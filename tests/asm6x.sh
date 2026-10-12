@@ -15,12 +15,12 @@ cd "$(dirname "$0")/.."
 CXX1="${CXX1:-./cpp11.exe}"
 ASM6X="${ASM6X:-}"
 if [ -z "$ASM6X" ]; then
-    for c in ../../ASM6x/build/asm6x.exe "$HOME/asm6x-build/asm6x.exe" "$(command -v asm6x 2>/dev/null)"; do
+    for c in ../ASM6x/build/asm6x.exe "$HOME/asm6x-build/asm6x.exe" "$(command -v asm6x 2>/dev/null)"; do
         [ -n "$c" ] && [ -x "$c" ] && { ASM6X=$c; break; }
     done
 fi
 [ -n "$ASM6X" ] || { echo "asm6x.sh: no asm6x - name it with ASM6X=<path>"; exit 2; }
-C6XDIFF="${C6XDIFF:-../../ASM6x/tests/c6xdiff.py}"
+C6XDIFF="${C6XDIFF:-../ASM6x/tests/c6xdiff.py}"
 [ -f "$C6XDIFF" ] || C6XDIFF="$HOME/asm6x-build/tests/c6xdiff.py"
 [ -f "$C6XDIFF" ] || { echo "asm6x.sh: no c6xdiff.py - name it with C6XDIFF=<path>"; exit 2; }
 OUT=tests/out-asm6x
