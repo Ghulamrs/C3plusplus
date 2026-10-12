@@ -18,7 +18,7 @@ set CPP11_AS=C:\asm6x-tests\build\asm6x.exe
 if not exist %CPP11_AS% set CPP11_AS=C:\Users\GRA\source\RStudio\bin\asm6x.exe
 if not exist %CPP11_AS% (echo ti-link.cmd: no asm6x.exe & exit /b 1)
 if not exist %CPP11_TI%\bin\lnk6x.exe (echo ti-link.cmd: no lnk6x under %CPP11_TI% & exit /b 1)
-if not exist %CPP11_TILIB%\rts6740_elf_eh.lib (echo ti-link.cmd: no rts6740_elf_eh.lib - see Emulator/tests/ti.sh & exit /b 1)
+if not exist %CPP11_TILIB%\rts6740_elf_eh.lib (echo ti-link.cmd: no rts6740_elf_eh.lib - see VM6747/tests/ti.sh & exit /b 1)
 if not exist %ROOT%\cxx1-msvc.exe (echo ti-link.cmd: no cxx1-msvc.exe - run-cases.cmd builds it & exit /b 1)
 if not exist %ROOT%\winout\ti mkdir %ROOT%\winout\ti
 del /q %ROOT%\winout\ti\* 2>nul

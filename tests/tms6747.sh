@@ -23,8 +23,8 @@ cd "$(dirname "$0")/.."
 CXX1="${CXX1:-./cpp11.exe}"
 # The emulator where the VM6747 checkout keeps it, or beside this tree as it was.
 if [ -z "${VM:-}" ]; then
-    for v in ../VM6747/Emulator/vm6747.exe ../Emulator/vm6747.exe; do [ -x "$v" ] && { VM=$v; break; }; done
-    VM=${VM:-../VM6747/Emulator/vm6747.exe}
+    for v in ../VM6747/vm6747.exe; do [ -x "$v" ] && { VM=$v; break; }; done
+    VM=${VM:-../VM6747/vm6747.exe}
 fi
 # CYCLES=1: each case's cycles from main, as TI's simulator counts cycle.CPU (vm6747 -c), taken
 # out of its output before the comparison and kept in <case>.cycles; the total is printed.

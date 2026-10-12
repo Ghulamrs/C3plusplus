@@ -32,8 +32,8 @@ WINDOWS=${CXX1_WINDOWS:-windows}
 CPP11=${CPP11:-$ROOT/cpp11.exe}
 ASM6X=${ASM6X:-$ROOT/../ASM6x/build/asm6x.exe}
 [ -x "$ASM6X" ] || ASM6X=$HOME/Developer/Claude/ASM6x/build/asm6x.exe
-VM=${VM:-$ROOT/../VM6747/Emulator/vm6747.exe}
-[ -x "$VM" ] || VM=$HOME/Developer/Claude/VM6747/Emulator/vm6747.exe
+VM=${VM:-$ROOT/../VM6747/vm6747.exe}
+[ -x "$VM" ] || VM=$HOME/Developer/Claude/VM6747/vm6747.exe
 WREMOTE='C:\cxx1\release-check'
 T0=$(date +%s)
 
