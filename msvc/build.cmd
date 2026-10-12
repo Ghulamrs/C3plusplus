@@ -35,7 +35,7 @@ REM /std:c++14 is the pin the other two toolchains carry as -std=c++14, and
 REM /permissive- is what makes MSVC judge the same language they do.
 REM
 REM **The disabled warnings and _CRT_SECURE_NO_WARNINGS are inherited, not
-REM chosen here.** They are exactly ..\..\Compiler-C\msvc\cc1.vcxproj's list,
+REM chosen here.** They are exactly ..\..\..\Compiler-C\msvc\cc1.vcxproj's list,
 REM and every one of them fires on code this tree forked rather than wrote:
 REM 4996 is fopen and localtime, 4244/4267 are the int64-to-int and
 REM long-double-to-double narrowings in the preprocessor and two backends, and

@@ -23,8 +23,8 @@ cd "$(dirname "$0")/.."
 CXX1="${CXX1:-./cpp11.exe}"
 # The emulator where the VM6747 checkout keeps it, or beside this tree as it was.
 if [ -z "${VM:-}" ]; then
-    for v in ../VM6747/vm6747.exe; do [ -x "$v" ] && { VM=$v; break; }; done
-    VM=${VM:-../VM6747/vm6747.exe}
+    for v in ../../TI/VM6747/vm6747.exe; do [ -x "$v" ] && { VM=$v; break; }; done
+    VM=${VM:-../../TI/VM6747/vm6747.exe}
 fi
 # CYCLES=1: each case's cycles from main, as TI's simulator counts cycle.CPU (vm6747 -c), taken
 # out of its output before the comparison and kept in <case>.cycles; the total is printed.
@@ -34,13 +34,13 @@ SIM="${SIM:-1}"
 find_tool() {
     for t in "$@"; do [ -n "$t" ] && [ -x "$t" ] && { echo "$t"; return; }; done
 }
-ASM6X=$(find_tool "${ASM6X:-}" ../ASM6x/build/asm6x.exe "$(command -v asm6x 2>/dev/null)")
-LNK6X=$(find_tool "${LNK6X:-}" ../LNK6x/build/lnk6x.exe "$(command -v lnk6x 2>/dev/null)")
-SIM6747=$(find_tool "${SIM6747:-}" ../SIM6747/sim6747.exe "$(command -v sim6747 2>/dev/null)")
+ASM6X=$(find_tool "${ASM6X:-}" ../../TI/ASM6x/build/asm6x.exe "$(command -v asm6x 2>/dev/null)")
+LNK6X=$(find_tool "${LNK6X:-}" ../../TI/LNK6x/build/lnk6x.exe "$(command -v lnk6x 2>/dev/null)")
+SIM6747=$(find_tool "${SIM6747:-}" ../../TI/SIM6747/sim6747.exe "$(command -v sim6747 2>/dev/null)")
 # The run-time library: RTS6x's, built beside this tree, since it passed the suite whole (M5, 2026-10-07);
 # TI's exception-handling rts6740 as RTSLIB=rts6740_elf_eh.lib, TIRTS its directory (default ~/c6747-lib).
 RTSLIB="${RTSLIB:-rts6x.lib}"
-if [ "$RTSLIB" = rts6x.lib ]; then TIRTS="${TIRTS:-../RTS6x/build}"; else TIRTS="${TIRTS:-${C6747_EHLIB:-$HOME/c6747-lib}}"; fi
+if [ "$RTSLIB" = rts6x.lib ]; then TIRTS="${TIRTS:-../../TI/RTS6x/build}"; else TIRTS="${TIRTS:-${C6747_EHLIB:-$HOME/c6747-lib}}"; fi
 CXX1_FLAGS="${CXX1_FLAGS:-}"   # -O1 or -O2 runs the corpus through the C6000 optimizer
 # Every pass that vows its edits only shrink liveness is held to the vow (review V9; under 1% of the
 # compile time, measured 2026-10-07); -O0 never reaches the optimizer. CPP11_C6XLIVECHECK= turns it off.

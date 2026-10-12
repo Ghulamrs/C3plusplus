@@ -152,7 +152,7 @@ if [ "$WHICH" = all ] || [ "$WHICH" = windows ]; then
     # every case through -masm=masm as well as the GNU spelling, into winout\masm.
     TOOLS='C:\cxx1\verify-tools'
     MASMENV=""
-    if [ -d "$ROOT/../MASM/src" ] && [ -d "$ROOT/../LINK/src" ]; then
+    if [ -d "$ROOT/../../Windows/MASM/src" ] && [ -d "$ROOT/../../Windows/LINK/src" ]; then
         TT=$(mktemp -t cxx1tools).tgz
         COPYFILE_DISABLE=1 tar -C "$ROOT/.." --no-xattrs -czf "$TT" --exclude '* [0-9]*' MASM/src LINK/src 2>/dev/null
         scp -q -o BatchMode=yes "$TT" "$WINDOWS:C:\\cxx1\\tools.tgz" || STATUS=1

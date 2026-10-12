@@ -25,7 +25,7 @@ rem  run once by hand, and the project's masm refused 10 of 379 cases under a gr
 rem  suite. The project's tools are found, in this order:
 rem    CXX1_MASM, CXX1_LINK      the two programs, named outright
 rem    CXX1_MASM_SRC, CXX1_LINK_SRC   their trees, built here by cl into <root>\winout-tools
-rem                              (default <root>\..\MASM and <root>\..\LINK)
+rem                              (default <root>\..\..\Windows\MASM and <root>\..\..\Windows\LINK)
 rem  and where neither is found the MASM pass is not run, the reason is printed and
 rem  the script exits 1 once the GNU pass is done. CXX1_CASES_SPELLINGS=gnu (or masm)
 rem  runs one spelling alone.
@@ -71,8 +71,8 @@ set LINKEXE=%CXX1_LINK%
 set TOOLS=%ROOT%\winout-tools
 if "%MASMEXE%"=="" call :build MASM masm "%CXX1_MASM_SRC%"
 if "%LINKEXE%"=="" call :build LINK link "%CXX1_LINK_SRC%"
-if "%MASMEXE%"=="" (echo run-cases.cmd: the MASM spelling was NOT run - no masm: set CXX1_MASM, or put the MASM tree at %ROOT%\..\MASM or CXX1_MASM_SRC& exit /b 1)
-if "%LINKEXE%"=="" (echo run-cases.cmd: the MASM spelling was NOT run - no LINK: set CXX1_LINK, or put the LINK tree at %ROOT%\..\LINK or CXX1_LINK_SRC& exit /b 1)
+if "%MASMEXE%"=="" (echo run-cases.cmd: the MASM spelling was NOT run - no masm: set CXX1_MASM, or put the MASM tree at %ROOT%\..\..\Windows\MASM or CXX1_MASM_SRC& exit /b 1)
+if "%LINKEXE%"=="" (echo run-cases.cmd: the MASM spelling was NOT run - no LINK: set CXX1_LINK, or put the LINK tree at %ROOT%\..\..\Windows\LINK or CXX1_LINK_SRC& exit /b 1)
 exit /b 0
 
 rem  %1 the tree's name, %2 the program, %3 its source tree if named; sets MASMEXE or LINKEXE.

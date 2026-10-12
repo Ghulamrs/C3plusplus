@@ -22,7 +22,7 @@ LINUX=${CXX1_LINUX:-ec2-user@52.202.164.123}
 WINDOWS=${CXX1_WINDOWS:-windows}
 COMPILERPP=${COMPILERPP:-$ROOT/../Compiler++}
 CPP11=${CPP11:-$ROOT/cpp11.exe}
-ASM6X=${ASM6X:-$ROOT/../ASM6x/build/asm6x.exe}
+ASM6X=${ASM6X:-$ROOT/../../TI/ASM6x/build/asm6x.exe}
 # COMPRESS=1 (default): cpp11's objects --compress, cl6x its own default, compressed; COMPRESS=0:
 # both plain, ASM6x and cl6x --no_compress - the two sides always built alike
 COMPRESS=${COMPRESS:-1}
