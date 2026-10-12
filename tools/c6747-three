@@ -30,8 +30,8 @@ set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 KEY=${CXX1_LINUX_KEY:-$HOME/Documents/Claude/myMorningWalk.pem}
 LINUX=${CXX1_LINUX:-ec2-user@52.202.164.123}
-WINDOWS=${CXX1_WINDOWS:-windows}
-WREMOTE='C:\cxx1\c6747-run'
+WINDOWS=${WINDOWS_BOX:-windows}
+WREMOTE='C:\Users\GRA\work\c6747-run'
 LREMOTE='c6747-run'
 BOXES="windows-ccs74-vm windows-ccs55 linux-ccs55 windows-ccs55-cpp11 linux-ccs55-cpp11"
 T0=$(date +%s)
@@ -85,8 +85,8 @@ LPROGS=$(for f in $FILES; do printf '%s/c6747/programs/%s ' "$LREMOTE" "$f"; don
 
 # The Windows machine: one unpack, then its two boxes at once.
 (
-    scp -q -o BatchMode=yes "$WORK/c6747.tgz" "$WINDOWS:C:/cxx1/c6747.tgz" &&
-    ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $WREMOTE 2>nul & mkdir $WREMOTE && tar -C $WREMOTE -xzf C:\\cxx1\\c6747.tgz" >/dev/null
+    scp -q -o BatchMode=yes "$WORK/c6747.tgz" "$WINDOWS:C:/Users/GRA/work/c6747.tgz" &&
+    ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $WREMOTE 2>nul & mkdir $WREMOTE && tar -C $WREMOTE -xzf C:\\Users\\GRA\\work\\c6747.tgz" >/dev/null
 ) > "$WORK/wship.log" 2>&1 || { echo "c6747-three: cannot ship to $WINDOWS"; cat "$WORK/wship.log"; exit 1; }
 ssh -o BatchMode=yes "$WINDOWS" "set TI_COMPRESS=$TI_COMPRESS&& $WREMOTE\\c6747\\vm-ccs74.cmd $WPROGS" > "$WORK/windows-ccs74-vm.log" 2>&1 &
 P1=$!
@@ -106,7 +106,7 @@ wait $P1; wait $P2; wait $P3
 
 # Everything back: each box's stdout and result for each program.
 mkdir -p "$WORK/back"
-scp -q -o BatchMode=yes "$WINDOWS:C:/cxx1/c6747-run/c6747/out/*.stdout" "$WINDOWS:C:/cxx1/c6747-run/c6747/out/*.result" "$WORK/back/" 2>/dev/null
+scp -q -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/c6747-run/c6747/out/*.stdout" "$WINDOWS:C:/Users/GRA/work/c6747-run/c6747/out/*.result" "$WORK/back/" 2>/dev/null
 scp -q -i "$KEY" -o BatchMode=yes "$LINUX:$LREMOTE/c6747/out/*.stdout" "$LINUX:$LREMOTE/c6747/out/*.result" "$WORK/back/" 2>/dev/null
 # And cl6x's objects, for the size table: -O2 as linked, and -O2 -ms3.
 mkdir -p "$WORK/back/o2" "$WORK/back/ms3"

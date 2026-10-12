@@ -16,7 +16,7 @@ set -e
 [ -n "$1" ] || { echo "usage: cl-measure <file.cpp> [symbols]" >&2; exit 2; }
 src=$1
 base=$(basename "$src" .cpp)
-host=${CXX1_WINDOWS:-windows}
+host=${WINDOWS_BOX:-windows}
 remote='C:\Users\GRA\source\measure'
 
 ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "if not exist $remote mkdir $remote" >/dev/null

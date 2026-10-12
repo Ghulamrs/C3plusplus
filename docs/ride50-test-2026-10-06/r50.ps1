@@ -11,7 +11,7 @@ $W = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Corpus = "$W\corpus"; $Img = "$W\img"; $Src = "$W\src"
 $Bin = "C:\Program Files\RIDE 5.0\bin"
 $CG8 = "C:\ti\ccsv7\tools\compiler\ti-cgt-c6000_8.2.2"; $Lib8 = "C:\Users\GRA\Documents\VM6747\tilib"
-$CG7 = "C:\ti\ccsv5\tools\compiler\c6000_7.4.4";      $Lib7 = "C:\cxx1\c6747-lib"
+$CG7 = "C:\ti\ccsv5\tools\compiler\c6000_7.4.4";      $Lib7 = "C:\ti\c6747-lib"
 $Eclipse = "C:\ti\ccsv5\eclipse\eclipsec.exe"
 New-Item -ItemType Directory -Force $Img, $Src, "$W\ws" | Out-Null
 $Variants = "c11-O0", "c11-O1", "c11-O2", "c11-Os", "ti822-O2", "ti744-O2"

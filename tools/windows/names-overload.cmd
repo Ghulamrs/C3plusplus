@@ -2,7 +2,7 @@
 rem  tests/names.sh and tests/overload.sh on the Windows box.
 rem
 rem  Usage:  names-overload.cmd <root> [compiler]
-rem          <root>      the tree, e.g. C:\cxx1\rtsdiv\ws-a
+rem          <root>      the tree, e.g. C:\Users\GRA\work\rtsdiv\ws-a
 rem          [compiler]  the cxx1 to test; default <root>\cxx1-msvc.exe,
 rem                      which msvc\build.cmd makes
 rem

@@ -13,10 +13,10 @@
 # cycle.Total per build, cpp11's ratio to each TI compiler at the same level, the code bytes of
 # each program's own object (its executable sections, the library excluded) and each image's
 # bytes. A program passes a build when its stdout is its .expected. Everything lands in
-# C:\cxx1\bench-levels\<stamp>, a folder of its own; KEEP=<dir> keeps the images and maps.
+# C:\Users\GRA\work\bench-levels\<stamp>, a folder of its own; KEEP=<dir> keeps the images and maps.
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-WINDOWS=${CXX1_WINDOWS:-windows}
+WINDOWS=${WINDOWS_BOX:-windows}
 CPP11=${CPP11:-$ROOT/cpp11.exe}
 ASM6X=${ASM6X:-$ROOT/../../TI/ASM6x/build/asm6x.exe}
 # COMPRESS=1 (default): cpp11's objects --compress, cl6x its own default, compressed; COMPRESS=0:
@@ -27,9 +27,9 @@ if [ "$COMPRESS" = 1 ]; then ASM6X_FLAGS=--compress; TI_COMPRESS=; else ASM6X_FL
 LNK6X=${LNK6X:-$ROOT/../../TI/LNK6x/build/lnk6x.exe}
 [ -x "$LNK6X" ] || LNK6X=$HOME/Developer/Claude/TI/LNK6x/build/lnk6x.exe
 MAP=${MAP:-C6747.cmd}
-TILIB=${TILIB:-$HOME/c6747-lib}   # a copy of the box's C:\cxx1\c6747-lib: rts6740_elf_eh.lib from 7.4.4's mklib
+TILIB=${TILIB:-$HOME/c6747-lib}   # a copy of the box's C:\ti\c6747-lib: rts6740_elf_eh.lib from 7.4.4's mklib
 STAMP=${STAMP:-$(date +%m%d-%H%M%S)}
-WREMOTE="C:\\cxx1\\bench-levels\\$STAMP"
+WREMOTE="C:\\Users\\GRA\\work\\bench-levels\\$STAMP"
 DIR=${1:-$ROOT/tools/c6747/bench}
 T0=$(date +%s)
 
@@ -61,8 +61,8 @@ for p in "$DIR"/*.c "$DIR"/*.cpp; do
 done
 if [ "${RESUME:-0}" != 1 ]; then
 COPYFILE_DISABLE=1 tar -C "$WORK" --no-xattrs -czf "$WORK/bl.tgz" bl
-scp -q -o BatchMode=yes "$WORK/bl.tgz" "$WINDOWS:C:/cxx1/bl-$STAMP.tgz" || { echo "c6747-levels: cannot ship to $WINDOWS"; exit 1; }
-ssh -o BatchMode=yes "$WINDOWS" "mkdir C:\\cxx1\\bench-levels 2>nul & mkdir $WREMOTE && tar -C $WREMOTE --strip-components=1 -xzf C:\\cxx1\\bl-$STAMP.tgz && del C:\\cxx1\\bl-$STAMP.tgz" > /dev/null 2>&1
+scp -q -o BatchMode=yes "$WORK/bl.tgz" "$WINDOWS:C:/Users/GRA/work/bl-$STAMP.tgz" || { echo "c6747-levels: cannot ship to $WINDOWS"; exit 1; }
+ssh -o BatchMode=yes "$WINDOWS" "mkdir C:\\Users\\GRA\\work\\bench-levels 2>nul & mkdir $WREMOTE && tar -C $WREMOTE --strip-components=1 -xzf C:\\Users\\GRA\\work\\bl-$STAMP.tgz && del C:\\Users\\GRA\\work\\bl-$STAMP.tgz" > /dev/null 2>&1
 fi
 printf 'c6747-levels: running in %s\n' "$WREMOTE"
 # **Detached, so a lost connection or a power cut kills no run**: the box job is started through WMI (start-detached.ps1)
@@ -72,7 +72,7 @@ boot() { ssh -o BatchMode=yes -o ConnectTimeout=10 "$WINDOWS" \
 launch() {   # $1: RESUME, 0 or 1
     printf '@echo off\r\nset TI_COMPRESS=%s\r\nset RESUME=%s\r\ncall "%s\\bench-levels.cmd" > "%s\\windows.log" 2>&1\r\n' \
         "$TI_COMPRESS" "$1" "$WREMOTE" "$WREMOTE" > "$WORK/launch.cmd"
-    scp -q -o BatchMode=yes "$WORK/launch.cmd" "$WINDOWS:C:/cxx1/bench-levels/$STAMP/launch.cmd" &&
+    scp -q -o BatchMode=yes "$WORK/launch.cmd" "$WINDOWS:C:/Users/GRA/work/bench-levels/$STAMP/launch.cmd" &&
     ssh -o BatchMode=yes "$WINDOWS" "powershell -NoProfile -ExecutionPolicy Bypass -File $WREMOTE\\start-detached.ps1 $WREMOTE\\launch.cmd" > /dev/null 2>&1
 }
 launch "${RESUME:-0}" || { echo "c6747-levels: cannot reach $WINDOWS"; exit 1; }
@@ -87,12 +87,12 @@ until ssh -o BatchMode=yes -o ConnectTimeout=10 "$WINDOWS" "if exist $WREMOTE\\b
         echo "c6747-levels: $WINDOWS restarted - resuming $STAMP"; booted=$now; launch 1
     fi
 done
-scp -q -o BatchMode=yes "$WINDOWS:C:/cxx1/bench-levels/$STAMP/windows.log" "$WORK/windows.log" 2>/dev/null
+scp -q -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/bench-levels/$STAMP/windows.log" "$WORK/windows.log" 2>/dev/null
 mkdir -p "$WORK/back"
-scp -q -r -o BatchMode=yes "$WINDOWS:C:/cxx1/bench-levels/$STAMP/*.result" "$WINDOWS:C:/cxx1/bench-levels/$STAMP/*.stdout" "$WORK/back/" 2>/dev/null
-scp -q -r -o BatchMode=yes "$WINDOWS:C:/cxx1/bench-levels/$STAMP/obj" "$WORK/back/" 2>/dev/null
+scp -q -r -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/bench-levels/$STAMP/*.result" "$WINDOWS:C:/Users/GRA/work/bench-levels/$STAMP/*.stdout" "$WORK/back/" 2>/dev/null
+scp -q -r -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/bench-levels/$STAMP/obj" "$WORK/back/" 2>/dev/null
 mkdir -p "$WORK/back/img"
-scp -q -o BatchMode=yes "$WINDOWS:C:/cxx1/bench-levels/$STAMP/*.out" "$WINDOWS:C:/cxx1/bench-levels/$STAMP/*.map" "$WORK/back/img/" 2>/dev/null
+scp -q -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/bench-levels/$STAMP/*.out" "$WINDOWS:C:/Users/GRA/work/bench-levels/$STAMP/*.map" "$WORK/back/img/" 2>/dev/null
 [ -n "${KEEP:-}" ] && mkdir -p "$KEEP" && cp -R "$WORK/back" "$WORK/bl" "$KEEP/"
 
 field() { tr -d '\r' < "$1" 2>/dev/null | tr ' ' '\n' | sed -n "s/^$2=//p" | head -1; }

@@ -5,7 +5,7 @@
 #   tools/c6747/o2run/rounds.sh s1004-231455 2336       (04-10-2026: 4 rounds on Windows, 3 on Linux)
 S=$(cd "$(dirname "$0")" && pwd); BASE=$1; CUT=$2
 K=~/Documents/Claude/myMorningWalk.pem
-isdone() { if [ $1 = windows ]; then ssh -o ConnectTimeout=15 windows "if exist C:\\cxx1\\o2run\\$2\\rep.done (exit 0) else (exit 1)" 2>/dev/null
+isdone() { if [ $1 = windows ]; then ssh -o ConnectTimeout=15 windows "if exist C:\\Users\\GRA\\work\\o2run\\$2\\rep.done (exit 0) else (exit 1)" 2>/dev/null
            else ssh -i $K -o ConnectTimeout=15 ec2-user@52.202.164.123 "test -f ~/o2run/$2/rep.done" 2>/dev/null; fi; }
 stamp() { [ $2 = 1 ] && echo $BASE || echo $BASE-r$2; }
 python3 $S/scen.py windows $BASE; python3 $S/scen.py linux $BASE

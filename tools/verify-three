@@ -19,7 +19,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WHICH=${1:-all}
 KEY=${CXX1_LINUX_KEY:-$HOME/Documents/Claude/myMorningWalk.pem}
 LINUX=${CXX1_LINUX:-ec2-user@52.202.164.123}
-WINDOWS=${CXX1_WINDOWS:-windows}
+WINDOWS=${WINDOWS_BOX:-windows}
 TAR=$(mktemp -t cxx1src).tgz
 STATUS=0
 
@@ -125,22 +125,22 @@ if [ "$WHICH" = all ] || [ "$WHICH" = windows ]; then
     # the same kind of place. A verification sandbox sharing a junk drawer is
     # one stray `del` from a run that fails for no reason anybody can see, and
     # it makes `rmdir /s /q` on the sandbox a heavier thing to write than it
-    # should be. C:\cxx1 belongs to this compiler and nothing else, so the
+    # should be. C:\Users\GRA\work belongs to this compiler and nothing else, so the
     # wipe-and-unpack below is safe to read at a glance.
-    REMOTE='C:\cxx1\verify'
-    scp -q -o BatchMode=yes "$TAR" "$WINDOWS:C:\\cxx1\\src.tgz" || STATUS=1
+    REMOTE='C:\Users\GRA\work\verify'
+    scp -q -o BatchMode=yes "$TAR" "$WINDOWS:C:\\Users\\GRA\\work\\src.tgz" || STATUS=1
     # Windows ships its own tar. Extracting over a previous run rather than
     # into a clean directory is what leaves a stale object linking perfectly,
     # so the directory goes first.
-    ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $REMOTE 2>nul & mkdir $REMOTE && tar -C $REMOTE -xzf C:\\cxx1\\src.tgz" >/dev/null || STATUS=1
+    ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $REMOTE 2>nul & mkdir $REMOTE && tar -C $REMOTE -xzf C:\\Users\\GRA\\work\\src.tgz" >/dev/null || STATUS=1
     # **The tms6747 target is a second box on the same machine**: a tree of its
-    # own in C:\cxx1\verify-ti, its own cxx1-msvc.exe, TI's lnk6x over every case
+    # own in C:\Users\GRA\work\verify-ti, its own cxx1-msvc.exe, TI's lnk6x over every case
     # - asm6x on what cxx1 wrote, the linker as the judge of the objects.
-    TIREMOTE='C:\cxx1\verify-ti'
+    TIREMOTE='C:\Users\GRA\work\verify-ti'
     (
         t=$(date +%s); rc=0
         printf '=== tms6747 (%s, %s) ===\n' "$WINDOWS" "$TIREMOTE"   # echo reads \c as "stop"
-        ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $TIREMOTE 2>nul & mkdir $TIREMOTE && tar -C $TIREMOTE -xzf C:\\cxx1\\src.tgz" >/dev/null || rc=1
+        ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $TIREMOTE 2>nul & mkdir $TIREMOTE && tar -C $TIREMOTE -xzf C:\\Users\\GRA\\work\\src.tgz" >/dev/null || rc=1
         ssh -o BatchMode=yes "$WINDOWS" "call $TIREMOTE\\msvc\\build.cmd >nul && $TIREMOTE\\tools\\windows\\ti-link.cmd $TIREMOTE" > "$LEGS/ti.raw" 2>&1 || rc=1
         grep -v "^$" "$LEGS/ti.raw" | tr -d '\r' | tail -8
         echo "tms6747 leg: $(( $(date +%s) - t ))s, $([ $rc -eq 0 ] && echo passed || echo FAILED)"
@@ -150,13 +150,13 @@ if [ "$WHICH" = all ] || [ "$WHICH" = windows ]; then
     TW=$(date +%s)
     # **The project's masm and LINK go with the tree** (review D15): run-cases.cmd builds them and puts
     # every case through -masm=masm as well as the GNU spelling, into winout\masm.
-    TOOLS='C:\cxx1\verify-tools'
+    TOOLS='C:\Users\GRA\work\verify-tools'
     MASMENV=""
     if [ -d "$ROOT/../../Windows/MASM/src" ] && [ -d "$ROOT/../../Windows/LINK/src" ]; then
         TT=$(mktemp -t cxx1tools).tgz
         COPYFILE_DISABLE=1 tar -C "$ROOT/.." --no-xattrs -czf "$TT" --exclude '* [0-9]*' MASM/src LINK/src 2>/dev/null
-        scp -q -o BatchMode=yes "$TT" "$WINDOWS:C:\\cxx1\\tools.tgz" || STATUS=1
-        ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $TOOLS 2>nul & mkdir $TOOLS && tar -C $TOOLS -xzf C:\\cxx1\\tools.tgz" >/dev/null || STATUS=1
+        scp -q -o BatchMode=yes "$TT" "$WINDOWS:C:\\Users\\GRA\\work\\tools.tgz" || STATUS=1
+        ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $TOOLS 2>nul & mkdir $TOOLS && tar -C $TOOLS -xzf C:\\Users\\GRA\\work\\tools.tgz" >/dev/null || STATUS=1
         rm -f "$TT"
         MASMENV="set CXX1_MASM_SRC=$TOOLS\\MASM&& set CXX1_LINK_SRC=$TOOLS\\LINK&& "
     fi
@@ -169,7 +169,7 @@ if [ "$WHICH" = all ] || [ "$WHICH" = windows ]; then
     OUT=$(mktemp -d)
     # Forward slashes: scp's remote path goes through the shell, which eats
     # the backslashes, and the copy then silently finds nothing.
-    scp -q -r -o BatchMode=yes "$WINDOWS:C:/cxx1/verify/winout" "$OUT"
+    scp -q -r -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/verify/winout" "$OUT"
     pass=0; fail=0
     for e in "$ROOT"/tests/cases/*.expected; do
         n=$(basename "$e" .expected)
@@ -256,7 +256,7 @@ if [ "$WHICH" = all ] || [ "$WHICH" = windows ]; then
     # optimizer stood under a green verify-three for that reason (2026-10-07). Recorded output only.
     ssh -o BatchMode=yes "$WINDOWS" "${MASMENV}set CXX1_CASES_FLAGS=-O2&& $REMOTE\\tools\\windows\\run-cases.cmd $REMOTE" >/dev/null || STATUS=1
     OUT2=$(mktemp -d)
-    scp -q -r -o BatchMode=yes "$WINDOWS:C:/cxx1/verify/winout" "$OUT2"
+    scp -q -r -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/verify/winout" "$OUT2"
     p2=0; f2=0
     for e in "$ROOT"/tests/cases/*.expected; do
         n=$(basename "$e" .expected)
@@ -341,7 +341,7 @@ double 2.5" ]; then
     }
     ssh -o BatchMode=yes "$WINDOWS" "$REMOTE\\tools\\windows\\names-vs-cl.cmd $REMOTE" >/dev/null || STATUS=1
     NOUT=$(mktemp -d)
-    scp -q -r -o BatchMode=yes "$WINDOWS:C:/cxx1/verify/winnames" "$NOUT" 2>/dev/null
+    scp -q -r -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/verify/winnames" "$NOUT" 2>/dev/null
     nagree=0; ndiffer=0
     for mine in "$NOUT"/winnames/*.mine.txt; do
         [ -f "$mine" ] || continue

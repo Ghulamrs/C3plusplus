@@ -61,7 +61,7 @@ Files: `src/backend/Tms6747.{h,cpp}` (1,642 lines), `src/optimizer/C6xSched.{h,c
 `src/optimizer/Inliner.h`, `include/string`, the parser's frame allocation, and the three prior
 reviews in `VM6747/TMS6747-REVIEW.md` plus `docs/HANDOVER-C6747-2026-09-29.md`.
 Oracles used: `vm6747.exe -c/-p` (TI cycle.CPU within 0.2%), `cl6x` 7.4.4 and 8.2.2 on the Windows
-box (`C:\cxx1\review\`: `-O2 -k`, `-O2 -ms3 -k`, `-O1 -k`, all `--symdebug:none`), `ofd6x` for
+box (`C:\Users\GRA\work\review\`: `-O2 -k`, `-O2 -ms3 -k`, `-O1 -k`, all `--symdebug:none`), `ofd6x` for
 section sizes. No TI simulator run, no Linux box, nothing written into the repository.
 Scratch: `scratchpad/review/asm/*.O{0,1,2}.s` (cpp11), `scratchpad/review/tms/o744*/`, `o822/`
 (cl6x listings and objects), `tms/fold.py`, `tms/regs.py` (the two experiments below).
@@ -729,12 +729,12 @@ figures above are the only record.
 
 Reviewed read-only: `~/Developer/Claude/LNK6x` at `a6d9462` (src/ 2,376 lines), its bed, and
 `docs/known.md`. Nothing in LNK6x, ASM6x or C++Optimize was edited; every experiment ran in the
-scratchpad (`.../scratchpad/review/`, kept) and on the Windows box under `C:\cxx1\review-lnk\`.
+scratchpad (`.../scratchpad/review/`, kept) and on the Windows box under `C:\Users\GRA\work\review-lnk\`.
 Neither TI simulator nor the Linux box was touched.
 
 **Oracles.** TI's `lnk6x` from CGT 7.4.4 (CCS 5.5 - the one both simulator legs of
 `tools/c6747-three` and `run-windows.cmd` link with) against the 7.4.4 `rts6740_elf_eh.lib` in
-`C:\cxx1\c6747-lib`; and `lnk6x` 8.2.2 against its own mklib runtime (`VM6747\tilib`, the copy
+`C:\ti\c6747-lib`; and `lnk6x` 8.2.2 against its own mklib runtime (`VM6747\tilib`, the copy
 checked into `tests/ref`). 8.2.2 refuses the 7.4.4 library outright ("C++ or C object files
 built with compiler versions before 8.0.0 are incompatible"), so every comparison below is
 version-consistent, and most are against 7.4.4, which is the toolchain the user's speed numbers

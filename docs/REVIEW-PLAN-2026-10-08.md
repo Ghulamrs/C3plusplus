@@ -28,7 +28,7 @@ one workstream, or sequenced and said so.
    not into the code.
 3. **The Mac is a control room.** Edit, use git and the seal tools on the Mac.
    Every build and every test runs on the Windows PC (`ssh windows`, `cmd.exe`;
-   tool workspace `C:\cxx1\rtsdiv\<workstream>`; clones with
+   tool workspace `C:\Users\GRA\work\rtsdiv\<workstream>`; clones with
    `core.autocrlf=false`) or on the Linux box (`ssh compiler-box`, `~/ride-5.1`,
    g++/gcc, no clang). `names.sh` and `overload.sh` need clang: on the Windows
    box they run under Git's bash (`C:\Program Files\Git\bin\bash.exe`, which
@@ -498,7 +498,7 @@ time on the box. "Case" means `tests/cases/<name>.cpp` with its clang
   (artefact table), A6, A7 (generator), M9.
 - **Order inside**: hour 0-3 decisions note for WS-B (`docs/review-2026-10-08/g-decisions.md`)
   → D2 (2 h) → R5 Run/Emulate (6 h, both GUIs, GUI is the oracle: drive RIDE.exe
-  on the box through `C:/cxx1/gui` as the memory describes, and the macOS app on
+  on the box through `C:/Users/GRA/work/gui` as the memory describes, and the macOS app on
   the Mac is the one exception the user's rules allow for a GUI check) → P3 (2 h)
   → D5 (1 h) → S2 workspace.mk + confirm in release (2 h) → D16 (1 h) → D13
   artefact table + `master-seal --html` (3 h) → D14 (1 h).
@@ -642,7 +642,7 @@ the branch's gate on the box, merge, push nothing until step 12)
 
 ### 5.3 Box usage
 
-Every workstream's builds run in `C:\cxx1\rtsdiv\<ws>` from a clone with
+Every workstream's builds run in `C:\Users\GRA\work\rtsdiv\<ws>` from a clone with
 `core.autocrlf=false`; builds and non-simulator tests may run concurrently.
 The Linux box runs one leg at a time (`~/ride-5.1/<ws>`), its memory being the
 limit (`./build` caps at 300 MB; `-j2`). Only WS-H and the final gate run TI
@@ -793,7 +793,7 @@ single-invocation recipe - hand the note to WS-B; (2) D2: `compile.cpp:614` and
 settings say `emulateOnly`; `tests/test.cpp` gains the three states; (3) begin
 R5 in `toolchain.cpp:770-782` (`runRecipe` for tms6747 builds the `.out` first
 and runs sim6747), the menu item in `menu.cpp`, the WinForms and macOS entries,
-and a GUI check script in `C:/cxx1/gui` for F5 on a C6000 example.
+and a GUI check script in `C:/Users/GRA/work/gui` for F5 on a C6000 example.
 
 **WS-L** (starts after E1 merges, ~hour 24): (1) golden recorded; `<cstddef>`
 `nullptr_t`, `<cstdarg>`, `setfill` in `<iomanip>` + the fill in `ostream`'s

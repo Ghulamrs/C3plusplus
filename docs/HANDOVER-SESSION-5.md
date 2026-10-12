@@ -131,7 +131,7 @@ From `C:\cxxopt`, as sessions 3 and 4 laid it out:
 
 1. `sync.cmd` with a bundle of this branch's head, then `msvc\build.cmd`.
 2. `opt.cmd s6 O1 O2`: Compiler++ at both levels, its four suites, 258
-   cases against `C:\cxx1dev\w\cl-O2`. The gate: 258/258 and green.
+   cases against `C:\Users\GRA\workdev\w\cl-O2`. The gate: 258/258 and green.
 3. `cases.cmd O0 O1 O2`: cxx1's cases on the box - this is where the
    Windows funclet, RTTI and `try` shapes first *run* under the allocator's
    preserved registers; nothing here executed Windows code.

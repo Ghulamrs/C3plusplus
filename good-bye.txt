@@ -1,0 +1,82 @@
+Where things stand - 02-10-2026, about 20:40 PKT
+================================================
+
+Two files hand this session over:
+  good-bye.txt     (this one)  everything done today and what is left
+  PROBLEM C++.md               the cpp11 bug from SampleExt, written as the brief for a fresh Fable 5.1 job
+
+Standing rules from today (also in memory):
+  * The MacBook is the control room. Builds, suites and experiments run on the Windows box
+    (ssh windows) and the Linux box (ssh ec2-user@52.202.164.123). The Mac builds only what
+    can only be built on a Mac (the macOS RIDE window, its .pkg), and only when the user says.
+  * Launch a Mac app for testing with `open -g` (background): `open -a` takes the user's keyboard
+    and his typing lands in the app.
+  * A Claude app session on the Windows box audits the WinForms RIDEGui. Leave her to it. We talk
+    through files in C:\Users\GRA\Developer\Claude: NOTE-FROM-MAC.md (mine, written) and
+    NOTE-TO-MAC.md (hers - none yet at 20:17). When she pushes, merge her WinForms work with mine.
+
+
+1. RIDE 4.7  -  github.com/Ghulamrs/RIDE-4.7 (public, made today), ~/Developer/Claude/RIDE-4.7, main
+-------------------------------------------------------------------------------------------------
+Commits, oldest first, all pushed:
+  f6a3b01  a copy of 4.51 named 4.7 (new AppId, com.ghulamrs.ride47, /usr/local and /opt ride-4.7,
+           build output in ../build/RIDE-4.7)
+  e2bf7b8  CCS workspace, one project at a time: <workspace>/<project>.pro holding only
+           {"ccs":{"workspace":".","project":"<name>"}}; src/ccs/ccsworkspace reads the registry,
+           .location, path variables and build macros (measured from CCS 7.4 eclipsec importProject)
+  fc7310a  both windows open a CCS workspace's project; help; two stale Windows-only checks mended
+  641c6b4  a not-yet-written <workspace>\<project>.pro on the command line is written; --build on a
+           workspace says what it is
+  553ded3  RIDEConsole takes the mouse on every box (SGR ?1000/1002/1006; Windows console records
+           turned into the same text)
+  0c857ee  docs/RIDE-4.7-macOS-Audit-2026-10-02.md - 33 findings, live on the installed 4.51 + code
+  af53763  the audit's findings fixed (table at the end of the audit), and the test suite given a
+           scratch HOME so it cannot write ~/.ride again
+  ae6e324  the in-window menu row removed from the macOS window (the user asked)
+  776fd90  ride-4.7.dat + MASTER.SEAL re-sealed (master seal 2AFD0D54); Window.xcodeproj regenerated
+Verified: Windows box build.bat check 1233/0, session 317/0; Linux box whole workspace, RIDE 1321/0,
+session 353/0, every compiler and tool suite green. The macOS window checked live on the Mac.
+
+Left open in 4.7:
+  * Escape closing the find bar: fixed in code, but the test tool's Escape never reaches the app -
+    the user should press it once.
+  * The mouse in RIDEConsole was tested through pipes only; a real click in the Windows console,
+    Windows Terminal and a Linux terminal is still to be tried.
+  * The compiler banner in build output is BY DESIGN (decided 11-09-2026, pinned by the suite).
+
+
+2. RIDE 4.7 on this Mac  -  built, NOT installed
+------------------------------------------------
+~/Developer/Claude/RIDE-4.7/dist/RIDE-4.7-macos.pkg (8.4 MB). Needs the user's password, in order:
+  sudo rm -rf "/Applications/RIDE 4.51.app" /usr/local/ride-4.51
+  sudo find /usr/local/bin -lname '../ride-4.51/*' -delete
+  sudo pkgutil --forget com.ghulamrs.ride451
+  sudo installer -pkg ~/Developer/Claude/RIDE-4.7/dist/RIDE-4.7-macos.pkg -target /
+The user was still running 4.51 at 20:30 (SampleExt was built in it). After install: check the
+installed copy once - versions, /usr/local/bin links, a project built and run.
+/usr/local/ride (4.5) is left alone.
+
+
+3. The user's own files
+-----------------------
+~/.ride/settings.json: restored today - "ccs" enabled true again (a test of mine had switched it off
+at 16:03), the stray include path and c90 Debug -O1 removed. ~/.ride/state.json: recent lists put
+back after every test. The clipboard holds "Ghulam" from a paste test.
+
+
+4. The cpp11 bug from SampleExt  -  see PROBLEM C++.md
+------------------------------------------------------
+The program is correct (g++ 11.5, clang++ 19, TI cl6x 7.4.4 all accept it and agree). cpp11 ignores a
+constructor that is a template, and swallows the error inside an instantiated member body, so
+CVector<3>::operator*<3> is silently never emitted. A worktree is ready:
+~/Developer/Claude/C++Optimize-wt-tmplctor, branch tmpl-ctor from gcc-scheme f8f0e38. The user said
+"wait" before the Fable job was launched - launch it only when he says.
+
+
+5. Still from before today (not touched since)
+----------------------------------------------
+  * Windows box cleanup - waits for the user's yes on the proposed list.
+  * Fable's -Os branch c6x-matmul-sieve - pushed, unmerged, untested.
+  * main / gcc-scheme naming in this repo.
+  * RIDE 4.51 installs on Windows and Linux carry the two-time cpp11 version text (no rebuild wanted).
+The previous good-bye.txt (00:40 PKT) is in this session's scratchpad as good-bye.previous.txt.

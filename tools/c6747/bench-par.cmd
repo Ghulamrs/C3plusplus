@@ -7,7 +7,7 @@ setlocal enabledelayedexpansion
 set W=%~dp0
 set W=%W:~0,-1%
 if "%CCS55%"=="" set CCS55=C:\ti\ccsv5
-if "%C6747_EHLIB%"=="" set C6747_EHLIB=C:\cxx1\c6747-lib
+if "%C6747_EHLIB%"=="" set C6747_EHLIB=C:\ti\c6747-lib
 set CG=%CCS55%\tools\compiler\c6000_7.4.4
 set LINK=-z --heap_size=0x800 --stack_size=0x800 -i"%C6747_EHLIB%" --rom_model "%W%\C6747.cmd" -lrts6740_elf_eh.lib
 cd /d "%W%"

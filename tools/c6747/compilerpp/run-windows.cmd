@@ -11,7 +11,7 @@ set W=%W:~0,-1%
 set WF=%W:\=/%
 set CG55=C:\ti\ccsv5\tools\compiler\c6000_7.4.4
 set CG74=C:\ti\ccsv7\tools\compiler\ti-cgt-c6000_8.2.2
-if "%C6747_EHLIB%"=="" set C6747_EHLIB=C:\cxx1\c6747-lib
+if "%C6747_EHLIB%"=="" set C6747_EHLIB=C:\ti\c6747-lib
 if "%C6747_EHLIB74%"=="" set C6747_EHLIB74=C:\Users\GRA\Documents\VM6747\tilib
 cd /d "%W%"
 del /q *.result *.cio *.out ccs74.built 2>nul

@@ -98,11 +98,11 @@ nothing is reverted). The allocator will weigh by them.
 (a git clone fed by `cxxopt.bundle`), `Compiler++` (the export),
 `w\<tag>-<level>\` (each build), and the scripts `sync.cmd` (bundle ->
 tree -> `msvc\build.cmd`), `opt.cmd TAG O1 O2` (Compiler++ built, suites,
-258 cases against `C:\cxx1dev\w\cl-O2`, best-of-five bench), `optmasm.cmd`
+258 cases against `C:\Users\GRA\workdev\w\cl-O2`, best-of-five bench), `optmasm.cmd`
 (the same with `-masm=masm` through RIDE's `masm.exe`), `cases.cmd O0 O1
 O2` (cxx1's cases), `ab.cmd N BUILD...` (interleaved rounds; `cl-O1`/`cl-O2`
-read from `C:\cxx1dev\w`). Copies of all of them are in this session's
-scratch; they are not in the repository. Never write into `C:\cxx1dev`.
+read from `C:\Users\GRA\workdev\w`). Copies of all of them are in this session's
+scratch; they are not in the repository. Never write into `C:\Users\GRA\workdev`.
 
 The Mac side: `~/cxxopt-build/tree` is the build of the checkout
 (rsync'd, never build in `~/Documents`), `base/cxx1.exe` the session-1

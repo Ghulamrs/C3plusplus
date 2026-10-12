@@ -106,7 +106,7 @@ need Windows or clang: `msvc\build.cmd`, `run-cases.cmd` at -O0 and -O2,
 is not supported yet`, `132 sites, 1 uncited`, `make test: docs/EXCLUSIONS.md
 does not match the source`. The line was removed and the tree is clean.
 
-**Gates on the Windows box** (`C:\cxx1\rtsdiv\ws-a`, `core.autocrlf=false`,
+**Gates on the Windows box** (`C:\Users\GRA\work\rtsdiv\ws-a`, `core.autocrlf=false`,
 `msvc\build.cmd`): `tools/exclusions --check` 131 / 0 / 0; `comment-lines` 0;
 `version-lines --check` agrees; `tools/seal check` - **1 file differs,
 `src/Version.h`**, which is the banner change and is expected: the reseal is

@@ -28,13 +28,13 @@
 # and it fails, naming throw-pointer (C1) and narrowing-allowed (C2).
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
-WINDOWS=${CXX1_WINDOWS:-windows}
+WINDOWS=${WINDOWS_BOX:-windows}
 CPP11=${CPP11:-$ROOT/cpp11.exe}
 ASM6X=${ASM6X:-$ROOT/../../TI/ASM6x/build/asm6x.exe}
 [ -x "$ASM6X" ] || ASM6X=$HOME/Developer/Claude/TI/ASM6x/build/asm6x.exe
 VM=${VM:-$ROOT/../../TI/VM6747/vm6747.exe}
 [ -x "$VM" ] || VM=$HOME/Developer/Claude/TI/VM6747/vm6747.exe
-WREMOTE='C:\cxx1\release-check'
+WREMOTE='C:\Users\GRA\work\release-check'
 T0=$(date +%s)
 
 # The sample: name | source | expected. Chosen to cover the two defects and the
@@ -95,14 +95,14 @@ done
 
 echo "release-check: shipping to $WINDOWS and running (TI assembler, dis6x, linker, C6747 simulator)"
 COPYFILE_DISABLE=1 tar -C "$WORK" --no-xattrs -czf "$WORK/rc.tgz" rc || exit 1
-scp -q -o BatchMode=yes "$WORK/rc.tgz" "$WINDOWS:C:/cxx1/rc.tgz" || { echo "release-check: cannot ship to $WINDOWS"; exit 1; }
-ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $WREMOTE 2>nul & mkdir $WREMOTE && tar -C $WREMOTE --strip-components=1 -xzf C:\\cxx1\\rc.tgz && del C:\\cxx1\\rc.tgz" >/dev/null 2>&1 || { echo "release-check: cannot unpack on $WINDOWS"; exit 1; }
+scp -q -o BatchMode=yes "$WORK/rc.tgz" "$WINDOWS:C:/Users/GRA/work/rc.tgz" || { echo "release-check: cannot ship to $WINDOWS"; exit 1; }
+ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $WREMOTE 2>nul & mkdir $WREMOTE && tar -C $WREMOTE --strip-components=1 -xzf C:\\Users\\GRA\\work\\rc.tgz && del C:\\Users\\GRA\\work\\rc.tgz" >/dev/null 2>&1 || { echo "release-check: cannot unpack on $WINDOWS"; exit 1; }
 ssh -o BatchMode=yes "$WINDOWS" "$WREMOTE\\release-check.cmd" > "$WORK/windows.log" 2>&1
 if ! grep -q 'release-check.done' "$WORK/windows.log" 2>/dev/null && ! ssh -o BatchMode=yes "$WINDOWS" "if exist $WREMOTE\\out\\release-check.done (exit 0) else (exit 1)" 2>/dev/null; then
     echo "release-check: the Windows worker did not finish"; tr -d '\r' < "$WORK/windows.log" | tail -8; exit 1
 fi
 mkdir -p "$WORK/back"
-scp -q -o BatchMode=yes "$WINDOWS:C:/cxx1/release-check/out/*" "$WORK/back/" 2>/dev/null
+scp -q -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/release-check/out/*" "$WORK/back/" 2>/dev/null
 
 NORM="python3 $ROOT/tools/c6747/norm-dis.py"
 encdiff=0; builderr=0; runfail=0; hidden=0

@@ -15,7 +15,7 @@ set W=%~dp0
 set W=%W:~0,-1%
 if "%CCS55%"=="" set CCS55=C:\ti\ccsv5
 if "%CGT74%"=="" set CGT74=C:\ti\ccsv7\tools\compiler\ti-cgt-c6000_8.2.2
-if "%C6747_EHLIB%"=="" set C6747_EHLIB=C:\cxx1\c6747-lib
+if "%C6747_EHLIB%"=="" set C6747_EHLIB=C:\ti\c6747-lib
 if "%MAXRUNS%"=="" set MAXRUNS=6
 set CG55=%CCS55%\tools\compiler\c6000_7.4.4
 if not exist "%CGT74%\bin\cl6x.exe" (echo RC-ERROR no cl6x 8.2.2 at %CGT74% & exit /b 2)

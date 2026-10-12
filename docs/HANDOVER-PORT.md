@@ -77,5 +77,5 @@ each level, 258 of 258 cases identical to cl /O2's build, `.text` 518,766 and
 and 2,327), bench.cpp best of five 992 and 593 ms (base 1,047 and 597).
 
 **Not run this session**: `tools/verify-three` itself (its Windows leg
-unpacks into `C:\cxx1\verify`, which the brief kept me out of); the
+unpacks into `C:\Users\GRA\work\verify`, which the brief kept me out of); the
 names-vs-cl comparison after the RTTI filter, for the same reason.

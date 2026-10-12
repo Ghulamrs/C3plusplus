@@ -116,7 +116,7 @@ in the repository; copies are in session 3's scratch):
    cxxopt.bundle claude/fable-5-1-background-work-kguwml`), then
    `msvc\build.cmd`.
 2. `opt.cmd s5 O1 O2`: Compiler++ built by the branch at both levels through
-   the GNU route, its four suites, 258 cases against `C:\cxx1dev\w\cl-O2`.
+   the GNU route, its four suites, 258 cases against `C:\Users\GRA\workdev\w\cl-O2`.
    The gate is 258/258 at both levels and every suite green.
 3. `cases.cmd O0 O1 O2`: cxx1's own cases at all three levels on the box
    (the Windows funclet and RTTI shapes are not run here).

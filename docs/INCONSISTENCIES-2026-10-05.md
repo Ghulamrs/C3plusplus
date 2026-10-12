@@ -68,7 +68,7 @@ so. "Record" means the 04/05-10 exercise, whose runs are not repeated here.
   `narrowing-allowed.cpp` for tms6747 at -O0 and -O2: both emit the right sequence,
   `MVKL/MVKH 1072693248, A5` (0x3FF00000, the high word of 1.0), `MVK 0, A4`,
   `DPSP A5:A4, A4; NOP 1`. `INTSP`/`INTDP` serve `big` and `d`, which are right. Then one probe
-  on the Windows box, `C:\cxx1\fable-scratch\dp.asm`, assembled by TI's asm6x 8.2.2 (`-mv6740`)
+  on the Windows box, `C:\Users\GRA\work\fable-scratch\dp.asm`, assembled by TI's asm6x 8.2.2 (`-mv6740`)
   and by ASM6x, both disassembled by TI's `dis6x`:
 
       TI asm6x    02140138  DPSP.L1  A1:A0,A4      ASM6x  02148138  DPSP.L1  A5:A4,A4

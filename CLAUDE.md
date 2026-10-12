@@ -10970,7 +10970,7 @@ every function, so its object needs `__c6xabi_unwind_cpp_pr3`, which only the `_
 build has - and CCS ships only the other. Linking cl6x against the plain library would
 time different run-time code. 7.4.4's `_eh` build is made once per box with
 `mklib --pattern=rts6740_elf_eh.lib --index=libc.a` from 7.4.4's `lib` directory, into
-`~/c6747-lib` on Linux (`--parallel=1`: 419 MB) and `C:\cxx1\c6747-lib` on Windows,
+`~/c6747-lib` on Linux (`--parallel=1`: 419 MB) and `C:\ti\c6747-lib` on Windows,
 49 seconds there; the scripts name it with `C6747_EHLIB`. And the library is named
 outright: `-llibc.a` picks one by the object's build attributes and could not match
 ASM6x's.
@@ -11126,7 +11126,7 @@ TI's linker linked on every row of this table**; LNK6x's own rows, `cpp11-O1-lnk
 and `cpp11-O2-lnk6x`, came later the same day and are the section below.
 
 **Compiler++ re-timed with the registers, the ten-file workload one file per run
-on the Windows box** (`C:\cxx1\split\cpph2`, cpp11's build alone, every
+on the Windows box** (`C:\Users\GRA\work\split\cpph2`, cpp11's build alone, every
 fingerprint the same as the run of 09:16 that matched clang's): adventure
 520,715,757, bank 870,236,643, containers 940,164,256, geometry 1,526,659,017,
 matrix 793,405,929, parser 634,265,498, shapes 929,028,242, simulation
@@ -11284,7 +11284,7 @@ cl6x 7.4.4 `-O2 -ms3`'s 2,144 and 2.62x 8.2.2's 2,208** (was 3.25x), 1.85x
 7.4.4 -O2's 3,200 and 1.59x 8.2.2 -O2's 3,712.
 
 **Compiler++, the ten-file workload one file per run on the Windows box**
-(`C:\cxx1\split\cpph3`, cpp11's build alone, every fingerprint clang's, 10 of
+(`C:\Users\GRA\work\split\cpph3`, cpp11's build alone, every fingerprint clang's, 10 of
 10): adventure 503,517,056, bank 845,433,105, containers 912,902,285, geometry
 1,486,633,992, matrix 767,465,648, parser 612,706,814, shapes 904,002,139,
 simulation 675,409,500, sorting 858,255,924, strings 980,439,715 -
@@ -11368,7 +11368,7 @@ printing their `.expected`:**
 take exactly the cycles of the 7.4.4-linked ones on every kernel** (was within 24). -O1 is
 2.04x 7.4.4 -O1. hash is where the gap is: 126,000 `__c6xabi_remi` calls, the review's B3.
 
-**Compiler++, the whole program, 2026-09-30 (C:\cxx1\split\cpp4): faster than both TI compilers
+**Compiler++, the whole program, 2026-09-30 (C:\Users\GRA\work\split\cpp4): faster than both TI compilers
 at -O2, and not yet their size.** Ten files, one simulator run each, 40 of 40 with clang's
 fingerprint; cpp11 -O2 + ASM6x linked by 7.4.4 and by LNK6x take the same cycles on every file.
 
@@ -11687,7 +11687,7 @@ outputs assemble with ASM6x, no message; emit golden 0 of 1403 changed at -O0 (8
 353 changed - 39 of them a `*R++` access, 3 a new kernel, and the line kinds leaving are `MV` (1,050) and `ADD`/`SHL`
 (1,115) - against 902271f's; run.sh 564/0; names.sh 361/0; overload.sh 30/0; `make comments` 0.
 
-**Compiler++ re-timed, the ten-file input benchmark on the box** (`C:\cxx1\input\all`, the input-reading harness
+**Compiler++ re-timed, the ten-file input benchmark on the box** (`C:\Users\GRA\work\input\all`, the input-reading harness
 linked by LNK6x `--cgt=7.4.4 --args=1024`, one simulator run per file, every fingerprint clang's): 7,930,895,902
 cycles against 7,936,487,108 before - adventure 464,214,530, bank 789,157,170, containers 845,015,797, geometry
 1,396,573,861, matrix 710,669,153, parser 561,612,751, shapes 839,212,647, simulation 622,923,798, sorting

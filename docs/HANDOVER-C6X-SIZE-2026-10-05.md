@@ -75,6 +75,6 @@ as cycle-neutral); the input benchmark at -O2 of 2026-10-01 stands as the last c
 
 - Mac: `/private/tmp/claude-501/.../scratchpad/` - `base/` (a worktree of 0407df9 used to record
   the golden and for before/after harness bytes), `harness/`, `kern/`, `asm2/`, the gate logs.
-- Windows: `C:\cxx1\bench-levels\1005-173724` (kernels), the ctor run's folder beside it,
-  `C:\cxx1\fable-c6x-size\` (cl6x objects, from 2026-10-02).
+- Windows: `C:\Users\GRA\work\bench-levels\1005-173724` (kernels), the ctor run's folder beside it,
+  `C:\Users\GRA\work\fable-c6x-size\` (cl6x objects, from 2026-10-02).
 - Linux box: nothing left running (one orphaned build from an aborted verify leg was killed).

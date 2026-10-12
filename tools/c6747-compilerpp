@@ -19,7 +19,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 ROUNDS=${1:-1}
 KEY=${CXX1_LINUX_KEY:-$HOME/Documents/Claude/myMorningWalk.pem}
 LINUX=${CXX1_LINUX:-ec2-user@52.202.164.123}
-WINDOWS=${CXX1_WINDOWS:-windows}
+WINDOWS=${WINDOWS_BOX:-windows}
 COMPILERPP=${COMPILERPP:-$ROOT/../Compiler++}
 CPP11=${CPP11:-$ROOT/cpp11.exe}
 ASM6X=${ASM6X:-$ROOT/../../TI/ASM6x/build/asm6x.exe}
@@ -45,13 +45,13 @@ cp "$ROOT"/tools/c6747/C6747-ddr.cmd "$ROOT"/tools/c6747/runca.js "$ROOT"/tools/
 ( cd "$WORK" && COPYFILE_DISABLE=1 tar --no-xattrs -czf cpph.tgz cpph )
 
 (
-    scp -q -o BatchMode=yes "$WORK/cpph.tgz" "$WINDOWS:C:/cxx1/cpph.tgz" &&
-    ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q C:\\cxx1\\cpph-run 2>nul & mkdir C:\\cxx1\\cpph-run && tar -C C:\\cxx1\\cpph-run -xzf C:\\cxx1\\cpph.tgz" > /dev/null &&
-    ssh -o BatchMode=yes -o ServerAliveInterval=30 "$WINDOWS" "set TI_COMPRESS=$TI_COMPRESS&& C:\\cxx1\\cpph-run\\cpph\\run-windows.cmd" &&
+    scp -q -o BatchMode=yes "$WORK/cpph.tgz" "$WINDOWS:C:/Users/GRA/work/cpph.tgz" &&
+    ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q C:\\Users\\GRA\\work\\cpph-run 2>nul & mkdir C:\\Users\\GRA\\work\\cpph-run && tar -C C:\\Users\\GRA\\work\\cpph-run -xzf C:\\Users\\GRA\\work\\cpph.tgz" > /dev/null &&
+    ssh -o BatchMode=yes -o ServerAliveInterval=30 "$WINDOWS" "set TI_COMPRESS=$TI_COMPRESS&& C:\\Users\\GRA\\work\\cpph-run\\cpph\\run-windows.cmd" &&
     mkdir -p "$WORK/win" &&
-    scp -q -o BatchMode=yes "$WINDOWS:C:/cxx1/cpph-run/cpph/*.result" "$WINDOWS:C:/cxx1/cpph-run/cpph/*.cio" \
-        "$WINDOWS:C:/cxx1/cpph-run/cpph/*.map" "$WINDOWS:C:/cxx1/cpph-run/cpph/*.prof" \
-        "$WINDOWS:C:/cxx1/cpph-run/cpph/*.out" "$WORK/win/"
+    scp -q -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/cpph-run/cpph/*.result" "$WINDOWS:C:/Users/GRA/work/cpph-run/cpph/*.cio" \
+        "$WINDOWS:C:/Users/GRA/work/cpph-run/cpph/*.map" "$WINDOWS:C:/Users/GRA/work/cpph-run/cpph/*.prof" \
+        "$WINDOWS:C:/Users/GRA/work/cpph-run/cpph/*.out" "$WORK/win/"
 ) > "$WORK/windows.log" 2>&1 &
 PW=$!
 (

@@ -11,7 +11,7 @@ box's CCS 5.5 C6747 cycle-accurate simulator: it has both.
   front, so the first element passed is `argv[0]`. `tools/c6747/runargs.js` is
   `runca.js` plus that: everything after a `--` argument goes to the program.
 - **files**: `fopen`, `fread`, `fgetc` in the TI runtime go to the host through CIO
-  (the `C$$IO$$` breakpoint DSS services). A path is the host's - `C:/cxx1/...`,
+  (the `C$$IO$$` breakpoint DSS services). A path is the host's - `C:/Users/GRA/work/...`,
   forward slashes accepted - and `"r"` on the host gives the file's bytes unchanged
   (a 3849-byte file read by `fread` and by `fgetc` both matched the host's FNV-1a).
 
@@ -35,7 +35,7 @@ nothing inside the program can start or stop it. The line printed is the one the
 embedded harness prints, so the fingerprint check against clang's native build is the
 same comparison.
 
-## The scripts, for `C:\cxx1\input\cpp` on the box
+## The scripts, for `C:\Users\GRA\work\input\cpp` on the box
 
     build-input.cmd     hin\ (input) and hemb\ (embedded) each by cl6x 7.4.4 -O2, cl6x 8.2.2
                         -O2, and cpp11's shipped object linked by lnk6x 7.4.4 - the input ones

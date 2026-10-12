@@ -146,7 +146,7 @@ From `C:\cxxopt`, as sessions 3 to 6 laid it out:
 2. `tools\windows\bench.cmd -New ... -Rounds 11` against cl /O2 and cl6x:
    matmul, sieve, isort and hash are the rows to expect movement in.
 3. `opt.cmd s8 O1 O2`: Compiler++ at both levels, its four suites, the
-   258 cases against `C:\cxx1dev\w\cl-O2`. The gate: 258/258 and green.
+   258 cases against `C:\Users\GRA\workdev\w\cl-O2`. The gate: 258/258 and green.
    **This is the first time an indexed operand, a threaded jump and a
    magic-number divide run under a Windows CRT**; the MASM rendering
    `[base+index*scale+d]` has only been emitted here, never assembled -

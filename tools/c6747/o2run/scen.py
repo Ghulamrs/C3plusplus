@@ -21,14 +21,14 @@ tgz = os.path.join(work, 'k.tgz')
 with tarfile.open(tgz,'w:gz') as t: t.add(kit, arcname=stamp)
 B = o2run.BOXES[box]
 if box == 'windows':
-    o2run.run(B['scp'] + [tgz, f'windows:C:/cxx1/o2run/{stamp}.tgz'])
-    o2run.run(B['ssh'] + [f'cd /d C:\\cxx1\\o2run && tar -xzf {stamp}.tgz && del {stamp}.tgz'])
+    o2run.run(B['scp'] + [tgz, f'windows:C:/Users/GRA/work/o2run/{stamp}.tgz'])
+    o2run.run(B['ssh'] + [f'cd /d C:\\Users\\GRA\\work\\o2run && tar -xzf {stamp}.tgz && del {stamp}.tgz'])
     cmd = os.path.join(work,'run.cmd')
     open(cmd,'w',newline='\r\n').write(f'@echo off\ncall "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat" >nul\n'
-        f'"C:\\Program Files\\Git\\bin\\bash.exe" C:/cxx1/o2run/{stamp}/native.sh windows > C:\\cxx1\\o2run\\{stamp}\\native.log 2>&1\n'
-        f'"C:\\Program Files\\Git\\bin\\bash.exe" C:/cxx1/o2run/{stamp}/rep.sh windows > C:\\cxx1\\o2run\\{stamp}\\rep.log 2>&1\n')
-    o2run.run(B['scp'] + [cmd, f'windows:C:/cxx1/o2run/{stamp}/run.cmd'])
-    r = o2run.run(B['ssh'] + [f'powershell -NoProfile -ExecutionPolicy Bypass -File C:\\cxx1\\o2run\\{stamp}\\start-detached.ps1 C:\\cxx1\\o2run\\{stamp}\\run.cmd'])
+        f'"C:\\Program Files\\Git\\bin\\bash.exe" C:/Users/GRA/work/o2run/{stamp}/native.sh windows > C:\\Users\\GRA\\work\\o2run\\{stamp}\\native.log 2>&1\n'
+        f'"C:\\Program Files\\Git\\bin\\bash.exe" C:/Users/GRA/work/o2run/{stamp}/rep.sh windows > C:\\Users\\GRA\\work\\o2run\\{stamp}\\rep.log 2>&1\n')
+    o2run.run(B['scp'] + [cmd, f'windows:C:/Users/GRA/work/o2run/{stamp}/run.cmd'])
+    r = o2run.run(B['ssh'] + [f'powershell -NoProfile -ExecutionPolicy Bypass -File C:\\Users\\GRA\\work\\o2run\\{stamp}\\start-detached.ps1 C:\\Users\\GRA\\work\\o2run\\{stamp}\\run.cmd'])
 else:
     o2run.run(B['scp'] + [tgz, f'{B["host"]}:o2run/{stamp}.tgz'])
     r = o2run.run(B['ssh'] + [f'cd o2run && tar xzf {stamp}.tgz && rm {stamp}.tgz && cd {stamp} && chmod +x *.sh && (nohup setsid bash -c "./native.sh linux > native.log 2>&1; ./rep.sh linux > rep.log 2>&1" > /dev/null 2>&1 < /dev/null &)'])

@@ -7,7 +7,7 @@ set W=%~dp0
 set W=%W:~0,-1%
 set CG55=C:\ti\ccsv5\tools\compiler\c6000_7.4.4
 set CG74=C:\ti\ccsv7\tools\compiler\ti-cgt-c6000_8.2.2
-set LIB55=C:\cxx1\c6747-lib
+set LIB55=C:\ti\c6747-lib
 set LIB74=C:\Users\GRA\Documents\VM6747\tilib
 cd /d "%W%"
 "%CG55%\bin\cl6x" -mv6740 --abi=eabi iop.cpp11.obj -z --args=1024 --heap_size=0x800 --stack_size=0x800 -i"%LIB55%" --rom_model C6747.cmd -lrts6740_elf_eh.lib -m iop-cpp11.map -o iop-cpp11.out > iop-cpp11.build.log 2>&1

@@ -180,7 +180,7 @@ From `C:\cxxopt`, as sessions 3 to 7 laid it out:
 2. `tools\windows\bench.cmd -New ... -Rounds 11` against cl /O2 and cl6x:
    fib, matmul, isort and hash are the rows to expect movement in.
 3. `opt.cmd s9 O1 O2`: Compiler++ at both levels, its four suites, the
-   258 cases against `C:\cxx1dev\w\cl-O2`. The gate: 258/258 and green.
+   258 cases against `C:\Users\GRA\workdev\w\cl-O2`. The gate: 258/258 and green.
    **This is the first time a recursive function is walked into itself,
    an inlined callee's locals are in registers, a value is hoisted in
    front of a loop, and a byte extension is a copy, under a Windows

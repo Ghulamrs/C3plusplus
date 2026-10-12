@@ -7,7 +7,7 @@ REM the outer quotes and leaks one into %1. The same note is on msvc\build.cmd,
 REM and it is here because a chain of quoted paths typed at ssh fails the same
 REM way - which is what this file exists to stop anybody rediscovering.
 REM
-REM     ssh windows "C:\cxx1\idetest\C++-IDE\build-vs.cmd"
+REM     ssh windows "C:\Users\GRA\work\idetest\C++-IDE\build-vs.cmd"
 REM     build-vs.cmd Debug          (Release is the default)
 setlocal
 set HERE=%~dp0

@@ -8,7 +8,7 @@ real fault was found in LINK and is said below. All three branches are on origin
 names (allowed); nothing was merged. **Second sitting 2026-10-09, Claude Fable 5.1**: P4 finished,
 the LINK version bump, and the gates below re-measured where the box allowed - see "Second sitting".
 
-Builds and tests ran on the Windows box (`C:\cxx1\rtsdiv\ws-f`, `ws-f-masm`, `ws-f-link`,
+Builds and tests ran on the Windows box (`C:\Users\GRA\work\rtsdiv\ws-f`, `ws-f-masm`, `ws-f-link`,
 `core.autocrlf=false`, `msvc\build.cmd`; the project's masm and LINK built there by cl from
 their trees) and on the Linux box (`~/ride-5.1/ws-f`, g++ 11.5). The Mac edited and ran git.
 
@@ -154,7 +154,7 @@ unchanged: LINK `review/f-windows` (now at `fa03281`) before this branch's Windo
 All three branches are on origin: cpp11 `review/f-windows`, LINK `review/f-windows` (`fa03281`,
 LINK 1.1), MASM `review/f-windows` (`66baab1`, tests only, unchanged). On the box, `cmd.exe`:
 
-1. `cd /d C:\cxx1\rtsdiv\ws-f && git fetch origin && git checkout -q review/f-windows && git reset -q --hard origin/review/f-windows && msvc\build.cmd` -
+1. `cd /d C:\Users\GRA\work\rtsdiv\ws-f && git fetch origin && git checkout -q review/f-windows && git reset -q --hard origin/review/f-windows && msvc\build.cmd` -
    and the same in `..\ws-f-masm` and `..\ws-f-link`, each built by cl from its tree (LINK must be `fa03281`
    or later: the SECREL/TLS fix `e8d51b5` is what the 8 static-local cases need).
 2. `tools\windows\run-cases.cmd` with the branch masm and LINK on PATH, default (both spellings),
@@ -173,7 +173,7 @@ LINK 1.1), MASM `review/f-windows` (`66baab1`, tests only, unchanged). On the bo
 
 The Windows box came back and every step of the recipe above but the budget-skipped ones ran on
 it at **cpp11 `eca971c`, MASM `66baab1`, LINK `fa03281`** (the three box clones take their
-`origin` from bundles in `C:\cxx1\rtsdiv`, not from GitHub - `wsf.bundle`, `masm.bundle`,
+`origin` from bundles in `C:\Users\GRA\work\rtsdiv`, not from GitHub - `wsf.bundle`, `masm.bundle`,
 `link.bundle`, re-made from the pushed tips and copied over; a `git fetch origin` there fetches
 nothing newer than the bundle). The cpp11 clone and the MASM/LINK ones were built by cl from the
 reset trees (`msvc\build.cmd`; run-cases.cmd's own cl build of masm and link into `winout-tools`;
@@ -196,7 +196,7 @@ MASM's `tests\windows\build.cmd`; LINK's `cpp11.cmd` build).
 `python3` wrapper over `C:\Users\GRA\AppData\Local\Programs\Python\Python312\python.exe`
 in front; and `MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'`, or Git bash rewrites LINK's
 `/nodefaultlib` into `C:/Program Files/Git/nodefaultlib` and every probe fails to link.
-`C:\cxx1\rtsdiv\beds2.sh` is the bed script with both.
+`C:\Users\GRA\work\rtsdiv\beds2.sh` is the bed script with both.
 
 **Skipped on instruction (budget):** -O2 run-cases, `tms6747.sh`, `names-overload.cmd`,
 LINK's `probes.sh` (the oracle recorder; `run.sh`'s references are checked in). No Linux box.

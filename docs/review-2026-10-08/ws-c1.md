@@ -131,7 +131,7 @@ class derived from the friend, refused as clang refuses it.
 
 ## Gates
 
-All on the Windows box, `C:\cxx1\rtsdiv\ws-c1`, a clone at `2955c0b` with the branch's files laid
+All on the Windows box, `C:\Users\GRA\work\rtsdiv\ws-c1`, a clone at `2955c0b` with the branch's files laid
 over it, compiler built by `msvc\build.cmd`; the tree measured is `85609cf` plus the comment rewrap
 and the names fixes of `e91dfcf`, which the last two rows re-measured.
 

@@ -76,7 +76,7 @@ A native cl build of the same algorithms would be an order of magnitude faster; 
 
 ## Reproduction
 
-`C:\cxx1\shm-match` on the box holds both trees, `programs\`, `match.cmd` and `results\`. The script builds both
+`C:\Users\GRA\work\shm-match` on the box holds both trees, `programs\`, `match.cmd` and `results\`. The script builds both
 compilers, then for each program times the `shc` compile (PowerShell `Measure-Command`), records `.obj`, `.asm`
 and `.exe` sizes, runs the executable three times, and records Codex's `--check`, `--object` and `-S` verdicts
 verbatim. `report.py` turns `results\*.txt` into the tables above.
@@ -131,5 +131,5 @@ and runs everything it accepts, including the fixtures written to break at run t
 the 35 it accepts and `shc` does not are, with one exception, fixtures that the specification does not accept
 either.
 
-Reproduction: `C:\cxx1\shm-match\fixtures\`, `scalar.cmd`, `timing.cmd`; results in `results\scalar\`
+Reproduction: `C:\Users\GRA\work\shm-match\fixtures\`, `scalar.cmd`, `timing.cmd`; results in `results\scalar\`
 (`summary.csv`, one `.txt` per fixture, `timing.txt`).

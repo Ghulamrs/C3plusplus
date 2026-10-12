@@ -48,7 +48,7 @@ is not possible without touching the merge; reword 03325fd/469d0e2/6135bcd/b2062
 | virt | 1,000,294 | 1,000,294 | 1,000,294 | 1,000,243 | 1,184 -> 1,184 / 1,184 | 640 | 1.85 |
 
 cl6x objects and assembly for all six (7.4.4 `-O2`, `-O2 -ms3`, 8.2.2 `-O2 -ms3`) are on the box in
-`C:\cxx1\fable-c6x-size\` (go2.cmd there regenerates them); 744-O2 bytes 128/352/480/1152/416/672.
+`C:\Users\GRA\work\fable-c6x-size\` (go2.cmd there regenerates them); 744-O2 bytes 128/352/480/1152/416/672.
 
 ## Not run yet (the gates) - run before anything else
 

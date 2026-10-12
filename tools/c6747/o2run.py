@@ -29,7 +29,7 @@ KEY = os.path.expanduser('~/Documents/Claude/myMorningWalk.pem')
 BOXES = {
     'windows': {'ssh': ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=20', 'windows'],
                 'scp': ['scp', '-q', '-o', 'BatchMode=yes'], 'host': 'windows',
-                'dir': 'C:/cxx1/o2run/{stamp}', 'predict': (15.0, 16.0, 17.0)},
+                'dir': 'C:/Users/GRA/work/o2run/{stamp}', 'predict': (15.0, 16.0, 17.0)},
     'linux':   {'ssh': ['ssh', '-i', KEY, '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=20', 'ec2-user@52.202.164.123'],
                 'scp': ['scp', '-q', '-i', KEY, '-o', 'BatchMode=yes'], 'host': 'ec2-user@52.202.164.123',
                 'dir': 'o2run/{stamp}', 'predict': (15.0, 16.0, 17.0)},
@@ -132,10 +132,10 @@ def init():
         d = B['dir'].format(stamp=stamp); tgz = os.path.join(work, f'{box}.tgz')
         if box == 'windows':
             wd = d.replace('/', '\\')
-            run(B['ssh'] + [f'mkdir C:\\cxx1\\o2run 2>nul & exit 0'])
-            r = run(B['scp'] + [tgz, f'{B["host"]}:C:/cxx1/o2run/{stamp}.tgz'])
+            run(B['ssh'] + [f'mkdir C:\\Users\\GRA\\work\\o2run 2>nul & exit 0'])
+            r = run(B['scp'] + [tgz, f'{B["host"]}:C:/Users/GRA/work/o2run/{stamp}.tgz'])
             if r.returncode: sys.exit(f'windows: cannot ship: {r.stderr}')
-            run(B['ssh'] + [f'cd /d C:\\cxx1\\o2run && tar -xzf {stamp}.tgz && del {stamp}.tgz'])
+            run(B['ssh'] + [f'cd /d C:\\Users\\GRA\\work\\o2run && tar -xzf {stamp}.tgz && del {stamp}.tgz'])
             cmd = os.path.join(work, 'run.cmd')
             with open(cmd, 'w', newline='\r\n') as f:
                 f.write(f'@echo off\n"C:\\Program Files\\Git\\bin\\bash.exe" {d}/o2run.sh windows > {wd}\\run.log 2>&1\n')
@@ -159,7 +159,7 @@ def simline(kit, box, stamp, line):
     n, tag, *k = line.split()
     meta = dict(l.rstrip('\n').split('=', 1) for l in open(os.path.join(kit, 'progs', n, 'meta')) if '=' in l) \
         if os.path.exists(os.path.join(kit, 'progs', n, 'meta')) else {'TMO': '600000'}
-    root = f'C:/cxx1/o2run/{stamp}' if box == 'windows' else f'/home/ec2-user/o2run/{stamp}'
+    root = f'C:/Users/GRA/work/o2run/{stamp}' if box == 'windows' else f'/home/ec2-user/o2run/{stamp}'
     b = f'{root}/b/{n}/{tag}'
     if k:
         f = k[0].split('=')[1]

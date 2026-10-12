@@ -10,8 +10,8 @@ rem  fifteen-second one while the Microsoft unwind schedule was being measured.
 rem
 rem  From the Mac:
 rem    ./cxx1.exe -S -arch x86_64-windows p.cpp -o p.asm
-rem    scp p.asm windows:C:/cxx1/fast/
-rem    ssh windows "C:\cxx1\fast\asm-run.cmd p"
+rem    scp p.asm windows:C:/Users/GRA/work/fast/
+rem    ssh windows "C:\Users\GRA\work\fast\asm-run.cmd p"
 rem
 rem  Use verify-three for the suites and before committing; use this while
 rem  chasing one answer.
@@ -19,7 +19,7 @@ setlocal
 if "%~1"=="" (echo asm-run.cmd: needs the base name of a .asm & exit /b 2)
 call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul
 if errorlevel 1 (echo asm-run: no vcvars64 & exit /b 1)
-cd /d C:\cxx1\fast
+cd /d C:\Users\GRA\work\fast
 ml64 /nologo /c /Fo %1.obj %1.asm
 if errorlevel 1 (echo asm-run: the assembler failed & exit /b 1)
 link /nologo /subsystem:console /out:%1.exe %1.obj libcmt.lib libucrt.lib libvcruntime.lib kernel32.lib legacy_stdio_definitions.lib

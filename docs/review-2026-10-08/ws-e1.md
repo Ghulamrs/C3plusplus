@@ -65,14 +65,14 @@ run-cases.cmd -O2, tms6747.sh -O2, run.sh -O2.
 | **Verdict** | **Ready to merge** (after C1/D/E2, per the outside-edits list above): every gate in the 2026-10-09 scope is green or classified, and the one emit change outside the new cases is the `<utility>` signature the workstream exists to put there. |
 | Linux box (g++ build, run.sh, tms6747.sh) | skipped on the user's instruction |
 
-**Finished 2026-10-09, later the same day, once the box came back** (clone C:\cxx1\rtsdiv\ws-e1 at 8e6591a - its `origin` is a local clone, so the branch was fetched from GitHub by URL; stale uncommitted copies of E1's files left by the 2026-10-08 scp were discarded first, the golden itself untouched; no stray `run-cases.cmd -O2` was running). The paragraph below is the morning's record and stands as written.
+**Finished 2026-10-09, later the same day, once the box came back** (clone C:\Users\GRA\work\rtsdiv\ws-e1 at 8e6591a - its `origin` is a local clone, so the branch was fetched from GitHub by URL; stale uncommitted copies of E1's files left by the 2026-10-08 scp were discarded first, the golden itself untouched; no stray `run-cases.cmd -O2` was running). The paragraph below is the morning's record and stands as written.
 
 **The Windows box was down for the morning of the 2026-10-09 session.** `ssh windows` and
 `ping 192.168.100.84` from 06:55 to 07:20: "Operation timed out", then "Host is down"; the ARP
 entry incomplete on en0; the hostname does not resolve. Past the plan's ~20-minute block, so
 recorded and the box-bound gates left as blocked rather than run anywhere else (the Mac does
 not build or test, the Linux box is excluded). To finish the gate when the box is back, in
-C:\cxx1\rtsdiv\ws-e1 (`git fetch origin review/e1-templates && git checkout 335ac4d`, then
+C:\Users\GRA\work\rtsdiv\ws-e1 (`git fetch origin review/e1-templates && git checkout 335ac4d`, then
 `msvc\build.cmd`): `tasklist` first for the stray `run-cases.cmd -O2` of 2026-10-08;
 `tests/run.sh` -O0 under Git bash; `tests/emit.sh` and read every file the golden at 2955c0b
 reports changed (the two F23 cases forwarding-* and the `std::forward`/`move` in `<utility>`
