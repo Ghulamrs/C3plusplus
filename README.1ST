@@ -209,7 +209,7 @@ two header directories of section 2.
 6.  THIS RELEASE, AND ITS SEAL
 ------------------------------
 
-This is **version 1.6**, sealed **08-10-2026**.
+This is **version 1.6**, sealed **12-10-2026**.
 
     cxx1.exe -version            says both, and names the seal file
     cxx1-1.6.dat                 the seal: a CRC32 and a size per file
