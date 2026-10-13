@@ -1,0 +1,4 @@
+# Cases compiled without CPP11_C6XLIVECHECK: the scheduler's liveness self-check is quadratic in a function's
+# length, and a case built to be large runs past the suite's 10 s CPU limit under it, and under nothing else.
+# One per line, the reason beside it.
+exception-table-large   two 1,100-call functions of ~70 KB each (the pr2 table's subject): 0.84 s at -O2, 30.8 s with the check (measured 2026-10-13), killed by ulimit -t 10 on every -O2 run of the suite, including the gate of 2026-10-13
