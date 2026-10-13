@@ -99,4 +99,7 @@ inline void __throw_out_of_range(const char *what) { throw out_of_range(what); }
 
 }  // namespace std
 
+#define _CXX1_STDEXCEPT_READY
+#include <__string_conversions>
+
 #endif

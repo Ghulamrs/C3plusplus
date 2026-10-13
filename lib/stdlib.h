@@ -56,6 +56,11 @@ double atof(const char *);
 double strtod(const char *, char **);
 long strtol(const char *, char **, int);
 unsigned long strtoul(const char *, char **, int);
+// C99's, which C++11's [c.strings] takes: the 64-bit and the narrower and wider floating forms.
+long long strtoll(const char *, char **, int);
+unsigned long long strtoull(const char *, char **, int);
+float strtof(const char *, char **);
+long double strtold(const char *, char **);
 
 int abs(int);
 long labs(long);

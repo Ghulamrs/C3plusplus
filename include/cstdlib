@@ -14,6 +14,10 @@
 namespace std {
 
 using ::abort;
+using ::strtoll;
+using ::strtoull;
+using ::strtof;
+using ::strtold;
 using ::abs;
 using ::atof;
 using ::atoi;
