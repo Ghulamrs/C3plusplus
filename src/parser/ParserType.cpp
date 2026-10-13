@@ -979,6 +979,8 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                     d.name == "operatornew[]" || d.name == "operatordelete[]";
                 std::vector<const Type *> mparams;
                 bool mvariadic = false;
+                const std::size_t paramsOpen = at_;
+                const Type *writtenReturn = d.type;
                 parameterTypes(mparams, mvariadic);
                 d.type = types_.functionType(d.type, std::move(mparams), mvariadic);
                 // **A ref-qualifier picks the overload by the object's own
@@ -1012,6 +1014,11 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                                      "and 'virtual' - one says there is no "
                                      "object and the other dispatches on one");
                 pendingNoexcept_ = exceptionSpecification();
+                if (mentionsDeduced(writtenReturn) && peek().is("->")) {
+                    refuseTrailingBase(writtenReturn, d.pos);
+                    d.type = types_.functionType(readTrailingReturn(paramsOpen),
+                                                 d.type->params(), mvariadic);
+                }
                 // [class.virtual]/4: `override` and `final` mark a virtual member function, which a static one is never.
                 if (memberIsStatic) refuseVirtSpecifiers("a static member function");
                 const VirtSpecifiers virt = takeVirtSpecifiers();
@@ -1702,6 +1709,11 @@ const Type *Parser::unqualifiedSpecifiers(StorageClass *storage, Qualifiers *qua
         break;
     }
 
+    // `auto S::f() -> T`: after `auto` a qualified declarator-id, not a type, [dcl.fct]/2.
+    if (*storage == StorageAuto && autoBeforeQualifiedName()) {
+        *storage = StorageNone;
+        return quals->isConst ? types_.withConst(types_.deducedType()) : types_.deducedType();
+    }
     // wchar_t is a type of its own in C++, not the typedef C makes it.
     if (consume("wchar_t")) return types_.get(Kind::WChar);
     if (consume("char16_t")) return types_.get(Kind::Char16);

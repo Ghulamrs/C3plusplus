@@ -54,11 +54,17 @@ private:
 
     std::vector<Cond> conds_;
     bool inBlockComment_ = false;
+    // The `)delim"` that closes a raw string a line left open, or empty.
+    std::string inRawString_;
     int depth_ = 0;
 
     int physLine_ = 0;
     int lineDelta_ = 0;
     int fileOverride_ = -1;
+    // `__COUNTER__`, an extension clang and cl share: 0, 1, 2 ... one per expansion.
+    int counter_ = 0;
+    static bool isDynamicMacro(const std::string &name);
+    static bool isStandardHeader(const std::string &name);
 
     bool emitting() const;
 

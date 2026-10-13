@@ -713,6 +713,10 @@ private:
                                std::vector<StmtPtr> &setup, int *bSlot,
                                int *eSlot, std::string *bName,
                                std::string *eName);
+    StmtPtr initRangeLocal(const std::string &name, const Type *t, int off, ExprPtr init,
+                           std::size_t pos);
+    // Where a range-for's own objects became alive: a statement index and how many then.
+    std::vector<std::pair<std::size_t, std::size_t> > rangeBuilt_;
     // The argument list at a use: `<int, 3>` read into types and values.
     void templateArguments(const TemplateDecl &decl,
                            std::vector<const Type *> *binding,
@@ -1852,6 +1856,20 @@ private:
     std::vector<std::string> usingNamespaces_;
     // **A using-declaration is an alias, not a table.**
     std::map<std::string, std::string> usingDeclarations_;
+    // `namespace A = N;` - the alias's qualified name to the namespace it names, for the
+    // readers that meet the alias without a `::` after it; every other use is rewritten.
+    std::map<std::string, std::string> namespaceAliases_;
+    void namespaceAlias(const std::string &name, std::size_t pos);
+    // WS-D: `auto f(params) -> T`, the return type read after the parameters.
+    void refuseTrailingBase(const Type *declared, std::size_t pos);
+    const Type *readTrailingReturn(std::size_t paramsOpen);
+    std::size_t skipFunctionQualifiers(std::size_t i) const;
+    bool autoBeforeQualifiedName() const;
+    void refuseTemplateTrailingDecltype();
+    bool trailingArrowAhead() const;
+    StmtPtr delegatingCall(const Declared &d, const Type *cls, std::vector<ExprPtr> args,
+                           std::size_t pos, std::size_t entries);
+    std::string resolveNamespaceName(const std::string &written) const;
     // **An unnamed namespace is a named one that nothing outside can name.**
     bool inUnnamedNamespace_ = false;
     // **The body being read belongs to a static member.**

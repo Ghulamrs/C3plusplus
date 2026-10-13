@@ -78,7 +78,7 @@ exit /b 0
 rem  %1 the tree's name, %2 the program, %3 its source tree if named; sets MASMEXE or LINKEXE.
 :build
 set SRCTREE=%~3
-if "%SRCTREE%"=="" set SRCTREE=%ROOT%\..\%1
+if "%SRCTREE%"=="" set SRCTREE=%ROOT%\..\..\Windows\%1
 if not exist "%SRCTREE%\src\main.cpp" exit /b 0
 if not exist %TOOLS%\%2 mkdir %TOOLS%\%2
 setlocal

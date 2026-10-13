@@ -77,8 +77,7 @@ void Parser::topLevel(Program &program) {
         if (peek().is("::"))
             src_.fail(peek().pos, "a nested namespace written 'N::M' is C++17 "
                                   "- open them one at a time");
-        if (consume("=")) 
-            src_.fail(pos, "a namespace alias is not supported yet");
+        if (consume("=")) { namespaceAlias(name, pos); return; }
         expect("{");
         namespaceStack_.push_back(name);
         namespaces_.insert(namespacePrefix().substr(
@@ -144,7 +143,9 @@ void Parser::topLevel(Program &program) {
             opened += "::" + expectIdent("a namespace name");
         }
         expect(";");
-        usingNamespaces_.push_back(opened);
+        // The directive names the namespace an alias stands for, [namespace.alias]/2.
+        const std::string resolved = resolveNamespaceName(opened);
+        usingNamespaces_.push_back(resolved.empty() ? opened : resolved);
         return;
     }
 
@@ -602,29 +603,12 @@ void Parser::topLevel(Program &program) {
         return;
     }
 
-    // **A trailing return type is C++11, and it arrives here wearing the same `auto`.**
-    // `auto f(int) -> int` says what the return type is rather than asking for it to be
-    // deduced. The parameter list is still ahead, so the arrow is found past it.
-    bool trailingArrow = false;
-    if (peek().is("(")) {
-        int depth = 0;
-        for (std::size_t i = at_; i < tokens_.size(); i++) {
-            if (tokens_[i].is("(")) depth++;
-            else if (tokens_[i].is(")")) {
-                if (--depth == 0) {
-                    trailingArrow = i + 1 < tokens_.size() &&
-                                    tokens_[i + 1].is("->");
-                    break;
-                }
-            }
-        }
-    }
-    if (mentionsDeduced(d.type) && trailingArrow)
-        src_.fail(d.pos, "a trailing return type - `auto f(...) -> T` - is "
-                         "C++11 and is not supported yet; write the return "
-                         "type in front, which says the same thing wherever it "
-                         "does not name a parameter");
-    if (mentionsDeduced(d.type))
+    // `auto f(int a) -> decltype(a)`, C++11: the return type is read after the parameters,
+    // which are in scope for it by then, [dcl.fct]/2 and [basic.scope.param].
+    const bool trailingArrow = trailingArrowAhead();
+    const bool trailing = trailingArrow && mentionsDeduced(d.type);
+    if (trailing) refuseTrailingBase(d.type, d.pos);
+    if (mentionsDeduced(d.type) && !trailing)
         src_.fail(d.pos, "a function's return type cannot be deduced - `auto` "
                          "there is C++14, and this compiler is C++11");
 
@@ -799,6 +783,7 @@ void Parser::topLevel(Program &program) {
     pendingNoexcept_ = exceptionSpecification();
     // **Captured here because declareFunction consumes it.**
     const bool declaredNoexcept = pendingNoexcept_;
+    if (trailing) d.type = readTrailingReturn(0);
 
     if (consume(";")) {
         if (memberOf != nullptr)
@@ -966,6 +951,12 @@ void Parser::topLevel(Program &program) {
     // declaration-order walk below reads all three from outside that block.
     std::map<std::string, std::size_t> valueInit;
     const bool isCtor = memberOf != nullptr && d.name == localOf(d.qualifier);
+    // [class.base.init]/6: `: S(args)` names the class itself - the target constructor
+    // does everything a list would, so the entry is the list's only one.
+    bool delegates = false;
+    std::vector<ExprPtr> delegateArgs;
+    std::size_t delegatePos = 0;
+    std::size_t entries = 0;
     if (memberOf != nullptr && peek().is(":")) {
         if (!isCtor)
             src_.fail(peek().pos, "an initialiser list belongs to a "
@@ -1006,6 +997,18 @@ void Parser::topLevel(Program &program) {
             const int frameBeforeArgs = frameSize_;
             std::vector<ExprPtr> args;
             parseArguments(args);
+            entries++;
+            {
+                const Type *named = templateBase != nullptr ? templateBase : findTypedef(entry);
+                if (entry == d.qualifier || entry == localOf(d.qualifier) ||
+                    (named != nullptr && named->unqualified() == memberOf->unqualified())) {
+                    delegates = true;
+                    delegateArgs = std::move(args);
+                    delegatePos = epos;
+                    if (!consume(",")) break;
+                    continue;
+                }
+            }
 
             // **The name written is not always the base's tag.** A class in a
             // namespace has a qualified tag - `n::Base` - and the list names
@@ -1048,9 +1051,6 @@ void Parser::topLevel(Program &program) {
             } else if (const Member *m = memberOf->findMember(entry)) {
                 if (memberExprs.count(entry))
                     src_.fail(epos, "'" + entry + "' is initialised twice");
-                if (m->type->isConst())
-                    src_.fail(epos, "a const member in an initialiser list is "
-                                    "not supported yet");
                 // **`: m()` value-initialises the member** - [class.base.init] hands
                 // the empty pair to [dcl.init]/8: a scalar zeroes, a class with no
                 // constructor zeroes leaf by leaf, a user-provided one runs alone.
@@ -1095,10 +1095,6 @@ void Parser::topLevel(Program &program) {
                 memberExprs[entry] = std::move(args);
                 namedInInit.insert(entry);
                 where[entry] = epos;
-            } else if (entry == d.qualifier) {
-                src_.fail(epos, "a delegating constructor is not supported "
-                                "yet - it is C++11's own addition and comes "
-                                "later");
             } else {
                 src_.fail(epos, "'" + entry + "' is neither a member of '" +
                                 d.qualifier + "' nor a direct base of it");
@@ -1108,10 +1104,14 @@ void Parser::topLevel(Program &program) {
 
     }
 
+    StmtPtr delegateCall;
+    if (delegates) delegateCall = delegatingCall(d, memberOf, std::move(delegateArgs),
+                                                 delegatePos, entries);
+
     // **Every member, in declaration order, by the first of three rules that applies to
     // it** - [class.base.init]/8, /9 and /11: named in the list, its own initialiser, or
     // a class with constructors default-constructed. A union's members are not built.
-    if (memberOf != nullptr && isCtor) {
+    if (memberOf != nullptr && isCtor && !delegates) {
         const std::vector<Member> &all = memberOf->members();
         for (std::size_t i = 0; i < all.size(); i++) {
             const Member *m = &all[i];
@@ -1127,6 +1127,16 @@ void Parser::topLevel(Program &program) {
                 if (one == nullptr && memberOf->kind() != Kind::Union)
                     one = constructMember(d.qualifier, memberOf, *m,
                                           thisOffset_, none, d.pos, false);
+                // [class.base.init]/8: a const or reference member the list leaves out
+                // is ill-formed, since nothing after this can give it a value.
+                if (one == nullptr && memberOf->kind() != Kind::Union &&
+                    (m->type->isReference() ||
+                     (m->type->isConst() && !constDefaultInitialisable(m->type))))
+                    src_.fail(d.pos, "this constructor of '" + d.qualifier +
+                                     "' does not initialise its " +
+                                     (m->type->isReference() ? "reference" : "const") +
+                                     " member '" + m->name + "', and nothing after "
+                                     "it can - name it in the initialiser list");
                 if (one != nullptr) memberInits.push_back(std::move(one));
                 continue;
             }
@@ -1325,8 +1335,15 @@ void Parser::topLevel(Program &program) {
         body = StmtPtr(new Block(std::move(withInits)));
     }
 
+    if (delegateCall != nullptr) {
+        std::vector<StmtPtr> withTarget;
+        withTarget.push_back(std::move(delegateCall));
+        withTarget.push_back(std::move(body));
+        body = StmtPtr(new Block(std::move(withTarget)));
+    }
+
     // **And in front of all of it, on Microsoft, the most-derived guard.**
-    if (memberOf != nullptr && memberOf->hasVptr() &&
+    if (memberOf != nullptr && memberOf->hasVptr() && !delegates &&
         (d.name == localOf(d.qualifier) ||
          d.name == "~" + localOf(d.qualifier))) {
         std::vector<StmtPtr> withVptr = storeVptrs(d.qualifier, memberOf, thisOffset_);
@@ -1350,7 +1367,7 @@ void Parser::topLevel(Program &program) {
     // the order the standard fixes and clang emits. The base's C2 and D2 are what is
     // called, and on Windows there is one name for each, called directly.
     for (std::size_t bn = 0;
-         memberOf != nullptr && bn < memberOf->bases().size() &&
+         memberOf != nullptr && !delegates && bn < memberOf->bases().size() &&
          (d.name == localOf(d.qualifier) ||
           d.name == "~" + localOf(d.qualifier)); bn++) {
         const bool building = d.name == localOf(d.qualifier);
@@ -1617,4 +1634,231 @@ Program Parser::parse() {
     finishDynamicInit(program);
     pruneUnusedInline(program);
     return program;
+}
+
+// A written namespace name - relative to the enclosing namespaces, or an alias at any
+// component - as the qualified name of the namespace it means; empty where it means none.
+std::string Parser::resolveNamespaceName(const std::string &written) const {
+    std::vector<std::string> parts;
+    std::string rest = written;
+    const bool global = rest.compare(0, 2, "::") == 0;
+    if (global) rest = rest.substr(2);
+    for (std::string::size_type cut; (cut = rest.find("::")) != std::string::npos;
+         rest = rest.substr(cut + 2))
+        parts.push_back(rest.substr(0, cut));
+    parts.push_back(rest);
+    for (std::size_t i = namespaceStack_.size() + 1; i-- > 0; ) {
+        if (global && i != 0) continue;
+        std::string cur;
+        for (std::size_t k = 0; k < i; k++) cur += namespaceStack_[k] + "::";
+        bool ok = true;
+        for (std::size_t p = 0; p < parts.size() && ok; p++) {
+            cur += parts[p];
+            std::map<std::string, std::string>::const_iterator a = namespaceAliases_.find(cur);
+            if (a != namespaceAliases_.end()) cur = a->second;
+            else if (namespaces_.find(cur) == namespaces_.end()) ok = false;
+            if (p + 1 < parts.size()) cur += "::";
+        }
+        if (ok) return cur;
+    }
+    return "";
+}
+
+// `namespace A = N;`, the `=` consumed. [namespace.alias]: A names N from here to the end of
+// the enclosing namespace. Every later `A::` in that reach is rewritten to N's name in place -
+// one token's text, never a token added - so the string-keyed lookups meet N and never A.
+void Parser::namespaceAlias(const std::string &name, std::size_t pos) {
+    std::string written = consume("::") ? "::" : "";
+    written += expectIdent("a namespace name after '='");
+    while (peek().is("::")) {
+        at_++;
+        written += "::" + expectIdent("a namespace name after '::'");
+    }
+    expect(";");
+    const std::string target = resolveNamespaceName(written);
+    if (target.empty())
+        src_.fail(pos, "'" + written + "' is not a namespace, so there is nothing for "
+                       "'namespace " + name + "' to be an alias of");
+    if (findTypedef(namespacePrefix() + name) != nullptr ||
+        namespaces_.count(namespacePrefix() + name))
+        src_.fail(pos, "'" + name + "' is already declared here, and a namespace alias "
+                       "cannot reuse the name");
+    namespaceAliases_[namespacePrefix() + name] = target;
+
+    // Inside the enclosing block an unqualified `A ::` means the alias; past its closing
+    // brace `N :: A ::` does, for a target within N. A name after `::`, `.` or `->` is not it.
+    auto plainAt = [&](std::size_t i) {
+        if (tokens_[i].kind != TokenKind::Ident || tokens_[i].text != name) return false;
+        if (i + 1 >= tokens_.size() || !tokens_[i + 1].is("::")) return false;
+        return i == 0 || !(tokens_[i - 1].is("::") || tokens_[i - 1].is(".") ||
+                           tokens_[i - 1].is("->") || tokens_[i - 1].is("namespace"));
+    };
+    int depth = 0;
+    std::size_t i = at_;
+    for (; i < tokens_.size() && tokens_[i].kind != TokenKind::End; i++) {
+        if (tokens_[i].is("{")) depth++;
+        else if (tokens_[i].is("}") && --depth < 0) break;
+        else if (plainAt(i)) tokens_[i].text = target;
+    }
+    if (namespaceStack_.empty()) return;
+    const std::string prefix = namespacePrefix();
+    if (target.compare(0, prefix.size(), prefix) != 0) return;
+    const std::string tail = target.substr(prefix.size());
+    for (; i < tokens_.size() && tokens_[i].kind != TokenKind::End; i++) {
+        if (tokens_[i].kind != TokenKind::Ident || tokens_[i].text != name ||
+            i + 1 >= tokens_.size() || !tokens_[i + 1].is("::") || i < 2 ||
+            !tokens_[i - 1].is("::"))
+            continue;
+        std::size_t j = i - 1;
+        bool spelled = true;
+        for (std::size_t k = namespaceStack_.size(); spelled && k-- > 0; ) {
+            spelled = j >= 1 && tokens_[j].is("::") &&
+                      tokens_[j - 1].kind == TokenKind::Ident &&
+                      tokens_[j - 1].text == namespaceStack_[k];
+            if (spelled) j = j >= 2 ? j - 2 : 0;
+        }
+        if (spelled && !tokens_[j].is("::")) tokens_[i].text = tail;
+    }
+}
+
+// [dcl.fct]/2: a declarator with a trailing return type has plain `auto` in front of it;
+// `auto *f() -> int` and `const auto f() -> int` are ill-formed, as clang says.
+void Parser::refuseTrailingBase(const Type *declared, std::size_t pos) {
+    if (declared->kind() != Kind::Deduced)
+        src_.fail(pos, "a function with a trailing return type is written with plain 'auto' "
+                       "in front, and this one says '" + declared->describe() + "'");
+}
+
+// `-> T` after a parameter list, at_ on the arrow. With `paramsOpen` 0 the parameters are
+// declared already; otherwise the list from that `(` is read again into a scope of its own,
+// names and types only - an operand there is unevaluated, so no slot is taken.
+const Type *Parser::readTrailingReturn(std::size_t paramsOpen) {
+    const std::size_t arrow = peek().pos;
+    expect("->");
+    const std::size_t typeAt = at_;
+    if (paramsOpen != 0) {
+        enterScope();
+        at_ = paramsOpen + 1;
+        while (!consume(")")) {
+            if (consume("...")) continue;
+            StorageClass psc;
+            const Type *pt = specifiers(&psc);
+            Declared pd = declarator(pt, true);
+            if (!pd.name.empty() && !pd.type->isVoid()) {
+                if (pd.type->isArray()) pd.type = types_.pointerTo(pd.type->pointee());
+                locals_.push_back(Local{ pd.name, 0, pd.type, false, std::string() });
+                locals_.back().isParameter = true;
+            }
+            if (consume("=")) skipDefaultArgument();
+            consume(",");
+        }
+        at_ = typeAt;
+    }
+    StorageClass rsc;
+    const Type *returns = declarator(specifiers(&rsc), true).type;
+    if (paramsOpen != 0) {
+        locals_.resize(scopeStarts_.back());
+        scopeStarts_.pop_back();
+    }
+    if (mentionsDeduced(returns))
+        src_.fail(arrow, "a trailing return type cannot itself be deduced - 'auto' there "
+                         "is C++14, and this compiler is C++11");
+    return returns;
+}
+
+// Past the cv, ref-qualifier and exception specification a function declarator may carry
+// after its `)`, from token i: where a trailing `->` would stand.
+std::size_t Parser::skipFunctionQualifiers(std::size_t i) const {
+    for (;;) {
+        if (i >= tokens_.size() - 1) return tokens_.size() - 1;
+        const Token &t = tokens_[i];
+        if (t.is("const") || t.is("volatile") || t.is("&") || t.is("&&")) { i++; continue; }
+        if (!t.is("noexcept") && !t.is("throw")) return i;
+        i++;
+        if (!tokens_[i].is("(")) continue;
+        for (int depth = 0; i < tokens_.size() - 1; i++) {
+            if (tokens_[i].is("(")) depth++;
+            else if (tokens_[i].is(")") && --depth == 0) { i++; break; }
+        }
+    }
+}
+
+// `auto` followed by `S::f(`, `S::~S(`, `Box<T>::get(` or `S::operator+(`: a qualified name
+// a parameter list follows, which is a declarator-id and not the start of a type.
+bool Parser::autoBeforeQualifiedName() const {
+    std::size_t i = at_;
+    bool qualified = false;
+    while (i + 1 < tokens_.size() && tokens_[i].kind == TokenKind::Ident) {
+        i++;
+        if (tokens_[i].is("<")) {
+            for (int depth = 0; i + 1 < tokens_.size(); i++) {
+                if (tokens_[i].is("<")) depth++;
+                else if (tokens_[i].is(">") && --depth == 0) { i++; break; }
+                else if (tokens_[i].is(">>") && (depth -= 2) <= 0) { i++; break; }
+                else if (tokens_[i].is(";") || tokens_[i].is("{")) return false;
+            }
+        }
+        if (!tokens_[i].is("::")) return qualified && tokens_[i].is("(");
+        qualified = true;
+        i++;
+        if (tokens_[i].is("~")) i++;
+        if (tokens_[i].is("operator")) return true;
+    }
+    return false;
+}
+
+// A function template's `-> decltype(e)`: Itanium spells such a signature with the expression
+// itself (`Dt...E`), which this mangler cannot write; refused by name rather than misnamed.
+void Parser::refuseTemplateTrailingDecltype() {
+    for (std::size_t i = at_ + 1; i < tokens_.size() - 1; i++) {
+        if (tokens_[i].is("{") || tokens_[i].is(";") || tokens_[i].is("=")) return;
+        if (tokens_[i].is("decltype"))
+            src_.fail(tokens_[i].pos, "a function template whose trailing return type is "
+                                      "'decltype(...)' is not supported yet - its Itanium name "
+                                      "spells the expression, and this compiler cannot; '-> T' "
+                                      "works");
+    }
+}
+
+// At a parameter list's `(`: whether a trailing `->` follows its `)` and qualifiers.
+bool Parser::trailingArrowAhead() const {
+    if (!peek().is("(")) return false;
+    int depth = 0;
+    for (std::size_t i = at_; i < tokens_.size() - 1; i++) {
+        if (tokens_[i].is("(")) depth++;
+        else if (tokens_[i].is(")") && --depth == 0)
+            return tokens_[skipFunctionQualifiers(i + 1)].is("->");
+    }
+    return false;
+}
+
+// The call a delegating constructor makes - [class.base.init]/6 - to the target chosen by
+// overload resolution, on `this`, before the body; its C1 on Itanium, as clang calls.
+StmtPtr Parser::delegatingCall(const Declared &d, const Type *cls, std::vector<ExprPtr> args,
+                               std::size_t pos, std::size_t entries) {
+    if (entries != 1)
+        src_.fail(pos, "a delegating constructor's initialiser list names '" +
+                       localOf(d.qualifier) + "' and nothing else - the constructor it "
+                       "delegates to builds the bases and members, [class.base.init]/6");
+    if (cls->hasVirtualBase())
+        src_.fail(pos, "a delegating constructor of a class with a virtual base is not "
+                       "supported yet - the target would have to be told whether this "
+                       "object is the most derived one");
+    const std::string key = constructorKey(cls->tag());
+    Signature chosen = resolveOverload(key, args, pos);
+    applyDefaults(chosen, args, pos);
+    const Type *self = types_.pointerTo(cls);
+    std::vector<ExprPtr> all;
+    ExprPtr me(Var::local("this", thisOffset_));
+    me->setType(self);
+    all.push_back(std::move(me));
+    std::vector<const Type *> params;
+    params.push_back(self);
+    for (std::size_t i = 0; i < chosen.params.size(); i++) {
+        all.push_back(std::move(args[i]));
+        params.push_back(chosen.params[i]);
+    }
+    return StmtPtr(new ExprStmt(completeCall(cls->tag(), chosen.symbol, nullptr,
+                                             types_.get(Kind::Void), params, false, pos,
+                                             std::move(all), false, 0)));
 }
