@@ -71,8 +71,8 @@ runs both.
 
 ## The library
 
-**A subset ships, and it is a subset on purpose.** `include/` holds 31 C++
-headers and `lib/` 19 C ones (counted 2026-10-08). They are here
+**A subset ships, and it is a subset on purpose.** `include/` holds 35 C++
+headers and `lib/` 19 C ones (counted 2026-10-13, WS-L). They are here
 for two reasons: the core language cannot do without some of them -
 `<initializer_list>` is what a braced initialiser *means* - and a compiler with
 no containers cannot be pointed at a real program. **They are not an
@@ -80,12 +80,13 @@ implementation of the C++11 library and are not becoming one.**
 
 | | |
 | --- | --- |
-| containers | `<vector>` `<string>` `<map>` `<set>` |
-| algorithms | `<algorithm>` `<numeric>` `<utility>` |
+| containers | `<vector>` `<string>` `<map>` `<set>` `<array>` |
+| algorithms | `<algorithm>` `<numeric>` `<utility>` `<functional>` |
+| ownership | `<memory>` - `unique_ptr<T>`, `shared_ptr<T>` |
 | streams | `<iostream>` `<ostream>` `<istream>` `<sstream>` `<fstream>` `<ios>` `<iomanip>` |
 | exceptions | `<exception>` `<stdexcept>` |
 | language support | `<initializer_list>` `<limits>` `<new>` `<typeinfo>` `<type_traits>` |
-| C, inside `std` | `<cassert>` `<cctype>` `<cfloat>` `<climits>` `<cmath>` `<cstddef>` `<cstdint>` `<cstdio>` `<cstdlib>` `<cstring>` |
+| C, inside `std` | `<cassert>` `<cctype>` `<cfloat>` `<climits>` `<cmath>` `<cstddef>` `<cstdint>` `<cstdio>` `<cstdlib>` `<cstring>` `<cstdarg>` |
 
 `lib/` holds 19 C headers - `assert.h` through `time.h` - and the ten `<c…>`
 names forward into it. **The forwarding is a using-declaration**, `namespace std
@@ -121,15 +122,14 @@ what a program *means*:
   cost is that any insertion invalidates every iterator, `begin()` on an empty
   vector answers null, and a `vector<int>` iterator compared against a
   `vector<char>` one is not caught.
-- **`vector` drops a slot without destroying it** on `pop_back`, `clear` and
-  `erase`. Correct for `vector<POD>` and `vector<T *>`; a
-  `vector<std::string>` leaks. Its storage is `calloc`'d and assigned into,
-  because placement new is refused by this compiler, so a zeroed slot is a real
-  state a class held here has to tolerate.
-- **`map` and `set` are sorted vectors**, binary-searched. The interface is the
-  standard's and the complexity is not: an insertion moves elements.
-- **`sort` is an insertion sort** - quadratic, no scratch memory, and it steps
-  the iterator both ways, which is all any iterator here can promise.
+- **`vector` owns its elements** (2026-10-13): built in place by placement new, destroyed on
+  every way out, `at()` checked, `emplace_back` forwarding its arguments.
+- **`map` and `set` are sorted vectors**, binary-searched (L01, declined for this round). The
+  interface is the standard's and the complexity is not: an insertion is O(n) and moves elements,
+  so it invalidates pointers into the container where [associative.reqmts] keeps them. The design
+  for the round that replaces it is a red-black tree with node-stable iterators, which wants a
+  class iterator - range-for over one works since WS-D.
+- **`sort` is an introsort** (2026-10-13): O(n log n), not stable; `stable_sort` is absent.
 - **`numeric_limits` means something only where it is specialised.** The primary
   template answers `T()` to every query.
 - The library's free functions are `inline` and its function templates plain,
@@ -140,23 +140,28 @@ what a program *means*:
 
 ### What is absent
 
-**`<stdexcept>` is here as of 2026-09-07**, with the standard's nine classes
-over a `std::string` and `std::exception` in `<exception>` beside it, as the
-standard splits them. Nothing else in the library throws: a container that runs
-out of memory or is indexed past its end does not raise, it misbehaves, and
-`at()` **is** provided and does not throw - it indexes like `operator[]`, so a
-past-the-end `at()` misbehaves rather than raising `std::out_of_range`. That is
-the one place the sentence above is not kept, and it is worse than not providing
-it: a caller who wrote `at()` for the check does not get one. `include/vector`.
+**`<stdexcept>` is here as of 2026-09-07**, with the standard's nine classes over a `std::string`
+and `std::exception` in `<exception>` beside it. `vector::at`, `array::at` and the `sto*` family
+throw `std::out_of_range` and `std::invalid_argument` as the standard has them, except on
+x86_64-windows, where a class cannot be thrown yet and they print and abort instead.
 
-`<memory>`, `<functional>`, `<tuple>`, `<array>`, `<deque>`, `<list>`,
-`<unordered_map>`, `<unordered_set>`, `<thread>`, `<atomic>`, `<mutex>`,
-`<chrono>`, `<regex>`, `<random>`, `<cstdarg>` and the rest of C++11 are not
-present. `<new>`, `<typeinfo>` and `<type_traits>` are: a class's
-own `operator new` and `operator delete`, the placement and nothrow forms,
-`std::bad_alloc` from the platform runtime, `typeid` and `dynamic_cast` all
-work - the sentence that stood here until 2026-10-08 saying the first two were
-refused was stale by a month, and the review of that day is what caught it.
+**Absent, each for a reason** (the preprocessor refuses every one of these by name, L19):
+
+- `<tuple>` (L10): the shape is the recursive `Tuple` of `tests/cases/tuple.cpp`; `get<I>` needs a
+  non-type template argument written beside deduced ones, which this compiler does not do yet.
+- `<unordered_map>`, `<unordered_set>` (L12): separate chaining over a `vector` of buckets, with
+  `std::hash` for the integral types and `string`, is the design; not written this round.
+- `<thread>`, `<atomic>`, `<mutex>` (L13, L14): there are no threads on the C6000 and no
+  `thread_local`; declined.
+- `<chrono>` (L15): it wants `<ratio>`'s arithmetic over non-type template packs; declined.
+- `<regex>` (L16) and `<random>` (L17): declined; `minstd_rand`, `mt19937` and
+  `uniform_int_distribution` are fully specified by the standard and are the place to start.
+- From headers that are here: `std::function`, `bind` and `ref`; `unique_ptr<T[]>`, `weak_ptr` and
+  `make_shared`; `stable_sort`. `docs/EXCLUSIONS.md` gives each its reason.
+
+`<new>`, `<typeinfo>` and `<type_traits>` are here: a class's own `operator new` and `operator
+delete`, the placement and nothrow forms, `std::bad_alloc` from the platform runtime, `typeid` and
+`dynamic_cast` all work.
 
 ## What 1.4 changes
 

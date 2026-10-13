@@ -19,7 +19,7 @@ from E2 keeps the later rebase trivial. Nothing pushed or merged.
 | L02 `sort` O(n log n) | landed: introsort - median-of-three Hoare partition to runs of 16, heapsort past 2 log2(n) depth, one insertion pass; random-access iterators (every container's are pointers); `stable_sort` named absent | `algorithm-sort-large.cpp` (200000 elements, six shapes, a comparator, strings; 0.56 s on the Mac; not on tms6747, minutes on the emulator) |
 | L06 `emplace_back` | landed: `template <class... A> void emplace_back(A &&...)`, placement new over `std::forward<A>(a)...` (E1's F23) | `vector-emplace-back.cpp` |
 | L08 `<memory>` | landed: `unique_ptr<T>` (move-only, `= delete` copies, release/reset/swap, explicit bool) and `shared_ptr<T>` (a non-atomic count in a block of its own, copy/move/assign/reset/use_count, `==`/`!=`); **not**: `unique_ptr<T[]>` (a partial specialization on an array of unknown bound - "target: no size for this type yet", the `is_array<T[]>` limit), `weak_ptr`, custom deleters, and `make_shared`, whose standard form gives one template argument and deduces the rest | `memory-unique-ptr.cpp`, `memory-shared-ptr.cpp` (ledger, counts equal to clang's) |
-| L01, L10, L12-L17 (documentation and declines) | not started; L01's paragraph still says what it said | - |
+| L01, L10, L12-L17 (documentation and declines) | done: README.md's library section rewritten - L01 declined with the red-black-tree design, L10/L12 design notes, L13-L17 declined with reasons; the header count and table updated | - |
 
 ## Oracle
 
