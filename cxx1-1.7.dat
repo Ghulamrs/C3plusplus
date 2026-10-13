@@ -1,7 +1,7 @@
 ©2026 G. R. Akhtar - C++03 with C++11 extensions
 Release seal, version 1.7, sealed 13-10-2026
 Written by tools/seal; check it with `tools/seal check`.
-CRC32  size  file - 160 files, seal AA4A2D8A
+CRC32  size  file - 160 files, seal EC6C6EC9
 ------------------------------------------------------------------
 302F7AC7      4283  include/__string_conversions
 A88B4DC7      6938  include/algorithm
@@ -60,7 +60,7 @@ EB104FF5      2994  lib/stdlib.h
 E20D4640      3250  lib/time.h
 A0490168      1512  src/Abi.h
 B86FC4E8     25835  src/Ast.h
-3AB40EAB     60568  src/Driver.cpp
+8C6093F7     60629  src/Driver.cpp
 A7860783      4292  src/Driver.h
 6B76BB10     22035  src/Lexer.cpp
 98436587      2597  src/Lexer.h
@@ -90,8 +90,8 @@ E0AFFCF2     15315  src/backend/Dwarf.cpp
 2A677CA7      6688  src/backend/Masm.h
 C0022931     18370  src/backend/Spelling.cpp
 5EA461E4     12444  src/backend/Spelling.h
-30A0FC32    115223  src/backend/Tms6747.cpp
-F1468BF4     14775  src/backend/Tms6747.h
+1B17F0F6    115921  src/backend/Tms6747.cpp
+42435CCE     14937  src/backend/Tms6747.h
 86CE9FCB     19349  src/backend/Walker.cpp
 95138F23     10092  src/backend/Walker.h
 8E5694C1    100409  src/backend/X86_64Linux.cpp
