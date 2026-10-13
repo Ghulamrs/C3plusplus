@@ -972,6 +972,8 @@ bool Driver::parseArguments(int argc, char **argv) {
                 return false;
             }
             addMacroEdit(text, undef);
+        } else if (std::strcmp(argv[i], "-E") == 0) {
+            preprocessOnly_ = true;
         } else if (std::strcmp(argv[i], "-S") == 0) {
             assemblyOnly_ = true;
         } else if (std::strcmp(argv[i], "-c") == 0) {
@@ -1014,6 +1016,13 @@ bool Driver::parseArguments(int argc, char **argv) {
     standardIncludeDirectories(argv[0]);
 
     if (inputs.empty()) { usage(argv[0]); return false; }
+
+    // -E: each input after phase 4, on stdout, and nothing compiled.
+    if (preprocessOnly_) {
+        for (const std::string &in : inputs)
+            std::fputs(Preprocessor(in, searchPath_, macrosFor()).run().text().c_str(), stdout);
+        std::exit(0);
+    }
 
     // **The project's own masm and LINK when they are beside this program, and no spelling asked
     // for**: they take COMDAT and a throw, so clang is wanted only for -g's line table.
