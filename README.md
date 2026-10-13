@@ -163,6 +163,13 @@ x86_64-windows, where a class cannot be thrown yet and they print and abort inst
 delete`, the placement and nothrow forms, `std::bad_alloc` from the platform runtime, `typeid` and
 `dynamic_cast` all work.
 
+## What 1.8 changes
+
+`-g` for tms6747: the statement's source position goes into the assembly as
+cl6x's `.dwpsn`, so VM6747 1.1 (`vm6747 --debug`) can stop on a line and step
+under RIDE 5.13's Debug session. `-g` with `-O` stays refused for that target.
+The tms6747 suite leaves its liveness self-check off for `exception-table-large`.
+
 ## What 1.7 changes
 
 The second half of the review round of 2026-10-08 (`docs/REVIEW-PLAN-2026-10-08.md`;
@@ -227,10 +234,10 @@ defects below and nothing else; Compiler-Cppi has closed those too, with the
 vtable group, `_ZTv` thunks, VTT and construction vtables, and that work is
 not in 1.3.
 
-## Known shortcomings in 1.7
+## Known shortcomings in 1.8
 
 Everything here is measured and written down elsewhere in full; this is the
-short list a user of **1.7** should have in front of them. `docs/EXCLUSIONS.md`
+short list a user of **1.8** should have in front of them. `docs/EXCLUSIONS.md`
 is the complete one - 126 refusal sites on 2026-10-13 (131 on 2026-10-08),
 each citing the source line that refuses it, and `make test` fails when the two
 disagree. The heading

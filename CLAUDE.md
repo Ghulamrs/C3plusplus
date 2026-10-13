@@ -13198,3 +13198,16 @@ says which tool is missing what. cl6x's own `-g` images carry one and stop on li
 Measured: run.sh 702 / 0; tms6747.sh 437 / 0 on the new vm6747 with every pass also on sim6747
 against rts6x.lib; `tests/out-dbg/probe.cpp` with `-g` assembles with ASM6x and with TI's asm6x.
 No `.dwpsn` is written without `-g`, so no suite emission moved.
+
+## Version 1.8, 2026-10-13: a changed module's seal takes a new number
+
+**1.7 was resealed under its own number once `-g` for tms6747 landed** (the
+statement's position as cl6x's `.dwpsn`, for `vm6747 --debug` and RIDE's Debug
+session), and the user then set the rule this section exists to record: **a
+module that has changed since its last seal takes the next number, 0.1 on, at
+that seal** - a seal names one version of the sources, and a changed module is
+a new version. So 1.8 is 1.7's resealed tree under its own name; nothing in
+`src/` differs between the two. Beside it, by the same rule: ASM6x 1.2
+(`.dwpsn` accepted), VM6747 1.1 and SIM6747 1.3 (`--debug`), RIDE 5.13 (the
+tms6747 Debug session), and MASTER.SEAL rewritten over all twelve.
+

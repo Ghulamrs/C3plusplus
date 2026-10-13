@@ -213,10 +213,10 @@ two header directories of section 2.
 6.  THIS RELEASE, AND ITS SEAL
 ------------------------------
 
-This is **version 1.7**, sealed **13-10-2026**.
+This is **version 1.8**, sealed **13-10-2026**.
 
     cxx1.exe -version            says both, and names the seal file
-    cxx1-1.7.dat                 the seal: a CRC32 and a size per file
+    cxx1-1.8.dat                 the seal: a CRC32 and a size per file
     tools/seal check             verifies every line of it
 
 The seal covers what the compiler *is*: every file under `src/`, `include/` and
@@ -236,7 +236,7 @@ fails on a stale one - because this section said 1.4 for two releases after the
 binary said otherwise.
 
 Known shortcomings of this version are listed in `README.md` under "Known
-shortcomings in 1.7", and the complete list of what the language does not
+shortcomings in 1.8", and the complete list of what the language does not
 accept is `docs/EXCLUSIONS.md`.
 
 

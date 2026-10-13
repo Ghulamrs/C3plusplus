@@ -1,7 +1,7 @@
 ©2026 G. R. Akhtar - C++03 with C++11 extensions
-Release seal, version 1.7, sealed 13-10-2026
+Release seal, version 1.8, sealed 13-10-2026
 Written by tools/seal; check it with `tools/seal check`.
-CRC32  size  file - 160 files, seal EC6C6EC9
+CRC32  size  file - 160 files, seal 4B4CB0B6
 ------------------------------------------------------------------
 302F7AC7      4283  include/__string_conversions
 A88B4DC7      6938  include/algorithm
@@ -75,7 +75,7 @@ B35E3402      3248  src/Operator.cpp
 2C992AD9      2403  src/Source.h
 52741BC7     20117  src/Type.cpp
 3E18351B     25888  src/Type.h
-BB77F636       384  src/Version.h
+463D901A       384  src/Version.h
 0B0F9F25     45019  src/backend/Arm64Darwin.cpp
 98997445      5698  src/backend/Arm64Darwin.h
 0F851578      3863  src/backend/Backend.cpp
