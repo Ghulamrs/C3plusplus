@@ -935,6 +935,9 @@ void Parser::templateArguments(const TemplateDecl &decl,
             StorageClass sc;
             Qualifiers quals;
             const Type *base = specifiers(&sc, &quals);
+            if (peek().is("(") && !peekAt(1).is("*") && !peekAt(1).is("&") && !peekAt(1).is("&&"))
+                src_.fail(peek().pos, "a function type as a template argument, 'R(Args...)', is not "
+                                      "supported yet - a pointer to one, 'R (*)(Args...)', is read");
             Declared d = declarator(base, true);
             if (!d.name.empty())
                 src_.fail(d.pos, "a template argument is a type here, and this "
@@ -1850,6 +1853,9 @@ void Parser::partialArguments(TemplateDecl::Partial *ps,
             StorageClass sc;
             Qualifiers quals;
             const Type *base = specifiers(&sc, &quals);
+            if (peek().is("(") && !peekAt(1).is("*") && !peekAt(1).is("&") && !peekAt(1).is("&&"))
+                src_.fail(peek().pos, "a function type as a template argument, 'R(Args...)', is not "
+                                      "supported yet - a pointer to one, 'R (*)(Args...)', is read");
             Declared d = declarator(base, true);
             a.isType = true;
             a.type = d.type;

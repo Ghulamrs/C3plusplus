@@ -515,6 +515,9 @@ std::vector<Token> Lexer::tokenize() {
             continue;
         }
 
+        if (c == '\\' && i + 1 < s.size() && (s[i + 1] == 'u' || s[i + 1] == 'U'))
+            src_.fail(i, "a universal character name outside a literal, '\\u' in an identifier, is "
+                         "not supported yet - inside a string or character literal it is read");
         src_.fail(i, std::string("stray '") + c + "' in program");
     }
 

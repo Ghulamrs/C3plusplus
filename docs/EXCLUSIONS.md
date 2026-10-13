@@ -138,7 +138,7 @@ templates followed. What is left:
 - **an unnamed template parameter** - `src/parser/ParserTemplate.cpp:52`,
   `src/parser/ParserTemplate.cpp:75`
 - **a non-type template parameter that is not an integer type** -
-  `src/parser/ParserTemplate.cpp:948`
+  `src/parser/ParserTemplate.cpp:951`
 - **`template <>` where a parameter list is expected** -
   `src/parser/ParserTemplate.cpp:38`
 - **a template that is neither a class nor a function** -
@@ -157,14 +157,14 @@ templates followed. What is left:
 - **some of a function template's arguments written and the rest deduced
   from the call** - write all of them, or none. `src/parser/ParserTemplate.cpp:837`
 - **naming a function template without calling it**, and **instantiating one
-  that was only declared** - `src/parser/ParserTemplate.cpp:2199`,
-  `src/parser/ParserTemplate.cpp:2286`, `src/parser/ParserTemplate.cpp:2325`
+  that was only declared** - `src/parser/ParserTemplate.cpp:2205`,
+  `src/parser/ParserTemplate.cpp:2292`, `src/parser/ParserTemplate.cpp:2331`
 - **naming a member through a class template's argument list**,
   `Box<int>::m` in a declaration - the type is made, so a typedef for it
   reaches the member: `typedef Box<int> B; B::m`.
-  `src/parser/ParserTemplate.cpp:2321`, `src/parser/ParserType.cpp:38`
+  `src/parser/ParserTemplate.cpp:2327`, `src/parser/ParserType.cpp:38`
 - **a member function template named without being called** -
-  `src/parser/ParserTemplate.cpp:2398`; **a member class template** -
+  `src/parser/ParserTemplate.cpp:2404`; **a member class template** -
   `src/parser/ParserType.cpp:501`; **an out-of-line member template
   definition** - `src/parser/ParserType.cpp:551`; **an `explicit` constructor
   template** - `src/parser/ParserType.cpp:534`
@@ -247,9 +247,9 @@ templates followed. What is left:
   `T{...}`. `src/parser/ParserExprCall.cpp:488`
 - **`auto x{...}`** - C++11 makes it `std::initializer_list`, N3922 the
   element's type, and compilers apply N3922 to C++11; `auto x = {...}` deduces
-  the list. `src/parser/ParserTemplate.cpp:1259`
+  the list. `src/parser/ParserTemplate.cpp:1262`
 - **`auto &` or `auto *` from a braced list** - only `auto` and `const auto`
-  deduce `std::initializer_list` here. `src/parser/ParserTemplate.cpp:1268`
+  deduce `std::initializer_list` here. `src/parser/ParserTemplate.cpp:1271`
 - **a `std::initializer_list` with static storage made from braces** - its
   backing array would need static storage too. `src/parser/ParserInit.cpp:1158`
 - **a braced default argument** - `src/parser/ParserClass.cpp:4669`,
@@ -486,3 +486,10 @@ cannot support is the same defect one level up, which is what this document
 fixes. When a feature lands, delete its entry here and run
 `tools/exclusions --check`; when a refusal is added, cite it here in the same
 commit; and `make test` fails until both are true.
+
+## Found by the release's feature sweep (2026-10-13)
+
+- **a function type as a template argument**, `std::function<int(int)>` - a pointer to one,
+  `R (*)(Args...)`, is read. `src/parser/ParserTemplate.cpp:1857`, `src/parser/ParserTemplate.cpp:939`
+- **a universal character name in an identifier**, `caf\u00e9` - inside a string or character
+  literal it is read. `src/Lexer.cpp:519`
