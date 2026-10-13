@@ -325,7 +325,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 - **`dynamic_cast` naming a class with more than one base** - the type_info is
   emitted; the cast's runtime walk over it is not. `src/parser/ParserExprNew.cpp:720`
 - **catching a pointer by reference** - the runtime hands a handler the pointer
-  itself, so catch it by value. `src/parser/ParserStmt.cpp:1399`
+  itself, so catch it by value. `src/parser/ParserStmt.cpp:1410`
 - **throwing a pointer to a function** - it has no `type_info`; the message
   splices its reason in at run time, so this entry is hand-written.
   `tests/cases/throw-refused.cpp`
@@ -348,12 +348,12 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 - **a local with a destructor and a `try` in one function** - refused only
   where the call-site table cannot be split; beside the `try`, inside its body
   and inside a handler all work on the Itanium targets.
-  `src/parser/ParserStmt.cpp:949`, `src/parser/ParserStmt.cpp:2121`
+  `src/parser/ParserStmt.cpp:949`, `src/parser/ParserStmt.cpp:2132`
 - **a `goto` that leaves a `catch` handler** - [except.handle]/16 ends the
   handling on the way out, and the call that ends it has to be emitted where
   the jump is written; a forward label has not been read there. `return`,
   `break` and `continue` out of a handler work, and so does a `goto` to a label
-  inside it. `src/parser/ParserStmt.cpp:2208`,
+  inside it. `src/parser/ParserStmt.cpp:2219`,
   `tests/cases/goto-out-of-handler-refused.cpp`
 - **a function try block**, `int f() try { } catch (...) { }` - its handler
   covers the mem-initialisers as well as the body, so a `try` inside the body
@@ -381,7 +381,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 
 - **a namespace alias inside a block** - the alias is a rewrite to the end of
   the enclosing namespace; at namespace scope it works.
-  `src/parser/ParserStmt.cpp:1811`
+  `src/parser/ParserStmt.cpp:1822`
 - **an inline namespace** - its members would have to be found in the
   namespace around it. `src/parser/ParserType.cpp:1702`
 - **an alias declaration**, `using X = T;` - C++11; `typedef T X;` says the
@@ -389,7 +389,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 - **a using-declaration inside a class**, `using B::f;` - it redeclares a base
   member, changing its access and joining the overload set; an inheriting
   constructor is the same declaration one step on. `src/parser/ParserType.cpp:563`
-- **a using-declaration inside a block** - `src/parser/ParserStmt.cpp:1819`.
+- **a using-declaration inside a block** - `src/parser/ParserStmt.cpp:1830`.
   The one at namespace scope works, and so does `using namespace N;`.
 
 ## Lambdas
@@ -454,12 +454,12 @@ between the two lists.**
   `src/parser/ParserType.cpp:1586`
 - **a `try` inside a `catch` handler, on x86_64-windows** - a handler is a
   funclet there, and a nested `try`'s handlers would be funclets inside it.
-  `src/parser/ParserStmt.cpp:1284`
+  `src/parser/ParserStmt.cpp:1295`
 - **a local with a destructor inside a `catch` handler, on x86_64-windows** -
-  the same reason, a cleanup being a funclet. `src/parser/ParserStmt.cpp:1242`
+  the same reason, a cleanup being a funclet. `src/parser/ParserStmt.cpp:1253`
 - **a rethrow, `throw;`, on x86_64-windows** - `_CxxThrowException` with two
   null pointers from inside a funclet, not measured on the box.
-  `src/parser/ParserStmt.cpp:1840`
+  `src/parser/ParserStmt.cpp:1851`
 - **a member under `#pragma pack`, on tms6747** - the C6000 backend loads words
   aligned only, and cl6x has no `#pragma pack`. `src/parser/ParserType.cpp:57`
 
