@@ -16,11 +16,39 @@ Nothing pushed, nothing merged.
 | F22 lambda to function pointer | landed; one refusal line for the main session | lambda-to-function-pointer, lambda-capturing-no-pointer-refused, static-member-function-address |
 | F41a dynamic_cast to a reference | landed on the Itanium targets; x86_64-windows and `&&` refused by name | dynamic-cast-reference, dynamic-cast-rvalue-reference-refused |
 | F41b dynamic_cast, several bases | landed on Itanium (it worked already - measured and cased); Microsoft refused by name | dynamic-cast-multiple-bases |
-| F27d range-for over a braced list | **not done**: WS-D's F27a is not merged (main at `cc210bb` has WS-A only). It needs nothing new once D lands: a braced list is now an `initializer_list` whose begin/end are pointers, the iterator shape the class range-for already takes; the refusal is `ParserStmt.cpp:614`, WS-D's file | - |
+| F27d range-for over a braced list | **landed 2026-10-13** after the rebase on WS-D (see the section below). Was: WS-D's F27a is not merged (main at `cc210bb` has WS-A only). It needs nothing new once D lands: a braced list is now an `initializer_list` whose begin/end are pointers, the iterator shape the class range-for already takes; the refusal is `ParserStmt.cpp:614`, WS-D's file | - |
 
 Removed refusals and their cases: list-init-ctor, list-init-expression-refused,
 list-init-values-refused, lambda-to-function-pointer-refused,
 dynamic-cast-reference-refused.
+
+## Rebased on WS-D and finished, 2026-10-13
+
+Rebased onto `review/d-toplevel` at `fdf7b65` (WS-D's tip, not yet merged: the plan's step 6
+rebases E2 on D). One code conflict, `ParserExprCall.cpp`'s argument loop: E1's pack expansion
+and E2's braced placeholder both kept, the braces asked first. `docs/EXCLUSIONS.md` was written
+before WS-A restructured it, so it was rebuilt by hand in WS-A's shape - E2's new list-
+initialisation entries, `dynamic_cast` narrowed to x86_64-windows, `new T[n]{...}`, auto from
+braces gone from the library paragraph - and every citation remapped by message from WS-D's and
+E2's own inventories. Then:
+
+- **The F22 line** (`ParserOverload.cpp`): the message tail is gone and it now states
+  [expr.prim.lambda]/6's rule. No longer a refusal, it left `docs/EXCLUSIONS.md`.
+- **F27d**: `rangeForStatement` deduces `std::initializer_list<E>` from the braces
+  (`deduceBracedAuto`), builds it into the loop's setup (`buildInitializerList`) and walks it as
+  a class range. The alive mark is taken before the range, so the backing array dies with the
+  loop. `range-for-braced-list-refused` went; `range-for-braced-list.cpp` is VS clang's output.
+- **Found writing it, and E2's**: an `initializer_list` of a class with constructors
+  (`auto x = {P(4), P(5)};`) aggregate-assigned each element into the class's first member and
+  was refused ("'.ilbacking0' is 'int' and this is 'struct P'"). Each element is copy- or
+  move-initialised now, and the backing array is destroyed as one entry with its count. A braced
+  list as such an element is refused by name (`ParserClass.cpp:1995`).
+
+**Measured on the Mac**: run.sh 682 / 0; names.sh 436 / 4, the four being WS-H's; overload.sh
+33 / 0 at the C2 measurement, unchanged here; `tools/exclusions --check` 126 sites, 0 / 0;
+`make comments` 0. On this Mac the libc++ ABI tag (`B9nqe220106`) and the absence of headers for
+the two cross targets needed `arm64-darwin`, `x86_64-linux` and `x86_64-windows` lines in five
+`.nonames`, each giving the reason. The box gates follow in the merge note.
 
 ## The one line for the main session (F22)
 
