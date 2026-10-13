@@ -13,7 +13,7 @@ if "%~1"==":shard" goto :shard
 if "%~1"=="" (echo ti-link.cmd: needs the tree root & exit /b 2)
 set ROOT=%~1
 set CPP11_TI=C:\ti\ccsv7\tools\compiler\ti-cgt-c6000_8.2.2
-set CPP11_TILIB=C:\Users\GRA\Documents\VM6747\tilib
+set CPP11_TILIB=C:\ti\c6747-lib-822
 set CPP11_AS=C:\asm6x-tests\build\asm6x.exe
 if not exist %CPP11_AS% set CPP11_AS=C:\Users\GRA\source\RStudio\bin\asm6x.exe
 if not exist %CPP11_AS% (echo ti-link.cmd: no asm6x.exe & exit /b 1)

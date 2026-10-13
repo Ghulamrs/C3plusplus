@@ -13,7 +13,7 @@ set W=%W:~0,-1%
 if "%CCS55%"=="" set CCS55=C:\ti\ccsv5
 if "%CG74%"=="" set CG74=C:\ti\ccsv7\tools\compiler\ti-cgt-c6000_8.2.2
 if "%C6747_EHLIB%"=="" set C6747_EHLIB=C:\ti\c6747-lib
-if "%C6747_EHLIB74%"=="" set C6747_EHLIB74=C:\Users\GRA\Documents\VM6747\tilib
+if "%C6747_EHLIB74%"=="" set C6747_EHLIB74=C:\ti\c6747-lib-822
 if "%MAXRUNS%"=="" set MAXRUNS=12
 set CG55=%CCS55%\tools\compiler\c6000_7.4.4
 set LINK55=-z --heap_size=0x800 --stack_size=0x800 -i"%C6747_EHLIB%" --rom_model "%W%\C6747.cmd" -lrts6740_elf_eh.lib
