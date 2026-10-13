@@ -40,7 +40,8 @@ public:
     bool emits() const override { return true; }
     const char *const *identityMacros() const override;
     std::unique_ptr<CodeGen> codegen(std::ostream &sink, Syntax) const override;
-    bool emitsLineTable(Syntax) const override { return false; }
+    // -g writes cl6x's `.dwpsn` before each statement: the source position vm6747 and sim6747 stop on.
+    bool emitsLineTable(Syntax) const override { return true; }
 private:
     Tms6747Target target_;
 };
@@ -52,6 +53,7 @@ public:
 
     using Walker::visit;
     void run(const Program &program) override;
+    void emitLoc(int file, int line, int column) override;
 
     void visit(const Num &) override;
     void visit(const Var &) override;
