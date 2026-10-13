@@ -726,6 +726,15 @@ std::string Tms6747::userLabel(const std::string &name) const {
     return "L." + functionName_ + "." + name;
 }
 void Tms6747::defineLabel(const std::string &l) { out_ << l << ":\n"; }
+
+// -g: the statement's source position as cl6x spells it (measured, 8.2.2: `.dwpsn file "t.c",line 2,column
+// 11,is_stmt,isa 0`), so TI's assembler takes the file as it stands and vm6747 and sim6747 stop on the line.
+void Tms6747::emitLoc(int file, int line, int column) {
+    const std::vector<std::string> &files = lineSource()->files();
+    if (file < 1 || static_cast<std::size_t>(file) > files.size()) return;
+    out_ << "\t.dwpsn\tfile \"" << files[static_cast<std::size_t>(file) - 1] << "\",line " << line
+         << ",column " << column << ",is_stmt,isa 0\n";
+}
 void Tms6747::jump(const std::string &l) { out_ << "\tB\t" << l << "\n\tNOP\t5\n"; }
 
 // Only A0-A2 and B0-B2 can predicate a branch, so the truth value is moved into
@@ -2230,6 +2239,7 @@ void Tms6747::emitFunction(const Function &fn) {
     const std::string early = earlyExit(fn);
     std::ostringstream pro;
     pro.swap(out_);                                        // the prologue, scheduled with the body at -O1 and -O2
+    markLine(fn.pos());                                     // -g: the function's own line, as cl6x's first .dwpsn names it
     std::vector<std::string> saved = savedRegs();
     // A leaf whose parameters and locals are all in registers needs no frame at all.
     bool needFrame = frame > 0 || hasCall_ || (optimize_ > 0 ? paramInFrame_ : !fn.params().empty()) || sretSlot_ != 0 ||

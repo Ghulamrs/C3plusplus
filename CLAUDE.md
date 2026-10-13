@@ -13166,3 +13166,32 @@ under the gate's load; alone it compiles in 0.9 s and passed 121 runs of 121.
 **None of the four touched `src/`, `include/` or `lib/`**, so the seal written at
 the version bump stands: `tools/seal check` reads 160 files, 0 differ, on the
 merged tree.
+
+## `-g` for tms6747: cl6x's `.dwpsn`, which vm6747 and sim6747 stop on, 2026-10-13
+
+**`-g` was refused for tms6747 by name** - "its code generator writes no line table" - so RIDE's
+Debug session had nothing to stop on there, and VM6747 was "not a debugger yet". The position a
+statement came from is what the other three backends already emit through `Walker::markLine` →
+`emitLoc`; `Tms6747::emitLoc` writes it as cl6x spells it, measured on cl6x 8.2.2:
+
+    .dwpsn  file "t.c",line 2,column 11,is_stmt,isa 0
+
+so TI's own assembler takes the file as it stands (ASM6x ignores the directive since `2567978`;
+building a `.debug_line` from it is the gap named below), and the function's own line goes in
+front of the prologue, as cl6x's first `.dwpsn` of a function does. `tiExternals` skips a
+directive line, so none of `file`, `line`, `is_stmt` becomes a `.ref`. **`-g` with `-O` stays
+refused by name**: the C6000 scheduler treats a directive line as a block boundary and carries no
+position through its packets, and RIDE's Debug build is `-g` alone.
+
+**What reads it.** VM6747's assembler stamps each instruction with the last `.dwpsn` before it
+(a function's label clears it), and `vm6747 --debug file.s` is a debugger session in gdb's words -
+break FILE:LINE, run, next, step, finish, backtrace, print $A4 - which RIDE drives with the parser
+it has for gdb (RIDE `DebuggerC6x`, VM6747 `src/Debug.h`); sim6747 speaks the same shell over the
+linked image, its lines from the image's DWARF `.debug_line`. **A cpp11-built image carries none**:
+ASM6x turns no `.dwpsn` into a `.debug_line`, and LNK6x writes no non-allocated section into an
+image - so on sim6747 a cpp11 program breaks by function and steps by packet, and `break t.c:6`
+says which tool is missing what. cl6x's own `-g` images carry one and stop on lines there.
+
+Measured: run.sh 702 / 0; tms6747.sh 437 / 0 on the new vm6747 with every pass also on sim6747
+against rts6x.lib; `tests/out-dbg/probe.cpp` with `-g` assembles with ASM6x and with TI's asm6x.
+No `.dwpsn` is written without `-g`, so no suite emission moved.

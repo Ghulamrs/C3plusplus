@@ -1046,9 +1046,9 @@ bool Driver::parseArguments(int argc, char **argv) {
         return false;
     }
 
-    if (debug_ && std::strcmp(backend_->name(), "tms6747") == 0) {
-        std::fprintf(stderr, "%s: -g is not supported yet for tms6747 - its code generator writes no "
-                             "line table; compile without -g\n", argv[0]);
+    if (debug_ && optimize_ > 0 && std::strcmp(backend_->name(), "tms6747") == 0) {
+        std::fprintf(stderr, "%s: -g with -O is not supported yet for tms6747 - the C6000 scheduler does not "
+                             "carry a source position through its packets; compile with -g alone\n", argv[0]);
         return false;
     }
     if (debug_ && !backend_->emitsLineTable(syntax_)) {
