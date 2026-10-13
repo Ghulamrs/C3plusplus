@@ -100,7 +100,7 @@ done
 # A quoted pattern is several inputs: -S writes a .s beside each, never all of them to stdout.
 mkdir -p "$OUT/pattern"
 printf 'int f() { return 1; }\n' > "$OUT/pattern/a.cpp"; printf 'int g() { return 2; }\n' > "$OUT/pattern/b.cpp"
-if "$CXX1" -nologo -S "$OUT/pattern/*.cpp" > "$OUT/pattern/stdout" 2>&1 &&
+if cxx1 -nologo -S "$OUT/pattern/*.cpp" > "$OUT/pattern/stdout" 2>&1 &&
    [ -s "$OUT/pattern/a.s" ] && [ -s "$OUT/pattern/b.s" ] && [ ! -s "$OUT/pattern/stdout" ]; then
     pass=$((pass + 1))
 else

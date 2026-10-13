@@ -31,6 +31,7 @@ private:
     bool toStdout_ = false;
     bool timing_ = false;
     bool assemblyOnly_ = false;
+    bool preprocessOnly_ = false;
     bool debug_ = false;
     int optimize_ = 0;
     bool forSize_ = false;      // -Os: -O1, the smaller code chosen where a backend offers the choice

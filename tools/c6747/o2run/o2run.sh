@@ -12,7 +12,7 @@ if [ "$BOX" = windows ]; then
     export MSYS_NO_PATHCONV=1
     RIDE="/c/Program Files/RIDE 4.7"
     CG744=/c/ti/ccsv5/tools/compiler/c6000_7.4.4; CG822=/c/ti/ccsv7/tools/compiler/ti-cgt-c6000_8.2.2
-    LIB744=/c/cxx1/c6747-lib; LIB822=/c/Users/GRA/Documents/VM6747/tilib
+    LIB744=/c/ti/c6747-lib; LIB822=/c/ti/c6747-lib-822
     JOBS=${JOBS:-20}; LANES=${LANES:-12}; STAGGER=${STAGGER:-0}; CHUNK=${CHUNK:-80}; HOLD=${HOLD:-8}; DEADLINE=${DEADLINE:-1500}; CCXML=c6747ca-windows.ccxml
     wp() { cygpath -m "$1"; }
 else

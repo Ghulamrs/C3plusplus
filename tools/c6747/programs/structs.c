@@ -9,7 +9,7 @@ struct point { short x; int y; char tag; };
 
 static int byY(const void *a, const void *b)
 {
-    const struct point *p = a, *q = b;
+    const struct point *p = (const struct point *)a, *q = (const struct point *)b;
     return p->y - q->y;
 }
 
