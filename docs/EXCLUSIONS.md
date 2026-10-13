@@ -84,10 +84,8 @@ A conforming C++ implementation is a compiler **and** a library; cxx1 is a
 language translator with four code generators, and every claim about C++11 in
 this tree is to be read with that in front of it.
 
-The one *language* refusal the library's absence causes: `auto` from a braced
-initialiser deduces an `initializer_list`, and a range-based `for` over a
-braced list would need one - `src/parser/ParserTemplate.cpp:1260`,
-`src/parser/ParserStmt.cpp:663`.
+`<initializer_list>` is there, so `auto x = {1, 2}` deduces one and a braced
+argument reaches an `initializer_list` parameter.
 
 ## Refused because of the standard version
 
@@ -101,13 +99,12 @@ goes in the same commit.
 | `1'000`, a digit separator | C++14 | `src/Lexer.cpp:210` |
 | `0b101`, a binary literal | C++14 | `src/Lexer.cpp:360` |
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:431` |
-| `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:1509` |
+| `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:1588` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:231` |
 | `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:4602`, `src/parser/ParserTopLevel.cpp:682` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:612` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:413` |
-| `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:715`, `src/parser/ParserInit.cpp:924`, `src/parser/ParserTopLevel.cpp:379` |
-| `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:153` |
+| `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:709`, `src/parser/ParserInit.cpp:926`, `src/parser/ParserTopLevel.cpp:379`, `src/parser/ParserExprNew.cpp:414` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:153` |
 | `namespace N::M { }` | C++17 | `src/parser/ParserTopLevel.cpp:78` |
 | an inline variable | C++17 | `src/parser/ParserTopLevel.cpp:230` |
 
@@ -160,19 +157,19 @@ templates followed. What is left:
 - **some of a function template's arguments written and the rest deduced
   from the call** - write all of them, or none. `src/parser/ParserTemplate.cpp:837`
 - **naming a function template without calling it**, and **instantiating one
-  that was only declared** - `src/parser/ParserTemplate.cpp:2188`,
-  `src/parser/ParserTemplate.cpp:2275`, `src/parser/ParserTemplate.cpp:2314`
+  that was only declared** - `src/parser/ParserTemplate.cpp:2199`,
+  `src/parser/ParserTemplate.cpp:2286`, `src/parser/ParserTemplate.cpp:2325`
 - **naming a member through a class template's argument list**,
   `Box<int>::m` in a declaration - the type is made, so a typedef for it
   reaches the member: `typedef Box<int> B; B::m`.
-  `src/parser/ParserTemplate.cpp:2310`, `src/parser/ParserType.cpp:38`
+  `src/parser/ParserTemplate.cpp:2321`, `src/parser/ParserType.cpp:38`
 - **a member function template named without being called** -
-  `src/parser/ParserTemplate.cpp:2387`; **a member class template** -
+  `src/parser/ParserTemplate.cpp:2398`; **a member class template** -
   `src/parser/ParserType.cpp:500`; **an out-of-line member template
   definition** - `src/parser/ParserType.cpp:550`; **an `explicit` constructor
   template** - `src/parser/ParserType.cpp:533`
 - **`sizeof` of a template parameter in a signature** - the linker name would
-  have to spell the expression. `src/parser/ParserExpr.cpp:2452`
+  have to spell the expression. `src/parser/ParserExpr.cpp:2533`
 - **two-phase name lookup is not done, and that is a decision rather than a
   gap.** A template is instantiated by replaying its tokens, so every name in
   its body is looked up at instantiation - MSVC's old model - and cxx1
@@ -215,14 +212,14 @@ templates followed. What is left:
   class around it, sharing storage. C++98. `src/parser/ParserType.cpp:785`
 - **a member function of a union** - `src/parser/ParserClass.cpp:3899`
 - **one name holding both a static and a non-static member**, where overload
-  resolution picks the non-static one - `src/parser/ParserExpr.cpp:1273`
+  resolution picks the non-static one - `src/parser/ParserExpr.cpp:1355`
 - **a covariant return that moves the result** - an override may return a
   pointer or reference to a class derived from the base's, and does when that
   base sits at offset 0; where it sits at an offset the result would need a
   thunk at every call through the base. `src/parser/ParserClass.cpp:102`
 - **a virtual function of a base after the first with no slot in the class's
   own vtable**, reached through the derived class -
-  `src/parser/ParserExpr.cpp:2299`
+  `src/parser/ParserExpr.cpp:2380`
 - **an attribute other than `[[noreturn]]` and `[[carries_dependency]]`** - the
   two C++11 has are read; `[[deprecated]]` is C++14, and an unknown attribute
   is refused where [dcl.attr.grammar]/5 says it is ignored, which is recorded as
@@ -243,31 +240,28 @@ templates followed. What is left:
 
 ## Initialisation, and braces
 
-- **list-initialisation calling a constructor**, `P p{1, 2}` - write the
-  arguments in parentheses. Two shapes *are* read: the empty pair, `{}`, which
-  is value-initialisation; and a braced list handed to a class that declares a
-  `std::initializer_list` constructor. `src/parser/ParserInit.cpp:932`,
-  `src/parser/ParserInit.cpp:46`
-- **`T{...}` with a value in the braces** as an expression - the empty pair is
-  read: `T{}` value-initialises, as `T()` does. `src/parser/ParserExpr.cpp:490`
-- **`T{}` on a class in an expression** - `T()` does the same and is read.
-  `src/parser/ParserExpr.cpp:496`
-- **`S{...}` as an expression** - `S(...)` calls a constructor, and a plain
-  struct is built by naming its members. `src/parser/ParserExpr.cpp:1442`
-- **`new T{...}`** with a value inside - `new T{}` value-initialises.
-  `src/parser/ParserExprNew.cpp:1133`
+- **a braced list nested inside the braces that call a constructor** -
+  `P p{1, {2, 3}}`; name the inner one's type, `T{...}`.
+  `src/parser/ParserExprNew.cpp:288`
+- **a braced call argument on a road that never asks the parameter's type** -
+  a call through a function pointer or a member pointer; name the type,
+  `T{...}`. `src/parser/ParserExprCall.cpp:488`
+- **`auto x{...}`** - C++11 makes it `std::initializer_list`, N3922 the
+  element's type, and compilers apply N3922 to C++11; `auto x = {...}` deduces
+  the list. `src/parser/ParserTemplate.cpp:1259`
+- **`auto &` or `auto *` from a braced list** - only `auto` and `const auto`
+  deduce `std::initializer_list` here. `src/parser/ParserTemplate.cpp:1268`
+- **a `std::initializer_list` with static storage made from braces** - its
+  backing array would need static storage too. `src/parser/ParserInit.cpp:1158`
 - **a braced default argument** - `src/parser/ParserClass.cpp:4616`,
   `src/parser/ParserTopLevel.cpp:735`
 - **a braced member initialiser with values**, and **one without `=`** -
   `int x = 5;` works, and `= {}` and `= {0}` zero a member.
   `src/parser/ParserType.cpp:1156`, `src/parser/ParserType.cpp:1166`
 - **a braced list for an array of a class with a destructor and no
-  constructor** - `src/parser/ParserInit.cpp:1189`,
+  constructor** - `src/parser/ParserInit.cpp:1196`,
   `src/parser/ParserStmt.cpp:181`
-- **a bit-field initialised at file scope** - `src/parser/ParserInit.cpp:681`
-- **`auto` from a braced initialiser** - it deduces an `initializer_list`.
-  `src/parser/ParserTemplate.cpp:1260`
-
+- **a bit-field initialised at file scope** - `src/parser/ParserInit.cpp:675`
 ## Objects that would run code before `main`
 
 Dynamic initialisation runs - a file-scope object with a constructor, a static
@@ -281,31 +275,33 @@ many, or has no object of its own:
   destroyed element by element. `src/parser/ParserClass.cpp:3734`
 - **a static-duration reference bound to a temporary** - [class.temporary]/5
   gives the temporary the program's lifetime, so it would need static storage
-  of its own; a named object binds. `src/parser/ParserInit.cpp:1589`
+  of its own; a named object binds. `src/parser/ParserInit.cpp:1596`
 
 ## Expressions
 
 - **`static_cast` of a reference to a different type** -
-  `src/parser/ParserExpr.cpp:287`
+  `src/parser/ParserExpr.cpp:313`
 - **a name qualified with `::` alone in an *expression*** - as a *type*,
   `::Lexer *p;` works; a name in an expression goes through the namespace and
   using-directive lookup, and restricting that for one name is a flag that has
   to be put down again before the call's arguments are parsed.
-  `src/parser/ParserExpr.cpp:960`
+  `src/parser/ParserExpr.cpp:1041`
 - **choosing an overload by the type it is assigned to** -
-  `src/parser/ParserExpr.cpp:552`
+  `src/parser/ParserExpr.cpp:624`
 - **a pointer to a *const* member function** - the constness of `this` is not
   part of a function type here. `src/parser/ParserType.cpp:2282`
 - **postfix `++` / `--` on a bit-field** - the prefix form works.
   `src/parser/ParserOperator.cpp:678`
-- **`va_arg` of an aggregate** - `src/parser/ParserExpr.cpp:747`
+- **`va_arg` of an aggregate** - `src/parser/ParserExpr.cpp:819`
 
 ## `new` and `delete`
 
 - **more than one value in a new-expression** without a constructor -
-  `src/parser/ParserExprNew.cpp:1159`
+  `src/parser/ParserExprNew.cpp:1415`
 - **`new T[n][m]`** - only the first dimension may be given.
-  `src/parser/ParserExprNew.cpp:1107`
+  `src/parser/ParserExprNew.cpp:1362`
+- **`new T[n]{...}`** with values inside - the empty pair value-initialises
+  the elements; `new T{...}` works. `src/parser/ParserExprNew.cpp:1388`
 
 Plain `new` and `delete`, a class's own `operator new`/`operator delete`, the
 placement forms and `<new>` all work; the entries that said otherwise were
@@ -319,11 +315,13 @@ with more than one base; five `??_R` records and a locator in front of the
 vftable on Microsoft - and `dynamic_cast` to a pointer, `dynamic_cast<void *>`
 and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 
-- **`dynamic_cast` to a reference** - it has no null to answer with, so a
-  failure throws `std::bad_cast`, which needs a class-typed throw on every
-  target. `src/parser/ParserExprNew.cpp:660`
-- **`dynamic_cast` naming a class with more than one base** - the type_info is
-  emitted; the cast's runtime walk over it is not. `src/parser/ParserExprNew.cpp:720`
+- **`dynamic_cast` to a reference on x86_64-windows** - a failure throws
+  `std::bad_cast`, a class this target neither throws nor catches yet; the
+  Itanium targets call `__cxa_bad_cast`. And **to an rvalue reference** on
+  every target. `src/parser/ParserExprNew.cpp:880`, `src/parser/ParserExprNew.cpp:877`
+- **`dynamic_cast` through a class with more than one base, on
+  x86_64-windows** - the Microsoft hierarchy is written one base deep; the
+  Itanium targets walk `__vmi_class_type_info`. `src/parser/ParserExprNew.cpp:977`
 - **catching a pointer by reference** - the runtime hands a handler the pointer
   itself, so catch it by value. `src/parser/ParserStmt.cpp:1410`
 - **throwing a pointer to a function** - it has no `type_info`; the message
@@ -394,11 +392,12 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 
 ## Lambdas
 
-- **naming a capture after a default one** - `[=]` and `[&]` on their own take
-  everything the body reads, `this` included. `src/parser/ParserExprLambda.cpp:198`
-- **a capture-less lambda converting to a function pointer** -
-  [expr.prim.lambda]/6's conversion function is not synthesised.
-  `src/parser/ParserOverload.cpp:1201`
+- **naming a capture after a default one** — `[=]` and `[&]` on their own take
+  everything the body reads, `this` included where the body names a member.
+  `src/parser/ParserExprLambda.cpp:198`
+- **a lambda that captures converting to a function pointer** -
+  [expr.prim.lambda]/6 gives the conversion to a captureless one only, which
+  works. `src/parser/ParserOverload.cpp:1201`
 
 ## `volatile`, which is read and dropped
 
@@ -418,7 +417,7 @@ refused (CLAUDE.md, "The volatile sweep"):
 
 Three, from `pending[]` in `src/parser/Parser.cpp`, each refused **by name** at
 the three doors a keyword can arrive at - a name, an expression, a declaration:
-`src/parser/Parser.cpp:101`, `src/parser/ParserExpr.cpp:679`,
+`src/parser/Parser.cpp:101`, `src/parser/ParserExpr.cpp:751`,
 `src/parser/ParserType.cpp:1925`; `tests/cases/refused.cpp` holds one.
 
     asm   export   thread_local
