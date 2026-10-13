@@ -11,6 +11,7 @@
 #   tools/verify-three windows
 #   tools/verify-three c6747        TI's own C6747 toolchains alone: tools/c6747-three
 #   tools/verify-three ride         RIDE's tests/test --require-tools on the Windows box
+#   tools/verify-three tms6747      the tms6747 box on the Windows machine: TI's lnk6x over every case
 #
 # Every run starts with the Mac step: text checks only - the exclusions document against the
 # source, the comment cap - which no box needs to answer and a run should not get past.
@@ -24,6 +25,16 @@ WHICH=${1:-all}
 KEY=${CXX1_LINUX_KEY:-$HOME/Documents/Claude/myMorningWalk.pem}
 LINUX=${CXX1_LINUX:-ec2-user@52.202.164.123}
 WINDOWS=${WINDOWS_BOX:-windows}
+# ASM6x's tests directory, for c6xdiff.py: $C6XDIFF's, beside $ASM6X's build, or the workspace's.
+C6XTESTS=""
+for c in "$(dirname "${C6XDIFF:-/nonexistent/x}")" "$(dirname "${ASM6X:-/nonexistent/x}")/../tests" \
+         "$ROOT/../../TI/ASM6x/tests"; do
+    [ -f "$c/c6xdiff.py" ] && [ -f "$c/elfdump.py" ] && { C6XTESTS=$c; break; }
+done
+# The RIDE tree on the Windows box: the ride leg runs its suite, and its bin\ holds the product's
+# asm6x.exe, which the tms6747 leg's ti-link.cmd assembles with (CXX1_TI_ASM6X names another).
+RT=${CXX1_RIDE_TREE:-'C:\Users\GRA\work\ride-verify'}
+TIASM=${CXX1_TI_ASM6X:-"$RT\\bin\\asm6x.exe"}
 TAR=$(mktemp -t cxx1src).tgz
 STATUS=0
 
@@ -93,6 +104,15 @@ if [ "$WHICH" = all ] || [ "$WHICH" = linux ]; then
         t=$(date +%s); rc=0
         echo "=== linux ($LINUX) ==="
         scp -q -i "$KEY" -o BatchMode=yes "$TAR" "$LINUX:/tmp/cxx1src.tgz" || rc=1
+        # tests/asm6x.sh compares objects with ASM6x's c6xdiff.py (and the elfdump.py it runs),
+        # which the box has no checkout of: they go to ~/asm6x-build/tests, where it looks.
+        if [ -n "$C6XTESTS" ]; then
+            ssh -i "$KEY" -o BatchMode=yes "$LINUX" 'mkdir -p ~/asm6x-build/tests' &&
+            scp -q -i "$KEY" -o BatchMode=yes "$C6XTESTS/c6xdiff.py" "$C6XTESTS/elfdump.py" \
+                "$LINUX:asm6x-build/tests/" || rc=1
+        else
+            echo "linux: no ASM6x tests/c6xdiff.py here - set C6XDIFF=<path>"; rc=1
+        fi
         ssh -i "$KEY" -o BatchMode=yes "$LINUX" '
             rm -rf ~/cxx1-verify && mkdir -p ~/cxx1-verify &&
             tar -C ~/cxx1-verify -xzf /tmp/cxx1src.tgz &&
@@ -131,6 +151,25 @@ if [ "$WHICH" = all ] || [ "$WHICH" = c6747 ]; then
     BG="$BG c6747:$!"
 fi
 
+# **The tms6747 target is a second box on the Windows machine**: a tree of its own in
+# C:\Users\GRA\work\verify-ti and a tarball of its own beside the windows leg's, its own
+# cxx1-msvc.exe, TI's lnk6x over every case - asm6x on what cxx1 wrote, the linker the judge.
+# `tools/verify-three tms6747` runs it alone.
+if [ "$WHICH" = all ] || [ "$WHICH" = windows ] || [ "$WHICH" = tms6747 ]; then
+    TIREMOTE='C:\Users\GRA\work\verify-ti'
+    (
+        t=$(date +%s); rc=0
+        scp -q -o BatchMode=yes "$TAR" "$WINDOWS:C:\\Users\\GRA\\work\\src-ti.tgz" || rc=1
+        printf '=== tms6747 (%s, %s) ===\n' "$WINDOWS" "$TIREMOTE"   # echo reads \c as "stop"
+        ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $TIREMOTE 2>nul & mkdir $TIREMOTE && tar -C $TIREMOTE -xzf C:\\Users\\GRA\\work\\src-ti.tgz" >/dev/null || rc=1
+        ssh -o BatchMode=yes "$WINDOWS" "set CPP11_AS=$TIASM&& call $TIREMOTE\\msvc\\build.cmd >nul && $TIREMOTE\\tools\\windows\\ti-link.cmd $TIREMOTE" > "$LEGS/ti.raw" 2>&1 || rc=1
+        grep -v "^$" "$LEGS/ti.raw" | tr -d '\r' | tail -8
+        echo "tms6747 leg: $(( $(date +%s) - t ))s, $([ $rc -eq 0 ] && echo passed || echo FAILED)"
+        exit $rc
+    ) > "$LEGS/tms6747.log" 2>&1 &
+    BG="$BG tms6747:$!"
+fi
+
 if [ "$WHICH" = all ] || [ "$WHICH" = windows ]; then
     echo "=== windows ($WINDOWS) ==="
     # **A directory of its own, and not a corner of somebody's scratch.** This
@@ -147,20 +186,6 @@ if [ "$WHICH" = all ] || [ "$WHICH" = windows ]; then
     # into a clean directory is what leaves a stale object linking perfectly,
     # so the directory goes first.
     ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $REMOTE 2>nul & mkdir $REMOTE && tar -C $REMOTE -xzf C:\\Users\\GRA\\work\\src.tgz" >/dev/null || STATUS=1
-    # **The tms6747 target is a second box on the same machine**: a tree of its
-    # own in C:\Users\GRA\work\verify-ti, its own cxx1-msvc.exe, TI's lnk6x over every case
-    # - asm6x on what cxx1 wrote, the linker as the judge of the objects.
-    TIREMOTE='C:\Users\GRA\work\verify-ti'
-    (
-        t=$(date +%s); rc=0
-        printf '=== tms6747 (%s, %s) ===\n' "$WINDOWS" "$TIREMOTE"   # echo reads \c as "stop"
-        ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $TIREMOTE 2>nul & mkdir $TIREMOTE && tar -C $TIREMOTE -xzf C:\\Users\\GRA\\work\\src.tgz" >/dev/null || rc=1
-        ssh -o BatchMode=yes "$WINDOWS" "call $TIREMOTE\\msvc\\build.cmd >nul && $TIREMOTE\\tools\\windows\\ti-link.cmd $TIREMOTE" > "$LEGS/ti.raw" 2>&1 || rc=1
-        grep -v "^$" "$LEGS/ti.raw" | tr -d '\r' | tail -8
-        echo "tms6747 leg: $(( $(date +%s) - t ))s, $([ $rc -eq 0 ] && echo passed || echo FAILED)"
-        exit $rc
-    ) > "$LEGS/tms6747.log" 2>&1 &
-    BG="$BG tms6747:$!"
     TW=$(date +%s)
     # **The project's masm and LINK go with the tree** (review D15): run-cases.cmd builds them and puts
     # every case through -masm=masm as well as the GNU spelling, into winout\masm.
@@ -409,12 +434,13 @@ fi
 # **RIDE's suite with --require-tools** (review of 2026-10-08, D14): a skip for a missing tool is
 # a failure. The tree is a RIDE checkout on the box with the product's tools in its bin\
 # (CXX1_RIDE_TREE, default C:\Users\GRA\work\ride-verify), as WS-G's gate set it up; none there fails.
+# The suite builds and stops in programs only where $CC1, $CXX1 and $SHC name the compilers, so
+# they name the tree's own bin\c90.exe, cpp11.exe and shalimar.exe - unnamed, 11 cases skip and fail.
 if [ "$WHICH" = all ] || [ "$WHICH" = ride ]; then
     echo "=== ride ($WINDOWS) ==="
-    RT=${CXX1_RIDE_TREE:-'C:\Users\GRA\work\ride-verify'}
     if ssh -o BatchMode=yes "$WINDOWS" "if exist $RT\\build.bat (exit 0) else (exit 1)" 2>/dev/null; then
         RLOG=$(mktemp)
-        ssh -o BatchMode=yes "$WINDOWS" "cd /d $RT && set RIDE_TEST_FLAGS=--require-tools&& set C6747_EHLIB=C:\\ti\\c6747-lib&& build.bat check" \
+        ssh -o BatchMode=yes "$WINDOWS" "cd /d $RT && set RIDE_TEST_FLAGS=--require-tools&& set C6747_EHLIB=C:\\ti\\c6747-lib&& set CC1=$RT\\bin\\c90.exe&& set CXX1=$RT\\bin\\cpp11.exe&& set SHC=$RT\\bin\\shalimar.exe&& build.bat check" \
             > "$RLOG" 2>&1 || STATUS=1
         tr -d '\r' < "$RLOG" | grep -E 'checks|FAIL|failed' | tail -6; rm -f "$RLOG"
     else
