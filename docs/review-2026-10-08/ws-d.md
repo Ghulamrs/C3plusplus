@@ -1,42 +1,71 @@
 # WS-D - top level, statements, lexer, preprocessor: handover
 
-Branch `review/d-toplevel`, from main `2955c0b`, 2026-10-08/09. Executor Fable 5.1, under
-`docs/REVIEW-PLAN-2026-10-08.md` section 4 "WS-D". Nothing was pushed or merged; the main session
-reads this note, re-runs the gates it wants, and writes the CLAUDE.md sections from it - drafts
-are at the end. Written on the budget the user set on 2026-10-09: the gate is trimmed as section
-"Gates" says, and WS-D does not edit `ParserOperator.cpp`.
+Branch `review/d-toplevel`, from main `2955c0b`, 2026-10-08/09, executor Fable 5.1; **rebased on
+main `869bae7`, finished and gated 2026-10-13** by the main session's side session (Opus 5.5), under
+`docs/REVIEW-PLAN-2026-10-08.md` section 4 "WS-D" and section 5.2 step 5. Nothing was pushed or
+merged. The first sitting's sections below are kept; where the second sitting changed what they
+say, "2026-10-13" says so. The CLAUDE.md drafts are at the end.
+
+## Second sitting, 2026-10-13: rebased, F27 built, the case label, the gate
+
+**Rebase on main `869bae7`** (49 commits: WS-A, C1, E1, F merged, the 1.6 reseal, the workspace
+reorg). One real conflict, `ParserType.cpp`'s in-class member declarator: F18's trailing return
+type and C1's `override`/`final` both read after the exception specification. Resolved in the
+grammar's order - `noexcept`, then `-> T`, then the virt-specifiers - which is
+[dcl.decl]/4's `parameters-and-qualifiers trailing-return-type` followed by
+[class.mem]'s `virt-specifier-seq`. `docs/EXCLUSIONS.md` conflicted in four commits; main's
+version was taken each time and the result re-cited once at the end (section "EXCLUSIONS.md").
+
+**F27a/b/c built for the first time, and compiled first time** - cl `/W4 /WX` on the Windows box
+and g++ `-Werror` on the Linux box, no edit. The three cases' hand-written `.expected` were then
+produced by VS clang (`clang++ -x c++ -std=c++11 -pedantic-errors`) and are byte-identical to what
+was written by hand; `range-for-no-begin-refused.cpp`'s comment said clang refuses at 16:16 and
+clang says 14:16 - corrected. **Two of main's `.error` cases were F27's own refusals**,
+`range-for-class-iterator-refused` and `range-for-temporary-refused` (rung 7.3's); both now
+compile, as clang does, and are deleted with the features, rule 8. `range-for-no-begin-refused`
+stays, with F27b's wording. The amended commit drops "WIP" (`06efd44`).
+
+**The scoped-enum `case` label** (`fae5bd6`). [stmt.switch]/2 makes a case label a converted
+constant expression of the condition's promoted type, and a scoped enumeration converts to and
+from nothing - so `Parser::caseLabel` now reads the label as an expression, refuses it where the
+condition or the label is a scoped enumeration and the two types differ, and only then folds it.
+clang's message, measured: "value of type 'int' is not implicitly convertible to 'Colour'", and
+the other way round "value of type 'Colour' is not implicitly convertible to 'int'", both at 7:10
+in the two cases `scoped-enum-case-int-refused` and `scoped-enum-case-in-int-switch-refused`.
+`enum-class.cpp`'s `case Colour::Red:` keeps compiling. It is not an exclusion - it refuses
+ill-formed C++11 - so `tools/exclusions` does not count it.
+
+**Two path fixes the 2026-10-13 workspace reorg left**, both tools-only: `run-cases.cmd` built
+the project's MASM and LINK from `<root>\..\MASM` while its own message (and the reorg) said
+`<root>\..\..\Windows\MASM`, so the MASM spelling silently did not run from a clean layout
+(`1c3625b`); and `tools/verify-three` tarred them from `$ROOT/..` after testing for them at
+`$ROOT/../../Windows` (`3cc9787`).
 
 ## Commits
 
 | commit | item | state |
 | --- | --- | --- |
-| `02e55d8` | F20 const or reference member in a mem-initialiser list | landed |
-| `77ddb81` | F09 namespace alias | landed at namespace scope; inside a block refused by name |
-| `f42cb9a` | F44 `__COUNTER__`; L19 a missing standard header refused by name | landed |
-| `189d1ff` | cases: F20's and F09's constructors out of line, so names.sh agrees | |
-| `71a049c` | F01 raw string literals | landed |
-| `722a9cd` | F18 trailing return types | landed; two shapes refused by name |
-| `b7fcd50`, `3f417bd` | F14 delegating constructors | landed; a class with a virtual base refused by name |
-| `5f5b5a6` | F27a class iterator, F27b free `begin`/`end`, F27c a temporary range | **WIP: written, never built** - see "F27" and "Recipe" |
-| this note | | |
+| `112d55c` | F20 const or reference member in a mem-initialiser list | landed |
+| `4ce07f4` | F09 namespace alias | landed at namespace scope; inside a block refused by name |
+| `bca501a` | F44 `__COUNTER__`; L19 a missing standard header refused by name | landed |
+| `984c123` | cases: F20's and F09's constructors out of line, so names.sh agrees | |
+| `22e950b` | F01 raw string literals | landed |
+| `3150d80` | F18 trailing return types | landed; two shapes refused by name |
+| `efb20c6`, `79abca4` | F14 delegating constructors | landed; a class with a virtual base refused by name |
+| `06efd44` | F27a class iterator, F27b free `begin`/`end`, F27c a temporary range | landed, built and gated 2026-10-13 |
+| `a1eb3a7` | the first sitting's note | |
+| `fae5bd6` | the scoped-enum `case` label; EXCLUSIONS re-cited after the rebase | landed |
+| `fa9083c`, `433948c`, `637520f` | clang's column; F27's two old refusal cases deleted; citations after the case-label edit | |
+| `1c3625b`, `3cc9787` | run-cases.cmd and verify-three: MASM and LINK where the reorg put them | tools |
+
+(The SHAs above are the rebased ones; the first sitting's `02e55d8` ... `5f5b5a6` are what
+`origin/review/d-toplevel` still holds - the rebased branch replaces it, so a push needs `--force-with-lease`.)
 
 **One deviation from the plan's ownership**, said first because the main session decides it:
 F18 carries one small hunk each in `ParserType.cpp` (WS-C1's) and `ParserTemplate.cpp`
 (WS-E1's) - the in-class member and the template pattern read the arrow too. Each is a call into
-a function defined in WS-D's files, named in `722a9cd`'s message.
-
-**The scoped-enum `case` label (the extra item) is not done here, and cannot be.** A scoped
-enumeration does not exist on this branch - `enum class` is still refused by name at
-`ParserType.cpp:1401` on `review/d-toplevel`, because F06 landed in WS-C1 after this branch
-forked. The over-acceptance is in main's code: `Parser::caseLabel` (main `ParserStmt.cpp:915`)
-folds the label with `constantExpression(...)` and narrows it to `switches_.back().governing`
-without asking the label's *type*; [stmt.switch]/2 wants a converted constant expression of the
-condition's promoted type, and a scoped enumeration promotes to nothing, so `case 1:` under a
-`switch (Colour c)` must be refused and `case Colour::Red:` taken. The mend is in `caseLabel`:
-read the expression with `expr()`, and where `governing->isScopedEnumeration()` refuse an operand
-whose `type()->unqualified()` is not `governing->unqualified()` (clang: "no viable conversion"),
-then fold it. Written after the rebase, where the type exists - a dozen lines and one `.error`
-case (`scoped-enum-case-int-refused.cpp`).
+a function defined in WS-D's files, named in `3150d80`'s message. After the rebase the
+`ParserType.cpp` hunk sits beside C1's virt-specifiers, in the order above.
 
 ## F20 - a const or reference member named in a mem-initialiser list (`02e55d8`)
 
@@ -101,7 +130,7 @@ constructors on x86_64-linux and a pre-existing Windows RTTI name),
 
 ## F27a, F27b, F27c - the range-based `for` over a class (one rewrite, see "Commits")
 
-**State: `5f5b5a6` is a WIP commit - written, not built, not gated.** The Windows box went down
+**State (2026-10-13): built and gated - see "Second sitting". What follows was the first sitting's account, and the measurements now agree with it.** It was, on 2026-10-09: `5f5b5a6` a WIP commit - written, not built, not gated. The Windows box went down
 at about 06:55 on 2026-10-09 and the user wound the workstream up at 07:20 with the weekly budget
 at 92%, before a single build of the F27 code had run. Everything below about F27 describes what
 the code is written to do, not what was measured; the first build may find a compile error or a
@@ -158,75 +187,55 @@ before the variable is built and the change is a round of its own.
 
 ## Golden
 
-Recorded and read for F20, F09, F44/L19 (0 of 1582 changed each, see their sections). **Not
-recorded or read for F01, F18, F14 or F27** - the box was in use for other workstreams for the
-first three and down for the fourth; the recipe below records it at `3f417bd` (before F27) and
-reads the diff. Expected for F27: 0 changed among existing cases - the pointer loop is rebuilt
-from the same nodes - and 9 added (three cases, three targets); anything else in an existing
-`range-for-*` case is a regression to read.
+**2026-10-13, at the tip, against main `869bae7`.** Recorded on the Windows box from main's own
+build (`tests/emit.sh --record`, `--o2 --record`) and read from the branch's:
 
-## Gates
+- -O0, all four targets: **0 of 1638 files changed, 36 added** - nine WS-D cases with recorded
+  output or a refusal that emits on every target it allows. Nothing that already compiled moved,
+  the pointer range-for loop included, which the F27 rewrite rebuilds from the same nodes.
+- -O2, tms6747: **0 of 411 changed, 9 added**.
 
-**None of the gate was run on the final tree.** The gates recorded in the earlier commits'
-messages (F20, F09, F44: run.sh and emit on the box, names agreeing) were run at those commits.
-At `5f5b5a6` only the Mac-side checks ran: `tools/exclusions --check docs/EXCLUSIONS.md` 0
-uncited, 0 stale; `make comments` (tools/comment-lines src) 0 groups over the cap.
+The first sitting's per-item goldens (F20, F09, F44: 0 of 1582 each) are superseded by this one.
 
-### Recipe to finish, when the box is back (all on `ssh windows`, cmd.exe unless said)
+## Gates (2026-10-13, at the tip; builds on the boxes, Mac only for the text checks)
 
-1. `cd C:\cxx1\rtsdiv\ws-d && git fetch origin review/d-toplevel && git checkout 3f417bd`
-   (the branch is pushed; the clone has `core.autocrlf=false`).
-2. Golden before F27: build (`msvc\build.cmd` or the workspace's usual `nmake`/`make`), then
-   under Git bash `tests/emit.sh --record`.
-3. `git checkout review/d-toplevel`, build. Fix compile errors in `ParserStmt.cpp` (functions
-   `classRangeEnds`, `initRangeLocal`, `rangeForStatement`; the declarations are in `Parser.h`
-   at the WIP's hunk). Things to look at first if it fails: `constructLocal`'s `Declared`
-   initialiser `Declared{ name, t, pos, 0, std::string() }` against the struct's field order;
-   `completeCall`'s argument order; `overloadedUnary` takes `ExprPtr &`.
-4. Produce the three `.expected` with VS clang:
-   `"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\Llvm\x64\bin\clang++" -x c++ -std=c++11 -pedantic-errors tests\cases\range-for-class-iterator.cpp -o t.exe && t.exe`,
-   the same for `range-for-free-begin` and `range-for-temporary`; overwrite the hand-written
-   `.expected` with the output (LF endings). For `range-for-no-begin-refused.error` the column
-   is clang's `16:16`, already in the case's comment.
-5. `tests/run.sh` at -O0 (Git bash, `cxx1-msvc.exe`); then -O2 if budget allows. Read every
-   failure of a `range-for-*` case first.
-6. `tests/emit.sh` and read the golden diff; classify every changed file in this note.
-7. `tools\windows\names-overload.cmd` (names.sh + overload.sh under Git bash with VS LLVM
-   first on PATH). A new case whose names differ gets a `.nonames` with the measured reason -
-   expect clang's C2-only inline constructors on x86_64-linux for `range-for-temporary`'s
-   `Bag` only if its constructors are inline; they are written out of line on purpose.
-8. `tools\windows\run-cases.cmd` at -O0 (GNU spelling); `tests/tms6747.sh` at -O0 both legs.
-9. `tools/seal check` on the Mac; the changed sealed files are the ones in "Sealed files".
-10. If all green: amend `5f5b5a6`'s message to drop "WIP" (keep the three items in one commit,
-    the reason is in "F27"); if the loop-variable defect is to be mended, it is a new item.
-11. Then the scoped-enum `case` label, after the rebase on main (see above).
+Windows box: `C:\Users\GRA\work` (it did not exist; made today - the box was cleaned on
+2026-10-13), laid out as the Mac is: `Compilers\ws-d` (the branch), `Compilers\main` (for the
+golden), `TI\{ASM6x,LNK6x,SIM6747,VM6747,RTS6x}` and `Windows\{MASM,LINK}`, each a `git archive`
+of the Mac's HEAD, every tool built there by cl. RTS6x's `rts6x.lib` was built by main's cpp11.
+The box ran the tree at `fae5bd6` + `fa9083c`; the commits after it change no source.
 
-Linux gates (run.sh -O0/-O2 under g++): skipped on the user's instruction. `run-cases.cmd` at
--O2 and `tests/tms6747.sh` at -O2: skipped, budget. The Windows box was unreachable (host down)
-from about 06:55 on 2026-10-09 and had not come back when the workstream was wound up at 07:20.
+| gate | result |
+| --- | --- |
+| Linux box (g++ 11 build, `~/work/Compilers/ws-d`) `run.sh` -O0 | 667 passed, 2 failed - the two old F27 refusal cases, deleted since |
+| Linux box `run.sh` -O2 (`CXX1="./cpp11.exe -O2"`) | 666 passed, 3 failed - the same two, and "a quoted pattern with -S", which quotes `"$CXX1"` and so cannot pass with a flag inside it: pre-existing on main, a harness quirk, not WS-D's |
+| Windows `run-cases.cmd`, GNU spelling, -O0 and -O2 | **402 printed / 0, 243 refusals / 0**, both levels (compared on the Mac, CR stripped, as verify-three does) |
+| Windows `run-cases.cmd`, MASM spelling (project's masm + LINK), -O0 and -O2 | **402 / 0, 243 / 0**, both levels |
+| `winlink-check.cmd` | member-pointer-models, overload-slots, this-return: ab and ba all match |
+| Windows `tests/run.sh` -O0 and -O2 under Git bash | 403 of 404 recorded outputs agree once CR is stripped; every failure is one of the 19 cases whose `.notarget` names x86_64-windows (run.sh takes the box for x86_64-linux) or the two deleted cases - run-cases.cmd is that box's real host suite |
+| `names.sh` (bash + VS clang 19) | **421 passed, 6 failed** - the six main has: compare-with-zero, pipelined-data-exit, pipelined-reduction, ternary-index-after-remake, and ifdef-comment and using-declaration-chain (no Darwin headers on this box). Every WS-D case agrees |
+| `overload.sh` | **33 agreed, 0 differed** |
+| `tests/tms6747.sh` -O0 and -O2, both legs (vm6747; asm6x + lnk6x + rts6x.lib on sim6747) | **411 passed, 0 failed** at each level, every pass also on sim6747 |
+| `tools/exclusions --check docs/EXCLUSIONS.md` | **0 uncited, 0 stale**; 126 sites, 117 messages |
+| `make comments` (`tools/comment-lines src`) | **0** groups over the cap |
+| `tools/seal check` | 9 sealed files differ, as expected: `Lexer.cpp`, `Lexer.h`, `Preprocessor.cpp`, `Preprocessor.h`, `Parser.h`, `ParserStmt.cpp`, `ParserTemplate.cpp`, `ParserTopLevel.cpp`, `ParserType.cpp` |
+
+Not run: the Linux box's tms6747 legs (one leg at a time there, and the Windows box ran both);
+TI simulator jobs (rule 4: WS-H and the final gate only).
 
 ## EXCLUSIONS.md
 
-The branch's document is **main's document** (0e64e73, which WS-C1 regenerated), relined to this
-branch's sources by matching each site's message (117 of 129 sites), with WS-D's rows applied:
-the raw-string, range-for (three), const-member, delegating-constructor, trailing-return and
-namespace-alias rows gone; the missing-header table, the namespace-alias-in-block, the
-`-> decltype` template, the `-> auto`, the delegating-constructor-with-a-virtual-base and the
-range-for-in-a-handler rows added. Six rows name WS-C1's *old* refusals, which exist on this
-branch and not on main (`= default`, `friend class`, `enum class`, `override`/`final`, `final`
-on a class, a `constexpr` constructor), and five of main's rows for C1's *new* refusals are not
-here (a deleted destructor, `= default` outside the class, a deleted virtual, a `constexpr`
-object, statements in a `constexpr` constructor). **At the rebase, take main's version of every
-one of those eleven rows**; the WS-D rows are the ones to keep. `tools/exclusions --check` reads
-0 uncited, 0 stale on the branch.
+Main's document taken whole at the rebase, then re-cited by message against the rebased source
+(57 citations moved), and WS-D's rows applied: the raw-string, delegating-constructor, const-member,
+three range-for, trailing-return and namespace-alias rows gone; the missing standard header, the
+namespace alias inside a block, the trailing return type that is itself deduced, the `decltype`
+trailing return of a function template, the delegating constructor of a class with a virtual base,
+and the range-based `for` with a destructor inside a Windows handler added. The count paragraph
+says 126 sites, 117 messages, at this branch. `--check` reads 0/0.
 
 ## Sealed files changed
 
-Not checked (`tools/seal check` is a Mac tool, but the seal's file list is in the tree - run it at
-the rebase). Expected to differ: `src/Lexer.cpp`, `src/Lexer.h`, `src/Preprocessor.cpp`,
-`src/Preprocessor.h`, `src/parser/Parser.h`, `src/parser/Parser.cpp`, `src/parser/ParserStmt.cpp`,
-`src/parser/ParserTopLevel.cpp`, `src/parser/ParserType.cpp`, `src/parser/ParserTemplate.cpp`,
-`src/parser/ParserConst.cpp` (every `src/` file this branch touches: `git diff --stat main...HEAD -- src`).
+The nine in the gate table. The source seal stays 1.6 until the release step reseals 1.7.
 
 ## Draft CLAUDE.md paragraphs
 
@@ -271,3 +280,21 @@ later `A::` to the end of the enclosing namespace, which is why it works at name
 is refused by name inside a block. And `#include <tuple>` says "the standard header <tuple> is
 not provided by this compiler yet" rather than "cannot find", for the 48 C++11 header names
 `include/` lacks - a refusal `tools/exclusions` can count.
+
+### A scoped enumeration's `case` label
+
+**[stmt.switch]/2 converts a case label to the condition's promoted type, and a scoped
+enumeration promotes and converts to nothing**, so `case 1:` under `switch (Colour c)` and
+`case Colour::Red:` under `switch (int n)` are both ill-formed. `caseLabel` folded the label
+first and narrowed it to the governing type without asking what type it was, which accepted
+both; it reads the label as an expression now and refuses a scoped enumeration on either side
+unless the two are one type, with clang's words. Found in WS-C1's code by WS-D's review, mended
+after the rebase gave this branch `enum class`.
+
+## Left open, said plainly
+
+- **The range-for loop variable of class type is copied bytewise** and never destroyed -
+  pre-existing since rung 7.3, found reading F27's code, not mended (its section above). Wants
+  `initRangeLocal`'s road for `d.name` inside the body's own cleanup bookkeeping; a round of its own.
+- **F27d**, a braced list as the range, is E2's (plan step 6).
+- The Linux `run.sh -O2` "quoted pattern" line is a harness quirk on main, not this branch's.
