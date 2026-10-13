@@ -12,6 +12,15 @@
 
 namespace std {
 
+template <class T> struct __cxx1_never { enum { value = 0 }; };
+
+// `std::function` names itself absent where it is used, rather than as an undeclared name.
+template <class Signature> class function {
+    static_assert(__cxx1_never<Signature>::value, "std::function is not supported yet - it is a "
+                  "partial specialization on a function type with type erasure; call the callable "
+                  "directly, or give the function a template parameter for it");
+};
+
 template <class T> struct less {
     typedef T first_argument_type; typedef T second_argument_type; typedef bool result_type;
     bool operator()(const T &a, const T &b) const { return a < b; }
