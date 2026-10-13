@@ -26,6 +26,7 @@
 #include <cstdlib>
 #include <initializer_list>
 #include <new>
+#include <utility>
 #ifdef _WIN32
 #include <cstdio>
 #else
@@ -95,6 +96,13 @@ public:
         } else {
             new (items_ + size_) T(v);
         }
+        size_++;
+    }
+    // [sequence.reqmts] emplace_back: the element is made in place from the arguments, forwarded.
+    template <class... A>
+    void emplace_back(A &&... a) {
+        if (size_ == cap_) grow(cap_ == 0 ? 4 : cap_ * 2);
+        new (items_ + size_) T(std::forward<A>(a)...);
         size_++;
     }
     void pop_back() { if (size_ != 0) { size_--; items_[size_].~T(); } }
