@@ -1645,6 +1645,25 @@ ExprPtr Parser::newExpression(std::size_t pos) {
     if (constructed) {
         buildBracedArguments(constructorKey(made->tag()), ctorArgs, pos);
         convertThroughConversionFunction(ctorArgs, made, true, pos);
+        // A class whose copy is trivial has no copy constructor to resolve: [class.copy]/12 makes
+        // `new (p) T(t)` a copy of the bytes, the store a declaration `T u(t);` already makes.
+        if (ctorArgs.size() == 1 && copyConstructorOf(made) == nullptr && moveConstructorOf(made) == nullptr &&
+            ctorArgs[0]->type()->unqualified() == made) {
+            ExprPtr base(Var::local(temp, slot));
+            base->setType(pointer);
+            ExprPtr target(new Unary('*', std::move(base)));
+            target->setType(made);
+            ExprPtr store(new Assign(std::move(target), std::move(ctorArgs[0])));
+            store->setType(made);
+            if (nothrow) store = guardAgainstNull(temp, slot, pointer, std::move(store));
+            ExprPtr made2(new Comma(std::move(keep), std::move(store)));
+            made2->setType(made);
+            ExprPtr answer(Var::local(temp, slot));
+            answer->setType(pointer);
+            ExprPtr whole(new Comma(std::move(made2), std::move(answer)));
+            whole->setType(pointer);
+            return whole;
+        }
         const Signature &ctor = resolveOverload(constructorKey(made->tag()),
                                                 ctorArgs, pos);
         // **[class.access]/1 applies to a constructor a new-expression

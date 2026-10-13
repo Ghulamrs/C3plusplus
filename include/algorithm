@@ -6,7 +6,7 @@
 // alike, which is the property that makes them worth having as templates rather
 // than as members.
 //
-// What is not here: `sort`, `find_if`, and the rest of the header. They are
+// What is not here: `stable_sort`, `find_if`, and the rest of the header. They are
 // absent because nothing calls them, and adding them untested would be adding
 // the appearance of a library rather than a library.
 #ifndef _CXX1_ALGORITHM
@@ -60,38 +60,101 @@ std::size_t count(In from, In to, const T &want) {
 }
 
 
-// **sort - [alg.sort], as an insertion sort.** The standard asks for O(n log n)
-// and this is quadratic: a complexity guarantee this library does not meet,
-// rather than a wrong answer, and it is written down here rather than implied.
-// It needs no scratch memory and moves through the iterator alone, so it works
-// for any iterator that can step both ways.
+// **sort - [alg.sort], an introsort** (L02, 2026-10-13): quicksort on a median-of-three pivot
+// down to runs of 16, heapsort for a range that has recursed 2 log2(n) deep without getting
+// there, then one insertion pass over the nearly sorted whole - O(n log n) in the worst case, as
+// [alg.sort] asks. It needs random-access iterators, which every container here has (pointers).
+// Not stable; `stable_sort` is not here. The helpers are plain templates called with every
+// argument deduced and qualified with std::, which is what this compiler's templates need.
+template <class It>
+void __sort_swap(It a, It b) {
+    auto held = *a;
+    *a = *b;
+    *b = held;
+}
+
+template <class It, class Less>
+void __sort_sift(It base, long at, long n, Less less) {
+    for (;;) {
+        long child = 2 * at + 1;
+        if (child >= n) return;
+        if (child + 1 < n && less(base[child], base[child + 1])) child++;
+        if (!less(base[at], base[child])) return;
+        std::__sort_swap(base + at, base + child);
+        at = child;
+    }
+}
+
+template <class It, class Less>
+void __sort_heap(It from, It to, Less less) {
+    const long n = (long)(to - from);
+    for (long at = n / 2 - 1; at >= 0; at--) std::__sort_sift(from, at, n, less);
+    for (long end = n - 1; end > 0; end--) {
+        std::__sort_swap(from, from + end);
+        std::__sort_sift(from, 0, end, less);
+    }
+}
+
+// The median of the first, middle and last goes to the front and is the pivot (Hoare's scheme
+// with the pivot at the low end, so both parts are non-empty and the recursion always shrinks).
+template <class It, class Less>
+void __sort_intro(It from, It to, long depth, Less less) {
+    while ((long)(to - from) > 16) {
+        if (depth == 0) { std::__sort_heap(from, to, less); return; }
+        depth--;
+        It mid = from + (long)(to - from) / 2;
+        It last = to - 1;
+        if (less(*mid, *from)) std::__sort_swap(mid, from);
+        if (less(*last, *mid)) {
+            std::__sort_swap(last, mid);
+            if (less(*mid, *from)) std::__sort_swap(mid, from);
+        }
+        std::__sort_swap(from, mid);
+        auto pivot = *from;
+        It i = from - 1;
+        It j = to;
+        for (;;) {
+            do { ++i; } while (less(*i, pivot));
+            do { --j; } while (less(pivot, *j));
+            if (i >= j) break;
+            std::__sort_swap(i, j);
+        }
+        It cut = j + 1;
+        if (cut - from < to - cut) { std::__sort_intro(from, cut, depth, less); from = cut; }
+        else { std::__sort_intro(cut, to, depth, less); to = cut; }
+    }
+}
+
 template <class It, class Less>
 void sort(It from, It to, Less less) {
-    for (It i = from; i != to; ++i)
+    long n = (long)(to - from);
+    if (n < 2) return;
+    long depth = 0;
+    for (long k = n; k > 1; k >>= 1) depth += 2;
+    std::__sort_intro(from, to, depth, less);
+    for (It i = from + 1; i != to; ++i)
         for (It j = i; j != from; ) {
-            It prev = j;
-            --prev;
+            It prev = j - 1;
             if (!less(*j, *prev)) break;
-            auto held = *prev;
-            *prev = *j;
-            *j = held;
+            std::__sort_swap(prev, j);
             j = prev;
         }
 }
 
-// The same, ordered by `<` - which is what the two-argument form means.
+// The two-argument form is the same with `<`; T comes from the element, deduced through `&*from`.
+template <class T>
+struct __sort_less {
+    bool operator()(const T &a, const T &b) const { return a < b; }
+};
+
+template <class It, class T>
+void __sort_by_less(It from, It to, T *) {
+    std::sort(from, to, std::__sort_less<T>());
+}
+
 template <class It>
 void sort(It from, It to) {
-    for (It i = from; i != to; ++i)
-        for (It j = i; j != from; ) {
-            It prev = j;
-            --prev;
-            if (!(*j < *prev)) break;
-            auto held = *prev;
-            *prev = *j;
-            *j = held;
-            j = prev;
-        }
+    if (from != to) std::__sort_by_less(from, to, &*from);
 }
 
 }  // namespace std

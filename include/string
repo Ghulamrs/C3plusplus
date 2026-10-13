@@ -404,4 +404,6 @@ inline wstring to_wstring(int v) { return to_wstring((long long)v); }
 // After the class, so <stdexcept> can hold a string; it defines what `at` calls.
 #include <stdexcept>
 
+#include <__string_conversions>
+
 #endif

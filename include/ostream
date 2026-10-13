@@ -57,10 +57,12 @@ public:
     int prec_;
     int fmt_;
     int width_;
+    // setfill's character; the aggregate initialisers leave it 0, which pads with a space.
+    char fill_;
 
     // setw right-justifies within the field and forgets it: the width is
-    // consumed by one insertion, which is [ostream.formatted]/3. The fill is a
-    // space, taken as such so the aggregate need not spell it.
+    // consumed by one insertion, which is [ostream.formatted]/3. The fill is
+    // setfill's, and a space while the aggregate has left it 0.
     ostream &rawput(const char *s) {
         if (buf_ != 0) { *buf_ += s; return *this; }
         FILE *f = target();
@@ -69,7 +71,7 @@ public:
     }
     ostream &pad(const char *s) {
         int n = 0; while (s[n]) n++;
-        for (int i = 0; i < width_ - n; i++) put(' ');
+        for (int i = 0; i < width_ - n; i++) put(fill_ ? fill_ : ' ');
         width_ = 0;
         return rawput(s);
     }
@@ -91,6 +93,8 @@ public:
     // lets `os.precision(os.precision(4))` and a save-and-restore work.
     streamsize precision() const { return prec_; }
     streamsize precision(streamsize n) { streamsize was = prec_; prec_ = (int)n; return was; }
+    char fill() const { return fill_ ? fill_ : ' '; }
+    char fill(char c) { char was = fill(); fill_ = c; return was; }
     streamsize width() const { return width_; }
     streamsize width(streamsize n) { streamsize was = width_; width_ = (int)n; return was; }
     std::ios_base::fmtflags flags() const { return fmt_ | ((base_ == 0 ? 10 : base_) << 8); }

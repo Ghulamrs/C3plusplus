@@ -69,17 +69,18 @@ the reason `pending[]` once had eight keywords in it that were implemented.
 
 ## The library, which is a subset on purpose
 
-`include/` holds 31 C++ headers and `lib/` 19 C ones; `README.md` lists them
-and says what each is honest about. What is **not** there: `<memory>`,
-`<functional>`, `<tuple>`, `<array>`, `<unordered_map>`, `<unordered_set>`,
+`include/` holds 35 C++ headers and `lib/` 19 C ones; `README.md` lists them
+and says what each is honest about. What is **not** there: `std::function`, `std::bind` and `std::ref` from `<functional>`
+(its function objects are there), `unique_ptr<T[]>`, `weak_ptr` and `make_shared` from
+`<memory>` (`unique_ptr<T>` and `shared_ptr<T>` are there),
+`<tuple>`, `<unordered_map>`, `<unordered_set>`,
 `<list>`, `<deque>`, `<forward_list>`, `<thread>`, `<atomic>`, `<mutex>`,
 `<chrono>`, `<regex>`, `<random>`, `<bitset>`, `<complex>`, `<iterator>`,
 `<locale>`, `<ratio>`, `<system_error>`, `<typeindex>`, `<cinttypes>`,
-`<cstdarg>` (`<stdarg.h>` works), `<cwchar>`, `<cuchar>`, and the rest of the
+`<cwchar>`, `<cuchar>`, and the rest of the
 C++11 library. Inside the headers that exist, whatever a program reaches for
-that was not written: `map` and `set` are sorted vectors, `sort` is quadratic,
-`vector` drops a slot without destroying it, `at()` does not throw,
-`setfill` is accepted and ignored, there is no `emplace_back` and no `stoi`.
+that was not written: `map` and `set` are sorted vectors (O(n) insertion, and an
+insertion moves every element), and `stable_sort` is not in `<algorithm>`.
 A conforming C++ implementation is a compiler **and** a library; cxx1 is a
 language translator with four code generators, and every claim about C++11 in
 this tree is to be read with that in front of it.
@@ -101,7 +102,7 @@ goes in the same commit.
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:431` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:1588` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:231` |
-| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:4650`, `src/parser/ParserTopLevel.cpp:683` |
+| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:4655`, `src/parser/ParserTopLevel.cpp:683` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:613` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:413` |
 | `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:709`, `src/parser/ParserInit.cpp:926`, `src/parser/ParserTopLevel.cpp:380`, `src/parser/ParserExprNew.cpp:414` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:196` |
@@ -209,7 +210,7 @@ templates followed. What is left:
 - **befriending one member function of another class** - `src/parser/ParserType.cpp:709`
 - **an anonymous union** - its members would have to become members of the
   class around it, sharing storage. C++98. `src/parser/ParserType.cpp:788`
-- **a member function of a union** - `src/parser/ParserClass.cpp:3936`
+- **a member function of a union** - `src/parser/ParserClass.cpp:3941`
 - **one name holding both a static and a non-static member**, where overload
   resolution picks the non-static one - `src/parser/ParserExpr.cpp:1355`
 - **a covariant return that moves the result** - an override may return a
@@ -251,7 +252,7 @@ templates followed. What is left:
   deduce `std::initializer_list` here. `src/parser/ParserTemplate.cpp:1268`
 - **a `std::initializer_list` with static storage made from braces** - its
   backing array would need static storage too. `src/parser/ParserInit.cpp:1158`
-- **a braced default argument** - `src/parser/ParserClass.cpp:4664`,
+- **a braced default argument** - `src/parser/ParserClass.cpp:4669`,
   `src/parser/ParserTopLevel.cpp:736`
 - **a braced member initialiser with values on a class, an array or a
   reference** - a scalar member takes `{v}` and `= {v}`, and `= {}` and `= {0}`
@@ -270,7 +271,7 @@ many, or has no object of its own:
 - **a static data member that is an array of a class with a constructor** -
   each element would need its constructor before main and its destructor at
   exit; a file-scope array and a static local of the same shape are built and
-  destroyed element by element. `src/parser/ParserClass.cpp:3771`
+  destroyed element by element. `src/parser/ParserClass.cpp:3776`
 - **a static-duration reference bound to a temporary** - [class.temporary]/5
   gives the temporary the program's lifetime, so it would need static storage
   of its own; a named object binds. `src/parser/ParserInit.cpp:1596`

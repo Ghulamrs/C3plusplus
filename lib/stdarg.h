@@ -1,6 +1,8 @@
 #ifndef _STDARG_H
 #define _STDARG_H
 
+#include <stddef.h>  // size_t, for vsnprintf
+
 // Everything here is the C library, so it is named the way C names it.
 // Without this the compiler would give every declaration below a C++
 // linkage name and ask the linker for a symbol libc has never had.
@@ -42,6 +44,7 @@ extern "C" {
 typedef char *va_list;
 #define va_start(ap, last) __builtin_va_start(&(ap))
 #define va_arg(ap, type)   __builtin_va_arg(&(ap), type)
+#define va_copy(d, s)      ((d) = (s))
 
 #else
 
@@ -57,6 +60,7 @@ typedef struct __va_list_tag {
 typedef __va_list_tag va_list[1];
 #define va_start(ap, last) __builtin_va_start(ap)
 #define va_arg(ap, type)   __builtin_va_arg(ap, type)
+#define va_copy(d, s)      ((d)[0] = (s)[0])
 
 #endif
 
@@ -67,12 +71,13 @@ typedef __va_list_tag va_list[1];
  * end. */
 #define va_end(ap)         ((void)0)
 
-/* The three <stdio.h> functions that take a va_list. They live here and not
+/* The four <stdio.h> functions that take a va_list, vsnprintf being C99's. They live here and not
  * there because that is where va_list is: a file that never asked for stdarg.h
  * has no use for them and should not have the name in scope. */
 int vprintf(const char *, va_list);
 int vfprintf(void *, const char *, va_list);
 int vsprintf(char *, const char *, va_list);
+int vsnprintf(char *, size_t, const char *, va_list);
 
 
 }  // extern "C"
