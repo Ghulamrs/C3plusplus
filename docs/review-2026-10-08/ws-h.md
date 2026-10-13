@@ -28,3 +28,26 @@ Provenance, the seven left: handler-exit-end-catch, local-in-handler, throw-out-
 - **Still running on the Windows box when this was written:** `run-cases.cmd` at -O0 then -O2 in `C:\cxx1\rtsdiv\ws-h\cpp` (started from the Mac; its numbers were not collected). 
 - Not done: tms6747.sh both legs, RTS6x make check, RIDE `tests/test` (H's gate rows), expected-from-clang/preprocess.sh wired into verify-three.
 - Sealed sources changed: **ASM6x src** (compact.cpp). C++Optimize: no src/ change (tests/tools/docs). LNK6x, RTS6x, SIM6747, VM6747: no sealed file changed.
+
+## Resumed and finished, 2026-10-13
+
+Rebased on main with WS-D, E2, C2 and L merged. Added here: **`-E`** (the held-back
+`ws-h-driver-E.patch`, now that WS-F has merged - `tests/preprocess.sh` 21 agree, 2 known, 0
+differ); **`tests/run.sh`'s quoted-pattern check** through `cxx1()`, so `CXX1="./cpp11.exe -O2"`
+passes it (it was the one -O2 failure on every Linux gate); and **box paths after the 2026-10-12
+reorganisation**: TI's 8.2.2 `rts6740_elf_eh.lib` is `C:\ti\c6747-lib-822` beside 7.4.4's
+`C:\ti\c6747-lib` (both placed on the box from LNK6x's `tests/ref`), vm6747 is under
+`Developer\Claude\RIDE-4.7\bin`, and the RIDE leg's tree is `C:\Users\GRA\work\ride-verify`.
+`tools/c6747/programs/structs.c` casts its qsort arguments: cpp11 refuses `void *` to a pointer
+without one since 314eda4, as C++ does.
+
+**The scheduled TI-simulator jobs, one at a time on the Windows box:**
+
+| job | result |
+| --- | --- |
+| 1 `release-check` on main 729efe9 | PASS in 65 s - all ten samples on TI's simulator as `.expected`, ASM6x and TI's assembler both build them |
+| 2 RTS6x `referee --record` | 840 agree, 1 differ, 0 did not run, of 841 in 2518 s - the one is c90's `io_three_agree`, the host path `/dev/null` (three such on 10-08); `RTS6x/docs/REFEREE-2026-10-13.md` |
+| 3 `c6747-levels` | 72 of 72 as expected; cpp11 -O2 / CCS 7.4 -O2: fib .76, hash 1.01, isort 1.12, matmul .99, sieve 1.20, virt 1.11; LNK6x's images cycle-identical to 7.4.4's |
+| 4 `c6747-three tools/c6747/programs` | 4 of 4 on all three boxes, Windows and Linux simulators cycle-identical; cpp11 / cl6x -O2: arith 1.04, floats .70, hello .99, structs .78 |
+
+Job 5 is `release-check` again inside the final gate.
