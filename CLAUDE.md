@@ -13161,8 +13161,11 @@ linked, 0 failed. The RTS6x referee's one difference of 841, c90's
 `io_three_agree`, was the host: CCS 5.5's Windows host takes `/dev/null` as a
 path under the image's folder, and the referee made `tmp` there but not `dev` -
 with it, TI's run returns 0 as sim6747's does (RTS6x `fix/io-three-agree`). The
-one RTS6x suite failure, `exception-table-large`, was the suite's 10 s CPU limit
-under the gate's load; alone it compiles in 0.9 s and passed 121 runs of 121.
+one RTS6x suite failure, `exception-table-large`, was the suite's own
+`CPP11_C6XLIVECHECK=1`: the liveness self-check is quadratic, and on this case
+it takes the -O2 compile from 0.84 s to 30.8 s, past `ulimit -t 10` - first
+taken for load, which runs without the variable did not reproduce; the suite
+leaves the check off for that case now (`tests/tms6747-nolivecheck.txt`).
 **None of the four touched `src/`, `include/` or `lib/`**, so the seal written at
 the version bump stands: `tools/seal check` reads 160 files, 0 differ, on the
 merged tree.
