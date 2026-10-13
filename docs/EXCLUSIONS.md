@@ -395,9 +395,6 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 - **naming a capture after a default one** — `[=]` and `[&]` on their own take
   everything the body reads, `this` included where the body names a member.
   `src/parser/ParserExprLambda.cpp:198`
-- **a lambda that captures converting to a function pointer** -
-  [expr.prim.lambda]/6 gives the conversion to a captureless one only, which
-  works. `src/parser/ParserOverload.cpp:1201`
 
 ## `volatile`, which is read and dropped
 
