@@ -6,17 +6,16 @@ rem  against rts6740_elf_eh.lib into <case>.out. The linker is the judge: it
 rem  takes every object asm6x wrote, or names the one it does not.
 rem    ti-link.cmd <tree root>
 rem  CXX1_TI_FLAGS, if set, goes on every compile - -O1 or -O2 links the optimizer's code.
-rem  asm6x.exe is ASM6x's own cl build (tests/windows.sh leaves it at
-rem  C:\asm6x-tests\build) or the one in RIDE's bin; the TI tools are CCS 7.4's.
+rem  asm6x.exe is %CPP11_AS% if set (verify-three names the RIDE tree's bin\asm6x.exe), else
+rem  ASM6x's own cl build at C:\asm6x-tests\build; the TI tools are CCS 7.4's.
 setlocal enabledelayedexpansion
 if "%~1"==":shard" goto :shard
 if "%~1"=="" (echo ti-link.cmd: needs the tree root & exit /b 2)
 set ROOT=%~1
 set CPP11_TI=C:\ti\ccsv7\tools\compiler\ti-cgt-c6000_8.2.2
 set CPP11_TILIB=C:\ti\c6747-lib-822
-set CPP11_AS=C:\asm6x-tests\build\asm6x.exe
-if not exist %CPP11_AS% set CPP11_AS=C:\Users\GRA\source\RStudio\bin\asm6x.exe
-if not exist %CPP11_AS% (echo ti-link.cmd: no asm6x.exe & exit /b 1)
+if "%CPP11_AS%"=="" set CPP11_AS=C:\asm6x-tests\build\asm6x.exe
+if not exist "%CPP11_AS%" (echo ti-link.cmd: no asm6x.exe at %CPP11_AS% - name it with CPP11_AS & exit /b 1)
 if not exist %CPP11_TI%\bin\lnk6x.exe (echo ti-link.cmd: no lnk6x under %CPP11_TI% & exit /b 1)
 if not exist %CPP11_TILIB%\rts6740_elf_eh.lib (echo ti-link.cmd: no rts6740_elf_eh.lib - see VM6747/tests/ti.sh & exit /b 1)
 if not exist %ROOT%\cxx1-msvc.exe (echo ti-link.cmd: no cxx1-msvc.exe - run-cases.cmd builds it & exit /b 1)
@@ -47,7 +46,10 @@ exit /b 0
 
 :one
 if exist %ROOT%\tests\cases\%1.notarget findstr /C:"tms6747" %ROOT%\tests\cases\%1.notarget >nul 2>&1 && (echo =SKIPPED %1& exit /b 0)
-%ROOT%\cxx1-msvc.exe -arch tms6747 -nologo %CXX1_TI_FLAGS% %ROOT%\tests\cases\%1.cpp -o %ROOT%\winout\ti\%1.out > %ROOT%\winout\ti\%1.log 2>&1
+rem  A case's second translation unit, <case>.part.cpp, goes into its program, as run-cases.cmd does.
+set PART=
+if exist %ROOT%\tests\cases\%1.part.cpp set PART=%ROOT%\tests\cases\%1.part.cpp
+%ROOT%\cxx1-msvc.exe -arch tms6747 -nologo %CXX1_TI_FLAGS% %ROOT%\tests\cases\%1.cpp %PART% -o %ROOT%\winout\ti\%1.out > %ROOT%\winout\ti\%1.log 2>&1
 if errorlevel 1 (echo =FAILED %1& echo TI-FAILED %1& type %ROOT%\winout\ti\%1.log | findstr /v "^$"& exit /b 0)
 if exist %ROOT%\winout\ti\%1.out (echo =LINKED %1) else (echo =FAILED %1& echo TI-NO-OUT %1)
 exit /b 0
