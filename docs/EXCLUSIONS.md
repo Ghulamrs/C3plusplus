@@ -69,9 +69,10 @@ the reason `pending[]` once had eight keywords in it that were implemented.
 
 ## The library, which is a subset on purpose
 
-`include/` holds 34 C++ headers and `lib/` 19 C ones; `README.md` lists them
-and says what each is honest about. What is **not** there: `<memory>`, `std::function`, `std::bind` and `std::ref` from
-`<functional>` (its function objects are there),
+`include/` holds 35 C++ headers and `lib/` 19 C ones; `README.md` lists them
+and says what each is honest about. What is **not** there: `std::function`, `std::bind` and `std::ref` from `<functional>`
+(its function objects are there), `unique_ptr<T[]>`, `weak_ptr` and `make_shared` from
+`<memory>` (`unique_ptr<T>` and `shared_ptr<T>` are there),
 `<tuple>`, `<unordered_map>`, `<unordered_set>`,
 `<list>`, `<deque>`, `<forward_list>`, `<thread>`, `<atomic>`, `<mutex>`,
 `<chrono>`, `<regex>`, `<random>`, `<bitset>`, `<complex>`, `<iterator>`,
