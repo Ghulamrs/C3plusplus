@@ -1003,8 +1003,19 @@ StmtPtr Parser::caseLabel() {
         if (switches_.back().deflt)
             src_.fail(pos, "a switch has only one 'default'");
     } else {
-        value = narrowTo(constantExpression("a case value"),
-                         switches_.back().governing);
+        // [stmt.switch]/2: a converted constant expression, and a scoped enumeration converts to and from nothing.
+        const Type *governing = switches_.back().governing;
+        const std::size_t at = peek().pos;
+        ExprPtr e = decay(conditional());
+        const Type *et = e->type()->unqualified();
+        if ((governing->isScopedEnumeration() || et->isScopedEnumeration()) &&
+            et != governing->unqualified())
+            src_.fail(at, "value of type '" + et->describe() + "' is not implicitly "
+                          "convertible to '" + governing->describe() + "'");
+        long long folded;
+        if (!fold(*e, &folded, at))
+            src_.fail(at, "expected a case value, and this is not an integer constant expression");
+        value = narrowTo(folded, governing);
         for (const Case *c : switches_.back().cases)
             if (c->value() == value)
                 src_.fail(pos, "duplicate case value " + std::to_string(value));
