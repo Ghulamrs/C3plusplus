@@ -32,13 +32,24 @@ sized to what has been asked of it rather than to the standard. The headline
 goes back to "C++11" when every feature in the review's Rec 1 has landed and
 the probe grid says so (`tools/feature-sweep`), and not before.
 `docs/EXCLUSIONS.md` is the list — **the number of refusal sites is the one
-`tools/exclusions --count` prints**, 131 on 2026-10-08, derived from the source
-rather than written by hand; `tools/exclusions --check docs/EXCLUSIONS.md`
+`tools/exclusions --count` prints**, 131 on 2026-10-08 and 126 on 2026-10-13,
+derived from the source rather than written by hand; `tools/exclusions --check docs/EXCLUSIONS.md`
 reports every refusal the document does not cite and every citation that has
 gone, and `make test` fails on either. It read "101 refusal sites" here while
 the tool said 131 and the document 130, which is the tree's own rule 5 — *a
 claim with no oracle is not allowed to be believed* — failing on the first
 paragraph of this file; the number is the tool's now, in one place.
+
+**Re-measured at the release step of 2026-10-13 (1.7), and the headline stays
+"C++03 with C++11 extensions".** The plan's seven - `enum class`,
+`override`/`final`, `= default`/`= delete`, delegating constructors, alias
+declarations, forwarding references, list-initialisation (F06, F12, F13, F14,
+F07a, F23, F24) - all landed, and `tools/feature-sweep` reads **71 compile, 23
+refused by name, 0 naming nothing, of 94**. The plan lets the headline go back
+on that; it is held because the review's own Rec 1 named inheriting
+constructors, which are refused by name, and because 19 C++11 language rows of
+the grid and most of the library still are. "The headline, re-measured" near
+the end of this file has the evidence, row by row.
 
 `-std=c++14 -Wall -Wextra -Werror -pedantic` in the `Makefile`. A Mac cannot
 enforce C++14: Apple's libc++ hands you `std::string_view` in C++14 mode, so a
@@ -81,6 +92,10 @@ existed; what was missing was the list.
    "C++11" and what is actually here — then `CONFORMANCE.md` for what compiles
    and should not, the newest `HANDOVER-*.md` for where a round stopped, and
    `DESIGN-REVIEW-2026-09-02.md` for what to change next and what not to.
+   For the round of 2026-10-08 to 2026-10-13: `REVIEW-PLAN-2026-10-08.md`
+   (every finding of the critical review and what was done with it) and the
+   workstream handovers beside it in `docs/review-2026-10-08/`, which are what
+   "The review of 2026-10-08, and what landed" in this file is written from.
 
 **What this file is *for*, once that reading is done**, is the measurement
 behind a line of code: why an ABI answer is what it is, what a bug looked like
@@ -5575,7 +5590,7 @@ Found 2026-08-30 and each checked against clang, which accepts all three.
 | written | what comes back |
 | --- | --- |
 | `P a(1), b(2);` | `expected ';'` — **fixed 2026-09-04**, and it was never about the arguments: see below |
-| `return P(1);` | `'P(...)' makes a temporary of type 'struct P'` — a class temporary written as a functional cast |
+| `return P(1);` | `'P(...)' makes a temporary of type 'struct P'` — a class temporary written as a functional cast - **fixed**: see "Class temporaries: one gap, three symptoms" |
 | `int f(int) { … }` | `a parameter of a definition needs a name` - **fixed 2026-09-04** |
 
 **The third had a sharper edge than it looks, and it is mended.** The postfix
@@ -5612,6 +5627,20 @@ initialiser, was refused with "an initialiser list needs at least one value" - a
 rule about lists answering a question about `{}` meaning `T()`. It was the first
 thing a reader tried after the const refusal above, so the two together were a
 wall. See "An empty pair of braces is value-initialisation".
+
+**This bucket has a counter now, and on 2026-10-13 it reads 0.**
+`tools/feature-sweep` is the review of 2026-10-08's grid kept as a program -
+94 probes, each valid C++11 by `clang++ -std=c++11 -pedantic-errors` or marked
+as a form the standard refuses - sorted into the three bins this section
+describes: compiles, refused by name, and refused by a message naming nothing.
+WS-A's first run, on 2026-10-08, put six in the third bin (a universal
+character name, a forwarding reference, a braced call argument,
+`std::nullptr_t`, a default template argument on a function template, and
+`std::stoi`); the round implemented five of them, and the release sweep's
+last two unnamed refusals - a UCN in an identifier, and a function type as a
+template argument, which the grid met later - were named in `ba9f459`. A refusal in
+the third bin is what this section was written about, and the release step
+gates on its count rather than on a reader stumbling over one.
 
 ## What is in `tools/`, and what was inherited and is dead
 
@@ -12831,3 +12860,302 @@ the entry line is now the first `{` outside parentheses after the function's pos
 (`Walker::openingBrace`); other targets keep theirs, so their DWARF is unchanged. Measured with
 m10.py step on stepped.c (RIDE's session program): cl 11, 2, 3, 4 and ours 11, 2, 3, 4. RIDE's F6
 now steps once more from such a stop, to the first line, for cl's programs and ours alike.
+
+## The review of 2026-10-08, and what landed, 2026-10-08 to 2026-10-13
+
+**A critical review (`CppOptimize-critical-review_1.md`) found the headline
+false and the gates self-referential**, and `docs/REVIEW-PLAN-2026-10-08.md`
+answered it item by item - 160 items, eleven workstreams, each on a branch of
+its own with a handover in `docs/review-2026-10-08/`. The sections below are the
+compiler's half of that round, one per subject, written from those handovers;
+the numbers in each are the handover's own, on the box it names. **Two
+releases carry it**: 1.6, resealed on 2026-10-12, holds WS-A, C1, E1 and F;
+1.7 holds WS-D, E2, C2, L, H and the release sweep, merged on 2026-10-13 in
+the plan's order (`9f16a0a`, `c2b7c80`, `72540e6`, `729efe9`, `6e59a80`,
+`c349ad4`). RIDE's half (WS-B, WS-G) is in RIDE-4.7.
+
+**Every executor met the same three walls, and they are worth knowing before
+the next round.** The Windows box was down for the morning of 2026-10-09 and
+the weekly budget ran near its end, so several branches stopped as WIP and were
+resumed on 2026-10-13; the Linux box was withdrawn mid-round, so g++ was asked
+late; and Visual Studio's clang on the box has no C++11 library at all
+(Microsoft's STL refuses `-std=c++11`) and parses templates late by default -
+a case that includes a header is validated by the Mac's clang against libc++,
+and a template-lookup probe on the box passes `-fno-delayed-template-parsing`.
+Each handover says which box answered which question.
+
+### The headline, the exclusions gate, and the version lines (WS-A, in 1.6)
+
+**The banner, `README.md`, `README.1ST` section 3, `docs/EXCLUSIONS.md`'s
+opening and this file's first section say "C++03 with C++11 extensions"**, and
+each says how the headline gets back: `tools/feature-sweep` and the plan's
+release step. `docs/EXCLUSIONS.md` was regenerated from the source (131 sites,
+0 uncited, 0 stale, where it had read 116 and 112), and **`make test` fails
+when `tools/exclusions --check` does not read 0/0** - proved by appending a
+commented `fail(..., "a gate probe is not supported yet")` to a source file and
+watching `make test` exit 2 naming it. `tools/version-lines` writes the README
+lines that name the release from `src/Version.h`; `tools/seal write` runs it
+first and `tools/seal check` fails on a stale one - README.1ST had said 1.4
+beside a 1.6 seal for three releases. `run.sh` prints its recorded outputs
+apart from its recorded refusals, since the second number proves nothing about
+what compiles. The refusals kept by design - user-defined literals,
+`thread_local`, a non-type pack, template template parameters, two-phase lookup,
+ref-qualifiers, `alignas` on a local past the stack's alignment - each have a
+design note in `ws-a.md`.
+
+### `override` and `final`, checks and not declarations (WS-C1, F12, in 1.6)
+
+**[class.virtual]/4 and /5 make both words checks on a slot the search already
+finds.** `override` refuses a member whose slot search found no base virtual;
+`final` on a member is recorded on its `VSlot` and refuses the next override,
+and on a class head is recorded on the `Type` and refused where a base clause
+names it. Both stay contextual - `int final = 3;` is a name. **The first commit
+did not build with g++**: a struct with member initialisers used as a default
+argument of a member function of its enclosing class is refused by g++ 11 and
+taken by MSVC and clang, so two boxes were green and the third was not.
+
+### `= default` and `= delete`, and the members [class.copy] deletes (WS-C1, F13, in 1.6)
+
+**A special member written `= default` inside its class is the one the compiler
+would have written**, so nothing is declared at the `= default`:
+`declareImplicitSpecials` writes it as it would have, trivial where trivial.
+**`= delete` is a mark on the signature**: overload resolution ranks a deleted
+function like any other and refuses it only where it wins, so `f(double) =
+delete` takes a `2.5` away from `f(int)`; a by-value copy and `&f` are refused
+where they are made (`&f` of a deleted `f` was a link error). [class.copy]/7,
+/11 and /18 declare the implicit copies *deleted* rather than leaving them
+undeclared - undeclared is how a trivially copyable class is copied, so the
+deletion would have become a byte copy. Refused by name: `= default` on a later
+declaration, a deleted destructor, a deleted virtual function.
+
+### `enum class`, `friend class X;`, a `constexpr` constructor (WS-C1, F06, F19, F04, in 1.6)
+
+**An enumeration here was already a type that keeps its name**, so a scoped one
+is that type marked scoped: no backend and no mangler heard about it. What
+changed is the scope - `E::a` and nothing else, `n::E::a`, `C::E::a`, `T::a`
+through a template parameter, and C++11's `E::a` for an unscoped E, which was
+"'E' was not declared" - and the conversions of [dcl.enum]/10 and
+[conv.prom]/3: no promotion, no rank against another type, no truth value but
+a `switch`'s, no arithmetic, a cast to reach the integer. The opaque
+declarations `enum class E;` and `enum E : int;` work. A `case 1:` under a
+switch on a scoped enumeration was over-accepted until WS-D read the label as
+an expression (below). `friend class X;` records X's tag and `isFriendOf` asks
+first whether the code being read is inside a member of X - every access check
+already asked `isFriendOf`, so all of them honour it. A `constexpr` constructor
+runs at run time ([dcl.constexpr]/3); a `constexpr` object of class type is
+refused by name, the evaluator having no object model.
+
+### Forwarding references, and four template gaps beside them (WS-E1, in 1.6)
+
+**[temp.deduct.call]/3: `T &&` given an lvalue of type U deduces `U &`**, and
+[dcl.ref]/6 collapses `U & &&` to `U &`, in the declarator and in `auto`
+substitution. An expression's type never carries its category here, so
+`deductionArgType` hands deduction `U &` for an lvalue. `<utility>`'s `move`
+and `forward` have the standard's signatures now, and that is the one existing
+case whose emission moved: `_Z4moveIR3BufEONSt16remove_referenceIT_E4typeEOS3_`
+where it had been `_Z4moveI3BufEOT_RS1_`, on all four targets, no instruction
+moved. A pack of forwarding references and a pattern expanded with `...` came
+with it. In the same branch: a function template's default template argument
+on the deduced path; an out-of-line constructor or destructor of a class
+template, replayed as a held constructor; an explicit specialization of a
+function template; and alias templates, transparent to deduction and to both
+manglers.
+
+### The Windows MASM path, the driver, and two races (WS-F, in 1.6)
+
+**The `masm` spelling had ten of 379 cases refused by the project's own masm,
+and two faults in `Masm.cpp` made the ten**: a COMDAT data block written
+`.data SEGMENT ... COMDAT`, which that masm takes only as `_DATA`, `_BSS` or
+`CONST`; and an early exit's `jmp $LNleave$` making a funclet's label an
+`EXTERN`. A third, found building MASM's bed, was the ml64 dialect's:
+`.xdata$x` reopened at two alignments. Under them was a
+LINK fault no compiler test could see - a SECREL measured from the wrong
+section and no TLS directory written - so every static local with a
+constructor faulted; LINK is 1.1 for it. `run-cases.cmd` runs both spellings
+now. `-rts=` names the C6000 run-time and the link line says which it took.
+ThreadSanitizer on the Mac found two real races in the job pool -
+`localtime`/`tzset` from every worker for `__DATE__`, and `OptTable.cpp`'s
+opcode index filled lazily by two jobs - and a failing job no longer exits the
+process under the others. `tests/tms6747.sh` runs with `CPP11_C6XLIVECHECK=1`.
+
+### Delegating constructors, trailing return types, raw strings, a const member (WS-D, in 1.7)
+
+**[class.base.init]/6: a mem-initialiser naming the class itself is the list's
+only entry**, and the target - chosen by overload resolution, defaults applied
+- builds the bases, members and vptr; a class with a virtual base is refused by
+name, since cl's most-derived flag and Itanium's C1/C2 split would both have to
+be passed through. **A trailing return type is read in the scope of the
+parameters**, so `decltype(a + b)` names them - the reason the syntax exists;
+a function template whose trailing type is `decltype(...)` is refused by name
+(Itanium spells the expression, `Dt...E`) and `-> auto` is C++14. A raw string
+is its characters as written, every prefix, and the preprocessor's line
+splitter leaves a splice or a `#if` inside one alone. A const or reference
+member named in a constructor's list is initialised by it ([class.base.init]/8)
+and one left out is refused, as clang refuses it. A namespace alias rewrites
+every later `A::` to the end of its namespace, and is refused by name inside a
+block. `__COUNTER__` counts, which made a macro argument's replacement happen
+once however often the parameter is used ([cpp.subst]/1) - a rule that had been
+wrong with no way to see it; and `#include <tuple>` and the 47 other C++11
+header names `include/` lacks are refused by name rather than "cannot find".
+Golden at the merge: 0 of 1638 changed at -O0, 0 of 411 at tms6747 -O2.
+
+### The range-based `for` finishes its rewrite (WS-D F27a-c, WS-E2 F27d, in 1.7)
+
+**[stmt.ranged]/1 is a rewrite, and three thirds of it were refused until this
+round**: the loop here had begin and end as members, a pointer iterator and an
+lvalue range. A class iterator's `!=`, `++` and `*` are its own, found by the
+operator resolution every expression uses; the two iterators are objects of the
+loop's scope on `alive_`, destroyed at its end, by a jump and by an exception.
+A class with neither member gets the free `begin(r)`/`end(r)` of its namespace,
+then the global one. A temporary range is kept to the loop's end as `auto
+&&__range` keeps it, and a braced list is an `initializer_list` whose begin and
+end are pointers. **A scoped enumeration's `case` label** came with WS-D's
+rebase: [stmt.switch]/2 converts a label to the condition's promoted type, a
+scoped enumeration converts to nothing, and `caseLabel` now reads the label as
+an expression before folding it, with clang's words. **Left, said plainly**:
+the loop variable of class type is still copied bytewise and never destroyed,
+as the array loop has done since rung 7.3.
+
+### List-initialisation in every form, and a braced argument (WS-E2, F24/F25/F03, in 1.7)
+
+**`P p{1, 2}`, `P p = {1, 2}`, `P{1, 2}`, `new P{1, 2}` and `f({1, 2})` were
+all refused**, by three messages. [over.match.list] is two phases on top of
+`resolveOverload`: an initializer_list constructor takes the braces whole, and
+otherwise every constructor is a candidate with the elements as arguments -
+`explicit` refused for copy-list-initialisation, each element checked for
+narrowing against the parameter it reaches. `T{...}` is the temporary `T(...)`
+makes, under every spelling of T. **A braced argument waits for its
+parameter**: it is held behind a placeholder until the overload set is known,
+built against the type every candidate agrees on at that position, and refused
+by name where they disagree. `auto x = {1, 2}` deduces
+`std::initializer_list<int>`; `auto x{1}` stays refused naming N3922. An
+`initializer_list` of a class with constructors copy-initialises each element,
+where it had aggregate-assigned the class's first member.
+
+### Casts and conversions (WS-E2, F29/F22/F41, in 1.7)
+
+`static_cast` downcasts, refused by name through a virtual base. **A
+captureless lambda converts to a function pointer** ([expr.prim.lambda]/6):
+the closure gets a static `__invoke` and a conversion function returning its
+address, clang's shape and names (`cvPFiiE`, `8__invoke`); writing it found
+that `&S::f` of a static member function had been a pointer to member, and
+that a deduced lambda return kept a scalar's `const`. `dynamic_cast` to a
+reference is the pointer cast on the operand's address with a null answer
+calling `__cxa_bad_cast`, which `<typeinfo>` now declares; through several
+bases it already worked on Itanium, `__vmi_class_type_info` being written since
+2026-10-06, and is refused by name on x86_64-windows, whose RTTI hierarchy here
+is one base deep. **Found and not mended**: a class temporary returned by
+value is built in the callee and its bytes moved, so the ledger reports
+`live=1 phantom=1` - true before the round too.
+
+### Alias declarations, attributes, a braced member, `extern template` (WS-C2, in 1.7)
+
+`using X = T;` enters the typedef table at the three doors - file, block, class
+- and refuses a storage class, `auto`, a named declarator and a redeclaration
+to another type. **Attributes are read where the grammar places them and an
+unknown one is ignored**, as clang ignores it: the decl-specifiers, the
+declarator, after a declarator-id, after an array bound, after a parameter list
+and the exception specification, before a parameter, at class and enum heads;
+`[[deprecated]]` is C++14 and refused naming it, and a statement attribute is
+refused by name. `int x{5};` on a scalar member is its initialiser, narrowing
+checked. `extern template` is read and suppresses nothing, recorded in
+`docs/CONFORMANCE.md`. Building it found an older fault: **an initialiser on a
+member could not name another member**, `memberInitialiser` having set `this`
+aside with the locals - [class.mem]/4 keeps it.
+
+### The library, sized and owned (WS-L, in 1.7)
+
+**`vector` owns its elements**: raw storage, placement new for each element
+made, a destructor call on every way one leaves - `~vector` had destroyed none.
+`at()` throws `std::out_of_range` (on x86_64-windows it prints and aborts, a
+class throw being refused there), `emplace_back` forwards through F23, and
+`sort` is an introsort, O(n log n), held by a 200,000-element case. New:
+`<array>`, `<memory>`'s `unique_ptr<T>` and `shared_ptr<T>`, `<functional>`'s
+seventeen function objects, `<cstdarg>` with `va_copy`, `std::nullptr_t`, the
+`sto*` family and `setfill`. Named absent: `std::function`, `bind`, `ref`,
+`unique_ptr<T[]>`, `weak_ptr`, `make_shared`, `stable_sort`, and the headers
+the preprocessor refuses. Two compiler mends: `new (p) T(t)` for a trivially
+copyable class copies the bytes, there being no constructor to call; and an
+unused inline function's string literals are pruned with it - 24 goldens lost
+dead strings and nothing else. 35 C++ headers and 19 C ones, counted.
+
+### Verification: provenance, `-E`, and legs that run (WS-H, in 1.7)
+
+**Every `.expected` was put to VS clang and ten depended on the order
+arguments are evaluated in** - one call a statement now, the recorded output
+unchanged, and `tools/expected-from-clang` re-asks the question. `cpp11 -E`
+writes each input after phase 4, and `tests/preprocess.sh` holds it beside
+clang's: 21 agree, 2 known. `tests/names.sh --reasons` classifies every
+recorded difference. `tools/verify-three` gained a Mac step (exclusions and the
+comment cap), the RTS6x referee in the c6747 leg, a RIDE leg, and the seal
+named by glob. `tests/run.sh`'s quoted-pattern check calls the compiler through
+`cxx1()`, so `CXX1="./cpp11.exe -O2"` passes it - the one -O2 failure every
+Linux gate had explained since 2026-10-08. And **c13 was ours**: ASM6x had no
+16-bit L3 `ADD`/`SUB .L` form, measured from cl6x 8.2.2 and added - which is
+why ASM6x is 1.1 at this release. The scheduled TI-simulator jobs on
+2026-10-13: release-check passed, c6747-levels 72 of 72, c6747-three 4 of 4 on
+three boxes, the RTS6x referee 840 of 841 agreeing.
+
+### The headline, re-measured, 2026-10-13
+
+**The plan's release step reads three counts and seven features, and this is
+what they said at `c349ad4`.** `tools/feature-sweep --clang clang++` on the
+Mac, every probe validated by clang first, none reported as the sweep's own
+fault:
+
+    compiles                 71
+    refused by name          23
+    refused naming nothing    0
+    probes                   94
+
+(38 / 50 / 6 on 2026-10-08.) The 94 are one probe per row of the review's
+section 2, where its 122 counted several per row - so these are not the review's
+numbers re-taken, and are not compared with its 56. **The seven the plan names
+all compile**: `enum-class`, `override-final`, `default-delete`,
+`delegating-constructor`, `alias-declaration`, `forwarding-reference`, and
+`list-init-constructor`, `list-init-expression` and `list-init-new` - F06, F12,
+F13, F14, F07a, F23, F24, each with its suite cases.
+
+**The headline stays "C++03 with C++11 extensions", and the reason is the
+evidence.** The plan permits "C++11, minus the list"; this file's first section
+says the headline returns when *every feature in the review's Rec 1* has
+landed, and Rec 1 named **inheriting constructors**, which the plan disposed as
+refused-by-name and which are still refused. The grid's 23 refusals are four
+C++14 forms refused naming the version, as they must be (digit separators,
+binary literals, `decltype(auto)`, an init-capture); four library rows
+(`std::function`, `<tuple>`, the unordered containers, threads); and **15 rows
+of the language** - a UCN in an identifier, a user-defined literal, a
+`constexpr` object of class type, `alignas` on a local past the stack's
+alignment, an inline namespace, a dynamic exception specification, inheriting
+constructors, `thread_local`, a non-type pack, a template template parameter,
+SFINAE on an expression in a signature, a ref-qualifier, a `goto` out of a
+handler, and two that are C++98, an anonymous union and a function try block.
+And `two-phase-lookup` *compiles* where the standard refuses it - the replay
+decision of rung 5. A headline that says "C++11" over that list would be the
+claim the review of 2026-10-08 was about. When inheriting constructors land and
+the language rows that are left each have a design note saying why, re-run the
+tool and decide again.
+
+## Version 1.7, 2026-10-13: the review round's second half
+
+**1.6 was resealed on 2026-10-12 with WS-A, C1, E1 and F; 1.7 is the number
+WS-D, E2, C2, L and H earn**, merged on 2026-10-13 - each with its section
+above. The headline is unchanged, for the reasons in "The headline,
+re-measured". ASM6x goes to 1.1 beside it, its `src/` having changed for c13.
+
+**Measured on the Mac at the version bump** (`review/release-1.7`, from
+`c349ad4`): `tests/run.sh` 702 passed, 0 failed (453 printed their recorded
+output, 248 were refused as recorded); `tools/exclusions --check` 126 sites, 0
+uncited, 0 stale; `make comments` 0; `tools/feature-sweep` 71 / 23 / 0 of 94.
+**The final gate** (`tools/verify-three` end to end on `c349ad4`): the Windows
+cases 1108 passed, 0 failed, and 854 at -O2, both spellings; names vs cl 292
+agreed, 16 differed; the Linux leg's `run.sh` 702 / 0 and
+`emit.sh` 1789 / 0; release-check passed on TI's simulator; c6747-three 4 of
+4. **Four legs were left with follow-ups that are not the compiler's**, run by
+other sessions as this was written: the Linux leg's `asm6x.sh` found no
+`c6xdiff.py`, the RIDE leg no `$SHC`, `$CC1` or `$CXX1` to build with, and the
+tms6747 leg's `ti-link.cmd` no `asm6x.exe` - three tool paths - and the RTS6x
+referee differs on one of 841, c90's `io_three_agree`, the host path
+`/dev/null` it has differed on before. **The seal is written last and is to be
+written again once those report**: a reseal records sources, and a follow-up
+that mends a source moves it.
