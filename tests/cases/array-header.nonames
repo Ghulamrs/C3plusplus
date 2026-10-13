@@ -1,0 +1,3 @@
+x86_64-linux  the Mac's clang has no standard headers for this target, so there is nothing to compare.
+x86_64-windows  the same: no headers for this target on the Mac.
+arm64-darwin  libc++ puts the library in its inline namespace std::__1 and tags its members (B9nqe220106), and its own <string>, <stdexcept> and <vector> members are other functions than cxx1's - a header difference; the program's own names agree net of std::__1.

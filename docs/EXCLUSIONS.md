@@ -69,13 +69,14 @@ the reason `pending[]` once had eight keywords in it that were implemented.
 
 ## The library, which is a subset on purpose
 
-`include/` holds 31 C++ headers and `lib/` 19 C ones; `README.md` lists them
-and says what each is honest about. What is **not** there: `<memory>`,
-`<functional>`, `<tuple>`, `<array>`, `<unordered_map>`, `<unordered_set>`,
+`include/` holds 34 C++ headers and `lib/` 19 C ones; `README.md` lists them
+and says what each is honest about. What is **not** there: `<memory>`, `std::function`, `std::bind` and `std::ref` from
+`<functional>` (its function objects are there),
+`<tuple>`, `<unordered_map>`, `<unordered_set>`,
 `<list>`, `<deque>`, `<forward_list>`, `<thread>`, `<atomic>`, `<mutex>`,
 `<chrono>`, `<regex>`, `<random>`, `<bitset>`, `<complex>`, `<iterator>`,
 `<locale>`, `<ratio>`, `<system_error>`, `<typeindex>`, `<cinttypes>`,
-`<cstdarg>` (`<stdarg.h>` works), `<cwchar>`, `<cuchar>`, and the rest of the
+`<cwchar>`, `<cuchar>`, and the rest of the
 C++11 library. Inside the headers that exist, whatever a program reaches for
 that was not written: `map` and `set` are sorted vectors, `sort` is quadratic,
 `vector` drops a slot without destroying it, `at()` does not throw,

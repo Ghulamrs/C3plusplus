@@ -16,6 +16,7 @@
 #define _CXX1_CSTDIO
 
 #include <stdio.h>
+#include <stdarg.h>  // [cstdio.syn] names the v-functions, which take a va_list
 
 namespace std {
 
@@ -58,6 +59,11 @@ using ::sprintf;
 using ::sscanf;
 using ::tmpfile;
 using ::ungetc;
+
+using ::vprintf;
+using ::vfprintf;
+using ::vsprintf;
+using ::vsnprintf;
 
 }  // namespace std
 

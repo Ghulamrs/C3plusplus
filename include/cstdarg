@@ -1,0 +1,17 @@
+// <cstdarg> - <stdarg.h> under `std::`, [cstdarg.syn].
+//
+// va_start, va_arg, va_end and va_copy are macros and belong to no namespace, so
+// the only name to bring in is the type. Derived from lib/stdarg.h, like the
+// other C wrappers here.
+#ifndef _CXX1_CSTDARG
+#define _CXX1_CSTDARG
+
+#include <stdarg.h>
+
+namespace std {
+
+using ::va_list;
+
+}  // namespace std
+
+#endif

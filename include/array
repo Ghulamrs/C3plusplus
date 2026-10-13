@@ -1,0 +1,102 @@
+// <array> - `std::array<T, N>`, [array]: an aggregate holding `T elems_[N]`, so `array<int, 3> a =
+// {{1, 2, 3}}` and `= {1, 2, 3}` initialise it as the standard says, and its iterators are pointers
+// like every container here. N == 0 is the partial specialization below, which holds no element.
+//
+// **`at()` is checked.** Out of range it throws std::out_of_range where a class can be thrown;
+// x86_64-windows cannot throw one yet (docs/EXCLUSIONS.md), so there it prints what happened and
+// aborts - the same rule <vector>'s at() follows, and the behaviour a caller sees either way is that
+// the program does not go on with a wrong element.
+#ifndef _CXX1_ARRAY
+#define _CXX1_ARRAY
+
+#include <cstddef>
+#ifdef _WIN32
+#include <cstdio>
+#include <cstdlib>
+#else
+#include <stdexcept>
+#endif
+
+namespace std {
+
+inline void __array_range_fail(size_t i, size_t n) {
+#ifdef _WIN32
+    std::fprintf(stderr, "std::array::at: index %lu is not below its size %lu\n",
+                 (unsigned long)i, (unsigned long)n);
+    std::abort();
+#else
+    (void)i; (void)n;
+    throw out_of_range("array::at");
+#endif
+}
+
+template <class T, size_t N> struct array {
+    typedef T value_type;
+    typedef size_t size_type;
+    typedef ptrdiff_t difference_type;
+    typedef T &reference;
+    typedef const T &const_reference;
+    typedef T *pointer;
+    typedef const T *const_pointer;
+    typedef T *iterator;
+    typedef const T *const_iterator;
+
+    T elems_[N];
+
+    iterator begin() { return elems_; }
+    const_iterator begin() const { return elems_; }
+    iterator end() { return elems_ + N; }
+    const_iterator end() const { return elems_ + N; }
+    const_iterator cbegin() const { return elems_; }
+    const_iterator cend() const { return elems_ + N; }
+
+    size_type size() const { return N; }
+    size_type max_size() const { return N; }
+    bool empty() const { return false; }
+
+    reference operator[](size_type i) { return elems_[i]; }
+    const_reference operator[](size_type i) const { return elems_[i]; }
+    reference at(size_type i) { if (i >= N) std::__array_range_fail(i, N); return elems_[i]; }
+    const_reference at(size_type i) const { if (i >= N) std::__array_range_fail(i, N); return elems_[i]; }
+    reference front() { return elems_[0]; }
+    const_reference front() const { return elems_[0]; }
+    reference back() { return elems_[N - 1]; }
+    const_reference back() const { return elems_[N - 1]; }
+    T *data() { return elems_; }
+    const T *data() const { return elems_; }
+
+    void fill(const T &v) { for (size_type i = 0; i < N; i++) elems_[i] = v; }
+    void swap(array &o) {
+        for (size_type i = 0; i < N; i++) { T t = elems_[i]; elems_[i] = o.elems_[i]; o.elems_[i] = t; }
+    }
+};
+
+template <class T> struct array<T, 0> {
+    typedef T value_type;
+    typedef size_t size_type;
+    typedef T *iterator;
+    typedef const T *const_iterator;
+    iterator begin() { return 0; }
+    const_iterator begin() const { return 0; }
+    iterator end() { return 0; }
+    const_iterator end() const { return 0; }
+    size_type size() const { return 0; }
+    size_type max_size() const { return 0; }
+    bool empty() const { return true; }
+    T *data() { return 0; }
+    const T *data() const { return 0; }
+    void fill(const T &) {}
+    void swap(array &) {}
+};
+
+template <class T, size_t N> bool operator==(const array<T, N> &a, const array<T, N> &b) {
+    for (size_t i = 0; i < N; i++) if (!(a.elems_[i] == b.elems_[i])) return false;
+    return true;
+}
+template <class T, size_t N> bool operator!=(const array<T, N> &a, const array<T, N> &b) {
+    return !(a == b);
+}
+
+}  // namespace std
+
+#endif
