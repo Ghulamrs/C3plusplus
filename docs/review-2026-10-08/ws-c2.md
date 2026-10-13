@@ -3,6 +3,39 @@
 Branch `review/c2-class`, from main `0e64e73`, 2026-10-08. Stopped early on the main session's
 instruction; nothing pushed or merged.
 
+## Resumed and built, 2026-10-13
+
+Rebased on main `869bae7` (conflicts: ParserType.cpp's reference declarator - E1's collapsing
+kept and C2's `skipAttributes()` added in front; `docs/EXCLUSIONS.md` taken from main, C2's four
+entry changes applied, every citation remapped by message from main's inventory to the branch's).
+The WIP built clean under `-Werror` on the first try; the suite then found three faults in it and
+one older one, each mended in `f63c17a`:
+
+- **An initialiser on a member could not name another member** (`int from{a + 1};`, and the same
+  with `=` - this one predates C2): `memberInitialiser` set every local aside, `this` included.
+  `this` now stays, [class.mem]/4.
+- **`int f(int) [[tag]];`** read the `[[` as an array bound. The array check skips `[[`, and the
+  attributes after the exception specification are read, [dcl.fct]/1 - the risk this note named.
+- **`void f([[tag]] int q)` as a definition** was taken for an object with an initialiser:
+  `atParenInitialiser` answers "parameter list" for a `[[`, which can never begin an expression.
+- **`[[tag]] n = 2;`** reached `declaration()` (atDeclarationStart takes any `[[`), so the named
+  refusal in `statementBody` never fired; `declaration()` asks `attributedDeclarationAhead` itself.
+- **`extern-template.cpp` was ill-formed NDR**: it used `S<double>` after declaring it extern with
+  no explicit instantiation definition anywhere ([temp.explicit]/10), and clang's link failed.
+  It now declares extern only specializations it does not use, and still links two units.
+
+`.expected` for alias-declaration, attribute-ignored, extern-template and member-brace-initialiser
+from VS clang 19.1.5 on the box (`-std=c++11 -pedantic-errors`, CR stripped).
+
+**Measured:** Mac run.sh 659 / 0; names.sh 418 / 5 - four are WS-H's (compare-with-zero,
+pipelined-data-exit, pipelined-reduction, ternary-index-after-remake, `.nonames` on h-verify) and
+member-brace-initialiser has its own `.nonames` (in-class C1 on x86_64-linux, memset for `{}`);
+overload.sh 33 / 0; `tools/exclusions --check` 125 sites, 0 / 0; `make comments` 0; emit golden
+recorded from main 869bae7 on the Mac, **0 of 1638 changed, 20 added**; tms6747.sh (RTS6x, both
+legs) 406 / 0 at -O0, 405 / 1 at -O2 - exception-table-large exceeds `ulimit -t 10` inside the
+suite on this Mac with main's compiler as well (0.9 s run alone), so it is not C2's. The Linux g++
+and Windows legs are below.
+
 ## Stopped here (second time, 2026-10-09 ~07:30)
 
 **The Windows box was unreachable for the whole session** (host down from ~06:55) and the weekly
