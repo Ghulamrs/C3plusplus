@@ -13151,11 +13151,18 @@ uncited, 0 stale; `make comments` 0; `tools/feature-sweep` 71 / 23 / 0 of 94.
 cases 1108 passed, 0 failed, and 854 at -O2, both spellings; names vs cl 292
 agreed, 16 differed; the Linux leg's `run.sh` 702 / 0 and
 `emit.sh` 1789 / 0; release-check passed on TI's simulator; c6747-three 4 of
-4. **Four legs were left with follow-ups that are not the compiler's**, run by
-other sessions as this was written: the Linux leg's `asm6x.sh` found no
-`c6xdiff.py`, the RIDE leg no `$SHC`, `$CC1` or `$CXX1` to build with, and the
-tms6747 leg's `ti-link.cmd` no `asm6x.exe` - three tool paths - and the RTS6x
-referee differs on one of 841, c90's `io_three_agree`, the host path
-`/dev/null` it has differed on before. **The seal is written last and is to be
-written again once those report**: a reseal records sources, and a follow-up
-that mends a source moves it.
+4. **Four legs were left with follow-ups, and none was the compiler's.** Three
+were tool paths, mended in `tools/verify-three` and `tools/windows/ti-link.cmd`
+(`review/gate-paths`): the RIDE leg names `CC1`, `CXX1` and `SHC` from the RIDE
+tree and reads 1419 checks, 0 failed, 0 skipped; the Linux leg ships ASM6x's
+`c6xdiff.py` and `elfdump.py`, and `asm6x.sh` reads 447 / 0; the tms6747 leg
+assembles with the tree's `asm6x.exe` and builds a case's `.part.cpp` in, 442
+linked, 0 failed. The RTS6x referee's one difference of 841, c90's
+`io_three_agree`, was the host: CCS 5.5's Windows host takes `/dev/null` as a
+path under the image's folder, and the referee made `tmp` there but not `dev` -
+with it, TI's run returns 0 as sim6747's does (RTS6x `fix/io-three-agree`). The
+one RTS6x suite failure, `exception-table-large`, was the suite's 10 s CPU limit
+under the gate's load; alone it compiles in 0.9 s and passed 121 runs of 121.
+**None of the four touched `src/`, `include/` or `lib/`**, so the seal written at
+the version bump stands: `tools/seal check` reads 160 files, 0 differ, on the
+merged tree.
