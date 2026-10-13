@@ -4,7 +4,7 @@
 // found, as free `begin(r)` and `end(r)` by argument-dependent lookup. This
 // class has neither, so the loop has nothing to walk - clang refuses it too:
 // "invalid range expression of type 'Plain'; no viable 'begin' function
-// available" at 16:16.
+// available" at 14:16.
 
 struct Plain { int x; };
 
