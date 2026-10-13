@@ -7,7 +7,7 @@ setlocal enabledelayedexpansion
 set W=%~dp0
 set W=%W:~0,-1%
 if "%CGT74%"=="" set CGT74=C:\ti\ccsv7\tools\compiler\ti-cgt-c6000_8.2.2
-if "%VM6747%"=="" set VM6747=C:\Users\GRA\source\RIDE-4.7\bin\vm6747.exe
+if "%VM6747%"=="" set VM6747=C:\Users\GRA\Developer\Claude\RIDE-4.7\bin\vm6747.exe
 set BOX=windows-ccs74-vm
 if not exist "%CGT74%\bin\cl6x.exe" (echo RESULT %BOX% - no cl6x at %CGT74% & exit /b 1)
 if not exist "%VM6747%" (echo RESULT %BOX% - no vm6747 at %VM6747% & exit /b 1)
