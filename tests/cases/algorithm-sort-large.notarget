@@ -1,0 +1,1 @@
+tms6747  200000 elements take minutes on the emulator at -O0, past the suite's limits; sort's C6000 code is held by the other algorithm cases at their sizes.

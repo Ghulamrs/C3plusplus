@@ -1,0 +1,3 @@
+x86_64-linux  the Mac's clang has no standard headers for this target, so there is nothing to compare.
+x86_64-windows  the same: no headers for this target on the Mac.
+arm64-darwin  libc++'s sort, vector and string are other functions than cxx1's, in std::__1 - a header difference.
