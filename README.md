@@ -163,6 +163,25 @@ x86_64-windows, where a class cannot be thrown yet and they print and abort inst
 delete`, the placement and nothrow forms, `std::bad_alloc` from the platform runtime, `typeid` and
 `dynamic_cast` all work.
 
+## What 1.7 changes
+
+The second half of the review round of 2026-10-08 (`docs/REVIEW-PLAN-2026-10-08.md`;
+1.6 carried the first half - `enum class`, `override`/`final`, `= default`/`= delete`,
+forwarding references, alias templates and the Windows MASM path). In the
+language: delegating constructors, trailing return types, raw string literals,
+alias declarations, attributes read where the grammar places them,
+list-initialisation in every form and a braced call argument, `auto x = {...}`,
+a capture-less lambda converting to a function pointer, `dynamic_cast` to a
+reference, a `static_cast` downcast, a namespace alias, `__COUNTER__`, a const
+member initialised in a constructor's list, and range-based `for` over a class
+iterator, free `begin`/`end`, a temporary and a braced list. In the library
+(above): a `vector` that owns its elements, a checked `at()`, `emplace_back`, an
+O(n log n) `sort`, `<array>`, `<memory>`, `<functional>`'s function objects,
+`<cstdarg>`, `std::nullptr_t`, the `sto*` family and `setfill`. In the tools:
+`cpp11 -E`, and every `.expected` re-asked of clang. The headline was
+re-measured and stays "C++03 with C++11 extensions" - CLAUDE.md's "The
+headline, re-measured, 2026-10-13" says why, row by row.
+
 ## What 1.4 changes
 
 The cl review of 2026-09-17 (`VM6747/CXX1I-REVIEW-2026-09-17.md`, made against
@@ -208,30 +227,38 @@ defects below and nothing else; Compiler-Cppi has closed those too, with the
 vtable group, `_ZTv` thunks, VTT and construction vtables, and that work is
 not in 1.3.
 
-## Known shortcomings in 1.6
+## Known shortcomings in 1.7
 
 Everything here is measured and written down elsewhere in full; this is the
-short list a user of **1.6** should have in front of them. `docs/EXCLUSIONS.md`
-is the complete one - 131 refusal sites on 2026-10-08, each citing the source
-line that refuses it, and `make test` fails when the two disagree. The heading
+short list a user of **1.7** should have in front of them. `docs/EXCLUSIONS.md`
+is the complete one - 126 refusal sites on 2026-10-13 (131 on 2026-10-08),
+each citing the source line that refuses it, and `make test` fails when the two
+disagree. The heading
 above is written by `tools/version-lines` from `src/Version.h`; it said 1.4 for
 two releases before that tool existed.
 
 **The language is C++03 with C++11 extensions, and these are the C++11 parts a
-real codebase meets first.** `enum class`; `override` and `final`; `= default`
-and `= delete`; a delegating constructor; `using X = T;` and an alias template;
-a forwarding reference - `template <class T> void f(T &&)` deduces for an
-rvalue only; list-initialisation that calls a constructor, `P p{1, 2}`,
-`T{...}` as an expression, `new T{...}`; a trailing return type; a `constexpr`
-constructor; a raw string literal; a user-defined literal; `thread_local`; an
-inline namespace; `extern template`; a template template parameter; a non-type
-parameter pack; a capture-less lambda converting to a function pointer; a
-ref-qualifier on a member function; a `goto` that leaves a `catch` handler; a
-function try block and an anonymous union, which are C++98. What works, and is
-measured against clang in the suites: `auto`, `decltype`, lambdas with every
-C++11 capture, rvalue references and move, variadic type packs,
-`static_assert`, `constexpr` functions, `nullptr`, range-based `for` over an
-array or a pointer-iterator container, `noexcept`, `explicit` conversion
+real codebase meets first that are still refused, each by name**: inheriting
+constructors; a user-defined literal; `thread_local`; an inline namespace; a
+template template parameter; a non-type parameter pack; a ref-qualifier on a
+member function; a `constexpr` object of class type; `alignas` on a local past
+the stack's alignment; a dynamic exception specification; SFINAE on an
+expression in a signature; a universal character name in an identifier; a `goto`
+that leaves a `catch` handler; and a function try block and an anonymous union,
+which are C++98. `tools/feature-sweep` counts them: on 2026-10-13, 71 of its 94
+probes compile, 23 are refused by name and none by a message naming nothing.
+**Landed in the review round of 2026-10-08 to 2026-10-13**: `enum class`;
+`override` and `final`; `= default` and `= delete`; delegating constructors;
+`using X = T;` and alias templates; forwarding references and `std::forward`;
+list-initialisation that calls a constructor, `P p{1, 2}`, `T{...}`, `new
+T{...}` and a braced argument; a trailing return type; a `constexpr`
+constructor, run at run time; raw string literals; `extern template`, read and
+suppressing nothing; a capture-less lambda converting to a function pointer;
+range-based `for` over a class iterator, a temporary and a braced list. What
+works besides, measured against clang in the suites: `auto`, `decltype`,
+lambdas with every C++11 capture, rvalue references and move, variadic type packs,
+`static_assert`, `constexpr` functions, `nullptr`, range-based `for`
+over an array or a container, `noexcept`, `explicit` conversion
 functions, `alignas`, `char16_t`/`char32_t`, `dynamic_cast`, `typeid`, a
 class's own `operator new`, exceptions with class types, virtual inheritance on
 the Itanium targets, partial specialization, SFINAE, member and constructor
@@ -304,14 +331,11 @@ This is still why most `.nocl` and `.nonames` entries in `tests/cases/` exist:
 cl folds an inline definition into a COMDAT and drops it when nothing calls it,
 where cxx1 emits it.
 
-**Five programs are known to answer differently from clang**, kept as programs
-in `tests/open/` with clang's answer beside each: a `catch` parameter whose
-copy constructor throws should call `std::terminate` and does not; a
-`constexpr double` does not fold; a lambda body naming a class's `static`
-member or enumerator is refused; a lambda whose only `return` is inside a `try`
-deduces `void`; and a mem-initialiser naming a template-id base -
-`D(int x) : P<int>(x) {}` - does not parse. `make open` runs them and gates
-nothing.
+**One program is known to answer differently from clang**, kept in
+`tests/open/` with clang's answer beside it: a name declared after a template
+is found inside it, where two-phase lookup would refuse it - the replay design
+of rung 5, recorded in `docs/CONFORMANCE.md`. The five that stood here before
+1.3 are closed and are suite cases. `make open` runs it and gates nothing.
 
 **Two smaller ones worth knowing.** A static local's symbol is spelled
 `f.name` rather than the Itanium `_ZZ1fvE4name` - nothing links against it, a
@@ -330,8 +354,8 @@ built from are sealed - see `README.1ST`, section 6.
 
 **The four suites are four different questions, and the numbers mean different
 things.** `tests/run.sh` compiles and runs every case on this machine: on
-2026-10-08 that is 628 cases, of which **402 have a recorded output** and must
-print it, and **226 have a recorded refusal** and must stop with that message -
+2026-10-13 that is 702 checks, of which **453 have a recorded output** and must
+print it, and **248 have a recorded refusal** and must stop with that message -
 the second number is the compiler saying no where it should, which proves the
 refusal names the feature and nothing about what compiles; `run.sh` prints the
 two apart. `tests/emit.sh` compiles every case for all four targets and stops at

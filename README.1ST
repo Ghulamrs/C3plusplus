@@ -122,8 +122,12 @@ refused - `enum class`, `override` and `final`, `= default` and `= delete`,
 delegating constructors, `using X = T;`, forwarding references,
 list-initialisation calling a constructor, raw strings, `thread_local` among
 them - which is about half of what C++11 added to C++03, and under a fifth of
-its library. The headline goes back to C++11 when the list below says it may.
-The subset is written down rather than left to be discovered:
+its library. Most of those landed between 2026-10-08 and 2026-10-13 - every
+one named in that list but `thread_local` - and the grid was re-measured for
+1.7: 71 of 94 probes compile, 23 are refused by name, none by a message naming
+nothing. The headline stays, because inheriting constructors and fourteen
+more rows of the language are still refused; it goes back to C++11 when the
+list below says it may. The subset is written down rather than left to be discovered:
 
     docs/EXCLUSIONS.md      everything this compiler does not accept, each
                             entry with the source line that refuses it.
@@ -209,10 +213,10 @@ two header directories of section 2.
 6.  THIS RELEASE, AND ITS SEAL
 ------------------------------
 
-This is **version 1.6**, sealed **12-10-2026**.
+This is **version 1.7**, sealed **13-10-2026**.
 
     cxx1.exe -version            says both, and names the seal file
-    cxx1-1.6.dat                 the seal: a CRC32 and a size per file
+    cxx1-1.7.dat                 the seal: a CRC32 and a size per file
     tools/seal check             verifies every line of it
 
 The seal covers what the compiler *is*: every file under `src/`, `include/` and
@@ -232,7 +236,7 @@ fails on a stale one - because this section said 1.4 for two releases after the
 binary said otherwise.
 
 Known shortcomings of this version are listed in `README.md` under "Known
-shortcomings in 1.6", and the complete list of what the language does not
+shortcomings in 1.7", and the complete list of what the language does not
 accept is `docs/EXCLUSIONS.md`.
 
 
