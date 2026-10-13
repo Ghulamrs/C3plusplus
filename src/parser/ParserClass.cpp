@@ -1987,6 +1987,43 @@ ExprPtr Parser::buildInitializerList(const Type *ilType, Init &in,
                              types_.get(Kind::Void), ps, false, pos,
                              std::move(all)))));
         }
+    } else if (plainElem->isStructOrUnion() && hasConstructors(plainElem->tag())) {
+        // [dcl.init.list]/5: each element is copy-initialised from its initialiser, by a constructor.
+        const Type *elemPtr = types_.pointerTo(plainElem);
+        for (std::size_t i = 0; i < in.items.size(); i++) {
+            if (in.items[i].isList)
+                src_.fail(in.items[i].pos, "a braced list as an element of an initializer_list of a class "
+                          "with constructors is not supported yet - name the element's type, 'T{...}'");
+            ExprPtr value = std::move(in.items[i].value);
+            if (ExprPtr made = userConversion(plainElem, value, pos)) value = std::move(made);
+            const Signature *cc = copyConstructorOf(plainElem);
+            const Signature *mv = moveConstructorOf(plainElem);
+            const Signature *use = (!isLvalue(*value) && mv != nullptr) ? mv : cc;
+            ExprPtr arr(Var::local(bk, bkOff)); arr->setType(arrType);
+            ExprPtr idx(new Num(static_cast<long long>(i)));
+            idx->setType(types_.get(Kind::Int));
+            ExprPtr addr = arithmetic(BinOp::Add, decay(std::move(arr)), std::move(idx), pos);
+            if (use == nullptr) {
+                ExprPtr slot(new Unary('*', std::move(addr))); slot->setType(plainElem);
+                ExprPtr store(new Assign(std::move(slot), std::move(value))); store->setType(plainElem);
+                into.push_back(StmtPtr(new ExprStmt(std::move(store))));
+                continue;
+            }
+            markUsed(use);
+            std::vector<ExprPtr> all;
+            all.push_back(std::move(addr));
+            all.push_back(std::move(value));
+            std::vector<const Type *> ps{ elemPtr, use->params[0] };
+            into.push_back(StmtPtr(new ExprStmt(
+                completeCall(plainElem->tag(), use->symbol, nullptr,
+                             types_.get(Kind::Void), ps, false, pos, std::move(all)))));
+        }
+        flushTemporaries(into);
+        if (destructorOf(plainElem) != nullptr) {
+            Alive whole{ bk, bkOff, plainElem };
+            whole.count = n;
+            alive_.push_back(whole);
+        }
     } else {
         std::vector<InitStep> path;
         emitInit(bk, path, arrType, in, into);

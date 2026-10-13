@@ -101,7 +101,7 @@ goes in the same commit.
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:431` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:1588` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:231` |
-| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:4602`, `src/parser/ParserTopLevel.cpp:682` |
+| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:4639`, `src/parser/ParserTopLevel.cpp:682` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:612` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:413` |
 | `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:709`, `src/parser/ParserInit.cpp:926`, `src/parser/ParserTopLevel.cpp:379`, `src/parser/ParserExprNew.cpp:414` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:153` |
@@ -210,7 +210,7 @@ templates followed. What is left:
 - **befriending one member function of another class** - `src/parser/ParserType.cpp:706`
 - **an anonymous union** - its members would have to become members of the
   class around it, sharing storage. C++98. `src/parser/ParserType.cpp:785`
-- **a member function of a union** - `src/parser/ParserClass.cpp:3899`
+- **a member function of a union** - `src/parser/ParserClass.cpp:3936`
 - **one name holding both a static and a non-static member**, where overload
   resolution picks the non-static one - `src/parser/ParserExpr.cpp:1355`
 - **a covariant return that moves the result** - an override may return a
@@ -253,7 +253,7 @@ templates followed. What is left:
   deduce `std::initializer_list` here. `src/parser/ParserTemplate.cpp:1268`
 - **a `std::initializer_list` with static storage made from braces** - its
   backing array would need static storage too. `src/parser/ParserInit.cpp:1158`
-- **a braced default argument** - `src/parser/ParserClass.cpp:4616`,
+- **a braced default argument** - `src/parser/ParserClass.cpp:4653`,
   `src/parser/ParserTopLevel.cpp:735`
 - **a braced member initialiser with values**, and **one without `=`** -
   `int x = 5;` works, and `= {}` and `= {0}` zero a member.
@@ -272,7 +272,7 @@ many, or has no object of its own:
 - **a static data member that is an array of a class with a constructor** -
   each element would need its constructor before main and its destructor at
   exit; a file-scope array and a static local of the same shape are built and
-  destroyed element by element. `src/parser/ParserClass.cpp:3734`
+  destroyed element by element. `src/parser/ParserClass.cpp:3771`
 - **a static-duration reference bound to a temporary** - [class.temporary]/5
   gives the temporary the program's lifetime, so it would need static storage
   of its own; a named object binds. `src/parser/ParserInit.cpp:1596`
@@ -323,7 +323,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   x86_64-windows** - the Microsoft hierarchy is written one base deep; the
   Itanium targets walk `__vmi_class_type_info`. `src/parser/ParserExprNew.cpp:977`
 - **catching a pointer by reference** - the runtime hands a handler the pointer
-  itself, so catch it by value. `src/parser/ParserStmt.cpp:1410`
+  itself, so catch it by value. `src/parser/ParserStmt.cpp:1416`
 - **throwing a pointer to a function** - it has no `type_info`; the message
   splices its reason in at run time, so this entry is hand-written.
   `tests/cases/throw-refused.cpp`
@@ -346,12 +346,12 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 - **a local with a destructor and a `try` in one function** - refused only
   where the call-site table cannot be split; beside the `try`, inside its body
   and inside a handler all work on the Itanium targets.
-  `src/parser/ParserStmt.cpp:949`, `src/parser/ParserStmt.cpp:2132`
+  `src/parser/ParserStmt.cpp:955`, `src/parser/ParserStmt.cpp:2138`
 - **a `goto` that leaves a `catch` handler** - [except.handle]/16 ends the
   handling on the way out, and the call that ends it has to be emitted where
   the jump is written; a forward label has not been read there. `return`,
   `break` and `continue` out of a handler work, and so does a `goto` to a label
-  inside it. `src/parser/ParserStmt.cpp:2219`,
+  inside it. `src/parser/ParserStmt.cpp:2225`,
   `tests/cases/goto-out-of-handler-refused.cpp`
 - **a function try block**, `int f() try { } catch (...) { }` - its handler
   covers the mem-initialisers as well as the body, so a `try` inside the body
@@ -364,11 +364,13 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   `tests/cases/noexcept-dynamic-spec-refused.cpp`
 - **a class declared in the condition of a loop** - [stmt.iter]/2 builds it
   afresh on every turn, and only a scalar can be written where the test is; a
-  class in the condition of an `if` works. `src/parser/ParserStmt.cpp:890`
+  class in the condition of an `if` works. `src/parser/ParserStmt.cpp:896`
 - **a range-based `for` whose range or iterator has a destructor, inside a
   `catch` handler, on x86_64-windows** - the cleanup would be a funclet inside
-  the handler's funclet. `src/parser/ParserStmt.cpp:816`
-- **a range-based `for` over a braced list** - `src/parser/ParserStmt.cpp:663`
+  the handler's funclet. `src/parser/ParserStmt.cpp:822`
+- **a braced list as an element of an `initializer_list` of a class with constructors**,
+  `{ {1, 2}, {3, 4} }` for a list of `P` - name the element's type, `P{...}`.
+  `src/parser/ParserClass.cpp:1995`
 - **a trailing return type that is itself deduced**, `auto f() -> auto` -
   C++14. `src/parser/ParserTopLevel.cpp:1764`
 - **a function template whose trailing return type is `decltype(...)`** - its
@@ -379,7 +381,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 
 - **a namespace alias inside a block** - the alias is a rewrite to the end of
   the enclosing namespace; at namespace scope it works.
-  `src/parser/ParserStmt.cpp:1822`
+  `src/parser/ParserStmt.cpp:1828`
 - **an inline namespace** - its members would have to be found in the
   namespace around it. `src/parser/ParserType.cpp:1702`
 - **an alias declaration**, `using X = T;` - C++11; `typedef T X;` says the
@@ -387,7 +389,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 - **a using-declaration inside a class**, `using B::f;` - it redeclares a base
   member, changing its access and joining the overload set; an inheriting
   constructor is the same declaration one step on. `src/parser/ParserType.cpp:563`
-- **a using-declaration inside a block** - `src/parser/ParserStmt.cpp:1830`.
+- **a using-declaration inside a block** - `src/parser/ParserStmt.cpp:1836`.
   The one at namespace scope works, and so does `using namespace N;`.
 
 ## Lambdas
@@ -450,12 +452,12 @@ between the two lists.**
   `src/parser/ParserType.cpp:1586`
 - **a `try` inside a `catch` handler, on x86_64-windows** - a handler is a
   funclet there, and a nested `try`'s handlers would be funclets inside it.
-  `src/parser/ParserStmt.cpp:1295`
+  `src/parser/ParserStmt.cpp:1301`
 - **a local with a destructor inside a `catch` handler, on x86_64-windows** -
-  the same reason, a cleanup being a funclet. `src/parser/ParserStmt.cpp:1253`
+  the same reason, a cleanup being a funclet. `src/parser/ParserStmt.cpp:1259`
 - **a rethrow, `throw;`, on x86_64-windows** - `_CxxThrowException` with two
   null pointers from inside a funclet, not measured on the box.
-  `src/parser/ParserStmt.cpp:1851`
+  `src/parser/ParserStmt.cpp:1857`
 - **a member under `#pragma pack`, on tms6747** - the C6000 backend loads words
   aligned only, and cl6x has no `#pragma pack`. `src/parser/ParserType.cpp:57`
 

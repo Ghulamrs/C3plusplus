@@ -1,1 +1,2 @@
 x86_64-linux  cxx1 emits the C1 and D1 forms of constructors and destructors defined inside their class where clang emits only the C2 a use asks for - the difference implicit-move.nonames records. Measured on the Windows box with clang -target x86_64-linux-gnu over cxx1's own headers, every other name agreeing (this box's names.sh cannot, its clang having no headers for that target).
+arm64-darwin  cxx1 emits B's C1 beside its C2 for a constructor defined inside its class (implicit-move.nonames records it); the Mac's clang emits only what is used.

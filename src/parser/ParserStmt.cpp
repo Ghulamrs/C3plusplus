@@ -657,14 +657,20 @@ StmtPtr Parser::rangeForStatement(int scope) {
     expect(":");
 
     const std::size_t rpos = peek().pos;
-    // **A braced list as the range is an `initializer_list`** - [stmt.ranged]
-    // binds the range to `auto &&`, and for braces that makes one of those.
-    if (peek().is("{"))
-        src_.fail(rpos, "a range-based 'for' over a braced list is not "
-                        "supported yet - the list would be an "
-                        "'std::initializer_list', which this compiler has no "
-                        "library for; name an array and loop over that");
-    ExprPtr range = expr();
+    // **A braced list as the range is an `initializer_list`** - [stmt.ranged] binds the range
+    // to `auto &&`, which for braces deduces one; it is then walked as any class range is (F27d).
+    const std::size_t aliveBefore = alive_.size();
+    std::vector<StmtPtr> listSetup;
+    ExprPtr range;
+    if (peek().is("{")) {
+        const std::size_t braces = at_;
+        const Type *il = deduceBracedAuto("the range", rpos);
+        at_ = braces;
+        Init in = parseInitialiser();
+        range = buildInitializerList(il, in, rpos, listSetup);
+    } else {
+        range = expr();
+    }
     expect(")");
 
     const Type *rt = range->type();
@@ -676,10 +682,10 @@ StmtPtr Parser::rangeForStatement(int scope) {
     // **The two ends of the loop, and the only thing the two kinds of range
     // disagree about.**
     const Type *elemPtr = nullptr;
-    std::vector<StmtPtr> setup;
+    std::vector<StmtPtr> setup = std::move(listSetup);  // a braced range's backing array and list
     int bSlot = 0, eSlot = 0;
     std::string bName, eName;
-    const std::size_t aliveMark = alive_.size();
+    const std::size_t aliveMark = aliveBefore;
     rangeBuilt_.clear();
 
     if (rt->unqualified()->isStructOrUnion()) {
