@@ -408,10 +408,10 @@ fi
 
 # **RIDE's suite with --require-tools** (review of 2026-10-08, D14): a skip for a missing tool is
 # a failure. The tree is a RIDE checkout on the box with the product's tools in its bin\
-# (CXX1_RIDE_TREE, default C:\cxx1\ride-verify), as WS-G's gate set it up; none there fails.
+# (CXX1_RIDE_TREE, default C:\Users\GRA\work\ride-verify), as WS-G's gate set it up; none there fails.
 if [ "$WHICH" = all ] || [ "$WHICH" = ride ]; then
     echo "=== ride ($WINDOWS) ==="
-    RT=${CXX1_RIDE_TREE:-'C:\cxx1\ride-verify'}
+    RT=${CXX1_RIDE_TREE:-'C:\Users\GRA\work\ride-verify'}
     if ssh -o BatchMode=yes "$WINDOWS" "if exist $RT\\build.bat (exit 0) else (exit 1)" 2>/dev/null; then
         RLOG=$(mktemp)
         ssh -o BatchMode=yes "$WINDOWS" "cd /d $RT && set RIDE_TEST_FLAGS=--require-tools&& set C6747_EHLIB=C:\\cxx1\\c6747-lib&& build.bat check" \
