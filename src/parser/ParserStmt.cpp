@@ -37,7 +37,8 @@ bool Parser::atParenInitialiser() {
     // says parameter list.
     const bool parameters = peek().is(")") || peek().is("...") || pack ||
                             peek().is("static") || peek().is("register") ||
-                            peek().is("auto") || atTypeName();
+                            peek().is("auto") || atTypeName() ||
+                            (peek().is("[") && peekAt(1).is("["));  // an attribute, never an expression
     at_ = save;
     return !parameters;
 }
@@ -56,6 +57,7 @@ void Parser::checkOneDeducedType(const Type *&first, const Type *now,
 
 StmtPtr Parser::declaration() {
     std::size_t pos = peek().pos;
+    attributedDeclarationAhead();  // `[[x]] n = 2;` reaches here, atDeclarationStart taking any `[[`
     StmtPtr s = declarationBody();
     if (s) s->setPos(pos);
     return s;

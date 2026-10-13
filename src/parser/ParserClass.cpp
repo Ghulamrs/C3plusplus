@@ -4429,6 +4429,8 @@ StmtPtr Parser::memberInitialiser(const std::string &tag, const Type *type,
     const std::size_t resume = at_;
     std::vector<Local> outer;
     outer.swap(locals_);
+    // `this` stays: [class.mem]/4 lets the initialiser name another member, read through the object.
+    for (const Local &l : outer) if (l.name == "this") locals_.push_back(l);
     const Type *outerClass = currentClass_;
     currentClass_ = type;
     struct RestoreClass {
