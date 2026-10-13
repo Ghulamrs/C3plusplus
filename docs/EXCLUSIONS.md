@@ -79,8 +79,8 @@ and says what each is honest about. What is **not** there: `<memory>`, `std::fun
 `<cwchar>`, `<cuchar>`, and the rest of the
 C++11 library. Inside the headers that exist, whatever a program reaches for
 that was not written: `map` and `set` are sorted vectors, `sort` is quadratic,
-`vector` drops a slot without destroying it, `at()` does not throw,
-`setfill` is accepted and ignored, there is no `emplace_back` and no `stoi`.
+`vector` drops a slot without destroying it, `vector`'s `at()` does not throw,
+and there is no `emplace_back`.
 A conforming C++ implementation is a compiler **and** a library; cxx1 is a
 language translator with four code generators, and every claim about C++11 in
 this tree is to be read with that in front of it.

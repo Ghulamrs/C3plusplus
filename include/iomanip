@@ -23,7 +23,7 @@ inline _Setfill      setfill(char c)     { _Setfill s;      s.c = c; return s; }
 
 inline ostream &operator<<(ostream &os, _Setw m)         { os.width_ = m.n; return os; }
 inline ostream &operator<<(ostream &os, _Setprecision m) { os.prec_  = m.n; return os; }
-inline ostream &operator<<(ostream &os, _Setfill)        { return os; }
+inline ostream &operator<<(ostream &os, _Setfill m)      { os.fill_ = m.c; return os; }
 
 }  // namespace std
 
