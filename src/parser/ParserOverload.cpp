@@ -1192,15 +1192,13 @@ void Parser::checkAssignable(const Expr &from, const Type *to, std::size_t pos,
         const_cast<Parser *>(this)->conversionFunction(ft, to) != nullptr)
         return;
 
-    // **A lambda with no capture converts to a function pointer** -
-    // [expr.prim.lambda]/6 gives the closure a conversion function returning
-    // one that calls the body.
+    // Reached only by a lambda that captures: a captureless one has its conversion function (F22),
+    // and [expr.prim.lambda]/6 gives one to no other.
     if (to->isPointer() && to->pointee()->isFunction() &&
         ft->unqualified()->isStructOrUnion() &&
         ft->unqualified()->tag().find("$_") != std::string::npos)
         src_.fail(pos, "a lambda converts to a function pointer only if it "
-                       "captures nothing, and that conversion is not "
-                       "supported yet - call the closure directly, or give "
+                       "captures nothing - call the closure directly, or give "
                        "the function a template parameter for it");
 
     auto refuse = [&](const char *tail) {

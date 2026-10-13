@@ -104,7 +104,7 @@ ExprPtr Parser::overloadedBinary(BinOp op, ExprPtr &lhs, ExprPtr &rhs,
         std::vector<ExprPtr> args;
         args.push_back(std::move(lhs));
         args.push_back(std::move(rhs));
-        const Signature &sig = resolveOverload(name, args, pos);
+        const Signature &sig = resolveOverloadBraced(name, args, pos);
         return completeCall(name, sig.symbol, nullptr, sig.returns, sig.params,
                             sig.variadic, pos, std::move(args),
                             !sig.owner.empty());
@@ -170,7 +170,7 @@ ExprPtr Parser::overloadedUnary(const char *spelling, ExprPtr &operand,
     case OperatorChoice::NonMember: {
         std::vector<ExprPtr> args;
         args.push_back(std::move(operand));
-        const Signature &sig = resolveOverload(name, args, pos);
+        const Signature &sig = resolveOverloadBraced(name, args, pos);
         return completeCall(name, sig.symbol, nullptr, sig.returns, sig.params,
                             sig.variadic, pos, std::move(args),
                             !sig.owner.empty());
@@ -283,6 +283,32 @@ ExprPtr Parser::staticCast(std::size_t pos) {
                            "object to cast, and this is a value with no "
                            "address of its own - it is already the kind of "
                            "thing a '" + to->describe() + "' binds to");
+        // **[expr.static.cast]/2: a base lvalue cast to a reference to a derived class** -
+        // `&v` walked back by the base's offset and dereferenced, the const kept.
+        if (v->type()->unqualified() != referent->unqualified() &&
+            v->type()->unqualified()->isStructOrUnion() && referent->unqualified()->isStructOrUnion()) {
+            bool viaVirtual = false;
+            const int off = downcastOffset(referent, v->type(), &viaVirtual);
+            if (off >= 0 || viaVirtual) {
+                if (viaVirtual)
+                    src_.fail(pos, "'static_cast<" + to->describe() + ">' of a '" + v->type()->describe() +
+                                   "' - the base is a virtual base, whose offset is not a constant; "
+                                   "'dynamic_cast' is the cast that asks the object");
+                if (v->type()->isConst() && !referent->isConst())
+                    src_.fail(pos, "'static_cast<" + to->describe() + ">' of a '" +
+                                   v->type()->describe() + "' - a cast does not take const off");
+                const Type *dst = v->type()->isConst() ? types_.withConst(referent->unqualified())
+                                                       : referent->unqualified();
+                const Type *srcPtr = types_.pointerTo(v->type());
+                ExprPtr addr(new Unary('&', std::move(v)));
+                addr->setType(srcPtr);
+                ExprPtr moved = downcastPointer(std::move(addr), types_.pointerTo(dst), off);
+                ExprPtr obj(new Unary('*', std::move(moved)));
+                obj->setType(dst);
+                if (to->isRValueReference()) obj->setXvalue();
+                return obj;
+            }
+        }
         if (v->type()->unqualified() != referent->unqualified())
             src_.fail(pos, "'static_cast<" + to->describe() + ">' of a '" +
                            v->type()->describe() + "' - casting a reference "
@@ -304,8 +330,77 @@ ExprPtr Parser::staticCast(std::size_t pos) {
         ExprPtr c(new Cast(to, std::move(v)));
         return c;
     }
+    // **[expr.static.cast]/11: `B *` to `D *` where B is a base of D** - the inverse of the
+    // conversion `convert` makes the other way, refused through a virtual base.
+    if (to->isPointer() && v->type()->isPointer() && to->pointee()->unqualified()->isStructOrUnion() &&
+        v->type()->pointee()->unqualified()->isStructOrUnion() &&
+        to->pointee()->unqualified() != v->type()->pointee()->unqualified()) {
+        bool viaVirtual = false;
+        const int off = downcastOffset(to->pointee(), v->type()->pointee(), &viaVirtual);
+        if (viaVirtual)
+            src_.fail(pos, "'static_cast<" + to->describe() + ">' of a '" + v->type()->describe() +
+                           "' - the base is a virtual base, whose offset is not a constant; "
+                           "'dynamic_cast' is the cast that asks the object");
+        if (off >= 0) {
+            if (v->type()->pointee()->isConst() && !to->pointee()->isConst())
+                src_.fail(pos, "'static_cast<" + to->describe() + ">' of a '" +
+                               v->type()->describe() + "' - a cast does not take const off");
+            return downcastPointer(std::move(v), to, off);
+        }
+    }
     refuseUnrelatedClassCast(*v, to, pos, "'static_cast'");
     return convert(std::move(v), to, true);
+}
+
+int Parser::downcastOffset(const Type *derived, const Type *base, bool *viaVirtual) const {
+    if (derived == nullptr || base == nullptr) return -1;
+    const Type *d = derived->unqualified();
+    if (d == base->unqualified()) return 0;
+    const std::vector<Type::BaseSpec> &bases = d->bases();
+    for (std::size_t i = 0; i < bases.size(); i++) {
+        if (!baseStepAccessible(d, bases[i].access)) continue;
+        const int deeper = downcastOffset(bases[i].type, base, viaVirtual);
+        if (deeper < 0) continue;
+        if (bases[i].isVirtual) { *viaVirtual = true; return -1; }
+        return bases[i].offset + deeper;
+    }
+    return -1;
+}
+
+// At offset 0 only the type changes; otherwise the pointer is held, tested and moved back -
+// `(char *)0 - 4` is not null, so the test is the rule and not caution.
+ExprPtr Parser::downcastPointer(ExprPtr p, const Type *to, int off) {
+    if (off == 0) {
+        ExprPtr c(new Cast(to, std::move(p)));
+        c->setType(to);
+        return c;
+    }
+    const Type *chars = types_.pointerTo(types_.get(Kind::Char));
+    ExprPtr asChars(new Cast(chars, std::move(p)));
+    asChars->setType(chars);
+    const int slot = allocateFrameSlot(chars);
+    const std::string temp = ".dp" + std::to_string(refTemps_++);
+    ExprPtr held(Var::local(temp, slot));
+    held->setType(chars);
+    ExprPtr save(new Assign(std::move(held), std::move(asChars)));
+    save->setType(chars);
+    ExprPtr test(Var::local(temp, slot));
+    test->setType(chars);
+    ExprPtr shift(Var::local(temp, slot));
+    shift->setType(chars);
+    ExprPtr by(new Num(static_cast<long long>(off)));
+    by->setType(types_.intType());
+    ExprPtr moved(new Binary(BinOp::Sub, std::move(shift), std::move(by)));
+    moved->setType(chars);
+    ExprPtr zero(new Num(0LL));
+    zero->setType(chars);
+    ExprPtr pick(new Conditional(std::move(test), std::move(moved), std::move(zero)));
+    pick->setType(chars);
+    ExprPtr both(new Comma(std::move(save), std::move(pick)));
+    both->setType(chars);
+    ExprPtr out(new Cast(to, std::move(both)));
+    out->setType(to);
+    return out;
 }
 
 
@@ -483,32 +578,9 @@ const Type *Parser::simpleTypeKeyword() const {
     return nullptr;
 }
 
-// `T(x)` and `T()` for a T that is not a class, the '(' still ahead.
+// `T{...}` for any T, the '{' still ahead - [expr.type.conv]/2, list-initialisation.
 ExprPtr Parser::bracedValueInit(const Type *to, std::size_t pos) {
-    expect("{");
-    if (!consume("}"))
-        src_.fail(peek().pos, "'" + to->describe() + "{...}' with a value in the "
-                              "braces is list-initialisation, which is not "
-                              "supported yet - write the value in parentheses. "
-                              "The empty pair is read: it value-initialises");
-    if (to->isVoid()) src_.fail(pos, "'void{}' has no value");
-    if (to->unqualified()->isStructOrUnion())
-        src_.fail(pos, "'" + to->describe() + "{}' - value-initialising a class "
-                       "with braces in an expression is not supported yet; "
-                       "'" + to->describe() + "()' does the same thing and is "
-                       "read");
-    ExprPtr z;
-    if (to->isPointer()) {
-        z.reset(new Num(0LL));
-        z->setType(types_.get(Kind::NullPtr));
-    } else if (to->isFloating()) {
-        z.reset(new Num(0.0L));
-        z->setType(types_.doubleType());
-    } else {
-        z.reset(new Num(0LL));
-        z->setType(types_.intType());
-    }
-    return convert(std::move(z), types_.withoutConst(to));
+    return listTemporary(to, pos);
 }
 
 ExprPtr Parser::functionalCast(const Type *to, std::size_t pos) {
@@ -668,7 +740,7 @@ ExprPtr Parser::primary(Program *program) {
                                   "call needs its arguments");
         std::vector<ExprPtr> args;
         parseArguments(args);
-        const Signature &sig = resolveOverload(name, args, opos);
+        const Signature &sig = resolveOverloadBraced(name, args, opos);
         applyDefaults(sig, args, opos);
         return completeCall(name, sig.symbol, nullptr, sig.returns, sig.params,
                             sig.variadic, opos, std::move(args));
@@ -937,6 +1009,15 @@ ExprPtr Parser::primary(Program *program) {
                 }
             }
         }
+        // `N::S{1, 2}` - the same temporary, list-initialised.
+        if (peekAt(typeEnd).is("{")) {
+            const Type *named = qualifiedTypeAt(typeEnd);
+            if (named != nullptr) {
+                const std::size_t qpos = peek().pos;
+                at_ += typeEnd;
+                return listTemporary(named, qpos);
+            }
+        }
         if (peekAt(typeEnd).is("(")) {
             const Type *named = qualifiedTypeAt(typeEnd);
             const std::size_t qpos = peek().pos;
@@ -971,7 +1052,8 @@ ExprPtr Parser::primary(Program *program) {
         // temporary rather than the qualifier of a member: `std::vector<T>()`
         // belongs to this branch, `std::vector<T>::size_type` does not.
         (qualifiedTypeEnd() == 0 ||
-         peekAt(qualifiedTypeEndPastArgs()).is("("))) {
+         peekAt(qualifiedTypeEndPastArgs()).is("(") ||
+         peekAt(qualifiedTypeEndPastArgs()).is("{"))) {
         const std::size_t qpos = peek().pos;
         std::string scope = peek().text;
         at_ += 2;
@@ -999,7 +1081,7 @@ ExprPtr Parser::primary(Program *program) {
         if (consume("(")) {
             std::vector<ExprPtr> args;
             parseArguments(args);
-            const Signature &sig = resolveOverload(full, args, qpos);
+            const Signature &sig = resolveOverloadBraced(full, args, qpos);
             applyDefaults(sig, args, qpos);
             return completeCall(full, sig.symbol, nullptr, sig.returns,
                                 sig.params, sig.variadic, qpos, std::move(args),
@@ -1099,7 +1181,7 @@ ExprPtr Parser::primary(Program *program) {
             expect("(");
             std::vector<ExprPtr> args;
             parseArguments(args);
-            const Signature &sig = resolveOverload(key, args, qpos);
+            const Signature &sig = resolveOverloadBraced(key, args, qpos);
             applyDefaults(sig, args, qpos);
             // A static member obeys access like any other - the check the
             // `.` and `->` paths make in memberCallWith, made here because
@@ -1249,7 +1331,7 @@ ExprPtr Parser::primary(Program *program) {
                 at_ += 2;
                 std::vector<ExprPtr> args;
                 parseArguments(args);
-                const Signature &sig = resolveOverload(key, args, pos);
+                const Signature &sig = resolveOverloadBraced(key, args, pos);
                 applyDefaults(sig, args, pos);
                 // A static member obeys access like any other - the check the
                 // `.` and `->` paths make in memberCallWith, made here because
@@ -1296,7 +1378,7 @@ ExprPtr Parser::primary(Program *program) {
         // `P(1)` where P names a class: a temporary, not a call to a function
         // nobody declared. Asked before the call branch below, which would
         // look the name up in the function table and report it undeclared.
-        if (peekAt(1).is("{") && peekAt(2).is("}") && !callsThroughObject &&
+        if (peekAt(1).is("{") && !callsThroughObject &&
             l == nullptr && g == nullptr) {
             if (const Type *named = findTypedef(name)) {
                 at_++;
@@ -1346,7 +1428,7 @@ ExprPtr Parser::primary(Program *program) {
             // from there is nothing to convert them to until one is chosen.
             std::vector<ExprPtr> args;
             parseArguments(args);
-            const Signature &sig = resolveOverload(name, args, pos);
+            const Signature &sig = resolveOverloadBraced(name, args, pos);
             applyDefaults(sig, args, pos);
             return completeCall(name, sig.symbol, nullptr, sig.returns, sig.params,
                                 sig.variadic, pos, std::move(args),
@@ -1436,13 +1518,10 @@ ExprPtr Parser::primary(Program *program) {
         if (ExprPtr f = functionAsValue(
                 qualifyForLookup(name, &Parser::hasFunctionNamed), pos))
             return f;
-        // **`S{...}` is list-initialisation written as an expression** - the
-        // same rule a declaration's braces meet, one syntax over.
+        // `S{...}` with a variable or function S in scope: the name hides the type, [basic.scope.hiding]/2.
         if (peek().is("{") && findTypedef(name) != nullptr)
-            src_.fail(pos, "'" + name + "{...}' is list-initialisation, and "
-                           "that is not supported yet - '" + name +
-                           "(...)' calls a constructor here, and a plain "
-                           "struct is built by naming its members");
+            src_.fail(pos, "'" + name + "' names an object or function here, which hides the type "
+                           "of that name, so '" + name + "{...}' is no temporary");
         // `S::x` reached here found no static member, enumerator or function: say which it was.
         // The class is the longest prefix naming one, `n::S::nope` reaching S through n.
         std::size_t k = 0;
@@ -2286,6 +2365,8 @@ ExprPtr Parser::unary() {
                                            "cannot be told from the use alone");
                         const Signature &f = functions_[(*set)[0]];
                         at_ += q + 1;
+                        // [expr.unary.op]/3: a static member function's address is an ordinary pointer.
+                        if (f.isStaticMember) return functionAsValue(key, pos);
                         // **A virtual one holds the slot, not the function.**
                         // Itanium: 1 + the slot's byte offset, tested at the
                         // call; Microsoft: the address of a vcall thunk.
