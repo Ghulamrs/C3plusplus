@@ -98,7 +98,7 @@ void Parser::topLevel(Program &program) {
     // here on. A using-*declaration*, `using N::f;`, names one thing and is a
     // different rule; it is refused by name.
     if (peek().is("using")) {
-        refuseAliasDeclaration();
+        if (aliasDeclaration(namespacePrefix())) return;
         const std::size_t pos = peek().pos;
         at_++;
         // **`using N::f;` names one thing, and what it leaves behind is an
@@ -153,6 +153,7 @@ void Parser::topLevel(Program &program) {
     const bool direct = directLinkage_;
     directLinkage_ = false;
     if (linkageSpecification()) return;
+    if (externTemplateDeclaration()) return;
     if (templateDeclaration()) return;
 
     StorageClass sc;
@@ -762,7 +763,7 @@ void Parser::topLevel(Program &program) {
     }
 
 
-    if (peek().is("(") || peek().is("[")) {
+    if (peek().is("(") || (peek().is("[") && !peekAt(1).is("["))) {
         bool fn = peek().is("(");
         src_.fail(peek().pos,
                   std::string("a function cannot return ") +
@@ -781,6 +782,7 @@ void Parser::topLevel(Program &program) {
 
     // The exception specification comes after the constness, which is the order C++ writes them in.
     pendingNoexcept_ = exceptionSpecification();
+    skipAttributes();  // [dcl.fct]/1: the function type's own, after the exception specification
     // **Captured here because declareFunction consumes it.**
     const bool declaredNoexcept = pendingNoexcept_;
     if (trailing) d.type = readTrailingReturn(0);

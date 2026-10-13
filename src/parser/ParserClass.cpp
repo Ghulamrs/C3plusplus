@@ -4429,6 +4429,8 @@ StmtPtr Parser::memberInitialiser(const std::string &tag, const Type *type,
     const std::size_t resume = at_;
     std::vector<Local> outer;
     outer.swap(locals_);
+    // `this` stays: [class.mem]/4 lets the initialiser name another member, read through the object.
+    for (const Local &l : outer) if (l.name == "this") locals_.push_back(l);
     const Type *outerClass = currentClass_;
     currentClass_ = type;
     struct RestoreClass {
@@ -4437,9 +4439,12 @@ StmtPtr Parser::memberInitialiser(const std::string &tag, const Type *type,
     } restoreClass{ this, outerClass };
     at_ = it->second;
 
+    // `{v}` on a scalar: the value, which may not narrow - [dcl.init.list]/7.
+    const bool braced = peek().is("{") && !peekAt(1).is("}") &&
+        !(peekAt(1).kind == TokenKind::Num && !peekAt(1).isFloat && peekAt(1).value == 0 && peekAt(2).is("}"));
     // `= {}` or `= {0}`: the member's bytes zeroed by memset, an array or a
     // scalar alike, which is what [dcl.init.list]/3 comes to for either.
-    if (peek().is("{")) {
+    if (peek().is("{") && !braced) {
         const Type *voidPtr = types_.pointerTo(types_.get(Kind::Void));
         ExprPtr field = thisMember(thisSlot, type, m);
         ExprPtr addr(new Unary('&', std::move(field)));
@@ -4464,7 +4469,13 @@ StmtPtr Parser::memberInitialiser(const std::string &tag, const Type *type,
         at_ = resume;
         return StmtPtr(new ExprStmt(std::move(filled)));
     }
+    if (braced) at_++;
+    const std::size_t valueAt = peek().pos;
     ExprPtr value = decay(assign());
+    if (braced) {
+        checkNarrowing(m.type, *value, valueAt, "'" + m.name + "'");
+        expect("}");
+    }
 
     // **A class-typed member is *built* from its initialiser, not assigned
     // one.**

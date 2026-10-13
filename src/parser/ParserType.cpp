@@ -50,6 +50,7 @@ const Type *Parser::memberTypeWalk(const Type *t) {
 
 const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     const char *what = isClass ? "class" : (kind == Kind::Struct ? "struct" : "union");
+    skipAttributes();
     std::size_t pos = peek().pos;
     // `#pragma pack(n)` in force here caps every alignment the layout reads.
     const int pack = src_.packAt(pos);
@@ -558,7 +559,9 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
         // **A using-declaration in a class is a different rule from one at namespace scope**, which
         // this compiler has: here it redeclares a base member, changing its access or bringing an
         // overload set into the derived class's own, and neither is an alias.
-        refuseAliasDeclaration();
+        if (peek().is("using") && tag.empty() && peekAt(2).is("="))
+            src_.fail(peek().pos, "an alias declaration needs a class with a name - this one is anonymous");
+        if (aliasDeclaration(tag + "::")) continue;
         if (peek().is("using"))
             src_.fail(peek().pos, "a using-declaration inside a class is not "
                                   "supported yet - it redeclares a base member "
@@ -982,6 +985,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 const std::size_t paramsOpen = at_;
                 const Type *writtenReturn = d.type;
                 parameterTypes(mparams, mvariadic);
+                skipAttributes();
                 d.type = types_.functionType(d.type, std::move(mparams), mvariadic);
                 // **A ref-qualifier picks the overload by the object's own
                 // value category** - `f() &` against `f() &&` - which is a
@@ -1140,32 +1144,26 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             // `int x = 5;` - C++11's initialiser on the member itself. The tokens stay
             // where they are and their place is recorded; every constructor that does
             // not name this member in its own list reads them again.
-            if (peek().is("=")) {
-                at_++;
-                // **`= {}` and `= {0}` zero the member** - [dcl.init.list]/3
-                // for an array or a scalar - and are the braced forms read;
-                // a list with values in it is refused by name.
+            if (peek().is("=") || peek().is("{")) {
+                consume("=");
+                // `= {}` and `= {0}` zero the member, [dcl.init.list]/3; `{v}` on a scalar is the
+                // value, narrowing checked at the replay; a list for a class or an array is refused.
                 if (peek().is("{")) {
                     const bool zeroing = peekAt(1).is("}") ||
                         (peekAt(1).kind == TokenKind::Num && !peekAt(1).isFloat && peekAt(1).value == 0 &&
                          peekAt(2).is("}"));
                     const Type *inner = d.type;
                     while (inner->isArray()) inner = inner->pointee();
-                    if (!zeroing || d.type->isReference() ||
-                        inner->unqualified()->isStructOrUnion())
+                    if (!zeroing && (d.type->isReference() || d.type->isArray() ||
+                                     inner->unqualified()->isStructOrUnion()))
                         src_.fail(peek().pos, "a braced member initialiser with "
-                                              "values is not supported yet - "
-                                              "'= {}' and '= {0}' zero an array "
-                                              "or a scalar member; write the "
-                                              "rest as a value");
+                                              "values on a class, an array or a "
+                                              "reference is not supported yet - "
+                                              "'= {}' and '= {0}' zero an array, "
+                                              "and a scalar member takes '{v}'");
                 }
                 memberInit_[tag + "::" + d.name] = at_;
                 skipMemberInitialiser();
-            } else if (peek().is("{")) {
-                // The other spelling of the same initialiser, named rather than left to "expected ';'".
-                src_.fail(peek().pos, "a braced member initialiser without '=' - "
-                                      "'int x{5};' - is not supported yet; write "
-                                      "'int x = 5;'");
             }
             long long endBits = (at + slot->size(target_)) * 8;
             if (kind == Kind::Union) { if (endBits > widestBits) widestBits = endBits; }
@@ -1413,6 +1411,7 @@ const Type *Parser::enumSpecifier() {
     // it converts to nothing without a cast (refuseScopedConversion, refuseScopedOperand).
     const bool scoped = peek().is("class") || peek().is("struct");
     if (scoped) at_++;
+    skipAttributes();
 
     std::string tag;
     if (peek().kind == TokenKind::Ident) { tag = peek().text; at_++; }
@@ -1549,6 +1548,70 @@ ExprPtr Parser::enumeratorThroughEnum() {
     return n;
 }
 
+// [dcl.attr.grammar]: any number of `[[...]]` - C++11's two are read and change nothing, `deprecated`
+// is C++14 and refused, and every other attribute-token is ignored, /5. True if one was read.
+bool Parser::skipAttributes() {
+    bool any = false;
+    while (peek().is("[") && peekAt(1).is("[")) {
+        any = true;
+        at_ += 2;
+        for (;;) {
+            if (peek().is("]") && peekAt(1).is("]")) { at_ += 2; break; }
+            if (consume(",")) continue;
+            if (peek().kind != TokenKind::Ident && peek().kind != TokenKind::Keyword)
+                src_.fail(peek().pos, "expected the name of an attribute, or ']]' to close the list");
+            const std::size_t apos = peek().pos;
+            const std::string name = peek().text;
+            at_++;
+            bool scoped = false;
+            if (peek().is("::") && (peekAt(1).kind == TokenKind::Ident || peekAt(1).kind == TokenKind::Keyword)) {
+                at_ += 2;
+                scoped = true;
+            }
+            const bool args = peek().is("(");
+            if (args && !scoped && (name == "noreturn" || name == "carries_dependency"))
+                src_.fail(peek().pos, "the attribute '" + name + "' takes no argument list");
+            if (args) skipBalanced();
+            if (!scoped && name == "deprecated")
+                src_.fail(apos, "the attribute '[[deprecated]]' is C++14, and this compiler is C++11 - "
+                                "C++11 has '[[noreturn]]' and '[[carries_dependency]]', which are read, "
+                                "and an attribute it does not know is ignored");
+            consume("...");
+            if (!peek().is(",") && !(peek().is("]") && peekAt(1).is("]")))
+                src_.fail(peek().pos, "expected ',' or ']]' after the attribute '" + name + "'");
+        }
+    }
+    if (any) lastAttributeEnd_ = at_;
+    return any;
+}
+
+// `[[x]] int y;` in a block is a declaration with an attribute; `[[x]] return 0;` is a statement
+// with one, which only a declaration's reader takes here - so the second is refused by name.
+bool Parser::attributedDeclarationAhead() {
+    if (!peek().is("[") || !peekAt(1).is("[")) return false;
+    const std::size_t save = at_;
+    skipAttributes();
+    const bool declares = atDeclarationStart();
+    at_ = save;
+    if (!declares)
+        src_.fail(peek().pos, "an attribute on a statement is not supported yet - [dcl.attr.grammar] lets "
+                              "one stand before any statement, and this compiler reads them before a "
+                              "declaration only");
+    return true;
+}
+
+// From an opening bracket of any kind to the one that closes it, nesting counted.
+void Parser::skipBalanced() {
+    const std::size_t pos = peek().pos;
+    int depth = 0;
+    do {
+        if (peek().kind == TokenKind::End) src_.fail(pos, "this bracket never closes");
+        if (peek().is("(") || peek().is("[") || peek().is("{")) depth++;
+        else if (peek().is(")") || peek().is("]") || peek().is("}")) depth--;
+        at_++;
+    } while (depth > 0);
+}
+
 // The specifiers are read without their qualifiers here, and specifiers() folds the
 // const in afterwards. It reads 'const' in two places - before the type name and
 // after it - and both must be collected before the type can be built.
@@ -1651,38 +1714,15 @@ const Type *Parser::unqualifiedSpecifiers(StorageClass *storage, Qualifiers *qua
         }
     }
 
+    lastAttributeEnd_ = static_cast<std::size_t>(-1);
     for (;;) {
         if (peek().is("alignas")) {
             int a = alignasSpecifier();
             if (a > quals->alignAs) quals->alignAs = a;
             continue;
         }
-        // **The two C++11 attributes are read and change nothing** - a
-        // promise about the function, a memory order - `[[deprecated]]` is
-        // C++14 and anything else is not standard: both refused by name.
-        if (peek().is("[") && peekAt(1).is("[")) {
-            const std::size_t apos = peek().pos;
-            at_ += 2;
-            const std::string which = peek().kind == TokenKind::Ident ? peek().text : "";
-            if (which != "noreturn" && which != "carries_dependency")
-                src_.fail(apos, "the attribute '[[" + which + "]]' is not "
-                                "supported - C++11 has '[[noreturn]]' and "
-                                "'[[carries_dependency]]', which are read; "
-                                "'[[deprecated]]' is C++14");
-            at_++;
-            expect("]");
-            expect("]");
-            continue;
-        }
+        if (skipAttributes()) continue;
         if (consume("static"))  { *storage = StorageStatic; continue; }
-        // **`extern template` suppresses an implicit instantiation** in this
-        // translation unit and promises one elsewhere. Every specialization
-        // here is emitted where it is used, so the promise cannot be kept.
-        if (peek().is("extern") && peekAt(1).is("template"))
-            src_.fail(peek().pos, "an explicit instantiation declaration - "
-                                  "'extern template' - is not supported yet: "
-                                  "a specialization is emitted wherever it is "
-                                  "used here, so there is nothing to suppress");
         if (consume("extern"))  { *storage = StorageExtern; continue; }
         if (consume("typedef")) { *storage = StorageTypedef; continue; }
         if (consume("const"))    { quals->isConst = true; continue; }
@@ -1914,13 +1954,10 @@ const Type *Parser::unqualifiedSpecifiers(StorageClass *storage, Qualifiers *qua
                               "- not on an out-of-class definition of that "
                               "same constructor, and not on anything that is "
                               "not one");
-    // **`[[`, which is an attribute and not a type.** Named here because the C++11
-    // attributes and the C++14 one are spelled identically, and a reader who writes
-    // either is owed the version number rather than a complaint about a missing type.
-    if (peek().is("[") && peekAt(1).is("["))
-        src_.fail(peek().pos, "an attribute is not supported yet - C++11 has "
-                              "'[[noreturn]]' and '[[carries_dependency]]', "
-                              "and '[[deprecated]]' is C++14");
+    // `[[x]];` is an attribute-declaration, [dcl.pre]/1, which declares nothing.
+    if (lastAttributeEnd_ == at_ && peek().is(";") && *storage == StorageNone &&
+        !quals->isConst && !quals->isVolatile)
+        return types_.get(Kind::Void);
     if (const char *pending = notYetSupported(peek().text))
         src_.fail(peek().pos, std::string("'") + pending +
                               "' is not supported yet");
@@ -1975,8 +2012,9 @@ const Type *Parser::arraySuffix(const Type *base, std::size_t pos) {
                               "elements are objects, and a reference is not "
                               "one");
     std::vector<long long> dims;
-    while (consume("[")) {
-        if (consume("]")) { dims.push_back(-1); continue; }
+    // `[[` is an attribute after the bound, [dcl.attr.grammar]/6, and never a bound of its own.
+    while (!(peek().is("[") && peekAt(1).is("[")) && consume("[")) {
+        if (consume("]")) { dims.push_back(-1); skipAttributes(); continue; }
         std::size_t dpos = peek().pos;
         // `long long`, not `long`: this compiler is built by cl on one of its three
         // machines, where a `long` is 32 bits - so `char a[0x100000001]` silently
@@ -1987,6 +2025,7 @@ const Type *Parser::arraySuffix(const Type *base, std::size_t pos) {
                             std::to_string(n));
         dims.push_back(n);
         expect("]");
+        skipAttributes();
     }
     for (std::size_t i = 1; i < dims.size(); i++)
         if (dims[i] < 0)
@@ -2211,6 +2250,7 @@ std::string Parser::declaredName(const char *what) {
 
 Parser::Declared Parser::declarator(const Type *base, bool nameOptional,
                                     bool insideParens) {
+    skipAttributes();
 
     // The const after a star qualifies the pointer, not what it points at: `char *
     // const p` is a const pointer to a writable char and `const char *p` the other
@@ -2218,6 +2258,7 @@ Parser::Declared Parser::declarator(const Type *base, bool nameOptional,
     while (consume("*")) {
         base = types_.pointerTo(base);
         for (;;) {
+            if (skipAttributes()) continue;
             if (consume("const"))    { base = types_.withConst(base); continue; }
             if (peek().is("volatile")) refuseVolatilePointer();
             break;
@@ -2228,6 +2269,7 @@ Parser::Declared Parser::declarator(const Type *base, bool nameOptional,
     // and there is nothing on the other side of it, a reference being no object to
     // point at. **`&&` binds like `&`**, differing only in what it will take.
     if (consume("&&")) {
+        skipAttributes();
         base = base->isReference() ? base : types_.rvalueReferenceTo(base);  // [dcl.ref]/6 collapsing
         if (peek().is("&") || peek().is("&&"))
             src_.fail(peek().pos, "there is no reference to a reference");
@@ -2236,6 +2278,7 @@ Parser::Declared Parser::declarator(const Type *base, bool nameOptional,
         return declarator(base, nameOptional, insideParens);
     }
     if (consume("&")) {
+        skipAttributes();
         base = types_.referenceTo(base->isReference() ? base->referent() : base);
         if (peek().is("&") || peek().is("&&"))
             src_.fail(peek().pos, "there is no reference to a reference");
@@ -2391,6 +2434,7 @@ Parser::Declared Parser::declarator(const Type *base, bool nameOptional,
         if (destructor) name = "~" + name;
     }
 
+    skipAttributes();
     // `int D::modes_[Count]`: the bound after a class's declarator-id is in its scope.
     const Type *declaredIn = qualifier.empty() ? nullptr : findTypedef(qualifier);
     const Type *t;
@@ -2410,6 +2454,7 @@ Parser::Declared Parser::declarator(const Type *base, bool nameOptional,
                                             peek().is("[") ? declaredIn : nullptr);
         t = arraySuffix(base, pos);
     }
+    skipAttributes();
 
     std::size_t paramsAt = 0;
     if (insideParens && peek().is("(")) {
