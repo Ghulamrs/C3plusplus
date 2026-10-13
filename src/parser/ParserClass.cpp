@@ -3494,7 +3494,7 @@ public:
     explicit SymbolsNamed(std::vector<std::string> *o) : out(o) {}
     void visit(const Num &) override {}
     void visit(const Var &n) override { out->push_back(n.symbol()); }
-    void visit(const StrLit &) override {}
+    void visit(const StrLit &e) override { out->push_back(e.label()); }
     void visit(const Goto &) override {}
     void visit(const Break &) override {}
     void visit(const Continue &) override {}
@@ -3642,6 +3642,11 @@ void Parser::pruneUnusedInline(Program &program) {
     for (std::size_t i = 0; i < program.globals.size(); i++)
         if (reached[nf + i]) keptGlobals.push_back(std::move(program.globals[i]));
     program.globals.swap(keptGlobals);
+    // A literal only a pruned body used goes with it; what is kept names every literal it reads.
+    std::vector<StringLit> keptStrings;
+    for (StringLit &sl : program.strings)
+        if (everyName.count(sl.label) != 0) keptStrings.push_back(std::move(sl));
+    program.strings.swap(keptStrings);
     // A Microsoft class keeps its five records where its vftable stayed or something names one.
     std::vector<const Type *> rtti;
     for (const Type *cls : program.rtti) {

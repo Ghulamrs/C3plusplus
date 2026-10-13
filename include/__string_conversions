@@ -87,7 +87,7 @@ inline int stoi(const string &s, size_t *idx = 0, int base = 10) {
 }
 inline float stof(const string &s, size_t *idx = 0) {
     const long double v = std::__sto_floating("stof", s, idx);
-    if (v > 3.402823466e38L || v < -3.402823466e38L) std::__sto_fail("stof", true);
+    if (v > (long double)3.4028234663852886e38 || v < -(long double)3.4028234663852886e38) std::__sto_fail("stof", true);
     return (float)v;
 }
 inline double stod(const string &s, size_t *idx = 0) {

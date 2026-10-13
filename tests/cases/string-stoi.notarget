@@ -1,1 +1,2 @@
 x86_64-windows  a failed conversion aborts there rather than throwing: a class-typed throw is refused on that target, and <string> says so.
+tms6747  RTS6x and the vm6747 runtime have no strtoll, strtoull or strtold yet (C99), which the sto* family reads through.

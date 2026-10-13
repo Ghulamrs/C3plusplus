@@ -98,10 +98,18 @@ static int lfLive() {
 
 // One line. For a correct program built and gone are equal and every other
 // number is zero, whatever the implementation chose to elide.
+// LF_BALANCE_ONLY, defined before the include, prints whether built equals gone rather than the
+// two counts - for a case whose counts are the library's choice, a container's growth policy.
 static void lfReport() {
+#ifdef LF_BALANCE_ONLY
+    printf("LEDGER balanced=%d live=%d double=%d phantom=%d over=%d lost=%d\n",
+           lfBuiltCount == lfGoneCount, lfLive(),
+           lfDoubleCount, lfPhantomCount, lfOverCount, lfLostCount);
+#else
     printf("LEDGER built=%d gone=%d live=%d double=%d phantom=%d over=%d lost=%d\n",
            lfBuiltCount, lfGoneCount, lfLive(),
            lfDoubleCount, lfPhantomCount, lfOverCount, lfLostCount);
+#endif
 }
 
 // Reported at exit, not inline: main's own locals are destroyed after its

@@ -1,0 +1,8 @@
+nine: 1 2 3 1 2 3 1 2 3
+insert: 4 1 2 3 1 0 2 3 1 2 3
+erase: 4 2 2 3 1 2 3
+down: 4 2 2
+up: 4 2 2 4 4
+assign: 4 2 2 4 4
+cleared 0
+LEDGER balanced=1 live=0 double=0 phantom=0 over=0 lost=0

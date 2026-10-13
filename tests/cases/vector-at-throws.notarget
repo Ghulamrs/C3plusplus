@@ -1,0 +1,1 @@
+x86_64-windows  at() aborts there rather than throwing: a class-typed throw is refused on that target (docs/EXCLUSIONS.md), and <array> says so.
