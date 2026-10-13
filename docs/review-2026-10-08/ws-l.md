@@ -76,4 +76,9 @@ target: RTS6x and the vm6747 runtime have no `vsnprintf`, `strtoll`, `strtoull` 
 run.sh 695 / 0; names.sh 449 / 4 (WS-H's four, which its branch's `.nonames` close); each new
 case carries a `.nonames` for the two cross targets the Mac's clang has no headers for, and the
 library ones for libc++'s `std::__1` and ABI tag. `tools/exclusions --check` 126 sites, 0 / 0;
-`make comments` 0. Box gates not run yet.
+`make comments` 0.
+
+**Boxes, on main with WS-D, E2 and C2 (`9b2ec69`)**: Linux g++ build clean under `-Werror`, run.sh 702 / 0
+at -O0 and 701 / 1 at -O2 (the quoted-pattern harness check, fixed on WS-H's branch); Windows
+`run-cases.cmd` 427 / 0 printed in the GNU and the MASM spelling and 248 / 0 refusals, at -O0 and
+at -O2. tms6747.sh (RTS6x, both legs) 433 / 0 at -O0 on the Mac.
