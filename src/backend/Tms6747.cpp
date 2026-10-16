@@ -2153,6 +2153,32 @@ void Tms6747::walkBody(const Function &fn) {
     else out_ << "\tZERO\tA4\n";
 }
 
+// -g: the function's parameters and locals in TI's .dwtag spelling, so sim6747 and vm6747 can show them
+// (GRIDEd docs\C6747-LOCALS-DESIGN.md). A frame variable is named from A15 - TI's DWARF register 15 - at
+// the slot localAddr forms; one the layout keeps in a register, or gave no room, is left out for now;
+// a static one by its symbol. Parameters first, in order, as the CodeView path does.
+void Tms6747::emitVariables(const Function &fn) {
+    if (lineSource() == nullptr) return;
+    out_ << "\t.dwtag\tDW_TAG_subprogram, DW_AT_name(\"" << fn.name() << "\"), DW_AT_low_pc(" << fn.symbol() << ")\n";
+    for (int pass = 0; pass < 2; pass++)
+        for (const Local &l : fn.locals()) {
+            if (l.isParam != (pass == 0) || l.name.empty() || l.type == nullptr) continue;
+            std::string where;
+            if (!l.staticName.empty()) where = "DW_OP_addr " + l.staticName;
+            else {
+                int key = localBase_ + l.offset;
+                if (regOf_.count(key)) continue;
+                std::map<int, int>::const_iterator it = place_.find(key);
+                if (relayout_ && it == place_.end()) continue;
+                where = "DW_OP_breg15 " + std::to_string(-(saveBytes_ + (relayout_ ? it->second : key)));
+            }
+            out_ << "\t.dwtag\t" << (l.isParam ? "DW_TAG_formal_parameter" : "DW_TAG_variable")
+                 << ", DW_AT_name(\"" << l.name << "\"), DW_AT_type(\"" << l.type->describe() << "\"), "
+                 << "DW_AT_location[" << where << "]\n";
+        }
+    out_ << "\t.dwendtag\n";
+}
+
 void Tms6747::emitFunction(const Function &fn) {
     resetLabels();
     // The symbol, not the name: with C++ linkage that is the mangled name, and
@@ -2277,6 +2303,7 @@ void Tms6747::emitFunction(const Function &fn) {
         epi << "\tLDW\t*A15, A15\n\tNOP\t4\n";      // the caller's FP, last
     }
     epi << "\tB\tB3\n\tNOP\t5\n";
+    emitVariables(fn);                                      // -g: after the label, outside the scheduled code
     // Scheduled with the body at -O1 and -O2, so a result in flight at its end lands under the return's delay slots.
     if (optimize_ > 0 && !backendSkipped("pro")) out_ << c6xSchedule(early + pro.str() + params + body + epi.str(), optimize_);
     else out_ << pro.str() << c6xSchedule(early + params + body + epi.str(), optimize_);

@@ -245,6 +245,7 @@ private:
     void emitGlobal(const Global &g, Segment seg);
     void emitData(const Program &program);
     void emitParams(const Function &fn);
+    void emitVariables(const Function &fn);
     void emitExceptionTable(const Function &fn);
     void emitFunction(const Function &fn);
 };
