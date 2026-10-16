@@ -560,7 +560,16 @@ private:
         }
         else if (t->isArray()) {
             out += 'A';
-            out += std::to_string(t->length());
+            // **A bound that is a template parameter is spelled as one, and is no
+            // substitution candidate** - it is an expression there, not a type.
+            // Measured: `T f(const T (&)[N])` is _Z1fIiLi3EET_RAT0__KS0_.
+            if (t->boundParam() >= 0) {
+                out += 'T';
+                if (t->boundParam() > 0) out += std::to_string(t->boundParam() - 1);
+                out += '_';
+            } else {
+                out += std::to_string(t->length());
+            }
             out += '_';
             type(t->pointee());
         } else if (t->isFunction()) {

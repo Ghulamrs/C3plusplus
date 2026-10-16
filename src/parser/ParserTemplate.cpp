@@ -1422,8 +1422,33 @@ bool Parser::deduceOne(const Type *pattern, const Type *arg,
 
     if (pattern->isPointer() && arg->isPointer())
         return deduceOne(pattern->pointee(), arg->pointee(), binding, values, why);
-    if (pattern->isArray() && arg->isArray())
-        return deduceOne(pattern->pointee(), arg->pointee(), binding, values, why);
+    if (pattern->isArray() && arg->isArray()) {
+        // **`T (&)[N]` against an `int[3]` gives N=3**, [temp.deduct.type]/8's
+        // `type[i]`. The binding only marks N deduced; the value is what is read.
+        // **Every level here**: an element is no argument and does not decay, and
+        // recursing would decay `int[4]` in `T (&)[M][N]` to an `int *`.
+        while (pattern->isArray() && arg->isArray()) {
+            const int j = pattern->boundParam();
+            if (j >= 0 && static_cast<std::size_t>(j) < binding->size()) {
+                if (arg->length() < 0) {
+                    *why = "'" + arg->describe() + "' has no length to give a "
+                           "non-type parameter";
+                    return false;
+                }
+                if ((*binding)[j] != nullptr && values != nullptr &&
+                    (*values)[j] != arg->length()) {
+                    *why = "a non-type parameter is deduced two different values";
+                    return false;
+                }
+                (*binding)[j] = types_.intType();
+                if (values != nullptr) (*values)[j] = arg->length();
+            }
+            pattern = pattern->pointee();
+            arg = arg->pointee();
+        }
+        return pattern->isArray() || arg->isArray() ||
+               deduceOne(pattern, arg, binding, values, why);
+    }
     // `T S::*` against `int S::*`: the member's type, and the class when it is
     // a parameter too.
     if (pattern->isMemberPointer() && arg->isMemberPointer())

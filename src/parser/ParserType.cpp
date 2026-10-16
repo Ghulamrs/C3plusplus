@@ -2016,6 +2016,17 @@ const Type *Parser::arraySuffix(const Type *base, std::size_t pos) {
     while (!(peek().is("[") && peekAt(1).is("[")) && consume("[")) {
         if (consume("]")) { dims.push_back(-1); skipAttributes(); continue; }
         std::size_t dpos = peek().pos;
+        // **`T (&)[N]` while a signature is read for deduction**: a bare name that
+        // is a pattern non-type parameter is a reference to it, as in `V<N>`, and
+        // what deduceOne binds from the argument's length.
+        if (patternOnly_ && peek().kind == TokenKind::Ident && peekAt(1).is("]") &&
+            nonTypePatternParams_.count(peek().text) != 0) {
+            dims.push_back(Type::parameterBound(nonTypePatternParams_[peek().text]));
+            at_++;
+            expect("]");
+            skipAttributes();
+            continue;
+        }
         // `long long`, not `long`: this compiler is built by cl on one of its three
         // machines, where a `long` is 32 bits - so `char a[0x100000001]` silently
         // became `char a[1]` there and kept its full length on the other two.
@@ -2028,15 +2039,17 @@ const Type *Parser::arraySuffix(const Type *base, std::size_t pos) {
         skipAttributes();
     }
     for (std::size_t i = 1; i < dims.size(); i++)
-        if (dims[i] < 0)
+        if (dims[i] == -1)
             src_.fail(pos, "only the first dimension may be left empty - the "
                            "others decide how far one step moves");
 
     // **An object this compiler cannot measure is refused where it is written.** Every
     // size here is a signed 32-bit count, and an array that overflowed one used to be
     // laid out anyway. Checked by division, so the check itself cannot overflow.
+    // **Not in a pattern**, whose `const T` no target can measure: the declaration is
+    // read again with the arguments in force, and checked then.
     for (std::size_t i = dims.size(); i-- > 0; ) {
-        const long long elem = base->size(target_);
+        const long long elem = patternOnly_ ? 0 : base->size(target_);
         if (dims[i] > 0 && elem > 0 && dims[i] > 2147483647LL / elem)
             src_.fail(pos, "this array is larger than this compiler can lay "
                            "out: " + std::to_string(dims[i]) + " elements of " +

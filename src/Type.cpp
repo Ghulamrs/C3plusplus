@@ -72,7 +72,9 @@ std::string Type::parameterList() const {
 static std::string arrayDims(const Type *t) {
     std::string dims;
     for (; t->isArray(); t = t->pointee())
-        dims += "[" + std::to_string(t->length()) + "]";
+        dims += "[" + (t->boundParam() >= 0
+                           ? "template parameter " + std::to_string(t->boundParam())
+                           : std::to_string(t->length())) + "]";
     return dims;
 }
 
