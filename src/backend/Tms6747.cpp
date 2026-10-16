@@ -2175,8 +2175,68 @@ void Tms6747::emitVariables(const Function &fn) {
             out_ << "\t.dwtag\t" << (l.isParam ? "DW_TAG_formal_parameter" : "DW_TAG_variable")
                  << ", DW_AT_name(\"" << l.name << "\"), DW_AT_type(\"" << l.type->describe() << "\"), "
                  << "DW_AT_location[" << where << "]\n";
+            noteType(l.type);
         }
     out_ << "\t.dwendtag\n";
+}
+
+// A type and every type it is made of, each once: an array's element, what a pointer or a reference
+// refers to, a class's members and its non-virtual bases.
+void Tms6747::noteType(const Type *t) {
+    if (t == nullptr || t->isFunction() || t->isVoid()) return;
+    const Kind k = t->kind();
+    if (k != Kind::Pointer && k != Kind::LValueRef && k != Kind::RValueRef && k != Kind::Array && !t->isStructOrUnion() &&
+        !t->isArithmetic() && k != Kind::NullPtr)
+        return;                                    // a member pointer, a template's own: nothing to show
+    for (const Type *seen : debugTypes_) if (seen == t) return;
+    debugTypes_.push_back(t);
+    if (k == Kind::Pointer || k == Kind::LValueRef || k == Kind::RValueRef || k == Kind::Array) noteType(t->pointee());
+    if (t->isStructOrUnion() && t->isComplete()) {
+        for (const Type::BaseSpec &b : t->bases()) if (b.direct && !b.isVirtual) noteType(b.type);
+        for (const Member &m : t->members()) noteType(m.type);
+    }
+}
+
+// -g: the types, named as the variables' DW_AT_type names them, each closed by .dwendtag: a base type's size
+// and encoding, a pointer's or a reference's size, an array's element and bound, a class's non-virtual bases
+// (as gdb names them, <Base>) and members at their offsets (a bit-field is left out).
+void Tms6747::emitTypes() {
+    if (lineSource() == nullptr) return;
+    std::ostringstream o;
+    for (const Type *t : debugTypes_) {
+        const std::string name = t->describe();
+        const Kind k = t->kind();
+        const int size = t->isComplete() ? t->size(target_) : 0;
+        if (k == Kind::Pointer || k == Kind::LValueRef || k == Kind::RValueRef) {
+            o << "\t.dwtag\tDW_TAG_pointer_type, DW_AT_name(\"" << name << "\"), DW_AT_type(\""
+              << (t->pointee()->isFunction() ? std::string("void") : t->pointee()->describe()) << "\"), DW_AT_byte_size(4)\n";
+        } else if (k == Kind::Array) {
+            o << "\t.dwtag\tDW_TAG_array_type, DW_AT_name(\"" << name << "\"), DW_AT_type(\"" << t->pointee()->describe()
+              << "\"), DW_AT_upper_bound(" << (t->length() - 1) << "), DW_AT_byte_size(" << size << ")\n";
+        } else if (t->isStructOrUnion()) {
+            o << "\t.dwtag\t" << (k == Kind::Union ? "DW_TAG_union_type" : t->declaredClass() ? "DW_TAG_class_type" : "DW_TAG_structure_type")
+              << ", DW_AT_name(\"" << name << "\"), DW_AT_byte_size(" << size << ")\n";
+            if (t->isComplete()) {
+                for (const Type::BaseSpec &b : t->bases())
+                    if (b.direct && !b.isVirtual)
+                        o << "\t.dwtag\tDW_TAG_member, DW_AT_name(\"<" << b.type->describe() << ">\"), DW_AT_type(\"" << b.type->describe()
+                          << "\"), DW_AT_data_member_location(" << b.offset << ")\n";
+                for (const Member &m : t->members())
+                    if (m.width == 0 && !m.name.empty() && m.inVirtualBase == nullptr)
+                        o << "\t.dwtag\tDW_TAG_member, DW_AT_name(\"" << m.name << "\"), DW_AT_type(\"" << m.type->describe()
+                          << "\"), DW_AT_data_member_location(" << m.offset << ")\n";
+            }
+        } else {
+            const bool isSigned = t->isArithmetic() && t->isSigned(target_);
+            const char *enc = t->isFloating() ? "DW_ATE_float"
+                            : k == Kind::Bool ? "DW_ATE_boolean"
+                            : (k == Kind::Char || k == Kind::SChar || k == Kind::UChar) ? (isSigned ? "DW_ATE_signed_char" : "DW_ATE_unsigned_char")
+                            : isSigned ? "DW_ATE_signed" : "DW_ATE_unsigned";
+            o << "\t.dwtag\tDW_TAG_base_type, DW_AT_name(\"" << name << "\"), DW_AT_byte_size(" << size << "), DW_AT_encoding(" << enc << ")\n";
+        }
+        o << "\t.dwendtag\n";
+    }
+    file_ += o.str();
 }
 
 void Tms6747::emitFunction(const Function &fn) {
@@ -2331,6 +2391,7 @@ void Tms6747::run(const Program &program) {
     file_ += out_.str();
     out_.str(std::string());
     for (const Function &fn : program.functions) emitFunction(fn);
+    emitTypes();
     // Dynamic initialisation: the init function's address in .init_array,
     // which the EABI's start-up code - and the VM6747 emulator - walk before
     // main.
