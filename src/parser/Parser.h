@@ -358,6 +358,8 @@ private:
             bool constructor = false;
             // **A static data member, not a member function.**
             bool isData = false;
+            // A member of a nested class, `Tree<T>::It::Deep::count`: "It::Deep", under the specialization.
+            std::string nested;
         };
         std::vector<OutOfLine> outOfLine;
 
@@ -748,7 +750,7 @@ private:
     bool skipTemplatedDefinition(bool *sawInit = nullptr, bool *sawParen = nullptr);
     void skipTemplateArguments();
     // `Box<T>::Box(` or `Box<T>::~Box(`.
-    bool atOutOfLineSpecial(std::string *what);
+    bool atOutOfLineSpecial(std::string *what, std::string *nested = nullptr);
     // The whole of what a use of a template does in 5.1.
     void refuseTemplateId();
 

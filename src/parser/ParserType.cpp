@@ -1321,13 +1321,18 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     // Held bodies are read now, with the class complete: every member exists,
     // so a body may name one declared below it. Taken out of the vector first,
     // because a body may itself define a class with held bodies of its own.
+    // A specialization also takes its nested classes' bodies, which waited for it, [temp.inst]/2.
+    const bool takesNested = !specializationOf.empty() && deferSpecializationBodies_;
+    auto ownBody = [&](const PendingBody &b) {
+        return b.tag == tag || (takesNested && b.tag.compare(0, tag.size() + 2, tag + "::") == 0);
+    };
     std::vector<PendingBody> mine;
     for (std::size_t i = 0; i < pendingBodies_.size(); i++)
-        if (pendingBodies_[i].tag == tag) mine.push_back(pendingBodies_[i]);
+        if (ownBody(pendingBodies_[i])) mine.push_back(pendingBodies_[i]);
     if (!mine.empty()) {
         std::vector<PendingBody> rest;
         for (std::size_t i = 0; i < pendingBodies_.size(); i++)
-            if (pendingBodies_[i].tag != tag) rest.push_back(pendingBodies_[i]);
+            if (!ownBody(pendingBodies_[i])) rest.push_back(pendingBodies_[i]);
         pendingBodies_.swap(rest);
     }
 
@@ -1367,8 +1372,14 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     // **A specialization's member bodies are not replayed here.** This is in the
     // middle of whatever asked for the class, and a replay goes through topLevel,
     // which clears the locals; they are handed to the pass that defines them.
+    bool insideSpecialization = false;
+    for (std::size_t i = 0; i < classStack_.size(); i++)
+        if (classStack_[i] != type && classStack_[i]->isSpecialization()) insideSpecialization = true;
     if (!specializationOf.empty() && deferSpecializationBodies_)
         heldForSpecialization_ = std::move(mine);
+    else if (deferSpecializationBodies_ && insideSpecialization)
+        // Nested in a specialization being made: compiled where called, with the specialization's own.
+        pendingBodies_.insert(pendingBodies_.end(), mine.begin(), mine.end());
     else
         replayInlineBodies(std::move(mine));
     return type;
