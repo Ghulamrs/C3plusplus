@@ -61,10 +61,15 @@ will not ask the local assembler to build for hardware it is not on. `tms6747`
 is different, since no host is a C6747: `-c` assembles what the compiler wrote
 with asm6x, the project's own C6000 assembler (`CPP11_AS` names it, else the
 one beside `cpp11`, else `asm6x` on PATH), into a TI object on any machine;
-without `-c` the objects go to TI's `lnk6x` against `rts6740_elf.lib` - or
-`rts6740_elf_eh.lib`, which a C++ program that throws needs - into a `.out`,
-which needs CCS: `CPP11_TI` names its C6000 compiler directory, `CPP11_TILIB` a
-directory holding the exception-handling runtime, `CPP11_LD` the linker itself.
+without `-c` the objects go to TI's `lnk6x` into a `.out`, against the run-time
+`-rts=` picks: a directory holding RTS6x's `rts6x.lib`, or the `.lib` itself, or
+`ti` for TI's `rts6740`. Unsaid, cpp11 links RTS6x when `RTS6X` names it or
+`lib/rts6x-tms6747` is beside `cpp11` - as RIDE installs it - and neither
+`CPP11_TI` nor `CPP11_TILIB` names TI's; TI's otherwise, `rts6740_elf.lib` or
+`rts6740_elf_eh.lib`, which a C++ program that throws needs, where CCS is:
+`CPP11_TI` names its C6000 compiler directory, `CPP11_TILIB` a directory holding
+the exception-handling runtime, `CPP11_LD` the linker itself. The link prints
+which run-time it took, and a `-rts=` naming no `.lib` that exists is refused.
 `tests/asm6x.sh` holds every case's driver-made object to asm6x's own;
 `tools/windows/ti-link.cmd` links every case on the box, and `verify-three`
 runs both.

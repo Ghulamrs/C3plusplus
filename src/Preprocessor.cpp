@@ -154,8 +154,8 @@ void Preprocessor::fail(int fileIndex, int lineNo, const std::string &line,
     std::string text = head + line + "\n";
     text.append(head.size() + column, ' ');
     text += "^ " + message + "\n";
-    std::fwrite(text.data(), 1, text.size(), stderr);
-    std::exit(1);
+    { std::lock_guard<std::mutex> hold(diagnosticLock()); std::fwrite(text.data(), 1, text.size(), stderr); }
+    compileFailed();  // thrown, not exited: this runs in a worker, and the pool gives the verdict (P1)
 }
 
 bool Preprocessor::parentEmitting() const {

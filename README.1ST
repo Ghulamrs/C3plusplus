@@ -37,6 +37,12 @@ Options, in full:
                   the default where they sit beside the compiler), gnu (clang,
                   the default elsewhere and for -g), or ml64 (Microsoft's
                   assembler, which links one translation unit per program)
+    -rts=<r>      tms6747 only: the run-time a .out is linked against - a
+                  directory holding RTS6x's rts6x.lib, the .lib itself, or
+                  ti for TI's rts6740. Unsaid: RTS6x from RTS6X, or from
+                  lib/rts6x-tms6747 beside the compiler as RIDE installs it,
+                  unless CPP11_TI or CPP11_TILIB names TI's; TI's otherwise.
+                  The link prints which it took
     -O0 -O1 -O2   how hard the optimizer works; -O0 is the default
     -Os           -O1 choosing the smaller code where the two differ
     -g            write a line table, so a debugger can step through the

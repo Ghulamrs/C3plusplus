@@ -457,6 +457,10 @@ between the two lists.**
   `src/parser/ParserStmt.cpp:1860`
 - **a member under `#pragma pack`, on tms6747** - the C6000 backend loads words
   aligned only, and cl6x has no `#pragma pack`. `src/parser/ParserType.cpp:58`
+- **`-g` with `-O`, on tms6747** - the C6000 scheduler treats a `.dwpsn` line
+  as a block boundary and carries no source position through its packets;
+  `-g` alone writes the line table. The driver refuses it, so this entry is
+  hand-written. `tests/cases/tms6747-debug-optimized.cpp`
 
 A case that cannot be compiled for a target names it in `<case>.notarget` with
 the reason on the line, which is printed on every run.
