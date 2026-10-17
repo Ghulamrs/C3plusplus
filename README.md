@@ -318,8 +318,8 @@ member function; a `constexpr` object of class type; `alignas` on a local past
 the stack's alignment; a dynamic exception specification; SFINAE on an
 expression in a signature; a universal character name in an identifier; a `goto`
 that leaves a `catch` handler; and a function try block and an anonymous union,
-which are C++98. `tools/feature-sweep` counts them: on 2026-10-13, 71 of its 94
-probes compile, 23 are refused by name and none by a message naming nothing.
+which are C++98. `tools/feature-sweep` counts them: on 2026-10-17, 72 of its 94
+probes compile, 22 are refused by name and none by a message naming nothing.
 **Landed in the review round of 2026-10-08 to 2026-10-13**: `enum class`;
 `override` and `final`; `= default` and `= delete`; delegating constructors;
 `using X = T;` and alias templates; forwarding references and `std::forward`;
