@@ -169,6 +169,23 @@ x86_64-windows, where a class cannot be thrown yet and they print and abort inst
 delete`, the placement and nothrow forms, `std::bad_alloc` from the platform runtime, `typeid` and
 `dynamic_cast` all work.
 
+## What 1.13 changes
+
+The plan's third day, and the last of its items:
+
+* **Inheriting constructors**, `using B::B;` ([class.inhctor], as clang applies it under
+  `-std=c++11`): each constructor of B, but its default, copy and move ones, becomes one of D's, with
+  B's parameters, default arguments, access and `explicit`, building the rest of D as the implicit
+  default constructor would. Itanium names it `CI1`/`CI2` plus the base (`_ZN1DCI11BEi`); Microsoft as
+  an ordinary constructor. Refused by name: of a virtual base, a constructor with `...`, and one taking
+  a class by value whose copy is not trivial.
+* **`template <class T, T v>`** - a non-type parameter whose type is an earlier type parameter - and
+  with it **`std::integral_constant`**, the base of every trait in `<type_traits>`, as C++11 writes it
+  (no `operator()`, which is C++14). `true_type` and `false_type` are its two `bool` instances.
+* **The headline, re-measured**: `tools/feature-sweep` reads 72 compile, 22 refused by name, 0 naming
+  nothing, of 94. The feature the review's Rec 1 named has landed; the headline stays "C++03 with
+  C++11 extensions" while fourteen C++11 language rows are refused.
+
 ## What 1.12 changes
 
 The five items the 1.9 round found and did not mend, and an older silent wrong value found beside the first:
@@ -300,11 +317,11 @@ defects below and nothing else; Compiler-Cppi has closed those too, with the
 vtable group, `_ZTv` thunks, VTT and construction vtables, and that work is
 not in 1.3.
 
-## Known shortcomings in 1.12
+## Known shortcomings in 1.13
 
 Everything here is measured and written down elsewhere in full; this is the
-short list a user of **1.12** should have in front of them. `docs/EXCLUSIONS.md`
-is the complete one - 125 refusal sites on 2026-10-17 (131 on 2026-10-08),
+short list a user of **1.13** should have in front of them. `docs/EXCLUSIONS.md`
+is the complete one - 129 refusal sites on 2026-10-17 (131 on 2026-10-08),
 each citing the source line that refuses it, and `make test` fails when the two
 disagree. The heading
 above is written by `tools/version-lines` from `src/Version.h`; it said 1.4 for

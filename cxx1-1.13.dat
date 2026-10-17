@@ -1,7 +1,7 @@
 ©2026 G. R. Akhtar - C++03 with C++11 extensions
-Release seal, version 1.12, sealed 17-10-2026
+Release seal, version 1.13, sealed 17-10-2026
 Written by tools/seal; check it with `tools/seal check`.
-CRC32  size  file - 160 files, seal 0F1AE3AE
+CRC32  size  file - 160 files, seal FB113119
 ------------------------------------------------------------------
 302F7AC7      4283  include/__string_conversions
 A88B4DC7      6938  include/algorithm
@@ -35,7 +35,7 @@ C49ECBC5      2228  include/set
 648E0442      2095  include/sstream
 C2F50D91      3994  include/stdexcept
 15AF8573     16480  include/string
-1001F7EE      9467  include/type_traits
+D25FA330      9375  include/type_traits
 6AA11039      3675  include/typeinfo
 A89EE1B9      2130  include/utility
 147C885E      9797  include/vector
@@ -64,8 +64,8 @@ B08C27AF     60870  src/Driver.cpp
 A7860783      4292  src/Driver.h
 6B76BB10     22035  src/Lexer.cpp
 98436587      2597  src/Lexer.h
-416EE77B     76550  src/Mangle.cpp
-00DAB69B     12131  src/Mangle.h
+D268F967     77642  src/Mangle.cpp
+CB39507D     12470  src/Mangle.h
 36FF0529       493  src/Name.h
 B35E3402      3248  src/Operator.cpp
 5E9A1F82      1033  src/Operator.h
@@ -75,7 +75,7 @@ F6E56373      4226  src/Preprocessor.h
 2C992AD9      2403  src/Source.h
 9260ADFC     20254  src/Type.cpp
 C8DA442B     26369  src/Type.h
-478F25E2       386  src/Version.h
+AA355B63       386  src/Version.h
 0B0F9F25     45019  src/backend/Arm64Darwin.cpp
 98997445      5698  src/backend/Arm64Darwin.h
 0F851578      3863  src/backend/Backend.cpp
@@ -147,8 +147,8 @@ EBE87737     29190  src/optimizer/OptValues.cpp
 9F102317     10752  src/optimizer/Optimizer.cpp
 9E3EB6F4      5814  src/optimizer/Optimizer.h
 90851294     44643  src/parser/Parser.cpp
-A49B482D    136320  src/parser/Parser.h
-C46709F1    228282  src/parser/ParserClass.cpp
+6EA764B6    137568  src/parser/Parser.h
+BAFA1646    235922  src/parser/ParserClass.cpp
 CC084F84     25161  src/parser/ParserConst.cpp
 8E4BDCB1    127194  src/parser/ParserExpr.cpp
 9B660517     42318  src/parser/ParserExprCall.cpp
@@ -159,9 +159,9 @@ B5CA4BB8     73168  src/parser/ParserInit.cpp
 D05BA92D     43642  src/parser/ParserOperator.cpp
 187F7A91     61933  src/parser/ParserOverload.cpp
 C242B4A0    111279  src/parser/ParserStmt.cpp
-33EB2BB9    133951  src/parser/ParserTemplate.cpp
+21EC479C    136014  src/parser/ParserTemplate.cpp
 F77ED86A     97829  src/parser/ParserTopLevel.cpp
-4ED90D56    133003  src/parser/ParserType.cpp
+12EA0C8C    134738  src/parser/ParserType.cpp
 96A8CE61     37964  src/parser/ParserVtable.cpp
 ------------------------------------------------------------------
 Sealed on 17-10-2026

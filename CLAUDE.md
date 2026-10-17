@@ -13388,3 +13388,16 @@ function try block), so the headline stays "C++03 with C++11 extensions". **Foun
 not mended**: a partial specialization whose non-type parameter appears only inside a
 template-id argument, `template <int N> struct K<V<N> >`, is refused as "never used".
 
+
+## Version 1.13, 2026-10-17: the mending plan's third day
+
+**1.13 is `mend/day3` merged**, each item with its section above ("Day 3 of the 1.9 mending plan"):
+inheriting constructors, `template <class T, T v>` with `std::integral_constant` under every trait, and
+the headline re-measured - 72 compile, 22 refused by name, 0 naming nothing, of 94 - held at "C++03 with
+C++11 extensions" while fourteen C++11 language rows are refused. With it the plan the Claude Doc "cpp11
+mending plan" laid out on 2026-10-16 is closed, its six items and the five found on Day 1 all mended.
+
+Measured: Mac `make test` passes - run.sh 730/0, emit.sh 1853/0, names.sh 474/0, overload.sh 33/0,
+exclusions 129 sites 0/0, comment cap 0; Linux box, g++: run.sh 730/0 at -O0 and -O2, tms6747.sh 453/0 at
+-O0 and -O2 on vm6747 and every case also on sim6747 against TI's rts6740_elf_eh.lib. Not run: the
+Windows box, closed at the user's word, and TI's simulators. Seal `cxx1-1.13.dat`, 160 files.
