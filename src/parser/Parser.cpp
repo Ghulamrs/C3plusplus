@@ -231,11 +231,16 @@ std::string Parser::qualifyForLookup(const std::string &name,
 }
 
 std::string Parser::namespaceNamed(const std::string &first) const {
-    // A nearer namespace of the same name hides a file-scope one, so the enclosing
-    // namespaces are asked first, innermost out.
+    // Innermost out, and a class of the name hides a namespace as a nearer namespace does:
+    // inside `outer`, `inner::k` is `outer::inner`'s whichever kind it is.
+    for (std::size_t i = classStack_.size(); i-- > 0; )
+        if (lookupInClass(classStack_[i], first) != nullptr) return std::string();
+    if (currentClass_ != nullptr && lookupInClass(currentClass_, first) != nullptr)
+        return std::string();
     for (std::size_t i = namespaceStack_.size(); i-- > 0; ) {
         std::string prefix;
         for (std::size_t k = 0; k <= i; k++) prefix += namespaceStack_[k] + "::";
+        if (hasTypeNamed(prefix + first)) return std::string();
         if (namespaces_.count(prefix + first)) return prefix + first;
     }
     for (std::size_t i = usingNamespaces_.size(); i-- > 0; )
