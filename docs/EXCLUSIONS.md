@@ -102,10 +102,10 @@ goes in the same commit.
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:431` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:1672` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:231` |
-| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:4809`, `src/parser/ParserTopLevel.cpp:707` |
-| `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:636` |
+| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:4809`, `src/parser/ParserTopLevel.cpp:722` |
+| `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:651` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:444` |
-| `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:709`, `src/parser/ParserInit.cpp:926`, `src/parser/ParserTopLevel.cpp:403`, `src/parser/ParserExprNew.cpp:422` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:196` |
+| `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:709`, `src/parser/ParserInit.cpp:926`, `src/parser/ParserTopLevel.cpp:415`, `src/parser/ParserExprNew.cpp:422` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:196` |
 | `namespace N::M { }` | C++17 | `src/parser/ParserTopLevel.cpp:78` |
 | an inline variable | C++17 | `src/parser/ParserTopLevel.cpp:229` |
 
@@ -139,7 +139,7 @@ argument over a template's parameters in a signature, spelled as clang spells th
 - **an unnamed template parameter** - `src/parser/ParserTemplate.cpp:52`,
   `src/parser/ParserTemplate.cpp:91`
 - **a non-type template parameter that is not an integer type** -
-  `src/parser/ParserTemplate.cpp:1024`
+  `src/parser/ParserTemplate.cpp:1038`
 - **a non-type template parameter whose type is built from an earlier one**,
   `template <class T, T *p>` - `T v` itself works, `std::integral_constant` with
   it. `src/parser/ParserTemplate.cpp:106`
@@ -153,22 +153,22 @@ argument over a template's parameters in a signature, spelled as clang spells th
   read and suppresses nothing - `docs/CONFORMANCE.md` says what that costs.
 - **two class templates of one name** - that is partial specialization and is
   written `template <> struct X<...>`; function templates overload.
-  `src/parser/ParserTemplate.cpp:615`
+  `src/parser/ParserTemplate.cpp:629`
 - **an explicit specialization of anything but a class template or a
-  namespace-scope function template** - `src/parser/ParserTemplate.cpp:639`;
+  namespace-scope function template** - `src/parser/ParserTemplate.cpp:653`;
   and **a function template's explicit specialization declared without its
-  body** - give it the body there. `src/parser/ParserTemplate.cpp:650`
+  body** - give it the body there. `src/parser/ParserTemplate.cpp:664`
 - **some of a function template's arguments written and the rest deduced
-  from the call** - write all of them, or none. `src/parser/ParserTemplate.cpp:908`
+  from the call** - write all of them, or none. `src/parser/ParserTemplate.cpp:922`
 - **naming a function template without calling it**, and **instantiating one
-  that was only declared** - `src/parser/ParserTemplate.cpp:2368`,
-  `src/parser/ParserTemplate.cpp:2455`, `src/parser/ParserTemplate.cpp:2494`
+  that was only declared** - `src/parser/ParserTemplate.cpp:2382`,
+  `src/parser/ParserTemplate.cpp:2469`, `src/parser/ParserTemplate.cpp:2508`
 - **naming a member through a class template's argument list**,
   `Box<int>::m` in a declaration - the type is made, so a typedef for it
   reaches the member: `typedef Box<int> B; B::m`.
-  `src/parser/ParserTemplate.cpp:2490`, `src/parser/ParserType.cpp:36`
+  `src/parser/ParserTemplate.cpp:2504`, `src/parser/ParserType.cpp:36`
 - **a member function template named without being called** -
-  `src/parser/ParserTemplate.cpp:2576`; **a member class template** -
+  `src/parser/ParserTemplate.cpp:2590`; **a member class template** -
   `src/parser/ParserType.cpp:499`; **an out-of-line member template
   definition** - `src/parser/ParserType.cpp:549`; **an `explicit` constructor
   template** - `src/parser/ParserType.cpp:532`
@@ -198,13 +198,13 @@ argument over a template's parameters in a signature, spelled as clang spells th
   has no body. `src/parser/ParserType.cpp:1115`
 - **a delegating constructor of a class with a virtual base** - the target
   would have to be told whether the object is the most derived one.
-  `src/parser/ParserTopLevel.cpp:1872`
+  `src/parser/ParserTopLevel.cpp:1889`
 - **a mem-initialiser that would run a constructor once per element of an
-  array member** - `src/parser/ParserTopLevel.cpp:1105`
+  array member** - `src/parser/ParserTopLevel.cpp:1121`
 - **a virtual base initialised with an argument that needs a temporary** - the
   base is built by the most-derived constructor, in a frame the temporary is
   not in; an argument of parameters and constants works.
-  `src/parser/ParserTopLevel.cpp:1072`
+  `src/parser/ParserTopLevel.cpp:1088`
 - **a `constexpr` object of class type** - a `constexpr` constructor runs as an
   ordinary one, and the constant evaluator has no object model to fold the
   object with. `src/parser/ParserConst.cpp:132`; **statements in a `constexpr`
@@ -252,13 +252,13 @@ argument over a template's parameters in a signature, spelled as clang spells th
   `T{...}`. `src/parser/ParserExprCall.cpp:488`
 - **`auto x{...}`** - C++11 makes it `std::initializer_list`, N3922 the
   element's type, and compilers apply N3922 to C++11; `auto x = {...}` deduces
-  the list. `src/parser/ParserTemplate.cpp:1385`
+  the list. `src/parser/ParserTemplate.cpp:1399`
 - **`auto &` or `auto *` from a braced list** - only `auto` and `const auto`
-  deduce `std::initializer_list` here. `src/parser/ParserTemplate.cpp:1394`
+  deduce `std::initializer_list` here. `src/parser/ParserTemplate.cpp:1408`
 - **a `std::initializer_list` with static storage made from braces** - its
   backing array would need static storage too. `src/parser/ParserInit.cpp:1158`
 - **a braced default argument** - `src/parser/ParserClass.cpp:4823`,
-  `src/parser/ParserTopLevel.cpp:760`
+  `src/parser/ParserTopLevel.cpp:775`
 - **a braced member initialiser with values on a class, an array or a
   reference** - a scalar member takes `{v}` and `= {v}`, and `= {}` and `= {0}`
   zero any member. `src/parser/ParserType.cpp:1185`
@@ -359,7 +359,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   `tests/cases/goto-out-of-handler-refused.cpp`
 - **a function try block**, `int f() try { } catch (...) { }` - its handler
   covers the mem-initialisers as well as the body, so a `try` inside the body
-  is not the same thing. C++98. `src/parser/ParserTopLevel.cpp:1283`,
+  is not the same thing. C++98. `src/parser/ParserTopLevel.cpp:1299`,
   `tests/cases/function-try-block-refused.cpp`
 - **a dynamic exception specification**, `throw(T)` - deprecated in C++11; it
   needs a run-time check of the thrown type against a list, where `noexcept` is
@@ -373,7 +373,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   `catch` handler, on x86_64-windows** - the cleanup would be a funclet inside
   the handler's funclet. `src/parser/ParserStmt.cpp:824`
 - **a trailing return type that is itself deduced**, `auto f() -> auto` -
-  C++14. `src/parser/ParserTopLevel.cpp:1805`
+  C++14. `src/parser/ParserTopLevel.cpp:1822`
 - **an expression form the Itanium name was not measured for, over a template's
   parameters in a function template's signature** - a postfix `++` or `--`, a
   lambda, `new`, `throw`, `typeid`, `noexcept`, a C-style cast to a reference
@@ -508,6 +508,6 @@ commit; and `make test` fails until both are true.
 ## Found by the release's feature sweep (2026-10-13)
 
 - **a function type as a template argument**, `std::function<int(int)>` - a pointer to one,
-  `R (*)(Args...)`, is read. `src/parser/ParserTemplate.cpp:2009`, `src/parser/ParserTemplate.cpp:1011`
+  `R (*)(Args...)`, is read. `src/parser/ParserTemplate.cpp:2023`, `src/parser/ParserTemplate.cpp:1025`
 - **a universal character name in an identifier**, `caf\u00e9` - inside a string or character
   literal it is read. `src/Lexer.cpp:519`

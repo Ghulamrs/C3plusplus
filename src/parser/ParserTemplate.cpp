@@ -517,6 +517,20 @@ bool Parser::templateDeclaration() {
                           "never used in this specialization's arguments, so "
                           "nothing could ever work it out");
         }
+        // [temp.class.spec]/8: a value given for `T v` may not specialize it while T is still a parameter.
+        const std::vector<TemplateParam> &primaryParams = primary->second.params;
+        for (std::size_t k = 0; k < ps.args.size() && k < primaryParams.size(); k++) {
+            const int of = primaryParams[k].typeOf;
+            if (ps.args[k].isType || ps.args[k].isPackExpansion || ps.args[k].isParam || of < 0 ||
+                static_cast<std::size_t>(of) >= ps.args.size() || !ps.args[of].isType)
+                continue;
+            for (std::size_t i = 0; i < ps.params.size(); i++)
+                if (mentionsParam(ps.args[of].type, i))
+                    src_.fail(ps.pos, "this partial specialization gives '" + primaryParams[k].name +
+                                      "' a value while its type '" + primaryParams[of].name + "' is still "
+                                      "a parameter - a non-type argument may not specialize a parameter "
+                                      "of dependent type");
+        }
         at_ = decl.afterParams;
         skipTemplatedDefinition();
         primary->second.partials.push_back(ps);

@@ -240,6 +240,7 @@ void Parser::topLevel(Program &program) {
     // qualifier that names a namespace is folded into the name, which is how
     // a function in a namespace is keyed throughout (the review's A17).
     std::vector<std::string> definedIn;
+    std::string absoluteName;
     if (!d.qualifier.empty() && namespaces_.find(d.qualifier) != namespaces_.end() &&
         findTypedef(d.qualifier) == nullptr) {
         // [basic.lookup.unqual]/6: its body looks names up in that namespace, as if written there.
@@ -248,7 +249,12 @@ void Parser::topLevel(Program &program) {
             if (e == std::string::npos) e = d.qualifier.size();
             definedIn.push_back(d.qualifier.substr(s, e - s));
         }
-        d.name = d.qualifier + "::" + d.name;
+        // Relative to the namespace it is written in, which every key below puts back on;
+        // lookupSignature takes a qualified name as absolute, so it is handed the whole one.
+        absoluteName = d.qualifier + "::" + d.name;
+        const std::string prefix = namespacePrefix();
+        const bool within = !prefix.empty() && d.qualifier.compare(0, prefix.size(), prefix) == 0;
+        d.name = within ? absoluteName.substr(prefix.size()) : absoluteName;
         d.qualifier.clear();
     } else if (!d.qualifier.empty()) {
         // A member of a class in a namespace: its body, parameters and initialiser read there too.
@@ -327,6 +333,11 @@ void Parser::topLevel(Program &program) {
     }
 
     if ((!peek().is("(") || constructionAhead) && d.paramsAt == 0) {
+        // `int a::b::v = k;` is read as if written in a::b, its initialiser too - [basic.lookup.unqual]/13.
+        if (!absoluteName.empty()) {
+            inNamespace.enter(definedIn);
+            d.name = absoluteName.substr(absoluteName.rfind("::") + 2);
+        }
         const Type *deducedSoFar = nullptr;
         for (;;) {
             if (mentionsDeduced(d.type)) {
@@ -374,6 +385,7 @@ void Parser::topLevel(Program &program) {
                                                       std::move(pieces), hasInit,
                                                       internal, false });
                 if (!consume(",")) break;
+                inNamespace.leave();   // a second declarator is read where the first was written
                 d = declarator(base);
                 continue;
             }
@@ -470,7 +482,8 @@ void Parser::topLevel(Program &program) {
                                                       false, internal, false });
                     program.globals.back().align = quals.alignAs;
                     if (!consume(",")) break;
-                    d = declarator(base);
+                    inNamespace.leave();   // a second declarator is read where the first was written
+                d = declarator(base);
                     continue;
                 }
             }
@@ -588,6 +601,7 @@ void Parser::topLevel(Program &program) {
                     }
                 }
                 if (!consume(",")) break;
+                inNamespace.leave();   // a second declarator is read where the first was written
                 d = declarator(base);
                 continue;
             }
@@ -621,7 +635,8 @@ void Parser::topLevel(Program &program) {
                 refuseWeakAlignas(quals.alignAs, d.type, d.pos);
             }
             if (!consume(",")) break;
-            d = declarator(base);
+            inNamespace.leave();   // a second declarator is read where the first was written
+                d = declarator(base);
         }
         expect(";");
         return;
@@ -953,7 +968,8 @@ void Parser::topLevel(Program &program) {
         // Which function's body is about to be read, so that an access check inside it
         // can ask whether a class befriended *this* function. A member's is left empty:
         // the qualified form that would befriend a member is refused where written.
-        currentFunction_ = lookupSignature(d.name, params, variadic, d.pos).symbol;
+        currentFunction_ = lookupSignature(absoluteName.empty() ? d.name : absoluteName, params, variadic,
+                                           d.pos).symbol;
     }
     // Set for a member's body too, unlike the friend question above, because a local
     // class inside a member function is spelled by wrapping that function's name.
@@ -1539,7 +1555,8 @@ void Parser::topLevel(Program &program) {
     const Type *emittedReturn = d.type->isReference()
                               ? types_.pointerTo(d.type->referent()) : d.type;
     if (definedSymbol.empty())
-        definedSymbol = lookupSignature(d.name, params, variadic, d.pos).symbol;
+        definedSymbol = lookupSignature(absoluteName.empty() ? d.name : absoluteName, params,
+                                        variadic, d.pos).symbol;
 
     // Recorded before `body` is moved into the Function - the expression the pointer
     // names is heap-allocated and goes on living there, which makes it safe to keep.
