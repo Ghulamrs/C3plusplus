@@ -1905,8 +1905,7 @@ private:
     // name itself. `exists` says which table to ask, functions and variables differing.
     std::string qualifyForLookup(const std::string &name,
                                  bool (Parser::*exists)(const std::string &) const) const;
-    // The namespace a written first component names, as qualifyForLookup would find it -
-    // `inner` inside `outer` is "outer::inner"; empty when it names none.
+    // The namespace a first component names, innermost out: `inner` in `outer` is "outer::inner".
     std::string namespaceNamed(const std::string &first) const;
     // The name a using-declaration redirects `key` to, following a chain of them
     // and stopping at a fixed depth so that `using A::x;` and `using B::x;`

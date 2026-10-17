@@ -9,8 +9,6 @@
 #include <climits>
 #include <cstring>
 
-// Answers with at_ where it was. A refusal that names a feature is an answer and is
-// reported; any other failure only says this parenthesis does not hold a type-id.
 // Whether a token can begin the operand of a cast: a name, a literal, a prefix
 // operator or a bracket. `.`, `->`, a binary-only operator or a closer cannot.
 static bool beginsOperand(const Token &t) {
@@ -28,6 +26,8 @@ bool Parser::endsInEmptyCall() const {
            !tokens_[at_ - 3].is(")");
 }
 
+// Answers with at_ where it was. A refusal that names a feature is an answer and is
+// reported; any other failure only says this parenthesis does not hold a type-id.
 bool Parser::parenHoldsTypeId() {
     const std::size_t save = at_;
     at_++;

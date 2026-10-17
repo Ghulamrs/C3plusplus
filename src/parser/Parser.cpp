@@ -195,9 +195,7 @@ std::string Parser::followUsingDeclaration(const std::string &key) const {
 
 std::string Parser::qualifyForLookup(const std::string &name,
                                      bool (Parser::*exists)(const std::string &) const) const {
-    // Written qualified, so there is nothing to search - but `std::size_t` may
-    // still be a name a using-declaration put in `std`, and only the alias says
-    // what it stands for.
+    // Written qualified: the first component is searched for, then a using-declaration followed.
     if (name.find("::") != std::string::npos) {
         // [basic.lookup.qual]/1: the first component is looked up unqualified, so
         // `inner::S` inside `outer` is `outer::inner::S` - the enclosing namespaces
