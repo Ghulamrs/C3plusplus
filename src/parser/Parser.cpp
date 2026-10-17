@@ -230,6 +230,18 @@ std::string Parser::qualifyForLookup(const std::string &name,
     return name;
 }
 
+std::string Parser::enclosingNamespaceKey(const std::string &name,
+                                          bool (Parser::*exists)(const std::string &) const) const {
+    if (name.find("::") != std::string::npos) return std::string();
+    for (std::size_t i = namespaceStack_.size(); i-- > 0; ) {
+        std::string prefix;
+        for (std::size_t k = 0; k <= i; k++) prefix += namespaceStack_[k] + "::";
+        const std::string key = followUsingDeclaration(prefix + name);
+        if ((this->*exists)(key)) return key;
+    }
+    return std::string();
+}
+
 std::string Parser::namespaceNamed(const std::string &first) const {
     // Innermost out, and a class of the name hides a namespace as a nearer namespace does:
     // inside `outer`, `inner::k` is `outer::inner`'s whichever kind it is.
@@ -261,6 +273,13 @@ const Type *Parser::findTypedef(const std::string &name) const {
     auto local = localTypes_.find(name);
     if (local != localTypes_.end()) return local->second;
 
+    // Unqualified, the classes this is inside come next, then the enclosing namespaces,
+    // and only then a global: [basic.lookup.unqual]/1, the nearest declaration wins.
+    if (name.find("::") == std::string::npos)
+        if (const Type *t = classScopeType(name)) return t;
+    const std::string nearer = enclosingNamespaceKey(name, &Parser::hasTypeNamed);
+    if (!nearer.empty()) return typedefs_[typedefIndex_.find(nearer)->second].type;
+
     // A qualified name's first component is found innermost first, so a nearer
     // `inner::S` hides one at file scope before the name as written is tried.
     if (name.find("::") != std::string::npos && !namespaceStack_.empty()) {
@@ -291,9 +310,12 @@ const Type *Parser::findTypedef(const std::string &name) const {
         }
     }
 
-    // **Not found by its own name, so look in the classes this is inside.**
-    // Innermost first: a class body being parsed, then the class whose member
-    // function's body this is - a nested class is unqualified only from inside.
+    return classScopeType(name);
+}
+
+// **The classes this is inside, innermost first**: a class body being parsed, then the class whose
+// member function's body this is - a nested class is unqualified only from inside.
+const Type *Parser::classScopeType(const std::string &name) const {
     for (std::size_t i = classStack_.size(); i-- > 0; )
         if (const Type *t = lookupInClass(classStack_[i], name)) return t;
     if (currentClass_ != nullptr)
@@ -341,6 +363,8 @@ const Parser::EnumConst *Parser::enumInClass(const Type *cls,
 // `Layout::StepBase`, `n::Red` - so the scopes findTypedef walks are walked
 // here too.
 const Parser::EnumConst *Parser::findEnum(const std::string &name) const {
+    const std::string nearer = enclosingNamespaceKey(name, &Parser::hasEnumNamed);
+    if (!nearer.empty()) return &enums_[enumIndex_.find(nearer)->second];
     auto it = enumIndex_.find(name);
     if (it != enumIndex_.end()) return &enums_[it->second];
 
@@ -924,6 +948,8 @@ const Parser::Local *Parser::findLocal(const std::string &name) const {
 }
 
 const Parser::GlobalSym *Parser::findGlobal(const std::string &name) const {
+    const std::string nearer = enclosingNamespaceKey(name, &Parser::hasGlobalNamed);
+    if (!nearer.empty()) return &globals_[globalIndex_.find(nearer)->second];
     auto it = globalIndex_.find(name);
     if (it != globalIndex_.end()) return &globals_[it->second];
     // Not under the name as written: an unqualified one inside a namespace

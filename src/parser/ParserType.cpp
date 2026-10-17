@@ -2463,6 +2463,19 @@ Parser::Declared Parser::declarator(const Type *base, bool nameOptional,
     } else {
         const StaticMemberScope scope(this, declaredIn != nullptr && declaredIn->isStructOrUnion() &&
                                             peek().is("[") ? declaredIn : nullptr);
+        // `int ns::f(S s)`: what follows the declarator-id is looked up in ns, [basic.lookup.unqual]/8.
+        struct Restore {
+            std::vector<std::string> &stack; const std::vector<std::string> saved;
+            ~Restore() { stack = saved; }
+        } restore{ namespaceStack_, namespaceStack_ };
+        if (declaredIn == nullptr && !qualifier.empty() && namespaces_.count(qualifier)) {
+            namespaceStack_.clear();
+            for (std::size_t s = 0, e; s <= qualifier.size(); s = e + 2) {
+                e = qualifier.find("::", s);
+                if (e == std::string::npos) e = qualifier.size();
+                namespaceStack_.push_back(qualifier.substr(s, e - s));
+            }
+        }
         t = arraySuffix(base, pos);
     }
     skipAttributes();

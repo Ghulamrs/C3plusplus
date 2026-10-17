@@ -1907,6 +1907,12 @@ private:
                                  bool (Parser::*exists)(const std::string &) const) const;
     // The namespace a first component names, innermost out: `inner` in `outer` is "outer::inner".
     std::string namespaceNamed(const std::string &first) const;
+    // An unqualified name declared in an enclosing namespace, innermost first, or "" -
+    // asked before the flat table, since [basic.lookup.unqual]/1 lets the nearer one hide a global.
+    // A type named in the classes this is inside, innermost first, or null.
+    const Type *classScopeType(const std::string &name) const;
+    std::string enclosingNamespaceKey(const std::string &name,
+                                      bool (Parser::*exists)(const std::string &) const) const;
     // The name a using-declaration redirects `key` to, following a chain of them
     // and stopping at a fixed depth so that `using A::x;` and `using B::x;`
     // written into a cycle cannot hang the parser instead of failing a lookup.
