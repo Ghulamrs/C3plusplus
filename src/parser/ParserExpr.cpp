@@ -769,7 +769,8 @@ ExprPtr Parser::primary(Program *program) {
         // the rule R1 fixed for a name and this is the same rule for a *call*.
         const bool memberFirst =
             currentClass_ != nullptr && peekAt(1).is("(") &&
-            findMemberOwner(currentClass_, peek().text) != nullptr;
+            (findMemberOwner(currentClass_, peek().text) != nullptr ||
+             isMemberTemplate(currentClass_, peek().text));
         if (!memberFirst) return templateCall(program);
     }
 
@@ -1322,7 +1323,9 @@ ExprPtr Parser::primary(Program *program) {
             currentClass_ != nullptr && l == nullptr && g == nullptr) {
             const Type *owner = currentClass_->unqualified();
             const Local *self = findLocal("this");
-            if (isMemberTemplate(owner, name) && self != nullptr) {
+            // Beside an ordinary member of the name, overload resolution below ranks the two.
+            const bool alone = peekAt(1).is("<") || findMemberOwner(owner, name) == nullptr;
+            if (isMemberTemplate(owner, name) && self != nullptr && alone) {
                 at_++;                         // the name; memberTemplateCall reads from the '<' or '('
                 ExprPtr me(Var::local("this", self->offset));
                 me->setType(self->type);
