@@ -169,6 +169,15 @@ x86_64-windows, where a class cannot be thrown yet and they print and abort inst
 delete`, the placement and nothrow forms, `std::bad_alloc` from the platform runtime, `typeid` and
 `dynamic_cast` all work.
 
+## What 1.10 changes
+
+`-g` on tms6747: a variable of an inner block is written inside that block's `DW_TAG_lexical_block`,
+named by the block's begin and end labels, so a debugger lists it only while the stop is inside the
+block - GRIDEx2's phase F, brought from the Windows handoff of 2026-10-17. No instruction changes:
+`-g` adds `.dw` records and block labels, which `tests/run.sh` holds. Read by asm6x 1.5 and vm6747
+1.2; GRIDE's sim6747 and vm6747 show the blocks. Measured on the boxes: the referee's 445 images agree
+between sim6747 and TI's CCS 5.5 simulator, 0 differ.
+
 ## What 1.9 changes
 
 The first round of the 1.9 mending plan (2026-10-16), and the work brought from GRIDE's toolchain copy:
@@ -262,10 +271,10 @@ defects below and nothing else; Compiler-Cppi has closed those too, with the
 vtable group, `_ZTv` thunks, VTT and construction vtables, and that work is
 not in 1.3.
 
-## Known shortcomings in 1.9
+## Known shortcomings in 1.10
 
 Everything here is measured and written down elsewhere in full; this is the
-short list a user of **1.9** should have in front of them. `docs/EXCLUSIONS.md`
+short list a user of **1.10** should have in front of them. `docs/EXCLUSIONS.md`
 is the complete one - 126 refusal sites on 2026-10-13 (131 on 2026-10-08),
 each citing the source line that refuses it, and `make test` fails when the two
 disagree. The heading

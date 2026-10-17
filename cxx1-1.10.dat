@@ -1,7 +1,7 @@
 ©2026 G. R. Akhtar - C++03 with C++11 extensions
-Release seal, version 1.9, sealed 17-10-2026
+Release seal, version 1.10, sealed 17-10-2026
 Written by tools/seal; check it with `tools/seal check`.
-CRC32  size  file - 160 files, seal FE0D038E
+CRC32  size  file - 160 files, seal 5066EB58
 ------------------------------------------------------------------
 302F7AC7      4283  include/__string_conversions
 A88B4DC7      6938  include/algorithm
@@ -75,7 +75,7 @@ CC5E4171     55779  src/Preprocessor.cpp
 2C992AD9      2403  src/Source.h
 9260ADFC     20254  src/Type.cpp
 C8DA442B     26369  src/Type.h
-8D32A99B       384  src/Version.h
+478ADEA1       386  src/Version.h
 0B0F9F25     45019  src/backend/Arm64Darwin.cpp
 98997445      5698  src/backend/Arm64Darwin.h
 0F851578      3863  src/backend/Backend.cpp
@@ -90,10 +90,10 @@ E0AFFCF2     15315  src/backend/Dwarf.cpp
 2A677CA7      6688  src/backend/Masm.h
 C0022931     18370  src/backend/Spelling.cpp
 5EA461E4     12444  src/backend/Spelling.h
-1E1D7A5B    121651  src/backend/Tms6747.cpp
-2F10F3AC     15182  src/backend/Tms6747.h
+5213D455    123127  src/backend/Tms6747.cpp
+A44D113A     15297  src/backend/Tms6747.h
 86CE9FCB     19349  src/backend/Walker.cpp
-95138F23     10092  src/backend/Walker.h
+B3EC3C75     10463  src/backend/Walker.h
 8E5694C1    100409  src/backend/X86_64Linux.cpp
 7EEA4AD5     13518  src/backend/X86_64Linux.h
 10093D9D      3295  src/backend/X86_64Windows.cpp

@@ -13279,3 +13279,24 @@ from the box; `CXX1_TI_ASM6X` names the copy in `C:\Users\GRA\work\ride512-tools
 simulator on Windows and on Linux, the two agreeing to the cycle - cpp11 -O2 at 0.70 to 1.04 of cl6x
 7.4.4 -O2's cycles. **Not run**: `release-check`, whose vm6747 is not built on this Mac, and the RTS6x
 referee, which records into `../../TI/RTS6x`, outside the tree this round was confined to.
+
+## Version 1.10, 2026-10-17: GRIDEx2's phase F, and the tools 1.9's -g needed
+
+**1.9 shipped a `-g` the released tools could not read.** The `.dwtag` records brought from GRIDE's copy
+on 2026-10-16 were refused by asm6x 1.4 ("not a directive this assembler knows") and vm6747 1.1
+("unknown directive"), so RIDE's tms6747 Debug build broke on 1.9 - and no Mac suite assembles `-g`
+output, so nothing here saw it. It was found on the Linux box building RTS6x's debug libraries, which
+are `-O0 -g`. asm6x 1.5 takes GRIDE's `.dwtag` change whole and keeps the records in a section of their
+own; vm6747 1.2 skips them, its Locals debugger staying in GRIDE. The rule this round wrote down: **the TI
+modules run on the boxes, and cpp11 is tested there at every phase's end** - building vm6747 on the
+Mac to get a check through was the wrong turn, and was undone.
+
+**Phase F** came from the Windows handoff `gridex2-2026-10-17`: an inner block's variables inside its
+`DW_TAG_lexical_block`, named by begin and end labels. Merged three-way against 1.9's base; one comment
+conflicted. A block's labels are the only other thing `-g` adds, so `run.sh`'s check strips them too.
+
+Measured on the boxes for 1.9 and 1.10: tms6747.sh 445/0 at -O0 and -O2 on the Linux box, every pass
+also on sim6747, against TI's rts6740 and against rts6x.lib built by cpp11 and asm6x 1.5 (RTS6x's own
+check 192/0 with its release and its debug libraries); the RTS6x referee 445 agree, 0 differ, between
+sim6747 and TI's CCS 5.5 simulator on Windows; release-check PASS. The two TI tools and MASTER.SEAL are
+committed beside this release; RIDE stays 5.17, its own seal untouched.
