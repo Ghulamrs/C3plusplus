@@ -2,9 +2,9 @@
 #define CXX1_VERSION_H
 
 // **The release, in one place.**
-#define CXX1_VERSION      "1.8"
-#define CXX1_SEAL_DATE    "13-10-2026"
-#define CXX1_SEAL_FILE    "cxx1-1.8.dat"
+#define CXX1_VERSION      "1.9"
+#define CXX1_SEAL_DATE    "17-10-2026"
+#define CXX1_SEAL_FILE    "cxx1-1.9.dat"
 
 // The line every run prints first; what it claims is docs/EXCLUSIONS.md's to measure (review of 2026-10-08).
 #define CXX1_BANNER "©2026 G. R. Akhtar - C++03 with C++11 extensions"

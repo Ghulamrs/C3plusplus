@@ -169,6 +169,28 @@ x86_64-windows, where a class cannot be thrown yet and they print and abort inst
 delete`, the placement and nothrow forms, `std::bad_alloc` from the platform runtime, `typeid` and
 `dynamic_cast` all work.
 
+## What 1.9 changes
+
+The first round of the 1.9 mending plan (2026-10-16), and the work brought from GRIDE's toolchain copy:
+
+* **Four parser defects, each with clang-checked cases.** A constructor initialising a member that
+  hides a base's member of the same name crashed the compiler; a list entry naming only a base's
+  member is refused now, as clang refuses it. A nested namespace named relative to the one around
+  it, `inner::S` inside `outer`, was refused - and a nearer class or namespace now hides a
+  file-scope one of the same name, where a type and an expression had answered differently.
+  `typename X<It>::type()` makes a temporary, a member function template is called by its bare
+  name inside a member and ranked beside an ordinary member of that name, `(S()).k` reads a
+  temporary, and a cast to a function type, `(int()) + 1`, is refused. A class template's own name
+  before `::` - `Tree::next(n)` inside `Tree<T>` and its nested classes - is the specialization,
+  and `Tree::Tree(5)` is refused as naming the constructor.
+* **tms6747**: a parameter `T (&)[N]`, and with `-g` the `.dwtag` records that let sim6747 and
+  vm6747 show parameters, locals and their types.
+* `Preprocessor::fail` no longer ends the whole process from inside a worker, so one file's
+  `#error` leaves the other jobs' output written. README documents `-rts=`.
+* `make test` passes again: `docs/EXCLUSIONS.md`'s citations name the lines that refuse (126 sites,
+  0 uncited, 0 stale) and no comment is over the cap. `tools/feature-sweep` is unchanged at 71
+  compiled, 23 refused by name and 0 naming nothing, of 94, so the headline stays.
+
 ## What 1.8 changes
 
 `-g` for tms6747: the statement's source position goes into the assembly as
@@ -240,10 +262,10 @@ defects below and nothing else; Compiler-Cppi has closed those too, with the
 vtable group, `_ZTv` thunks, VTT and construction vtables, and that work is
 not in 1.3.
 
-## Known shortcomings in 1.8
+## Known shortcomings in 1.9
 
 Everything here is measured and written down elsewhere in full; this is the
-short list a user of **1.8** should have in front of them. `docs/EXCLUSIONS.md`
+short list a user of **1.9** should have in front of them. `docs/EXCLUSIONS.md`
 is the complete one - 126 refusal sites on 2026-10-13 (131 on 2026-10-08),
 each citing the source line that refuses it, and `make test` fails when the two
 disagree. The heading
@@ -284,6 +306,14 @@ hides. Four shapes met while writing `<type_traits>` are still refused:
 `template <class T, T v>`, a typedef naming a template-id used as a base, a
 partial specialization on `X<T []>`, and an out-of-line constructor of a class
 template.
+
+**Found in the 1.9 round and not mended**, each also refused or wrong in 1.8: a
+namespace member defined out of line, `int outer::f() { S s; }`, does not see its
+namespace's names; a base's member template, or a static one, called by its bare
+name; an out-of-line constructor of a class template's *nested* class; a chain of
+nested classes after a template-id in an expression, `Tree<int>::It::Deep::f()`;
+and a nested class's inline members are compiled uncalled, so a static they name
+is defined where clang defines none.
 
 **Pointers to members** stop short of two things: a pointer to a *virtual*
 member function is refused by name (Compiler-Cppi has it), and `&D::f` for an

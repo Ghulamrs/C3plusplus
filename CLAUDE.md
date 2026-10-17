@@ -13211,3 +13211,50 @@ a new version. So 1.8 is 1.7's resealed tree under its own name; nothing in
 (`.dwpsn` accepted), VM6747 1.1 and SIM6747 1.3 (`--debug`), RIDE 5.13 (the
 tms6747 Debug session), and MASTER.SEAL rewritten over all twelve.
 
+
+## Version 1.9, 2026-10-17: the mending plan's first round, and a review that found two of its faults
+
+**The plan is a Claude Doc, "cpp11 mending plan" (2026-10-16), not a file here.** Phase 1 re-tested
+what was open on 58316cd: C-A1 and B9 had been done on 2026-09-30, and four parser defects from
+2026-10-13 were real. They were mended in two lanes on their own worktrees - P the parser, G the
+gates and small items - Opus 5.5 writing and Fable 5.1 designing defect 4 and reviewing lane P's
+diff, so that no writer judged its own work. The review found two faults in the mends, and that is
+the round's argument for the rule: four green suites had passed both.
+
+**A member copied down from a base is told by `Member::declaredIn`, not by offset.** The
+mem-initialiser walk matched list entries by name over the flattened member list, so B's `m` took
+the initialiser for D's own `m` and D's then read a moved-from slot - a crash. The first mend
+skipped base members by `memberFromBase`, whose offset ranges cover a class's own members once a
+virtual base is in the hierarchy; `virtual-base-construction-vtable` said so at once.
+
+**A qualified name's first component is found innermost first, and the nearest declaration wins
+whatever its kind** - [basic.lookup.qual]/1. `qualifyForLookup` took a qualified name as written,
+from file scope; `findTypedef` tried the written name before the enclosing namespaces, so a
+file-scope `inner::S` was taken where `outer::inner::S` hides it; and `namespaceNamed`, written for
+the expression path, first asked only which namespaces exist - so inside `outer`, with `inner` a
+class there, `inner::S` found the class and `inner::k` the file-scope namespace. The review caught
+that last one; main printed `5 1 5 1` where clang prints `5 2 1 1`.
+
+**`(T())` is a type-id only where a cast could follow.** [dcl.ambig.res]/2 as clang reads it:
+`(S()).k` is a temporary, `(int()) + 1` an ill-formed cast to a function type, refused now where it
+had compiled as a cast to `int`. The declarator answers `T` for `T()`, so the tokens are asked
+(`endsInEmptyCall`). Beside it, `typename` in an expression is dropped as in a declaration, and a
+member template called by its bare name is `this->name(...)` - but only where no ordinary member of
+the name exists, or overload resolution never sees the ordinary one: the review's regression.
+
+**A class template's own name before `::` in an expression** is the injected class name - Fable's
+design, `docs/mend-1.9/defect4-design.md`, implemented as written: `templateCall` had arms for `<`
+and `(` after the name and none for `::`.
+
+**`make test` passes again**, and the reason it had not is worth keeping: 13 exclusion citations
+were stale on main before the round began, and lane P moved 14 more. They were re-paired by line
+order within each file and then checked by message, because one pair - `operator->*` and the
+user-defined literal, two lines apart in `ParserType.cpp` - drifted onto each other's old lines,
+which `tools/exclusions --check` cannot see. Four comment groups over the cap came from the
+2026-10-16 commits.
+
+Measured at the merge, `c09efe4`: Mac run.sh 716/0, emit.sh 1821/0 with the golden at 2aea776 0 of
+1789 changed, names.sh 466/0, overload.sh 33/0, exclusions 126 sites 0/0, comment-lines 0; Linux
+g++ run.sh 716/0 at -O0 and -O2 and ThreadSanitizer clean; `tools/feature-sweep` 71/23/0 of 94,
+unchanged, so the headline stays. **Not run**: the Windows box, which another session had, and the
+TI legs. Found and not mended are listed in README's "Known shortcomings in 1.9".
