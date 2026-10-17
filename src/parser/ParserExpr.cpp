@@ -1742,13 +1742,14 @@ const Type *Parser::decltypeSpecifier() {
         (tokens_[to - 2].is(".") || tokens_[to - 2].is("->")) &&
         dynamic_cast<const MemberAccess *>(e.get()) != nullptr)
         return t;
-    // [dcl.type.simple]/4 in full: an xvalue answers `T &&`, an lvalue `T &`, a prvalue `T`. A
-    // temporary is marked an xvalue so it binds to `T &&` and is a prvalue all the same, so the
-    // prvalue mark is asked first; the xvalue mark then before the lvalue.
-    if (e->declCategory() == Expr::Category::Prvalue) return t;
+    // [dcl.type.simple]/4: an xvalue answers `T &&`, an lvalue `T &`, a prvalue `T` - without cv where
+    // T is not a class or an array, [expr]/6. A temporary is marked an xvalue so it binds to `T &&` and
+    // is a prvalue all the same, so the prvalue mark is asked first; the xvalue mark before the lvalue.
+    const Type *prvalue = t->isStructOrUnion() || t->isArray() ? t : t->unqualified();
+    if (e->declCategory() == Expr::Category::Prvalue) return prvalue;
     if (e->isXvalue()) return types_.rvalueReferenceTo(t);
     if (e->declCategory() == Expr::Category::Lvalue) return types_.referenceTo(t);
-    return isLvalue(*e) ? types_.referenceTo(t) : t;
+    return isLvalue(*e) ? types_.referenceTo(t) : prvalue;
 }
 
 // A reference is used by going through the address in its slot, and every use does
