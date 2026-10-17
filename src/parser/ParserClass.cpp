@@ -2555,6 +2555,11 @@ std::string Parser::baseConstructorSymbol(const Signature &ctor, const Type *bas
     const Type *fnType = types_.functionType(types_.get(Kind::Void), ctor.params,
                                              false);
     std::string sub, why;
+    // An inherited constructor's base-subobject form is its CI2.
+    const std::map<std::string, const Type *>::const_iterator inh = inheritedFrom_.find(ctor.symbol);
+    if (inh != inheritedFrom_.end())
+        return itaniumInheritingConstructorName(base->tag(), base, inh->second, fnType, false, &sub, &why)
+               ? sub : ctor.symbol;
     if (itaniumConstructorName(base->tag(), base, fnType, false, &sub, &why))
         return sub;
     return ctor.symbol;
@@ -2993,9 +2998,90 @@ void Parser::declareImplicitCopyCtor(const std::string &tag, const Type *type,
     functions_.back().deleted = deleted;
 }
 
+// **`using B::B;`**: each constructor of B but its default, copy and move ones becomes one of this
+// class's, with B's parameters, defaults, access and `explicit`, building B from them and every other
+// base and member as the implicit default constructor would - [class.inhctor] as P0136 has it.
+void Parser::declareInheritingCtors(const std::string &tag, const Type *type, std::size_t pos) {
+    auto it = inheritFrom_.find(tag);
+    if (it == inheritFrom_.end()) return;
+    const std::vector<const Type *> bases = it->second;
+    for (const Type *base : bases) {
+        const std::vector<std::size_t> *set = overloadsOf(constructorKey(base->tag()));
+        if (set == nullptr) continue;
+        const std::vector<std::size_t> from = *set;
+        for (std::size_t idx : from) {
+            const Signature b = functions_[idx];
+            if (b.deleted || b.owner != base->tag()) continue;
+            // An inherited default constructor is D's own default one, by name and body, as clang has it.
+            if (b.params.empty()) {
+                bool has = false;
+                if (const std::vector<std::size_t> *own = overloadsOf(constructorKey(tag)))
+                    for (std::size_t k : *own)
+                        if (functions_[k].params.empty()) has = true;
+                if (has) continue;
+                const Type *fn0 = types_.functionType(types_.get(Kind::Void), std::vector<const Type *>(), false);
+                const char code0 = b.access == Access::Public ? 'Q' : b.access == Access::Protected ? 'I' : 'A';
+                std::string out0, why0;
+                const bool ok0 = target_.microsoftNames()
+                        ? microsoftConstructorName(tag, type, fn0, code0, &out0, &why0)
+                        : itaniumConstructorName(tag, type, fn0, true, &out0, &why0);
+                if (!ok0)
+                    src_.fail(pos, "'" + tag + "''s default constructor cannot be given a name the linker "
+                                   "can hold: " + why0);
+                functionIndex_[constructorKey(tag)].push_back(functions_.size());
+                functions_.push_back(Signature{ tag, out0, types_.get(Kind::Void), std::vector<const Type *>(),
+                                                false, false, pos, false, tag, false, b.access, false });
+                functions_.back().implicit = true;
+                continue;
+            }
+            if (b.params.size() == 1 && b.params[0]->isReference() &&
+                b.params[0]->referent()->unqualified() == base->unqualified())
+                continue;
+            // One this class declared itself with the same parameters hides it.
+            bool hidden = false;
+            if (const std::vector<std::size_t> *own = overloadsOf(constructorKey(tag)))
+                for (std::size_t k : *own)
+                    if (sameParameters(functions_[k].params, b.params)) hidden = true;
+            if (hidden) continue;
+            if (b.variadic)
+                src_.fail(pos, "inheriting '" + base->tag() + "''s constructor with '...' is not "
+                               "supported yet - its arguments would have to be forwarded as they came");
+            for (const Type *p : b.params)
+                if (!p->isReference() && passedByAddress(p))
+                    src_.fail(pos, "inheriting '" + base->tag() + "''s constructor that takes '" +
+                                   p->describe() + "' by value is not supported yet - the copy "
+                                   "would have to be passed on rather than made twice");
+            const Type *fn = types_.functionType(types_.get(Kind::Void), b.params, false);
+            auto chained = inheritedFrom_.find(b.symbol);
+            const Type *origin = chained != inheritedFrom_.end() ? chained->second : base;
+            const char code = b.access == Access::Public ? 'Q' : b.access == Access::Protected ? 'I' : 'A';
+            std::string out, why;
+            const bool ok = target_.microsoftNames()
+                    ? microsoftConstructorName(tag, type, fn, code, &out, &why)
+                    : itaniumInheritingConstructorName(tag, type, origin, fn, true, &out, &why);
+            if (!ok)
+                src_.fail(pos, "'" + tag + "''s constructor inherited from '" + base->tag() +
+                               "' cannot be given a name the linker can hold: " + why);
+            functionIndex_[constructorKey(tag)].push_back(functions_.size());
+            functions_.push_back(Signature{ tag, out, types_.get(Kind::Void), b.params,
+                                            false, false, pos, false, tag, false, b.access, false });
+            functions_.back().implicit = true;
+            functions_.back().isExplicit = b.isExplicit;
+            auto dflt = defaultArgs_.find(b.symbol);
+            if (dflt != defaultArgs_.end()) {
+                defaultArgs_[out] = dflt->second;
+                auto ns = defaultArgNamespace_.find(b.symbol);
+                if (ns != defaultArgNamespace_.end()) defaultArgNamespace_[out] = ns->second;
+            }
+            inheriting_[functions_.size() - 1] = Inheriting{ base, idx };
+            inheritedFrom_[out] = origin;
+        }
+    }
+}
+
 // The body of a default constructor nobody wrote: the bases in the order they were
 // written, then the vptrs, then the members with constructors of their own. Scalars
-// are left alone, which is what [dcl.init] means by default-initialisation.
+// are left alone, as [dcl.init] has it; an inheriting constructor's forwards its parameters to its base.
 void Parser::synthesizeDefaultCtor(std::size_t which) {
     const std::string cls = functions_[which].owner;
     const std::size_t pos = functions_[which].pos;
@@ -3015,6 +3101,16 @@ void Parser::synthesizeDefaultCtor(std::size_t which) {
     if (takesVtt(type)) {
         vttSlot_ = allocateFrameSlot(vttType());
         params.push_back(Param{ vttType(), vttSlot_ });
+    }
+    // An inheriting constructor's own parameters, B's: a reference arrives as its address.
+    const auto inh = inheriting_.find(which);
+    const Type *inhBase = inh != inheriting_.end() ? inh->second.base : nullptr;
+    const std::vector<const Type *> forwarded = functions_[which].params;
+    std::vector<int> fwdSlots;
+    for (const Type *p : forwarded) {
+        const Type *slotType = p->isReference() ? types_.pointerTo(p->referent()) : p;
+        fwdSlots.push_back(allocateFrameSlot(slotType));
+        params.push_back(Param{ slotType, fwdSlots.back() });
     }
     int flagSlot = -1;
     if (target_.microsoftNames() && type->hasVirtualBase()) {
@@ -3039,7 +3135,8 @@ void Parser::synthesizeDefaultCtor(std::size_t which) {
         // wrong when it is built here.
         if (bs[i].isVirtual) continue;
         if (!hasConstructors(base->tag())) continue;
-        const Signature *ctor = defaultConstructorOf(base);
+        const bool inherited = inhBase != nullptr && base->unqualified() == inhBase->unqualified();
+        const Signature *ctor = inherited ? &functions_[inh->second.from] : defaultConstructorOf(base);
         if (ctor == nullptr)
             src_.fail(pos, "'" + cls + "' has no constructor of its own, and the "
                            "one the compiler would write cannot build its base '" +
@@ -3056,7 +3153,25 @@ void Parser::synthesizeDefaultCtor(std::size_t which) {
         // Copied before the defaults are read - see constructLocalArray.
         const Signature chosen = *ctor;
         std::vector<ExprPtr> defaults;
-        applyDefaults(chosen, defaults, pos);
+        if (inherited) {
+            // Forwarded as they came: an lvalue reference as the object, an rvalue one as an xvalue.
+            for (std::size_t k = 0; k < forwarded.size(); k++) {
+                const Type *p = forwarded[k];
+                ExprPtr v(Var::local("$inh" + std::to_string(k), fwdSlots[k]));
+                if (p->isReference()) {
+                    v->setType(types_.pointerTo(p->referent()));
+                    ExprPtr obj(new Unary('*', std::move(v)));
+                    obj->setType(p->referent());
+                    if (p->kind() == Kind::RValueRef) obj->setXvalue();
+                    defaults.push_back(std::move(obj));
+                } else {
+                    v->setType(p);
+                    defaults.push_back(std::move(v));
+                }
+            }
+        } else {
+            applyDefaults(chosen, defaults, pos);
+        }
         const std::string sym = baseConstructorSymbol(chosen, base);
 
         const Type *basePtr = types_.pointerTo(base);
@@ -3119,7 +3234,14 @@ void Parser::synthesizeDefaultCtor(std::size_t which) {
     // The same two names a written constructor is emitted under: C1 for a
     // complete object and C2 for a base subobject, the second a label in front
     // of the first. Microsoft has one name and wants no alias.
-    if (!target_.microsoftNames()) {
+    if (!target_.microsoftNames() && inhBase != nullptr) {
+        const Type *fnType = types_.functionType(types_.get(Kind::Void), forwarded, false);
+        std::string c2, why;
+        auto origin = inheritedFrom_.find(symbol);
+        if (itaniumInheritingConstructorName(cls, type, origin != inheritedFrom_.end() ? origin->second : inhBase,
+                                             fnType, false, &c2, &why))
+            current_->functions.back().setAlias(c2);
+    } else if (!target_.microsoftNames()) {
         const Type *fnType = types_.functionType(types_.get(Kind::Void),
                                                  std::vector<const Type *>(), false);
         std::string c2, why;
@@ -3696,7 +3818,7 @@ void Parser::defineImplicitFunctions() {
             if (!functions_[i].name.empty() && functions_[i].name[0] == '~')
                                                     synthesizeDestructor(i);
             else if (functions_[i].name == "operator=") synthesizeCopy(i, true);
-            else if (functions_[i].params.empty())   synthesizeDefaultCtor(i);
+            else if (functions_[i].params.empty() || inheriting_.count(i)) synthesizeDefaultCtor(i);
             else                                    synthesizeCopy(i, false);
             again = true;
         }

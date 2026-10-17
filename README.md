@@ -311,8 +311,8 @@ above is written by `tools/version-lines` from `src/Version.h`; it said 1.4 for
 two releases before that tool existed.
 
 **The language is C++03 with C++11 extensions, and these are the C++11 parts a
-real codebase meets first that are still refused, each by name**: inheriting
-constructors; a user-defined literal; `thread_local`; an inline namespace; a
+real codebase meets first that are still refused, each by name**: a
+user-defined literal; `thread_local`; an inline namespace; a
 template template parameter; a non-type parameter pack; a ref-qualifier on a
 member function; a `constexpr` object of class type; `alignas` on a local past
 the stack's alignment; a dynamic exception specification; SFINAE on an

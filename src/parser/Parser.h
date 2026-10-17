@@ -1148,6 +1148,15 @@ private:
     // what first calls another's.
     void defineImplicitFunctions();
     void synthesizeDefaultCtor(std::size_t which);
+    // `using B::B;` [class.inhctor]: the bases a class inherits constructors from, and per declared
+    // constructor the base and the base constructor (an index into functions_) it forwards to.
+    std::map<std::string, std::vector<const Type *> > inheritFrom_;
+    struct Inheriting { const Type *base; std::size_t from; };
+    std::map<std::size_t, Inheriting> inheriting_;
+    // An inherited constructor's symbol to the class that first declared it, which both ABIs' names
+    // and a further `using D::D;` spell: `E : D : B` makes E's `ECI11BEi`, and its body calls `DCI21BEi`.
+    std::map<std::string, const Type *> inheritedFrom_;
+    void declareInheritingCtors(const std::string &tag, const Type *type, std::size_t pos);
     // The vtable, type_info and name string each class emitted, by tag, so the key-function rule can take them back.
     std::map<std::string, std::vector<std::string> > classSymbols_;
     bool keyFunctionUndefined(const std::string &tag) const;

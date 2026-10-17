@@ -142,6 +142,10 @@ bool microsoftConstructorTemplateName(const std::string &cls, const Type *clsTyp
 bool itaniumConstructorName(const std::string &cls, const Type *clsType,
                             const Type *fn,
                             bool complete, std::string *out, std::string *problem);
+// `using B::B;`: D's constructor inherited from B, spelled CI1 or CI2 and then B's type.
+bool itaniumInheritingConstructorName(const std::string &cls, const Type *clsType,
+                                      const Type *base, const Type *fn, bool complete,
+                                      std::string *out, std::string *problem);
 
 bool microsoftConstructorName(const std::string &cls, const Type *clsType,
                               const Type *fn, char access,
