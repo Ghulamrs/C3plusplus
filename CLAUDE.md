@@ -13320,3 +13320,45 @@ Measured: Mac make test (run.sh 721/0, emit.sh with the golden 0 of 1789 changed
 exclusions 125 sites 0/0, comment-lines 0), preprocess.sh 21 agreed, feature-sweep 71/23/0; Linux box,
 g++: run.sh 721/0 at -O0 and -O2, tms6747.sh 445/0 at -O0 and -O2 with the released asm6x 1.5, lnk6x
 1.3, sim6747 1.5, vm6747 1.4 and rts6x.lib built by this compiler, the two new cases among them.
+
+## Version 1.12, 2026-10-17: what the 1.9 round found and left, and the nearest scope
+
+**The mending plan's last open items**, the five Day 1 found and did not mend (the Claude Doc "cpp11
+mending plan", section "Day 2 results"). Each was re-tested on 1.11 first, one program each against
+clang; a sixth line of README's list, `D d(g);` with a reference to a function, already compiled.
+
+**A namespace member defined out of line reads its parameters and body in that namespace**
+([basic.lookup.unqual]/6 and /8). The qualifier had been folded into the name and nothing else, so
+`int outer::f(S s)` was "'S' was not declared". The declarator, topLevel's parameter list and its
+initialiser check, and the body run under an RAII swap of `namespaceStack_` to the qualifier's path.
+
+**Writing that case found the older fault, a silent wrong value**: the CONFORMANCE entry "Inside a
+namespace, an unqualified name finds the global one first" held for objects and enumerators too, not
+only types, and a class's member type lost to a global one inside its own member functions -
+`int f() { return k; }` in `namespace outer` read `::k`, 131 where clang prints 37, and `sizeof(T)` in
+`C::sizes()` read the global `T`, 26 where clang gives 81. `findGlobal`, `findEnum` and `findTypedef`
+ask `enclosingNamespaceKey` before the flat table, and `findTypedef` asks `classScopeType` - the
+enclosing classes - before both; a typedef at namespace scope is checked against its own scope's key.
+
+**Member templates, inherited and static.** `memberTemplateCall` looked a template up under the
+object's own class, so a base's was unreachable even as `d.twice(3)`; it takes the declaring class now
+(`memberTemplateOwner` over `declaringClassOf`) and moves `this` there through `convert()`. A static
+member template had never been callable: its instantiation is marked `isStaticMember` and spelled with
+cl's S/K/C, the call passes no `this`, and `S::f(...)`/`S::f<T>(...)` reach it qualified. **One trap
+kept**: a specialization already made is listed under the template's name, and the bare-name branch
+took it for an ordinary member beside the template - `neg(9)` in a static member function failed once
+`neg<int>` existed. Specializations do not count now.
+
+**A class template's nested class.** An out-of-line entry carries the nested path under the
+specialization (`It::Deep`); a pattern is read shallow, with no nested classes to find, so the
+qualifier's text is split after the template-id. `atOutOfLineSpecial` follows `It::` chains to a nested
+constructor or destructor. `templateIdMember` walks nested classes in an expression. And **a class
+nested in a specialization being made hands its held bodies to the specialization**, which takes them
+with its own into the on-use pass, [temp.inst]/2 - the emit golden's 8 changed files (of 1789, against
+2aea776) are those bodies moving later in the same two cases, line for line the same.
+
+Measured: Mac `make test` passes - run.sh 725/0, emit.sh 1845/0, names.sh 472/0, overload.sh 33/0,
+exclusions 125 sites 0/0 (67 moved citations re-paired and checked by message), comment cap 0; Linux
+box, g++: run.sh 725/0 at -O0 and -O2, tms6747.sh 451/0 at -O0 and -O2 on vm6747 and every case also on
+sim6747 against TI's rts6740_elf_eh.lib, with asm6x 1.5, lnk6x 1.3, sim6747 1.5 and vm6747 1.4 built
+there. Not run: the Windows box, closed at the user's word, and TI's simulators.

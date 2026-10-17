@@ -169,6 +169,23 @@ x86_64-windows, where a class cannot be thrown yet and they print and abort inst
 delete`, the placement and nothrow forms, `std::bad_alloc` from the platform runtime, `typeid` and
 `dynamic_cast` all work.
 
+## What 1.12 changes
+
+The five items the 1.9 round found and did not mend, and an older silent wrong value found beside the first:
+
+* **A namespace member defined out of line**, `int outer::f(S s) { S t; return k; }`, reads its
+  parameters and body in that namespace ([basic.lookup.unqual]/6 and /8); `S` was "not declared".
+* **The nearest scope's name wins.** Inside a namespace, a global object, enumerator or type of the
+  same name beat the namespace's own - a silent wrong value, 131 where clang prints 37 - and inside a
+  member function a global type beat the class's own member type (`sizeof` 26 where clang gives 81).
+  Recorded in `docs/CONFORMANCE.md` until now; the entry is gone.
+* **A member function template of a base** is reached through a derived object, by its bare name and
+  qualified, with `this` moved to where the base sits; **a static member template** is called with no
+  `this` - qualified, through an object, or by its bare name from a static member function.
+* **A class template's nested class**: its constructor, destructor, member functions and static data
+  members defined out of line; `Tree<int>::It::Deep::twice(2)` in an expression; and its inline members
+  compiled only where called, so a static data member an uncalled one names is no longer defined.
+
 ## What 1.11 changes
 
 The two defects GRIDEx2's showcase met (the Windows handoff `gridex2-2026-10-17c`):
@@ -283,11 +300,11 @@ defects below and nothing else; Compiler-Cppi has closed those too, with the
 vtable group, `_ZTv` thunks, VTT and construction vtables, and that work is
 not in 1.3.
 
-## Known shortcomings in 1.11
+## Known shortcomings in 1.12
 
 Everything here is measured and written down elsewhere in full; this is the
-short list a user of **1.11** should have in front of them. `docs/EXCLUSIONS.md`
-is the complete one - 126 refusal sites on 2026-10-13 (131 on 2026-10-08),
+short list a user of **1.12** should have in front of them. `docs/EXCLUSIONS.md`
+is the complete one - 125 refusal sites on 2026-10-17 (131 on 2026-10-08),
 each citing the source line that refuses it, and `make test` fails when the two
 disagree. The heading
 above is written by `tools/version-lines` from `src/Version.h`; it said 1.4 for
@@ -323,10 +340,8 @@ templates.
 **Templates instantiate by replaying tokens**, so every name in a template body
 is looked up at instantiation - MSVC's old model. cxx1 therefore *accepts*
 some programs clang refuses, which `docs/CONFORMANCE.md` records rather than
-hides. Four shapes met while writing `<type_traits>` are still refused:
-`template <class T, T v>`, a typedef naming a template-id used as a base, a
-partial specialization on `X<T []>`, and an out-of-line constructor of a class
-template.
+hides. Of the four shapes met while writing `<type_traits>`, one is still refused:
+`template <class T, T v>`, so there is no `std::integral_constant`.
 
 **Pointers to members** stop short of two things: a pointer to a *virtual*
 member function is refused by name (Compiler-Cppi has it), and `&D::f` for an
