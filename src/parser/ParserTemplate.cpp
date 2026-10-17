@@ -1041,6 +1041,17 @@ void Parser::templateArguments(const TemplateDecl &decl,
                 at_++;
             } else {
                 const std::size_t argPos = peek().pos;
+                bool namesParam = false;
+                if (patternOnly_)
+                    for (std::size_t k = 0, depth = 0; peekAt(k).kind != TokenKind::End; k++) {
+                        const Token &t = peekAt(k);
+                        if (t.is("(") || t.is("[")) depth++;
+                        else if ((t.is(")") || t.is("]")) && depth > 0) depth--;
+                        else if (depth == 0 && (t.is(",") || t.is(">") || t.is(">>"))) break;
+                        else if (t.kind == TokenKind::Ident &&
+                                 (nonTypePatternParams_.count(t.text) != 0 || boundTypeParams_.count(t.text) != 0))
+                            namesParam = true;
+                    }
                 const long long v = constantExpression("a template argument");
                 // [temp.arg.nontype]/1: a converted constant expression, which may not narrow.
                 // An 8-byte type is left alone: the value's own signedness is not kept here.
@@ -1058,6 +1069,7 @@ void Parser::templateArguments(const TemplateDecl &decl,
                 a.isType = false;
                 a.type = pt;
                 a.value = v;
+                a.dependentValue = namesParam;
             }
         }
         args->push_back(a);
@@ -2155,10 +2167,10 @@ const Type *Parser::instantiateClass(const TemplateDecl &decl, std::size_t pos) 
     }
     const std::string tag = specializationKey(decl.name, args);
 
-    // Reading a pattern, not building a class. `Holder<T>` cannot be laid out
-    // - T has no size - and neither the mangler nor deduction wants it laid
-    // out: both read only the template's name and its argument list.
-    if (patternOnly_) {
+    // Reading a pattern, not building a class: `Holder<T>` cannot be laid out, and the mangler
+    // and deduction read only its name and arguments. An argument list that mentions no
+    // parameter is a real class - `enable_if<2 + 2 == 4, int>`.
+    if (patternOnly_ && dependentArgs(args)) {
         Type *shallow = types_.structType(Kind::Struct, tag);
         if (!shallow->isSpecialization()) {
             shallow->setSpecialization(decl.name, args);
@@ -2867,4 +2879,34 @@ void Parser::instantiateViableMemberTemplate(const TemplateDecl &mt,
                                  "', asked for at " + src_.where(pos));
     }
     memberTemplateBody_ = wasBody;
+}
+
+bool Parser::dependentArgs(const std::vector<TemplateArg> &args) const {
+    for (const TemplateArg &a : args) {
+        if (a.isParam || a.dependentValue) return true;
+        if (a.isPack) {
+            for (const Type *m : a.pack)
+                if (dependentType(m)) return true;
+        } else if (a.isType && dependentType(a.type)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Parser::dependentType(const Type *t) const {
+    for (int depth = 0; t != nullptr && depth < 64; depth++) {
+        if (t->kind() == Kind::TemplateParam || t->kind() == Kind::DependentMember) return true;
+        if (t->unqualified() != t) { t = t->unqualified(); continue; }
+        if (t->isStructOrUnion()) return t->isSpecialization() && dependentArgs(t->templateArgs());
+        if (t->kind() == Kind::Function) {
+            for (const Type *p : t->params())
+                if (dependentType(p)) return true;
+            t = t->returns();
+            continue;
+        }
+        if (t->isPointer() || t->isReference() || t->isArray()) { t = t->pointee(); continue; }
+        return false;
+    }
+    return false;
 }
