@@ -1051,7 +1051,7 @@ void Parser::topLevel(Program &program) {
                                     "constants works");
                 baseArgs[baseKey] = std::move(args);
             } else if (const Member *m = memberOf->findMember(entry)) {
-                if (memberFromBase(memberOf, *m))
+                if (m->declaredIn != nullptr)
                     src_.fail(epos, "member initialiser '" + entry + "' names a member of a "
                                     "base of '" + d.qualifier + "' - the base's constructor "
                                     "initialises it, and a list may name only this class's "
@@ -1125,7 +1125,7 @@ void Parser::topLevel(Program &program) {
             // A base's members are in this class's list too, and its constructor built
             // them; a list entry never names one ([class.base.init]/2), even by the name
             // this class's own member hides it with.
-            if (memberFromBase(memberOf, *m)) continue;
+            if (m->declaredIn != nullptr) continue;
             std::map<std::string, std::vector<ExprPtr> >::iterator found =
                 memberExprs.find(m->name);
             if (found == memberExprs.end()) {
