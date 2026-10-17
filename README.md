@@ -169,7 +169,19 @@ x86_64-windows, where a class cannot be thrown yet and they print and abort inst
 delete`, the placement and nothrow forms, `std::bad_alloc` from the platform runtime, `typeid` and
 `dynamic_cast` all work.
 
-## What 1.15 changes
+## What 1.16 changes
+
+The two nits the review of 1.12 and 1.13 left, and an older fault beside the first:
+
+* **A relative namespace qualifier**: `int b::f()` written inside `namespace a` defines `a::b::f`,
+  where it was "'b' is not a class". Once found, the definition had been registered under a second
+  name, so a default argument it added was never seen at the call.
+* **A namespace variable defined through a qualifier reads its initialiser in its namespace**
+  ([basic.lookup.unqual]/13): `int a::b::v = k + 100;` read the global `k` - a silent wrong value.
+* **A partial specialization may not give `T v` a value while `T` is still a parameter**
+  ([temp.class.spec]/8): `template <class T> struct S<T, 0>` is refused, as clang refuses it.
+
+
 
 **Expression SFINAE.** A function template's signature may depend on its parameters through an
 expression, and a substitution failure there drops the candidate:
@@ -365,10 +377,10 @@ defects below and nothing else; Compiler-Cppi has closed those too, with the
 vtable group, `_ZTv` thunks, VTT and construction vtables, and that work is
 not in 1.3.
 
-## Known shortcomings in 1.15
+## Known shortcomings in 1.16
 
 Everything here is measured and written down elsewhere in full; this is the
-short list a user of **1.15** should have in front of them. `docs/EXCLUSIONS.md`
+short list a user of **1.16** should have in front of them. `docs/EXCLUSIONS.md`
 is the complete one - 130 refusal sites on 2026-10-17 (131 on 2026-10-08),
 each citing the source line that refuses it, and `make test` fails when the two
 disagree. The heading
@@ -410,6 +422,10 @@ being `template <class T, T v>` - so `std::integral_constant` is the base of eve
 **Two namespaces' function templates of one name are one overload set**: templates are keyed by
 their bare name, so `a::twice(3)` can reach `b::twice`. Registered in `tests/open`
 (`namespace-function-template-name`); clang prints `6 2 6` where cxx1 prints `6 2 4`.
+
+**A namespace-scope variable defined twice is accepted** - `int v; int v = 5;`, C's tentative
+definition, which C++ does not have. clang refuses it; registered in `tests/open`
+(`redefinition-of-variable`).
 
 **A return type's top-level `const` is dropped from a Microsoft name** - `const int f()` is
 `?f@@YAHXZ` where cl writes `?f@@YA?BHXZ`, so such a function compiled by cl does not link with

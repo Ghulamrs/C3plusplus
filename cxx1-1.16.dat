@@ -1,7 +1,7 @@
 ©2026 G. R. Akhtar - C++03 with C++11 extensions
-Release seal, version 1.15, sealed 17-10-2026
+Release seal, version 1.16, sealed 17-10-2026
 Written by tools/seal; check it with `tools/seal check`.
-CRC32  size  file - 161 files, seal 36E4C6C6
+CRC32  size  file - 161 files, seal B804E59F
 ------------------------------------------------------------------
 302F7AC7      4283  include/__string_conversions
 A88B4DC7      6938  include/algorithm
@@ -75,7 +75,7 @@ F6E56373      4226  src/Preprocessor.h
 2C992AD9      2403  src/Source.h
 5A0BAD84     22752  src/Type.cpp
 0A86CD83     28495  src/Type.h
-AA3B56A6       386  src/Version.h
+4784D364       386  src/Version.h
 0B0F9F25     45019  src/backend/Arm64Darwin.cpp
 98997445      5698  src/backend/Arm64Darwin.h
 0F851578      3863  src/backend/Backend.cpp
@@ -160,9 +160,9 @@ B5CA4BB8     73168  src/parser/ParserInit.cpp
 7105541D     43975  src/parser/ParserOperator.cpp
 D1043C0E     62155  src/parser/ParserOverload.cpp
 C242B4A0    111279  src/parser/ParserStmt.cpp
-740D39EE    141358  src/parser/ParserTemplate.cpp
-C9BD4E31     97852  src/parser/ParserTopLevel.cpp
-6C5E485A    134606  src/parser/ParserType.cpp
+B107694F    142404  src/parser/ParserTemplate.cpp
+24E2A515     99124  src/parser/ParserTopLevel.cpp
+B9793BAB    135080  src/parser/ParserType.cpp
 96A8CE61     37964  src/parser/ParserVtable.cpp
 ------------------------------------------------------------------
 Sealed on 17-10-2026

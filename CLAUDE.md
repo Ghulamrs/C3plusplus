@@ -13499,3 +13499,31 @@ Measured: Mac `make test` passes - run.sh 752/0, emit.sh 1928/0, names.sh 493/0,
 exclusions 130 sites 0/0, comment cap 0; Linux box, g++: run.sh 752/0 at -O0 and -O2, tms6747.sh 472/0
 at -O0 and -O2 on vm6747 and sim6747. Not run: the Windows box, closed at the user's word, and TI's
 simulators. Seal `cxx1-1.15.dat`, 36E4C6C6, 161 files - one more than 1.14, `ParserDependent.cpp`.
+
+
+## Version 1.16, 2026-10-17: the review's two nits, and a variable read in its namespace
+
+**Nit 11, a relative qualifier.** `int b::f()` written inside `namespace a` was "'b' is not a
+class": the declarator's qualifier was looked up as written, and `namespaces_` holds `a::b`. The
+qualifier's first name is found innermost first now (`namespaceNamed`, as an expression's is).
+**Finding it showed a second fault**: the qualified name was folded into `d.name` whole and every
+key below - `declareFunction`, the four variable sites - put the enclosing namespace on again, so
+the definition was keyed `a::a::b::f`, a second function. Its symbol came out right, which hid it;
+a default the definition added was never seen. `d.name` is relative to the namespace it is
+written in now; only `lookupSignature`, which takes any qualified name as absolute, gets the whole.
+
+**And one door over, older: a namespace variable defined through a qualifier read its initialiser
+where it was written** - `int a::b::v = k + 100;` at file scope read `::k`, 101 where clang prints
+103. [basic.lookup.unqual]/13 reads it in its namespace; the first declarator is read as if
+written there, a second where the first was written.
+
+**Nit 10**: [temp.class.spec]/8 - `template <class T> struct S<T, 0>` for `template <class T, T v>`
+gives v a value while its type is still a parameter, and is refused as clang refuses it.
+
+**Found and registered, not mended**: `int v; int v = 5;` at namespace scope is accepted, C's
+tentative definition; `tests/open/redefinition-of-variable`.
+
+Measured: Mac `make test` passes - run.sh 755/0, emit.sh 1936/0, names.sh 495/0, overload.sh 35/0,
+exclusions 130 sites 0/0, comment cap 0; `tools/feature-sweep` 75/21/0 of 96; Linux box, g++:
+run.sh 755/0 at -O0 and -O2, tms6747.sh 474/0 at -O0 and -O2 on vm6747 and sim6747. Not run: the
+Windows box and TI's simulators. Seal `cxx1-1.16.dat`, B804E59F, 161 files.
