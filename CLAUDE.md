@@ -13267,5 +13267,15 @@ base's members were listed again, flattened, beside the `<Base>` member that alr
 Measured at the merge, `c09efe4`: Mac run.sh 716/0, emit.sh 1821/0 with the golden at 2aea776 0 of
 1789 changed, names.sh 466/0, overload.sh 33/0, exclusions 126 sites 0/0, comment-lines 0; Linux
 g++ run.sh 716/0 at -O0 and -O2 and ThreadSanitizer clean; `tools/feature-sweep` 71/23/0 of 94,
-unchanged, so the headline stays. **Not run**: the Windows box, which another session had, and the
-TI legs. Found and not mended are listed in README's "Known shortcomings in 1.9".
+unchanged, so the headline stays. Found and not mended are listed in README's "Known shortcomings in 1.9".
+
+**And on the boxes, after the seal (`b079d8f`).** Windows: the cases 1129/0 through both spellings and
+870/0 at -O2, `throw-check`, `catch-check`, `sret-check` and `winlink-check` passing; names vs cl 300
+agreed and 16 differed - the 2026-10-08 round's library and list-initialisation cases, none with a
+`.nocl`, the same 16 as at 1.7, so recording debt rather than a 1.9 difference. tms6747 on the box:
+TI's `lnk6x` linked 450 programs, 0 failed, assembled by RIDE 5.12's `asm6x` (`ride-verify` is gone
+from the box; `CXX1_TI_ASM6X` names the copy in `C:\Users\GRA\work\ride512-tools`). TI's simulators,
+`tools/c6747-three`: 4 of 4 programs as expected on CCS 7.4's VM box and on CCS 5.5's cycle-accurate
+simulator on Windows and on Linux, the two agreeing to the cycle - cpp11 -O2 at 0.70 to 1.04 of cl6x
+7.4.4 -O2's cycles. **Not run**: `release-check`, whose vm6747 is not built on this Mac, and the RTS6x
+referee, which records into `../../TI/RTS6x`, outside the tree this round was confined to.
