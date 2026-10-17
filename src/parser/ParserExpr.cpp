@@ -1299,6 +1299,14 @@ ExprPtr Parser::primary(Program *program) {
         std::size_t pos = peek().pos;
 
         const Local *l = findLocal(name);
+        // A bound non-type template parameter hides a member and a namespace's name alike ([temp.local]/6).
+        if (l == nullptr && boundValueParams_.count(name) != 0 && !peekAt(1).is("::"))
+            if (const EnumConst *e = findEnum(name)) {
+                at_++;
+                ExprPtr n(new Num(e->value));
+                n->setType(e->type != nullptr ? e->type : types_.intType());
+                return n;
+            }
         const GlobalSym *g = l != nullptr ? nullptr : findGlobal(name);
         // **Class scope comes before the namespace** - [basic.lookup.unqual]/8: a static member, a
         // member function or an enumerator of the class (or a base) hides a global of the same name.
@@ -1858,6 +1866,7 @@ ExprPtr Parser::objectRef(const std::string &name) {
 // static one, a member function or an enumerator of the class being read, a base, or the class a
 // lambda was written in. Asked of a name a global also answers, which the class then hides.
 bool Parser::classScopeDeclares(const std::string &name) {
+    if (boundValueParams_.count(name) != 0) return false;
     const Type *roots[2] = { currentClass_ != nullptr ? currentClass_
                                                       : classStack_.empty() ? nullptr
                                                                             : classStack_.back(),

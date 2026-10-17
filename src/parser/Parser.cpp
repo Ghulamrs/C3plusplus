@@ -273,6 +273,11 @@ const Type *Parser::findTypedef(const std::string &name) const {
     auto local = localTypes_.find(name);
     if (local != localTypes_.end()) return local->second;
 
+    // A bound template parameter's scope is inside every class and namespace around it ([temp.local]/6).
+    if (boundTypeParams_.count(name) != 0) {
+        auto it = typedefIndex_.find(name);
+        if (it != typedefIndex_.end()) return typedefs_[it->second].type;
+    }
     // Unqualified, the classes this is inside come next, then the enclosing namespaces,
     // and only then a global: [basic.lookup.unqual]/1, the nearest declaration wins.
     if (name.find("::") == std::string::npos)
@@ -316,6 +321,7 @@ const Type *Parser::findTypedef(const std::string &name) const {
 // **The classes this is inside, innermost first**: a class body being parsed, then the class whose
 // member function's body this is - a nested class is unqualified only from inside.
 const Type *Parser::classScopeType(const std::string &name) const {
+    if (boundTypeParams_.count(name) != 0) return nullptr;      // a bound parameter hides it
     for (std::size_t i = classStack_.size(); i-- > 0; )
         if (const Type *t = lookupInClass(classStack_[i], name)) return t;
     if (currentClass_ != nullptr)
@@ -363,6 +369,10 @@ const Parser::EnumConst *Parser::enumInClass(const Type *cls,
 // `Layout::StepBase`, `n::Red` - so the scopes findTypedef walks are walked
 // here too.
 const Parser::EnumConst *Parser::findEnum(const std::string &name) const {
+    if (boundValueParams_.count(name) != 0) {
+        auto bound = enumIndex_.find(name);
+        if (bound != enumIndex_.end()) return &enums_[bound->second];
+    }
     const std::string nearer = enclosingNamespaceKey(name, &Parser::hasEnumNamed);
     if (!nearer.empty()) return &enums_[enumIndex_.find(nearer)->second];
     auto it = enumIndex_.find(name);
@@ -381,6 +391,7 @@ const Parser::EnumConst *Parser::findEnum(const std::string &name) const {
 // class scope, so it beats a global and loses to a local - which the caller
 // in `primary` needs to ask separately from the namespace-scope table above.
 const Parser::EnumConst *Parser::findClassEnum(const std::string &name) const {
+    if (boundValueParams_.count(name) != 0) return nullptr;     // a bound parameter hides it
     for (std::size_t i = classStack_.size(); i-- > 0; )
         if (const EnumConst *e = enumInClass(classStack_[i], name)) return e;
     if (currentClass_ != nullptr)

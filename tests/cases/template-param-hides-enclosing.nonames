@@ -1,0 +1,3 @@
+x86_64-linux  a function template declared in a namespace is named without its namespace - _Z5twiceIiET_S0_ for clang's _ZN1n5twiceIiEET_S1_ - an older fault registered in tests/open/namespace-function-template-name.cpp; and the C1 of the inline constructors, which clang leaves out on this target.
+x86_64-windows  the same namespace fault: ??$twice@H@@YAHH@Z for cl's ??$twice@H@n@@YAHH@Z.
+arm64-darwin  the same namespace fault as x86_64-linux.

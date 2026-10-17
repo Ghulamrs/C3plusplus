@@ -609,6 +609,8 @@ private:
                                         bool *construction = nullptr);
     // The type parameters bound now, counted: `X::type` as a type needs `typename` (A27).
     std::map<std::string, int> boundTypeParams_;
+    // The non-type parameters bound now, by name: in their template's scope they hide an enclosing one.
+    std::map<std::string, int> boundValueParams_;
     // What a binding does to the two name tables, and how to put them back.
     struct Shadow {
         std::string name;

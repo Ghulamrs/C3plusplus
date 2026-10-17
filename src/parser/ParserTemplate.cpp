@@ -237,12 +237,14 @@ void Parser::bindTemplateParameters(const std::vector<TemplateParam> &params,
             if (en != enumIndex_.end()) { ev.had = true; ev.was = en->second; }
             enumIndex_[p.name] = enums_.size();
             enums_.push_back(EnumConst{ p.name, values[i] });
+            boundValueParams_[p.name]++;
             undo->push_back(ev);
         } else {
             auto it = enumIndex_.find(p.name);
             if (it != enumIndex_.end()) { s.had = true; s.was = it->second; }
             enumIndex_[p.name] = enums_.size();
             enums_.push_back(EnumConst{ p.name, values[i] });
+            boundValueParams_[p.name]++;
         }
         undo->push_back(s);
     }
@@ -270,6 +272,7 @@ void Parser::unbindTemplateParameters(const std::vector<Shadow> &undo) {
         } else {
             if (s.had) enumIndex_[s.name] = s.was;
             else       enumIndex_.erase(s.name);
+            if (--boundValueParams_[s.name] <= 0) boundValueParams_.erase(s.name);
         }
     }
 }
