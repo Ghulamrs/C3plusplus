@@ -1,0 +1,2 @@
+x86_64-linux  every difference is a name cxx1 emits and clang does not: clang emits only the forms of a constructor or destructor with vague linkage that something calls (C2 alone for V's and B's, CI1 alone for D's two-argument and E's inherited constructors) where cxx1 emits both forms of each, as inheriting-constructors.nonames records. No name clang emits is missing.
+arm64-darwin  the same as x86_64-linux: the unused C1, D1, CI2 and C2 forms of constructors and destructors with vague linkage, which clang leaves out and cxx1 emits.

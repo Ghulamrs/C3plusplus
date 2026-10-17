@@ -609,6 +609,8 @@ private:
                                         bool *construction = nullptr);
     // The type parameters bound now, counted: `X::type` as a type needs `typename` (A27).
     std::map<std::string, int> boundTypeParams_;
+    // The non-type parameters bound now, by name: in their template's scope they hide an enclosing one.
+    std::map<std::string, int> boundValueParams_;
     // What a binding does to the two name tables, and how to put them back.
     struct Shadow {
         std::string name;
@@ -1555,6 +1557,10 @@ private:
     const Type *lambdaScope() const;
     // Whether class scope declares the name, so that it hides a global of that name.
     bool classScopeDeclares(const std::string &name);
+    bool hasOrdinaryMember(const Type *cls, const std::string &name);
+    // Does this type mention a template parameter - the one test the pattern read's stand-ins ask.
+    bool dependentType(const Type *t) const;
+    bool dependentArgs(const std::vector<TemplateArg> &args) const;
     // The function an expression designates as an lvalue, or null.
     const Type *functionDesignated(const Expr &e) const;
     // `$this` - the member a `[this]` capture holds.
@@ -1924,6 +1930,10 @@ private:
             out += namespaceStack_[i] + "::";
         return out;
     }
+    // The namespace a class was declared in, as namespaceStack_ spells it (n::m as {n, m}).
+    std::vector<std::string> classNamespacePath(const Type *t) const;
+    // The namespace an out-of-line definition was written for, while it is read; its defaults read there.
+    std::vector<std::string> definitionNamespace_;
     // The qualified name to look a written one up under: the enclosing namespaces from
     // the innermost outwards, then whatever a `using namespace` has opened, then the
     // name itself. `exists` says which table to ask, functions and variables differing.

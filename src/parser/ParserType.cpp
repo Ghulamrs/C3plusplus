@@ -16,9 +16,7 @@
 const Type *Parser::memberTypeWalk(const Type *t) {
     while (peek().is("::") && peekAt(1).kind == TokenKind::Ident) {
         const std::string member = peekAt(1).text;
-        if (patternOnly_ &&
-            (t->kind() == Kind::TemplateParam || t->kind() == Kind::DependentMember ||
-             (t->isStructOrUnion() && t->isSpecialization()))) {
+        if (patternOnly_ && dependentType(t)) {
             at_ += 2;
             t = types_.dependentMember(t, member);
             continue;

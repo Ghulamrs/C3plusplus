@@ -58,6 +58,8 @@ struct TemplateArg {
     // `N` in the pattern `V<N>`.
     bool isParam = false;
     int paramIndex = 0;
+    // A value folded from an expression that names a parameter while a pattern is read, `V<N + M>`.
+    bool dependentValue = false;
     // **A pack argument is a list, not a type.** Itanium spells one `J...E`
     // and Microsoft lists its members inline with `$$V` for an empty one, so
     // both need the members rather than anything standing for them.

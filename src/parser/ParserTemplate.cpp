@@ -237,12 +237,14 @@ void Parser::bindTemplateParameters(const std::vector<TemplateParam> &params,
             if (en != enumIndex_.end()) { ev.had = true; ev.was = en->second; }
             enumIndex_[p.name] = enums_.size();
             enums_.push_back(EnumConst{ p.name, values[i] });
+            boundValueParams_[p.name]++;
             undo->push_back(ev);
         } else {
             auto it = enumIndex_.find(p.name);
             if (it != enumIndex_.end()) { s.had = true; s.was = it->second; }
             enumIndex_[p.name] = enums_.size();
             enums_.push_back(EnumConst{ p.name, values[i] });
+            boundValueParams_[p.name]++;
         }
         undo->push_back(s);
     }
@@ -270,6 +272,7 @@ void Parser::unbindTemplateParameters(const std::vector<Shadow> &undo) {
         } else {
             if (s.had) enumIndex_[s.name] = s.was;
             else       enumIndex_.erase(s.name);
+            if (--boundValueParams_[s.name] <= 0) boundValueParams_.erase(s.name);
         }
     }
 }
@@ -1037,12 +1040,36 @@ void Parser::templateArguments(const TemplateDecl &decl,
                 values->push_back(0);
                 at_++;
             } else {
+                const std::size_t argPos = peek().pos;
+                bool namesParam = false;
+                if (patternOnly_)
+                    for (std::size_t k = 0, depth = 0; peekAt(k).kind != TokenKind::End; k++) {
+                        const Token &t = peekAt(k);
+                        if (t.is("(") || t.is("[")) depth++;
+                        else if ((t.is(")") || t.is("]")) && depth > 0) depth--;
+                        else if (depth == 0 && (t.is(",") || t.is(">") || t.is(">>"))) break;
+                        else if (t.kind == TokenKind::Ident &&
+                                 (nonTypePatternParams_.count(t.text) != 0 || boundTypeParams_.count(t.text) != 0))
+                            namesParam = true;
+                    }
                 const long long v = constantExpression("a template argument");
+                // [temp.arg.nontype]/1: a converted constant expression, which may not narrow.
+                // An 8-byte type is left alone: the value's own signedness is not kept here.
+                if (pt->isInteger() && pt->tag().empty() && pt->size(target_) < 8) {
+                    const int bits = pt->kind() == Kind::Bool ? 1 : 8 * pt->size(target_);
+                    const bool sgn = pt->kind() != Kind::Bool && pt->isSigned(target_);
+                    const long long lo = sgn ? -(1LL << (bits - 1)) : 0;
+                    const long long hi = sgn ? (1LL << (bits - 1)) - 1 : (1LL << bits) - 1;
+                    if (v < lo || v > hi)
+                        src_.fail(argPos, "the template argument is " + std::to_string(v) +
+                                          ", which cannot be narrowed to '" + pt->describe() + "'");
+                }
                 binding->push_back(pt);
                 values->push_back(v);
                 a.isType = false;
                 a.type = pt;
                 a.value = v;
+                a.dependentValue = namesParam;
             }
         }
         args->push_back(a);
@@ -1122,8 +1149,8 @@ Parser::instantiate(const TemplateDecl &decl,
 
     std::string symbol, why;
     const bool ok = target_.microsoftNames()
-        ? microsoftTemplateFunctionName(decl.name, fn, args, &symbol, &why)
-        : itaniumTemplateFunctionName(decl.name, patternFn, args, false,
+        ? microsoftTemplateFunctionName(decl.ns + decl.name, fn, args, &symbol, &why)
+        : itaniumTemplateFunctionName(decl.ns + decl.name, patternFn, args, false,
                                       &symbol, &why);
     if (!ok)
         src_.fail(pos, "'" + key + "' cannot be given a name the linker can "
@@ -1270,8 +1297,19 @@ void Parser::instantiatePending() {
                     topLevel(*current_);
                 }
             } else {
+                // Its body reads names in the namespace it was declared in, wherever it is used from.
+                const std::vector<std::string> wasStack = namespaceStack_;
+                if (!decl.ns.empty()) {
+                    namespaceStack_.clear();
+                    for (std::size_t s = 0, e; s < decl.ns.size(); s = e + 2) {
+                        e = decl.ns.find("::", s);
+                        if (e == std::string::npos) e = decl.ns.size();
+                        if (e > s) namespaceStack_.push_back(decl.ns.substr(s, e - s));
+                    }
+                }
                 at_ = sp.start;
                 topLevel(*current_);
+                namespaceStack_ = wasStack;
             }
             replayingInline_ = wasReplayingInline;
             at_ = resume;
@@ -2129,10 +2167,10 @@ const Type *Parser::instantiateClass(const TemplateDecl &decl, std::size_t pos) 
     }
     const std::string tag = specializationKey(decl.name, args);
 
-    // Reading a pattern, not building a class. `Holder<T>` cannot be laid out
-    // - T has no size - and neither the mangler nor deduction wants it laid
-    // out: both read only the template's name and its argument list.
-    if (patternOnly_) {
+    // Reading a pattern, not building a class: `Holder<T>` cannot be laid out, and the mangler
+    // and deduction read only its name and arguments. An argument list that mentions no
+    // parameter is a real class - `enable_if<2 + 2 == 4, int>`.
+    if (patternOnly_ && dependentArgs(args)) {
         Type *shallow = types_.structType(Kind::Struct, tag);
         if (!shallow->isSpecialization()) {
             shallow->setSpecialization(decl.name, args);
@@ -2450,6 +2488,12 @@ ExprPtr Parser::memberTemplateCall(ExprPtr object, const Type *obj,
     if (plain == nullptr) plain = named;
     const std::vector<TemplateDecl> &templates = memberTemplates_[plain->tag() + "::" + name];
     TemplateDecl mt = templates.front();
+    // [class.access.base]/5: the member's own access, and every base on the way from the class it was named in.
+    if (!insideAccessOf(plain, mt.memberAccess) && !isFriendOf(plain) &&
+        !memberReachable(named, plain, mt.memberAccess))
+        src_.fail(pos, "'" + name + "' is a member template of '" + plain->describe() +
+                       "' that is not accessible here" +
+                       (plain != named ? " through '" + named->describe() + "'" : std::string()));
 
     std::vector<const Type *> binding;
     std::vector<long long> values;
@@ -2835,4 +2879,34 @@ void Parser::instantiateViableMemberTemplate(const TemplateDecl &mt,
                                  "', asked for at " + src_.where(pos));
     }
     memberTemplateBody_ = wasBody;
+}
+
+bool Parser::dependentArgs(const std::vector<TemplateArg> &args) const {
+    for (const TemplateArg &a : args) {
+        if (a.isParam || a.dependentValue) return true;
+        if (a.isPack) {
+            for (const Type *m : a.pack)
+                if (dependentType(m)) return true;
+        } else if (a.isType && dependentType(a.type)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Parser::dependentType(const Type *t) const {
+    for (int depth = 0; t != nullptr && depth < 64; depth++) {
+        if (t->kind() == Kind::TemplateParam || t->kind() == Kind::DependentMember) return true;
+        if (t->unqualified() != t) { t = t->unqualified(); continue; }
+        if (t->isStructOrUnion()) return t->isSpecialization() && dependentArgs(t->templateArgs());
+        if (t->kind() == Kind::Function) {
+            for (const Type *p : t->params())
+                if (dependentType(p)) return true;
+            t = t->returns();
+            continue;
+        }
+        if (t->isPointer() || t->isReference() || t->isArray()) { t = t->pointee(); continue; }
+        return false;
+    }
+    return false;
 }

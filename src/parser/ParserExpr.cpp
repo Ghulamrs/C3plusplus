@@ -1299,6 +1299,14 @@ ExprPtr Parser::primary(Program *program) {
         std::size_t pos = peek().pos;
 
         const Local *l = findLocal(name);
+        // A bound non-type template parameter hides a member and a namespace's name alike ([temp.local]/6).
+        if (l == nullptr && boundValueParams_.count(name) != 0 && !peekAt(1).is("::"))
+            if (const EnumConst *e = findEnum(name)) {
+                at_++;
+                ExprPtr n(new Num(e->value));
+                n->setType(e->type != nullptr ? e->type : types_.intType());
+                return n;
+            }
         const GlobalSym *g = l != nullptr ? nullptr : findGlobal(name);
         // **Class scope comes before the namespace** - [basic.lookup.unqual]/8: a static member, a
         // member function or an enumerator of the class (or a base) hides a global of the same name.
@@ -1653,6 +1661,19 @@ const Type *Parser::decltypeSpecifier() {
         src_.fail(peek().pos, "'decltype(auto)' is C++14, and this compiler is "
                               "C++11 - 'decltype' of an expression works, and "
                               "'auto' on its own deduces from an initialiser");
+    // **In a signature, `decltype` of an expression over a template parameter** is spelled
+    // as the expression itself in the Itanium name (DT...E) - the same wall as 'sizeof'.
+    if (patternOnly_)
+        for (std::size_t k = 0, depth = 0; peekAt(k).kind != TokenKind::End; k++) {
+            if (peekAt(k).is("(")) depth++;
+            else if (peekAt(k).is(")") && depth-- == 0) break;
+            else if (peekAt(k).kind == TokenKind::Ident &&
+                     (boundTypeParams_.count(peekAt(k).text) != 0 ||
+                      nonTypePatternParams_.count(peekAt(k).text) != 0))
+                src_.fail(pos, "'decltype' of an expression over a template parameter in a "
+                               "signature is not supported yet - the linker name would have to "
+                               "spell the expression, and that is its own step");
+        }
     const bool namePath = atNamePath();
 
     // **A name on its own is looked up, not evaluated.** A reference variable is the
@@ -1854,10 +1875,22 @@ ExprPtr Parser::objectRef(const std::string &name) {
     return globalRef(name);
 }
 
+// An ordinary member function of this name, beside which a member template is ranked rather
+// than taken ([over.match.best]); a made specialization is not one.
+bool Parser::hasOrdinaryMember(const Type *cls, const std::string &name) {
+    const Type *ordinary = findMemberOwner(cls->unqualified(), name);
+    if (ordinary == nullptr) return false;
+    if (const std::vector<std::size_t> *set = overloadsOf(ordinary->unqualified()->tag() + "::" + name))
+        for (std::size_t k = 0; k < set->size(); k++)
+            if (!functions_[(*set)[k]].fromTemplate) return true;
+    return false;
+}
+
 // Does class scope, between block scope and the namespace, declare this name - a data member, a
 // static one, a member function or an enumerator of the class being read, a base, or the class a
 // lambda was written in. Asked of a name a global also answers, which the class then hides.
 bool Parser::classScopeDeclares(const std::string &name) {
+    if (boundValueParams_.count(name) != 0) return false;
     const Type *roots[2] = { currentClass_ != nullptr ? currentClass_
                                                       : classStack_.empty() ? nullptr
                                                                             : classStack_.back(),
@@ -2189,7 +2222,8 @@ ExprPtr Parser::postfix() {
             const Type *in = scope != nullptr ? scope : obj;
             // **A member function template**, `p->head<3>()` - told from `<` as
             // a comparison only because the member is a registered template.
-            if ((peek().is("<") || peek().is("(")) && memberTemplateOwner(obj, name) != nullptr) {
+            if ((peek().is("<") || (peek().is("(") && !hasOrdinaryMember(obj, name))) &&
+                memberTemplateOwner(obj, name) != nullptr) {
                 n = memberTemplateCall(std::move(n), obj, name, pos);
                 continue;
             }
@@ -2271,7 +2305,8 @@ ExprPtr Parser::postfix() {
                              ? 0 : publicBaseOffset(obj, scope);
             const Type *in = scope != nullptr ? scope : obj;
             // **A member function template**, `v.head<3>()`.
-            if ((peek().is("<") || peek().is("(")) && memberTemplateOwner(obj, name) != nullptr) {
+            if ((peek().is("<") || (peek().is("(") && !hasOrdinaryMember(obj, name))) &&
+                memberTemplateOwner(obj, name) != nullptr) {
                 n = memberTemplateCall(std::move(n), obj, name, pos);
                 continue;
             }

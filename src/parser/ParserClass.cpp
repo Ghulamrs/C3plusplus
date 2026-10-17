@@ -1166,13 +1166,10 @@ bool Parser::sameParameters(const std::vector<const Type *> &a,
     return true;
 }
 
-bool Parser::memberFromBase(const Type *cls, const Member &m) {
-    const std::vector<Type::BaseSpec> &bs = cls->bases();
-    for (std::size_t k = 0; k < bs.size(); k++)
-        if (m.offset >= bs[k].offset &&
-            m.offset < bs[k].offset + bs[k].type->dataSize())
-            return true;
-    return false;
+bool Parser::memberFromBase(const Type *, const Member &m) {
+    // Which class wrote it, not where it sits: a base's data size reaches past its own members
+    // once a virtual base is laid at the end, and a derived member may sit in that range.
+    return m.declaredIn != nullptr || m.inVirtualBase != nullptr;
 }
 
 // **[dcl.init]/7 refuses a const object that nothing would initialise**, and
@@ -3006,6 +3003,9 @@ void Parser::declareInheritingCtors(const std::string &tag, const Type *type, st
     if (it == inheritFrom_.end()) return;
     const std::vector<const Type *> bases = it->second;
     for (const Type *base : bases) {
+        if (memberTemplates_.count(constructorKey(base->tag())) != 0)
+            src_.fail(pos, "inheriting '" + base->describe() + "''s constructor template is not "
+                           "supported yet - its specializations would have to be made for the derived class");
         const std::vector<std::size_t> *set = overloadsOf(constructorKey(base->tag()));
         if (set == nullptr) continue;
         const std::vector<std::size_t> from = *set;
@@ -3239,8 +3239,17 @@ void Parser::synthesizeDefaultCtor(std::size_t which) {
         std::string c2, why;
         auto origin = inheritedFrom_.find(symbol);
         if (itaniumInheritingConstructorName(cls, type, origin != inheritedFrom_.end() ? origin->second : inhBase,
-                                             fnType, false, &c2, &why))
+                                             fnType, false, &c2, &why)) {
+            // A virtual base of the class splits it as it splits any constructor: this body is CI2.
+            if (type->hasVirtualBase()) {
+                current_->functions.back().setSymbol(c2);
+                closeFrame(savedFrame);
+                vttSlot_ = savedVtt;
+                synthesizeCompleteCtor(type, forwarded, symbol, c2, true, pos);
+                return;
+            }
             current_->functions.back().setAlias(c2);
+        }
     } else if (!target_.microsoftNames()) {
         const Type *fnType = types_.functionType(types_.get(Kind::Void),
                                                  std::vector<const Type *>(), false);
@@ -4281,7 +4290,8 @@ void Parser::declareFunction(const std::string &name, const Type *returns,
     // namespace goes on here, once**, every table below being keyed by the whole name.
     const std::string plain = instantiationName(name);
     const std::string qualified =
-        (cLinkage_ > 0 || plain == "main" || namespaceStack_.empty())
+        (cLinkage_ > 0 || plain == "main" || namespaceStack_.empty() ||
+         (!instantiationKey_.empty() && plain == instantiationKey_))
             ? plain : namespacePrefix() + plain;
     const std::string &key = qualified;
     checkOperatorDeclarable(key, params, false, pos, internal);
@@ -4328,7 +4338,7 @@ void Parser::declareFunction(const std::string &name, const Type *returns,
         if (!pendingDefaults_.empty()) {
             // The scope this declaration was written in, for
             // [dcl.fct.default]/5.
-            defaultArgNamespace_[f.symbol] = namespaceStack_;
+            defaultArgNamespace_[f.symbol] = definitionNamespace_.empty() ? namespaceStack_ : definitionNamespace_;
             std::vector<std::size_t> &have = defaultArgs_[f.symbol];
             if (have.size() < pendingDefaults_.size())
                 have.resize(pendingDefaults_.size(), 0);
@@ -4377,7 +4387,7 @@ void Parser::declareFunction(const std::string &name, const Type *returns,
     pendingExplicitConversion_ = false;
     if (!pendingDefaults_.empty()) {
         defaultArgs_[functions_.back().symbol] = pendingDefaults_;
-        defaultArgNamespace_[functions_.back().symbol] = namespaceStack_;
+        defaultArgNamespace_[functions_.back().symbol] = definitionNamespace_.empty() ? namespaceStack_ : definitionNamespace_;
     }
     pendingDefaults_.clear();
 }

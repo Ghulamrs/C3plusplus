@@ -375,15 +375,27 @@ public:
     void templateFunction(const std::string &name, const Type *pattern,
                           const std::vector<TemplateArg> &args, bool internal) {
         out = internal ? "_ZL" : "_Z";
+        // **One declared in a namespace is a nested-name**, `_ZN1n5twiceIiEET_S1_`: the namespace
+        // a candidate, then the template's name, then its arguments inside the N...E; directly in
+        // std it is `St` and no N...E, as an ordinary function's is.
+        const std::vector<std::string> parts = scopeComponents(name);
+        const std::string &last = parts.back();
+        const bool inStd = isDirectlyInStd(name);
+        const bool nested = parts.size() > 1 && !inStd;
+        if (inStd) out += "St";
+        if (nested) {
+            out += "N";
+            namespacesOf(name);
+        }
         // **An operator template spells its code, not the name**, and the code
         // is not a substitution candidate - `operator+<3>` is _ZplILi3EE...,
         // where a named template's name is candidate zero.
-        const std::string spelling = operatorSpelling(name);
+        const std::string spelling = operatorSpelling(last);
         if (const OperatorCode *op = findOperator(spelling))
             out += itaniumOperatorCode(*op, pattern->params().size() == 1);
         else {
-            out += std::to_string(name.size());
-            out += name;
+            out += std::to_string(last.size());
+            out += last;
         }
         Sub self;
         self.name = name;
@@ -392,6 +404,7 @@ public:
         out += 'I';
         for (std::size_t i = 0; i < args.size(); i++) templateArgument(args[i]);
         out += 'E';
+        if (nested) out += 'E';
 
         type(pattern->returns());
         const std::vector<const Type *> &params = pattern->params();
@@ -422,7 +435,12 @@ public:
         if (a.isType) { type(a.type); return; }
         out += 'L';
         type(a.type);
-        if (a.value < 0) { out += 'n'; out += std::to_string(-a.value); }
+        // An unsigned argument is spelled as its own value, never negative: Ly18446744073709551615E.
+        if (a.type != nullptr && (a.type->kind() == Kind::UChar || a.type->kind() == Kind::UShort ||
+                                  a.type->kind() == Kind::UInt || a.type->kind() == Kind::ULong ||
+                                  a.type->kind() == Kind::ULongLong))
+            out += std::to_string(static_cast<unsigned long long>(a.value));
+        else if (a.value < 0) { out += 'n'; out += std::to_string(0ULL - static_cast<unsigned long long>(a.value)); }
         else             { out += std::to_string(a.value); }
         out += 'E';
     }
@@ -882,8 +900,11 @@ public:
     void templateFunction(const std::string &name, const Type *fn,
                           const std::vector<TemplateArg> &args) {
         out = "??$";
-        templateId(name, args);
-        out += '@';               // the empty enclosing scope list
+        const std::vector<std::string> parts = scopeComponents(name);
+        templateId(parts.back(), args);
+        // The enclosing scopes innermost first, `??$twice@H@n@@YAHH@Z`, then the '@' closing them.
+        for (std::size_t i = parts.size() - 1; i-- > 0; ) pushName(parts[i]);
+        out += '@';
         out += "YA";
         returnType(fn->returns());
         const std::vector<const Type *> &params = fn->params();
