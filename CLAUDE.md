@@ -13401,3 +13401,44 @@ Measured: Mac `make test` passes - run.sh 730/0, emit.sh 1853/0, names.sh 474/0,
 exclusions 129 sites 0/0, comment cap 0; Linux box, g++: run.sh 730/0 at -O0 and -O2, tms6747.sh 453/0 at
 -O0 and -O2 on vm6747 and every case also on sim6747 against TI's rts6740_elf_eh.lib. Not run: the
 Windows box, closed at the user's word, and TI's simulators. Seal `cxx1-1.13.dat`, 160 files.
+
+## Version 1.14, 2026-10-17: a review of 1.12 and 1.13, and the three defects a design found
+
+**A Fable 5.1 review of 1.12/1.13 and Fable's expression-SFINAE design**, the user naming it for both
+(`docs/mend-1.14/review-1.12-1.13.md`, `expression-sfinae-design.md`, each with its probes), were
+mended on `mend/1.14`. What each fault was, in the order the commits landed:
+
+- **[temp.local]/6, undone by 1.12**: asking the enclosing namespace and class before the flat table
+  put a bound parameter behind them - `typedef double T` in the namespace made `Box<int>`'s `T`
+  double, and a member template's own `N` lost to the class's enumerator, member or static member.
+  `boundTypeParams_` and the new `boundValueParams_` are asked first, in `findTypedef`, `findEnum`,
+  the class-scope lookups and `primary`.
+- **An inheriting constructor of a class with a virtual base** went through 1.13's single CI1=CI2,
+  which skips virtual bases - a crash. It is split as any such constructor is
+  (`synthesizeCompleteCtor`). The case found an older fault: `memberFromBase` decided by offset, and
+  a base with a virtual base reaches past its own members, so a derived member's initialiser in that
+  range was skipped. It asks `Member::declaredIn` (or `inVirtualBase`) now.
+- **Namespace scope, one door over from 1.12's**: an out-of-line member of a class in a namespace, a
+  static member's definition, and a namespace's function template instantiated from outside read
+  their names in that namespace (`classNamespacePath`; the replay swaps `namespaceStack_`); a
+  default argument on an out-of-line definition reads the definition's (`definitionNamespace_`).
+  **And the function template's name had dropped its namespace on both ABIs** - `_Z5twiceIiET_S0_`
+  where clang writes `_ZN1n5twiceIiEET_S1_`, `std::move` without its `St`. 71 of 1789 goldens moved,
+  every changed line a `std` name respelled or a function reordered, checked mechanically. An
+  operator candidate reached through two keys had then become ambiguous with itself;
+  `resolveOperator` takes it once.
+- A member template's access and path are checked; beside an ordinary member of the name the
+  template is ranked rather than taken; a narrowing non-type argument is refused; an unsigned one is
+  spelled unsigned; a base's constructor template inherited is refused by name.
+- **The design's defects**: a pattern read made every template-id shallow, so
+  `enable_if<2 + 2 == 4, int>::type` and `V<N + M>` lost their members; only an argument list naming
+  a parameter is shallow now (`TemplateArg::dependentValue`). `decltype` of an expression over a
+  template parameter in a signature is refused by name.
+
+**Found and not mended**, in `tests/open`: two namespaces' function templates of one name form one
+overload set, templates being keyed by their bare name. The review's two nits are left.
+
+Measured: Mac `make test` passes - run.sh 745/0, emit.sh 1896/0, names.sh 485/0, overload.sh 33/0,
+exclusions 131 sites 0/0, comment cap 0; `tools/feature-sweep` 72/22/0 of 94, the headline held; Linux
+box, g++: run.sh 745/0 at -O0 and -O2, tms6747.sh 464/0 at -O0 and -O2 on vm6747 and sim6747. Not run:
+the Windows box, closed at the user's word, and TI's simulators.

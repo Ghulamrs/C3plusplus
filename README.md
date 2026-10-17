@@ -169,6 +169,33 @@ x86_64-windows, where a class cannot be thrown yet and they print and abort inst
 delete`, the placement and nothrow forms, `std::bad_alloc` from the platform runtime, `typeid` and
 `dynamic_cast` all work.
 
+## What 1.14 changes
+
+A review of 1.12 and 1.13 found two blocking faults and seven more, and an expression-SFINAE
+design found three; all are mended or refused by name (the review's two nits are left):
+
+* **A bound template parameter hides the enclosing class's and namespace's names again**
+  ([temp.local]/6). 1.12 asked the enclosing scopes first, so inside a namespace with `typedef
+  double T`, `Box<int>`'s `T` was `double`, and a member template's own non-type parameter lost
+  to a class enumerator or member of the same name - silent wrong values.
+* **An inheriting constructor in a class with a virtual base** builds it once: CI1 builds the
+  virtual base and calls CI2, where 1.13 made the two one function and the program crashed. Beside
+  it, a derived class's member initialiser past a base with a virtual base is no longer skipped.
+* **Namespace scope one door over**: a member of a class in a namespace defined out of line, a
+  static member's definition, a default argument on an out-of-line definition, and a namespace's
+  function template instantiated from outside all read their names in that namespace. Such a
+  template is now named with its namespace on both ABIs, `_ZN1n5twiceIiEET_S1_` and
+  `??$twice@H@n@@YAHH@Z`, and so is a function template of `std` - `_ZSt4moveI...` - as clang
+  and cl name it, where the namespace had been dropped.
+* **Member templates**: access and the path to the declaring class are checked, and beside an
+  ordinary member of the name, `s.f(1)` ranks the template rather than taking it.
+* **Non-type arguments**: one that narrows to its parameter's type is refused, and an unsigned one
+  is spelled unsigned in an Itanium name.
+* **A non-dependent template argument is a class** in a signature - `enable_if<2 + 2 == 4,
+  int>::type` and `V<N + M>` kept their members. Refused by name: `decltype` of an expression over
+  a template parameter in a signature (Itanium would have to spell the expression), and a base's
+  constructor template inherited.
+
 ## What 1.13 changes
 
 The plan's third day, and the last of its items:
@@ -317,11 +344,11 @@ defects below and nothing else; Compiler-Cppi has closed those too, with the
 vtable group, `_ZTv` thunks, VTT and construction vtables, and that work is
 not in 1.3.
 
-## Known shortcomings in 1.13
+## Known shortcomings in 1.14
 
 Everything here is measured and written down elsewhere in full; this is the
-short list a user of **1.13** should have in front of them. `docs/EXCLUSIONS.md`
-is the complete one - 129 refusal sites on 2026-10-17 (131 on 2026-10-08),
+short list a user of **1.14** should have in front of them. `docs/EXCLUSIONS.md`
+is the complete one - 131 refusal sites on 2026-10-17 (131 on 2026-10-08),
 each citing the source line that refuses it, and `make test` fails when the two
 disagree. The heading
 above is written by `tools/version-lines` from `src/Version.h`; it said 1.4 for
@@ -359,6 +386,10 @@ is looked up at instantiation - MSVC's old model. cxx1 therefore *accepts*
 some programs clang refuses, which `docs/CONFORMANCE.md` records rather than
 hides. The four shapes met while writing `<type_traits>` all compile now, the last
 being `template <class T, T v>` - so `std::integral_constant` is the base of every trait.
+
+**Two namespaces' function templates of one name are one overload set**: templates are keyed by
+their bare name, so `a::twice(3)` can reach `b::twice`. Registered in `tests/open`
+(`namespace-function-template-name`); clang prints `6 2 6` where cxx1 prints `6 2 4`.
 
 **Pointers to members** stop short of two things: a pointer to a *virtual*
 member function is refused by name (Compiler-Cppi has it), and `&D::f` for an
