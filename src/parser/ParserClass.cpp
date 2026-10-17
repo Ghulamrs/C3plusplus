@@ -1166,13 +1166,10 @@ bool Parser::sameParameters(const std::vector<const Type *> &a,
     return true;
 }
 
-bool Parser::memberFromBase(const Type *cls, const Member &m) {
-    const std::vector<Type::BaseSpec> &bs = cls->bases();
-    for (std::size_t k = 0; k < bs.size(); k++)
-        if (m.offset >= bs[k].offset &&
-            m.offset < bs[k].offset + bs[k].type->dataSize())
-            return true;
-    return false;
+bool Parser::memberFromBase(const Type *, const Member &m) {
+    // Which class wrote it, not where it sits: a base's data size reaches past its own members
+    // once a virtual base is laid at the end, and a derived member may sit in that range.
+    return m.declaredIn != nullptr || m.inVirtualBase != nullptr;
 }
 
 // **[dcl.init]/7 refuses a const object that nothing would initialise**, and
@@ -3239,8 +3236,17 @@ void Parser::synthesizeDefaultCtor(std::size_t which) {
         std::string c2, why;
         auto origin = inheritedFrom_.find(symbol);
         if (itaniumInheritingConstructorName(cls, type, origin != inheritedFrom_.end() ? origin->second : inhBase,
-                                             fnType, false, &c2, &why))
+                                             fnType, false, &c2, &why)) {
+            // A virtual base of the class splits it as it splits any constructor: this body is CI2.
+            if (type->hasVirtualBase()) {
+                current_->functions.back().setSymbol(c2);
+                closeFrame(savedFrame);
+                vttSlot_ = savedVtt;
+                synthesizeCompleteCtor(type, forwarded, symbol, c2, true, pos);
+                return;
+            }
             current_->functions.back().setAlias(c2);
+        }
     } else if (!target_.microsoftNames()) {
         const Type *fnType = types_.functionType(types_.get(Kind::Void),
                                                  std::vector<const Type *>(), false);
