@@ -9,11 +9,12 @@
 // about what the compiler has implemented, so the two sites re-raise when the
 // failure was a refusal. This template deduces perfectly well and its return
 // type cannot be spelt in an Itanium name, and that is what the reader is told.
-// (It was `-> A` until trailing return types landed; `-> decltype(a)` is the
-// form still refused.)
+// (It was `-> A` until trailing return types landed, and `-> decltype(a)` until
+// expression SFINAE did in 1.15; a postfix `++` is a form still refused, clang
+// spelling it `pp` where the Itanium ABI says `pp_`.)
 //
 // template-sfinae.cpp is the other half: a real substitution failure still
 // drops its candidate and the program still runs.
-template <class A> auto f(A a) -> decltype(a) { return a; }
+template <class A> auto f(A a) -> decltype(a++) { return a; }
 
 int main() { return f(0); }

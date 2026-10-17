@@ -37,15 +37,48 @@ enum class Kind {
     MemberPointer,
     // **A template parameter, and it is not a type anything is made of.**
     TemplateParam,
-    // **A member type of something that is not known yet** - `T::type`, or
-    // `Value<T>::type`. Like TemplateParam it exists only in a pattern, because
-    // Itanium spells a function template's return type from the pattern.
-    DependentMember
+    // **A member type not known yet**, `T::type` - a pattern's only, Itanium spelling a return type from it.
+    DependentMember,
+    // **`decltype` of an expression over a template's parameters**, in a pattern only: Itanium
+    // spells it `Dt...E` (an id-expression or a member access) or `DT...E`, the expression itself.
+    DependentExpr
 };
 
 class Target;
 
 class Type;
+
+// **An expression over a template's parameters, kept as a tree because the Itanium name spells it**
+// - `sizeof(T) == 4` is `eqstT_Li4E`. Built by the pattern read, interned by TypeTable on `key`,
+// meaning nothing to any backend. `kids` are the operands in the order the name writes them.
+struct DepExpr {
+    enum Op {
+        Literal,            // `type` its type; `value` the integer, or the IEEE bits when `floating`
+        TemplateParam,      // a non-type parameter, `index`
+        FunctionParam,      // the `index`th function parameter, `fp_`
+        SizeofType,         // `st <type>`
+        SizeofExpr,         // `sz <expression>`
+        Operator,           // `code` and one, two or three operands
+        Member,             // `dt <kid> <name>`
+        Arrow,              // `pt <kid> <name>`
+        Call,               // `cl <callee> <args> E`
+        UnresolvedName,     // a function named by `name` and not looked up
+        QualifiedParamName, // `sr <type> <name>`
+        Cast,               // `cv <type> <kid>`, one operand
+        CastList,           // `cv <type> _ <kids> E`, none or several
+        StaticCast          // `sc <type> <kid>`
+    };
+    Op op = Literal;
+    std::string code;
+    const Type *type = nullptr;
+    long long value = 0;
+    bool floating = false;
+    int index = -1;
+    std::string name;
+    std::vector<const DepExpr *> kids;
+    std::string key;    // the identity: equivalent expressions have one key and one node
+    std::string text;   // what a diagnostic shows
+};
 
 // One template argument: a type, or a value of a type. `type` is the argument for
 // a type argument and the *parameter's* type for a non-type one, which is what
@@ -60,6 +93,8 @@ struct TemplateArg {
     int paramIndex = 0;
     // A value folded from an expression that names a parameter while a pattern is read, `V<N + M>`.
     bool dependentValue = false;
+    // **A non-type argument that is an expression of the parameters**, in a pattern: `X <expr> E`.
+    const DepExpr *expr = nullptr;
     // **A pack argument is a list, not a type.** Itanium spells one `J...E`
     // and Microsoft lists its members inline with `$$V` for an empty one, so
     // both need the members rather than anything standing for them.
@@ -122,6 +157,10 @@ public:
     int boundParam() const {
         return kind_ == Kind::Array && length_ <= -2 ? static_cast<int>(-2 - length_) : -1;
     }
+
+    // The expression a `Kind::DependentExpr` is `decltype` of, and whether it is spelled `Dt`.
+    const DepExpr *dependentExpr() const { return kind_ == Kind::DependentExpr ? expr_ : nullptr; }
+    bool dependentIdExpression() const { return kind_ == Kind::DependentExpr && length_ == 1; }
 
     bool isPointer() const { return kind_ == Kind::Pointer; }
 
@@ -447,6 +486,7 @@ private:
     // one, this copy having been taken before the struct was complete.
     const Type *unqual_ = nullptr;
     bool const_ = false;
+    const DepExpr *expr_ = nullptr;
 
     const Type *pointee_ = nullptr;
     long long length_ = -1;
@@ -517,6 +557,12 @@ public:
     // `owner::name`, where owner is a pattern. Interned on the pair.
     const Type *dependentMember(const Type *owner, const std::string &name);
     const Type *packExpansion(const Type *of);
+    // `decltype(e)` in a pattern; `id` for an id-expression or a member access (`Dt`).
+    const Type *dependentExpr(const DepExpr *e, bool id);
+    // One node per key: two equivalent expressions are one node, so two signatures are one type.
+    const DepExpr *intern(DepExpr e);
+    // A type's identity in a pattern, where describe() would call every parameter alike.
+    static std::string patternKey(const Type *t);
 
     Type *structType(Kind kind, const std::string &tag);
     // **An enumeration, which is an `int` that remembers its name.**
@@ -531,6 +577,7 @@ public:
 private:
     std::vector<Type> types_;
     std::vector<Type *> derived_;
+    std::vector<DepExpr *> exprs_;
 };
 
 class Target {

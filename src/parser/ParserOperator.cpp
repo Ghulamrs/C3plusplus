@@ -67,7 +67,9 @@ ExprPtr Parser::castExpr() {
         ExprPtr v = decay(castExpr());
         if (to->isVoid()) return ExprPtr(new Cast(to, std::move(v)));
         refuseUnrelatedClassCast(*v, to, openPos, "a cast");
-        return convert(std::move(v), to, true);   // a cast allows explicit
+        ExprPtr r = convert(std::move(v), to, true);   // a cast allows explicit
+        if (!to->isReference()) r->setDeclCategory(Expr::Category::Prvalue);
+        return r;
     }
     return unary();
 }
@@ -860,6 +862,7 @@ ExprPtr Parser::conditional() {
         // About to expire, like any other temporary: without the mark, passing
         // one by value would reach for the copy constructor.
         made->setXvalue();
+        made->setDeclCategory(Expr::Category::Prvalue);
         return made;
     } else if (ta == tb) {
         result = ta;
@@ -900,7 +903,9 @@ ExprPtr Parser::assign() {
     for (const auto &c : kCompound) {
         if (peek().is(c.tok)) {
             std::size_t pos = peek().pos; at_++;
-            return compound(c.op, std::move(n), decay(assign()), pos);
+            ExprPtr r = compound(c.op, std::move(n), decay(assign()), pos);
+            if (dynamic_cast<const Assign *>(r.get())) r->setDeclCategory(Expr::Category::Lvalue);
+            return r;
         }
     }
 
@@ -978,6 +983,7 @@ ExprPtr Parser::assign() {
     }
     ExprPtr node(new Assign(std::move(n), convert(std::move(value), to)));
     node->setType(to);
+    node->setDeclCategory(Expr::Category::Lvalue);
     return node;
 }
 

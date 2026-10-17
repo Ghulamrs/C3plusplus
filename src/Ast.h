@@ -88,9 +88,15 @@ public:
     // with the object, not by how its address is computed. No backend reads it.
     bool isXvalue() const { return xvalue_; }
     void setXvalue() { xvalue_ = true; }
+    // **What `decltype` asks where C's categories answer wrong**: an assignment and a prefix `++` are
+    // lvalues, a cast to a non-reference type a prvalue ([expr.ass]/1, [expr.cast]/1). Only decltype reads it.
+    enum class Category { Natural, Lvalue, Prvalue };
+    Category declCategory() const { return category_; }
+    void setDeclCategory(Category c) { category_ = c; }
 private:
     const Type *type_ = nullptr;
     bool xvalue_ = false;
+    Category category_ = Category::Natural;
 };
 
 class Stmt : public Node {

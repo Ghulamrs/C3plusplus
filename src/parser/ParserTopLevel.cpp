@@ -1777,6 +1777,7 @@ const Type *Parser::readTrailingReturn(std::size_t paramsOpen) {
     if (paramsOpen != 0) {
         enterScope();
         at_ = paramsOpen + 1;
+        int index = 0;
         while (!consume(")")) {
             if (consume("...")) continue;
             StorageClass psc;
@@ -1786,7 +1787,9 @@ const Type *Parser::readTrailingReturn(std::size_t paramsOpen) {
                 if (pd.type->isArray()) pd.type = types_.pointerTo(pd.type->pointee());
                 locals_.push_back(Local{ pd.name, 0, pd.type, false, std::string() });
                 locals_.back().isParameter = true;
+                locals_.back().trailingParam = index;
             }
+            if (!pd.type->isVoid()) index++;
             if (consume("=")) skipDefaultArgument();
             consume(",");
         }
@@ -1843,19 +1846,6 @@ bool Parser::autoBeforeQualifiedName() const {
         if (tokens_[i].is("operator")) return true;
     }
     return false;
-}
-
-// A function template's `-> decltype(e)`: Itanium spells such a signature with the expression
-// itself (`Dt...E`), which this mangler cannot write; refused by name rather than misnamed.
-void Parser::refuseTemplateTrailingDecltype() {
-    for (std::size_t i = at_ + 1; i < tokens_.size() - 1; i++) {
-        if (tokens_[i].is("{") || tokens_[i].is(";") || tokens_[i].is("=")) return;
-        if (tokens_[i].is("decltype"))
-            src_.fail(tokens_[i].pos, "a function template whose trailing return type is "
-                                      "'decltype(...)' is not supported yet - its Itanium name "
-                                      "spells the expression, and this compiler cannot; '-> T' "
-                                      "works");
-    }
 }
 
 // At a parameter list's `(`: whether a trailing `->` follows its `)` and qualifiers.

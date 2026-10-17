@@ -73,6 +73,20 @@ by cxx1 in another, will not link to itself. Nothing else. Keeping it would
 mean carrying the parameter type twice - once as declared and once as the
 function's type - and that is not worth doing for a name.
 
+## A return type's top-level const is dropped from a Microsoft name
+
+```cpp
+const int f();                                   // cl and clang write ?f@@YA?BHXZ, cxx1 ?f@@YAHXZ
+template <class T> const typename enable_if<sizeof(T) == 4, int>::type m11(T);  // ?B there too
+```
+
+The same shape as the parameter above, at the other end of the signature: the Microsoft ABI writes
+a `const` on a return type of non-class type as `?B`, and cxx1 drops it before the mangler sees it.
+Itanium writes no return type for an ordinary function and agrees; for a function template it spells
+the pattern, where cxx1 keeps the `K`. Found by the expression-SFINAE probes (1.15), measured with
+clang for the Microsoft ABI. What it costs is the same as above: such a function, compiled by cl in
+one object and by cxx1 in another, does not link to itself.
+
 ## A static local keeps its own name in the object file
 
 A `static` variable inside a function becomes a global here, named

@@ -124,6 +124,7 @@ std::string Type::describe() const {
         return std::string(isClass_ ? "class " : "struct ") +
                (tag_.empty() ? "<anonymous>" : tag_);
     if (kind_ == Kind::Union)  return "union "  + (tag_.empty() ? "<anonymous>" : tag_);
+    if (kind_ == Kind::DependentExpr) return "decltype(" + expr_->text + ")";
     return name();
 }
 
@@ -257,6 +258,53 @@ const Type *TypeTable::dependentMember(const Type *owner,
     derived_.push_back(new Type(Kind::DependentMember, owner, -1));
     derived_.back()->tag_ = name;
     return derived_.back();
+}
+
+// The tree kept in expr_, `Dt` against `DT` in length_ (1 and 0), interned on the pair.
+const Type *TypeTable::dependentExpr(const DepExpr *e, bool id) {
+    for (Type *d : derived_)
+        if (!d->isConst() && d->kind() == Kind::DependentExpr && d->expr_ == e &&
+            d->length() == (id ? 1 : 0))
+            return d;
+    derived_.push_back(new Type(Kind::DependentExpr, nullptr, id ? 1 : 0));
+    derived_.back()->expr_ = e;
+    return derived_.back();
+}
+
+// [temp.over.link]/5: equivalent expressions are the same tokens up to the parameters' names, so
+// the key spells the tree with every parameter by its index and every type by patternKey.
+const DepExpr *TypeTable::intern(DepExpr e) {
+    std::string key = std::to_string(static_cast<int>(e.op)) + "{" + e.code + "|" +
+                      (e.type != nullptr ? patternKey(e.type) : std::string()) + "|" +
+                      std::to_string(e.value) + (e.floating ? "f" : "") + "|" +
+                      std::to_string(e.index) + "|" + e.name;
+    for (const DepExpr *k : e.kids) key += "|" + k->key;
+    e.key = key + "}";
+    for (DepExpr *d : exprs_)
+        if (d->key == e.key) return d;
+    exprs_.push_back(new DepExpr(e));
+    return exprs_.back();
+}
+
+std::string TypeTable::patternKey(const Type *t) {
+    if (t == nullptr) return "?";
+    if (t->isConst()) return "const " + patternKey(t->unqualified());
+    switch (t->kind()) {
+    case Kind::TemplateParam:   return "$T" + std::to_string(t->length());
+    case Kind::DependentExpr:   return (t->length() == 1 ? "$Dt" : "$DT") + t->dependentExpr()->key;
+    case Kind::DependentMember: return patternKey(t->pointee()) + "::" + t->tag();
+    case Kind::PackExpansion:   return patternKey(t->pointee()) + "...";
+    case Kind::Pointer:         return patternKey(t->pointee()) + " *";
+    case Kind::LValueRef:       return patternKey(t->pointee()) + " &";
+    case Kind::RValueRef:       return patternKey(t->pointee()) + " &&";
+    case Kind::Array:           return patternKey(t->pointee()) + " [" + std::to_string(t->length()) + "]";
+    case Kind::Function: {
+        std::string k = patternKey(t->returns()) + " (";
+        for (const Type *p : t->params()) k += patternKey(p) + ",";
+        return k + (t->isVariadicFn() ? "...)" : ")");
+    }
+    default:                    return t->describe();
+    }
 }
 
 const Type *TypeTable::packExpansion(const Type *of) {
@@ -458,6 +506,7 @@ const char *Type::name() const {
     case Kind::Deduced:       return "auto";
     case Kind::TemplateParam: return "template parameter";
     case Kind::DependentMember: return "dependent member type";
+    case Kind::DependentExpr: return "decltype of a dependent expression";
     case Kind::PackExpansion: return "parameter pack expansion";
     }
     return "?";

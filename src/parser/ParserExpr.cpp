@@ -322,34 +322,40 @@ ExprPtr Parser::staticCast(std::size_t pos) {
         // An lvalue reference cast leaves an lvalue and there is nothing to
         // mark; an rvalue reference cast is the whole point of this function.
         if (to->isRValueReference()) v->setXvalue();
+        v->setDeclCategory(Expr::Category::Natural);   // a reference cast names the object
         return v;
     }
 
-    v = decay(std::move(v));
-    if (to->isVoid()) {
-        ExprPtr c(new Cast(to, std::move(v)));
-        return c;
-    }
-    // **[expr.static.cast]/11: `B *` to `D *` where B is a base of D** - the inverse of the
-    // conversion `convert` makes the other way, refused through a virtual base.
-    if (to->isPointer() && v->type()->isPointer() && to->pointee()->unqualified()->isStructOrUnion() &&
-        v->type()->pointee()->unqualified()->isStructOrUnion() &&
-        to->pointee()->unqualified() != v->type()->pointee()->unqualified()) {
-        bool viaVirtual = false;
-        const int off = downcastOffset(to->pointee(), v->type()->pointee(), &viaVirtual);
-        if (viaVirtual)
-            src_.fail(pos, "'static_cast<" + to->describe() + ">' of a '" + v->type()->describe() +
-                           "' - the base is a virtual base, whose offset is not a constant; "
-                           "'dynamic_cast' is the cast that asks the object");
-        if (off >= 0) {
-            if (v->type()->pointee()->isConst() && !to->pointee()->isConst())
-                src_.fail(pos, "'static_cast<" + to->describe() + ">' of a '" +
-                               v->type()->describe() + "' - a cast does not take const off");
-            return downcastPointer(std::move(v), to, off);
+    // A cast to a non-reference type is a prvalue, whatever node the conversion hands back.
+    ExprPtr r = [&]() -> ExprPtr {
+        v = decay(std::move(v));
+        if (to->isVoid()) {
+            ExprPtr c(new Cast(to, std::move(v)));
+            return c;
         }
-    }
-    refuseUnrelatedClassCast(*v, to, pos, "'static_cast'");
-    return convert(std::move(v), to, true);
+        // **[expr.static.cast]/11: `B *` to `D *` where B is a base of D** - the inverse of the
+        // conversion `convert` makes the other way, refused through a virtual base.
+        if (to->isPointer() && v->type()->isPointer() && to->pointee()->unqualified()->isStructOrUnion() &&
+            v->type()->pointee()->unqualified()->isStructOrUnion() &&
+            to->pointee()->unqualified() != v->type()->pointee()->unqualified()) {
+            bool viaVirtual = false;
+            const int off = downcastOffset(to->pointee(), v->type()->pointee(), &viaVirtual);
+            if (viaVirtual)
+                src_.fail(pos, "'static_cast<" + to->describe() + ">' of a '" + v->type()->describe() +
+                               "' - the base is a virtual base, whose offset is not a constant; "
+                               "'dynamic_cast' is the cast that asks the object");
+            if (off >= 0) {
+                if (v->type()->pointee()->isConst() && !to->pointee()->isConst())
+                    src_.fail(pos, "'static_cast<" + to->describe() + ">' of a '" +
+                                   v->type()->describe() + "' - a cast does not take const off");
+                return downcastPointer(std::move(v), to, off);
+            }
+        }
+        refuseUnrelatedClassCast(*v, to, pos, "'static_cast'");
+        return convert(std::move(v), to, true);
+    }();
+    r->setDeclCategory(Expr::Category::Prvalue);
+    return r;
 }
 
 int Parser::downcastOffset(const Type *derived, const Type *base, bool *viaVirtual) const {
@@ -584,37 +590,42 @@ ExprPtr Parser::bracedValueInit(const Type *to, std::size_t pos) {
 }
 
 ExprPtr Parser::functionalCast(const Type *to, std::size_t pos) {
-    expect("(");
-    if (consume(")")) {
-        if (to->isVoid())
-            src_.fail(pos, "'void()' has no value");
-        // The zero that convert can carry to any scalar: a null pointer
-        // constant for a pointer, 0.0 for a floating type, 0 for the rest.
-        ExprPtr z;
-        if (to->isPointer()) {
-            z.reset(new Num(0LL));
-            z->setType(types_.get(Kind::NullPtr));
-        } else if (to->isFloating()) {
-            z.reset(new Num(0.0L));
-            z->setType(types_.doubleType());
-        } else {
-            z.reset(new Num(0LL));
-            z->setType(types_.intType());
+    // `T(x)` is a prvalue ([expr.type.conv]/2), whatever node the conversion hands back.
+    ExprPtr r = [&]() -> ExprPtr {
+        expect("(");
+        if (consume(")")) {
+            if (to->isVoid())
+                src_.fail(pos, "'void()' has no value");
+            // The zero that convert can carry to any scalar: a null pointer
+            // constant for a pointer, 0.0 for a floating type, 0 for the rest.
+            ExprPtr z;
+            if (to->isPointer()) {
+                z.reset(new Num(0LL));
+                z->setType(types_.get(Kind::NullPtr));
+            } else if (to->isFloating()) {
+                z.reset(new Num(0.0L));
+                z->setType(types_.doubleType());
+            } else {
+                z.reset(new Num(0LL));
+                z->setType(types_.intType());
+            }
+            return convert(std::move(z), types_.withoutConst(to), true);
         }
-        return convert(std::move(z), types_.withoutConst(to), true);
-    }
-    ExprPtr v = decay(assign());
-    if (peek().is(","))
-        src_.fail(peek().pos, "'" + to->describe() + "(a, b)' would need a "
-                              "constructor, and '" + to->describe() +
-                              "' is not a class");
-    expect(")");
-    if (to->isVoid()) {
-        ExprPtr c(new Cast(to, std::move(v)));
-        c->setType(to);
-        return c;
-    }
-    return convert(std::move(v), types_.withoutConst(to), true);
+        ExprPtr v = decay(assign());
+        if (peek().is(","))
+            src_.fail(peek().pos, "'" + to->describe() + "(a, b)' would need a "
+                                  "constructor, and '" + to->describe() +
+                                  "' is not a class");
+        expect(")");
+        if (to->isVoid()) {
+            ExprPtr c(new Cast(to, std::move(v)));
+            c->setType(to);
+            return c;
+        }
+        return convert(std::move(v), types_.withoutConst(to), true);
+    }();
+    r->setDeclCategory(Expr::Category::Prvalue);
+    return r;
 }
 
 // **A function's address, from its key.**
@@ -1661,19 +1672,27 @@ const Type *Parser::decltypeSpecifier() {
         src_.fail(peek().pos, "'decltype(auto)' is C++14, and this compiler is "
                               "C++11 - 'decltype' of an expression works, and "
                               "'auto' on its own deduces from an initialiser");
-    // **In a signature, `decltype` of an expression over a template parameter** is spelled
-    // as the expression itself in the Itanium name (DT...E) - the same wall as 'sizeof'.
-    if (patternOnly_)
-        for (std::size_t k = 0, depth = 0; peekAt(k).kind != TokenKind::End; k++) {
-            if (peekAt(k).is("(")) depth++;
-            else if (peekAt(k).is(")") && depth-- == 0) break;
-            else if (peekAt(k).kind == TokenKind::Ident &&
-                     (boundTypeParams_.count(peekAt(k).text) != 0 ||
-                      nonTypePatternParams_.count(peekAt(k).text) != 0))
-                src_.fail(pos, "'decltype' of an expression over a template parameter in a "
-                               "signature is not supported yet - the linker name would have to "
-                               "spell the expression, and that is its own step");
+    // **In a pattern, `decltype` of an expression over the parameters is a type spelled by the
+    // expression**: `Dt` for an unparenthesised id-expression or member access, `DT` else -
+    // measured, `-> decltype(t.v)` is `Dtdtfp_1vE` and `-> decltype((t))` `DTfp_E`.
+    if (patternOnly_ && dependentAhead(false)) {
+        const std::size_t from = at_;
+        DepExpr tree = *dependentExpression(false, true);
+        const std::size_t to = at_;
+        expect(")");
+        bool wrapped = tokens_[from].is("(");
+        for (std::size_t i = from, depth = 0; wrapped && i < to; i++) {
+            if (tokens_[i].is("(")) depth++;
+            else if (tokens_[i].is(")") && --depth == 0 && i + 1 != to) wrapped = false;
         }
+        const DepExpr::Op top = tree.op;
+        const bool id = !wrapped && (top == DepExpr::TemplateParam ||
+                                     top == DepExpr::FunctionParam ||
+                                     top == DepExpr::QualifiedParamName ||
+                                     top == DepExpr::Member || top == DepExpr::Arrow);
+        tree.text = depText(from, to);
+        return types_.dependentExpr(types_.intern(tree), id);
+    }
     const bool namePath = atNamePath();
 
     // **A name on its own is looked up, not evaluated.** A reference variable is the
@@ -1708,17 +1727,27 @@ const Type *Parser::decltypeSpecifier() {
     // nothing in it happens, so nothing it registered may outlive the read.
     Discarded held(this);
     Unevaluated unevaluated(this);
+    const std::size_t from = at_;
     ExprPtr e = expr();
+    const std::size_t to = at_;
     expect(")");
     const Type *t = e->type();
     if (t == nullptr)
         src_.fail(pos, "'decltype' needs an expression with a type, and this "
                        "one has none");
     if (namePath) return t;
-    // [dcl.type.simple]/4 in full: an xvalue answers `T &&`, an lvalue `T &`,
-    // and a prvalue `T`. Three categories and three answers, which is why the
-    // xvalue mark has to be asked about before the lvalue is.
+    // **An unparenthesised member access answers the member's declared type** whatever its object -
+    // `decltype(T().v)` is `double` as `decltype(s.v)` is, though the object is a temporary.
+    if (to >= from + 3 && tokens_[to - 1].kind == TokenKind::Ident &&
+        (tokens_[to - 2].is(".") || tokens_[to - 2].is("->")) &&
+        dynamic_cast<const MemberAccess *>(e.get()) != nullptr)
+        return t;
+    // [dcl.type.simple]/4 in full: an xvalue answers `T &&`, an lvalue `T &`, a prvalue `T`. A
+    // temporary is marked an xvalue so it binds to `T &&` and is a prvalue all the same, so the
+    // prvalue mark is asked first; the xvalue mark then before the lvalue.
+    if (e->declCategory() == Expr::Category::Prvalue) return t;
     if (e->isXvalue()) return types_.rvalueReferenceTo(t);
+    if (e->declCategory() == Expr::Category::Lvalue) return types_.referenceTo(t);
     return isLvalue(*e) ? types_.referenceTo(t) : t;
 }
 
@@ -1756,6 +1785,21 @@ ExprPtr Parser::bindReference(const Type *ref, ExprPtr init, std::size_t pos,
         init->setType(types_.pointerTo(referent));
         return init;
     }
+
+    // **An assignment and a prefix `++` are lvalues naming their left operand** ([expr.ass]/1): bound
+    // as `*(a = b, &a)`, the operand named again - which needs it free of effects to be named twice.
+    if (init->declCategory() == Expr::Category::Lvalue)
+        if (const Assign *as = dynamic_cast<const Assign *>(init.get()))
+            if (ExprPtr again = clonePure(as->target())) {
+                const Type *obj = as->target().type();
+                ExprPtr at(new Unary('&', std::move(again)));
+                at->setType(types_.pointerTo(obj));
+                ExprPtr both(new Comma(std::move(init), std::move(at)));
+                both->setType(types_.pointerTo(obj));
+                init.reset(new Unary('*', std::move(both)));
+                init->setType(obj);
+                it = obj;
+            }
 
     // Binding takes an address, so the two things that have none cannot be bound to
     // directly. A const reference still may: it copies them into a temporary below,
@@ -2389,13 +2433,18 @@ ExprPtr Parser::unary() {
             const Type *t = promote(v->type());
             if (t != v->type()) v = convert(std::move(v), t);
         }
+        v->setDeclCategory(Expr::Category::Prvalue);   // `+t` is a value, not t
         return v;
     }
 
     if (peek().is("++") || peek().is("--")) {
         bool inc = peek().is("++");
         at_++;
-        return incDec(unary(), inc, true, pos);
+        ExprPtr operand = unary();
+        const bool scalar = !operand->type()->unqualified()->isStructOrUnion();
+        ExprPtr r = incDec(std::move(operand), inc, true, pos);
+        if (scalar) r->setDeclCategory(Expr::Category::Lvalue);   // [expr.pre.incr]/1
+        return r;
     }
     if (consume("~")) {
         ExprPtr v = castExpr();
@@ -2625,14 +2674,12 @@ ExprPtr Parser::unary() {
                                    "', which is a bit-field");
             measured = operand->type();
         }
-        // **A signature that depends on its parameters through an *expression*
-        // cannot be given a name.** Itanium spells such a pattern as the expression
-        // itself - measured with clang - and nothing here can write that.
+        // **A dependent `sizeof` outside a template argument or a `decltype`** - an array bound, a
+        // `noexcept` - is the one the expression reader is not reached from.
         if (patternOnly_ && (measured->kind() == Kind::TemplateParam ||
                              measured->kind() == Kind::DependentMember))
-            src_.fail(pos, "'sizeof' of a template parameter in a signature is "
-                           "not supported yet - the linker name would have to "
-                           "spell the expression, and that is its own step");
+            src_.fail(pos, "'sizeof' of a template parameter is not supported yet in this place "
+                           "of a signature - in a template argument or a 'decltype' it is read");
         if (!measured->isComplete())
             src_.fail(pos, "sizeof needs a complete type");
         ExprPtr n(new Num(static_cast<long long>(measured->size(target_))));

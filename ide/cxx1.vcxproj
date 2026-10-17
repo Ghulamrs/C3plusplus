@@ -82,6 +82,7 @@
     <ClCompile Include="..\src\parser\Parser.cpp" />
     <ClCompile Include="..\src\parser\ParserClass.cpp" />
     <ClCompile Include="..\src\parser\ParserConst.cpp" />
+    <ClCompile Include="..\src\parser\ParserDependent.cpp" />
     <ClCompile Include="..\src\parser\ParserExpr.cpp" />
     <ClCompile Include="..\src\parser\ParserExprCall.cpp" />
     <ClCompile Include="..\src\parser\ParserExprLambda.cpp" />

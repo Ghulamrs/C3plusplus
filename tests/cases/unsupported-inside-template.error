@@ -1,1 +1,1 @@
-a function template whose trailing return type is 'decltype(...)' is not supported yet
+a postfix '++' is not supported yet

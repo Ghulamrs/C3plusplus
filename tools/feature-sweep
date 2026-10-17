@@ -114,6 +114,8 @@ PROBES = [
     # [temp]
     ("partial-specialization", "accept", 'template <class T> struct Is { static const int v = 0; }; template <class T> struct Is<T *> { static const int v = 1; }; int main() { return Is<int *>::v - 1 + Is<int>::v; }'),
     ("sfinae", "accept", 'template <bool B, class T = void> struct enable_if {}; template <class T> struct enable_if<true, T> { typedef T type; }; template <class T> typename enable_if<sizeof(T) == 4, int>::type f(T) { return 0; } int f(...) { return 1; } int main() { return f(1); }'),
+    ("sfinae-decltype-trailing", "accept", 'struct S { int size() const { return 0; } }; template <class T> auto n(const T &t) -> decltype(t.size()) { return t.size(); } int n(...) { return 1; } int main() { S s; return n(s); }'),
+    ("sfinae-decltype-leading", "accept", 'struct S { int size() const { return 0; } }; template <class T> decltype(T().size()) n(T t) { return t.size(); } int n(...) { return 1; } int main() { return n(S()); }'),
     ("angle-angle", "accept", 'template <class T> struct B { T v; }; int main() { B<B<int>> b; b.v.v = 0; return b.v.v; }'),
     ("default-class-template-arg", "accept", 'template <class T = int> struct B { T v; }; int main() { B<> b; b.v = 0; return b.v; }'),
     ("default-function-template-arg", "accept", 'template <class T = int> T zero() { return T(); } int main() { return zero(); }'),
