@@ -169,7 +169,28 @@ x86_64-windows, where a class cannot be thrown yet and they print and abort inst
 delete`, the placement and nothrow forms, `std::bad_alloc` from the platform runtime, `typeid` and
 `dynamic_cast` all work.
 
-## What 1.14 changes
+## What 1.15 changes
+
+**Expression SFINAE.** A function template's signature may depend on its parameters through an
+expression, and a substitution failure there drops the candidate:
+
+```cpp
+template <class T> auto size(const T &t) -> decltype(t.size()) { return t.size(); }
+template <class T> decltype(T() + T()) sum(T a, T b) { return a + b; }
+template <class T> typename enable_if<sizeof(T) == 4, int>::type four(T) { return 4; }
+```
+
+* **The names are clang's** on the Itanium targets - the expression itself, `DTcldtfp_4sizeEE`,
+  `XeqstT_Li4EE` - and cl's on x86_64-windows, which spells the substituted signature. A form not
+  measured (a postfix `++`, a lambda, `new`, `typeid`) is refused by name rather than spelled by guess.
+* **`decltype` answers [dcl.type.simple]/4 in full**: a cast, a functional cast, a class temporary and
+  unary `+` are prvalues (`T`), an assignment and a prefix `++` lvalues (`T &`), and an unparenthesised
+  member access the member's declared type. These were wrong outside templates too.
+* **Two templates differing only in a `decltype` return are two candidates**, so a call that matches
+  both is ambiguous as clang says; before, the second was folded into the first.
+* A reference binds to an assignment, `return t = t;` into an `int &`.
+
+
 
 A review of 1.12 and 1.13 found two blocking faults and seven more, and an expression-SFINAE
 design found three; all are mended or refused by name (the review's two nits are left):
@@ -344,11 +365,11 @@ defects below and nothing else; Compiler-Cppi has closed those too, with the
 vtable group, `_ZTv` thunks, VTT and construction vtables, and that work is
 not in 1.3.
 
-## Known shortcomings in 1.14
+## Known shortcomings in 1.15
 
 Everything here is measured and written down elsewhere in full; this is the
-short list a user of **1.14** should have in front of them. `docs/EXCLUSIONS.md`
-is the complete one - 131 refusal sites on 2026-10-17 (131 on 2026-10-08),
+short list a user of **1.15** should have in front of them. `docs/EXCLUSIONS.md`
+is the complete one - 130 refusal sites on 2026-10-17 (131 on 2026-10-08),
 each citing the source line that refuses it, and `make test` fails when the two
 disagree. The heading
 above is written by `tools/version-lines` from `src/Version.h`; it said 1.4 for
@@ -359,11 +380,10 @@ real codebase meets first that are still refused, each by name**: a
 user-defined literal; `thread_local`; an inline namespace; a
 template template parameter; a non-type parameter pack; a ref-qualifier on a
 member function; a `constexpr` object of class type; `alignas` on a local past
-the stack's alignment; a dynamic exception specification; SFINAE on an
-expression in a signature; a universal character name in an identifier; a `goto`
+the stack's alignment; a dynamic exception specification; a universal character name in an identifier; a `goto`
 that leaves a `catch` handler; and a function try block and an anonymous union,
-which are C++98. `tools/feature-sweep` counts them: on 2026-10-17, 72 of its 94
-probes compile, 22 are refused by name and none by a message naming nothing.
+which are C++98. `tools/feature-sweep` counts them: on 2026-10-17, 75 of its 96
+probes compile, 21 are refused by name and none by a message naming nothing.
 **Landed in the review round of 2026-10-08 to 2026-10-13**: `enum class`;
 `override` and `final`; `= default` and `= delete`; delegating constructors;
 `using X = T;` and alias templates; forwarding references and `std::forward`;
@@ -378,8 +398,8 @@ lambdas with every C++11 capture, rvalue references and move, variadic type pack
 over an array or a container, `noexcept`, `explicit` conversion
 functions, `alignas`, `char16_t`/`char32_t`, `dynamic_cast`, `typeid`, a
 class's own `operator new`, exceptions with class types, virtual inheritance on
-the Itanium targets, partial specialization, SFINAE, member and constructor
-templates.
+the Itanium targets, partial specialization, SFINAE - on an expression in a signature too, since 1.15 -
+member and constructor templates.
 
 **Templates instantiate by replaying tokens**, so every name in a template body
 is looked up at instantiation - MSVC's old model. cxx1 therefore *accepts*
@@ -390,6 +410,10 @@ being `template <class T, T v>` - so `std::integral_constant` is the base of eve
 **Two namespaces' function templates of one name are one overload set**: templates are keyed by
 their bare name, so `a::twice(3)` can reach `b::twice`. Registered in `tests/open`
 (`namespace-function-template-name`); clang prints `6 2 6` where cxx1 prints `6 2 4`.
+
+**A return type's top-level `const` is dropped from a Microsoft name** - `const int f()` is
+`?f@@YAHXZ` where cl writes `?f@@YA?BHXZ`, so such a function compiled by cl does not link with
+cxx1's. Older than 1.15 and recorded in `docs/CONFORMANCE.md`.
 
 **Pointers to members** stop short of two things: a pointer to a *virtual*
 member function is refused by name (Compiler-Cppi has it), and `&D::f` for an

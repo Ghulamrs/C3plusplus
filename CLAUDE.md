@@ -13484,3 +13484,18 @@ Measured on the Mac: `make test` passes - run.sh 752/0, emit.sh 1928/0 with the 
 493/0, overload.sh 35/0, exclusions 130 sites 0/0, comment cap 0; preprocess.sh 21 agreed.
 Linux box, g++ under -Werror: run.sh 752/0 at -O0 and -O2, tms6747.sh 472/0 at -O0 and -O2 on vm6747
 and sim6747. Not run: the Windows box, closed at the user's word, and TI's simulators.
+
+
+## Version 1.15, 2026-10-17: expression SFINAE
+
+**1.15 is `mend/1.15` merged**, with its section above ("Expression SFINAE, and the decltype categories
+it needed"): a function template's signature may depend on its parameters through an expression, spelled
+in an Itanium name as clang spells it, and `decltype` answers [dcl.type.simple]/4 for prvalues and
+lvalues it had got wrong outside templates too. With it the last item the 1.14 round left as the plan's
+next step is done; `tools/feature-sweep` reads 75 compile, 21 refused by name, 0 naming nothing, of 96,
+and the headline stays "C++03 with C++11 extensions" while thirteen C++11 language rows are refused.
+
+Measured: Mac `make test` passes - run.sh 752/0, emit.sh 1928/0, names.sh 493/0, overload.sh 35/0,
+exclusions 130 sites 0/0, comment cap 0; Linux box, g++: run.sh 752/0 at -O0 and -O2, tms6747.sh 472/0
+at -O0 and -O2 on vm6747 and sim6747. Not run: the Windows box, closed at the user's word, and TI's
+simulators. Seal `cxx1-1.15.dat`, 36E4C6C6, 161 files - one more than 1.14, `ParserDependent.cpp`.
