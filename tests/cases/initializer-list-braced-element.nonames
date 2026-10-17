@@ -1,0 +1,3 @@
+x86_64-linux  this box's clang has no C++ headers for the target, and the case includes <initializer_list> - nothing to compare against, by construction.
+x86_64-windows  the same: no Microsoft headers for clang on this box.
+arm64-darwin  Apple's libc++ tags its initializer_list members with an ABI tag (begin`B9nqe220106`Ev, end`B9nqe220106`Ev) that cxx1's <initializer_list> does not carry - a header difference, as template-initializer-list-ctor.nonames records - and cxx1 destroys the backing array of a class with a destructor through its own helper, ___cxx1_vec_del_1P, which clang writes inline. Every other name agrees.

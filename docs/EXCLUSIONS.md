@@ -102,7 +102,7 @@ goes in the same commit.
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:431` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:1615` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:231` |
-| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:4655`, `src/parser/ParserTopLevel.cpp:683` |
+| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:4677`, `src/parser/ParserTopLevel.cpp:683` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:613` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:413` |
 | `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:709`, `src/parser/ParserInit.cpp:926`, `src/parser/ParserTopLevel.cpp:380`, `src/parser/ParserExprNew.cpp:414` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:196` |
@@ -113,9 +113,9 @@ goes in the same commit.
 
 - **a standard header `include/` does not have** - `#include <tuple>` and the
   other C++11 header names missing from `include/` are refused by name rather
-  than as a file not found. `src/Preprocessor.cpp:1142`
+  than as a file not found. `src/Preprocessor.cpp:1143`
 - **GNU's named variadic macro parameter** - write `...` and use `__VA_ARGS__`.
-  `src/Preprocessor.cpp:1033`
+  `src/Preprocessor.cpp:1034`
 - **a user-defined literal**, `operator"" _km` - [lex.ext] wants the literal
   operator looked up by the suffix at every literal, and [over.literal] a
   literal operator template for the raw form; neither path exists.
@@ -210,7 +210,7 @@ templates followed. What is left:
 - **befriending one member function of another class** - `src/parser/ParserType.cpp:709`
 - **an anonymous union** - its members would have to become members of the
   class around it, sharing storage. C++98. `src/parser/ParserType.cpp:788`
-- **a member function of a union** - `src/parser/ParserClass.cpp:3941`
+- **a member function of a union** - `src/parser/ParserClass.cpp:3963`
 - **one name holding both a static and a non-static member**, where overload
   resolution picks the non-static one - `src/parser/ParserExpr.cpp:1382`
 - **a covariant return that moves the result** - an override may return a
@@ -252,7 +252,7 @@ templates followed. What is left:
   deduce `std::initializer_list` here. `src/parser/ParserTemplate.cpp:1271`
 - **a `std::initializer_list` with static storage made from braces** - its
   backing array would need static storage too. `src/parser/ParserInit.cpp:1158`
-- **a braced default argument** - `src/parser/ParserClass.cpp:4669`,
+- **a braced default argument** - `src/parser/ParserClass.cpp:4691`,
   `src/parser/ParserTopLevel.cpp:736`
 - **a braced member initialiser with values on a class, an array or a
   reference** - a scalar member takes `{v}` and `= {v}`, and `= {}` and `= {0}`
@@ -271,7 +271,7 @@ many, or has no object of its own:
 - **a static data member that is an array of a class with a constructor** -
   each element would need its constructor before main and its destructor at
   exit; a file-scope array and a static local of the same shape are built and
-  destroyed element by element. `src/parser/ParserClass.cpp:3776`
+  destroyed element by element. `src/parser/ParserClass.cpp:3798`
 - **a static-duration reference bound to a temporary** - [class.temporary]/5
   gives the temporary the program's lifetime, so it would need static storage
   of its own; a named object binds. `src/parser/ParserInit.cpp:1596`
@@ -367,9 +367,6 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 - **a range-based `for` whose range or iterator has a destructor, inside a
   `catch` handler, on x86_64-windows** - the cleanup would be a funclet inside
   the handler's funclet. `src/parser/ParserStmt.cpp:824`
-- **a braced list as an element of an `initializer_list` of a class with constructors**,
-  `{ {1, 2}, {3, 4} }` for a list of `P` - name the element's type, `P{...}`.
-  `src/parser/ParserClass.cpp:1995`
 - **a trailing return type that is itself deduced**, `auto f() -> auto` -
   C++14. `src/parser/ParserTopLevel.cpp:1772`
 - **a function template whose trailing return type is `decltype(...)`** - its

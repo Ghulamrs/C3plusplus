@@ -1991,9 +1991,31 @@ ExprPtr Parser::buildInitializerList(const Type *ilType, Init &in,
         // [dcl.init.list]/5: each element is copy-initialised from its initialiser, by a constructor.
         const Type *elemPtr = types_.pointerTo(plainElem);
         for (std::size_t i = 0; i < in.items.size(); i++) {
-            if (in.items[i].isList)
-                src_.fail(in.items[i].pos, "a braced list as an element of an initializer_list of a class "
-                          "with constructors is not supported yet - name the element's type, 'T{...}'");
+            // A braced element is copy-list-initialised, [over.match.list]: built in its slot by the
+            // constructor its items choose, never an explicit one - no temporary and no copy.
+            if (in.items[i].isList) {
+                checkNotAbstract(plainElem, in.items[i].pos, "an element of this initializer_list would make");
+                std::vector<ExprPtr> args;
+                Signature ctor = listConstructor(plainElem, in.items[i], args, true, in.items[i].pos);
+                applyDefaults(ctor, args, in.items[i].pos);
+                if (ctor.access != Access::Public && !insideAccessOf(plainElem, ctor.access) &&
+                    !isFriendOf(plainElem))
+                    src_.fail(in.items[i].pos, "'" + plainElem->describe() + "' has no public constructor "
+                              "taking these arguments - the one that matches is " +
+                              (ctor.access == Access::Private ? "private" : "protected"));
+                ExprPtr arr(Var::local(bk, bkOff)); arr->setType(arrType);
+                ExprPtr idx(new Num(static_cast<long long>(i)));
+                idx->setType(types_.get(Kind::Int));
+                std::vector<ExprPtr> all;
+                all.push_back(arithmetic(BinOp::Add, decay(std::move(arr)), std::move(idx), pos));
+                for (ExprPtr &a : args) all.push_back(std::move(a));
+                std::vector<const Type *> ps{ elemPtr };
+                ps.insert(ps.end(), ctor.params.begin(), ctor.params.end());
+                into.push_back(StmtPtr(new ExprStmt(
+                    completeCall(plainElem->tag(), ctor.symbol, nullptr, types_.get(Kind::Void), ps,
+                                 ctor.variadic, pos, std::move(all)))));
+                continue;
+            }
             ExprPtr value = std::move(in.items[i].value);
             if (ExprPtr made = userConversion(plainElem, value, pos)) value = std::move(made);
             const Signature *cc = copyConstructorOf(plainElem);
