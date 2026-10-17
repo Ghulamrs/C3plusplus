@@ -1,0 +1,1 @@
+x86_64-windows  a closure's name: cl writes the call operator of the lambda in a::b::h as ??R<lambda_0>@?0??h@b@a@@YAHXZ@QEBA@XZ and cxx1 as ??R$_0@?1??h@b@a@@YAHXZ@QEBAHXZ - a unique unnamed type ([expr.prim.lambda]) that nothing links against, as lambda.nonames records. Every other name agrees.

@@ -250,7 +250,16 @@ void Parser::topLevel(Program &program) {
         }
         d.name = d.qualifier + "::" + d.name;
         d.qualifier.clear();
+    } else if (!d.qualifier.empty()) {
+        // A member of a class in a namespace: its body, parameters and initialiser read there too.
+        const Type *owner = findTypedef(d.qualifier);
+        if (owner != nullptr && owner->isStructOrUnion()) definedIn = classNamespacePath(owner);
     }
+    struct DefinitionNamespace {
+        std::vector<std::string> &slot; std::vector<std::string> saved;
+        ~DefinitionNamespace() { slot = saved; }
+    } definitionScope{ definitionNamespace_, definitionNamespace_ };
+    if (!definedIn.empty()) definitionNamespace_ = definedIn;
     struct NamespaceSwap {
         std::vector<std::string> &stack; std::vector<std::string> saved; bool on;
         void enter(const std::vector<std::string> &to) { if (to.empty()) return; saved = stack; stack = to; on = true; }
@@ -299,6 +308,7 @@ void Parser::topLevel(Program &program) {
                              "inside '" + d.qualifier + "' - the definition of "
                              "'" + d.qualifier + "::" + d.name + "' is written "
                              "without it");
+        inNamespace.enter(definedIn);
         defineStaticMember(d, program);
         return;
     }
@@ -874,7 +884,7 @@ void Parser::topLevel(Program &program) {
                 // **The defaults its parameter list just read.**
                 if (!pendingDefaults_.empty()) {
                     defaultArgs_[sym] = pendingDefaults_;
-                    defaultArgNamespace_[sym] = namespaceStack_;
+                    defaultArgNamespace_[sym] = definitionNamespace_.empty() ? namespaceStack_ : definitionNamespace_;
                 }
             }
         }

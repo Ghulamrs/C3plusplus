@@ -6,6 +6,7 @@
 #include "../Mangle.h"
 #include "../Source.h"
 
+#include <algorithm>
 #include <climits>
 #include <cstring>
 
@@ -909,6 +910,8 @@ Parser::OperatorChoice Parser::resolveOperator(const std::string &name,
     for (std::size_t ki = 0; ki < keys.size(); ki++)
     if (const std::vector<std::size_t> *set = overloadsOf(keys[ki]))
         for (std::size_t k = 0; k < set->size(); k++) {
+            // Two keys may reach one function - the bare name and its namespace's - and it is one candidate.
+            if (std::find(which.begin(), which.end(), (*set)[k]) != which.end()) continue;
             const Signature &f = functions_[(*set)[k]];
             if (f.params.size() != written + 1) continue;
             Rank a = rankArgument(left, f.params[0]);

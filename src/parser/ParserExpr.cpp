@@ -1865,6 +1865,17 @@ ExprPtr Parser::objectRef(const std::string &name) {
 // Does class scope, between block scope and the namespace, declare this name - a data member, a
 // static one, a member function or an enumerator of the class being read, a base, or the class a
 // lambda was written in. Asked of a name a global also answers, which the class then hides.
+// An ordinary member function of this name, beside which a member template is ranked rather
+// than taken: the non-template wins a tie ([over.match.best]). A made specialization is not one.
+bool Parser::hasOrdinaryMember(const Type *cls, const std::string &name) {
+    const Type *ordinary = findMemberOwner(cls->unqualified(), name);
+    if (ordinary == nullptr) return false;
+    if (const std::vector<std::size_t> *set = overloadsOf(ordinary->unqualified()->tag() + "::" + name))
+        for (std::size_t k = 0; k < set->size(); k++)
+            if (!functions_[(*set)[k]].fromTemplate) return true;
+    return false;
+}
+
 bool Parser::classScopeDeclares(const std::string &name) {
     if (boundValueParams_.count(name) != 0) return false;
     const Type *roots[2] = { currentClass_ != nullptr ? currentClass_
@@ -2198,7 +2209,8 @@ ExprPtr Parser::postfix() {
             const Type *in = scope != nullptr ? scope : obj;
             // **A member function template**, `p->head<3>()` - told from `<` as
             // a comparison only because the member is a registered template.
-            if ((peek().is("<") || peek().is("(")) && memberTemplateOwner(obj, name) != nullptr) {
+            if ((peek().is("<") || (peek().is("(") && !hasOrdinaryMember(obj, name))) &&
+                memberTemplateOwner(obj, name) != nullptr) {
                 n = memberTemplateCall(std::move(n), obj, name, pos);
                 continue;
             }
@@ -2280,7 +2292,8 @@ ExprPtr Parser::postfix() {
                              ? 0 : publicBaseOffset(obj, scope);
             const Type *in = scope != nullptr ? scope : obj;
             // **A member function template**, `v.head<3>()`.
-            if ((peek().is("<") || peek().is("(")) && memberTemplateOwner(obj, name) != nullptr) {
+            if ((peek().is("<") || (peek().is("(") && !hasOrdinaryMember(obj, name))) &&
+                memberTemplateOwner(obj, name) != nullptr) {
                 n = memberTemplateCall(std::move(n), obj, name, pos);
                 continue;
             }

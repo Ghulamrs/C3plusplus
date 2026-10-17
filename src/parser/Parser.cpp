@@ -261,6 +261,37 @@ std::string Parser::namespaceNamed(const std::string &first) const {
     return namespaces_.count(first) ? first : std::string();
 }
 
+std::vector<std::string> Parser::classNamespacePath(const Type *t) const {
+    const Type *o = t->unqualified();
+    while (o->enclosing() != nullptr) o = o->enclosing()->unqualified();
+    std::string ns = o->templateNamespace();
+    if (ns.empty() && o->inNamespace()) {
+        const std::string &tag = o->tag();
+        int depth = 0;
+        for (std::size_t i = 0; i + 1 < tag.size(); i++) {
+            if (tag[i] == '<') depth++;
+            else if (tag[i] == '>') depth--;
+            else if (depth == 0 && tag[i] == ':' && tag[i + 1] == ':') ns = tag.substr(0, i);
+        }
+    }
+    std::vector<std::string> path;
+    int depth = 0;
+    std::string part;
+    for (std::size_t i = 0; i < ns.size(); i++) {
+        if (ns[i] == '<') depth++;
+        else if (ns[i] == '>') depth--;
+        if (depth == 0 && ns[i] == ':' && i + 1 < ns.size() && ns[i + 1] == ':') {
+            if (!part.empty()) path.push_back(part);
+            part.clear();
+            i++;
+            continue;
+        }
+        part += ns[i];
+    }
+    if (!part.empty()) path.push_back(part);
+    return path;
+}
+
 const Type *Parser::findGlobalTypedef(const std::string &name) const {
     auto it = typedefIndex_.find(name);
     return it == typedefIndex_.end() ? nullptr : typedefs_[it->second].type;

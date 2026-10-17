@@ -1040,7 +1040,19 @@ void Parser::templateArguments(const TemplateDecl &decl,
                 values->push_back(0);
                 at_++;
             } else {
+                const std::size_t argPos = peek().pos;
                 const long long v = constantExpression("a template argument");
+                // [temp.arg.nontype]/1: a converted constant expression, which may not narrow.
+                // An 8-byte type is left alone: the value's own signedness is not kept here.
+                if (pt->isInteger() && pt->tag().empty() && pt->size(target_) < 8) {
+                    const int bits = pt->kind() == Kind::Bool ? 1 : 8 * pt->size(target_);
+                    const bool sgn = pt->kind() != Kind::Bool && pt->isSigned(target_);
+                    const long long lo = sgn ? -(1LL << (bits - 1)) : 0;
+                    const long long hi = sgn ? (1LL << (bits - 1)) - 1 : (1LL << bits) - 1;
+                    if (v < lo || v > hi)
+                        src_.fail(argPos, "the template argument is " + std::to_string(v) +
+                                          ", which cannot be narrowed to '" + pt->describe() + "'");
+                }
                 binding->push_back(pt);
                 values->push_back(v);
                 a.isType = false;
@@ -1125,8 +1137,8 @@ Parser::instantiate(const TemplateDecl &decl,
 
     std::string symbol, why;
     const bool ok = target_.microsoftNames()
-        ? microsoftTemplateFunctionName(decl.name, fn, args, &symbol, &why)
-        : itaniumTemplateFunctionName(decl.name, patternFn, args, false,
+        ? microsoftTemplateFunctionName(decl.ns + decl.name, fn, args, &symbol, &why)
+        : itaniumTemplateFunctionName(decl.ns + decl.name, patternFn, args, false,
                                       &symbol, &why);
     if (!ok)
         src_.fail(pos, "'" + key + "' cannot be given a name the linker can "
@@ -1273,8 +1285,19 @@ void Parser::instantiatePending() {
                     topLevel(*current_);
                 }
             } else {
+                // Its body reads names in the namespace it was declared in, wherever it is used from.
+                const std::vector<std::string> wasStack = namespaceStack_;
+                if (!decl.ns.empty()) {
+                    namespaceStack_.clear();
+                    for (std::size_t s = 0, e; s < decl.ns.size(); s = e + 2) {
+                        e = decl.ns.find("::", s);
+                        if (e == std::string::npos) e = decl.ns.size();
+                        if (e > s) namespaceStack_.push_back(decl.ns.substr(s, e - s));
+                    }
+                }
                 at_ = sp.start;
                 topLevel(*current_);
+                namespaceStack_ = wasStack;
             }
             replayingInline_ = wasReplayingInline;
             at_ = resume;
@@ -2453,6 +2476,12 @@ ExprPtr Parser::memberTemplateCall(ExprPtr object, const Type *obj,
     if (plain == nullptr) plain = named;
     const std::vector<TemplateDecl> &templates = memberTemplates_[plain->tag() + "::" + name];
     TemplateDecl mt = templates.front();
+    // [class.access.base]/5: the member's own access, and every base on the way from the class it was named in.
+    if (!insideAccessOf(plain, mt.memberAccess) && !isFriendOf(plain) &&
+        !memberReachable(named, plain, mt.memberAccess))
+        src_.fail(pos, "'" + name + "' is a member template of '" + plain->describe() +
+                       "' that is not accessible here" +
+                       (plain != named ? " through '" + named->describe() + "'" : std::string()));
 
     std::vector<const Type *> binding;
     std::vector<long long> values;

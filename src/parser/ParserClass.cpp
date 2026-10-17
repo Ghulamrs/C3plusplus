@@ -3003,6 +3003,9 @@ void Parser::declareInheritingCtors(const std::string &tag, const Type *type, st
     if (it == inheritFrom_.end()) return;
     const std::vector<const Type *> bases = it->second;
     for (const Type *base : bases) {
+        if (memberTemplates_.count(constructorKey(base->tag())) != 0)
+            src_.fail(pos, "inheriting '" + base->describe() + "''s constructor template is not "
+                           "supported yet - its specializations would have to be made for the derived class");
         const std::vector<std::size_t> *set = overloadsOf(constructorKey(base->tag()));
         if (set == nullptr) continue;
         const std::vector<std::size_t> from = *set;
@@ -4287,7 +4290,8 @@ void Parser::declareFunction(const std::string &name, const Type *returns,
     // namespace goes on here, once**, every table below being keyed by the whole name.
     const std::string plain = instantiationName(name);
     const std::string qualified =
-        (cLinkage_ > 0 || plain == "main" || namespaceStack_.empty())
+        (cLinkage_ > 0 || plain == "main" || namespaceStack_.empty() ||
+         (!instantiationKey_.empty() && plain == instantiationKey_))
             ? plain : namespacePrefix() + plain;
     const std::string &key = qualified;
     checkOperatorDeclarable(key, params, false, pos, internal);
@@ -4334,7 +4338,7 @@ void Parser::declareFunction(const std::string &name, const Type *returns,
         if (!pendingDefaults_.empty()) {
             // The scope this declaration was written in, for
             // [dcl.fct.default]/5.
-            defaultArgNamespace_[f.symbol] = namespaceStack_;
+            defaultArgNamespace_[f.symbol] = definitionNamespace_.empty() ? namespaceStack_ : definitionNamespace_;
             std::vector<std::size_t> &have = defaultArgs_[f.symbol];
             if (have.size() < pendingDefaults_.size())
                 have.resize(pendingDefaults_.size(), 0);
@@ -4383,7 +4387,7 @@ void Parser::declareFunction(const std::string &name, const Type *returns,
     pendingExplicitConversion_ = false;
     if (!pendingDefaults_.empty()) {
         defaultArgs_[functions_.back().symbol] = pendingDefaults_;
-        defaultArgNamespace_[functions_.back().symbol] = namespaceStack_;
+        defaultArgNamespace_[functions_.back().symbol] = definitionNamespace_.empty() ? namespaceStack_ : definitionNamespace_;
     }
     pendingDefaults_.clear();
 }
