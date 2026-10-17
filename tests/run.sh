@@ -111,7 +111,7 @@ fi
 dbg=tests/cases/tms6747-debug-optimized.cpp
 if ! cxx1 -nologo -S -arch tms6747 -g -O2 "$dbg" -o "$OUT/dbg-O2.s" 2>"$OUT/dbg-O2.err" &&
    grep -qF -- "-g with -O is not supported yet for tms6747" "$OUT/dbg-O2.err" &&
-   cxx1 -nologo -S -arch tms6747 -g "$dbg" -o "$OUT/dbg-O0.s" 2>/dev/null; then
+   cxx1 -nologo -S -arch tms6747 -g -O0 "$dbg" -o "$OUT/dbg-O0.s" 2>/dev/null; then  # -O0: CXX1 may carry -O2
     pass=$((pass + 1))
 else
     echo "FAIL tms6747 -g: wanted -O2 refused by name and -g alone compiled"; fail=$((fail + 1))
