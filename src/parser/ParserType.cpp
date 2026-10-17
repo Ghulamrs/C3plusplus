@@ -562,6 +562,34 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
         if (peek().is("using") && tag.empty() && peekAt(2).is("="))
             src_.fail(peek().pos, "an alias declaration needs a class with a name - this one is anonymous");
         if (aliasDeclaration(tag + "::")) continue;
+        // **`using B::B;` inherits B's constructors**, [class.inhctor] - recorded here, declared once the class is complete.
+        if (peek().is("using") && !tag.empty()) {
+            std::size_t e = at_ + 1;
+            for (int depth = 0; e < tokens_.size() && !(depth == 0 && tokens_[e].is(";")); e++) {
+                if (tokens_[e].is("<")) depth++;
+                else if (tokens_[e].is(">")) depth--;
+                else if (tokens_[e].kind == TokenKind::End) break;
+            }
+            const Type *named = nullptr;
+            if (e < tokens_.size() && e >= at_ + 4 && tokens_[e - 1].kind == TokenKind::Ident &&
+                tokens_[e - 2].is("::")) {
+                const std::string ctor = tokens_[e - 1].text;
+                for (const Type::BaseSpec *b : type->directBases())
+                    if (b->type->localName() == ctor ||
+                        (b->type->isSpecialization() && b->type->templateName() == ctor))
+                        named = b->type;
+            }
+            if (named != nullptr) {
+                for (const Type::BaseSpec *b : type->directBases())
+                    if (b->type == named && b->isVirtual)
+                        src_.fail(peek().pos, "inheriting the constructors of a virtual base is not "
+                                              "supported yet - the most-derived class would have to be told "
+                                              "which of them builds it");
+                inheritFrom_[tag].push_back(named);
+                at_ = e + 1;
+                continue;
+            }
+        }
         if (peek().is("using"))
             src_.fail(peek().pos, "a using-declaration inside a class is not "
                                   "supported yet - it redeclares a base member "
@@ -1336,6 +1364,8 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     }
 
     declareImplicitSpecials(tag, type, pos);
+    // After them: an inherited constructor is not user-declared, so it leaves the implicit default one.
+    declareInheritingCtors(tag, type, pos);
     // **Who takes cl's hidden flag**, recorded once the class is laid out and
     // its implicit members declared: every constructor of a Microsoft class
     // with a virtual base, by symbol, because the flag is not in the name.

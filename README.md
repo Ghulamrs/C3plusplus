@@ -311,15 +311,15 @@ above is written by `tools/version-lines` from `src/Version.h`; it said 1.4 for
 two releases before that tool existed.
 
 **The language is C++03 with C++11 extensions, and these are the C++11 parts a
-real codebase meets first that are still refused, each by name**: inheriting
-constructors; a user-defined literal; `thread_local`; an inline namespace; a
+real codebase meets first that are still refused, each by name**: a
+user-defined literal; `thread_local`; an inline namespace; a
 template template parameter; a non-type parameter pack; a ref-qualifier on a
 member function; a `constexpr` object of class type; `alignas` on a local past
 the stack's alignment; a dynamic exception specification; SFINAE on an
 expression in a signature; a universal character name in an identifier; a `goto`
 that leaves a `catch` handler; and a function try block and an anonymous union,
-which are C++98. `tools/feature-sweep` counts them: on 2026-10-13, 71 of its 94
-probes compile, 23 are refused by name and none by a message naming nothing.
+which are C++98. `tools/feature-sweep` counts them: on 2026-10-17, 72 of its 94
+probes compile, 22 are refused by name and none by a message naming nothing.
 **Landed in the review round of 2026-10-08 to 2026-10-13**: `enum class`;
 `override` and `final`; `= default` and `= delete`; delegating constructors;
 `using X = T;` and alias templates; forwarding references and `std::forward`;
@@ -340,8 +340,8 @@ templates.
 **Templates instantiate by replaying tokens**, so every name in a template body
 is looked up at instantiation - MSVC's old model. cxx1 therefore *accepts*
 some programs clang refuses, which `docs/CONFORMANCE.md` records rather than
-hides. Of the four shapes met while writing `<type_traits>`, one is still refused:
-`template <class T, T v>`, so there is no `std::integral_constant`.
+hides. The four shapes met while writing `<type_traits>` all compile now, the last
+being `template <class T, T v>` - so `std::integral_constant` is the base of every trait.
 
 **Pointers to members** stop short of two things: a pointer to a *virtual*
 member function is refused by name (Compiler-Cppi has it), and `&D::f` for an

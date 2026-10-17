@@ -281,6 +281,20 @@ public:
         if (fn->isVariadicFn()) out += "z";
     }
 
+    // An inheriting constructor, [class.inhctor] as P0136 has it: `_ZN1DCI11BEi`, CI1 or CI2 then the base.
+    void inheritingConstructor(const std::string &cls, const Type *clsType, const Type *base,
+                               const Type *fn, bool complete) {
+        out = "_ZN";
+        prefix(clsType, cls);
+        out += complete ? "CI1" : "CI2";
+        type(base);
+        out += 'E';
+        const std::vector<const Type *> &params = fn->params();
+        if (params.empty() && !fn->isVariadicFn()) { out += "v"; return; }
+        for (const Type *p : params) type(p);
+        if (fn->isVariadicFn()) out += "z";
+    }
+
     // A constructor *template* specialization: `_ZN2MxILm3ELm3EEC1ILm3EEERK1VIXT_EE` - C1 or C2
     // where a member writes its name, the arguments after it, and the parameters as the pattern.
     void constructorTemplate(const std::string &cls, const Type *clsType, const Type *fn,
@@ -1715,6 +1729,17 @@ bool itaniumConstructorName(const std::string &cls, const Type *clsType,
                             bool complete, std::string *out, std::string *problem) {
     Itanium m;
     m.constructor(cls, clsType, fn, complete);
+    if (!m.ok) { *problem = m.problem; return false; }
+    *out = m.out;
+    itaniumWrapLocal(clsType, out);
+    return true;
+}
+
+bool itaniumInheritingConstructorName(const std::string &cls, const Type *clsType,
+                                      const Type *base, const Type *fn, bool complete,
+                                      std::string *out, std::string *problem) {
+    Itanium m;
+    m.inheritingConstructor(cls, clsType, base, fn, complete);
     if (!m.ok) { *problem = m.problem; return false; }
     *out = m.out;
     itaniumWrapLocal(clsType, out);

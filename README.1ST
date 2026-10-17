@@ -132,8 +132,8 @@ them - which is about half of what C++11 added to C++03, and under a fifth of
 its library. Most of those landed between 2026-10-08 and 2026-10-13 - every
 one named in that list but `thread_local` - and the grid was re-measured for
 1.7: 71 of 94 probes compile, 23 are refused by name, none by a message naming
-nothing. The headline stays, because inheriting constructors and fourteen
-more rows of the language are still refused; it goes back to C++11 when the
+nothing. Inheriting constructors landed on 2026-10-17 (72 compile, 22 refused);
+the headline stays, because fourteen rows of the language are still refused; it goes back to C++11 when the
 list below says it may. The subset is written down rather than left to be discovered:
 
     docs/EXCLUSIONS.md      everything this compiler does not accept, each

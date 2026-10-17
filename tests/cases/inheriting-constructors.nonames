@@ -1,0 +1,2 @@
+x86_64-linux  clang emits only the CI2 and C2 forms of a constructor with vague linkage - an inherited one, a compiler-written default one, and Holder<double>'s defined in a class template - where cxx1 emits CI1 beside CI2 and C1 beside C2, as it does for all of them; move-constructor.nonames records the same difference. They are identical for a class with no virtual bases.
+arm64-darwin  clang leaves out Holder<double>'s C1, which nothing calls - Wrap's CI2 builds its base through the C2 - where cxx1 emits both forms of a constructor a class template's instantiation defines.

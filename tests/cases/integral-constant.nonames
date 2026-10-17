@@ -1,0 +1,3 @@
+x86_64-linux  the Mac's clang has no standard headers for this target, so there is nothing to compare.
+x86_64-windows  the Mac's clang has no standard headers for this target, so there is nothing to compare.
+arm64-darwin  libc++'s integral_constant conversion is hidden from the ABI and inlined, where cxx1 emits <type_traits>'s as a weak function - a header difference; the case's own constant<T, v> names agree.

@@ -13362,3 +13362,29 @@ exclusions 125 sites 0/0 (67 moved citations re-paired and checked by message), 
 box, g++: run.sh 725/0 at -O0 and -O2, tms6747.sh 451/0 at -O0 and -O2 on vm6747 and every case also on
 sim6747 against TI's rts6740_elf_eh.lib, with asm6x 1.5, lnk6x 1.3, sim6747 1.5 and vm6747 1.4 built
 there. Not run: the Windows box, closed at the user's word, and TI's simulators.
+
+## Day 3 of the 1.9 mending plan, 2026-10-17: inheriting constructors, `T v`, the headline
+
+**`using B::B;` works**, [class.inhctor] as clang applies it under `-std=c++11`: each
+constructor of B but its default, copy and move ones becomes one of D's, with B's
+parameters, defaults, access and `explicit`, and builds the rest of D as the implicit
+default constructor would. Itanium names it `CI1`/`CI2` plus the declaring base
+(`_ZN1DCI11BEi`; x86_64-linux emits CI2 alone, as clang does), a chain `E : D : B` naming
+B in E's; Microsoft names it as an ordinary constructor. Refused by name: of a virtual
+base, a constructor with `...`, and a class by value whose copy is not trivial.
+
+**`template <class T, T v>`**, [temp.param]/4: the type is read with the earlier type
+parameters standing for themselves (`TemplateParam::typeOf`), and `paramTypeIn` gives it
+T's binding wherever an argument list binds one. `<type_traits>` has `integral_constant`
+as C++11 writes it - no `operator()`, which is C++14 - and every trait derives from it.
+
+**The headline, re-measured**: `tools/feature-sweep` 72 compile, 22 refused by name, 0
+naming nothing, of 94. The review's Rec 1 feature has landed; 14 C++11 language rows are
+still refused (a UCN in an identifier, a user-defined literal, a `constexpr` object of
+class type, `alignas` past the stack, an inline namespace, a dynamic exception
+specification, `thread_local`, an anonymous union, a non-type pack, SFINAE on an
+expression, a template template parameter, a ref-qualifier, a `goto` out of a handler, a
+function try block), so the headline stays "C++03 with C++11 extensions". **Found and
+not mended**: a partial specialization whose non-type parameter appears only inside a
+template-id argument, `template <int N> struct K<V<N> >`, is refused as "never used".
+
