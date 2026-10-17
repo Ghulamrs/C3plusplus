@@ -1423,10 +1423,9 @@ bool Parser::deduceOne(const Type *pattern, const Type *arg,
     if (pattern->isPointer() && arg->isPointer())
         return deduceOne(pattern->pointee(), arg->pointee(), binding, values, why);
     if (pattern->isArray() && arg->isArray()) {
-        // **`T (&)[N]` against an `int[3]` gives N=3**, [temp.deduct.type]/8's
-        // `type[i]`. The binding only marks N deduced; the value is what is read.
-        // **Every level here**: an element is no argument and does not decay, and
-        // recursing would decay `int[4]` in `T (&)[M][N]` to an `int *`.
+        // **`T (&)[N]` against an `int[3]` gives N=3**, [temp.deduct.type]/8's `type[i]`; the binding
+        // marks N deduced and the value is what is read. Every level here: an element does not decay,
+        // and recursing would decay `int[4]` in `T (&)[M][N]` to an `int *`.
         while (pattern->isArray() && arg->isArray()) {
             const int j = pattern->boundParam();
             if (j >= 0 && static_cast<std::size_t>(j) < binding->size()) {

@@ -47,7 +47,8 @@ Options, in full:
     -Os           -O1 choosing the smaller code where the two differ
     -g            write a line table, so a debugger can step through the
                   source: DWARF on x86_64-linux and arm64-darwin, CodeView on
-                  x86_64-windows in the gnu spelling; refused for tms6747
+                  x86_64-windows in the gnu spelling, cl6x's .dwpsn and
+                  .dwtag on tms6747; refused there with -O
     -nologo       leave out the line printed before the work starts
     -version      say which release this is and name its seal file
     -time         report how long each phase took

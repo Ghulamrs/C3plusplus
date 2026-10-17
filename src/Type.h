@@ -113,10 +113,9 @@ public:
 
     const Type *pointee() const { return pointee_; }
     long long length() const { return length_; }
-    // **An array whose bound is a non-type template parameter**, the `[N]` of
-    // `T (&)[N]` read as a pattern. The parameter's index is kept in length_ as
-    // -2 - index, below the -1 of an unknown bound, so arrayOf interns it and
-    // withConst carries it like any other length.
+    // **An array whose bound is a non-type template parameter**, the `[N]` of `T (&)[N]` read as
+    // a pattern. length_ keeps -2 - index, below the -1 of an unknown bound, so arrayOf interns
+    // it and withConst carries it like any other length.
     static long long parameterBound(int index) { return -2 - static_cast<long long>(index); }
     int boundParam() const {
         return kind_ == Kind::Array && length_ <= -2 ? static_cast<int>(-2 - length_) : -1;

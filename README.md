@@ -48,7 +48,8 @@ cxx1 -I dir f.cpp        add a directory to the ones <...> searches
 `-D` defines a macro and `-U` removes one, `-j` sets how many files compile at
 once, `-g` writes a line table for a debugger - DWARF on x86_64-linux and
 arm64-darwin, CodeView on x86_64-windows through the `gnu` spelling (since
-1.6); tms6747 writes none and `-g` is refused there - `-masm` picks the assembly syntax for
+1.6), and on tms6747 cl6x's `.dwpsn` lines and `.dwtag` variables (since 1.8; refused there
+with `-O`, the scheduler carrying no position) - `-masm` picks the assembly syntax for
 x86_64-windows (`masm` for the project's own masm and link, the default where
 they sit beside the compiler, `gnu` for clang, the default elsewhere and for
 `-g`, `ml64` for Microsoft's assembler, one translation unit per program),

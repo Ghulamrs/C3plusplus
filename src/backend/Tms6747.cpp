@@ -2153,10 +2153,9 @@ void Tms6747::walkBody(const Function &fn) {
     else out_ << "\tZERO\tA4\n";
 }
 
-// -g: the function's parameters and locals in TI's .dwtag spelling, so sim6747 and vm6747 can show them
-// (GRIDEd docs\C6747-LOCALS-DESIGN.md). A frame variable is named from A15 - TI's DWARF register 15 - at
-// the slot localAddr forms; one the layout keeps in a register, or gave no room, is left out for now;
-// a static one by its symbol. Parameters first, in order, as the CodeView path does.
+// -g: parameters, then locals, in TI's .dwtag spelling for sim6747 and vm6747 (GRIDEd docs\C6747-LOCALS-DESIGN.md).
+// A frame variable is named from A15 - TI's DWARF register 15 - at the slot localAddr forms; one kept in a
+// register, or given no room, is left out for now; a static one by its symbol.
 void Tms6747::emitVariables(const Function &fn) {
     if (lineSource() == nullptr) return;
     out_ << "\t.dwtag\tDW_TAG_subprogram, DW_AT_name(\"" << fn.name() << "\"), DW_AT_low_pc(" << fn.symbol() << ")\n";
