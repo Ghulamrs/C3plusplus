@@ -117,5 +117,16 @@ else
     echo "FAIL tms6747 -g: wanted -O2 refused by name and -g alone compiled"; fail=$((fail + 1))
 fi
 
+# -g adds .dw records and changes no instruction - a class holding a reference to a function had
+# refused under -g alone, its type record asking the referent's size (1.9's final review).
+dbg=tests/cases/reference-to-function-member.cpp
+if cxx1 -nologo -S -arch tms6747 -g -O0 "$dbg" -o "$OUT/dbg-ref-g.s" 2>/dev/null &&
+   cxx1 -nologo -S -arch tms6747 -O0 "$dbg" -o "$OUT/dbg-ref.s" 2>/dev/null &&
+   grep -v '\.dw' "$OUT/dbg-ref-g.s" | cmp -s - "$OUT/dbg-ref.s"; then
+    pass=$((pass + 1))
+else
+    echo "FAIL tms6747 -g: wanted $dbg compiled with -g, and its code the same as without"; fail=$((fail + 1))
+fi
+
 echo "run.sh: $pass passed, $fail failed ($ran printed their recorded output, $refused were refused as recorded)"
 [ "$fail" -eq 0 ]

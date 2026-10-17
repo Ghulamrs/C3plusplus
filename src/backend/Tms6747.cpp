@@ -2205,7 +2205,9 @@ void Tms6747::emitTypes() {
     for (const Type *t : debugTypes_) {
         const std::string name = t->describe();
         const Kind k = t->kind();
-        const int size = t->isComplete() ? t->size(target_) : 0;
+        // A reference's size is its referent's, and a function's is none: only the kinds below ask.
+        const bool sized = k != Kind::Pointer && k != Kind::LValueRef && k != Kind::RValueRef && !t->isFunction();
+        const int size = sized && t->isComplete() ? t->size(target_) : 0;
         if (k == Kind::Pointer || k == Kind::LValueRef || k == Kind::RValueRef) {
             o << "\t.dwtag\tDW_TAG_pointer_type, DW_AT_name(\"" << name << "\"), DW_AT_type(\""
               << (t->pointee()->isFunction() ? std::string("void") : t->pointee()->describe()) << "\"), DW_AT_byte_size(4)\n";
@@ -2221,7 +2223,7 @@ void Tms6747::emitTypes() {
                         o << "\t.dwtag\tDW_TAG_member, DW_AT_name(\"<" << b.type->describe() << ">\"), DW_AT_type(\"" << b.type->describe()
                           << "\"), DW_AT_data_member_location(" << b.offset << ")\n";
                 for (const Member &m : t->members())
-                    if (m.width == 0 && !m.name.empty() && m.inVirtualBase == nullptr)
+                    if (m.width == 0 && !m.name.empty() && m.inVirtualBase == nullptr && m.declaredIn == nullptr)
                         o << "\t.dwtag\tDW_TAG_member, DW_AT_name(\"" << m.name << "\"), DW_AT_type(\"" << m.type->describe()
                           << "\"), DW_AT_data_member_location(" << m.offset << ")\n";
             }

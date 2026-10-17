@@ -13253,6 +13253,17 @@ user-defined literal, two lines apart in `ParserType.cpp` - drifted onto each ot
 which `tools/exclusions --check` cannot see. Four comment groups over the cap came from the
 2026-10-16 commits.
 
+**Three commits came from GRIDE's toolchain copy on 2026-10-16 and were reviewed only at the end.**
+A parameter `T (&)[N]` on tms6747 (`8e7bcb3`), and with `-g` the `.dwtag` records for parameters,
+locals and their types (`4702428`, `58316cd`). Fable's final review measured them over all 451 tms6747
+cases: with the `.dw*` lines stripped, `-g` output is byte for byte what plain output is. **The
+commits call the records cl6x's spelling, and they are not**: the directive names are TI's, but cl6x
+writes `DW_AT_type(*$C$DW$T$n)`, `.dwattr` and `DW_TAG_inheritance` where these name types by string -
+what sim6747 and vm6747 read, unmeasured against TI's own debugger. Two faults it found are mended
+here: a class holding a reference to a function was refused under `-g` alone, the type record asking
+the referent's size (`run.sh` now holds that `-g` compiles it and changes no instruction); and a
+base's members were listed again, flattened, beside the `<Base>` member that already holds them.
+
 Measured at the merge, `c09efe4`: Mac run.sh 716/0, emit.sh 1821/0 with the golden at 2aea776 0 of
 1789 changed, names.sh 466/0, overload.sh 33/0, exclusions 126 sites 0/0, comment-lines 0; Linux
 g++ run.sh 716/0 at -O0 and -O2 and ThreadSanitizer clean; `tools/feature-sweep` 71/23/0 of 94,
