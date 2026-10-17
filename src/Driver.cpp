@@ -1019,8 +1019,12 @@ bool Driver::parseArguments(int argc, char **argv) {
 
     // -E: each input after phase 4, on stdout, and nothing compiled.
     if (preprocessOnly_) {
-        for (const std::string &in : inputs)
-            std::fputs(Preprocessor(in, searchPath_, macrosFor()).run().text().c_str(), stdout);
+        try {
+            for (const std::string &in : inputs)
+                std::fputs(Preprocessor(in, searchPath_, macrosFor()).run().text().c_str(), stdout);
+        } catch (const CompileFailed &) {
+            std::exit(1);  // the diagnostic is written; one thread here, so the exit is the verdict
+        }
         std::exit(0);
     }
 
