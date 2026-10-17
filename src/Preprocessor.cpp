@@ -465,6 +465,7 @@ std::string Preprocessor::expandText(const std::string &s, std::vector<std::stri
         std::size_t start = i;
         while (i < s.size() && identCont(s[i])) i++;
         std::string name = s.substr(start, i - start);
+        if (skipping_) { out += name; continue; }   // [cpp.cond]/6: a skipped group expands nothing
 
         if (name == "__LINE__") { out += std::to_string(lineNo); continue; }
         if (name == "__COUNTER__") { out += std::to_string(counter_++); continue; }
@@ -1306,8 +1307,11 @@ void Preprocessor::processFile(const std::string &path, int fileIndex) {
             continue;
         }
 
+        // A skipped line is still scanned, for the comment and raw-string state the next line inherits.
         if (!emitting()) {
+            skipping_ = true;
             expandLine(line, shownFile, lineNo);
+            skipping_ = false;
             continue;
         }
 
