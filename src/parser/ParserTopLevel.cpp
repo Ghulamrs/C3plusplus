@@ -183,13 +183,10 @@ void Parser::topLevel(Program &program) {
         do {
             Declared td = declarator(base);
             typedefFunctionSuffix(td);
-            // [dcl.typedef]/2 lets a typedef-name be redeclared to the same type,
-            // which is what makes the C idiom "typedef struct S S;" legal now that the
-            // tag already names the type by itself. Only a different type is an error.
-            // **A typedef at namespace scope is keyed by its qualified name**,
-            // the way a class declared there already was through its tag.
+            // **A typedef at namespace scope is keyed by its qualified name**, the way a class's tag is.
             const std::string key = namespacePrefix() + td.name;
-            // Only this scope's: `typedef short T;` in a namespace hides a global `T`.
+            // [dcl.typedef]/2 lets this scope's own be redeclared to the same type ("typedef struct S S;"),
+            // and a namespace's `typedef short T;` hides a global `T` rather than redeclaring it.
             if (const Type *had = findGlobalTypedef(key))
                 if (had != td.type)
                     src_.fail(td.pos, "'" + td.name + "' is typedefed twice, "

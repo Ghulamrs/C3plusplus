@@ -1318,9 +1318,8 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     if (noData) empties.push_back(Type::EmptyAt{ type, 0 });
     type->setEmptySubobjects(empties);
     type->complete(members, size, align);
-    // Held bodies are read now, with the class complete: every member exists,
-    // so a body may name one declared below it. Taken out of the vector first,
-    // because a body may itself define a class with held bodies of its own.
+    // Held bodies are read now, with the class complete, so a body may name a member declared below
+    // it; taken out of the vector first, since a body may define a class with held bodies of its own.
     // A specialization also takes its nested classes' bodies, which waited for it, [temp.inst]/2.
     const bool takesNested = !specializationOf.empty() && deferSpecializationBodies_;
     auto ownBody = [&](const PendingBody &b) {
