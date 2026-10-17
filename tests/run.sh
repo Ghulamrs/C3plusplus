@@ -107,5 +107,15 @@ else
     echo "FAIL a quoted pattern with -S: wanted a.s and b.s and nothing on stdout"; fail=$((fail + 1))
 fi
 
+# -g with -O is refused for tms6747 by the driver, and -g alone is not (docs/EXCLUSIONS.md).
+dbg=tests/cases/tms6747-debug-optimized.cpp
+if ! cxx1 -nologo -S -arch tms6747 -g -O2 "$dbg" -o "$OUT/dbg-O2.s" 2>"$OUT/dbg-O2.err" &&
+   grep -qF -- "-g with -O is not supported yet for tms6747" "$OUT/dbg-O2.err" &&
+   cxx1 -nologo -S -arch tms6747 -g "$dbg" -o "$OUT/dbg-O0.s" 2>/dev/null; then
+    pass=$((pass + 1))
+else
+    echo "FAIL tms6747 -g: wanted -O2 refused by name and -g alone compiled"; fail=$((fail + 1))
+fi
+
 echo "run.sh: $pass passed, $fail failed ($ran printed their recorded output, $refused were refused as recorded)"
 [ "$fail" -eq 0 ]
