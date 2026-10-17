@@ -423,17 +423,23 @@ bool Parser::templateDeclaration() {
 
     // **`template <class T> Box<T>::Box(...)`**: from the `Box` after `::` it is shaped as a constructor
     // held inside the class, so it is kept on the class and replayed by that path.
-    std::string special;
-    if (atOutOfLineSpecial(&special)) {
+    std::string special, nestedPath;
+    if (atOutOfLineSpecial(&special, &nestedPath)) {
         TemplateDecl &owner = templates_[peek().text];
         at_++;
         skipTemplateArguments();
         expect("::");
+        std::string local = owner.name;
+        while (peek().kind == TokenKind::Ident && peekAt(1).is("::")) {
+            local = peek().text;
+            at_ += 2;
+        }
         TemplateDecl::OutOfLine ool;
         ool.start = at_;
         ool.constructor = special == "constructor";
         ool.destructor = !ool.constructor;
-        ool.member = owner.name;
+        ool.member = local;
+        ool.nested = nestedPath;
         at_ = decl.afterParams;
         skipTemplatedDefinition();
         owner.outOfLine.push_back(ool);
@@ -501,6 +507,30 @@ bool Parser::templateDeclaration() {
     // is new is that the qualifier is a template-id, naming the pattern.
     if (!qualifier.empty()) {
         const Type *of = findTypedef(qualifier);
+        // A nested class of the pattern, `Tree<T>::It::Deep`: the member belongs to the template whose
+        // specialization encloses it, and its path down is kept for the replay to find it by.
+        std::string nestedIn;
+        while (of != nullptr && !of->isSpecialization() && of->enclosing() != nullptr) {
+            nestedIn = of->localName() + (nestedIn.empty() ? "" : "::" + nestedIn);
+            of = of->enclosing();
+        }
+        // A pattern is read shallow, with no nested classes to find, so the qualifier's text is split:
+        // the template-id up to its closing '>', then the path down.
+        if (of == nullptr) {
+            int depth = 0;
+            for (std::size_t c = 0; c + 1 < qualifier.size(); c++) {
+                if (qualifier[c] == '<') depth++;
+                else if (qualifier[c] == '>') depth--;
+                else if (depth == 0 && qualifier[c] == ':' && qualifier[c + 1] == ':') {
+                    const Type *head = findTypedef(qualifier.substr(0, c));
+                    if (head != nullptr && head->isSpecialization()) {
+                        of = head;
+                        nestedIn = qualifier.substr(c + 2);
+                    }
+                    break;
+                }
+            }
+        }
         if (of == nullptr || !of->isSpecialization())
             src_.fail(decl.pos, "'" + qualifier + "' is not a class template, "
                                 "so this defines a member of nothing");
@@ -520,6 +550,7 @@ bool Parser::templateDeclaration() {
         ool.member = decl.name;
         ool.destructor = !decl.name.empty() && decl.name[0] == '~';
         ool.isData = !defined && (sawInit || constructs || dataNoInit);
+        ool.nested = nestedIn;
         owner->second.outOfLine.push_back(ool);
         return true;
     }
@@ -748,7 +779,7 @@ bool Parser::explicitSpecialization() {
 
 // The tokens read without being consumed. skipTemplateArguments is what walks
 // the argument list, so the `>>` split has to be put back too.
-bool Parser::atOutOfLineSpecial(std::string *what) {
+bool Parser::atOutOfLineSpecial(std::string *what, std::string *nested) {
     if (peek().kind != TokenKind::Ident) return false;
     auto t = templates_.find(peek().text);
     if (t == templates_.end() || !t->second.isClass || !peekAt(1).is("<"))
@@ -763,10 +794,19 @@ bool Parser::atOutOfLineSpecial(std::string *what) {
     bool yes = false;
     if (peek().is("::")) {
         std::size_t n = 1;
+        // `Tree<T>::It::It(`: the class whose constructor this is may be nested, a name per `::`.
+        std::string path, cls = name;
+        while (peekAt(n).kind == TokenKind::Ident && peekAt(n + 1).is("::") &&
+               (peekAt(n + 2).kind == TokenKind::Ident || peekAt(n + 2).is("~"))) {
+            cls = peekAt(n).text;
+            path += (path.empty() ? "" : "::") + cls;
+            n += 2;
+        }
         if (peekAt(n).is("~")) { n++; *what = "destructor"; }
         else                   { *what = "constructor"; }
-        if (peekAt(n).kind == TokenKind::Ident && peekAt(n).text == name &&
+        if (peekAt(n).kind == TokenKind::Ident && peekAt(n).text == cls &&
             peekAt(n + 1).is("(")) yes = true;
+        if (nested != nullptr) *nested = path;
     }
     at_ = resume;
     angleSplit_ = wasSplit;
@@ -1137,8 +1177,9 @@ void Parser::instantiatePending() {
                 for (std::size_t k = 0; k < d.outOfLine.size(); k++) {
                     if (done[k] || specializations_[i].fromPartial) continue;
                     const TemplateDecl::OutOfLine &o = d.outOfLine[k];
+                    // The class the member is in: the specialization, or a class nested in it.
+                    const std::string tag = specializations_[i].key + (o.nested.empty() ? "" : "::" + o.nested);
                     if (o.constructor || o.destructor) {
-                        const std::string &tag = specializations_[i].key;
                         if (!memberIsUsed(o.constructor ? constructorKey(tag) : destructorKey(tag))) continue;
                         done[k] = true;
                         PendingBody b;
@@ -1150,13 +1191,12 @@ void Parser::instantiatePending() {
                     // **A static data member is defined only where an evaluated
                     // expression named it**, [temp.inst]/3, as clang emits it.
                     if (d.outOfLine[k].isData) {
-                        const Type *spec = findTypedef(specializations_[i].key);
+                        const Type *spec = findTypedef(tag);
                         const Type::StaticMember *sm =
                             spec != nullptr ? spec->findStaticMember(d.outOfLine[k].member)
                                             : nullptr;
                         if (sm != nullptr && !usedStaticMembers_.count(sm->symbol)) continue;
-                    } else if (!memberIsUsed(specializations_[i].key + "::" +
-                                             d.outOfLine[k].member)) continue;
+                    } else if (!memberIsUsed(tag + "::" + d.outOfLine[k].member)) continue;
                     done[k] = true;
                     outsideNow.push_back(k);
                 }
@@ -2372,7 +2412,10 @@ void Parser::refuseTemplateId() {
 // **A member function template call, v.head<3>().**
 ExprPtr Parser::memberTemplateCall(ExprPtr object, const Type *obj,
                                    const std::string &name, std::size_t pos) {
-    const Type *plain = obj->unqualified();
+    // The class whose scope declares it - `d.twice(3)` finds B's template through a D.
+    const Type *named = obj->unqualified();
+    const Type *plain = memberTemplateOwner(named, name);
+    if (plain == nullptr) plain = named;
     const std::vector<TemplateDecl> &templates = memberTemplates_[plain->tag() + "::" + name];
     TemplateDecl mt = templates.front();
 
@@ -2448,13 +2491,30 @@ ExprPtr Parser::memberTemplateCall(ExprPtr object, const Type *obj,
     const Signature chosen = *sig;
     applyDefaults(chosen, callArgs, pos);
 
+    // A static member template takes no `this`; an object it was named through is still evaluated.
+    if (chosen.isStaticMember) {
+        ExprPtr call = completeCall(name, chosen.symbol, nullptr, chosen.returns, chosen.params,
+                                    chosen.variadic, pos, std::move(callArgs), false);
+        if (object == nullptr || clonePure(*object) != nullptr) return call;
+        const Type *rt = call->type();
+        ExprPtr both(new Comma(std::move(object), std::move(call)));
+        both->setType(rt);
+        return both;
+    }
+    if (object == nullptr)
+        src_.fail(pos, "'" + plain->describe() + "::" + name + "' is a member function "
+                       "template that is not static, so it needs an object to be called on");
+
     if (obj->isConst() && !chosen.constThis)
         src_.fail(pos, "'" + name + "' is not a const member function, and this "
                        "object is const");
 
     const Type *pointee = chosen.constThis ? types_.withConst(plain) : plain;
     const Type *thisType = types_.pointerTo(pointee);
+    // `this` is the declaring base's address, which convert() moves to where that base sits.
     ExprPtr addr(new Unary('&', std::move(object)));
+    addr->setType(types_.pointerTo(obj->isConst() ? types_.withConst(named) : named));
+    if (plain != named) addr = convert(std::move(addr), thisType);
     addr->setType(thisType);
 
     std::vector<const Type *> full;
@@ -2592,8 +2652,17 @@ void Parser::instantiateViableTemplates(const std::string &name,
 // check()` or `std::numeric_limits<int>::max()`.
 ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
     (void)pos;
-    const std::size_t mpos = peek().pos;
-    const std::string member = declaredName("a member name");
+    std::size_t mpos = peek().pos;
+    std::string member = declaredName("a member name");
+    // `Tree<int>::It::Deep::twice(2)`: a nested class is a scope of its own, walked a name at a time.
+    while (peek().is("::") && peekAt(1).kind == TokenKind::Ident) {
+        const Type *nested = lookupInClass(cls, member);
+        if (nested == nullptr || !nested->isStructOrUnion()) break;
+        at_++;
+        cls = nested;
+        mpos = peek().pos;
+        member = declaredName("a member name");
+    }
     // [class.qual]/2: `Tree::Tree` and `Tree<int>::Tree` name the constructor, not a type.
     if (cls->isSpecialization() && member == cls->templateName())
         src_.fail(mpos, "'" + cls->describe() + "::" + member + "' names the constructor, "

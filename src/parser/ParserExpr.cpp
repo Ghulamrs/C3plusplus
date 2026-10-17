@@ -770,7 +770,7 @@ ExprPtr Parser::primary(Program *program) {
         const bool memberFirst =
             currentClass_ != nullptr && peekAt(1).is("(") &&
             (findMemberOwner(currentClass_, peek().text) != nullptr ||
-             isMemberTemplate(currentClass_, peek().text));
+             memberTemplateOwner(currentClass_, peek().text) != nullptr);
         if (!memberFirst) return templateCall(program);
     }
 
@@ -1162,6 +1162,33 @@ ExprPtr Parser::primary(Program *program) {
             if (ExprPtr m = unevaluatedMember()) return m;
     }
 
+    // **`S::f(...)` or `S::f<T>(...)` where f is a member function template**: static, or reached
+    // through `*this` from a member of S or of a class derived from it.
+    if (peek().kind == TokenKind::Ident && peekAt(1).is("::")) {
+        std::string q = peek().text;
+        for (std::size_t k = 1; peekAt(k).is("::") && peekAt(k + 1).kind == TokenKind::Ident; k += 2) {
+            const std::string component = peekAt(k + 1).text;
+            const Type *cls = findTypedef(q);
+            if (cls != nullptr && cls->isStructOrUnion() &&
+                (peekAt(k + 2).is("(") || peekAt(k + 2).is("<")) &&
+                memberTemplateOwner(cls, component) != nullptr) {
+                const std::size_t qpos = peek().pos;
+                at_ += k + 2;                  // the name; memberTemplateCall reads from the '<' or '('
+                const Local *self = findLocal("this");
+                const bool related = self != nullptr && !inStaticMember_ && currentClass_ != nullptr &&
+                                     (currentClass_->unqualified() == cls->unqualified() ||
+                                      publicBaseOffset(currentClass_, cls->unqualified()) >= 0);
+                if (!related) return memberTemplateCall(nullptr, cls, component, qpos);
+                ExprPtr me(Var::local("this", self->offset));
+                me->setType(self->type);
+                ExprPtr obj(new Unary('*', std::move(me)));
+                obj->setType(self->type->pointee());
+                return memberTemplateCall(std::move(obj), self->type->pointee(), component, qpos);
+            }
+            q += "::" + component;
+        }
+    }
+
     // **`S::f(...)` - a static member function, called with no object.** The
     // twin of the static *data* member found just above, and looked up the
     // same way.
@@ -1324,14 +1351,25 @@ ExprPtr Parser::primary(Program *program) {
             const Type *owner = currentClass_->unqualified();
             const Local *self = findLocal("this");
             // Beside an ordinary member of the name, overload resolution below ranks the two.
-            const bool alone = peekAt(1).is("<") || findMemberOwner(owner, name) == nullptr;
-            if (isMemberTemplate(owner, name) && self != nullptr && alone) {
+            // A specialization of the template already made is listed under the name too, and is not one.
+            bool alone = peekAt(1).is("<");
+            if (!alone) {
+                const Type *ordinary = findMemberOwner(owner, name);
+                alone = true;
+                if (ordinary != nullptr)
+                    if (const std::vector<std::size_t> *set = overloadsOf(ordinary->unqualified()->tag() + "::" + name))
+                        for (std::size_t k = 0; k < set->size(); k++)
+                            if (!functions_[(*set)[k]].fromTemplate) alone = false;
+            }
+            // A base's, or a static one called from a static member function, where there is no `this`.
+            if (memberTemplateOwner(owner, name) != nullptr && alone) {
                 at_++;                         // the name; memberTemplateCall reads from the '<' or '('
+                if (self == nullptr || inStaticMember_) return memberTemplateCall(nullptr, owner, name, pos);
                 ExprPtr me(Var::local("this", self->offset));
                 me->setType(self->type);
                 ExprPtr obj(new Unary('*', std::move(me)));
                 obj->setType(self->type->pointee());
-                return memberTemplateCall(std::move(obj), owner, name, pos);
+                return memberTemplateCall(std::move(obj), self->type->pointee(), name, pos);
             }
         }
 
@@ -2151,7 +2189,7 @@ ExprPtr Parser::postfix() {
             const Type *in = scope != nullptr ? scope : obj;
             // **A member function template**, `p->head<3>()` - told from `<` as
             // a comparison only because the member is a registered template.
-            if ((peek().is("<") || peek().is("(")) && isMemberTemplate(obj, name)) {
+            if ((peek().is("<") || peek().is("(")) && memberTemplateOwner(obj, name) != nullptr) {
                 n = memberTemplateCall(std::move(n), obj, name, pos);
                 continue;
             }
@@ -2233,7 +2271,7 @@ ExprPtr Parser::postfix() {
                              ? 0 : publicBaseOffset(obj, scope);
             const Type *in = scope != nullptr ? scope : obj;
             // **A member function template**, `v.head<3>()`.
-            if ((peek().is("<") || peek().is("(")) && isMemberTemplate(obj, name)) {
+            if ((peek().is("<") || peek().is("(")) && memberTemplateOwner(obj, name) != nullptr) {
                 n = memberTemplateCall(std::move(n), obj, name, pos);
                 continue;
             }

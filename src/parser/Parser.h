@@ -358,6 +358,8 @@ private:
             bool constructor = false;
             // **A static data member, not a member function.**
             bool isData = false;
+            // A member of a nested class, `Tree<T>::It::Deep::count`: "It::Deep", under the specialization.
+            std::string nested;
         };
         std::vector<OutOfLine> outOfLine;
 
@@ -453,6 +455,11 @@ private:
     bool isMemberTemplate(const Type *obj, const std::string &name) const {
         return obj != nullptr &&
                memberTemplates_.count(obj->unqualified()->tag() + "::" + name) != 0;
+    }
+    // The class that declares `name` as a member template, `cls` or a base of it, or null.
+    const Type *memberTemplateOwner(const Type *cls, const std::string &name) const {
+        const Type *d = declaringClassOf(cls, name);
+        return d != nullptr && isMemberTemplate(d, name) ? d : nullptr;
     }
     ExprPtr memberTemplateCall(ExprPtr object, const Type *obj,
                                const std::string &name, std::size_t pos);
@@ -743,7 +750,7 @@ private:
     bool skipTemplatedDefinition(bool *sawInit = nullptr, bool *sawParen = nullptr);
     void skipTemplateArguments();
     // `Box<T>::Box(` or `Box<T>::~Box(`.
-    bool atOutOfLineSpecial(std::string *what);
+    bool atOutOfLineSpecial(std::string *what, std::string *nested = nullptr);
     // The whole of what a use of a template does in 5.1.
     void refuseTemplateId();
 
@@ -1907,6 +1914,12 @@ private:
                                  bool (Parser::*exists)(const std::string &) const) const;
     // The namespace a first component names, innermost out: `inner` in `outer` is "outer::inner".
     std::string namespaceNamed(const std::string &first) const;
+    // An unqualified name declared in an enclosing namespace, innermost first, or "" -
+    // asked before the flat table, since [basic.lookup.unqual]/1 lets the nearer one hide a global.
+    // A type named in the classes this is inside, innermost first, or null.
+    const Type *classScopeType(const std::string &name) const;
+    std::string enclosingNamespaceKey(const std::string &name,
+                                      bool (Parser::*exists)(const std::string &) const) const;
     // The name a using-declaration redirects `key` to, following a chain of them
     // and stopping at a fixed depth so that `using A::x;` and `using B::x;`
     // written into a cycle cannot hang the parser instead of failing a lookup.

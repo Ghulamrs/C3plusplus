@@ -328,15 +328,6 @@ hides. Four shapes met while writing `<type_traits>` are still refused:
 partial specialization on `X<T []>`, and an out-of-line constructor of a class
 template.
 
-**Found in the 1.9 round and not mended**, each also refused or wrong in 1.8: a
-namespace member defined out of line, `int outer::f() { S s; }`, does not see its
-namespace's names; a base's member template, or a static one, called by its bare
-name; an out-of-line constructor of a class template's *nested* class; a chain of
-nested classes after a template-id in an expression, `Tree<int>::It::Deep::f()`;
-a nested class's inline members are compiled uncalled, so a static they name
-is defined where clang defines none; and at file scope `D d(g);`, where D's
-constructor takes a reference to a function, is refused "no size for this type yet".
-
 **Pointers to members** stop short of two things: a pointer to a *virtual*
 member function is refused by name (Compiler-Cppi has it), and `&D::f` for an
 `f` that D inherited is not found - write `&B::f`, which converts.

@@ -183,18 +183,16 @@ void Parser::topLevel(Program &program) {
         do {
             Declared td = declarator(base);
             typedefFunctionSuffix(td);
-            // [dcl.typedef]/2 lets a typedef-name be redeclared to the same type,
-            // which is what makes the C idiom "typedef struct S S;" legal now that the
-            // tag already names the type by itself. Only a different type is an error.
-            if (const Type *had = findTypedef(td.name))
+            // **A typedef at namespace scope is keyed by its qualified name**, the way a class's tag is.
+            const std::string key = namespacePrefix() + td.name;
+            // [dcl.typedef]/2 lets this scope's own be redeclared to the same type ("typedef struct S S;"),
+            // and a namespace's `typedef short T;` hides a global `T` rather than redeclaring it.
+            if (const Type *had = findGlobalTypedef(key))
                 if (had != td.type)
                     src_.fail(td.pos, "'" + td.name + "' is typedefed twice, "
                                       "and not to the same type: it was '" +
                                       had->describe() + "' and is now '" +
                                       td.type->describe() + "'");
-            // **A typedef at namespace scope is keyed by its qualified name**,
-            // the way a class declared there already was through its tag.
-            const std::string key = namespacePrefix() + td.name;
             typedefIndex_[key] = typedefs_.size();
             typedefs_.push_back(TypedefName{ key, td.type });
         } while (consume(","));
@@ -241,11 +239,24 @@ void Parser::topLevel(Program &program) {
     // **`int ns::f(int)` defines the `f` declared in namespace `ns`**: a
     // qualifier that names a namespace is folded into the name, which is how
     // a function in a namespace is keyed throughout (the review's A17).
+    std::vector<std::string> definedIn;
     if (!d.qualifier.empty() && namespaces_.find(d.qualifier) != namespaces_.end() &&
         findTypedef(d.qualifier) == nullptr) {
+        // [basic.lookup.unqual]/6: its body looks names up in that namespace, as if written there.
+        for (std::size_t s = 0, e; s <= d.qualifier.size(); s = e + 2) {
+            e = d.qualifier.find("::", s);
+            if (e == std::string::npos) e = d.qualifier.size();
+            definedIn.push_back(d.qualifier.substr(s, e - s));
+        }
         d.name = d.qualifier + "::" + d.name;
         d.qualifier.clear();
     }
+    struct NamespaceSwap {
+        std::vector<std::string> &stack; std::vector<std::string> saved; bool on;
+        void enter(const std::vector<std::string> &to) { if (to.empty()) return; saved = stack; stack = to; on = true; }
+        void leave() { if (on) stack = saved; on = false; }
+        ~NamespaceSwap() { leave(); }
+    } inNamespace{ namespaceStack_, {}, false };
 
     // **`S g(1);` at file scope is a construction, not a prototype**: a
     // parameter list begins with a type name or is empty, the local path's own
@@ -255,7 +266,9 @@ void Parser::topLevel(Program &program) {
         !d.type->isStructOrUnion() && !d.type->isArray() &&
         !d.type->isReference() && !d.type->isFunction() &&
         (sc != StorageExtern || direct) && !constexprFunction && !inlineFunction) {
+        inNamespace.enter(definedIn);
         scalarInitAhead = atParenInitialiser();
+        inNamespace.leave();
     }
 
     bool constructionAhead = scalarInitAhead;
@@ -619,6 +632,7 @@ void Parser::topLevel(Program &program) {
         at_ = d.paramsAt;
     }
 
+    inNamespace.enter(definedIn);   // the parameters, as the body
     expect("(");
     std::vector<const Type *> params;
     std::vector<const Type *> written;
@@ -743,6 +757,7 @@ void Parser::topLevel(Program &program) {
             }
         }
     }
+    inNamespace.leave();
     if (resumeAt != 0) at_ = resumeAt;
 
     // Hand what this parameter list collected to whichever declare() runs below, the
@@ -819,9 +834,11 @@ void Parser::topLevel(Program &program) {
                 // the substituted signature, the split a free function template already makes.
                 const Type *patternFn = memberTemplatePattern_ != nullptr ? memberTemplatePattern_
                                                                            : fnType;
-                const char code = memberTemplateAccess_ == Access::Public ? 'Q'
-                                : memberTemplateAccess_ == Access::Protected ? 'I'
-                                                                             : 'A';
+                // `template <class T> static T f(T)`: no `this`, and cl spells it S, K or C.
+                const bool staticTemplate = sc == StorageStatic;
+                const char code = memberTemplateAccess_ == Access::Public ? (staticTemplate ? 'S' : 'Q')
+                                : memberTemplateAccess_ == Access::Protected ? (staticTemplate ? 'K' : 'I')
+                                                                             : (staticTemplate ? 'C' : 'A');
                 const bool ctor = d.name == localOf(d.qualifier);
                 std::string sym, why, c2;
                 bool ok;
@@ -853,6 +870,7 @@ void Parser::topLevel(Program &program) {
                     d.pos, false, d.qualifier, constThis,
                     memberTemplateAccess_, false });
                 functions_.back().fromTemplate = true;
+                functions_.back().isStaticMember = staticTemplate;
                 // **The defaults its parameter list just read.**
                 if (!pendingDefaults_.empty()) {
                     defaultArgs_[sym] = pendingDefaults_;
@@ -1266,7 +1284,9 @@ void Parser::topLevel(Program &program) {
     // A class can be defined inside a function and its members defined from
     // there, so what this function allocates is what it added to the list.
     const std::size_t guardsFrom = guardSlots_.size();
+    inNamespace.enter(definedIn);
     StmtPtr body = block();
+    inNamespace.leave();
 
     // **Every guard this function made is cleared at its entry.**
     if (guardSlots_.size() > guardsFrom) {
