@@ -65,6 +65,22 @@ void Parser::templateParameters(std::vector<TemplateParam> &params) {
                                              "is");
                 }
             }
+            // **`T v` after `class T`**, [temp.param]/4: the earlier type parameters stand for
+            // themselves while this one's type is read, as a function template's signature does.
+            std::vector<Shadow> undo;
+            std::vector<TemplateParam> earlier;
+            std::vector<const Type *> stand;
+            for (std::size_t k = 0; k < params.size(); k++)
+                if (params[k].type == nullptr && !params[k].isPack) {
+                    earlier.push_back(params[k]);
+                    stand.push_back(types_.templateParam(static_cast<int>(k)));
+                }
+            bindTemplateParameters(earlier, stand, std::vector<long long>(earlier.size(), 0),
+                                   std::vector<std::vector<const Type *> >(earlier.size()), &undo);
+            struct Unbind {
+                Parser *p; std::vector<Shadow> *u;
+                ~Unbind() { p->unbindTemplateParameters(*u); }
+            } unbind{ this, &undo };
             StorageClass sc;
             Qualifiers quals;
             const Type *base = specifiers(&sc, &quals);
@@ -76,6 +92,20 @@ void Parser::templateParameters(std::vector<TemplateParam> &params) {
                                "supported yet");
             p.name = d.name;
             p.type = d.type;
+            if (d.type->kind() == Kind::TemplateParam)
+                p.typeOf = static_cast<int>(d.type->length());
+            else if ([&] {
+                         for (const Type *t = d.type; t != nullptr; ) {
+                             if (t->kind() == Kind::TemplateParam) return true;
+                             if (t->unqualified() != t) t = t->unqualified();
+                             else if (t->isPointer() || t->isReference()) t = t->pointee();
+                             else return false;
+                         }
+                         return false;
+                     }())
+                src_.fail(pos, "a non-type template parameter whose type is built from an earlier "
+                               "parameter, '" + d.type->describe() + "', is not supported yet - "
+                               "the earlier parameter itself, 'T v', is");
         }
         // **A default argument, kept as tokens.** [temp.param]/9 lets a
         // parameter carry one, and a use that omits it replays these tokens
@@ -663,7 +693,7 @@ bool Parser::functionExplicitSpecialization(std::size_t pos) {
             for (std::size_t i = 0; i < m.binding.size(); i++) {
                 TemplateArg a;
                 if (decl.params[i].type != nullptr) {
-                    a.isType = false; a.type = decl.params[i].type; a.value = m.values[i];
+                    a.isType = false; a.type = paramTypeIn(decl.params[i], m.binding); a.value = m.values[i];
                 } else if (decl.params[i].isPack) {
                     a.isType = true; a.isPack = true; a.pack = m.packs[i];
                 } else {
@@ -907,8 +937,9 @@ void Parser::templateArguments(const TemplateDecl &decl,
                 a.isType = true; a.type = d.type;
             } else {
                 const long long v = constantExpression("a default template argument");
-                binding->push_back(p.type); values->push_back(v);
-                a.isType = false; a.type = p.type; a.value = v;
+                const Type *pt = paramTypeIn(p, *binding);
+                binding->push_back(pt); values->push_back(v);
+                a.isType = false; a.type = pt; a.value = v;
             }
             at_ = saved;
             args->push_back(a);
@@ -987,9 +1018,10 @@ void Parser::templateArguments(const TemplateDecl &decl,
             a.isType = true;
             a.type = d.type;
         } else {
-            if (!p.type->isInteger())
+            const Type *pt = paramTypeIn(p, *binding);
+            if (!pt->isInteger() && pt->kind() != Kind::TemplateParam)
                 src_.fail(p.pos, "a non-type template parameter of type '" +
-                                 p.type->describe() + "' is not supported yet - "
+                                 pt->describe() + "' is not supported yet - "
                                  "it must be an integer type");
             // **`V<N>` while a signature is read for deduction**: a bare name
             // that is a pattern non-type parameter is a reference to it, not a
@@ -1000,16 +1032,16 @@ void Parser::templateArguments(const TemplateDecl &decl,
                 a.isType = false;
                 a.isParam = true;
                 a.paramIndex = nonTypePatternParams_[peek().text];
-                a.type = p.type;
-                binding->push_back(p.type);
+                a.type = pt;
+                binding->push_back(pt);
                 values->push_back(0);
                 at_++;
             } else {
                 const long long v = constantExpression("a template argument");
-                binding->push_back(p.type);
+                binding->push_back(pt);
                 values->push_back(v);
                 a.isType = false;
-                a.type = p.type;
+                a.type = pt;
                 a.value = v;
             }
         }
@@ -1745,7 +1777,7 @@ bool Parser::defaultTemplateArgument(const TemplateDecl &decl, std::size_t i,
         const Type *base = specifiers(&sc, &quals);
         (*binding)[i] = declarator(base, true).type;
     } else {
-        (*binding)[i] = p.type;
+        (*binding)[i] = paramTypeIn(p, *binding);
         (*values)[i] = constantExpression("a default template argument");
     }
     at_ = saved;
@@ -2459,7 +2491,7 @@ ExprPtr Parser::memberTemplateCall(ExprPtr object, const Type *obj,
         for (std::size_t i = 0; i < binding.size(); i++) {
             TemplateArg a;
             if (mt.params[i].type != nullptr) {
-                a.isType = false; a.type = mt.params[i].type; a.value = values[i];
+                a.isType = false; a.type = paramTypeIn(mt.params[i], binding); a.value = values[i];
             } else if (mt.params[i].isPack) {
                 a.isType = true; a.isPack = true; a.pack = packs[i];
             } else {
@@ -2628,7 +2660,7 @@ void Parser::instantiateViableTemplates(const std::string &name,
         for (std::size_t i = 0; i < binding.size(); i++) {
             TemplateArg a;
             if (decl.params[i].type != nullptr) {
-                a.isType = false; a.type = decl.params[i].type; a.value = values[i];
+                a.isType = false; a.type = paramTypeIn(decl.params[i], binding); a.value = values[i];
             } else if (decl.params[i].isPack) {
                 a.isType = true; a.isPack = true; a.pack = packs[i];
             } else {
@@ -2777,7 +2809,7 @@ void Parser::instantiateViableMemberTemplate(const TemplateDecl &mt,
     for (std::size_t i = 0; i < binding.size(); i++) {
         TemplateArg a;
         if (mt.params[i].type != nullptr) {
-            a.isType = false; a.type = mt.params[i].type; a.value = values[i];
+            a.isType = false; a.type = paramTypeIn(mt.params[i], binding); a.value = values[i];
         } else if (mt.params[i].isPack) {
             a.isType = true; a.isPack = true; a.pack = packs[i];
         } else {

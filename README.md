@@ -340,8 +340,8 @@ templates.
 **Templates instantiate by replaying tokens**, so every name in a template body
 is looked up at instantiation - MSVC's old model. cxx1 therefore *accepts*
 some programs clang refuses, which `docs/CONFORMANCE.md` records rather than
-hides. Of the four shapes met while writing `<type_traits>`, one is still refused:
-`template <class T, T v>`, so there is no `std::integral_constant`.
+hides. The four shapes met while writing `<type_traits>` all compile now, the last
+being `template <class T, T v>` - so `std::integral_constant` is the base of every trait.
 
 **Pointers to members** stop short of two things: a pointer to a *virtual*
 member function is refused by name (Compiler-Cppi has it), and `&D::f` for an

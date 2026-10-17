@@ -315,6 +315,8 @@ private:
     struct TemplateParam {
         std::string name;
         const Type *type = nullptr;   // null for a type parameter
+        // `T v` after `class T`: the index of T, and `type` is T standing for itself. -1 otherwise.
+        int typeOf = -1;
         std::size_t pos = 0;
         // `class...`
         bool isPack = false;
@@ -324,6 +326,12 @@ private:
         std::size_t defBegin = 0;
         std::size_t defEnd = 0;
     };
+    // A non-type parameter's type under a binding: T's binding for `T v`, the written type otherwise.
+    static const Type *paramTypeIn(const TemplateParam &p, const std::vector<const Type *> &binding) {
+        if (p.typeOf >= 0 && static_cast<std::size_t>(p.typeOf) < binding.size() &&
+            binding[p.typeOf] != nullptr) return binding[p.typeOf];
+        return p.type;
+    }
     // What is known about a name that names a template. `start` is the
     // `template` keyword: instantiation here will be a replay of these
     // tokens, so where they begin is the thing worth keeping.
