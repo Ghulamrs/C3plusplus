@@ -13527,3 +13527,28 @@ Measured: Mac `make test` passes - run.sh 755/0, emit.sh 1936/0, names.sh 495/0,
 exclusions 130 sites 0/0, comment cap 0; `tools/feature-sweep` 75/21/0 of 96; Linux box, g++:
 run.sh 755/0 at -O0 and -O2, tms6747.sh 474/0 at -O0 and -O2 on vm6747 and sim6747. Not run: the
 Windows box and TI's simulators. Seal `cxx1-1.16.dat`, B804E59F, 161 files.
+
+
+## Version 1.17, 2026-10-17: a const return type in a Microsoft name
+
+**`const int f()` is `?f@@YA?BHXZ`**, measured with clang for the Microsoft ABI over eighteen shapes:
+a return type that is not a pointer carries its top-level cv in front - `?B` when const, `?A` for a
+class or an enumeration otherwise - and a pointer writes its own (`QEAH` for `int *const`, which was
+already right). `Microsoft::returnType` dropped the const, so a function returning one, compiled by
+cl, did not link with cxx1's - recorded in `docs/CONFORMANCE.md` at 1.15 and now gone from it. The
+RTTI descriptor borrowed the same function for its `?AUBase@@` and writes its own `?A` now.
+
+**The same measurement found an older fault one door over**: a pointer to a function spelled the
+function's return with `type()`, not `returnType()`, so `S (*)()` was `P6AUS@@XZ` where clang writes
+`P6A?AUS@@XZ` - the same link failure, for every function pointer returning a class or enumeration.
+
+**And the fix uncovered a third**, which the dropped const had hidden: `decltype` answered a prvalue
+of non-class type with its cv, so `decltype(T::value + u)` over a `static const int` was
+`const int`. [expr]/6 says a prvalue of non-class, non-array type has none; a class prvalue keeps it.
+`template-sfinae-unresolved`'s Microsoft name was the one that showed it.
+
+Measured: Mac `make test` passes - run.sh 757/0, emit.sh 1944/0 (golden at 8d3d6a6: one case changed,
+a redundant sign-extension on three targets), names.sh 497/0, overload.sh 35/0, exclusions 130 sites
+0/0, comment cap 0; Linux box, g++: run.sh 757/0 at -O0 and -O2, tms6747.sh 476/0 at -O0 and -O2 on
+vm6747 and sim6747. Not run: the Windows box, where cl itself would confirm the names, and TI's
+simulators. Seal `cxx1-1.17.dat`, F0C985F1, 161 files.

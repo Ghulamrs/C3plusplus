@@ -1,7 +1,7 @@
 ©2026 G. R. Akhtar - C++03 with C++11 extensions
-Release seal, version 1.16, sealed 17-10-2026
+Release seal, version 1.17, sealed 17-10-2026
 Written by tools/seal; check it with `tools/seal check`.
-CRC32  size  file - 161 files, seal B804E59F
+CRC32  size  file - 161 files, seal F0C985F1
 ------------------------------------------------------------------
 302F7AC7      4283  include/__string_conversions
 A88B4DC7      6938  include/algorithm
@@ -64,7 +64,7 @@ B08C27AF     60870  src/Driver.cpp
 A7860783      4292  src/Driver.h
 6B76BB10     22035  src/Lexer.cpp
 98436587      2597  src/Lexer.h
-B653582C     83154  src/Mangle.cpp
+3DF0E6AF     83534  src/Mangle.cpp
 CB39507D     12470  src/Mangle.h
 36FF0529       493  src/Name.h
 B35E3402      3248  src/Operator.cpp
@@ -75,7 +75,7 @@ F6E56373      4226  src/Preprocessor.h
 2C992AD9      2403  src/Source.h
 5A0BAD84     22752  src/Type.cpp
 0A86CD83     28495  src/Type.h
-4784D364       386  src/Version.h
+AA3EADE5       386  src/Version.h
 0B0F9F25     45019  src/backend/Arm64Darwin.cpp
 98997445      5698  src/backend/Arm64Darwin.h
 0F851578      3863  src/backend/Backend.cpp
@@ -151,7 +151,7 @@ EE8ABC27    139163  src/parser/Parser.h
 D82DE5C3    236787  src/parser/ParserClass.cpp
 CC084F84     25161  src/parser/ParserConst.cpp
 9F389C7B     13649  src/parser/ParserDependent.cpp
-B6908893    132000  src/parser/ParserExpr.cpp
+4B1EAA4E    132144  src/parser/ParserExpr.cpp
 9B660517     42318  src/parser/ParserExprCall.cpp
 2BF1518F     32872  src/parser/ParserExprLambda.cpp
 74F409A0    101620  src/parser/ParserExprNew.cpp

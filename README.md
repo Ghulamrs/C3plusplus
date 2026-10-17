@@ -169,6 +169,16 @@ x86_64-windows, where a class cannot be thrown yet and they print and abort inst
 delete`, the placement and nothrow forms, `std::bad_alloc` from the platform runtime, `typeid` and
 `dynamic_cast` all work.
 
+## What 1.17 changes
+
+* **A `const` return type is part of a Microsoft name**, as cl writes it: `const int f()` is
+  `?f@@YA?BHXZ`, a const class `?BUS@@`, a const enumeration `?BW4E@@`. The `const` had been
+  dropped, so such a function compiled by cl did not link with cxx1's.
+* **A pointer to a function returning a class or enumeration** is named as cl names it,
+  `P6A?AUS@@XZ` where cxx1 wrote `P6AUS@@XZ` - the same link failure, older.
+* **`decltype` of a non-class prvalue has no cv** ([expr]/6): `decltype(k + u)` over a
+  `static const int k` is `int`, where it had been `const int`.
+
 ## What 1.16 changes
 
 The two nits the review of 1.12 and 1.13 left, and an older fault beside the first:
@@ -377,10 +387,10 @@ defects below and nothing else; Compiler-Cppi has closed those too, with the
 vtable group, `_ZTv` thunks, VTT and construction vtables, and that work is
 not in 1.3.
 
-## Known shortcomings in 1.16
+## Known shortcomings in 1.17
 
 Everything here is measured and written down elsewhere in full; this is the
-short list a user of **1.16** should have in front of them. `docs/EXCLUSIONS.md`
+short list a user of **1.17** should have in front of them. `docs/EXCLUSIONS.md`
 is the complete one - 130 refusal sites on 2026-10-17 (131 on 2026-10-08),
 each citing the source line that refuses it, and `make test` fails when the two
 disagree. The heading
