@@ -199,6 +199,17 @@ std::string Parser::qualifyForLookup(const std::string &name,
     // still be a name a using-declaration put in `std`, and only the alias says
     // what it stands for.
     if (name.find("::") != std::string::npos) {
+        // [basic.lookup.qual]/1: the first component is looked up unqualified, so
+        // `inner::S` inside `outer` is `outer::inner::S` - the enclosing namespaces
+        // innermost first, then the ones a using-directive opened.
+        for (std::size_t i = namespaceStack_.size(); i-- > 0; ) {
+            std::string prefix;
+            for (std::size_t k = 0; k <= i; k++) prefix += namespaceStack_[k] + "::";
+            if ((this->*exists)(prefix + name)) return prefix + name;
+        }
+        for (std::size_t i = usingNamespaces_.size(); i-- > 0; )
+            if ((this->*exists)(usingNamespaces_[i] + "::" + name))
+                return usingNamespaces_[i] + "::" + name;
         const std::string aliased = followUsingDeclaration(name);
         return aliased != name && (this->*exists)(aliased) ? aliased : name;
     }
@@ -221,6 +232,20 @@ std::string Parser::qualifyForLookup(const std::string &name,
     return name;
 }
 
+std::string Parser::namespaceNamed(const std::string &first) const {
+    // A nearer namespace of the same name hides a file-scope one, so the enclosing
+    // namespaces are asked first, innermost out.
+    for (std::size_t i = namespaceStack_.size(); i-- > 0; ) {
+        std::string prefix;
+        for (std::size_t k = 0; k <= i; k++) prefix += namespaceStack_[k] + "::";
+        if (namespaces_.count(prefix + first)) return prefix + first;
+    }
+    for (std::size_t i = usingNamespaces_.size(); i-- > 0; )
+        if (namespaces_.count(usingNamespaces_[i] + "::" + first))
+            return usingNamespaces_[i] + "::" + first;
+    return namespaces_.count(first) ? first : std::string();
+}
+
 const Type *Parser::findGlobalTypedef(const std::string &name) const {
     auto it = typedefIndex_.find(name);
     return it == typedefIndex_.end() ? nullptr : typedefs_[it->second].type;
@@ -232,6 +257,16 @@ const Type *Parser::findTypedef(const std::string &name) const {
     // local scope is a table of its own rather than an entry in the global one.
     auto local = localTypes_.find(name);
     if (local != localTypes_.end()) return local->second;
+
+    // A qualified name's first component is found innermost first, so a nearer
+    // `inner::S` hides one at file scope before the name as written is tried.
+    if (name.find("::") != std::string::npos && !namespaceStack_.empty()) {
+        const std::string key = qualifyForLookup(name, &Parser::hasTypeNamed);
+        if (key != name) {
+            auto q = typedefIndex_.find(key);
+            if (q != typedefIndex_.end()) return typedefs_[q->second].type;
+        }
+    }
 
     auto it = typedefIndex_.find(name);
     if (it != typedefIndex_.end()) return typedefs_[it->second].type;
@@ -478,7 +513,7 @@ bool Parser::atDeclarationStart() const {
         // is a statement and `N::S s;` is a declaration, and only the walk
         // below tells them apart.
         if ((named != nullptr && named->isStructOrUnion()) ||
-            namespaces_.find(peek().text) != namespaces_.end()) {
+            !namespaceNamed(peek().text).empty()) {
             // ...**unless the qualified name is itself a type**: it declares only
             // where the name *stops* at one. `Outer::Inner x;` declares an x;
             // `Outer::Inner::shared = 1;` goes on past the type and assigns.
