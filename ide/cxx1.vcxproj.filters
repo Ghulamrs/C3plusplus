@@ -22,6 +22,7 @@
     <ClCompile Include="..\src\parser\Parser.cpp"><Filter>Source Files\parser</Filter></ClCompile>
     <ClCompile Include="..\src\parser\ParserClass.cpp"><Filter>Source Files\parser</Filter></ClCompile>
     <ClCompile Include="..\src\parser\ParserConst.cpp"><Filter>Source Files\parser</Filter></ClCompile>
+    <ClCompile Include="..\src\parser\ParserDependent.cpp"><Filter>Source Files\parser</Filter></ClCompile>
     <ClCompile Include="..\src\parser\ParserExpr.cpp"><Filter>Source Files\parser</Filter></ClCompile>
     <ClCompile Include="..\src\parser\ParserExprCall.cpp"><Filter>Source Files\parser</Filter></ClCompile>
     <ClCompile Include="..\src\parser\ParserExprLambda.cpp"><Filter>Source Files\parser</Filter></ClCompile>

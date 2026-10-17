@@ -51,6 +51,8 @@ private:
         bool guardsJump = false;
         // Which object this is: two locals of one function may share a frame slot once the first's scope has closed.
         int serial = 0;
+        // Its position among a trailing return type's parameters, unnamed ones counted - `fp_`, `fp0_`.
+        int trailingParam = -1;
     };
 
     // A frame slot a closed scope gave back, for a later local of exactly that stored type: `FreeSlot`, in `freeSlots_`.
@@ -1561,6 +1563,19 @@ private:
     // Does this type mention a template parameter - the one test the pattern read's stand-ins ask.
     bool dependentType(const Type *t) const;
     bool dependentArgs(const std::vector<TemplateArg> &args) const;
+    // **Expression SFINAE**: an expression over a pattern's parameters, read as a tree that types
+    // nothing (ParserDependent.cpp). `angle` stops at an argument list's `>`; `comma` lets `,` in.
+    bool dependentAhead(bool angle) const;
+    const DepExpr *dependentExpression(bool angle, bool comma);
+    const DepExpr *depAssignment(bool angle);
+    const DepExpr *depBinary(int least, bool angle);
+    const DepExpr *depUnary(bool angle);
+    const DepExpr *depPostfix(bool angle);
+    const DepExpr *depPrimary(bool angle);
+    const DepExpr *depCast(const Type *to);
+    const DepExpr *depNode(DepExpr e);
+    void depRefuse(std::size_t pos, const std::string &what);
+    std::string depText(std::size_t from, std::size_t to) const;
     // The function an expression designates as an lvalue, or null.
     const Type *functionDesignated(const Expr &e) const;
     // `$this` - the member a `[this]` capture holds.
@@ -1896,7 +1911,6 @@ private:
     const Type *readTrailingReturn(std::size_t paramsOpen);
     std::size_t skipFunctionQualifiers(std::size_t i) const;
     bool autoBeforeQualifiedName() const;
-    void refuseTemplateTrailingDecltype();
     bool trailingArrowAhead() const;
     StmtPtr delegatingCall(const Declared &d, const Type *cls, std::vector<ExprPtr> args,
                            std::size_t pos, std::size_t entries);

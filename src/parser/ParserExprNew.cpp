@@ -140,6 +140,7 @@ ExprPtr Parser::classTemporary(const Type *cls, std::size_t pos) {
         // Expiring, whichever of the three shapes below answers - the same
         // mark the constructor branch sets, for the same reason.
         obj->setXvalue();
+        obj->setDeclCategory(Expr::Category::Prvalue);
         if (args.empty()) {
             // **[dcl.init]/8: `P()` value-initialises, and for a class with no
             // user-provided constructor that means zeroing it.** The slot was
@@ -158,6 +159,7 @@ ExprPtr Parser::classTemporary(const Type *cls, std::size_t pos) {
             ExprPtr made(new Unary('*', std::move(both)));
             made->setType(plain);
             made->setXvalue();
+            made->setDeclCategory(Expr::Category::Prvalue);
             return made;
         }
         checkAssignable(*args[0], plain, pos, "this temporary");
@@ -172,6 +174,7 @@ ExprPtr Parser::classTemporary(const Type *cls, std::size_t pos) {
         ExprPtr made(new Unary('*', std::move(both)));
         made->setType(plain);
         made->setXvalue();
+        made->setDeclCategory(Expr::Category::Prvalue);
         return made;
     }
 
@@ -367,7 +370,11 @@ ExprPtr Parser::aggregateTemporary(const Type *plain, Init &in, std::size_t pos)
     }
     ExprPtr obj(Var::local(name, off));
     obj->setType(plain);
-    if (chain == nullptr) { obj->setXvalue(); return obj; }
+    if (chain == nullptr) {
+        obj->setXvalue();
+        obj->setDeclCategory(Expr::Category::Prvalue);
+        return obj;
+    }
     ExprPtr at(new Unary('&', std::move(obj)));
     at->setType(types_.pointerTo(plain));
     ExprPtr both(new Comma(std::move(chain), std::move(at)));
@@ -375,6 +382,7 @@ ExprPtr Parser::aggregateTemporary(const Type *plain, Init &in, std::size_t pos)
     ExprPtr made(new Unary('*', std::move(both)));
     made->setType(plain);
     made->setXvalue();
+    made->setDeclCategory(Expr::Category::Prvalue);
     return made;
 }
 
@@ -760,6 +768,7 @@ ExprPtr Parser::constructTemporary(const Type *plain, const Signature &ctor,
     // the compiler is told.** The lowering reads as an ordinary lvalue, so without
     // it a temporary passed by value reached for the copy constructor.
     made->setXvalue();
+    made->setDeclCategory(Expr::Category::Prvalue);
     return made;
 }
 

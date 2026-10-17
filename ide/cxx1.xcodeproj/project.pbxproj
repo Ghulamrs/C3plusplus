@@ -17,6 +17,7 @@
 		781C436E6FE3C805E913584B /* Parser.cpp in Sources */ = {isa = PBXBuildFile; fileRef = AE33A216B5D8537C37B1C11B /* Parser.cpp */; };
 		0C0A49252B10DC314A9F94DE /* ParserClass.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 67C0D31628F1AE770DA763B0 /* ParserClass.cpp */; };
 		05C9ABB097EDE7A7622CEDFA /* ParserConst.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 63C98F684D262AB060AA2828 /* ParserConst.cpp */; };
+		E3415BAD135DF55C276A1D5B /* ParserDependent.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 04AB44A452144A123C7F3B0E /* ParserDependent.cpp */; };
 		0F66087E672AC554777D6939 /* ParserExpr.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C81BCDFDB0EEE96044A0E70D /* ParserExpr.cpp */; };
 		100487773F202353D4B4D2FE /* ParserExprCall.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 003FEF6EDE3829A29053145B /* ParserExprCall.cpp */; };
 		E4C59F458413CA1A0F2D44F8 /* ParserExprLambda.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F7E14BA7B844D82CA1511880 /* ParserExprLambda.cpp */; };
@@ -79,6 +80,7 @@
 		AE33A216B5D8537C37B1C11B /* Parser.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Parser.cpp; path = "../src/parser/Parser.cpp"; sourceTree = "<group>"; };
 		67C0D31628F1AE770DA763B0 /* ParserClass.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = ParserClass.cpp; path = "../src/parser/ParserClass.cpp"; sourceTree = "<group>"; };
 		63C98F684D262AB060AA2828 /* ParserConst.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = ParserConst.cpp; path = "../src/parser/ParserConst.cpp"; sourceTree = "<group>"; };
+		04AB44A452144A123C7F3B0E /* ParserDependent.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = ParserDependent.cpp; path = "../src/parser/ParserDependent.cpp"; sourceTree = "<group>"; };
 		C81BCDFDB0EEE96044A0E70D /* ParserExpr.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = ParserExpr.cpp; path = "../src/parser/ParserExpr.cpp"; sourceTree = "<group>"; };
 		003FEF6EDE3829A29053145B /* ParserExprCall.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = ParserExprCall.cpp; path = "../src/parser/ParserExprCall.cpp"; sourceTree = "<group>"; };
 		F7E14BA7B844D82CA1511880 /* ParserExprLambda.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = ParserExprLambda.cpp; path = "../src/parser/ParserExprLambda.cpp"; sourceTree = "<group>"; };
@@ -312,6 +314,7 @@
 				2D10825A2D722016661BDF14 /* Parser.h */,
 				67C0D31628F1AE770DA763B0 /* ParserClass.cpp */,
 				63C98F684D262AB060AA2828 /* ParserConst.cpp */,
+				04AB44A452144A123C7F3B0E /* ParserDependent.cpp */,
 				C81BCDFDB0EEE96044A0E70D /* ParserExpr.cpp */,
 				003FEF6EDE3829A29053145B /* ParserExprCall.cpp */,
 				F7E14BA7B844D82CA1511880 /* ParserExprLambda.cpp */,
@@ -384,6 +387,7 @@
 				781C436E6FE3C805E913584B /* Parser.cpp in Sources */,
 				0C0A49252B10DC314A9F94DE /* ParserClass.cpp in Sources */,
 				05C9ABB097EDE7A7622CEDFA /* ParserConst.cpp in Sources */,
+				E3415BAD135DF55C276A1D5B /* ParserDependent.cpp in Sources */,
 				0F66087E672AC554777D6939 /* ParserExpr.cpp in Sources */,
 				100487773F202353D4B4D2FE /* ParserExprCall.cpp in Sources */,
 				E4C59F458413CA1A0F2D44F8 /* ParserExprLambda.cpp in Sources */,

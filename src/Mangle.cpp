@@ -423,6 +423,14 @@ public:
             out += 'E';
             return;
         }
+        // **An argument that is an expression of the parameters**, `X <expression> E` -
+        // measured: `enable_if<sizeof(T) == 4, int>` is `9enable_ifIXeqstT_Li4EEiE`.
+        if (a.expr != nullptr) {
+            out += 'X';
+            expression(a.expr);
+            out += 'E';
+            return;
+        }
         // **A non-type parameter as an argument, `V<N>` in a pattern**: written
         // as the expression `X T_ E` - the parameter spelled `T_`, `T0_`, `T1_`
         // for indices 0, 1, 2. Measured: _ZNK1VILi4EE4headILi3EEES_IXT_EEv.
@@ -442,6 +450,81 @@ public:
             out += std::to_string(static_cast<unsigned long long>(a.value));
         else if (a.value < 0) { out += 'n'; out += std::to_string(0ULL - static_cast<unsigned long long>(a.value)); }
         else             { out += std::to_string(a.value); }
+        out += 'E';
+    }
+
+    // **An <expression> of the Itanium ABI, a preorder walk of the tree**, every production measured
+    // with clang (docs/mend-1.14/expression-sfinae-design.md, 1.2). A type operand goes through
+    // type() and so is a candidate; an operator, a literal, `fp_` and an unresolved name are not.
+    void expression(const DepExpr *e) {
+        if (!ok) return;
+        switch (e->op) {
+        case DepExpr::Literal:
+            literal(e);
+            return;
+        case DepExpr::TemplateParam:
+            out += 'T';
+            if (e->index > 0) out += std::to_string(e->index - 1);
+            out += '_';
+            return;
+        case DepExpr::FunctionParam:
+            out += "fp";
+            if (e->index > 0) out += std::to_string(e->index - 1);
+            out += '_';
+            return;
+        case DepExpr::SizeofType:  out += "st"; type(e->type); return;
+        case DepExpr::SizeofExpr:  out += "sz"; expression(e->kids[0]); return;
+        case DepExpr::Operator:
+            out += e->code;
+            for (const DepExpr *k : e->kids) expression(k);
+            return;
+        case DepExpr::Member:
+        case DepExpr::Arrow:
+            out += e->op == DepExpr::Member ? "dt" : "pt";
+            expression(e->kids[0]);
+            sourceName(e->name);
+            return;
+        case DepExpr::Call:
+            out += "cl";
+            for (const DepExpr *k : e->kids) expression(k);
+            out += 'E';
+            return;
+        case DepExpr::UnresolvedName:     sourceName(e->name); return;
+        case DepExpr::QualifiedParamName: out += "sr"; type(e->type); sourceName(e->name); return;
+        case DepExpr::Cast:       out += "cv"; type(e->type); expression(e->kids[0]); return;
+        case DepExpr::StaticCast: out += "sc"; type(e->type); expression(e->kids[0]); return;
+        case DepExpr::CastList:
+            out += "cv";
+            type(e->type);
+            out += '_';
+            for (const DepExpr *k : e->kids) expression(k);
+            out += 'E';
+            return;
+        }
+    }
+
+    void sourceName(const std::string &n) { out += std::to_string(n.size()); out += n; }
+
+    // `L <type> <value> E`: an integer as its value, `true` as 1, a floating one as its IEEE bits in
+    // lower-case hex - `Ld4010000000000000E` for 4.0, `Lf3fc00000E` for 1.5f.
+    void literal(const DepExpr *e) {
+        out += 'L';
+        type(e->type);
+        if (e->floating) {
+            static const char hex[] = "0123456789abcdef";
+            const int digits = e->type->kind() == Kind::Float ? 8 : 16;
+            const unsigned long long bits = static_cast<unsigned long long>(e->value);
+            for (int i = digits - 1; i >= 0; i--) out += hex[(bits >> (4 * i)) & 15];
+        } else if (e->type->kind() == Kind::UInt || e->type->kind() == Kind::ULong ||
+                   e->type->kind() == Kind::ULongLong || e->type->kind() == Kind::UChar ||
+                   e->type->kind() == Kind::UShort) {
+            out += std::to_string(static_cast<unsigned long long>(e->value));
+        } else if (e->value < 0) {
+            out += 'n';
+            out += std::to_string(0ULL - static_cast<unsigned long long>(e->value));
+        } else {
+            out += std::to_string(e->value);
+        }
         out += 'E';
     }
 
@@ -553,6 +636,17 @@ private:
             type(t->pointee());
             out += std::to_string(t->tag().size());
             out += t->tag();
+            out += 'E';
+            subs_.push_back(Sub{ t, std::string() });
+            return;
+        }
+
+        // **`decltype(e)` in a pattern is a type, and the expression is its spelling**: `Dt` for an
+        // id-expression or a member access, `DT` otherwise, a candidate as a whole pushed at its E -
+        // measured: `-> decltype(t.size())` is `DTcldtfp_4sizeEE`, `-> decltype(t.v)` `Dtdtfp_1vE`.
+        if (t->kind() == Kind::DependentExpr) {
+            out += t->dependentIdExpression() ? "Dt" : "DT";
+            expression(t->dependentExpr());
             out += 'E';
             subs_.push_back(Sub{ t, std::string() });
             return;

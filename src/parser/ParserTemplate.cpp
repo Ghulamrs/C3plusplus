@@ -166,10 +166,9 @@ std::string Parser::templatedName(const std::vector<TemplateParam> &params,
     scratch.afterParams = at_;
     std::vector<const Type *> binding(params.size());
     std::vector<long long> values(params.size(), 1);
+    // A non-type parameter stands for itself too, or `enable_if<N == 3, int>` folds N to 1 here.
     for (std::size_t i = 0; i < params.size(); i++)
-        binding[i] = params[i].type == nullptr
-                         ? types_.templateParam(static_cast<int>(i))
-                         : params[i].type;
+        binding[i] = types_.templateParam(static_cast<int>(i));
     std::string name;
     readTemplateDeclaration(scratch, binding, values, &name, qualifier, nullptr,
                             construction);
@@ -345,7 +344,6 @@ const Type *Parser::readTemplateDeclaration(const TemplateDecl &decl,
         // `template <class T> auto f(T) -> T`: the pattern's return type is the trailing one.
         if (mentionsDeduced(written) && tokens_[skipFunctionQualifiers(at_)].is("->")) {
             at_ = skipFunctionQualifiers(at_);
-            refuseTemplateTrailingDecltype();
             d.type = types_.functionType(readTrailingReturn(paramsOpen), d.type->params(), variadic);
         }
     } else if (qualifier == nullptr) {
@@ -1039,6 +1037,18 @@ void Parser::templateArguments(const TemplateDecl &decl,
                 binding->push_back(pt);
                 values->push_back(0);
                 at_++;
+            } else if (patternOnly_ && dependentAhead(true)) {
+                // **An argument that is an expression of the parameters** - `sizeof(T) == 4`,
+                // `N + M` - is kept as the tree the Itanium name spells, `X...E`, and folds nothing.
+                const std::size_t from = at_;
+                DepExpr tree = *dependentExpression(true, false);
+                tree.text = depText(from, at_);
+                a.isType = false;
+                a.type = pt;
+                a.dependentValue = true;
+                a.expr = types_.intern(tree);
+                binding->push_back(pt);
+                values->push_back(0);
             } else {
                 const std::size_t argPos = peek().pos;
                 bool namesParam = false;
@@ -1095,6 +1105,7 @@ std::string Parser::specializationKey(const std::string &name,
             }
             key += "}";
         }
+        else if (args[i].expr != nullptr) key += "$X" + args[i].expr->key;
         else if (args[i].isParam)
             // A non-type parameter reference - `V<N>` in a pattern - keyed by
             // which parameter, or `V<N>` and `V<M>` would be one type.
@@ -1133,6 +1144,8 @@ Parser::instantiate(const TemplateDecl &decl,
     std::string key = display;
     for (std::size_t i = 0; i < fn->params().size(); i++)
         key += "#" + fn->params()[i]->describe();
+    // And which template: two differing only in `decltype(...)` returns were one key, the first.
+    key += "@" + std::to_string(decl.afterParams);
 
     if (const std::vector<std::size_t> *had = overloadsOf(key))
         return functions_[(*had)[0]];
@@ -1909,6 +1922,11 @@ bool Parser::matchPattern(const Type *pattern, const Type *arg,
             const TemplateArg &a = arg->templateArgs()[i];
             if (p.isType != a.isType) return false;
             if (!p.isType) {
+                // Two expressions are one argument only as one interned node: [temp.over.link]/5.
+                if (p.expr != nullptr || a.expr != nullptr) {
+                    if (p.expr != a.expr) return false;
+                    continue;
+                }
                 if (p.value != a.value) return false;
                 continue;
             }
@@ -2883,7 +2901,7 @@ void Parser::instantiateViableMemberTemplate(const TemplateDecl &mt,
 
 bool Parser::dependentArgs(const std::vector<TemplateArg> &args) const {
     for (const TemplateArg &a : args) {
-        if (a.isParam || a.dependentValue) return true;
+        if (a.isParam || a.dependentValue || a.expr != nullptr) return true;
         if (a.isPack) {
             for (const Type *m : a.pack)
                 if (dependentType(m)) return true;
@@ -2896,7 +2914,9 @@ bool Parser::dependentArgs(const std::vector<TemplateArg> &args) const {
 
 bool Parser::dependentType(const Type *t) const {
     for (int depth = 0; t != nullptr && depth < 64; depth++) {
-        if (t->kind() == Kind::TemplateParam || t->kind() == Kind::DependentMember) return true;
+        if (t->kind() == Kind::TemplateParam || t->kind() == Kind::DependentMember ||
+            t->kind() == Kind::DependentExpr)
+            return true;
         if (t->unqualified() != t) { t = t->unqualified(); continue; }
         if (t->isStructOrUnion()) return t->isSpecialization() && dependentArgs(t->templateArgs());
         if (t->kind() == Kind::Function) {

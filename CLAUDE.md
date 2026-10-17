@@ -13442,3 +13442,45 @@ Measured: Mac `make test` passes - run.sh 745/0, emit.sh 1896/0, names.sh 485/0,
 exclusions 131 sites 0/0, comment cap 0; `tools/feature-sweep` 72/22/0 of 94, the headline held; Linux
 box, g++: run.sh 745/0 at -O0 and -O2, tms6747.sh 464/0 at -O0 and -O2 on vm6747 and sim6747. Not run:
 the Windows box, closed at the user's word, and TI's simulators.
+
+## Expression SFINAE, and the decltype categories it needed, 2026-10-17
+
+**A function template's signature may hold an expression over its parameters**: `-> decltype(t.size())`,
+`decltype(T() + T()) h(T)`, `typename enable_if<sizeof(T) == 4, int>::type f(T)`, `V<N + M>`. Built from
+`docs/mend-1.14/expression-sfinae-design.md`. Half of it already worked - the substituted read folds
+`sizeof(int) == 4` and fails inside a `Trial` - and what stopped it was the *pattern* read, from which
+Itanium spells the expression itself (`_Z1gI1SEDTcldtfp_4sizeEET_`). `ParserDependent.cpp` reads an
+expression over dependent operands as a `DepExpr` tree, untyped, interned by structure; it becomes a
+`Kind::DependentExpr` (`decltype`) or a `TemplateArg::expr` (a non-type argument), and `Mangle.cpp`
+spells it: `X...E`, `Dt`/`DT...E` as a substitution candidate, operator codes, `fp_`, `T_`, literals
+(a floating one as its IEEE bits in hex), `st`, `sz`, `cv`, `sc`, `cl`, `dt`, `pt`, `sr`. Microsoft names
+are still spelled from the substituted signature and needed nothing. A form not measured - postfix
+`++`, a lambda, `new`, `typeid` - is refused by name, and a refusal inside a trial re-raises rather than
+dropping the candidate, as every refusal does. Every probe of the design agrees with clang's names on
+all three targets but the const-return ones (below).
+
+**`decltype` got its categories right on the way, and they were wrong outside templates too.**
+[dcl.type.simple]/4 answers `T` for a prvalue: `decltype(int(1))`, `decltype((int)x)`,
+`decltype(static_cast<int>(x))`, `decltype(+x)` and a class temporary all said `T &&` or `T &`, because
+the parser carries a temporary as an xvalue so it binds to `T &&`. `Expr::Category` is a mark read only
+by `decltype`; the casts and temporaries mark a prvalue, assignment and prefix `++` an lvalue, and an
+unparenthesised member access answers the member's declared type. Binding a reference to an
+assignment, `return t = t;` into `int &`, works now.
+
+**Two templates differing only in a `decltype` return were one candidate.** A specialization was keyed
+by its name, arguments and parameter types, so `measure(const T &) -> decltype(t.size())` and
+`-> decltype(t.length())` both keyed `measure<S>#const S &`, the second deduped to the first, and an
+ambiguity clang refuses was resolved silently. The key carries the template's position now.
+`tests/overload/sfinae-expression-ambiguous.cpp` found it on its first run.
+
+**Left, recorded**: a return type's top-level `const` is dropped from a Microsoft name
+(`?cf@@YAHXZ` where cl writes `?cf@@YA?BHXZ`), older than this round, in `docs/CONFORMANCE.md`; and
+`sizeof(T)` as an array bound in a signature is refused by name, its spelling not measured.
+`tools/feature-sweep` 75 compile, 21 refused by name, 0 naming nothing, of 96 (two rows added); SFINAE on
+an expression leaves the refused list, thirteen C++11 language rows remain, and the headline holds.
+
+Measured on the Mac: `make test` passes - run.sh 752/0, emit.sh 1928/0 with the golden at 0b55fc2
+3 of 1896 changed (template-nontype-expr's name, now clang's `VIXplT_T0_EE`) and 32 added, names.sh
+493/0, overload.sh 35/0, exclusions 130 sites 0/0, comment cap 0; preprocess.sh 21 agreed.
+Linux box, g++ under -Werror: run.sh 752/0 at -O0 and -O2, tms6747.sh 472/0 at -O0 and -O2 on vm6747
+and sim6747. Not run: the Windows box, closed at the user's word, and TI's simulators.
