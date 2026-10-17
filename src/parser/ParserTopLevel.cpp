@@ -837,9 +837,11 @@ void Parser::topLevel(Program &program) {
                 // the substituted signature, the split a free function template already makes.
                 const Type *patternFn = memberTemplatePattern_ != nullptr ? memberTemplatePattern_
                                                                            : fnType;
-                const char code = memberTemplateAccess_ == Access::Public ? 'Q'
-                                : memberTemplateAccess_ == Access::Protected ? 'I'
-                                                                             : 'A';
+                // `template <class T> static T f(T)`: no `this`, and cl spells it S, K or C.
+                const bool staticTemplate = sc == StorageStatic;
+                const char code = memberTemplateAccess_ == Access::Public ? (staticTemplate ? 'S' : 'Q')
+                                : memberTemplateAccess_ == Access::Protected ? (staticTemplate ? 'K' : 'I')
+                                                                             : (staticTemplate ? 'C' : 'A');
                 const bool ctor = d.name == localOf(d.qualifier);
                 std::string sym, why, c2;
                 bool ok;
@@ -871,6 +873,7 @@ void Parser::topLevel(Program &program) {
                     d.pos, false, d.qualifier, constThis,
                     memberTemplateAccess_, false });
                 functions_.back().fromTemplate = true;
+                functions_.back().isStaticMember = staticTemplate;
                 // **The defaults its parameter list just read.**
                 if (!pendingDefaults_.empty()) {
                     defaultArgs_[sym] = pendingDefaults_;

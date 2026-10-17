@@ -454,6 +454,11 @@ private:
         return obj != nullptr &&
                memberTemplates_.count(obj->unqualified()->tag() + "::" + name) != 0;
     }
+    // The class that declares `name` as a member template, `cls` or a base of it, or null.
+    const Type *memberTemplateOwner(const Type *cls, const std::string &name) const {
+        const Type *d = declaringClassOf(cls, name);
+        return d != nullptr && isMemberTemplate(d, name) ? d : nullptr;
+    }
     ExprPtr memberTemplateCall(ExprPtr object, const Type *obj,
                                const std::string &name, std::size_t pos);
     const Signature *instantiateMemberTemplate(

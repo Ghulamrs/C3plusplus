@@ -2372,7 +2372,10 @@ void Parser::refuseTemplateId() {
 // **A member function template call, v.head<3>().**
 ExprPtr Parser::memberTemplateCall(ExprPtr object, const Type *obj,
                                    const std::string &name, std::size_t pos) {
-    const Type *plain = obj->unqualified();
+    // The class whose scope declares it - `d.twice(3)` finds B's template through a D.
+    const Type *named = obj->unqualified();
+    const Type *plain = memberTemplateOwner(named, name);
+    if (plain == nullptr) plain = named;
     const std::vector<TemplateDecl> &templates = memberTemplates_[plain->tag() + "::" + name];
     TemplateDecl mt = templates.front();
 
@@ -2448,13 +2451,30 @@ ExprPtr Parser::memberTemplateCall(ExprPtr object, const Type *obj,
     const Signature chosen = *sig;
     applyDefaults(chosen, callArgs, pos);
 
+    // A static member template takes no `this`; an object it was named through is still evaluated.
+    if (chosen.isStaticMember) {
+        ExprPtr call = completeCall(name, chosen.symbol, nullptr, chosen.returns, chosen.params,
+                                    chosen.variadic, pos, std::move(callArgs), false);
+        if (object == nullptr || clonePure(*object) != nullptr) return call;
+        const Type *rt = call->type();
+        ExprPtr both(new Comma(std::move(object), std::move(call)));
+        both->setType(rt);
+        return both;
+    }
+    if (object == nullptr)
+        src_.fail(pos, "'" + plain->describe() + "::" + name + "' is a member function "
+                       "template that is not static, so it needs an object to be called on");
+
     if (obj->isConst() && !chosen.constThis)
         src_.fail(pos, "'" + name + "' is not a const member function, and this "
                        "object is const");
 
     const Type *pointee = chosen.constThis ? types_.withConst(plain) : plain;
     const Type *thisType = types_.pointerTo(pointee);
+    // `this` is the declaring base's address, which convert() moves to where that base sits.
     ExprPtr addr(new Unary('&', std::move(object)));
+    addr->setType(types_.pointerTo(obj->isConst() ? types_.withConst(named) : named));
+    if (plain != named) addr = convert(std::move(addr), thisType);
     addr->setType(thisType);
 
     std::vector<const Type *> full;
