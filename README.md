@@ -427,10 +427,6 @@ their bare name, so `a::twice(3)` can reach `b::twice`. Registered in `tests/ope
 definition, which C++ does not have. clang refuses it; registered in `tests/open`
 (`redefinition-of-variable`).
 
-**A return type's top-level `const` is dropped from a Microsoft name** - `const int f()` is
-`?f@@YAHXZ` where cl writes `?f@@YA?BHXZ`, so such a function compiled by cl does not link with
-cxx1's. Older than 1.15 and recorded in `docs/CONFORMANCE.md`.
-
 **Pointers to members** stop short of two things: a pointer to a *virtual*
 member function is refused by name (Compiler-Cppi has it), and `&D::f` for an
 `f` that D inherited is not found - write `&B::f`, which converts.

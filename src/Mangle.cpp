@@ -761,7 +761,7 @@ private:
 class Microsoft : public Mangler {
 public:
     // **The class as a type descriptor spells it**, `?AUBase@@`.
-    void classAsTypeName(const Type *t) { returnType(t); }
+    void classAsTypeName(const Type *t) { out += "?A"; type(t->unqualified()); }
     void anyType(const Type *t) { type(t); }   // a descriptor's pointee, `PEAUB@@`
 
     void vtableOffset(int offset) { number(offset); }   // a vcall thunk's vftable offset
@@ -1173,9 +1173,14 @@ private:
     }
 
     void returnType(const Type *t) {
-        // A class or an enumeration returned by value carries its
-        // cv-qualification in front of it; everything else is written as it
-        // stands. Measured: `Small pick(int)` is `?pick@@YA?AW4Small@@H@Z`.
+        // A return type that is not a pointer carries its top-level cv in front: `?A` for a class or an
+        // enumeration, `?B` for any const one - `const int f()` is `?f@@YA?BHXZ`, measured with clang for
+        // this ABI. A pointer writes its own cv, `QEAH` for `int *const`; the rest is written as it stands.
+        if (t->isConst() && !t->isPointer() && !t->isReference() && !t->isMemberPointer()) {
+            out += "?B";
+            type(t->unqualified());
+            return;
+        }
         if (t->isStructOrUnion() || t->isEnumeration()) out += "?A";
         type(t);
     }
@@ -1202,7 +1207,7 @@ private:
         // and an array carries its dimensions there instead.
         if (p->isFunction()) {
             out += "6A";
-            type(p->returns());
+            returnType(p->returns());   // `?A`/`?B` in front, as a function's own return - `P6A?AUS@@XZ`
             if (p->params().empty() && !p->isVariadicFn()) { out += "XZ"; return; }
             // **The argument table is one table for the whole name**, and a
             // parameter inside a function pointer's signature goes into it

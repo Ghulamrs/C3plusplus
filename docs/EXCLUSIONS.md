@@ -174,7 +174,7 @@ argument over a template's parameters in a signature, spelled as clang spells th
   template** - `src/parser/ParserType.cpp:532`
 - **`sizeof` of a template parameter in a signature outside a template argument
   or a `decltype`** - an array bound, `void f(T, int (*)[sizeof(T)])`, whose
-  Itanium spelling was not measured. `src/parser/ParserExpr.cpp:2681`
+  Itanium spelling was not measured. `src/parser/ParserExpr.cpp:2682`
 - **two-phase name lookup is not done, and that is a decision rather than a
   gap.** A template is instantiated by replaying its tokens, so every name in
   its body is looked up at instantiation - MSVC's old model - and cxx1
@@ -224,7 +224,7 @@ argument over a template's parameters in a signature, spelled as clang spells th
   thunk at every call through the base. `src/parser/ParserClass.cpp:102`
 - **a virtual function of a base after the first with no slot in the class's
   own vtable**, reached through the derived class -
-  `src/parser/ParserExpr.cpp:2529`
+  `src/parser/ParserExpr.cpp:2530`
 - **an attribute before a statement**, `[[x]] return 0;` - one before a
   declaration is read wherever [dcl.attr.grammar] places it, C++11's two change
   nothing and an unknown one is ignored (/5); `[[deprecated]]` is C++14.
@@ -488,7 +488,7 @@ judgement in a program. They are named here instead:
 - `src/parser/ParserType.cpp:212` - a base class that is not yet defined. An
   ordinary error: a derived object contains its base, so the base has to be
   complete.
-- `src/Mangle.cpp:752`, `src/Mangle.cpp:1307` - a type with no Itanium or
+- `src/Mangle.cpp:752`, `src/Mangle.cpp:1312` - a type with no Itanium or
   Microsoft linkage name. Internal: reaching either means a type was built that
   the mangler was never taught, which is a bug in this compiler and not a
   statement about the language.
