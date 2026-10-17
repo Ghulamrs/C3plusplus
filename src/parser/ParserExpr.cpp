@@ -655,6 +655,14 @@ struct FindBase {
 };
 
 ExprPtr Parser::primary(Program *program) {
+    // **`typename X<T>::type()` makes a temporary** - [temp.res]/3 says the name is a type,
+    // and the body replays with T bound, so the hint is dropped here as in a declaration.
+    if (peek().is("typename")) {
+        const std::size_t pos = peek().pos;
+        at_++;
+        if (!(peek().kind == TokenKind::Ident || peek().is("::")))
+            src_.fail(pos, "'typename' introduces a qualified type name, and this is not one");
+    }
     if (peek().is("typeid")) {
         std::size_t pos = peek().pos;
         at_++;
@@ -1305,6 +1313,22 @@ ExprPtr Parser::primary(Program *program) {
             if (s != nullptr) {
                 at_++;
                 return staticMemberRef(staticScope, *s, staticScope->tag(), pos);
+            }
+        }
+
+        // **A member function template called by its bare name** is `this->init(...)` too, and it
+        // has no declaration to find until it is instantiated, so it is asked for as a template.
+        if ((peekAt(1).is("(") || peekAt(1).is("<")) && !callsThroughObject &&
+            currentClass_ != nullptr && l == nullptr && g == nullptr) {
+            const Type *owner = currentClass_->unqualified();
+            const Local *self = findLocal("this");
+            if (isMemberTemplate(owner, name) && self != nullptr) {
+                at_++;                         // the name; memberTemplateCall reads from the '<' or '('
+                ExprPtr me(Var::local("this", self->offset));
+                me->setType(self->type);
+                ExprPtr obj(new Unary('*', std::move(me)));
+                obj->setType(self->type->pointee());
+                return memberTemplateCall(std::move(obj), owner, name, pos);
             }
         }
 

@@ -1050,6 +1050,7 @@ private:
 
     const Token &peek() const { return tokens_[at_]; }
     const Token &peekAt(std::size_t n) const;
+    bool endsInEmptyCall() const;
     bool consume(const char *s);
     void expect(const char *s);
     std::string expectIdent(const char *what);
