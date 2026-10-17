@@ -196,6 +196,10 @@ protected:
     }
 
     void resetBlocks(const std::vector<int> &parents);
+    // a body walked inside another (an inlined callee) numbers its blocks its own way: the caller's are set
+    // aside meanwhile, so the callee's openBlock/closeBlock find none and leave them alone
+    std::vector<DwarfBlock> takeBlocks() { std::vector<DwarfBlock> b; b.swap(blocks_); return b; }
+    void putBlocks(std::vector<DwarfBlock> b) { blocks_.swap(b); }
 
     void openBlock(int scope);
     void closeBlock(int scope);
