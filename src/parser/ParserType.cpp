@@ -2482,6 +2482,14 @@ Parser::Declared Parser::declarator(const Type *base, bool nameOptional,
         name = declaredName("a member name after '::'");
         if (destructor) name = "~" + name;
     }
+    // `int b::f()` inside `namespace a`: the qualifier's first name is found innermost first, `a::b`.
+    if (!qualifier.empty() && !namespaces_.count(qualifier)) {
+        const std::size_t cut = qualifier.find("::");
+        const std::string head = qualifier.substr(0, cut);
+        const std::string ns = namespaceNamed(head);
+        if (!ns.empty() && ns != head)
+            qualifier = ns + (cut == std::string::npos ? std::string() : qualifier.substr(cut));
+    }
 
     skipAttributes();
     // `int D::modes_[Count]`: the bound after a class's declarator-id is in its scope.
