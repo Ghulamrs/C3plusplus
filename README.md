@@ -169,6 +169,18 @@ x86_64-windows, where a class cannot be thrown yet and they print and abort inst
 delete`, the placement and nothrow forms, `std::bad_alloc` from the platform runtime, `typeid` and
 `dynamic_cast` all work.
 
+## What 1.11 changes
+
+The two defects GRIDEx2's showcase met (the Windows handoff `gridex2-2026-10-17c`):
+
+* **A skipped group expanded macros.** Every line of a group a conditional skips was expanded on its
+  own, so a function-like macro call spanning two lines there - an `assert` in a header included a
+  second time behind its include guard - was "missing its ')'", and a skipped `__COUNTER__` counted.
+  [cpp.cond]/6: a skipped line is scanned for comments and directives and nothing is expanded.
+* **A braced element of an `initializer_list` of a class with constructors**, `{{1, 2}, {3, 4}}`, is
+  built in place by the constructor its items choose ([over.match.list]): never an explicit one, and
+  each item checked for narrowing. It was refused by name; `docs/EXCLUSIONS.md` loses the entry.
+
 ## What 1.10 changes
 
 `-g` on tms6747: a variable of an inner block is written inside that block's `DW_TAG_lexical_block`,
@@ -271,10 +283,10 @@ defects below and nothing else; Compiler-Cppi has closed those too, with the
 vtable group, `_ZTv` thunks, VTT and construction vtables, and that work is
 not in 1.3.
 
-## Known shortcomings in 1.10
+## Known shortcomings in 1.11
 
 Everything here is measured and written down elsewhere in full; this is the
-short list a user of **1.10** should have in front of them. `docs/EXCLUSIONS.md`
+short list a user of **1.11** should have in front of them. `docs/EXCLUSIONS.md`
 is the complete one - 126 refusal sites on 2026-10-13 (131 on 2026-10-08),
 each citing the source line that refuses it, and `make test` fails when the two
 disagree. The heading

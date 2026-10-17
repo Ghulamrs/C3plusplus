@@ -13300,3 +13300,23 @@ also on sim6747, against TI's rts6740 and against rts6x.lib built by cpp11 and a
 check 192/0 with its release and its debug libraries); the RTS6x referee 445 agree, 0 differ, between
 sim6747 and TI's CCS 5.5 simulator on Windows; release-check PASS. The two TI tools and MASTER.SEAL are
 committed beside this release; RIDE stays 5.17, its own seal untouched.
+
+## Version 1.11, 2026-10-17: two defects the GRIDEx2 showcase met
+
+**A skipped group expanded macros, line by line.** The line loop handed every skipped line to
+`expandLine`, which it needs for the comment and raw-string state the next line inherits - and which
+also expanded names. A function-like call spanning two lines was then cut at its first line: a header
+included a second time behind its guard, holding a two-line `assert(...)`, was "missing its ')'", and
+`__COUNTER__` advanced in text that never compiles (1.10 printed 1 where clang prints 0). `skipping_`
+makes `expandText` copy every name through while the scan goes on - [cpp.cond]/6.
+
+**A braced element of an `initializer_list` of a class with constructors** is built in its backing-array
+slot by `listConstructor`, the same choice `P p{1, 2}` makes, under copy-list rules: an explicit
+constructor refused, each item checked for narrowing, defaults applied - no temporary and no copy.
+The case runs under the ledger and is written so elision cannot move its counts: a `P(6, 7)` element
+is a temporary cxx1 copies and clang elides, which C++11 allows either way.
+
+Measured: Mac make test (run.sh 721/0, emit.sh with the golden 0 of 1789 changed, names.sh, overload.sh,
+exclusions 125 sites 0/0, comment-lines 0), preprocess.sh 21 agreed, feature-sweep 71/23/0; Linux box,
+g++: run.sh 721/0 at -O0 and -O2, tms6747.sh 445/0 at -O0 and -O2 with the released asm6x 1.5, lnk6x
+1.3, sim6747 1.5, vm6747 1.4 and rts6x.lib built by this compiler, the two new cases among them.
