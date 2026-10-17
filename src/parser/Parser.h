@@ -1050,6 +1050,7 @@ private:
 
     const Token &peek() const { return tokens_[at_]; }
     const Token &peekAt(std::size_t n) const;
+    bool endsInEmptyCall() const;
     bool consume(const char *s);
     void expect(const char *s);
     std::string expectIdent(const char *what);
@@ -1904,6 +1905,8 @@ private:
     // name itself. `exists` says which table to ask, functions and variables differing.
     std::string qualifyForLookup(const std::string &name,
                                  bool (Parser::*exists)(const std::string &) const) const;
+    // The namespace a first component names, innermost out: `inner` in `outer` is "outer::inner".
+    std::string namespaceNamed(const std::string &first) const;
     // The name a using-declaration redirects `key` to, following a chain of them
     // and stopping at a fixed depth so that `using A::x;` and `using B::x;`
     // written into a cycle cannot hang the parser instead of failing a lookup.

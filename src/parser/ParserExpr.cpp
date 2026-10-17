@@ -655,6 +655,14 @@ struct FindBase {
 };
 
 ExprPtr Parser::primary(Program *program) {
+    // **`typename X<T>::type()` makes a temporary** - [temp.res]/3 says the name is a type,
+    // and the body replays with T bound, so the hint is dropped here as in a declaration.
+    if (peek().is("typename")) {
+        const std::size_t pos = peek().pos;
+        at_++;
+        if (!(peek().kind == TokenKind::Ident || peek().is("::")))
+            src_.fail(pos, "'typename' introduces a qualified type name, and this is not one");
+    }
     if (peek().is("typeid")) {
         std::size_t pos = peek().pos;
         at_++;
@@ -761,7 +769,8 @@ ExprPtr Parser::primary(Program *program) {
         // the rule R1 fixed for a name and this is the same rule for a *call*.
         const bool memberFirst =
             currentClass_ != nullptr && peekAt(1).is("(") &&
-            findMemberOwner(currentClass_, peek().text) != nullptr;
+            (findMemberOwner(currentClass_, peek().text) != nullptr ||
+             isMemberTemplate(currentClass_, peek().text));
         if (!memberFirst) return templateCall(program);
     }
 
@@ -1047,7 +1056,7 @@ ExprPtr Parser::primary(Program *program) {
     // class is a member, which the branch below already knows how to find. Asked
     // before the namespace is eaten, since eating it loses the start of the name.
     if (peek().kind == TokenKind::Ident && peekAt(1).is("::") &&
-        namespaces_.find(peek().text) != namespaces_.end() &&
+        !namespaceNamed(peek().text).empty() &&
         // **...unless what follows the type is a `(`**, which makes it a
         // temporary rather than the qualifier of a member: `std::vector<T>()`
         // belongs to this branch, `std::vector<T>::size_type` does not.
@@ -1055,7 +1064,7 @@ ExprPtr Parser::primary(Program *program) {
          peekAt(qualifiedTypeEndPastArgs()).is("(") ||
          peekAt(qualifiedTypeEndPastArgs()).is("{"))) {
         const std::size_t qpos = peek().pos;
-        std::string scope = peek().text;
+        std::string scope = namespaceNamed(peek().text);
         at_ += 2;
         while (peek().kind == TokenKind::Ident && peekAt(1).is("::") &&
                namespaces_.find(scope + "::" + peek().text) != namespaces_.end()) {
@@ -1305,6 +1314,24 @@ ExprPtr Parser::primary(Program *program) {
             if (s != nullptr) {
                 at_++;
                 return staticMemberRef(staticScope, *s, staticScope->tag(), pos);
+            }
+        }
+
+        // **A member function template called by its bare name** is `this->init(...)` too, and it
+        // has no declaration to find until it is instantiated, so it is asked for as a template.
+        if ((peekAt(1).is("(") || peekAt(1).is("<")) && !callsThroughObject &&
+            currentClass_ != nullptr && l == nullptr && g == nullptr) {
+            const Type *owner = currentClass_->unqualified();
+            const Local *self = findLocal("this");
+            // Beside an ordinary member of the name, overload resolution below ranks the two.
+            const bool alone = peekAt(1).is("<") || findMemberOwner(owner, name) == nullptr;
+            if (isMemberTemplate(owner, name) && self != nullptr && alone) {
+                at_++;                         // the name; memberTemplateCall reads from the '<' or '('
+                ExprPtr me(Var::local("this", self->offset));
+                me->setType(self->type);
+                ExprPtr obj(new Unary('*', std::move(me)));
+                obj->setType(self->type->pointee());
+                return memberTemplateCall(std::move(obj), owner, name, pos);
             }
         }
 

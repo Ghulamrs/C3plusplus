@@ -192,7 +192,8 @@ void Driver::usage(char *file) {
         "       -g writes a line table, so a debugger can stop on a line of C++\n"
         "         and step through it: DWARF on x86_64-linux and arm64-darwin,\n"
         "         CodeView on x86_64-windows in the gnu spelling (linked with\n"
-        "         /debug into a PDB); refused for tms6747 and for -masm=masm/ml64\n"
+        "         /debug into a PDB), cl6x's .dwpsn and .dwtag on tms6747;\n"
+        "         refused for -masm=masm/ml64, and on tms6747 with -O\n"
         "       -nologo leaves out the line this compiler prints before it\n"
         "         starts, which a build script may not want\n"
         "       -version says which release this is, and which seal file\n"
@@ -1019,8 +1020,12 @@ bool Driver::parseArguments(int argc, char **argv) {
 
     // -E: each input after phase 4, on stdout, and nothing compiled.
     if (preprocessOnly_) {
-        for (const std::string &in : inputs)
-            std::fputs(Preprocessor(in, searchPath_, macrosFor()).run().text().c_str(), stdout);
+        try {
+            for (const std::string &in : inputs)
+                std::fputs(Preprocessor(in, searchPath_, macrosFor()).run().text().c_str(), stdout);
+        } catch (const CompileFailed &) {
+            std::exit(1);  // the diagnostic is written; one thread here, so the exit is the verdict
+        }
         std::exit(0);
     }
 

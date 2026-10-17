@@ -1423,10 +1423,9 @@ bool Parser::deduceOne(const Type *pattern, const Type *arg,
     if (pattern->isPointer() && arg->isPointer())
         return deduceOne(pattern->pointee(), arg->pointee(), binding, values, why);
     if (pattern->isArray() && arg->isArray()) {
-        // **`T (&)[N]` against an `int[3]` gives N=3**, [temp.deduct.type]/8's
-        // `type[i]`. The binding only marks N deduced; the value is what is read.
-        // **Every level here**: an element is no argument and does not decay, and
-        // recursing would decay `int[4]` in `T (&)[M][N]` to an `int *`.
+        // **`T (&)[N]` against an `int[3]` gives N=3**, [temp.deduct.type]/8's `type[i]`; the binding
+        // marks N deduced and the value is what is read. Every level here: an element does not decay,
+        // and recursing would decay `int[4]` in `T (&)[M][N]` to an `int *`.
         while (pattern->isArray() && arg->isArray()) {
             const int j = pattern->boundParam();
             if (j >= 0 && static_cast<std::size_t>(j) < binding->size()) {
@@ -2217,6 +2216,17 @@ ExprPtr Parser::templateCall(Program *program) {
                     return classTemporary(self, pos);
                 }
         }
+        // **And before `::`**: `Tree::next(n)` inside Tree<T>'s members, its nested and derived
+        // classes is the road `Tree<T>::next(n)` takes - [temp.local]/1. At file scope nothing
+        // answers for the bare name and the refusal below stands.
+        if (peek().is("::")) {
+            if (const Type *self = findTypedef(name))
+                if (self->isStructOrUnion() && self->isSpecialization() &&
+                    self->templateName() == name) {
+                    at_++;
+                    return templateIdMember(self, pos);
+                }
+        }
         at_ = save;
         refuseTemplateId();
     }
@@ -2584,6 +2594,10 @@ ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
     (void)pos;
     const std::size_t mpos = peek().pos;
     const std::string member = declaredName("a member name");
+    // [class.qual]/2: `Tree::Tree` and `Tree<int>::Tree` name the constructor, not a type.
+    if (cls->isSpecialization() && member == cls->templateName())
+        src_.fail(mpos, "'" + cls->describe() + "::" + member + "' names the constructor, "
+                        "not a type - write '" + member + "(...)'");
     const std::string key = cls->tag() + "::" + member;
     // **`C<int>::T(3)` and `C<int>::Nested(1)`** - a member type, cast to or built as a temporary.
     if (peek().is("(") && overloadsOf(key) == nullptr)

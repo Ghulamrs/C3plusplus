@@ -1051,6 +1051,11 @@ void Parser::topLevel(Program &program) {
                                     "constants works");
                 baseArgs[baseKey] = std::move(args);
             } else if (const Member *m = memberOf->findMember(entry)) {
+                if (m->declaredIn != nullptr)
+                    src_.fail(epos, "member initialiser '" + entry + "' names a member of a "
+                                    "base of '" + d.qualifier + "' - the base's constructor "
+                                    "initialises it, and a list may name only this class's "
+                                    "own members and its direct bases");
                 if (memberExprs.count(entry))
                     src_.fail(epos, "'" + entry + "' is initialised twice");
                 // **`: m()` value-initialises the member** - [class.base.init] hands
@@ -1117,12 +1122,13 @@ void Parser::topLevel(Program &program) {
         const std::vector<Member> &all = memberOf->members();
         for (std::size_t i = 0; i < all.size(); i++) {
             const Member *m = &all[i];
+            // A base's members are in this class's list too, and its constructor built
+            // them; a list entry never names one ([class.base.init]/2), even by the name
+            // this class's own member hides it with.
+            if (m->declaredIn != nullptr) continue;
             std::map<std::string, std::vector<ExprPtr> >::iterator found =
                 memberExprs.find(m->name);
             if (found == memberExprs.end()) {
-                // A base's members are in this class's list too - see the walk
-                // in synthesizeDefaultCtor. The base's constructor built them.
-                if (memberFromBase(memberOf, *m)) continue;
                 StmtPtr one = memberInitialiser(d.qualifier, memberOf, *m,
                                                 thisOffset_, d.pos);
                 std::vector<ExprPtr> none;

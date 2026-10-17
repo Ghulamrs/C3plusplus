@@ -2043,11 +2043,9 @@ const Type *Parser::arraySuffix(const Type *base, std::size_t pos) {
             src_.fail(pos, "only the first dimension may be left empty - the "
                            "others decide how far one step moves");
 
-    // **An object this compiler cannot measure is refused where it is written.** Every
-    // size here is a signed 32-bit count, and an array that overflowed one used to be
-    // laid out anyway. Checked by division, so the check itself cannot overflow.
-    // **Not in a pattern**, whose `const T` no target can measure: the declaration is
-    // read again with the arguments in force, and checked then.
+    // **An object this compiler cannot measure is refused where it is written** - every size is a
+    // signed 32-bit count, checked by division so the check cannot overflow. **Not in a pattern**,
+    // whose `const T` no target can measure: the declaration is read again with its arguments.
     for (std::size_t i = dims.size(); i-- > 0; ) {
         const long long elem = patternOnly_ ? 0 : base->size(target_);
         if (dims[i] > 0 && elem > 0 && dims[i] > 2147483647LL / elem)

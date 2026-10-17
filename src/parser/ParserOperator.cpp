@@ -9,6 +9,23 @@
 #include <climits>
 #include <cstring>
 
+// Whether a token can begin the operand of a cast: a name, a literal, a prefix
+// operator or a bracket. `.`, `->`, a binary-only operator or a closer cannot.
+static bool beginsOperand(const Token &t) {
+    if (t.kind != TokenKind::Punct) return true;
+    static const char *const starts[] = { "(", "+", "-", "!", "~", "*", "&", "++", "--", "::", "[" };
+    for (const char *s : starts)
+        if (t.is(s)) return true;
+    return false;
+}
+
+// Whether the type-id just read ended `T()` - a function type, which the declarator
+// answers as T. `int (*)()` ends with its own `)` before the `()` and is not one.
+bool Parser::endsInEmptyCall() const {
+    return at_ >= 3 && tokens_[at_ - 1].is(")") && tokens_[at_ - 2].is("(") &&
+           !tokens_[at_ - 3].is(")");
+}
+
 // Answers with at_ where it was. A refusal that names a feature is an answer and is
 // reported; any other failure only says this parenthesis does not hold a type-id.
 bool Parser::parenHoldsTypeId() {
@@ -20,8 +37,12 @@ bool Parser::parenHoldsTypeId() {
             Trial trial(this);
             StorageClass psc;
             const Type *pt = specifiers(&psc);
-            declarator(pt, true);
-            typeId = peek().is(")");
+            const Type *dt = declarator(pt, true).type;
+            // **`(T())` is a type-id only where a cast could follow** - [dcl.ambig.res]/2 with
+            // what clang reads: `(S()).k` is a temporary, `(int()) + 1` an ill-formed cast. The
+            // declarator answers T for `T()`, so the tokens say it was a function type.
+            typeId = peek().is(")") &&
+                     (!(dt->isFunction() || endsInEmptyCall()) || beginsOperand(peekAt(1)));
         } catch (const SubstitutionFailure &f) {
             if (f.unsupported) src_.fail(f.pos, f.why);
             typeId = false;
@@ -39,6 +60,9 @@ ExprPtr Parser::castExpr() {
         StorageClass sc;
         const Type *to = specifiers(&sc);
         to = declarator(to, true).type;
+        if (to->isFunction() || endsInEmptyCall())
+            src_.fail(openPos, "a cast to a function type is ill-formed - [expr.cast]/4 has "
+                               "no conversion to one; cast to a pointer to function");
         expect(")");
         ExprPtr v = decay(castExpr());
         if (to->isVoid()) return ExprPtr(new Cast(to, std::move(v)));
