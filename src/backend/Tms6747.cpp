@@ -1815,7 +1815,9 @@ void Tms6747::walkInPlace(const Function &fn) {
     returnLabel_ = label("inline", nextLabel());
     if (planning_) planLocals(fn);
     emitParams(fn);
+    std::vector<DwarfBlock> outer = takeBlocks();           // -g: the callee's blocks are not the caller's
     fn.body().accept(*this);
+    putBlocks(std::move(outer));
     // A return as the body's last statement branches to the next line: dropped.
     const std::string tail = "\tB\t" + returnLabel_ + "\n\tNOP\t5\n";
     std::string text = out_.str();
@@ -2142,9 +2144,10 @@ void Tms6747::walkBody(const Function &fn) {
     if (planning_) { pushCrossesCall_.clear(); pushEvents_.clear(); pushLoop_.clear(); }
     frame_ = relayout_ ? placedTop_ : align8(fn.frameSize());
     inlineBase_ = align8(fn.frameSize());
-    // A pad sets SP from the frame as it stands: a function with one reserves room for any callee walked
-    // in place - unless the frame is laid out, which places every inlined slot and never grows.
+    // A pad sets SP from the frame as it stands, so room for any callee walked in place - unless the frame is laid out.
     if (!relayout_ && inliner_ && fn.hasLandingPads()) frame_ += kInlineDepth * align8(inliner_->largestFrame());
+    // -g: each block's begin and end label, so its variables can be tagged with the code they live in
+    if (lineSource() != nullptr) resetBlocks(fn.blocks());
     fn.body().accept(*this);
     // Falling off the end returns 0 - main's C99 meaning, and what the other
     // backends do for every function - or the result pointer for a struct.
@@ -2153,15 +2156,22 @@ void Tms6747::walkBody(const Function &fn) {
     else out_ << "\tZERO\tA4\n";
 }
 
-// -g: parameters, then locals, in TI's .dwtag spelling for sim6747 and vm6747 (GRIDEd docs\C6747-LOCALS-DESIGN.md).
-// A frame variable is named from A15 - TI's DWARF register 15 - at the slot localAddr forms; one kept in a
-// register, or given no room, is left out for now; a static one by its symbol.
+// -g: parameters, then locals, in TI's .dwtag spelling for sim6747 and vm6747 (GRIDEd docs\C6747-LOCALS-DESIGN.md): a frame
+// variable at its slot from A15 (DWARF register 15), one kept in a register or given no room left out, a static by its symbol.
+// An inner block's variables go inside its DW_TAG_lexical_block (phase F), so a debugger lists them only while the stop is in it.
 void Tms6747::emitVariables(const Function &fn) {
     if (lineSource() == nullptr) return;
     out_ << "\t.dwtag\tDW_TAG_subprogram, DW_AT_name(\"" << fn.name() << "\"), DW_AT_low_pc(" << fn.symbol() << ")\n";
+    emitScope(fn, 0);
+    out_ << "\t.dwendtag\n";
+}
+
+// a block's own variables (the function's, scope 0, parameters first), then each inner block that declares
+// something: as a lexical block when it has code of its own, else folded into this one
+void Tms6747::emitScope(const Function &fn, int scope) {
     for (int pass = 0; pass < 2; pass++)
         for (const Local &l : fn.locals()) {
-            if (l.isParam != (pass == 0) || l.name.empty() || l.type == nullptr) continue;
+            if (l.scope != scope || l.isParam != (pass == 0) || l.name.empty() || l.type == nullptr) continue;
             std::string where;
             if (!l.staticName.empty()) where = "DW_OP_addr " + l.staticName;
             else {
@@ -2176,7 +2186,22 @@ void Tms6747::emitVariables(const Function &fn) {
                  << "DW_AT_location[" << where << "]\n";
             noteType(l.type);
         }
-    out_ << "\t.dwendtag\n";
+    const std::vector<DwarfBlock> &bs = blocks();
+    for (std::size_t b = 1; b < bs.size(); b++) {
+        if (bs[b].parent != scope || !declaresAnything(fn, static_cast<int>(b))) continue;
+        if (bs[b].begin.empty() || bs[b].end.empty()) { emitScope(fn, static_cast<int>(b)); continue; }
+        out_ << "\t.dwtag\tDW_TAG_lexical_block, DW_AT_low_pc(" << bs[b].begin << "), DW_AT_high_pc(" << bs[b].end << ")\n";
+        emitScope(fn, static_cast<int>(b));
+        out_ << "\t.dwendtag\n";
+    }
+}
+
+bool Tms6747::declaresAnything(const Function &fn, int scope) const {
+    for (const Local &l : fn.locals()) if (l.scope == scope && !l.name.empty()) return true;
+    const std::vector<DwarfBlock> &bs = blocks();
+    for (std::size_t b = 1; b < bs.size(); b++)
+        if (bs[b].parent == scope && declaresAnything(fn, static_cast<int>(b))) return true;
+    return false;
 }
 
 // A type and every type it is made of, each once: an array's element, what a pointer or a reference
