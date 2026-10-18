@@ -29,7 +29,7 @@ Parser::Init Parser::parseInitialiser() {
         // of an `Init` below takes no items as "zero it", so none tests for this.
         if (consume("}")) return in;
         for (;;) {
-            in.items.push_back(parseInitialiser());
+            if (!expandPackInitialiser(in.items)) in.items.push_back(parseInitialiser());
             if (consume("}")) break;
             expect(",");
             if (consume("}")) break;

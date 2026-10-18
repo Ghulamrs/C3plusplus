@@ -318,6 +318,14 @@ private:
     void skipBracedBlock();
 
     // ---- Rung 5.1: the template table, and nothing instantiated ----
+    // **A pack's members as bound**: the types, and for a non-type pack the values beside them,
+    // the types then being the element type once per value. One per template parameter.
+    struct PackMembers : std::vector<const Type *> {
+        std::vector<long long> values;
+        PackMembers() {}
+        PackMembers(const std::vector<const Type *> &t) : std::vector<const Type *>(t) {}
+    };
+    typedef std::vector<PackMembers> Packs;
     // One template parameter as written: `class T` / `typename T`, or a non-type one
     // such as `int N`. Nothing is bound to either yet.
     struct TemplateParam {
@@ -520,7 +528,7 @@ private:
         const Type *fn = nullptr;           // the substituted signature
         std::vector<const Type *> binding;  // by parameter index
         std::vector<long long> values;      // non-type arguments, same index
-        std::vector<std::vector<const Type *> > packs;   // same index again
+        Packs packs;   // same index again
         std::size_t start = 0;              // the template's own tokens
         std::size_t pos = 0;                // where it was first asked for
         bool emitted = false;
@@ -608,8 +616,8 @@ private:
                                  const std::vector<long long> &values,
                                  const std::vector<TemplateArg> &args,
                                  std::size_t pos,
-                                 const std::vector<std::vector<const Type *> > &packs =
-                                     std::vector<std::vector<const Type *> >());
+                                 const Packs &packs =
+                                     Packs());
     void instantiatePending();
     bool memberIsUsed(const std::string &key) const;
     // "twice<int>" - the table key and what the diagnostics call it.
@@ -622,12 +630,25 @@ private:
                                         const std::vector<long long> &values,
                                         std::string *name,
                                         std::string *qualifier = nullptr,
-                                        const std::vector<std::vector<const Type *> > *packs = nullptr,
+                                        const Packs *packs = nullptr,
                                         bool *construction = nullptr);
     // The type parameters bound now, counted: `X::type` as a type needs `typename` (A27).
     std::map<std::string, int> boundTypeParams_;
     // The non-type parameters bound now, by name: in their template's scope they hide an enclosing one.
     std::map<std::string, int> boundValueParams_;
+    // **A pack while a specialization is being read**: the types it was given and, once its function
+    // parameters have been made, the names they were given - `rest` becomes `rest$0` and `rest$1`, and
+    // `rest...` in a call is those two names. A non-type pack holds its values beside, of `valueType`.
+    struct PackBinding {
+        std::vector<const Type *> types;
+        std::vector<std::string> names;
+        bool isValue = false;
+        const Type *valueType = nullptr;
+        std::vector<long long> values;
+        bool standsForItself() const {
+            return types.size() == 1 && types[0]->kind() == Kind::TemplateParam;
+        }
+    };
     // What a binding does to the two name tables, and how to put them back.
     struct Shadow {
         std::string name;
@@ -635,8 +656,7 @@ private:
         bool isPack = false;
         bool had = false;
         std::size_t was = 0;
-        std::vector<const Type *> hadPack;
-        std::vector<std::string> hadNames;
+        PackBinding hadPack;
         // A non-type parameter bound as a pattern reference rather than a value
         // - `N` in `V<N>` while a signature is read for deduction.
         bool isParamRef = false;
@@ -646,13 +666,6 @@ private:
         bool isTemplate = false;
         bool hadTemplate = false;
         TemplateDecl hadDecl;
-    };
-    // **A pack while a specialization is being read**: the types it was given and, once
-    // its function parameters have been made, the names they were given. `rest` becomes
-    // `rest$0` and `rest$1`, and `rest...` in a call is those two names.
-    struct PackBinding {
-        std::vector<const Type *> types;
-        std::vector<std::string> names;
     };
     std::map<std::string, PackBinding> packs_;
     // While a signature is read as a pattern for deduction, a non-type parameter is bound here.
@@ -666,7 +679,7 @@ private:
     void bindTemplateParameters(const std::vector<TemplateParam> &params,
                                 const std::vector<const Type *> &binding,
                                 const std::vector<long long> &values,
-                                const std::vector<std::vector<const Type *> > &packs,
+                                const Packs &packs,
                                 std::vector<Shadow> *undo);
     // [temp.deduct.type] rather than [temp.deduct.call]: this matches a template
     // *argument* against a pattern, where nothing decays and nothing may differ.
@@ -680,7 +693,7 @@ private:
                               const std::vector<TemplateArg> &args,
                               std::vector<const Type *> *binding,
                               std::vector<long long> *values,
-                              std::vector<std::vector<const Type *> > *packs,
+                              Packs *packs,
                               std::size_t pos);
     // [temp.class.order]: whether one pattern is at least as specialized as
     // another, which is asked by matching each against the other.
@@ -688,6 +701,7 @@ private:
                               const TemplateDecl::Partial &b) const;
     bool moreSpecialized(const TemplateDecl::Partial &a,
                          const TemplateDecl::Partial &b) const;
+    static bool mentionsPackExpansion(const Type *t);
     // `Box<T *>` after `template <class T> struct` - the argument list of a
     // partial specialization, read as patterns.
     void partialArguments(TemplateDecl::Partial *ps,
@@ -699,13 +713,14 @@ private:
                                  const std::vector<const Type *> &argTypes,
                                  std::vector<const Type *> *binding,
                                  std::vector<long long> *values,
-                                 std::vector<std::vector<const Type *> > *packs,
+                                 Packs *packs,
                                  std::string *why);
     // `values` receives a deduced non-type argument (the 3 in V<3>); it may be
     // null where only type parameters can occur (the `auto` path).
     bool deduceOne(const Type *pattern, const Type *arg,
                    std::vector<const Type *> *binding,
-                   std::vector<long long> *values, std::string *why) const;
+                   std::vector<long long> *values, std::string *why,
+                   Packs *packs = nullptr) const;
     // An argument's type as a parameter sees it.
     const Type *decayedType(const Type *a) const;
     // ---- WS-E1 (review 2026-10-08): forwarding references, F30, F31, F34, alias templates ----
@@ -719,6 +734,14 @@ private:
     const Type *wrapPackMember(const Type *member, int wrap);
     // `f(g(a)...)`, `std::forward<A>(a)...`: one argument per member, the pattern read once for each.
     bool expandPackPattern(std::vector<ExprPtr> &args);
+    // The same for `{ 0, Ns... }` in a braced list and `List<(Ns * 2)...>` in an argument list.
+    struct Init;
+    bool expandPackInitialiser(std::vector<Init> &items);
+    bool expandPackValues(TemplateArg &a);
+    // Where a pattern's `...` ends and how many members it expands to, and one member's tokens bound.
+    std::size_t packPatternEnd(bool angle, std::size_t *members) const;
+    void bindPatternMember(std::size_t from, std::size_t end, std::size_t m, std::vector<Shadow> *undo);
+    void checkNonTypeArgument(const Type *pt, long long v, std::size_t argPos) const;
     // `template <> int twice<int>(int)` - F31.
     bool functionExplicitSpecialization(std::size_t pos);
     // A deduction left parameter `i` unbound: its default, if it has one, replayed with the earlier ones bound.
@@ -760,7 +783,7 @@ private:
                            std::vector<const Type *> *binding,
                            std::vector<long long> *values,
                            std::vector<TemplateArg> *args,
-                           std::vector<std::vector<const Type *> > *packs = nullptr);
+                           Packs *packs = nullptr);
     // **A name declared as an object is not a template name.**
     bool isTemplateName(const std::string &name, bool qualified = false) const {
         if (templates_.find(name) == templates_.end()) return false;
@@ -788,13 +811,17 @@ private:
     std::vector<TemplateArg> argumentsFromBinding(const std::vector<TemplateParam> &params,
                                                   const std::vector<const Type *> &binding,
                                                   const std::vector<long long> &values,
-                                                  const std::vector<std::vector<const Type *> > &packs) const;
+                                                  const Packs &packs) const;
     // What the declaration after `template <...>` actually declares: a class template, a
     // function template, or a member of a class template defined outside it.
     // `qualifier` is the class for that last one and empty otherwise.
     std::string templatedName(const std::vector<TemplateParam> &params,
                               bool *isClass, std::string *qualifier,
-                              bool *construction = nullptr);
+                              bool *construction = nullptr, const Type **pattern = nullptr);
+    // [temp.param]/11: the first parameter after a pack, or npos; and the class template's refusal of one.
+    static std::size_t afterPack(const std::vector<TemplateParam> &params);
+    void refuseAfterPack(const std::vector<TemplateParam> &params);
+    void requireDeducibleAfterPack(const TemplateDecl &decl, const Type *fn);
     // `sawInit`, when given, says the declaration ended at a `;` having passed
     // an `=` at depth zero - which is a static data member of a class template
     // being *defined* out of line, not a member left undefined.
@@ -2298,7 +2325,7 @@ private:
     void instantiateViableMemberTemplate(const TemplateDecl &mt,
                                          const std::vector<const Type *> &argTypes, std::size_t pos);
     bool deduceFromArgument(const Type *param, const Type *arg, std::vector<const Type *> *binding,
-                            std::vector<long long> *values, std::string *why);
+                            std::vector<long long> *values, std::string *why, Packs *packs = nullptr);
     // `using X = T;` is an alias declaration and not a using-declaration: true if one was read.
     bool aliasDeclaration(const std::string &prefix);
     // ---- WS-C2 (review 2026-10-08): attributes read and ignored, [dcl.attr.grammar]/5 ----

@@ -14046,3 +14046,119 @@ ambiguous partial specialization (`Kind<C<int> >` beside `Kind<Box<T> >` for a
 `Kind<Box<int> >`) is the template-id's where clang's is the declarator's -
 the older refusal's position, unchanged; and clang's note at the argument for
 a kind mismatch is not written, only its error's position matched.
+
+## Non-type template parameter packs, 2026-10-18
+
+**[temp.param]/15 lets a pack be a pack of values**, `template <int... Ns>`, of
+any type a non-type parameter may have, and [temp.variadic] expands it wherever
+a type pack expands. Refused by name since rung 5.7c, as the thing that "needs
+a second list beside it and a second expansion" - which is exactly what it
+turned out to be. The review's example compiles on all four targets and prints
+clang's `3 15 7`.
+
+**The design is the type pack's, with values beside the types.** A pack's
+members travel as `PackMembers` - the vector of types every pack always was,
+with a `values` vector beside it; for a non-type pack the types are the element
+type once per value, so every count that reads `size()` reads the same number
+for both kinds. `PackBinding` carries the same pair and `valueType`, the written
+type or T's binding for `T... Vs` ([temp.param]/4); `TemplateArg` carries
+`packValues` and `packIsValue`. The binding for the body is the one every
+template parameter takes: a member is bound as an *enumerator* with its value,
+which is why `Ns...` in a braced list, a call, a template argument list and a
+`sizeof...` needed no new path - `bindPatternMember` copies a pattern's tokens
+once per member with each pack bound to its m-th member, type or value, and
+`expandPackPattern`, `expandPackInitialiser` and `expandPackValues` read the
+copy as an argument, an initialiser or a constant. One scan, `packPatternEnd`,
+finds the `...` for all three and refuses two packs of different lengths where
+clang refuses them.
+
+**In a pattern the pack stands for itself, and `Ns...` is its expansion.** A
+type pack given to another template's list in a signature was refused by name
+("here it stands for itself"); the argument is now `TemplateArg::expandsParam`,
+one member that is the parameter, and deduction binds the parameter to the
+argument's whole list - [temp.deduct.type]/9 - through a `Packs` the deducer
+carries beside its binding. So `template <int... Ns> int f(List<Ns...>)` deduces
+from a `List<1, 2, 3>`, `Seq<T, Vs...>` from a `Seq<int, 4, 5>`, two packs
+from two parameters, and a pack from a base of the argument's class through a
+reference; and `template <class... Ts> int size(Tuple<Ts...>)`, the shape
+`template-variadic-forward` had refused since rung 5.7c, deduces by the same
+line. **A function parameter pack is `Ts... rest` and nothing else**: deduction
+had taken any last parameter that was a pack for one, and `f(List<Ns...>)`
+would have been counted as a trailing pack of zero written parameters; it asks
+whether the pattern's last parameter is a `Kind::PackExpansion` now. A partial
+specialization peels the head as it did for types - `Sum<N, Rest...>` over
+`Sum<>` - the flattened list carrying values, and the tail pack taking its own
+kind. [temp.param]/11's two sentences are two helpers: a class template's pack
+is last (`refuseAfterPack`, at the pack's name, clang's column) and a function
+template's may be followed by a parameter a function parameter names or one
+with a default (`requireDeducibleAfterPack`), a pack after a pack deducing
+empty as clang takes it.
+
+**Both ABIs measured with clang, all three targets, every name agreeing
+(`tools/mangled-names` over the four measurement probes and the six cases, and `names.sh` 523 / 0):**
+
+    sum<4, 5, 6>()                       _Z3sumIJLi4ELi5ELi6EEEiv          ??$sum@$03$04$05@@YAHXZ
+    sum<>()                              _Z3sumIJEEiv                      ??$sum@$S@@YAHXZ
+    f(List<Ns...>), List<1,2,3>          _Z1fIJLi1ELi2ELi3EEEi4ListIJXspT_EEE   ??$f@$00$01$02@@YAHU?$List@$00$01$02@@@Z
+    f(List<Ns...>), List<>               _Z1fIJEEi4ListIJXspT_EEE          ??$f@$S@@YAHU?$List@$S@@@Z
+    g(Seq<T, Vs...>), Seq<char,'a'>      _Z1gIcJLc97EEEi3SeqIT_JXspT0_EEE  ??$g@D$0GB@@@YAHU?$Seq@D$0GB@@@@Z
+    two(List<As...>, List<Bs...>)        _Z3twoIJLi1EEJLi2ELi3EEEi4ListIJXspT_EEES0_IJXspT0_EEE   ??$two@$00$$Z$01$02@@...
+    sq(List<Ns...>, List<Ns...>)         _Z2sqIJLi5EEEi4ListIJXspT_EEES1_
+    tt(TL<As...>, TL<Bs...>), types      _Z2ttIJiEJcdEEi2TLIJDpT_EES0_IJDpT0_EE   ??$tt@H$$ZDN@@...
+    h(TL<Ts...>, TL<Ts...>)              _Z1hIJiEEi2TLIJDpT_EES3_
+    pn(List<Ns...>, B), pack then type   _Z2pnIJLi1EEdEi4ListIJXspT_EEET0_  ??$pn@$00N@@...
+    negs<-1, -2>, bools<true,false>      _Z4negsIJLin1ELin2EEEiv, _Z5boolsIJLb1ELb0EEEiv   $0?0$0?1, $00$0A@
+    ulls<1, 2^64-1>, enums<A, B>         _Z4ullsIJLy1ELy18446744073709551615EEEiv, _Z5enumsIJL1E0ELS0_1EEEiv
+    List<1,2,3>::get(), ::count          _ZN4ListIJLi1ELi2ELi3EEE3getEv, ...5countE   ?get@?$List@$00$01$02@@QEAAHXZ
+
+Itanium writes a pack of values as the values in a `J...E` pack, each
+`L<type><value>E`, an empty one `JE`, an enumeration's type a substitution
+candidate after its first spelling (`LS0_1E`); a pattern's `Ns...` is `JXspT_EE`
+- the expansion `sp` of the parameter as an expression, which is **no
+substitution candidate** (`sq`'s second `List` is `S1_`, the type after the
+template's name), where a type pack's `JDpT_E` is one beside its `T_` (`h`'s
+second is `S3_`). `(Ns * 2)...` in a signature is `JXspmlT_Li2EEE` and
+`List<Ns..., 4>` is `JXspT_ELi4EE`, measured and not written: both are refused
+by name. Microsoft lists the values inline, `$00$01$02`, with `$0?0` for a
+negative and for `2^64-1` alike, `$S` for an empty pack of values where an
+empty pack of types is `$$V`, and **`$$Z` between two packs in a row** of
+either kind - `$00$$Z$01$02`, `H$$Z$00`, `$$V$$Z$S` - and nothing between a
+pack and a plain argument; the signature is the substituted one and needed
+nothing. cl itself was not asked, the Windows box being the coordinator's leg;
+the Microsoft column is clang's.
+
+**Found on the way.** A non-type parameter is bound as an `int`-typed
+enumerator whatever its declared type, so `template <unsigned long long N>`
+given a value past `LLONG_MAX` reads as a negative int and a braced initialiser
+refuses it; a plain parameter and a pack member alike, older than this round,
+in `tests/open/nontype-parameter-typed-int.cpp`. An enumeration-typed parameter
+keeps its type now - `Colour c[] = { Cs..., Red }` was refused as an int to an
+enumeration - which is the one word of that fix taken here, the rest changing
+how every `template <unsigned N>` computes. And a class template with a head
+parameter and a pack, `First<7>`, was refused "takes 2 template arguments and
+this gives 1": the comma check ran for a pack at the closing angle, for type
+packs too since rung 5.7c.
+
+**Measured.** The emit golden at 1ff74c3: **0 of 2024 files changed**, 24 added
+(the runnable cases on four targets). Mac `make test`: run.sh 817 / 0 (518 printed
+their recorded output, 296 refused as recorded), emit.sh 2048 / 0, names.sh
+523 / 0 against clang on three targets, overload.sh 41 / 0, `tools/exclusions
+--check` 137 sites, 0 uncited, 0 stale (one site gone, seven added, every
+citation in `ParserTemplate.cpp`, `ParserType.cpp`, `Mangle.cpp` and
+`ParserExpr.cpp` re-paired by message and line order), comment cap 0.
+`tools/feature-sweep --clang clang++`: 80 compile, 16 refused by name, 0 naming
+nothing, of 96 (was 79 / 17 / 0; the `non-type-pack` row moved). `tests/tms6747.sh`
+on vm6747 (the one on PATH, `SIM=0`): 502 / 0 at -O0 and 502 / 0 at -O2; the sim6747
+leg and TI's simulator are for the Linux box. `-g` compiles the deduction and
+expansion cases for all four targets. The MASM spelling of every new case
+carries no angle bracket: a value pack reaches a symbol only as `$0..`.
+
+**Refused by name, each an exclusion with its case**: a pack of a pointer,
+reference or array type; a pack of a floating type (which clang refuses too);
+`List<Ns..., 4>` and `(Ns * 2)...` in a signature; explicit arguments ending at
+a pack with a parameter after it left to the call (`template-variadic-order`
+now records that refusal, its old one having called a legal program
+impossible); a pack expanded inside a nested template-id of a partial
+specialization's arguments. **Refused as clang refuses it**: a bare `Ns`
+without its `...`, a pack of types where values are taken, a class template's
+pack that is not last, two packs of different lengths under one `...`.
