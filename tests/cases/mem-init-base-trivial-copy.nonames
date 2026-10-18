@@ -1,0 +1,1 @@
+x86_64-linux  clang emits only the C2 form of a constructor defined inside its class and calls it; cxx1 emits C1 and C2 - the difference move-constructor.nonames records. Darwin and Windows agree name for name.

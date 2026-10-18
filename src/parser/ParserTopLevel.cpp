@@ -1510,9 +1510,18 @@ void Parser::topLevel(Program &program) {
             // into a vector that anything parsed after this can move.
             Signature chosen;
             bool found = false;
+            // [class.copy]/12: a trivially copyable base copied by name, `: B(b)`, has no copy constructor
+            // to call - its copy is the bytes, as `B c(b);` makes it.
+            bool copyBytes = false;
             if (building && named != baseArgs.end()) {
                 chosenArgs.swap(named->second);
-                chosen = resolveOverload(key, chosenArgs, d.pos);
+                const Type *from = chosenArgs.size() == 1 && chosenArgs[0]->type() != nullptr
+                                       ? chosenArgs[0]->type()->unqualified() : nullptr;
+                copyBytes = from != nullptr && from->isStructOrUnion() && isGlvalue(*chosenArgs[0]) &&
+                            (from == base->unqualified() || accessibleBaseOffset(from, base) >= 0) &&
+                            copyConstructorOf(base) == nullptr && moveConstructorOf(base) == nullptr &&
+                            !base->nonTrivialCopy();
+                if (!copyBytes) chosen = resolveOverload(key, chosenArgs, d.pos);
                 found = true;
             } else if (building) {
                 // No entry names this base, so its default constructor runs.
@@ -1535,10 +1544,10 @@ void Parser::topLevel(Program &program) {
                                  "taking nothing - name one in the initialiser "
                                  "list, ': " + base->tag() + "(...)'");
             // **The defaults the entry left out are read here, as every other call reads them.**
-            if (building) applyDefaults(chosen, chosenArgs, d.pos);
+            if (building && !copyBytes) applyDefaults(chosen, chosenArgs, d.pos);
 
             std::string symbol = chosen.symbol;
-            if (!target_.microsoftNames()) {
+            if (!target_.microsoftNames() && !copyBytes) {
                 std::string sub;
                 if (building) {
                     sub = baseConstructorSymbol(chosen, base);
@@ -1569,6 +1578,24 @@ void Parser::topLevel(Program &program) {
             } else {
                 me->setType(types_.pointerTo(memberOf));
                 me = convert(std::move(me), basePtr);
+            }
+            if (copyBytes) {
+                ExprPtr src = std::move(chosenArgs[0]);
+                const Type *from = src->type()->unqualified();
+                ExprPtr at(new Unary('&', std::move(src)));
+                at->setType(types_.pointerTo(from));
+                if (from != base->unqualified()) at = convert(std::move(at), basePtr);
+                ExprPtr value(new Unary('*', std::move(at)));
+                value->setType(base);
+                ExprPtr there(new Unary('*', std::move(me)));
+                there->setType(base);
+                ExprPtr copy(new Assign(std::move(there), std::move(value)));
+                copy->setType(base);
+                std::vector<StmtPtr> wrapped;
+                wrapped.push_back(StmtPtr(new ExprStmt(std::move(copy))));
+                wrapped.push_back(std::move(body));
+                body = StmtPtr(new Block(std::move(wrapped)));
+                continue;
             }
             std::vector<ExprPtr> args;
             args.push_back(std::move(me));

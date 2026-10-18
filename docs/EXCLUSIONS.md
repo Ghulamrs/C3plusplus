@@ -221,7 +221,7 @@ is left:
   has no body. `src/parser/ParserType.cpp:1200`
 - **a delegating constructor of a class with a virtual base** - the target
   would have to be told whether the object is the most derived one.
-  `src/parser/ParserTopLevel.cpp:1951`
+  `src/parser/ParserTopLevel.cpp:1978`
 - **a mem-initialiser that would run a constructor once per element of an
   array member** - `src/parser/ParserTopLevel.cpp:1171`
 - **a virtual base initialised with an argument that needs a temporary** - the
@@ -402,7 +402,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   `catch` handler, on x86_64-windows** - the cleanup would be a funclet inside
   the handler's funclet. `src/parser/ParserStmt.cpp:836`
 - **a trailing return type that is itself deduced**, `auto f() -> auto` -
-  C++14. `src/parser/ParserTopLevel.cpp:1884`
+  C++14. `src/parser/ParserTopLevel.cpp:1911`
 - **an expression form the Itanium name was not measured for, over a template's
   parameters in a function template's signature** - a postfix `++` or `--`, a
   lambda, `new`, `throw`, `typeid`, `noexcept`, a C-style cast to a reference

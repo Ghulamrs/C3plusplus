@@ -14235,3 +14235,22 @@ substituted signature. `member-template-enclosing-parameter.cpp`; its names agre
 three targets but clang's `memset`. Found compiling a CCS sample, `SampleExt1`, after the unnamed
 template parameter above; the next thing that sample meets is a base copied in a mem-initialiser
 through its implicit copy constructor, `: B(b)`, which cpp11 does not yet do.
+
+## A base copied by name in a mem-initialiser, 2026-10-18
+
+**`D(const B &b) : B(b)` copies the base through its implicit copy constructor**, [class.base.init]
+with [class.copy]/12 - and for a trivially copyable `B` that constructor is not a function here (a
+trivial special member never is), so overload resolution saw only `B`'s written constructors and
+refused the entry. `B c(b);` had always worked, the declaration path taking the bytes; the
+mem-initialiser path now does the same where the entry is one glvalue of `B`, or of a class with `B`
+as an accessible base, and `B` declares no copy or move constructor. The base is copied before any
+member of the derived class is built, so nothing the copy covers is live yet. Found in the CCS sample
+`SampleExt1` (`CQuat(const CVector<I> &v) : CVector<I>(v)`); `mem-init-base-trivial-copy.cpp` holds
+a class, a class template, a copy from the derived class itself and one from a temporary.
+
+**What the extended samples still need, recorded rather than built in 1.20**: `SampleExt` and
+`SampleExt1`'s `Math/Math` copies deduce `N` in `nearly(const CVector<N> &, ...)` from a `CQuat`,
+which derives from `CVector<4>` ([temp.deduct.call]/4.3); `SampleExt1` writes `this->template
+select<3>(1)`, the `->template` disambiguator; `SampleExt` declares a member class template (refused by
+name) and re-declares a template parameter, which clang refuses too. `Sample` compiles, runs and prints
+what clang's build prints.
