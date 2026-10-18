@@ -480,17 +480,19 @@ bool Parser::templateDeclaration() {
     // **`template <class T> struct Box<T *>` - a partial specialization.** It is
     // told from the primary by the `<` after the name: a class template being
     // *declared* has nothing there, and one already declared is being specialized.
+    const std::size_t q = peek().is("struct") || peek().is("class") || peek().is("union")
+                        ? namespaceQualifierTokens(1) : 0;
     if ((peek().is("struct") || peek().is("class") || peek().is("union")) &&
-        peekAt(1).kind == TokenKind::Ident && peekAt(2).is("<")) {
-        auto primary = templates_.find(peekAt(1).text);
+        peekAt(1 + q).kind == TokenKind::Ident && peekAt(2 + q).is("<")) {
+        auto primary = templates_.find(peekAt(1 + q).text);
         if (primary == templates_.end() || !primary->second.isClass)
-            src_.fail(peekAt(1).pos, "'" + peekAt(1).text + "' is not a class "
-                                     "template, so there is nothing here to "
-                                     "specialize");
+            src_.fail(peekAt(1 + q).pos, "'" + peekAt(1 + q).text + "' is not a class "
+                                         "template, so there is nothing here to "
+                                         "specialize");
         TemplateDecl::Partial ps;
         ps.params = decl.params;
         ps.pos = decl.pos;
-        at_ += 2;
+        at_ += 2 + q;
         partialArguments(&ps, primary->second.params);
         // **`:` as well as `{`.** A specialization may have a base clause and a
         // recursive variadic one always does - `struct A<T, R...> : A<R...>`. The
@@ -775,6 +777,8 @@ bool Parser::explicitSpecialization() {
     const bool isClass = peek().is("class");
     at_++;
 
+    // `template <> struct lib::Box<int>`: a namespace qualifier, an inline one's left out or not.
+    at_ += namespaceQualifierTokens(0);
     if (peek().kind != TokenKind::Ident)
         src_.fail(peek().pos, "this specialization names no class");
     const std::string name = peek().text;
@@ -1204,7 +1208,12 @@ Parser::instantiate(const TemplateDecl &decl,
     functionIndex_[decl.name].push_back(at);
     // And under the template's namespace, where that namespace's ordinary functions of the name
     // are: a template and a non-template there compete as one set, and the non-template wins a tie.
+    // Where that namespace is inline, under the enclosing one's as well - `lib::twice(1)`.
     if (!decl.ns.empty()) functionIndex_[decl.ns + decl.name].push_back(at);
+    {
+        const std::vector<std::string> alts = inlineAliasPrefixes(decl.ns);
+        for (std::size_t a = 0; a < alts.size(); a++) functionIndex_[alts[a] + decl.name].push_back(at);
+    }
     functions_.push_back(Signature{ display, symbol, fn->returns(), fn->params(),
                                     fn->isVariadicFn(), false, pos, false,
                                     std::string(), false, Access::Public });

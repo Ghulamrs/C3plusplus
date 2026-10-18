@@ -4332,12 +4332,16 @@ void Parser::declareFunction(const std::string &name, const Type *returns,
     std::vector<std::size_t> &set = functionIndex_[key];
     const SpecialDef special = takeSpecialDef();
 
-    for (std::size_t k = 0; k < set.size(); k++) {
+    // An inline namespace's member sits under the enclosing name too, and only a qualified
+    // declarator reaches it there - `int lib::f(int) {}` defines lib::v2::f - after lib's own.
+    for (std::size_t pass = 0, k = 0; pass < (definingQualified_ ? 2u : 1u); k++) {
+        if (k == set.size()) { pass++; k = static_cast<std::size_t>(-1); continue; }
         Signature &f = functions_[set[k]];
         // A specialization sits in this list under the template's plain name
         // so that resolution can see it. It is not a declaration of that
         // name, so a function written with the same parameters is a new one.
         if (f.fromTemplate && instantiationKey_.empty()) continue;
+        if ((!f.fromTemplate && f.name != key) != (pass == 1)) continue;
         if (f.variadic != variadic || !sameParameters(f.params, params)) continue;
         // [dcl.fct.def.delete]/4: a deleted definition is the first declaration.
         if (special == SpecialDef::Deleted)
@@ -4415,6 +4419,7 @@ void Parser::declareFunction(const std::string &name, const Type *returns,
     functions_.back().isNoexcept = pendingNoexcept_;
     functions_.back().deleted = special == SpecialDef::Deleted;
     pendingNoexcept_ = false;
+    if (!cName) aliasFunctionKey(key, functions_.size() - 1);
     if (pendingExplicitConversion_ && isConversionName(instantiationName(name)))
         functions_.back().isExplicit = true;
     pendingExplicitConversion_ = false;
@@ -4456,12 +4461,15 @@ Parser::lookupSignature(const std::string &name,
                           ? name
                           : qualifyForLookup(instantiationName(name),
                                              &Parser::hasFunctionNamed);
+    // The namespace's own function before one an inline namespace put under its name.
     if (const std::vector<std::size_t> *set = overloadsOf(key)) {
-        for (std::size_t k = 0; k < set->size(); k++) {
-            const Signature &f = functions_[(*set)[k]];
-            if (f.variadic == variadic && sameParameters(f.params, params))
-                return f;
-        }
+        for (int pass = 0; pass < 2; pass++)
+            for (std::size_t k = 0; k < set->size(); k++) {
+                const Signature &f = functions_[(*set)[k]];
+                if ((!f.fromTemplate && f.name != key) == (pass == 1) && f.variadic == variadic &&
+                    sameParameters(f.params, params))
+                    return f;
+            }
     }
     src_.fail(pos, "'" + name + "' was not declared - a prototype must come first");
 }

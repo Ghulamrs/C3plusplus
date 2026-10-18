@@ -36,7 +36,8 @@ bool Parser::aliasDeclaration(const std::string &prefix) {
     expect(";");
     const std::string key = prefix + name;
     std::unordered_map<std::string, std::size_t>::const_iterator had = typedefIndex_.find(key);
-    if (had != typedefIndex_.end() && typedefs_[had->second].type != d.type)
+    if (had != typedefIndex_.end() && typedefs_[had->second].type != d.type &&
+        typedefs_[had->second].name == key)
         src_.fail(pos, "'" + name + "' is declared twice, and not as the same type: it was '" +
                        typedefs_[had->second].type->describe() + "' and is now '" + d.type->describe() + "'");
     typedefIndex_[key] = typedefs_.size();

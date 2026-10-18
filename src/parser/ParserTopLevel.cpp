@@ -41,13 +41,18 @@ bool Parser::linkageSpecification() {
 }
 
 void Parser::topLevel(Program &program) {
-    // `namespace N { ... }` - a scope that qualifies what is declared in it,
-    // and nothing else. Everything inside is read by this same function, so a
-    // namespace nests, may be reopened, and may hold anything a file may hold.
+    // `namespace N { ... }` - a scope that qualifies what is declared in it, and nothing else.
+    // Everything inside is read by this same function, so a namespace nests, may be reopened,
+    // and may hold anything a file may hold. `inline namespace N { }` is [namespace.def]/8.
+    const bool inlineNs = peek().is("inline") && peekAt(1).is("namespace");
+    if (inlineNs) at_++;
     if (peek().is("namespace")) {
         const std::size_t pos = peek().pos;
         at_++;
-        // **An unnamed namespace, opened under the name the ABI gives it.**
+        if (inlineNs && peekAt(1).is("="))
+            src_.fail(pos, "'inline' goes on a namespace definition, and this is an alias");
+        // **An unnamed namespace, opened under the name the ABI gives it.** An `inline` one
+        // is that with the mark: its using-directive already makes every member visible.
         if (peek().is("{")) {
             at_++;
             const std::string tag = "_GLOBAL__N_1";
@@ -55,6 +60,7 @@ void Parser::topLevel(Program &program) {
             namespaceStack_.push_back(tag);
             namespaces_.insert(namespacePrefix().substr(
                                    0, namespacePrefix().size() - 2));
+            if (inlineNs) inlineNamespaces_.insert(namespacePrefix().substr(0, namespacePrefix().size() - 2));
             inUnnamedNamespace_ = true;
             while (!peek().is("}")) {
                 if (peek().kind == TokenKind::End)
@@ -72,6 +78,7 @@ void Parser::topLevel(Program &program) {
             usingNamespaces_.push_back(opened);
             return;
         }
+        const std::size_t namePos = peek().pos;
         std::string name = expectIdent("a namespace name");
         // `namespace N::M { }` is C++17; nesting is written out here.
         if (peek().is("::"))
@@ -80,12 +87,26 @@ void Parser::topLevel(Program &program) {
         if (consume("=")) { namespaceAlias(name, pos); return; }
         expect("{");
         namespaceStack_.push_back(name);
-        namespaces_.insert(namespacePrefix().substr(
-                               0, namespacePrefix().size() - 2));
+        const std::string path = namespacePrefix().substr(0, namespacePrefix().size() - 2);
+        // The first definition decides: reopened later with or without `inline` it stays
+        // what it was, and a plain one reopened `inline` is refused as clang refuses it.
+        if (inlineNs && namespaces_.count(path) && !inlineNamespaces_.count(path))
+            src_.fail(namePos, "non-inline namespace cannot be reopened as inline");
+        if (inlineNs) inlineNamespaces_.insert(path);
+        namespaces_.insert(path);
+        // Nested in an inline one it is the enclosing namespace's too: `lib::inner` for `lib::v2::inner`.
+        {
+            const std::vector<std::string> alts = inlineAliasPrefixes(namespacePrefix());
+            for (std::size_t a = 0; a < alts.size(); a++)
+                namespaces_.insert(alts[a].substr(0, alts[a].size() - 2));
+        }
+        const bool aliased = !inlineAliasPrefixes(namespacePrefix()).empty();
         while (!peek().is("}")) {
             if (peek().kind == TokenKind::End)
                 src_.fail(pos, "this namespace never closes");
+            const TableSizes before = tableSizes();
             topLevel(program);
+            if (aliased) aliasInlineMembers(before);
         }
         at_++;                                  // the '}'
         namespaceStack_.pop_back();
@@ -188,7 +209,7 @@ void Parser::topLevel(Program &program) {
             // [dcl.typedef]/2 lets this scope's own be redeclared to the same type ("typedef struct S S;"),
             // and a namespace's `typedef short T;` hides a global `T` rather than redeclaring it.
             if (const Type *had = findGlobalTypedef(key))
-                if (had != td.type)
+                if (had != td.type && typedefs_[typedefIndex_.find(key)->second].name == key)
                     src_.fail(td.pos, "'" + td.name + "' is typedefed twice, "
                                       "and not to the same type: it was '" +
                                       had->describe() + "' and is now '" +
@@ -838,8 +859,10 @@ void Parser::topLevel(Program &program) {
             src_.fail(d.pos, "'" + d.qualifier + "::" + d.name + "' is declared "
                              "inside the class - this says it again outside, "
                              "which declares nothing new");
+        definingQualified_ = !absoluteName.empty();
         declareFunction(d.name, d.type, params, variadic, false, d.pos,
                         sc == StorageStatic);
+        definingQualified_ = false;
         // A prototype's by-value parameters were registered alive above, and
         // there is no body to destroy them: pop them, or the next definition does.
         alive_.resize(alive_.size() - aliveParams);
@@ -972,8 +995,10 @@ void Parser::topLevel(Program &program) {
         inStaticMember_ = false;
         msVbInitSlot_ = -1;
         vttSlot_ = -1;
+        definingQualified_ = !absoluteName.empty();
         declareFunction(d.name, d.type, params, variadic, true, d.pos,
                         sc == StorageStatic);
+        definingQualified_ = false;
         // Which function's body is about to be read, so that an access check inside it
         // can ask whether a class befriended *this* function. A member's is left empty:
         // the qualified form that would befriend a member is refused where written.

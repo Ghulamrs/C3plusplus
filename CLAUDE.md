@@ -13639,3 +13639,121 @@ on PATH, RIDE 5.12's; none sits beside the tree), with `SIM=0`: the TI tools are
 not on this Mac, so the sim6747 leg was not run. `ref-qualifier-template.nonames`
 records the one divergence, x86_64-linux's C2-only emission of a class
 template's constructor, which no out-of-line definition can dodge.
+
+## Inline namespaces, 2026-10-18
+
+**[namespace.def]/8: the members of an inline namespace can be used as though
+they were members of the enclosing namespace**, for qualified lookup, for
+unqualified lookup from inside the enclosing one, for a using-directive naming
+it, and for argument-dependent lookup - [basic.lookup.argdep]/2 puts the
+inline namespace and its enclosing one in each other's associated sets - and a
+template declared in one may be specialized as a member of the enclosing
+namespace, which is what the construct is for. Refused by name since 2026-08-30
+("its members would have to be found in the namespace around it"); it compiles
+now, and `lib::version()`, `lib::v2::version()` and `lib::v1::version()` print
+clang's `2 2 1`.
+
+**The design is the one the standard states: the inline namespace's members are
+entered under the enclosing name as well.** Every table here is keyed by a
+qualified string, so a member declared as `lib::v2::version` is also indexed as
+`lib::version` - the same index, a second key - by `aliasInlineMembers` after
+each declaration in a namespace with an inline component above it, and at the
+moment of declaration for a class name and a free function, so a body may reach
+its own class or itself through the enclosing name. `inlineAliasPrefixes`
+gives every prefix a path becomes with a subset of its inline components taken
+out, so `outer::mid::deep::d` with both inline is `outer::d`, `outer::mid::d`
+and `outer::deep::d`, and `outer::mid::plain::in::e` is `outer::plain::e`. A
+nested namespace is entered the same way (`lib::inner` for `lib::v2::inner`),
+a function template's specialization under `lib::twice` beside
+`lib::v2::twice`, an enumerator under both of C++11's spellings. Nothing in a
+lookup had to learn the feature; the string it builds is in the index.
+
+**What tells an alias from a declaration is the entry's own name.** A function,
+a global or a typedef registered under its own key carries that key as its
+name, and an alias carries the other namespace's - so `declareTypeName`,
+`findGlobalToUpdate`, the typedef and alias-declaration redeclaration checks
+and `declareFunction`'s redeclaration loop take the real entry and leave an
+alias be, and a `struct X` in lib beside `v2::X` is a second class rather than
+a redefinition. A specialization's display name is not its key, so the test
+excludes `fromTemplate` - the first version did not, and every function
+template called qualified through a namespace was instantiated and never
+defined (`v2::twice(4)`, an undefined symbol at the link), which is a shape
+the suite had not held either.
+
+**[namespace.udir]/6 is refused where the key becomes an entity**:
+`refuseInlineAmbiguity`, asked in `findTypedef`, `findGlobal` and `findEnum`,
+looks for the name under every inline descendant of the key's namespace and
+refuses two distinct entities with clang's words, "reference to 'x' is
+ambiguous", at the name - two typedefs of one type being one entity, as clang
+holds. Two functions of one signature need nothing: the enclosing key's
+overload set holds both and the ranking ties, "this call to 'lib::f' is
+ambiguous" at clang's column. **A qualified declarator reaches an alias**:
+`int lib::f(int) { }` defines `lib::v2::f` when lib has no `f(int)` of its
+own, which clang accepts, so `definingQualified_` lets `declareFunction` and
+`lookupSignature` take an alias entry, after lib's own. The explicit and
+partial specialization parsers step over a namespace qualifier now
+(`namespaceQualifierTokens`), so `template <> struct lib::Box<char>`,
+`template <> struct lib::v2::Box<double>` and `template <class T> struct
+lib::Box<T *>` are read - and so is the plain-namespace form, which was
+"'lib' is not a class template" before; the qualifier is stepped over and not
+checked against the template's namespace, templates being keyed by their bare
+name (`tests/open/namespace-function-template-name`, no worse than it was).
+
+**Measured against clang, `-std=c++11 -pedantic-errors`, before anything was
+written**: a namespace first defined `inline` may be reopened with or without
+the word (clang only warns at the reopening without it); one first defined
+without may not be reopened `inline` - "non-inline namespace cannot be
+reopened as inline", at the name; `inline namespace { }` is accepted, and is
+the unnamed namespace with the mark on it here; `use()` inside lib sees both
+`f(int)` of v2 and `f(double)` of lib; `tag2(t)` in lib is found by ADL for a
+`v2::T`; a nested `inner` in both lib and v2 is reached as `lib::inner::` for
+either's members. **Both ABIs spell the inline namespace into every name**,
+measured with `tools/mangled-names` on x86_64-linux, x86_64-pc-windows-msvc
+and arm64-darwin, every name agreeing:
+
+    lib::v2::version()                _ZN3lib2v27versionEv              ?version@v2@lib@@YAHXZ
+    lib::v2::Widget::get() const      _ZNK3lib2v26Widget3getEv          ?get@Widget@v2@lib@@QEBAHXZ
+    lib::outside(Widget, Widget)      _ZN3lib7outsideENS_2v26WidgetES1_ ?outside@lib@@YAHUWidget@v2@1@0@Z
+    take(lib::Widget, lib::v2::Widget, lib::Box<char>)
+                                      _Z4takeN3lib2v26WidgetES1_NS0_3BoxIcEE
+                                                                        ?take@@YAHUWidget@v2@lib@@0U?$Box@D@23@@Z
+    lib::v2::twice<int>(int)          _ZN3lib2v25twiceIiEET_S2_         ??$twice@H@v2@lib@@YAHH@Z
+    lib::v2::inner::deep(Deep)        _ZN3lib2v25inner4deepENS1_4DeepE  ?deep@inner@v2@lib@@YAHUDeep@123@@Z
+    std::__1::string, as a parameter  NSt3__16stringE                   Ustring@__1@std@@
+    std::__1::f(std::string)          _ZNSt3__11fENS_6stringE           ?f@__1@std@@YAHUstring@12@@Z
+    std::plain, as a parameter        St5plain                          Uplain@std@@
+
+The `St` abbreviation is for a name directly in `std` and stops at an inline
+namespace: `std::__1::string` is `NSt3__16stringE`, with the wrapper, which is
+what libc++'s own `std::__1` looks like to this mangler. Nothing in
+`Mangle.cpp` changed - every entity keeps its full path as its name, and the
+alias is a second key in the parser's index only. cl itself was not asked, the
+Windows box being out of reach this round; the Microsoft column is clang's.
+
+**Measured.** The emit golden at 8b591eb: **0 of 1960 files changed**, 20
+added - the five runnable cases on four targets; nothing that compiled before
+emits a byte differently, which a change to every lookup table's keys most
+needs to say. `tools/feature-sweep --clang clang++`: 77 compile, 19 refused by
+name, 0 naming nothing, of 96 (was 76 / 20 / 0; the `inline-namespace` row
+moved). Mac `make test`: run.sh 769 / 0 (501 printed their recorded output,
+265 refused as recorded), emit.sh 1980 / 0, names.sh 506 / 0 against clang on
+three targets, overload.sh 39 / 0 - `inline-namespace-set.cpp` the set spanning
+both namespaces reached three ways, twelve calls agreeing, and
+`ambiguous-inline-namespace.cpp` the tie both refuse - `tools/exclusions
+--check` 128 sites, 0 uncited, 0 stale (one site gone, 45 citations re-paired
+by line order and checked by message), comment cap 0. The five runnable cases
+pass `tests/tms6747.sh` at -O0 and -O2 on vm6747 (the one on PATH) with
+`SIM=0`; the sim6747 leg and TI's simulator are for the Linux box. `-g`
+compiles the lookup case for all four targets; neither the debug emitters nor
+the C6000 backend read a namespace, and needed nothing.
+`inline-namespace-nested.nonames` records the one difference, the Microsoft
+hash of an unnamed namespace that `namespace-unnamed.nonames` already records.
+
+**Refused, as clang refuses it**: a plain namespace reopened `inline`; a name
+in both namespaces looked up through the enclosing one; `inline` on a namespace
+alias. **Not built, and said so**: an `inline namespace` inside a function or a
+class is refused as C++ refuses it - a word that begins no statement there, or
+a definition in the wrong scope - and not as a missing feature.
+**Known and left**: a function template of one name in two namespaces is still
+one overload set, as before this round; and the specialization parsers do not
+check that the namespace written before `Box<int>` is the template's.
