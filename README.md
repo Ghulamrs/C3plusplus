@@ -169,6 +169,31 @@ x86_64-windows, where a class cannot be thrown yet and they print and abort inst
 delete`, the placement and nothrow forms, `std::bad_alloc` from the platform runtime, `typeid` and
 `dynamic_cast` all work.
 
+## What 1.19 changes
+
+Two more refused C++11 features, built by Fable 5.1 and measured on all three boxes, and three wrong
+answers mended:
+
+* **Template template parameters**: `template <template <class> class C, class T> struct Holder { C<T> c; };`
+  takes a class template, an alias template or a namespaced one, deduces `C` and `T` from `Box<int>`,
+  and specialises on `C<int>`; named as clang and cl name it (`6HolderI3BoxiE`, `?$Holder@UBox@@H@@`).
+  `std::vector<std::vector<int>>` is now `St6vectorIS_IiEE`, as clang writes it, where a `St` was repeated.
+* **Non-type parameter packs**: `template <int... Ns>`, `template <class T, T... Vs>` - the shape
+  `std::integer_sequence` takes - expanded in braces, calls and template arguments (`(Ns * 2)...`),
+  deduced from `List<Ns...>`, peeled head and tail by a partial specialisation. A type pack is now
+  deduced from a class template argument too, `size(Tuple<Ts...>)`.
+* **A named union's member initialiser is applied**: `union U { int i = 3; double d; }; U u;` gives 3,
+  where `u.i` held the stack - a silent wrong value.
+* **`int v; int v = 5;` at namespace scope is refused** as a second definition, as clang refuses it;
+  C's tentative definition had been accepted.
+* **A union holding a class with its own constructor, destructor or assignment is refused by name**
+  (C++11's unrestricted union). Without a constructor of its own it compiled and built nothing; with one
+  it compiled and destroyed the member twice, the union's destructor and then cpp11 itself running `~S`.
+
+`tools/feature-sweep` reads 79 compile, 17 refused by name and 0 naming nothing, of 96 - one fewer
+compiling than the round's packs alone read, because the `union-nontrivial-member` probe it had counted
+as compiling was that double destruction.
+
 ## What 1.18 changes
 
 Three C++ features that were refused by name, each built by Fable 5.1 in a round of its own and
@@ -410,11 +435,11 @@ defects below and nothing else; Compiler-Cppi has closed those too, with the
 vtable group, `_ZTv` thunks, VTT and construction vtables, and that work is
 not in 1.3.
 
-## Known shortcomings in 1.18
+## Known shortcomings in 1.19
 
 Everything here is measured and written down elsewhere in full; this is the
-short list a user of **1.18** should have in front of them. `docs/EXCLUSIONS.md`
-is the complete one - 129 refusal sites on 2026-10-18 (131 on 2026-10-08),
+short list a user of **1.19** should have in front of them. `docs/EXCLUSIONS.md`
+is the complete one - 138 refusal sites on 2026-10-18 (131 on 2026-10-08),
 each citing the source line that refuses it, and `make test` fails when the two
 disagree. The heading
 above is written by `tools/version-lines` from `src/Version.h`; it said 1.4 for
@@ -422,12 +447,13 @@ two releases before that tool existed.
 
 **The language is C++03 with C++11 extensions, and these are the C++11 parts a
 real codebase meets first that are still refused, each by name**: a
-user-defined literal; `thread_local`; a
-template template parameter; a non-type parameter pack; a `constexpr` object of class type; `alignas` on a local past
+user-defined literal; `thread_local`; a union holding a class with special members of its own (an
+unrestricted union); a `constexpr` object of class type; `alignas` on a local past
 the stack's alignment; a dynamic exception specification; a universal character name in an identifier; a `goto`
 that leaves a `catch` handler; and a function try block, which is C++98. Ref-qualifiers, inline
-namespaces and anonymous unions landed in 1.18. `tools/feature-sweep` counts them: on 2026-10-18, 78 of its 96
-probes compile, 18 are refused by name and none by a message naming nothing.
+namespaces and anonymous unions landed in 1.18, template template parameters and non-type parameter packs
+in 1.19. `tools/feature-sweep` counts them: on 2026-10-18, 79 of its 96
+probes compile, 17 are refused by name and none by a message naming nothing.
 **Landed in the review round of 2026-10-08 to 2026-10-13**: `enum class`;
 `override` and `final`; `= default` and `= delete`; delegating constructors;
 `using X = T;` and alias templates; forwarding references and `std::forward`;
@@ -455,16 +481,17 @@ being `template <class T, T v>` - so `std::integral_constant` is the base of eve
 their bare name, so `a::twice(3)` can reach `b::twice`. Registered in `tests/open`
 (`namespace-function-template-name`); clang prints `6 2 6` where cxx1 prints `6 2 4`.
 
-**A named union's member initialiser is ignored** - `union U { int i = 3; double d; }; U u;` leaves
-`u.i` holding the stack where clang prints 3: a silent wrong value, the next item to mend. Beside it a
-union with a member whose class has a constructor compiles where clang refuses it, and four refusals of
-ordinary code are registered: `T t = u;` copying a derived object into its base, `struct lib::P *` (an
-elaborated type with a namespace qualifier), `offsetof` as a constant expression, and `&S::f` choosing
-between `f() &` and `f() &&` by the target type. All are in `tests/open` with clang's answer.
+**Six programs clang compiles or refuses differently are registered** in `tests/open`, each with
+clang's answer: four refusals of ordinary code - `T t = u;` copying a derived object into its base,
+`struct lib::P *` (an elaborated type with a namespace qualifier), `offsetof` as a constant expression,
+and `&S::f` choosing between `f() &` and `f() &&` by the target type - and a non-type parameter of a
+wide unsigned type read as an `int` past `INT_MAX` (`nontype-parameter-typed-int`), besides the
+namespace-template one above and two-phase lookup's.
 
-**A namespace-scope variable defined twice is accepted** - `int v; int v = 5;`, C's tentative
-definition, which C++ does not have. clang refuses it; registered in `tests/open`
-(`redefinition-of-variable`).
+**`std::string` and its neighbours are a subset**: building GRIDE's `cppparse` example with cpp11
+stops in 33 of its 39 files - on `<iosfwd>` and `<ctime>`, `string::compare`, `insert` and `rfind`
+forms, a `vector` range constructor, `ostream::setf`, `std::stable_sort`, `set::insert`'s pair, and
+one condition cpp11 parses wrongly (`if (std::string(b) == "}")`). Recorded, not mended in 1.19.
 
 **Pointers to members** stop short of two things: a pointer to a *virtual*
 member function is refused by name (Compiler-Cppi has it), and `&D::f` for an

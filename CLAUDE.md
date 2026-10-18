@@ -14178,3 +14178,25 @@ ill-formed. A named union compiled it and built nothing; it is refused by name n
 anonymous-union round already refused it inside an anonymous union. A union of trivial classes is
 unchanged. Both entries leave `tests/open` for `tests/cases`; the emitted assembly of every existing
 case is byte-identical (0 of 2024).
+
+## Version 1.19, 2026-10-18: template template parameters, non-type packs, and three wrong answers
+
+**Batch A of the refused C++11 features, built by Fable 5.1 one at a time and re-measured on all three
+boxes before each merge** - the two sections above say what each is - with the three faults the
+anonymous-union round registered or found: a named union's member initialiser applied, and two
+over-acceptances refused (`int v; int v = 5;`, and a union holding a class with special members).
+
+**The release step found what no gate had: the feature grid had been counting a miscompile.**
+`tools/feature-sweep` read 80 compile with non-type packs merged and 79 once the union refusal joined
+them. The row that moved, `union-nontrivial-member`, is the legal C++11 unrestricted union - the union
+writing its own constructor and destructor for a member that has them - and cpp11 had compiled it and
+destroyed the member twice: `~U` ran `s.~S()`, then cpp11 ran `~S` on the member itself, which C++ never
+does for a union. The probe returns 0 either way, so the grid said "compiles". The refusal now says
+"not supported yet" instead, `union-own-special-members-refused.cpp` holds it, and the honest count for
+1.19 is **79 compile, 17 refused by name, 0 naming nothing, of 96**. The lesson is rule 5 again: a probe
+that checks an exit status is an oracle for whether something compiles, not for whether it is right.
+
+**Also recorded, not mended:** GRIDE's `cppparse` example stops in 33 of its 39 files on library gaps
+(`<iosfwd>`, `<ctime>`, `string` and `vector` members, `setf`, `stable_sort`, `set::insert`'s pair) and
+one parse fault (`if (std::string(b) == "}")`); the user declined that round on 2026-10-18, and the
+`rfind` part is parked on branch `mend/string-rfind`. The headline stays "C++03 with C++11 extensions".
