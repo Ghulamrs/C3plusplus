@@ -1,0 +1,1 @@
+:1:70: error: unnamed variable cannot be implicitly captured in a lambda expression

@@ -66,9 +66,21 @@ StmtPtr Parser::declaration() {
 StmtPtr Parser::declarationBody() {
     StorageClass sc;
     Qualifiers quals;
+    const std::size_t specStart = at_;
     const Type *base = specifiers(&sc, &quals);
 
-    if (peek().is(";")) { at_++; return StmtPtr(new Block({})); }
+    if (peek().is(";")) {
+        // [class.union]/5: a nameless union's members are locals sharing one slot; a nameless struct is refused.
+        if (base->isStructOrUnion() && base->tag().empty()) {
+            std::size_t key = specStart;
+            while (key + 1 < at_ && !tokens_[key].is("union") && !tokens_[key].is("struct") && !tokens_[key].is("class")) key++;
+            if (base->kind() != Kind::Union)
+                src_.fail(tokens_[key].pos, "anonymous structs are a GNU extension");
+            declareAnonymousUnionObject(base, sc, tokens_[key].pos, true);
+        }
+        at_++;
+        return StmtPtr(new Block({}));
+    }
 
     if (sc == StorageTypedef) {
         do {

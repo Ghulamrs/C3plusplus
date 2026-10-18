@@ -8,11 +8,15 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <ostream>
 #include <string>
 #include <vector>
 
 namespace {
+
+const char kMasmNameChars[] =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_?@$";
 
 [[noreturn]] void give_up(const std::string &what, const std::string &why) {
     std::fprintf(stderr, "%s: masm: %s\n  for: %s\n", program::kName, why.c_str(),
@@ -183,9 +187,10 @@ const Rule *ruleFor(const std::string &m) {
 }
 
 std::string MasmSpelling::mangle(const std::string &name) {
-    if (name.find('.') != std::string::npos) {
+    // A dot, or a character no MASM name holds (`<unnamed-type-$S1>`), only in an internal symbol.
+    if (name.find_first_not_of(kMasmNameChars) != std::string::npos) {
         std::string out = "$";
-        for (char c : name) out += (c == '.') ? '_' : c;
+        for (char c : name) out += std::strchr(kMasmNameChars, c) != nullptr ? c : '_';
         return out;
     }
     if (!isReservedInMasm(name)) return name;
@@ -619,8 +624,12 @@ void MasmSpelling::preamble(std::ostream &sink) {
         sink << "OPTION NOKEYWORD:<" << g << ">\n";
     if (!unreserved_.empty()) sink << "\n";
 
-    for (const std::string &e : exported_)
+    for (const std::string &e : exported_) {
+        // Renaming an exported name would break the link; only a dot was ever renamed in one.
+        if (e.find_first_not_of(std::string(kMasmNameChars) + ".") != std::string::npos)
+            give_up(e, "an exported name holds a character no MASM name can spell");
         sink << "PUBLIC " << mangle(e) << "\n";
+    }
     for (const std::string &r : referenced_)
         if (defined_.find(r) == defined_.end())
             sink << "EXTERN " << mangle(r) << ":PROC\n";

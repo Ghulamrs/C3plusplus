@@ -3242,7 +3242,7 @@ void Parser::synthesizeDefaultCtor(std::size_t which) {
         if (memberFromBase(type, ms[i])) continue;
         StmtPtr one = memberInitialiser(cls, type, ms[i], thisSlot, pos);
         std::vector<ExprPtr> none;
-        if (one == nullptr && type->kind() != Kind::Union)
+        if (one == nullptr && type->kind() != Kind::Union && ms[i].anonUnion == nullptr)
             one = constructMember(cls, type, ms[i], thisSlot, none, pos, true);
         if (one != nullptr) body.push_back(std::move(one));
     }
@@ -4582,6 +4582,13 @@ void Parser::refuseDeletedDefaultInit(const Type *t, const std::string &name,
         if (!needsOne) continue;
         if (memberInit_.find(plain->tag() + "::" + all[i].name) != memberInit_.end())
             continue;
+        // A const member of an anonymous union is set where another member of it has an initialiser.
+        bool unionSet = false;
+        for (std::size_t k = 0; k < all.size() && all[i].anonUnion != nullptr; k++)
+            if (all[k].anonUnion == all[i].anonUnion &&
+                memberInit_.find(plain->tag() + "::" + all[k].name) != memberInit_.end())
+                unionSet = true;
+        if (unionSet) continue;
         src_.fail(pos, "'" + name + "' has type '" + plain->describe() +
                        "', whose member '" + all[i].name + "' is " +
                        (all[i].type->isReference() ? "a reference"
@@ -4608,8 +4615,10 @@ std::vector<StmtPtr> Parser::memberInitialisers(const std::string &tag,
                                                 std::size_t pos) {
     std::vector<StmtPtr> out;
     const std::vector<Member> &ms = type->members();
+    const std::set<const Type *> taken = unionsNamedBy(type, already);
     for (std::size_t i = 0; i < ms.size(); i++) {
         if (already.find(ms[i].name) != already.end()) continue;
+        if (ms[i].anonUnion != nullptr && taken.count(ms[i].anonUnion) != 0) continue;
         StmtPtr one = memberInitialiser(tag, type, ms[i], thisSlot, pos);
         if (one != nullptr) out.push_back(std::move(one));
     }
