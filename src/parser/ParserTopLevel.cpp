@@ -819,6 +819,12 @@ void Parser::topLevel(Program &program) {
     if (memberOf != nullptr && consume("const")) constThis = true;
     // The same C++11 rule the class body applies.
     if (memberOf != nullptr && constexprFunction) constThis = true;
+    // [dcl.fct]/6: a ref-qualifier is a non-static member's, so `int f() &` at namespace scope is ill-formed.
+    const std::size_t refAt = peek().pos;
+    const RefQual refThis = refQualifier();
+    if (refThis != RefQual::None && memberOf == nullptr)
+        src_.fail(refAt, "non-member function '" + d.name + "' cannot have a ref-qualifier - "
+                         "[dcl.fct]/6 allows one on a non-static member function alone");
 
     // The exception specification comes after the constness, which is the order C++ writes them in.
     pendingNoexcept_ = exceptionSpecification();
@@ -850,6 +856,7 @@ void Parser::topLevel(Program &program) {
             if (const std::vector<std::size_t> *set = overloadsOf(key))
                 for (std::size_t k = 0; k < set->size(); k++)
                     if (functions_[(*set)[k]].constThis == constThis &&
+                        functions_[(*set)[k]].refThis == refThis &&
                         sameParameters(functions_[(*set)[k]].params, params))
                         declared = true;
             if (!declared) {
@@ -877,10 +884,10 @@ void Parser::topLevel(Program &program) {
                                                         memberTemplateArgs_, false, &c2, &why);
                 else if (target_.microsoftNames())
                     ok = microsoftMemberTemplateName(d.qualifier, memberOf, d.name,
-                          fnType, memberTemplateArgs_, code, constThis, &sym, &why);
+                          fnType, memberTemplateArgs_, code, constThis, refThis, &sym, &why);
                 else
                     ok = itaniumMemberTemplateName(d.qualifier, memberOf, d.name,
-                          patternFn, memberTemplateArgs_, constThis, &sym, &why);
+                          patternFn, memberTemplateArgs_, constThis, refThis, &sym, &why);
                 if (!ok)
                     src_.fail(d.pos, "'" + key + "' cannot be given a name the "
                                      "linker can hold: " + why);
@@ -896,6 +903,7 @@ void Parser::topLevel(Program &program) {
                     memberTemplateAccess_, false });
                 functions_.back().fromTemplate = true;
                 functions_.back().isStaticMember = staticTemplate;
+                functions_.back().refThis = refThis;
                 // **The defaults its parameter list just read.**
                 if (!pendingDefaults_.empty()) {
                     defaultArgs_[sym] = pendingDefaults_;
@@ -906,13 +914,14 @@ void Parser::topLevel(Program &program) {
         if (const std::vector<std::size_t> *set = overloadsOf(key)) {
             for (std::size_t k = 0; k < set->size() && member == nullptr; k++) {
                 const Signature &f = functions_[(*set)[k]];
-                if (f.constThis == constThis && sameParameters(f.params, params))
+                if (f.constThis == constThis && f.refThis == refThis &&
+                    sameParameters(f.params, params))
                     member = &f;
             }
         }
         if (member == nullptr)
             src_.fail(d.pos, "'" + d.qualifier + "' declares no member '" +
-                             d.name + "' with these parameters");
+                             d.name + "' with these parameters and qualifiers");
         if (member->returns != d.type)
             src_.fail(d.pos, "'" + key + "' was declared to return '" +
                              member->returns->describe() + "' and this says '" +

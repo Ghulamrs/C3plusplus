@@ -78,9 +78,24 @@ StmtPtr Parser::constructObject(const Declared &d, const std::string &symbol,
 // concatenation, because a nested class's is a whole nested-name -
 // ??_GInner@Outer@@UEAAPEAXI@Z, not ??_GOuter::Inner@@...
 bool Parser::overrides(const VSlot &s, const std::string &name,
-                       const std::vector<const Type *> &params, bool constThis) {
-    if (s.name != name || s.constThis != constThis) return false;
+                       const std::vector<const Type *> &params, bool constThis,
+                       RefQual refThis) {
+    if (s.name != name || s.constThis != constThis || s.refThis != refThis) return false;
     return sameParameters(s.params, params);
+}
+
+// [over.load]/2: with one parameter-type-list, either every overload has a ref-qualifier or none has.
+static bool mixesRefQualifier(RefQual a, RefQual b) {
+    return (a == RefQual::None) != (b == RefQual::None);
+}
+
+std::string Parser::refQualifierMixRefusal(RefQual written, RefQual other) {
+    const RefQual with = written != RefQual::None ? written : other;
+    const std::string spelt = std::string("with ref-qualifier '") +
+                              (with == RefQual::LValue ? "&" : "&&") + "'";
+    const std::string none = "without a ref-qualifier";
+    return "cannot overload a member function " + (written != RefQual::None ? spelt : none) +
+           " with a member function " + (written != RefQual::None ? none : spelt) + " - [over.load]/2";
 }
 
 // **[class.virtual]/8: an override returns the same type, or a pointer or
@@ -119,6 +134,12 @@ std::string Parser::deletingDestructorSymbol(const std::string &cls) {
          : itaniumDeletingDestructorName(cls, findTypedef(cls));
 }
 
+// [class.ctor]/1 and [class.dtor]/1 give neither a cv-qualifier nor a ref-qualifier, as clang says.
+void Parser::refuseSpecialRefQualifier(const char *what) const {
+    if (!peek().is("&") && !peek().is("&&")) return;
+    src_.fail(peek().pos, "ref-qualifier '" + peek().text + "' is not allowed on a " + what);
+}
+
 void Parser::declareDestructor(const std::string &cls, std::size_t pos,
                                Access access, bool isVirtual) {
     std::vector<const Type *> params;
@@ -126,6 +147,7 @@ void Parser::declareDestructor(const std::string &cls, std::size_t pos,
     parameterTypes(params, variadic);
     if (!params.empty() || variadic)
         src_.fail(pos, "a destructor takes no parameters");
+    refuseSpecialRefQualifier("destructor");
     // A destructor is `noexcept` in C++11 whether or not it says so.
     pendingNoexcept_ = exceptionSpecification();
     const VirtSpecifiers virt = takeVirtSpecifiers();
@@ -1822,6 +1844,7 @@ void Parser::declareConstructor(const std::string &cls, std::size_t pos,
     parameterTypes(params, variadic);
     if (variadic)
         src_.fail(pos, "a constructor cannot take '...'");
+    refuseSpecialRefQualifier("constructor");
     // Read here rather than at the call site.
     pendingNoexcept_ = exceptionSpecification();
     const SpecialDef special = takeSpecialDef();
@@ -3595,7 +3618,7 @@ const Parser::Signature *Parser::keyFunction(const std::string &tag) const {
         bool pure = false;
         if (vt != vtables_.end())
             for (std::size_t k = 0; k < vt->second.size(); k++)
-                if (vt->second[k].pure && overrides(vt->second[k], f.name, f.params, f.constThis))
+                if (vt->second[k].pure && overrides(vt->second[k], f.name, f.params, f.constThis, f.refThis))
                     pure = true;
         if (pure) continue;
         return &f;
@@ -4087,7 +4110,7 @@ void Parser::checkNotAbstract(const Type *t, std::size_t pos,
 }
 
 void Parser::declareMember(const std::string &cls, const Declared &d,
-                           bool constThis, Access access, bool inUnion,
+                           bool constThis, RefQual refThis, Access access, bool inUnion,
                            bool isVirtual, bool isStatic, bool isPure,
                            VirtSpecifiers virt) {
     if (inUnion)
@@ -4102,8 +4125,11 @@ void Parser::declareMember(const std::string &cls, const Declared &d,
     const std::vector<const Type *> &params = fn->params();
     for (std::size_t k = 0; k < set.size(); k++) {
         const Signature &f = functions_[set[k]];
-        if (f.constThis == constThis && sameParameters(f.params, params))
+        if (!sameParameters(f.params, params)) continue;
+        if (f.constThis == constThis && f.refThis == refThis)
             src_.fail(d.pos, "'" + key + "' is declared twice");
+        if (mixesRefQualifier(f.refThis, refThis))
+            src_.fail(d.pos, refQualifierMixRefusal(refThis, f.refThis));
     }
 
     if (inUnion && isVirtual)
@@ -4112,7 +4138,7 @@ void Parser::declareMember(const std::string &cls, const Declared &d,
     // **A static member takes no slot and overrides nothing.**
     if (isStatic) {
         const std::string sym = memberSymbol(cls, d.name, fn, access, false,
-                                             d.pos, false, true);
+                                             RefQual::None, d.pos, false, true);
         if (!pendingDefaults_.empty()) {
             defaultArgs_[sym] = pendingDefaults_;
             defaultArgNamespace_[sym] = namespaceStack_;
@@ -4136,7 +4162,11 @@ void Parser::declareMember(const std::string &cls, const Declared &d,
     std::size_t slot = slots.size();
     bool foundBase = false;
     for (std::size_t i = 0; i < slots.size(); i++) {
-        if (!overrides(slots[i], d.name, params, constThis)) continue;
+        // clang refuses an override that drops or adds the ref-qualifier as [over.load]/2 does.
+        if (slots[i].name == d.name && sameParameters(slots[i].params, params) &&
+            mixesRefQualifier(slots[i].refThis, refThis))
+            src_.fail(d.pos, refQualifierMixRefusal(refThis, slots[i].refThis));
+        if (!overrides(slots[i], d.name, params, constThis, refThis)) continue;
         checkOverrideReturn(slots[i], fn->returns(), cls, d.name, d.pos);
         checkNotFinal(slots[i], cls, d.name, d.pos);
         slot = i;
@@ -4155,7 +4185,7 @@ void Parser::declareMember(const std::string &cls, const Declared &d,
                     vtables_.find(bs[bi].type->tag());
                 if (it == vtables_.end()) continue;
                 for (std::size_t i = 0; i < it->second.size(); i++)
-                    if (overrides(it->second[i], d.name, params, constThis)) {
+                    if (overrides(it->second[i], d.name, params, constThis, refThis)) {
                         checkOverrideReturn(it->second[i], fn->returns(), cls, d.name, d.pos);
                         checkNotFinal(it->second[i], cls, d.name, d.pos);
                         isVirtual = foundBase = true;
@@ -4177,7 +4207,7 @@ void Parser::declareMember(const std::string &cls, const Declared &d,
                          d.name + "' is not declared 'virtual' and overrides nothing");
 
     const std::string symbol = memberSymbol(cls, d.name, fn, access, constThis,
-                                            d.pos, isVirtual);
+                                            refThis, d.pos, isVirtual);
     if (!pendingDefaults_.empty()) defaultArgs_[symbol] = pendingDefaults_;
     if (!pendingDefaults_.empty())
         defaultArgNamespace_[symbol] = namespaceStack_;
@@ -4188,6 +4218,7 @@ void Parser::declareMember(const std::string &cls, const Declared &d,
         fn->returns(), params, fn->isVariadicFn(), false, d.pos, false,
         cls, constThis, access, isVirtual });
     functions_.back().isNoexcept = pendingNoexcept_;
+    functions_.back().refThis = refThis;
     pendingNoexcept_ = false;
 
     if (!isVirtual) return;
@@ -4211,7 +4242,8 @@ void Parser::declareMember(const std::string &cls, const Declared &d,
             if (slots[i].name == d.name) { at = i; break; }
     }
     slots.insert(slots.begin() + static_cast<std::ptrdiff_t>(at),
-                 VSlot{ d.name, entry, params, constThis, isPure, fn->returns(), virt.isFinal });
+                 VSlot{ d.name, entry, params, constThis, isPure, fn->returns(), virt.isFinal,
+                        refThis });
 }
 
 void Parser::checkNotFinal(const VSlot &s, const std::string &cls, const std::string &name,
@@ -4226,7 +4258,8 @@ void Parser::checkNotFinal(const VSlot &s, const std::string &cls, const std::st
 // choice here.
 std::string Parser::memberSymbol(const std::string &cls, const std::string &name,
                                  const Type *fn, Access access, bool constThis,
-                                 std::size_t pos, bool isVirtual, bool isStatic) {
+                                 RefQual refThis, std::size_t pos, bool isVirtual,
+                                 bool isStatic) {
     // Q public, I protected, A private - the Microsoft ABI puts the access in
     // the name and Itanium does not, both measured.
     const char code = isStatic && access == Access::Public    ? 'S'
@@ -4244,14 +4277,14 @@ std::string Parser::memberSymbol(const std::string &cls, const std::string &name
     bool ok = target_.microsoftNames()
             ? (owner != nullptr
                    ? microsoftLocalMemberName(*owner, cls, findTypedef(cls), name,
-                                              shown, code, constThis, &out, &why)
+                                              shown, code, constThis, refThis, &out, &why)
                    : microsoftMemberName(cls, findTypedef(cls), name, shown, code,
-                                         constThis, &out, &why))
+                                         constThis, refThis, &out, &why))
             : (owner != nullptr
                    ? itaniumLocalMemberName(*owner, cls, findTypedef(cls), name,
-                                            fn, constThis, &out, &why)
+                                            fn, constThis, refThis, &out, &why)
                    : itaniumMemberName(cls, findTypedef(cls), name, fn, constThis,
-                                       &out, &why));
+                                       refThis, &out, &why));
     if (!ok)
         src_.fail(pos, "'" + cls + "::" + name + "' cannot be given a name the "
                        "linker can hold: " + why);

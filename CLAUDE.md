@@ -13552,3 +13552,90 @@ a redundant sign-extension on three targets), names.sh 497/0, overload.sh 35/0, 
 0/0, comment cap 0; Linux box, g++: run.sh 757/0 at -O0 and -O2, tms6747.sh 476/0 at -O0 and -O2 on
 vm6747 and sim6747. Not run: the Windows box, where cl itself would confirm the names, and TI's
 simulators. Seal `cxx1-1.17.dat`, F0C985F1, 161 files.
+
+## Ref-qualifiers on member functions, 2026-10-18
+
+**[dcl.fct]/6 lets a non-static member function carry `&` or `&&` after its
+cv-qualifiers, and [over.match.funcs]/4 says what it buys**: the implicit object
+parameter is `X &` for `&`, `X &&` for `&&`, and `X &` for a member with no
+qualifier - except that an rvalue still binds the unqualified one. So an lvalue
+reaches `take() &`, a temporary or what `static_cast<X &&>` hands over reaches
+`take() &&`, `const &` takes an rvalue as any const lvalue reference does, and
+where `const &` and `&&` are both viable [over.ics.rank]/3.2.3 prefers the
+rvalue reference. Refused by name since the first class landed, "the object's
+value category does not choose an overload here"; it does now, on every target.
+
+**The qualifier is half of a member's identity beside its const**, and that is
+the shape of the change: `Signature::refThis` and `VSlot::refThis` travel with
+`constThis` through the six places that compare two members - the duplicate
+check, the out-of-line lookup, `overrides` and the vtable's three - so `f() &`
+and `f() &&` are two functions, two slots, and two symbols, and a definition
+must match its declaration's qualifier. `resolveOverload` takes the object's
+value category beside its type (`objectIsLvalue`: a class temporary is a
+dereference of its slot wearing the prvalue mark, so the mark is asked first,
+and an xvalue is an rvalue), `refQualifierViable` is [over.match.funcs]/4 in
+three lines, and `betterCandidate` adds the /3.2.3 tiebreak where two
+ref-qualified members tie - both viable means the object is an rvalue. The
+operator path asks the same of its left operand, so `operator=(const X &) &`
+takes `c = b` and refuses `make() = b`. A member template's instantiation
+reads the qualifier through the same out-of-line path a held body replays.
+
+**The pointer type carries it as the function type's** - `int (S::*)() &` is
+`functionType(..., RefQual::LValue)`, interned apart from the plain one, which
+is what makes `&S::one` fill it and the Itanium spelling come out of `type()`
+with nothing taught to the member-pointer branch. [expr.mptr.oper]/6 is checked
+where `.*` is read: a `&` pointer is called on an lvalue alone, a `&&` one on
+an rvalue alone, clang's words.
+
+**Both ABIs measured with clang, all three targets** (`tools/mangled-names`,
+25 names agreeing; x86_64-linux, x86_64-pc-windows-msvc and arm64-apple-darwin
+from `-S`):
+
+    int Buffer::take() &            _ZNR6Buffer4takeEv      ?take@Buffer@@QEGAAHXZ
+    int Buffer::take() &&           _ZNO6Buffer4takeEv      ?take@Buffer@@QEHAAHXZ
+    int Buffer::peek() const &      _ZNKR6Buffer4peekEv     ?peek@Buffer@@QEGBAHXZ
+    int Buffer::peek() const &&     _ZNKO6Buffer4peekEv     ?peek@Buffer@@QEHBAHXZ
+    Buffer &operator=(const Buffer &) &   _ZNR6BufferaSERKS_   ??4Buffer@@QEGAAAEAU0@AEBU0@@Z
+    virtual int v() &               _ZNR6Buffer1vEv         ?v@Buffer@@UEGAAHXZ
+    ns::S::f(int) &                 _ZNR2ns1S1fEi           ?f@S@ns@@QEGAAHH@Z
+    Box<int>::get() &&              _ZNO3BoxIiE3getEv       ?get@?$Box@H@@QEHAAHXZ
+    int (Buffer::*)() &             M6BufferFivRE           P8Buffer@@EGAAHXZ
+    int (Buffer::*)() &&            M6BufferFivOE           P8Buffer@@EHAAHXZ
+
+Itanium writes `R` or `O` after the `K`, inside the nested-name and before the
+prefix; the function type of a member pointer writes it before its closing `E`,
+`KFivOE` for a const one. Microsoft writes `G` or `H` after the `E` and before
+the `A`/`B` of the cv, in a member's name and in `P8`'s alike. cl itself was not
+asked: the Windows box was not in reach this round, and clang for that target
+is the second implementation of the ABI, so the Microsoft column is clang's.
+The C6000 takes the Itanium names.
+
+**Refused, and each as clang refuses it** - none is an exclusion, all being
+rules of C++11: two overloads of one parameter-type-list where some but not all
+have a qualifier, [over.load]/2 (`take() const` beside `take() &` included, and
+an override that drops the base's qualifier), with clang's message naming the
+written declaration first; `&` on an rvalue and `&&` on an lvalue, at the call;
+a non-member function, a static member, a constructor and a destructor with
+one; a pointer or reference to a non-member function type with one. **Still
+refused by name, older than this round**: a pointer to a *const* member
+function, so `int (S::*)() const &` is not spellable here; and `&S::f` where
+`f` is overloaded, which [over.over] would pick by the target's type and cxx1
+refuses whatever the target - `tests/open/member-pointer-overload-by-type.cpp`,
+the one thing found and not mended. The refusal's column is the call's `(`
+where clang's is the object; the text is clang's.
+
+**Measured.** The emit golden at f69faa4: **0 of 1944 files changed**, 16 added
+- the four new cases on four targets; nothing that compiled before emits a
+byte differently, which a parser change that touches every member declaration
+most needs to say. `tools/feature-sweep --clang clang++`: 76 compile, 20
+refused by name, 0 naming nothing, of 96 (was 75 / 21 / 0; the `ref-qualifier`
+row moved). Mac `make test`: run.sh 763 / 0 (496 printed their recorded output,
+264 refused as recorded), emit.sh 1960 / 0, names.sh 501 / 0 against clang on
+three targets, overload.sh 37 / 0 - `ref-qualifier-rank.cpp` the ranking, five
+calls agreeing, and `ref-qualifier-refused.cpp` a const rvalue both refuse -
+`tools/exclusions --check` 129 sites, 0 uncited, 0 stale, comment cap 0. The
+four runnable cases pass `tests/tms6747.sh` at -O0 and -O2 on vm6747 (the one
+on PATH, RIDE 5.12's; none sits beside the tree), with `SIM=0`: the TI tools are
+not on this Mac, so the sim6747 leg was not run. `ref-qualifier-template.nonames`
+records the one divergence, x86_64-linux's C2-only emission of a class
+template's constructor, which no out-of-line definition can dodge.

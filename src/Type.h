@@ -44,6 +44,9 @@ enum class Kind {
     DependentExpr
 };
 
+// A function type's ref-qualifier - [dcl.fct]/6 - and half of a member function's identity beside its const.
+enum class RefQual : char { None, LValue, RValue };
+
 class Target;
 
 class Type;
@@ -461,6 +464,8 @@ public:
     const Type *returns() const { return pointee_; }
     const std::vector<const Type *> &params() const { return params_; }
     bool isVariadicFn() const { return variadic_; }
+    // The ref-qualifier a function type was written with: `int () &` and `int ()` are two types.
+    RefQual refQualifier() const { return refQual_; }
     bool isFunction() const { return kind_ == Kind::Function; }
     bool isMemberPointer() const {
         return cls().kind_ == Kind::MemberPointer;
@@ -476,6 +481,10 @@ public:
         return kind_ == Kind::Pointer && pointee_ != nullptr && pointee_->isFunction();
     }
     std::string parameterList() const;
+    // ` &`, ` &&` or nothing, as a function type's ref-qualifier is written after its parameters.
+    const char *refQualifierSpelling() const {
+        return refQual_ == RefQual::LValue ? " &" : refQual_ == RefQual::RValue ? " &&" : "";
+    }
 
 private:
     friend class TypeTable;
@@ -493,6 +502,7 @@ private:
 
     std::vector<const Type *> params_;
     bool variadic_ = false;
+    RefQual refQual_ = RefQual::None;
 
     std::string tag_;
     std::string local_;
@@ -549,7 +559,8 @@ public:
     const Type *rvalueReferenceTo(const Type *t);
     const Type *arrayOf(const Type *t, long long length);
     const Type *functionType(const Type *returns,
-                             std::vector<const Type *> params, bool variadic);
+                             std::vector<const Type *> params, bool variadic,
+                             RefQual ref = RefQual::None);
     // The Nth parameter of the template being mangled.
     const Type *templateParam(int index);
     // `auto`, before deduction has replaced it.

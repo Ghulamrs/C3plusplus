@@ -70,6 +70,13 @@ bool isLvalue(const Expr &e) {
     return !e.isXvalue() && isGlvalue(e);
 }
 
+// A class temporary is a dereference of its slot and carries the prvalue mark, so the mark is
+// asked first; an xvalue is an rvalue; a reference cast marked Lvalue names an object.
+bool objectIsLvalue(const Expr &e) {
+    if (e.declCategory() == Expr::Category::Prvalue || e.isXvalue()) return false;
+    return e.declCategory() == Expr::Category::Lvalue || isLvalue(e);
+}
+
 const Token &Parser::peekAt(std::size_t n) const {
     std::size_t i = at_ + n;
     return i < tokens_.size() ? tokens_[i] : tokens_.back();

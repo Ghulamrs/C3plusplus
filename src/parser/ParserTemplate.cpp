@@ -2616,6 +2616,8 @@ ExprPtr Parser::memberTemplateCall(ExprPtr object, const Type *obj,
     if (obj->isConst() && !chosen.constThis)
         src_.fail(pos, "'" + name + "' is not a const member function, and this "
                        "object is const");
+    if (!refQualifierViable(chosen.refThis, chosen.constThis, objectIsLvalue(*object)))
+        src_.fail(pos, refQualifierRefusal(name, objectIsLvalue(*object)));
 
     const Type *pointee = chosen.constThis ? types_.withConst(plain) : plain;
     const Type *thisType = types_.pointerTo(pointee);

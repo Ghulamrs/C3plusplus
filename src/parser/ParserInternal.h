@@ -21,6 +21,9 @@ bool isLvalue(const Expr &e);
 // Does it name an object, lvalue or xvalue alike?
 bool isGlvalue(const Expr &e);
 
+// Is this an lvalue as the object of a member call - not a temporary, not what a move hands over?
+bool objectIsLvalue(const Expr &e);
+
 // The integer literal 0, which [conv.ptr] lets stand for a null pointer.
 bool isNullConstant(const Expr &e);
 

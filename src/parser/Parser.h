@@ -108,6 +108,8 @@ private:
         bool inlineBody = false;
         // `= delete` - [dcl.fct.def.delete]: ranked like any other candidate, and refused where chosen.
         bool deleted = false;
+        // **The ref-qualifier, half of a member's identity beside its const** - [over.load]/2.
+        RefQual refThis = RefQual::None;
     };
 
     // One vtable slot: the function it currently points at, and enough of the
@@ -124,6 +126,7 @@ private:
         bool pure = false;
         const Type *returns = nullptr;     // checked when an override takes the slot
         bool isFinal = false;              // [class.virtual]/4: no later override may take it
+        RefQual refThis = RefQual::None;   // `f() &` and `f() &&` take two slots
     };
     // `override` and `final` as written on one declaration, each with where it was written.
     // A constructor rather than member initialisers: g++ refuses those in a default argument of the enclosing class.
@@ -142,7 +145,7 @@ private:
     // first, and the secondary table's walk - and the third copy is why it is named.
     static bool overrides(const VSlot &s, const std::string &name,
                           const std::vector<const Type *> &params,
-                          bool constThis);
+                          bool constThis, RefQual refThis);
     // **The Itanium vtable group and its address points**: for each base
     // subobject with a table in it, by (class, offset in the object), how
     // far into the symbol that table's address point sits.
@@ -194,6 +197,7 @@ private:
         std::string name;
         std::vector<const Type *> params;
         bool constThis;
+        RefQual refThis;
         long long value;
     };
     void vcallEntries(const Type *y, int yAt, const Type *vbase, int vbaseAt,
@@ -1468,7 +1472,7 @@ private:
     ExprPtr memberWithoutObject(const Type *cls, const Member &m, std::size_t pos);
     ExprPtr unevaluatedMember();
     void declareMember(const std::string &cls, const Declared &d, bool constThis,
-                       Access access, bool inUnion, bool isVirtual,
+                       RefQual refThis, Access access, bool inUnion, bool isVirtual,
                        bool isStatic = false, bool isPure = false,
                        VirtSpecifiers virt = VirtSpecifiers());
     // [class.virtual]/4: the slot a member is about to take must not be `final`.
@@ -1483,7 +1487,7 @@ private:
     }
     std::string memberSymbol(const std::string &cls, const std::string &name,
                              const Type *fn, Access access, bool constThis,
-                             std::size_t pos, bool isVirtual = false,
+                             RefQual refThis, std::size_t pos, bool isVirtual = false,
                              bool isStatic = false);
     // `S a[4];` - the default constructor once per element, and `S a[3] = { ... };` - each element
     // from its initialiser, the rest value-initialised. Apart from constructLocal, which builds a
@@ -1721,7 +1725,16 @@ private:
     Signature resolveOverload(const std::string &name,
                                      const std::vector<ExprPtr> &args,
                                      std::size_t pos,
-                                     const Type *object = nullptr);
+                                     const Type *object = nullptr,
+                                     bool objectLvalue = true);
+    // `&` or `&&` after a member's parameter list - [dcl.fct]/6 - consumed; None where there is none.
+    RefQual refQualifier();
+    // [over.match.funcs]/4: whether a member with this ref-qualifier and const takes the object.
+    static bool refQualifierViable(RefQual ref, bool constThis, bool objectLvalue);
+    static std::string refQualifierRefusal(const std::string &name, bool objectLvalue);
+    static std::string refQualifierMixRefusal(RefQual written, RefQual other);
+    void refuseMemberPointerCategory(const Expr &mp, bool lvalue, std::size_t pos) const;
+    void refuseSpecialRefQualifier(const char *what) const;
 
     ExprPtr newExpression(std::size_t pos);
     ExprPtr deleteExpression(std::size_t pos);
@@ -2386,7 +2399,8 @@ private:
                               std::vector<ExprPtr> &args, std::size_t pos);
     ExprPtr bracedArgumentFor(const Type *param, Init &in, std::size_t pos);
     Signature resolveOverloadBraced(const std::string &key, std::vector<ExprPtr> &args,
-                                    std::size_t pos, const Type *object = nullptr);
+                                    std::size_t pos, const Type *object = nullptr,
+                                    bool objectLvalue = true);
     bool onlyImplicitConstructors(const std::string &tag) const;
     int listTemps_ = 0;
     // `std::initializer_list<E>` itself, which a braced list makes rather than calls.

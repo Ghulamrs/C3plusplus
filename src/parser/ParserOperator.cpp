@@ -80,7 +80,7 @@ ExprPtr Parser::castExpr() {
 ExprPtr Parser::boundMemberPointer(const Type *cls, const Signature &f,
                                    std::size_t pos, long long vtableCode,
                                    const std::string &code) {
-    const Type *fn = types_.functionType(f.returns, f.params, f.variadic);
+    const Type *fn = types_.functionType(f.returns, f.params, f.variadic, f.refThis);
     const Type *mp = types_.memberFunctionPointerTo(cls, fn, target_);
     const int slot = allocateFrameSlot(mp);
     const Type *word = types_.pointerTo(types_.get(Kind::Void));
@@ -144,6 +144,16 @@ ExprPtr Parser::boundMemberPointer(const Type *cls, const Signature &f,
     made->setType(mp);
     (void)pos;
     return made;
+}
+
+// [expr.mptr.oper]/6: a pointer to a `&` member is called on an lvalue alone, a `&&` one on an rvalue.
+void Parser::refuseMemberPointerCategory(const Expr &mp, bool lvalue, std::size_t pos) const {
+    const Type *t = mp.type()->unqualified();
+    if (!t->isMemberFunctionPointer()) return;
+    const RefQual ref = t->pointee()->refQualifier();
+    if (ref == RefQual::None || (ref == RefQual::LValue) == lvalue) return;
+    src_.fail(pos, "pointer-to-member function type '" + t->describe() + "' can only be called "
+                   "on an " + (ref == RefQual::LValue ? "lvalue" : "rvalue"));
 }
 
 ExprPtr Parser::applyMemberPointer(ExprPtr addr, ExprPtr mp, std::size_t pos,
@@ -300,10 +310,12 @@ ExprPtr Parser::memberPointerExpr() {
                 src_.fail(pos, "the left of '.*' has to be an object of class "
                                "type, and this is '" + of->describe() + "'");
             const bool constObject = of->isConst();
+            const bool lvalue = objectIsLvalue(*n);
             ExprPtr addr(new Unary('&', std::move(n)));
             addr->setType(types_.pointerTo(of->unqualified()));
-            n = applyMemberPointer(std::move(addr), memberPointerExpr(), pos,
-                                   constObject);
+            ExprPtr mp = memberPointerExpr();
+            refuseMemberPointerCategory(*mp, lvalue, pos);
+            n = applyMemberPointer(std::move(addr), std::move(mp), pos, constObject);
             continue;
         }
         if (consume("->*")) {

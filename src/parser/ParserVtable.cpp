@@ -95,6 +95,7 @@ const Parser::VSlot *Parser::declaredSlot(const Type *cls, const VSlot &s) const
         for (std::size_t k = 0; k < set->size() && !own; k++) {
             const Signature &f = functions_[(*set)[k]];
             if (f.owner == cls->tag() && f.constThis == s.constThis &&
+                f.refThis == s.refThis &&
                 f.isVirtual && sameParameters(f.params, s.params))
                 own = true;
         }
@@ -103,7 +104,7 @@ const Parser::VSlot *Parser::declaredSlot(const Type *cls, const VSlot &s) const
     for (std::size_t i = 0; i < it->second.size(); i++) {
         const VSlot &c = it->second[i];
         if (dtor ? c.name == s.name
-                 : overrides(c, s.name, s.params, s.constThis))
+                 : overrides(c, s.name, s.params, s.constThis, s.refThis))
             return &c;
     }
     return nullptr;
@@ -173,7 +174,7 @@ void Parser::vcallEntries(const Type *y, int yAt, const Type *vbase,
         const Overrider ov = finalOverrider(root, rootAt, slots[i], y, yAt,
                                             layout, pos);
         out.push_back(VcallEntry{ y, slots[i].name, slots[i].params,
-                                  slots[i].constThis,
+                                  slots[i].constThis, slots[i].refThis,
                                   static_cast<long long>(ov.at - vbaseAt) });
     }
     const std::vector<const Type::BaseSpec *> bs = y->directBases();
@@ -353,6 +354,7 @@ void Parser::layoutOneVtable(VtableGroup &g, const Type *x, int xAt,
                 for (std::size_t k = 0; k < vcalls.size() && idx == vcalls.size(); k++)
                     if (vcalls[k].cls == x && vcalls[k].name == want &&
                         vcalls[k].constThis == slots[i].constThis &&
+                        vcalls[k].refThis == slots[i].refThis &&
                         sameParameters(vcalls[k].params, slots[i].params))
                         idx = k;
                 if (idx == vcalls.size())
