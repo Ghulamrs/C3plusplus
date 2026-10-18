@@ -14162,3 +14162,19 @@ impossible); a pack expanded inside a nested template-id of a partial
 specialization's arguments. **Refused as clang refuses it**: a bare `Ns`
 without its `...`, a pack of types where values are taken, a class template's
 pack that is not last, two packs of different lengths under one `...`.
+
+## Two over-acceptances closed, 2026-10-18
+
+**[basic.def.odr]/1: `int v;` at namespace scope is a definition, and C++ has no tentative one.**
+`int v; int v = 5;` - and `int w;` in `namespace m` then `int m::w = 7;` - compiled and kept one
+object; the scalar path checked only for a second *initialiser*, which is C's rule. It refuses a
+second definition now, as the class path and the reference path beside it already did, with their
+words. `extern-then-define.cpp` holds the shapes it must leave alone: any number of `extern`
+declarations beside one definition, before or after it, in a namespace and through a qualifier.
+
+**[class.union]/2: a union member whose class has a constructor, destructor or assignment of its own
+makes the union C++11's unrestricted union**, whose own special members are deleted - `U u;` is
+ill-formed. A named union compiled it and built nothing; it is refused by name now, as the
+anonymous-union round already refused it inside an anonymous union. A union of trivial classes is
+unchanged. Both entries leave `tests/open` for `tests/cases`; the emitted assembly of every existing
+case is byte-identical (0 of 2024).
