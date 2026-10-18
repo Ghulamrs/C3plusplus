@@ -69,6 +69,30 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
         if (a > classAlign) classAlign = a;
     }
 
+    // **`struct lib::P *` and `struct lib::Box<char> *`**, [dcl.type.elab]: a qualified name, or a
+    // template-id, names a class already declared - read as the type name it is, unless a body follows.
+    if (classInstantiationTag_.empty() && peek().kind == TokenKind::Ident &&
+        (peekAt(1).is("::") || (peekAt(1).is("<") && findTemplate(peek().text) != templates_.end()))) {
+        std::size_t i = at_ + 1;
+        int depth = 0;
+        for (; i < tokens_.size() && tokens_[i].kind != TokenKind::End; i++) {
+            const Token &t = tokens_[i];
+            if (t.is("<")) depth++;
+            else if (t.is(">")) depth--;
+            else if (t.is(">>")) depth -= 2;
+            else if (depth == 0 && !t.is("::") && t.kind != TokenKind::Ident) break;
+            else if (depth == 0 && t.kind == TokenKind::Ident && !tokens_[i - 1].is("::")) break;
+        }
+        if (!tokens_[i].is("{") && !tokens_[i].is(":")) {
+            StorageClass sc = StorageNone;
+            Qualifiers q;
+            const Type *named = unqualifiedSpecifiers(&sc, &q);
+            if (!named->unqualified()->isStructOrUnion())
+                src_.fail(pos, std::string("'") + what + "' names a class, and this is '" +
+                               named->describe() + "'");
+            return named;
+        }
+    }
     std::string tag;
     if (peek().kind == TokenKind::Ident) { tag = peek().text; at_++; }
     // **[class.union]/5: an anonymous union** - nameless, a body, a `;` straight after - its members the scope's own.

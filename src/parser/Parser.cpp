@@ -763,7 +763,7 @@ bool Parser::atDeclarationStart() const {
     // is a declaration and nothing else - or an expression is asked for instead.
     return atTypeName() || peek().is("static") || peek().is("extern")
         || peek().is("register") || peek().is("auto") || peek().is("typedef")
-        || peek().is("constexpr") || peek().is("alignas")
+        || peek().is("constexpr") || peek().is("alignas") || peek().is("class")
         || (peek().is("[") && peekAt(1).is("["));
 }
 

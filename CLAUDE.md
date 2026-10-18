@@ -14315,3 +14315,13 @@ reads an address built on a constant pointer - a cast of an integer to a pointer
 members of that (an anonymous union's and a nested struct's included), and `&` - so offsetof
 folds wherever a constant is asked for: a static_assert, an array bound, an enumerator, a case
 label, a template argument. `offsetof-constant-expression`, from tests/open.
+
+## An elaborated name with a qualifier, and `class X x;` in a block, 2026-10-18
+
+**`struct lib::P *q;` and `struct lib::Box<char> *b;` were "expected a name" at the `::`**,
+[dcl.type.elab]: an elaborated-type-specifier may carry a nested-name-specifier or be a
+template-id, and names a class already declared. `structOrUnionSpecifier` scans past the name
+first - a body after it is a definition, which keeps its old road - and otherwise reads the name
+as the type name it is, refusing one that is not a class. **And a block declaration beginning
+with `class`, `class Q qq;`, was "expected an expression"**: `atDeclarationStart` knew `struct`
+and `union` through `atTypeName` and not `class`. `elaborated-qualified-name`, from tests/open.
