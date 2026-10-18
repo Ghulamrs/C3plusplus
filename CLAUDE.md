@@ -14365,3 +14365,15 @@ Specializations were already indexed under their namespace; a global template's 
 `::name` as well now, so a call reaching the global one ranks no other namespace's.
 `namespace-function-template-name`, from tests/open, which now holds only the over-acceptance
 two-phase lookup costs.
+
+## Version 1.21, 2026-10-18: the open register emptied
+
+**1.21 is six of the seven programs `tests/open` held, mended and moved into the suite** - slicing, a
+non-type parameter's declared type, `offsetof` as a constant, a qualified elaborated name with `class`
+in a block, [over.over] by target type, and two namespaces' function templates of one name, each with
+its section above. The register keeps only `two-phase-lookup-late-name`, the over-acceptance the
+token-replay decision costs. `tools/feature-sweep` is unchanged at 79 / 17 / 0 of 96; none of the six
+is a row of the grid. Measured at the release: Mac `make test` exit 0 (run.sh 838/0, names.sh 540/0,
+overload.sh 41/0, exclusions 135 sites 0/0, comment cap 0); Linux run.sh 838/0 at -O0 and -O2,
+tms6747 on vm6747 and sim6747; Windows cases 1322/0 through both spellings and 1016/0 at -O2,
+ti-link 524/0; names against cl differ on the 18 library cases they did at 1.19 and no other.

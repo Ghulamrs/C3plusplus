@@ -169,6 +169,24 @@ x86_64-windows, where a class cannot be thrown yet and they print and abort inst
 delete`, the placement and nothrow forms, `std::bad_alloc` from the platform runtime, `typeid` and
 `dynamic_cast` all work.
 
+## What 1.21 changes
+
+Six of the seven programs `tests/open` held - each a known wrong answer or refusal against clang -
+are mended and moved into the suite; the seventh, the over-acceptance two-phase lookup costs, is kept by design:
+
+* **Slicing**: `T t = u;`, `w = u`, `take(u)` for `take(T)` and a return copy the base part of a derived
+  object; a derived object passed by value to a base ranks as a Conversion. A private base is refused.
+* **A non-type template parameter has its declared type**: `unsigned long long N` past LLONG_MAX, `unsigned`
+  arithmetic, `bool`, `char`, `short` - every one had been an `int`.
+* **`offsetof` is a constant expression**, in a `static_assert`, an array bound, an enumerator, a `case`
+  label and a template argument.
+* **`struct lib::P *` and `struct lib::Box<char> *`**, an elaborated name with a qualifier or a
+  template-id; and a block declaration beginning with `class`.
+* **An overloaded function's name picked by its target type** ([over.over]): `&f` and `&S::f` take the one
+  whose type an initialiser, an assignment, a cast or a return asks for. An argument does not pick yet.
+* **Two namespaces' function templates of one name**: `m::twice(2)` called `n::twice` - a silent wrong
+  value; a call now takes the nearest namespace's templates, or the one a qualifier names.
+
 ## What 1.20 changes
 
 The user's CCS sample projects, SampleExt and SampleExt1, compile and run unchanged - but for
@@ -453,10 +471,10 @@ defects below and nothing else; Compiler-Cppi has closed those too, with the
 vtable group, `_ZTv` thunks, VTT and construction vtables, and that work is
 not in 1.3.
 
-## Known shortcomings in 1.20
+## Known shortcomings in 1.21
 
 Everything here is measured and written down elsewhere in full; this is the
-short list a user of **1.20** should have in front of them. `docs/EXCLUSIONS.md`
+short list a user of **1.21** should have in front of them. `docs/EXCLUSIONS.md`
 is the complete one - 138 refusal sites on 2026-10-18 (131 on 2026-10-08),
 each citing the source line that refuses it, and `make test` fails when the two
 disagree. The heading
