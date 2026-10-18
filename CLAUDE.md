@@ -13863,3 +13863,16 @@ compiles the example for all four targets. `anonymous-union.nonames` records
 clang's memset for `Value z = {}` (S-09's difference) and the closure's
 Microsoft name; `anonymous-union-namespace.nonames` the unnamed namespace's
 Microsoft hash; `anonymous-union-local.nonames` the static local's name.
+
+**And the Windows box found what neither Itanium target could: the MASM spelling cannot write
+the hidden object's name.** cl names it `?$S1@@3T<unnamed-type-$S1>@@A`, and the GNU spelling
+quotes it, so clang assembled it and every gate on the Mac and Linux was green. The project's
+masm, which a Release build in GRIDE assembles with, answered `unexpected '<'` - the one case
+of 1246 that failed `tools/verify-three windows`, at -O0 and -O2. `MasmSpelling::mangle`
+already renamed a dotted name (`$` and underscores); it renames any character a MASM name
+cannot hold the same way now, which is safe because such an object is always internal - a
+namespace-scope anonymous union is `static` or in an unnamed namespace - and an exported name
+that would need it is refused rather than renamed. Every case compiled with `-masm=masm` before
+and after: 1 of 487 changed, this one; assembled and linked by the project's masm and link on
+the box, it prints its `.expected` at -O0 and -O2. The lesson is the house's: the spelling a
+user's Release build takes is not the one the default run checks, and only the third box says so.
