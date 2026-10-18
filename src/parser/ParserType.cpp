@@ -963,6 +963,17 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                                      "its own - a union holding one is not supported yet: [class.union]/2 "
                                      "would delete the enclosing class's own special members");
                 anonUnionMemberPos_[type].push_back(d.pos);
+            } else if (kind == Kind::Union && !memberIsFunction && msc != StorageStatic) {
+                const Type *mc = d.type->unqualified();
+                while (mc->isArray()) mc = mc->pointee()->unqualified();
+                if (mc->isStructOrUnion() && !mc->tag().empty() &&
+                    (hasConstructors(mc->tag()) || destructorOf(mc) != nullptr ||
+                     copyConstructorOf(mc) != nullptr || moveConstructorOf(mc) != nullptr ||
+                     copyAssignOf(mc) != nullptr || moveAssignOf(mc) != nullptr))
+                    src_.fail(d.pos, "'" + d.name + "' is a member of a union, and its class '" +
+                                     mc->tag() + "' has a constructor, destructor or assignment of its "
+                                     "own - a union holding one is not supported yet: [class.union]/2 "
+                                     "would delete the union's own special members");
             }
 
             // **[dcl.stc]/9 names what `mutable` may not be applied to**, and

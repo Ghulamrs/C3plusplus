@@ -609,6 +609,10 @@ void Parser::topLevel(Program &program) {
 
                 prev->type = both;
                 d.type = both;
+                // [basic.def.odr]/1: `int v;` already defines - C++ has no tentative definition.
+                const bool defines = sc != StorageExtern || hasInit || dynamicScalar.value != nullptr;
+                if (defines && prev->emitted)
+                    src_.fail(d.pos, "'" + d.name + "' is defined twice");
                 if ((hasInit || dynamicScalar.value != nullptr) && prev->hasInit)
                     src_.fail(d.pos, "'" + d.name + "' is given an initialiser twice");
                 if (hasInit || dynamicScalar.value != nullptr) prev->hasInit = true;
