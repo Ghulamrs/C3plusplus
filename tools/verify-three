@@ -25,10 +25,13 @@ WHICH=${1:-all}
 KEY=${CXX1_LINUX_KEY:-$HOME/Documents/Claude/myMorningWalk.pem}
 LINUX=${CXX1_LINUX:-ec2-user@52.202.164.123}
 WINDOWS=${WINDOWS_BOX:-windows}
+# The workspace holding TI/ and Windows/: two levels up as it was under Compilers/, or one since 2026-10-18.
+WS="$ROOT/../.."
+for w in "$ROOT/../.." "$ROOT/.."; do [ -d "$w/TI" ] || [ -d "$w/Windows" ] && { WS=$w; break; }; done
 # ASM6x's tests directory, for c6xdiff.py: $C6XDIFF's, beside $ASM6X's build, or the workspace's.
 C6XTESTS=""
 for c in "$(dirname "${C6XDIFF:-/nonexistent/x}")" "$(dirname "${ASM6X:-/nonexistent/x}")/../tests" \
-         "$ROOT/../../TI/ASM6x/tests"; do
+         "$WS/TI/ASM6x/tests"; do
     [ -f "$c/c6xdiff.py" ] && [ -f "$c/elfdump.py" ] && { C6XTESTS=$c; break; }
 done
 # The RIDE tree on the Windows box: the ride leg runs its suite, and its bin\ holds the product's
@@ -143,7 +146,7 @@ if [ "$WHICH" = all ] || [ "$WHICH" = c6747 ]; then
         # RTS6x's referee (review of 2026-10-08, R7): every image both tms6747 suites link against
         # rts6x.lib, on TI's simulator against sim6747, recorded into RTS6x's docs/.
         echo "--- RTS6x referee ---"
-        if [ -x "$ROOT/../../TI/RTS6x/tools/referee" ]; then "$ROOT/../../TI/RTS6x/tools/referee" --record || rc=1
+        if [ -x "$WS/TI/RTS6x/tools/referee" ]; then "$WS/TI/RTS6x/tools/referee" --record || rc=1
         else echo "referee: no RTS6x at ../../TI/RTS6x"; rc=1; fi
         echo "c6747 leg: $(( $(date +%s) - t ))s, $([ $rc -eq 0 ] && echo passed || echo FAILED)"
         exit $rc
@@ -191,9 +194,9 @@ if [ "$WHICH" = all ] || [ "$WHICH" = windows ]; then
     # every case through -masm=masm as well as the GNU spelling, into winout\masm.
     TOOLS='C:\Users\GRA\work\verify-tools'
     MASMENV=""
-    if [ -d "$ROOT/../../Windows/MASM/src" ] && [ -d "$ROOT/../../Windows/LINK/src" ]; then
+    if [ -d "$WS/Windows/MASM/src" ] && [ -d "$WS/Windows/LINK/src" ]; then
         TT=$(mktemp -t cxx1tools).tgz
-        COPYFILE_DISABLE=1 tar -C "$ROOT/../../Windows" --no-xattrs -czf "$TT" --exclude '* [0-9]*' MASM/src LINK/src 2>/dev/null
+        COPYFILE_DISABLE=1 tar -C "$WS/Windows" --no-xattrs -czf "$TT" --exclude '* [0-9]*' MASM/src LINK/src 2>/dev/null
         scp -q -o BatchMode=yes "$TT" "$WINDOWS:C:\\Users\\GRA\\work\\tools.tgz" || STATUS=1
         ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $TOOLS 2>nul & mkdir $TOOLS && tar -C $TOOLS -xzf C:\\Users\\GRA\\work\\tools.tgz" >/dev/null || STATUS=1
         rm -f "$TT"
