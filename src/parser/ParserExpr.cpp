@@ -1629,6 +1629,10 @@ ExprPtr Parser::primary(Program *program) {
                 src_.fail(peekAt(k + 1).pos, "'" + cls->tag() + "' has no member called '" +
                                          member + "'");
             }
+        // [temp.variadic]/5: a pack is written with the `...` that expands it, never bare.
+        if (packs_.count(name) != 0)
+            src_.fail(pos, "'" + name + "' is a parameter pack, and here it is written without the "
+                           "'...' that expands it");
         src_.fail(pos, "'" + name + "' was not declared");
     }
 

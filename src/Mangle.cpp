@@ -426,9 +426,34 @@ public:
     void templateArgument(const TemplateArg &a) {
         // `J i c E` - a pack argument is its members between J and E, and an
         // empty one is `JE`. Measured: _Z7nothingIJicEEiv, _Z5totalIiJEEiT_DpT0_.
+        // A pack of values is each `L<type><value>E`: `JLi1ELi2EE`, `JLin1EE`, `JL1E0ELS0_1EE` for an enum.
         if (a.isPack) {
             out += 'J';
-            for (std::size_t i = 0; i < a.pack.size(); i++) type(a.pack[i]);
+            if (a.expandsParam >= 0) {
+                // **`Ns...` in a pattern is `XspT_E`, no candidate; `Ts...` is `DpT_`, one beside its T_**:
+                // measured `_Z2sqIJLi5EEEi4ListIJXspT_EEES1_` against `_Z1hIJiEEi2TLIJDpT_EES3_`.
+                if (a.packIsValue) {
+                    out += "XspT";
+                    if (a.expandsParam > 0) out += std::to_string(a.expandsParam - 1);
+                    out += "_E";
+                } else {
+                    out += "Dp";
+                    type(a.pack[0]);
+                    subs_.push_back(Sub{ nullptr, "<pack-expansion>" + std::to_string(a.expandsParam) });
+                }
+            }
+            for (std::size_t i = 0; a.expandsParam < 0 && i < a.pack.size(); i++) {
+                if (!a.packIsValue) { type(a.pack[i]); continue; }
+                TemplateArg one;
+                one.isType = false;
+                one.type = a.pack[i];
+                one.value = a.packValues[i];
+                if (a.pack[i]->kind() == Kind::TemplateParam) {
+                    one.isParam = true;
+                    one.paramIndex = static_cast<int>(a.pack[i]->length());
+                }
+                templateArgument(one);
+            }
             out += 'E';
             return;
         }
@@ -880,8 +905,7 @@ public:
 
         out = "?$";
         pushName(c->templateName());
-        const std::vector<TemplateArg> &args = c->templateArgs();
-        for (std::size_t i = 0; i < args.size(); i++) templateArgument(args[i]);
+        templateArguments(c->templateArgs());
         std::string component;
         component.swap(out);
 
@@ -1091,22 +1115,33 @@ public:
         } else {
             pushName(name);
         }
-        for (std::size_t i = 0; i < args.size(); i++) templateArgument(args[i]);
+        templateArguments(args);
         out += '@';               // closes the template-id
         names_.swap(outerNames);
         args_.swap(outerArgs);
     }
 
+    // **Two packs in a row are parted by `$$Z`** - measured with clang for this ABI: `two<{1},{2,3}>` is
+    // `??$two@$00$$Z$01$02@@`, `tv<{int},{1}>` `??$tv@H$$Z$00@@`, and a pack after a plain argument has none.
+    void templateArguments(const std::vector<TemplateArg> &args) {
+        for (std::size_t i = 0; i < args.size(); i++) {
+            if (i > 0 && args[i].isPack && args[i - 1].isPack) out += "$$Z";
+            templateArgument(args[i]);
+        }
+    }
+
     // `$02` for 3, and `$0?4` for -5.
     void templateArgument(const TemplateArg &a) {
-        // A pack's members are written one after another with nothing around
-        // them, and an empty pack is `$$V`. Measured with cl:
-        // ??$total@HH@@YAHHH@Z for a pack of one, ??$total@H$$V@@YAHH@Z for none.
+        // A pack's members are written one after another with nothing around them, and an empty
+        // pack is `$$V` - measured with cl: ??$total@HH@@YAHHH@Z for one, ??$total@H$$V@@YAHH@Z for none.
+        // A pack of values is each `$0..` and an empty one `$S`: `??$sum@$03$04$05@@YAHXZ`, `??$f@$S@@YAHU?$List@$S@@@Z`, clang for this ABI.
         if (a.isPack) {
-            if (a.pack.empty()) { out += "$$V"; return; }
+            if (a.expandsParam >= 0) { refuse("a pattern has no Microsoft name"); return; }
+            if (a.pack.empty()) { out += a.packIsValue ? "$S" : "$$V"; return; }
             for (std::size_t i = 0; i < a.pack.size(); i++) {
                 TemplateArg one;
                 one.type = a.pack[i];
+                if (a.packIsValue) { one.isType = false; one.value = a.packValues[i]; }
                 templateArgument(one);
             }
             return;

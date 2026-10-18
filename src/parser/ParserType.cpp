@@ -497,6 +497,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 src_.fail(peek().pos, "explicit instantiation in a class is not "
                                       "supported yet");
             templateParameters(mt.params);
+            refuseAfterPack(mt.params);
             mt.afterParams = at_;
             mt.pos = peek().pos;
             if (peek().is("struct") || peek().is("class") || peek().is("union"))

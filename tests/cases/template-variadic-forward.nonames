@@ -1,0 +1,2 @@
+x86_64-linux  clang zeroes the by-value `Tuple<...>` temporaries with a call to memset where cxx1 writes the field out - the difference S-09 recorded in CLAUDE.md, a question about emission and not about a name; the other 7 names, the `JDpT_E` expansion among them, agree.
+x86_64-windows  the same memset; every other name agrees. arm64-darwin agrees on all 7.

@@ -1,0 +1,1 @@
+:6:32: error: a pack expanded inside a nested template-id in a partial specialization's arguments is not supported yet

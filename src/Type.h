@@ -103,6 +103,12 @@ struct TemplateArg {
     // both need the members rather than anything standing for them.
     bool isPack = false;
     std::vector<const Type *> pack;
+    // **A non-type pack's values**, one per member of `pack`, which then holds their type once each:
+    // Itanium `JLi1ELi2EE`, Microsoft `$00$01` and `$S` for none. `type` is that element type.
+    bool packIsValue = false;
+    std::vector<long long> packValues;
+    // **`Ns...` or `Ts...` in a pattern**: the expansion of pack parameter `expandsParam`, its one member that parameter itself - `JXspT_EE`, `JDpT_E`; -1 for a list.
+    int expandsParam = -1;
     // **A template template argument**, `Holder<Box, int>`'s Box: `type` is the stand-in TypeTable::templateNameType makes,
     // or a Kind::TemplateParam where a pattern names an enclosing template template parameter.
     bool isTemplate = false;
