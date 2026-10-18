@@ -395,7 +395,7 @@ ExprPtr Parser::lambdaExpression() {
     d.name = "operator()";
     d.type = types_.functionType(returns, params, false);
     d.pos = pos;
-    declareMember(tag, d, !isMutable, Access::Public, false, false);
+    declareMember(tag, d, !isMutable, RefQual::None, Access::Public, false, false);
 
     // The tokens the replay will read. Appended rather than spliced: an index
     // into tokens_ is what PendingBody keeps, and an index survives the vector
@@ -622,12 +622,12 @@ void Parser::captureFreeConversion(const std::string &tag, const std::string &lo
     inv.name = "__invoke";
     inv.type = fn;
     inv.pos = pos;
-    declareMember(tag, inv, false, Access::Public, false, false, true);
+    declareMember(tag, inv, false, RefQual::None, Access::Public, false, false, true);
     Declared cv;
     cv.name = "operator " + fn->describe() + " *";
     cv.type = types_.functionType(fp, std::vector<const Type *>(), false);
     cv.pos = pos;
-    declareMember(tag, cv, true, Access::Public, false, false);
+    declareMember(tag, cv, true, RefQual::None, Access::Public, false, false);
 
     const std::string k = std::to_string(lambdaConvSeq_++);
     const std::string cls = "$lcls" + k, ptr = "$lfp" + k, ret = "$lret" + std::to_string(lambdaRetSeq_++);

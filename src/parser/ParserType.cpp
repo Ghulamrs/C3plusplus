@@ -1013,15 +1013,6 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 parameterTypes(mparams, mvariadic);
                 skipAttributes();
                 d.type = types_.functionType(d.type, std::move(mparams), mvariadic);
-                // **A ref-qualifier picks the overload by the object's own
-                // value category** - `f() &` against `f() &&` - which is a
-                // rank the implicit object parameter does not carry here.
-                if (peek().is("&") || peek().is("&&"))
-                    src_.fail(peek().pos, "a ref-qualifier on a member "
-                                          "function - 'f() &' or 'f() &&' - is "
-                                          "not supported yet: the object's "
-                                          "value category does not choose an "
-                                          "overload here");
                 bool constThis = false;
                 if (consume("const")) constThis = true;
                 // `f() volatile` and `f() const volatile`: the cv on `this` is
@@ -1033,12 +1024,18 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                               "- the qualifier on 'this' is part of the name on "
                               "both ABIs, and 'volatile' is not in this "
                               "compiler's type system");
+                // [dcl.fct]/6: the ref-qualifier, after the cv - `f() &`, `f() const &&`.
+                const std::size_t refAt = peek().pos;
+                const RefQual refThis = refQualifier();
                 // [class.static]/1: a static member function has no `this`, so
                 // there is nothing for either of these to qualify.
                 if (memberIsStatic && constThis)
                     src_.fail(d.pos, "'" + d.name + "' is a static member "
                                      "function and has no 'this', so 'const' "
                                      "has nothing to qualify");
+                if (memberIsStatic && refThis != RefQual::None)
+                    src_.fail(refAt, "static member function '" + d.name + "' cannot have a "
+                                     "ref-qualifier - it has no 'this' for one to qualify");
                 if (memberIsStatic && isVirtual)
                     src_.fail(d.pos, "'" + d.name + "' cannot be both 'static' "
                                      "and 'virtual' - one says there is no "
@@ -1093,7 +1090,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                         src_.fail(d.pos, "a member function needs a class with "
                                          "a name - this one is anonymous");
                     const std::size_t sigAt = functions_.size();
-                    declareMember(tag, d, constThis, access,
+                    declareMember(tag, d, constThis, refThis, access,
                                   kind == Kind::Union, isVirtual, memberIsStatic,
                                   isPure, virt);
                     pendingBodies_.push_back(PendingBody{
@@ -1107,7 +1104,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 if (tag.empty())
                     src_.fail(d.pos, "a member function needs a class with a "
                                      "name - this one is anonymous");
-                declareMember(tag, d, constThis, access, kind == Kind::Union,
+                declareMember(tag, d, constThis, refThis, access, kind == Kind::Union,
                               isVirtual, memberIsStatic, isPure, virt);
                 if (special == SpecialDef::Deleted) {
                     // A deleted virtual would leave its slot naming a function with no body.
@@ -2376,7 +2373,14 @@ Parser::Declared Parser::declarator(const Type *base, bool nameOptional,
                                       "'this' is not part of a function type "
                                       "here, so this one cannot be told from "
                                       "the other");
-            outer = types_.functionType(base, std::move(params), variadic);
+            // `int (S::*)() &` - the ref-qualifier is the function type's, [dcl.fct]/6; a
+            // pointer or reference to a non-member function type may not carry one.
+            if (!wrapsMemberPointer && (peek().is("&") || peek().is("&&")))
+                src_.fail(peek().pos, "a pointer or reference to a function type cannot "
+                                      "have a '" + peek().text + "' qualifier - only a "
+                                      "non-static member function can, [dcl.fct]/6");
+            const RefQual ref = refQualifier();
+            outer = types_.functionType(base, std::move(params), variadic, ref);
         } else {
             outer = arraySuffix(base, posOuter);
         }
@@ -2537,6 +2541,12 @@ Parser::Declared Parser::declarator(const Type *base, bool nameOptional,
     return Declared{ name, t, pos, paramsAt, qualifier };
 }
 
+
+RefQual Parser::refQualifier() {
+    if (consume("&"))  return RefQual::LValue;
+    if (consume("&&")) return RefQual::RValue;
+    return RefQual::None;
+}
 
 // **`V<N>(` and `~V<N>(` in V<N>'s own body name its constructor and destructor**:
 // the injected-class-name with its own arguments, [temp.local]/1. C++11 takes it, C++20

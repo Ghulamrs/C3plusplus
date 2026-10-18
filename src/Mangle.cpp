@@ -113,6 +113,10 @@ protected:
 
 class Itanium : public Mangler {
 public:
+    // `R` for `&` and `O` for `&&`, after the cv - [mangle] <ref-qualifier>, measured.
+    static const char *refQualifier(RefQual r) {
+        return r == RefQual::LValue ? "R" : r == RefQual::RValue ? "O" : "";
+    }
     // <nested-name> ::= N [<CV>] <prefix> <unqualified-name> E, with the K for a
     // const `this` before the class - _ZNK5Point4cgetEv. Every enclosing class and
     // namespace is a substitution candidate of its own; the caller writes the name.
@@ -213,12 +217,14 @@ public:
     // What a conversion function converts to, for writtenName.
     const Type *conversionTo_ = nullptr;
 
+    // **`R` or `O` after the cv** - measured, `_ZNR6Buffer4takeEv`, `_ZNKO6Buffer4peekEv`.
     void memberFunction(const std::string &cls, const Type *clsType,
                         const std::string &name,
-                        const Type *fn, bool constThis) {
+                        const Type *fn, bool constThis, RefQual refThis) {
         conversionTo_ = fn->returns();
         out = "_ZN";
         if (constThis) out += "K";
+        out += refQualifier(refThis);
         prefix(clsType, cls);
         // A member operator's operand count is one more than its parameter
         // count, `this` being the first, so a member with no parameter is the
@@ -235,10 +241,11 @@ public:
     void memberFunctionTemplate(const std::string &cls, const Type *clsType,
                                 const std::string &name, const Type *fn,
                                 const std::vector<TemplateArg> &args,
-                                bool constThis) {
+                                bool constThis, RefQual refThis) {
         conversionTo_ = fn->returns();
         out = "_ZN";
         if (constThis) out += "K";
+        out += refQualifier(refThis);
         prefix(clsType, cls);
         writtenName(name, false);
         // **The template-prefix - `Mx<3,3>::twice` - is a candidate of its own**, [mangle.substitution]:
@@ -704,6 +711,7 @@ private:
             if (t->params().empty() && !t->isVariadicFn()) out += 'v';
             for (const Type *p : t->params()) type(p);
             if (t->isVariadicFn()) out += 'z';
+            out += refQualifier(t->refQualifier());    // `FivRE`, measured
             out += 'E';
         } else if (t->isStructOrUnion()) {
             // A class inside another is a nested-name here too, and prefix()
@@ -760,6 +768,10 @@ private:
 
 class Microsoft : public Mangler {
 public:
+    // `G` for `&` and `H` for `&&`, after the `E` and before the cv - measured with clang.
+    static const char *refQualifier(RefQual r) {
+        return r == RefQual::LValue ? "G" : r == RefQual::RValue ? "H" : "";
+    }
     // **The class as a type descriptor spells it**, `?AUBase@@`.
     void classAsTypeName(const Type *t) { out += "?A"; type(t->unqualified()); }
     void anyType(const Type *t) { type(t); }   // a descriptor's pointee, `PEAUB@@`
@@ -847,7 +859,7 @@ public:
 
     void memberFunction(const std::string &cls, const Type *clsType,
                         const std::string &name,
-                        const Type *fn, char access, bool constThis,
+                        const Type *fn, char access, bool constThis, RefQual refThis,
                         const std::string &localOwner = std::string()) {
         if (!operatorPrefix(name)) {
             out = "?";
@@ -858,6 +870,7 @@ public:
         // **A static member has no `this`, so it spells none.**
         if (access != 'S' && access != 'K' && access != 'C') {
             out += 'E';           // this is __ptr64
+            out += refQualifier(refThis);    // `QEGAA`, `QEHBA` - measured
             out += constThis ? 'B' : 'A';
         }
         out += 'A';               // __cdecl
@@ -874,13 +887,14 @@ public:
     void memberFunctionTemplate(const std::string &cls, const Type *clsType,
                                 const std::string &name, const Type *fn,
                                 const std::vector<TemplateArg> &args,
-                                char access, bool constThis) {
+                                char access, bool constThis, RefQual refThis) {
         out = "??$";
         templateId(name, args);
         scopeOf(clsType, cls);
         out += access;
         if (access != 'S' && access != 'K' && access != 'C') {
             out += 'E';
+            out += refQualifier(refThis);
             out += constThis ? 'B' : 'A';
         }
         out += 'A';
@@ -1246,7 +1260,9 @@ private:
             const Type *fn = plain->pointee();
             out += "P8";
             scopeOf(plain->enclosing(), plain->enclosing()->tag());
-            out += "EAA";
+            out += 'E';
+            out += refQualifier(fn->refQualifier());    // `P8Buffer@@EGAAHXZ`, measured
+            out += "AA";
             returnType(fn->returns());
             const std::vector<const Type *> &ps = fn->params();
             if (ps.empty() && !fn->isVariadicFn()) { out += "XZ"; return; }
@@ -1674,10 +1690,10 @@ bool microsoftTemplateFunctionName(const std::string &name, const Type *fn,
 
 bool itaniumMemberName(const std::string &cls, const Type *clsType,
                        const std::string &name,
-                       const Type *fn, bool constThis,
+                       const Type *fn, bool constThis, RefQual refThis,
                        std::string *out, std::string *problem) {
     Itanium m;
-    m.memberFunction(cls, clsType, name, fn, constThis);
+    m.memberFunction(cls, clsType, name, fn, constThis, refThis);
     if (!m.ok) { *problem = m.problem; return false; }
     *out = m.out;
     return true;
@@ -1688,10 +1704,10 @@ bool itaniumMemberName(const std::string &cls, const Type *clsType,
 // would be outside a function, both giving up their _Z to sit in the wrapper.
 bool itaniumLocalMemberName(const std::string &owner, const std::string &cls,
                             const Type *clsType, const std::string &name,
-                            const Type *fn, bool constThis,
+                            const Type *fn, bool constThis, RefQual refThis,
                             std::string *out, std::string *problem) {
     std::string inner;
-    if (!itaniumMemberName(cls, clsType, name, fn, constThis, &inner, problem))
+    if (!itaniumMemberName(cls, clsType, name, fn, constThis, refThis, &inner, problem))
         return false;
 
     std::string function;
@@ -1710,10 +1726,10 @@ bool itaniumLocalMemberName(const std::string &owner, const std::string &cls,
 
 bool microsoftLocalMemberName(const std::string &owner, const std::string &cls,
                               const Type *clsType, const std::string &name,
-                              const Type *fn, char access, bool constThis,
+                              const Type *fn, char access, bool constThis, RefQual refThis,
                               std::string *out, std::string *problem) {
     Microsoft m;
-    m.memberFunction(cls, clsType, name, fn, access, constThis, owner);
+    m.memberFunction(cls, clsType, name, fn, access, constThis, refThis, owner);
     if (!m.ok) { *problem = m.problem; return false; }
     *out = m.out;
     return true;
@@ -1721,10 +1737,10 @@ bool microsoftLocalMemberName(const std::string &owner, const std::string &cls,
 
 bool microsoftMemberName(const std::string &cls, const Type *clsType,
                          const std::string &name,
-                         const Type *fn, char access, bool constThis,
+                         const Type *fn, char access, bool constThis, RefQual refThis,
                          std::string *out, std::string *problem) {
     Microsoft m;
-    m.memberFunction(cls, clsType, name, fn, access, constThis);
+    m.memberFunction(cls, clsType, name, fn, access, constThis, refThis);
     if (!m.ok) { *problem = m.problem; return false; }
     *out = m.out;
     return true;
@@ -1733,10 +1749,10 @@ bool microsoftMemberName(const std::string &cls, const Type *clsType,
 bool itaniumMemberTemplateName(const std::string &cls, const Type *clsType,
                                const std::string &name, const Type *fn,
                                const std::vector<TemplateArg> &args,
-                               bool constThis,
+                               bool constThis, RefQual refThis,
                                std::string *out, std::string *problem) {
     Itanium m;
-    m.memberFunctionTemplate(cls, clsType, name, fn, args, constThis);
+    m.memberFunctionTemplate(cls, clsType, name, fn, args, constThis, refThis);
     if (!m.ok) { *problem = m.problem; return false; }
     *out = m.out;
     return true;
@@ -1745,10 +1761,10 @@ bool itaniumMemberTemplateName(const std::string &cls, const Type *clsType,
 bool microsoftMemberTemplateName(const std::string &cls, const Type *clsType,
                                  const std::string &name, const Type *fn,
                                  const std::vector<TemplateArg> &args,
-                                 char access, bool constThis,
+                                 char access, bool constThis, RefQual refThis,
                                  std::string *out, std::string *problem) {
     Microsoft m;
-    m.memberFunctionTemplate(cls, clsType, name, fn, args, access, constThis);
+    m.memberFunctionTemplate(cls, clsType, name, fn, args, access, constThis, refThis);
     if (!m.ok) { *problem = m.problem; return false; }
     *out = m.out;
     return true;

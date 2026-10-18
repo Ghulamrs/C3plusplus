@@ -99,12 +99,12 @@ std::string Type::describe() const {
     if (kind_ == Kind::Pointer && pointee_->isFunction())
         return pointee_->returns()->describe() + " (*)" + pointee_->parameterList();
     if (kind_ == Kind::Function)
-        return pointee_->describe() + " " + parameterList();
+        return pointee_->describe() + " " + parameterList() + refQualifierSpelling();
     if (kind_ == Kind::Pointer) return pointee_->describe() + " *";
     if (memberFn_)
         return pointee_->returns()->describe() + " (" +
                (enclosing_ != nullptr ? enclosing_->tag() : std::string("?")) +
-               "::*)" + pointee_->parameterList();
+               "::*)" + pointee_->parameterList() + pointee_->refQualifierSpelling();
     if (kind_ == Kind::MemberPointer)
         return pointee_->describe() + " " +
                (enclosing_ != nullptr ? enclosing_->tag() : std::string("?")) +
@@ -133,14 +133,15 @@ std::string Type::describe() const {
 // did not skip it would hand back the const one for every `char *` in the file.
 const Type *TypeTable::functionType(const Type *returns,
                                     std::vector<const Type *> params,
-                                    bool variadic) {
+                                    bool variadic, RefQual ref) {
     for (Type *d : derived_)
         if (!d->isConst() && d->kind() == Kind::Function && d->pointee() == returns &&
-            d->variadic_ == variadic && d->params_ == params)
+            d->variadic_ == variadic && d->params_ == params && d->refQual_ == ref)
             return d;
     Type *t = new Type(Kind::Function, returns, -1);
     t->params_ = std::move(params);
     t->variadic_ = variadic;
+    t->refQual_ = ref;
     derived_.push_back(t);
     return derived_.back();
 }

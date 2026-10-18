@@ -126,9 +126,10 @@ void Parser::buildBracedArguments(const std::string &key, std::vector<ExprPtr> &
 }
 
 Parser::Signature Parser::resolveOverloadBraced(const std::string &key, std::vector<ExprPtr> &args,
-                                                std::size_t pos, const Type *object) {
+                                                std::size_t pos, const Type *object,
+                                                bool objectLvalue) {
     buildBracedArguments(key, args, pos, object);
-    return resolveOverload(key, args, pos, object);
+    return resolveOverload(key, args, pos, object, objectLvalue);
 }
 
 // **Split from completeCall so that overload resolution can stand between them.**
@@ -617,7 +618,8 @@ ExprPtr Parser::memberCallWith(ExprPtr object, const Type *cls,
     if (owner == nullptr) owner = plain;
     std::string key = owner->tag() + "::" + name;
 
-    const Signature &sig = resolveOverloadBraced(key, args, pos, cls);
+    // The object's value category is what a ref-qualifier is ranked against, [over.match.funcs]/4.
+    const Signature &sig = resolveOverloadBraced(key, args, pos, cls, objectIsLvalue(*object));
     applyDefaults(sig, args, pos);
 
     // Now there IS an inside, and this is where it starts to mean something:
@@ -676,7 +678,7 @@ ExprPtr Parser::memberCallWith(ExprPtr object, const Type *cls,
         int index = -1;
         const std::vector<VSlot> &slots = vtables_[plain->tag()];
         for (std::size_t i = 0; i < slots.size(); i++) {
-            if (overrides(slots[i], name, sig.params, sig.constThis)) {
+            if (overrides(slots[i], name, sig.params, sig.constThis, sig.refThis)) {
                 index = static_cast<int>(i);
                 break;
             }
@@ -687,7 +689,7 @@ ExprPtr Parser::memberCallWith(ExprPtr object, const Type *cls,
         if (index < 0 && owner != plain) {
             const std::vector<VSlot> &theirs = vtables_[owner->tag()];
             for (std::size_t i = 0; i < theirs.size(); i++) {
-                if (overrides(theirs[i], name, sig.params, sig.constThis)) {
+                if (overrides(theirs[i], name, sig.params, sig.constThis, sig.refThis)) {
                     index = static_cast<int>(i);
                     break;
                 }

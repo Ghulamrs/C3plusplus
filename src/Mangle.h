@@ -93,12 +93,12 @@ bool microsoftFunctionName(const std::string &name, const Type *fn, bool interna
 // `clsType` feeds Itanium's substitution table, where the class is candidate S_.
 bool itaniumMemberName(const std::string &cls, const Type *clsType,
                        const std::string &name,
-                       const Type *fn, bool constThis,
+                       const Type *fn, bool constThis, RefQual refThis,
                        std::string *out, std::string *problem);
 
 bool microsoftMemberName(const std::string &cls, const Type *clsType,
                          const std::string &name,
-                         const Type *fn, char access, bool constThis,
+                         const Type *fn, char access, bool constThis, RefQual refThis,
                          std::string *out, std::string *problem);
 
 // A member *function template* specialization: the member name with its own
@@ -106,13 +106,13 @@ bool microsoftMemberName(const std::string &cls, const Type *clsType,
 bool itaniumMemberTemplateName(const std::string &cls, const Type *clsType,
                                const std::string &name, const Type *fn,
                                const std::vector<TemplateArg> &args,
-                               bool constThis,
+                               bool constThis, RefQual refThis,
                                std::string *out, std::string *problem);
 
 bool microsoftMemberTemplateName(const std::string &cls, const Type *clsType,
                                  const std::string &name, const Type *fn,
                                  const std::vector<TemplateArg> &args,
-                                 char access, bool constThis,
+                                 char access, bool constThis, RefQual refThis,
                                  std::string *out, std::string *problem);
 
 // A member function of a class defined inside a function body: both ABIs wrap the
@@ -120,12 +120,12 @@ bool microsoftMemberTemplateName(const std::string &cls, const Type *clsType,
 // name. One with no decorated name is `4main` to Itanium and `?main@@9` to cl.
 bool itaniumLocalMemberName(const std::string &owner, const std::string &cls,
                             const Type *clsType, const std::string &name,
-                            const Type *fn, bool constThis,
+                            const Type *fn, bool constThis, RefQual refThis,
                             std::string *out, std::string *problem);
 
 bool microsoftLocalMemberName(const std::string &owner, const std::string &cls,
                               const Type *clsType, const std::string &name,
-                              const Type *fn, char access, bool constThis,
+                              const Type *fn, char access, bool constThis, RefQual refThis,
                               std::string *out, std::string *problem);
 
 // A constructor template specialization: C1/C2 and `??$?0`, the arguments as a template-id.

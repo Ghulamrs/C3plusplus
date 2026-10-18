@@ -2524,7 +2524,7 @@ ExprPtr Parser::unary() {
                             int index = -1;
                             const std::vector<VSlot> &slots = vtables_[cls->tag()];
                             for (std::size_t i = 0; i < slots.size(); i++)
-                                if (overrides(slots[i], f.name, f.params, f.constThis))
+                                if (overrides(slots[i], f.name, f.params, f.constThis, f.refThis))
                                     index = static_cast<int>(i);
                             if (index < 0)
                                 src_.fail(pos, "'" + key + "' is virtual but has "
