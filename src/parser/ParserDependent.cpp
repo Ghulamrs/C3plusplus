@@ -316,6 +316,18 @@ const DepExpr *Parser::depPrimary(bool angle) {
             n.index = np->second;
             return depNode(n);
         }
+        // An enclosing template's non-type parameter is bound to its value here, and clang spells
+        // that value: `V<N + K>` in `V<3>` is `XplLm3ET_E`, measured.
+        if (boundValueParams_.count(name) != 0) {
+            const EnumConst *e = findEnum(name);
+            if (e != nullptr && e->paramType != nullptr && e->paramType->isInteger()) {
+                at_++;
+                n.op = DepExpr::Literal;
+                n.type = e->paramType;
+                n.value = e->value;
+                return depNode(n);
+            }
+        }
         if (const Local *l = findLocal(name)) {
             if (l->trailingParam < 0) depRefuse(pos, "a local name");
             at_++;

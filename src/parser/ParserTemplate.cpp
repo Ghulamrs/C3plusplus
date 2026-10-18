@@ -301,6 +301,7 @@ void Parser::bindTemplateParameters(const std::vector<TemplateParam> &params,
             // [temp.param]/5: an enumeration-typed parameter is a value of that enumeration, not an int.
             const Type *pt = paramTypeIn(p, binding);
             if (pt != nullptr && pt->isInteger() && !pt->tag().empty()) e.type = pt;
+            e.paramType = pt;
             enums_.push_back(e);
             boundValueParams_[p.name]++;
         }

@@ -999,6 +999,8 @@ private:
         long long value;
         // The enumeration's type when an enum-base chose one, else null: int.
         const Type *type = nullptr;
+        // A bound non-type template parameter's declared type, which only a signature's expression spells.
+        const Type *paramType = nullptr;
     };
 
     const Source &src_;

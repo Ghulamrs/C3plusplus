@@ -14220,3 +14220,18 @@ rather than at each of the seven sites that print a parameter's name.
 moved up 9, so the first one's old number landed on the second one's new line and `tools/exclusions
 --check` read clean with the two swapped. Every citation was then checked the other way round - the line
 an entry cited before against the line it cites now - 136 of 136 the same.
+
+## A member template's signature over the enclosing class's parameter, 2026-10-18
+
+**`template <size_t K> CVector<N + K> operator|(const CVector<K> &) const`** - a member template whose
+signature computes with the class template's own `N` - was refused by name from 1.15, the expression
+reader meeting a name "declared outside the template" whose Itanium spelling had not been measured. It
+is measured now: in `V<3>` the class's `N` is already bound to 3, and clang spells it as that value of
+the parameter's declared type - `V<N + K>` is `S_IXplLm3ET_EE`, `V<N * K>` `XmlLm3ET_E`,
+`V<N + sizeof(T)>` `XplLm3EstT_E`, `W<A - B>` in `W<5>` `XmiLi5ET_E`. A bound parameter keeps its
+declared type beside its value (`EnumConst::paramType`) for this alone; the enumerator it is bound as
+stays `int`, so no arithmetic changed. The Microsoft names were already right, that ABI spelling the
+substituted signature. `member-template-enclosing-parameter.cpp`; its names agree with clang on all
+three targets but clang's `memset`. Found compiling a CCS sample, `SampleExt1`, after the unnamed
+template parameter above; the next thing that sample meets is a base copied in a mem-initialiser
+through its implicit copy constructor, `: B(b)`, which cpp11 does not yet do.
