@@ -620,12 +620,12 @@ Parser::Rank Parser::rankArgument(const Expr &arg, const Type *param) {
             }
         }
 
-        // **A reference to a base binds to a derived object** - [dcl.init.ref], and the sequence is
-        // a derived-to-base Conversion, which is what makes `f(Base &)` lose to `f(Derived &)` for
-        // a Derived rather than tie with it.
+        // **A reference to a base binds to a derived object** - [dcl.init.ref], a derived-to-base
+        // Conversion, so `f(Base &)` loses to `f(Derived &)` for a Derived; and /5 binds a const
+        // one to a derived class temporary too, `f(D(3))` for `f(const B &)`.
         if (want->unqualified() != given->unqualified() &&
-            accessibleBaseOffset(given, want) > -1 &&
-            isLvalue(arg) && !param->isRValueReference()) {
+            accessibleBaseOffset(given, want) > -1 && !param->isRValueReference() &&
+            (isLvalue(arg) || (want->isConst() && given->unqualified()->isStructOrUnion()))) {
             if (!want->isConst() && given->isConst()) return Rank::None;
             return Rank::Conversion;
         }

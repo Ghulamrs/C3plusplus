@@ -1417,10 +1417,15 @@ Parser::instantiate(const TemplateDecl &decl,
     const Type *patternFn =
         readTemplateDeclaration(decl, pattern, values, &patternName);
 
+    // A `static` template has internal linkage, which Itanium writes as an L: `_ZL5near1...`.
+    bool internal = false;
+    for (std::size_t i = decl.afterParams; i < tokens_.size() && !tokens_[i].is("(") &&
+                                            tokens_[i].text != decl.name; i++)
+        internal = internal || tokens_[i].is("static");
     std::string symbol, why;
     const bool ok = target_.microsoftNames()
         ? microsoftTemplateFunctionName(decl.ns + decl.name, fn, args, &symbol, &why)
-        : itaniumTemplateFunctionName(decl.ns + decl.name, patternFn, args, false,
+        : itaniumTemplateFunctionName(decl.ns + decl.name, patternFn, args, internal,
                                       &symbol, &why);
     if (!ok)
         src_.fail(pos, "'" + key + "' cannot be given a name the linker can "
@@ -3271,6 +3276,23 @@ ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
         at_++;
         std::vector<ExprPtr> callArgs;
         parseArguments(callArgs);
+        // **`CVector<I>::operator*(s)` in a member of CVector<4> or of a class derived from it** is
+        // `Base::f(...)`: called on `this`, never dispatched, [expr.call]/1 - as for a plain base name.
+        const Local *held = findLocal("this");
+        if (held != nullptr && !inStaticMember_ && currentClass_ != nullptr && overloadsOf(key) != nullptr &&
+            (currentClass_->unqualified() == cls->unqualified() ||
+             publicBaseOffset(currentClass_, cls->unqualified()) >= 0)) {
+            bool anyMember = false;
+            for (std::size_t i : *overloadsOf(key)) anyMember = anyMember || needsThis(functions_[i]);
+            if (anyMember) {
+                ExprPtr self(Var::local("this", held->offset));
+                self->setType(held->type);
+                ExprPtr obj(new Unary('*', std::move(self)));
+                obj->setType(held->type->pointee());
+                return memberCallWith(std::move(obj), held->type->pointee(), member, mpos,
+                                      std::move(callArgs), cls);
+            }
+        }
         if (overloadsOf(key) == nullptr)
             src_.fail(mpos, "'" + cls->describe() + "' has no static "
                             "member function '" + member + "' - only "

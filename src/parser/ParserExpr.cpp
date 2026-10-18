@@ -1894,6 +1894,28 @@ ExprPtr Parser::bindReference(const Type *ref, ExprPtr init, std::size_t pos,
                        "copy of it instead");
     }
 
+    // **A derived class value bound by a const reference to a base**, `f(make())` for `f(const B &)`:
+    // [dcl.init.ref]/5 binds the reference to the base subobject of the temporary, so the temporary
+    // holds the whole D and the address handed over is its B's.
+    if (it->unqualified()->isStructOrUnion() && referent->unqualified()->isStructOrUnion() &&
+        it->unqualified() != referent->unqualified() && accessibleBaseOffset(it, referent) > -1) {
+        const Type *whole = it->unqualified();
+        const int wslot = allocateFrameSlot(whole);
+        const std::string wtemp = ".ref" + std::to_string(refTemps_++);
+        ExprPtr target(Var::local(wtemp, wslot));
+        target->setType(whole);
+        ExprPtr keep(new Assign(std::move(target), std::move(init)));
+        keep->setType(whole);
+        ExprPtr held(Var::local(wtemp, wslot));
+        held->setType(whole);
+        ExprPtr addr(new Unary('&', std::move(held)));
+        addr->setType(types_.pointerTo(whole));
+        ExprPtr base = convert(std::move(addr), types_.pointerTo(referent));
+        const Type *baseType = base->type();
+        ExprPtr both(new Comma(std::move(keep), std::move(base)));
+        both->setType(baseType);
+        return both;
+    }
     checkAssignable(*init, referent, pos, what);
     const Type *store = referent->unqualified();
     const Type *addrType = types_.pointerTo(referent);
@@ -2264,6 +2286,9 @@ ExprPtr Parser::postfix() {
             ExprPtr deref(new Unary('*', std::move(n)));
             deref->setType(obj);
             n = std::move(deref);
+            // [temp.names]/4: `p->template f<3>()` - the keyword only says a `<` opens arguments, which
+            // token replay already knows; it is read and dropped, as `typename` is.
+            consume("template");
             std::string name = declaredName("a member name");
             const Type *scope = qualifiedMemberScope(obj, name, pos);
             const int adjust = scope == nullptr || scope == obj->unqualified()
@@ -2348,6 +2373,9 @@ ExprPtr Parser::postfix() {
                 src_.fail(pos, "'.' needs a struct or union, not '" +
                                n->type()->describe() + "'");
             const Type *obj = n->type();
+            // [temp.names]/4: `p->template f<3>()` - the keyword only says a `<` opens arguments, which
+            // token replay already knows; it is read and dropped, as `typename` is.
+            consume("template");
             std::string name = declaredName("a member name");
             const Type *scope = qualifiedMemberScope(obj, name, pos);
             const int adjust = scope == nullptr || scope == obj->unqualified()

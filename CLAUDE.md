@@ -14254,3 +14254,33 @@ which derives from `CVector<4>` ([temp.deduct.call]/4.3); `SampleExt1` writes `t
 select<3>(1)`, the `->template` disambiguator; `SampleExt` declares a member class template (refused by
 name) and re-declares a template parameter, which clang refuses too. `Sample` compiles, runs and prints
 what clang's build prints.
+
+## The CCS samples whole: six gaps, one linkage letter, 2026-10-18
+
+**SampleExt and SampleExt1, the user's CCS projects of vector, matrix and quaternion
+templates, compile and run unchanged**, apart from the samples' own invalid C++ (SampleExt1
+declares `GCompileCheck` inside `#ifndef assert`, which every compiler refuses). Six gaps, each
+legal C++11 and each with a case recorded from clang:
+
+- **`p->template f<3>()`**, [temp.names]/4: the keyword says only that a `<` opens arguments,
+  which token replay already knows, so it is read and dropped after `.` and `->`, as `typename`
+  is. `template-keyword-member`.
+- **`V<I>::operator*(s)` inside a member of a class derived from `V<I>`** is `Base::f(...)`,
+  [expr.call]/1: called on `this`, never dispatched. `templateIdMember` took any template-id
+  qualifier for a static call. `template-id-qualified-base-call`.
+- **`B(d)`, a functional cast from a derived object**, copies the base part; `classTemporary`
+  handed the derived object to a class with no copy constructor and refused it.
+  `functional-cast-from-derived`.
+- **`(const V &)q` and `(int &)k`** name an lvalue of the referent, [expr.cast]/4: built on
+  addresses, which carries a base's offset. `cast-to-reference-lvalue`.
+- **A const reference to a base binds a derived class temporary**, [dcl.init.ref]/5 - `f(D(3))`
+  for `f(const B &)`, and `friend operator<<(ostream &, const V &)` given a `Q` built in place.
+  `rankArgument` ranked the binding only for an lvalue; `bindReference` keeps the whole temporary
+  in a frame slot and binds its base. `const-ref-binds-derived-temporary`,
+  `deduce-from-derived-temporary`.
+
+**And a `static` function's Itanium L was in the wrong place or missing**: a function template
+had none (`_Z5near1...` where clang writes `_ZL5near1...`), and any function in a namespace had
+it after `_Z` (`_ZLN1n1fEi`, `_ZLSt1hi`) where it marks the unqualified name (`_ZN1nL1fEi`,
+`_ZStL1hi`). The functions were local all along - only the names said otherwise; a
+specialization now asks its declaration for `static`. `static-function-template-linkage`.

@@ -117,13 +117,25 @@ ExprPtr Parser::classTemporary(const Type *cls, std::size_t pos) {
     buildBracedArguments(key, args, pos);
     if (hasConstructors(plain->tag()))
         convertThroughConversionFunction(args, plain, true, pos);
+    const bool trivialCopyable = copyConstructorOf(plain) == nullptr && moveConstructorOf(plain) == nullptr;
+    // From an object of a class derived from it, `CVector<4>(quat)`, the copy is of the base subobject.
+    if (args.size() == 1 && args[0]->type() != nullptr && trivialCopyable && isGlvalue(*args[0]) &&
+        args[0]->type()->unqualified() != plain && args[0]->type()->unqualified()->isStructOrUnion() &&
+        accessibleBaseOffset(args[0]->type(), plain) >= 0) {
+        const Type *from = args[0]->type()->unqualified();
+        ExprPtr at(new Unary('&', std::move(args[0])));
+        at->setType(types_.pointerTo(from));
+        at = convert(std::move(at), types_.pointerTo(plain));
+        ExprPtr base(new Unary('*', std::move(at)));
+        base->setType(plain);
+        args[0] = std::move(base);
+    }
     // **`T(t)` for a class whose constructors leave its copy trivial** is a
     // copy of bytes too: no copy constructor was declared, so resolution had
     // nothing to find and `T b = T(T::make())` was refused.
     const bool trivialSameClass =
         args.size() == 1 && args[0]->type() != nullptr &&
-        args[0]->type()->unqualified() == plain &&
-        copyConstructorOf(plain) == nullptr && moveConstructorOf(plain) == nullptr;
+        args[0]->type()->unqualified() == plain && trivialCopyable;
     if (!hasConstructors(plain->tag()) || trivialSameClass) {
         // No constructor at all: `P(x)` is then a copy of another P, which is
         // a move of bytes, and `P()` is an object with nothing to set.

@@ -350,13 +350,16 @@ public:
         if (internal && (findOperator(operatorSpelling(name)) != nullptr ||
                          isConversionFunction(name)))
             internal = false;
-        out = internal ? "_ZL" : "_Z";
+        // The L marks the unqualified name and stands in front of it: `_ZN1nL1fEi`, `_ZStL1hi`.
+        const char *L = internal ? "L" : "";
+        out = "_Z";
         // **A name with a scope in it is a nested-name**, `_ZN1N1fEi`, and a
         // namespace component is written exactly as a class one is.
         const std::vector<std::string> parts = scopeComponents(name);
         if (isDirectlyInStd(name)) {
             // `_ZSt15set_new_handlerPFvvE`: the abbreviation alone, no N...E.
             out += "St";
+            out += L;
             writtenName(parts.back(), fn->params().size() == 1);
         } else if (parts.size() > 1) {
             out += "N";
@@ -364,12 +367,14 @@ public:
             // substitution candidate - which is what makes a parameter of type
             // N::S inside N::f read `NS_1SE` and not `N1N1SE`.
             namespacesOf(name);
+            out += L;
             writtenName(parts.back(), fn->params().size() == 1);
             out += "E";
         } else {
             // A non-member operator carries every operand in its parameter
             // list, so one parameter is the unary form where a member's zero
             // is.
+            out += L;
             writtenName(name, fn->params().size() == 1);
         }
         const std::vector<const Type *> &params = fn->params();
@@ -383,7 +388,7 @@ public:
     // return type and an ordinary function does not**, or two would share a symbol.
     void templateFunction(const std::string &name, const Type *pattern,
                           const std::vector<TemplateArg> &args, bool internal) {
-        out = internal ? "_ZL" : "_Z";
+        out = "_Z";
         // **One declared in a namespace is a nested-name**, `_ZN1n5twiceIiEET_S1_`: the namespace
         // a candidate, then the template's name, then its arguments inside the N...E; directly in
         // std it is `St` and no N...E, as an ordinary function's is.
@@ -400,6 +405,7 @@ public:
         // is not a substitution candidate - `operator+<3>` is _ZplILi3EE...,
         // where a named template's name is candidate zero.
         const std::string spelling = operatorSpelling(last);
+        if (internal && findOperator(spelling) == nullptr) out += "L";
         if (const OperatorCode *op = findOperator(spelling))
             out += itaniumOperatorCode(*op, pattern->params().size() == 1);
         else {

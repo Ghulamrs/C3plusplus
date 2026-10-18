@@ -67,6 +67,20 @@ ExprPtr Parser::castExpr() {
         ExprPtr v = decay(castExpr());
         if (to->isVoid()) return ExprPtr(new Cast(to, std::move(v)));
         refuseUnrelatedClassCast(*v, to, openPos, "a cast");
+        // **`(const V &)q` and `(int &)k` name an lvalue of the referent**, [expr.cast]/4 - built on
+        // addresses, which carries a base's offset, so the result is an operand, not a reference-typed value.
+        if (to->isReference() && !to->isRValueReference() && v->type() != nullptr &&
+            !v->type()->isFunction() && !to->pointee()->isFunction() && isGlvalue(*v) &&
+            to->pointee()->isStructOrUnion() == v->type()->unqualified()->isStructOrUnion()) {
+            const Type *ref = to->pointee();
+            const Type *from = v->type();
+            ExprPtr at(new Unary('&', std::move(v)));
+            at->setType(types_.pointerTo(from));
+            at = convert(std::move(at), types_.pointerTo(ref), true);
+            ExprPtr r(new Unary('*', std::move(at)));
+            r->setType(ref);
+            return r;
+        }
         ExprPtr r = convert(std::move(v), to, true);   // a cast allows explicit
         if (!to->isReference()) r->setDeclCategory(Expr::Category::Prvalue);
         return r;
