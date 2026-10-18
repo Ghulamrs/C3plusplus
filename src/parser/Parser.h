@@ -1161,6 +1161,8 @@ private:
     // so whether it is a function at all - is a question about the members.
     void declareImplicitSpecials(const std::string &tag, const Type *type,
                                  std::size_t pos);
+    void declareImplicitDefaultCtor(const std::string &tag, const Type *type,
+                                    std::size_t pos, Access access);
     // Bodies for the implicit members something actually called, run at the
     // end of the file and to a fixed point: giving one class a body can be
     // what first calls another's.

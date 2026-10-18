@@ -13901,3 +13901,22 @@ the register.
 **The headline stays "C++03 with C++11 extensions"**: `tools/feature-sweep` reads 78 compile, 18
 refused by name, 0 naming nothing, of 96; ten C++11 language rows are refused (batch A's two, batch
 B's `constexpr` class object, batch C's three, batch D's two, batch E's two).
+
+## A union's member initialiser, 2026-10-18
+
+**[class.union]/4 lets one member of a union carry a brace-or-equal-initializer, and the union's
+implicit default constructor applies it.** cpp11 gave a union no implicit special member at all -
+`declareImplicitSpecials` returned at the word `union` - so `union U { int i = 3; double d; }; U u;`
+left `u.i` holding the stack: a silent wrong value, registered in `tests/open` by the anonymous-union
+round and mended the same day. A union now gets the one implicit member that has work, the default
+constructor, where a member has an initialiser; the copies, the move and the destructor stay trivial,
+as they are for a union of trivial members, and the body is the struct's, through `memberInitialisers`.
+
+`union-member-initialiser.cpp` builds a union every way one is built - a local, a global, an array of
+them at file scope, a static local, a member of a class with and without a written constructor, `new`,
+`U()`, a copy, by value through a function, assigned over - and agrees with clang at -O0 and -O2. The
+two rules beside it were already held: an initialiser on two members is refused, and `U u = {5}` is
+refused because such a union is not an aggregate in C++11. The names differ from clang's in kinds
+already recorded, chiefly that clang takes the implicit constructor as `constexpr` and initialises the
+globals at compile time where cxx1 builds them at run time; the `.nonames` says each. Emit golden at
+1.18: 0 of 1996 files changed.

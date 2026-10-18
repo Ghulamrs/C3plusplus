@@ -2590,9 +2590,16 @@ std::string Parser::baseConstructorSymbol(const Signature &ctor, const Type *bas
 // member is declared only where it has some - a vptr, or a base or member to build.
 void Parser::declareImplicitSpecials(const std::string &tag, const Type *type,
                                      std::size_t pos) {
-    if (tag.empty() || type->kind() == Kind::Union) return;
+    if (tag.empty()) return;
     // Asked before the copy constructor is declared, because declaring one would answer it yes.
     const bool wroteConstructor = hasConstructors(tag);
+    // [class.union]/4: a union's one member initialiser is applied by its implicit default
+    // constructor, the only special member of a union of trivial members that has work.
+    if (type->kind() == Kind::Union) {
+        if (!wroteConstructor && hasMemberInitialiser(tag))
+            declareImplicitDefaultCtor(tag, type, pos, Access::Public);
+        return;
+    }
     // A member written `= default` is user-declared for [class.copy]/7 and /9 and implicit for everything else.
     const Defaulted df = defaulted_.count(tag) != 0 ? defaulted_[tag] : Defaulted();
     // **Read now, for the same reason and at the same moment.** After the three calls
@@ -2637,7 +2644,13 @@ void Parser::declareImplicitSpecials(const std::string &tag, const Type *type,
             work = true;
     }
     if (!work) return;
+    declareImplicitDefaultCtor(tag, type, pos,
+                               df.defaultCtor.is ? df.defaultCtor.access : Access::Public);
+}
 
+// The implicit default constructor's signature, named for the linker; its body is written on use.
+void Parser::declareImplicitDefaultCtor(const std::string &tag, const Type *type,
+                                        std::size_t pos, Access access) {
     const std::vector<const Type *> params;
     const Type *fn = types_.functionType(types_.get(Kind::Void), params, false);
     std::string out, why;
@@ -2651,8 +2664,7 @@ void Parser::declareImplicitSpecials(const std::string &tag, const Type *type,
 
     functionIndex_[constructorKey(tag)].push_back(functions_.size());
     functions_.push_back(Signature{ tag, out, types_.get(Kind::Void), params,
-                                    false, false, pos, false, tag, false,
-                                    df.defaultCtor.is ? df.defaultCtor.access : Access::Public, false });
+                                    false, false, pos, false, tag, false, access, false });
     functions_.back().implicit = true;
 }
 
