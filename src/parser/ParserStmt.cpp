@@ -362,7 +362,8 @@ StmtPtr Parser::declarationBody() {
             int off = early ? declare(d.name, d.type, d.pos, quals.alignAs) : 0;
             const std::size_t mine = locals_.size() - 1;
             at_++;
-            ExprPtr init = assign();
+            ExprPtr init;
+            { OverloadTarget hold(*this, d.type); init = assign(); }
             if (!early) off = declare(d.name, d.type, d.pos, quals.alignAs);
             locals_[early ? mine : locals_.size() - 1].guardsJump = true;
             const Type *slot = types_.pointerTo(d.type->referent());
@@ -400,6 +401,7 @@ StmtPtr Parser::declarationBody() {
             const std::size_t mine = locals_.size() - 1;
             Init dynamic;
             if (parenInit || consume("=") || atBracedInitialiser(d.name)) {
+                OverloadTarget hold(*this, d.type);
                 Init in = parenInit ? parenthesisedInitialiser(d)
                                     : parseInitialiser();
                 if (d.type->isArray() && d.type->length() < 0)
@@ -445,6 +447,7 @@ StmtPtr Parser::declarationBody() {
         std::size_t mine = locals_.size() - 1;
         Init in;
         if (hasInit) {
+            OverloadTarget hold(*this, d.type);
             if (parenInit) {
                 in = parenthesisedInitialiser(d);
             } else {
@@ -1936,7 +1939,8 @@ StmtPtr Parser::statementBody() {
             }
             return StmtPtr(new Return(nullptr));
         }
-        ExprPtr returned = returnType_->isReference() ? expr() : decay(expr());
+        ExprPtr returned;
+        { OverloadTarget hold(*this, returnType_); returned = returnType_->isReference() ? expr() : decay(expr()); }
         // **The temporary that *is* the returned value must not be destroyed
         // here.**
         if (!returnType_->isReference())

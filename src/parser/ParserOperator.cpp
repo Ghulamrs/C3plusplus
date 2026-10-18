@@ -64,7 +64,8 @@ ExprPtr Parser::castExpr() {
             src_.fail(openPos, "a cast to a function type is ill-formed - [expr.cast]/4 has "
                                "no conversion to one; cast to a pointer to function");
         expect(")");
-        ExprPtr v = decay(castExpr());
+        ExprPtr v;
+        { OverloadTarget hold(*this, to); v = decay(castExpr()); }
         if (to->isVoid()) return ExprPtr(new Cast(to, std::move(v)));
         refuseUnrelatedClassCast(*v, to, openPos, "a cast");
         // **`(const V &)q` and `(int &)k` name an lvalue of the referent**, [expr.cast]/4 - built on
@@ -942,7 +943,8 @@ ExprPtr Parser::assign() {
     requireAssignable(*n, pos, "the left of '='");
 
     const Type *to = n->type();
-    ExprPtr value = decay(assign());
+    ExprPtr value;
+    { OverloadTarget hold(*this, to); value = decay(assign()); }
 
     // **`t = 5` where the class declares an `operator=` that takes an int.**
     if (to->unqualified()->isStructOrUnion() && value->type() != nullptr &&

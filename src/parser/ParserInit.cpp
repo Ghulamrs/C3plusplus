@@ -1601,7 +1601,8 @@ void Parser::bindStaticReference(const Declared &d, const std::string &symbol,
                          "initialised here - there is no later assignment "
                          "that would bind it, only one that writes through it");
     at_++;
-    ExprPtr init = assign();
+    ExprPtr init;
+    { OverloadTarget hold(*this, d.type); init = assign(); }
     if (!isGlvalue(*init))
         src_.fail(d.pos, "'" + d.name + "' is a reference with static storage "
                          "duration, and binding it to a temporary is not "

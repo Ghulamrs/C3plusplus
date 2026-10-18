@@ -14325,3 +14325,15 @@ first - a body after it is a definition, which keeps its old road - and otherwis
 as the type name it is, refusing one that is not a class. **And a block declaration beginning
 with `class`, `class Q qq;`, was "expected an expression"**: `atDeclarationStart` knew `struct`
 and `union` through `atTypeName` and not `class`. `elaborated-qualified-name`, from tests/open.
+
+## An overloaded function's name picked by its target type, 2026-10-18
+
+**[over.over]: `&f` or `&S::f` naming several functions names the one whose type the target
+asks for**, and cpp11 refused every such use ("which one this is cannot be told from the use
+alone"). `overloadTarget_` holds the type an operand converts to while it is read - a
+declaration's initialiser (a reference's too), an assignment's right side, a C-style cast's and
+a `static_cast`'s operand, a return's value - and is cleared for a call's arguments;
+`pickByTarget` takes the one function of that type, a member one of the target's class, so
+`int (S::*)() &` takes `f() &` and `int (*)(double)` takes `h(double)`. **An argument does not
+pick yet**: a parameter's type is known only after the call is resolved, and the refusal says
+so. `member-pointer-overload-by-type`, from tests/open.
