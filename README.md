@@ -169,6 +169,29 @@ x86_64-windows, where a class cannot be thrown yet and they print and abort inst
 delete`, the placement and nothrow forms, `std::bad_alloc` from the platform runtime, `typeid` and
 `dynamic_cast` all work.
 
+## What 1.18 changes
+
+Three C++ features that were refused by name, each built by Fable 5.1 in a round of its own and
+measured on all three boxes before it was merged:
+
+* **Ref-qualifiers on member functions**: `int take() &` and `int take() &&` are two functions, an
+  lvalue object choosing the first and an rvalue the second ([over.match.funcs]/4); mixing a
+  qualified and an unqualified overload is refused as clang refuses it. Named `_ZNR6Buffer4takeEv` /
+  `_ZNO...` and `?take@Buffer@@QEGAAHXZ` / `QEHAA` - the Microsoft spelling confirmed by cl itself.
+* **Inline namespaces**: the members of `inline namespace v2` inside `lib` are found as `lib::f`,
+  by unqualified lookup, `using namespace` and argument-dependent lookup, and a class template in one
+  may be specialised from the enclosing namespace; the name keeps the real namespace,
+  `_ZN3lib2v27versionEv`.
+* **Anonymous unions** in a class, at namespace scope (`static`, or in an unnamed namespace) and as a
+  local: the members are the enclosing scope's own, sharing one slot, laid out as clang lays them on
+  every ABI, aggregate- and mem-initialised as [class.union] says. A union member whose class has a
+  constructor, destructor or assignment (C++11's unrestricted union) is still refused by name.
+* **The MASM spelling renames a name MASM cannot hold** - the anonymous union's hidden object is
+  `?$S1@@3T<unnamed-type-$S1>@@A` to cl, and the project's masm refused the `<`. Such a name is always
+  internal; an exported one would be refused rather than renamed.
+
+`tools/feature-sweep` reads 78 compile, 18 refused by name and 0 naming nothing, of 96.
+
 ## What 1.17 changes
 
 * **A `const` return type is part of a Microsoft name**, as cl writes it: `const int f()` is
@@ -387,11 +410,11 @@ defects below and nothing else; Compiler-Cppi has closed those too, with the
 vtable group, `_ZTv` thunks, VTT and construction vtables, and that work is
 not in 1.3.
 
-## Known shortcomings in 1.17
+## Known shortcomings in 1.18
 
 Everything here is measured and written down elsewhere in full; this is the
-short list a user of **1.17** should have in front of them. `docs/EXCLUSIONS.md`
-is the complete one - 130 refusal sites on 2026-10-17 (131 on 2026-10-08),
+short list a user of **1.18** should have in front of them. `docs/EXCLUSIONS.md`
+is the complete one - 129 refusal sites on 2026-10-18 (131 on 2026-10-08),
 each citing the source line that refuses it, and `make test` fails when the two
 disagree. The heading
 above is written by `tools/version-lines` from `src/Version.h`; it said 1.4 for
@@ -399,13 +422,12 @@ two releases before that tool existed.
 
 **The language is C++03 with C++11 extensions, and these are the C++11 parts a
 real codebase meets first that are still refused, each by name**: a
-user-defined literal; `thread_local`; an inline namespace; a
-template template parameter; a non-type parameter pack; a ref-qualifier on a
-member function; a `constexpr` object of class type; `alignas` on a local past
+user-defined literal; `thread_local`; a
+template template parameter; a non-type parameter pack; a `constexpr` object of class type; `alignas` on a local past
 the stack's alignment; a dynamic exception specification; a universal character name in an identifier; a `goto`
-that leaves a `catch` handler; and a function try block and an anonymous union,
-which are C++98. `tools/feature-sweep` counts them: on 2026-10-17, 75 of its 96
-probes compile, 21 are refused by name and none by a message naming nothing.
+that leaves a `catch` handler; and a function try block, which is C++98. Ref-qualifiers, inline
+namespaces and anonymous unions landed in 1.18. `tools/feature-sweep` counts them: on 2026-10-18, 78 of its 96
+probes compile, 18 are refused by name and none by a message naming nothing.
 **Landed in the review round of 2026-10-08 to 2026-10-13**: `enum class`;
 `override` and `final`; `= default` and `= delete`; delegating constructors;
 `using X = T;` and alias templates; forwarding references and `std::forward`;
@@ -432,6 +454,13 @@ being `template <class T, T v>` - so `std::integral_constant` is the base of eve
 **Two namespaces' function templates of one name are one overload set**: templates are keyed by
 their bare name, so `a::twice(3)` can reach `b::twice`. Registered in `tests/open`
 (`namespace-function-template-name`); clang prints `6 2 6` where cxx1 prints `6 2 4`.
+
+**A named union's member initialiser is ignored** - `union U { int i = 3; double d; }; U u;` leaves
+`u.i` holding the stack where clang prints 3: a silent wrong value, the next item to mend. Beside it a
+union with a member whose class has a constructor compiles where clang refuses it, and four refusals of
+ordinary code are registered: `T t = u;` copying a derived object into its base, `struct lib::P *` (an
+elaborated type with a namespace qualifier), `offsetof` as a constant expression, and `&S::f` choosing
+between `f() &` and `f() &&` by the target type. All are in `tests/open` with clang's answer.
 
 **A namespace-scope variable defined twice is accepted** - `int v; int v = 5;`, C's tentative
 definition, which C++ does not have. clang refuses it; registered in `tests/open`

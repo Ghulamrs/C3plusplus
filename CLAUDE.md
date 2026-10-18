@@ -13876,3 +13876,28 @@ that would need it is refused rather than renamed. Every case compiled with `-ma
 and after: 1 of 487 changed, this one; assembled and linked by the project's masm and link on
 the box, it prints its `.expected` at -O0 and -O2. The lesson is the house's: the spelling a
 user's Release build takes is not the one the default run checks, and only the third box says so.
+
+## Version 1.18, 2026-10-18: ref-qualifiers, inline namespaces, anonymous unions
+
+**1.18 is batch B of the refused C++11 features, less its `constexpr` class object**, each feature
+built by Fable 5.1 in a worktree of its own from the merge before it and re-measured here on all three
+boxes before it was merged - the three sections above say what each one is. The order was the user's:
+push 1.17, then the three, one at a time, none started before the last was measured.
+
+**What the re-measuring caught, and what it did not have to.** The Mac and Linux numbers matched each
+report to the case. The Windows box was not asked until the user asked for it - a gap in the
+coordinating, not in the work, and now a standing rule - and it found one thing no other box could:
+the MASM spelling, which a Release build in GRIDE assembles with, could not write the anonymous union's
+hidden name (above). cl confirmed the Microsoft ref-qualifier spelling (`G`/`H` after `E`) that Fable
+had measured from clang alone; the one new names difference was a closure cl inlines away, now a
+`.nocl`.
+
+**Found on the way and registered, not mended**, in `tests/open` with clang's answer: a named union's
+member initialiser ignored (a silent wrong value - the next item), a union with a constructor-bearing
+member accepted, `offsetof` refused as a constant expression, `&S::f` not choosing between `f() &` and
+`f() &&` by target type, `struct lib::P *`, and `T t = u;` from a derived object. Nine programs are in
+the register.
+
+**The headline stays "C++03 with C++11 extensions"**: `tools/feature-sweep` reads 78 compile, 18
+refused by name, 0 naming nothing, of 96; ten C++11 language rows are refused (batch A's two, batch
+B's `constexpr` class object, batch C's three, batch D's two, batch E's two).
