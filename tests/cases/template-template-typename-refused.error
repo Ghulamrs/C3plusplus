@@ -1,0 +1,1 @@
+:7:31: error: 'typename' after a template template parameter's list is C++17, and this compiler is C++11 - write 'class' there

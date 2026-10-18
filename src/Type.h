@@ -103,6 +103,9 @@ struct TemplateArg {
     // both need the members rather than anything standing for them.
     bool isPack = false;
     std::vector<const Type *> pack;
+    // **A template template argument**, `Holder<Box, int>`'s Box: `type` is the stand-in TypeTable::templateNameType makes,
+    // or a Kind::TemplateParam where a pattern names an enclosing template template parameter.
+    bool isTemplate = false;
 };
 
 int homogeneousFloatCount(const Type *t, Kind *elem);
@@ -265,8 +268,16 @@ public:
     // anything a linker has ever seen.
     const std::string &enumTag() const { return tag_; }
     bool isEnumeration() const { return isInteger() && !tag_.empty(); }
-    bool isSpecialization() const { return !cls().templateName_.empty(); }
+    bool isSpecialization() const { return !cls().templateName_.empty() && !cls().templateNameOnly_; }
     const std::string &templateName() const { return cls().templateName_; }
+    // **A stand-in for a template's name and nothing else** - what a template template parameter is bound
+    // to, and what a template template argument carries; no object is ever of it. [temp.arg.template].
+    bool isTemplateName() const { return cls().templateNameOnly_; }
+    bool isAliasTemplate() const { return cls().aliasTemplate_; }
+    void setTemplateNameOnly(std::string name, std::string ns, bool alias) {
+        templateName_ = std::move(name); templateNamespace_ = std::move(ns);
+        templateNameOnly_ = true; aliasTemplate_ = alias;
+    }
     const std::vector<TemplateArg> &templateArgs() const { return cls().templateArgs_; }
     void setSpecialization(std::string name, std::vector<TemplateArg> args) {
         templateName_ = std::move(name);
@@ -519,6 +530,8 @@ private:
     std::string templateName_;
     std::string templateNamespace_;
     std::vector<TemplateArg> templateArgs_;
+    bool templateNameOnly_ = false;
+    bool aliasTemplate_ = false;
     const Type *enclosing_ = nullptr;
     Access nestedAccess_ = Access::Public;
     bool isClass_ = false;
@@ -581,6 +594,8 @@ public:
     static std::string patternKey(const Type *t);
 
     Type *structType(Kind kind, const std::string &tag);
+    // The stand-in for a template named as a template template argument - `ns::NBox` as a name, interned.
+    const Type *templateNameType(const std::string &name, const std::string &ns, bool alias, bool classKey);
     // **An enumeration, which is an `int` that remembers its name.**
     Type *enumType(const std::string &tag, Kind underlying = Kind::Int);
     Type *anonymousStruct(Kind kind);

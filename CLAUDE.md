@@ -13920,3 +13920,129 @@ refused because such a union is not an aggregate in C++11. The names differ from
 already recorded, chiefly that clang takes the implicit constructor as `constexpr` and initialises the
 globals at compile time where cxx1 builds them at run time; the `.nonames` says each. Emit golden at
 1.18: 0 of 1996 files changed.
+
+## Template template parameters, 2026-10-18
+
+**[temp.param]/1 lets a template parameter stand for a template**, `template
+<template <class> class C>`, and [temp.arg.template] says what may be given for
+it: the name of a class template or an alias template, no arguments on it. In
+the body `C<T>` is that template applied - a member, a base, nested as
+`C<C<T>>`, behind `typename C<T>::type`, passed on to another template, with a
+default (`= Box`), two in one list, in a member function template, in a
+partial specialization's pattern. [temp.deduct.type]/8 deduces C and T from a
+`Box<int>` given a `C<int>` or a `C<T>`, through two levels, from a pack
+parameter's `C<int>` given a variadic template's, and from a base of the
+argument's class ([temp.deduct.call]/4.3). Refused by name since rung 5.1, as
+the thing "the pattern read that spells the Itanium name would have to spell as
+`TT_`"; the review's example compiles on all four targets and prints clang's
+`7 9`.
+
+**The design is one entry in the template table, under the parameter's own
+name.** A type parameter is bound as a type name and a non-type one as an
+enumerator, and a template template parameter is now bound as a *template*:
+`bindTemplateParameters` copies the argument's `TemplateDecl` into `templates_`
+under `C`, so `C<int>` reads as `Box<int>` - the same tag, the same class, the
+same name - with nothing taught to any of the uses, which all go through
+`findTemplate` and `instantiateClass`. In a pattern, where every parameter
+stands for itself, the entry is a stand-in `$TT<i>` carrying the parameter's own
+list (`TemplateDecl::ttParam`), so `C<T>` reads as a shallow specialization
+whose template is parameter i - a shape `deduceOne` and `matchPattern` bind from
+the argument's own template, and the Itanium name spells `T_I...E`. What a
+parameter is bound *to* travels in the binding vector like every other
+argument, as a Type that is a template's name and nothing else
+(`TypeTable::templateNameType`, `Type::isTemplateName()`; `isSpecialization()`
+excludes it), so `Specialization`, deduction, the member-template layers and
+the replay needed no second vector beside the one they have. `TemplateArg::
+isTemplate` marks the argument for the keys and the manglers.
+
+**The matching rule is clang's, measured, and it is not C++11's letter.**
+[temp.arg.template]/3 in C++11 wants the two parameter lists to match exactly;
+clang 21 under `-std=c++11 -pedantic-errors` applies P0522 as a defect report
+and accepts `H<Two>` for `template <class T, class U = int> struct Two` given
+`template <class> class C`, which the letter refuses (g++ was not asked this
+round; the Linux leg is where it would be). So the rule here is the one clang
+answers: each parameter of the list wants one of its kind from the argument
+template (type, non-type, template - recursively); a pack of types on either
+side stands for every *type* parameter the other has left, so `template
+<class...> class C` takes Box and Tup, `template <class> class C` takes Tup, and
+`template <class...> class C` given `BoxN<T, int N>` is refused at N; and what
+the argument has over must carry a default - `Two2<T, U>` is refused, `Two<T, U
+= int>` and `BoxN<T, int N = 3>` and `ArrT<int N, class T = int>` are taken.
+Nine shapes measured one program each (`template-template-pack.cpp` holds the
+accepted ones), and the refusals sit at clang's column: the argument for fewer
+parameters and for a missing default, the *parameter in the list* for a kind
+mismatch (`6:24`, the name a `template <int>` has no room for). `typename` in
+place of `class` after the list is C++17 (N4051) and is refused naming it;
+`typename` *inside* the list is C++98 and is not this.
+
+**Both ABIs measured with clang, all three targets, 31 names agreeing
+(`tools/mangled-names` over the two probes, and `names.sh` 516 / 0):**
+
+    Holder<Box, int>, as a parameter      6HolderI3BoxiE                 U?$Holder@UBox@@H@@
+    Holder<Box, int> h, Box<int> b        6HolderI3BoxiES0_IiE           U?$Holder@UBox@@H@@U?$Box@H@@
+    Holder<Box, Box<int> >                6HolderI3BoxS0_IiEE            U?$Holder@UBox@@U?$Box@H@@@@
+    Holder<CBox, int>, CBox a `class`     6HolderI4CBoxiE                U?$Holder@VCBox@@H@@
+    Holder<ns::NBox, int>, ns::NBox<int>  6HolderIN2ns4NBoxEiENS1_IiEE   U?$Holder@UNBox@ns@@H@@U?$NBox@H@ns@@
+    Holder<Alias, int>, an alias template 6HolderI5AliasiE               U?$Holder@$$YAlias@@H@@
+    Holder<ns::NAlias, int>               6HolderIN2ns6NAliasEiE         U?$Holder@$$YNAlias@ns@@H@@
+    peek<Box>(const Box<int> &)           _Z4peekI3BoxEiRKT_IiE          ??$peek@UBox@@@@YAHAEBU?$Box@H@@@Z
+    peek2<Box, double>(const C<T> &)      _Z5peek2I3BoxdET0_RKT_IS1_E    ??$peek2@UBox@@N@@YANAEBU?$Box@N@@@Z
+    deep<Box>(const C<C<int> > &)         _Z4deepI3BoxEiRKT_IS1_IiEE     ??$deep@UBox@@@@YAHAEBU?$Box@U?$Box@H@@@@@Z
+    both<Box, double>(C<T>, C<int>, T)    _Z4bothI3BoxdEiRKT_IT0_ERKS1_IiES2_
+    twoTT<Box, Box>(C<int>, D<int>)       _Z5twoTTI3BoxS0_EiRKT_IiERKT0_IiE   ??$twoTT@UBox@@U1@@@YAHAEBU?$Box@H@@0@Z
+    pk<Tup>(const C<int> &), a pack       _Z2pkI3TupEiRKT_IJiEE          ??$pk@UTup@@@@YAHAEBU?$Tup@H@@@Z
+    f1<Box, int>(Holder<C, T>, C<int>)    _Z2f1I4CBoxiEi6HolderIT_T0_ES2_IiE
+    Holder<Box, int>::get()               _ZN6HolderI3BoxiE3getEv        ?get@?$Holder@UBox@@H@@QEAAHXZ
+
+Itanium writes a template template argument as the template's *name* - `3Box`,
+`N2ns4NBoxE` with its namespaces, `5Alias` for an alias - and that name is a
+substitution candidate under its qualified spelling, so `Box<int>` after it is
+`S0_IiE` and `ns::NBox<int>` is `NS1_IiEE`. A pattern's parameter is `T_` in
+the same index space as the type parameters (C is `T_`, T is `T0_` in `peek2`),
+a candidate the moment it is first spelled whether as an argument or as a
+template-prefix, so `C<int>` after `Holder<C, T>` is `S2_IiE` and `Holder<C,
+T>` after `C<int>` is `6HolderIS1_T0_E`. Microsoft spells the template as a
+class with no arguments, `UBox@@` or `VCBox@@` by its class-key, `UNBox@ns@@`
+with its scopes, `$$YAlias@@` for an alias template, a second mention a name
+back-reference (`U1@`); the signature is the substituted one and needed nothing
+new. cl itself was not asked, the Windows box being the coordinator's leg; the
+Microsoft column is clang's.
+
+**The golden found a mangling fault older than this round, and fixed it.** The
+emit golden at 89a1a3d: **3 of 1996 files changed, 24 added** (six cases on four
+targets). The three are `include-vector` on the Itanium targets and the C6000:
+`std::vector<std::vector<int> >` was spelled `_ZNSt6vectorIStS_IiEEC1Ev` and is
+`_ZNSt6vectorIS_IiEEC1Ev` now, which is clang's (`_Z1fSt6vectorIS_IiEE`,
+measured on three targets) - `templateId` wrote `St` and *then* looked the bare
+name up, and a substitution stands for the whole `St6vector`. It looks the
+qualified name up first now, which is what a template named as an argument
+needed anyway; the case's `.nonames` is why names.sh never saw it. Nothing
+else that compiled before emits a byte differently.
+
+**Measured.** Mac `make test`: run.sh 802 / 0 (511 printed their recorded
+output, 288 refused as recorded), emit.sh 2020 / 0, names.sh 516 / 0 against
+clang on three targets, overload.sh 41 / 0 - `template-template-order.cpp`
+ranks `C<int>` over `C<T>` over `T` as clang does and
+`ambiguous-template-template.cpp` is `C<int>` against `Box<T>`, which both
+refuse - `tools/exclusions --check` 131 sites, 0 uncited, 0 stale (one site
+gone, two added, every citation in `ParserTemplate.cpp` re-paired by line order
+and checked by message), comment cap 0. `tools/feature-sweep --clang clang++`:
+79 compile, 17 refused by name, 0 naming nothing, of 96
+(was 78 / 18 / 0; the `template-template-parameter` row moved). The six runnable
+cases pass `tests/tms6747.sh` at -O0 and -O2 on vm6747 (the one on PATH) with
+`SIM=0`, 494 / 0 for the suite at each level; the sim6747 leg and TI's
+simulator are for the Linux box. `-g` compiles the example and the members
+case for all four targets. The MASM spelling of every new case carries no
+angle bracket and no `$template:` - the stand-in's tag reaches no symbol.
+
+**Refused, each as clang refuses it**: an argument that is a type (`H<int>`)
+or a template-id (`H<Box<int> >`), the three mismatches above, `typename`
+after the list. **Refused by name, and exclusions**: a pack of template
+template parameters, `template <template <class> class... Cs>`, which would
+want a list of table entries and an expansion over it; a member class template
+as an argument, `Holder<Outer::Inner, int>`, which the older refusal of a
+member class template reaches first. **Found and left**: the column of an
+ambiguous partial specialization (`Kind<C<int> >` beside `Kind<Box<T> >` for a
+`Kind<Box<int> >`) is the template-id's where clang's is the declarator's -
+the older refusal's position, unchanged; and clang's note at the argument for
+a kind mismatch is not written, only its error's position matched.

@@ -1,0 +1,1 @@
+:6:3: error: 'C' is a template template parameter of 'H', so its argument is the name of a class template

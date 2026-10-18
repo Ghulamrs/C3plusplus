@@ -2,6 +2,8 @@
 
 #include "Operator.h"
 
+#include <cstdlib>
+
 // "N::M::f" -> {"N", "M", "f"}. A namespace scope is spelled by both ABIs
 // exactly as a class scope is - measured, `N::f` is `_ZN1N1fEi` and
 // `?f@N@@YAHH@Z` - so the manglers need the components and nothing else.
@@ -447,6 +449,14 @@ public:
             out += "_E";
             return;
         }
+        // **A template template argument is the template's name, a candidate by that name** -
+        // measured: `Holder<Box,int>, Box<int>` is `6HolderI3BoxiES0_IiE`, `ns::NBox` `N2ns4NBoxE`,
+        // an alias template `5Alias`, and a pattern's own parameter `T_`, which `C<int>` then reads as `S1_IiE`.
+        if (a.isTemplate) {
+            if (a.type->kind() == Kind::TemplateParam) templateParamName(static_cast<int>(a.type->length()));
+            else templateName(a.type->templateNamespace() + a.type->templateName());
+            return;
+        }
         if (a.isType) { type(a.type); return; }
         out += 'L';
         type(a.type);
@@ -575,21 +585,58 @@ private:
         return false;
     }
 
+    // **A template's name as a candidate under its qualified spelling**: `ns::NBox` twice is `N2ns4NBoxE`
+    // then `NS1_IiEE`, the namespaces inside it candidates of their own. `std::X` keeps `St` and no wrapper.
+    void templateName(const std::string &qualified) {
+        if (substitutedName(qualified)) return;
+        const std::string leaf = scopeComponents(qualified).back();
+        const bool nested = leaf.size() != qualified.size() && !isDirectlyInStd(qualified);
+        if (nested) out += 'N';
+        namespacesOf(qualified);
+        out += std::to_string(leaf.size());
+        out += leaf;
+        if (nested) out += 'E';
+        Sub s;
+        s.name = qualified;
+        subs_.push_back(s);
+    }
+
+    // `T_` for a template template parameter, under the name a pattern's `C<int>` carries.
+    void templateParamName(int index) {
+        const std::string key = "$TT" + std::to_string(index);
+        if (substitutedName(key)) return;
+        out += 'T';
+        if (index > 0) out += std::to_string(index - 1);
+        out += '_';
+        Sub s;
+        s.name = key;
+        subs_.push_back(s);
+    }
+
     // `3BoxIiLi3EE` - the template's name, then the arguments between I and E.
     void templateId(const Type *t) {
-        // **The namespace the template was declared in**, which the bare name
-        // does not carry: `std::vector<int>` is `St6vectorIiE`.
-        if (!t->templateNamespace().empty()) {
-            const std::string qualified =
-                t->templateNamespace() + t->templateName();
-            namespacesOf(qualified);
-        }
-        if (!substitutedName(t->templateName())) {
-            out += std::to_string(t->templateName().size());
-            out += t->templateName();
-            Sub s;
-            s.name = t->templateName();
-            subs_.push_back(s);
+        // **The namespace the template was declared in**, which the bare name does not carry:
+        // `std::vector<int>` is `St6vectorIiE`. A pattern's `C<int>` is `T_IiE`, measured `_Z4peekI3BoxEiRKT_IiE`.
+        if (t->templateName().compare(0, 3, "$TT") == 0) {
+            templateParamName(std::atoi(t->templateName().c_str() + 3));
+        } else if (t->templateNamespace().empty()) {
+            if (!substitutedName(t->templateName())) {
+                out += std::to_string(t->templateName().size());
+                out += t->templateName();
+                Sub s;
+                s.name = t->templateName();
+                subs_.push_back(s);
+            }
+        } else {
+            const std::string qualified = t->templateNamespace() + t->templateName();
+            if (!substitutedName(qualified)) {
+                namespacesOf(qualified);
+                out += std::to_string(t->templateName().size());
+                out += t->templateName();
+                Sub s;
+                s.name = qualified;
+                subs_.push_back(s);
+            }
         }
         out += 'I';
         const std::vector<TemplateArg> &args = t->templateArgs();
@@ -1062,6 +1109,15 @@ public:
                 one.type = a.pack[i];
                 templateArgument(one);
             }
+            return;
+        }
+        // **A template template argument is the template spelled as a class with no arguments** - measured
+        // with clang for this ABI: `Holder<Box,int>` is `U?$Holder@UBox@@H@@`, a `class` template `VCBox@@`,
+        // `ns::NBox` `UNBox@ns@@`, a second mention `U1@`, and an alias template `$$YAlias@@`.
+        if (a.isTemplate) {
+            if (a.type->kind() == Kind::TemplateParam) { refuse("a pattern has no Microsoft name"); return; }
+            out += a.type->isAliasTemplate() ? "$$Y" : a.type->declaredClass() ? "V" : "U";
+            qualifiedName(a.type->templateNamespace() + a.type->templateName());
             return;
         }
         if (a.isType) {
