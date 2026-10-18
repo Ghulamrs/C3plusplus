@@ -102,7 +102,7 @@ goes in the same commit.
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:431` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:1672` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:231` |
-| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:4859`, `src/parser/ParserTopLevel.cpp:755` |
+| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:4871`, `src/parser/ParserTopLevel.cpp:755` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:684` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:444` |
 | `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:719`, `src/parser/ParserInit.cpp:936`, `src/parser/ParserTopLevel.cpp:448`, `src/parser/ParserExprNew.cpp:422` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:197` |
@@ -217,7 +217,7 @@ argument over a template's parameters in a signature, spelled as clang spells th
 - **a bit-field of an anonymous union at namespace or block scope** - the
   members are names of the scope, and a bit-field would be a name with no
   object to be a field of. `src/parser/ParserType.cpp:2133`
-- **a member function of a union** - `src/parser/ParserClass.cpp:4117`
+- **a member function of a union** - `src/parser/ParserClass.cpp:4129`
 - **one name holding both a static and a non-static member**, where overload
   resolution picks the non-static one - `src/parser/ParserExpr.cpp:1439`
 - **a covariant return that moves the result** - an override may return a
@@ -259,7 +259,7 @@ argument over a template's parameters in a signature, spelled as clang spells th
   deduce `std::initializer_list` here. `src/parser/ParserTemplate.cpp:1408`
 - **a `std::initializer_list` with static storage made from braces** - its
   backing array would need static storage too. `src/parser/ParserInit.cpp:1168`
-- **a braced default argument** - `src/parser/ParserClass.cpp:4873`,
+- **a braced default argument** - `src/parser/ParserClass.cpp:4885`,
   `src/parser/ParserTopLevel.cpp:808`
 - **a braced member initialiser with values on a class, an array or a
   reference** - a scalar member takes `{v}` and `= {v}`, and `= {}` and `= {0}`
@@ -278,7 +278,7 @@ many, or has no object of its own:
 - **a static data member that is an array of a class with a constructor** -
   each element would need its constructor before main and its destructor at
   exit; a file-scope array and a static local of the same shape are built and
-  destroyed element by element. `src/parser/ParserClass.cpp:3952`
+  destroyed element by element. `src/parser/ParserClass.cpp:3964`
 - **a static-duration reference bound to a temporary** - [class.temporary]/5
   gives the temporary the program's lifetime, so it would need static storage
   of its own; a named object binds. `src/parser/ParserInit.cpp:1606`
@@ -394,12 +394,12 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   - **of a virtual base** - the most-derived class would have to be told which
     of them builds it. `src/parser/ParserType.cpp:587`
   - **a constructor template** - its specializations would have to be made
-    for the derived class as calls asked for them. `src/parser/ParserClass.cpp:3030`
+    for the derived class as calls asked for them. `src/parser/ParserClass.cpp:3042`
   - **a constructor with `...`** - its arguments would have to be forwarded as
-    they came. `src/parser/ParserClass.cpp:3070`
+    they came. `src/parser/ParserClass.cpp:3082`
   - **a constructor taking a class by value whose copy is not trivial** - the
     copy would have to be passed on rather than made twice.
-    `src/parser/ParserClass.cpp:3074`
+    `src/parser/ParserClass.cpp:3086`
 - **a using-declaration inside a block** - `src/parser/ParserStmt.cpp:1851`.
   The one at namespace scope works, and so does `using namespace N;`.
 
