@@ -14284,3 +14284,16 @@ had none (`_Z5near1...` where clang writes `_ZL5near1...`), and any function in 
 it after `_Z` (`_ZLN1n1fEi`, `_ZLSt1hi`) where it marks the unqualified name (`_ZN1nL1fEi`,
 `_ZStL1hi`). The functions were local all along - only the names said otherwise; a
 specialization now asks its declaration for `static`. `static-function-template-linkage`.
+
+## Slicing: a derived object copied to its base, 2026-10-18
+
+**`T t = u;` with u of a class derived from T was refused** - "'t' is 'struct T' and this is
+'struct U'", naming no feature - for any T with no copy constructor written, and so were `w = u`,
+`take(u)` for `take(T)`, `return w;` into a T and `h.member = x`; and a T with a copy constructor
+was refused as a by-value argument. [class.copy]/12 copies the T part, slicing, ordinary C++98.
+`convert` takes the base subobject of a glvalue (a prvalue kept in a frame slot first), through
+`baseSubobject`, the one place `*(B *)&d` is built now, carrying a base's offset;
+`rankArgument` ranks a derived object passed by value to a base as a Conversion,
+[over.best.ics]/6, so `pick(T)` loses to `pick(U)` for a U; `materialiseCopy` hands a copy
+constructor the base subobject. A private base is refused naming [class.access.base]/4.
+`derived-to-base-copy` (from tests/open), `derived-to-base-copy-private-refused`.

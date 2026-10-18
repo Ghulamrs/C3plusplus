@@ -60,7 +60,7 @@ oracle, and the sentence has to be read.
 *reachability* depends on where it sits. `template <>` at
 `src/parser/ParserTemplate.cpp:39` is refused where a template parameter list
 is expected, while `template <> struct Box<int> { ... };` compiles; the
-functional-cast temporary at `src/parser/ParserOverload.cpp:1100` is refused
+functional-cast temporary at `src/parser/ParserOverload.cpp:1146` is refused
 during overload ranking, while `take(P(4))` and `P q = P(3);` compile. Both were
 checked with a program before this sentence was written, and the same habit is
 the reason `pending[]` once had eight keywords in it that were implemented.
@@ -106,7 +106,7 @@ goes in the same commit.
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:688` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:623` |
 | `template <template <class> typename C>`, `typename` after a template template parameter's list | C++17 | `src/parser/ParserTemplate.cpp:51` |
-| `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:719`, `src/parser/ParserInit.cpp:936`, `src/parser/ParserTopLevel.cpp:448`, `src/parser/ParserExprNew.cpp:434` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:197` |
+| `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:719`, `src/parser/ParserInit.cpp:936`, `src/parser/ParserTopLevel.cpp:448`, `src/parser/ParserExprNew.cpp:428` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:197` |
 | `namespace N::M { }` | C++17 | `src/parser/ParserTopLevel.cpp:85` |
 | an inline variable | C++17 | `src/parser/ParserTopLevel.cpp:262` |
 
@@ -275,10 +275,10 @@ is left:
 
 - **a braced list nested inside the braces that call a constructor** -
   `P p{1, {2, 3}}`; name the inner one's type, `T{...}`.
-  `src/parser/ParserExprNew.cpp:303`
+  `src/parser/ParserExprNew.cpp:297`
 - **a braced call argument on a road that never asks the parameter's type** -
   a call through a function pointer or a member pointer; name the type,
-  `T{...}`. `src/parser/ParserExprCall.cpp:489`
+  `T{...}`. `src/parser/ParserExprCall.cpp:493`
 - **`auto x{...}`** - C++11 makes it `std::initializer_list`, N3922 the
   element's type, and compilers apply N3922 to C++11; `auto x = {...}` deduces
   the list. `src/parser/ParserTemplate.cpp:1652`
@@ -330,11 +330,11 @@ many, or has no object of its own:
 ## `new` and `delete`
 
 - **more than one value in a new-expression** without a constructor -
-  `src/parser/ParserExprNew.cpp:1436`
+  `src/parser/ParserExprNew.cpp:1430`
 - **`new T[n][m]`** - only the first dimension may be given.
-  `src/parser/ParserExprNew.cpp:1383`
+  `src/parser/ParserExprNew.cpp:1377`
 - **`new T[n]{...}`** with values inside - the empty pair value-initialises
-  the elements; `new T{...}` works. `src/parser/ParserExprNew.cpp:1409`
+  the elements; `new T{...}` works. `src/parser/ParserExprNew.cpp:1403`
 
 Plain `new` and `delete`, a class's own `operator new`/`operator delete`, the
 placement forms and `<new>` all work; the entries that said otherwise were
@@ -351,10 +351,10 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 - **`dynamic_cast` to a reference on x86_64-windows** - a failure throws
   `std::bad_cast`, a class this target neither throws nor catches yet; the
   Itanium targets call `__cxa_bad_cast`. And **to an rvalue reference** on
-  every target. `src/parser/ParserExprNew.cpp:901`, `src/parser/ParserExprNew.cpp:898`
+  every target. `src/parser/ParserExprNew.cpp:895`, `src/parser/ParserExprNew.cpp:892`
 - **`dynamic_cast` through a class with more than one base, on
   x86_64-windows** - the Microsoft hierarchy is written one base deep; the
-  Itanium targets walk `__vmi_class_type_info`. `src/parser/ParserExprNew.cpp:998`
+  Itanium targets walk `__vmi_class_type_info`. `src/parser/ParserExprNew.cpp:992`
 - **catching a pointer by reference** - the runtime hands a handler the pointer
   itself, so catch it by value. `src/parser/ParserStmt.cpp:1430`
 - **throwing a pointer to a function** - it has no `type_info`; the message

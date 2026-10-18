@@ -85,6 +85,17 @@ void Parser::refuseScopedOperand(const Type *a, const Type *b, const char *op, s
                    "type, and a cast reaches the integer");
 }
 
+ExprPtr Parser::baseSubobject(ExprPtr e, const Type *base) const {
+    const Type *from = e->type();
+    const Type *want = from->isConst() ? types_.withConst(base->unqualified()) : base->unqualified();
+    ExprPtr at(new Unary('&', std::move(e)));
+    at->setType(types_.pointerTo(from));
+    at = convert(std::move(at), types_.pointerTo(want), true);
+    ExprPtr sub(new Unary('*', std::move(at)));
+    sub->setType(want);
+    return sub;
+}
+
 ExprPtr Parser::convert(ExprPtr e, const Type *to, bool allowExplicit) const {
     if (e->type() == to) return e;
     // A scoped enumeration converts only by a cast, in either direction - [dcl.enum]/10, [expr.static.cast]/9.
@@ -145,6 +156,36 @@ ExprPtr Parser::convert(ExprPtr e, const Type *to, bool allowExplicit) const {
         to->unqualified()->isStructOrUnion()) {
         e->setType(to);
         return e;
+    }
+
+    // **A derived object copied to a base with no copy constructor of its own is its base subobject**,
+    // [class.copy]/12 - slicing, `T t = u;` and `w = u`: the copy is of bytes, so it is a load of
+    // the subobject. A prvalue is kept in a frame slot first, as a reference's temporary is.
+    Parser *self = const_cast<Parser *>(this);
+    if (e->type() != nullptr && e->type()->unqualified()->isStructOrUnion() &&
+        to->unqualified()->isStructOrUnion() && e->type()->unqualified() != to->unqualified() &&
+        anyBaseOffset(e->type()->unqualified(), to->unqualified()) >= 0 &&
+        self->copyConstructorOf(to->unqualified()) == nullptr &&
+        self->moveConstructorOf(to->unqualified()) == nullptr) {
+        const Type *from = e->type();
+        ExprPtr keep;
+        if (!isGlvalue(*e)) {
+            const int slot = self->allocateFrameSlot(from->unqualified());
+            const std::string temp = ".sl" + std::to_string(self->refTemps_++);
+            ExprPtr target(Var::local(temp, slot));
+            target->setType(from->unqualified());
+            keep.reset(new Assign(std::move(target), std::move(e)));
+            keep->setType(from->unqualified());
+            e.reset(Var::local(temp, slot));
+            e->setType(from->unqualified());
+            from = from->unqualified();
+        }
+        ExprPtr base = baseSubobject(std::move(e), to->unqualified());
+        if (keep == nullptr) return base;
+        const Type *baseType = base->type();
+        ExprPtr both(new Comma(std::move(keep), std::move(base)));
+        both->setType(baseType);
+        return both;
     }
     // **A null data member pointer is -1 on both ABIs** - an offset of 0 is a
     // real member - and Microsoft's virtual model writes {0, -1}. It had been a
@@ -719,6 +760,11 @@ Parser::Rank Parser::rankArgument(const Expr &arg, const Type *param) {
     if (to->isNullPtr() && from->isInteger())
         return isNullConstant(arg) ? Rank::Conversion : Rank::None;
 
+    // [over.best.ics]/6: a derived object passed by value to a base is a derived-to-base Conversion.
+    if (to->unqualified()->isStructOrUnion() && from->unqualified()->isStructOrUnion() &&
+        to->unqualified() != from->unqualified() && accessibleBaseOffset(from, to->unqualified()) >= 0)
+        return Rank::Conversion;
+
     // **Last of all, a user-defined conversion** - [over.ics.rank]/2 puts one
     // below every standard conversion, so this is asked only where nothing
     // above it answered.
@@ -1232,6 +1278,19 @@ void Parser::checkAssignable(const Expr &from, const Type *to, std::size_t pos,
         src_.fail(pos, "a lambda converts to a function pointer only if it "
                        "captures nothing - call the closure directly, or give "
                        "the function a template parameter for it");
+
+    // Slicing, [class.copy]/12: a derived object copies to an accessible base that has no copy
+    // constructor of its own as its base subobject's bytes; convert() takes the subobject.
+    if (ft->unqualified()->isStructOrUnion() && to->unqualified()->isStructOrUnion() &&
+        accessibleBaseOffset(ft->unqualified(), to->unqualified()) >= 0 &&
+        const_cast<Parser *>(this)->copyConstructorOf(to->unqualified()) == nullptr &&
+        const_cast<Parser *>(this)->moveConstructorOf(to->unqualified()) == nullptr)
+        return;
+    if (ft->unqualified()->isStructOrUnion() && to->unqualified()->isStructOrUnion() &&
+        ft->unqualified() != to->unqualified() &&
+        anyBaseOffset(ft->unqualified(), to->unqualified()) >= 0)
+        src_.fail(pos, what + " is '" + to->describe() + "', a base of '" + ft->describe() +
+                       "' that is not accessible here ([class.access.base]/4)");
 
     auto refuse = [&](const char *tail) {
         src_.fail(pos, what + " is '" + to->describe() + "' and this is '" +
