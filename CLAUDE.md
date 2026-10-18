@@ -14284,3 +14284,19 @@ had none (`_Z5near1...` where clang writes `_ZL5near1...`), and any function in 
 it after `_Z` (`_ZLN1n1fEi`, `_ZLSt1hi`) where it marks the unqualified name (`_ZN1nL1fEi`,
 `_ZStL1hi`). The functions were local all along - only the names said otherwise; a
 specialization now asks its declaration for `static`. `static-function-template-linkage`.
+
+## Version 1.20, 2026-10-18: the CCS samples whole
+
+**1.20 is the round that made the user's CCS projects compile** - unnamed template parameters, a
+member template's signature over its class's parameter, a base copied in a mem-initialiser, and
+the five gaps of "The CCS samples whole" - with the misplaced Itanium `L` of a `static` function
+found on the way. Each section above says what was measured. `tools/feature-sweep` is unchanged
+at **79 compile, 17 refused by name, 0 naming nothing, of 96**: none of the eight is a row of the
+grid, which is the review's C++11 list and not the C++98 core these sit in. The headline stays.
+
+Measured at the release: Mac `make test` exit 0 (run.sh 831/0, names.sh 534/0, overload.sh 41/0,
+exclusions 135 sites 0/0, comment cap 0); the emit golden against 1.19's tree moved only
+`template-in-namespace`, its `static` template's name now clang's. Linux, g++: run.sh 831/0 at
+-O0 and -O2, tms6747.sh on vm6747 and sim6747. Windows: the cases 1309/0 through both spellings
+and 1004/0 at -O2, ti-link 518/0; names against cl differ on the 18 library cases they did at
+1.19 and on `template-id-qualified-base-call`'s elided move, which its `.nocl` records.

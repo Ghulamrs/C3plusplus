@@ -169,6 +169,24 @@ x86_64-windows, where a class cannot be thrown yet and they print and abort inst
 delete`, the placement and nothrow forms, `std::bad_alloc` from the platform runtime, `typeid` and
 `dynamic_cast` all work.
 
+## What 1.20 changes
+
+The user's CCS sample projects, SampleExt and SampleExt1, compile and run unchanged - but for
+SampleExt1's own `template <bool> struct GCompileCheck;` written inside `#ifndef assert`, which every
+compiler refuses. What they needed, each legal C++11 and each a case recorded from clang:
+
+* **Unnamed template parameters**, `template <bool> struct GCompileCheck;`, `template <class>`,
+  `template <int = 3>` - every one was refused, the non-type form naming no feature.
+* **A member template's signature over its class's parameter**, `CVector<N + K>` inside
+  `CVector<N>`, named as clang names it (`S_IXplLm3ET_EE`).
+* **A base copied in a mem-initialiser**, `: B(b)`, for a base with no copy constructor of its own.
+* **`p->template f<3>()`**; **`V<I>::operator*(s)`** in a member of a class derived from `V<I>`,
+  called on `this` and never dispatched; **`B(d)`**, a functional cast from a derived object;
+  **`(const V &)q`**, a cast to a reference naming the base subobject; and **a const reference to a
+  base bound to a derived class temporary**, `f(D(3))` for `f(const B &)`.
+* **A `static` function's Itanium name**: a function template's had no `L`, and every one in a
+  namespace had it after `_Z` - `_ZLN1n1fEi` where clang writes `_ZN1nL1fEi`. Only the names were wrong.
+
 ## What 1.19 changes
 
 Two more refused C++11 features, built by Fable 5.1 and measured on all three boxes, and three wrong
@@ -435,10 +453,10 @@ defects below and nothing else; Compiler-Cppi has closed those too, with the
 vtable group, `_ZTv` thunks, VTT and construction vtables, and that work is
 not in 1.3.
 
-## Known shortcomings in 1.19
+## Known shortcomings in 1.20
 
 Everything here is measured and written down elsewhere in full; this is the
-short list a user of **1.19** should have in front of them. `docs/EXCLUSIONS.md`
+short list a user of **1.20** should have in front of them. `docs/EXCLUSIONS.md`
 is the complete one - 138 refusal sites on 2026-10-18 (131 on 2026-10-08),
 each citing the source line that refuses it, and `make test` fails when the two
 disagree. The heading
