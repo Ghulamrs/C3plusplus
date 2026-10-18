@@ -1523,7 +1523,11 @@ const Type *Parser::enumSpecifier() {
     while (!peek().is("}")) {
         std::size_t npos = peek().pos;
         std::string name = expectIdent("an enumerator");
-        if (enumIndex_.count(within_ + name) != 0 || (!scoped && findEnum(prefix + name)))
+        // Declared twice under this very key - not one an inline namespace's enumerator put here.
+        const std::unordered_map<std::string, std::size_t>::const_iterator twice =
+            enumIndex_.find(within_ + name);
+        if ((twice != enumIndex_.end() && enums_[twice->second].name == within_ + name) ||
+            (!scoped && twice == enumIndex_.end() && findEnum(prefix + name)))
             src_.fail(npos, "'" + name + "' is declared twice");
         if (consume("=")) {
             const long long given = constantExpression("a constant");
@@ -1540,6 +1544,17 @@ const Type *Parser::enumSpecifier() {
         made.push_back(enums_.size() - 1);
         // C++11's `E::a` for an unscoped E too, [dcl.enum]/11.
         if (!scoped && !tag.empty()) enumIndex_[prefix + tag + "::" + name] = enums_.size() - 1;
+        // And under the enclosing namespace's name where this one is inline.
+        {
+            const std::vector<std::string> alts = within == nullptr ? inlineAliasPrefixes(prefix)
+                                                                    : std::vector<std::string>();
+            const std::string tail = scoped ? tag + "::" + name : name;
+            for (std::size_t a = 0; a < alts.size(); a++) {
+                enumIndex_.insert(std::make_pair(alts[a] + tail, enums_.size() - 1));
+                if (!scoped && !tag.empty())
+                    enumIndex_.insert(std::make_pair(alts[a] + tag + "::" + name, enums_.size() - 1));
+            }
+        }
         if (scoped) {
             const std::size_t had = enumIndex_.count(prefix + name);
             inBody.push_back(std::make_pair(prefix + name,
@@ -1770,14 +1785,12 @@ const Type *Parser::unqualifiedSpecifiers(StorageClass *storage, Qualifiers *qua
             continue;
         }
         if (consume("volatile")) { quals->isVolatile = sawVolatile(); continue; }
-        // **`inline` is a hint about linkage, not about the type.** It makes a
-        // function's definition mergeable across translation units; nothing
-        // else downstream needs it.
+        // **`inline` is a hint about linkage, not about the type.** It makes a function's
+        // definition mergeable across translation units; nothing else downstream needs it.
+        // `inline namespace` at file scope is topLevel's; here it is one in a class or block.
         if (peek().is("inline") && peekAt(1).is("namespace"))
-            src_.fail(peek().pos, "an inline namespace is not supported yet - "
-                                  "its members would have to be found in the "
-                                  "namespace around it, and 'namespace N { }' "
-                                  "without 'inline' works here");
+            src_.fail(peek().pos, "a namespace is defined at namespace scope, and this one is "
+                                  "inside a class or a function");
         if (consume("inline")) { quals->isInline = true; continue; }
         if (consume("register")) { *storage = StorageRegister; continue; }
         if (consume("auto"))     { *storage = StorageAuto; continue; }

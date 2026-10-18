@@ -859,7 +859,11 @@ std::vector<std::string> Parser::lookupKeys(const std::string &name,
         if (!t->isStructOrUnion() || !t->inNamespace()) continue;
         const std::string &tag = t->tag();
         const std::size_t cut = tag.rfind("::");
-        if (cut != std::string::npos) add(tag.substr(0, cut) + "::" + name);
+        if (cut == std::string::npos) continue;
+        add(tag.substr(0, cut) + "::" + name);
+        // [basic.lookup.argdep]/2: an inline namespace's class has the enclosing one too.
+        const std::vector<std::string> alts = inlineAliasPrefixes(tag.substr(0, cut) + "::");
+        for (std::size_t a = 0; a < alts.size(); a++) add(alts[a] + name);
     }
     return keys;
 }

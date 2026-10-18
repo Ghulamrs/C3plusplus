@@ -1957,10 +1957,31 @@ private:
             out += namespaceStack_[i] + "::";
         return out;
     }
+    // Every namespace defined `inline`, by full path - [namespace.def]/8.
+    std::set<std::string> inlineNamespaces_;
+    // Every prefix `a::b::` becomes with inline components taken out: `lib::v2::`'s member is `lib::`'s.
+    std::vector<std::string> inlineAliasPrefixes(const std::string &prefix) const;
+    // The four tables' sizes before a declaration, so the entries it added can be aliased.
+    struct TableSizes { std::size_t functions, globals, typedefs, enums; };
+    TableSizes tableSizes() const {
+        return TableSizes{ functions_.size(), globals_.size(), typedefs_.size(), enums_.size() };
+    }
+    void aliasInlineMembers(const TableSizes &before);
+    void aliasTypeKey(const std::string &key, std::size_t index);
+    void aliasFunctionKey(const std::string &key, std::size_t index);
+    // [namespace.udir]/6: a name found in the namespace and in an inline one of it, as two
+    // entities, is ambiguous - refused where the key is turned into the entity it names.
+    void refuseInlineAmbiguity(const std::string &key, std::size_t index,
+                               const std::unordered_map<std::string, std::size_t> &table,
+                               bool (Parser::*same)(std::size_t, std::size_t) const = nullptr) const;
+    // Two typedef entries naming one type are one entity, as a typedef written twice is.
+    bool sameTypedef(std::size_t a, std::size_t b) const { return typedefs_[a].type == typedefs_[b].type; }
     // The namespace a class was declared in, as namespaceStack_ spells it (n::m as {n, m}).
     std::vector<std::string> classNamespacePath(const Type *t) const;
     // The namespace an out-of-line definition was written for, while it is read; its defaults read there.
     std::vector<std::string> definitionNamespace_;
+    // `int lib::f(int) {}` reaches an f declared in an inline namespace of lib; an unqualified one declares anew.
+    bool definingQualified_ = false;
     // The qualified name to look a written one up under: the enclosing namespaces from
     // the innermost outwards, then whatever a `using namespace` has opened, then the
     // name itself. `exists` says which table to ask, functions and variables differing.
@@ -1968,6 +1989,8 @@ private:
                                  bool (Parser::*exists)(const std::string &) const) const;
     // The namespace a first component names, innermost out: `inner` in `outer` is "outer::inner".
     std::string namespaceNamed(const std::string &first) const;
+    // How many tokens from `from` spell a namespace qualifier, `lib :: v2 ::` being four; 0 for none.
+    std::size_t namespaceQualifierTokens(std::size_t from) const;
     // An unqualified name declared in an enclosing namespace, innermost first, or "" -
     // asked before the flat table, since [basic.lookup.unqual]/1 lets the nearer one hide a global.
     // A type named in the classes this is inside, innermost first, or null.
