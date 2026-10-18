@@ -550,6 +550,7 @@ void Parser::topLevel(Program &program) {
                                               d.type, c, false, false, false, 0 });
             }
             if (scalarInitAhead || consume("=") || atBracedInitialiser(d.name)) {
+                OverloadTarget hold(*this, d.type);
                 Init in = scalarInitAhead ? parenthesisedInitialiser(d)
                                           : parseInitialiser();
                 scalarInitAhead = false;

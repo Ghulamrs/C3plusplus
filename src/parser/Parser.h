@@ -445,6 +445,13 @@ private:
     void instantiateViableTemplates(const std::string &name,
                                     const std::vector<const Type *> &argTypes,
                                     std::size_t pos);
+    void instantiateViableTemplates(const std::vector<TemplateDecl> &overloads,
+                                    const std::vector<const Type *> &argTypes, std::size_t pos);
+    // The function templates a call of `name` names, [basic.lookup.qual] and [basic.lookup.unqual]:
+    // the nearest namespace declaring one - or the one a qualifier names - in `*ns`; else every one.
+    // A `scope` is the namespace a qualifier resolved to, absolute: `m` for `m::twice(2)`.
+    std::vector<TemplateDecl> templatesNamed(const std::string &name, const std::string &scope,
+                                             std::string *ns) const;
     // The same, for a member function template of `cls`.
     void instantiateViableMemberTemplates(const Type *cls,
                                           const std::string &name,
@@ -569,7 +576,7 @@ private:
         return (!instantiationKey_.empty() && name == instantiationOf_)
                    ? instantiationKey_ : name;
     }
-    ExprPtr templateCall(Program *program);
+    ExprPtr templateCall(Program *program, const std::string &scope = std::string());
     // A static member reached through a class template-id, after its `::`.
     ExprPtr templateIdMember(const Type *cls, std::size_t pos);
     // `Box<int, 3>` where a type was expected.
@@ -2385,6 +2392,7 @@ private:
     // reached. `noexcept(e)` reads it; nothing else does.
     int mayThrow_ = 0;
     long long constantExpression(const char *what);
+    bool foldPointerConstant(const Expr &e, long long *out, std::size_t pos) const;
     bool fold(const Expr &e, long long *out, std::size_t pos) const;
 
     void typedefFunctionSuffix(Declared &td);
@@ -2436,9 +2444,18 @@ private:
     ExprPtr constCast(std::size_t pos);
     ExprPtr dynamicCast(std::size_t pos);
     ExprPtr dynamicCastToVoid(ExprPtr v, const Type *to);
-    // A function named but not called, as a pointer to it; null if `key`
-    // names no function. Shared by the bare and the qualified spelling.
+    // A function named but not called, as a pointer to it (null for none), bare or qualified.
     ExprPtr functionAsValue(const std::string &key, std::size_t pos);
+    // [over.over]: what an overloaded function's name converts to while its operand is read.
+    const Type *overloadTarget_ = nullptr;
+    // Held over an initialiser, an assignment's right side, a cast's operand and a return's value.
+    struct OverloadTarget {
+        Parser &p; const Type *was;
+        OverloadTarget(Parser &parser, const Type *t) : p(parser), was(parser.overloadTarget_) { p.overloadTarget_ = t; }
+        ~OverloadTarget() { p.overloadTarget_ = was; }
+    };
+    // The one function of the set whose type the target names - of `cls` for a member - or null.
+    const Signature *pickByTarget(const std::vector<std::size_t> &set, const Type *cls) const;
     ExprPtr reinterpretCast(std::size_t pos);
     ExprPtr unary();
     ExprPtr postfix();

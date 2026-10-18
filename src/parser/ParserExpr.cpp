@@ -272,7 +272,8 @@ ExprPtr Parser::staticCast(std::size_t pos) {
         src_.fail(peek().pos, "expected '>' to close 'static_cast<'");
     takeClosingAngle();
     expect("(");
-    ExprPtr v = expr();
+    ExprPtr v;
+    { OverloadTarget hold(*this, to); v = expr(); }
     expect(")");
 
     if (to->isReference()) {
@@ -629,16 +630,41 @@ ExprPtr Parser::functionalCast(const Type *to, std::size_t pos) {
 }
 
 // **A function's address, from its key.**
+const Parser::Signature *Parser::pickByTarget(const std::vector<std::size_t> &set, const Type *cls) const {
+    const Type *t = overloadTarget_ == nullptr ? nullptr : overloadTarget_->unqualified();
+    if (t == nullptr) return nullptr;
+    const Type *fn = nullptr;
+    if (cls != nullptr) {
+        if (!t->isMemberFunctionPointer() || t->enclosing() != cls->unqualified()) return nullptr;
+        fn = t->pointee();
+    } else if (t->isFunctionPointer() || (t->isReference() && t->pointee()->isFunction())) {
+        fn = t->pointee();
+    }
+    if (fn == nullptr) return nullptr;
+    const Signature *found = nullptr;
+    for (std::size_t i : set) {
+        const Signature &f = functions_[i];
+        if (cls != nullptr && f.isStaticMember) continue;
+        if (types_.functionType(f.returns, f.params, f.variadic, f.refThis) != fn) continue;
+        if (found != nullptr) return nullptr;
+        found = &f;
+    }
+    return found;
+}
+
 ExprPtr Parser::functionAsValue(const std::string &key, std::size_t pos) {
+    const Signature *sig = nullptr;
     if (const std::vector<std::size_t> *set = overloadsOf(key)) {
-        if (set->size() > 1)
+        if (set->size() > 1) sig = pickByTarget(*set, nullptr);
+        if (set->size() > 1 && sig == nullptr)
             src_.fail(pos, "'" + key + "' names " +
                            std::to_string(set->size()) + " functions, and "
                            "which one this is cannot be told from the use "
-                           "alone - choosing an overload by the type it is "
-                           "assigned to is not supported yet");
+                           "alone - choosing one by the parameter it is passed "
+                           "to is not supported yet; initialise a pointer of "
+                           "the type wanted and pass that");
     }
-    const Signature *sig = findFunction(key);
+    if (sig == nullptr) sig = findFunction(key);
     if (sig == nullptr) return nullptr;
     Var *v = Var::global(key);
     v->setSymbol(sig->symbol);
@@ -1084,7 +1110,7 @@ ExprPtr Parser::primary(Program *program) {
         }
         // **`std::copy(a, b, c)` - a function template named qualified.**
         if (peek().kind == TokenKind::Ident && isTemplateName(peek().text, true))
-            return templateCall(program);
+            return templateCall(program, scope);
 
         std::string full = scope + "::" + expectIdent("a name");
         // **A member of N's unnamed namespace is reached as `N::x`** -
@@ -2540,12 +2566,13 @@ ExprPtr Parser::unary() {
                     // a slot of this frame the way a class temporary is.
                     const std::string key = cls->tag() + "::" + memberName;
                     if (const std::vector<std::size_t> *set = overloadsOf(key)) {
-                        if (set->size() > 1)
+                        const Signature *picked = set->size() > 1 ? pickByTarget(*set, cls) : nullptr;
+                        if (set->size() > 1 && picked == nullptr)
                             src_.fail(pos, "'" + key + "' names " +
                                            std::to_string(set->size()) +
                                            " functions, and which one this is "
                                            "cannot be told from the use alone");
-                        const Signature &f = functions_[(*set)[0]];
+                        const Signature &f = picked != nullptr ? *picked : functions_[(*set)[0]];
                         at_ += q + 1;
                         // [expr.unary.op]/3: a static member function's address is an ordinary pointer.
                         if (f.isStaticMember) return functionAsValue(key, pos);

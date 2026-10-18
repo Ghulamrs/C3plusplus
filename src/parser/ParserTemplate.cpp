@@ -298,9 +298,10 @@ void Parser::bindTemplateParameters(const std::vector<TemplateParam> &params,
             if (it != enumIndex_.end()) { s.had = true; s.was = it->second; }
             enumIndex_[p.name] = enums_.size();
             EnumConst e{ p.name, values[i] };
-            // [temp.param]/5: an enumeration-typed parameter is a value of that enumeration, not an int.
+            // [temp.param]/5: a non-type parameter is a prvalue of its declared type - an enumeration,
+            // `unsigned`, `unsigned long long` - and not an int.
             const Type *pt = paramTypeIn(p, binding);
-            if (pt != nullptr && pt->isInteger() && !pt->tag().empty()) e.type = pt;
+            if (pt != nullptr && pt->isInteger()) e.type = pt->unqualified();
             e.paramType = pt;
             enums_.push_back(e);
             boundValueParams_[p.name]++;
@@ -1454,6 +1455,7 @@ Parser::instantiate(const TemplateDecl &decl,
     // are: a template and a non-template there compete as one set, and the non-template wins a tie.
     // Where that namespace is inline, under the enclosing one's as well - `lib::twice(1)`.
     if (!decl.ns.empty()) functionIndex_[decl.ns + decl.name].push_back(at);
+    else functionIndex_["::" + decl.name].push_back(at);   // the global namespace's own
     {
         const std::vector<std::string> alts = inlineAliasPrefixes(decl.ns);
         for (std::size_t a = 0; a < alts.size(); a++) functionIndex_[alts[a] + decl.name].push_back(at);
@@ -2833,7 +2835,7 @@ const Type *Parser::instantiateClass(const TemplateDecl &decl, std::size_t pos) 
 
 // A template named in an expression. 5.2 wants the arguments written out:
 // deducing them from the call is 5.3, and a class template is 5.4.
-ExprPtr Parser::templateCall(Program *program) {
+ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
     const std::string name = peek().text;
     const std::size_t pos = peek().pos;
     const TemplateDecl decl = templates_[name];
@@ -2898,8 +2900,10 @@ ExprPtr Parser::templateCall(Program *program) {
         for (std::size_t i = 0; i < callArgs.size(); i++)
             argTypes.push_back(deductionArgType(*callArgs[i]));
 
-        // **Every function template of this name is a candidate.**
-        instantiateViableTemplates(name, argTypes, pos);
+        // **Every function template the name reaches is a candidate** - one namespace's, the nearest.
+        std::string named;
+        const std::vector<TemplateDecl> reached = templatesNamed(name, scope, &named);
+        instantiateViableTemplates(reached, argTypes, pos);
 
         // Nothing deduced and no ordinary function - so say why the template
         // failed, which beats "not declared". With more than one overload the
@@ -2919,10 +2923,21 @@ ExprPtr Parser::templateCall(Program *program) {
             src_.fail(pos, "'" + name + "' is a function template and " + why);
         }
 
+        const std::string bare = name.substr(name.rfind("::") == std::string::npos ? 0 : name.rfind("::") + 2);
         // **In the template's own namespace**, whose ordinary functions of this name are candidates
         // beside its specializations - [over.match.best]: an exact non-template beats a template.
-        // Under the bare name a qualified call or a class template's member body saw only the specializations.
-        const std::string key = !decl.ns.empty() && overloadsOf(decl.ns + name) != nullptr
+        // The global namespace's is its ordinary functions and its own specializations, no other's.
+        if (named == "::") {
+            std::vector<std::size_t> mine;
+            if (const std::vector<std::size_t> *all = overloadsOf(bare))
+                for (std::size_t i : *all) if (!functions_[i].fromTemplate) mine.push_back(i);
+            if (const std::vector<std::size_t> *own = overloadsOf("::" + bare))
+                mine.insert(mine.end(), own->begin(), own->end());
+            functionIndex_["$global:" + bare] = mine;
+            named = "$global:";
+        }
+        const std::string key = !named.empty() && overloadsOf(named + bare) != nullptr ? named + bare
+                              : !decl.ns.empty() && overloadsOf(decl.ns + name) != nullptr
                               ? decl.ns + name : name;
         const Signature sig = resolveOverload(key, callArgs, pos);
         // **A specialization's defaults, as every ordinary call reads them.**
@@ -2934,8 +2949,8 @@ ExprPtr Parser::templateCall(Program *program) {
     // **Every function template of this name is a candidate here too.** The written
     // list is read once per overload - `forward<T>` has one on `type &` and one on
     // `type &&` - and what each makes is ranked against the call's arguments below.
-    std::vector<TemplateDecl> overloads;
-    if (fnTemplates_.count(name) != 0) overloads = fnTemplates_[name];
+    std::string named;
+    std::vector<TemplateDecl> overloads = templatesNamed(name, scope, &named);
     if (overloads.empty()) overloads.push_back(decl);
     const std::size_t listAt = at_;
     std::size_t afterList = 0;
@@ -3224,6 +3239,39 @@ void Parser::instantiateViableTemplates(const std::string &name,
         fnTemplates_.find(name);
     if (it == fnTemplates_.end()) return;
     const std::vector<TemplateDecl> overloads = it->second;
+    instantiateViableTemplates(overloads, argTypes, pos);
+}
+
+std::vector<Parser::TemplateDecl> Parser::templatesNamed(const std::string &name, const std::string &scope,
+                                                         std::string *ns) const {
+    const std::string::size_type cut = name.rfind("::");
+    const std::string q = cut == std::string::npos ? std::string() : name.substr(0, cut + 2);
+    const std::string bare = cut == std::string::npos ? name : name.substr(cut + 2);
+    ns->clear();
+    std::map<std::string, std::vector<TemplateDecl> >::const_iterator it = fnTemplates_.find(bare);
+    if (it == fnTemplates_.end()) return std::vector<TemplateDecl>();
+    std::string here = scope.empty() ? namespacePrefix() : scope + "::";
+    if (!scope.empty()) {
+        std::vector<TemplateDecl> got;
+        for (const TemplateDecl &d : it->second)
+            if (d.ns == here) got.push_back(d);
+        if (!got.empty()) *ns = here;
+        return got.empty() ? it->second : got;
+    }
+    for (;;) {
+        std::vector<TemplateDecl> got;
+        for (const TemplateDecl &d : it->second)
+            if (d.ns == here + q) got.push_back(d);
+        if (!got.empty()) { *ns = here + q == "" ? "::" : here + q; return got; }
+        if (here.empty()) break;
+        const std::string::size_type up = here.rfind("::", here.size() - 3);
+        here = up == std::string::npos ? std::string() : here.substr(0, up + 2);
+    }
+    return it->second;
+}
+
+void Parser::instantiateViableTemplates(const std::vector<TemplateDecl> &overloads,
+                                        const std::vector<const Type *> &argTypes, std::size_t pos) {
     for (std::size_t k = 0; k < overloads.size(); k++) {
         const TemplateDecl &decl = overloads[k];
         std::vector<const Type *> binding;

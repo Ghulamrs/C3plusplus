@@ -11,6 +11,7 @@
 
 
 void Parser::parseArguments(std::vector<ExprPtr> &args) {
+    OverloadTarget none(*this, nullptr);
     if (consume(")")) return;
     for (;;) {
         // **`rest...` - one thing written, one argument per member.** The names

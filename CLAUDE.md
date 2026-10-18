@@ -14312,3 +14312,56 @@ was refused as a by-value argument. [class.copy]/12 copies the T part, slicing, 
 [over.best.ics]/6, so `pick(T)` loses to `pick(U)` for a U; `materialiseCopy` hands a copy
 constructor the base subobject. A private base is refused naming [class.access.base]/4.
 `derived-to-base-copy` (from tests/open), `derived-to-base-copy-private-refused`.
+
+## A non-type parameter has its declared type, 2026-10-18
+
+**[temp.param]/5: a non-type template parameter is a prvalue of its declared type**, and cxx1
+bound every one but an enumeration's as an `int` enumerator: `unsigned long long N` past
+LLONG_MAX read as a negative int, so `{ N }` was refused as narrowing, and `unsigned U` did
+signed arithmetic. The bound enumerator now carries the parameter's integer type, unqualified -
+`bool`, `char`, `short`, `unsigned`, `size_t`, a pack's members alike.
+`nontype-parameter-typed-int`, from tests/open.
+
+## offsetof is a constant expression, 2026-10-18
+
+**`static_assert(offsetof(S, d) == 8, ...)` and `char a[offsetof(S, d)]` were refused**: the
+macro is `(size_t)&((T *)0)->m`, and `fold` stopped at a cast of a pointer. `foldPointerConstant`
+reads an address built on a constant pointer - a cast of an integer to a pointer, `*` of it,
+members of that (an anonymous union's and a nested struct's included), and `&` - so offsetof
+folds wherever a constant is asked for: a static_assert, an array bound, an enumerator, a case
+label, a template argument. `offsetof-constant-expression`, from tests/open.
+
+## An elaborated name with a qualifier, and `class X x;` in a block, 2026-10-18
+
+**`struct lib::P *q;` and `struct lib::Box<char> *b;` were "expected a name" at the `::`**,
+[dcl.type.elab]: an elaborated-type-specifier may carry a nested-name-specifier or be a
+template-id, and names a class already declared. `structOrUnionSpecifier` scans past the name
+first - a body after it is a definition, which keeps its old road - and otherwise reads the name
+as the type name it is, refusing one that is not a class. **And a block declaration beginning
+with `class`, `class Q qq;`, was "expected an expression"**: `atDeclarationStart` knew `struct`
+and `union` through `atTypeName` and not `class`. `elaborated-qualified-name`, from tests/open.
+
+## An overloaded function's name picked by its target type, 2026-10-18
+
+**[over.over]: `&f` or `&S::f` naming several functions names the one whose type the target
+asks for**, and cpp11 refused every such use ("which one this is cannot be told from the use
+alone"). `overloadTarget_` holds the type an operand converts to while it is read - a
+declaration's initialiser (a reference's too), an assignment's right side, a C-style cast's and
+a `static_cast`'s operand, a return's value - and is cleared for a call's arguments;
+`pickByTarget` takes the one function of that type, a member one of the target's class, so
+`int (S::*)() &` takes `f() &` and `int (*)(double)` takes `h(double)`. **An argument does not
+pick yet**: a parameter's type is known only after the call is resolved, and the refusal says
+so. `member-pointer-overload-by-type`, from tests/open.
+
+## Two namespaces' function templates of one name, 2026-10-18
+
+**`m::twice(2)` called n's `twice`**: function templates are kept by their bare name, so two
+namespaces' templates of one name were one overload set and the first registered won - a
+silent wrong value. A call now takes the templates [basic.lookup.unqual] reaches - the
+nearest enclosing namespace that declares one - or the namespace a qualifier names,
+[basic.lookup.qual] (`templateCall` is handed the resolved scope); `templatesNamed` decides,
+falling back to every template of the name where neither finds one (a using-directive, ADL).
+Specializations were already indexed under their namespace; a global template's are under
+`::name` as well now, so a call reaching the global one ranks no other namespace's.
+`namespace-function-template-name`, from tests/open, which now holds only the over-acceptance
+two-phase lookup costs.
