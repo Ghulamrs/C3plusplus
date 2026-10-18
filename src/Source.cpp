@@ -1,5 +1,7 @@
 #include "Source.h"
 
+#include <cctype>
+
 #include <cstdio>
 #include <cstdlib>
 
@@ -99,6 +101,27 @@ std::string Source::where(std::size_t pos) const {
            std::to_string(at.column);
 }
 
+// An unnamed template parameter is bound as `$tp<n>`, which no source can spell; a message says which it is.
+static std::string readableNames(const std::string &message) {
+    std::string out;
+    for (std::size_t i = 0; i < message.size(); i++) {
+        std::size_t j = i + 4;
+        if (message.compare(i, 4, "'$tp") == 0 && j < message.size() &&
+            std::isdigit(static_cast<unsigned char>(message[j]))) {
+            unsigned long n = 0;
+            for (; j < message.size() && std::isdigit(static_cast<unsigned char>(message[j])); j++)
+                n = n * 10 + static_cast<unsigned long>(message[j] - '0');
+            if (j < message.size() && message[j] == '\'') {
+                out += "unnamed template parameter " + std::to_string(n + 1);
+                i = j;
+                continue;
+            }
+        }
+        out += message[i];
+    }
+    return out;
+}
+
 void Source::fail(std::size_t pos, const std::string &message) const {
     // Inside a trial nothing is printed and nothing exits.
     if (trials_ > 0) {
@@ -127,7 +150,7 @@ void Source::fail(std::size_t pos, const std::string &message) const {
 
     std::string text = file + ":" + std::to_string(at.line) + ":" +
                        std::to_string(at.column) + ": error: " +
-                       message + "\n";
+                       readableNames(message) + "\n";
 
     text += "    ";
     text.append(text_, lineStart, lineEnd - lineStart);

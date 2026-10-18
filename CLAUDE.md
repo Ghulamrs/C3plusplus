@@ -14200,3 +14200,23 @@ that checks an exit status is an oracle for whether something compiles, not for 
 (`<iosfwd>`, `<ctime>`, `string` and `vector` members, `setf`, `stable_sort`, `set::insert`'s pair) and
 one parse fault (`if (std::string(b) == "}")`); the user declined that round on 2026-10-18, and the
 `rfind` part is parked on branch `mend/string-rfind`. The headline stays "C++03 with C++11 extensions".
+
+## Unnamed template parameters, 2026-10-18
+
+**[temp.param]/1 lets any template parameter go unnamed** - `template <bool> struct GCompileCheck;`,
+the compile-time check idiom a CCS sample's `STATIC_CHECK` uses, and `template <class>`, `template <int
+= 3>`, `template <class...>`, `template <template <class> class>`. cpp11 refused every one: a type or
+template parameter "is not supported yet", a non-type one only "expected a name" - a refusal naming no
+feature, the kind `tools/exclusions` cannot count. Reported from GRIDEm, which built the sample with cpp11.
+
+**An unnamed parameter is bound by its place under a name no source can spell, `$tp<n>`**, the way an
+unnamed function parameter already was. Nothing downstream changed: both ABIs number template
+parameters rather than name them, so `template-unnamed-parameter.cpp`'s names agree with clang on all
+three targets, and the hidden name appears in no emitted file, `-g` and the MASM spelling included. A
+message that would print it says "unnamed template parameter 2" instead - done once, in `Source::fail`,
+rather than at each of the seven sites that print a parameter's name.
+
+**The citation re-pairing caught the trap again**: two `auto` braced-list refusals 9 lines apart both
+moved up 9, so the first one's old number landed on the second one's new line and `tools/exclusions
+--check` read clean with the two swapped. Every citation was then checked the other way round - the line
+an entry cited before against the line it cites now - 136 of 136 the same.

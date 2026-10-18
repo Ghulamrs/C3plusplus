@@ -55,18 +55,10 @@ void Parser::templateParameters(std::vector<TemplateParam> &params, bool allowUn
             if (consume("..."))
                 src_.fail(pos, "a pack of template template parameters is not supported yet");
             p.namePos = peek().pos;
-            if (peek().kind != TokenKind::Ident)
-                src_.fail(peek().pos, "an unnamed template parameter is not supported yet");
-            p.name = peek().text;
-            at_++;
+            if (peek().kind == TokenKind::Ident) { p.name = peek().text; at_++; }
         } else if (consume("class") || consume("typename")) {
             if (consume("...")) p.isPack = true;
             p.namePos = peek().pos;
-            // C++ lets a parameter go unnamed. Nothing here can refer to
-            // one, so it is a not-yet rather than a rule.
-            if (peek().kind != TokenKind::Ident && !allowUnnamed)
-                src_.fail(peek().pos, "an unnamed template parameter is not "
-                                      "supported yet");
             if (peek().kind == TokenKind::Ident) { p.name = peek().text; at_++; }
         } else {
             // A non-type parameter is written exactly like a function's, so it is read like one.
@@ -104,13 +96,10 @@ void Parser::templateParameters(std::vector<TemplateParam> &params, bool allowUn
                                                  "integral or enumeration type, 'int... Ns', is");
                 }
             }
-            Declared d = declarator(base, allowUnnamed);
+            Declared d = declarator(base, true);
             if (p.isPack && !base->isInteger() && base->kind() != Kind::TemplateParam)
                 src_.fail(d.pos, "a non-type parameter pack of type '" + base->describe() + "' is not "
                                  "supported yet - it must be an integral or enumeration type");
-            if (d.name.empty() && !allowUnnamed)
-                src_.fail(pos, "an unnamed template parameter is not "
-                               "supported yet");
             p.name = d.name;
             p.type = d.type;
             p.namePos = d.pos;
@@ -129,6 +118,8 @@ void Parser::templateParameters(std::vector<TemplateParam> &params, bool allowUn
                                "parameter, '" + d.type->describe() + "', is not supported yet - "
                                "the earlier parameter itself, 'T v', is");
         }
+        // [temp.param]/1 lets a parameter go unnamed: it is bound by its place under a name no source can spell.
+        if (p.name.empty()) p.name = "$tp" + std::to_string(params.size());
         // **A default argument, kept as tokens.** [temp.param]/9 lets a
         // parameter carry one, and a use that omits it replays these tokens
         // with the earlier parameters bound - which is how `N = M` sees `M`.
