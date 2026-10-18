@@ -14300,3 +14300,15 @@ exclusions 135 sites 0/0, comment cap 0); the emit golden against 1.19's tree mo
 -O0 and -O2, tms6747.sh on vm6747 and sim6747. Windows: the cases 1309/0 through both spellings
 and 1004/0 at -O2, ti-link 518/0; names against cl differ on the 18 library cases they did at
 1.19 and on `template-id-qualified-base-call`'s elided move, which its `.nocl` records.
+## Slicing: a derived object copied to its base, 2026-10-18
+
+**`T t = u;` with u of a class derived from T was refused** - "'t' is 'struct T' and this is
+'struct U'", naming no feature - for any T with no copy constructor written, and so were `w = u`,
+`take(u)` for `take(T)`, `return w;` into a T and `h.member = x`; and a T with a copy constructor
+was refused as a by-value argument. [class.copy]/12 copies the T part, slicing, ordinary C++98.
+`convert` takes the base subobject of a glvalue (a prvalue kept in a frame slot first), through
+`baseSubobject`, the one place `*(B *)&d` is built now, carrying a base's offset;
+`rankArgument` ranks a derived object passed by value to a base as a Conversion,
+[over.best.ics]/6, so `pick(T)` loses to `pick(U)` for a U; `materialiseCopy` hands a copy
+constructor the base subobject. A private base is refused naming [class.access.base]/4.
+`derived-to-base-copy` (from tests/open), `derived-to-base-copy-private-refused`.

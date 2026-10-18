@@ -122,13 +122,7 @@ ExprPtr Parser::classTemporary(const Type *cls, std::size_t pos) {
     if (args.size() == 1 && args[0]->type() != nullptr && trivialCopyable && isGlvalue(*args[0]) &&
         args[0]->type()->unqualified() != plain && args[0]->type()->unqualified()->isStructOrUnion() &&
         accessibleBaseOffset(args[0]->type(), plain) >= 0) {
-        const Type *from = args[0]->type()->unqualified();
-        ExprPtr at(new Unary('&', std::move(args[0])));
-        at->setType(types_.pointerTo(from));
-        at = convert(std::move(at), types_.pointerTo(plain));
-        ExprPtr base(new Unary('*', std::move(at)));
-        base->setType(plain);
-        args[0] = std::move(base);
+        args[0] = baseSubobject(std::move(args[0]), plain);
     }
     // **`T(t)` for a class whose constructors leave its copy trivial** is a
     // copy of bytes too: no copy constructor was declared, so resolution had

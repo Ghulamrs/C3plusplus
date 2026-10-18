@@ -1732,6 +1732,8 @@ private:
     const Type *promote(const Type *t) const;
     const Type *usualArithmetic(const Type *a, const Type *b) const;
     ExprPtr convert(ExprPtr e, const Type *to, bool allowExplicit = false) const;
+    // The base subobject of a glvalue of a derived class, `*(B *)&d` - a base's offset carried.
+    ExprPtr baseSubobject(ExprPtr e, const Type *base) const;
     // [conv.mem]: a pointer to a member of B becomes one to a member of D, D
     // derived from B; the base's offset, or -1 where that is not the case.
     int memberPointerToDerived(const Type *from, const Type *to) const;
