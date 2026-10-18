@@ -1,0 +1,1 @@
+cl names a closure by a hash of the file, `<lambda_...>`, and inlines its call operator away; cxx1 writes `??R$_0@?1??viaLambda@Around@@QEBAHXZ@QEBAHXZ` for the one lambda in Around::viaLambda. Nothing links against a closure's call operator - the shape member-holding-function-pointer.nocl records. Every name the anonymous unions themselves produce agrees.
