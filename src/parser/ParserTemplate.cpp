@@ -7,6 +7,7 @@
 #include "../Source.h"
 
 #include <climits>
+#include <cstdlib>
 #include <cstring>
 
 // ------------------------------------------------------------------ templates
@@ -32,27 +33,41 @@ void Parser::takeClosingAngle() {
 
 // `template < class T, int N >`. Everything C++11 puts here that this rung
 // does not implement is refused by name rather than misread.
-void Parser::templateParameters(std::vector<TemplateParam> &params) {
+void Parser::templateParameters(std::vector<TemplateParam> &params, bool allowUnnamed) {
     expect("<");
     if (atClosingAngle())
         src_.fail(peek().pos, "'template <>' is an explicit specialization, "
                               "and that is not supported yet");
     for (;;) {
         const std::size_t pos = peek().pos;
-        if (peek().is("template"))
-            src_.fail(pos, "a template template parameter is not supported yet");
-
         TemplateParam p;
         p.pos = pos;
-        if (consume("class") || consume("typename")) {
-            if (consume("...")) p.isPack = true;
-            // C++ lets a parameter go unnamed. Nothing here can refer to
-            // one, so it is a not-yet rather than a rule.
+        // **`template <class> class C`** - [temp.param]/1. Its own list may go unnamed; the
+        // keyword after it is `class` in C++11, `typename` there being C++17's (P0522's neighbour N4051).
+        if (consume("template")) {
+            p.isTemplate = true;
+            templateParameters(p.inner, true);
+            if (peek().is("typename"))
+                src_.fail(peek().pos, "'typename' after a template template parameter's list is "
+                                      "C++17, and this compiler is C++11 - write 'class' there");
+            if (!consume("class"))
+                src_.fail(peek().pos, "expected 'class' after a template template parameter's list");
+            if (consume("..."))
+                src_.fail(pos, "a pack of template template parameters is not supported yet");
+            p.namePos = peek().pos;
             if (peek().kind != TokenKind::Ident)
-                src_.fail(peek().pos, "an unnamed template parameter is not "
-                                      "supported yet");
+                src_.fail(peek().pos, "an unnamed template parameter is not supported yet");
             p.name = peek().text;
             at_++;
+        } else if (consume("class") || consume("typename")) {
+            if (consume("...")) p.isPack = true;
+            p.namePos = peek().pos;
+            // C++ lets a parameter go unnamed. Nothing here can refer to
+            // one, so it is a not-yet rather than a rule.
+            if (peek().kind != TokenKind::Ident && !allowUnnamed)
+                src_.fail(peek().pos, "an unnamed template parameter is not "
+                                      "supported yet");
+            if (peek().kind == TokenKind::Ident) { p.name = peek().text; at_++; }
         } else {
             // A non-type parameter is written exactly like a function's, so
             // it is read exactly like one.
@@ -86,12 +101,13 @@ void Parser::templateParameters(std::vector<TemplateParam> &params) {
             const Type *base = specifiers(&sc, &quals);
             if (sc != StorageNone)
                 src_.fail(pos, "a template parameter has no storage class");
-            Declared d = declarator(base);
-            if (d.name.empty())
+            Declared d = declarator(base, allowUnnamed);
+            if (d.name.empty() && !allowUnnamed)
                 src_.fail(pos, "an unnamed template parameter is not "
                                "supported yet");
             p.name = d.name;
             p.type = d.type;
+            p.namePos = d.pos;
             if (d.type->kind() == Kind::TemplateParam)
                 p.typeOf = static_cast<int>(d.type->length());
             else if ([&] {
@@ -126,7 +142,7 @@ void Parser::templateParameters(std::vector<TemplateParam> &params) {
                 src_.fail(peek().pos, "a default template argument has no value");
         }
         for (std::size_t i = 0; i < params.size(); i++)
-            if (params[i].name == p.name)
+            if (!p.name.empty() && params[i].name == p.name)
                 src_.fail(p.pos, "'" + p.name + "' is declared twice in this "
                                  "template parameter list");
         // **Only the last parameter may be a pack.** A pack takes every
@@ -211,6 +227,30 @@ void Parser::bindTemplateParameters(const std::vector<TemplateParam> &params,
             undo->push_back(s);
             continue;
         }
+        // **A template template parameter is an entry in `templates_` under its own name**: the
+        // argument's declaration, so `C<int>` reads as `Box<int>` with nothing taught to any use; in
+        // a pattern a stand-in `$TT<i>` with the parameter's own list, so `C<T>` reads as a pattern.
+        if (p.isTemplate) {
+            s.isTemplate = true;
+            auto had = templates_.find(p.name);
+            if (had != templates_.end()) { s.hadTemplate = true; s.hadDecl = had->second; }
+            const Type *b = i < binding.size() ? binding[i] : nullptr;
+            if (b != nullptr && b->kind() == Kind::TemplateParam) {
+                TemplateDecl stand;
+                stand.name = "$TT" + std::to_string(b->length());
+                stand.params = p.inner;
+                stand.isClass = true;
+                stand.ttParam = static_cast<int>(b->length());
+                templates_[p.name] = stand;
+            } else if (b != nullptr && b->isTemplateName() && findTemplate(b->templateName()) != templates_.end()) {
+                templates_[p.name] = findTemplate(b->templateName())->second;
+            } else {
+                src_.fail(p.pos, "'" + p.name + "' is a template template parameter and this binds "
+                                 "it to no template");
+            }
+            undo->push_back(s);
+            continue;
+        }
         if (s.isType) {
             auto it = typedefIndex_.find(p.name);
             if (it != typedefIndex_.end()) { s.had = true; s.was = it->second; }
@@ -261,6 +301,11 @@ void Parser::unbindTemplateParameters(const std::vector<Shadow> &undo) {
             }
             continue;
         }
+        if (s.isTemplate) {
+            if (s.hadTemplate) templates_[s.name] = s.hadDecl;
+            else               templates_.erase(s.name);
+            continue;
+        }
         if (s.isType) {
             if (s.had) typedefIndex_[s.name] = s.was;
             else       typedefIndex_.erase(s.name);
@@ -274,6 +319,120 @@ void Parser::unbindTemplateParameters(const std::vector<Shadow> &undo) {
             if (--boundValueParams_[s.name] <= 0) boundValueParams_.erase(s.name);
         }
     }
+}
+
+const Type *Parser::templateNameTypeOf(const TemplateDecl &decl) const {
+    return types_.templateNameType(decl.name, decl.ns, decl.isAlias, decl.classKey);
+}
+
+// `$TT3` names template template parameter 3, and nothing a program writes begins with a `$`.
+static bool ttRefName(const std::string &name, int *index) {
+    if (name.compare(0, 3, "$TT") != 0) return false;
+    *index = std::atoi(name.c_str() + 3);
+    return true;
+}
+
+bool Parser::templateParamRef(const std::string &name, int *index) { return ttRefName(name, index); }
+
+// What a template template parameter is bound to by a specialization: its template's stand-in, or
+// - while two patterns are ordered against each other - the other pattern's own parameter.
+const Type *Parser::templateOf(const Type *spec) const {
+    int tt;
+    if (ttRefName(spec->templateName(), &tt)) return types_.templateParam(tt);
+    return templateNameTypeOf(templates_.find(spec->templateName())->second);
+}
+
+// **The rule is clang's, which takes P0522 as a defect report under -std=c++11** (C++11's letter is
+// an exact match): a pack of types on either side stands for every type parameter the other has
+// left, each other parameter wants one of its kind, and what the argument has over needs a default.
+bool Parser::templateTemplateMatches(const std::vector<TemplateParam> &param,
+                                     const std::vector<TemplateParam> &arg, std::string *why,
+                                     std::size_t *at) {
+    std::size_t a = 0;
+    for (std::size_t p = 0; p < param.size(); p++) {
+        const bool packHere = param[p].isPack, packThere = a < arg.size() && arg[a].isPack;
+        if (packHere || packThere) {
+            const std::vector<TemplateParam> &rest = packHere ? arg : param;
+            for (std::size_t k = packHere ? a : p; k < rest.size(); k++)
+                if (rest[k].type != nullptr || rest[k].isTemplate) {
+                    *why = "a pack of types cannot stand for the " +
+                           std::string(rest[k].isTemplate ? "template" : "non-type") + " parameter '" +
+                           rest[k].name + "'";
+                    *at = packHere ? param[p].namePos : rest[k].namePos;
+                    return false;
+                }
+            return true;
+        }
+        if (a >= arg.size()) {
+            *why = "it has " + std::to_string(arg.size()) + " template parameter(s) and the parameter's list has " +
+                   std::to_string(param.size());
+            return false;
+        }
+        const TemplateParam &P = param[p], &A = arg[a++];
+        // A kind mismatch is reported where clang reports it: at the parameter of the list.
+        if (P.isTemplate != A.isTemplate || (P.type == nullptr) != (A.type == nullptr)) {
+            *why = "its parameter '" + A.name + "' is " +
+                   (A.isTemplate ? "a template" : A.type != nullptr ? "a non-type" : "a type") +
+                   " parameter where the parameter's list has " +
+                   (P.isTemplate ? "a template" : P.type != nullptr ? "a non-type" : "a type") + " one";
+            *at = P.namePos;
+            return false;
+        }
+        if (P.isTemplate && !templateTemplateMatches(P.inner, A.inner, why, at)) return false;
+    }
+    for (; a < arg.size(); a++)
+        if (!arg[a].isPack && arg[a].defBegin == 0) {
+            *why = "its parameter '" + arg[a].name + "' has no default, and the parameter's list gives it nothing";
+            return false;
+        }
+    return true;
+}
+
+// `Box`, `ns::NBox`, an alias template, or a template template parameter of the template around this one.
+const Parser::TemplateDecl &Parser::templateTemplateArgument(const TemplateDecl &decl,
+                                                              const TemplateParam &p) {
+    const std::size_t pos = peek().pos;
+    consume("::");
+    if (peek().kind != TokenKind::Ident)
+        src_.fail(pos, "'" + p.name + "' is a template template parameter of '" + decl.name +
+                       "', so its argument is the name of a class template");
+    std::string written = peek().text;
+    at_++;
+    while (peek().is("::") && peekAt(1).kind == TokenKind::Ident) {
+        written += "::" + peekAt(1).text;
+        at_ += 2;
+    }
+    if (peek().is("<"))
+        src_.fail(pos, "'" + written + "' is given arguments here, and '" + p.name + "' is a template "
+                       "template parameter, which takes a template's name alone");
+    std::map<std::string, TemplateDecl>::const_iterator it = findTemplate(written);
+    if (it == templates_.end() || !it->second.isClass)
+        src_.fail(pos, "'" + written + "' does not name a class template or an alias template, "
+                       "which is what '" + p.name + "' of '" + decl.name + "' takes");
+    std::string why;
+    std::size_t at = pos;
+    if (!templateTemplateMatches(p.inner, it->second.params, &why, &at))
+        src_.fail(at, "'" + written + "' cannot be the argument for the template template "
+                      "parameter '" + p.name + "' of '" + decl.name + "': " + why);
+    return it->second;
+}
+
+std::vector<TemplateArg> Parser::argumentsFromBinding(
+    const std::vector<TemplateParam> &params, const std::vector<const Type *> &binding,
+    const std::vector<long long> &values, const std::vector<std::vector<const Type *> > &packs) const {
+    std::vector<TemplateArg> args;
+    for (std::size_t i = 0; i < binding.size() && i < params.size(); i++) {
+        TemplateArg a;
+        if (params[i].type != nullptr) {
+            a.isType = false; a.type = paramTypeIn(params[i], binding); a.value = values[i];
+        } else if (params[i].isPack) {
+            a.isType = true; a.isPack = true; a.pack = packs[i];
+        } else {
+            a.isType = true; a.type = binding[i]; a.isTemplate = params[i].isTemplate;
+        }
+        args.push_back(a);
+    }
+    return args;
 }
 
 // The declaration read again with the arguments in force. Nothing is
@@ -707,17 +866,7 @@ bool Parser::functionExplicitSpecialization(std::size_t pos) {
         } else {
             if (!deduceTemplateArguments(decl, wanted->params(), &m.binding, &m.values, &m.packs, &why))
                 continue;
-            for (std::size_t i = 0; i < m.binding.size(); i++) {
-                TemplateArg a;
-                if (decl.params[i].type != nullptr) {
-                    a.isType = false; a.type = paramTypeIn(decl.params[i], m.binding); a.value = m.values[i];
-                } else if (decl.params[i].isPack) {
-                    a.isType = true; a.isPack = true; a.pack = m.packs[i];
-                } else {
-                    a.isType = true; a.type = m.binding[i];
-                }
-                m.args.push_back(a);
-            }
+            m.args = argumentsFromBinding(decl.params, m.binding, m.values, m.packs);
         }
         const Type *made = readTemplateDeclaration(decl, m.binding, m.values, &ignored, nullptr, &m.packs);
         if (made->describe() != wanted->describe()) continue;
@@ -948,7 +1097,12 @@ void Parser::templateArguments(const TemplateDecl &decl,
                 }
             const std::size_t saved = at_;
             at_ = p.defBegin;
-            if (p.type == nullptr) {
+            if (p.isTemplate) {
+                const TemplateDecl &named = templateTemplateArgument(decl, p);
+                a.isType = a.isTemplate = true;
+                a.type = named.ttParam >= 0 ? types_.templateParam(named.ttParam) : templateNameTypeOf(named);
+                binding->push_back(a.type); values->push_back(0);
+            } else if (p.type == nullptr) {
                 StorageClass sc; Qualifiers quals;
                 const Type *base = specifiers(&sc, &quals);
                 Declared d = declarator(base, true);
@@ -1020,6 +1174,17 @@ void Parser::templateArguments(const TemplateDecl &decl,
             if (packs != nullptr) (*packs)[i] = a.pack;
             args->push_back(a);
             break;
+        }
+        // **A template's name, for a template template parameter** - a pattern's `Holder<C, T>`
+        // records the parameter itself, as a type argument naming T does.
+        if (p.isTemplate) {
+            const TemplateDecl &named = templateTemplateArgument(decl, p);
+            a.isType = a.isTemplate = true;
+            a.type = named.ttParam >= 0 ? types_.templateParam(named.ttParam) : templateNameTypeOf(named);
+            binding->push_back(a.type);
+            values->push_back(0);
+            args->push_back(a);
+            continue;
         }
         if (p.type == nullptr) {
             StorageClass sc;
@@ -1133,6 +1298,9 @@ std::string Parser::specializationKey(const std::string &name,
         // put a space in a tag every table is keyed by.
         else if (args[i].type->kind() == Kind::TemplateParam)
             key += "$T" + std::to_string(args[i].type->length());
+        // A template named as an argument: `Holder<Box,int>`, the name as written.
+        else if (args[i].isTemplate)
+            key += args[i].type->templateNamespace() + args[i].type->templateName();
         else key += args[i].type->describe();
     }
     return key + ">";
@@ -1528,12 +1696,25 @@ bool Parser::deduceOne(const Type *pattern, const Type *arg,
     // template before their arguments mean anything - `Holder<T>` deduces
     // nothing from a `Box<int>`.
     if (pattern->isSpecialization()) {
+        int tt;
+        // **[temp.deduct.type]/8's `TT<T>`**: a template template parameter deduces from the argument's own template, then the arguments pairwise.
+        const bool viaParam = ttRefName(pattern->templateName(), &tt);
         if (!arg->isSpecialization() ||
-            arg->templateName() != pattern->templateName() ||
+            (!viaParam && arg->templateName() != pattern->templateName()) ||
             arg->templateArgs().size() != pattern->templateArgs().size()) {
             *why = "'" + arg->describe() + "' is not a '" +
-                   pattern->templateName() + "'";
+                   (viaParam ? "template's specialization" : pattern->templateName()) + "'";
             return false;
+        }
+        if (viaParam) {
+            const Type *deduced = templateOf(arg);
+            const std::size_t i = static_cast<std::size_t>(tt);
+            if ((*binding)[i] == nullptr) (*binding)[i] = deduced;
+            else if ((*binding)[i] != deduced) {
+                *why = "it is '" + (*binding)[i]->describe() + "' in one argument and '" +
+                       deduced->describe() + "' in another";
+                return false;
+            }
         }
         for (std::size_t i = 0; i < pattern->templateArgs().size(); i++) {
             const TemplateArg &p = pattern->templateArgs()[i];
@@ -1561,6 +1742,22 @@ bool Parser::deduceOne(const Type *pattern, const Type *arg,
                 continue;
             }
             if (!p.isType || !a.isType) continue;
+            if (p.isTemplate != a.isTemplate || p.isPack != a.isPack) {
+                *why = "'" + arg->describe() + "' gives a " +
+                       (a.isPack ? "pack" : a.isTemplate ? "template" : "type") +
+                       " where the pattern has a " + (p.isPack ? "pack" : p.isTemplate ? "template" : "type");
+                return false;
+            }
+            // `C<int>` for a `template <class...> class C` holds its arguments as one pack, as `Tup<int>` does.
+            if (p.isPack) {
+                if (p.pack.size() != a.pack.size()) {
+                    *why = "'" + arg->describe() + "' has a different number of arguments";
+                    return false;
+                }
+                for (std::size_t k = 0; k < p.pack.size(); k++)
+                    if (!deduceOne(p.pack[k], a.pack[k], binding, values, why)) return false;
+                continue;
+            }
             if (!deduceOne(p.type, a.type, binding, values, why)) return false;
         }
         return true;
@@ -1606,11 +1803,12 @@ bool Parser::deduceOne(const Type *pattern, const Type *arg,
     return true;
 }
 
-// Every base of `cls` that is a specialization of `name`, at any depth.
+// Every base of `cls` that is a specialization of `name`, at any depth - of any template for a pattern's `C<T>`.
 static void basesNamed(const Type *cls, const std::string &name, std::vector<const Type *> *out) {
+    int tt;
     for (const Type::BaseSpec &b : cls->unqualified()->bases()) {
         const Type *t = b.type->unqualified();
-        if (t->isSpecialization() && t->templateName() == name) out->push_back(t);
+        if (t->isSpecialization() && (t->templateName() == name || ttRefName(name, &tt))) out->push_back(t);
         basesNamed(t, name, out);
     }
 }
@@ -1845,7 +2043,10 @@ bool Parser::defaultTemplateArgument(const TemplateDecl &decl, std::size_t i,
     } inArgs{ inTemplateArgs_, inTemplateArgs_ };
     inTemplateArgs_ = true;                    // the `>` after `N = 3` closes the list
     at_ = p.defBegin;
-    if (p.type == nullptr) {
+    if (p.isTemplate) {
+        const TemplateDecl &named = templateTemplateArgument(decl, p);
+        (*binding)[i] = named.ttParam >= 0 ? types_.templateParam(named.ttParam) : templateNameTypeOf(named);
+    } else if (p.type == nullptr) {
         StorageClass sc;
         Qualifiers quals;
         const Type *base = specifiers(&sc, &quals);
@@ -1869,6 +2070,8 @@ static bool mentionsParam(const Type *t, std::size_t i) {
     if (t->isPointer() || t->isArray()) return mentionsParam(t->pointee(), i);
     if (t->isReference()) return mentionsParam(t->referent(), i);
     if (t->isSpecialization()) {
+        int tt;
+        if (ttRefName(t->templateName(), &tt) && static_cast<std::size_t>(tt) == i) return true;
         for (std::size_t k = 0; k < t->templateArgs().size(); k++)
             if (t->templateArgs()[k].isType &&
                 mentionsParam(t->templateArgs()[k].type, i)) return true;
@@ -1936,14 +2139,29 @@ bool Parser::matchPattern(const Type *pattern, const Type *arg,
                matchPattern(pattern->enclosing(), arg->enclosing(), binding, why);
 
     if (pattern->isSpecialization()) {
+        // `S<C<int>>` against `S<Box<int>>`: the template itself is what C is bound to.
+        int tt;
+        const bool viaParam = ttRefName(pattern->templateName(), &tt);
         if (!arg->isSpecialization() ||
-            arg->templateName() != pattern->templateName() ||
+            (!viaParam && arg->templateName() != pattern->templateName()) ||
             arg->templateArgs().size() != pattern->templateArgs().size())
             return false;
+        if (viaParam) {
+            const Type *deduced = templateOf(arg);
+            const std::size_t i = static_cast<std::size_t>(tt);
+            if ((*binding)[i] == nullptr) (*binding)[i] = deduced;
+            else if ((*binding)[i] != deduced) return false;
+        }
         for (std::size_t i = 0; i < pattern->templateArgs().size(); i++) {
             const TemplateArg &p = pattern->templateArgs()[i];
             const TemplateArg &a = arg->templateArgs()[i];
-            if (p.isType != a.isType) return false;
+            if (p.isType != a.isType || p.isTemplate != a.isTemplate || p.isPack != a.isPack) return false;
+            if (p.isPack) {
+                if (p.pack.size() != a.pack.size()) return false;
+                for (std::size_t k = 0; k < p.pack.size(); k++)
+                    if (!matchPattern(p.pack[k], a.pack[k], binding, why)) return false;
+                continue;
+            }
             if (!p.isType) {
                 // Two expressions are one argument only as one interned node: [temp.over.link]/5.
                 if (p.expr != nullptr || a.expr != nullptr) {
@@ -2207,6 +2425,14 @@ const Type *Parser::instantiateClass(const TemplateDecl &decl, std::size_t pos) 
         return t;
     }
     const std::string tag = specializationKey(decl.name, args);
+
+    // **A pattern's `C<T>`**, the stand-in applied: a shape deduction matches and Itanium spells `T_I...E`.
+    if (decl.ttParam >= 0) {
+        Type *shallow = types_.structType(Kind::Struct, tag);
+        if (!shallow->isSpecialization()) shallow->setSpecialization(decl.name, args);
+        declareTypeName(tag, shallow);
+        return shallow;
+    }
 
     // Reading a pattern, not building a class: `Holder<T>` cannot be laid out, and the mangler
     // and deduction read only its name and arguments. An argument list that mentions no
@@ -2573,17 +2799,7 @@ ExprPtr Parser::memberTemplateCall(ExprPtr object, const Type *obj,
         if (!ok)
             src_.fail(pos, "'" + plain->describe() + "::" + name + "' is a "
                            "member function template and " + why);
-        for (std::size_t i = 0; i < binding.size(); i++) {
-            TemplateArg a;
-            if (mt.params[i].type != nullptr) {
-                a.isType = false; a.type = paramTypeIn(mt.params[i], binding); a.value = values[i];
-            } else if (mt.params[i].isPack) {
-                a.isType = true; a.isPack = true; a.pack = packs[i];
-            } else {
-                a.isType = true; a.type = binding[i];
-            }
-            args.push_back(a);
-        }
+        args = argumentsFromBinding(mt.params, binding, values, packs);
     }
 
     const Signature *sig = instantiateMemberTemplate(mt, binding, values, args, pos);
@@ -2743,18 +2959,7 @@ void Parser::instantiateViableTemplates(const std::string &name,
         if (!deduceTemplateArguments(decl, argTypes, &binding, &values, &packs,
                                      &why))
             continue;
-        std::vector<TemplateArg> args;
-        for (std::size_t i = 0; i < binding.size(); i++) {
-            TemplateArg a;
-            if (decl.params[i].type != nullptr) {
-                a.isType = false; a.type = paramTypeIn(decl.params[i], binding); a.value = values[i];
-            } else if (decl.params[i].isPack) {
-                a.isType = true; a.isPack = true; a.pack = packs[i];
-            } else {
-                a.isType = true; a.type = binding[i];
-            }
-            args.push_back(a);
-        }
+        const std::vector<TemplateArg> args = argumentsFromBinding(decl.params, binding, values, packs);
         try {
             Trial trial(this);
             instantiate(decl, binding, values, args, pos, packs);
@@ -2892,18 +3097,7 @@ void Parser::instantiateViableMemberTemplate(const TemplateDecl &mt,
     unbindTemplateParameters(undo);
     if (!ok) return;
 
-    std::vector<TemplateArg> args;
-    for (std::size_t i = 0; i < binding.size(); i++) {
-        TemplateArg a;
-        if (mt.params[i].type != nullptr) {
-            a.isType = false; a.type = paramTypeIn(mt.params[i], binding); a.value = values[i];
-        } else if (mt.params[i].isPack) {
-            a.isType = true; a.isPack = true; a.pack = packs[i];
-        } else {
-            a.isType = true; a.type = binding[i];
-        }
-        args.push_back(a);
-    }
+    const std::vector<TemplateArg> args = argumentsFromBinding(mt.params, binding, values, packs);
     const bool wasBody = memberTemplateBody_;
     memberTemplateBody_ = false;
     try {
@@ -2943,7 +3137,11 @@ bool Parser::dependentType(const Type *t) const {
             t->kind() == Kind::DependentExpr)
             return true;
         if (t->unqualified() != t) { t = t->unqualified(); continue; }
-        if (t->isStructOrUnion()) return t->isSpecialization() && dependentArgs(t->templateArgs());
+        if (t->isStructOrUnion()) {
+            int tt;
+            return t->isSpecialization() &&
+                   (ttRefName(t->templateName(), &tt) || dependentArgs(t->templateArgs()));
+        }
         if (t->kind() == Kind::Function) {
             for (const Type *p : t->params())
                 if (dependentType(p)) return true;

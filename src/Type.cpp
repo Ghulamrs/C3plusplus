@@ -120,6 +120,7 @@ std::string Type::describe() const {
     // `double r[2][3]`. Recursing through the element wrote them backwards.
     if (kind_ == Kind::Array)
         return innermostElement()->describe() + " " + arrayDims(this);
+    if (templateNameOnly_) return "template " + templateNamespace_ + templateName_;
     if (kind_ == Kind::Struct)
         return std::string(isClass_ ? "class " : "struct ") +
                (tag_.empty() ? "<anonymous>" : tag_);
@@ -374,6 +375,17 @@ Type *TypeTable::structType(Kind kind, const std::string &tag) {
     Type *t = new Type(kind);
     t->tag_ = tag;
     derived_.push_back(t);
+    return t;
+}
+
+// The tag carries a `$` so it can collide with nothing written; the manglers spell the name beside it.
+const Type *TypeTable::templateNameType(const std::string &name, const std::string &ns, bool alias,
+                                        bool classKey) {
+    Type *t = structType(Kind::Struct, "$template:" + ns + name);
+    if (!t->isTemplateName()) {
+        t->setTemplateNameOnly(name, ns, alias);
+        t->setDeclaredClass(classKey);
+    }
     return t;
 }
 

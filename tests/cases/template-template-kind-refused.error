@@ -1,0 +1,1 @@
+:6:24: error: 'Box' cannot be the argument for the template template parameter 'C' of 'HN': its parameter 'T' is a type parameter where the parameter's list has a non-type one

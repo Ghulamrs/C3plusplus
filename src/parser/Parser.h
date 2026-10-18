@@ -326,8 +326,14 @@ private:
         // `T v` after `class T`: the index of T, and `type` is T standing for itself. -1 otherwise.
         int typeOf = -1;
         std::size_t pos = 0;
+        // Where its name is, or would be: what clang points at for a template template argument of the wrong kind.
+        std::size_t namePos = 0;
         // `class...`
         bool isPack = false;
+        // **`template <class> class C`** - [temp.param]/1: a parameter standing for a template, with
+        // its own list in `inner`, whose names nothing can refer to. `type` is null, as a type parameter's.
+        bool isTemplate = false;
+        std::vector<TemplateParam> inner;
         // A default argument, kept as a half-open token range [begin, end) the way a default
         // *function* argument is - instantiation replays tokens, so a default is replayed too, with
         // the earlier parameters bound. begin == 0 means there is none.
@@ -357,6 +363,9 @@ private:
         // `template <class T> using Ptr = T *;` - kept with the class templates, its type-id at aliasAt.
         bool isAlias = false;
         std::size_t aliasAt = 0;
+        // **A pattern's stand-in for template template parameter `ttParam`**, entered under the
+        // parameter's name while a pattern is read; -1 for every template a program declares.
+        int ttParam = -1;
         std::size_t start = 0;
         // The token after the `>` that closed the parameter list, which is
         // where the declaration proper begins. Instantiating is re-reading
@@ -633,6 +642,10 @@ private:
         bool isParamRef = false;
         bool hadParamRef = false;
         int paramRefWas = 0;
+        // A template template parameter is an entry in `templates_` under its name; this is what it hid.
+        bool isTemplate = false;
+        bool hadTemplate = false;
+        TemplateDecl hadDecl;
     };
     // **A pack while a specialization is being read**: the types it was given and, once
     // its function parameters have been made, the names they were given. `rest` becomes
@@ -755,7 +768,27 @@ private:
         return findLocal(name) == nullptr && findGlobal(name) == nullptr;
     }
     bool templateDeclaration();
-    void templateParameters(std::vector<TemplateParam> &params);
+    // `allowUnnamed` for a template template parameter's own list, whose names nothing refers to.
+    void templateParameters(std::vector<TemplateParam> &params, bool allowUnnamed = false);
+    // ---- Template template parameters, [temp.param]/1 and [temp.arg.template] ----
+    // The stand-in a template template parameter is bound to: the template's name as a Type.
+    const Type *templateNameTypeOf(const TemplateDecl &decl) const;
+    // The template a specialization is of, as a binding: its stand-in, or a pattern's own parameter.
+    const Type *templateOf(const Type *spec) const;
+    // `$TT0`: a pattern's stand-in for template template parameter 0, and which one it is.
+    static bool templateParamRef(const std::string &name, int *index);
+    // [temp.arg.template]/3 as clang applies it under -std=c++11: whether a template with
+    // parameters `arg` can take the argument list the parameter's own list `param` forms.
+    static bool templateTemplateMatches(const std::vector<TemplateParam> &param,
+                                        const std::vector<TemplateParam> &arg, std::string *why,
+                                        std::size_t *at);
+    // The argument written for a template template parameter: a class or alias template's name, or a bound parameter's.
+    const TemplateDecl &templateTemplateArgument(const TemplateDecl &decl, const TemplateParam &p);
+    // The argument list a deduction's binding amounts to, one TemplateArg per parameter.
+    std::vector<TemplateArg> argumentsFromBinding(const std::vector<TemplateParam> &params,
+                                                  const std::vector<const Type *> &binding,
+                                                  const std::vector<long long> &values,
+                                                  const std::vector<std::vector<const Type *> > &packs) const;
     // What the declaration after `template <...>` actually declares: a class template, a
     // function template, or a member of a class template defined outside it.
     // `qualifier` is the class for that last one and empty otherwise.
