@@ -14306,3 +14306,12 @@ LLONG_MAX read as a negative int, so `{ N }` was refused as narrowing, and `unsi
 signed arithmetic. The bound enumerator now carries the parameter's integer type, unqualified -
 `bool`, `char`, `short`, `unsigned`, `size_t`, a pack's members alike.
 `nontype-parameter-typed-int`, from tests/open.
+
+## offsetof is a constant expression, 2026-10-18
+
+**`static_assert(offsetof(S, d) == 8, ...)` and `char a[offsetof(S, d)]` were refused**: the
+macro is `(size_t)&((T *)0)->m`, and `fold` stopped at a cast of a pointer. `foldPointerConstant`
+reads an address built on a constant pointer - a cast of an integer to a pointer, `*` of it,
+members of that (an anonymous union's and a nested struct's included), and `&` - so offsetof
+folds wherever a constant is asked for: a static_assert, an array bound, an enumerator, a case
+label, a template argument. `offsetof-constant-expression`, from tests/open.

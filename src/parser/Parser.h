@@ -2385,6 +2385,7 @@ private:
     // reached. `noexcept(e)` reads it; nothing else does.
     int mayThrow_ = 0;
     long long constantExpression(const char *what);
+    bool foldPointerConstant(const Expr &e, long long *out, std::size_t pos) const;
     bool fold(const Expr &e, long long *out, std::size_t pos) const;
 
     void typedefFunctionSuffix(Declared &td);

@@ -332,6 +332,30 @@ bool Parser::enterConstexprCall(const Call &c, const ConstexprFn **out,
     return true;
 }
 
+// **An address built on a constant pointer is a constant**, `(size_t)&((S *)0)->m` - offsetof,
+// [support.types]/4: a cast of an integer to a pointer, `*` of it, members of that, and `&`.
+bool Parser::foldPointerConstant(const Expr &e, long long *out, std::size_t pos) const {
+    if (const Cast *c = dynamic_cast<const Cast *>(&e)) {
+        if (c->value().type() != nullptr && c->value().type()->isPointer())
+            return foldPointerConstant(c->value(), out, pos);
+        return c->value().type() != nullptr && c->value().type()->isInteger() && fold(c->value(), out, pos);
+    }
+    const Unary *u = dynamic_cast<const Unary *>(&e);
+    if (u == nullptr || u->op() != '&') return false;
+    const Expr *at = &u->operand();
+    long long offset = 0;
+    while (const MemberAccess *m = dynamic_cast<const MemberAccess *>(at)) {
+        if (m->isBitField()) return false;
+        offset += m->offset();
+        at = &m->object();
+    }
+    const Unary *deref = dynamic_cast<const Unary *>(at);
+    if (deref == nullptr || deref->op() != '*' || !foldPointerConstant(deref->operand(), out, pos))
+        return false;
+    *out += offset;
+    return true;
+}
+
 bool Parser::fold(const Expr &e, long long *out, std::size_t pos) const {
     // **A name, when it names a constant.**
     if (const Var *v = dynamic_cast<const Var *>(&e)) {
@@ -388,6 +412,8 @@ bool Parser::fold(const Expr &e, long long *out, std::size_t pos) const {
             v = e.type()->isSigned(target_)
               ? static_cast<long long>(d)
               : static_cast<long long>(static_cast<unsigned long long>(d));
+        } else if (c->value().type() != nullptr && c->value().type()->isPointer()) {
+            if (!foldPointerConstant(c->value(), &v, pos)) return false;
         } else if (!fold(c->value(), &v, pos)) {
             return false;
         }
