@@ -185,10 +185,25 @@ public:
     }
     size_type find(const basic_string &s) const { return find(s.p(), 0); }
 
-    size_type rfind(C c) const {
-        for (size_type i = len_; i-- > 0; )
+    // [string.rfind]: the last match that starts at or before `from`; an empty one matches at min(from, size()).
+    size_type rfind(C c, size_type from = npos) const {
+        if (len_ == 0) return npos;
+        for (size_type i = (from < len_ ? from : len_ - 1) + 1; i-- > 0; )
             if (p()[i] == c) return i;
         return npos;
+    }
+    size_type rfind(const C *s, size_type from, size_type n) const {
+        if (n > len_) return npos;
+        size_type i = len_ - n < from ? len_ - n : from;
+        for (++i; i-- > 0; )
+            if (std::memcmp(p() + i, s, n * sizeof(C)) == 0) return i;
+        return npos;
+    }
+    size_type rfind(const C *s, size_type from = npos) const {
+        return rfind(s, from, __cxx1_length(s));
+    }
+    size_type rfind(const basic_string &s, size_type from = npos) const {
+        return rfind(s.p(), from, s.len_);
     }
 
     // The parameter is `wanted` and not `set`, which it was: once `<set>` is
