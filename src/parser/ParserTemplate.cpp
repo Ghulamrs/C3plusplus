@@ -298,9 +298,10 @@ void Parser::bindTemplateParameters(const std::vector<TemplateParam> &params,
             if (it != enumIndex_.end()) { s.had = true; s.was = it->second; }
             enumIndex_[p.name] = enums_.size();
             EnumConst e{ p.name, values[i] };
-            // [temp.param]/5: an enumeration-typed parameter is a value of that enumeration, not an int.
+            // [temp.param]/5: a non-type parameter is a prvalue of its declared type - an enumeration,
+            // `unsigned`, `unsigned long long` - and not an int.
             const Type *pt = paramTypeIn(p, binding);
-            if (pt != nullptr && pt->isInteger() && !pt->tag().empty()) e.type = pt;
+            if (pt != nullptr && pt->isInteger()) e.type = pt->unqualified();
             e.paramType = pt;
             enums_.push_back(e);
             boundValueParams_[p.name]++;

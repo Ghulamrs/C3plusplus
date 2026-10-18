@@ -14297,3 +14297,12 @@ was refused as a by-value argument. [class.copy]/12 copies the T part, slicing, 
 [over.best.ics]/6, so `pick(T)` loses to `pick(U)` for a U; `materialiseCopy` hands a copy
 constructor the base subobject. A private base is refused naming [class.access.base]/4.
 `derived-to-base-copy` (from tests/open), `derived-to-base-copy-private-refused`.
+
+## A non-type parameter has its declared type, 2026-10-18
+
+**[temp.param]/5: a non-type template parameter is a prvalue of its declared type**, and cxx1
+bound every one but an enumeration's as an `int` enumerator: `unsigned long long N` past
+LLONG_MAX read as a negative int, so `{ N }` was refused as narrowing, and `unsigned U` did
+signed arithmetic. The bound enumerator now carries the parameter's integer type, unqualified -
+`bool`, `char`, `short`, `unsigned`, `size_t`, a pack's members alike.
+`nontype-parameter-typed-int`, from tests/open.
