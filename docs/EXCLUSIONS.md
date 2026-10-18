@@ -150,7 +150,7 @@ is left:
   `tests/cases/nontype-pack-beside-signature-refused.cpp`
 - **a pattern over a pack in a template's signature**, `f(List<(Ns * 2)...>)` -
   the same non-deduced context, spelled `JXspmlT_Li2EEE`; the pattern works
-  wherever the members are known. `src/parser/ParserTemplate.cpp:2131`,
+  wherever the members are known. `src/parser/ParserTemplate.cpp:2132`,
   `tests/cases/nontype-pack-pattern-signature-refused.cpp`
 - **explicit arguments ending at a pack, the parameter after it deduced from the
   call**, `f<1>(L<1>(), L<2>())` for `template <int... Ns, int M>` - the written
@@ -159,7 +159,7 @@ is left:
   `tests/cases/nontype-pack-explicit-then-deduce-refused.cpp`
 - **a pack expanded inside a nested template-id of a partial specialization's
   arguments**, `K<B<R...> >` - the pattern would bind R to the whole of B's
-  list; `R...` as an argument of its own matches. `src/parser/ParserTemplate.cpp:2525`,
+  list; `R...` as an argument of its own matches. `src/parser/ParserTemplate.cpp:2526`,
   `tests/cases/nontype-pack-nested-partial-refused.cpp`
 - **a non-type template parameter that is not an integer type** -
   `src/parser/ParserTemplate.cpp:1268`
@@ -184,14 +184,14 @@ is left:
 - **some of a function template's arguments written and the rest deduced
   from the call** - write all of them, or none. `src/parser/ParserTemplate.cpp:1100`
 - **naming a function template without calling it**, and **instantiating one
-  that was only declared** - `src/parser/ParserTemplate.cpp:2892`,
-  `src/parser/ParserTemplate.cpp:2979`, `src/parser/ParserTemplate.cpp:3018`
+  that was only declared** - `src/parser/ParserTemplate.cpp:2893`,
+  `src/parser/ParserTemplate.cpp:2993`, `src/parser/ParserTemplate.cpp:3032`
 - **naming a member through a class template's argument list**,
   `Box<int>::m` in a declaration - the type is made, so a typedef for it
   reaches the member: `typedef Box<int> B; B::m`.
-  `src/parser/ParserTemplate.cpp:3014`, `src/parser/ParserType.cpp:36`
+  `src/parser/ParserTemplate.cpp:3028`, `src/parser/ParserType.cpp:36`
 - **a member function template named without being called** -
-  `src/parser/ParserTemplate.cpp:3090`; **a member class template** -
+  `src/parser/ParserTemplate.cpp:3104`; **a member class template** -
   `src/parser/ParserType.cpp:528`; **an out-of-line member template
   definition** - `src/parser/ParserType.cpp:578`; **an `explicit` constructor
   template** - `src/parser/ParserType.cpp:561`
@@ -281,9 +281,9 @@ is left:
   `T{...}`. `src/parser/ParserExprCall.cpp:494`
 - **`auto x{...}`** - C++11 makes it `std::initializer_list`, N3922 the
   element's type, and compilers apply N3922 to C++11; `auto x = {...}` deduces
-  the list. `src/parser/ParserTemplate.cpp:1653`
+  the list. `src/parser/ParserTemplate.cpp:1654`
 - **`auto &` or `auto *` from a braced list** - only `auto` and `const auto`
-  deduce `std::initializer_list` here. `src/parser/ParserTemplate.cpp:1662`
+  deduce `std::initializer_list` here. `src/parser/ParserTemplate.cpp:1663`
 - **a `std::initializer_list` with static storage made from braces** - its
   backing array would need static storage too. `src/parser/ParserInit.cpp:1168`
 - **a braced default argument** - `src/parser/ParserClass.cpp:4885`,
@@ -536,6 +536,6 @@ commit; and `make test` fails until both are true.
 ## Found by the release's feature sweep (2026-10-13)
 
 - **a function type as a template argument**, `std::function<int(int)>` - a pointer to one,
-  `R (*)(Args...)`, is read. `src/parser/ParserTemplate.cpp:1255`, `src/parser/ParserTemplate.cpp:2518`
+  `R (*)(Args...)`, is read. `src/parser/ParserTemplate.cpp:1255`, `src/parser/ParserTemplate.cpp:2519`
 - **a universal character name in an identifier**, `caf\u00e9` - inside a string or character
   literal it is read. `src/Lexer.cpp:519`

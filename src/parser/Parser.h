@@ -445,6 +445,13 @@ private:
     void instantiateViableTemplates(const std::string &name,
                                     const std::vector<const Type *> &argTypes,
                                     std::size_t pos);
+    void instantiateViableTemplates(const std::vector<TemplateDecl> &overloads,
+                                    const std::vector<const Type *> &argTypes, std::size_t pos);
+    // The function templates a call of `name` names, [basic.lookup.qual] and [basic.lookup.unqual]:
+    // the nearest namespace declaring one - or the one a qualifier names - in `*ns`; else every one.
+    // A `scope` is the namespace a qualifier resolved to, absolute: `m` for `m::twice(2)`.
+    std::vector<TemplateDecl> templatesNamed(const std::string &name, const std::string &scope,
+                                             std::string *ns) const;
     // The same, for a member function template of `cls`.
     void instantiateViableMemberTemplates(const Type *cls,
                                           const std::string &name,
@@ -569,7 +576,7 @@ private:
         return (!instantiationKey_.empty() && name == instantiationOf_)
                    ? instantiationKey_ : name;
     }
-    ExprPtr templateCall(Program *program);
+    ExprPtr templateCall(Program *program, const std::string &scope = std::string());
     // A static member reached through a class template-id, after its `::`.
     ExprPtr templateIdMember(const Type *cls, std::size_t pos);
     // `Box<int, 3>` where a type was expected.

@@ -14337,3 +14337,16 @@ a `static_cast`'s operand, a return's value - and is cleared for a call's argume
 `int (S::*)() &` takes `f() &` and `int (*)(double)` takes `h(double)`. **An argument does not
 pick yet**: a parameter's type is known only after the call is resolved, and the refusal says
 so. `member-pointer-overload-by-type`, from tests/open.
+
+## Two namespaces' function templates of one name, 2026-10-18
+
+**`m::twice(2)` called n's `twice`**: function templates are kept by their bare name, so two
+namespaces' templates of one name were one overload set and the first registered won - a
+silent wrong value. A call now takes the templates [basic.lookup.unqual] reaches - the
+nearest enclosing namespace that declares one - or the namespace a qualifier names,
+[basic.lookup.qual] (`templateCall` is handed the resolved scope); `templatesNamed` decides,
+falling back to every template of the name where neither finds one (a using-directive, ADL).
+Specializations were already indexed under their namespace; a global template's are under
+`::name` as well now, so a call reaching the global one ranks no other namespace's.
+`namespace-function-template-name`, from tests/open, which now holds only the over-acceptance
+two-phase lookup costs.

@@ -1110,7 +1110,7 @@ ExprPtr Parser::primary(Program *program) {
         }
         // **`std::copy(a, b, c)` - a function template named qualified.**
         if (peek().kind == TokenKind::Ident && isTemplateName(peek().text, true))
-            return templateCall(program);
+            return templateCall(program, scope);
 
         std::string full = scope + "::" + expectIdent("a name");
         // **A member of N's unnamed namespace is reached as `N::x`** -
