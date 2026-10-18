@@ -49,6 +49,8 @@ private:
         bool byValueByAddress = false;
         // **[stmt.dcl]/3: a jump may not enter this object's scope** - set for an automatic object with an initialiser, a constructor or a destructor, the three things a jump landing past its declaration would skip.
         bool guardsJump = false;
+        // A member of a local anonymous union: its slot is the union's, given back once, by the union.
+        bool sharesSlot = false;
         // Which object this is: two locals of one function may share a frame slot once the first's scope has closed.
         int serial = 0;
         // Its position among a trailing return type's parameters, unnamed ones counted - `fp_`, `fp0_`.
@@ -2019,6 +2021,15 @@ private:
                                         const Type *right) const;
 
     std::map<std::string, std::size_t> memberInit_;
+    // **[class.union]/5, an anonymous union.** Its members' positions, recorded as its body is read,
+    // for the refusals the class around it raises; the `$S<n>` count clang numbers its objects by.
+    std::map<const Type *, std::vector<std::size_t> > anonUnionMemberPos_;
+    int anonUnionSeq_ = 0;
+    bool anonymousUnionAhead() const;
+    void refuseAnonymousUnionShape(const Type *u, std::size_t pos);
+    std::string anonymousUnionSymbol(const Type *u, std::size_t pos);
+    void declareAnonymousUnionObject(const Type *u, StorageClass sc, std::size_t pos, bool local);
+    std::set<const Type *> unionsNamedBy(const Type *cls, const std::set<std::string> &names) const;
     // Whether this class wrote a member initialiser - [dcl.init.aggr]/1.
     bool hasMemberInitialiser(const std::string &tag) const;
     // [class.ctor]/5: default-initialising a class whose implicit default

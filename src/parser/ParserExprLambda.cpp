@@ -234,6 +234,9 @@ ExprPtr Parser::lambdaExpression() {
                                   "something the enclosing function already "
                                   "declared");
         const Local *have = findLocal(cname);
+        // [expr.prim.lambda]/10: a member of an anonymous union is no variable to capture, clang's words.
+        if (have != nullptr && have->sharesSlot)
+            src_.fail(cpos, "'" + cname + "' in capture list does not name a variable");
         const Type *fromOuter = nullptr;
         if (have == nullptr) {
             // A capture of the lambda around this one, which is a member of
@@ -299,6 +302,8 @@ ExprPtr Parser::lambdaExpression() {
                 if (capNames[k] == n) { had = true; break; }
             if (had) continue;
             const Local *have = findLocal(n);
+            if (have != nullptr && have->sharesSlot)
+                src_.fail(tokens_[i].pos, "unnamed variable cannot be implicitly captured in a lambda expression");
             const Type *raw = have != nullptr ? have->type : nullptr;
             if (raw == nullptr) {
                 // **A lambda inside a lambda, taking the outer one's capture.**

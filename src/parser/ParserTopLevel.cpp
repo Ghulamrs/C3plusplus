@@ -180,6 +180,7 @@ void Parser::topLevel(Program &program) {
     StorageClass sc;
     Qualifiers quals;
     std::size_t scPos = peek().pos;
+    const std::size_t specStart = at_;
     const Type *base = specifiers(&sc, &quals);
     // [dcl.link]/7: linkage, and whether this defines, are what `extern` would give - so
     // `extern "C" int u;` declares and `extern "C" const int k = 5;` is external. No storage class.
@@ -191,7 +192,18 @@ void Parser::topLevel(Program &program) {
         if (sc == StorageNone) sc = StorageExtern;
     }
 
-    if (peek().is(";")) { at_++; return; }
+    if (peek().is(";")) {
+        // [class.union]/6: a nameless union declares its members here; a nameless struct is clang's refusal.
+        if (base->isStructOrUnion() && base->tag().empty()) {
+            std::size_t key = specStart;
+            while (key + 1 < at_ && !tokens_[key].is("union") && !tokens_[key].is("struct") && !tokens_[key].is("class")) key++;
+            if (base->kind() != Kind::Union)
+                src_.fail(tokens_[key].pos, "anonymous structs are a GNU extension");
+            declareAnonymousUnionObject(base, sc, tokens_[key].pos, false);
+        }
+        at_++;
+        return;
+    }
 
     if (sc == StorageRegister)
         src_.fail(scPos, "'register' is a storage class for a local or a "
@@ -1198,6 +1210,17 @@ void Parser::topLevel(Program &program) {
     // a class with constructors default-constructed. A union's members are not built.
     if (memberOf != nullptr && isCtor && !delegates) {
         const std::vector<Member> &all = memberOf->members();
+        // [class.base.init]/8: the list names at most one member of a union, named or anonymous, and
+        // the others of that union are then left alone - no initialiser of their own, no default.
+        std::set<const Type *> namedUnions;
+        std::size_t unionEntries = 0;
+        for (std::size_t i = 0; i < all.size(); i++) {
+            if (all[i].declaredIn != nullptr || memberExprs.find(all[i].name) == memberExprs.end()) continue;
+            if (memberOf->kind() == Kind::Union && unionEntries++ > 0)
+                src_.fail(where[all[i].name], "initializing multiple members of union");
+            if (all[i].anonUnion != nullptr && !namedUnions.insert(all[i].anonUnion).second)
+                src_.fail(where[all[i].name], "initializing multiple members of union");
+        }
         for (std::size_t i = 0; i < all.size(); i++) {
             const Member *m = &all[i];
             // A base's members are in this class's list too, and its constructor built
@@ -1207,10 +1230,11 @@ void Parser::topLevel(Program &program) {
             std::map<std::string, std::vector<ExprPtr> >::iterator found =
                 memberExprs.find(m->name);
             if (found == memberExprs.end()) {
+                if (m->anonUnion != nullptr && namedUnions.count(m->anonUnion) != 0) continue;
                 StmtPtr one = memberInitialiser(d.qualifier, memberOf, *m,
                                                 thisOffset_, d.pos);
                 std::vector<ExprPtr> none;
-                if (one == nullptr && memberOf->kind() != Kind::Union)
+                if (one == nullptr && memberOf->kind() != Kind::Union && m->anonUnion == nullptr)
                     one = constructMember(d.qualifier, memberOf, *m,
                                           thisOffset_, none, d.pos, false);
                 // [class.base.init]/8: a const or reference member the list leaves out

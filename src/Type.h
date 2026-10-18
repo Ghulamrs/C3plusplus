@@ -131,8 +131,13 @@ struct Member {
     const Type *declaredIn = nullptr;
     // In two base subobjects of the copying class (A25): unqualified, refused.
     bool ambiguous = false;
+    // **[class.union]/5: the anonymous union this member came out of**, null for an ordinary one; the run sharing it is one slot.
+    const Type *anonUnion = nullptr;
 
     bool isBitField() const { return width != 0; }
+    bool continuesUnion(const Member *prev) const {
+        return anonUnion != nullptr && prev != nullptr && prev->anonUnion == anonUnion;
+    }
 };
 
 class Type {

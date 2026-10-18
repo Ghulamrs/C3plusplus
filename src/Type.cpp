@@ -535,12 +535,17 @@ static int hfaWalk(const Type *t, Kind *elem, bool *set) {
 
         bool isUnion = t->kind() == Kind::Union;
         int total = 0;
+        // An anonymous union's members share one slot: the run counts its widest, as a union does.
+        const Member *prev = nullptr;
+        int runMax = 0;
         for (const Member &m : t->members()) {
             if (m.isBitField()) return 0;
             int one = hfaWalk(m.type, elem, set);
             if (one == 0) return 0;
             if (isUnion) total = one > total ? one : total;
-            else         total += one;
+            else if (m.continuesUnion(prev)) { if (one > runMax) { total += one - runMax; runMax = one; } }
+            else { total += one; runMax = one; }
+            prev = &m;
             if (total > 4) return 5;
         }
         return total;

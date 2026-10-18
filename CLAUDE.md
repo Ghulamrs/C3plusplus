@@ -13757,3 +13757,109 @@ a definition in the wrong scope - and not as a missing feature.
 **Known and left**: a function template of one name in two namespaces is still
 one overload set, as before this round; and the specialization parsers do not
 check that the namespace written before `Box<int>` is the template's.
+
+## Anonymous unions, 2026-10-18
+
+**[class.union]/5: an anonymous union's members are members of the scope it
+is written in**, at one offset, named without going through it - `v.d`,
+`p->i`, the implicit `this->s` and a lambda's `[this]`, `&Value::d`, a
+mem-initialiser naming one of them, one member's own initialiser, the
+implicit copy, aggregate and value initialisation, a base's members through
+a derived class. [class.union]/6 puts one at namespace scope under `static`
+or in an unnamed namespace, its members names of that scope sharing one
+object; in a block they are locals sharing one frame slot. Refused by name
+since 2026-08-30 ("its members would have to become members of the class
+around it, sharing storage"); the review's example compiles now and prints
+clang's `1 2.5 16` on all four targets.
+
+**The design is the flattening the layout already does for a base.** A
+union written with no name, a body and a `;` straight after (`anonProper`,
+decided at its `{` by looking past the matching `}`) is read as a class and
+then, where the `;` is met, laid as one member of its own type would be -
+the union's alignment, the open Microsoft bit-field unit closed, the
+empty-subobject walk, `endsWithZeroSized` - and its members pushed into the
+enclosing list at that offset, each carrying `Member::anonUnion`, the union's
+Type, with the access where the union was written. Every lookup that reaches
+a member by name or offset needed nothing. What needed the group is wherever
+a walk over the members treats each as its own slot: aggregate initialisation
+(`emitAggregate`, `flattenAggregate`, `skipInit`) steps into the union's own
+type through a synthetic member at the slot, so `{1, {2}}` and the
+brace-elided `{1, 2}` reach its first member and `{1, 2, 3.0}` is one too
+many, as clang has them; a mem-initialiser list names at most one member of
+each union, and the others are then left alone - no initialiser of their
+own, no default - [class.base.init]/8; a member's `= 3` is re-keyed from the
+nameless tag to the class's; and arm64's HFA count takes a union's run as
+its widest member, not their sum - measured by a mixed link, `take(Hfa)`
+compiled by cpp11 and called from clang, `17 1234 7 8 16` three ways. The
+debug emitters list the members as they stand, at one offset, which is what
+clang's DWARF shows too.
+
+**At namespace scope the storage is one hidden global, `$S<n>`**, and each
+member a `GlobalSym` of its own type naming the same symbol - a union's
+members are all at 0, so no arithmetic is needed. The symbol is clang's,
+measured on three targets: Itanium spells the first member as a mangled
+variable with no `L` though the object is internal - `_Z1a`, `_ZN1n1eE`,
+`_ZN12_GLOBAL__N_11cE` - and Microsoft numbers the objects of the unit,
+`?$S1@@3T<unnamed-type-$S1>@@A`, `?$S3@n@@3T<unnamed-type-$S3>@1@A`,
+`?$S1@b@a@@3T<unnamed-type-$S1>@12@A`, which the ordinary data mangler
+writes once a Type of that tag stands in for the union. In a block the
+members are `Local`s sharing the hidden local's slot, marked `sharesSlot` so
+`leaveScope` gives the slot back once and not per name; a `static` one is one
+static object under the members' names, spelled as cxx1 spells every static
+local (`_ZL5twicev.count`, recorded in the case's `.nonames`).
+
+**Layouts, clang's for x86_64-linux, x86_64-pc-windows-msvc and arm64-darwin
+alike** (`-fdump-record-layouts`), and the C6000's, whose double and long
+long are eight bytes aligned eight:
+
+    struct Value { int kind; union { int i; double d; }; }        16, the union at 8
+    struct First { union { int i; double d; }; int kind; }        16, kind at 8
+    struct Mid { char c; union { char a; short s; }; char e; }    6, the union at 2, e at 4
+    struct Holds { char c; union { Inner in; long long ll; }; int tail; }   24, 8, 16
+    struct Bits { int kind; union { int lo : 4; unsigned hi : 12; }; char after; }   12, after at 8
+    #pragma pack(1) struct PackedV { char c; union { int i; double d; }; char e; }  10, 1, 9
+    struct HoldsEmpty { union { Empty e; int n; }; }               4
+    struct BitsAfter { char c : 3; union { int i; char k; }; char d : 2; }   12, the union at 4
+
+Nothing differs by ABI here: the union is one slot of its own size and
+alignment, which is the one fact the three layouts share. The case asserts
+the sizes for every target and prints the offsets, `offsetof` not being a
+constant expression here (below).
+
+**Refused as clang refuses it, at clang's column**: a private or protected
+member, a member function, a static data member, a type declared inside, an
+anonymous union inside an anonymous union (the `-Wnested-anon-types`
+extension; inside a *named* union it is C++ and works), an anonymous
+*struct* (`-Wgnu-anonymous-struct`, now named where "this declares nothing"
+stood), a storage class on one at class scope, a non-static one at namespace
+scope, a member redeclaring a name of the scope (class, namespace, block), an
+empty one, a reference member of any union, a second member initialiser in
+any union and a mem-initialiser list naming two members of one, and a lambda
+capturing a member by name or by a capture-default - "unnamed variable
+cannot be implicitly captured". **Refused by name, and exclusions**: a member
+whose class has a constructor, destructor or assignment of its own - C++11's
+unrestricted union, which deletes the enclosing class's special members and
+would want the deletion carried - and a bit-field of an anonymous union at
+namespace or block scope, a name with no object to be a field of. **Found
+and not mended**, in `tests/open/`: `offsetof` is not an integral constant
+expression here (`static_assert(offsetof(S, d) == 8, "")`); a *named*
+union's member initialiser is recorded and never run, a silent wrong value;
+and a named union holding a member with a non-trivial constructor is built
+where clang's deleted constructor refuses it.
+
+**Measured.** The emit golden at 07b295b: **0 of 1980 files changed**, 16
+added - the four runnable cases on four targets. `tools/feature-sweep --clang
+clang++`: 78 compile, 18 refused by name, 0 naming nothing, of 96 (was 77 /
+19 / 0; the `anonymous-union` row moved). Mac `make test`: run.sh 791 / 0 (505 printed their recorded output, 283 refused as recorded),
+emit.sh 1996 / 0, names.sh 510 / 0 against clang on three targets,
+overload.sh 39 / 0, `tools/exclusions --check` 129 sites, 0 uncited,
+0 stale (one site gone, two added, 55 citations re-paired by the text of
+the cited line - and three volatile ones that pairing collapsed onto one
+site were put right by message), comment cap 0. The four runnable cases
+pass `tests/tms6747.sh` at -O0 and -O2 on vm6747 (the one on PATH) with
+`SIM=0`; the sim6747 leg and TI's simulator are for the Linux box, as is a
+run of the x86 optimizer over the block-scope union's shared slot. `-g`
+compiles the example for all four targets. `anonymous-union.nonames` records
+clang's memset for `Value z = {}` (S-09's difference) and the closure's
+Microsoft name; `anonymous-union-namespace.nonames` the unnamed namespace's
+Microsoft hash; `anonymous-union-local.nonames` the static local's name.

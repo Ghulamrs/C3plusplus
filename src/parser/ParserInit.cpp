@@ -112,7 +112,9 @@ void Parser::skipInit(const Type *type, InitCursor &c) {
                           : members.size();
         for (std::size_t i = 0; i < count && !c.done(); i++) {
             if (members[i].name.empty()) continue;
-            skipInit(members[i].type, c);
+            // An anonymous union's members are one slot, taking one initialiser as the union would.
+            if (members[i].continuesUnion(i > 0 ? &members[i - 1] : nullptr)) continue;
+            skipInit(members[i].anonUnion != nullptr ? members[i].anonUnion : members[i].type, c);
         }
         return;
     }
@@ -277,9 +279,15 @@ void Parser::emitAggregate(const std::string &name, std::vector<InitStep> &path,
                       : members.size();
     for (std::size_t i = 0; i < count; i++) {
         if (members[i].name.empty()) continue;
-        path.push_back(InitStep{ &members[i], 0 });
-        if (c.done()) initZero(name, path, members[i].type, pos, out);
-        else          emitFill(name, path, members[i].type, c, out);
+        // An anonymous union's members are one slot: the step is the union itself, at its offset, and
+        // one initialiser reaches its first member as it would a named union's - [dcl.init.aggr].
+        if (members[i].continuesUnion(i > 0 ? &members[i - 1] : nullptr)) continue;
+        const Member slot{ std::string(), members[i].anonUnion, members[i].offset };
+        const bool grouped = members[i].anonUnion != nullptr;
+        path.push_back(InitStep{ grouped ? &slot : &members[i], 0 });
+        const Type *t = grouped ? members[i].anonUnion : members[i].type;
+        if (c.done()) initZero(name, path, t, pos, out);
+        else          emitFill(name, path, t, c, out);
         path.pop_back();
     }
 }
@@ -671,6 +679,8 @@ void Parser::flattenAggregate(const Type *type, InitCursor &c, int base,
     for (std::size_t i = 0; i < count && !c.done(); i++) {
         const Member &m = members[i];
         if (m.name.empty()) continue;
+        if (m.continuesUnion(i > 0 ? &members[i - 1] : nullptr)) continue;
+        if (m.anonUnion != nullptr) { flattenFill(m.anonUnion, c, base + m.offset, out); continue; }
         if (m.isBitField())
             src_.fail(c.cur().pos,
                       "a bit-field cannot be initialised at file scope yet - "

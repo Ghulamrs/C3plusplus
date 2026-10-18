@@ -1,0 +1,1 @@
+:1:1: error: anonymous unions at namespace or global scope must be declared 'static'
