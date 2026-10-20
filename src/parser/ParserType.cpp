@@ -637,15 +637,18 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
         const std::size_t explicitAt = peek().pos;
         if (peek().is("explicit")) { isExplicit = true; at_++; itemStart = at_; }
 
+        bool constexprCtorAhead = false;
         // **A `constexpr` constructor makes a literal type** - one whose
         // objects a constant expression may build.
         if (!tag.empty() && peek().is("constexpr") &&
             peekAt(1).kind == TokenKind::Ident && peekAt(1).text == local &&
             peekAt(2).is("(")) {
-            // [dcl.constexpr]/3: one may always run at run time, so it is an ordinary constructor here.
+            // [dcl.constexpr]/3: one may always run at run time, so it is an ordinary constructor here,
+            // and its body is kept where it is defined for a constant object to be built by.
             refuseConstexprConstructorBody(2);
             at_++;
             itemStart = at_;
+            constexprCtorAhead = true;
         }
 
         // A constructor has the class's own name and no return type, so it has to be seen
@@ -659,9 +662,10 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             if (!ownId) at_++;
             const std::size_t sigAt = functions_.size();
             declareConstructor(tag, cpos, access, isExplicit);
+            if (constexprCtorAhead && functions_.size() > sigAt) constexprCtorSymbols_.insert(functions_[sigAt].symbol);
             isExplicit = false;
             refuseVirtSpecifiers("a constructor");
-            if (peek().is("{") || peek().is(":")) {
+            if (peek().is("{") || peek().is(":") || peek().is("try")) {
                 pendingBodies_.push_back(PendingBody{
                     tag, itemStart, local, constructorKey(tag),
                     signatureAddedUnder(constructorKey(tag), sigAt) });
@@ -710,7 +714,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             if (!ownDtor) at_ += 2;
             const std::size_t sigAt = functions_.size();
             declareDestructor(tag, dpos, access, isVirtual);
-            if (peek().is("{")) {
+            if (peek().is("{") || peek().is("try")) {
                 pendingBodies_.push_back(PendingBody{
                     tag, itemStart, local, destructorKey(tag),
                     signatureAddedUnder(destructorKey(tag), sigAt) });
@@ -827,6 +831,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 if (td.name.empty())
                     src_.fail(td.pos, "this typedef names nothing");
                 declareTypeName(tag + "::" + td.name, td.type);
+                if (td.type->tag().empty()) td.type->nameForLinkage(tag + "::" + td.name, td.name, type, false);
             } while (consume(","));
             expect(";");
             continue;
@@ -1034,10 +1039,13 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             // **A static member is not part of the object**, so it leaves the
             // layout untouched and the cursor where it was.
             if (msc == StorageStatic && !peek().is("(")) {
-                declareStaticMember(tag, type, d, access, mquals.isVolatile);
+                declareStaticMember(tag, type, d, access, mquals.isVolatile, mquals.isThreadLocal,
+                                    mquals.isConstexpr);
                 if (!consume(",")) break;
                 continue;
             }
+            // [dcl.stc]/4: a static data member may be thread_local; nothing else in a class may.
+            refuseThreadLocalHere(mquals.isThreadLocal, d.pos);
 
             if (peek().is(":")) {
                 std::size_t cpos = peek().pos;
@@ -1197,7 +1205,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 // **The body is held, not parsed.** It has to be able to see members
                 // declared after it, so nothing in it can be read until the class is
                 // closed - which is why this is a delayed parse and not a recursion.
-                if (peek().is("{")) {
+                if (peek().is("{") || peek().is("try")) {
                     if (tag.empty())
                         src_.fail(d.pos, "a member function needs a class with "
                                          "a name - this one is anonymous");
@@ -1784,7 +1792,6 @@ const Type *Parser::specifiers(StorageClass *storage, Qualifiers *quals) {
     if (quals == nullptr) quals = &discard;
     const Type *t = unqualifiedSpecifiers(storage, quals);
     if (quals->isVolatile) refuseVolatileUnderADeclarator(*storage);
-    if (quals->isConstexpr && t->unqualified()->isStructOrUnion()) refuseConstexprClassObject();
     return quals->isConst ? types_.withConst(t) : t;
 }
 
@@ -1888,6 +1895,17 @@ const Type *Parser::unqualifiedSpecifiers(StorageClass *storage, Qualifiers *qua
         if (skipAttributes()) continue;
         if (consume("static"))  { *storage = StorageStatic; continue; }
         if (consume("extern"))  { *storage = StorageExtern; continue; }
+        // [dcl.stc]/4: `thread_local`, beside `static` or `extern` or alone. The C6000 has no
+        // thread storage at all - cl6x 8.2.2 knows no such word - so it is refused there by name.
+        if (peek().is("thread_local")) {
+            if (!target_.hasThreadStorage())
+                src_.fail(peek().pos, "'thread_local' is not supported yet on " + std::string(target_.name()) +
+                                      ": TI's cl6x has no thread-local storage, and a program for the "
+                                      "C6000 is one thread");
+            at_++;
+            quals->isThreadLocal = true;
+            continue;
+        }
         if (consume("typedef")) { *storage = StorageTypedef; continue; }
         if (consume("const"))    { quals->isConst = true; continue; }
         // **`constexpr` on an object is `const` plus a demand.** [dcl.constexpr]
@@ -2361,8 +2379,23 @@ std::string Parser::operatorName() {
     }
     if (spelling == "->*")
         src_.fail(pos, "'operator->*' is not supported yet");
-    if (peek().kind == TokenKind::Str)
-        src_.fail(pos, "a user-defined literal is not supported yet");
+    // **[over.literal]/1: `operator "" _km`**, or `""_km` with the suffix run onto the quotes.
+    if (peek().kind == TokenKind::Str) {
+        const Token &q = peek();
+        if (!q.text.empty() || q.prefix != 0 || q.wide)
+            src_.fail(q.pos, "the string after 'operator' must be '\"\"' - [over.literal]/1 "
+                             "names a literal operator by an empty string and a suffix");
+        std::string suffix = q.udSuffix;
+        at_++;
+        if (suffix.empty()) {
+            if (peek().kind != TokenKind::Ident)
+                src_.fail(peek().pos, "a literal operator is named 'operator\"\"' and an "
+                                      "identifier, its suffix - [over.literal]/1");
+            suffix = peek().text;
+            at_++;
+        }
+        return "operator\"\" " + suffix;
+    }
     // **A type after `operator` is a conversion function**, not an operator
     // that happens to be spelled with letters - `new` and `delete` being the
     // two that are.
@@ -2408,6 +2441,10 @@ void Parser::checkOperatorDeclarable(const std::string &name,
                                      const std::vector<const Type *> &params,
                                      bool member, std::size_t pos,
                                      bool internal) {
+    if (!literalSuffix(name).empty()) {
+        checkLiteralOperator(name, params, member, pos);
+        return;
+    }
     const std::string spelling = operatorSpelling(name);
     if (spelling.empty() || findOperator(spelling) == nullptr) return;
     // **An allocation function is an operator in name only** - [basic.stc.dynamic]:
@@ -2514,6 +2551,54 @@ void Parser::checkOperatorDeclarable(const std::string &name,
                    "it can be given the name the linker wants, and there is no "
                    "path from an expression to it, so declaring one would make "
                    "a function nothing can call");
+}
+
+void Parser::checkLiteralOperator(const std::string &name,
+                                  const std::vector<const Type *> &params,
+                                  bool member, std::size_t pos) {
+    const std::string shown = "operator\"\"" + literalSuffix(name.substr(name.rfind(':') + 1));
+    if (member)
+        src_.fail(pos, "literal operator '" + shown + "' must be in a namespace or global "
+                       "scope - [over.literal]/2");
+    if (cLinkage_ > 0)
+        src_.fail(pos, "literal operator must have C++ linkage - [over.literal]/6");
+    for (std::size_t i = 0; i < pendingDefaults_.size(); i++)
+        if (pendingDefaults_[i] != 0)
+            src_.fail(pos, "literal operator cannot have a default argument - [over.literal]/8");
+    // A template's specialization takes nothing, the template's own list being checked where it is declared.
+    if (params.empty() && !instantiationKey_.empty()) return;
+    auto character = [&](const Type *t) {
+        const Kind k = t->unqualified()->kind();
+        return k == Kind::Char || k == Kind::WChar || k == Kind::Char16 || k == Kind::Char32;
+    };
+    bool ok = false;
+    if (params.size() == 1) {
+        const Type *p = params[0]->unqualified();
+        ok = p->kind() == Kind::ULongLong || p->kind() == Kind::LongDouble || character(p) ||
+             (p->isPointer() && p->pointee()->isConst() &&
+              p->pointee()->unqualified()->kind() == Kind::Char);
+    } else if (params.size() == 2) {
+        const Type *p = params[0]->unqualified();
+        ok = p->isPointer() && p->pointee()->isConst() && character(p->pointee()) &&
+             params[1]->unqualified() == types_.get(target_.sizeType());
+    }
+    if (!ok)
+        src_.fail(pos, "invalid literal operator parameter list for '" + shown + "' - "
+                       "[over.literal]/3 takes (const char *), (unsigned long long), (long "
+                       "double), one character type, or a pointer to const characters and a "
+                       "size_t");
+}
+
+void Parser::checkLiteralOperatorTemplate(const TemplateDecl &decl, const Type *pattern) {
+    const bool chars = decl.params.size() == 1 && decl.params[0].isPack &&
+                       decl.params[0].type != nullptr && !decl.params[0].isTemplate &&
+                       decl.params[0].type->unqualified()->kind() == Kind::Char;
+    if (!chars)
+        src_.fail(decl.pos, "template parameter list for literal operator must be 'char...' - "
+                            "[over.literal]/5");
+    if (pattern != nullptr && !pattern->params().empty())
+        src_.fail(decl.pos, "literal operator template cannot have any parameters - "
+                            "[over.literal]/5");
 }
 
 // `expectIdent` with the operator case in front of it. This stands wherever a

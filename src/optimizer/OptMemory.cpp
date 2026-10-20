@@ -189,7 +189,7 @@ bool foldScale(Stream &s, Flow &f, const Convention &c, const Block &blk, int k)
             const unsigned role = n == 0 ? roles.a : roles.b;
             if (o->indexed() && o->index.id == r && o->scale == 1 && o->reg.id != r) { uses.push_back(o); continue; }
             if (o->indexed() && o->index.id == r) ok = false;
-            if (o->kind != Operand::Register && o->kind != Operand::Memory && o->kind != Operand::Indirect) continue;
+            if (o->kind != Operand::Register && !o->basedOnReg() && o->kind != Operand::Indirect) continue;
             if (o->reg.id != r) continue;
             const bool overwrite = o->kind == Operand::Register && role == kWrite && o->reg.width >= 4;
             if (!overwrite) ok = false;

@@ -1,0 +1,1 @@
+tms6747  alignas past the stack's 8 is refused by name there: the C6000 backend builds no realigning prologue, and cl6x 8.2.2 knows no `alignas`.

@@ -187,8 +187,12 @@ static const char *narrower(const char *reg64, int bytes) {
     return reg64;
 }
 
+// An operand `k` bytes further on: the frame's base is rbp or, realigned, rbx - see frameSlot.
+static Op further(Op at, long long k) { at.disp += k; at.hasDisp = true; return at; }
+
 void X86_64Linux::storeTailFromReg(const char *reg64, long long off,
                                    const char *base, int left) {
+    const Op at = std::strcmp(base, "%rbp") == 0 ? frameSlot(off) : mem(off, base);
     int done = 0, shifted = 0;
     auto bring = [&](int want) {
         if (want == shifted) return;
@@ -196,35 +200,36 @@ void X86_64Linux::storeTailFromReg(const char *reg64, long long off,
         shifted = want;
     };
     if (left - done >= 4) {
-        a_->ins("movl", reg(narrower(reg64, 4)), mem(off + done, base));
+        a_->ins("movl", reg(narrower(reg64, 4)), further(at, done));
         done += 4;
     }
     if (left - done >= 2) {
         bring(done);
-        a_->ins("movw", reg(narrower(reg64, 2)), mem(off + done, base));
+        a_->ins("movw", reg(narrower(reg64, 2)), further(at, done));
         done += 2;
     }
     if (left - done >= 1) {
         bring(done);
-        a_->ins("movb", reg(narrower(reg64, 1)), mem(off + done, base));
+        a_->ins("movb", reg(narrower(reg64, 1)), further(at, done));
     }
 }
 
 void X86_64Linux::copyTailMem(long long from, long long to, int left) {
+    const Op src = frameSlot(from), dst = frameSlot(to);
     int done = 0;
     if (left - done >= 4) {
-        a_->ins("movl", mem(from + done, "%rbp"), reg("%eax"));
-        a_->ins("movl", reg("%eax"), mem(to + done, "%rbp"));
+        a_->ins("movl", further(src, done), reg("%eax"));
+        a_->ins("movl", reg("%eax"), further(dst, done));
         done += 4;
     }
     if (left - done >= 2) {
-        a_->ins("movzwl", mem(from + done, "%rbp"), reg("%eax"));
-        a_->ins("movw", reg("%ax"), mem(to + done, "%rbp"));
+        a_->ins("movzwl", further(src, done), reg("%eax"));
+        a_->ins("movw", reg("%ax"), further(dst, done));
         done += 2;
     }
     if (left - done >= 1) {
-        a_->ins("movzbl", mem(from + done, "%rbp"), reg("%eax"));
-        a_->ins("movb", reg("%al"), mem(to + done, "%rbp"));
+        a_->ins("movzbl", further(src, done), reg("%eax"));
+        a_->ins("movb", reg("%al"), further(dst, done));
     }
 }
 
@@ -258,22 +263,22 @@ void X86_64Linux::msCopyToSlot(const Type *t, int slot, const char *from) {
     int off = 0;
     while (size - off >= 8) {
         a_->ins("mov", mem(off, from), reg("%r11"));
-        a_->ins("mov", reg("%r11"), mem((off - slot), "%rbp"));
+        a_->ins("mov", reg("%r11"), frameSlot(off - slot));
         off += 8;
     }
     while (size - off >= 4) {
         a_->ins("movl", mem(off, from), reg("%r11d"));
-        a_->ins("movl", reg("%r11d"), mem((off - slot), "%rbp"));
+        a_->ins("movl", reg("%r11d"), frameSlot(off - slot));
         off += 4;
     }
     while (size - off >= 2) {
         a_->ins("movzwl", mem(off, from), reg("%r11d"));
-        a_->ins("movw", reg("%r11w"), mem((off - slot), "%rbp"));
+        a_->ins("movw", reg("%r11w"), frameSlot(off - slot));
         off += 2;
     }
     while (size - off >= 1) {
         a_->ins("movzbl", mem(off, from), reg("%r11d"));
-        a_->ins("movb", reg("%r11b"), mem((off - slot), "%rbp"));
+        a_->ins("movb", reg("%r11b"), frameSlot(off - slot));
         off += 1;
     }
 }
@@ -303,6 +308,7 @@ void X86_64Linux::canonicalise(const Type *t) {
 void X86_64Linux::genAddr(const Expr &e) {
     if (const Var *v = dynamic_cast<const Var *>(&e)) {
         if (v->isLocal()) a_->ins("lea", local(v->offset()), reg("%rax"));
+        else if (v->isThreadLocal()) tlsAddress(*v);
         else if (target_.microsoftNames() || definedHere_.count(v->symbol()) != 0)
             a_->ins("lea", rip(v->symbol()), reg("%rax"));
         else {
@@ -425,6 +431,38 @@ void X86_64Linux::visit(const Var &n) {
     load(n.type());
 }
 
+// **Measured from clang and cl.** ELF: the thread pointer at %fs:0 plus the object's offset, local-exec,
+// for an object defined here with a constant initialiser, else its `_ZTW` wrapper. COFF: cl's walk,
+// `_tls_index` into the array at gs:88, after the CRT's `__tls_guard` where the object may want initialising.
+void X86_64Linux::tlsAddress(const Var &v) {
+    if (!target_.microsoftNames()) {
+        if (v.viaWrapper()) { a_->ins("call", lbl(tlsWrapperName(v.symbol()))); return; }
+        a_->ins("mov", seg("%fs", 0), reg("%rax"));
+        a_->ins("lea", tls(v.symbol(), "%rax"), reg("%rax"));
+        return;
+    }
+    msTlsBlock();
+    if (v.viaWrapper()) {
+        const std::string ready = label("tlsready", nextLabel());
+        a_->ins("cmpb", imm(0), tls("__tls_guard", "%rax"));
+        a_->ins("jne", lbl(ready));
+        a_->ins("call", lbl("__dyn_tls_on_demand_init"));
+        msTlsBlock();
+        a_->defLabel(ready);
+    }
+    a_->ins("lea", tls(v.symbol(), "%rax"), reg("%rax"));
+}
+
+// Shifted and added rather than cl's `[rdx+rcx*8]`: the walker writes no indexed operand, the
+// optimizer's webs rely on that, and fold-index makes the indexed form itself at -O2.
+void X86_64Linux::msTlsBlock() {
+    a_->ins("movl", rip("_tls_index"), reg("%eax"));
+    a_->ins("mov", seg("%gs", 88), reg("%rcx"));
+    a_->ins("shl", imm(3), reg("%rax"));
+    a_->ins("add", reg("%rcx"), reg("%rax"));
+    a_->ins("mov", mem("%rax"), reg("%rax"));
+}
+
 void X86_64Linux::visit(const StrLit &n) { genAddr(n); }
 
 void X86_64Linux::visit(const MemberAccess &n) {
@@ -443,7 +481,7 @@ void X86_64Linux::visit(const MemberAccess &n) {
 void X86_64Linux::copyBlock(int size) {
     const char *from = "%rax", *to = abi_.scratch;
     const int words = size / 8;
-    const bool string = words >= 3 && optimizer_ && optimizer_->copiesByString();
+    const bool string = words >= 3 && optimizing() && optimizer_->copiesByString();
     bool save = false;
     int off = 0;
     if (string) {
@@ -904,7 +942,7 @@ void X86_64Linux::visit(const Binary &n) {
         a_->ins("mov", imm((isAnd ? 0 : 1)), reg("%rax"));
         a_->defLabel(label("scend", id));
         // Named by these jumps and nothing else, so droppable once threaded past.
-        if (optimizer_) { optimizer_->jumpOnly(label("sc", id)); optimizer_->jumpOnly(label("scend", id)); }
+        if (optimizing()) { optimizer_->jumpOnly(label("sc", id)); optimizer_->jumpOnly(label("scend", id)); }
         return;
     }
 
@@ -1209,7 +1247,7 @@ void X86_64Linux::visit(const Call &n) {
     if (n.callee() != nullptr) pop("%r11");
 
     if (sret)
-        a_->ins("lea", mem((-n.resultSlot()), "%rbp"),
+        a_->ins("lea", local(n.resultSlot()),
                 reg(abi_.intRegs[msThisFirst ? 1 : 0]));
 
     if (const Function *body = inlineTarget(n, stackSlots)) {
@@ -1228,7 +1266,7 @@ void X86_64Linux::visit(const Call &n) {
 
         // **The call reads the registers the plan filled and no other**: the
         // optimizer need not keep the rest alive into it, nor copy into them.
-        if (optimizer_) {
+        if (optimizing()) {
             opt::RegSet reads = (n.isVariadic() && abi_.variadicSseCountInAl) ? opt::bit(opt::RAX) : 0;
             for (int k = 0; k < plan.intsUsed && k < abi_.intCount; ++k) reads |= opt::bit(opt::parseReg(abi_.intRegs[k]).id);
             for (int k = 0; k < plan.ssesUsed && k < abi_.sseCount; ++k) reads |= opt::bit(opt::parseReg(abi_.sseRegs[k]).id);
@@ -1245,18 +1283,18 @@ void X86_64Linux::visit(const Call &n) {
     }
 
     if (sret) {
-        a_->ins("lea", mem((-n.resultSlot()), "%rbp"), reg("%rax"));
+        a_->ins("lea", local(n.resultSlot()), reg("%rax"));
         return;
     }
 
     if (byRef && n.type()->isStructOrUnion()) {
         int size = n.type()->size(target_);
         int to = -n.resultSlot();
-        if (size == 8)      a_->ins("mov", reg("%rax"), mem(to, "%rbp"));
-        else if (size == 4) a_->ins("movl", reg("%eax"), mem(to, "%rbp"));
-        else if (size == 2) a_->ins("movw", reg("%ax"), mem(to, "%rbp"));
-        else                a_->ins("movb", reg("%al"), mem(to, "%rbp"));
-        a_->ins("lea", mem(to, "%rbp"), reg("%rax"));
+        if (size == 8)      a_->ins("mov", reg("%rax"), frameSlot(to));
+        else if (size == 4) a_->ins("movl", reg("%eax"), frameSlot(to));
+        else if (size == 2) a_->ins("movw", reg("%ax"), frameSlot(to));
+        else                a_->ins("movb", reg("%al"), frameSlot(to));
+        a_->ins("lea", frameSlot(to), reg("%rax"));
         return;
     }
 
@@ -1271,14 +1309,14 @@ void X86_64Linux::visit(const Call &n) {
             int off = static_cast<int>(k) * 8 - base;
             int left = size - static_cast<int>(k) * 8;
             if (lanes[k]) {
-                a_->ins(left >= 8 ? "movsd" : "movss", reg(sret[nextSse++]), mem(off, "%rbp"));
+                a_->ins(left >= 8 ? "movsd" : "movss", reg(sret[nextSse++]), frameSlot(off));
             } else {
                 const char *r = ret[nextInt++];
-                if (left >= 8) a_->ins("mov", reg(r), mem(off, "%rbp"));
+                if (left >= 8) a_->ins("mov", reg(r), frameSlot(off));
                 else           storeTailFromReg(r, off, "%rbp", left);
             }
         }
-        a_->ins("lea", mem((-base), "%rbp"), reg("%rax"));
+        a_->ins("lea", local(base), reg("%rax"));
         return;
     }
 
@@ -1368,7 +1406,7 @@ void X86_64Linux::visit(const VaStart &n) {
     a_->ins("movl", imm(varFp_), mem(4, "%rax"));
     a_->ins("lea", mem(varOverflow_, "%rbp"), reg("%rcx"));
     a_->ins("mov", reg("%rcx"), mem(8, "%rax"));
-    a_->ins("lea", mem((-regSave_), "%rbp"), reg("%rcx"));
+    a_->ins("lea", local(regSave_), reg("%rcx"));
     a_->ins("mov", reg("%rcx"), mem(16, "%rax"));
 }
 
@@ -1450,7 +1488,7 @@ std::string X86_64Linux::label(const char *kind, int id) const {
 // The SysV pair: %rax holds the exception object and %rdx the selector, and
 // both go into frame slots the parser already knows the numbers of.
 void X86_64Linux::exceptionRegion(const std::string &begin, const std::string &end, const std::string &target) {
-    if (optimizer_) optimizer_->exceptionRegion(begin, end, target);
+    if (optimizing()) optimizer_->exceptionRegion(begin, end, target);
 }
 
 void X86_64Linux::landingPad(int pointerSlot, int selectorSlot) {
@@ -1521,6 +1559,7 @@ std::string X86_64Linux::userLabel(const std::string &name) const {
 // its own funclet cutting, and is written as it was.
 void X86_64Linux::setOptimize(int level) {
     if (level <= 0 || optimizer_) return;
+    plain_ = a_;
     optimizer_.reset(new Optimizer(*a_, abi_, level));
     if (optimizer_->costs().inlines()) inliner_.reset(new Inliner(optimizer_->costs()));
     a_ = optimizer_.get();
@@ -1531,7 +1570,7 @@ void X86_64Linux::finishChunk() {
     out_.clear();
 }
 
-namespace { std::vector<const Call *> callsIn(const Node &n, std::vector<const Call *> *outer = nullptr); }
+namespace { std::vector<const Call *> callsIn(const Node &n, std::vector<const Call *> *outer = nullptr, bool *tlsGuarded = nullptr); }
 
 // A call with stack arguments writes them above the shadow space, and a callee
 // walked in place may make any call at all.
@@ -1551,8 +1590,25 @@ void X86_64Linux::emit(const Function &fn) {
     labelPrefix_ = ".L." + fn.symbol() + ".";
     returnLabel_ = ".L.return." + fn.symbol();
 
+    // **A frame realigned for an over-aligned local** (Function::frameAlign, or a named local's own) is
+    // written past the optimizer, whose passes address the frame from rbp and take rbx, and walks no
+    // callee in place; a Windows funclet reaches the frame through the establisher, so that shape is refused.
+    realign_ = fn.frameAlign() > 16 ? fn.frameAlign() : 0;
+    for (const Local &l : fn.locals())
+        if (l.staticName.empty() && l.type != nullptr) {
+            const int a = l.align > objectAlign(l.type, target_) ? l.align : objectAlign(l.type, target_);
+            if (a > 16 && a > realign_) realign_ = a;
+        }
+    if (realign_ > 0 && fn.hasLandingPads() && usesFunclets())
+        unsupported("an over-aligned local in a function with a try or a local with a destructor");
+    if (realign_ > 0 && optimizing()) {
+        optimizer_->finish();
+        a_ = plain_;
+        opt::noteDecline("realigned-frame-no-optimizer", fn.symbol());
+    }
+
     a_->functionBegin(fn.symbol(), !fn.isStatic(), fn.isInline());
-    if (optimizer_)
+    if (optimizing())
         optimizer_->returnsPair(!abi_.aggregatesByReference && fn.returns()->isStructOrUnion() &&
                                 fn.returns()->size(target_) > 8);
     if (fn.isInline()) a_->weakDefinition(fn.symbol());
@@ -1607,38 +1663,45 @@ void X86_64Linux::emit(const Function &fn) {
     fnMergeable_ = fn.isInline();
     // On Windows the entry is named by the `{` line, as cl names it - see openingBrace.
     markLine(target_.microsoftNames() ? openingBrace(fn.pos()) : fn.pos());
-    if (optimizer_) optimizer_->frame(scalarsOf(fn));
+    if (optimizing()) optimizer_->frame(scalarsOf(fn));
     // The shadow space and the widest stack arguments of a call not inside another's operands, in 16s.
     // A nested call is evaluated with the outer one's values pushed, so it never finds the area; counting it
     // only made frames larger, and with them the displacements into the frame - 1.6 KB of .text at -O2, measured.
     outgoing_ = 0;
     if (abi_.shadowBytes > 0) {
         std::vector<const Call *> outer;
-        const std::vector<const Call *> calls = callsIn(fn.body(), &outer);
+        bool tlsGuarded = false;
+        const std::vector<const Call *> calls = callsIn(fn.body(), &outer, &tlsGuarded);
         int words = 0;
         for (const Call *c : outer) words = std::max(words, placeCall(*c).stackWords);
-        if (!calls.empty()) outgoing_ = (abi_.shadowBytes + 8 * words + 15) & ~15;
+        if (!calls.empty() || tlsGuarded) outgoing_ = (abi_.shadowBytes + 8 * words + 15) & ~15;
     }
     floorDepth_ = 0;
-    tempsAllowed_ = optimizer_ && !(fn.hasLandingPads() && usesFunclets());
+    tempsAllowed_ = optimizing() && !(fn.hasLandingPads() && usesFunclets());
     tempDepth_ = tempHigh_ = 0;
-    a_->prologue(frameSize_,
+    // The frame's top, rounded to the alignment, is what a realigned prologue allocates.
+    top_ = frameSize_ + outgoing_;
+    if (realign_ > 0) top_ = (top_ + realign_ - 1) / realign_ * realign_;
+    a_->prologue(realign_ > 0 ? top_ - outgoing_ : frameSize_,
                  fn.hasLandingPads() ? ".Lexception." + fn.symbol()
                                      : std::string(),
-                 outgoing_);
+                 outgoing_, realign_);
 
     receiveParameters(fn);
 
     walkBody(fn);
-    if (optimizer_) optimizer_->temporaries(tempHigh_);
-    // **rsp is restored *from rbp*, never by adding to itself.** Resuming after a
-    // catch it holds whatever the runtime left, and adding the frame size landed
-    // on the unwind-help slot, so `ret` took -2. The renderer adds the size.
+    if (optimizing()) optimizer_->temporaries(tempHigh_);
+    // **rsp is restored *from rbp*, never by adding to itself.** Resuming after a catch it holds
+    // whatever the runtime left, and adding the frame size landed on the unwind-help slot, so `ret`
+    // took -2. The renderer adds the size; a realigned frame's rbx sits just under the saved rbp.
     if (localsAboveFrameBase()) {
         a_->ins("lea", mem(0, "%rbp"), reg("%rsp"));
+    } else if (realign_ > 0) {
+        a_->ins("lea", mem(-8, "%rbp"), reg("%rsp"));
     } else {
         a_->ins("mov", reg("%rbp"), reg("%rsp"));
     }
+    if (realign_ > 0) a_->ins("pop", reg("%rbx"));
     a_->ins("pop", reg("%rbp"));
     a_->ins("ret");
     // Before .cfi_endproc, because the last call-site range measures to it.
@@ -1649,14 +1712,18 @@ void X86_64Linux::emit(const Function &fn) {
     if (target_.microsoftNames()) a_->noteHasEh(!msStates().empty());
     a_->functionEnd(fn.symbol());
     // The tables below measure slots from the frame as the passes left it.
-    if (optimizer_) frameSize_ = optimizer_->frameSize();
+    if (optimizing()) frameSize_ = optimizer_->frameSize();
     emitExceptionTables(fn);
     if (lineSource()) {
         a_->defLabel(".Lfunc.end." + fn.symbol());
 
         dwarfFns_.back().blocks = blocks();
         dwarfFns_.back().frameBias = frameSize_ + outgoing_;
+        // The records measure from rbx, DWARF's register 3, up to the top of a realigned frame.
+        if (realign_ > 0) { dwarfFns_.back().frameBaseReg = 3; dwarfFns_.back().frameBias = top_; }
     }
+    if (realign_ > 0 && optimizer_) a_ = optimizer_.get();
+    realign_ = 0;
 
     if (depth_ != 0 || tempDepth_ != 0) {
         std::fprintf(stderr, "codegen: stack depth %d and %d temporaries at the end of %s\n",
@@ -1683,12 +1750,12 @@ void X86_64Linux::receiveParameters(const Function &fn) {
         regSave_ = 0;
     } else if (regSave_ != 0) {
         for (int i = 0; i < 6; i++)
-            a_->ins("mov", reg(abi_.intRegs[i]), mem((i * 8 - regSave_), "%rbp"));
+            a_->ins("mov", reg(abi_.intRegs[i]), frameSlot(i * 8 - regSave_));
         std::string done = ".L.novec." + fn.symbol();
         a_->ins("testb", reg("%al"), reg("%al"));
         a_->ins("je", lbl(done));
         for (int i = 0; i < 8; i++)
-            a_->ins("movaps", reg("%xmm" + std::to_string(i)), mem((48 + i * 16 - regSave_), "%rbp"));
+            a_->ins("movaps", reg("%xmm" + std::to_string(i)), frameSlot(48 + i * 16 - regSave_));
         a_->defLabel(done);
     }
 
@@ -1719,10 +1786,10 @@ void X86_64Linux::receiveParameters(const Function &fn) {
             int to = -ps[i].offset;
             if (msInRegister(size)) {
                 if (src != "%rax") a_->ins("mov", reg(src), reg("%rax"));
-                if (size == 8)      a_->ins("movq", reg("%rax"), mem(to, "%rbp"));
-                else if (size == 4) a_->ins("movl", reg("%eax"), mem(to, "%rbp"));
-                else if (size == 2) a_->ins("movw", reg("%ax"), mem(to, "%rbp"));
-                else                a_->ins("movb", reg("%al"), mem(to, "%rbp"));
+                if (size == 8)      a_->ins("movq", reg("%rax"), frameSlot(to));
+                else if (size == 4) a_->ins("movl", reg("%eax"), frameSlot(to));
+                else if (size == 2) a_->ins("movw", reg("%ax"), frameSlot(to));
+                else                a_->ins("movb", reg("%al"), frameSlot(to));
             } else {
                 msCopyToSlot(pt, ps[i].offset, src.c_str());
             }
@@ -1736,8 +1803,8 @@ void X86_64Linux::receiveParameters(const Function &fn) {
                 int to = k * 8 - ps[i].offset;
                 int left = size - k * 8;
                 if (left >= 8) {
-                    a_->ins("mov", mem(from, "%rbp"), reg("%rax"));
-                    a_->ins("movq", reg("%rax"), mem(to, "%rbp"));
+                    a_->ins("mov", frameSlot(from), reg("%rax"));
+                    a_->ins("movq", reg("%rax"), frameSlot(to));
                 } else {
                     copyTailMem(from, to, left);
                 }
@@ -1751,10 +1818,10 @@ void X86_64Linux::receiveParameters(const Function &fn) {
                 int off = static_cast<int>(k) * 8 - ps[i].offset;
                 int left = size - static_cast<int>(k) * 8;
                 if (pl.lanes[k]) {
-                    a_->ins(left >= 8 ? "movsd" : "movss", reg(abi_.sseRegs[pl.regs[k]]), mem(off, "%rbp"));
+                    a_->ins(left >= 8 ? "movsd" : "movss", reg(abi_.sseRegs[pl.regs[k]]), frameSlot(off));
                 } else {
                     a_->ins("mov", reg(abi_.intRegs[pl.regs[k]]), reg("%rax"));
-                    if (left >= 8) a_->ins("movq", reg("%rax"), mem(off, "%rbp"));
+                    if (left >= 8) a_->ins("movq", reg("%rax"), frameSlot(off));
                     else           storeTailFromReg("%rax", off, "%rbp", left);
                 }
             }
@@ -1792,8 +1859,10 @@ public:
     std::vector<const Call *> calls;
     std::vector<const Call *> outer;     // not inside another call's operands
     int inCall = 0;
+    // A thread_local reached through the CRT's guard is a call to `__dyn_tls_on_demand_init` too.
+    bool tlsGuarded = false;
     void visit(const Num &) override {}
-    void visit(const Var &) override {}
+    void visit(const Var &n) override { if (n.isThreadLocal() && n.viaWrapper()) tlsGuarded = true; }
     void visit(const StrLit &) override {}
     void visit(const Goto &) override {}
     void visit(const Break &) override {}
@@ -1846,10 +1915,11 @@ public:
     }
 };
 
-std::vector<const Call *> callsIn(const Node &n, std::vector<const Call *> *outer) {
+std::vector<const Call *> callsIn(const Node &n, std::vector<const Call *> *outer, bool *tlsGuarded) {
     CallScan scan;
     n.accept(scan);
     if (outer != nullptr) *outer = scan.outer;
+    if (tlsGuarded != nullptr) *tlsGuarded = scan.tlsGuarded;
     return scan.calls;
 }
 
@@ -1875,7 +1945,7 @@ const Function *X86_64Linux::inlineTarget(const Call &n, int stackSlots) const {
     return &callee;
 }
 
-bool X86_64Linux::inlining() const { return inliner_ && !lineSource(); }
+bool X86_64Linux::inlining() const { return inliner_ && !lineSource() && realign_ == 0; }
 
 // The callee's walk borrows the caller's state for its own, and gives it
 // back; its frame the optimizer moves below the caller's.
@@ -1907,6 +1977,7 @@ void X86_64Linux::walkInPlace(const Function &fn) {
 // return label every `return` jumps to.
 void X86_64Linux::walkBody(const Function &fn) {
     const std::vector<Param> &ps = fn.params();
+    if (!inPlace_) storeUnwindHelpAtEntry(fn.body());   // a body walked in place is not an entry
     fn.body().accept(*this);
 
     if (sretSlot_ != 0)                     a_->ins("mov", local(sretSlot_), reg("%rax"));
@@ -1928,7 +1999,7 @@ void X86_64Linux::walkBody(const Function &fn) {
 // appends its code like any other, so remembering where that began and cutting
 // back to it gives the body exactly - and the code generator knows none of it.
 std::string X86_64Linux::beginFunclet() {
-    if (optimizer_) optimizer_->funcletBegin();
+    if (optimizing()) optimizer_->funcletBegin();
     inFunclet_ = true;
     atOutput([this] { funcletMark_ = out_.size(); });
     funcletSymbol_ = "$" + std::string(funcletKind_).substr(1) +
@@ -1956,8 +2027,8 @@ void X86_64Linux::funcletLeave(const std::string &label) {
 // Write -2 into the runtime's scratch word: the personality routine reads it
 // through the FuncInfo's dispUnwindHelp to know how far this frame had got.
 void X86_64Linux::storeUnwindHelp(int slot) {
-    if (optimizer_) optimizer_->sharedSlot(-slot, 8);
-    a_->ins("movq", immText("-2"), mem(-slot, "%rbp"));
+    if (optimizing()) optimizer_->sharedSlot(-slot, 8);
+    a_->ins("movq", immText("-2"), local(slot));
 }
 
 // **The funclet's own frame, and the assembler writes its unwind data.**
@@ -2033,7 +2104,7 @@ void X86_64Linux::closeFunclet(const std::string &tail) {
         funclets_ += head + body + f;
         funcletPdata_ += pdata;
     });
-    if (optimizer_) optimizer_->funcletEnd();
+    if (optimizing()) optimizer_->funcletEnd();
 }
 
 // **The FH3 tables for a frame that only cleans up.**
@@ -2214,7 +2285,7 @@ void X86_64Linux::emitGlobal(const Global &g, Segment seg) {
     if (!g.prefixWord.empty()) a_->dataSym(g.prefixWord, 0);
     a_->defLabel(g.symbol);
 
-    if (seg == Segment::Bss) { a_->zero(size); return; }
+    if (seg == Segment::Bss || seg == Segment::TlsBss) { a_->zero(size); return; }
 
     int at = 0;
     for (const GlobalPiece &p : g.init) {
@@ -2256,6 +2327,8 @@ void X86_64Linux::emitData(const Program &program) {
         { Segment::ConstRelocated, rodataOpen && !a_->hasRelro() },
         { Segment::Data,  false },
         { Segment::Bss,   false },
+        { Segment::TlsData, false },
+        { Segment::TlsBss, false },
     };
     for (const Bucket &b : order) {
         bool opened = b.alreadyOpen;
@@ -2265,12 +2338,47 @@ void X86_64Linux::emitData(const Program &program) {
                 if (b.seg == Segment::Const) a_->rodataSection();
                 else if (b.seg == Segment::ConstRelocated) a_->relroSection();
                 else if (b.seg == Segment::Data) a_->dataSection();
-                else                             a_->bssSection();
+                else if (b.seg == Segment::Bss) a_->bssSection();
+                else if (b.seg == Segment::TlsData) a_->tlsDataSection();
+                else                             a_->tlsBssSection();
                 opened = true;
             }
             emitGlobal(g, b.seg);
         }
     }
+}
+
+// **The `_ZTW` wrappers, as clang writes them**: one per external thread_local defined or reached here,
+// hidden and weak in a COMDAT of its own (a `static` one's a local function); a defined object reached
+// local-exec after its `_ZTH` where __tls_init builds it, another unit's initial-exec, its `_ZTH` weak.
+void X86_64Linux::emitTlsWrappers(const Program &program) {
+    std::string o, weak;
+    for (const TlsWrapper &w : program.tlsWrappers) {
+        const std::string name = tlsWrapperName(w.symbol), init = tlsInitName(w.symbol);
+        if (w.internal) o += "  .text\n";
+        else o += "  .section .text." + name + ",\"axG\",@progbits," + name + ",comdat\n  .hidden " + name +
+                  "\n  .weak " + name + "\n";
+        o += "  .p2align 4\n  .type " + name + ",@function\n" + name + ":\n  .cfi_startproc\n  push %rbp\n"
+             "  .cfi_def_cfa_offset 16\n  .cfi_offset %rbp, -16\n  mov %rsp, %rbp\n  .cfi_def_cfa_register %rbp\n";
+        if (w.definedHere) {
+            if (w.dynamicInit) o += "  call " + init + "\n";
+            o += "  mov %fs:0, %rax\n  lea " + w.symbol + "@TPOFF(%rax), %rax\n";
+        } else {
+            o += "  mov " + init + "@GOTPCREL(%rip), %rax\n  test %rax, %rax\n  je .L.ready." + name + "\n  call " +
+                 init + "@PLT\n.L.ready." + name + ":\n  mov " + w.symbol + "@GOTTPOFF(%rip), %rcx\n  mov %fs:0, %rax\n"
+                 "  add %rcx, %rax\n";
+            weak += "  .weak " + init + "\n";
+        }
+        o += "  pop %rbp\n  .cfi_def_cfa %rsp, 8\n  ret\n  .cfi_endproc\n  .size " + name + ", .-" + name + "\n";
+    }
+    // The `_ZTH` aliases: `__tls_init` under the name the wrappers call, global for an external object.
+    for (const TlsWrapper &w : program.tlsWrappers) {
+        if (!w.definedHere || !w.dynamicInit) continue;
+        const std::string init = tlsInitName(w.symbol);
+        if (!w.internal) o += "  .globl " + init + "\n";
+        o += "  .type " + init + ",@function\n" + init + " = " + program.tlsInitFunction + "\n";
+    }
+    out_ += o + weak;
 }
 
 // The four objects a Microsoft `throw` hands the runtime, spelled for GNU-as:
@@ -2361,9 +2469,19 @@ void X86_64Linux::run(const Program &program) {
         a_->initialiserEntry(program.initFunction, program.usesDsoHandle);
         finishChunk();
     }
+    if (!program.tlsInitFunction.empty() && target_.microsoftNames()) {
+        a_->tlsInitialiserEntry(program.tlsInitFunction);
+        finishChunk();
+    }
+    if (!target_.microsoftNames() && !program.tlsWrappers.empty()) {
+        atOutput([this, &program] { emitTlsWrappers(program); });
+        finishChunk();
+    }
 
     if (lineSource() != nullptr && writesDwarf()) {
         for (const Global &g : program.globals) {
+            // A thread_local has no address the records could hold: not described yet.
+            if (g.isThreadLocal) continue;
             DwarfGlobal dg;
             dg.name = g.name;
             dg.symbol = g.symbol;

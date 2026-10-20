@@ -5,5 +5,6 @@
 // **This case names whichever keyword is still pending, and that changes as
 // the ladder advances** - it said 'class' until rung 3 implemented it, and
 // 'typeid' until 2026-09-14, which is how a green suite told the truth about
-// the day before. Pick a keyword from a rung that is still ahead.
-int main(void) { int x = thread_local; return x; }
+// the day before, and 'thread_local' until 2026-10-20. Pick a keyword from a
+// rung that is still ahead.
+int main(void) { int x = asm; return x; }

@@ -32,6 +32,9 @@ struct DwarfFunction {
     std::string codeEnd;
     bool mergeable = false;
     int frameBias = 0;
+    // A realigned frame's own base register, as DWARF numbers it (rbx is 3), with the records then
+    // measured `frameBias - offset` up from it; -1 is the target's frame pointer and the plain `-offset`.
+    int frameBaseReg = -1;
 };
 
 struct DwarfGlobal {

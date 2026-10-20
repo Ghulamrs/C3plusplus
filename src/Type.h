@@ -240,6 +240,16 @@ public:
     const Type &cls() const { return unqual_ != nullptr ? *unqual_ : *this; }
 
     const std::string &tag() const { return cls().tag_; }
+    // [dcl.typedef]/9: an unnamed class first named by a typedef has that name for linkage.
+    // `name` is the qualified key, `local` the typedef's own name; a class or a namespace around it is set too.
+    void nameForLinkage(const std::string &name, const std::string &local, const Type *in, bool inNamespace) const {
+        Type &c = const_cast<Type &>(cls());
+        if (!c.tag_.empty() || (c.kind_ != Kind::Struct && c.kind_ != Kind::Union)) return;
+        c.tag_ = name;
+        c.local_ = local;
+        if (in != nullptr && c.enclosing_ == nullptr) c.enclosing_ = in;
+        if (inNamespace) c.inNamespace_ = true;
+    }
 
     // `class X` and `struct X` build the same kind of type and differ only in the
     // default access - and in what a diagnostic should call it. "struct Account"
@@ -467,6 +477,7 @@ public:
         // emits no symbol for one and folds the value in. That value is here.
         bool folded = false;
         long long value = 0;
+        bool isThreadLocal = false;   // `static thread_local`: one object per thread
     };
     const std::vector<StaticMember> &staticMembers() const {
         return cls().statics_;
@@ -633,6 +644,13 @@ public:
     virtual bool microsoftNames() const = 0;
     // What the stack pointer is kept aligned to: 16 on the hosts, 8 on the C6000.
     virtual int stackAlign() const { return 16; }
+    // Whether a frame can be realigned for a local that asks for more than that - the hosts' backends do.
+    virtual bool realignsFrame() const { return true; }
+    // **Thread storage**: whether the target has any (cl6x 8.2.2 has none - measured), and what
+    // registers a thread_local's destructor: Itanium's __cxa_thread_atexit, dyld's _tlv_atexit,
+    // the Microsoft CRT's __tlregdtor (a helper of no arguments, as atexit takes).
+    virtual bool hasThreadStorage() const { return true; }
+    virtual const char *threadAtexit() const { return "__cxa_thread_atexit"; }
     // Whether a word may sit at any address: the hosts' loads do, the C6000's LDW faults.
     virtual bool loadsUnaligned() const { return true; }
     // The ARM C++ ABI's array cookie: two size_t words, element size then count - arm64-darwin, measured.
@@ -643,6 +661,8 @@ public:
     virtual bool hasGetExceptionPtr() const { return true; }
     // **What `__cxa_begin_catch` returns for a thrown pointer**: the pointer's value on the hosts, the exception object's address on TI's runtime.
     virtual bool beginCatchReturnsObject() const { return false; }
+    // **Who checks `throw(T...)`**: a filter in the frame's own pads on the hosts, the descriptor TI's personality reads.
+    virtual bool specInTable() const { return false; }
 
     virtual const char *name() const = 0;
 };

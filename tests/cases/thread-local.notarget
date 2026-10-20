@@ -1,0 +1,1 @@
+tms6747  TI's cl6x 8.2.2 (CCS 7.4) has no thread-local storage - it does not know the word `thread_local` (measured 2026-10-20) - and the parser refuses the keyword by name for this target.

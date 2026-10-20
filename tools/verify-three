@@ -25,9 +25,10 @@ WHICH=${1:-all}
 KEY=${CXX1_LINUX_KEY:-$HOME/Documents/Claude/myMorningWalk.pem}
 LINUX=${CXX1_LINUX:-ec2-user@52.202.164.123}
 WINDOWS=${WINDOWS_BOX:-windows}
-# The workspace holding TI/ and Windows/: two levels up as it was under Compilers/, or one since 2026-10-18.
-WS="$ROOT/../.."
-for w in "$ROOT/../.." "$ROOT/.."; do [ -d "$w/TI" ] || [ -d "$w/Windows" ] && { WS=$w; break; }; done
+# The workspace holding TI/ and Windows/: two levels up as it was under Compilers/, or one since 2026-10-18 -
+# or named by CXX1_WORKSPACE, for a tree that is not beside them (a git worktree under .claude/worktrees).
+WS=${CXX1_WORKSPACE:-$ROOT/../..}
+[ -n "${CXX1_WORKSPACE:-}" ] || for w in "$ROOT/../.." "$ROOT/.."; do [ -d "$w/TI" ] || [ -d "$w/Windows" ] && { WS=$w; break; }; done
 # ASM6x's tests directory, for c6xdiff.py: $C6XDIFF's, beside $ASM6X's build, or the workspace's.
 C6XTESTS=""
 for c in "$(dirname "${C6XDIFF:-/nonexistent/x}")" "$(dirname "${ASM6X:-/nonexistent/x}")/../tests" \
@@ -240,11 +241,15 @@ if [ "$WHICH" = all ] || [ "$WHICH" = windows ]; then
         fi
     done
     # **The same cases through -masm=masm**, assembled and linked by the project's own tools.
+    # A case the project's masm cannot take says so in <case>.nomasm, printed like a .notarget.
     for e in "$ROOT"/tests/cases/*.expected; do
         n=$(basename "$e" .expected)
         case "$n" in *" "[0-9]*) continue;; esac
         nt="$ROOT/tests/cases/$n.notarget"
         if [ -f "$nt" ] && grep -q x86_64-windows "$nt"; then continue; fi
+        if [ -f "$ROOT/tests/cases/$n.nomasm" ]; then
+            echo "  skip $n for -masm=masm: $(tr '\n' ' ' < "$ROOT/tests/cases/$n.nomasm")"; continue
+        fi
         got="$OUT/winout/masm/$n.out"
         if [ -f "$got" ] && tr -d '\r' < "$got" | diff -q - "$e" >/dev/null; then
             pass=$((pass + 1))
@@ -306,6 +311,8 @@ if [ "$WHICH" = all ] || [ "$WHICH" = windows ]; then
         nt="$ROOT/tests/cases/$n.notarget"
         if [ -f "$nt" ] && grep -q x86_64-windows "$nt"; then continue; fi
         for sp in "" masm/; do
+            # a .nomasm case is not built by the MASM pass at any level
+            if [ "$sp" = masm/ ] && [ -f "$ROOT/tests/cases/$n.nomasm" ]; then continue; fi
             if [ -f "$OUT2/winout/$sp$n.out" ] && tr -d '\r' < "$OUT2/winout/$sp$n.out" | diff -q - "$e" >/dev/null; then
                 p2=$((p2 + 1))
             else

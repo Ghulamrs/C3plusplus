@@ -75,3 +75,10 @@ const char *itaniumOperatorCode(const OperatorCode &op, bool unary) {
     if (unary && op.itaniumUnary != nullptr) return op.itaniumUnary;
     return op.itanium;
 }
+
+std::string literalSuffix(const std::string &name) {
+    static const char kPrefix[] = "operator\"\" ";
+    const std::size_t n = sizeof kPrefix - 1;
+    if (name.size() <= n || name.compare(0, n, kPrefix) != 0) return std::string();
+    return name.substr(n);
+}

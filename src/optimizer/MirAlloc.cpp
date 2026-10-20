@@ -70,7 +70,7 @@ void Allocator::findUses() {
                 u.read = (role[n] & kRead) != 0;
                 u.write = (role[n] & kWrite) != 0;
                 if (u.write && ((role[n] & kKeep) || o.reg.width < 4)) u.read = true;
-            } else if (o.kind == Operand::Memory || o.kind == Operand::Indirect) {
+            } else if (o.basedOnReg() || o.kind == Operand::Indirect) {
                 u.read = true;
             } else {
                 continue;
@@ -145,7 +145,7 @@ void Allocator::buildInterference() {
     for (const Entry &e : s) {
         if (e.kind != Entry::Ins || e.dead) continue;
         for (const Operand *o : {&e.ins.a, &e.ins.b})
-            if ((o->kind == Operand::Register || o->kind == Operand::Memory || o->kind == Operand::Indirect) &&
+            if ((o->kind == Operand::Register || o->basedOnReg() || o->kind == Operand::Indirect) &&
                 o->reg.id >= 0 && o->reg.id < kPhysical)
                 mentioned |= bit(o->reg.id);
         for (const Operand *o : {&e.ins.a, &e.ins.b})

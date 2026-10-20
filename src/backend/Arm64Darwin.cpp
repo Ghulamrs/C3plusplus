@@ -193,12 +193,33 @@ void Arm64Darwin::storeWord(const char *xreg, const char *base, int k, int size)
     }
 }
 
+// **A realigned frame is addressed from its floor in x19**: slot k at x19 + top - k, the top rounded
+// to the alignment, so a slot the parser aligned stays aligned - see Function::frameAlign.
+void Arm64Darwin::localIn(const char *dst, int slot) {
+    if (realign_ > 0) {
+        movImm("x9", top_ - slot);
+        out_ << "  add " << dst << ", x19, x9\n";
+    } else {
+        movImm("x9", slot);
+        out_ << "  sub " << dst << ", x29, x9\n";
+    }
+}
+
 void Arm64Darwin::genAddr(const Expr &e) {
     if (const Var *v = dynamic_cast<const Var *>(&e)) {
         if (v->isLocal()) {
-
-            movImm("x9", v->offset());
-            out_ << "  sub x0, x29, x9\n";
+            localIn("x0", v->offset());
+        } else if (v->isThreadLocal()) {
+            // **The TLV descriptor's getter, measured from clang**: its address from the page, its
+            // first word called with the descriptor in x0, the object's address answered in x0. The
+            // getter and this unit's wrappers keep every register but x0, x9, x16 and x17 (dyld's rule).
+            if (v->viaWrapper()) {
+                out_ << "  bl _" << tlsWrapperName(v->symbol()) << "\n";
+            } else {
+                out_ << "  adrp x0, _" << v->symbol() << "@TLVPPAGE\n";
+                out_ << "  ldr x0, [x0, _" << v->symbol() << "@TLVPPAGEOFF]\n";
+                out_ << "  ldr x9, [x0]\n  blr x9\n";
+            }
         } else if (definedHere_.count(v->symbol()) != 0) {
             out_ << "  adrp x0, _" << v->symbol() << "@PAGE\n";
             out_ << "  add x0, x0, _" << v->symbol() << "@PAGEOFF\n";
@@ -356,11 +377,9 @@ int Arm64Darwin::aggStackSlot(const Type *t, const AggPlan &p, int &at) const {
 // whole of what the backend does about it: x0 the exception object and x1 the
 // selector, into frame slots the parser knows. From then on they are locals.
 void Arm64Darwin::landingPad(int pointerSlot, int selectorSlot) {
-    out_ << "  mov x9, #" << pointerSlot << "\n";
-    out_ << "  sub x9, x29, x9\n";
+    localIn("x9", pointerSlot);
     out_ << "  str x0, [x9]\n";
-    out_ << "  mov x9, #" << selectorSlot << "\n";
-    out_ << "  sub x9, x29, x9\n";
+    localIn("x9", selectorSlot);
     out_ << "  str w1, [x9]\n";
 }
 // Where a throw out of a cleanup pad lands: std::terminate, as clang's
@@ -783,8 +802,7 @@ void Arm64Darwin::visit(const Call &n) {
     for (std::size_t i = 0; i < named; i++) {
         if (!args[i]->type()->isStructOrUnion()) continue;
         args[i]->accept(*this);
-        movImm("x9", n.argSlot(i));
-        out_ << "  sub x1, x29, x9\n";
+        localIn("x1", n.argSlot(i));
         copyBlock(args[i]->type()->size(target_), "x0", "x1");
     }
 
@@ -802,8 +820,7 @@ void Arm64Darwin::visit(const Call &n) {
     for (std::size_t i = 0; i < named; i++) {
         const Type *t = args[i]->type();
         if (!t->isStructOrUnion()) continue;
-        movImm("x9", n.argSlot(i));
-        out_ << "  sub x9, x29, x9\n";
+        localIn("x9", n.argSlot(i));
         const AggPlan &p = plan.args[i].plan;
 
         if (plan.args[i].stackOffset >= 0) {
@@ -831,10 +848,7 @@ void Arm64Darwin::visit(const Call &n) {
         }
     }
 
-    if (sret) {
-        movImm("x9", n.resultSlot());
-        out_ << "  sub x8, x29, x9\n";
-    }
+    if (sret) localIn("x8", n.resultSlot());
 
     if (n.callee() != nullptr) {
 
@@ -848,8 +862,7 @@ void Arm64Darwin::visit(const Call &n) {
         out_ << "  add sp, sp, x9\n";
     }
     if (n.type()->isStructOrUnion()) {
-        movImm("x9", n.resultSlot());
-        out_ << "  sub x9, x29, x9\n";
+        localIn("x9", n.resultSlot());
         AggPlan p = planFor(n.type());
         if (p.byRef) {
         } else if (p.hfa > 0) {
@@ -900,8 +913,7 @@ void Arm64Darwin::visit(const Return &n) {
     if (t->isStructOrUnion()) {
         AggPlan p = planFor(t);
         if (p.byRef) {
-            movImm("x9", sretSlot_);
-            out_ << "  sub x9, x29, x9\n";
+            localIn("x9", sretSlot_);
             out_ << "  ldr x1, [x9]\n";
             copyBlock(t->size(target_), "x0", "x1");
             out_ << "  mov x0, x1\n";
@@ -949,8 +961,19 @@ void Arm64Darwin::emitGlobal(const Global &g, Segment seg) {
         return;
     }
 
+    // **A thread_local is a descriptor and a template**, measured from clang: `_x` is three words in
+    // __thread_vars - dyld's bootstrap getter, a key dyld fills, the template's address - and the
+    // template `_x$tlv$init` is the initial image, in __thread_data or zero-filled by `.tbss`.
+    const bool tls = seg == Segment::TlsData || seg == Segment::TlsBss;
+    if (tls) {
+        if (seg == Segment::TlsBss) out_ << ".tbss _" << g.symbol << "$tlv$init, " << size << ", " << p2 << "\n";
+        out_ << "  .section __DATA,__thread_vars,thread_local_variables\n_" << g.symbol
+             << ":\n  .quad __tlv_bootstrap\n  .quad 0\n  .quad _" << g.symbol << "$tlv$init\n";
+        if (seg == Segment::TlsBss) return;
+        out_ << "  .section __DATA,__thread_data,thread_local_regular\n";
+    }
     out_ << "  .p2align " << p2 << "\n";
-    out_ << "_" << g.symbol << ":\n";
+    out_ << "_" << g.symbol << (tls ? "$tlv$init:\n" : ":\n");
     int at = 0;
     for (const GlobalPiece &p : g.init) {
         if (p.offset > at) out_ << "  .space " << (p.offset - at) << "\n";
@@ -1014,6 +1037,8 @@ void Arm64Darwin::emitData(const Program &program) {
         { Segment::ConstRelocated, "  .section __DATA,__const\n" },
         { Segment::Data,  "  .section __DATA,__data\n" },
         { Segment::Bss,   nullptr },
+        { Segment::TlsData, nullptr },
+        { Segment::TlsBss, nullptr },
     };
     for (const Bucket &b : order) {
         bool opened = false;
@@ -1088,12 +1113,33 @@ void Arm64Darwin::emitFunction(const Function &fn) {
     out_ << "  .cfi_offset w30, -8\n";
     out_ << "  .cfi_offset w29, -16\n";
 
+    // **A frame realigned for an over-aligned local** (Function::frameAlign, or a named local's own)
+    // saves x19 under the frame record, rounds sp down after the allocation - clang's `and sp, x9,
+    // #0xff..c0` - and keeps the floor in x19 for localIn; the peephole, which takes x19, stays out.
+    realign_ = fn.frameAlign() > 16 ? fn.frameAlign() : 0;
+    for (const Local &l : fn.locals())
+        if (l.staticName.empty() && l.type != nullptr) {
+            const int a = l.align > objectAlign(l.type, target_) ? l.align : objectAlign(l.type, target_);
+            if (a > 16 && a > realign_) realign_ = a;
+        }
+    if (realign_ > 0) {
+        out_ << "  str x19, [sp, #-16]!\n";
+        out_ << "  .cfi_offset w19, -32\n";
+        opt::noteDecline("realigned-frame-no-peephole", fn.symbol());
+    }
     // An optimized frame keeps room below its locals for the callee-saved registers a promoted local takes.
     const int locals = alignTo(fn.frameSize(), 16);
-    const bool promote = optimize_ > 0 && locals + kCalleeArea <= 65535;
+    const bool promote = optimize_ > 0 && realign_ == 0 && locals + kCalleeArea <= 65535;
     if (optimize_ > 0 && !promote) opt::noteDecline("arm64-frame-too-large-no-promotion", fn.symbol());
     int frame = locals + (promote ? kCalleeArea : 0);
-    if (frame > 0) {
+    if (realign_ > 0) frame = top_ = alignTo(locals, realign_);
+    if (realign_ > 0) {
+        // `and` takes no sp as its source: the allocation is made in x9 and sp rounded from it, as clang writes it.
+        char mask[32];
+        std::snprintf(mask, sizeof mask, "#0x%llx", static_cast<unsigned long long>(-static_cast<long long>(realign_)));
+        movImm("x9", frame);
+        out_ << "  sub x9, sp, x9\n  and sp, x9, " << mask << "\n  mov x19, sp\n";
+    } else if (frame > 0) {
         movImm("x9", frame);
         out_ << "  sub sp, sp, x9\n";
     }
@@ -1103,8 +1149,7 @@ void Arm64Darwin::emitFunction(const Function &fn) {
 
     sretSlot_ = fn.sretSlot();
     if (sretSlot_ != 0) {
-        movImm("x9", sretSlot_);
-        out_ << "  sub x9, x29, x9\n";
+        localIn("x9", sretSlot_);
         out_ << "  str x8, [x9]\n";
     }
 
@@ -1124,8 +1169,7 @@ void Arm64Darwin::emitFunction(const Function &fn) {
             const bool inRegister = pl.inRegister;
             const int from = pl.stackOffset;
 
-            movImm("x9", ps[i].offset);
-            out_ << "  sub x9, x29, x9\n";
+            localIn("x9", ps[i].offset);
 
             if (!inRegister) {
                 out_ << "  mov x11, x9\n";
@@ -1151,8 +1195,7 @@ void Arm64Darwin::emitFunction(const Function &fn) {
             }
             continue;
         }
-        movImm("x9", ps[i].offset);
-        out_ << "  sub x9, x29, x9\n";
+        localIn("x9", ps[i].offset);
 
         if (!pl.inRegister) {
             out_ << "  mov x11, x9\n";
@@ -1175,7 +1218,7 @@ void Arm64Darwin::emitFunction(const Function &fn) {
     std::vector<std::string> saved;
     const Type *ret = fn.returns();
     const bool resultInX = ret != nullptr && !ret->isVoid() && !ret->isFloating();
-    const std::string body = a64Peephole(out_.str(), optimize_, promote ? &saved : nullptr, resultInX);
+    const std::string body = a64Peephole(out_.str(), realign_ > 0 ? 0 : optimize_, promote ? &saved : nullptr, resultInX);
     out_.str(std::string());
     out_ << head;
     // Each register a promoted local took is saved below the locals, where the unwinder is told to find it.
@@ -1190,6 +1233,7 @@ void Arm64Darwin::emitFunction(const Function &fn) {
     out_ << returnLabel_ << ":\n";
     for (std::size_t i = 0; i < saved.size(); i++)
         out_ << "  mov x9, #" << (locals + 8 * static_cast<int>(i + 1)) << "\n  sub x9, x29, x9\n  ldr " << saved[i] << ", [x9]\n";
+    if (realign_ > 0) out_ << "  ldur x19, [x29, #-16]\n";
     out_ << "  mov sp, x29\n";
     out_ << "  ldp x29, x30, [sp], #16\n";
     out_ << "  ret\n";
@@ -1197,6 +1241,8 @@ void Arm64Darwin::emitFunction(const Function &fn) {
     // the last call-site range measures up to it.
     if (lineSource() || !callSites().empty())
         out_ << "Lfunc.end." << fn.symbol() << ":\n";
+    // The records measure from x19, DWARF's register 19, up to the top of a realigned frame.
+    if (lineSource() && realign_ > 0) { dwarfFns_.back().frameBaseReg = 19; dwarfFns_.back().frameBias = top_; }
     out_ << "  .cfi_endproc\n";
     if (!callSites().empty()) {
         emitLsda(fn.symbol());
@@ -1207,6 +1253,40 @@ void Arm64Darwin::emitFunction(const Function &fn) {
 
 void Arm64Darwin::emitLoc(int file, int line, int column) {
     out_ << "  .loc " << file << " " << line << " " << column << "\n";
+}
+
+// **The wrappers as clang writes them on Darwin**: `_ZTW` only for the objects this unit defines
+// (a unit reaching another's calls the defining unit's), global and strong; `_ZTH` an alias of a
+// shell round `__tls_init` keeping every register but x0, x9, x16, x17 - what its callers rely on.
+void Arm64Darwin::emitTlsWrappers(const Program &program) {
+    bool dynamic = false;
+    for (const TlsWrapper &w : program.tlsWrappers) {
+        if (!w.definedHere) continue;
+        if (w.dynamicInit) dynamic = true;
+        const std::string name = tlsWrapperName(w.symbol);
+        out_ << "  .section __TEXT,__text,regular,pure_instructions\n";
+        if (!w.internal) out_ << "  .globl _" << name << "\n";
+        out_ << "  .p2align 2\n_" << name << ":\n  .cfi_startproc\n  stp x29, x30, [sp, #-16]!\n  mov x29, sp\n"
+                "  .cfi_def_cfa w29, 16\n  .cfi_offset w30, -8\n  .cfi_offset w29, -16\n";
+        if (w.dynamicInit) out_ << "  bl _" << tlsInitName(w.symbol) << "\n";
+        out_ << "  adrp x0, _" << w.symbol << "@TLVPPAGE\n  ldr x0, [x0, _" << w.symbol << "@TLVPPAGEOFF]\n"
+                "  ldr x9, [x0]\n  blr x9\n  ldp x29, x30, [sp], #16\n  ret\n  .cfi_endproc\n";
+    }
+    if (!dynamic) return;
+    static const char *const saved[] = {
+        "x1, x2", "x3, x4", "x5, x6", "x7, x8", "x10, x11", "x12, x13", "x14, x15", "x16, x17",
+        "d0, d1", "d2, d3", "d4, d5", "d6, d7", "d16, d17", "d18, d19", "d20, d21", "d22, d23",
+        "d24, d25", "d26, d27", "d28, d29", "d30, d31" };
+    const std::string fast = "___tls_init_fast";
+    out_ << "  .section __TEXT,__text,regular,pure_instructions\n  .p2align 2\n" << fast
+         << ":\n  .cfi_startproc\n  sub sp, sp, #336\n  stp x29, x30, [sp, #320]\n  add x29, sp, #320\n"
+            "  .cfi_def_cfa w29, 16\n  .cfi_offset w30, -8\n  .cfi_offset w29, -16\n";
+    for (int i = 0; i < 20; i++) out_ << "  stp " << saved[i] << ", [sp, #" << 16 * i << "]\n";
+    out_ << "  bl _" << program.tlsInitFunction << "\n";
+    for (int i = 19; i >= 0; i--) out_ << "  ldp " << saved[i] << ", [sp, #" << 16 * i << "]\n";
+    out_ << "  ldp x29, x30, [sp, #320]\n  add sp, sp, #336\n  ret\n  .cfi_endproc\n";
+    for (const TlsWrapper &w : program.tlsWrappers)
+        if (w.definedHere && w.dynamicInit) out_ << "_" << tlsInitName(w.symbol) << " = " << fast << "\n";
 }
 
 void Arm64Darwin::run(const Program &program) {
@@ -1222,12 +1302,15 @@ void Arm64Darwin::run(const Program &program) {
 
     emitData(program);
     for (const Function &fn : program.functions) emitFunction(fn);
+    emitTlsWrappers(program);
     // Measured from clang: the init function's address in __mod_init_func.
     if (!program.initFunction.empty())
         out_ << "  .section __DATA,__mod_init_func,mod_init_funcs\n"
                 "  .p2align 3, 0x0\n  .quad _" << program.initFunction << "\n";
     if (const Source *src = lineSource()) {
         for (const Global &g : program.globals) {
+            // A thread_local has no address the records could hold: not described yet.
+            if (g.isThreadLocal) continue;
             DwarfGlobal dg;
             dg.name = g.name;
             dg.symbol = g.symbol;

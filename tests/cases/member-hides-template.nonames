@@ -1,0 +1,2 @@
+x86_64-linux  clang zeroes `Mx<3> m = {}` with a call to memset where cxx1 writes the stores inline; every other name agrees with clang.
+x86_64-windows  the same: clang calls memset for the zeroing cxx1 writes inline.

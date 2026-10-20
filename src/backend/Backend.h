@@ -24,9 +24,16 @@ public:
     virtual void setOptimizeForSize(bool size) { (void)size; }
 };
 
-enum class Segment { Code, Const, ConstRelocated, Data, Bss };
+// TlsData and TlsBss hold a thread_local's template, which every thread gets a copy of.
+enum class Segment { Code, Const, ConstRelocated, Data, Bss, TlsData, TlsBss };
 
 Segment segmentFor(const Global &g);
+
+// **A thread_local's Itanium wrapper and initialiser**, `_ZTW` and `_ZTH` before the variable's own
+// encoding - what follows its `_Z`, or its name as a <source-name> where it has no `_Z`. Measured
+// from clang: `_ZTW1t` for `t`, `_ZTWN2ns1nE` for `ns::n`, `_ZTWL1s` for a `static` one.
+std::string tlsWrapperName(const std::string &symbol);
+std::string tlsInitName(const std::string &symbol);
 
 // **Which assembler x86_64-windows is written for**, the one target with a choice: GNU syntax for clang; MASM for the project's own assembler, which reads `SEGMENT ... COMDAT`; or MASM without COMDAT for ml64, which cannot, and so links one translation unit at a time. The other targets ignore it.
 enum class Syntax { Gnu, Masm, Ml64 };
@@ -50,6 +57,9 @@ public:
 };
 
 std::vector<std::pair<std::string, std::string> > predefinedMacros(const Backend &b);
+
+// A name past ASCII quoted for GNU as, `"_caf\u00e9"@PAGE` in UTF-8; tms6747's refusal, or empty.
+std::string spellWideNames(const Backend &b, std::string *text);
 
 const Backend *findBackend(const std::string &name);
 const Backend &defaultBackend();

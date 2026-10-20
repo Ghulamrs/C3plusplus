@@ -10,6 +10,16 @@
 #include <cstring>
 
 // **The initialiser inside `(...)` of a direct-initialised scalar.**
+// [dcl.constexpr]/9: a local object of class type is folded from the statements that build it at run time.
+void Parser::foldLocalObject(const Declared &d, int off, const std::vector<StmtPtr> &inits, std::size_t from) {
+    std::vector<const Stmt *> steps;
+    for (std::size_t k = from; k < inits.size(); k++) steps.push_back(inits[k].get());
+    const std::unique_ptr<Var> self(Var::local(d.name, off));
+    ConstObject value;
+    if (!foldDeclaredObject(steps, *self, &value, d.pos)) refuseConstexprClassObject(d.name, d.pos);
+    constObjects_[constObjectKey(*self)] = value;
+}
+
 Parser::Init Parser::parenthesisedInitialiser(const Declared &d) {
     expect("(");
     Init in;
@@ -68,6 +78,9 @@ StmtPtr Parser::declarationBody() {
     Qualifiers quals;
     const std::size_t specStart = at_;
     const Type *base = specifiers(&sc, &quals);
+    // [dcl.stc]/4: a block-scope thread_local has static storage whether or not `static` is written.
+    if (quals.isThreadLocal && sc == StorageNone) sc = StorageStatic;
+    const ThreadLocalObject tlo(this, quals.isThreadLocal);
 
     if (peek().is(";")) {
         // [class.union]/5: a nameless union's members are locals sharing one slot; a nameless struct is refused.
@@ -85,6 +98,7 @@ StmtPtr Parser::declarationBody() {
     if (sc == StorageTypedef) {
         do {
             Declared td = declarator(base);
+            refuseThreadLocalHere(quals.isThreadLocal, td.pos);
             typedefFunctionSuffix(td);
             // [dcl.typedef]/2 lets a typedef-name be redeclared to the same type,
             // which is what makes the C idiom "typedef struct S S;" legal now that
@@ -119,6 +133,14 @@ StmtPtr Parser::declarationBody() {
             declareStaticLocal(d.name, d.type, d.pos,
                                seen != nullptr ? seen->symbol
                                                : dataSymbol(d.name, d.type, false, d.pos));
+            // `extern thread_local int t;` in a block: reached through its wrapper, as at file scope.
+            if (seen != nullptr && seen->isThreadLocal != quals.isThreadLocal)
+                src_.fail(d.pos, std::string(quals.isThreadLocal ? "thread-local" : "non-thread-local") +
+                                 " declaration of '" + d.name + "' follows " +
+                                 (quals.isThreadLocal ? "non-thread-local" : "thread-local") + " declaration");
+            locals_.back().isThreadLocal = quals.isThreadLocal;
+            locals_.back().tlsViaWrapper = quals.isThreadLocal;
+            if (quals.isThreadLocal) fnVars_.pop_back();
         } while (consume(","));
         expect(";");
         return StmtPtr(new Block({}));
@@ -176,7 +198,9 @@ StmtPtr Parser::declarationBody() {
             const bool arrayDtor = d.type->isArray() && plain != nullptr &&
                 plain->isStructOrUnion() && !plain->tag().empty() &&
                 destructorOf(plain) != nullptr;
-            if (arrayCtor || arrayDtor) {
+            // An array of aggregates from a list is filled member by member, [dcl.init.aggr].
+            const bool aggregates = arrayCtor && !arrayDtor && isAggregateClass(plain) && bracedInitialiserAhead();
+            if ((arrayCtor || arrayDtor) && !aggregates) {
                 // [stmt.dcl]/4: a static one is built once, under a guard,
                 // and its elements destroyed at exit - as one object is.
                 if (sc == StorageStatic) {
@@ -231,7 +255,7 @@ StmtPtr Parser::declarationBody() {
         }
 
         if (d.type->isStructOrUnion() && !d.type->tag().empty() &&
-            hasConstructors(d.type->tag())) {
+            hasConstructors(d.type->tag()) && !(isAggregateClass(d.type) && bracedInitialiserAhead())) {
             // [stmt.dcl]/4: a static one is built the first time control
             // passes through, under a guard, and destroyed at exit.
             if (sc == StorageStatic) {
@@ -249,6 +273,7 @@ StmtPtr Parser::declarationBody() {
             // that reads them - a list-init only.
             for (std::size_t z = 0; z < ci.ilSetup.size(); z++)
                 inits.push_back(std::move(ci.ilSetup[z]));
+            const std::size_t builtFrom = inits.size();
 
             // **Copy elision, in the one case worth having it**: where the initialiser is a call
             // already returning through a hidden pointer, the object is built straight into this
@@ -272,6 +297,7 @@ StmtPtr Parser::declarationBody() {
                 inits.push_back(constructLocal(d, off, std::move(ci.args),
                                                ci.copyInit, ci.valueInit));
             }
+            if (quals.isConstexpr) foldLocalObject(d, off, inits, builtFrom);
             flushTemporaries(inits);
             if (destructorOf(d.type) != nullptr)
                 alive_.push_back(Alive{ d.name, off, d.type->unqualified() });
@@ -343,12 +369,15 @@ StmtPtr Parser::declarationBody() {
                 std::vector<StmtPtr> body;
                 const bool early = initialiserNames(d.name);
                 if (early) declareStaticLocal(d.name, d.type, d.pos, symbol);
+                const std::size_t mine = locals_.size() - 1;
                 bindStaticReference(d, symbol, pieces, hasInit, &body);
                 if (!early) declareStaticLocal(d.name, d.type, d.pos, symbol);
+                markThreadLocal(early ? mine : locals_.size() - 1, quals.isThreadLocal);
                 current_->globals.push_back(Global{ symbol, symbol,
                                                     types_.pointerTo(d.type->referent()),
                                                     std::move(pieces), hasInit,
                                                     true, false });
+                current_->globals.back().isThreadLocal = quals.isThreadLocal;
                 if (!body.empty())
                     inits.push_back(guardOnce(symbol, std::move(body)));
                 continue;
@@ -423,12 +452,14 @@ StmtPtr Parser::declarationBody() {
             const std::size_t at = early ? mine : locals_.size();
             if (!early) declareStaticLocal(d.name, d.type, d.pos, symbol);
             locals_[at].isConst = d.type->isConst();
+            markThreadLocal(at, quals.isThreadLocal);
             // Not `isConst` where the guarded store writes it: it cannot live in .rodata.
             current_->globals.push_back(Global{ symbol, symbol, d.type,
                                                 std::move(pieces), hasInit, true,
                                                 locals_[at].isConst &&
                                                     dynamic.value == nullptr });
             current_->globals.back().align = quals.alignAs;
+            current_->globals.back().isThreadLocal = quals.isThreadLocal;
             if (dynamic.value != nullptr) {
                 std::vector<StmtPtr> body;
                 std::vector<InitStep> path;
@@ -482,6 +513,8 @@ StmtPtr Parser::declarationBody() {
                 // A const floating local reads back the same way a global does.
                 locals_[mine].isConstantDouble = true;
                 locals_[mine].constantDouble = dvalue;
+            } else if (quals.isConstexpr && d.type->innermostElement()->unqualified()->isStructOrUnion()) {
+                if (d.type->isArray()) refuseConstexprClassObject(d.name, d.pos);
             } else if (quals.isConstexpr) {
                 src_.fail(d.pos, "'" + d.name + "' is 'constexpr', so its value "
                                  "has to be known while this is compiled, and "
@@ -500,7 +533,9 @@ StmtPtr Parser::declarationBody() {
 
         if (hasInit) {
             std::vector<InitStep> path;
+            const std::size_t built = inits.size();
             emitInit(d.name, path, d.type, in, inits);
+            if (quals.isConstexpr && d.type->unqualified()->isStructOrUnion()) foldLocalObject(d, off, inits, built);
         }
         flushTemporaries(inits);
     } while (!conditionDecl_ && consume(","));
@@ -960,25 +995,25 @@ StmtPtr Parser::forStatement() {
 
     leaveBlock();
     leaveScope();
-    For *f = new For(std::move(init), std::move(cond),
-                     std::move(step), std::move(body));
-    f->setScope(scope);
-    if (alive_.size() == aliveAtEntry) return StmtPtr(f);
+    if (alive_.size() == aliveAtEntry) {
+        For *f = new For(std::move(init), std::move(cond), std::move(step), std::move(body));
+        f->setScope(scope);
+        return StmtPtr(f);
+    }
 
-    // **`for (S s; ...)` destroys s when the loop is done**, here, the way a block
-    // destroys what it built at its '}'. It used to stay on alive_ and be destroyed by
-    // the enclosing block instead - once, but late, and after all that block did.
-    if (functionHasTry_ || inTryBody_)
-        src_.fail(pos, "a local with a destructor and a 'try' in one "
-                       "function is not supported yet - each is a range in "
-                       "the call-site table and one would have to split "
-                       "the other");
+    // **`for (S s; ...)` destroys s when the loop is done**, the way a block destroys what it built
+    // at its '}' - and on the way out of an exception, so the init stands in front of the loop, in
+    // the statement's scope, and the loop is a cleanup region from there, as an `if`'s condition is.
     std::vector<StmtPtr> steps;
-    steps.push_back(StmtPtr(f));
+    steps.push_back(std::move(init));
+    steps.push_back(StmtPtr(new For(StmtPtr(), std::move(cond), std::move(step), std::move(body))));
+    const std::vector<std::pair<std::size_t, std::size_t> > built(1, std::make_pair(std::size_t(1), alive_.size()));
     emitDestructors(steps, aliveAtEntry, pos);
+    steps = target_.microsoftNames() ? wrapMsCleanups(std::move(steps), built, aliveAtEntry, pos)
+                                     : wrapCleanups(std::move(steps), built, aliveAtEntry, pos);
     alive_.resize(aliveAtEntry);
     Block *b = new Block(std::move(steps));
-    b->setScope(-1);
+    b->setScope(scope);
     return StmtPtr(b);
 }
 
@@ -1076,7 +1111,7 @@ StmtPtr Parser::gotoLabel() {
     for (const LabelDef &l : labels_)
         if (l.name == name)
             src_.fail(pos, "label '" + name + "' is defined twice in this function");
-    labels_.push_back(LabelDef{ name, pos, jumpGuards(), alive_, nullptr });
+    labels_.push_back(LabelDef{ name, pos, jumpGuards(), alive_, nullptr, true, std::string() });
 
     // A declaration is a statement in C++, so a label may stand before one;
     // the rule that it may not was C's (the cl review's A10).
@@ -1092,7 +1127,10 @@ StmtPtr Parser::gotoLabel() {
 std::vector<Parser::JumpGuard> Parser::jumpGuards() const {
     std::vector<JumpGuard> out;
     for (const Local &l : locals_)
-        if (l.guardsJump) out.push_back(JumpGuard{ l.name, l.serial });
+        if (l.guardsJump) out.push_back(JumpGuard{ l.name, l.serial, 0 });
+    // An open `try` block or handler, keyed by where it begins: no local's serial is negative.
+    for (std::size_t p : tryFrom_) out.push_back(JumpGuard{ "", -2 * static_cast<int>(p) - 1, 1 });
+    for (std::size_t p : handlerFrom_) out.push_back(JumpGuard{ "", -2 * static_cast<int>(p) - 2, 2 });
     return out;
 }
 
@@ -1175,6 +1213,10 @@ void Parser::checkJump(const std::vector<JumpGuard> &from,
         for (const JumpGuard &f : from)
             if (f.serial == g.serial) { inScopeAtOrigin = true; break; }
         if (inScopeAtOrigin) continue;
+        if (g.region != 0)
+            src_.fail(pos, jump + " enters a " + (g.region == 1 ? "'try' block" : "'catch' handler") +
+                           " from outside it - [except.handle]/2 lets a jump leave one and never "
+                           "enter it; put the label outside it");
         src_.fail(pos, jump + " jumps past the initialisation of '" + g.name +
                        "', which is in scope at the label and not at " +
                        origin + " - a jump may not enter the scope of a "
@@ -1184,6 +1226,22 @@ void Parser::checkJump(const std::vector<JumpGuard> &from,
                        g.name + "' before " + origin + ", or put it in a "
                        "block that ends before the label");
     }
+}
+
+// **The jump destroys what it leaves, and cannot yet know what that is**: a forward label has not
+// been read, so the goto is an empty block resolveGotos() fills, destructors and jump alike.
+StmtPtr Parser::gotoStatement(const std::string &name, std::size_t pos, bool destroys) {
+    Block *cleanups = new Block({});
+    cleanups->setScope(-1);
+    LabelDef g{ name, pos, jumpGuards(), alive_, cleanups, destroys, std::string() };
+    // Inside a Microsoft handler the jump may leave the funclet, by an exit its `try` places after it.
+    if (inMsHandler_ && msExit_ != nullptr) {
+        std::string exit;
+        g.msExit = msExitLabel(exit, "goto");
+        msExit_->gotos.push_back(std::make_pair(g.msExit, name));
+    }
+    gotos_.push_back(g);
+    return StmtPtr(cleanups);
 }
 
 void Parser::resolveGotos() {
@@ -1199,7 +1257,7 @@ void Parser::resolveGotos() {
         // **A goto out of a scope destroys what it leaves**, innermost first, in the
         // block left in front of the Goto for them: alive at the goto and not at the
         // label is left behind, alive at both is stayed inside. Never twice.
-        for (std::size_t i = g.alive.size(); i > 0; i--) {
+        for (std::size_t i = g.destroys ? g.alive.size() : 0; i > 0; i--) {
             const Alive &a = g.alive[i - 1];
             bool atLabel = false;
             for (const Alive &b : target->alive)
@@ -1210,14 +1268,30 @@ void Parser::resolveGotos() {
             for (std::size_t k = 0; k < call.size(); k++)
                 g.cleanups->append(std::move(call[k]));
         }
+        // **And it ends the handling of each handler it leaves**, [except.handle]/16: a call each on
+        // Itanium; a Microsoft funclet is left for the exit its parent jumps on from.
+        int leaves = 0;
+        for (const JumpGuard &f : g.guards) {
+            bool kept = f.region != 2;
+            for (const JumpGuard &t : target->guards) kept = kept || t.serial == f.serial;
+            leaves += kept ? 0 : 1;
+        }
+        if (leaves > 0 && !g.msExit.empty()) {
+            g.cleanups->append(StmtPtr(new FuncletLeave(g.msExit)));
+            continue;
+        }
+        std::vector<StmtPtr> ends;
+        endCatches(ends, leaves);
+        for (std::size_t k = 0; k < ends.size(); k++) g.cleanups->append(std::move(ends[k]));
+        g.cleanups->append(StmtPtr(new Goto(g.name)));
     }
     labels_.clear();
     gotos_.clear();
 }
 
-StmtPtr Parser::block() {
+StmtPtr Parser::block(bool functionTry) {
     std::size_t pos = peek().pos;
-    expect("{");
+    if (!functionTry) expect("{");
     enterScope();
     // A `using namespace` written inside this block reaches the '}' and no
     // further - [namespace.udir]/2 - so the list is cut back to what it held
@@ -1242,7 +1316,7 @@ StmtPtr Parser::block() {
     std::vector<Temporary> temps;
     std::vector<Temporary> outer;
     outer.swap(statementTemps_);
-    while (!peek().is("}")) {
+    while (functionTry ? body.empty() : !peek().is("}")) {
         if (peek().kind == TokenKind::End)
             src_.fail(peek().pos, "unclosed '{'");
         const std::size_t aliveBefore = alive_.size();
@@ -1286,7 +1360,7 @@ StmtPtr Parser::block() {
     alive_.resize(aliveAtEntry);
     usingNamespaces_.resize(usingAtEntry);
 
-    expect("}");
+    if (!functionTry) expect("}");
     if (!isBody) leaveBlock();
     leaveScope();
     Block *b = new Block(std::move(body));
@@ -1304,7 +1378,8 @@ StmtPtr Parser::statement() {
 }
 
 // **`try` is a block, a landing pad, and no new statement machinery.**
-StmtPtr Parser::tryStatement(std::size_t pos) {
+StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bodyFn, bool rethrows,
+                             const std::string &spec) {
     // What is alive when the `try` is reached.
     const std::size_t aliveOutside = alive_.size();
     // **The two ABIs disagree about who picks the handler**, so this reads one grammar
@@ -1356,9 +1431,11 @@ StmtPtr Parser::tryStatement(std::size_t pos) {
 
     const bool wasInTry = inTryBody_;
     inTryBody_ = true;
-    if (!peek().is("{"))
+    if (!bodyFn && !peek().is("{"))
         src_.fail(peek().pos, "'try' takes a block");
-    StmtPtr body = block();
+    tryFrom_.push_back(peek().pos);
+    StmtPtr body = bodyFn ? bodyFn() : block();
+    tryFrom_.pop_back();
     inTryBody_ = wasInTry;
     handlerResumeLabel_ = wasHandlerLabel;
     handlerResumePtr_ = wasHandlerPtr;
@@ -1373,7 +1450,7 @@ StmtPtr Parser::tryStatement(std::size_t pos) {
     tryChainSelectorSlot_ = wasSel;
     tryChainAliveFrom_ = wasAliveFrom;
 
-    if (!peek().is("catch"))
+    if (spec.empty() && !peek().is("catch"))
         src_.fail(peek().pos, "a 'try' needs at least one 'catch'");
 
     // Read the handlers innermost-last, so the chain can be built from the
@@ -1390,7 +1467,12 @@ StmtPtr Parser::tryStatement(std::size_t pos) {
     std::vector<std::string> types;
     bool sawCatchAll = false;
 
-    while (peek().is("catch")) {
+    // **A `throw(T...)` list is a handler of no type of its own**: the table's filter, the selector negative.
+    if (!spec.empty()) {
+        types.push_back(spec);
+        indices.push_back(-1);
+    }
+    while (spec.empty() && peek().is("catch")) {
         const std::size_t cpos = peek().pos;
         at_++;
         expect("(");
@@ -1657,7 +1739,19 @@ StmtPtr Parser::tryStatement(std::size_t pos) {
             handlerResumePtr_ = padPtr;
             handlerResumeSel_ = padSel;
         }
+        const bool wasCtorHandler = inCtorTryHandler_;
+        inCtorTryHandler_ = rethrows;
         StmtPtr handlerBody = block();
+        inCtorTryHandler_ = wasCtorHandler;
+        // [except.handle]/15: flowing off the end of a constructor's function-try handler rethrows.
+        if (rethrows) {
+            mayThrow_++;
+            std::vector<StmtPtr> then;
+            then.push_back(std::move(handlerBody));
+            then.push_back(StmtPtr(new ExprStmt(runtimeCall("__cxa_rethrow", types_.get(Kind::Void),
+                                                            std::vector<ExprPtr>()))));
+            handlerBody = StmtPtr(new Block(std::move(then)));
+        }
         handlerResumeLabel_ = wasHandlerLabel2;
         handlerResumePtr_ = wasHandlerPtr2;
         handlerResumeSel_ = wasHandlerSel2;
@@ -1735,11 +1829,19 @@ StmtPtr Parser::tryStatement(std::size_t pos) {
         // FuncInfo's dispUnwindHelp and the parent sets to -2 on entry. A frame slot
         // like any other, so where it lives is decided where every local's is.
         t->setUnwindHelpSlot(msUnwindHelp());
-        if (msExit.ret.empty() && msExit.brk.empty() && msExit.cont.empty())
+        std::vector<std::pair<std::string, std::string> > gotoExits;
+        // A goto to a label inside this `try` statement never leaves its funclet, so it needs no exit.
+        for (const std::pair<std::string, std::string> &e : msExit.gotos) {
+            bool inside = false;
+            for (const LabelDef &l : labels_) inside = inside || (l.name == e.second && l.pos >= pos);
+            if (!inside) gotoExits.push_back(e);
+        }
+        if (msExit.ret.empty() && msExit.brk.empty() && msExit.cont.empty() && gotoExits.empty())
             return StmtPtr(t);
         std::vector<std::string> exits;
         for (const std::string *e : { &msExit.ret, &msExit.brk, &msExit.cont })
             if (!e->empty()) exits.push_back(*e);
+        for (const std::pair<std::string, std::string> &e : gotoExits) exits.push_back(e.first);
         t->setMsExits(std::move(exits));
         // **Where a handler's early exit carries on**: the funclet handed back one
         // of these labels, and the parent does here what the handler could not.
@@ -1759,6 +1861,9 @@ StmtPtr Parser::tryStatement(std::size_t pos) {
             after.push_back(StmtPtr(new Label(msExit.brk, StmtPtr(new Break()))));
         if (!msExit.cont.empty())
             after.push_back(StmtPtr(new Label(msExit.cont, StmtPtr(new Continue()))));
+        // The funclet destroyed what the jump left, so the parent's half only jumps on.
+        for (const std::pair<std::string, std::string> &e : gotoExits)
+            after.push_back(StmtPtr(new Label(e.first, gotoStatement(e.second, pos, false))));
         after.push_back(StmtPtr(new Label(skip, StmtPtr(new Block({})))));
         Block *b = new Block(std::move(after));
         b->setScope(-1);
@@ -1781,6 +1886,21 @@ StmtPtr Parser::tryStatement(std::size_t pos) {
     if (beyondTry.empty()) resume.push_back(resumeUnwinding(pointerSlot));
     else                   resume.push_back(StmtPtr(new Goto(beyondTry)));
     StmtPtr chain = unwindPad(std::move(resume));
+    // [except.unexpected]: an exception the list does not allow, once this frame is unwound.
+    if (!spec.empty()) {
+        std::vector<ExprPtr> args;
+        ExprPtr ptr(Var::local(".ex.ptr", pointerSlot));
+        ptr->setType(voidPtr);
+        args.push_back(std::move(ptr));
+        StmtPtr unexpected(new ExprStmt(runtimeCall("__cxa_call_unexpected", types_.get(Kind::Void), std::move(args))));
+        ExprPtr sel(Var::local(".ex.sel", selectorSlot));
+        sel->setType(types_.intType());
+        ExprPtr zero(new Num(0LL));
+        zero->setType(types_.intType());
+        ExprPtr test(new Binary(BinOp::Lt, std::move(sel), std::move(zero)));
+        test->setType(types_.intType());
+        chain = StmtPtr(new If(std::move(test), std::move(unexpected), std::move(chain)));
+    }
 
     for (std::size_t i = handlers.size(); i-- > 0; ) {
         if (handlers[i].type.empty()) {          // catch (...) matches always
@@ -1906,6 +2026,9 @@ StmtPtr Parser::statementBody() {
     // saved in the parent's frame and the parent returning it at the label.
     const bool leavesFunclet = inMsHandler_ && msExit_ != nullptr &&
                                deducingReturn_ == nullptr;
+    if (peek().is("return") && inCtorTryHandler_)
+        src_.fail(peek().pos, "a handler of a constructor's function try block cannot 'return' - "
+                              "[except.handle]/13; it ends by rethrowing, or by a 'throw' of its own");
     if (consume("return")) {
         std::size_t pos = peek().pos;
         // **A lambda's body, read to find what it returns**: the operand's
@@ -2153,11 +2276,6 @@ StmtPtr Parser::statementBody() {
         // What the condition built is destroyed at the end of the statement,
         // the way a block destroys what it built at its '}'.
         if (alive_.size() != aliveAtEntry) {
-            if (functionHasTry_ || inTryBody_)
-                src_.fail(pos, "a local with a destructor and a 'try' in one "
-                               "function is not supported yet - each is a "
-                               "range in the call-site table and one would "
-                               "have to split the other");
             emitDestructors(setup, aliveAtEntry, pos);
             setup = target_.microsoftNames()
                         ? wrapMsCleanups(std::move(setup), built,
@@ -2232,35 +2350,7 @@ StmtPtr Parser::statementBody() {
         std::size_t pos = peek().pos;
         std::string name = expectIdent("a label to jump to");
         expect(";");
-        // **A `goto` out of a handler ends the handling** -
-        // [except.handle]/16, the same sentence `return`, `break` and
-        // `continue` answer above - and this one cannot.
-        if (handlerDepth_ > 0) {
-            bool insideHandler = false;
-            for (std::size_t i = 0; i < labels_.size(); i++)
-                if (labels_[i].name == name && labels_[i].pos >= handlerFrom_.back())
-                    insideHandler = true;
-            if (!insideHandler)
-                src_.fail(pos, "'goto " + name + "' leaves a 'catch' block, "
-                               "which is not supported yet - leaving a handler "
-                               "ends the handling, and the call that ends it "
-                               "is emitted where the jump is written, which a "
-                               "label this compiler has not read yet cannot "
-                               "have. A 'return' out of a handler works, and "
-                               "so does a 'goto' to a label inside it");
-        }
-        // **The jump destroys what it leaves, and cannot yet know what that is**: a
-        // forward label has not been read. So the goto is placed behind an empty block
-        // that resolveGotos() fills. What is alive here is copied now, not later.
-        Block *cleanups = new Block({});
-        cleanups->setScope(-1);
-        gotos_.push_back(LabelDef{ name, pos, jumpGuards(), alive_, cleanups });
-        std::vector<StmtPtr> steps;
-        steps.push_back(StmtPtr(cleanups));
-        steps.push_back(StmtPtr(new Goto(std::move(name))));
-        Block *b = new Block(std::move(steps));
-        b->setScope(-1);
-        return StmtPtr(b);
+        return gotoStatement(name, pos, true);
     }
 
     if (peek().kind == TokenKind::Ident && peekAt(1).is(":")) return gotoLabel();

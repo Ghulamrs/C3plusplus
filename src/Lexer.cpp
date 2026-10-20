@@ -3,6 +3,7 @@
 
 #include <cctype>
 #include <cerrno>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -79,9 +80,110 @@ static void appendUtf8(std::string &text, long long cp) {
     text.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
 }
 
+std::string Lexer::utf8(long cp) {
+    std::string out;
+    appendUtf8(out, cp);
+    return out;
+}
+
+std::size_t Lexer::universalAt(const std::string &s, std::size_t i, long *cp) {
+    if (i + 1 >= s.size() || s[i] != '\\' || (s[i + 1] != 'u' && s[i + 1] != 'U')) return 0;
+    const std::size_t digits = s[i + 1] == 'u' ? 4 : 8;
+    if (i + 2 + digits > s.size()) return 0;
+    for (std::size_t k = 0; k < digits; k++)
+        if (!std::isxdigit(static_cast<unsigned char>(s[i + 2 + k]))) return 0;
+    std::size_t at = i + 2;
+    *cp = static_cast<long>(universalName(s, at, static_cast<int>(digits)));
+    return 2 + digits;
+}
+
+// **C++11's Annex E, the letter**: clang applies UAX #31 to every mode as P1949's
+// defect report and g++ keeps these ranges, so where the two disagree this follows
+// the standard the compiler compiles - E.1 the characters allowed, E.2 not first.
+static const long kAllowed[][2] = {
+    {0xA8, 0xA8}, {0xAA, 0xAA}, {0xAD, 0xAD}, {0xAF, 0xAF}, {0xB2, 0xB5}, {0xB7, 0xBA},
+    {0xBC, 0xBE}, {0xC0, 0xD6}, {0xD8, 0xF6}, {0xF8, 0xFF}, {0x100, 0x167F},
+    {0x1681, 0x180D}, {0x180F, 0x1FFF}, {0x200B, 0x200D}, {0x202A, 0x202E},
+    {0x203F, 0x2040}, {0x2054, 0x2054}, {0x2060, 0x206F}, {0x2070, 0x218F},
+    {0x2460, 0x24FF}, {0x2776, 0x2793}, {0x2C00, 0x2DFF}, {0x2E80, 0x2FFF},
+    {0x3004, 0x3007}, {0x3021, 0x302F}, {0x3031, 0x303F}, {0x3040, 0xD7FF},
+    {0xF900, 0xFD3D}, {0xFD40, 0xFDCF}, {0xFDF0, 0xFE44}, {0xFE47, 0xFFFD},
+};
+static const long kNotInitially[][2] = {
+    {0x300, 0x36F}, {0x1DC0, 0x1DFF}, {0x20D0, 0x20FF}, {0xFE20, 0xFE2F},
+};
+
+bool Lexer::identifierCodePoint(long cp) {
+    for (const auto &r : kAllowed)
+        if (cp >= r[0] && cp <= r[1]) return true;
+    // E.1/8: every plane past the first, its last two code points excepted.
+    return cp >= 0x10000 && cp <= 0xEFFFD && (cp & 0xFFFF) <= 0xFFFD;
+}
+
+static bool notInitially(long cp) {
+    for (const auto &r : kNotInitially)
+        if (cp >= r[0] && cp <= r[1]) return true;
+    return false;
+}
+
+// One well-formed UTF-8 sequence at i, its code point; -1 for a malformed one.
+static long decodeUtf8(const std::string &s, std::size_t &i) {
+    const unsigned char b = static_cast<unsigned char>(s[i]);
+    const int more = b >= 0xF0 && b <= 0xF4 ? 3 : b >= 0xE0 ? (b < 0xF0 ? 2 : -1)
+                   : b >= 0xC2 ? 1 : -1;
+    if (more < 0 || i + more >= s.size()) return -1;
+    long cp = b & (0x3F >> more);
+    for (int k = 1; k <= more; k++) {
+        const unsigned char c = static_cast<unsigned char>(s[i + k]);
+        if ((c & 0xC0) != 0x80) return -1;
+        cp = (cp << 6) | (c & 0x3F);
+    }
+    static const long kLeast[] = { 0, 0x80, 0x800, 0x10000 };
+    if (cp < kLeast[more] || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) return -1;
+    i += more + 1;
+    return cp;
+}
+
+void Lexer::identifierCharacter(const std::string &s, std::size_t &i, std::string *text,
+                                bool first) const {
+    const std::size_t at = i;
+    long cp = 0;
+    if (s[i] == '\\') {
+        const std::size_t n = universalAt(s, i, &cp);
+        if (n == 0)
+            src_.fail(at, "an incomplete universal character name - '\\u' takes four hex "
+                          "digits and '\\U' eight, [lex.charset]/2");
+        // [lex.charset]/2: a surrogate is no character, and outside a literal neither a
+        // control nor a basic source character may be named this way.
+        if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF))
+            src_.fail(at, "'" + s.substr(at, n) + "' is not a valid universal character "
+                          "name - [lex.charset]/2");
+        if (cp <= 0x1F || (cp >= 0x7F && cp <= 0x9F) ||
+            (cp < 0x7F && cp != '$' && cp != '@' && cp != '`'))
+            src_.fail(at, "'" + s.substr(at, n) + "' names a basic source or control "
+                          "character, which only a literal may - [lex.charset]/2");
+        i += n;
+    } else {
+        cp = decodeUtf8(s, i);
+        if (cp < 0)
+            src_.fail(at, "this byte does not begin a UTF-8 character, and the source is read "
+                          "as UTF-8");
+    }
+    char hex[16];
+    std::snprintf(hex, sizeof hex, "%04lX", cp);
+    if (!identifierCodePoint(cp))
+        src_.fail(at, std::string("character <U+") + hex + "> is not allowed in an "
+                      "identifier - [lex.name], C++11 Annex E.1");
+    if (first && notInitially(cp))
+        src_.fail(at, std::string("character <U+") + hex + "> is not allowed at the start "
+                      "of an identifier - C++11 Annex E.2");
+    appendUtf8(*text, cp);
+}
+
 // `R"`, `LR"`, `uR"`, `UR"` and `u8R"` - a prefix only where no name runs into it.
 std::size_t Lexer::rawStringAt(const std::string &s, std::size_t i, std::string *close) {
-    if (i > 0 && (std::isalnum(static_cast<unsigned char>(s[i - 1])) || s[i - 1] == '_'))
+    if (i > 0 && (std::isalnum(static_cast<unsigned char>(s[i - 1])) || s[i - 1] == '_' ||
+                  static_cast<unsigned char>(s[i - 1]) >= 0x80))
         return 0;
     static const char *const kPrefixes[] = { "u8R\"", "LR\"", "uR\"", "UR\"", "R\"", 0 };
     for (int k = 0; kPrefixes[k] != 0; k++) {
@@ -218,6 +320,22 @@ std::vector<Token> Lexer::tokenize() {
 
     auto identStart = [](char c) { return std::isalpha(static_cast<unsigned char>(c)) || c == '_'; };
     auto identCont  = [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; };
+    auto wideStart = [](const std::string &t, std::size_t k) {
+        return static_cast<unsigned char>(t[k]) >= 0x80 ||
+               (t[k] == '\\' && k + 1 < t.size() && (t[k + 1] == 'u' || t[k + 1] == 'U'));
+    };
+    // [lex.ext]: a name run straight onto a literal is its ud-suffix; empty where none is.
+    auto suffixAt = [&](std::size_t &k) {
+        std::string name;
+        if (k >= s.size() || !(identStart(s[k]) || wideStart(s, k))) return name;
+        const std::size_t first = k;
+        while (k < s.size()) {
+            if (identCont(s[k])) name.push_back(s[k++]);
+            else if (wideStart(s, k)) identifierCharacter(s, k, &name, k == first);
+            else break;
+        }
+        return name;
+    };
 
     static const char *const three[] = { "<<=", ">>=", "->*" };
     static const char *const two[] = { "==", "!=", "<=", ">=", "<<", ">>", "&&", "||",
@@ -260,8 +378,9 @@ std::vector<Token> Lexer::tokenize() {
             t.prefix = p0 == 'u' && s[i + 1] == '8' ? '8' : (p0 == 'u' || p0 == 'U') ? p0 : 0;
             t.wide = p0 == 'L';
             t.pos = start;
-            out.push_back(std::move(t));
             i = to + rawClose.size();
+            t.udSuffix = suffixAt(i);
+            out.push_back(std::move(t));
             continue;
         }
 
@@ -315,6 +434,7 @@ std::vector<Token> Lexer::tokenize() {
             t.prefix = prefix;
             t.isChar = isChar;
             t.pos = start;
+            t.udSuffix = suffixAt(i);
             out.push_back(std::move(t));
             continue;
         }
@@ -339,6 +459,7 @@ std::vector<Token> Lexer::tokenize() {
             t.wide = wide && prefix == 0;
             t.prefix = prefix;
             t.pos = start;
+            t.udSuffix = suffixAt(i);
             out.push_back(std::move(t));
             continue;
         }
@@ -382,56 +503,79 @@ std::vector<Token> Lexer::tokenize() {
                 t.exactInDouble = exactlyADouble(s, from, i);
 
                 digitSeparator(s, i);
-                if (i < s.size() && (s[i] == 'f' || s[i] == 'F')) {
-                    t.suffixF = true; i++;
+                const std::size_t digitsEnd = i;
+                const std::string suffix = suffixAt(i);
+                if (suffix == "f" || suffix == "F") {
+                    t.suffixF = true;
                     // A `float` literal is rounded once too: through `double` it
                     // is rounded twice, 53 bits and then 24. [lex.fcon] gives the
                     // literal the value of its own type, so `strtof` is that.
                     t.dvalue = std::strtof(s.c_str() + from, nullptr);
-                } else if (i < s.size() && (s[i] == 'l' || s[i] == 'L')) {
-                    t.suffixL = true; i++;
+                } else if (suffix == "l" || suffix == "L") {
+                    t.suffixL = true;
+                } else if (!suffix.empty()) {
+                    t.udSuffix = suffix;
+                    t.spelling = s.substr(from, digitsEnd - from);
                 }
                 out.push_back(std::move(t));
                 continue;
             }
 
+            const std::size_t from = i;
             errno = 0;
             t.value = static_cast<long long>(std::strtoull(s.c_str() + i, &stop, 0));
-            if (errno == ERANGE)
-                src_.fail(i, "this integer constant does not fit any type");
+            const bool tooLarge = errno == ERANGE;
             i = static_cast<std::size_t>(stop - s.c_str());
             digitSeparator(s, i);
 
+            // The standard suffixes are the whole of the name after the digits, or it is a ud-suffix.
+            const std::size_t digitsEnd = i;
+            const std::string suffix = suffixAt(i);
             int us = 0, ls = 0;
-            while (i < s.size()) {
-                if ((s[i] == 'u' || s[i] == 'U') && us == 0) {
-                    t.suffixU = true; us++; i++;
-                } else if ((s[i] == 'l' || s[i] == 'L') && ls < 2) {
-                    ls++; i++;
+            std::size_t k = 0;
+            for (; k < suffix.size(); k++) {
+                if ((suffix[k] == 'u' || suffix[k] == 'U') && us == 0) {
+                    t.suffixU = true; us++;
+                } else if ((suffix[k] == 'l' || suffix[k] == 'L') && ls < 2) {
+                    ls++;
                     t.suffixL = true;
                     if (ls == 2) t.suffixLL = true;
                 } else {
                     break;
                 }
             }
+            if (k < suffix.size()) {
+                t.suffixU = t.suffixL = t.suffixLL = false;
+                t.udSuffix = suffix;
+                t.spelling = s.substr(from, digitsEnd - from);
+                t.tooLarge = tooLarge;
+            } else if (tooLarge) {
+                src_.fail(from, "this integer constant does not fit any type");
+            }
             out.push_back(std::move(t));
             continue;
         }
 
-        if (identStart(c)) {
+        // [lex.name]: a name may begin and go on past ASCII, in UTF-8 or as a `\u` name.
+        if (identStart(c) || wideStart(s, i)) {
             std::size_t start = i;
-            while (i < s.size() && identCont(s[i])) i++;
+            std::string name;
+            while (i < s.size()) {
+                if (identCont(s[i])) name.push_back(s[i++]);
+                else if (wideStart(s, i)) identifierCharacter(s, i, &name, i == start);
+                else break;
+            }
             // **A literal prefix is part of the literal, not a name in front
             // of one** - [lex.string].
             if (i < s.size() && (s[i] == '"' || s[i] == '\'')) {
-                const std::string pre = s.substr(start, i - start);
+                const std::string &pre = name;
                 // `L` is not here: a wide literal is read further up and
                 // works. What is left is the C++11 set plus the raw forms.
                 if (pre == "u8")
                     src_.fail(start, "a u8 character literal is C++17, and this compiler is C++11");
             }
             Token t;
-            t.text = s.substr(start, i - start);
+            t.text = name;
             // [lex.digraph]/2: an alternative token *is* its primary token from
             // here on, so nothing downstream needs a rule for the spelling.
             if (const char *primary = alternativeToken(t.text)) {
@@ -515,9 +659,6 @@ std::vector<Token> Lexer::tokenize() {
             continue;
         }
 
-        if (c == '\\' && i + 1 < s.size() && (s[i + 1] == 'u' || s[i + 1] == 'U'))
-            src_.fail(i, "a universal character name outside a literal, '\\u' in an identifier, is "
-                         "not supported yet - inside a string or character literal it is read");
         src_.fail(i, std::string("stray '") + c + "' in program");
     }
 

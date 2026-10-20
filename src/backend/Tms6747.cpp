@@ -820,8 +820,20 @@ static const std::size_t kLongScope = 0xF000;
 // phase 2 then lands once, on the pad of the barrier phase 1 found, whose
 // selector walks the chain of pads the parser built.
 void Tms6747::emitExceptionTable(const Function &fn) {
-    const std::vector<CallSite> &rows = callSites();
-    if (rows.empty() && !fn.isNoexcept()) return;
+    std::vector<CallSite> rows;
+    std::map<std::string, std::size_t> region;
+    // **A cleanup region is one scope here, unsplit**: TI's personality scans a frame's scopes in order and
+    // goes on after a cleanup from the next one at the address that threw, which pieces split around an
+    // inner region would not cover - unless a pad in it jumps to another, whose resume would run it twice.
+    for (const CallSite &c : callSites()) {
+        const bool pure = c.types.empty() && !c.terminate && !c.handsOver;
+        std::map<std::string, std::size_t>::const_iterator at = pure ? region.find(c.pad) : region.end();
+        if (at != region.end()) { rows[at->second].end = c.end; continue; }
+        if (pure) region[c.pad] = rows.size();
+        rows.push_back(c);
+    }
+    const bool states = fn.isNoexcept() || !fn.exceptionSpec().empty();
+    if (rows.empty() && !states) return;
     const std::string table = "__c6xabi_extab$" + fn.symbol();
     std::ostringstream pads;
     std::set<std::string> made;
@@ -862,17 +874,20 @@ void Tms6747::emitExceptionTable(const Function &fn) {
             t << scope << len << "\n" << scope << off << "\n"
               << "\t.ulong\t$EXTAB_LP(" << trampoline(c.pad, 0) << ")\n";
     }
-    // A noexcept function's exception specification, over the whole of it
-    // and last: no type allowed, no pad, so TI's runtime calls
+    // A function's exception specification, over the whole of it and last: the types
+    // `throw(T...)` allows - none for noexcept - and no pad, so TI's runtime calls
     // __cxa_call_unexpected - cl6x's row, with the offset's low bit set.
     const std::string fnEnd = "L." + fn.symbol() + ".fnend";
-    if (fn.isNoexcept())
-        t << scope << "$EXTAB_SCOPE(" << fnEnd << ") - $EXTAB_SCOPE(" << fn.symbol() << ")\n" << scope << "3\n\t.ulong\t0\n"
-          << "\t.symdepend\t\"__cxa_call_unexpected\", \".c6xabi.extab:" << fn.symbol() << "\"\n";
+    if (states) {
+        t << scope << "$EXTAB_SCOPE(" << fnEnd << ") - $EXTAB_SCOPE(" << fn.symbol() << ")\n" << scope << "3\n"
+          << "\t.ulong\t" << fn.exceptionSpec().size() << "\n";
+        for (const std::string &type : fn.exceptionSpec()) t << "\t.ulong\t$EXTAB_RTTI(" << type << ")\n";
+        t << "\t.symdepend\t\"__cxa_call_unexpected\", \".c6xabi.extab:" << fn.symbol() << "\"\n";
+    }
     t << "\t.ulong\t0\n\t.symdepend\t\"__c6xabi_unwind_cpp_pr" << (wide ? 2 : 3) << "\", \".c6xabi.extab:" << fn.symbol() << "\"\n";
     if (wide) needsPr2_ = true;
     out_ << pads.str() << fnEnd << ":\n" << t.str() << "\t.text\n";
-    if (fn.isNoexcept()) needsUnexpected_ = true;
+    if (states) needsUnexpected_ = true;
 }
 // A4 = (value == 0) ? 1 : 0, for the value of type t in the accumulator. A
 // floating zero is compared as a number, so -0.0 is zero and NaN is not.
@@ -1791,7 +1806,7 @@ const Function *Tms6747::inlineTarget(const Call &n) const {
     const Function &fn = *it->second;
     const std::string site = n.symbol() + " in " + (functionOf_ ? functionOf_->symbol() : std::string());
     auto decline = [&](const char *why) { if (!planning_) opt::noteDecline(why, site); return static_cast<const Function *>(nullptr); };
-    if (fn.isNoexcept()) return decline("inline-callee-noexcept");
+    if (fn.isNoexcept() || !fn.exceptionSpec().empty()) return decline("inline-callee-noexcept");
     if (inliner_->size(fn) > (inliner_->leaf(fn) ? kLeafMember : kSmallMember)) return decline("inline-callee-not-small");
     if (fn.params().size() > static_cast<std::size_t>(abi_.intCount)) return decline("inline-site-stack-arguments");
     for (const Param &p : fn.params())
@@ -2161,7 +2176,10 @@ void Tms6747::walkBody(const Function &fn) {
 // An inner block's variables go inside its DW_TAG_lexical_block (phase F), so a debugger lists them only while the stop is in it.
 void Tms6747::emitVariables(const Function &fn) {
     if (lineSource() == nullptr) return;
-    out_ << "\t.dwtag\tDW_TAG_subprogram, DW_AT_name(\"" << fn.name() << "\"), DW_AT_low_pc(" << fn.symbol() << ")\n";
+    // ASM6x ends a string at the next quote, so a literal operator's `operator"" _km` is `operator'' _km` here.
+    std::string name = fn.name();
+    for (char &c : name) if (c == '"') c = '\'';
+    out_ << "\t.dwtag\tDW_TAG_subprogram, DW_AT_name(\"" << name << "\"), DW_AT_low_pc(" << fn.symbol() << ")\n";
     emitScope(fn, 0);
     out_ << "\t.dwendtag\n";
 }
@@ -2399,12 +2417,13 @@ void Tms6747::emitFunction(const Function &fn) {
     emitExceptionTable(fn);
     char word[16];
     std::snprintf(word, sizeof word, "0x%08x", unwindWord(needFrame));
-    bool calls = !callSites().empty() || fn.isNoexcept();
+    const bool states = fn.isNoexcept() || !fn.exceptionSpec().empty();
+    bool calls = !callSites().empty() || states;
     for (const std::string &r : savedRegs()) if (r == "B3") calls = true;
     if (calls) anyExidx_ = true;
     if (calls)
         out_ << "\t.sect\t\".c6xabi.exidx:.text\"\n\t.align\t4\n\t.ulong\t$EXIDX_FUNC(" << fn.symbol() << ")\n\t.ulong\t"
-             << (callSites().empty() && !fn.isNoexcept() ? std::string(word) : "$EXIDX_EXTAB(\"__c6xabi_extab$" + fn.symbol() + "\")") << "\n\t.text\n";
+             << (callSites().empty() && !states ? std::string(word) : "$EXIDX_EXTAB(\"__c6xabi_extab$" + fn.symbol() + "\")") << "\n\t.text\n";
 
     file_ += out_.str();
     out_.str(std::string());

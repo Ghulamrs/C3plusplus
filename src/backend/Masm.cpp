@@ -187,6 +187,11 @@ const Rule *ruleFor(const std::string &m) {
 }
 
 std::string MasmSpelling::mangle(const std::string &name) {
+    // A name past ASCII - [lex.name]'s `caf\u00e9` - is not renamed: an import of one could not link.
+    for (char c : name)
+        if (static_cast<unsigned char>(c) >= 0x80)
+            give_up(name, "a name past ASCII is not supported in the MASM spelling - no MASM "
+                          "takes one, and the default GNU syntax, -masm=gnu, writes it");
     // A dot, or a character no MASM name holds (`<unnamed-type-$S1>`), only in an internal symbol.
     if (name.find_first_not_of(kMasmNameChars) != std::string::npos) {
         std::string out = "$";
@@ -243,6 +248,18 @@ MasmSpelling::Rendered MasmSpelling::render(const Op &x) {
         std::string sym(x.text);
         referenced_.insert(sym);
         return { mangle(sym), false, false, false };
+    }
+    // Sized here: ml64 cannot size `gs:[88]` from the register it is moved to (A2024, measured).
+    case Op::Seg:
+        return { "QWORD PTR " + std::string(x.text.substr(1)) + ":[" + std::to_string(x.disp) + "]", false, false, false };
+    case Op::Tls: {
+        // **ml64 relocates `[base + SECTIONREL x]` as SECREL** (measured with dumpbin); `lea eax,
+        // SECTIONREL x` is REL32 and wrong. The project's own masm has no SECTIONREL operator yet.
+        if (comdat_) give_up(std::string(x.text), "a thread_local is not supported yet in the project's own masm, "
+                                                  "which has no SECTIONREL operator - the GNU spelling and ml64 have it");
+        std::string sym(x.text);
+        referencedData_.insert(sym);
+        return { "[" + std::string(x.index.substr(1)) + " + SECTIONREL " + mangle(sym) + "]", true, false, false };
     }
     }
     return {};
@@ -333,7 +350,7 @@ void MasmSpelling::raw(const std::string &text) {
     o_ += text;
 }
 
-void MasmSpelling::prologue(int frameSize, const std::string &lsda, int outgoing) {
+void MasmSpelling::prologue(int frameSize, const std::string &lsda, int outgoing, int realign) {
     frameSize += outgoing;
     afterCall_ = false;
     // **The LSDA name says a landing pad exists, which is not the same
@@ -348,6 +365,8 @@ void MasmSpelling::prologue(int frameSize, const std::string &lsda, int outgoing
     // FH3 table is an unsigned offset up from the establisher. Measured against cl.
     o_ += "  push rbp\n";
     o_ += "$LNpush$" + m + ":\n";
+    // rbx as a second pushed nonvolatile, the realignment after the prologue - see CoffSpelling.
+    if (realign > 0) o_ += "  push rbx\n$LNpushb$" + m + ":\n";
     // A frame of a page or more is probed first - cl's rule, measured: 4056 is
     // a plain sub, 4120 calls __chkstk. Unprobed, the first write at the bottom
     // skips the guard page and is an access violation, not a stack overflow.
@@ -369,6 +388,7 @@ void MasmSpelling::prologue(int frameSize, const std::string &lsda, int outgoing
         o_ += "$LNsave" + std::to_string(i) + "$" + m + ":\n";
     }
     o_ += "$LNprolog$" + m + ":\n";
+    if (realign > 0) o_ += "  and rsp, " + std::to_string(-realign) + "\n  mov rbx, rsp\n";
 
     // Last instruction first, which is the order an unwinder undoes them in:
     // the saves, SET_FPREG, the allocation, the push.
@@ -407,7 +427,11 @@ void MasmSpelling::prologue(int frameSize, const std::string &lsda, int outgoing
             unwindCodes_ += 2;
         }
     }
-    // UWOP_PUSH_NONVOL is 0 with the register in the high nibble - rbp is 5.
+    // UWOP_PUSH_NONVOL is 0 with the register in the high nibble - rbx is 3, rbp is 5.
+    if (realign > 0) {
+        unwindData_ += "  DB $LNpushb$" + m + "-$LNbeg$" + m + "\n  DB 030H\n";
+        unwindCodes_ += 1;
+    }
     unwindData_ += "  DB $LNpush$" + m + "-$LNbeg$" + m + "\n";
     unwindData_ += "  DB 050H\n";
     unwindCodes_ += 1;
@@ -520,6 +544,28 @@ void MasmSpelling::bssSection() {
     if (seg_ != Bss) { o_ += "\n.DATA?\n"; seg_ = Bss; }
 }
 
+// **`.tls$`, with the dot**: ml64 names a `_TLS SEGMENT` `_TLS` and the linker builds no template
+// from it - measured with dumpbin. The project's masm has no SECTIONREL to reach the object with.
+void MasmSpelling::tlsDataSection() {
+    if (comdat_) give_up(".tls$", "a thread_local is not supported yet in the project's own masm, "
+                                  "which has no SECTIONREL operator - the GNU spelling and ml64 have it");
+    flushPending();
+    if (seg_ == Tls) return;
+    closeDataBlock();
+    o_ += "\n.tls$ SEGMENT ALIGN(16) 'DATA'\n";
+    dataBlock_ = ".tls$";
+    seg_ = Tls;
+}
+
+void MasmSpelling::tlsInitialiserEntry(const std::string &fn) {
+    flushPending();
+    closeDataBlock();
+    o_ += "\n.CRT$XDU SEGMENT READONLY ALIGN(8) 'DATA'\n" + mangle(fn + "$initializer$") + " DQ ";
+    o_ += mangle(fn);
+    o_ += "\n.CRT$XDU ENDS\n.drectve SEGMENT INFO\n  DB \" /include:__dyn_tls_init\"\n.drectve ENDS\n";
+    seg_ = None;
+}
+
 void MasmSpelling::objectType(const std::string &) {}
 void MasmSpelling::objectSize(const std::string &, int) {}
 
@@ -528,7 +574,8 @@ void MasmSpelling::loopAlign(int) { flushPending(); o_ += "  ALIGN 16\n"; }
 
 void MasmSpelling::align(int n) {
     flushPending();
-    if (seg_ != Code) {
+    // The TLS template is one segment, every object in it: nothing to close or reopen.
+    if (seg_ != Code && seg_ != Tls) {
         if (!dataBlock_.empty() && dataBlockUsed_) closeDataBlock();
         // An ALIGN past 16 inside .DATA is refused: such an object gets a segment of its own.
         if (!pendingComdat_.empty() || n > 16) openDataBlock(n);
@@ -625,14 +672,18 @@ void MasmSpelling::preamble(std::ostream &sink) {
     if (!unreserved_.empty()) sink << "\n";
 
     for (const std::string &e : exported_) {
+        const std::string spelt = mangle(e);
         // Renaming an exported name would break the link; only a dot was ever renamed in one.
         if (e.find_first_not_of(std::string(kMasmNameChars) + ".") != std::string::npos)
             give_up(e, "an exported name holds a character no MASM name can spell");
-        sink << "PUBLIC " << mangle(e) << "\n";
+        sink << "PUBLIC " << spelt << "\n";
     }
     for (const std::string &r : referenced_)
-        if (defined_.find(r) == defined_.end())
+        if (defined_.find(r) == defined_.end() && referencedData_.find(r) == referencedData_.end())
             sink << "EXTERN " << mangle(r) << ":PROC\n";
+    for (const std::string &r : referencedData_)
+        if (defined_.find(r) == defined_.end())
+            sink << "EXTERN " << mangle(r) << ":BYTE\n";
     sink << "\n";
 }
 

@@ -1,0 +1,1 @@
+x86_64-linux  The C1 and D1 forms of `S`'s constructor and destructor, which clang emits as aliases of the C2 and D2 (docs/CONFORMANCE.md, "An inline member function is a strong symbol"); every other name agrees with clang.

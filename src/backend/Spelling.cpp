@@ -24,6 +24,10 @@ void GnuSpelling::op(const Op &x) {
     case Op::Rip: o_ += sym(std::string(x.text.p, x.text.n)); o_ += "(%rip)"; return;
     case Op::Ind: o_ += '*'; o_ += x.text; return;
     case Op::Lbl: o_ += sym(std::string(x.text.p, x.text.n)); return;
+    case Op::Seg: o_ += x.text; o_ += ':'; appendNum(o_, x.disp); return;
+    // Local-exec, measured from clang: the symbol's offset from the thread pointer, which the
+    // linker resolves for an executable's own objects.
+    case Op::Tls: o_ += sym(std::string(x.text.p, x.text.n)); o_ += "@TPOFF("; o_ += x.index; o_ += ')'; return;
     }
 }
 
@@ -70,7 +74,7 @@ void GnuSpelling::functionBegin(const std::string &name, bool exported,
 // **Unwind data, and it is the same three directives in every function.** A
 // cxx1 frame has one shape, so the CFA is rbp + 16 throughout; without it a
 // backtrace stops here and no exception passes. MASM has always said this.
-void GnuSpelling::prologue(int frameSize, const std::string &lsda, int outgoing) {
+void GnuSpelling::prologue(int frameSize, const std::string &lsda, int outgoing, int realign) {
     frameSize += outgoing;
     afterCall_ = false;
     o_ += "  .cfi_startproc\n";
@@ -83,7 +87,14 @@ void GnuSpelling::prologue(int frameSize, const std::string &lsda, int outgoing)
     o_ += "  .cfi_offset %rbp, -16\n";
     ins("mov", reg("%rsp"), reg("%rbp"));
     o_ += "  .cfi_def_cfa_register %rbp\n";
+    // The CFA stays rbp + 16 through a realignment, so the unwinder is told only where rbx went.
+    if (realign > 0) {
+        ins("push", reg("%rbx"));
+        o_ += "  .cfi_offset %rbx, -24\n";
+        ins("and", imm(-realign), reg("%rsp"));
+    }
     if (frameSize > 0) ins("sub", imm(frameSize), reg("%rsp"));
+    if (realign > 0) ins("mov", reg("%rsp"), reg("%rbx"));
     // The canonical frame address is rbp + 16.
     for (const SavedReg &s : saves_) {
         ins("mov", reg(s.reg), mem(s.disp, "%rbp"));
@@ -138,6 +149,9 @@ void GnuSpelling::rodataSection() { o_ += "  .section .rodata\n"; }
 void GnuSpelling::relroSection() { o_ += "  .section .data.rel.ro,\"aw\"\n"; }
 void GnuSpelling::dataSection()   { o_ += "  .data\n"; }
 void GnuSpelling::bssSection()    { o_ += "  .bss\n"; }
+// Measured from clang: the T flag is what makes a section part of the TLS template.
+void GnuSpelling::tlsDataSection() { o_ += "  .section .tdata,\"awT\",@progbits\n"; }
+void GnuSpelling::tlsBssSection()  { o_ += "  .section .tbss,\"awT\",@nobits\n"; }
 
 void GnuSpelling::objectType(const std::string &name) {
     o_ += "  .type "; o_ += sym(name); o_ += ", @object\n";
@@ -315,6 +329,17 @@ void CoffSpelling::dataSection() {
 void CoffSpelling::bssSection() {
     plainSection_ = "  .bss\n"; comdatData_ = 0; o_ += plainSection_;
 }
+// One section for both, as cl and clang write it: a zero-filled thread_local is written as zeros.
+void CoffSpelling::tlsDataSection() {
+    plainSection_ = "  .section .tls$,\"dw\"\n"; comdatData_ = 0; o_ += plainSection_;
+}
+// Measured from cl: an object with a thread_local initialiser carries `/include:__dyn_tls_init`
+// in its directives, and one without does not; the CRT's per-thread callback is what runs .CRT$XDU.
+void CoffSpelling::tlsInitialiserEntry(const std::string &fn) {
+    o_ += "  .section .CRT$XDU,\"dr\"\n  .p2align 3, 0x0\n" + sym(fn + "$initializer$") + ":\n  .quad ";
+    o_ += sym(fn);
+    o_ += "\n  .section .drectve,\"yni\"\n  .ascii \" /include:__dyn_tls_init\"\n";
+}
 void CoffSpelling::align(int n) {
     // The COMDAT object's own align passes through; the next object's puts
     // the plain section back first, so it does not land in a section that is
@@ -329,7 +354,7 @@ void CoffSpelling::objectSize(const std::string &name, int size) {
 }
 
 // **Hand-written, because `.seh_handlerdata` cannot live in a COMDAT.** The `.seh_*` directives are the tidy way and the assembler builds .pdata and .xdata from them - measured, and it works for every function in plain .text.
-void CoffSpelling::prologue(int frameSize, const std::string &lsda, int outgoing) {
+void CoffSpelling::prologue(int frameSize, const std::string &lsda, int outgoing, int realign) {
     // The area goes under everything, so it is simply more frame: every
     // offset below is measured up from rsp, which rbp equals.
     frameSize += outgoing;
@@ -343,6 +368,8 @@ void CoffSpelling::prologue(int frameSize, const std::string &lsda, int outgoing
     // FH3 displacement is an unsigned offset up from the establisher.
     o_ += "  push %rbp\n";
     o_ += "\"$LNpush$" + fnName_ + "\":\n";
+    // rbx a second pushed nonvolatile; the `and` comes after the prologue, where the unwinder, recovering rsp from rbp, never sees it (clang-cl).
+    if (realign > 0) { o_ += "  push %rbx\n\"$LNpushb$" + fnName_ + "\":\n"; }
     // A frame of a page or more is probed through __chkstk first, as the
     // MASM prologue does and for the same measured reason.
     if (frameSize >= 4096) {
@@ -359,6 +386,7 @@ void CoffSpelling::prologue(int frameSize, const std::string &lsda, int outgoing
         o_ += "\"$LNsave" + std::to_string(i) + "$" + fnName_ + "\":\n";
     }
     o_ += "\"$LNprolog$" + fnName_ + "\":\n";
+    if (realign > 0) { o_ += "  and $"; appendNum(o_, -realign); o_ += ", %rsp\n  mov %rsp, %rbx\n"; }
 
     // Last instruction first, which is the order an unwinder undoes them in.
     unwindCodes_ = 0;
@@ -392,7 +420,11 @@ void CoffSpelling::prologue(int frameSize, const std::string &lsda, int outgoing
             unwindCodes_ += 2;
         }
     }
-    // UWOP_PUSH_NONVOL is 0 with the register in the high nibble - rbp is 5.
+    // UWOP_PUSH_NONVOL is 0 with the register in the high nibble - rbx is 3, rbp is 5.
+    if (realign > 0) {
+        unwindData_ += "  .byte \"$LNpushb$" + fnName_ + "\"-" + b + "\n  .byte 0x30\n";
+        unwindCodes_ += 1;
+    }
     unwindData_ += "  .byte " + pu + "-" + b + "\n  .byte 0x50\n";
     unwindCodes_ += 1;
 }
@@ -439,6 +471,12 @@ void CoffSpelling::functionEnd(const std::string &name) {
 
 // **The whole frame moved, so every offset into it moves with it.**
 void CoffSpelling::op(const Op &x) {
+    // The symbol's offset within the image's TLS template, cl's IMAGE_REL_AMD64_SECREL (measured
+    // with dumpbin), off the thread's copy of the template in the base register.
+    if (x.kind == Op::Tls) {
+        o_ += sym(std::string(x.text.p, x.text.n)); o_ += "@SECREL32("; o_ += x.index; o_ += ')';
+        return;
+    }
     if (x.kind != Op::Mem || std::string(x.text.p, x.text.n) != "%rbp") {
         GnuSpelling::op(x);
         return;

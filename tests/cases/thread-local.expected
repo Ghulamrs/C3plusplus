@@ -1,0 +1,9 @@
+D(1)
+main: counter 101 zeroed 2 internal 8 ns 4 member 41 bump 1005 1011 built 1 fromCall 20
+D(3)
+thread: counter 101 zeroed 2 internal 8 ns 4 member 41 bump 1005 1011 built 3 fromCall 40
+~D(3)
+main: counter 102 zeroed 4 internal 9 ns 5 member 42 bump 1017 1023 built 1 fromCall 20
+seeds 4
+~D(1)
+LEDGER built=2 gone=2 live=0 double=0 phantom=0 over=0 lost=0

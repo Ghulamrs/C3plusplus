@@ -14377,3 +14377,339 @@ is a row of the grid. Measured at the release: Mac `make test` exit 0 (run.sh 83
 overload.sh 41/0, exclusions 135 sites 0/0, comment cap 0); Linux run.sh 838/0 at -O0 and -O2,
 tms6747 on vm6747 and sim6747; Windows cases 1322/0 through both spellings and 1016/0 at -O2,
 ti-link 524/0; names against cl differ on the 18 library cases they did at 1.19 and no other.
+
+## An overloaded function's name passed as an argument, 2026-10-20
+
+**[over.over]/1 counts a parameter among the targets, and cpp11 refused `apply(h, 3)` for an
+overloaded `h`** ("choosing one by the parameter it is passed to is not supported yet") - the one
+target 2026-10-18 left out, because a call's arguments are read before the call is resolved.
+`parseArguments` now reads an argument that is a function's name and nothing else - `f`, `&f`,
+`n::f`, `&S::f`, up to its `,` or `)` (`atBareFunctionArgument`) - with `overloadArgument_` set,
+and a name naming several functions comes back as a placeholder, the braced argument's device: a
+`void` constant, told apart by a serial, the set kept in `overloadArgs_`. **Both places a braced
+list is built pick it**: against the parameters where the callee is known, and before an
+overloaded call is ranked, where every candidate the argument count allows asks its parameter's
+type of the set (`pickOverloadArguments`) - none fitting is "no overload takes one of them", two
+candidates fitting different functions is refused as clang refuses it ("call to 'g' is
+ambiguous"; cpp11 does not weigh the other arguments first). The picked value is built as the
+target-type road builds it - `functionAddress`, or `memberFunctionAddress` for `&S::f`, split out
+of `unary` with its virtual-slot and vcall-thunk branches. **Refused by name**: a template that
+deduces from the argument ([temp.deduct.call]/6, which clang also refuses where every function
+deduces), and any call road that resolves without asking a parameter's type, at `resolveOverload`
+and `completeCall`. `overload-by-parameter`, `overload-by-parameter-ambiguous`,
+`overload-by-parameter-template`.
+
+**A probe against clang found what the suite had not: inside a member function a bare name was
+the namespace's before the class's.** `ap(h)` in a member of a class with static `h` overloads
+picked the global `h` and printed 4 where clang prints 50 - a silent wrong value the placeholder
+made reachable, and older than it: a single static member read by its bare name as a value
+(`int (*p)(int) = h;`) was the global one at 1.21 too. `memberFunctionByName` asks the class scope
+and its bases before the namespace, [basic.lookup.unqual]/8, and answers with the static ones; a
+name with only non-static ones is refused as clang refuses it ("must be called"). With it:
+`pickByTarget` tells a static member (a function pointer target) from a non-static one (a pointer
+to member of the class), and a `const &` to a function pointer is a target; `S::sf` uncalled is a
+value, access checked; `(h)` and `&(h)` are bare arguments; and a candidate another written
+argument rules out has no say in the pick (`rankArgument` over the others), so `g(h, 1)` against
+`g(int (*)(int), int *)` and `g(int (*)(double), int)` takes the second, as clang does. **Still
+refused, each by name**: a braced initialiser, an operator's operand, a default argument
+(`docs/EXCLUSIONS.md`), a mem-initialiser and a call through a member pointer (the backstop), a
+template's deduction, a set holding a function template, and a converting constructor's parameter.
+About 120 probes, every one at -O0 and -O2: none prints differently from clang now.
+`overload-by-parameter-scope`, `overload-by-parameter-nonstatic-refused`.
+
+## A goto out of a handler, function try blocks, and constructors that unwind, 2026-10-21
+
+**[except.handle]/16: a `goto` out of a handler ends the handling**, and cpp11 refused it. The jump
+is now `gotoStatement`, resolved once its label is read (`resolveGotos`): it ends one catch per
+handler it leaves (`endCatches`) and destroys what it leaves, and on x86_64-windows it leaves the
+funclet by an exit its `try` places after itself (`MsExit::gotos`), the way `return` and `break`
+already did. **The other direction is refused as clang refuses it**: a `goto` or a `case` entering a
+`try` block or a handler ([except.handle]/2) - `jumpGuards` gives each `try` body and handler a
+guard of its own. `goto-out-of-handler`, `goto-out-of-handler-ms`, `goto-into-try-refused`,
+`goto-into-handler-refused`.
+
+**Function try blocks on every function** (`block(true)`), and a constructor's covering its
+mem-initialisers - `tryStatement` takes the body as a function (`bodyFn`), so the members are built
+inside the region - and a destructor's covering the members and bases it destroys. A constructor's
+or destructor's handler ends by rethrowing ([except.handle]/15: `rethrows`), and `return` in a
+constructor's handler is refused ([except.handle]/14). Refused by name on x86_64-windows, where a
+rethrow is, and for a class with a virtual base. `function-try-block`,
+`function-try-block-constructor`, `function-try-block-constructor-return-refused`.
+
+**[except.ctor]/2-3: a constructor that throws destroys what it built, and cpp11 destroyed none of
+it.** Bases, members, the elements of an array member built so far, the virtual bases the complete
+object's constructor built, and a delegating constructor's finished object are now each guarded
+(`guardSubobject`, `guardConstruction`, `withVirtualBases`), in the constructors the program writes
+and the ones the compiler writes (`OwnPads`), on both ABIs. In a function try block every pad hands
+over to the handlers, so each guard owes everything built before it, not only its own subobject.
+`constructor-unwinds`.
+
+**On the C6000 a cleanup region is one unsplit scope again**, unless a pad inside it hands over: TI's
+personality resumes its scan of a frame at the throwing address, so the pieces a nested region split
+off lost the outer destructors (`Tms6747::emitExceptionTable`, `CallSite::handsOver`).
+
+## A `for`'s init-statement unwinds, 2026-10-21
+
+**An object built in a `for`'s init-statement was never destroyed when an exception left the loop**,
+and the loop was refused inside a `try` ("a local with a destructor and a 'try'"), as was a class in
+an `if`'s condition. The init is hoisted in front of the loop when it built objects, and the two
+become one block with the cleanups any block gets; both refusals are gone. `for-init-unwinds` keeps
+the ledger, which balanced at 1.21 only because nothing was thrown through a loop.
+
+## Dynamic exception specifications, 2026-10-21
+
+**`throw(T...)` was refused; [except.spec]/8 is kept now.** `exceptionSpecification` reads the list
+into `pendingSpec_`, each type adjusted by [except.spec]/2 (`adjustedSpecType`: a reference names its
+referent, an array or function decays, top-level cv goes, an incomplete type is refused), and a
+declaration and its definition must name the same set (`DynamicSpec::sameSet`), as clang requires.
+**On the Itanium targets the body is one region whose filter is the list**: `tryStatement` in spec
+mode reads no handlers, gives the region one type, `$spec,<_ZTI...>` under index -1, and its chain
+calls `__cxa_call_unexpected` where the selector is negative; `Walker::lsdaTable` writes the filter
+byte, the list's types past every other index, and the list itself after ttbase - clang's table in
+shape. Constructors are covered from their mem-initialisers on, and a constructor's function try
+block sits inside the filter. **On the C6000 the table states it**: the function specification
+descriptor `noexcept` wrote with no types now carries the list (`Function::exceptionSpec`,
+`Target::specInTable`), as cl6x writes it. **On x86_64-windows it is read and ignored**, as cl does
+(docs/CONFORMANCE.md). `<exception>` gains `set_unexpected`, `unexpected` and, on the hosts,
+`bad_exception`. **vm6747 cannot run it**: its Runtime.cpp faults on a descriptor with types, so the
+two cases are in `tests/tms6747-exceptions.txt` and run by name under sim6747 on the box.
+**Still refused**: a pack expansion in the list, and a list on a constructor or destructor of a
+class with a virtual base. Not checked: an override's list against its base's. `exception-spec`,
+`exception-spec-unexpected`, `exception-spec-bad-exception`, and three `-refused` cases.
+
+## `constexpr` objects of class type, 2026-10-21
+
+**[dcl.constexpr]/9: a `constexpr` object of literal class type was refused by name**; it is folded
+now. The fold holds an object as its scalar leaves by byte offset (`ConstObject`), and a pointer
+into one as the object and an offset; it runs the statements the object is built by at run time
+(`runConstexpr`): a constexpr constructor's lowered body, kept at its definition under its C1 and
+C2 names (`constexprCtors_` - the class body marks one `constexpr` in `constexprCtorSymbols_`,
+since the replay drops the keyword), a member's constructor, a base's (through the null-checked
+address arithmetic the lowering writes), a default member initialiser, a copy, an aggregate's
+braces (`constObjectFromInit`). `fold` and `foldDouble` read a member of one (`foldLeaf`), and a
+constexpr member function runs with `this` pointing into it; class arguments and results pass
+whole (`foldArgument`). A local is folded where it is declared (`foldLocalObject`), a namespace-
+scope one is laid down as data and its constructor never runs (`dynamicInitialise` with `folded`).
+**Refused by name** where the fold cannot hold it: an array of class objects, a pointer or
+reference member, a bit-field (`refuseConstexprClassObject`). `constexpr-object`,
+`constexpr-object-array-refused`, `-pointer-refused`, `-not-constant`.
+
+**[class.static.data]/3: a `static constexpr` member of any literal type takes its initialiser in
+the class** - a class, an aggregate, a double; only a `static const` integer did. It is folded
+there and laid down as a weak definition, so a run-time read finds it, and `constexpr P S::k;`
+outside the class is taken (`defineConstexprStaticMember`). `constexpr-object-static-member`.
+
+**A class template's constexpr member is compiled where a constant needs it**
+(`instantiateForConstant`): a specialization's member bodies were replayed only at the end of the
+file, so `constexpr W<int> w(6);` - and a `static_assert` on any constexpr member function of a
+specialization - had nothing to run. `constexpr-object-template`.
+
+**Three older faults this reached**: `constexpr int x(5);` at namespace scope was read as a function
+and refused ("expected a type"); an in-class `static constexpr` member function was implicitly
+const on its replay and so matched no declaration; and an out-of-class `constexpr` constructor was
+made a const member. All three compile as clang does now.
+
+**A specialization built inside another template's pattern read the pattern's parameter**: `Mx<3, 3>`
+first named in `template <int N> V<N>::operator Mx<3, 3>()` saw its own `N` as V's, since binding a
+value did not hide `nonTypePatternParams_`; its rows were `V<N>` unresolved and `R[0][0]` refused.
+Found compiling the COM Core sources (CVector/CMatrix), which clang takes.
+`specialization-in-pattern-parameter`.
+
+## A typedef names an unnamed class for linkage, 2026-10-21
+
+**[dcl.typedef]/9: an unnamed class defined in a typedef declaration takes the typedef's name for
+linkage**, and cpp11 refused any function or template over one ("an unnamed class has no name to
+give the linker") - found compiling `std::vector<SceneVertex>` over the C idiom `typedef struct {
+... } SceneVertex;` in the COM Core sources. A typedef at namespace or class scope now gives such a
+struct or union its name, local name and scope (`Type::nameForLinkage`), and all three ABIs spell
+it as clang does: `_Z1f2P2`, `N1S2InE`, `?g@@YAXUIn@S@@@Z`. An unnamed enum is left as it was.
+`typedef-name-for-linkage`.
+## A universal character name in an identifier, 2026-10-21
+
+**[lex.name] lets a name hold characters past ASCII, written as `\u00e9` or as UTF-8, and cpp11
+refused both** - the `\u` form by name, the UTF-8 one as a stray byte. A name is UTF-8 from the lexer
+on: `identifierCharacter` decodes either spelling, and `splitLines` turns a valid `\u` name outside a
+literal into its UTF-8 before a macro is looked up, so `caf\u00e9` and the UTF-8 spelling are one name and one
+macro ([lex.phases]/1 read the other way round). The mangler needed nothing: a name's length is its
+bytes, and clang writes the bytes - `_Z4f\u00e9ei`, `_ZN3n\u00e91zE`, `?f\u00e9e@@YAHH@Z` - measured on all three host
+ABIs, twelve names agreeing. **What changed below the parser is the assembler's spelling**:
+`spellWideNames` quotes every name with a byte past 0x7F in the finished text, `"_caf\u00e9"@PAGE` as clang
+writes it, on the one road every target's text takes; text without one is never touched (golden: 0
+changed).
+
+**Which characters is the letter of C++11, not clang's.** Annex E.1 lists the ranges a name may hold
+and E.2 the combining marks that may not begin one (`identifierCodePoint`, `notInitially`); clang 21
+applies UAX #31 to every mode as P1949's defect report, and where the two part this follows the
+standard the compiler compiles (g++ was not asked). Every character in the
+case is in both sets. **The difference is real and recorded**: `\u00a8` and `\U0001F600` compile
+here and clang refuses them, and U+2070 compiles here where clang calls it an extension. A `\u` name naming a
+basic or control character, or a surrogate, is refused as [lex.charset]/2 says.
+
+**Refused for two spellings, by name**: tms6747, whose ASM6x takes no byte past ASCII in a name (TI's
+assembler was not asked), and the MASM spelling, where neither ml64 nor the project's masm does and
+renaming an import would not link (`MasmSpelling::mangle`; the Windows runner skips a `.nomasm`
+case in that pass). **Known and left**: a diagnostic's column past a `\u` name on its line is off by
+the bytes the conversion saved. `ucn-identifier`, `ucn-identifier-start-refused`,
+`ucn-identifier-character-refused`, `ucn-identifier-basic-refused`.
+
+## User-defined literals, 2026-10-21
+
+**[lex.ext] makes a literal with a ud-suffix a call of the literal operator the suffix names, and
+cpp11 refused the declaration** - `operator"" _km` was "not supported yet". The lexer reads the
+suffix run onto any literal (`Token::udSuffix`, and a number's digits as written in `spelling`), a
+standard suffix being one only when it is the whole of the name after the digits; `operatorName`
+reads `operator "" _km` and `operator""_km` alike and files the function as `operator"" _km`.
+**The literal is rewritten as the call the standard says it is**: `userDefinedLiteral` writes the
+call's tokens past the end of the stream and reads them through `primary` - the device
+`initializerListOf` uses - so the lookup, the overload resolution and the constant folding are the
+ones a call written out gets. `static_assert(4_KiB == 4096)` and `int t[2_KiB / 1024]` fold through
+a `constexpr` literal operator with nothing taught to `fold`.
+
+**A number's call is [lex.ext]/3-4's choice, made by looking at the set**: the cooked form
+(`unsigned long long`, `long double`) where one is declared, else the raw `const char *` one or the
+`char...` template - not both - with the digits as written, `0x1F_digits` handing over "0x1F". A
+string takes its pointer and its length in code units, adjacent strings being one literal whose
+suffixes must agree ([lex.ext]/8); a character takes itself, and the overloads for `char`,
+`wchar_t`, `char16_t` and `char32_t` rank as any do. **Both names measured with clang on three
+targets**: `li` and the suffix as a source-name on Itanium, `_Zli3_kmy`, `_ZN3litli2_nEy`, the
+template's `li2_t` a substitution candidate; `??__K` and the suffix on Microsoft, `??__K_km@@YA_J_K@Z`
+and `??$?__K_t@$0DB@@@YAHXZ`. No `L` on a static one, as no operator carries one.
+
+**[over.literal] is checked where it is declared** (`checkLiteralOperator`,
+`checkLiteralOperatorTemplate`): a namespace-scope function, C++ linkage, one of the eleven
+parameter lists, no default argument, a template of one `char...` and no parameters - each refused
+with clang's words. **A suffix with no `_` is reserved** ([usrlit.suffix]): declaring one stands
+and a literal using it is refused, as clang refuses it. **Known and left**: a pp-number keeps going
+through `.` in clang, so `3_km.metres` is one token there and two here - the case writes
+`3_km .metres`; and a cooked `long double` literal that is not exactly a double is refused on
+x86_64-linux by the rule every such literal meets. `user-defined-literal`, and ten `udl-*-refused`
+cases, one per rule; `udl-refused` is gone. With both features `tools/feature-sweep --clang
+clang++` reads 84 compile, 12 refused by name, 0 naming nothing, of 96 - the `ucn` and `udl` rows
+now compile.
+## `thread_local`, 2026-10-20
+
+**[dcl.stc]/4 and [basic.stc.thread]: one object per thread, at namespace scope, as a static data
+member and in a block, where it is static whether or not `static` is written.** It left `pending[]`
+after sitting there with the note that thread storage is a different model on each target; it is,
+and each model was measured before a line was written - clang `-target` for the three hosts,
+cl 19.44 on the Windows box for the Microsoft spelling, ml64 and dumpbin for what MASM can say,
+cl6x 7.4.4 and 8.2.2 for the C6000. `tests/cases/thread-local.cpp` runs a second thread through
+every shape (pthread on the hosts, CreateThread under `_WIN32`) and the ledger counts both
+threads' objects; `thread-local-extern.cpp` reaches another unit's; two refusals hold clang's words.
+
+**What each ABI does, measured.** ELF (`clang -target x86_64-linux-gnu -S`): the template in
+`.tdata,"awT",@progbits` / `.tbss,"awT",@nobits`; an object defined in the unit reached local-exec,
+`mov %fs:0, %rax; lea x@TPOFF(%rax), %rax`; a `_ZTW<encoding>` wrapper per external thread_local
+the unit defines or reaches, `.hidden .weak` in a COMDAT of its own - for a defined object the
+local-exec pair, preceded by `call _ZTH<encoding>` where the object has dynamic initialisation; for
+another unit's object `_ZTH@GOTPCREL` tested and called through the PLT if the link found one
+(`.weak _ZTH`), then `x@GOTTPOFF(%rip)` added to `%fs:0`, initial-exec. Dynamic initialisation is
+one `__tls_init` per unit under a thread_local byte `__tls_guard`, `_ZTH<x> = __tls_init` for each
+object it builds (global, or local for a `static` one - `_ZTHL1d`), and destructors registered
+with `__cxa_thread_atexit(dtor, obj, &__dso_handle)`; a use of such an object in the unit goes
+through its wrapper, inside `__tls_init` directly. A block-scope one with dynamic initialisation
+has a thread_local guard byte of its own set *after* the construction and no `__cxa_guard` call.
+Mach-O (`-target arm64-apple-darwin`): `_x` is a three-word descriptor in
+`__DATA,__thread_vars,thread_local_variables` - `__tlv_bootstrap`, 0, the template `_x$tlv$init`
+in `__thread_data,thread_local_regular` or `.tbss _x$tlv$init, size, p2` - reached by `adrp x0,
+_x@TLVPPAGE; ldr x0, [x0, _x@TLVPPAGEOFF]; ldr x9, [x0]; blr x9`, the address in x0; the wrapper is
+defined only by the unit that defines the object, global and strong, and a reaching unit calls it;
+`_tlv_atexit` registers a destructor. dyld's getter and clang's wrappers keep every register but
+x0, x9, x16, x17 - clang's own `___tls_init` saves x1-x14, x27-x28, d0-d7, d16-d31 - so cxx1's
+`__ZTH` aliases `___tls_init_fast`, a shell that saves x1-x8, x10-x17 and d0-d7, d16-d31 round the
+ordinary `___tls_init` the parser built. COFF (cl and clang agree): the template in `.tls$`;
+`movl _tls_index(%rip), %eax; mov %gs:88, %rcx` and the thread's block at `[rcx + rax*8]`,
+written here as a shift and an add because the walker writes no indexed operand; the object at
+`x@SECREL32(%rax)`, IMAGE_REL_AMD64_SECREL in the object (dumpbin); before an access to an object
+that may want initialising - another unit's, or one `__tls_init` builds - `cmpb $0,
+__tls_guard@SECREL32(%rax)` and `call __dyn_tls_on_demand_init`, the CRT's own guard; `__tls_init`
+registered from `.CRT$XDU` with `/include:__dyn_tls_init` in `.drectve`, which cl writes only for a
+unit with a thread_local initialiser; `__tlregdtor(helper)` for a destructor. Microsoft names
+decorate nothing extra for thread storage (`?t@@3HA` as for a plain int). MASM: `_TLS SEGMENT`
+names a section `_TLS`, which the linker builds no template from - `.tls$ SEGMENT` it is; ml64
+relocates `mov r11d, SECTIONREL x` as SECREL and refuses `SECTIONREL` inside every memory operand
+tried (`lea rax, [rcx + SECTIONREL x]` A2024, with and without a PTR size, in `_TLS` and `.tls$`),
+so the MASM spelling writes a `Tls` operand as that `mov` and the register added; `gs:[88]` has to
+be `QWORD PTR gs:[88]`; a symbol inside `SECTIONREL` must be `EXTERN x:BYTE`, not `:PROC` (A2102).
+The project's own masm has no `SECTIONREL` at all, so `-masm=masm` refuses a thread_local by name
+(`tests/cases/thread-local.nomasm`, a per-spelling skip run-cases.cmd and verify-three honour);
+`-masm=ml64` and the GNU spelling run the case. cl6x 7.4.4 and 8.2.2 do not know the word (8.2.2
+has no `--c++14` either), so tms6747 refuses it by name.
+
+**In the compiler.** `Var` carries `isThreadLocal` and `viaWrapper`; `Global.isThreadLocal` picks
+`Segment::TlsData`/`TlsBss`; two operand kinds, `Op::Seg` and `Op::Tls`, are rendered by each
+spelling and reach the optimizer as `SegMemory` and `TlsSymbol`, memory to the effects table, with
+the base register renamed wherever a `Memory`'s is (`Operand::basedOnReg`) and never folded as one.
+The first cut made them opaque instead - reads and writes every register - and MirAlloc's homes
+then failed to colour: a promoted local in rbx was live across an instruction that "wrote" rbx. A
+clone of a `Var` for `x += 1` kept neither flag and read the template, which showed as every
+namespace-scope object failing to persist across a call. Debug records leave a thread_local out:
+DWARF would want `DW_OP_GNU_push_tls_address`, which the writers do not have yet.
+
+## `alignas` on a local past the stack's alignment, 2026-10-20
+
+**[basic.align]: a local, or a by-value class local, aligned past the 16 the stack keeps, has the
+frame realigned to it** - `tests/cases/alignas-local.cpp` and `alignas-local-unwind.cpp`, the second
+throwing through two realigned frames. clang's shape on all three hosts is the prologue's `and`
+after the frame pointer is set and every local then addressed from the stack pointer; cxx1's walker
+pushes on the stack, so the locals are addressed from a callee-saved register holding the realigned
+floor instead: rbx on x86-64 (`push %rbp; mov %rsp, %rbp; push %rbx; and $-64, %rsp; sub $top,
+%rsp; mov %rsp, %rbx`, slot k at `top - k(%rbx)`, the top rounded to the alignment so the parser's
+alignment of k holds; CFA still rbp + 16, `.cfi_offset %rbx, -24`), x19 on arm64 (`str x19, [sp,
+#-16]!` under the frame record, `sub x9, sp, #top; and sp, x9, #0xffffffffffffffc0; mov x19, sp`,
+clang's own `and`, since `and` takes no sp source). Windows follows clang-cl: `push rbp; push rbx;
+sub rsp, F; mov rbp, rsp; $LNprolog$:` then the `and` *after* the prologue ends, which the unwinder,
+recovering rsp from rbp through UWOP_SET_FPREG, never has to describe; the unwind codes gain
+UWOP_PUSH_NONVOL rbx (0x30). A funclet reaches the parent's frame through the establisher, which a
+realigned frame no longer measures locals from, so an over-aligned local in a function with a `try`
+or a local with a destructor is refused by name on x86_64-windows alone; the Itanium targets unwind
+through it, the restored rbx/x19 being what the landing pad addresses the frame by. The optimizer
+addresses the frame from rbp and takes rbx, so a realigned function is written past it
+(`Optimizer::finish` flushes what is held first, `optimizing()` guards every other use), and walks
+no callee in place; the arm64 peephole, which takes x19-x28, is left out of it. `-g` records measure
+from the base register (`DwarfFunction::frameBaseReg`, 3 or 19, `frameBias - offset`; CodeView
+S_REGREL32 against CV_AMD64_RBX), checked by the case run under `-g` on the Mac. The parser keeps
+the widest slot alignment of each function by symbol (`frameAligns_`, from `allocateFrameSlot`, so a
+temporary counts) and parse() hands each `Function` its `frameAlign`; the backend takes the wider
+of that and a named local's own. The emit golden shows 0 of 2116 files changed: every slot site that
+wrote `mem(-k, "%rbp")` by hand now goes through `local()`/`frameSlot()`, an identity on a plain
+frame. tms6747 keeps the refusal, by name for that target: its stack is 8-aligned and the C6000
+backend builds no realigning prologue; `alignas-local-past-stack-refused` is gone with it.
+`tools/feature-sweep` reads 81 / 15 / 0 of 96 (79 / 17 / 0 at 1.21): `thread-local` and
+`alignas-local` moved from refused by name to compiles.
+
+## The COM Core sources compile, 2026-10-21
+
+**The ArrowsMetal Core sources (CVector, CMatrix, CQuat, ArrowMesh, Scene) now build with cpp11 and
+run as clang's build does** at -O0 and -O2 - a driver over `buildScene()` and `Scene::update`
+prints the same mesh counts, index sums and camera numbers. Six faults stood in the way; two are
+in the sections above (a specialization reading a pattern's parameter, a typedef naming an unnamed
+class), and four are here.
+
+**[dcl.init.aggr]: an aggregate whose member's class has constructors is still an aggregate.** Its
+implicit constructors made cpp11 take `{ v, 3 }` as arguments to one. `isAggregateClass` leaves the
+implicit ones out, a braced list on an aggregate takes the aggregate road at every scope, and a
+member of a class with a constructor is built where the list reaches it (`initConstruct`): copy-
+initialised from its value, from a list of its constructor's arguments, or value-initialised where
+the list ends. `aggregate-member-constructor`.
+
+**A namespace-scope initialiser's temporaries now have room in the init function.** The list or
+expression is read before the init function's frame is entered, so `int g = f(S(3));` used slots
+that frame never reserved and the program died before main; `enterInitFunction` counts them in.
+`global-initialiser-temporary`.
+
+**[basic.lookup.unqual]/8 for a data member**: `vector[0]` in a class with a member `vector` read
+the class template of that name - a member function already won, a data member did not.
+`member-hides-template`.
+
+**A template's declaration and class body are read without the caller's locals in scope**
+(`LocalsHidden`): `CMatrix<4, 4> M; M * x` read the operator template's `CVector<M>` as the local,
+the substitution failed, and no operator was a candidate; `V<3> N(...)` made `V<3>` read its own
+`double s[N]` as the local. `template-signature-caller-local`.
+
+**On x86_64-windows FH3's scratch word is set to -2 on entry**, as cl's prologue writes it
+(`storeUnwindHelpAtEntry`); it was written where the first `try` region began. A local's
+constructor that threw before that point - `Written w(9);`, which now unwinds its own members -
+left the runtime reading whatever the stack held there as the frame's state, and it destroyed `w`
+whole after the constructor had already destroyed its parts. Found by the Windows box on
+`constructor-unwinds`.

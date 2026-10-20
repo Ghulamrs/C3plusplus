@@ -1,0 +1,3 @@
+x86_64-linux  clang folds every use of a constexpr object and constexpr function here at compile time and so emits none of the constructors, `mk`, `use`, `half`, `P::sum`, nor the constants `fromGlobal` and `parens`; cxx1 folds the same values but still builds each local constexpr object at run time and lays the namespace-scope constants down, so it emits them. Every name both emit agrees.
+x86_64-windows  the same: clang folds and discards the constructors, the constexpr functions and the two constants cxx1 emits.
+arm64-darwin  the same: clang folds and discards the constructors, the constexpr functions and the two constants cxx1 emits.

@@ -1,0 +1,1 @@
+x86_64-windows  clang emits a second catchable-type array for `int`, `_CTA1H.1`, beside the `_CTA1H` its `_TI1H` names - an LLVM uniquing artefact of the template's `throw x`, referenced by nothing; cxx1 emits the one array. Every function and throw record the case is about agrees.

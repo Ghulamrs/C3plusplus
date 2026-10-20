@@ -4,6 +4,7 @@
 #include "Parser.h"
 #include "ParserInternal.h"
 #include "../Mangle.h"
+#include "../Operator.h"
 #include "../Source.h"
 
 #include <climits>
@@ -294,6 +295,19 @@ void Parser::bindTemplateParameters(const std::vector<TemplateParam> &params,
             boundValueParams_[p.name]++;
             undo->push_back(ev);
         } else {
+            // **A value hides a pattern's parameter of the same name**: `Mx<3, 3>` built while a pattern
+            // with an `N` of its own is read sees its own `N` as 3, not the pattern's.
+            auto ref = nonTypePatternParams_.find(p.name);
+            if (ref != nonTypePatternParams_.end()) {
+                Shadow pr;
+                pr.name = p.name;
+                pr.isType = false;
+                pr.isParamRef = true;
+                pr.hadParamRef = true;
+                pr.paramRefWas = ref->second;
+                nonTypePatternParams_.erase(ref);
+                undo->push_back(pr);
+            }
             auto it = enumIndex_.find(p.name);
             if (it != enumIndex_.end()) { s.had = true; s.was = it->second; }
             enumIndex_[p.name] = enums_.size();
@@ -474,6 +488,9 @@ const Type *Parser::readTemplateDeclaration(const TemplateDecl &decl,
         std::vector<Shadow> undo;
         ~Unbind() { p->unbindTemplateParameters(undo); }
     } guard{ this, std::vector<Shadow>() };
+    // **The caller's locals are not in the template's scope**: `Mx<4,4> M; M * v` read the operator's
+    // `CVector<M>` as that object, and the operator was never a candidate.
+    const LocalsHidden hidden(this);
     bindTemplateParameters(decl.params, binding, values,
                            packs != nullptr
                                ? *packs
@@ -560,7 +577,8 @@ bool Parser::skipTemplatedDefinition(bool *sawInit, bool *sawParen) {
         if (peek().is("{")) { depth++; body = body || !initialiser; at_++; continue; }
         if (peek().is("}")) {
             at_++;
-            if (--depth == 0) { consume(";"); return body; }
+            // A function try block's handlers follow its braces and are the body too.
+            if (--depth == 0 && !(body && peek().is("catch"))) { consume(";"); return body; }
             continue;
         }
         if (peek().is(";") && depth == 0) { at_++; return body; }
@@ -727,6 +745,8 @@ bool Parser::templateDeclaration() {
     decl.name = templatedName(decl.params, &decl.isClass, &qualifier, &constructs, &fnPattern);
     if (decl.isClass) refuseAfterPack(decl.params);
     else              requireDeducibleAfterPack(decl, fnPattern);
+    if (!decl.isClass && !literalSuffix(decl.name).empty())
+        checkLiteralOperatorTemplate(decl, fnPattern);
     // Where it was written, for the manglers - the table's key stays bare.
     decl.ns = namespacePrefix();
     at_ = decl.afterParams;
@@ -1705,6 +1725,11 @@ const Type *Parser::decayedType(const Type *a) const {
 // An lvalue argument travels to deduction as `U &`: an expression's type never carries
 // its value category, and a forwarding reference is the one parameter that asks for it.
 const Type *Parser::deductionArgType(const Expr &e) const {
+    if (const OverloadArg *oa = overloadArgOf(e))
+        src_.fail(oa->pos, "'" + oa->key + "' names " + std::to_string(oa->set.size()) +
+                           " functions, and is passed where a template deduces from it - choosing "
+                           "one there is not supported yet; initialise a pointer of the type wanted "
+                           "and pass that");
     const Type *t = e.type();
     if (isLvalue(e) && !t->isReference() && !t->isFunction()) return types_.referenceTo(t);
     return t;
@@ -2789,6 +2814,8 @@ const Type *Parser::instantiateClass(const TemplateDecl &decl, std::size_t pos) 
     deferSpecializationBodies_ = true;
     StorageClass sc;
     Qualifiers quals;
+    // Nor in a class template's: `V<3> N(...)` made V<3> read its own `double s[N]` as the local.
+    std::unique_ptr<LocalsHidden> hidden(new LocalsHidden(this));
     const Type *made = partial
         ? structOrUnionSpecifier(Kind::Struct, false)
         : specifiers(&sc, &quals);
@@ -2800,6 +2827,7 @@ const Type *Parser::instantiateClass(const TemplateDecl &decl, std::size_t pos) 
     instantiatingParams_ = outerParams;
     instantiatingBinding_ = outerBinding;
     instantiatingValues_ = outerValues;
+    hidden.reset();
     classStack_.swap(outerClasses);
     currentClass_ = outerCurrent;
     inlineOwner_ = outerInline;

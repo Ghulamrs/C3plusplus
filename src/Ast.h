@@ -145,6 +145,13 @@ public:
     void setReadOnly(bool r) { readOnly_ = r; }
     bool noAddress() const { return noAddress_; }
     void setNoAddress(bool n) { noAddress_ = n; }
+    // **An object with thread storage duration** - [basic.stc.thread] - reached through the thread
+    // pointer rather than by its own address; `viaWrapper` says to go through the ABI's wrapper
+    // function (Itanium's _ZTW) or its guard (Microsoft's __tls_guard) first, see Parser::tlsVar.
+    bool isThreadLocal() const { return threadLocal_; }
+    void setThreadLocal(bool t) { threadLocal_ = t; }
+    bool viaWrapper() const { return viaWrapper_; }
+    void setViaWrapper(bool w) { viaWrapper_ = w; }
     void accept(Visitor &v) const override { v.visit(*this); }
 
 private:
@@ -156,6 +163,8 @@ private:
     int offset_;
     bool readOnly_ = false;
     bool noAddress_ = false;
+    bool threadLocal_ = false;
+    bool viaWrapper_ = false;
 };
 
 class StrLit final : public Expr {
@@ -636,6 +645,11 @@ public:
     const std::vector<Param> &params() const { return params_; }
     const Stmt &body() const { return *body_; }
     int frameSize() const { return frameSize_; }
+    // **What the frame must be aligned to**: the stack's 16 unless a local asked for more with
+    // `alignas` or its type, when the prologue realigns the frame to it - [basic.align], measured
+    // from clang's `and $-64, %rsp`. The parser records the widest slot it allocated.
+    int frameAlign() const { return frameAlign_; }
+    void setFrameAlign(int a) { frameAlign_ = a; }
     bool isStatic() const { return isStatic_; }
     int sretSlot() const { return sretSlot_; }
     bool isVariadic() const { return variadic_; }
@@ -656,8 +670,12 @@ public:
     // Declared noexcept (or throw()): a table that says so lets the runtime end the program itself.
     bool isNoexcept() const { return noexcept_; }
     void setNoexcept(bool b) { noexcept_ = b; }
+    // `throw(T...)`'s type_info symbols, for a target whose table states the list; empty where none was written.
+    const std::vector<std::string> &exceptionSpec() const { return spec_; }
+    void setExceptionSpec(std::vector<std::string> s) { spec_ = std::move(s); }
 private:
     bool noexcept_ = false;
+    std::vector<std::string> spec_;
     bool hasThis_ = false;
     bool isInline_ = false;
     std::string name_;
@@ -667,6 +685,7 @@ private:
     std::vector<Param> params_;
     StmtPtr body_;
     int frameSize_;
+    int frameAlign_ = 16;
     bool isStatic_;
     int sretSlot_;
     bool variadic_;
@@ -706,6 +725,18 @@ struct Global {
     // that share a polymorphic class collide on every one of them.
     bool isInline = false;
     int align = 0;   // `alignas(N)` on the object: what it asked for beyond its type's, else 0
+    // `thread_local`: one copy per thread, in the target's TLS segment rather than .data or .bss.
+    bool isThreadLocal = false;
+};
+
+// **One Itanium TLS wrapper this unit writes** - `_ZTW<name>`, the function every other unit calls
+// to reach a thread_local with external linkage: defined here (local-exec, calling `_ZTH` first
+// where the object has dynamic initialisation) or declared elsewhere (initial-exec, `_ZTH` weak).
+struct TlsWrapper {
+    std::string symbol;
+    bool definedHere;
+    bool dynamicInit;
+    bool internal;       // `static thread_local` built by __tls_init: a wrapper nobody else can name
 };
 
 struct StringLit {
@@ -728,6 +759,10 @@ struct Program {
     std::string initFunction;
     // Whether it names __dso_handle, which ELF wants declared hidden.
     bool usesDsoHandle = false;
+    // **The function that initialises this unit's thread_locals in a thread**, `__tls_init`, which
+    // Itanium's `_ZTH` aliases name and the Microsoft CRT runs from .CRT$XDU; empty where none needs one.
+    std::string tlsInitFunction;
+    std::vector<TlsWrapper> tlsWrappers;
     // **Whether the file wrote `volatile` anywhere.** The type system drops it,
     // so the optimizer cannot tell a volatile read from a plain one: such a
     // file is compiled without -O (see Driver::compile).

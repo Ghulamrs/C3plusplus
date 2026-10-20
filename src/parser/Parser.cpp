@@ -19,8 +19,7 @@ int alignTo(int n, int a) { return (n + a - 1) / a * a; }
 const char *notYetSupported(const std::string &word) {
     static const char *const pending[] = {
         "asm",
-        "export",
-        "thread_local"
+        "export"
     };
     for (const char *k : pending)
         if (word == k) return k;
@@ -764,11 +763,14 @@ bool Parser::atDeclarationStart() const {
     return atTypeName() || peek().is("static") || peek().is("extern")
         || peek().is("register") || peek().is("auto") || peek().is("typedef")
         || peek().is("constexpr") || peek().is("alignas") || peek().is("class")
+        || peek().is("thread_local")
         || (peek().is("[") && peekAt(1).is("["));
 }
 
 // From the '{' to the '}' that closes it, counting depth.
 void Parser::skipBracedBlock() {
+    // A function try block's handlers are its body too, [dcl.fct.def.general]/1.
+    const bool functionTry = peek().is("try");
     // A constructor's body may be preceded by its mem-initializer list, so
     // what is skipped starts at the ':' and the '{' is found from there.
     while (!peek().is("{")) {
@@ -781,7 +783,12 @@ void Parser::skipBracedBlock() {
         if (peek().kind == TokenKind::End)
             src_.fail(peek().pos, "this member function's body is never closed");
         if (peek().is("{")) depth++;
-        else if (peek().is("}")) { depth--; at_++; if (depth == 0) return; continue; }
+        else if (peek().is("}")) {
+            depth--;
+            at_++;
+            if (depth == 0 && !(functionTry && peek().is("catch"))) return;
+            continue;
+        }
         at_++;
     }
 }
@@ -804,6 +811,7 @@ Parser::FunctionState Parser::captureFunctionState() const {
     s.labels = labels_;
     s.gotos = gotos_;
     s.frameSize = frameSize_;
+    s.frameAlign = frameAlign_;
     s.freeSlots = freeSlots_;
     s.localSerial = localSerial_;
     s.thisOffset = thisOffset_;
@@ -825,6 +833,7 @@ Parser::FunctionState Parser::captureFunctionState() const {
     s.staticSymbols = staticSymbols_;
     s.pendingDefaults = pendingDefaults_;
     s.pendingNoexcept = pendingNoexcept_;
+    s.pendingSpec = pendingSpec_;
     s.inNoexceptFunction = inNoexceptFunction_;
     s.replayingInline = replayingInline_;
     s.loopDepth = loopDepth_;
@@ -835,10 +844,12 @@ Parser::FunctionState Parser::captureFunctionState() const {
     s.inMsHandler = inMsHandler_;
     s.msExit = msExit_;
     s.inHandlerBody = inHandlerBody_;
+    s.inCtorTryHandler = inCtorTryHandler_;
     s.handlerDepth = handlerDepth_;
     s.handlerLoopDepth = handlerLoopDepth_;
     s.handlerSwitchDepth = handlerSwitchDepth_;
     s.handlerFrom = handlerFrom_;
+    s.tryFrom = tryFrom_;
     s.handlerResumeLabel = handlerResumeLabel_;
     s.handlerResumePtr = handlerResumePtr_;
     s.handlerResumeSel = handlerResumeSel_;
@@ -863,6 +874,7 @@ void Parser::restoreFunctionState(const FunctionState &s) {
     labels_ = s.labels;
     gotos_ = s.gotos;
     frameSize_ = s.frameSize;
+    frameAlign_ = s.frameAlign;
     freeSlots_ = s.freeSlots;
     localSerial_ = s.localSerial;
     thisOffset_ = s.thisOffset;
@@ -884,6 +896,7 @@ void Parser::restoreFunctionState(const FunctionState &s) {
     staticSymbols_ = s.staticSymbols;
     pendingDefaults_ = s.pendingDefaults;
     pendingNoexcept_ = s.pendingNoexcept;
+    pendingSpec_ = s.pendingSpec;
     inNoexceptFunction_ = s.inNoexceptFunction;
     replayingInline_ = s.replayingInline;
     loopDepth_ = s.loopDepth;
@@ -894,10 +907,12 @@ void Parser::restoreFunctionState(const FunctionState &s) {
     inMsHandler_ = s.inMsHandler;
     msExit_ = s.msExit;
     inHandlerBody_ = s.inHandlerBody;
+    inCtorTryHandler_ = s.inCtorTryHandler;
     handlerDepth_ = s.handlerDepth;
     handlerLoopDepth_ = s.handlerLoopDepth;
     handlerSwitchDepth_ = s.handlerSwitchDepth;
     handlerFrom_ = s.handlerFrom;
+    tryFrom_ = s.tryFrom;
     handlerResumeLabel_ = s.handlerResumeLabel;
     handlerResumePtr_ = s.handlerResumePtr;
     handlerResumeSel_ = s.handlerResumeSel;
@@ -923,6 +938,7 @@ void Parser::clearFunctionState() {
     labels_.clear();
     gotos_.clear();
     frameSize_ = 0;
+    frameAlign_ = 16;
     freeSlots_.clear();
     localSerial_ = 0;
     thisOffset_ = 0;
@@ -944,6 +960,7 @@ void Parser::clearFunctionState() {
     staticSymbols_.clear();
     pendingDefaults_.clear();
     pendingNoexcept_ = false;
+    pendingSpec_ = DynamicSpec();
     inNoexceptFunction_ = false;
     loopDepth_ = 0;
     switchDepth_ = 0;
@@ -953,10 +970,12 @@ void Parser::clearFunctionState() {
     inMsHandler_ = false;
     msExit_ = nullptr;
     inHandlerBody_ = false;
+    inCtorTryHandler_ = false;
     handlerDepth_ = 0;
     handlerLoopDepth_.clear();
     handlerSwitchDepth_.clear();
     handlerFrom_.clear();
+    tryFrom_.clear();
     handlerResumeLabel_.clear();
     handlerResumePtr_ = 0;
     handlerResumeSel_ = 0;
@@ -987,6 +1006,7 @@ void Parser::replayInlineBodies(std::vector<PendingBody> mine) {
         // class.**
         pendingDefaults_.clear();
         pendingNoexcept_ = false;
+        pendingSpec_ = DynamicSpec();
         const bool scoped = mine[i].freeFunction && !mine[i].tag.empty();
         const Type *scope = scoped ? findTypedef(mine[i].tag) : nullptr;
         if (scope != nullptr) classStack_.push_back(scope);
@@ -1051,22 +1071,27 @@ int Parser::allocateFrameSlot(const Type *type, int alignAtLeast) {
     if (alignAtLeast > align) align = alignAtLeast;
     frameSize_ += stored->size(target_);
     frameSize_ = alignTo(frameSize_, align);
+    // Past the stack's alignment the whole frame is realigned to the widest slot, by its symbol.
+    if (align > frameAlign_) {
+        frameAlign_ = align;
+        const std::string &owner = currentFunction_.empty() ? functionName_ : currentFunction_;
+        if (frameAligns_[owner] < align) frameAligns_[owner] = align;
+    }
     return frameSize_;
 }
 
 int Parser::declare(const std::string &name, const Type *type, std::size_t pos,
                     int alignAtLeast) {
     refuseWeakAlignas(alignAtLeast, type, pos);
-    // A frame slot is only as aligned as the stack it hangs from; past that
-    // the frame would have to be realigned, which no backend here does.
+    // A frame slot is only as aligned as the stack it hangs from; past that the
+    // frame is realigned by the hosts' prologues, and the C6000's is not yet.
     const int typeAlign = type->isReference() ? 0 : type->align(target_);
-    if (alignAtLeast > target_.stackAlign() || typeAlign > target_.stackAlign())
+    if ((alignAtLeast > target_.stackAlign() || typeAlign > target_.stackAlign()) && !target_.realignsFrame())
         src_.fail(pos, "'alignas(" + std::to_string(alignAtLeast > typeAlign ? alignAtLeast : typeAlign) + ")' on a "
-                       "local is not supported yet: the stack is kept " +
-                       std::to_string(target_.stackAlign()) + "-aligned on " +
-                       target_.name() + ", and a local past that would need "
-                       "the frame realigned. A global or a member may ask for "
-                       "more");
+                       "local is not supported yet on " + target_.name() + ": the stack is kept " +
+                       std::to_string(target_.stackAlign()) + "-aligned there, and a local past that "
+                       "would need the frame realigned, which that backend does not do. A global or "
+                       "a member may ask for more");
     if (type->isVoid())
         src_.fail(pos, "'" + name + "' cannot have type void");
     std::size_t from = scopeStarts_.empty() ? 0 : scopeStarts_.back();
@@ -1103,6 +1128,48 @@ void Parser::declareStaticLocal(const std::string &name, const Type *type,
             src_.fail(pos, "'" + name + "' is declared twice in this block");
     locals_.push_back(Local{ name, 0, type, false, symbol });
     fnVars_.push_back(::Local{ name, type, 0, false, symbol, currentBlock() });
+}
+
+// A thread_local has no address a debug record could hold - DWARF reaches one through the thread
+// pointer, which these records do not write yet - so its static-local record is withdrawn.
+void Parser::markThreadLocal(std::size_t local, bool threadLocal) {
+    if (!threadLocal) return;
+    locals_[local].isThreadLocal = true;
+    for (std::size_t i = fnVars_.size(); i-- > 0;)
+        if (fnVars_[i].staticName == locals_[local].staticName) { fnVars_.erase(fnVars_.begin() + static_cast<long>(i)); break; }
+}
+
+void Parser::tlsVar(Var *v, bool viaWrapper, bool external) {
+    v->setThreadLocal(true);
+    // Inside __tls_init an object of this unit is reached directly, as clang reaches it: the
+    // function is already running, and on Windows its guard would call it again.
+    if (currentFunction_ == "__tls_init" && tlsHere_.count(v->symbol()) != 0) viaWrapper = false;
+    v->setViaWrapper(viaWrapper);
+    if (external) tlsReached_.insert(v->symbol());
+}
+
+void Parser::tlsDefining(const std::string &symbol, bool external) {
+    tlsHere_.insert(symbol);
+    if (external) tlsDefined_.insert(symbol);
+}
+
+void Parser::refuseThreadLocalHere(bool written, std::size_t pos) {
+    if (written) src_.fail(pos, "'thread_local' is only allowed on variable declarations");
+}
+
+void Parser::noteThreadLocal(GlobalSym &g, bool prior, bool threadLocal, const std::string &name,
+                             bool viaWrapper, bool external, bool defines, std::size_t pos) {
+    if (prior && g.isThreadLocal != threadLocal)
+        src_.fail(pos, std::string(threadLocal ? "thread-local" : "non-thread-local") + " declaration of '" +
+                       name + "' follows " + (threadLocal ? "non-thread-local" : "thread-local") + " declaration");
+    g.isThreadLocal = threadLocal;
+    if (!threadLocal) return;
+    g.tlsViaWrapper = viaWrapper;
+    g.tlsExternal = external;
+    if (!defines) return;
+    tlsDefining(g.symbol, external);
+    if (viaWrapper && external) tlsDynamic_.insert(g.symbol);
+    if (viaWrapper && !external) tlsInternalDynamic_.insert(g.symbol);
 }
 
 // [basic.scope.hiding]/2: `void f(tm *tm)` - in the body the parameter hides the class, so `tm`

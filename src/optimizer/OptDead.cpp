@@ -44,7 +44,7 @@ bool workInPlace(Stream &s, Flow &f, const Convention &conv, int k, int begin, c
             for (int q = p; q < k; ++q) {
                 if (s[q].kind != Entry::Ins || s[q].dead) continue;
                 for (Operand *o : {&s[q].ins.a, &s[q].ins.b}) {
-                    if ((o->kind == Operand::Register || o->kind == Operand::Memory) && o->reg.id == t) o->reg.id = x;
+                    if ((o->kind == Operand::Register || o->basedOnReg()) && o->reg.id == t) o->reg.id = x;
                     if (o->indexed() && o->index.id == t) o->index.id = x;
                 }
                 f.effects[q] = effectsOf(s[q].ins, conv);

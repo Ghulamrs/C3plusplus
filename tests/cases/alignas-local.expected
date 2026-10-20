@@ -1,0 +1,4 @@
+buf mod 64 = 0, sum 6, last 53, first 6
+w mod 32 = 0, copy mod 32 = 0, d mod 128 = 0
+w 18 copy 28 d 7.5
+59 46

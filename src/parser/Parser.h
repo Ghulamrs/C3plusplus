@@ -8,6 +8,7 @@
 
 #include <functional>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -55,6 +56,9 @@ private:
         int serial = 0;
         // Its position among a trailing return type's parameters, unnamed ones counted - `fp_`, `fp0_`.
         int trailingParam = -1;
+        // A static or extern thread_local in a block, and whether a use goes through its wrapper.
+        bool isThreadLocal = false;
+        bool tlsViaWrapper = false;
     };
 
     // A frame slot a closed scope gave back, for a later local of exactly that stored type: `FreeSlot`, in `freeSlots_`.
@@ -71,6 +75,19 @@ private:
         long long constantValue = 0;
         bool isConstantDouble = false;  // and the floating one, as for Local
         long double constantDouble = 0;
+        // **thread_local** - [basic.stc.thread]: whether a use reaches it through the ABI's wrapper
+        // or guard (declared elsewhere, or built by __tls_init), and whether it has external linkage.
+        bool isThreadLocal = false;
+        bool tlsViaWrapper = false;
+        bool tlsExternal = false;
+    };
+
+    // **`throw(T...)` as written**, adjusted by [except.spec]/2; `throw()` is noexcept and not one of these.
+    struct DynamicSpec {
+        bool written = false;
+        std::vector<const Type *> types;
+        std::size_t pos = 0;
+        bool sameSet(const DynamicSpec &o) const;
     };
 
     struct Signature {
@@ -96,6 +113,7 @@ private:
         bool isStaticMember = false;
         // **`noexcept` on this function**, which in C++11 is not part of its type.
         bool isNoexcept = false;
+        DynamicSpec spec = DynamicSpec();
         // **Nobody wrote this one.** An implicitly declared special member is put in the
         // table so overload resolution finds it, and given a body only if something
         // calls it - which is what keeps the symbol list level with the oracles.
@@ -931,12 +949,15 @@ private:
     // And the vbtable pointer beside them, Microsoft only.
     void storeVbptr(const std::string &cls, const Type *memberOf, int thisSlot,
                     std::vector<StmtPtr> &into);
-    // The `if (mostDerived)` a Microsoft constructor opens with: the vbtable
-    // pointers and the virtual bases, built only by the complete object.
+    struct Alive;
+    // The `if (mostDerived)` a Microsoft constructor opens with: the vbtable pointers and the virtual
+    // bases, built only by the complete object. With `vbs`, a count of those built is zeroed first and
+    // `vbs` gets each one's destruction on that count, for a region over the rest, [except.ctor]/3.
     std::vector<StmtPtr> guardedVirtualBaseInit(
         const Type *type, const std::string &cls, int thisSlot, int flagSlot,
         std::size_t pos, int srcSlot, bool moving,
-        std::map<std::string, std::vector<ExprPtr> > *vbaseArgs);
+        std::map<std::string, std::vector<ExprPtr> > *vbaseArgs,
+        std::vector<Alive> *vbs = nullptr);
     // A thunk: the entry a secondary table holds for a function this class
     // overrides. It moves `this` back to the complete object and calls the
     // real one. Named for the offset it undoes - _ZThn16_N1C1gEv.
@@ -994,6 +1015,7 @@ private:
         // linker folds - the same treatment a template specialization gets.
         bool isInline = false;
         int alignAs = 0;   // `alignas(N)` among the specifiers: the largest, else 0
+        bool isThreadLocal = false;   // `thread_local`, [dcl.stc]/4: one object per thread
     };
 
     struct TypedefName {
@@ -1100,12 +1122,37 @@ private:
         // *contains* rather than where the slot sits.
         bool byAddress = false;
         long long count = 0;   // an array of this many `cls`, destroyed last first; 0 for one object
+        // A subobject a constructor has built, [except.ctor]/3: `offset` is then the slot of `this`,
+        // and the object `owner`'s member `member` or its base `base` - both -1 for the whole object.
+        const Type *owner = nullptr;
+        int member = -1, base = -1;
+        int builtSlot = -1;   // an array being built: the slot counting its `cls` elements built so far
+        // Destroyed only where the slot holds more than `whenAbove`: cl's virtual bases, built under a flag.
+        int whenSlot = -1, whenAbove = 0;
     };
+    // **A function written on its own, between the statements of another**: its pads are its own,
+    // so the enclosing `try`'s chain and pad flag are set aside while it is built.
+    struct OwnPads {
+        Parser &p;
+        std::string chain, handler;
+        bool pads;
+        explicit OwnPads(Parser &parser)
+            : p(parser), chain(parser.tryChainLabel_), handler(parser.handlerResumeLabel_),
+              pads(parser.functionHasPads_) {
+            p.tryChainLabel_.clear();
+            p.handlerResumeLabel_.clear();
+            p.functionHasPads_ = false;
+        }
+        bool made() const { return p.functionHasPads_; }
+        ~OwnPads() { p.tryChainLabel_ = chain; p.handlerResumeLabel_ = handler; p.functionHasPads_ = pads; }
+    };
+    // [except.ctor]/3 over an element loop: `loop` counts in `indexSlot` the elements of `a` built.
+    StmtPtr guardElements(StmtPtr loop, Alive a, int indexSlot, std::size_t pos);
 
-    // One automatic object a jump may not land past - see Local::guardsJump. Its serial is
-    // the identity - a slot may be shared by two objects whose scopes do not overlap, and
-    // a name can be declared again in an inner block; the name is for the message.
-    struct JumpGuard { std::string name; int serial; };
+    // One automatic object a jump may not land past - see Local::guardsJump - or with `region`
+    // a `try` block (1) or a handler (2), which [except.handle]/2 lets a jump leave and never enter.
+    // Its serial is the identity: a slot may be shared, a name declared again in an inner block.
+    struct JumpGuard { std::string name; int serial; int region = 0; };
     std::vector<JumpGuard> jumpGuards() const;
     void checkJump(const std::vector<JumpGuard> &from,
                    const std::vector<JumpGuard> &to, std::size_t pos,
@@ -1131,7 +1178,13 @@ private:
         // go into `cleanups`, filled by resolveGotos(). Null for a label.
         std::vector<Alive> alive;
         Block *cleanups;
+        // A goto's own: whether it destroys what it leaves (a parent's half of a funclet's jump
+        // does not), and the exit a Microsoft handler leaves its funclet by.
+        bool destroys = true;
+        std::string msExit;
     };
+    // `goto name;` as written here - what the jump destroys, ends and leaves is decided once the label is read.
+    StmtPtr gotoStatement(const std::string &name, std::size_t pos, bool destroys);
     // alive_.size() at the entry to each loop body, and to each loop body
     // or switch body: what `continue` and `break` respectively destroy on
     // the way out is everything built since.
@@ -1192,6 +1245,28 @@ private:
     std::vector<StmtPtr> memberDestructors(const std::string &cls,
                                            const Type *type, int thisSlot,
                                            std::size_t pos);
+    // A member of this type, or an array of one, has a destructor to run.
+    bool memberHasDestructor(const Type *t) const;
+    // One member's destruction, appended to `out` - nothing for a member with no destructor.
+    void memberDestructor(std::vector<StmtPtr> &out, const std::string &cls, const Type *type,
+                          int thisSlot, std::size_t n, std::size_t pos);
+    // The base-object destructor of `cls`'s base `which`, on `this` - D2, or cl's `??1`.
+    StmtPtr baseDestructorCall(const Type *cls, std::size_t which, int thisSlot, std::size_t pos);
+    // The class's own base-object destructor, on `this` and not through its vtable.
+    StmtPtr selfDestructorCall(const Type *cls, int thisSlot, std::size_t pos);
+    // A constructor the compiler writes, `steps` in order with `done[i]` what step i finishes (no owner:
+    // nothing) - each guarding the steps after it. Written on its own, so no enclosing `try` is its own.
+    StmtPtr guardConstruction(std::vector<StmtPtr> steps, std::vector<Alive> done, std::size_t pos,
+                              bool *guarded);
+    // cl's virtual-base `init` in front of `rest`: the count zeroed, and the rest guarded by `vbs`.
+    StmtPtr withVirtualBases(std::vector<StmtPtr> init, const std::vector<Alive> &vbs, StmtPtr rest,
+                             std::size_t pos);
+    // `rest` in one region destroying all of `as`, last first, on unwind.
+    StmtPtr guardSubobjects(StmtPtr rest, const std::vector<Alive> &as, std::size_t pos);
+    // [except.ctor]/3: `rest`, run after a subobject is built, in a region destroying it on unwind - and
+    // `before` with it, which a pad handing over to a function try block's handlers owes as well.
+    StmtPtr guardSubobject(StmtPtr rest, const Alive &a, std::size_t pos,
+                           const std::vector<Alive> &before = std::vector<Alive>());
     // The deleting destructor, which no program writes: it runs the
     // destructor and then frees. Itanium calls it D0 and Microsoft ??_G, and
     // it is what a `delete` through a base pointer reaches.
@@ -1219,7 +1294,8 @@ private:
                                           int srcSlot = -1, bool moving = false,
                                           std::map<std::string,
                                               std::vector<ExprPtr> >
-                                              *vbaseArgs = nullptr);
+                                              *vbaseArgs = nullptr,
+                                          std::vector<int> *builtBase = nullptr);
     static std::string destructorKey(const std::string &cls) {
         return cls + "::~" + localOf(cls);
     }
@@ -1324,6 +1400,7 @@ private:
     // lays down after the `try` and hands it back as the address to carry on at.
     struct MsExit {
         std::string ret, brk, cont;   // the labels, empty until an exit asks
+        std::vector<std::pair<std::string, std::string> > gotos;   // an exit label, and the goto's
         int retSlot = 0;              // the returned value, saved for the parent
         std::string retTemp;
     };
@@ -1338,7 +1415,7 @@ private:
         std::vector<std::size_t> scopeStarts;
         std::vector<int> blocks, blockStack;
         std::vector<LabelDef> labels, gotos;
-        int frameSize = 0, thisOffset = 0;
+        int frameSize = 0, thisOffset = 0, frameAlign = 16;
         std::vector<FreeSlot> freeSlots;
         int localSerial = 0;
         const Type *currentClass = nullptr;
@@ -1356,6 +1433,7 @@ private:
         std::vector<std::string> staticSymbols;
         std::vector<std::size_t> pendingDefaults;
         bool pendingNoexcept = false;
+        DynamicSpec pendingSpec;
         bool inNoexceptFunction = false;
         bool replayingInline = false;
         // The six a review found still missing, each with a program that
@@ -1364,11 +1442,11 @@ private:
         int loopDepth = 0, switchDepth = 0;
         std::vector<SwitchCtx> switches;
         std::vector<std::size_t> breakMarks;
-        bool inTryBody = false, inMsHandler = false, inHandlerBody = false;
+        bool inTryBody = false, inMsHandler = false, inHandlerBody = false, inCtorTryHandler = false;
         MsExit *msExit = nullptr;
         int handlerDepth = 0;
         std::vector<int> handlerLoopDepth, handlerSwitchDepth;
-        std::vector<std::size_t> handlerFrom;
+        std::vector<std::size_t> handlerFrom, tryFrom;
         std::string handlerResumeLabel;
         int handlerResumePtr = 0, handlerResumeSel = 0;
         int mayThrow = 0;
@@ -1469,6 +1547,34 @@ private:
     int dynInitFrame_ = 0;
     std::vector<int> dynInitGuards_;
     std::string initFunctionSymbol() const;
+    // **The same for thread storage** - [basic.stc.thread]: `__tls_init`, its frame and its guards,
+    // built while tlsObject_ says the object being declared is a thread_local; the init functions
+    // below write to initSink(), and registerDestruction asks the target's threadAtexit().
+    std::vector<StmtPtr> tlsInit_;
+    int tlsInitFrame_ = 0;
+    std::vector<int> tlsInitGuards_;
+    bool tlsObject_ = false;
+    std::vector<StmtPtr> &initSink() { return tlsObject_ ? tlsInit_ : dynInit_; }
+    // The external thread_locals this unit defines, those __tls_init builds (external and internal),
+    // and those it reaches: what the Itanium wrappers and `_ZTH` aliases are made from.
+    std::set<std::string> tlsDefined_, tlsDynamic_, tlsReached_, tlsInternalDynamic_, tlsHere_;
+    void tlsDefining(const std::string &symbol, bool external);
+    void finishTlsInit(Program &program);
+    // The flags a Var reaching a thread_local carries, see Var::viaWrapper.
+    void tlsVar(Var *v, bool viaWrapper, bool external);
+    // A block-scope static just declared is a thread_local: marked, and taken out of the debug records.
+    void markThreadLocal(std::size_t local, bool threadLocal);
+    // **The widest alignment a slot of the function being parsed asked for**, 16 until one asks for
+    // more; kept by the function's symbol for parse() to hand each Function, since fifteen sites
+    // build one and the backends realign the frame from this.
+    int frameAlign_ = 16;
+    std::map<std::string, int> frameAligns_;
+    // What a namespace-scope declaration says of its object's thread storage, recorded on the
+    // symbol and checked against what an earlier declaration said - [dcl.stc]/4, clang's words.
+    void noteThreadLocal(GlobalSym &g, bool prior, bool threadLocal, const std::string &name,
+                         bool viaWrapper, bool external, bool defines, std::size_t pos);
+    // `thread_local` written where only a variable may carry it - clang's words.
+    void refuseThreadLocalHere(bool written, std::size_t pos);
     // Everything below runs inside the init function's frame. The state
     // struct is what every other re-entry door saves, and this is one more.
     FunctionState enterInitFunction();
@@ -1487,9 +1593,10 @@ private:
     ExprPtr functionAddress(const std::string &symbol, const Type *fnType);
     // A file-scope object with a constructor, and a static data member of one.
     void dynamicInitialise(Declared &d, const std::string &symbol,
-                           const std::string &helper, bool once);
+                           const std::string &helper, bool once, std::vector<GlobalPiece> *folded = nullptr);
     // [stmt.dcl]/4.
     StmtPtr guardOnce(const std::string &symbol, std::vector<StmtPtr> body);
+    StmtPtr guardOnceThread(const std::string &symbol, std::vector<StmtPtr> body);
     // Where guardSlots_ stood when the init function's frame was entered.
     std::size_t initGuardMark_ = 0;
     void staticLocalWithConstructor(Declared &d,
@@ -1522,8 +1629,11 @@ private:
         return false;
     }
     void declareStaticMember(const std::string &cls, Type *owner,
-                             const Declared &d, Access access, bool volatileWritten);
-    void defineStaticMember(Declared &d, Program &program);
+                             const Declared &d, Access access, bool volatileWritten,
+                             bool threadLocal, bool isConstexpr = false);
+    void defineConstexprStaticMember(const std::string &full, const std::string &symbol, const Declared &d);
+    std::set<std::string> inClassConstexprStatics_;
+    void defineStaticMember(Declared &d, Program &program, bool threadLocal);
     // **What a static member *defined* out of line is worth when read** - the
     // [expr.const]/3 read-back a namespace-scope const already makes.
     struct StaticConst {
@@ -1735,6 +1845,15 @@ private:
                                  const std::vector<const Type *> &params,
                                  bool member, std::size_t pos,
                                  bool internal = false);
+    // [over.literal]/2-/8: where a literal operator may be declared, and the lists it may take.
+    void checkLiteralOperator(const std::string &name, const std::vector<const Type *> &params,
+                              bool member, std::size_t pos);
+    // [over.literal]/5: a literal operator template's own list is one `char...` and its function's empty.
+    void checkLiteralOperatorTemplate(const TemplateDecl &decl, const Type *pattern);
+    // [lex.ext]/2-8: a literal with a ud-suffix, as the call of the literal operator it names.
+    ExprPtr userDefinedLiteral(Program *program);
+    // Whether the literal at the cursor - adjacent strings taken together - carries a ud-suffix.
+    bool atUserDefinedLiteral() const;
     const Type *arraySuffix(const Type *base, std::size_t pos);
     const Type *promote(const Type *t) const;
     const Type *usualArithmetic(const Type *a, const Type *b) const;
@@ -1766,6 +1885,14 @@ private:
                             std::size_t pos, const std::string &symbol);
     void requireAssignable(const Expr &e, std::size_t pos, const char *what);
     const Local *findLocal(const std::string &name) const;
+    // **A template's own scope has none of the locals of the function that named it**: held aside
+    // while its declaration or class body is read, put back on every way out.
+    struct LocalsHidden {
+        Parser *p;
+        std::vector<Local> held;
+        explicit LocalsHidden(Parser *q) : p(q) { held.swap(p->locals_); }
+        ~LocalsHidden() { held.swap(p->locals_); }
+    };
     bool localHidesType() const;
     bool atTemporaryMemberAccess() const;
     void enterScope();
@@ -1819,7 +1946,12 @@ private:
     ExprPtr virtualDestructorCall(const std::string &temp, int slot, const Type *t,
                                   const Type *cls, bool deleting, std::size_t pos);
     // `try { ... } catch (T e) { ... }` - rung 6.3.
-    StmtPtr tryStatement(std::size_t pos);
+    // A constructor's function try block hands its body in as `bodyFn` - parsed and assembled with the
+    // `try` open - and `rethrows`: each handler ends rethrowing, [except.handle]/15.
+    StmtPtr tryStatement(std::size_t pos, const std::function<StmtPtr()> &bodyFn = nullptr,
+                         bool rethrows = false, const std::string &spec = std::string());
+    // Inside a handler of a constructor's function try block, where `return` is ill-formed.
+    bool inCtorTryHandler_ = false;
     // Set while a try's body is read, so a try inside one is refused.
     bool inTryBody_ = false;
     // Inside a Microsoft `catch` body, which is compiled as a funclet - a function of its own.
@@ -1845,6 +1977,8 @@ private:
     void releaseGuarded(std::vector<StmtPtr> &steps, const Temporary &t);
     // Where each open handler's block begins, telling a `goto` from a jump.
     std::vector<std::size_t> handlerFrom_;
+    // Where each open `try` block begins, for the jumps [except.handle]/2 forbids into one.
+    std::vector<std::size_t> tryFrom_;
     // The `__cxa_end_catch` calls a jump out of `count` handlers has to make, appended after whatever destructors that jump already runs.
     void endCatches(std::vector<StmtPtr> &into, int count);
     // How many handlers a `break` or a `continue` here leaves.
@@ -2017,6 +2151,12 @@ private:
         }
         ~StaticMemberScope() { p->currentClass_ = cls; p->inStaticMember_ = wasStatic; }
     };
+    // While a thread_local is declared: its construction, binding and destructor go to __tls_init.
+    struct ThreadLocalObject {
+        Parser *p; bool was;
+        ThreadLocalObject(Parser *parser, bool tls) : p(parser), was(parser->tlsObject_) { p->tlsObject_ = tls; }
+        ~ThreadLocalObject() { p->tlsObject_ = was; }
+    };
     // Whether a declaration here has internal linkage: written `static`, or
     // inside an unnamed namespace, which says the same thing about a name.
     bool internalLinkage(StorageClass sc) const {
@@ -2183,6 +2323,12 @@ private:
         const Member *member = nullptr;
         long long index = 0;
     };
+    bool isAggregateClass(const Type *t) const;
+    bool bracedInitialiserAhead() const;
+    bool constructedClass(const Type *t) const;
+    bool needsConstruction(const Type *t) const;
+    void initConstruct(const std::string &name, std::vector<InitStep> &path, const Type *type,
+                       std::vector<ExprPtr> args, bool valueInit, std::size_t pos, std::vector<StmtPtr> &out);
 
     // **[dcl.init]/8: `T()` on a class with no user-provided constructor is
     // value-initialisation, which zeroes it.** `initZero` says the same in statements;
@@ -2252,13 +2398,29 @@ private:
     };
     std::map<std::string, ConstexprFn> constexprFns_;   // by mangled symbol
 
+    // **A constant object of literal class type** - [basic.types]/10, [expr.const]/2: its scalar
+    // leaves by byte offset, which is all a constant expression reads of it.
+    struct ConstLeaf { const Type *type = nullptr; long long i = 0; long double d = 0; };
+    typedef std::map<int, ConstLeaf> ConstObject;
+    typedef std::shared_ptr<ConstObject> ConstObjectPtr;
+    // A `constexpr` constructor, kept as its lowered body: this slot, then the parameters'.
+    struct ConstexprCtor { const Stmt *body = nullptr; std::vector<int> slots; int thisSlot = 0; };
+    std::map<std::string, ConstexprCtor> constexprCtors_;   // by C1 and C2 symbol
+    std::set<std::string> constexprCtorSymbols_;           // declared `constexpr` in their class
+    // Named constexpr objects: a global by its name, a local by function and slot.
+    std::map<std::string, ConstObject> constObjects_;
+
     // One frame per call being folded, holding what each parameter slot is worth:
     // an integer, or a double when the parameter's type is floating (A11).
+    // A class parameter holds its object; a pointer to one the object and an offset in it.
     struct ConstexprSlot {
         int offset = 0;
         bool floating = false;
         long long i = 0;
         long double d = 0;
+        ConstObjectPtr obj;
+        bool pointer = false;
+        std::string global;   // a global object being built, named by this slot
     };
     mutable std::vector<std::vector<ConstexprSlot> > constexprFrames_;
     const ConstexprSlot *constexprSlot(const Var &v) const;
@@ -2267,6 +2429,25 @@ private:
                             std::size_t pos) const;
 
     const Expr *singleReturnValue(const Stmt &body) const;
+    bool foldArgument(const Expr &a, ConstexprSlot *slot, std::size_t pos) const;
+    bool foldObject(const Expr &e, ConstObject *out, std::size_t pos) const;
+    bool foldObjectPointer(const Expr &e, ConstObjectPtr *obj, int *at, std::size_t pos) const;
+    bool objectAddress(const Expr &lvalue, ConstObjectPtr *obj, int *at, std::size_t pos) const;
+    bool foldLeaf(const Expr &lvalue, ConstLeaf *out, std::size_t pos) const;
+    bool runConstexpr(const Stmt &s, std::size_t pos) const;
+    bool runConstexprEffect(const Expr &e, std::size_t pos) const;
+    bool constructConst(const Call &c, std::size_t pos) const;
+    std::string constObjectKey(const Var &v) const;
+    bool instantiateForConstant(const std::string &symbol) const;
+    static ConstObject subObject(const ConstObject &from, int at, int size);
+    static void storeSubObject(ConstObject &into, int at, int size, const ConstObject &what);
+    // The object a declaration's own statements build, run with `target` standing for it.
+    bool foldDeclaredObject(const std::vector<const Stmt *> &init, const Var &target, ConstObject *out,
+                            std::size_t pos);
+    bool constObjectFromInit(const Type *t, const Init &in, int base, ConstObject *out) const;
+    void foldLocalObject(const Declared &d, int off, const std::vector<StmtPtr> &inits, std::size_t from);
+    void constObjectPieces(const ConstObject &o, std::vector<GlobalPiece> &out);
+    void refuseConstexprClassObject(const std::string &name, std::size_t pos) const;
     ExprPtr targetFor(const std::string &name, const std::vector<InitStep> &path);
 
     void initStore(const std::string &name, std::vector<InitStep> &path,
@@ -2311,7 +2492,8 @@ private:
     void requireStringFits(const Type *array, const StrLit *s, std::size_t pos);
 
     void topLevel(Program &program);
-    StmtPtr block();
+    // A `{...}`, or with `functionTry` a function's whole body that is one `try` statement, [dcl.fct.def.general].
+    StmtPtr block(bool functionTry = false);
     StmtPtr statement();
     StmtPtr statementBody();
     StmtPtr declarationBody();
@@ -2347,6 +2529,7 @@ private:
     // `extern template ...;` is read and suppresses nothing: true if one was read.
     bool externTemplateDeclaration();
     bool exceptionSpecification();
+    const Type *adjustedSpecType(const Type *t, std::size_t pos);
     // ---- WS-C1 (review 2026-10-08): the virt-specifier-seq and `= default` / `= delete`, read behind the exception specification ----
     VirtSpecifiers pendingVirt_;
     void readVirtSpecifiers();
@@ -2371,7 +2554,6 @@ private:
     void declareDefaultedMoveAssign(const std::string &tag, const Type *type, std::size_t pos);
     const Signature *moveAssignOf(const Type *cls) const;
     void refuseConstexprConstructorBody(std::size_t parenAt) const;
-    void refuseConstexprClassObject();
     void refuseScopedConversion(const Type *from, const Type *to, std::size_t pos) const;
     void refuseScopedOperand(const Type *a, const Type *b, const char *op, std::size_t pos) const;
     // `E::a`, `n::E::a`, `C::E::a` - an enumerator named through its enumeration, [dcl.enum]/11.
@@ -2384,6 +2566,8 @@ private:
     // ---- end WS-C1 ----
     // Set by exceptionSpecification() at each place a parameter list can be closed, read and cleared by whichever declare* call follows.
     bool pendingNoexcept_ = false;
+    // The other half of what exceptionSpecification() read: `throw(T...)` with a type in it.
+    DynamicSpec pendingSpec_;
     // **Is the function being parsed declared `noexcept`?** [except.spec]/9.
     bool inNoexceptFunction_ = false;
     // Set when `explicit operator T()` is seen, consumed by the next declareFunction of a conversion name, which stamps the signature.
@@ -2448,14 +2632,46 @@ private:
     ExprPtr functionAsValue(const std::string &key, std::size_t pos);
     // [over.over]: what an overloaded function's name converts to while its operand is read.
     const Type *overloadTarget_ = nullptr;
+    // Set while a call argument that is a function's name and nothing else is read: its set waits.
+    bool overloadArgument_ = false;
     // Held over an initialiser, an assignment's right side, a cast's operand and a return's value.
     struct OverloadTarget {
-        Parser &p; const Type *was;
-        OverloadTarget(Parser &parser, const Type *t) : p(parser), was(parser.overloadTarget_) { p.overloadTarget_ = t; }
-        ~OverloadTarget() { p.overloadTarget_ = was; }
+        Parser &p; const Type *was; bool wasArgument;
+        OverloadTarget(Parser &parser, const Type *t, bool argument = false)
+            : p(parser), was(parser.overloadTarget_), wasArgument(parser.overloadArgument_) {
+            p.overloadTarget_ = t; p.overloadArgument_ = argument;
+        }
+        ~OverloadTarget() { p.overloadTarget_ = was; p.overloadArgument_ = wasArgument; }
     };
-    // The one function of the set whose type the target names - of `cls` for a member - or null.
-    const Signature *pickByTarget(const std::vector<std::size_t> &set, const Type *cls) const;
+    // The one function of the set whose type `target` names - of `cls` for a member - or null.
+    const Signature *pickByTarget(const std::vector<std::size_t> &set, const Type *cls,
+                                  const Type *target) const;
+    // A function's address as a value, and a member function's as the ABI's pair.
+    ExprPtr functionAddress(const Signature &sig, const std::string &key);
+    ExprPtr memberFunctionAddress(const Type *cls, const Signature &f, const std::string &key,
+                                  std::size_t pos);
+    // `f`, `&f`, `n::f` or `&S::f` alone up to the argument's `,` or `)`, the next token first.
+    bool atBareFunctionArgument() const;
+    // The class scope's member functions of `name` as a value - its static ones - or null where it has none.
+    ExprPtr memberFunctionByName(const std::string &name, std::size_t pos);
+    // [over.over]/1's parameter target: an overloaded name as an argument waits behind a
+    // placeholder, as a braced list does, until the parameter it initialises is known.
+    struct OverloadArg {
+        const Expr *placeholder; long long serial;
+        std::vector<std::size_t> set; std::string key; const Type *cls; std::size_t pos;
+    };
+    std::vector<OverloadArg> overloadArgs_;
+    long long overloadSerial_ = 0;
+    ExprPtr overloadPlaceholder(const std::vector<std::size_t> &set, const std::string &key,
+                                const Type *cls, std::size_t pos);
+    const OverloadArg *overloadArgOf(const Expr &e) const;
+    // The function of the set `param` takes, as a value - null where none or several are of its type.
+    ExprPtr overloadArgumentFor(const Type *param, const OverloadArg &oa);
+    // Before `key`'s set is ranked: each candidate's parameter picks, and they must pick one function.
+    void pickOverloadArguments(const std::string &key, std::vector<ExprPtr> &args,
+                               const Type *object);
+    // A placeholder that reached a call no parameter picked it on, refused by name.
+    void refuseOverloadArguments(const std::vector<ExprPtr> &args, const std::string &callee) const;
     ExprPtr reinterpretCast(std::size_t pos);
     ExprPtr unary();
     ExprPtr postfix();

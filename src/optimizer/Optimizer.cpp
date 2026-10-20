@@ -227,12 +227,13 @@ void Optimizer::replay(const opt::Stream &s) {
 }
 
 // Everything else is an event: held where it stood, with its arguments copied.
-void Optimizer::prologue(int frameSize, const std::string &lsda, int outgoing) {
+void Optimizer::prologue(int frameSize, const std::string &lsda, int outgoing, int realign) {
+    assert(realign == 0 && "a realigned frame is written past the optimizer");
     fn_.prologueAt = static_cast<int>(fn_.stream.size());
     fn_.frameSize = frameSize;
     fn_.lsda = lsda;
     fn_.outgoing = outgoing;
-    event([=](Spelling &s) { s.prologue(frameSize, lsda, outgoing); });
+    event([=](Spelling &s) { s.prologue(frameSize, lsda, outgoing, realign); });
 }
 void Optimizer::fileEntry(int n, const std::string &name) {
     event([=](Spelling &s) { s.fileEntry(n, name); });
@@ -248,6 +249,11 @@ void Optimizer::textSection() { event([](Spelling &s) { s.textSection(); }); }
 void Optimizer::rodataSection() { event([](Spelling &s) { s.rodataSection(); }); }
 void Optimizer::dataSection() { event([](Spelling &s) { s.dataSection(); }); }
 void Optimizer::bssSection() { event([](Spelling &s) { s.bssSection(); }); }
+void Optimizer::tlsDataSection() { event([](Spelling &s) { s.tlsDataSection(); }); }
+void Optimizer::tlsBssSection() { event([](Spelling &s) { s.tlsBssSection(); }); }
+void Optimizer::tlsInitialiserEntry(const std::string &fn) {
+    event([=](Spelling &s) { s.tlsInitialiserEntry(fn); });
+}
 void Optimizer::objectType(const std::string &name) {
     event([=](Spelling &s) { s.objectType(name); });
 }

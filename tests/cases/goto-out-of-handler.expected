@@ -1,0 +1,6 @@
++L1 +L2 -L2 +L3 small -L3 after out -L1 1
++L1 +L2 -L2 +L3 -L3 out -L1 5
++L4 n7 -L4 +L4 -L4 done 1
++L4 n7 -L4 +L4 n7 -L4 +L4 n7 -L4 none done 9
+turns2 3
+LEDGER built=36 gone=36 live=0 double=0 phantom=0 over=0 lost=0

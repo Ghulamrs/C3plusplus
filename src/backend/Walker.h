@@ -95,6 +95,7 @@ protected:
         std::vector<int> indices;
         bool cleanup = false;   // a trailing action record with filter 0
         bool terminate = false; // a throw out of here ends the program: a pad's own code
+        bool handsOver = false; // a pad in this region, or its own, goes on to another by a jump
         // Where this segment begins, counted in the order labels are defined -
         // which is address order, since the walk emits as it goes. Only usable
         // as a sort key because the segments below are disjoint.
@@ -110,13 +111,14 @@ protected:
         // can put these on the end of its own action chain.
         std::vector<std::string> types;
         std::vector<int> indices;
+        bool innerHandsOver = false;
     };
     // **Rows are used in the order they are registered and never sorted.**
     void callSite(const std::string &begin, const std::string &end,
                   const std::string &pad,
                   const std::vector<std::string> &types,
                   const std::vector<int> &indices,
-                  bool cleanup = false, int at = 0) {
+                  bool cleanup = false, int at = 0, bool handsOver = false) {
         CallSite s;
         s.begin = begin;
         s.end = end;
@@ -125,6 +127,7 @@ protected:
         s.indices = indices;
         s.cleanup = cleanup;
         s.at = at;
+        s.handsOver = handsOver;
         callSites_.push_back(s);
     }
 
@@ -136,7 +139,7 @@ protected:
     // `resume` - which is the inner's end, so the enclosing still covers the
     // inner's landing pad and handler.
     std::vector<CallSite> closeRegion(const std::string &end,
-                                      const std::string &resume);
+                                      const std::string &resume, bool handsOver = false);
     const std::vector<CallSite> &callSites() const { return callSites_; }
     void clearCallSites() { callSites_.clear(); open_.clear(); labelOrder_ = 0; }
 
@@ -156,6 +159,9 @@ protected:
 
     // Write -2 into the runtime's scratch word.
     virtual void storeUnwindHelp(int slot) { (void)slot; }
+
+    // FH3's scratch word set to -2 before the body's first call; see Walker.cpp.
+    void storeUnwindHelpAtEntry(const Stmt &body);
 
     // A cleanup funclet is opened the same way and closed differently.
     virtual void endCleanupFunclet() {}

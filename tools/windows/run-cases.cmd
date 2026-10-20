@@ -105,6 +105,7 @@ exit /b 0
 
 rem  A case may say it cannot be compiled for this target, one reason per line in <case>.notarget -
 rem  the file tests/emit.sh reads. The reason is printed: an exclusion nobody sees is one nobody removes.
+rem  <case>.nomasm says the same of the MASM spelling alone, with its reason: the GNU pass still runs it.
 :one
 set NAME=%~1
 if exist %ROOT%\tests\cases\%NAME%.notarget (
@@ -113,6 +114,12 @@ if exist %ROOT%\tests\cases\%NAME%.notarget (
         findstr /C:"x86_64-windows" %ROOT%\tests\cases\%NAME%.notarget
         exit /b 0
     )
+)
+rem  And one the MASM spelling cannot write, its reason in <case>.nomasm - the GNU pass still runs it.
+if "%CXX1_PASS_FLAGS%"=="-masm=masm" if exist %ROOT%\tests\cases\%NAME%.nomasm (
+    echo   skip %NAME% for the MASM spelling:
+    type %ROOT%\tests\cases\%NAME%.nomasm
+    exit /b 0
 )
 rem  A case's second translation unit, <case>.part.cpp, goes into its program - as run.sh does.
 set PART=

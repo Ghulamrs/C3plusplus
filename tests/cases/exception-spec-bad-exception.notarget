@@ -1,0 +1,2 @@
+x86_64-windows cl ignores a throw(...) list, as cpp11 does there (docs/CONFORMANCE.md)
+tms6747 vm6747 has no std::set_unexpected, and the C6000 header no std::bad_exception

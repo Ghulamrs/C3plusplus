@@ -4,6 +4,7 @@
 #include "Parser.h"
 #include "ParserInternal.h"
 #include "../Mangle.h"
+#include "../Operator.h"
 #include "../Source.h"
 
 #include <climits>
@@ -630,22 +631,21 @@ ExprPtr Parser::functionalCast(const Type *to, std::size_t pos) {
 }
 
 // **A function's address, from its key.**
-const Parser::Signature *Parser::pickByTarget(const std::vector<std::size_t> &set, const Type *cls) const {
-    const Type *t = overloadTarget_ == nullptr ? nullptr : overloadTarget_->unqualified();
+const Parser::Signature *Parser::pickByTarget(const std::vector<std::size_t> &set, const Type *cls,
+                                              const Type *target) const {
+    const Type *t = target == nullptr ? nullptr : target->unqualified();
     if (t == nullptr) return nullptr;
-    const Type *fn = nullptr;
-    if (cls != nullptr) {
-        if (!t->isMemberFunctionPointer() || t->enclosing() != cls->unqualified()) return nullptr;
-        fn = t->pointee();
-    } else if (t->isFunctionPointer() || (t->isReference() && t->pointee()->isFunction())) {
-        fn = t->pointee();
-    }
-    if (fn == nullptr) return nullptr;
+    // A plain function and a static member want a pointer or reference to a function, `const &` to one
+    // included; a non-static member wants a pointer to a member of `cls`.
+    const Type *plain = t->isReference() ? t->referent()->unqualified() : t;
+    plain = plain->isFunction() ? plain : plain->isFunctionPointer() ? plain->pointee() : nullptr;
+    const Type *member = cls != nullptr && t->isMemberFunctionPointer() &&
+                         t->enclosing() == cls->unqualified() ? t->pointee() : nullptr;
     const Signature *found = nullptr;
     for (std::size_t i : set) {
         const Signature &f = functions_[i];
-        if (cls != nullptr && f.isStaticMember) continue;
-        if (types_.functionType(f.returns, f.params, f.variadic, f.refThis) != fn) continue;
+        const Type *fn = !f.owner.empty() && !f.isStaticMember ? member : plain;
+        if (fn == nullptr || types_.functionType(f.returns, f.params, f.variadic, f.refThis) != fn) continue;
         if (found != nullptr) return nullptr;
         found = &f;
     }
@@ -655,25 +655,135 @@ const Parser::Signature *Parser::pickByTarget(const std::vector<std::size_t> &se
 ExprPtr Parser::functionAsValue(const std::string &key, std::size_t pos) {
     const Signature *sig = nullptr;
     if (const std::vector<std::size_t> *set = overloadsOf(key)) {
-        if (set->size() > 1) sig = pickByTarget(*set, nullptr);
+        if (set->size() > 1) sig = pickByTarget(*set, nullptr, overloadTarget_);
+        if (set->size() > 1 && sig == nullptr && overloadArgument_)
+            return overloadPlaceholder(*set, key, nullptr, pos);
         if (set->size() > 1 && sig == nullptr)
             src_.fail(pos, "'" + key + "' names " +
                            std::to_string(set->size()) + " functions, and "
                            "which one this is cannot be told from the use "
-                           "alone - choosing one by the parameter it is passed "
-                           "to is not supported yet; initialise a pointer of "
-                           "the type wanted and pass that");
+                           "alone - choosing one by a type this place asks for is "
+                           "not supported yet here; initialise a pointer of the "
+                           "type wanted and use that");
     }
     if (sig == nullptr) sig = findFunction(key);
     if (sig == nullptr) return nullptr;
+    return functionAddress(*sig, key);
+}
+
+ExprPtr Parser::functionAddress(const Signature &sig, const std::string &key) {
     Var *v = Var::global(key);
-    v->setSymbol(sig->symbol);
+    v->setSymbol(sig.symbol);
     ExprPtr target(v);
-    const Type *fn = types_.functionType(sig->returns, sig->params, sig->variadic);
+    const Type *fn = types_.functionType(sig.returns, sig.params, sig.variadic);
     target->setType(fn);
     ExprPtr n(new Unary('&', std::move(target)));
     n->setType(types_.pointerTo(fn));
     return n;
+}
+
+// `&S::f` for a member function: the ABI's pair, built in a slot of this frame the way a class temporary is.
+ExprPtr Parser::memberFunctionAddress(const Type *cls, const Signature &f, const std::string &key,
+                                      std::size_t pos) {
+    // [expr.unary.op]/3: a static member function's address is an ordinary pointer.
+    if (f.isStaticMember) return functionAddress(f, key);
+    // **A virtual one holds the slot, not the function.**
+    // Itanium: 1 + the slot's byte offset, tested at the
+    // call; Microsoft: the address of a vcall thunk.
+    if (f.isVirtual) {
+        int index = -1;
+        const std::vector<VSlot> &slots = vtables_[cls->tag()];
+        for (std::size_t i = 0; i < slots.size(); i++)
+            if (overrides(slots[i], f.name, f.params, f.constThis, f.refThis))
+                index = static_cast<int>(i);
+        if (index < 0)
+            src_.fail(pos, "'" + key + "' is virtual but has "
+                           "no slot in '" + cls->describe() +
+                           "'s own vtable - a function of a "
+                           "base after the first is not "
+                           "supported here yet");
+        if (target_.microsoftNames())
+            return boundMemberPointer(cls, f, pos, 0,
+                                      synthesizeVcallThunk(cls, f, index, pos));
+        return boundMemberPointer(cls, f, pos,
+                                  1 + static_cast<long long>(index) * pointerBytes());
+    }
+    return boundMemberPointer(cls, f, pos);
+}
+
+bool Parser::atBareFunctionArgument() const {
+    std::size_t k = 0, open = 0;
+    for (; peekAt(k).is("&") || peekAt(k).is("("); k++) open += peekAt(k).is("(") ? 1 : 0;
+    if (peekAt(k).is("::")) k++;
+    if (peekAt(k).kind != TokenKind::Ident) return false;
+    while (peekAt(k + 1).is("::") && peekAt(k + 2).kind == TokenKind::Ident) k += 2;
+    for (; open > 0; open--, k++)
+        if (!peekAt(k + 1).is(")")) return false;
+    return peekAt(k + 1).is(",") || peekAt(k + 1).is(")");
+}
+
+// [basic.lookup.unqual]/8: a member function named bare in a member is the class's before the namespace's.
+ExprPtr Parser::memberFunctionByName(const std::string &name, std::size_t pos) {
+    if (boundValueParams_.count(name) != 0) return nullptr;
+    const Type *roots[2] = { currentClass_ != nullptr ? currentClass_
+                                                      : classStack_.empty() ? nullptr
+                                                                            : classStack_.back(),
+                             lambdaScope() };
+    for (const Type *root : roots)
+        for (const Type *c = root; c != nullptr; c = c->base()) {
+            const std::vector<std::size_t> *set =
+                name == localOf(c->tag()) ? nullptr : overloadsOf(c->tag() + "::" + name);
+            if (set == nullptr) continue;
+            bool anyStatic = false;
+            for (std::size_t i : *set) anyStatic = anyStatic || functions_[i].isStaticMember;
+            if (!anyStatic)
+                src_.fail(pos, "'" + name + "' names a non-static member function, which must be "
+                               "called - write '&" + localOf(c->tag()) + "::" + name + "' for its "
+                               "pointer to member");
+            return functionAsValue(c->tag() + "::" + name, pos);
+        }
+    return nullptr;
+}
+
+// The placeholder is a `void` constant like a braced list's, told apart by its serial.
+ExprPtr Parser::overloadPlaceholder(const std::vector<std::size_t> &set, const std::string &key,
+                                    const Type *cls, std::size_t pos) {
+    ExprPtr mark(new Num(++overloadSerial_));
+    mark->setType(types_.get(Kind::Void));
+    overloadArgs_.push_back(OverloadArg{ mark.get(), overloadSerial_, set, key, cls, pos });
+    return mark;
+}
+
+const Parser::OverloadArg *Parser::overloadArgOf(const Expr &e) const {
+    const Num *n = dynamic_cast<const Num *>(&e);
+    if (n == nullptr || e.type() == nullptr || !e.type()->isVoid()) return nullptr;
+    for (std::size_t i = 0; i < overloadArgs_.size(); i++)
+        if (overloadArgs_[i].placeholder == &e && overloadArgs_[i].serial == n->value())
+            return &overloadArgs_[i];
+    return nullptr;
+}
+
+ExprPtr Parser::overloadArgumentFor(const Type *param, const OverloadArg &oa) {
+    const Signature *f = pickByTarget(oa.set, oa.cls, param);
+    if (f == nullptr) return nullptr;
+    const OverloadArg mine = oa;
+    for (std::size_t i = 0; i < overloadArgs_.size(); i++)
+        if (overloadArgs_[i].placeholder == mine.placeholder) {
+            overloadArgs_.erase(overloadArgs_.begin() + static_cast<long>(i));
+            break;
+        }
+    return mine.cls != nullptr ? memberFunctionAddress(mine.cls, *f, mine.key, mine.pos)
+                               : functionAddress(*f, mine.key);
+}
+
+void Parser::refuseOverloadArguments(const std::vector<ExprPtr> &args,
+                                     const std::string &callee) const {
+    for (std::size_t i = 0; i < args.size(); i++)
+        if (const OverloadArg *oa = overloadArgOf(*args[i]))
+            src_.fail(oa->pos, "'" + oa->key + "' names " + std::to_string(oa->set.size()) +
+                               " functions, and choosing one by the parameter of '" + callee +
+                               "' it is passed to is not supported yet on this road - initialise "
+                               "a pointer of the type wanted and pass that");
 }
 
 // **The injected class name of a base**, which is how a derived class
@@ -690,6 +800,165 @@ struct FindBase {
         return nullptr;
     }
 };
+
+bool Parser::atUserDefinedLiteral() const {
+    if (peek().kind == TokenKind::Num) return !peek().udSuffix.empty();
+    for (std::size_t k = 0; peekAt(k).kind == TokenKind::Str; k++)
+        if (!peekAt(k).udSuffix.empty()) return true;
+    return false;
+}
+
+// A string literal's code units: bytes, UTF-16 units for `u`, code points for U and L.
+static long long codeUnits(const std::string &text, char prefix, bool wide) {
+    if (prefix != 'u' && prefix != 'U' && !wide) return static_cast<long long>(text.size());
+    long long n = 0;
+    for (std::size_t i = 0; i < text.size(); ) {
+        const unsigned char c = static_cast<unsigned char>(text[i]);
+        const int extra = c >= 0xF0 ? 3 : c >= 0xE0 ? 2 : c >= 0xC0 ? 1 : 0;
+        n += prefix == 'u' && extra == 3 ? 2 : 1;
+        i += extra + 1;
+    }
+    return n;
+}
+
+// **The literal is rewritten as the call [lex.ext] says it is**, into tokens past the end and read
+// by `primary` - so the call is looked up, resolved and folded as one written out would be. Which
+// call a number makes is [lex.ext]/3-4's: the cooked form, else the raw one or the template.
+ExprPtr Parser::userDefinedLiteral(Program *program) {
+    const Token lit = peek();
+    const std::size_t pos = lit.pos;
+    std::string suffix = lit.udSuffix;
+    Token value = lit;
+    value.udSuffix.clear();
+    at_++;
+    // [lex.ext]/8: adjacent strings are one literal, the suffix any of them carries the whole's.
+    if (lit.kind == TokenKind::Str) {
+        while (peek().kind == TokenKind::Str) {
+            if (!peek().udSuffix.empty() && !suffix.empty() && peek().udSuffix != suffix)
+                src_.fail(peek().pos, "adjacent string literals with different ud-suffixes '" +
+                                      suffix + "' and '" + peek().udSuffix + "' - [lex.ext]/8");
+            if (!peek().udSuffix.empty()) suffix = peek().udSuffix;
+            if (peek().prefix != 0 && value.prefix != 0 && peek().prefix != value.prefix)
+                src_.fail(peek().pos, "adjacent string literals with different "
+                                      "encoding prefixes - [lex.string]/13");
+            if (peek().prefix != 0) value.prefix = peek().prefix;
+            value.wide = value.wide || peek().wide;
+            value.text += peek().text;
+            at_++;
+        }
+    }
+    const std::size_t resume = at_;
+    const bool number = !lit.spelling.empty();
+    const std::size_t suffixPos = number ? pos + lit.spelling.size() : pos;
+    const char *what = lit.kind == TokenKind::Str ? "string literal"
+                     : !number ? "character constant"
+                     : lit.isFloat ? "floating constant" : "integer constant";
+    // [usrlit.suffix]/1 reserves a suffix with no `_` first; clang calls one at a literal invalid.
+    if (suffix[0] != '_')
+        src_.fail(suffixPos, "invalid suffix '" + suffix + "' on " + what + " - a ud-suffix "
+                             "that does not begin with '_' is reserved, [usrlit.suffix]");
+    const std::string name = "operator\"\" " + suffix;
+    const std::string shown = "operator\"\"" + suffix;
+    const std::string key = qualifyForLookup(name, &Parser::hasFunctionNamed);
+    const std::vector<std::size_t> *set = overloadsOf(key);
+
+    std::vector<Token> call;
+    auto put = [&](TokenKind kind, const std::string &text) {
+        Token t;
+        t.kind = kind;
+        t.text = text;
+        t.pos = pos;
+        call.push_back(t);
+    };
+    auto byName = [&]() {
+        put(TokenKind::Keyword, "operator");
+        put(TokenKind::Str, std::string());
+        put(TokenKind::Ident, suffix);
+        put(TokenKind::Punct, "(");
+    };
+    if (number) {
+        bool cooked = false, raw = false;
+        if (set != nullptr)
+            for (std::size_t k = 0; k < set->size(); k++) {
+                const Signature &f = functions_[(*set)[k]];
+                if (f.fromTemplate || f.params.size() != 1) continue;
+                const Type *p = f.params[0]->unqualified();
+                if (p->kind() == (lit.isFloat ? Kind::LongDouble : Kind::ULongLong)) cooked = true;
+                if (p->isPointer() && p->pointee()->unqualified()->kind() == Kind::Char) raw = true;
+            }
+        const bool templ = isTemplateName(name);
+        if (cooked) {
+            // [lex.ext]/3-4: `n ULL` or `f L`, the literal's own value.
+            if (lit.tooLarge)
+                src_.fail(pos, "integer literal is too large to be represented in any integer "
+                               "type - [lex.ext]/3 hands '" + shown + "' an unsigned long long");
+            value.suffixU = value.suffixLL = !lit.isFloat;
+            value.suffixL = true;
+            value.suffixF = false;
+            byName();
+            call.push_back(value);
+        } else if (raw && templ) {
+            src_.fail(pos, "'" + shown + "' is both a raw literal operator and a literal "
+                           "operator template, and [lex.ext]/3 asks for one of them");
+        } else if (raw) {
+            byName();
+            Token str;
+            str.kind = TokenKind::Str;
+            str.text = lit.spelling;
+            str.pos = pos;
+            call.push_back(str);
+        } else if (templ) {
+            // `operator"" _t<'1', '2'>()`, its characters the literal's as written.
+            put(TokenKind::Ident, name);
+            put(TokenKind::Punct, "<");
+            for (std::size_t k = 0; k < lit.spelling.size(); k++) {
+                if (k > 0) put(TokenKind::Punct, ",");
+                Token c;
+                c.kind = TokenKind::Num;
+                c.value = static_cast<signed char>(lit.spelling[k]);
+                c.isChar = true;
+                c.pos = pos;
+                call.push_back(c);
+            }
+            put(TokenKind::Punct, ">");
+            put(TokenKind::Punct, "(");
+        } else {
+            src_.fail(suffixPos, "no matching literal operator for call to '" + shown +
+                                 "' with argument of type '" +
+                                 (lit.isFloat ? "long double" : "unsigned long long") +
+                                 "' or 'const char *', and no matching literal operator "
+                                 "template - [lex.ext]/3");
+        }
+    } else {
+        if (set == nullptr)
+            src_.fail(pos, "no matching literal operator for call to '" + shown + "' with this " +
+                           what + " - [lex.ext]/" + (lit.kind == TokenKind::Str ? "5" : "6"));
+        byName();
+        call.push_back(value);
+        // [lex.ext]/5: a string's length in code units, its '\0' not counted, as a size_t.
+        if (lit.kind == TokenKind::Str) {
+            put(TokenKind::Punct, ",");
+            Token len;
+            len.kind = TokenKind::Num;
+            len.value = codeUnits(value.text, value.prefix, value.wide);
+            const Kind size = target_.sizeType();
+            len.suffixU = true;
+            len.suffixL = size == Kind::ULong || size == Kind::ULongLong;
+            len.suffixLL = size == Kind::ULongLong;
+            len.pos = pos;
+            call.push_back(len);
+        }
+    }
+    put(TokenKind::Punct, ")");
+    put(TokenKind::End, std::string());
+
+    const std::size_t start = tokens_.size();
+    tokens_.insert(tokens_.end(), call.begin(), call.end());
+    at_ = start;
+    ExprPtr made = primary(program);
+    at_ = resume;
+    return made;
+}
 
 ExprPtr Parser::primary(Program *program) {
     // **`typename X<T>::type()` makes a temporary** - [temp.res]/3 says the name is a type,
@@ -804,10 +1073,14 @@ ExprPtr Parser::primary(Program *program) {
     if (peek().kind == TokenKind::Ident && isTemplateName(peek().text)) {
         // **Class scope before namespace scope** - [basic.lookup.unqual]/8,
         // the rule R1 fixed for a name and this is the same rule for a *call*.
+        // A data member hides one too - `vector[0]` in a class with a member `vector` - unless a `<` follows.
         const bool memberFirst =
-            currentClass_ != nullptr && peekAt(1).is("(") &&
-            (findMemberOwner(currentClass_, peek().text) != nullptr ||
-             memberTemplateOwner(currentClass_, peek().text) != nullptr);
+            currentClass_ != nullptr &&
+            ((peekAt(1).is("(") &&
+              (findMemberOwner(currentClass_, peek().text) != nullptr ||
+               memberTemplateOwner(currentClass_, peek().text) != nullptr)) ||
+             (!peekAt(1).is("<") && (currentClass_->findMember(peek().text) != nullptr ||
+                                     currentClass_->findStaticMember(peek().text) != nullptr)));
         if (!memberFirst) return templateCall(program);
     }
 
@@ -879,6 +1152,8 @@ ExprPtr Parser::primary(Program *program) {
         expect(")");
         return e;
     }
+
+    if (atUserDefinedLiteral()) return userDefinedLiteral(program);
 
     if (peek().kind == TokenKind::Str) {
         std::string label = ".L.str." + std::to_string(strings_++);
@@ -1245,6 +1520,21 @@ ExprPtr Parser::primary(Program *program) {
             if (peekAt(k + 2).is("(") && hasStaticMemberNamed(candidate)) {
                 key = candidate;
                 consumed = k + 2;
+            }
+            // `S::f` not called - a static member function as a value, [expr.prim.general]/9.
+            if (!peekAt(k + 2).is("(") && !peekAt(k + 2).is("::") && hasStaticMemberNamed(candidate)) {
+                const std::size_t qpos = peek().pos;
+                for (std::size_t i : *overloadsOf(candidate)) {
+                    const Signature &f = functions_[i];
+                    const Type *ownerType = findTypedef(f.owner);
+                    if (f.access != Access::Public &&
+                        (ownerType == nullptr || (!insideAccessOf(ownerType, f.access) && !isFriendOf(ownerType))))
+                        src_.fail(qpos, "'" + candidate + "' is " +
+                                        (f.access == Access::Private ? "private" : "protected") +
+                                        " in '" + f.owner + "'");
+                }
+                at_ += k + 2;
+                return functionAsValue(candidate, qpos);
             }
             q += "::" + component;
         }
@@ -1614,6 +1904,8 @@ ExprPtr Parser::primary(Program *program) {
                 return n;
             }
         }
+
+        if (ExprPtr f = memberFunctionByName(name, pos)) return f;
 
         // Namespace scope, last of the three.
         if (const EnumConst *e = findEnum(name)) {
@@ -2009,6 +2301,8 @@ ExprPtr Parser::localRef(const std::string &name) {
                                        : Var::global(l->staticName);
         v->setReadOnly(l->isConst);
         v->setNoAddress(l->isRegister);
+        // A block-scope thread_local is reached directly; an `extern` one through its wrapper.
+        if (l->isThreadLocal) tlsVar(v, l->tlsViaWrapper, l->tlsViaWrapper);
         ExprPtr n(v);
         n->setType(l->type);
         return useReference(std::move(n));
@@ -2021,6 +2315,7 @@ ExprPtr Parser::globalRef(const std::string &name) {
         Var *v = Var::global(name);
         v->setSymbol(g->symbol);
         v->setReadOnly(g->isConst);
+        if (g->isThreadLocal) tlsVar(v, g->tlsViaWrapper, g->tlsExternal);
         ExprPtr n(v);
         n->setType(g->type);
         // A reference at file scope is a slot holding an address, as a local
@@ -2566,7 +2861,12 @@ ExprPtr Parser::unary() {
                     // a slot of this frame the way a class temporary is.
                     const std::string key = cls->tag() + "::" + memberName;
                     if (const std::vector<std::size_t> *set = overloadsOf(key)) {
-                        const Signature *picked = set->size() > 1 ? pickByTarget(*set, cls) : nullptr;
+                        const Signature *picked = set->size() > 1 ? pickByTarget(*set, cls, overloadTarget_)
+                                                                  : nullptr;
+                        if (set->size() > 1 && picked == nullptr && overloadArgument_) {
+                            at_ += q + 1;
+                            return overloadPlaceholder(*set, key, cls, pos);
+                        }
                         if (set->size() > 1 && picked == nullptr)
                             src_.fail(pos, "'" + key + "' names " +
                                            std::to_string(set->size()) +
@@ -2574,34 +2874,13 @@ ExprPtr Parser::unary() {
                                            "cannot be told from the use alone");
                         const Signature &f = picked != nullptr ? *picked : functions_[(*set)[0]];
                         at_ += q + 1;
-                        // [expr.unary.op]/3: a static member function's address is an ordinary pointer.
-                        if (f.isStaticMember) return functionAsValue(key, pos);
-                        // **A virtual one holds the slot, not the function.**
-                        // Itanium: 1 + the slot's byte offset, tested at the
-                        // call; Microsoft: the address of a vcall thunk.
-                        if (f.isVirtual) {
-                            int index = -1;
-                            const std::vector<VSlot> &slots = vtables_[cls->tag()];
-                            for (std::size_t i = 0; i < slots.size(); i++)
-                                if (overrides(slots[i], f.name, f.params, f.constThis, f.refThis))
-                                    index = static_cast<int>(i);
-                            if (index < 0)
-                                src_.fail(pos, "'" + key + "' is virtual but has "
-                                               "no slot in '" + cls->describe() +
-                                               "'s own vtable - a function of a "
-                                               "base after the first is not "
-                                               "supported here yet");
-                            if (target_.microsoftNames())
-                                return boundMemberPointer(cls, f, pos, 0,
-                                                          synthesizeVcallThunk(cls, f, index, pos));
-                            return boundMemberPointer(cls, f, pos,
-                                                      1 + static_cast<long long>(index) * pointerBytes());
-                        }
-                        return boundMemberPointer(cls, f, pos);
+                        return memberFunctionAddress(cls, f, key, pos);
                     }
                 }
         }
         ExprPtr v = castExpr();
+        // `&f` for an overloaded f as an argument is the set itself, still waiting for its parameter.
+        if (overloadArgOf(*v) != nullptr) return v;
         // Only when the class declared one.
         if (ExprPtr call = overloadedUnary("&", v, pos)) return call;
         // **`&f` and `f` are the same thing for a function.** [conv.func] has already

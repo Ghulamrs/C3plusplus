@@ -1,7 +1,7 @@
 // A `constexpr` constructor - [dcl.constexpr]/3, /4 - may always run at run time, and here it
 // does: the class is built by the ordinary constructor, and a constexpr member function on it
-// is called like any other. What the evaluator cannot do is make a constexpr *object* of
-// class type, which constexpr-class-object-refused holds. clang agrees on every line.
+// is called like any other; constexpr-object folds the same constructors while compiling.
+// clang agrees on every line.
 extern "C" int printf(const char *, ...);
 
 struct P {

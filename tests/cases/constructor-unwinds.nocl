@@ -1,0 +1,1 @@
+cl destroys `new M[4]` from `delete[]` through M's vector deleting destructor ??_EM@@QEAAPEAXI@Z, where cxx1 loops the destructor and frees in the open - the shape array-of-class-destructor.nocl records. Every name the program declares agrees.

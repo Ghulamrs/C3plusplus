@@ -26,8 +26,12 @@ public:
     bool resumeTakesException() const override { return false; }   // __cxa_end_cleanup(), measured from cl6x
     bool hasGetExceptionPtr() const override { return false; }     // not in rts6740_elf_eh.lib
     bool beginCatchReturnsObject() const override { return true; } // the object's address for a pointer too, measured on TI's simulator
+    bool specInTable() const override { return true; }      // an FESD with the types, as cl6x writes
     int stackAlign() const override { return 8; }
+    bool realignsFrame() const override { return false; }   // no `AND B15` prologue is built for the C6000
+
     bool loadsUnaligned() const override { return false; }   // LDW faults; no LDNW is emitted
+    bool hasThreadStorage() const override { return false; }   // cl6x 8.2.2 refuses `thread_local`, measured 2026-10-20
     bool microsoftNames() const override { return false; }
     const char *name() const override { return "tms6747"; }
 };

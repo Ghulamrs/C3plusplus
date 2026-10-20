@@ -215,6 +215,7 @@ void Parser::topLevel(Program &program) {
     if (sc == StorageTypedef) {
         do {
             Declared td = declarator(base);
+            refuseThreadLocalHere(quals.isThreadLocal, td.pos);
             typedefFunctionSuffix(td);
             // **A typedef at namespace scope is keyed by its qualified name**, the way a class's tag is.
             const std::string key = namespacePrefix() + td.name;
@@ -228,6 +229,7 @@ void Parser::topLevel(Program &program) {
                                       td.type->describe() + "'");
             typedefIndex_[key] = typedefs_.size();
             typedefs_.push_back(TypedefName{ key, td.type });
+            if (td.type->tag().empty()) td.type->nameForLinkage(key, td.name, nullptr, key != td.name);
         } while (consume(","));
         expect(";");
         return;
@@ -250,7 +252,7 @@ void Parser::topLevel(Program &program) {
     // keyword was written for. The '(' still ahead tells a function from an object.
     const bool constexprFunction =
         quals.isConstexpr &&
-        (peek().is("(") || d.paramsAt != 0 || d.type->isFunction());
+        ((peek().is("(") && !atParenInitialiser()) || d.paramsAt != 0 || d.type->isFunction());
 
     // **`inline` is a function specifier here.** It marks the definition
     // mergeable across translation units - a weak/COMDAT symbol - which is the
@@ -348,7 +350,7 @@ void Parser::topLevel(Program &program) {
                              "'" + d.qualifier + "::" + d.name + "' is written "
                              "without it");
         inNamespace.enter(definedIn);
-        defineStaticMember(d, program);
+        defineStaticMember(d, program, quals.isThreadLocal);
         return;
     }
 
@@ -398,11 +400,12 @@ void Parser::topLevel(Program &program) {
                 const bool defines = !(sc == StorageExtern && !peek().is("="));
                 std::vector<GlobalPiece> pieces;
                 bool hasInit = false;
+                const ThreadLocalObject tlo(this, quals.isThreadLocal);
                 if (defines) {
                     if (prev != nullptr && prev->emitted)
                         src_.fail(d.pos, "'" + d.name + "' is defined twice");
                     const FunctionState outer = enterInitFunction();
-                    bindStaticReference(d, symbol, pieces, hasInit, &dynInit_);
+                    bindStaticReference(d, symbol, pieces, hasInit, &initSink());
                     leaveInitFunction(outer);
                 }
                 if (prev != nullptr) {
@@ -412,11 +415,16 @@ void Parser::topLevel(Program &program) {
                     globals_.push_back(GlobalSym{ gname, symbol, d.type, false,
                                                   defines, defines, false, 0 });
                 }
+                // A thread_local reference bound in __tls_init is reached through the wrapper, one
+                // bound in the image directly; what another unit defines, through the wrapper.
+                noteThreadLocal(prev != nullptr ? *prev : globals_.back(), prev != nullptr, quals.isThreadLocal,
+                                d.name, defines ? !hasInit : true, !internal, defines, d.pos);
                 if (defines)
                     program.globals.push_back(Global{ gname, symbol,
                                                       types_.pointerTo(d.type->referent()),
                                                       std::move(pieces), hasInit,
                                                       internal, false });
+                if (defines) program.globals.back().isThreadLocal = quals.isThreadLocal;
                 if (!consume(",")) break;
                 inNamespace.leave();   // a second declarator is read where the first was written
                 d = declarator(base);
@@ -450,12 +458,15 @@ void Parser::topLevel(Program &program) {
                                      "is not an aggregate and a braced list "
                                      "cannot initialise it - C++14 changed "
                                      "that rule and this compiler is C++11");
-                // **Built before main**, [basic.start.init]/2, in the init
-                // function and in declaration order; destroyed at exit in
-                // reverse. `extern S s;` alone declares and builds nothing.
+                // **Built before main**, [basic.start.init]/2, in the init function and in declaration
+                // order; destroyed at exit in reverse. `extern S s;` alone builds nothing, and an aggregate
+                // from a list is filled member by member below, its members' constructors run there.
+                const Type *each = arrayClass != nullptr ? arrayClass : d.type;
+                const bool aggregate = isAggregateClass(each) && destructorOf(each) == nullptr &&
+                                       bracedInitialiserAhead();
                 if ((arrayClass != nullptr ||
                      hasConstructors(d.type->tag())) &&
-                    sc != StorageExtern) {
+                    sc != StorageExtern && !aggregate) {
                     const std::string gname =
                         (namespaceStack_.empty() || cLinkage_ > 0)
                             ? d.name : namespacePrefix() + d.name;
@@ -497,8 +508,13 @@ void Parser::topLevel(Program &program) {
                         globals_.push_back(GlobalSym{ gname, symbol, d.type,
                                                       d.type->isConst(), true,
                                                       true, false, 0 });
+                        noteThreadLocal(globals_.back(), false, quals.isThreadLocal, d.name, true, !internal, true, d.pos);
                     }
-                    dynamicInitialise(d, symbol, helper, false);
+                    const ThreadLocalObject tlo(this, quals.isThreadLocal);
+                    if (quals.isThreadLocal) tlsDefining(symbol, !internal);
+                    std::vector<GlobalPiece> folded;
+                    dynamicInitialise(d, symbol, helper, false, quals.isConstexpr ? &folded : nullptr);
+                    if (quals.isConstexpr) constObjects_[gname] = constObjects_[symbol];
                     if (prev != nullptr) {
                         prev->emitted = true;
                         prev->hasInit = true;
@@ -508,12 +524,15 @@ void Parser::topLevel(Program &program) {
                                                       d.type->isConst(), true,
                                                       true, false, 0 });
                     }
+                    if (!early)
+                        noteThreadLocal(prev != nullptr ? *prev : globals_.back(), prev != nullptr, quals.isThreadLocal,
+                                        d.name, true, !internal, true, d.pos);
                     // Not isConst: the constructor writes it, so it cannot
-                    // be laid down read-only.
-                    program.globals.push_back(Global{ gname, symbol, d.type,
-                                                      std::vector<GlobalPiece>(),
-                                                      false, internal, false });
+                    // be laid down read-only - unless it was folded, and no constructor runs.
+                    program.globals.push_back(Global{ gname, symbol, d.type, folded,
+                                                      quals.isConstexpr, internal, quals.isConstexpr });
                     program.globals.back().align = quals.alignAs;
+                    program.globals.back().isThreadLocal = quals.isThreadLocal;
                     if (!consume(",")) break;
                     inNamespace.leave();   // a second declarator is read where the first was written
                 d = declarator(base);
@@ -567,7 +586,15 @@ void Parser::topLevel(Program &program) {
                         constantDoubleKnown = true;
                     }
                 }
-                if (!constantKnown && !constantDoubleKnown && quals.isConstexpr)
+                // An aggregate's list, folded leaf by leaf for a constant expression to read.
+                if (quals.isConstexpr && d.type->innermostElement()->unqualified()->isStructOrUnion()) {
+                    ConstObject value;
+                    if (d.type->isArray() || !constObjectFromInit(d.type, in, 0, &value))
+                        refuseConstexprClassObject(d.name, d.pos);
+                    constObjects_[selfKey] = value;
+                }
+                if (!constantKnown && !constantDoubleKnown && quals.isConstexpr &&
+                    !d.type->innermostElement()->unqualified()->isStructOrUnion())
                     src_.fail(d.pos, "'" + d.name + "' is 'constexpr', so its "
                                      "value has to be known while this is "
                                      "compiled, and this initialiser is not a "
@@ -579,7 +606,7 @@ void Parser::topLevel(Program &program) {
                     flattenInit(d.type, in, 0, pieces);
                     hasInit = true;
                 } else {
-                    dynamicScalar = std::move(in);
+                    dynamicScalar = std::move(in);   // a list too, where a member has a constructor
                 }
             } else if (quals.isConstexpr && sc != StorageExtern) {
                 src_.fail(d.pos, "'" + d.name + "' is 'constexpr' and has no "
@@ -611,24 +638,28 @@ void Parser::topLevel(Program &program) {
                 prev->type = both;
                 d.type = both;
                 // [basic.def.odr]/1: `int v;` already defines - C++ has no tentative definition.
-                const bool defines = sc != StorageExtern || hasInit || dynamicScalar.value != nullptr;
+                const bool defines = sc != StorageExtern || hasInit || (dynamicScalar.value != nullptr || dynamicScalar.isList);
                 if (defines && prev->emitted)
                     src_.fail(d.pos, "'" + d.name + "' is defined twice");
-                if ((hasInit || dynamicScalar.value != nullptr) && prev->hasInit)
+                if ((hasInit || (dynamicScalar.value != nullptr || dynamicScalar.isList)) && prev->hasInit)
                     src_.fail(d.pos, "'" + d.name + "' is given an initialiser twice");
-                if (hasInit || dynamicScalar.value != nullptr) prev->hasInit = true;
-                if (dynamicScalar.value != nullptr)
+                if (hasInit || (dynamicScalar.value != nullptr || dynamicScalar.isList)) prev->hasInit = true;
+                const ThreadLocalObject tlo(this, quals.isThreadLocal);
+                if ((dynamicScalar.value != nullptr || dynamicScalar.isList))
                     dynamicInitialiseScalar(gname, d.type, dynamicScalar);
+                noteThreadLocal(*prev, true, quals.isThreadLocal, d.name, (dynamicScalar.value != nullptr || dynamicScalar.isList) || !defines,
+                                !internalLinkage(sc), defines, d.pos);
 
                 // `extern` with an initialiser defines - [dcl.stc]/6 - and
                 // keeps external linkage a const object would otherwise lose.
-                if (sc != StorageExtern || hasInit || dynamicScalar.value != nullptr) {
+                if (sc != StorageExtern || hasInit || (dynamicScalar.value != nullptr || dynamicScalar.isList)) {
                     if (!prev->emitted) {
                         prev->emitted = true;
                         program.globals.push_back(Global{ d.name, prev->symbol,
                                                           d.type, pieces, hasInit,
                                                           internalLinkage(sc),
                                                           prev->isConst });
+                        program.globals.back().isThreadLocal = quals.isThreadLocal;
                     } else {
                         for (Global &g : program.globals)
                             if (g.name == d.name) {
@@ -656,7 +687,7 @@ void Parser::topLevel(Program &program) {
                             (objectIsConst && sc != StorageExtern);
             refuseVolatileWithLinkage(quals.isVolatile, internal, d.pos);
             std::string symbol = dataSymbol(gname, d.type, internal, d.pos);
-            const bool dynamic = dynamicScalar.value != nullptr;
+            const bool dynamic = (dynamicScalar.value != nullptr || dynamicScalar.isList);
             GlobalSym made{ gname, symbol, d.type, objectIsConst,
                             sc != StorageExtern || hasInit || dynamic,
                             hasInit || dynamic, constantKnown, constantValue };
@@ -664,12 +695,17 @@ void Parser::topLevel(Program &program) {
             made.constantDouble = constantDoubleValue;
             if (registered) globals_[early] = made;
             else globals_.push_back(made);
+            const bool definesHere = sc != StorageExtern || hasInit || dynamic;
+            noteThreadLocal(registered ? globals_[early] : globals_.back(), false, quals.isThreadLocal, d.name,
+                            dynamic || !definesHere, !internal, definesHere, d.pos);
+            const ThreadLocalObject tlo(this, quals.isThreadLocal);
             if (dynamic) dynamicInitialiseScalar(gname, d.type, dynamicScalar);
-            if (sc != StorageExtern || hasInit || dynamic) {
+            if (definesHere) {
                 program.globals.push_back(Global{ gname, symbol, d.type,
                                                   std::move(pieces), hasInit,
                                                   internal, objectIsConst && !dynamic });
                 program.globals.back().align = quals.alignAs;
+                program.globals.back().isThreadLocal = quals.isThreadLocal;
                 refuseWeakAlignas(quals.alignAs, d.type, d.pos);
             }
             if (!consume(",")) break;
@@ -680,6 +716,7 @@ void Parser::topLevel(Program &program) {
         return;
     }
 
+    refuseThreadLocalHere(quals.isThreadLocal, d.pos);
     // `auto f(int a) -> decltype(a)`, C++11: the return type is read after the parameters,
     // which are in scope for it by then, [dcl.fct]/2 and [basic.scope.param].
     const bool trailingArrow = trailingArrowAhead();
@@ -855,8 +892,11 @@ void Parser::topLevel(Program &program) {
     // Point::get() are two functions.
     bool constThis = false;
     if (memberOf != nullptr && consume("const")) constThis = true;
-    // The same C++11 rule the class body applies.
-    if (memberOf != nullptr && constexprFunction) constThis = true;
+    // The same C++11 rule the class body applies, to every member function but a constructor - and
+    // a static one, which has no `this` to be const: the lookup below lets that one match without.
+    const bool impliedConst = memberOf != nullptr && constexprFunction && !constThis &&
+                              d.name != localOf(d.qualifier);
+    if (impliedConst) constThis = true;
     // [dcl.fct]/6: a ref-qualifier is a non-static member's, so `int f() &` at namespace scope is ill-formed.
     const std::size_t refAt = peek().pos;
     const RefQual refThis = refQualifier();
@@ -869,6 +909,7 @@ void Parser::topLevel(Program &program) {
     skipAttributes();  // [dcl.fct]/1: the function type's own, after the exception specification
     // **Captured here because declareFunction consumes it.**
     const bool declaredNoexcept = pendingNoexcept_;
+    const DynamicSpec declaredSpec = pendingSpec_;
     if (trailing) d.type = readTrailingReturn(0);
 
     if (consume(";")) {
@@ -954,8 +995,8 @@ void Parser::topLevel(Program &program) {
         if (const std::vector<std::size_t> *set = overloadsOf(key)) {
             for (std::size_t k = 0; k < set->size() && member == nullptr; k++) {
                 const Signature &f = functions_[(*set)[k]];
-                if (f.constThis == constThis && f.refThis == refThis &&
-                    sameParameters(f.params, params))
+                if ((f.constThis == constThis || (impliedConst && f.isStaticMember)) &&
+                    f.refThis == refThis && sameParameters(f.params, params))
                     member = &f;
             }
         }
@@ -1036,6 +1077,8 @@ void Parser::topLevel(Program &program) {
     lambdaCount_ = 0;
     // The mem-initializer list, [class.base.init], parsed here because `this` and the parameters are in scope and the body has not begun.
     std::vector<StmtPtr> memberInits;
+    // For each of those statements, the member it finishes building, or -1 - [except.ctor]/3 needs it.
+    std::vector<int> memberDone;
     // Which members this constructor's own list covers. Kept out here because
     // the initialisers the class wrote are applied to the rest, below, and the
     // list itself is scoped to the block that reads it.
@@ -1054,6 +1097,26 @@ void Parser::topLevel(Program &program) {
     std::vector<ExprPtr> delegateArgs;
     std::size_t delegatePos = 0;
     std::size_t entries = 0;
+    // **A constructor's function try block opens before its mem-initialisers**, which it covers; a
+    // destructor's covers the members and bases it destroys after its body.
+    const bool ctorTry = memberOf != nullptr && peek().is("try") &&
+                         (isCtor || d.name == "~" + localOf(d.qualifier));
+    const std::size_t ctorTryAt = peek().pos;
+    if (ctorTry && target_.microsoftNames())
+        src_.fail(ctorTryAt, "a constructor's or destructor's function try block is not supported yet for "
+                             "x86_64-windows - its handlers end by rethrowing, and a rethrow is refused there");
+    if (ctorTry && memberOf->hasVirtualBase())
+        src_.fail(ctorTryAt, "a function try block on a constructor or destructor of a class with a virtual "
+                             "base is not supported yet - the complete object's one deals with those, outside this one");
+    if (ctorTry) at_++;
+    // **`throw(T...)` on the hosts is a filter around the whole body**, mem-initialisers included, whose
+    // pads hand over the way a function try block's do; TI's table states the list, and cl ignores it.
+    const bool specFilter = declaredSpec.written && !target_.microsoftNames() && !target_.specInTable();
+    const bool specialHandsOver = ctorTry || (specFilter && memberOf != nullptr &&
+                                              (isCtor || d.name == "~" + localOf(d.qualifier)));
+    if (specialHandsOver && !ctorTry && memberOf->hasVirtualBase())
+        src_.fail(declaredSpec.pos, "a 'throw(...)' list on a constructor or destructor of a class with a virtual "
+                                    "base is not supported yet - the complete object's one deals with those");
     if (memberOf != nullptr && peek().is(":")) {
         if (!isCtor)
             src_.fail(peek().pos, "an initialiser list belongs to a "
@@ -1226,7 +1289,17 @@ void Parser::topLevel(Program &program) {
             if (all[i].anonUnion != nullptr && !namedUnions.insert(all[i].anonUnion).second)
                 src_.fail(where[all[i].name], "initializing multiple members of union");
         }
+        // The statements the member before this one added, and which member that was.
+        std::size_t doneFrom = memberInits.size();
+        int doneMember = -1;
+        auto settle = [&]() {
+            memberDone.resize(memberInits.size(), -1);
+            if (doneMember >= 0 && memberInits.size() > doneFrom) memberDone.back() = doneMember;
+        };
         for (std::size_t i = 0; i < all.size(); i++) {
+            settle();
+            doneFrom = memberInits.size();
+            doneMember = static_cast<int>(i);
             const Member *m = &all[i];
             // A base's members are in this class's list too, and its constructor built
             // them; a list entry never names one ([class.base.init]/2), even by the name
@@ -1327,6 +1400,7 @@ void Parser::topLevel(Program &program) {
             assign->setType(m->type);
             memberInits.push_back(StmtPtr(new ExprStmt(std::move(assign))));
         }
+        settle();
     }
 
     returnType_ = d.type;
@@ -1355,15 +1429,8 @@ void Parser::topLevel(Program &program) {
     // Anything already alive belongs to an enclosing function.
     const std::size_t paramsFrom = alive_.size() - aliveParams;
 
-    // **A function try block wraps the whole body, mem-initialisers
-    // included** - [except.pre] - so a handler for it catches what a base or
-    // member constructor threw, which no region built here can express.
-    if (peek().is("try"))
-        src_.fail(peek().pos, "a function try block - 'int f() try { } "
-                              "catch (...) { }' - is not supported yet: its "
-                              "handler covers the mem-initialisers as well as "
-                              "the body, so a 'try' inside the body is not the "
-                              "same thing");
+    // A function try block is a body that is one `try` statement, [dcl.fct.def.general]/1.
+    const bool functionTry = peek().is("try");
 
     atFunctionBody_ = true;
     // [except.spec]/9 needs this inside the body, and the declarator read it a
@@ -1373,272 +1440,348 @@ void Parser::topLevel(Program &program) {
     // A class can be defined inside a function and its members defined from
     // there, so what this function allocates is what it added to the list.
     const std::size_t guardsFrom = guardSlots_.size();
-    inNamespace.enter(definedIn);
-    StmtPtr body = block();
-    inNamespace.leave();
+    StmtPtr body;
+    // What every function does once its body is read - in a constructor's function try block, after its handlers.
+    auto wrapUp = [&]() {
+        // **Every guard this function made is cleared at its entry.**
+        if (guardSlots_.size() > guardsFrom) {
+            std::vector<StmtPtr> withClears;
+            for (std::size_t i = guardsFrom; i < guardSlots_.size(); i++)
+                withClears.push_back(StmtPtr(new ExprStmt(
+                    setGuard(guardSlots_[i], 0))));
+            withClears.push_back(std::move(body));
+            body = StmtPtr(new Block(std::move(withClears)));
+            guardSlots_.resize(guardsFrom);
+        }
+        // **[except.spec]/9 over the whole body**, for an exception this function
+        // did not throw itself.
+        if (inNoexceptFunction_ && mayThrow_ > 0 && !functionHasPads_ &&
+            !target_.microsoftNames()) {
+            const Type *voidPtr = types_.pointerTo(types_.get(Kind::Void));
+            const int pointerSlot = allocateFrameSlot(voidPtr);
+            const int selectorSlot = allocateFrameSlot(types_.intType());
+            functionHasPads_ = true;
 
-    // **Every guard this function made is cleared at its entry.**
-    if (guardSlots_.size() > guardsFrom) {
-        std::vector<StmtPtr> withClears;
-        for (std::size_t i = guardsFrom; i < guardSlots_.size(); i++)
-            withClears.push_back(StmtPtr(new ExprStmt(
-                setGuard(guardSlots_[i], 0))));
-        withClears.push_back(std::move(body));
-        body = StmtPtr(new Block(std::move(withClears)));
-        guardSlots_.resize(guardsFrom);
-    }
-    // **[except.spec]/9 over the whole body**, for an exception this function
-    // did not throw itself.
-    if (inNoexceptFunction_ && mayThrow_ > 0 && !functionHasPads_ &&
-        !target_.microsoftNames()) {
-        const Type *voidPtr = types_.pointerTo(types_.get(Kind::Void));
-        const int pointerSlot = allocateFrameSlot(voidPtr);
-        const int selectorSlot = allocateFrameSlot(types_.intType());
-        functionHasPads_ = true;
+            // A catch-all is the empty type string, the spelling `catch (...)`
+            // takes, so the chain is the pad itself with nothing to test.
+            std::vector<std::string> types;
+            types.push_back(std::string());
+            std::vector<int> indices;
+            indices.push_back(typeIndexFor(std::string()));
 
-        // A catch-all is the empty type string, the spelling `catch (...)`
-        // takes, so the chain is the pad itself with nothing to test.
-        std::vector<std::string> types;
-        types.push_back(std::string());
-        std::vector<int> indices;
-        indices.push_back(typeIndexFor(std::string()));
+            // `__cxa_begin_catch` first, as clang's `__clang_call_terminate` does:
+            // the exception is being handled, and the runtime is told so before
+            // the process ends.
+            std::vector<ExprPtr> beginArgs;
+            ExprPtr held(Var::local(".ex.ptr", pointerSlot));
+            held->setType(voidPtr);
+            beginArgs.push_back(std::move(held));
+            std::vector<StmtPtr> padSteps;
+            padSteps.push_back(StmtPtr(new ExprStmt(
+                runtimeCall("__cxa_begin_catch", voidPtr, std::move(beginArgs)))));
+            padSteps.push_back(StmtPtr(new ExprStmt(
+                runtimeCall("abort", types_.get(Kind::Void),
+                            std::vector<ExprPtr>()))));
+            Block *padBlock = new Block(std::move(padSteps));
+            padBlock->setScope(-1);
 
-        // `__cxa_begin_catch` first, as clang's `__clang_call_terminate` does:
-        // the exception is being handled, and the runtime is told so before
-        // the process ends.
-        std::vector<ExprPtr> beginArgs;
-        ExprPtr held(Var::local(".ex.ptr", pointerSlot));
-        held->setType(voidPtr);
-        beginArgs.push_back(std::move(held));
-        std::vector<StmtPtr> padSteps;
-        padSteps.push_back(StmtPtr(new ExprStmt(
-            runtimeCall("__cxa_begin_catch", voidPtr, std::move(beginArgs)))));
-        padSteps.push_back(StmtPtr(new ExprStmt(
-            runtimeCall("abort", types_.get(Kind::Void),
-                        std::vector<ExprPtr>()))));
-        Block *padBlock = new Block(std::move(padSteps));
-        padBlock->setScope(-1);
+            std::vector<StmtPtr> guarded;
+            guarded.push_back(std::move(body));
+            Try *t = new Try(std::move(guarded), StmtPtr(padBlock), pointerSlot,
+                             selectorSlot, types);
+            t->setTypeIndices(indices);
+            body = StmtPtr(t);
+        }
 
-        std::vector<StmtPtr> guarded;
-        guarded.push_back(std::move(body));
-        Try *t = new Try(std::move(guarded), StmtPtr(padBlock), pointerSlot,
-                         selectorSlot, types);
-        t->setTypeIndices(indices);
-        body = StmtPtr(t);
-    }
+        resolveGotos();
+        variadicBody_ = false;
 
-    resolveGotos();
-    variadicBody_ = false;
+        // **The by-value parameters Microsoft makes this function destroy.** A `return`
+        // already unwinds everything the function owes, parameters included, so these are
+        // appended for the one path that does not go through one: falling off the end.
+        if (aliveParams != 0) {
+            std::vector<StmtPtr> withParams;
+            withParams.push_back(std::move(body));
+            emitDestructors(withParams, paramsFrom, d.pos);
+            body = StmtPtr(new Block(std::move(withParams)));
+            alive_.resize(paramsFrom);
+        }
+    };
+    // A constructor's own: its members, bases and vptrs in front of the body, each guarding the rest.
+    auto assemble = [&]() {
+        memberDone.resize(memberInits.size(), -1);
+        // Members go in front of the body last first, each guarding the rest, [except.ctor]/3 - and in a
+        // function try block every pad hands over to the handlers, so each owes all built before it.
+        std::vector<Alive> built;
+        for (std::size_t bn = 0; specialHandsOver && bn < memberOf->bases().size(); bn++)
+            if (!memberOf->bases()[bn].isVirtual && destructorOf(memberOf->bases()[bn].type) != nullptr) {
+                built.push_back(Alive{ "this", thisOffset_, memberOf });
+                built.back().owner = memberOf;
+                built.back().base = static_cast<int>(bn);
+            }
+        for (std::size_t i = 0; specialHandsOver && i < memberInits.size(); i++)
+            if (memberDone[i] >= 0 && memberHasDestructor(memberOf->members()[memberDone[i]].type)) {
+                built.push_back(Alive{ "this", thisOffset_, memberOf });
+                built.back().owner = memberOf;
+                built.back().member = memberDone[i];
+            }
+        auto builtBefore = [&](const Alive &a) {
+            std::vector<Alive> before;
+            for (const Alive &b : built) {
+                if (b.base == a.base && b.member == a.member) break;
+                before.push_back(b);
+            }
+            return before;
+        };
+        for (std::size_t i = memberInits.size(); i-- > 0; ) {
+            if (memberDone[i] >= 0) {
+                Alive member{ "this", thisOffset_, memberOf };
+                member.owner = memberOf;
+                member.member = memberDone[i];
+                if (memberHasDestructor(memberOf->members()[memberDone[i]].type))
+                    body = guardSubobject(std::move(body), member, d.pos, builtBefore(member));
+            }
+            std::vector<StmtPtr> withInit;
+            withInit.push_back(std::move(memberInits[i]));
+            withInit.push_back(std::move(body));
+            body = StmtPtr(new Block(std::move(withInit)));
+        }
 
-    // **The by-value parameters Microsoft makes this function destroy.** A `return`
-    // already unwinds everything the function owes, parameters included, so these are
-    // appended for the one path that does not go through one: falling off the end.
-    if (aliveParams != 0) {
-        std::vector<StmtPtr> withParams;
-        withParams.push_back(std::move(body));
-        emitDestructors(withParams, paramsFrom, d.pos);
-        body = StmtPtr(new Block(std::move(withParams)));
-        alive_.resize(paramsFrom);
-    }
+        if (delegateCall != nullptr) {
+            // [except.ctor]/2: once the target returns the object is complete, so the body's exception destroys it.
+            if (destructorOf(memberOf) != nullptr) {
+                Alive whole{ "this", thisOffset_, memberOf };
+                whole.owner = memberOf;
+                body = guardSubobject(std::move(body), whole, d.pos);
+            }
+            std::vector<StmtPtr> withTarget;
+            withTarget.push_back(std::move(delegateCall));
+            withTarget.push_back(std::move(body));
+            body = StmtPtr(new Block(std::move(withTarget)));
+        }
 
-    // Members initialise after the bases and the vptr and before the body -
-    // so they are stitched in front of the body here, and the vptr and base
-    // blocks below then wrap the result in their own order.
-    if (!memberInits.empty()) {
-        std::vector<StmtPtr> withInits;
-        for (std::size_t i = 0; i < memberInits.size(); i++)
-            withInits.push_back(std::move(memberInits[i]));
-        withInits.push_back(std::move(body));
-        body = StmtPtr(new Block(std::move(withInits)));
-    }
+        // **And in front of all of it, on Microsoft, the most-derived guard.**
+        if (memberOf != nullptr && memberOf->hasVptr() && !delegates &&
+            (d.name == localOf(d.qualifier) ||
+             d.name == "~" + localOf(d.qualifier))) {
+            std::vector<StmtPtr> withVptr = storeVptrs(d.qualifier, memberOf, thisOffset_);
+            withVptr.push_back(std::move(body));
+            body = StmtPtr(new Block(std::move(withVptr)));
+        }
 
-    if (delegateCall != nullptr) {
-        std::vector<StmtPtr> withTarget;
-        withTarget.push_back(std::move(delegateCall));
-        withTarget.push_back(std::move(body));
-        body = StmtPtr(new Block(std::move(withTarget)));
-    }
+        // **[class.dtor]/8: a written destructor destroys the class's members
+        // too**, after its body and before its bases.
+        if (memberOf != nullptr && d.name == "~" + localOf(d.qualifier)) {
+            std::vector<StmtPtr> withMembers;
+            withMembers.push_back(std::move(body));
+            std::vector<StmtPtr> mine =
+                memberDestructors(d.qualifier, memberOf, thisOffset_, d.pos);
+            for (std::size_t i = 0; i < mine.size(); i++)
+                withMembers.push_back(std::move(mine[i]));
+            body = StmtPtr(new Block(std::move(withMembers)));
+        }
 
-    // **And in front of all of it, on Microsoft, the most-derived guard.**
-    if (memberOf != nullptr && memberOf->hasVptr() && !delegates &&
-        (d.name == localOf(d.qualifier) ||
-         d.name == "~" + localOf(d.qualifier))) {
-        std::vector<StmtPtr> withVptr = storeVptrs(d.qualifier, memberOf, thisOffset_);
-        withVptr.push_back(std::move(body));
-        body = StmtPtr(new Block(std::move(withVptr)));
-    }
+        // **A constructor runs the base's first and a destructor runs it last**, which is
+        // the order the standard fixes and clang emits. The base's C2 and D2 are what is
+        // called, and on Windows there is one name for each, called directly.
+        for (std::size_t bn = 0;
+             memberOf != nullptr && !delegates && bn < memberOf->bases().size() &&
+             (d.name == localOf(d.qualifier) ||
+              d.name == "~" + localOf(d.qualifier)); bn++) {
+            const bool building = d.name == localOf(d.qualifier);
+            // Bases are built in the order they were written and destroyed in the reverse.
+            // **Both walk the list backwards**, because a constructor's call is prepended
+            // to the body and a destructor's is appended; forwards put B before A.
+            const std::size_t which = memberOf->bases().size() - 1 - bn;
+            const Type *base = memberOf->bases()[which].type;
+            const int baseAt = memberOf->bases()[which].offset;
+            // **A virtual base is not built here.**
+            if (memberOf->bases()[which].isVirtual) continue;
+            const std::string key = building ? constructorKey(base->tag())
+                                             : destructorKey(base->tag());
 
-    // **[class.dtor]/8: a written destructor destroys the class's members
-    // too**, after its body and before its bases.
-    if (memberOf != nullptr && d.name == "~" + localOf(d.qualifier)) {
-        std::vector<StmtPtr> withMembers;
-        withMembers.push_back(std::move(body));
-        std::vector<StmtPtr> mine =
-            memberDestructors(d.qualifier, memberOf, thisOffset_, d.pos);
-        for (std::size_t i = 0; i < mine.size(); i++)
-            withMembers.push_back(std::move(mine[i]));
-        body = StmtPtr(new Block(std::move(withMembers)));
-    }
-
-    // **A constructor runs the base's first and a destructor runs it last**, which is
-    // the order the standard fixes and clang emits. The base's C2 and D2 are what is
-    // called, and on Windows there is one name for each, called directly.
-    for (std::size_t bn = 0;
-         memberOf != nullptr && !delegates && bn < memberOf->bases().size() &&
-         (d.name == localOf(d.qualifier) ||
-          d.name == "~" + localOf(d.qualifier)); bn++) {
-        const bool building = d.name == localOf(d.qualifier);
-        // Bases are built in the order they were written and destroyed in the reverse.
-        // **Both walk the list backwards**, because a constructor's call is prepended
-        // to the body and a destructor's is appended; forwards put B before A.
-        const std::size_t which = memberOf->bases().size() - 1 - bn;
-        const Type *base = memberOf->bases()[which].type;
-        const int baseAt = memberOf->bases()[which].offset;
-        // **A virtual base is not built here.**
-        if (memberOf->bases()[which].isVirtual) continue;
-        const std::string key = building ? constructorKey(base->tag())
-                                         : destructorKey(base->tag());
-
-        if (const std::vector<std::size_t> *set = overloadsOf(key)) {
-            // The initialiser list's arguments for this base, or none - in
-            // which case the default constructor is what runs, and a base
-            // without one is refused where the reader can fix it.
-            std::vector<ExprPtr> chosenArgs;
-            std::map<std::string, std::vector<ExprPtr> >::iterator named =
-                baseArgs.find(base->tag());
-            // **Held by value, like everything else that comes out of
-            // overload resolution.** A pointer into `functions_` is a pointer
-            // into a vector that anything parsed after this can move.
-            Signature chosen;
-            bool found = false;
-            // [class.copy]/12: a trivially copyable base copied by name, `: B(b)`, has no copy constructor
-            // to call - its copy is the bytes, as `B c(b);` makes it.
-            bool copyBytes = false;
-            if (building && named != baseArgs.end()) {
-                chosenArgs.swap(named->second);
-                const Type *from = chosenArgs.size() == 1 && chosenArgs[0]->type() != nullptr
-                                       ? chosenArgs[0]->type()->unqualified() : nullptr;
-                copyBytes = from != nullptr && from->isStructOrUnion() && isGlvalue(*chosenArgs[0]) &&
-                            (from == base->unqualified() || accessibleBaseOffset(from, base) >= 0) &&
-                            copyConstructorOf(base) == nullptr && moveConstructorOf(base) == nullptr &&
-                            !base->nonTrivialCopy();
-                if (!copyBytes) chosen = resolveOverload(key, chosenArgs, d.pos);
-                found = true;
-            } else if (building) {
-                // No entry names this base, so its default constructor runs.
-                if (const Signature *dc = defaultConstructorOf(base)) {
-                    // **Marked used, because a copy is what is kept.**
-                    markUsed(dc);
-                    chosen = *dc;
+            if (const std::vector<std::size_t> *set = overloadsOf(key)) {
+                // The initialiser list's arguments for this base, or none - in
+                // which case the default constructor is what runs, and a base
+                // without one is refused where the reader can fix it.
+                std::vector<ExprPtr> chosenArgs;
+                std::map<std::string, std::vector<ExprPtr> >::iterator named =
+                    baseArgs.find(base->tag());
+                // **Held by value, like everything else that comes out of
+                // overload resolution.** A pointer into `functions_` is a pointer
+                // into a vector that anything parsed after this can move.
+                Signature chosen;
+                bool found = false;
+                // [class.copy]/12: a trivially copyable base copied by name, `: B(b)`, has no copy constructor
+                // to call - its copy is the bytes, as `B c(b);` makes it.
+                bool copyBytes = false;
+                if (building && named != baseArgs.end()) {
+                    chosenArgs.swap(named->second);
+                    const Type *from = chosenArgs.size() == 1 && chosenArgs[0]->type() != nullptr
+                                           ? chosenArgs[0]->type()->unqualified() : nullptr;
+                    copyBytes = from != nullptr && from->isStructOrUnion() && isGlvalue(*chosenArgs[0]) &&
+                                (from == base->unqualified() || accessibleBaseOffset(from, base) >= 0) &&
+                                copyConstructorOf(base) == nullptr && moveConstructorOf(base) == nullptr &&
+                                !base->nonTrivialCopy();
+                    if (!copyBytes) chosen = resolveOverload(key, chosenArgs, d.pos);
                     found = true;
-                }
-            } else {
-                for (std::size_t k = 0; k < set->size(); k++)
-                    if (functions_[(*set)[k]].params.empty()) {
-                        markUsed(&functions_[(*set)[k]]);
-                        chosen = functions_[(*set)[k]];
+                } else if (building) {
+                    // No entry names this base, so its default constructor runs.
+                    if (const Signature *dc = defaultConstructorOf(base)) {
+                        // **Marked used, because a copy is what is kept.**
+                        markUsed(dc);
+                        chosen = *dc;
                         found = true;
                     }
-            }
-            if (!found)
-                src_.fail(d.pos, "'" + base->tag() + "' has no constructor "
-                                 "taking nothing - name one in the initialiser "
-                                 "list, ': " + base->tag() + "(...)'");
-            // **The defaults the entry left out are read here, as every other call reads them.**
-            if (building && !copyBytes) applyDefaults(chosen, chosenArgs, d.pos);
-
-            std::string symbol = chosen.symbol;
-            if (!target_.microsoftNames() && !copyBytes) {
-                std::string sub;
-                if (building) {
-                    sub = baseConstructorSymbol(chosen, base);
                 } else {
-                    itaniumDestructorName(base->tag(), base, false, &sub);
+                    for (std::size_t k = 0; k < set->size(); k++)
+                        if (functions_[(*set)[k]].params.empty()) {
+                            markUsed(&functions_[(*set)[k]]);
+                            chosen = functions_[(*set)[k]];
+                            found = true;
+                        }
                 }
-                symbol = sub;
-            }
+                if (!found)
+                    src_.fail(d.pos, "'" + base->tag() + "' has no constructor "
+                                     "taking nothing - name one in the initialiser "
+                                     "list, ': " + base->tag() + "(...)'");
+                // **The defaults the entry left out are read here, as every other call reads them.**
+                if (building && !copyBytes) applyDefaults(chosen, chosenArgs, d.pos);
 
-            const Type *basePtr = types_.pointerTo(base);
-            ExprPtr me(Var::local("this", thisOffset_));
-            if (baseAt == 0) {
-                me->setType(basePtr);      // the first base is the object
-            } else if (memberOf->bases()[which].isVirtual) {
-                // **A virtual base is reached by a constant here**, where
-                // everywhere else it is reached through the vtable.
-                const Type *chars = types_.pointerTo(types_.get(Kind::Char));
-                me->setType(types_.pointerTo(memberOf));
-                ExprPtr asChars(new Cast(chars, std::move(me)));
-                asChars->setType(chars);
-                ExprPtr step(new Num(static_cast<long long>(baseAt)));
-                step->setType(types_.get(Kind::LongLong));
-                ExprPtr moved(new Binary(BinOp::Add, std::move(asChars),
-                                         std::move(step)));
-                moved->setType(chars);
-                me = ExprPtr(new Cast(basePtr, std::move(moved)));
-                me->setType(basePtr);
-            } else {
-                me->setType(types_.pointerTo(memberOf));
-                me = convert(std::move(me), basePtr);
-            }
-            if (copyBytes) {
-                ExprPtr src = std::move(chosenArgs[0]);
-                const Type *from = src->type()->unqualified();
-                ExprPtr at(new Unary('&', std::move(src)));
-                at->setType(types_.pointerTo(from));
-                if (from != base->unqualified()) at = convert(std::move(at), basePtr);
-                ExprPtr value(new Unary('*', std::move(at)));
-                value->setType(base);
-                ExprPtr there(new Unary('*', std::move(me)));
-                there->setType(base);
-                ExprPtr copy(new Assign(std::move(there), std::move(value)));
-                copy->setType(base);
+                std::string symbol = chosen.symbol;
+                if (!target_.microsoftNames() && !copyBytes) {
+                    std::string sub;
+                    if (building) {
+                        sub = baseConstructorSymbol(chosen, base);
+                    } else {
+                        itaniumDestructorName(base->tag(), base, false, &sub);
+                    }
+                    symbol = sub;
+                }
+
+                const Type *basePtr = types_.pointerTo(base);
+                ExprPtr me(Var::local("this", thisOffset_));
+                if (baseAt == 0) {
+                    me->setType(basePtr);      // the first base is the object
+                } else if (memberOf->bases()[which].isVirtual) {
+                    // **A virtual base is reached by a constant here**, where
+                    // everywhere else it is reached through the vtable.
+                    const Type *chars = types_.pointerTo(types_.get(Kind::Char));
+                    me->setType(types_.pointerTo(memberOf));
+                    ExprPtr asChars(new Cast(chars, std::move(me)));
+                    asChars->setType(chars);
+                    ExprPtr step(new Num(static_cast<long long>(baseAt)));
+                    step->setType(types_.get(Kind::LongLong));
+                    ExprPtr moved(new Binary(BinOp::Add, std::move(asChars),
+                                             std::move(step)));
+                    moved->setType(chars);
+                    me = ExprPtr(new Cast(basePtr, std::move(moved)));
+                    me->setType(basePtr);
+                } else {
+                    me->setType(types_.pointerTo(memberOf));
+                    me = convert(std::move(me), basePtr);
+                }
+                if (copyBytes) {
+                    ExprPtr src = std::move(chosenArgs[0]);
+                    const Type *from = src->type()->unqualified();
+                    ExprPtr at(new Unary('&', std::move(src)));
+                    at->setType(types_.pointerTo(from));
+                    if (from != base->unqualified()) at = convert(std::move(at), basePtr);
+                    ExprPtr value(new Unary('*', std::move(at)));
+                    value->setType(base);
+                    ExprPtr there(new Unary('*', std::move(me)));
+                    there->setType(base);
+                    ExprPtr copy(new Assign(std::move(there), std::move(value)));
+                    copy->setType(base);
+                    if (destructorOf(base) != nullptr) {
+                        Alive one{ "this", thisOffset_, memberOf };
+                        one.owner = memberOf;
+                        one.base = static_cast<int>(which);
+                        body = guardSubobject(std::move(body), one, d.pos, builtBefore(one));
+                    }
+                    std::vector<StmtPtr> wrapped;
+                    wrapped.push_back(StmtPtr(new ExprStmt(std::move(copy))));
+                    wrapped.push_back(std::move(body));
+                    body = StmtPtr(new Block(std::move(wrapped)));
+                    continue;
+                }
+                std::vector<ExprPtr> args;
+                args.push_back(std::move(me));
+                std::vector<const Type *> params2;
+                params2.push_back(basePtr);
+                // A base with virtual bases takes its sub-VTT out of this one's.
+                if (takesVtt(base)) {
+                    args.push_back(vttForBase(memberOf, base));
+                    params2.push_back(vttType());
+                }
+                for (std::size_t i = 0; i < chosen.params.size(); i++) {
+                    args.push_back(std::move(chosenArgs[i]));
+                    params2.push_back(chosen.params[i]);
+                }
+                ExprPtr call = completeCall(base->tag(), symbol, nullptr,
+                                            types_.get(Kind::Void), params2, false,
+                                            d.pos, std::move(args), false, 0);
+
                 std::vector<StmtPtr> wrapped;
-                wrapped.push_back(StmtPtr(new ExprStmt(std::move(copy))));
-                wrapped.push_back(std::move(body));
+                if (building) {
+                    // [except.ctor]/3: everything after this base's construction destroys it on unwind.
+                    if (destructorOf(base) != nullptr) {
+                        Alive one{ "this", thisOffset_, memberOf };
+                        one.owner = memberOf;
+                        one.base = static_cast<int>(which);
+                        body = guardSubobject(std::move(body), one, d.pos, builtBefore(one));
+                    }
+                    wrapped.push_back(StmtPtr(new ExprStmt(std::move(call))));
+                    wrapped.push_back(std::move(body));
+                } else {
+                    wrapped.push_back(std::move(body));
+                    wrapped.push_back(StmtPtr(new ExprStmt(std::move(call))));
+                }
                 body = StmtPtr(new Block(std::move(wrapped)));
-                continue;
             }
-            std::vector<ExprPtr> args;
-            args.push_back(std::move(me));
-            std::vector<const Type *> params2;
-            params2.push_back(basePtr);
-            // A base with virtual bases takes its sub-VTT out of this one's.
-            if (takesVtt(base)) {
-                args.push_back(vttForBase(memberOf, base));
-                params2.push_back(vttType());
-            }
-            for (std::size_t i = 0; i < chosen.params.size(); i++) {
-                args.push_back(std::move(chosenArgs[i]));
-                params2.push_back(chosen.params[i]);
-            }
-            ExprPtr call = completeCall(base->tag(), symbol, nullptr,
-                                        types_.get(Kind::Void), params2, false,
-                                        d.pos, std::move(args), false, 0);
-
-            std::vector<StmtPtr> wrapped;
-            if (building) {
-                wrapped.push_back(StmtPtr(new ExprStmt(std::move(call))));
-                wrapped.push_back(std::move(body));
-            } else {
-                wrapped.push_back(std::move(body));
-                wrapped.push_back(StmtPtr(new ExprStmt(std::move(call))));
-            }
-            body = StmtPtr(new Block(std::move(wrapped)));
         }
+
+        // **The most-derived guard goes outside the base calls**, because a
+        // virtual base is built before every non-virtual one: cl's `R::R` stores
+        // the vbtable pointer and calls `V::V` and only then `D1::D1`.
+        if (msVbInitSlot_ >= 0 && memberOf != nullptr &&
+            d.name == localOf(d.qualifier)) {
+            std::vector<Alive> vbs;
+            std::vector<StmtPtr> guarded =
+                guardedVirtualBaseInit(memberOf, d.qualifier, thisOffset_,
+                                       msVbInitSlot_, d.pos, -1, false, &baseArgs, &vbs);
+            body = withVirtualBases(std::move(guarded), vbs, std::move(body), d.pos);
+        }
+    };
+    inNamespace.enter(definedIn);
+    std::vector<std::string> specSymbols;
+    for (const Type *t : declaredSpec.types) {
+        std::string why;
+        specSymbols.push_back(target_.microsoftNames() ? std::string() : typeInfoSymbolFor(t, declaredSpec.pos, &why));
+        if (!target_.microsoftNames() && specSymbols.back().empty())
+            src_.fail(declaredSpec.pos, "a 'throw(...)' list cannot name '" + t->describe() + "': " + why);
     }
-
-    // **The most-derived guard goes outside the base calls**, because a
-    // virtual base is built before every non-virtual one: cl's `R::R` stores
-    // the vbtable pointer and calls `V::V` and only then `D1::D1`.
-    if (msVbInitSlot_ >= 0 && memberOf != nullptr &&
-        d.name == localOf(d.qualifier)) {
-        std::vector<StmtPtr> guarded =
-            guardedVirtualBaseInit(memberOf, d.qualifier, thisOffset_,
-                                   msVbInitSlot_, d.pos, -1, false, &baseArgs);
-        if (!guarded.empty()) {
-            guarded.push_back(std::move(body));
-            body = StmtPtr(new Block(std::move(guarded)));
-        }
+    std::string spec = "$spec";
+    for (const std::string &sym : specSymbols) spec += "," + sym;
+    if (specFilter) {
+        const std::size_t bodyAt = peek().pos;
+        body = tryStatement(bodyAt, [&]() {
+            body = ctorTry ? tryStatement(ctorTryAt, [&]() { body = block(); assemble(); return std::move(body); }, true)
+                           : block(functionTry);
+            if (!ctorTry) assemble();
+            return std::move(body);
+        }, false, spec);
+        inNamespace.leave();
+        wrapUp();
+    } else if (ctorTry) {
+        body = tryStatement(ctorTryAt, [&]() { body = block(); assemble(); return std::move(body); }, true);
+        inNamespace.leave();
+        wrapUp();
+    } else {
+        body = block(functionTry);
+        inNamespace.leave();
+        wrapUp();
+        assemble();
     }
 
     int frame = alignTo(frameSize_, 16);
@@ -1648,10 +1791,18 @@ void Parser::topLevel(Program &program) {
         definedSymbol = lookupSignature(absoluteName.empty() ? d.name : absoluteName, params,
                                         variadic, d.pos).symbol;
 
-    // Recorded before `body` is moved into the Function - the expression the pointer
-    // names is heap-allocated and goes on living there, which makes it safe to keep.
-    // Only a definition has one; a declaration with no body folds through nothing.
-    if (constexprFunction && body != nullptr) {
+    // Recorded before `body` is moved into the Function, where what the pointer names lives on; a
+    // constexpr constructor is kept whole, also under the C2 name a derived class calls it by.
+    if (isCtor && body != nullptr && (constexprFunction || constexprCtorSymbols_.count(definedSymbol))) {
+        ConstexprCtor ctor;
+        ctor.body = body.get();
+        ctor.thisSlot = thisOffset_;
+        for (const Param &p : paramSlots)
+            if (p.offset != thisOffset_) ctor.slots.push_back(p.offset);
+        constexprCtors_[definedSymbol] = ctor;
+        const std::size_t c1 = definedSymbol.find("C1E");
+        if (c1 != std::string::npos) constexprCtors_[std::string(definedSymbol).replace(c1, 3, "C2E")] = ctor;
+    } else if (constexprFunction && body != nullptr) {
         const Expr *value = singleReturnValue(*body);
         if (value == nullptr)
             src_.fail(d.pos, "'" + d.name + "' is 'constexpr', so in C++11 its "
@@ -1684,6 +1835,7 @@ void Parser::topLevel(Program &program) {
     program.functions.back().setHasThis(!d.qualifier.empty() && !inStaticMember_);
     program.functions.back().setHasLandingPads(functionHasPads_);
     program.functions.back().setNoexcept(inNoexceptFunction_);
+    if (declaredSpec.written && target_.specInTable()) program.functions.back().setExceptionSpec(specSymbols);
     // Everything replayed from inside a class body - and every member of a
     // template specialization, which is replayed the same way - is implicitly
     // inline, so its definition may appear in several translation units.
@@ -1777,6 +1929,11 @@ Program Parser::parse() {
     pruneExternalVtables(program);
     pruneUnchosenCandidates(program);
     finishDynamicInit(program);
+    finishTlsInit(program);
+    for (Function &f : program.functions) {
+        const std::map<std::string, int>::const_iterator a = frameAligns_.find(f.symbol());
+        if (a != frameAligns_.end()) f.setFrameAlign(a->second);
+    }
     pruneUnusedInline(program);
     return program;
 }

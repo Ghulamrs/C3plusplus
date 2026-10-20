@@ -1,0 +1,1 @@
+x86_64-linux  cxx1 emits the C1 of Wide's inline constructor beside the C2 clang folds it into (the shape implicit-move.nonames records); the realigned functions' own names agree.

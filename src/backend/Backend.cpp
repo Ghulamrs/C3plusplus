@@ -4,6 +4,7 @@
 #include "X86_64Linux.h"
 #include "X86_64Windows.h"
 
+#include <cctype>
 #include <ctime>
 #include <ostream>
 #include <string>
@@ -18,6 +19,50 @@ static const Arm64DarwinBackend kDarwin;
 static const Tms6747Backend kTms6747;
 
 static const Backend *const kBackends[] = { &kLinux, &kWindows, &kDarwin, &kTms6747 };
+
+// **A name past ASCII is quoted, as clang writes it**, `"_Z4f\u00e9ei"` and `"_caf\u00e9"@PAGE` in
+// UTF-8 - the one place every name passes; tms6747, whose assemblers take no such name, gets its
+// reason back. Text with no byte past 0x7F is never touched, and Masm.cpp refuses its own.
+std::string spellWideNames(const Backend &b, std::string *text) {
+    const std::string &in = *text;
+    std::size_t first = 0;
+    while (first < in.size() && static_cast<unsigned char>(in[first]) < 0x80) first++;
+    if (first == in.size()) return std::string();
+    const bool tms = std::string(b.name()) == "tms6747";
+    auto nameChar = [](char c) {
+        return std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '.' || c == '$' ||
+               static_cast<unsigned char>(c) >= 0x80;
+    };
+    std::string out;
+    bool quoted = false;
+    for (std::size_t i = 0; i < in.size(); ) {
+        const char c = in[i];
+        if (c == '\n') quoted = false;
+        if (quoted || !nameChar(c)) {
+            out += c;
+            if (quoted && c == '\\' && i + 1 < in.size()) out += in[++i];
+            else if (c == '"') quoted = !quoted;
+            i++;
+            continue;
+        }
+        std::size_t end = i;
+        bool wide = false;
+        while (end < in.size() && nameChar(in[end]))
+            wide = static_cast<unsigned char>(in[end++]) >= 0x80 || wide;
+        const std::string run = in.substr(i, end - i);
+        i = end;
+        if (!wide) { out += run; continue; }
+        // [lex.name] gives the name; the C6000's assemblers take no byte past ASCII in one.
+        if (tms)
+            return "a name past ASCII, '" + run + "', is not supported yet on tms6747 - "
+                   "ASM6x's names are letters, digits, '_', '$' and '.'";
+        out += '"';
+        out += run;
+        out += '"';
+    }
+    text->swap(out);
+    return std::string();
+}
 
 static std::string twoDigits(int n) {
     const std::string digits = std::to_string(n);
@@ -83,6 +128,11 @@ static bool relocates(const Global &g) {
 }
 
 Segment segmentFor(const Global &g) {
+    if (g.isThreadLocal) {
+        for (const GlobalPiece &p : g.init)
+            if (p.value != 0 || !p.symbol.empty()) return Segment::TlsData;
+        return Segment::TlsBss;
+    }
     if (g.isConst) return relocates(g) ? Segment::ConstRelocated : Segment::Const;
     if (!g.hasInit) return Segment::Bss;
 
@@ -90,6 +140,13 @@ Segment segmentFor(const Global &g) {
         if (p.value != 0 || !p.symbol.empty()) return Segment::Data;
     return Segment::Bss;
 }
+
+static std::string tlsEncoding(const std::string &symbol) {
+    if (symbol.compare(0, 2, "_Z") == 0) return symbol.substr(2);
+    return std::to_string(symbol.size()) + symbol;
+}
+std::string tlsWrapperName(const std::string &symbol) { return "_ZTW" + tlsEncoding(symbol); }
+std::string tlsInitName(const std::string &symbol) { return "_ZTH" + tlsEncoding(symbol); }
 
 const Backend *findBackend(const std::string &name) {
     for (const Backend *b : kBackends)

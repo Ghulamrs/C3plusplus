@@ -1,0 +1,3 @@
+x86_64-linux  clang folds the constexpr objects and discards the constructors of `W<int>` and `Pair<int>`, which cxx1 still emits because it builds the local constexpr object at run time; every other name agrees.
+x86_64-windows  the same: clang folds and discards `Pair<int>`'s constructor, which cxx1 emits.
+arm64-darwin  the same: clang folds and discards `Pair<int>`'s constructors, which cxx1 emits.

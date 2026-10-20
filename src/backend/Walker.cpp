@@ -1,5 +1,7 @@
 #include "Walker.h"
 
+#include <set>
+
 #include <algorithm>
 
 #include "../Source.h"
@@ -256,7 +258,7 @@ void Walker::openRegion(const std::string &begin,
 }
 
 std::vector<Walker::CallSite> Walker::closeRegion(const std::string &end,
-                                                  const std::string &resume) {
+                                                  const std::string &resume, bool handsOver) {
     OpenRegion mine = open_.back();
     open_.pop_back();
     CallSite last;
@@ -264,11 +266,80 @@ std::vector<Walker::CallSite> Walker::closeRegion(const std::string &end,
     last.end = end;
     last.at = mine.at;
     mine.closed.push_back(last);
+    const bool any = mine.innerHandsOver || handsOver;
+    for (CallSite &piece : mine.closed) piece.handsOver = any;
     if (!open_.empty()) {
         open_.back().start = resume;
         open_.back().at = ++labelOrder_;
+        open_.back().innerHandsOver = open_.back().innerHandsOver || any;
     }
     return mine.closed;
+}
+
+// The gotos of a pad and the labels it defines - a pad goes on to another of this frame where one of
+// its gotos names a label outside it, and resumes the unwind where none does.
+static void padJumps(const Stmt &s, std::set<std::string> &to, std::set<std::string> &defined) {
+    if (const Block *b = dynamic_cast<const Block *>(&s)) {
+        for (const StmtPtr &x : b->body()) padJumps(*x, to, defined);
+    } else if (const If *i = dynamic_cast<const If *>(&s)) {
+        padJumps(i->thenArm(), to, defined);
+        if (i->elseArm() != nullptr) padJumps(*i->elseArm(), to, defined);
+    } else if (const Label *l = dynamic_cast<const Label *>(&s)) {
+        defined.insert(l->name());
+        padJumps(l->body(), to, defined);
+    } else if (const Goto *g = dynamic_cast<const Goto *>(&s)) {
+        to.insert(g->label());
+    }
+}
+
+static bool padHandsOver(const Stmt &pad) {
+    std::set<std::string> to, defined;
+    padJumps(pad, to, defined);
+    for (const std::string &l : to)
+        if (defined.count(l) == 0) return true;
+    return false;
+}
+
+// The first Microsoft region's scratch word, wherever in the body it is.
+static int firstUnwindHelp(const Stmt &s) {
+    if (const Try *t = dynamic_cast<const Try *>(&s)) {
+        if (t->unwindHelpSlot() != 0) return t->unwindHelpSlot();
+        for (const StmtPtr &x : t->body())
+            if (int k = firstUnwindHelp(*x)) return k;
+        return 0;
+    }
+    const Stmt *kids[2] = { nullptr, nullptr };
+    if (const Block *b = dynamic_cast<const Block *>(&s)) {
+        for (const StmtPtr &x : b->body())
+            if (int k = firstUnwindHelp(*x)) return k;
+    } else if (const If *i = dynamic_cast<const If *>(&s)) {
+        kids[0] = &i->thenArm(); kids[1] = i->elseArm();
+    } else if (const While *w = dynamic_cast<const While *>(&s)) {
+        kids[0] = &w->body();
+    } else if (const For *f = dynamic_cast<const For *>(&s)) {
+        kids[0] = f->init(); kids[1] = &f->body();
+    } else if (const DoWhile *d = dynamic_cast<const DoWhile *>(&s)) {
+        kids[0] = &d->body();
+    } else if (const Switch *w = dynamic_cast<const Switch *>(&s)) {
+        kids[0] = &w->body();
+    } else if (const Case *c = dynamic_cast<const Case *>(&s)) {
+        kids[0] = &c->body();
+    } else if (const Label *l = dynamic_cast<const Label *>(&s)) {
+        kids[0] = &l->body();
+    }
+    for (const Stmt *k : kids)
+        if (k != nullptr)
+            if (int slot = firstUnwindHelp(*k)) return slot;
+    return 0;
+}
+
+// **-2 goes into the scratch word on entry, as cl's prologue writes it**: a call that throws before
+// the first region began - a local's constructor - found whatever the stack held there, and the
+// runtime took it for a state and destroyed an object that was never built.
+void Walker::storeUnwindHelpAtEntry(const Stmt &body) {
+    if (!usesFunclets()) return;
+    msUnwindHelpSlot_ = firstUnwindHelp(body);
+    if (msUnwindHelpSlot_ != 0) storeUnwindHelp(msUnwindHelpSlot_);
 }
 
 void Walker::visit(const Try &n) {
@@ -284,7 +355,7 @@ void Walker::visit(const Try &n) {
     openRegion(begin, n.types(), n.typeIndices());
     for (std::size_t i = 0; i < n.body().size(); i++) n.body()[i]->accept(*this);
     defineLabel(end);
-    const std::vector<CallSite> pieces = closeRegion(end, end);
+    const std::vector<CallSite> pieces = closeRegion(end, end, n.hasPad() && padHandsOver(n.pad()));
     jump(done);
 
     defineLabel(pad);
@@ -313,7 +384,7 @@ void Walker::visit(const Try &n) {
     }
     for (std::size_t i = 0; i < pieces.size(); i++) {
         callSite(pieces[i].begin, pieces[i].end, pad, chain, chainIx,
-                 n.alsoCleanup(), pieces[i].at);
+                 n.alsoCleanup(), pieces[i].at, pieces[i].handsOver);
         exceptionRegion(pieces[i].begin, pieces[i].end, pad);
     }
 }
@@ -441,6 +512,34 @@ std::string Walker::lsdaTable(const LsdaSpelling &sp, const std::string &symbol,
         for (std::size_t k = 0; k < callSites()[i].indices.size(); k++)
             if (callSites()[i].indices[k] > catchAll) catchAll = callSites()[i].indices[k];
     catchAll++;
+    // **A `throw(T...)` list is a filter**: its types go into the type table past every other index, and
+    // the list into the specification table after ttbase, which a negative filter counts into from 1.
+    std::vector<std::string> specs;
+    std::vector<std::vector<int> > specIndices;
+    std::vector<std::string> specTypes;
+    int nextIndex = catchAll;
+    for (const CallSite &c : callSites())
+        for (const std::string &t : c.types) {
+            if (t.compare(0, 5, "$spec") != 0) continue;
+            if (std::find(specs.begin(), specs.end(), t) != specs.end()) continue;
+            specs.push_back(t);
+            specIndices.push_back(std::vector<int>());
+            for (std::size_t from = 6; from <= t.size(); ) {
+                std::size_t to = t.find(',', from);
+                if (to == std::string::npos) to = t.size();
+                if (to > from) {
+                    specIndices.back().push_back(++nextIndex);
+                    specTypes.push_back(t.substr(from, to - from));
+                }
+                from = to + 1;
+            }
+        }
+    auto filterOf = [&](const std::string &t) {
+        int offset = 0;
+        for (std::size_t i = 0; i < specs.size() && specs[i] != t; i++)
+            offset += static_cast<int>(specIndices[i].size()) + 1;
+        return -(offset + 1);
+    };
     // **Sorted by address, which is safe now and was not before.**
     std::vector<CallSite> rows = callSites();
     for (std::size_t i = 1; i < rows.size(); i++)
@@ -472,6 +571,9 @@ std::string Walker::lsdaTable(const LsdaSpelling &sp, const std::string &symbol,
     // saying there is no next, so the chain ends and the exception goes on
     // unwinding. **The index is the parser's, not this table's.**
     types.clear();
+    if (!specTypes.empty()) types.resize(specTypes.size() + static_cast<std::size_t>(catchAll));
+    for (std::size_t i = 0; i < specTypes.size(); i++)
+        types[static_cast<std::size_t>(catchAll) + i] = specTypes[i];
     for (std::size_t i = 0; i < rows.size(); i++) {
         const CallSite &c = rows[i];
         if (c.terminate) {
@@ -482,6 +584,13 @@ std::string Walker::lsdaTable(const LsdaSpelling &sp, const std::string &symbol,
             continue;
         }
         for (std::size_t k = 0; k < c.types.size(); k++) {
+            if (c.types[k].compare(0, 5, "$spec") == 0) {
+                // One byte, as long as the specification table stays under 64.
+                o += "  .byte " + std::to_string(128 + filterOf(c.types[k])) + "\n";
+                const bool more = k + 1 < c.types.size() || c.cleanup;
+                o += "  .byte " + std::string(more ? "1" : "0") + "\n";
+                continue;
+            }
             const std::size_t at = k < c.indices.size()
                                        ? static_cast<std::size_t>(c.indices[k])
                                        : types.size() + 1;
@@ -508,6 +617,10 @@ std::string Walker::lsdaTable(const LsdaSpelling &sp, const std::string &symbol,
                   sp.typeSuffix + "-" + here + "\n";
     }
     o += ttbase + ":\n";
+    for (std::size_t i = 0; i < specs.size(); i++) {
+        for (int ix : specIndices[i]) o += "  .uleb128 " + std::to_string(ix) + "\n";
+        o += "  .byte 0\n";
+    }
     o += "  .p2align 2\n";
     return o;
 }
