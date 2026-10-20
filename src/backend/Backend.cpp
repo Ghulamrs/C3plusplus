@@ -83,6 +83,11 @@ static bool relocates(const Global &g) {
 }
 
 Segment segmentFor(const Global &g) {
+    if (g.isThreadLocal) {
+        for (const GlobalPiece &p : g.init)
+            if (p.value != 0 || !p.symbol.empty()) return Segment::TlsData;
+        return Segment::TlsBss;
+    }
     if (g.isConst) return relocates(g) ? Segment::ConstRelocated : Segment::Const;
     if (!g.hasInit) return Segment::Bss;
 
@@ -90,6 +95,13 @@ Segment segmentFor(const Global &g) {
         if (p.value != 0 || !p.symbol.empty()) return Segment::Data;
     return Segment::Bss;
 }
+
+static std::string tlsEncoding(const std::string &symbol) {
+    if (symbol.compare(0, 2, "_Z") == 0) return symbol.substr(2);
+    return std::to_string(symbol.size()) + symbol;
+}
+std::string tlsWrapperName(const std::string &symbol) { return "_ZTW" + tlsEncoding(symbol); }
+std::string tlsInitName(const std::string &symbol) { return "_ZTH" + tlsEncoding(symbol); }
 
 const Backend *findBackend(const std::string &name) {
     for (const Backend *b : kBackends)

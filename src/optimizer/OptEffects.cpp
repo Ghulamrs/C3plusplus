@@ -12,13 +12,19 @@ RegSet readsOf(const Operand &o) {
     switch (o.kind) {
     case Operand::Register:
     case Operand::Indirect:
+    case Operand::TlsSymbol:
     case Operand::Memory: return (o.reg.id >= 0 && o.reg.id < kPhysical ? bit(o.reg.id) : 0) |
                                  (o.scale != 0 && o.index.id < kPhysical ? bit(o.index.id) : 0);
     default: return 0;
     }
 }
 
-bool inMemory(const Operand &o) { return o.kind == Operand::Memory || o.kind == Operand::RipSymbol; }
+// A thread-local operand is memory like any other to the effects: the base register read, the
+// access noted. What differs is that no pass folds one, since none takes it for a Memory operand.
+bool inMemory(const Operand &o) {
+    return o.kind == Operand::Memory || o.kind == Operand::RipSymbol ||
+           o.kind == Operand::SegMemory || o.kind == Operand::TlsSymbol;
+}
 
 // **A write of four or eight bytes is whole**; a narrower one leaves the rest.
 void write(Effects &e, const Operand &o) {

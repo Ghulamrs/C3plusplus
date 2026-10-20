@@ -1,0 +1,2 @@
+x86_64-windows  a frame realigned for an over-aligned local is refused by name there once it holds a landing pad or a local with a destructor: a Microsoft funclet reaches the frame through the establisher, which the realigned frame no longer measures locals from (src/backend/X86_64Linux.cpp, emit).
+tms6747  alignas past the stack's 8 is refused by name there: the C6000 backend builds no realigning prologue.

@@ -156,10 +156,10 @@ int encodingFor(const Type *t, const Target &target) {
     return t->isSigned(target) ? kAteSigned : kAteUnsigned;
 }
 
-std::vector<unsigned char> frameLocation(int offset) {
+std::vector<unsigned char> frameLocation(int offset, const DwarfFunction &f) {
     std::vector<unsigned char> e;
     e.push_back(kOpFbreg);
-    sleb(e, -static_cast<long long>(offset));
+    sleb(e, (f.frameBaseReg >= 0 ? f.frameBias : 0) - static_cast<long long>(offset));
     return e;
 }
 
@@ -356,7 +356,7 @@ void writeType(std::string &o, const Type *t, int id, Types &types,
 }
 
 void writeObject(std::string &o, const Local &l, Types &types,
-                 const DwarfSpelling &sp) {
+                 const DwarfSpelling &sp, const DwarfFunction &f) {
     if (!l.staticName.empty()) {
 
         num(o, "  .byte", kAbStaticVariable);
@@ -369,7 +369,7 @@ void writeObject(std::string &o, const Local &l, Types &types,
     num(o, "  .byte", l.isParam ? kAbFormalParameter : kAbVariable);
     str(o, l.name);
     typeRef(o, types.id(l.type));
-    exprLoc(o, frameLocation(l.offset));
+    exprLoc(o, frameLocation(l.offset, f));
 }
 
 bool declaresAnything(const DwarfFunction &f, int scope) {
@@ -388,7 +388,7 @@ void writeScope(std::string &o, const DwarfFunction &f, int scope,
     if (f.locals != nullptr)
         for (std::size_t i = 0; i < f.locals->size(); i++)
             if ((*f.locals)[i].scope == scope)
-                writeObject(o, (*f.locals)[i], types, sp);
+                writeObject(o, (*f.locals)[i], types, sp, f);
 
     for (std::size_t b = 1; b < f.blocks.size(); b++) {
         if (f.blocks[b].parent != scope) continue;
@@ -456,7 +456,14 @@ void writeDwarf(std::string &out, const DwarfSpelling &sp, const Target &target,
         num(out, "  .short", f.line);
         line(out, "  .quad " + f.begin);
         line(out, "  .quad " + f.end);
-        exprLoc(out, frameBase);
+        if (f.frameBaseReg < 0) {
+            exprLoc(out, frameBase);
+        } else {
+            std::vector<unsigned char> own;
+            own.push_back(static_cast<unsigned char>(0x70 + f.frameBaseReg));
+            sleb(own, 0);
+            exprLoc(out, own);
+        }
         num(out, "  .byte", f.external ? 1 : 0);
         if (returns != 0) typeRef(out, returns);
 

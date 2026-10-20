@@ -68,6 +68,9 @@ StmtPtr Parser::declarationBody() {
     Qualifiers quals;
     const std::size_t specStart = at_;
     const Type *base = specifiers(&sc, &quals);
+    // [dcl.stc]/4: a block-scope thread_local has static storage whether or not `static` is written.
+    if (quals.isThreadLocal && sc == StorageNone) sc = StorageStatic;
+    const ThreadLocalObject tlo(this, quals.isThreadLocal);
 
     if (peek().is(";")) {
         // [class.union]/5: a nameless union's members are locals sharing one slot; a nameless struct is refused.
@@ -85,6 +88,7 @@ StmtPtr Parser::declarationBody() {
     if (sc == StorageTypedef) {
         do {
             Declared td = declarator(base);
+            refuseThreadLocalHere(quals.isThreadLocal, td.pos);
             typedefFunctionSuffix(td);
             // [dcl.typedef]/2 lets a typedef-name be redeclared to the same type,
             // which is what makes the C idiom "typedef struct S S;" legal now that
@@ -119,6 +123,14 @@ StmtPtr Parser::declarationBody() {
             declareStaticLocal(d.name, d.type, d.pos,
                                seen != nullptr ? seen->symbol
                                                : dataSymbol(d.name, d.type, false, d.pos));
+            // `extern thread_local int t;` in a block: reached through its wrapper, as at file scope.
+            if (seen != nullptr && seen->isThreadLocal != quals.isThreadLocal)
+                src_.fail(d.pos, std::string(quals.isThreadLocal ? "thread-local" : "non-thread-local") +
+                                 " declaration of '" + d.name + "' follows " +
+                                 (quals.isThreadLocal ? "non-thread-local" : "thread-local") + " declaration");
+            locals_.back().isThreadLocal = quals.isThreadLocal;
+            locals_.back().tlsViaWrapper = quals.isThreadLocal;
+            if (quals.isThreadLocal) fnVars_.pop_back();
         } while (consume(","));
         expect(";");
         return StmtPtr(new Block({}));
@@ -343,12 +355,15 @@ StmtPtr Parser::declarationBody() {
                 std::vector<StmtPtr> body;
                 const bool early = initialiserNames(d.name);
                 if (early) declareStaticLocal(d.name, d.type, d.pos, symbol);
+                const std::size_t mine = locals_.size() - 1;
                 bindStaticReference(d, symbol, pieces, hasInit, &body);
                 if (!early) declareStaticLocal(d.name, d.type, d.pos, symbol);
+                markThreadLocal(early ? mine : locals_.size() - 1, quals.isThreadLocal);
                 current_->globals.push_back(Global{ symbol, symbol,
                                                     types_.pointerTo(d.type->referent()),
                                                     std::move(pieces), hasInit,
                                                     true, false });
+                current_->globals.back().isThreadLocal = quals.isThreadLocal;
                 if (!body.empty())
                     inits.push_back(guardOnce(symbol, std::move(body)));
                 continue;
@@ -423,12 +438,14 @@ StmtPtr Parser::declarationBody() {
             const std::size_t at = early ? mine : locals_.size();
             if (!early) declareStaticLocal(d.name, d.type, d.pos, symbol);
             locals_[at].isConst = d.type->isConst();
+            markThreadLocal(at, quals.isThreadLocal);
             // Not `isConst` where the guarded store writes it: it cannot live in .rodata.
             current_->globals.push_back(Global{ symbol, symbol, d.type,
                                                 std::move(pieces), hasInit, true,
                                                 locals_[at].isConst &&
                                                     dynamic.value == nullptr });
             current_->globals.back().align = quals.alignAs;
+            current_->globals.back().isThreadLocal = quals.isThreadLocal;
             if (dynamic.value != nullptr) {
                 std::vector<StmtPtr> body;
                 std::vector<InitStep> path;

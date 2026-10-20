@@ -1,0 +1,2 @@
+x86_64-linux  clang writes `DW.ref.__gxx_personality_v0` for the unit, which cxx1, with no landing pad in it, does not need; the thread_locals, `__tls_init`, `_ZTH` and `_ZTW` names all agree.
+arm64-darwin  `___tls_init_fast`, the register-preserving shell round `___tls_init` that cxx1 writes as a function of its own where clang folds the saving into `___tls_init` itself; every other name agrees.

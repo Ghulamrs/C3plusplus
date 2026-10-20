@@ -61,7 +61,7 @@ std::vector<Local> promotableLocals(const Stream &s, const std::vector<Local> &l
         const Instr &i = s[k].ins;
         if (i.m == "call" && i.a.text.find("setjmp") != std::string::npos) return {};
         for (const Operand *o : {&i.a, &i.b}) {
-            if ((o->kind == Operand::Register || o->kind == Operand::Memory || o->kind == Operand::Indirect) &&
+            if ((o->kind == Operand::Register || o->basedOnReg() || o->kind == Operand::Indirect) &&
                 o->reg.id >= 0 && o->reg.id < kPhysical)
                 mentioned |= bit(o->reg.id);
             if (o->indexed()) mentioned |= bit(o->index.id);
@@ -108,7 +108,7 @@ void dropUnusedSaves(Stream &s, std::vector<SavedReg> &saves, long long top) {
     for (const Entry &e : s)
         if (e.kind == Entry::Ins && !e.dead && !(e.ins.m == "mov" && e.ins.a.isMem() && e.ins.a.reg.id == RBP))
             for (const Operand *o : {&e.ins.a, &e.ins.b}) {
-                if ((o->kind == Operand::Register || o->kind == Operand::Memory) && o->reg.id >= 0) named |= bit(o->reg.id);
+                if ((o->kind == Operand::Register || o->basedOnReg()) && o->reg.id >= 0) named |= bit(o->reg.id);
                 if (o->indexed()) named |= bit(o->index.id);
             }
     std::vector<SavedReg> kept;

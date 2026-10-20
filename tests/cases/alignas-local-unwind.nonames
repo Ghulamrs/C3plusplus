@@ -1,0 +1,1 @@
+x86_64-linux  cxx1 emits the C1 constructor and D1 destructor of Held beside the C2 and D2 clang folds them into (the shape implicit-move.nonames records); the realigned function's own names agree.

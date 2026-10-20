@@ -491,6 +491,9 @@ ExprPtr Parser::clonePure(const Expr &e) {
         raw->setSymbol(v->symbol());
         raw->setReadOnly(v->readOnly());
         raw->setNoAddress(v->noAddress());
+        // And how it is reached: a thread_local's clone read the template, not the thread's copy.
+        raw->setThreadLocal(v->isThreadLocal());
+        raw->setViaWrapper(v->viaWrapper());
         ExprPtr c(raw);
         c->setType(v->type());
         return c;

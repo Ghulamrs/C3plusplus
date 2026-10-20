@@ -11,6 +11,7 @@ public:
 
     Kind wcharType() const override { return Kind::UShort; }
     bool microsoftNames() const override { return true; }
+    const char *threadAtexit() const override { return "__tlregdtor"; }
     const char *name() const override { return "x86_64-windows"; }
 };
 

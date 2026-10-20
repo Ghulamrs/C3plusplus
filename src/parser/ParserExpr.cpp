@@ -2009,6 +2009,8 @@ ExprPtr Parser::localRef(const std::string &name) {
                                        : Var::global(l->staticName);
         v->setReadOnly(l->isConst);
         v->setNoAddress(l->isRegister);
+        // A block-scope thread_local is reached directly; an `extern` one through its wrapper.
+        if (l->isThreadLocal) tlsVar(v, l->tlsViaWrapper, l->tlsViaWrapper);
         ExprPtr n(v);
         n->setType(l->type);
         return useReference(std::move(n));
@@ -2021,6 +2023,7 @@ ExprPtr Parser::globalRef(const std::string &name) {
         Var *v = Var::global(name);
         v->setSymbol(g->symbol);
         v->setReadOnly(g->isConst);
+        if (g->isThreadLocal) tlsVar(v, g->tlsViaWrapper, g->tlsExternal);
         ExprPtr n(v);
         n->setType(g->type);
         // A reference at file scope is a slot holding an address, as a local

@@ -59,8 +59,9 @@ public:
     void stateLabel(const std::string &l) override;
 
     void functionBegin(const std::string &name, bool exported, bool mergeable) override;
-    void prologue(int frameSize, const std::string &lsda, int outgoing) override;
+    void prologue(int frameSize, const std::string &lsda, int outgoing, int realign) override;
     void functionEnd(const std::string &name) override;
+    void finish() { flush(); }   // the function held written out now, for a caller about to write one past this optimizer
 
     void fileEntry(int n, const std::string &name) override;
     void location(int file, int line, int column) override;
@@ -74,6 +75,9 @@ public:
     void rodataSection() override;
     void dataSection() override;
     void bssSection() override;
+    void tlsDataSection() override;
+    void tlsBssSection() override;
+    void tlsInitialiserEntry(const std::string &fn) override;
     void objectType(const std::string &name) override;
     void objectSize(const std::string &name, int size) override;
     void align(int n) override;

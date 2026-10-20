@@ -3891,7 +3891,7 @@ std::string Parser::staticMemberSymbol(const std::string &cls,
 // a name the linker can hold and a definition outside the class to go with it.
 void Parser::declareStaticMember(const std::string &cls, Type *owner,
                                  const Declared &d, Access access,
-                                 bool volatileWritten) {
+                                 bool volatileWritten, bool threadLocal) {
     if (cls.empty())
         src_.fail(d.pos, "a static member needs a class with a name - this one "
                          "is anonymous");
@@ -3906,6 +3906,7 @@ void Parser::declareStaticMember(const std::string &cls, Type *owner,
     s.name = d.name;
     s.type = d.type;
     s.access = access;
+    s.isThreadLocal = threadLocal;
 
     // **`static const int k = 5;` written in the class needs no definition**, measured
     // rather than assumed: cl emits no symbol for one and folds the value in wherever
@@ -3934,7 +3935,7 @@ void Parser::declareStaticMember(const std::string &cls, Type *owner,
 // `int Counter::total = 0;` at file scope - the definition the declaration inside the
 // class asked for. An ordinary global the class gave its name to, so all this adds is
 // finding which member it is and taking the symbol from it.
-void Parser::defineStaticMember(Declared &d, Program &program) {
+void Parser::defineStaticMember(Declared &d, Program &program, bool threadLocal) {
     const Type *owner = findTypedef(d.qualifier);
     if (owner == nullptr || !owner->isStructOrUnion())
         src_.fail(d.pos, "'" + d.qualifier + "' is not a class");
@@ -3942,6 +3943,13 @@ void Parser::defineStaticMember(Declared &d, Program &program) {
     if (s == nullptr)
         src_.fail(d.pos, "'" + d.qualifier + "' declares no static member '" +
                          d.name + "'");
+    // [dcl.stc]/4 wants `thread_local` on the definition as on the declaration; clang's words.
+    if (threadLocal != s->isThreadLocal)
+        src_.fail(d.pos, std::string(threadLocal ? "thread-local" : "non-thread-local") + " declaration of '" +
+                         d.name + "' follows " + (threadLocal ? "non-thread-local" : "thread-local") + " declaration");
+    // What the member's definition adds to the unit: what initialises it, and that it is here.
+    const ThreadLocalObject tlo(this, threadLocal);
+    if (threadLocal) tlsDefining(s->symbol, true);
     const StaticMemberScope scope(this, owner);
     if (s->type->unqualified() != d.type->unqualified() ||
         s->type->isConst() != d.type->isConst())
@@ -3978,6 +3986,8 @@ void Parser::defineStaticMember(Declared &d, Program &program) {
                                               std::vector<GlobalPiece>(), false,
                                               false, false });
             program.globals.back().isInline = owner->isSpecialization();
+            program.globals.back().isThreadLocal = threadLocal;
+            if (threadLocal) tlsDynamic_.insert(s->symbol);
             return;
         }
 
@@ -3990,13 +4000,15 @@ void Parser::defineStaticMember(Declared &d, Program &program) {
         m.name = d.qualifier + "::" + d.name;
         m.type = s->type;
         const FunctionState outer = enterInitFunction();
-        bindStaticReference(m, s->symbol, pieces, hasInit, &dynInit_);
+        bindStaticReference(m, s->symbol, pieces, hasInit, &initSink());
         leaveInitFunction(outer);
         expect(";");
         program.globals.push_back(Global{ m.name, s->symbol,
                                           types_.pointerTo(s->type->referent()),
                                           std::move(pieces), hasInit, false, false });
         program.globals.back().isInline = owner->isSpecialization();
+        program.globals.back().isThreadLocal = threadLocal;
+        if (threadLocal && !hasInit) tlsDynamic_.insert(s->symbol);
         return;
     }
     if (consume("=") || atBracedInitialiser(d.name)) {
@@ -4039,6 +4051,8 @@ void Parser::defineStaticMember(Declared &d, Program &program) {
     // A template's static member is defined by every unit that uses it, and
     // the linker keeps one - a weak object, as its vtable is.
     program.globals.back().isInline = owner->isSpecialization();
+    program.globals.back().isThreadLocal = threadLocal;
+    if (threadLocal && stored) tlsDynamic_.insert(s->symbol);
 }
 
 // [expr.prim.general]/13: nothing reads it, so an lvalue of the member's type at no
@@ -4097,6 +4111,9 @@ ExprPtr Parser::staticMemberRef(const Type *owner, const Type::StaticMember &s,
     if (unevaluated_ == 0) usedStaticMembers_.insert(s.symbol);
     Var *v = Var::global(cls + "::" + s.name);
     v->setSymbol(s.symbol);
+    // Through the wrapper unless this unit has already defined it with a constant initialiser - a
+    // definition still to come, in this unit or another, may build it dynamically.
+    if (s.isThreadLocal) tlsVar(v, tlsDynamic_.count(s.symbol) != 0 || tlsDefined_.count(s.symbol) == 0, true);
     ExprPtr n(v);
     n->setType(s.type);
     return useReference(std::move(n));      // a reference member is read through its slot
@@ -4867,6 +4884,7 @@ void Parser::parameterTypes(std::vector<const Type *> &params, bool &variadic) {
         Qualifiers pquals;
         const Type *pt = specifiers(&psc, &pquals);
         Declared pd = declarator(pt, true);
+        refuseThreadLocalHere(pquals.isThreadLocal, pd.pos);
         if (mentionsDeduced(pd.type))
             src_.fail(pd.pos, "a parameter's type cannot be deduced - `auto` "
                               "there is C++14, and this compiler is C++11");

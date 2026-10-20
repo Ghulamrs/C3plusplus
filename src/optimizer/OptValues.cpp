@@ -307,7 +307,7 @@ private:
                     if ((role & kRead) && o->reg.width > ws) return false;
                     if ((role & kWrite) && o->reg.width >= 4) redefined = true;
                     else if (o->reg.width > ws) return false;
-                } else if ((o->isMem() || o->kind == Operand::Indirect) && (o->reg.id == d || (o->indexed() && o->index.id == d))) {
+                } else if ((o->basedOnReg() || o->kind == Operand::Indirect) && (o->reg.id == d || (o->indexed() && o->index.id == d))) {
                     return false;
                 }
             }
@@ -455,7 +455,7 @@ private:
         if (sourceOnly && !shift && gpr(i.a)) edited = original(i.a.reg) || edited;
         if (is(i.m, {"cmp", "cmpl", "cmpq", "test", "testl", "testq"}) && gpr(i.b)) edited = original(i.b.reg) || edited;
         for (Operand *o : {&i.a, &i.b}) {
-            if (o->kind == Operand::Memory && o->reg.id >= 0 && o->reg.id < kGprs && o->reg.id != RBP && o->reg.id != RSP)
+            if (o->basedOnReg() && o->reg.id >= 0 && o->reg.id < kGprs && o->reg.id != RBP && o->reg.id != RSP)
                 edited = original(o->reg) || edited;
             if (o->indexed()) edited = original(o->index) || edited;
         }

@@ -1034,10 +1034,12 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             // **A static member is not part of the object**, so it leaves the
             // layout untouched and the cursor where it was.
             if (msc == StorageStatic && !peek().is("(")) {
-                declareStaticMember(tag, type, d, access, mquals.isVolatile);
+                declareStaticMember(tag, type, d, access, mquals.isVolatile, mquals.isThreadLocal);
                 if (!consume(",")) break;
                 continue;
             }
+            // [dcl.stc]/4: a static data member may be thread_local; nothing else in a class may.
+            refuseThreadLocalHere(mquals.isThreadLocal, d.pos);
 
             if (peek().is(":")) {
                 std::size_t cpos = peek().pos;
@@ -1888,6 +1890,17 @@ const Type *Parser::unqualifiedSpecifiers(StorageClass *storage, Qualifiers *qua
         if (skipAttributes()) continue;
         if (consume("static"))  { *storage = StorageStatic; continue; }
         if (consume("extern"))  { *storage = StorageExtern; continue; }
+        // [dcl.stc]/4: `thread_local`, beside `static` or `extern` or alone. The C6000 has no
+        // thread storage at all - cl6x 8.2.2 knows no such word - so it is refused there by name.
+        if (peek().is("thread_local")) {
+            if (!target_.hasThreadStorage())
+                src_.fail(peek().pos, "'thread_local' is not supported yet on " + std::string(target_.name()) +
+                                      ": TI's cl6x has no thread-local storage, and a program for the "
+                                      "C6000 is one thread");
+            at_++;
+            quals->isThreadLocal = true;
+            continue;
+        }
         if (consume("typedef")) { *storage = StorageTypedef; continue; }
         if (consume("const"))    { quals->isConst = true; continue; }
         // **`constexpr` on an object is `const` plus a demand.** [dcl.constexpr]

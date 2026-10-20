@@ -17,7 +17,7 @@ bool gpr(const Operand &o) { return o.kind == Operand::Register && o.reg.id >= 0
 Reg *slotOf(Instr &i, int slot) {
     Operand &o = slot < 2 ? i.a : i.b;
     if (slot & 1) return o.indexed() ? &o.index : nullptr;
-    return (o.kind == Operand::Register || o.kind == Operand::Memory || o.kind == Operand::Indirect) && o.reg.id >= 0 &&
+    return (o.kind == Operand::Register || o.basedOnReg() || o.kind == Operand::Indirect) && o.reg.id >= 0 &&
                    o.reg.id < kGprs
                ? &o.reg
                : nullptr;
@@ -577,7 +577,7 @@ bool widenCounterIn(Function &fn, const Loops::Loop &loop) {
                 for (Operand *o : {&u.a, &u.b}) {
                     const unsigned role = o == &u.a ? roles.a : roles.b;
                     if (o->kind == Operand::Register && o->reg.id == d && !(role & kWrite)) { o->reg.id = r; renamed = true; }
-                    if (o->isMem() && o->reg.id == d) { o->reg.id = r; renamed = true; }
+                    if (o->basedOnReg() && o->reg.id == d) { o->reg.id = r; renamed = true; }
                     if (o->indexed() && o->index.id == d) { o->index.id = r; renamed = true; }
                 }
                 if (renamed) changed = true;

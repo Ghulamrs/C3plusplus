@@ -240,11 +240,15 @@ if [ "$WHICH" = all ] || [ "$WHICH" = windows ]; then
         fi
     done
     # **The same cases through -masm=masm**, assembled and linked by the project's own tools.
+    # A case the project's masm cannot take says so in <case>.nomasm, printed like a .notarget.
     for e in "$ROOT"/tests/cases/*.expected; do
         n=$(basename "$e" .expected)
         case "$n" in *" "[0-9]*) continue;; esac
         nt="$ROOT/tests/cases/$n.notarget"
         if [ -f "$nt" ] && grep -q x86_64-windows "$nt"; then continue; fi
+        if [ -f "$ROOT/tests/cases/$n.nomasm" ]; then
+            echo "  skip $n for -masm=masm: $(tr '\n' ' ' < "$ROOT/tests/cases/$n.nomasm")"; continue
+        fi
         got="$OUT/winout/masm/$n.out"
         if [ -f "$got" ] && tr -d '\r' < "$got" | diff -q - "$e" >/dev/null; then
             pass=$((pass + 1))

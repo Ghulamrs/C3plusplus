@@ -19,6 +19,7 @@ public:
     Kind wcharType() const override { return Kind::Int; }
     bool microsoftNames() const override { return false; }
     bool armArrayCookie() const override { return true; }
+    const char *threadAtexit() const override { return "_tlv_atexit"; }
     const char *name() const override { return "arm64-darwin"; }
 };
 
@@ -103,6 +104,8 @@ private:
     void popD(const char *reg);
     void emitData(const Program &program);
     void emitGlobal(const Global &g, Segment seg);
+    // The `_ZTW` wrappers, `_ZTH` aliases and the register-preserving `__tls_init` this unit defines.
+    void emitTlsWrappers(const Program &program);
     void emitFunction(const Function &fn);
 
     struct AggPlan {
@@ -140,6 +143,10 @@ private:
     int namedStackBytes_ = 0;
 
     void genAddr(const Expr &e);
+    // A slot's address into `dst`: below x29, or up from x19 in a frame realigned for an over-aligned local.
+    void localIn(const char *dst, int slot);
+    int realign_ = 0;
+    int top_ = 0;
     void addOffset(int bytes);
     void copyBlock(int size, const char *from, const char *to);
     void bitFieldUnitAddr(const MemberAccess &m);

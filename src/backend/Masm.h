@@ -26,7 +26,7 @@ public:
     std::string associative() { return mergeable_ ? " ASSOCIATIVE(" + mangledName() + ")" : std::string(); }
     // Whether records the linker should fold are written as COMDATs.
     bool comdat() const { return comdat_; }
-    void prologue(int frameSize, const std::string &lsda, int outgoing) override;
+    void prologue(int frameSize, const std::string &lsda, int outgoing, int realign) override;
     void stateLabel(const std::string &l) override;
     // The registers an optimizer keeps locals in, saved after the frame pointer is set - see prologue.
     void calleeSaves(const std::vector<SavedReg> &saves) override { saves_ = saves; }
@@ -59,6 +59,9 @@ public:
     void rodataSection() override;
     void dataSection() override;
     void bssSection() override;
+    void tlsDataSection() override;
+    void tlsBssSection() override { tlsDataSection(); }
+    void tlsInitialiserEntry(const std::string &fn) override;
     void objectType(const std::string &name) override;
     void objectSize(const std::string &name, int size) override;
     void align(int n) override;
@@ -77,7 +80,7 @@ private:
     const bool comdat_;
     std::string &o_;
     std::vector<SavedReg> saves_;
-    enum Seg { None, Code, Data, Const, Bss } seg_ = None;
+    enum Seg { None, Code, Data, Const, Bss, Tls } seg_ = None;
 
     // **A mergeable definition is a COMDAT of its own.** A function opens one at functionBegin;
     // a global's is opened at its ALIGN, where its alignment is known, and closed by the next
@@ -92,6 +95,8 @@ private:
     std::string pending_;
 
     std::set<std::string> defined_, exported_, referenced_, unreserved_;
+    // Referenced inside a SECTIONREL expression, which ml64 refuses to add to a `:PROC` (A2102).
+    std::set<std::string> referencedData_;
 
     struct Rendered {
         std::string text;
@@ -106,7 +111,7 @@ private:
 class MasmCodeGen final : public X86_64Linux {
 public:
     MasmCodeGen(std::ostream &sink, const Target &target, const Abi &abi, bool comdat)
-        : X86_64Linux(sink, target, abi), masm_(out_, comdat) { a_ = &masm_; }
+        : X86_64Linux(sink, target, abi), masm_(out_, comdat) { a_ = plain_ = &masm_; }
 
     void run(const Program &program) override;
 
