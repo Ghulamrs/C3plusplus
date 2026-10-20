@@ -228,6 +228,7 @@ void Parser::topLevel(Program &program) {
                                       td.type->describe() + "'");
             typedefIndex_[key] = typedefs_.size();
             typedefs_.push_back(TypedefName{ key, td.type });
+            if (td.type->tag().empty()) td.type->nameForLinkage(key, td.name, nullptr, key != td.name);
         } while (consume(","));
         expect(";");
         return;

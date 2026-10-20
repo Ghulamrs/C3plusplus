@@ -240,6 +240,16 @@ public:
     const Type &cls() const { return unqual_ != nullptr ? *unqual_ : *this; }
 
     const std::string &tag() const { return cls().tag_; }
+    // [dcl.typedef]/9: an unnamed class first named by a typedef has that name for linkage.
+    // `name` is the qualified key, `local` the typedef's own name; a class or a namespace around it is set too.
+    void nameForLinkage(const std::string &name, const std::string &local, const Type *in, bool inNamespace) const {
+        Type &c = const_cast<Type &>(cls());
+        if (!c.tag_.empty() || (c.kind_ != Kind::Struct && c.kind_ != Kind::Union)) return;
+        c.tag_ = name;
+        c.local_ = local;
+        if (in != nullptr && c.enclosing_ == nullptr) c.enclosing_ = in;
+        if (inNamespace) c.inNamespace_ = true;
+    }
 
     // `class X` and `struct X` build the same kind of type and differ only in the
     // default access - and in what a diagnostic should call it. "struct Account"

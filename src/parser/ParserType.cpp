@@ -831,6 +831,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 if (td.name.empty())
                     src_.fail(td.pos, "this typedef names nothing");
                 declareTypeName(tag + "::" + td.name, td.type);
+                if (td.type->tag().empty()) td.type->nameForLinkage(tag + "::" + td.name, td.name, type, false);
             } while (consume(","));
             expect(";");
             continue;

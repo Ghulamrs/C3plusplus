@@ -14514,3 +14514,13 @@ first named in `template <int N> V<N>::operator Mx<3, 3>()` saw its own `N` as V
 value did not hide `nonTypePatternParams_`; its rows were `V<N>` unresolved and `R[0][0]` refused.
 Found compiling the COM Core sources (CVector/CMatrix), which clang takes.
 `specialization-in-pattern-parameter`.
+
+## A typedef names an unnamed class for linkage, 2026-10-21
+
+**[dcl.typedef]/9: an unnamed class defined in a typedef declaration takes the typedef's name for
+linkage**, and cpp11 refused any function or template over one ("an unnamed class has no name to
+give the linker") - found compiling `std::vector<SceneVertex>` over the C idiom `typedef struct {
+... } SceneVertex;` in the COM Core sources. A typedef at namespace or class scope now gives such a
+struct or union its name, local name and scope (`Type::nameForLinkage`), and all three ABIs spell
+it as clang does: `_Z1f2P2`, `N1S2InE`, `?g@@YAXUIn@S@@@Z`. An unnamed enum is left as it was.
+`typedef-name-for-linkage`.
