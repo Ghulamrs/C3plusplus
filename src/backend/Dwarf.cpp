@@ -70,9 +70,13 @@ void num(std::string &o, const char *dir, long long v) {
     o += '\n';
 }
 
+// Escaped as CodeView's are: a literal operator's name, `operator"" _km`, holds two quotes.
 void str(std::string &o, const std::string &v) {
     o += "  .asciz \"";
-    o += v;
+    for (char c : v) {
+        if (c == '"' || c == '\\') o += '\\';
+        o += c;
+    }
     o += "\"\n";
 }
 

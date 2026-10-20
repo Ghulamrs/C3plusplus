@@ -32,6 +32,11 @@ struct Token {
     // multi-character literal ('ab') is int in both and does not set it.
     bool isChar = false;
     std::string text;
+    // **[lex.ext]: a literal with a ud-suffix**, `12_km` - the suffix, and a number's
+    // digits as written for the raw and template forms; `tooLarge` past unsigned long long.
+    std::string udSuffix;
+    std::string spelling;
+    bool tooLarge = false;
     std::size_t pos = 0;
     // Just past the token's last character (0 for a token the parser made): where a missing ';' is reported, the end of the statement that wants it rather than the token after.
     std::size_t end = 0;

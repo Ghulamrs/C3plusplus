@@ -14504,3 +14504,38 @@ renaming an import would not link (`MasmSpelling::mangle`; the Windows runner sk
 case in that pass). **Known and left**: a diagnostic's column past a `\u` name on its line is off by
 the bytes the conversion saved. `ucn-identifier`, `ucn-identifier-start-refused`,
 `ucn-identifier-character-refused`, `ucn-identifier-basic-refused`.
+
+## User-defined literals, 2026-10-21
+
+**[lex.ext] makes a literal with a ud-suffix a call of the literal operator the suffix names, and
+cpp11 refused the declaration** - `operator"" _km` was "not supported yet". The lexer reads the
+suffix run onto any literal (`Token::udSuffix`, and a number's digits as written in `spelling`), a
+standard suffix being one only when it is the whole of the name after the digits; `operatorName`
+reads `operator "" _km` and `operator""_km` alike and files the function as `operator"" _km`.
+**The literal is rewritten as the call the standard says it is**: `userDefinedLiteral` writes the
+call's tokens past the end of the stream and reads them through `primary` - the device
+`initializerListOf` uses - so the lookup, the overload resolution and the constant folding are the
+ones a call written out gets. `static_assert(4_KiB == 4096)` and `int t[2_KiB / 1024]` fold through
+a `constexpr` literal operator with nothing taught to `fold`.
+
+**A number's call is [lex.ext]/3-4's choice, made by looking at the set**: the cooked form
+(`unsigned long long`, `long double`) where one is declared, else the raw `const char *` one or the
+`char...` template - not both - with the digits as written, `0x1F_digits` handing over "0x1F". A
+string takes its pointer and its length in code units, adjacent strings being one literal whose
+suffixes must agree ([lex.ext]/8); a character takes itself, and the overloads for `char`,
+`wchar_t`, `char16_t` and `char32_t` rank as any do. **Both names measured with clang on three
+targets**: `li` and the suffix as a source-name on Itanium, `_Zli3_kmy`, `_ZN3litli2_nEy`, the
+template's `li2_t` a substitution candidate; `??__K` and the suffix on Microsoft, `??__K_km@@YA_J_K@Z`
+and `??$?__K_t@$0DB@@@YAHXZ`. No `L` on a static one, as no operator carries one.
+
+**[over.literal] is checked where it is declared** (`checkLiteralOperator`,
+`checkLiteralOperatorTemplate`): a namespace-scope function, C++ linkage, one of the eleven
+parameter lists, no default argument, a template of one `char...` and no parameters - each refused
+with clang's words. **A suffix with no `_` is reserved** ([usrlit.suffix]): declaring one stands
+and a literal using it is refused, as clang refuses it. **Known and left**: a pp-number keeps going
+through `.` in clang, so `3_km.metres` is one token there and two here - the case writes
+`3_km .metres`; and a cooked `long double` literal that is not exactly a double is refused on
+x86_64-linux by the rule every such literal meets. `user-defined-literal`, and ten `udl-*-refused`
+cases, one per rule; `udl-refused` is gone. With both features `tools/feature-sweep --clang
+clang++` reads 84 compile, 12 refused by name, 0 naming nothing, of 96 - the `ucn` and `udl` rows
+now compile.

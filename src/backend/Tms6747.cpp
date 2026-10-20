@@ -2176,7 +2176,10 @@ void Tms6747::walkBody(const Function &fn) {
 // An inner block's variables go inside its DW_TAG_lexical_block (phase F), so a debugger lists them only while the stop is in it.
 void Tms6747::emitVariables(const Function &fn) {
     if (lineSource() == nullptr) return;
-    out_ << "\t.dwtag\tDW_TAG_subprogram, DW_AT_name(\"" << fn.name() << "\"), DW_AT_low_pc(" << fn.symbol() << ")\n";
+    // ASM6x ends a string at the next quote, so a literal operator's `operator"" _km` is `operator'' _km` here.
+    std::string name = fn.name();
+    for (char &c : name) if (c == '"') c = '\'';
+    out_ << "\t.dwtag\tDW_TAG_subprogram, DW_AT_name(\"" << name << "\"), DW_AT_low_pc(" << fn.symbol() << ")\n";
     emitScope(fn, 0);
     out_ << "\t.dwendtag\n";
 }

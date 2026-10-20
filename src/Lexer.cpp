@@ -324,6 +324,18 @@ std::vector<Token> Lexer::tokenize() {
         return static_cast<unsigned char>(t[k]) >= 0x80 ||
                (t[k] == '\\' && k + 1 < t.size() && (t[k + 1] == 'u' || t[k + 1] == 'U'));
     };
+    // [lex.ext]: a name run straight onto a literal is its ud-suffix; empty where none is.
+    auto suffixAt = [&](std::size_t &k) {
+        std::string name;
+        if (k >= s.size() || !(identStart(s[k]) || wideStart(s, k))) return name;
+        const std::size_t first = k;
+        while (k < s.size()) {
+            if (identCont(s[k])) name.push_back(s[k++]);
+            else if (wideStart(s, k)) identifierCharacter(s, k, &name, k == first);
+            else break;
+        }
+        return name;
+    };
 
     static const char *const three[] = { "<<=", ">>=", "->*" };
     static const char *const two[] = { "==", "!=", "<=", ">=", "<<", ">>", "&&", "||",
@@ -367,6 +379,7 @@ std::vector<Token> Lexer::tokenize() {
             t.wide = p0 == 'L';
             t.pos = start;
             i = to + rawClose.size();
+            t.udSuffix = suffixAt(i);
             out.push_back(std::move(t));
             continue;
         }
@@ -421,6 +434,7 @@ std::vector<Token> Lexer::tokenize() {
             t.prefix = prefix;
             t.isChar = isChar;
             t.pos = start;
+            t.udSuffix = suffixAt(i);
             out.push_back(std::move(t));
             continue;
         }
@@ -445,6 +459,7 @@ std::vector<Token> Lexer::tokenize() {
             t.wide = wide && prefix == 0;
             t.prefix = prefix;
             t.pos = start;
+            t.udSuffix = suffixAt(i);
             out.push_back(std::move(t));
             continue;
         }
@@ -488,37 +503,54 @@ std::vector<Token> Lexer::tokenize() {
                 t.exactInDouble = exactlyADouble(s, from, i);
 
                 digitSeparator(s, i);
-                if (i < s.size() && (s[i] == 'f' || s[i] == 'F')) {
-                    t.suffixF = true; i++;
+                const std::size_t digitsEnd = i;
+                const std::string suffix = suffixAt(i);
+                if (suffix == "f" || suffix == "F") {
+                    t.suffixF = true;
                     // A `float` literal is rounded once too: through `double` it
                     // is rounded twice, 53 bits and then 24. [lex.fcon] gives the
                     // literal the value of its own type, so `strtof` is that.
                     t.dvalue = std::strtof(s.c_str() + from, nullptr);
-                } else if (i < s.size() && (s[i] == 'l' || s[i] == 'L')) {
-                    t.suffixL = true; i++;
+                } else if (suffix == "l" || suffix == "L") {
+                    t.suffixL = true;
+                } else if (!suffix.empty()) {
+                    t.udSuffix = suffix;
+                    t.spelling = s.substr(from, digitsEnd - from);
                 }
                 out.push_back(std::move(t));
                 continue;
             }
 
+            const std::size_t from = i;
             errno = 0;
             t.value = static_cast<long long>(std::strtoull(s.c_str() + i, &stop, 0));
-            if (errno == ERANGE)
-                src_.fail(i, "this integer constant does not fit any type");
+            const bool tooLarge = errno == ERANGE;
             i = static_cast<std::size_t>(stop - s.c_str());
             digitSeparator(s, i);
 
+            // The standard suffixes are the whole of the name after the digits, or it is a ud-suffix.
+            const std::size_t digitsEnd = i;
+            const std::string suffix = suffixAt(i);
             int us = 0, ls = 0;
-            while (i < s.size()) {
-                if ((s[i] == 'u' || s[i] == 'U') && us == 0) {
-                    t.suffixU = true; us++; i++;
-                } else if ((s[i] == 'l' || s[i] == 'L') && ls < 2) {
-                    ls++; i++;
+            std::size_t k = 0;
+            for (; k < suffix.size(); k++) {
+                if ((suffix[k] == 'u' || suffix[k] == 'U') && us == 0) {
+                    t.suffixU = true; us++;
+                } else if ((suffix[k] == 'l' || suffix[k] == 'L') && ls < 2) {
+                    ls++;
                     t.suffixL = true;
                     if (ls == 2) t.suffixLL = true;
                 } else {
                     break;
                 }
+            }
+            if (k < suffix.size()) {
+                t.suffixU = t.suffixL = t.suffixLL = false;
+                t.udSuffix = suffix;
+                t.spelling = s.substr(from, digitsEnd - from);
+                t.tooLarge = tooLarge;
+            } else if (tooLarge) {
+                src_.fail(from, "this integer constant does not fit any type");
             }
             out.push_back(std::move(t));
             continue;
