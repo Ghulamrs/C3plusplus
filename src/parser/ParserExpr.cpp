@@ -1073,10 +1073,14 @@ ExprPtr Parser::primary(Program *program) {
     if (peek().kind == TokenKind::Ident && isTemplateName(peek().text)) {
         // **Class scope before namespace scope** - [basic.lookup.unqual]/8,
         // the rule R1 fixed for a name and this is the same rule for a *call*.
+        // A data member hides one too - `vector[0]` in a class with a member `vector` - unless a `<` follows.
         const bool memberFirst =
-            currentClass_ != nullptr && peekAt(1).is("(") &&
-            (findMemberOwner(currentClass_, peek().text) != nullptr ||
-             memberTemplateOwner(currentClass_, peek().text) != nullptr);
+            currentClass_ != nullptr &&
+            ((peekAt(1).is("(") &&
+              (findMemberOwner(currentClass_, peek().text) != nullptr ||
+               memberTemplateOwner(currentClass_, peek().text) != nullptr)) ||
+             (!peekAt(1).is("<") && (currentClass_->findMember(peek().text) != nullptr ||
+                                     currentClass_->findStaticMember(peek().text) != nullptr)));
         if (!memberFirst) return templateCall(program);
     }
 

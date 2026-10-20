@@ -1885,6 +1885,14 @@ private:
                             std::size_t pos, const std::string &symbol);
     void requireAssignable(const Expr &e, std::size_t pos, const char *what);
     const Local *findLocal(const std::string &name) const;
+    // **A template's own scope has none of the locals of the function that named it**: held aside
+    // while its declaration or class body is read, put back on every way out.
+    struct LocalsHidden {
+        Parser *p;
+        std::vector<Local> held;
+        explicit LocalsHidden(Parser *q) : p(q) { held.swap(p->locals_); }
+        ~LocalsHidden() { held.swap(p->locals_); }
+    };
     bool localHidesType() const;
     bool atTemporaryMemberAccess() const;
     void enterScope();
@@ -2315,6 +2323,12 @@ private:
         const Member *member = nullptr;
         long long index = 0;
     };
+    bool isAggregateClass(const Type *t) const;
+    bool bracedInitialiserAhead() const;
+    bool constructedClass(const Type *t) const;
+    bool needsConstruction(const Type *t) const;
+    void initConstruct(const std::string &name, std::vector<InitStep> &path, const Type *type,
+                       std::vector<ExprPtr> args, bool valueInit, std::size_t pos, std::vector<StmtPtr> &out);
 
     // **[dcl.init]/8: `T()` on a class with no user-provided constructor is
     // value-initialisation, which zeroes it.** `initZero` says the same in statements;

@@ -488,6 +488,9 @@ const Type *Parser::readTemplateDeclaration(const TemplateDecl &decl,
         std::vector<Shadow> undo;
         ~Unbind() { p->unbindTemplateParameters(undo); }
     } guard{ this, std::vector<Shadow>() };
+    // **The caller's locals are not in the template's scope**: `Mx<4,4> M; M * v` read the operator's
+    // `CVector<M>` as that object, and the operator was never a candidate.
+    const LocalsHidden hidden(this);
     bindTemplateParameters(decl.params, binding, values,
                            packs != nullptr
                                ? *packs
@@ -2811,6 +2814,8 @@ const Type *Parser::instantiateClass(const TemplateDecl &decl, std::size_t pos) 
     deferSpecializationBodies_ = true;
     StorageClass sc;
     Qualifiers quals;
+    // Nor in a class template's: `V<3> N(...)` made V<3> read its own `double s[N]` as the local.
+    std::unique_ptr<LocalsHidden> hidden(new LocalsHidden(this));
     const Type *made = partial
         ? structOrUnionSpecifier(Kind::Struct, false)
         : specifiers(&sc, &quals);
@@ -2822,6 +2827,7 @@ const Type *Parser::instantiateClass(const TemplateDecl &decl, std::size_t pos) 
     instantiatingParams_ = outerParams;
     instantiatingBinding_ = outerBinding;
     instantiatingValues_ = outerValues;
+    hidden.reset();
     classStack_.swap(outerClasses);
     currentClass_ = outerCurrent;
     inlineOwner_ = outerInline;

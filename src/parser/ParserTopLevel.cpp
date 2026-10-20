@@ -458,12 +458,15 @@ void Parser::topLevel(Program &program) {
                                      "is not an aggregate and a braced list "
                                      "cannot initialise it - C++14 changed "
                                      "that rule and this compiler is C++11");
-                // **Built before main**, [basic.start.init]/2, in the init
-                // function and in declaration order; destroyed at exit in
-                // reverse. `extern S s;` alone declares and builds nothing.
+                // **Built before main**, [basic.start.init]/2, in the init function and in declaration
+                // order; destroyed at exit in reverse. `extern S s;` alone builds nothing, and an aggregate
+                // from a list is filled member by member below, its members' constructors run there.
+                const Type *each = arrayClass != nullptr ? arrayClass : d.type;
+                const bool aggregate = isAggregateClass(each) && destructorOf(each) == nullptr &&
+                                       bracedInitialiserAhead();
                 if ((arrayClass != nullptr ||
                      hasConstructors(d.type->tag())) &&
-                    sc != StorageExtern) {
+                    sc != StorageExtern && !aggregate) {
                     const std::string gname =
                         (namespaceStack_.empty() || cLinkage_ > 0)
                             ? d.name : namespacePrefix() + d.name;
@@ -603,7 +606,7 @@ void Parser::topLevel(Program &program) {
                     flattenInit(d.type, in, 0, pieces);
                     hasInit = true;
                 } else {
-                    dynamicScalar = std::move(in);
+                    dynamicScalar = std::move(in);   // a list too, where a member has a constructor
                 }
             } else if (quals.isConstexpr && sc != StorageExtern) {
                 src_.fail(d.pos, "'" + d.name + "' is 'constexpr' and has no "
@@ -635,21 +638,21 @@ void Parser::topLevel(Program &program) {
                 prev->type = both;
                 d.type = both;
                 // [basic.def.odr]/1: `int v;` already defines - C++ has no tentative definition.
-                const bool defines = sc != StorageExtern || hasInit || dynamicScalar.value != nullptr;
+                const bool defines = sc != StorageExtern || hasInit || (dynamicScalar.value != nullptr || dynamicScalar.isList);
                 if (defines && prev->emitted)
                     src_.fail(d.pos, "'" + d.name + "' is defined twice");
-                if ((hasInit || dynamicScalar.value != nullptr) && prev->hasInit)
+                if ((hasInit || (dynamicScalar.value != nullptr || dynamicScalar.isList)) && prev->hasInit)
                     src_.fail(d.pos, "'" + d.name + "' is given an initialiser twice");
-                if (hasInit || dynamicScalar.value != nullptr) prev->hasInit = true;
+                if (hasInit || (dynamicScalar.value != nullptr || dynamicScalar.isList)) prev->hasInit = true;
                 const ThreadLocalObject tlo(this, quals.isThreadLocal);
-                if (dynamicScalar.value != nullptr)
+                if ((dynamicScalar.value != nullptr || dynamicScalar.isList))
                     dynamicInitialiseScalar(gname, d.type, dynamicScalar);
-                noteThreadLocal(*prev, true, quals.isThreadLocal, d.name, dynamicScalar.value != nullptr || !defines,
+                noteThreadLocal(*prev, true, quals.isThreadLocal, d.name, (dynamicScalar.value != nullptr || dynamicScalar.isList) || !defines,
                                 !internalLinkage(sc), defines, d.pos);
 
                 // `extern` with an initialiser defines - [dcl.stc]/6 - and
                 // keeps external linkage a const object would otherwise lose.
-                if (sc != StorageExtern || hasInit || dynamicScalar.value != nullptr) {
+                if (sc != StorageExtern || hasInit || (dynamicScalar.value != nullptr || dynamicScalar.isList)) {
                     if (!prev->emitted) {
                         prev->emitted = true;
                         program.globals.push_back(Global{ d.name, prev->symbol,
@@ -684,7 +687,7 @@ void Parser::topLevel(Program &program) {
                             (objectIsConst && sc != StorageExtern);
             refuseVolatileWithLinkage(quals.isVolatile, internal, d.pos);
             std::string symbol = dataSymbol(gname, d.type, internal, d.pos);
-            const bool dynamic = dynamicScalar.value != nullptr;
+            const bool dynamic = (dynamicScalar.value != nullptr || dynamicScalar.isList);
             GlobalSym made{ gname, symbol, d.type, objectIsConst,
                             sc != StorageExtern || hasInit || dynamic,
                             hasInit || dynamic, constantKnown, constantValue };

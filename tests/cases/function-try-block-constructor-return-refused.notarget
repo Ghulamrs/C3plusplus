@@ -1,0 +1,1 @@
+x86_64-windows a constructor's function try block is refused there before its handler is read (docs/EXCLUSIONS.md), so the refusal this case measures is never reached

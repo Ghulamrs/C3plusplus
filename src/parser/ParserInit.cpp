@@ -6,6 +6,7 @@
 #include "../Mangle.h"
 #include "../Source.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cfloat>
 #include <climits>
@@ -171,6 +172,82 @@ ExprPtr Parser::targetFor(const std::string &name,
     return e;
 }
 
+// [dcl.init.aggr]/1: no constructor the program wrote, no private or protected member, no base, no
+// virtual function, and - in C++11 - no member initialiser. The implicit constructors do not count.
+bool Parser::isAggregateClass(const Type *t) const {
+    t = t->unqualified();
+    if (!t->isStructOrUnion() || t->tag().empty() || !t->bases().empty() || t->polymorphic() ||
+        hasMemberInitialiser(t->tag()))
+        return false;
+    for (const Member &m : t->members())
+        if (m.declaredIn == nullptr && m.access != Access::Public) return false;
+    if (const std::vector<std::size_t> *set = overloadsOf(constructorKey(t->tag())))
+        for (std::size_t i : *set)
+            if (!functions_[i].implicit) return false;
+    return true;
+}
+
+// `= {` or `{` ahead: the list an aggregate is initialised from.
+bool Parser::bracedInitialiserAhead() const {
+    return peek().is("{") || (peek().is("=") && peekAt(1).is("{"));
+}
+
+// A class built by calling one of its constructors, rather than member by member from a list.
+bool Parser::constructedClass(const Type *t) const {
+    t = t->unqualified();
+    return t->isStructOrUnion() && !t->tag().empty() && hasConstructors(t->tag()) && !isAggregateClass(t);
+}
+
+// Whether building `t` runs a constructor anywhere inside it.
+bool Parser::needsConstruction(const Type *t) const {
+    t = t->unqualified();
+    while (t->isArray()) t = t->pointee()->unqualified();
+    if (!t->isStructOrUnion()) return false;
+    if (constructedClass(t)) return true;
+    for (const Member &m : t->members())
+        if (m.declaredIn == nullptr && needsConstruction(m.type)) return true;
+    return false;
+}
+
+// **An aggregate's member whose class has a constructor is built where the list reaches it**,
+// [dcl.init.aggr]/2: copy-initialised from its value, or value-initialised where the list ends.
+void Parser::initConstruct(const std::string &name, std::vector<InitStep> &path, const Type *type,
+                           std::vector<ExprPtr> args, bool valueInit, std::size_t pos,
+                           std::vector<StmtPtr> &out) {
+    const Type *cls = type->unqualified();
+    if (args.size() == 1 && args[0]->type() != nullptr && args[0]->type()->unqualified() == cls &&
+        !cls->nonTrivialCopy()) {
+        initStore(name, path, std::move(args[0]), pos, out);
+        return;
+    }
+    checkNotAbstract(cls, pos, "'" + name + "'");
+    const Signature &ctor = resolveOverload(constructorKey(cls->tag()), args, pos);
+    applyDefaults(ctor, args, pos);
+    if (ctor.isExplicit && !valueInit)
+        src_.fail(pos, "'" + cls->describe() + "' has a constructor taking these arguments and it is "
+                       "'explicit', so copy-initialising a member of '" + name + "' will not choose it");
+    if (ctor.access != Access::Public && !insideAccessOf(cls, ctor.access) && !isFriendOf(cls))
+        src_.fail(pos, "'" + cls->describe() + "' has no public constructor taking these arguments - "
+                       "the one that matches is " + (ctor.access == Access::Private ? "private" : "protected"));
+    const Type *thisType = types_.pointerTo(cls);
+    ExprPtr addr(new Unary('&', targetFor(name, path)));
+    addr->setType(thisType);
+    std::vector<ExprPtr> all;
+    all.push_back(std::move(addr));
+    for (ExprPtr &a : args) all.push_back(std::move(a));
+    std::vector<const Type *> full(1, thisType);
+    for (const Type *p : ctor.params) full.push_back(p);
+    ExprPtr call = completeCall(cls->tag(), ctor.symbol, nullptr, types_.get(Kind::Void), full, false, pos,
+                                std::move(all));
+    if (valueInit && ctor.implicit)
+        if (ExprPtr chain = zeroChain(*targetFor(name, path), cls)) {
+            ExprPtr seq(new Comma(std::move(chain), std::move(call)));
+            seq->setType(types_.get(Kind::Void));
+            call = std::move(seq);
+        }
+    out.push_back(StmtPtr(new ExprStmt(std::move(call))));
+}
+
 void Parser::initStore(const std::string &name, std::vector<InitStep> &path,
                        ExprPtr value, std::size_t pos,
                        std::vector<StmtPtr> &out) {
@@ -192,6 +269,10 @@ void Parser::initZero(const std::string &name, std::vector<InitStep> &path,
             initZero(name, path, elem, pos, out);
             path.pop_back();
         }
+        return;
+    }
+    if (constructedClass(type)) {
+        initConstruct(name, path, type, std::vector<ExprPtr>(), true, pos, out);
         return;
     }
     if (type->isStructOrUnion()) {
@@ -240,6 +321,19 @@ void Parser::emitFill(const std::string &name, std::vector<InitStep> &path,
     if (c.done()) return;
     Init &item = c.cur();
 
+    // A member of a class with a constructor takes one value, or a list of its arguments.
+    if (constructedClass(type)) {
+        c.at++;
+        std::vector<ExprPtr> args;
+        if (!item.isList) args.push_back(decay(std::move(item.value)));
+        for (Init &a : item.items) {
+            if (a.isList) src_.fail(a.pos, "a braced list inside the arguments of '" + type->describe() +
+                                           "''s constructor is not supported yet - write the value");
+            args.push_back(decay(std::move(a.value)));
+        }
+        initConstruct(name, path, type, std::move(args), item.isList && item.items.empty(), item.pos, out);
+        return;
+    }
     if (item.isList) {
         c.at++;
         emitInit(name, path, type, item, out);
@@ -1077,12 +1171,14 @@ std::string Parser::initFunctionSymbol() const {
     return "_GLOBAL__sub_I_" + file;
 }
 
-// The init function's frame is entered the way every other re-entry door
-// enters one: the whole state saved, cleared, and the frame put in its place.
+// The init function's frame is entered the way every other re-entry door enters one, the state saved,
+// cleared and the frame put in its place - holding the slots a namespace-scope initialiser read before
+// this made its temporaries in: `int g = f(S(3));` wrote past it.
 Parser::FunctionState Parser::enterInitFunction() {
+    const int parsed = atFunctionBody_ ? 0 : frameSize_;
     FunctionState outer = captureFunctionState();
     clearFunctionState();
-    frameSize_ = tlsObject_ ? tlsInitFrame_ : dynInitFrame_;
+    frameSize_ = std::max(tlsObject_ ? tlsInitFrame_ : dynInitFrame_, parsed);
     functionName_ = tlsObject_ ? "__tls_init" : initFunctionSymbol();
     currentFunction_ = functionName_;
     atFunctionBody_ = true;
@@ -1474,6 +1570,7 @@ void Parser::dynamicInitialise(Declared &d, const std::string &symbol,
 // constructor - that path was taken earlier - so `P g = P();` and `P g = f();`
 // are trivial copies made at run time; a braced list stays with flattenInit.
 bool Parser::staticallyInitialisable(const Type *t, Init &in) {
+    if (needsConstruction(t)) return false;
     if (in.value == nullptr) return true;
     if (in.isList)
         return in.items.size() != 1 || in.items[0].isList || t->isArray() ||

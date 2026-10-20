@@ -300,6 +300,48 @@ static bool padHandsOver(const Stmt &pad) {
     return false;
 }
 
+// The first Microsoft region's scratch word, wherever in the body it is.
+static int firstUnwindHelp(const Stmt &s) {
+    if (const Try *t = dynamic_cast<const Try *>(&s)) {
+        if (t->unwindHelpSlot() != 0) return t->unwindHelpSlot();
+        for (const StmtPtr &x : t->body())
+            if (int k = firstUnwindHelp(*x)) return k;
+        return 0;
+    }
+    const Stmt *kids[2] = { nullptr, nullptr };
+    if (const Block *b = dynamic_cast<const Block *>(&s)) {
+        for (const StmtPtr &x : b->body())
+            if (int k = firstUnwindHelp(*x)) return k;
+    } else if (const If *i = dynamic_cast<const If *>(&s)) {
+        kids[0] = &i->thenArm(); kids[1] = i->elseArm();
+    } else if (const While *w = dynamic_cast<const While *>(&s)) {
+        kids[0] = &w->body();
+    } else if (const For *f = dynamic_cast<const For *>(&s)) {
+        kids[0] = f->init(); kids[1] = &f->body();
+    } else if (const DoWhile *d = dynamic_cast<const DoWhile *>(&s)) {
+        kids[0] = &d->body();
+    } else if (const Switch *w = dynamic_cast<const Switch *>(&s)) {
+        kids[0] = &w->body();
+    } else if (const Case *c = dynamic_cast<const Case *>(&s)) {
+        kids[0] = &c->body();
+    } else if (const Label *l = dynamic_cast<const Label *>(&s)) {
+        kids[0] = &l->body();
+    }
+    for (const Stmt *k : kids)
+        if (k != nullptr)
+            if (int slot = firstUnwindHelp(*k)) return slot;
+    return 0;
+}
+
+// **-2 goes into the scratch word on entry, as cl's prologue writes it**: a call that throws before
+// the first region began - a local's constructor - found whatever the stack held there, and the
+// runtime took it for a state and destroyed an object that was never built.
+void Walker::storeUnwindHelpAtEntry(const Stmt &body) {
+    if (!usesFunclets()) return;
+    msUnwindHelpSlot_ = firstUnwindHelp(body);
+    if (msUnwindHelpSlot_ != 0) storeUnwindHelp(msUnwindHelpSlot_);
+}
+
 void Walker::visit(const Try &n) {
     markLine(n);
     if (usesFunclets()) { msTryStatement(n); return; }

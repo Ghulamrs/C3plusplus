@@ -160,6 +160,9 @@ protected:
     // Write -2 into the runtime's scratch word.
     virtual void storeUnwindHelp(int slot) { (void)slot; }
 
+    // FH3's scratch word set to -2 before the body's first call; see Walker.cpp.
+    void storeUnwindHelpAtEntry(const Stmt &body);
+
     // A cleanup funclet is opened the same way and closed differently.
     virtual void endCleanupFunclet() {}
 

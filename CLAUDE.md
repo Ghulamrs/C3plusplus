@@ -14677,3 +14677,39 @@ frame. tms6747 keeps the refusal, by name for that target: its stack is 8-aligne
 backend builds no realigning prologue; `alignas-local-past-stack-refused` is gone with it.
 `tools/feature-sweep` reads 81 / 15 / 0 of 96 (79 / 17 / 0 at 1.21): `thread-local` and
 `alignas-local` moved from refused by name to compiles.
+
+## The COM Core sources compile, 2026-10-21
+
+**The ArrowsMetal Core sources (CVector, CMatrix, CQuat, ArrowMesh, Scene) now build with cpp11 and
+run as clang's build does** at -O0 and -O2 - a driver over `buildScene()` and `Scene::update`
+prints the same mesh counts, index sums and camera numbers. Six faults stood in the way; two are
+in the sections above (a specialization reading a pattern's parameter, a typedef naming an unnamed
+class), and four are here.
+
+**[dcl.init.aggr]: an aggregate whose member's class has constructors is still an aggregate.** Its
+implicit constructors made cpp11 take `{ v, 3 }` as arguments to one. `isAggregateClass` leaves the
+implicit ones out, a braced list on an aggregate takes the aggregate road at every scope, and a
+member of a class with a constructor is built where the list reaches it (`initConstruct`): copy-
+initialised from its value, from a list of its constructor's arguments, or value-initialised where
+the list ends. `aggregate-member-constructor`.
+
+**A namespace-scope initialiser's temporaries now have room in the init function.** The list or
+expression is read before the init function's frame is entered, so `int g = f(S(3));` used slots
+that frame never reserved and the program died before main; `enterInitFunction` counts them in.
+`global-initialiser-temporary`.
+
+**[basic.lookup.unqual]/8 for a data member**: `vector[0]` in a class with a member `vector` read
+the class template of that name - a member function already won, a data member did not.
+`member-hides-template`.
+
+**A template's declaration and class body are read without the caller's locals in scope**
+(`LocalsHidden`): `CMatrix<4, 4> M; M * x` read the operator template's `CVector<M>` as the local,
+the substitution failed, and no operator was a candidate; `V<3> N(...)` made `V<3>` read its own
+`double s[N]` as the local. `template-signature-caller-local`.
+
+**On x86_64-windows FH3's scratch word is set to -2 on entry**, as cl's prologue writes it
+(`storeUnwindHelpAtEntry`); it was written where the first `try` region began. A local's
+constructor that threw before that point - `Written w(9);`, which now unwinds its own members -
+left the runtime reading whatever the stack held there as the frame's state, and it destroyed `w`
+whole after the constructor had already destroyed its parts. Found by the Windows box on
+`constructor-unwinds`.

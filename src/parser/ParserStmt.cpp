@@ -198,7 +198,9 @@ StmtPtr Parser::declarationBody() {
             const bool arrayDtor = d.type->isArray() && plain != nullptr &&
                 plain->isStructOrUnion() && !plain->tag().empty() &&
                 destructorOf(plain) != nullptr;
-            if (arrayCtor || arrayDtor) {
+            // An array of aggregates from a list is filled member by member, [dcl.init.aggr].
+            const bool aggregates = arrayCtor && !arrayDtor && isAggregateClass(plain) && bracedInitialiserAhead();
+            if ((arrayCtor || arrayDtor) && !aggregates) {
                 // [stmt.dcl]/4: a static one is built once, under a guard,
                 // and its elements destroyed at exit - as one object is.
                 if (sc == StorageStatic) {
@@ -253,7 +255,7 @@ StmtPtr Parser::declarationBody() {
         }
 
         if (d.type->isStructOrUnion() && !d.type->tag().empty() &&
-            hasConstructors(d.type->tag())) {
+            hasConstructors(d.type->tag()) && !(isAggregateClass(d.type) && bracedInitialiserAhead())) {
             // [stmt.dcl]/4: a static one is built the first time control
             // passes through, under a guard, and destroyed at exit.
             if (sc == StorageStatic) {
