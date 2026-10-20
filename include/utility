@@ -28,6 +28,22 @@ struct pair {
     T2 second;
 };
 
+// [pairs.spec]: equal member by member, ordered by first and then by second.
+template <class T1, class T2>
+bool operator==(const pair<T1, T2> &a, const pair<T1, T2> &b) { return a.first == b.first && a.second == b.second; }
+template <class T1, class T2>
+bool operator!=(const pair<T1, T2> &a, const pair<T1, T2> &b) { return !(a == b); }
+template <class T1, class T2>
+bool operator<(const pair<T1, T2> &a, const pair<T1, T2> &b) {
+    return a.first < b.first || (!(b.first < a.first) && a.second < b.second);
+}
+template <class T1, class T2>
+bool operator>(const pair<T1, T2> &a, const pair<T1, T2> &b) { return b < a; }
+template <class T1, class T2>
+bool operator<=(const pair<T1, T2> &a, const pair<T1, T2> &b) { return !(b < a); }
+template <class T1, class T2>
+bool operator>=(const pair<T1, T2> &a, const pair<T1, T2> &b) { return !(a < b); }
+
 template <class T1, class T2>
 pair<T1, T2> make_pair(const T1 &a, const T2 &b) {
     return pair<T1, T2>(a, b);

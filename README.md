@@ -77,8 +77,8 @@ runs both.
 
 ## The library
 
-**A subset ships, and it is a subset on purpose.** `include/` holds 35 C++
-headers and `lib/` 19 C ones (counted 2026-10-13, WS-L). They are here
+**A subset ships, and it is a subset on purpose.** `include/` holds 37 C++
+headers and `lib/` 19 C ones (counted 2026-10-21). They are here
 for two reasons: the core language cannot do without some of them -
 `<initializer_list>` is what a braced initialiser *means* - and a compiler with
 no containers cannot be pointed at a real program. **They are not an
@@ -89,12 +89,12 @@ implementation of the C++11 library and are not becoming one.**
 | containers | `<vector>` `<string>` `<map>` `<set>` `<array>` |
 | algorithms | `<algorithm>` `<numeric>` `<utility>` `<functional>` |
 | ownership | `<memory>` - `unique_ptr<T>`, `shared_ptr<T>` |
-| streams | `<iostream>` `<ostream>` `<istream>` `<sstream>` `<fstream>` `<ios>` `<iomanip>` |
+| streams | `<iostream>` `<ostream>` `<istream>` `<sstream>` `<fstream>` `<ios>` `<iosfwd>` `<iomanip>` |
 | exceptions | `<exception>` `<stdexcept>` |
 | language support | `<initializer_list>` `<limits>` `<new>` `<typeinfo>` `<type_traits>` |
-| C, inside `std` | `<cassert>` `<cctype>` `<cfloat>` `<climits>` `<cmath>` `<cstddef>` `<cstdint>` `<cstdio>` `<cstdlib>` `<cstring>` `<cstdarg>` |
+| C, inside `std` | `<cassert>` `<cctype>` `<cfloat>` `<climits>` `<cmath>` `<cstddef>` `<cstdint>` `<cstdio>` `<cstdlib>` `<cstring>` `<cstdarg>` `<ctime>` |
 
-`lib/` holds 19 C headers - `assert.h` through `time.h` - and the ten `<c…>`
+`lib/` holds 19 C headers - `assert.h` through `time.h` - and the eleven `<c…>`
 names forward into it. **The forwarding is a using-declaration**, `namespace std
 { using ::size_t; }`, rather than a repeated typedef: a typedef would be a
 second type that happened to agree, and the two would differ to an overload.
@@ -130,12 +130,11 @@ what a program *means*:
   `vector<char>` one is not caught.
 - **`vector` owns its elements** (2026-10-13): built in place by placement new, destroyed on
   every way out, `at()` checked, `emplace_back` forwarding its arguments.
-- **`map` and `set` are sorted vectors**, binary-searched (L01, declined for this round). The
-  interface is the standard's and the complexity is not: an insertion is O(n) and moves elements,
-  so it invalidates pointers into the container where [associative.reqmts] keeps them. The design
-  for the round that replaces it is a red-black tree with node-stable iterators, which wants a
-  class iterator - range-for over one works since WS-D.
-- **`sort` is an introsort** (2026-10-13): O(n log n), not stable; `stable_sort` is absent.
+- **`map` and `set` are AVL trees** (2026-10-21, `<__tree>`): O(log n), and an insertion
+  invalidates nothing and an erasure only the erased element, as [associative.reqmts] says, so
+  `m.erase(it++)` walks one. They were sorted vectors until cppparse's optimizer did exactly that.
+- **`sort` is an introsort** (2026-10-13): O(n log n), not stable; `stable_sort` is a merge sort
+  that merges in place by rotation (2026-10-21), O(n log² n) and needing no buffer.
 - **`numeric_limits` means something only where it is specialised.** The primary
   template answers `T()` to every query.
 - The library's free functions are `inline` and its function templates plain,
@@ -163,7 +162,7 @@ x86_64-windows, where a class cannot be thrown yet and they print and abort inst
 - `<regex>` (L16) and `<random>` (L17): declined; `minstd_rand`, `mt19937` and
   `uniform_int_distribution` are fully specified by the standard and are the place to start.
 - From headers that are here: `std::function`, `bind` and `ref`; `unique_ptr<T[]>`, `weak_ptr` and
-  `make_shared`; `stable_sort`. `docs/EXCLUSIONS.md` gives each its reason.
+  `make_shared`. `docs/EXCLUSIONS.md` gives each its reason.
 
 `<new>`, `<typeinfo>` and `<type_traits>` are here: a class's own `operator new` and `operator
 delete`, the placement and nothrow forms, `std::bad_alloc` from the platform runtime, `typeid` and
@@ -549,9 +548,10 @@ wide unsigned type read as an `int` past `INT_MAX` (`nontype-parameter-typed-int
 namespace-template one above and two-phase lookup's.
 
 **`std::string` and its neighbours are a subset**: building GRIDE's `cppparse` example with cpp11
-stops in 33 of its 39 files - on `<iosfwd>` and `<ctime>`, `string::compare`, `insert` and `rfind`
-forms, a `vector` range constructor, `ostream::setf`, `std::stable_sort`, `set::insert`'s pair, and
-one condition cpp11 parses wrongly (`if (std::string(b) == "}")`). Recorded, not mended in 1.19.
+stopped in 33 of its 39 files at 1.19, on library gaps and one condition parsed wrongly
+(`if (std::string(b) == "}")`). Mended 2026-10-21: 38 of 39 compile, the 39th wanting POSIX's
+`<sys/stat.h>`, which `lib/` does not have; built with a stand-in for it, the program agrees with
+clang's build on every output it writes.
 
 **Pointers to members** stop short of two things: a pointer to a *virtual*
 member function is refused by name (Compiler-Cppi has it), and `&D::f` for an

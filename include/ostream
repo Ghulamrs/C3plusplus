@@ -104,6 +104,12 @@ public:
         base_ = f >> 8;
         return was;
     }
+    // [fmtflags.state]: the flags given set, the ones in the mask taken off, the old ones answered.
+    std::ios_base::fmtflags setf(std::ios_base::fmtflags f) { return flags(flags() | f); }
+    std::ios_base::fmtflags setf(std::ios_base::fmtflags f, std::ios_base::fmtflags mask) {
+        return flags((flags() & ~mask) | (f & mask));
+    }
+    void unsetf(std::ios_base::fmtflags mask) { flags(flags() & ~mask); }
 
     bool good() const { return state_ == 0; }
     bool fail() const { return state_ != 0; }

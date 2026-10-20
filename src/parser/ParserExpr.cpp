@@ -1787,7 +1787,7 @@ ExprPtr Parser::primary(Program *program) {
         }
 
         if (peekAt(1).is("(") && !callsThroughObject && l == nullptr &&
-            g == nullptr) {
+            g == nullptr && !localHidesType()) {
             const Type *named = findTypedef(name);
             if (named != nullptr && named->isStructOrUnion()) {
                 at_ += 2;

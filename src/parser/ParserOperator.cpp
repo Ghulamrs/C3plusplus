@@ -37,11 +37,12 @@ bool Parser::parenHoldsTypeId() {
             Trial trial(this);
             StorageClass psc;
             const Type *pt = specifiers(&psc);
-            const Type *dt = declarator(pt, true).type;
-            // **`(T())` is a type-id only where a cast could follow** - [dcl.ambig.res]/2 with
-            // what clang reads: `(S()).k` is a temporary, `(int()) + 1` an ill-formed cast. The
-            // declarator answers T for `T()`, so the tokens say it was a function type.
-            typeId = peek().is(")") &&
+            const Declared d = declarator(pt, true);
+            const Type *dt = d.type;
+            // **`(T())` is a type-id only where a cast could follow** - [dcl.ambig.res]/2 as clang
+            // reads it: `(S()).k` is a temporary, `(int()) + 1` an ill-formed cast, the tokens saying
+            // `T()` was a function type; and a type-id names nothing, so `(T(x))` is a temporary.
+            typeId = peek().is(")") && d.name.empty() &&
                      (!(dt->isFunction() || endsInEmptyCall()) || beginsOperand(peekAt(1)));
         } catch (const SubstitutionFailure &f) {
             if (f.unsupported) src_.fail(f.pos, f.why);
@@ -961,6 +962,12 @@ ExprPtr Parser::assign() {
                               std::move(args));
     }
 
+    // The implicit copy assignment takes its operand through a converting constructor, [over.ics.user].
+    if (to->unqualified()->isStructOrUnion() && value->type() != nullptr &&
+        value->type()->unqualified() != to->unqualified() &&
+        !(value->type()->unqualified()->isStructOrUnion() &&
+          accessibleBaseOffset(value->type()->unqualified(), to->unqualified()) >= 0))
+        if (ExprPtr made = userConversion(to->unqualified(), value, pos)) value = std::move(made);
     checkAssignable(*value, to, pos, "the left of '='");
 
     // **A class with a copy assignment of its own is assigned by calling it**,
