@@ -20,11 +20,14 @@ static std::string canonicalPath(const std::string &p) {
 
 namespace {
 
+// A byte past ASCII is a piece of a name's UTF-8 here; the lexer says whether Annex E allows it.
 bool identStart(char c) {
-    return std::isalpha(static_cast<unsigned char>(c)) || c == '_';
+    return std::isalpha(static_cast<unsigned char>(c)) || c == '_' ||
+           static_cast<unsigned char>(c) >= 0x80;
 }
 bool identCont(char c) {
-    return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+    return std::isalnum(static_cast<unsigned char>(c)) || c == '_' ||
+           static_cast<unsigned char>(c) >= 0x80;
 }
 
 // `#` and `##` are spelled `%:` and `%:%:` as well - [lex.digraph] table 2.
@@ -79,6 +82,16 @@ std::vector<std::string> splitLines(const std::string &text) {
             current += text.substr(i, open);
             i += open;
             continue;
+        } else if (c == '\\') {
+            // **`caf\u00e9` and its UTF-8 are one name** - phase 1, read the other way round:
+            // a valid name outside a literal becomes its UTF-8, so a macro is found by either.
+            long cp = 0;
+            const std::size_t n = Lexer::universalAt(text, i, &cp);
+            if (n != 0 && Lexer::identifierCodePoint(cp)) {
+                current += Lexer::utf8(cp);
+                i += n;
+                continue;
+            }
         } else if (c == '"' || c == '\'') quote = c;
         if (c == '\n') {
             if (!current.empty() && current.back() == '\\') {

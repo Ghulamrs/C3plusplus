@@ -114,6 +114,12 @@ if exist %ROOT%\tests\cases\%NAME%.notarget (
         exit /b 0
     )
 )
+rem  And one the MASM spelling cannot write, its reason in <case>.nomasm - the GNU pass still runs it.
+if "%CXX1_PASS_FLAGS%"=="-masm=masm" if exist %ROOT%\tests\cases\%NAME%.nomasm (
+    echo   skip %NAME% for the MASM spelling:
+    type %ROOT%\tests\cases\%NAME%.nomasm
+    exit /b 0
+)
 rem  A case's second translation unit, <case>.part.cpp, goes into its program - as run.sh does.
 set PART=
 if exist %ROOT%\tests\cases\%NAME%.part.cpp set PART=%ROOT%\tests\cases\%NAME%.part.cpp

@@ -23,6 +23,7 @@
 #include <fstream>
 #include <iostream>
 #include <mutex>
+#include <sstream>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -1199,12 +1200,22 @@ bool Driver::compile(const Job &job) {
     }
 
     bool ok = true;
-    if (job.output.empty()) {
-        std::unique_ptr<CodeGen> gen = backend_->codegen(std::cout, syntax_);
+    std::ostringstream made;
+    {
+        std::unique_ptr<CodeGen> gen = backend_->codegen(made, syntax_);
         if (debug_) gen->setLineSource(&src, workingDirectory());
         gen->setOptimize(level);
         gen->setOptimizeForSize(forSize_ && level > 0);
         gen->run(program);
+    }
+    std::string text = made.str();
+    const std::string refused = spellWideNames(*backend_, &text);
+    if (!refused.empty()) {
+        std::fprintf(stderr, "%s: %s: %s\n", program_.c_str(), job.input.c_str(), refused.c_str());
+        return false;
+    }
+    if (job.output.empty()) {
+        std::cout << text;
     } else {
         // Binary, so the assembly is byte-identical on every host: text mode wrote CRLF on Windows (C5).
         std::ofstream file(job.output, std::ios::binary);
@@ -1213,11 +1224,7 @@ bool Driver::compile(const Job &job) {
                          job.output.c_str());
             return false;
         }
-        std::unique_ptr<CodeGen> gen = backend_->codegen(file, syntax_);
-        if (debug_) gen->setLineSource(&src, workingDirectory());
-        gen->setOptimize(level);
-        gen->setOptimizeForSize(forSize_ && level > 0);
-        gen->run(program);
+        file << text;
     }
     auto t4 = Clock::now();
 

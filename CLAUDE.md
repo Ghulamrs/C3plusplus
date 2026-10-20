@@ -14476,3 +14476,31 @@ two cases are in `tests/tms6747-exceptions.txt` and run by name under sim6747 on
 **Still refused**: a pack expansion in the list, and a list on a constructor or destructor of a
 class with a virtual base. Not checked: an override's list against its base's. `exception-spec`,
 `exception-spec-unexpected`, `exception-spec-bad-exception`, and three `-refused` cases.
+
+## A universal character name in an identifier, 2026-10-21
+
+**[lex.name] lets a name hold characters past ASCII, written as `\u00e9` or as UTF-8, and cpp11
+refused both** - the `\u` form by name, the UTF-8 one as a stray byte. A name is UTF-8 from the lexer
+on: `identifierCharacter` decodes either spelling, and `splitLines` turns a valid `\u` name outside a
+literal into its UTF-8 before a macro is looked up, so `caf\u00e9` and the UTF-8 spelling are one name and one
+macro ([lex.phases]/1 read the other way round). The mangler needed nothing: a name's length is its
+bytes, and clang writes the bytes - `_Z4f\u00e9ei`, `_ZN3n\u00e91zE`, `?f\u00e9e@@YAHH@Z` - measured on all three host
+ABIs, twelve names agreeing. **What changed below the parser is the assembler's spelling**:
+`spellWideNames` quotes every name with a byte past 0x7F in the finished text, `"_caf\u00e9"@PAGE` as clang
+writes it, on the one road every target's text takes; text without one is never touched (golden: 0
+changed).
+
+**Which characters is the letter of C++11, not clang's.** Annex E.1 lists the ranges a name may hold
+and E.2 the combining marks that may not begin one (`identifierCodePoint`, `notInitially`); clang 21
+applies UAX #31 to every mode as P1949's defect report, and where the two part this follows the
+standard the compiler compiles (g++ was not asked). Every character in the
+case is in both sets. **The difference is real and recorded**: `\u00a8` and `\U0001F600` compile
+here and clang refuses them, and U+2070 compiles here where clang calls it an extension. A `\u` name naming a
+basic or control character, or a surrogate, is refused as [lex.charset]/2 says.
+
+**Refused for two spellings, by name**: tms6747, whose ASM6x takes no byte past ASCII in a name (TI's
+assembler was not asked), and the MASM spelling, where neither ml64 nor the project's masm does and
+renaming an import would not link (`MasmSpelling::mangle`; the Windows runner skips a `.nomasm`
+case in that pass). **Known and left**: a diagnostic's column past a `\u` name on its line is off by
+the bytes the conversion saved. `ucn-identifier`, `ucn-identifier-start-refused`,
+`ucn-identifier-character-refused`, `ucn-identifier-basic-refused`.

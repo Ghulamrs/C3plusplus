@@ -1,0 +1,1 @@
+No MASM takes a name past ASCII - neither ml64 nor the project's masm, whose names are letters, digits and _ $ @ ? - so the MASM spelling refuses this case by name; the default GNU spelling compiles it.

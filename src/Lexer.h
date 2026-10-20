@@ -52,6 +52,12 @@ public:
     static const char *alternativeToken(const std::string &word);
     // The length of a raw string's prefix at i, quote included; its `)delim"` in *close.
     static std::size_t rawStringAt(const std::string &s, std::size_t i, std::string *close);
+    // The length of a well-formed `\u` or `\U` name at i, its code point in *cp; 0 if none.
+    static std::size_t universalAt(const std::string &s, std::size_t i, long *cp);
+    // [lex.name] and C++11 Annex E.1: a code point an identifier may hold.
+    static bool identifierCodePoint(long cp);
+    // A code point as UTF-8, the spelling every name carries from here on.
+    static std::string utf8(long cp);
 
 private:
     const Source &src_;
@@ -65,4 +71,8 @@ private:
                                std::size_t to);
 
     static bool isKeyword(const std::string &word);
+    // One character of a name at i past ASCII - UTF-8 or a universal character name -
+    // appended to *text as UTF-8; i moves past it. Refused where Annex E refuses it.
+    void identifierCharacter(const std::string &s, std::size_t &i, std::string *text,
+                             bool first) const;
 };

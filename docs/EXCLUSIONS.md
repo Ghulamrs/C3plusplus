@@ -97,9 +97,9 @@ goes in the same commit.
 
 | written | version | site |
 | --- | --- | --- |
-| `1'000`, a digit separator | C++14 | `src/Lexer.cpp:210` |
-| `0b101`, a binary literal | C++14 | `src/Lexer.cpp:360` |
-| `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:431` |
+| `1'000`, a digit separator | C++14 | `src/Lexer.cpp:312` |
+| `0b101`, a binary literal | C++14 | `src/Lexer.cpp:466` |
+| `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:543` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:1828` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:233` |
 | `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:5188`, `src/parser/ParserTopLevel.cpp:760` |
@@ -114,9 +114,9 @@ goes in the same commit.
 
 - **a standard header `include/` does not have** - `#include <tuple>` and the
   other C++11 header names missing from `include/` are refused by name rather
-  than as a file not found. `src/Preprocessor.cpp:1143`
+  than as a file not found. `src/Preprocessor.cpp:1156`
 - **GNU's named variadic macro parameter** - write `...` and use `__VA_ARGS__`.
-  `src/Preprocessor.cpp:1034`
+  `src/Preprocessor.cpp:1047`
 - **a user-defined literal**, `operator"" _km` - [lex.ext] wants the literal
   operator looked up by the suffix at every literal, and [over.literal] a
   literal operator template for the raw form; neither path exists.
@@ -502,6 +502,14 @@ between the two lists.**
   as a block boundary and carries no source position through its packets;
   `-g` alone writes the line table. The driver refuses it, so this entry is
   hand-written. `tests/cases/tms6747-debug-optimized.cpp`
+- **a name past ASCII, on tms6747** - an identifier with a universal character name or
+  UTF-8 in it is spelled in UTF-8, and ASM6x's names are letters, digits, `_`, `$` and
+  `.`; TI's assembler was not asked. The driver refuses it after the code generator, so
+  this entry is hand-written. `tests/cases/ucn-identifier.notarget`
+- **a name past ASCII, in the MASM spelling of x86_64-windows** - neither ml64 nor the
+  project's masm takes one, and renaming an import would not link; `Masm.cpp` refuses it
+  and the default GNU spelling writes it, quoted. `tests/cases/ucn-identifier.cpp`, whose
+  `.nomasm` tells the Windows runner's MASM pass to step over it.
 
 A case that cannot be compiled for a target names it in `<case>.notarget` with
 the reason on the line, which is printed on every run.
@@ -536,5 +544,3 @@ commit; and `make test` fails until both are true.
 
 - **a function type as a template argument**, `std::function<int(int)>` - a pointer to one,
   `R (*)(Args...)`, is read. `src/parser/ParserTemplate.cpp:1256`, `src/parser/ParserTemplate.cpp:2525`
-- **a universal character name in an identifier**, `caf\u00e9` - inside a string or character
-  literal it is read. `src/Lexer.cpp:519`

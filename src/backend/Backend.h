@@ -51,6 +51,9 @@ public:
 
 std::vector<std::pair<std::string, std::string> > predefinedMacros(const Backend &b);
 
+// A name past ASCII quoted for GNU as, `"_caf\u00e9"@PAGE` in UTF-8; tms6747's refusal, or empty.
+std::string spellWideNames(const Backend &b, std::string *text);
+
 const Backend *findBackend(const std::string &name);
 const Backend &defaultBackend();
 std::string backendNames();
