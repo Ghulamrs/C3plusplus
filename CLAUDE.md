@@ -14713,3 +14713,28 @@ constructor that threw before that point - `Written w(9);`, which now unwinds it
 left the runtime reading whatever the stack held there as the frame's state, and it destroyed `w`
 whole after the constructor had already destroyed its parts. Found by the Windows box on
 `constructor-unwinds`.
+
+## Version 1.22, 2026-10-21: the language grid down to one row
+
+**1.22 is `mend/exceptions` merged** (`e17884d`), each feature with its section above: an overloaded
+name as an argument, a `goto` out of a handler, function try blocks and constructors that unwind,
+dynamic exception specifications, `thread_local`, `alignas` past the stack, UCN identifiers,
+user-defined literals, `constexpr` class objects, and the COM Core fixes - the last two batches built
+by Fable 5.1 in worktrees of their own and re-measured here before each merge.
+
+**The Windows box found the round's last fault**: at -O2 an inlined callee went through `walkBody`, and
+the entry hook for FH3's scratch word took the callee's region slot for the frame's, so the FuncInfo
+named one word and the stores another - 30 exception cases failed at -O2 under green Mac and Linux
+legs. Only a function's own entry sets it now. `tools/verify-three`'s -O2 pass skips a `.nomasm` case
+under MASM, as -O0's does.
+
+**The headline is held at "C++03 with C++11 extensions"**: `tools/feature-sweep` reads 87 compile, 9
+refused by name, 0 naming nothing, of 96 - four C++14 forms refused as they must be, four library rows,
+and one C++11 language row, the unrestricted union. Rec 1 has landed; whether the headline returns to
+"C++11" with that row and most of the library refused is a decision for the release owner.
+
+Measured at the merge: Mac `make test` exit 0 (run.sh 885/0, names.sh 567/0, overload.sh 41/0,
+exclusions 136 sites 0/0, comment cap 0); Linux run.sh 885/0 at -O0 and -O2, asm6x.sh 549/0; Windows
+cases 1379/0 both spellings and 1053/0 at -O2, ti-link 544/0 (assembled by RIDE 4.7's asm6x, the
+`ride-verify` tree being gone from the box); names vs cl the 18 library cases of 1.19 and six new
+one-directional ones, each in a `.nocl`.

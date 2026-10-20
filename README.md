@@ -169,6 +169,32 @@ x86_64-windows, where a class cannot be thrown yet and they print and abort inst
 delete`, the placement and nothrow forms, `std::bad_alloc` from the platform runtime, `typeid` and
 `dynamic_cast` all work.
 
+## What 1.22 changes
+
+The last C++11 language rows the feature grid refused but one, and the fixes a real project met. Each
+compiles on all four targets but where a line below says otherwise, and agrees with clang:
+
+* **A `goto` out of a `catch` handler** ends the handling; a jump *into* a `try` block or a handler is
+  refused as clang refuses it.
+* **Function try blocks**, a constructor's covering its mem-initialisers; and **a constructor that
+  throws destroys what it had built** - bases, members, array elements, virtual bases - where it
+  destroyed none of it.
+* **Dynamic exception specifications**, `throw(T...)`, kept by `std::unexpected` on the Itanium targets
+  and stated in the table on the C6000; read and ignored on x86_64-windows, as cl does.
+* **`thread_local`** on the three hosts, and **`alignas` on a local past the stack's alignment**; both
+  still refused by name on tms6747.
+* **A universal character name or UTF-8 in an identifier**, and **user-defined literals**.
+* **`constexpr` objects of class type**, and a `static constexpr` member of any literal type.
+* **An overloaded function's name passed as an argument**, picked by the parameter it is passed to.
+* **The ArrowsMetal Core sources build and run as clang's build does**: an aggregate with members of a
+  class with constructors, a typedef naming an unnamed class for linkage, a data member hiding a class
+  template, a temporary in a namespace-scope initialiser, and a template read beside a caller's local.
+* **On x86_64-windows a constructor that throws before the first `try` unwinds correctly**: the
+  exception-state word is set to -2 on entry, as cl's prologue writes it.
+
+`tools/feature-sweep` reads **87 compile, 9 refused by name, 0 naming nothing, of 96**: four C++14 forms
+refused as they must be, four library rows, and one C++11 language row, the unrestricted union.
+
 ## What 1.21 changes
 
 Six of the seven programs `tests/open` held - each a known wrong answer or refusal against clang -
@@ -471,25 +497,23 @@ defects below and nothing else; Compiler-Cppi has closed those too, with the
 vtable group, `_ZTv` thunks, VTT and construction vtables, and that work is
 not in 1.3.
 
-## Known shortcomings in 1.21
+## Known shortcomings in 1.22
 
 Everything here is measured and written down elsewhere in full; this is the
-short list a user of **1.21** should have in front of them. `docs/EXCLUSIONS.md`
-is the complete one - 138 refusal sites on 2026-10-18 (131 on 2026-10-08),
+short list a user of **1.22** should have in front of them. `docs/EXCLUSIONS.md`
+is the complete one - 136 refusal sites on 2026-10-21 (131 on 2026-10-08),
 each citing the source line that refuses it, and `make test` fails when the two
 disagree. The heading
 above is written by `tools/version-lines` from `src/Version.h`; it said 1.4 for
 two releases before that tool existed.
 
-**The language is C++03 with C++11 extensions, and these are the C++11 parts a
-real codebase meets first that are still refused, each by name**: a
-user-defined literal; `thread_local`; a union holding a class with special members of its own (an
-unrestricted union); a `constexpr` object of class type; `alignas` on a local past
-the stack's alignment; a dynamic exception specification; a universal character name in an identifier; a `goto`
-that leaves a `catch` handler; and a function try block, which is C++98. Ref-qualifiers, inline
-namespaces and anonymous unions landed in 1.18, template template parameters and non-type parameter packs
-in 1.19. `tools/feature-sweep` counts them: on 2026-10-18, 79 of its 96
-probes compile, 17 are refused by name and none by a message naming nothing.
+**The language is C++03 with C++11 extensions, and the one C++11 language feature the probe grid still
+finds refused, by name, is a union holding a class with special members of its own (an unrestricted
+union)**; most of the library is refused too. A user-defined literal, `thread_local`, a `constexpr`
+object of class type, `alignas` past the stack, a dynamic exception specification, a universal character
+name in an identifier, a `goto` out of a handler and a function try block landed in 1.22.
+`tools/feature-sweep` counts them: on 2026-10-21, 87 of its 96 probes compile, 9 are refused by name
+and none by a message naming nothing.
 **Landed in the review round of 2026-10-08 to 2026-10-13**: `enum class`;
 `override` and `final`; `= default` and `= delete`; delegating constructors;
 `using X = T;` and alias templates; forwarding references and `std::forward`;
