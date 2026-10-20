@@ -1977,7 +1977,7 @@ void X86_64Linux::walkInPlace(const Function &fn) {
 // return label every `return` jumps to.
 void X86_64Linux::walkBody(const Function &fn) {
     const std::vector<Param> &ps = fn.params();
-    storeUnwindHelpAtEntry(fn.body());
+    if (!inPlace_) storeUnwindHelpAtEntry(fn.body());   // a body walked in place is not an entry
     fn.body().accept(*this);
 
     if (sretSlot_ != 0)                     a_->ins("mov", local(sretSlot_), reg("%rax"));

@@ -311,6 +311,8 @@ if [ "$WHICH" = all ] || [ "$WHICH" = windows ]; then
         nt="$ROOT/tests/cases/$n.notarget"
         if [ -f "$nt" ] && grep -q x86_64-windows "$nt"; then continue; fi
         for sp in "" masm/; do
+            # a .nomasm case is not built by the MASM pass at any level
+            if [ "$sp" = masm/ ] && [ -f "$ROOT/tests/cases/$n.nomasm" ]; then continue; fi
             if [ -f "$OUT2/winout/$sp$n.out" ] && tr -d '\r' < "$OUT2/winout/$sp$n.out" | diff -q - "$e" >/dev/null; then
                 p2=$((p2 + 1))
             else
