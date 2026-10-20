@@ -24,8 +24,9 @@
 //
 // `terminate`, `set_terminate`, `get_terminate` and `uncaught_exception` are declared off
 // Windows, defined by libc++abi, libstdc++ or RTS6x; MSVC's CRT spells them its own way.
-// What is NOT here is the rest of [exception]: `exception_ptr`, `current_exception`,
-// `nested_exception`, and the C++03 `unexpected` family.
+// So are `set_unexpected` and `unexpected`, which a `throw(T...)` list reaches through
+// `__cxa_call_unexpected`, and `bad_exception` on the hosts, whose runtimes own its class.
+// What is NOT here is the rest of [exception]: `exception_ptr`, `current_exception`, `nested_exception`.
 //
 // **`what()` is virtual and const, and returns a pointer the caller does not
 // own.** [exception]/8 says the string is valid until the object is destroyed
@@ -86,6 +87,17 @@ terminate_handler set_terminate(terminate_handler) throw();
 terminate_handler get_terminate() throw();
 void terminate();
 bool uncaught_exception() throw();
+typedef void (*unexpected_handler)();
+unexpected_handler set_unexpected(unexpected_handler) throw();
+void unexpected();
+#endif
+#if !defined(_WIN32) && !defined(__TMS320C6X__)
+class bad_exception : public exception {
+public:
+    bad_exception() {}
+    virtual ~bad_exception();
+    virtual const char *what() const;
+};
 #endif
 
 }  // namespace std

@@ -643,6 +643,8 @@ public:
     virtual bool hasGetExceptionPtr() const { return true; }
     // **What `__cxa_begin_catch` returns for a thrown pointer**: the pointer's value on the hosts, the exception object's address on TI's runtime.
     virtual bool beginCatchReturnsObject() const { return false; }
+    // **Who checks `throw(T...)`**: a filter in the frame's own pads on the hosts, the descriptor TI's personality reads.
+    virtual bool specInTable() const { return false; }
 
     virtual const char *name() const = 0;
 };

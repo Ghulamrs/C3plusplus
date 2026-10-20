@@ -470,6 +470,34 @@ std::string Walker::lsdaTable(const LsdaSpelling &sp, const std::string &symbol,
         for (std::size_t k = 0; k < callSites()[i].indices.size(); k++)
             if (callSites()[i].indices[k] > catchAll) catchAll = callSites()[i].indices[k];
     catchAll++;
+    // **A `throw(T...)` list is a filter**: its types go into the type table past every other index, and
+    // the list into the specification table after ttbase, which a negative filter counts into from 1.
+    std::vector<std::string> specs;
+    std::vector<std::vector<int> > specIndices;
+    std::vector<std::string> specTypes;
+    int nextIndex = catchAll;
+    for (const CallSite &c : callSites())
+        for (const std::string &t : c.types) {
+            if (t.compare(0, 5, "$spec") != 0) continue;
+            if (std::find(specs.begin(), specs.end(), t) != specs.end()) continue;
+            specs.push_back(t);
+            specIndices.push_back(std::vector<int>());
+            for (std::size_t from = 6; from <= t.size(); ) {
+                std::size_t to = t.find(',', from);
+                if (to == std::string::npos) to = t.size();
+                if (to > from) {
+                    specIndices.back().push_back(++nextIndex);
+                    specTypes.push_back(t.substr(from, to - from));
+                }
+                from = to + 1;
+            }
+        }
+    auto filterOf = [&](const std::string &t) {
+        int offset = 0;
+        for (std::size_t i = 0; i < specs.size() && specs[i] != t; i++)
+            offset += static_cast<int>(specIndices[i].size()) + 1;
+        return -(offset + 1);
+    };
     // **Sorted by address, which is safe now and was not before.**
     std::vector<CallSite> rows = callSites();
     for (std::size_t i = 1; i < rows.size(); i++)
@@ -501,6 +529,9 @@ std::string Walker::lsdaTable(const LsdaSpelling &sp, const std::string &symbol,
     // saying there is no next, so the chain ends and the exception goes on
     // unwinding. **The index is the parser's, not this table's.**
     types.clear();
+    if (!specTypes.empty()) types.resize(specTypes.size() + static_cast<std::size_t>(catchAll));
+    for (std::size_t i = 0; i < specTypes.size(); i++)
+        types[static_cast<std::size_t>(catchAll) + i] = specTypes[i];
     for (std::size_t i = 0; i < rows.size(); i++) {
         const CallSite &c = rows[i];
         if (c.terminate) {
@@ -511,6 +542,13 @@ std::string Walker::lsdaTable(const LsdaSpelling &sp, const std::string &symbol,
             continue;
         }
         for (std::size_t k = 0; k < c.types.size(); k++) {
+            if (c.types[k].compare(0, 5, "$spec") == 0) {
+                // One byte, as long as the specification table stays under 64.
+                o += "  .byte " + std::to_string(128 + filterOf(c.types[k])) + "\n";
+                const bool more = k + 1 < c.types.size() || c.cleanup;
+                o += "  .byte " + std::string(more ? "1" : "0") + "\n";
+                continue;
+            }
             const std::size_t at = k < c.indices.size()
                                        ? static_cast<std::size_t>(c.indices[k])
                                        : types.size() + 1;
@@ -537,6 +575,10 @@ std::string Walker::lsdaTable(const LsdaSpelling &sp, const std::string &symbol,
                   sp.typeSuffix + "-" + here + "\n";
     }
     o += ttbase + ":\n";
+    for (std::size_t i = 0; i < specs.size(); i++) {
+        for (int ix : specIndices[i]) o += "  .uleb128 " + std::to_string(ix) + "\n";
+        o += "  .byte 0\n";
+    }
     o += "  .p2align 2\n";
     return o;
 }

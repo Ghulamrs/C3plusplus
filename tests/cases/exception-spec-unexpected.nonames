@@ -1,0 +1,2 @@
+x86_64-linux  the Mac's clang has no standard headers for this target, so there is nothing to compare.
+arm64-darwin  The C1 and D1 forms of `Base`'s constructor and destructor, which clang builds only as the C2 and D2 a base asks for (docs/CONFORMANCE.md, "An inline member function is a strong symbol"); every other name agrees with clang.

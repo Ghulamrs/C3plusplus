@@ -1989,6 +1989,7 @@ void Parser::declareConstructor(const std::string &cls, std::size_t pos,
                                     false, false, pos, false, cls, false, access });
     functions_.back().isExplicit = isExplicit;
     functions_.back().isNoexcept = pendingNoexcept_;
+    functions_.back().spec = pendingSpec_;
     functions_.back().deleted = special == SpecialDef::Deleted;
     pendingNoexcept_ = false;
 }
@@ -4463,6 +4464,7 @@ void Parser::declareMember(const std::string &cls, const Declared &d,
             cls, false, access, false });
         functions_.back().isStaticMember = true;
         functions_.back().isNoexcept = pendingNoexcept_;
+        functions_.back().spec = pendingSpec_;
         pendingNoexcept_ = false;
         return;
     }
@@ -4530,6 +4532,7 @@ void Parser::declareMember(const std::string &cls, const Declared &d,
         fn->returns(), params, fn->isVariadicFn(), false, d.pos, false,
         cls, constThis, access, isVirtual });
     functions_.back().isNoexcept = pendingNoexcept_;
+    functions_.back().spec = pendingSpec_;
     functions_.back().refThis = refThis;
     pendingNoexcept_ = false;
 
@@ -4677,11 +4680,19 @@ void Parser::declareFunction(const std::string &name, const Type *returns,
                            (pendingNoexcept_ ? "'noexcept'" : "nothing") +
                            " - a declaration and its definition have to make "
                            "the same promise");
+        // [except.spec]/3 asks the same of `throw(T...)`: the same set of types, or none on both.
+        if (f.spec.written != pendingSpec_.written || !f.spec.sameSet(pendingSpec_))
+            src_.fail(pos, "'" + key + "' " + (f.spec.written ? "was declared with a 'throw(...)' list"
+                                                               : "was declared without a 'throw(...)' list") +
+                           " and this " + (pendingSpec_.written ? (f.spec.written ? "names other types" : "has one")
+                                                                : "has none") +
+                           " - [except.spec]/3, every declaration of a function has the same specification");
         if (defining) {
             if (f.defined) src_.fail(pos, "'" + key + "' is defined twice");
             f.defined = true;
         }
         pendingNoexcept_ = false;
+        pendingSpec_ = DynamicSpec();
 
         // **[dcl.fct.default]/4: a later declaration adds defaults, it does not discard them.**
         if (!pendingDefaults_.empty()) {
@@ -4729,6 +4740,7 @@ void Parser::declareFunction(const std::string &name, const Type *returns,
                                     cName, std::string(), false,
                                     Access::Public });
     functions_.back().isNoexcept = pendingNoexcept_;
+    functions_.back().spec = pendingSpec_;
     functions_.back().deleted = special == SpecialDef::Deleted;
     pendingNoexcept_ = false;
     if (!cName) aliasFunctionKey(key, functions_.size() - 1);

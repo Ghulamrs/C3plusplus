@@ -656,8 +656,12 @@ public:
     // Declared noexcept (or throw()): a table that says so lets the runtime end the program itself.
     bool isNoexcept() const { return noexcept_; }
     void setNoexcept(bool b) { noexcept_ = b; }
+    // `throw(T...)`'s type_info symbols, for a target whose table states the list; empty where none was written.
+    const std::vector<std::string> &exceptionSpec() const { return spec_; }
+    void setExceptionSpec(std::vector<std::string> s) { spec_ = std::move(s); }
 private:
     bool noexcept_ = false;
+    std::vector<std::string> spec_;
     bool hasThis_ = false;
     bool isInline_ = false;
     std::string name_;

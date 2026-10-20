@@ -438,6 +438,18 @@ unwinding - which is a program relying on it to crash - keeps running instead.
 Nothing that relies on the *promise* being true is affected, because a program
 that keeps its promise cannot tell the difference.
 
+## A `throw(T...)` list is not checked on x86_64-windows
+
+[except.spec]/8: an exception a dynamic exception specification does not allow calls
+`std::unexpected` once the function's frame is unwound. On the Itanium targets the body is one
+region whose filter names the list - clang's table, byte for byte in shape - and its pad calls
+`__cxa_call_unexpected`; on the C6000 the table's function specification descriptor carries the
+types, as cl6x writes it. `tests/cases/exception-spec.cpp`, `exception-spec-unexpected.cpp`.
+
+**On x86_64-windows the list is read and ignored**, which is what cl does with it (C4290): the
+FH3 tables have no specification to state, and an exception the list does not allow propagates.
+A program that keeps its promise cannot tell the difference.
+
 ## An un-elided call result is not destroyed when an exception passes through
 
 [class.temporary]/4 destroys a temporary at the end of the full expression it

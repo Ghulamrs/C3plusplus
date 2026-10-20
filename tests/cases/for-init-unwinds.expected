@@ -1,0 +1,5 @@
++S1 -S2 caught2
++S2 -S2 caught2
++S1 t1 t2 -S3 +S9 c -S9 caught5 
++S4 n4 n5 -S6 
+LEDGER built=5 gone=5 live=0 double=0 phantom=0 over=0 lost=0

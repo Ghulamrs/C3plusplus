@@ -832,6 +832,7 @@ Parser::FunctionState Parser::captureFunctionState() const {
     s.staticSymbols = staticSymbols_;
     s.pendingDefaults = pendingDefaults_;
     s.pendingNoexcept = pendingNoexcept_;
+    s.pendingSpec = pendingSpec_;
     s.inNoexceptFunction = inNoexceptFunction_;
     s.replayingInline = replayingInline_;
     s.loopDepth = loopDepth_;
@@ -893,6 +894,7 @@ void Parser::restoreFunctionState(const FunctionState &s) {
     staticSymbols_ = s.staticSymbols;
     pendingDefaults_ = s.pendingDefaults;
     pendingNoexcept_ = s.pendingNoexcept;
+    pendingSpec_ = s.pendingSpec;
     inNoexceptFunction_ = s.inNoexceptFunction;
     replayingInline_ = s.replayingInline;
     loopDepth_ = s.loopDepth;
@@ -955,6 +957,7 @@ void Parser::clearFunctionState() {
     staticSymbols_.clear();
     pendingDefaults_.clear();
     pendingNoexcept_ = false;
+    pendingSpec_ = DynamicSpec();
     inNoexceptFunction_ = false;
     loopDepth_ = 0;
     switchDepth_ = 0;
@@ -1000,6 +1003,7 @@ void Parser::replayInlineBodies(std::vector<PendingBody> mine) {
         // class.**
         pendingDefaults_.clear();
         pendingNoexcept_ = false;
+        pendingSpec_ = DynamicSpec();
         const bool scoped = mine[i].freeFunction && !mine[i].tag.empty();
         const Type *scope = scoped ? findTypedef(mine[i].tag) : nullptr;
         if (scope != nullptr) classStack_.push_back(scope);

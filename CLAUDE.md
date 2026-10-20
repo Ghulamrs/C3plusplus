@@ -14416,3 +14416,63 @@ refused, each by name**: a braced initialiser, an operator's operand, a default 
 template's deduction, a set holding a function template, and a converting constructor's parameter.
 About 120 probes, every one at -O0 and -O2: none prints differently from clang now.
 `overload-by-parameter-scope`, `overload-by-parameter-nonstatic-refused`.
+
+## A goto out of a handler, function try blocks, and constructors that unwind, 2026-10-21
+
+**[except.handle]/16: a `goto` out of a handler ends the handling**, and cpp11 refused it. The jump
+is now `gotoStatement`, resolved once its label is read (`resolveGotos`): it ends one catch per
+handler it leaves (`endCatches`) and destroys what it leaves, and on x86_64-windows it leaves the
+funclet by an exit its `try` places after itself (`MsExit::gotos`), the way `return` and `break`
+already did. **The other direction is refused as clang refuses it**: a `goto` or a `case` entering a
+`try` block or a handler ([except.handle]/2) - `jumpGuards` gives each `try` body and handler a
+guard of its own. `goto-out-of-handler`, `goto-out-of-handler-ms`, `goto-into-try-refused`,
+`goto-into-handler-refused`.
+
+**Function try blocks on every function** (`block(true)`), and a constructor's covering its
+mem-initialisers - `tryStatement` takes the body as a function (`bodyFn`), so the members are built
+inside the region - and a destructor's covering the members and bases it destroys. A constructor's
+or destructor's handler ends by rethrowing ([except.handle]/15: `rethrows`), and `return` in a
+constructor's handler is refused ([except.handle]/14). Refused by name on x86_64-windows, where a
+rethrow is, and for a class with a virtual base. `function-try-block`,
+`function-try-block-constructor`, `function-try-block-constructor-return-refused`.
+
+**[except.ctor]/2-3: a constructor that throws destroys what it built, and cpp11 destroyed none of
+it.** Bases, members, the elements of an array member built so far, the virtual bases the complete
+object's constructor built, and a delegating constructor's finished object are now each guarded
+(`guardSubobject`, `guardConstruction`, `withVirtualBases`), in the constructors the program writes
+and the ones the compiler writes (`OwnPads`), on both ABIs. In a function try block every pad hands
+over to the handlers, so each guard owes everything built before it, not only its own subobject.
+`constructor-unwinds`.
+
+**On the C6000 a cleanup region is one unsplit scope again**, unless a pad inside it hands over: TI's
+personality resumes its scan of a frame at the throwing address, so the pieces a nested region split
+off lost the outer destructors (`Tms6747::emitExceptionTable`, `CallSite::handsOver`).
+
+## A `for`'s init-statement unwinds, 2026-10-21
+
+**An object built in a `for`'s init-statement was never destroyed when an exception left the loop**,
+and the loop was refused inside a `try` ("a local with a destructor and a 'try'"), as was a class in
+an `if`'s condition. The init is hoisted in front of the loop when it built objects, and the two
+become one block with the cleanups any block gets; both refusals are gone. `for-init-unwinds` keeps
+the ledger, which balanced at 1.21 only because nothing was thrown through a loop.
+
+## Dynamic exception specifications, 2026-10-21
+
+**`throw(T...)` was refused; [except.spec]/8 is kept now.** `exceptionSpecification` reads the list
+into `pendingSpec_`, each type adjusted by [except.spec]/2 (`adjustedSpecType`: a reference names its
+referent, an array or function decays, top-level cv goes, an incomplete type is refused), and a
+declaration and its definition must name the same set (`DynamicSpec::sameSet`), as clang requires.
+**On the Itanium targets the body is one region whose filter is the list**: `tryStatement` in spec
+mode reads no handlers, gives the region one type, `$spec,<_ZTI...>` under index -1, and its chain
+calls `__cxa_call_unexpected` where the selector is negative; `Walker::lsdaTable` writes the filter
+byte, the list's types past every other index, and the list itself after ttbase - clang's table in
+shape. Constructors are covered from their mem-initialisers on, and a constructor's function try
+block sits inside the filter. **On the C6000 the table states it**: the function specification
+descriptor `noexcept` wrote with no types now carries the list (`Function::exceptionSpec`,
+`Target::specInTable`), as cl6x writes it. **On x86_64-windows it is read and ignored**, as cl does
+(docs/CONFORMANCE.md). `<exception>` gains `set_unexpected`, `unexpected` and, on the hosts,
+`bad_exception`. **vm6747 cannot run it**: its Runtime.cpp faults on a descriptor with types, so the
+two cases are in `tests/tms6747-exceptions.txt` and run by name under sim6747 on the box.
+**Still refused**: a pack expansion in the list, and a list on a constructor or destructor of a
+class with a virtual base. Not checked: an override's list against its base's. `exception-spec`,
+`exception-spec-unexpected`, `exception-spec-bad-exception`, and three `-refused` cases.

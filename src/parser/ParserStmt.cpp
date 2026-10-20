@@ -960,25 +960,25 @@ StmtPtr Parser::forStatement() {
 
     leaveBlock();
     leaveScope();
-    For *f = new For(std::move(init), std::move(cond),
-                     std::move(step), std::move(body));
-    f->setScope(scope);
-    if (alive_.size() == aliveAtEntry) return StmtPtr(f);
+    if (alive_.size() == aliveAtEntry) {
+        For *f = new For(std::move(init), std::move(cond), std::move(step), std::move(body));
+        f->setScope(scope);
+        return StmtPtr(f);
+    }
 
-    // **`for (S s; ...)` destroys s when the loop is done**, here, the way a block
-    // destroys what it built at its '}'. It used to stay on alive_ and be destroyed by
-    // the enclosing block instead - once, but late, and after all that block did.
-    if (functionHasTry_ || inTryBody_)
-        src_.fail(pos, "a local with a destructor and a 'try' in one "
-                       "function is not supported yet - each is a range in "
-                       "the call-site table and one would have to split "
-                       "the other");
+    // **`for (S s; ...)` destroys s when the loop is done**, the way a block destroys what it built
+    // at its '}' - and on the way out of an exception, so the init stands in front of the loop, in
+    // the statement's scope, and the loop is a cleanup region from there, as an `if`'s condition is.
     std::vector<StmtPtr> steps;
-    steps.push_back(StmtPtr(f));
+    steps.push_back(std::move(init));
+    steps.push_back(StmtPtr(new For(StmtPtr(), std::move(cond), std::move(step), std::move(body))));
+    const std::vector<std::pair<std::size_t, std::size_t> > built(1, std::make_pair(std::size_t(1), alive_.size()));
     emitDestructors(steps, aliveAtEntry, pos);
+    steps = target_.microsoftNames() ? wrapMsCleanups(std::move(steps), built, aliveAtEntry, pos)
+                                     : wrapCleanups(std::move(steps), built, aliveAtEntry, pos);
     alive_.resize(aliveAtEntry);
     Block *b = new Block(std::move(steps));
-    b->setScope(-1);
+    b->setScope(scope);
     return StmtPtr(b);
 }
 
@@ -1343,7 +1343,8 @@ StmtPtr Parser::statement() {
 }
 
 // **`try` is a block, a landing pad, and no new statement machinery.**
-StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bodyFn, bool rethrows) {
+StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bodyFn, bool rethrows,
+                             const std::string &spec) {
     // What is alive when the `try` is reached.
     const std::size_t aliveOutside = alive_.size();
     // **The two ABIs disagree about who picks the handler**, so this reads one grammar
@@ -1414,7 +1415,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
     tryChainSelectorSlot_ = wasSel;
     tryChainAliveFrom_ = wasAliveFrom;
 
-    if (!peek().is("catch"))
+    if (spec.empty() && !peek().is("catch"))
         src_.fail(peek().pos, "a 'try' needs at least one 'catch'");
 
     // Read the handlers innermost-last, so the chain can be built from the
@@ -1431,7 +1432,12 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
     std::vector<std::string> types;
     bool sawCatchAll = false;
 
-    while (peek().is("catch")) {
+    // **A `throw(T...)` list is a handler of no type of its own**: the table's filter, the selector negative.
+    if (!spec.empty()) {
+        types.push_back(spec);
+        indices.push_back(-1);
+    }
+    while (spec.empty() && peek().is("catch")) {
         const std::size_t cpos = peek().pos;
         at_++;
         expect("(");
@@ -1845,6 +1851,21 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
     if (beyondTry.empty()) resume.push_back(resumeUnwinding(pointerSlot));
     else                   resume.push_back(StmtPtr(new Goto(beyondTry)));
     StmtPtr chain = unwindPad(std::move(resume));
+    // [except.unexpected]: an exception the list does not allow, once this frame is unwound.
+    if (!spec.empty()) {
+        std::vector<ExprPtr> args;
+        ExprPtr ptr(Var::local(".ex.ptr", pointerSlot));
+        ptr->setType(voidPtr);
+        args.push_back(std::move(ptr));
+        StmtPtr unexpected(new ExprStmt(runtimeCall("__cxa_call_unexpected", types_.get(Kind::Void), std::move(args))));
+        ExprPtr sel(Var::local(".ex.sel", selectorSlot));
+        sel->setType(types_.intType());
+        ExprPtr zero(new Num(0LL));
+        zero->setType(types_.intType());
+        ExprPtr test(new Binary(BinOp::Lt, std::move(sel), std::move(zero)));
+        test->setType(types_.intType());
+        chain = StmtPtr(new If(std::move(test), std::move(unexpected), std::move(chain)));
+    }
 
     for (std::size_t i = handlers.size(); i-- > 0; ) {
         if (handlers[i].type.empty()) {          // catch (...) matches always
@@ -2220,11 +2241,6 @@ StmtPtr Parser::statementBody() {
         // What the condition built is destroyed at the end of the statement,
         // the way a block destroys what it built at its '}'.
         if (alive_.size() != aliveAtEntry) {
-            if (functionHasTry_ || inTryBody_)
-                src_.fail(pos, "a local with a destructor and a 'try' in one "
-                               "function is not supported yet - each is a "
-                               "range in the call-site table and one would "
-                               "have to split the other");
             emitDestructors(setup, aliveAtEntry, pos);
             setup = target_.microsoftNames()
                         ? wrapMsCleanups(std::move(setup), built,

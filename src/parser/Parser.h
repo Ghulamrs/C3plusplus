@@ -73,6 +73,14 @@ private:
         long double constantDouble = 0;
     };
 
+    // **`throw(T...)` as written**, adjusted by [except.spec]/2; `throw()` is noexcept and not one of these.
+    struct DynamicSpec {
+        bool written = false;
+        std::vector<const Type *> types;
+        std::size_t pos = 0;
+        bool sameSet(const DynamicSpec &o) const;
+    };
+
     struct Signature {
         std::string name;
         std::string symbol;
@@ -96,6 +104,7 @@ private:
         bool isStaticMember = false;
         // **`noexcept` on this function**, which in C++11 is not part of its type.
         bool isNoexcept = false;
+        DynamicSpec spec = DynamicSpec();
         // **Nobody wrote this one.** An implicitly declared special member is put in the
         // table so overload resolution finds it, and given a body only if something
         // calls it - which is what keeps the symbol list level with the oracles.
@@ -1414,6 +1423,7 @@ private:
         std::vector<std::string> staticSymbols;
         std::vector<std::size_t> pendingDefaults;
         bool pendingNoexcept = false;
+        DynamicSpec pendingSpec;
         bool inNoexceptFunction = false;
         bool replayingInline = false;
         // The six a review found still missing, each with a program that
@@ -1880,7 +1890,7 @@ private:
     // A constructor's function try block hands its body in as `bodyFn` - parsed and assembled with the
     // `try` open - and `rethrows`: each handler ends rethrowing, [except.handle]/15.
     StmtPtr tryStatement(std::size_t pos, const std::function<StmtPtr()> &bodyFn = nullptr,
-                         bool rethrows = false);
+                         bool rethrows = false, const std::string &spec = std::string());
     // Inside a handler of a constructor's function try block, where `return` is ill-formed.
     bool inCtorTryHandler_ = false;
     // Set while a try's body is read, so a try inside one is refused.
@@ -2413,6 +2423,7 @@ private:
     // `extern template ...;` is read and suppresses nothing: true if one was read.
     bool externTemplateDeclaration();
     bool exceptionSpecification();
+    const Type *adjustedSpecType(const Type *t, std::size_t pos);
     // ---- WS-C1 (review 2026-10-08): the virt-specifier-seq and `= default` / `= delete`, read behind the exception specification ----
     VirtSpecifiers pendingVirt_;
     void readVirtSpecifiers();
@@ -2450,6 +2461,8 @@ private:
     // ---- end WS-C1 ----
     // Set by exceptionSpecification() at each place a parameter list can be closed, read and cleared by whichever declare* call follows.
     bool pendingNoexcept_ = false;
+    // The other half of what exceptionSpecification() read: `throw(T...)` with a type in it.
+    DynamicSpec pendingSpec_;
     // **Is the function being parsed declared `noexcept`?** [except.spec]/9.
     bool inNoexceptFunction_ = false;
     // Set when `explicit operator T()` is seen, consumed by the next declareFunction of a conversion name, which stamps the signature.

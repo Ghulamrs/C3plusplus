@@ -869,6 +869,7 @@ void Parser::topLevel(Program &program) {
     skipAttributes();  // [dcl.fct]/1: the function type's own, after the exception specification
     // **Captured here because declareFunction consumes it.**
     const bool declaredNoexcept = pendingNoexcept_;
+    const DynamicSpec declaredSpec = pendingSpec_;
     if (trailing) d.type = readTrailingReturn(0);
 
     if (consume(";")) {
@@ -1068,6 +1069,14 @@ void Parser::topLevel(Program &program) {
         src_.fail(ctorTryAt, "a function try block on a constructor or destructor of a class with a virtual "
                              "base is not supported yet - the complete object's one deals with those, outside this one");
     if (ctorTry) at_++;
+    // **`throw(T...)` on the hosts is a filter around the whole body**, mem-initialisers included, whose
+    // pads hand over the way a function try block's do; TI's table states the list, and cl ignores it.
+    const bool specFilter = declaredSpec.written && !target_.microsoftNames() && !target_.specInTable();
+    const bool specialHandsOver = ctorTry || (specFilter && memberOf != nullptr &&
+                                              (isCtor || d.name == "~" + localOf(d.qualifier)));
+    if (specialHandsOver && !ctorTry && memberOf->hasVirtualBase())
+        src_.fail(declaredSpec.pos, "a 'throw(...)' list on a constructor or destructor of a class with a virtual "
+                                    "base is not supported yet - the complete object's one deals with those");
     if (memberOf != nullptr && peek().is(":")) {
         if (!isCtor)
             src_.fail(peek().pos, "an initialiser list belongs to a "
@@ -1464,13 +1473,13 @@ void Parser::topLevel(Program &program) {
         // Members go in front of the body last first, each guarding the rest, [except.ctor]/3 - and in a
         // function try block every pad hands over to the handlers, so each owes all built before it.
         std::vector<Alive> built;
-        for (std::size_t bn = 0; ctorTry && bn < memberOf->bases().size(); bn++)
+        for (std::size_t bn = 0; specialHandsOver && bn < memberOf->bases().size(); bn++)
             if (!memberOf->bases()[bn].isVirtual && destructorOf(memberOf->bases()[bn].type) != nullptr) {
                 built.push_back(Alive{ "this", thisOffset_, memberOf });
                 built.back().owner = memberOf;
                 built.back().base = static_cast<int>(bn);
             }
-        for (std::size_t i = 0; ctorTry && i < memberInits.size(); i++)
+        for (std::size_t i = 0; specialHandsOver && i < memberInits.size(); i++)
             if (memberDone[i] >= 0 && memberHasDestructor(memberOf->members()[memberDone[i]].type)) {
                 built.push_back(Alive{ "this", thisOffset_, memberOf });
                 built.back().owner = memberOf;
@@ -1705,7 +1714,26 @@ void Parser::topLevel(Program &program) {
         }
     };
     inNamespace.enter(definedIn);
-    if (ctorTry) {
+    std::vector<std::string> specSymbols;
+    for (const Type *t : declaredSpec.types) {
+        std::string why;
+        specSymbols.push_back(target_.microsoftNames() ? std::string() : typeInfoSymbolFor(t, declaredSpec.pos, &why));
+        if (!target_.microsoftNames() && specSymbols.back().empty())
+            src_.fail(declaredSpec.pos, "a 'throw(...)' list cannot name '" + t->describe() + "': " + why);
+    }
+    std::string spec = "$spec";
+    for (const std::string &sym : specSymbols) spec += "," + sym;
+    if (specFilter) {
+        const std::size_t bodyAt = peek().pos;
+        body = tryStatement(bodyAt, [&]() {
+            body = ctorTry ? tryStatement(ctorTryAt, [&]() { body = block(); assemble(); return std::move(body); }, true)
+                           : block(functionTry);
+            if (!ctorTry) assemble();
+            return std::move(body);
+        }, false, spec);
+        inNamespace.leave();
+        wrapUp();
+    } else if (ctorTry) {
         body = tryStatement(ctorTryAt, [&]() { body = block(); assemble(); return std::move(body); }, true);
         inNamespace.leave();
         wrapUp();
@@ -1759,6 +1787,7 @@ void Parser::topLevel(Program &program) {
     program.functions.back().setHasThis(!d.qualifier.empty() && !inStaticMember_);
     program.functions.back().setHasLandingPads(functionHasPads_);
     program.functions.back().setNoexcept(inNoexceptFunction_);
+    if (declaredSpec.written && target_.specInTable()) program.functions.back().setExceptionSpec(specSymbols);
     // Everything replayed from inside a class body - and every member of a
     // template specialization, which is replayed the same way - is implicitly
     // inline, so its definition may appear in several translation units.

@@ -220,9 +220,10 @@ bool Parser::staticAssertion() {
 
 // **The exception specification, and the one thing it does not touch.** In C++11 it is
 // *not* part of the function's type - measured, both spellings mangle alike - so what
-// it buys is `noexcept(e)`. `throw()` is taken as one; `throw(int)` is refused.
+// it buys is `noexcept(e)`, or `throw(T...)`'s list, kept in pendingSpec_ for the definition.
 bool Parser::exceptionSpecification() {
     skipAttributes();
+    pendingSpec_ = DynamicSpec();
     bool noexc = false;
     if (consume("noexcept")) {
         noexc = true;
@@ -234,17 +235,44 @@ bool Parser::exceptionSpecification() {
     } else if (peek().is("throw") && peekAt(1).is("(")) {
         const std::size_t at = peek().pos;
         at_ += 2;
-        if (!consume(")"))
-            src_.fail(at, "a dynamic exception specification - 'throw(T)' - is "
-                          "not supported yet; it needs a run-time check of the "
-                          "thrown type against a list, where 'noexcept' is a "
-                          "promise the compiler only has to record. 'throw()' "
-                          "with nothing in it is 'noexcept' and works");
-        noexc = true;
+        if (consume(")")) {
+            noexc = true;
+        } else {
+            pendingSpec_.written = true;
+            pendingSpec_.pos = at;
+            do {
+                const std::size_t tpos = peek().pos;
+                StorageClass sc;
+                const Type *t = declarator(specifiers(&sc), true).type;
+                if (peek().is("..."))
+                    src_.fail(peek().pos, "a pack expansion in a dynamic exception specification is not "
+                                          "supported yet - write the types out");
+                pendingSpec_.types.push_back(adjustedSpecType(t, tpos));
+            } while (consume(","));
+            expect(")");
+        }
     }
     readVirtSpecifiers();
     readDefaultedOrDeleted();
     return noexc;
+}
+
+// [except.spec]/2: a reference names its referent, an array or a function decays, and the
+// top-level qualifiers go - what is left must be complete, or point at a complete type or void.
+const Type *Parser::adjustedSpecType(const Type *t, std::size_t pos) {
+    if (t->isRValueReference())
+        src_.fail(pos, "an rvalue reference type is not allowed in an exception specification - [except.spec]/2");
+    if (t->isReference()) t = t->referent();
+    if (t->isArray()) t = types_.pointerTo(t->pointee());
+    else if (t->isFunction()) t = types_.pointerTo(t);
+    t = t->unqualified();
+    if (patternOnly_) return t;
+    const Type *named = (t->isPointer() ? t->pointee() : t)->unqualified();
+    if (named->kind() == Kind::TemplateParam || named->kind() == Kind::DependentMember) return t;
+    if (!named->isVoid() && !named->isComplete())
+        src_.fail(pos, "'" + named->describe() + "' is incomplete, and an exception specification may "
+                       "only name a complete type, or a pointer or reference to one - [except.spec]/2");
+    return t;
 }
 
 // **`override` and `final` are contextual and follow the exception specification** - [class.mem]. Inside a
@@ -562,4 +590,17 @@ long long Parser::narrowTo(long long v, const Type *t) const {
     unsigned long long kept = static_cast<unsigned long long>(v) & mask;
     if (t->isSigned(target_) && (kept & (1ULL << (bits - 1)))) kept |= ~mask;
     return static_cast<long long>(kept);
+}
+
+// The same types, in any order and however often each is written.
+bool Parser::DynamicSpec::sameSet(const DynamicSpec &o) const {
+    auto within = [](const std::vector<const Type *> &a, const std::vector<const Type *> &b) {
+        for (const Type *t : a) {
+            bool found = false;
+            for (const Type *u : b) found = found || t == u || t->describe() == u->describe();
+            if (!found) return false;
+        }
+        return true;
+    };
+    return within(types, o.types) && within(o.types, types);
 }
