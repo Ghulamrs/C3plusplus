@@ -2448,14 +2448,46 @@ private:
     ExprPtr functionAsValue(const std::string &key, std::size_t pos);
     // [over.over]: what an overloaded function's name converts to while its operand is read.
     const Type *overloadTarget_ = nullptr;
+    // Set while a call argument that is a function's name and nothing else is read: its set waits.
+    bool overloadArgument_ = false;
     // Held over an initialiser, an assignment's right side, a cast's operand and a return's value.
     struct OverloadTarget {
-        Parser &p; const Type *was;
-        OverloadTarget(Parser &parser, const Type *t) : p(parser), was(parser.overloadTarget_) { p.overloadTarget_ = t; }
-        ~OverloadTarget() { p.overloadTarget_ = was; }
+        Parser &p; const Type *was; bool wasArgument;
+        OverloadTarget(Parser &parser, const Type *t, bool argument = false)
+            : p(parser), was(parser.overloadTarget_), wasArgument(parser.overloadArgument_) {
+            p.overloadTarget_ = t; p.overloadArgument_ = argument;
+        }
+        ~OverloadTarget() { p.overloadTarget_ = was; p.overloadArgument_ = wasArgument; }
     };
-    // The one function of the set whose type the target names - of `cls` for a member - or null.
-    const Signature *pickByTarget(const std::vector<std::size_t> &set, const Type *cls) const;
+    // The one function of the set whose type `target` names - of `cls` for a member - or null.
+    const Signature *pickByTarget(const std::vector<std::size_t> &set, const Type *cls,
+                                  const Type *target) const;
+    // A function's address as a value, and a member function's as the ABI's pair.
+    ExprPtr functionAddress(const Signature &sig, const std::string &key);
+    ExprPtr memberFunctionAddress(const Type *cls, const Signature &f, const std::string &key,
+                                  std::size_t pos);
+    // `f`, `&f`, `n::f` or `&S::f` alone up to the argument's `,` or `)`, the next token first.
+    bool atBareFunctionArgument() const;
+    // The class scope's member functions of `name` as a value - its static ones - or null where it has none.
+    ExprPtr memberFunctionByName(const std::string &name, std::size_t pos);
+    // [over.over]/1's parameter target: an overloaded name as an argument waits behind a
+    // placeholder, as a braced list does, until the parameter it initialises is known.
+    struct OverloadArg {
+        const Expr *placeholder; long long serial;
+        std::vector<std::size_t> set; std::string key; const Type *cls; std::size_t pos;
+    };
+    std::vector<OverloadArg> overloadArgs_;
+    long long overloadSerial_ = 0;
+    ExprPtr overloadPlaceholder(const std::vector<std::size_t> &set, const std::string &key,
+                                const Type *cls, std::size_t pos);
+    const OverloadArg *overloadArgOf(const Expr &e) const;
+    // The function of the set `param` takes, as a value - null where none or several are of its type.
+    ExprPtr overloadArgumentFor(const Type *param, const OverloadArg &oa);
+    // Before `key`'s set is ranked: each candidate's parameter picks, and they must pick one function.
+    void pickOverloadArguments(const std::string &key, std::vector<ExprPtr> &args,
+                               const Type *object);
+    // A placeholder that reached a call no parameter picked it on, refused by name.
+    void refuseOverloadArguments(const std::vector<ExprPtr> &args, const std::string &callee) const;
     ExprPtr reinterpretCast(std::size_t pos);
     ExprPtr unary();
     ExprPtr postfix();

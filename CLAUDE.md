@@ -14377,3 +14377,42 @@ is a row of the grid. Measured at the release: Mac `make test` exit 0 (run.sh 83
 overload.sh 41/0, exclusions 135 sites 0/0, comment cap 0); Linux run.sh 838/0 at -O0 and -O2,
 tms6747 on vm6747 and sim6747; Windows cases 1322/0 through both spellings and 1016/0 at -O2,
 ti-link 524/0; names against cl differ on the 18 library cases they did at 1.19 and no other.
+
+## An overloaded function's name passed as an argument, 2026-10-20
+
+**[over.over]/1 counts a parameter among the targets, and cpp11 refused `apply(h, 3)` for an
+overloaded `h`** ("choosing one by the parameter it is passed to is not supported yet") - the one
+target 2026-10-18 left out, because a call's arguments are read before the call is resolved.
+`parseArguments` now reads an argument that is a function's name and nothing else - `f`, `&f`,
+`n::f`, `&S::f`, up to its `,` or `)` (`atBareFunctionArgument`) - with `overloadArgument_` set,
+and a name naming several functions comes back as a placeholder, the braced argument's device: a
+`void` constant, told apart by a serial, the set kept in `overloadArgs_`. **Both places a braced
+list is built pick it**: against the parameters where the callee is known, and before an
+overloaded call is ranked, where every candidate the argument count allows asks its parameter's
+type of the set (`pickOverloadArguments`) - none fitting is "no overload takes one of them", two
+candidates fitting different functions is refused as clang refuses it ("call to 'g' is
+ambiguous"; cpp11 does not weigh the other arguments first). The picked value is built as the
+target-type road builds it - `functionAddress`, or `memberFunctionAddress` for `&S::f`, split out
+of `unary` with its virtual-slot and vcall-thunk branches. **Refused by name**: a template that
+deduces from the argument ([temp.deduct.call]/6, which clang also refuses where every function
+deduces), and any call road that resolves without asking a parameter's type, at `resolveOverload`
+and `completeCall`. `overload-by-parameter`, `overload-by-parameter-ambiguous`,
+`overload-by-parameter-template`.
+
+**A probe against clang found what the suite had not: inside a member function a bare name was
+the namespace's before the class's.** `ap(h)` in a member of a class with static `h` overloads
+picked the global `h` and printed 4 where clang prints 50 - a silent wrong value the placeholder
+made reachable, and older than it: a single static member read by its bare name as a value
+(`int (*p)(int) = h;`) was the global one at 1.21 too. `memberFunctionByName` asks the class scope
+and its bases before the namespace, [basic.lookup.unqual]/8, and answers with the static ones; a
+name with only non-static ones is refused as clang refuses it ("must be called"). With it:
+`pickByTarget` tells a static member (a function pointer target) from a non-static one (a pointer
+to member of the class), and a `const &` to a function pointer is a target; `S::sf` uncalled is a
+value, access checked; `(h)` and `&(h)` are bare arguments; and a candidate another written
+argument rules out has no say in the pick (`rankArgument` over the others), so `g(h, 1)` against
+`g(int (*)(int), int *)` and `g(int (*)(double), int)` takes the second, as clang does. **Still
+refused, each by name**: a braced initialiser, an operator's operand, a default argument
+(`docs/EXCLUSIONS.md`), a mem-initialiser and a call through a member pointer (the backstop), a
+template's deduction, a set holding a function template, and a converting constructor's parameter.
+About 120 probes, every one at -O0 and -O2: none prints differently from clang now.
+`overload-by-parameter-scope`, `overload-by-parameter-nonstatic-refused`.

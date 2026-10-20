@@ -43,7 +43,10 @@ void Parser::parseArguments(std::vector<ExprPtr> &args) {
         // **A braced list as an argument** is kept behind a placeholder until the parameter
         // it copy-list-initialises is known - [dcl.init]/16 cannot be applied before that.
         if (peek().is("{")) args.push_back(bracedPlaceholder(parseInitialiser()));
-        else if (!expandPackPattern(args)) args.push_back(assign());
+        else if (atBareFunctionArgument()) {
+            OverloadTarget waits(*this, nullptr, true);
+            args.push_back(assign());
+        } else if (!expandPackPattern(args)) args.push_back(assign());
         if (consume(")")) break;
         expect(",");
     }
@@ -74,6 +77,18 @@ ExprPtr Parser::bracedArgumentFor(const Type *param, Init &in, std::size_t pos) 
 void Parser::buildBracedArguments(const std::vector<const Type *> &params,
                                   std::vector<ExprPtr> &args, std::size_t pos) {
     for (std::size_t i = 0; i < args.size(); i++) {
+        const OverloadArg *oa = overloadArgOf(*args[i]);
+        if (oa == nullptr) continue;
+        ExprPtr picked = i < params.size() ? overloadArgumentFor(params[i], *oa) : nullptr;
+        if (picked == nullptr)
+            src_.fail(oa->pos, "'" + oa->key + "' names " + std::to_string(oa->set.size()) +
+                               " functions, and none of them is of the type " +
+                               (i < params.size() ? "'" + params[i]->describe() + "' that "
+                                                  : std::string("no ")) +
+                               "parameter " + std::to_string(i + 1) + " of this call takes");
+        args[i] = std::move(picked);
+    }
+    for (std::size_t i = 0; i < args.size(); i++) {
         if (!isBracedPlaceholder(*args[i])) continue;
         if (i >= params.size())
             src_.fail(pos, "a braced list is given where this call has no parameter to take it");
@@ -91,6 +106,7 @@ void Parser::buildBracedArguments(const std::vector<const Type *> &params,
 // where they agree the list is built against that type, where they do not it is refused.
 void Parser::buildBracedArguments(const std::string &key, std::vector<ExprPtr> &args,
                                   std::size_t pos, const Type *object) {
+    pickOverloadArguments(key, args, object);
     bool any = false;
     for (std::size_t i = 0; i < args.size() && !any; i++) any = isBracedPlaceholder(*args[i]);
     if (!any) return;
@@ -124,6 +140,52 @@ void Parser::buildBracedArguments(const std::string &key, std::vector<ExprPtr> &
             src_.fail(pos, "a braced list is given as argument " + std::to_string(i + 1) + " of '" +
                            key + "', and no overload has a parameter there");
     buildBracedArguments(params, args, pos);
+}
+
+// [over.over]/1 with the overload set of the call itself: a candidate whose parameter no
+// function of the argument's set fits is not viable for it, and the viable ones must agree.
+void Parser::pickOverloadArguments(const std::string &key, std::vector<ExprPtr> &args,
+                                   const Type *object) {
+    bool any = false;
+    for (std::size_t i = 0; i < args.size() && !any; i++) any = overloadArgOf(*args[i]) != nullptr;
+    if (!any) return;
+    const std::string name = object != nullptr ? key : qualifyForLookup(key, &Parser::hasFunctionNamed);
+    const std::vector<std::size_t> *callee = overloadsOf(name);
+    if (callee == nullptr) return;
+    for (std::size_t i = 0; i < args.size(); i++) {
+        const OverloadArg *oa = overloadArgOf(*args[i]);
+        if (oa == nullptr) continue;
+        const Signature *picked = nullptr;
+        const Type *param = nullptr;
+        bool differ = false;
+        for (std::size_t k = 0; k < callee->size(); k++) {
+            const Signature &f = functions_[(*callee)[k]];
+            if (f.variadic ? args.size() < leastArguments(f)
+                           : (args.size() > f.params.size() || args.size() < leastArguments(f))) continue;
+            if (i >= f.params.size()) continue;
+            // A candidate another written argument rules out picks nothing, so it cannot disagree.
+            bool viable = true;
+            for (std::size_t j = 0; j < args.size() && j < f.params.size() && viable; j++)
+                if (j != i && overloadArgOf(*args[j]) == nullptr && !isBracedPlaceholder(*args[j]))
+                    viable = rankArgument(*args[j], f.params[j]) != Rank::None;
+            if (!viable) continue;
+            const Signature *one = pickByTarget(oa->set, oa->cls, f.params[i]);
+            if (one == nullptr) continue;
+            if (picked != nullptr && one != picked) differ = true;
+            picked = one;
+            param = f.params[i];
+        }
+        const std::string head = "'" + oa->key + "' names " + std::to_string(oa->set.size()) +
+                                 " functions, and ";
+        if (differ)
+            src_.fail(oa->pos, head + "the overloads of '" + key + "' take different ones of them as "
+                               "argument " + std::to_string(i + 1) + " - initialise a pointer of the "
+                               "type wanted and pass that");
+        if (picked == nullptr)
+            src_.fail(oa->pos, head + "no overload of '" + key + "' has a parameter of the type of "
+                               "one of them as argument " + std::to_string(i + 1));
+        args[i] = overloadArgumentFor(param, *oa);
+    }
 }
 
 Parser::Signature Parser::resolveOverloadBraced(const std::string &key, std::vector<ExprPtr> &args,
@@ -489,6 +551,7 @@ ExprPtr Parser::completeCall(const std::string &name, const std::string &symbol,
                        std::to_string(params.size()) + " argument(s), given " +
                        std::to_string(args.size()));
     // A list nobody built reaches here from a road that never asked its parameter's type.
+    refuseOverloadArguments(args, name);
     for (std::size_t i = 0; i < args.size(); i++)
         if (isBracedPlaceholder(*args[i]))
             src_.fail(pos, "a braced list as argument " + std::to_string(i + 1) + " of '" + name +

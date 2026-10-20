@@ -1705,6 +1705,11 @@ const Type *Parser::decayedType(const Type *a) const {
 // An lvalue argument travels to deduction as `U &`: an expression's type never carries
 // its value category, and a forwarding reference is the one parameter that asks for it.
 const Type *Parser::deductionArgType(const Expr &e) const {
+    if (const OverloadArg *oa = overloadArgOf(e))
+        src_.fail(oa->pos, "'" + oa->key + "' names " + std::to_string(oa->set.size()) +
+                           " functions, and is passed where a template deduces from it - choosing "
+                           "one there is not supported yet; initialise a pointer of the type wanted "
+                           "and pass that");
     const Type *t = e.type();
     if (isLvalue(e) && !t->isReference() && !t->isFunction()) return types_.referenceTo(t);
     return t;

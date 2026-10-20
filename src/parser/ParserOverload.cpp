@@ -1089,6 +1089,7 @@ Parser::Signature Parser::resolveOverload(const std::string &written,
                                           const std::vector<ExprPtr> &args,
                                           std::size_t pos,
                                           const Type *object, bool objectLvalue) {
+    refuseOverloadArguments(args, written);
     // An unqualified name inside a namespace names that namespace's function
     // if it has one - the enclosing scopes are tried from the innermost out,
     // then whatever a `using namespace` has opened.
