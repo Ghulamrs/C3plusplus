@@ -1,0 +1,6 @@
++L1 -L1 1
++L3 -L3 caught30 k=3 -30
+g-ok g-caught 
+7 107 0 8
+10 5
+main caught x

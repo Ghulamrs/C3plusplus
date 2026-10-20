@@ -1,0 +1,14 @@
+written: +B +M1 +M2 body -M2 -M1 -B 
+written, a member throws: +B +M1 -M1 -B caught9 
+written, the body throws: +B +M1 +M3 body -M3 -M1 -B caught3 
+implicit default: +M1 +M2 -M2 -M1 caught3 
+implicit copy: +M1 +M2 +M3 +M11 +M12 -M12 -M11 -M3 -M2 -M1 caught13 
+implicit move: +M1 +M2 +M3 +M21 +M22 -M22 -M21 -M3 -M2 -M1 caught23 
+virtual base: +M7 -M7 caught8 
+delegating: +M2 +M3 deleg -M3 -M2 caught50 
+delegating, the target throws: +M2 -M2 caught3 
+array member: +M1 +M2 -M2 -M1 caught3 
+local array: +M1 +M2 -M2 -M1 caught3 
+new array: +M1 +M2 -M2 -M1 caught3 
+braced list: +M1 +M2 -M2 -M1 caught99 
+LEDGER built=32 gone=32 live=0 double=0 phantom=0 over=0 lost=0

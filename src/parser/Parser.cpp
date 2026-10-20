@@ -769,6 +769,8 @@ bool Parser::atDeclarationStart() const {
 
 // From the '{' to the '}' that closes it, counting depth.
 void Parser::skipBracedBlock() {
+    // A function try block's handlers are its body too, [dcl.fct.def.general]/1.
+    const bool functionTry = peek().is("try");
     // A constructor's body may be preceded by its mem-initializer list, so
     // what is skipped starts at the ':' and the '{' is found from there.
     while (!peek().is("{")) {
@@ -781,7 +783,12 @@ void Parser::skipBracedBlock() {
         if (peek().kind == TokenKind::End)
             src_.fail(peek().pos, "this member function's body is never closed");
         if (peek().is("{")) depth++;
-        else if (peek().is("}")) { depth--; at_++; if (depth == 0) return; continue; }
+        else if (peek().is("}")) {
+            depth--;
+            at_++;
+            if (depth == 0 && !(functionTry && peek().is("catch"))) return;
+            continue;
+        }
         at_++;
     }
 }
@@ -835,10 +842,12 @@ Parser::FunctionState Parser::captureFunctionState() const {
     s.inMsHandler = inMsHandler_;
     s.msExit = msExit_;
     s.inHandlerBody = inHandlerBody_;
+    s.inCtorTryHandler = inCtorTryHandler_;
     s.handlerDepth = handlerDepth_;
     s.handlerLoopDepth = handlerLoopDepth_;
     s.handlerSwitchDepth = handlerSwitchDepth_;
     s.handlerFrom = handlerFrom_;
+    s.tryFrom = tryFrom_;
     s.handlerResumeLabel = handlerResumeLabel_;
     s.handlerResumePtr = handlerResumePtr_;
     s.handlerResumeSel = handlerResumeSel_;
@@ -894,10 +903,12 @@ void Parser::restoreFunctionState(const FunctionState &s) {
     inMsHandler_ = s.inMsHandler;
     msExit_ = s.msExit;
     inHandlerBody_ = s.inHandlerBody;
+    inCtorTryHandler_ = s.inCtorTryHandler;
     handlerDepth_ = s.handlerDepth;
     handlerLoopDepth_ = s.handlerLoopDepth;
     handlerSwitchDepth_ = s.handlerSwitchDepth;
     handlerFrom_ = s.handlerFrom;
+    tryFrom_ = s.tryFrom;
     handlerResumeLabel_ = s.handlerResumeLabel;
     handlerResumePtr_ = s.handlerResumePtr;
     handlerResumeSel_ = s.handlerResumeSel;
@@ -953,10 +964,12 @@ void Parser::clearFunctionState() {
     inMsHandler_ = false;
     msExit_ = nullptr;
     inHandlerBody_ = false;
+    inCtorTryHandler_ = false;
     handlerDepth_ = 0;
     handlerLoopDepth_.clear();
     handlerSwitchDepth_.clear();
     handlerFrom_.clear();
+    tryFrom_.clear();
     handlerResumeLabel_.clear();
     handlerResumePtr_ = 0;
     handlerResumeSel_ = 0;

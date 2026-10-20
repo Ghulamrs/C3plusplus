@@ -931,12 +931,15 @@ private:
     // And the vbtable pointer beside them, Microsoft only.
     void storeVbptr(const std::string &cls, const Type *memberOf, int thisSlot,
                     std::vector<StmtPtr> &into);
-    // The `if (mostDerived)` a Microsoft constructor opens with: the vbtable
-    // pointers and the virtual bases, built only by the complete object.
+    struct Alive;
+    // The `if (mostDerived)` a Microsoft constructor opens with: the vbtable pointers and the virtual
+    // bases, built only by the complete object. With `vbs`, a count of those built is zeroed first and
+    // `vbs` gets each one's destruction on that count, for a region over the rest, [except.ctor]/3.
     std::vector<StmtPtr> guardedVirtualBaseInit(
         const Type *type, const std::string &cls, int thisSlot, int flagSlot,
         std::size_t pos, int srcSlot, bool moving,
-        std::map<std::string, std::vector<ExprPtr> > *vbaseArgs);
+        std::map<std::string, std::vector<ExprPtr> > *vbaseArgs,
+        std::vector<Alive> *vbs = nullptr);
     // A thunk: the entry a secondary table holds for a function this class
     // overrides. It moves `this` back to the complete object and calls the
     // real one. Named for the offset it undoes - _ZThn16_N1C1gEv.
@@ -1100,12 +1103,37 @@ private:
         // *contains* rather than where the slot sits.
         bool byAddress = false;
         long long count = 0;   // an array of this many `cls`, destroyed last first; 0 for one object
+        // A subobject a constructor has built, [except.ctor]/3: `offset` is then the slot of `this`,
+        // and the object `owner`'s member `member` or its base `base` - both -1 for the whole object.
+        const Type *owner = nullptr;
+        int member = -1, base = -1;
+        int builtSlot = -1;   // an array being built: the slot counting its `cls` elements built so far
+        // Destroyed only where the slot holds more than `whenAbove`: cl's virtual bases, built under a flag.
+        int whenSlot = -1, whenAbove = 0;
     };
+    // **A function written on its own, between the statements of another**: its pads are its own,
+    // so the enclosing `try`'s chain and pad flag are set aside while it is built.
+    struct OwnPads {
+        Parser &p;
+        std::string chain, handler;
+        bool pads;
+        explicit OwnPads(Parser &parser)
+            : p(parser), chain(parser.tryChainLabel_), handler(parser.handlerResumeLabel_),
+              pads(parser.functionHasPads_) {
+            p.tryChainLabel_.clear();
+            p.handlerResumeLabel_.clear();
+            p.functionHasPads_ = false;
+        }
+        bool made() const { return p.functionHasPads_; }
+        ~OwnPads() { p.tryChainLabel_ = chain; p.handlerResumeLabel_ = handler; p.functionHasPads_ = pads; }
+    };
+    // [except.ctor]/3 over an element loop: `loop` counts in `indexSlot` the elements of `a` built.
+    StmtPtr guardElements(StmtPtr loop, Alive a, int indexSlot, std::size_t pos);
 
-    // One automatic object a jump may not land past - see Local::guardsJump. Its serial is
-    // the identity - a slot may be shared by two objects whose scopes do not overlap, and
-    // a name can be declared again in an inner block; the name is for the message.
-    struct JumpGuard { std::string name; int serial; };
+    // One automatic object a jump may not land past - see Local::guardsJump - or with `region`
+    // a `try` block (1) or a handler (2), which [except.handle]/2 lets a jump leave and never enter.
+    // Its serial is the identity: a slot may be shared, a name declared again in an inner block.
+    struct JumpGuard { std::string name; int serial; int region = 0; };
     std::vector<JumpGuard> jumpGuards() const;
     void checkJump(const std::vector<JumpGuard> &from,
                    const std::vector<JumpGuard> &to, std::size_t pos,
@@ -1131,7 +1159,13 @@ private:
         // go into `cleanups`, filled by resolveGotos(). Null for a label.
         std::vector<Alive> alive;
         Block *cleanups;
+        // A goto's own: whether it destroys what it leaves (a parent's half of a funclet's jump
+        // does not), and the exit a Microsoft handler leaves its funclet by.
+        bool destroys = true;
+        std::string msExit;
     };
+    // `goto name;` as written here - what the jump destroys, ends and leaves is decided once the label is read.
+    StmtPtr gotoStatement(const std::string &name, std::size_t pos, bool destroys);
     // alive_.size() at the entry to each loop body, and to each loop body
     // or switch body: what `continue` and `break` respectively destroy on
     // the way out is everything built since.
@@ -1192,6 +1226,28 @@ private:
     std::vector<StmtPtr> memberDestructors(const std::string &cls,
                                            const Type *type, int thisSlot,
                                            std::size_t pos);
+    // A member of this type, or an array of one, has a destructor to run.
+    bool memberHasDestructor(const Type *t) const;
+    // One member's destruction, appended to `out` - nothing for a member with no destructor.
+    void memberDestructor(std::vector<StmtPtr> &out, const std::string &cls, const Type *type,
+                          int thisSlot, std::size_t n, std::size_t pos);
+    // The base-object destructor of `cls`'s base `which`, on `this` - D2, or cl's `??1`.
+    StmtPtr baseDestructorCall(const Type *cls, std::size_t which, int thisSlot, std::size_t pos);
+    // The class's own base-object destructor, on `this` and not through its vtable.
+    StmtPtr selfDestructorCall(const Type *cls, int thisSlot, std::size_t pos);
+    // A constructor the compiler writes, `steps` in order with `done[i]` what step i finishes (no owner:
+    // nothing) - each guarding the steps after it. Written on its own, so no enclosing `try` is its own.
+    StmtPtr guardConstruction(std::vector<StmtPtr> steps, std::vector<Alive> done, std::size_t pos,
+                              bool *guarded);
+    // cl's virtual-base `init` in front of `rest`: the count zeroed, and the rest guarded by `vbs`.
+    StmtPtr withVirtualBases(std::vector<StmtPtr> init, const std::vector<Alive> &vbs, StmtPtr rest,
+                             std::size_t pos);
+    // `rest` in one region destroying all of `as`, last first, on unwind.
+    StmtPtr guardSubobjects(StmtPtr rest, const std::vector<Alive> &as, std::size_t pos);
+    // [except.ctor]/3: `rest`, run after a subobject is built, in a region destroying it on unwind - and
+    // `before` with it, which a pad handing over to a function try block's handlers owes as well.
+    StmtPtr guardSubobject(StmtPtr rest, const Alive &a, std::size_t pos,
+                           const std::vector<Alive> &before = std::vector<Alive>());
     // The deleting destructor, which no program writes: it runs the
     // destructor and then frees. Itanium calls it D0 and Microsoft ??_G, and
     // it is what a `delete` through a base pointer reaches.
@@ -1219,7 +1275,8 @@ private:
                                           int srcSlot = -1, bool moving = false,
                                           std::map<std::string,
                                               std::vector<ExprPtr> >
-                                              *vbaseArgs = nullptr);
+                                              *vbaseArgs = nullptr,
+                                          std::vector<int> *builtBase = nullptr);
     static std::string destructorKey(const std::string &cls) {
         return cls + "::~" + localOf(cls);
     }
@@ -1324,6 +1381,7 @@ private:
     // lays down after the `try` and hands it back as the address to carry on at.
     struct MsExit {
         std::string ret, brk, cont;   // the labels, empty until an exit asks
+        std::vector<std::pair<std::string, std::string> > gotos;   // an exit label, and the goto's
         int retSlot = 0;              // the returned value, saved for the parent
         std::string retTemp;
     };
@@ -1364,11 +1422,11 @@ private:
         int loopDepth = 0, switchDepth = 0;
         std::vector<SwitchCtx> switches;
         std::vector<std::size_t> breakMarks;
-        bool inTryBody = false, inMsHandler = false, inHandlerBody = false;
+        bool inTryBody = false, inMsHandler = false, inHandlerBody = false, inCtorTryHandler = false;
         MsExit *msExit = nullptr;
         int handlerDepth = 0;
         std::vector<int> handlerLoopDepth, handlerSwitchDepth;
-        std::vector<std::size_t> handlerFrom;
+        std::vector<std::size_t> handlerFrom, tryFrom;
         std::string handlerResumeLabel;
         int handlerResumePtr = 0, handlerResumeSel = 0;
         int mayThrow = 0;
@@ -1819,7 +1877,12 @@ private:
     ExprPtr virtualDestructorCall(const std::string &temp, int slot, const Type *t,
                                   const Type *cls, bool deleting, std::size_t pos);
     // `try { ... } catch (T e) { ... }` - rung 6.3.
-    StmtPtr tryStatement(std::size_t pos);
+    // A constructor's function try block hands its body in as `bodyFn` - parsed and assembled with the
+    // `try` open - and `rethrows`: each handler ends rethrowing, [except.handle]/15.
+    StmtPtr tryStatement(std::size_t pos, const std::function<StmtPtr()> &bodyFn = nullptr,
+                         bool rethrows = false);
+    // Inside a handler of a constructor's function try block, where `return` is ill-formed.
+    bool inCtorTryHandler_ = false;
     // Set while a try's body is read, so a try inside one is refused.
     bool inTryBody_ = false;
     // Inside a Microsoft `catch` body, which is compiled as a funclet - a function of its own.
@@ -1845,6 +1908,8 @@ private:
     void releaseGuarded(std::vector<StmtPtr> &steps, const Temporary &t);
     // Where each open handler's block begins, telling a `goto` from a jump.
     std::vector<std::size_t> handlerFrom_;
+    // Where each open `try` block begins, for the jumps [except.handle]/2 forbids into one.
+    std::vector<std::size_t> tryFrom_;
     // The `__cxa_end_catch` calls a jump out of `count` handlers has to make, appended after whatever destructors that jump already runs.
     void endCatches(std::vector<StmtPtr> &into, int count);
     // How many handlers a `break` or a `continue` here leaves.
@@ -2311,7 +2376,8 @@ private:
     void requireStringFits(const Type *array, const StrLit *s, std::size_t pos);
 
     void topLevel(Program &program);
-    StmtPtr block();
+    // A `{...}`, or with `functionTry` a function's whole body that is one `try` statement, [dcl.fct.def.general].
+    StmtPtr block(bool functionTry = false);
     StmtPtr statement();
     StmtPtr statementBody();
     StmtPtr declarationBody();

@@ -560,7 +560,8 @@ bool Parser::skipTemplatedDefinition(bool *sawInit, bool *sawParen) {
         if (peek().is("{")) { depth++; body = body || !initialiser; at_++; continue; }
         if (peek().is("}")) {
             at_++;
-            if (--depth == 0) { consume(";"); return body; }
+            // A function try block's handlers follow its braces and are the body too.
+            if (--depth == 0 && !(body && peek().is("catch"))) { consume(";"); return body; }
             continue;
         }
         if (peek().is(";") && depth == 0) { at_++; return body; }

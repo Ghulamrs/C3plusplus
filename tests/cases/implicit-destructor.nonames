@@ -1,2 +1,3 @@
 x86_64-linux  cxx1 emits both of Itanium's constructor and destructor forms where clang emits only the ones a use needs - see docs/CONFORMANCE.md, "An inline member function is a strong symbol"
 arm64-darwin  same: VB is only ever built as a base here, so clang writes its C2 and no C1
+x86_64-windows  cxx1's element loop `__cxx1_vec_del_1M`, which the pad of a partly built array member calls since [except.ctor]/3 landed (2026-10-20), against clang's inline code - a file-local helper, once per class.

@@ -661,7 +661,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             declareConstructor(tag, cpos, access, isExplicit);
             isExplicit = false;
             refuseVirtSpecifiers("a constructor");
-            if (peek().is("{") || peek().is(":")) {
+            if (peek().is("{") || peek().is(":") || peek().is("try")) {
                 pendingBodies_.push_back(PendingBody{
                     tag, itemStart, local, constructorKey(tag),
                     signatureAddedUnder(constructorKey(tag), sigAt) });
@@ -710,7 +710,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             if (!ownDtor) at_ += 2;
             const std::size_t sigAt = functions_.size();
             declareDestructor(tag, dpos, access, isVirtual);
-            if (peek().is("{")) {
+            if (peek().is("{") || peek().is("try")) {
                 pendingBodies_.push_back(PendingBody{
                     tag, itemStart, local, destructorKey(tag),
                     signatureAddedUnder(destructorKey(tag), sigAt) });
@@ -1197,7 +1197,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 // **The body is held, not parsed.** It has to be able to see members
                 // declared after it, so nothing in it can be read until the class is
                 // closed - which is why this is a delayed parse and not a recursion.
-                if (peek().is("{")) {
+                if (peek().is("{") || peek().is("try")) {
                     if (tag.empty())
                         src_.fail(d.pos, "a member function needs a class with "
                                          "a name - this one is anonymous");

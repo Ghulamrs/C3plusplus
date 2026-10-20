@@ -1,0 +1,6 @@
+ok: +B +M1 +M2 body -M2 -M1 -B 
+a member throws: +B +M1 -M1 -B handler9 caught9 
+the body throws: +B +M1 +M3 body -M3 -M1 -B handler30 caught30 
+a handler throws its own: t-handler caught77 
+destructor: +M11 +M12 ~U12 -M12 ~U11 -M11 
+LEDGER built=10 gone=10 live=0 double=0 phantom=0 over=0 lost=0

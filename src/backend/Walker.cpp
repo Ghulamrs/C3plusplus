@@ -1,5 +1,7 @@
 #include "Walker.h"
 
+#include <set>
+
 #include <algorithm>
 
 #include "../Source.h"
@@ -256,7 +258,7 @@ void Walker::openRegion(const std::string &begin,
 }
 
 std::vector<Walker::CallSite> Walker::closeRegion(const std::string &end,
-                                                  const std::string &resume) {
+                                                  const std::string &resume, bool handsOver) {
     OpenRegion mine = open_.back();
     open_.pop_back();
     CallSite last;
@@ -264,11 +266,38 @@ std::vector<Walker::CallSite> Walker::closeRegion(const std::string &end,
     last.end = end;
     last.at = mine.at;
     mine.closed.push_back(last);
+    const bool any = mine.innerHandsOver || handsOver;
+    for (CallSite &piece : mine.closed) piece.handsOver = any;
     if (!open_.empty()) {
         open_.back().start = resume;
         open_.back().at = ++labelOrder_;
+        open_.back().innerHandsOver = open_.back().innerHandsOver || any;
     }
     return mine.closed;
+}
+
+// The gotos of a pad and the labels it defines - a pad goes on to another of this frame where one of
+// its gotos names a label outside it, and resumes the unwind where none does.
+static void padJumps(const Stmt &s, std::set<std::string> &to, std::set<std::string> &defined) {
+    if (const Block *b = dynamic_cast<const Block *>(&s)) {
+        for (const StmtPtr &x : b->body()) padJumps(*x, to, defined);
+    } else if (const If *i = dynamic_cast<const If *>(&s)) {
+        padJumps(i->thenArm(), to, defined);
+        if (i->elseArm() != nullptr) padJumps(*i->elseArm(), to, defined);
+    } else if (const Label *l = dynamic_cast<const Label *>(&s)) {
+        defined.insert(l->name());
+        padJumps(l->body(), to, defined);
+    } else if (const Goto *g = dynamic_cast<const Goto *>(&s)) {
+        to.insert(g->label());
+    }
+}
+
+static bool padHandsOver(const Stmt &pad) {
+    std::set<std::string> to, defined;
+    padJumps(pad, to, defined);
+    for (const std::string &l : to)
+        if (defined.count(l) == 0) return true;
+    return false;
 }
 
 void Walker::visit(const Try &n) {
@@ -284,7 +313,7 @@ void Walker::visit(const Try &n) {
     openRegion(begin, n.types(), n.typeIndices());
     for (std::size_t i = 0; i < n.body().size(); i++) n.body()[i]->accept(*this);
     defineLabel(end);
-    const std::vector<CallSite> pieces = closeRegion(end, end);
+    const std::vector<CallSite> pieces = closeRegion(end, end, n.hasPad() && padHandsOver(n.pad()));
     jump(done);
 
     defineLabel(pad);
@@ -313,7 +342,7 @@ void Walker::visit(const Try &n) {
     }
     for (std::size_t i = 0; i < pieces.size(); i++) {
         callSite(pieces[i].begin, pieces[i].end, pad, chain, chainIx,
-                 n.alsoCleanup(), pieces[i].at);
+                 n.alsoCleanup(), pieces[i].at, pieces[i].handsOver);
         exceptionRegion(pieces[i].begin, pieces[i].end, pad);
     }
 }

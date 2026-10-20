@@ -1,0 +1,1 @@
+x86_64-linux  The C1 and D1 forms clang leaves out: `T`'s constructor is defined in its class with its function try block - the shape a held body takes - so clang emits its C2 alone (docs/CONFORMANCE.md, "An inline member function is a strong symbol"), and the destructors of `S` and `T` the compiler writes. Every name the program wrote out of line agrees with clang.
