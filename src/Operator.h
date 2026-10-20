@@ -21,3 +21,6 @@ std::string operatorSpelling(const std::string &name);
 
 // `unary` decides between the two Itanium codes and is ignored by Microsoft.
 const char *itaniumOperatorCode(const OperatorCode &op, bool unary);
+
+// **[over.literal]: a literal operator is filed as `operator"" _km`**; its suffix, else empty.
+std::string literalSuffix(const std::string &name);

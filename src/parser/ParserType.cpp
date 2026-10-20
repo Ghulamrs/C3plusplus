@@ -2365,8 +2365,23 @@ std::string Parser::operatorName() {
     }
     if (spelling == "->*")
         src_.fail(pos, "'operator->*' is not supported yet");
-    if (peek().kind == TokenKind::Str)
-        src_.fail(pos, "a user-defined literal is not supported yet");
+    // **[over.literal]/1: `operator "" _km`**, or `""_km` with the suffix run onto the quotes.
+    if (peek().kind == TokenKind::Str) {
+        const Token &q = peek();
+        if (!q.text.empty() || q.prefix != 0 || q.wide)
+            src_.fail(q.pos, "the string after 'operator' must be '\"\"' - [over.literal]/1 "
+                             "names a literal operator by an empty string and a suffix");
+        std::string suffix = q.udSuffix;
+        at_++;
+        if (suffix.empty()) {
+            if (peek().kind != TokenKind::Ident)
+                src_.fail(peek().pos, "a literal operator is named 'operator\"\"' and an "
+                                      "identifier, its suffix - [over.literal]/1");
+            suffix = peek().text;
+            at_++;
+        }
+        return "operator\"\" " + suffix;
+    }
     // **A type after `operator` is a conversion function**, not an operator
     // that happens to be spelled with letters - `new` and `delete` being the
     // two that are.
@@ -2412,6 +2427,10 @@ void Parser::checkOperatorDeclarable(const std::string &name,
                                      const std::vector<const Type *> &params,
                                      bool member, std::size_t pos,
                                      bool internal) {
+    if (!literalSuffix(name).empty()) {
+        checkLiteralOperator(name, params, member, pos);
+        return;
+    }
     const std::string spelling = operatorSpelling(name);
     if (spelling.empty() || findOperator(spelling) == nullptr) return;
     // **An allocation function is an operator in name only** - [basic.stc.dynamic]:
@@ -2518,6 +2537,54 @@ void Parser::checkOperatorDeclarable(const std::string &name,
                    "it can be given the name the linker wants, and there is no "
                    "path from an expression to it, so declaring one would make "
                    "a function nothing can call");
+}
+
+void Parser::checkLiteralOperator(const std::string &name,
+                                  const std::vector<const Type *> &params,
+                                  bool member, std::size_t pos) {
+    const std::string shown = "operator\"\"" + literalSuffix(name.substr(name.rfind(':') + 1));
+    if (member)
+        src_.fail(pos, "literal operator '" + shown + "' must be in a namespace or global "
+                       "scope - [over.literal]/2");
+    if (cLinkage_ > 0)
+        src_.fail(pos, "literal operator must have C++ linkage - [over.literal]/6");
+    for (std::size_t i = 0; i < pendingDefaults_.size(); i++)
+        if (pendingDefaults_[i] != 0)
+            src_.fail(pos, "literal operator cannot have a default argument - [over.literal]/8");
+    // A template's specialization takes nothing, the template's own list being checked where it is declared.
+    if (params.empty() && !instantiationKey_.empty()) return;
+    auto character = [&](const Type *t) {
+        const Kind k = t->unqualified()->kind();
+        return k == Kind::Char || k == Kind::WChar || k == Kind::Char16 || k == Kind::Char32;
+    };
+    bool ok = false;
+    if (params.size() == 1) {
+        const Type *p = params[0]->unqualified();
+        ok = p->kind() == Kind::ULongLong || p->kind() == Kind::LongDouble || character(p) ||
+             (p->isPointer() && p->pointee()->isConst() &&
+              p->pointee()->unqualified()->kind() == Kind::Char);
+    } else if (params.size() == 2) {
+        const Type *p = params[0]->unqualified();
+        ok = p->isPointer() && p->pointee()->isConst() && character(p->pointee()) &&
+             params[1]->unqualified() == types_.get(target_.sizeType());
+    }
+    if (!ok)
+        src_.fail(pos, "invalid literal operator parameter list for '" + shown + "' - "
+                       "[over.literal]/3 takes (const char *), (unsigned long long), (long "
+                       "double), one character type, or a pointer to const characters and a "
+                       "size_t");
+}
+
+void Parser::checkLiteralOperatorTemplate(const TemplateDecl &decl, const Type *pattern) {
+    const bool chars = decl.params.size() == 1 && decl.params[0].isPack &&
+                       decl.params[0].type != nullptr && !decl.params[0].isTemplate &&
+                       decl.params[0].type->unqualified()->kind() == Kind::Char;
+    if (!chars)
+        src_.fail(decl.pos, "template parameter list for literal operator must be 'char...' - "
+                            "[over.literal]/5");
+    if (pattern != nullptr && !pattern->params().empty())
+        src_.fail(decl.pos, "literal operator template cannot have any parameters - "
+                            "[over.literal]/5");
 }
 
 // `expectIdent` with the operator case in front of it. This stands wherever a

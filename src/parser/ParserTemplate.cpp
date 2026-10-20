@@ -4,6 +4,7 @@
 #include "Parser.h"
 #include "ParserInternal.h"
 #include "../Mangle.h"
+#include "../Operator.h"
 #include "../Source.h"
 
 #include <climits>
@@ -741,6 +742,8 @@ bool Parser::templateDeclaration() {
     decl.name = templatedName(decl.params, &decl.isClass, &qualifier, &constructs, &fnPattern);
     if (decl.isClass) refuseAfterPack(decl.params);
     else              requireDeducibleAfterPack(decl, fnPattern);
+    if (!decl.isClass && !literalSuffix(decl.name).empty())
+        checkLiteralOperatorTemplate(decl, fnPattern);
     // Where it was written, for the manglers - the table's key stays bare.
     decl.ns = namespacePrefix();
     at_ = decl.afterParams;

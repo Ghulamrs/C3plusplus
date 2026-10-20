@@ -1,0 +1,1 @@
+Not measured: names-vs-cl.cmd hands cl the file without /utf-8, and cl reads a file with no byte-order mark in the code page, so the names written in UTF-8 here (`café`, `Sé`) reach cl as other bytes. clang for the Microsoft ABI agrees with cxx1 on all twelve names.

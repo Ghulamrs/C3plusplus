@@ -14524,3 +14524,65 @@ give the linker") - found compiling `std::vector<SceneVertex>` over the C idiom 
 struct or union its name, local name and scope (`Type::nameForLinkage`), and all three ABIs spell
 it as clang does: `_Z1f2P2`, `N1S2InE`, `?g@@YAXUIn@S@@@Z`. An unnamed enum is left as it was.
 `typedef-name-for-linkage`.
+## A universal character name in an identifier, 2026-10-21
+
+**[lex.name] lets a name hold characters past ASCII, written as `\u00e9` or as UTF-8, and cpp11
+refused both** - the `\u` form by name, the UTF-8 one as a stray byte. A name is UTF-8 from the lexer
+on: `identifierCharacter` decodes either spelling, and `splitLines` turns a valid `\u` name outside a
+literal into its UTF-8 before a macro is looked up, so `caf\u00e9` and the UTF-8 spelling are one name and one
+macro ([lex.phases]/1 read the other way round). The mangler needed nothing: a name's length is its
+bytes, and clang writes the bytes - `_Z4f\u00e9ei`, `_ZN3n\u00e91zE`, `?f\u00e9e@@YAHH@Z` - measured on all three host
+ABIs, twelve names agreeing. **What changed below the parser is the assembler's spelling**:
+`spellWideNames` quotes every name with a byte past 0x7F in the finished text, `"_caf\u00e9"@PAGE` as clang
+writes it, on the one road every target's text takes; text without one is never touched (golden: 0
+changed).
+
+**Which characters is the letter of C++11, not clang's.** Annex E.1 lists the ranges a name may hold
+and E.2 the combining marks that may not begin one (`identifierCodePoint`, `notInitially`); clang 21
+applies UAX #31 to every mode as P1949's defect report, and where the two part this follows the
+standard the compiler compiles (g++ was not asked). Every character in the
+case is in both sets. **The difference is real and recorded**: `\u00a8` and `\U0001F600` compile
+here and clang refuses them, and U+2070 compiles here where clang calls it an extension. A `\u` name naming a
+basic or control character, or a surrogate, is refused as [lex.charset]/2 says.
+
+**Refused for two spellings, by name**: tms6747, whose ASM6x takes no byte past ASCII in a name (TI's
+assembler was not asked), and the MASM spelling, where neither ml64 nor the project's masm does and
+renaming an import would not link (`MasmSpelling::mangle`; the Windows runner skips a `.nomasm`
+case in that pass). **Known and left**: a diagnostic's column past a `\u` name on its line is off by
+the bytes the conversion saved. `ucn-identifier`, `ucn-identifier-start-refused`,
+`ucn-identifier-character-refused`, `ucn-identifier-basic-refused`.
+
+## User-defined literals, 2026-10-21
+
+**[lex.ext] makes a literal with a ud-suffix a call of the literal operator the suffix names, and
+cpp11 refused the declaration** - `operator"" _km` was "not supported yet". The lexer reads the
+suffix run onto any literal (`Token::udSuffix`, and a number's digits as written in `spelling`), a
+standard suffix being one only when it is the whole of the name after the digits; `operatorName`
+reads `operator "" _km` and `operator""_km` alike and files the function as `operator"" _km`.
+**The literal is rewritten as the call the standard says it is**: `userDefinedLiteral` writes the
+call's tokens past the end of the stream and reads them through `primary` - the device
+`initializerListOf` uses - so the lookup, the overload resolution and the constant folding are the
+ones a call written out gets. `static_assert(4_KiB == 4096)` and `int t[2_KiB / 1024]` fold through
+a `constexpr` literal operator with nothing taught to `fold`.
+
+**A number's call is [lex.ext]/3-4's choice, made by looking at the set**: the cooked form
+(`unsigned long long`, `long double`) where one is declared, else the raw `const char *` one or the
+`char...` template - not both - with the digits as written, `0x1F_digits` handing over "0x1F". A
+string takes its pointer and its length in code units, adjacent strings being one literal whose
+suffixes must agree ([lex.ext]/8); a character takes itself, and the overloads for `char`,
+`wchar_t`, `char16_t` and `char32_t` rank as any do. **Both names measured with clang on three
+targets**: `li` and the suffix as a source-name on Itanium, `_Zli3_kmy`, `_ZN3litli2_nEy`, the
+template's `li2_t` a substitution candidate; `??__K` and the suffix on Microsoft, `??__K_km@@YA_J_K@Z`
+and `??$?__K_t@$0DB@@@YAHXZ`. No `L` on a static one, as no operator carries one.
+
+**[over.literal] is checked where it is declared** (`checkLiteralOperator`,
+`checkLiteralOperatorTemplate`): a namespace-scope function, C++ linkage, one of the eleven
+parameter lists, no default argument, a template of one `char...` and no parameters - each refused
+with clang's words. **A suffix with no `_` is reserved** ([usrlit.suffix]): declaring one stands
+and a literal using it is refused, as clang refuses it. **Known and left**: a pp-number keeps going
+through `.` in clang, so `3_km.metres` is one token there and two here - the case writes
+`3_km .metres`; and a cooked `long double` literal that is not exactly a double is refused on
+x86_64-linux by the rule every such literal meets. `user-defined-literal`, and ten `udl-*-refused`
+cases, one per rule; `udl-refused` is gone. With both features `tools/feature-sweep --clang
+clang++` reads 84 compile, 12 refused by name, 0 naming nothing, of 96 - the `ucn` and `udl` rows
+now compile.

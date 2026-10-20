@@ -1806,6 +1806,15 @@ private:
                                  const std::vector<const Type *> &params,
                                  bool member, std::size_t pos,
                                  bool internal = false);
+    // [over.literal]/2-/8: where a literal operator may be declared, and the lists it may take.
+    void checkLiteralOperator(const std::string &name, const std::vector<const Type *> &params,
+                              bool member, std::size_t pos);
+    // [over.literal]/5: a literal operator template's own list is one `char...` and its function's empty.
+    void checkLiteralOperatorTemplate(const TemplateDecl &decl, const Type *pattern);
+    // [lex.ext]/2-8: a literal with a ud-suffix, as the call of the literal operator it names.
+    ExprPtr userDefinedLiteral(Program *program);
+    // Whether the literal at the cursor - adjacent strings taken together - carries a ud-suffix.
+    bool atUserDefinedLiteral() const;
     const Type *arraySuffix(const Type *base, std::size_t pos);
     const Type *promote(const Type *t) const;
     const Type *usualArithmetic(const Type *a, const Type *b) const;

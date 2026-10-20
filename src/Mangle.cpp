@@ -207,6 +207,14 @@ public:
             type(conversionTo_);
             return;
         }
+        // **`li` and the suffix as a source-name** - measured, `_Zli3_kmy`, `_ZN3litli2_nEy`.
+        const std::string suffix = literalSuffix(name);
+        if (!suffix.empty()) {
+            out += "li";
+            out += std::to_string(suffix.size());
+            out += suffix;
+            return;
+        }
         const std::string spelling = operatorSpelling(name);
         if (const OperatorCode *op = findOperator(spelling)) {
             out += itaniumOperatorCode(*op, unary);
@@ -348,7 +356,7 @@ public:
         // internal-linkage *identifier* - `_ZL8ordinaryi` - and does not mark
         // an operator, however it is declared.
         if (internal && (findOperator(operatorSpelling(name)) != nullptr ||
-                         isConversionFunction(name)))
+                         isConversionFunction(name) || !literalSuffix(name).empty()))
             internal = false;
         // The L marks the unqualified name and stands in front of it: `_ZN1nL1fEi`, `_ZStL1hi`.
         const char *L = internal ? "L" : "";
@@ -405,9 +413,12 @@ public:
         // is not a substitution candidate - `operator+<3>` is _ZplILi3EE...,
         // where a named template's name is candidate zero.
         const std::string spelling = operatorSpelling(last);
-        if (internal && findOperator(spelling) == nullptr) out += "L";
+        const std::string suffix = literalSuffix(last);
+        if (internal && findOperator(spelling) == nullptr && suffix.empty()) out += "L";
         if (const OperatorCode *op = findOperator(spelling))
             out += itaniumOperatorCode(*op, pattern->params().size() == 1);
+        else if (!suffix.empty())
+            out += "li" + std::to_string(suffix.size()) + suffix;   // `_Zli2_tIJLc49EEEiv`
         else {
             out += std::to_string(last.size());
             out += last;
@@ -923,6 +934,9 @@ public:
 
     // **An operator replaces the whole `?name@` and is not pushed as a back-reference**.
     bool operatorPrefix(const std::string &name) {
+        // A literal operator is `??__K` and its suffix as a name: `??__K_km@@YA_J_K@Z`, measured.
+        const std::string suffix = literalSuffix(name);
+        if (!suffix.empty()) { out = "??__K" + suffix + "@"; return true; }
         // **`??B`, and unlike every other operator it writes its return type** - which
         // memberFunction already does for all of them, so naming it is the whole of the difference:
         // `??BS@@QEBA_NXZ` for `operator bool() const`. Measured against clang.
@@ -1113,6 +1127,8 @@ public:
         const OperatorCode *op = findOperator(operatorSpelling(name));
         if (isConversionFunction(name)) {
             out += "?B";
+        } else if (!literalSuffix(name).empty()) {
+            out += "?__K" + literalSuffix(name) + "@";   // `??$?__K_t@$0DB@@@YAHXZ`
         } else if (name == "?0") {
             out += "?0";          // a constructor's code, which takes no name back-reference
         } else if (op != nullptr) {

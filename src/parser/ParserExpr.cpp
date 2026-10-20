@@ -4,6 +4,7 @@
 #include "Parser.h"
 #include "ParserInternal.h"
 #include "../Mangle.h"
+#include "../Operator.h"
 #include "../Source.h"
 
 #include <climits>
@@ -800,6 +801,165 @@ struct FindBase {
     }
 };
 
+bool Parser::atUserDefinedLiteral() const {
+    if (peek().kind == TokenKind::Num) return !peek().udSuffix.empty();
+    for (std::size_t k = 0; peekAt(k).kind == TokenKind::Str; k++)
+        if (!peekAt(k).udSuffix.empty()) return true;
+    return false;
+}
+
+// A string literal's code units: bytes, UTF-16 units for `u`, code points for U and L.
+static long long codeUnits(const std::string &text, char prefix, bool wide) {
+    if (prefix != 'u' && prefix != 'U' && !wide) return static_cast<long long>(text.size());
+    long long n = 0;
+    for (std::size_t i = 0; i < text.size(); ) {
+        const unsigned char c = static_cast<unsigned char>(text[i]);
+        const int extra = c >= 0xF0 ? 3 : c >= 0xE0 ? 2 : c >= 0xC0 ? 1 : 0;
+        n += prefix == 'u' && extra == 3 ? 2 : 1;
+        i += extra + 1;
+    }
+    return n;
+}
+
+// **The literal is rewritten as the call [lex.ext] says it is**, into tokens past the end and read
+// by `primary` - so the call is looked up, resolved and folded as one written out would be. Which
+// call a number makes is [lex.ext]/3-4's: the cooked form, else the raw one or the template.
+ExprPtr Parser::userDefinedLiteral(Program *program) {
+    const Token lit = peek();
+    const std::size_t pos = lit.pos;
+    std::string suffix = lit.udSuffix;
+    Token value = lit;
+    value.udSuffix.clear();
+    at_++;
+    // [lex.ext]/8: adjacent strings are one literal, the suffix any of them carries the whole's.
+    if (lit.kind == TokenKind::Str) {
+        while (peek().kind == TokenKind::Str) {
+            if (!peek().udSuffix.empty() && !suffix.empty() && peek().udSuffix != suffix)
+                src_.fail(peek().pos, "adjacent string literals with different ud-suffixes '" +
+                                      suffix + "' and '" + peek().udSuffix + "' - [lex.ext]/8");
+            if (!peek().udSuffix.empty()) suffix = peek().udSuffix;
+            if (peek().prefix != 0 && value.prefix != 0 && peek().prefix != value.prefix)
+                src_.fail(peek().pos, "adjacent string literals with different "
+                                      "encoding prefixes - [lex.string]/13");
+            if (peek().prefix != 0) value.prefix = peek().prefix;
+            value.wide = value.wide || peek().wide;
+            value.text += peek().text;
+            at_++;
+        }
+    }
+    const std::size_t resume = at_;
+    const bool number = !lit.spelling.empty();
+    const std::size_t suffixPos = number ? pos + lit.spelling.size() : pos;
+    const char *what = lit.kind == TokenKind::Str ? "string literal"
+                     : !number ? "character constant"
+                     : lit.isFloat ? "floating constant" : "integer constant";
+    // [usrlit.suffix]/1 reserves a suffix with no `_` first; clang calls one at a literal invalid.
+    if (suffix[0] != '_')
+        src_.fail(suffixPos, "invalid suffix '" + suffix + "' on " + what + " - a ud-suffix "
+                             "that does not begin with '_' is reserved, [usrlit.suffix]");
+    const std::string name = "operator\"\" " + suffix;
+    const std::string shown = "operator\"\"" + suffix;
+    const std::string key = qualifyForLookup(name, &Parser::hasFunctionNamed);
+    const std::vector<std::size_t> *set = overloadsOf(key);
+
+    std::vector<Token> call;
+    auto put = [&](TokenKind kind, const std::string &text) {
+        Token t;
+        t.kind = kind;
+        t.text = text;
+        t.pos = pos;
+        call.push_back(t);
+    };
+    auto byName = [&]() {
+        put(TokenKind::Keyword, "operator");
+        put(TokenKind::Str, std::string());
+        put(TokenKind::Ident, suffix);
+        put(TokenKind::Punct, "(");
+    };
+    if (number) {
+        bool cooked = false, raw = false;
+        if (set != nullptr)
+            for (std::size_t k = 0; k < set->size(); k++) {
+                const Signature &f = functions_[(*set)[k]];
+                if (f.fromTemplate || f.params.size() != 1) continue;
+                const Type *p = f.params[0]->unqualified();
+                if (p->kind() == (lit.isFloat ? Kind::LongDouble : Kind::ULongLong)) cooked = true;
+                if (p->isPointer() && p->pointee()->unqualified()->kind() == Kind::Char) raw = true;
+            }
+        const bool templ = isTemplateName(name);
+        if (cooked) {
+            // [lex.ext]/3-4: `n ULL` or `f L`, the literal's own value.
+            if (lit.tooLarge)
+                src_.fail(pos, "integer literal is too large to be represented in any integer "
+                               "type - [lex.ext]/3 hands '" + shown + "' an unsigned long long");
+            value.suffixU = value.suffixLL = !lit.isFloat;
+            value.suffixL = true;
+            value.suffixF = false;
+            byName();
+            call.push_back(value);
+        } else if (raw && templ) {
+            src_.fail(pos, "'" + shown + "' is both a raw literal operator and a literal "
+                           "operator template, and [lex.ext]/3 asks for one of them");
+        } else if (raw) {
+            byName();
+            Token str;
+            str.kind = TokenKind::Str;
+            str.text = lit.spelling;
+            str.pos = pos;
+            call.push_back(str);
+        } else if (templ) {
+            // `operator"" _t<'1', '2'>()`, its characters the literal's as written.
+            put(TokenKind::Ident, name);
+            put(TokenKind::Punct, "<");
+            for (std::size_t k = 0; k < lit.spelling.size(); k++) {
+                if (k > 0) put(TokenKind::Punct, ",");
+                Token c;
+                c.kind = TokenKind::Num;
+                c.value = static_cast<signed char>(lit.spelling[k]);
+                c.isChar = true;
+                c.pos = pos;
+                call.push_back(c);
+            }
+            put(TokenKind::Punct, ">");
+            put(TokenKind::Punct, "(");
+        } else {
+            src_.fail(suffixPos, "no matching literal operator for call to '" + shown +
+                                 "' with argument of type '" +
+                                 (lit.isFloat ? "long double" : "unsigned long long") +
+                                 "' or 'const char *', and no matching literal operator "
+                                 "template - [lex.ext]/3");
+        }
+    } else {
+        if (set == nullptr)
+            src_.fail(pos, "no matching literal operator for call to '" + shown + "' with this " +
+                           what + " - [lex.ext]/" + (lit.kind == TokenKind::Str ? "5" : "6"));
+        byName();
+        call.push_back(value);
+        // [lex.ext]/5: a string's length in code units, its '\0' not counted, as a size_t.
+        if (lit.kind == TokenKind::Str) {
+            put(TokenKind::Punct, ",");
+            Token len;
+            len.kind = TokenKind::Num;
+            len.value = codeUnits(value.text, value.prefix, value.wide);
+            const Kind size = target_.sizeType();
+            len.suffixU = true;
+            len.suffixL = size == Kind::ULong || size == Kind::ULongLong;
+            len.suffixLL = size == Kind::ULongLong;
+            len.pos = pos;
+            call.push_back(len);
+        }
+    }
+    put(TokenKind::Punct, ")");
+    put(TokenKind::End, std::string());
+
+    const std::size_t start = tokens_.size();
+    tokens_.insert(tokens_.end(), call.begin(), call.end());
+    at_ = start;
+    ExprPtr made = primary(program);
+    at_ = resume;
+    return made;
+}
+
 ExprPtr Parser::primary(Program *program) {
     // **`typename X<T>::type()` makes a temporary** - [temp.res]/3 says the name is a type,
     // and the body replays with T bound, so the hint is dropped here as in a declaration.
@@ -988,6 +1148,8 @@ ExprPtr Parser::primary(Program *program) {
         expect(")");
         return e;
     }
+
+    if (atUserDefinedLiteral()) return userDefinedLiteral(program);
 
     if (peek().kind == TokenKind::Str) {
         std::string label = ".L.str." + std::to_string(strings_++);

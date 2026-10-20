@@ -187,6 +187,11 @@ const Rule *ruleFor(const std::string &m) {
 }
 
 std::string MasmSpelling::mangle(const std::string &name) {
+    // A name past ASCII - [lex.name]'s `caf\u00e9` - is not renamed: an import of one could not link.
+    for (char c : name)
+        if (static_cast<unsigned char>(c) >= 0x80)
+            give_up(name, "a name past ASCII is not supported in the MASM spelling - no MASM "
+                          "takes one, and the default GNU syntax, -masm=gnu, writes it");
     // A dot, or a character no MASM name holds (`<unnamed-type-$S1>`), only in an internal symbol.
     if (name.find_first_not_of(kMasmNameChars) != std::string::npos) {
         std::string out = "$";
@@ -625,10 +630,11 @@ void MasmSpelling::preamble(std::ostream &sink) {
     if (!unreserved_.empty()) sink << "\n";
 
     for (const std::string &e : exported_) {
+        const std::string spelt = mangle(e);
         // Renaming an exported name would break the link; only a dot was ever renamed in one.
         if (e.find_first_not_of(std::string(kMasmNameChars) + ".") != std::string::npos)
             give_up(e, "an exported name holds a character no MASM name can spell");
-        sink << "PUBLIC " << mangle(e) << "\n";
+        sink << "PUBLIC " << spelt << "\n";
     }
     for (const std::string &r : referenced_)
         if (defined_.find(r) == defined_.end())
