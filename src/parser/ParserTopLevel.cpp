@@ -250,7 +250,7 @@ void Parser::topLevel(Program &program) {
     // keyword was written for. The '(' still ahead tells a function from an object.
     const bool constexprFunction =
         quals.isConstexpr &&
-        (peek().is("(") || d.paramsAt != 0 || d.type->isFunction());
+        ((peek().is("(") && !atParenInitialiser()) || d.paramsAt != 0 || d.type->isFunction());
 
     // **`inline` is a function specifier here.** It marks the definition
     // mergeable across translation units - a weak/COMDAT symbol - which is the
@@ -498,7 +498,9 @@ void Parser::topLevel(Program &program) {
                                                       d.type->isConst(), true,
                                                       true, false, 0 });
                     }
-                    dynamicInitialise(d, symbol, helper, false);
+                    std::vector<GlobalPiece> folded;
+                    dynamicInitialise(d, symbol, helper, false, quals.isConstexpr ? &folded : nullptr);
+                    if (quals.isConstexpr) constObjects_[gname] = constObjects_[symbol];
                     if (prev != nullptr) {
                         prev->emitted = true;
                         prev->hasInit = true;
@@ -509,10 +511,9 @@ void Parser::topLevel(Program &program) {
                                                       true, false, 0 });
                     }
                     // Not isConst: the constructor writes it, so it cannot
-                    // be laid down read-only.
-                    program.globals.push_back(Global{ gname, symbol, d.type,
-                                                      std::vector<GlobalPiece>(),
-                                                      false, internal, false });
+                    // be laid down read-only - unless it was folded, and no constructor runs.
+                    program.globals.push_back(Global{ gname, symbol, d.type, folded,
+                                                      quals.isConstexpr, internal, quals.isConstexpr });
                     program.globals.back().align = quals.alignAs;
                     if (!consume(",")) break;
                     inNamespace.leave();   // a second declarator is read where the first was written
@@ -567,7 +568,15 @@ void Parser::topLevel(Program &program) {
                         constantDoubleKnown = true;
                     }
                 }
-                if (!constantKnown && !constantDoubleKnown && quals.isConstexpr)
+                // An aggregate's list, folded leaf by leaf for a constant expression to read.
+                if (quals.isConstexpr && d.type->innermostElement()->unqualified()->isStructOrUnion()) {
+                    ConstObject value;
+                    if (d.type->isArray() || !constObjectFromInit(d.type, in, 0, &value))
+                        refuseConstexprClassObject(d.name, d.pos);
+                    constObjects_[selfKey] = value;
+                }
+                if (!constantKnown && !constantDoubleKnown && quals.isConstexpr &&
+                    !d.type->innermostElement()->unqualified()->isStructOrUnion())
                     src_.fail(d.pos, "'" + d.name + "' is 'constexpr', so its "
                                      "value has to be known while this is "
                                      "compiled, and this initialiser is not a "
@@ -855,8 +864,11 @@ void Parser::topLevel(Program &program) {
     // Point::get() are two functions.
     bool constThis = false;
     if (memberOf != nullptr && consume("const")) constThis = true;
-    // The same C++11 rule the class body applies.
-    if (memberOf != nullptr && constexprFunction) constThis = true;
+    // The same C++11 rule the class body applies, to every member function but a constructor - and
+    // a static one, which has no `this` to be const: the lookup below lets that one match without.
+    const bool impliedConst = memberOf != nullptr && constexprFunction && !constThis &&
+                              d.name != localOf(d.qualifier);
+    if (impliedConst) constThis = true;
     // [dcl.fct]/6: a ref-qualifier is a non-static member's, so `int f() &` at namespace scope is ill-formed.
     const std::size_t refAt = peek().pos;
     const RefQual refThis = refQualifier();
@@ -955,8 +967,8 @@ void Parser::topLevel(Program &program) {
         if (const std::vector<std::size_t> *set = overloadsOf(key)) {
             for (std::size_t k = 0; k < set->size() && member == nullptr; k++) {
                 const Signature &f = functions_[(*set)[k]];
-                if (f.constThis == constThis && f.refThis == refThis &&
-                    sameParameters(f.params, params))
+                if ((f.constThis == constThis || (impliedConst && f.isStaticMember)) &&
+                    f.refThis == refThis && sameParameters(f.params, params))
                     member = &f;
             }
         }
@@ -1751,10 +1763,18 @@ void Parser::topLevel(Program &program) {
         definedSymbol = lookupSignature(absoluteName.empty() ? d.name : absoluteName, params,
                                         variadic, d.pos).symbol;
 
-    // Recorded before `body` is moved into the Function - the expression the pointer
-    // names is heap-allocated and goes on living there, which makes it safe to keep.
-    // Only a definition has one; a declaration with no body folds through nothing.
-    if (constexprFunction && body != nullptr) {
+    // Recorded before `body` is moved into the Function, where what the pointer names lives on; a
+    // constexpr constructor is kept whole, also under the C2 name a derived class calls it by.
+    if (isCtor && body != nullptr && (constexprFunction || constexprCtorSymbols_.count(definedSymbol))) {
+        ConstexprCtor ctor;
+        ctor.body = body.get();
+        ctor.thisSlot = thisOffset_;
+        for (const Param &p : paramSlots)
+            if (p.offset != thisOffset_) ctor.slots.push_back(p.offset);
+        constexprCtors_[definedSymbol] = ctor;
+        const std::size_t c1 = definedSymbol.find("C1E");
+        if (c1 != std::string::npos) constexprCtors_[std::string(definedSymbol).replace(c1, 3, "C2E")] = ctor;
+    } else if (constexprFunction && body != nullptr) {
         const Expr *value = singleReturnValue(*body);
         if (value == nullptr)
             src_.fail(d.pos, "'" + d.name + "' is 'constexpr', so in C++11 its "

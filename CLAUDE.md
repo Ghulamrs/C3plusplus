@@ -14476,3 +14476,41 @@ two cases are in `tests/tms6747-exceptions.txt` and run by name under sim6747 on
 **Still refused**: a pack expansion in the list, and a list on a constructor or destructor of a
 class with a virtual base. Not checked: an override's list against its base's. `exception-spec`,
 `exception-spec-unexpected`, `exception-spec-bad-exception`, and three `-refused` cases.
+
+## `constexpr` objects of class type, 2026-10-21
+
+**[dcl.constexpr]/9: a `constexpr` object of literal class type was refused by name**; it is folded
+now. The fold holds an object as its scalar leaves by byte offset (`ConstObject`), and a pointer
+into one as the object and an offset; it runs the statements the object is built by at run time
+(`runConstexpr`): a constexpr constructor's lowered body, kept at its definition under its C1 and
+C2 names (`constexprCtors_` - the class body marks one `constexpr` in `constexprCtorSymbols_`,
+since the replay drops the keyword), a member's constructor, a base's (through the null-checked
+address arithmetic the lowering writes), a default member initialiser, a copy, an aggregate's
+braces (`constObjectFromInit`). `fold` and `foldDouble` read a member of one (`foldLeaf`), and a
+constexpr member function runs with `this` pointing into it; class arguments and results pass
+whole (`foldArgument`). A local is folded where it is declared (`foldLocalObject`), a namespace-
+scope one is laid down as data and its constructor never runs (`dynamicInitialise` with `folded`).
+**Refused by name** where the fold cannot hold it: an array of class objects, a pointer or
+reference member, a bit-field (`refuseConstexprClassObject`). `constexpr-object`,
+`constexpr-object-array-refused`, `-pointer-refused`, `-not-constant`.
+
+**[class.static.data]/3: a `static constexpr` member of any literal type takes its initialiser in
+the class** - a class, an aggregate, a double; only a `static const` integer did. It is folded
+there and laid down as a weak definition, so a run-time read finds it, and `constexpr P S::k;`
+outside the class is taken (`defineConstexprStaticMember`). `constexpr-object-static-member`.
+
+**A class template's constexpr member is compiled where a constant needs it**
+(`instantiateForConstant`): a specialization's member bodies were replayed only at the end of the
+file, so `constexpr W<int> w(6);` - and a `static_assert` on any constexpr member function of a
+specialization - had nothing to run. `constexpr-object-template`.
+
+**Three older faults this reached**: `constexpr int x(5);` at namespace scope was read as a function
+and refused ("expected a type"); an in-class `static constexpr` member function was implicitly
+const on its replay and so matched no declaration; and an out-of-class `constexpr` constructor was
+made a const member. All three compile as clang does now.
+
+**A specialization built inside another template's pattern read the pattern's parameter**: `Mx<3, 3>`
+first named in `template <int N> V<N>::operator Mx<3, 3>()` saw its own `N` as V's, since binding a
+value did not hide `nonTypePatternParams_`; its rows were `V<N>` unresolved and `R[0][0]` refused.
+Found compiling the COM Core sources (CVector/CMatrix), which clang takes.
+`specialization-in-pattern-parameter`.

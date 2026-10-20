@@ -4192,7 +4192,7 @@ std::string Parser::staticMemberSymbol(const std::string &cls,
 // a name the linker can hold and a definition outside the class to go with it.
 void Parser::declareStaticMember(const std::string &cls, Type *owner,
                                  const Declared &d, Access access,
-                                 bool volatileWritten) {
+                                 bool volatileWritten, bool isConstexpr) {
     if (cls.empty())
         src_.fail(d.pos, "a static member needs a class with a name - this one "
                          "is anonymous");
@@ -4208,6 +4208,14 @@ void Parser::declareStaticMember(const std::string &cls, Type *owner,
     s.type = d.type;
     s.access = access;
 
+    // **[class.static.data]/3: a `static constexpr` member of any literal type is initialised here.**
+    if (isConstexpr && !d.type->isInteger() && (peek().is("=") || peek().is("{"))) {
+        refuseVolatileWithLinkage(volatileWritten, false, d.pos);
+        s.symbol = staticMemberSymbol(cls, d.name, d.type, access, d.pos);
+        owner->addStaticMember(s);
+        defineConstexprStaticMember(cls + "::" + d.name, s.symbol, d);
+        return;
+    }
     // **`static const int k = 5;` written in the class needs no definition**, measured
     // rather than assumed: cl emits no symbol for one and folds the value in wherever
     // it is read. Anything else with an initialiser here is refused.
@@ -4232,6 +4240,44 @@ void Parser::declareStaticMember(const std::string &cls, Type *owner,
     owner->addStaticMember(s);
 }
 
+// The value folded where the class declares it, and laid down there as a weak definition: a constant
+// expression reads the value, and a read at run time the object, defined or not outside the class.
+void Parser::defineConstexprStaticMember(const std::string &full, const std::string &symbol, const Declared &d) {
+    inClassConstexprStatics_.insert(symbol);
+    std::vector<GlobalPiece> pieces;
+    // A template's own pattern has nothing to fold; each specialization reads it again.
+    if (patternOnly_) {
+        for (int depth = 0; !(depth == 0 && (peek().is(";") || peek().is(","))); at_++) {
+            if (peek().is("(") || peek().is("{") || peek().is("[")) depth++;
+            if (peek().is(")") || peek().is("}") || peek().is("]")) depth--;
+        }
+        return;
+    }
+    const Type *cls = d.type->unqualified();
+    if (cls->isStructOrUnion() && !cls->tag().empty() && hasConstructors(cls->tag())) {
+        Declared m = d;
+        m.name = full;
+        dynamicInitialise(m, symbol, std::string(), false, &pieces);
+    } else {
+        consume("=");
+        Init in = parseInitialiser();
+        ConstObject value;
+        StaticConst rec;
+        if (d.type->isFloating() && !in.isList && in.value != nullptr && foldFloating(*in.value, &rec.dvalue)) {
+            rec.dknown = true;
+            staticConsts_[symbol] = rec;
+            flattenScalar(d.type, in, 0, pieces);
+        } else if (cls->isStructOrUnion() && constObjectFromInit(d.type, in, 0, &value)) {
+            constObjects_[symbol] = value;
+            constObjectPieces(value, pieces);
+        } else {
+            refuseConstexprClassObject(full, d.pos);
+        }
+    }
+    current_->globals.push_back(Global{ full, symbol, d.type, pieces, true, false, true });
+    current_->globals.back().isInline = true;
+}
+
 // `int Counter::total = 0;` at file scope - the definition the declaration inside the
 // class asked for. An ordinary global the class gave its name to, so all this adds is
 // finding which member it is and taking the symbol from it.
@@ -4244,6 +4290,14 @@ void Parser::defineStaticMember(Declared &d, Program &program) {
         src_.fail(d.pos, "'" + d.qualifier + "' declares no static member '" +
                          d.name + "'");
     const StaticMemberScope scope(this, owner);
+    // [class.static.data]/3: `constexpr P S::k;` defines what the class initialised, already laid down.
+    if (inClassConstexprStatics_.count(s->symbol)) {
+        if (!peek().is(";"))
+            src_.fail(d.pos, "'" + d.qualifier + "::" + d.name + "' was initialised inside the class, so "
+                             "its definition outside it takes no initialiser");
+        expect(";");
+        return;
+    }
     if (s->type->unqualified() != d.type->unqualified() ||
         s->type->isConst() != d.type->isConst())
         src_.fail(d.pos, "'" + d.qualifier + "::" + d.name + "' was declared '" +

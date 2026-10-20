@@ -1,0 +1,3 @@
+x86_64-linux  cxx1 lays down a weak definition of each in-class initialised static constexpr member - `S::d`, `S::ag`, `S::k2`, `W<P>::h`, `W<P>::v` - so a read at run time finds one with or without the definition outside the class; clang folds every read and emits only `S::k`, which the program defines. Every name both emit agrees.
+x86_64-windows  the same: the weak definitions of `S::d`, `S::k2` and `W<P>::h` that clang folds away.
+arm64-darwin  the same: the weak definitions of the in-class static constexpr members that clang folds away.

@@ -294,6 +294,19 @@ void Parser::bindTemplateParameters(const std::vector<TemplateParam> &params,
             boundValueParams_[p.name]++;
             undo->push_back(ev);
         } else {
+            // **A value hides a pattern's parameter of the same name**: `Mx<3, 3>` built while a pattern
+            // with an `N` of its own is read sees its own `N` as 3, not the pattern's.
+            auto ref = nonTypePatternParams_.find(p.name);
+            if (ref != nonTypePatternParams_.end()) {
+                Shadow pr;
+                pr.name = p.name;
+                pr.isType = false;
+                pr.isParamRef = true;
+                pr.hadParamRef = true;
+                pr.paramRefWas = ref->second;
+                nonTypePatternParams_.erase(ref);
+                undo->push_back(pr);
+            }
             auto it = enumIndex_.find(p.name);
             if (it != enumIndex_.end()) { s.had = true; s.was = it->second; }
             enumIndex_[p.name] = enums_.size();

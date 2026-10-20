@@ -8,6 +8,7 @@
 
 #include <functional>
 #include <map>
+#include <memory>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -1555,7 +1556,7 @@ private:
     ExprPtr functionAddress(const std::string &symbol, const Type *fnType);
     // A file-scope object with a constructor, and a static data member of one.
     void dynamicInitialise(Declared &d, const std::string &symbol,
-                           const std::string &helper, bool once);
+                           const std::string &helper, bool once, std::vector<GlobalPiece> *folded = nullptr);
     // [stmt.dcl]/4.
     StmtPtr guardOnce(const std::string &symbol, std::vector<StmtPtr> body);
     // Where guardSlots_ stood when the init function's frame was entered.
@@ -1590,7 +1591,9 @@ private:
         return false;
     }
     void declareStaticMember(const std::string &cls, Type *owner,
-                             const Declared &d, Access access, bool volatileWritten);
+                             const Declared &d, Access access, bool volatileWritten, bool isConstexpr = false);
+    void defineConstexprStaticMember(const std::string &full, const std::string &symbol, const Declared &d);
+    std::set<std::string> inClassConstexprStatics_;
     void defineStaticMember(Declared &d, Program &program);
     // **What a static member *defined* out of line is worth when read** - the
     // [expr.const]/3 read-back a namespace-scope const already makes.
@@ -2327,13 +2330,29 @@ private:
     };
     std::map<std::string, ConstexprFn> constexprFns_;   // by mangled symbol
 
+    // **A constant object of literal class type** - [basic.types]/10, [expr.const]/2: its scalar
+    // leaves by byte offset, which is all a constant expression reads of it.
+    struct ConstLeaf { const Type *type = nullptr; long long i = 0; long double d = 0; };
+    typedef std::map<int, ConstLeaf> ConstObject;
+    typedef std::shared_ptr<ConstObject> ConstObjectPtr;
+    // A `constexpr` constructor, kept as its lowered body: this slot, then the parameters'.
+    struct ConstexprCtor { const Stmt *body = nullptr; std::vector<int> slots; int thisSlot = 0; };
+    std::map<std::string, ConstexprCtor> constexprCtors_;   // by C1 and C2 symbol
+    std::set<std::string> constexprCtorSymbols_;           // declared `constexpr` in their class
+    // Named constexpr objects: a global by its name, a local by function and slot.
+    std::map<std::string, ConstObject> constObjects_;
+
     // One frame per call being folded, holding what each parameter slot is worth:
     // an integer, or a double when the parameter's type is floating (A11).
+    // A class parameter holds its object; a pointer to one the object and an offset in it.
     struct ConstexprSlot {
         int offset = 0;
         bool floating = false;
         long long i = 0;
         long double d = 0;
+        ConstObjectPtr obj;
+        bool pointer = false;
+        std::string global;   // a global object being built, named by this slot
     };
     mutable std::vector<std::vector<ConstexprSlot> > constexprFrames_;
     const ConstexprSlot *constexprSlot(const Var &v) const;
@@ -2342,6 +2361,25 @@ private:
                             std::size_t pos) const;
 
     const Expr *singleReturnValue(const Stmt &body) const;
+    bool foldArgument(const Expr &a, ConstexprSlot *slot, std::size_t pos) const;
+    bool foldObject(const Expr &e, ConstObject *out, std::size_t pos) const;
+    bool foldObjectPointer(const Expr &e, ConstObjectPtr *obj, int *at, std::size_t pos) const;
+    bool objectAddress(const Expr &lvalue, ConstObjectPtr *obj, int *at, std::size_t pos) const;
+    bool foldLeaf(const Expr &lvalue, ConstLeaf *out, std::size_t pos) const;
+    bool runConstexpr(const Stmt &s, std::size_t pos) const;
+    bool runConstexprEffect(const Expr &e, std::size_t pos) const;
+    bool constructConst(const Call &c, std::size_t pos) const;
+    std::string constObjectKey(const Var &v) const;
+    bool instantiateForConstant(const std::string &symbol) const;
+    static ConstObject subObject(const ConstObject &from, int at, int size);
+    static void storeSubObject(ConstObject &into, int at, int size, const ConstObject &what);
+    // The object a declaration's own statements build, run with `target` standing for it.
+    bool foldDeclaredObject(const std::vector<const Stmt *> &init, const Var &target, ConstObject *out,
+                            std::size_t pos);
+    bool constObjectFromInit(const Type *t, const Init &in, int base, ConstObject *out) const;
+    void foldLocalObject(const Declared &d, int off, const std::vector<StmtPtr> &inits, std::size_t from);
+    void constObjectPieces(const ConstObject &o, std::vector<GlobalPiece> &out);
+    void refuseConstexprClassObject(const std::string &name, std::size_t pos) const;
     ExprPtr targetFor(const std::string &name, const std::vector<InitStep> &path);
 
     void initStore(const std::string &name, std::vector<InitStep> &path,
@@ -2448,7 +2486,6 @@ private:
     void declareDefaultedMoveAssign(const std::string &tag, const Type *type, std::size_t pos);
     const Signature *moveAssignOf(const Type *cls) const;
     void refuseConstexprConstructorBody(std::size_t parenAt) const;
-    void refuseConstexprClassObject();
     void refuseScopedConversion(const Type *from, const Type *to, std::size_t pos) const;
     void refuseScopedOperand(const Type *a, const Type *b, const char *op, std::size_t pos) const;
     // `E::a`, `n::E::a`, `C::E::a` - an enumerator named through its enumeration, [dcl.enum]/11.

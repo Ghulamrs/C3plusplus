@@ -637,15 +637,18 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
         const std::size_t explicitAt = peek().pos;
         if (peek().is("explicit")) { isExplicit = true; at_++; itemStart = at_; }
 
+        bool constexprCtorAhead = false;
         // **A `constexpr` constructor makes a literal type** - one whose
         // objects a constant expression may build.
         if (!tag.empty() && peek().is("constexpr") &&
             peekAt(1).kind == TokenKind::Ident && peekAt(1).text == local &&
             peekAt(2).is("(")) {
-            // [dcl.constexpr]/3: one may always run at run time, so it is an ordinary constructor here.
+            // [dcl.constexpr]/3: one may always run at run time, so it is an ordinary constructor here,
+            // and its body is kept where it is defined for a constant object to be built by.
             refuseConstexprConstructorBody(2);
             at_++;
             itemStart = at_;
+            constexprCtorAhead = true;
         }
 
         // A constructor has the class's own name and no return type, so it has to be seen
@@ -659,6 +662,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             if (!ownId) at_++;
             const std::size_t sigAt = functions_.size();
             declareConstructor(tag, cpos, access, isExplicit);
+            if (constexprCtorAhead && functions_.size() > sigAt) constexprCtorSymbols_.insert(functions_[sigAt].symbol);
             isExplicit = false;
             refuseVirtSpecifiers("a constructor");
             if (peek().is("{") || peek().is(":") || peek().is("try")) {
@@ -1034,7 +1038,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             // **A static member is not part of the object**, so it leaves the
             // layout untouched and the cursor where it was.
             if (msc == StorageStatic && !peek().is("(")) {
-                declareStaticMember(tag, type, d, access, mquals.isVolatile);
+                declareStaticMember(tag, type, d, access, mquals.isVolatile, mquals.isConstexpr);
                 if (!consume(",")) break;
                 continue;
             }
@@ -1784,7 +1788,6 @@ const Type *Parser::specifiers(StorageClass *storage, Qualifiers *quals) {
     if (quals == nullptr) quals = &discard;
     const Type *t = unqualifiedSpecifiers(storage, quals);
     if (quals->isVolatile) refuseVolatileUnderADeclarator(*storage);
-    if (quals->isConstexpr && t->unqualified()->isStructOrUnion()) refuseConstexprClassObject();
     return quals->isConst ? types_.withConst(t) : t;
 }
 

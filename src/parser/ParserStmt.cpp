@@ -10,6 +10,16 @@
 #include <cstring>
 
 // **The initialiser inside `(...)` of a direct-initialised scalar.**
+// [dcl.constexpr]/9: a local object of class type is folded from the statements that build it at run time.
+void Parser::foldLocalObject(const Declared &d, int off, const std::vector<StmtPtr> &inits, std::size_t from) {
+    std::vector<const Stmt *> steps;
+    for (std::size_t k = from; k < inits.size(); k++) steps.push_back(inits[k].get());
+    const std::unique_ptr<Var> self(Var::local(d.name, off));
+    ConstObject value;
+    if (!foldDeclaredObject(steps, *self, &value, d.pos)) refuseConstexprClassObject(d.name, d.pos);
+    constObjects_[constObjectKey(*self)] = value;
+}
+
 Parser::Init Parser::parenthesisedInitialiser(const Declared &d) {
     expect("(");
     Init in;
@@ -249,6 +259,7 @@ StmtPtr Parser::declarationBody() {
             // that reads them - a list-init only.
             for (std::size_t z = 0; z < ci.ilSetup.size(); z++)
                 inits.push_back(std::move(ci.ilSetup[z]));
+            const std::size_t builtFrom = inits.size();
 
             // **Copy elision, in the one case worth having it**: where the initialiser is a call
             // already returning through a hidden pointer, the object is built straight into this
@@ -272,6 +283,7 @@ StmtPtr Parser::declarationBody() {
                 inits.push_back(constructLocal(d, off, std::move(ci.args),
                                                ci.copyInit, ci.valueInit));
             }
+            if (quals.isConstexpr) foldLocalObject(d, off, inits, builtFrom);
             flushTemporaries(inits);
             if (destructorOf(d.type) != nullptr)
                 alive_.push_back(Alive{ d.name, off, d.type->unqualified() });
@@ -482,6 +494,8 @@ StmtPtr Parser::declarationBody() {
                 // A const floating local reads back the same way a global does.
                 locals_[mine].isConstantDouble = true;
                 locals_[mine].constantDouble = dvalue;
+            } else if (quals.isConstexpr && d.type->innermostElement()->unqualified()->isStructOrUnion()) {
+                if (d.type->isArray()) refuseConstexprClassObject(d.name, d.pos);
             } else if (quals.isConstexpr) {
                 src_.fail(d.pos, "'" + d.name + "' is 'constexpr', so its value "
                                  "has to be known while this is compiled, and "
@@ -500,7 +514,9 @@ StmtPtr Parser::declarationBody() {
 
         if (hasInit) {
             std::vector<InitStep> path;
+            const std::size_t built = inits.size();
             emitInit(d.name, path, d.type, in, inits);
+            if (quals.isConstexpr && d.type->unqualified()->isStructOrUnion()) foldLocalObject(d, off, inits, built);
         }
         flushTemporaries(inits);
     } while (!conditionDecl_ && consume(","));

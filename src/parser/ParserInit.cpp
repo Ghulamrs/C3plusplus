@@ -357,6 +357,7 @@ bool Parser::foldDouble(const Expr &e, const Target &target, long double *out,
     // [basic.start.init], and folding it is what every compiler does instead.
     if (const Var *v = dynamic_cast<const Var *>(&e)) {
         if (const ConstexprSlot *slot = constexprSlot(*v)) {
+            if (slot->obj != nullptr) return false;
             *out = slot->floating ? slot->d : static_cast<long double>(slot->i);
             return true;
         }
@@ -371,6 +372,16 @@ bool Parser::foldDouble(const Expr &e, const Target &target, long double *out,
         if (const StaticConst *sc = findStaticConst(v->symbol()))
             if (sc->dknown) { *out = sc->dvalue; return true; }
         return false;
+    }
+    // A member of a constant object, as fold() reads one.
+    if (dynamic_cast<const MemberAccess *>(&e) != nullptr ||
+        (dynamic_cast<const Unary *>(&e) != nullptr && static_cast<const Unary &>(e).op() == '*')) {
+        ConstLeaf leaf;
+        if (!foldLeaf(e, &leaf, 0)) return false;
+        *out = leaf.type->isFloating() ? leaf.d
+             : leaf.type->isSigned(target) ? static_cast<long double>(leaf.i)
+             : static_cast<long double>(static_cast<unsigned long long>(leaf.i));
+        return true;
     }
     if (const Num *n = dynamic_cast<const Num *>(&e)) {
         if (n->type()->isFloating()) {
@@ -410,7 +421,7 @@ bool Parser::foldDouble(const Expr &e, const Target &target, long double *out,
         // the constexpr function's own definition.
         auto it = constexprFns_.find(c->symbol());
         const ConstexprFn *fn = nullptr;
-        if (it == constexprFns_.end() || !enterConstexprCall(*c, &fn, it->second.pos))
+        if (!enterConstexprCall(*c, &fn, it == constexprFns_.end() ? 0 : it->second.pos))
             return false;
         const bool ok = foldDouble(*fn->value, target, out, past53, x87Rounded);
         constexprFrames_.pop_back();
@@ -1364,7 +1375,7 @@ void Parser::registerDestruction(const Declared &d, const std::string &symbol,
 // built inside the init function. `once` is a template's static member: a
 // weak guard beside it keeps a second unit's copy from building it again.
 void Parser::dynamicInitialise(Declared &d, const std::string &symbol,
-                               const std::string &helper, bool once) {
+                               const std::string &helper, bool once, std::vector<GlobalPiece> *folded) {
     if (d.type->isConst() && !peek().is("=") && !peek().is("(") &&
         !peek().is("{"))
         requireConstInitialised(d.type, d.name, d.pos);
@@ -1377,6 +1388,20 @@ void Parser::dynamicInitialise(Declared &d, const std::string &symbol,
     std::vector<StmtPtr> built = d.type->isArray()
         ? buildStaticArrayConstruction(d, symbol, helper)
         : buildStaticConstruction(d, symbol, helper);
+    // **A `constexpr` object is folded from these statements and laid down as data**, [basic.start.init]/2.
+    if (folded != nullptr) {
+        std::vector<const Stmt *> steps;
+        for (const StmtPtr &b : built) steps.push_back(b.get());
+        const std::unique_ptr<Var> self(Var::global(d.name));
+        self->setSymbol(symbol);
+        ConstObject value;
+        if (d.type->isArray() || !foldDeclaredObject(steps, *self, &value, d.pos))
+            refuseConstexprClassObject(d.name, d.pos);
+        constObjects_[symbol] = value;
+        constObjectPieces(value, *folded);
+        leaveInitFunction(outer);
+        return;
+    }
     if (once) {
         StmtPtr guarded = guardTemplateMember(symbol, std::move(built));
         built.clear();
