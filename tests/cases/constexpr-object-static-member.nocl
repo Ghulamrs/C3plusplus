@@ -1,0 +1,1 @@
+Three names cxx1 emits and cl does not, none differing: ?d@S@@2NB, ?k2@S@@2UP@@B and ?h@?$W@UP@@@@2NB, static constexpr data members every reader of which is a constant expression. cl folds them and emits no object; cxx1 emits each one it defines. The emission difference constexpr-call-floating.nocl records for constexpr functions.

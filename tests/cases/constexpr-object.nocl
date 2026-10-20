@@ -1,0 +1,1 @@
+Names cxx1 emits and cl does not, none differing: the constexpr constructors and functions, which are inline, and cl - having evaluated every call at compile time - emits no symbol for them; cxx1 emits each as an ordinary definition. The COMDAT difference constexpr-call-floating.nocl records.

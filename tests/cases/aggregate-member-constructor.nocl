@@ -1,0 +1,1 @@
+cl builds the array of A by calling its own vector constructor iterator, ??_H@YAXPEAX_K1P6APEAX0@Z@Z, passing it A's implicit default constructor ??0A@@QEAA@XZ, which it then emits; cxx1 builds the elements inline and needs neither. The shape array-of-class.nocl records. Every name the program declares agrees.
