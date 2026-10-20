@@ -33,9 +33,12 @@ Reg parseReg(Str name);
 const char *regName(int id, int width);
 
 struct Operand {
-    enum Kind { None, Register, Immediate, Memory, RipSymbol, Indirect, Label };
+    // SegMemory and TlsSymbol are Op::Seg and Op::Tls: memory a thread reaches through its own
+    // pointer. Neither is a Memory to the passes that fold or forward through one - `isMem()` says
+    // no - but a TlsSymbol names its base register wherever a Memory would, so renaming reaches it.
+    enum Kind { None, Register, Immediate, Memory, RipSymbol, Indirect, Label, SegMemory, TlsSymbol };
     Kind kind = None;
-    Reg reg;                  // Register; Indirect's target; Memory's base
+    Reg reg;                  // Register; Indirect's target; Memory's and TlsSymbol's base
     long long disp = 0;       // Memory
     bool hasDisp = false;
     Reg index;                // Memory: `disp(base,index,scale)`; scale 0 is none
@@ -51,6 +54,8 @@ struct Operand {
     Op op() const;            // valid while this operand is
     bool isReg(int id) const { return kind == Register && reg.id == id; }
     bool isMem() const { return kind == Memory; }
+    // Whether `reg` is a base register this operand reads: a Memory's or a TlsSymbol's.
+    bool basedOnReg() const { return kind == Memory || kind == TlsSymbol; }
     bool indexed() const { return kind == Memory && scale != 0; }
 };
 

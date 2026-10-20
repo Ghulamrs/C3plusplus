@@ -215,6 +215,7 @@ void Parser::topLevel(Program &program) {
     if (sc == StorageTypedef) {
         do {
             Declared td = declarator(base);
+            refuseThreadLocalHere(quals.isThreadLocal, td.pos);
             typedefFunctionSuffix(td);
             // **A typedef at namespace scope is keyed by its qualified name**, the way a class's tag is.
             const std::string key = namespacePrefix() + td.name;
@@ -349,7 +350,7 @@ void Parser::topLevel(Program &program) {
                              "'" + d.qualifier + "::" + d.name + "' is written "
                              "without it");
         inNamespace.enter(definedIn);
-        defineStaticMember(d, program);
+        defineStaticMember(d, program, quals.isThreadLocal);
         return;
     }
 
@@ -399,11 +400,12 @@ void Parser::topLevel(Program &program) {
                 const bool defines = !(sc == StorageExtern && !peek().is("="));
                 std::vector<GlobalPiece> pieces;
                 bool hasInit = false;
+                const ThreadLocalObject tlo(this, quals.isThreadLocal);
                 if (defines) {
                     if (prev != nullptr && prev->emitted)
                         src_.fail(d.pos, "'" + d.name + "' is defined twice");
                     const FunctionState outer = enterInitFunction();
-                    bindStaticReference(d, symbol, pieces, hasInit, &dynInit_);
+                    bindStaticReference(d, symbol, pieces, hasInit, &initSink());
                     leaveInitFunction(outer);
                 }
                 if (prev != nullptr) {
@@ -413,11 +415,16 @@ void Parser::topLevel(Program &program) {
                     globals_.push_back(GlobalSym{ gname, symbol, d.type, false,
                                                   defines, defines, false, 0 });
                 }
+                // A thread_local reference bound in __tls_init is reached through the wrapper, one
+                // bound in the image directly; what another unit defines, through the wrapper.
+                noteThreadLocal(prev != nullptr ? *prev : globals_.back(), prev != nullptr, quals.isThreadLocal,
+                                d.name, defines ? !hasInit : true, !internal, defines, d.pos);
                 if (defines)
                     program.globals.push_back(Global{ gname, symbol,
                                                       types_.pointerTo(d.type->referent()),
                                                       std::move(pieces), hasInit,
                                                       internal, false });
+                if (defines) program.globals.back().isThreadLocal = quals.isThreadLocal;
                 if (!consume(",")) break;
                 inNamespace.leave();   // a second declarator is read where the first was written
                 d = declarator(base);
@@ -498,7 +505,10 @@ void Parser::topLevel(Program &program) {
                         globals_.push_back(GlobalSym{ gname, symbol, d.type,
                                                       d.type->isConst(), true,
                                                       true, false, 0 });
+                        noteThreadLocal(globals_.back(), false, quals.isThreadLocal, d.name, true, !internal, true, d.pos);
                     }
+                    const ThreadLocalObject tlo(this, quals.isThreadLocal);
+                    if (quals.isThreadLocal) tlsDefining(symbol, !internal);
                     std::vector<GlobalPiece> folded;
                     dynamicInitialise(d, symbol, helper, false, quals.isConstexpr ? &folded : nullptr);
                     if (quals.isConstexpr) constObjects_[gname] = constObjects_[symbol];
@@ -511,11 +521,15 @@ void Parser::topLevel(Program &program) {
                                                       d.type->isConst(), true,
                                                       true, false, 0 });
                     }
+                    if (!early)
+                        noteThreadLocal(prev != nullptr ? *prev : globals_.back(), prev != nullptr, quals.isThreadLocal,
+                                        d.name, true, !internal, true, d.pos);
                     // Not isConst: the constructor writes it, so it cannot
                     // be laid down read-only - unless it was folded, and no constructor runs.
                     program.globals.push_back(Global{ gname, symbol, d.type, folded,
                                                       quals.isConstexpr, internal, quals.isConstexpr });
                     program.globals.back().align = quals.alignAs;
+                    program.globals.back().isThreadLocal = quals.isThreadLocal;
                     if (!consume(",")) break;
                     inNamespace.leave();   // a second declarator is read where the first was written
                 d = declarator(base);
@@ -627,8 +641,11 @@ void Parser::topLevel(Program &program) {
                 if ((hasInit || dynamicScalar.value != nullptr) && prev->hasInit)
                     src_.fail(d.pos, "'" + d.name + "' is given an initialiser twice");
                 if (hasInit || dynamicScalar.value != nullptr) prev->hasInit = true;
+                const ThreadLocalObject tlo(this, quals.isThreadLocal);
                 if (dynamicScalar.value != nullptr)
                     dynamicInitialiseScalar(gname, d.type, dynamicScalar);
+                noteThreadLocal(*prev, true, quals.isThreadLocal, d.name, dynamicScalar.value != nullptr || !defines,
+                                !internalLinkage(sc), defines, d.pos);
 
                 // `extern` with an initialiser defines - [dcl.stc]/6 - and
                 // keeps external linkage a const object would otherwise lose.
@@ -639,6 +656,7 @@ void Parser::topLevel(Program &program) {
                                                           d.type, pieces, hasInit,
                                                           internalLinkage(sc),
                                                           prev->isConst });
+                        program.globals.back().isThreadLocal = quals.isThreadLocal;
                     } else {
                         for (Global &g : program.globals)
                             if (g.name == d.name) {
@@ -674,12 +692,17 @@ void Parser::topLevel(Program &program) {
             made.constantDouble = constantDoubleValue;
             if (registered) globals_[early] = made;
             else globals_.push_back(made);
+            const bool definesHere = sc != StorageExtern || hasInit || dynamic;
+            noteThreadLocal(registered ? globals_[early] : globals_.back(), false, quals.isThreadLocal, d.name,
+                            dynamic || !definesHere, !internal, definesHere, d.pos);
+            const ThreadLocalObject tlo(this, quals.isThreadLocal);
             if (dynamic) dynamicInitialiseScalar(gname, d.type, dynamicScalar);
-            if (sc != StorageExtern || hasInit || dynamic) {
+            if (definesHere) {
                 program.globals.push_back(Global{ gname, symbol, d.type,
                                                   std::move(pieces), hasInit,
                                                   internal, objectIsConst && !dynamic });
                 program.globals.back().align = quals.alignAs;
+                program.globals.back().isThreadLocal = quals.isThreadLocal;
                 refuseWeakAlignas(quals.alignAs, d.type, d.pos);
             }
             if (!consume(",")) break;
@@ -690,6 +713,7 @@ void Parser::topLevel(Program &program) {
         return;
     }
 
+    refuseThreadLocalHere(quals.isThreadLocal, d.pos);
     // `auto f(int a) -> decltype(a)`, C++11: the return type is read after the parameters,
     // which are in scope for it by then, [dcl.fct]/2 and [basic.scope.param].
     const bool trailingArrow = trailingArrowAhead();
@@ -1902,6 +1926,11 @@ Program Parser::parse() {
     pruneExternalVtables(program);
     pruneUnchosenCandidates(program);
     finishDynamicInit(program);
+    finishTlsInit(program);
+    for (Function &f : program.functions) {
+        const std::map<std::string, int>::const_iterator a = frameAligns_.find(f.symbol());
+        if (a != frameAligns_.end()) f.setFrameAlign(a->second);
+    }
     pruneUnusedInline(program);
     return program;
 }

@@ -1082,8 +1082,8 @@ std::string Parser::initFunctionSymbol() const {
 Parser::FunctionState Parser::enterInitFunction() {
     FunctionState outer = captureFunctionState();
     clearFunctionState();
-    frameSize_ = dynInitFrame_;
-    functionName_ = initFunctionSymbol();
+    frameSize_ = tlsObject_ ? tlsInitFrame_ : dynInitFrame_;
+    functionName_ = tlsObject_ ? "__tls_init" : initFunctionSymbol();
     currentFunction_ = functionName_;
     atFunctionBody_ = true;
     initGuardMark_ = guardSlots_.size();
@@ -1094,9 +1094,9 @@ Parser::FunctionState Parser::enterInitFunction() {
 // part of the state struct, so they are moved by hand. The token index is put
 // back to where the initialiser ended, since the restore rewinds it.
 void Parser::leaveInitFunction(const FunctionState &outer) {
-    dynInitFrame_ = frameSize_;
+    (tlsObject_ ? tlsInitFrame_ : dynInitFrame_) = frameSize_;
     for (std::size_t i = initGuardMark_; i < guardSlots_.size(); i++)
-        dynInitGuards_.push_back(guardSlots_[i]);
+        (tlsObject_ ? tlsInitGuards_ : dynInitGuards_).push_back(guardSlots_[i]);
     guardSlots_.resize(initGuardMark_);
     const std::size_t resume = at_;
     restoreFunctionState(outer);
@@ -1124,6 +1124,59 @@ void Parser::finishDynamicInit(Program &program) {
     program.initFunction = symbol;
 }
 
+// **`__tls_init`, the per-thread twin of the function above**, measured from clang: Itanium runs it
+// from a `_ZTH` alias the first time a thread reaches an object it built, under a thread_local guard
+// byte of its own; the Microsoft CRT runs it once per thread from .CRT$XDU and keeps the guard itself.
+void Parser::finishTlsInit(Program &program) {
+    for (const std::string &s : tlsDefined_)
+        program.tlsWrappers.push_back(TlsWrapper{ s, true, tlsDynamic_.count(s) != 0, false });
+    for (const std::string &s : tlsReached_)
+        if (tlsDefined_.count(s) == 0) program.tlsWrappers.push_back(TlsWrapper{ s, false, false, false });
+    for (const std::string &s : tlsInternalDynamic_)
+        program.tlsWrappers.push_back(TlsWrapper{ s, true, true, true });
+    if (tlsInit_.empty()) return;
+    std::vector<StmtPtr> body;
+    for (std::size_t i = 0; i < tlsInitGuards_.size(); i++)
+        body.push_back(StmtPtr(new ExprStmt(setGuard(tlsInitGuards_[i], 0))));
+    if (target_.microsoftNames()) {
+        for (std::size_t i = 0; i < tlsInit_.size(); i++) body.push_back(std::move(tlsInit_[i]));
+    } else {
+        const Type *byte = types_.get(Kind::UChar);
+        program.globals.push_back(Global{ "__tls_guard", "__tls_guard", byte,
+                                          std::vector<GlobalPiece>(), false, true, false });
+        program.globals.back().isThreadLocal = true;
+        auto guard = [&]() {
+            Var *g = Var::global("__tls_guard");
+            g->setSymbol("__tls_guard");
+            tlsVar(g, false, false);
+            ExprPtr e(g);
+            e->setType(byte);
+            return e;
+        };
+        ExprPtr zero(new Num(0LL));
+        zero->setType(byte);
+        ExprPtr fresh(new Binary(BinOp::Eq, guard(), std::move(zero)));
+        fresh->setType(types_.get(Kind::Bool));
+        ExprPtr one(new Num(1LL));
+        one->setType(byte);
+        ExprPtr mark(new Assign(guard(), std::move(one)));
+        mark->setType(byte);
+        std::vector<StmtPtr> once;
+        once.push_back(StmtPtr(new ExprStmt(std::move(mark))));
+        for (std::size_t i = 0; i < tlsInit_.size(); i++) once.push_back(std::move(tlsInit_[i]));
+        body.push_back(StmtPtr(new If(std::move(fresh), StmtPtr(new Block(std::move(once))), StmtPtr())));
+    }
+    tlsInit_.clear();
+    tlsInitGuards_.clear();
+    program.functions.push_back(Function("__tls_init", types_.get(Kind::Void),
+                                         std::vector<Param>(),
+                                         StmtPtr(new Block(std::move(body))),
+                                         alignTo(tlsInitFrame_, 16), true, 0,
+                                         false, 0, 0, std::vector<::Local>()));
+    program.functions.back().setSymbol("__tls_init");
+    program.tlsInitFunction = "__tls_init";
+}
+
 // `&f` for a function named by its linkage symbol, the shape a designator
 // decays to: a Var of the function's type under an address-of.
 ExprPtr Parser::functionAddress(const std::string &symbol, const Type *fnType) {
@@ -1140,6 +1193,7 @@ ExprPtr Parser::functionAddress(const std::string &symbol, const Type *fnType) {
 ExprPtr Parser::objectAt(const Declared &d, const std::string &symbol, int offset) {
     Var *v = symbol.empty() ? Var::local(d.name, offset) : Var::global(d.name);
     if (!symbol.empty()) v->setSymbol(symbol);
+    if (!symbol.empty() && tlsObject_) tlsVar(v, false, false);
     ExprPtr e(v);
     e->setType(d.type);
     if (symbol.empty() || offset == 0) return e;
@@ -1284,7 +1338,8 @@ std::vector<StmtPtr> Parser::buildStaticArrayConstruction(Declared &d,
         const Type *helperType = types_.functionType(types_.get(Kind::Void),
                                                      std::vector<const Type *>(), false);
         args.push_back(functionAddress(fn, helperType));
-        out.push_back(StmtPtr(new ExprStmt(runtimeCall("atexit", types_.intType(), std::move(args)))));
+        out.push_back(StmtPtr(new ExprStmt(runtimeCall(tlsObject_ ? target_.threadAtexit() : "atexit",
+                                                       types_.intType(), std::move(args)))));
         return out;
     }
     const Type *voidPtr = types_.pointerTo(types_.get(Kind::Void));
@@ -1302,7 +1357,8 @@ std::vector<StmtPtr> Parser::buildStaticArrayConstruction(Declared &d,
     handleAddr->setType(voidPtr);
     args.push_back(std::move(handleAddr));
     current_->usesDsoHandle = true;
-    out.push_back(StmtPtr(new ExprStmt(runtimeCall("__cxa_atexit", types_.intType(), std::move(args)))));
+    out.push_back(StmtPtr(new ExprStmt(runtimeCall(tlsObject_ ? target_.threadAtexit() : "__cxa_atexit",
+                                                   types_.intType(), std::move(args)))));
     return out;
 }
 
@@ -1340,8 +1396,10 @@ void Parser::registerDestruction(const Declared &d, const std::string &symbol,
         args.push_back(std::move(handleAddr));
         current_->usesDsoHandle = true;
 
+        // __cxa_thread_atexit and _tlv_atexit take the same three arguments, measured from clang.
         into.push_back(StmtPtr(new ExprStmt(
-            runtimeCall("__cxa_atexit", types_.intType(), std::move(args)))));
+            runtimeCall(tlsObject_ ? target_.threadAtexit() : "__cxa_atexit",
+                        types_.intType(), std::move(args)))));
         return;
     }
 
@@ -1368,7 +1426,7 @@ void Parser::registerDestruction(const Declared &d, const std::string &symbol,
     std::vector<ExprPtr> args;
     args.push_back(functionAddress(helper, helperType));
     into.push_back(StmtPtr(new ExprStmt(
-        runtimeCall("atexit", types_.intType(), std::move(args)))));
+        runtimeCall(tlsObject_ ? target_.threadAtexit() : "atexit", types_.intType(), std::move(args)))));
 }
 
 // A file-scope object with a constructor, or a static data member of one,
@@ -1408,7 +1466,7 @@ void Parser::dynamicInitialise(Declared &d, const std::string &symbol,
         built.push_back(std::move(guarded));
     }
     for (std::size_t i = 0; i < built.size(); i++)
-        dynInit_.push_back(std::move(built[i]));
+        initSink().push_back(std::move(built[i]));
     leaveInitFunction(outer);
 }
 
@@ -1436,8 +1494,8 @@ void Parser::dynamicInitialiseScalar(const std::string &name, const Type *type,
                                      Init &in) {
     const FunctionState outer = enterInitFunction();
     std::vector<InitStep> path;
-    emitInit(name, path, type, in, dynInit_);
-    flushTemporaries(dynInit_);
+    emitInit(name, path, type, in, initSink());
+    flushTemporaries(initSink());
     leaveInitFunction(outer);
 }
 
@@ -1486,6 +1544,7 @@ void Parser::dynamicInitialiseStaticMember(const std::string &name,
     std::vector<StmtPtr> built;
     Var *v = Var::global(name);
     v->setSymbol(symbol);
+    if (tlsObject_) tlsVar(v, false, false);
     ExprPtr target(v);
     target->setType(type);
     checkAssignable(*in.value, type, in.pos, "'" + name + "'");
@@ -1499,14 +1558,43 @@ void Parser::dynamicInitialiseStaticMember(const std::string &name,
         built.push_back(std::move(guarded));
     }
     for (std::size_t i = 0; i < built.size(); i++)
-        dynInit_.push_back(std::move(built[i]));
+        initSink().push_back(std::move(built[i]));
     leaveInitFunction(outer);
+}
+
+// **A block-scope thread_local built once per thread** - [stmt.dcl]/4 - needs no lock: the
+// guard is a thread_local byte of its own, set after the construction so that one which throws
+// is tried again. Measured from clang, which writes `_ZGV<name>` in .tbss and no __cxa_guard call.
+StmtPtr Parser::guardOnceThread(const std::string &symbol, std::vector<StmtPtr> body) {
+    const std::string guard = symbol + (target_.microsoftNames() ? "$tguard" : ".tguard");
+    const Type *byte = types_.get(Kind::UChar);
+    current_->globals.push_back(Global{ guard, guard, byte, std::vector<GlobalPiece>(), false, true, false });
+    current_->globals.back().isThreadLocal = true;
+    auto flag = [&]() {
+        Var *g = Var::global(guard);
+        g->setSymbol(guard);
+        tlsVar(g, false, false);
+        ExprPtr e(g);
+        e->setType(byte);
+        return e;
+    };
+    ExprPtr zero(new Num(0LL));
+    zero->setType(byte);
+    ExprPtr fresh(new Binary(BinOp::Eq, flag(), std::move(zero)));
+    fresh->setType(types_.get(Kind::Bool));
+    ExprPtr one(new Num(1LL));
+    one->setType(byte);
+    ExprPtr set(new Assign(flag(), std::move(one)));
+    set->setType(byte);
+    body.push_back(StmtPtr(new ExprStmt(std::move(set))));
+    return StmtPtr(new If(std::move(fresh), StmtPtr(new Block(std::move(body))), StmtPtr()));
 }
 
 // [stmt.dcl]/4 under the ABI's own guard: __cxa_guard_acquire / _release
 // around the construction on Itanium; _Init_thread_header / _footer with the
 // guard at -1 on Microsoft, without cl's TLS epoch fast path - CONFORMANCE.md.
 StmtPtr Parser::guardOnce(const std::string &symbol, std::vector<StmtPtr> body) {
+    if (tlsObject_) return guardOnceThread(symbol, std::move(body));
     const bool ms = target_.microsoftNames();
     const std::string guard = symbol + (ms ? "$guard" : ".guard");
     const Type *guardType = types_.get(ms ? Kind::Int : Kind::LongLong);
@@ -1608,10 +1696,12 @@ void Parser::staticLocalWithConstructor(Declared &d,
         : buildStaticConstruction(d, symbol, helper);
     if (!early) declareStaticLocal(d.name, d.type, d.pos, symbol);
     locals_[early ? mine : locals_.size() - 1].isConst = d.type->isConst();
+    markThreadLocal(early ? mine : locals_.size() - 1, tlsObject_);
     // Not `isConst`: the constructor writes it, so it cannot live in .rodata.
     current_->globals.push_back(Global{ symbol, symbol, d.type,
                                         std::vector<GlobalPiece>(), false,
                                         true, false });
+    current_->globals.back().isThreadLocal = tlsObject_;
     inits.push_back(guardOnce(symbol, std::move(body)));
 }
 
@@ -1651,6 +1741,7 @@ void Parser::bindStaticReference(const Declared &d, const std::string &symbol,
                 }
     Var *target = Var::global(d.name);
     target->setSymbol(symbol);
+    if (tlsObject_) tlsVar(target, false, false);
     ExprPtr t(target);
     t->setType(slot);
     ExprPtr bind(new Assign(std::move(t), std::move(addr)));

@@ -477,6 +477,7 @@ public:
         // emits no symbol for one and folds the value in. That value is here.
         bool folded = false;
         long long value = 0;
+        bool isThreadLocal = false;   // `static thread_local`: one object per thread
     };
     const std::vector<StaticMember> &staticMembers() const {
         return cls().statics_;
@@ -643,6 +644,13 @@ public:
     virtual bool microsoftNames() const = 0;
     // What the stack pointer is kept aligned to: 16 on the hosts, 8 on the C6000.
     virtual int stackAlign() const { return 16; }
+    // Whether a frame can be realigned for a local that asks for more than that - the hosts' backends do.
+    virtual bool realignsFrame() const { return true; }
+    // **Thread storage**: whether the target has any (cl6x 8.2.2 has none - measured), and what
+    // registers a thread_local's destructor: Itanium's __cxa_thread_atexit, dyld's _tlv_atexit,
+    // the Microsoft CRT's __tlregdtor (a helper of no arguments, as atexit takes).
+    virtual bool hasThreadStorage() const { return true; }
+    virtual const char *threadAtexit() const { return "__cxa_thread_atexit"; }
     // Whether a word may sit at any address: the hosts' loads do, the C6000's LDW faults.
     virtual bool loadsUnaligned() const { return true; }
     // The ARM C++ ABI's array cookie: two size_t words, element size then count - arm64-darwin, measured.

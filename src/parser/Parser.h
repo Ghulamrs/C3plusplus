@@ -56,6 +56,9 @@ private:
         int serial = 0;
         // Its position among a trailing return type's parameters, unnamed ones counted - `fp_`, `fp0_`.
         int trailingParam = -1;
+        // A static or extern thread_local in a block, and whether a use goes through its wrapper.
+        bool isThreadLocal = false;
+        bool tlsViaWrapper = false;
     };
 
     // A frame slot a closed scope gave back, for a later local of exactly that stored type: `FreeSlot`, in `freeSlots_`.
@@ -72,6 +75,11 @@ private:
         long long constantValue = 0;
         bool isConstantDouble = false;  // and the floating one, as for Local
         long double constantDouble = 0;
+        // **thread_local** - [basic.stc.thread]: whether a use reaches it through the ABI's wrapper
+        // or guard (declared elsewhere, or built by __tls_init), and whether it has external linkage.
+        bool isThreadLocal = false;
+        bool tlsViaWrapper = false;
+        bool tlsExternal = false;
     };
 
     // **`throw(T...)` as written**, adjusted by [except.spec]/2; `throw()` is noexcept and not one of these.
@@ -1007,6 +1015,7 @@ private:
         // linker folds - the same treatment a template specialization gets.
         bool isInline = false;
         int alignAs = 0;   // `alignas(N)` among the specifiers: the largest, else 0
+        bool isThreadLocal = false;   // `thread_local`, [dcl.stc]/4: one object per thread
     };
 
     struct TypedefName {
@@ -1406,7 +1415,7 @@ private:
         std::vector<std::size_t> scopeStarts;
         std::vector<int> blocks, blockStack;
         std::vector<LabelDef> labels, gotos;
-        int frameSize = 0, thisOffset = 0;
+        int frameSize = 0, thisOffset = 0, frameAlign = 16;
         std::vector<FreeSlot> freeSlots;
         int localSerial = 0;
         const Type *currentClass = nullptr;
@@ -1538,6 +1547,34 @@ private:
     int dynInitFrame_ = 0;
     std::vector<int> dynInitGuards_;
     std::string initFunctionSymbol() const;
+    // **The same for thread storage** - [basic.stc.thread]: `__tls_init`, its frame and its guards,
+    // built while tlsObject_ says the object being declared is a thread_local; the init functions
+    // below write to initSink(), and registerDestruction asks the target's threadAtexit().
+    std::vector<StmtPtr> tlsInit_;
+    int tlsInitFrame_ = 0;
+    std::vector<int> tlsInitGuards_;
+    bool tlsObject_ = false;
+    std::vector<StmtPtr> &initSink() { return tlsObject_ ? tlsInit_ : dynInit_; }
+    // The external thread_locals this unit defines, those __tls_init builds (external and internal),
+    // and those it reaches: what the Itanium wrappers and `_ZTH` aliases are made from.
+    std::set<std::string> tlsDefined_, tlsDynamic_, tlsReached_, tlsInternalDynamic_, tlsHere_;
+    void tlsDefining(const std::string &symbol, bool external);
+    void finishTlsInit(Program &program);
+    // The flags a Var reaching a thread_local carries, see Var::viaWrapper.
+    void tlsVar(Var *v, bool viaWrapper, bool external);
+    // A block-scope static just declared is a thread_local: marked, and taken out of the debug records.
+    void markThreadLocal(std::size_t local, bool threadLocal);
+    // **The widest alignment a slot of the function being parsed asked for**, 16 until one asks for
+    // more; kept by the function's symbol for parse() to hand each Function, since fifteen sites
+    // build one and the backends realign the frame from this.
+    int frameAlign_ = 16;
+    std::map<std::string, int> frameAligns_;
+    // What a namespace-scope declaration says of its object's thread storage, recorded on the
+    // symbol and checked against what an earlier declaration said - [dcl.stc]/4, clang's words.
+    void noteThreadLocal(GlobalSym &g, bool prior, bool threadLocal, const std::string &name,
+                         bool viaWrapper, bool external, bool defines, std::size_t pos);
+    // `thread_local` written where only a variable may carry it - clang's words.
+    void refuseThreadLocalHere(bool written, std::size_t pos);
     // Everything below runs inside the init function's frame. The state
     // struct is what every other re-entry door saves, and this is one more.
     FunctionState enterInitFunction();
@@ -1559,6 +1596,7 @@ private:
                            const std::string &helper, bool once, std::vector<GlobalPiece> *folded = nullptr);
     // [stmt.dcl]/4.
     StmtPtr guardOnce(const std::string &symbol, std::vector<StmtPtr> body);
+    StmtPtr guardOnceThread(const std::string &symbol, std::vector<StmtPtr> body);
     // Where guardSlots_ stood when the init function's frame was entered.
     std::size_t initGuardMark_ = 0;
     void staticLocalWithConstructor(Declared &d,
@@ -1591,10 +1629,11 @@ private:
         return false;
     }
     void declareStaticMember(const std::string &cls, Type *owner,
-                             const Declared &d, Access access, bool volatileWritten, bool isConstexpr = false);
+                             const Declared &d, Access access, bool volatileWritten,
+                             bool threadLocal, bool isConstexpr = false);
     void defineConstexprStaticMember(const std::string &full, const std::string &symbol, const Declared &d);
     std::set<std::string> inClassConstexprStatics_;
-    void defineStaticMember(Declared &d, Program &program);
+    void defineStaticMember(Declared &d, Program &program, bool threadLocal);
     // **What a static member *defined* out of line is worth when read** - the
     // [expr.const]/3 read-back a namespace-scope const already makes.
     struct StaticConst {
@@ -2103,6 +2142,12 @@ private:
             if (owner != nullptr) { p->currentClass_ = owner; p->inStaticMember_ = true; }
         }
         ~StaticMemberScope() { p->currentClass_ = cls; p->inStaticMember_ = wasStatic; }
+    };
+    // While a thread_local is declared: its construction, binding and destructor go to __tls_init.
+    struct ThreadLocalObject {
+        Parser *p; bool was;
+        ThreadLocalObject(Parser *parser, bool tls) : p(parser), was(parser->tlsObject_) { p->tlsObject_ = tls; }
+        ~ThreadLocalObject() { p->tlsObject_ = was; }
     };
     // Whether a declaration here has internal linkage: written `static`, or
     // inside an unnamed namespace, which says the same thing about a name.

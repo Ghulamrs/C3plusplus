@@ -108,6 +108,8 @@ std::string operandText(const Operand &o) {
     case Operand::RipSymbol: return o.text + "(%rip)";
     case Operand::Indirect: return "*" + regText(o.reg, o.text);
     case Operand::Label: return o.text;
+    case Operand::SegMemory: return o.text + ":" + std::to_string(o.disp);
+    case Operand::TlsSymbol: return o.text + "@TPOFF(" + regText(Reg{o.reg.id, 8}, "") + ")";
     }
     return "";
 }

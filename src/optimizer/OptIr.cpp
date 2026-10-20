@@ -81,6 +81,8 @@ Operand Operand::from(const Op &o) {
         if (x.reg.id < 0) x.text = std::string(o.text);
         break;
     case Op::Lbl: x.kind = Label; x.text = std::string(o.text); break;
+    case Op::Seg: x.kind = SegMemory; x.text = std::string(o.text); x.disp = o.disp; x.hasDisp = true; break;
+    case Op::Tls: x.kind = TlsSymbol; x.text = std::string(o.text); x.reg = parseReg(o.index); break;
     }
     return x;
 }
@@ -122,6 +124,8 @@ Op Operand::op() const {
     case RipSymbol: return rip(text);
     case Indirect: return ind(name);
     case Label: return lbl(text);
+    case SegMemory: return seg(text, disp);
+    case TlsSymbol: return tls(text, Str(regName(reg.id, 8)));
     case None: break;
     }
     return immText("");

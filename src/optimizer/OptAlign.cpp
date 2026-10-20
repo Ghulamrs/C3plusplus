@@ -59,6 +59,8 @@ int bytesOf(const Instr &i) {
         switch (o->kind) {
         case Operand::Memory: n += memoryBytes(*o); break;
         case Operand::RipSymbol: n += 4; break;
+        case Operand::SegMemory: n += 5; break;    // the prefix and an absolute disp32
+        case Operand::TlsSymbol: n += 4; break;    // a disp32 the linker fills
         case Operand::Immediate:
             if (!o->numeric) n += 4;
             else if (m == "mov" || startsWith(m, "movabs")) n += fitsInt(o->value) ? 4 : 8;

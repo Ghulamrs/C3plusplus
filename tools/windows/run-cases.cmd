@@ -105,6 +105,7 @@ exit /b 0
 
 rem  A case may say it cannot be compiled for this target, one reason per line in <case>.notarget -
 rem  the file tests/emit.sh reads. The reason is printed: an exclusion nobody sees is one nobody removes.
+rem  <case>.nomasm says the same of the MASM spelling alone, with its reason: the GNU pass still runs it.
 :one
 set NAME=%~1
 if exist %ROOT%\tests\cases\%NAME%.notarget (

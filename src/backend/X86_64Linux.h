@@ -45,6 +45,7 @@ public:
     X86_64Linux(std::ostream &sink, const Target &target, const Abi &abi)
         : target_(target), sink_(sink), abi_(abi) {
         if (target.microsoftNames()) a_ = &coff_;
+        plain_ = a_;
     }
 
     using Walker::visit;
@@ -121,7 +122,7 @@ protected:
     // In front of a_ at -O1 and above. It holds a function whole, its funclets apart, so anything that lifts text out of out_ goes through atOutput.
     std::unique_ptr<Optimizer> optimizer_;
     // Done where it stands in the output: at once, or after what an optimizer holds.
-    void atOutput(std::function<void()> f) { if (optimizer_) optimizer_->defer(std::move(f)); else f(); }
+    void atOutput(std::function<void()> f) { if (optimizing()) optimizer_->defer(std::move(f)); else f(); }
 
     void landingPad(int pointerSlot, int selectorSlot) override;
     void exceptionRegion(const std::string &begin, const std::string &end, const std::string &target) override;
@@ -133,10 +134,15 @@ protected:
     // **Where the frame base sits, relative to the locals.**
     virtual bool localsAboveFrameBase() const { return target_.microsoftNames(); }
 
-    // One local. Every frame-relative operand in this file is written against
-    // rbp as Itanium establishes it, so a target whose base is elsewhere moves
-    // all of them by one constant, applied once where operands are rendered.
-    Op local(long long slot) const { return mem(-slot, "%rbp"); }
+    // One local, written against rbp as Itanium establishes it, so a target whose base is elsewhere moves
+    // every slot by one constant where operands are rendered; **a realigned frame is addressed from its
+    // floor in rbx**, slot k at rbx + top - k with the top rounded to the alignment (Function::frameAlign).
+    Op local(long long slot) const { return realign_ > 0 ? mem(top_ - slot, "%rbx") : mem(-slot, "%rbp"); }
+    Op frameSlot(long long disp) const { return disp < 0 ? local(-disp) : mem(disp, "%rbp"); }   // below rbp a slot, above it the caller's
+    int realign_ = 0;
+    int top_ = 0;
+    Spelling *plain_ = nullptr;   // under the optimizer, written to directly for a realigned frame - see emit()
+    bool optimizing() const { return optimizer_ && a_ == optimizer_.get(); }
     int frameSize_ = 0;
     // **The shadow space, allocated once at the floor of the frame** rather than around each call; 0 where the ABI has none or the body calls nothing. A call finds it at rsp only when nothing is pushed above it.
     int outgoing_ = 0;
@@ -208,6 +214,12 @@ private:
     std::string userLabel(const std::string &name) const override;
     void emitData(const Program &program);
     void emitGlobal(const Global &g, Segment seg);
+    // A thread_local's address into rax: local-exec or its wrapper on ELF, cl's `_tls_index` walk on
+    // COFF with the CRT's guard asked first where the object may still want initialising.
+    void tlsAddress(const Var &v);
+    void msTlsBlock();
+    // The `_ZTW` wrappers and `_ZTH` aliases this unit defines - ELF only, as raw text after the functions.
+    void emitTlsWrappers(const Program &program);
     void push();
     void pop(const char *into);
     // A stack argument, on the real stack whatever the level: the call unwinds it.
@@ -218,7 +230,7 @@ private:
     bool tempsAllowed_ = false;
     int tempDepth_ = 0;
     int tempHigh_ = 0;
-    bool tempsInSlots() const { return tempsAllowed_ && !inFunclet_; }
+    bool tempsInSlots() const { return tempsAllowed_ && !inFunclet_ && optimizing(); }
     // One stack per function, inlined callees included, placed below every frame once the walk is done.
     Op tempSlot(int t) const { return local(Optimizer::kTempBase + 8 * (t + 1)); }
     void pushF();

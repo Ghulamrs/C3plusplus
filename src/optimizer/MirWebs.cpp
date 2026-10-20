@@ -67,7 +67,7 @@ std::vector<Webs::Occurrence> Webs::occurrencesOf(const Instr &i, int entry) {
             oc.keeps = oc.write && ((role[n] & kKeep) || o.reg.width < 4);
             oc.pinned = n == 0 && isShift(i.m);
             oc.tied = role[n] == 0;
-        } else if (o.kind == Operand::Memory || o.kind == Operand::Indirect) {
+        } else if (o.basedOnReg() || o.kind == Operand::Indirect) {
             assert(o.scale == 0 && "fold-index makes indexed operands after webs and allocate");
             oc.read = true;
         } else {

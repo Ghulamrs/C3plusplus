@@ -46,6 +46,11 @@ struct Op {
         Rip,
         Ind,
         Lbl,
+        // **Thread storage**: a word at a fixed offset off a segment register - `%fs:0`, the thread
+        // pointer - and a thread_local's symbol as a displacement off a base register, which each
+        // spelling relocates its own way: `x@TPOFF(%rax)`, `"x"@SECREL32(%rax)`, `[rax + SECTIONREL x]`.
+        Seg,
+        Tls,
     };
     Kind kind;
 
@@ -84,6 +89,8 @@ inline Op memIndexed(long long d, bool hasD, Str base, Str index, int scale) {
 inline Op rip(Str sym) { return { Op::Rip, sym, 0, false, 0, false, false, {}, 0 }; }
 inline Op ind(Str r)   { return { Op::Ind, r, 0, false, 0, false, false, {}, 0 }; }
 inline Op lbl(Str l)   { return { Op::Lbl, l, 0, false, 0, false, false, {}, 0 }; }
+inline Op seg(Str r, long long d) { return { Op::Seg, r, d, true, 0, false, false, {}, 0 }; }
+inline Op tls(Str symbol, Str base) { return { Op::Tls, symbol, 0, false, 0, false, false, base, 0 }; }
 
 inline void appendNum(std::string &s, unsigned long long v) {
     char b[24];
@@ -119,10 +126,10 @@ public:
 
     virtual void functionBegin(const std::string &name, bool exported,
                                bool mergeable = false) = 0;
-// `lsda` names this function's exception table, or is empty where it has no landing pad. The
-// personality routine must be named between .cfi_startproc and the first instruction, and this is the only place that sees both.
+// `lsda` names this function's exception table, or is empty where it has no landing pad; the personality routine must be named between .cfi_startproc and the first instruction, and this is the only place that sees both.
 // `outgoing` is the area at the very bottom of the frame that a call made at the frame's floor finds its shadow space in - below the locals, below the callee-saved spills, below anything an optimizer adds to the frame.
-    virtual void prologue(int frameSize, const std::string &lsda, int outgoing) = 0;
+// `realign` past 0 is the alignment a local asked for beyond the stack's: rbx is saved, rsp rounded down to it after the allocation, and the floor left in rbx, which every slot is addressed from (X86_64Linux::local) - clang's `andq $-64, %rsp`.
+    virtual void prologue(int frameSize, const std::string &lsda, int outgoing, int realign = 0) = 0;
     virtual void functionEnd(const std::string &name) = 0;
     // Said before the prologue, which saves them where the unwinder looks.
     virtual void calleeSaves(const std::vector<SavedReg> &saves) { assert(saves.empty()); (void)saves; }
@@ -145,6 +152,12 @@ public:
     virtual bool hasRelro() const { return false; }
     virtual void dataSection() = 0;
     virtual void bssSection() = 0;
+    // The thread-local template: `.tdata`/`.tbss` on ELF, `.tls$` on COFF, where one copy per thread is made from.
+    virtual void tlsDataSection() = 0;
+    virtual void tlsBssSection() = 0;
+    // **Where __tls_init is registered on COFF** - .CRT$XDU, which the CRT runs in every new thread - and the
+    // directive that pulls `__dyn_tls_init` into the link; nothing on ELF, where the `_ZTH` aliases reach it.
+    virtual void tlsInitialiserEntry(const std::string &fn) { (void)fn; }
     virtual void objectType(const std::string &name) = 0;
     virtual void objectSize(const std::string &name, int size) = 0;
     virtual void align(int n) = 0;
@@ -187,7 +200,7 @@ public:
     void location(int file, int line, int column) override;
     void functionBegin(const std::string &name, bool exported,
                        bool mergeable = false) override;
-    void prologue(int frameSize, const std::string &lsda, int outgoing) override;
+    void prologue(int frameSize, const std::string &lsda, int outgoing, int realign) override;
     void functionEnd(const std::string &name) override;
     void calleeSaves(const std::vector<SavedReg> &saves) override { saves_ = saves; }
     void globl(const std::string &name) override;
@@ -198,6 +211,8 @@ public:
     bool hasRelro() const override { return true; }
     void dataSection() override;
     void bssSection() override;
+    void tlsDataSection() override;
+    void tlsBssSection() override;
     void objectType(const std::string &name) override;
     void objectSize(const std::string &name, int size) override;
     void align(int n) override;
@@ -235,13 +250,16 @@ public:
     bool hasRelro() const override { return false; }
     void dataSection() override;
     void bssSection() override;
+    void tlsDataSection() override;
+    void tlsBssSection() override { tlsDataSection(); }
     void align(int n) override;
     void objectType(const std::string &name) override;
     void objectSize(const std::string &name, int size) override;
-    void prologue(int frameSize, const std::string &lsda, int outgoing) override;
+    void prologue(int frameSize, const std::string &lsda, int outgoing, int realign) override;
     void functionEnd(const std::string &name) override;
     void noteHasEh(bool yes) override { hasEh_ = yes; }
     void initialiserEntry(const std::string &fn, bool dsoHandle) override;
+    void tlsInitialiserEntry(const std::string &fn) override;
     // CodeView's line entries in place of DWARF's - see CodeView.h.
     void fileEntry(int n, const std::string &name) override;
     void location(int file, int line, int column) override;

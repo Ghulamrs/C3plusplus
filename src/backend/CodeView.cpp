@@ -10,7 +10,7 @@ const int kSObjName = 0x1101, kSCompile3 = 0x113c, kSFrameProc = 0x1012;
 const int kSGProc32 = 0x1110, kSLProc32 = 0x110f, kSEnd = 0x0006;
 const int kDebugSSymbols = 0xf1, kCvSignatureC13 = 4, kMachineAmd64 = 0xd0;
 const int kSRegRel32 = 0x1111, kSBlock32 = 0x1103, kSUdt = 0x1108;
-const int kSGData32 = 0x110d, kSLData32 = 0x110c, kCvAmd64Rbp = 334;
+const int kSGData32 = 0x110d, kSLData32 = 0x110c, kCvAmd64Rbp = 334, kCvAmd64Rbx = 331;
 
 // S_FRAMEPROC flags: locals and parameters both off RBP (encoded 2, bits 14-15 and 16-17).
 const int kFrameFlags = (2 << 14) | (2 << 16);
@@ -96,7 +96,8 @@ void writeCompileUnit(Records &r, CodeViewLanguage language, const std::string &
 }
 
 // One object in a scope: a frame slot off RBP, or a static local's own symbol.
-void writeObject(Records &r, const Local &l, int frameBias, CodeViewTypes &types, const Spell &spell) {
+// `frameReg` is the register the slot is measured from: rbp, or rbx for a realigned frame (DWARF's 3).
+void writeObject(Records &r, const Local &l, int frameBias, int frameReg, CodeViewTypes &types, const Spell &spell) {
     std::string &o = r.out();
     if (!l.staticName.empty()) {
         r.begin(kSLData32);
@@ -110,7 +111,7 @@ void writeObject(Records &r, const Local &l, int frameBias, CodeViewTypes &types
     r.begin(kSRegRel32);
     num(o, "  .long", frameBias - l.offset);
     num(o, "  .long", types.index(l.type));
-    num(o, "  .short", kCvAmd64Rbp);
+    num(o, "  .short", frameReg);
     name(o, l.name);
     r.end();
 }
@@ -128,9 +129,9 @@ bool declaresAnything(const DwarfFunction &f, int scope) {
 void writeScope(Records &r, const DwarfFunction &f, int scope, CodeViewTypes &types, const Spell &spell) {
     if (f.locals != nullptr) {
         for (const Local &l : *f.locals)
-            if (l.scope == scope && l.isParam) writeObject(r, l, f.frameBias, types, spell);
+            if (l.scope == scope && l.isParam) writeObject(r, l, f.frameBias, f.frameBaseReg == 3 ? kCvAmd64Rbx : kCvAmd64Rbp, types, spell);
         for (const Local &l : *f.locals)
-            if (l.scope == scope && !l.isParam) writeObject(r, l, f.frameBias, types, spell);
+            if (l.scope == scope && !l.isParam) writeObject(r, l, f.frameBias, f.frameBaseReg == 3 ? kCvAmd64Rbx : kCvAmd64Rbp, types, spell);
     }
     std::string &o = r.out();
     for (std::size_t b = 1; b < f.blocks.size(); b++) {

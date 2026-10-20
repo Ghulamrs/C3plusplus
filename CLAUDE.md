@@ -14586,3 +14586,94 @@ x86_64-linux by the rule every such literal meets. `user-defined-literal`, and t
 cases, one per rule; `udl-refused` is gone. With both features `tools/feature-sweep --clang
 clang++` reads 84 compile, 12 refused by name, 0 naming nothing, of 96 - the `ucn` and `udl` rows
 now compile.
+## `thread_local`, 2026-10-20
+
+**[dcl.stc]/4 and [basic.stc.thread]: one object per thread, at namespace scope, as a static data
+member and in a block, where it is static whether or not `static` is written.** It left `pending[]`
+after sitting there with the note that thread storage is a different model on each target; it is,
+and each model was measured before a line was written - clang `-target` for the three hosts,
+cl 19.44 on the Windows box for the Microsoft spelling, ml64 and dumpbin for what MASM can say,
+cl6x 7.4.4 and 8.2.2 for the C6000. `tests/cases/thread-local.cpp` runs a second thread through
+every shape (pthread on the hosts, CreateThread under `_WIN32`) and the ledger counts both
+threads' objects; `thread-local-extern.cpp` reaches another unit's; two refusals hold clang's words.
+
+**What each ABI does, measured.** ELF (`clang -target x86_64-linux-gnu -S`): the template in
+`.tdata,"awT",@progbits` / `.tbss,"awT",@nobits`; an object defined in the unit reached local-exec,
+`mov %fs:0, %rax; lea x@TPOFF(%rax), %rax`; a `_ZTW<encoding>` wrapper per external thread_local
+the unit defines or reaches, `.hidden .weak` in a COMDAT of its own - for a defined object the
+local-exec pair, preceded by `call _ZTH<encoding>` where the object has dynamic initialisation; for
+another unit's object `_ZTH@GOTPCREL` tested and called through the PLT if the link found one
+(`.weak _ZTH`), then `x@GOTTPOFF(%rip)` added to `%fs:0`, initial-exec. Dynamic initialisation is
+one `__tls_init` per unit under a thread_local byte `__tls_guard`, `_ZTH<x> = __tls_init` for each
+object it builds (global, or local for a `static` one - `_ZTHL1d`), and destructors registered
+with `__cxa_thread_atexit(dtor, obj, &__dso_handle)`; a use of such an object in the unit goes
+through its wrapper, inside `__tls_init` directly. A block-scope one with dynamic initialisation
+has a thread_local guard byte of its own set *after* the construction and no `__cxa_guard` call.
+Mach-O (`-target arm64-apple-darwin`): `_x` is a three-word descriptor in
+`__DATA,__thread_vars,thread_local_variables` - `__tlv_bootstrap`, 0, the template `_x$tlv$init`
+in `__thread_data,thread_local_regular` or `.tbss _x$tlv$init, size, p2` - reached by `adrp x0,
+_x@TLVPPAGE; ldr x0, [x0, _x@TLVPPAGEOFF]; ldr x9, [x0]; blr x9`, the address in x0; the wrapper is
+defined only by the unit that defines the object, global and strong, and a reaching unit calls it;
+`_tlv_atexit` registers a destructor. dyld's getter and clang's wrappers keep every register but
+x0, x9, x16, x17 - clang's own `___tls_init` saves x1-x14, x27-x28, d0-d7, d16-d31 - so cxx1's
+`__ZTH` aliases `___tls_init_fast`, a shell that saves x1-x8, x10-x17 and d0-d7, d16-d31 round the
+ordinary `___tls_init` the parser built. COFF (cl and clang agree): the template in `.tls$`;
+`movl _tls_index(%rip), %eax; mov %gs:88, %rcx` and the thread's block at `[rcx + rax*8]`,
+written here as a shift and an add because the walker writes no indexed operand; the object at
+`x@SECREL32(%rax)`, IMAGE_REL_AMD64_SECREL in the object (dumpbin); before an access to an object
+that may want initialising - another unit's, or one `__tls_init` builds - `cmpb $0,
+__tls_guard@SECREL32(%rax)` and `call __dyn_tls_on_demand_init`, the CRT's own guard; `__tls_init`
+registered from `.CRT$XDU` with `/include:__dyn_tls_init` in `.drectve`, which cl writes only for a
+unit with a thread_local initialiser; `__tlregdtor(helper)` for a destructor. Microsoft names
+decorate nothing extra for thread storage (`?t@@3HA` as for a plain int). MASM: `_TLS SEGMENT`
+names a section `_TLS`, which the linker builds no template from - `.tls$ SEGMENT` it is; ml64
+relocates `mov r11d, SECTIONREL x` as SECREL and refuses `SECTIONREL` inside every memory operand
+tried (`lea rax, [rcx + SECTIONREL x]` A2024, with and without a PTR size, in `_TLS` and `.tls$`),
+so the MASM spelling writes a `Tls` operand as that `mov` and the register added; `gs:[88]` has to
+be `QWORD PTR gs:[88]`; a symbol inside `SECTIONREL` must be `EXTERN x:BYTE`, not `:PROC` (A2102).
+The project's own masm has no `SECTIONREL` at all, so `-masm=masm` refuses a thread_local by name
+(`tests/cases/thread-local.nomasm`, a per-spelling skip run-cases.cmd and verify-three honour);
+`-masm=ml64` and the GNU spelling run the case. cl6x 7.4.4 and 8.2.2 do not know the word (8.2.2
+has no `--c++14` either), so tms6747 refuses it by name.
+
+**In the compiler.** `Var` carries `isThreadLocal` and `viaWrapper`; `Global.isThreadLocal` picks
+`Segment::TlsData`/`TlsBss`; two operand kinds, `Op::Seg` and `Op::Tls`, are rendered by each
+spelling and reach the optimizer as `SegMemory` and `TlsSymbol`, memory to the effects table, with
+the base register renamed wherever a `Memory`'s is (`Operand::basedOnReg`) and never folded as one.
+The first cut made them opaque instead - reads and writes every register - and MirAlloc's homes
+then failed to colour: a promoted local in rbx was live across an instruction that "wrote" rbx. A
+clone of a `Var` for `x += 1` kept neither flag and read the template, which showed as every
+namespace-scope object failing to persist across a call. Debug records leave a thread_local out:
+DWARF would want `DW_OP_GNU_push_tls_address`, which the writers do not have yet.
+
+## `alignas` on a local past the stack's alignment, 2026-10-20
+
+**[basic.align]: a local, or a by-value class local, aligned past the 16 the stack keeps, has the
+frame realigned to it** - `tests/cases/alignas-local.cpp` and `alignas-local-unwind.cpp`, the second
+throwing through two realigned frames. clang's shape on all three hosts is the prologue's `and`
+after the frame pointer is set and every local then addressed from the stack pointer; cxx1's walker
+pushes on the stack, so the locals are addressed from a callee-saved register holding the realigned
+floor instead: rbx on x86-64 (`push %rbp; mov %rsp, %rbp; push %rbx; and $-64, %rsp; sub $top,
+%rsp; mov %rsp, %rbx`, slot k at `top - k(%rbx)`, the top rounded to the alignment so the parser's
+alignment of k holds; CFA still rbp + 16, `.cfi_offset %rbx, -24`), x19 on arm64 (`str x19, [sp,
+#-16]!` under the frame record, `sub x9, sp, #top; and sp, x9, #0xffffffffffffffc0; mov x19, sp`,
+clang's own `and`, since `and` takes no sp source). Windows follows clang-cl: `push rbp; push rbx;
+sub rsp, F; mov rbp, rsp; $LNprolog$:` then the `and` *after* the prologue ends, which the unwinder,
+recovering rsp from rbp through UWOP_SET_FPREG, never has to describe; the unwind codes gain
+UWOP_PUSH_NONVOL rbx (0x30). A funclet reaches the parent's frame through the establisher, which a
+realigned frame no longer measures locals from, so an over-aligned local in a function with a `try`
+or a local with a destructor is refused by name on x86_64-windows alone; the Itanium targets unwind
+through it, the restored rbx/x19 being what the landing pad addresses the frame by. The optimizer
+addresses the frame from rbp and takes rbx, so a realigned function is written past it
+(`Optimizer::finish` flushes what is held first, `optimizing()` guards every other use), and walks
+no callee in place; the arm64 peephole, which takes x19-x28, is left out of it. `-g` records measure
+from the base register (`DwarfFunction::frameBaseReg`, 3 or 19, `frameBias - offset`; CodeView
+S_REGREL32 against CV_AMD64_RBX), checked by the case run under `-g` on the Mac. The parser keeps
+the widest slot alignment of each function by symbol (`frameAligns_`, from `allocateFrameSlot`, so a
+temporary counts) and parse() hands each `Function` its `frameAlign`; the backend takes the wider
+of that and a named local's own. The emit golden shows 0 of 2116 files changed: every slot site that
+wrote `mem(-k, "%rbp")` by hand now goes through `local()`/`frameSlot()`, an identity on a plain
+frame. tms6747 keeps the refusal, by name for that target: its stack is 8-aligned and the C6000
+backend builds no realigning prologue; `alignas-local-past-stack-refused` is gone with it.
+`tools/feature-sweep` reads 81 / 15 / 0 of 96 (79 / 17 / 0 at 1.21): `thread-local` and
+`alignas-local` moved from refused by name to compiles.
