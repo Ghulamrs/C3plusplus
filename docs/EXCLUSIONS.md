@@ -285,14 +285,14 @@ is left:
 - **`auto &` or `auto *` from a braced list** - only `auto` and `const auto`
   deduce `std::initializer_list` here. `src/parser/ParserTemplate.cpp:1663`
 - **a `std::initializer_list` with static storage made from braces** - its
-  backing array would need static storage too. `src/parser/ParserInit.cpp:1223`
+  backing array would need static storage too. `src/parser/ParserInit.cpp:1222`
 - **a braced default argument** - `src/parser/ParserClass.cpp:4903`,
   `src/parser/ParserTopLevel.cpp:837`
 - **a braced member initialiser with values on a class, an array or a
   reference** - a scalar member takes `{v}` and `= {v}`, and `= {}` and `= {0}`
   zero any member. `src/parser/ParserType.cpp:1298`
 - **a braced list for an array of a class with a destructor and no
-  constructor** - `src/parser/ParserInit.cpp:1261`,
+  constructor** - `src/parser/ParserInit.cpp:1260`,
   `src/parser/ParserStmt.cpp:207`
 - **a bit-field initialised at file scope** - `src/parser/ParserInit.cpp:685`
 ## Objects that would run code before `main`
@@ -308,7 +308,7 @@ many, or has no object of its own:
   destroyed element by element. `src/parser/ParserClass.cpp:3972`
 - **a static-duration reference bound to a temporary** - [class.temporary]/5
   gives the temporary the program's lifetime, so it would need static storage
-  of its own; a named object binds. `src/parser/ParserInit.cpp:1698`
+  of its own; a named object binds. `src/parser/ParserInit.cpp:1697`
 
 ## Expressions
 
