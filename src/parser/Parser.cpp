@@ -673,30 +673,43 @@ std::size_t Parser::qualifiedTypeEndPastArgs() const {
 
 // [stmt.ambig]/1: `T(x).f();` cannot be a declaration - no declarator goes on with `.` or `->`
 // after its `)` - so it is a temporary of T and a member call. True when that is what is here.
-bool Parser::atTemporaryMemberAccess() const {
-    if (peek().kind != TokenKind::Ident) return false;
+// Where `T(...)` opening the statement closes: the index of its `)`, or 0 where it does not open so.
+std::size_t Parser::temporaryCallEnd() const {
+    if (peek().kind != TokenKind::Ident) return 0;
     std::size_t k = 0;
     if (peekAt(1).is("::")) k = qualifiedTypeEndPastArgs();
-    else if (localHidesType()) return false;
+    else if (localHidesType()) return 0;
     else if (peekAt(1).is("<") && isClassTemplate(peek().text)) {
         int depth = 0;
         for (k = 1;; k++) {
             const Token &t = peekAt(k);
-            if (t.kind == TokenKind::End || t.is(";")) return false;
+            if (t.kind == TokenKind::End || t.is(";")) return 0;
             if (t.is("<")) depth++;
             else if (t.is(">")) { if (--depth == 0) { k++; break; } }
             else if (t.is(">>")) { depth -= 2; if (depth <= 0) { k++; break; } }
         }
     } else if (findTypedef(peek().text) != nullptr) k = 1;
-    if (k == 0 || !peekAt(k).is("(")) return false;
+    if (k == 0 || !peekAt(k).is("(")) return 0;
     int depth = 0;
     for (;; k++) {
         const Token &t = peekAt(k);
-        if (t.kind == TokenKind::End) return false;
+        if (t.kind == TokenKind::End) return 0;
         if (t.is("(") || t.is("[") || t.is("{")) depth++;
-        else if (t.is(")") || t.is("]") || t.is("}")) { if (--depth == 0) break; }
+        else if (t.is(")") || t.is("]") || t.is("}")) { if (--depth == 0) return k; }
     }
-    return peekAt(k + 1).is(".") || peekAt(k + 1).is("->");
+}
+
+bool Parser::atTemporaryMemberAccess() const {
+    const std::size_t k = temporaryCallEnd();
+    return k != 0 && (peekAt(k + 1).is(".") || peekAt(k + 1).is("->"));
+}
+
+// **[stmt.select]/1: a condition declares only where `=` or `{` follows its declarator**, so after
+// `T(x)` anything else - `==`, `<`, `&&`, `)` - makes `T(x)` a temporary and the condition an expression.
+bool Parser::atConditionDeclaration() const {
+    if (!atDeclarationStart()) return false;
+    const std::size_t k = temporaryCallEnd();
+    return k == 0 || peekAt(k + 1).is("=") || peekAt(k + 1).is("{");
 }
 
 bool Parser::atDeclarationStart() const {
@@ -1176,7 +1189,15 @@ void Parser::noteThreadLocal(GlobalSym &g, bool prior, bool threadLocal, const s
 // is an object there; a name before `::` still looks at types only, [basic.lookup.qual]/1.
 bool Parser::localHidesType() const {
     if (peekAt(1).is("::") || localTypes_.count(peek().text) != 0) return false;
-    return findLocal(peek().text) != nullptr;
+    if (findLocal(peek().text) != nullptr) return true;
+    // [basic.scope.hiding]/2: a function declared in the class's own scope under its name hides
+    // it, so `stat(p, &st)` beside `struct stat` is a call; `struct stat` still names the class.
+    const Type *named = findTypedef(peek().text);
+    if (named == nullptr || !named->isStructOrUnion() || named->localName() != peek().text) return false;
+    for (std::size_t i = 0; i < classStack_.size(); i++)
+        if (classStack_[i]->unqualified() == named->unqualified()) return false;
+    if (currentClass_ != nullptr && currentClass_->unqualified() == named->unqualified()) return false;
+    return hasFunctionNamed(named->tag());
 }
 
 const Parser::Local *Parser::findLocal(const std::string &name) const {

@@ -1,0 +1,1 @@
+x86_64-linux  The C1 forms of the inline constructors, which clang emits only as C2 (docs/CONFORMANCE.md, "An inline member function is a strong symbol"); every other name agrees with clang.

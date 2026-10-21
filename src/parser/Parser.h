@@ -1894,6 +1894,7 @@ private:
         ~LocalsHidden() { held.swap(p->locals_); }
     };
     bool localHidesType() const;
+    std::size_t temporaryCallEnd() const;
     bool atTemporaryMemberAccess() const;
     void enterScope();
     void leaveScope();
@@ -2204,6 +2205,7 @@ private:
                                  bool (Parser::*exists)(const std::string &) const) const;
     // The namespace a first component names, innermost out: `inner` in `outer` is "outer::inner".
     std::string namespaceNamed(const std::string &first) const;
+    static std::vector<std::string> namespacePathStack(const std::string &ns);
     // How many tokens from `from` spell a namespace qualifier, `lib :: v2 ::` being four; 0 for none.
     std::size_t namespaceQualifierTokens(std::size_t from) const;
     // An unqualified name declared in an enclosing namespace, innermost first, or "" -

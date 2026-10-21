@@ -14738,3 +14738,45 @@ exclusions 136 sites 0/0, comment cap 0); Linux run.sh 885/0 at -O0 and -O2, asm
 cases 1379/0 both spellings and 1053/0 at -O2, ti-link 544/0 (assembled by RIDE 4.7's asm6x, the
 `ride-verify` tree being gone from the box); names vs cl the 18 library cases of 1.19 and six new
 one-directional ones, each in a `.nocl`.
+
+## GRIDE's cppparse example compiles, and agrees with clang's build, 2026-10-21
+
+**cppparse, GRIDE's sample of 39 sources, stopped in 33 of them at 1.19** (`bug.md`, B1 and B2)
+and now compiles in 38; the 39th, `PathUtil.cpp`, includes POSIX's `<sys/stat.h>`, which `lib/`
+does not have and is not meant to. Built with a stand-in for that one header, the program cpp11
+makes and the one clang makes write identical output for `--stdout --no-compile` (21,679 lines),
+`--health` and `--compile6` at -O0, -O1 and -O2, every file of the last byte for byte but the
+map's timestamp. Six front-end faults and a library short of what a real program reaches for:
+
+- **[stmt.select]/1: a condition declares only where `=` or `{` follows its declarator**, so
+  `if (std::string(b) == "}")` is an expression, and was read as a declaration of `b`.
+  `atConditionDeclaration` asks it for `if` and `while`, through `temporaryCallEnd`, the scan
+  `atTemporaryMemberAccess` already made. **And `((T(x)) == y)`**: a parenthesis holding a
+  declarator with a name is no type-id, so `parenHoldsTypeId` says no. `condition-temporary-expression`.
+- **[temp.deduct]/7: a default template argument that does not substitute makes the deduction
+  fail, and no more** - `template <class It, class = typename enable_if<...>::type>`, the shape of
+  a range constructor. It was a hard error; it is read in a `Trial` now. `default-template-argument-sfinae`.
+- **A using-declaration's qualifier is found innermost first**, [basic.lookup.qual]/1:
+  `using inner::f;` inside `outer` named a file-scope `inner`. `using-declaration-relative`.
+- **[basic.scope.hiding]/2: a function of a class's name hides the class**, so `st(&s)` beside
+  `struct st` is a call - the `struct stat` / `stat()` idiom. `localHidesType` answers yes for it
+  outside the class itself. `function-hides-class`.
+- **A class template used from outside its namespace reads its body there**, members' bodies
+  included, as a function template's always did (`namespacePathStack`). `template-body-namespace`.
+- **The implicit copy assignment takes its operand through a converting constructor** - `cit = it`
+  for a const_iterator - an explicit one refused as clang refuses it. `assign-converting-constructor`.
+- **And one older than the round, found by the round's own case**: the scan that tells a variable
+  template from a function counted the `<` of `operator<` as an opening angle, so the next `>` in
+  the file closed it and `if (n > h) n = h;` was refused as C++14. `operator` ends the scan now.
+  `operator-template-then-greater`.
+
+**`map` and `set` are AVL trees now** (`include/__tree`, parent links and a sentinel that is
+end()), with the node stability [associative.reqmts] promises: cppparse's optimizer writes
+`m.erase(it++)`, and over the sorted vector they had been it walked off the end - a SIGBUS at
+-O1 and -O2 that `--compile6 -O0` never reached. `map-set-node-stability` is 3,000 random inserts
+and erasures checked against clang. Beside it: `<iosfwd>`, `<ctime>`, `string`'s
+`insert`/`compare`/`find_*_not_of`/`swap` forms and `rfind` (the parked WIP), `vector`'s range
+constructor and `assign` behind `enable_if`, comparisons for `vector`, `pair`, `map` and `set`,
+`ostream::setf`/`unsetf`, `stable_sort` (merge sort, merged in place by rotation) and `system`.
+`library-cppparse-pieces`. The emit golden recorded at 3349e11 moved by 8 of 2219 files, all
+`include-map-set` and `range-for-vector`, the two cases that use a map or a set.

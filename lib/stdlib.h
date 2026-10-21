@@ -35,6 +35,8 @@ void free(void *);
 
 void exit(int);
 void abort(void);
+// [cstdlib.syn]: a command handed to the host's command processor; its status comes back.
+int system(const char *);
 
 int atoi(const char *);
 char *getenv(const char *);

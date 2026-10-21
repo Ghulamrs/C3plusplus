@@ -6,7 +6,7 @@
 // alike, which is the property that makes them worth having as templates rather
 // than as members.
 //
-// What is not here: `stable_sort`, `find_if`, and the rest of the header. They are
+// What is not here: `find_if`, and the rest of the header. They are
 // absent because nothing calls them, and adding them untested would be adding
 // the appearance of a library rather than a library.
 #ifndef _CXX1_ALGORITHM
@@ -64,7 +64,7 @@ std::size_t count(In from, In to, const T &want) {
 // down to runs of 16, heapsort for a range that has recursed 2 log2(n) deep without getting
 // there, then one insertion pass over the nearly sorted whole - O(n log n) in the worst case, as
 // [alg.sort] asks. It needs random-access iterators, which every container here has (pointers).
-// Not stable; `stable_sort` is not here. The helpers are plain templates called with every
+// Not stable; `stable_sort` below is. The helpers are plain templates called with every
 // argument deduced and qualified with std::, which is what this compiler's templates need.
 template <class It>
 void __sort_swap(It a, It b) {
@@ -155,6 +155,70 @@ void __sort_by_less(It from, It to, T *) {
 template <class It>
 void sort(It from, It to) {
     if (from != to) std::__sort_by_less(from, to, &*from);
+}
+
+// **stable_sort - [stable.sort]**, merge sort with the halves merged in place by rotation (the
+// buffer-less merge): O(n log^2 n) comparisons, and no allocation, so an element needs only to
+// be copyable. Equal elements keep their order, which is the whole of the difference from sort.
+template <class It>
+void __stable_reverse(It from, It to) {
+    while (from != to && from != --to) { std::__sort_swap(from, to); ++from; }
+}
+
+template <class It>
+void __stable_rotate(It from, It mid, It to) {
+    std::__stable_reverse(from, mid);
+    std::__stable_reverse(mid, to);
+    std::__stable_reverse(from, to);
+}
+
+template <class It, class Less>
+void __stable_merge(It from, It mid, It to, Less less) {
+    const long n1 = (long)(mid - from), n2 = (long)(to - mid);
+    if (n1 == 0 || n2 == 0) return;
+    if (n1 + n2 == 2) { if (less(*mid, *from)) std::__sort_swap(from, mid); return; }
+    It cut1 = from, cut2 = mid;
+    if (n1 >= n2) {
+        cut1 = from + n1 / 2;          // the first element of the right half not less than it
+        for (long len = n2; len > 0; ) {
+            const long h = len / 2;
+            if (less(cut2[h], *cut1)) { cut2 += h + 1; len -= h + 1; } else len = h;
+        }
+    } else {
+        cut2 = mid + n2 / 2;           // the first element of the left half greater than it
+        for (long len = n1; len > 0; ) {
+            const long h = len / 2;
+            if (!less(*cut2, cut1[h])) { cut1 += h + 1; len -= h + 1; } else len = h;
+        }
+    }
+    std::__stable_rotate(cut1, mid, cut2);
+    It split = cut1 + (cut2 - mid);
+    std::__stable_merge(from, cut1, split, less);
+    std::__stable_merge(split, cut2, to, less);
+}
+
+template <class It, class Less>
+void stable_sort(It from, It to, Less less) {
+    const long n = (long)(to - from);
+    if (n <= 16) {
+        for (long i = 1; i < n; i++)
+            for (It j = from + i; j != from && less(*j, *(j - 1)); --j) std::__sort_swap(j - 1, j);
+        return;
+    }
+    It mid = from + n / 2;
+    std::stable_sort(from, mid, less);
+    std::stable_sort(mid, to, less);
+    std::__stable_merge(from, mid, to, less);
+}
+
+template <class It, class T>
+void __stable_sort_by_less(It from, It to, T *) {
+    std::stable_sort(from, to, std::__sort_less<T>());
+}
+
+template <class It>
+void stable_sort(It from, It to) {
+    if (from != to) std::__stable_sort_by_less(from, to, &*from);
 }
 
 }  // namespace std

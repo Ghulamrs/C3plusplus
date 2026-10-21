@@ -2243,7 +2243,7 @@ StmtPtr Parser::statementBody() {
         // **A declaration here is a scope that wraps both arms**, so the whole
         // statement goes inside a block of its own rather than the condition
         // being a bigger expression.
-        const bool declares = atDeclarationStart();
+        const bool declares = atConditionDeclaration();
         std::vector<StmtPtr> setup;
         int scope = -1;
         std::size_t aliveAtEntry = alive_.size();
@@ -2296,7 +2296,7 @@ StmtPtr Parser::statementBody() {
         // The declared object is one slot for the whole loop and is written
         // afresh each turn - see whileConditionDeclaration. It still needs a
         // scope of its own, or the name would outlive the loop.
-        const bool declares = atDeclarationStart();
+        const bool declares = atConditionDeclaration();
         int scope = -1;
         if (declares) { enterScope(); scope = enterBlock(); }
         ExprPtr cond = declares

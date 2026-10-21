@@ -25,6 +25,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <cctype>     // as libstdc++'s <string> reaches it, so `isupper` is declared beside a string
 
 namespace std {
 
@@ -120,6 +121,13 @@ public:
     const C *data() const { return p(); }
 
     void clear() { len_ = 0; p()[0] = 0; }
+    // [string.swap]: the insides exchanged - the heap buffer by pointer, the inline units by copy.
+    void swap(basic_string &o) {
+        C *h = heap_; heap_ = o.heap_; o.heap_ = h;
+        size_type n = len_; len_ = o.len_; o.len_ = n;
+        n = cap_; cap_ = o.cap_; o.cap_ = n;
+        for (int i = 0; i <= small; i++) { C c = small_[i]; small_[i] = o.small_[i]; o.small_[i] = c; }
+    }
     void push_back(C c) { appendUnits(&c, 1); }
     void pop_back() { if (len_ != 0) { len_--; p()[len_] = 0; } }
 
@@ -185,10 +193,25 @@ public:
     }
     size_type find(const basic_string &s) const { return find(s.p(), 0); }
 
-    size_type rfind(C c) const {
-        for (size_type i = len_; i-- > 0; )
+    // [string.rfind]: the last match that starts at or before `from`; an empty one matches at min(from, size()).
+    size_type rfind(C c, size_type from = npos) const {
+        if (len_ == 0) return npos;
+        for (size_type i = (from < len_ ? from : len_ - 1) + 1; i-- > 0; )
             if (p()[i] == c) return i;
         return npos;
+    }
+    size_type rfind(const C *s, size_type from, size_type n) const {
+        if (n > len_) return npos;
+        size_type i = len_ - n < from ? len_ - n : from;
+        for (++i; i-- > 0; )
+            if (std::memcmp(p() + i, s, n * sizeof(C)) == 0) return i;
+        return npos;
+    }
+    size_type rfind(const C *s, size_type from = npos) const {
+        return rfind(s, from, __cxx1_length(s));
+    }
+    size_type rfind(const basic_string &s, size_type from = npos) const {
+        return rfind(s.p(), from, s.len_);
     }
 
     // The parameter is `wanted` and not `set`, which it was: once `<set>` is
@@ -210,6 +233,31 @@ public:
     // through no conversion C++ has, so without these the call is refused.
     size_type find_first_of(C c) const { return find(c, 0); }
     size_type find_last_of(C c) const { return rfind(c); }
+    // [string.find.first.not.of] and [string.find.last.not.of]: the first or last unit not in the set.
+    size_type find_first_not_of(const C *wanted, size_type from = 0) const {
+        for (size_type i = from; i < len_; i++)
+            if (!__cxx1_holds(wanted, p()[i])) return i;
+        return npos;
+    }
+    size_type find_first_not_of(const basic_string &s, size_type from = 0) const {
+        return find_first_not_of(s.c_str(), from);
+    }
+    size_type find_first_not_of(C c, size_type from = 0) const {
+        for (size_type i = from; i < len_; i++) if (p()[i] != c) return i;
+        return npos;
+    }
+    size_type find_last_not_of(const C *wanted, size_type from = npos) const {
+        for (size_type i = from < len_ ? from + 1 : len_; i-- > 0; )
+            if (!__cxx1_holds(wanted, p()[i])) return i;
+        return npos;
+    }
+    size_type find_last_not_of(const basic_string &s, size_type from = npos) const {
+        return find_last_not_of(s.c_str(), from);
+    }
+    size_type find_last_not_of(C c, size_type from = npos) const {
+        for (size_type i = from < len_ ? from + 1 : len_; i-- > 0; ) if (p()[i] != c) return i;
+        return npos;
+    }
 
     basic_string &insert(size_type pos, const C *s) {
         size_type n = __cxx1_length(s);
@@ -225,6 +273,18 @@ public:
     }
     basic_string &insert(size_type pos, const basic_string &s) {
         return insert(pos, s.c_str());
+    }
+    basic_string &insert(size_type pos, const C *s, size_type n) {
+        return insert(pos, basic_string(s, n).c_str());
+    }
+    basic_string &insert(size_type pos, size_type n, C c) {
+        return insert(pos, basic_string(n, c).c_str());
+    }
+    // [string.insert]: one unit before an iterator, which is a pointer here; the answer is where it went.
+    C *insert(C *at, C c) {
+        const size_type pos = at - p();
+        insert(pos, basic_string(1, c).c_str());
+        return p() + pos;
     }
 
     basic_string &erase(size_type pos, size_type n) {
@@ -244,6 +304,17 @@ public:
         return r != 0 ? r : len_ < o.len_ ? -1 : len_ == o.len_ ? 0 : 1;
     }
     int compare(const C *s) const { return compareUnits(s, __cxx1_length(s)); }
+    // [string.compare]: the same, of the run of up to n1 units from pos.
+    int compare(size_type pos, size_type n1, const basic_string &o) const {
+        return substr(pos, n1).compare(o);
+    }
+    int compare(size_type pos, size_type n1, const basic_string &o, size_type pos2, size_type n2) const {
+        return substr(pos, n1).compare(o.substr(pos2, n2));
+    }
+    int compare(size_type pos, size_type n1, const C *s) const { return substr(pos, n1).compare(s); }
+    int compare(size_type pos, size_type n1, const C *s, size_type n2) const {
+        return substr(pos, n1).compareUnits(s, n2);
+    }
 
 private:
     // **Up to fifteen units live inside the object** - TI's and Dinkumware's layout,

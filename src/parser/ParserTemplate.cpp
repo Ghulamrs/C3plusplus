@@ -637,7 +637,8 @@ bool Parser::templateDeclaration() {
         for (std::size_t i = at_; i < tokens_.size(); i++) {
             const Token &t = tokens_[i];
             if (depth == 0) {
-                if (t.is("(") || t.is("::") || t.is("{") || t.is(";")) break;
+                // `operator<` names a function, and its `<` opens nothing.
+                if (t.is("(") || t.is("::") || t.is("{") || t.is(";") || t.is("operator")) break;
                 if (t.is("="))
                     src_.fail(t.pos, "a variable template is C++14, and this "
                                      "compiler is C++11 - a class template "
@@ -1588,6 +1589,9 @@ void Parser::instantiatePending() {
             // linker folds the copies rather than rejecting them.
             const bool wasReplayingInline = replayingInline_;
             replayingInline_ = true;
+            // Its bodies read names in the namespace it was declared in, wherever it is used from.
+            const std::vector<std::string> wasStack = namespaceStack_;
+            if (!decl.ns.empty()) namespaceStack_ = namespacePathStack(decl.ns);
             if (sp.isClass) {
                 // Its member functions, held here; inlineOwner_ gives the scope.
                 replayInlineBodies(now);
@@ -1599,20 +1603,10 @@ void Parser::instantiatePending() {
                     topLevel(*current_);
                 }
             } else {
-                // Its body reads names in the namespace it was declared in, wherever it is used from.
-                const std::vector<std::string> wasStack = namespaceStack_;
-                if (!decl.ns.empty()) {
-                    namespaceStack_.clear();
-                    for (std::size_t s = 0, e; s < decl.ns.size(); s = e + 2) {
-                        e = decl.ns.find("::", s);
-                        if (e == std::string::npos) e = decl.ns.size();
-                        if (e > s) namespaceStack_.push_back(decl.ns.substr(s, e - s));
-                    }
-                }
                 at_ = sp.start;
                 topLevel(*current_);
-                namespaceStack_ = wasStack;
             }
+            namespaceStack_ = wasStack;
             replayingInline_ = wasReplayingInline;
             at_ = resume;
 
@@ -2076,7 +2070,18 @@ bool Parser::deduceTemplateArguments(const TemplateDecl &decl,
         // A pack deduced from an expansion was marked in `binding` by its own parameter; the function
         // parameter pack binds through `packs` alone. Neither is a type to leave in the binding.
         if (decl.params[i].isPack) { (*binding)[i] = nullptr; continue; }
-        if ((*binding)[i] == nullptr && !defaultTemplateArgument(decl, i, binding, values)) {
+        if ((*binding)[i] != nullptr) continue;
+        // [temp.deduct]/7: a default that does not substitute makes the deduction fail, and no more.
+        bool took = false;
+        try {
+            Trial trial(this);
+            took = defaultTemplateArgument(decl, i, binding, values);
+        } catch (const SubstitutionFailure &f) {
+            if (f.unsupported) src_.fail(f.pos, f.why);
+            *why = "the default argument of '" + decl.params[i].name + "' does not substitute: " + f.why;
+            return false;
+        }
+        if (!took) {
             *why = "'" + decl.params[i].name + "' appears in no parameter, so "
                    "there is nothing in the call to work it out from - write "
                    "the arguments out";
@@ -2698,6 +2703,17 @@ std::size_t Parser::choosePartial(const TemplateDecl &decl,
     return fits[best];
 }
 
+// `a::b::` as the stack of namespaces it names, which is what namespaceStack_ holds.
+std::vector<std::string> Parser::namespacePathStack(const std::string &ns) {
+    std::vector<std::string> stack;
+    for (std::size_t s = 0, e; s < ns.size(); s = e + 2) {
+        e = ns.find("::", s);
+        if (e == std::string::npos) e = ns.size();
+        if (e > s) stack.push_back(ns.substr(s, e - s));
+    }
+    return stack;
+}
+
 // `Box<int, 3>` where a type was expected - rung 5.4. The class is made by replaying
 // `struct Box { ... };` with the arguments bound, and all the class path had to be
 // told is what tag to take: nested classes had made tag() an arbitrary string.
@@ -2816,9 +2832,13 @@ const Type *Parser::instantiateClass(const TemplateDecl &decl, std::size_t pos) 
     Qualifiers quals;
     // Nor in a class template's: `V<3> N(...)` made V<3> read its own `double s[N]` as the local.
     std::unique_ptr<LocalsHidden> hidden(new LocalsHidden(this));
+    // And its body names things in its own namespace, as a function template's does, wherever it is used from.
+    const std::vector<std::string> outerStack = namespaceStack_;
+    if (!decl.ns.empty()) namespaceStack_ = namespacePathStack(decl.ns);
     const Type *made = partial
         ? structOrUnionSpecifier(Kind::Struct, false)
         : specifiers(&sc, &quals);
+    namespaceStack_ = outerStack;
     angleSplit_ = outerAngle;
     classInstantiationTag_.clear();
     classInstantiationOf_.clear();

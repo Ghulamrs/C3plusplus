@@ -14,6 +14,7 @@
 namespace std {
 
 using ::abort;
+using ::system;
 using ::strtoll;
 using ::strtoull;
 using ::strtof;

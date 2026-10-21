@@ -138,9 +138,15 @@ void Parser::topLevel(Program &program) {
                                "elsewhere, so it takes a qualified name: "
                                "'using N::f;', or 'using ::f;' for one at "
                                "global scope");
-            // A name another using-declaration put there stands for what that one named:
-            // `using std::scanf;` when <cstdio> has `using ::scanf;` in std.
             const std::string written = target;
+            // [basic.lookup.qual]/1: the qualifier's first name is found innermost first, so
+            // `using s::Sy;` inside `namespace a` names `a::s::Sy`.
+            if (!fromGlobal && cut != std::string::npos) {
+                const std::string::size_type first = target.find("::");
+                const std::string scope = namespaceNamed(target.substr(0, first));
+                if (!scope.empty()) target = scope + target.substr(first);
+            }
+            // What another using-declaration put there: `using std::scanf;` over <cstdio>'s `using ::scanf;`.
             target = followUsingDeclaration(target);
             // **Refused by name if it names nothing**, rather than recorded and
             // found missing at the use - the position of the declaration is the

@@ -1,10 +1,10 @@
 // A range-based `for` over the containers this compiler ships.
 //
 // `range-for-class.cpp` says what the feature needs; this says that
-// `include/`'s containers give it. Every one of them declares
-// `iterator` as `T *` and returns one from `begin()` and `end()`, which is the
-// simplification that header made on purpose - so a range-based `for` over
-// them is the pointer loop and nothing else.
+// `include/`'s containers give it. `vector` and `string` declare `iterator` as
+// `T *`, so a range-based `for` over them is the pointer loop; `set` and `map`
+// are trees since 2026-10-21, and their class iterators are walked by their own
+// `!=`, `++` and `*`.
 //
 // **This is the case `~/Documents/Claude/lambdaTest/lambda.cpp` was reduced
 // from** - `std::sort` with a lambda comparator and then a range-based `for`

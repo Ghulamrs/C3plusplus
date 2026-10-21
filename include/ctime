@@ -1,0 +1,29 @@
+// <ctime> - The C time functions, under `std::`.
+//
+// The same shape as <cstdio>: lib/time.h wrapped, every name it declares
+// named here, and nothing added. `CLOCKS_PER_SEC` is a macro and stays one.
+#ifndef _CXX1_CTIME
+#define _CXX1_CTIME
+
+#include <time.h>
+
+namespace std {
+
+using ::size_t;
+using ::time_t;
+using ::clock_t;
+using ::tm;
+
+using ::time;
+using ::difftime;
+using ::clock;
+using ::localtime;
+using ::gmtime;
+using ::mktime;
+using ::asctime;
+using ::ctime;
+using ::strftime;
+
+}  // namespace std
+
+#endif

@@ -1,16 +1,22 @@
-// <set> - an ordered set, kept the same way `<map>` is.
+// <set> - an ordered set, on the same tree as `<map>`.
 //
-// A sorted `vector<T>` with a pointer for an iterator, bisection for the
-// lookup, and the same two costs written down there: insertion is O(n) and
-// invalidates every iterator. What a set adds over a map is only that the
-// element *is* the key, so there is no pair and `*it` is the value.
+// What a set adds over a map is only that the element *is* the key, so there is no pair and
+// `*it` is the value - which a set's iterator does not let be written, since writing it could
+// put the tree out of order. Insertion invalidates no iterator and erasure only the erased one.
 #ifndef _CXX1_SET
 #define _CXX1_SET
 
 #include <cstddef>
-#include <vector>
+#include <utility>
+#include <__tree>
 
 namespace std {
+
+template <class T>
+struct __set_key {
+    typedef T key_type;
+    static const T &get(const T &v) { return v; }
+};
 
 template <class T>
 class set {
@@ -18,61 +24,60 @@ public:
     typedef T key_type;
     typedef T value_type;
     typedef std::size_t size_type;
-    typedef T *iterator;
-    typedef const T *const_iterator;
+    typedef __tree_const_iterator<T> iterator;
+    typedef __tree_const_iterator<T> const_iterator;
 
     set() {}
+    template <class It>
+    set(It first, It last) { insert(first, last); }
 
-    size_type size() const { return items_.size(); }
-    bool empty() const { return items_.empty(); }
-    void clear() { items_.clear(); }
+    size_type size() const { return tree_.size(); }
+    bool empty() const { return tree_.empty(); }
+    void clear() { tree_.clear(); }
+    void swap(set &other) { tree_.swap(other.tree_); }
 
-    iterator begin() { return items_.begin(); }
-    iterator end() { return items_.end(); }
-    const_iterator begin() const { return items_.begin(); }
-    const_iterator end() const { return items_.end(); }
+    const_iterator begin() const { return tree_.begin(); }
+    const_iterator end() const { return tree_.end(); }
 
-    size_type lower(const T &v) const {
-        size_type lo = 0;
-        size_type hi = items_.size();
-        while (lo < hi) {
-            const size_type mid = lo + (hi - lo) / 2;
-            if (items_[mid] < v) lo = mid + 1;
-            else hi = mid;
-        }
-        return lo;
+    const_iterator find(const T &v) const { return const_iterator(tree_.findLink(v), tree_.end().link()); }
+    size_type count(const T &v) const { return tree_.findLink(v) != tree_.end().link() ? 1 : 0; }
+    const_iterator lower_bound(const T &v) const { return const_iterator(tree_.lowerLink(v), tree_.end().link()); }
+    const_iterator upper_bound(const T &v) const { return const_iterator(tree_.upperLink(v), tree_.end().link()); }
+
+    // [associative.reqmts]: where the element is, and whether this call put it there.
+    std::pair<iterator, bool> insert(const T &v) {
+        bool made;
+        __tree_link *n = tree_.insertUnique(v, &made);
+        return std::pair<iterator, bool>(iterator(n, tree_.end().link()), made);
     }
+    // A hint is where to start looking; the answer is where the element is.
+    iterator insert(iterator, const T &v) { return insert(v).first; }
+    template <class It>
+    void insert(It first, It last) { for (; first != last; ++first) insert(*first); }
 
-    iterator find(const T &v) {
-        const size_type at = lower(v);
-        if (at == items_.size() || v < items_[at]) return end();
-        return items_.begin() + at;
+    size_type erase(const T &v) {
+        __tree_link *n = tree_.findLink(v);
+        if (n == tree_.end().link()) return 0;
+        tree_.eraseLink(n);
+        return 1;
     }
-    const_iterator find(const T &v) const {
-        const size_type at = lower(v);
-        if (at == items_.size() || v < items_[at]) return end();
-        return items_.begin() + at;
-    }
-
-    size_type count(const T &v) const {
-        const size_type at = lower(v);
-        return at != items_.size() && !(v < items_[at]) ? 1 : 0;
-    }
-
-    void insert(const T &v) {
-        const size_type at = lower(v);
-        if (at != items_.size() && !(v < items_[at])) return;
-        items_.insert(items_.begin() + at, v);
-    }
-
-    void erase(const T &v) {
-        const size_type at = lower(v);
-        if (at != items_.size() && !(v < items_[at])) items_.erase(items_.begin() + at);
+    iterator erase(iterator at) {
+        iterator next = at;
+        ++next;
+        tree_.eraseLink(at.link());
+        return next;
     }
 
 private:
-    std::vector<T> items_;
+    __tree<T, __set_key<T> > tree_;
 };
+
+template <class T>
+bool operator==(const set<T> &a, const set<T> &b) { return __tree_equal(a, b); }
+template <class T>
+bool operator!=(const set<T> &a, const set<T> &b) { return !__tree_equal(a, b); }
+template <class T>
+bool operator<(const set<T> &a, const set<T> &b) { return __tree_less(a, b); }
 
 }  // namespace std
 

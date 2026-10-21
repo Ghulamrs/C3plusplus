@@ -27,6 +27,7 @@
 #include <initializer_list>
 #include <new>
 #include <utility>
+#include <type_traits>
 #ifdef _WIN32
 #include <cstdio>
 #else
@@ -77,6 +78,13 @@ public:
             push_back(*it);
     }
 
+    // [sequence.reqmts]/14: two iterators copy their range. Two integers are not iterators, so
+    // `vector<int> v(3, 5)` and `vector<T *> v(3, 0)` reach (n, v) above, as the standard has it.
+    template <class It, class = typename std::enable_if<!std::is_integral<It>::value>::type>
+    vector(It first, It last) : items_(0), size_(0), cap_(0) {
+        for (; first != last; ++first) push_back(*first);
+    }
+
     ~vector() { clear(); std::free(items_); }
 
     vector &operator=(const vector &o) {
@@ -118,6 +126,12 @@ public:
     void assign(size_type n, const T &v) {
         clear();
         for (size_type i = 0; i < n; i++) push_back(v);
+    }
+    // The range form, held from two integers as the range constructor is.
+    template <class It, class = typename std::enable_if<!std::is_integral<It>::value>::type>
+    void assign(It first, It last) {
+        clear();
+        for (; first != last; ++first) push_back(*first);
     }
     void swap(vector &other) {
         T *d = items_; items_ = other.items_; other.items_ = d;
@@ -239,6 +253,24 @@ private:
     size_type size_;
     size_type cap_;
 };
+
+// [container.requirements.general]: equal sizes and equal elements; ordered as their sequences are.
+template <class T>
+bool operator==(const vector<T> &a, const vector<T> &b) {
+    if (a.size() != b.size()) return false;
+    for (typename vector<T>::size_type i = 0; i < a.size(); i++) if (!(a[i] == b[i])) return false;
+    return true;
+}
+template <class T>
+bool operator!=(const vector<T> &a, const vector<T> &b) { return !(a == b); }
+template <class T>
+bool operator<(const vector<T> &a, const vector<T> &b) {
+    for (typename vector<T>::size_type i = 0; i < a.size() && i < b.size(); i++) {
+        if (a[i] < b[i]) return true;
+        if (b[i] < a[i]) return false;
+    }
+    return a.size() < b.size();
+}
 
 }  // namespace std
 
