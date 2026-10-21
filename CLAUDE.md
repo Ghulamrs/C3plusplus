@@ -14780,3 +14780,16 @@ constructor and `assign` behind `enable_if`, comparisons for `vector`, `pair`, `
 `ostream::setf`/`unsetf`, `stable_sort` (merge sort, merged in place by rotation) and `system`.
 `library-cppparse-pieces`. The emit golden recorded at 3349e11 moved by 8 of 2219 files, all
 `include-map-set` and `range-for-vector`, the two cases that use a map or a set.
+
+## Version 1.23, 2026-10-21: GRIDE's cppparse whole
+
+**1.23 is `mend/cppparse` merged** (`91d1fb8`), with its section above ("GRIDE's cppparse example
+compiles, and agrees with clang's build"): five front-end faults cppparse met, an older one its cases
+found (the `operator<` scan), `map` and `set` rebuilt as node-stable trees, and the library pieces the
+sample asked for, the parked `rfind` among them. The headline is unchanged at "C++03 with C++11
+extensions", `tools/feature-sweep` at 87 / 9 / 0 of 96.
+
+Measured at the merge: Mac `make test` exit 0 (run.sh 896/0 and at -O2, emit.sh 2251/0 with the golden
+at 3349e11 8 of 2219 changed - the two map/set cases - names.sh 577/0, exclusions 136 sites 0/0, comment
+cap 0); Linux run.sh 896/0 at -O0 and -O2, asm6x.sh 559/0; Windows cases 1400/0 both spellings and
+1073/0 at -O2, ti-link 554/0, names vs cl the 18 library cases recorded since 1.19 and no other.

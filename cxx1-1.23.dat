@@ -1,10 +1,11 @@
 ©2026 G. R. Akhtar - C++03 with C++11 extensions
-Release seal, version 1.22, sealed 21-10-2026
+Release seal, version 1.23, sealed 21-10-2026
 Written by tools/seal; check it with `tools/seal check`.
-CRC32  size  file - 161 files, seal 5009CFB2
+CRC32  size  file - 164 files, seal 000760A4
 ------------------------------------------------------------------
 302F7AC7      4283  include/__string_conversions
-A88B4DC7      6938  include/algorithm
+61FB2421     11329  include/__tree
+D5E6A72B      9297  include/algorithm
 36F50CEC      3625  include/array
 24D34375       483  include/cassert
 8DA08DB0       868  include/cctype
@@ -15,30 +16,32 @@ D1864FE6       122  include/cfloat
 A9D0414D       916  include/cstddef
 77C2EE9C       353  include/cstdint
 BBB838C8      1720  include/cstdio
-D8345106       908  include/cstdlib
+A15222B3       924  include/cstdlib
 873774AC       938  include/cstring
+F50E0E92       520  include/ctime
 F60B0B5F      4348  include/exception
 3E53C566      3557  include/fstream
 A4CC801D      4213  include/functional
 F7084316      1678  include/initializer_list
 0D40924B      1248  include/iomanip
 8E040977      2122  include/ios
+B3F6C140       713  include/iosfwd
 4BCACA63      1553  include/iostream
 D9AFB186      9407  include/istream
 193559F8      4877  include/limits
-AF3574DA      4189  include/map
+67C4F577      4178  include/map
 EDDF3F5A      3606  include/memory
 2E17DEC8      3584  include/new
 00091A75       805  include/numeric
-62A52FF9     13490  include/ostream
-C49ECBC5      2228  include/set
+323DF197     13908  include/ostream
+9990DF15      2886  include/set
 648E0442      2095  include/sstream
 C2F50D91      3994  include/stdexcept
-15AF8573     16480  include/string
+DDBD2FD8     20010  include/string
 D25FA330      9375  include/type_traits
 6AA11039      3675  include/typeinfo
-A89EE1B9      2130  include/utility
-147C885E      9797  include/vector
+90662F6D      2979  include/utility
+3A8013B0     11237  include/vector
 6DC8A396      3147  lib/assert.h
 D8CAA933      1488  lib/ctype.h
 EC518216      2297  lib/errno.h
@@ -55,7 +58,7 @@ CAFE9E5B      3766  lib/math.h
 3B8B75BC      2473  lib/stddef.h
 92687B87      2514  lib/stdint.h
 09257F7B      7235  lib/stdio.h
-EB104FF5      2994  lib/stdlib.h
+31A07A9F      3111  lib/stdlib.h
 412080F6      2457  lib/string.h
 E20D4640      3250  lib/time.h
 A0490168      1512  src/Abi.h
@@ -75,7 +78,7 @@ F9B8B65E      5675  src/Source.cpp
 2C992AD9      2403  src/Source.h
 34F9FF5A     23727  src/Type.cpp
 AFF6BE53     32533  src/Type.h
-93305436       386  src/Version.h
+7E8A2AB7       386  src/Version.h
 199452A5     50705  src/backend/Arm64Darwin.cpp
 5BAE0519      6118  src/backend/Arm64Darwin.h
 44F3A786      6321  src/backend/Backend.cpp
@@ -146,22 +149,22 @@ D5A5640B      3328  src/optimizer/OptTable.h
 E40CF9C0     29184  src/optimizer/OptValues.cpp
 3ED7E09E     11144  src/optimizer/Optimizer.cpp
 D6902D0A      6083  src/optimizer/Optimizer.h
-E213D79D     56757  src/parser/Parser.cpp
-4B916121    164031  src/parser/Parser.h
+4FFAA71D     58012  src/parser/Parser.cpp
+9DA65B51    164152  src/parser/Parser.h
 C7B7EEF6    259756  src/parser/ParserClass.cpp
 AB2A438D     48380  src/parser/ParserConst.cpp
 36076CF7     14204  src/parser/ParserDependent.cpp
-242C8168    149336  src/parser/ParserExpr.cpp
+B9CFFBE0    149357  src/parser/ParserExpr.cpp
 61C38C0C     46577  src/parser/ParserExprCall.cpp
 5F12553A     33384  src/parser/ParserExprLambda.cpp
 D0042F2A    102098  src/parser/ParserExprNew.cpp
 2966D814     85465  src/parser/ParserInit.cpp
 FF098ED8      1431  src/parser/ParserInternal.h
-954653C9     45847  src/parser/ParserOperator.cpp
+E91B827D     46408  src/parser/ParserOperator.cpp
 F5B60A40     67462  src/parser/ParserOverload.cpp
-9754C998    118235  src/parser/ParserStmt.cpp
-B3261E39    175344  src/parser/ParserTemplate.cpp
-76846D09    116743  src/parser/ParserTopLevel.cpp
+5A8D985E    118243  src/parser/ParserStmt.cpp
+C2CA74E9    176267  src/parser/ParserTemplate.cpp
+5A8DAF73    117152  src/parser/ParserTopLevel.cpp
 8D7282C0    154816  src/parser/ParserType.cpp
 F95C7639     38100  src/parser/ParserVtable.cpp
 ------------------------------------------------------------------

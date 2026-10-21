@@ -168,6 +168,28 @@ x86_64-windows, where a class cannot be thrown yet and they print and abort inst
 delete`, the placement and nothrow forms, `std::bad_alloc` from the platform runtime, `typeid` and
 `dynamic_cast` all work.
 
+## What 1.23 changes
+
+GRIDE's `cppparse` sample - 39 files, a C++98 project reader and compiler - compiles in 38 of them
+(the 39th wants POSIX's `<sys/stat.h>`), and built with a stand-in for that header it writes exactly
+what clang's build writes. What it needed, each agreeing with clang:
+
+* **A condition that begins with a temporary**, `if (std::string(b) == "}")` and `((T(x)) == y)`, is an
+  expression; it was read as a declaration of `b`.
+* **A default template argument that does not substitute** drops the candidate, as an `enable_if`
+  range constructor needs, where it stopped the compile.
+* **`using inner::f;` inside a namespace** finds the nearest `inner`; **a function named like a class**
+  hides it (`stat(p, &st)` beside `struct stat`); **a class template used from another namespace**
+  reads its body in its own.
+* **Assignment through a converting constructor**, `cit = it` for a `const_iterator`.
+* **An `operator<` template** no longer makes a later `if (n > h) n = h;` read as a C++14 variable
+  template.
+* **`map` and `set` are AVL trees** with node-stable iterators, so `m.erase(it++)` walks one; and
+  `<iosfwd>`, `<ctime>`, more of `string`, `vector`'s range constructor and `assign`, comparisons for
+  `vector`, `pair`, `map` and `set`, `setf`/`unsetf`, `stable_sort` and `system`.
+
+`tools/feature-sweep` is unchanged at **87 compile, 9 refused by name, 0 naming nothing, of 96**.
+
 ## What 1.22 changes
 
 The last C++11 language rows the feature grid refused but one, and the fixes a real project met. Each
@@ -496,10 +518,10 @@ defects below and nothing else; Compiler-Cppi has closed those too, with the
 vtable group, `_ZTv` thunks, VTT and construction vtables, and that work is
 not in 1.3.
 
-## Known shortcomings in 1.22
+## Known shortcomings in 1.23
 
 Everything here is measured and written down elsewhere in full; this is the
-short list a user of **1.22** should have in front of them. `docs/EXCLUSIONS.md`
+short list a user of **1.23** should have in front of them. `docs/EXCLUSIONS.md`
 is the complete one - 136 refusal sites on 2026-10-21 (131 on 2026-10-08),
 each citing the source line that refuses it, and `make test` fails when the two
 disagree. The heading
