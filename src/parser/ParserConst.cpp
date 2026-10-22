@@ -421,6 +421,14 @@ bool Parser::fold(const Expr &e, long long *out, std::size_t pos) const {
         *out = n->value();
         return true;
     }
+    // [expr.comma]: the right operand is the value; the left is a constant too or an effect a
+    // constexpr body is allowed, so `int a[(1, 3)]` has 3 elements (1.27, 2026-10-21, review of
+    // 1.25, item 3 - it was "not an integer constant expression").
+    if (const Comma *c = dynamic_cast<const Comma *>(&e)) {
+        long long dropped = 0;
+        if (!fold(c->left(), &dropped, pos) && !runConstexprEffect(c->left(), pos)) return false;
+        return fold(c->right(), out, pos);
+    }
     // **A member of a constant object**, or what a pointer into one reaches.
     if (dynamic_cast<const MemberAccess *>(&e) != nullptr ||
         (dynamic_cast<const Unary *>(&e) != nullptr && static_cast<const Unary &>(e).op() == '*')) {

@@ -187,10 +187,13 @@ ExprPtr Parser::convert(ExprPtr e, const Type *to, bool allowExplicit) const {
         both->setType(baseType);
         return both;
     }
-    // **A null data member pointer is -1 on both ABIs** - an offset of 0 is a
-    // real member - and Microsoft's virtual model writes {0, -1}. It had been a
-    // plain zero, so a member at 0 was null and a null from clang or cl was not.
-    if (e->type()->isNullPtr() && to->unqualified()->isMemberPointer()) {
+    // **A null data member pointer is -1 on both ABIs** (offset 0 is a member), {0, -1} in Microsoft's virtual
+    // model; zero made a member at 0 null and a null from clang or cl not. `nullptr` or 0 gives a member function
+    // pointer the pair with a null code word, [conv.mem]/1 (1.27, 2026-10-21, review of 1.25, item 3).
+    const bool nullConstant = e->type()->isNullPtr() || (e->type()->isInteger() && isNullConstant(*e));
+    if (nullConstant && to->unqualified()->isMemberFunctionPointer())
+        return const_cast<Parser *>(this)->nullMemberFunctionPointer(to->unqualified());
+    if (nullConstant && to->unqualified()->isMemberPointer()) {
         const bool virtualModel = target_.microsoftNames() && to->unqualified()->size(target_) == 8;
         ExprPtr n(new Num(virtualModel ? -4294967296LL : -1LL));
         n->setType(types_.get(Kind::LongLong));
@@ -688,7 +691,7 @@ Parser::Rank Parser::rankArgument(const Expr &arg, const Type *param) {
                         : (given->unqualified()->isStructOrUnion() &&
                            conversionFunction(given, want) != nullptr);
                 rankingConversion_--;
-                if (usable) return Rank::UserDefined;
+                if (usable) return userDefinedRank(given, want);
             }
             // **And a standard conversion makes that temporary too.**
             if (want->isConst()) {
@@ -699,11 +702,12 @@ Parser::Rank Parser::rankArgument(const Expr &arg, const Type *param) {
         }
         if (!want->isConst() && given->isConst()) return Rank::None;
 
-        // **Which reference will take this argument is a question about the
-        // argument, not about a conversion.** An rvalue reference is not viable
-        // for an object that has an address, and the better match where both are.
+        // **Which reference takes this argument is about the argument**: no rvalue reference for an lvalue.
         if (param->isRValueReference() && isLvalue(arg)) return Rank::None;
-        if (param->isRValueReference()) return Rank::Identity;
+        // `const T &&` for a `T` rvalue adds a qualifier, as `const T &` does below - [over.ics.rank]/3.2.6,
+        // so that `fwd(std::move(x))` picks fwd<int> over the fwd<const int> an earlier call made (1.27).
+        if (param->isRValueReference())
+            return want->isConst() && !given->isConst() ? Rank::Qualification : Rank::Identity;
 
         // **A value has no lvalue to bind, so `T &` is not viable for one**.
         if (!isLvalue(arg)) return want->isConst() ? Rank::Qualification : Rank::None;
@@ -778,10 +782,27 @@ Parser::Rank Parser::rankArgument(const Expr &arg, const Type *param) {
                 : (from->unqualified()->isStructOrUnion() &&
                    conversionFunction(from, to) != nullptr);
         rankingConversion_--;
-        if (usable) return Rank::UserDefined;
+        if (usable) return userDefinedRank(from, to);
     }
 
     return Rank::None;
+}
+
+// [over.ics.rank]/3.3: user-defined sequences through one conversion function are told apart by their second
+// standard conversion: `lng(long)` beats `lng(int)` for `operator long()`. One scalar conversion function reaches
+// every scalar target, sub-rank its distance from the result; a class target keeps the plain rank (1.27, item 3).
+Parser::Rank Parser::userDefinedRank(const Type *from, const Type *to) {
+    const Type *want = to->unqualified();
+    if (want->isStructOrUnion()) return Rank::UserDefined;
+    const Signature *via = soleNumericConversion(from);
+    if (via == nullptr) return Rank::UserDefined;
+    const Type *gives = via->returns->unqualified();
+    if (gives == want) return Rank::UserDefined;
+    if (gives->isPointer() && want->isPointer() && qualificationConvertible(gives, want))
+        return Rank::UserDefined;
+    if (gives->isArithmetic() && want->isArithmetic() && isPromotion(gives, want))
+        return Rank::UserDefinedPromotion;
+    return Rank::UserDefinedConversion;
 }
 
 std::string Parser::describeSignature(const Signature &f) {
@@ -834,17 +855,74 @@ bool Parser::sameMatchEitherWay(const Type *pa, const Type *pb) {
     return va == vb;
 }
 
+// **Two parameters that took one argument at the same rank** (1.27, review item 3), per [over.ics.rank]: /3.2.3 an
+// rvalue reference binding an rvalue beats an lvalue one; /3.2.6, /4.3 the less cv-qualified reference or pointer
+// target; /4.4 the nearer base (`H *` over `G *` for an `I *`), class over `void *`. /4 needs the argument.
+int Parser::closerTarget(const Type *pa, const Type *pb, const Type *given) const {
+    if (pa == nullptr || pb == nullptr || given == nullptr) return 0;
+    struct Nearer {
+        static int derived(const Parser &p, const Type *a, const Type *b, const Type *from) {
+            if (from == nullptr || !from->isStructOrUnion()) return 0;
+            if (a == b || !a->isStructOrUnion() || !b->isStructOrUnion()) return 0;
+            if (p.accessibleBaseOffset(a, b) >= 0) return 1;
+            if (p.accessibleBaseOffset(b, a) >= 0) return -1;
+            return 0;
+        }
+    };
+    if (pa->isReference() && pb->isReference()) {
+        const Type *ta = pa->pointee(), *tb = pb->pointee();
+        if (ta->unqualified() == tb->unqualified()) {
+            if (ta->isConst() != tb->isConst()) return ta->isConst() ? -1 : 1;
+            if (pa->isRValueReference() != pb->isRValueReference())
+                return pa->isRValueReference() ? 1 : -1;
+            return 0;
+        }
+        return Nearer::derived(*this, ta->unqualified(), tb->unqualified(), given->unqualified());
+    }
+    if (pa->isPointer() && pb->isPointer() && (given->isPointer() || given->isArray())) {
+        const Type *ta = pa->pointee(), *tb = pb->pointee();
+        const Type *object = given->pointee()->unqualified();   // an array decays to its element's
+        if (ta->unqualified() == tb->unqualified())
+            return ta->isConst() == tb->isConst() ? 0 : ta->isConst() ? -1 : 1;
+        if (tb->isVoid() && ta->unqualified()->isStructOrUnion() && object->isStructOrUnion()) return 1;
+        if (ta->isVoid() && tb->unqualified()->isStructOrUnion() && object->isStructOrUnion()) return -1;
+        return Nearer::derived(*this, ta->unqualified(), tb->unqualified(), object);
+    }
+    if (!pa->isReference() && !pb->isReference())
+        return Nearer::derived(*this, pa->unqualified(), pb->unqualified(), given->unqualified());
+    return 0;
+}
+
 bool Parser::betterCandidate(const std::vector<Rank> &a,
                              const std::vector<Rank> &b,
                              const Signature &fa, const Signature &fb,
                              bool ranksObjectA, bool ranksObjectB) const {
     bool better = false, worse = false;
     for (std::size_t i = 0; i < a.size() && i < b.size(); i++) {
-        if (a[i] == b[i]) continue;
-        if (sameMatchEitherWay(rankedParameter(fa, i, ranksObjectA),
-                               rankedParameter(fb, i, ranksObjectB)) &&
+        const Type *pa = rankedParameter(fa, i, ranksObjectA);
+        const Type *pb = rankedParameter(fb, i, ranksObjectB);
+        if (a[i] == b[i]) {
+            if (a[i] > Rank::Conversion) continue;
+            const int closer =
+                closerTarget(pa, pb, i < rankingGiven_.size() ? rankingGiven_[i] : nullptr);
+            if (closer > 0) better = true;
+            if (closer < 0) worse = true;
+            continue;
+        }
+        if (sameMatchEitherWay(pa, pb) &&
             a[i] <= Rank::Qualification && b[i] <= Rank::Qualification)
             continue;
+        // [over.ics.rank]/3.3: a user-defined sequence is compared with another only through the
+        // same conversion function; a class target was reached by a constructor, so with one on
+        // either side the two stay level.
+        if (a[i] >= Rank::UserDefined && a[i] <= Rank::UserDefinedConversion &&
+            b[i] >= Rank::UserDefined && b[i] <= Rank::UserDefinedConversion) {
+            const Type *va = pa != nullptr ? (pa->isReference() ? pa->pointee() : pa) : nullptr;
+            const Type *vb = pb != nullptr ? (pb->isReference() ? pb->pointee() : pb) : nullptr;
+            if (va == nullptr || vb == nullptr || va->unqualified()->isStructOrUnion() ||
+                vb->unqualified()->isStructOrUnion())
+                continue;
+        }
         if (a[i] < b[i]) better = true;
         if (a[i] > b[i]) worse = true;
     }
@@ -902,13 +980,27 @@ std::vector<std::string> Parser::lookupKeys(const std::string &name,
             t = t->pointee();
         if (t == nullptr) continue;
         t = t->unqualified();
-        if (!t->isStructOrUnion() || !t->inNamespace()) continue;
-        const std::string &tag = t->tag();
-        const std::size_t cut = tag.rfind("::");
-        if (cut == std::string::npos) continue;
-        add(tag.substr(0, cut) + "::" + name);
+        // [basic.lookup.argdep]/2: a class's namespace; and an enumeration's, the innermost namespace
+        // around it - a class-scoped one's is its class's - so that `N::A | N::B` reaches N's
+        // operator| and not the built-in (1.27, review item 3; the enumeration case was missing).
+        std::string prefix;
+        if (t->isStructOrUnion() && t->inNamespace()) {
+            const std::size_t cut = t->tag().rfind("::");
+            if (cut == std::string::npos) continue;
+            prefix = t->tag().substr(0, cut);
+        } else if (t->isEnumeration()) {
+            prefix = t->tag();
+            for (;;) {
+                const std::size_t cut = prefix.rfind("::");
+                if (cut == std::string::npos) { prefix.clear(); break; }
+                prefix = prefix.substr(0, cut);
+                if (namespaces_.count(prefix) != 0) break;
+            }
+            if (prefix.empty()) continue;   // a global enumeration's namespace is the bare name's
+        } else continue;
+        add(prefix + "::" + name);
         // [basic.lookup.argdep]/2: an inline namespace's class has the enclosing one too.
-        const std::vector<std::string> alts = inlineAliasPrefixes(tag.substr(0, cut) + "::");
+        const std::vector<std::string> alts = inlineAliasPrefixes(prefix + "::");
         for (std::size_t a = 0; a < alts.size(); a++) add(alts[a] + name);
     }
     return keys;
@@ -1002,6 +1094,9 @@ Parser::OperatorChoice Parser::resolveOperator(const std::string &name,
 
     if (which.empty()) return OperatorChoice::None;
 
+    rankingGiven_.clear();
+    rankingGiven_.push_back(lt);
+    if (right != nullptr) rankingGiven_.push_back(right->type());
     std::size_t best = 0;
     for (std::size_t k = 1; k < which.size(); k++)
         if (betterCandidate(ranks[k], ranks[best],
@@ -1211,6 +1306,9 @@ Parser::Signature Parser::resolveOverload(const std::string &written,
         return functions_[viable[0]];
     }
 
+    rankingGiven_.clear();
+    if (object != nullptr) rankingGiven_.push_back(object);
+    for (std::size_t i = 0; i < args.size(); i++) rankingGiven_.push_back(args[i]->type());
     std::size_t best = 0;
     for (std::size_t k = 1; k < viable.size(); k++)
         if (betterCandidate(ranks[k], ranks[best],
@@ -1270,6 +1368,14 @@ void Parser::checkAssignable(const Expr &from, const Type *to, std::size_t pos,
         !publiclyDerivedFrom(ft->unqualified(), to->unqualified()) &&
         const_cast<Parser *>(this)->conversionFunction(ft, to) != nullptr)
         return;
+    // [class.conv.fct]/2: an `explicit` one is for direct-initialisation, a cast and a condition,
+    // never for this copy - `bool b = f` (1.28, 2026-10-22, review of 1.25, neg07).
+    if (ft->unqualified()->isStructOrUnion() && !to->unqualified()->isStructOrUnion() &&
+        const_cast<Parser *>(this)->conversionFunction(ft, to, true) != nullptr)
+        src_.fail(pos, what + " is '" + to->describe() + "' and this is '" + ft->describe() +
+                       "', whose conversion function to it is 'explicit' - copy-initialisation "
+                       "may not take it ([class.conv.fct]/2); write '" + to->describe() +
+                       " x(v)', a static_cast, or use it as a condition");
 
     // Reached only by a lambda that captures: a captureless one has its conversion function (F22),
     // and [expr.prim.lambda]/6 gives one to no other.
@@ -1332,10 +1438,13 @@ void Parser::checkAssignable(const Expr &from, const Type *to, std::size_t pos,
         if (isNullConstant(from)) return;
         refuse(" - only the constant 0 becomes a pointer on its own");
     }
-    // `nullptr` converts to any pointer and to any pointer to member, and nothing
-    // is emitted: the value is already a pointer-sized zero, and what the type
-    // carried was the front end's knowledge that this zero is not the number 0.
-    if (ft->isNullPtr() && (to->isPointer() || to->isMemberPointer())) return;
+    // `nullptr` converts to any pointer and any pointer to member, and nothing is emitted: the value is already
+    // a pointer-sized zero, the type only carrying the front end's knowledge that it is not the number 0. A member
+    // function pointer is a pointer to a member too, [conv.mem]/1, and the constant 0 reaches both (1.27, item 3).
+    if (ft->isNullPtr() &&
+        (to->isPointer() || to->isMemberPointer() || to->isMemberFunctionPointer())) return;
+    if ((to->isMemberPointer() || to->isMemberFunctionPointer()) && ft->isInteger() &&
+        isNullConstant(from)) return;
     if (to->isNullPtr()) {
         if (isNullConstant(from)) return;
         refuse(" - the only values of that type are 'nullptr' and the "

@@ -12,6 +12,8 @@
 
 void Parser::parseArguments(std::vector<ExprPtr> &args) {
     OverloadTarget none(*this, nullptr);
+    // `f(f(f(...)))` re-enters the whole expression grammar per call.
+    const Nesting deep(this, peek().pos, "argument list");
     if (consume(")")) return;
     for (;;) {
         // **`rest...` - one thing written, one argument per member.** The names
@@ -74,6 +76,38 @@ ExprPtr Parser::bracedArgumentFor(const Type *param, Init &in, std::size_t pos) 
     return listTemporaryFrom(to, in, true, pos);
 }
 
+const Parser::Init *Parser::bracedInitOf(const Expr &e) const {
+    for (std::size_t i = 0; i < bracedArgs_.size(); i++)
+        if (bracedArgs_[i].placeholder == &e) return &bracedArgs_[i].init;
+    return nullptr;
+}
+
+// **[over.ics.list], as far as choosing among overloads needs it** (1.25, 2026-10-21): could the list initialise
+// a parameter of this type, in listTemporaryFrom's order - scalar, initializer_list, constructor (not explicit),
+// aggregate; elements are not ranked. It tells `{1.0, 2.0, 3.0}` for CMatrix's CVector<3> from a `const double *`.
+bool Parser::bracedListViable(const Type *param, const Init &in) {
+    if (param->isReference() && !param->isRValueReference() && !param->referent()->isConst())
+        return false;  // the list makes a temporary, which binds no non-const lvalue reference
+    const Type *plain = (param->isReference() ? param->referent() : param)->unqualified();
+    const std::size_t n = in.items.size();
+    if (plain->isVoid() || plain->isArray()) return false;
+    if (!plain->isStructOrUnion()) return n == 0 || (n == 1 && !in.items[0].isList);
+    if (isInitializerListType(plain) || plain->tag().empty()) return true;
+    if (!hasConstructors(plain->tag()) || onlyImplicitConstructors(plain->tag())) return true;
+    const Type *ilType = nullptr;
+    if (n != 0 && initializerListConstructor(plain, &ilType) != nullptr) return true;
+    // A constructor template's parameters are not known until it is deduced: it may take the list.
+    if (n != 0 && memberTemplates_.count(constructorKey(plain->tag())) != 0) return true;
+    const std::vector<std::size_t> *set = overloadsOf(constructorKey(plain->tag()));
+    if (set == nullptr) return n == 0;
+    for (std::size_t k = 0; k < set->size(); k++) {
+        const Signature &f = functions_[(*set)[k]];
+        if (f.isExplicit || n < leastArguments(f) || (!f.variadic && n > f.params.size())) continue;
+        return true;
+    }
+    return false;
+}
+
 void Parser::buildBracedArguments(const std::vector<const Type *> &params,
                                   std::vector<ExprPtr> &args, std::size_t pos) {
     for (std::size_t i = 0; i < args.size(); i++) {
@@ -115,13 +149,29 @@ void Parser::buildBracedArguments(const std::string &key, std::vector<ExprPtr> &
     if (set == nullptr)
         src_.fail(pos, "a braced list is given as an argument of '" + key + "', and no function "
                        "of that name is declared to say what it should make");
+    // **Only the candidates that could take this call are asked** (1.25): the number of arguments,
+    // every written one convertible to its parameter, every braced one a list its parameter can be
+    // initialised from (bracedListViable). If none is left, all of them are asked, as before 1.25.
+    std::vector<std::size_t> asked;
+    for (std::size_t k = 0; k < set->size(); k++) {
+        const Signature &f = functions_[(*set)[k]];
+        if (f.variadic ? args.size() < leastArguments(f)
+                       : (args.size() > f.params.size() || args.size() < leastArguments(f))) continue;
+        bool viable = true;
+        for (std::size_t j = 0; j < args.size() && j < f.params.size() && viable; j++) {
+            if (const Init *in = bracedInitOf(*args[j])) viable = bracedListViable(f.params[j], *in);
+            else if (overloadArgOf(*args[j]) == nullptr) viable = rankArgument(*args[j], f.params[j]) != Rank::None;
+        }
+        if (viable) asked.push_back((*set)[k]);
+    }
+    if (asked.empty()) asked = *set;
     std::vector<const Type *> params;
     for (std::size_t i = 0; i < args.size(); i++) {
         const Type *agreed = nullptr;
         bool disagree = false;
         if (isBracedPlaceholder(*args[i]))
-            for (std::size_t k = 0; k < set->size(); k++) {
-                const Signature &f = functions_[(*set)[k]];
+            for (std::size_t k = 0; k < asked.size(); k++) {
+                const Signature &f = functions_[asked[k]];
                 if (i >= f.params.size()) continue;
                 const Type *p = f.params[i]->isReference() ? f.params[i]->referent()->unqualified()
                                                            : f.params[i]->unqualified();
@@ -286,38 +336,51 @@ bool Parser::releaseTemporary(const Expr &value) {
     return false;
 }
 
+// **The pending temporary a bound address names, if any** - its index in pendingTemps_, or -1. The walk passes
+// a comma's right side (`*(ctor(&tmp), &tmp)`; or over a saved base pointer, asked on its store), dereference,
+// address-of, cast, and a member access ([class.temporary]/5: `const T &m = Pair().b;` keeps the Pair; fix 2).
+int Parser::pendingTemporaryOf(const Expr &e) const {
+    if (const Comma *c = dynamic_cast<const Comma *>(&e)) {
+        const int right = pendingTemporaryOf(c->right());
+        if (right >= 0) return right;
+        if (dynamic_cast<const Conditional *>(&c->right()) != nullptr ||
+            dynamic_cast<const Cast *>(&c->right()) != nullptr)
+            if (const Assign *a = dynamic_cast<const Assign *>(&c->left()))
+                return pendingTemporaryOf(a->value());
+        return -1;
+    }
+    if (const Unary *u = dynamic_cast<const Unary *>(&e))
+        return u->op() == '*' || u->op() == '&' ? pendingTemporaryOf(u->operand()) : -1;
+    if (const Cast *c = dynamic_cast<const Cast *>(&e)) return pendingTemporaryOf(c->value());
+    if (const MemberAccess *m = dynamic_cast<const MemberAccess *>(&e))
+        return pendingTemporaryOf(m->object());
+    int slot = 0;
+    if (const Var *v = dynamic_cast<const Var *>(&e)) {
+        if (!v->isLocal()) return -1;
+        slot = v->offset();
+    } else if (const Call *c = dynamic_cast<const Call *>(&e)) {
+        slot = c->resultSlot();
+    } else {
+        return -1;
+    }
+    if (slot == 0) return -1;
+    for (std::size_t i = 0; i < pendingTemps_.size(); i++)
+        if (pendingTemps_[i].slot == slot) return static_cast<int>(i);
+    return -1;
+}
+
 // **[class.temporary]/5: a temporary bound to a reference lives as long as the
 // reference does**, not to the end of the full expression that made it.
 bool Parser::extendTemporary(const Expr &addr, const std::string &name) {
-    const Expr *at = &addr;
-    for (;;) {
-        if (const Comma *c = dynamic_cast<const Comma *>(at)) { at = &c->right(); continue; }
-        if (const Unary *u = dynamic_cast<const Unary *>(at))
-            if (u->op() == '*' || u->op() == '&') { at = &u->operand(); continue; }
-        break;
-    }
-
-    int slot = 0;
-    if (const Var *v = dynamic_cast<const Var *>(at)) {
-        if (!v->isLocal()) return false;
-        slot = v->offset();
-    } else if (const Call *c = dynamic_cast<const Call *>(at)) {
-        if (c->resultSlot() == 0) return false;
-        slot = c->resultSlot();
-    } else {
-        return false;
-    }
-
-    for (std::size_t i = 0; i < pendingTemps_.size(); i++)
-        if (pendingTemps_[i].slot == slot) {
-            const Type *cls = pendingTemps_[i].type;
-            pendingTemps_.erase(pendingTemps_.begin() + i);
-            // The guard flag goes with the entry.
-            if (destructorOf(cls) != nullptr)
-                alive_.push_back(Alive{ name, slot, cls });
-            return true;
-        }
-    return false;
+    const int i = pendingTemporaryOf(addr);
+    if (i < 0) return false;
+    const int slot = pendingTemps_[i].slot;
+    const Type *cls = pendingTemps_[i].type;
+    pendingTemps_.erase(pendingTemps_.begin() + i);
+    // The guard flag goes with the entry.
+    if (destructorOf(cls) != nullptr)
+        alive_.push_back(Alive{ name, slot, cls });
+    return true;
 }
 
 ExprPtr Parser::endFullExpression(ExprPtr e) {
@@ -857,6 +920,14 @@ bool Parser::insideAccessOf(const Type *cls, Access access) const {
     // The class's own body reaches everything it declares - [class.access]/1.
     for (std::size_t i = 0; i < classStack_.size(); i++)
         if (classStack_[i] == want) return true;
+    // **And so does a class nested in it** - [class.access.nest]/1, C++11's rule: a nested class is a
+    // member, and a member has the access of any other (1.27, 2026-10-21, review of 1.25, item 3:
+    // `Outer::Inner::peek(const Outer &o)` reading `o.secret` found "no member").
+    for (std::size_t i = 0; i <= classStack_.size(); i++) {
+        const Type *here = i < classStack_.size() ? classStack_[i] : currentClass_;
+        for (const Type *e = here != nullptr ? here->enclosing() : nullptr; e != nullptr; e = e->enclosing())
+            if (e->unqualified() == want) return true;
+    }
     if (currentClass_ == nullptr) return false;
     if (currentClass_ == want) return true;
     if (access == Access::Protected && derivesFrom(currentClass_, want))

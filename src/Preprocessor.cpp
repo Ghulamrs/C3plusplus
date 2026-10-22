@@ -493,6 +493,36 @@ std::string Preprocessor::expandText(const std::string &s, std::vector<std::stri
             continue;
         }
 
+        // [cpp.pragma.op]: `_Pragma("...")` is a `#pragma` in the middle of a line - the string
+        // destringized and handed to the same reader, so `_Pragma("pack(1)")` packs and an unknown
+        // one is dropped (1.27, 2026-10-21, review of 1.25, item 3: it was "not declared").
+        if (name == "_Pragma" && !skipping_) {
+            std::size_t j = i;
+            while (j < s.size() && std::isspace(static_cast<unsigned char>(s[j]))) j++;
+            bool wellFormed = j < s.size() && s[j] == '(';
+            std::string text;
+            if (wellFormed) {
+                j++;
+                while (j < s.size() && std::isspace(static_cast<unsigned char>(s[j]))) j++;
+                if (j < s.size() && s[j] == 'L') j++;
+                wellFormed = j < s.size() && s[j] == '"';
+                for (j++; wellFormed && j < s.size() && s[j] != '"'; j++) {
+                    if (s[j] == '\\' && j + 1 < s.size() && (s[j + 1] == '"' || s[j + 1] == '\\')) j++;
+                    text += s[j];
+                }
+                wellFormed = wellFormed && j < s.size();
+                j++;                                             // the closing quote
+                while (j < s.size() && std::isspace(static_cast<unsigned char>(s[j]))) j++;
+                wellFormed = wellFormed && j < s.size() && s[j] == ')';
+            }
+            if (!wellFormed)
+                fail(fileIndex, lineNo, reportLine_, 0,
+                     "'_Pragma' takes one string literal in parentheses - [cpp.pragma.op]");
+            i = j + 1;
+            pragma(text, fileIndex, lineNo, reportLine_, 0);
+            continue;
+        }
+
         auto it = macros_.find(name);
         if (it == macros_.end()) { out += name; continue; }
 
@@ -501,38 +531,80 @@ std::string Preprocessor::expandText(const std::string &s, std::vector<std::stri
             if (b == name) { recursing = true; break; }
         if (recursing) { out += name; continue; }
 
+        auto checkArity = [&](const Macro &m, const std::string &called,
+                              const std::vector<std::string> &args) {
+            if (m.variadic) {
+                if (args.size() < m.params.size())
+                    fail(fileIndex, lineNo, reportLine_, 0,
+                         "'" + called + "' takes at least " +
+                         std::to_string(m.params.size()) +
+                         " argument(s) before its '...', given " +
+                         std::to_string(args.size()));
+            } else if (args.size() != m.params.size()) {
+                fail(fileIndex, lineNo, reportLine_, 0,
+                     "'" + called + "' takes " + std::to_string(m.params.size()) +
+                     " argument(s), given " + std::to_string(args.size()));
+            }
+        };
+        // [cpp.rescan]/1: a function-like macro's name ending an expansion takes its arguments from what
+        // follows: `#define G F` makes `G(3)` `F(3)`, `ID(F)(5)` is `F(5)` (1.27, review of 1.25, item 3).
+        // The name is cut off, the call read from `s`, expanded with the names busy where it arose (else pending).
+        auto withTail = [&](std::string expansion) {
+            while (!pendingTail_.empty()) {
+                std::size_t j = i;
+                while (j < s.size() && std::isspace(static_cast<unsigned char>(s[j]))) j++;
+                if (j >= s.size()) break;
+                const std::string tail = pendingTail_;
+                std::vector<std::string> tailBusy = pendingBusy_;
+                pendingTail_.clear();
+                if (s[j] != '(') break;
+                std::size_t end = expansion.size();
+                while (end > 0 && std::isspace(static_cast<unsigned char>(expansion[end - 1]))) end--;
+                if (end < tail.size() ||
+                    expansion.compare(end - tail.size(), tail.size(), tail) != 0) break;
+                auto m = macros_.find(tail);
+                if (m == macros_.end() || !m->second.functionLike) break;
+                expansion.erase(end - tail.size());
+                i = j;
+                std::vector<std::string> args = collectArgs(s, i, tail, fileIndex, lineNo);
+                if (args.size() == 1 && trim(args[0]).empty() && m->second.params.empty())
+                    args.clear();
+                checkArity(m->second, tail, args);
+                std::string replaced = substitute(m->second, args, tailBusy, fileIndex, lineNo);
+                tailBusy.push_back(tail);
+                expansion += expandText(replaced, tailBusy, fileIndex, lineNo, false);
+            }
+            return expansion;
+        };
+
         if (!it->second.functionLike) {
             busy.push_back(name);
-            out += expandText(it->second.body, busy, fileIndex, lineNo, false);
+            std::string expansion = expandText(it->second.body, busy, fileIndex, lineNo, false);
             busy.pop_back();
+            out += withTail(std::move(expansion));
             continue;
         }
 
         std::size_t j = i;
         while (j < s.size() && std::isspace(static_cast<unsigned char>(s[j]))) j++;
-        if (j >= s.size() || s[j] != '(') { out += name; continue; }
+        if (j >= s.size() || s[j] != '(') {
+            out += name;
+            // At the end of this text, the '(' may be in the text this one was expanded into.
+            if (j >= s.size()) { pendingTail_ = name; pendingBusy_ = busy; }
+            continue;
+        }
 
         i = j;
         std::vector<std::string> args = collectArgs(s, i, name, fileIndex, lineNo);
         if (args.size() == 1 && trim(args[0]).empty() && it->second.params.empty())
             args.clear();
-        if (it->second.variadic) {
-            if (args.size() < it->second.params.size())
-                fail(fileIndex, lineNo, reportLine_, 0,
-                     "'" + name + "' takes at least " +
-                     std::to_string(it->second.params.size()) +
-                     " argument(s) before its '...', given " +
-                     std::to_string(args.size()));
-        } else if (args.size() != it->second.params.size()) {
-            fail(fileIndex, lineNo, reportLine_, 0,
-                 "'" + name + "' takes " + std::to_string(it->second.params.size()) +
-                 " argument(s), given " + std::to_string(args.size()));
-        }
+        checkArity(it->second, name, args);
 
         std::string replaced = substitute(it->second, args, busy, fileIndex, lineNo);
         busy.push_back(name);
-        out += expandText(replaced, busy, fileIndex, lineNo, false);
+        std::string expansion = expandText(replaced, busy, fileIndex, lineNo, false);
         busy.pop_back();
+        out += withTail(std::move(expansion));
     }
     return out;
 }
@@ -541,6 +613,7 @@ std::string Preprocessor::expandLine(const std::string &line, int fileIndex,
                                      int lineNo) {
     std::vector<std::string> busy;
     reportLine_ = line;
+    pendingTail_.clear();
     return expandText(line, busy, fileIndex, lineNo, true);
 }
 
@@ -723,13 +796,25 @@ long long Preprocessor::evalCondition(const std::string &raw, int fileIndex, int
     // After expansion, because a macro body may spell one and a keyword may not itself be a macro name.
     expanded = spellAlternativeTokens(expanded);
 
+    // [cpp.cond]/4: every value is an intmax_t or uintmax_t, and the usual arithmetic conversions make an
+    // operation unsigned where either operand is - `#if -1 > 0u` holds, as in C (1.27, 2026-10-21, review of
+    // 1.25, item 3: the `u` was dropped). Values carry the flag; a comparison's or `!`'s result is a signed int.
+    struct V {
+        long long v;
+        bool u;
+    };
     struct E {
         Preprocessor *pp;
         const std::string &s;
         int fileIndex;
         int lineNo;
         const std::string &line;
-        std::size_t i = 0;
+        std::size_t i;
+
+        // C++11 has no aggregate with a member initialiser, so the braces call this.
+        E(Preprocessor *pp, const std::string &s, int fileIndex, int lineNo,
+          const std::string &line, std::size_t i = 0)
+            : pp(pp), s(s), fileIndex(fileIndex), lineNo(lineNo), line(line), i(i) {}
 
         void skip() {
             while (i < s.size() && std::isspace(static_cast<unsigned char>(s[i]))) i++;
@@ -749,12 +834,13 @@ long long Preprocessor::evalCondition(const std::string &raw, int fileIndex, int
             return true;
         }
         [[noreturn]] void bad(const std::string &m) { pp->fail(fileIndex, lineNo, line, 0, m); }
+        static V signedValue(long long v) { return V{ v, false }; }
 
-        long long primary() {
+        V primary() {
             skip();
             if (i >= s.size()) bad("this condition ends too early");
             if (take("(")) {
-                long long v = cond();
+                V v = cond();
                 skip();
                 if (!take(")")) bad("this condition is missing a ')'");
                 return v;
@@ -770,19 +856,25 @@ long long Preprocessor::evalCondition(const std::string &raw, int fileIndex, int
                     v = static_cast<unsigned char>(s[i++]);
                 }
                 if (i < s.size() && s[i] == '\'') i++;
-                return v;
+                return signedValue(v);
             }
             if (std::isdigit(static_cast<unsigned char>(s[i]))) {
                 char *stop = nullptr;
-                long long v = std::strtoll(s.c_str() + i, &stop, 0);
+                // Read unsigned, so that a constant past the signed range keeps its bits; [lex.icon]
+                // then gives such a one an unsigned type, as the `u` suffix does.
+                const unsigned long long u = std::strtoull(s.c_str() + i, &stop, 0);
                 i = static_cast<std::size_t>(stop - s.c_str());
+                bool isUnsigned = u > 9223372036854775807ULL;
                 while (i < s.size() && (s[i] == 'u' || s[i] == 'U' ||
-                                        s[i] == 'l' || s[i] == 'L')) i++;
-                return v;
+                                        s[i] == 'l' || s[i] == 'L')) {
+                    if (s[i] == 'u' || s[i] == 'U') isUnsigned = true;
+                    i++;
+                }
+                return V{ static_cast<long long>(u), isUnsigned };
             }
             if (identStart(s[i])) {
                 while (i < s.size() && identCont(s[i])) i++;
-                return 0;
+                return signedValue(0);
             }
             bad(std::string("this condition has a stray '") + s[i] + "'");
         }
@@ -792,107 +884,116 @@ long long Preprocessor::evalCondition(const std::string &raw, int fileIndex, int
         static long long wrap(unsigned long long v) {
             return static_cast<long long>(v);
         }
+        static unsigned long long bits(long long v) { return static_cast<unsigned long long>(v); }
 
-        long long unary() {
+        V unary() {
             skip();
-            if (take("!")) return !unary();
-            if (take("~")) return ~unary();
+            if (take("!")) return signedValue(!unary().v);
+            if (take("~")) { const V a = unary(); return V{ ~a.v, a.u }; }
             // Negating the most negative value is the overflow that is
             // easiest to reach and hardest to see.
-            if (take("-")) return wrap(0ULL - static_cast<unsigned long long>(unary()));
+            if (take("-")) { const V a = unary(); return V{ wrap(0ULL - bits(a.v)), a.u }; }
             if (take("+")) return unary();
             return primary();
         }
-        long long mul() {
-            long long v = unary();
+        V mul() {
+            V v = unary();
             for (;;) {
                 skip();
                 if (take("*")) {
-                    const long long r = unary();
-                    v = wrap(static_cast<unsigned long long>(v) *
-                             static_cast<unsigned long long>(r));
+                    const V r = unary();
+                    v = V{ wrap(bits(v.v) * bits(r.v)), v.u || r.u };
                 } else if (take("/")) {
-                    const long long r = unary();
-                    if (!r) bad("division by zero in this condition");
+                    const V r = unary();
+                    if (!r.v) bad("division by zero in this condition");
                     // The one division that overflows, and the one the
                     // hardware traps on rather than wrapping.
-                    v = (v == (-9223372036854775807LL - 1) && r == -1) ? v : v / r;
+                    if (v.u || r.u) v = V{ wrap(bits(v.v) / bits(r.v)), true };
+                    else v.v = (v.v == (-9223372036854775807LL - 1) && r.v == -1) ? v.v : v.v / r.v;
                 } else if (take("%")) {
-                    const long long r = unary();
-                    if (!r) bad("division by zero in this condition");
-                    v = (v == (-9223372036854775807LL - 1) && r == -1) ? 0 : v % r;
+                    const V r = unary();
+                    if (!r.v) bad("division by zero in this condition");
+                    if (v.u || r.u) v = V{ wrap(bits(v.v) % bits(r.v)), true };
+                    else v.v = (v.v == (-9223372036854775807LL - 1) && r.v == -1) ? 0 : v.v % r.v;
                 } else return v;
             }
         }
-        long long add() {
-            long long v = mul();
+        V add() {
+            V v = mul();
             for (;;) {
                 skip();
                 if (take("+")) {
-                    const long long r = mul();
-                    v = wrap(static_cast<unsigned long long>(v) +
-                             static_cast<unsigned long long>(r));
+                    const V r = mul();
+                    v = V{ wrap(bits(v.v) + bits(r.v)), v.u || r.u };
                 } else if (take("-")) {
-                    const long long r = mul();
-                    v = wrap(static_cast<unsigned long long>(v) -
-                             static_cast<unsigned long long>(r));
+                    const V r = mul();
+                    v = V{ wrap(bits(v.v) - bits(r.v)), v.u || r.u };
                 } else return v;
             }
         }
-        long long shift() {
-            long long v = add();
+        V shift() {
+            V v = add();
             for (;;) {
                 skip();
                 const bool left = take("<<");
                 if (!left && !take(">>")) return v;
-                const long long n = add();
+                const long long n = add().v;
                 // A count outside [0, 63] is undefined rather than large, and
                 // so is a left shift of a negative value - so the count is
                 // named where it is wrong and the shift is done unsigned.
                 if (n < 0 || n > 63)
                     bad("a shift of " + std::to_string(n) +
                         " places in this condition, where a value has 64 bits");
-                v = left ? wrap(static_cast<unsigned long long>(v) << n)
-                         : (v < 0 ? -(-(v + 1) >> n) - 1 : v >> n);
+                // [expr.shift]/1: the result has the left operand's type.
+                v.v = left ? wrap(bits(v.v) << n)
+                     : v.u ? wrap(bits(v.v) >> n)
+                     : (v.v < 0 ? -(-(v.v + 1) >> n) - 1 : v.v >> n);
             }
         }
-        long long rel() {
-            long long v = shift();
+        // The relational and equality operators compare unsigned where either side is.
+        static bool less(const V &a, const V &b) {
+            return (a.u || b.u) ? bits(a.v) < bits(b.v) : a.v < b.v;
+        }
+        V rel() {
+            V v = shift();
             for (;;) {
                 skip();
-                if (take("<=")) v = v <= shift();
-                else if (take(">=")) v = v >= shift();
-                else if (take("<")) v = v < shift();
-                else if (take(">")) v = v > shift();
+                if (take("<=")) { const V r = shift(); v = signedValue(!less(r, v)); }
+                else if (take(">=")) { const V r = shift(); v = signedValue(!less(v, r)); }
+                else if (take("<")) { const V r = shift(); v = signedValue(less(v, r)); }
+                else if (take(">")) { const V r = shift(); v = signedValue(less(r, v)); }
                 else return v;
             }
         }
-        long long eq() {
-            long long v = rel();
+        V eq() {
+            V v = rel();
             for (;;) {
                 skip();
-                if (take("==")) v = v == rel();
-                else if (take("!=")) v = v != rel();
+                if (take("==")) v = signedValue(v.v == rel().v);
+                else if (take("!=")) v = signedValue(v.v != rel().v);
                 else return v;
             }
         }
         // **`long long`, not `long`.** A `long` is 32 bits where cl builds this
         // compiler and 64 where gcc and clang do, so `#if 0x300000002 &
         // 0xFFFFFFFF` answered differently depending on which box built it.
-        long long bitAnd() { long long v = eq(); for (;;) { skip(); if (take("&")) v = v & eq(); else return v; } }
-        long long bitXor() { long long v = bitAnd(); for (;;) { skip(); if (take("^")) v = v ^ bitAnd(); else return v; } }
-        long long bitOr()  { long long v = bitXor(); for (;;) { skip(); if (take("|")) v = v | bitXor(); else return v; } }
-        long long land()   { long long v = bitOr(); for (;;) { skip(); if (take("&&")) { long long r = bitOr(); v = (v && r); } else return v; } }
-        long long lor()    { long long v = land(); for (;;) { skip(); if (take("||")) { long long r = land(); v = (v || r); } else return v; } }
-        long long cond() {
-            long long c = lor();
+        V bitAnd() { V v = eq(); for (;;) { skip(); if (take("&")) { const V r = eq(); v = V{ v.v & r.v, v.u || r.u }; } else return v; } }
+        V bitXor() { V v = bitAnd(); for (;;) { skip(); if (take("^")) { const V r = bitAnd(); v = V{ v.v ^ r.v, v.u || r.u }; } else return v; } }
+        V bitOr()  { V v = bitXor(); for (;;) { skip(); if (take("|")) { const V r = bitXor(); v = V{ v.v | r.v, v.u || r.u }; } else return v; } }
+        V land()   { V v = bitOr(); for (;;) { skip(); if (take("&&")) { const V r = bitOr(); v = signedValue(v.v && r.v); } else return v; } }
+        V lor()    { V v = land(); for (;;) { skip(); if (take("||")) { const V r = land(); v = signedValue(v.v || r.v); } else return v; } }
+        V cond() {
+            const V c = lor();
             skip();
             if (!take("?")) return c;
-            long long a = cond();
+            const V a = cond();
             skip();
             if (!take(":")) bad("this condition is missing the ':' of a '?:'");
-            long long b = cond();
-            return c ? a : b;
+            const V b = cond();
+            // [expr.cond]/5: the arms meet by the usual arithmetic conversions.
+            V picked = c.v ? a : b;
+            picked.u = a.u || b.u;
+            return picked;
         }
     };
 
@@ -900,7 +1001,7 @@ long long Preprocessor::evalCondition(const std::string &raw, int fileIndex, int
         fail(fileIndex, lineNo, line, 0, "this directive needs a condition");
 
     E e{ this, expanded, fileIndex, lineNo, line };
-    long long v = e.cond();
+    long long v = e.cond().v;
     e.skip();
     if (e.i != expanded.size())
         fail(fileIndex, lineNo, line, 0,
@@ -1210,19 +1311,26 @@ void Preprocessor::directive(const std::string &line, int fileIndex, int lineNo)
     }
 
     if (what == "pragma") {
-        // The file that wrote it is not read again, whoever includes it next.
-        const std::string p = trim(rest);
-        if (p == "once" && fileIndex >= 0 &&
-            static_cast<std::size_t>(fileIndex) < files_.size())
-            pragmaOnce_.insert(canonicalPath(files_[fileIndex]));
-        else if (p.compare(0, 4, "pack") == 0 &&
-                 (p.size() == 4 || p[4] == '(' || std::isspace(static_cast<unsigned char>(p[4]))))
-            pragmaPack(trim(p.substr(4)), fileIndex, lineNo, line, nameStart);
+        pragma(rest, fileIndex, lineNo, line, nameStart);
         return;
     }
     if (what.empty()) return;
 
     fail(fileIndex, lineNo, line, nameStart, "unknown directive '#" + what + "'");
+}
+
+// `#pragma once`, `#pragma pack(...)`; any other pragma is read and dropped, as cl drops the ones
+// it does not know. `_Pragma("...")` arrives here too, destringized ([cpp.pragma.op]).
+void Preprocessor::pragma(const std::string &spec, int fileIndex, int lineNo,
+                          const std::string &line, std::size_t nameStart) {
+    // The file that wrote it is not read again, whoever includes it next.
+    const std::string p = trim(spec);
+    if (p == "once" && fileIndex >= 0 &&
+        static_cast<std::size_t>(fileIndex) < files_.size())
+        pragmaOnce_.insert(canonicalPath(files_[fileIndex]));
+    else if (p.compare(0, 4, "pack") == 0 &&
+             (p.size() == 4 || p[4] == '(' || std::isspace(static_cast<unsigned char>(p[4]))))
+        pragmaPack(trim(p.substr(4)), fileIndex, lineNo, line, nameStart);
 }
 
 // **`#pragma pack` is the one pragma that changes what a program computes**, and

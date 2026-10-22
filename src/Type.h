@@ -129,11 +129,11 @@ struct Member {
     std::string name;
     const Type *type;
     int offset;
-    int width = 0;
-    int bitOffset = 0;
-    Access access = Access::Public;
+    int width;
+    int bitOffset;
+    Access access;
     // **[dcl.stc]/9: a `mutable` member is writable through a const object.**
-    bool isMutable = false;
+    bool isMutable;
     // Set for a member living in a virtual base.
     const Type *inVirtualBase = nullptr;
     // **Which class declared it**, null for one the class wrote itself.
@@ -142,6 +142,13 @@ struct Member {
     bool ambiguous = false;
     // **[class.union]/5: the anonymous union this member came out of**, null for an ordinary one; the run sharing it is one slot.
     const Type *anonUnion = nullptr;
+
+    // C++11 has no aggregate with a member initialiser, so the braces call this.
+    Member(std::string name = std::string(), const Type *type = nullptr, int offset = 0,
+           int width = 0, int bitOffset = 0, Access access = Access::Public,
+           bool isMutable = false)
+        : name(std::move(name)), type(type), offset(offset), width(width),
+          bitOffset(bitOffset), access(access), isMutable(isMutable) {}
 
     bool isBitField() const { return width != 0; }
     bool continuesUnion(const Member *prev) const {
@@ -363,11 +370,17 @@ public:
         int offset;
         Access access;
         // **One subobject however many paths reach it**, laid down by the
-        bool isVirtual = false;
+        bool isVirtual;
         // **Written in this class's base-clause**, not reached through one.
-        bool direct = true;
+        bool direct;
         // Its place in that base-clause, -1 for one reached through another.
-        int written = -1;
+        int written;
+
+        // C++11 has no aggregate with a member initialiser, so the braces call this.
+        BaseSpec(const Type *type = nullptr, int offset = 0, Access access = Access::Public,
+                 bool isVirtual = false, bool direct = true, int written = -1)
+            : type(type), offset(offset), access(access), isVirtual(isVirtual),
+              direct(direct), written(written) {}
     };
     const std::vector<BaseSpec> &bases() const {
         return cls().bases_;

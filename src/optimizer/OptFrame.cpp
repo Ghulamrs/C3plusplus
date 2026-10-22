@@ -30,7 +30,10 @@ int accessWidth(const Instr &i, const Operand &at) {
 
 struct Candidate {
     Local local;
-    bool ok = true;
+    bool ok;
+
+    // C++11 has no aggregate with a member initialiser, so the braces call this.
+    Candidate(Local local = Local(), bool ok = true) : local(local), ok(ok) {}
 };
 
 }

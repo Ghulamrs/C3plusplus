@@ -162,6 +162,40 @@ ExprPtr Parser::boundMemberPointer(const Type *cls, const Signature &f,
     return made;
 }
 
+// **The null pointer to a member function**: the same pair, every word zero - which both ABIs read
+// as null - built as `&S::f` is, so that `nullptr` and the constant 0 reach a `void (S::*)()` by
+// [conv.mem]/1 (1.27, 2026-10-21, review of 1.25, item 3: the declaration was refused).
+ExprPtr Parser::nullMemberFunctionPointer(const Type *mp) {
+    const int slot = allocateFrameSlot(mp);
+    ExprPtr chain;
+    static const char *const words[] = { "$fn", "$adj", "$vbi" };
+    for (std::size_t wi = 0; wi < 3; wi++) {
+        const Member *m = mp->findMember(words[wi]);
+        if (m == nullptr) continue;
+        ExprPtr self(Var::local("$mfp", slot));
+        self->setType(mp);
+        ExprPtr at(new MemberAccess(std::move(self), words[wi], m->offset, 0, 0));
+        at->setType(m->type);
+        ExprPtr zero(new Num(0LL));
+        zero->setType(m->type);
+        ExprPtr put(new Assign(std::move(at), std::move(zero)));
+        put->setType(m->type);
+        if (chain == nullptr) { chain = std::move(put); continue; }
+        ExprPtr both(new Comma(std::move(chain), std::move(put)));
+        both->setType(m->type);
+        chain = std::move(both);
+    }
+    ExprPtr whole(Var::local("$mfp", slot));
+    whole->setType(mp);
+    ExprPtr at(new Unary('&', std::move(whole)));
+    at->setType(types_.pointerTo(mp));
+    ExprPtr seq(new Comma(std::move(chain), std::move(at)));
+    seq->setType(types_.pointerTo(mp));
+    ExprPtr made(new Unary('*', std::move(seq)));
+    made->setType(mp);
+    return made;
+}
+
 // [expr.mptr.oper]/6: a pointer to a `&` member is called on an lvalue alone, a `&&` one on an rvalue.
 void Parser::refuseMemberPointerCategory(const Expr &mp, bool lvalue, std::size_t pos) const {
     const Type *t = mp.type()->unqualified();
@@ -713,6 +747,13 @@ ExprPtr Parser::incDec(ExprPtr target, bool increment, bool prefix, std::size_t 
         }
     }
 
+    // [expr.pre.incr]/2 and [expr.post.incr]/2: a bool may be incremented (deprecated) and never
+    // decremented - `--b` was accepted (1.28, 2026-10-22, review of 1.25, neg75).
+    if (!increment && target->type() != nullptr && target->type()->unqualified()->isBool())
+        src_.fail(pos, std::string("'") + (prefix ? "--b" : "b--") + "' on a bool is ill-formed - "
+                       "[expr.pre.incr]/2: a bool has no value below false to step to; assign "
+                       "'false' instead");
+
     if (prefix) {
         ExprPtr one(new Num(1LL));
         one->setType(types_.intType());
@@ -805,15 +846,70 @@ ExprPtr Parser::conditional() {
     // **What each arm builds, only that arm may destroy.** The entries each
     // one adds are noted so the class path below can guard them.
     const std::size_t tempsBeforeA = pendingTemps_.size();
+    const int throwsBeforeA = throwsSeen_;
     ExprPtr a = decay(expr());
     const std::size_t tempsAfterA = pendingTemps_.size();
+    const int throwsAfterA = throwsSeen_;
     expect(":");
-    ExprPtr b = decay(conditional());
+    // [expr.cond]/1: the third operand is an assignment-expression - `c ? x : y = 1` assigns to y, and
+    // `c ? x : throw e` throws (1.27; it was read one level down, as C reads it).
+    ExprPtr b = decay(assign());
     const std::size_t tempsAfterB = pendingTemps_.size();
 
     const Type *ta = a->type();
     const Type *tb = b->type();
     const Type *result = nullptr;
+
+    // **[expr.cond]/2: a throw-expression arm takes the other arm's type** - `b ? 7 : throw 1` is an int (1.27,
+    // 2026-10-21, review of 1.25, item 3: "expected an expression"). A class-typed other arm would need its
+    // temporary built by the arm, which this does not do yet.
+    {
+        const bool aThrows = ta->isVoid() && throwsAfterA > throwsBeforeA;
+        const bool bThrows = tb->isVoid() && throwsSeen_ > throwsAfterA;
+        if (aThrows != bThrows) {
+            const Type *other = (aThrows ? tb : ta)->unqualified();
+            if (!other->isVoid()) {
+                if (other->isStructOrUnion())
+                    src_.fail(pos, "'?:' with a 'throw' arm and an arm of class type '" + other->describe() +
+                                   "' is not supported yet - throw in a statement of its own, or give the "
+                                   "class arm to a variable first");
+                ExprPtr zero(new Num(0LL));
+                zero->setType(other->isFloating() ? types_.doubleType() : types_.intType());
+                if (other->isFloating()) zero.reset(new Num(0.0L)), zero->setType(types_.doubleType());
+                zero = convert(std::move(zero), other);
+                ExprPtr &thrower = aThrows ? a : b;
+                ExprPtr never(new Comma(std::move(thrower), std::move(zero)));
+                never->setType(other);
+                thrower = std::move(never);
+                ta = a->type();
+                tb = b->type();
+            }
+        }
+    }
+
+    // **[expr.cond]/3 with one class arm and one that is not**: the class converts through its conversion function
+    // to the other arm's type, which is the answer - `t ? f : 1.0` for an F with `operator double()` (1.27,
+    // 2026-10-21, review of 1.25, item 3: only the class-to-class question had been asked).
+    if (ta->unqualified()->isStructOrUnion() != tb->unqualified()->isStructOrUnion()) {
+        const bool classIsA = ta->unqualified()->isStructOrUnion();
+        const Type *cls = classIsA ? ta : tb;
+        const Type *other = (classIsA ? tb : ta)->unqualified();
+        if (!other->isVoid() && conversionFunction(cls, other) != nullptr) {
+            if (classIsA) a = convert(std::move(a), other); else b = convert(std::move(b), other);
+            ta = a->type();
+            tb = b->type();
+        }
+    }
+
+    // **[expr.cond]/3: two lvalues differing only in const** - `c ? x : cx` - the plain one converts to a
+    // reference to the const one, so the `?:` is an lvalue of the const type and `decltype` of it `const int &`
+    // (1.27, 2026-10-21, review of 1.25, item 3: it was read as an `int` prvalue).
+    if (ta != tb && ta->unqualified() == tb->unqualified() && !ta->isStructOrUnion() &&
+        ta->isConst() != tb->isConst() && isLvalue(*a) && isLvalue(*b)) {
+        const Type *constOne = ta->isConst() ? ta : tb;
+        if (ta->isConst()) b->setType(constOne); else a->setType(constOne);
+        ta = tb = constOne;
+    }
 
     // **[expr.cond]/4: both arms glvalues of one type, and the `?:` is one
     // too.**
@@ -923,6 +1019,8 @@ ExprPtr Parser::conditional() {
 }
 
 ExprPtr Parser::assign() {
+    // [expr.ass]/1: a throw-expression is an assignment-expression (1.27).
+    if (peek().is("throw")) return throwExpression();
     ExprPtr n = conditional();
 
     static const struct { const char *tok; BinOp op; } kCompound[] = {

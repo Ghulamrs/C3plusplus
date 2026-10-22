@@ -31,6 +31,24 @@ Parser::Init Parser::parenthesisedInitialiser(const Declared &d) {
                               "initialiser - a list in parentheses is for a "
                               "class with a constructor that takes them");
     expect(")");
+    // [conv.bool]/1: `bool b(nullptr)` is false, a conversion direct-initialisation alone allows
+    // (1.27, 2026-10-21, review of 1.25, item 3); `= nullptr` stays refused, as [dcl.init] has it.
+    if (d.type->unqualified()->isBool() && in.value != nullptr && in.value->type() != nullptr &&
+        in.value->type()->isNullPtr()) {
+        in.value.reset(new Num(0LL));
+        in.value->setType(types_.get(Kind::Bool));
+    }
+    // [over.match.conv]: direct-initialising a scalar from a class considers its `explicit` conversion functions
+    // too - `bool c(f)` with `explicit operator bool`, unlike `bool b = f` - so the call is made here, before
+    // the copy's rules see the value (1.28, 2026-10-22, review of 1.25, neg07: both forms passed).
+    if (!d.type->isReference() && !d.type->unqualified()->isStructOrUnion() && in.value != nullptr &&
+        in.value->type() != nullptr && in.value->type()->unqualified()->isStructOrUnion()) {
+        if (const Signature *how = conversionFunction(in.value->type(), d.type->unqualified(), true)) {
+            const Type *object = in.value->type();
+            std::vector<ExprPtr> none;
+            in.value = memberCallWith(std::move(in.value), object, how->name, in.pos, std::move(none));
+        }
+    }
     return in;
 }
 
@@ -382,7 +400,7 @@ StmtPtr Parser::declarationBody() {
                     inits.push_back(guardOnce(symbol, std::move(body)));
                 continue;
             }
-            if (!peek().is("="))
+            if (!peek().is("=") && !peek().is("{"))
                 src_.fail(d.pos, "'" + d.name + "' is a reference and has to be "
                                  "initialised here - there is no later "
                                  "assignment that would bind it, only one that "
@@ -390,9 +408,22 @@ StmtPtr Parser::declarationBody() {
             const bool early = initialiserNames(d.name);
             int off = early ? declare(d.name, d.type, d.pos, quals.alignAs) : 0;
             const std::size_t mine = locals_.size() - 1;
-            at_++;
             ExprPtr init;
-            { OverloadTarget hold(*this, d.type); init = assign(); }
+            if (peek().is("{")) {
+                // [dcl.init.list]/3: `const int &r{9};` binds the reference to the list's one element
+                // (1.27, 2026-10-21, review of 1.25, item 3: only `=` was read here).
+                const std::size_t bpos = peek().pos;
+                OverloadTarget hold(*this, d.type);
+                Init in = parseInitialiser();
+                if (in.items.size() != 1 || in.items[0].isList)
+                    src_.fail(bpos, "'" + d.name + "' is a reference, and a braced initialiser binds it "
+                                    "to one value - this list has " + std::to_string(in.items.size()));
+                init = std::move(in.items[0].value);
+            } else {
+                at_++;
+                OverloadTarget hold(*this, d.type);
+                init = assign();
+            }
             if (!early) off = declare(d.name, d.type, d.pos, quals.alignAs);
             locals_[early ? mine : locals_.size() - 1].guardsJump = true;
             const Type *slot = types_.pointerTo(d.type->referent());
@@ -403,25 +434,27 @@ StmtPtr Parser::declarationBody() {
             // **The temporary this reference binds to, if it made one**, is
             // extended to the scope rather than destroyed at the semicolon -
             // [class.temporary]/5.
-            const bool extended = extendTemporary(*addr, d.name + "$held");
+            extendTemporary(*addr, d.name + "$held");
             ExprPtr bind(new Assign(std::move(target), std::move(addr)));
             bind->setType(slot);
             inits.push_back(StmtPtr(new ExprStmt(std::move(bind))));
-            // And anything else the initialiser built - `const T &r =
-            // f(T(1));` makes T(1) as well, and that one does die here. **Only
-            // once something was extended.**
-            if (extended) flushTemporaries(inits);
+            // And anything else the initialiser built - `const T &r = f(T(1));` makes T(1) too, and it dies here,
+            // as does `pass(make())`'s by-reference argument ([class.temporary]/5). Flushed even when nothing was
+            // extended (review of 1.25, fixes 1 and 2): before, such a declaration ended no full-expression.
+            flushTemporaries(inits);
             continue;
         }
 
+        // `int arr[] = {1, 2, 3}` and, [dcl.init.list], `int arr[]{1, 2, 3}` (1.27, 2026-10-21, review of
+        // 1.25, item 3: the braces without the '=' left the array "incomplete").
         bool sizedByInitialiser = d.type->isArray() && d.type->length() < 0 &&
-                                  peek().is("=");
+                                  (peek().is("=") || atBracedInitialiser(d.name));
         if (!d.type->isComplete() && !sizedByInitialiser)
             src_.fail(d.pos, "'" + d.name + "' has an incomplete type");
         checkNotAbstract(d.type, d.pos, "'" + d.name + "'");
 
         if (sc == StorageStatic) {
-            const std::string symbol = uniqueStaticSymbol(d.name);
+            const std::string symbol = uniqueStaticSymbol(d.name, quals.isThreadLocal ? nullptr : d.type);
             std::vector<GlobalPiece> pieces;
             bool hasInit = false;
             // In scope in its own initialiser, as an automatic one is.
@@ -454,10 +487,14 @@ StmtPtr Parser::declarationBody() {
             locals_[at].isConst = d.type->isConst();
             markThreadLocal(at, quals.isThreadLocal);
             // Not `isConst` where the guarded store writes it: it cannot live in .rodata.
+            // An inline function's static local is one object for the program: external, in a
+            // COMDAT, under the ABI's name (1.28, 2026-10-22, review of 1.25, item 14).
             current_->globals.push_back(Global{ symbol, symbol, d.type,
-                                                std::move(pieces), hasInit, true,
+                                                std::move(pieces), hasInit,
+                                                !sharedStaticLocal(symbol),
                                                 locals_[at].isConst &&
                                                     dynamic.value == nullptr });
+            current_->globals.back().isInline = sharedStaticLocal(symbol);
             current_->globals.back().align = quals.alignAs;
             current_->globals.back().isThreadLocal = quals.isThreadLocal;
             if (dynamic.value != nullptr) {
@@ -1291,6 +1328,7 @@ void Parser::resolveGotos() {
 
 StmtPtr Parser::block(bool functionTry) {
     std::size_t pos = peek().pos;
+    const Nesting deep(this, pos, "block");
     if (!functionTry) expect("{");
     enterScope();
     // A `using namespace` written inside this block reaches the '}' and no
@@ -1372,6 +1410,8 @@ StmtPtr Parser::block(bool functionTry) {
 
 StmtPtr Parser::statement() {
     std::size_t pos = peek().pos;
+    // An `else if` chain is one statement under another, each arm a level.
+    const Nesting deep(this, pos, "statement");
     StmtPtr s = statementBody();
     if (s) s->setPos(pos);
     return s;
@@ -2063,7 +2103,16 @@ StmtPtr Parser::statementBody() {
             return StmtPtr(new Return(nullptr));
         }
         ExprPtr returned;
-        { OverloadTarget hold(*this, returnType_); returned = returnType_->isReference() ? expr() : decay(expr()); }
+        {
+            OverloadTarget hold(*this, returnType_);
+            // [stmt.return]/2: `return {4, 5};` copy-list-initialises the returned object from the
+            // braces, [dcl.init.list] (1.27, 2026-10-21, review of 1.25, item 3 - "expected an
+            // expression").
+            if (peek().is("{") && !returnType_->isReference() && !returnType_->isVoid())
+                returned = listTemporary(returnType_, pos);
+            else
+                returned = returnType_->isReference() ? expr() : decay(expr());
+        }
         // **The temporary that *is* the returned value must not be destroyed
         // here.**
         if (!returnType_->isReference())

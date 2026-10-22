@@ -342,10 +342,12 @@ const Type *TypeTable::arrayOf(const Type *t, long long length) {
 }
 
 const Member *Type::findMember(const std::string &name) const {
-    // **members(), not members_**: the qualified copy has none of its own, so a
-    // `const X` interned before X closed would forever see an empty list.
-    // **Backwards**: the list is base-first, and a derived member hides a base's.
+    // **members(), not members_**: the qualified copy has none, so a `const X` interned before X closed saw none.
+    // **Backwards, the class's own first of all**: the list is base-first, a derived member hides a base's, and a
+    // virtual base follows them (1.27, 2026-10-21, review of 1.25, item 3: `B1() : t("b1")` was refused).
     const std::vector<Member> &all = members();
+    for (std::size_t i = all.size(); i > 0; i--)
+        if (all[i - 1].name == name && all[i - 1].declaredIn == nullptr) return &all[i - 1];
     for (std::size_t i = all.size(); i > 0; i--)
         if (all[i - 1].name == name) return &all[i - 1];
     return nullptr;

@@ -5,16 +5,20 @@ code in this repository.
 
 ## Two languages, and they are not the same one
 
-**`src/` is ISO C++14. The language `cxx1` compiles is C++03 with C++11
-extensions — the list of what it does not take is `docs/EXCLUSIONS.md`, and
-the library is the subset in `include/`.** Keep the two languages apart in
-every sentence you write about this project, because almost every confusing
-question here comes from conflating them.
+**`src/` is ISO C++11 (since 2026-10-22; it was C++14). The language `cxx1`
+compiles is C++03 with C++11 extensions — the list of what it does not take is
+`docs/EXCLUSIONS.md`, and the library is the subset in `include/`.** Keep the two
+languages apart in every sentence you write about this project, because almost
+every confusing question here comes from conflating them.
 
-The consequence worth stating up front: **this compiler can never compile
-itself**, and that is deliberate rather than a gap. A compiler of this language
-cannot read C++14 source. Self-hosting is not a milestone here and offering it
-as one is a mistake — see "How correctness is established" for what replaces it.
+**Self-hosting is now the goal, and this reverses what this file used to say.**
+The design for cpp11 2 (`Compiler_Design_Final.md`, milestones M0-M8) makes "the
+compiler compiles itself" the first gate (R5, R9.1). M0 made the source C++11 -
+the C++14 aggregate-with-member-initialiser rule was the only C++14 in it, 30
+structs given constructors, every golden byte-identical before and after - so
+`clang++ -std=c++11` now builds it. M1 is the gap list between what `src/` uses and
+what cxx1 accepts. Until that list is empty cxx1 still cannot compile itself;
+"How correctness is established" below remains how a change is judged meanwhile.
 
 **The headline said "C++11 minus the list" until 2026-10-08, and that was a
 claim the compiler could not support.** The critical review of that day
@@ -51,9 +55,9 @@ constructors, which are refused by name, and because 19 C++11 language rows of
 the grid and most of the library still are. "The headline, re-measured" near
 the end of this file has the evidence, row by row.
 
-`-std=c++14 -Wall -Wextra -Werror -pedantic` in the `Makefile`. A Mac cannot
-enforce C++14: Apple's libc++ hands you `std::string_view` in C++14 mode, so a
-C++17-ism compiles clean here and is refused only when it reaches real g++.
+`-std=c++11 -Wall -Wextra -Werror -pedantic` in the `Makefile`. A Mac cannot
+enforce C++11: Apple's libc++ hands you library names past it in C++11 mode, so a
+C++14-ism compiles clean here and is refused only when it reaches real g++.
 Build on the Linux box before believing a clean Mac build. Same trap, same
 answer as Compiler-C.
 
@@ -10059,6 +10063,23 @@ code below that comment is the declaration and stays the authority on order:
 The two loops rebuild the flow without dropping labels, where rounds does
 both: that is how the driver did it before the manager, and a label dropped
 there could change what is emitted - kept, and noted.
+
+### The third sweep, 2026-10-22: 58 groups from 1.24-1.28
+
+**Releases 1.24 to 1.28 were written in GRIDE's copy of this tree, where no
+`make comments` ran**, and came back with 58 breaches when M0 brought them here.
+Fixed comment text only - a diff of every changed line against the tree before
+shows no code line touched - and the emit golden 0 of 2251 changed. Three
+groups lost detail the cap would not hold, and it is here:
+
+- `uniqueStaticSymbol` (ParserInit.cpp) spelled out cl's grammar for a static
+  local's name; it keeps one example of each ABI, `?a@?1??f@@YAHXZ@4HA` and
+  `_ZZ1fvE1a`, and the grammar is "A static local keeps its own name" above.
+- `declareImplicitMoveAssign` (ParserClass.cpp) noted that a trivial move
+  assignment sits on the copy assignment's measured line.
+- `kMaxNesting` (Parser.h) gave the measured overflows - 80 parentheses, 300
+  blocks, 25-50 KB of stack per level - which the 1.25 review's section 7 and
+  "Version 1.26" in README.md carry.
 
 ## Version 1.5, 2026-10-03: the optimizer rounds and the constructor template
 

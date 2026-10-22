@@ -592,8 +592,12 @@ private:
     // Holder<double>)` is _Z3two6HolderIiES_IdE, where the S_ is the word "Holder"
     // and not any type. So the table holds one or the other and never both.
     struct Sub {
-        const Type *type = nullptr;
+        const Type *type;
         std::string name;
+
+        // C++11 has no aggregate with a member initialiser, so the braces call this.
+        Sub(const Type *type = nullptr, std::string name = std::string())
+            : type(type), name(std::move(name)) {}
     };
     std::vector<Sub> subs_;
 
@@ -1227,7 +1231,9 @@ public:
     void dataType(const Type *t) {
         const Type *u = t->unqualified();
         if (u->isArray()) {
-            out += "PA";
+            // An array of const is `QB`, measured: cl's `?cs@@3QBDB` for `const char cs[]`, and
+            // `?cs@?1??f@@YAHXZ@4QBDB` for the same as a static local (1.28, 2026-10-22).
+            out += t->isConst() ? "QB" : "PA";
             type(u->pointee());
             out += t->isConst() ? "B" : "A";
             return;

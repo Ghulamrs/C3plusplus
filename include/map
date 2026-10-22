@@ -22,15 +22,21 @@ namespace std {
 template <class K, class V>
 struct __map_key {
     typedef K key_type;
-    static const K &get(const std::pair<K, V> &v) { return v.first; }
+    static const K &get(const std::pair<const K, V> &v) { return v.first; }
 };
 
+// **An element is `pair<const K, V>`**, [map.overview], since 1.27 (2026-10-21, review of 1.25, item
+// 4): it was `pair<K, V>`, so `for (const std::pair<const std::string, int> &p : m)` - the pair
+// the standard names - was refused. The tree relinks nodes and never assigns one element to another,
+// so the const key costs nothing there; a `pair<K, V>` given to insert - `make_pair(k, v)` - goes to
+// an overload that builds the element from its two halves (pair's converting constructor deduces its
+// first member's type only, see <utility>).
 template <class K, class V>
 class map {
 public:
     typedef K key_type;
     typedef V mapped_type;
-    typedef std::pair<K, V> value_type;
+    typedef std::pair<const K, V> value_type;
     typedef std::size_t size_type;
     typedef __tree_iterator<value_type> iterator;
     typedef __tree_const_iterator<value_type> const_iterator;
@@ -70,8 +76,11 @@ public:
         __tree_link *n = tree_.insertUnique(v, &made);
         return std::pair<iterator, bool>(iterator(n, tree_.end().link()), made);
     }
+    // `insert(std::make_pair(k, v))`: a `pair<K, V>`, which is not the element's `pair<const K, V>` (1.27).
+    std::pair<iterator, bool> insert(const std::pair<K, V> &v) { return insert(value_type(v.first, v.second)); }
     // A hint is where to start looking; the answer is where the element is.
     iterator insert(iterator, const value_type &v) { return insert(v).first; }
+    iterator insert(iterator, const std::pair<K, V> &v) { return insert(v).first; }
     template <class It>
     void insert(It first, It last) { for (; first != last; ++first) insert(*first); }
 

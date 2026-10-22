@@ -677,7 +677,9 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             continue;
         }
 
-        // **`explicit` on a conversion function is C++11 and is not built.**
+        // **`explicit` on a conversion function is C++11**: carried to the member's Signature,
+        // where conversionFunction leaves it out of a copy-initialisation (1.28; until then it was
+        // read and recorded nowhere, so `bool b = f` took it).
         if (isExplicit && peek().is("operator") &&
             peekAt(1).kind != TokenKind::Punct) {
             pendingExplicitConversion_ = true;
@@ -1463,11 +1465,16 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     if (noData) empties.push_back(Type::EmptyAt{ type, 0 });
     type->setEmptySubobjects(empties);
     type->complete(members, size, align);
-    // Held bodies are read now, with the class complete, so a body may name a member declared below
-    // it; taken out of the vector first, since a body may define a class with held bodies of its own.
-    // A specialization also takes its nested classes' bodies, which waited for it, [temp.inst]/2.
-    const bool takesNested = !specializationOf.empty() && deferSpecializationBodies_;
+    // Held bodies are read now, class complete, so a body may name a later member; taken out of the vector first,
+    // since a body may define a class with held bodies. A specialization also takes its nested classes' bodies,
+    // [temp.inst]/2; **so does any class** (1.27, item 3): a nested one waits for the outermost, [class.mem]/2.
+    bool nestedInOpen = false;
+    for (std::size_t i = 0; i < classStack_.size() && !nestedInOpen; i++)
+        for (const Type *e = type->enclosing(); e != nullptr; e = e->enclosing())
+            if (e->unqualified() == classStack_[i]->unqualified() && classStack_[i] != type) nestedInOpen = true;
+    const bool takesNested = !nestedInOpen;
     auto ownBody = [&](const PendingBody &b) {
+        if (nestedInOpen) return false;
         return b.tag == tag || (takesNested && b.tag.compare(0, tag.size() + 2, tag + "::") == 0);
     };
     std::vector<PendingBody> mine;
@@ -1795,9 +1802,13 @@ const Type *Parser::specifiers(StorageClass *storage, Qualifiers *quals) {
     return quals->isConst ? types_.withConst(t) : t;
 }
 
-// Marks the file as one the optimizer must leave alone; always true.
+// Marks the file as one the optimizer must leave alone, and keeps where the first `volatile` was (the
+// token just consumed); always true.
 bool Parser::sawVolatile() {
-    if (current_ != nullptr) current_->usesVolatile = true;
+    if (current_ != nullptr) {
+        if (!current_->usesVolatile && at_ > 0) current_->volatileAt = src_.where(tokens_[at_ - 1].pos);
+        current_->usesVolatile = true;
+    }
     return true;
 }
 
@@ -2659,6 +2670,7 @@ Parser::Declared Parser::declarator(const Type *base, bool nameOptional,
 
     if (peek().is("(")) {
         std::size_t open = at_;
+        const Nesting deep(this, peek().pos, "parenthesised declarator");
         at_++;
         // `int (*p)()` and `int (S::*p)()` are the same shape to this branch: what is
         // inside the parentheses points at something, so what follows them is a parameter
@@ -2670,7 +2682,18 @@ Parser::Declared Parser::declarator(const Type *base, bool nameOptional,
         bool wrapsAPointer = peek().is("*") || peek().is("&") || peek().is("&&") ||
                              wrapsMemberPointer;
 
-        declarator(types_.intType(), true, true);
+        // **To the matching ')' by counting brackets**: the declarator inside was read once here and again below,
+        // so `int (((x)))` cost 2^N for N parentheses (review of 1.25, fix 5). Balanced in any well-formed
+        // declarator; one that never closes is read the old way, so it is refused where and as it was.
+        std::size_t close = open;
+        int depth = 0;
+        for (; close < tokens_.size() && tokens_[close].kind != TokenKind::End; close++) {
+            const Token &t = tokens_[close];
+            if (t.is("(") || t.is("[") || t.is("{")) depth++;
+            else if (t.is(")") || t.is("]") || t.is("}")) { if (--depth == 0) break; }
+        }
+        if (depth == 0 && close < tokens_.size() && tokens_[close].is(")")) at_ = close;
+        else declarator(types_.intType(), true, true);
         expect(")");
 
         std::size_t posOuter = peek().pos;

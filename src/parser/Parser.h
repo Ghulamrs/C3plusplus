@@ -33,7 +33,7 @@ private:
         std::string name;
         int offset;
         const Type *type;
-        bool isConst = false;
+        bool isConst;
         std::string staticName;
         bool isRegister = false;
         // [expr.const]: a const object of integral type initialised with a constant
@@ -44,6 +44,8 @@ private:
         // **And the same for a floating one.**
         bool isConstantDouble = false;
         long double constantDouble = 0;
+        // A const local read in a lambda for its value only: no odr-use, no capture ([expr.prim.lambda]/12, 1.27).
+        bool constantOnly = false;
         // **[class.copy]/31 elides a `return` copy, and excludes a parameter.**
         bool isParameter = false;
         // A by-value class parameter that arrived by address is lowered to a reference, so by its slot alone it looks like `T &t`.
@@ -59,6 +61,12 @@ private:
         // A static or extern thread_local in a block, and whether a use goes through its wrapper.
         bool isThreadLocal = false;
         bool tlsViaWrapper = false;
+
+        // C++11 has no aggregate with a member initialiser, so the braces call this.
+        Local(std::string name = std::string(), int offset = 0, const Type *type = nullptr,
+              bool isConst = false, std::string staticName = std::string())
+            : name(std::move(name)), offset(offset), type(type), isConst(isConst),
+              staticName(std::move(staticName)) {}
     };
 
     // A frame slot a closed scope gave back, for a later local of exactly that stored type: `FreeSlot`, in `freeSlots_`.
@@ -68,11 +76,11 @@ private:
         std::string name;
         std::string symbol;
         const Type *type;
-        bool isConst = false;
-        bool emitted = false;
-        bool hasInit = false;
-        bool isConstantValue = false;   // as for Local, above
-        long long constantValue = 0;
+        bool isConst;
+        bool emitted;
+        bool hasInit;
+        bool isConstantValue;   // as for Local, above
+        long long constantValue;
         bool isConstantDouble = false;  // and the floating one, as for Local
         long double constantDouble = 0;
         // **thread_local** - [basic.stc.thread]: whether a use reaches it through the ABI's wrapper
@@ -80,6 +88,14 @@ private:
         bool isThreadLocal = false;
         bool tlsViaWrapper = false;
         bool tlsExternal = false;
+
+        // C++11 has no aggregate with a member initialiser, so the braces call this.
+        GlobalSym(std::string name = std::string(), std::string symbol = std::string(),
+                  const Type *type = nullptr, bool isConst = false, bool emitted = false,
+                  bool hasInit = false, bool isConstantValue = false, long long constantValue = 0)
+            : name(std::move(name)), symbol(std::move(symbol)), type(type), isConst(isConst),
+              emitted(emitted), hasInit(hasInit), isConstantValue(isConstantValue),
+              constantValue(constantValue) {}
     };
 
     // **`throw(T...)` as written**, adjusted by [except.spec]/2; `throw()` is noexcept and not one of these.
@@ -104,9 +120,9 @@ private:
         // keyed in the table as "Point::get", so overload resolution works on
         // members with no second implementation of it.
         std::string owner;
-        bool constThis = false;
-        Access access = Access::Public;
-        bool isVirtual = false;
+        bool constThis;
+        Access access;
+        bool isVirtual;
         // **`explicit` on a constructor**, which changes nothing about the function and only about who may pick it.
         bool isExplicit = false;
         // **A static member function is a member in every way but the one that matters at a call**.
@@ -130,6 +146,18 @@ private:
         bool deleted = false;
         // **The ref-qualifier, half of a member's identity beside its const** - [over.load]/2.
         RefQual refThis = RefQual::None;
+
+        // C++11 has no aggregate with a member initialiser, so the braces call this.
+        Signature(std::string name = std::string(), std::string symbol = std::string(),
+                  const Type *returns = nullptr,
+                  std::vector<const Type *> params = std::vector<const Type *>(),
+                  bool variadic = false, bool defined = false, std::size_t pos = 0,
+                  bool cLinkage = false, std::string owner = std::string(),
+                  bool constThis = false, Access access = Access::Public, bool isVirtual = false)
+            : name(std::move(name)), symbol(std::move(symbol)), returns(returns),
+              params(std::move(params)), variadic(variadic), defined(defined), pos(pos),
+              cLinkage(cLinkage), owner(std::move(owner)), constThis(constThis), access(access),
+              isVirtual(isVirtual) {}
     };
 
     // One vtable slot: the function it currently points at, and enough of the
@@ -143,10 +171,19 @@ private:
         // **A pure virtual holds a slot it has no function for.** The entry is
         // the runtime's own trap, and a class with one of these still in its
         // table is abstract.
-        bool pure = false;
-        const Type *returns = nullptr;     // checked when an override takes the slot
-        bool isFinal = false;              // [class.virtual]/4: no later override may take it
-        RefQual refThis = RefQual::None;   // `f() &` and `f() &&` take two slots
+        bool pure;
+        const Type *returns;     // checked when an override takes the slot
+        bool isFinal;            // [class.virtual]/4: no later override may take it
+        RefQual refThis;         // `f() &` and `f() &&` take two slots
+
+        // C++11 has no aggregate with a member initialiser, so the braces call this.
+        VSlot(std::string name = std::string(), std::string symbol = std::string(),
+              std::vector<const Type *> params = std::vector<const Type *>(),
+              bool constThis = false, bool pure = false, const Type *returns = nullptr,
+              bool isFinal = false, RefQual refThis = RefQual::None)
+            : name(std::move(name)), symbol(std::move(symbol)), params(std::move(params)),
+              constThis(constThis), pure(pure), returns(returns), isFinal(isFinal),
+              refThis(refThis) {}
     };
     // `override` and `final` as written on one declaration, each with where it was written.
     // A constructor rather than member initialisers: g++ refuses those in a default argument of the enclosing class.
@@ -319,6 +356,13 @@ private:
         // **A friend defined inside the class is not a member of it.**
         bool freeFunction = false;
         static std::size_t npos() { return (std::size_t)-1; }
+
+        // C++11 has no aggregate with a member initialiser, so the braces call this.
+        PendingBody(std::string tag = std::string(), std::size_t start = 0,
+                    std::string local = std::string(), std::string key = std::string(),
+                    std::size_t which = 0)
+            : tag(std::move(tag)), start(start), local(std::move(local)), key(std::move(key)),
+              which(which) {}
     };
     std::vector<PendingBody> pendingBodies_;
     // **Where a declaration actually put its signature.**
@@ -556,6 +600,9 @@ private:
         Packs packs;   // same index again
         std::size_t start = 0;              // the template's own tokens
         std::size_t pos = 0;                // where it was first asked for
+        // How many replayed bodies deep the request came from: one more than the specialization whose
+        // body asked for this one, 1 from the program itself - bounded by kMaxNesting (2026-10-21, fix 5).
+        int depth = 1;
         bool emitted = false;
         // A class specialization instead of a function one.
         bool isClass = false;
@@ -586,6 +633,8 @@ private:
     // by the declarator that names the function.
     std::string instantiationKey_;
     std::string instantiationOf_;
+    // Depth of the specialization being replayed (0 outside); its requests are one deeper (Specialization::depth).
+    int instantiationDepth_ = 0;
     // A `>` inside a template argument list closes it and is not an operator
     // - [temp.names], and the reason a comparison there must be parenthesised.
     // Cleared inside parentheses, where a `>` is an operator again.
@@ -644,6 +693,8 @@ private:
                                  const Packs &packs =
                                      Packs());
     void instantiatePending();
+    // Past kMaxNesting bodies deep, a specialization asked for from inside another's body is refused.
+    void refuseInstantiationDepth(const std::string &name, int depth, std::size_t pos) const;
     bool memberIsUsed(const std::string &key) const;
     // "twice<int>" - the table key and what the diagnostics call it.
     std::string specializationKey(const std::string &name,
@@ -740,12 +791,13 @@ private:
                                  std::vector<long long> *values,
                                  Packs *packs,
                                  std::string *why);
-    // `values` receives a deduced non-type argument (the 3 in V<3>); it may be
-    // null where only type parameters can occur (the `auto` path).
+    // `values` receives a deduced non-type argument (the 3 in V<3>); null where only type parameters occur.
+    // `nested`: inside a template-id an argument is matched as it is - no decay, and a cv-qualifier the pattern
+    // does not write is deduced ([temp.deduct.type]/8: `It<C, V>` against `It<S, const int>` is V = const int).
     bool deduceOne(const Type *pattern, const Type *arg,
                    std::vector<const Type *> *binding,
                    std::vector<long long> *values, std::string *why,
-                   Packs *packs = nullptr) const;
+                   Packs *packs = nullptr, bool nested = false) const;
     // An argument's type as a parameter sees it.
     const Type *decayedType(const Type *a) const;
     // ---- WS-E1 (review 2026-10-08): forwarding references, F30, F31, F34, alias templates ----
@@ -915,6 +967,9 @@ private:
 
     // `(*this).m`, typed as the member is declared.
     ExprPtr thisMember(int thisSlot, const Type *cls, const Member &m);
+    // `PB::v` inside a member function: `(*this).PB::v`, or null where there is no such `this` (1.27).
+    ExprPtr qualifiedMemberThroughThis(const Type *cls, const Member &m,
+                                       const std::string &member, std::size_t pos);
     // Reaching a member that lives in a virtual base.
     void refuseVirtualBaseMember(const Type *staticType, const Member &m,
                                  const std::string &name, std::size_t pos);
@@ -969,10 +1024,16 @@ private:
     std::string synthesizeVcallThunk(const Type *cls, const Signature &f,
                                      int index, std::size_t pos);
 
-    // How well one argument matches one parameter, in the order [over.ics.scs]
-    // ranks them - the values are compared, so do not reorder this enum.
+    // How well one argument matches one parameter, in [over.ics.scs]'s order - the values are compared, so do
+    // not reorder this enum. The three UserDefined values are one rank with its second standard conversion behind
+    // it, [over.ics.rank]/3.3, told apart only through the same conversion function (1.27).
     enum class Rank { Identity, Qualification, Promotion, Conversion,
-                      UserDefined, Ellipsis, None };
+                      UserDefined, UserDefinedPromotion, UserDefinedConversion,
+                      Ellipsis, None };
+    // UserDefined rank for class `from` to scalar `to` through its one conversion function; plain for a class.
+    Rank userDefinedRank(const Type *from, const Type *to);
+    // For `given` at one rank, [over.ics.rank]/3.2 and /4: +1 if pa's target is nearer, -1 if pb's, 0 if neither.
+    int closerTarget(const Type *pa, const Type *pb, const Type *given) const;
     // `ranksObjectA`/`B` say whether that candidate's rank vector opens with an implicit object
     // parameter, which is how a rank position is mapped back to the parameter it came from - a
     // member and a non-member operator are ranked side by side and do not open the same way.
@@ -995,11 +1056,16 @@ private:
         const Type *type;
         std::size_t pos;
 
-        std::size_t paramsAt = 0;
+        std::size_t paramsAt;
         // The class named before a `::` in a definition's declarator -
         // `int Point::get()` declares nothing called "Point::get", it defines
         // the `get` that Point already declared.
         std::string qualifier;
+        Declared(std::string name = std::string(), const Type *type = nullptr,
+                 std::size_t pos = 0, std::size_t paramsAt = 0,
+                 std::string qualifier = std::string())
+            : name(std::move(name)), type(type), pos(pos), paramsAt(paramsAt),
+              qualifier(std::move(qualifier)) {}
     };
 
     enum StorageClass { StorageNone, StorageStatic, StorageExtern, StorageTypedef,
@@ -1027,9 +1093,14 @@ private:
         std::string name;
         long long value;
         // The enumeration's type when an enum-base chose one, else null: int.
-        const Type *type = nullptr;
+        const Type *type;
         // A bound non-type template parameter's declared type, which only a signature's expression spells.
         const Type *paramType = nullptr;
+
+        // C++11 has no aggregate with a member initialiser, so the braces call this.
+        EnumConst(std::string name = std::string(), long long value = 0,
+                  const Type *type = nullptr)
+            : name(std::move(name)), value(value), type(type) {}
     };
 
     const Source &src_;
@@ -1120,7 +1191,7 @@ private:
         // Set for a by-value class parameter that arrived by address: its slot
         // holds the caller's pointer, so the object's address is what the slot
         // *contains* rather than where the slot sits.
-        bool byAddress = false;
+        bool byAddress;
         long long count = 0;   // an array of this many `cls`, destroyed last first; 0 for one object
         // A subobject a constructor has built, [except.ctor]/3: `offset` is then the slot of `this`,
         // and the object `owner`'s member `member` or its base `base` - both -1 for the whole object.
@@ -1129,6 +1200,11 @@ private:
         int builtSlot = -1;   // an array being built: the slot counting its `cls` elements built so far
         // Destroyed only where the slot holds more than `whenAbove`: cl's virtual bases, built under a flag.
         int whenSlot = -1, whenAbove = 0;
+
+        // C++11 has no aggregate with a member initialiser, so the braces call this.
+        Alive(std::string name = std::string(), int offset = 0, const Type *cls = nullptr,
+              bool byAddress = false)
+            : name(std::move(name)), offset(offset), cls(cls), byAddress(byAddress) {}
     };
     // **A function written on its own, between the statements of another**: its pads are its own,
     // so the enclosing `try`'s chain and pad flag are set aside while it is built.
@@ -1152,7 +1228,12 @@ private:
     // One automatic object a jump may not land past - see Local::guardsJump - or with `region`
     // a `try` block (1) or a handler (2), which [except.handle]/2 lets a jump leave and never enter.
     // Its serial is the identity: a slot may be shared, a name declared again in an inner block.
-    struct JumpGuard { std::string name; int serial; int region = 0; };
+    struct JumpGuard {
+        std::string name; int serial; int region;
+        // C++11 has no aggregate with a member initialiser, so the braces call this.
+        JumpGuard(std::string name = std::string(), int serial = 0, int region = 0)
+            : name(std::move(name)), serial(serial), region(region) {}
+    };
     std::vector<JumpGuard> jumpGuards() const;
     void checkJump(const std::vector<JumpGuard> &from,
                    const std::vector<JumpGuard> &to, std::size_t pos,
@@ -1180,8 +1261,16 @@ private:
         Block *cleanups;
         // A goto's own: whether it destroys what it leaves (a parent's half of a funclet's jump
         // does not), and the exit a Microsoft handler leaves its funclet by.
-        bool destroys = true;
+        bool destroys;
         std::string msExit;
+
+        // C++11 has no aggregate with a member initialiser, so the braces call this.
+        LabelDef(std::string name = std::string(), std::size_t pos = 0,
+                 std::vector<JumpGuard> guards = std::vector<JumpGuard>(),
+                 std::vector<Alive> alive = std::vector<Alive>(), Block *cleanups = nullptr,
+                 bool destroys = true, std::string msExit = std::string())
+            : name(std::move(name)), pos(pos), guards(std::move(guards)), alive(std::move(alive)),
+              cleanups(cleanups), destroys(destroys), msExit(std::move(msExit)) {}
     };
     // `goto name;` as written here - what the jump destroys, ends and leaves is decided once the label is read.
     StmtPtr gotoStatement(const std::string &name, std::size_t pos, bool destroys);
@@ -1393,6 +1482,8 @@ private:
         // temporary of the throw's own full expression and is released with
         // `__cxa_free_exception` rather than destroyed.
         bool exceptionStorage = false;
+        Temporary(int slot = 0, const Type *type = nullptr, int flag = 0)
+            : slot(slot), type(type), flag(flag) {}
     };
 
     // **The ways out of a Microsoft handler**, one record per `try`: a funclet
@@ -1436,6 +1527,8 @@ private:
         DynamicSpec pendingSpec;
         bool inNoexceptFunction = false;
         bool replayingInline = false;
+        bool currentFunctionInline = false;
+        int tssSeq = 0;
         // The six a review found still missing, each with a program that
         // reached it: `break` and `case` written in a lambda inside a loop or
         // a switch were accepted and segfaulted the compiler.
@@ -1474,6 +1567,19 @@ private:
         ~Unevaluated() { p->unevaluated_--; }
         Unevaluated(const Unevaluated &) = delete;
         Unevaluated &operator=(const Unevaluated &) = delete;
+    };
+
+    // **How deep the parser's own recursion is**, one per level of nesting (parentheses, lists, blocks, lambdas,
+    // instantiations), refused by name past kMaxNesting before the stack runs out (review of 1.25, fix 5).
+    // The 256 MB stack overflows at 5000+ instantiations: 2048 leaves room twice over, twice [implimits]' 1024.
+    static const int kMaxNesting = 2048;
+    int nesting_ = 0;
+    struct Nesting {
+        Parser *p;
+        Nesting(Parser *pp, std::size_t pos, const char *what);
+        ~Nesting() { p->nesting_--; }
+        Nesting(const Nesting &) = delete;
+        Nesting &operator=(const Nesting &) = delete;
     };
 
     FunctionState captureFunctionState() const;
@@ -1601,7 +1707,13 @@ private:
     std::size_t initGuardMark_ = 0;
     void staticLocalWithConstructor(Declared &d,
                                     std::vector<StmtPtr> &inits);
-    std::string uniqueStaticSymbol(const std::string &name);
+    // With its type, an inline function's static local takes the ABI's name (1.28).
+    std::string uniqueStaticSymbol(const std::string &name, const Type *type = nullptr);
+    // Whether that symbol is one - the per-unit `owner.name` has a dot, the ABI's names have none -
+    // so that it and its guard are external and in a COMDAT, one object for the program.
+    bool sharedStaticLocal(const std::string &symbol) const {
+        return currentFunctionInline_ && symbol.find('.') == std::string::npos;
+    }
     // A reference with static storage duration: bound statically where the
     // initialiser is the address of a global, and before main otherwise.
     void bindStaticReference(const Declared &d, const std::string &symbol,
@@ -1744,6 +1856,10 @@ private:
     // so its statics, enumerators and nested types are named bare.
     std::map<std::string, const Type *> closureScope_;
     const Type *lambdaScope() const;
+    // The const locals with known values of the function a lambda was written in, by closure tag:
+    // its body reads them without a capture, [expr.prim.lambda]/12 (1.27).
+    std::map<std::string, std::vector<Local> > closureConstants_;
+    std::vector<Local> constantLocals() const;
     // Whether class scope declares the name, so that it hides a global of that name.
     bool classScopeDeclares(const std::string &name);
     bool hasOrdinaryMember(const Type *cls, const std::string &name);
@@ -1828,6 +1944,10 @@ private:
     std::string currentFunction_;
     // The same function's *source* name, which a local class is qualified by.
     std::string currentFunctionName_;
+    // Whether that function is inline (written so, in-class, templated): its static locals are COMDATs (1.28).
+    bool currentFunctionInline_ = false;
+    // cl's `$TSS0`, `$TSS1` guards count up within one function.
+    int tssSeq_ = 0;
 
     bool isFriendOf(const Type *cls) const;
 
@@ -1976,6 +2096,8 @@ private:
     std::string unwindTarget(int *ptrSlot, int *selSlot) const;
     // One temporary of a block, released under its guard by a pad.
     void releaseGuarded(std::vector<StmtPtr> &steps, const Temporary &t);
+    // `body` under a cleanup of its own: `onUnwind` runs when an exception leaves it, and the unwinding goes on.
+    StmtPtr cleanupRegion(std::vector<StmtPtr> body, StmtPtr onUnwind);
     // Where each open handler's block begins, telling a `goto` from a jump.
     std::vector<std::size_t> handlerFrom_;
     // Where each open `try` block begins, for the jumps [except.handle]/2 forbids into one.
@@ -2026,6 +2148,8 @@ private:
     const Signature *soleNumericConversion(const Type *from);
     // **Only one user-defined conversion may appear in a sequence**.
     int rankingConversion_ = 0;
+    // The arguments being ranked, by position - the object first, then operands - for closerTarget (1.27).
+    std::vector<const Type *> rankingGiven_;
     // The conversion itself, or null when none is needed or possible.
     ExprPtr userConversion(const Type *param, ExprPtr &arg, std::size_t pos);
     // **[over.ics.user] through a conversion *function***: one argument of
@@ -2090,9 +2214,10 @@ private:
     ExprPtr endFullExpression(ExprPtr e);
     // Drop the temporary this expression yields from the pending list, because its ownership is leaving the frame.
     bool releaseTemporary(const Expr &value);
-    // [class.temporary]/5 - a temporary bound to a reference outlives its full
-    // expression and is destroyed with the reference's scope instead.
+    // [class.temporary]/5 - a temporary bound to a reference lives to the end of the reference's scope.
     bool extendTemporary(const Expr &addr, const std::string &name);
+    // The index in pendingTemps_ of the temporary a bound address names, or -1.
+    int pendingTemporaryOf(const Expr &e) const;
     void flushTemporaries(std::vector<StmtPtr> &into);
     ExprPtr completeCall(const std::string &name, const std::string &symbol,
                          ExprPtr callee, const Type *returns,
@@ -2322,8 +2447,12 @@ private:
     };
 
     struct InitStep {
-        const Member *member = nullptr;
-        long long index = 0;
+        const Member *member;
+        long long index;
+
+        // C++11 has no aggregate with a member initialiser, so the braces call this.
+        InitStep(const Member *member = nullptr, long long index = 0)
+            : member(member), index(index) {}
     };
     bool isAggregateClass(const Type *t) const;
     bool bracedInitialiserAhead() const;
@@ -2348,8 +2477,12 @@ private:
     const Type *simpleTypeKeyword() const;
 
     struct InitCursor {
-        std::vector<Init> *items = nullptr;
-        std::size_t at = 0;
+        std::vector<Init> *items;
+        std::size_t at;
+
+        // C++11 has no aggregate with a member initialiser, so the braces call this.
+        InitCursor(std::vector<Init> *items = nullptr, std::size_t at = 0)
+            : items(items), at(at) {}
         bool done() const { return items == nullptr || at >= items->size(); }
         Init &cur() const { return (*items)[at]; }
     };
@@ -2554,6 +2687,9 @@ private:
     static bool deletedSpecial(const Signature *f) { return f != nullptr && f->deleted; }
     static bool nonPublicDefault(const DefaultedMember &m) { return m.is && m.access != Access::Public; }
     void declareDefaultedMoveAssign(const std::string &tag, const Type *type, std::size_t pos);
+    // [class.copy]/20 - the implicit move assignment, through declareDefaultedMoveAssign where it has work.
+    void declareImplicitMoveAssign(const std::string &tag, const Type *type, std::size_t pos,
+                                   bool userDeclared);
     const Signature *moveAssignOf(const Type *cls) const;
     void refuseConstexprConstructorBody(std::size_t parenAt) const;
     void refuseScopedConversion(const Type *from, const Type *to, std::size_t pos) const;
@@ -2620,6 +2756,16 @@ private:
     ExprPtr boundMemberPointer(const Type *cls, const Signature &f,
                                std::size_t pos, long long vtableCode = 0,
                                const std::string &code = std::string());
+    // The null pointer to a member function, the same pair with a null code word (1.27).
+    ExprPtr nullMemberFunctionPointer(const Type *mp);
+    // `throw e` as an expression - an arm of `?:`, the operand of `noexcept` - of type void, and the
+    // statements a `throw` lowers to, which are all expressions, as one comma chain (1.27).
+    ExprPtr throwExpression();
+    ExprPtr statementsAsExpression(StmtPtr s, std::size_t pos);
+    // How many throw-expressions have been read, which tells a `?:` that an arm is one.
+    int throwsSeen_ = 0;
+    // Whether the function template signature readTemplateDeclaration last read says `noexcept` (1.27).
+    bool patternNoexcept_ = false;
     // **`o.*p` for a member *function* pointer has to carry two things to the call** -
     // the object's address and the code pointer - and no expression holds a pair. The
     // address is left here and the `(` in `postfix` picks it up. One token wide.
@@ -2733,6 +2879,10 @@ private:
     void buildBracedArguments(const std::vector<const Type *> &params,
                               std::vector<ExprPtr> &args, std::size_t pos);
     ExprPtr bracedArgumentFor(const Type *param, Init &in, std::size_t pos);
+    // Whether a braced list could initialise a parameter of this type at all ([over.ics.list]),
+    // which tells the overloads a braced argument could go to from those it cannot (1.25).
+    bool bracedListViable(const Type *param, const Init &in);
+    const Init *bracedInitOf(const Expr &e) const;
     Signature resolveOverloadBraced(const std::string &key, std::vector<ExprPtr> &args,
                                     std::size_t pos, const Type *object = nullptr,
                                     bool objectLvalue = true);

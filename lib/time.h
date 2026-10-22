@@ -32,7 +32,14 @@ extern "C" {
 
 // Seconds since the epoch. Eight bytes on all three - the UCRT defaults
 // time_t to 64 bits, which is why nothing here needs _USE_32BIT_TIME_T.
+// **`long long` under the UCRT**: `long` is four bytes there (LLP64), so the
+// `long` this was until 2026-10-20 handed the library a four-byte object to
+// write eight into.
+#ifdef _WIN32
+typedef long long time_t;
+#else
 typedef long time_t;
+#endif
 
 #ifdef _WIN32
 typedef int clock_t;
@@ -62,6 +69,26 @@ struct tm {
 #endif
 };
 
+#ifdef _WIN32
+// **The UCRT has these under their 64-bit names only**: its own header makes
+// time(), localtime() and the four others inline functions over _time64 and
+// its neighbours, and libucrt holds no symbol `time` - a call to the plain
+// name did not link. So here they are the same inline functions.
+time_t _time64(time_t *t);
+double _difftime64(time_t end, time_t start);
+struct tm *_localtime64(const time_t *t);
+struct tm *_gmtime64(const time_t *t);
+time_t _mktime64(struct tm *tm);
+char *_ctime64(const time_t *t);
+static inline time_t time(time_t *t) { return _time64(t); }
+static inline double difftime(time_t end, time_t start) { return _difftime64(end, start); }
+static inline struct tm *localtime(const time_t *t) { return _localtime64(t); }
+static inline struct tm *gmtime(const time_t *t) { return _gmtime64(t); }
+static inline time_t mktime(struct tm *tm) { return _mktime64(tm); }
+static inline char *ctime(const time_t *t) { return _ctime64(t); }
+clock_t clock(void);
+char *asctime(const struct tm *tm);
+#else
 time_t time(time_t *t);
 double difftime(time_t end, time_t start);
 clock_t clock(void);
@@ -80,6 +107,7 @@ time_t mktime(struct tm *tm);
 // detail everybody forgets.
 char *asctime(const struct tm *tm);
 char *ctime(const time_t *t);
+#endif
 
 size_t strftime(char *s, size_t max, const char *fmt, const struct tm *tm);
 

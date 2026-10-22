@@ -849,6 +849,8 @@ Parser::FunctionState Parser::captureFunctionState() const {
     s.pendingSpec = pendingSpec_;
     s.inNoexceptFunction = inNoexceptFunction_;
     s.replayingInline = replayingInline_;
+    s.currentFunctionInline = currentFunctionInline_;
+    s.tssSeq = tssSeq_;
     s.loopDepth = loopDepth_;
     s.switchDepth = switchDepth_;
     s.switches = switches_;
@@ -912,6 +914,8 @@ void Parser::restoreFunctionState(const FunctionState &s) {
     pendingSpec_ = s.pendingSpec;
     inNoexceptFunction_ = s.inNoexceptFunction;
     replayingInline_ = s.replayingInline;
+    currentFunctionInline_ = s.currentFunctionInline;
+    tssSeq_ = s.tssSeq;
     loopDepth_ = s.loopDepth;
     switchDepth_ = s.switchDepth;
     switches_ = s.switches;
@@ -975,6 +979,8 @@ void Parser::clearFunctionState() {
     pendingNoexcept_ = false;
     pendingSpec_ = DynamicSpec();
     inNoexceptFunction_ = false;
+    currentFunctionInline_ = false;
+    tssSeq_ = 0;
     loopDepth_ = 0;
     switchDepth_ = 0;
     switches_.clear();
@@ -1002,6 +1008,8 @@ void Parser::replayInlineBodies(std::vector<PendingBody> mine) {
     // **One capture for the whole nested parse.**
     const FunctionState outer = captureFunctionState();
     clearFunctionState();
+    // A local class's bodies replay inside its function, where it and its neighbours are local types (1.27).
+    localTypes_ = outer.localTypes;
     // A body replayed here was written inside a class body, so every definition it produces is implicitly inline.
     replayingInline_ = true;
 
@@ -1035,6 +1043,19 @@ void Parser::replayInlineBodies(std::vector<PendingBody> mine) {
         throw;
     }
     restoreFunctionState(outer);
+}
+
+// **One level of the program's nesting is one level of the parser's**, and the limit is said
+// where it is reached, as the '#include' and constant-expression depths are: a bound named is
+// better than a stack that is not, and the standard lets an implementation set one.
+Parser::Nesting::Nesting(Parser *pp, std::size_t pos, const char *what) : p(pp) {
+    if (++p->nesting_ <= kMaxNesting) return;
+    p->nesting_--;
+    p->src_.fail(pos, std::string("this ") + what + " is nested more than " +
+                      std::to_string(kMaxNesting) + " levels deep - parentheses, blocks, "
+                      "statements, lambdas and template instantiations counted together - and "
+                      "the compiler, which follows the program's nesting with its own, stops "
+                      "here rather than run out of stack");
 }
 
 void Parser::enterScope() { scopeStarts_.push_back(locals_.size()); }

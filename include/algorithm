@@ -13,6 +13,7 @@
 #define _CXX1_ALGORITHM
 
 #include <cstddef>
+#include <utility>   // std::move, for the swaps below (1.27)
 
 namespace std {
 
@@ -68,9 +69,9 @@ std::size_t count(In from, In to, const T &want) {
 // argument deduced and qualified with std::, which is what this compiler's templates need.
 template <class It>
 void __sort_swap(It a, It b) {
-    auto held = *a;
-    *a = *b;
-    *b = held;
+    auto held = std::move(*a);   // by moves, as [alg.sort]'s swaps are (1.27)
+    *a = std::move(*b);
+    *b = std::move(held);
 }
 
 template <class It, class Less>
@@ -221,18 +222,14 @@ void stable_sort(It from, It to) {
     if (from != to) std::__stable_sort_by_less(from, to, &*from);
 }
 
-}  // namespace std
-
-#endif
-
 // **reverse - [alg.reverse].** Swaps from both ends until they meet; the
 // element type is deduced from a pointer to one, this header having no
 // iterator_traits.
 template <class It, class T>
 void reverseSwap(It a, It b, T *) {
-    T held(*a);
-    *a = *b;
-    *b = held;
+    T held(std::move(*a));   // by moves (1.27)
+    *a = std::move(*b);
+    *b = std::move(held);
 }
 
 template <class It>
@@ -285,3 +282,20 @@ It min_element(It from, It to, Less less) {
         if (less(*i, *best)) best = i;
     return best;
 }
+
+// **remove - [alg.remove]** (1.10, 2026-10-20): every element not equal to `value`
+// moved down over the ones that are, in order, and the new end returned - the
+// container is not shortened, which is the erase that follows it in the idiom.
+template <class It, class T>
+It remove(It from, It to, const T &value) {
+    It out = from;
+    for (; from != to; ++from)
+        if (!(*from == value)) { *out = *from; ++out; }
+    return out;
+}
+
+// reverse, max_element, min_element and remove are std's too: until 1.10 the namespace and the
+// include guard closed above reverse, so these were global and defined again at each #include.
+}  // namespace std
+
+#endif

@@ -33,7 +33,11 @@ const Type *Parser::deduceLambdaReturn(std::size_t paramsFrom,
     if (haveThis) keptThis = *hadThis;
 
     // **This door is not `clearFunctionState`'s kind.**
+    // The enclosing function's const locals with known values stay readable, [expr.prim.lambda]/12,
+    // as the values they are (1.27, 2026-10-21, review of 1.25, item 3).
+    const std::vector<Local> constants = constantLocals();
     locals_.clear();
+    locals_.insert(locals_.end(), constants.begin(), constants.end());
     if (haveThis) locals_.push_back(keptThis);
     scopeStarts_.clear();
     alive_.clear();
@@ -137,6 +141,22 @@ const Type *Parser::deduceLambdaReturn(std::size_t paramsFrom,
     return found;
 }
 
+// The locals in scope that a lambda's body may read without capturing them: const objects of
+// integral type with a constant initialiser, [expr.prim.lambda]/12 with [basic.def.odr]/2 - kept
+// as the values they are, since the lambda's frame is not the one they live in (1.27).
+std::vector<Parser::Local> Parser::constantLocals() const {
+    std::vector<Local> out;
+    for (std::size_t i = 0; i < locals_.size(); i++) {
+        const Local &l = locals_[i];
+        if (!l.isConstantValue || l.type->isReference() || l.sharesSlot || l.name.empty()) continue;
+        Local c = l;
+        c.constantOnly = true;
+        c.guardsJump = false;
+        out.push_back(c);
+    }
+    return out;
+}
+
 // **The captured pointer has the type `this` has in the enclosing function** -
 // [expr.prim.lambda]/18.
 const Type *Parser::capturedThisClass() {
@@ -156,6 +176,7 @@ bool Parser::namesOwnMember(const std::string &name) {
 ExprPtr Parser::lambdaExpression() {
     const std::size_t pos = peek().pos;
     const std::size_t lamAt = at_;
+    const Nesting deep(this, pos, "lambda");
 
     // Already built on an earlier reading of these same tokens: hand back
     // another object of the one class rather than making a second.
@@ -373,6 +394,8 @@ ExprPtr Parser::lambdaExpression() {
     // A lambda inside a lambda is in the scope the outer one was written in.
     if (const Type *scope = lambdaScope()) closureScope_[tag] = scope;
     else if (currentClass_ != nullptr) closureScope_[tag] = currentClass_->unqualified();
+    // The enclosing function's constants, for the body's replay as `operator()` (1.27).
+    closureConstants_[tag] = constantLocals();
     declareTypeName(tag, closure);
     // Laid out as any class is: each member at the next offset its own
     // alignment allows, and the whole thing aligned to the widest of them.

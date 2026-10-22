@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+"""The memory rule, counted: R6 of the design (docs/Compiler_Design_Final.md).
+
+    tools/memory-gate             every site, file:line and what it is
+    tools/memory-gate --count     the counts, one per kind
+    tools/memory-gate --check     fail if any count is above tools/memory-gate.baseline
+    tools/memory-gate --record    write today's counts as the baseline
+
+R6.1 forbids `new`, `delete`, `malloc`, `calloc`, `realloc`, `free` and `alloca` in the
+compiler's source; R6.6 converts what exists module by module, so the gate is that no
+count ever rises. Comments, string and character literals are skipped, and so are the
+two spellings that are not allocation: `= delete` on a function and `operator new` /
+`operator delete` named as functions. `make_owned`'s one `new` (R6.4) will be the only
+one left when the count reaches it.
+"""
+import os
+import re
+import signal
+import sys
+
+signal.signal(signal.SIGPIPE, signal.SIG_DFL)   # `| head` ends the listing quietly
+
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+SRC = os.path.join(ROOT, "src")
+BASELINE = os.path.join(ROOT, "tools", "memory-gate.baseline")
+KINDS = ("new", "delete", "malloc", "calloc", "realloc", "free", "alloca")
+
+
+def code_only(text):
+    """The text with comments and literals blanked, line breaks kept."""
+    out = []
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if text.startswith("//", i):
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+            out.append(" " * (j - i))
+            i = j
+        elif text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+            out.append(re.sub(r"[^\n]", " ", text[i:j]))
+            i = j
+        elif c in "\"'":
+            # A raw string would need its own reader; the compiler's source has none.
+            j = i + 1
+            while j < n and text[j] != c:
+                j += 2 if text[j] == "\\" else 1
+            out.append(" " * (min(j + 1, n) - i))
+            i = j + 1
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
+def sites():
+    found = []
+    for base, _, files in os.walk(SRC):
+        for name in sorted(files):
+            if not name.endswith((".cpp", ".h")):
+                continue
+            path = os.path.join(base, name)
+            with open(path, encoding="utf-8", errors="replace") as f:
+                code = code_only(f.read())
+            for lineno, line in enumerate(code.split("\n"), 1):
+                for m in re.finditer(r"\b(" + "|".join(KINDS) + r")\b", line):
+                    word = m.group(1)
+                    before = line[:m.start()].rstrip()
+                    if word == "delete" and before.endswith("="):
+                        continue            # `= delete`: a deleted function
+                    if before.endswith("operator"):
+                        continue            # `operator new` named, not called
+                    if word not in ("new", "delete") and not line[m.end():].lstrip().startswith("("):
+                        continue            # `free` as a word, not the call
+                    if before.endswith((".", "->")):
+                        continue            # a member of that name
+                    found.append((os.path.relpath(path, ROOT), lineno, word))
+    return found
+
+
+def counts(found):
+    c = dict((k, 0) for k in KINDS)
+    for _, _, word in found:
+        c[word] += 1
+    return c
+
+
+def main(argv):
+    found = sites()
+    now = counts(found)
+    if len(argv) == 1:
+        for path, lineno, word in found:
+            print("%s:%d: %s" % (path, lineno, word))
+        return 0
+    if argv[1] == "--count":
+        print(" ".join("%s %d" % (k, now[k]) for k in KINDS))
+        return 0
+    if argv[1] == "--record":
+        with open(BASELINE, "w") as f:
+            for k in KINDS:
+                f.write("%s %d\n" % (k, now[k]))
+        print("memory-gate: baseline recorded: " + " ".join("%s %d" % (k, now[k]) for k in KINDS))
+        return 0
+    if argv[1] == "--check":
+        with open(BASELINE) as f:
+            was = dict((k, int(v)) for k, v in (l.split() for l in f if l.strip()))
+        risen = [k for k in KINDS if now[k] > was.get(k, 0)]
+        for k in risen:
+            print("memory-gate: %s rose from %d to %d - R6.6 lets a count only go down" % (k, was.get(k, 0), now[k]))
+        fallen = [k for k in KINDS if now[k] < was.get(k, 0)]
+        if fallen and not risen:
+            print("memory-gate: lower than the baseline (" + ", ".join(fallen) + "); run --record to keep it")
+        return 1 if risen else 0
+    sys.stderr.write(__doc__)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

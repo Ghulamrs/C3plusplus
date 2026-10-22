@@ -100,7 +100,12 @@ private:
 
     struct Rendered {
         std::string text;
-        bool isMem = false, isImm = false, isXmm = false;
+        bool isMem, isImm, isXmm;
+
+        // C++11 has no aggregate with a member initialiser, so the braces call this.
+        Rendered(std::string text = std::string(), bool isMem = false, bool isImm = false,
+                 bool isXmm = false)
+            : text(std::move(text)), isMem(isMem), isImm(isImm), isXmm(isXmm) {}
     };
     Rendered render(const Op &x);
     std::string mangle(const std::string &name);

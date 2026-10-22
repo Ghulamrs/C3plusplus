@@ -252,6 +252,12 @@ void Parser::topLevel(Program &program) {
     frameSize_ = 0;
     freeSlots_.clear();
     Declared d = declarator(base);
+    // A closure's `operator()` reads the enclosing function's const locals for their values,
+    // [expr.prim.lambda]/12 - declared first, so that a parameter or a local of the body hides one (1.27).
+    {
+        std::map<std::string, std::vector<Local> >::const_iterator cc = closureConstants_.find(d.qualifier);
+        if (cc != closureConstants_.end()) locals_ = cc->second;
+    }
 
     // **A `constexpr` function was refused by name until 7.5b**: accepting it as an
     // ordinary function would compile and then quietly fail to be constant where the
@@ -1078,7 +1084,14 @@ void Parser::topLevel(Program &program) {
         currentFunction_ = definedSymbol;
     }
     currentFunctionName_ = d.name;
-    localTypes_.clear();
+    // **A static local of an inline function is one object for the program** ([basic.def.odr]/6, [dcl.inline]/4):
+    // uniqueStaticSymbol and guardOnce name it as the ABI does and the backends put it in a COMDAT - an inline,
+    // in-class or template function's, not internal linkage (1.28, 2026-10-22, review of 1.25, item 14).
+    currentFunctionInline_ = (replayingInline_ || inlineFunction) &&
+                             !(memberOf != nullptr ? inUnnamedNamespace_ : internalLinkage(sc));
+    tssSeq_ = 0;
+    // A local class's held bodies replay inside its function and name it and its neighbours as written (1.27).
+    if (!replayingInline_) localTypes_.clear();
     // Closures are numbered within the function that writes them, which is what clang does.
     lambdaCount_ = 0;
     // The mem-initializer list, [class.base.init], parsed here because `this` and the parameters are in scope and the body has not begun.
@@ -1825,6 +1838,7 @@ void Parser::topLevel(Program &program) {
     currentClass_ = nullptr;
     currentFunction_.clear();
     currentFunctionName_.clear();
+    currentFunctionInline_ = false;
     localTypes_.clear();
     // **`static` on a member says which member, not which linkage.**
     const bool internal = memberOf != nullptr ? inUnnamedNamespace_

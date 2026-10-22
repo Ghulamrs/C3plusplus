@@ -286,21 +286,26 @@ bool Parser::onlyImplicitConstructors(const std::string &tag) const {
     return true;
 }
 
-// A nested list is refused by name rather than built against a parameter type that is
-// not known until the constructor is chosen; the elements go in as written.
+// The elements go in as written. **A nested list waits behind a placeholder** (1.25, 2026-10-21) for the
+// constructor whose parameter it initialises, like a braced call argument ([over.match.list]/1, [over.ics.list]):
+// each row of `CMatrix<3, 3> X = { {1.0, 2.0, 3.0}, ... }` becomes the CVector<3> it takes. Refused until 1.24.
 Parser::Signature Parser::listConstructor(const Type *plain, Init &in,
                                           std::vector<ExprPtr> &args, bool copyList,
                                           std::size_t pos) {
     std::vector<std::size_t> where;
+    bool braced = false;
     for (std::size_t i = 0; i < in.items.size(); i++) {
-        if (in.items[i].isList)
-            src_.fail(in.items[i].pos, "a braced list inside the braces that call a constructor "
-                                       "of '" + plain->describe() + "' is not supported yet - "
-                                       "write the inner one as 'T{...}' with its type named");
-        args.push_back(std::move(in.items[i].value));
-        where.push_back(in.items[i].pos);
+        const std::size_t at = in.items[i].pos;
+        if (in.items[i].isList) {
+            args.push_back(bracedPlaceholder(std::move(in.items[i])));
+            braced = true;
+        } else {
+            args.push_back(std::move(in.items[i].value));
+        }
+        where.push_back(at);
     }
     const std::string key = constructorKey(plain->tag());
+    if (braced) buildBracedArguments(key, args, pos, plain);
     convertThroughConversionFunction(args, plain, !copyList, pos);
     Signature ctor = resolveOverload(key, args, pos);
     // [over.match.list]/1: copy-list-initialisation may not choose an explicit constructor.
@@ -402,7 +407,11 @@ ExprPtr Parser::listTemporaryFrom(const Type *to, Init &in, bool copyList, std::
                        "can have; name a variable for it");
     if (!plain->isStructOrUnion()) return scalarFromList(plain, in, pos);
     if (isInitializerListType(plain)) return initializerListExpr(plain, in, pos);
-    if (!plain->tag().empty() && hasConstructors(plain->tag())) {
+    // [dcl.init.list]/3: an aggregate is initialised by its members; implicit constructors a class member gives
+    // it do not make it less of one - `S{"made", 1}` for an S holding a std::string (1.27, 2026-10-21, review of
+    // 1.25, item 3: it asked for a two-argument constructor). An empty list is value-initialisation.
+    if (!plain->tag().empty() && hasConstructors(plain->tag()) &&
+        !(isAggregateClass(plain) && !in.items.empty())) {
         checkNotAbstract(plain, pos, "the temporary '" + plain->describe() + "{...}' would make");
         const Type *ilType = nullptr;
         if (!in.items.empty() && initializerListConstructor(plain, &ilType) != nullptr) {
@@ -1090,6 +1099,59 @@ void Parser::finishMicrosoftThrow(MicrosoftThrow &names, bool thrown) {
     current_->msThrows.push_back(names);
 }
 
+// The statements a `throw` lowers to are a block of expression statements - stores, guard flags and
+// calls - so an expression can carry them as one comma chain. Anything else in there is refused.
+ExprPtr Parser::statementsAsExpression(StmtPtr s, std::size_t pos) {
+    if (ExprStmt *one = dynamic_cast<ExprStmt *>(s.get())) return one->release();
+    Block *b = dynamic_cast<Block *>(s.get());
+    if (b == nullptr)
+        src_.fail(pos, "this 'throw' builds a statement an expression cannot carry - write it as "
+                       "a statement of its own");
+    ExprPtr chain;
+    for (const StmtPtr &x : b->body()) {
+        ExprStmt *one = dynamic_cast<ExprStmt *>(x.get());
+        if (one == nullptr)
+            src_.fail(pos, "this 'throw' builds a statement an expression cannot carry - write it "
+                           "as a statement of its own");
+        ExprPtr e = one->release();
+        if (chain == nullptr) { chain = std::move(e); continue; }
+        ExprPtr both(new Comma(std::move(chain), std::move(e)));
+        both->setType(types_.get(Kind::Void));
+        chain = std::move(both);
+    }
+    if (chain == nullptr) src_.fail(pos, "this 'throw' lowered to nothing");
+    chain->setType(types_.get(Kind::Void));
+    return chain;
+}
+
+// **[expr.throw]: `throw e` is an expression of type void** - an assignment-expression, so an arm of `?:`
+// (`b ? 7 : throw 1`) and the operand of `noexcept` (1.27, 2026-10-21, review of 1.25, item 3). Lowered as the
+// statement is, chained; a rethrow where it has one; [except.spec]/9's terminate where it puts it.
+ExprPtr Parser::throwExpression() {
+    const std::size_t tpos = peek().pos;
+    expect("throw");
+    throwsSeen_++;
+    mayThrow_++;
+    if (peek().is(";") || peek().is(")") || peek().is(",") || peek().is(":") ||
+        peek().is("]") || peek().is("}")) {
+        if (target_.microsoftNames())
+            src_.fail(tpos, "a rethrow - 'throw' with nothing after it - "
+                            "is not supported yet for x86_64-windows: it "
+                            "is _CxxThrowException with two null pointers "
+                            "from inside a funclet, and that has not been "
+                            "measured on the box");
+        return runtimeCall("__cxa_rethrow", types_.get(Kind::Void), std::vector<ExprPtr>());
+    }
+    ExprPtr value = decay(assign());
+    if (inNoexceptFunction_ && !inTryBody_ && !inHandlerBody_) {
+        ExprPtr both(new Comma(std::move(value),
+                               runtimeCall("abort", types_.get(Kind::Void), std::vector<ExprPtr>())));
+        both->setType(types_.get(Kind::Void));
+        return both;
+    }
+    return statementsAsExpression(throwStatement(std::move(value), tpos), tpos);
+}
+
 StmtPtr Parser::microsoftThrow(ExprPtr value, std::size_t pos) {
     value = decay(std::move(value));
     const Type *thrown = value->type()->unqualified();
@@ -1511,6 +1573,9 @@ ExprPtr Parser::newExpression(std::size_t pos) {
         raw = callAllocator(alloc.c_str(),
                             array ? "??_U@YAPEAX_K@Z" : "??2@YAPEAX_K@Z",
                             voidPtr, std::move(bytes), pos);
+        // [new.delete.single]/3: the library's allocator throws bad_alloc, so `noexcept(new int)` is
+        // false, as cl has it (1.27, 2026-10-21, review of 1.25, item 3). The nothrow one above does not.
+        mayThrow_++;
     }
     // The cookie: the allocation held, the count written into its last
     // size_t, and the array beginning after it.

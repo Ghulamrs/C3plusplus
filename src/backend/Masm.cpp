@@ -996,7 +996,7 @@ void MasmCodeGen::emitClassRtti(const Program &program) {
 void MasmCodeGen::emitThrowInfo(const Program &program) {
     if (program.msThrows.empty()) return;
     std::string &o = out_;
-    std::set<std::string> catchables;
+    std::set<std::string> catchables, arrays;
     for (std::size_t i = 0; i < program.msThrows.size(); i++) {
         const MicrosoftThrow &n = program.msThrows[i];
         for (std::size_t k = 0; k < n.catchables.size(); k++) {
@@ -1023,11 +1023,19 @@ void MasmCodeGen::emitThrowInfo(const Program &program) {
             o += ".xdata$x ENDS\n";
         }
         if (!n.thrown) continue;
-        o += record(".xdata$x", 4, n.array, true);
-        o += n.array + " DD " + std::to_string(n.catchables.size()) + "\n";
-        for (std::size_t k = 0; k < n.catchables.size(); k++)
-            o += "  DD imagerel " + n.catchables[k].name + "\n";
-        o += record(".xdata$x", 4, n.info, false);
+        // **One array per name.** `int *` and `const int *` thrown in one unit have two ThrowInfos -
+        // the const is the info's - over one `_CTA2PEAH`, a throw's record dropping the pointee's
+        // const; the second copy was an assembler error (1.28, 2026-10-22, review of 1.25, item 9).
+        const bool arrayHere = arrays.insert(n.array).second;
+        if (arrayHere) {
+            o += record(".xdata$x", 4, n.array, true);
+            o += n.array + " DD " + std::to_string(n.catchables.size()) + "\n";
+            for (std::size_t k = 0; k < n.catchables.size(); k++)
+                o += "  DD imagerel " + n.catchables[k].name + "\n";
+        }
+        // The info follows the array in its segment, or opens one of its own where the array was
+        // written with an earlier info.
+        o += record(".xdata$x", 4, n.info, !arrayHere);
         o += n.info + (n.isConst ? " DD 01H\n" : " DD 00H\n");
         o += n.destructor.empty() ? "  DD 00H\n" : "  DD imagerel " + n.destructor + "\n";
         o += "  DD 00H\n";

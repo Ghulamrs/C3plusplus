@@ -55,16 +55,23 @@ struct Op {
     Kind kind;
 
     Str text;
-    long long disp = 0;
-    bool hasDisp = false;
+    long long disp;
+    bool hasDisp;
 
-    unsigned long long uimm = 0;
-    bool immNeg = false;
-    bool immNumeric = false;
+    unsigned long long uimm;
+    bool immNeg;
+    bool immNumeric;
 
     // Mem only: `d(base,index,scale)`; scale 0 is no index.
     Str index;
-    int scale = 0;
+    int scale;
+
+    // C++11 has no aggregate with a member initialiser, so the braces call this.
+    Op(Kind kind = Reg, Str text = Str(), long long disp = 0, bool hasDisp = false,
+       unsigned long long uimm = 0, bool immNeg = false, bool immNumeric = false,
+       Str index = Str(), int scale = 0)
+        : kind(kind), text(text), disp(disp), hasDisp(hasDisp), uimm(uimm), immNeg(immNeg),
+          immNumeric(immNumeric), index(index), scale(scale) {}
 };
 
 inline Op reg(Str r)  { return { Op::Reg, r, 0, false, 0, false, false, {}, 0 }; }

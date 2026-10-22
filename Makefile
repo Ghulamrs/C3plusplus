@@ -55,7 +55,7 @@ export TZ := Asia/Karachi
 # reaches past C++14. Apple's libc++ hands you string_view in C++14 mode
 # anyway, so a Mac build will not catch that kind of slip - g++ on the box
 # will, which is the reason to build there before believing it.
-CXXFLAGS = -std=c++14 -O2 -g -Wall -Wextra -Werror -pedantic -pthread \
+CXXFLAGS = -std=c++11 -O2 -g -Wall -Wextra -Werror -pedantic -pthread \
            -DCXX1_INCLUDE_DIR='"$(INCDIR)"' \
            -DCXX1_CXX_INCLUDE_DIR='"$(CXXINCDIR)"'
 # src/backend holds one file per platform: the sizes its types measure, the ABI
@@ -105,7 +105,7 @@ BINDIR  ?= .
 PROGRAM  = cpp11
 TARGET   = $(BINDIR)/$(PROGRAM).exe
 
-.PHONY: all test golden corpus open comments clean help tsan
+.PHONY: all test golden corpus open comments clean help tsan determinism
 
 all: $(TARGET)
 
@@ -152,6 +152,7 @@ test: $(TARGET)
 	@./tools/exclusions --check docs/EXCLUSIONS.md || { echo "make test: docs/EXCLUSIONS.md does not match the source - see the lines above"; exit 1; }
 	@./tools/comment-lines --count
 	@./tools/comment-lines >/dev/null || { echo "make test: comment groups over the cap - run make comments"; exit 1; }
+	@./tools/memory-gate --check || { echo "make test: new/delete/malloc rose - R6.6 lets the count only go down"; exit 1; }
 
 # The comment-line policy, on its own, because it is about the source and not
 # about the compiler: three lines to a group, one over a one-liner. Both this
@@ -163,6 +164,7 @@ help:
 	@echo "make            build cxx1 with $(CXX)"
 	@echo "make test       build and run the four suites"
 	@echo "make golden     record what emit.sh emits now, to compare a change against"
+	@echo "make determinism compile every case twice, 4 targets, -O0 and -O2; fail on any byte"
 	@echo "make corpus     run the 424 inherited C cases; gates nothing"
 	@echo "make open       run the register of known-open defects; gates nothing"
 	@echo "make comments   check the comment-line policy and name every breach"
@@ -179,6 +181,9 @@ golden: $(TARGET)
 
 # The inherited C corpus. Not part of `make test` and not a pass rate - see
 # tests/c-corpus/README, which says what each part of the failing set is.
+determinism: $(TARGET)
+	@./tools/determinism.sh $(TARGET)
+
 corpus: $(TARGET)
 	@CXX1=$(TARGET) ./tests/corpus.sh
 

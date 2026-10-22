@@ -607,8 +607,14 @@ struct Local {
 
     std::string staticName;
 
-    int scope = 0;
+    int scope;
     int align = 0;      // the slot's alignment, alignas included: what a backend laying the frame out must keep
+
+    // C++11 has no aggregate with a member initialiser, so the braces call this.
+    Local(std::string name = std::string(), const Type *type = nullptr, int offset = 0,
+          bool isParam = false, std::string staticName = std::string(), int scope = 0)
+        : name(std::move(name)), type(type), offset(offset), isParam(isParam),
+          staticName(std::move(staticName)), scope(scope) {}
 };
 
 class Function {
@@ -718,15 +724,24 @@ struct Global {
     bool isConst;
 
     // **One 8-byte pointer laid down immediately before this object's label.**
-    std::string prefixWord = std::string();
+    std::string prefixWord;
 
     // **Folded rather than rejected**, for an object several translation units each define: a
     // vtable, a typeinfo and its name string. clang marks all three weak, and without it two units
     // that share a polymorphic class collide on every one of them.
-    bool isInline = false;
+    bool isInline;
     int align = 0;   // `alignas(N)` on the object: what it asked for beyond its type's, else 0
     // `thread_local`: one copy per thread, in the target's TLS segment rather than .data or .bss.
     bool isThreadLocal = false;
+
+    // C++11 has no aggregate with a member initialiser, so the braces call this.
+    Global(std::string name = std::string(), std::string symbol = std::string(),
+           const Type *type = nullptr, std::vector<GlobalPiece> init = std::vector<GlobalPiece>(),
+           bool hasInit = false, bool isStatic = false, bool isConst = false,
+           std::string prefixWord = std::string(), bool isInline = false)
+        : name(std::move(name)), symbol(std::move(symbol)), type(type), init(std::move(init)),
+          hasInit(hasInit), isStatic(isStatic), isConst(isConst),
+          prefixWord(std::move(prefixWord)), isInline(isInline) {}
 };
 
 // **One Itanium TLS wrapper this unit writes** - `_ZTW<name>`, the function every other unit calls
@@ -763,8 +778,8 @@ struct Program {
     // Itanium's `_ZTH` aliases name and the Microsoft CRT runs from .CRT$XDU; empty where none needs one.
     std::string tlsInitFunction;
     std::vector<TlsWrapper> tlsWrappers;
-    // **Whether the file wrote `volatile` anywhere.** The type system drops it,
-    // so the optimizer cannot tell a volatile read from a plain one: such a
-    // file is compiled without -O (see Driver::compile).
+    // **Whether the file wrote `volatile`**: the type system drops it, so -O is off (Driver::compile).
     bool usesVolatile = false;
+    // Where the first `volatile` is, `file:line:col`, for the warning that says so.
+    std::string volatileAt;
 };

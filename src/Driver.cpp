@@ -285,19 +285,44 @@ static std::string developerShell() {
 // **Per-thread, because the assembler runs on a pool now.**
 static thread_local std::string lastToolCommand;
 
-// Runs one tool, inside a developer environment where the machine needs one.
-// Through a batch file and not a /c string: cmd strips the outer quotes of a
-// command that has them, and a file with the command on its own line has none.
+// The program a command starts: its first word, without the quotes around it.
+static std::string programOf(const std::string &command) {
+    const std::string::size_type start = command.find_first_not_of("\" ");
+    if (start == std::string::npos) return std::string();
+    const std::string::size_type end = command.find_first_of(command[0] == '"' ? "\"" : " ", start);
+    return command.substr(start, end == std::string::npos ? end : end - start);
+}
+
 #ifdef _WIN32
-static std::string forCmd(const std::string &command) {
-    return "\"" + command + "\"";
+// **Started directly, not through cmd.exe** (1.10, 2026-10-20). A machine may have cmd disabled by policy,
+// as GRIDE's does: every cpp11 -c and link through cmd failed, and an IDE that starts cpp11 had no cmd to lend.
+// The command line is the shell's: the program's quoted path, then its arguments, as CreateProcess reads it.
+static int runDirect(const std::string &command) {
+    STARTUPINFOA si;
+    ZeroMemory(&si, sizeof si);
+    si.cb = sizeof si;
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
+    si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+    PROCESS_INFORMATION pi;
+    ZeroMemory(&pi, sizeof pi);
+    std::vector<char> line(command.begin(), command.end());
+    line.push_back('\0');
+    if (!CreateProcessA(nullptr, line.data(), nullptr, nullptr, TRUE, 0, nullptr, nullptr, &si, &pi)) return -1;
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD code = 1;
+    GetExitCodeProcess(pi.hProcess, &code);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    return static_cast<int>(code);
 }
 #endif
 
 // **posix_spawn rather than system(), because system() serialises on macOS.**
 static int runShell(const std::string &command) {
 #ifdef _WIN32
-    return std::system(forCmd(command).c_str());
+    return runDirect(command);
 #else
     const char *argv[] = { "/bin/sh", "-c", command.c_str(), nullptr };
     pid_t pid = 0;
@@ -311,9 +336,13 @@ static int runShell(const std::string &command) {
 #endif
 }
 
+// Runs one tool, inside a developer environment where it needs one: a tool named by its path (GRIDE's
+// own masm and link) is started as it is; only a bare name - Visual Studio's ml64 and link, which reach
+// PATH through vcvars64.bat - runs from a batch file that calls vcvars first, and that takes cmd.
 static int runTool(const std::string &command) {
     lastToolCommand = command;
-    const std::string vcvars = developerShell();
+    const bool byPath = programOf(command).find_first_of("/\\") != std::string::npos;
+    const std::string vcvars = byPath ? std::string() : developerShell();
     if (vcvars.empty()) return runShell(command);
 
 #ifdef _WIN32
@@ -359,10 +388,7 @@ static std::string buildStamp() {
 // its path - RIDE's own masm and link - was found and ran, and its messages above are the answer.
 static void noteWindowsToolchain(const std::string &command) {
     if (!hostIsWindows()) return;
-    const std::string::size_type start = command.find_first_not_of("\" ");
-    const std::string::size_type end = command.find_first_of(command[0] == '"' ? "\"" : " ", start);
-    const std::string program = command.substr(start, end == std::string::npos ? end : end - start);
-    if (program.find_first_of("/\\") != std::string::npos) return;
+    if (programOf(command).find_first_of("/\\") != std::string::npos) return;
     std::fprintf(stderr, "  ml64 and link ship with Visual Studio and reach "
                          "PATH only after vcvars64.bat has run - a Developer "
                          "Command Prompt is that same environment.\n");
@@ -1188,14 +1214,15 @@ bool Driver::compile(const Job &job) {
     Program program = parser.parse();
     auto t3 = Clock::now();
 
-    // **A file that writes `volatile` is compiled without -O**, and says so: the
-    // type system drops the qualifier, so an optimizer would take a volatile
-    // read for a plain one and keep it in a register or delete it.
+    // **A file that writes `volatile` is compiled without -O**: the type system drops the qualifier, so an
+    // optimizer would keep a volatile read in a register or delete it. **Said as a warning at the first
+    // `volatile`** (1.10, 2026-10-20) as `file:line:col: warning:`; `cpp11: ...` stopped GRIDE 2.0's build.
     const int level = program.usesVolatile ? 0 : optimize_;
     if (optimize_ > 0 && program.usesVolatile) {
         volatileDowngrades_++;
-        std::fprintf(stderr, "%s: %s uses 'volatile', which this compiler cannot keep apart "
-                     "from plain memory; compiled without -O%d\n", program_.c_str(),
+        std::fprintf(stderr, "%s: warning: 'volatile' is something this compiler cannot keep apart "
+                     "from plain memory, so %s is compiled without -O%d\n",
+                     program.volatileAt.empty() ? job.input.c_str() : program.volatileAt.c_str(),
                      job.input.c_str(), optimize_);
     }
 

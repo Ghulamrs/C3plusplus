@@ -17,8 +17,17 @@
 // raw storage; an element is made in it by placement new - copy-constructed, or `T()` for
 // value-initialisation - and destroyed by name when `pop_back`, `clear`, `erase`, `resize` down,
 // the assignment, a regrowth or the destructor drops it. A shift inside the buffer is the
-// element's own assignment. `at()` is checked: std::out_of_range, or on x86_64-windows, which
-// cannot throw a class yet, a message and abort - <array>'s rule (L04).
+// element's own assignment. `at()` is checked: std::out_of_range, on every target since 1.27
+// (2026-10-21, review of 1.25, item 4) - x86_64-windows throws a class since 1.10, and until then
+// this printed a message and aborted where cl's throws, which a program catching the exception
+// could see (L04 closed).
+//
+// **An element is moved where the standard moves it** (1.27, the same review): `push_back(T &&)`,
+// the regrowth and the shifts of insert and erase move, so a move-only type lives in a vector and
+// a program counting its copies counts what it counts under cl; the vector itself has a move
+// constructor and a move assignment, which take the buffer and leave the source empty. The one
+// simplification: a regrowth moves whether or not the move constructor is noexcept, where
+// [vector.modifiers] copies a type whose move may throw.
 #ifndef _CXX1_VECTOR
 #define _CXX1_VECTOR
 
@@ -28,23 +37,13 @@
 #include <new>
 #include <utility>
 #include <type_traits>
-#ifdef _WIN32
-#include <cstdio>
-#else
 #include <stdexcept>
-#endif
 
 namespace std {
 
 inline void __vector_range_fail(std::size_t i, std::size_t n) {
-#ifdef _WIN32
-    std::fprintf(stderr, "std::vector::at: index %lu is not below its size %lu\n",
-                 (unsigned long)i, (unsigned long)n);
-    std::abort();
-#else
     (void)i; (void)n;
     throw out_of_range("vector::at");
-#endif
 }
 
 template <class T>
@@ -56,6 +55,8 @@ public:
 
     vector() : items_(0), size_(0), cap_(0) {}
     vector(const vector &o) : items_(0), size_(0), cap_(0) { copyFrom(o); }
+    // The buffer changes hands; the source is empty afterwards, as [container.requirements] has it.
+    vector(vector &&o) : items_(o.items_), size_(o.size_), cap_(o.cap_) { o.items_ = 0; o.size_ = 0; o.cap_ = 0; }
     vector(size_type n, const T &v) : items_(0), size_(0), cap_(0) {
         reserve(n);
         for (size_type i = 0; i < n; i++) push_back(v);
@@ -94,15 +95,35 @@ public:
         }
         return *this;
     }
+    vector &operator=(vector &&o) {
+        if (this != &o) {
+            clear();
+            std::free(items_);
+            items_ = o.items_; size_ = o.size_; cap_ = o.cap_;
+            o.items_ = 0; o.size_ = 0; o.cap_ = 0;
+        }
+        return *this;
+    }
 
     // `v` may be an element of this vector, so it is copied before a regrowth frees it.
     void push_back(const T &v) {
         if (size_ == cap_) {
             T keep(v);
             grow(cap_ == 0 ? 4 : cap_ * 2);
-            new (items_ + size_) T(keep);
+            new (items_ + size_) T(std::move(keep));
         } else {
             new (items_ + size_) T(v);
+        }
+        size_++;
+    }
+    // An rvalue is moved in - the one road a move-only element has into a vector.
+    void push_back(T &&v) {
+        if (size_ == cap_) {
+            T keep(std::move(v));
+            grow(cap_ == 0 ? 4 : cap_ * 2);
+            new (items_ + size_) T(std::move(keep));
+        } else {
+            new (items_ + size_) T(std::move(v));
         }
         size_++;
     }
@@ -179,16 +200,12 @@ public:
     iterator insert(iterator at, const T &v) {
         const size_type where = (size_type)(at - items_);
         T keep(v);
-        if (size_ == cap_) grow(cap_ == 0 ? 4 : cap_ * 2);
-        if (where == size_) {
-            new (items_ + size_) T(keep);
-        } else {
-            new (items_ + size_) T(items_[size_ - 1]);
-            for (size_type i = size_ - 1; i > where; i--) items_[i] = items_[i - 1];
-            items_[where] = keep;
-        }
-        size_++;
-        return items_ + where;
+        return insertMoved(where, keep);
+    }
+    iterator insert(iterator at, T &&v) {
+        const size_type where = (size_type)(at - items_);
+        T keep(std::move(v));
+        return insertMoved(where, keep);
     }
     // **The range forms.** `v.insert(v.end(), o.begin(), o.end())` is how one
     // vector is appended to another without a loop at the call site, and it is
@@ -207,8 +224,8 @@ public:
         // Backwards, so a move within one buffer cannot overwrite what it has not read yet; a slot
         // past the old end is raw and is constructed, one before it is assigned.
         for (size_type i = size_; i-- > where; ) {
-            if (i + n >= size_) new (items_ + i + n) T(items_[i]);
-            else items_[i + n] = items_[i];
+            if (i + n >= size_) new (items_ + i + n) T(std::move(items_[i]));
+            else items_[i + n] = std::move(items_[i]);
         }
         size_type k = 0;
         for (const_iterator p = first; p != last; p++, k++) {
@@ -218,10 +235,21 @@ public:
         size_ += n;
         return items_ + where;
     }
+    // Any other range - a map's or a set's - is copied out first and inserted as the pointer range above
+    // (1.10, 2026-10-20: `v.insert(v.end(), s.begin(), s.end())` from a set had no insert to call). Two
+    // pointers of this vector's own type take the form above, a non-template being the better match.
+    // Spelled `T *` and `const T *`, which is what iterator and const_iterator are: a member template
+    // whose return type is the class's own typedef is "expected a type" to this compiler (1.24).
+    template <class It, class = typename std::enable_if<!std::is_integral<It>::value>::type>
+    T *insert(T *at, It first, It last) {
+        const size_type where = (size_type)(at - items_);
+        vector<T> keep(first, last);
+        return insert(items_ + where, (const T *)keep.items_, (const T *)(keep.items_ + keep.size_));
+    }
 
     iterator erase(iterator at) {
         const size_type where = (size_type)(at - items_);
-        for (size_type i = where; i + 1 < size_; i++) items_[i] = items_[i + 1];
+        for (size_type i = where; i + 1 < size_; i++) items_[i] = std::move(items_[i + 1]);
         if (size_ != 0) { size_--; items_[size_].~T(); }
         return items_ + where;
     }
@@ -229,7 +257,7 @@ public:
         const size_type where = (size_type)(first - items_);
         const size_type n = (size_type)(last - first);
         if (n == 0) return items_ + where;
-        for (size_type i = where; i + n < size_; i++) items_[i] = items_[i + n];
+        for (size_type i = where; i + n < size_; i++) items_[i] = std::move(items_[i + n]);
         for (size_type k = 0; k < n; k++) { size_--; items_[size_].~T(); }
         return items_ + where;
     }
@@ -239,10 +267,25 @@ private:
         reserve(o.size_);
         for (size_type i = 0; i < o.size_; i++) push_back(o.items_[i]);
     }
-    // A regrowth copy-constructs every element into the new storage and destroys the old ones.
+    // `keep` is this call's own copy or move of the element, made before a regrowth could free
+    // what it was made from; the last element is moved into the raw slot past the end and the
+    // rest shift up by their own move assignment, as [vector.modifiers] has them.
+    iterator insertMoved(size_type where, T &keep) {
+        if (size_ == cap_) grow(cap_ == 0 ? 4 : cap_ * 2);
+        if (where == size_) {
+            new (items_ + size_) T(std::move(keep));
+        } else {
+            new (items_ + size_) T(std::move(items_[size_ - 1]));
+            for (size_type i = size_ - 1; i > where; i--) items_[i] = std::move(items_[i - 1]);
+            items_[where] = std::move(keep);
+        }
+        size_++;
+        return items_ + where;
+    }
+    // A regrowth moves every element into the new storage and destroys the old ones.
     void grow(size_type want) {
         T *fresh = (T *)std::malloc(want * sizeof(T));
-        for (size_type i = 0; i < size_; i++) new (fresh + i) T(items_[i]);
+        for (size_type i = 0; i < size_; i++) new (fresh + i) T(std::move(items_[i]));
         for (size_type i = 0; i < size_; i++) items_[i].~T();
         std::free(items_);
         items_ = fresh;

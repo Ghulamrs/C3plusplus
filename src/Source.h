@@ -14,8 +14,13 @@ std::mutex &diagnosticLock();
 struct SubstitutionFailure {
     std::string why;
     // **A feature this compiler has not built is not a substitution failure.**
-    bool unsupported = false;
-    std::size_t pos = 0;
+    bool unsupported;
+    std::size_t pos;
+
+    // C++11 has no aggregate with a member initialiser, so the braces call this.
+    SubstitutionFailure(std::string why = std::string(), bool unsupported = false,
+                        std::size_t pos = 0)
+        : why(std::move(why)), unsupported(unsupported), pos(pos) {}
 };
 
 class Source {

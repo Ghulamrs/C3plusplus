@@ -41,6 +41,10 @@ Source Source::fromFile(const std::string &path) {
     std::size_t n;
     while ((n = std::fread(chunk, 1, sizeof chunk, fp)) > 0) buf.append(chunk, n);
     std::fclose(fp);
+    // A UTF-8 byte order mark opens many a Windows-saved file, and it is not part of the program -
+    // [lex.phases]/1 maps the source to the basic character set first, and cl and clang both drop
+    // it (1.27, 2026-10-21, review of 1.25, item 3: it was read as a stray '#' on line 1).
+    if (buf.compare(0, 3, "\xEF\xBB\xBF") == 0) buf.erase(0, 3);
     return Source(path, std::move(buf));
 }
 

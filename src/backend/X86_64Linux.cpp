@@ -2387,7 +2387,7 @@ void X86_64Linux::emitTlsWrappers(const Program &program) {
 void X86_64Linux::emitCoffThrowInfo(const Program &program) {
     if (program.msThrows.empty()) return;
     std::string &o = out_;
-    std::set<std::string> catchables;
+    std::set<std::string> catchables, arrays;
 
     for (std::size_t i = 0; i < program.msThrows.size(); i++) {
         const MicrosoftThrow &n = program.msThrows[i];
@@ -2412,10 +2412,13 @@ void X86_64Linux::emitCoffThrowInfo(const Program &program) {
         }
         if (!n.thrown) continue;
         const std::string ar = a_->labelText(n.array);
-        coffRecord(".xdata$x", ar, 2);
-        o += "  .long " + std::to_string(n.catchables.size()) + "\n";
-        for (std::size_t k = 0; k < n.catchables.size(); k++)
-            o += "  .long " + a_->labelText(n.catchables[k].name) + "@IMGREL\n";
+        // One array per name: two ThrowInfos - `int *` and `const int *` - share `_CTA2PEAH` (1.28).
+        if (arrays.insert(n.array).second) {
+            coffRecord(".xdata$x", ar, 2);
+            o += "  .long " + std::to_string(n.catchables.size()) + "\n";
+            for (std::size_t k = 0; k < n.catchables.size(); k++)
+                o += "  .long " + a_->labelText(n.catchables[k].name) + "@IMGREL\n";
+        }
         coffRecord(".xdata$x", a_->labelText(n.info), 2);
         o += "  .long " + std::string(n.isConst ? "1" : "0") + "\n";     // attributes
         if (n.destructor.empty()) o += "  .long 0\n";                   // pmfnUnwind

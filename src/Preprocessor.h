@@ -50,12 +50,19 @@ private:
     std::vector<Source::Pack> packs_;
     void pragmaPack(const std::string &args, int fileIndex, int lineNo,
                     const std::string &line, std::size_t nameStart);
+    // What `#pragma` and `_Pragma("...")` both hand over: the text after the word.
+    void pragma(const std::string &spec, int fileIndex, int lineNo,
+                const std::string &line, std::size_t nameStart);
     std::vector<Source::Line> lines_;
 
     std::vector<Cond> conds_;
     bool inBlockComment_ = false;
     // The `)delim"` that closes a raw string a line left open, or empty.
     std::string inRawString_;
+    // [cpp.rescan]: a function-like macro's name that an expansion ended with, and the names that
+    // were busy there - its arguments may be the tokens that follow the invocation (1.27).
+    std::string pendingTail_;
+    std::vector<std::string> pendingBusy_;
     int depth_ = 0;
 
     int physLine_ = 0;

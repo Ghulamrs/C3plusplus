@@ -24,6 +24,7 @@ Parser::Init Parser::parseInitialiser() {
     Init in;
     in.pos = peek().pos;
     if (consume("{")) {
+        const Nesting deep(this, in.pos, "braced list");
         in.isList = true;
         // **`{}` is not an empty list, it is value-initialisation.** [dcl.init]/11
         // sends it to /8, the paragraph `T()` already follows here; every reader
@@ -344,7 +345,10 @@ void Parser::emitFill(const std::string &name, std::vector<InitStep> &path,
         emitString(name, path, type, s, item.pos, out);
         return;
     }
-    if (type->isArray() || type->isStructOrUnion()) {
+    // A pointer to a member function is laid out as a struct here, and it is still one value:
+    // `{&B::vf, &B::nf}` fills two of them, not the first one's fields (1.27, 2026-10-21, review
+    // of 1.25, item 3 - the array's first element was asked to take `&B::vf` as a `void *`).
+    if (type->isArray() || (type->isStructOrUnion() && !type->isMemberFunctionPointer())) {
         emitAggregate(name, path, type, c, item.pos, out);
         return;
     }
@@ -1693,11 +1697,25 @@ StmtPtr Parser::guardOnceThread(const std::string &symbol, std::vector<StmtPtr> 
 StmtPtr Parser::guardOnce(const std::string &symbol, std::vector<StmtPtr> body) {
     if (tlsObject_) return guardOnceThread(symbol, std::move(body));
     const bool ms = target_.microsoftNames();
-    const std::string guard = symbol + (ms ? "$guard" : ".guard");
+    std::string guard = symbol + (ms ? "$guard" : ".guard");
+    // **An inline function's guard is shared as its object is**, under the ABI's name: cl's
+    // `?$TSS0@?1??f@@YAHXZ@4HA`, counting up through the function, with the object's block digit;
+    // Itanium's `_ZGVZ1fvE1s` (1.28, 2026-10-22, review of 1.25, item 14).
+    const bool shared = sharedStaticLocal(symbol);
+    if (shared) {
+        if (ms) {
+            const std::string &owner = currentFunction_.empty() ? functionName_ : currentFunction_;
+            guard = "?$TSS" + std::to_string(tssSeq_++) + "@?" +
+                    std::to_string(currentBlock() + 1) + "?" + owner + "@4HA";
+        } else {
+            guard = "_ZGV" + symbol.substr(2);
+        }
+    }
     const Type *guardType = types_.get(ms ? Kind::Int : Kind::LongLong);
     current_->globals.push_back(Global{ guard, guard, guardType,
                                         std::vector<GlobalPiece>(), false,
-                                        true, false });
+                                        !shared, false });
+    current_->globals.back().isInline = shared;
     const Type *guardPtr = types_.pointerTo(guardType);
     auto guardAddr = [&]() {
         Var *g = Var::global(guard);
@@ -1720,6 +1738,17 @@ StmtPtr Parser::guardOnce(const std::string &symbol, std::vector<StmtPtr> body) 
         return c;
     };
 
+    // **A throwing initialiser leaves the guard "being built"**; [stmt.dcl]/4 wants the next call to retry, so the
+    // construction runs under a cleanup calling `__cxa_guard_abort`/`_Init_thread_abort` before the exception goes
+    // on, as cl and clang do (2026-10-21, review of 1.25, fix 3). Not inside a Microsoft handler (see block()).
+    auto guarded = [&](const char *abort) {
+        std::vector<ExprPtr> a;
+        a.push_back(guardAddr());
+        StmtPtr onUnwind(new ExprStmt(runtimeCall(abort, types_.get(Kind::Void), std::move(a))));
+        std::vector<StmtPtr> region;
+        region.push_back(cleanupRegion(std::move(body), std::move(onUnwind)));
+        return region;
+    };
     if (!ms) {
         std::vector<ExprPtr> a1;
         a1.push_back(guardAddr());
@@ -1727,12 +1756,13 @@ StmtPtr Parser::guardOnce(const std::string &symbol, std::vector<StmtPtr> body) 
                                        std::move(a1));
         std::vector<ExprPtr> a2;
         a2.push_back(guardAddr());
-        body.push_back(StmtPtr(new ExprStmt(
+        std::vector<StmtPtr> built = guarded("__cxa_guard_abort");
+        built.push_back(StmtPtr(new ExprStmt(
             runtimeCall("__cxa_guard_release", types_.get(Kind::Void),
                         std::move(a2)))));
         std::vector<StmtPtr> inner;
         inner.push_back(StmtPtr(new If(std::move(acquired),
-                                       StmtPtr(new Block(std::move(body))),
+                                       StmtPtr(new Block(std::move(built))),
                                        StmtPtr())));
         return StmtPtr(new If(guardIs(0, Kind::UChar),
                               StmtPtr(new Block(std::move(inner))), StmtPtr()));
@@ -1746,21 +1776,43 @@ StmtPtr Parser::guardOnce(const std::string &symbol, std::vector<StmtPtr> body) 
                     std::move(a1)))));
     std::vector<ExprPtr> a2;
     a2.push_back(guardAddr());
-    body.push_back(StmtPtr(new ExprStmt(
+    std::vector<StmtPtr> built = inHandlerBody_ ? std::move(body) : guarded("_Init_thread_abort");
+    built.push_back(StmtPtr(new ExprStmt(
         runtimeCall("_Init_thread_footer", types_.get(Kind::Void),
                     std::move(a2)))));
     whole.push_back(StmtPtr(new If(guardIs(-1, Kind::Int),
-                                   StmtPtr(new Block(std::move(body))),
+                                   StmtPtr(new Block(std::move(built))),
                                    StmtPtr())));
     return StmtPtr(new Block(std::move(whole)));
 }
 
-// A static local's symbol: the function's *mangled* symbol and the object's
-// name, numbered where a name is declared twice in one function. The bare
-// name was used until 2026-09-17, and S::f, T::f and f(double) all made `f.n`.
-std::string Parser::uniqueStaticSymbol(const std::string &name) {
+// A static local's symbol: the *mangled* function plus the object's name, numbered where a name repeats (the bare
+// name made S::f, T::f, f(double) one `f.n`). **An inline function's static local is one object for the program**
+// ([basic.def.odr]/6): the ABI's name in a COMDAT (1.28, item 14) - cl `?a@?1??f@@YAHXZ@4HA`, Itanium `_ZZ1fvE1a`.
+std::string Parser::uniqueStaticSymbol(const std::string &name, const Type *type) {
     const std::string &owner = currentFunction_.empty() ? functionName_
                                                         : currentFunction_;
+    if (currentFunctionInline_ && type != nullptr) {
+        std::string abi;
+        if (target_.microsoftNames()) {
+            std::string data, why;
+            const std::string head = "?" + name + "@@3";
+            if (!owner.empty() && owner[0] == '?' && microsoftDataName(name, type, &data, &why) &&
+                data.compare(0, head.size(), head) == 0)
+                abi = "?" + name + "@?" + std::to_string(currentBlock() + 1) + "?" + owner + "@4" +
+                      data.substr(head.size());
+        } else if (owner.compare(0, 2, "_Z") == 0) {
+            abi = "_ZZ" + owner.substr(2) + "E" + std::to_string(name.size()) + name;
+            int seen = 0;
+            for (const std::string &used : staticSymbols_)
+                if (used == abi || used.compare(0, abi.size() + 1, abi + "_") == 0) seen++;
+            if (seen > 0) abi += "_" + std::to_string(seen - 1);
+        }
+        if (!abi.empty()) {
+            staticSymbols_.push_back(abi);
+            return abi;
+        }
+    }
     std::string symbol = owner + "." + name;
     for (int n = 1; ; n++) {
         bool taken = false;
@@ -1777,7 +1829,7 @@ std::string Parser::uniqueStaticSymbol(const std::string &name) {
 // `??__Floc@?1??f@@YAHXZ@YAXXZ` - with an undecorated owner written ?name@@9.
 void Parser::staticLocalWithConstructor(Declared &d,
                                         std::vector<StmtPtr> &inits) {
-    const std::string symbol = uniqueStaticSymbol(d.name);
+    const std::string symbol = uniqueStaticSymbol(d.name, tlsObject_ ? nullptr : d.type);
     std::string helper;
     if (target_.microsoftNames()) {
         const std::string owner =
@@ -1797,7 +1849,8 @@ void Parser::staticLocalWithConstructor(Declared &d,
     // Not `isConst`: the constructor writes it, so it cannot live in .rodata.
     current_->globals.push_back(Global{ symbol, symbol, d.type,
                                         std::vector<GlobalPiece>(), false,
-                                        true, false });
+                                        !sharedStaticLocal(symbol), false });
+    current_->globals.back().isInline = sharedStaticLocal(symbol);
     current_->globals.back().isThreadLocal = tlsObject_;
     inits.push_back(guardOnce(symbol, std::move(body)));
 }

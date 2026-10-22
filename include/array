@@ -2,32 +2,21 @@
 // {{1, 2, 3}}` and `= {1, 2, 3}` initialise it as the standard says, and its iterators are pointers
 // like every container here. N == 0 is the partial specialization below, which holds no element.
 //
-// **`at()` is checked.** Out of range it throws std::out_of_range where a class can be thrown;
-// x86_64-windows cannot throw one yet (docs/EXCLUSIONS.md), so there it prints what happened and
-// aborts - the same rule <vector>'s at() follows, and the behaviour a caller sees either way is that
-// the program does not go on with a wrong element.
+// **`at()` is checked.** Out of range it throws std::out_of_range, on every target since 1.27
+// (2026-10-21, review of 1.25, item 4): x86_64-windows throws a class since 1.10, and until then it
+// printed what happened and aborted where cl's throws - the same rule <vector>'s at() followed.
 #ifndef _CXX1_ARRAY
 #define _CXX1_ARRAY
 
 #include <cstddef>
-#ifdef _WIN32
-#include <cstdio>
-#include <cstdlib>
-#else
 #include <stdexcept>
-#endif
+#include <utility>
 
 namespace std {
 
 inline void __array_range_fail(size_t i, size_t n) {
-#ifdef _WIN32
-    std::fprintf(stderr, "std::array::at: index %lu is not below its size %lu\n",
-                 (unsigned long)i, (unsigned long)n);
-    std::abort();
-#else
     (void)i; (void)n;
     throw out_of_range("array::at");
-#endif
 }
 
 template <class T, size_t N> struct array {
@@ -66,8 +55,9 @@ template <class T, size_t N> struct array {
     const T *data() const { return elems_; }
 
     void fill(const T &v) { for (size_type i = 0; i < N; i++) elems_[i] = v; }
+    // Element by element, each exchange by moves - what std::swap does (1.27).
     void swap(array &o) {
-        for (size_type i = 0; i < N; i++) { T t = elems_[i]; elems_[i] = o.elems_[i]; o.elems_[i] = t; }
+        for (size_type i = 0; i < N; i++) std::swap(elems_[i], o.elems_[i]);
     }
 };
 
