@@ -869,9 +869,6 @@ void Parser::topLevel(Program &program) {
                 // happens twice, and the same way: a place in the token stream.
                 defaults.resize(params.size(), 0);
                 if (consume("=")) {
-                    if (peek().is("{"))
-                        src_.fail(peek().pos, "a braced default argument is not "
-                                              "supported yet - write the value");
                     defaults.back() = at_;
                     skipDefaultArgument();
                 }

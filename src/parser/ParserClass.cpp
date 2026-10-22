@@ -5034,15 +5034,24 @@ bool Parser::packParameter(std::vector<const Type *> *types,
 // default is refused where it is read rather than mis-parsed here.
 void Parser::skipDefaultArgument() {
     int depth = 0;
+    // A template-id's arguments keep their commas too - `std::vector<std::pair<A, B> >()` (M1 L3b);
+    // the angles count only where a template's name opened them, [temp.names]/3.
+    std::vector<int> angles;
     for (;;) {
         const Token &t = peek();
         if (t.kind == TokenKind::End)
             src_.fail(t.pos, "this default argument never ends");
-        if (t.is("(") || t.is("[") || t.is("{")) depth++;
+        if (t.is("<") && at_ > 0 && tokens_[at_ - 1].kind == TokenKind::Ident &&
+            isTemplateName(tokens_[at_ - 1].text, true))
+            angles.push_back(depth);
+        else if ((t.is(">") || t.is(">>")) && !angles.empty() && angles.back() == depth) {
+            angles.pop_back();
+            if (t.is(">>") && !angles.empty() && angles.back() == depth) angles.pop_back();
+        } else if (t.is("(") || t.is("[") || t.is("{")) depth++;
         else if (t.is(")") || t.is("]") || t.is("}")) {
             if (depth == 0) return;         // the ')' closing the parameters
             depth--;
-        } else if (t.is(",") && depth == 0) return;
+        } else if (t.is(",") && depth == 0 && angles.empty()) return;
         at_++;
     }
 }
@@ -5147,8 +5156,11 @@ StmtPtr Parser::memberInitialiser(const std::string &tag, const Type *type,
     at_ = it->second;
 
     // `{v}` on a scalar: the value, which may not narrow - [dcl.init.list]/7.
-    const bool braced = peek().is("{") && !peekAt(1).is("}") &&
-        !(peekAt(1).kind == TokenKind::Num && !peekAt(1).isFloat && peekAt(1).value == 0 && peekAt(2).is("}"));
+    // A class with constructors is built from any list, `{}` and `{0}` included - they are not its bytes.
+    const Type *memberCls = m.type->unqualified();
+    const bool built = memberCls->isStructOrUnion() && !memberCls->tag().empty() && hasConstructors(memberCls->tag());
+    const bool braced = peek().is("{") && (built || (!peekAt(1).is("}") &&
+        !(peekAt(1).kind == TokenKind::Num && !peekAt(1).isFloat && peekAt(1).value == 0 && peekAt(2).is("}"))));
     // `= {}` or `= {0}`: the member's bytes zeroed by memset, an array or a
     // scalar alike, which is what [dcl.init.list]/3 comes to for either.
     if (peek().is("{") && !braced) {
@@ -5175,6 +5187,31 @@ StmtPtr Parser::memberInitialiser(const std::string &tag, const Type *type,
         locals_.swap(outer);
         at_ = resume;
         return StmtPtr(new ExprStmt(std::move(filled)));
+    }
+    // **A list on a class or an array** (M1 L4): a class with constructors is built from it, direct- or
+    // copy-list as `{` or `= {` was written; an aggregate or an array of scalars is laid down leaf by leaf.
+    if (braced && (m.type->isArray() || m.type->unqualified()->isStructOrUnion())) {
+        Init in = parseInitialiser();
+        std::vector<StmtPtr> all;
+        const Type *cls = m.type->unqualified();
+        if (cls->isStructOrUnion() && !cls->tag().empty() && hasConstructors(cls->tag()) &&
+            !(isAggregateClass(cls) && !in.items.empty())) {
+            std::vector<ExprPtr> args;
+            if (memberInitCopy_.count(tag + "::" + m.name)) args.push_back(listTemporaryFrom(cls, in, true, pos));
+            else args = bracedInitArguments(cls, in, pos);
+            all.push_back(constructMember(tag, type, m, thisSlot, args, pos, false));
+        } else {
+            const MemberRoot root = { thisSlot, type, &m };
+            const MemberRoot *was = memberRoot_;
+            memberRoot_ = &root;
+            std::vector<InitStep> path;
+            emitInit(std::string(), path, m.type, in, all);
+            memberRoot_ = was;
+        }
+        locals_.swap(outer);
+        at_ = resume;
+        flushTemporaries(all);
+        return oneStatement(std::move(all));
     }
     if (braced) at_++;
     const std::size_t valueAt = peek().pos;
@@ -5211,6 +5248,11 @@ StmtPtr Parser::memberInitialiser(const std::string &tag, const Type *type,
     std::vector<StmtPtr> all;
     all.push_back(std::move(made));
     flushTemporaries(all);
+    return oneStatement(std::move(all));
+}
+
+// Statements as one: the statement itself where there is one, a block of them otherwise.
+StmtPtr Parser::oneStatement(std::vector<StmtPtr> all) {
     if (all.size() == 1) return std::move(all[0]);
     return StmtPtr(new Block(std::move(all)));
 }
@@ -5338,6 +5380,7 @@ void Parser::parameterTypes(std::vector<const Type *> &params, bool &variadic) {
     expect("(");
     variadic = false;
     pendingDefaults_.clear();
+    std::vector<std::size_t> defaults;
     writtenParams_.clear();
     writtenFor_.clear();
     std::vector<const Type *> written;
@@ -5371,14 +5414,11 @@ void Parser::parameterTypes(std::vector<const Type *> &params, bool &variadic) {
 
         // `int b = 3`. The tokens are left where they are and their position
         // recorded; a call that omits the argument reads them again.
-        pendingDefaults_.resize(params.size(), 0);
+        defaults.resize(params.size(), 0);
         if (consume("=")) {
-            if (peek().is("{"))
-                src_.fail(peek().pos, "a braced default argument is not "
-                                      "supported yet - write the value");
-            pendingDefaults_.back() = at_;
+            defaults.back() = at_;
             skipDefaultArgument();
-            if (at_ == pendingDefaults_.back())
+            if (at_ == defaults.back())
                 src_.fail(peek().pos, "this parameter says '=' and then gives "
                                       "no default");
         }
@@ -5387,6 +5427,9 @@ void Parser::parameterTypes(std::vector<const Type *> &params, bool &variadic) {
         expect(",");
     }
 
+    // Kept apart until the list ends: a template-id in a later parameter instantiates a class, and
+    // its members' own lists reset pendingDefaults_ (M1, 2026-10-23).
+    pendingDefaults_ = defaults;
     requireDefaultsAreASuffix(pendingDefaults_, closed);
     if (written.size() == params.size() && written != params) {
         writtenParams_ = std::move(written);

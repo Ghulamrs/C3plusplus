@@ -2014,6 +2014,7 @@ private:
     // The base subobject of a glvalue of a derived class, `*(B *)&d` - a base's offset carried.
     ExprPtr baseSubobject(ExprPtr e, const Type *base) const;
     ExprPtr assignValue(ExprPtr n, ExprPtr value, std::size_t pos);
+    StmtPtr oneStatement(std::vector<StmtPtr> all);
     ExprPtr enumeratorValue(const EnumConst &e);
     ExprPtr thisObject();
     ExprPtr namedAfter(ExprPtr effect, ExprPtr obj);
@@ -2398,6 +2399,11 @@ private:
                                         const Type *right) const;
 
     std::map<std::string, std::size_t> memberInit_;
+    // The members whose initialiser is written `= {...}`, copy-list rather than direct (M1 L4).
+    std::set<std::string> memberInitCopy_;
+    // While a member's braced initialiser is laid down by emitInit: the member, reached through `this`.
+    struct MemberRoot { int thisSlot; const Type *cls; const Member *member; };
+    const MemberRoot *memberRoot_ = nullptr;
     // **[class.union]/5, an anonymous union.** Its members' positions, recorded as its body is read,
     // for the refusals the class around it raises; the `$S<n>` count clang numbers its objects by.
     std::map<const Type *, std::vector<std::size_t> > anonUnionMemberPos_;

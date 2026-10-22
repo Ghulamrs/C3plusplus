@@ -152,7 +152,9 @@ long long Parser::inferredLength(const Init &in, const Type *element, std::size_
 
 ExprPtr Parser::targetFor(const std::string &name,
                           const std::vector<InitStep> &path) {
-    ExprPtr e = objectRef(name);
+    ExprPtr e = memberRoot_ != nullptr && name.empty()
+                    ? thisMember(memberRoot_->thisSlot, memberRoot_->cls, *memberRoot_->member)
+                    : objectRef(name);
     for (const InitStep &s : path) {
         if (s.member != nullptr) {
             const Member *m = s.member;

@@ -1171,6 +1171,14 @@ void Parser::applyDefaults(Signature f, std::vector<ExprPtr> &args,
             src_.fail(pos, "'" + f.name + "' has no default for parameter " +
                            std::to_string(i + 1));
         at_ = it->second[i];
+        // [dcl.fct.default]/1 takes a brace-or-equal-initializer: `= {}` and `= {1, 2}` copy-list-initialise
+        // the parameter - a reference's referent through a temporary (M1 L3).
+        if (peek().is("{")) {
+            const Type *p = f.params[i]->isReference() ? f.params[i]->referent() : f.params[i];
+            Init in = parseInitialiser();
+            args.push_back(listTemporaryFrom(p->unqualified(), in, true, pos));
+            continue;
+        }
         args.push_back(assign());
     }
     at_ = resume;

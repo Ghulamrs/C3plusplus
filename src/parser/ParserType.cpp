@@ -1302,22 +1302,22 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             if (peek().is("=") || peek().is("{")) {
                 if (kind == Kind::Union && unionInits++ > 0)
                     src_.fail(d.pos, "initializing multiple members of union");
-                consume("=");
-                // `= {}` and `= {0}` zero the member, [dcl.init.list]/3; `{v}` on a scalar is the
-                // value, narrowing checked at the replay; a list for a class or an array is refused.
+                if (consume("=")) memberInitCopy_.insert(tag + "::" + d.name);
+                // `= {}` and `= {0}` zero the member, [dcl.init.list]/3; `{v}` on a scalar is the value, a
+                // list on a class or an array of scalars builds it (M1 L4); a reference or an array of classes is refused.
                 if (peek().is("{")) {
                     const bool zeroing = peekAt(1).is("}") ||
                         (peekAt(1).kind == TokenKind::Num && !peekAt(1).isFloat && peekAt(1).value == 0 &&
                          peekAt(2).is("}"));
                     const Type *inner = d.type;
                     while (inner->isArray()) inner = inner->pointee();
-                    if (!zeroing && (d.type->isReference() || d.type->isArray() ||
-                                     inner->unqualified()->isStructOrUnion()))
+                    if (!zeroing && (d.type->isReference() ||
+                                     (d.type->isArray() && inner->unqualified()->isStructOrUnion())))
                         src_.fail(peek().pos, "a braced member initialiser with "
-                                              "values on a class, an array or a "
-                                              "reference is not supported yet - "
-                                              "'= {}' and '= {0}' zero an array, "
-                                              "and a scalar member takes '{v}'");
+                                              "values on a reference or an array of a "
+                                              "class is not supported yet - '= {}' and "
+                                              "'= {0}' zero an array, and a class or an "
+                                              "array of scalars takes a list");
                 }
                 memberInit_[tag + "::" + d.name] = at_;
                 skipMemberInitialiser();
