@@ -34,6 +34,11 @@ public:
     static const int hex        = 16 << 8;
     static const int oct        = 8 << 8;
     static const int basefield  = 0xff00;
+    // [ios.base]: the three directions a seek counts from.
+    typedef int seekdir;
+    static const int beg = 0;
+    static const int cur = 1;
+    static const int end = 2;
 };
 
 class ios : public ios_base {

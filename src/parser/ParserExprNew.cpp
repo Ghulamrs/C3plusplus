@@ -65,9 +65,7 @@ void Parser::zeroLeaves(const Expr &root, const Type *type,
         }
         return;
     }
-    ExprPtr z;
-    if (type->isFloating()) { z.reset(new Num(0.0L)); z->setType(types_.doubleType()); }
-    else                    { z.reset(new Num(0LL));  z->setType(types_.intType()); }
+    ExprPtr z = zeroOf(type);
     ExprPtr again = clonePure(root);
     if (again == nullptr)
         src_.fail(0, "internal: value-initialisation was asked to zero an "
@@ -203,7 +201,7 @@ ExprPtr Parser::classTemporary(const Type *cls, std::size_t pos) {
 // as a comma chain in front of the list, the shape `Row({1, 2})` already used.
 ExprPtr Parser::initializerListExpr(const Type *ilType, Init &in, std::size_t pos) {
     std::vector<StmtPtr> setup;
-    ExprPtr list = buildInitializerList(ilType, in, pos, setup);
+    ExprPtr list = buildInitializerList(ilType, in, pos, setup, false);
     ExprPtr chain;
     for (std::size_t i = 0; i < setup.size(); i++) {
         ExprStmt *one = dynamic_cast<ExprStmt *>(setup[i].get());
@@ -327,20 +325,7 @@ ExprPtr Parser::scalarFromList(const Type *to, Init &in, std::size_t pos) {
     if (in.items.size() == 1 && in.items[0].isList)
         src_.fail(in.items[0].pos, "'" + to->describe() + "{{...}}' - braces inside the braces "
                                    "of a scalar, which has no member to take them");
-    if (in.items.empty()) {
-        ExprPtr z;
-        if (to->isPointer() || to->isNullPtr()) {
-            z.reset(new Num(0LL));
-            z->setType(types_.get(Kind::NullPtr));
-        } else if (to->isFloating()) {
-            z.reset(new Num(0.0L));
-            z->setType(types_.doubleType());
-        } else {
-            z.reset(new Num(0LL));
-            z->setType(types_.intType());
-        }
-        return convert(std::move(z), types_.withoutConst(to));
-    }
+    if (in.items.empty()) return convert(zeroOf(to), types_.withoutConst(to));
     ExprPtr v = decay(std::move(in.items[0].value));
     checkNarrowing(to, *v, in.items[0].pos, std::string());
     checkAssignable(*v, to, pos, "'" + to->describe() + "{...}'");
@@ -457,6 +442,18 @@ std::vector<ExprPtr> Parser::bracedInitArguments(const Type *to, Init &in, std::
     if (!plain->isStructOrUnion() && in.items.empty()) return args;      // value-initialised, `: m()`
     args.push_back(listTemporaryFrom(to, in, false, pos));
     return args;
+}
+
+// The zero a value-initialisation stores, of a type `convert` carries to `to`: a null pointer constant for a
+// pointer, 0.0 for a floating type, the enumeration's own zero for one - a scoped one takes no int (M1 L17).
+ExprPtr Parser::zeroOf(const Type *to) {
+    const Type *plain = to->unqualified();
+    const bool floating = plain->isFloating();
+    ExprPtr z(floating ? new Num(0.0L) : new Num(0LL));
+    z->setType(plain->isPointer() || plain->isNullPtr() ? types_.get(Kind::NullPtr)
+               : floating ? types_.doubleType()
+               : plain->isEnumeration() ? plain : types_.intType());
+    return z;
 }
 
 ExprPtr Parser::listTemporary(const Type *to, std::size_t pos) {
@@ -1868,10 +1865,7 @@ ExprPtr Parser::newExpression(std::size_t pos) {
         checkAssignable(*init, made, pos, "the value in a new-expression");
         value = convert(decay(std::move(init)), made);
     } else {
-        value.reset(new Num(0LL));
-        // An enumeration's zero is of its own type: a scoped one takes no int, [dcl.init]/8 (M1 L17).
-        value->setType(made->unqualified()->isEnumeration() ? made->unqualified() : types_.intType());
-        value = convert(std::move(value), made);
+        value = convert(zeroOf(made), made);
     }
     ExprPtr store(new Assign(std::move(where), std::move(value)));
     store->setType(made);

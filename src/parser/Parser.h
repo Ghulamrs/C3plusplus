@@ -2020,6 +2020,7 @@ private:
     ExprPtr baseSubobject(ExprPtr e, const Type *base) const;
     ExprPtr assignValue(ExprPtr n, ExprPtr value, std::size_t pos);
     StmtPtr oneStatement(std::vector<StmtPtr> all);
+    ExprPtr zeroOf(const Type *to);
     ExprPtr enumeratorValue(const EnumConst &e);
     ExprPtr thisObject();
     ExprPtr namedAfter(ExprPtr effect, ExprPtr obj);
@@ -2649,7 +2650,7 @@ private:
     const Signature *initializerListConstructor(const Type *cls,
                                                 const Type **ilType);
     ExprPtr buildInitializerList(const Type *ilType, Init &in, std::size_t pos,
-                                 std::vector<StmtPtr> &into);
+                                 std::vector<StmtPtr> &into, bool flush = true);
     int ilTemps_ = 0;
 
     void emitInit(const std::string &name, std::vector<InitStep> &path,

@@ -645,20 +645,7 @@ ExprPtr Parser::functionalCast(const Type *to, std::size_t pos) {
         if (consume(")")) {
             if (to->isVoid())
                 src_.fail(pos, "'void()' has no value");
-            // The zero that convert can carry to any scalar: a null pointer
-            // constant for a pointer, 0.0 for a floating type, 0 for the rest.
-            ExprPtr z;
-            if (to->isPointer()) {
-                z.reset(new Num(0LL));
-                z->setType(types_.get(Kind::NullPtr));
-            } else if (to->isFloating()) {
-                z.reset(new Num(0.0L));
-                z->setType(types_.doubleType());
-            } else {
-                z.reset(new Num(0LL));
-                z->setType(types_.intType());
-            }
-            return convert(std::move(z), types_.withoutConst(to), true);
+            return convert(zeroOf(to), types_.withoutConst(to), true);
         }
         ExprPtr v = decay(assign());
         if (peek().is(","))

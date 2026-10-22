@@ -2091,7 +2091,7 @@ Parser::initializerListConstructor(const Type *cls, const Type **ilType) {
 // it**, [dcl.init.list]/5. The array holds the elements; the list is `{
 // &array[0], count }` - the pointer and count <initializer_list> lays out.
 ExprPtr Parser::buildInitializerList(const Type *ilType, Init &in,
-                                     std::size_t pos, std::vector<StmtPtr> &into) {
+                                     std::size_t pos, std::vector<StmtPtr> &into, bool flush) {
     const Type *elem = ilType->templateArgs().empty()
                          ? types_.get(Kind::Int)
                          : ilType->templateArgs()[0].type;
@@ -2117,7 +2117,7 @@ ExprPtr Parser::buildInitializerList(const Type *ilType, Init &in,
             if (!in.items[i].isList)
                 src_.fail(in.items[i].pos, "this element is built from a braced "
                           "list and this initialiser is not braced");
-            ExprPtr list = buildInitializerList(innerIl, in.items[i], pos, into);
+            ExprPtr list = buildInitializerList(innerIl, in.items[i], pos, into, flush);
             ExprPtr arr(Var::local(bk, bkOff)); arr->setType(arrType);
             ExprPtr idx(new Num(static_cast<long long>(i)));
             idx->setType(types_.get(Kind::Int));
@@ -2185,7 +2185,8 @@ ExprPtr Parser::buildInitializerList(const Type *ilType, Init &in,
                 completeCall(plainElem->tag(), use->symbol, nullptr,
                              types_.get(Kind::Void), ps, false, pos, std::move(all)))));
         }
-        flushTemporaries(into);
+        // In an expression the elements' temporaries wait for its end, [class.temporary]/4 (M1).
+        if (flush) flushTemporaries(into);
         if (destructorOf(plainElem) != nullptr) {
             Alive whole{ bk, bkOff, plainElem };
             whole.count = n;

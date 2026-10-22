@@ -67,6 +67,11 @@ class basic_string {
 public:
     typedef std::size_t size_type;
     typedef C value_type;
+    // [basic.string]: the iterators are pointers here, as vector's are.
+    typedef C *iterator;
+    typedef const C *const_iterator;
+    typedef C &reference;
+    typedef const C &const_reference;
     // -1 as a size: "to the end", or "not found". Every function that takes a
     // length accepts it and every search returns it.
     static const size_type npos = (size_type)-1;
@@ -305,6 +310,12 @@ public:
         return *this;
     }
     basic_string &erase(size_type pos) { return erase(pos, npos); }
+    // [string.erase]: the one character at an iterator, answering what follows it.
+    C *erase(C *at) {
+        const size_type i = (size_type)(at - p());
+        erase(i, 1);
+        return p() + i;
+    }
 
     // **[string.cons], [string.assign], [string.replace], [string.copy]** - the members cppparse's
     // strings call that the rest of this class does not have (1.10, 2026-10-20, kept in 1.24). Every

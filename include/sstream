@@ -42,6 +42,12 @@ public:
     void str(const string &v) { s_ = v; }
     // How much has been written - the position the next character goes to, never moved back here.
     long tellp() const { return (long)s_.size(); }
+    // [ostream.seeks], to the one place this stream writes: its end. Any other is a failure.
+    ostringstream &seekp(long off, int dir) {
+        const long at = dir == ios_base::beg ? off : (long)s_.size() + off;
+        if (at != (long)s_.size()) state_ = 1;
+        return *this;
+    }
     // [ostringstream.swap]: the two exchange what they hold and how they format, each still
     // writing into its own string.
     void swap(ostringstream &o) {

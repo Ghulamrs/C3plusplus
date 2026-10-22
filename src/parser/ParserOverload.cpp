@@ -1269,11 +1269,13 @@ Parser::Signature Parser::resolveOverload(const std::string &written,
                        : (args.size() > f.params.size() ||
                           args.size() < leastArguments(f))) continue;
 
-        // **The implicit object parameter goes first**, and ranking it is what
-        // separates `get()` from `get() const`: exact where the constness agrees,
-        // a qualification conversion where a const member takes a non-const object.
+        // **The implicit object parameter goes first**, and ranking it separates `get()` from `get() const`:
+        // exact where the constness agrees, a qualification conversion where a const member takes a non-const
+        // object. A static member's matches any object, [over.match.funcs]/4.
         std::vector<Rank> r;
-        if (object != nullptr) {
+        if (object != nullptr && f.isStaticMember) {
+            r.push_back(Rank::Identity);
+        } else if (object != nullptr) {
             if (object->isConst() && !f.constThis) { droppedForConst = true; continue; }
             if (!refQualifierViable(f.refThis, f.constThis, objectLvalue)) { droppedForRef = true; continue; }
             r.push_back(object->isConst() == f.constThis ? Rank::Identity
