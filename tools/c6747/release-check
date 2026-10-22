@@ -29,7 +29,7 @@
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 WINDOWS=${WINDOWS_BOX:-windows}
-CPP11=${CPP11:-$ROOT/cpp11.exe}
+CPP11=${CPP11:-$ROOT/cxx3.exe}
 ASM6X=${ASM6X:-$ROOT/../../TI/ASM6x/build/asm6x.exe}
 [ -x "$ASM6X" ] || ASM6X=$HOME/Developer/Claude/TI/ASM6x/build/asm6x.exe
 VM=${VM:-$ROOT/../../TI/VM6747/vm6747.exe}

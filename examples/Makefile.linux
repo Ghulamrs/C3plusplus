@@ -18,7 +18,7 @@ SRCS      := $(wildcard *.cpp)
 OBJS      := $(SRCS:.cpp=.o)
 ASMS      := $(SRCS:.cpp=.s)
 
-CXX1      ?= cxx1.exe
+CXX1      ?= cxx3.exe
 CXX1FLAGS ?=
 
 .PHONY: all run asm clean

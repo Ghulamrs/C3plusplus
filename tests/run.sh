@@ -15,7 +15,7 @@
 # needs no assembler and therefore runs anywhere.
 set -e
 cd "$(dirname "$0")/.."
-CXX1="${CXX1:-./cpp11.exe}"
+CXX1="${CXX1:-./cxx3.exe}"
 
 # Every invocation of the compiler runs under a CPU limit, in a subshell so
 # the limit does not outlive it. A parser that loops on bad input is a real

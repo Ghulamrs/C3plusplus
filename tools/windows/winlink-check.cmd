@@ -40,7 +40,7 @@ set SRC=%ROOT%\tests\winlink
 if "%2"=="ab" (set MINE=a& set THEIRS=b) else (set MINE=b& set THEIRS=a)
 set LOG=%WORK%\%1-%2.log
 start "" /b cmd /c "cl /nologo /EHsc /c /I%SRC% /Fo%WORK%\%1-%2-%THEIRS%.obj %SRC%\%1-%THEIRS%.cpp > %LOG%.cl 2>&1 & echo.> %LOG%.cldone"
-%ROOT%\cxx1-msvc.exe -c %SRC%\%1-%MINE%.cpp -o %WORK%\%1-%2-%MINE%.obj > %LOG% 2>&1
+%ROOT%\cxx3-msvc.exe -c %SRC%\%1-%MINE%.cpp -o %WORK%\%1-%2-%MINE%.obj > %LOG% 2>&1
 set MINERC=%errorlevel%
 :wait
 if not exist %LOG%.cldone (ping -n 2 127.0.0.1 >nul & goto wait)

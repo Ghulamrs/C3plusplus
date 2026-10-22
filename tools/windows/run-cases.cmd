@@ -128,12 +128,12 @@ rem  A case's second translation unit, <case>.part.cpp, goes into its program - 
 set PART=
 if exist %ROOT%\tests\cases\%NAME%.part.cpp set PART=%ROOT%\tests\cases\%NAME%.part.cpp
 if "%~2"==".expected" (
-    %ROOT%\cxx1-msvc.exe %CXX1_PASS_FLAGS% %CXX1_CASES_FLAGS% %FLAGS% %ROOT%\tests\cases\%NAME%.cpp %PART% -o %OUT%\%NAME%.exe >%OUT%\%NAME%.build 2>&1
+    %ROOT%\cxx3-msvc.exe %CXX1_PASS_FLAGS% %CXX1_CASES_FLAGS% %FLAGS% %ROOT%\tests\cases\%NAME%.cpp %PART% -o %OUT%\%NAME%.exe >%OUT%\%NAME%.build 2>&1
     if errorlevel 1 (echo COMPILE-FAILED %CXX1_PASS_FLAGS% %NAME%& exit /b 0)
     %OUT%\%NAME%.exe > %OUT%\%NAME%.out 2>&1 < nul
     exit /b 0
 )
 rem  A refusal: only the compile is asked for, -S stopping before the assembler.
-%ROOT%\cxx1-msvc.exe %CXX1_PASS_FLAGS% %FLAGS% -S %ROOT%\tests\cases\%NAME%.cpp -o nul >%OUT%\%NAME%.err 2>&1
+%ROOT%\cxx3-msvc.exe %CXX1_PASS_FLAGS% %FLAGS% -S %ROOT%\tests\cases\%NAME%.cpp -o nul >%OUT%\%NAME%.err 2>&1
 if not errorlevel 1 echo COMPILED-AND-SHOULD-NOT-HAVE %CXX1_PASS_FLAGS% %NAME%
 exit /b 0

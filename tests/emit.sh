@@ -20,7 +20,7 @@
 set -e
 cd "$(dirname "$0")/.."
 if [ "${1:-}" = --o2 ]; then EMIT_O2=1; export EMIT_O2; shift; fi
-CXX1="${CXX1:-./cpp11.exe}"
+CXX1="${CXX1:-./cxx3.exe}"
 cxx1() { ( ulimit -t 10; $CXX1 "$@" < /dev/null ); }
 OUT=tests/out-emit
 GOLD=tests/out-emit.golden

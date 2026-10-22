@@ -7,8 +7,8 @@
 # the diagnostics and exit status with them.
 #
 # Usage: tools/identical.sh REF NEW [CPP] [OUT]
-#   REF  the reference cxx1.exe (a build of the untouched base)
-#   NEW  the cxx1.exe under test
+#   REF  the reference cxx3.exe (a build of the untouched base)
+#   NEW  the cxx3.exe under test
 #   CPP  a Compiler++ tree (its units are CPP/Compiler++/*.cpp); default
 #        ~/cxxopt-build/cpp, skipped if it is not there
 #   OUT  a scratch directory; default ~/cxxopt-build/identical

@@ -4,7 +4,7 @@
     tools/feature-sweep                      run every probe through cpp11
     tools/feature-sweep --clang clang++      and validate each probe with clang first
     tools/feature-sweep --list               print the probes and stop
-    CXX1=path/to/cpp11.exe                   the compiler under test (default ./cpp11.exe)
+    CXX1=path/to/cxx3.exe                   the compiler under test (default ./cxx3.exe)
 
 The critical review of 2026-10-08 (`CppOptimize-critical-review_1.md`, section 2)
 put 122 probes of C++11 features through cpp11 and found 56 refused, which is
@@ -172,7 +172,7 @@ def main():
     clang = None
     if "--clang" in args:
         clang = args[args.index("--clang") + 1]
-    cxx1 = os.environ.get("CXX1", os.path.join(ROOT, "cpp11.exe"))
+    cxx1 = os.environ.get("CXX1", os.path.join(ROOT, "cxx3.exe"))
     clangflags = os.environ.get("CLANGFLAGS", "").split()
 
     bins = {"compiles": [], "refused by name": [], "refused naming nothing": []}

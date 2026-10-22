@@ -81,7 +81,7 @@ if defined SKIP (
     exit /b 0
 )
 if "%TOOL%"=="cxx1" (
-    %ROOT%\cxx1-msvc.exe -c %ROOT%\tests\cases\%NAME%.cpp -o %ROOT%\winnames\%NAME%.obj >nul 2>&1
+    %ROOT%\cxx3-msvc.exe -c %ROOT%\tests\cases\%NAME%.cpp -o %ROOT%\winnames\%NAME%.obj >nul 2>&1
     if errorlevel 1 echo cxx1-refused > %ROOT%\winnames\%NAME%.skip
     exit /b 0
 )

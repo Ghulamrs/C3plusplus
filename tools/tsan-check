@@ -2,7 +2,7 @@
 # The compiler's thread pool under ThreadSanitizer (review P4): `make tsan` builds a
 # -fsanitize=thread cpp11 into obj-tsan/ and hands it here.
 #
-#   tools/tsan-check obj-tsan/cpp11.exe
+#   tools/tsan-check obj-tsan/cxx3.exe
 #
 # Three runs, every report written to a file of its own (TSAN_OPTIONS log_path) and counted
 # at the end - a report on a refusal case would otherwise hide inside the text it was asked for:
@@ -20,9 +20,9 @@ export TSAN_OPTIONS="log_path=$T/reports/tsan second_deadlock_stack=1 ${TSAN_OPT
 fail=0
 
 # 1. the suite, through a wrapper that adds -j 4 to every compile
-printf '#!/bin/sh\nexec "%s" -j 4 "$@"\n' "$TSAN" > "$T/wrap/cpp11.exe"
-chmod +x "$T/wrap/cpp11.exe"
-CXX1="$T/wrap/cpp11.exe" ./tests/run.sh > "$T/run.log" 2>&1 || { echo "tsan-check: run.sh failed under TSAN"; fail=1; }
+printf '#!/bin/sh\nexec "%s" -j 4 "$@"\n' "$TSAN" > "$T/wrap/cxx3.exe"
+chmod +x "$T/wrap/cxx3.exe"
+CXX1="$T/wrap/cxx3.exe" ./tests/run.sh > "$T/run.log" 2>&1 || { echo "tsan-check: run.sh failed under TSAN"; fail=1; }
 tail -1 "$T/run.log"
 
 # 2. the pool over every case, for each target the tree emits

@@ -29,7 +29,7 @@ ASMS    := $(SRCS:.cpp=.s)
 # Point CXX1 at wherever the compiler was unpacked, or leave it as a bare name
 # if it is on PATH.
 
-CXX1    ?= cxx1.exe
+CXX1    ?= cxx3.exe
 CXX1FLAGS ?=
 # Examples of what may go on that line, none of them needed by default:
 #   -I include        a directory of your own headers, searched first

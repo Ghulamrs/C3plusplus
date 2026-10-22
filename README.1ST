@@ -6,7 +6,7 @@ run it, where its headers come from, what it accepts, and how to build it from
 source on the three machines it runs on.  Everything else in this tree is for
 whoever works *on* the compiler; this file is for whoever works *with* it.
 
-The program is `cxx1.exe` on every machine - Linux, macOS and Windows alike.
+The program is `cxx3.exe` on every machine - Linux, macOS and Windows alike.
 It carries one name everywhere so that a script does not have to know which
 machine it is on.
 
@@ -14,12 +14,12 @@ machine it is on.
 1.  RUNNING IT
 --------------
 
-    cxx1.exe hello.cpp                     compile, assemble, link -> a.out
-    cxx1.exe hello.cpp -o hello            ... and name the program
-    cxx1.exe a.cpp b.cpp c.cpp -o prog     several files, linked together
-    cxx1.exe -c part.cpp                   stop at an object file
-    cxx1.exe -S part.cpp                   stop at assembly
-    cxx1.exe -S part.cpp -o -              ... written to standard output
+    cxx3.exe hello.cpp                     compile, assemble, link -> a.out
+    cxx3.exe hello.cpp -o hello            ... and name the program
+    cxx3.exe a.cpp b.cpp c.cpp -o prog     several files, linked together
+    cxx3.exe -c part.cpp                   stop at an object file
+    cxx3.exe -S part.cpp                   stop at assembly
+    cxx3.exe -S part.cpp -o -              ... written to standard output
 
 On a Windows host the default program name is `a.exe` rather than `a.out`.
 
@@ -92,7 +92,7 @@ is put.  The search, in order, and the first that answers wins:
   1. `CPP11_INCLUDE` and `CPP11_LIB` in the environment, if set.  This is the
      override for a packager or a test harness, and nothing else touches it.
 
-  2. Beside the program: `<where cxx1.exe is>/include` and `.../lib`, then one
+  2. Beside the program: `<where cxx3.exe is>/include` and `.../lib`, then one
      directory up - `<...>/../include` and `../lib` - which is the layout a
      release takes when the program sits in `bin/`.  A directory is taken only
      if a header this compiler ships is actually in it, so somebody else's
@@ -104,7 +104,7 @@ is put.  The search, in order, and the first that answers wins:
 
 So either of these layouts is a complete installation:
 
-    cxx1.exe                        cxx1/bin/cxx1.exe
+    cxx3.exe                        cxx1/bin/cxx3.exe
     include/...                     cxx1/include/...
     lib/...                         cxx1/lib/...
 
@@ -160,7 +160,7 @@ a test program each.  It uses `<algorithm>`, `<cmath>`, `<iostream>`, `<map>`,
 templates over a non-type parameter, and `assert` throughout.  Nothing in it
 was written with this compiler in mind.
 
-    cxx1.exe "../C++ Vector Exercise/main.cpp" -I "../C++ Vector Exercise" -o vectors
+    cxx3.exe "../C++ Vector Exercise/main.cpp" -I "../C++ Vector Exercise" -o vectors
     ./vectors
 
     a       = (1, 2, 3)
@@ -192,7 +192,7 @@ compiler's on the answers.
 From the source tree, on any of the three machines it builds on (its fourth
 target, tms6747, is cross-compiled from any of them):
 
-    make                 build cxx1.exe with the host compiler
+    make                 build cxx3.exe with the host compiler
     make test            build and run the four suites
     make open            the register of known-open defects; gates nothing
     make golden          record what the assembly suite emits now
@@ -222,7 +222,7 @@ two header directories of section 2.
 
 This is **version 1.23**, sealed **21-10-2026**.
 
-    cxx1.exe -version            says both, and names the seal file
+    cxx3.exe -version            says both, and names the seal file
     cxx1-1.23.dat                 the seal: a CRC32 and a size per file
     tools/seal check             verifies every line of it
 
@@ -232,7 +232,7 @@ The seal covers what the compiler *is*: every file under `src/`, `include/` and
 The head of the file says how many, and carries **one CRC32 over all of them**,
 so a single number identifies the release.
 
-Nothing generated is in it - no object files, no `cxx1.exe`, no test output -
+Nothing generated is in it - no object files, no `cxx3.exe`, no test output -
 and neither is documentation, which changes without the compiler changing.
 **`tools/seal check` answers with the files that differ and a non-zero status**,
 so a build script can gate on it; a seal nobody can check is decoration. The
@@ -275,7 +275,7 @@ and it builds any project of C++ sources in one directory:
     SRCS    := $(wildcard *.cpp)
     OBJS    := $(SRCS:.cpp=.o)
 
-    CXX1    ?= cxx1.exe
+    CXX1    ?= cxx3.exe
     CXX1FLAGS ?=
 
     all: $(TARGET)
@@ -297,21 +297,21 @@ toolchain from this file's point of view**, and it takes object files as inputs
 so that the link step is the same program as the compile step.
 
     $ make
-    cxx1.exe -c demo.cpp -o demo.o
-    cxx1.exe -c report.cpp -o report.o
-    cxx1.exe demo.o report.o -o demo
+    cxx3.exe -c demo.cpp -o demo.o
+    cxx3.exe -c report.cpp -o report.o
+    cxx3.exe demo.o report.o -o demo
 
     $ make one
-    cxx1.exe demo.cpp report.cpp -o demo
+    cxx3.exe demo.cpp report.cpp -o demo
     ©2026 G. R. Akhtar - C++03 with C++11 extensions
     2 source files, 1 compilation thread
       [thread 1] demo.cpp
       [thread 1] report.cpp
 
     $ nmake /f Makefile.windows          (from a Developer Command Prompt)
-    cxx1.exe -c demo.cpp -o demo.obj
-    cxx1.exe -c report.cpp -o report.obj
-    cxx1.exe demo.obj report.obj -o demo.exe
+    cxx3.exe -c demo.cpp -o demo.obj
+    cxx3.exe -c report.cpp -o report.obj
+    cxx3.exe demo.obj report.obj -o demo.exe
 
 **Which tools take part.**  cxx1 does the compiling itself - its own lexer,
 preprocessor, parser and code generator, with no framework underneath - and

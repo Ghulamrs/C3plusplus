@@ -9,12 +9,12 @@ REM quoted paths typed at an ssh shell loses a quote, which is why the work is
 REM in a file rather than on a command line. ide\build-vs.cmd carries the same
 REM note for the same reason.
 REM
-REM     build-win.cmd                 uses cxx1.exe from PATH
-REM     build-win.cmd C:\path\cxx1.exe
+REM     build-win.cmd                 uses cxx3.exe from PATH
+REM     build-win.cmd C:\path\cxx3.exe
 setlocal
 set HERE=%~dp0
 set CXX1=%1
-if "%CXX1%"=="" set CXX1=cxx1.exe
+if "%CXX1%"=="" set CXX1=cxx3.exe
 
 call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul
 if errorlevel 1 ( echo build-win.cmd: no vcvars64 - ml64 and link come from it & exit /b 1 )

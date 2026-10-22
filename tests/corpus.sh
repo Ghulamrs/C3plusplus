@@ -23,7 +23,7 @@
 # Its headers are copied beside the cases, so #include "..." still finds them.
 set -u
 cd "$(dirname "$0")/.."
-CXX1="${CXX1:-./cpp11.exe}"
+CXX1="${CXX1:-./cxx3.exe}"
 OUT=tests/out-corpus
 rm -rf "$OUT"; mkdir -p "$OUT"
 cp tests/c-corpus/*.h "$OUT"/        # a case's #include "..." looks beside the copy

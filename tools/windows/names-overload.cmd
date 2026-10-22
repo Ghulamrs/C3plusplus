@@ -3,7 +3,7 @@ rem  tests/names.sh and tests/overload.sh on the Windows box.
 rem
 rem  Usage:  names-overload.cmd <root> [compiler]
 rem          <root>      the tree, e.g. C:\Users\GRA\work\rtsdiv\ws-a
-rem          [compiler]  the cxx1 to test; default <root>\cxx1-msvc.exe,
+rem          [compiler]  the cxx1 to test; default <root>\cxx3-msvc.exe,
 rem                      which msvc\build.cmd makes
 rem
 rem  Both suites ask clang, and the two scripts are POSIX sh - so they run under
@@ -34,7 +34,7 @@ setlocal
 if "%~1"=="" (echo names-overload.cmd: needs the tree root & exit /b 2)
 set ROOT=%~1
 set CXX1=%~2
-if "%CXX1%"=="" set CXX1=%ROOT%\cxx1-msvc.exe
+if "%CXX1%"=="" set CXX1=%ROOT%\cxx3-msvc.exe
 if not exist "%CXX1%" (echo names-overload.cmd: no compiler at %CXX1% - run msvc\build.cmd first & exit /b 2)
 
 rem  C:\a\b -> /c/a/b, the spelling bash wants.

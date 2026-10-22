@@ -12,7 +12,7 @@ script can gate on it.
 What is sealed is what a release *is*: the compiler's own sources, the two
 header directories every program it compiles reaches into - source code only,
 no examples. Nothing that is
-generated (obj/, cxx1.exe, tests/out-*) and nothing that is documentation, which
+generated (obj/, cxx3.exe, tests/out-*) and nothing that is documentation, which
 changes without the compiler changing.
 
 CRC32 and not a cryptographic digest, because this answers "did this file

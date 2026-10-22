@@ -29,7 +29,7 @@ del /q %WORK%\* 2>nul
 call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul
 if errorlevel 1 (echo catch-check: no vcvars64 & exit /b 1)
 
-%ROOT%\cxx1-msvc.exe %WORK%\prog.cpp -o %WORK%\prog.exe
+%ROOT%\cxx3-msvc.exe %WORK%\prog.cpp -o %WORK%\prog.exe
 if errorlevel 1 (echo catch-check: cxx1 refused it & exit /b 1)
 %WORK%\prog.exe
 if errorlevel 1 (echo catch-check: the program failed & exit /b 1)

@@ -18,7 +18,7 @@ if "%CPP11_AS%"=="" set CPP11_AS=C:\asm6x-tests\build\asm6x.exe
 if not exist "%CPP11_AS%" (echo ti-link.cmd: no asm6x.exe at %CPP11_AS% - name it with CPP11_AS & exit /b 1)
 if not exist %CPP11_TI%\bin\lnk6x.exe (echo ti-link.cmd: no lnk6x under %CPP11_TI% & exit /b 1)
 if not exist %CPP11_TILIB%\rts6740_elf_eh.lib (echo ti-link.cmd: no rts6740_elf_eh.lib - see VM6747/tests/ti.sh & exit /b 1)
-if not exist %ROOT%\cxx1-msvc.exe (echo ti-link.cmd: no cxx1-msvc.exe - run-cases.cmd builds it & exit /b 1)
+if not exist %ROOT%\cxx3-msvc.exe (echo ti-link.cmd: no cxx3-msvc.exe - run-cases.cmd builds it & exit /b 1)
 if not exist %ROOT%\winout\ti mkdir %ROOT%\winout\ti
 del /q %ROOT%\winout\ti\* 2>nul
 rem  Six shards at once with par.cmd; each prints a marker line per case, and the counts are
@@ -49,7 +49,7 @@ if exist %ROOT%\tests\cases\%1.notarget findstr /C:"tms6747" %ROOT%\tests\cases\
 rem  A case's second translation unit, <case>.part.cpp, goes into its program, as run-cases.cmd does.
 set PART=
 if exist %ROOT%\tests\cases\%1.part.cpp set PART=%ROOT%\tests\cases\%1.part.cpp
-%ROOT%\cxx1-msvc.exe -arch tms6747 -nologo %CXX1_TI_FLAGS% %ROOT%\tests\cases\%1.cpp %PART% -o %ROOT%\winout\ti\%1.out > %ROOT%\winout\ti\%1.log 2>&1
+%ROOT%\cxx3-msvc.exe -arch tms6747 -nologo %CXX1_TI_FLAGS% %ROOT%\tests\cases\%1.cpp %PART% -o %ROOT%\winout\ti\%1.out > %ROOT%\winout\ti\%1.log 2>&1
 if errorlevel 1 (echo =FAILED %1& echo TI-FAILED %1& type %ROOT%\winout\ti\%1.log | findstr /v "^$"& exit /b 0)
 if exist %ROOT%\winout\ti\%1.out (echo =LINKED %1) else (echo =FAILED %1& echo TI-NO-OUT %1)
 exit /b 0

@@ -12,7 +12,7 @@
 #                                          build beside this tree, else one on PATH
 set -u
 cd "$(dirname "$0")/.."
-CXX1="${CXX1:-./cpp11.exe}"
+CXX1="${CXX1:-./cxx3.exe}"
 ASM6X="${ASM6X:-}"
 if [ -z "$ASM6X" ]; then
     for c in ../../TI/ASM6x/build/asm6x.exe "$HOME/asm6x-build/asm6x.exe" "$(command -v asm6x 2>/dev/null)"; do

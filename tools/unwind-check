@@ -20,7 +20,7 @@
 # other compiler's.
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-CXX1=${CXX1:-$ROOT/cxx1.exe}
+CXX1=${CXX1:-$ROOT/cxx3.exe}
 SYS=${SYSCXX:-c++}
 DIR=$(mktemp -d)
 trap 'rm -rf "$DIR"' EXIT

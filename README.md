@@ -1,8 +1,9 @@
 # cxx1 — a C++03 compiler with C++11 extensions
 
-`cxx1` (`cpp11.exe`) compiles **C++03 with C++11 extensions** to native
+`cxx1` (`cxx3.exe`, built by `make`; RIDE's projects build it as `cpp11.exe`) compiles
+**C++03 with C++11 extensions** to native
 assembly for **x86_64-linux**, **x86_64-windows**, **arm64-darwin** and
-**tms6747** (TI's C6747 DSP). It is written in ISO C++14 and depends on no
+**tms6747** (TI's C6747 DSP). It is written in ISO C++11 and depends on no
 compiler framework: its own lexer, preprocessor, parser, type system and four
 code generators.
 

@@ -1,11 +1,11 @@
 # Run by bench.cmd, which sets up the MSVC environment first.
-#   -New    the cxx1 under test (default: this tree's cxx1-msvc.exe)
+#   -New    the cxx1 under test (default: this tree's cxx3-msvc.exe)
 #   -Base   a cxx1 to compare it with, e.g. a build of the commit before (optional)
 #   -Cppi   a Compiler-Cppi cxx1 with the C6000 target, for the cl6x comparison (optional)
 #   -CppiArch  that target's -arch name (default tms6747)
 #   -Rounds interleaved rounds per x86 build (default 9); -Out the work directory
 param(
-    [string]$New = (Join-Path $PSScriptRoot '..\..\cxx1-msvc.exe'),
+    [string]$New = (Join-Path $PSScriptRoot '..\..\cxx3-msvc.exe'),
     [string]$Base = '',
     [string]$Cppi = '',
     [string]$CppiArch = 'tms6747',

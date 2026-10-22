@@ -58,7 +58,7 @@ NAMES=$(for f in $FILES; do echo "${f%.*}"; done)
 # cpp11's own build, here on the Mac: cpp11 -O2 to assembly, asm6x to a TI object,
 # shipped as programs/<prog>.cpp11.obj for both simulator boxes to link and run.
 # cpp11 compiles C++, so each program goes in under a .cpp name.
-CPP11=${CPP11:-$ROOT/cpp11.exe}
+CPP11=${CPP11:-$ROOT/cxx3.exe}
 ASM6X=${ASM6X:-$ROOT/../../TI/ASM6x/build/asm6x.exe}
 # COMPRESS=1 (default): cpp11's objects --compress, cl6x its own default, compressed; COMPRESS=0:
 # both plain, ASM6x and cl6x --no_compress - the two sides always built alike

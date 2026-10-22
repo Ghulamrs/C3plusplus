@@ -49,7 +49,7 @@ rem  generated, so only this mixed link can see it.
 call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul
 if errorlevel 1 (echo sret-check: no vcvars64 & exit /b 1)
 
-%ROOT%\cxx1-msvc.exe -c %WORK%\holder.cpp -o %WORK%\holder.obj
+%ROOT%\cxx3-msvc.exe -c %WORK%\holder.cpp -o %WORK%\holder.obj
 if errorlevel 1 (echo sret-check: cxx1 refused the member function & exit /b 1)
 cl /nologo /EHsc /c /Fo%WORK%\caller.obj %WORK%\caller.cpp >nul
 if errorlevel 1 (echo sret-check: cl refused the caller & exit /b 1)

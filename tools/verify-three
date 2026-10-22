@@ -121,7 +121,7 @@ if [ "$WHICH" = all ] || [ "$WHICH" = linux ]; then
             rm -rf ~/cxx1-verify && mkdir -p ~/cxx1-verify &&
             tar -C ~/cxx1-verify -xzf /tmp/cxx1src.tgz &&
             cd ~/cxx1-verify && ./build -j1 >/dev/null && make test &&
-            CXX1="./cpp11.exe -O2" sh tests/run.sh &&
+            CXX1="./cxx3.exe -O2" sh tests/run.sh &&
             ASM6X=$HOME/asm6x-build/asm6x.exe sh tests/asm6x.sh' || rc=1
         echo "linux leg: $(( $(date +%s) - t ))s, $([ $rc -eq 0 ] && echo passed || echo FAILED)"
         exit $rc
@@ -157,7 +157,7 @@ fi
 
 # **The tms6747 target is a second box on the Windows machine**: a tree of its own in
 # C:\Users\GRA\work\verify-ti and a tarball of its own beside the windows leg's, its own
-# cxx1-msvc.exe, TI's lnk6x over every case - asm6x on what cxx1 wrote, the linker the judge.
+# cxx3-msvc.exe, TI's lnk6x over every case - asm6x on what cxx1 wrote, the linker the judge.
 # `tools/verify-three tms6747` runs it alone.
 if [ "$WHICH" = all ] || [ "$WHICH" = windows ] || [ "$WHICH" = tms6747 ]; then
     TIREMOTE='C:\Users\GRA\work\verify-ti'

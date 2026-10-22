@@ -4,7 +4,7 @@ rem
 rem  asm-run.cmd is the MASM twin. The x86_64-windows default is the GNU
 rem  spelling, which clang assembles into the same COFF - so a question about
 rem  this target that needs a run, not a rebuild, goes through here:
-rem    ./cpp11.exe -S -arch x86_64-windows p.cpp -o p.s
+rem    ./cxx3.exe -S -arch x86_64-windows p.cpp -o p.s
 rem    scp p.s windows:C:/Users/GRA/work/fast/
 rem    ssh windows "C:\Users\GRA\work\fast\gnu-run.cmd p"
 rem  The extra libraries beyond asm-run's: libcpmt.lib, which holds

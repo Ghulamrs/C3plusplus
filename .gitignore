@@ -1,17 +1,17 @@
 obj/
-cxx1.exe
+cxx3.exe
 tests/out-*/
 .DS_Store
 # **macOS makes a duplicate beside a file it has just rewritten**, so a clean
-# build leaves `cxx1 2.exe` next to `cxx1.exe`. Harmless here - the Makefiles
+# build leaves `cxx3 2.exe` next to `cxx3.exe`. Harmless here - the Makefiles
 # filter on src/%.cpp and verify-three's tar excludes *.exe - but it has
 # broken a build in a neighbouring tree, so it is named rather than deleted by
 # hand each time. See CLAUDE.md on building inside ~/Documents.
-cxx1 *.exe
+cxx3 *.exe
 obj-msvc/
 obj-tsan/
 winout-tools/
-cxx1-msvc.exe
+cxx3-msvc.exe
 
 # What the two IDE projects write beside themselves. `ide/build` is MSBuild's,
 # and Xcode keeps its own products under ~/Library unless somebody points

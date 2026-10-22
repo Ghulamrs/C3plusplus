@@ -20,6 +20,12 @@ structs given constructors, every golden byte-identical before and after - so
 what cxx1 accepts. Until that list is empty cxx1 still cannot compile itself;
 "How correctness is established" below remains how a change is judged meanwhile.
 
+**The executable is `cxx3.exe` from 2026-10-23, and `cxx3-msvc.exe` for stage 0**, so
+the cpp11 2 work cannot be mistaken for an earlier build. Only the file name changed:
+the messages still say `cpp11:`, the variables are still `CPP11_*`, the seal is still
+`cxx1-N.dat`, and RIDE's projects in `ide/` still build the `cpp11.exe` RIDE installs.
+Sections below that name `cpp11.exe` or `cxx1.exe` were written before the rename.
+
 **The headline said "C++11 minus the list" until 2026-10-08, and that was a
 claim the compiler could not support.** The critical review of that day
 (`CppOptimize-critical-review_1.md`, answered by
@@ -10631,7 +10637,7 @@ never emits.
 ## Build
 
 ```
-make                 build cxx1.exe with clang++ (Mac) or g++ (Linux)
+make                 build cxx3.exe with clang++ (Mac) or g++ (Linux)
 make test            run the four suites
 make clean
 ```

@@ -34,7 +34,7 @@ rem  PATH only after vcvars64 has run.
 call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul
 if errorlevel 1 (echo throw-check: no vcvars64 & exit /b 1)
 
-%ROOT%\cxx1-msvc.exe -c %WORK%\risky.cpp -o %WORK%\risky.obj
+%ROOT%\cxx3-msvc.exe -c %WORK%\risky.cpp -o %WORK%\risky.obj
 if errorlevel 1 (echo throw-check: cxx1 refused the thrower & exit /b 1)
 cl /nologo /EHsc /c /Fo%WORK%\catcher.obj %WORK%\catcher.cpp >nul
 if errorlevel 1 (echo throw-check: cl refused the catcher & exit /b 1)

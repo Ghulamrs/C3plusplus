@@ -97,12 +97,12 @@ DEPS     = $(OBJS:.o=.d)
 # step is a step that can be forgotten, and was.
 BINDIR  ?= .
 
-# cxx1.exe on every machine, not only Windows. The programs in this family -
+# cxx3.exe on every machine, not only Windows. The programs in this family -
 # RStudio, cc1, shc and this one - carry one name each wherever they are, and a
 # suffix that changes by platform is one more thing a script has to know.
-# The program's name, once - src/Name.h and the project files RIDE's
-# tools/make-projects.py writes spell it the same.
-PROGRAM  = cpp11
+# cxx3 names the cpp11 2 work's executable; src/Name.h keeps "cpp11" for messages and the
+# CPP11_* variables, and RIDE's projects (ide/) still build the cpp11.exe RIDE installs.
+PROGRAM  = cxx3
 TARGET   = $(BINDIR)/$(PROGRAM).exe
 
 .PHONY: all test golden corpus open comments clean help tsan determinism
@@ -134,8 +134,8 @@ $(OBJDIR)/%.o: src/%.cpp
 # checks all three backends on any machine. Neither is a differential suite
 # yet - comparing cxx1's objects against clang's needs mangling and
 # extern "C", which are rung 2.
-# The suites are told which binary, since a BINDIR build puts cpp11.exe
-# somewhere other than here; unset, each falls back to ./cpp11.exe.
+# The suites are told which binary, since a BINDIR build puts cxx3.exe
+# somewhere other than here; unset, each falls back to ./cxx3.exe.
 # ide/'s Visual Studio and Xcode projects list their sources by name, where this Makefile globs:
 # a source missing there built here and failed RIDE's Windows link (C6xPipe.cpp, 2026-09-30).
 #
@@ -203,13 +203,13 @@ TSANOBJS = $(patsubst src/%.cpp,$(TSANDIR)/%.o,$(SRCS))
 $(TSANDIR)/%.o: src/%.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -fsanitize=thread -MMD -MP -c $< -o $@
-$(TSANDIR)/cpp11.exe: $(TSANOBJS)
+$(TSANDIR)/cxx3.exe: $(TSANOBJS)
 	@mkdir -p $(TSANDIR)/lib
 	@lib=$$($(CXX) -print-file-name=libtsan.so); [ ! -f "$$lib" ] || ln -sf "$$(realpath "$$lib")" $(TSANDIR)/lib/libtsan.so.0
 	$(CXX) $(CXXFLAGS) -fsanitize=thread -Wl,-rpath,$(CURDIR)/$(TSANDIR)/lib -o $@ $(TSANOBJS)
 -include $(TSANOBJS:.o=.d)
-tsan: $(TSANDIR)/cpp11.exe
-	@./tools/tsan-check $(TSANDIR)/cpp11.exe
+tsan: $(TSANDIR)/cxx3.exe
+	@./tools/tsan-check $(TSANDIR)/cxx3.exe
 
 clean:
 	rm -rf $(OBJDIR) $(TARGET) $(TSANDIR)

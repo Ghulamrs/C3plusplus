@@ -1,7 +1,7 @@
 @echo off
 rem  **M1's measurement, on the target it is for.** R5.2 makes x86_64-windows the
 rem  self-hosting target, so the gap list is taken here and not on a Mac: stage 0 is
-rem  cxx1-msvc.exe, built by cl through msvc\build.cmd, and it compiles every one of its
+rem  cxx3-msvc.exe, built by cl through msvc\build.cmd, and it compiles every one of its
 rem  own sources for x86_64-windows with -keep-going, with only its own include\ and lib\
 rem  on the path - never msvc\compat\, which is cl's crutch and not cxx1's.
 rem
@@ -22,7 +22,7 @@ set N=0
 set OK=0
 for /r "%ROOT%\src" %%f in (*.cpp) do (
     set /a N+=1
-    "%ROOT%\cxx1-msvc.exe" -nologo -S -arch x86_64-windows -keep-going=500 !EXTRA! "%%f" -o "%ROOT%\selfout\%%~nf.s" > "%ROOT%\selfout\%%~nxf.err" 2>&1
+    "%ROOT%\cxx3-msvc.exe" -nologo -S -arch x86_64-windows -keep-going=500 !EXTRA! "%%f" -o "%ROOT%\selfout\%%~nf.s" > "%ROOT%\selfout\%%~nxf.err" 2>&1
     set RC=!errorlevel!
     echo !RC!> "%ROOT%\selfout\%%~nxf.rc"
     if "!RC!"=="0" set /a OK+=1

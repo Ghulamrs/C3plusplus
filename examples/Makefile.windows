@@ -25,7 +25,7 @@ SRCS      = demo.cpp report.cpp shapes.cpp
 OBJS      = demo.obj report.obj shapes.obj
 ASMS      = demo.s report.s shapes.s
 
-CXX1      = cxx1.exe
+CXX1      = cxx3.exe
 CXX1FLAGS =
 
 all: $(TARGET)

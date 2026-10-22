@@ -5,13 +5,13 @@
 # agree if one compiler gives one output - and so does every golden this tree records.
 #
 # Usage: tools/determinism.sh [CXX1] [OUT]
-#   CXX1  the compiler (default ./cpp11.exe)
+#   CXX1  the compiler (default ./cxx3.exe)
 #   OUT   a scratch directory (default /tmp/cxx1-determinism)
 #
 # Prints how many outputs were compared and names each one that differs; exits 1 if any does.
 set -u
 cd "$(dirname "$0")/.."
-CXX1=${1:-./cpp11.exe}
+CXX1=${1:-./cxx3.exe}
 OUT=${2:-/tmp/cxx1-determinism}
 TARGETS="x86_64-linux x86_64-windows arm64-darwin tms6747"
 LEVELS="-O0 -O2"

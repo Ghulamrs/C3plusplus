@@ -9,7 +9,7 @@ rem  here. That is what this does, and it turned a twenty-minute loop into a
 rem  fifteen-second one while the Microsoft unwind schedule was being measured.
 rem
 rem  From the Mac:
-rem    ./cxx1.exe -S -arch x86_64-windows p.cpp -o p.asm
+rem    ./cxx3.exe -S -arch x86_64-windows p.cpp -o p.asm
 rem    scp p.asm windows:C:/Users/GRA/work/fast/
 rem    ssh windows "C:\Users\GRA\work\fast\asm-run.cmd p"
 rem

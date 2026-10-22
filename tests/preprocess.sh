@@ -9,11 +9,11 @@
 # differs; both refusing agrees. tests/preprocess-known.txt names a difference that
 # is understood, one case a line with its reason, and the reason is printed every run.
 #
-#     tests/preprocess.sh            CXX1 (./cpp11.exe) and CLANG (clang++) name the two
+#     tests/preprocess.sh            CXX1 (./cxx3.exe) and CLANG (clang++) name the two
 #
 # Skips itself, saying so, where there is no clang or cpp11 has no -E.
 cd "$(dirname "$0")/.."
-CXX1="${CXX1:-./cpp11.exe}"
+CXX1="${CXX1:-./cxx3.exe}"
 CLANG="${CLANG:-clang++}"
 OUT=tests/out-preprocess
 if ! command -v "$CLANG" >/dev/null 2>&1; then echo "preprocess.sh: skipped - no $CLANG"; exit 0; fi

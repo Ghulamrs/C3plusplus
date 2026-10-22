@@ -20,7 +20,7 @@
 set -u
 
 cd "$(dirname "$0")/.."
-CXX1="${CXX1:-./cpp11.exe}"
+CXX1="${CXX1:-./cxx3.exe}"
 # The emulator where the VM6747 checkout keeps it, or beside this tree as it was.
 if [ -z "${VM:-}" ]; then
     for v in ../../TI/VM6747/vm6747.exe; do [ -x "$v" ] && { VM=$v; break; }; done
