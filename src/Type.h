@@ -349,6 +349,9 @@ public:
     // **`final` on the class head** - [class]/3 - checked where a base clause names it.
     bool isFinal() const { return cls().final_; }
     void setFinal() { final_ = true; }
+    // Its definition has begun: a pointer to its member met in its body is sized before it is complete.
+    bool beingDefined() const { return cls().beingDefined_; }
+    void setBeingDefined() { beingDefined_ = true; }
 
     // **Whether copying this class is a function call rather than a move of bytes**,
     // which both platform ABIs make a question about how it is *passed*. Measured
@@ -512,6 +515,8 @@ public:
     bool isVariadicFn() const { return variadic_; }
     // The ref-qualifier a function type was written with: `int () &` and `int ()` are two types.
     RefQual refQualifier() const { return refQual_; }
+    // `int () const`, a member function's type with a const `this` - a pointer to one is another type (M1 L9).
+    bool isConstThisFn() const { return constThis_; }
     bool isFunction() const { return kind_ == Kind::Function; }
     bool isMemberPointer() const {
         return cls().kind_ == Kind::MemberPointer;
@@ -528,8 +533,9 @@ public:
     }
     std::string parameterList() const;
     // ` &`, ` &&` or nothing, as a function type's ref-qualifier is written after its parameters.
-    const char *refQualifierSpelling() const {
-        return refQual_ == RefQual::LValue ? " &" : refQual_ == RefQual::RValue ? " &&" : "";
+    std::string refQualifierSpelling() const {
+        return std::string(constThis_ ? " const" : "") +
+               (refQual_ == RefQual::LValue ? " &" : refQual_ == RefQual::RValue ? " &&" : "");
     }
 
 private:
@@ -549,6 +555,7 @@ private:
     std::vector<const Type *> params_;
     bool variadic_ = false;
     RefQual refQual_ = RefQual::None;
+    bool constThis_ = false;
 
     std::string tag_;
     std::string local_;
@@ -571,6 +578,7 @@ private:
     bool polymorphic_ = false;
     bool abstract_ = false;
     bool final_ = false;
+    bool beingDefined_ = false;
     bool nonTrivialCopy_ = false;
     bool hasDestructor_ = false;
     std::vector<BaseSpec> bases_;
@@ -608,7 +616,7 @@ public:
     const Type *arrayOf(const Type *t, long long length);
     const Type *functionType(const Type *returns,
                              std::vector<const Type *> params, bool variadic,
-                             RefQual ref = RefQual::None);
+                             RefQual ref = RefQual::None, bool constThis = false);
     // The Nth parameter of the template being mangled.
     const Type *templateParam(int index);
     // `auto`, before deduction has replaced it.

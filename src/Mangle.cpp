@@ -799,6 +799,7 @@ private:
             out += '_';
             type(t->pointee());
         } else if (t->isFunction()) {
+            if (t->isConstThisFn()) out += 'K';                // `M1SKFivE`, measured
             out += 'F';
             type(t->returns());
             if (t->params().empty() && !t->isVariadicFn()) out += 'v';
@@ -1384,7 +1385,7 @@ private:
             scopeOf(plain->enclosing(), plain->enclosing()->tag());
             out += 'E';
             out += refQualifier(fn->refQualifier());    // `P8Buffer@@EGAAHXZ`, measured
-            out += "AA";
+            out += fn->isConstThisFn() ? "BA" : "AA";   // `P8S@@EBAHXZ` for a const `this`, measured
             returnType(fn->returns());
             const std::vector<const Type *> &ps = fn->params();
             if (ps.empty() && !fn->isVariadicFn()) { out += "XZ"; return; }

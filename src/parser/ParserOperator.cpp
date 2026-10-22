@@ -96,7 +96,7 @@ ExprPtr Parser::castExpr() {
 ExprPtr Parser::boundMemberPointer(const Type *cls, const Signature &f,
                                    std::size_t pos, long long vtableCode,
                                    const std::string &code) {
-    const Type *fn = types_.functionType(f.returns, f.params, f.variadic, f.refThis);
+    const Type *fn = types_.functionType(f.returns, f.params, f.variadic, f.refThis, f.constThis);
     const Type *mp = types_.memberFunctionPointerTo(cls, fn, target_);
     const int slot = allocateFrameSlot(mp);
     const Type *word = types_.pointerTo(types_.get(Kind::Void));
@@ -221,9 +221,13 @@ ExprPtr Parser::applyMemberPointer(ExprPtr addr, ExprPtr mp, std::size_t pos,
             addr = convert(std::move(addr), types_.pointerTo(to));
         }
     }
-    // A pointer to a member *function*: read the code pointer out of it and
-    // leave the object's address for the call to pick up.
+    // A pointer to a member *function*: read the code pointer out of it, the object's address left for the call.
     if (mpt->isMemberFunctionPointer()) {
+        // A const object calls only through a pointer to a const member, [expr.mptr.oper]/6.
+        if (constObject && !mpt->pointee()->isConstThisFn())
+            src_.fail(pos, "'this' argument to member function call has type 'const " +
+                           mpt->enclosing()->describe() + "', but the pointer's function '" + mpt->describe() +
+                           "' is not marked const");
         const Member *slot = mpt->findMember("$fn");
         const Type *fnPtr = types_.pointerTo(mpt->pointee());
         boundFn_ = mpt->pointee();

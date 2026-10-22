@@ -1,0 +1,1 @@
+but the pointer's function 'int (S::*)(void)' is not marked const

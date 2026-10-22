@@ -19,7 +19,8 @@ const Type *TypeTable::get(Kind k) const {
 // a class that adds the first vfptr over a base without one, make it multiple.
 int Type::microsoftInheritanceModel() const {
     const Type *c = unqualified();
-    if (!c->isComplete()) return 3;
+    // A class being defined with no base can only be single, whatever its body adds (M1 L13).
+    if (!c->isComplete()) return c->beingDefined() && c->bases().empty() ? 0 : 3;
     if (c->hasVirtualBase()) return 2;
     while (!c->bases().empty()) {
         if (c->bases().size() > 1) return 1;
@@ -134,15 +135,16 @@ std::string Type::describe() const {
 // did not skip it would hand back the const one for every `char *` in the file.
 const Type *TypeTable::functionType(const Type *returns,
                                     std::vector<const Type *> params,
-                                    bool variadic, RefQual ref) {
+                                    bool variadic, RefQual ref, bool constThis) {
     for (Type *d : derived_)
         if (!d->isConst() && d->kind() == Kind::Function && d->pointee() == returns &&
-            d->variadic_ == variadic && d->params_ == params && d->refQual_ == ref)
+            d->variadic_ == variadic && d->params_ == params && d->refQual_ == ref && d->constThis_ == constThis)
             return d;
     Type *t = new Type(Kind::Function, returns, -1);
     t->params_ = std::move(params);
     t->variadic_ = variadic;
     t->refQual_ = ref;
+    t->constThis_ = constThis;
     derived_.push_back(t);
     return derived_.back();
 }

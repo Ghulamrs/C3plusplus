@@ -184,7 +184,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     }
     // A definition decides this, and a declaration answers when no definition
     // has.
-    if (peek().is("{") || peek().is(":")) type->setDeclaredClass(isClass);
+    if (peek().is("{") || peek().is(":")) { type->setDeclaredClass(isClass); type->setBeingDefined(); }
     else                                  type->noteClassKey(isClass);
     if (classFinal) type->setFinal();
     if (!localOwner.empty()) {
@@ -2736,15 +2736,8 @@ Parser::Declared Parser::declarator(const Type *base, bool nameOptional,
             std::vector<const Type *> params;
             bool variadic = false;
             parameterTypes(params, variadic);
-            // **`int (S::*f)() const` is a different type and is refused by name.** A
-            // function type here carries no constness, so taking the word would make
-            // a pointer that could hold a non-const member and be called on a const.
-            if (wrapsMemberPointer && peek().is("const"))
-                src_.fail(peek().pos, "a pointer to a *const* member function "
-                                      "is not supported yet - the constness of "
-                                      "'this' is not part of a function type "
-                                      "here, so this one cannot be told from "
-                                      "the other");
+            // `int (S::*f)() const` is a type of its own: the function type carries the const `this` (M1 L9).
+            const bool constThis = wrapsMemberPointer && consume("const");
             // `int (S::*)() &` - the ref-qualifier is the function type's, [dcl.fct]/6; a
             // pointer or reference to a non-member function type may not carry one.
             if (!wrapsMemberPointer && (peek().is("&") || peek().is("&&")))
@@ -2752,7 +2745,7 @@ Parser::Declared Parser::declarator(const Type *base, bool nameOptional,
                                       "have a '" + peek().text + "' qualifier - only a "
                                       "non-static member function can, [dcl.fct]/6");
             const RefQual ref = refQualifier();
-            outer = types_.functionType(base, std::move(params), variadic, ref);
+            outer = types_.functionType(base, std::move(params), variadic, ref, constThis);
         } else {
             outer = arraySuffix(base, posOuter);
         }
@@ -2832,7 +2825,7 @@ Parser::Declared Parser::declarator(const Type *base, bool nameOptional,
             at_ += 2;                              // the '::' and the '*'
             // cl sizes a member pointer by the class's inheritance model, and an
             // incomplete class takes the three-field "unspecified" form: refused.
-            if (target_.microsoftNames() && !cls->isComplete())
+            if (target_.microsoftNames() && !cls->isComplete() && cls->microsoftInheritanceModel() == 3)
                 src_.fail(pos, "'" + of + "::*' before '" + of + "' is complete - "
                                "the Microsoft ABI sizes a pointer to a member by "
                                "the class's inheritance model, and an incomplete "

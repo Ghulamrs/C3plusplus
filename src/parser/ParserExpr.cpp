@@ -692,7 +692,9 @@ const Parser::Signature *Parser::pickByTarget(const std::vector<std::size_t> &se
     for (std::size_t i : set) {
         const Signature &f = functions_[i];
         const Type *fn = !f.owner.empty() && !f.isStaticMember ? member : plain;
-        if (fn == nullptr || types_.functionType(f.returns, f.params, f.variadic, f.refThis) != fn) continue;
+        if (fn == nullptr ||
+            types_.functionType(f.returns, f.params, f.variadic, f.refThis, fn == member && f.constThis) != fn)
+            continue;
         if (found != nullptr) return nullptr;
         found = &f;
     }
@@ -2749,7 +2751,9 @@ ExprPtr Parser::postfix() {
                 for (std::size_t i = 0; i < written.size(); i++)
                     args.push_back(std::move(written[i]));
                 std::vector<const Type *> full;
-                full.push_back(types_.pointerTo(types_.get(Kind::Void)));
+                // A const member's `this` points at a const object (M1 L9).
+                const Type *voidType = types_.get(Kind::Void);
+                full.push_back(types_.pointerTo(fn->isConstThisFn() ? types_.withConst(voidType) : voidType));
                 for (std::size_t i = 0; i < fn->params().size(); i++)
                     full.push_back(fn->params()[i]);
                 // A call through a member function pointer is a member call, and the

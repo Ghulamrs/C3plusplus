@@ -1,0 +1,1 @@
+'p' is 'int (S::*)(void)' and this is 'int (S::*)(void) const'
