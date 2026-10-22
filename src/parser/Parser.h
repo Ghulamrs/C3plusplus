@@ -1586,6 +1586,25 @@ private:
     void restoreFunctionState(const FunctionState &s);
     void clearFunctionState();
 
+    // **-keep-going** (M0 of cpp11 2): what a declaration that failed half-way leaves to be put back.
+    // The guards that unwind with the exception - Nesting, Unevaluated, Discarded - restore themselves.
+    struct DeclarationSnapshot {
+        FunctionState fn;
+        std::size_t classes = 0, namespaces = 0, split = 0;
+        std::size_t instArgs = 0, instParams = 0, instBinding = 0, instValues = 0;
+        bool unnamedNamespace = false, pattern = false, memberTemplateInst = false;
+        bool definingQualified = false, directLinkage = false;
+        int cLinkage = 0;
+        std::string inlineOwner;
+        std::map<std::string, int> boundTypes, boundValues;
+    };
+    DeclarationSnapshot snapshotDeclaration() const;
+    void restoreDeclaration(const DeclarationSnapshot &s);
+    // One declaration; under -keep-going an error in it is reported and parsing goes on after it.
+    void topLevelRecovering(Program &program);
+    // Where a declaration from `from` ends - its `;`, its body's `}`, or the scope's `}` - always past `from`.
+    std::size_t declarationEnd(std::size_t from) const;
+
     // `except` is the frame offset of an object not to destroy - the one being returned,
     // which the caller destroys instead. And a cleanup region's landing pad: destroy
     // alive_[from..to), last first, and hand the exception back to the unwinder.

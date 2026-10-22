@@ -66,8 +66,16 @@ public:
     void beginTrial() const { trials_++; }
     void endTrial() const { trials_--; }
 
+    // **-keep-going**: errors are counted, and the parser goes on from the next declaration
+    // until `limit` of them; 0 is the default, where the first error ends the file.
+    void setKeepGoing(int limit) { keepGoing_ = limit; }
+    int keepGoing() const { return keepGoing_; }
+    int errors() const { return errors_; }
+
 private:
     mutable int trials_ = 0;
+    int keepGoing_ = 0;
+    mutable int errors_ = 0;
     std::string name_;
     std::string text_;
     std::vector<std::string> files_;

@@ -199,7 +199,9 @@ void Driver::usage(char *file) {
         "         starts, which a build script may not want\n"
         "       -version says which release this is, and which seal file\n"
         "         carries the CRC32 of the sources it was built from\n"
-        "       -time reports how long each phase took\n", file);
+        "       -time reports how long each phase took\n"
+        "       -keep-going[=N] reports up to N errors a file (100 if no N) and goes\n"
+        "         on from the next declaration after each; the file still fails\n", file);
 }
 
 static std::string workingDirectory() {
@@ -1006,6 +1008,14 @@ bool Driver::parseArguments(int argc, char **argv) {
             assemblyOnly_ = true;
         } else if (std::strcmp(argv[i], "-c") == 0) {
             objectOnly_ = true;
+        } else if (std::strcmp(argv[i], "-keep-going") == 0 || std::strcmp(argv[i], "--keep-going") == 0) {
+            keepGoing_ = 100;
+        } else if (std::strncmp(argv[i], "-keep-going=", 12) == 0) {
+            keepGoing_ = std::atoi(argv[i] + 12);
+            if (keepGoing_ < 1) {
+                std::fprintf(stderr, "%s: -keep-going= wants a number of errors, 1 or more\n", argv[0]);
+                return false;
+            }
         } else if (std::strcmp(argv[i], "-time") == 0) {
             timing_ = true;
         } else if (std::strcmp(argv[i], "-version") == 0 ||
@@ -1205,6 +1215,7 @@ bool Driver::compile(const Job &job) {
 
     auto t0 = Clock::now();
     Source src = Preprocessor(job.input, searchPath_, macros_).run();
+    src.setKeepGoing(keepGoing_);
     auto t1 = Clock::now();
 
     std::vector<Token> tokens = Lexer(src).tokenize();

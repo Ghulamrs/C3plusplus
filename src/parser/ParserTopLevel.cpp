@@ -4,8 +4,11 @@
 #include "../Mangle.h"
 #include "../Source.h"
 
+#include <algorithm>
 #include <climits>
+#include <cstdio>
 #include <cstring>
+#include <mutex>
 
 bool Parser::linkageSpecification() {
     if (!peek().is("extern") || peekAt(1).kind != TokenKind::Str) return false;
@@ -27,7 +30,7 @@ bool Parser::linkageSpecification() {
             if (peek().kind == TokenKind::End)
                 src_.fail(pos, "this 'extern \"" + language + "\"' block is "
                                "never closed");
-            topLevel(*current_);
+            topLevelRecovering(*current_);
         }
         at_++;
     } else {
@@ -65,7 +68,7 @@ void Parser::topLevel(Program &program) {
             while (!peek().is("}")) {
                 if (peek().kind == TokenKind::End)
                     src_.fail(pos, "this namespace never closes");
-                topLevel(program);
+                topLevelRecovering(program);
             }
             at_++;                              // the '}'
             const std::string opened = namespacePrefix().substr(
@@ -105,7 +108,7 @@ void Parser::topLevel(Program &program) {
             if (peek().kind == TokenKind::End)
                 src_.fail(pos, "this namespace never closes");
             const TableSizes before = tableSizes();
-            topLevel(program);
+            topLevelRecovering(program);
             if (aliased) aliasInlineMembers(before);
         }
         at_++;                                  // the '}'
@@ -1934,11 +1937,122 @@ void Parser::topLevel(Program &program) {
         discardableInline_.insert(program.functions[i].symbol());
 }
 
+Parser::DeclarationSnapshot Parser::snapshotDeclaration() const {
+    DeclarationSnapshot s;
+    s.fn = captureFunctionState();
+    s.classes = classStack_.size();
+    s.namespaces = namespaceStack_.size();
+    s.split = angleSplit_;
+    s.instArgs = instantiatingArgs_.size();
+    s.instParams = instantiatingParams_.size();
+    s.instBinding = instantiatingBinding_.size();
+    s.instValues = instantiatingValues_.size();
+    s.unnamedNamespace = inUnnamedNamespace_;
+    s.pattern = patternOnly_;
+    s.memberTemplateInst = memberTemplateInst_;
+    s.definingQualified = definingQualified_;
+    s.directLinkage = directLinkage_;
+    s.cLinkage = cLinkage_;
+    s.inlineOwner = inlineOwner_;
+    s.boundTypes = boundTypeParams_;
+    s.boundValues = boundValueParams_;
+    return s;
+}
+
+void Parser::restoreDeclaration(const DeclarationSnapshot &s) {
+    restoreFunctionState(s.fn);
+    classStack_.erase(classStack_.begin() + static_cast<std::ptrdiff_t>(
+                          std::min(s.classes, classStack_.size())), classStack_.end());
+    namespaceStack_.erase(namespaceStack_.begin() + static_cast<std::ptrdiff_t>(
+                              std::min(s.namespaces, namespaceStack_.size())), namespaceStack_.end());
+    instantiatingArgs_.erase(instantiatingArgs_.begin() + static_cast<std::ptrdiff_t>(
+                                 std::min(s.instArgs, instantiatingArgs_.size())), instantiatingArgs_.end());
+    instantiatingParams_.erase(instantiatingParams_.begin() + static_cast<std::ptrdiff_t>(
+                                   std::min(s.instParams, instantiatingParams_.size())), instantiatingParams_.end());
+    instantiatingBinding_.erase(instantiatingBinding_.begin() + static_cast<std::ptrdiff_t>(
+                                    std::min(s.instBinding, instantiatingBinding_.size())), instantiatingBinding_.end());
+    instantiatingValues_.erase(instantiatingValues_.begin() + static_cast<std::ptrdiff_t>(
+                                   std::min(s.instValues, instantiatingValues_.size())), instantiatingValues_.end());
+    angleSplit_ = s.split;
+    inUnnamedNamespace_ = s.unnamedNamespace;
+    patternOnly_ = s.pattern;
+    memberTemplateInst_ = s.memberTemplateInst;
+    definingQualified_ = s.definingQualified;
+    directLinkage_ = s.directLinkage;
+    cLinkage_ = s.cLinkage;
+    inlineOwner_ = s.inlineOwner;
+    boundTypeParams_ = s.boundTypes;
+    boundValueParams_ = s.boundValues;
+}
+
+// A class head or an `=` before the first brace makes it a body or a list that declarators follow, so the
+// end is the `;`; a function's body ends at its `}` - unless a `,`, `{` or `catch` says a mem-initialiser
+// braced `b{2}` or a function try block goes on.
+std::size_t Parser::declarationEnd(std::size_t from) const {
+    int depth = 0;
+    bool aggregate = false;
+    std::size_t classKeyAt = 0;
+    bool classKey = false;
+    for (std::size_t i = from; i < tokens_.size(); i++) {
+        const Token &t = tokens_[i];
+        if (t.kind == TokenKind::End) return i > from ? i : from + 1;
+        if (depth == 0 && t.is("{") && classKey) {
+            bool call = false;
+            for (std::size_t k = classKeyAt; k < i; k++) call = call || tokens_[k].is("(");
+            if (!call) aggregate = true;
+        }
+        if (t.is("(") || t.is("[") || t.is("{")) { depth++; continue; }
+        if (t.is(")") || t.is("]")) { if (depth > 0) depth--; continue; }
+        if (t.is("}")) {
+            if (depth == 0) return i > from ? i : from + 1;      // the enclosing scope's own brace
+            if (--depth > 0) continue;
+            const Token &next = tokens_[i + 1 < tokens_.size() ? i + 1 : i];
+            if (next.is(";")) return i + 2;
+            if (aggregate || next.is(",") || next.is("{") || next.is("catch")) continue;
+            return i + 1;
+        }
+        if (depth == 0 && t.is(";")) return i + 1;
+        if (depth == 0 && t.is("=")) aggregate = true;
+        if (depth == 0 && (t.is("struct") || t.is("class") || t.is("union") || t.is("enum"))) {
+            classKey = true;
+            classKeyAt = i;
+        }
+    }
+    return tokens_.size();
+}
+
+void Parser::topLevelRecovering(Program &program) {
+    if (src_.keepGoing() == 0) { topLevel(program); return; }
+    const std::size_t start = at_;
+    const DeclarationSnapshot before = snapshotDeclaration();
+    try {
+        topLevel(program);
+    } catch (const CompileFailed &) {
+        if (src_.errors() >= src_.keepGoing()) {
+            std::lock_guard<std::mutex> hold(diagnosticLock());
+            std::fprintf(stderr, "%s: %d errors - stopping here, the limit -keep-going=%d sets\n",
+                         src_.files().empty() ? "" : src_.files()[0].c_str(), src_.errors(), src_.keepGoing());
+            throw;
+        }
+        restoreDeclaration(before);
+        at_ = std::min(declarationEnd(start), tokens_.size() - 1);
+    }
+}
+
 Program Parser::parse() {
     Program program;
     current_ = &program;
     while (peek().kind != TokenKind::End)
-        topLevel(program);
+        topLevelRecovering(program);
+    // **Under -keep-going the file still fails**: what was skipped would leave the rest half-built.
+    if (src_.errors() > 0) {
+        {
+            std::lock_guard<std::mutex> hold(diagnosticLock());
+            std::fprintf(stderr, "%s: %d error%s\n", src_.files().empty() ? "" : src_.files()[0].c_str(),
+                         src_.errors(), src_.errors() == 1 ? "" : "s");
+        }
+        compileFailed();
+    }
     // **Each of these two can give the other more to do, so they alternate.**
     for (int pass = 0; pass < 64; pass++) {
         const std::size_t had = program.functions.size();

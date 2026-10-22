@@ -104,13 +104,13 @@ goes in the same commit.
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:575` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2074` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:254` |
-| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:5344`, `src/parser/ParserTopLevel.cpp:809` |
-| `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:738` |
+| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:5344`, `src/parser/ParserTopLevel.cpp:812` |
+| `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:741` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:664` |
 | `template <template <class> typename C>`, `typename` after a template template parameter's list | C++17 | `src/parser/ParserTemplate.cpp:52` |
-| `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:828`, `src/parser/ParserInit.cpp:1045`, `src/parser/ParserTopLevel.cpp:468`, `src/parser/ParserExprNew.cpp:437` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:186` |
-| `namespace N::M { }` | C++17 | `src/parser/ParserTopLevel.cpp:85` |
-| an inline variable | C++17 | `src/parser/ParserTopLevel.cpp:276` |
+| `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:828`, `src/parser/ParserInit.cpp:1045`, `src/parser/ParserTopLevel.cpp:471`, `src/parser/ParserExprNew.cpp:437` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:186` |
+| `namespace N::M { }` | C++17 | `src/parser/ParserTopLevel.cpp:88` |
+| an inline variable | C++17 | `src/parser/ParserTopLevel.cpp:279` |
 
 ## Lexer and preprocessor
 
@@ -219,13 +219,13 @@ is left:
   has no body. `src/parser/ParserType.cpp:1234`
 - **a delegating constructor of a class with a virtual base** - the target
   would have to be told whether the object is the most derived one.
-  `src/parser/ParserTopLevel.cpp:2156`
+  `src/parser/ParserTopLevel.cpp:2270`
 - **a mem-initialiser that would run a constructor once per element of an
-  array member** - `src/parser/ParserTopLevel.cpp:1254`
+  array member** - `src/parser/ParserTopLevel.cpp:1257`
 - **a virtual base initialised with an argument that needs a temporary** - the
   base is built by the most-derived constructor, in a frame the temporary is
   not in; an argument of parameters and constants works.
-  `src/parser/ParserTopLevel.cpp:1221`
+  `src/parser/ParserTopLevel.cpp:1224`
 - **a braced list among the arguments of an aggregate member's constructor**,
   `B b = { 1, { 2, { 3 } } }` where the member's class has a constructor - each
   argument is taken as a value. `src/parser/ParserInit.cpp:331`
@@ -286,7 +286,7 @@ is left:
 - **a `std::initializer_list` with static storage made from braces** - its
   backing array would need static storage too. `src/parser/ParserInit.cpp:1333`
 - **a braced default argument** - `src/parser/ParserClass.cpp:5358`,
-  `src/parser/ParserTopLevel.cpp:862`
+  `src/parser/ParserTopLevel.cpp:865`
 - **a braced member initialiser with values on a class, an array or a
   reference** - a scalar member takes `{v}` and `= {v}`, and `= {}` and `= {0}`
   zero any member. `src/parser/ParserType.cpp:1306`
@@ -388,15 +388,15 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 
 - **a constructor's or destructor's function try block on x86_64-windows** - its handlers end by
   rethrowing, and a rethrow from inside a funclet is refused on that target; the Itanium targets and
-  the C6000 take it. `src/parser/ParserTopLevel.cpp:1125`
+  the C6000 take it. `src/parser/ParserTopLevel.cpp:1128`
 - **a constructor's or destructor's function try block in a class with a virtual base** - the
   complete object's constructor or destructor builds or destroys those, outside the one the handler
-  covers, where [except.handle]/14 wants them destroyed before the handler. `src/parser/ParserTopLevel.cpp:1137`
+  covers, where [except.handle]/14 wants them destroyed before the handler. `src/parser/ParserTopLevel.cpp:1140`
 - **a pack expansion in a dynamic exception specification**, `throw(Ts...)` - the list is read
   as types written out. `src/parser/ParserConst.cpp:237`
 - **a `throw(...)` list on a constructor or destructor of a class with a virtual base** - the
   filter would have to cover what the complete object's constructor builds outside this one, as
-  a function try block's handlers would. `src/parser/ParserTopLevel.cpp:1128`
+  a function try block's handlers would. `src/parser/ParserTopLevel.cpp:1131`
 - **a class declared in the condition of a loop** - [stmt.iter]/2 builds it
   afresh on every turn, and only a scalar can be written where the test is; a
   class in the condition of an `if` works. `src/parser/ParserStmt.cpp:985`
@@ -404,7 +404,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   `catch` handler, on x86_64-windows** - the cleanup would be a funclet inside
   the handler's funclet. `src/parser/ParserStmt.cpp:911`
 - **a trailing return type that is itself deduced**, `auto f() -> auto` -
-  C++14. `src/parser/ParserTopLevel.cpp:2089`
+  C++14. `src/parser/ParserTopLevel.cpp:2203`
 - **an expression form the Itanium name was not measured for, over a template's
   parameters in a function template's signature** - a postfix `++` or `--`, a
   lambda, `new`, `throw`, `typeid`, `noexcept`, a C-style cast to a reference

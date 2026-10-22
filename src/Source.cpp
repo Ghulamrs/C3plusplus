@@ -168,5 +168,6 @@ void Source::fail(std::size_t pos, const std::string &message) const {
         std::lock_guard<std::mutex> hold(diagnosticLock());
         std::fwrite(text.data(), 1, text.size(), stderr);
     }
+    errors_++;
     compileFailed();
 }

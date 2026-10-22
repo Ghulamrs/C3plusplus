@@ -6,6 +6,10 @@
 # second kind is how a refusal is tested: a compiler that stops is doing its
 # job, and the message it stops with is part of what is being checked.
 #
+# A case may carry <case>.flags, words added to its compile line - the
+# -keep-going cases, whose .error is the summary line that only a run reaching
+# every one of their errors prints.
+#
 # This suite runs where cxx1 can also assemble and link - it is the host-target
 # suite. Assembly for the other two targets is checked by tests/emit.sh, which
 # needs no assembler and therefore runs anywhere.
@@ -38,9 +42,10 @@ one() {
     return
   fi
 
+  flags=""; [ -f "tests/cases/$base.flags" ] && flags=$(cat "tests/cases/$base.flags")
   if [ -f "tests/cases/$base.error" ]; then
     want=$(cat "tests/cases/$base.error")
-    if cxx1 -S "$src" -o "$OUT/$base.s" 2>"$OUT/$base.err"; then
+    if cxx1 $flags -S "$src" -o "$OUT/$base.s" 2>"$OUT/$base.err"; then
       echo "FAIL $base: compiled, and should not have"
       echo fail > "$OUT/$base.verdict"
     elif grep -qF "$want" "$OUT/$base.err"; then
@@ -53,7 +58,7 @@ one() {
     return
   fi
 
-  if ! cxx1 "$src" $part -o "$OUT/$base" 2>"$OUT/$base.err"; then
+  if ! cxx1 $flags "$src" $part -o "$OUT/$base" 2>"$OUT/$base.err"; then
     echo "FAIL $base: did not compile"
     sed 's/^/      /' "$OUT/$base.err"
     echo fail > "$OUT/$base.verdict"
