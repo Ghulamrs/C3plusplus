@@ -1,0 +1,3 @@
+x86_64-linux  the Mac's clang has no standard headers for this target, so <initializer_list> is not found and there is nothing to compare.
+x86_64-windows  the same: no headers for this target on the Mac.
+arm64-darwin  Apple's libc++ tags its own initializer_list members with an ABI tag (begin`B9nqe220106`Ev and the like) that cxx1's <initializer_list> does not carry - a header difference; every name net of the tag agrees; cxx1 destroys the backing array of P through its own `__cxx1_vec_del_1P` helper, which clang writes inline.

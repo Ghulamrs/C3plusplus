@@ -1,0 +1,380 @@
+©2026 G. R. Akhtar - C++03 with C++11 extensions
+==========================================
+
+READ THIS FIRST.  It is the whole of what a user of this compiler needs: how to
+run it, where its headers come from, what it accepts, and how to build it from
+source on the three machines it runs on.  Everything else in this tree is for
+whoever works *on* the compiler; this file is for whoever works *with* it.
+
+The program is `cxx3.exe` on every machine - Linux, macOS and Windows alike.
+It carries one name everywhere so that a script does not have to know which
+machine it is on.
+
+
+1.  RUNNING IT
+--------------
+
+    cxx3.exe hello.cpp                     compile, assemble, link -> a.out
+    cxx3.exe hello.cpp -o hello            ... and name the program
+    cxx3.exe a.cpp b.cpp c.cpp -o prog     several files, linked together
+    cxx3.exe -c part.cpp                   stop at an object file
+    cxx3.exe -S part.cpp                   stop at assembly
+    cxx3.exe -S part.cpp -o -              ... written to standard output
+
+On a Windows host the default program name is `a.exe` rather than `a.out`.
+
+Options, in full:
+
+    -o <file>     name the output; with no -S or -c it names the program
+    -c            compile to one object file per input, no linking
+    -S            compile to assembly and stop; needs no assembler
+    -I <dir>      another directory for #include <...>, searched first
+    -D n[=v]      define a macro; -DN alone means -DN=1
+    -U n          undefine one, including one of the target's own
+    -j <n>        how many files are compiled at once; -j 1 is serial
+    -arch <a>     x86_64-linux, x86_64-windows, arm64-darwin or tms6747
+    -masm=<m>     x86_64-windows only: masm (the project's own masm and link,
+                  the default where they sit beside the compiler), gnu (clang,
+                  the default elsewhere and for -g), or ml64 (Microsoft's
+                  assembler, which links one translation unit per program)
+    -rts=<r>      tms6747 only: the run-time a .out is linked against - a
+                  directory holding RTS6x's rts6x.lib, the .lib itself, or
+                  ti for TI's rts6740. Unsaid: RTS6x from RTS6X, or from
+                  lib/rts6x-tms6747 beside the compiler as RIDE installs it,
+                  unless CPP11_TI or CPP11_TILIB names TI's; TI's otherwise.
+                  The link prints which it took
+    -O0 -O1 -O2   how hard the optimizer works; -O0 is the default
+    -Os           -O1 choosing the smaller code where the two differ
+    -g            write a line table, so a debugger can step through the
+                  source: DWARF on x86_64-linux and arm64-darwin, CodeView on
+                  x86_64-windows in the gnu spelling, cl6x's .dwpsn and
+                  .dwtag on tms6747; refused there with -O
+    -nologo       leave out the line printed before the work starts
+    -version      say which release this is and name its seal file
+    -time         report how long each phase took
+
+Run it with no arguments for the same list.
+
+**Every run prints one line before it starts**, naming the compiler, and a
+multi-file build then says how many source files it has and how many threads it
+is compiling them on, one line per file as each thread takes it:
+
+    ©2026 G. R. Akhtar - C++03 with C++11 extensions
+    6 source files, 6 compilation threads
+      [thread 1] main.cpp
+      [thread 2] parser.cpp
+      ...
+
+The numbers are the *threads* and not the files: the pool hands out the next
+file to whichever thread is free, so which number appears beside which file is
+not fixed between runs.  Below four files the work is done on the thread the
+program was started on and the report says one thread, honestly; `-j n` asks
+for the pool whatever the count.  All of this goes to standard error, so
+`-S -o -` still writes nothing but assembly to standard output, and `-nologo`
+leaves it out entirely for a build script that wants silence.
+
+
+2.  WHERE THE HEADERS COME FROM
+-------------------------------
+
+Two directories ship with the compiler and both are on the include path of
+every program it compiles:
+
+    include/      the C++ headers - <vector>, <string>, <iostream>, <map>, ...
+    lib/          the C headers underneath them - <stddef.h>, <string.h>, ...
+
+A program may reach either.  `#include <vector>` finds `include/vector`, which
+includes `<cstddef>` beside it, which includes `<stddef.h>` from `lib/`.
+
+**They are found beside the compiler**, so an unpacked release works wherever it
+is put.  The search, in order, and the first that answers wins:
+
+  1. `CPP11_INCLUDE` and `CPP11_LIB` in the environment, if set.  This is the
+     override for a packager or a test harness, and nothing else touches it.
+
+  2. Beside the program: `<where cxx3.exe is>/include` and `.../lib`, then one
+     directory up - `<...>/../include` and `../lib` - which is the layout a
+     release takes when the program sits in `bin/`.  A directory is taken only
+     if a header this compiler ships is actually in it, so somebody else's
+     `lib/` is never adopted by accident.
+
+  3. The path compiled in when the compiler was built, which is the source tree
+     it came from.  A binary that has been moved away from its headers still
+     works if that tree is still there.
+
+So either of these layouts is a complete installation:
+
+    cxx3.exe                        cxx1/bin/cxx3.exe
+    include/...                     cxx1/include/...
+    lib/...                         cxx1/lib/...
+
+A directory of your own goes in front of all of it with `-I`, which is searched
+before the two above.
+
+
+3.  WHAT IT ACCEPTS
+-------------------
+
+The language is **C++03 with C++11 extensions**: classes, inheritance, virtual
+functions and vtables, templates including partial specialization, exceptions
+with `try`/`catch`/`throw`, lambdas and closures, references, operator
+overloading, namespaces, `auto`, `decltype`, rvalue references and move,
+variadic type packs, `nullptr`, `static_assert`, `noexcept`, `constexpr`
+functions, range-based `for`, `dynamic_cast` and `typeid`, and the implicit
+special members with the rules that delete them.
+
+It is **not ISO C++11**, and said so wrongly until 2026-10-08: an independent
+review that day put 122 probes of C++11 features through it and 56 were
+refused - `enum class`, `override` and `final`, `= default` and `= delete`,
+delegating constructors, `using X = T;`, forwarding references,
+list-initialisation calling a constructor, raw strings, `thread_local` among
+them - which is about half of what C++11 added to C++03, and under a fifth of
+its library. Most of those landed between 2026-10-08 and 2026-10-13 - every
+one named in that list but `thread_local` - and the grid was re-measured for
+1.7: 71 of 94 probes compile, 23 are refused by name, none by a message naming
+nothing. Inheriting constructors landed on 2026-10-17 (72 compile, 22 refused);
+the headline stays, because fourteen rows of the language are still refused; it goes back to C++11 when the
+list below says it may. The subset is written down rather than left to be discovered:
+
+    docs/EXCLUSIONS.md      everything this compiler does not accept, each
+                            entry with the source line that refuses it.
+                            **Read this before writing a program for cxx1.**
+    docs/CONFORMANCE.md     what it compiles that a conforming compiler would
+                            not, or compiles differently, each with why.
+    tests/open/             programs it still answers differently from clang,
+                            kept as programs with clang's answer beside them.
+
+Two things worth knowing at the outset: the compiler is written in C++14 and
+therefore cannot compile itself, which is settled rather than pending; and the
+standard library here is this tree's own `include/`, not the platform's, so a
+program that reaches for something outside it will be told so by name.
+
+
+4.  AN EXAMPLE, FROM A PROGRAM THIS COMPILER DID NOT COME WITH
+--------------------------------------------------------------
+
+`C++ Vector Exercise` is a small C++11 library written for its own sake - four
+class templates for vectors, matrices, quaternions and rotation matrices, with
+a test program each.  It uses `<algorithm>`, `<cmath>`, `<iostream>`, `<map>`,
+`<numeric>`, `<sstream>` and `<cassert>`, operator overloading, expression
+templates over a non-type parameter, and `assert` throughout.  Nothing in it
+was written with this compiler in mind.
+
+    cxx3.exe "../C++ Vector Exercise/main.cpp" -I "../C++ Vector Exercise" -o vectors
+    ./vectors
+
+    a       = (1, 2, 3)
+    b       = (4, 5, 6)
+    a + b   = (5, 7, 9)
+    a * 2   = (2, 4, 6)
+    a . b   = 32
+    a x b   = (-3, 6, -3)
+    |a|     = 3.74166
+    unit a  = (0.267261, 0.534522, 0.801784)
+    angle   = 0.225726 rad
+    p | t   = (1, 2, 3, 4, 5)
+    p|t|p   = (1, 2, 3, 4, 5, 1, 2)
+    big5    = (1, 2, 3, 4, 5)
+
+    all checks passed
+
+All four of that project's programs - `main.cpp`, `matrix_main.cpp`,
+`quat_main.cpp` and `rotrix_main.cpp` - compile with `cxx1` and print **exactly
+what a clang build of the same sources prints**, byte for byte, floating-point
+formatting included.  That is the demonstration worth having: not that the
+compiler accepts the file, but that the program it produced agrees with another
+compiler's on the answers.
+
+
+5.  BUILDING THE COMPILER
+-------------------------
+
+From the source tree, on any of the three machines it builds on (its fourth
+target, tms6747, is cross-compiled from any of them):
+
+    make                 build cxx3.exe with the host compiler
+    make test            build and run the four suites
+    make open            the register of known-open defects; gates nothing
+    make golden          record what the assembly suite emits now
+    make clean
+
+`make` needs a C++14 compiler and nothing else.  The Makefile takes `BINDIR` if
+you want the program somewhere other than the tree.
+
+**macOS, in Xcode**: open `ide/cxx1.xcworkspace` and press Run, or
+
+    xcodebuild -project ide/cxx1.xcodeproj -scheme cxx1 -configuration Release build
+
+**Windows, in Visual Studio 2022**: open `ide/cxx1.sln` and build, or run
+`ide\build-vs.cmd` by its full path from a shell on that machine.  There is also
+`msvc\build.cmd`, which drives `cl` directly and is what the three-box
+verification uses.
+
+Both IDE projects are generated from the source tree by `ide/generate.py`, so a
+new source file does not rot them: `./ide/generate.py` rewrites them and
+`./ide/generate.py --check` says whether they are current.  Both compile the
+same file list with the same warning set the Makefile uses, and both bake in the
+two header directories of section 2.
+
+
+6.  THIS RELEASE, AND ITS SEAL
+------------------------------
+
+This is **version 1.23**, sealed **21-10-2026**.
+
+    cxx3.exe -version            says both, and names the seal file
+    cxx1-1.23.dat                 the seal: a CRC32 and a size per file
+    tools/seal check             verifies every line of it
+
+The seal covers what the compiler *is*: every file under `src/`, `include/` and
+`lib/` - source code only, since 2026-10-05; the Makefile, `msvc\build.cmd` and
+`ide/generate.py` decide how it is built, not what it is, and are not sealed.
+The head of the file says how many, and carries **one CRC32 over all of them**,
+so a single number identifies the release.
+
+Nothing generated is in it - no object files, no `cxx3.exe`, no test output -
+and neither is documentation, which changes without the compiler changing.
+**`tools/seal check` answers with the files that differ and a non-zero status**,
+so a build script can gate on it; a seal nobody can check is decoration. The
+version and date in this section, the banner lines quoted in this file and the
+heading of README.md's shortcomings list are written by `tools/version-lines`
+from `src/Version.h` - `tools/seal write` runs it first and `tools/seal check`
+fails on a stale one - because this section said 1.4 for two releases after the
+binary said otherwise.
+
+Known shortcomings of this version are listed in `README.md` under "Known
+shortcomings in 1.23", and the complete list of what the language does not
+accept is `docs/EXCLUSIONS.md`.
+
+
+7.  A MAKEFILE FOR YOUR OWN PROJECT, AND WHICH TOOLS TAKE PART
+--------------------------------------------------------------
+
+`examples/` holds a two-file program and **four** Makefiles that build it:
+
+    Makefile             portable: the host's own target, GNU make
+    Makefile.macos       arm64-darwin, named rather than inferred
+    Makefile.linux       x86_64-linux
+    Makefile.windows     x86_64-windows, and written for NMAKE, whose syntax
+                         is not GNU make's - `.cpp.obj:` for the rule, the
+                         sources listed rather than globbed, `del` to clean
+
+The three named ones differ from the portable one only where the platform does,
+which is the point of shipping them: a build that names its target says what it
+meant, and fails on the machine where that was a mistake instead of quietly
+building something else.
+
+`Makefile.windows` builds one object per source like the other three, and
+`examples/build-win.cmd` runs the whole thing from a plain shell - it calls
+`vcvars64.bat` first, because that is where `link.exe` and `clang` are.  With
+`-masm=ml64` it would need the single-translation-unit build `examples/unity.cpp`
+holds; the end of this section says why.  Copy whichever fits, change the first three lines,
+and it builds any project of C++ sources in one directory:
+
+    TARGET  := demo
+    SRCS    := $(wildcard *.cpp)
+    OBJS    := $(SRCS:.cpp=.o)
+
+    CXX1    ?= cxx3.exe
+    CXX1FLAGS ?=
+
+    all: $(TARGET)
+
+    $(TARGET): $(OBJS)          # the link step
+    	$(CXX1) $(CXX1FLAGS) $(OBJS) -o $@
+
+    %.o: %.cpp                  # one object per source
+    	$(CXX1) $(CXX1FLAGS) -c $< -o $@
+
+    one:                        # or the whole thing in one command
+    	$(CXX1) $(CXX1FLAGS) $(SRCS) -o $(TARGET)
+
+    clean:
+    	rm -f $(TARGET) $(OBJS)
+
+There is no `AS` and no `LD` in it, and no library path: **cxx1 is the whole
+toolchain from this file's point of view**, and it takes object files as inputs
+so that the link step is the same program as the compile step.
+
+    $ make
+    cxx3.exe -c demo.cpp -o demo.o
+    cxx3.exe -c report.cpp -o report.o
+    cxx3.exe demo.o report.o -o demo
+
+    $ make one
+    cxx3.exe demo.cpp report.cpp -o demo
+    ©2026 G. R. Akhtar - C++03 with C++11 extensions
+    2 source files, 1 compilation thread
+      [thread 1] demo.cpp
+      [thread 1] report.cpp
+
+    $ nmake /f Makefile.windows          (from a Developer Command Prompt)
+    cxx3.exe -c demo.cpp -o demo.obj
+    cxx3.exe -c report.cpp -o report.obj
+    cxx3.exe demo.obj report.obj -o demo.exe
+
+**Which tools take part.**  cxx1 does the compiling itself - its own lexer,
+preprocessor, parser and code generator, with no framework underneath - and
+then runs two programs that are already on the machine:
+
+    what                 Linux and macOS          Windows
+    ----------------------------------------------------------------------
+    compile to assembly  cxx1                     cxx1
+    assemble             c++     (-c on the .s)   clang -target
+                                                  x86_64-pc-windows-msvc -c
+                                                  (the project's masm.exe where
+                                                  it sits beside cxx1, -masm=masm;
+                                                  or ml64.exe /c /Fo, -masm=ml64)
+    link                 c++     (and -lm)        link.exe /subsystem:console
+                                                  with the UCRT libraries (the
+                                                  project's link.exe beside masm)
+
+**"GNU spelling" is a syntax, not a toolchain.**  Nothing of MinGW, gcc or a
+GNU runtime is involved on Windows: clang reads the assembly, writes an
+ordinary MSVC-ABI COFF object, and `link.exe` links it against the Microsoft
+CRT exactly as it would an object from `cl`.  clang ships inside Visual Studio
+2022 as the optional "C++ Clang tools for Windows" component, or as the
+standalone LLVM installer.
+
+**Why it is the default where there is no masm beside the compiler.**  A
+program of more than one file links only when each inline definition is marked
+COMDAT: a member function defined inside its class - `std::string`'s own, in
+this compiler's own `<string>` - is a strong symbol in every object that
+includes the header.  The `gnu` spelling marks it so through clang, and the
+`masm` spelling through the project's own masm, which reads a COMDAT the way cl
+writes one; Microsoft's `ml64` has no directive that reaches the bit at all, so
+`-masm=ml64` is there for a machine with neither, at the cost of one translation
+unit per program.  The `gnu` spelling is also the only one that carries a line
+table, so `-g` picks it.
+
+`c++` rather than `cc` on the Itanium targets, because `operator new` lives in
+the C++ runtime and the C driver links neither libc++ nor libstdc++.  On
+Windows the linker is given an 8 MB stack, which is what ELF and Mach-O give by
+default and Windows does not - so a program behaves the same on all three.
+
+Each of the three can be replaced from the environment, which is what a
+cross-build or an unusual installation needs:
+
+    CPP11_CC      the assembler-and-linker driver on Linux and macOS   (c++)
+    CPP11_AS      the assembler on Windows                    (ml64.exe, clang)
+    CPP11_LD      the linker on Windows                              (link.exe)
+    CPP11_INCLUDE, CPP11_LIB    the two header directories of section 2
+
+With `-S` none of them runs: cxx1 writes assembly and stops, which is why
+assembly for another machine can be produced on this one.
+
+
+8.  IF SOMETHING IS WRONG
+-------------------------
+
+The compiler tries to answer every refusal with the rule behind it and the
+place in the standard that says so.  Where it cannot do something yet, it says
+that instead of guessing - a message that names a paragraph number is a
+deliberate limit, not a crash.
+
+    make test            the four suites, on this machine
+    tools/verify-three   the same on all three, which is what a change here is
+                         held to
+
+`docs/` holds the handovers, which say where each round of work stopped and
+what it left open.

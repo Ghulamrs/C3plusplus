@@ -1,0 +1,157 @@
+// <type_traits> - the compile-time questions the language itself asks.
+//
+// The README names this one of the five headers the *language* cannot do
+// without, beside <initializer_list>, <new>, <typeinfo> and <cstddef>. It is
+// here for that reason and not as the beginning of a standard library.
+//
+// **`integral_constant<T, v>` is the base every trait derives from**, as the
+// standard writes it, `true_type` and `false_type` its two bool instances.
+//
+// What is deliberately absent: `is_class`, `is_enum`, `is_union`, `is_pod`,
+// `is_polymorphic` and the rest of the questions no library can answer
+// without help from the compiler. They need intrinsics (`__is_class` and its
+// neighbours) that this compiler does not have, and a wrong answer from a
+// trait is worse than a missing one - it is a silently different program.
+#ifndef _CXX1_TYPE_TRAITS
+#define _CXX1_TYPE_TRAITS
+
+namespace std {
+
+template <class T, T v> struct integral_constant {
+    static const T value = v;
+    typedef T value_type;
+    typedef integral_constant<T, v> type;
+    operator value_type() const { return v; }
+};
+
+typedef integral_constant<bool, true>  true_type;
+typedef integral_constant<bool, false> false_type;
+
+// The cv strippers, which every question below asks first: `const int` is an
+// integral type, and a trait that said otherwise would be answering about the
+// qualifier rather than the type.
+// **`volatile` is not in this compiler's type system**, so the traits that
+// would ask about it are not here: no `remove_volatile`, no `is_volatile`, and
+// no `T *volatile` among the pointer strippers - each is a compile error
+// today, naming the volatile sweep's own message. `remove_cv` therefore
+// removes what there is to remove, which is `const`. It is spelled out rather
+// than aliased so that the day volatile lands, this is the one line to change
+// and the traits above it need no thought.
+template <class T> struct remove_const          { typedef T type; };
+template <class T> struct remove_const<const T> { typedef T type; };
+template <class T> struct remove_cv { typedef typename remove_const<T>::type type; };
+
+template <class T> struct remove_reference      { typedef T type; };
+template <class T> struct remove_reference<T &> { typedef T type; };
+template <class T> struct remove_reference<T &&>{ typedef T type; };
+
+template <class T> struct remove_pointer                    { typedef T type; };
+template <class T> struct remove_pointer<T *>               { typedef T type; };
+template <class T> struct remove_pointer<T *const>          { typedef T type; };
+
+template <class T> struct add_pointer { typedef typename remove_reference<T>::type *type; };
+
+// is_same, and the whole of it is that one partial specialization matches
+// when the two arguments are one type.
+template <class A, class B> struct is_same       : integral_constant<bool, false> {};
+template <class A>          struct is_same<A, A> : integral_constant<bool, true>  {};
+
+template <class T> struct is_const             : integral_constant<bool, false> {};
+template <class T> struct is_const<const T>    : integral_constant<bool, true>  {};
+
+template <class T> struct is_lvalue_reference       : integral_constant<bool, false> {};
+template <class T> struct is_lvalue_reference<T &>  : integral_constant<bool, true>  {};
+template <class T> struct is_rvalue_reference       : integral_constant<bool, false> {};
+template <class T> struct is_rvalue_reference<T &&> : integral_constant<bool, true>  {};
+template <class T> struct is_reference       : integral_constant<bool, false> {};
+template <class T> struct is_reference<T &>  : integral_constant<bool, true>  {};
+template <class T> struct is_reference<T &&> : integral_constant<bool, true>  {};
+
+
+// **`is_array` is not here.** `template <class T> struct is_array<T []>` - a
+// partial specialization on an array of unknown bound - stops with `target: no
+// size for this type yet`, and a pattern is a shape rather than an object: it
+// needs no size. Same anonymous refusal as a template parameter used as an
+// array element. Restore it when that lands.
+//
+// The fundamental types, asked of the type with its qualifiers removed. Each
+// list is written out rather than derived: there is no arithmetic on types
+// here, and a name missing from a list is a trait that quietly says false.
+template <class T> struct _is_void_raw : integral_constant<bool, false> {};
+template <> struct _is_void_raw<void>  : integral_constant<bool, true>  {};
+template <class T> struct is_void : _is_void_raw<typename remove_cv<T>::type> {};
+
+template <class T> struct _is_integral_raw : integral_constant<bool, false> {};
+template <> struct _is_integral_raw<bool>               : integral_constant<bool, true> {};
+template <> struct _is_integral_raw<char>               : integral_constant<bool, true> {};
+template <> struct _is_integral_raw<signed char>        : integral_constant<bool, true> {};
+template <> struct _is_integral_raw<unsigned char>      : integral_constant<bool, true> {};
+template <> struct _is_integral_raw<short>              : integral_constant<bool, true> {};
+template <> struct _is_integral_raw<unsigned short>     : integral_constant<bool, true> {};
+template <> struct _is_integral_raw<int>                : integral_constant<bool, true> {};
+template <> struct _is_integral_raw<unsigned int>       : integral_constant<bool, true> {};
+template <> struct _is_integral_raw<long>               : integral_constant<bool, true> {};
+template <> struct _is_integral_raw<unsigned long>      : integral_constant<bool, true> {};
+template <> struct _is_integral_raw<long long>          : integral_constant<bool, true> {};
+template <> struct _is_integral_raw<unsigned long long> : integral_constant<bool, true> {};
+template <class T> struct is_integral
+    : _is_integral_raw<typename remove_cv<T>::type> {};
+
+template <class T> struct _is_floating_raw : integral_constant<bool, false> {};
+template <> struct _is_floating_raw<float>       : integral_constant<bool, true> {};
+template <> struct _is_floating_raw<double>      : integral_constant<bool, true> {};
+template <> struct _is_floating_raw<long double> : integral_constant<bool, true> {};
+template <class T> struct is_floating_point
+    : _is_floating_raw<typename remove_cv<T>::type> {};
+
+template <class T> struct _is_pointer_raw      : integral_constant<bool, false> {};
+template <class T> struct _is_pointer_raw<T *> : integral_constant<bool, true>  {};
+template <class T> struct is_pointer
+    : _is_pointer_raw<typename remove_cv<T>::type> {};
+
+// **`is_arithmetic` is a disjunction, and there is no `||` on traits here.**
+// A partial specialization on the first answer is what stands in for one: the
+// primary takes the false case and asks the second question, and the `true`
+// case never has to.
+template <bool Integral, class T> struct _arith_or : _is_floating_raw<typename remove_cv<T>::type> {};
+template <class T> struct _arith_or<true, T> : integral_constant<bool, true> {};
+template <class T> struct is_arithmetic
+    : _arith_or<is_integral<T>::value, T> {};
+
+template <bool Arith, class T> struct _fund_or : is_void<T> {};
+template <class T> struct _fund_or<true, T> : integral_constant<bool, true> {};
+template <class T> struct is_fundamental
+    : _fund_or<is_arithmetic<T>::value, T> {};
+
+// Signedness is asked only of an arithmetic type; for anything else both
+// answers are false, which is what the standard says.
+template <class T> struct _is_signed_raw : integral_constant<bool, false> {};
+template <> struct _is_signed_raw<signed char> : integral_constant<bool, true> {};
+template <> struct _is_signed_raw<short>       : integral_constant<bool, true> {};
+template <> struct _is_signed_raw<int>         : integral_constant<bool, true> {};
+template <> struct _is_signed_raw<long>        : integral_constant<bool, true> {};
+template <> struct _is_signed_raw<long long>   : integral_constant<bool, true> {};
+template <> struct _is_signed_raw<float>       : integral_constant<bool, true> {};
+template <> struct _is_signed_raw<double>      : integral_constant<bool, true> {};
+template <> struct _is_signed_raw<long double> : integral_constant<bool, true> {};
+template <class T> struct is_signed : _is_signed_raw<typename remove_cv<T>::type> {};
+
+template <class T> struct _is_unsigned_raw : integral_constant<bool, false> {};
+template <> struct _is_unsigned_raw<bool>               : integral_constant<bool, true> {};
+template <> struct _is_unsigned_raw<unsigned char>      : integral_constant<bool, true> {};
+template <> struct _is_unsigned_raw<unsigned short>     : integral_constant<bool, true> {};
+template <> struct _is_unsigned_raw<unsigned int>       : integral_constant<bool, true> {};
+template <> struct _is_unsigned_raw<unsigned long>      : integral_constant<bool, true> {};
+template <> struct _is_unsigned_raw<unsigned long long> : integral_constant<bool, true> {};
+template <class T> struct is_unsigned : _is_unsigned_raw<typename remove_cv<T>::type> {};
+
+// conditional and enable_if, the two that select rather than answer.
+template <bool B, class T, class F> struct conditional          { typedef T type; };
+template <class T, class F>         struct conditional<false, T, F> { typedef F type; };
+
+template <bool B, class T = void> struct enable_if {};
+template <class T> struct enable_if<true, T> { typedef T type; };
+
+}  // namespace std
+
+#endif

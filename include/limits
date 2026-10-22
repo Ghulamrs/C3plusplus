@@ -1,0 +1,95 @@
+// <limits> - what a type can hold.
+//
+// [numeric.limits]: `std::numeric_limits<T>` answers about one arithmetic type.
+// The primary template answers about nothing - is_specialized is false and every
+// value is T() - which is what the standard asks for a type nobody specialised,
+// and is honest here: a program that asks about a type this file does not name
+// gets a zero rather than a wrong number.
+//
+// The numbers themselves come from <limits.h> and <float.h>, so this file states
+// no bound of its own. `infinity()` is the largest value squared, which
+// overflows to the infinity the target has - written that way rather than as a
+// literal too large to represent, which is what lib/math.h does for HUGE_VAL and
+// which every compiler warns about when it reads one.
+#ifndef _CXX1_LIMITS
+#define _CXX1_LIMITS
+
+#include <climits>
+#include <cfloat>
+
+namespace std {
+
+template <class T>
+class numeric_limits {
+public:
+    static const bool is_specialized = false;
+    static const bool is_signed      = false;
+    static const bool is_integer     = false;
+    static const bool has_infinity   = false;
+    static T min()       { return T(); }
+    static T max()       { return T(); }
+    static T lowest()    { return T(); }
+    static T epsilon()   { return T(); }
+    static T infinity()  { return T(); }
+};
+
+// An integer type: no infinity, and lowest() is min().
+#define _CXX1_INT_LIMITS(T, LO, HI, SIGNED)                                   \
+template <> class numeric_limits<T> {                                         \
+public:                                                                       \
+    static const bool is_specialized = true;                                  \
+    static const bool is_signed      = SIGNED;                                \
+    static const bool is_integer     = true;                                  \
+    static const bool has_infinity   = false;                                 \
+    static T min()      { return LO; }                                        \
+    static T max()      { return HI; }                                        \
+    static T lowest()   { return LO; }                                        \
+    static T epsilon()  { return 0; }                                         \
+    static T infinity() { return 0; }                                         \
+};
+
+_CXX1_INT_LIMITS(bool,               false,     true,      false)
+_CXX1_INT_LIMITS(char,               CHAR_MIN,  CHAR_MAX,  true)
+_CXX1_INT_LIMITS(signed char,        SCHAR_MIN, SCHAR_MAX, true)
+_CXX1_INT_LIMITS(unsigned char,      0,         UCHAR_MAX, false)
+_CXX1_INT_LIMITS(short,              SHRT_MIN,  SHRT_MAX,  true)
+_CXX1_INT_LIMITS(unsigned short,     0,         USHRT_MAX, false)
+_CXX1_INT_LIMITS(int,                INT_MIN,   INT_MAX,   true)
+_CXX1_INT_LIMITS(unsigned int,       0,         UINT_MAX,  false)
+_CXX1_INT_LIMITS(long,               LONG_MIN,  LONG_MAX,  true)
+_CXX1_INT_LIMITS(unsigned long,      0,         ULONG_MAX, false)
+_CXX1_INT_LIMITS(long long,          LLONG_MIN, LLONG_MAX, true)
+_CXX1_INT_LIMITS(unsigned long long, 0,         ULLONG_MAX, false)
+
+#undef _CXX1_INT_LIMITS
+
+// A floating type: min() is the smallest *positive* normal value, which is why
+// lowest() exists at all - it is the most negative, and the two differ.
+#define _CXX1_FLT_LIMITS(T, LO, HI, EPS)                                      \
+template <> class numeric_limits<T> {                                         \
+public:                                                                       \
+    static const bool is_specialized = true;                                  \
+    static const bool is_signed      = true;                                  \
+    static const bool is_integer     = false;                                 \
+    static const bool has_infinity   = true;                                  \
+    static T min()      { return LO; }                                        \
+    static T max()      { return HI; }                                        \
+    static T lowest()   { return -HI; }                                       \
+    static T epsilon()  { return EPS; }                                       \
+    static T infinity() { T big = HI; return big * big; }                     \
+};
+
+_CXX1_FLT_LIMITS(float,       FLT_MIN, FLT_MAX, FLT_EPSILON)
+_CXX1_FLT_LIMITS(double,      DBL_MIN, DBL_MAX, DBL_EPSILON)
+// **`long double` is deliberately left unspecialized.** Its bounds on an x87
+// target need more precision than a double holds, and this compiler refuses a
+// floating literal it cannot carry exactly rather than approximating it - the
+// rule that keeps every build machine reading the same number. So there is no
+// honest way to state them here, and is_specialized stays false rather than a
+// wrong bound being written down.
+
+#undef _CXX1_FLT_LIMITS
+
+}  // namespace std
+
+#endif

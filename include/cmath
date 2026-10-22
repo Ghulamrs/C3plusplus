@@ -1,0 +1,57 @@
+// <cmath> - The floating-point functions, under `std::`.
+//
+// C++ overloads each of these for `float` and `long double` as well. This does
+// not: `lib/math.h` declares the `double` form alone, so `std::sqrt(2.0f)`
+// converts to double and back rather than calling `sqrtf`. The answer is the
+// same one; the call is not the one a conforming library would make.
+//
+// Derived from lib/math.h: every name that header declares is named here, and
+// the two are checked against each other by the case that includes both.
+#ifndef _CXX1_CMATH
+#define _CXX1_CMATH
+
+#include <math.h>
+
+namespace std {
+
+using ::acos;
+using ::asin;
+using ::atan;
+using ::atan2;
+using ::ceil;
+using ::cos;
+using ::cosh;
+using ::exp;
+using ::fabs;
+using ::floor;
+using ::fmod;
+using ::frexp;
+using ::ldexp;
+using ::log;
+using ::log10;
+using ::modf;
+using ::pow;
+using ::sin;
+using ::sinh;
+using ::sqrt;
+using ::tan;
+using ::tanh;
+using ::trunc;
+using ::round;
+
+// The C99 classification functions, as C++11's <cmath> has them: a NaN is
+// the one value unequal to itself, an infinity is what is left when the
+// fractional part is taken off and nothing finite compares beyond it, and
+// the sign bit is read through the bits themselves.
+inline bool isnan(double v) { return v != v; }
+inline bool isinf(double v) { return v == v && (v - v) != (v - v); }
+inline bool isfinite(double v) { return v == v && (v - v) == (v - v); }
+inline bool signbit(double v) {
+    if (v != 0 || v != v) return v < 0 || (v != v && false);
+    // The zeros: 1 / -0.0 is -inf.
+    return 1.0 / v < 0;
+}
+
+}  // namespace std
+
+#endif

@@ -1,0 +1,1 @@
+:7:3: error: 'Box' is given arguments here, and 'C' is a template template parameter, which takes a template's name alone

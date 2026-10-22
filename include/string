@@ -1,0 +1,555 @@
+// <string> - one class template, and the operators around it.
+//
+// **Not `<cstring>`**, which is C's `string.h` under `std::`. This is the
+// class; that is the byte functions. The two names are one letter apart and a
+// program that reaches for the wrong one gets no error, so it is worth saying
+// twice.
+//
+// What is here is what a program actually calls, and no more: the tree this
+// library was written for uses seventeen members of this class, and each is
+// below. Up to fifteen units are held inside the object, as TI's library does, and
+// only a longer string owns a heap buffer; there is no allocator parameter,
+// because there is nowhere to put one that anything would read.
+//
+// **`basic_string<C>` since 2026-09-26**, so that `wstring` is the same class
+// over `wchar_t` rather than a second copy of it; there is no `char_traits`,
+// the three things a traits class would answer being the three helpers below.
+//
+// **The class owns memory, which is why it defines all four of the special
+// members** rather than letting the compiler copy its bytes: two strings
+// sharing a buffer would free it twice, and that is the failure that prints the
+// right answer first.
+#ifndef _CXX1_STRING
+#define _CXX1_STRING
+
+#include <cstddef>
+#include <cstdlib>
+#include <cstring>
+#include <cctype>     // as libstdc++'s <string> reaches it, so `isupper` is declared beside a string
+
+namespace std {
+
+// **`at` throws `out_of_range`, and `out_of_range` holds a `string`**, so the
+// class cannot be named here. What `at` calls is declared here and defined at
+// the end of <stdexcept>, which the end of this header includes: the same
+// shape libstdc++ gives it, with the definition in every unit rather than in
+// a library, as the operators below are.
+inline void __throw_out_of_range(const char *what);
+
+// The traits a basic_string needs, as three functions: length, order, membership. For char the
+// first two are strlen and memcmp - char_traits<char> compares as unsigned char - which the
+// platform's library has fast; wchar_t takes the loops.
+template <class C> inline std::size_t __cxx1_length(const C *s) {
+    std::size_t n = 0;
+    if (s != 0) while (s[n] != 0) n++;
+    return n;
+}
+inline std::size_t __cxx1_length(const char *s) { return s != 0 ? std::strlen(s) : 0; }
+template <class C> inline int __cxx1_compare_n(const C *a, const C *b, std::size_t n) {
+    for (std::size_t i = 0; i < n; i++)
+        if (a[i] != b[i]) return a[i] < b[i] ? -1 : 1;
+    return 0;
+}
+inline int __cxx1_compare_n(const char *a, const char *b, std::size_t n) {
+    if (n == 0) return 0;
+    int r = std::memcmp(a, b, n);
+    return r < 0 ? -1 : r > 0 ? 1 : 0;
+}
+template <class C> inline bool __cxx1_holds(const C *wanted, C c) {
+    for (std::size_t i = 0; wanted[i] != 0; i++)
+        if (wanted[i] == c) return true;
+    return false;
+}
+
+template <class C>
+class basic_string {
+public:
+    typedef std::size_t size_type;
+    typedef C value_type;
+    // -1 as a size: "to the end", or "not found". Every function that takes a
+    // length accepts it and every search returns it.
+    static const size_type npos = (size_type)-1;
+
+    basic_string() { init(0, 0); }
+    basic_string(const C *s) { init(s, __cxx1_length(s)); }
+    basic_string(const C *s, size_type n) { init(s, n); }
+    basic_string(const basic_string &o) { init(o.p(), o.len_); }
+    basic_string(size_type n, C c) {
+        empty0();
+        reserve(n);
+        C *d = p();
+        for (size_type i = 0; i < n; i++) d[i] = c;
+        len_ = n;
+        d[len_] = 0;
+    }
+    ~basic_string() { if (heap_ != 0) std::free(heap_); }
+
+    basic_string &operator=(const basic_string &o) {
+        // Self-assignment first, because the next line frees what it would
+        // then copy from.
+        if (this != &o) assignFrom(o.p(), o.len_);
+        return *this;
+    }
+    basic_string &operator=(const C *s) {
+        assignFrom(s, __cxx1_length(s));
+        return *this;
+    }
+    basic_string &operator=(C c) { assignFrom(&c, 1); return *this; }
+
+    basic_string &operator+=(const basic_string &o) { return appendUnits(o.p(), o.len_); }
+    basic_string &operator+=(const C *s) {
+        return appendUnits(s, __cxx1_length(s));
+    }
+    basic_string &operator+=(C c) { return appendUnits(&c, 1); }
+
+    C &operator[](size_type i) { return p()[i]; }
+    const C &operator[](size_type i) const { return p()[i]; }
+    // [string.access]: the checked form of the same.
+    C &at(size_type i) {
+        if (i >= len_) std::__throw_out_of_range("string::at");
+        return p()[i];
+    }
+    const C &at(size_type i) const {
+        if (i >= len_) std::__throw_out_of_range("string::at");
+        return p()[i];
+    }
+
+    size_type size() const { return len_; }
+    size_type length() const { return len_; }
+    bool empty() const { return len_ == 0; }
+    const C *c_str() const { return p(); }
+    const C *data() const { return p(); }
+
+    void clear() { len_ = 0; p()[0] = 0; }
+    // [string.swap]: the insides exchanged - the heap buffer by pointer, the inline units by copy.
+    void swap(basic_string &o) {
+        C *h = heap_; heap_ = o.heap_; o.heap_ = h;
+        size_type n = len_; len_ = o.len_; o.len_ = n;
+        n = cap_; cap_ = o.cap_; o.cap_ = n;
+        for (int i = 0; i <= small; i++) { C c = small_[i]; small_[i] = o.small_[i]; o.small_[i] = c; }
+    }
+    void push_back(C c) { appendUnits(&c, 1); }
+    void pop_back() { if (len_ != 0) { len_--; p()[len_] = 0; } }
+
+    C &back() { return p()[len_ - 1]; }
+    const C &back() const { return p()[len_ - 1]; }
+    C &front() { return p()[0]; }
+    const C &front() const { return p()[0]; }
+
+    C *begin() { return p(); }
+    C *end() { return p() + len_; }
+    const C *begin() const { return p(); }
+    const C *end() const { return p() + len_; }
+
+    basic_string &append(const basic_string &o) { return appendUnits(o.p(), o.len_); }
+    basic_string &append(const C *s) {
+        return appendUnits(s, __cxx1_length(s));
+    }
+    basic_string &append(const C *s, size_type n) { return appendUnits(s, n); }
+    basic_string &append(size_type n, C c) {
+        for (size_type i = 0; i < n; i++) appendUnits(&c, 1);
+        return *this;
+    }
+
+    // An all-zero object is an empty string: `vector` assigns into `calloc`'d slots.
+    void reserve(size_type n) { if (n > capacity()) grow(n, 0, 0); }
+    size_type capacity() const { return heap_ != 0 ? cap_ : (size_type)small; }
+
+    void resize(size_type n, C c) {
+        if (n > len_) {
+            reserve(n);
+            for (size_type i = len_; i < n; i++) p()[i] = c;
+        }
+        len_ = n;
+        p()[len_] = 0;
+    }
+    void resize(size_type n) { resize(n, 0); }
+
+    basic_string substr(size_type pos, size_type n) const {
+        if (pos > len_) pos = len_;
+        size_type have = len_ - pos;
+        return basic_string(p() + pos, n > have ? have : n);
+    }
+    basic_string substr(size_type pos) const { return substr(pos, npos); }
+    basic_string substr() const { return substr(0, npos); }
+
+    size_type find(C c, size_type from) const {
+        for (size_type i = from; i < len_; i++)
+            if (p()[i] == c) return i;
+        return npos;
+    }
+    size_type find(C c) const { return find(c, 0); }
+
+    size_type find(const C *s, size_type from) const {
+        size_type n = __cxx1_length(s);
+        if (n > len_) return npos;
+        for (size_type i = from; i + n <= len_; i++)
+            if (std::memcmp(p() + i, s, n * sizeof(C)) == 0) return i;
+        return npos;
+    }
+    size_type find(const C *s) const { return find(s, 0); }
+    size_type find(const basic_string &s, size_type from) const {
+        return find(s.p(), from);
+    }
+    size_type find(const basic_string &s) const { return find(s.p(), 0); }
+
+    // [string.rfind]: the last match that starts at or before `from`; an empty one matches at min(from, size()).
+    size_type rfind(C c, size_type from = npos) const {
+        if (len_ == 0) return npos;
+        for (size_type i = (from < len_ ? from : len_ - 1) + 1; i-- > 0; )
+            if (p()[i] == c) return i;
+        return npos;
+    }
+    size_type rfind(const C *s, size_type from, size_type n) const {
+        if (n > len_) return npos;
+        size_type i = len_ - n < from ? len_ - n : from;
+        for (++i; i-- > 0; )
+            if (std::memcmp(p() + i, s, n * sizeof(C)) == 0) return i;
+        return npos;
+    }
+    size_type rfind(const C *s, size_type from = npos) const {
+        return rfind(s, from, __cxx1_length(s));
+    }
+    size_type rfind(const basic_string &s, size_type from = npos) const {
+        return rfind(s.p(), from, s.len_);
+    }
+
+    // The parameter is `wanted` and not `set`, which it was: once `<set>` is
+    // included as well, `set` names a class template, and this compiler reads
+    // the template in preference to the parameter that shadows it. A header
+    // has no business using a library name for a parameter either way.
+    size_type find_first_of(const C *wanted) const {
+        for (size_type i = 0; i < len_; i++)
+            if (__cxx1_holds(wanted, p()[i])) return i;
+        return npos;
+    }
+    size_type find_last_of(const C *wanted) const {
+        for (size_type i = len_; i-- > 0; )
+            if (__cxx1_holds(wanted, p()[i])) return i;
+        return npos;
+    }
+    // **The one-character forms**, which is how a path is usually split -
+    // `path.find_last_of('/')`. A `char` reaches the `const char *` overload
+    // through no conversion C++ has, so without these the call is refused.
+    size_type find_first_of(C c) const { return find(c, 0); }
+    size_type find_last_of(C c) const { return rfind(c); }
+    // [string.find.first.not.of] and [string.find.last.not.of]: the first or last unit not in the set.
+    size_type find_first_not_of(const C *wanted, size_type from = 0) const {
+        for (size_type i = from; i < len_; i++)
+            if (!__cxx1_holds(wanted, p()[i])) return i;
+        return npos;
+    }
+    size_type find_first_not_of(const basic_string &s, size_type from = 0) const {
+        return find_first_not_of(s.c_str(), from);
+    }
+    size_type find_first_not_of(C c, size_type from = 0) const {
+        for (size_type i = from; i < len_; i++) if (p()[i] != c) return i;
+        return npos;
+    }
+    size_type find_last_not_of(const C *wanted, size_type from = npos) const {
+        for (size_type i = from < len_ ? from + 1 : len_; i-- > 0; )
+            if (!__cxx1_holds(wanted, p()[i])) return i;
+        return npos;
+    }
+    size_type find_last_not_of(const basic_string &s, size_type from = npos) const {
+        return find_last_not_of(s.c_str(), from);
+    }
+    size_type find_last_not_of(C c, size_type from = npos) const {
+        for (size_type i = from < len_ ? from + 1 : len_; i-- > 0; ) if (p()[i] != c) return i;
+        return npos;
+    }
+
+    basic_string &insert(size_type pos, const C *s) {
+        size_type n = __cxx1_length(s);
+        if (pos > len_) pos = len_;
+        reserve(len_ + n);
+        // Backwards, so that a move within one buffer cannot overwrite what it
+        // has not read yet.
+        for (size_type i = len_; i-- > pos; ) p()[i + n] = p()[i];
+        for (size_type i = 0; i < n; i++) p()[pos + i] = s[i];
+        len_ += n;
+        p()[len_] = 0;
+        return *this;
+    }
+    basic_string &insert(size_type pos, const basic_string &s) {
+        return insert(pos, s.c_str());
+    }
+    basic_string &insert(size_type pos, const C *s, size_type n) {
+        return insert(pos, basic_string(s, n).c_str());
+    }
+    basic_string &insert(size_type pos, size_type n, C c) {
+        return insert(pos, basic_string(n, c).c_str());
+    }
+    // [string.insert]: one unit before an iterator, which is a pointer here; the answer is where it went.
+    C *insert(C *at, C c) {
+        const size_type pos = at - p();
+        insert(pos, basic_string(1, c).c_str());
+        return p() + pos;
+    }
+
+    basic_string &erase(size_type pos, size_type n) {
+        if (pos > len_) return *this;
+        size_type have = len_ - pos;
+        if (n > have) n = have;
+        for (size_type i = pos; i + n < len_; i++) p()[i] = p()[i + n];
+        len_ -= n;
+        p()[len_] = 0;
+        return *this;
+    }
+    basic_string &erase(size_type pos) { return erase(pos, npos); }
+
+    // **[string.cons], [string.assign], [string.replace], [string.copy]** - the members cppparse's
+    // strings call that the rest of this class does not have (1.10, 2026-10-20, kept in 1.24). Every
+    // change in the middle is a replaceUnits, which copies a source out of this string first.
+    basic_string(const basic_string &o, size_type pos, size_type n) {
+        if (pos > o.len_) pos = o.len_;
+        init(o.p() + pos, n > o.len_ - pos ? o.len_ - pos : n);
+    }
+    basic_string(const basic_string &o, size_type pos) {
+        if (pos > o.len_) pos = o.len_;
+        init(o.p() + pos, o.len_ - pos);
+    }
+    size_type max_size() const { return npos / sizeof(C) - 1; }
+
+    basic_string &assign(const basic_string &o) { if (this != &o) assignFrom(o.p(), o.len_); return *this; }
+    basic_string &assign(const basic_string &o, size_type pos, size_type n) { basic_string t(o, pos, n); return assign(t); }
+    basic_string &assign(const C *s, size_type n) { return replaceUnits(0, len_, s, n); }
+    basic_string &assign(const C *s) { return replaceUnits(0, len_, s, __cxx1_length(s)); }
+    basic_string &assign(size_type n, C c) { clear(); return append(n, c); }
+
+    basic_string &append(const basic_string &o, size_type pos, size_type n) {
+        if (pos > o.len_) pos = o.len_;
+        return replaceUnits(len_, 0, o.p() + pos, n > o.len_ - pos ? o.len_ - pos : n);
+    }
+    basic_string &insert(size_type pos, const basic_string &s, size_type pos2, size_type n) {
+        if (pos2 > s.len_) pos2 = s.len_;
+        return replaceUnits(pos, 0, s.p() + pos2, n > s.len_ - pos2 ? s.len_ - pos2 : n);
+    }
+    C *erase(C *first, C *last) {
+        size_type i = (size_type)(first - p());
+        erase(i, (size_type)(last - first));
+        return p() + i;
+    }
+
+    basic_string &replace(size_type pos, size_type n, const basic_string &s) { return replaceUnits(pos, n, s.p(), s.len_); }
+    basic_string &replace(size_type pos, size_type n, const basic_string &s, size_type pos2, size_type n2) {
+        if (pos2 > s.len_) pos2 = s.len_;
+        return replaceUnits(pos, n, s.p() + pos2, n2 > s.len_ - pos2 ? s.len_ - pos2 : n2);
+    }
+    basic_string &replace(size_type pos, size_type n, const C *s, size_type n2) { return replaceUnits(pos, n, s, n2); }
+    basic_string &replace(size_type pos, size_type n, const C *s) { return replaceUnits(pos, n, s, __cxx1_length(s)); }
+    basic_string &replace(size_type pos, size_type n, size_type n2, C c) { basic_string t(n2, c); return replaceUnits(pos, n, t.p(), n2); }
+    basic_string &replace(C *first, C *last, const basic_string &s) { return replaceUnits((size_type)(first - p()), (size_type)(last - first), s.p(), s.len_); }
+    basic_string &replace(C *first, C *last, const C *s) { return replaceUnits((size_type)(first - p()), (size_type)(last - first), s, __cxx1_length(s)); }
+    basic_string &replace(C *first, C *last, const C *s, size_type n) { return replaceUnits((size_type)(first - p()), (size_type)(last - first), s, n); }
+
+    size_type copy(C *s, size_type n, size_type pos) const {
+        if (pos > len_) std::__throw_out_of_range("string::copy");
+        if (n > len_ - pos) n = len_ - pos;
+        for (size_type i = 0; i < n; i++) s[i] = p()[pos + i];
+        return n;
+    }
+    size_type copy(C *s, size_type n) const { return copy(s, n, 0); }
+
+    // The common length first, then which is longer.
+    int compare(const basic_string &o) const {
+        int r = __cxx1_compare_n(p(), o.p(), len_ < o.len_ ? len_ : o.len_);
+        return r != 0 ? r : len_ < o.len_ ? -1 : len_ == o.len_ ? 0 : 1;
+    }
+    int compare(const C *s) const { return compareUnits(s, __cxx1_length(s)); }
+    // [string.compare]: the same, of the run of up to n1 units from pos.
+    int compare(size_type pos, size_type n1, const basic_string &o) const {
+        return substr(pos, n1).compare(o);
+    }
+    int compare(size_type pos, size_type n1, const basic_string &o, size_type pos2, size_type n2) const {
+        return substr(pos, n1).compare(o.substr(pos2, n2));
+    }
+    int compare(size_type pos, size_type n1, const C *s) const { return substr(pos, n1).compare(s); }
+    int compare(size_type pos, size_type n1, const C *s, size_type n2) const {
+        return substr(pos, n1).compareUnits(s, n2);
+    }
+
+private:
+    // **Up to fifteen units live inside the object** - TI's and Dinkumware's layout,
+    // chosen per access rather than by a pointer into the object, because cxx1 hands
+    // a returned local to its caller as bytes and a self-pointer would dangle.
+    enum { small = 15 };
+    C *p() { return heap_ != 0 ? heap_ : small_; }
+    const C *p() const { return heap_ != 0 ? static_cast<const C *>(heap_) : small_; }
+    int compareUnits(const C *s, size_type n) const {
+        int r = __cxx1_compare_n(p(), s, len_ < n ? len_ : n);
+        return r != 0 ? r : len_ < n ? -1 : len_ == n ? 0 : 1;
+    }
+    // **Every change in the middle is this one**: the n units at pos give way to n2 from s. A source
+    // inside this string is copied out first, since what follows moves it, or frees it in a grow.
+    basic_string &replaceUnits(size_type pos, size_type n, const C *s, size_type n2) {
+        if (pos > len_) pos = len_;
+        if (n > len_ - pos) n = len_ - pos;
+        C *own = 0;
+        if (n2 != 0 && s >= p() && s <= p() + len_) {
+            own = (C *)std::malloc(n2 * sizeof(C));
+            std::memcpy(own, s, n2 * sizeof(C));
+            s = own;
+        }
+        const size_type tail = len_ - pos - n;
+        const size_type wanted = len_ - n + n2;
+        reserve(wanted);
+        C *d = p();
+        if (n2 != n && tail != 0) std::memmove(d + pos + n2, d + pos + n, tail * sizeof(C));
+        if (n2 != 0) std::memcpy(d + pos, s, n2 * sizeof(C));
+        len_ = wanted;
+        d[len_] = 0;
+        if (own != 0) std::free(own);
+        return *this;
+    }
+    void empty0() { heap_ = 0; len_ = 0; cap_ = 0; small_[0] = 0; }
+    void init(const C *s, size_type n) {
+        empty0();
+        reserve(n);
+        C *d = p();
+        if (n != 0) std::memcpy(d, s, n * sizeof(C));
+        len_ = n;
+        d[len_] = 0;
+    }
+    // Room for `want` units plus the terminator, keeping the text; `s`/`n` are
+    // appended before the old buffer is freed, so an append of this string survives.
+    void grow(size_type want, const C *s, size_type n) {
+        C *fresh = (C *)std::malloc((want + 1) * sizeof(C));
+        C *old = p();
+        std::memcpy(fresh, old, len_ * sizeof(C));
+        if (n != 0) std::memcpy(fresh + len_, s, n * sizeof(C));
+        len_ += n;
+        fresh[len_] = 0;
+        if (heap_ != 0) std::free(heap_);
+        heap_ = fresh;
+        cap_ = want;
+    }
+    void assignFrom(const C *s, size_type n) {
+        if (n > capacity()) { len_ = 0; grow(n, s, n); return; }
+        C *d = p();
+        if (n != 0) std::memmove(d, s, n * sizeof(C));
+        len_ = n;
+        d[len_] = 0;
+    }
+    basic_string &appendUnits(const C *s, size_type n) {
+        if (n == 0) return *this;
+        size_type have = capacity();
+        // Grown by doubling, so that building a string one character at a time is not quadratic.
+        if (len_ + n > have) { grow(len_ + n > have * 2 ? len_ + n : have * 2, s, n); return *this; }
+        C *d = p();
+        std::memcpy(d + len_, s, n * sizeof(C));
+        len_ += n;
+        d[len_] = 0;
+        return *this;
+    }
+
+    C *heap_;
+    size_type len_;
+    size_type cap_;
+    C small_[small + 1];
+};
+
+typedef basic_string<char> string;
+typedef basic_string<wchar_t> wstring;
+
+// **The comparisons and the concatenations are non-members**, which is what
+// lets `"a" + s` work as well as `s + "a"`: a member would need the left side
+// to be the class.
+//
+// **`inline`, since 2026-09-19: one definition, merged across every translation
+// unit that includes this.** They were `static` until then - a copy per unit -
+// because cxx1 had no weak or linkonce linkage to give an inline function.
+// Now it does on every target: `.weak` on the two GNU targets and the C6000,
+// `.weak_def_can_be_hidden` on Mach-O, a COMDAT section on Windows in both
+// spellings (the project's own MASM assembler took COMDAT on 2026-09-18).
+// Equality with another string asks the lengths before a unit is compared; with a C string it
+// walks both and stops at the first difference - usually the first unit - never measuring it.
+template <class C> inline bool __cxx1_equal(const basic_string<C> &a, const C *b) {
+    const C *d = a.data();
+    const std::size_t n = a.size();
+    for (std::size_t i = 0; i < n; i++)
+        if (d[i] != b[i]) return false;
+    return b[n] == 0;
+}
+template <class C> inline bool operator==(const basic_string<C> &a, const basic_string<C> &b) {
+    return a.size() == b.size() && __cxx1_compare_n(a.data(), b.data(), a.size()) == 0;
+}
+template <class C> inline bool operator==(const basic_string<C> &a, const C *b) { return __cxx1_equal(a, b); }
+template <class C> inline bool operator==(const C *a, const basic_string<C> &b) { return __cxx1_equal(b, a); }
+template <class C> inline bool operator!=(const basic_string<C> &a, const basic_string<C> &b) { return !(a == b); }
+template <class C> inline bool operator!=(const basic_string<C> &a, const C *b) { return !(a == b); }
+template <class C> inline bool operator!=(const C *a, const basic_string<C> &b) { return !(b == a); }
+template <class C> inline bool operator<(const basic_string<C> &a, const basic_string<C> &b) { return a.compare(b) < 0; }
+template <class C> inline bool operator>(const basic_string<C> &a, const basic_string<C> &b) { return a.compare(b) > 0; }
+template <class C> inline bool operator<=(const basic_string<C> &a, const basic_string<C> &b) { return a.compare(b) <= 0; }
+template <class C> inline bool operator>=(const basic_string<C> &a, const basic_string<C> &b) { return a.compare(b) >= 0; }
+
+template <class C> inline basic_string<C> operator+(const basic_string<C> &a, const basic_string<C> &b) {
+    basic_string<C> r(a);
+    r += b;
+    return r;
+}
+template <class C> inline basic_string<C> operator+(const basic_string<C> &a, const C *b) {
+    basic_string<C> r(a);
+    r += b;
+    return r;
+}
+template <class C> inline basic_string<C> operator+(const C *a, const basic_string<C> &b) {
+    basic_string<C> r(a);
+    r += b;
+    return r;
+}
+template <class C> inline basic_string<C> operator+(const basic_string<C> &a, C b) {
+    basic_string<C> r(a);
+    r += b;
+    return r;
+}
+template <class C> inline basic_string<C> operator+(C a, const basic_string<C> &b) {
+    basic_string<C> r(1, a);
+    r += b;
+    return r;
+}
+
+// **[string.conversions] to_string, and the digits come off the negative
+// side.** `-v` is undefined for the most negative value of a signed type -
+// there is no positive counterpart - so the loop runs on `x <= 0` and turns
+// each remainder round with `'0' - x % 10`. C++11 fixed `%` to truncate toward
+// zero, so a negative dividend gives a non-positive remainder and the
+// subtraction is the digit.
+inline string to_string(long long v) {
+    char buf[24];
+    int n = 0;
+    bool neg = v < 0;
+    long long x = neg ? v : -v;
+    do {
+        buf[n] = (char)('0' - (int)(x % 10));
+        n++;
+        x /= 10;
+    } while (x != 0);
+    if (neg) { buf[n] = '-'; n++; }
+    string r;
+    for (int i = n; i-- > 0; ) r += buf[i];
+    return r;
+}
+
+inline string to_string(int v) { return to_string((long long)v); }
+inline string to_string(long v) { return to_string((long long)v); }
+inline string to_string(unsigned v) { return to_string((long long)v); }
+inline string to_string(unsigned long v) { return to_string((long long)v); }
+
+inline wstring to_wstring(long long v) {
+    string s = to_string(v);
+    wstring r;
+    for (std::size_t i = 0; i < s.size(); i++) r += (wchar_t)s[i];
+    return r;
+}
+inline wstring to_wstring(int v) { return to_wstring((long long)v); }
+
+}  // namespace std
+
+// After the class, so <stdexcept> can hold a string; it defines what `at` calls.
+#include <stdexcept>
+
+#include <__string_conversions>
+
+#endif

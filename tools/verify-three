@@ -1,0 +1,471 @@
+#!/bin/sh
+# Build and test this tree on all three machines, from the Mac.
+#
+# The standing rule in CLAUDE.md is that a change is not done until the Mac,
+# the Linux box and the Windows box have all passed. This is that rule with a
+# command behind it - it relays the working tree rather than a commit, so it
+# can be run before committing, which is the order the rule wants.
+#
+#   tools/verify-three              both boxes, and the three C6747 boxes
+#   tools/verify-three linux        one of them
+#   tools/verify-three windows
+#   tools/verify-three c6747        TI's own C6747 toolchains alone: tools/c6747-three
+#   tools/verify-three ride         RIDE's tests/test --require-tools on the Windows box
+#   tools/verify-three tms6747      the tms6747 box on the Windows machine: TI's lnk6x over every case
+#
+# Every run starts with the Mac step: text checks only - the exclusions document against the
+# source, the comment cap - which no box needs to answer and a run should not get past.
+#
+# It ships the tree as a tar rather than pulling a commit: the Windows box has
+# no git, and on the Linux box a pull would test what was pushed instead of
+# what is here.
+set -u
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+WHICH=${1:-all}
+KEY=${CXX1_LINUX_KEY:-$HOME/Documents/Claude/myMorningWalk.pem}
+LINUX=${CXX1_LINUX:-ec2-user@52.202.164.123}
+WINDOWS=${WINDOWS_BOX:-windows}
+# The workspace holding TI/ and Windows/: two levels up as it was under Compilers/, or one since 2026-10-18 -
+# or named by CXX1_WORKSPACE, for a tree that is not beside them (a git worktree under .claude/worktrees).
+WS=${CXX1_WORKSPACE:-$ROOT/../..}
+[ -n "${CXX1_WORKSPACE:-}" ] || for w in "$ROOT/../.." "$ROOT/.."; do [ -d "$w/TI" ] || [ -d "$w/Windows" ] && { WS=$w; break; }; done
+# ASM6x's tests directory, for c6xdiff.py: $C6XDIFF's, beside $ASM6X's build, or the workspace's.
+C6XTESTS=""
+for c in "$(dirname "${C6XDIFF:-/nonexistent/x}")" "$(dirname "${ASM6X:-/nonexistent/x}")/../tests" \
+         "$WS/TI/ASM6x/tests"; do
+    [ -f "$c/c6xdiff.py" ] && [ -f "$c/elfdump.py" ] && { C6XTESTS=$c; break; }
+done
+# The RIDE tree on the Windows box: the ride leg runs its suite, and its bin\ holds the product's
+# asm6x.exe, which the tms6747 leg's ti-link.cmd assembles with (CXX1_TI_ASM6X names another).
+RT=${CXX1_RIDE_TREE:-'C:\Users\GRA\work\ride-verify'}
+TIASM=${CXX1_TI_ASM6X:-"$RT\\bin\\asm6x.exe"}
+TAR=$(mktemp -t cxx1src).tgz
+STATUS=0
+
+# The tree, minus everything a build makes. `winout` and the out-* directories
+# are outputs of a previous run on the other side and shipping them back would
+# compare a run against itself.
+# **COPYFILE_DISABLE, and it is not optional.** Without it macOS bsdtar writes
+# an AppleDouble `._Driver.cpp` beside every file that carries an extended
+# attribute, `--no-xattrs` does not stop it, and `src\*.cpp` in msvc\build.cmd
+# then hands those to cl - which reports `unknown character '0x5'` in a file
+# nobody wrote. Same shape as the duplicate-file trap the Makefiles guard
+# against with a $(wildcard) filter.
+#
+# **And that same duplicate trap, excluded here rather than swept.** iCloud
+# Drive copies a file it is syncing to `name 2.ext`, and it does so whenever it
+# likes - a sweep before the tar is not enough, because the copies reappear
+# between the sweep and the tar. Shipped, `tests/cases/foo 2.cpp` is a case with
+# no `.expected` of its own name and the far side reports it as "did not run":
+# a red run that says nothing about the compiler. One three-box round was spent
+# on exactly that.
+# **The release material travels too**, and it is on this line rather than in a
+# comment somewhere: `examples/` so the four Makefiles can be run on the machine
+# each is written for, `README.1ST` because it is what a user is handed, and the
+# seal so `tools/seal check` answers the same question on all three boxes. None
+# of it changes what is built; all of it is part of what is released.
+COPYFILE_DISABLE=1 tar -C "$ROOT" --no-xattrs -czf "$TAR" \
+    --exclude .git --exclude obj --exclude obj-msvc --exclude winout \
+    --exclude 'tests/out-*' --exclude '*.exe' --exclude .DS_Store \
+    --exclude '* [0-9]' --exclude '* [0-9].*' \
+    src tests lib include tools docs msvc ide examples \
+    Makefile CLAUDE.md README.md README.1ST $(cd "$ROOT" && ls cxx1-*.dat) cxx1.sln build \
+    2>/dev/null
+
+# **The Linux build goes through `./build`, which caps it.** That script runs
+# make inside a 300 MB cgroup scope and says so plainly when no cgroup is
+# available, and it exists because an unbounded job once drove this 419 MiB
+# instance into swap until sshd could not fork. It sat unused for weeks while
+# this script ran a bare `make -j4` on the same box - a safety net nobody was
+# under - and on 2026-08-30 the box thrashed for exactly that reason: a killed
+# run left its `make` orphaned on the far side, a second run overlapped it, and
+# eight cc1plus competed for 419 MB with zram at 100%. Under the cap the
+# runaway is killed alone and the box stays up.
+#
+# **-j2 and not -j4**, and the arithmetic is worth keeping: one cc1plus on the
+# big parser files peaks near 50 MB, so two fit inside 300 MB with room, and
+# four sit at the cap's edge where a legitimate build would be killed and
+# reported as a verification failure. Raise it deliberately, having measured,
+# or not at all. **-j1 since 2026-09-26**: the backends grew, and at -j2 the
+# cap killed cc1plus on Masm.cpp and the leg failed for want of memory alone.
+#
+# Killing this script does not stop the far side: the ssh closes and the build
+# runs on as an orphan. Clear it before starting another -
+# `ssh ... 'pkill -9 -x cc1plus; pkill -9 -x make'`.
+# **The boxes run at once, and the run ends when the slowest does.** Linux and
+# the tms6747 box on the Windows machine go to the background, each into a log
+# of its own; the x86_64-windows box runs in front; `wait` collects them all.
+# **The Mac step** (review of 2026-10-08, R3): the two checks a release reads as text.
+echo "=== mac (text checks) ==="
+"$ROOT/tools/exclusions" --check "$ROOT/docs/EXCLUSIONS.md" | tail -1 || STATUS=1
+"$ROOT/tools/comment-lines" | tail -1 || STATUS=1
+
+LEGS=$(mktemp -d)
+BG=""
+T0=$(date +%s)
+if [ "$WHICH" = all ] || [ "$WHICH" = linux ]; then
+    (
+        t=$(date +%s); rc=0
+        echo "=== linux ($LINUX) ==="
+        scp -q -i "$KEY" -o BatchMode=yes "$TAR" "$LINUX:/tmp/cxx1src.tgz" || rc=1
+        # tests/asm6x.sh compares objects with ASM6x's c6xdiff.py (and the elfdump.py it runs),
+        # which the box has no checkout of: they go to ~/asm6x-build/tests, where it looks.
+        if [ -n "$C6XTESTS" ]; then
+            ssh -i "$KEY" -o BatchMode=yes "$LINUX" 'mkdir -p ~/asm6x-build/tests' &&
+            scp -q -i "$KEY" -o BatchMode=yes "$C6XTESTS/c6xdiff.py" "$C6XTESTS/elfdump.py" \
+                "$LINUX:asm6x-build/tests/" || rc=1
+        else
+            echo "linux: no ASM6x tests/c6xdiff.py here - set C6XDIFF=<path>"; rc=1
+        fi
+        ssh -i "$KEY" -o BatchMode=yes "$LINUX" '
+            rm -rf ~/cxx1-verify && mkdir -p ~/cxx1-verify &&
+            tar -C ~/cxx1-verify -xzf /tmp/cxx1src.tgz &&
+            cd ~/cxx1-verify && ./build -j1 >/dev/null && make test &&
+            CXX1="./cxx3.exe -O2" sh tests/run.sh &&
+            ASM6X=$HOME/asm6x-build/asm6x.exe sh tests/asm6x.sh' || rc=1
+        echo "linux leg: $(( $(date +%s) - t ))s, $([ $rc -eq 0 ] && echo passed || echo FAILED)"
+        exit $rc
+    ) > "$LEGS/linux.log" 2>&1 &
+    BG="$BG linux:$!"
+    LINUXPID=$!
+fi
+
+# **The three C6747 boxes**: TI's toolchains as they ship - CCS 7.4's cl6x run on
+# VM6747, CCS 5.5's cl6x on its simulator on both machines - over the programs in
+# tools/c6747/programs. What it proves is that the boxes this compiler's tms6747
+# target is measured against are standing and agree with each other. Its Linux half
+# waits for the Linux build: DSS's Java and a cc1plus do not both fit in 419 MB.
+if [ "$WHICH" = all ] || [ "$WHICH" = c6747 ]; then
+    (
+        t=$(date +%s); rc=0
+        echo "=== c6747 (CCS 7.4 on VM6747, CCS 5.5 simulator on $WINDOWS and $LINUX) ==="
+        C6747_AFTER=${LINUXPID:-} "$ROOT/tools/c6747-three" || rc=1
+        # The release check the emulator cannot fool: a sample run on TI's own
+        # C6747 simulator and compared with .expected, where C1 and C2 hid.
+        echo "--- release-check ---"
+        "$ROOT/tools/c6747/release-check" || rc=1
+        # RTS6x's referee (review of 2026-10-08, R7): every image both tms6747 suites link against
+        # rts6x.lib, on TI's simulator against sim6747, recorded into RTS6x's docs/.
+        echo "--- RTS6x referee ---"
+        if [ -x "$WS/TI/RTS6x/tools/referee" ]; then "$WS/TI/RTS6x/tools/referee" --record || rc=1
+        else echo "referee: no RTS6x at ../../TI/RTS6x"; rc=1; fi
+        echo "c6747 leg: $(( $(date +%s) - t ))s, $([ $rc -eq 0 ] && echo passed || echo FAILED)"
+        exit $rc
+    ) > "$LEGS/c6747.log" 2>&1 &
+    BG="$BG c6747:$!"
+fi
+
+# **The tms6747 target is a second box on the Windows machine**: a tree of its own in
+# C:\Users\GRA\work\verify-ti and a tarball of its own beside the windows leg's, its own
+# cxx3-msvc.exe, TI's lnk6x over every case - asm6x on what cxx1 wrote, the linker the judge.
+# `tools/verify-three tms6747` runs it alone.
+if [ "$WHICH" = all ] || [ "$WHICH" = windows ] || [ "$WHICH" = tms6747 ]; then
+    TIREMOTE='C:\Users\GRA\work\verify-ti'
+    (
+        t=$(date +%s); rc=0
+        scp -q -o BatchMode=yes "$TAR" "$WINDOWS:C:\\Users\\GRA\\work\\src-ti.tgz" || rc=1
+        printf '=== tms6747 (%s, %s) ===\n' "$WINDOWS" "$TIREMOTE"   # echo reads \c as "stop"
+        ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $TIREMOTE 2>nul & mkdir $TIREMOTE && tar -C $TIREMOTE -xzf C:\\Users\\GRA\\work\\src-ti.tgz" >/dev/null || rc=1
+        ssh -o BatchMode=yes "$WINDOWS" "set CPP11_AS=$TIASM&& call $TIREMOTE\\msvc\\build.cmd >nul && $TIREMOTE\\tools\\windows\\ti-link.cmd $TIREMOTE" > "$LEGS/ti.raw" 2>&1 || rc=1
+        grep -v "^$" "$LEGS/ti.raw" | tr -d '\r' | tail -8
+        echo "tms6747 leg: $(( $(date +%s) - t ))s, $([ $rc -eq 0 ] && echo passed || echo FAILED)"
+        exit $rc
+    ) > "$LEGS/tms6747.log" 2>&1 &
+    BG="$BG tms6747:$!"
+fi
+
+if [ "$WHICH" = all ] || [ "$WHICH" = windows ]; then
+    echo "=== windows ($WINDOWS) ==="
+    # **A directory of its own, and not a corner of somebody's scratch.** This
+    # unpacked into C:\Users\GRA\source, which holds four other projects and a
+    # drift of loose .exe, .obj and .pdb from hand-run experiments; C:\work is
+    # the same kind of place. A verification sandbox sharing a junk drawer is
+    # one stray `del` from a run that fails for no reason anybody can see, and
+    # it makes `rmdir /s /q` on the sandbox a heavier thing to write than it
+    # should be. C:\Users\GRA\work belongs to this compiler and nothing else, so the
+    # wipe-and-unpack below is safe to read at a glance.
+    REMOTE='C:\Users\GRA\work\verify'
+    scp -q -o BatchMode=yes "$TAR" "$WINDOWS:C:\\Users\\GRA\\work\\src.tgz" || STATUS=1
+    # Windows ships its own tar. Extracting over a previous run rather than
+    # into a clean directory is what leaves a stale object linking perfectly,
+    # so the directory goes first.
+    ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $REMOTE 2>nul & mkdir $REMOTE && tar -C $REMOTE -xzf C:\\Users\\GRA\\work\\src.tgz" >/dev/null || STATUS=1
+    TW=$(date +%s)
+    # **The project's masm and LINK go with the tree** (review D15): run-cases.cmd builds them and puts
+    # every case through -masm=masm as well as the GNU spelling, into winout\masm.
+    TOOLS='C:\Users\GRA\work\verify-tools'
+    MASMENV=""
+    if [ -d "$WS/Windows/MASM/src" ] && [ -d "$WS/Windows/LINK/src" ]; then
+        TT=$(mktemp -t cxx1tools).tgz
+        COPYFILE_DISABLE=1 tar -C "$WS/Windows" --no-xattrs -czf "$TT" --exclude '* [0-9]*' MASM/src LINK/src 2>/dev/null
+        scp -q -o BatchMode=yes "$TT" "$WINDOWS:C:\\Users\\GRA\\work\\tools.tgz" || STATUS=1
+        ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $TOOLS 2>nul & mkdir $TOOLS && tar -C $TOOLS -xzf C:\\Users\\GRA\\work\\tools.tgz" >/dev/null || STATUS=1
+        rm -f "$TT"
+        MASMENV="set CXX1_MASM_SRC=$TOOLS\\MASM&& set CXX1_LINK_SRC=$TOOLS\\LINK&& "
+    fi
+    ssh -o BatchMode=yes "$WINDOWS" "$MASMENV$REMOTE\\tools\\windows\\run-cases.cmd $REMOTE" || STATUS=1
+    # The two-half programs, linked across the boundary with cl both ways:
+    # the ABI at the seam, which nothing compiled by cxx1 alone can see.
+    ssh -o BatchMode=yes "$WINDOWS" "$REMOTE\\tools\\windows\\winlink-check.cmd $REMOTE" || STATUS=1
+
+    # The comparison happens here, not there - see run-cases.cmd for why.
+    OUT=$(mktemp -d)
+    # Forward slashes: scp's remote path goes through the shell, which eats
+    # the backslashes, and the copy then silently finds nothing.
+    scp -q -r -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/verify/winout" "$OUT"
+    pass=0; fail=0
+    for e in "$ROOT"/tests/cases/*.expected; do
+        n=$(basename "$e" .expected)
+        # **Excluded coming back as well as going out.** The tar above drops
+        # the `name 2.ext` copies iCloud leaves, so the far side never sees
+        # them - but this loop reads the local directory, where they are, and
+        # then reports each as "did not run" against output that was rightly
+        # never produced. 125 of them on 2026-09-08, every one a copy, and the
+        # run exited 1 for a reason that had nothing to do with the compiler.
+        case "$n" in *" "[0-9]*) continue;; esac
+        nt="$ROOT/tests/cases/$n.notarget"
+        if [ -f "$nt" ] && grep -q x86_64-windows "$nt"; then
+            echo "  skip $n: $(grep x86_64-windows "$nt")"
+            continue
+        fi
+        got="$OUT/winout/$n.out"
+        if [ ! -f "$got" ]; then
+            echo "  $n: did not run"; fail=$((fail + 1)); continue
+        fi
+        if tr -d '\r' < "$got" | diff -q - "$e" >/dev/null; then
+            pass=$((pass + 1))
+        else
+            echo "  $n: output differs"
+            tr -d '\r' < "$got" | diff - "$e" | head -6
+            fail=$((fail + 1))
+        fi
+    done
+    # **The same cases through -masm=masm**, assembled and linked by the project's own tools.
+    # A case the project's masm cannot take says so in <case>.nomasm, printed like a .notarget.
+    for e in "$ROOT"/tests/cases/*.expected; do
+        n=$(basename "$e" .expected)
+        case "$n" in *" "[0-9]*) continue;; esac
+        nt="$ROOT/tests/cases/$n.notarget"
+        if [ -f "$nt" ] && grep -q x86_64-windows "$nt"; then continue; fi
+        if [ -f "$ROOT/tests/cases/$n.nomasm" ]; then
+            echo "  skip $n for -masm=masm: $(tr '\n' ' ' < "$ROOT/tests/cases/$n.nomasm")"; continue
+        fi
+        got="$OUT/winout/masm/$n.out"
+        if [ -f "$got" ] && tr -d '\r' < "$got" | diff -q - "$e" >/dev/null; then
+            pass=$((pass + 1))
+        else
+            echo "  $n (-masm=masm): did not run, or output differs"; fail=$((fail + 1))
+        fi
+    done
+    # The refusals. What is checked is the same thing tests/run.sh checks -
+    # that the compiler stopped, and that its message contains the recorded
+    # text - because a refusal that stops for the wrong reason is not the one
+    # the case is about.
+    for e in "$ROOT"/tests/winlink/*.expected; do
+        [ -f "$e" ] || continue
+        n=$(basename "$e" .expected)
+        case "$n" in *" "[0-9]*) continue;; esac
+        for way in ab ba; do
+            got="$OUT/winout/winlink-$n-$way.out"
+            if [ ! -f "$got" ]; then
+                echo "  winlink $n ($way): did not run"; fail=$((fail + 1)); continue
+            fi
+            if tr -d '\r' < "$got" | cmp -s - "$e"; then
+                pass=$((pass + 1))
+            else
+                echo "  winlink $n ($way): output differs"
+                tr -d '\r' < "$got" | diff - "$e" | head -6
+                fail=$((fail + 1))
+            fi
+        done
+    done
+    for e in "$ROOT"/tests/cases/*.error; do
+        n=$(basename "$e" .error)
+        case "$n" in *" "[0-9]*) continue;; esac   # the copies again
+        nt="$ROOT/tests/cases/$n.notarget"
+        if [ -f "$nt" ] && grep -q x86_64-windows "$nt"; then
+            echo "  skip $n: $(grep x86_64-windows "$nt")"
+            continue
+        fi
+        got="$OUT/winout/$n.err"
+        if [ ! -f "$got" ]; then
+            echo "  $n: did not run"; fail=$((fail + 1)); continue
+        fi
+        if tr -d '\r' < "$got" | grep -qF "$(cat "$e")"; then
+            pass=$((pass + 1))
+        else
+            echo "  $n: wanted \"$(cat "$e")\", got:"
+            tr -d '\r' < "$got" | sed 's/^/      /' | head -4
+            fail=$((fail + 1))
+        fi
+    done
+    # **The cases again at -O2**: run.sh and the loop above build at -O0, and five wrong answers of the x86
+    # optimizer stood under a green verify-three for that reason (2026-10-07). Recorded output only.
+    ssh -o BatchMode=yes "$WINDOWS" "${MASMENV}set CXX1_CASES_FLAGS=-O2&& $REMOTE\\tools\\windows\\run-cases.cmd $REMOTE" >/dev/null || STATUS=1
+    OUT2=$(mktemp -d)
+    scp -q -r -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/verify/winout" "$OUT2"
+    p2=0; f2=0
+    for e in "$ROOT"/tests/cases/*.expected; do
+        n=$(basename "$e" .expected)
+        case "$n" in *" "[0-9]*) continue;; esac
+        nt="$ROOT/tests/cases/$n.notarget"
+        if [ -f "$nt" ] && grep -q x86_64-windows "$nt"; then continue; fi
+        for sp in "" masm/; do
+            # a .nomasm case is not built by the MASM pass at any level
+            if [ "$sp" = masm/ ] && [ -f "$ROOT/tests/cases/$n.nomasm" ]; then continue; fi
+            if [ -f "$OUT2/winout/$sp$n.out" ] && tr -d '\r' < "$OUT2/winout/$sp$n.out" | diff -q - "$e" >/dev/null; then
+                p2=$((p2 + 1))
+            else
+                echo "  $n at -O2${sp:+ (-masm=masm)}: did not run, or output differs"; f2=$((f2 + 1))
+            fi
+        done
+    done
+    echo "windows cases at -O2: $p2 passed, $f2 failed"
+    fail=$((fail + f2))
+    rm -rf "$OUT2"
+    # The Windows half of tools/unwind-check: something cxx1 threw, caught by
+    # cl. A run rather than a diff, for the same reason.
+    if ssh -o BatchMode=yes "$WINDOWS" "$REMOTE\\tools\\windows\\throw-check.cmd $REMOTE" \
+           > "$OUT/throw.txt" 2>&1 &&
+       [ "$(tr -d '\r' < "$OUT/throw.txt" | tail -2)" = "int 7
+double 2.5" ]; then
+        echo "  throw-check: a cxx1 throw was caught by cl"
+    else
+        echo "  throw-check: FAILED"
+        tail -4 "$OUT/throw.txt" | sed 's/^/      /'
+        fail=$((fail + 1))
+    fi
+
+    # **A cl caller against a cxx1 callee**, which is the one question a
+    # same-compiler test cannot ask: cxx1 passed the hidden return pointer and
+    # `this` in the opposite registers from cl, on both sides of every call it
+    # generated, so every run.sh case agreed with itself and disagreed with
+    # the platform. The fourth number is the small struct, which asks the
+    # other half of the member rule: the hidden pointer serves a member's
+    # return whatever its size, where cxx1 once kept the free-function size
+    # test and answered in eax. 17 20 7 19 is what cl's caller reads back.
+    if ssh -o BatchMode=yes "$WINDOWS" "$REMOTE\\tools\\windows\\sret-check.cmd $REMOTE" \
+           2>/dev/null | tr -d '\r' | grep -q '^17 20 7 19$'; then
+        echo "  sret-check: cl called a cxx1 member and got its struct back"
+    else
+        echo "  sret-check: FAILED"
+        STATUS=1
+    fi
+
+    # The mirror, and the one rung 6.5b is for: both halves compiled by cxx1,
+    # so what it tests is the funclet and the FH3 tables rather than the
+    # ThrowInfo chain the check above covers.
+    if ssh -o BatchMode=yes "$WINDOWS" "$REMOTE\\tools\\windows\\catch-check.cmd $REMOTE" \
+           2>/dev/null | tr -d '\r' | grep -q '^caught 7$'; then
+        echo "  catch-check: cxx1 caught what cxx1 threw"
+    else
+        echo "  catch-check: FAILED"
+        STATUS=1
+    fi
+    echo "windows cases: $pass passed, $fail failed"
+
+    # **The names, asked of cl rather than of clang.** tests/names.sh compares
+    # against clang with -target x86_64-pc-windows-msvc, which is a second
+    # implementation of the Microsoft ABI; this asks the ABI itself, on the box
+    # where it lives. The first run of it found that every `static` function
+    # came out of the object as an External symbol - MASM exports every PROC
+    # unless told not to - which no name comparison could see, because the
+    # names were right and it was the storage class beside them that was wrong.
+    #
+    # Compared here and not there for the reason run-cases.cmd gives about its
+    # own output: cmd is a poor place to cut up text, and this box has no awk.
+    # Defined external symbols. cl's float and string literal COMDATs are
+    # dropped: it names those and cxx1 puts them in .rdata unnamed, which is a
+    # codegen difference and says nothing about a symbol anybody links.
+    # The RTTI records ??_R0..??_R4 are dropped too, and the reason is on both
+    # sides: names-vs-cl.cmd compiles cl's half with /GR-, so cl writes none,
+    # and since 2780983 cxx1 writes each as a COMDAT of its own, which needs a
+    # global symbol - so they surfaced in 22 cases as cxx1's alone. A recorded
+    # difference, not a fixed one: the flag is deliberate (this is a question
+    # about names, not tables), and cl with /GR emits the same five records.
+    clsyms() {
+        grep -E "SECT[0-9A-F]+ .*External" "$1" 2>/dev/null |
+        sed -e 's/.*| //' -e 's/ (.*//' -e 's/[[:space:]]*$//' |
+        grep -vE '^__real@|^__xmm@|^\?\?_C@|^\?\?_R[0-4]' | sort -u
+    }
+    ssh -o BatchMode=yes "$WINDOWS" "$REMOTE\\tools\\windows\\names-vs-cl.cmd $REMOTE" >/dev/null || STATUS=1
+    NOUT=$(mktemp -d)
+    scp -q -r -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/verify/winnames" "$NOUT" 2>/dev/null
+    nagree=0; ndiffer=0
+    for mine in "$NOUT"/winnames/*.mine.txt; do
+        [ -f "$mine" ] || continue
+        n=$(basename "$mine" .mine.txt)
+        theirs="$NOUT/winnames/$n.cl.txt"
+        [ -f "$theirs" ] || continue
+        # Temp files and not process substitution: this script is /bin/sh.
+        clsyms "$mine"   > "$NOUT/a.$$"
+        clsyms "$theirs" > "$NOUT/b.$$"
+        if cmp -s "$NOUT/a.$$" "$NOUT/b.$$"; then
+            nagree=$((nagree + 1))
+        else
+            echo "  NAMES-DIFFER $n - < cxx1, > cl"
+            diff "$NOUT/a.$$" "$NOUT/b.$$" | grep -E '^[<>]' | sed 's/^/      /'
+            ndiffer=$((ndiffer + 1))
+            STATUS=1
+        fi
+    done
+    # What was not compared, by kind. A .nocl records a difference against cl
+    # and its first sentence is printed for the reason a .notarget's is: an
+    # exclusion nobody sees is an exclusion nobody removes.
+    nnocl=0; nnotarget=0; nrefused=0; nclrefused=0
+    for k in "$NOUT"/winnames/*.skip; do
+        [ -f "$k" ] || continue
+        n=$(basename "$k" .skip)
+        kind=$(tr -d '\r\n' < "$k")
+        if [ -f "$ROOT/tests/cases/$n.nocl" ]; then
+            nnocl=$((nnocl + 1))
+            echo "  nocl $n: $(tr '\n' ' ' < "$ROOT/tests/cases/$n.nocl" | tr -s ' ' | cut -c1-96)"
+        elif [ "$kind" = cxx1-refused ]; then
+            # No exclusion file covers this one, so it is a case that quietly
+            # left the comparison. run-cases.cmd owns the verdict; this names it.
+            nrefused=$((nrefused + 1))
+            echo "  cxx1 refused $n - not compared, and no exclusion file says so"
+        elif [ "$kind" = cl-refused ]; then
+            nclrefused=$((nclrefused + 1))
+        else
+            nnotarget=$((nnotarget + 1))
+        fi
+    done
+    nskip=$((nnocl + nnotarget + nrefused + nclrefused))
+    rm -rf "$NOUT"
+    echo "windows names vs cl: $nagree agreed, $ndiffer differed, $nskip skipped" \
+         "($nnocl recorded, $nnotarget not for this target," \
+         "$nrefused cxx1-refused, $nclrefused cl-refused)"
+    [ "$fail" -eq 0 ] || STATUS=1
+    rm -rf "$OUT"
+    echo "x86_64-windows leg: $(( $(date +%s) - TW ))s"
+fi
+
+# **RIDE's suite with --require-tools** (review of 2026-10-08, D14): a skip for a missing tool is
+# a failure. The tree is a RIDE checkout on the box with the product's tools in its bin\
+# (CXX1_RIDE_TREE, default C:\Users\GRA\work\ride-verify), as WS-G's gate set it up; none there fails.
+# The suite builds and stops in programs only where $CC1, $CXX1 and $SHC name the compilers, so
+# they name the tree's own bin\c90.exe, cpp11.exe and shalimar.exe - unnamed, 11 cases skip and fail.
+if [ "$WHICH" = all ] || [ "$WHICH" = ride ]; then
+    echo "=== ride ($WINDOWS) ==="
+    if ssh -o BatchMode=yes "$WINDOWS" "if exist $RT\\build.bat (exit 0) else (exit 1)" 2>/dev/null; then
+        RLOG=$(mktemp)
+        ssh -o BatchMode=yes "$WINDOWS" "cd /d $RT && set RIDE_TEST_FLAGS=--require-tools&& set C6747_EHLIB=C:\\ti\\c6747-lib&& set CC1=$RT\\bin\\c90.exe&& set CXX1=$RT\\bin\\cpp11.exe&& set SHC=$RT\\bin\\shalimar.exe&& build.bat check" \
+            > "$RLOG" 2>&1 || STATUS=1
+        tr -d '\r' < "$RLOG" | grep -E 'checks|FAIL|failed' | tail -6; rm -f "$RLOG"
+    else
+        echo "ride: no RIDE tree at $RT on $WINDOWS - set CXX1_RIDE_TREE"; STATUS=1
+    fi
+fi
+
+# Every background box, its log, and its verdict in the exit status.
+for leg in $BG; do
+    name=${leg%%:*}; pid=${leg#*:}
+    wait "$pid" || STATUS=1
+    cat "$LEGS/$name.log"
+done
+rm -rf "$LEGS"
+echo "all legs done in $(( $(date +%s) - T0 ))s, the slowest deciding"
+
+rm -f "$TAR"
+exit $STATUS

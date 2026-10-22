@@ -1,0 +1,3 @@
+x86_64-linux  the two static locals of bump() are named by cxx1's own static-local symbol, `_Z4bumpv.calls` for clang's `_ZZ4bumpvE5calls` (CONFORMANCE.md); a `.tdata`/`.tbss` object's name is otherwise clang's, and the `_ZTW` wrappers agree. clang also writes `DW.ref.__gxx_personality_v0`, which a program with no landing pad of cxx1's does not need.
+x86_64-windows  the same two static-local names; every `.tls$` object, `__tls_init` and `__tls_init$initializer$` agree with clang.
+arm64-darwin  the same two static-local names, each with its `$tlv$init` template; and `___tls_init_fast`, the register-preserving shell round `___tls_init` that cxx1 writes as a function of its own where clang folds the saving into `___tls_init` itself.

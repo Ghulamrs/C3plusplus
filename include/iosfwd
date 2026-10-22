@@ -1,0 +1,27 @@
+// <iosfwd> - the stream and string names, declared and not defined.
+//
+// [iosfwd.syn] declares the class templates and their typedefs so a header can
+// name a stream by reference without paying for the stream. The streams here
+// are classes rather than templates (see <ostream>), so what is declared is
+// those classes as they are, and `basic_string` with its two typedefs.
+#ifndef _CXX1_IOSFWD
+#define _CXX1_IOSFWD
+
+namespace std {
+
+class ios_base;
+class ios;
+class ostream;
+class istream;
+class ostringstream;
+class istringstream;
+class ofstream;
+class ifstream;
+
+template <class C> class basic_string;
+typedef basic_string<char> string;
+typedef basic_string<wchar_t> wstring;
+
+}  // namespace std
+
+#endif

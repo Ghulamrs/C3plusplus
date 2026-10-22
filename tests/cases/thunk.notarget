@@ -1,0 +1,1 @@
+x86_64-windows  MSVC biases `this` to the secondary base inside the override rather than using a thunk - see CLAUDE.md, measured with cl

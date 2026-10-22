@@ -1,0 +1,1 @@
+x86_64-linux  clang emits only the C2 of a constructor defined inside its class - V's constructor template and IsInt<T>::type's two, which a nested class of a class template cannot define out of line here yet; cxx1 emits C1 and C2, mergeable and identical, as move-constructor.nonames records

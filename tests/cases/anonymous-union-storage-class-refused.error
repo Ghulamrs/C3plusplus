@@ -1,0 +1,1 @@
+:1:12: error: anonymous union at class scope must not have a storage specifier

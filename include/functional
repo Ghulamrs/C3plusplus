@@ -1,0 +1,89 @@
+// <functional> - the function objects of [function.objects]: the comparisons, the arithmetic
+// and the logical ones, each a struct with a const operator() and nothing else.
+//
+// **What is not here, and why it is not a small thing.** `std::function` is a partial
+// specialization on a function type, `function<R(Args...)>`, that erases the type of whatever it
+// holds behind a call through a pointer; `std::bind` and the placeholders need the same machinery
+// and `std::ref` wants `reference_wrapper`'s conversion. None of them is written: a program that
+// names one meets "has no member" here, and docs/EXCLUSIONS.md lists them. The C++11 forms that
+// carry `result_type`, `first_argument_type` and `second_argument_type` are given them.
+#ifndef _CXX1_FUNCTIONAL
+#define _CXX1_FUNCTIONAL
+
+namespace std {
+
+template <class T> struct __cxx1_never { enum { value = 0 }; };
+
+// `std::function` names itself absent where it is used, rather than as an undeclared name.
+template <class Signature> class function {
+    static_assert(__cxx1_never<Signature>::value, "std::function is not supported yet - it is a "
+                  "partial specialization on a function type with type erasure; call the callable "
+                  "directly, or give the function a template parameter for it");
+};
+
+template <class T> struct less {
+    typedef T first_argument_type; typedef T second_argument_type; typedef bool result_type;
+    bool operator()(const T &a, const T &b) const { return a < b; }
+};
+template <class T> struct greater {
+    typedef T first_argument_type; typedef T second_argument_type; typedef bool result_type;
+    bool operator()(const T &a, const T &b) const { return a > b; }
+};
+template <class T> struct less_equal {
+    typedef T first_argument_type; typedef T second_argument_type; typedef bool result_type;
+    bool operator()(const T &a, const T &b) const { return a <= b; }
+};
+template <class T> struct greater_equal {
+    typedef T first_argument_type; typedef T second_argument_type; typedef bool result_type;
+    bool operator()(const T &a, const T &b) const { return a >= b; }
+};
+template <class T> struct equal_to {
+    typedef T first_argument_type; typedef T second_argument_type; typedef bool result_type;
+    bool operator()(const T &a, const T &b) const { return a == b; }
+};
+template <class T> struct not_equal_to {
+    typedef T first_argument_type; typedef T second_argument_type; typedef bool result_type;
+    bool operator()(const T &a, const T &b) const { return a != b; }
+};
+
+template <class T> struct plus {
+    typedef T first_argument_type; typedef T second_argument_type; typedef T result_type;
+    T operator()(const T &a, const T &b) const { return a + b; }
+};
+template <class T> struct minus {
+    typedef T first_argument_type; typedef T second_argument_type; typedef T result_type;
+    T operator()(const T &a, const T &b) const { return a - b; }
+};
+template <class T> struct multiplies {
+    typedef T first_argument_type; typedef T second_argument_type; typedef T result_type;
+    T operator()(const T &a, const T &b) const { return a * b; }
+};
+template <class T> struct divides {
+    typedef T first_argument_type; typedef T second_argument_type; typedef T result_type;
+    T operator()(const T &a, const T &b) const { return a / b; }
+};
+template <class T> struct modulus {
+    typedef T first_argument_type; typedef T second_argument_type; typedef T result_type;
+    T operator()(const T &a, const T &b) const { return a % b; }
+};
+template <class T> struct negate {
+    typedef T argument_type; typedef T result_type;
+    T operator()(const T &a) const { return -a; }
+};
+
+template <class T> struct logical_and {
+    typedef T first_argument_type; typedef T second_argument_type; typedef bool result_type;
+    bool operator()(const T &a, const T &b) const { return a && b; }
+};
+template <class T> struct logical_or {
+    typedef T first_argument_type; typedef T second_argument_type; typedef bool result_type;
+    bool operator()(const T &a, const T &b) const { return a || b; }
+};
+template <class T> struct logical_not {
+    typedef T argument_type; typedef bool result_type;
+    bool operator()(const T &a) const { return !a; }
+};
+
+}  // namespace std
+
+#endif

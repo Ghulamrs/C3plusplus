@@ -1,0 +1,1 @@
+x86_64-linux  The C1 form of `Box<P2>`'s constructor, which clang emits as an alias of the C2 (docs/CONFORMANCE.md, "An inline member function is a strong symbol"); every other name agrees with clang, `P2`, `S::In` and `n::U` spelled as it spells them.

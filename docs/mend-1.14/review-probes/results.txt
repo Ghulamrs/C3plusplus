@@ -1,0 +1,144 @@
+same   i01-inherit-basic-lifetime (accept)
+same   i02b-inherit-explicit-refused (reject)
+same   i02c-inherit-protected-refused (reject)
+same   i03-inherit-two-bases (accept)
+same   i04-inherit-ambiguous-refused (reject)
+DIFF   i05-inherit-template-base: clang accept, cpp11 reject
+    cpp11: ©2026 G. R. Akhtar - C++03 with C++11 extensions
+    cpp11: i05-inherit-template-base.cpp:11:9: error: no function called 'DCT::DCT' takes these 1 argument(s)
+    cpp11:     candidate: DCT()
+DIFF   i05b-inherit-ctor-template: clang accept, cpp11 reject
+    cpp11: ©2026 G. R. Akhtar - C++03 with C++11 extensions
+    cpp11: i05b-inherit-ctor-template.cpp:4:56: error: no function called 'DCT::DCT' takes these 1 argument(s)
+    cpp11:     candidate: DCT()
+same   i05c-inherit-dependent-base (accept)
+same   i06-inherit-chain-and-own (accept)
+same   i07-inherit-default-ctor-with-own (accept)
+same   i08-inherit-virtual-fn-and-member-init (accept)
+same   i09-inherit-names (accept)
+same   i10-inherit-by-value-class (accept)
+DIFF   i11-inherit-virtual-base-elsewhere: output differs
+    1,2c1
+    < 5 9 / 5 9 / 5 9
+    < rc=0
+    ---
+    > rc=139
+DIFF   i11b-inherit-virtual-base-elsewhere-min: output differs
+    1,3c1
+    < 5 9
+    < 5 9
+    < rc=0
+    ---
+    > rc=139
+same   i12-inherit-default-arg-base-scope (accept)
+same   i13-inherit-copy-init-forms (accept)
+same   i14-inherit-ns-base (accept)
+same   i15-inherit-member-no-default-refused (reject)
+same   i16-inherit-class-template-derived (accept)
+same   i17-inherit-ledger (accept)
+DIFF   l01-tparam-vs-ns-typedef: clang accept, cpp11 reject
+    cpp11: ©2026 G. R. Akhtar - C++03 with C++11 extensions
+    cpp11: l01-tparam-vs-ns-typedef.cpp:9:27: error: 'twice' is a function template and 'T' appears in no parameter, so there is nothing in the call to work it out from - write the arguments out
+    cpp11:             printf("%d %d\n", twice(3), (int)sizeof(twice(3)));
+DIFF   l01b-tparam-vs-ns-typedef-class: clang accept, cpp11 reject
+    cpp11: ©2026 G. R. Akhtar - C++03 with C++11 extensions
+    cpp11: l01b-tparam-vs-ns-typedef-class.cpp:5:42: error: 'Box<int>' declares no member 'Box<int>' with these parameters
+    cpp11:         template <class T> struct Box { T v; Box(T x) : v(x) {} T get() const { return v; } };
+DIFF   l01c-tparam-vs-ns-typedef-fn: clang accept, cpp11 reject
+    cpp11: ©2026 G. R. Akhtar - C++03 with C++11 extensions
+    cpp11: l01c-tparam-vs-ns-typedef-fn.cpp:6:35: error: 'twice' is a function template and 'T' appears in no parameter, so there is nothing in the call to work it out from - write the arguments out
+    cpp11:         int run() { printf("%d %d\n", twice(3), (int)sizeof(twice(3))); return 0; }
+DIFF   l01d-tparam-vs-class-typedef: clang accept, cpp11 reject
+    cpp11: ©2026 G. R. Akhtar - C++03 with C++11 extensions
+    cpp11: l01d-tparam-vs-class-typedef.cpp:7:49: error: 'struct Outer::In::twice' is a member function template and 'T' appears in no parameter, so there is nothing in the call to work it out from - write the arguments out
+    cpp11:         int run() const { In i; return (int)sizeof(i.twice(3)) * 0 + i.twice(4); }
+DIFF   l02-nontype-tparam-vs-ns-enum: output differs
+    1c1
+    < 9 3 12
+    ---
+    > 9 3 400
+DIFF   l03-member-fn-outside-ns: clang accept, cpp11 reject
+    cpp11: ©2026 G. R. Akhtar - C++03 with C++11 extensions
+    cpp11: l03-member-fn-outside-ns.cpp:12:28: error: 'E' was not declared
+    cpp11:     int outer::C::h() { return E; }
+same   l04-using-directive-vs-enclosing (accept)
+same   l05-member-hides-ns-var (accept)
+DIFF   l06-global-colon: clang accept, cpp11 reject
+    cpp11: ©2026 G. R. Akhtar - C++03 with C++11 extensions
+    cpp11: l06-global-colon.cpp:6:22: error: a name qualified with '::' alone is not supported yet in an expression - as a type, '::Lexer *p;' works. Write the name without it where nothing shadows it
+    cpp11:         int f() { return ::k; }
+same   l07-param-in-ns-fn (accept)
+DIFF   l08-default-arg-in-ns-outofline: output differs
+    1c1
+    < 37 37 37
+    ---
+    > 37 131 37
+DIFF   l09-nested-ns-fn-body: output differs
+    1c1
+    < 2 2 2 9
+    ---
+    > 2 2 2 8
+DIFF   l10-static-member-of-ns-class: output differs
+    1c1
+    < 5 5
+    ---
+    > 99 99
+DIFF   l11-ns-template-replay-from-outside: output differs
+    1c1
+    < 2 2 2 1 2 2
+    ---
+    > 1 1 1 1 1 1
+same   l12-ns-class-member-inline-vs-outside (accept)
+DIFF   l13-relative-qualifier-in-ns: clang accept, cpp11 reject
+    cpp11: ©2026 G. R. Akhtar - C++03 with C++11 extensions
+    cpp11: l13-relative-qualifier-in-ns.cpp:6:9: error: 'b' is not a class
+    cpp11:         int b::f() { return k; }
+same   m01-base-member-template (accept)
+same   m02-static-member-template (accept)
+DIFF   m03-member-template-overload-ordinary: clang accept, cpp11 reject
+    cpp11: ©2026 G. R. Akhtar - C++03 with C++11 extensions
+    cpp11: Undefined symbols for architecture arm64:
+    cpp11:   "int S::f<int>(int)", referenced from:
+same   m03b-member-template-overload-split (accept)
+DIFF   m03c-member-template-overload-outside: output differs
+    1c1
+    < 1 2
+    ---
+    > 2 2
+same   m04-member-template-private-base (accept)
+DIFF   m05-member-template-private-base-outside-refused: clang reject, cpp11 accept
+    clang: m05-member-template-private-base-outside-refused.cpp:3:28: error: 'twice' is a private member of 'B'
+    clang:     3 | int main() { D d; return d.twice(4); }
+    clang:       |                          ~~^~~~~
+same   n01-nested-class-outofline (accept)
+same   n02-nested-only-via-deferred (accept)
+same   n03-nested-virtual (accept)
+same   n04-nested-static-unused (accept)
+same   n05-nested-type-outside (accept)
+DIFF   t01-tv-types: clang reject, cpp11 accept
+    clang: t01-tv-types.cpp:7:66: error: non-type template argument evaluates to 7, which cannot be narrowed to type 'bool' [-Wc++11-narrowing]
+    clang:     7 |     printf("%d %d %d\n", (int)K<bool, true>::value, (int)K<bool, 7>::value, (int)std::true_type::value);
+    clang:       |                                                                  ^
+DIFF   t01b-tv-narrow-bool: clang reject, cpp11 accept
+    clang: t01b-tv-narrow-bool.cpp:3:45: error: non-type template argument evaluates to 7, which cannot be narrowed to type 'bool' [-Wc++11-narrowing]
+    clang:     3 | int main() { printf("%d %d\n", (int)K<bool, 7>::value, (int)K<char, 300>::value); return 0; }
+    clang:       |                                             ^
+DIFF   t02-tv-partial-spec: clang reject, cpp11 accept
+    clang: t02-tv-partial-spec.cpp:4:32: error: non-type template argument specializes a template parameter with dependent type 'T'
+    clang:     4 | template <class T> struct S<T, 0> { static const int which = 1; };
+    clang:       |                                ^
+same   t02b-tv-partial-spec-valid (accept)
+same   t03-tv-deduce (accept)
+DIFF   t04-tv-defaults: clang reject, cpp11 accept
+    clang: t04-tv-defaults.cpp:3:32: error: non-type template argument evaluates to 7, which cannot be narrowed to type 'bool' [-Wc++11-narrowing]
+    clang:     3 | template <class T = int, T v = 7> struct S { static const T value = v; };
+    clang:       |                                ^
+same   t04b-tv-defaults-valid (accept)
+same   t05-tv-mangle (accept)
+same   t06-tv-traits-usage (accept)
+same   t07-tv-in-class-template (accept)
+DIFF   t08-tv-pointer-param-refused: clang accept, cpp11 reject
+    cpp11: ©2026 G. R. Akhtar - C++03 with C++11 extensions
+    cpp11: t08-tv-pointer-param-refused.cpp:1:20: error: a non-type template parameter whose type is built from an earlier parameter, 'template parameter *', is not supported yet - the earlier parameter itself, 'T v', is
+    cpp11:     template <class T, T *p> struct P { };
+same   t09-tv-scoped-enum (accept)

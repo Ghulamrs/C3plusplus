@@ -1,0 +1,6 @@
++L1 +L2 -L2 small after out -L1 1
++L1 +L2 -L2 out -L1 5
+n0 o7 done 1
+n0 o7 n1 o7 n2 o7 none done 9
+turns2 3
+skip 1

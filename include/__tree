@@ -1,0 +1,296 @@
+// <__tree> - the balanced tree <map> and <set> are built on. Not a standard header.
+//
+// **Nodes that stay where they are**, which is what [associative.reqmts] promises: an insertion
+// invalidates no iterator and an erasure only the erased one, so `m.erase(it++)` walks a map.
+// The tree is an AVL tree with parent links; the sentinel `head_` is end(), and the root hangs
+// from its left link, so stepping past the largest element climbs to it and stepping back from
+// it goes to the largest. An erased node is unlinked and its neighbour moved into its place by
+// relinking - never by copying a value - so every other node, and every iterator to one, stays.
+//
+// KeyOf says what a value is ordered by: the pair's first for a map, the value for a set.
+#ifndef _CXX1___TREE
+#define _CXX1___TREE
+
+#include <cstddef>
+
+namespace std {
+
+struct __tree_link {
+    __tree_link *left;
+    __tree_link *right;
+    __tree_link *parent;
+    int height;
+    __tree_link() : left(0), right(0), parent(0), height(0) {}
+};
+
+template <class V>
+struct __tree_node : __tree_link {
+    V value;
+    explicit __tree_node(const V &v) : value(v) { height = 1; }
+};
+
+inline __tree_link *__tree_leftmost(__tree_link *n) { while (n->left != 0) n = n->left; return n; }
+inline __tree_link *__tree_rightmost(__tree_link *n) { while (n->right != 0) n = n->right; return n; }
+
+// In-order successor; the largest element's is the sentinel, the root's parent.
+inline __tree_link *__tree_next(__tree_link *n) {
+    if (n->right != 0) return __tree_leftmost(n->right);
+    __tree_link *p = n->parent;
+    while (p->right == n) { n = p; p = p->parent; }
+    return p;
+}
+
+// In-order predecessor; the sentinel's is the largest element.
+inline __tree_link *__tree_prev(__tree_link *n, __tree_link *head) {
+    if (n == head) return __tree_rightmost(head->left);
+    if (n->left != 0) return __tree_rightmost(n->left);
+    __tree_link *p = n->parent;
+    while (p->left == n) { n = p; p = p->parent; }
+    return p;
+}
+
+template <class V>
+class __tree_const_iterator;
+
+template <class V>
+class __tree_iterator {
+public:
+    typedef V value_type;
+    __tree_iterator() : n_(0), head_(0) {}
+    __tree_iterator(__tree_link *n, __tree_link *head) : n_(n), head_(head) {}
+    V &operator*() const { return static_cast<__tree_node<V> *>(n_)->value; }
+    V *operator->() const { return &static_cast<__tree_node<V> *>(n_)->value; }
+    __tree_iterator &operator++() { n_ = __tree_next(n_); return *this; }
+    __tree_iterator operator++(int) { __tree_iterator was = *this; n_ = __tree_next(n_); return was; }
+    __tree_iterator &operator--() { n_ = __tree_prev(n_, head_); return *this; }
+    __tree_iterator operator--(int) { __tree_iterator was = *this; n_ = __tree_prev(n_, head_); return was; }
+    bool operator==(const __tree_iterator &o) const { return n_ == o.n_; }
+    bool operator!=(const __tree_iterator &o) const { return n_ != o.n_; }
+    __tree_link *link() const { return n_; }
+    __tree_link *head() const { return head_; }
+private:
+    __tree_link *n_;
+    __tree_link *head_;
+};
+
+template <class V>
+class __tree_const_iterator {
+public:
+    typedef V value_type;
+    __tree_const_iterator() : n_(0), head_(0) {}
+    __tree_const_iterator(const __tree_link *n, const __tree_link *head)
+        : n_(const_cast<__tree_link *>(n)), head_(const_cast<__tree_link *>(head)) {}
+    __tree_const_iterator(const __tree_iterator<V> &i) : n_(i.link()), head_(i.head()) {}
+    const V &operator*() const { return static_cast<const __tree_node<V> *>(n_)->value; }
+    const V *operator->() const { return &static_cast<const __tree_node<V> *>(n_)->value; }
+    __tree_const_iterator &operator++() { n_ = __tree_next(n_); return *this; }
+    __tree_const_iterator operator++(int) { __tree_const_iterator was = *this; n_ = __tree_next(n_); return was; }
+    __tree_const_iterator &operator--() { n_ = __tree_prev(n_, head_); return *this; }
+    __tree_const_iterator operator--(int) { __tree_const_iterator was = *this; n_ = __tree_prev(n_, head_); return was; }
+    bool operator==(const __tree_const_iterator &o) const { return n_ == o.n_; }
+    bool operator!=(const __tree_const_iterator &o) const { return n_ != o.n_; }
+    __tree_link *link() const { return n_; }
+private:
+    __tree_link *n_;
+    __tree_link *head_;
+};
+
+template <class V, class KeyOf>
+class __tree {
+public:
+    typedef typename KeyOf::key_type key_type;
+    typedef std::size_t size_type;
+    typedef __tree_iterator<V> iterator;
+    typedef __tree_const_iterator<V> const_iterator;
+
+    __tree() : size_(0) {}
+    __tree(const __tree &o) : size_(0) { insertAll(o); }
+    __tree &operator=(const __tree &o) {
+        if (this != &o) { clear(); insertAll(o); }
+        return *this;
+    }
+    ~__tree() { clear(); }
+
+    size_type size() const { return size_; }
+    bool empty() const { return size_ == 0; }
+    void clear() { destroy(head_.left); head_.left = 0; size_ = 0; }
+    // The two exchange their nodes; the roots are re-hung from the sentinel each belongs to.
+    void swap(__tree &o) {
+        __tree_link *r = head_.left; head_.left = o.head_.left; o.head_.left = r;
+        if (head_.left != 0) head_.left->parent = &head_;
+        if (o.head_.left != 0) o.head_.left->parent = &o.head_;
+        size_type s = size_; size_ = o.size_; o.size_ = s;
+    }
+
+    iterator begin() { return iterator(head_.left != 0 ? __tree_leftmost(head_.left) : &head_, &head_); }
+    iterator end() { return iterator(&head_, &head_); }
+    const_iterator begin() const {
+        return const_iterator(head_.left != 0 ? __tree_leftmost(head_.left) : &head_, &head_);
+    }
+    const_iterator end() const { return const_iterator(&head_, &head_); }
+
+    // The first element not ordered before k, and the first ordered after it.
+    __tree_link *lowerLink(const key_type &k) const {
+        __tree_link *n = head_.left;
+        __tree_link *at = const_cast<__tree_link *>(&head_);
+        while (n != 0) {
+            if (KeyOf::get(nodeValue(n)) < k) n = n->right;
+            else { at = n; n = n->left; }
+        }
+        return at;
+    }
+    __tree_link *upperLink(const key_type &k) const {
+        __tree_link *n = head_.left;
+        __tree_link *at = const_cast<__tree_link *>(&head_);
+        while (n != 0) {
+            if (k < KeyOf::get(nodeValue(n))) { at = n; n = n->left; }
+            else n = n->right;
+        }
+        return at;
+    }
+    __tree_link *findLink(const key_type &k) const {
+        __tree_link *at = lowerLink(k);
+        if (at == &head_ || k < KeyOf::get(nodeValue(at))) return const_cast<__tree_link *>(&head_);
+        return at;
+    }
+
+    // Where the value is, and whether this call put it there.
+    __tree_link *insertUnique(const V &v, bool *inserted) {
+        const key_type &k = KeyOf::get(v);
+        __tree_link *parent = &head_;
+        __tree_link *n = head_.left;
+        bool goLeft = true;
+        while (n != 0) {
+            parent = n;
+            if (k < KeyOf::get(nodeValue(n))) { goLeft = true; n = n->left; }
+            else if (KeyOf::get(nodeValue(n)) < k) { goLeft = false; n = n->right; }
+            else { *inserted = false; return n; }
+        }
+        __tree_link *made = new __tree_node<V>(v);
+        made->parent = parent;
+        if (goLeft) parent->left = made; else parent->right = made;
+        size_++;
+        rebalance(parent);
+        *inserted = true;
+        return made;
+    }
+
+    // Unlinks the node; its successor, if it had two children, is relinked into its place.
+    void eraseLink(__tree_link *node) {
+        __tree_link *from;
+        if (node->left != 0 && node->right != 0) {
+            __tree_link *s = __tree_leftmost(node->right);
+            if (s->parent == node) {
+                s->left = node->left;
+                s->left->parent = s;
+                from = s;
+            } else {
+                from = s->parent;
+                from->left = s->right;
+                if (s->right != 0) s->right->parent = from;
+                s->left = node->left;
+                s->left->parent = s;
+                s->right = node->right;
+                s->right->parent = s;
+            }
+            s->height = node->height;
+            replace(node, s);
+        } else {
+            __tree_link *child = node->left != 0 ? node->left : node->right;
+            from = node->parent;
+            replace(node, child);
+        }
+        delete static_cast<__tree_node<V> *>(node);
+        size_--;
+        rebalance(from);
+    }
+
+    static V &nodeValue(__tree_link *n) { return static_cast<__tree_node<V> *>(n)->value; }
+
+private:
+    static int height(const __tree_link *n) { return n != 0 ? n->height : 0; }
+    static void update(__tree_link *n) {
+        const int l = height(n->left), r = height(n->right);
+        n->height = (l > r ? l : r) + 1;
+    }
+    void replace(__tree_link *old, __tree_link *now) {
+        __tree_link *p = old->parent;
+        if (p == &head_) p->left = now;
+        else if (p->left == old) p->left = now;
+        else p->right = now;
+        if (now != 0) now->parent = p;
+    }
+    __tree_link *rotateLeft(__tree_link *x) {
+        __tree_link *y = x->right;
+        x->right = y->left;
+        if (y->left != 0) y->left->parent = x;
+        replace(x, y);
+        y->left = x;
+        x->parent = y;
+        update(x);
+        update(y);
+        return y;
+    }
+    __tree_link *rotateRight(__tree_link *x) {
+        __tree_link *y = x->left;
+        x->left = y->right;
+        if (y->right != 0) y->right->parent = x;
+        replace(x, y);
+        y->right = x;
+        x->parent = y;
+        update(x);
+        update(y);
+        return y;
+    }
+    // From n up to the root: heights brought up to date, and any node two out of balance rotated.
+    void rebalance(__tree_link *n) {
+        while (n != &head_) {
+            update(n);
+            const int bf = height(n->left) - height(n->right);
+            if (bf > 1) {
+                if (height(n->left->left) < height(n->left->right)) rotateLeft(n->left);
+                n = rotateRight(n);
+            } else if (bf < -1) {
+                if (height(n->right->right) < height(n->right->left)) rotateRight(n->right);
+                n = rotateLeft(n);
+            }
+            n = n->parent;
+        }
+    }
+    void destroy(__tree_link *n) {
+        if (n == 0) return;
+        destroy(n->left);
+        destroy(n->right);
+        delete static_cast<__tree_node<V> *>(n);
+    }
+    void insertAll(const __tree &o) {
+        bool made;
+        for (const_iterator i = o.begin(); i != o.end(); ++i) insertUnique(*i, &made);
+    }
+
+    __tree_link head_;
+    size_type size_;
+};
+
+// [container.requirements.general] for a map or a set: equal sizes and equal elements in order,
+// and ordered as their sequences are.
+template <class C>
+bool __tree_equal(const C &a, const C &b) {
+    if (a.size() != b.size()) return false;
+    typename C::const_iterator i = a.begin(), j = b.begin();
+    for (; i != a.end(); ++i, ++j) if (!(*i == *j)) return false;
+    return true;
+}
+template <class C>
+bool __tree_less(const C &a, const C &b) {
+    typename C::const_iterator i = a.begin(), j = b.begin();
+    for (; i != a.end() && j != b.end(); ++i, ++j) {
+        if (*i < *j) return true;
+        if (*j < *i) return false;
+    }
+    return i == a.end() && j != b.end();
+}
+
+}  // namespace std
+
+#endif

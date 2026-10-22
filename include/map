@@ -1,0 +1,114 @@
+// <map> - an ordered map.
+//
+// **A balanced tree whose nodes stay where they are** (<__tree>, 2026-10-21): an insertion
+// invalidates no iterator and an erasure only the erased one, as [associative.reqmts] says - so
+// `m[k] = v` inside a loop over `m` and `m.erase(it++)` both mean what they mean elsewhere. It
+// was a sorted vector with a pointer for an iterator until cppparse's `mem.erase(m++)` walked
+// off its end; the members are the ones it had, plus lower_bound and upper_bound.
+//
+// `operator[]` inserts a default-constructed value when the key is absent,
+// which is what makes `m[k]++` work and what makes it a mistake to use for
+// asking whether a key is there. `find` and `count` are the questions that do
+// not insert.
+#ifndef _CXX1_MAP
+#define _CXX1_MAP
+
+#include <cstddef>
+#include <utility>
+#include <__tree>
+
+namespace std {
+
+template <class K, class V>
+struct __map_key {
+    typedef K key_type;
+    static const K &get(const std::pair<const K, V> &v) { return v.first; }
+};
+
+// **An element is `pair<const K, V>`**, [map.overview], since 1.27 (2026-10-21, review of 1.25, item
+// 4): it was `pair<K, V>`, so `for (const std::pair<const std::string, int> &p : m)` - the pair
+// the standard names - was refused. The tree relinks nodes and never assigns one element to another,
+// so the const key costs nothing there; a `pair<K, V>` given to insert - `make_pair(k, v)` - goes to
+// an overload that builds the element from its two halves (pair's converting constructor deduces its
+// first member's type only, see <utility>).
+template <class K, class V>
+class map {
+public:
+    typedef K key_type;
+    typedef V mapped_type;
+    typedef std::pair<const K, V> value_type;
+    typedef std::size_t size_type;
+    typedef __tree_iterator<value_type> iterator;
+    typedef __tree_const_iterator<value_type> const_iterator;
+
+    map() {}
+    template <class It>
+    map(It first, It last) { insert(first, last); }
+
+    size_type size() const { return tree_.size(); }
+    bool empty() const { return tree_.empty(); }
+    void clear() { tree_.clear(); }
+    // The two maps exchange their nodes rather than their entries, so neither copies anything.
+    void swap(map &other) { tree_.swap(other.tree_); }
+
+    iterator begin() { return tree_.begin(); }
+    iterator end() { return tree_.end(); }
+    const_iterator begin() const { return tree_.begin(); }
+    const_iterator end() const { return tree_.end(); }
+
+    iterator find(const K &k) { return iterator(tree_.findLink(k), tree_.end().link()); }
+    const_iterator find(const K &k) const { return const_iterator(tree_.findLink(k), tree_.end().link()); }
+    size_type count(const K &k) const { return tree_.findLink(k) != tree_.end().link() ? 1 : 0; }
+    iterator lower_bound(const K &k) { return iterator(tree_.lowerLink(k), tree_.end().link()); }
+    const_iterator lower_bound(const K &k) const { return const_iterator(tree_.lowerLink(k), tree_.end().link()); }
+    iterator upper_bound(const K &k) { return iterator(tree_.upperLink(k), tree_.end().link()); }
+    const_iterator upper_bound(const K &k) const { return const_iterator(tree_.upperLink(k), tree_.end().link()); }
+
+    V &operator[](const K &k) {
+        bool made;
+        __tree_link *n = tree_.insertUnique(value_type(k, V()), &made);
+        return tree_.nodeValue(n).second;
+    }
+
+    // Answers where the element is and whether this call put it there.
+    std::pair<iterator, bool> insert(const value_type &v) {
+        bool made;
+        __tree_link *n = tree_.insertUnique(v, &made);
+        return std::pair<iterator, bool>(iterator(n, tree_.end().link()), made);
+    }
+    // `insert(std::make_pair(k, v))`: a `pair<K, V>`, which is not the element's `pair<const K, V>` (1.27).
+    std::pair<iterator, bool> insert(const std::pair<K, V> &v) { return insert(value_type(v.first, v.second)); }
+    // A hint is where to start looking; the answer is where the element is.
+    iterator insert(iterator, const value_type &v) { return insert(v).first; }
+    iterator insert(iterator, const std::pair<K, V> &v) { return insert(v).first; }
+    template <class It>
+    void insert(It first, It last) { for (; first != last; ++first) insert(*first); }
+
+    // [associative.reqmts]: by key, answering how many went; by iterator, answering what follows.
+    size_type erase(const K &k) {
+        __tree_link *n = tree_.findLink(k);
+        if (n == tree_.end().link()) return 0;
+        tree_.eraseLink(n);
+        return 1;
+    }
+    iterator erase(iterator at) {
+        iterator next = at;
+        ++next;
+        tree_.eraseLink(at.link());
+        return next;
+    }
+
+private:
+    __tree<value_type, __map_key<K, V> > tree_;
+};
+
+template <class K, class V>
+bool operator==(const map<K, V> &a, const map<K, V> &b) { return __tree_equal(a, b); }
+template <class K, class V>
+bool operator!=(const map<K, V> &a, const map<K, V> &b) { return !__tree_equal(a, b); }
+template <class K, class V>
+bool operator<(const map<K, V> &a, const map<K, V> &b) { return __tree_less(a, b); }
+
+}  // namespace std
+
+#endif

@@ -1,0 +1,82 @@
+// stdlib.h - allocation, conversion, and leaving.
+//
+// The same bargain as <stdio.h>: prototypes only, checked against glibc by the
+// suite building every case twice. See that file for why this is not a copy of
+// the real header.
+//
+// malloc needed nothing new from the compiler when it first appeared here - it
+// arrives through an ordinary prototype, and the cast that turns its block into
+// an array of something is the declarator grammar doing its ordinary work.
+#ifndef _CC1_STDLIB_H
+#define _CC1_STDLIB_H
+
+// Everything here is the C library, so it is named the way C names it.
+// Without this the compiler would give every declaration below a C++
+// linkage name and ask the linker for a symbol libc has never had.
+extern "C" {
+
+
+#include <stddef.h>
+
+// C90 7.10: the two exit statuses everywhere, and RAND_MAX as each platform's own library has it -
+// glibc's and Darwin's 2147483647, Microsoft's and the C6000's (RTS6x's, and TI's ABI) 32767.
+#define EXIT_SUCCESS 0
+#define EXIT_FAILURE 1
+#if defined(_WIN32) || defined(__TMS320C6X__)
+#define RAND_MAX 32767
+#else
+#define RAND_MAX 2147483647
+#endif
+
+void *malloc(size_t);
+void *calloc(size_t, size_t);
+void *realloc(void *, size_t);
+void free(void *);
+
+void exit(int);
+void abort(void);
+// [cstdlib.syn]: a command handed to the host's command processor; its status comes back.
+int system(const char *);
+
+int atoi(const char *);
+char *getenv(const char *);
+long atol(const char *);
+
+// The one that says where it stopped. atol cannot report a failure at all - it
+// gives back zero for "0" and for "banana" alike - so anything reading a
+// number it did not write itself wants this instead, and gets the rest of the
+// string as well as the value.
+//
+// char ** rather than const char **, which looks like an oversight and is not:
+// it is what C89 says, so that the end pointer can be used to walk a string
+// the caller owns. Declaring it the tidier way would make every correct
+// program that passes a char ** fail to compile here.
+//
+// strtol and strtoul are its neighbours and take a base as well: 0 reads the
+// prefix - 0x for sixteen, a leading 0 for eight - and 2 to 36 says outright.
+double atof(const char *);
+double strtod(const char *, char **);
+long strtol(const char *, char **, int);
+unsigned long strtoul(const char *, char **, int);
+// C99's, which C++11's [c.strings] takes: the 64-bit and the narrower and wider floating forms.
+long long strtoll(const char *, char **, int);
+unsigned long long strtoull(const char *, char **, int);
+float strtof(const char *, char **);
+long double strtold(const char *, char **);
+
+int abs(int);
+long labs(long);
+
+int rand(void);
+void srand(unsigned int);
+
+// The two that could not be written here until pointers to functions existed,
+// and a good part of the reason they were wanted. A comparison function is the
+// argument, and there is no way to spell one without this type.
+void qsort(void *, size_t, size_t, int (*)(const void *, const void *));
+void *bsearch(const void *, const void *, size_t, size_t,
+              int (*)(const void *, const void *));
+
+
+}  // extern "C"
+#endif

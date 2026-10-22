@@ -1,0 +1,1 @@
+:7:3: error: 'Two2' cannot be the argument for the template template parameter 'C' of 'H': its parameter 'U' has no default, and the parameter's list gives it nothing

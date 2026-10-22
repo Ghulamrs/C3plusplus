@@ -1,0 +1,1 @@
+tms6747  RTS6x and the vm6747 runtime have no vsnprintf yet (C99); the case links nowhere on this target until they do.

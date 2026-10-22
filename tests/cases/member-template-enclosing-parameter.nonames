@@ -1,0 +1,3 @@
+x86_64-linux  clang zeroes the value-initialised V<...>() with a call to memset where cpp11 writes the fields out - the difference value-init cases record (S-09); every function name agrees.
+x86_64-windows  the same memset, and nothing else.
+arm64-darwin  the same _memset, and nothing else.

@@ -1,0 +1,119 @@
+// <utility> - `pair`, the two functions that go with it, and the two casts a
+// C++11 program moves things with.
+//
+// It is here because `<map>` needs it: a map's element *is* a pair, and its
+// iterator is a pointer to one, so `it->first` and `it->second` are an ordinary
+// member access through an ordinary pointer.
+#ifndef _CXX1_UTILITY
+#define _CXX1_UTILITY
+
+#include <cstddef>
+#include <type_traits>
+
+namespace std {
+
+// **`first` and `second` are public and that is the whole of the type.** The
+// constructors are here so a pair can be built in one expression; the copy and
+// the assignment are the compiler's, which is right because a pair owns nothing
+// beyond whatever its members own.
+template <class T1, class T2>
+struct pair {
+    typedef T1 first_type;
+    typedef T2 second_type;
+
+    pair() : first(), second() {}
+    pair(const T1 &a, const T2 &b) : first(a), second(b) {}
+    // A `pair<K, V>` from a map's `pair<const K, V>` - `vector<pair<int, char> > pv(m.begin(), m.end())`
+    // copies one - by a constructor of its own; the specialization below has the other direction.
+    // Neither is a template: see there (1.27, 2026-10-21, review of 1.25, item 4).
+    pair(const pair<const T1, T2> &p) : first(p.first), second(p.second) {}
+
+    T1 first;
+    T2 second;
+};
+
+// **`pair<const K, V>`, a map's element**: the same pair, with a constructor from the `pair<K, V>`
+// that make_pair gives. [pairs.pair]/7's `template <class U1, class U2> pair(const pair<U1, U2> &)`
+// is not written: a constructor template whose parameter names the class's own T2 is deduced as if
+// T2 were a parameter of its own, so a `pair<pair<A, B>, C>` instantiated it from a `pair<A, B>` while
+// ranking a conversion and failed in its body (cppparse's Sema.cpp, 2026-10-21). Two plain
+// constructors say what a map needs and deduce nothing (1.27, 2026-10-21, review of 1.25, item 4).
+template <class T1, class T2>
+struct pair<const T1, T2> {
+    typedef const T1 first_type;
+    typedef T2 second_type;
+
+    pair() : first(), second() {}
+    pair(const T1 &a, const T2 &b) : first(a), second(b) {}
+    pair(const pair<T1, T2> &p) : first(p.first), second(p.second) {}
+
+    const T1 first;
+    T2 second;
+};
+
+// [pairs.spec]: equal member by member, ordered by first and then by second.
+template <class T1, class T2>
+bool operator==(const pair<T1, T2> &a, const pair<T1, T2> &b) { return a.first == b.first && a.second == b.second; }
+template <class T1, class T2>
+bool operator!=(const pair<T1, T2> &a, const pair<T1, T2> &b) { return !(a == b); }
+template <class T1, class T2>
+bool operator<(const pair<T1, T2> &a, const pair<T1, T2> &b) {
+    return a.first < b.first || (!(b.first < a.first) && a.second < b.second);
+}
+template <class T1, class T2>
+bool operator>(const pair<T1, T2> &a, const pair<T1, T2> &b) { return b < a; }
+template <class T1, class T2>
+bool operator<=(const pair<T1, T2> &a, const pair<T1, T2> &b) { return !(b < a); }
+template <class T1, class T2>
+bool operator>=(const pair<T1, T2> &a, const pair<T1, T2> &b) { return !(a < b); }
+
+template <class T1, class T2>
+pair<T1, T2> make_pair(const T1 &a, const T2 &b) {
+    return pair<T1, T2>(a, b);
+}
+
+// **move and forward - [forward].** Each is a cast and nothing else, written as the
+// standard writes them: `move` takes a forwarding reference, so an lvalue deduces T as
+// `U &` and the parameter collapses to `U &`, and names its argument as an rvalue;
+// `forward<T>` hands an argument on with the value category T carries, `T &&` collapsing
+// to `U &` for an lvalue's T and staying `U &&` for an rvalue's. The second `forward` is
+// [forward]/4's: an rvalue may be forwarded as an rvalue and never as an lvalue.
+template <class T>
+typename remove_reference<T>::type &&move(T &&t) {
+    return static_cast<typename remove_reference<T>::type &&>(t);
+}
+
+template <class T>
+T &&forward(typename remove_reference<T>::type &t) {
+    return static_cast<T &&>(t);
+}
+
+template <class T>
+T &&forward(typename remove_reference<T>::type &&t) {
+    static_assert(!is_lvalue_reference<T>::value, "an rvalue cannot be forwarded as an lvalue");
+    return static_cast<T &&>(t);
+}
+
+// [declval]: an rvalue of T that no object has to exist for - the operand of a `decltype` or a
+// `noexcept`, `noexcept(T(std::declval<T>()))`, and never evaluated (1.27, 2026-10-21, review of
+// 1.25, item 3). The standard leaves it undefined; this compiler instantiates what it names, so a
+// body it is, one that no program runs. `T &&` collapses to `U &` for a `U &`, which is what
+// add_rvalue_reference would say.
+template <class T>
+T &&declval() noexcept {
+    return static_cast<T &&>(*static_cast<typename remove_reference<T>::type *>(0));
+}
+
+// [utility.swap]: by moves since 1.27 (2026-10-21, review of 1.25, item 4) - it copied, so a
+// program counting its copies and moves counted three copies where cl counts a move and two move
+// assignments, and a move-only type could not be swapped at all. Below `move`, which it uses.
+template <class T>
+void swap(T &a, T &b) {
+    T held(std::move(a));
+    a = std::move(b);
+    b = std::move(held);
+}
+
+}  // namespace std
+
+#endif

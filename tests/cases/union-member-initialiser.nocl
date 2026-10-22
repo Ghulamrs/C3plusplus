@@ -1,0 +1,1 @@
+cl builds the arrays of unions (`V globals[2]`, `U a[3]`) by calling its own vector constructor iterator, ??_H@YAXPEAX_K1P6APEAX0@Z@Z, where cxx1 writes the loop inline - the difference array-of-class.nocl records. Every name of the unions themselves agrees.

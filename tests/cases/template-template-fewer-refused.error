@@ -1,0 +1,1 @@
+:6:4: error: 'Box' cannot be the argument for the template template parameter 'C' of 'H2': it has 1 template parameter(s) and the parameter's list has 2

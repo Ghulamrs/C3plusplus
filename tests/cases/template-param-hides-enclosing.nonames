@@ -1,0 +1,1 @@
+x86_64-linux  clang emits only the C2 form of an inline constructor on this target where cxx1 emits C1 beside it (n::C and n::Box<int>), as move-constructor.nonames records; every other name agrees.

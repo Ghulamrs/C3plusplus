@@ -1,0 +1,102 @@
+// <__string_conversions> - std::stoi and the rest of [string.conversions]'s sto* family.
+//
+// Not a header a program includes: <string> and <stdexcept> both do, at their ends, and the
+// functions are defined only once both are complete - they throw invalid_argument and
+// out_of_range, and <stdexcept> holds a string. Whichever of the two is included first, the
+// second inclusion here is the one that finds _CXX1_STDEXCEPT_READY and defines them.
+#if defined(_CXX1_STDEXCEPT_READY) && !defined(_CXX1_STRING_CONVERSIONS)
+#define _CXX1_STRING_CONVERSIONS
+
+#include <errno.h>
+
+namespace std {
+
+// **[string.conversions] the sto* family**: strto*, with invalid_argument when nothing was read and
+// out_of_range when the value does not fit. x86_64-windows cannot throw a class yet, so there the
+// message is printed and the program aborts - the rule <array>'s at() follows.
+inline void __sto_fail(const char *fn, bool range) {
+#ifdef _WIN32
+    std::fprintf(stderr, "std::%s: %s\n", fn, range ? "out of range" : "no conversion");
+    std::abort();
+#else
+    if (range) throw out_of_range(fn);
+    throw invalid_argument(fn);
+#endif
+}
+
+// Every integer form reads through strtoll or strtoull and every floating one through strtold,
+// then narrows: one helper per kind, so nothing here asks for template-argument deduction.
+inline long long __sto_signed(const char *fn, const string &s, size_t *idx, int base,
+                              long long lo, long long hi) {
+    const char *p = s.c_str();
+    char *end = 0;
+    const int saved = errno;
+    errno = 0;
+    long long v = strtoll(p, &end, base);
+    if (end == p) std::__sto_fail(fn, false);
+    if (errno == ERANGE || v < lo || v > hi) std::__sto_fail(fn, true);
+    errno = saved;
+    if (idx) *idx = (size_t)(end - p);
+    return v;
+}
+
+inline unsigned long long __sto_unsigned(const char *fn, const string &s, size_t *idx, int base,
+                                         unsigned long long hi) {
+    const char *p = s.c_str();
+    char *end = 0;
+    const int saved = errno;
+    errno = 0;
+    unsigned long long v = strtoull(p, &end, base);
+    if (end == p) std::__sto_fail(fn, false);
+    if (errno == ERANGE || v > hi) std::__sto_fail(fn, true);
+    errno = saved;
+    if (idx) *idx = (size_t)(end - p);
+    return v;
+}
+
+inline long double __sto_floating(const char *fn, const string &s, size_t *idx) {
+    const char *p = s.c_str();
+    char *end = 0;
+    const int saved = errno;
+    errno = 0;
+    long double v = strtold(p, &end);
+    if (end == p) std::__sto_fail(fn, false);
+    if (errno == ERANGE) std::__sto_fail(fn, true);
+    errno = saved;
+    if (idx) *idx = (size_t)(end - p);
+    return v;
+}
+
+inline long stol(const string &s, size_t *idx = 0, int base = 10) {
+    return (long)std::__sto_signed("stol", s, idx, base,
+                                   sizeof(long) == 4 ? -2147483647LL - 1 : -9223372036854775807LL - 1,
+                                   sizeof(long) == 4 ? 2147483647LL : 9223372036854775807LL);
+}
+inline unsigned long stoul(const string &s, size_t *idx = 0, int base = 10) {
+    return (unsigned long)std::__sto_unsigned("stoul", s, idx, base,
+                                              sizeof(long) == 4 ? 4294967295ULL : 18446744073709551615ULL);
+}
+inline long long stoll(const string &s, size_t *idx = 0, int base = 10) {
+    return std::__sto_signed("stoll", s, idx, base, -9223372036854775807LL - 1, 9223372036854775807LL);
+}
+inline unsigned long long stoull(const string &s, size_t *idx = 0, int base = 10) {
+    return std::__sto_unsigned("stoull", s, idx, base, 18446744073709551615ULL);
+}
+inline int stoi(const string &s, size_t *idx = 0, int base = 10) {
+    return (int)std::__sto_signed("stoi", s, idx, base, -2147483647LL - 1, 2147483647LL);
+}
+inline float stof(const string &s, size_t *idx = 0) {
+    const long double v = std::__sto_floating("stof", s, idx);
+    if (v > (long double)3.4028234663852886e38 || v < -(long double)3.4028234663852886e38) std::__sto_fail("stof", true);
+    return (float)v;
+}
+inline double stod(const string &s, size_t *idx = 0) {
+    return (double)std::__sto_floating("stod", s, idx);
+}
+inline long double stold(const string &s, size_t *idx = 0) {
+    return std::__sto_floating("stold", s, idx);
+}
+
+}  // namespace std
+
+#endif

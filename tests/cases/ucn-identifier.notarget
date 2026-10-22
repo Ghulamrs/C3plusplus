@@ -1,0 +1,1 @@
+tms6747  ASM6x takes no name past ASCII - its names are letters, digits, '_', '$' and '.' - so a name from a universal character name is refused for this target, and TI's assembler was not asked.

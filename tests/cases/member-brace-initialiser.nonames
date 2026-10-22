@@ -1,0 +1,3 @@
+x86_64-linux  cxx1 emits the C1 form of P's and Q's constructors beside the C2 where clang emits only the C2 for a constructor defined inside its class (implicit-move.nonames records the same); and `memset`, below.
+x86_64-windows  `= {}` and `= {0}` on a member zero it through memset, the shape memberInitialiser has always used for them, where clang stores the zero directly.
+arm64-darwin  the same memset.

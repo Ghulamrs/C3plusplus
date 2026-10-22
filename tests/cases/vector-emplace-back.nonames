@@ -1,0 +1,3 @@
+x86_64-linux  the Mac's clang has no standard headers for this target, so there is nothing to compare.
+x86_64-windows  the same: no headers for this target on the Mac.
+arm64-darwin  libc++'s vector is std::__1::vector<T, allocator<T>> with its own members - a header difference.

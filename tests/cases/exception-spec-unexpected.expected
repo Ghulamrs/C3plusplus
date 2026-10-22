@@ -1,0 +1,11 @@
+~inner
+~bad
+unexpected handler
+replaced 42
+Base
+M3
+~Base
+handler 3
+unexpected handler again
+caught 2.5
+done

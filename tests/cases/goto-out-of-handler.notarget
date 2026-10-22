@@ -1,0 +1,1 @@
+x86_64-windows  a local with a destructor inside a handler, and a `try` inside a handler, are each refused for this target (a cleanup there would be a funclet inside the handler's funclet); goto-out-of-handler-ms.cpp holds the jumps this target takes.

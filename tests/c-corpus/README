@@ -1,0 +1,142 @@
+424 C programs, inherited, untriaged, and not a pass rate
+========================================================
+
+These came over whole from Compiler-C, the C90 compiler this one was forked
+from, on 2026-08-26. They are **C**, and cxx1 is a C++11 compiler. Nothing in
+the build gates on them: `make test` does not look here, and a case that stops
+compiling is as likely to be C++ doing what C++ does as it is to be a fault.
+
+Each program says what it should exit with, in a `// expect: N` line on the
+first line. That convention is theirs, not `tests/cases/`'s, which uses sidecar
+files instead - and it is the reason these two directories cannot be run by one
+script.
+
+Running them
+------------
+
+    tests/corpus.sh              all of them, and the split
+    tests/corpus.sh add          one, with what it said
+
+Each case is compiled as a `.cpp` copy in `tests/out-corpus/`, with
+`pp_helper.h` copied beside it. Since 2026-09-15 (ffc3b77) the driver turns a
+`.c` away by name - "looks like C (.c), and cxx1 compiles C++, not C" - and
+until this runner copied them every case was refused for that and nothing else:
+424 refused, which measured the file extension. The question this corpus asks
+is what happens to C when it is read as C++, and a copy asks it without
+teaching the driver a `-x` it has never needed.
+
+It exits 0 whatever happens. What it is for is `tests/out-corpus/FAILING`: run
+it before a change and after one, and **diff the failing set**. A case that
+moves between the lists is worth reading; the count on its own is not.
+
+What the split is on 2026-09-30, at 314eda4, on the Mac
+-------------------------------------------------------
+
+    365 ran and agreed, 58 refused, 1 wrong, of 424
+
+The same numbers as 2026-09-02, and the same failing set line for line: the
+compiler from just before 314eda4 gives an identical `FAILING`. That commit
+removed the implicit `void *` to object-pointer conversion ([conv.ptr]/2),
+which C relies on for `p = malloc(n)`, and one case writes it:
+`assign_types.c`, `char *w = malloc(4);` on line 21. It was already refused,
+four lines earlier, for `char *p = "literal";` - so the first error is
+unchanged and nothing moved. Take that line out and the `malloc` one is the
+error now, where before 314eda4 the case would have run: a case can hide a
+second refusal behind its first, and the failing set shows only the first.
+The others that call `malloc` cast its result or keep it in a `void *`. The
+59, by cause:
+
+* **45 refused: a string literal where a `char *` is wanted.** 39 are a call -
+  `printf(char *, ...)` in 37 of them, `puts` and a `count(char *)` in one each
+  - and 6 an initialisation or assignment. In C++11 the literal is `const
+  char[N]` and does not convert. cxx1 is right.
+* **13 refused at the link: a libc function the case declares itself, without
+  `extern "C"`.** `putchar(int)` in 10, `printf(const char *, ...)` in 2 -
+  typed correctly, so it compiles, and then its name is mangled - and
+  `malloc(long)` in 1. C++ behaving as C++.
+* **1 wrong: `pp_predefined`**, as below.
+
+The 2026-09-02 tally below comes to 39 + 7 + 6 = 52 refusals of the 58 it
+reports, so six were never accounted for; the likeliest are six more link
+failures it does not list - `printf(const char *, ...)` and `malloc(long)`
+beside `putchar` - but the failing set of that day was not kept, and that is
+a guess. The breakdown above adds up: 45 + 13 = 58.
+
+What the split was on 2026-09-02, on the Mac
+--------------------------------------------
+
+    365 ran and agreed, 58 refused, 1 wrong, of 424
+
+Every one of the 59 was read, and none of them is a compiler fault:
+
+* **39 refused: a string literal passed to a `char *` parameter.** The case
+  writes `int printf(char *fmt, ...);` and calls it with `"%u\n"`. In C++11 a
+  string literal is `const char[N]` and does not convert, so there is no
+  matching function. C says yes, C++ says no, and cxx1 is right.
+* **7 refused at the link: `putchar(int)` undefined.** The case declares the
+  libc function itself, without `extern "C"`, so the name is mangled and the C
+  library does not have it. Again C++ behaving as C++; `#include <stdio.h>`
+  from `lib/`, which wraps its declarations, links fine.
+* **6 refused: the same string-literal rule** reached by an assignment rather
+  than a call.
+* **1 wrong: `pp_predefined`, expecting 0 and getting 3**, because it asks
+  `#ifndef __linux__` and this is a Mac. The corpus was written for one
+  machine, so even the wrong bucket has to be read rather than counted.
+
+So the number is not 379/424, which is what this file used to be quoted at in
+CLAUDE.md with nothing left in the tree able to reproduce it. The runners that
+produced it were deleted with the fork.
+
+What the split is on 2026-10-01, case by case
+----------------------------------------------
+
+    365 ran and agreed, 58 refused, 1 wrong, of 424
+
+The same three numbers, and this time every one of the 59 was asked of
+`clang++ -x c++ -std=c++11 -pedantic-errors`, compiled, linked and run. The
+2026-09-02 buckets above add up to 53, not 59; this list is complete. **None
+is a fault of cpp11**:
+
+| class | cases | clang |
+| --- | --- | --- |
+| invalid C++11: a string literal given to a `char *` | 44 | refuses |
+| invalid C++11: `, ## __VA_ARGS__`, a GNU extension | 1 | refuses |
+| a libc function declared without `extern "C"`, so its name is mangled | 13 | compiles, then fails to link |
+| `pp_predefined`, which expects `__linux__` and `__x86_64__` | 1 | exits 3 on this Mac, as cpp11 does |
+
+String literal (44):
+  assign_types, bf_compound, bf_full_width, bf_mixed_members, bf_neighbours,
+  bf_sizes, bf_straddle, bf_truncates, bf_types, bf_union, bf_unnamed,
+  ce_sizeof_relations, cm_mixed, cm_not_in_arguments, cond_as_argument,
+  cond_char_pointer, cond_usual_conversions, fm_side_effect_twice,
+  fm_stringify, fp_printf, fp_printf_deep, fp_printf_many, fp_printf_mixed,
+  out_switch, pd_abstract_declarators, pd_malloc_block, pp_line_and_file,
+  pp_macro_not_in_literals, qs_const_in_expressions, qs_static_in_loop,
+  qs_static_scope, qs_static_two_functions, st_adjacent, st_index, st_puts,
+  st_terminator, st_walk, toolkit, up_libc, up_pointers_and_arrays, va_basic,
+  va_expanded, va_only, va_stringify
+
+GNU comma (1): va_empty_swallows_comma - cpp11 refuses it a step later, at the
+string literal the same line passes to `printf(char *fmt, ...)`.
+
+Link (13):
+  fp_nan_ordering, lg_shortcircuit_and, lg_shortcircuit_nested,
+  lg_shortcircuit_or, lg_shortcircuit_runs, out_digits, out_factorial,
+  out_fizzbuzz, out_hello, out_triangle, pd_matrix_through_function,
+  st_escape, vd_forward
+
+`pp_include` was refused until 2026-10-01 for a reason of the runner's: the
+driver turns a `.c` away by name, so corpus.sh compiled nothing at all until it
+copied each case to `.cpp`, and the copy then lost the directory its
+`#include "..."` reads from - `-Itests/c-corpus` puts it back, and the case
+agrees. `tests/out-corpus/FAILING` also records the first line past cpp11's
+banner now, where it recorded the banner.
+
+Asking clang about one of them
+------------------------------
+
+    clang++ -x c++ -std=c++11 -pedantic-errors tests/c-corpus/add.c
+
+`-x c++` is not optional: without it clang compiles the file as C and agrees
+with everything. Without `-pedantic-errors` the string-literal rule is a
+warning it keeps for old C++, which is the other half of the same trap.

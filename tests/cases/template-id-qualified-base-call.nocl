@@ -1,0 +1,1 @@
+x86_64-windows  cxx1 moves the temporary `return Q(...)` builds into the caller's object through Q<3>'s implicit move constructor, ??0?$Q@$02@@QEAA@$$QEAU0@@Z, where cl elides it - [class.copy]/31 permits both. The same difference the .nonames records against clang.
