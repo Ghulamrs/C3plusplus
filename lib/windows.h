@@ -25,13 +25,16 @@
 //
 // Added 2026-10-20 for cppparse: its main thread's 512 MB stack (CreateThread,
 // WaitForSingleObject) and its worker pool (GetSystemInfo, a critical section,
-// WaitForMultipleObjects and an interlocked counter of the next job).
+// WaitForMultipleObjects and an interlocked counter of the next job). 2026-10-23,
+// for the compiler's own Driver.cpp: processes, file search and temporary files.
 #ifndef _CXX1_WINDOWS_H
 #define _CXX1_WINDOWS_H
 
 #ifndef _WIN32
 #error "<windows.h> is here for the x86_64-windows target only"
 #endif
+
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -47,6 +50,14 @@ extern "C" {
 #define WAIT_FAILED 0xFFFFFFFF
 #define CREATE_SUSPENDED 0x00000004
 #define STACK_SIZE_PARAM_IS_A_RESERVATION 0x00010000
+#define MAX_PATH 260
+#define FILE_ATTRIBUTE_DIRECTORY 0x00000010
+#define STARTF_USESTDHANDLES 0x00000100
+#define STD_INPUT_HANDLE ((DWORD)-10)
+#define STD_OUTPUT_HANDLE ((DWORD)-11)
+#define STD_ERROR_HANDLE ((DWORD)-12)
+#define INVALID_HANDLE_VALUE ((HANDLE)(LONG_PTR)-1)
+#define ZeroMemory(d, n) memset((d), 0, (n))
 
 typedef int BOOL;
 typedef unsigned char BYTE;
@@ -69,6 +80,8 @@ typedef DWORD *LPDWORD;
 typedef char CHAR;
 typedef char *LPSTR;
 typedef const char *LPCSTR;
+typedef BYTE *LPBYTE;
+typedef void *HMODULE;
 
 typedef DWORD (*LPTHREAD_START_ROUTINE)(LPVOID parameter);
 
@@ -108,6 +121,50 @@ typedef struct _RTL_CRITICAL_SECTION {
     ULONG_PTR SpinCount;
 } CRITICAL_SECTION, *LPCRITICAL_SECTION;
 
+//  0 cb  8 lpReserved  16 lpDesktop  24 lpTitle  32 dwX .. 60 dwFlags  64 wShowWindow
+// 66 cbReserved2  72 lpReserved2  80 hStdInput  88 hStdOutput  96 hStdError  - 104 bytes.
+typedef struct _STARTUPINFOA {
+    DWORD cb;
+    LPSTR lpReserved;
+    LPSTR lpDesktop;
+    LPSTR lpTitle;
+    DWORD dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
+    WORD wShowWindow;
+    WORD cbReserved2;
+    LPBYTE lpReserved2;
+    HANDLE hStdInput;
+    HANDLE hStdOutput;
+    HANDLE hStdError;
+} STARTUPINFOA, *LPSTARTUPINFOA;
+
+//  0 hProcess  8 hThread  16 dwProcessId  20 dwThreadId  - 24 bytes.
+typedef struct _PROCESS_INFORMATION {
+    HANDLE hProcess;
+    HANDLE hThread;
+    DWORD dwProcessId;
+    DWORD dwThreadId;
+} PROCESS_INFORMATION, *LPPROCESS_INFORMATION;
+
+typedef struct _FILETIME {
+    DWORD dwLowDateTime;
+    DWORD dwHighDateTime;
+} FILETIME;
+
+//  0 dwFileAttributes  4/12/20 the three FILETIMEs  28 nFileSizeHigh  32 nFileSizeLow
+// 36, 40 dwReserved0/1  44 cFileName[260]  304 cAlternateFileName[14]  - 320 bytes.
+typedef struct _WIN32_FIND_DATAA {
+    DWORD dwFileAttributes;
+    FILETIME ftCreationTime;
+    FILETIME ftLastAccessTime;
+    FILETIME ftLastWriteTime;
+    DWORD nFileSizeHigh;
+    DWORD nFileSizeLow;
+    DWORD dwReserved0;
+    DWORD dwReserved1;
+    CHAR cFileName[MAX_PATH];
+    CHAR cAlternateFileName[14];
+} WIN32_FIND_DATAA, *LPWIN32_FIND_DATAA;
+
 // One pointer, zero when free; SRWLOCK_INIT is that zero.
 typedef struct _RTL_SRWLOCK {
     PVOID Ptr;
@@ -129,6 +186,20 @@ void InitializeCriticalSection(LPCRITICAL_SECTION section);
 void EnterCriticalSection(LPCRITICAL_SECTION section);
 void LeaveCriticalSection(LPCRITICAL_SECTION section);
 void DeleteCriticalSection(LPCRITICAL_SECTION section);
+BOOL CreateProcessA(LPCSTR application, LPSTR commandLine, LPSECURITY_ATTRIBUTES processAttributes,
+                    LPSECURITY_ATTRIBUTES threadAttributes, BOOL inheritHandles, DWORD flags,
+                    LPVOID environment, LPCSTR directory, LPSTARTUPINFOA startup,
+                    LPPROCESS_INFORMATION information);
+BOOL GetExitCodeProcess(HANDLE process, LPDWORD code);
+DWORD GetCurrentProcessId(void);
+DWORD GetModuleFileNameA(HMODULE module, LPSTR name, DWORD size);
+HANDLE GetStdHandle(DWORD which);
+DWORD GetTempPathA(DWORD size, LPSTR buffer);
+UINT GetTempFileNameA(LPCSTR path, LPCSTR prefix, UINT unique, LPSTR name);
+DWORD SearchPathA(LPCSTR path, LPCSTR file, LPCSTR extension, DWORD size, LPSTR buffer, LPSTR *filePart);
+HANDLE FindFirstFileA(LPCSTR pattern, LPWIN32_FIND_DATAA data);
+BOOL FindNextFileA(HANDLE find, LPWIN32_FIND_DATAA data);
+BOOL FindClose(HANDLE find);
 void AcquireSRWLockExclusive(PSRWLOCK lock);
 void ReleaseSRWLockExclusive(PSRWLOCK lock);
 

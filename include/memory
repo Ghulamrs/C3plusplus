@@ -26,6 +26,8 @@ public:
     unique_ptr(std::nullptr_t) : p_(0) {}
     explicit unique_ptr(T *p) : p_(p) {}
     unique_ptr(unique_ptr &&o) : p_(o.p_) { o.p_ = 0; }
+    // [unique.ptr.single.ctor]/19: from a unique_ptr<U> whose pointer converts - a derived class's.
+    template <class U> unique_ptr(unique_ptr<U> &&o) : p_(o.release()) {}
     unique_ptr(const unique_ptr &) = delete;
     unique_ptr &operator=(const unique_ptr &) = delete;
     ~unique_ptr() { delete p_; }

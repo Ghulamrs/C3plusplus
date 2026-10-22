@@ -135,6 +135,10 @@ private:
         // calls it - which is what keeps the symbol list level with the oracles.
         bool implicit = false;
         bool used = false;
+        // A member template candidate whose body failed while it was only being ranked: the error,
+        // reported if overload resolution chooses it ([temp.inst]/3 - a body is instantiated when used).
+        std::string bodyFailure;
+        std::size_t bodyFailurePos = 0;
         // **A specialization is a candidate like any other, and loses a tie.**
         // [over.match.best]: where a specialization and an ordinary function are equally
         // good, the ordinary one wins. Its unbound parameter list serves [temp.func.order].
@@ -1594,6 +1598,11 @@ private:
         std::size_t instArgs = 0, instParams = 0, instBinding = 0, instValues = 0;
         bool unnamedNamespace = false, pattern = false, memberTemplateInst = false;
         bool definingQualified = false, directLinkage = false;
+        // Set partway through a construct: left set by an error, `n > 0` reads as a closing angle.
+        bool templateArgs = false, replaying = false, memberTemplateBody = false, deferBodies = false;
+        bool overloadArgument = false, pendingNoexcept = false, pendingExplicit = false, tlsObject = false;
+        int instantiationDepth = 0, nesting = 0;
+        const Type *overloadTarget = nullptr;
         int cLinkage = 0;
         std::string inlineOwner;
         std::map<std::string, int> boundTypes, boundValues;

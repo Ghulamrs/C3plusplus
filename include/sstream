@@ -70,6 +70,27 @@ public:
     void str(const string &v) { s_ = v; pos_ = 0; state_ = 0; }
 };
 
+// **[stringstream]: one string, read and written** - an istream whose source and an ostream whose
+// buffer are both s_, so a read sees what was written. Each base keeps its own state, which a
+// program that only reads, or only writes, never sees differ.
+class stringstream : public istream, public ostream {
+public:
+    string s_;
+
+    stringstream() { open(); }
+    explicit stringstream(const string &from) { open(); s_ = from; }
+
+    string str() const { return s_; }
+    void str(const string &v) { s_ = v; istream::pos_ = 0; istream::state_ = 0; }
+
+private:
+    void open() {
+        istream::fp_ = 0; istream::which_ = 0; istream::state_ = 0; src_ = &s_; pos_ = 0;
+        ostream::fp_ = 0; ostream::which_ = 0; ostream::state_ = 0; buf_ = &s_;
+        base_ = 10; prec_ = 6; fmt_ = 0; width_ = 0; fill_ = 0;
+    }
+};
+
 }  // namespace std
 
 #endif

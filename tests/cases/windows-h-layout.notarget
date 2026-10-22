@@ -1,0 +1,3 @@
+x86_64-linux  lib/windows.h is for the x86_64-windows target only
+arm64-darwin  lib/windows.h is for the x86_64-windows target only
+tms6747  lib/windows.h is for the x86_64-windows target only

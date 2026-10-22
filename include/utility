@@ -27,17 +27,18 @@ struct pair {
     // copies one - by a constructor of its own; the specialization below has the other direction.
     // Neither is a template: see there (1.27, 2026-10-21, review of 1.25, item 4).
     pair(const pair<const T1, T2> &p) : first(p.first), second(p.second) {}
+    // [pairs.pair]/7: from any pair whose members convert - `push_back(make_pair("k", s))` into a
+    // vector of pair<string, string>. Brought back 2026-10-23, cppparse compiling as before.
+    template <class U1, class U2>
+    pair(const pair<U1, U2> &p) : first(p.first), second(p.second) {}
 
     T1 first;
     T2 second;
 };
 
 // **`pair<const K, V>`, a map's element**: the same pair, with a constructor from the `pair<K, V>`
-// that make_pair gives. [pairs.pair]/7's `template <class U1, class U2> pair(const pair<U1, U2> &)`
-// is not written: a constructor template whose parameter names the class's own T2 is deduced as if
-// T2 were a parameter of its own, so a `pair<pair<A, B>, C>` instantiated it from a `pair<A, B>` while
-// ranking a conversion and failed in its body (cppparse's Sema.cpp, 2026-10-21). Two plain
-// constructors say what a map needs and deduce nothing (1.27, 2026-10-21, review of 1.25, item 4).
+// that make_pair gives. Its converting template stayed out in 1.27: a candidate's body was then
+// instantiated while ranking, and failed (cppparse's Sema.cpp); since 2026-10-23 it waits to be chosen.
 template <class T1, class T2>
 struct pair<const T1, T2> {
     typedef const T1 first_type;
@@ -67,8 +68,10 @@ bool operator<=(const pair<T1, T2> &a, const pair<T1, T2> &b) { return !(b < a);
 template <class T1, class T2>
 bool operator>=(const pair<T1, T2> &a, const pair<T1, T2> &b) { return !(a < b); }
 
+// [pairs.spec]/9: the pair of the arguments' decayed types, so `make_pair("k", s)` is a pair of
+// `const char *`. By value, as C++03 wrote it: deduction from a value decays an array.
 template <class T1, class T2>
-pair<T1, T2> make_pair(const T1 &a, const T2 &b) {
+pair<T1, T2> make_pair(T1 a, T2 b) {
     return pair<T1, T2>(a, b);
 }
 

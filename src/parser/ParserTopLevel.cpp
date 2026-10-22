@@ -948,10 +948,13 @@ void Parser::topLevel(Program &program) {
         if (memberTemplateInst_ && d.name == memberTemplateOf_) {
             key = d.qualifier + "::" + memberTemplateName_;
             // Declared unless one with these parameters is: two templates of a name meet at K = 3.
+            // Only another specialization counts - `unique_ptr<R>`'s converting constructor at U = R
+            // is not its move constructor, which [over.match.best] prefers over it.
             bool declared = false;
             if (const std::vector<std::size_t> *set = overloadsOf(key))
                 for (std::size_t k = 0; k < set->size(); k++)
-                    if (functions_[(*set)[k]].constThis == constThis &&
+                    if (functions_[(*set)[k]].fromTemplate &&
+                        functions_[(*set)[k]].constThis == constThis &&
                         functions_[(*set)[k]].refThis == refThis &&
                         sameParameters(functions_[(*set)[k]].params, params))
                         declared = true;
@@ -1010,6 +1013,7 @@ void Parser::topLevel(Program &program) {
         if (const std::vector<std::size_t> *set = overloadsOf(key)) {
             for (std::size_t k = 0; k < set->size() && member == nullptr; k++) {
                 const Signature &f = functions_[(*set)[k]];
+                if (memberTemplateInst_ && d.name == memberTemplateOf_ && !f.fromTemplate) continue;
                 if ((f.constThis == constThis || (impliedConst && f.isStaticMember)) &&
                     f.refThis == refThis && sameParameters(f.params, params))
                     member = &f;
@@ -1952,6 +1956,17 @@ Parser::DeclarationSnapshot Parser::snapshotDeclaration() const {
     s.memberTemplateInst = memberTemplateInst_;
     s.definingQualified = definingQualified_;
     s.directLinkage = directLinkage_;
+    s.templateArgs = inTemplateArgs_;
+    s.replaying = replayingInline_;
+    s.memberTemplateBody = memberTemplateBody_;
+    s.deferBodies = deferSpecializationBodies_;
+    s.overloadArgument = overloadArgument_;
+    s.pendingNoexcept = pendingNoexcept_;
+    s.pendingExplicit = pendingExplicitConversion_;
+    s.tlsObject = tlsObject_;
+    s.instantiationDepth = instantiationDepth_;
+    s.nesting = nesting_;
+    s.overloadTarget = overloadTarget_;
     s.cLinkage = cLinkage_;
     s.inlineOwner = inlineOwner_;
     s.boundTypes = boundTypeParams_;
@@ -1979,6 +1994,17 @@ void Parser::restoreDeclaration(const DeclarationSnapshot &s) {
     memberTemplateInst_ = s.memberTemplateInst;
     definingQualified_ = s.definingQualified;
     directLinkage_ = s.directLinkage;
+    inTemplateArgs_ = s.templateArgs;
+    replayingInline_ = s.replaying;
+    memberTemplateBody_ = s.memberTemplateBody;
+    deferSpecializationBodies_ = s.deferBodies;
+    overloadArgument_ = s.overloadArgument;
+    pendingNoexcept_ = s.pendingNoexcept;
+    pendingExplicitConversion_ = s.pendingExplicit;
+    tlsObject_ = s.tlsObject;
+    instantiationDepth_ = s.instantiationDepth;
+    nesting_ = s.nesting;
+    overloadTarget_ = s.overloadTarget;
     cLinkage_ = s.cLinkage;
     inlineOwner_ = s.inlineOwner;
     boundTypeParams_ = s.boundTypes;

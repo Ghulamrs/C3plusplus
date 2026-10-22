@@ -3596,6 +3596,7 @@ void Parser::instantiateViableMemberTemplate(const TemplateDecl &mt,
     const std::vector<TemplateArg> args = argumentsFromBinding(mt.params, binding, values, packs);
     const bool wasBody = memberTemplateBody_;
     memberTemplateBody_ = false;
+    const std::size_t before = functions_.size();
     try {
         Trial trial(this);
         const Signature *made = instantiateMemberTemplate(mt, binding, values, args, pos);
@@ -3606,10 +3607,22 @@ void Parser::instantiateViableMemberTemplate(const TemplateDecl &mt,
         // rather than about this candidate, or **the body failed**, which [temp.deduct]/8 does not
         // forgive: the candidate was formed, and dropping it now leaves a call to nothing.
         if (f.unsupported) src_.fail(f.pos, f.why);
-        if (memberTemplateBody_)
-            src_.fail(f.pos, f.why + " - in the instantiation of '" + mt.ownerTag + "::" +
-                                 specializationKey(mt.isConstructor ? mt.ownerLocal : mt.name, args) +
-                                 "', asked for at " + src_.where(pos));
+        if (memberTemplateBody_) {
+            const std::string display = specializationKey(mt.isConstructor ? mt.ownerLocal : mt.name, args);
+            const std::string why = f.why + " - in the instantiation of '" + mt.ownerTag + "::" +
+                                    display + "', asked for at " + src_.where(pos);
+            // **Its signature stands as a candidate**; the body's error waits for it to be chosen,
+            // which pruneUnchosenCandidates asks - a pair<pair<A, B>, C> ranks pair(const pair<U1, U2> &).
+            const std::vector<std::size_t> *had = overloadsOf(mt.ownerTag + "::" + display);
+            std::size_t found = static_cast<std::size_t>(-1);
+            for (std::size_t i = 0; had != nullptr && i < had->size(); i++)
+                if ((*had)[i] >= before) { found = (*had)[i]; break; }
+            if (found == static_cast<std::size_t>(-1)) src_.fail(f.pos, why);
+            functions_[found].bodyFailure = why;
+            functions_[found].bodyFailurePos = f.pos;
+            memberTemplateMade_[mt.ownerTag + "::" + display + "@" + std::to_string(mt.afterParams)] = found;
+            candidateSpecializations_.push_back(found);
+        }
     }
     memberTemplateBody_ = wasBody;
 }

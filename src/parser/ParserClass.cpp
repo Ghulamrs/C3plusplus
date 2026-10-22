@@ -4035,6 +4035,7 @@ void Parser::pruneExternalVtables(Program &program) {
 void Parser::pruneUnchosenCandidates(Program &program) {
     for (std::size_t k = 0; k < candidateSpecializations_.size(); k++) {
         const Signature &f = functions_[candidateSpecializations_[k]];
+        if (f.used && !f.bodyFailure.empty()) src_.fail(f.bodyFailurePos, f.bodyFailure);
         if (f.used) continue;
         for (std::size_t i = program.functions.size(); i-- > 0; )
             if (program.functions[i].symbol() == f.symbol)

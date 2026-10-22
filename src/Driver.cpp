@@ -28,11 +28,10 @@
 #include <utility>
 #include <vector>
 
-#include <unistd.h>
-
 #ifdef _WIN32
 #include <direct.h>
 #else
+#include <unistd.h>
 #include <sys/stat.h>
 #include <cerrno>
 #include <glob.h>
@@ -204,9 +203,22 @@ void Driver::usage(char *file) {
         "         on from the next declaration after each; the file still fails\n", file);
 }
 
+// This process's id, which keeps two runs in one directory from choosing one temporary name.
+static unsigned long processId() {
+#ifdef _WIN32
+    return GetCurrentProcessId();
+#else
+    return static_cast<unsigned long>(getpid());
+#endif
+}
+
 static std::string workingDirectory() {
     char buf[4096];
+#ifdef _WIN32
+    if (_getcwd(buf, sizeof buf) == nullptr) return std::string();
+#else
     if (getcwd(buf, sizeof buf) == nullptr) return std::string();
+#endif
     return std::string(buf);
 }
 
@@ -608,7 +620,7 @@ std::string Driver::temporaryName(int index) {
                              base[base.size() - 1] == '\\'))
         base.erase(base.size() - 1);
     return base + (hostIsWindows() ? "\\" : "/") + program::kName + "-" +
-           std::to_string(static_cast<long>(getpid())) + "-" +
+           std::to_string(static_cast<long>(processId())) + "-" +
            std::to_string(index) + ".s";
 }
 

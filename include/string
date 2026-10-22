@@ -25,6 +25,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>     // snprintf, for to_string of a floating value
 #include <cctype>     // as libstdc++'s <string> reaches it, so `isupper` is declared beside a string
 
 namespace std {
@@ -218,21 +219,28 @@ public:
     // included as well, `set` names a class template, and this compiler reads
     // the template in preference to the parameter that shadows it. A header
     // has no business using a library name for a parameter either way.
-    size_type find_first_of(const C *wanted) const {
-        for (size_type i = 0; i < len_; i++)
+    // [string.find.first.of] and [string.find.last.of], each from a position as the standard has them.
+    size_type find_first_of(const C *wanted, size_type from = 0) const {
+        for (size_type i = from; i < len_; i++)
             if (__cxx1_holds(wanted, p()[i])) return i;
         return npos;
     }
-    size_type find_last_of(const C *wanted) const {
-        for (size_type i = len_; i-- > 0; )
+    size_type find_first_of(const basic_string &s, size_type from = 0) const {
+        return find_first_of(s.c_str(), from);
+    }
+    size_type find_last_of(const C *wanted, size_type from = npos) const {
+        for (size_type i = from < len_ ? from + 1 : len_; i-- > 0; )
             if (__cxx1_holds(wanted, p()[i])) return i;
         return npos;
+    }
+    size_type find_last_of(const basic_string &s, size_type from = npos) const {
+        return find_last_of(s.c_str(), from);
     }
     // **The one-character forms**, which is how a path is usually split -
     // `path.find_last_of('/')`. A `char` reaches the `const char *` overload
     // through no conversion C++ has, so without these the call is refused.
-    size_type find_first_of(C c) const { return find(c, 0); }
-    size_type find_last_of(C c) const { return rfind(c); }
+    size_type find_first_of(C c, size_type from = 0) const { return find(c, from); }
+    size_type find_last_of(C c, size_type from = npos) const { return rfind(c, from); }
     // [string.find.first.not.of] and [string.find.last.not.of]: the first or last unit not in the set.
     size_type find_first_not_of(const C *wanted, size_type from = 0) const {
         for (size_type i = from; i < len_; i++)
@@ -532,10 +540,37 @@ inline string to_string(long long v) {
     return r;
 }
 
+// An unsigned value keeps its own loop: past LLONG_MAX a cast to long long would print it negative.
+inline string to_string(unsigned long long v) {
+    char buf[24];
+    int n = 0;
+    do {
+        buf[n] = (char)('0' + (int)(v % 10));
+        n++;
+        v /= 10;
+    } while (v != 0);
+    string r;
+    for (int i = n; i-- > 0; ) r += buf[i];
+    return r;
+}
+
 inline string to_string(int v) { return to_string((long long)v); }
 inline string to_string(long v) { return to_string((long long)v); }
-inline string to_string(unsigned v) { return to_string((long long)v); }
-inline string to_string(unsigned long v) { return to_string((long long)v); }
+inline string to_string(unsigned v) { return to_string((unsigned long long)v); }
+inline string to_string(unsigned long v) { return to_string((unsigned long long)v); }
+
+// [string.conversions]/7: what sprintf's "%f" writes.
+inline string to_string(double v) {
+    char buf[512];
+    snprintf(buf, sizeof buf, "%f", v);
+    return string(buf);
+}
+inline string to_string(float v) { return to_string((double)v); }
+inline string to_string(long double v) {
+    char buf[5120];
+    snprintf(buf, sizeof buf, "%Lf", v);
+    return string(buf);
+}
 
 inline wstring to_wstring(long long v) {
     string s = to_string(v);

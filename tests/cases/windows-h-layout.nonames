@@ -1,0 +1,1 @@
+x86_64-windows  lib/windows.h is this compiler's own declarations, and clang here has no Windows SDK to compile against; the layouts are the oracle, held by static_asserts measured with cl and the real SDK on the Windows box.
