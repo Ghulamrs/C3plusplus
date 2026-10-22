@@ -194,6 +194,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
         type->setLocalName(local);
         type->setLocalOwner(localOwner);
         localClassOwner_[tag] = localOwner;
+        if (currentClass_ != nullptr) localClassOuter_[tag] = currentClass_;
         localTypes_[local] = type;
     }
     if (!tag.empty()) declareTypeName(tag, type);
@@ -627,12 +628,34 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 continue;
             }
         }
+        // **`using B::f;` - a base's member functions of that name join this class's set**, [namespace.udecl]/15,
+        // those this class declares with the same parameters left out; joined at completion. A data member, or
+        // one whose access the declaration would change, is still refused (M1 L2).
+        if (peek().is("using") && !tag.empty() && peekAt(1).kind == TokenKind::Ident && peekAt(2).is("::") &&
+            peekAt(3).kind == TokenKind::Ident && peekAt(4).is(";")) {
+            // The base the declaration names, by the name as written or its injected class name.
+            const Type *named = nullptr;
+            for (const Type::BaseSpec &b : type->bases())
+                if (b.type->localName() == peekAt(1).text || b.type->tag() == peekAt(1).text ||
+                    b.type->unqualified() == (findTypedef(peekAt(1).text) != nullptr
+                                                  ? findTypedef(peekAt(1).text)->unqualified() : nullptr))
+                    named = b.type;
+            const Type *owner = named != nullptr ? findMemberOwner(named, peekAt(3).text) : nullptr;
+            bool sameAccess = owner != nullptr;
+            if (sameAccess)
+                for (std::size_t i : *overloadsOf(owner->tag() + "::" + peekAt(3).text))
+                    if (functions_[i].access != access) sameAccess = false;
+            if (sameAccess) {
+                usingMembers_[tag].push_back(std::make_pair(owner, peekAt(3).text));
+                at_ += 5;
+                continue;
+            }
+        }
         if (peek().is("using"))
             src_.fail(peek().pos, "a using-declaration inside a class is not "
-                                  "supported yet - it redeclares a base member "
-                                  "here rather than naming it, which changes "
-                                  "access and overload resolution; one at "
-                                  "namespace scope works");
+                                  "supported yet here - of a base's member functions in "
+                                  "the access they have, it works; of a data member, or "
+                                  "changing the access, it is not; one at namespace scope works");
 
         // Where this member's declaration begins.
         std::size_t itemStart = at_;
@@ -1497,6 +1520,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
         pendingBodies_.swap(rest);
     }
 
+    declareUsingMembers(tag, type);
     declareImplicitSpecials(tag, type, pos);
     // After them: an inherited constructor is not user-declared, so it leaves the implicit default one.
     declareInheritingCtors(tag, type, pos);

@@ -1,0 +1,1 @@
+x86_64-windows  cl writes the RTTI of a base away from offset 0, which cxx1 does not yet - the known gap in docs/HANDOVER-2026-09-11.md.

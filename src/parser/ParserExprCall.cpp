@@ -752,6 +752,13 @@ ExprPtr Parser::memberCallWith(ExprPtr object, const Type *cls,
     // The object's value category is what a ref-qualifier is ranked against, [over.match.funcs]/4.
     const Signature &sig = resolveOverloadBraced(key, args, pos, cls, objectIsLvalue(*object));
     applyDefaults(sig, args, pos);
+    // One a using-declaration brought in is the base's, called on the base as if found there (M1 L2).
+    if (forceOwner == nullptr && !sig.owner.empty() && sig.owner != owner->tag())
+        if (const Type *declared = findTypedef(sig.owner))
+            if (declared->isStructOrUnion() && accessibleBaseOffset(plain, declared->unqualified()) >= 0) {
+                owner = declared->unqualified();
+                key = owner->tag() + "::" + name;
+            }
 
     // Now there IS an inside, and this is where it starts to mean something:
     // a private member is reachable from another member of the same class.
@@ -932,6 +939,13 @@ bool Parser::insideAccessOf(const Type *cls, Access access) const {
     if (currentClass_ == want) return true;
     if (access == Access::Protected && derivesFrom(currentClass_, want))
         return true;
+    // A local class has the access of the member function it is written in, [class.local]/1.
+    for (const Type *c = currentClass_;;) {
+        std::map<std::string, const Type *>::const_iterator in = localClassOuter_.find(c->unqualified()->tag());
+        if (in == localClassOuter_.end()) break;
+        c = in->second;
+        if (c->unqualified() == want || (access == Access::Protected && derivesFrom(c, want))) return true;
+    }
     std::map<std::string, const Type *>::const_iterator outer =
         closureOuter_.find(currentClass_->unqualified()->tag());
     return outer != closureOuter_.end() &&

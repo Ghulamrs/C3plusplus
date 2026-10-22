@@ -334,6 +334,18 @@ ExprPtr Parser::staticCast(std::size_t pos) {
                 return obj;
             }
         }
+        // **And a derived lvalue to a reference to its base** - [expr.static.cast]/4's implicit conversion,
+        // the base subobject named; `static_cast<B &>(*this) = o` in an operator= (M1 L8d).
+        if (v->type()->unqualified() != referent->unqualified() &&
+            v->type()->unqualified()->isStructOrUnion() && referent->unqualified()->isStructOrUnion() &&
+            accessibleBaseOffset(v->type()->unqualified(), referent->unqualified()) >= 0) {
+            if (v->type()->isConst() && !referent->isConst())
+                src_.fail(pos, "'static_cast<" + to->describe() + ">' of a '" +
+                               v->type()->describe() + "' - a cast does not take const off");
+            ExprPtr sub = baseSubobject(std::move(v), referent->unqualified());
+            if (to->isRValueReference()) sub->setXvalue();
+            return sub;
+        }
         if (v->type()->unqualified() != referent->unqualified())
             src_.fail(pos, "'static_cast<" + to->describe() + ">' of a '" +
                            v->type()->describe() + "' - casting a reference "

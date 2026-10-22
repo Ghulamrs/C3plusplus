@@ -1,0 +1,1 @@
+'static_cast<struct B &>' of a 'const struct D' - a cast does not take const off

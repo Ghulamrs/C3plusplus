@@ -4323,6 +4323,27 @@ const Type *Parser::constexprObject(const Type *t) {
     return t;
 }
 
+// [namespace.udecl]/15: each base overload a using-declaration names joins this class's set, unless this
+// class declares one with the same parameters and qualifiers - which hides it.
+void Parser::declareUsingMembers(const std::string &tag, const Type *type) {
+    (void)type;
+    auto it = usingMembers_.find(tag);
+    if (it == usingMembers_.end()) return;
+    for (const std::pair<const Type *, std::string> &u : it->second) {
+        const std::vector<std::size_t> from = *overloadsOf(u.first->tag() + "::" + u.second);
+        std::vector<std::size_t> &mine = functionIndex_[tag + "::" + u.second];
+        const std::vector<std::size_t> own = mine;
+        for (std::size_t i : from) {
+            bool hidden = false;
+            for (std::size_t k : own)
+                if (sameParameters(functions_[k].params, functions_[i].params) &&
+                    functions_[k].constThis == functions_[i].constThis && functions_[k].refThis == functions_[i].refThis)
+                    hidden = true;
+            if (!hidden) mine.push_back(i);
+        }
+    }
+}
+
 // The value folded where the class declares it, and laid down there as a weak definition: a constant
 // expression reads the value, and a read at run time the object, defined or not outside the class.
 void Parser::defineConstexprStaticMember(const std::string &full, const std::string &symbol, const Declared &d) {

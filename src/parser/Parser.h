@@ -1409,6 +1409,9 @@ private:
     // what first calls another's.
     void defineImplicitFunctions();
     void synthesizeDefaultCtor(std::size_t which);
+    // `using B::f;` in a class body, by the class's tag: the base and the name, joined at completion (M1 L2).
+    std::map<std::string, std::vector<std::pair<const Type *, std::string> > > usingMembers_;
+    void declareUsingMembers(const std::string &tag, const Type *type);
     // `using B::B;` [class.inhctor]: the bases a class inherits constructors from, and per declared
     // constructor the base and the base constructor (an index into functions_) it forwards to.
     std::map<std::string, std::vector<const Type *> > inheritFrom_;
@@ -1883,6 +1886,8 @@ private:
     int lambdaRetSeq_ = 0;
     // The class a closure captured `this` from, by closure tag.
     std::map<std::string, const Type *> closureOuter_;
+    // A local class's enclosing member function's class, by its tag: [class.local]/1 (M1 L10).
+    std::map<std::string, const Type *> localClassOuter_;
     // The class a lambda was written in, by closure tag, `this` captured or
     // not: [expr.prim.lambda]/7 puts the body in that member function's scope,
     // so its statics, enumerators and nested types are named bare.

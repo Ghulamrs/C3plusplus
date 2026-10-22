@@ -1,0 +1,2 @@
+x86_64-linux  cxx1 emits the C1 and D1 forms of each inline constructor and destructor beside the C2 and D2 a use reaches, where clang emits only those on this target - the difference implicit-move records.
+x86_64-windows  clang writes the type descriptors of Plain and Y for Y's vftable, Plain sitting at offset 8 behind Pad; cxx1's Microsoft RTTI for a base away from offset 0 is the known gap in docs/HANDOVER-2026-09-11.md.
