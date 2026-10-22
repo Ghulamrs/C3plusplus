@@ -1,0 +1,2 @@
+x86_64-linux  clang emits only the C2 variant of the inline constructors Two(int) and Holder() and the D2 of the local Restore, where cxx1 emits C1 and C2 - the inline-constructor difference implicit-move.nonames records - and cxx1 keeps a landing pad in Holder::run whose only cleanup is unreachable from any call, where clang drops it (_Unwind_Resume, DW.ref.__gxx_personality_v0). Every other name agrees.
+arm64-darwin  the same unreachable landing pad in Holder::run, so cxx1 names __Unwind_Resume and clang does not; every other name agrees.

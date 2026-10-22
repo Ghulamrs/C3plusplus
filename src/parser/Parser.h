@@ -518,6 +518,7 @@ private:
     // The function templates a call of `name` names, [basic.lookup.qual] and [basic.lookup.unqual]:
     // the nearest namespace declaring one - or the one a qualifier names - in `*ns`; else every one.
     // A `scope` is the namespace a qualifier resolved to, absolute: `m` for `m::twice(2)`.
+    bool functionHidesTemplates(const std::string &name) const;
     std::vector<TemplateDecl> templatesNamed(const std::string &name, const std::string &scope,
                                              std::string *ns) const;
     // The same, for a member function template of `cls`.

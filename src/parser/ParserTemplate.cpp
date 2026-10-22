@@ -1390,6 +1390,18 @@ void Parser::templateArguments(const TemplateDecl &decl,
     inTemplateArgs_ = wasInArgs;
 }
 
+// A type as a specialization's key spells it: describe() writes an enumeration as the int it is
+// held in, and `Box<Rank>` would be `Box<int>` - one class for two (M1, `std::vector<Rank>`).
+static std::string keySpelling(const Type *t) {
+    if (t->unqualified() != t)
+        return t->isPointer() ? keySpelling(t->unqualified()) + " const" : "const " + keySpelling(t->unqualified());
+    if (t->isEnumeration()) return "enum " + t->enumTag();
+    if (t->isPointer() && !t->pointee()->isFunction()) return keySpelling(t->pointee()) + " *";
+    if (t->kind() == Kind::LValueRef) return keySpelling(t->referent()) + " &";
+    if (t->kind() == Kind::RValueRef) return keySpelling(t->referent()) + " &&";
+    return t->describe();
+}
+
 std::string Parser::specializationKey(const std::string &name,
                                       const std::vector<TemplateArg> &args) const {
     std::string key = name + "<";
@@ -1406,7 +1418,7 @@ std::string Parser::specializationKey(const std::string &name,
                 else if (args[i].packIsValue) key += std::to_string(args[i].packValues[k]);
                 else if (args[i].pack[k]->kind() == Kind::TemplateParam)
                     key += "$T" + std::to_string(args[i].pack[k]->length());
-                else key += args[i].pack[k]->describe();
+                else key += keySpelling(args[i].pack[k]);
             }
             key += "}";
         }
@@ -1423,7 +1435,7 @@ std::string Parser::specializationKey(const std::string &name,
         // A template named as an argument: `Holder<Box,int>`, the name as written.
         else if (args[i].isTemplate)
             key += args[i].type->templateNamespace() + args[i].type->templateName();
-        else key += args[i].type->describe();
+        else key += keySpelling(args[i].type);
     }
     return key + ">";
 }
@@ -3472,6 +3484,20 @@ std::vector<Parser::TemplateDecl> Parser::templatesNamed(const std::string &name
         here = up == std::string::npos ? std::string() : here.substr(0, up + 2);
     }
     return it->second;
+}
+
+// [basic.lookup.unqual]/1 for a call: an ordinary function in an enclosing namespace hides the templates of
+// a namespace no enclosing one is - `copy(r)` in `mir` is `mir::copy`, not `std::copy` (M1, MirWebs.cpp).
+bool Parser::functionHidesTemplates(const std::string &name) const {
+    std::string ns;
+    templatesNamed(name, std::string(), &ns);
+    if (!ns.empty()) return false;
+    const std::string key = qualifyForLookup(name, &Parser::hasFunctionNamed);
+    if (key == name) return false;
+    if (const std::vector<std::size_t> *set = overloadsOf(key))
+        for (std::size_t i : *set)
+            if (!functions_[i].fromTemplate) return true;
+    return false;
 }
 
 void Parser::instantiateViableTemplates(const std::vector<TemplateDecl> &overloads,

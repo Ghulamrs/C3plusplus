@@ -1047,6 +1047,7 @@ void Parser::replayInlineBodies(std::vector<PendingBody> mine) {
     // inside a trial may throw from here, and the call that follows still reads its locals.
     try {
     for (std::size_t i = 0; i < mine.size(); i++) {
+        localTypes_ = outer.localTypes;     // each body's end clears them, and the next names them too
         at_ = mine[i].start;
         // A friend's body is written inside the class and belongs outside it,
         // so it is replayed with no owner to supply a `Class::` it must not have.

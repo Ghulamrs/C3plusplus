@@ -356,6 +356,16 @@ void Parser::emitFill(const std::string &name, std::vector<InitStep> &path,
     }
 
     c.at++;
+    // A reference member is bound, not assigned ([dcl.init.aggr]/2): the slot holds the address.
+    if (type->isReference()) {
+        ExprPtr field = targetFor(name, path);
+        const Type *held = types_.pointerTo(type->referent());
+        field->setType(held);
+        ExprPtr bind(new Assign(std::move(field), bindReference(type, std::move(item.value), item.pos, "'" + name + "'")));
+        bind->setType(held);
+        out.push_back(StmtPtr(new ExprStmt(std::move(bind))));
+        return;
+    }
     checkNarrowing(type, *item.value, item.pos, "'" + name + "'");
     initStore(name, path, decay(std::move(item.value)), item.pos, out);
 }

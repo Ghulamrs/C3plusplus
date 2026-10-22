@@ -1140,7 +1140,8 @@ ExprPtr Parser::primary(Program *program) {
                memberTemplateOwner(currentClass_, peek().text) != nullptr)) ||
              (!peekAt(1).is("<") && (currentClass_->findMember(peek().text) != nullptr ||
                                      currentClass_->findStaticMember(peek().text) != nullptr)));
-        if (!memberFirst) return templateCall(program);
+        if (!memberFirst && !(peekAt(1).is("(") && functionHidesTemplates(peek().text)))
+            return templateCall(program);
     }
 
     if (peek().is("__builtin_va_start")) {
@@ -1460,6 +1461,14 @@ ExprPtr Parser::primary(Program *program) {
             absoluteLookup_ = was;
             if (v == nullptr) src_.fail(qpos, "'::" + full + "' was not declared in the global namespace");
             return v;
+        }
+        // `::S(x)`, `::S{x}` - a temporary of a class (or a cast to a type) found from the global namespace.
+        const Type *named = last.kind == TokenKind::Ident && !peekAt(k + 1).is("::") ? findGlobalTypedef(full) : nullptr;
+        if (named != nullptr && (peekAt(k + 1).is("(") || peekAt(k + 1).is("{"))) {
+            at_ += k + 1;
+            if (peek().is("{")) return listTemporary(named, qpos);
+            if (named->isStructOrUnion()) { at_++; return classTemporary(named, qpos); }
+            return functionalCast(named, qpos);
         }
     }
     if (peek().is("::"))
