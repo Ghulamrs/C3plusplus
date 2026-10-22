@@ -37,6 +37,12 @@ void exit(int);
 void abort(void);
 // [cstdlib.syn]: a command handed to the host's command processor; its status comes back.
 int system(const char *);
+#ifdef _WIN32
+// The Microsoft CRT's absolute path of a file, as its stdlib.h declares it - the compiler's own
+// main.cpp and Preprocessor.cpp ask it (M1, 2026-10-23).
+#define _MAX_PATH 260
+char *_fullpath(char *, const char *, size_t);
+#endif
 
 int atoi(const char *);
 char *getenv(const char *);

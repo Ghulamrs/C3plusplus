@@ -34,6 +34,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <initializer_list>
+#include <iterator>
 #include <new>
 #include <utility>
 #include <type_traits>
@@ -52,6 +53,8 @@ public:
     typedef std::size_t size_type;
     typedef T *iterator;
     typedef const T *const_iterator;
+    typedef std::reverse_iterator<T *> reverse_iterator;
+    typedef std::reverse_iterator<const T *> const_reverse_iterator;
 
     vector() : items_(0), size_(0), cap_(0) {}
     vector(const vector &o) : items_(0), size_(0), cap_(0) { copyFrom(o); }
@@ -178,6 +181,10 @@ public:
     iterator end() { return items_ + size_; }
     const_iterator begin() const { return items_; }
     const_iterator end() const { return items_ + size_; }
+    reverse_iterator rbegin() { return reverse_iterator(end()); }
+    reverse_iterator rend() { return reverse_iterator(begin()); }
+    const_reverse_iterator rbegin() const { return const_reverse_iterator(end()); }
+    const_reverse_iterator rend() const { return const_reverse_iterator(begin()); }
 
     void reserve(size_type n) { if (n > cap_) grow(n); }
 

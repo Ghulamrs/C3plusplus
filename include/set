@@ -7,6 +7,8 @@
 #define _CXX1_SET
 
 #include <cstddef>
+#include <initializer_list>
+#include <iterator>
 #include <utility>
 #include <__tree>
 
@@ -26,10 +28,13 @@ public:
     typedef std::size_t size_type;
     typedef __tree_const_iterator<T> iterator;
     typedef __tree_const_iterator<T> const_iterator;
+    typedef std::reverse_iterator<const_iterator> reverse_iterator;
+    typedef std::reverse_iterator<const_iterator> const_reverse_iterator;
 
     set() {}
     template <class It>
     set(It first, It last) { insert(first, last); }
+    set(std::initializer_list<T> list) { insert(list.begin(), list.end()); }
 
     size_type size() const { return tree_.size(); }
     bool empty() const { return tree_.empty(); }
@@ -38,6 +43,8 @@ public:
 
     const_iterator begin() const { return tree_.begin(); }
     const_iterator end() const { return tree_.end(); }
+    const_reverse_iterator rbegin() const { return const_reverse_iterator(end()); }
+    const_reverse_iterator rend() const { return const_reverse_iterator(begin()); }
 
     const_iterator find(const T &v) const { return const_iterator(tree_.findLink(v), tree_.end().link()); }
     size_type count(const T &v) const { return tree_.findLink(v) != tree_.end().link() ? 1 : 0; }

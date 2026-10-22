@@ -1,0 +1,98 @@
+// <iterator> - what is said about an iterator rather than done with one: its traits, a reverse
+// adaptor, and next, prev, advance and distance.
+//
+// **The containers include it**, as every library's do, so `std::next(it)` and `v.rbegin()` need
+// no #include of their own - the compiler's own src/ writes both that way (M1, 2026-10-23).
+// What is not here: the category tags beyond what advance asks, the insert iterators, and the
+// stream iterators.
+#ifndef _CXX1_ITERATOR
+#define _CXX1_ITERATOR
+
+#include <cstddef>
+
+namespace std {
+
+struct input_iterator_tag {};
+struct forward_iterator_tag : input_iterator_tag {};
+struct bidirectional_iterator_tag : forward_iterator_tag {};
+struct random_access_iterator_tag : bidirectional_iterator_tag {};
+
+// [iterator.traits]: a class iterator says these itself; a pointer is told here.
+template <class It>
+struct iterator_traits {
+    typedef typename It::value_type value_type;
+    typedef typename It::reference reference;
+    typedef typename It::pointer pointer;
+    typedef typename It::difference_type difference_type;
+    typedef typename It::iterator_category iterator_category;
+};
+template <class T>
+struct iterator_traits<T *> {
+    typedef T value_type;
+    typedef T &reference;
+    typedef T *pointer;
+    typedef std::ptrdiff_t difference_type;
+    typedef random_access_iterator_tag iterator_category;
+};
+template <class T>
+struct iterator_traits<const T *> {
+    typedef T value_type;
+    typedef const T &reference;
+    typedef const T *pointer;
+    typedef std::ptrdiff_t difference_type;
+    typedef random_access_iterator_tag iterator_category;
+};
+
+// [reverse.iterator]: walks the other way, `*r` being the element before the one it holds.
+template <class It>
+class reverse_iterator {
+public:
+    typedef It iterator_type;
+    typedef typename iterator_traits<It>::value_type value_type;
+    typedef typename iterator_traits<It>::reference reference;
+    typedef typename iterator_traits<It>::pointer pointer;
+    typedef typename iterator_traits<It>::difference_type difference_type;
+    typedef typename iterator_traits<It>::iterator_category iterator_category;
+
+    reverse_iterator() : it_() {}
+    explicit reverse_iterator(It it) : it_(it) {}
+    // A reverse_iterator over `iterator` gives one over `const_iterator`, as the two below convert.
+    template <class U> reverse_iterator(const reverse_iterator<U> &o) : it_(o.base()) {}
+
+    It base() const { return it_; }
+    reference operator*() const { It t = it_; --t; return *t; }
+    pointer operator->() const { It t = it_; --t; return &*t; }
+    reverse_iterator &operator++() { --it_; return *this; }
+    reverse_iterator operator++(int) { reverse_iterator was = *this; --it_; return was; }
+    reverse_iterator &operator--() { ++it_; return *this; }
+    reverse_iterator operator--(int) { reverse_iterator was = *this; ++it_; return was; }
+
+private:
+    It it_;
+};
+
+template <class A, class B>
+bool operator==(const reverse_iterator<A> &a, const reverse_iterator<B> &b) { return a.base() == b.base(); }
+template <class A, class B>
+bool operator!=(const reverse_iterator<A> &a, const reverse_iterator<B> &b) { return a.base() != b.base(); }
+
+// [iterator.operations]: by steps, which every iterator here can take, a pointer included.
+template <class It, class Distance>
+void advance(It &it, Distance n) {
+    for (; n > 0; --n) ++it;
+    for (; n < 0; ++n) --it;
+}
+template <class It>
+std::ptrdiff_t distance(It first, It last) {
+    std::ptrdiff_t n = 0;
+    for (; first != last; ++first) ++n;
+    return n;
+}
+template <class It>
+It next(It it, std::ptrdiff_t n = 1) { std::advance(it, n); return it; }
+template <class It>
+It prev(It it, std::ptrdiff_t n = 1) { std::advance(it, -n); return it; }
+
+}  // namespace std
+
+#endif

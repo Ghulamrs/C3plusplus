@@ -12,6 +12,7 @@
 #define _CXX1___TREE
 
 #include <cstddef>
+#include <iterator>
 
 namespace std {
 
@@ -56,6 +57,10 @@ template <class V>
 class __tree_iterator {
 public:
     typedef V value_type;
+    typedef V &reference;
+    typedef V *pointer;
+    typedef std::ptrdiff_t difference_type;
+    typedef bidirectional_iterator_tag iterator_category;
     __tree_iterator() : n_(0), head_(0) {}
     __tree_iterator(__tree_link *n, __tree_link *head) : n_(n), head_(head) {}
     V &operator*() const { return static_cast<__tree_node<V> *>(n_)->value; }
@@ -77,6 +82,10 @@ template <class V>
 class __tree_const_iterator {
 public:
     typedef V value_type;
+    typedef const V &reference;
+    typedef const V *pointer;
+    typedef std::ptrdiff_t difference_type;
+    typedef bidirectional_iterator_tag iterator_category;
     __tree_const_iterator() : n_(0), head_(0) {}
     __tree_const_iterator(const __tree_link *n, const __tree_link *head)
         : n_(const_cast<__tree_link *>(n)), head_(const_cast<__tree_link *>(head)) {}

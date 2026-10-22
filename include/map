@@ -14,6 +14,9 @@
 #define _CXX1_MAP
 
 #include <cstddef>
+#include <initializer_list>
+#include <iterator>
+#include <stdexcept>
 #include <utility>
 #include <__tree>
 
@@ -40,10 +43,13 @@ public:
     typedef std::size_t size_type;
     typedef __tree_iterator<value_type> iterator;
     typedef __tree_const_iterator<value_type> const_iterator;
+    typedef std::reverse_iterator<iterator> reverse_iterator;
+    typedef std::reverse_iterator<const_iterator> const_reverse_iterator;
 
     map() {}
     template <class It>
     map(It first, It last) { insert(first, last); }
+    map(std::initializer_list<value_type> list) { insert(list.begin(), list.end()); }
 
     size_type size() const { return tree_.size(); }
     bool empty() const { return tree_.empty(); }
@@ -55,6 +61,10 @@ public:
     iterator end() { return tree_.end(); }
     const_iterator begin() const { return tree_.begin(); }
     const_iterator end() const { return tree_.end(); }
+    reverse_iterator rbegin() { return reverse_iterator(end()); }
+    reverse_iterator rend() { return reverse_iterator(begin()); }
+    const_reverse_iterator rbegin() const { return const_reverse_iterator(end()); }
+    const_reverse_iterator rend() const { return const_reverse_iterator(begin()); }
 
     iterator find(const K &k) { return iterator(tree_.findLink(k), tree_.end().link()); }
     const_iterator find(const K &k) const { return const_iterator(tree_.findLink(k), tree_.end().link()); }
@@ -63,6 +73,18 @@ public:
     const_iterator lower_bound(const K &k) const { return const_iterator(tree_.lowerLink(k), tree_.end().link()); }
     iterator upper_bound(const K &k) { return iterator(tree_.upperLink(k), tree_.end().link()); }
     const_iterator upper_bound(const K &k) const { return const_iterator(tree_.upperLink(k), tree_.end().link()); }
+
+    // [map.access]: checked, std::out_of_range where the key is absent - it never inserts.
+    V &at(const K &k) {
+        __tree_link *n = tree_.findLink(k);
+        if (n == tree_.end().link()) throw std::out_of_range("map::at");
+        return tree_.nodeValue(n).second;
+    }
+    const V &at(const K &k) const {
+        __tree_link *n = tree_.findLink(k);
+        if (n == tree_.end().link()) throw std::out_of_range("map::at");
+        return tree_.nodeValue(n).second;
+    }
 
     V &operator[](const K &k) {
         bool made;

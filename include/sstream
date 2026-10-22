@@ -40,6 +40,20 @@ public:
 
     string str() const { return s_; }
     void str(const string &v) { s_ = v; }
+    // How much has been written - the position the next character goes to, never moved back here.
+    long tellp() const { return (long)s_.size(); }
+    // [ostringstream.swap]: the two exchange what they hold and how they format, each still
+    // writing into its own string.
+    void swap(ostringstream &o) {
+        s_.swap(o.s_);
+        int t;
+        t = state_; state_ = o.state_; o.state_ = t;
+        t = base_; base_ = o.base_; o.base_ = t;
+        t = prec_; prec_ = o.prec_; o.prec_ = t;
+        t = fmt_; fmt_ = o.fmt_; o.fmt_ = t;
+        t = width_; width_ = o.width_; o.width_ = t;
+        char c = fill_; fill_ = o.fill_; o.fill_ = c;
+    }
 };
 
 class istringstream : public istream {

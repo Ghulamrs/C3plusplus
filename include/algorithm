@@ -38,6 +38,16 @@ Out fill_n(Out into, Size n, const T &v) {
     return into;
 }
 
+// [alg.unique]: each run of equal elements kept as its first, moved down; answers the new end.
+template <class It>
+It unique(It from, It to) {
+    if (from == to) return to;
+    It kept = from;
+    while (++from != to)
+        if (!(*kept == *from)) *++kept = *from;
+    return ++kept;
+}
+
 // **Written with an `if` and not a conditional**, and the reason is a compiler
 // limit worth recording rather than working around silently: `return b < a ? b
 // : a;` over two `const T &` is an lvalue and should be returnable as a

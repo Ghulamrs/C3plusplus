@@ -1,0 +1,6 @@
+4 3 2 1 | 4
+c=3 b=2 a=1 | 2 2
+out_of_range
+jne jl je | 1 jne
+5 427 hello
+1 1 0 1 1 0
