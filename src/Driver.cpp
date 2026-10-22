@@ -617,6 +617,55 @@ static std::vector<std::string> &temporaryNames() {
     return names;
 }
 
+static std::string shellQuote(const std::string &s);
+
+#ifdef _WIN32
+// The first line of a text file, its line ending and trailing blanks taken off; empty if there is none.
+static std::string firstLineOf(const std::string &path) {
+    std::ifstream in(path.c_str());
+    std::string line;
+    std::getline(in, line);
+    while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+    return line;
+}
+
+// **/LIBPATH for a linker started without vcvars** (named by its path, so started directly): with no LIB set,
+// the directories come off the installation - Visual Studio's default tools version and the SDK's manifest -
+// so the project's LINK finds libcmt from a plain command line too, not only from GRIDE, which sets LIB.
+static std::string installationLibPaths() {
+    const char *lib = std::getenv("LIB");
+    if (lib != nullptr && lib[0] != '\0') return std::string();
+    static const std::string paths = [] {
+        std::vector<std::string> dirs;
+        const std::string vcvars = findVcvars();
+        const std::string::size_type cut = vcvars.find("\\VC\\Auxiliary\\Build\\");
+        if (cut != std::string::npos) {
+            const std::string root = vcvars.substr(0, cut);
+            const std::string tools = firstLineOf(root + "\\VC\\Auxiliary\\Build\\Microsoft.VCToolsVersion.default.txt");
+            if (!tools.empty()) dirs.push_back(root + "\\VC\\Tools\\MSVC\\" + tools + "\\lib\\x64");
+        }
+        // SDKManifest.xml names the installed SDK as `PlatformIdentity = "UAP, Version=10.0.26100.0"`.
+        const std::string kits = "C:\\Program Files (x86)\\Windows Kits\\10";
+        std::ifstream manifest((kits + "\\SDKManifest.xml").c_str());
+        std::string line, sdk;
+        while (sdk.empty() && std::getline(manifest, line)) {
+            const std::string::size_type v = line.find("Version=");
+            if (v == std::string::npos) continue;
+            const std::string::size_type end = line.find('"', v + 8);
+            sdk = line.substr(v + 8, end == std::string::npos ? std::string::npos : end - v - 8);
+        }
+        if (!sdk.empty()) {
+            dirs.push_back(kits + "\\Lib\\" + sdk + "\\ucrt\\x64");
+            dirs.push_back(kits + "\\Lib\\" + sdk + "\\um\\x64");
+        }
+        std::string out;
+        for (const std::string &d : dirs) out += " /LIBPATH:" + shellQuote(d);
+        return out;
+    }();
+    return paths;
+}
+#endif
+
 void Driver::removeTemporaries() {
     std::vector<std::string> &names = temporaryNames();
     for (const std::string &t : names) std::remove(t.c_str());
@@ -870,6 +919,9 @@ bool Driver::link() {
         // libcpmt holds std::set_new_handler and get_new_handler, and no other static library does.
         command += " libcmt.lib libcpmt.lib libucrt.lib libvcruntime.lib kernel32.lib"
                    " legacy_stdio_definitions.lib";
+#ifdef _WIN32
+        command += installationLibPaths();
+#endif
     } else {
         command = shellQuote(hostCompiler());
 
