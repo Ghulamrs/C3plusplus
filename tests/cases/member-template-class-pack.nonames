@@ -1,0 +1,1 @@
+x86_64-linux  cxx1 emits the C1 form of a constructor template's specialization defined in its class, beside the C2 its call reaches, where clang emits only the C2 for an inline constructor on this target - the difference constructor-template and implicit-move record. Darwin and Windows agree name for name.

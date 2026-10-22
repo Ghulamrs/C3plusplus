@@ -572,6 +572,16 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             mt.classParams = instantiatingParams_;
             mt.classBinding = instantiatingBinding_;
             mt.classValues = instantiatingValues_;
+            // The class's packs too, bound while its body is read - left out, `Args...` read empty, silently.
+            mt.classPacks.assign(mt.classParams.size(), PackMembers());
+            for (std::size_t i = 0; i < mt.classParams.size(); i++)
+                if (mt.classParams[i].isPack) {
+                    auto bound = packs_.find(mt.classParams[i].name);
+                    if (bound != packs_.end()) {
+                        mt.classPacks[i] = PackMembers(bound->second.types);
+                        mt.classPacks[i].values = bound->second.values;
+                    }
+                }
             at_ = mt.afterParams;
             mt.defined = skipTemplatedDefinition();
             if (!mt.defined)

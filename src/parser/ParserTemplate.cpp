@@ -3227,9 +3227,7 @@ ExprPtr Parser::memberTemplateCall(ExprPtr object, const Type *obj,
         for (std::size_t t = 0; t < templates.size() && !ok; t++) {
             std::vector<Shadow> undo;
             if (!templates[t].classParams.empty())
-                bindTemplateParameters(templates[t].classParams, templates[t].classBinding,
-                                       templates[t].classValues,
-                                       Packs(),
+                bindTemplateParameters(templates[t].classParams, templates[t].classBinding, templates[t].classValues, templates[t].classPacks,
                                        &undo);
             ok = deduceTemplateArguments(templates[t], argTypes, &binding, &values,
                                          &packs, &why);
@@ -3329,8 +3327,7 @@ const Parser::Signature *Parser::instantiateMemberTemplate(
     // The class's parameters first (N), then the member's own (M) - two layers,
     // the whole reason a member template records the class's binding.
     if (!mt.classParams.empty())
-        bindTemplateParameters(mt.classParams, mt.classBinding, mt.classValues,
-                               Packs(), &undo);
+        bindTemplateParameters(mt.classParams, mt.classBinding, mt.classValues, mt.classPacks, &undo);
     // A member template's own pack is carried in its argument list.
     Packs packs(mt.params.size());
     for (std::size_t i = 0; i < args.size() && i < packs.size(); i++)
@@ -3473,6 +3470,19 @@ ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
             if (named->isStructOrUnion()) { at_++; return classTemporary(named, mpos); }
             return functionalCast(named, mpos);
         }
+    // **`C<int>::f(x)` or `C<int>::f<T>(x)` where f is a member template**: static, or through `*this`
+    // from a member of C<int> or of a class derived from it - `FlowOf<Entry>::build(...)` (M1 L14).
+    if ((peek().is("(") || peek().is("<")) && memberTemplateOwner(cls, member) != nullptr) {
+        const bool related = findLocal("this") != nullptr && !inStaticMember_ && currentClass_ != nullptr &&
+                             (currentClass_->unqualified() == cls->unqualified() ||
+                              publicBaseOffset(currentClass_, cls->unqualified()) >= 0);
+        if (!related) return memberTemplateCall(nullptr, cls, member, mpos);
+        // On the qualifier's subobject: the derived class's own member of the name is not asked, [class.qual].
+        ExprPtr obj = thisObject();
+        if (obj->type()->unqualified() != cls->unqualified()) obj = baseSubobject(std::move(obj), cls->unqualified());
+        const Type *objType = obj->type();
+        return memberTemplateCall(std::move(obj), objType, member, mpos);
+    }
     if (peek().is("(")) {
         at_++;
         std::vector<ExprPtr> callArgs;
@@ -3486,12 +3496,9 @@ ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
             bool anyMember = false;
             for (std::size_t i : *overloadsOf(key)) anyMember = anyMember || needsThis(functions_[i]);
             if (anyMember) {
-                ExprPtr self(Var::local("this", held->offset));
-                self->setType(held->type);
-                ExprPtr obj(new Unary('*', std::move(self)));
-                obj->setType(held->type->pointee());
-                return memberCallWith(std::move(obj), held->type->pointee(), member, mpos,
-                                      std::move(callArgs), cls);
+                ExprPtr obj = thisObject();
+                const Type *objType = obj->type();
+                return memberCallWith(std::move(obj), objType, member, mpos, std::move(callArgs), cls);
             }
         }
         if (overloadsOf(key) == nullptr)
@@ -3584,8 +3591,7 @@ void Parser::instantiateViableMemberTemplate(const TemplateDecl &mt,
     std::string why;
     std::vector<Shadow> undo;
     if (!mt.classParams.empty())
-        bindTemplateParameters(mt.classParams, mt.classBinding, mt.classValues,
-                               Packs(), &undo);
+        bindTemplateParameters(mt.classParams, mt.classBinding, mt.classValues, mt.classPacks, &undo);
     const bool ok = deduceTemplateArguments(mt, argTypes, &binding, &values,
                                             &packs, &why);
     unbindTemplateParameters(undo);

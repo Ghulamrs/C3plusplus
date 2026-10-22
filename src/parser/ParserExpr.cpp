@@ -1588,11 +1588,12 @@ ExprPtr Parser::primary(Program *program) {
                                      (currentClass_->unqualified() == cls->unqualified() ||
                                       publicBaseOffset(currentClass_, cls->unqualified()) >= 0);
                 if (!related) return memberTemplateCall(nullptr, cls, component, qpos);
-                ExprPtr me(Var::local("this", self->offset));
-                me->setType(self->type);
-                ExprPtr obj(new Unary('*', std::move(me)));
-                obj->setType(self->type->pointee());
-                return memberTemplateCall(std::move(obj), self->type->pointee(), component, qpos);
+                // On the qualifier's subobject, so a derived class's own member of the name is not asked.
+                ExprPtr obj = thisObject();
+                if (obj->type()->unqualified() != cls->unqualified())
+                    obj = baseSubobject(std::move(obj), cls->unqualified());
+                const Type *objType = obj->type();
+                return memberTemplateCall(std::move(obj), objType, component, qpos);
             }
             q += "::" + component;
         }

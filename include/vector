@@ -98,6 +98,12 @@ public:
         }
         return *this;
     }
+    // [vector.overview]: `v = {1, 2, 3}` - the list's elements, copied in.
+    vector &operator=(std::initializer_list<T> list) {
+        vector made(list);
+        swap(made);
+        return *this;
+    }
     vector &operator=(vector &&o) {
         if (this != &o) {
             clear();

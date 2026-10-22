@@ -791,11 +791,27 @@ bool Parser::atDeclarationStart() const {
 void Parser::skipBracedBlock() {
     // A function try block's handlers are its body too, [dcl.fct.def.general]/1.
     const bool functionTry = peek().is("try");
-    // A constructor's body may be preceded by its mem-initializer list, so
-    // what is skipped starts at the ':' and the '{' is found from there.
-    while (!peek().is("{")) {
+    // A constructor's body may be preceded by its mem-initializer list, so what is skipped starts at the
+    // ':' - and a '{' inside an argument's parentheses, `i(Info{...})`, or after a name, `i{1}`, is an
+    // initialiser's, not the body's (M1 L15).
+    int parens = 0;
+    bool memInits = false;
+    while (!peek().is("{") || parens > 0 ||
+           (memInits && at_ > 0 && (tokens_[at_ - 1].kind == TokenKind::Ident || tokens_[at_ - 1].is(">") ||
+                                    tokens_[at_ - 1].is(">>")))) {
         if (peek().kind == TokenKind::End)
             src_.fail(peek().pos, "this member function has no body after all");
+        if (peek().is(":") && parens == 0) memInits = true;
+        if (peek().is("(")) parens++;
+        else if (peek().is(")")) parens--;
+        else if (peek().is("{") && parens == 0) {      // a braced mem-initialiser, stepped over whole
+            for (int depth = 0;; at_++) {
+                if (peek().kind == TokenKind::End)
+                    src_.fail(peek().pos, "this member function has no body after all");
+                if (peek().is("{")) depth++;
+                else if (peek().is("}") && --depth == 0) break;
+            }
+        }
         at_++;
     }
     int depth = 0;

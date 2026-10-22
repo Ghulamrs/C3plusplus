@@ -1187,10 +1187,30 @@ void Parser::topLevel(Program &program) {
                     entry += "::" + expectIdent("a name after '::'");
                 }
             }
-            expect("(");
             const int frameBeforeArgs = frameSize_;
             std::vector<ExprPtr> args;
-            parseArguments(args);
+            if (peek().is("{")) {
+                // [class.base.init]/1: `j{3}`, `v{1, 2}`, `Base{...}` - direct-list-initialisation (M1 L15).
+                const Type *named = templateBase != nullptr ? templateBase : findTypedef(entry);
+                const Type *target = nullptr;
+                if (entry == d.qualifier || entry == localOf(d.qualifier) ||
+                    (named != nullptr && named->unqualified() == memberOf->unqualified()))
+                    target = memberOf;
+                for (const Type::BaseSpec &b : memberOf->bases())
+                    if (target == nullptr && (b.type->tag() == entry || b.type->localName() == entry ||
+                                              (named != nullptr && named->unqualified() == b.type->unqualified())))
+                        target = b.type;
+                if (target == nullptr)
+                    if (const Member *m = memberOf->findMember(entry)) target = m->type;
+                if (target == nullptr)
+                    src_.fail(epos, "'" + entry + "' is neither a member of '" + d.qualifier +
+                                    "' nor a direct base of it");
+                Init in = parseInitialiser();
+                args = bracedInitArguments(target, in, epos);
+            } else {
+                expect("(");
+                parseArguments(args);
+            }
             entries++;
             {
                 const Type *named = templateBase != nullptr ? templateBase : findTypedef(entry);

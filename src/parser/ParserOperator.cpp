@@ -1046,6 +1046,23 @@ ExprPtr Parser::assign() {
 
     const Type *to = n->type();
     ExprPtr value;
+    // [expr.ass]/9: `x = {...}` - a scalar takes the one value, narrowing checked; a class its
+    // `operator=` taking an initializer_list, or else a `T{...}` made by copy-list rules (M1 L18).
+    if (peek().is("{")) {
+        Init in = parseInitialiser();
+        const Type *plain = to->unqualified();
+        if (plain->isStructOrUnion()) {
+            if (const std::vector<std::size_t> *set = overloadsOf(assignmentKey(plain->tag())))
+                for (std::size_t i : *set) {
+                    const Signature &f = functions_[i];
+                    if (f.params.size() != 1 || !isInitializerListType(f.params[0]->unqualified())) continue;
+                    std::vector<ExprPtr> args;
+                    args.push_back(initializerListExpr(f.params[0]->unqualified(), in, pos));
+                    return memberCallWith(std::move(n), to, "operator=", pos, std::move(args));
+                }
+        }
+        return assignValue(std::move(n), listTemporaryFrom(plain, in, true, pos), pos);
+    }
     { OverloadTarget hold(*this, to); value = decay(assign()); }
     return assignValue(std::move(n), std::move(value), pos);
 }

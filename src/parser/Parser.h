@@ -497,6 +497,7 @@ private:
         std::vector<TemplateParam> classParams;
         std::vector<const Type *> classBinding;
         std::vector<long long> classValues;
+        Packs classPacks;           // the class's packs, which the member template's body may expand (L16)
         // **A constructor template**: named by its class's own name, keyed under constructorKey(ownerTag).
         bool isConstructor = false;
         // The class's name as the source spells it - `CMatrix` for `CMatrix<3,3>` - which inlineOwnerName_ wants.
@@ -2902,6 +2903,7 @@ private:
     ExprPtr listTemporary(const Type *to, std::size_t pos);
     // A list-initialised temporary of `to` from an already-read list, as an xvalue.
     ExprPtr listTemporaryFrom(const Type *to, Init &in, bool copyList, std::size_t pos);
+    std::vector<ExprPtr> bracedInitArguments(const Type *to, Init &in, std::size_t pos);
     // An aggregate built in a hidden local of this frame from its braced list.
     ExprPtr aggregateTemporary(const Type *plain, Init &in, std::size_t pos);
     // A scalar from its one braced element, [dcl.init.list]/3 - narrowing refused.

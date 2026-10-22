@@ -440,6 +440,25 @@ ExprPtr Parser::listTemporaryFrom(const Type *to, Init &in, bool copyList, std::
     return aggregateTemporary(plain, in, pos);
 }
 
+// A braced initialiser as the arguments a constructor, or a scalar's or aggregate's initialisation,
+// takes - what direct-list-initialisation of a member or base in a mem-initialiser hands on.
+std::vector<ExprPtr> Parser::bracedInitArguments(const Type *to, Init &in, std::size_t pos) {
+    std::vector<ExprPtr> args;
+    const Type *plain = to->unqualified();
+    if (plain->isStructOrUnion() && !plain->tag().empty() && hasConstructors(plain->tag()) &&
+        !(isAggregateClass(plain) && !in.items.empty())) {
+        const Type *ilType = nullptr;
+        if (!in.items.empty() && initializerListConstructor(plain, &ilType) != nullptr)
+            args.push_back(initializerListExpr(ilType, in, pos));
+        else
+            listConstructor(plain, in, args, false, pos);
+        return args;
+    }
+    if (!plain->isStructOrUnion() && in.items.empty()) return args;      // value-initialised, `: m()`
+    args.push_back(listTemporaryFrom(to, in, false, pos));
+    return args;
+}
+
 ExprPtr Parser::listTemporary(const Type *to, std::size_t pos) {
     Init in = parseInitialiser();
     return listTemporaryFrom(to, in, false, pos);
@@ -481,6 +500,11 @@ const Parser::Signature *Parser::conversionFunction(const Type *from,
             }
             if (exact) continue;
             if (!gives->unqualified()->isScalar() || !to->isScalar()) continue;
+            // [conv]: no standard conversion takes a pointer to a number other than bool, or a number
+            // to a pointer - a lambda's function pointer is no `int` (M1, 2026-10-23).
+            const bool givesPointer = gives->unqualified()->isPointer() || gives->unqualified()->isFunctionPointer();
+            const bool toPointer = to->unqualified()->isPointer() || to->unqualified()->isFunctionPointer();
+            if (givesPointer != toPointer && !to->unqualified()->isBool()) continue;
             if (best != nullptr) return nullptr;
             best = &f;
         }
@@ -1845,7 +1869,8 @@ ExprPtr Parser::newExpression(std::size_t pos) {
         value = convert(decay(std::move(init)), made);
     } else {
         value.reset(new Num(0LL));
-        value->setType(types_.intType());
+        // An enumeration's zero is of its own type: a scoped one takes no int, [dcl.init]/8 (M1 L17).
+        value->setType(made->unqualified()->isEnumeration() ? made->unqualified() : types_.intType());
         value = convert(std::move(value), made);
     }
     ExprPtr store(new Assign(std::move(where), std::move(value)));
