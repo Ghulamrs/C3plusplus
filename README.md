@@ -1,7 +1,7 @@
 # cxx1 — a C++03 compiler with C++11 extensions
 
 *C3plusplus: this is the compiler of cpp11 2. The design that drives it, and the order to read it
-in, is `Compiler_Design_README.md`.*
+in, is `doc-cxx3/Compiler_Design_README.md`.*
 
 `cxx1` (`cxx3.exe`, built by `make`; RIDE's projects build it as `cpp11.exe`) compiles
 **C++03 with C++11 extensions** to native

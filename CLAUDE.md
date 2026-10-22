@@ -12,7 +12,7 @@ languages apart in every sentence you write about this project, because almost
 every confusing question here comes from conflating them.
 
 **Self-hosting is now the goal, and this reverses what this file used to say.**
-The design for cpp11 2 (`Compiler_Design_Final.md`, milestones M0-M8) makes "the
+The design for cpp11 2 (`doc-cxx3/Compiler_Design_Final.md`, milestones M0-M8) makes "the
 compiler compiles itself" the first gate (R5, R9.1). M0 made the source C++11 -
 the C++14 aggregate-with-member-initialiser rule was the only C++14 in it, 30
 structs given constructors, every golden byte-identical before and after - so
@@ -28,7 +28,7 @@ Sections below that name `cpp11.exe` or `cxx1.exe` were written before the renam
 
 **The headline said "C++11 minus the list" until 2026-10-08, and that was a
 claim the compiler could not support.** The critical review of that day
-(`CppOptimize-critical-review_1.md`, answered by
+(`doc-cxx3/CppOptimize-critical-review_1.md`, answered by
 `docs/REVIEW-PLAN-2026-10-08.md`) put 122 probes of C++11 features through it
 and 56 were refused - `enum class`, `override`/`final`, `= default`/`= delete`,
 delegating and inheriting constructors, alias declarations, forwarding
@@ -12890,7 +12890,7 @@ now steps once more from such a stop, to the first line, for cl's programs and o
 
 ## The review of 2026-10-08, and what landed, 2026-10-08 to 2026-10-13
 
-**A critical review (`CppOptimize-critical-review_1.md`) found the headline
+**A critical review (`doc-cxx3/CppOptimize-critical-review_1.md`) found the headline
 false and the gates self-referential**, and `docs/REVIEW-PLAN-2026-10-08.md`
 answered it item by item - 160 items, eleven workstreams, each on a branch of
 its own with a handover in `docs/review-2026-10-08/`. The sections below are the
