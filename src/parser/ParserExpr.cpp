@@ -1413,15 +1413,57 @@ ExprPtr Parser::primary(Program *program) {
         }
     }
 
-    // **`::f()` - a name asked for at global scope explicitly.** Refused by
-    // name rather than left to "expected an expression", which points at a
-    // '::' and says nothing.
+    // **`::f()`, `::g`, `::n::f()` - looked up from the global namespace**, [namespace.qual]: no enclosing
+    // namespace, using-directive, local or argument's namespace is asked. The arguments are read first, so
+    // the absolute mode covers the resolution and nothing in them (M1 L11). A class or template is refused.
     if (ExprPtr e = enumeratorThroughEnum()) return e;
+    if (peek().is("::") && peekAt(1).kind == TokenKind::Ident) {
+        const std::size_t qpos = peek().pos;
+        std::size_t k = 1;
+        std::string scope;
+        while (peekAt(k).kind == TokenKind::Ident && peekAt(k + 1).is("::") &&
+               namespaces_.count(scope.empty() ? peekAt(k).text : scope + "::" + peekAt(k).text)) {
+            scope = scope.empty() ? peekAt(k).text : scope + "::" + peekAt(k).text;
+            k += 2;
+        }
+        const Token &last = peekAt(k);
+        const std::string full = scope.empty() ? last.text : scope + "::" + last.text;
+        const bool plain = last.kind == TokenKind::Ident && !peekAt(k + 1).is("::") &&
+                           !peekAt(k + 1).is("<") && !isTemplateName(full, true) &&
+                           findGlobalTypedef(full) == nullptr;
+        if (plain) {
+            at_ += k + 1;
+            if (consume("(")) {
+                std::vector<ExprPtr> args;
+                parseArguments(args);
+                Signature sig;
+                {
+                    const bool was = absoluteLookup_;
+                    absoluteLookup_ = true;
+                    if (overloadsOf(full) == nullptr)
+                        src_.fail(qpos, "'::" + full + "' was not declared in the global namespace");
+                    sig = resolveOverloadBraced(full, args, qpos);
+                    absoluteLookup_ = was;
+                }
+                applyDefaults(sig, args, qpos);
+                return completeCall(full, sig.symbol, nullptr, sig.returns, sig.params, sig.variadic,
+                                    qpos, std::move(args), !sig.owner.empty());
+            }
+            const bool was = absoluteLookup_;
+            absoluteLookup_ = true;
+            ExprPtr v = globalRef(full);
+            if (v == nullptr)
+                if (const EnumConst *e = findEnum(full)) v = enumeratorValue(*e);
+            if (v == nullptr) v = functionAsValue(full, qpos);
+            absoluteLookup_ = was;
+            if (v == nullptr) src_.fail(qpos, "'::" + full + "' was not declared in the global namespace");
+            return v;
+        }
+    }
     if (peek().is("::"))
-        src_.fail(peek().pos, "a name qualified with '::' alone is not "
-                              "supported yet in an expression - as a type, "
-                              "'::Lexer *p;' works. Write the name without it "
-                              "where nothing shadows it");
+        src_.fail(peek().pos, "a class or a template named with '::' alone is not "
+                              "supported yet in an expression - a function, a variable "
+                              "and an enumerator are, and as a type '::Lexer *p;' works");
 
     // ...and `N::S::n` is not this: the chain reaches a *class*, and what follows a
     // class is a member, which the branch below already knows how to find. Asked
@@ -1469,9 +1511,7 @@ ExprPtr Parser::primary(Program *program) {
         }
         if (ExprPtr v = objectRef(full)) return v;
         if (const EnumConst *e = findEnum(full)) {
-            ExprPtr n(new Num(e->value));
-            n->setType(e->type != nullptr ? e->type : types_.intType());
-            return n;
+            return enumeratorValue(*e);
         }
         // `take(N::nl)` - the function itself, written qualified and not called.
         if (ExprPtr f = functionAsValue(full, qpos)) return f;
@@ -1525,9 +1565,7 @@ ExprPtr Parser::primary(Program *program) {
         }
         if (found != nullptr) {
             at_ += took;
-            ExprPtr n(new Num(found->value));
-            n->setType(found->type != nullptr ? found->type : types_.intType());
-            return n;
+            return enumeratorValue(*found);
         }
         if (unevaluated_ > 0)
             if (ExprPtr m = unevaluatedMember()) return m;
@@ -1630,6 +1668,49 @@ ExprPtr Parser::primary(Program *program) {
         }
     }
 
+    // **`Base::operator=(o)` inside a member** - [expr.call]/1 again, the operator named by its
+    // qualified name: the base subobject assigned, through the base's own `operator=` or, where that
+    // is trivial and so no function here, by its bytes. Any other operator is an ordinary member (M1 L8).
+    if (currentClass_ != nullptr && !inStaticMember_ && peek().kind == TokenKind::Ident &&
+        peekAt(1).is("::") && peekAt(2).is("operator")) {
+        const Type *cls = findTypedef(peek().text);
+        if (cls == nullptr) cls = FindBase::named(currentClass_, peek().text);
+        if (cls != nullptr && cls->isStructOrUnion() &&
+            (currentClass_->unqualified() == cls->unqualified() ||
+             accessibleBaseOffset(currentClass_, cls->unqualified()) >= 0)) {
+            const std::size_t qpos = peek().pos;
+            const std::size_t from = at_;
+            at_ += 2;
+            const std::string op = operatorName();
+            if (peek().is("(") &&
+                (op == "operator=" || overloadsOf(cls->tag() + "::" + op) != nullptr)) {
+                at_++;
+                std::vector<ExprPtr> args;
+                parseArguments(args);
+                ExprPtr obj = thisObject();
+                const Type *selfType = types_.pointerTo(obj->type());
+                if (op == "operator=") {
+                    if (args.size() != 1)
+                        src_.fail(qpos, "'" + cls->tag() + "::operator=' takes one argument, given " +
+                                        std::to_string(args.size()));
+                    if (obj->type()->unqualified() != cls->unqualified())
+                        obj = baseSubobject(std::move(obj), cls->unqualified());
+                    requireAssignable(*obj, qpos, "the left of '='");
+                    ExprPtr done = assignValue(std::move(obj), decay(std::move(args[0])), qpos);
+                    if (!dynamic_cast<const Assign *>(done.get())) return done;
+                    // Bytes moved: what it answers is the base subobject, named again from `this`.
+                    ExprPtr whole = thisObject();
+                    if (whole->type()->unqualified() != cls->unqualified())
+                        whole = baseSubobject(std::move(whole), cls->unqualified());
+                    return namedAfter(std::move(done), std::move(whole));
+                }
+                return memberCallWith(std::move(obj), selfType->pointee(), op, qpos,
+                                      std::move(args), cls);
+            }
+            at_ = from;
+        }
+    }
+
     // **`Base::f(...)` inside a member - the version this class replaced.**
     // [expr.call]/1: naming the function with a qualified-id suppresses the
     // dispatch, which is the whole reason an override writes it.
@@ -1666,17 +1747,9 @@ ExprPtr Parser::primary(Program *program) {
             expect("(");
             std::vector<ExprPtr> args;
             parseArguments(args);
-            const Local *held = findLocal("this");
-            ExprPtr self(Var::local("this", held != nullptr ? held->offset
-                                                            : thisOffset_));
-            const Type *selfType = held != nullptr
-                                       ? held->type
-                                       : types_.pointerTo(currentClass_);
-            self->setType(selfType);
-            ExprPtr obj(new Unary('*', std::move(self)));
-            obj->setType(selfType->pointee());
-            return memberCallWith(std::move(obj), selfType->pointee(), member,
-                                  qpos, std::move(args), owner);
+            ExprPtr obj = thisObject();
+            const Type *objType = obj->type();
+            return memberCallWith(std::move(obj), objType, member, qpos, std::move(args), owner);
         }
     }
 
@@ -1689,9 +1762,7 @@ ExprPtr Parser::primary(Program *program) {
         if (l == nullptr && boundValueParams_.count(name) != 0 && !peekAt(1).is("::"))
             if (const EnumConst *e = findEnum(name)) {
                 at_++;
-                ExprPtr n(new Num(e->value));
-                n->setType(e->type != nullptr ? e->type : types_.intType());
-                return n;
+                return enumeratorValue(*e);
             }
         const GlobalSym *g = l != nullptr ? nullptr : findGlobal(name);
         // **Class scope comes before the namespace** - [basic.lookup.unqual]/8: a static member, a
@@ -1960,19 +2031,22 @@ ExprPtr Parser::primary(Program *program) {
             }
 
             if (const EnumConst *e = findClassEnum(name)) {
-                ExprPtr n(new Num(e->value));
-                n->setType(e->type != nullptr ? e->type : types_.intType());
-                return n;
+                return enumeratorValue(*e);
             }
         }
 
         if (ExprPtr f = memberFunctionByName(name, pos)) return f;
 
-        // Namespace scope, last of the three.
+        // Namespace scope, last of the three - and within it the nearer declaration, an enumerator or
+        // a variable: `Tag` in `namespace q` is q's variable before the global enumerator.
+        {
+            const std::string enumKey = enclosingNamespaceKey(name, &Parser::hasEnumNamed);
+            const std::string globalKey = enclosingNamespaceKey(name, &Parser::hasGlobalNamed);
+            if (globalKey.size() > enumKey.size())
+                if (ExprPtr v = globalRef(name)) return v;
+        }
         if (const EnumConst *e = findEnum(name)) {
-            ExprPtr n(new Num(e->value));
-            n->setType(e->type != nullptr ? e->type : types_.intType());
-            return n;
+            return enumeratorValue(*e);
         }
         if (ExprPtr v = globalRef(name)) return v;
 
@@ -2202,14 +2276,8 @@ ExprPtr Parser::bindReference(const Type *ref, ExprPtr init, std::size_t pos,
     if (init->declCategory() == Expr::Category::Lvalue)
         if (const Assign *as = dynamic_cast<const Assign *>(init.get()))
             if (ExprPtr again = clonePure(as->target())) {
-                const Type *obj = as->target().type();
-                ExprPtr at(new Unary('&', std::move(again)));
-                at->setType(types_.pointerTo(obj));
-                ExprPtr both(new Comma(std::move(init), std::move(at)));
-                both->setType(types_.pointerTo(obj));
-                init.reset(new Unary('*', std::move(both)));
-                init->setType(obj);
-                it = obj;
+                it = again->type();
+                init = namedAfter(std::move(init), std::move(again));
             }
 
     // Binding takes an address, so the two things that have none cannot be bound to
@@ -2423,6 +2491,37 @@ ExprPtr Parser::localRef(const std::string &name) {
         return useReference(std::move(n));
     }
     return nullptr;
+}
+
+// An enumerator as the value it stands for, of its enumeration's type.
+ExprPtr Parser::enumeratorValue(const EnumConst &e) {
+    ExprPtr n(new Num(e.value));
+    n->setType(e.type != nullptr ? e.type : types_.intType());
+    return n;
+}
+
+// `*this` in the member function being read, of the class `this` points at - its const included.
+ExprPtr Parser::thisObject() {
+    const Local *held = findLocal("this");
+    ExprPtr self(Var::local("this", held != nullptr ? held->offset : thisOffset_));
+    const Type *selfType = held != nullptr ? held->type : types_.pointerTo(currentClass_);
+    self->setType(selfType);
+    ExprPtr obj(new Unary('*', std::move(self)));
+    obj->setType(selfType->pointee());
+    return obj;
+}
+
+// `*(effect, &obj)`: the effect, then obj as the lvalue the whole expression names - an assignment
+// that answers its left operand, [expr.ass]/1, where obj is free of effects to be named twice.
+ExprPtr Parser::namedAfter(ExprPtr effect, ExprPtr obj) {
+    const Type *t = obj->type();
+    ExprPtr at(new Unary('&', std::move(obj)));
+    at->setType(types_.pointerTo(t));
+    ExprPtr both(new Comma(std::move(effect), std::move(at)));
+    both->setType(types_.pointerTo(t));
+    ExprPtr named(new Unary('*', std::move(both)));
+    named->setType(t);
+    return named;
 }
 
 ExprPtr Parser::globalRef(const std::string &name) {

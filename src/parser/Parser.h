@@ -1168,6 +1168,8 @@ private:
     std::vector<std::string> staticSymbols_;
     // Above 0 inside sizeof, decltype, noexcept: [expr.prim.general]/13 lets `S::x` go without an object.
     int unevaluated_ = 0;
+    // A `::`-qualified name being resolved: its key is absolute, no enclosing namespace asked.
+    bool absoluteLookup_ = false;
 
     std::vector<Signature> functions_;
     // One name, every function declared under it. C had one; C++ has a set,
@@ -1517,6 +1519,7 @@ private:
         const Type *returnType = nullptr;
         const Type **deducingReturn = nullptr;
         int unevaluated = 0;
+        bool absoluteLookup = false;
         int lambdaCount = 0;
         bool atFunctionBody = false;
         std::vector<Alive> alive;
@@ -1930,6 +1933,7 @@ private:
     bool memberReachable(const Type *n, const Type *decl, Access own) const;
     // A name that is a *capture of the lambda around this one*.
     ExprPtr outerCaptureAccess(const std::string &name);
+    const Type *referenceCaptureType(const Type *captured);
     // **One closure type per lambda written, however often it is read.** 7.1 reads an
     // `auto` initialiser twice, so a lambda reached here twice and made two classes, and
     // the declaration then refused its own initialiser. Keyed by the '[' token.
@@ -2008,6 +2012,10 @@ private:
     ExprPtr convert(ExprPtr e, const Type *to, bool allowExplicit = false) const;
     // The base subobject of a glvalue of a derived class, `*(B *)&d` - a base's offset carried.
     ExprPtr baseSubobject(ExprPtr e, const Type *base) const;
+    ExprPtr assignValue(ExprPtr n, ExprPtr value, std::size_t pos);
+    ExprPtr enumeratorValue(const EnumConst &e);
+    ExprPtr thisObject();
+    ExprPtr namedAfter(ExprPtr effect, ExprPtr obj);
     // [conv.mem]: a pointer to a member of B becomes one to a member of D, D
     // derived from B; the base's offset, or -1 where that is not the case.
     int memberPointerToDerived(const Type *from, const Type *to) const;
@@ -2748,6 +2756,10 @@ private:
     void typedefFunctionSuffix(Declared &td);
 
     bool foldAddress(const Expr &e, std::string *sym, long long *off) const;
+    bool addressConstant(const Type *t, const Init &in);
+    const Type *constexprObject(const Type *t);
+    // A namespace-scope constexpr pointer's address constant, by its key, for one defined from it.
+    std::map<std::string, std::pair<std::string, long long> > constAddresses_;
     bool addressOfObject(const Expr &e, std::string *sym, long long *off) const;
     long long narrowTo(long long v, const Type *t) const;
 

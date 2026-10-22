@@ -1047,7 +1047,13 @@ ExprPtr Parser::assign() {
     const Type *to = n->type();
     ExprPtr value;
     { OverloadTarget hold(*this, to); value = decay(assign()); }
+    return assignValue(std::move(n), std::move(value), pos);
+}
 
+// `n = value` once both are read - by the class's `operator=` where it has one, else by bytes. Also
+// what `Base::operator=(o)` in a member of a derived class is, on the base subobject (M1 L8).
+ExprPtr Parser::assignValue(ExprPtr n, ExprPtr value, std::size_t pos) {
+    const Type *to = n->type();
     // **`t = 5` where the class declares an `operator=` that takes an int.**
     if (to->unqualified()->isStructOrUnion() && value->type() != nullptr &&
         value->type()->unqualified() != to->unqualified() &&

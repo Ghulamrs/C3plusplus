@@ -17,6 +17,7 @@ int publicBaseOffset(const Type *derived, const Type *base);
 
 // Does this expression name an object with an address of its own?
 bool isLvalue(const Expr &e);
+bool markedLvalue(const Expr &e);
 
 // Does it name an object, lvalue or xvalue alike?
 bool isGlvalue(const Expr &e);

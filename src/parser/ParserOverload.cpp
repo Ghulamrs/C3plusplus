@@ -664,12 +664,14 @@ Parser::Rank Parser::rankArgument(const Expr &arg, const Type *param) {
             }
         }
 
-        // **A reference to a base binds to a derived object** - [dcl.init.ref], a derived-to-base
-        // Conversion, so `f(Base &)` loses to `f(Derived &)` for a Derived; and /5 binds a const
-        // one to a derived class temporary too, `f(D(3))` for `f(const B &)`.
+        // **A reference to a base binds to a derived object** - [dcl.init.ref], a derived-to-base Conversion,
+        // so `f(Base &)` loses to `f(Derived &)` for a Derived; /5 binds a const one to a derived class
+        // temporary too, `f(D(3))` for `f(const B &)`, and a `B &&` a derived rvalue, `std::move(e)`.
         if (want->unqualified() != given->unqualified() &&
-            accessibleBaseOffset(given, want) > -1 && !param->isRValueReference() &&
-            (isLvalue(arg) || (want->isConst() && given->unqualified()->isStructOrUnion()))) {
+            accessibleBaseOffset(given, want) > -1 &&
+            (param->isRValueReference()
+                 ? !markedLvalue(arg)
+                 : (markedLvalue(arg) || (want->isConst() && given->unqualified()->isStructOrUnion())))) {
             if (!want->isConst() && given->isConst()) return Rank::None;
             return Rank::Conversion;
         }
@@ -702,15 +704,15 @@ Parser::Rank Parser::rankArgument(const Expr &arg, const Type *param) {
         }
         if (!want->isConst() && given->isConst()) return Rank::None;
 
-        // **Which reference takes this argument is about the argument**: no rvalue reference for an lvalue.
-        if (param->isRValueReference() && isLvalue(arg)) return Rank::None;
+        // **No rvalue reference for an lvalue** - `++x`, `x = 5` and `x += 2` among them (M1 L12).
+        if (param->isRValueReference() && markedLvalue(arg)) return Rank::None;
         // `const T &&` for a `T` rvalue adds a qualifier, as `const T &` does below - [over.ics.rank]/3.2.6,
         // so that `fwd(std::move(x))` picks fwd<int> over the fwd<const int> an earlier call made (1.27).
         if (param->isRValueReference())
             return want->isConst() && !given->isConst() ? Rank::Qualification : Rank::Identity;
 
         // **A value has no lvalue to bind, so `T &` is not viable for one**.
-        if (!isLvalue(arg)) return want->isConst() ? Rank::Qualification : Rank::None;
+        if (!markedLvalue(arg)) return want->isConst() ? Rank::Qualification : Rank::None;
 
         return want->isConst() && !given->isConst() ? Rank::Qualification
                                                     : Rank::Identity;

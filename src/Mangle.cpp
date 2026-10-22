@@ -1238,7 +1238,10 @@ public:
             out += t->isConst() ? "B" : "A";
             return;
         }
+        const std::size_t at = out.size();
         type(u);
+        // A const pointer object is `Q` where a plain one is `P`, measured: cl's `?cp@@3QEADEA`.
+        if (u->isPointer() && t->isConst() && at < out.size() && out[at] == 'P') out[at] = 'Q';
         // **A member pointer's storage class repeats the class**, `EQ<class>@`
         // after the type: cl's `?gpm@@3PEQNest@@HEQ1@` (the review's A7); Q is
         // the member's cv-code, R for const, as a pointer's A/B are.

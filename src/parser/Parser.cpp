@@ -70,6 +70,12 @@ bool isLvalue(const Expr &e) {
     return !e.isXvalue() && isGlvalue(e);
 }
 
+// An lvalue, or an expression marked as one where its node is not an object's - an assignment and a
+// prefix `++` or `--`, which name their left operand.
+bool markedLvalue(const Expr &e) {
+    return isLvalue(e) || (!e.isXvalue() && e.declCategory() == Expr::Category::Lvalue);
+}
+
 // A class temporary is a dereference of its slot and carries the prvalue mark, so the mark is
 // asked first; an xvalue is an rvalue; a reference cast marked Lvalue names an object.
 bool objectIsLvalue(const Expr &e) {
@@ -202,6 +208,7 @@ std::string Parser::followUsingDeclaration(const std::string &key) const {
 
 std::string Parser::qualifyForLookup(const std::string &name,
                                      bool (Parser::*exists)(const std::string &) const) const {
+    if (absoluteLookup_) return name;
     // Written qualified: the first component is searched for, then a using-declaration followed.
     if (name.find("::") != std::string::npos) {
         // [basic.lookup.qual]/1: the first component is looked up unqualified, so
@@ -239,7 +246,7 @@ std::string Parser::qualifyForLookup(const std::string &name,
 
 std::string Parser::enclosingNamespaceKey(const std::string &name,
                                           bool (Parser::*exists)(const std::string &) const) const {
-    if (name.find("::") != std::string::npos) return std::string();
+    if (absoluteLookup_ || name.find("::") != std::string::npos) return std::string();
     for (std::size_t i = namespaceStack_.size(); i-- > 0; ) {
         std::string prefix;
         for (std::size_t k = 0; k <= i; k++) prefix += namespaceStack_[k] + "::";
@@ -832,6 +839,7 @@ Parser::FunctionState Parser::captureFunctionState() const {
     s.returnType = returnType_;
     s.deducingReturn = deducingReturn_;
     s.unevaluated = unevaluated_;
+    s.absoluteLookup = absoluteLookup_;
     s.lambdaCount = lambdaCount_;
     s.atFunctionBody = atFunctionBody_;
     s.alive = alive_;
@@ -897,6 +905,7 @@ void Parser::restoreFunctionState(const FunctionState &s) {
     returnType_ = s.returnType;
     deducingReturn_ = s.deducingReturn;
     unevaluated_ = s.unevaluated;
+    absoluteLookup_ = s.absoluteLookup;
     lambdaCount_ = s.lambdaCount;
     atFunctionBody_ = s.atFunctionBody;
     alive_ = s.alive;
@@ -964,6 +973,7 @@ void Parser::clearFunctionState() {
     deducingReturn_ = nullptr;
     lambdaCount_ = 0;
     unevaluated_ = 0;
+    absoluteLookup_ = false;
     atFunctionBody_ = false;
     alive_.clear();
     pendingTemps_.clear();

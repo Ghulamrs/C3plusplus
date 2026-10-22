@@ -1,0 +1,1 @@
+x86_64-windows  clang emits no object for a constexpr pointer at namespace scope that nothing odr-uses - it is const, so internal ([basic.link]/3), and every read folds - where cxx1 lays each one down as internal data; the names it does share agree, the static member's `?tag@S@@2QEBDEB` included.

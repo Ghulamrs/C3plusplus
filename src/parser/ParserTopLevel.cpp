@@ -365,6 +365,7 @@ void Parser::topLevel(Program &program) {
                              "'" + d.qualifier + "::" + d.name + "' is written "
                              "without it");
         inNamespace.enter(definedIn);
+        if (quals.isConstexpr) d.type = constexprObject(d.type);
         defineStaticMember(d, program, quals.isThreadLocal);
         return;
     }
@@ -390,6 +391,7 @@ void Parser::topLevel(Program &program) {
         }
         const Type *deducedSoFar = nullptr;
         for (;;) {
+            if (quals.isConstexpr) d.type = constexprObject(d.type);
             if (mentionsDeduced(d.type)) {
                 d.type = deduceAuto(d.type, d.name, d.pos);
                 checkOneDeducedType(deducedSoFar, lastDeducedAuto_, d.name,
@@ -607,6 +609,12 @@ void Parser::topLevel(Program &program) {
                     if (d.type->isArray() || !constObjectFromInit(d.type, in, 0, &value))
                         refuseConstexprClassObject(d.name, d.pos);
                     constObjects_[selfKey] = value;
+                }
+                if (quals.isConstexpr && !constantKnown && addressConstant(d.type, in)) {
+                    std::string sym;
+                    long long off = 0;
+                    if (foldAddress(*in.value, &sym, &off)) constAddresses_[selfKey] = std::make_pair(sym, off);
+                    constantKnown = true;
                 }
                 if (!constantKnown && !constantDoubleKnown && quals.isConstexpr &&
                     !d.type->innermostElement()->unqualified()->isStructOrUnion())

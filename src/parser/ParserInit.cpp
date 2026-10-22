@@ -975,7 +975,23 @@ bool Parser::foldAddress(const Expr &e, std::string *sym, long long *off) const 
         }
         return false;
     }
+    // A constexpr pointer read back: `constexpr const char *b = a;` where a is one.
+    if (const Var *v = dynamic_cast<const Var *>(&e))
+        if (!v->isLocal()) {
+            std::map<std::string, std::pair<std::string, long long> >::const_iterator
+                it = constAddresses_.find(v->name());
+            if (it != constAddresses_.end()) { *sym = it->second.first; *off = it->second.second; return true; }
+        }
     return false;
+}
+
+// [expr.const]/4: an address constant expression - null, a string literal, or an object of static
+// storage with an offset - is what a `constexpr` pointer may be initialised with (M1 L6).
+bool Parser::addressConstant(const Type *t, const Init &in) {
+    if (!t->isPointer() || in.isList || in.value == nullptr) return false;
+    std::string sym;
+    long long off = 0;
+    return isNullConstant(*in.value) || foldAddress(*in.value, &sym, &off);
 }
 
 bool Parser::addressOfObject(const Expr &e, std::string *sym, long long *off) const {

@@ -4274,16 +4274,18 @@ void Parser::declareStaticMember(const std::string &cls, Type *owner,
 
     Type::StaticMember s;
     s.name = d.name;
-    s.type = d.type;
+    s.type = isConstexpr ? constexprObject(d.type) : d.type;
     s.access = access;
     s.isThreadLocal = threadLocal;
 
     // **[class.static.data]/3: a `static constexpr` member of any literal type is initialised here.**
     if (isConstexpr && !d.type->isInteger() && (peek().is("=") || peek().is("{"))) {
         refuseVolatileWithLinkage(volatileWritten, false, d.pos);
-        s.symbol = staticMemberSymbol(cls, d.name, d.type, access, d.pos);
+        s.symbol = staticMemberSymbol(cls, d.name, s.type, access, d.pos);
         owner->addStaticMember(s);
-        defineConstexprStaticMember(cls + "::" + d.name, s.symbol, d);
+        Declared typed = d;
+        typed.type = s.type;
+        defineConstexprStaticMember(cls + "::" + d.name, s.symbol, typed);
         return;
     }
     // **`static const int k = 5;` written in the class needs no definition**, measured
@@ -4308,6 +4310,17 @@ void Parser::declareStaticMember(const std::string &cls, Type *owner,
     refuseVolatileWithLinkage(volatileWritten, false, d.pos);
     s.symbol = staticMemberSymbol(cls, d.name, d.type, access, d.pos);
     owner->addStaticMember(s);
+}
+
+// [dcl.constexpr]/9: a constexpr object is const - for a pointer, the pointer itself, which the
+// const on the base type does not reach: `constexpr const char *p` is `const char *const` (M1 L6).
+const Type *Parser::constexprObject(const Type *t) {
+    if (t->isPointer() && !t->isConst()) return types_.withConst(t);
+    if (t->isArray()) {
+        const Type *e = constexprObject(t->pointee());
+        return e == t->pointee() ? t : types_.arrayOf(e, t->length());
+    }
+    return t;
 }
 
 // The value folded where the class declares it, and laid down there as a weak definition: a constant
@@ -4340,6 +4353,11 @@ void Parser::defineConstexprStaticMember(const std::string &full, const std::str
         } else if (cls->isStructOrUnion() && constObjectFromInit(d.type, in, 0, &value)) {
             constObjects_[symbol] = value;
             constObjectPieces(value, pieces);
+        } else if (addressConstant(d.type, in)) {
+            std::string sym;
+            long long off = 0;
+            if (foldAddress(*in.value, &sym, &off)) constAddresses_[full] = std::make_pair(sym, off);
+            flattenInit(d.type, in, 0, pieces);
         } else {
             refuseConstexprClassObject(full, d.pos);
         }

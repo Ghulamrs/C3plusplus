@@ -279,7 +279,7 @@ ExprPtr Parser::lambdaExpression() {
         const Type *raw = have != nullptr ? have->type : fromOuter;
         const Type *base = raw->isReference()
                          ? raw->referent()->unqualified() : raw->unqualified();
-        capTypes.push_back(byRef ? types_.referenceTo(base) : base);
+        capTypes.push_back(byRef ? referenceCaptureType(raw) : base);
         if (!peek().is("]")) expect(",");
     }
     at_++;                                    // ']'
@@ -342,7 +342,7 @@ ExprPtr Parser::lambdaExpression() {
             const Type *base = raw->isReference()
                              ? raw->referent()->unqualified()
                              : raw->unqualified();
-            capTypes.push_back(captureAllByRef ? types_.referenceTo(base) : base);
+            capTypes.push_back(captureAllByRef ? referenceCaptureType(raw) : base);
         }
     }
 
@@ -620,6 +620,12 @@ const Type *Parser::lambdaScope() const {
     std::map<std::string, const Type *>::const_iterator scope =
         closureScope_.find(currentClass_->unqualified()->tag());
     return scope == closureScope_.end() ? nullptr : scope->second;
+}
+
+// [expr.prim.lambda]/15: a by-reference capture refers to the entity itself, its cv included - so a
+// const object, or a const reference, is held as a `const T &` (L7, M1).
+const Type *Parser::referenceCaptureType(const Type *captured) {
+    return types_.referenceTo(captured->isReference() ? captured->referent() : captured);
 }
 
 // A capture of the lambda around this one, read from inside it: by then the outer

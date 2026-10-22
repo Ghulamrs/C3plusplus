@@ -3526,9 +3526,7 @@ ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
     // a value rather than an object - so there is nothing to take the address
     // of and the number is the whole of it.
     if (const EnumConst *e = enumInClass(cls, member)) {
-        ExprPtr n(new Num(e->value));
-        n->setType(e->type != nullptr ? e->type : types_.intType());
-        return n;
+        return enumeratorValue(*e);
     }
     // `Base<T>::v = x` inside a member of a class derived from the specialization: `(*this).Base<T>::v`,
     // [class.mfct.non-static]/3 (1.27, 2026-10-21, review of 1.25, item 3).

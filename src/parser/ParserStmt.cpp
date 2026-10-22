@@ -170,6 +170,7 @@ StmtPtr Parser::declarationBody() {
     const Type *deducedSoFar = nullptr;
     do {
         Declared d = declarator(base);
+        if (quals.isConstexpr) d.type = constexprObject(d.type);
         // **A condition declares one name and must initialise it**, and both
         // are settled here: the loop below leaves by more than one path, so
         // asking at the end would mean asking in several places.
@@ -552,7 +553,7 @@ StmtPtr Parser::declarationBody() {
                 locals_[mine].constantDouble = dvalue;
             } else if (quals.isConstexpr && d.type->innermostElement()->unqualified()->isStructOrUnion()) {
                 if (d.type->isArray()) refuseConstexprClassObject(d.name, d.pos);
-            } else if (quals.isConstexpr) {
+            } else if (quals.isConstexpr && !addressConstant(d.type, in)) {
                 src_.fail(d.pos, "'" + d.name + "' is 'constexpr', so its value "
                                  "has to be known while this is compiled, and "
                                  "this initialiser is not a constant expression");
