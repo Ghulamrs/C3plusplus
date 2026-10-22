@@ -1,0 +1,1 @@
+x86_64-linux  clang emits only the C2 variant of Any's inline constructor template, `Any(3)`, on this target where cxx1 emits C1 and C2 - the inline-constructor difference implicit-move.nonames records; every other name agrees, and arm64-darwin and x86_64-windows agree on all.

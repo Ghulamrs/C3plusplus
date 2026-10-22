@@ -1,25 +1,97 @@
 // <functional> - the function objects of [function.objects]: the comparisons, the arithmetic
 // and the logical ones, each a struct with a const operator() and nothing else.
 //
-// **What is not here, and why it is not a small thing.** `std::function` is a partial
-// specialization on a function type, `function<R(Args...)>`, that erases the type of whatever it
-// holds behind a call through a pointer; `std::bind` and the placeholders need the same machinery
-// and `std::ref` wants `reference_wrapper`'s conversion. None of them is written: a program that
-// names one meets "has no member" here, and docs/EXCLUSIONS.md lists them. The C++11 forms that
-// carry `result_type`, `first_argument_type` and `second_argument_type` are given them.
+// **`std::function<R(Args...)>`** (M1, 2026-10-23, after doc-cxx3/M1-STD-FUNCTION-DESIGN.md): three words -
+// the call thunk for the held object, a manager that clones or destroys it under an opcode, and the object
+// on the heap - and no small buffer: the compiler's own instruction entries carry one each, nearly all empty.
+// A copy clones the target; a move hands it over. `target`, `target_type`, `std::bind`, the placeholders and
+// `std::ref` are not here; docs/EXCLUSIONS.md lists them. The comparisons and the arithmetic carry the
+// C++11 `result_type`, `first_argument_type` and `second_argument_type`.
 #ifndef _CXX1_FUNCTIONAL
 #define _CXX1_FUNCTIONAL
+
+#include <cstddef>
+#include <exception>
+#include <type_traits>
+#include <utility>
 
 namespace std {
 
 template <class T> struct __cxx1_never { enum { value = 0 }; };
 
-// `std::function` names itself absent where it is used, rather than as an undeclared name.
-template <class Signature> class function {
-    static_assert(__cxx1_never<Signature>::value, "std::function is not supported yet - it is a "
-                  "partial specialization on a function type with type erasure; call the callable "
-                  "directly, or give the function a template parameter for it");
+// [func.wrap.badcall]: what calling an empty std::function throws.
+class bad_function_call : public exception {
+public:
+    bad_function_call() {}
+    virtual const char *what() const noexcept { return "bad_function_call"; }
 };
+
+// The manager's two requests, and the model that answers them and the call for one held type.
+enum __fn_op { __fn_clone, __fn_destroy };
+template <class F, class R, class... Args> struct __fn_model {
+    static R call(void *p, Args... a) { return (*static_cast<F *>(p))(std::forward<Args>(a)...); }
+    static void *manage(__fn_op op, void *p) {
+        if (op == __fn_clone) return new F(*static_cast<F *>(p));
+        delete static_cast<F *>(p);
+        return 0;
+    }
+};
+
+// What the converting constructor and assignment take: anything but nullptr and a function of this type, which
+// have their own - left in, each is instantiated as a candidate though it loses (libc++ and libstdc++ do the same).
+template <class F, class Fn> struct __fn_callable {
+    enum { value = !is_same<F, std::nullptr_t>::value && !is_same<F, Fn>::value };   // F by value: decayed
+};
+
+// A signature that is not a function type names the mistake where it is used.
+template <class Signature> class function {
+    static_assert(__cxx1_never<Signature>::value, "std::function takes a function type, "
+                  "'std::function<R(Args...)>'");
+};
+
+template <class R, class... Args> class function<R(Args...)> {
+    R (*call_)(void *, Args...);
+    void *(*manage_)(__fn_op, void *);
+    void *target_;
+public:
+    typedef R result_type;
+
+    function() noexcept : call_(0), manage_(0), target_(0) {}
+    function(std::nullptr_t) noexcept : call_(0), manage_(0), target_(0) {}
+    template <class F, class = typename enable_if<__fn_callable<F, function<R(Args...)> >::value>::type> function(F f)
+        : call_(&__fn_model<F, R, Args...>::call), manage_(&__fn_model<F, R, Args...>::manage),
+          target_(new F(std::move(f))) {}
+    function(const function &o)
+        : call_(o.call_), manage_(o.manage_), target_(o.manage_ ? o.manage_(__fn_clone, o.target_) : 0) {}
+    function(function &&o) noexcept : call_(o.call_), manage_(o.manage_), target_(o.target_) {
+        o.call_ = 0; o.manage_ = 0; o.target_ = 0;
+    }
+    ~function() { if (manage_) manage_(__fn_destroy, target_); }
+
+    function &operator=(const function &o) { function(o).swap(*this); return *this; }
+    function &operator=(function &&o) noexcept { function(std::move(o)).swap(*this); return *this; }
+    function &operator=(std::nullptr_t) noexcept { function().swap(*this); return *this; }
+    template <class F, class = typename enable_if<__fn_callable<F, function<R(Args...)> >::value>::type>
+    function &operator=(F f) { function(std::move(f)).swap(*this); return *this; }
+
+    void swap(function &o) noexcept {
+        std::swap(call_, o.call_);
+        std::swap(manage_, o.manage_);
+        std::swap(target_, o.target_);
+    }
+    explicit operator bool() const noexcept { return manage_ != 0; }
+    R operator()(Args... args) const {
+        if (call_ == 0) throw bad_function_call();
+        return call_(target_, std::forward<Args>(args)...);
+    }
+};
+
+// [func.wrap.func.nullptr]: empty is equal to nullptr, either way round.
+template <class R, class... Args> bool operator==(const function<R(Args...)> &f, std::nullptr_t) noexcept { return !f; }
+template <class R, class... Args> bool operator==(std::nullptr_t, const function<R(Args...)> &f) noexcept { return !f; }
+template <class R, class... Args> bool operator!=(const function<R(Args...)> &f, std::nullptr_t) noexcept { return (bool)f; }
+template <class R, class... Args> bool operator!=(std::nullptr_t, const function<R(Args...)> &f) noexcept { return (bool)f; }
+template <class R, class... Args> void swap(function<R(Args...)> &a, function<R(Args...)> &b) noexcept { a.swap(b); }
 
 template <class T> struct less {
     typedef T first_argument_type; typedef T second_argument_type; typedef bool result_type;

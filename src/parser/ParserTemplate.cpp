@@ -509,6 +509,15 @@ const Type *Parser::readTemplateDeclaration(const TemplateDecl &decl,
         ~Owner() { p->inlineOwner_ = tag; p->inlineOwnerName_ = name; }
     } owner{ this, inlineOwner_, inlineOwnerName_ };
     if (decl.isConstructor) { inlineOwner_ = decl.ownerTag; inlineOwnerName_ = decl.ownerLocal; }
+    // Any other member template's signature names its class's members, its own name included: `Box &set(U)`.
+    struct Scope {
+        Parser *p; const Type *was;
+        ~Scope() { p->signatureClass_ = was; }
+    } scope{ this, signatureClass_ };
+    if (decl.isMember && !decl.isConstructor) {
+        auto own = typedefIndex_.find(decl.ownerTag);
+        if (own != typedefIndex_.end()) signatureClass_ = typedefs_[own->second].type;
+    }
     // **The signature names things in the namespace the template was declared in**, as its body
     // does when replayed: `template <class T> int adl(T, Tag)` inside NS reads NS's Tag from a call
     // outside NS (1.27, 2026-10-21, review of 1.25, item 3 - "expected a type" at the instantiation).
@@ -591,8 +600,10 @@ bool Parser::skipTemplatedDefinition(bool *sawInit, bool *sawParen) {
         // parameter list or a construction; neither, and no braces, is `T Tm<T>::st;`, a definition.
         if (depth == 0 && peek().is("(")) parens++;
         if (depth == 0 && peek().is(")")) parens--;
-        if (depth == 0 && parens == 0 && peek().is("=")) initialiser = true;
-        if (sawInit != nullptr && depth == 0 && peek().is("=")) *sawInit = true;
+        // ...but not the `=` of `operator=`, a name (M1, std::function's `template <class F> operator=(F)`).
+        const bool opName = at_ > 0 && tokens_[at_ - 1].is("operator");
+        if (depth == 0 && parens == 0 && peek().is("=") && !opName) initialiser = true;
+        if (sawInit != nullptr && depth == 0 && peek().is("=") && !opName) *sawInit = true;
         if (sawParen != nullptr && depth == 0 && peek().is("(")) *sawParen = true;
         // Braces after that `=` are a list, `C<T>::arr[2] = { 1, 2 };`, and no body.
         if (peek().is("{")) { depth++; body = body || !initialiser; at_++; continue; }
@@ -1293,9 +1304,6 @@ void Parser::templateArguments(const TemplateDecl &decl,
             StorageClass sc;
             Qualifiers quals;
             const Type *base = specifiers(&sc, &quals);
-            if (peek().is("(") && !peekAt(1).is("*") && !peekAt(1).is("&") && !peekAt(1).is("&&"))
-                src_.fail(peek().pos, "a function type as a template argument, 'R(Args...)', is not "
-                                      "supported yet - a pointer to one, 'R (*)(Args...)', is read");
             Declared d = declarator(base, true);
             if (!d.name.empty())
                 src_.fail(d.pos, "a template argument is a type here, and this "
@@ -2023,18 +2031,8 @@ bool Parser::deduceOne(const Type *pattern, const Type *arg,
     // **`R (*)(A)` against a function pointer** - [temp.deduct.type]/8's `T(*)()` and `T(T)`: the
     // return type and each parameter, matched as they are (1.27, 2026-10-21, review of 1.25, item 3:
     // `callIt(dbl, 21)` for `R callIt(R (*f)(A), A a)` bound nothing and R "appears in no parameter").
-    if (pattern->isFunction() && arg->isFunction()) {
-        const std::vector<const Type *> &pp = pattern->params(), &ap = arg->params();
-        if (pp.size() != ap.size() || pattern->isVariadicFn() != arg->isVariadicFn()) {
-            *why = "'" + arg->describe() + "' takes a different number of parameters from '" +
-                   pattern->describe() + "'";
-            return false;
-        }
-        if (!deduceOne(pattern->returns(), arg->returns(), binding, values, why, packs, true)) return false;
-        for (std::size_t i = 0; i < pp.size(); i++)
-            if (!deduceOne(pp[i], ap[i], binding, values, why, packs, true)) return false;
-        return true;
-    }
+    if (pattern->isFunction() && arg->isFunction())
+        return matchFunctionParams(pattern, arg, binding, values, why, packs, true);
     // `T S::*` against `int S::*`: the member's type, and the class when it is
     // a parameter too.
     if (pattern->isMemberPointer() && arg->isMemberPointer())
@@ -2063,6 +2061,10 @@ static void basesNamed(const Type *cls, const std::string &name, std::vector<con
 bool Parser::deduceFromArgument(const Type *param, const Type *arg,
                                 std::vector<const Type *> *binding,
                                 std::vector<long long> *values, std::string *why, Packs *packs) {
+    // A function's name arrives as its address; `R (&)(A)` deduces from the function itself.
+    if (param->isReference() && param->referent()->isFunction() && arg != nullptr && arg->isPointer() &&
+        arg->pointee()->isFunction())
+        arg = arg->pointee();
     const std::vector<const Type *> before = *binding;
     const std::vector<long long> beforeValues = values ? *values : std::vector<long long>();
     const Packs beforePacks = packs ? *packs : Packs();
@@ -2434,6 +2436,15 @@ static bool mentionsParam(const Type *t, std::size_t i) {
         return static_cast<std::size_t>(t->length()) == i;
     if (t->isPointer() || t->isArray()) return mentionsParam(t->pointee(), i);
     if (t->isReference()) return mentionsParam(t->referent(), i);
+    if (t->kind() == Kind::PackExpansion) return mentionsParam(t->pointee(), i);
+    // `R (*)(A)` and `R(Args...)`: the return and every parameter (M1 L1b).
+    if (t->isFunction()) {
+        if (mentionsParam(t->returns(), i)) return true;
+        for (const Type *p : t->params()) if (mentionsParam(p, i)) return true;
+        return false;
+    }
+    if (t->isMemberPointer() || t->isMemberFunctionPointer())
+        return mentionsParam(t->pointee(), i) || mentionsParam(t->enclosing(), i);
     if (t->isSpecialization()) {
         int tt;
         if (ttRefName(t->templateName(), &tt) && static_cast<std::size_t>(tt) == i) return true;
@@ -2485,12 +2496,56 @@ Parser::Trial::~Trial() {
     p->angleSplit_ = split;
 }
 
+// **A function type against a function type**, for deduction ([temp.deduct.type]/8's `T(T)`) and for a
+// partial specialization alike: the return, then each parameter, a trailing `A...` taking the rest of
+// the argument's into its pack - `function<R(Args...)>` is that pattern (M1 L1b). Varargs match varargs.
+bool Parser::matchFunctionParams(const Type *pattern, const Type *arg, std::vector<const Type *> *binding,
+                                 std::vector<long long> *values, std::string *why, Packs *packs,
+                                 bool deduce) const {
+    const std::vector<const Type *> &pp = pattern->params(), &ap = arg->params();
+    const bool rest = !pp.empty() && pp.back()->kind() == Kind::PackExpansion;
+    const std::size_t fixed = rest ? pp.size() - 1 : pp.size();
+    if (rest ? ap.size() < fixed : pp.size() != ap.size()) {
+        *why = "'" + arg->describe() + "' takes a different number of parameters from '" + pattern->describe() + "'";
+        return false;
+    }
+    if (pattern->isVariadicFn() != arg->isVariadicFn() || pattern->refQualifier() != arg->refQualifier() ||
+        pattern->isConstThisFn() != arg->isConstThisFn()) {
+        *why = "'" + arg->describe() + "' is not of the form '" + pattern->describe() + "'";
+        return false;
+    }
+    auto one = [&](const Type *p, const Type *a) {
+        return deduce ? deduceOne(p, a, binding, values, why, packs, true) : matchPattern(p, a, binding, why, packs);
+    };
+    if (!one(pattern->returns(), arg->returns())) return false;
+    for (std::size_t i = 0; i < fixed; i++)
+        if (!one(pp[i], ap[i])) return false;
+    if (!rest) return true;
+    // The expansion's pattern is the pack itself here; a shaped one, `const A &...`, is not read yet.
+    const Type *shape = pp.back()->pointee();
+    if (shape == nullptr || shape->kind() != Kind::TemplateParam || packs == nullptr ||
+        static_cast<std::size_t>(shape->length()) >= packs->size()) {
+        *why = "a parameter pack of that shape in a function type cannot be deduced yet";
+        return false;
+    }
+    const std::size_t at = static_cast<std::size_t>(shape->length());
+    PackMembers got(std::vector<const Type *>(ap.begin() + static_cast<std::ptrdiff_t>(fixed), ap.end()));
+    if ((*binding)[at] != nullptr && static_cast<const std::vector<const Type *> &>((*packs)[at]) != got) {
+        *why = "the parameter pack is deduced two different lists";
+        return false;
+    }
+    (*packs)[at] = got;
+    // Deduction marks the pack deduced in the binding, as a template-id's pack does; a partial binds it in packs alone.
+    if (deduce) (*binding)[at] = shape;
+    return true;
+}
+
 // [temp.deduct.type]. A pattern that is a pointer matches a pointer and
 // nothing else - there is no conversion here for a mismatch to be forgiven
 // by, which is what makes this stricter than deduction from a call.
 bool Parser::matchPattern(const Type *pattern, const Type *arg,
                           std::vector<const Type *> *binding,
-                          std::string *why) const {
+                          std::string *why, Packs *packs) const {
     // **The qualifier is asked about before anything else, and both sides must
     // agree.** `Box<const T>` matches `Box<const int>` and not `Box<int>`; `Box<T>`
     // matches both, binding T to the qualified type where there is one.
@@ -2500,7 +2555,7 @@ bool Parser::matchPattern(const Type *pattern, const Type *arg,
             return false;
         }
         return matchPattern(pattern->unqualified(), arg->unqualified(),
-                            binding, why);
+                            binding, why, packs);
     }
 
     if (pattern->kind() == Kind::TemplateParam) {
@@ -2516,18 +2571,20 @@ bool Parser::matchPattern(const Type *pattern, const Type *arg,
 
     if (pattern->isPointer())
         return arg->isPointer() &&
-               matchPattern(pattern->pointee(), arg->pointee(), binding, why);
+               matchPattern(pattern->pointee(), arg->pointee(), binding, why, packs);
     // `T &` and `T &&` are two patterns: `remove_reference<T &&>` must not take an `int &`.
     if (pattern->isReference())
         return arg->isReference() && arg->isRValueReference() == pattern->isRValueReference() &&
-               matchPattern(pattern->referent(), arg->referent(), binding, why);
+               matchPattern(pattern->referent(), arg->referent(), binding, why, packs);
     if (pattern->isArray())
         return arg->isArray() && pattern->length() == arg->length() &&
-               matchPattern(pattern->pointee(), arg->pointee(), binding, why);
+               matchPattern(pattern->pointee(), arg->pointee(), binding, why, packs);
     if (pattern->isMemberPointer())
         return arg->isMemberPointer() &&
-               matchPattern(pattern->pointee(), arg->pointee(), binding, why) &&
-               matchPattern(pattern->enclosing(), arg->enclosing(), binding, why);
+               matchPattern(pattern->pointee(), arg->pointee(), binding, why, packs) &&
+               matchPattern(pattern->enclosing(), arg->enclosing(), binding, why, packs);
+    if (pattern->isFunction())
+        return arg->isFunction() && matchFunctionParams(pattern, arg, binding, nullptr, why, packs, false);
 
     if (pattern->isSpecialization()) {
         // `S<C<int>>` against `S<Box<int>>`: the template itself is what C is bound to.
@@ -2645,9 +2702,6 @@ void Parser::partialArguments(TemplateDecl::Partial *ps,
             StorageClass sc;
             Qualifiers quals;
             const Type *base = specifiers(&sc, &quals);
-            if (peek().is("(") && !peekAt(1).is("*") && !peekAt(1).is("&") && !peekAt(1).is("&&"))
-                src_.fail(peek().pos, "a function type as a template argument, 'R(Args...)', is not "
-                                      "supported yet - a pointer to one, 'R (*)(Args...)', is read");
             Declared d = declarator(base, true);
             a.isType = true;
             a.type = d.type;
@@ -2758,7 +2812,7 @@ std::size_t Parser::choosePartial(const TemplateDecl &decl,
                 else if (a.value != flat[i].value) ok = false;
                 continue;
             }
-            if (!matchPattern(a.type, flat[i].type, &b, &why)) ok = false;
+            if (!matchPattern(a.type, flat[i].type, &b, &why, &pk)) ok = false;
         }
         if (ok && takesRest) {
             const TemplateDecl::Partial::Arg &tail = ps.args.back();
@@ -3529,6 +3583,13 @@ ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
     }
     if (const Type::StaticMember *sm = cls->findStaticMember(member))
         return staticMemberRef(cls, *sm, cls->tag(), mpos);
+    // `&C<int>::f`, f a static member function named and not called - a function as a value (M1).
+    if (const std::vector<std::size_t> *set = overloadsOf(key)) {
+        bool allStatic = true;
+        for (std::size_t i : *set) allStatic = allStatic && functions_[i].isStaticMember;
+        if (allStatic)
+            if (ExprPtr f = functionAsValue(key, mpos)) return f;
+    }
     // **An enumerator of the specialization is reached the same way**, and is
     // a value rather than an object - so there is nothing to take the address
     // of and the number is the whole of it.
@@ -3601,12 +3662,21 @@ void Parser::instantiateViableMemberTemplate(const TemplateDecl &mt,
     const bool wasBody = memberTemplateBody_;
     memberTemplateBody_ = false;
     const std::size_t before = functions_.size();
+    std::vector<std::size_t> uses;
+    std::vector<std::size_t> *const wasUses = candidateUses_;
+    candidateUses_ = &uses;
     try {
         Trial trial(this);
         const Signature *made = instantiateMemberTemplate(mt, binding, values, args, pos);
-        if (made != nullptr)
-            candidateSpecializations_.push_back(static_cast<std::size_t>(made - &functions_[0]));
+        candidateUses_ = wasUses;
+        if (made != nullptr) {
+            const std::size_t at = static_cast<std::size_t>(made - &functions_[0]);
+            candidateSpecializations_.push_back(at);
+            functions_[at].deferredUses.insert(functions_[at].deferredUses.end(), uses.begin(), uses.end());
+            if (functions_[at].used) noteUsed(at);      // already chosen elsewhere: its uses stand
+        }
     } catch (const SubstitutionFailure &f) {
+        candidateUses_ = wasUses;
         // This one does not apply - unless it was a refusal, which is a fact about the compiler
         // rather than about this candidate, or **the body failed**, which [temp.deduct]/8 does not
         // forgive: the candidate was formed, and dropping it now leaves a call to nothing.

@@ -135,9 +135,10 @@ private:
         // calls it - which is what keeps the symbol list level with the oracles.
         bool implicit = false;
         bool used = false;
-        // A member template candidate whose body failed while it was only being ranked: the error,
-        // reported if overload resolution chooses it ([temp.inst]/3 - a body is instantiated when used).
+        // A ranked-only member template's body error, reported if it is chosen ([temp.inst]/3).
         std::string bodyFailure;
+        // What this candidate's body used, marked only once it is chosen (M1, std::function's converting candidates).
+        std::vector<std::size_t> deferredUses;
         std::size_t bodyFailurePos = 0;
         // **A specialization is a candidate like any other, and loses a tie.**
         // [over.match.best]: where a specialization and an ordinary function are equally
@@ -767,7 +768,9 @@ private:
     // Deduction from a call is looser, because a conversion may still bridge it.
     bool matchPattern(const Type *pattern, const Type *arg,
                       std::vector<const Type *> *binding,
-                      std::string *why) const;
+                      std::string *why, Packs *packs = nullptr) const;
+    bool matchFunctionParams(const Type *pattern, const Type *arg, std::vector<const Type *> *binding,
+                             std::vector<long long> *values, std::string *why, Packs *packs, bool deduce) const;
     // The partial specialization these arguments ask for, or npos for none.
     // Refuses by name where two match and neither is more specialized.
     std::size_t choosePartial(const TemplateDecl &decl,
@@ -948,6 +951,9 @@ private:
 
     // **Mark a signature that came out of `functions_` used, and the one place the pointer arithmetic this file warns about is written.**
     void markUsed(const Signature *f);
+    // Marks functions_[i] used, and what its body used; while a candidate's body is read, records it instead.
+    void noteUsed(std::size_t i);
+    std::vector<std::size_t> *candidateUses_ = nullptr;
     // **A vtable entry, a typeinfo field and the vptr are one pointer wide**
     // - eight bytes on the 64-bit targets, four on the C6000 - and an offset
     // stored among them (offset-to-top, a vbase_offset) is as wide, signed.
@@ -1837,6 +1843,8 @@ private:
     // The class up the chain that declares this member function, searching every base rather than only the first.
     const Type *findMemberOwner(const Type *cls, const std::string &name) const;
 
+    // The class a member template's signature is read in, for lookup alone ([basic.scope.class]).
+    const Type *signatureClass_ = nullptr;
     // The class whose member function is being parsed, and the frame offset of its
     // hidden `this` parameter; empty and 0 outside one. Below it, the classes whose
     // bodies are being parsed, outermost first, which gives a nested class its tag.

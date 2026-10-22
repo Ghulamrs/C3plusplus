@@ -1448,6 +1448,8 @@ private:
             qualifiedName(*tag);
             return;
         }
+        // A function type as a template argument, `Box<void(int)>`: `$$A` and its own `6A...`, measured (M1 L1a).
+        if (t->isFunction()) { out += "$$A"; pointee(t); return; }
         refuse("this type has no Microsoft linkage name yet");
     }
 };

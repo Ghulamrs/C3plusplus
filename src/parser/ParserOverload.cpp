@@ -1080,6 +1080,16 @@ Parser::OperatorChoice Parser::resolveOperator(const std::string &name,
             if (std::find(which.begin(), which.end(), (*set)[k]) != which.end()) continue;
             const Signature &f = functions_[(*set)[k]];
             if (f.params.size() != written + 1) continue;
+            // [over.match.oper]/3.2: with no operand of class type, a non-member is a candidate only if a
+            // parameter takes an operand's enumeration itself - `op == __fn_clone` is no call (M1).
+            if (!plain->isStructOrUnion() && (right == nullptr || !right->type()->unqualified()->isStructOrUnion())) {
+                auto takes = [](const Type *param, const Type *operand) {
+                    const Type *e = operand->unqualified();
+                    const Type *p = param->isReference() ? param->referent() : param;
+                    return e->isEnumeration() && p->unqualified() == e;
+                };
+                if (!takes(f.params[0], lt) && !(right != nullptr && takes(f.params[1], right->type()))) continue;
+            }
             Rank a = rankArgument(left, f.params[0]);
             if (a == Rank::None) continue;
             std::vector<Rank> r;
@@ -1313,7 +1323,7 @@ Parser::Signature Parser::resolveOverload(const std::string &written,
     }
     if (viable.size() == 1) {
         refuseDeleted(functions_[viable[0]], pos);
-        functions_[viable[0]].used = true;
+        noteUsed(viable[0]);
         if (!functions_[viable[0]].isNoexcept) mayThrow_++;
         return functions_[viable[0]];
     }
@@ -1340,7 +1350,7 @@ Parser::Signature Parser::resolveOverload(const std::string &written,
     }
     // [dcl.fct.def.delete]: a deleted candidate is ranked like any other and refused only where it wins.
     refuseDeleted(functions_[viable[best]], pos);
-    functions_[viable[best]].used = true;
+    noteUsed(viable[best]);
     // **Every call is potentially-throwing unless the function promised
     // otherwise**, and this is the one place a call finds out which function it
     // reached. `noexcept(e)` reads the count this leaves behind.

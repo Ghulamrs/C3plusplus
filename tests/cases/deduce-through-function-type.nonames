@@ -1,0 +1,2 @@
+x86_64-linux  clang zeroes a braced `Box<...> v = { 0 }` with a call to memset where cxx1 writes the field out - the difference S-09 recorded in CLAUDE.md, a question about emission and not about a name; every other name agrees.
+x86_64-windows  clang zeroes a braced `Box<...> v = { 0 }` with a call to memset where cxx1 writes the field out - the difference S-09 recorded in CLAUDE.md, a question about emission and not about a name; every other name agrees.

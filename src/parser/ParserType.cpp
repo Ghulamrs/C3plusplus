@@ -2702,6 +2702,19 @@ Parser::Declared Parser::declarator(const Type *base, bool nameOptional,
                                   " &' is what qualifies what it refers to");
     }
 
+    // **`int(char)`, `R(A...)`, `void()` - a function type in a type-id**, [dcl.ambig.res]/2: in an abstract
+    // declarator a `(` that begins a parameter list is one, not a parenthesised declarator (M1 L1a).
+    if (nameOptional && peek().is("(")) {
+        std::size_t q = 1;
+        while (peekAt(q).kind == TokenKind::Ident && peekAt(q + 1).is("::")) q += 2;
+        if (!(q > 1 && peekAt(q).is("*")) && !atParenInitialiser()) {
+            std::vector<const Type *> params;
+            bool variadic = false;
+            parameterTypes(params, variadic);
+            return declarator(types_.functionType(base, std::move(params), variadic), nameOptional, insideParens);
+        }
+    }
+
     if (peek().is("(")) {
         std::size_t open = at_;
         const Nesting deep(this, peek().pos, "parenthesised declarator");

@@ -823,6 +823,7 @@ void Parser::topLevel(Program &program) {
                 const Type *declared = pd.type;
                 if (pd.type->isArray())
                     pd.type = types_.pointerTo(pd.type->pointee());
+                if (pd.type->isFunction()) pd.type = types_.pointerTo(pd.type);   // [dcl.fct]/5
 
                 // **A class whose copy is a constructor call arrives by address**, on
                 // both ABIs and whatever its size. The parameter is lowered to a
@@ -2234,6 +2235,7 @@ const Type *Parser::readTrailingReturn(std::size_t paramsOpen) {
             Declared pd = declarator(pt, true);
             if (!pd.name.empty() && !pd.type->isVoid()) {
                 if (pd.type->isArray()) pd.type = types_.pointerTo(pd.type->pointee());
+                if (pd.type->isFunction()) pd.type = types_.pointerTo(pd.type);
                 locals_.push_back(Local{ pd.name, 0, pd.type, false, std::string() });
                 locals_.back().isParameter = true;
                 locals_.back().trailingParam = index;

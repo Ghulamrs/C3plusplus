@@ -1297,7 +1297,17 @@ void Parser::markSymbolUsed(const std::string &symbol) {
 // A use of a deleted function is refused here as well as at a call: the compiler-written members reach their bases' and members' through this.
 void Parser::markUsed(const Signature *f) {
     refuseDeleted(*f, at_ + 1 < tokens_.size() ? peek().pos : f->pos);
-    functions_[static_cast<std::size_t>(f - &functions_[0])].used = true;
+    noteUsed(static_cast<std::size_t>(f - &functions_[0]));
+}
+
+// [temp.inst]: a candidate made for ranking uses nothing until it is chosen - clang declares such a
+// specialization and never instantiates its body - so while one's body is read, its uses are its own.
+void Parser::noteUsed(std::size_t i) {
+    if (candidateUses_ != nullptr) { candidateUses_->push_back(i); return; }
+    functions_[i].used = true;
+    std::vector<std::size_t> later;
+    later.swap(functions_[i].deferredUses);
+    for (std::size_t k : later) noteUsed(k);
 }
 
 bool Parser::sameParameters(const std::vector<const Type *> &a,
@@ -5429,6 +5439,7 @@ void Parser::parameterTypes(std::vector<const Type *> &params, bool &variadic) {
                               "there is C++14, and this compiler is C++11");
         const Type *declared = pd.type;
         if (pd.type->isArray()) pd.type = types_.pointerTo(pd.type->pointee());
+        if (pd.type->isFunction()) pd.type = types_.pointerTo(pd.type);   // [dcl.fct]/5, `S f(T())`
         if (pd.type->isVoid())
             src_.fail(pd.pos, "'void' is only a parameter list on its own");
         params.push_back(types_.withoutConst(pd.type));

@@ -704,6 +704,7 @@ ExprPtr Parser::functionAsValue(const std::string &key, std::size_t pos) {
     }
     if (sig == nullptr) sig = findFunction(key);
     if (sig == nullptr) return nullptr;
+    markUsed(sig);      // its address is an odr-use: a class template's member is instantiated for it
     return functionAddress(*sig, key);
 }
 
