@@ -851,11 +851,11 @@ ExprPtr Parser::buildReturned(ExprPtr value, std::size_t pos, bool *named) {
             if (const Var *v = dynamic_cast<const Var *>(&u->operand()))
                 if (v->isLocal() && v->offset() == sretSlot_) { *named = true; return value; }
     {
-        Expr *named = value.get();
+        Expr *operand = value.get();
         bool viaDeref = false;
-        if (Unary *u = dynamic_cast<Unary *>(named))
-            if (u->op() == '*') { named = const_cast<Expr *>(&u->operand()); viaDeref = true; }
-        if (const Var *v = dynamic_cast<const Var *>(named))
+        if (Unary *u = dynamic_cast<Unary *>(operand))
+            if (u->op() == '*') { operand = const_cast<Expr *>(&u->operand()); viaDeref = true; }
+        if (const Var *v = dynamic_cast<const Var *>(operand))
             if (v->isLocal())
                 if (const Local *l = findLocal(v->name()))
                     if (viaDeref ? (l->isParameter && l->byValueByAddress) : !l->type->isReference())
