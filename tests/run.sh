@@ -133,5 +133,13 @@ else
     echo "FAIL tms6747 -g: wanted $dbg compiled with -g, and its code the same as without"; fail=$((fail + 1))
 fi
 
+# The host's -g too: a closure holding a reference to a 300-byte object wrote its size in one byte (M1).
+dbg=tests/cases/debug-reference-member.cpp
+if cxx1 -nologo -g "$dbg" -o "$OUT/dbg-host" 2>/dev/null && "$OUT/dbg-host" | cmp -s - tests/cases/debug-reference-member.expected; then
+    pass=$((pass + 1))
+else
+    echo "FAIL -g: wanted $dbg built with -g and printing its recorded output"; fail=$((fail + 1))
+fi
+
 echo "run.sh: $pass passed, $fail failed ($ran printed their recorded output, $refused were refused as recorded)"
 [ "$fail" -eq 0 ]

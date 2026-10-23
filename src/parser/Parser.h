@@ -1578,6 +1578,11 @@ private:
         std::vector<int> handlerLoopDepth, handlerSwitchDepth;
         std::vector<std::size_t> handlerFrom, tryFrom;
         std::string handlerResumeLabel;
+        // The enclosing `try` body's chain: a body replayed inside one is another function's (M1).
+        std::string tryChainLabel;
+        int tryChainPointerSlot = 0, tryChainSelectorSlot = 0;
+        std::size_t tryChainAliveFrom = 0;
+        std::vector<Try *> tryBodySegments;
         int handlerResumePtr = 0, handlerResumeSel = 0;
         int mayThrow = 0;
         bool conditionDecl = false;

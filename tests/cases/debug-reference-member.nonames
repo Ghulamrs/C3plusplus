@@ -1,0 +1,3 @@
+x86_64-linux  clang zeroes `Big a = {}` with a call to memset where cxx1 writes the bytes out - the difference value-init-empty-braces.cpp records.
+x86_64-windows  the same memset, and the closure: clang-msvc names it `<lambda_0>` and encodes its deduced return as `@` where cxx1 writes `$_0` and the type - lambda.nonames records it.
+arm64-darwin  clang zeroes with _bzero where cxx1 writes the bytes out.

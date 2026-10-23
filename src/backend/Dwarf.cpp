@@ -24,6 +24,7 @@ namespace {
 
 const int kTagArray = 0x01, kTagStructure = 0x13, kTagUnion = 0x17;
 const int kTagMember = 0x0d, kTagPointer = 0x0f, kTagCompileUnit = 0x11;
+const int kTagReference = 0x10, kTagRvalueReference = 0x42;
 const int kTagSubroutine = 0x15, kTagSubrange = 0x21, kTagBase = 0x24;
 const int kTagFormalParameter = 0x05, kTagSubprogram = 0x2e, kTagVariable = 0x34;
 const int kTagLexicalBlock = 0x0b;
@@ -58,7 +59,7 @@ enum Abbrev {
     kAbArray, kAbSubrange, kAbSubrangeOpen,
     kAbStructure, kAbUnion, kAbMember, kAbBitField,
     kAbSubroutine, kAbSubroutineVoid, kAbParamType, kAbUnspecified,
-    kAbLexicalBlock
+    kAbLexicalBlock, kAbReference, kAbRvalueReference
 };
 
 void line(std::string &o, const std::string &text) { o += text; o += '\n'; }
@@ -126,6 +127,7 @@ public:
         order_.push_back(t);
 
         if (t->isPointer() || t->isArray()) id(t->pointee());
+        if (t->isReference()) id(t->referent());
         if (t->isFunction()) {
             id(t->returns());
             for (std::size_t i = 0; i < t->params().size(); i++)
@@ -291,6 +293,16 @@ void writeAbbrevTable(std::string &o, const DwarfSpelling &sp) {
     abbrev(o, kAbUnspecified, kTagUnspecifiedParameters, false);
     endAbbrev(o);
 
+    abbrev(o, kAbReference, kTagReference, false);
+    attr(o, kAtByteSize, kFormData1);
+    attr(o, kAtType, kFormRef4);
+    endAbbrev(o);
+
+    abbrev(o, kAbRvalueReference, kTagRvalueReference, false);
+    attr(o, kAtByteSize, kFormData1);
+    attr(o, kAtType, kFormRef4);
+    endAbbrev(o);
+
     o += "  .byte 0\n";
 }
 
@@ -303,6 +315,13 @@ void writeType(std::string &o, const Type *t, int id, Types &types,
         num(o, "  .byte", to != 0 ? kAbPointer : kAbPointerVoid);
         num(o, "  .byte", t->size(target));
         if (to != 0) typeRef(o, to);
+        return;
+    }
+    // A reference is a pointer's size and names what it refers to - the referent's size overran a byte.
+    if (t->isReference()) {
+        num(o, "  .byte", t->isRValueReference() ? kAbRvalueReference : kAbReference);
+        num(o, "  .byte", target.sizeOf(Kind::Pointer));
+        typeRef(o, types.id(t->referent()));
         return;
     }
     if (t->isArray()) {

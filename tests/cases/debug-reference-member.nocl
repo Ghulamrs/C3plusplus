@@ -1,0 +1,1 @@
+The closure: cl names it `<lambda_<hash>>` where cxx1 writes `$_0` - lookup-order.nocl records it - and cl zeroes `Big a = {}` with memset.
