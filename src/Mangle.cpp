@@ -675,7 +675,11 @@ private:
             }
         } else {
             const std::string qualified = t->templateNamespace() + t->templateName();
-            if (!substitutedName(qualified)) {
+            // [mangle.substitution]'s predefined abbreviations for two templates, no candidates themselves:
+            // `std::basic_string<char>` is `SbIcE`, as clang writes it, and `std::allocator<T>` `SaIT_E`.
+            if (qualified == "std::basic_string" || qualified == "std::allocator") {
+                out += qualified == "std::basic_string" ? "Sb" : "Sa";
+            } else if (!substitutedName(qualified)) {
                 namespacesOf(qualified);
                 out += std::to_string(t->templateName().size());
                 out += t->templateName();
