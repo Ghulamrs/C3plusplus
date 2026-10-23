@@ -35,14 +35,16 @@ if !errorlevel! neq 0 (echo self-host.cmd: stage 1 did not build stage 2, status
 if not exist "%OUT%\cxx3-stage2.exe" (echo self-host.cmd: stage 1 wrote no stage 2 & exit /b 1)
 echo self-host.cmd: stage 2 built
 
-rem  The fixed point: each source's assembly from the two stages.
+rem  The fixed point: each source's assembly from the two stages, the clock pinned - Driver.cpp's -version
+rem  names the build's __DATE__ and __TIME__, and the two stages are built at two moments.
+set CLOCK="-D__DATE__=\"Jan 01 2000\"" -D__TIME__=\"00:00:00\"
 set N=0
 set SAME=0
 type nul > "%OUT%\differ.txt"
 for %%d in (src src\parser src\backend src\optimizer) do for %%f in ("%ROOT%\%%d\*.cpp") do (
     set /a N+=1
-    "%OUT%\cxx3-stage1.exe" -nologo -S %FLAGS% %DEFS% "%%f" -o "%OUT%\s1\%%~nf.s" > nul 2>&1
-    "%OUT%\cxx3-stage2.exe" -nologo -S %FLAGS% %DEFS% "%%f" -o "%OUT%\s2\%%~nf.s" > nul 2>&1
+    "%OUT%\cxx3-stage1.exe" -nologo -S %FLAGS% %DEFS% %CLOCK% "%%f" -o "%OUT%\s1\%%~nf.s" > nul 2>&1
+    "%OUT%\cxx3-stage2.exe" -nologo -S %FLAGS% %DEFS% %CLOCK% "%%f" -o "%OUT%\s2\%%~nf.s" > nul 2>&1
     fc /b "%OUT%\s1\%%~nf.s" "%OUT%\s2\%%~nf.s" > nul 2>&1
     if errorlevel 1 (echo %%~nxf>> "%OUT%\differ.txt") else (set /a SAME+=1)
 )
