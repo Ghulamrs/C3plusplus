@@ -26,10 +26,13 @@ set SRCS=
 for %%d in (src src\parser src\backend src\optimizer) do for %%f in ("%ROOT%\%%d\*.cpp") do set SRCS=!SRCS! "%%f"
 
 "%ROOT%\cxx3-msvc.exe" -nologo %FLAGS% %DEFS% !SRCS! -o "%OUT%\cxx3-stage1.exe" > "%OUT%\stage1.log" 2>&1
-if errorlevel 1 (echo self-host.cmd: stage 0 did not build stage 1 - see %OUT%\stage1.log & exit /b 1)
+rem  A crash's status is negative, which `if errorlevel 1` does not see - so the status, and the file.
+if !errorlevel! neq 0 (echo self-host.cmd: stage 0 did not build stage 1 - see %OUT%\stage1.log & exit /b 1)
+if not exist "%OUT%\cxx3-stage1.exe" (echo self-host.cmd: stage 0 wrote no stage 1 & exit /b 1)
 echo self-host.cmd: stage 1 built
 "%OUT%\cxx3-stage1.exe" -nologo %FLAGS% %DEFS% !SRCS! -o "%OUT%\cxx3-stage2.exe" > "%OUT%\stage2.log" 2>&1
-if errorlevel 1 (echo self-host.cmd: stage 1 did not build stage 2 - see %OUT%\stage2.log & exit /b 1)
+if !errorlevel! neq 0 (echo self-host.cmd: stage 1 did not build stage 2, status !errorlevel! - see %OUT%\stage2.log & exit /b 1)
+if not exist "%OUT%\cxx3-stage2.exe" (echo self-host.cmd: stage 1 wrote no stage 2 & exit /b 1)
 echo self-host.cmd: stage 2 built
 
 rem  The fixed point: each source's assembly from the two stages.

@@ -923,6 +923,8 @@ ExprPtr Parser::conditional() {
         at->setType(ptr);
         ExprPtr bt(new Unary('&', std::move(b)));
         bt->setType(ptr);
+        at = markSkippableTemporaries(std::move(at), tempsBeforeA, tempsAfterA);
+        bt = markSkippableTemporaries(std::move(bt), tempsAfterA, tempsAfterB);
         ExprPtr which(new Conditional(std::move(cond), std::move(at),
                                       std::move(bt)));
         which->setType(ptr);
@@ -1017,6 +1019,15 @@ ExprPtr Parser::conditional() {
                        ta->describe() + "' and '" + tb->describe() + "'");
     }
 
+    // **An arm's temporaries are that arm's on this path too** - `c ? f(T(1)) : g(T(2))` made one T, and
+    // the other arm's was destroyed unbuilt (found self-hosting: `c ? name(a + b) : name2(a + b)`).
+    if (result->isVoid()) {
+        a = markArmTemporaries(std::move(a), tempsBeforeA, tempsAfterA);
+        b = markArmTemporaries(std::move(b), tempsAfterA, tempsAfterB);
+    } else {
+        a = markSkippableTemporaries(std::move(a), tempsBeforeA, tempsAfterA);
+        b = markSkippableTemporaries(std::move(b), tempsAfterA, tempsAfterB);
+    }
     ExprPtr n(new Conditional(std::move(cond), std::move(a), std::move(b)));
     n->setType(result);
     return n;

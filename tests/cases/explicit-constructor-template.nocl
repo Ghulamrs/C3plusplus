@@ -1,0 +1,1 @@
+One name cxx1 emits and cl does not, and none that differs: the copy constructor ??0S@@QEAA@AEBU0@@Z, defined inside its class. cl elides the copy in `S c = S(5)` and so never instantiates the inline function; cxx1 makes the copy C++11 permits and emits it - the case says so by printing `c.v >= 10`.
