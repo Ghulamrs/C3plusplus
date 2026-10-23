@@ -308,10 +308,19 @@ public:
         : left_(std::move(left)), right_(std::move(right)) {}
     const Expr &left() const { return *left_; }
     const Expr &right() const { return *right_; }
+    Expr &right() { return *right_; }
     void accept(Visitor &v) const override { v.visit(*this); }
 private:
     ExprPtr left_, right_;
 };
+
+// **The call a class prvalue comes from**, through the commas in front of it - a virtual call's saved
+// object address, `(a, f())` - so its result slot is elided into or bound to as a bare call's is.
+inline Call *producingCall(Expr *e) {
+    while (Comma *c = dynamic_cast<Comma *>(e)) e = &c->right();
+    return dynamic_cast<Call *>(e);
+}
+inline const Call *producingCall(const Expr *e) { return producingCall(const_cast<Expr *>(e)); }
 
 class Conditional final : public Expr {
 public:

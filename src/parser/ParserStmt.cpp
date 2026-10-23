@@ -302,7 +302,7 @@ StmtPtr Parser::declarationBody() {
             Call *made = ci.args.size() == 1 &&
                          (d.type->nonTrivialCopy() ||
                           destructorOf(d.type) != nullptr)
-                       ? dynamic_cast<Call *>(ci.args[0].get()) : nullptr;
+                       ? producingCall(ci.args[0].get()) : nullptr;
 
             if (made != nullptr && made->type() == d.type &&
                 returnsIndirectly(d.type, made->hasThis())) {
@@ -716,7 +716,7 @@ const Type *Parser::classRangeEnds(ExprPtr range, std::size_t rpos,
 StmtPtr Parser::initRangeLocal(const std::string &name, const Type *t, int off,
                                ExprPtr init, std::size_t pos) {
     std::vector<StmtPtr> out;
-    Call *made = dynamic_cast<Call *>(init.get());
+    Call *made = producingCall(init.get());
     const bool owns = t->isStructOrUnion() &&
                       (t->nonTrivialCopy() || destructorOf(t) != nullptr);
     if (made != nullptr && owns && made->type()->unqualified() == t &&

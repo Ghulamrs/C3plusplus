@@ -2401,7 +2401,7 @@ ExprPtr Parser::bindReference(const Type *ref, ExprPtr init, std::size_t pos,
     // extendTemporary then keeps it, [class.temporary]/5; a derived result bound to a base is converted as below.
     if (it->unqualified()->isStructOrUnion() && referent->unqualified()->isStructOrUnion() &&
         (it->unqualified() == referent->unqualified() || accessibleBaseOffset(it, referent) > -1))
-        if (const Call *c = dynamic_cast<const Call *>(init.get()))
+        if (const Call *c = producingCall(init.get()))
             if (c->resultSlot() != 0) {
                 const Type *whole = it->unqualified();
                 ExprPtr held(Var::local("$ret", c->resultSlot()));

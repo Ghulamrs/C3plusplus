@@ -541,7 +541,7 @@ ExprPtr Parser::materialiseCopy(const Type *type, ExprPtr arg, std::size_t pos,
     // **Elision, where the argument is already one of these coming back through a
     // hidden pointer.** The call builds its result straight into the temporary this
     // argument needs, so no copy constructor runs - as clang does at -O0.
-    if (Call *made = dynamic_cast<Call *>(arg.get())) {
+    if (Call *made = producingCall(arg.get())) {
         if (made->type() == cls && returnsIndirectly(cls, made->hasThis())) {
             claimCallResult(*made, tmp);
             ExprPtr built(Var::local("$copy", tmp));
