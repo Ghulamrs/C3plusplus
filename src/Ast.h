@@ -218,6 +218,7 @@ public:
     Unary(char op, ExprPtr operand) : op_(op), operand_(std::move(operand)) {}
     char op() const { return op_; }
     const Expr &operand() const { return *operand_; }
+    ExprPtr &operandSlot() { return operand_; }
     void accept(Visitor &v) const override { v.visit(*this); }
 private:
     char op_;
@@ -249,11 +250,16 @@ public:
     const std::string &symbol() const { return symbol_.empty() ? name_ : symbol_; }
     void setSymbol(std::string s) { symbol_ = std::move(s); }
     const std::vector<ExprPtr> &args() const { return args_; }
+    std::vector<ExprPtr> &argsSlots() { return args_; }
     const Expr *callee() const { return callee_.get(); }
     bool isVariadic() const { return variadic_; }
     int resultSlot() const { return resultSlot_; }
     // Copy elision points this at the variable being initialised, so the callee builds its result there and no copy constructor runs.
     void setResultSlot(int s) { resultSlot_ = s; }
+    // **The result slot holds a pointer to where the result goes**: `return f();` hands f the hidden pointer
+    // this function was given, so the object is built in its caller's storage once.
+    bool resultIndirect() const { return resultIndirect_; }
+    void setResultIndirect(bool b) { resultIndirect_ = b; }
 
     int namedArgs() const { return namedArgs_; }
 
@@ -277,6 +283,7 @@ private:
     int namedArgs_;
     std::vector<int> argSlots_;
     bool hasThis_ = false;
+    bool resultIndirect_ = false;
 };
 
 class Postfix final : public Expr {
@@ -309,6 +316,8 @@ public:
     const Expr &left() const { return *left_; }
     const Expr &right() const { return *right_; }
     Expr &right() { return *right_; }
+    Expr &left() { return *left_; }
+    ExprPtr &rightSlot() { return right_; }
     void accept(Visitor &v) const override { v.visit(*this); }
 private:
     ExprPtr left_, right_;

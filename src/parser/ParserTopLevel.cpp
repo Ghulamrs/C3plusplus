@@ -1465,6 +1465,7 @@ void Parser::topLevel(Program &program) {
         frameSize_ = alignTo(frameSize_, 8);
         sretSlot = frameSize_;
     }
+    sretSlot_ = sretSlot;
 
     int regSaveSlot = 0;
     if (variadic) {
@@ -1811,6 +1812,7 @@ void Parser::topLevel(Program &program) {
     }
     std::string spec = "$spec";
     for (const std::string &sym : specSymbols) spec += "," + sym;
+    nrvoName_ = nrvoCandidate();
     if (specFilter) {
         const std::size_t bodyAt = peek().pos;
         body = tryStatement(bodyAt, [&]() {
@@ -2336,4 +2338,53 @@ StmtPtr Parser::delegatingCall(const Declared &d, const Type *cls, std::vector<E
     return StmtPtr(new ExprStmt(completeCall(cls->tag(), chosen.symbol, nullptr,
                                              types_.get(Kind::Void), params, false, pos,
                                              std::move(all), false, 0)));
+}
+
+// **The local a body returns from every `return` in its scope** ([class.copy]/31's named return value), read
+// off the tokens as clang decides it: one declaration after a type name, and every `return` from it to its
+// block's `}` names it. Anything less certain - another spelling of a declaration, a lambda's - names nothing.
+std::string Parser::nrvoCandidate() const {
+    if (sretSlot_ == 0 || returnType_ == nullptr || !returnType_->isStructOrUnion() ||
+        !returnType_->unqualified()->nonTrivialCopy() || !tokens_[at_].is("{"))
+        return std::string();
+    std::size_t end = at_;
+    for (int depth = 0; end < tokens_.size(); end++) {
+        if (tokens_[end].is("{")) depth++;
+        else if (tokens_[end].is("}") && --depth == 0) break;
+    }
+    std::vector<std::size_t> returns;
+    for (std::size_t i = at_; i < end; i++)
+        if (tokens_[i].is("return")) returns.push_back(i);
+    std::string found;
+    for (std::size_t r = 0; r < returns.size(); r++) {
+        const std::size_t at = returns[r];
+        if (tokens_[at + 1].kind != TokenKind::Ident || !tokens_[at + 2].is(";")) continue;
+        const std::string &name = tokens_[at + 1].text;
+        if (name == found) continue;
+        int maybeDeclared = 0, afterType = 0;
+        std::size_t declaredAt = 0;
+        for (std::size_t i = at_ + 1; i < end; i++) {
+            if (tokens_[i].kind != TokenKind::Ident || tokens_[i].text != name) continue;
+            const Token &prev = tokens_[i - 1];
+            if (prev.is("return")) continue;
+            if (prev.kind == TokenKind::Ident || prev.kind == TokenKind::Keyword || prev.is("*") ||
+                prev.is("&") || prev.is("&&") || prev.is(">")) maybeDeclared++;
+            if (prev.kind == TokenKind::Ident) { afterType++; declaredAt = i; }
+        }
+        if (maybeDeclared != 1 || afterType != 1) continue;
+        std::size_t scopeEnd = declaredAt;
+        for (int depth = 0; scopeEnd < end; scopeEnd++) {
+            if (tokens_[scopeEnd].is("{")) depth++;
+            else if (tokens_[scopeEnd].is("}") && --depth < 0) break;
+        }
+        bool every = true;
+        for (std::size_t k = 0; k < returns.size(); k++)
+            if (returns[k] > declaredAt && returns[k] < scopeEnd &&
+                !(tokens_[returns[k] + 1].text == name && tokens_[returns[k] + 2].is(";")))
+                every = false;
+        if (!every) continue;
+        if (!found.empty()) return std::string();
+        found = name;
+    }
+    return found;
 }

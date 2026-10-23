@@ -117,15 +117,18 @@ Counted giveCounted() { Counted c; return c; }
 Counted r = giveCounted();      // clang: one construction. cl: a copy as well.
 ```
 
-cxx1 elides, which is clang's answer, in three places: a declaration
+cxx1 elides, which is clang's answer, in these places: a declaration
 initialised by a call that already returns the class through a hidden pointer,
-such a call passed straight in as a by-value argument, and a local returned by
-value - which is not destroyed on the way out, because the caller destroys it
-where it lands.
+such a call passed straight in as a by-value argument, and a `return` - of
+`T(...)` or of a call, built in the caller's storage, and of the local every
+`return` in its scope names (NRVO, decided as clang decides it), which *is* the
+caller's object from its declaration on. Any other class returned by value is
+moved, or copied, into the caller's storage and then destroyed.
 
-That third one is not only a choice about how many constructors run. Copying
-the bytes out *without* eliding the destruction would destroy the same object
-twice, once in the callee and once in the caller.
+**Until 2026-10-23 a returned class was built in the callee's frame and its
+bytes moved to the caller**, which is no copy C++ has a word for: an object
+holding its own address - `std::map`'s sentinel - arrived pointing into a dead
+frame. `tests/cases/return-self-referential.cpp` returns one every way.
 
 **And one place cxx1 does not elide where clang does**: a class-typed member
 with its own initialiser.

@@ -395,8 +395,8 @@ public:
 
 private:
     // **Up to fifteen units live inside the object** - TI's and Dinkumware's layout,
-    // chosen per access rather than by a pointer into the object, because cxx1 hands
-    // a returned local to its caller as bytes and a self-pointer would dangle.
+    // chosen per access rather than by a pointer into the object, as cxx1 handed a
+    // returned local to its caller as bytes until 2026-10-23 and a self-pointer dangled.
     enum { small = 15 };
     C *p() { return heap_ != 0 ? heap_ : small_; }
     const C *p() const { return heap_ != 0 ? static_cast<const C *>(heap_) : small_; }

@@ -1177,6 +1177,11 @@ private:
     std::vector<FreeSlot> freeSlots_;    // slots closed scopes gave back - see leaveScope
     int localSerial_ = 0;
     const Type *returnType_ = nullptr;
+    // The frame slot the caller's hidden return pointer is kept in, or 0 - where `return` builds a class.
+    int sretSlot_ = 0;
+    // The one local every `return` of this body names, built where the caller asked (NRVO), or empty.
+    std::string nrvoName_;
+    std::string nrvoCandidate() const;
     // Set while a lambda's body is read to find its return type: a `return`
     // writes the type of its operand here, the first one deciding, and is
     // not checked against returnType_, there being none yet.
@@ -1540,6 +1545,8 @@ private:
         int localSerial = 0;
         const Type *currentClass = nullptr;
         const Type *returnType = nullptr;
+        int sretSlot = 0;
+        std::string nrvoName;
         const Type **deducingReturn = nullptr;
         int unevaluated = 0;
         bool absoluteLookup = false;
@@ -2231,6 +2238,9 @@ private:
                            std::size_t pos = 0);
     void refuseUnrelatedClassCast(const Expr &v, const Type *to,
                                   std::size_t pos, const char *what);
+    // `return value;` built through the hidden pointer by the move or copy constructor; `*sret` is the answer.
+    ExprPtr buildReturned(ExprPtr value, std::size_t pos, bool *named);
+    bool pendingTemporaryAt(int slot) const;
     // **Copy-initialise a class into a slot somebody else owns**, as one
     // expression. `constructTemporary` and `materialiseCopy` each allocate a
     // slot of their own, and both arms of a `?:` have to build into one.

@@ -849,6 +849,7 @@ void Arm64Darwin::visit(const Call &n) {
     }
 
     if (sret) localIn("x8", n.resultSlot());
+    if (sret && n.resultIndirect()) out_ << "  ldr x8, [x8]\n";
 
     if (n.callee() != nullptr) {
 
@@ -863,6 +864,7 @@ void Arm64Darwin::visit(const Call &n) {
     }
     if (n.type()->isStructOrUnion()) {
         localIn("x9", n.resultSlot());
+        if (n.resultIndirect()) out_ << "  ldr x9, [x9]\n";
         AggPlan p = planFor(n.type());
         if (p.byRef) {
         } else if (p.hfa > 0) {

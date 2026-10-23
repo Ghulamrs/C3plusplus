@@ -1735,11 +1735,13 @@ void Tms6747::visit(const Call &n) {
     if (n.callee() != nullptr) pop("B1");
     if (inPlace != nullptr) { walkInPlace(*inPlace); return; }
     if (sret) localAddr(n.resultSlot(), shift != 0 ? "A4" : "A3", n.type()->size(target_), n.type()->align(target_));    // where the result goes
+    if (sret && n.resultIndirect()) out_ << (shift != 0 ? "\tLDW\t*A4, A4\n\tNOP\t4\n" : "\tLDW\t*A3, A3\n\tNOP\t4\n");
 
     call(n.callee() != nullptr ? "B1" : n.symbol());
     closeArea();
     if (pair) { localAddr(n.resultSlot(), "A3", n.type()->size(target_), n.type()->align(target_)); storePair(n.type()->size(target_), n.type()->align(target_)); }
     if (sret || pair) localAddr(n.resultSlot(), "A4", n.type()->size(target_), n.type()->align(target_));    // the value: its address
+    if (sret && n.resultIndirect()) out_ << "\tLDW\t*A4, A4\n\tNOP\t4\n";
 }
 
 // Where a stack-passed parameter (from firstStack_ on) sits relative to the

@@ -859,6 +859,8 @@ Parser::FunctionState Parser::captureFunctionState() const {
     s.thisOffset = thisOffset_;
     s.currentClass = currentClass_;
     s.returnType = returnType_;
+    s.sretSlot = sretSlot_;
+    s.nrvoName = nrvoName_;
     s.deducingReturn = deducingReturn_;
     s.unevaluated = unevaluated_;
     s.absoluteLookup = absoluteLookup_;
@@ -927,6 +929,8 @@ void Parser::restoreFunctionState(const FunctionState &s) {
     thisOffset_ = s.thisOffset;
     currentClass_ = s.currentClass;
     returnType_ = s.returnType;
+    sretSlot_ = s.sretSlot;
+    nrvoName_ = s.nrvoName;
     deducingReturn_ = s.deducingReturn;
     unevaluated_ = s.unevaluated;
     absoluteLookup_ = s.absoluteLookup;
@@ -996,6 +1000,8 @@ void Parser::clearFunctionState() {
     thisOffset_ = 0;
     currentClass_ = nullptr;
     returnType_ = nullptr;
+    sretSlot_ = 0;
+    nrvoName_.clear();
     deducingReturn_ = nullptr;
     lambdaCount_ = 0;
     unevaluated_ = 0;

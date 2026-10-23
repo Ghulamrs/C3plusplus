@@ -1049,7 +1049,7 @@ void Parser::emitDestructors(std::vector<StmtPtr> &into, std::size_t from,
     if (to > alive_.size()) to = alive_.size();
     for (std::size_t i = to; i > from; i--) {
         const Alive &a = alive_[i - 1];
-        if (except >= 0 && a.offset == except && !a.byAddress) continue;
+        if (except >= 0 && a.offset == except && (!a.byAddress || except == sretSlot_)) continue;
         destroyObject(into, a, pos);
     }
 }

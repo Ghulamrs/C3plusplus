@@ -289,6 +289,18 @@ StmtPtr Parser::declarationBody() {
             CtorInit ci = readConstructorInitialiser(d);
             if (!early) off = declare(d.name, d.type, d.pos, quals.alignAs);
             locals_[early ? mine : locals_.size() - 1].guardsJump = true;
+            // **The named return value is built in the caller's storage** - nrvoCandidate chose it - and from
+            // here reads as `*sret`, the way a by-value parameter that arrived by address reads.
+            const bool nrvo = !early && !nrvoName_.empty() && d.name == nrvoName_ && !ci.trivialCopy &&
+                              !quals.isConstexpr &&
+                              d.type->unqualified() == returnType_->unqualified();
+            if (nrvo) {
+                Local &l = locals_.back();
+                l.offset = sretSlot_;
+                l.type = types_.referenceTo(d.type);
+                l.byValueByAddress = true;
+                off = sretSlot_;
+            }
 
             // The backing array and the list object, before the constructor
             // that reads them - a list-init only.
@@ -304,9 +316,10 @@ StmtPtr Parser::declarationBody() {
                           destructorOf(d.type) != nullptr)
                        ? producingCall(ci.args[0].get()) : nullptr;
 
-            if (made != nullptr && made->type() == d.type &&
+            if (made != nullptr && made->type()->unqualified() == d.type->unqualified() &&
                 returnsIndirectly(d.type, made->hasThis())) {
                 claimCallResult(*made, off);
+                if (nrvo) made->setResultIndirect(true);
                 inits.push_back(StmtPtr(make_owned<ExprStmt>(std::move(ci.args[0]))));
             } else if (ci.trivialCopy) {
                 ExprPtr target(Var::local(d.name, off));
@@ -321,7 +334,7 @@ StmtPtr Parser::declarationBody() {
             if (quals.isConstexpr) foldLocalObject(d, off, inits, builtFrom);
             flushTemporaries(inits);
             if (destructorOf(d.type) != nullptr)
-                alive_.push_back(Alive{ d.name, off, d.type->unqualified() });
+                alive_.push_back(Alive{ d.name, off, d.type->unqualified(), nrvo });
             // **The comma belongs to the loop condition.**
             continue;
         }
@@ -2138,8 +2151,17 @@ StmtPtr Parser::statementBody() {
         if (!returnType_->isReference())
             if (ExprPtr made = userConversion(returnType_, returned, pos))
                 returned = std::move(made);
+        // **A class with a copy or move constructor of its own is built where the caller asked**, through the
+        // hidden pointer, and its source destroyed as any object: moving its bytes out of this frame broke one
+        // that points into itself - a returned std::map named its dead sentinel (M1, stage 1 on Windows).
+        const bool builtInPlace = !returnType_->isReference() && returnType_->isStructOrUnion() &&
+                                  sretSlot_ != 0 && returned->type() != nullptr &&
+                                  returnType_->unqualified()->nonTrivialCopy() &&
+                                  returned->type()->unqualified() == returnType_->unqualified();
+        bool namedReturn = false;
+        if (builtInPlace) returned = buildReturned(std::move(returned), pos, &namedReturn);
         bool ownedTemporary = false;
-        if (!returnType_->isReference() && returnType_->isStructOrUnion())
+        if (!returnType_->isReference() && returnType_->isStructOrUnion() && !builtInPlace)
             ownedTemporary = releaseTemporary(*returned);
         // A reference is bound before the full expression ends: the address is what is kept past its
         // temporaries' destruction - kept as a value it named a copy in this frame (M1, unordered_map's []).
@@ -2174,7 +2196,7 @@ StmtPtr Parser::statementBody() {
             // **[class.copy]/31 again: returning by value copy-initializes the caller's
             // object**, so its copy constructor is selected and checked though the copy
             // is elided below. An explicit one makes the function ill-formed alone.
-            if (returnType_->isStructOrUnion() && value->type() != nullptr &&
+            if (returnType_->isStructOrUnion() && value->type() != nullptr && !builtInPlace &&
                 value->type()->unqualified() == returnType_->unqualified()) {
                 // **Which constructor `return` selects is decided rvalue-first for an
                 // automatic object** - [class.copy]/32: resolution runs first as if the
@@ -2216,7 +2238,7 @@ StmtPtr Parser::statementBody() {
         // constructor**, and nothing did: the byte move let the destructor's elision
         // stand in. The copy is built into a slot of this frame, and that is elided.
         std::vector<StmtPtr> before;
-        if (returnType_->isStructOrUnion() && !elidable && !ownedTemporary &&
+        if (returnType_->isStructOrUnion() && !elidable && !ownedTemporary && !builtInPlace &&
             value->type() != nullptr &&
             value->type()->unqualified() == returnType_->unqualified() &&
             isGlvalue(*value) &&
@@ -2242,7 +2264,7 @@ StmtPtr Parser::statementBody() {
             elidable = true;
         }
 
-        int elided = -1;
+        int elided = namedReturn ? sretSlot_ : -1;
         if (returnType_->isStructOrUnion() &&
             destructorOf(returnType_) != nullptr && elidable)
             if (const Var *v = dynamic_cast<const Var *>(value.get()))

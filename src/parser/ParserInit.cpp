@@ -1319,6 +1319,14 @@ ExprPtr Parser::functionAddress(const std::string &symbol, const Type *fnType) {
 
 // The object as an expression: a global named by its symbol, or a frame slot.
 ExprPtr Parser::objectAt(const Declared &d, const std::string &symbol, int offset) {
+    // The slot the hidden return pointer is in names the caller's object, `*sret` - an NRVO local.
+    if (symbol.empty() && offset != 0 && offset == sretSlot_) {
+        ExprPtr held(Var::local(".sret", sretSlot_));
+        held->setType(types_.pointerTo(d.type->unqualified()));
+        ExprPtr obj(make_owned<Unary>('*', std::move(held)));
+        obj->setType(d.type);
+        return obj;
+    }
     Var *v = symbol.empty() ? Var::local(d.name, offset) : Var::global(d.name);
     if (!symbol.empty()) v->setSymbol(symbol);
     if (!symbol.empty() && tlsObject_) tlsVar(v, false, false);

@@ -9,6 +9,80 @@
 #include <climits>
 #include <cstring>
 
+namespace {
+
+// How often a body names the frame slot `slot`: a temporary built only by its constructor names it once.
+class SlotUses final : public Visitor {
+public:
+    int slot, count = 0;
+    explicit SlotUses(int s) : slot(s) {}
+    void visit(const Num &) override {}
+    void visit(const Var &n) override { if (n.isLocal() && n.offset() == slot) count++; }
+    void visit(const StrLit &) override {}
+    void visit(const Goto &) override {}
+    void visit(const Break &) override {}
+    void visit(const Continue &) override {}
+    void visit(const FuncletLeave &) override {}
+    void visit(const Call &n) override {
+        if (n.callee() != nullptr) n.callee()->accept(*this);
+        for (const ExprPtr &a : n.args()) a->accept(*this);
+        if (n.resultSlot() == slot) count++;
+    }
+    void visit(const VaStart &n) override { n.list().accept(*this); }
+    void visit(const VaArg &n) override { n.list().accept(*this); }
+    void visit(const Assign &n) override { n.target().accept(*this); n.value().accept(*this); }
+    void visit(const Unary &n) override { n.operand().accept(*this); }
+    void visit(const Binary &n) override { n.lhs().accept(*this); n.rhs().accept(*this); }
+    void visit(const Postfix &n) override { n.target().accept(*this); }
+    void visit(const Cast &n) override { n.value().accept(*this); }
+    void visit(const Comma &n) override { n.left().accept(*this); n.right().accept(*this); }
+    void visit(const Conditional &n) override {
+        n.cond().accept(*this); n.thenArm().accept(*this); n.elseArm().accept(*this);
+    }
+    void visit(const MemberAccess &n) override { n.object().accept(*this); }
+    void visit(const ExprStmt &n) override { n.expr().accept(*this); }
+    void visit(const Return &n) override { if (n.hasValue()) n.value().accept(*this); }
+    void visit(const Block &n) override { for (const StmtPtr &s : n.body()) s->accept(*this); }
+    void visit(const If &n) override {
+        n.cond().accept(*this); n.thenArm().accept(*this);
+        if (n.elseArm() != nullptr) n.elseArm()->accept(*this);
+    }
+    void visit(const While &n) override { n.cond().accept(*this); n.body().accept(*this); }
+    void visit(const DoWhile &n) override { n.body().accept(*this); n.cond().accept(*this); }
+    void visit(const For &n) override {
+        if (n.init() != nullptr) n.init()->accept(*this);
+        if (n.cond() != nullptr) n.cond()->accept(*this);
+        if (n.step() != nullptr) n.step()->accept(*this);
+        n.body().accept(*this);
+    }
+    void visit(const Switch &n) override { n.cond().accept(*this); n.body().accept(*this); }
+    void visit(const Case &n) override { n.body().accept(*this); }
+    void visit(const Label &n) override { n.body().accept(*this); }
+    void visit(const Try &n) override {
+        for (const StmtPtr &s : n.body()) s->accept(*this);
+        if (n.hasPad()) n.pad().accept(*this);
+        if (n.cleanup() != nullptr) n.cleanup()->accept(*this);
+        for (const MsHandler &h : n.handlers())
+            if (h.body != nullptr) h.body->accept(*this);
+    }
+};
+
+// The constructor call in `x` whose `this` is `&slot`, through the commas a guard or a zeroing adds.
+Call *constructorOfSlot(Expr *x, int slot) {
+    if (Comma *c = dynamic_cast<Comma *>(x)) {
+        if (Call *got = constructorOfSlot(&c->left(), slot)) return got;
+        return constructorOfSlot(&c->right(), slot);
+    }
+    Call *call = dynamic_cast<Call *>(x);
+    if (call == nullptr || call->args().empty()) return nullptr;
+    const Unary *at = dynamic_cast<const Unary *>(call->args()[0].get());
+    if (at == nullptr || at->op() != '&') return nullptr;
+    const Var *v = dynamic_cast<const Var *>(&at->operand());
+    return v != nullptr && v->isLocal() && v->offset() == slot ? call : nullptr;
+}
+
+}
+
 
 // `P(1)` - a temporary of class type. **The object goes in a slot of this frame
 // and the expression answers with its name**, the constructor sequenced in front;
@@ -746,6 +820,107 @@ ExprPtr Parser::buildInto(const Type *cls, int slot, ExprPtr value, int guard,
     }
     mark->setType(types_.intType());
     return mark;
+}
+
+// Whether a temporary of the full expression being read lives at `slot`.
+bool Parser::pendingTemporaryAt(int slot) const {
+    for (std::size_t i = 0; i < pendingTemps_.size(); i++)
+        if (pendingTemps_[i].slot == slot) return true;
+    return false;
+}
+
+// **`return value;` for a class with a copy or move constructor of its own**: the caller's object is
+// constructed through the hidden pointer from the value, a local or parameter as an rvalue first -
+// [class.copy]/32 - and the value is destroyed as any object, its address never having been handed out.
+ExprPtr Parser::buildReturned(ExprPtr value, std::size_t pos, bool *named) {
+    const Type *cls = returnType_->unqualified();
+    const Type *ptr = types_.pointerTo(cls);
+    // [class.copy]/31-32: the constructor is selected, rvalue first, and checked though the copy is elided.
+    {
+        const Signature *mc = moveConstructorOf(cls);
+        const Signature *sel = mc != nullptr ? mc : copyConstructorOf(cls);
+        if (sel != nullptr && sel->isExplicit)
+            src_.fail(pos, "'" + returnType_->describe() + "' has an 'explicit' " + (sel == mc ? "move" : "copy") +
+                           " constructor, so it cannot be returned by value - 'return' copy-initialises the "
+                           "caller's object, and that may not pick an explicit constructor even where the "
+                           "copy is elided");
+    }
+    // The named return value is in the caller's storage already, and is not destroyed here.
+    if (const Unary *u = dynamic_cast<const Unary *>(value.get()))
+        if (u->op() == '*')
+            if (const Var *v = dynamic_cast<const Var *>(&u->operand()))
+                if (v->isLocal() && v->offset() == sretSlot_) { *named = true; return value; }
+    {
+        Expr *named = value.get();
+        bool viaDeref = false;
+        if (Unary *u = dynamic_cast<Unary *>(named))
+            if (u->op() == '*') { named = const_cast<Expr *>(&u->operand()); viaDeref = true; }
+        if (const Var *v = dynamic_cast<const Var *>(named))
+            if (v->isLocal())
+                if (const Local *l = findLocal(v->name()))
+                    if (viaDeref ? (l->isParameter && l->byValueByAddress) : !l->type->isReference())
+                        value->setXvalue();
+    }
+    // **The object made only to be returned is made where it goes** - [class.copy]/31's elision, as clang takes it.
+    // `return f();` hands f this function's own hidden pointer; `return T(...);` points T's constructor at it.
+    if (Call *c = producingCall(value.get()))
+        if (c->resultSlot() != 0 && c->type()->unqualified() == cls && returnsIndirectly(cls, c->hasThis()) &&
+            pendingTemporaryAt(c->resultSlot())) {
+            claimCallResult(*c, sretSlot_);
+            c->setResultIndirect(true);
+            return value;
+        }
+    if (Unary *deref = dynamic_cast<Unary *>(value.get()))
+        if (deref->op() == '*')
+            if (Comma *both = dynamic_cast<Comma *>(deref->operandSlot().get())) {
+                const Unary *at = dynamic_cast<const Unary *>(&both->right());
+                const Var *tmp = at != nullptr && at->op() == '&' ? dynamic_cast<const Var *>(&at->operand()) : nullptr;
+                if (tmp != nullptr && tmp->isLocal() && pendingTemporaryAt(tmp->offset())) {
+                    const int slot = tmp->offset();
+                    SlotUses uses(slot);
+                    both->left().accept(uses);
+                    Call *ctor = constructorOfSlot(&both->left(), slot);
+                    if (uses.count == 1 && ctor != nullptr) {
+                        releaseTemporary(*value);
+                        ExprPtr held(Var::local(".sret", sretSlot_));
+                        held->setType(ptr);
+                        ctor->argsSlots()[0] = std::move(held);
+                        ExprPtr again(Var::local(".sret", sretSlot_));
+                        again->setType(ptr);
+                        both->rightSlot() = std::move(again);
+                        return value;
+                    }
+                }
+            }
+    const Signature *mv = moveConstructorOf(cls);
+    const Signature *use = !isLvalue(*value) && mv != nullptr ? mv : copyConstructorOf(cls);
+    if (use == nullptr || use->deleted)
+        src_.fail(pos, "'" + returnType_->describe() + "' cannot be returned by value from here - "
+                       "'return' copy-initialises the caller's object, and this one has no usable copy or "
+                       "move constructor for it");
+    if (use->isExplicit)
+        src_.fail(pos, "'" + returnType_->describe() + "' has an 'explicit' " +
+                       (use == mv ? "move" : "copy") + " constructor, so it cannot be returned by value - "
+                       "'return' copy-initialises the caller's object, and that may not pick an "
+                       "explicit constructor even where the copy is elided");
+    markUsed(use);
+    ExprPtr held(Var::local(".sret", sretSlot_));
+    held->setType(ptr);
+    std::vector<ExprPtr> args;
+    args.push_back(std::move(held));
+    args.push_back(std::move(value));
+    std::vector<const Type *> params;
+    params.push_back(ptr);
+    params.push_back(use->params[0]);
+    ExprPtr built = completeCall(cls->tag(), use->symbol, nullptr, types_.get(Kind::Void), params,
+                                 false, pos, std::move(args), true);
+    ExprPtr again(Var::local(".sret", sretSlot_));
+    again->setType(ptr);
+    ExprPtr both(make_owned<Comma>(std::move(built), std::move(again)));
+    both->setType(ptr);
+    ExprPtr at(make_owned<Unary>('*', std::move(both)));
+    at->setType(returnType_);
+    return at;
 }
 
 // **A temporary of `plain`, built by `ctor`, from arguments already parsed.**

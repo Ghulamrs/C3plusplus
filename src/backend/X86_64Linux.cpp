@@ -1247,7 +1247,7 @@ void X86_64Linux::visit(const Call &n) {
     if (n.callee() != nullptr) pop("%r11");
 
     if (sret)
-        a_->ins("lea", local(n.resultSlot()),
+        a_->ins(n.resultIndirect() ? "mov" : "lea", local(n.resultSlot()),
                 reg(abi_.intRegs[msThisFirst ? 1 : 0]));
 
     if (const Function *body = inlineTarget(n, stackSlots)) {
@@ -1283,7 +1283,7 @@ void X86_64Linux::visit(const Call &n) {
     }
 
     if (sret) {
-        a_->ins("lea", local(n.resultSlot()), reg("%rax"));
+        a_->ins(n.resultIndirect() ? "mov" : "lea", local(n.resultSlot()), reg("%rax"));
         return;
     }
 
