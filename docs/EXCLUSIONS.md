@@ -103,7 +103,7 @@ goes in the same commit.
 | `0b101`, a binary literal | C++14 | `src/Lexer.cpp:481` |
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:575` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2162` |
-| `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:254` |
+| `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:261` |
 | `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:5440`, `src/parser/ParserTopLevel.cpp:819` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:748` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:675` |
@@ -426,7 +426,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 
 - **naming a capture after a default one** — `[=]` and `[&]` on their own take
   everything the body reads, `this` included where the body names a member.
-  `src/parser/ParserExprLambda.cpp:221`
+  `src/parser/ParserExprLambda.cpp:228`
 
 ## `volatile`, which is read and dropped
 
