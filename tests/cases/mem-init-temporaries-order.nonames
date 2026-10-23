@@ -1,0 +1,2 @@
+x86_64-linux  clang emits only the D2 form of the implicit destructor of O on this target where cxx1 emits D1 beside it - the C2-only difference implicit-move.nonames records, for a destructor.
+arm64-darwin  cxx1 emits `__Unwind_Resume` for the cleanup of a member's temporaries where clang, proving the destructor cannot throw into it, emits none on Mach-O - the difference temporary-in-short-circuit.nonames records.

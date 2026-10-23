@@ -1116,6 +1116,9 @@ void Parser::topLevel(Program &program) {
     std::set<std::string> namedInInit;
     std::map<std::string, std::vector<ExprPtr> > baseArgs;
     std::map<std::string, std::vector<ExprPtr> > memberExprs;
+    // A member's own temporaries, kept apart until it is built: the list is read whole before the members are
+    // built in declaration order, and the first flush destroyed what later entries had not made yet (M1).
+    std::map<std::string, std::vector<Temporary> > memberTemps;
     std::map<std::string, std::size_t> where;
     // The members written `: m()`, and for one with a constructor the index of the one
     // to run; functions_.size() says there is none. Out here with the other two: the
@@ -1182,6 +1185,7 @@ void Parser::topLevel(Program &program) {
                 }
             }
             const int frameBeforeArgs = frameSize_;
+            const std::size_t tempsBeforeArgs = pendingTemps_.size();
             std::vector<ExprPtr> args;
             if (peek().is("{")) {
                 // [class.base.init]/1: `j{3}`, `v{1, 2}`, `Base{...}` - direct-list-initialisation (M1 L15).
@@ -1306,6 +1310,9 @@ void Parser::topLevel(Program &program) {
                 // answer any more.** A class-typed member takes as many as one of its
                 // constructors does, so the check moved down with the construction.
                 memberExprs[entry] = std::move(args);
+                memberTemps[entry].assign(pendingTemps_.begin() + static_cast<long>(tempsBeforeArgs),
+                                          pendingTemps_.end());
+                pendingTemps_.resize(tempsBeforeArgs);
                 namedInInit.insert(entry);
                 where[entry] = epos;
             } else {
@@ -1340,7 +1347,10 @@ void Parser::topLevel(Program &program) {
         // The statements the member before this one added, and which member that was.
         std::size_t doneFrom = memberInits.size();
         int doneMember = -1;
+        bool ownTempsPending = false;
         auto settle = [&]() {
+            if (ownTempsPending) flushTemporaries(memberInits);
+            ownTempsPending = false;
             memberDone.resize(memberInits.size(), -1);
             if (doneMember >= 0 && memberInits.size() > doneFrom) memberDone.back() = doneMember;
         };
@@ -1377,6 +1387,10 @@ void Parser::topLevel(Program &program) {
                 continue;
             }
             std::size_t epos = where[m->name];
+            // This member's temporaries are back, and destroyed once it is built - by `settle` below.
+            const std::vector<Temporary> &own = memberTemps[m->name];
+            pendingTemps_.insert(pendingTemps_.end(), own.begin(), own.end());
+            ownTempsPending = true;
 
             // **An empty pair belongs to value-initialisation, and only to it.**
             const bool valueInitialised = valueInit.count(m->name) != 0;
