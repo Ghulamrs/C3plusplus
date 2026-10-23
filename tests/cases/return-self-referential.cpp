@@ -30,6 +30,8 @@ S inTry(int k) {
     try { S t(k); return t; } catch (...) { return S(-1); }
 }
 S withOther(int k) { S other(k + 50); S r(k); return r; }
+// A const local binds no `S &&`: [class.copy]/32's rvalue try fails, and it is copied.
+S fromConst(int k) { const S c(k); S other(0); if (k != 0) return c; return other; }
 struct Maker { virtual S make(int k) const { return S(k); } virtual ~Maker() {} };
 std::map<std::string, int> table() { std::map<std::string, int> m; m["a"] = 1; m["b"] = 2; return m; }
 std::set<int> evens() { std::set<int> s; for (int i = 0; i < 10; i += 2) s.insert(i); return s; }
@@ -43,6 +45,7 @@ int main() {
     { S f = earlyOut(true); printf("| %d %d\n", f.v, check(f)); }
     { S g = inTry(9); printf("| %d %d\n", g.v, check(g)); }
     { S h = withOther(4); printf("| %d %d\n", h.v, check(h)); }
+    { S j = fromConst(12); printf("| %d %d\n", j.v, check(j)); }
     { Maker m; const Maker &r = m; S i = r.make(11); printf("| %d %d\n", i.v, check(i)); }
     std::map<std::string, int> t = table();
     int sum = 0;

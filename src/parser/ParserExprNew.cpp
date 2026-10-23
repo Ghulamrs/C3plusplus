@@ -892,8 +892,10 @@ ExprPtr Parser::buildReturned(ExprPtr value, std::size_t pos, bool *named) {
                     }
                 }
             }
+    // A const one binds no `T &&`, so [class.copy]/32's first try fails and the copy is taken.
     const Signature *mv = moveConstructorOf(cls);
-    const Signature *use = !isLvalue(*value) && mv != nullptr ? mv : copyConstructorOf(cls);
+    const bool movable = !isLvalue(*value) && !value->type()->isConst() && mv != nullptr;
+    const Signature *use = movable ? mv : copyConstructorOf(cls);
     if (use == nullptr || use->deleted)
         src_.fail(pos, "'" + returnType_->describe() + "' cannot be returned by value from here - "
                        "'return' copy-initialises the caller's object, and this one has no usable copy or "
