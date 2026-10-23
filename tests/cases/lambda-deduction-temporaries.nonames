@@ -1,0 +1,1 @@
+x86_64-windows  the closure: clang-msvc names it `<lambda_0>` and encodes its deduced return as `@` where cxx1 writes `$_0` and the type - lambda.nonames records it.

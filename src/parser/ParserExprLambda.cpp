@@ -25,6 +25,11 @@ const Type *Parser::deduceLambdaReturn(std::size_t paramsFrom,
 
     // **This is a nested parse of a different function and was saving three fields of it.**
     const FunctionState outer = captureFunctionState();
+    // Nor are the enclosing block's temporaries and guards its own: the reading is thrown away, frame and all,
+    // and what it made stayed for the block's pads to destroy, guarded by slots past the frame (M1).
+    std::vector<Temporary> enclosingTemps;
+    enclosingTemps.swap(statementTemps_);
+    const std::size_t enclosingGuards = guardSlots_.size();
     // **`this` is the exception**: a member is reached through it, and the body
     // may name one, so it is carried across the clear.
     const Local *hadThis = findLocal("this");
@@ -138,6 +143,8 @@ const Type *Parser::deduceLambdaReturn(std::size_t paramsFrom,
     leaveScope();                                       // parameters and body
     leaveScope();                                       // the captures
     restoreFunctionState(outer);
+    statementTemps_.swap(enclosingTemps);
+    guardSlots_.resize(enclosingGuards);
     return found;
 }
 
