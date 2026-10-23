@@ -31,6 +31,8 @@ rem  the script exits 1 once the GNU pass is done. CXX1_CASES_SPELLINGS=gnu (or 
 rem  runs one spelling alone.
 rem
 rem  CXX1_CASES_FLAGS, if set, goes on every compile of both passes - -O2, say.
+rem  CXX1_CASES_COMPILER, if set, is the compiler every case is built by, and the tree's is not built -
+rem  a self-hosted stage, say (self-host.cmd's stage 2).
 setlocal enabledelayedexpansion
 if "%~1"==":shard" goto :shard
 if "%~1"=="" (echo run-cases.cmd: needs the tree root & exit /b 2)
@@ -39,8 +41,10 @@ set SPELLINGS=%CXX1_CASES_SPELLINGS%
 if "%SPELLINGS%"=="" set SPELLINGS=gnu masm
 set STATUS=0
 
-call %ROOT%\msvc\build.cmd
-if errorlevel 1 exit /b 1
+if "%CXX1_CASES_COMPILER%"=="" (
+    call %ROOT%\msvc\build.cmd
+    if errorlevel 1 exit /b 1
+)
 
 if not exist %ROOT%\winout mkdir %ROOT%\winout
 del /q %ROOT%\winout\* 2>nul
@@ -127,13 +131,15 @@ if exist %ROOT%\tests\cases\%NAME%.flags set /p FLAGS=<%ROOT%\tests\cases\%NAME%
 rem  A case's second translation unit, <case>.part.cpp, goes into its program - as run.sh does.
 set PART=
 if exist %ROOT%\tests\cases\%NAME%.part.cpp set PART=%ROOT%\tests\cases\%NAME%.part.cpp
+set CXXEXE=%ROOT%\cxx3-msvc.exe
+if not "%CXX1_CASES_COMPILER%"=="" set CXXEXE=%CXX1_CASES_COMPILER%
 if "%~2"==".expected" (
-    %ROOT%\cxx3-msvc.exe %CXX1_PASS_FLAGS% %CXX1_CASES_FLAGS% %FLAGS% %ROOT%\tests\cases\%NAME%.cpp %PART% -o %OUT%\%NAME%.exe >%OUT%\%NAME%.build 2>&1
+    %CXXEXE% %CXX1_PASS_FLAGS% %CXX1_CASES_FLAGS% %FLAGS% %ROOT%\tests\cases\%NAME%.cpp %PART% -o %OUT%\%NAME%.exe >%OUT%\%NAME%.build 2>&1
     if errorlevel 1 (echo COMPILE-FAILED %CXX1_PASS_FLAGS% %NAME%& exit /b 0)
     %OUT%\%NAME%.exe > %OUT%\%NAME%.out 2>&1 < nul
     exit /b 0
 )
 rem  A refusal: only the compile is asked for, -S stopping before the assembler.
-%ROOT%\cxx3-msvc.exe %CXX1_PASS_FLAGS% %FLAGS% -S %ROOT%\tests\cases\%NAME%.cpp -o nul >%OUT%\%NAME%.err 2>&1
+%CXXEXE% %CXX1_PASS_FLAGS% %FLAGS% -S %ROOT%\tests\cases\%NAME%.cpp -o nul >%OUT%\%NAME%.err 2>&1
 if not errorlevel 1 echo COMPILED-AND-SHOULD-NOT-HAVE %CXX1_PASS_FLAGS% %NAME%
 exit /b 0
