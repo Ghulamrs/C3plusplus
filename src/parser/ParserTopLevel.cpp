@@ -269,12 +269,11 @@ void Parser::topLevel(Program &program) {
         quals.isConstexpr &&
         ((peek().is("(") && !atParenInitialiser()) || d.paramsAt != 0 || d.type->isFunction());
 
-    // **`inline` is a function specifier here.** It marks the definition
-    // mergeable across translation units - a weak/COMDAT symbol - which is the
-    // same treatment a template specialization already gets.
+    // **`inline` is a function specifier here**, marking the definition mergeable across units - weak or
+    // COMDAT, as a template specialization is; [dcl.constexpr]/2 makes a `constexpr` function inline too.
     const bool inlineFunction =
-        quals.isInline &&
-        (peek().is("(") || d.paramsAt != 0 || d.type->isFunction());
+        (quals.isInline && (peek().is("(") || d.paramsAt != 0 || d.type->isFunction())) ||
+        constexprFunction;
     if (quals.isInline && !inlineFunction)
         src_.fail(d.pos, "'inline' on a variable is a C++17 feature, and this "
                          "compiler is C++11 - 'inline' marks a function's "
