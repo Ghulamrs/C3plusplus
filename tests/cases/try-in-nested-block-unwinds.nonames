@@ -1,0 +1,2 @@
+x86_64-linux  the case includes <cstdio>, and clang for this target has no C++ headers on this machine and refuses the file; arm64-darwin is compared, and run.sh holds the behaviour.
+x86_64-windows  the same.

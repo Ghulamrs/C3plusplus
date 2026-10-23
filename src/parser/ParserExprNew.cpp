@@ -275,7 +275,17 @@ ExprPtr Parser::classTemporary(const Type *cls, std::size_t pos) {
 // as a comma chain in front of the list, the shape `Row({1, 2})` already used.
 ExprPtr Parser::initializerListExpr(const Type *ilType, Init &in, std::size_t pos) {
     std::vector<StmtPtr> setup;
+    const std::size_t aliveFrom = alive_.size();
     ExprPtr list = buildInitializerList(ilType, in, pos, setup, false);
+    // **The backing array is a temporary of this full expression**, [dcl.init.list]/6: destroyed at its end
+    // under a guard, not at the scope's, where a branch that never built it would destroy it too (M1).
+    for (std::size_t a = aliveFrom; a < alive_.size(); a++) {
+        Temporary t{ alive_[a].offset, alive_[a].cls, guardFlag() };
+        t.count = alive_[a].count;
+        pendingTemps_.push_back(t);
+        setup.push_back(StmtPtr(make_owned<ExprStmt>(setGuard(t.flag, 1))));
+    }
+    alive_.resize(aliveFrom);
     ExprPtr chain;
     for (std::size_t i = 0; i < setup.size(); i++) {
         ExprStmt *one = dynamic_cast<ExprStmt *>(setup[i].get());

@@ -27,6 +27,11 @@ extern "C" void Sleep(unsigned long milliseconds);
 extern "C" int SwitchToThread();
 #elif !defined(__TMS320C6X__)
 extern "C" int pthread_create(void **thread, const void *attributes, void *(*start)(void *), void *parameter);
+// The attributes are opaque: 64 bytes on macOS, 56 under glibc - a buffer of the larger serves both.
+struct __cxx1_pthread_attr { alignas(8) unsigned char bytes[64]; };
+extern "C" int pthread_attr_init(__cxx1_pthread_attr *attributes);
+extern "C" int pthread_attr_setstacksize(__cxx1_pthread_attr *attributes, decltype(sizeof 0) bytes);
+extern "C" int pthread_attr_destroy(__cxx1_pthread_attr *attributes);
 extern "C" int pthread_join(void *thread, void **result);
 extern "C" int pthread_detach(void *thread);
 extern "C" void *pthread_self();
@@ -95,7 +100,13 @@ public:
 #elif defined(__TMS320C6X__)
         __thread_run(b);
 #else
-        if (pthread_create(&h_, 0, __thread_start, b) != 0) { delete b; std::terminate(); }
+        // 8 MB, the main thread's and what Windows threads take from the image: macOS gives a new thread 512 KB.
+        __cxx1_pthread_attr attr;
+        pthread_attr_init(&attr);
+        pthread_attr_setstacksize(&attr, 8u << 20);
+        const int made = pthread_create(&h_, &attr, __thread_start, b);
+        pthread_attr_destroy(&attr);
+        if (made != 0) { delete b; std::terminate(); }
         id_ = id(reinterpret_cast<unsigned long long>(h_));
 #endif
     }

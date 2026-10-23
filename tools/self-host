@@ -1,0 +1,43 @@
+#!/bin/sh
+# **M1's stages 1 and 2 on Linux and macOS**, as tools/windows/self-host.cmd is on Windows. Stage 0 is
+# ./cxx3.exe, built by make with clang++ or g++; it compiles and links every source in src/ into
+# stage 1, and stage 1 does the same into stage 2. Each source's assembly from the two, for this host's
+# target and the clock pinned, must be the same byte for byte.
+#
+#   tools/self-host [out-dir] [flags for every compile, -O2 say]
+#
+# Writes <out>/cxx3-stage1 and cxx3-stage2, each source's assembly from each in <out>/s1 and <out>/s2,
+# and <out>/differ.txt naming the sources whose two are not the same.
+set -u
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+OUT=${1:-$ROOT/selfhost}
+FLAGS=${2:-}
+cd "$ROOT" || exit 2
+make cxx3.exe > /dev/null || { echo "self-host: stage 0 did not build"; exit 1; }
+rm -rf "$OUT"; mkdir -p "$OUT/s1" "$OUT/s2"
+SRCS=$(ls src/*.cpp src/parser/*.cpp src/backend/*.cpp src/optimizer/*.cpp)
+
+build() {   # $1 compiler, $2 output
+    "$1" -nologo $FLAGS -I src -DCXX1_INCLUDE_DIR="\"$ROOT/lib\"" -DCXX1_CXX_INCLUDE_DIR="\"$ROOT/include\"" \
+        $SRCS -o "$2"
+}
+build ./cxx3.exe "$OUT/cxx3-stage1" > "$OUT/stage1.log" 2>&1 && [ -x "$OUT/cxx3-stage1" ] ||
+    { echo "self-host: stage 0 did not build stage 1 - see $OUT/stage1.log"; exit 1; }
+echo "self-host: stage 1 built"
+build "$OUT/cxx3-stage1" "$OUT/cxx3-stage2" > "$OUT/stage2.log" 2>&1 && [ -x "$OUT/cxx3-stage2" ] ||
+    { echo "self-host: stage 1 did not build stage 2 - see $OUT/stage2.log"; exit 1; }
+echo "self-host: stage 2 built"
+
+# The fixed point, the clock pinned: Driver.cpp's -version names the build's __DATE__ and __TIME__.
+n=0; same=0; : > "$OUT/differ.txt"
+for f in $SRCS; do
+    b=$(basename "$f" .cpp); n=$((n + 1))
+    for s in 1 2; do
+        "$OUT/cxx3-stage$s" -nologo -S $FLAGS -I src -DCXX1_INCLUDE_DIR="\"$ROOT/lib\"" \
+            -DCXX1_CXX_INCLUDE_DIR="\"$ROOT/include\"" '-D__DATE__="Jan 01 2000"' '-D__TIME__="00:00:00"' \
+            "$f" -o "$OUT/s$s/$b.s" > /dev/null 2>&1
+    done
+    if cmp -s "$OUT/s1/$b.s" "$OUT/s2/$b.s" && [ -s "$OUT/s1/$b.s" ]; then same=$((same + 1)); else echo "$f" >> "$OUT/differ.txt"; fi
+done
+echo "self-host: $same of $n sources emit the same assembly from stage 1 and stage 2"
+[ "$same" -eq "$n" ]

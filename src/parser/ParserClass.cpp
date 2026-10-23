@@ -979,14 +979,9 @@ void Parser::releaseGuarded(std::vector<StmtPtr> &steps, const Temporary &t) {
                                    : deallocate(t.type, std::move(raw), 0);
         both.push_back(StmtPtr(new ExprStmt(std::move(give))));
     } else {
-        const Signature *dtor = destructorOf(t.type);
-        if (dtor == nullptr) return;
-        ExprPtr what(Var::local("$copy", t.slot));
-        what->setType(t.type);
-        ExprPtr at(new Unary('&', std::move(what)));
-        at->setType(types_.pointerTo(t.type));
-        both.push_back(StmtPtr(new ExprStmt(
-            destructorCall(std::move(at), *dtor, 0))));
+        ExprPtr gone = temporaryDestruction(t, 0);
+        if (gone == nullptr) return;
+        both.push_back(StmtPtr(make_owned<ExprStmt>(std::move(gone))));
     }
     both.push_back(StmtPtr(new ExprStmt(setGuard(t.flag, 0))));
     ExprPtr live(Var::local("$guard", t.flag));

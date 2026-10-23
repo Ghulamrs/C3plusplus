@@ -426,6 +426,11 @@ ExprPtr Parser::lambdaExpression() {
     closure->complete(members, size, widest);
     // **A closure is a class and gets the members a class gets.**
     declareImplicitSpecials(tag, closure, pos);
+    // And is passed as a class is, settled as a class settles it: by address where copying it is a call (M1 -
+    // `std::function` moved out of its own byte copy of the closure while the caller still owned it).
+    if (copyConstructorOf(closure) != nullptr || moveConstructorOf(closure) != nullptr)
+        closure->setNonTrivialCopy(true);
+    if (destructorOf(closure) != nullptr) closure->setHasDestructor(true);
 
     // `operator()`, declared as a const member of it.
     Declared d;
@@ -589,6 +594,30 @@ ExprPtr Parser::buildClosureObject(const MadeLambda &made, std::size_t pos) {
             continue;
         }
 
+        // **A class captured by copy is copy-constructed into its member**, [expr.prim.lambda]/21: a byte
+        // copy left a vector's buffer in two objects and both destroyed it (M1, stage 2's frame saves).
+        const Type *cls = made.types[i]->unqualified();
+        if (cls->isStructOrUnion())
+            if (const Signature *cc = copyConstructorOf(cls)) {
+                markUsed(cc);
+                const Type *ptr = types_.pointerTo(cls);
+                dst->setType(cls);
+                ExprPtr at(make_owned<Unary>('&', std::move(dst)));
+                at->setType(ptr);
+                std::vector<ExprPtr> args;
+                args.push_back(std::move(at));
+                args.push_back(std::move(src));
+                std::vector<const Type *> params;
+                params.push_back(ptr);
+                params.push_back(cc->params[0]);
+                ExprPtr built = completeCall(cls->tag(), cc->symbol, nullptr, types_.get(Kind::Void), params,
+                                             false, pos, std::move(args));
+                if (chain == nullptr) { chain = std::move(built); continue; }
+                ExprPtr both(make_owned<Comma>(std::move(chain), std::move(built)));
+                both->setType(types_.get(Kind::Void));
+                chain = std::move(both);
+                continue;
+            }
         dst->setType(made.types[i]);
         ExprPtr store(new Assign(std::move(dst), decay(std::move(src))));
         store->setType(made.types[i]);
@@ -596,6 +625,15 @@ ExprPtr Parser::buildClosureObject(const MadeLambda &made, std::size_t pos) {
         ExprPtr both(new Comma(std::move(chain), std::move(store)));
         both->setType(made.types[i]);
         chain = std::move(both);
+    }
+    // **The closure is a temporary, and one holding a class is destroyed** at the end of its full expression
+    // ([class.temporary]/3) - unless a declaration takes it whole, which claims it (M1).
+    if (destructorOf(made.type) != nullptr) {
+        const int guard = guardFlag();
+        pendingTemps_.push_back(Temporary{ off, made.type, guard });
+        ExprPtr mark(make_owned<Comma>(std::move(chain), setGuard(guard, 1)));
+        mark->setType(types_.intType());
+        chain = std::move(mark);
     }
     ExprPtr whole(Var::local(name, off));
     whole->setType(made.type);
@@ -606,6 +644,18 @@ ExprPtr Parser::buildClosureObject(const MadeLambda &made, std::size_t pos) {
     ExprPtr obj(new Unary('*', std::move(seq)));
     obj->setType(made.type);
     return obj;
+}
+
+int Parser::closureSlotOf(const Expr *e) {
+    if (const Var *v = dynamic_cast<const Var *>(e))
+        return v->isLocal() && v->name().compare(0, 4, ".lam") == 0 ? v->offset() : -1;
+    const Unary *u = dynamic_cast<const Unary *>(e);
+    if (u == nullptr || u->op() != '*') return -1;
+    const Comma *c = dynamic_cast<const Comma *>(&u->operand());
+    if (c == nullptr) return -1;
+    const Unary *a = dynamic_cast<const Unary *>(&c->right());
+    if (a == nullptr || a->op() != '&') return -1;
+    return closureSlotOf(&a->operand());
 }
 
 // The enclosing object's pointer, inside a closure that captured it: the

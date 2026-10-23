@@ -6,6 +6,7 @@
 #include "../Mangle.h"
 #include "../Source.h"
 
+#include <algorithm>
 #include <climits>
 #include <cstring>
 
@@ -316,7 +317,15 @@ StmtPtr Parser::declarationBody() {
                           destructorOf(d.type) != nullptr)
                        ? producingCall(ci.args[0].get()) : nullptr;
 
-            if (made != nullptr && made->type()->unqualified() == d.type->unqualified() &&
+            // A closure the declaration names is the object itself, built in its own slot: `auto f = [=]...`.
+            const int lam = ci.args.size() == 1 && !early && !nrvo ? closureSlotOf(ci.args[0].get()) : -1;
+            if (lam >= 0 && ci.args[0]->type()->unqualified() == d.type->unqualified()) {
+                for (std::size_t t = 0; t < pendingTemps_.size(); t++)
+                    if (pendingTemps_[t].slot == lam) { pendingTemps_.erase(pendingTemps_.begin() + static_cast<long>(t)); break; }
+                locals_.back().offset = lam;
+                off = lam;
+                inits.push_back(StmtPtr(make_owned<ExprStmt>(std::move(ci.args[0]))));
+            } else if (made != nullptr && made->type()->unqualified() == d.type->unqualified() &&
                 returnsIndirectly(d.type, made->hasThis())) {
                 claimCallResult(*made, off);
                 if (nrvo) made->setResultIndirect(true);
@@ -1028,8 +1037,12 @@ StmtPtr Parser::forStatement() {
         else { ExprPtr e = endFullExpression(expr()); expect(";"); init = StmtPtr(make_owned<ExprStmt>(std::move(e))); }
     }
 
+    // [stmt.for]/1 converts the condition contextually, as `while` does: `for (; getline(in, l);)` (M1).
     ExprPtr cond;
-    if (!peek().is(";")) cond = endFullExpression(decay(expr()));
+    if (!peek().is(";")) {
+        const std::size_t cpos = peek().pos;
+        cond = contextualScalar(endFullExpression(decay(expr())), cpos, "this condition");
+    }
     expect(";");
 
     ExprPtr step;
@@ -1374,6 +1387,8 @@ StmtPtr Parser::block(bool functionTry) {
         if (peek().kind == TokenKind::End)
             src_.fail(peek().pos, "unclosed '{'");
         const std::size_t aliveBefore = alive_.size();
+        blockOwesFrom_ = regionFrom;
+        blockStatementAt_ = at_;
         body.push_back(atDeclarationStart() ? declaration() : statement());
         // **A `try` is not covered by a cleanup region, it answers for
         // itself.**
@@ -1431,8 +1446,11 @@ StmtPtr Parser::statement() {
 // **`try` is a block, a landing pad, and no new statement machinery.**
 StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bodyFn, bool rethrows,
                              const std::string &spec) {
-    // What is alive when the `try` is reached.
+    // What is alive when the `try` is reached, and from where it is this `try`'s to destroy: the block it is a
+    // statement of splits its region around it, and every block outside that one still covers it.
     const std::size_t aliveOutside = alive_.size();
+    const std::size_t owesFrom = bodyFn ? bodyCleanupFrom_
+                                        : std::max(bodyCleanupFrom_, std::min(blockOwesFrom_, aliveOutside));
     // **The two ABIs disagree about who picks the handler**, so this reads one grammar
     // and builds two shapes: Itanium's if/else chain on a selector, and Microsoft's
     // handlers kept whole for the runtime to call.
@@ -1837,9 +1855,8 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
                             std::vector<ExprPtr>()))));
             // **And the objects outside the `try`, where this pad is the last
             // one in the frame.**
-            if (aliveOutside > bodyCleanupFrom_ && beyond.empty())
-                emitDestructors(padSteps, bodyCleanupFrom_, pos, -1,
-                                aliveOutside);
+            if (aliveOutside > owesFrom && beyond.empty())
+                emitDestructors(padSteps, owesFrom, pos, -1, aliveOutside);
             // **Handed to the enclosing `try`'s chain**, past the rows between:
             // what its body built before this `try` is destroyed here first.
             if (!beyond.empty() && beyond == wasChain && aliveOutside > wasAliveFrom)
@@ -1956,10 +1973,9 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
     // **A nested `try` hands over instead of resuming.**
     int outPtr = 0, outSel = 0;
     const std::string beyondTry = unwindTarget(&outPtr, &outSel);
-    const bool unwindsHere = aliveOutside > bodyCleanupFrom_ &&
-                             beyondTry.empty();
-    if (unwindsHere) emitDestructors(resume, bodyCleanupFrom_, pos,
-                                     -1, aliveOutside);
+    // Landed on whenever anything outside is alive - an enclosing region's objects are destroyed after the resume.
+    const bool unwindsHere = aliveOutside > bodyCleanupFrom_ && beyondTry.empty();
+    if (unwindsHere && aliveOutside > owesFrom) emitDestructors(resume, owesFrom, pos, -1, aliveOutside);
     // **Handing to the enclosing `try`'s chain skips the rows between**, so
     // what its body built before this `try` is destroyed here first.
     if (!beyondTry.empty() && beyondTry == wasChain && aliveOutside > wasAliveFrom)
@@ -2060,6 +2076,8 @@ StmtPtr Parser::statementBody() {
 
     if (peek().is("try")) {
         const std::size_t tpos = peek().pos;
+        // A `try` that is not a block's own statement - `if (c) try ...` - is covered by that block's region.
+        if (at_ != blockStatementAt_) blockOwesFrom_ = alive_.size();
         at_++;
         return tryStatement(tpos);
     }

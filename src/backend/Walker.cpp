@@ -257,8 +257,9 @@ void Walker::openRegion(const std::string &begin,
     open_.push_back(mine);
 }
 
-std::vector<Walker::CallSite> Walker::closeRegion(const std::string &end,
-                                                  const std::string &resume, bool handsOver) {
+std::vector<Walker::CallSite> Walker::closeRegion(const std::string &end, const std::string &resume,
+                                                  const std::set<std::string> &exits,
+                                                  const std::set<std::string> &defines) {
     OpenRegion mine = open_.back();
     open_.pop_back();
     CallSite last;
@@ -266,12 +267,16 @@ std::vector<Walker::CallSite> Walker::closeRegion(const std::string &end,
     last.end = end;
     last.at = mine.at;
     mine.closed.push_back(last);
-    const bool any = mine.innerHandsOver || handsOver;
+    // A pad jumped into ran by the jump, so its region hands over too; the regions outside it do not.
+    std::set<std::string> left = mine.innerExits;
+    left.insert(exits.begin(), exits.end());
+    const bool any = !left.empty();
+    for (const std::string &l : defines) left.erase(l);
     for (CallSite &piece : mine.closed) piece.handsOver = any;
     if (!open_.empty()) {
         open_.back().start = resume;
         open_.back().at = ++labelOrder_;
-        open_.back().innerHandsOver = open_.back().innerHandsOver || any;
+        open_.back().innerExits.insert(left.begin(), left.end());
     }
     return mine.closed;
 }
@@ -292,12 +297,12 @@ static void padJumps(const Stmt &s, std::set<std::string> &to, std::set<std::str
     }
 }
 
-static bool padHandsOver(const Stmt &pad) {
-    std::set<std::string> to, defined;
+static std::set<std::string> padExits(const Stmt &pad, std::set<std::string> &defined) {
+    std::set<std::string> to, out;
     padJumps(pad, to, defined);
     for (const std::string &l : to)
-        if (defined.count(l) == 0) return true;
-    return false;
+        if (defined.count(l) == 0) out.insert(l);
+    return out;
 }
 
 // The first Microsoft region's scratch word, wherever in the body it is.
@@ -355,7 +360,9 @@ void Walker::visit(const Try &n) {
     openRegion(begin, n.types(), n.typeIndices());
     for (std::size_t i = 0; i < n.body().size(); i++) n.body()[i]->accept(*this);
     defineLabel(end);
-    const std::vector<CallSite> pieces = closeRegion(end, end, n.hasPad() && padHandsOver(n.pad()));
+    std::set<std::string> defines, exits;
+    if (n.hasPad()) exits = padExits(n.pad(), defines);
+    const std::vector<CallSite> pieces = closeRegion(end, end, exits, defines);
     jump(done);
 
     defineLabel(pad);

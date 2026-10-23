@@ -136,11 +136,13 @@ public:
     // A word: whitespace skipped, then everything up to the next whitespace.
     // Read a character at a time rather than through `%s`, because `%s` cannot
     // be told how much room it has and this one grows the string instead.
+    // The string is emptied only once a word is found ([string.io]/1, after the sentry): at the end it is left as it was.
     istream &operator>>(string &s) {
-        s = string();
+        if (state_ != 0) return *this;
         int c = get();
         while (c >= 0 && std::isspace(c)) c = get();
         if (c < 0) { state_ = 2; return *this; }
+        s = string();
         while (c >= 0 && !std::isspace(c)) {
             s += (char)c;
             c = get();

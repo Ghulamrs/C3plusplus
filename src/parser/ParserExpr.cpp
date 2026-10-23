@@ -2333,11 +2333,11 @@ ExprPtr Parser::bindReference(const Type *ref, ExprPtr init, std::size_t pos,
                        "reference binds only to a value that has none, so "
                        "that taking it apart harms nobody");
 
-    // The direct binding: an addressable glvalue of exactly the type named,
-    // which the reference then *is*.
+    // The direct binding to a base subobject, [dcl.init.ref]/5: an lvalue for `B &`, and an xvalue for `B &&`
+    // too - `B::operator=(std::move(d))` moves out of d's own B, where a sliced copy shared its buffers (M1).
     if (isGlvalue(*init) && noAddressBecause == nullptr &&
         it->unqualified() != referent->unqualified() &&
-        accessibleBaseOffset(it, referent) > -1 && !ref->isRValueReference()) {
+        accessibleBaseOffset(it, referent) > -1) {
         if (it->isConst() && !referent->isConst())
             src_.fail(pos, what + " is '" + ref->describe() + "' and this is '" +
                            it->describe() + "' - a reference that can write "

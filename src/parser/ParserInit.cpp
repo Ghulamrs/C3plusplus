@@ -1364,6 +1364,9 @@ std::string Parser::atexitHelperName(const std::string &scoped) const {
 std::vector<StmtPtr> Parser::buildStaticConstruction(const Declared &d,
                                                      const std::string &symbol,
                                                      const std::string &helper) {
+    // A braced list's backing array lives to the end of this full expression, [dcl.init.list]/6 - so inside a
+    // static local's guard, not to every return of the function, built or not (M1: threadJumps' `tests` set).
+    const std::size_t aliveFrom = alive_.size();
     CtorInit ci = readConstructorInitialiser(d);
     if (ci.listInit && isInitializerListType(d.type))
         src_.fail(d.pos, "'" + d.name + "' is a 'std::initializer_list' with static storage made "
@@ -1381,6 +1384,10 @@ std::vector<StmtPtr> Parser::buildStaticConstruction(const Declared &d,
                                       ci.copyInit, ci.valueInit));
     }
     flushTemporaries(out);
+    if (alive_.size() > aliveFrom) {
+        emitDestructors(out, aliveFrom, d.pos);
+        alive_.resize(aliveFrom);
+    }
     registerDestruction(d, symbol, helper, out);
     return out;
 }

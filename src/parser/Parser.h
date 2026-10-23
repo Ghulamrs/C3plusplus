@@ -1509,10 +1509,11 @@ private:
         bool newStorage = false;
         bool newArray = false, newNothrow = false;
         int newCookie = 0;
-        // **The storage `__cxa_allocate_exception` handed back**, which is a
-        // temporary of the throw's own full expression and is released with
-        // `__cxa_free_exception` rather than destroyed.
+        // **The storage `__cxa_allocate_exception` handed back**, which is a temporary of the throw's own full
+        // expression and is released with `__cxa_free_exception` rather than destroyed - and **an array of `type`**,
+        // `count` long: a braced list's backing array made inside an expression.
         bool exceptionStorage = false;
+        long long count = 0;
         Temporary(int slot = 0, const Type *type = nullptr, int flag = 0)
             : slot(slot), type(type), flag(flag) {}
     };
@@ -1991,6 +1992,8 @@ private:
     // One closure object: a frame slot, and each capture copied into it.
     ExprPtr buildClosure(const MadeLambda &made, std::size_t pos);
     ExprPtr buildClosureObject(const MadeLambda &made, std::size_t pos);
+    // The slot a closure object is built in, where `e` is one as buildClosureObject made it; -1 otherwise.
+    static int closureSlotOf(const Expr *e);
     // A closure met while an enclosing lambda's body was read for its return type (A21),
     // by that reading's function and the `[`'s source position: the real reading, from a
     // copy of the tokens, takes it back, so the deduced return type and the object agree.
@@ -2196,6 +2199,11 @@ private:
     std::string tryChainLabel_;
     int tryChainPointerSlot_ = 0;
     int tryChainSelectorSlot_ = 0;
+    // **What a `try` owes on its way out**: a block splits its cleanup region around the `try`s that are its own
+    // statements, and only those - an enclosing block's region covers the rest. So the block reading a statement
+    // says where its own objects start, and at which token the statement began (M1).
+    std::size_t blockOwesFrom_ = 0;
+    std::size_t blockStatementAt_ = static_cast<std::size_t>(-1);
     // How much was alive when the `try` was entered. A segment's pad destroys
     // everything the *body* built, not only what its own block did: it jumps to
     // the chain instead of resuming, so no enclosing pad runs after it.
@@ -2296,6 +2304,8 @@ private:
     ExprPtr setGuard(int flag, int value);
     // **Taking over a call's result slot takes over its destruction too.**
     void claimCallResult(Call &c, int slot);
+    // A temporary's destruction as an expression - its destructor, or the class's array loop; null if none.
+    ExprPtr temporaryDestruction(const Temporary &t, std::size_t pos);
     ExprPtr endFullExpression(ExprPtr e);
     // Drop the temporary this expression yields from the pending list, because its ownership is leaving the frame.
     bool releaseTemporary(const Expr &value);

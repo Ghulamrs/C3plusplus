@@ -267,13 +267,9 @@ void Parser::flushTemporaries(std::vector<StmtPtr> &into) {
     std::vector<Temporary> mine;
     mine.swap(pendingTemps_);
     for (std::size_t k = mine.size(); k-- > 0; ) {
-        const Signature *dtor = destructorOf(mine[k].type);
-        if (dtor == nullptr) continue;
-        ExprPtr what(Var::local("$copy", mine[k].slot));
-        what->setType(mine[k].type);
-        ExprPtr at(new Unary('&', std::move(what)));
-        at->setType(types_.pointerTo(mine[k].type));
-        StmtPtr call(new ExprStmt(destructorCall(std::move(at), *dtor, 0)));
+        ExprPtr gone = temporaryDestruction(mine[k], 0);
+        if (gone == nullptr) continue;
+        StmtPtr call(make_owned<ExprStmt>(std::move(gone)));
         // **Under its guard, and cleared with it.**
         if (mine[k].flag != 0) {
             ExprPtr live(Var::local("$guard", mine[k].flag));
@@ -286,6 +282,21 @@ void Parser::flushTemporaries(std::vector<StmtPtr> &into) {
         }
         into.push_back(std::move(call));
     }
+}
+
+ExprPtr Parser::temporaryDestruction(const Temporary &t, std::size_t pos) {
+    const Signature *dtor = destructorOf(t.type);
+    if (dtor == nullptr) return nullptr;
+    ExprPtr what(Var::local("$copy", t.slot));
+    what->setType(t.type);
+    ExprPtr at(make_owned<Unary>('&', std::move(what)));
+    at->setType(types_.pointerTo(t.type));
+    if (t.count > 0) {
+        ExprPtr n(make_owned<Num>(t.count));
+        n->setType(types_.get(target_.sizeType()));
+        return callVectorLoop(vectorDestructor(t.type, pos), t.type, std::move(at), std::move(n), pos);
+    }
+    return destructorCall(std::move(at), *dtor, 0);
 }
 
 // **Take one temporary off the pending list**, because something else has
@@ -411,13 +422,8 @@ ExprPtr Parser::endFullExpression(ExprPtr e) {
         e = std::move(save);
     }
     for (std::size_t k = mine.size(); k-- > 0; ) {
-        const Signature *dtor = destructorOf(mine[k].type);
-        if (dtor == nullptr) continue;
-        ExprPtr what(Var::local("$copy", mine[k].slot));
-        what->setType(mine[k].type);
-        ExprPtr at(new Unary('&', std::move(what)));
-        at->setType(types_.pointerTo(mine[k].type));
-        ExprPtr gone = destructorCall(std::move(at), *dtor, 0);
+        ExprPtr gone = temporaryDestruction(mine[k], 0);
+        if (gone == nullptr) continue;
         // Clear the guard with the destruction, so that a pad later in the
         // same block does not destroy what this statement already has - and
         // ask it first, for the same reason `flushTemporaries` does.

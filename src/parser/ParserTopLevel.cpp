@@ -254,6 +254,8 @@ void Parser::topLevel(Program &program) {
     enterScope();
     frameSize_ = 0;
     freeSlots_.clear();
+    // The guards this frame makes start here, a constructor's mem-initialisers' among them (M1).
+    const std::size_t frameGuards = guardSlots_.size();
     Declared d = declarator(base);
     // A closure's `operator()` reads the enclosing function's const locals for their values,
     // [expr.prim.lambda]/12 - declared first, so that a parameter or a local of the body hides one (1.27).
@@ -1501,8 +1503,9 @@ void Parser::topLevel(Program &program) {
     inNoexceptFunction_ = declaredNoexcept;
     bodyCleanupFrom_ = paramsFrom;
     // A class can be defined inside a function and its members defined from
-    // there, so what this function allocates is what it added to the list.
-    const std::size_t guardsFrom = guardSlots_.size();
+    // there, so what this function allocates is what it added to the list - from its frame's start, so a guard
+    // a mem-initialiser made is cleared here and not left to the function this one was instantiated inside.
+    const std::size_t guardsFrom = frameGuards;
     StmtPtr body;
     // What every function does once its body is read - in a constructor's function try block, after its handlers.
     auto wrapUp = [&]() {

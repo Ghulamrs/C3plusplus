@@ -4,6 +4,7 @@
 #include "Dwarf.h"
 
 #include <cstddef>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -111,7 +112,9 @@ protected:
         // can put these on the end of its own action chain.
         std::vector<std::string> types;
         std::vector<int> indices;
-        bool innerHandsOver = false;
+        // The labels outside them that pads nested in this region jump to: a pad hands over up to the region
+        // whose own pad defines its target - the `try` that owns the `$chain` a body's cleanup goes to - not past.
+        std::set<std::string> innerExits;
     };
     // **Rows are used in the order they are registered and never sorted.**
     void callSite(const std::string &begin, const std::string &end,
@@ -138,8 +141,9 @@ protected:
     // Close it, hand back its segments, and reopen the enclosing one past
     // `resume` - which is the inner's end, so the enclosing still covers the
     // inner's landing pad and handler.
-    std::vector<CallSite> closeRegion(const std::string &end,
-                                      const std::string &resume, bool handsOver = false);
+    std::vector<CallSite> closeRegion(const std::string &end, const std::string &resume,
+                                      const std::set<std::string> &exits = std::set<std::string>(),
+                                      const std::set<std::string> &defines = std::set<std::string>());
     const std::vector<CallSite> &callSites() const { return callSites_; }
     void clearCallSites() { callSites_.clear(); open_.clear(); labelOrder_ = 0; }
 
