@@ -16,7 +16,8 @@ int main() {
     const int x = a(), y = b(), z = viaParam(s), q = viaDefault(s, 5);
     printf("%d %d %d %d %d\n", x, y, z, q, n);
     int m = 2;
-    auto outer = [&]() { auto inner = [&]() { m += c; return c * 10; }; return inner() + m; };
+    // inner() changes m: called in a statement of its own, the order of `+`'s operands being unspecified.
+    auto outer = [&]() { auto inner = [&]() { m += c; return c * 10; }; const int r = inner(); return r + m; };
     const int o = outer();
     printf("%d %d\n", o, m);
     return 0;

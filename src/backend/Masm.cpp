@@ -721,9 +721,10 @@ void MasmCodeGen::storeUnwindHelp(int slot) {
 // back to it gives the body exactly - and the code generator knows none of it.
 std::string MasmCodeGen::beginFunclet() {
     if (optimizer_) optimizer_->funcletBegin();
+    funcletOuter_.push_back(funcletSymbol_);
     atOutput([this] {
         masm_.raw("");                   // nothing pending inside the slice
-        funcletMark_ = out_.size();
+        funcletMarks_.push_back(out_.size());
     });
     funcletSymbol_ = masm_.mangledName() + funcletKind_ +
                      std::to_string(funcletIndex_++);
@@ -779,13 +780,13 @@ void MasmCodeGen::closeFunclet(const std::string &tail) {
     f += ".text$x ENDS\n";
 
     // A funclet carries unwind data of its own, naming the same handler and *the
-    // parent's* FuncInfo - the two share one description of the try. Its .pdata
-    // goes to a pile written after every function, for the sorting reason recorded.
-    masm_.trailer_ += "\n.pdata SEGMENT READONLY ALIGN(4) 'DATA'" + masm_.associative() + "\n";
+    // parent's* FuncInfo - the two share one description of the try. Its entry is in `.pdata$x`, as the GNU
+    // spelling's is: Microsoft's link does not sort .pdata, and `.text$x` lands after the CRT's code (M1).
+    masm_.trailer_ += "\n.pdata$x SEGMENT READONLY ALIGN(4) 'DATA'" + masm_.associative() + "\n";
     masm_.trailer_ += "$pdata$" + sym + " DD imagerel $LNbeg$" + sym + "\n";
     masm_.trailer_ += "  DD imagerel $LNend$" + sym + "\n";
     masm_.trailer_ += "  DD imagerel $unwind$" + sym + "\n";
-    masm_.trailer_ += ".pdata ENDS\n";
+    masm_.trailer_ += ".pdata$x ENDS\n";
     f += ".xdata SEGMENT READONLY ALIGN(8) 'DATA'" + masm_.associative() + "\n";
     f += "$unwind$" + sym + " DB 019H\n";
     f += "  DB $LNprolog$" + sym + "-$LNbeg$" + sym + "\n";
@@ -805,11 +806,15 @@ void MasmCodeGen::closeFunclet(const std::string &tail) {
     // with an optimizer in front is after the function it belongs to.
     atOutput([this, head, f] {
         masm_.raw("");
-        const std::string body = out_.substr(funcletMark_);
-        out_.resize(funcletMark_);
+        const std::size_t mark = funcletMarks_.back();
+        funcletMarks_.pop_back();
+        const std::string body = out_.substr(mark);
+        out_.resize(mark);
         funclets_ += head + body + f;
     });
     if (optimizer_) optimizer_->funcletEnd();
+    funcletSymbol_ = funcletOuter_.back();
+    funcletOuter_.pop_back();
 }
 
 void MasmCodeGen::emitExceptionTables(const Function &fn) {
@@ -895,7 +900,8 @@ void MasmCodeGen::emitExceptionTables(const Function &fn) {
                                                   : std::to_string(msIpRows()[k].state)) + "\n";
     }
     for (std::size_t k = 0; k < msFuncletRows().size(); k++) {
-        o += "  DD imagerel " + msFuncletRows()[k].label + "\n";
+        const MsIpRow &r = msFuncletRows()[k];
+        o += "  DD imagerel " + (r.funclet ? r.label : masm_.labelName(r.label)) + "\n";
         o += "  DD " + std::to_string(msFuncletRows()[k].state) + "\n";
     }
     o += ".xdata ENDS\n\n.CODE\n";

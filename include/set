@@ -74,6 +74,11 @@ public:
         tree_.eraseLink(at.link());
         return next;
     }
+    // A range: nodes stay where they are, so `last` is still where it was when the rest have gone.
+    iterator erase(iterator first, iterator last) {
+        while (first != last) first = erase(first);
+        return last;
+    }
 
 private:
     __tree<T, __set_key<T> > tree_;

@@ -26,6 +26,7 @@ using ::atol;
 using ::bsearch;
 using ::calloc;
 using ::exit;
+using ::atexit;
 using ::free;
 using ::labs;
 using ::getenv;

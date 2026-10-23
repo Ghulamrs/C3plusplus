@@ -1,0 +1,1 @@
+x86_64-linux  clang builds `throw E(k)` straight into the exception object, so a throwing constructor would leave storage to free and it names __cxa_free_exception; cxx1 builds the temporary first and copies it, a copy of a trivially copyable class that cannot throw - the elision C++11 permits either way. Every other name agrees, and the other two targets agree on all.

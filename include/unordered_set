@@ -1,0 +1,63 @@
+// <unordered_set> - [unord.set]: the same table as <unordered_map>, the element its own key. An element is
+// never modified in place, so both iterators read it const.
+#ifndef _CXX1_UNORDERED_SET
+#define _CXX1_UNORDERED_SET
+
+#include <cstddef>
+#include <functional>
+#include <initializer_list>
+#include <utility>
+#include <__hash>
+#include <__hash_table>
+
+namespace std {
+
+template <class K> struct __unordered_set_key {
+    static const K &get(const K &v) { return v; }
+};
+
+template <class K, class H = hash<K>, class E = equal_to<K> >
+class unordered_set {
+public:
+    typedef K key_type;
+    typedef K value_type;
+    typedef size_t size_type;
+    typedef __hash_table<K, K, __unordered_set_key<K>, H, E> table;
+    typedef typename table::const_iterator iterator;
+    typedef typename table::const_iterator const_iterator;
+
+    unordered_set() {}
+    explicit unordered_set(size_type buckets) { t_.rehash(buckets); }
+    template <class It> unordered_set(It first, It last) { insert(first, last); }
+    unordered_set(initializer_list<K> list) { insert(list.begin(), list.end()); }
+
+    size_type size() const { return t_.size(); }
+    bool empty() const { return t_.size() == 0; }
+    void clear() { t_.clear(); }
+    void swap(unordered_set &o) { t_.swap(o.t_); }
+    size_type bucket_count() const { return t_.bucketCount(); }
+    void rehash(size_type n) { t_.rehash(n); }
+    void reserve(size_type n) { t_.rehash(n); }
+
+    const_iterator begin() const { return t_.begin(); }
+    const_iterator end() const { return t_.end(); }
+    const_iterator find(const K &k) const { return t_.find(k); }
+    size_type count(const K &k) const { return t_.find(k) == t_.end() ? 0 : 1; }
+
+    pair<iterator, bool> insert(const K &k) {
+        const_iterator at = t_.find(k);
+        if (at != t_.end()) return pair<iterator, bool>(at, false);
+        return pair<iterator, bool>(const_iterator(t_.insertNew(k)), true);
+    }
+    template <class It> void insert(It first, It last) { for (; first != last; ++first) insert(*first); }
+
+    size_type erase(const K &k) { return t_.eraseKey(k); }
+    iterator erase(const_iterator at) { return t_.erase(at); }
+
+private:
+    table t_;
+};
+
+}  // namespace std
+
+#endif

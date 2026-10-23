@@ -40,6 +40,10 @@ public:
     ofstream() { fp_ = 0; which_ = 0; state_ = 1; buf_ = 0; base_ = 10; prec_ = 6; fmt_ = 0; width_ = 0; }
     ofstream(const char *path) { fp_ = 0; buf_ = 0; base_ = 10; prec_ = 6; fmt_ = 0; width_ = 0; open(path, ios::out); }
     ofstream(const char *path, int flags) { fp_ = 0; buf_ = 0; base_ = 10; prec_ = 6; fmt_ = 0; width_ = 0; open(path, flags); }
+    // [ofstream.cons]/4, C++11: the name as a string.
+    ofstream(const string &path, int flags = ios::out) {
+        fp_ = 0; buf_ = 0; base_ = 10; prec_ = 6; fmt_ = 0; width_ = 0; open(path.c_str(), flags);
+    }
     ~ofstream() { close(); }
 
     void open(const char *path) { open(path, ios::out); }
@@ -50,6 +54,7 @@ public:
         fp_ = std::fopen(path, _cxx1_mode(flags, false));
         state_ = fp_ != 0 ? 0 : 1;
     }
+    void open(const string &path, int flags = ios::out) { open(path.c_str(), flags); }
     bool is_open() const { return fp_ != 0; }
     void close() {
         if (fp_ != 0) std::fclose(fp_);
@@ -62,6 +67,8 @@ public:
     ifstream() { fp_ = 0; which_ = 0; state_ = 1; src_ = 0; pos_ = 0; }
     ifstream(const char *path) { fp_ = 0; src_ = 0; pos_ = 0; open(path, ios::in); }
     ifstream(const char *path, int flags) { fp_ = 0; src_ = 0; pos_ = 0; open(path, flags); }
+    // [ifstream.cons]/4, C++11: the name as a string.
+    ifstream(const string &path, int flags = ios::in) { fp_ = 0; src_ = 0; pos_ = 0; open(path.c_str(), flags); }
     ~ifstream() { close(); }
 
     void open(const char *path) { open(path, ios::in); }
@@ -73,6 +80,7 @@ public:
         fp_ = std::fopen(path, _cxx1_mode(flags, true));
         state_ = fp_ != 0 ? 0 : 1;
     }
+    void open(const string &path, int flags = ios::in) { open(path.c_str(), flags); }
     bool is_open() const { return fp_ != 0; }
     void close() {
         if (fp_ != 0) std::fclose(fp_);

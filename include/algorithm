@@ -315,6 +315,15 @@ It remove(It from, It to, const T &value) {
     return out;
 }
 
+// remove_if - the same, for every element the predicate does not accept.
+template <class It, class Pred>
+It remove_if(It from, It to, Pred keep) {
+    It out = from;
+    for (; from != to; ++from)
+        if (!keep(*from)) { *out = std::move(*from); ++out; }
+    return out;
+}
+
 // reverse, max_element, min_element and remove are std's too: until 1.10 the namespace and the
 // include guard closed above reverse, so these were global and defined again at each #include.
 }  // namespace std

@@ -659,6 +659,9 @@ Parser::Rank Parser::rankArgument(const Expr &arg, const Type *param) {
             const Type *ge = given->innermostElement();
             if (we->unqualified() == ge->unqualified()) {
                 if (!we->isConst() && ge->isConst()) return Rank::None;
+                // The category as any reference asks it: `&&` takes no lvalue, a string literal being one (M1).
+                const bool lvalue = markedLvalue(arg) || dynamic_cast<const StrLit *>(&arg) != nullptr;
+                if (param->isRValueReference() ? lvalue : (!lvalue && !we->isConst())) return Rank::None;
                 return we->isConst() && !ge->isConst() ? Rank::Qualification
                                                        : Rank::Identity;
             }
@@ -677,10 +680,13 @@ Parser::Rank Parser::rankArgument(const Expr &arg, const Type *param) {
         }
 
         if (want->unqualified() != given->unqualified()) {
-            // **A `const T &` takes a temporary, so it takes a conversion.**
-            // [over.ics.user] with [dcl.init.ref]: the converting constructor
-            // makes an object and the reference binds to it.
-            if (want->isConst() && rankingConversion_ == 0) {
+            // **A `const T &` takes a temporary, so a conversion** - [over.ics.user]: the converting constructor makes
+            // an object and the reference binds to it; an rvalue reference does too, [dcl.init.ref]/5 (M1,
+            // `v.push_back(nullptr)`) - not where the two are reference-related, /5.4.1.
+            const bool related = given->unqualified()->isStructOrUnion() && want->unqualified()->isStructOrUnion() &&
+                                 accessibleBaseOffset(given, want) > -1;
+            const bool takesTemporary = want->isConst() || (param->isRValueReference() && !related);
+            if (takesTemporary && rankingConversion_ == 0) {
                 rankingConversion_++;
                 // A class target is reached by its converting constructor or by
                 // the argument's conversion function, [over.ics.user]; the second
@@ -696,7 +702,7 @@ Parser::Rank Parser::rankArgument(const Expr &arg, const Type *param) {
                 if (usable) return userDefinedRank(given, want);
             }
             // **And a standard conversion makes that temporary too.**
-            if (want->isConst()) {
+            if (takesTemporary) {
                 const Rank direct = rankArgument(arg, want->unqualified());
                 if (direct != Rank::None) return direct;
             }
@@ -904,6 +910,14 @@ bool Parser::betterCandidate(const std::vector<Rank> &a,
         const Type *pa = rankedParameter(fa, i, ranksObjectA);
         const Type *pb = rankedParameter(fb, i, ranksObjectB);
         if (a[i] == b[i]) {
+            // [over.ics.rank]/3.3 then /3.2.3: one conversion making a temporary for both, `&&` binds it as an rvalue.
+            if (a[i] >= Rank::UserDefined && a[i] <= Rank::UserDefinedConversion && pa != nullptr && pb != nullptr &&
+                pa->isReference() && pb->isReference() && pa->isRValueReference() != pb->isRValueReference() &&
+                pa->referent()->unqualified() == pb->referent()->unqualified()) {
+                if (pa->isRValueReference()) better = true;
+                else worse = true;
+                continue;
+            }
             if (a[i] > Rank::Conversion) continue;
             const int closer =
                 closerTarget(pa, pb, i < rankingGiven_.size() ? rankingGiven_[i] : nullptr);

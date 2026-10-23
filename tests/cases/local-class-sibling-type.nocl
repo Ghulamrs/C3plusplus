@@ -1,0 +1,1 @@
+cl inlines E's three members and emits none of them, so the names are cxx1's alone - and those spell the enclosing function again inside the ?1? scope where cl would back-reference it, the difference local-class-sibling-type.nonames records against clang. Local names nothing outside the unit links against.

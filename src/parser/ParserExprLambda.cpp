@@ -469,10 +469,17 @@ ExprPtr Parser::lambdaExpression() {
     return buildClosure(record, pos);
 }
 
-// A slot for the closure, and each capture copied into it. Called on every reading
-// of the lambda and not only the first: 7.1 reads an `auto` initialiser twice and
-// the second takes the cached class, so the kept object would hold the stack.
+// A slot for the closure, and each capture copied into it - on every reading of the lambda, since 7.1 reads an
+// `auto` initialiser twice and the second takes the cached class, so the kept object would hold the stack.
+// [expr.prim.lambda]/2: a lambda-expression is a prvalue - its closure object a temporary, though it lives in a slot.
 ExprPtr Parser::buildClosure(const MadeLambda &made, std::size_t pos) {
+    ExprPtr e = buildClosureObject(made, pos);
+    e->setXvalue();      // the two marks a class temporary carries, for the same reason
+    e->setDeclCategory(Expr::Category::Prvalue);
+    return e;
+}
+
+ExprPtr Parser::buildClosureObject(const MadeLambda &made, std::size_t pos) {
     const std::string name = ".lam" + std::to_string(refTemps_++);
     const int off = declare(name, made.type, pos);
     if (made.names.empty()) {

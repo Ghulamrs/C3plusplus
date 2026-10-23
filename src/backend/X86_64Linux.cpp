@@ -2000,8 +2000,9 @@ void X86_64Linux::walkBody(const Function &fn) {
 // back to it gives the body exactly - and the code generator knows none of it.
 std::string X86_64Linux::beginFunclet() {
     if (optimizing()) optimizer_->funcletBegin();
+    funcletOuter_.push_back(std::make_pair(funcletSymbol_, inFunclet_));
     inFunclet_ = true;
-    atOutput([this] { funcletMark_ = out_.size(); });
+    atOutput([this] { funcletMarks_.push_back(out_.size()); });
     funcletSymbol_ = "$" + std::string(funcletKind_).substr(1) +
                      std::to_string(funcletIndex_++) + "$" + fnSymbol_;
     return funcletSymbol_;
@@ -2099,12 +2100,17 @@ void X86_64Linux::closeFunclet(const std::string &tail) {
     // **The body is lifted out of the output where it was written**, which
     // with an optimizer in front is after the function it belongs to.
     atOutput([this, head, f, pdata] {
-        const std::string body = out_.substr(funcletMark_);
-        out_.resize(funcletMark_);
+        const std::size_t mark = funcletMarks_.back();
+        funcletMarks_.pop_back();
+        const std::string body = out_.substr(mark);
+        out_.resize(mark);
         funclets_ += head + body + f;
         funcletPdata_ += pdata;
     });
     if (optimizing()) optimizer_->funcletEnd();
+    funcletSymbol_ = funcletOuter_.back().first;
+    inFunclet_ = funcletOuter_.back().second;
+    funcletOuter_.pop_back();
 }
 
 // **The FH3 tables for a frame that only cleans up.**

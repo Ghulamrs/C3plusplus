@@ -1134,9 +1134,6 @@ void Parser::topLevel(Program &program) {
     const bool ctorTry = memberOf != nullptr && peek().is("try") &&
                          (isCtor || d.name == "~" + localOf(d.qualifier));
     const std::size_t ctorTryAt = peek().pos;
-    if (ctorTry && target_.microsoftNames())
-        src_.fail(ctorTryAt, "a constructor's or destructor's function try block is not supported yet for "
-                             "x86_64-windows - its handlers end by rethrowing, and a rethrow is refused there");
     if (ctorTry && memberOf->hasVirtualBase())
         src_.fail(ctorTryAt, "a function try block on a constructor or destructor of a class with a virtual "
                              "base is not supported yet - the complete object's one deals with those, outside this one");

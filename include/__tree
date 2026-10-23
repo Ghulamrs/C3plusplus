@@ -13,6 +13,7 @@
 
 #include <cstddef>
 #include <iterator>
+#include <utility>
 
 namespace std {
 
@@ -28,6 +29,7 @@ template <class V>
 struct __tree_node : __tree_link {
     V value;
     explicit __tree_node(const V &v) : value(v) { height = 1; }
+    explicit __tree_node(V &&v) : value(std::move(v)) { height = 1; }
 };
 
 inline __tree_link *__tree_leftmost(__tree_link *n) { while (n->left != 0) n = n->left; return n; }
@@ -165,23 +167,17 @@ public:
 
     // Where the value is, and whether this call put it there.
     __tree_link *insertUnique(const V &v, bool *inserted) {
-        const key_type &k = KeyOf::get(v);
-        __tree_link *parent = &head_;
-        __tree_link *n = head_.left;
-        bool goLeft = true;
-        while (n != 0) {
-            parent = n;
-            if (k < KeyOf::get(nodeValue(n))) { goLeft = true; n = n->left; }
-            else if (KeyOf::get(nodeValue(n)) < k) { goLeft = false; n = n->right; }
-            else { *inserted = false; return n; }
-        }
-        __tree_link *made = new __tree_node<V>(v);
-        made->parent = parent;
-        if (goLeft) parent->left = made; else parent->right = made;
-        size_++;
-        rebalance(parent);
-        *inserted = true;
-        return made;
+        __tree_link *parent;
+        bool goLeft;
+        if (__tree_link *had = place(KeyOf::get(v), &parent, &goLeft)) { *inserted = false; return had; }
+        return link(new __tree_node<V>(v), parent, goLeft, inserted);
+    }
+    // Moved in: a map's `operator[]` element, whose mapped type may only move ([map.access]/1).
+    __tree_link *insertUnique(V &&v, bool *inserted) {
+        __tree_link *parent;
+        bool goLeft;
+        if (__tree_link *had = place(KeyOf::get(v), &parent, &goLeft)) { *inserted = false; return had; }
+        return link(new __tree_node<V>(std::move(v)), parent, goLeft, inserted);
     }
 
     // Unlinks the node; its successor, if it had two children, is relinked into its place.
@@ -275,6 +271,28 @@ private:
     void insertAll(const __tree &o) {
         bool made;
         for (const_iterator i = o.begin(); i != o.end(); ++i) insertUnique(*i, &made);
+    }
+
+    // The node with this key, or none and where one would go.
+    __tree_link *place(const key_type &k, __tree_link **parent, bool *goLeft) {
+        *parent = &head_;
+        *goLeft = true;
+        __tree_link *n = head_.left;
+        while (n != 0) {
+            *parent = n;
+            if (k < KeyOf::get(nodeValue(n))) { *goLeft = true; n = n->left; }
+            else if (KeyOf::get(nodeValue(n)) < k) { *goLeft = false; n = n->right; }
+            else return n;
+        }
+        return 0;
+    }
+    __tree_link *link(__tree_link *made, __tree_link *parent, bool goLeft, bool *inserted) {
+        made->parent = parent;
+        if (goLeft) parent->left = made; else parent->right = made;
+        size_++;
+        rebalance(parent);
+        *inserted = true;
+        return made;
     }
 
     __tree_link head_;

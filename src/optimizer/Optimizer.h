@@ -94,11 +94,11 @@ private:
     Spelling &under_;
     // The level, as the costs its passes ask.
     std::unique_ptr<const opt::Costs> costs_;
-    // **The function being held**, and what the walker has said of it so far;
-    // the funclet being held, if one is; and the funclets done, each improved,
-    // waiting to be written after the function.
+    // **The function being held**, and what the walker has said of it so far; the funclets being held, a stack
+    // since a cleanup funclet may open inside a handler's (M1), the innermost taking the code; and the funclets
+    // done, each improved, waiting to be written after the function.
+    std::vector<std::unique_ptr<opt::Function> > funclet_;
     opt::Function fn_;
-    std::unique_ptr<opt::Function> funclet_;
     std::vector<opt::Stream> funclets_;
     int frameSize_ = 0;
     // The pipeline, built once per spelling, and the manager that runs it.
@@ -114,7 +114,7 @@ private:
     opt::RegSet args_ = 0;
 
     // Where an entry goes: the funclet being held, or the function.
-    opt::Function &current() { return funclet_ ? *funclet_ : fn_; }
+    opt::Function &current() { return funclet_.empty() ? fn_ : *funclet_.back(); }
     void hold(opt::Entry e);
     void instruction(const std::string &m, int operands, const Op *a, const Op *b);
     // A call that is not an instruction: held in its place inside a function,

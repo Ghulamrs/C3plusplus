@@ -1,0 +1,113 @@
+// <unordered_map> - [unord.map]: a hash table with a singly linked chain per bucket. A node stays where it is
+// made, so an insertion invalidates no reference and an erasure only the erased element's, as
+// [unord.req]/14 asks; a rehash moves no node either, only relinks it, and it happens where the size passes
+// the bucket count (max_load_factor 1). An iterator walks the buckets in order, so the order of a walk is
+// the table's - the standard's unspecified order, which a program must not print.
+//
+// **Not here**: local iterators and the bucket interface past bucket_count, hint arguments that are used,
+// and max_load_factor other than 1. unordered_set is in <unordered_set>, over the same table.
+#ifndef _CXX1_UNORDERED_MAP
+#define _CXX1_UNORDERED_MAP
+
+#include <cstddef>
+#include <functional>
+#include <initializer_list>
+#include <stdexcept>
+#include <utility>
+#include <__hash>
+#include <__hash_table>
+
+namespace std {
+
+template <class K, class V>
+struct __unordered_map_key {
+    static const K &get(const pair<const K, V> &v) { return v.first; }
+};
+
+template <class K, class V, class H = hash<K>, class E = equal_to<K> >
+class unordered_map {
+public:
+    typedef K key_type;
+    typedef V mapped_type;
+    typedef pair<const K, V> value_type;
+    typedef size_t size_type;
+    typedef H hasher;
+    typedef E key_equal;
+    typedef __hash_table<value_type, K, __unordered_map_key<K, V>, H, E> table;
+    typedef typename table::iterator iterator;
+    typedef typename table::const_iterator const_iterator;
+
+    unordered_map() {}
+    explicit unordered_map(size_type buckets) { t_.rehash(buckets); }
+    template <class It> unordered_map(It first, It last) { insert(first, last); }
+    unordered_map(initializer_list<value_type> list) { insert(list.begin(), list.end()); }
+
+    size_type size() const { return t_.size(); }
+    bool empty() const { return t_.size() == 0; }
+    void clear() { t_.clear(); }
+    void swap(unordered_map &o) { t_.swap(o.t_); }
+    size_type bucket_count() const { return t_.bucketCount(); }
+    float load_factor() const { return t_.bucketCount() ? float(t_.size()) / float(t_.bucketCount()) : 0.0f; }
+    float max_load_factor() const { return 1.0f; }
+    void rehash(size_type n) { t_.rehash(n); }
+    void reserve(size_type n) { t_.rehash(n); }
+
+    iterator begin() { return t_.begin(); }
+    iterator end() { return t_.end(); }
+    const_iterator begin() const { return t_.begin(); }
+    const_iterator end() const { return t_.end(); }
+    const_iterator cbegin() const { return t_.begin(); }
+    const_iterator cend() const { return t_.end(); }
+
+    iterator find(const K &k) { return t_.find(k); }
+    const_iterator find(const K &k) const { return t_.find(k); }
+    size_type count(const K &k) const { return t_.find(k) == t_.end() ? 0 : 1; }
+
+    V &operator[](const K &k) {
+        iterator at = t_.find(k);
+        if (at != t_.end()) return at->second;
+        return t_.insertNew(value_type(k, V()))->second;
+    }
+    V &at(const K &k) {
+        iterator at = t_.find(k);
+        if (at == t_.end()) throw out_of_range("unordered_map::at");
+        return at->second;
+    }
+    const V &at(const K &k) const {
+        const_iterator at = t_.find(k);
+        if (at == t_.end()) throw out_of_range("unordered_map::at");
+        return at->second;
+    }
+
+    pair<iterator, bool> insert(const value_type &v) {
+        iterator at = t_.find(v.first);
+        if (at != t_.end()) return pair<iterator, bool>(at, false);
+        return pair<iterator, bool>(t_.insertNew(v), true);
+    }
+    pair<iterator, bool> insert(const pair<K, V> &v) { return insert(value_type(v.first, v.second)); }
+    template <class It> void insert(It first, It last) { for (; first != last; ++first) insert(*first); }
+    pair<iterator, bool> emplace(const K &k, const V &v) { return insert(value_type(k, v)); }
+
+    size_type erase(const K &k) { return t_.eraseKey(k); }
+    iterator erase(const_iterator at) { return t_.erase(at); }
+    iterator erase(iterator at) { return t_.erase(const_iterator(at)); }
+
+private:
+    table t_;
+};
+
+template <class K, class V, class H, class E>
+bool operator==(const unordered_map<K, V, H, E> &a, const unordered_map<K, V, H, E> &b) {
+    if (a.size() != b.size()) return false;
+    for (typename unordered_map<K, V, H, E>::const_iterator i = a.begin(); i != a.end(); ++i) {
+        typename unordered_map<K, V, H, E>::const_iterator j = b.find(i->first);
+        if (j == b.end() || !(j->second == i->second)) return false;
+    }
+    return true;
+}
+template <class K, class V, class H, class E>
+bool operator!=(const unordered_map<K, V, H, E> &a, const unordered_map<K, V, H, E> &b) { return !(a == b); }
+
+}  // namespace std
+
+#endif

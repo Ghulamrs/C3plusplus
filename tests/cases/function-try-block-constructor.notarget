@@ -1,1 +1,0 @@
-x86_64-windows  a constructor's or destructor's function try block is refused by name for this target: its handlers end by rethrowing, and a rethrow - `_CxxThrowException` with two null pointers from inside a funclet - is refused there (rethrow.notarget).

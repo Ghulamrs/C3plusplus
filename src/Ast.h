@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 class Num;
@@ -109,6 +110,10 @@ private:
 
 using ExprPtr = std::unique_ptr<Expr>;
 using StmtPtr = std::unique_ptr<Stmt>;
+
+// R6.4: the one helper an owned node is made by, and so the one `new` the memory rule (R6) leaves standing.
+template <class T, class... A>
+std::unique_ptr<T> make_owned(A &&...args) { return std::unique_ptr<T>(new T(std::forward<A>(args)...)); }
 
 enum class BinOp { Add, Sub, Mul, Div, Mod, Shl, Shr,
                    BitAnd, BitOr, BitXor,

@@ -1,0 +1,60 @@
+// <ratio> - [ratio]: a compile-time fraction, reduced to lowest terms with its sign on the numerator, and
+// the four operations <chrono> needs to convert one duration's period to another's. A ratio is a type, and
+// num and den are its constants; nothing here is ever an object.
+#ifndef _CXX1_RATIO
+#define _CXX1_RATIO
+
+#include <cstdint>
+#include <type_traits>
+
+namespace std {
+
+template <intmax_t A, intmax_t B> struct __gcd { static const intmax_t value = __gcd<B, A % B>::value; };
+template <intmax_t A> struct __gcd<A, 0> { static const intmax_t value = A < 0 ? -A : A; };
+template <intmax_t B> struct __gcd<0, B> { static const intmax_t value = B < 0 ? -B : B; };
+template <> struct __gcd<0, 0> { static const intmax_t value = 1; };
+
+template <intmax_t N, intmax_t D = 1> struct ratio {
+    static_assert(D != 0, "a ratio's denominator is not zero");
+    static const intmax_t num = (D < 0 ? -N : N) / __gcd<N, D>::value;
+    static const intmax_t den = (D < 0 ? -D : D) / __gcd<N, D>::value;
+    typedef ratio<num, den> type;
+};
+
+template <class R1, class R2> struct ratio_multiply {
+    typedef typename ratio<R1::num * R2::num, R1::den * R2::den>::type type;
+};
+template <class R1, class R2> struct ratio_divide {
+    typedef typename ratio<R1::num * R2::den, R1::den * R2::num>::type type;
+};
+template <class R1, class R2> struct ratio_add {
+    typedef typename ratio<R1::num * R2::den + R2::num * R1::den, R1::den * R2::den>::type type;
+};
+template <class R1, class R2> struct ratio_subtract {
+    typedef typename ratio<R1::num * R2::den - R2::num * R1::den, R1::den * R2::den>::type type;
+};
+template <class R1, class R2> struct ratio_equal
+    : integral_constant<bool, R1::num == R2::num && R1::den == R2::den> {};
+template <class R1, class R2> struct ratio_less
+    : integral_constant<bool, R1::num * R2::den < R2::num * R1::den> {};
+
+typedef ratio<1, 1000000000000000000> atto;
+typedef ratio<1, 1000000000000000> femto;
+typedef ratio<1, 1000000000000> pico;
+typedef ratio<1, 1000000000> nano;
+typedef ratio<1, 1000000> micro;
+typedef ratio<1, 1000> milli;
+typedef ratio<1, 100> centi;
+typedef ratio<1, 10> deci;
+typedef ratio<10, 1> deca;
+typedef ratio<100, 1> hecto;
+typedef ratio<1000, 1> kilo;
+typedef ratio<1000000, 1> mega;
+typedef ratio<1000000000, 1> giga;
+typedef ratio<1000000000000, 1> tera;
+typedef ratio<1000000000000000, 1> peta;
+typedef ratio<1000000000000000000, 1> exa;
+
+}  // namespace std
+
+#endif

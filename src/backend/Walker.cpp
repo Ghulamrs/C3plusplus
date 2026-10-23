@@ -109,7 +109,7 @@ void Walker::visit(const Block &n) {
     if (msCurState_ != msStateAtEntry) {
         const std::string l = label("stateend", nextLabel());
         defineStateLabel(l);
-        msIpRows_.push_back(MsIpRow{ l, msStateAtEntry });
+        msRows().push_back(MsIpRow{ l, msStateAtEntry, false });
         msCurState_ = msStateAtEntry;
     }
     closeBlock(n.scope());
@@ -399,7 +399,8 @@ void Walker::msTryStatement(const Try &n) {
     const std::string resume = label("caught", id);
     // The FuncInfo names one scratch word per frame: the first region's, for all of them.
     if (msUnwindHelpSlot_ == 0) msUnwindHelpSlot_ = n.unwindHelpSlot();
-    storeUnwindHelp(msUnwindHelpSlot_);
+    // Not inside a handler: a funclet runs with the frame's state already the runtime's (cl writes none there).
+    if (msRowsInto_ == nullptr) storeUnwindHelp(msUnwindHelpSlot_);
 
     // This region's state, inside whatever encloses it; the body's own states
     // follow it in number, which is what tryLow..tryHigh relies on.
@@ -409,7 +410,7 @@ void Walker::msTryStatement(const Try &n) {
     s.toState = parent;
     msStates_.push_back(s);
     defineStateLabel(begin);
-    msIpRows_.push_back(MsIpRow{ begin, state });
+    msRows().push_back(MsIpRow{ begin, state, false });
     msCurState_ = state;
     for (std::size_t i = 0; i < n.body().size(); i++) n.body()[i]->accept(*this);
     defineStateLabel(end);
@@ -429,7 +430,7 @@ void Walker::msTryStatement(const Try &n) {
         return;
     }
     msCurState_ = parent;
-    msIpRows_.push_back(MsIpRow{ end, parent });
+    msRows().push_back(MsIpRow{ end, parent, false });
 
     // The funclets come after the range they belong to is closed, so nothing
     // they emit lands between `begin` and `end` - those bound the addresses the
@@ -452,10 +453,15 @@ void Walker::msTryStatement(const Try &n) {
         row.constPointer = h.constPointer;
         row.funclet = beginFunclet();
         msCurState_ = hstate;
+        std::vector<MsIpRow> inside;
+        std::vector<MsIpRow> *const wasInto = msRowsInto_;
+        msRowsInto_ = &inside;
         h.body->accept(*this);
+        msRowsInto_ = wasInto;
         msCurState_ = parent;
         endFunclet(resume);
-        msFuncletRows_.push_back(MsIpRow{ row.funclet, hstate });
+        msFuncletRows_.push_back(MsIpRow{ row.funclet, hstate, true });
+        msFuncletRows_.insert(msFuncletRows_.end(), inside.begin(), inside.end());
         tb.handlers.push_back(row);
     }
     tb.catchHigh = static_cast<int>(msStates_.size()) - 1;

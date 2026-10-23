@@ -23,7 +23,7 @@
 // no C++ runtime library to take one from.
 //
 // `terminate`, `set_terminate`, `get_terminate` and `uncaught_exception` are declared off
-// Windows, defined by libc++abi, libstdc++ or RTS6x; MSVC's CRT spells them its own way.
+// Windows, defined by libc++abi, libstdc++ or RTS6x; on Windows the UCRT's C-linkage terminate and set_terminate.
 // So are `set_unexpected` and `unexpected`, which a `throw(T...)` list reaches through
 // `__cxa_call_unexpected`, and `bad_exception` on the hosts, whose runtimes own its class.
 // What is NOT here is the rest of [exception]: `exception_ptr`, `current_exception`, `nested_exception`.
@@ -42,6 +42,9 @@ struct __std_exception_data {
 };
 extern "C" void __std_exception_copy(const __std_exception_data *, __std_exception_data *);
 extern "C" void __std_exception_destroy(__std_exception_data *);
+// The UCRT's own, with C linkage - cl calls `terminate` and `set_terminate` by those names (measured, M1).
+extern "C" void terminate();
+extern "C" void (*set_terminate(void (*)()))();
 #endif
 
 namespace std {
@@ -81,7 +84,11 @@ public:
 };
 #endif
 
-#if !defined(_WIN32)
+#if defined(_WIN32)
+typedef void (*terminate_handler)();
+using ::terminate;
+using ::set_terminate;
+#else
 typedef void (*terminate_handler)();
 terminate_handler set_terminate(terminate_handler) throw();
 terminate_handler get_terminate() throw();

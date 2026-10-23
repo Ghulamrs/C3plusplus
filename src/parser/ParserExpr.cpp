@@ -1130,16 +1130,18 @@ ExprPtr Parser::primary(Program *program) {
 
     // A template named in an expression.
     if (peek().kind == TokenKind::Ident && isTemplateName(peek().text)) {
-        // **Class scope before namespace scope** - [basic.lookup.unqual]/8,
-        // the rule R1 fixed for a name and this is the same rule for a *call*.
+        // **Class scope before namespace scope** - [basic.lookup.unqual]/8, R1's rule for a name, here for a *call*.
         // A data member hides one too - `vector[0]` in a class with a member `vector` - unless a `<` follows.
-        const bool memberFirst =
-            currentClass_ != nullptr &&
-            ((peekAt(1).is("(") &&
-              (findMemberOwner(currentClass_, peek().text) != nullptr ||
-               memberTemplateOwner(currentClass_, peek().text) != nullptr)) ||
-             (!peekAt(1).is("<") && (currentClass_->findMember(peek().text) != nullptr ||
-                                     currentClass_->findStaticMember(peek().text) != nullptr)));
+        // In a lambda the class is the one the lambda was written in, [expr.prim.lambda]/7 (M1, `decay(...)`).
+        auto memberOf = [&](const Type *cls) {
+            return cls != nullptr &&
+                   ((peekAt(1).is("(") &&
+                     (findMemberOwner(cls, peek().text) != nullptr ||
+                      memberTemplateOwner(cls, peek().text) != nullptr)) ||
+                    (!peekAt(1).is("<") && (cls->findMember(peek().text) != nullptr ||
+                                            cls->findStaticMember(peek().text) != nullptr)));
+        };
+        const bool memberFirst = memberOf(currentClass_) || memberOf(lambdaScope());
         if (!memberFirst && !(peekAt(1).is("(") && functionHidesTemplates(peek().text)))
             return templateCall(program);
     }
@@ -2283,6 +2285,17 @@ ExprPtr Parser::bindReference(const Type *ref, ExprPtr init, std::size_t pos,
         return init;
     }
 
+    // **A string literal is an lvalue with storage of its own** ([expr.prim.literal], [lex.string]/8): an
+    // array reference binds to it, its address the literal's - no temporary, no copy (M1).
+    if (dynamic_cast<const StrLit *>(init.get()) != nullptr && referent->isArray() && it->isArray() &&
+        referent->sameArrayShape(it) &&
+        referent->innermostElement()->unqualified() == it->innermostElement()->unqualified() &&
+        (referent->innermostElement()->isConst() || !it->innermostElement()->isConst())) {
+        init = decay(std::move(init));
+        init->setType(types_.pointerTo(referent));
+        return init;
+    }
+
     // **An assignment and a prefix `++` are lvalues naming their left operand** ([expr.ass]/1): bound
     // as `*(a = b, &a)`, the operand named again - which needs it free of effects to be named twice.
     if (init->declCategory() == Expr::Category::Lvalue)
@@ -2308,10 +2321,13 @@ ExprPtr Parser::bindReference(const Type *ref, ExprPtr init, std::size_t pos,
             noAddressName = v->name();
         }
 
-    // **An rvalue reference takes exactly what an lvalue one will not.**
-    // [dcl.init.ref]: `T &&` binds to a value with nowhere to live and refuses an
-    // object that has somewhere - which is how a move takes an object apart.
-    if (ref->isRValueReference() && isLvalue(*init))
+    // **An rvalue reference takes exactly what an lvalue one will not**: [dcl.init.ref], `T &&` binds to a value
+    // with nowhere to live and refuses an object that has somewhere - which is how a move takes an object apart.
+    // Only where the two are reference-related, /5.4.1: an int lvalue for an `unsigned char &&` binds a temporary.
+    const bool related = it->unqualified() == referent->unqualified() ||
+                         (it->unqualified()->isStructOrUnion() && referent->unqualified()->isStructOrUnion() &&
+                          accessibleBaseOffset(it, referent) > -1);
+    if (ref->isRValueReference() && isLvalue(*init) && related)
         src_.fail(pos, what + " is '" + ref->describe() + "' and this is an "
                        "object with an address of its own - an rvalue "
                        "reference binds only to a value that has none, so "

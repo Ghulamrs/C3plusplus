@@ -190,7 +190,7 @@ protected:
         int tryLow = 0, tryHigh = 0, catchHigh = 0;
         std::vector<MsHandlerRow> handlers;
     };
-    struct MsIpRow { std::string label; int state; };
+    struct MsIpRow { std::string label; int state; bool funclet; };   // funclet: the label is a funclet's symbol
     const std::vector<MsState> &msStates() const { return msStates_; }
     const std::vector<MsTryBlock> &msTryBlocks() const { return msTryBlocks_; }
     const std::vector<MsIpRow> &msIpRows() const { return msIpRows_; }
@@ -223,6 +223,9 @@ private:
     std::vector<MsState> msStates_;
     std::vector<MsTryBlock> msTryBlocks_;
     std::vector<MsIpRow> msIpRows_, msFuncletRows_;
+    // Rows written while a handler's body is walked: addresses inside its funclet, so they follow its start row.
+    std::vector<MsIpRow> *msRowsInto_ = nullptr;
+    std::vector<MsIpRow> &msRows() { return msRowsInto_ != nullptr ? *msRowsInto_ : msIpRows_; }
     int msCurState_ = -1;
     int msUnwindHelpSlot_ = 0;
     const Source *lines_ = nullptr;

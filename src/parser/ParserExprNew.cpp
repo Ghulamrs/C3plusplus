@@ -585,9 +585,14 @@ ExprPtr Parser::userConversion(const Type *param, ExprPtr &arg, std::size_t pos)
     const Type *want = param->isReference() ? param->pointee() : param;
     const Type *plain = want->unqualified();
     if (!plain->isStructOrUnion()) return nullptr;
-    if (param->isReference() && !want->isConst()) return nullptr;
+    // A `const T &` or a `T &&` binds the temporary this makes, [dcl.init.ref]/5; a `T &` binds none.
+    if (param->isReference() && !want->isConst() && !param->isRValueReference()) return nullptr;
     if (arg->type() == nullptr) return nullptr;
     if (arg->type()->unqualified() == plain) return nullptr;
+    // Reference-related classes bind directly or not at all, [dcl.init.ref]/5 - no temporary for a `T &&`.
+    if (param->isRValueReference() && !want->isConst() && arg->type()->unqualified()->isStructOrUnion() &&
+        accessibleBaseOffset(arg->type(), plain) > -1)
+        return nullptr;
 
     const Signature *ctor = convertingConstructor(plain, *arg, pos);
     // **The other half of [over.ics.user]: a conversion function on the
@@ -1091,6 +1096,20 @@ ExprPtr Parser::runtimeCall(const char *symbol, const Type *returns,
     return n;
 }
 
+// `throw;` - the runtime knows the exception the handler holds. Itanium asks __cxa_rethrow; Microsoft calls
+// _CxxThrowException with two null pointers from inside the handler's funclet, measured on cl (M1).
+ExprPtr Parser::rethrowCall() {
+    if (!target_.microsoftNames())
+        return runtimeCall("__cxa_rethrow", types_.get(Kind::Void), std::vector<ExprPtr>());
+    std::vector<ExprPtr> args;
+    for (int i = 0; i < 2; i++) {
+        ExprPtr z(make_owned<Num>(0LL));
+        z->setType(types_.pointerTo(types_.get(Kind::Void)));
+        args.push_back(std::move(z));
+    }
+    return runtimeCall("_CxxThrowException", types_.get(Kind::Void), std::move(args));
+}
+
 // **The Microsoft ABI throws from the stack, not from the heap**: `T tmp = x;` and
 // then `_CxxThrowException(&tmp, &_TI1<letter>)`, where Itanium asks the runtime
 // for memory. Identity is the ThrowInfo chain, four objects the backend emits.
@@ -1155,13 +1174,7 @@ ExprPtr Parser::throwExpression() {
     mayThrow_++;
     if (peek().is(";") || peek().is(")") || peek().is(",") || peek().is(":") ||
         peek().is("]") || peek().is("}")) {
-        if (target_.microsoftNames())
-            src_.fail(tpos, "a rethrow - 'throw' with nothing after it - "
-                            "is not supported yet for x86_64-windows: it "
-                            "is _CxxThrowException with two null pointers "
-                            "from inside a funclet, and that has not been "
-                            "measured on the box");
-        return runtimeCall("__cxa_rethrow", types_.get(Kind::Void), std::vector<ExprPtr>());
+        return rethrowCall();
     }
     ExprPtr value = decay(assign());
     if (inNoexceptFunction_ && !inTryBody_ && !inHandlerBody_) {
@@ -1508,12 +1521,15 @@ ExprPtr Parser::newExpression(std::size_t pos) {
             if (!peek().is(")")) parseArguments(ctorArgs);
             else at_++;
         } else if (!consume(")")) {
-            init = assign();
-            if (peek().is(","))
-                src_.fail(peek().pos, "more than one value in a new-expression "
-                                      "needs a constructor, which is not "
-                                      "supported yet");
-            expect(")");
+            // An argument list, so a pack expansion may give it none or one: `new T(std::forward<A>(a)...)` (M1).
+            const std::size_t first = peek().pos;
+            std::vector<ExprPtr> vals;
+            parseArguments(vals);
+            if (vals.size() > 1)
+                src_.fail(first, "more than one value in a new-expression "
+                                 "needs a constructor, which is not "
+                                 "supported yet");
+            if (!vals.empty()) init = std::move(vals[0]);
         }
     }
     const Type *sizeT = types_.get(target_.sizeType());

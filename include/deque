@@ -1,0 +1,174 @@
+// <deque> - [deque]: elements in fixed blocks under a map of block pointers, the standard's own shape, so a
+// push or a pop at either end moves no element and keeps every reference to the others ([deque.modifiers]).
+// The map is recentred or doubled when an end runs out, which moves pointers and never elements. Blocks are
+// malloc'd raw storage, an element made in it by placement new, as <vector> does.
+//
+// **Not here**: insert and erase in the middle, resize, shrink_to_fit and the reverse iterators.
+#ifndef _CXX1_DEQUE
+#define _CXX1_DEQUE
+
+#include <cstddef>
+#include <cstdlib>
+#include <initializer_list>
+#include <new>
+#include <stdexcept>
+#include <utility>
+
+namespace std {
+
+template <class T> class deque;
+
+// An index into the deque it walks: random access, invalidated as [deque.modifiers] says.
+template <class T, class Ref, class Ptr, class D> class __deque_iterator {
+public:
+    typedef ptrdiff_t difference_type;
+    __deque_iterator() : d_(0), i_(0) {}
+    __deque_iterator(D *d, size_t i) : d_(d), i_(i) {}
+    template <class R2, class P2, class D2>
+    __deque_iterator(const __deque_iterator<T, R2, P2, D2> &o) : d_(o.d_), i_(o.i_) {}
+
+    Ref operator*() const { return (*d_)[i_]; }
+    Ptr operator->() const { return &(*d_)[i_]; }
+    Ref operator[](ptrdiff_t k) const { return (*d_)[i_ + k]; }
+    __deque_iterator &operator++() { ++i_; return *this; }
+    __deque_iterator operator++(int) { __deque_iterator w(*this); ++i_; return w; }
+    __deque_iterator &operator--() { --i_; return *this; }
+    __deque_iterator operator--(int) { __deque_iterator w(*this); --i_; return w; }
+    __deque_iterator &operator+=(ptrdiff_t k) { i_ += k; return *this; }
+    __deque_iterator &operator-=(ptrdiff_t k) { i_ -= k; return *this; }
+    __deque_iterator operator+(ptrdiff_t k) const { return __deque_iterator(d_, i_ + k); }
+    __deque_iterator operator-(ptrdiff_t k) const { return __deque_iterator(d_, i_ - k); }
+    ptrdiff_t operator-(const __deque_iterator &o) const { return static_cast<ptrdiff_t>(i_) - static_cast<ptrdiff_t>(o.i_); }
+    bool operator==(const __deque_iterator &o) const { return i_ == o.i_; }
+    bool operator!=(const __deque_iterator &o) const { return i_ != o.i_; }
+    bool operator<(const __deque_iterator &o) const { return i_ < o.i_; }
+
+    D *d_;
+    size_t i_;
+};
+
+template <class T> class deque {
+public:
+    typedef T value_type;
+    typedef size_t size_type;
+    typedef T &reference;
+    typedef const T &const_reference;
+    typedef __deque_iterator<T, T &, T *, deque> iterator;
+    typedef __deque_iterator<T, const T &, const T *, const deque> const_iterator;
+
+    deque() : map_(0), cap_(0), first_(0), blocks_(0), start_(0), size_(0) {}
+    deque(initializer_list<T> list) : map_(0), cap_(0), first_(0), blocks_(0), start_(0), size_(0) {
+        for (const T *p = list.begin(); p != list.end(); ++p) push_back(*p);
+    }
+    deque(const deque &o) : map_(0), cap_(0), first_(0), blocks_(0), start_(0), size_(0) {
+        for (size_t i = 0; i < o.size_; i++) push_back(o[i]);
+    }
+    deque(deque &&o) noexcept : map_(o.map_), cap_(o.cap_), first_(o.first_), blocks_(o.blocks_),
+                                start_(o.start_), size_(o.size_) {
+        o.map_ = 0; o.cap_ = o.first_ = o.blocks_ = o.start_ = o.size_ = 0;
+    }
+    deque &operator=(const deque &o) {
+        if (this != &o) { deque copy(o); swap(copy); }
+        return *this;
+    }
+    deque &operator=(deque &&o) noexcept { swap(o); return *this; }
+    ~deque() { clear(); release(); }
+
+    size_type size() const { return size_; }
+    bool empty() const { return size_ == 0; }
+    T &operator[](size_type i) { size_t g = start_ + i; return map_[first_ + g / block][g % block]; }
+    const T &operator[](size_type i) const { size_t g = start_ + i; return map_[first_ + g / block][g % block]; }
+    T &at(size_type i) { if (i >= size_) throw out_of_range("deque::at"); return (*this)[i]; }
+    const T &at(size_type i) const { if (i >= size_) throw out_of_range("deque::at"); return (*this)[i]; }
+    T &front() { return (*this)[0]; }
+    const T &front() const { return (*this)[0]; }
+    T &back() { return (*this)[size_ - 1]; }
+    const T &back() const { return (*this)[size_ - 1]; }
+
+    iterator begin() { return iterator(this, 0); }
+    iterator end() { return iterator(this, size_); }
+    const_iterator begin() const { return const_iterator(this, 0); }
+    const_iterator end() const { return const_iterator(this, size_); }
+
+    void push_back(const T &v) { new (backSlot()) T(v); size_++; }
+    void push_back(T &&v) { new (backSlot()) T(std::move(v)); size_++; }
+    template <class... A> void emplace_back(A &&...a) { new (backSlot()) T(std::forward<A>(a)...); size_++; }
+    void push_front(const T &v) { new (frontSlot()) T(v); start_--; size_++; }
+    void push_front(T &&v) { new (frontSlot()) T(std::move(v)); start_--; size_++; }
+
+    void pop_back() {
+        back().~T();
+        size_--;
+        // A block left with nothing in it goes.
+        if (blocks_ > 0 && start_ + size_ <= (blocks_ - 1) * block) dropLast();
+    }
+    void pop_front() {
+        front().~T();
+        start_++;
+        size_--;
+        if (start_ == block) { std::free(map_[first_]); first_++; blocks_--; start_ = 0; }
+        if (size_ == 0) clear();
+    }
+    void clear() {
+        for (size_t i = 0; i < size_; i++) (*this)[i].~T();
+        for (size_t b = 0; b < blocks_; b++) std::free(map_[first_ + b]);
+        blocks_ = 0;
+        size_ = 0;
+        start_ = 0;
+        first_ = cap_ / 2;
+    }
+    void swap(deque &o) {
+        std::swap(map_, o.map_); std::swap(cap_, o.cap_); std::swap(first_, o.first_);
+        std::swap(blocks_, o.blocks_); std::swap(start_, o.start_); std::swap(size_, o.size_);
+    }
+
+private:
+    static const size_t block = sizeof(T) < 32 ? 512 / (sizeof(T) ? sizeof(T) : 1) : 16;
+
+    // Room for the element after the last: a new block where the last one is full.
+    T *backSlot() {
+        size_t g = start_ + size_;
+        if (g / block >= blocks_) {
+            if (first_ + blocks_ == cap_) remap();
+            map_[first_ + blocks_] = static_cast<T *>(std::malloc(block * sizeof(T)));
+            blocks_++;
+        }
+        return map_[first_ + g / block] + g % block;
+    }
+    // Room for the element before the first; start_ is moved by the caller once it is made.
+    T *frontSlot() {
+        if (start_ == 0) {
+            if (first_ == 0) remap();
+            first_--;
+            map_[first_] = static_cast<T *>(std::malloc(block * sizeof(T)));
+            blocks_++;
+            start_ = block;
+        }
+        return map_[first_] + (start_ - 1);
+    }
+    void dropLast() { blocks_--; std::free(map_[first_ + blocks_]); }
+    // A map twice as large with the blocks in its middle - room at both ends.
+    void remap() {
+        size_t want = cap_ < 8 ? 8 : cap_ * 2;
+        while (want < blocks_ + 2) want *= 2;
+        T **fresh = static_cast<T **>(std::malloc(want * sizeof(T *)));
+        const size_t at = (want - blocks_) / 2;
+        for (size_t b = 0; b < blocks_; b++) fresh[at + b] = map_[first_ + b];
+        std::free(map_);
+        map_ = fresh;
+        cap_ = want;
+        first_ = at;
+    }
+    void release() { std::free(map_); map_ = 0; cap_ = 0; }
+
+    T **map_;
+    size_t cap_;
+    size_t first_;
+    size_t blocks_;
+    size_t start_;
+    size_t size_;
+};
+
+}  // namespace std
+
+#endif

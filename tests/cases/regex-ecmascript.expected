@@ -1,0 +1,13 @@
+push: [x] [19]
+push2: no
+slot: [ldursw] [x] [3] [24]
+slotzr: [stur] [w] [zr] [8]
+movany: [mov] [x] [3]
+movany2: [fmov] [d] [1]
+movany3: [mov] [w] [4]
+baseat: [strb] [wzr] [12]
+cset: [w] [0] [ne]
+1 0 1 0
+1 key value 0 11
+b|bb 1 0 1 1 1
+regex_error

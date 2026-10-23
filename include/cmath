@@ -38,6 +38,9 @@ using ::tan;
 using ::tanh;
 using ::trunc;
 using ::round;
+#if !defined(__TMS320C6X__)
+using ::fma;
+#endif
 
 // The C99 classification functions, as C++11's <cmath> has them: a NaN is
 // the one value unequal to itself, an infinity is what is left when the

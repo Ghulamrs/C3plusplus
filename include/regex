@@ -1,0 +1,374 @@
+// <regex> - [re]: ECMAScript patterns, compiled into a small program and run by backtracking, the leftmost
+// alternative first and the longest repetition first, as ECMAScript asks. What a pattern may hold:
+// alternation, groups and `(?:...)`, `* + ? {n} {n,} {n,m}` and their lazy forms, `.`, `^ $` (one line),
+// classes with ranges, negation and `\d \w \s` inside them, `\d \D \w \W \s \S \b \B`, and escaped literals.
+//
+// **Not here, and refused by regex_error where the pattern is read**: back-references, lookahead, the other
+// grammars and flags, regex_replace and the iterators. A string iterator is a pointer here, so smatch and
+// cmatch are one type.
+#ifndef _CXX1_REGEX
+#define _CXX1_REGEX
+
+#include <cstddef>
+#include <cstring>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+namespace std {
+
+class regex_error : public runtime_error {
+public:
+    explicit regex_error(const string &what) : runtime_error(what) {}
+};
+
+template <class It> class sub_match {
+public:
+    It first;
+    It second;
+    bool matched;
+    sub_match() : first(), second(), matched(false) {}
+    size_t length() const { return matched ? static_cast<size_t>(second - first) : 0; }
+    string str() const { return matched ? string(first, second) : string(); }
+    operator string() const { return str(); }
+    int compare(const string &s) const { return str().compare(s); }
+    int compare(const char *s) const { return str().compare(s); }
+};
+template <class It> bool operator==(const sub_match<It> &a, const sub_match<It> &b) { return a.str() == b.str(); }
+template <class It> bool operator!=(const sub_match<It> &a, const sub_match<It> &b) { return a.str() != b.str(); }
+template <class It> bool operator==(const sub_match<It> &m, const char *s) { return m.compare(s) == 0; }
+template <class It> bool operator==(const char *s, const sub_match<It> &m) { return m.compare(s) == 0; }
+template <class It> bool operator!=(const sub_match<It> &m, const char *s) { return m.compare(s) != 0; }
+template <class It> bool operator!=(const char *s, const sub_match<It> &m) { return m.compare(s) != 0; }
+template <class It> bool operator==(const sub_match<It> &m, const string &s) { return m.compare(s) == 0; }
+template <class It> bool operator==(const string &s, const sub_match<It> &m) { return m.compare(s) == 0; }
+template <class It> bool operator!=(const sub_match<It> &m, const string &s) { return m.compare(s) != 0; }
+template <class It> bool operator!=(const string &s, const sub_match<It> &m) { return m.compare(s) != 0; }
+
+template <class It> class match_results {
+public:
+    typedef sub_match<It> value_type;
+    typedef size_t size_type;
+    match_results() {}
+    size_type size() const { return subs_.size(); }
+    bool empty() const { return subs_.empty(); }
+    const sub_match<It> &operator[](size_type n) const { return n < subs_.size() ? subs_[n] : none_; }
+    string str(size_type n = 0) const { return (*this)[n].str(); }
+    size_t length(size_type n = 0) const { return (*this)[n].length(); }
+    ptrdiff_t position(size_type n = 0) const { return (*this)[n].matched ? (*this)[n].first - base_ : -1; }
+
+    vector<sub_match<It> > subs_;
+    sub_match<It> none_;
+    It base_;
+};
+
+typedef match_results<const char *> cmatch;
+typedef match_results<string::const_iterator> smatch;
+
+// The program: one instruction per step, a SPLIT trying its first branch before its second.
+struct __regex_op {
+    enum Kind { Char, Any, Class, Bol, Eol, Word, NotWord, Split, Jump, Save, Match } kind;
+    int a, b;
+};
+
+class regex {
+public:
+    regex() : groups_(0) {}
+    explicit regex(const char *p) : groups_(0) { compile(p, p + strlen(p)); }
+    explicit regex(const string &p) : groups_(0) { compile(p.data(), p.data() + p.size()); }
+    unsigned mark_count() const { return static_cast<unsigned>(groups_); }
+
+    // Whether [from, to) matches from `from` - to its end exactly where `whole` - recording the groups. Nothing
+    // here is the regex's own state, so one regex may be run on several threads at once.
+    bool run(const char *from, const char *to, const char *base, bool whole, vector<const char *> *caps) const {
+        caps->assign(2 * (groups_ + 1), static_cast<const char *>(0));
+        Ctx c;
+        c.begin = base; c.end = to; c.whole = whole; c.caps = caps;
+        if (!step(c, 0, from)) return false;
+        (*caps)[0] = from;
+        return true;
+    }
+
+private:
+    typedef __regex_op Op;
+    struct Range { unsigned char lo, hi; };
+    struct Set { vector<Range> ranges; bool negated; };
+
+    struct Ctx { const char *begin, *end; bool whole; vector<const char *> *caps; };
+    vector<Op> code_;
+    vector<Set> sets_;
+    int groups_;
+
+    static bool isWord(char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+    }
+    bool inSet(const Set &s, char c) const {
+        bool in = false;
+        const unsigned char u = static_cast<unsigned char>(c);
+        for (size_t i = 0; i < s.ranges.size() && !in; i++) in = u >= s.ranges[i].lo && u <= s.ranges[i].hi;
+        return in != s.negated;
+    }
+    bool step(const Ctx &c, int pc, const char *sp) const {
+        vector<const char *> *caps = c.caps;
+        for (;;) {
+            const Op &o = code_[static_cast<size_t>(pc)];
+            switch (o.kind) {
+            case Op::Char: if (sp == c.end || *sp != static_cast<char>(o.a)) return false; sp++; pc++; break;
+            case Op::Any: if (sp == c.end || *sp == '\n') return false; sp++; pc++; break;
+            case Op::Class:
+                if (sp == c.end || !inSet(sets_[static_cast<size_t>(o.a)], *sp)) return false;
+                sp++; pc++; break;
+            case Op::Bol: if (sp != c.begin) return false; pc++; break;
+            case Op::Eol: if (sp != c.end) return false; pc++; break;
+            case Op::Word:
+            case Op::NotWord: {
+                const bool before = sp != c.begin && isWord(sp[-1]);
+                const bool after = sp != c.end && isWord(*sp);
+                if ((before != after) != (o.kind == Op::Word)) return false;
+                pc++; break;
+            }
+            case Op::Split: if (step(c, o.a, sp)) return true; pc = o.b; break;
+            case Op::Jump: pc = o.a; break;
+            case Op::Save: {
+                const char *was = (*caps)[static_cast<size_t>(o.a)];
+                (*caps)[static_cast<size_t>(o.a)] = sp;
+                if (step(c, pc + 1, sp)) return true;
+                (*caps)[static_cast<size_t>(o.a)] = was;
+                return false;
+            }
+            case Op::Match:
+                if (c.whole && sp != c.end) return false;
+                (*caps)[1] = sp;
+                return true;
+            }
+        }
+    }
+
+    // ---- the compiler: a recursive descent over the pattern, emitting as it goes.
+    const char *p_, *e_;
+    void emit(Op::Kind k, int a = 0, int b = 0) { Op o; o.kind = k; o.a = a; o.b = b; code_.push_back(o); }
+    [[noreturn]] void bad(const char *why) const { throw regex_error(string("regex: ") + why); }
+
+    void compile(const char *p, const char *e) {
+        p_ = p; e_ = e;
+        alternation();
+        if (p_ != e_) bad("an unmatched ')'");
+        emit(Op::Match);
+    }
+    void alternation() {
+        const size_t start = code_.size();
+        sequence();
+        if (p_ == e_ || *p_ != '|') return;
+        p_++;
+        // SPLIT first, rest - inserted before the first branch, its jump after it.
+        vector<Op> first(code_.begin() + static_cast<ptrdiff_t>(start), code_.end());
+        code_.resize(start);
+        emit(Op::Split, static_cast<int>(start + 1), 0);
+        const size_t split = code_.size() - 1;
+        relocate(first, 1);
+        code_.insert(code_.end(), first.begin(), first.end());
+        emit(Op::Jump, 0);
+        const size_t jump = code_.size() - 1;
+        code_[split].b = static_cast<int>(code_.size());
+        alternation();
+        code_[jump].a = static_cast<int>(code_.size());
+    }
+    void sequence() {
+        while (p_ != e_ && *p_ != '|' && *p_ != ')') quantified();
+    }
+    // Moves the targets of a piece of program that is being shifted by `by` instructions.
+    static void relocate(vector<Op> &piece, int by) {
+        for (size_t i = 0; i < piece.size(); i++) {
+            if (piece[i].kind == Op::Split) { piece[i].a += by; piece[i].b += by; }
+            else if (piece[i].kind == Op::Jump) piece[i].a += by;
+        }
+    }
+    void quantified() {
+        const size_t start = code_.size();
+        atom();
+        if (p_ == e_) return;
+        int lo = 1, hi = 1;
+        if (*p_ == '*') { lo = 0; hi = -1; p_++; }
+        else if (*p_ == '+') { lo = 1; hi = -1; p_++; }
+        else if (*p_ == '?') { lo = 0; hi = 1; p_++; }
+        else if (*p_ == '{' && p_ + 1 != e_ && p_[1] >= '0' && p_[1] <= '9') {
+            p_++;
+            lo = number();
+            hi = lo;
+            if (p_ != e_ && *p_ == ',') { p_++; hi = p_ != e_ && *p_ == '}' ? -1 : number(); }
+            if (p_ == e_ || *p_ != '}') bad("a '{' with no '}'");
+            p_++;
+            if (hi >= 0 && hi < lo) bad("a repetition whose bounds are out of order");
+        } else {
+            return;
+        }
+        const bool lazy = p_ != e_ && *p_ == '?';
+        if (lazy) p_++;
+        vector<Op> piece(code_.begin() + static_cast<ptrdiff_t>(start), code_.end());
+        code_.resize(start);
+        for (int i = 0; i < lo; i++) append(piece, start);
+        if (hi < 0) {
+            // L: SPLIT body, out; body; JMP L
+            const size_t loop = code_.size();
+            emit(Op::Split, 0, 0);
+            append(piece, start);
+            emit(Op::Jump, static_cast<int>(loop));
+            const int body = static_cast<int>(loop + 1), out = static_cast<int>(code_.size());
+            code_[loop].a = lazy ? out : body;
+            code_[loop].b = lazy ? body : out;
+        } else {
+            vector<size_t> exits;
+            for (int i = lo; i < hi; i++) {
+                const size_t split = code_.size();
+                emit(Op::Split, 0, 0);
+                exits.push_back(split);
+                append(piece, start);
+            }
+            const int out = static_cast<int>(code_.size());
+            for (size_t k = 0; k < exits.size(); k++) {
+                const int body = static_cast<int>(exits[k] + 1);
+                code_[exits[k]].a = lazy ? out : body;
+                code_[exits[k]].b = lazy ? body : out;
+            }
+        }
+    }
+    // A copy of the piece cut from `from`, its targets moved to where it now stands.
+    void append(const vector<Op> &piece, size_t from) {
+        vector<Op> copy(piece);
+        relocate(copy, static_cast<int>(code_.size()) - static_cast<int>(from));
+        code_.insert(code_.end(), copy.begin(), copy.end());
+    }
+    int number() {
+        int n = 0;
+        if (p_ == e_ || *p_ < '0' || *p_ > '9') bad("a repetition bound that is not a number");
+        while (p_ != e_ && *p_ >= '0' && *p_ <= '9') n = n * 10 + (*p_++ - '0');
+        return n;
+    }
+    void atom() {
+        const char c = *p_++;
+        switch (c) {
+        case '(': {
+            int group = -1;
+            if (p_ != e_ && *p_ == '?') {
+                if (p_ + 1 != e_ && p_[1] == ':') p_ += 2;
+                else bad("lookahead is not supported here");
+            } else {
+                group = ++groups_;
+                emit(Op::Save, 2 * group);
+            }
+            alternation();
+            if (p_ == e_ || *p_ != ')') bad("a '(' with no ')'");
+            p_++;
+            if (group >= 0) emit(Op::Save, 2 * group + 1);
+            return;
+        }
+        case '.': emit(Op::Any); return;
+        case '^': emit(Op::Bol); return;
+        case '$': emit(Op::Eol); return;
+        case '[': classAtom(); return;
+        case '\\': escape(); return;
+        case '*': case '+': case '?': bad("a repetition with nothing to repeat");
+        default: emit(Op::Char, static_cast<unsigned char>(c)); return;
+        }
+    }
+    void escape() {
+        if (p_ == e_) bad("a '\\' at the end of the pattern");
+        const char c = *p_++;
+        Set s;
+        s.negated = false;
+        switch (c) {
+        case 'b': emit(Op::Word); return;
+        case 'B': emit(Op::NotWord); return;
+        case 'd': case 'D': case 'w': case 'W': case 's': case 'S':
+            named(c, &s);
+            s.negated = c == 'D' || c == 'W' || c == 'S';
+            sets_.push_back(s);
+            emit(Op::Class, static_cast<int>(sets_.size() - 1));
+            return;
+        case 'n': emit(Op::Char, '\n'); return;
+        case 't': emit(Op::Char, '\t'); return;
+        case 'r': emit(Op::Char, '\r'); return;
+        default:
+            if (c >= '1' && c <= '9') bad("back-references are not supported here");
+            emit(Op::Char, static_cast<unsigned char>(c));
+            return;
+        }
+    }
+    static void addRange(Set *s, unsigned char lo, unsigned char hi) { Range r; r.lo = lo; r.hi = hi; s->ranges.push_back(r); }
+    static void named(char c, Set *s) {
+        switch (c) {
+        case 'd': case 'D': addRange(s, '0', '9'); break;
+        case 'w': case 'W': addRange(s, 'a', 'z'); addRange(s, 'A', 'Z'); addRange(s, '0', '9'); addRange(s, '_', '_'); break;
+        default: addRange(s, ' ', ' '); addRange(s, '\t', '\r'); break;
+        }
+    }
+    void classAtom() {
+        Set s;
+        s.negated = p_ != e_ && *p_ == '^';
+        if (s.negated) p_++;
+        bool first = true;
+        while (p_ != e_ && (*p_ != ']' || first)) {
+            first = false;
+            unsigned char lo = static_cast<unsigned char>(*p_++);
+            if (lo == '\\' && p_ != e_) {
+                const char c = *p_++;
+                if (c == 'd' || c == 'w' || c == 's') { named(c, &s); continue; }
+                if (c == 'D' || c == 'W' || c == 'S') bad("a negated class escape inside a class is not supported here");
+                lo = static_cast<unsigned char>(c == 'n' ? '\n' : c == 't' ? '\t' : c);
+            }
+            unsigned char hi = lo;
+            if (p_ + 1 < e_ && *p_ == '-' && p_[1] != ']') {
+                p_++;
+                hi = static_cast<unsigned char>(*p_++);
+                if (hi == '\\' && p_ != e_) hi = static_cast<unsigned char>(*p_++);
+                if (hi < lo) bad("a class range whose ends are out of order");
+            }
+            addRange(&s, lo, hi);
+        }
+        if (p_ == e_) bad("a '[' with no ']'");
+        p_++;
+        sets_.push_back(s);
+        emit(Op::Class, static_cast<int>(sets_.size() - 1));
+    }
+};
+
+template <class It> void __regex_fill(match_results<It> *m, const vector<const char *> &caps, It base) {
+    m->subs_.assign(caps.size() / 2, sub_match<It>());
+    m->base_ = base;
+    for (size_t g = 0; g < caps.size() / 2; g++)
+        if (caps[2 * g] != 0 && caps[2 * g + 1] != 0) {
+            m->subs_[g].first = caps[2 * g];
+            m->subs_[g].second = caps[2 * g + 1];
+            m->subs_[g].matched = true;
+        }
+}
+
+inline bool regex_match(const char *from, const char *to, cmatch &m, const regex &re) {
+    vector<const char *> caps;
+    if (!re.run(from, to, from, true, &caps)) { m.subs_.clear(); return false; }
+    __regex_fill(&m, caps, from);
+    return true;
+}
+inline bool regex_match(const string &s, smatch &m, const regex &re) { return regex_match(s.data(), s.data() + s.size(), m, re); }
+inline bool regex_match(const char *s, cmatch &m, const regex &re) { return regex_match(s, s + strlen(s), m, re); }
+inline bool regex_match(const string &s, const regex &re) { smatch m; return regex_match(s, m, re); }
+inline bool regex_match(const char *s, const regex &re) { cmatch m; return regex_match(s, m, re); }
+
+// The leftmost place the pattern matches, each start tried in turn.
+inline bool regex_search(const char *from, const char *to, cmatch &m, const regex &re) {
+    vector<const char *> caps;
+    for (const char *at = from;; at++) {
+        if (re.run(at, to, from, false, &caps)) { __regex_fill(&m, caps, from); return true; }
+        if (at == to) break;
+    }
+    m.subs_.clear();
+    return false;
+}
+inline bool regex_search(const string &s, smatch &m, const regex &re) { return regex_search(s.data(), s.data() + s.size(), m, re); }
+inline bool regex_search(const char *s, cmatch &m, const regex &re) { return regex_search(s, s + strlen(s), m, re); }
+inline bool regex_search(const string &s, const regex &re) { smatch m; return regex_search(s, m, re); }
+inline bool regex_search(const char *s, const regex &re) { cmatch m; return regex_search(s, m, re); }
+
+}  // namespace std
+
+#endif

@@ -501,6 +501,7 @@ private:
         Packs classPacks;           // the class's packs, which the member template's body may expand (L16)
         // **A constructor template**: named by its class's own name, keyed under constructorKey(ownerTag).
         bool isConstructor = false;
+        bool isExplicit = false;    // `explicit` on a constructor template, read in the class and replayed past
         // The class's name as the source spells it - `CMatrix` for `CMatrix<3,3>` - which inlineOwnerName_ wants.
         std::string ownerLocal;
     };
@@ -769,7 +770,7 @@ private:
     // Deduction from a call is looser, because a conversion may still bridge it.
     bool matchPattern(const Type *pattern, const Type *arg,
                       std::vector<const Type *> *binding,
-                      std::string *why, Packs *packs = nullptr) const;
+                      std::string *why, Packs *packs = nullptr, std::vector<long long> *values = nullptr) const;
     bool matchFunctionParams(const Type *pattern, const Type *arg, std::vector<const Type *> *binding,
                              std::vector<long long> *values, std::string *why, Packs *packs, bool deduce) const;
     // The partial specialization these arguments ask for, or npos for none.
@@ -792,6 +793,14 @@ private:
     void partialArguments(TemplateDecl::Partial *ps,
                           const std::vector<TemplateParam> &primary);
     void unbindTemplateParameters(const std::vector<Shadow> &undo);
+    // The bindings a scope made, put back however it is left: a trial's failure inside them included.
+    struct BoundParams {
+        Parser *p;
+        std::vector<Shadow> undo;
+        explicit BoundParams(Parser *parser) : p(parser) {}
+        ~BoundParams() { p->unbindTemplateParameters(undo); }
+        void unbindNow() { p->unbindTemplateParameters(undo); undo.clear(); }
+    };
     // Deduction: the arguments worked out from the call rather than written.
     // Answers false and fills `why` when some parameter cannot be deduced.
     bool deduceTemplateArguments(const TemplateDecl &decl,
@@ -799,7 +808,7 @@ private:
                                  std::vector<const Type *> *binding,
                                  std::vector<long long> *values,
                                  Packs *packs,
-                                 std::string *why);
+                                 std::string *why, std::size_t explicitCount = 0);
     // `values` receives a deduced non-type argument (the 3 in V<3>); null where only type parameters occur.
     // `nested`: inside a template-id an argument is matched as it is - no decay, and a cv-qualifier the pattern
     // does not write is deduced ([temp.deduct.type]/8: `It<C, V>` against `It<S, const int>` is V = const int).
@@ -1506,6 +1515,7 @@ private:
     // **The ways out of a Microsoft handler**, one record per `try`: a funclet
     // cannot jump into its parent, so each early exit names a label the parent
     // lays down after the `try` and hands it back as the address to carry on at.
+    struct LocalTypeUndo { std::string name; const Type *had; };   // see localTypeUndo_
     struct MsExit {
         std::string ret, brk, cont;   // the labels, empty until an exit asks
         std::vector<std::pair<std::string, std::string> > gotos;   // an exit label, and the goto's
@@ -1518,6 +1528,8 @@ private:
         std::size_t at = 0;
         std::string currentFunction, currentFunctionName, functionName;
         std::map<std::string, const Type *> localTypes;
+        std::vector<LocalTypeUndo> localTypeUndo;
+        std::vector<std::size_t> localTypeUndoStarts;
         std::vector<Local> locals;
         std::vector<::Local> fnVars;
         std::vector<std::size_t> scopeStarts;
@@ -1966,6 +1978,7 @@ private:
     };
     // One closure object: a frame slot, and each capture copied into it.
     ExprPtr buildClosure(const MadeLambda &made, std::size_t pos);
+    ExprPtr buildClosureObject(const MadeLambda &made, std::size_t pos);
     // A closure met while an enclosing lambda's body was read for its return type (A21),
     // by that reading's function and the `[`'s source position: the real reading, from a
     // copy of the tokens, takes it back, so the deduced return type and the object agree.
@@ -1998,6 +2011,9 @@ private:
 
     bool isFriendOf(const Type *cls) const;
 
+    // A block's typedefs are its own ([basic.scope.block]): what each replaced, put back as the scope closes.
+    std::vector<LocalTypeUndo> localTypeUndo_;
+    std::vector<std::size_t> localTypeUndoStarts_;
     // [class.local]. A class defined in a function body belongs to that function: two
     // functions may each define `struct L` and they are different types. Both facts come
     // from these tables - a qualified tag, and a scope emptied when the function ends.
@@ -2226,6 +2242,7 @@ private:
     // kept and handed back, since the comparison is what reads it.
     ExprPtr markSkippableTemporaries(ExprPtr operand, std::size_t from,
                                      std::size_t to);
+    ExprPtr rethrowCall();
     ExprPtr runtimeCall(const char *symbol, const Type *returns,
                         std::vector<ExprPtr> args);
     const Signature *classAllocator(const Type *made, const char *which);

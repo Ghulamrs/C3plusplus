@@ -558,8 +558,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             // **A constructor template is named by the class's own name** - `template <size_t K>
             // CMatrix<M, N>(const CVector<K> &)` - and keyed with the other constructors.
             if (mname == local) {
-                if (peek().is("explicit"))
-                    src_.fail(mt.pos, "an 'explicit' constructor template is not supported yet");
+                if (tokens_[mt.afterParams].is("explicit")) { mt.isExplicit = true; mt.afterParams++; }   // replayed past
                 mt.isConstructor = true;
                 mname = localOf(tag);
             }
@@ -567,6 +566,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             mt.ownerLocal = local;
             mt.memberAccess = access;
             mt.ownerTag = tag;
+            if (mt.ns.empty()) mt.ns = namespacePrefix();   // its signature's and defaults' names are read there
             mt.ownerType = nullptr;    // filled at instantiation from the tag
             // A member of a class template: capture the class's own parameters
             // and this instantiation's binding, so both layers bind at replay.

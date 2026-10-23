@@ -1,0 +1,3 @@
+x86_64-linux  clang elides `S c = S(5)`'s copy, so S's inline copy constructor is never emitted, where cxx1 makes the copy C++11 permits and emits it; and clang emits only the C2 variant of an inline constructor template where cxx1 emits C1 and C2 (implicit-move.nonames). Every other name agrees.
+x86_64-windows  the same elided copy: cxx1 emits ??0S@@QEAA@AEBU0@@Z and clang does not. Every other name agrees.
+arm64-darwin  the same elided copy, its C1 and C2. Every other name agrees.

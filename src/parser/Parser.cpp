@@ -843,6 +843,8 @@ Parser::FunctionState Parser::captureFunctionState() const {
     s.currentFunctionName = currentFunctionName_;
     s.functionName = functionName_;
     s.localTypes = localTypes_;
+    s.localTypeUndo = localTypeUndo_;
+    s.localTypeUndoStarts = localTypeUndoStarts_;
     s.locals = locals_;
     s.fnVars = fnVars_;
     s.scopeStarts = scopeStarts_;
@@ -909,6 +911,8 @@ void Parser::restoreFunctionState(const FunctionState &s) {
     currentFunctionName_ = s.currentFunctionName;
     functionName_ = s.functionName;
     localTypes_ = s.localTypes;
+    localTypeUndo_ = s.localTypeUndo;
+    localTypeUndoStarts_ = s.localTypeUndoStarts;
     locals_ = s.locals;
     fnVars_ = s.fnVars;
     scopeStarts_ = s.scopeStarts;
@@ -976,6 +980,8 @@ void Parser::clearFunctionState() {
     currentFunctionName_.clear();
     functionName_.clear();
     localTypes_.clear();
+    localTypeUndo_.clear();
+    localTypeUndoStarts_.clear();
     locals_.clear();
     fnVars_.clear();
     scopeStarts_.clear();
@@ -1089,7 +1095,10 @@ Parser::Nesting::Nesting(Parser *pp, std::size_t pos, const char *what) : p(pp) 
                       "here rather than run out of stack");
 }
 
-void Parser::enterScope() { scopeStarts_.push_back(locals_.size()); }
+void Parser::enterScope() {
+    scopeStarts_.push_back(locals_.size());
+    localTypeUndoStarts_.push_back(localTypeUndo_.size());
+}
 
 int Parser::enterBlock() {
     blocks_.push_back(currentBlock());
@@ -1112,6 +1121,13 @@ void Parser::leaveScope() {
     }
     locals_.resize(scopeStarts_.back());
     scopeStarts_.pop_back();
+    if (localTypeUndoStarts_.empty()) return;
+    for (std::size_t i = localTypeUndo_.size(); i-- > localTypeUndoStarts_.back(); ) {
+        if (localTypeUndo_[i].had != nullptr) localTypes_[localTypeUndo_[i].name] = localTypeUndo_[i].had;
+        else localTypes_.erase(localTypeUndo_[i].name);
+    }
+    localTypeUndo_.resize(localTypeUndoStarts_.back());
+    localTypeUndoStarts_.pop_back();
 }
 
 // A freed slot belongs to the frame that freed it: a function opened mid-parse starts with none, or it reuses an offset its own frame never reached.

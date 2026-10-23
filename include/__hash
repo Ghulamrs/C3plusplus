@@ -1,0 +1,61 @@
+// <__hash> - std::hash, [unord.hash], for the integral types, the floating ones and pointers; <string>
+// specializes it for std::string. An integer hashes to itself, as libstdc++'s does; a float or a double to
+// FNV-1a over its bytes, with +0 and -0 one value as [unord.hash] requires of equal keys.
+#ifndef _CXX1_HASH
+#define _CXX1_HASH
+
+#include <cstddef>
+
+namespace std {
+
+template <class T> struct hash;
+
+inline size_t __hash_bytes(const void *p, size_t n) {
+    const unsigned char *b = static_cast<const unsigned char *>(p);
+    unsigned long long h = 14695981039346656037ull;
+    for (size_t i = 0; i < n; i++) { h ^= b[i]; h *= 1099511628211ull; }
+    return static_cast<size_t>(h ^ (h >> 32));
+}
+
+#define _CXX1_HASH_ITSELF(T) \
+    template <> struct hash<T> { \
+        typedef T argument_type; \
+        typedef size_t result_type; \
+        size_t operator()(T v) const { return static_cast<size_t>(v); } \
+    };
+_CXX1_HASH_ITSELF(bool)
+_CXX1_HASH_ITSELF(char)
+_CXX1_HASH_ITSELF(signed char)
+_CXX1_HASH_ITSELF(unsigned char)
+_CXX1_HASH_ITSELF(wchar_t)
+_CXX1_HASH_ITSELF(char16_t)
+_CXX1_HASH_ITSELF(char32_t)
+_CXX1_HASH_ITSELF(short)
+_CXX1_HASH_ITSELF(unsigned short)
+_CXX1_HASH_ITSELF(int)
+_CXX1_HASH_ITSELF(unsigned int)
+_CXX1_HASH_ITSELF(long)
+_CXX1_HASH_ITSELF(unsigned long)
+_CXX1_HASH_ITSELF(long long)
+_CXX1_HASH_ITSELF(unsigned long long)
+#undef _CXX1_HASH_ITSELF
+
+template <> struct hash<float> {
+    typedef float argument_type;
+    typedef size_t result_type;
+    size_t operator()(float v) const { return v == 0.0f ? 0 : __hash_bytes(&v, sizeof v); }
+};
+template <> struct hash<double> {
+    typedef double argument_type;
+    typedef size_t result_type;
+    size_t operator()(double v) const { return v == 0.0 ? 0 : __hash_bytes(&v, sizeof v); }
+};
+template <class T> struct hash<T *> {
+    typedef T *argument_type;
+    typedef size_t result_type;
+    size_t operator()(T *p) const { return reinterpret_cast<size_t>(p); }
+};
+
+}  // namespace std
+
+#endif

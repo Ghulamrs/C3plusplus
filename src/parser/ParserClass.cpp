@@ -3854,7 +3854,8 @@ void Parser::synthesizeCopy(std::size_t which, bool assigning) {
         if (assigning && moving) cc = moveAssignOf(memberClass(mt));
         if (assigning && cc == nullptr) cc = copyAssignOf(memberClass(mt));
         else if (!assigning) {
-            if (moving) cc = moveConstructorOf(memberClass(mt));
+            // A const member is `const T &&` to move from, which only the copy constructor takes ([class.copy]/15).
+            if (moving && !elem->isConst()) cc = moveConstructorOf(memberClass(mt));
             if (cc == nullptr) cc = copyConstructorOf(memberClass(mt));
         }
         if (cc != nullptr) {
@@ -5345,8 +5346,9 @@ StmtPtr Parser::constructMember(const std::string &cls, const Type *type,
             : "'" + mc->tag() + "' has no public constructor taking these "
               "arguments for '" + m.name + "' - the one that matches is " +
               (chosen.access == Access::Private ? "private" : "protected"));
+    // Through noteUsed: inside a candidate's body, ranked and not yet chosen, the use waits with the rest.
     for (std::size_t k = 0; k < functions_.size(); k++)
-        if (functions_[k].symbol == chosen.symbol) functions_[k].used = true;
+        if (functions_[k].symbol == chosen.symbol) noteUsed(k);
     applyDefaults(chosen, args, pos);
 
     int indexSlot = 0;

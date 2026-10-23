@@ -1,0 +1,164 @@
+// <thread> - [thread.thread.class]: std::thread over CreateThread on Windows and pthread_create on Linux and
+// macOS, the callable kept on the heap until the new thread has run it. hardware_concurrency asks
+// GetActiveProcessorCount, or sysconf(_SC_NPROCESSORS_ONLN) - 84 on Linux, 58 on macOS.
+//
+// **The C6000 has one thread**: a std::thread there runs its function where it is made and join() returns at
+// once - the program's answer, without the concurrency. **Not here**: arguments after the callable (a
+// lambda carries them), this_thread::sleep_for and yield.
+#ifndef _CXX1_THREAD
+#define _CXX1_THREAD
+
+#include <exception>
+#include <type_traits>
+#include <utility>
+
+#if defined(_WIN32)
+// The SDK's declarations type for type - lib/windows.h's agree - so a program including both redeclares them.
+struct _SECURITY_ATTRIBUTES;
+extern "C" void *CreateThread(_SECURITY_ATTRIBUTES *security, unsigned long long stack,
+                              unsigned long (*start)(void *), void *parameter, unsigned long flags,
+                              unsigned long *id);
+extern "C" unsigned long WaitForSingleObject(void *handle, unsigned long milliseconds);
+extern "C" int CloseHandle(void *handle);
+extern "C" unsigned long GetActiveProcessorCount(unsigned short group);
+extern "C" unsigned long GetCurrentThreadId();
+#elif !defined(__TMS320C6X__)
+extern "C" int pthread_create(void **thread, const void *attributes, void *(*start)(void *), void *parameter);
+extern "C" int pthread_join(void *thread, void **result);
+extern "C" int pthread_detach(void *thread);
+extern "C" void *pthread_self();
+extern "C" long sysconf(int name);
+#endif
+
+namespace std {
+
+struct __thread_body {
+    virtual ~__thread_body() {}
+    virtual void run() = 0;
+};
+
+template <class F> struct __thread_call : __thread_body {
+    F f;
+    explicit __thread_call(F &&g) : f(std::move(g)) {}
+    void run() { f(); }
+};
+
+// The new thread's first frame: run the callable, free it, and terminate if it throws ([thread.thread.constr]/5).
+inline void __thread_run(void *p) {
+    __thread_body *b = static_cast<__thread_body *>(p);
+    try {
+        b->run();
+    } catch (...) {
+        std::terminate();
+    }
+    delete b;
+}
+#if defined(_WIN32)
+inline unsigned long __thread_start(void *p) { __thread_run(p); return 0; }
+#elif !defined(__TMS320C6X__)
+inline void *__thread_start(void *p) { __thread_run(p); return 0; }
+#endif
+
+class thread {
+public:
+    class id {
+    public:
+        id() noexcept : n_(0) {}
+        explicit id(unsigned long long n) noexcept : n_(n) {}
+        bool operator==(const id &o) const noexcept { return n_ == o.n_; }
+        bool operator!=(const id &o) const noexcept { return n_ != o.n_; }
+        bool operator<(const id &o) const noexcept { return n_ < o.n_; }
+
+    private:
+        unsigned long long n_;
+    };
+
+    thread() noexcept : h_(0), id_() {}
+    // Not a candidate for a thread itself ([thread.thread.constr]/3, as C++14 words it): a move is the move constructor's.
+    template <class F, class = typename enable_if<!is_same<typename decay<F>::type, thread>::value>::type,
+              class... Args>
+    explicit thread(F &&f, Args &&...) : h_(0), id_() {
+        static_assert(sizeof...(Args) == 0, "std::thread with arguments after the callable is not here yet - "
+                                            "a lambda can carry them");
+        typedef typename decay<F>::type Fn;
+        __thread_body *b = new __thread_call<Fn>(Fn(std::forward<F>(f)));
+#if defined(_WIN32)
+        unsigned long n = 0;
+        h_ = CreateThread(0, 0, __thread_start, b, 0, &n);
+        if (h_ == 0) { delete b; std::terminate(); }
+        id_ = id(n);
+#elif defined(__TMS320C6X__)
+        __thread_run(b);
+#else
+        if (pthread_create(&h_, 0, __thread_start, b) != 0) { delete b; std::terminate(); }
+        id_ = id(reinterpret_cast<unsigned long long>(h_));
+#endif
+    }
+    thread(thread &&o) noexcept : h_(o.h_), id_(o.id_) { o.h_ = 0; o.id_ = id(); }
+    thread &operator=(thread &&o) noexcept {
+        if (joinable()) std::terminate();
+        h_ = o.h_; id_ = o.id_;
+        o.h_ = 0; o.id_ = id();
+        return *this;
+    }
+    ~thread() { if (joinable()) std::terminate(); }
+    thread(const thread &) = delete;
+    thread &operator=(const thread &) = delete;
+
+    bool joinable() const noexcept { return h_ != 0; }
+    id get_id() const noexcept { return id_; }
+    void join() {
+#if defined(_WIN32)
+        WaitForSingleObject(h_, 0xFFFFFFFFul);
+        CloseHandle(h_);
+#elif !defined(__TMS320C6X__)
+        pthread_join(h_, 0);
+#endif
+        h_ = 0;
+        id_ = id();
+    }
+    void detach() {
+#if defined(_WIN32)
+        CloseHandle(h_);
+#elif !defined(__TMS320C6X__)
+        pthread_detach(h_);
+#endif
+        h_ = 0;
+        id_ = id();
+    }
+    void swap(thread &o) noexcept { std::swap(h_, o.h_); std::swap(id_, o.id_); }
+
+    static unsigned hardware_concurrency() noexcept {
+#if defined(_WIN32)
+        return static_cast<unsigned>(GetActiveProcessorCount(0xFFFF));
+#elif defined(__TMS320C6X__)
+        return 1;
+#elif defined(__APPLE__)
+        return static_cast<unsigned>(sysconf(58));
+#else
+        return static_cast<unsigned>(sysconf(84));
+#endif
+    }
+
+private:
+    void *h_;
+    id id_;
+};
+
+inline void swap(thread &a, thread &b) noexcept { a.swap(b); }
+
+namespace this_thread {
+inline thread::id get_id() noexcept {
+#if defined(_WIN32)
+    return thread::id(GetCurrentThreadId());
+#elif defined(__TMS320C6X__)
+    return thread::id(1);
+#else
+    return thread::id(reinterpret_cast<unsigned long long>(pthread_self()));
+#endif
+}
+}  // namespace this_thread
+
+}  // namespace std
+
+#endif

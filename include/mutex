@@ -1,0 +1,111 @@
+// <mutex> - [thread.mutex]: std::mutex over each platform's own lock, and the two guards. Windows takes a
+// slim reader/writer lock, a word that needs no setup and no teardown; Linux and macOS a pthread_mutex_t,
+// 40 and 64 bytes, held here in 64; the C6000 runs one thread and its mutex locks nothing.
+//
+// **Not here**: recursive_mutex, timed_mutex, call_once and try_lock of several - unasked for so far.
+#ifndef _CXX1_MUTEX
+#define _CXX1_MUTEX
+
+#if defined(_WIN32)
+// The SDK's declarations type for type - lib/windows.h's agree - so a program including both redeclares them.
+struct _RTL_SRWLOCK;
+extern "C" void AcquireSRWLockExclusive(_RTL_SRWLOCK *lock);
+extern "C" void ReleaseSRWLockExclusive(_RTL_SRWLOCK *lock);
+extern "C" unsigned char TryAcquireSRWLockExclusive(_RTL_SRWLOCK *lock);
+#elif !defined(__TMS320C6X__)
+extern "C" int pthread_mutex_init(void *mutex, const void *attributes);
+extern "C" int pthread_mutex_destroy(void *mutex);
+extern "C" int pthread_mutex_lock(void *mutex);
+extern "C" int pthread_mutex_unlock(void *mutex);
+extern "C" int pthread_mutex_trylock(void *mutex);
+#endif
+
+namespace std {
+
+class mutex {
+public:
+#if defined(_WIN32)
+    mutex() noexcept : lock_(0) {}
+    ~mutex() {}
+    void lock() { AcquireSRWLockExclusive(srw()); }
+    void unlock() { ReleaseSRWLockExclusive(srw()); }
+    bool try_lock() { return TryAcquireSRWLockExclusive(srw()) != 0; }
+#elif defined(__TMS320C6X__)
+    mutex() noexcept {}
+    void lock() {}
+    void unlock() {}
+    bool try_lock() { return true; }
+#else
+    mutex() noexcept { pthread_mutex_init(lock_, 0); }
+    ~mutex() { pthread_mutex_destroy(lock_); }
+    void lock() { pthread_mutex_lock(lock_); }
+    void unlock() { pthread_mutex_unlock(lock_); }
+    bool try_lock() { return pthread_mutex_trylock(lock_) == 0; }
+#endif
+    mutex(const mutex &) = delete;
+    mutex &operator=(const mutex &) = delete;
+
+private:
+#if defined(_WIN32)
+    _RTL_SRWLOCK *srw() { return reinterpret_cast<_RTL_SRWLOCK *>(&lock_); }
+    void *lock_;
+#elif !defined(__TMS320C6X__)
+    long long lock_[8];
+#endif
+};
+
+struct defer_lock_t {};
+struct try_to_lock_t {};
+struct adopt_lock_t {};
+const defer_lock_t defer_lock = {};
+const try_to_lock_t try_to_lock = {};
+const adopt_lock_t adopt_lock = {};
+
+template <class Mutex> class lock_guard {
+public:
+    typedef Mutex mutex_type;
+    explicit lock_guard(Mutex &m) : m_(m) { m_.lock(); }
+    lock_guard(Mutex &m, adopt_lock_t) : m_(m) {}
+    ~lock_guard() { m_.unlock(); }
+    lock_guard(const lock_guard &) = delete;
+    lock_guard &operator=(const lock_guard &) = delete;
+
+private:
+    Mutex &m_;
+};
+
+template <class Mutex> class unique_lock {
+public:
+    typedef Mutex mutex_type;
+    unique_lock() noexcept : m_(0), owns_(false) {}
+    explicit unique_lock(Mutex &m) : m_(&m), owns_(false) { lock(); }
+    unique_lock(Mutex &m, defer_lock_t) noexcept : m_(&m), owns_(false) {}
+    unique_lock(Mutex &m, try_to_lock_t) : m_(&m), owns_(m.try_lock()) {}
+    unique_lock(Mutex &m, adopt_lock_t) : m_(&m), owns_(true) {}
+    unique_lock(unique_lock &&o) noexcept : m_(o.m_), owns_(o.owns_) { o.m_ = 0; o.owns_ = false; }
+    unique_lock &operator=(unique_lock &&o) noexcept {
+        if (owns_) m_->unlock();
+        m_ = o.m_; owns_ = o.owns_;
+        o.m_ = 0; o.owns_ = false;
+        return *this;
+    }
+    ~unique_lock() { if (owns_) m_->unlock(); }
+    unique_lock(const unique_lock &) = delete;
+    unique_lock &operator=(const unique_lock &) = delete;
+
+    void lock() { m_->lock(); owns_ = true; }
+    bool try_lock() { owns_ = m_->try_lock(); return owns_; }
+    void unlock() { m_->unlock(); owns_ = false; }
+    Mutex *release() noexcept { Mutex *m = m_; m_ = 0; owns_ = false; return m; }
+    bool owns_lock() const noexcept { return owns_; }
+    explicit operator bool() const noexcept { return owns_; }
+    Mutex *mutex() const noexcept { return m_; }
+
+private:
+    Mutex *m_;
+    bool owns_;
+};
+
+}  // namespace std
+
+#endif

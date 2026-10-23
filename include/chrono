@@ -1,0 +1,208 @@
+// <chrono> - [time]: a duration is a count of ticks of a period, a time_point a duration since a clock's
+// epoch, and the clocks read the platform's own: QueryPerformanceCounter on Windows, clock_gettime on Linux
+// (CLOCK_MONOTONIC is 1, CLOCK_REALTIME 0) and macOS (6 and 0), clock() on the C6000, which has no other.
+//
+// **Sized to what has been asked of it**: durations of one type combine with + - and compare; two of
+// different types meet through duration_cast, or through the converting constructor where it loses nothing
+// ([time.duration.cons]/4) - the common_type arithmetic between two periods is not here.
+#ifndef _CXX1_CHRONO
+#define _CXX1_CHRONO
+
+#include <cstdint>
+#include <ctime>
+#include <ratio>
+#include <type_traits>
+
+#if defined(_WIN32)
+// The SDK's declarations type for type, as <mutex>'s: LARGE_INTEGER and FILETIME are 8 bytes each, read whole.
+union _LARGE_INTEGER;
+struct _FILETIME;
+extern "C" int QueryPerformanceCounter(_LARGE_INTEGER *count);
+extern "C" int QueryPerformanceFrequency(_LARGE_INTEGER *frequency);
+extern "C" void GetSystemTimePreciseAsFileTime(_FILETIME *ticks);
+#elif !defined(__TMS320C6X__)
+struct __cxx1_timespec { long tv_sec; long tv_nsec; };
+extern "C" int clock_gettime(int clock, __cxx1_timespec *at);
+#endif
+
+namespace std {
+namespace chrono {
+
+template <class Rep> struct treat_as_floating_point : is_floating_point<Rep> {};
+
+template <class Rep, class Period = ratio<1> > class duration;
+
+// From one period to another, in the destination's representation, or a long double where either side floats.
+template <class To, class Rep, class Period>
+To duration_cast(const duration<Rep, Period> &d) {
+    typedef typename ratio_divide<Period, typename To::period>::type cf;
+    typedef typename To::rep rep;
+    if (treat_as_floating_point<rep>::value || treat_as_floating_point<Rep>::value)
+        return To(static_cast<rep>(static_cast<long double>(d.count()) * cf::num / cf::den));
+    return To(static_cast<rep>(static_cast<intmax_t>(d.count()) * cf::num / cf::den));
+}
+
+template <class Rep, class Period> class duration {
+public:
+    typedef Rep rep;
+    typedef Period period;
+
+    duration() : r_() {}
+    explicit duration(const Rep &r) : r_(r) {}
+    // Implicit only where nothing is lost: into a floating count, or into a period that divides the source's.
+    template <class Rep2, class Period2,
+              class = typename enable_if<treat_as_floating_point<Rep>::value ||
+                                         (ratio_divide<Period2, Period>::type::den == 1 &&
+                                          !treat_as_floating_point<Rep2>::value)>::type>
+    duration(const duration<Rep2, Period2> &d) : r_(duration_cast<duration>(d).count()) {}
+
+    Rep count() const { return r_; }
+
+    duration operator+() const { return *this; }
+    duration operator-() const { return duration(-r_); }
+    duration &operator++() { ++r_; return *this; }
+    duration operator++(int) { duration was(*this); ++r_; return was; }
+    duration &operator--() { --r_; return *this; }
+    duration operator--(int) { duration was(*this); --r_; return was; }
+    duration &operator+=(const duration &d) { r_ += d.r_; return *this; }
+    duration &operator-=(const duration &d) { r_ -= d.r_; return *this; }
+    duration &operator*=(const Rep &k) { r_ *= k; return *this; }
+    duration &operator/=(const Rep &k) { r_ /= k; return *this; }
+
+    static duration zero() { return duration(Rep(0)); }
+
+private:
+    Rep r_;
+};
+
+template <class R, class P> duration<R, P> operator+(const duration<R, P> &a, const duration<R, P> &b) {
+    return duration<R, P>(a.count() + b.count());
+}
+template <class R, class P> duration<R, P> operator-(const duration<R, P> &a, const duration<R, P> &b) {
+    return duration<R, P>(a.count() - b.count());
+}
+template <class R, class P> duration<R, P> operator*(const duration<R, P> &a, const R &k) {
+    return duration<R, P>(a.count() * k);
+}
+template <class R, class P> duration<R, P> operator*(const R &k, const duration<R, P> &a) {
+    return duration<R, P>(a.count() * k);
+}
+template <class R, class P> duration<R, P> operator/(const duration<R, P> &a, const R &k) {
+    return duration<R, P>(a.count() / k);
+}
+template <class R, class P> R operator/(const duration<R, P> &a, const duration<R, P> &b) {
+    return a.count() / b.count();
+}
+template <class R, class P> bool operator==(const duration<R, P> &a, const duration<R, P> &b) { return a.count() == b.count(); }
+template <class R, class P> bool operator!=(const duration<R, P> &a, const duration<R, P> &b) { return a.count() != b.count(); }
+template <class R, class P> bool operator<(const duration<R, P> &a, const duration<R, P> &b) { return a.count() < b.count(); }
+template <class R, class P> bool operator>(const duration<R, P> &a, const duration<R, P> &b) { return a.count() > b.count(); }
+template <class R, class P> bool operator<=(const duration<R, P> &a, const duration<R, P> &b) { return a.count() <= b.count(); }
+template <class R, class P> bool operator>=(const duration<R, P> &a, const duration<R, P> &b) { return a.count() >= b.count(); }
+
+typedef duration<long long, nano> nanoseconds;
+typedef duration<long long, micro> microseconds;
+typedef duration<long long, milli> milliseconds;
+typedef duration<long long> seconds;
+typedef duration<long long, ratio<60> > minutes;
+typedef duration<long long, ratio<3600> > hours;
+
+template <class Clock, class Duration = typename Clock::duration> class time_point {
+public:
+    typedef Clock clock;
+    typedef Duration duration;
+    typedef typename Duration::rep rep;
+    typedef typename Duration::period period;
+
+    time_point() : d_() {}
+    explicit time_point(const Duration &d) : d_(d) {}
+    Duration time_since_epoch() const { return d_; }
+    time_point &operator+=(const Duration &d) { d_ += d; return *this; }
+    time_point &operator-=(const Duration &d) { d_ -= d; return *this; }
+
+private:
+    Duration d_;
+};
+
+template <class C, class D> D operator-(const time_point<C, D> &a, const time_point<C, D> &b) {
+    return a.time_since_epoch() - b.time_since_epoch();
+}
+template <class C, class D> time_point<C, D> operator+(const time_point<C, D> &a, const D &d) {
+    return time_point<C, D>(a.time_since_epoch() + d);
+}
+template <class C, class D> time_point<C, D> operator-(const time_point<C, D> &a, const D &d) {
+    return time_point<C, D>(a.time_since_epoch() - d);
+}
+template <class C, class D> bool operator==(const time_point<C, D> &a, const time_point<C, D> &b) {
+    return a.time_since_epoch() == b.time_since_epoch();
+}
+template <class C, class D> bool operator!=(const time_point<C, D> &a, const time_point<C, D> &b) {
+    return a.time_since_epoch() != b.time_since_epoch();
+}
+template <class C, class D> bool operator<(const time_point<C, D> &a, const time_point<C, D> &b) {
+    return a.time_since_epoch() < b.time_since_epoch();
+}
+
+// One source of nanoseconds per clock and target; the clocks below are a type around each.
+inline long long __steady_nanoseconds() {
+#if defined(_WIN32)
+    long long c = 0, f = 1;
+    QueryPerformanceCounter(reinterpret_cast<_LARGE_INTEGER *>(&c));
+    QueryPerformanceFrequency(reinterpret_cast<_LARGE_INTEGER *>(&f));
+    return (c / f) * 1000000000LL + (c % f) * 1000000000LL / f;
+#elif defined(__TMS320C6X__)
+    return static_cast<long long>(::clock()) * (1000000000LL / CLOCKS_PER_SEC);
+#else
+    __cxx1_timespec at = { 0, 0 };
+#if defined(__APPLE__)
+    clock_gettime(6, &at);
+#else
+    clock_gettime(1, &at);
+#endif
+    return static_cast<long long>(at.tv_sec) * 1000000000LL + at.tv_nsec;
+#endif
+}
+
+// Microseconds since 1970: Windows counts 100 ns ticks since 1601, 11644473600 seconds before.
+inline long long __system_microseconds() {
+#if defined(_WIN32)
+    unsigned long long t = 0;
+    GetSystemTimePreciseAsFileTime(reinterpret_cast<_FILETIME *>(&t));
+    return static_cast<long long>(t / 10) - 11644473600000000LL;
+#elif defined(__TMS320C6X__)
+    return static_cast<long long>(::time(0)) * 1000000LL;
+#else
+    __cxx1_timespec at = { 0, 0 };
+    clock_gettime(0, &at);
+    return static_cast<long long>(at.tv_sec) * 1000000LL + at.tv_nsec / 1000;
+#endif
+}
+
+struct steady_clock {
+    typedef nanoseconds duration;
+    typedef duration::rep rep;
+    typedef duration::period period;
+    typedef chrono::time_point<steady_clock> time_point;
+    static const bool is_steady = true;
+    static time_point now() { return time_point(duration(__steady_nanoseconds())); }
+};
+
+struct system_clock {
+    typedef microseconds duration;
+    typedef duration::rep rep;
+    typedef duration::period period;
+    typedef chrono::time_point<system_clock> time_point;
+    static const bool is_steady = false;
+    static time_point now() { return time_point(duration(__system_microseconds())); }
+    static time_t to_time_t(const time_point &t) {
+        return static_cast<time_t>(t.time_since_epoch().count() / 1000000);
+    }
+    static time_point from_time_t(time_t t) { return time_point(duration(static_cast<long long>(t) * 1000000)); }
+};
+
+typedef steady_clock high_resolution_clock;
+
+}  // namespace chrono
+}  // namespace std
+
+#endif

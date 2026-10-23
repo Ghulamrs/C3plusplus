@@ -27,6 +27,8 @@
 #include <cstring>
 #include <cstdio>     // snprintf, for to_string of a floating value
 #include <cctype>     // as libstdc++'s <string> reaches it, so `isupper` is declared beside a string
+#include <__hash>
+#include <type_traits>
 
 namespace std {
 
@@ -80,6 +82,9 @@ public:
     basic_string(const C *s) { init(s, __cxx1_length(s)); }
     basic_string(const C *s, size_type n) { init(s, n); }
     basic_string(const basic_string &o) { init(o.p(), o.len_); }
+    // [string.cons]/15: a range of characters - not for two integers, which is (n, c) above.
+    template <class It, class = typename enable_if<!is_integral<It>::value>::type>
+    basic_string(It first, It last) { init(0, 0); for (; first != last; ++first) push_back(*first); }
     basic_string(size_type n, C c) {
         empty0();
         reserve(n);
@@ -470,6 +475,13 @@ private:
 
 typedef basic_string<char> string;
 typedef basic_string<wchar_t> wstring;
+
+// [basic.string.hash]: the characters' bytes, as <__hash> takes them.
+template <class C> struct hash<basic_string<C> > {
+    typedef basic_string<C> argument_type;
+    typedef size_t result_type;
+    size_t operator()(const basic_string<C> &s) const { return __hash_bytes(s.data(), s.size() * sizeof(C)); }
+};
 
 // **The comparisons and the concatenations are non-members**, which is what
 // lets `"a" + s` work as well as `s + "a"`: a member would need the left side

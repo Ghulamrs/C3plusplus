@@ -139,7 +139,8 @@ private:
     // The funclets' .pdata goes to MasmSpelling::trailer_, after every function:
     // .pdata has to be sorted by the address it describes and every funclet
     // lives in .text$x, so emitting beside the parent gives LNK1223.
-    std::size_t funcletMark_ = 0;
+    std::vector<std::size_t> funcletMarks_;          // as X86_64Linux's: a funclet may open inside one
+    std::vector<std::string> funcletOuter_;
     int funcletIndex_ = 0;
     std::string funcletSymbol_;
     const char *funcletKind_ = "$catch$";

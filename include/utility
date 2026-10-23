@@ -23,6 +23,8 @@ struct pair {
 
     pair() : first(), second() {}
     pair(const T1 &a, const T2 &b) : first(a), second(b) {}
+    // The second member moved in: a map's `operator[]` makes its element from a default value, which may only move.
+    pair(const T1 &a, T2 &&b) : first(a), second(static_cast<T2 &&>(b)) {}
     // A `pair<K, V>` from a map's `pair<const K, V>` - `vector<pair<int, char> > pv(m.begin(), m.end())`
     // copies one - by a constructor of its own; the specialization below has the other direction.
     // Neither is a template: see there (1.27, 2026-10-21, review of 1.25, item 4).
@@ -46,6 +48,7 @@ struct pair<const T1, T2> {
 
     pair() : first(), second() {}
     pair(const T1 &a, const T2 &b) : first(a), second(b) {}
+    pair(const T1 &a, T2 &&b) : first(a), second(static_cast<T2 &&>(b)) {}
     pair(const pair<T1, T2> &p) : first(p.first), second(p.second) {}
 
     const T1 first;

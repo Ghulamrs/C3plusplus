@@ -96,11 +96,12 @@ protected:
     void coffRecord(const char *section, const std::string &label, int p2align,
                     const char *flags = "dr");
 
-    // A funclet is written by walking the handler into the ordinary output and
-    // lifting the text back out - what the body appended, in order, IS the
-    // funclet, so moving it costs no second code path.
+    // A funclet is written by walking the handler into the ordinary output and lifting the text back out - what
+    // the body appended, in order, IS the funclet. One may open inside another (M1): the marks are a stack the
+    // output lambdas keep, and the outer funclet's symbol and flag come back when the inner one closes.
+    std::vector<std::size_t> funcletMarks_;
+    std::vector<std::pair<std::string, bool> > funcletOuter_;
     std::string funclets_;
-    std::size_t funcletMark_ = 0;
     int funcletIndex_ = 0;
     std::string funcletSymbol_;
     // The Microsoft type descriptors this file has laid down, so a class both

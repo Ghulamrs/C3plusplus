@@ -94,6 +94,8 @@ double __c6xabi_nround(double);
 #else
 double trunc(double);
 double round(double);
+/* x * y + z rounded once - the hosts' C libraries have it; TI's runtime is not asked. */
+double fma(double, double, double);
 #endif
 
 

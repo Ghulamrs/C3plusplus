@@ -1,0 +1,124 @@
+// <atomic> - [atomics]: std::atomic<T> for an integral type, bool and a pointer, sequentially consistent.
+// **Kept under a lock, not by lock-free instructions**: cxx3 has no atomic operations of its own yet, so each
+// atomic holds a std::mutex beside its value and is_lock_free() says false - correct, and slower than a
+// compare-and-swap; sizeof is not the value's. The memory_order arguments are taken and all are seq_cst.
+#ifndef _CXX1_ATOMIC
+#define _CXX1_ATOMIC
+
+#include <cstddef>
+#include <mutex>
+
+namespace std {
+
+enum memory_order {
+    memory_order_relaxed, memory_order_consume, memory_order_acquire,
+    memory_order_release, memory_order_acq_rel, memory_order_seq_cst
+};
+
+// The value and its lock, and everything every atomic does.
+template <class T> class __atomic_base {
+public:
+    __atomic_base() noexcept : v_() {}
+    __atomic_base(T v) noexcept : v_(v) {}
+    __atomic_base(const __atomic_base &) = delete;
+    __atomic_base &operator=(const __atomic_base &) = delete;
+
+    bool is_lock_free() const noexcept { return false; }
+    void store(T v, memory_order = memory_order_seq_cst) noexcept { lock_guard<mutex> h(m_); v_ = v; }
+    T load(memory_order = memory_order_seq_cst) const noexcept { lock_guard<mutex> h(m_); return v_; }
+    operator T() const noexcept { return load(); }
+    T exchange(T v, memory_order = memory_order_seq_cst) noexcept {
+        lock_guard<mutex> h(m_);
+        T was = v_;
+        v_ = v;
+        return was;
+    }
+    bool compare_exchange_strong(T &expected, T desired, memory_order = memory_order_seq_cst) noexcept {
+        lock_guard<mutex> h(m_);
+        if (v_ == expected) { v_ = desired; return true; }
+        expected = v_;
+        return false;
+    }
+    bool compare_exchange_weak(T &expected, T desired, memory_order o = memory_order_seq_cst) noexcept {
+        return compare_exchange_strong(expected, desired, o);
+    }
+
+protected:
+    T v_;
+    mutable mutex m_;
+};
+
+template <class T> struct atomic : __atomic_base<T> {
+    atomic() noexcept {}
+    atomic(T v) noexcept : __atomic_base<T>(v) {}
+    T operator=(T v) noexcept { this->store(v); return v; }
+};
+
+// Integral: the fetch operations and the operators built on them.
+template <class T> struct __atomic_integral : __atomic_base<T> {
+    __atomic_integral() noexcept {}
+    __atomic_integral(T v) noexcept : __atomic_base<T>(v) {}
+    T fetch_add(T d, memory_order = memory_order_seq_cst) noexcept { lock_guard<mutex> h(this->m_); T w = this->v_; this->v_ = w + d; return w; }
+    T fetch_sub(T d, memory_order = memory_order_seq_cst) noexcept { lock_guard<mutex> h(this->m_); T w = this->v_; this->v_ = w - d; return w; }
+    T fetch_and(T d, memory_order = memory_order_seq_cst) noexcept { lock_guard<mutex> h(this->m_); T w = this->v_; this->v_ = w & d; return w; }
+    T fetch_or(T d, memory_order = memory_order_seq_cst) noexcept { lock_guard<mutex> h(this->m_); T w = this->v_; this->v_ = w | d; return w; }
+    T fetch_xor(T d, memory_order = memory_order_seq_cst) noexcept { lock_guard<mutex> h(this->m_); T w = this->v_; this->v_ = w ^ d; return w; }
+    T operator++() noexcept { return fetch_add(1) + 1; }
+    T operator++(int) noexcept { return fetch_add(1); }
+    T operator--() noexcept { return fetch_sub(1) - 1; }
+    T operator--(int) noexcept { return fetch_sub(1); }
+    T operator+=(T d) noexcept { return fetch_add(d) + d; }
+    T operator-=(T d) noexcept { return fetch_sub(d) - d; }
+    T operator&=(T d) noexcept { return fetch_and(d) & d; }
+    T operator|=(T d) noexcept { return fetch_or(d) | d; }
+    T operator^=(T d) noexcept { return fetch_xor(d) ^ d; }
+    T operator=(T v) noexcept { this->store(v); return v; }
+};
+
+#define _CXX1_ATOMIC_INTEGRAL(T) \
+    template <> struct atomic<T> : __atomic_integral<T> { \
+        atomic() noexcept {} \
+        atomic(T v) noexcept : __atomic_integral<T>(v) {} \
+        T operator=(T v) noexcept { this->store(v); return v; } \
+    };
+_CXX1_ATOMIC_INTEGRAL(char)
+_CXX1_ATOMIC_INTEGRAL(signed char)
+_CXX1_ATOMIC_INTEGRAL(unsigned char)
+_CXX1_ATOMIC_INTEGRAL(short)
+_CXX1_ATOMIC_INTEGRAL(unsigned short)
+_CXX1_ATOMIC_INTEGRAL(int)
+_CXX1_ATOMIC_INTEGRAL(unsigned int)
+_CXX1_ATOMIC_INTEGRAL(long)
+_CXX1_ATOMIC_INTEGRAL(unsigned long)
+_CXX1_ATOMIC_INTEGRAL(long long)
+_CXX1_ATOMIC_INTEGRAL(unsigned long long)
+_CXX1_ATOMIC_INTEGRAL(wchar_t)
+_CXX1_ATOMIC_INTEGRAL(char16_t)
+_CXX1_ATOMIC_INTEGRAL(char32_t)
+#undef _CXX1_ATOMIC_INTEGRAL
+
+// A pointer: arithmetic in elements.
+template <class T> struct atomic<T *> : __atomic_base<T *> {
+    atomic() noexcept {}
+    atomic(T *v) noexcept : __atomic_base<T *>(v) {}
+    T *fetch_add(ptrdiff_t d, memory_order = memory_order_seq_cst) noexcept { lock_guard<mutex> h(this->m_); T *w = this->v_; this->v_ = w + d; return w; }
+    T *fetch_sub(ptrdiff_t d, memory_order = memory_order_seq_cst) noexcept { lock_guard<mutex> h(this->m_); T *w = this->v_; this->v_ = w - d; return w; }
+    T *operator++() noexcept { return fetch_add(1) + 1; }
+    T *operator++(int) noexcept { return fetch_add(1); }
+    T *operator--() noexcept { return fetch_sub(1) - 1; }
+    T *operator--(int) noexcept { return fetch_sub(1); }
+    T *operator+=(ptrdiff_t d) noexcept { return fetch_add(d) + d; }
+    T *operator-=(ptrdiff_t d) noexcept { return fetch_sub(d) - d; }
+    T *operator=(T *v) noexcept { this->store(v); return v; }
+};
+
+typedef atomic<bool> atomic_bool;
+typedef atomic<int> atomic_int;
+typedef atomic<unsigned int> atomic_uint;
+typedef atomic<long> atomic_long;
+typedef atomic<long long> atomic_llong;
+typedef atomic<size_t> atomic_size_t;
+
+}  // namespace std
+
+#endif

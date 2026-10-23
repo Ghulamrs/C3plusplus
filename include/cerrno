@@ -1,0 +1,8 @@
+// <cerrno> - lib/errno.h, whose `errno` is a macro over each C library's own function, and its numbers.
+// Nothing is under `std::` here: errno and every E-constant are macros, [cerrno.syn].
+#ifndef _CXX1_CERRNO
+#define _CXX1_CERRNO
+
+#include <errno.h>
+
+#endif

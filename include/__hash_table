@@ -1,0 +1,165 @@
+// <__hash_table> - the table under <unordered_map> and <unordered_set>: an array of buckets, each a singly
+// linked chain of nodes made one at a time and never moved. Value is the element, GetKey reads its key, H
+// hashes a key and E compares two. Growing doubles the bucket count once the size passes it and relinks
+// every node into its new bucket; nothing is copied.
+#ifndef _CXX1_HASH_TABLE
+#define _CXX1_HASH_TABLE
+
+#include <cstddef>
+#include <utility>
+
+namespace std {
+
+template <class Value> struct __hash_node {
+    __hash_node *next;
+    Value v;
+    explicit __hash_node(const Value &x) : next(0), v(x) {}
+    explicit __hash_node(Value &&x) : next(0), v(std::move(x)) {}
+};
+
+// Where an iterator stands: a node and its bucket, and the buckets to walk on through.
+template <class Value, class Ref, class Ptr> class __hash_iterator {
+public:
+    typedef __hash_node<Value> node;
+    __hash_iterator() : n_(0), b_(0), nb_(0), i_(0) {}
+    __hash_iterator(node *n, node *const *b, size_t nb, size_t i) : n_(n), b_(b), nb_(nb), i_(i) {}
+    template <class R2, class P2>
+    __hash_iterator(const __hash_iterator<Value, R2, P2> &o) : n_(o.n_), b_(o.b_), nb_(o.nb_), i_(o.i_) {}
+
+    Ref operator*() const { return n_->v; }
+    Ptr operator->() const { return &n_->v; }
+    __hash_iterator &operator++() {
+        if (n_->next != 0) { n_ = n_->next; return *this; }
+        n_ = 0;
+        while (++i_ < nb_)
+            if (b_[i_] != 0) { n_ = b_[i_]; break; }
+        return *this;
+    }
+    __hash_iterator operator++(int) { __hash_iterator was(*this); ++*this; return was; }
+    bool operator==(const __hash_iterator &o) const { return n_ == o.n_; }
+    bool operator!=(const __hash_iterator &o) const { return n_ != o.n_; }
+
+    node *n_;
+    node *const *b_;
+    size_t nb_;
+    size_t i_;
+};
+
+template <class Value, class Key, class GetKey, class H, class E> class __hash_table {
+public:
+    typedef __hash_node<Value> node;
+    typedef __hash_iterator<Value, Value &, Value *> iterator;
+    typedef __hash_iterator<Value, const Value &, const Value *> const_iterator;
+
+    __hash_table() : b_(0), nb_(0), n_(0) {}
+    __hash_table(const __hash_table &o) : b_(0), nb_(0), n_(0), h_(o.h_), e_(o.e_) {
+        rehash(o.nb_);
+        for (const_iterator i = o.begin(); i != o.end(); ++i) insertNew(*i);
+    }
+    __hash_table(__hash_table &&o) noexcept : b_(o.b_), nb_(o.nb_), n_(o.n_), h_(o.h_), e_(o.e_) {
+        o.b_ = 0; o.nb_ = 0; o.n_ = 0;
+    }
+    __hash_table &operator=(const __hash_table &o) {
+        if (this != &o) { __hash_table copy(o); swap(copy); }
+        return *this;
+    }
+    __hash_table &operator=(__hash_table &&o) noexcept { swap(o); return *this; }
+    ~__hash_table() { clear(); delete[] b_; }
+
+    size_t size() const { return n_; }
+    size_t bucketCount() const { return nb_; }
+
+    iterator begin() { return iterator(first(), b_, nb_, firstBucket()); }
+    iterator end() { return iterator(0, b_, nb_, nb_); }
+    const_iterator begin() const { return const_iterator(first(), b_, nb_, firstBucket()); }
+    const_iterator end() const { return const_iterator(0, b_, nb_, nb_); }
+
+    iterator find(const Key &k) {
+        if (nb_ == 0) return end();
+        const size_t i = h_(k) % nb_;
+        for (node *x = b_[i]; x != 0; x = x->next)
+            if (e_(GetKey::get(x->v), k)) return iterator(x, b_, nb_, i);
+        return end();
+    }
+    const_iterator find(const Key &k) const { return const_cast<__hash_table *>(this)->find(k); }
+
+    // An element whose key is not in the table yet; the caller has asked.
+    iterator insertNew(const Value &v) { return linkNew(new node(v)); }
+    // Moved in: an `operator[]` element, whose mapped type may only move.
+    iterator insertNew(Value &&v) { return linkNew(new node(std::move(v))); }
+    iterator linkNew(node *x) {
+        if (n_ + 1 > nb_) rehash(nb_ < 8 ? 8 : nb_ * 2);
+        const size_t i = h_(GetKey::get(x->v)) % nb_;
+        x->next = b_[i];
+        b_[i] = x;
+        ++n_;
+        return iterator(x, b_, nb_, i);
+    }
+
+    size_t eraseKey(const Key &k) {
+        iterator at = find(k);
+        if (at == end()) return 0;
+        erase(const_iterator(at));
+        return 1;
+    }
+    iterator erase(const_iterator at) {
+        const_iterator next = at;
+        ++next;
+        node **link = &b_[at.i_];
+        while (*link != at.n_) link = &(*link)->next;
+        *link = at.n_->next;
+        delete at.n_;
+        --n_;
+        return iterator(next.n_, b_, nb_, next.i_);
+    }
+
+    void clear() {
+        for (size_t i = 0; i < nb_; i++) {
+            node *x = b_[i];
+            while (x != 0) { node *next = x->next; delete x; x = next; }
+            b_[i] = 0;
+        }
+        n_ = 0;
+    }
+    void swap(__hash_table &o) {
+        std::swap(b_, o.b_); std::swap(nb_, o.nb_); std::swap(n_, o.n_);
+        std::swap(h_, o.h_); std::swap(e_, o.e_);
+    }
+    // At least n buckets, and never fewer than the elements: every node relinked, none copied.
+    void rehash(size_t n) {
+        if (n < n_) n = n_;
+        if (n <= nb_ || n == 0) return;
+        node **fresh = new node *[n];
+        for (size_t i = 0; i < n; i++) fresh[i] = 0;
+        for (size_t i = 0; i < nb_; i++) {
+            node *x = b_[i];
+            while (x != 0) {
+                node *next = x->next;
+                const size_t j = h_(GetKey::get(x->v)) % n;
+                x->next = fresh[j];
+                fresh[j] = x;
+                x = next;
+            }
+        }
+        delete[] b_;
+        b_ = fresh;
+        nb_ = n;
+    }
+
+private:
+    size_t firstBucket() const {
+        for (size_t i = 0; i < nb_; i++) if (b_[i] != 0) return i;
+        return nb_;
+    }
+    node *first() const { const size_t i = firstBucket(); return i < nb_ ? b_[i] : 0; }
+
+    node **b_;
+    size_t nb_;
+    size_t n_;
+    H h_;
+    E e_;
+};
+
+}  // namespace std
+
+#endif

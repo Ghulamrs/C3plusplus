@@ -34,6 +34,8 @@ void *realloc(void *, size_t);
 void free(void *);
 
 void exit(int);
+// C90 7.10.4.2: a function called at normal termination, the last registered first.
+int atexit(void (*)(void));
 void abort(void);
 // [cstdlib.syn]: a command handed to the host's command processor; its status comes back.
 int system(const char *);

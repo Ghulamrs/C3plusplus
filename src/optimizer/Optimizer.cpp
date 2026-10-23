@@ -68,7 +68,7 @@ void Optimizer::defLabel(const std::string &l) {
 void Optimizer::stateLabel(const std::string &l) {
     if (!inFunction_) { under_.stateLabel(l); return; }
     defLabel(l);
-    fn_.stream.back().state = true;
+    current().stream.back().state = true;     // a funclet's own stream, where a handler holds a try (M1)
 }
 
 void Optimizer::functionBegin(const std::string &name, bool exported, bool mergeable) {
@@ -92,20 +92,22 @@ void Optimizer::functionBegin(const std::string &name, bool exported, bool merge
 // frame under rbp - and a piece, never whole: no pass takes a register for it that its prologue does
 // not save. What it reads or writes of the parent's frame is shared with the parent, whose passes then leave those slots alone.
 void Optimizer::funcletBegin() {
-    assert(inFunction_ && !funclet_ && "a funclet inside a funclet");
-    funclet_.reset(new opt::Function(*costs_));
-    funclet_->name = fn_.name;
-    funclet_->convention = fn_.convention;
-    funclet_->whole = false;
+    assert(inFunction_ && "a funclet outside a function");
+    funclet_.emplace_back(new opt::Function(*costs_));
+    opt::Function &f = *funclet_.back();
+    f.name = fn_.name;
+    f.convention = fn_.convention;
+    f.whole = false;
     opt::noteDecline("funclet-no-frame-passes", fn_.name);
 }
 
 void Optimizer::funcletEnd() {
-    assert(funclet_ && "no funclet is held");
-    improve(*funclet_);
-    fn_.shared.addAccessesOf(funclet_->stream);
-    funclets_.push_back(std::move(funclet_->stream));
-    funclet_.reset();
+    assert(!funclet_.empty() && "no funclet is held");
+    opt::Function &f = *funclet_.back();
+    improve(f);
+    fn_.shared.addAccessesOf(f.stream);
+    funclets_.push_back(std::move(f.stream));
+    funclet_.pop_back();
 }
 
 void Optimizer::defer(std::function<void()> call) {

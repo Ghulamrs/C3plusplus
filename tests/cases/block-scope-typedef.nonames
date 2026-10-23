@@ -1,0 +1,1 @@
+x86_64-linux  clang emits only the C2 variant of W's inline constructor template, where cxx1 emits C1 and C2 - the inline-constructor difference implicit-move.nonames records. Every other name agrees, and the other two targets agree on all.
