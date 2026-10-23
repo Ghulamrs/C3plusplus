@@ -44,6 +44,10 @@ int system(const char *);
 // main.cpp and Preprocessor.cpp ask it (M1, 2026-10-23).
 #define _MAX_PATH 260
 char *_fullpath(char *, const char *, size_t);
+#elif !defined(__TMS320C6X__)
+// POSIX's absolute path of a file, written into a buffer of PATH_MAX (<limits.h>) - the compiler's own
+// main.cpp and Preprocessor.cpp ask it on Linux and macOS (M1, 2026-10-23).
+char *realpath(const char *, char *);
 #endif
 
 int atoi(const char *);

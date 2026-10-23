@@ -1,0 +1,2 @@
+x86_64-windows  POSIX headers: Windows has <direct.h> and <io.h> instead, and lib/ refuses these by name there.
+tms6747  POSIX headers: the C6000 has none, and lib/ refuses them by name there.

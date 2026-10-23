@@ -71,6 +71,13 @@ extern "C" {
 // The largest multibyte character in any supported locale. Genuinely different
 // on all three - measured, not assumed: 16 under glibc, 6 on macOS, 5 under the
 // UCRT. A program sizing a buffer by it gets its own platform's answer.
+// POSIX's longest path, a buffer realpath() fills: 4096 under glibc, 1024 on macOS - measured.
+#if defined(__APPLE__)
+#define PATH_MAX    1024
+#elif defined(__linux__)
+#define PATH_MAX    4096
+#endif
+
 #ifdef _WIN32
 #define MB_LEN_MAX  5
 #elif defined(__APPLE__)

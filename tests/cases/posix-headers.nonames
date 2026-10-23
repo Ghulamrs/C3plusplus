@@ -1,0 +1,2 @@
+x86_64-linux  clang on the Mac has no Linux headers to compile this against; the Linux box runs it.
+arm64-darwin  Apple's header binds realpath to `realpath$DARWIN_EXTSN`, the variant that resolves a path whose last component does not exist yet, where lib/ declares the plain `realpath` libSystem also exports - the same for an existing path, which is all a program here asks. And libc++ makes strrchr a C++ overload pair where lib/ has the C function.

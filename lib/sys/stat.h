@@ -13,7 +13,7 @@
 // stat() an inline function over _stat64i32, which is the exported name, so
 // that is what this one is too.
 //
-// For the Windows target only, as <sys/types.h>.
+// macOS's and Linux's are first, each as measured; the C6000 has none.
 //
 // Added 2026-10-20 for cppparse's PathUtil.cpp: `struct stat st; stat(path, &st)`
 // and `st.st_mode & S_IFDIR`.
@@ -26,6 +26,67 @@
 extern "C" {
 #endif
 
+#if !defined(_WIN32)
+// **POSIX's, for macOS (arm64) and Linux (x86_64)**: each layout measured with offsetof against the
+// platform's own header, 144 bytes on both and alike in almost nothing else (M1, 2026-10-23).
+struct __cxx1_stat_time { long tv_sec; long tv_nsec; };
+#if defined(__APPLE__)
+struct stat {
+    dev_t st_dev;                          //  0
+    mode_t st_mode;                        //  4
+    nlink_t st_nlink;                      //  6
+    ino_t st_ino;                          //  8
+    uid_t st_uid;                          // 16
+    gid_t st_gid;                          // 20
+    dev_t st_rdev;                         // 24
+    struct __cxx1_stat_time st_atimespec;  // 32
+    struct __cxx1_stat_time st_mtimespec;  // 48
+    struct __cxx1_stat_time st_ctimespec;  // 64
+    struct __cxx1_stat_time st_birthtimespec;  // 80
+    off_t st_size;                         // 96
+    blkcnt_t st_blocks;                    // 104
+    blksize_t st_blksize;                  // 112
+    unsigned int st_flags;                 // 116
+    unsigned int st_gen;                   // 120
+    int st_lspare;
+    long long st_qspare[2];                // to 144
+};
+#else
+struct stat {
+    dev_t st_dev;                          //  0
+    ino_t st_ino;                          //  8
+    nlink_t st_nlink;                      // 16
+    mode_t st_mode;                        // 24
+    uid_t st_uid;                          // 28
+    gid_t st_gid;                          // 32
+    int __pad0;
+    dev_t st_rdev;                         // 40
+    off_t st_size;                         // 48
+    blksize_t st_blksize;                  // 56
+    blkcnt_t st_blocks;                    // 64
+    struct __cxx1_stat_time st_atim;       // 72
+    struct __cxx1_stat_time st_mtim;       // 88
+    struct __cxx1_stat_time st_ctim;       // 104
+    long __reserved[3];                    // to 144
+};
+#endif
+
+#define S_IFMT   0170000
+#define S_IFDIR  0040000
+#define S_IFREG  0100000
+#define S_IFLNK  0120000
+#define S_ISDIR(m) (((m) & S_IFMT) == S_IFDIR)
+#define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
+#define S_IRWXU  0700
+#define S_IRUSR  0400
+#define S_IWUSR  0200
+#define S_IXUSR  0100
+
+int stat(const char *path, struct stat *buf);
+int mkdir(const char *path, mode_t mode);
+int chmod(const char *path, mode_t mode);
+
+#else
 struct _stat64i32 {
     _dev_t st_dev;
     _ino_t st_ino;
@@ -77,6 +138,7 @@ int _stat64i32(const char *path, struct _stat64i32 *buf);
 static inline int stat(const char *path, struct stat *buf) {
     return _stat64i32(path, (struct _stat64i32 *)buf);
 }
+#endif
 
 #ifdef __cplusplus
 }
