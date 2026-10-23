@@ -6,6 +6,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
+#include <vector>
 
 static long long unescape(const std::string &s, std::size_t &i, std::size_t,
                           bool wide = false) {
@@ -246,12 +248,41 @@ bool Lexer::isKeyword(const std::string &word) {
     return false;
 }
 
+// **The digits as a number of any length**, base 10^9 and least significant first: an exact value
+// with twenty digits - 18446744073709551616.0L is 2^64 - overflowed a 64-bit accumulator (M1).
+namespace {
+typedef std::vector<unsigned> Digits;
+unsigned divideSmall(Digits &n, unsigned d) {
+    unsigned long long rem = 0;
+    for (std::size_t k = n.size(); k-- > 0;) {
+        const unsigned long long cur = rem * 1000000000ULL + n[k];
+        n[k] = static_cast<unsigned>(cur / d);
+        rem = cur % d;
+    }
+    while (!n.empty() && n.back() == 0) n.pop_back();
+    return static_cast<unsigned>(rem);
+}
+void multiplySmall(Digits &n, unsigned f) {
+    unsigned long long carry = 0;
+    for (std::size_t k = 0; k < n.size(); k++) {
+        const unsigned long long cur = static_cast<unsigned long long>(n[k]) * f + carry;
+        n[k] = static_cast<unsigned>(cur % 1000000000ULL);
+        carry = cur / 1000000000ULL;
+    }
+    if (carry != 0) n.push_back(static_cast<unsigned>(carry));
+}
+bool belowTwo53(const Digits &n) {
+    if (n.size() > 2) return false;
+    const unsigned long long v = (n.size() > 1 ? n[1] * 1000000000ULL : 0) + (n.empty() ? 0 : n[0]);
+    return v < (1ULL << 53);
+}
+}
+
 bool Lexer::exactlyADouble(const std::string &s, std::size_t from,
                            std::size_t to) {
-    unsigned long long m = 0;
+    std::string digits;               // the significant digits, leading zeros dropped
     long long tenth = 0;              // digits seen after the point
-    long long zeros = 0;              // zeros seen and not yet needed
-    bool afterPoint = false, overflowed = false, any = false;
+    bool afterPoint = false, any = false;
     std::size_t i = from;
     for (; i < to; i++) {
         const char c = s[i];
@@ -260,20 +291,11 @@ bool Lexer::exactlyADouble(const std::string &s, std::size_t from,
         if (!std::isdigit(static_cast<unsigned char>(c))) break;
         any = true;
         if (afterPoint) tenth++;
-        // **A zero is held back until a later digit needs it.** Trailing zeros
-        // only move the exponent, and multiplying them in overflowed the
-        // accumulator; only a zero between significant digits is multiplied in.
-        if (c == '0') { if (m != 0) zeros++; continue; }
-        while (zeros > 0 && !overflowed) {
-            if (m > (0xFFFFFFFFFFFFFFFFULL - 9) / 10) overflowed = true;
-            else { m *= 10; zeros--; }
-        }
-        if (m > (0xFFFFFFFFFFFFFFFFULL - 9) / 10) overflowed = true;
-        else m = m * 10 + static_cast<unsigned long long>(c - '0');
+        if (c != '0' || !digits.empty()) digits += c;
     }
-    if (!any || overflowed) return false;
+    if (!any) return false;
 
-    long long exp10 = zeros - tenth;
+    long long exp10 = -tenth;
     if (i < to && (s[i] == 'e' || s[i] == 'E')) {
         i++;
         bool neg = false;
@@ -285,25 +307,37 @@ bool Lexer::exactlyADouble(const std::string &s, std::size_t from,
         }
         exp10 += neg ? -e : e;
     }
+    // **Trailing zeros only move the exponent.**
+    while (!digits.empty() && digits[digits.size() - 1] == '0') { digits.erase(digits.size() - 1); exp10++; }
+    if (digits.empty()) return true;  // zero
+    Digits m;
+    for (std::size_t end = digits.size(); end > 0;) {
+        const std::size_t begin = end > 9 ? end - 9 : 0;
+        m.push_back(static_cast<unsigned>(std::strtoul(digits.substr(begin, end - begin).c_str(), nullptr, 10)));
+        end = begin;
+    }
 
     // **A negative power of ten divides out only through its fives.** 10^-k
     // is 2^-k / 5^k, and the halves are free in binary - so the value is a
     // dyadic rational exactly when 5^k divides the digits.
-    while (exp10 < 0) {
-        if (m % 5 != 0) return false;
-        m /= 5;
-        exp10++;
+    for (; exp10 < 0; exp10++) {
+        Digits q = m;
+        if (divideSmall(q, 5) != 0) return false;
+        m.swap(q);
     }
     // **A positive power of ten multiplies in only through its fives**: 10^k is
-    // 5^k * 2^k and the twos cost nothing, so what accumulates is the odd part -
-    // an overflow there is past 2^53, which makes refusing it the true answer.
-    while (m != 0 && m % 2 == 0) m /= 2;      // the factors of two are free
-    while (exp10 > 0) {
-        if (m > 0xFFFFFFFFFFFFFFFFULL / 5) return false;
-        m *= 5;
-        exp10--;
+    // 5^k * 2^k and the twos cost nothing, so what is left is the odd part, and
+    // it has to fit the 53 bits of a double's significand.
+    for (;;) {
+        Digits q = m;
+        if (divideSmall(q, 2) != 0) break;
+        m.swap(q);
     }
-    return m < (1ULL << 53);
+    for (; exp10 > 0; exp10--) {
+        multiplySmall(m, 5);
+        if (!belowTwo53(m)) return false;
+    }
+    return belowTwo53(m);
 }
 
 void Lexer::digitSeparator(const std::string &s, std::size_t at) const {

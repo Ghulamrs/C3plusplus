@@ -99,9 +99,9 @@ goes in the same commit.
 
 | written | version | site |
 | --- | --- | --- |
-| `1'000`, a digit separator | C++14 | `src/Lexer.cpp:312` |
-| `0b101`, a binary literal | C++14 | `src/Lexer.cpp:481` |
-| `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:575` |
+| `1'000`, a digit separator | C++14 | `src/Lexer.cpp:346` |
+| `0b101`, a binary literal | C++14 | `src/Lexer.cpp:515` |
+| `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:609` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2162` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:261` |
 | `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:5435`, `src/parser/ParserTopLevel.cpp:821` |
