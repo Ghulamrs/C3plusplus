@@ -216,6 +216,13 @@ syntax tree records `true`, `false` and `nullptr` now** (`literal`): an initiali
 part, which the adapter read as no initialiser - found by the first function it took that had one,
 `alternative-tokens`' `main`. At M2.12h: 1,027 of 1,986 adapted, all the same.
 
+**M2.12i: copy-initialisation and class temporaries.** `X x = e;` for such a class is its copy constructor where
+it has one and the bytes where it is trivially copyable, an lvalue of `X` or of a class derived from it; `X(a, b)`
+in an expression is the temporary the parser builds, `*(X::X(&$tmp, a, b), &$tmp)`, in the frame slot it chose,
+now recorded by node (`temporarySlots_`). A class with no constructor, destructor or copy of its own is moved by
+its bytes wherever the parser does (`byteClass`, which widens M2.12d's plain struct to one with constructors).
+At M2.12i: 1,059 of 1,986 adapted, all the same.
+
 **The parser's `Ast.h` is the oracle for the new path while both exist**: the new path is right where it
 produces what the old one produced. That is `tools/identical.sh` again, and the reason the old path is kept
 until the new one has matched it everywhere.

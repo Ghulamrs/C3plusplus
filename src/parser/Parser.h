@@ -578,9 +578,20 @@ private:
     ExprPtr note(ExprPtr e, syntax::Kind kind, const std::string &text, std::size_t pos,
                  const std::vector<syntax::NodeId> &children = std::vector<syntax::NodeId>()) {
         if (e) e->setSyntax(syntaxTree_.add(kind, text, pos, children));
-        if (kind == syntax::Kind::Call)
+        if (kind == syntax::Kind::Call) {
             if (const Call *c = dynamic_cast<const Call *>(e.get())) noteCallSlots(*c);
+            else noteTemporarySlot(e.get());
+        }
         return e;
+    }
+    // A class temporary `T(a)` is `*(ctor(&$tmp, a), &$tmp)`, its slot the parser's: kept by node (M2.12i).
+    std::unordered_map<std::uint32_t, int> temporarySlots_;
+    void noteTemporarySlot(const Expr *e) {
+        const Unary *star = dynamic_cast<const Unary *>(e);
+        const Comma *both = star != nullptr && star->op() == '*' ? dynamic_cast<const Comma *>(&star->operand()) : nullptr;
+        const Unary *at = both != nullptr ? dynamic_cast<const Unary *>(&both->right()) : nullptr;
+        const Var *tmp = at != nullptr && at->op() == '&' ? dynamic_cast<const Var *>(&at->operand()) : nullptr;
+        if (tmp != nullptr && tmp->name() == "$tmp") temporarySlots_[e->syntax().v] = tmp->offset();
     }
     // **How a class goes to a function, and the two ABIs part company here.** Itanium
     // passes one by address whenever copying or destroying it is a call, and the caller

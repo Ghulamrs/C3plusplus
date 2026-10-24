@@ -127,7 +127,7 @@ StmtPtr Adapter::stmt(TypedId id) {
             }
             if (n.count == 1 && returns_ != nullptr && returns_->isReference())
                 return placed(make_owned<Return>(bind(returns_, expr(tree.child(id, 0)))), s, n.syntax);
-            if (n.count == 1 && returns_ != nullptr && plainClass(p_, returns_)) {
+            if (n.count == 1 && returns_ != nullptr && byteClass(p_, returns_)) {
                 ExprPtr value = decay(expr(tree.child(id, 0)));
                 if (value->type()->unqualified() != returns_->unqualified()) outside("a struct returned from what is not one");
                 return placed(make_owned<Return>(classValue(std::move(value), returns_)), s, n.syntax);
@@ -185,9 +185,15 @@ static ExprPtr localVar(const Local &l, TypeTable &types) {
 
 // A struct the parser copies by its bytes and builds by doing nothing: no constructor, destructor, vptr or copy of its own.
 bool Adapter::plainClass(Parser &p, const Type *t) {
+    return byteClass(p, t) && !p.hasConstructors(t->unqualified()->tag());
+}
+
+// A struct the parser copies, passes and returns by its bytes, whatever constructors build it: no destructor, vptr,
+// copy, move or copy assignment of its own (M2.12i).
+bool Adapter::byteClass(Parser &p, const Type *t) {
     if (t == nullptr || !t->isStructOrUnion()) return false;
     const Type *u = t->unqualified();
-    return u->isComplete() && u->kind() != Kind::Union && !p.hasConstructors(u->tag()) && !u->hasDestructor() && !u->hasVptr() &&
+    return u->isComplete() && u->kind() != Kind::Union && !u->hasDestructor() && !u->hasVptr() &&
            p.classes_.copyAssignOf(u) == nullptr && p.classes_.copyConstructorOf(u) == nullptr &&
            p.classes_.moveConstructorOf(u) == nullptr;
 }
@@ -198,7 +204,7 @@ void Adapter::plainLocal(Parser &p, const Local &l) {
     if (l.constantOnly) throw std::string("a local read for its value only");
     if (l.type->isReference()) {
         const Type *r = l.type->referent();
-        if (!scalar(r) && !plainClass(p, r)) throw std::string("a reference to '" + r->describe() + "'");
+        if (!scalar(r) && !byteClass(p, r)) throw std::string("a reference to '" + r->describe() + "'");
         return;
     }
     if (!scalar(l.type) && !scalarArray(l.type) && !plainClass(p, l.type) && !ownedClass(p, l.type))
@@ -223,7 +229,9 @@ void Adapter::ownedLocal(TypedId var, const Local &l, std::vector<StmtPtr> &body
     const Type *cls = l.type->unqualified();
     const bool dies = p_.destructorOf(cls) != nullptr;
     if (dies && p_.target_.microsoftNames()) outside("an object a Microsoft funclet would destroy");
-    if (returns_ != nullptr && returns_->isStructOrUnion() && returns_->unqualified() == cls) outside("a local of the class returned");
+    // A named return value is built in the caller's storage, which only a class with a copy of its own gets (nrvoCandidate).
+    if (returns_ != nullptr && returns_->isStructOrUnion() && returns_->unqualified() == cls && !byteClass(p_, cls))
+        outside("a local of the class returned");
     int bounds = 0;
     const std::size_t end = declaratorEnd(var, &bounds);
     if (bounds != 0 || end >= p_.tokens_.size()) outside("a class object not where it was");
@@ -238,15 +246,33 @@ void Adapter::ownedLocal(TypedId var, const Local &l, std::vector<StmtPtr> &body
             else if (w.is(")") && --depth == 0) break;
         }
         for (std::uint32_t i = 0; i < v.count; i++) args.push_back(expr(tree.child(var, i)));
+    } else if (t.is("=")) {
+        // Copy-initialisation, [dcl.init]/16: one argument, an explicit constructor being the parser's to refuse.
+        if (end + 1 >= p_.tokens_.size() || p_.tokens_[end + 1].is("{") || v.count != 1)
+            outside("a class object initialised by braces");
+        args.push_back(expr(tree.child(var, 0)));
     } else if (!t.is(";") && !t.is(",")) {
         outside("a class object initialised by '" + t.text + "'");
     } else if (v.count != 0) {
         outside("a class object of " + std::to_string(v.count) + " parts");
     }
-    // A class argument is a copy, a slice or a conversion function, which the parser decides before it resolves.
-    for (std::size_t i = 0; i < args.size(); i++)
-        if (!scalar(args[i]->type()) && !(args[i]->type()->isArray() && scalar(args[i]->type()->pointee())))
-            outside("a constructor given what is not a scalar");
+    // One object of the class itself is a copy: its bytes where the class has no copy or move constructor (the
+    // parser's trivialCopy), else its copy constructor, chosen below; a temporary is an elision, kept outside.
+    if (args.size() == 1 && args[0]->type()->isStructOrUnion()) {
+        if (args[0]->type()->unqualified() != cls) outside("a class object initialised from another class");
+        if (p_.classes_.copyConstructorOf(cls) == nullptr && p_.classes_.moveConstructorOf(cls) == nullptr) {
+            ExprPtr object = typed(std::unique_ptr<Var>(Var::local(l.name, l.offset)), l.type);
+            body.push_back(make_owned<ExprStmt>(typed(make_owned<Assign>(std::move(object), std::move(args[0])), l.type)));
+            if (dies) alive_.push_back(AliveObj{ l.name, l.offset, cls });
+            return;
+        }
+        if (!isLvalue(*args[0])) outside("a class object initialised from a temporary");
+    } else {
+        // Any other class argument is a slice or a conversion function, which the parser decides before it resolves.
+        for (std::size_t i = 0; i < args.size(); i++)
+            if (!scalar(args[i]->type()) && !(args[i]->type()->isArray() && scalar(args[i]->type()->pointee())))
+                outside("a constructor given what is not a scalar");
+    }
     if (p_.hasConstructors(cls->tag())) {
         const std::string key = Parser::constructorKey(cls->tag());
         const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(key);
@@ -333,10 +359,10 @@ StmtPtr Adapter::unwindingReturn(TypedId id) {
         steps.push_back(make_owned<Return>(ExprPtr()));
         return placed(make_owned<Block>(std::move(steps)), syn(id), n.syntax);
     }
-    if (n.count != 1 || returns_ == nullptr || !(scalar(returns_) || plainClass(p_, returns_)))
+    if (n.count != 1 || returns_ == nullptr || !(scalar(returns_) || byteClass(p_, returns_)))
         outside("a return of what is not a scalar, past objects alive");
     ExprPtr value = decay(expr(tree.child(id, 0)));
-    if (plainClass(p_, returns_)) {
+    if (byteClass(p_, returns_)) {
         if (value->type()->unqualified() != returns_->unqualified()) outside("a struct returned from what is not one");
         value = classValue(std::move(value), returns_);
     } else {
@@ -741,7 +767,7 @@ ExprPtr Adapter::member(TypedId id) {
     if (m == nullptr || m->ambiguous || m->inVirtualBase != nullptr || m->anonUnion != nullptr || m->type->isReference())
         outside("a member '" + name + "' the adapter does not reach");
     const Type *t = obj->isConst() && !m->isMutable ? p_.types_.withConst(m->type) : m->type;
-    if (!scalar(t) && !scalarArray(t) && !plainClass(p_, t)) outside("a member of type '" + t->describe() + "'");
+    if (!scalar(t) && !scalarArray(t) && !byteClass(p_, t)) outside("a member of type '" + t->describe() + "'");
     ExprPtr access = typed(make_owned<MemberAccess>(std::move(object), name, m->offset, m->width, m->bitOffset), t);
     if (rvalue) access->setXvalue();
     return access;
@@ -787,7 +813,7 @@ ExprPtr Adapter::name(TypedId id) {
     if (text.find("::") == std::string::npos && scopedName(text)) outside("a name that names something in a scope too");
     if (const GlobalSym *g = p_.lookup_.findGlobal(text)) {
         if (g->isThreadLocal) outside("a thread_local");
-        if (!scalar(g->type) && !scalarArray(g->type) && !plainClass(p_, g->type)) outside("an object of type '" + g->type->describe() + "'");
+        if (!scalar(g->type) && !scalarArray(g->type) && !byteClass(p_, g->type)) outside("an object of type '" + g->type->describe() + "'");
         Var *v = Var::global(text);
         v->setSymbol(g->symbol);
         v->setReadOnly(g->isConst);
@@ -965,7 +991,7 @@ ExprPtr Adapter::assign(TypedId id) {
     if (n.count != 2) outside("an assignment of " + std::to_string(n.count) + " parts");
     ExprPtr target = expr(tree.child(id, 0));
     const Type *t = target->type();
-    if (!(scalar(t) || (op == "=" && plainClass(p_, t))) || !lvalueTarget(*target))
+    if (!(scalar(t) || (op == "=" && byteClass(p_, t))) || !lvalueTarget(*target))
         outside("an assignment to what is not a scalar object");
     ExprPtr value = expr(tree.child(id, 1));
     if (t->isStructOrUnion()) {
@@ -1008,6 +1034,9 @@ ExprPtr Adapter::call(TypedId id) {
     // Which `f` an unqualified call means depends on the scope it is written in, which the parser has left by now.
     if (callee.find("::") == std::string::npos && scopedName(callee)) outside("a call of a name something in a scope shares");
     const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(callee);
+    if (set == nullptr && callee.find('<') == std::string::npos)
+        if (const Type *cls = p_.lookup_.findTypedef(callee))
+            if (cls->isStructOrUnion()) return classTemporary(id, cls, std::move(args));
     if (set == nullptr && p_.lookup_.findGlobal(callee) != nullptr) return pointerCall(id, head, std::move(args));
     if (set == nullptr) outside("a call of an undeclared name");
     for (std::size_t k = 0; k < set->size(); k++)
@@ -1026,6 +1055,45 @@ ExprPtr Adapter::call(TypedId id) {
     }
     if (callee.find_first_of("<~") != std::string::npos) outside("a call of '" + callee + "'");
     return finishCall(id, callee, f, f.params, std::move(args), false);
+}
+
+// Parser::classTemporary for a class copied by its bytes: `T(a)` is `*(ctor(&$tmp, a), &$tmp)`, or a copy of one
+// T into the slot where T has no copy of its own, an expiring object either way; the slot is the parser's, by node.
+ExprPtr Adapter::classTemporary(TypedId id, const Type *cls, std::vector<ExprPtr> args) {
+    const Type *plain = cls->unqualified();
+    if (!byteClass(p_, plain) || !p_.hasConstructors(plain->tag())) outside("a temporary of what is not a class with constructors");
+    std::unordered_map<std::uint32_t, int>::const_iterator k = p_.temporarySlots_.find(typer_.tree().node(id).syntax.v);
+    if (k == p_.temporarySlots_.end()) outside("a temporary whose slot was not recorded");
+    const int slot = k->second;
+    const Type *ptr = p_.types_.pointerTo(plain);
+    ExprPtr build;
+    if (args.size() == 1 && args[0]->type()->unqualified() == plain) {
+        ExprPtr obj = typed(std::unique_ptr<Var>(Var::local("$tmp", slot)), plain);
+        obj->setXvalue();
+        obj->setDeclCategory(Expr::Category::Prvalue);
+        build = typed(make_owned<Assign>(std::move(obj), std::move(args[0])), plain);
+    } else {
+        for (std::size_t i = 0; i < args.size(); i++)
+            if (!scalar(args[i]->type())) outside("a temporary given what is not a scalar");
+        if (args.empty()) outside("a temporary value-initialised");
+        const std::string key = Parser::constructorKey(plain->tag());
+        if (p_.tmpl_.memberTemplates_.count(key) != 0) outside("a constructor that is a template");
+        const Signature ctor = p_.overload_.resolveOverload(key, args, syn(id).loc);
+        if (ctor.deleted || args.size() != ctor.params.size()) outside("a constructor with defaults, or deleted");
+        std::vector<ExprPtr> all;
+        all.push_back(typed(make_owned<Unary>('&', typed(std::unique_ptr<Var>(Var::local("$tmp", slot)), plain)), ptr));
+        for (std::size_t i = 0; i < args.size(); i++) all.push_back(std::move(args[i]));
+        std::vector<const Type *> full(1, ptr);
+        full.insert(full.end(), ctor.params.begin(), ctor.params.end());
+        const Signature made(plain->tag(), ctor.symbol, p_.types_.get(Kind::Void), full, false);
+        build = finishCall(id, plain->tag(), made, full, std::move(all), false);
+    }
+    ExprPtr at = typed(make_owned<Unary>('&', typed(std::unique_ptr<Var>(Var::local("$tmp", slot)), plain)), ptr);
+    ExprPtr both = typed(make_owned<Comma>(std::move(build), std::move(at)), ptr);
+    ExprPtr made = typed(make_owned<Unary>('*', std::move(both)), plain);
+    made->setXvalue();
+    made->setDeclCategory(Expr::Category::Prvalue);
+    return made;
 }
 
 // [expr.call]/1 through a pointer to a function, `(*p)(a)` and `p(a)` alike: the call names the pointer's type.
@@ -1090,7 +1158,7 @@ ExprPtr Adapter::memberCall(TypedId id, TypedId head, std::vector<ExprPtr> args)
 ExprPtr Adapter::finishCall(TypedId at, const std::string &name, const Signature &f, const std::vector<const Type *> &params,
                             std::vector<ExprPtr> args, bool hasThis, ExprPtr callee) {
     const Type *gives = f.returns != nullptr && f.returns->isReference() ? f.returns->referent() : f.returns;
-    if (gives == nullptr || !(gives->isVoid() || scalar(gives) || plainClass(p_, gives)))
+    if (gives == nullptr || !(gives->isVoid() || scalar(gives) || byteClass(p_, gives)))
         outside("a call returning a class");
     if (args.size() < params.size() || (args.size() > params.size() && !f.variadic)) outside("a call with defaults or too many");
     for (std::size_t i = 0; i < args.size(); i++) {
@@ -1103,7 +1171,7 @@ ExprPtr Adapter::finishCall(TypedId at, const std::string &name, const Signature
             continue;
         }
         if (params[i]->isReference()) { args[i] = bind(params[i], std::move(args[i])); continue; }
-        if (plainClass(p_, params[i])) {
+        if (byteClass(p_, params[i])) {
             args[i] = decay(std::move(args[i]));
             if (args[i]->type()->unqualified() != params[i]->unqualified()) outside("a struct passed from what is not one");
             args[i] = classValue(std::move(args[i]), params[i]);

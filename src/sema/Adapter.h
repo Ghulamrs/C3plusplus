@@ -51,6 +51,7 @@ private:
     ExprPtr finishCall(TypedId at, const std::string &name, const Signature &f, const std::vector<const Type *> &params,
                        std::vector<ExprPtr> args, bool hasThis, ExprPtr callee = ExprPtr());
     ExprPtr pointerCall(TypedId id, TypedId head, std::vector<ExprPtr> args);
+    ExprPtr classTemporary(TypedId id, const Type *cls, std::vector<ExprPtr> args);
     ExprPtr condition(TypedId id);
     ExprPtr arithmetic(const std::string &op, ExprPtr a, ExprPtr b);
     ExprPtr pointerAdd(ExprPtr ptr, ExprPtr n);
@@ -61,6 +62,7 @@ private:
     const syntax::Node &syn(TypedId id) const;
     static void outside(const std::string &why);
     static bool plainClass(Parser &p, const Type *t);
+    static bool byteClass(Parser &p, const Type *t);
     static bool ownedClass(Parser &p, const Type *t);
     static void plainLocal(Parser &p, const Local &l);
     Parser &p_;

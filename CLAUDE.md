@@ -10742,6 +10742,13 @@ around it - in the frame slots it chose, recorded by node (`blockCleanups_`, `re
 adapter wrote none - silent until the first function holding one was adapted; they are `literal` nodes now. A null
 constant made a member pointer's -1 takes the literal's handle with it, the third lowering `-check=typed` names.
 
+## M2.12i: copy-initialisation and class temporaries, 2026-10-24
+
+**1,059 of 1,986 functions take the adapter's body**, all the same: `X x = e;` by the copy constructor or the
+bytes, and `X(a, b)` as the temporary `*(X::X(&$tmp, a, b), &$tmp)` in the slot the parser chose, recorded by node
+(`temporarySlots_`). A class with constructors but no destructor and no copy of its own moves by its bytes in
+returns, arguments and assignments, as the parser moves it (`byteClass`).
+
 ## Build
 
 ```
