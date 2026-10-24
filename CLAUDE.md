@@ -10770,6 +10770,13 @@ the signature the parser chose, its symbol recorded by node (`CallSlots::symbol`
 twice. **`twice<int>(k)` had no syntax node** - a bare `name` with its arguments loose in its parent - and is a `call`
 now. A class with a destructor and no copy of its own is returned from its local, elided, and built in place by a call.
 
+## M2.12m: static locals as data, constructor templates, and a reference's temporary, 2026-10-24
+
+**1,185 of 1,986 functions take the adapter's body**, all the same. A static local with a constant initialiser is the
+global the parser wrote, and one built under a guard stays outside (`guardedStatics_`). A constructor template is
+ranked by the parser's own `resolveOverload`. A scalar bound to a const or rvalue reference goes into the slot
+`bindReference` chose, recorded by the bound expression's node (`bindTemps_`).
+
 ## Build
 
 ```

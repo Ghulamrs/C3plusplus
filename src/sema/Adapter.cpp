@@ -188,7 +188,7 @@ StmtPtr Adapter::stmt(TypedId id) {
 
 // A local read or written by name, as Parser::localRef builds it.
 static ExprPtr localVar(const Local &l, TypeTable &types) {
-    Var *v = Var::local(l.name, l.offset);
+    Var *v = l.staticName.empty() ? Var::local(l.name, l.offset) : Var::global(l.staticName);
     v->setReadOnly(l.isConst);
     v->setNoAddress(l.isRegister);
     if (!l.type->isReference()) return typed(std::unique_ptr<Var>(v), l.type);
@@ -223,8 +223,8 @@ bool Adapter::dyingBytes(Parser &p, const Type *t) {
 }
 
 void Adapter::plainLocal(Parser &p, const Local &l) {
-    if (!l.staticName.empty()) throw std::string("a static local");
     if (l.isThreadLocal) throw std::string("a thread_local");
+    if (!l.staticName.empty() && p.guardedStatics_.count(l.staticName)) throw std::string("a static local built at run time");
     if (l.constantOnly) throw std::string("a local read for its value only");
     if (l.type->isReference()) {
         const Type *r = l.type->referent();
@@ -311,10 +311,7 @@ void Adapter::ownedLocal(TypedId var, const Local &l, std::vector<StmtPtr> &body
     }
     if (p_.hasConstructors(cls->tag())) {
         const std::string key = Parser::constructorKey(cls->tag());
-        const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(key);
-        if (set == nullptr || p_.tmpl_.memberTemplates_.count(key) != 0) outside("a constructor that is a template");
-        for (std::size_t k = 0; k < set->size(); k++)
-            if (p_.lookup_.functions_[(*set)[k]].fromTemplate) outside("a constructor of a template's");
+        // resolveOverload instantiates a constructor template that deduces, as the parser's own call did.
         const Signature ctor = p_.overload_.resolveOverload(key, args, syn(var).loc);
         if (ctor.deleted || args.size() != ctor.params.size()) outside("a constructor with defaults, or deleted");
         const Type *thisType = p_.types_.pointerTo(cls);
@@ -457,6 +454,8 @@ StmtPtr Adapter::declaration(TypedId id, bool owns) {
         std::unordered_map<std::uint32_t, Local>::const_iterator l = p_.declaredLocals_.find(tree.node(var).syntax.v);
         if (l == p_.declaredLocals_.end()) outside("a var whose local was not recorded");
         try { plainLocal(p_, l->second); } catch (const std::string &why) { outside(why); }
+        // A static local whose initialiser is a constant is data the parser laid down: nothing runs here.
+        if (!l->second.staticName.empty()) continue;
         const TypedNode &v = tree.node(var);
         if (ownedClass(p_, l->second.type)) {
             if (!owns) outside("a class object declared where it is not a block's statement");
@@ -795,6 +794,7 @@ ExprPtr Adapter::expr(TypedId id) {
     }
     if (n.type != nullptr && e->type() != n.type && e->type()->unqualified() != n.type->unqualified())
         outside(std::string("a '") + syntax::kindName(s.kind) + "' the typer and the adapter type apart");
+    if (!e->syntax().valid()) e->setSyntax(n.syntax);
     return e;
 }
 
@@ -1154,7 +1154,6 @@ ExprPtr Adapter::classTemporary(TypedId id, const Type *cls, std::vector<ExprPtr
             if (!scalar(args[i]->type())) outside("a temporary given what is not a scalar");
         if (args.empty()) outside("a temporary value-initialised");
         const std::string key = Parser::constructorKey(plain->tag());
-        if (p_.tmpl_.memberTemplates_.count(key) != 0) outside("a constructor that is a template");
         const Signature ctor = p_.overload_.resolveOverload(key, args, syn(id).loc);
         if (ctor.deleted || args.size() != ctor.params.size()) outside("a constructor with defaults, or deleted");
         std::vector<ExprPtr> all;
@@ -1278,18 +1277,32 @@ ExprPtr Adapter::finishCall(TypedId at, const std::string &name, const Signature
     return typed(make_owned<Unary>('*', std::move(through)), gives);
 }
 
-// [dcl.init.ref]/5, the direct binding alone: an lvalue of the referent's type, its address taken.
+// [dcl.init.ref]/5 as Parser::bindReference does it: a glvalue of the referent's type, its address taken; else a
+// scalar a const or rvalue reference binds, copied into the frame slot the parser chose, `(.refN = v, &.refN)`.
 ExprPtr Adapter::bind(const Type *ref, ExprPtr init) {
     const Type *referent = ref->referent(), *it = init->type();
-    if (ref->isRValueReference() || referent->isFunction() || referent->isArray()) outside("a binding of '" + ref->describe() + "'");
+    if (referent->isFunction() || referent->isArray()) outside("a binding of '" + ref->describe() + "'");
     const MemberAccess *field = dynamic_cast<const MemberAccess *>(init.get());
     const Var *var = dynamic_cast<const Var *>(init.get());
     const Unary *deref = dynamic_cast<const Unary *>(init.get());
     const bool glvalue = (var != nullptr && !var->noAddress()) || (field != nullptr && field->width() == 0) ||
                          (deref != nullptr && deref->op() == '*');
-    if (!glvalue || init->isXvalue() || it->unqualified() != referent->unqualified() || (it->isConst() && !referent->isConst()))
-        outside("a reference bound to what is not an lvalue of its type");
-    return typed(make_owned<Unary>('&', std::move(init)), p_.types_.pointerTo(referent));
+    if (glvalue && it->unqualified() == referent->unqualified()) {
+        if (it->isConst() && !referent->isConst()) outside("a reference that can write bound to a const");
+        return typed(make_owned<Unary>('&', std::move(init)), p_.types_.pointerTo(referent));
+    }
+    if (glvalue && !init->isXvalue() && ref->isRValueReference()) outside("an rvalue reference bound to an lvalue");
+    if (!referent->isConst() && !ref->isRValueReference()) outside("a reference bound to what is not an lvalue of its type");
+    if (!scalar(it) || !scalar(referent)) outside("a reference bound to a temporary of a class");
+    std::unordered_map<std::uint32_t, std::pair<std::string, int> >::const_iterator k =
+        p_.bindTemps_.find(init->syntax().v);
+    if (!init->syntax().valid() || k == p_.bindTemps_.end()) outside("a reference's temporary not recorded");
+    const Type *store = referent->unqualified();
+    ExprPtr keep = typed(make_owned<Assign>(typed(std::unique_ptr<Var>(Var::local(k->second.first, k->second.second)), store),
+                                            convert(std::move(init), store)), store);
+    ExprPtr addr = typed(make_owned<Unary>('&', typed(std::unique_ptr<Var>(Var::local(k->second.first, k->second.second)),
+                                                       store)), p_.types_.pointerTo(referent));
+    return typed(make_owned<Comma>(std::move(keep), std::move(addr)), p_.types_.pointerTo(referent));
 }
 
 // [conv]: a scalar to another - a Cast, but to bool a comparison with zero, as Parser::convertNode builds them.

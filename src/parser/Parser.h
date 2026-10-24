@@ -543,6 +543,8 @@ private:
     };
     std::unordered_map<std::uint32_t, TryFacts> tryFacts_;
     std::set<std::string> wrappedBodies_;
+    // The static locals guardOnce builds at run time; the adapter takes only those laid down as data.
+    std::set<std::string> guardedStatics_;
     TryFacts pendingTry_;
     // A `throw` of a scalar on the Itanium targets: the slot holding the exception's storage, and its type_info.
     struct ThrowFacts { std::string temp; int slot = 0; std::string info; };
@@ -607,6 +609,8 @@ private:
     }
     // A class temporary `T(a)` is `*(ctor(&$tmp, a), &$tmp)`, its slot the parser's: kept by node (M2.12i).
     std::unordered_map<std::uint32_t, int> temporarySlots_;
+    // A value a const or rvalue reference binds copied into a frame slot by bindReference: its name and slot, by node.
+    std::unordered_map<std::uint32_t, std::pair<std::string, int> > bindTemps_;
     void noteTemporarySlot(const Expr *e) {
         const Unary *star = dynamic_cast<const Unary *>(e);
         const Comma *both = star != nullptr && star->op() == '*' ? dynamic_cast<const Comma *>(&star->operand()) : nullptr;

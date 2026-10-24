@@ -2506,6 +2506,7 @@ ExprPtr Parser::bindReference(const Type *ref, ExprPtr init, std::size_t pos,
     const Type *addrType = types_.pointerTo(referent);
     int slot = allocateFrameSlot(store);
     std::string temp = ".ref" + std::to_string(refTemps_++);
+    if (init->syntax().valid()) bindTemps_[init->syntax().v] = std::make_pair(temp, slot);
 
     ExprPtr target(Var::local(temp, slot));
     target->setType(store);

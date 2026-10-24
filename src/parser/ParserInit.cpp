@@ -1541,6 +1541,7 @@ StmtPtr Parser::guardOnceThread(const std::string &symbol, std::vector<StmtPtr> 
 // around the construction on Itanium; _Init_thread_header / _footer with the
 // guard at -1 on Microsoft, without cl's TLS epoch fast path - CONFORMANCE.md.
 StmtPtr Parser::guardOnce(const std::string &symbol, std::vector<StmtPtr> body) {
+    guardedStatics_.insert(symbol);
     if (tlsObject_) return guardOnceThread(symbol, std::move(body));
     const bool ms = target_.microsoftNames();
     std::string guard = symbol + (ms ? "$guard" : ".guard");

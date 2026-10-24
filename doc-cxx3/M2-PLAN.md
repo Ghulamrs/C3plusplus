@@ -250,6 +250,14 @@ own (`dyingBytes`) returned from its local goes out as its bytes, that local not
 call returning it is built where the call puts its result (`claimedSlot_`, Parser::claimCallResult). At M2.12l: 1,174
 of 1,986 adapted, all the same.
 
+**M2.12m: static locals laid down as data, constructor templates, and a value a reference binds.** A static local
+whose initialiser is a constant is a global the parser already wrote: the declaration builds nothing and a use is
+`Var::global` of its symbol; one built at run time under a guard (`guardedStatics_`, filled by `guardOnce`) stays
+outside. A constructor chosen from a set holding a template is resolved by the parser's `resolveOverload`, which
+instantiates what deduces as the parser's own call did. And a scalar bound to a const or rvalue reference is copied
+into the slot `bindReference` chose, recorded by the bound expression's node (`bindTemps_`); every expression the
+adapter builds carries its node for that lookup. At M2.12m: 1,185 of 1,986 adapted, all the same.
+
 **The parser's `Ast.h` is the oracle for the new path while both exist**: the new path is right where it
 produces what the old one produced. That is `tools/identical.sh` again, and the reason the old path is kept
 until the new one has matched it everywhere.
