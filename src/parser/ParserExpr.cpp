@@ -3153,6 +3153,10 @@ ExprPtr Parser::noteKeywordForm(syntax::Kind kind, KeywordForm f) {
     if (kind == syntax::Kind::Sizeof)
         if (const Num *folded = dynamic_cast<const Num *>(f.e.get()))
             keywordValues_[f.e->syntax().v] = std::make_pair(folded->value(), folded->type());
+    // A named cast to a scalar is the conversion it names; one to a reference is a glvalue, and is left unrecorded.
+    if (kind == syntax::Kind::Cast && text.find('&') == std::string::npos && text.compare(0, 12, "dynamic_cast") != 0 &&
+        f.e->type() != nullptr && (f.e->type()->isVoid() || f.e->type()->isScalar()))
+        castTypes_[f.e->syntax().v] = f.e->type();
     return std::move(f.e);
 }
 

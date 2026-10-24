@@ -198,6 +198,12 @@ one could mean `n::f` where the adapter would find `::f`. Such a use is kept out
 is declared under the name - unless the function is at file scope and no using-directive is open, where the two
 lookups cannot part. At M2.12f: 958 of 1,986 adapted, all the same.
 
+**M2.12g: the named casts.** `static_cast`, `const_cast` and `reinterpret_cast` to a scalar or to void are the
+conversion they name, built as a C-style cast is; their target is now recorded in `castTypes_` beside the
+C-style cast's, which also lets Sema type them (`typed.sh`: 1,368 more nodes typed, 0 differ). A named cast to a
+reference is a glvalue and `dynamic_cast` a runtime call, and both stay unrecorded. At M2.12g: 965 of 1,986
+adapted, all the same.
+
 **The parser's `Ast.h` is the oracle for the new path while both exist**: the new path is right where it
 produces what the old one produced. That is `tools/identical.sh` again, and the reason the old path is kept
 until the new one has matched it everywhere.
