@@ -186,6 +186,10 @@ and each struct argument's, are the parser's: `callSlots_` records them by call 
 result slot holds a pointer, and is brought up to date where an elision later moves a result. At M2.12d: 900 of
 1,986 adapted, all the same.
 
+**M2.12e: what builds nothing.** An `alignas`, a `decltype` or a `static_assert` in a declaration, and an array
+parameter's bound, are recorded in the syntax tree beside the declarators and are unevaluated or adjusted away,
+so the adapter passes over them. At M2.12e: 928 of 1,986 adapted, all the same.
+
 **The parser's `Ast.h` is the oracle for the new path while both exist**: the new path is right where it
 produces what the old one produced. That is `tools/identical.sh` again, and the reason the old path is kept
 until the new one has matched it everywhere.

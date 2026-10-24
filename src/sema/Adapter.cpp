@@ -23,8 +23,9 @@ StmtPtr Adapter::body(TypedId typed, const Function &fn, std::string *why) {
         const TypedNode &f = typer_.tree().node(typed);
         if (f.count == 0) outside("a function with no body");
         if (fn.isNoexcept() || fn.hasLandingPads()) outside("a function whose body is a region");
+        // An array parameter's bound is recorded beside it, and [dcl.fct]/5 has adjusted it away.
         for (std::uint32_t i = 0; i + 1 < f.count; i++)
-            if (syn(typer_.tree().child(typed, i)).kind != syntax::Kind::Var) outside("a parameter that is not a var");
+            if (syn(typer_.tree().child(typed, i)).kind == syntax::Kind::Block) outside("a parameter that is a block");
         const TypedId last = typer_.tree().child(typed, f.count - 1);
         if (syn(last).kind != syntax::Kind::Block) outside("a body that is not a block");
         return stmt(last);
@@ -183,7 +184,8 @@ StmtPtr Adapter::declaration(TypedId id) {
     std::vector<StmtPtr> body;
     for (std::uint32_t i = 0; i < n.count; i++) {
         const TypedId var = tree.child(id, i);
-        if (syn(var).kind != syntax::Kind::Var) outside("a declaration of what is not a var");
+        // What else a declaration records is unevaluated - an alignas, a decltype, a static_assert - and builds nothing.
+        if (syn(var).kind != syntax::Kind::Var) continue;
         std::unordered_map<std::uint32_t, Local>::const_iterator l = p_.declaredLocals_.find(tree.node(var).syntax.v);
         if (l == p_.declaredLocals_.end()) outside("a var whose local was not recorded");
         try { plainLocal(p_, l->second); } catch (const std::string &why) { outside(why); }
