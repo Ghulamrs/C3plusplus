@@ -64,6 +64,10 @@ public:
     std::vector<NodeId> adopt(std::size_t from, std::size_t lo, std::size_t hi);
     // Every node made after `from` is dead: a trial rewound past them.
     void kill(std::size_t from);
+    // A node whose parent died is a root again, for the live node that records the same tokens to adopt (M2.15).
+    void release(NodeId id) { nodes_[id.v].hasParent = false; }
+    // A subtree a kill took that is the tree's after all: a lambda's replayed body made inside a discarded reading.
+    void revive(NodeId id);
     // Every live root - a node no other node holds - in creation order, as an S-expression a line.
     // Every live root, in creation order.
     std::vector<NodeId> roots() const;

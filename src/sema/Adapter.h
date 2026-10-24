@@ -9,7 +9,7 @@
 #include "../Ast.h"
 
 #include <string>
-#include <unordered_set>
+#include <unordered_map>
 
 class Parser;
 
@@ -87,9 +87,9 @@ private:
     Parser &p_;
     const Typer &typer_;
     const Type *returns_ = nullptr;
-    bool scopedName(const std::string &name);
-    bool scopedBuilt_ = false;
-    std::unordered_set<std::string> scoped_, globalFunctions_;
+    const Signature *signatureBySymbol(const std::string &symbol) const;
+    const Signature *recordedFunction(TypedId id) const;
+    mutable std::unordered_map<std::string, std::size_t> bySymbol_;
     std::string fnSymbol_;
     // What a block's statements built and have not destroyed - Parser::alive_ for a plain local - and where each loop
     // the adapter is in began, which a `break` or `continue` destroys back to (M2.12h).

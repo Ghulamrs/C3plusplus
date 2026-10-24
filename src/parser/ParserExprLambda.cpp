@@ -191,6 +191,7 @@ ExprPtr Parser::lambdaExpression() {
         lambdaAt_.find(std::make_pair(currentFunction_, lamAt));
     if (had != lambdaAt_.end()) {
         at_ = had->second.end;
+        lambdaBodies_ = had->second.bodies;
         return buildClosure(had->second, pos);
     }
     // Inside a closure's call operator, one the deducing reading already built
@@ -201,6 +202,7 @@ ExprPtr Parser::lambdaExpression() {
             deducedAt_.find(std::make_pair(owner, pos));
         if (made != deducedAt_.end()) {
             at_ = lamAt + made->second.span;
+            lambdaBodies_ = made->second.bodies;
             return buildClosure(made->second, pos);
         }
     }
@@ -468,11 +470,18 @@ ExprPtr Parser::lambdaExpression() {
     mine.push_back(PendingBody{ tag, start, local, tag + "::operator()",
                                 PendingBody::npos() });
     if (capNames.empty()) captureFreeConversion(tag, local, returns, params, pos, mine);
-    replayInlineBodies(std::move(mine));
+    // The in-place readings of the body are not the tree's; the replayed call operator, recorded next, is (M2.15).
     syntaxTree_.kill(bodySyntax);
+    reviveDefinedBodies(bodySyntax);
+    const std::size_t bodiesFrom = syntaxTree_.size();
+    replayInlineBodies(std::move(mine));
 
     // The object itself: a slot in this frame, and the expression is its name.
     MadeLambda record;
+    for (std::uint32_t i = static_cast<std::uint32_t>(bodiesFrom) + 1; i <= syntaxTree_.size(); i++)
+        if (syntaxTree_.node(syntax::NodeId(i)).kind == syntax::Kind::Function && !syntaxTree_.node(syntax::NodeId(i)).hasParent)
+            record.bodies.push_back(syntax::NodeId(i));
+    lambdaBodies_ = record.bodies;
     record.type = closure;
     record.end = at_;
     record.span = at_ - lamAt;
@@ -482,6 +491,14 @@ ExprPtr Parser::lambdaExpression() {
     lambdaAt_[std::make_pair(currentFunction_, lamAt)] = record;
     if (deducing) deducedAt_[std::make_pair(currentFunction_, pos)] = record;
     return buildClosure(record, pos);
+}
+
+// A body defined inside a reading that was then killed - a lambda's call operator replayed during the deducing read
+// of the lambda around it, a member template instantiated inside a trial - is emitted all the same, so its nodes are
+// the tree's whatever reading made them (M2.15). Those past `from` are revived; the vector is in creation order.
+void Parser::reviveDefinedBodies(std::size_t from) {
+    for (std::size_t i = definedBodies_.size(); i > 0 && definedBodies_[i - 1].v > from; i--)
+        syntaxTree_.revive(definedBodies_[i - 1]);
 }
 
 // A slot for the closure, and each capture copied into it - on every reading of the lambda, since 7.1 reads an

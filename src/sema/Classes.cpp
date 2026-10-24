@@ -212,6 +212,7 @@ void Classes::synthesizeDeleting(const std::string &cls, const Type *type,
                                            alignTo(p_.frameSize_, 16), false, 0,
                                            false, 0, pos,
                                            std::vector<::Local>()));
+    p_.current_->functions.back().setSynthesised("deleting destructor");
     showMemberAs(p_.current_->functions.back(), type, "`scalar deleting destructor'");
     p_.current_->functions.back().setSymbol(symbol);
     // **A compiler-written special member is inline** - [class.copy] and its
@@ -308,6 +309,7 @@ void Classes::synthesizeCompleteCtor(const Type *type,
                                            alignTo(p_.frameSize_, 16), false, 0,
                                            false, 0, pos,
                                            std::vector<::Local>()));
+    p_.current_->functions.back().setSynthesised("complete constructor");
     p_.current_->functions.back().setSymbol(c1);
     p_.current_->functions.back().setHasLandingPads(guarded);
     if (isInline) p_.current_->functions.back().setInline(true);
@@ -353,6 +355,7 @@ void Classes::synthesizeCompleteDtor(const Type *type, const std::string &d1,
                                            alignTo(p_.frameSize_, 16), false, 0,
                                            false, 0, pos,
                                            std::vector<::Local>()));
+    p_.current_->functions.back().setSynthesised("complete destructor");
     p_.current_->functions.back().setSymbol(d1);
     if (isInline) p_.current_->functions.back().setInline(true);
     showMemberAs(p_.current_->functions.back(), type, "~" + Parser::localOf(cls));
@@ -428,6 +431,7 @@ std::string Classes::synthesizeThunk(const std::string &cls, const Type *type,
                                            StmtPtr(new Block(std::move(body))),
                                            alignTo(p_.frameSize_, 16), false, 0,
                                            false, 0, pos, std::vector<::Local>()));
+    p_.current_->functions.back().setSynthesised("thunk");
     p_.current_->functions.back().setSymbol(name);
     p_.current_->functions.back().setInline(true);
     p_.closeFrame(savedFrame);
@@ -500,6 +504,7 @@ std::string Classes::synthesizeVcallThunk(const Type *cls, const Signature &f,
                                            StmtPtr(new Block(std::move(body))),
                                            alignTo(p_.frameSize_, 16), false, 0,
                                            false, 0, pos, std::vector<::Local>()));
+    p_.current_->functions.back().setSynthesised("vcall thunk");
     p_.current_->functions.back().setSymbol(name);
     p_.current_->functions.back().setInline(true);
     p_.closeFrame(savedFrame);
@@ -1466,6 +1471,7 @@ void Classes::synthesizeDestructor(std::size_t which) {
                                            StmtPtr(new Block(std::move(body))),
                                            alignTo(p_.frameSize_, 16), false, 0,
                                            false, 0, pos, std::vector<::Local>()));
+    p_.current_->functions.back().setSynthesised("implicit destructor");
     p_.current_->functions.back().setSymbol(symbol);
     p_.current_->functions.back().setInline(true);
     showMemberAs(p_.current_->functions.back(), type, "~" + Parser::localOf(cls));
@@ -1935,6 +1941,7 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
                                            std::move(params), std::move(built),
                                            alignTo(p_.frameSize_, 16), false, 0,
                                            false, 0, pos, std::vector<::Local>()));
+    p_.current_->functions.back().setSynthesised("implicit default constructor");
     p_.current_->functions.back().setSymbol(symbol);
     p_.current_->functions.back().setHasLandingPads(guarded || own.made());
     showMemberAs(p_.current_->functions.back(), type, Parser::localOf(cls));
@@ -2234,6 +2241,7 @@ void Classes::synthesizeCopy(std::size_t which, bool assigning) {
                                            returns, std::move(params), std::move(built),
                                            alignTo(p_.frameSize_, 16), false, 0,
                                            false, 0, pos, std::vector<::Local>()));
+    p_.current_->functions.back().setSynthesised("implicit copy or move");
     p_.current_->functions.back().setSymbol(symbol);
     showMemberAs(p_.current_->functions.back(), type, assigning ? std::string("operator=") : Parser::localOf(cls));
     p_.current_->functions.back().setHasLandingPads(guarded || own.made());
@@ -2606,6 +2614,7 @@ std::string Classes::synthesizeVirtualThunk(const Type *type, const VSlot &slot,
                                            StmtPtr(new Block(std::move(body))),
                                            alignTo(p_.frameSize_, 16), false, 0,
                                            false, 0, pos, std::vector<::Local>()));
+    p_.current_->functions.back().setSynthesised("virtual thunk");
     p_.current_->functions.back().setSymbol(name);
     p_.current_->functions.back().setInline(true);
     p_.closeFrame(savedFrame);

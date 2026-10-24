@@ -98,11 +98,15 @@ public:
     // The syntax node the grammar recorded for this expression, if it recorded one (M2 step 2); nothing reads it yet.
     syntax::NodeId syntax() const { return syntax_; }
     void setSyntax(syntax::NodeId s) { syntax_ = s; }
+    // The entity the parser resolved this expression to, as an index into its table (M2.16); 0 is none. No backend reads it.
+    std::uint32_t resolved() const { return resolved_; }
+    void setResolved(std::uint32_t r) { resolved_ = r; }
 private:
     const Type *type_ = nullptr;
     bool xvalue_ = false;
     Category category_ = Category::Natural;
     syntax::NodeId syntax_;
+    std::uint32_t resolved_ = 0;
 };
 
 class Stmt : public Node {
@@ -719,7 +723,12 @@ public:
     // `throw(T...)`'s type_info symbols, for a target whose table states the list; empty where none was written.
     const std::vector<std::string> &exceptionSpec() const { return spec_; }
     void setExceptionSpec(std::vector<std::string> s) { spec_ = std::move(s); }
+    // The kind of a function the compiler wrote with no source body - an implicit special member, a thunk, an init
+    // function - and empty for one the grammar read (M2.15): the census of what the typed tree covers reads it.
+    const std::string &synthesised() const { return synthesised_; }
+    void setSynthesised(const char *kind) { synthesised_ = kind; }
 private:
+    std::string synthesised_;
     bool noexcept_ = false;
     std::vector<std::string> spec_;
     bool hasThis_ = false;

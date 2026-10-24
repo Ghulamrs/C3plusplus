@@ -119,12 +119,17 @@ if [ "$WHICH" = all ] || [ "$WHICH" = linux ]; then
         scp -q -i "$KEY" -o BatchMode=yes "$TAR" "$LINUX:cxx1src.tgz" || rc=1
         # The C6000 here, with the TI tools built on this box from source (~/ti6x, tools/ti6x-build.sh): the
         # corpus on VM6747 and SIM6747 against rts6x.lib at -O0 and -O2, and the driver's path through ASM6x.
+        # And M2's typed front end (M2.18): run.sh under -front=typed at both levels, and the self-host with and
+        # without the flag - stage 1 = stage 2 either way, and the box's g++ building stage 0 rather than clang.
         ssh -i "$KEY" -o BatchMode=yes "$LINUX" '
             rm -rf ~/cxx1-verify && mkdir -p ~/cxx1-verify/tmp &&
             tar -C ~/cxx1-verify -xzf ~/cxx1src.tgz && rm ~/cxx1src.tgz &&
             export TMPDIR=$HOME/cxx1-verify/tmp && T=$HOME/ti6x &&
             cd ~/cxx1-verify && ./build -j1 >/dev/null && make test &&
             CXX1="./cxx3.exe -O2" sh tests/run.sh &&
+            CXX1="./cxx3.exe -front=typed" sh tests/run.sh &&
+            CXX1="./cxx3.exe -front=typed -O2" sh tests/run.sh &&
+            sh tools/self-host ~/cxx1-verify/selfhost && sh tools/self-host ~/cxx1-verify/selfhost-typed -front=typed &&
             ASM6X=$T/ASM6x/build/asm6x.exe sh tests/asm6x.sh &&
             for o in "" -O2; do
                 CXX1_FLAGS=$o VM=$T/VM6747/vm6747.exe SIM6747=$T/SIM6747/sim6747.exe ASM6X=$T/ASM6x/build/asm6x.exe \

@@ -15027,3 +15027,59 @@ Measured at the merge: Mac `make test` exit 0 (run.sh 896/0 and at -O2, emit.sh 
 at 3349e11 8 of 2219 changed - the two map/set cases - names.sh 577/0, exclusions 136 sites 0/0, comment
 cap 0); Linux run.sh 896/0 at -O0 and -O2, asm6x.sh 559/0; Windows cases 1400/0 both spellings and
 1073/0 at -O2, ti-link 554/0, names vs cl the 18 library cases recorded since 1.19 and no other.
+
+## M2's end decided, and M2.13-M2.15: the facts, the dump, the denominator, 2026-10-25
+
+**The review of 2026-10-24 put a choice before the user, who delegated it: M2 ends at a complete, checked typed tree, and
+`Ast.h` stays the oracle until M3** - design section 12.1 has the reasons, the deciding one being size: the adapter
+lowered 1,257 of 1,986 file-scope free functions by reading fifteen fact maps the parser records while it builds `Ast.h`,
+and finishing it means the parser's layout half written a second time for every function kind, which M3 then deletes.
+The adapter stays as the harness for its subset and is not grown; what M2 owes is the typed tree, every name, member,
+call and operator in it carrying the entity Sema resolved it to at parse time. M2-PLAN.md lists the steps M2.13-M2.18.
+
+**M2.13, M2.14.** The six pending facts a parse records for the node that takes them travel in `FunctionState`, and
+`-dump=ast` prints every field of a `Try`. **M2.15: the denominator is every emitted function.** `Typer::census` counts
+8,227 over the 647 host cases: 7,420 with a source body - a live `function` node that defined the symbol the function
+was emitted under - and 807 compiler-written, by kind (`Function::synthesised`), none neither. The reports had counted
+1,986. The Typer types every body: 184,964 nodes, 84,821 typed, 0 differ, and **44,220 expression nodes typed null**,
+named by kind in the report - name 18,595, call 7,255, member 6,729 at the head - which is the gap M2.16 and M2.17 close.
+**Three bodies the parser emitted had syntax the tree had killed**: a lambda's replayed call operator (killed by the kill
+meant for the in-place reading, which ran after the replay, and again by `Tree::adopt`, which killed any earlier root at
+one location - it kills a root of the same kind and text now, which is what a rewound read makes); and a body defined
+inside a reading later killed - an inner lambda's during the outer's deducing read, a template's inside a `Trial` -
+which `reviveDefinedBodies` brings back, since the function was emitted. Gated: `make test` green, emit golden 0 of
+1,924 changed, `identical.sh` 5,352 compared and the known 8.
+
+## M2.16: what a name resolved to, recorded where the parser resolved it, 2026-10-25
+
+**Neither the Typer nor the adapter looks a name up after the file now.** `Parser::Resolved` records, at the point of
+resolution and in the scope the parser had then, what a name, a member access, a call or an overloaded operator meant - a
+local by its serial, a global or function by its symbol, a member by its class and offset, an enumerator by its value, a
+call by the function it reached, a temporary by its class and constructor - as an index on the `Expr` into an append-only
+table that `note` copies onto the syntax node. The review's condition 3; the heuristic `scopedName` and the adapter's
+`findGlobal`, `findEnum`, `overloadsOf` and `resolveOverload` are gone with it. **The typed tree went from 84,821 to
+123,874 typed nodes and from 44,220 to 5,167 untyped expressions**, 0 differing from `Ast.h` over the 647 host cases;
+M2-PLAN.md has the kinds left. **Two rules the gate taught**: a typed node's type is the expression's, so a member's record
+carries the access type with the object's const applied (137 array-member differences, one shape); and a call and a
+function named as a value are two kinds, the one a return type and the other the pointer [conv.func] makes. **And the trap
+this file already records under M2.12n bit three times in one afternoon**: `resolve(std::move(e), ...e->type())` reads its
+operand beside the move, in an argument list whose order is unspecified - `enumeratorValue`'s crashed every case that
+includes `<string>`. Gated: `make test` green, emit golden 0 of 1,924 changed, `identical.sh` 5,352 compared and the
+known 8.
+
+## M2.17: the typed tree at 99.5% of expressions, and what the last 656 are, 2026-10-25
+
+**Three more kinds of record and nine rules took the untyped expressions from 5,167 to 656 of 129,041, at 0 differ.**
+A call's callee node takes the function the call reached (`Callee`), a temporary's callee the class it names
+(`TypeName`), and a form that names no entity - `new`, `delete`, `throw`, a lambda, a cast to a reference, `typeid`,
+a prefixed string, a conditional of class arms, `&S::m` - carries the type the parser gave it (`Value`), **read only
+where the Typer's own rule has no answer and counted apart**: `recorded=1027` in the report, because a type taken from
+the parser's record is not independent agreement and the count must say so. The rules are [expr.throw]/1 and
+[expr.delete]/1's `void`, a call through a pointer to a function, a comparison with `nullptr`, `&` and `*` on a class
+operand (an overloaded one carries a Call record, which comes first), and a destructor call's `void`. **Two more
+recording gaps the count found**: a scoped enumerator `E::a` is built in `ParserType.cpp` outside `enumeratorValue`,
+and an overload placeholder's node is noted before the parameter chooses its function. What is left is named in
+M2-PLAN.md: calls the parser builds by hand as a Comma rather than through `completeCall` - a temporary's `operator()`
+above all - and their operands. Gated: `make test` green, emit golden 0 of 1,924 changed, `identical.sh` 5,352
+compared and the known 8.
+

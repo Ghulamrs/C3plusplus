@@ -14,10 +14,15 @@ for r in "$out"/*.typed; do
     base=$(basename "$r" .typed)
     line=$(grep -- '^-check=typed:' "$r")
     if [ -z "$line" ]; then skipped=$((skipped + 1)); continue; fi
-    if echo "$line" | grep -q ' 0 differ'; then pass=$((pass + 1))
+    if echo "$line" | grep -q ' differ=0 '; then pass=$((pass + 1))
     else echo "FAIL $base: a typed node differs"; grep 'the parser says' "$r" | head -5 | sed 's/^/      /'; fail=$((fail + 1)); fi
 done
-cat "$out"/*.typed | grep -- '^-check=typed:' |
-    awk '{t+=$2; a+=$4; m+=$8} END {printf "typed.sh: %d nodes typed, %d agree, %d with no Ast.h node\n", t, a, m}'
+# The report is key=value fields (M2.15): the census of every emitted function, then the nodes under the bodies.
+cat "$out"/*.typed | grep -- '^-check=typed:' | tr ' ' '\n' | grep = | tr '=' ' ' |
+    awk '{s[$1]+=$2} END {printf "typed.sh: %d functions emitted, %d with a source body, %d compiler-written; %d nodes, %d typed, %d untyped, %d agree (%d from the parser'"'"'s own record), %d with no Ast.h node\n", s["functions"], s["bodies"], s["synthesised"], s["nodes"], s["typed"], s["untyped"], s["agree"], s["recorded"], s["absent"]}'
+cat "$out"/*.typed | grep -- '^  compiler-written:' | sed 's/^  compiler-written: //' | tr ',' '\n' | sed 's/^ //' | tr '=' ' ' |
+    awk '{s[$0]=0} {n=$NF; $NF=""; s[$0]+=n} END {for (k in s) if (s[k] > 0) printf "    %s%d\n", k, s[k]}' | sort
+cat "$out"/*.typed | grep -- '^  untyped:' | sed 's/^  untyped: //' | tr ',' '\n' | sed 's/^ //' | tr '=' ' ' |
+    awk '{s[$1]+=$2} END {printf "typed.sh: untyped by kind:"; for (k in s) printf " %s=%d", k, s[k]; printf "\n"}'
 echo "typed.sh: $pass passed, $fail failed, $skipped did not compile for this host"
 [ "$fail" -eq 0 ]

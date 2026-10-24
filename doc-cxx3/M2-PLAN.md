@@ -100,7 +100,7 @@ records, so step 2 is cut so that each commit is checked by the one before it:
 | M2.9 | statements and declarations recorded the same way; every function body has a syntax root | the same |
 | M2.10 | the typed tree, and Sema typing a subset of the syntax tree into it - scalars, operators, locals, calls | `-check=typed`: every typed node's type against the type the parser gave its `Ast.h` node |
 | M2.11 | the adapter: typed tree to `Ast.h` for that subset; behind `-front=typed`, a function inside the subset takes the adapter's `Ast.h`, any other the parser's | output identical with the flag on and off |
-| M2.12 on | the subset grows - classes, templates by replay, exceptions - until every function takes the adapter's | the same, case by case; then the old path is deleted |
+| M2.12 on | the subset grows - classes, templates by replay, exceptions - until every function takes the adapter's | the same, case by case; then the old path is deleted. **Stopped at M2.12p**: the review of 2026-10-24 and the decision below end M2 at the typed tree, and the adapter is not grown further |
 
 **How M2.9 finds a statement's parts.** Every part records itself, so a statement takes the roots made since its
 first token whose location lies inside its own tokens (`Tree::adopt`): a template body replayed from elsewhere, a
@@ -297,3 +297,143 @@ candidate leaves no syntax behind.
 
 The parser's question "what kind of name is this?" (`atTypeName`, `localHidesType`) stays in the
 parser and asks `Lookup`; making it one call is step 2's, with the handle syntax tree behind its flag.
+
+## M2's end, decided 2026-10-25 (Fable 5.1)
+
+The interim review (`M2-REVIEW-FABLE-2026-10-24.md`) put a choice before the user and the user delegated it: M2 ends at a
+complete, checked typed tree, `Ast.h` stays the oracle until M3, and the adapter is a harness for its subset and is not
+grown. Design section 12.1 carries the reasons; the one that decides it is size: the adapter lowers 1,257 of the 1,986
+file-scope free functions - about 15% of the 8,227 functions the same cases emit - and reads fifteen fact maps the parser
+records while it builds `Ast.h`, so finishing it means writing the parser's layout half a second time for every function
+kind, and M3 then deletes it.
+
+**What is done from here, in this order, each commit gated as before** (make test with its seven suites, the emit golden
+recorded at `a2b39e7`, `tools/identical.sh` against `a2b39e7`'s binary, `tools/self-host`):
+
+| step | what | checked by |
+| --- | --- | --- |
+| M2.13 | the pending facts (`pendingTry_`, `pendingThrow_`, `pendingLambda_`, `pendingRange_`, `pendingReturnTemp_`, `lastCleanupSlots_`) into `FunctionState` | identical; a nested-parse probe |
+| M2.14 | `-dump=ast` prints a `Try`'s types, indices, `alsoCleanup`, `msExits` and unwind-help slot | adapted.sh still 0 differ |
+| M2.15 | the denominator: every emitted function counted - with a syntax root or compiler-written, by kind - and `-check=typed` and `-check=adapted` reporting over all of them; the Typer types every root, a name it cannot resolve typed null and counted | typed.sh 0 differ |
+| M2.16 | resolutions recorded per node at parse time - a name's entity, a member's `Member`, a call's and an overloaded operator's chosen signature - read by the Typer and the adapter in place of `findGlobal`, `findEnum`, `overloadsOf` and `resolveOverload` after the file | typed.sh 0 differ, the typed fraction up; adapted.sh 0 differ |
+| M2.17 | the Typer's remaining kinds: `this`, member access, class operators, `new`, `delete`, `throw`, lambdas, qualified names, string pieces; the untyped kinds named in the report | typed.sh 0 differ |
+| M2.18 | `tools/self-host` with `-front=typed`; a Linux leg (and the Windows leg where the box answers) running run.sh under `-front=typed` at -O0 and -O2 | stage 1 = stage 2; the leg's counts |
+
+**"M2 closed" means** the six points of design section 12.1 hold, with the numbers written here: the count of emitted
+functions, of those with a syntax root and typed, of the compiler-written by kind; the typed fraction of nodes and the
+kinds outside it; `-check=typed` and `-check=adapted` at 0 differ; `identical.sh` and self-host green with and without
+`-front=typed`; the non-Mac leg's counts.
+
+**M2.13 and M2.14** (`2f9e873`): the six pending facts into `FunctionState`; `-dump=ast` prints a `Try`'s types with
+their selector indices, `alsoCleanup`, the Microsoft exits and the unwind-help slot. Identical over 5,352 outputs.
+
+**M2.15: the denominator** (2026-10-25). Every emitted function is counted, by `Typer::census`: one the grammar read has
+a live `function` node that defined its symbol (`syntaxFunctions_`, recorded once the symbol is final - a constructor
+split for a virtual base is renamed to its C2 after the first recording) and one the compiler wrote carries its kind
+(`Function::synthesised`, set at the fifteen sites in `Classes.cpp`, `ParserClass.cpp` and `ParserInit.cpp`). Over the
+647 cases that compile for the host: **8,227 functions emitted, 7,420 with a source body, 807 compiler-written, 0 neither**
+- against the 1,986 the reports counted before, which were the file-scope free functions. The 807 by kind: implicit
+destructor 209, implicit default constructor 180, deleting destructor 144, implicit copy or move 97, complete constructor
+33 and destructor 23 (a virtual base's split), thunk 20, virtual thunk 29, vector constructor 13 and destructor 25, array
+destructor helper 8, init function 25, tls init 1. The Typer types every body and `-check=typed` holds them all:
+184,964 syntax nodes under the bodies, 84,821 typed, 83,323 agreeing, 0 differing, 1,407 with no Ast.h node;
+**44,220 expression nodes typed null**, by kind: name 18,595, call 7,255, member 6,729, binary 3,917, assign 2,782, unary
+1,238, subscript 1,209, this 564, conditional 399, new 368, postfix 343, cast 243, throw 184, delete 139, lambda 125,
+sizeof 92, string 34, comma 4. That is the typed tree's gap at M2.15, and M2.16 and M2.17 are what close it. The adapter
+is asked for every body too and answers 1,257 of 7,420, the 6,163 outside each with its reason, the commonest "a body
+whose names are a class's, a namespace's or a template's".
+
+**Three recording faults the census found**, each a body the parser emitted whose syntax was not the tree's. A lambda's
+call operator, replayed from synthesised tokens at the lambda's own position, was killed twice: by `kill(bodySyntax)`,
+which ran after the replay and was meant for the in-place readings (moved in front of it), and by `Tree::adopt`, which
+killed any earlier root at one location when a later one appeared there - the call operator, `__invoke` and the `lambda`
+node share the `[`'s position. A rewound read records the *same* node again, so `adopt` kills only a root of the same
+kind and text now, and a lambda's text is its whole token span whichever reading records it (the first read's was `"["`),
+so the two readings still dedup; the live `lambda` node takes the replayed bodies from the dead one (`MadeLambda::bodies`,
+`Tree::release`). And a body defined inside a reading that is then killed - an inner lambda's call operator made during
+the outer lambda's deducing read, whose closure the real read reuses, or a constructor or member template instantiated
+inside a `Trial`, whose destructor kills on success as on failure - is revived after the kill (`definedBodies_`,
+`reviveDefinedBodies`, `Tree::revive`): the function was emitted, so its syntax is the tree's whatever reading made it.
+`tests/syntax/statements.syntax` was re-recorded for the one change, the lambda node holding its call operator.
+
+Gated: `make test` green (emit golden 0 of 1,924 changed, typed.sh and adapted.sh 0 differ), `identical.sh` 5,352 compared
+and the known 8 differ.
+
+**M2.16: resolutions recorded per node at parse time** (2026-10-25). `Parser::Resolved` is what a name, a member access, a
+call or an overloaded operator resolved to - Local, Global, Function (named as a value), Call (reached by a call, a
+constructor's included), Member, Enumerator, StaticMember, This, Temporary - with the entity's type as the expression
+has it, its symbol or value, its owner and the name the parser gave its `Var`. It is recorded where the parser resolves
+(`localRef`, `globalRef`, `enumeratorValue`, the `this` branch, the four member paths, `staticMemberRef`,
+`memberWithoutObject`, `functionAddress`, `completeCall`, `noteTemporarySlot`, and a declaration's constructor by the
+local's serial): an `Expr` carries an index into an append-only table, so a record can never be stale, and `note` copies
+it onto the syntax node (`resolutions_`). **The Typer looks nothing up after the file**: `named` asks its own scopes and
+then the record; `resolvedType` answers a call's return, a function's pointer ([conv.func]), a member's access type, and
+`scopedFunctions_` no longer gates it. **Nor does the adapter**: `name`, `call`, `memberCall`, `objectCall`, a declaration's
+and a temporary's constructor read the record and find the signature by symbol; `scopedName`, its two tables and every
+`findGlobal`/`findEnum`/`overloadsOf`/`resolveOverload` are gone from it (`findTypedef(tag)` of a class stays: a tag is
+not a scope-dependent lookup). Over the 647 host cases: **123,874 typed, 110,954 agree, 0 differ, 12,730 with no Ast.h
+node, 5,167 untyped** (84,821 / 44,220 at M2.15); the untyped by kind: member 1,987, name 772, unary 526, new 368, cast
+243, call 228, throw 184, conditional 160, binary 155, assign 153, delete 139, lambda 125, sizeof 92, string 34, comma 1.
+Adapted: 1,266 of 7,420, all the same (1,257 before: the nine are qualified names the heuristic had kept outside).
+
+**Three faults the gate found in the writing.** A record's type for a member is the access's type - the object's const
+applied, `const int [3]` for an array member through a const object - not the member's declared type, since a typed node's
+type is the expression's (137 differences, one shape). A function reached by a call and one named as a value are two kinds:
+`&f` and `f` are the pointer [conv.func] makes, a call is the return. And a member function or member template called by
+its bare name reads its own arguments, so `argGen_` did not move and the call was recorded as a `name` whose Ast was a
+`Call`; a name whose Ast is a call is a `call` node now. **And one of this tree's own**: three times a `resolve(std::move(e),
+...e->type())` read its operand in the argument list beside the move - argument order is unspecified, and `enumeratorValue`'s
+crashed every case including `<string>`; the type is taken into a local first, as CLAUDE.md's M2.12n already said.
+
+Gated: `make test` green (emit golden 0 of 1,924 changed, typed.sh and adapted.sh 0 differ), `identical.sh` 5,352 compared
+and the known 8 differ.
+
+**M2.17: the Typer's remaining kinds** (2026-10-25). Three more record kinds beside M2.16's: `Callee`, on the node of a
+call's callee - the function itself, where a `name` or `member` callee had no Ast node and no type; `TypeName`, on the
+callee of a class temporary; and `Value`, the type the parser gave a form that names no entity - `new`, `delete`, `throw`,
+a lambda, a cast to a reference or `dynamic_cast`, `typeid`, a string with a prefix, a conditional of class arms, `&S::m` -
+read **only where the Typer's own rule has no answer**, and counted apart in the report (`recorded=`), since a type taken
+from the parser's own record is not independent agreement. Rules added: `throw` and `delete` are `void`; a call through a
+pointer to a function is its pointee's return; a comparison with `nullptr` is `bool`; `&` and `*` of a class operand
+follow the built-in rule (a class's own operator carries a Call record, answered first); an explicit destructor or
+pseudo-destructor call is `void`; a byte-copied class assignment is the object; a scoped enumerator `E::a` (built in
+`ParserType.cpp`, outside `enumeratorValue`) records its enumerator; an indirect call records the function type it calls
+through, with no symbol - which the adapter reads as a call through a pointer; an overload placeholder's node takes the
+function it resolves to. Over the 647 host cases: **128,385 typed, 112,982 agree (1,027 from the parser's own record), 0
+differ, 15,212 with no Ast.h node, 656 untyped** of the 129,041 expression nodes - 0.5% - by kind: call 228 (a call of a
+class temporary, `ByDigits()(a, b)`, and of an object whose `operator()` the parser reached through a shape with no
+record), member 191, name 123, unary 58, assign 27, binary 24, cast 4, comma 1 - most of them operands of those. The
+adapter: 1,268 of 7,420, all the same.
+
+**What is untyped at M2.17, named**: a call of a temporary or an object through a Comma the parser built in place of a
+Call; the callee `member` and `name` nodes under those; a `unary &` or `*` whose operand is one of them; a class
+assignment whose `operator=` the parser reached through a shape that carries no record; a cast whose text the recorder
+did not reach. Each is a shape the parser builds by hand rather than through `completeCall`; the record is one line at
+the site, and the list is what M3's lowering has to meet or close.
+
+Gated: `make test` green (emit golden 0 of 1,924 changed, typed.sh and adapted.sh 0 differ), `identical.sh` 5,352
+compared and the known 8 differ.
+
+
+**M2.18: the typed front end on every box** (2026-10-25; Fable's M2.13-M2.17, finished by Claude Opus 5.5 after
+Fable's session ran out of context). Measured on the four boxes, Windows first:
+
+| box | what | result |
+| --- | --- | --- |
+| Windows (zeeshan, cl 19.51) | the cases through the MASM spelling and the project's LINK at -O0, -O2, `-front=typed`, `-front=typed -O2` | 955 passed, 0 failed, 33 skipped, each of the four |
+| Windows | `tools/windows/self-host.cmd`, plain and `-front=typed` | stage 1 and stage 2 built, 70 of 70 sources the same from each, both (assembled by clang - see below) |
+| TMS6747 (the Linux box: CCS 5.5's lnk6x 7.4.4, vm6747, sim6747) | `tests/tms6747.sh` at -O0 and -O2; `tests/ti-link.sh` (TI's lnk6x over every case) at -O0 and -O2; `tests/asm6x.sh` | 620 passed, 0 failed, each level; 629 linked, 0 failed, each level; 633 objects, 0 failed |
+| Linux (g++ 11.5) | run.sh at -O0 and -O2, plain and `-front=typed`; emit, syntax, typed, adapted | 989 passed, 0 failed, all four; emit 2,557; typed and adapted 647, 0 differ |
+| Linux | `tools/self-host`, plain and `-front=typed` | 70 of 70 sources the same from stage 1 and stage 2, both |
+| macOS | `make test` | run.sh 987, emit 1,924 (the golden at `a2b39e7` 0 changed), names 653, typed and adapted 647, 0 failed; exclusions 0/0, comment cap 0 |
+
+**The self-host found one gap in cxx3, not in M2's code**: `std::pair<int, int> lastCleanupSlots = std::pair<int,
+int>(0, 0);`, M2.13's member of `FunctionState`, stopped stage 0 at the comma inside the template-id - a member's own
+initialiser is ended at a depth-0 comma and angle brackets are not counted. The source no longer writes the
+initialiser (`std::pair`'s default constructor is the same value), and the gap is in the register,
+`tests/open/member-initialiser-template-id-comma.cpp`.
+
+**The Windows self-host is the GNU spelling's, as M1's was.** Under `-masm=masm` stage 0 cannot build stage 1: cxx3's
+own sources use `thread_local`, which needs SECTIONREL, and the project's masm has none - refused by name; ml64 has no
+COMDAT, so a program of seventy objects does not link. Until the project's masm gains SECTIONREL (or M4's COFF writer
+lands, R4.4), R9.1's target-1 gate is assembled by clang.

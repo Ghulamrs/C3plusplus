@@ -1771,7 +1771,7 @@ ExprPtr Parser::enumeratorThroughEnum() {
     at_ += took + 2;
     ExprPtr n(new Num(lookup_.enums_[it->second].value));
     n->setType(found);
-    return n;
+    return resolve(std::move(n), resolvedAs(Resolved::Enumerator, found, std::string(), -1, lookup_.enums_[it->second].value));
 }
 
 // [dcl.attr.grammar]: any number of `[[...]]` - C++11's two are read and change nothing, `deprecated`

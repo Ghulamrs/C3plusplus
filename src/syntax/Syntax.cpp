@@ -112,12 +112,15 @@ std::vector<NodeId> Tree::adopt(std::size_t from, std::size_t lo, std::size_t hi
     for (std::size_t i = from + 1; i < nodes_.size(); i++) {
         const Node &n = nodes_[i];
         if (n.hasParent || n.dead || n.loc < lo || n.loc > hi) continue;
+        // A rewound read records the same node again - the same kind and text at one location - and the later wins;
+        // a lambda's replayed call operator, its `__invoke` and the lambda itself share a location and are three (M2.15).
         std::unordered_map<std::uint32_t, std::size_t>::const_iterator seen = at.find(n.loc);
-        if (seen != at.end()) {
+        if (seen != at.end() && nodes_[out[seen->second].v].kind == n.kind && nodes_[out[seen->second].v].text == n.text) {
             nodes_[out[seen->second].v].dead = true;
             out[seen->second] = NodeId(static_cast<std::uint32_t>(i));
             continue;
         }
+        if (seen != at.end()) { out.push_back(NodeId(static_cast<std::uint32_t>(i))); continue; }
         at[n.loc] = out.size();
         out.push_back(NodeId(static_cast<std::uint32_t>(i)));
     }
@@ -126,6 +129,11 @@ std::vector<NodeId> Tree::adopt(std::size_t from, std::size_t lo, std::size_t hi
 
 void Tree::kill(std::size_t from) {
     for (std::size_t i = from + 1; i < nodes_.size(); i++) nodes_[i].dead = true;
+}
+
+void Tree::revive(NodeId id) {
+    nodes_[id.v].dead = false;
+    for (std::uint32_t i = 0; i < nodes_[id.v].count; i++) revive(children_[nodes_[id.v].first + i]);
 }
 
 std::vector<NodeId> Tree::roots() const {

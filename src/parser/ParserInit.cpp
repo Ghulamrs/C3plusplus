@@ -1058,6 +1058,7 @@ void Parser::finishDynamicInit(Program &program) {
                                          StmtPtr(new Block(std::move(body))),
                                          alignTo(dynInitFrame_, 16), true, 0,
                                          false, 0, 0, std::vector<::Local>()));
+    program.functions.back().setSynthesised("init function");
     program.functions.back().setSymbol(symbol);
     program.initFunction = symbol;
 }
@@ -1111,6 +1112,7 @@ void Parser::finishTlsInit(Program &program) {
                                          StmtPtr(new Block(std::move(body))),
                                          alignTo(tlsInitFrame_, 16), true, 0,
                                          false, 0, 0, std::vector<::Local>()));
+    program.functions.back().setSynthesised("tls init");
     program.functions.back().setSymbol("__tls_init");
     program.tlsInitFunction = "__tls_init";
 }
@@ -1276,6 +1278,7 @@ std::vector<StmtPtr> Parser::buildStaticArrayConstruction(Declared &d,
                                            StmtPtr(new Block(std::move(body))),
                                            alignTo(frameSize_, 16), true, 0,
                                            false, 0, d.pos, std::vector<::Local>()));
+    current_->functions.back().setSynthesised("array destructor helper");
     current_->functions.back().setSymbol(fn);
     closeFrame(savedFrame);
 
@@ -1363,6 +1366,7 @@ void Parser::registerDestruction(const Declared &d, const std::string &symbol,
                                            alignTo(frameSize_, 16), true, 0,
                                            false, 0, d.pos,
                                            std::vector<::Local>()));
+    current_->functions.back().setSynthesised("atexit helper");
     current_->functions.back().setSymbol(helper);
     closeFrame(savedFrame);
 

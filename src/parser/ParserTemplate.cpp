@@ -1593,6 +1593,7 @@ Parser::Trial::~Trial() {
     p->patternOnly_ = pattern;
     p->angleSplit_ = split;
     p->syntaxTree_.kill(syntaxMark);     // the tokens are read again, and what this read recorded is not the tree's
+    p->reviveDefinedBodies(syntaxMark);  // but a body a template instantiated in here is emitted, and stays (M2.15)
 }
 
 // `a::b::` as the stack of namespaces it names, which is what namespaceStack_ holds.
@@ -1800,8 +1801,9 @@ ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
     std::vector<syntax::NodeId> kids(1, syntaxTree_.add(syntax::Kind::Name, scope.empty() ? name : scope + "::" + name, pos,
                                                         std::vector<syntax::NodeId>()));
     kids.insert(kids.end(), callArgs_.begin(), callArgs_.end());
-    return note(completeCall(sig.name, sig.symbol, nullptr, sig.returns, sig.params,
-                             sig.variadic, pos, std::move(callArgs)), syntax::Kind::Call, "", pos, kids);
+    ExprPtr called = completeCall(sig.name, sig.symbol, nullptr, sig.returns, sig.params, sig.variadic, pos, std::move(callArgs));
+    noteCallee(kids[0], called.get());
+    return note(std::move(called), syntax::Kind::Call, "", pos, kids);
 }
 
 void Parser::refuseTemplateId() {

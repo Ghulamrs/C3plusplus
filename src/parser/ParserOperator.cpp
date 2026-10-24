@@ -887,8 +887,9 @@ ExprPtr Parser::conditional() {
     const CondParts mine = condParts_;
     condParts_ = outer;
     if (!mine.seen) return r;
-    return note(std::move(r), syntax::Kind::Conditional, "?:", mine.pos,
-                {mine.parts[0], mine.parts[1], mine.parts[2]});
+    r = note(std::move(r), syntax::Kind::Conditional, "?:", mine.pos, {mine.parts[0], mine.parts[1], mine.parts[2]});
+    noteValue(r.get());
+    return r;
 }
 
 ExprPtr Parser::conditionalNode() {

@@ -21,14 +21,15 @@ for r in "$out"/*.adapted; do
     base=$(basename "$r" .adapted)
     line=$(grep -- '^-check=adapted:' "$r")
     if [ -z "$line" ]; then skipped=$((skipped + 1)); continue; fi
-    if echo "$line" | grep -q ' 0 differ' && [ ! -f "$out/$base.moved" ]; then pass=$((pass + 1))
+    if echo "$line" | grep -q ' differ=0 ' && [ ! -f "$out/$base.moved" ]; then pass=$((pass + 1))
     else
         echo "FAIL $base"; grep -A2 ': line' "$r" | head -6 | sed 's/^/      /'
         [ -f "$out/$base.moved" ] && sed 's/^/      assembly moved with -front=typed: /' "$out/$base.moved"
         fail=$((fail + 1))
     fi
 done
-cat "$out"/*.adapted | grep -- '^-check=adapted:' |
-    awk '{f+=$2; a+=$4; s+=$6} END {printf "adapted.sh: %d functions, %d adapted, %d the same as the parser'"'"'s\n", f, a, s}'
+# The report is key=value fields (M2.15): the census of every emitted function, then what the adapter took of the bodies.
+cat "$out"/*.adapted | grep -- '^-check=adapted:' | tr ' ' '\n' | grep = | tr '=' ' ' |
+    awk '{s[$1]+=$2} END {printf "adapted.sh: %d functions emitted, %d with a source body, %d compiler-written; %d adapted, %d the same as the parser'"'"'s, %d outside\n", s["functions"], s["bodies"], s["synthesised"], s["adapted"], s["same"], s["outside"]}'
 echo "adapted.sh: $pass passed, $fail failed, $skipped did not compile for this host"
 [ "$fail" -eq 0 ]

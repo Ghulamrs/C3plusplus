@@ -33,7 +33,9 @@ public:
     Parser(const Source &src, std::vector<Token> tokens,
            TypeTable &types, const Target &target, const Abi &abi)
         : src_(src), tokens_(std::move(tokens)), types_(types), target_(target),
-          abi_(abi), lookup_(*this), overload_(*this), tmpl_(*this), classes_(*this), constant_(*this), linkage_(*this) {}
+          abi_(abi), lookup_(*this), overload_(*this), tmpl_(*this), classes_(*this), constant_(*this), linkage_(*this) {
+        resolvedTable_.push_back(Resolved());
+    }
 
     // What the grammar recorded, for -dump=syntax.
     const syntax::Tree &syntaxTree() const { return syntaxTree_; }
@@ -506,6 +508,51 @@ private:
     }
     // The type each `var` node declares, by node - what Sema's typing reads a name's type from (M2.10).
     std::unordered_map<std::uint32_t, const Type *> declaredTypes_;
+    // **What a name, a member, a call or an operator resolved to, recorded where the parser resolved it** (M2.16).
+    struct Resolved {
+        // Function: named as a value, the type its function type; Call: reached by a call, the value its return;
+        // Callee: the function a call reached, on its callee's node; TypeName: a type a temporary's callee names;
+        // Value: the type the parser gave a form that names no entity - new, delete, throw, a lambda, a string.
+        enum What { None, Local, Global, Function, Call, Callee, Member, Enumerator, StaticMember, This, Temporary,
+                    TypeName, Value };
+        What what = None;
+        const Type *type = nullptr;      // as declared: a reference keeps its `&`, a function is its function type
+        const Type *owner = nullptr;     // a member's class, a member function's
+        std::string symbol;              // a global's, a function's or a static member's linkage name; a local's static name
+        int serial = -1;                 // a local's serial; a member's offset
+        long long value = 0;             // an enumerator's, a folded static member's
+        bool isConst = false, isThreadLocal = false;    // a global's
+        std::string name;                                // a global's or a function's lookup name, which its Var is named by
+    };
+    std::vector<Resolved> resolvedTable_;
+    std::unordered_map<std::uint32_t, Resolved> resolutions_;
+    ExprPtr resolve(ExprPtr e, const Resolved &r) {
+        if (e) { e->setResolved(static_cast<std::uint32_t>(resolvedTable_.size())); resolvedTable_.push_back(r); }
+        return e;
+    }
+    static Resolved resolvedAs(Resolved::What what, const Type *type, const std::string &symbol = std::string(),
+                               int serial = -1, long long value = 0, const Type *owner = nullptr) {
+        Resolved r;
+        r.what = what; r.type = type; r.symbol = symbol; r.serial = serial; r.value = value; r.owner = owner;
+        return r;
+    }
+    void noteResolved(syntax::NodeId id, const Expr *e) {
+        if (e != nullptr && e->resolved() != 0 && id.valid()) resolutions_[id.v] = resolvedTable_[e->resolved()];
+    }
+    // A callee's node takes what its call reached: the function, or the class a temporary's callee names.
+    void noteCallee(syntax::NodeId callee, const Expr *call) {
+        if (call == nullptr || !callee.valid()) return;
+        Resolved r = call->resolved() != 0 ? resolvedTable_[call->resolved()] : temporaryOf(call);
+        if (r.what == Resolved::Call) r.what = Resolved::Callee;
+        else if (r.what == Resolved::Temporary) r.what = Resolved::TypeName;
+        else return;
+        resolutions_[callee.v] = r;
+    }
+    // The type the parser gave a form that names no entity, for typing to fall back on where its own rule has none.
+    void noteValue(const Expr *e) {
+        if (e != nullptr && e->syntax().valid() && e->type() != nullptr)
+            resolutions_[e->syntax().v] = resolvedAs(Resolved::Value, e->type());
+    }
     ExprPtr noteCast(ExprPtr e, const Type *to, const std::string &written, std::size_t pos, syntax::NodeId operand) {
         e = note(std::move(e), syntax::Kind::Cast, written, pos, std::vector<syntax::NodeId>(1, operand));
         if (e) castTypes_[e->syntax().v] = to;
@@ -567,8 +614,14 @@ private:
         noteDeclaredLocal(id, name);
     }
     void noteDeclaredLocal(syntax::NodeId id, const std::string &name) {
-        if (const Local *l = lookup_.findLocal(name)) declaredLocals_[id.v] = *l;
+        const Local *l = lookup_.findLocal(name);
+        if (l == nullptr) return;
+        declaredLocals_[id.v] = *l;
+        std::map<int, std::string>::const_iterator c = ctorBySerial_.find(l->serial);
+        if (c != ctorBySerial_.end()) resolutions_[id.v] = resolvedAs(Resolved::Call, nullptr, c->second);
     }
+    // The constructor a declaration called, by the declared local's serial, until its `var` node is made (M2.16).
+    std::map<int, std::string> ctorBySerial_;
     // **One declarator's `var` node**, made when the declarator's scope closes - which a loop body that leaves by
     // `continue` from several places does in one place - over the parts its parse recorded: a bound, an initialiser.
     struct VarNote {
@@ -601,9 +654,13 @@ private:
     ExprPtr note(ExprPtr e, syntax::Kind kind, const std::string &text, std::size_t pos,
                  const std::vector<syntax::NodeId> &children = std::vector<syntax::NodeId>()) {
         if (e) e->setSyntax(syntaxTree_.add(kind, text, pos, children));
+        if (e) noteResolved(e->syntax(), e.get());
         if (kind == syntax::Kind::Call) {
             if (const Call *c = dynamic_cast<const Call *>(e.get())) noteCallSlots(*c);
             else noteTemporarySlot(e.get());
+        } else if (kind == syntax::Kind::Name && e && e->resolved() == 0) {
+            const Resolved tmp = temporaryOf(e.get());
+            if (tmp.what == Resolved::Temporary) resolutions_[e->syntax().v] = tmp;
         }
         return e;
     }
@@ -626,6 +683,15 @@ private:
     std::unordered_map<std::uint32_t, RangeFacts> rangeFacts_;
     RangeFacts pendingRange_ = RangeFacts();
     LambdaFacts pendingLambda_;
+    // A class temporary's shape, `*(ctor(&$tmp, ...), &$tmp)`, read for its class; None where the Expr is not one.
+    Resolved temporaryOf(const Expr *e) const {
+        const Unary *star = dynamic_cast<const Unary *>(e);
+        const Comma *both = star != nullptr && star->op() == '*' ? dynamic_cast<const Comma *>(&star->operand()) : nullptr;
+        const Unary *at = both != nullptr ? dynamic_cast<const Unary *>(&both->right()) : nullptr;
+        const Var *tmp = at != nullptr && at->op() == '&' ? dynamic_cast<const Var *>(&at->operand()) : nullptr;
+        if (tmp == nullptr || tmp->name() != "$tmp") return Resolved();
+        return resolvedAs(Resolved::Temporary, e->type());
+    }
     void noteTemporarySlot(const Expr *e) {
         const Unary *star = dynamic_cast<const Unary *>(e);
         const Comma *both = star != nullptr && star->op() == '*' ? dynamic_cast<const Comma *>(&star->operand()) : nullptr;
@@ -633,6 +699,9 @@ private:
         const Var *tmp = at != nullptr && at->op() == '&' ? dynamic_cast<const Var *>(&at->operand()) : nullptr;
         if (tmp == nullptr || tmp->name() != "$tmp") return;
         temporarySlots_[e->syntax().v] = tmp->offset();
+        // The temporary's class, and the constructor that built it where one did.
+        const std::uint32_t ctor = both->left().resolved();
+        resolutions_[e->syntax().v] = resolvedAs(Resolved::Temporary, e->type(), ctor != 0 ? resolvedTable_[ctor].symbol : std::string());
         for (std::size_t i = 0; i < pendingTemps_.size(); i++)
             if (pendingTemps_[i].slot == tmp->offset()) temporaryGuards_[e->syntax().v] = pendingTemps_[i].flag;
     }
@@ -1009,9 +1078,17 @@ private:
         int mayThrow = 0;
         bool conditionDecl = false;
         std::string conditionName;
-        // Block-scope, and a lambda's body is its own block: a using-directive
-        // written in one reached the end of the enclosing function.
+        // Block-scope, and a lambda's body is its own block: a using-directive written in one reached the function's end.
         std::vector<std::string> usingNamespaces;
+        // The facts a parse records for the syntax node that takes them (M2.13): set deep in a statement, read at its end.
+        std::pair<int, int> lastCleanupSlots;
+        ReturnTemp pendingReturnTemp;
+        TryFacts pendingTry;
+        ThrowFacts pendingThrow;
+        RangeFacts pendingRange = RangeFacts();
+        LambdaFacts pendingLambda;
+        std::vector<syntax::NodeId> lambdaBodies;
+        std::map<int, std::string> ctorBySerial;
     };
     // **A parse whose result is discarded must put back what it accumulated.**
     struct Discarded {
@@ -1390,7 +1467,15 @@ private:
         std::vector<std::string> names;
         std::vector<const Type *> types;
         std::vector<int> offsets;
+        // The `function` nodes its replayed bodies recorded - the call operator, `__invoke` - which every reading's
+        // `lambda` node holds (M2.15); a rewound reading's node dies and the live one takes them.
+        std::vector<syntax::NodeId> bodies;
     };
+    std::vector<syntax::NodeId> lambdaBodies_;
+    // Every `function` node that defined an emitted body, in creation order: a kill that rewinds a reading - a trial's,
+    // a lambda's deducing one - takes them with it, and a body whose function was emitted is the tree's (M2.15).
+    std::vector<syntax::NodeId> definedBodies_;
+    void reviveDefinedBodies(std::size_t from);
     // One closure object: a frame slot, and each capture copied into it.
     ExprPtr buildClosure(const MadeLambda &made, std::size_t pos);
     ExprPtr buildClosureObject(const MadeLambda &made, std::size_t pos);

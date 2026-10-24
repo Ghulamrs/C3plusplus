@@ -719,7 +719,9 @@ ExprPtr Parser::functionAddress(const Signature &sig, const std::string &key) {
     target->setType(fn);
     ExprPtr n(new Unary('&', std::move(target)));
     n->setType(types_.pointerTo(fn));
-    return n;
+    Resolved r = resolvedAs(Resolved::Function, fn, sig.symbol, -1, 0, sig.owner.empty() ? nullptr : lookup_.findTypedef(sig.owner));
+    r.name = key;
+    return resolve(std::move(n), r);
 }
 
 // `&S::f` for a member function: the ABI's pair, built in a slot of this frame the way a class temporary is.
@@ -812,8 +814,10 @@ ExprPtr Parser::overloadArgumentFor(const Type *param, const OverloadArg &oa) {
             overloadArgs_.erase(overloadArgs_.begin() + static_cast<long>(i));
             break;
         }
-    return mine.cls != nullptr ? memberFunctionAddress(mine.cls, *f, mine.key, mine.pos)
-                               : functionAddress(*f, mine.key);
+    ExprPtr made = mine.cls != nullptr ? memberFunctionAddress(mine.cls, *f, mine.key, mine.pos)
+                                       : functionAddress(*f, mine.key);
+    noteResolved(mine.placeholder->syntax(), made.get());     // the name was noted before the parameter chose
+    return made;
 }
 
 void Parser::refuseOverloadArguments(const std::vector<ExprPtr> &args,
@@ -1060,6 +1064,7 @@ ExprPtr Parser::primary(Program *program) {
     }
     if (first.kind == TokenKind::Str) {
         r = note(std::move(r), syntax::Kind::StringLit, first.text, pos);
+        noteValue(r.get());
         literalTokens_[r->syntax().v] = start;
         if (const StrLit *lit = dynamic_cast<const StrLit *>(r.get()))
             stringLiterals_[r->syntax().v] = std::make_pair(lit->label(), lit->text());
@@ -1075,9 +1080,10 @@ ExprPtr Parser::primary(Program *program) {
                        tokens_[k].is("operator")))
         name += tokens_[k++].text;
     if (name.empty()) return r;     // a lambda, a cast, a keyword's own form: not recorded yet
-    if (k < at_ && tokens_[k].is("(") && argGen_ != gen) {
+    if (k < at_ && tokens_[k].is("(") && (argGen_ != gen || dynamic_cast<const Call *>(r.get()) != nullptr)) {
         std::vector<syntax::NodeId> call(1, syntaxTree_.add(syntax::Kind::Name, name, pos));
-        call.insert(call.end(), callArgs_.begin(), callArgs_.end());
+        noteCallee(call[0], r.get());
+        if (argGen_ != gen) call.insert(call.end(), callArgs_.begin(), callArgs_.end());
         return note(std::move(r), syntax::Kind::Call, "", tokens_[k].pos, call);
     }
     return note(std::move(r), syntax::Kind::Name, name, pos);
@@ -1150,7 +1156,10 @@ ExprPtr Parser::primaryNode(Program *program) {
         // **Inside a lambda that captured it, `this` is the enclosing
         // object's** - [expr.prim.lambda]. The closure's own `this` is not
         // what the reader wrote and is of no use to them.
-        if (ExprPtr held = capturedThisPointer()) return held;
+        if (ExprPtr held = capturedThisPointer()) {
+            const Type *heldType = held->type();
+            return resolve(std::move(held), resolvedAs(Resolved::This, heldType));
+        }
         if (currentClass_ == nullptr)
             src_.fail(pos, "'this' is only inside a member function, and this "
                            "is not one");
@@ -1163,7 +1172,8 @@ ExprPtr Parser::primaryNode(Program *program) {
         ExprPtr v(Var::local("this", slot != nullptr ? slot->offset : thisOffset_));
         v->setType(slot != nullptr ? slot->type
                                    : types_.pointerTo(currentClass_));
-        return v;
+        const Type *selfType = v->type();
+        return resolve(std::move(v), resolvedAs(Resolved::This, selfType));
     }
 
     // **`operator+(a, b)` written out.**
@@ -2083,7 +2093,8 @@ ExprPtr Parser::primaryNode(Program *program) {
                 acc->setType(held->isConst() && !m->type->isReference() &&
                              !m->isMutable
                                  ? types_.withConst(m->type) : m->type);
-                return useReference(std::move(acc));
+                const Type *accessType = acc->type();
+                return resolve(useReference(std::move(acc)), resolvedAs(Resolved::Member, accessType, name, m->offset, 0, m->declaredIn));
             }
 
             // **A member of the class the lambda was written in**, reached through
@@ -2104,7 +2115,8 @@ ExprPtr Parser::primaryNode(Program *program) {
                     acc->setType(of->isConst() && !om->type->isReference() &&
                                  !om->isMutable
                                      ? types_.withConst(om->type) : om->type);
-                    return useReference(std::move(acc));
+                    const Type *accessType = acc->type();
+                    return resolve(useReference(std::move(acc)), resolvedAs(Resolved::Member, accessType, name, om->offset, 0, om->declaredIn));
                 }
             }
 
@@ -2551,7 +2563,7 @@ ExprPtr Parser::localRef(const std::string &name) {
         if (l->constantOnly) {
             ExprPtr n(new Num(l->constantValue));
             n->setType(l->type);
-            return n;
+            return resolve(std::move(n), resolvedAs(Resolved::Local, l->type, l->staticName, l->serial, l->constantValue));
         }
         Var *v = l->staticName.empty() ? Var::local(name, l->offset)
                                        : Var::global(l->staticName);
@@ -2561,16 +2573,17 @@ ExprPtr Parser::localRef(const std::string &name) {
         if (l->isThreadLocal) tlsVar(v, l->tlsViaWrapper, l->tlsViaWrapper);
         ExprPtr n(v);
         n->setType(l->type);
-        return useReference(std::move(n));
+        return resolve(useReference(std::move(n)), resolvedAs(Resolved::Local, l->type, l->staticName, l->serial));
     }
     return nullptr;
 }
 
 // An enumerator as the value it stands for, of its enumeration's type.
 ExprPtr Parser::enumeratorValue(const EnumConst &e) {
+    const Type *t = e.type != nullptr ? e.type : types_.intType();
     ExprPtr n(new Num(e.value));
-    n->setType(e.type != nullptr ? e.type : types_.intType());
-    return n;
+    n->setType(t);
+    return resolve(std::move(n), resolvedAs(Resolved::Enumerator, t, std::string(), -1, e.value));
 }
 
 // `*this` in the member function being read, of the class `this` points at - its const included.
@@ -2607,7 +2620,11 @@ ExprPtr Parser::globalRef(const std::string &name) {
         n->setType(g->type);
         // A reference at file scope is a slot holding an address, as a local
         // one is, so a mention of it is a dereference of the slot.
-        return useReference(std::move(n));
+        Resolved r = resolvedAs(Resolved::Global, g->type, g->symbol);
+        r.isConst = g->isConst;
+        r.isThreadLocal = g->isThreadLocal;
+        r.name = name;
+        return resolve(useReference(std::move(n)), r);
     }
     return nullptr;
 }
@@ -2809,6 +2826,7 @@ ExprPtr Parser::notePostfix(ExprPtr n, PostfixStep &st) {
             // `o.f(x)` is read in one turn, so a member that read arguments is the callee of a call.
             if (st.callFollows && argGen_ != st.argGen) {
                 std::vector<syntax::NodeId> call(1, syntaxTree_.add(syntax::Kind::Member, st.text, st.pos, kids));
+                noteCallee(call[0], n.get());
                 call.insert(call.end(), callArgs_.begin(), callArgs_.end());
                 return note(std::move(n), syntax::Kind::Call, "", st.callPos, call);
             }
@@ -2996,8 +3014,10 @@ ExprPtr Parser::postfix() {
                 // there is nothing to evaluate, and dropping it leaves an lvalue.
                 if (clonePure(*n) == nullptr) {
                     const Type *st = one->type();
+                    const std::uint32_t res = one->resolved();
                     ExprPtr both(new Comma(std::move(n), std::move(one)));
                     both->setType(st);
+                    both->setResolved(res);
                     one = std::move(both);
                 }
                 n = std::move(one);
@@ -3025,6 +3045,8 @@ ExprPtr Parser::postfix() {
             acc->setType(obj->isConst() && !m->type->isReference() &&
                          !m->isMutable
                              ? types_.withConst(m->type) : m->type);
+            const Type *accessType = acc->type();
+            acc = resolve(std::move(acc), resolvedAs(Resolved::Member, accessType, name, m->offset, 0, m->declaredIn));
             // A reference member holds an address, so reading one is a
             // dereference - the same `useReference` every mention of a
             // reference local already goes through.
@@ -3082,8 +3104,10 @@ ExprPtr Parser::postfix() {
                 // there is nothing to evaluate, and dropping it leaves an lvalue.
                 if (clonePure(*n) == nullptr) {
                     const Type *st = one->type();
+                    const std::uint32_t res = one->resolved();
                     ExprPtr both(new Comma(std::move(n), std::move(one)));
                     both->setType(st);
+                    both->setResolved(res);
                     one = std::move(both);
                 }
                 n = std::move(one);
@@ -3115,6 +3139,8 @@ ExprPtr Parser::postfix() {
             acc->setType(obj->isConst() && !m->type->isReference() &&
                          !m->isMutable
                              ? types_.withConst(m->type) : m->type);
+            const Type *accessType = acc->type();
+            acc = resolve(std::move(acc), resolvedAs(Resolved::Member, accessType, name, m->offset, 0, m->declaredIn));
             if (objectIsRvalue && !m->type->isReference()) acc->setXvalue();
             // A reference member holds an address, so reading one is a
             // dereference - the same `useReference` every mention of a
@@ -3143,10 +3169,21 @@ ExprPtr Parser::noteKeywordForm(syntax::Kind kind, KeywordForm f) {
     const std::size_t pos = tokens_[f.start].pos;
     std::vector<syntax::NodeId> parts = syntaxTree_.adopt(f.mark, pos, at_ > 0 ? tokens_[at_ - 1].pos : pos);
     // The text is the tokens up to the operand - all of them where there is none, the type of a cast where there is.
-    std::size_t end = parts.empty() ? at_ : f.start + 1;
+    // A lambda's text is its whole token span whichever read records it, so a rewound read dedups (M2.15).
+    std::size_t end = parts.empty() || kind == syntax::Kind::Lambda ? at_ : f.start + 1;
     if (kind == syntax::Kind::Cast)
         for (int depth = 0; end < at_ && !(depth == 0 && tokens_[end].is("(")); end++)
             depth += tokens_[end].is("<") ? 1 : tokens_[end].is(">") ? -1 : 0;
+    if (kind == syntax::Kind::Lambda) {
+        for (std::size_t i = 0; i < lambdaBodies_.size(); i++) {
+            bool held = false;
+            for (std::size_t k = 0; k < parts.size() && !held; k++) held = parts[k].v == lambdaBodies_[i].v;
+            if (held) continue;
+            syntaxTree_.release(lambdaBodies_[i]);
+            parts.push_back(lambdaBodies_[i]);
+        }
+        lambdaBodies_.clear();
+    }
     std::string text = tokens_[f.start].text;
     for (std::size_t k = f.start + 1; k < end; k++) {
         const bool words = tokens_[k].kind != TokenKind::Punct && tokens_[k - 1].kind != TokenKind::Punct;
@@ -3154,6 +3191,10 @@ ExprPtr Parser::noteKeywordForm(syntax::Kind kind, KeywordForm f) {
     }
     if (!f.e) { syntaxTree_.add(kind, text, pos, parts); return std::move(f.e); }
     f.e->setSyntax(syntaxTree_.add(kind, text, pos, parts));
+    if (kind == syntax::Kind::Sizeof && text.compare(0, 6, "typeid") == 0) noteValue(f.e.get());
+    if (kind == syntax::Kind::New || kind == syntax::Kind::Delete || kind == syntax::Kind::Throw || kind == syntax::Kind::Lambda ||
+        (kind == syntax::Kind::Cast && (text.find('&') != std::string::npos || text.compare(0, 12, "dynamic_cast") == 0)))
+        noteValue(f.e.get());
     if (kind == syntax::Kind::Throw && !pendingThrow_.temp.empty()) throwFacts_[f.e->syntax().v] = pendingThrow_;
     if (kind == syntax::Kind::Throw) pendingThrow_ = ThrowFacts();
     if (kind == syntax::Kind::Lambda && pendingLambda_.simple) lambdaFacts_[f.e->syntax().v] = pendingLambda_;
@@ -3284,7 +3325,7 @@ ExprPtr Parser::unaryNode() {
                         at_ += q + 1;
                         ExprPtr off(new Num(static_cast<long long>(m->offset)));
                         off->setType(types_.memberPointerTo(cls, m->type));
-                        return off;
+                        return resolve(std::move(off), resolvedAs(Resolved::Value, types_.memberPointerTo(cls, m->type)));
                     }
                     // `&S::f` for a member function: the ABI's pair, built in
                     // a slot of this frame the way a class temporary is.
