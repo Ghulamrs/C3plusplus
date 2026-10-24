@@ -13,7 +13,7 @@ rem  dumpbin /linkermember, they are in no other static library.
 rem  A second base name is a second translation unit, assembled and linked into the first's program.
 setlocal
 if "%~1"=="" (echo gnu-run.cmd: needs the base name of a .s & exit /b 2)
-call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul
+call "%~dp0vcvars.cmd" >nul
 if errorlevel 1 (echo gnu-run: no vcvars64 & exit /b 1)
 cd /d C:\Users\GRA\work\fast
 "%VCINSTALLDIR%Tools\Llvm\x64\bin\clang.exe" -target x86_64-pc-windows-msvc -c %1.s -o %1.obj

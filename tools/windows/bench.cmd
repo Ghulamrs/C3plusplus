@@ -9,7 +9,7 @@ rem
 rem    C:\cxxopt\C++\tools\windows\bench.cmd -New C:\cxxopt\C++\cxx3-msvc.exe
 rem         -Base C:\cxxopt\w\base\cxx3-msvc.exe -Cppi C:\path\to\Compiler-Cppi\cxx3-msvc.exe
 setlocal
-call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul
+call "%~dp0vcvars.cmd" >nul
 if errorlevel 1 (echo bench.cmd: no vcvars64 & exit /b 1)
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0bench.ps1" %*
 exit /b %errorlevel%

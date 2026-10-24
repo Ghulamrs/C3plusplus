@@ -86,7 +86,7 @@ if "%SRCTREE%"=="" set SRCTREE=%ROOT%\..\..\Windows\%1
 if not exist "%SRCTREE%\src\main.cpp" exit /b 0
 if not exist %TOOLS%\%2 mkdir %TOOLS%\%2
 setlocal
-call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul
+call "%~dp0vcvars.cmd" >nul
 cl /nologo /MP /std:c++14 /W4 /permissive- /O2 /EHsc /D_CRT_SECURE_NO_WARNINGS /Fo:%TOOLS%\%2\ /Fe:%TOOLS%\%2.exe "%SRCTREE%\src\*.cpp" > %TOOLS%\%2-cl.log 2>&1
 endlocal
 if not exist %TOOLS%\%2.exe (echo run-cases.cmd: %1 did not build from %SRCTREE% - see %TOOLS%\%2-cl.log& exit /b 0)

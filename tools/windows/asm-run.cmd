@@ -17,7 +17,7 @@ rem  Use verify-three for the suites and before committing; use this while
 rem  chasing one answer.
 setlocal
 if "%~1"=="" (echo asm-run.cmd: needs the base name of a .asm & exit /b 2)
-call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul
+call "%~dp0vcvars.cmd" >nul
 if errorlevel 1 (echo asm-run: no vcvars64 & exit /b 1)
 cd /d C:\Users\GRA\work\fast
 ml64 /nologo /c /Fo %1.obj %1.asm

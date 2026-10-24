@@ -46,7 +46,7 @@ rem  generated, so only this mixed link can see it.
 >> %WORK%\caller.cpp echo   return 0;
 >> %WORK%\caller.cpp echo }
 
-call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul
+call "%~dp0vcvars.cmd" >nul
 if errorlevel 1 (echo sret-check: no vcvars64 & exit /b 1)
 
 %ROOT%\cxx3-msvc.exe -c %WORK%\holder.cpp -o %WORK%\holder.obj
