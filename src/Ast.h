@@ -554,6 +554,7 @@ struct MsHandler {
     bool byReference = false;  // the slot takes the runtime's pointer, not a copy
     bool constPointer = false; // `catch (const T *)`: HT_IsConst, the const off the name
     StmtPtr body;
+    std::size_t pos = 0;       // where `catch` is written: the line the funclet's entry is named by under -g (1.29)
 };
 
 class Try final : public Stmt {
@@ -653,6 +654,11 @@ public:
     const std::string &name() const { return name_; }
     const std::string &symbol() const { return symbol_.empty() ? name_ : symbol_; }
     void setSymbol(std::string s) { symbol_ = std::move(s); }
+    // **The name a debugger shows** (1.29): a specialization's as cl spells it - `biggest<int>`, `Counter::head<3>` - else the plain name, the backend qualifying it from the symbol.
+    const std::string &displayName() const { return displayName_.empty() ? name_ : displayName_; }
+    // Whether one was given (it may spell the same as the name: `geo::Tally::~Tally`, which needs no qualifying).
+    bool hasDisplayName() const { return !displayName_.empty(); }
+    void setDisplayName(std::string s) { displayName_ = std::move(s); }
 
     // The definition side of Call::hasThis - the same question asked of the
     // function being emitted rather than of a call to one.
@@ -709,6 +715,7 @@ private:
     bool isInline_ = false;
     std::string name_;
     std::string symbol_;
+    std::string displayName_;
     std::string alias_;
     const Type *returns_;
     std::vector<Param> params_;

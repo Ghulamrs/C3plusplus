@@ -3,9 +3,11 @@
 #include "../Mangle.h"
 #include "../Name.h"
 #include "../optimizer/OptIr.h"
+#include "CodeView.h"
 
 #include "../Source.h"
 
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -307,8 +309,9 @@ void MasmSpelling::ins(const std::string &m, const Op &a, const Op &b) {
 
 void MasmSpelling::defLabel(const std::string &l) {
     if (seg_ == Code) {
-
-        if (l.compare(0, 3, ".L.") != 0)
+        // Internal: the Walker's own (.L.), and under -g the function's bounds (.Lfunc.) and its
+        // blocks' (.L.blk.), which the CodeView records measure (1.29).
+        if (l.compare(0, 2, ".L") != 0)
             give_up(l, "a label in code that is not an internal one");
         defined_.insert(l);
         o_ += mangle(l); o_ += ":\n";
@@ -323,6 +326,10 @@ void MasmSpelling::defLabel(const std::string &l) {
 // reaches the COMDAT bit - see CoffSpelling, which exists for that reason.
 void MasmSpelling::functionBegin(const std::string &name, bool exported,
                                  bool mergeable) {
+    inFunction_ = true;
+    lastLoc_.clear();
+    lastLocFile_ = lastLocLine_ = 0;
+    linesRun_.clear();
     defined_.insert(name);
     if (exported) exported_.insert(name);
     flushPending();
@@ -441,6 +448,7 @@ void MasmSpelling::prologue(int frameSize, const std::string &lsda, int outgoing
 // records where its instruction *ends*, and `sub rsp, 40` is four bytes where
 // `sub rsp, 400` is seven - the assembler chooses, so the assembler is asked.
 void MasmSpelling::functionEnd(const std::string &name) {
+    inFunction_ = false;
     const std::string m = mangle(name);
     // **The dot is the whole of it.** A segment called `pdata` is a segment called
     // pdata; the linker builds the image's exception directory from `.pdata`, and
@@ -482,6 +490,164 @@ void MasmSpelling::functionEnd(const std::string &name) {
     unwindCodes_ = 0;
     hasEh_ = false;
     saves_.clear();
+}
+
+// **-g through GRIDE's masm** (1.29, the PDB line, as c90 does it): `.FILE n, "path"` names source file n, and masm writes the
+// CodeView line table from the `.LINE`s that follow. The path arrives as codeViewPath spelt it for clang - absolute, backslashes
+// and quotes escaped - and a MASM string undoes that, doubling a quote instead.
+void MasmSpelling::fileEntry(int n, const std::string &name) {
+    std::string path;
+    for (std::size_t i = 0; i < name.size(); i++) {
+        if (name[i] == '\\' && i + 1 < name.size()) i++;
+        if (name[i] == '"') path += '"';
+        path += name[i];
+    }
+    o_ += ".FILE "; appendNum(o_, n); o_ += ", \""; o_ += path; o_ += "\"\n";
+}
+
+// Whether text holds an instruction: a line indented, and not a directive.
+static bool holdsInstruction(const std::string &text) {
+    for (std::size_t at = 0; at < text.size();) {
+        if (text.compare(at, 2, "  ") == 0 && at + 2 < text.size() && text[at + 2] != '.') return true;
+        const std::size_t nl = text.find('\n', at);
+        if (nl == std::string::npos) break;
+        at = nl + 1;
+    }
+    return false;
+}
+
+// `.LINE line, file` before the instructions of a line, by CoffSpelling::location's rules for
+// `.cv_loc`: one entry per run of a line, no second run of it in a function (cdb refuses `bp` on
+// a line entered twice), and one no instruction follows replaced by the next.
+void MasmSpelling::location(int file, int line, int) {
+    if (!inFunction_) return;
+    if (file == lastLocFile_ && line == lastLocLine_) return;
+    if (!linesRun_.insert(std::make_pair(file, line)).second) return;
+    lastLocFile_ = file;
+    lastLocLine_ = line;
+    if (!lastLoc_.empty() && lastLocAt_ + lastLoc_.size() <= o_.size() &&
+        o_.compare(lastLocAt_, lastLoc_.size(), lastLoc_) == 0 &&
+        !holdsInstruction(o_.substr(lastLocAt_ + lastLoc_.size())))
+        o_.erase(lastLocAt_, lastLoc_.size());
+    lastLocAt_ = o_.size();
+    o_ += "  .LINE "; appendNum(o_, line); o_ += ", "; appendNum(o_, file); o_ += '\n';
+    lastLoc_ = o_.substr(lastLocAt_);
+}
+
+// **A funclet PROC's lines are a run of their own** (1.29): masm makes one table per PROC, so a line the
+// function had may come again in its handler; the function's state waits and comes back after.
+void MasmSpelling::funcletLinesBegin() {
+    LineState s;
+    s.lastLoc = lastLoc_; s.lastLocAt = lastLocAt_; s.lastLocFile = lastLocFile_; s.lastLocLine = lastLocLine_;
+    s.linesRun = linesRun_;
+    outerLines_.push_back(s);
+    lastLoc_.clear(); lastLocAt_ = 0; lastLocFile_ = lastLocLine_ = 0;
+    linesRun_.clear();
+}
+
+void MasmSpelling::funcletLinesEnd() {
+    if (outerLines_.empty()) return;
+    const LineState &s = outerLines_.back();
+    lastLoc_ = s.lastLoc; lastLocAt_ = s.lastLocAt; lastLocFile_ = s.lastLocFile; lastLocLine_ = s.lastLocLine;
+    linesRun_ = s.linesRun;
+    outerLines_.pop_back();
+}
+
+// masm names no function in a `.LINE`: the PROC the instruction is in is the one described.
+std::string MasmSpelling::locationDirective(int, int file, int line, int) const {
+    std::string o = "  .LINE ";
+    appendNum(o, line); o += ", "; appendNum(o, file); o += '\n';
+    return o;
+}
+
+// Every name in an expression as this spelling writes it: `.Lcv.r3.e-.Lcv.r3.b` and the like.
+std::string MasmSpelling::mangleNames(const std::string &expr) {
+    std::string out;
+    for (std::size_t i = 0; i < expr.size();) {
+        const char c = expr[i];
+        if (std::isalpha(static_cast<unsigned char>(c)) || c == '_' || c == '.' || c == '$' || c == '?' || c == '@') {
+            std::size_t j = i;
+            while (j < expr.size() && (std::isalnum(static_cast<unsigned char>(expr[j])) || expr[j] == '_' ||
+                                       expr[j] == '.' || expr[j] == '$' || expr[j] == '?' || expr[j] == '@'))
+                j++;
+            out += mangle(expr.substr(i, j - i));
+            i = j;
+        } else {
+            out += c;
+            i++;
+        }
+    }
+    return out;
+}
+
+// **The CodeView writeCodeView makes for clang, in MASM** - one writer, two spellings, as c90's MasmSpelling::codeView has it. `.debug$S` and `.debug$T` become SEGMENTs (a mergeable function's records ASSOCIATIVE with its COMDAT),
+// `.long`, `.short`, `.byte` and `.asciz` DD, DW and DB, `.secrel32` and `.secidx` SECTIONREL and SECTION, a label its MASM name.
+// The line table, the file checksums and the string table are left to masm, which makes them from the `.LINE`s and appends them to the plain `.debug$S`.
+void MasmSpelling::codeView(const std::string &gnu) {
+    flushPending();
+    closeDataBlock();
+    std::string open;
+    for (std::size_t at = 0; at < gnu.size();) {
+        std::size_t nl = gnu.find('\n', at);
+        if (nl == std::string::npos) nl = gnu.size();
+        const std::string line = gnu.substr(at, nl - at);
+        at = nl + 1;
+        const std::size_t b = line.find_first_not_of(" \t");
+        if (b == std::string::npos) continue;
+        const std::string t = line.substr(b);
+        if (b == 0 && t[t.size() - 1] == ':') {
+            const std::string name = t.substr(0, t.size() - 1);
+            defined_.insert(name);
+            o_ += mangle(name); o_ += ":\n";
+            continue;
+        }
+        const std::size_t sp = t.find_first_of(" \t");
+        const std::string d = t.substr(0, sp);
+        const std::string rest = sp == std::string::npos ? std::string() : t.substr(t.find_first_not_of(" \t", sp));
+        if (d == ".section") {
+            if (!open.empty()) o_ += open + " ENDS\n";
+            open = rest.compare(0, 8, ".debug$T") == 0 ? ".debug$T" : ".debug$S";
+            o_ += "\n" + open + " SEGMENT";
+            const std::size_t assoc = rest.find(",associative,");
+            if (assoc != std::string::npos) o_ += " ASSOCIATIVE(" + mangle(rest.substr(assoc + 13)) + ")";
+            o_ += "\n";
+        } else if (d == ".p2align") {
+            o_ += "  ALIGN "; appendNum(o_, 1LL << std::atoi(rest.c_str())); o_ += '\n';
+        } else if (d == ".long") {
+            o_ += "  DD " + mangleNames(rest) + "\n";
+        } else if (d == ".short") {
+            o_ += "  DW " + mangleNames(rest) + "\n";
+        } else if (d == ".byte") {
+            o_ += "  DB " + rest + "\n";
+        } else if (d == ".asciz") {
+            // the GNU string's escapes undone, MASM's one escape - a doubled quote - made
+            std::string s;
+            for (std::size_t k = 1; k + 1 < rest.size(); k++) {
+                if (rest[k] == '\\' && k + 2 < rest.size()) k++;
+                if (rest[k] == '"') s += '"';
+                s += rest[k];
+            }
+            o_ += s.empty() ? "  DB 0\n" : "  DB \"" + s + "\", 0\n";
+        } else if (d == ".secrel32") {
+            o_ += "  DD SECTIONREL " + mangleNames(rest) + "\n";
+        } else if (d == ".secidx") {
+            o_ += "  DW SECTION " + mangleNames(rest) + "\n";
+        } else if (d != ".cv_linetable" && d != ".cv_filechecksums" && d != ".cv_stringtable") {
+            give_up(line, "a CodeView directive the MASM spelling has no words for");
+        }
+    }
+    if (!open.empty()) o_ += open + " ENDS\n";
+    // The next code or data reopens its segment.
+    seg_ = None;
+}
+
+void MasmCodeGen::writeDebug(const std::vector<DwarfFunction> &fns,
+                             const std::vector<DwarfGlobal> &globals) {
+    std::string gnu;
+    writeCodeView(gnu, target_, CodeViewLanguage::Cpp,
+                  codeViewPath(compDir(), lineSource()->files().front() + ".obj", false), fns, globals,
+                  [](const std::string &s) { return s; });
+    masm_.codeView(gnu);
 }
 
 void MasmSpelling::globl(const std::string &name) { exported_.insert(name); }
@@ -719,7 +885,7 @@ void MasmCodeGen::storeUnwindHelp(int slot) {
 // **A funclet is a slice of the ordinary output, lifted.** Walking the handler
 // appends its code like any other, so remembering where that began and cutting
 // back to it gives the body exactly - and the code generator knows none of it.
-std::string MasmCodeGen::beginFunclet() {
+std::string MasmCodeGen::beginFunclet(std::size_t pos, int number, bool cleanup) {
     if (optimizer_) optimizer_->funcletBegin();
     funcletOuter_.push_back(funcletSymbol_);
     atOutput([this] {
@@ -728,6 +894,7 @@ std::string MasmCodeGen::beginFunclet() {
     });
     funcletSymbol_ = masm_.mangledName() + funcletKind_ +
                      std::to_string(funcletIndex_++);
+    funcletDebugBegin(funcletSymbol_, pos, number, cleanup);
     return funcletSymbol_;
 }
 
@@ -751,6 +918,7 @@ void MasmCodeGen::funcletLeave(const std::string &label) {
 
 void MasmCodeGen::closeFunclet(const std::string &tail) {
     const std::string sym = funcletSymbol_;
+    funcletDebugEnd();
     // Written here as raw text, so said to be defined: an early exit's `jmp $LNleave$` made it an EXTERN otherwise.
     masm_.predefine({ sym, "$LNbeg$" + sym, "$LNpush$" + sym, "$LNprolog$" + sym, "$LNleave$" + sym, "$LNend$" + sym });
     // The text around the body: the head, then the body as written out, then the tail with the unwind data.
@@ -761,6 +929,8 @@ void MasmCodeGen::closeFunclet(const std::string &tail) {
     head += "\n.text$x SEGMENT ALIGN(16) 'CODE'" + masm_.associative() + "\n";
     head += sym + " PROC\n";
     head += "$LNbeg$" + sym + ":\n";
+    // -g: the prologue is on the `catch` line, as cl's funclet begins (1.29).
+    head += funcletEntryLoc_;
     head += "  mov QWORD PTR [rsp+16], rdx\n";
     head += "  push rbp\n";
     head += "$LNpush$" + sym + ":\n";

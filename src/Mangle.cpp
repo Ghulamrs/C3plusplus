@@ -1424,6 +1424,14 @@ private:
         // b(cc::BinaryOp)` is `?b@@YAXW4BinaryOp@cc@@@Z`.
         if (t->isEnumeration()) {
             out += "W4";
+            // **An enum inside a class is scoped through the class**, as a nested class is: the
+            // specialization's own name for `geo::Box<int>::Kind`, `W4Kind@?$Box@H@geo@@` - the tag
+            // spelled `Kind@Box<int>@geo@@`, which masm refuses. An ordinary class comes out as before.
+            if (const Type *in = t->enumScope()) {
+                pushName(scopeComponents(t->enumTag()).back());
+                scopeOf(in, std::string(), in->localOwner());
+                return;
+            }
             scopeOf(nullptr, t->enumTag());
             return;
         }

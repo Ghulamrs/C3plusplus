@@ -1897,6 +1897,15 @@ void Parser::topLevel(Program &program) {
                                          variadic, regSaveSlot, d.pos,
                                          std::move(fnVars_)));
     program.functions.back().setSymbol(definedSymbol);
+    // **-g: the name a debugger shows, as cl's PDB has it** (1.29): a specialization with its arguments, `ns::biggest<int>`, and a member
+    // under its class's whole name, `geo::Box<int>::count`, `Counter::head<3>` - Type::displayTag, which the backend cannot read back out
+    // of the symbol. GRIDE's step filter `*!std::*` relies on the prefix.
+    if (!instantiationDisplay_.empty() && d.name == instantiationOf_)
+        program.functions.back().setDisplayName(Type::displaySpelling(instantiationDisplay_));
+    else if (memberOf != nullptr)
+        program.functions.back().setDisplayName(Type::displaySpelling(
+            memberOf->displayTag() + "::" +
+            (memberTemplateInst_ && d.name == memberTemplateOf_ ? memberTemplateName_ : d.name)));
     // The definition side of the same question: a member's first parameter is
     // its `this`, and on the Microsoft ABI that is what the hidden return
     // pointer has to come *after*.

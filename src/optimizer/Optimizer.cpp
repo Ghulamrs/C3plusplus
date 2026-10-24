@@ -243,6 +243,8 @@ void Optimizer::fileEntry(int n, const std::string &name) {
 void Optimizer::location(int file, int line, int column) {
     event([=](Spelling &s) { s.location(file, line, column); });
 }
+void Optimizer::funcletLinesBegin() { event([](Spelling &s) { s.funcletLinesBegin(); }); }
+void Optimizer::funcletLinesEnd() { event([](Spelling &s) { s.funcletLinesEnd(); }); }
 void Optimizer::globl(const std::string &name) { event([=](Spelling &s) { s.globl(name); }); }
 void Optimizer::weakDefinition(const std::string &name) {
     event([=](Spelling &s) { s.weakDefinition(name); });

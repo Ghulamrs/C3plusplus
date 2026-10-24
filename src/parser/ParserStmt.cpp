@@ -1602,6 +1602,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
         // catch when the funclet returns - so the three Itanium calls are not here.
         if (microsoft) {
             MsHandler mh;
+            mh.pos = cpos;
             if (caught != nullptr) {
                 MicrosoftThrow names;
                 std::string why;

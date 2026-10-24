@@ -237,7 +237,38 @@ void CoffSpelling::functionBegin(const std::string &name, bool exported,
     }
     if (exported) globl(name);
     defLabel(name);
-    if (codeView_) { o_ += "  .cv_func_id "; appendNum(o_, cvFunctions_++); o_ += '\n'; }
+    if (codeView_) { cvCurrent_ = cvFunctions_++; o_ += "  .cv_func_id "; appendNum(o_, cvCurrent_); o_ += '\n'; }
+}
+
+// **A funclet's lines are a function's own** (1.29): the next id, declared where the funclet's text begins
+// (it moves to `.text$x` with it), and a fresh run of lines; the function's state waits and comes back.
+void CoffSpelling::funcletLinesBegin() {
+    if (!codeView_) return;
+    LineState s;
+    s.current = cvCurrent_; s.lastLoc = lastLoc_; s.lastLocAt = lastLocAt_;
+    s.lastLocFn = lastLocFn_; s.lastLocFile = lastLocFile_; s.lastLocLine = lastLocLine_;
+    s.linesRun = linesRun_;
+    outerLines_.push_back(s);
+    cvCurrent_ = cvFunctions_++;
+    o_ += "  .cv_func_id "; appendNum(o_, cvCurrent_); o_ += '\n';
+    lastLoc_.clear(); lastLocAt_ = 0; lastLocFn_ = -1; lastLocFile_ = lastLocLine_ = 0;
+    linesRun_.clear();
+}
+
+void CoffSpelling::funcletLinesEnd() {
+    if (!codeView_ || outerLines_.empty()) return;
+    const LineState &s = outerLines_.back();
+    cvCurrent_ = s.current; lastLoc_ = s.lastLoc; lastLocAt_ = s.lastLocAt;
+    lastLocFn_ = s.lastLocFn; lastLocFile_ = s.lastLocFile; lastLocLine_ = s.lastLocLine;
+    linesRun_ = s.linesRun;
+    outerLines_.pop_back();
+}
+
+std::string CoffSpelling::locationDirective(int fn, int file, int line, int column) const {
+    std::string o = "  .cv_loc ";
+    appendNum(o, fn); o += ' '; appendNum(o, file); o += ' '; appendNum(o, line); o += ' '; appendNum(o, column);
+    o += '\n';
+    return o;
 }
 
 // The name arrives absolute and escaped (codeViewPath); the checksum is optional and left out.
@@ -266,21 +297,22 @@ static bool holdsInstruction(const std::string &text) {
 // **One entry per run of a line, as cl writes it**: a `for` gave four, a column apiece, and cdb
 // refused `bp` on the line as ambiguous.
 void CoffSpelling::location(int file, int line, int column) {
-    if (cvFunctions_ == 0) return;
-    if (cvFunctions_ == lastLocFn_ && file == lastLocFile_ && line == lastLocLine_) return;
+    if (cvCurrent_ < 0) return;
+    if (cvCurrent_ == lastLocFn_ && file == lastLocFile_ && line == lastLocLine_) return;
     // **No second run of a line**: a loop's step written after its body was a second run of the `for`
     // line, and cdb refused `bp` on it as ambiguous; that code counts as the line before it.
-    if (cvFunctions_ != lastLocFn_) linesRun_.clear();
+    if (cvCurrent_ != lastLocFn_) linesRun_.clear();
     if (!linesRun_.insert(std::make_pair(file, line)).second) return;
-    lastLocFn_ = cvFunctions_;
+    lastLocFn_ = cvCurrent_;
     lastLocFile_ = file;
     lastLocLine_ = line;
-    if (lastLocAt_ + lastLoc_.size() <= o_.size() && o_.compare(lastLocAt_, lastLoc_.size(), lastLoc_) == 0 &&
+    if (!lastLoc_.empty() && lastLocAt_ + lastLoc_.size() <= o_.size() &&
+        o_.compare(lastLocAt_, lastLoc_.size(), lastLoc_) == 0 &&
         !holdsInstruction(o_.substr(lastLocAt_ + lastLoc_.size())))
         o_.erase(lastLocAt_, lastLoc_.size());
     lastLocAt_ = o_.size();
     o_ += "  .cv_loc ";
-    appendNum(o_, cvFunctions_ - 1);
+    appendNum(o_, cvCurrent_);
     o_ += ' ';
     appendNum(o_, file);
     o_ += ' ';

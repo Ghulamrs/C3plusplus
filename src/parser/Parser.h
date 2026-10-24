@@ -194,6 +194,7 @@ private:
     struct Specialization {
         std::string key;                    // "twice<int>", and the table key
         std::string name;                   // "twice"
+        std::string display;                // "ns::twice<int>": what a debugger shows for it (1.29)
         std::string symbol;
         const Type *fn = nullptr;           // the substituted signature
         std::vector<const Type *> binding;  // by parameter index
@@ -234,6 +235,8 @@ private:
     // by the declarator that names the function.
     std::string instantiationKey_;
     std::string instantiationOf_;
+    // And its display name, Specialization::display, for the Function made (1.29).
+    std::string instantiationDisplay_;
     // Depth of the specialization being replayed (0 outside); its requests are one deeper (Specialization::depth).
     int instantiationDepth_ = 0;
     // A `>` inside a template argument list closes it and is not an operator

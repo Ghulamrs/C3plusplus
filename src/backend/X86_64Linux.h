@@ -69,6 +69,10 @@ public:
 protected:
 
     virtual bool writesDwarf() const { return true; }
+    // -g's records: CodeView for Microsoft's tools, DWARF elsewhere; the MASM path spells the same
+    // CodeView for GRIDE's masm (1.29).
+    virtual void writeDebug(const std::vector<DwarfFunction> &fns,
+                            const std::vector<DwarfGlobal> &globals);
     // **The MASM path writes its own RTTI records**, so the COFF ones must not.
     virtual bool emitsOwnRtti() const { return false; }
 
@@ -76,7 +80,7 @@ protected:
     bool usesFunclets() const override { return target_.microsoftNames(); }
     bool terminateScopes() const override { return !target_.microsoftNames(); }
     std::string terminatePad(int id) override;
-    std::string beginFunclet() override;
+    std::string beginFunclet(std::size_t pos, int number, bool cleanup) override;
     void funcletLeave(const std::string &label) override;
     void endCleanupFunclet() override;
     void endFunclet(const std::string &resume) override;
@@ -116,6 +120,14 @@ protected:
     bool fnMergeable_ = false;
     // **A funclet's .pdata goes last, after every ordinary function's.**
     std::string funcletPdata_;
+    // **-g describes a funclet as a procedure of its own** (1.29, DwarfFunction::funclet), pushed after its function's record, the
+    // spelling's lines going to it until it closes. `funcletEntryLoc_` is its first instruction's location - the `catch` line, as cl
+    // names it - which closeFunclet writes into the head it builds, since no instruction of the walk is there.
+    void funcletDebugBegin(const std::string &symbol, std::size_t pos, int number, bool cleanup);
+    void funcletDebugEnd();
+    std::string funcletEntryLoc_;
+    // The function being emitted, among dwarfFns_: its funclets' records follow it.
+    std::size_t dwarfFnAt_ = 0;
 
     std::string out_;
     std::size_t emittedSize() override { return out_.size() + (optimizer_ ? optimizer_->held() : 0); }
@@ -183,8 +195,8 @@ private:
     const Abi &abi_;
     int depth_ = 0;
     std::string returnLabel_;
-    // Not in a funclet: its code is in another section, which its function's CodeView line table cannot measure to.
-    void emitLoc(int file, int line, int column) override { if (!inFunclet_) a_->location(file, line, column); }
+    // In a funclet too (1.29): its lines are a table of the funclet's own, since its code is in another section - see Spelling::funcletLinesBegin.
+    void emitLoc(int file, int line, int column) override { a_->location(file, line, column); }
     void defineLabel(const std::string &l) override;
     void defineStateLabel(const std::string &l) override;
     void jump(const std::string &l) override;

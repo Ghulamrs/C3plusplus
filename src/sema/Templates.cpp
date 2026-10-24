@@ -378,8 +378,10 @@ void Templates::instantiatePending() {
             bindTemplateParameters(sp.params, sp.binding, sp.values, sp.packs, &undo);
             const std::string wasKey = p_.instantiationKey_;
             const std::string wasOf = p_.instantiationOf_;
+            const std::string wasDisplay = p_.instantiationDisplay_;
             p_.instantiationKey_ = sp.isClass ? std::string() : sp.key;
             p_.instantiationOf_ = sp.isClass ? std::string() : sp.name;
+            p_.instantiationDisplay_ = sp.isClass ? std::string() : sp.display;
             // What this body asks for is one deeper than it - and a specialization appended
             // while this round runs is replayed in this same round, so a chain that never
             // settles is one round long; the depth, not the round, is what bounds it.
@@ -415,6 +417,7 @@ void Templates::instantiatePending() {
 
             p_.instantiationKey_ = wasKey;
             p_.instantiationOf_ = wasOf;
+            p_.instantiationDisplay_ = wasDisplay;
             p_.instantiationDepth_ = wasDepth;
             unbindTemplateParameters(undo);
         }

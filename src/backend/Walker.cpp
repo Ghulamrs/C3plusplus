@@ -51,6 +51,7 @@ void Walker::openBlock(int scope) {
     if (static_cast<std::size_t>(scope) >= blocks_.size()) return;
     std::size_t before = emittedSize();
     blocks_[scope].begin = label("blk.b", scope);
+    blocks_[scope].funclet = funcletNo_;
     defineLabel(blocks_[scope].begin);
     notCode_ += emittedSize() - before;
     Mark m;
@@ -429,9 +430,10 @@ void Walker::msTryStatement(const Try &n) {
     // **A cleanup's objects outlive its range** - the next stretch of the same
     // block chains to it, and the block's end is what reverts the state.
     if (n.cleanup() != nullptr) {
-        const std::string funclet = beginFunclet();
+        const std::string funclet = openFunclet(n.cleanup()->pos(), true);
         n.cleanup()->accept(*this);
         endCleanupFunclet();
+        leaveFunclet();
         msStates_[state].action = funclet;
         msCurState_ = state;
         return;
@@ -458,7 +460,8 @@ void Walker::msTryStatement(const Try &n) {
         row.objectSlot = h.objectSlot;
         row.byReference = h.byReference;
         row.constPointer = h.constPointer;
-        row.funclet = beginFunclet();
+        // Entered on the `catch` line, as cl's funclet is.
+        row.funclet = openFunclet(h.pos, false);
         msCurState_ = hstate;
         std::vector<MsIpRow> inside;
         std::vector<MsIpRow> *const wasInto = msRowsInto_;
@@ -467,6 +470,7 @@ void Walker::msTryStatement(const Try &n) {
         msRowsInto_ = wasInto;
         msCurState_ = parent;
         endFunclet(resume);
+        leaveFunclet();
         msFuncletRows_.push_back(MsIpRow{ row.funclet, hstate, true });
         msFuncletRows_.insert(msFuncletRows_.end(), inside.begin(), inside.end());
         tb.handlers.push_back(row);

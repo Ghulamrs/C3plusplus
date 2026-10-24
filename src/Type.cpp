@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 TypeTable::TypeTable() {
     for (int k = static_cast<int>(Kind::Void);
@@ -128,6 +129,32 @@ std::string Type::describe() const {
     if (kind_ == Kind::Union)  return "union "  + (tag_.empty() ? "<anonymous>" : tag_);
     if (kind_ == Kind::DependentExpr) return "decltype(" + expr_->text + ")";
     return name();
+}
+
+// A specialization's tag is the parser's key, `Box<int>`, with its namespace kept apart (templateNamespace); a class written in a
+// namespace carries it in the tag, and a nested class carries its enclosing classes - so the outermost class says whether a namespace
+// is missing. The key spells a class argument as a diagnostic does, `Box<struct Tally>`; cl's display name has the bare tag, `Box<Tally>`.
+std::string Type::displayTag() const {
+    if (!cls().displayTag_.empty()) return displaySpelling(cls().displayTag_);
+    const Type *root = &cls();
+    while (root->enclosing() != nullptr) root = root->enclosing();
+    const std::string ns = root->isSpecialization() && !root->inNamespace() ? root->templateNamespace() : std::string();
+    return displaySpelling(ns + tag());
+}
+
+std::string Type::displaySpelling(const std::string &key) {
+    static const char *const words[] = { "struct ", "class ", "union " };
+    std::string out;
+    for (std::size_t i = 0; i < key.size();) {
+        bool dropped = false;
+        if (i == 0 || key[i - 1] == '<' || key[i - 1] == ',' || key[i - 1] == ' ')
+            for (std::size_t w = 0; w < 3 && !dropped; w++) {
+                const std::size_t n = std::strlen(words[w]);
+                if (key.compare(i, n, words[w]) == 0) { i += n; dropped = true; }
+            }
+        if (!dropped) out += key[i++];
+    }
+    return out;
 }
 
 // Every one of these interning loops skips the qualified types, and must. A

@@ -455,9 +455,10 @@ bool Constexpr::instantiateForConstant(const std::string &symbol) const {
             self.tmpl_.bindTemplateParameters(sp.params, sp.binding, sp.values, sp.packs, &undo);
             std::vector<std::vector<ConstexprSlot> > frames;
             frames.swap(p_.constexprFrames_);
-            const std::string wasKey = p_.instantiationKey_, wasOf = p_.instantiationOf_;
+            const std::string wasKey = p_.instantiationKey_, wasOf = p_.instantiationOf_, wasDisplay = p_.instantiationDisplay_;
             self.instantiationKey_.clear();
             self.instantiationOf_.clear();
+            self.instantiationDisplay_.clear();
             const bool wasInline = p_.replayingInline_;
             const std::size_t resume = p_.at_;
             self.replayInlineBodies(std::vector<Parser::PendingBody>(1, body));
@@ -465,6 +466,7 @@ bool Constexpr::instantiateForConstant(const std::string &symbol) const {
             self.replayingInline_ = wasInline;
             self.instantiationKey_ = wasKey;
             self.instantiationOf_ = wasOf;
+            self.instantiationDisplay_ = wasDisplay;
             frames.swap(p_.constexprFrames_);
             self.tmpl_.unbindTemplateParameters(undo);
             return true;

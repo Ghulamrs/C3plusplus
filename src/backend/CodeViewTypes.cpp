@@ -122,7 +122,8 @@ unsigned CodeViewTypes::aggregate(const Type *t) {
     const Type *c = &t->cls();
     const bool isUnion = c->kind() == Kind::Union;
     const int kind = isUnion ? kLfUnion : c->declaredClass() ? kLfClass : kLfStructure;
-    const std::string name = c->tag().empty() ? std::string("<unnamed-tag>") : c->tag();
+    // The whole name, namespaces included, as cl's LF_CLASS has it: `std::basic_string<char>` (1.29).
+    const std::string name = c->tag().empty() ? std::string("<unnamed-tag>") : c->displayTag();
 
     // count, property, then (not for a union) derived-from and vshape, size, name.
     auto head = [&](unsigned count, unsigned property, unsigned fields, long long size) {
@@ -191,9 +192,10 @@ unsigned CodeViewTypes::enumeration(const Type *t) {
     u16(b, 0);
     u32(b, fundamental(t));
     u32(b, list);
-    text(b, t->enumTag());
+    const std::string name = t->enumTag().empty() ? t->enumTag() : t->displayTag();
+    text(b, name);
     const unsigned e = record(kLfEnum, b);
-    named_.push_back(std::make_pair(t->enumTag(), e));
+    named_.push_back(std::make_pair(name, e));
     return e;
 }
 

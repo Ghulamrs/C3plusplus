@@ -10,6 +10,9 @@ struct DwarfBlock {
     int parent;
     std::string begin;
     std::string end;
+    // Which funclet of the function the block's code is in - 0 for the function's own (1.29): a Microsoft
+    // handler is walked as a funclet, a procedure of its own in `.text$x`, and its blocks are described there.
+    int funclet = 0;
 };
 
 struct DwarfFunction {
@@ -32,9 +35,12 @@ struct DwarfFunction {
     std::string codeEnd;
     bool mergeable = false;
     int frameBias = 0;
-    // A realigned frame's own base register, as DWARF numbers it (rbx is 3), with the records then
-    // measured `frameBias - offset` up from it; -1 is the target's frame pointer and the plain `-offset`.
+    // A realigned frame's base register as DWARF numbers it (rbx is 3), records at `frameBias - offset` from it; -1 the frame pointer, `-offset`.
     int frameBaseReg = -1;
+    // **A handler funclet, described as cl describes one** (1.29): an S_LPROC32 of its own, `` `f'::`1'::catch$0 ``, typeless, over the
+    // parent's frame - `locals` and `blocks` are the parent's, `funclet` says which of its funclets this is (DwarfBlock::funclet). It
+    // follows its parent in the list, and a mergeable parent's funclets share its `.debug$S` (CodeView.cpp).
+    int funclet = 0;
 };
 
 struct DwarfGlobal {

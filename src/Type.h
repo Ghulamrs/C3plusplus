@@ -243,6 +243,18 @@ public:
 
     std::string describe() const;
 
+    // **The tag as a debugger shows it** (1.29), cl's `std::basic_string<char>`, `geo::Box<int>::Lid`: the
+    // namespace a specialization keeps beside its name (templateNamespace) put back in front, and the
+    // `struct ` a key spells a class argument with taken out - displaySpelling, which does that to any key.
+    std::string displayTag() const;
+    static std::string displaySpelling(const std::string &key);
+    // Said outright where the tag cannot tell: an enum written inside a class, which has no enclosing() to walk.
+    void setDisplayTag(std::string t) { displayTag_ = std::move(t); }
+    // **The class an enum is written inside** (1.29): the Microsoft name is scoped through it, as a nested class's is -
+    // `Box<int>::Kind` is `W4Kind@?$Box@H@geo@@` - where the tag would put `Box<int>` into the symbol.
+    const Type *enumScope() const { return cls().enumScope_; }
+    void setEnumScope(const Type *c) { enumScope_ = c; }
+
     // **Every question about what a class *is* is asked of the unqualified type**, and this is the only place that says so.
     const Type &cls() const { return unqual_ != nullptr ? *unqual_ : *this; }
 
@@ -561,6 +573,8 @@ private:
     std::string local_;
     std::string localOwner_;
     bool inNamespace_ = false;
+    std::string displayTag_;
+    const Type *enumScope_ = nullptr;
     // Set on a class that is a template specialization. `local_` is
     // "Box<int,3>" there, which no ABI writes: Itanium wants `3BoxIiLi3EE`
     // and Microsoft `?$Box@H$02@`, both built from these two.

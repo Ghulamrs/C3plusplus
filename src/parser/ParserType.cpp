@@ -1663,6 +1663,10 @@ const Type *Parser::enumSpecifier() {
             src_.fail(pos, "'" + tag + "' was declared before as a different enumeration - a "
                            "redeclaration repeats 'class' and the enum-base exactly");
         if (scoped) self->setScoped();
+        // -g: shown under the class's whole name, `geo::Box<int>::Kind` - the tag has the class's tag alone (1.29).
+        if (within != nullptr) self->setDisplayTag(within->displayTag() + "::" + tag);
+        // and mangled through the class, a specialization's `?$Box@H@` included (1.29)
+        if (within != nullptr) self->setEnumScope(within);
         lookup_.declareTypeName(prefix + tag, self);
     }
     // [dcl.enum]/5: an enumerator has its enumeration's type once the enum is complete, so

@@ -54,6 +54,17 @@ public:
     std::string labelName(const std::string &l) { return mangle(l); }
     void functionEnd(const std::string &name) override;
 
+    // -g: the source files and lines, in the directives GRIDE's masm reads - `.FILE n, "path"` and
+    // `.LINE line, n` - as c90 writes them; ml64 has no such words (1.29, 2026-10-22).
+    void fileEntry(int n, const std::string &name) override;
+    void location(int file, int line, int column) override;
+    // A funclet PROC's lines are a run of their own; masm makes its table per PROC (1.29).
+    void funcletLinesBegin() override;
+    void funcletLinesEnd() override;
+    std::string locationDirective(int fn, int file, int line, int column) const override;
+    // -g: the CodeView writeCodeView makes for clang, spelled for GRIDE's masm (see Masm.cpp).
+    void codeView(const std::string &gnu);
+
     void globl(const std::string &name) override;
     void textSection() override;
     void rodataSection() override;
@@ -94,6 +105,18 @@ private:
 
     std::string pending_;
 
+    // -g: the line entries of the function being written - the last `.LINE` and where it went (one
+    // no instruction follows is replaced by the next), and every (file, line) given a run already.
+    bool inFunction_ = false;
+    std::string lastLoc_;
+    std::size_t lastLocAt_ = 0;
+    int lastLocFile_ = 0, lastLocLine_ = 0;
+    std::set<std::pair<int, int> > linesRun_;
+    // The function's line state, set aside while a funclet's lines are written.
+    struct LineState { std::string lastLoc; std::size_t lastLocAt; int lastLocFile, lastLocLine; std::set<std::pair<int, int> > linesRun; };
+    std::vector<LineState> outerLines_;
+    std::string mangleNames(const std::string &expr);
+
     std::set<std::string> defined_, exported_, referenced_, unreserved_;
     // Referenced inside a SECTIONREL expression, which ml64 refuses to add to a `:PROC` (A2102).
     std::set<std::string> referencedData_;
@@ -123,7 +146,7 @@ public:
 private:
     bool usesFunclets() const override { return true; }
     bool localsAboveFrameBase() const override { return true; }
-    std::string beginFunclet() override;
+    std::string beginFunclet(std::size_t pos, int number, bool cleanup) override;
     void funcletLeave(const std::string &label) override;
     void endFunclet(const std::string &resume) override;
     void endCleanupFunclet() override;
@@ -144,7 +167,11 @@ private:
     int funcletIndex_ = 0;
     std::string funcletSymbol_;
     const char *funcletKind_ = "$catch$";
-    bool writesDwarf() const override { return false; }
+    // -g: the variables and types as CodeView, which GRIDE's masm carries into the object
+    // (writeDebug); not for ml64, which the driver refuses -g for (1.29).
+    bool writesDwarf() const override { return masm_.comdat(); }
+    void writeDebug(const std::vector<DwarfFunction> &fns,
+                    const std::vector<DwarfGlobal> &globals) override;
     bool emitsOwnRtti() const override { return true; }
     // The four objects the Microsoft ABI wants per thrown type.
     void emitThrowInfo(const Program &program);

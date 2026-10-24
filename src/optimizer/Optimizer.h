@@ -65,6 +65,11 @@ public:
 
     void fileEntry(int n, const std::string &name) override;
     void location(int file, int line, int column) override;
+    void funcletLinesBegin() override;
+    void funcletLinesEnd() override;
+    std::string locationDirective(int fn, int file, int line, int column) const override {
+        return under_.locationDirective(fn, file, line, column);
+    }
     void predefine(const std::vector<std::string> &names) override { under_.predefine(names); }
     void preamble(std::ostream &o) override { under_.preamble(o); }
     void postamble(std::ostream &o) override { under_.postamble(o); }

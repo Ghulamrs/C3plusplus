@@ -148,7 +148,7 @@ is left:
   `tests/cases/nontype-pack-beside-signature-refused.cpp`
 - **a pattern over a pack in a template's signature**, `f(List<(Ns * 2)...>)` -
   the same non-deduced context, spelled `JXspmlT_Li2EEE`; the pattern works
-  wherever the members are known. `src/parser/ParserTemplate.cpp:1402`,
+  wherever the members are known. `src/parser/ParserTemplate.cpp:1403`,
   `tests/cases/nontype-pack-pattern-signature-refused.cpp`
 - **explicit arguments ending at a pack, the parameter after it deduced from the
   call**, `f<1>(L<1>(), L<2>())` for `template <int... Ns, int M>` - the written
@@ -157,7 +157,7 @@ is left:
   `tests/cases/nontype-pack-explicit-then-deduce-refused.cpp`
 - **a pack expanded inside a nested template-id of a partial specialization's
   arguments**, `K<B<R...> >` - the pattern would bind R to the whole of B's
-  list; `R...` as an argument of its own matches. `src/sema/Templates.cpp:1178`,
+  list; `R...` as an argument of its own matches. `src/sema/Templates.cpp:1181`,
   `tests/cases/nontype-pack-nested-partial-refused.cpp`
 - **a non-type template parameter that is not an integer type** -
   `src/parser/ParserTemplate.cpp:1102`
@@ -180,14 +180,14 @@ is left:
   and **a function template's explicit specialization declared without its
   body** - give it the body there. `src/parser/ParserTemplate.cpp:685`
 - **naming a function template without calling it**, and **instantiating one
-  that was only declared** - `src/parser/ParserTemplate.cpp:1664`,
-  `src/parser/ParserTemplate.cpp:1731`, `src/parser/ParserTemplate.cpp:1814`
+  that was only declared** - `src/parser/ParserTemplate.cpp:1665`,
+  `src/parser/ParserTemplate.cpp:1732`, `src/parser/ParserTemplate.cpp:1815`
 - **naming a member through a class template's argument list**,
   `Box<int>::m` in a declaration - the type is made, so a typedef for it
   reaches the member: `typedef Box<int> B; B::m`.
-  `src/parser/ParserTemplate.cpp:1810`, `src/parser/ParserType.cpp:36`
+  `src/parser/ParserTemplate.cpp:1811`, `src/parser/ParserType.cpp:36`
 - **a member function template named without being called** -
-  `src/parser/ParserTemplate.cpp:1884`; **a member class template** -
+  `src/parser/ParserTemplate.cpp:1885`; **a member class template** -
   `src/parser/ParserType.cpp:529`; **an out-of-line member template
   definition** - `src/parser/ParserType.cpp:589`
 - **`sizeof` of a template parameter in a signature outside a template argument
@@ -216,7 +216,7 @@ is left:
   has no body. `src/parser/ParserType.cpp:1276`
 - **a delegating constructor of a class with a virtual base** - the target
   would have to be told whether the object is the most derived one.
-  `src/parser/ParserTopLevel.cpp:2338`
+  `src/parser/ParserTopLevel.cpp:2347`
 - **a mem-initialiser that would run a constructor once per element of an
   array member** - `src/parser/ParserTopLevel.cpp:1289`
 - **a virtual base initialised with an argument that needs a temporary** - the
@@ -228,7 +228,7 @@ is left:
   argument is taken as a value. `src/parser/ParserInit.cpp:333`
 - **a `constexpr` object the object fold cannot build** - an array of class
   objects, a pointer or reference member (an address), a bit-field; the fold
-  holds an object as its scalar leaves. `src/sema/Constexpr.cpp:730`,
+  holds an object as its scalar leaves. `src/sema/Constexpr.cpp:732`,
   `tests/cases/constexpr-object-array-refused.cpp`; **statements in a `constexpr`
   constructor's body** are C++14. `src/parser/ParserConst.cpp:121`
 - **befriending one member function of another class** - `src/parser/ParserType.cpp:812`
@@ -242,25 +242,25 @@ is left:
   when it had compiled and built nothing. `src/parser/ParserType.cpp:1046`
 - **a bit-field of an anonymous union at namespace or block scope** - the
   members are names of the scope, and a bit-field would be a name with no
-  object to be a field of. `src/parser/ParserType.cpp:2243`
+  object to be a field of. `src/parser/ParserType.cpp:2247`
 - **a member function of a union** - `src/parser/ParserClass.cpp:2260`
 - **one name holding both a static and a non-static member**, where overload
   resolution picks the non-static one - `src/parser/ParserExpr.cpp:1901`
 - **a covariant return that moves the result** - an override may return a
   pointer or reference to a class derived from the base's, and does when that
   base sits at offset 0; where it sits at an offset the result would need a
-  thunk at every call through the base. `src/sema/Classes.cpp:38`
+  thunk at every call through the base. `src/sema/Classes.cpp:44`
 - **a virtual function of a base after the first with no slot in the class's
   own vtable**, reached through the derived class -
   `src/parser/ParserExpr.cpp:737`
 - **an attribute before a statement**, `[[x]] return 0;` - one before a
   declaration is read wherever [dcl.attr.grammar] places it, C++11's two change
   nothing and an unknown one is ignored (/5); `[[deprecated]]` is C++14.
-  `src/parser/ParserType.cpp:1819`, `src/parser/ParserType.cpp:1798`
+  `src/parser/ParserType.cpp:1823`, `src/parser/ParserType.cpp:1802`
 
 ## Conversion functions and operators
 
-- **`operator->*`** - `src/parser/ParserType.cpp:2418`
+- **`operator->*`** - `src/parser/ParserType.cpp:2422`
 - **an operator that can be named but not reached** - `operator&&`,
   `operator||` and `operator,`: refused at the declaration, because a function
   that links and can never be called is the half-built thing this project
@@ -268,7 +268,7 @@ is left:
   expression, asked of a one-line program each: `+ - * / % & | ^ << >> == != <
   <= > >=` binary, `+ - * & ! ~ ++ --` unary, `() [] = ->`, the ten compound
   assignments, and `operator new`, `operator delete` and the placement forms.
-  `src/parser/ParserType.cpp:2587`
+  `src/parser/ParserType.cpp:2591`
 
 ## Initialisation, and braces
 
@@ -277,9 +277,9 @@ is left:
   `T{...}`. `src/parser/ParserExprCall.cpp:626`
 - **`auto x{...}`** - C++11 makes it `std::initializer_list`, N3922 the
   element's type, and compilers apply N3922 to C++11; `auto x = {...}` deduces
-  the list. `src/parser/ParserTemplate.cpp:1306`
+  the list. `src/parser/ParserTemplate.cpp:1307`
 - **`auto &` or `auto *` from a braced list** - only `auto` and `const auto`
-  deduce `std::initializer_list` here. `src/parser/ParserTemplate.cpp:1297`
+  deduce `std::initializer_list` here. `src/parser/ParserTemplate.cpp:1298`
 - **a `std::initializer_list` with static storage made from braces** - its
   backing array would need static storage too. `src/parser/ParserInit.cpp:1175`
 - **a braced member initialiser with values on a reference or an array of a
@@ -314,7 +314,7 @@ many, or has no object of its own:
   `src/parser/ParserExpr.cpp:1477`
 - **an overloaded function's name passed where a template deduces from it** - [temp.deduct.call]/6
   would try each function of the set; a parameter of a known type picks one ([over.over]), a
-  deduced one does not - `src/sema/Templates.cpp:481`
+  deduced one does not - `src/sema/Templates.cpp:484`
 - **an overloaded function's name as an argument on a call road that resolves without asking
   its parameter's type** - the roads through `resolveOverload` and a known callee pick one; this
   is the backstop for any other - `src/parser/ParserExpr.cpp:820`
@@ -393,7 +393,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   `catch` handler, on x86_64-windows** - the cleanup would be a funclet inside
   the handler's funclet. `src/parser/ParserStmt.cpp:936`
 - **a trailing return type that is itself deduced**, `auto f() -> auto` -
-  C++14. `src/parser/ParserTopLevel.cpp:2271`
+  C++14. `src/parser/ParserTopLevel.cpp:2280`
 - **an expression form the Itanium name was not measured for, over a template's
   parameters in a function template's signature** - a postfix `++` or `--`, a
   lambda, `new`, `throw`, `typeid`, `noexcept`, a C-style cast to a reference
@@ -404,7 +404,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 
 - **a namespace alias inside a block** - the alias is a rewrite to the end of
   the enclosing namespace; at namespace scope it works.
-  `src/parser/ParserStmt.cpp:2063`
+  `src/parser/ParserStmt.cpp:2064`
 - **a using-declaration inside a class of a data member, or one that changes
   an access** - `using B::f;` of a base's member functions in the access they
   already have joins them to the class's set (M1 L2).
@@ -413,13 +413,13 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   - **of a virtual base** - the most-derived class would have to be told which
     of them builds it. `src/parser/ParserType.cpp:623`
   - **a constructor template** - its specializations would have to be made
-    for the derived class as calls asked for them. `src/sema/Classes.cpp:1687`
+    for the derived class as calls asked for them. `src/sema/Classes.cpp:1697`
   - **a constructor with `...`** - its arguments would have to be forwarded as
-    they came. `src/sema/Classes.cpp:1727`
+    they came. `src/sema/Classes.cpp:1737`
   - **a constructor taking a class by value whose copy is not trivial** - the
     copy would have to be passed on rather than made twice.
-    `src/sema/Classes.cpp:1731`
-- **a using-declaration inside a block** - `src/parser/ParserStmt.cpp:2071`.
+    `src/sema/Classes.cpp:1741`
+- **a using-declaration inside a block** - `src/parser/ParserStmt.cpp:2072`.
   The one at namespace scope works, and so does `using namespace N;`.
 
 ## Lambdas
@@ -437,17 +437,17 @@ refused (CLAUDE.md, "The volatile sweep"):
 
 | refused | measured against | site |
 | --- | --- | --- |
-| a pointer or reference to a volatile type | clang `_Z1fPVi`, cl `PECH` | `src/parser/ParserType.cpp:1889` |
-| `T *volatile` | cl `REAH`; Itanium right by accident | `src/parser/ParserType.cpp:1862` |
+| a pointer or reference to a volatile type | clang `_Z1fPVi`, cl `PECH` | `src/parser/ParserType.cpp:1893` |
+| `T *volatile` | cl `REAH`; Itanium right by accident | `src/parser/ParserType.cpp:1866` |
 | a volatile member function | the cv on `this` is in the name on both ABIs | `src/parser/ParserType.cpp:1186` |
-| a typedef of a volatile type | it would launder the qualifier past the above | `src/parser/ParserType.cpp:1896` |
+| a typedef of a volatile type | it would launder the qualifier past the above | `src/parser/ParserType.cpp:1900` |
 
 ## Keywords the parser has no rule for
 
 Two, from `pending[]` in `src/parser/Parser.cpp`, each refused **by name** at
 the three doors a keyword can arrive at - a name, an expression, a declaration:
 `src/parser/Parser.cpp:114`, `src/parser/ParserExpr.cpp:1124`,
-`src/parser/ParserType.cpp:2198`; `tests/cases/refused.cpp` holds one.
+`src/parser/ParserType.cpp:2202`; `tests/cases/refused.cpp` holds one.
 
     asm   export
 
@@ -469,20 +469,20 @@ between the two lists.**
 - **a polymorphic base that is not the first, on the Microsoft ABI** - cl lays
   the base with the vfptr first wherever it was written and compiles an
   override against a biased `this` where Itanium puts a thunk in front.
-  `src/sema/Classes.cpp:1078`, `src/parser/ParserType.cpp:327`
+  `src/sema/Classes.cpp:1087`, `src/parser/ParserType.cpp:327`
 - **a virtual base with virtual functions, on x86_64-windows** - cl dispatches
   through one with vtordisp fields and thunks of its own, measured in CLAUDE.md
   "The Microsoft virtual-base layout" and not built. `src/parser/ParserType.cpp:469`
 - **a pointer to a member of an incomplete class, on x86_64-windows** - the
   Microsoft ABI sizes one by the class's inheritance model, and an incomplete
   class takes cl's widest form. A class being defined with no base is single
-  and is taken (M1 L13). `src/parser/ParserType.cpp:2834`
+  and is taken (M1 L13). `src/parser/ParserType.cpp:2838`
 - **a `volatile` object with external linkage, on x86_64-windows** - cl
   decorates its name with the qualifier, `?g@@3HC` for `?g@@3HA`.
-  `src/parser/ParserType.cpp:1874`
+  `src/parser/ParserType.cpp:1878`
 - **`thread_local`, on tms6747** - TI's cl6x 8.2.2 does not know the word, so
   the C6000 has no thread storage to put one in (measured 2026-10-20).
-  `src/parser/ParserType.cpp:1956`, `tests/cases/thread-local.notarget`
+  `src/parser/ParserType.cpp:1960`, `tests/cases/thread-local.notarget`
 - **`alignas` past the stack's 8 on a local, on tms6747** - the C6000 backend
   builds no realigning prologue; the hosts' do. `src/parser/Parser.cpp:790`,
   `tests/cases/alignas-local.notarget`
@@ -524,11 +524,11 @@ judgement in a program. They are named here instead:
 - `src/parser/ParserType.cpp:239` - a base class that is not yet defined. An
   ordinary error: a derived object contains its base, so the base has to be
   complete.
-- `src/Mangle.cpp:858`, `src/Mangle.cpp:1457` - a type with no Itanium or
+- `src/Mangle.cpp:858`, `src/Mangle.cpp:1465` - a type with no Itanium or
   Microsoft linkage name. Internal: reaching either means a type was built that
   the mangler was never taught, which is a bug in this compiler and not a
   statement about the language.
-- `src/sema/Templates.cpp:429` - a template instantiating itself past
+- `src/sema/Templates.cpp:432` - a template instantiating itself past
   the nesting limit. An implementation limit ([implimits] recommends 1024
   recursive instantiations, and this stops at 2048), not a construct refused.
 

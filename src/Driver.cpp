@@ -180,9 +180,9 @@ void Driver::usage(char *file) {
         "         program (RIDE's bin), assembled by it and linked by the\n"
         "         link.exe beside it (CPP11_AS, CPP11_LD name others), COMDAT\n"
         "         and all; 'gnu' is assembled by clang, the default elsewhere\n"
-        "         and for -g, being the only one that carries a line table;\n"
-        "         'ml64' is the MASM syntax without COMDAT, for ml64, which\n"
-        "         links one translation unit at a time\n"
+        "         and for -g where clang is found; 'ml64' is the MASM syntax\n"
+        "         without COMDAT, for ml64, which links one translation unit\n"
+        "         at a time\n"
         "       -O1 and -O2 improve the code of each function: frame slots and\n"
         "         constants forwarded, pushes paired with their pops, dead\n"
         "         instructions removed. Every spelling; -O0 is the default\n"
@@ -191,9 +191,11 @@ void Driver::usage(char *file) {
         "         entry test is duplicated ahead of the frame; elsewhere -O1\n"
         "       -g writes a line table, so a debugger can stop on a line of C++\n"
         "         and step through it: DWARF on x86_64-linux and arm64-darwin,\n"
-        "         CodeView on x86_64-windows in the gnu spelling (linked with\n"
-        "         /debug into a PDB), cl6x's .dwpsn and .dwtag on tms6747;\n"
-        "         refused for -masm=masm/ml64, and on tms6747 with -O\n"
+        "         CodeView on x86_64-windows (linked with /debug into a PDB) -\n"
+        "         for clang in the gnu spelling, for GRIDE's masm as the .FILE\n"
+        "         and .LINE directives it reads with -masm=masm - and cl6x's\n"
+        "         .dwpsn and .dwtag on tms6747; refused for -masm=ml64, and on\n"
+        "         tms6747 with -O\n"
         "       -nologo leaves out the line this compiler prints before it\n"
         "         starts, which a build script may not want\n"
         "       -version says which release this is, and which seal file\n"
@@ -1160,11 +1162,10 @@ bool Driver::parseArguments(int argc, char **argv) {
     if (debug_ && !backend_->emitsLineTable(syntax_)) {
         std::fprintf(stderr,
                      "%s: -g asks where each line of C++ went, and this compiler "
-                     "writes no such thing for %s in the MASM spelling: MASM "
-                     "carries no line table and ml64 builds none from it, and "
-                     "a native Windows debugger wants CodeView rather than "
-                     "DWARF. Add -masm=gnu, which does carry one, or compile "
-                     "without -g.\n",
+                     "writes no such thing for %s with -masm=ml64: MASM carries no "
+                     "line table and ml64 builds none from it. -masm=masm writes the "
+                     ".FILE and .LINE directives GRIDE's masm reads, -masm=gnu a line "
+                     "table clang assembles; or compile without -g.\n",
                      argv[0], backend_->name());
         return false;
     }

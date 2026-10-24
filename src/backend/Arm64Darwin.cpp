@@ -1081,7 +1081,7 @@ void Arm64Darwin::emitFunction(const Function &fn) {
     if (const Source *src = lineSource()) {
         Source::Place at = src->locate(fn.pos());
         DwarfFunction d;
-        d.name = fn.name();
+        d.name = fn.displayName();
         d.begin = "Lfunc.begin." + fn.symbol();
         d.end = "Lfunc.end." + fn.symbol();
         d.file = at.file + 1;

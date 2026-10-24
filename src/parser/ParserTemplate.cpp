@@ -1231,6 +1231,7 @@ Parser::instantiate(const TemplateDecl &decl,
     Specialization sp;
     sp.key = key;
     sp.name = decl.name;
+    sp.display = decl.ns + display;
     sp.params = decl.params;
     sp.packs = packs;
     sp.symbol = symbol;
