@@ -1801,8 +1801,9 @@ ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
     std::vector<syntax::NodeId> kids(1, syntaxTree_.add(syntax::Kind::Name, scope.empty() ? name : scope + "::" + name, pos,
                                                         std::vector<syntax::NodeId>()));
     kids.insert(kids.end(), callArgs_.begin(), callArgs_.end());
-    return note(completeCall(sig.name, sig.symbol, nullptr, sig.returns, sig.params,
-                             sig.variadic, pos, std::move(callArgs)), syntax::Kind::Call, "", pos, kids);
+    ExprPtr called = completeCall(sig.name, sig.symbol, nullptr, sig.returns, sig.params, sig.variadic, pos, std::move(callArgs));
+    noteCallee(kids[0], called.get());
+    return note(std::move(called), syntax::Kind::Call, "", pos, kids);
 }
 
 void Parser::refuseTemplateId() {

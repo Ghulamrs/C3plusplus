@@ -15027,3 +15027,19 @@ operand beside the move, in an argument list whose order is unspecified - `enume
 includes `<string>`. Gated: `make test` green, emit golden 0 of 1,924 changed, `identical.sh` 5,352 compared and the
 known 8.
 
+## M2.17: the typed tree at 99.5% of expressions, and what the last 656 are, 2026-10-25
+
+**Three more kinds of record and nine rules took the untyped expressions from 5,167 to 656 of 129,041, at 0 differ.**
+A call's callee node takes the function the call reached (`Callee`), a temporary's callee the class it names
+(`TypeName`), and a form that names no entity - `new`, `delete`, `throw`, a lambda, a cast to a reference, `typeid`,
+a prefixed string, a conditional of class arms, `&S::m` - carries the type the parser gave it (`Value`), **read only
+where the Typer's own rule has no answer and counted apart**: `recorded=1027` in the report, because a type taken from
+the parser's record is not independent agreement and the count must say so. The rules are [expr.throw]/1 and
+[expr.delete]/1's `void`, a call through a pointer to a function, a comparison with `nullptr`, `&` and `*` on a class
+operand (an overloaded one carries a Call record, which comes first), and a destructor call's `void`. **Two more
+recording gaps the count found**: a scoped enumerator `E::a` is built in `ParserType.cpp` outside `enumeratorValue`,
+and an overload placeholder's node is noted before the parameter chooses its function. What is left is named in
+M2-PLAN.md: calls the parser builds by hand as a Comma rather than through `completeCall` - a temporary's `operator()`
+above all - and their operands. Gated: `make test` green, emit golden 0 of 1,924 changed, `identical.sh` 5,352
+compared and the known 8.
+

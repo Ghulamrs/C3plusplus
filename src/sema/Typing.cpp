@@ -64,6 +64,7 @@ TypedId Typer::node(syntax::NodeId id) {
     syntax::NodeId decl;
     const Type *type = n.kind == syntax::Kind::Name ? named(id, &decl)
                      : isExpression(n.kind) ? expression(id, parts) : nullptr;
+    if (type == nullptr && isExpression(n.kind)) type = recordedValue(id);
     if (scoped) scopes_.pop_back();
     return tree_.add(id, type, kids, decl);
 }
@@ -136,6 +137,11 @@ const Type *Typer::resolvedType(syntax::NodeId id, syntax::Kind kind) const {
             if (kind != syntax::Kind::Name && kind != syntax::Kind::Unary) return nullptr;
             t = p_.types_.pointerTo(t);
             break;
+        case Parser::Resolved::Callee: case Parser::Resolved::TypeName:
+            // A callee is the function itself, or the class a temporary's callee names; neither is an operand.
+            return t;
+        case Parser::Resolved::Value:
+            return nullptr;     // the parser's own answer for a form: read only where the rule below has none
         case Parser::Resolved::Local: case Parser::Resolved::Global: case Parser::Resolved::StaticMember:
         case Parser::Resolved::Enumerator: case Parser::Resolved::This:
             if (kind != syntax::Kind::Name && kind != syntax::Kind::This) return nullptr;
@@ -144,7 +150,7 @@ const Type *Typer::resolvedType(syntax::NodeId id, syntax::Kind kind) const {
             if (kind != syntax::Kind::Name && kind != syntax::Kind::Member) return nullptr;
             break;
         case Parser::Resolved::Temporary:
-            if (kind != syntax::Kind::Call) return nullptr;
+            if (kind != syntax::Kind::Call && kind != syntax::Kind::Name) return nullptr;
             break;
         case Parser::Resolved::None:
             return nullptr;
@@ -152,6 +158,15 @@ const Type *Typer::resolvedType(syntax::NodeId id, syntax::Kind kind) const {
     // A reference reads as what it refers to, as every mention of one is lowered.
     if (t != nullptr && t->isReference()) t = t->referent();
     return t;
+}
+
+// The type the parser gave a form that names no entity - new, delete, throw, a lambda, a cast to a reference, a
+// conditional of class arms, a string with a prefix - where the typer's own rule has no answer.
+const Type *Typer::recordedValue(syntax::NodeId id) {
+    std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
+    if (r == p_.resolutions_.end() || r->second.what != Parser::Resolved::Value) return nullptr;
+    recorded_++;
+    return r->second.type;
 }
 
 // A name: a local of this function's scopes, which the typer saw declared, else the entity the parser recorded for it.
@@ -189,7 +204,11 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
         case syntax::Kind::WordLit:
             return types.get(op == "nullptr" ? Kind::NullPtr : Kind::Bool);
         case syntax::Kind::Unary:
-            if (a == nullptr || isClass(a)) return nullptr;     // a class's operator is overload resolution's
+            // A class's operator is overload resolution's, and carries a Call record, answered above.
+            if (a == nullptr) return nullptr;
+            if (op == "&" && !a->isFunction()) return types.pointerTo(a);
+            if (op == "*" && da->isPointer() && !da->pointee()->isFunction()) return da->pointee();
+            if (isClass(a)) return nullptr;
             if (op == "!") return types.get(Kind::Bool);
             if ((op == "+" || op == "-") && a->isArithmetic()) return p_.promote(a);
             if (op == "~" && a->isInteger()) return p_.promote(a);
@@ -203,7 +222,7 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
             if (a == nullptr || b == nullptr || isClass(a) || isClass(b)) return nullptr;
             if (op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=" ||
                 op == "&&" || op == "||")
-                return scalarOrArray(a) && scalarOrArray(b) ? types.get(Kind::Bool) : nullptr;
+                return (scalarOrArray(a) || a->isNullPtr()) && (scalarOrArray(b) || b->isNullPtr()) ? types.get(Kind::Bool) : nullptr;
             if (op == "<<" || op == ">>") return a->isInteger() && b->isInteger() ? p_.promote(a) : nullptr;
             if (a->isArithmetic() && b->isArithmetic()) return p_.usualArithmetic(a, b);
             if ((op == "+" || op == "-") && da->isPointer() && b->isInteger()) return da;
@@ -211,12 +230,13 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
             if (op == "-" && da->isPointer() && db->isPointer()) return p_.ptrdiffType();
             return nullptr;
         case syntax::Kind::Assign:
-            return a != nullptr && (a->isArithmetic() || a->isPointer()) ? a : nullptr;
+            // A class assigned with no operator= of its own is copied by its bytes, and the result is the object.
+            return a != nullptr && (a->isArithmetic() || a->isPointer() || (isClass(a) && op == "=")) ? a : nullptr;
         case syntax::Kind::Comma:
             return b;
         case syntax::Kind::Conditional: {
             const Type *x = parts.size() > 1 ? parts[1] : nullptr, *y = parts.size() > 2 ? parts[2] : nullptr;
-            if (x == nullptr || y == nullptr || isClass(x) || isClass(y)) return nullptr;
+            if (x == nullptr || y == nullptr) return nullptr;
             if (x->unqualified() == y->unqualified()) return x->unqualified();     // [expr.cond]/6: one type
             if (x->isArithmetic() && y->isArithmetic()) return p_.usualArithmetic(x, y);
             return nullptr;
@@ -226,7 +246,15 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
             if (db != nullptr && db->isPointer() && a != nullptr && a->isInteger()) return db->pointee();
             return nullptr;
         case syntax::Kind::Call:
-            return nullptr;     // a call the parser recorded no function for: through a pointer, or not yet
+            // Through a pointer to a function, or a function the call named: what it returns; an object's call has a record.
+            if (da != nullptr && da->isPointer() && da->pointee()->isFunction()) return da->pointee()->returns();
+            if (a != nullptr && a->isFunction()) return a->returns();
+            return nullptr;
+        case syntax::Kind::Throw: case syntax::Kind::Delete:
+            return types.get(Kind::Void);        // [expr.throw]/1, [expr.delete]/1
+        case syntax::Kind::Member:
+            // An explicit destructor call or a pseudo-destructor, `p->~T()`, is void; any other member has a record.
+            return op.find("~") != std::string::npos ? types.get(Kind::Void) : nullptr;
 
         case syntax::Kind::Cast: {
             std::unordered_map<std::uint32_t, const Type *>::const_iterator to = p_.castTypes_.find(id.v);
@@ -350,6 +378,7 @@ std::string Typer::check(Parser &p, const Program &program, const Source &src, i
     Typer typer(p);
     const syntax::Tree &st = p.syntaxTree_;
     const Census c = census(p, program);
+    typer.recorded_ = 0;
     std::map<std::string, int> untyped;
     int nodes = 0;
     for (std::size_t i = 0; i < c.bodies.size(); i++) {
@@ -365,6 +394,9 @@ std::string Typer::check(Parser &p, const Program &program, const Source &src, i
         const syntax::Kind kind = st.node(n.syntax).kind;
         if (n.type == nullptr) {
             if (kind < syntax::Kind::Block) untyped[syntax::kindName(kind)]++;      // an expression typed null
+            if (kind < syntax::Kind::Block && std::getenv("CXX1_UNTYPED") != nullptr)
+                std::fprintf(stderr, "untyped %s: %s '%s'\n", src.where(st.node(n.syntax).loc).c_str(), syntax::kindName(kind),
+                             st.text(n.syntax).c_str());
             continue;
         }
         typed++;
@@ -399,8 +431,8 @@ std::string Typer::check(Parser &p, const Program &program, const Source &src, i
         kinds += (kinds.empty() ? "  untyped: " : ", ") + k->first + "=" + std::to_string(k->second);
     }
     char line[240];
-    std::snprintf(line, sizeof line, "-check=typed: %s nodes=%d typed=%d untyped=%d agree=%d differ=%d absent=%d cv=%d lowered=%d\n",
-                  censusLine(c).c_str(), nodes, typed, unt, agree, *differ, absent, cv, lowered);
+    std::snprintf(line, sizeof line, "-check=typed: %s nodes=%d typed=%d untyped=%d agree=%d differ=%d absent=%d cv=%d lowered=%d recorded=%d\n",
+                  censusLine(c).c_str(), nodes, typed, unt, agree, *differ, absent, cv, lowered, typer.recorded_);
     return out + line + censusKinds(c) + (kinds.empty() ? std::string() : kinds + "\n");
 }
 

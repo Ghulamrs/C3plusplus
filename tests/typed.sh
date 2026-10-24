@@ -19,7 +19,7 @@ for r in "$out"/*.typed; do
 done
 # The report is key=value fields (M2.15): the census of every emitted function, then the nodes under the bodies.
 cat "$out"/*.typed | grep -- '^-check=typed:' | tr ' ' '\n' | grep = | tr '=' ' ' |
-    awk '{s[$1]+=$2} END {printf "typed.sh: %d functions emitted, %d with a source body, %d compiler-written; %d nodes, %d typed, %d untyped, %d agree, %d with no Ast.h node\n", s["functions"], s["bodies"], s["synthesised"], s["nodes"], s["typed"], s["untyped"], s["agree"], s["absent"]}'
+    awk '{s[$1]+=$2} END {printf "typed.sh: %d functions emitted, %d with a source body, %d compiler-written; %d nodes, %d typed, %d untyped, %d agree (%d from the parser'"'"'s own record), %d with no Ast.h node\n", s["functions"], s["bodies"], s["synthesised"], s["nodes"], s["typed"], s["untyped"], s["agree"], s["recorded"], s["absent"]}'
 cat "$out"/*.typed | grep -- '^  compiler-written:' | sed 's/^  compiler-written: //' | tr ',' '\n' | sed 's/^ //' | tr '=' ' ' |
     awk '{s[$0]=0} {n=$NF; $NF=""; s[$0]+=n} END {for (k in s) if (s[k] > 0) printf "    %s%d\n", k, s[k]}' | sort
 cat "$out"/*.typed | grep -- '^  untyped:' | sed 's/^  untyped: //' | tr ',' '\n' | sed 's/^ //' | tr '=' ' ' |

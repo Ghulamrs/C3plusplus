@@ -1455,7 +1455,7 @@ ExprPtr Adapter::call(TypedId id) {
     std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(n.syntax.v);
     if (r != p_.resolutions_.end() && r->second.what == Parser::Resolved::Temporary)
         return classTemporary(id, r->second.type->unqualified(), std::move(args));
-    if (r == p_.resolutions_.end() || r->second.what != Parser::Resolved::Call) {
+    if (r == p_.resolutions_.end() || r->second.what != Parser::Resolved::Call || r->second.symbol.empty()) {
         std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator h = p_.resolutions_.find(tree.node(head).syntax.v);
         if (h != p_.resolutions_.end() && h->second.what == Parser::Resolved::Global) return pointerCall(id, head, std::move(args));
         outside("a call the parser recorded no function for");

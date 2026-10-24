@@ -74,6 +74,8 @@ private:
     const Type *literal(syntax::NodeId id);
     const Type *named(syntax::NodeId id, syntax::NodeId *decl);
     const Type *resolvedType(syntax::NodeId id, syntax::Kind kind) const;
+    const Type *recordedValue(syntax::NodeId id);
+    int recorded_ = 0;      // nodes typed from a Value record, the parser's own answer: not independent agreement
     struct Declared { const Type *type; syntax::NodeId decl; };
     Parser &p_;
     TypedTree tree_;

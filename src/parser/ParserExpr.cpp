@@ -814,8 +814,10 @@ ExprPtr Parser::overloadArgumentFor(const Type *param, const OverloadArg &oa) {
             overloadArgs_.erase(overloadArgs_.begin() + static_cast<long>(i));
             break;
         }
-    return mine.cls != nullptr ? memberFunctionAddress(mine.cls, *f, mine.key, mine.pos)
-                               : functionAddress(*f, mine.key);
+    ExprPtr made = mine.cls != nullptr ? memberFunctionAddress(mine.cls, *f, mine.key, mine.pos)
+                                       : functionAddress(*f, mine.key);
+    noteResolved(mine.placeholder->syntax(), made.get());     // the name was noted before the parameter chose
+    return made;
 }
 
 void Parser::refuseOverloadArguments(const std::vector<ExprPtr> &args,
@@ -1062,6 +1064,7 @@ ExprPtr Parser::primary(Program *program) {
     }
     if (first.kind == TokenKind::Str) {
         r = note(std::move(r), syntax::Kind::StringLit, first.text, pos);
+        noteValue(r.get());
         literalTokens_[r->syntax().v] = start;
         if (const StrLit *lit = dynamic_cast<const StrLit *>(r.get()))
             stringLiterals_[r->syntax().v] = std::make_pair(lit->label(), lit->text());
@@ -1079,10 +1082,7 @@ ExprPtr Parser::primary(Program *program) {
     if (name.empty()) return r;     // a lambda, a cast, a keyword's own form: not recorded yet
     if (k < at_ && tokens_[k].is("(") && (argGen_ != gen || dynamic_cast<const Call *>(r.get()) != nullptr)) {
         std::vector<syntax::NodeId> call(1, syntaxTree_.add(syntax::Kind::Name, name, pos));
-        // The function the call reached names the callee as well - as a function, where the call's record is the call.
-        noteResolved(call[0], r.get());
-        std::unordered_map<std::uint32_t, Resolved>::iterator named = resolutions_.find(call[0].v);
-        if (named != resolutions_.end() && named->second.what == Resolved::Call) named->second.what = Resolved::Function;
+        noteCallee(call[0], r.get());
         if (argGen_ != gen) call.insert(call.end(), callArgs_.begin(), callArgs_.end());
         return note(std::move(r), syntax::Kind::Call, "", tokens_[k].pos, call);
     }
@@ -2826,6 +2826,7 @@ ExprPtr Parser::notePostfix(ExprPtr n, PostfixStep &st) {
             // `o.f(x)` is read in one turn, so a member that read arguments is the callee of a call.
             if (st.callFollows && argGen_ != st.argGen) {
                 std::vector<syntax::NodeId> call(1, syntaxTree_.add(syntax::Kind::Member, st.text, st.pos, kids));
+                noteCallee(call[0], n.get());
                 call.insert(call.end(), callArgs_.begin(), callArgs_.end());
                 return note(std::move(n), syntax::Kind::Call, "", st.callPos, call);
             }
@@ -3190,6 +3191,10 @@ ExprPtr Parser::noteKeywordForm(syntax::Kind kind, KeywordForm f) {
     }
     if (!f.e) { syntaxTree_.add(kind, text, pos, parts); return std::move(f.e); }
     f.e->setSyntax(syntaxTree_.add(kind, text, pos, parts));
+    if (kind == syntax::Kind::Sizeof && text.compare(0, 6, "typeid") == 0) noteValue(f.e.get());
+    if (kind == syntax::Kind::New || kind == syntax::Kind::Delete || kind == syntax::Kind::Throw || kind == syntax::Kind::Lambda ||
+        (kind == syntax::Kind::Cast && (text.find('&') != std::string::npos || text.compare(0, 12, "dynamic_cast") == 0)))
+        noteValue(f.e.get());
     if (kind == syntax::Kind::Throw && !pendingThrow_.temp.empty()) throwFacts_[f.e->syntax().v] = pendingThrow_;
     if (kind == syntax::Kind::Throw) pendingThrow_ = ThrowFacts();
     if (kind == syntax::Kind::Lambda && pendingLambda_.simple) lambdaFacts_[f.e->syntax().v] = pendingLambda_;
@@ -3320,7 +3325,7 @@ ExprPtr Parser::unaryNode() {
                         at_ += q + 1;
                         ExprPtr off(new Num(static_cast<long long>(m->offset)));
                         off->setType(types_.memberPointerTo(cls, m->type));
-                        return off;
+                        return resolve(std::move(off), resolvedAs(Resolved::Value, types_.memberPointerTo(cls, m->type)));
                     }
                     // `&S::f` for a member function: the ABI's pair, built in
                     // a slot of this frame the way a class temporary is.

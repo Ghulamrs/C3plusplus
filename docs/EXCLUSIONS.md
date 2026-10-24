@@ -181,18 +181,18 @@ is left:
   body** - give it the body there. `src/parser/ParserTemplate.cpp:685`
 - **naming a function template without calling it**, and **instantiating one
   that was only declared** - `src/parser/ParserTemplate.cpp:1667`,
-  `src/parser/ParserTemplate.cpp:1734`, `src/parser/ParserTemplate.cpp:1821`
+  `src/parser/ParserTemplate.cpp:1734`, `src/parser/ParserTemplate.cpp:1822`
 - **naming a member through a class template's argument list**,
   `Box<int>::m` in a declaration - the type is made, so a typedef for it
   reaches the member: `typedef Box<int> B; B::m`.
-  `src/parser/ParserTemplate.cpp:1817`, `src/parser/ParserType.cpp:36`
+  `src/parser/ParserTemplate.cpp:1818`, `src/parser/ParserType.cpp:36`
 - **a member function template named without being called** -
-  `src/parser/ParserTemplate.cpp:1891`; **a member class template** -
+  `src/parser/ParserTemplate.cpp:1892`; **a member class template** -
   `src/parser/ParserType.cpp:529`; **an out-of-line member template
   definition** - `src/parser/ParserType.cpp:589`
 - **`sizeof` of a template parameter in a signature outside a template argument
   or a `decltype`** - an array bound, `void f(T, int (*)[sizeof(T)])`, whose
-  Itanium spelling was not measured. `src/parser/ParserExpr.cpp:3519`
+  Itanium spelling was not measured. `src/parser/ParserExpr.cpp:3524`
 - **two-phase name lookup is not done, and that is a decision rather than a
   gap.** A template is instantiated by replaying its tokens, so every name in
   its body is looked up at instantiation - MSVC's old model - and cxx1
@@ -317,7 +317,7 @@ many, or has no object of its own:
   deduced one does not - `src/sema/Templates.cpp:484`
 - **an overloaded function's name as an argument on a call road that resolves without asking
   its parameter's type** - the roads through `resolveOverload` and a known callee pick one; this
-  is the backstop for any other - `src/parser/ParserExpr.cpp:825`
+  is the backstop for any other - `src/parser/ParserExpr.cpp:827`
 - **an overloaded function's name where something other than a call's parameter asks for a type** -
   a braced initialiser `T{h}`, an operand of an overloaded operator `o << h`, a default argument
   `= h`; an initialiser, an assignment, a cast, a return and a call's parameter pick one -
@@ -327,7 +327,7 @@ many, or has no object of its own:
 - **`va_arg` of an aggregate** - `src/parser/ParserExpr.cpp:1274`
 - **`?:` with a `throw` arm and an arm of class type** - the class arm would want a temporary the
   `throw` arm never builds; throw in a statement of its own, or give the class arm to a variable
-  first. `src/parser/ParserOperator.cpp:935`
+  first. `src/parser/ParserOperator.cpp:936`
 
 ## `new` and `delete`
 

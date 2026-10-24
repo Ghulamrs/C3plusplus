@@ -388,3 +388,29 @@ crashed every case including `<string>`; the type is taken into a local first, a
 Gated: `make test` green (emit golden 0 of 1,924 changed, typed.sh and adapted.sh 0 differ), `identical.sh` 5,352 compared
 and the known 8 differ.
 
+**M2.17: the Typer's remaining kinds** (2026-10-25). Three more record kinds beside M2.16's: `Callee`, on the node of a
+call's callee - the function itself, where a `name` or `member` callee had no Ast node and no type; `TypeName`, on the
+callee of a class temporary; and `Value`, the type the parser gave a form that names no entity - `new`, `delete`, `throw`,
+a lambda, a cast to a reference or `dynamic_cast`, `typeid`, a string with a prefix, a conditional of class arms, `&S::m` -
+read **only where the Typer's own rule has no answer**, and counted apart in the report (`recorded=`), since a type taken
+from the parser's own record is not independent agreement. Rules added: `throw` and `delete` are `void`; a call through a
+pointer to a function is its pointee's return; a comparison with `nullptr` is `bool`; `&` and `*` of a class operand
+follow the built-in rule (a class's own operator carries a Call record, answered first); an explicit destructor or
+pseudo-destructor call is `void`; a byte-copied class assignment is the object; a scoped enumerator `E::a` (built in
+`ParserType.cpp`, outside `enumeratorValue`) records its enumerator; an indirect call records the function type it calls
+through, with no symbol - which the adapter reads as a call through a pointer; an overload placeholder's node takes the
+function it resolves to. Over the 647 host cases: **128,385 typed, 112,982 agree (1,027 from the parser's own record), 0
+differ, 15,212 with no Ast.h node, 656 untyped** of the 129,041 expression nodes - 0.5% - by kind: call 228 (a call of a
+class temporary, `ByDigits()(a, b)`, and of an object whose `operator()` the parser reached through a shape with no
+record), member 191, name 123, unary 58, assign 27, binary 24, cast 4, comma 1 - most of them operands of those. The
+adapter: 1,268 of 7,420, all the same.
+
+**What is untyped at M2.17, named**: a call of a temporary or an object through a Comma the parser built in place of a
+Call; the callee `member` and `name` nodes under those; a `unary &` or `*` whose operand is one of them; a class
+assignment whose `operator=` the parser reached through a shape that carries no record; a cast whose text the recorder
+did not reach. Each is a shape the parser builds by hand rather than through `completeCall`; the record is one line at
+the site, and the list is what M3's lowering has to meet or close.
+
+Gated: `make test` green (emit golden 0 of 1,924 changed, typed.sh and adapted.sh 0 differ), `identical.sh` 5,352
+compared and the known 8 differ.
+

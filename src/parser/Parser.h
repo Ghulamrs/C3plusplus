@@ -510,8 +510,11 @@ private:
     std::unordered_map<std::uint32_t, const Type *> declaredTypes_;
     // **What a name, a member, a call or an operator resolved to, recorded where the parser resolved it** (M2.16).
     struct Resolved {
-        // Function: named as a value, the type its function type; Call: reached by a call, the value its return.
-        enum What { None, Local, Global, Function, Call, Member, Enumerator, StaticMember, This, Temporary };
+        // Function: named as a value, the type its function type; Call: reached by a call, the value its return;
+        // Callee: the function a call reached, on its callee's node; TypeName: a type a temporary's callee names;
+        // Value: the type the parser gave a form that names no entity - new, delete, throw, a lambda, a string.
+        enum What { None, Local, Global, Function, Call, Callee, Member, Enumerator, StaticMember, This, Temporary,
+                    TypeName, Value };
         What what = None;
         const Type *type = nullptr;      // as declared: a reference keeps its `&`, a function is its function type
         const Type *owner = nullptr;     // a member's class, a member function's
@@ -535,6 +538,20 @@ private:
     }
     void noteResolved(syntax::NodeId id, const Expr *e) {
         if (e != nullptr && e->resolved() != 0 && id.valid()) resolutions_[id.v] = resolvedTable_[e->resolved()];
+    }
+    // A callee's node takes what its call reached: the function, or the class a temporary's callee names.
+    void noteCallee(syntax::NodeId callee, const Expr *call) {
+        if (call == nullptr || !callee.valid()) return;
+        Resolved r = call->resolved() != 0 ? resolvedTable_[call->resolved()] : temporaryOf(call);
+        if (r.what == Resolved::Call) r.what = Resolved::Callee;
+        else if (r.what == Resolved::Temporary) r.what = Resolved::TypeName;
+        else return;
+        resolutions_[callee.v] = r;
+    }
+    // The type the parser gave a form that names no entity, for typing to fall back on where its own rule has none.
+    void noteValue(const Expr *e) {
+        if (e != nullptr && e->syntax().valid() && e->type() != nullptr)
+            resolutions_[e->syntax().v] = resolvedAs(Resolved::Value, e->type());
     }
     ExprPtr noteCast(ExprPtr e, const Type *to, const std::string &written, std::size_t pos, syntax::NodeId operand) {
         e = note(std::move(e), syntax::Kind::Cast, written, pos, std::vector<syntax::NodeId>(1, operand));
@@ -641,6 +658,9 @@ private:
         if (kind == syntax::Kind::Call) {
             if (const Call *c = dynamic_cast<const Call *>(e.get())) noteCallSlots(*c);
             else noteTemporarySlot(e.get());
+        } else if (kind == syntax::Kind::Name && e && e->resolved() == 0) {
+            const Resolved tmp = temporaryOf(e.get());
+            if (tmp.what == Resolved::Temporary) resolutions_[e->syntax().v] = tmp;
         }
         return e;
     }
@@ -663,6 +683,15 @@ private:
     std::unordered_map<std::uint32_t, RangeFacts> rangeFacts_;
     RangeFacts pendingRange_ = RangeFacts();
     LambdaFacts pendingLambda_;
+    // A class temporary's shape, `*(ctor(&$tmp, ...), &$tmp)`, read for its class; None where the Expr is not one.
+    Resolved temporaryOf(const Expr *e) const {
+        const Unary *star = dynamic_cast<const Unary *>(e);
+        const Comma *both = star != nullptr && star->op() == '*' ? dynamic_cast<const Comma *>(&star->operand()) : nullptr;
+        const Unary *at = both != nullptr ? dynamic_cast<const Unary *>(&both->right()) : nullptr;
+        const Var *tmp = at != nullptr && at->op() == '&' ? dynamic_cast<const Var *>(&at->operand()) : nullptr;
+        if (tmp == nullptr || tmp->name() != "$tmp") return Resolved();
+        return resolvedAs(Resolved::Temporary, e->type());
+    }
     void noteTemporarySlot(const Expr *e) {
         const Unary *star = dynamic_cast<const Unary *>(e);
         const Comma *both = star != nullptr && star->op() == '*' ? dynamic_cast<const Comma *>(&star->operand()) : nullptr;
