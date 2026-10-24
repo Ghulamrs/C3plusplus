@@ -433,7 +433,8 @@ So, as of 1.28, the failure is *usually* explicit, with two known silent excepti
 5. **Which tree is the source of truth?**
    - GitHub's `Compiler-Cpp-Optimize` stops at 1.23 (`b7a11bc`).
    - 1.24-1.28 were committed only inside GRIDE.
-   - cpp11 **1.29** (2026-10-22) is on neither. Every review here, the experiments included, was done against **1.28**, and section 10's baseline and the M0 oracle should be re-taken at 1.29 once its source is available. M0 assumes they are reunited in `Compiler-Cpp-Optimize`, with GRIDE copying from it as before.
+   - cpp11 **1.29** (2026-10-22) is on neither. Every review here, the experiments included, was done against **1.28**, and section 10's baseline and the M0 oracle should be re-taken at 1.29 once its source is available.
+   - **Resolved 2026-10-24** (`2553d0a`): 1.29 was GRIDE1 `2d9afbb`; it is merged into this tree over M2.0-M2.6, and GRIDE copies from here again. Without -g it changes none of 5,352 outputs; the emit golden is re-recorded at `2553d0a`, and section 10's baseline at 1.29 is 66 of 66 sources self-hosting. M0 assumes they are reunited in `Compiler-Cpp-Optimize`, with GRIDE copying from it as before.
 6. A target value for each R1.2 measure.
 7. **R7.1 does not match the toolchain.** R7.1 says "Kept: Microsoft `link.exe` … Not built: own … Windows linker". GRIDE already ships its own `link`: it takes `link.exe`'s command line, writes the PE32+ image (`GRIDE1/docs/MASM_LINK_Reference.html`), and since `cf1e607` writes a PDB. Should R7.1 name GRIDE's `link` as the default, with Microsoft's `link.exe` kept as the reference oracle for R9.3? GRIDE Design draft 0.5 §9 still says "link writes no PDB", which `cf1e607` made out of date.
 8. C90 is new work: cpp11 refuses `.c` today (`Driver.cpp:1124-1136`). M7 should be sized with that known.

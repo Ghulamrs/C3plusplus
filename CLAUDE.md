@@ -10656,6 +10656,16 @@ ships trees and reads results.
 - **Not moved yet**: RTS6x's referee, which rebuilds both tms6747 suites - c90's too - where it starts; verify-three
   no longer runs it from the Mac.
 
+## 1.29 came from GRIDE after M0, and was merged over M2, 2026-10-24
+
+**M0 took 1.28 from GRIDE's copy on 2026-10-22, and GRIDE wrote 1.29 the next day** (`2d9afbb`: -g through
+GRIDE's own masm), so the trees parted again - design section 15, item 5. `2553d0a` merges it three ways from
+GRIDE's 1.28 and 1.29, LF: M0's C++11 forms kept where 1.29 still wrote C++14, and 1.29's lines in functions
+M2 had moved re-applied in `src/sema/`. Without -g it changes none of 5,352 outputs. With -g, GRIDE's own 1.28
+and 1.29 built here agree with this tree's wherever their 1.28s agreed, but for two older differences: this
+tree's `.pdata$x` for a funclet, and `first<enum Colour>` where GRIDE says `first<int>` - cl settles that one.
+**The rule it leaves**: cpp11 is changed here, and GRIDE copies from here.
+
 ## Build
 
 ```
