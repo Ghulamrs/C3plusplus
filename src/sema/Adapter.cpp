@@ -104,6 +104,11 @@ StmtPtr Adapter::stmt(TypedId id) {
             }
             if (n.count == 1 && returns_ != nullptr && returns_->isReference())
                 return placed(make_owned<Return>(bind(returns_, expr(tree.child(id, 0)))), s, n.syntax);
+            if (n.count == 1 && returns_ != nullptr && plainClass(p_, returns_)) {
+                ExprPtr value = decay(expr(tree.child(id, 0)));
+                if (value->type()->unqualified() != returns_->unqualified()) outside("a struct returned from what is not one");
+                return placed(make_owned<Return>(classValue(std::move(value), returns_)), s, n.syntax);
+            }
             if (n.count != 1 || !scalar(returns_)) outside("a return of what is not a scalar");
             return placed(make_owned<Return>(convert(decay(expr(tree.child(id, 0))), returns_)), s, n.syntax);
         case syntax::Kind::If: {
@@ -525,7 +530,8 @@ ExprPtr Adapter::member(TypedId id) {
     }
     const Type *obj = object->type();
     if (!plainClass(p_, obj)) outside("a member of '" + obj->describe() + "'");
-    if (!arrow && (object->isXvalue() || !isLvalue(*object))) outside("a member of what is not an lvalue");
+    // [expr.ref]/4: a member of an rvalue object - `make().x` - is an xvalue.
+    const bool rvalue = object->isXvalue() || !isLvalue(*object);
     if (p_.lookup_.findMemberOwner(obj->unqualified(), name) != nullptr || obj->findStaticMember(name) != nullptr)
         outside("a member '" + name + "' that is not a data member");
     const Member *m = obj->findMember(name);
@@ -533,7 +539,9 @@ ExprPtr Adapter::member(TypedId id) {
         outside("a member '" + name + "' the adapter does not reach");
     const Type *t = obj->isConst() && !m->isMutable ? p_.types_.withConst(m->type) : m->type;
     if (!scalar(t) && !scalarArray(t) && !plainClass(p_, t)) outside("a member of type '" + t->describe() + "'");
-    return typed(make_owned<MemberAccess>(std::move(object), name, m->offset, m->width, m->bitOffset), t);
+    ExprPtr access = typed(make_owned<MemberAccess>(std::move(object), name, m->offset, m->width, m->bitOffset), t);
+    if (rvalue) access->setXvalue();
+    return access;
 }
 
 // A name, as the typer found it: a local of this function, else an object or an enumerator at file scope.
@@ -762,7 +770,7 @@ ExprPtr Adapter::call(TypedId id) {
     for (std::uint32_t i = 1; i < n.count; i++) args.push_back(expr(tree.child(id, i)));
     for (std::size_t i = 0; i < args.size(); i++)
         if (namespaceAssociated(args[i]->type())) outside("a call an argument's namespace may add to");
-    if (syn(head).kind == syntax::Kind::Member) return memberCall(head, std::move(args), syn(id).loc);
+    if (syn(head).kind == syntax::Kind::Member) return memberCall(id, head, std::move(args));
     if (syn(head).kind != syntax::Kind::Name) outside("a call of what is not a name");
     const std::string &callee = p_.syntaxTree_.text(tree.node(head).syntax);
     if (tree.node(head).decl.valid()) outside("a call through a local");
@@ -784,12 +792,13 @@ ExprPtr Adapter::call(TypedId id) {
     } else if (callee.find_first_of("<~") != std::string::npos) {
         outside("a call of '" + callee + "'");
     }
-    return finishCall(callee, f, f.params, std::move(args), false);
+    return finishCall(id, callee, f, f.params, std::move(args), false);
 }
 
 // [expr.ref] with [class.mfct.non-static]: `o.f(a)` is f called with `&o` in front of its arguments.
-ExprPtr Adapter::memberCall(TypedId head, std::vector<ExprPtr> args, std::size_t pos) {
+ExprPtr Adapter::memberCall(TypedId id, TypedId head, std::vector<ExprPtr> args) {
     const TypedTree &tree = typer_.tree();
+    const std::size_t pos = syn(id).loc;
     const std::string &text = p_.syntaxTree_.text(tree.node(head).syntax);
     const bool arrow = text.compare(0, 2, "->") == 0;
     const std::string name = text.substr(arrow ? 2 : 1);
@@ -817,22 +826,23 @@ ExprPtr Adapter::memberCall(TypedId head, std::vector<ExprPtr> args, std::size_t
     const Signature f = p_.overload_.resolveOverload(key, args, pos, cls, objectIsLvalue(*object));
     if (f.deleted || f.isVirtual || f.refThis != RefQual::None) outside("a member call of what is not plain");
     if (f.owner != plain->tag()) outside("a member call of a base's, brought in by a using-declaration");
-    if (f.isStaticMember) return finishCall(key, f, f.params, std::move(args), false);
+    if (f.isStaticMember) return finishCall(id, key, f, f.params, std::move(args), false);
     const Type *thisType = p_.types_.pointerTo(f.constThis ? p_.types_.withConst(plain) : plain);
     std::vector<ExprPtr> all;
     all.push_back(typed(make_owned<Unary>('&', std::move(object)), thisType));
     for (std::size_t i = 0; i < args.size(); i++) all.push_back(std::move(args[i]));
     std::vector<const Type *> full(1, thisType);
     full.insert(full.end(), f.params.begin(), f.params.end());
-    return finishCall(name, f, full, std::move(all), true);
+    return finishCall(id, name, f, full, std::move(all), true);
 }
 
-// Parser::completeCall for what the adapter takes: no default, no class by value or returned, a reference bound,
-// a scalar converted, an argument past the parameters promoted; a reference returned is read through.
-ExprPtr Adapter::finishCall(const std::string &name, const Signature &f, const std::vector<const Type *> &params,
+// Parser::completeCall for what the adapter takes: no default, a plain struct by value, a reference bound, a scalar
+// converted, an argument past the parameters promoted; a reference returned is read through. The frame slots of a
+// struct returned or passed are the parser's, read by node.
+ExprPtr Adapter::finishCall(TypedId at, const std::string &name, const Signature &f, const std::vector<const Type *> &params,
                             std::vector<ExprPtr> args, bool hasThis) {
     const Type *gives = f.returns != nullptr && f.returns->isReference() ? f.returns->referent() : f.returns;
-    if (gives == nullptr || !(gives->isVoid() || scalar(gives) || (f.returns->isReference() && plainClass(p_, gives))))
+    if (gives == nullptr || !(gives->isVoid() || scalar(gives) || plainClass(p_, gives)))
         outside("a call returning a class");
     if (args.size() < params.size() || (args.size() > params.size() && !f.variadic)) outside("a call with defaults or too many");
     for (std::size_t i = 0; i < args.size(); i++) {
@@ -845,12 +855,28 @@ ExprPtr Adapter::finishCall(const std::string &name, const Signature &f, const s
             continue;
         }
         if (params[i]->isReference()) { args[i] = bind(params[i], std::move(args[i])); continue; }
+        if (plainClass(p_, params[i])) {
+            args[i] = decay(std::move(args[i]));
+            if (args[i]->type()->unqualified() != params[i]->unqualified()) outside("a struct passed from what is not one");
+            args[i] = classValue(std::move(args[i]), params[i]);
+            continue;
+        }
         if (!scalar(params[i])) outside("a parameter of type '" + params[i]->describe() + "'");
         args[i] = convert(decay(std::move(args[i])), params[i]);
     }
-    std::unique_ptr<Call> c = make_owned<Call>(name, ExprPtr(), std::move(args), f.variadic, 0, static_cast<int>(params.size()));
+    Parser::CallSlots slots;
+    std::unordered_map<std::uint32_t, Parser::CallSlots>::const_iterator k = p_.callSlots_.find(typer_.tree().node(at).syntax.v);
+    if (k != p_.callSlots_.end()) slots = k->second;
+    else slots.args.assign(args.size(), 0);
+    if (slots.args.size() != args.size()) outside("a call whose slots were not recorded");
+    for (std::size_t i = 0; i < args.size(); i++)
+        if (args[i]->type()->isStructOrUnion() && slots.args[i] == 0) outside("a struct argument with no slot");
+    if (!f.returns->isReference() && gives->isStructOrUnion() && slots.result == 0) outside("a struct returned to no slot");
+    std::unique_ptr<Call> c = make_owned<Call>(name, ExprPtr(), std::move(args), f.variadic, slots.result,
+                                               static_cast<int>(params.size()), slots.args);
     c->setSymbol(f.symbol);
     c->setHasThis(hasThis);
+    c->setResultIndirect(slots.indirect);
     if (!f.returns->isReference()) return typed(std::move(c), f.returns);
     ExprPtr through = typed(std::move(c), p_.types_.pointerTo(gives));
     return typed(make_owned<Unary>('*', std::move(through)), gives);

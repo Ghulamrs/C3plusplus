@@ -709,6 +709,7 @@ void Parser::claimCallResult(Call &c, int slot) {
                 break;
             }
     c.setResultSlot(slot);
+    noteCallSlots(c);
 }
 
 // **The class whose scope declares `name`**, a member template counting as a declaration:

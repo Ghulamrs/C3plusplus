@@ -40,8 +40,8 @@ private:
     ExprPtr binary(TypedId id, const std::string &op, TypedId l, TypedId r);
     ExprPtr assign(TypedId id);
     ExprPtr call(TypedId id);
-    ExprPtr memberCall(TypedId head, std::vector<ExprPtr> args, std::size_t pos);
-    ExprPtr finishCall(const std::string &name, const Signature &f, const std::vector<const Type *> &params,
+    ExprPtr memberCall(TypedId id, TypedId head, std::vector<ExprPtr> args);
+    ExprPtr finishCall(TypedId at, const std::string &name, const Signature &f, const std::vector<const Type *> &params,
                        std::vector<ExprPtr> args, bool hasThis);
     ExprPtr condition(TypedId id);
     ExprPtr arithmetic(const std::string &op, ExprPtr a, ExprPtr b);

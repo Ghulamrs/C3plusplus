@@ -10717,6 +10717,14 @@ told from `{1, 2, 3}`. **Found and not mended:** `unsigned char u[] = {"xy"};` i
 number here") where `char c[] = {"ab"};` and `unsigned char u[] = "xy";` compile; [dcl.init.string]/1 takes the
 braced form for any narrow character array, and clang does.
 
+## M2.12d: a plain struct returned and passed by value, 2026-10-24
+
+**900 of 1,986 functions take the adapter's body**, all the same. A call returning or taking a struct by value
+uses frame slots the parser allocates as it builds the call, and the adapter reads them, a fact of layout like a
+local's offset: `callSlots_`, recorded in `note` for a `Call` and again in `claimCallResult` and the two places
+that mark a result indirect, since an elision moves the slot after the node is noted. Every ParserStmt and
+ParserExprNew citation past those two lines moved by one in `docs/EXCLUSIONS.md`.
+
 ## Build
 
 ```

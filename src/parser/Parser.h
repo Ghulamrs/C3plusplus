@@ -524,6 +524,17 @@ private:
     std::unordered_map<std::uint32_t, int> syntaxScopes_;
     std::unordered_map<std::uint32_t, std::string> syntaxFunctions_;
     std::unordered_map<std::uint32_t, const Type *> declaredReturns_;   // a reference return as written (M2.12)
+    // A call's frame slots - its result's, each argument's, and whether the result's holds a pointer - by node (M2.12).
+    struct CallSlots { int result = 0; bool indirect = false; std::vector<int> args; };
+    std::unordered_map<std::uint32_t, CallSlots> callSlots_;
+    void noteCallSlots(const Call &c) {
+        if (!c.syntax().valid()) return;
+        CallSlots &k = callSlots_[c.syntax().v];
+        k.result = c.resultSlot();
+        k.indirect = c.resultIndirect();
+        k.args.clear();
+        for (std::size_t i = 0; i < c.args().size(); i++) k.args.push_back(c.argSlot(i));
+    }
     std::unordered_map<std::uint32_t, std::pair<std::string, std::string> > stringLiterals_;   // a string's label and text
     void noteDeclaredLocal(syntax::NodeId id, const std::string &name) {
         if (const Local *l = lookup_.findLocal(name)) declaredLocals_[id.v] = *l;
@@ -560,6 +571,8 @@ private:
     ExprPtr note(ExprPtr e, syntax::Kind kind, const std::string &text, std::size_t pos,
                  const std::vector<syntax::NodeId> &children = std::vector<syntax::NodeId>()) {
         if (e) e->setSyntax(syntaxTree_.add(kind, text, pos, children));
+        if (kind == syntax::Kind::Call)
+            if (const Call *c = dynamic_cast<const Call *>(e.get())) noteCallSlots(*c);
         return e;
     }
     // **How a class goes to a function, and the two ABIs part company here.** Itanium

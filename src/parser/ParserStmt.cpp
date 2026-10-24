@@ -333,6 +333,7 @@ StmtPtr Parser::declarationBody() {
                 returnsIndirectly(d.type, made->hasThis())) {
                 claimCallResult(*made, off);
                 if (nrvo) made->setResultIndirect(true);
+                noteCallSlots(*made);
                 inits.push_back(StmtPtr(make_owned<ExprStmt>(std::move(ci.args[0]))));
             } else if (ci.trivialCopy) {
                 ExprPtr target(Var::local(d.name, off));

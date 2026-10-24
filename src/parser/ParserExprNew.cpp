@@ -878,6 +878,7 @@ ExprPtr Parser::buildReturned(ExprPtr value, std::size_t pos, bool *named) {
             pendingTemporaryAt(c->resultSlot())) {
             claimCallResult(*c, sretSlot_);
             c->setResultIndirect(true);
+            noteCallSlots(*c);
             return value;
         }
     if (Unary *deref = dynamic_cast<Unary *>(value.get()))

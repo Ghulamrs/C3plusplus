@@ -179,6 +179,13 @@ so a list holding a brace stays the parser's, and so does one expanding a pack, 
 elements. At M2.12c: 878 of 1,986 adapted, all the same; `run.sh` under `-front=typed` 987 of 987 at -O0 and
 -O2. Recording a list's braces in the syntax tree is what would take the rest.
 
+**M2.12d: a plain struct by value.** Returned - `return e` with `e` of the function's class, its type set to
+the return's as the parser's `convert` does - passed as an argument and returned from a call, and `make().x`,
+a member of an rvalue, marked the xvalue [expr.ref]/4 makes it. The frame slots such a call uses, its result's
+and each struct argument's, are the parser's: `callSlots_` records them by call node, with the flag that says the
+result slot holds a pointer, and is brought up to date where an elision later moves a result. At M2.12d: 900 of
+1,986 adapted, all the same.
+
 **The parser's `Ast.h` is the oracle for the new path while both exist**: the new path is right where it
 produces what the old one produced. That is `tools/identical.sh` again, and the reason the old path is kept
 until the new one has matched it everywhere.
