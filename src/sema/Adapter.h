@@ -29,7 +29,8 @@ private:
     StmtPtr stmt(TypedId id);
     StmtPtr declaration(TypedId id);
     StmtPtr forStatement(TypedId id);
-    bool initialised(TypedId var) const;
+    std::size_t declaratorEnd(TypedId var, int *bounds) const;
+    void arrayInitialiser(TypedId var, const Local &l, std::vector<StmtPtr> &body);
     ExprPtr expr(TypedId id);
     ExprPtr name(TypedId id);
     ExprPtr member(TypedId id);

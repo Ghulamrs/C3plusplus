@@ -170,6 +170,15 @@ namespace, since argument-dependent lookup could add a candidate. At M2.12b: 874
 same; identical on and off 5,352 of 5,352; `run.sh` under `-front=typed` 987 of 987 at -O0 and -O2. Outside,
 commonest first: a body that is a region (399), a return of a class (68), an array with an initialiser (39).
 
+**M2.12c: an array of scalars with an initialiser.** One store per element through `*(a + i)` for each
+dimension, as `targetFor` builds it; a list read in order into the leaves, which is the parser's brace elision;
+what the list leaves zeroed (`0.0` as a double for a floating element, `0` as the enumeration for one, `0` as
+an int else, each converted to the element); a narrow string spelled out byte by byte, the bytes past it zero.
+**The syntax tree keeps no braces inside a list** - `{{1, 2}, {3}}` and `{1, 2, 3}` record the same children -
+so a list holding a brace stays the parser's, and so does one expanding a pack, which is one child for several
+elements. At M2.12c: 878 of 1,986 adapted, all the same; `run.sh` under `-front=typed` 987 of 987 at -O0 and
+-O2. Recording a list's braces in the syntax tree is what would take the rest.
+
 **The parser's `Ast.h` is the oracle for the new path while both exist**: the new path is right where it
 produces what the old one produced. That is `tools/identical.sh` again, and the reason the old path is kept
 until the new one has matched it everywhere.

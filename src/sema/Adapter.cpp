@@ -194,8 +194,7 @@ StmtPtr Adapter::declaration(TypedId id) {
             continue;
         }
         if (l->second.type->isArray()) {
-            // An array's bounds are its var's first parts, so what follows the brackets says whether it is initialised.
-            if (initialised(var)) outside("an array with an initialiser");
+            arrayInitialiser(var, l->second, body);
             continue;
         }
         if (v.count > 1) outside("a var of " + std::to_string(v.count) + " parts");
@@ -213,22 +212,108 @@ StmtPtr Adapter::declaration(TypedId id) {
     return placed(std::move(b), syn(id), n.syntax);
 }
 
-// Whether a declarator is followed by `=` or a brace, past its name and its array bounds.
-bool Adapter::initialised(TypedId var) const {
+// The token after a declarator's name and its array bounds; *bounds counts the bounds written, which are the var's
+// first parts.
+std::size_t Adapter::declaratorEnd(TypedId var, int *bounds) const {
     const std::size_t loc = syn(var).loc;
     std::size_t at = 0;
     while (at < p_.tokens_.size() && p_.tokens_[at].pos < loc) at++;
     if (at >= p_.tokens_.size() || p_.tokens_[at].pos != loc || p_.tokens_[at].kind != TokenKind::Ident)
         outside("a declarator not where it was");
     at++;
+    *bounds = 0;
     while (at < p_.tokens_.size() && p_.tokens_[at].is("[")) {
+        if (at + 1 < p_.tokens_.size() && !p_.tokens_[at + 1].is("]")) ++*bounds;
         int depth = 0;
         for (; at < p_.tokens_.size(); at++) {
             if (p_.tokens_[at].is("[")) depth++;
             else if (p_.tokens_[at].is("]") && --depth == 0) { at++; break; }
         }
     }
-    return at < p_.tokens_.size() && (p_.tokens_[at].is("=") || p_.tokens_[at].is("{") || p_.tokens_[at].is("("));
+    return at;
+}
+
+// Parser::emitInit for an array of scalars: one store per element through `*(a + i)`, a list read in order into
+// the leaves (so brace elision is the parser's), what it leaves zeroed, a string spelled out byte by byte. The
+// syntax tree keeps no braces inside a list, so a list holding one stays the parser's.
+void Adapter::arrayInitialiser(TypedId var, const Local &l, std::vector<StmtPtr> &body) {
+    const TypedTree &tree = typer_.tree();
+    int bounds = 0;
+    std::size_t at = declaratorEnd(var, &bounds);
+    const std::vector<Token> &tk = p_.tokens_;
+    if (at >= tk.size() || !(tk[at].is("=") || tk[at].is("{"))) {
+        if (at < tk.size() && tk[at].is("(")) outside("an array with an initialiser in parentheses");
+        return;
+    }
+    if (tk[at].is("=")) at++;
+    std::vector<TypedId> items;
+    for (std::uint32_t i = static_cast<std::uint32_t>(bounds); i < tree.node(var).count; i++) items.push_back(tree.child(var, i));
+    if (at < tk.size() && tk[at].is("{")) {
+        int depth = 0;
+        for (std::size_t k = at; k < tk.size(); k++) {
+            if (tk[k].is("...")) outside("an array's list expanding a pack");
+            if (tk[k].is("{")) { if (++depth > 1) outside("an array's list holding braces"); }
+            else if (tk[k].is("}") && --depth == 0) break;
+        }
+    }
+    const Type *leaf = l.type;
+    std::vector<long long> dims;
+    while (leaf->isArray()) { dims.push_back(leaf->length()); leaf = leaf->pointee(); }
+    if (!scalar(leaf)) outside("an array of '" + leaf->describe() + "' with an initialiser");
+    long long leaves = 1;
+    for (std::size_t d = 0; d < dims.size(); d++) leaves *= dims[d];
+    // The element at a flat index: `*(a + i)` for each dimension in turn, as targetFor builds it.
+    struct Target {
+        Adapter &a; const Local &l; const std::vector<long long> &dims;
+        ExprPtr operator()(long long flat) {
+            ExprPtr e = localVar(l, a.p_.types_);
+            long long stride = 1;
+            for (std::size_t d = 1; d < dims.size(); d++) stride *= dims[d];
+            for (std::size_t d = 0; d < dims.size(); d++) {
+                const Type *elem = e->type()->pointee();
+                ExprPtr sum = a.pointerAdd(a.decay(std::move(e)), typed(make_owned<Num>(flat / stride), a.p_.types_.intType()));
+                e = typed(make_owned<Unary>('*', std::move(sum)), elem);
+                flat %= stride;
+                if (d + 1 < dims.size()) stride /= dims[d + 1];
+            }
+            return e;
+        }
+    } target = { *this, l, dims };
+    std::vector<ExprPtr> values;
+    const Kind ek = leaf->unqualified()->kind();
+    const bool narrow = ek == Kind::Char || ek == Kind::SChar || ek == Kind::UChar;
+    if (items.size() == 1 && syn(items[0]).kind == syntax::Kind::StringLit && !leaf->isPointer()) {
+        if (!narrow || dims.size() != 1) outside("a string into an array of '" + leaf->describe() + "'");
+        const Type *st = tree.node(items[0]).type;
+        if (st == nullptr || !st->isArray() || st->pointee()->unqualified()->kind() != Kind::Char) outside("a string not narrow");
+        std::unordered_map<std::uint32_t, std::pair<std::string, std::string> >::const_iterator lit =
+            p_.stringLiterals_.find(tree.node(items[0]).syntax.v);
+        if (lit == p_.stringLiterals_.end()) outside("a string not recorded");
+        const std::string &text = lit->second.second;
+        for (long long i = 0; i < leaves; i++) {
+            const long long ch = i < static_cast<long long>(text.size())
+                                     ? static_cast<long long>(static_cast<unsigned char>(text[static_cast<std::size_t>(i)])) : 0;
+            values.push_back(typed(make_owned<Num>(ch), p_.types_.intType()));
+        }
+    } else {
+        if (static_cast<long long>(items.size()) > leaves) outside("an array's list longer than it");
+        for (std::size_t i = 0; i < items.size(); i++) {
+            if (syn(items[i]).kind == syntax::Kind::StringLit && !leaf->isPointer()) outside("a string in an array's list");
+            values.push_back(decay(expr(items[i])));
+        }
+        for (long long i = static_cast<long long>(items.size()); i < leaves; i++) {
+            const Type *z = leaf->isFloating() ? p_.types_.doubleType()
+                          : leaf->unqualified()->isEnumeration() ? leaf->unqualified() : p_.types_.intType();
+            values.push_back(leaf->isFloating() ? typed(make_owned<Num>(static_cast<long double>(0)), z)
+                                                : typed(make_owned<Num>(0LL), z));
+        }
+    }
+    for (long long i = 0; i < leaves; i++) {
+        ExprPtr to = target(i);
+        const Type *t = to->type();
+        ExprPtr store = typed(make_owned<Assign>(std::move(to), convert(std::move(values[static_cast<std::size_t>(i)]), t)), t);
+        body.push_back(make_owned<ExprStmt>(std::move(store)));
+    }
 }
 
 // A `for`'s parts are told apart by where they stand against its two semicolons, any of the first three being absent.

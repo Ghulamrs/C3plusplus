@@ -10709,6 +10709,14 @@ B::f;` in D resolved to B's member, whose `this` wants D's pointer converted, wh
 member whose owner is not the object's class stays the parser's. A function returning a reference keeps its
 written return in `declaredReturns_`, by function node, since the definition's own type has lost the `&`.
 
+## M2.12c: an array of scalars with an initialiser, 2026-10-24
+
+**878 of 1,986 functions take the adapter's body**, all the same; doc-cxx3/M2-PLAN.md says what the slice is and
+why a list holding braces stays outside - the syntax tree flattens a braced list, so `{{1, 2}, {3}}` cannot be
+told from `{1, 2, 3}`. **Found and not mended:** `unsigned char u[] = {"xy"};` is refused ("a pointer is not a
+number here") where `char c[] = {"ab"};` and `unsigned char u[] = "xy";` compile; [dcl.init.string]/1 takes the
+braced form for any narrow character array, and clang does.
+
 ## Build
 
 ```
