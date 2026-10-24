@@ -14,6 +14,8 @@ cd "$(dirname "$0")/.."
 CXX1=${1:-./cxx3.exe}
 OUT=${2:-/tmp/cxx1-determinism}
 TARGETS="x86_64-linux x86_64-windows arm64-darwin tms6747"
+# No C6000 work on the Mac: tms6747 is the boxes'.
+[ "$(uname -s)" = Darwin ] && TARGETS="x86_64-linux x86_64-windows arm64-darwin"
 LEVELS="-O0 -O2"
 rm -rf "$OUT"; mkdir -p "$OUT/a" "$OUT/b"
 

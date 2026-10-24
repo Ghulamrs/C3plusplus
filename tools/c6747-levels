@@ -7,9 +7,9 @@
 # Eight builds of each program run at once there (tools/c6747/bench-levels.cmd, each run
 # capped at 30 minutes): cl6x 7.4.4 (CCS 5.5) and cl6x 8.2.2 (CCS 7.4) at -O1, -O2 and
 # -O2 -ms3, each with its own linker and rts6740_elf_eh.lib; and cpp11 -O1, -O2 and -Os, compiled
-# here, assembled by ASM6x and linked by 7.4.4 - and, where LNK6x is built beside this tree and
-# the box's 7.4.4 library is in $TILIB, the same objects linked by LNK6x here, `cpp11-O1-lnk6x`
-# and `cpp11-O2-lnk6x`, so cpp11 + ASM6x + LNK6x is timed as one toolchain). The table is
+# on the box too (the C6000 does not run on the Mac), assembled by ASM6x and linked by 7.4.4 - and the
+# same objects linked by LNK6x there, `cpp11-O1-lnk6x` and `cpp11-O2-lnk6x`, so cpp11 + ASM6x + LNK6x
+# is timed as one toolchain; the three are the box's, built from source in ti6x). The table is
 # cycle.Total per build, cpp11's ratio to each TI compiler at the same level, the code bytes of
 # each program's own object (its executable sections, the library excluded) and each image's
 # bytes. A program passes a build when its stdout is its .expected. Everything lands in
@@ -17,17 +17,15 @@
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WINDOWS=${WINDOWS_BOX:-windows}
-CPP11=${CPP11:-$ROOT/cxx3.exe}
-ASM6X=${ASM6X:-$ROOT/../../TI/ASM6x/build/asm6x.exe}
+CXX3_WIN=${CXX3_WIN:-'C:\Users\GRA\work\verify\cxx3-msvc.exe'}
+ASM6X_WIN=${ASM6X_WIN:-'C:\Users\GRA\work\ti6x\ASM6x\build\ASM6x.exe'}
+LNK6X_WIN=${LNK6X_WIN:-'C:\Users\GRA\work\ti6x\LNK6x\build\LNK6x.exe'}
+TILIB_WIN=${TILIB_WIN:-'C:\ti\c6747-lib'}
 # COMPRESS=1 (default): cpp11's objects --compress, cl6x its own default, compressed; COMPRESS=0:
 # both plain, ASM6x and cl6x --no_compress - the two sides always built alike
 COMPRESS=${COMPRESS:-1}
 if [ "$COMPRESS" = 1 ]; then ASM6X_FLAGS=--compress; TI_COMPRESS=; else ASM6X_FLAGS=--no_compress; TI_COMPRESS=--no_compress; fi
-[ -x "$ASM6X" ] || ASM6X=$HOME/Developer/Claude/TI/ASM6x/build/asm6x.exe   # from a worktree under .claude/
-LNK6X=${LNK6X:-$ROOT/../../TI/LNK6x/build/lnk6x.exe}
-[ -x "$LNK6X" ] || LNK6X=$HOME/Developer/Claude/TI/LNK6x/build/lnk6x.exe
 MAP=${MAP:-C6747.cmd}
-TILIB=${TILIB:-$HOME/c6747-lib}   # a copy of the box's C:\ti\c6747-lib: rts6740_elf_eh.lib from 7.4.4's mklib
 STAMP=${STAMP:-$(date +%m%d-%H%M%S)}
 WREMOTE="C:\\Users\\GRA\\work\\bench-levels\\$STAMP"
 DIR=${1:-$ROOT/tools/c6747/bench}
@@ -36,9 +34,10 @@ T0=$(date +%s)
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/bl"
-for f in runca.js c6747ca-windows.ccxml par-one.cmd bench-levels.cmd start-detached.ps1; do cp "$ROOT/tools/c6747/$f" "$WORK/bl/"; done
+for f in runca.js c6747ca-windows.ccxml par-one.cmd bench-levels.cmd start-detached.ps1 cpp11-build.cmd; do cp "$ROOT/tools/c6747/$f" "$WORK/bl/"; done
 cp "$ROOT/tools/c6747/$MAP" "$WORK/bl/C6747.cmd"   # MAP=C6747-ddr.cmd for a program past SHRAM's 128 KB
 NAMES=""
+SRCS=""
 for p in "$DIR"/*.c "$DIR"/*.cpp; do
     [ -f "$p" ] || continue
     case "$(basename "$p")" in *" "[0-9]*) continue;; esac
@@ -46,18 +45,7 @@ for p in "$DIR"/*.c "$DIR"/*.cpp; do
     cp "$p" "$WORK/bl/"
     [ -f "$DIR/$n.expected" ] && cp "$DIR/$n.expected" "$WORK/bl/"
     NAMES="$NAMES $n"
-    cp "$p" "$WORK/$n.cpp"
-    for L in O1 O2 Os; do
-        if "$CPP11" -arch tms6747 -nologo -$L -S "$WORK/$n.cpp" -o "$WORK/$n.$L.s" > "$WORK/$n.$L.log" 2>&1 &&
-           "$ASM6X" $ASM6X_FLAGS "$WORK/$n.$L.s" -o "$WORK/bl/$n.cpp11-$L.obj" >> "$WORK/$n.$L.log" 2>&1; then :
-        else echo "c6747-levels: cpp11 -$L did not build $n:"; sed 's/^/      /' "$WORK/$n.$L.log" | head -4; continue; fi
-        # LNK6x's image of the same object, made here from the command file and library TI's linker gets.
-        [ -x "$LNK6X" ] && [ -f "$TILIB/rts6740_elf_eh.lib" ] || continue
-        if "$LNK6X" --cgt=7.4.4 -mv6740 --abi=eabi "$WORK/bl/$n.cpp11-$L.obj" --heap_size=0x800 --stack_size=0x800 -i"$TILIB" \
-              --rom_model "$ROOT/tools/c6747/$MAP" -lrts6740_elf_eh.lib -m "$WORK/bl/$n.cpp11-$L-lnk6x.map" \
-              -o "$WORK/bl/$n.cpp11-$L-lnk6x.out" > "$WORK/$n.$L.lnk6x.log" 2>&1; then :
-        else echo "c6747-levels: LNK6x did not link $n -$L:"; sed 's/^/      /' "$WORK/$n.$L.lnk6x.log" | head -4; fi
-    done
+    SRCS="$SRCS $(basename "$p")"
 done
 if [ "${RESUME:-0}" != 1 ]; then
 COPYFILE_DISABLE=1 tar -C "$WORK" --no-xattrs -czf "$WORK/bl.tgz" bl
@@ -70,8 +58,18 @@ printf 'c6747-levels: running in %s\n' "$WREMOTE"
 boot() { ssh -o BatchMode=yes -o ConnectTimeout=10 "$WINDOWS" \
     'powershell -NoProfile -Command "(Get-CimInstance Win32_OperatingSystem).LastBootUpTime.Ticks"' 2>/dev/null | tr -d '\r'; }
 launch() {   # $1: RESUME, 0 or 1
-    printf '@echo off\r\nset TI_COMPRESS=%s\r\nset RESUME=%s\r\ncall "%s\\bench-levels.cmd" > "%s\\windows.log" 2>&1\r\n' \
-        "$TI_COMPRESS" "$1" "$WREMOTE" "$WREMOTE" > "$WORK/launch.cmd"
+    {
+        printf '@echo off\r\nset TI_COMPRESS=%s\r\nset RESUME=%s\r\n' "$TI_COMPRESS" "$1"
+        # cpp11's builds first, on this box: compiled, assembled, and linked by LNK6x as TI's linker is given them.
+        printf 'set CXX3=%s\r\nset ASM6X=%s\r\nset ASM6X_FLAGS=%s\r\nset LNK6X=%s\r\nset TILIB=%s\r\nset MAP=%s\\C6747.cmd\r\n' \
+            "$CXX3_WIN" "$ASM6X_WIN" "$ASM6X_FLAGS" "$LNK6X_WIN" "$TILIB_WIN" "$WREMOTE"
+        for L in O1 O2 Os; do
+            printf 'call "%s\\cpp11-build.cmd" "%s" -%s cpp11-%s' "$WREMOTE" "$WREMOTE" "$L" "$L"
+            for f in $SRCS; do printf ' "%s\\%s"' "$WREMOTE" "$f"; done
+            printf ' > "%s\\cpp11-%s.log" 2>&1\r\n' "$WREMOTE" "$L"
+        done
+        printf 'call "%s\\bench-levels.cmd" > "%s\\windows.log" 2>&1\r\n' "$WREMOTE" "$WREMOTE"
+    } > "$WORK/launch.cmd"
     scp -q -o BatchMode=yes "$WORK/launch.cmd" "$WINDOWS:C:/Users/GRA/work/bench-levels/$STAMP/launch.cmd" &&
     ssh -o BatchMode=yes "$WINDOWS" "powershell -NoProfile -ExecutionPolicy Bypass -File $WREMOTE\\start-detached.ps1 $WREMOTE\\launch.cmd" > /dev/null 2>&1
 }
@@ -92,6 +90,10 @@ mkdir -p "$WORK/back"
 scp -q -r -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/bench-levels/$STAMP/*.result" "$WINDOWS:C:/Users/GRA/work/bench-levels/$STAMP/*.stdout" "$WORK/back/" 2>/dev/null
 scp -q -r -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/bench-levels/$STAMP/obj" "$WORK/back/" 2>/dev/null
 mkdir -p "$WORK/back/img"
+# cpp11's objects and LNK6x's images, made on the box, for the size table.
+scp -q -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/bench-levels/$STAMP/*.cpp11-*.obj" "$WINDOWS:C:/Users/GRA/work/bench-levels/$STAMP/*-lnk6x.out" "$WORK/bl/" 2>/dev/null
+scp -q -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/bench-levels/$STAMP/cpp11-*.log" "$WORK/" 2>/dev/null
+grep -h "did not" "$WORK"/cpp11-*.log 2>/dev/null | tr -d '\r' | sed 's/^/c6747-levels: /'
 scp -q -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/bench-levels/$STAMP/*.out" "$WINDOWS:C:/Users/GRA/work/bench-levels/$STAMP/*.map" "$WORK/back/img/" 2>/dev/null
 [ -n "${KEEP:-}" ] && mkdir -p "$KEEP" && cp -R "$WORK/back" "$WORK/bl" "$KEEP/"
 

@@ -19,7 +19,7 @@
 # simulators run the same compiler on the same model, so their cycle counts must
 # agree too, and a difference is a failure.
 #
-# And cpp11 as a fourth and fifth column: cpp11 -O2 and asm6x here, to a TI object,
+# And cpp11 as a fourth and fifth column: cpp11 -O2 and asm6x on the Windows box, to a TI object,
 # linked on both simulator boxes exactly as cl6x's -O2 build is - the same linker,
 # C6747.cmd, heap, stack and rts6740_elf_eh.lib - so TI's simulator times both.
 # The ratio printed is cpp11's cycles over cl6x's: the gap -O2 has to close.
@@ -55,39 +55,35 @@ for a in "$@"; do
 done
 NAMES=$(for f in $FILES; do echo "${f%.*}"; done)
 
-# cpp11's own build, here on the Mac: cpp11 -O2 to assembly, asm6x to a TI object,
-# shipped as programs/<prog>.cpp11.obj for both simulator boxes to link and run.
-# cpp11 compiles C++, so each program goes in under a .cpp name.
-CPP11=${CPP11:-$ROOT/cxx3.exe}
-ASM6X=${ASM6X:-$ROOT/../../TI/ASM6x/build/asm6x.exe}
+# cpp11's own build, **on the Windows box** - the C6000 does not run on the Mac: cpp11 -O2 to assembly and asm6x
+# to a TI object there (tools/c6747/cpp11-build.cmd), with the box's cxx3 (CXX3_WIN, the one verify-three's Windows
+# leg builds) and its ASM6x (ASM6X_WIN, built from source in C:\Users\GRA\work\ti6x). The objects come back
+# only to travel on to the Linux box, so both simulators link the same one.
+CXX3_WIN=${CXX3_WIN:-'C:\Users\GRA\work\verify\cxx3-msvc.exe'}
+ASM6X_WIN=${ASM6X_WIN:-'C:\Users\GRA\work\ti6x\ASM6x\build\ASM6x.exe'}
 # COMPRESS=1 (default): cpp11's objects --compress, cl6x its own default, compressed; COMPRESS=0:
 # both plain, ASM6x and cl6x --no_compress - the two sides always built alike
 COMPRESS=${COMPRESS:-1}
 if [ "$COMPRESS" = 1 ]; then ASM6X_FLAGS=--compress; TI_COMPRESS=; else ASM6X_FLAGS=--no_compress; TI_COMPRESS=--no_compress; fi
 CPP11_FLAGS=${CPP11_FLAGS:--O2}
 mkdir -p "$WORK/cpp11"
-for f in $FILES; do
-    n=${f%.*}
-    cp "$WORK/c6747/programs/$f" "$WORK/cpp11/$n.cpp"
-    if "$CPP11" -arch tms6747 -nologo $CPP11_FLAGS -S "$WORK/cpp11/$n.cpp" -o "$WORK/cpp11/$n.s" \
-           > "$WORK/cpp11/$n.log" 2>&1 &&
-       "$ASM6X" $ASM6X_FLAGS "$WORK/cpp11/$n.s" -o "$WORK/c6747/programs/$n.cpp11.obj" >> "$WORK/cpp11/$n.log" 2>&1; then :
-    else
-        echo "c6747-three: cpp11 did not build $n:"; sed 's/^/      /' "$WORK/cpp11/$n.log" | head -4
-    fi
-    # For the size table: cpp11 -O1, the level that optimises for size. Not shipped.
-    "$CPP11" -arch tms6747 -nologo -O1 -S "$WORK/cpp11/$n.cpp" -o "$WORK/cpp11/$n.O1.s" > /dev/null 2>&1 &&
-        "$ASM6X" $ASM6X_FLAGS "$WORK/cpp11/$n.O1.s" -o "$WORK/cpp11/$n.O1.obj" > /dev/null 2>&1
-done
 COPYFILE_DISABLE=1 tar -C "$WORK" --no-xattrs -czf "$WORK/c6747.tgz" c6747
 WPROGS=$(for f in $FILES; do printf '%s\\programs\\%s ' "$WREMOTE\\c6747" "$f"; done)
 LPROGS=$(for f in $FILES; do printf '%s/c6747/programs/%s ' "$LREMOTE" "$f"; done)
-
-# The Windows machine: one unpack, then its two boxes at once.
 (
     scp -q -o BatchMode=yes "$WORK/c6747.tgz" "$WINDOWS:C:/Users/GRA/work/c6747.tgz" &&
     ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $WREMOTE 2>nul & mkdir $WREMOTE && tar -C $WREMOTE -xzf C:\\Users\\GRA\\work\\c6747.tgz" >/dev/null
 ) > "$WORK/wship.log" 2>&1 || { echo "c6747-three: cannot ship to $WINDOWS"; cat "$WORK/wship.log"; exit 1; }
+ssh -o BatchMode=yes "$WINDOWS" "set CXX3=$CXX3_WIN&& set ASM6X=$ASM6X_WIN&& set ASM6X_FLAGS=$ASM6X_FLAGS&& \
+    $WREMOTE\\c6747\\cpp11-build.cmd $WREMOTE\\c6747\\cpp11 $CPP11_FLAGS cpp11 $WPROGS & \
+    $WREMOTE\\c6747\\cpp11-build.cmd $WREMOTE\\c6747\\o1 -O1 O1 $WPROGS & \
+    copy /y $WREMOTE\\c6747\\cpp11\\*.cpp11.obj $WREMOTE\\c6747\\programs\\ >nul" > "$WORK/cpp11/build.log" 2>&1
+grep -i "did not" "$WORK/cpp11/build.log" | sed 's/^/c6747-three: /' | tr -d '\r'
+scp -q -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/c6747-run/c6747/cpp11/*.cpp11.obj" "$WORK/c6747/programs/" 2>/dev/null
+scp -q -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/c6747-run/c6747/o1/*.O1.obj" "$WORK/cpp11/" 2>/dev/null
+COPYFILE_DISABLE=1 tar -C "$WORK" --no-xattrs -czf "$WORK/c6747.tgz" c6747   # again, with the objects, for Linux
+
+# The Windows machine: unpacked and built above, its two boxes at once.
 ssh -o BatchMode=yes "$WINDOWS" "set TI_COMPRESS=$TI_COMPRESS&& $WREMOTE\\c6747\\vm-ccs74.cmd $WPROGS" > "$WORK/windows-ccs74-vm.log" 2>&1 &
 P1=$!
 ssh -o BatchMode=yes "$WINDOWS" "set TI_COMPRESS=$TI_COMPRESS&& $WREMOTE\\c6747\\sim-ccs55.cmd $WPROGS" > "$WORK/windows-ccs55.log" 2>&1 &

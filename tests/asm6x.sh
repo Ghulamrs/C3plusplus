@@ -11,6 +11,9 @@
 #   ASM6X=<asm6x> sh tests/asm6x.sh        the assembler: $ASM6X, else ASM6x's
 #                                          build beside this tree, else one on PATH
 set -u
+# **No C6000 work on the Mac** - it is a delicate machine with its own work to do. This runs on the Linux box,
+# whose leg of tools/verify-three runs it, and on the Windows box.
+if [ "$(uname -s)" = Darwin ]; then echo "asm6x.sh: the C6000 runs on the Windows and Linux boxes, not on the Mac"; exit 2; fi
 cd "$(dirname "$0")/.."
 CXX1="${CXX1:-./cxx3.exe}"
 ASM6X="${ASM6X:-}"

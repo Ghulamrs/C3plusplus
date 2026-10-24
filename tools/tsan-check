@@ -27,7 +27,9 @@ tail -1 "$T/run.log"
 
 # 2. the pool over every case, for each target the tree emits
 cases=$(for c in tests/cases/*.cpp; do b=$(basename "$c" .cpp); [ -f "tests/cases/$b.error" ] || echo "$c"; done | grep -v '\.part\.cpp$')
-for target in x86_64-linux x86_64-windows arm64-darwin tms6747; do
+TSAN_TARGETS="x86_64-linux x86_64-windows arm64-darwin tms6747"
+[ "$(uname -s)" = Darwin ] && TSAN_TARGETS="x86_64-linux x86_64-windows arm64-darwin"   # the C6000 is the boxes'
+for target in $TSAN_TARGETS; do
     mkdir -p "$T/all/$target"
     ok=0; bad=0
     for c in $cases; do

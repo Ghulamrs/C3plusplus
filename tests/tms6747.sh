@@ -18,6 +18,9 @@
 # what sees an assembler's encoding and TI's own runtime (C1, C2, D2 hid from the emulator).
 # SIM=0 leaves it out, said aloud; tests/tms6747-sim.txt names the cases it cannot run, why beside.
 set -u
+# **No C6000 work on the Mac** - it is a delicate machine with its own work to do. This runs on the Linux box,
+# whose leg of tools/verify-three runs it, and on the Windows box.
+if [ "$(uname -s)" = Darwin ]; then echo "tms6747.sh: the C6000 runs on the Windows and Linux boxes, not on the Mac"; exit 2; fi
 
 cd "$(dirname "$0")/.."
 CXX1="${CXX1:-./cxx3.exe}"

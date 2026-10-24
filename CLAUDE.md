@@ -10634,6 +10634,28 @@ clang names `_ZdlPvRKSt9nothrow_t` for it and cxx1 writes it for no form of
 terminate scope calling `abort`, which is correct and three instructions clang
 never emits.
 
+## The C6000 runs on the boxes, never on the Mac, 2026-10-23
+
+**Every C6000 build, run and check happens on the Windows box or the Linux box**, by the user's rule: the Mac is
+a delicate machine with its own work to do, and both boxes have CCS 7.4/5.5 and the simulators. The Mac edits,
+ships trees and reads results.
+
+- **Mac-run scripts leave tms6747 out on macOS and say so**: `tests/emit.sh` (whose `--o2` refuses there),
+  `run.sh`'s two `-g` checks, `tools/determinism.sh`, `tools/declines`, `tools/tsan-check`; `tests/tms6747.sh`
+  and `tests/asm6x.sh` refuse to start.
+- **Each box builds the C6000 tools from source**: `tools/ti6x-build.sh` into `~/ti6x` on the Linux box, and
+  `tools/windows/ti6x-build.cmd` into `C:\Users\GRA\work\ti6x` on the Windows box - ASM6x, LNK6x, VM6747,
+  SIM6747, then RTS6x's libraries with them. VM6747's own `msvc\build.cmd` lists its sources by hand and misses
+  the debugger's, so the box builds every tool from `src\*.cpp`.
+- **The checks**: verify-three's Linux leg runs `tests/tms6747.sh` at -O0 and -O2 and `tests/asm6x.sh` with those
+  tools; `tools/c6747/release-check` ships the tree and runs `tools/c6747/release-check-box.py` on the Windows
+  box (its sample in `release-check-sample.txt`, VM6747's answer beside TI's simulator); `tools/c6747-three`,
+  `c6747-levels` and `c6747-compilerpp` build cpp11's objects on the Windows box with `tools/c6747/cpp11-build.cmd`
+  (the compilerpp reference is g++'s, on the Linux box). `tools/windows/compare-cases.py` compares a
+  `run-cases.cmd` output on the Windows box itself.
+- **Not moved yet**: RTS6x's referee, which rebuilds both tms6747 suites - c90's too - where it starts; verify-three
+  no longer runs it from the Mac.
+
 ## Build
 
 ```

@@ -112,7 +112,9 @@ else
     echo "FAIL a quoted pattern with -S: wanted a.s and b.s and nothing on stdout"; fail=$((fail + 1))
 fi
 
-# -g with -O is refused for tms6747 by the driver, and -g alone is not (docs/EXCLUSIONS.md).
+# -g with -O is refused for tms6747 by the driver, and -g alone is not (docs/EXCLUSIONS.md) - on the boxes: no C6000
+# work runs on the Mac.
+if [ "$(uname -s)" != Darwin ]; then
 dbg=tests/cases/tms6747-debug-optimized.cpp
 if ! cxx1 -nologo -S -arch tms6747 -g -O2 "$dbg" -o "$OUT/dbg-O2.s" 2>"$OUT/dbg-O2.err" &&
    grep -qF -- "-g with -O is not supported yet for tms6747" "$OUT/dbg-O2.err" &&
@@ -131,6 +133,7 @@ if cxx1 -nologo -S -arch tms6747 -g -O0 "$dbg" -o "$OUT/dbg-ref-g.s" 2>/dev/null
     pass=$((pass + 1))
 else
     echo "FAIL tms6747 -g: wanted $dbg compiled with -g, and its code the same as without"; fail=$((fail + 1))
+fi
 fi
 
 # The host's -g too: a closure holding a reference to a 300-byte object wrote its size in one byte (M1).

@@ -10,7 +10,7 @@
 #   windows-ccs55   CCS 5.5's cl6x 7.4.4 -O2, on the Windows box
 #   windows-ccs74   CCS 7.4's cl6x 8.2.2 -O2, on the Windows box, run on CCS 5.5's simulator
 #   linux-ccs55     CCS 5.5's cl6x 7.4.4 -O2, on the Linux box
-#   windows-cpp11   cpp11 -O2 and asm6x on the Mac, linked by 7.4.4 on the Windows box
+#   windows-cpp11   cpp11 -O2 and asm6x on the Windows box, linked by 7.4.4 there
 #   linux-cpp11     the same object, linked and run on the Linux box
 # A build passes when every file's fingerprint is clang's. Printed: cycles, and the
 # harness's own code bytes - the .text its object contributes, read from the link map.
@@ -21,8 +21,10 @@ KEY=${CXX1_LINUX_KEY:-$HOME/Documents/Claude/myMorningWalk.pem}
 LINUX=${CXX1_LINUX:-ec2-user@52.202.164.123}
 WINDOWS=${WINDOWS_BOX:-windows}
 COMPILERPP=${COMPILERPP:-$ROOT/../Compiler++}
-CPP11=${CPP11:-$ROOT/cxx3.exe}
-ASM6X=${ASM6X:-$ROOT/../../TI/ASM6x/build/asm6x.exe}
+# **The C6000 does not run on the Mac**: cpp11's object is built on the Windows box by its cxx3 and the ASM6x built
+# there from source, and the clang reference is g++'s, on the Linux box. The Mac writes the harness and carries files.
+CXX3_WIN=${CXX3_WIN:-'C:\Users\GRA\work\verify\cxx3-msvc.exe'}
+ASM6X_WIN=${ASM6X_WIN:-'C:\Users\GRA\work\ti6x\ASM6x\build\ASM6x.exe'}
 # COMPRESS=1 (default): cpp11's objects --compress, cl6x its own default, compressed; COMPRESS=0:
 # both plain, ASM6x and cl6x --no_compress - the two sides always built alike
 COMPRESS=${COMPRESS:-1}
@@ -34,19 +36,24 @@ H=$WORK/cpph
 python3 "$ROOT/tools/c6747/compilerpp/make-harness.py" "$COMPILERPP" "$H" \
     --workload "${WORKLOAD:-$ROOT/tools/c6747/compilerpp/workload}" --rounds "$ROUNDS" > /dev/null || exit 1
 
-# The reference: the same harness built by clang, here.
-clang++ -std=c++98 -O2 -w -o "$WORK/ref" "$H/harness.cpp" && "$WORK/ref" > "$WORK/ref.txt" || exit 1
-# cpp11's object, here.
-"$CPP11" -arch tms6747 -nologo -O2 -S "$H/harness.cpp" -o "$WORK/h.s" &&
-    "$ASM6X" $ASM6X_FLAGS "$WORK/h.s" -o "$H/h.cpp11.obj" 2> "$WORK/asm6x.log" ||
-    { echo "c6747-compilerpp: cpp11 did not build the harness"; tail -5 "$WORK/asm6x.log"; exit 1; }
 cp "$ROOT"/tools/c6747/C6747-ddr.cmd "$ROOT"/tools/c6747/runca.js "$ROOT"/tools/c6747/prof.js "$ROOT"/tools/c6747/*.ccxml \
+   "$ROOT"/tools/c6747/cpp11-build.cmd \
    "$ROOT"/tools/c6747/compilerpp/run-windows.cmd "$ROOT"/tools/c6747/compilerpp/run-linux.sh "$H/"
 ( cd "$WORK" && COPYFILE_DISABLE=1 tar --no-xattrs -czf cpph.tgz cpph )
+WH='C:\Users\GRA\work\cpph-run\cpph'
+# cpp11's object, on the Windows box; back here only to travel on to the Linux box with the harness.
+scp -q -o BatchMode=yes "$WORK/cpph.tgz" "$WINDOWS:C:/Users/GRA/work/cpph.tgz" &&
+ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q C:\\Users\\GRA\\work\\cpph-run 2>nul & mkdir C:\\Users\\GRA\\work\\cpph-run && tar -C C:\\Users\\GRA\\work\\cpph-run -xzf C:\\Users\\GRA\\work\\cpph.tgz" > /dev/null &&
+ssh -o BatchMode=yes "$WINDOWS" "set CXX3=$CXX3_WIN&& set ASM6X=$ASM6X_WIN&& set ASM6X_FLAGS=$ASM6X_FLAGS&& $WH\\cpp11-build.cmd $WH \"-O2 -I$WH\" cpp11 $WH\\harness.cpp && move /y $WH\\harness.cpp11.obj $WH\\h.cpp11.obj" > "$WORK/cpp11.log" 2>&1 &&
+scp -q -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/cpph-run/cpph/h.cpp11.obj" "$H/" ||
+    { echo "c6747-compilerpp: cpp11 did not build the harness on $WINDOWS"; tr -d '\r' < "$WORK/cpp11.log" | tail -5; exit 1; }
+( cd "$WORK" && COPYFILE_DISABLE=1 tar --no-xattrs -czf cpph.tgz cpph )
+# The reference: the same harness built by g++, on the Linux box.
+scp -q -i "$KEY" -o BatchMode=yes "$H/harness.cpp" "$H/compilerpp_amalgamated.cpp" "$LINUX:" &&
+ssh -i "$KEY" -o BatchMode=yes "$LINUX" "mkdir -p cpph-ref && mv harness.cpp compilerpp_amalgamated.cpp cpph-ref/ && cd cpph-ref && g++ -std=c++98 -O2 -w -o ref harness.cpp && ./ref" > "$WORK/ref.txt" 2>/dev/null ||
+    { echo "c6747-compilerpp: the g++ reference did not build or run on $LINUX"; exit 1; }
 
 (
-    scp -q -o BatchMode=yes "$WORK/cpph.tgz" "$WINDOWS:C:/Users/GRA/work/cpph.tgz" &&
-    ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q C:\\Users\\GRA\\work\\cpph-run 2>nul & mkdir C:\\Users\\GRA\\work\\cpph-run && tar -C C:\\Users\\GRA\\work\\cpph-run -xzf C:\\Users\\GRA\\work\\cpph.tgz" > /dev/null &&
     ssh -o BatchMode=yes -o ServerAliveInterval=30 "$WINDOWS" "set TI_COMPRESS=$TI_COMPRESS&& C:\\Users\\GRA\\work\\cpph-run\\cpph\\run-windows.cmd" &&
     mkdir -p "$WORK/win" &&
     scp -q -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/cpph-run/cpph/*.result" "$WINDOWS:C:/Users/GRA/work/cpph-run/cpph/*.cio" \
@@ -73,7 +80,7 @@ codebytes() {
     tr -d '\r' < "$1" | grep " $2 (\.text" | awk '{ print $2 }' |
         while read -r x; do printf '%d\n' "0x$x"; done | awk '{ s += $1 } END { print s + 0 }'
 }
-printf 'rounds %s, reference: clang on the Mac\n' "$ROUNDS"
+printf 'rounds %s, reference: g++ on the Linux box\n' "$ROUNDS"
 printf '%-15s %-8s %14s %10s %-26s %s\n' build built cycles code split fingerprints
 pass=0; fail=0; base=""
 for spec in win/ccs55:windows-ccs55:harness.obj win/ccs74:windows-ccs74:harness.obj lin/ccs55:linux-ccs55:harness.obj \

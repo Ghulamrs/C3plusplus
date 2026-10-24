@@ -11,6 +11,8 @@ CXX1="${CXX1:-./cxx3.exe}"
 LEVEL="${1:--O2}"
 CSV="${2:-}"
 TARGETS="x86_64-linux x86_64-windows arm64-darwin tms6747"
+# No C6000 work on the Mac: tms6747 is the boxes'.
+[ "$(uname -s)" = Darwin ] && TARGETS="x86_64-linux x86_64-windows arm64-darwin"
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 
 for t in $TARGETS; do

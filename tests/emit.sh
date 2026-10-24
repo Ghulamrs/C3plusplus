@@ -28,6 +28,12 @@ LEVEL=
 TARGETS="x86_64-linux x86_64-windows arm64-darwin tms6747"
 # The C6000's optimizer is a text pass the -O0 golden never reaches (review D6).
 if [ "${EMIT_O2:-}" = 1 ]; then OUT=tests/out-emit-O2; GOLD=tests/out-emit-O2.golden; LEVEL=-O2; TARGETS=tms6747; fi
+# **No C6000 work on the Mac**: tms6747 is emitted on the Linux box, whose leg of tools/verify-three runs this.
+if [ "$(uname -s)" = Darwin ]; then
+    if [ "${EMIT_O2:-}" = 1 ]; then echo "emit.sh --o2: the C6000 runs on the Windows and Linux boxes, not on the Mac"; exit 2; fi
+    TARGETS="x86_64-linux x86_64-windows arm64-darwin"
+    echo "emit.sh: tms6747 left out here - the C6000 runs on the Windows and Linux boxes, not on the Mac"
+fi
 
 # Refused by name, like everything else here: a mistyped flag that ran the
 # ordinary suite would look like a recording that quietly did not happen.
