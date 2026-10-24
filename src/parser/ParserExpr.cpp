@@ -3156,6 +3156,8 @@ ExprPtr Parser::noteKeywordForm(syntax::Kind kind, KeywordForm f) {
     f.e->setSyntax(syntaxTree_.add(kind, text, pos, parts));
     if (kind == syntax::Kind::Throw && !pendingThrow_.temp.empty()) throwFacts_[f.e->syntax().v] = pendingThrow_;
     if (kind == syntax::Kind::Throw) pendingThrow_ = ThrowFacts();
+    if (kind == syntax::Kind::Lambda && pendingLambda_.simple) lambdaFacts_[f.e->syntax().v] = pendingLambda_;
+    if (kind == syntax::Kind::Lambda) pendingLambda_ = LambdaFacts();
     if (kind == syntax::Kind::Sizeof)
         if (const Num *folded = dynamic_cast<const Num *>(f.e.get()))
             keywordValues_[f.e->syntax().v] = std::make_pair(folded->value(), folded->type());

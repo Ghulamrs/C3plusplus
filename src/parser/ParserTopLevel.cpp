@@ -1505,6 +1505,7 @@ void Parser::topLevel(Program &program) {
 
     // A function try block is a body that is one `try` statement, [dcl.fct.def.general]/1.
     const bool functionTry = peek().is("try");
+    bool noexceptWrapped = false;
 
     atFunctionBody_ = true;
     // [except.spec]/9 needs this inside the body, and the declarator read it a
@@ -1532,6 +1533,7 @@ void Parser::topLevel(Program &program) {
         // did not throw itself.
         if (inNoexceptFunction_ && mayThrow_ > 0 && !functionHasPads_ &&
             !target_.microsoftNames()) {
+            noexceptWrapped = true;
             const Type *voidPtr = types_.pointerTo(types_.get(Kind::Void));
             const int pointerSlot = allocateFrameSlot(voidPtr);
             const int selectorSlot = allocateFrameSlot(types_.intType());
@@ -1867,7 +1869,7 @@ void Parser::topLevel(Program &program) {
         definedSymbol = lookup_.lookupSignature(absoluteName.empty() ? d.name : absoluteName, params,
                                         variadic, d.pos).symbol;
     // A body the parser wrapped in a `try` of its own - a throw(...) list, a function try block - the adapter leaves.
-    if (specFilter || ctorTry || functionTry) wrappedBodies_.insert(definedSymbol);
+    if (specFilter || ctorTry || functionTry || noexceptWrapped) wrappedBodies_.insert(definedSymbol);
 
     // Recorded before `body` is moved into the Function, where what the pointer names lives on; a
     // constexpr constructor is kept whole, also under the C2 name a derived class calls it by.

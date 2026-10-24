@@ -258,6 +258,17 @@ instantiates what deduces as the parser's own call did. And a scalar bound to a 
 into the slot `bindReference` chose, recorded by the bound expression's node (`bindTemps_`); every expression the
 adapter builds carries its node for that lookup. At M2.12m: 1,185 of 1,986 adapted, all the same.
 
+**M2.12n: lambdas, switch and goto, using-declarations, and `noexcept` functions.** A lambda whose captures are
+scalar locals of the function is the closure the parser built in its slot, each capture assigned or its address
+bound into its member (`lambdaFacts_`, recorded by `noteClosure` and moved to the `lambda` node), and a call of a
+local of a class is `o.operator()(a)`. A `switch` promotes its condition and takes its cases back in the order
+`caseLabel` numbered them (`caseFacts_`: the folded value, default or not, and the number); a `break` out of one
+destroys nothing it may not; a label is its statement and a `goto` the parser's one-statement block, where nothing
+is alive to destroy. A call through a using-declaration (`std::strcpy`) takes the set the declaration names and
+keeps the name as written. And a `noexcept` function is adapted unless the parser wrapped its body in the terminate
+region, which is a wrapped body now; a `throw` in one is the abort the parser writes, and stays outside. At M2.12n:
+1,229 of 1,986 adapted, all the same.
+
 **The parser's `Ast.h` is the oracle for the new path while both exist**: the new path is right where it
 produces what the old one produced. That is `tools/identical.sh` again, and the reason the old path is kept
 until the new one has matched it everywhere.

@@ -1,10 +1,12 @@
 // sema::Adapter - see Adapter.h.
 
 #include "Adapter.h"
+
 #include "../AstDump.h"
 #include "../parser/Parser.h"
 #include "../parser/ParserInternal.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <map>
 
@@ -19,6 +21,7 @@ StmtPtr Adapter::body(TypedId typed, const Function &fn, std::string *why) {
     fnSymbol_ = fn.symbol();
     alive_.clear();
     loopMarks_.clear();
+    switches_.clear();
     tryDepth_ = 0;
     handlerLoops_.clear();
     handovers_.clear();
@@ -30,7 +33,7 @@ StmtPtr Adapter::body(TypedId typed, const Function &fn, std::string *why) {
         if (f.count == 0) outside("a function with no body");
         // A Microsoft cleanup is a funclet and a state, wrapMsCleanups' shape, which the adapter does not write.
         if (fn.hasLandingPads() && p_.target_.microsoftNames()) outside("a function with landing pads");
-        if (fn.isNoexcept()) outside("a noexcept function");
+        noexcept_ = fn.isNoexcept();
         if (p_.wrappedBodies_.count(fn.symbol())) outside("a body wrapped in a try");
         // An array parameter's bound is recorded beside it, and [dcl.fct]/5 has adjusted it away.
         for (std::uint32_t i = 0; i + 1 < f.count; i++)
@@ -127,6 +130,7 @@ StmtPtr Adapter::stmt(TypedId id) {
             // `throw e;` is the statements Parser::throwStatement writes, in a block of their own.
             if (syn(tree.child(id, 0)).kind == syntax::Kind::Throw && p_.syntaxTree_.text(tree.node(tree.child(id, 0)).syntax).empty() &&
                 tree.node(tree.child(id, 0)).count == 1) {
+                if (noexcept_ && tryDepth_ == 0 && handlerLoops_.empty()) outside("a throw a noexcept function ends in abort");
                 std::unique_ptr<Block> b = make_owned<Block>(throwSteps(tree.child(id, 0)));
                 b->setScope(-1);
                 return placed(std::move(b), s, n.syntax);
@@ -176,7 +180,55 @@ StmtPtr Adapter::stmt(TypedId id) {
         }
         case syntax::Kind::For:
             return forStatement(id);
+        case syntax::Kind::Switch: {
+            if (n.count != 2) outside("a switch of " + std::to_string(n.count) + " parts");
+            if (syn(tree.child(id, 0)).kind == syntax::Kind::DeclStmt) outside("a declaration in a switch's condition");
+            ExprPtr cond = decay(expr(tree.child(id, 0)));
+            if (!cond->type()->isInteger()) outside("a switch on what is not an integer");
+            const Type *governing = p_.promote(cond->type());
+            cond = convert(std::move(cond), governing);
+            switches_.push_back(SwitchCtx{ alive_.size(), loopMarks_.size(), {}, nullptr });
+            StmtPtr body = stmt(tree.child(id, 1));
+            SwitchCtx ctx = switches_.back();
+            switches_.pop_back();
+            std::sort(ctx.cases.begin(), ctx.cases.end(),
+                      [](const std::pair<int, const Case *> &a, const std::pair<int, const Case *> &b) { return a.first < b.first; });
+            std::vector<const Case *> cases;
+            for (std::size_t i = 0; i < ctx.cases.size(); i++) cases.push_back(ctx.cases[i].second);
+            return placed(make_owned<Switch>(std::move(cond), std::move(body), std::move(cases), ctx.deflt), s, n.syntax);
+        }
+        case syntax::Kind::Case: case syntax::Kind::Default: {
+            std::unordered_map<std::uint32_t, Parser::CaseFacts>::const_iterator k = p_.caseFacts_.find(n.syntax.v);
+            if (k == p_.caseFacts_.end() || switches_.empty() || n.count == 0) outside("a case label not recorded");
+            StmtPtr body = stmt(tree.child(id, n.count - 1));
+            std::unique_ptr<Case> c = make_owned<Case>(k->second.value, k->second.isDefault, k->second.id, std::move(body));
+            if (k->second.isDefault) switches_.back().deflt = c.get();
+            else switches_.back().cases.push_back(std::make_pair(k->second.id, c.get()));
+            return placed(std::move(c), s, n.syntax);
+        }
+        case syntax::Kind::Label:
+            if (n.count != 1) outside("a label of " + std::to_string(n.count) + " parts");
+            return placed(make_owned<Label>(p_.syntaxTree_.text(n.syntax), stmt(tree.child(id, 0))), s, n.syntax);
+        case syntax::Kind::Goto: {
+            // Parser::gotoStatement's block, its Goto appended by resolveGotos: nothing alive here to destroy.
+            if (!alive_.empty() || !handlerLoops_.empty() || tryDepth_ > 0) outside("a goto among objects or handlers");
+            std::vector<StmtPtr> steps;
+            steps.push_back(make_owned<Goto>(p_.syntaxTree_.text(n.syntax)));
+            std::unique_ptr<Block> b = make_owned<Block>(std::move(steps));
+            b->setScope(-1);
+            return placed(std::move(b), s, n.syntax);
+        }
         case syntax::Kind::Break:
+            if (!switches_.empty() && switches_.back().loops == loopMarks_.size()) {
+                // A break that leaves a switch, Parser::breakMarks_: what the switch's body built is destroyed.
+                for (std::size_t h : handlerLoops_)
+                    if (h >= loopMarks_.size()) outside("a break out of a switch that leaves a handler");
+                if (alive_.size() > switches_.back().alive) outside("a break out of a switch among objects");
+                std::unique_ptr<Break> b = make_owned<Break>();
+                b->setPos(s.loc);
+                b->setSyntax(n.syntax);
+                return StmtPtr(std::move(b));
+            }
             return leaving(id, make_owned<Break>());
         case syntax::Kind::Continue:
             return leaving(id, make_owned<Continue>());
@@ -771,6 +823,7 @@ ExprPtr Adapter::expr(TypedId id) {
         }
         case syntax::Kind::Throw: {
             if (n.count == 0) { e = p_.rethrowCall(); break; }
+            if (noexcept_ && tryDepth_ == 0 && handlerLoops_.empty()) outside("a throw a noexcept function ends in abort");
             // statementsAsExpression: the statements chained by commas, each typed void.
             std::vector<StmtPtr> steps = throwSteps(id);
             for (StmtPtr &step : steps) {
@@ -782,6 +835,9 @@ ExprPtr Adapter::expr(TypedId id) {
             e->setType(p_.types_.get(Kind::Void));
             break;
         }
+        case syntax::Kind::Lambda:
+            e = lambda(id);
+            break;
         case syntax::Kind::Sizeof: {
             std::unordered_map<std::uint32_t, std::pair<long long, const Type *> >::const_iterator k =
                 p_.keywordValues_.find(n.syntax.v);
@@ -1093,15 +1149,27 @@ ExprPtr Adapter::call(TypedId id) {
     for (std::size_t i = 0; i < args.size(); i++)
         if (namespaceAssociated(args[i]->type())) outside("a call an argument's namespace may add to");
     if (syn(head).kind == syntax::Kind::Member) return memberCall(id, head, std::move(args));
+    if (syn(head).kind == syntax::Kind::Name && tree.node(head).decl.valid() && tree.node(head).type != nullptr &&
+        tree.node(head).type->isStructOrUnion())
+        return objectCall(id, head, std::move(args));
     if (syn(head).kind != syntax::Kind::Name || tree.node(head).decl.valid()) return pointerCall(id, head, std::move(args));
     std::string callee = p_.syntaxTree_.text(tree.node(head).syntax);
     if (callee.compare(0, 2, "::") == 0) callee = callee.substr(2);
+    const std::string written = callee;
     // Which `f` an unqualified call means depends on the scope it is written in, which the parser has left by now.
     if (callee.find("::") == std::string::npos && scopedName(callee)) outside("a call of a name something in a scope shares");
     const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(callee);
     if (set == nullptr && callee.find('<') == std::string::npos)
         if (const Type *cls = p_.lookup_.findTypedef(callee))
             if (cls->isStructOrUnion()) return classTemporary(id, cls, std::move(args));
+    if (set == nullptr && callee.find("::") != std::string::npos) {
+        // `std::strcpy` through `using ::strcpy;` names the function the declaration names.
+        const std::string aliased = p_.lookup_.followUsingDeclaration(callee);
+        if (aliased != callee && p_.lookup_.overloadsOf(aliased) != nullptr) {
+            callee = aliased;
+            set = p_.lookup_.overloadsOf(callee);
+        }
+    }
     if (set == nullptr && p_.lookup_.findGlobal(callee) != nullptr) return pointerCall(id, head, std::move(args));
     if (set == nullptr) outside("a call of an undeclared name");
     const std::string bare = Parser::localOf(callee);
@@ -1119,7 +1187,7 @@ ExprPtr Adapter::call(TypedId id) {
         if (chosen == nullptr) outside("a call of a template's not in its set");
         const Signature f = *chosen;
         if (f.deleted || !f.owner.empty()) outside("a call of a template's member or deleted function");
-        return finishCall(id, f.fromTemplate ? f.name : callee, f, f.params, std::move(args), false);
+        return finishCall(id, f.fromTemplate ? f.name : written, f, f.params, std::move(args), false);
     }
     const bool qualified = callee.find("::") != std::string::npos;
     const Signature f = set->size() == 1 ? p_.lookup_.functions_[(*set)[0]]
@@ -1131,7 +1199,7 @@ ExprPtr Adapter::call(TypedId id) {
         if (cls == nullptr || !plainClass(p_, cls)) outside("a static member of what is not a plain struct");
     }
     if (callee.find_first_of("<~") != std::string::npos) outside("a call of '" + callee + "'");
-    return finishCall(id, callee, f, f.params, std::move(args), false);
+    return finishCall(id, written, f, f.params, std::move(args), false);
 }
 
 // Parser::classTemporary for a class copied by its bytes: `T(a)` is `*(ctor(&$tmp, a), &$tmp)`, or a copy of one
@@ -1185,6 +1253,65 @@ ExprPtr Adapter::pointerCall(TypedId id, TypedId head, std::vector<ExprPtr> args
     if (fn->refQualifier() != RefQual::None || fn->isConstThisFn()) outside("a call through a qualified function type");
     Signature f(pt->describe(), std::string(), fn->returns(), fn->params(), fn->isVariadicFn());
     return finishCall(id, f.name, f, f.params, std::move(args), false, std::move(callee));
+}
+
+// [over.call]: `o(a)` for a local of a class is `o.operator()(a)` - a closure's call above all.
+ExprPtr Adapter::objectCall(TypedId id, TypedId head, std::vector<ExprPtr> args) {
+    ExprPtr object = expr(head);
+    const Type *cls = object->type();
+    if (!pure(*object) || !isLvalue(*object)) outside("a call of an object not named");
+    const Type *plain = cls->unqualified();
+    const std::string key = plain->tag() + "::operator()";
+    const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(key);
+    if (set == nullptr || p_.tmpl_.memberTemplates_.count(key) != 0) outside("a call of an object with no plain operator()");
+    for (std::size_t k = 0; k < set->size(); k++)
+        if (p_.lookup_.functions_[(*set)[k]].fromTemplate) outside("a call of a template's operator()");
+    if (p_.lookup_.findMemberOwner(plain, "operator()") != plain) outside("an operator() found in a base");
+    const Signature f = p_.overload_.resolveOverload(key, args, syn(id).loc, cls, objectIsLvalue(*object));
+    if (f.deleted || f.isVirtual || f.refThis != RefQual::None || f.isStaticMember || f.owner != plain->tag())
+        outside("an operator() that is not plain");
+    const Type *thisType = p_.types_.pointerTo(f.constThis ? p_.types_.withConst(plain) : plain);
+    std::vector<ExprPtr> all;
+    all.push_back(typed(make_owned<Unary>('&', std::move(object)), thisType));
+    for (std::size_t i = 0; i < args.size(); i++) all.push_back(std::move(args[i]));
+    std::vector<const Type *> full(1, thisType);
+    full.insert(full.end(), f.params.begin(), f.params.end());
+    return finishCall(id, "operator()", f, full, std::move(all), true);
+}
+
+// [expr.prim.lambda]: the closure in the slot the parser chose, each capture copied or bound into its member.
+ExprPtr Adapter::lambda(TypedId id) {
+    std::unordered_map<std::uint32_t, Parser::LambdaFacts>::const_iterator k =
+        p_.lambdaFacts_.find(typer_.tree().node(id).syntax.v);
+    if (k == p_.lambdaFacts_.end()) outside("a lambda whose closure was not recorded");
+    const Parser::LambdaFacts &f = k->second;
+    const Type *cls = f.type;
+    ExprPtr e;
+    if (f.captures.empty()) {
+        e = typed(std::unique_ptr<Var>(Var::local(f.slotName, f.slot)), cls);
+    } else {
+        ExprPtr chain;
+        for (std::size_t i = 0; i < f.captures.size(); i++) {
+            const Parser::LambdaCapture &c = f.captures[i];
+            Var *v = Var::local(c.src, c.srcOffset);
+            v->setReadOnly(c.srcConst);
+            ExprPtr src = typed(std::unique_ptr<Var>(v), c.srcType);
+            const bool byRef = c.type->isReference();
+            const Type *memberType = byRef ? p_.types_.pointerTo(c.type->referent()) : c.type;
+            ExprPtr self = typed(std::unique_ptr<Var>(Var::local(f.slotName, f.slot)), cls);
+            ExprPtr dst = typed(make_owned<MemberAccess>(std::move(self), c.member, c.offset, 0, 0), memberType);
+            if (byRef) src = typed(make_owned<Unary>('&', std::move(src)), memberType);
+            ExprPtr store = typed(make_owned<Assign>(std::move(dst), std::move(src)), memberType);
+            chain = chain ? typed(make_owned<Comma>(std::move(chain), std::move(store)), memberType) : std::move(store);
+        }
+        ExprPtr whole = typed(std::unique_ptr<Var>(Var::local(f.slotName, f.slot)), cls);
+        ExprPtr at = typed(make_owned<Unary>('&', std::move(whole)), p_.types_.pointerTo(cls));
+        ExprPtr seq = typed(make_owned<Comma>(std::move(chain), std::move(at)), p_.types_.pointerTo(cls));
+        e = typed(make_owned<Unary>('*', std::move(seq)), cls);
+    }
+    e->setXvalue();
+    e->setDeclCategory(Expr::Category::Prvalue);
+    return e;
 }
 
 // [expr.ref] with [class.mfct.non-static]: `o.f(a)` is f called with `&o` in front of its arguments.

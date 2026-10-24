@@ -54,6 +54,8 @@ private:
     ExprPtr finishCall(TypedId at, const std::string &name, const Signature &f, const std::vector<const Type *> &params,
                        std::vector<ExprPtr> args, bool hasThis, ExprPtr callee = ExprPtr());
     ExprPtr pointerCall(TypedId id, TypedId head, std::vector<ExprPtr> args);
+    ExprPtr objectCall(TypedId id, TypedId head, std::vector<ExprPtr> args);
+    ExprPtr lambda(TypedId id);
     ExprPtr classTemporary(TypedId id, const Type *cls, std::vector<ExprPtr> args);
     ExprPtr condition(TypedId id);
     ExprPtr arithmetic(const std::string &op, ExprPtr a, ExprPtr b);
@@ -81,6 +83,11 @@ private:
     struct AliveObj { std::string name; int offset; const Type *cls; };
     std::vector<AliveObj> alive_;
     std::vector<std::size_t> loopMarks_;
+    bool noexcept_ = false;
+    // The switches open, innermost last: what was alive at entry, the loops open then, and the cases met.
+    struct SwitchCtx { std::size_t alive; std::size_t loops; std::vector<std::pair<int, const Case *> > cases;
+                       const Case *deflt; };
+    std::vector<SwitchCtx> switches_;
     // Inside a `try` body, and the loops open where each handler that encloses this point was entered.
     int tryDepth_ = 0;
     std::vector<std::size_t> handlerLoops_;

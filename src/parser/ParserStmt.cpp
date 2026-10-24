@@ -1488,6 +1488,8 @@ StmtPtr Parser::statement() {
     pendingThrow_ = ThrowFacts();
     StmtPtr noted = noteStmt(std::move(s), kind, text, pos, mark, pos);
     if (const For *f = dynamic_cast<const For *>(noted.get())) syntaxScopes_[noted->syntax().v] = f->scope();
+    if (const Case *c = dynamic_cast<const Case *>(noted.get()))
+        caseFacts_[noted->syntax().v] = CaseFacts{ c->value(), c->isDefault(), c->id() };
     if (kind == syntax::Kind::Return && !pendingReturnTemp_.name.empty()) returnTemps_[noted->syntax().v] = pendingReturnTemp_;
     if (kind == syntax::Kind::Try && pendingTry_.simple) tryFacts_[noted->syntax().v] = pendingTry_;
     pendingTry_ = TryFacts();

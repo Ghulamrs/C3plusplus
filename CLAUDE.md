@@ -10777,6 +10777,15 @@ global the parser wrote, and one built under a guard stays outside (`guardedStat
 ranked by the parser's own `resolveOverload`. A scalar bound to a const or rvalue reference goes into the slot
 `bindReference` chose, recorded by the bound expression's node (`bindTemps_`).
 
+## M2.12n: lambdas, switch and goto, using-declarations, `noexcept`, 2026-10-24
+
+**1,229 of 1,986 functions take the adapter's body**, all the same. A lambda over scalar locals is rebuilt in the
+closure slot the parser chose (`lambdaFacts_`); `switch`, its cases (`caseFacts_`), labels and a `goto` among no
+objects are the parser's; `std::strcpy` through `using ::strcpy;` keeps its written name; and a `noexcept` function
+is adapted unless the parser wrapped it in the terminate region. **A use after `std::move` crashed nine cases**:
+`convert(std::move(cond), p_.promote(cond->type()))` - argument evaluation order is unspecified, and clang read
+`cond` after the move. The governing type is taken first now.
+
 ## Build
 
 ```

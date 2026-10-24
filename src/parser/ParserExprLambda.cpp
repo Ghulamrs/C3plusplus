@@ -494,9 +494,38 @@ ExprPtr Parser::buildClosure(const MadeLambda &made, std::size_t pos) {
     return e;
 }
 
+// What the adapter needs to build the closure again (M2.12n): kept only where every capture is a scalar local
+// of this function, by value or by reference, and the closure has nothing to destroy.
+void Parser::noteClosure(const MadeLambda &made, const std::string &name, int off) {
+    pendingLambda_ = LambdaFacts();
+    pendingLambda_.simple = destructorOf(made.type) == nullptr;
+    pendingLambda_.slotName = name;
+    pendingLambda_.slot = off;
+    pendingLambda_.type = made.type;
+    for (std::size_t i = 0; i < made.names.size() && pendingLambda_.simple; i++) {
+        const Local *l = made.names[i] == capturedThis() ? nullptr : lookup_.findLocal(made.names[i]);
+        const Type *held = made.types[i]->isReference() ? made.types[i]->referent() : made.types[i];
+        if (l == nullptr || !l->staticName.empty() || l->isThreadLocal || l->constantOnly || l->type->isReference() ||
+            l->isRegister || !held->isScalar() || l->type->unqualified() != held->unqualified()) {
+            pendingLambda_.simple = false;
+            break;
+        }
+        LambdaCapture c;
+        c.member = made.names[i];
+        c.offset = made.offsets[i];
+        c.type = made.types[i];
+        c.src = l->name;
+        c.srcOffset = l->offset;
+        c.srcType = l->type;
+        c.srcConst = l->isConst;
+        pendingLambda_.captures.push_back(c);
+    }
+}
+
 ExprPtr Parser::buildClosureObject(const MadeLambda &made, std::size_t pos) {
     const std::string name = ".lam" + std::to_string(refTemps_++);
     const int off = declare(name, made.type, pos);
+    noteClosure(made, name, off);
     if (made.names.empty()) {
         ExprPtr obj(Var::local(name, off));
         obj->setType(made.type);

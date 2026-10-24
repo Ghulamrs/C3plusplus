@@ -611,6 +611,16 @@ private:
     std::unordered_map<std::uint32_t, int> temporarySlots_;
     // A value a const or rvalue reference binds copied into a frame slot by bindReference: its name and slot, by node.
     std::unordered_map<std::uint32_t, std::pair<std::string, int> > bindTemps_;
+    // A lambda whose captures are scalar locals: the closure's slot and each capture's member and source, by node.
+    struct LambdaCapture { std::string member; int offset = 0; const Type *type = nullptr;
+                           std::string src; int srcOffset = 0; const Type *srcType = nullptr; bool srcConst = false; };
+    struct LambdaFacts { bool simple = false; std::string slotName; int slot = 0; const Type *type = nullptr;
+                         std::vector<LambdaCapture> captures; };
+    std::unordered_map<std::uint32_t, LambdaFacts> lambdaFacts_;
+    // A case label's folded value and the number caseLabel gave it, by node (M2.12n).
+    struct CaseFacts { long long value; bool isDefault; int id; };
+    std::unordered_map<std::uint32_t, CaseFacts> caseFacts_;
+    LambdaFacts pendingLambda_;
     void noteTemporarySlot(const Expr *e) {
         const Unary *star = dynamic_cast<const Unary *>(e);
         const Comma *both = star != nullptr && star->op() == '*' ? dynamic_cast<const Comma *>(&star->operand()) : nullptr;
@@ -1371,6 +1381,7 @@ private:
     // One closure object: a frame slot, and each capture copied into it.
     ExprPtr buildClosure(const MadeLambda &made, std::size_t pos);
     ExprPtr buildClosureObject(const MadeLambda &made, std::size_t pos);
+    void noteClosure(const MadeLambda &made, const std::string &name, int off);
     // The slot a closure object is built in, where `e` is one as buildClosureObject made it; -1 otherwise.
     static int closureSlotOf(const Expr *e);
     // A closure met while an enclosing lambda's body was read for its return type (A21),
