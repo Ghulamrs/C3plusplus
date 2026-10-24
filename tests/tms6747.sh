@@ -64,9 +64,10 @@ one() {
     if [ -z "$only" ] && grep -q "^$base[[:space:]]" tests/tms6747-exceptions.txt; then echo eh > "$OUT/$base.verdict"; return; fi
     if [ -z "$only" ] && grep -q "^$base[[:space:]]" tests/tms6747-lp64.txt; then echo lp64 > "$OUT/$base.verdict"; return; fi
 
-    # The liveness self-check is quadratic in a function's length: tests/tms6747-nolivecheck.txt names the cases it kills, and
-    # gives them 30 s, not 10 - one is 8 s alone, and two jobs on the Linux box's hyperthread siblings took it past 10 (M2.4).
-    limit=10
+    # The CPU limit catches a hang, so it is twice the slowest ordinary case: regex-ecmascript takes 5 s at -O2 alone, and two jobs
+    # on the Linux box's hyperthread siblings took it past 10 (M2.7). The liveness self-check is quadratic in a function's length:
+    # tests/tms6747-nolivecheck.txt names the cases it kills, and gives them 30 s - one is 8 s alone (M2.4).
+    limit=20
     if grep -q "^$base[[:space:]]" tests/tms6747-nolivecheck.txt; then unset CPP11_C6XLIVECHECK; limit=30; fi
     if ! ( ulimit -t $limit; "$CXX1" -S -arch tms6747 -nologo $CXX1_FLAGS "$src" -o "$OUT/$base.s" < /dev/null ) 2>"$OUT/$base.err"; then
         echo "FAIL $base: cpp11 refused it"
@@ -76,7 +77,7 @@ one() {
     fi
     parts=""
     if [ -f "tests/cases/$base.part.cpp" ]; then
-        if ! ( ulimit -t 10; "$CXX1" -S -arch tms6747 -nologo $CXX1_FLAGS "tests/cases/$base.part.cpp" -o "$OUT/$base.part.s" < /dev/null ) 2>>"$OUT/$base.err"; then
+        if ! ( ulimit -t $limit; "$CXX1" -S -arch tms6747 -nologo $CXX1_FLAGS "tests/cases/$base.part.cpp" -o "$OUT/$base.part.s" < /dev/null ) 2>>"$OUT/$base.err"; then
             echo "FAIL $base: cpp11 refused its .part.cpp"; sed 's/^/      /' "$OUT/$base.err" | head -3
             echo fail > "$OUT/$base.verdict"; return
         fi
