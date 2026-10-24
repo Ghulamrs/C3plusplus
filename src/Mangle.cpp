@@ -2,7 +2,9 @@
 
 #include "Operator.h"
 
+#include <algorithm>
 #include <cstdlib>
+#include <map>
 
 // "N::M::f" -> {"N", "M", "f"}. A namespace scope is spelled by both ABIs
 // exactly as a class scope is - measured, `N::f` is `_ZN1N1fEi` and
@@ -864,8 +866,21 @@ private:
 
 // -------------------------------------------------------------- Microsoft
 
+// **The back-reference tables each Microsoft name finished with**, by symbol: a local class's member embeds its
+// function's name and goes on from its tables - `?go@Outer@?1??nested@F@@QEBAHAEBVP@@@Z@SAH0@Z`, cl and clang alike.
+// They hold this unit's Types, so microsoftForgetLocalOwners() empties them at each parse.
+struct MicrosoftTables {
+    std::vector<std::string> names;
+    std::vector<const Type *> args;
+};
+thread_local std::map<std::string, MicrosoftTables> finishedTables;
+
 class Microsoft : public Mangler {
 public:
+    ~Microsoft() {
+        if (out.size() > 1 && out[0] == '?' && (!names_.empty() || !args_.empty()))
+            finishedTables[out] = MicrosoftTables{ names_, args_ };
+    }
     // `G` for `&` and `H` for `&&`, after the `E` and before the cv - measured with clang.
     static const char *refQualifier(RefQual r) {
         return r == RefQual::LValue ? "G" : r == RefQual::RValue ? "H" : "";
@@ -910,7 +925,18 @@ public:
             out += "?1?";
             // A function with no decorated name - main, or extern "C" - is
             // written ?name@@9, the 9 saying the name carries no type.
-            if (!localOwner.empty() && localOwner[0] == '?') out += localOwner;
+            if (!localOwner.empty() && localOwner[0] == '?') {
+                out += localOwner;
+                const auto found = finishedTables.find(localOwner);
+                if (found != finishedTables.end()) {
+                    for (const std::string &n : found->second.names)
+                        if (names_.size() < 10 && std::find(names_.begin(), names_.end(), n) == names_.end())
+                            names_.push_back(n);
+                    for (const Type *a : found->second.args)
+                        if (args_.size() < 10 && std::find(args_.begin(), args_.end(), a) == args_.end())
+                            args_.push_back(a);
+                }
+            }
             else { out += '?'; out += localOwner; out += "@@9"; }
         }
         out += '@';               // closes the scope list
@@ -1860,6 +1886,8 @@ bool itaniumLocalMemberName(const std::string &owner, const std::string &cls,
     *out = "_ZZ" + function + "E" + inner.substr(2);
     return true;
 }
+
+void microsoftForgetLocalOwners() { finishedTables.clear(); }
 
 bool microsoftLocalMemberName(const std::string &owner, const std::string &cls,
                               const Type *clsType, const std::string &name,

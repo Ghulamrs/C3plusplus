@@ -1,3 +1,2 @@
 x86_64-linux  a local class member's parameters are spelled afresh where clang reuses the enclosing function's substitutions - `_ZZNK1F3getERK1PEN1L4readES2_` against cxx1's `...readERK1P` (docs/CONFORMANCE.md, "A local entity's name does not share its function's substitutions"); and the C1 form of P's inline constructor beside the C2 clang emits alone.
-x86_64-windows  the same, as Microsoft back-references: `SAH0@Z` where cxx1 writes `SAHAEBVP@@@Z`.
 arm64-darwin  the same as x86_64-linux, but for the C1 form.
