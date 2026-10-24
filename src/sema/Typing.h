@@ -46,6 +46,15 @@ private:
     std::vector<TypedId> children_;
 };
 
+// **The census of what the typed tree covers** (M2.15): every function the backends emit, split into those whose body the
+// grammar read - each with a syntax root, found by symbol - and those the compiler wrote, counted by kind.
+struct Census {
+    std::vector<std::pair<syntax::NodeId, std::size_t> > bodies;    // a root and the index of the function it defined
+    std::vector<std::pair<std::string, int> > synthesised;          // kind, count
+    int emitted = 0;
+};
+
+
 class Typer {
 public:
     explicit Typer(Parser &p) : p_(p) {}
@@ -55,6 +64,10 @@ public:
     // **-check=typed**: every root function typed, each typed expression held against the type the parser gave the
     // Ast.h node carrying the same syntax - the innermost such node, before any conversion wrapped it.
     static std::string check(Parser &p, const Program &program, const Source &src, int *differ);
+    static Census census(const Parser &p, const Program &program);
+    // The census's counts as the report spells them, "functions=N bodies=K synthesised=M", and the kinds behind M.
+    static std::string censusLine(const Census &c);
+    static std::string censusKinds(const Census &c);
 private:
     TypedId node(syntax::NodeId id);
     const Type *expression(syntax::NodeId id, const std::vector<const Type *> &parts);

@@ -1779,27 +1779,20 @@ ExprPtr Adapter::decay(ExprPtr e) {
 }
 
 std::string Adapter::run(Parser &p, Program &program, bool replace, int *differ) {
-    std::map<std::string, std::size_t> bySymbol;
-    for (std::size_t i = 0; i < program.functions.size(); i++) bySymbol[program.functions[i].symbol()] = i;
     Typer typer(p);
-    const syntax::Tree &st = p.syntaxTree_;
-    const std::vector<syntax::NodeId> roots = st.roots();
+    const Census c = Typer::census(p, program);
     std::map<std::string, int> reasons;
     std::string out;
-    int considered = 0, adapted = 0, same = 0;
+    int adapted = 0, same = 0;
     *differ = 0;
-    for (std::size_t r = 0; r < roots.size(); r++) {
-        if (st.node(roots[r]).kind != syntax::Kind::Function || p.scopedFunctions_.count(roots[r].v) != 0) continue;
-        std::unordered_map<std::uint32_t, std::string>::const_iterator sym = p.syntaxFunctions_.find(roots[r].v);
-        if (sym == p.syntaxFunctions_.end()) continue;
-        std::map<std::string, std::size_t>::const_iterator at = bySymbol.find(sym->second);
-        if (at == bySymbol.end()) continue;
-        Function &fn = program.functions[at->second];
-        considered++;
-        const TypedId t = typer.typeFunction(roots[r]);
+    for (std::size_t r = 0; r < c.bodies.size(); r++) {
+        Function &fn = program.functions[c.bodies[r].second];
+        const TypedId t = typer.typeFunction(c.bodies[r].first);
         Adapter adapter(p, typer);
         std::string why;
-        StmtPtr b = adapter.body(t, fn, &why);
+        // A member's, a namespace's or a template's body names things the adapter's subset never reached (M2.15).
+        StmtPtr b = p.scopedFunctions_.count(c.bodies[r].first.v) != 0 ? StmtPtr() : adapter.body(t, fn, &why);
+        if (!b && why.empty()) why = "a body whose names are a class's, a namespace's or a template's";
         if (!b) {
             reasons[why]++;
             // CXX1_ADAPT_WHY names the function each reason was met in, for finding the next slice.
@@ -1823,10 +1816,10 @@ std::string Adapter::run(Parser &p, Program &program, bool replace, int *differ)
     if (!replace) {
         for (std::map<std::string, int>::const_iterator i = reasons.begin(); i != reasons.end(); ++i)
             out += "  outside (" + std::to_string(i->second) + "): " + i->first + "\n";
-        char line[200];
-        std::snprintf(line, sizeof line, "-check=adapted: %d functions, %d adapted, %d the same, %d differ, %d outside\n",
-                      considered, adapted, same, *differ, considered - adapted);
-        out += line;
+        char line[240];
+        std::snprintf(line, sizeof line, "-check=adapted: %s adapted=%d same=%d differ=%d outside=%zu\n",
+                      Typer::censusLine(c).c_str(), adapted, same, *differ, c.bodies.size() - adapted);
+        out += line + Typer::censusKinds(c);
     }
     return out;
 }

@@ -1466,6 +1466,7 @@ std::string Parser::vectorConstructor(const Type *cls, std::size_t pos) {
                                            StmtPtr(new Block(std::move(body))),
                                            alignTo(frameSize_, 16), true, 0,
                                            false, 0, pos, std::vector<::Local>()));
+    current_->functions.back().setSynthesised("vector constructor");
     current_->functions.back().setSymbol(name);
     current_->functions.back().setHasLandingPads(own.made());
     closeFrame(savedFrame);
@@ -1522,6 +1523,7 @@ std::string Parser::vectorDestructor(const Type *cls, std::size_t pos) {
                                            StmtPtr(new Block(std::move(body))),
                                            alignTo(frameSize_, 16), true, 0,
                                            false, 0, pos, std::vector<::Local>()));
+    current_->functions.back().setSynthesised("vector destructor");
     current_->functions.back().setSymbol(name);
     closeFrame(savedFrame);
     return name;

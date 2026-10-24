@@ -1912,7 +1912,6 @@ void Parser::topLevel(Program &program) {
     if (memberOf != nullptr || !namespaceStack_.empty() || d.name.find("::") != std::string::npos ||
         !instantiatingParams_.empty() || !boundTypeParams_.empty() || !boundValueParams_.empty())
         scopedFunctions_.insert(fnSyntax.v);
-    syntaxFunctions_[fnSyntax.v] = definedSymbol;
     declaredReturns_[fnSyntax.v] = returnType_;
     global.d = nullptr;                                                     // the definition is the node
     program.functions.push_back(Function(d.name, emittedReturn, std::move(paramSlots),
@@ -1994,6 +1993,9 @@ void Parser::topLevel(Program &program) {
             program.functions.back().setAlias(d2);
         }
     }
+    // The body's node and the symbol it was emitted under, once that is final - a virtual base's split renamed it.
+    syntaxFunctions_[fnSyntax.v] = program.functions.back().symbol();
+    definedBodies_.push_back(fnSyntax);
     // The deleting form is emitted beside the destructor that was just
     // defined, because that is where its body comes from.
     if (memberOf != nullptr && d.name == "~" + localOf(d.qualifier) &&

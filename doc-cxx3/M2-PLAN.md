@@ -323,3 +323,39 @@ recorded at `a2b39e7`, `tools/identical.sh` against `a2b39e7`'s binary, `tools/s
 functions, of those with a syntax root and typed, of the compiler-written by kind; the typed fraction of nodes and the
 kinds outside it; `-check=typed` and `-check=adapted` at 0 differ; `identical.sh` and self-host green with and without
 `-front=typed`; the non-Mac leg's counts.
+
+**M2.13 and M2.14** (`2f9e873`): the six pending facts into `FunctionState`; `-dump=ast` prints a `Try`'s types with
+their selector indices, `alsoCleanup`, the Microsoft exits and the unwind-help slot. Identical over 5,352 outputs.
+
+**M2.15: the denominator** (2026-10-25). Every emitted function is counted, by `Typer::census`: one the grammar read has
+a live `function` node that defined its symbol (`syntaxFunctions_`, recorded once the symbol is final - a constructor
+split for a virtual base is renamed to its C2 after the first recording) and one the compiler wrote carries its kind
+(`Function::synthesised`, set at the fifteen sites in `Classes.cpp`, `ParserClass.cpp` and `ParserInit.cpp`). Over the
+647 cases that compile for the host: **8,227 functions emitted, 7,420 with a source body, 807 compiler-written, 0 neither**
+- against the 1,986 the reports counted before, which were the file-scope free functions. The 807 by kind: implicit
+destructor 209, implicit default constructor 180, deleting destructor 144, implicit copy or move 97, complete constructor
+33 and destructor 23 (a virtual base's split), thunk 20, virtual thunk 29, vector constructor 13 and destructor 25, array
+destructor helper 8, init function 25, tls init 1. The Typer types every body and `-check=typed` holds them all:
+184,964 syntax nodes under the bodies, 84,821 typed, 83,323 agreeing, 0 differing, 1,407 with no Ast.h node;
+**44,220 expression nodes typed null**, by kind: name 18,595, call 7,255, member 6,729, binary 3,917, assign 2,782, unary
+1,238, subscript 1,209, this 564, conditional 399, new 368, postfix 343, cast 243, throw 184, delete 139, lambda 125,
+sizeof 92, string 34, comma 4. That is the typed tree's gap at M2.15, and M2.16 and M2.17 are what close it. The adapter
+is asked for every body too and answers 1,257 of 7,420, the 6,163 outside each with its reason, the commonest "a body
+whose names are a class's, a namespace's or a template's".
+
+**Three recording faults the census found**, each a body the parser emitted whose syntax was not the tree's. A lambda's
+call operator, replayed from synthesised tokens at the lambda's own position, was killed twice: by `kill(bodySyntax)`,
+which ran after the replay and was meant for the in-place readings (moved in front of it), and by `Tree::adopt`, which
+killed any earlier root at one location when a later one appeared there - the call operator, `__invoke` and the `lambda`
+node share the `[`'s position. A rewound read records the *same* node again, so `adopt` kills only a root of the same
+kind and text now, and a lambda's text is its whole token span whichever reading records it (the first read's was `"["`),
+so the two readings still dedup; the live `lambda` node takes the replayed bodies from the dead one (`MadeLambda::bodies`,
+`Tree::release`). And a body defined inside a reading that is then killed - an inner lambda's call operator made during
+the outer lambda's deducing read, whose closure the real read reuses, or a constructor or member template instantiated
+inside a `Trial`, whose destructor kills on success as on failure - is revived after the kill (`definedBodies_`,
+`reviveDefinedBodies`, `Tree::revive`): the function was emitted, so its syntax is the tree's whatever reading made it.
+`tests/syntax/statements.syntax` was re-recorded for the one change, the lambda node holding its call operator.
+
+Gated: `make test` green (emit golden 0 of 1,924 changed, typed.sh and adapted.sh 0 differ), `identical.sh` 5,352 compared
+and the known 8 differ.
+

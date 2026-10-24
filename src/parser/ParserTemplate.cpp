@@ -1593,6 +1593,7 @@ Parser::Trial::~Trial() {
     p->patternOnly_ = pattern;
     p->angleSplit_ = split;
     p->syntaxTree_.kill(syntaxMark);     // the tokens are read again, and what this read recorded is not the tree's
+    p->reviveDefinedBodies(syntaxMark);  // but a body a template instantiated in here is emitted, and stays (M2.15)
 }
 
 // `a::b::` as the stack of namespaces it names, which is what namespaceStack_ holds.

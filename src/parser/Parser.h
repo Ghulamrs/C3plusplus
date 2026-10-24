@@ -1018,6 +1018,7 @@ private:
         ThrowFacts pendingThrow;
         RangeFacts pendingRange = RangeFacts();
         LambdaFacts pendingLambda;
+        std::vector<syntax::NodeId> lambdaBodies;
     };
     // **A parse whose result is discarded must put back what it accumulated.**
     struct Discarded {
@@ -1396,7 +1397,15 @@ private:
         std::vector<std::string> names;
         std::vector<const Type *> types;
         std::vector<int> offsets;
+        // The `function` nodes its replayed bodies recorded - the call operator, `__invoke` - which every reading's
+        // `lambda` node holds (M2.15); a rewound reading's node dies and the live one takes them.
+        std::vector<syntax::NodeId> bodies;
     };
+    std::vector<syntax::NodeId> lambdaBodies_;
+    // Every `function` node that defined an emitted body, in creation order: a kill that rewinds a reading - a trial's,
+    // a lambda's deducing one - takes them with it, and a body whose function was emitted is the tree's (M2.15).
+    std::vector<syntax::NodeId> definedBodies_;
+    void reviveDefinedBodies(std::size_t from);
     // One closure object: a frame slot, and each capture copied into it.
     ExprPtr buildClosure(const MadeLambda &made, std::size_t pos);
     ExprPtr buildClosureObject(const MadeLambda &made, std::size_t pos);

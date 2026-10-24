@@ -5,6 +5,8 @@
 #include "../Source.h"
 
 #include <cstdio>
+#include <cstdlib>
+#include <map>
 
 namespace sema {
 
@@ -54,6 +56,8 @@ TypedId Typer::node(syntax::NodeId id) {
     std::vector<TypedId> kids;
     std::vector<const Type *> parts;
     for (std::uint32_t i = 0; i < n.count; i++) {
+        // A lambda's call operator is a function of its own, typed by the census from its own node and not from here.
+        if (n.kind == syntax::Kind::Lambda && st.node(st.child(id, i)).kind == syntax::Kind::Function) continue;
         const TypedId k = node(st.child(id, i));
         kids.push_back(k);
         parts.push_back(tree_.node(k).type);
@@ -275,20 +279,69 @@ struct Collect final : Visitor {
 
 }   // namespace
 
+Census Typer::census(const Parser &p, const Program &program) {
+    Census c;
+    std::map<std::string, std::size_t> bySymbol;
+    std::map<std::string, int> kinds;
+    for (std::size_t i = 0; i < program.functions.size(); i++) {
+        bySymbol[program.functions[i].symbol()] = i;
+        if (!program.functions[i].synthesised().empty()) kinds[program.functions[i].synthesised()]++;
+    }
+    c.emitted = static_cast<int>(program.functions.size());
+    // Every live `function` node that defined a symbol: a root, or a lambda's call operator under its `lambda` node.
+    const syntax::Tree &st = p.syntaxTree_;
+    for (std::uint32_t i = 1; i <= st.size(); i++) {
+        const syntax::NodeId id(i);
+        if (st.node(id).kind != syntax::Kind::Function || st.node(id).dead) continue;
+        std::unordered_map<std::uint32_t, std::string>::const_iterator sym = p.syntaxFunctions_.find(i);
+        if (sym == p.syntaxFunctions_.end()) continue;      // a declaration with no body
+        std::map<std::string, std::size_t>::const_iterator at = bySymbol.find(sym->second);
+        if (at == bySymbol.end()) continue;                 // read and then pruned: an unused inline
+        if (std::getenv("CXX1_CENSUS") != nullptr) std::fprintf(stderr, "body %s\n", sym->second.c_str());
+        c.bodies.push_back(std::make_pair(id, at->second));
+    }
+    for (std::map<std::string, int>::const_iterator k = kinds.begin(); k != kinds.end(); ++k) c.synthesised.push_back(*k);
+    return c;
+}
+
+std::string Typer::censusLine(const Census &c) {
+    int synth = 0;
+    for (std::size_t i = 0; i < c.synthesised.size(); i++) synth += c.synthesised[i].second;
+    char line[120];
+    std::snprintf(line, sizeof line, "functions=%d bodies=%zu synthesised=%d", c.emitted, c.bodies.size(), synth);
+    return line;
+}
+
+std::string Typer::censusKinds(const Census &c) {
+    std::string kinds;
+    for (std::size_t i = 0; i < c.synthesised.size(); i++)
+        kinds += (i == 0 ? "  compiler-written: " : ", ") + c.synthesised[i].first + "=" + std::to_string(c.synthesised[i].second);
+    return kinds.empty() ? kinds : kinds + "\n";
+}
+
 std::string Typer::check(Parser &p, const Program &program, const Source &src, int *differ) {
     Collect collect;
     for (std::size_t i = 0; i < program.functions.size(); i++) program.functions[i].body().accept(collect);
     Typer typer(p);
     const syntax::Tree &st = p.syntaxTree_;
-    const std::vector<syntax::NodeId> roots = st.roots();
-    for (std::size_t i = 0; i < roots.size(); i++)
-        if (st.node(roots[i]).kind == syntax::Kind::Function) typer.typeFunction(roots[i]);
+    const Census c = census(p, program);
+    std::map<std::string, int> untyped;
+    int nodes = 0;
+    for (std::size_t i = 0; i < c.bodies.size(); i++) {
+        const std::size_t before = typer.tree().size();
+        typer.typeFunction(c.bodies[i].first);
+        nodes += static_cast<int>(typer.tree().size() - before);
+    }
     std::string out;
     int typed = 0, agree = 0, absent = 0, cv = 0, lowered = 0;
     *differ = 0;
     for (std::uint32_t i = 1; i <= typer.tree().size(); i++) {
         const TypedNode &n = typer.tree().node(TypedId(i));
-        if (n.type == nullptr) continue;
+        const syntax::Kind kind = st.node(n.syntax).kind;
+        if (n.type == nullptr) {
+            if (kind < syntax::Kind::Block) untyped[syntax::kindName(kind)]++;      // an expression typed null
+            continue;
+        }
         typed++;
         std::unordered_map<std::uint32_t, const Type *>::const_iterator theirs = collect.types.find(n.syntax.v);
         if (theirs == collect.types.end()) { absent++; continue; }
@@ -312,11 +365,18 @@ std::string Typer::check(Parser &p, const Program &program, const Source &src, i
                st.text(n.syntax) + "' typed '" + n.type->describe() + "', the parser says '" +
                theirs->second->describe() + "'\n";
     }
+    // The report, one fact a field: the census, then the nodes - every syntax node under a body counted, the expressions
+    // typed null named by kind - then the agreement with Ast.h, the two named lowerings apart.
+    int unt = 0;
+    std::string kinds;
+    for (std::map<std::string, int>::const_iterator k = untyped.begin(); k != untyped.end(); ++k) {
+        unt += k->second;
+        kinds += (kinds.empty() ? "  untyped: " : ", ") + k->first + "=" + std::to_string(k->second);
+    }
     char line[240];
-    std::snprintf(line, sizeof line, "-check=typed: %d typed, %d agree, %d differ, %d with no Ast.h node to hold against"
-                  " (%d in top-level cv alone, %d lowered: a conditional promoted or decayed, a null member pointer)\n",
-                  typed, agree, *differ, absent, cv, lowered);
-    return out + line;
+    std::snprintf(line, sizeof line, "-check=typed: %s nodes=%d typed=%d untyped=%d agree=%d differ=%d absent=%d cv=%d lowered=%d\n",
+                  censusLine(c).c_str(), nodes, typed, unt, agree, *differ, absent, cv, lowered);
+    return out + line + censusKinds(c) + (kinds.empty() ? std::string() : kinds + "\n");
 }
 
 }   // namespace sema

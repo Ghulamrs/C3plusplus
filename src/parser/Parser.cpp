@@ -517,6 +517,7 @@ Parser::FunctionState Parser::captureFunctionState() const {
     s.pendingThrow = pendingThrow_;
     s.pendingRange = pendingRange_;
     s.pendingLambda = pendingLambda_;
+    s.lambdaBodies = lambdaBodies_;
     return s;
 }
 
@@ -601,6 +602,7 @@ void Parser::restoreFunctionState(const FunctionState &s) {
     pendingThrow_ = s.pendingThrow;
     pendingRange_ = s.pendingRange;
     pendingLambda_ = s.pendingLambda;
+    lambdaBodies_ = s.lambdaBodies;
 }
 
 // A body parsed behind one of these doors is a *different* function, so it
@@ -683,6 +685,7 @@ void Parser::clearFunctionState() {
     pendingThrow_ = ThrowFacts();
     pendingRange_ = RangeFacts();
     pendingLambda_ = LambdaFacts();
+    lambdaBodies_.clear();
 }
 
 void Parser::replayInlineBodies(std::vector<PendingBody> mine) {

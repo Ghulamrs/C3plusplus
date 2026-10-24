@@ -3143,10 +3143,21 @@ ExprPtr Parser::noteKeywordForm(syntax::Kind kind, KeywordForm f) {
     const std::size_t pos = tokens_[f.start].pos;
     std::vector<syntax::NodeId> parts = syntaxTree_.adopt(f.mark, pos, at_ > 0 ? tokens_[at_ - 1].pos : pos);
     // The text is the tokens up to the operand - all of them where there is none, the type of a cast where there is.
-    std::size_t end = parts.empty() ? at_ : f.start + 1;
+    // A lambda's text is its whole token span whichever read records it, so a rewound read dedups (M2.15).
+    std::size_t end = parts.empty() || kind == syntax::Kind::Lambda ? at_ : f.start + 1;
     if (kind == syntax::Kind::Cast)
         for (int depth = 0; end < at_ && !(depth == 0 && tokens_[end].is("(")); end++)
             depth += tokens_[end].is("<") ? 1 : tokens_[end].is(">") ? -1 : 0;
+    if (kind == syntax::Kind::Lambda) {
+        for (std::size_t i = 0; i < lambdaBodies_.size(); i++) {
+            bool held = false;
+            for (std::size_t k = 0; k < parts.size() && !held; k++) held = parts[k].v == lambdaBodies_[i].v;
+            if (held) continue;
+            syntaxTree_.release(lambdaBodies_[i]);
+            parts.push_back(lambdaBodies_[i]);
+        }
+        lambdaBodies_.clear();
+    }
     std::string text = tokens_[f.start].text;
     for (std::size_t k = f.start + 1; k < end; k++) {
         const bool words = tokens_[k].kind != TokenKind::Punct && tokens_[k - 1].kind != TokenKind::Punct;

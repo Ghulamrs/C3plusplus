@@ -719,7 +719,12 @@ public:
     // `throw(T...)`'s type_info symbols, for a target whose table states the list; empty where none was written.
     const std::vector<std::string> &exceptionSpec() const { return spec_; }
     void setExceptionSpec(std::vector<std::string> s) { spec_ = std::move(s); }
+    // The kind of a function the compiler wrote with no source body - an implicit special member, a thunk, an init
+    // function - and empty for one the grammar read (M2.15): the census of what the typed tree covers reads it.
+    const std::string &synthesised() const { return synthesised_; }
+    void setSynthesised(const char *kind) { synthesised_ = kind; }
 private:
+    std::string synthesised_;
     bool noexcept_ = false;
     std::vector<std::string> spec_;
     bool hasThis_ = false;
