@@ -414,3 +414,26 @@ the site, and the list is what M3's lowering has to meet or close.
 Gated: `make test` green (emit golden 0 of 1,924 changed, typed.sh and adapted.sh 0 differ), `identical.sh` 5,352
 compared and the known 8 differ.
 
+
+**M2.18: the typed front end on every box** (2026-10-25; Fable's M2.13-M2.17, finished by Claude Opus 5.5 after
+Fable's session ran out of context). Measured on the four boxes, Windows first:
+
+| box | what | result |
+| --- | --- | --- |
+| Windows (zeeshan, cl 19.51) | the cases through the MASM spelling and the project's LINK at -O0, -O2, `-front=typed`, `-front=typed -O2` | 955 passed, 0 failed, 33 skipped, each of the four |
+| Windows | `tools/windows/self-host.cmd`, plain and `-front=typed` | stage 1 and stage 2 built, 70 of 70 sources the same from each, both (assembled by clang - see below) |
+| TMS6747 (the Linux box: CCS 5.5's lnk6x 7.4.4, vm6747, sim6747) | `tests/tms6747.sh` at -O0 and -O2; `tests/ti-link.sh` (TI's lnk6x over every case) at -O0 and -O2; `tests/asm6x.sh` | 620 passed, 0 failed, each level; 629 linked, 0 failed, each level; 633 objects, 0 failed |
+| Linux (g++ 11.5) | run.sh at -O0 and -O2, plain and `-front=typed`; emit, syntax, typed, adapted | 989 passed, 0 failed, all four; emit 2,557; typed and adapted 647, 0 differ |
+| Linux | `tools/self-host`, plain and `-front=typed` | 70 of 70 sources the same from stage 1 and stage 2, both |
+| macOS | `make test` | run.sh 987, emit 1,924 (the golden at `a2b39e7` 0 changed), names 653, typed and adapted 647, 0 failed; exclusions 0/0, comment cap 0 |
+
+**The self-host found one gap in cxx3, not in M2's code**: `std::pair<int, int> lastCleanupSlots = std::pair<int,
+int>(0, 0);`, M2.13's member of `FunctionState`, stopped stage 0 at the comma inside the template-id - a member's own
+initialiser is ended at a depth-0 comma and angle brackets are not counted. The source no longer writes the
+initialiser (`std::pair`'s default constructor is the same value), and the gap is in the register,
+`tests/open/member-initialiser-template-id-comma.cpp`.
+
+**The Windows self-host is the GNU spelling's, as M1's was.** Under `-masm=masm` stage 0 cannot build stage 1: cxx3's
+own sources use `thread_local`, which needs SECTIONREL, and the project's masm has none - refused by name; ml64 has no
+COMDAT, so a program of seventy objects does not link. Until the project's masm gains SECTIONREL (or M4's COFF writer
+lands, R4.4), R9.1's target-1 gate is assembled by clang.
