@@ -11,7 +11,7 @@
 #   tools/verify-three windows
 #   tools/verify-three c6747        TI's own C6747 toolchains alone: tools/c6747-three
 #   tools/verify-three ride         RIDE's tests/test --require-tools on the Windows box
-#   tools/verify-three tms6747      the tms6747 box on the Windows machine: TI's lnk6x over every case
+#   tools/verify-three tms6747      TI's lnk6x over every case, on the Linux box (or CXX1_TI_BOX's Windows box)
 #
 # **No C6000 work runs on the Mac.** The C6000's suites, builds and simulators are the boxes': the Linux leg runs
 # tests/tms6747.sh and tests/asm6x.sh with the TI tools built there from source (tools/ti6x-build.sh, in ~/ti6x),
@@ -29,6 +29,16 @@ WHICH=${1:-all}
 KEY=${CXX1_LINUX_KEY:-$HOME/Documents/Claude/myMorningWalk.pem}
 LINUX=${CXX1_LINUX:-ec2-user@52.202.164.123}
 WINDOWS=${WINDOWS_BOX:-windows}
+# The Windows box's own folder for this leg, and the spellings its cases go through: the GRA box keeps
+# C:\Users\GRA\work and both spellings; zeeshan (2026-10-25) is H:\Claude and the MASM spelling alone - the
+# project's masm and LINK, no clang. WIN_WORK_FWD is the same folder for scp, which eats backslashes.
+WIN_WORK=${CXX1_WINDOWS_WORK:-'C:\Users\GRA\work'}
+WIN_WORK_FWD=$(printf '%s' "$WIN_WORK" | tr '\\' '/')
+WIN_SPELLINGS=${CXX1_WINDOWS_SPELLINGS:-gnu masm}
+# The box TI's lnk6x judges every tms6747 case on: the Linux box by default, whose CCS 5.5 has lnk6x 7.4.4
+# and ~/c6747-lib its rts6740_elf_eh.lib - run inside the Linux leg (tests/ti-link.sh), the box being too small
+# for two builds at once. A Windows box with CCS 7.4 is named as itself (ti-link.cmd); 'none' leaves it out.
+TIBOX=${CXX1_TI_BOX:-linux}
 # The workspace holding TI/ and Windows/: two levels up as it was under Compilers/, or one since 2026-10-18 -
 # or named by CXX1_WORKSPACE, for a tree that is not beside them (a git worktree under .claude/worktrees).
 WS=${CXX1_WORKSPACE:-$ROOT/../..}
@@ -119,7 +129,12 @@ if [ "$WHICH" = all ] || [ "$WHICH" = linux ]; then
             for o in "" -O2; do
                 CXX1_FLAGS=$o VM=$T/VM6747/vm6747.exe SIM6747=$T/SIM6747/sim6747.exe ASM6X=$T/ASM6x/build/asm6x.exe \
                     LNK6X=$T/LNK6x/build/lnk6x.exe TIRTS=$T/RTS6x/build sh tests/tms6747.sh | tail -1 || exit 1
-            done' || rc=1
+            done &&
+            if [ "'"$TIBOX"'" = linux ]; then
+                for o in "" -O2; do
+                    CXX1_TI_FLAGS=$o CPP11_AS=$T/ASM6x/build/asm6x.exe JOBS=2 sh tests/ti-link.sh | tail -6 || exit 1
+                done
+            fi' || rc=1
         echo "linux leg: $(( $(date +%s) - t ))s, $([ $rc -eq 0 ] && echo passed || echo FAILED)"
         exit $rc
     ) > "$LEGS/linux.log" 2>&1 &
@@ -157,14 +172,30 @@ fi
 # C:\Users\GRA\work\verify-ti and a tarball of its own beside the windows leg's, its own
 # cxx3-msvc.exe, TI's lnk6x over every case - asm6x on what cxx1 wrote, the linker the judge.
 # `tools/verify-three tms6747` runs it alone.
-if [ "$WHICH" = all ] || [ "$WHICH" = windows ] || [ "$WHICH" = tms6747 ]; then
+# Alone and on the Linux box, the tms6747 leg is tests/ti-link.sh at -O0 and -O2 in a tree of its own.
+if [ "$WHICH" = tms6747 ] && [ "$TIBOX" = linux ]; then
+    (
+        t=$(date +%s); rc=0
+        echo "=== tms6747 ($LINUX, CCS 5.5's lnk6x) ==="
+        scp -q -i "$KEY" -o BatchMode=yes "$TAR" "$LINUX:cxx1src-ti.tgz" || rc=1
+        ssh -i "$KEY" -o BatchMode=yes "$LINUX" '
+            rm -rf ~/cxx1-verify-ti && mkdir -p ~/cxx1-verify-ti/tmp &&
+            tar -C ~/cxx1-verify-ti -xzf ~/cxx1src-ti.tgz && rm ~/cxx1src-ti.tgz &&
+            export TMPDIR=$HOME/cxx1-verify-ti/tmp && cd ~/cxx1-verify-ti && ./build -j1 >/dev/null &&
+            for o in "" -O2; do CXX1_TI_FLAGS=$o JOBS=2 sh tests/ti-link.sh | tail -6 || exit 1; done' || rc=1
+        echo "tms6747 leg: $(( $(date +%s) - t ))s, $([ $rc -eq 0 ] && echo passed || echo FAILED)"
+        exit $rc
+    ) > "$LEGS/tms6747.log" 2>&1 &
+    BG="$BG tms6747:$!"
+fi
+if { [ "$WHICH" = all ] || [ "$WHICH" = windows ] || [ "$WHICH" = tms6747 ]; } && [ "$TIBOX" != none ] && [ "$TIBOX" != linux ]; then
     TIREMOTE='C:\Users\GRA\work\verify-ti'
     (
         t=$(date +%s); rc=0
-        scp -q -o BatchMode=yes "$TAR" "$WINDOWS:C:\\Users\\GRA\\work\\src-ti.tgz" || rc=1
-        printf '=== tms6747 (%s, %s) ===\n' "$WINDOWS" "$TIREMOTE"   # echo reads \c as "stop"
-        ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $TIREMOTE 2>nul & mkdir $TIREMOTE && tar -C $TIREMOTE -xzf C:\\Users\\GRA\\work\\src-ti.tgz" >/dev/null || rc=1
-        ssh -o BatchMode=yes "$WINDOWS" "set CPP11_AS=$TIASM&& call $TIREMOTE\\msvc\\build.cmd >nul && $TIREMOTE\\tools\\windows\\ti-link.cmd $TIREMOTE" > "$LEGS/ti.raw" 2>&1 || rc=1
+        scp -q -o BatchMode=yes "$TAR" "$TIBOX:C:\\Users\\GRA\\work\\src-ti.tgz" || rc=1
+        printf '=== tms6747 (%s, %s) ===\n' "$TIBOX" "$TIREMOTE"   # echo reads \c as "stop"
+        ssh -o BatchMode=yes "$TIBOX" "rmdir /s /q $TIREMOTE 2>nul & mkdir $TIREMOTE && tar -C $TIREMOTE -xzf C:\\Users\\GRA\\work\\src-ti.tgz" >/dev/null || rc=1
+        ssh -o BatchMode=yes "$TIBOX" "set CPP11_AS=$TIASM&& call $TIREMOTE\\msvc\\build.cmd >nul && $TIREMOTE\\tools\\windows\\ti-link.cmd $TIREMOTE" > "$LEGS/ti.raw" 2>&1 || rc=1
         grep -v "^$" "$LEGS/ti.raw" | tr -d '\r' | tail -8
         echo "tms6747 leg: $(( $(date +%s) - t ))s, $([ $rc -eq 0 ] && echo passed || echo FAILED)"
         exit $rc
@@ -182,26 +213,32 @@ if [ "$WHICH" = all ] || [ "$WHICH" = windows ]; then
     # it makes `rmdir /s /q` on the sandbox a heavier thing to write than it
     # should be. C:\Users\GRA\work belongs to this compiler and nothing else, so the
     # wipe-and-unpack below is safe to read at a glance.
-    REMOTE='C:\Users\GRA\work\verify'
-    scp -q -o BatchMode=yes "$TAR" "$WINDOWS:C:\\Users\\GRA\\work\\src.tgz" || STATUS=1
+    REMOTE="$WIN_WORK\\verify"
+    scp -q -o BatchMode=yes "$TAR" "$WINDOWS:$WIN_WORK_FWD/src.tgz" || STATUS=1
     # Windows ships its own tar. Extracting over a previous run rather than
     # into a clean directory is what leaves a stale object linking perfectly,
     # so the directory goes first.
-    ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $REMOTE 2>nul & mkdir $REMOTE && tar -C $REMOTE -xzf C:\\Users\\GRA\\work\\src.tgz" >/dev/null || STATUS=1
+    ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $REMOTE 2>nul & mkdir $REMOTE && tar -C $REMOTE -xzf $WIN_WORK\\src.tgz" >/dev/null || STATUS=1
     TW=$(date +%s)
     # **The project's masm and LINK go with the tree** (review D15): run-cases.cmd builds them and puts
     # every case through -masm=masm as well as the GNU spelling, into winout\masm.
-    TOOLS='C:\Users\GRA\work\verify-tools'
+    TOOLS="$WIN_WORK\\verify-tools"
     MASMENV=""
     if [ -d "$WS/Windows/MASM/src" ] && [ -d "$WS/Windows/LINK/src" ]; then
         TT=$(mktemp -t cxx1tools).tgz
         COPYFILE_DISABLE=1 tar -C "$WS/Windows" --no-xattrs -czf "$TT" --exclude '* [0-9]*' MASM/src LINK/src 2>/dev/null
-        scp -q -o BatchMode=yes "$TT" "$WINDOWS:C:\\Users\\GRA\\work\\tools.tgz" || STATUS=1
-        ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $TOOLS 2>nul & mkdir $TOOLS && tar -C $TOOLS -xzf C:\\Users\\GRA\\work\\tools.tgz" >/dev/null || STATUS=1
+        scp -q -o BatchMode=yes "$TT" "$WINDOWS:$WIN_WORK_FWD/tools.tgz" || STATUS=1
+        ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $TOOLS 2>nul & mkdir $TOOLS && tar -C $TOOLS -xzf $WIN_WORK\\tools.tgz" >/dev/null || STATUS=1
         rm -f "$TT"
         MASMENV="set CXX1_MASM_SRC=$TOOLS\\MASM&& set CXX1_LINK_SRC=$TOOLS\\LINK&& "
     fi
+    MASMENV="${MASMENV}set CXX1_CASES_SPELLINGS=$WIN_SPELLINGS&& "
+    case " $WIN_SPELLINGS " in *" gnu "*) GNUPASS=1;; *) GNUPASS=0;; esac
+    case " $WIN_SPELLINGS " in *" masm "*) MASMPASS=1;; *) MASMPASS=0;; esac
     ssh -o BatchMode=yes "$WINDOWS" "$MASMENV$REMOTE\\tools\\windows\\run-cases.cmd $REMOTE" || STATUS=1
+    # **No GNU pass, no clang**: the project's masm and LINK beside the compiler - RIDE's layout - so the checks
+    # below, which name no spelling, assemble and link with them too, before and after -masm=masm is the default.
+    [ "$GNUPASS" = 1 ] || ssh -o BatchMode=yes "$WINDOWS" "copy /y $REMOTE\\winout-tools\\masm.exe $REMOTE\\ && copy /y $REMOTE\\winout-tools\\link.exe $REMOTE\\" >/dev/null || STATUS=1
     # The two-half programs, linked across the boundary with cl both ways:
     # the ABI at the seam, which nothing compiled by cxx1 alone can see.
     ssh -o BatchMode=yes "$WINDOWS" "$REMOTE\\tools\\windows\\winlink-check.cmd $REMOTE" || STATUS=1
@@ -210,9 +247,9 @@ if [ "$WHICH" = all ] || [ "$WHICH" = windows ]; then
     OUT=$(mktemp -d)
     # Forward slashes: scp's remote path goes through the shell, which eats
     # the backslashes, and the copy then silently finds nothing.
-    scp -q -r -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/verify/winout" "$OUT"
+    scp -q -r -o BatchMode=yes "$WINDOWS:$WIN_WORK_FWD/verify/winout" "$OUT"
     pass=0; fail=0
-    for e in "$ROOT"/tests/cases/*.expected; do
+    [ "$GNUPASS" = 1 ] && for e in "$ROOT"/tests/cases/*.expected; do
         n=$(basename "$e" .expected)
         # **Excluded coming back as well as going out.** The tar above drops
         # the `name 2.ext` copies iCloud leaves, so the far side never sees
@@ -240,7 +277,7 @@ if [ "$WHICH" = all ] || [ "$WHICH" = windows ]; then
     done
     # **The same cases through -masm=masm**, assembled and linked by the project's own tools.
     # A case the project's masm cannot take says so in <case>.nomasm, printed like a .notarget.
-    for e in "$ROOT"/tests/cases/*.expected; do
+    [ "$MASMPASS" = 1 ] && for e in "$ROOT"/tests/cases/*.expected; do
         n=$(basename "$e" .expected)
         case "$n" in *" "[0-9]*) continue;; esac
         nt="$ROOT/tests/cases/$n.notarget"
@@ -277,6 +314,9 @@ if [ "$WHICH" = all ] || [ "$WHICH" = windows ]; then
             fi
         done
     done
+    # The refusals are judged in the GNU pass's output where there is one, else in the MASM pass's, where a
+    # .nomasm case was not built at all.
+    ERRDIR=winout; [ "$GNUPASS" = 1 ] || ERRDIR=winout/masm
     for e in "$ROOT"/tests/cases/*.error; do
         n=$(basename "$e" .error)
         case "$n" in *" "[0-9]*) continue;; esac   # the copies again
@@ -285,7 +325,8 @@ if [ "$WHICH" = all ] || [ "$WHICH" = windows ]; then
             echo "  skip $n: $(grep x86_64-windows "$nt")"
             continue
         fi
-        got="$OUT/winout/$n.err"
+        [ "$GNUPASS" = 1 ] || [ ! -f "$ROOT/tests/cases/$n.nomasm" ] || continue
+        got="$OUT/$ERRDIR/$n.err"
         if [ ! -f "$got" ]; then
             echo "  $n: did not run"; fail=$((fail + 1)); continue
         fi
@@ -301,14 +342,15 @@ if [ "$WHICH" = all ] || [ "$WHICH" = windows ]; then
     # optimizer stood under a green verify-three for that reason (2026-10-07). Recorded output only.
     ssh -o BatchMode=yes "$WINDOWS" "${MASMENV}set CXX1_CASES_FLAGS=-O2&& $REMOTE\\tools\\windows\\run-cases.cmd $REMOTE" >/dev/null || STATUS=1
     OUT2=$(mktemp -d)
-    scp -q -r -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/verify/winout" "$OUT2"
+    scp -q -r -o BatchMode=yes "$WINDOWS:$WIN_WORK_FWD/verify/winout" "$OUT2"
     p2=0; f2=0
     for e in "$ROOT"/tests/cases/*.expected; do
         n=$(basename "$e" .expected)
         case "$n" in *" "[0-9]*) continue;; esac
         nt="$ROOT/tests/cases/$n.notarget"
         if [ -f "$nt" ] && grep -q x86_64-windows "$nt"; then continue; fi
-        for sp in "" masm/; do
+        for sp in $([ "$GNUPASS" = 1 ] && echo _) $([ "$MASMPASS" = 1 ] && echo masm/); do
+            [ "$sp" = _ ] && sp=""
             # a .nomasm case is not built by the MASM pass at any level
             if [ "$sp" = masm/ ] && [ -f "$ROOT/tests/cases/$n.nomasm" ]; then continue; fi
             if [ -f "$OUT2/winout/$sp$n.out" ] && tr -d '\r' < "$OUT2/winout/$sp$n.out" | diff -q - "$e" >/dev/null; then
@@ -388,7 +430,7 @@ double 2.5" ]; then
     }
     ssh -o BatchMode=yes "$WINDOWS" "$REMOTE\\tools\\windows\\names-vs-cl.cmd $REMOTE" >/dev/null || STATUS=1
     NOUT=$(mktemp -d)
-    scp -q -r -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/verify/winnames" "$NOUT" 2>/dev/null
+    scp -q -r -o BatchMode=yes "$WINDOWS:$WIN_WORK_FWD/verify/winnames" "$NOUT" 2>/dev/null
     nagree=0; ndiffer=0
     for mine in "$NOUT"/winnames/*.mine.txt; do
         [ -f "$mine" ] || continue
