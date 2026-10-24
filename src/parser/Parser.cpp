@@ -511,6 +511,12 @@ Parser::FunctionState Parser::captureFunctionState() const {
     s.conditionDecl = conditionDecl_;
     s.conditionName = conditionName_;
     s.usingNamespaces = lookup_.usingNamespaces_;
+    s.lastCleanupSlots = lastCleanupSlots_;
+    s.pendingReturnTemp = pendingReturnTemp_;
+    s.pendingTry = pendingTry_;
+    s.pendingThrow = pendingThrow_;
+    s.pendingRange = pendingRange_;
+    s.pendingLambda = pendingLambda_;
     return s;
 }
 
@@ -589,6 +595,12 @@ void Parser::restoreFunctionState(const FunctionState &s) {
     conditionDecl_ = s.conditionDecl;
     conditionName_ = s.conditionName;
     lookup_.usingNamespaces_ = s.usingNamespaces;
+    lastCleanupSlots_ = s.lastCleanupSlots;
+    pendingReturnTemp_ = s.pendingReturnTemp;
+    pendingTry_ = s.pendingTry;
+    pendingThrow_ = s.pendingThrow;
+    pendingRange_ = s.pendingRange;
+    pendingLambda_ = s.pendingLambda;
 }
 
 // A body parsed behind one of these doors is a *different* function, so it
@@ -665,6 +677,12 @@ void Parser::clearFunctionState() {
     mayThrow_ = 0;
     conditionDecl_ = false;
     conditionName_.clear();
+    lastCleanupSlots_ = std::pair<int, int>(0, 0);
+    pendingReturnTemp_ = ReturnTemp();
+    pendingTry_ = TryFacts();
+    pendingThrow_ = ThrowFacts();
+    pendingRange_ = RangeFacts();
+    pendingLambda_ = LambdaFacts();
 }
 
 void Parser::replayInlineBodies(std::vector<PendingBody> mine) {

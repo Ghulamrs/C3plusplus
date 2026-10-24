@@ -1009,9 +1009,15 @@ private:
         int mayThrow = 0;
         bool conditionDecl = false;
         std::string conditionName;
-        // Block-scope, and a lambda's body is its own block: a using-directive
-        // written in one reached the end of the enclosing function.
+        // Block-scope, and a lambda's body is its own block: a using-directive written in one reached the function's end.
         std::vector<std::string> usingNamespaces;
+        // The facts a parse records for the syntax node that takes them (M2.13): set deep in a statement, read at its end.
+        std::pair<int, int> lastCleanupSlots = std::pair<int, int>(0, 0);
+        ReturnTemp pendingReturnTemp;
+        TryFacts pendingTry;
+        ThrowFacts pendingThrow;
+        RangeFacts pendingRange = RangeFacts();
+        LambdaFacts pendingLambda;
     };
     // **A parse whose result is discarded must put back what it accumulated.**
     struct Discarded {

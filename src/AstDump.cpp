@@ -145,11 +145,19 @@ struct Dump final : Visitor {
     void visit(const Break &n) override { stmtLine(n, "break"); }
     void visit(const Continue &n) override { stmtLine(n, "continue"); }
     void visit(const FuncletLeave &n) override { stmtLine(n, "funclet-leave " + n.label()); }
+    // Every field a backend reads (M2.14): two bodies differing in a type, an index, an exit or a slot must compare different.
     void visit(const Try &n) override {
-        char b[96];
-        std::snprintf(b, sizeof b, "try ptr=%d sel=%d types=%zu handlers=%zu", n.pointerSlot(), n.selectorSlot(),
-                      n.types().size(), n.handlers().size());
-        stmtLine(n, b);
+        char b[128];
+        std::snprintf(b, sizeof b, "try ptr=%d sel=%d handlers=%zu cleanup=%d help=%d", n.pointerSlot(), n.selectorSlot(),
+                      n.handlers().size(), n.alsoCleanup() ? 1 : 0, n.unwindHelpSlot());
+        std::string text = b;
+        for (std::size_t i = 0; i < n.types().size(); i++) {
+            text += i == 0 ? " types=" : ",";
+            text += n.types()[i].empty() ? "..." : n.types()[i];
+            if (i < n.typeIndices().size()) text += "#" + std::to_string(n.typeIndices()[i]);
+        }
+        for (std::size_t i = 0; i < n.msExits().size(); i++) text += (i == 0 ? " exits=" : ",") + n.msExits()[i];
+        stmtLine(n, text);
         for (std::size_t i = 0; i < n.body().size(); i++) sub(*n.body()[i]);
         if (n.hasPad()) { depth++; line("pad"); depth--; sub(n.pad()); }
     }
