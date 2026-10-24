@@ -938,6 +938,8 @@ StmtPtr Parser::rangeForStatement(int scope) {
                      StmtPtr(inside));
     f->setScope(scope);
     setup.push_back(StmtPtr(f));
+    if (!classIter && alive_.size() == aliveMark && rt->isArray())
+        pendingRange_ = RangeFacts{ bName, eName, bSlot, eSlot, scope, inner };
     // The range temporary and the iterators die after the loop, in the reverse order,
     // and on the way out of an exception too - a cleanup region from where each was built.
     if (alive_.size() != aliveMark) {
@@ -1488,6 +1490,8 @@ StmtPtr Parser::statement() {
     pendingThrow_ = ThrowFacts();
     StmtPtr noted = noteStmt(std::move(s), kind, text, pos, mark, pos);
     if (const For *f = dynamic_cast<const For *>(noted.get())) syntaxScopes_[noted->syntax().v] = f->scope();
+    if (kind == syntax::Kind::For && !pendingRange_.bName.empty()) rangeFacts_[noted->syntax().v] = pendingRange_;
+    pendingRange_ = RangeFacts();
     if (const Case *c = dynamic_cast<const Case *>(noted.get()))
         caseFacts_[noted->syntax().v] = CaseFacts{ c->value(), c->isDefault(), c->id() };
     if (kind == syntax::Kind::Return && !pendingReturnTemp_.name.empty()) returnTemps_[noted->syntax().v] = pendingReturnTemp_;

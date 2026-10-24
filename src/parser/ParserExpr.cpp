@@ -3165,6 +3165,10 @@ ExprPtr Parser::noteKeywordForm(syntax::Kind kind, KeywordForm f) {
     if (kind == syntax::Kind::Cast && text.find('&') == std::string::npos && text.compare(0, 12, "dynamic_cast") != 0 &&
         f.e->type() != nullptr && (f.e->type()->isVoid() || f.e->type()->isScalar()))
         castTypes_[f.e->syntax().v] = f.e->type();
+    // A static_cast or const_cast to a reference names its operand, typed as the cast leaves it (M2.12o).
+    if (kind == syntax::Kind::Cast && text.find("&>") != std::string::npos && f.e->type() != nullptr &&
+        (text.compare(0, 12, "static_cast<") == 0 || text.compare(0, 11, "const_cast<") == 0))
+        refCastTypes_[f.e->syntax().v] = std::make_pair(f.e->type(), f.e->isXvalue());
     return std::move(f.e);
 }
 

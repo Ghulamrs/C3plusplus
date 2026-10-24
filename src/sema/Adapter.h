@@ -39,6 +39,7 @@ private:
     std::vector<StmtPtr> throwSteps(TypedId id);
     void endCatches(std::vector<StmtPtr> &into, int count) const;
     StmtPtr forStatement(TypedId id);
+    StmtPtr rangeFor(TypedId id);
     std::size_t declaratorEnd(TypedId var, int *bounds) const;
     void arrayInitialiser(TypedId var, const Local &l, std::vector<StmtPtr> &body);
     ExprPtr expr(TypedId id);

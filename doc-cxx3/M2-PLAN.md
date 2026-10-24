@@ -269,6 +269,12 @@ keeps the name as written. And a `noexcept` function is adapted unless the parse
 region, which is a wrapped body now; a `throw` in one is the abort the parser writes, and stays outside. At M2.12n:
 1,229 of 1,986 adapted, all the same.
 
+**M2.12o: a range-based `for` over an array, and a cast to a reference.** The loop is the parser's rewrite: `.rb`
+and `.re` in the slots it chose (`rangeFacts_`, kept only where the range is an array and nothing is alive the
+loop must destroy), the test `.rb != .re`, the step `.rb = .rb + 1`, and the variable taken from `*.rb` in the
+body's own scope. `static_cast<T &>` and `const_cast<T &>` take the type and the xvalue mark the parser gave the
+cast (`refCastTypes_`), since the typed tree types neither. At M2.12o: 1,233 of 1,986 adapted, all the same.
+
 **The parser's `Ast.h` is the oracle for the new path while both exist**: the new path is right where it
 produces what the old one produced. That is `tools/identical.sh` again, and the reason the old path is kept
 until the new one has matched it everywhere.

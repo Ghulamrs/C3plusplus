@@ -648,10 +648,60 @@ void Adapter::arrayInitialiser(TypedId var, const Local &l, std::vector<StmtPtr>
 }
 
 // A `for`'s parts are told apart by where they stand against its two semicolons, any of the first three being absent.
+// Parser::rangeForStatement over an array: `__b = a; __e = __b + N;` and a loop whose body takes `*__b` first.
+StmtPtr Adapter::rangeFor(TypedId id) {
+    const TypedTree &tree = typer_.tree();
+    const TypedNode &n = tree.node(id);
+    const Parser::RangeFacts &f = p_.rangeFacts_.find(n.syntax.v)->second;
+    if (n.count != 3 || syn(tree.child(id, 1)).kind != syntax::Kind::Var) outside("a range-based for of other parts");
+    ExprPtr range = expr(tree.child(id, 0));
+    const Type *rt = range->type();
+    if (!rt->isArray() || rt->length() < 0) outside("a range-based for over what is not an array");
+    const Type *elemPtr = p_.types_.pointerTo(rt->pointee());
+    const Type *size = p_.types_.get(p_.target_.sizeType());
+    auto iter = [&](const std::string &name, int slot) { return typed(std::unique_ptr<Var>(Var::local(name, slot)), elemPtr); };
+    std::vector<StmtPtr> setup;
+    setup.push_back(make_owned<ExprStmt>(typed(make_owned<Assign>(iter(f.bName, f.bSlot), decay(std::move(range))), elemPtr)));
+    ExprPtr past = pointerAdd(iter(f.bName, f.bSlot), typed(make_owned<Num>(rt->length()), size));
+    setup.push_back(make_owned<ExprStmt>(typed(make_owned<Assign>(iter(f.eName, f.eSlot), std::move(past)), elemPtr)));
+    ExprPtr cond = typed(make_owned<Binary>(BinOp::Ne, iter(f.bName, f.bSlot), iter(f.eName, f.eSlot)), p_.types_.get(Kind::Bool));
+    ExprPtr next = pointerAdd(iter(f.bName, f.bSlot), typed(make_owned<Num>(1LL), size));
+    ExprPtr step = typed(make_owned<Assign>(iter(f.bName, f.bSlot), std::move(next)), elemPtr);
+    const TypedId var = tree.child(id, 1);
+    std::unordered_map<std::uint32_t, Local>::const_iterator l = p_.declaredLocals_.find(tree.node(var).syntax.v);
+    if (l == p_.declaredLocals_.end()) outside("a range-based for's variable not recorded");
+    try { plainLocal(p_, l->second); } catch (const std::string &why) { outside(why); }
+    if (!l->second.staticName.empty() || ownedClass(p_, l->second.type)) outside("a range-based for's variable of a class");
+    ExprPtr take;
+    if (l->second.type->isReference()) {
+        const Type *slotType = p_.types_.pointerTo(l->second.type->referent());
+        ExprPtr slot = typed(std::unique_ptr<Var>(Var::local(l->second.name, l->second.offset)), slotType);
+        take = typed(make_owned<Assign>(std::move(slot), convert(iter(f.bName, f.bSlot), slotType)), slotType);
+    } else {
+        ExprPtr at = typed(make_owned<Unary>('*', iter(f.bName, f.bSlot)), elemPtr->pointee());
+        take = typed(make_owned<Assign>(localVar(l->second, p_.types_), classValue(convert(std::move(at), l->second.type),
+                                                                                    l->second.type)), l->second.type);
+    }
+    std::vector<StmtPtr> body;
+    body.push_back(make_owned<ExprStmt>(std::move(take)));
+    loopMarks_.push_back(alive_.size());
+    body.push_back(stmt(tree.child(id, 2)));
+    loopMarks_.pop_back();
+    std::unique_ptr<Block> inside = make_owned<Block>(std::move(body));
+    inside->setScope(f.inner);
+    std::unique_ptr<For> loop = make_owned<For>(StmtPtr(), std::move(cond), std::move(step), StmtPtr(std::move(inside)));
+    loop->setScope(f.scope);
+    setup.push_back(std::move(loop));
+    std::unique_ptr<Block> whole = make_owned<Block>(std::move(setup));
+    whole->setScope(-1);
+    return placed(std::move(whole), syn(id), n.syntax);
+}
+
 StmtPtr Adapter::forStatement(TypedId id) {
     const TypedTree &tree = typer_.tree();
     const TypedNode &n = tree.node(id);
     const syntax::Node &s = syn(id);
+    if (p_.rangeFacts_.count(n.syntax.v) != 0) return rangeFor(id);
     std::unordered_map<std::uint32_t, int>::const_iterator scope = p_.syntaxScopes_.find(n.syntax.v);
     if (scope == p_.syntaxScopes_.end()) outside("a for whose scope was not recorded");
     std::size_t at = 0;
@@ -813,6 +863,22 @@ ExprPtr Adapter::expr(TypedId id) {
         case syntax::Kind::Cast: {
             // [expr.cast]: the operand decayed, then to void as it stands, else the conversion a cast allows.
             std::unordered_map<std::uint32_t, const Type *>::const_iterator to = p_.castTypes_.find(n.syntax.v);
+            // A reference cast names its operand: static_cast<T &&> marks it an xvalue, const_cast retypes it.
+            std::unordered_map<std::uint32_t, std::pair<const Type *, bool> >::const_iterator ref =
+                p_.refCastTypes_.find(n.syntax.v);
+            if (ref != p_.refCastTypes_.end() && n.count == 1) {
+                e = expr(tree.child(id, 0));
+                if (!isLvalue(*e) || e->isXvalue()) outside("a reference cast of what is not an lvalue");
+                if (e->type()->unqualified() != ref->second.first->unqualified()) outside("a reference cast to another type");
+                if (text.compare(0, 11, "const_cast<") == 0) {
+                    e->setType(ref->second.first);
+                } else {
+                    if (e->type() != ref->second.first) outside("a static_cast to a reference leaving another type");
+                    if (ref->second.second) e->setXvalue();
+                    e->setDeclCategory(Expr::Category::Natural);
+                }
+                break;
+            }
             if (to == p_.castTypes_.end() || n.count != 1) outside("a cast not recorded");
             ExprPtr v = decay(expr(tree.child(id, 0)));
             if (to->second->isVoid()) { e = typed(make_owned<Cast>(to->second, std::move(v)), to->second); break; }

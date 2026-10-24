@@ -10786,6 +10786,12 @@ is adapted unless the parser wrapped it in the terminate region. **A use after `
 `convert(std::move(cond), p_.promote(cond->type()))` - argument evaluation order is unspecified, and clang read
 `cond` after the move. The governing type is taken first now.
 
+## M2.12o: a range-based `for` over an array, and a cast to a reference, 2026-10-24
+
+**1,233 of 1,986 functions take the adapter's body**, all the same: a range-based `for` over an array is the
+parser's rewrite in the slots it chose (`rangeFacts_`), and `static_cast<T &>` and `const_cast<T &>` take the type
+and value category the parser recorded (`refCastTypes_`) - the typed tree gave neither a type.
+
 ## Build
 
 ```

@@ -620,6 +620,11 @@ private:
     // A case label's folded value and the number caseLabel gave it, by node (M2.12n).
     struct CaseFacts { long long value; bool isDefault; int id; };
     std::unordered_map<std::uint32_t, CaseFacts> caseFacts_;
+    std::unordered_map<std::uint32_t, std::pair<const Type *, bool> > refCastTypes_;
+    // A range-based for over an array with nothing alive: its two iterator slots and the scopes of the loop and body.
+    struct RangeFacts { std::string bName, eName; int bSlot, eSlot, scope, inner; };
+    std::unordered_map<std::uint32_t, RangeFacts> rangeFacts_;
+    RangeFacts pendingRange_ = RangeFacts();
     LambdaFacts pendingLambda_;
     void noteTemporarySlot(const Expr *e) {
         const Unary *star = dynamic_cast<const Unary *>(e);
