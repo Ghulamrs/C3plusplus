@@ -32,7 +32,7 @@ if [ "${EMIT_O2:-}" = 1 ]; then OUT=tests/out-emit-O2; GOLD=tests/out-emit-O2.go
 if [ "$(uname -s)" = Darwin ]; then
     if [ "${EMIT_O2:-}" = 1 ]; then echo "emit.sh --o2: the C6000 runs on the Windows and Linux boxes, not on the Mac"; exit 2; fi
     TARGETS="x86_64-linux x86_64-windows arm64-darwin"
-    echo "emit.sh: tms6747 left out here - the C6000 runs on the Windows and Linux boxes, not on the Mac"
+    [ "${1:-}" = --one ] || echo "emit.sh: tms6747 left out here - the C6000 runs on the Windows and Linux boxes, not on the Mac"
 fi
 
 # Refused by name, like everything else here: a mistyped flag that ran the

@@ -621,7 +621,7 @@ ExprPtr Parser::compound(BinOp op, ExprPtr target, ExprPtr value, std::size_t po
     const bool rightClass = value->type()->unqualified()->isStructOrUnion();
     if (leftClass || rightClass) {
         const std::string name = std::string("operator") + binOpSpelling(op) + "=";
-        switch (resolveOperator(name, *target, value.get(), pos)) {
+        switch (overload_.resolveOperator(name, *target, value.get(), pos)) {
         case OperatorChoice::Member: {
             std::vector<ExprPtr> args;
             args.push_back(std::move(value));
@@ -633,7 +633,7 @@ ExprPtr Parser::compound(BinOp op, ExprPtr target, ExprPtr value, std::size_t po
             std::vector<ExprPtr> args;
             args.push_back(std::move(target));
             args.push_back(std::move(value));
-            const Signature &sig = resolveOverload(name, args, pos);
+            const Signature &sig = overload_.resolveOverload(name, args, pos);
             return completeCall(name, sig.symbol, nullptr, sig.returns,
                                 sig.params, sig.variadic, pos, std::move(args),
                                 !sig.owner.empty());
@@ -728,7 +728,7 @@ ExprPtr Parser::incDec(ExprPtr target, bool increment, bool prefix, std::size_t 
             dummy.reset(new Num(0LL));
             dummy->setType(types_.intType());
         }
-        switch (resolveOperator(name, *target, dummy.get(), pos)) {
+        switch (overload_.resolveOperator(name, *target, dummy.get(), pos)) {
         case OperatorChoice::Member: {
             std::vector<ExprPtr> args;
             if (!prefix) args.push_back(std::move(dummy));
@@ -739,7 +739,7 @@ ExprPtr Parser::incDec(ExprPtr target, bool increment, bool prefix, std::size_t 
             std::vector<ExprPtr> args;
             args.push_back(std::move(target));
             if (!prefix) args.push_back(std::move(dummy));
-            const Signature &sig = resolveOverload(name, args, pos);
+            const Signature &sig = overload_.resolveOverload(name, args, pos);
             applyDefaults(sig, args, pos);
             return completeCall(name, sig.symbol, nullptr, sig.returns,
                                 sig.params, sig.variadic, pos, std::move(args),
@@ -1089,7 +1089,7 @@ ExprPtr Parser::assignValue(ExprPtr n, ExprPtr value, std::size_t pos) {
     // **`t = 5` where the class declares an `operator=` that takes an int.**
     if (to->unqualified()->isStructOrUnion() && value->type() != nullptr &&
         value->type()->unqualified() != to->unqualified() &&
-        resolveOperator("operator=", *n, value.get(), pos) ==
+        overload_.resolveOperator("operator=", *n, value.get(), pos) ==
             OperatorChoice::Member) {
         std::vector<ExprPtr> args;
         args.push_back(std::move(value));

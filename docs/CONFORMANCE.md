@@ -684,3 +684,17 @@ elaborated `struct Box` in a parameter. cxx3 computes a member's symbol where it
 `minus` is `?minus@Inner@Outer@@QEBAHAEBUBox@@@Z` where clang writes `...AEBVBox@@@Z`. A cxx3 object and a
 cl object naming that member do not link. The Itanium ABI does not spell the key, so only x86_64-windows
 is affected.
+
+## A local entity's name does not share its function's substitutions
+
+Measured 2026-10-24 with clang for all three host ABIs, writing
+`tests/cases/local-class-friend-access.cpp`. A member of a local class is named
+`Z <function> E <entity>` on Itanium and with the function as a `?1?` scope on
+Microsoft, and **both ABIs keep one substitution table across the whole name**:
+`static int read(const P &)` in a local class of `int F::get(const P &) const` is
+`_ZZNK1F3getERK1PEN1L4readES2_` and `?read@L@?1??get@F@@QEBAHAEBVP@@@Z@SAH0@Z` -
+the parameter is the function's `const P &` again, `S2_` and `0`. cxx1 mangles
+the entity with a fresh table and spells the type out (`...readERK1P`,
+`SAHAEBVP@@@Z`). Within cxx1's own objects the names agree; a cxx1 object and a
+clang or cl one naming the same local class member - an inline function's, the
+one case where that member crosses a translation unit - do not link.

@@ -15,6 +15,9 @@ int alignTo(int n, int a);
 // Where `base`'s subobject sits inside `derived`, or -1 if it is not a public base of it at all.
 int publicBaseOffset(const Type *derived, const Type *base);
 
+// [conv.qual]: whether a pointer (or an array of them) converts to `to` by adding cv-qualification alone.
+bool qualificationConvertible(const Type *from, const Type *to);
+
 // Does this expression name an object with an address of its own?
 bool isLvalue(const Expr &e);
 bool markedLvalue(const Expr &e);

@@ -3201,7 +3201,7 @@ ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
         const std::string key = !named.empty() && lookup_.overloadsOf(named + bare) != nullptr ? named + bare
                               : !decl.ns.empty() && lookup_.overloadsOf(decl.ns + name) != nullptr
                               ? decl.ns + name : name;
-        const Signature sig = resolveOverload(key, callArgs, pos);
+        const Signature sig = overload_.resolveOverload(key, callArgs, pos);
         // **A specialization's defaults, as every ordinary call reads them.**
         applyDefaults(sig, callArgs, pos);
         return completeCall(sig.name, sig.symbol, nullptr, sig.returns,
@@ -3276,7 +3276,7 @@ ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
     if (made.size() > 1) {
         const std::string key = "$explicit:" + name;
         functionIndex_[key] = made;
-        sig = resolveOverload(key, callArgs, pos);
+        sig = overload_.resolveOverload(key, callArgs, pos);
         functionIndex_.erase(key);
     }
     // Written out rather than deduced, so no ranking chose it and nothing else
@@ -3403,8 +3403,8 @@ ExprPtr Parser::memberTemplateCall(ExprPtr object, const Type *obj,
     if (obj->isConst() && !chosen.constThis)
         src_.fail(pos, "'" + name + "' is not a const member function, and this "
                        "object is const");
-    if (!refQualifierViable(chosen.refThis, chosen.constThis, objectIsLvalue(*object)))
-        src_.fail(pos, refQualifierRefusal(name, objectIsLvalue(*object)));
+    if (!overload_.refQualifierViable(chosen.refThis, chosen.constThis, objectIsLvalue(*object)))
+        src_.fail(pos, overload_.refQualifierRefusal(name, objectIsLvalue(*object)));
 
     const Type *pointee = chosen.constThis ? types_.withConst(plain) : plain;
     const Type *thisType = types_.pointerTo(pointee);
@@ -3644,7 +3644,7 @@ ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
                             "member function '" + member + "' - only "
                             "a static member is reachable through a "
                             "template-id with no object");
-        const Signature &sig = resolveOverload(key, callArgs, mpos);
+        const Signature &sig = overload_.resolveOverload(key, callArgs, mpos);
         applyDefaults(sig, callArgs, mpos);
         if (needsThis(sig))
             src_.fail(mpos, "'" + key + "' is not a static member "

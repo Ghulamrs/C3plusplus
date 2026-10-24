@@ -161,9 +161,14 @@ bool Parser::isFriendClassOf(const Type *cls) const {
     if (it == friendClasses_.end()) return false;
     const Type *here[3] = { currentClass_, classStack_.empty() ? nullptr : classStack_.back(), lambdaScope() };
     for (const Type *h : here)
-        for (const Type *c = h; c != nullptr; c = c->enclosing())
-            for (std::size_t i = 0; i < it->second.size(); i++)
-                if (c->unqualified()->tag() == it->second[i]) return true;
+        // A local class has its member function's access, [class.access]/2, so its outer class counts too.
+        for (const Type *l = h; l != nullptr;) {
+            for (const Type *c = l; c != nullptr; c = c->enclosing())
+                for (std::size_t i = 0; i < it->second.size(); i++)
+                    if (c->unqualified()->tag() == it->second[i]) return true;
+            std::map<std::string, const Type *>::const_iterator in = localClassOuter_.find(l->unqualified()->tag());
+            l = in != localClassOuter_.end() ? in->second : nullptr;
+        }
     return false;
 }
 

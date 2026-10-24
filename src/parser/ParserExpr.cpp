@@ -102,7 +102,7 @@ ExprPtr Parser::overloadedBinary(BinOp op, ExprPtr &lhs, ExprPtr &rhs,
     // The member and non-member candidates are ranked *together*, which is what
     // [over.match.oper] asks for and what asking the two questions in order got
     // wrong: taking the member first accepts an ambiguity clang refuses.
-    switch (resolveOperator(name, *lhs, rhs.get(), pos)) {
+    switch (overload_.resolveOperator(name, *lhs, rhs.get(), pos)) {
     case OperatorChoice::Member: {
         std::vector<ExprPtr> args;
         args.push_back(std::move(rhs));
@@ -169,7 +169,7 @@ ExprPtr Parser::overloadedUnary(const char *spelling, ExprPtr &operand,
     // with its constness still on it, to rank the implicit object parameter.
     const Type *self = operand->type();
     const std::string name = std::string("operator") + spelling;
-    switch (resolveOperator(name, *operand, nullptr, pos)) {
+    switch (overload_.resolveOperator(name, *operand, nullptr, pos)) {
     case OperatorChoice::Member: {
         std::vector<ExprPtr> args;
         return memberCallWith(std::move(operand), self, name, pos,

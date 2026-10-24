@@ -7,6 +7,7 @@
 #include "../Type.h"
 #include "../sema/Entities.h"
 #include "../sema/Lookup.h"
+#include "../sema/Overload.h"
 
 #include <functional>
 #include <map>
@@ -26,7 +27,7 @@ public:
     Parser(const Source &src, std::vector<Token> tokens,
            TypeTable &types, const Target &target, const Abi &abi)
         : src_(src), tokens_(std::move(tokens)), types_(types), target_(target),
-          abi_(abi), lookup_(*this) {}
+          abi_(abi), lookup_(*this), overload_(*this) {}
 
     Program parse();
 
@@ -922,32 +923,9 @@ private:
     std::string synthesizeVcallThunk(const Type *cls, const Signature &f,
                                      int index, std::size_t pos);
 
-    // How well one argument matches one parameter, in [over.ics.scs]'s order - the values are compared, so do
-    // not reorder this enum. The three UserDefined values are one rank with its second standard conversion behind
-    // it, [over.ics.rank]/3.3, told apart only through the same conversion function (1.27).
-    enum class Rank { Identity, Qualification, Promotion, Conversion,
-                      UserDefined, UserDefinedPromotion, UserDefinedConversion,
-                      Ellipsis, None };
-    // UserDefined rank for class `from` to scalar `to` through its one conversion function; plain for a class.
-    Rank userDefinedRank(const Type *from, const Type *to);
-    // For `given` at one rank, [over.ics.rank]/3.2 and /4: +1 if pa's target is nearer, -1 if pb's, 0 if neither.
-    int closerTarget(const Type *pa, const Type *pb, const Type *given) const;
-    // `ranksObjectA`/`B` say whether that candidate's rank vector opens with an implicit object
-    // parameter, which is how a rank position is mapped back to the parameter it came from - a
-    // member and a non-member operator are ranked side by side and do not open the same way.
-    bool betterCandidate(const std::vector<Rank> &a, const std::vector<Rank> &b,
-                         const Signature &fa, const Signature &fb,
-                         bool ranksObjectA, bool ranksObjectB) const;
-    // [temp.func.order]: a's template beats b's when b's patterns match a's, not the reverse.
-    bool moreSpecializedFunction(const Signature &a, const Signature &b) const;
+    typedef sema::Rank Rank;
 
-    // The parameter a rank position came from, or null for an implicit object
-    // parameter and for anything the ellipsis swallowed.
-    static const Type *rankedParameter(const Signature &f, std::size_t i,
-                                       bool ranksObject);
 
-    // Whether two parameters are the same match either way round.
-    static bool sameMatchEitherWay(const Type *pa, const Type *pb);
 
     struct Declared {
         std::string name;
@@ -997,6 +975,8 @@ private:
     // parser's state through a reference back to it until that state moves to the module.
     friend class sema::Lookup;
     sema::Lookup lookup_;
+    friend class sema::Overload;
+    sema::Overload overload_;
     // **How a class goes to a function, and the two ABIs part company here.** Itanium
     // passes one by address whenever copying or destroying it is a call, and the caller
     // destroys the copy; Microsoft passes by the size rules and the callee destroys.
@@ -1965,23 +1945,9 @@ private:
                          bool internal = false);
     ExprPtr defaultPromote(ExprPtr e);
 
-    static std::string describeSignature(const Signature &f);
     const Type *decayedType(const Type *t);
-    Rank rankArgument(const Expr &arg, const Type *param);
-    // `object` is the type the call is made on for a member function and null for a free
-    // one: **the implicit object parameter is ranked like any other**, which is what
-    // tells `get()` from `get() const`. **By value** - `functions_` can move under you.
-    Signature resolveOverload(const std::string &name,
-                                     const std::vector<ExprPtr> &args,
-                                     std::size_t pos,
-                                     const Type *object = nullptr,
-                                     bool objectLvalue = true);
     // `&` or `&&` after a member's parameter list - [dcl.fct]/6 - consumed; None where there is none.
     RefQual refQualifier();
-    // [over.match.funcs]/4: whether a member with this ref-qualifier and const takes the object.
-    static bool refQualifierViable(RefQual ref, bool constThis, bool objectLvalue);
-    static std::string refQualifierRefusal(const std::string &name, bool objectLvalue);
-    static std::string refQualifierMixRefusal(RefQual written, RefQual other);
     void refuseMemberPointerCategory(const Expr &mp, bool lvalue, std::size_t pos) const;
     void refuseSpecialRefQualifier(const char *what) const;
 
@@ -2295,8 +2261,6 @@ private:
     // definition may carry the defaults where the declaration did not.
     void requireDefaultsAreASuffix(const std::vector<std::size_t> &defaults,
                                    std::size_t pos);
-    // The lowest number of arguments a call may give this function.
-    std::size_t leastArguments(const Signature &f) const;
     // Fill in what the call left out, by re-reading each default expression. By value for
     // the same reason, and this is the site that does the parsing: re-reading tokens is
     // exactly what can grow `functions_` under a caller still holding a reference.
@@ -2731,12 +2695,7 @@ private:
     ExprPtr overloadedBinary(BinOp op, ExprPtr &lhs, ExprPtr &rhs,
                              std::size_t pos);
 
-    // Which side of [over.match.oper] won.
-    enum class OperatorChoice { None, Member, NonMember };
-    // `right` is null for a unary operator, where the operand is `left` and
-    // a member candidate writes no parameter at all.
-    OperatorChoice resolveOperator(const std::string &name, const Expr &left,
-                                   const Expr *right, std::size_t pos);
+    typedef sema::OperatorChoice OperatorChoice;
     // `-v`, `!v`, `*p`, `++v`. Null when the operand is not a class or the class has no
     // such operator, and the built-in path below is then reached unchanged - which keeps
     // `&obj` the ordinary address-of for a class that declares no `operator&`.

@@ -167,4 +167,14 @@ struct EnumConst {
 // The four tables' sizes before a declaration, so the entries it added can be aliased.
 struct TableSizes { std::size_t functions, globals, typedefs, enums; };
 
+// How well one argument matches one parameter, in [over.ics.scs]'s order - the values are compared, so do
+// not reorder this enum. The three UserDefined values are one rank with its second standard conversion behind
+// it, [over.ics.rank]/3.3, told apart only through the same conversion function (1.27).
+enum class Rank { Identity, Qualification, Promotion, Conversion,
+                  UserDefined, UserDefinedPromotion, UserDefinedConversion,
+                  Ellipsis, None };
+
+// Which side of [over.match.oper] won.
+enum class OperatorChoice { None, Member, NonMember };
+
 }   // namespace sema

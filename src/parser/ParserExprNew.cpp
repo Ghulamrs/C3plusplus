@@ -260,7 +260,7 @@ ExprPtr Parser::classTemporary(const Type *cls, std::size_t pos) {
     // class whose default constructor nobody wrote is zeroed *and then* built,
     // where a user-provided one gets no zeroing. The same paragraph says both.
     const bool valueInit = args.empty();
-    const Signature &ctor = resolveOverload(key, args, pos);
+    const Signature &ctor = overload_.resolveOverload(key, args, pos);
     applyDefaults(ctor, args, pos);
     if (ctor.access != Access::Public &&
         !insideAccessOf(plain, ctor.access) && !isFriendOf(plain))
@@ -389,7 +389,7 @@ Parser::Signature Parser::listConstructor(const Type *plain, Init &in,
     const std::string key = constructorKey(plain->tag());
     if (braced) buildBracedArguments(key, args, pos, plain);
     convertThroughConversionFunction(args, plain, !copyList, pos);
-    Signature ctor = resolveOverload(key, args, pos);
+    Signature ctor = overload_.resolveOverload(key, args, pos);
     // [over.match.list]/1: copy-list-initialisation may not choose an explicit constructor.
     if (copyList && ctor.isExplicit)
         src_.fail(pos, "'" + plain->describe() + "' has a constructor taking these arguments "
@@ -486,7 +486,7 @@ ExprPtr Parser::listTemporaryFrom(const Type *to, Init &in, bool copyList, std::
         if (!in.items.empty() && initializerListConstructor(plain, &ilType) != nullptr) {
             std::vector<ExprPtr> args;
             args.push_back(initializerListExpr(ilType, in, pos));
-            const Signature ctor = resolveOverload(constructorKey(plain->tag()), args, pos);
+            const Signature ctor = overload_.resolveOverload(constructorKey(plain->tag()), args, pos);
             return constructTemporary(plain, ctor, std::move(args), false, pos);
         }
         if (in.items.empty() || !onlyImplicitConstructors(plain->tag()) ||
@@ -650,13 +650,13 @@ const Parser::Signature *Parser::convertingConstructor(const Type *to,
         const Type *bare = want->isReference() ? want->pointee()->unqualified()
                                                : want->unqualified();
         if (bare == plain) continue;                 // the copy constructor
-        const Rank r = rankArgument(from, want);
+        const Rank r = overload_.rankArgument(from, want);
         if (r == Rank::None) continue;
         if (found == nullptr) { found = &c; foundRank = r; continue; }
         const std::vector<Rank> a(1, r), b(1, foundRank);
-        if (betterCandidate(a, b, c, *found, false, false)) {
+        if (overload_.betterCandidate(a, b, c, *found, false, false)) {
             found = &c; foundRank = r; ambiguous = false;
-        } else if (!betterCandidate(b, a, *found, c, false, false)) {
+        } else if (!overload_.betterCandidate(b, a, *found, c, false, false)) {
             ambiguous = true;
         }
     }
@@ -707,12 +707,12 @@ bool Parser::constructorViable(const Type *cls, const std::vector<ExprPtr> &args
         lookup_.overloadsOf(constructorKey(cls->unqualified()->tag()));
     for (std::size_t k = 0; set != nullptr && k < set->size(); k++) {
         const Signature &f = functions_[(*set)[k]];
-        if (f.variadic ? args.size() < leastArguments(f)
+        if (f.variadic ? args.size() < overload_.leastArguments(f)
                        : (args.size() > f.params.size() ||
-                          args.size() < leastArguments(f))) continue;
+                          args.size() < overload_.leastArguments(f))) continue;
         bool ok = true;
         for (std::size_t i = 0; i < args.size() && ok && i < f.params.size(); i++)
-            if (rankArgument(*args[i], f.params[i]) == Rank::None) ok = false;
+            if (overload_.rankArgument(*args[i], f.params[i]) == Rank::None) ok = false;
         if (ok) return true;
     }
     return false;
@@ -1968,7 +1968,7 @@ ExprPtr Parser::newExpression(std::size_t pos) {
             whole->setType(pointer);
             return whole;
         }
-        const Signature &ctor = resolveOverload(constructorKey(made->tag()),
+        const Signature &ctor = overload_.resolveOverload(constructorKey(made->tag()),
                                                 ctorArgs, pos);
         // **[class.access]/1 applies to a constructor a new-expression
         // calls**, as it does to every other way of building one.
@@ -2314,7 +2314,7 @@ ExprPtr Parser::userPlacementAllocation(const Type *made, bool array, ExprPtr by
     std::vector<ExprPtr> args;
     args.push_back(std::move(bytes));
     for (std::size_t i = 0; i < extra.size(); i++) args.push_back(std::move(extra[i]));
-    const Signature sig = resolveOverload(key, args, pos);
+    const Signature sig = overload_.resolveOverload(key, args, pos);
     for (std::size_t i = 1; i < args.size() && i < sig.params.size(); i++)
         if (!sig.params[i]->isReference()) args[i] = convert(std::move(args[i]), sig.params[i]);
     return completeCall(sig.name, sig.symbol, nullptr, sig.returns, sig.params,

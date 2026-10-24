@@ -51,6 +51,9 @@ so no parser code changes for it.
 
 M2.1 found a gap the self-host needed mended at once: `friend class sema::Lookup;`, a qualified
 friend class, was refused with "expected ';'". Each module's commit may carry such a fix, with its case.
+M2.2 found another: a local class's member read a private of `Parser` through the module's friendship,
+and [class.access]/2 gives a local class the access of the function it is written in - friendship included.
+`Rank` and `OperatorChoice` went to `Entities.h` with the entry types, for the same reason they did.
 
 A basename may not repeat across `src/` and its directories (`msvc/build.cmd` writes one flat object
 directory), so the M2.6 module is not called `Mangle`.

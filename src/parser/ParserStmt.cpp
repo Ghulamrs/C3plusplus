@@ -703,7 +703,7 @@ const Type *Parser::classRangeEnds(ExprPtr range, std::size_t rpos,
             return memberCallWith(object(), rangeType, which, rpos, std::vector<ExprPtr>());
         std::vector<ExprPtr> args;
         args.push_back(object());
-        const Signature sig = resolveOverload(scope + which, args, rpos);
+        const Signature sig = overload_.resolveOverload(scope + which, args, rpos);
         return completeCall(scope + which, sig.symbol, nullptr, sig.returns, sig.params,
                             sig.variadic, rpos, std::move(args), false);
     };

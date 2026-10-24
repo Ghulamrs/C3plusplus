@@ -102,7 +102,7 @@ bool Parser::bracedListViable(const Type *param, const Init &in) {
     if (set == nullptr) return n == 0;
     for (std::size_t k = 0; k < set->size(); k++) {
         const Signature &f = functions_[(*set)[k]];
-        if (f.isExplicit || n < leastArguments(f) || (!f.variadic && n > f.params.size())) continue;
+        if (f.isExplicit || n < overload_.leastArguments(f) || (!f.variadic && n > f.params.size())) continue;
         return true;
     }
     return false;
@@ -155,12 +155,12 @@ void Parser::buildBracedArguments(const std::string &key, std::vector<ExprPtr> &
     std::vector<std::size_t> asked;
     for (std::size_t k = 0; k < set->size(); k++) {
         const Signature &f = functions_[(*set)[k]];
-        if (f.variadic ? args.size() < leastArguments(f)
-                       : (args.size() > f.params.size() || args.size() < leastArguments(f))) continue;
+        if (f.variadic ? args.size() < overload_.leastArguments(f)
+                       : (args.size() > f.params.size() || args.size() < overload_.leastArguments(f))) continue;
         bool viable = true;
         for (std::size_t j = 0; j < args.size() && j < f.params.size() && viable; j++) {
             if (const Init *in = bracedInitOf(*args[j])) viable = bracedListViable(f.params[j], *in);
-            else if (overloadArgOf(*args[j]) == nullptr) viable = rankArgument(*args[j], f.params[j]) != Rank::None;
+            else if (overloadArgOf(*args[j]) == nullptr) viable = overload_.rankArgument(*args[j], f.params[j]) != Rank::None;
         }
         if (viable) asked.push_back((*set)[k]);
     }
@@ -210,14 +210,14 @@ void Parser::pickOverloadArguments(const std::string &key, std::vector<ExprPtr> 
         bool differ = false;
         for (std::size_t k = 0; k < callee->size(); k++) {
             const Signature &f = functions_[(*callee)[k]];
-            if (f.variadic ? args.size() < leastArguments(f)
-                           : (args.size() > f.params.size() || args.size() < leastArguments(f))) continue;
+            if (f.variadic ? args.size() < overload_.leastArguments(f)
+                           : (args.size() > f.params.size() || args.size() < overload_.leastArguments(f))) continue;
             if (i >= f.params.size()) continue;
             // A candidate another written argument rules out picks nothing, so it cannot disagree.
             bool viable = true;
             for (std::size_t j = 0; j < args.size() && j < f.params.size() && viable; j++)
                 if (j != i && overloadArgOf(*args[j]) == nullptr && !isBracedPlaceholder(*args[j]))
-                    viable = rankArgument(*args[j], f.params[j]) != Rank::None;
+                    viable = overload_.rankArgument(*args[j], f.params[j]) != Rank::None;
             if (!viable) continue;
             const Signature *one = pickByTarget(oa->set, oa->cls, f.params[i]);
             if (one == nullptr) continue;
@@ -242,7 +242,7 @@ Parser::Signature Parser::resolveOverloadBraced(const std::string &key, std::vec
                                                 std::size_t pos, const Type *object,
                                                 bool objectLvalue) {
     buildBracedArguments(key, args, pos, object);
-    return resolveOverload(key, args, pos, object, objectLvalue);
+    return overload_.resolveOverload(key, args, pos, object, objectLvalue);
 }
 
 // **Split from completeCall so that overload resolution can stand between them.**
@@ -892,12 +892,22 @@ ExprPtr Parser::memberCallWith(ExprPtr object, const Type *cls,
 // are the only ways past a private member, and are asked in the same breath.
 bool Parser::isFriendOf(const Type *cls) const {
     if (isFriendClassOf(cls)) return true;
-    if (cls == nullptr || currentFunction_.empty()) return false;
+    if (cls == nullptr) return false;
     std::map<std::string, std::vector<std::string> >::const_iterator it =
         friends_.find(cls->unqualified()->tag());
     if (it == friends_.end()) return false;
-    for (std::size_t i = 0; i < it->second.size(); i++)
-        if (it->second[i] == currentFunction_) return true;
+    // The function being read, and each function a local class around it was written in, [class.access]/2.
+    std::vector<std::string> fns(1, currentFunction_);
+    for (const Type *c = currentClass_; c != nullptr;) {
+        std::map<std::string, std::string>::const_iterator o = localClassOwner_.find(c->unqualified()->tag());
+        if (o == localClassOwner_.end()) break;
+        fns.push_back(o->second);
+        std::map<std::string, const Type *>::const_iterator in = localClassOuter_.find(c->unqualified()->tag());
+        c = in != localClassOuter_.end() ? in->second : nullptr;
+    }
+    for (std::size_t f = 0; f < fns.size(); f++)
+        for (std::size_t i = 0; i < it->second.size(); i++)
+            if (!fns[f].empty() && it->second[i] == fns[f]) return true;
     return false;
 }
 

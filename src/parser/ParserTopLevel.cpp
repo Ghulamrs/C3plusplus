@@ -1689,7 +1689,7 @@ void Parser::topLevel(Program &program) {
                                 (from == base->unqualified() || accessibleBaseOffset(from, base) >= 0) &&
                                 copyConstructorOf(base) == nullptr && moveConstructorOf(base) == nullptr &&
                                 !base->nonTrivialCopy();
-                    if (!copyBytes) chosen = resolveOverload(key, chosenArgs, d.pos);
+                    if (!copyBytes) chosen = overload_.resolveOverload(key, chosenArgs, d.pos);
                     found = true;
                 } else if (building) {
                     // No entry names this base, so its default constructor runs.
@@ -2339,7 +2339,7 @@ StmtPtr Parser::delegatingCall(const Declared &d, const Type *cls, std::vector<E
                        "supported yet - the target would have to be told whether this "
                        "object is the most derived one");
     const std::string key = constructorKey(cls->tag());
-    Signature chosen = resolveOverload(key, args, pos);
+    Signature chosen = overload_.resolveOverload(key, args, pos);
     applyDefaults(chosen, args, pos);
     const Type *self = types_.pointerTo(cls);
     std::vector<ExprPtr> all;

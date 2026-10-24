@@ -224,7 +224,7 @@ void Parser::initConstruct(const std::string &name, std::vector<InitStep> &path,
         return;
     }
     checkNotAbstract(cls, pos, "'" + name + "'");
-    const Signature &ctor = resolveOverload(constructorKey(cls->tag()), args, pos);
+    const Signature &ctor = overload_.resolveOverload(constructorKey(cls->tag()), args, pos);
     applyDefaults(ctor, args, pos);
     if (ctor.isExplicit && !valueInit)
         src_.fail(pos, "'" + cls->describe() + "' has a constructor taking these arguments and it is "

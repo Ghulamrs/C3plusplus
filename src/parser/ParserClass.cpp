@@ -25,7 +25,7 @@ StmtPtr Parser::constructObject(const Declared &d, const std::string &symbol,
                                 bool copyInit, bool valueInit) {
     checkNotAbstract(d.type, d.pos, "'" + d.name + "'");
     const std::string key = constructorKey(d.type->tag());
-    const Signature &ctor = resolveOverload(key, args, d.pos);
+    const Signature &ctor = overload_.resolveOverload(key, args, d.pos);
     applyDefaults(ctor, args, d.pos);
 
     // **[dcl.init]/16: copy-initialization may not pick an `explicit` constructor.**
@@ -87,15 +87,6 @@ bool Parser::overrides(const VSlot &s, const std::string &name,
 // [over.load]/2: with one parameter-type-list, either every overload has a ref-qualifier or none has.
 static bool mixesRefQualifier(RefQual a, RefQual b) {
     return (a == RefQual::None) != (b == RefQual::None);
-}
-
-std::string Parser::refQualifierMixRefusal(RefQual written, RefQual other) {
-    const RefQual with = written != RefQual::None ? written : other;
-    const std::string spelt = std::string("with ref-qualifier '") +
-                              (with == RefQual::LValue ? "&" : "&&") + "'";
-    const std::string none = "without a ref-qualifier";
-    return "cannot overload a member function " + (written != RefQual::None ? spelt : none) +
-           " with a member function " + (written != RefQual::None ? none : spelt) + " - [over.load]/2";
 }
 
 // **[class.virtual]/8: an override returns the same type, or a pointer or
@@ -548,7 +539,7 @@ std::vector<StmtPtr> Parser::virtualBaseCalls(const Type *type, int thisSlot,
             if (vbaseArgs != nullptr && said != vbaseArgs->end() &&
                 !said->second.empty()) {
                 ctorArgs.swap(said->second);
-                namedCtor = resolveOverload(constructorKey(base->tag()),
+                namedCtor = overload_.resolveOverload(constructorKey(base->tag()),
                                             ctorArgs, pos);
                 applyDefaults(namedCtor, ctorArgs, pos);
                 ctor = &namedCtor;
@@ -2424,7 +2415,7 @@ StmtPtr Parser::constructLocalArrayFromList(Declared &d, int offset,
         } else {
             const bool copyInit = !e.direct && (!e.braced || !empty);
             if (copyInit) {
-                const Signature chosen = resolveOverload(constructorKey(plain->tag()), e.args, d.pos);
+                const Signature chosen = overload_.resolveOverload(constructorKey(plain->tag()), e.args, d.pos);
                 if (chosen.isExplicit)
                     src_.fail(d.pos, "element " + std::to_string(i) + " of '" + d.name + "' is "
                                      "copy-initialised from its initialiser, and the constructor of '" +
@@ -2657,7 +2648,7 @@ const Parser::Signature *Parser::defaultConstructorOf(const Type *cls) const {
     const Signature *found = nullptr;
     for (std::size_t k = 0; k < set->size(); k++) {
         const Signature &f = functions_[(*set)[k]];
-        if (leastArguments(f) != 0) continue;
+        if (overload_.leastArguments(f) != 0) continue;
         if (found != nullptr) return nullptr;
         found = &f;
     }
@@ -4643,7 +4634,7 @@ void Parser::declareMember(const std::string &cls, const Declared &d,
         if (f.constThis == constThis && f.refThis == refThis)
             src_.fail(d.pos, "'" + key + "' is declared twice");
         if (mixesRefQualifier(f.refThis, refThis))
-            src_.fail(d.pos, refQualifierMixRefusal(refThis, f.refThis));
+            src_.fail(d.pos, overload_.refQualifierMixRefusal(refThis, f.refThis));
     }
 
     if (inUnion && isVirtual)
@@ -4680,7 +4671,7 @@ void Parser::declareMember(const std::string &cls, const Declared &d,
         // clang refuses an override that drops or adds the ref-qualifier as [over.load]/2 does.
         if (slots[i].name == d.name && sameParameters(slots[i].params, params) &&
             mixesRefQualifier(slots[i].refThis, refThis))
-            src_.fail(d.pos, refQualifierMixRefusal(refThis, slots[i].refThis));
+            src_.fail(d.pos, overload_.refQualifierMixRefusal(refThis, slots[i].refThis));
         if (!overrides(slots[i], d.name, params, constThis, refThis)) continue;
         checkOverrideReturn(slots[i], fn->returns(), cls, d.name, d.pos);
         checkNotFinal(slots[i], cls, d.name, d.pos);
@@ -5266,7 +5257,7 @@ StmtPtr Parser::constructMember(const std::string &cls, const Type *type,
     // Held by value: reading a default argument can grow `functions_`.
     Signature chosen;
     if (!args.empty()) {
-        chosen = resolveOverload(key, args, pos);
+        chosen = overload_.resolveOverload(key, args, pos);
     } else {
         const Signature *ctor = defaultConstructorOf(mc);
         if (ctor == nullptr)
