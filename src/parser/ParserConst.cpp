@@ -776,7 +776,7 @@ bool Parser::instantiateForConstant(const std::string &symbol) const {
             self.functions_[body.which].used = true;
             const Specialization sp = specializations_[i];
             std::vector<Shadow> undo;
-            self.bindTemplateParameters(sp.params, sp.binding, sp.values, sp.packs, &undo);
+            self.tmpl_.bindTemplateParameters(sp.params, sp.binding, sp.values, sp.packs, &undo);
             std::vector<std::vector<ConstexprSlot> > frames;
             frames.swap(constexprFrames_);
             const std::string wasKey = instantiationKey_, wasOf = instantiationOf_;
@@ -790,7 +790,7 @@ bool Parser::instantiateForConstant(const std::string &symbol) const {
             self.instantiationKey_ = wasKey;
             self.instantiationOf_ = wasOf;
             frames.swap(constexprFrames_);
-            self.unbindTemplateParameters(undo);
+            self.tmpl_.unbindTemplateParameters(undo);
             return true;
         }
     }

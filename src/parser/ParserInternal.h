@@ -18,6 +18,12 @@ int publicBaseOffset(const Type *derived, const Type *base);
 // [conv.qual]: whether a pointer (or an array of them) converts to `to` by adding cv-qualification alone.
 bool qualificationConvertible(const Type *from, const Type *to);
 
+// `$TT3` names template template parameter 3: whether `name` is such a stand-in, and which.
+bool ttRefName(const std::string &name, int *index);
+
+// Whether type t mentions template parameter i anywhere in it.
+bool mentionsParam(const Type *t, std::size_t i);
+
 // Does this expression name an object with an address of its own?
 bool isLvalue(const Expr &e);
 bool markedLvalue(const Expr &e);

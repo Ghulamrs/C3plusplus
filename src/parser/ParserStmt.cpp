@@ -185,7 +185,7 @@ StmtPtr Parser::declarationBody() {
                                  "nothing to test");
         }
         // `auto f(int) -> int;` in a block declares a function, its return type after the list.
-        if (mentionsDeduced(d.type) && trailingArrowAhead()) {
+        if (tmpl_.mentionsDeduced(d.type) && trailingArrowAhead()) {
             refuseTrailingBase(d.type, d.pos);
             std::vector<const Type *> params;
             bool variadic = false;
@@ -196,7 +196,7 @@ StmtPtr Parser::declarationBody() {
             declareFunction(d.name, returns, params, variadic, false, d.pos);
             continue;
         }
-        if (mentionsDeduced(d.type)) {
+        if (tmpl_.mentionsDeduced(d.type)) {
             d.type = deduceAuto(d.type, d.name, d.pos);
             checkOneDeducedType(deducedSoFar, lastDeducedAuto_, d.name, d.pos);
         }
@@ -789,7 +789,7 @@ StmtPtr Parser::rangeForStatement(int scope) {
 
     const Type *rt = range->type();
     // `auto &&` deduces `T &` from the lvalue `*__b`; a `T &&` written out cannot bind one.
-    if (d.type->kind() == Kind::RValueRef && !mentionsDeduced(d.type))
+    if (d.type->kind() == Kind::RValueRef && !tmpl_.mentionsDeduced(d.type))
         src_.fail(d.pos, "'" + d.name + "' is '" + d.type->describe() + "', and each element "
                          "is an lvalue - an rvalue reference cannot bind to one");
 
@@ -865,8 +865,8 @@ StmtPtr Parser::rangeForStatement(int scope) {
         deref->setType(elemPtr->pointee());
     }
     const Type *elem = deref->type();
-    if (mentionsDeduced(d.type))
-        d.type = deduceAutoFrom(d.type, types_.referenceTo(elem), d.name, d.pos);   // `*__b` is an lvalue
+    if (tmpl_.mentionsDeduced(d.type))
+        d.type = tmpl_.deduceAutoFrom(d.type, types_.referenceTo(elem), d.name, d.pos);   // `*__b` is an lvalue
 
     // `__b != __e`
     ExprPtr cond = comparison(BinOp::Ne, iterVar(bName, bSlot), iterVar(eName, eSlot), rpos);
@@ -1001,8 +1001,8 @@ ExprPtr Parser::whileConditionDeclaration() {
                               "has no initialiser - there would be nothing "
                               "to test");
     ExprPtr init = decay(assign());
-    if (mentionsDeduced(d.type))
-        d.type = deduceAutoFrom(d.type, deductionArgType(*init), d.name, d.pos);
+    if (tmpl_.mentionsDeduced(d.type))
+        d.type = tmpl_.deduceAutoFrom(d.type, tmpl_.deductionArgType(*init), d.name, d.pos);
     // A class would have to be constructed and destroyed once per turn, and the construction is
     // written where the test is - so it is refused here and not in an `if`, where the object is
     // built once and the ordinary declaration path does all of it.

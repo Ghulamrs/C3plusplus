@@ -1142,7 +1142,7 @@ ExprPtr Parser::primary(Program *program) {
                                             cls->findStaticMember(peek().text) != nullptr)));
         };
         const bool memberFirst = memberOf(currentClass_) || memberOf(lambdaScope());
-        if (!memberFirst && !(peekAt(1).is("(") && functionHidesTemplates(peek().text)))
+        if (!memberFirst && !(peekAt(1).is("(") && tmpl_.functionHidesTemplates(peek().text)))
             return templateCall(program);
     }
 
@@ -1386,7 +1386,7 @@ ExprPtr Parser::primary(Program *program) {
                 peekAt(after).is("::")) {
                 const std::size_t qpos = peek().pos;
                 at_ += typeEnd;                      // to the `<`
-                const Type *cls = instantiateClass(td->second, qpos);
+                const Type *cls = tmpl_.instantiateClass(td->second, qpos);
                 if (cls != nullptr && cls->isStructOrUnion() &&
                     peek().is("::")) {
                     at_++;

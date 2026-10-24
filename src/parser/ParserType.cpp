@@ -1205,7 +1205,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                                      "and 'virtual' - one says there is no "
                                      "object and the other dispatches on one");
                 pendingNoexcept_ = exceptionSpecification();
-                if (mentionsDeduced(writtenReturn) && peek().is("->")) {
+                if (tmpl_.mentionsDeduced(writtenReturn) && peek().is("->")) {
                     refuseTrailingBase(writtenReturn, d.pos);
                     d.type = types_.functionType(readTrailingReturn(paramsOpen),
                                                  d.type->params(), mvariadic);
@@ -2034,7 +2034,7 @@ const Type *Parser::unqualifiedSpecifiers(StorageClass *storage, Qualifiers *qua
         if (!decl.isClass) refuseTemplateId();
         const std::size_t tpos = peek().pos;
         at_++;
-        const Type *cls = instantiateClass(decl, tpos);
+        const Type *cls = tmpl_.instantiateClass(decl, tpos);
 
         return memberTypeWalk(cls);
     }
@@ -2072,15 +2072,17 @@ const Type *Parser::unqualifiedSpecifiers(StorageClass *storage, Qualifiers *qua
             if (tmplConsumed > consumed) {
                 const std::size_t tpos = peek().pos;
                 at_ += tmplConsumed;
-                const Type *cls = instantiateClass(findTemplate(tmpl)->second,
+                const Type *cls = tmpl_.instantiateClass(findTemplate(tmpl)->second,
                                                    tpos);
                 return memberTypeWalk(cls);
             }
             if (found != nullptr) {
-                // A nested class is a member, and `private:` reaches it.
+                // A nested class is a member, and `private:` reaches it - a friend's code and a local class's included.
                 if (found->enclosing() != nullptr &&
                     found->nestedAccess() != Access::Public &&
                     !insideClass(found->enclosing()) &&
+                    !insideAccessOf(found->enclosing(), found->nestedAccess()) &&
+                    !isFriendOf(found->enclosing()) &&
                     !definesMemberOf(found->enclosing(), consumed))
                     src_.fail(peek().pos, "'" + found->localName() + "' is " +
                                           (found->nestedAccess() == Access::Private
@@ -2803,7 +2805,7 @@ Parser::Declared Parser::declarator(const Type *base, bool nameOptional,
         if (!name.empty() && peek().is("<") && tmpl != templates_.end() &&
             tmpl->second.isClass) {
             const std::size_t tpos = pos;
-            const Type *cls = instantiateClass(tmpl->second, tpos);
+            const Type *cls = tmpl_.instantiateClass(tmpl->second, tpos);
             // A held `V<N>(` or `~V<N>(` replayed: the class's own name, not a qualifier.
             const bool own = !inlineOwner_.empty() && name == inlineOwnerName_ &&
                              cls->unqualified()->tag() == inlineOwner_ && peek().is("(");
@@ -2946,7 +2948,7 @@ bool Parser::atOwnTemplateId(const std::string &tag, const std::string &local) {
     if (tmpl == templates_.end() || !tmpl->second.isClass) return false;
     const std::size_t save = at_;
     at_++;
-    const Type *cls = instantiateClass(tmpl->second, peek().pos);
+    const Type *cls = tmpl_.instantiateClass(tmpl->second, peek().pos);
     if (cls != nullptr && cls->unqualified()->tag() == tag && peek().is("(")) return true;
     at_ = save;
     return false;

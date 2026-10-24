@@ -393,7 +393,7 @@ void Parser::topLevel(Program &program) {
         const Type *deducedSoFar = nullptr;
         for (;;) {
             if (quals.isConstexpr) d.type = constexprObject(d.type);
-            if (mentionsDeduced(d.type)) {
+            if (tmpl_.mentionsDeduced(d.type)) {
                 d.type = deduceAuto(d.type, d.name, d.pos);
                 checkOneDeducedType(deducedSoFar, lastDeducedAuto_, d.name,
                                     d.pos);
@@ -744,9 +744,9 @@ void Parser::topLevel(Program &program) {
     // `auto f(int a) -> decltype(a)`, C++11: the return type is read after the parameters,
     // which are in scope for it by then, [dcl.fct]/2 and [basic.scope.param].
     const bool trailingArrow = trailingArrowAhead();
-    const bool trailing = trailingArrow && mentionsDeduced(d.type);
+    const bool trailing = trailingArrow && tmpl_.mentionsDeduced(d.type);
     if (trailing) refuseTrailingBase(d.type, d.pos);
-    if (mentionsDeduced(d.type) && !trailing)
+    if (tmpl_.mentionsDeduced(d.type) && !trailing)
         src_.fail(d.pos, "a function's return type cannot be deduced - `auto` "
                          "there is C++14, and this compiler is C++11");
 
@@ -817,7 +817,7 @@ void Parser::topLevel(Program &program) {
                     src_.fail(pscPos, "'register' is the only storage class a "
                                       "parameter may have");
                 Declared pd = declarator(pt, true);
-                if (mentionsDeduced(pd.type))
+                if (tmpl_.mentionsDeduced(pd.type))
                     src_.fail(pd.pos, "a parameter's type cannot be deduced - "
                                       "`auto` there is C++14, and this "
                                       "compiler is C++11");
@@ -2123,7 +2123,7 @@ Program Parser::parse() {
     // **Each of these two can give the other more to do, so they alternate.**
     for (int pass = 0; pass < 64; pass++) {
         const std::size_t had = program.functions.size();
-        instantiatePending();
+        tmpl_.instantiatePending();
         defineImplicitFunctions();
         if (program.functions.size() == had) break;
     }
@@ -2267,7 +2267,7 @@ const Type *Parser::readTrailingReturn(std::size_t paramsOpen) {
         locals_.resize(scopeStarts_.back());
         scopeStarts_.pop_back();
     }
-    if (mentionsDeduced(returns))
+    if (tmpl_.mentionsDeduced(returns))
         src_.fail(arrow, "a trailing return type cannot itself be deduced - 'auto' there "
                          "is C++14, and this compiler is C++11");
     return returns;

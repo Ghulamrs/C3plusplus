@@ -330,7 +330,7 @@ const Type *Parser::initializerListOf(const Type *elem, std::size_t pos) {
     t.kind = TokenKind::Punct; t.text = ">";   tokens_.push_back(t);
     t.kind = TokenKind::End;   t.text = "";    tokens_.push_back(t);
     const TemplateDecl decl = it->second;
-    const Type *made = instantiateClass(decl, pos);
+    const Type *made = tmpl_.instantiateClass(decl, pos);
     at_ = resume;
     return made;
 }
@@ -633,7 +633,7 @@ const Parser::Signature *Parser::convertingConstructor(const Type *to,
     const Type *plain = to->unqualified();
     if (!plain->isStructOrUnion()) return nullptr;
     std::vector<const Type *> one(1, from.type());
-    instantiateConstructorTemplates(plain, one, pos);
+    tmpl_.instantiateConstructorTemplates(plain, one, pos);
     const std::vector<std::size_t> *set = lookup_.overloadsOf(constructorKey(plain->tag()));
     if (set == nullptr) return nullptr;
 
@@ -702,7 +702,7 @@ ExprPtr Parser::userConversion(const Type *param, ExprPtr &arg, std::size_t pos)
 // count and rank checks resolveOverload makes, without its refusal.
 bool Parser::constructorViable(const Type *cls, const std::vector<ExprPtr> &args,
                                std::size_t pos) {
-    instantiateConstructorTemplates(cls->unqualified(), args, pos);
+    tmpl_.instantiateConstructorTemplates(cls->unqualified(), args, pos);
     const std::vector<std::size_t> *set =
         lookup_.overloadsOf(constructorKey(cls->unqualified()->tag()));
     for (std::size_t k = 0; set != nullptr && k < set->size(); k++) {

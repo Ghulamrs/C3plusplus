@@ -5372,7 +5372,7 @@ void Parser::parameterTypes(std::vector<const Type *> &params, bool &variadic) {
         const Type *pt = specifiers(&psc, &pquals);
         Declared pd = declarator(pt, true);
         refuseThreadLocalHere(pquals.isThreadLocal, pd.pos);
-        if (mentionsDeduced(pd.type))
+        if (tmpl_.mentionsDeduced(pd.type))
             src_.fail(pd.pos, "a parameter's type cannot be deduced - `auto` "
                               "there is C++14, and this compiler is C++11");
         const Type *declared = pd.type;

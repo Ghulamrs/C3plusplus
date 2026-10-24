@@ -55,6 +55,16 @@ M2.2 found another: a local class's member read a private of `Parser` through th
 and [class.access]/2 gives a local class the access of the function it is written in - friendship included.
 `Rank` and `OperatorChoice` went to `Entities.h` with the entry types, for the same reason they did.
 
+**A `const` method reaches the parser through a non-const reference.** Two parser methods overloaded on
+`const` alone, with different bodies, are chosen by the caller's constness - and once the caller is moved,
+`p_` picks the non-const one whatever the caller was. M2.3 met it as `decayedType`: deduction's decay
+(through references, cv dropped) and the expression's, and `tools/identical.sh` showed 888 outputs
+changed. The deduction one is `decayedArgument` now. The one other such pair, `ptrdiffType`, is split
+before M2.4, which moves the code that reaches it. The template table's entry types (`TemplateParam`,
+`TemplateDecl`, `PackMembers`, `PackBinding`, `Shadow`) went to `Entities.h` with M2.3.
+M2.3's self-host found a third gap: a friend naming a class's private nested type (`Parser::PendingBody`)
+was refused - the type path asked only whether it was inside the class, never friendship.
+
 A basename may not repeat across `src/` and its directories (`msvc/build.cmd` writes one flat object
 directory), so the M2.6 module is not called `Mangle`.
 

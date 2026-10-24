@@ -8,6 +8,7 @@
 #include "../sema/Entities.h"
 #include "../sema/Lookup.h"
 #include "../sema/Overload.h"
+#include "../sema/Templates.h"
 
 #include <functional>
 #include <map>
@@ -27,7 +28,7 @@ public:
     Parser(const Source &src, std::vector<Token> tokens,
            TypeTable &types, const Target &target, const Abi &abi)
         : src_(src), tokens_(std::move(tokens)), types_(types), target_(target),
-          abi_(abi), lookup_(*this), overload_(*this) {}
+          abi_(abi), lookup_(*this), overload_(*this), tmpl_(*this) {}
 
     Program parse();
 
@@ -263,159 +264,19 @@ private:
     void skipBracedBlock();
 
     // ---- Rung 5.1: the template table, and nothing instantiated ----
-    // **A pack's members as bound**: the types, and for a non-type pack the values beside them,
-    // the types then being the element type once per value. One per template parameter.
-    struct PackMembers : std::vector<const Type *> {
-        std::vector<long long> values;
-        PackMembers() {}
-        PackMembers(const std::vector<const Type *> &t) : std::vector<const Type *>(t) {}
-    };
-    typedef std::vector<PackMembers> Packs;
-    // One template parameter as written: `class T` / `typename T`, or a non-type one
-    // such as `int N`. Nothing is bound to either yet.
-    struct TemplateParam {
-        std::string name;
-        const Type *type = nullptr;   // null for a type parameter
-        // `T v` after `class T`: the index of T, and `type` is T standing for itself. -1 otherwise.
-        int typeOf = -1;
-        std::size_t pos = 0;
-        // Where its name is, or would be: what clang points at for a template template argument of the wrong kind.
-        std::size_t namePos = 0;
-        // `class...`
-        bool isPack = false;
-        // **`template <class> class C`** - [temp.param]/1: a parameter standing for a template, with
-        // its own list in `inner`, whose names nothing can refer to. `type` is null, as a type parameter's.
-        bool isTemplate = false;
-        std::vector<TemplateParam> inner;
-        // A default argument, kept as a half-open token range [begin, end) the way a default
-        // *function* argument is - instantiation replays tokens, so a default is replayed too, with
-        // the earlier parameters bound. begin == 0 means there is none.
-        std::size_t defBegin = 0;
-        std::size_t defEnd = 0;
-    };
+    typedef sema::PackMembers PackMembers;
+    typedef sema::Packs Packs;
+    typedef sema::TemplateParam TemplateParam;
     // A non-type parameter's type under a binding: T's binding for `T v`, the written type otherwise.
     static const Type *paramTypeIn(const TemplateParam &p, const std::vector<const Type *> &binding) {
         if (p.typeOf >= 0 && static_cast<std::size_t>(p.typeOf) < binding.size() &&
             binding[p.typeOf] != nullptr) return binding[p.typeOf];
         return p.type;
     }
-    // What is known about a name that names a template. `start` is the
-    // `template` keyword: instantiation here will be a replay of these
-    // tokens, so where they begin is the thing worth keeping.
-    struct TemplateDecl {
-        std::string name;
-        // The namespace it was declared in, `std::` included. Carried to the
-        // specialization for the manglers alone - see Type::templateNamespace.
-        std::string ns;
-        std::vector<TemplateParam> params;
-        bool isClass = false;
-        // Written `class` rather than `struct`: a specialization made while the
-        // template is only declared has to describe itself the way it was declared.
-        bool classKey = false;
-        bool defined = false;
-        // `template <class T> using Ptr = T *;` - kept with the class templates, its type-id at aliasAt.
-        bool isAlias = false;
-        std::size_t aliasAt = 0;
-        // **A pattern's stand-in for template template parameter `ttParam`**, entered under the
-        // parameter's name while a pattern is read; -1 for every template a program declares.
-        int ttParam = -1;
-        std::size_t start = 0;
-        // The token after the `>` that closed the parameter list, which is
-        // where the declaration proper begins. Instantiating is re-reading
-        // from here with the arguments bound.
-        std::size_t afterParams = 0;
-        std::size_t pos = 0;
-        // **A member of this class template defined outside it** - `template <class T>
-        // T Box<T>::get(int)`. Kept on the class rather than as a template of its own,
-        // because that is what it is. Replayed when the class is instantiated.
-        struct OutOfLine {
-            std::size_t start = 0;
-            std::string member;    // "get", or the class's name for a ctor
-            bool destructor = false;
-            // A constructor, replayed like a held inline one from `start`, the `Box` after `Box<T>::`.
-            bool constructor = false;
-            // **A static data member, not a member function.**
-            bool isData = false;
-            // A member of a nested class, `Tree<T>::It::Deep::count`: "It::Deep", under the specialization.
-            std::string nested;
-        };
-        std::vector<OutOfLine> outOfLine;
-
-        // **A partial specialization: a second body for the argument lists that match a
-        // pattern.** Its arguments are patterns rather than types, which is why they are
-        // kept as written and matched at every use rather than resolved once.
-        struct Partial {
-            std::vector<TemplateParam> params;
-            // One written argument. A type argument is a pattern; a non-type
-            // one is either a value or one of this specialization's own
-            // parameters, which is the only shape of it that deduces.
-            struct Arg {
-                bool isType = true;
-                const Type *type = nullptr;
-                bool isParam = false;
-                std::size_t param = 0;
-                long long value = 0;
-                // `R...` written as the last argument of the pattern, where R is this
-                // specialization's own pack. It takes every argument the fixed ones in
-                // front did not, which lets `L<T, R...>` peel one type off any length.
-                bool isPackExpansion = false;
-            };
-            std::vector<Arg> args;
-            std::size_t bodyAt = 0;      // the '{' of its class body
-            std::size_t pos = 0;
-        };
-        std::vector<Partial> partials;
-
-        // ---- A member function template ----
-        // `template <int M> CVector<M> head() const { ... }` written inside a
-        // class.
-        bool isMember = false;
-        Access memberAccess = Access::Public;
-        std::string ownerTag;
-        const Type *ownerType = nullptr;
-        std::vector<TemplateParam> classParams;
-        std::vector<const Type *> classBinding;
-        std::vector<long long> classValues;
-        Packs classPacks;           // the class's packs, which the member template's body may expand (L16)
-        // **A constructor template**: named by its class's own name, keyed under constructorKey(ownerTag).
-        bool isConstructor = false;
-        bool isExplicit = false;    // `explicit` on a constructor template, read in the class and replayed past
-        // The class's name as the source spells it - `CMatrix` for `CMatrix<3,3>` - which inlineOwnerName_ wants.
-        std::string ownerLocal;
-    };
+    typedef sema::TemplateDecl TemplateDecl;
     std::map<std::string, TemplateDecl> templates_;
     // **Function templates overload; class templates do not.**
     std::map<std::string, std::vector<TemplateDecl> > fnTemplates_;
-    // Try every function template named `name` against these argument types,
-    // instantiating each that deduces - a substitution failure just drops that
-    // one.
-    void instantiateViableTemplates(const std::string &name,
-                                    const std::vector<const Type *> &argTypes,
-                                    std::size_t pos);
-    void instantiateViableTemplates(const std::vector<TemplateDecl> &overloads,
-                                    const std::vector<const Type *> &argTypes, std::size_t pos);
-    // The function templates a call of `name` names, [basic.lookup.qual] and [basic.lookup.unqual]:
-    // the nearest namespace declaring one - or the one a qualifier names - in `*ns`; else every one.
-    // A `scope` is the namespace a qualifier resolved to, absolute: `m` for `m::twice(2)`.
-    bool functionHidesTemplates(const std::string &name) const;
-    std::vector<TemplateDecl> templatesNamed(const std::string &name, const std::string &scope,
-                                             std::string *ns) const;
-    // The same, for a member function template of `cls`.
-    void instantiateViableMemberTemplates(const Type *cls,
-                                          const std::string &name,
-                                          const std::vector<const Type *> &argTypes,
-                                          std::size_t pos);
-    // The same by the table's own key - "CMatrix<3,3>::CMatrix<3,3>" for a constructor template.
-    void instantiateViableMemberTemplatesUnder(const std::string &key,
-                                               const std::vector<const Type *> &argTypes,
-                                               std::size_t pos);
-    // Every constructor template of `cls` that deduces from these argument types,
-    // instantiated so the constructor set that is then resolved holds it.
-    void instantiateConstructorTemplates(const Type *cls,
-                                         const std::vector<const Type *> &argTypes,
-                                         std::size_t pos);
-    void instantiateConstructorTemplates(const Type *cls,
-                                         const std::vector<ExprPtr> &args, std::size_t pos);
     // Member function templates by "<ownerTag>::<member>", every one of a name (operator* twice).
     std::map<std::string, std::vector<TemplateDecl> > memberTemplates_;
     // An instantiation made, keyed by the template's own position and its arguments.
@@ -451,10 +312,6 @@ private:
     }
     ExprPtr memberTemplateCall(ExprPtr object, const Type *obj,
                                const std::string &name, std::size_t pos);
-    const Signature *instantiateMemberTemplate(
-        const TemplateDecl &mt, const std::vector<const Type *> &binding,
-        const std::vector<long long> &values,
-        const std::vector<TemplateArg> &args, std::size_t pos);
     // **A template is keyed by its bare name, and named by either spelling.**
     std::map<std::string, TemplateDecl>::const_iterator
     findTemplate(const std::string &written) const {
@@ -532,8 +389,6 @@ private:
     ExprPtr templateCall(Program *program, const std::string &scope = std::string());
     // A static member reached through a class template-id, after its `::`.
     ExprPtr templateIdMember(const Type *cls, std::size_t pos);
-    // `Box<int, 3>` where a type was expected.
-    const Type *instantiateClass(const TemplateDecl &decl, std::size_t pos);
     // Set while a class template is being instantiated.
     std::string classInstantiationTag_;
     // The template's own name, for the explicit-specialization path.
@@ -578,13 +433,6 @@ private:
                                  std::size_t pos,
                                  const Packs &packs =
                                      Packs());
-    void instantiatePending();
-    // Past kMaxNesting bodies deep, a specialization asked for from inside another's body is refused.
-    void refuseInstantiationDepth(const std::string &name, int depth, std::size_t pos) const;
-    bool memberIsUsed(const std::string &key) const;
-    // "twice<int>" - the table key and what the diagnostics call it.
-    std::string specializationKey(const std::string &name,
-                                  const std::vector<TemplateArg> &args) const;
     // The template's declaration re-read with `binding` in force. Answers its
     // function type and, through `name`, the name it declares.
     const Type *readTemplateDeclaration(const TemplateDecl &decl,
@@ -598,37 +446,8 @@ private:
     std::map<std::string, int> boundTypeParams_;
     // The non-type parameters bound now, by name: in their template's scope they hide an enclosing one.
     std::map<std::string, int> boundValueParams_;
-    // **A pack while a specialization is being read**: the types it was given and, once its function
-    // parameters have been made, the names they were given - `rest` becomes `rest$0` and `rest$1`, and
-    // `rest...` in a call is those two names. A non-type pack holds its values beside, of `valueType`.
-    struct PackBinding {
-        std::vector<const Type *> types;
-        std::vector<std::string> names;
-        bool isValue = false;
-        const Type *valueType = nullptr;
-        std::vector<long long> values;
-        bool standsForItself() const {
-            return types.size() == 1 && types[0]->kind() == Kind::TemplateParam;
-        }
-    };
-    // What a binding does to the two name tables, and how to put them back.
-    struct Shadow {
-        std::string name;
-        bool isType = true;
-        bool isPack = false;
-        bool had = false;
-        std::size_t was = 0;
-        PackBinding hadPack;
-        // A non-type parameter bound as a pattern reference rather than a value
-        // - `N` in `V<N>` while a signature is read for deduction.
-        bool isParamRef = false;
-        bool hadParamRef = false;
-        int paramRefWas = 0;
-        // A template template parameter is an entry in `templates_` under its name; this is what it hid.
-        bool isTemplate = false;
-        bool hadTemplate = false;
-        TemplateDecl hadDecl;
-    };
+    typedef sema::PackBinding PackBinding;
+    typedef sema::Shadow Shadow;
     std::map<std::string, PackBinding> packs_;
     // While a signature is read as a pattern for deduction, a non-type parameter is bound here.
     std::map<std::string, int> nonTypePatternParams_;
@@ -636,72 +455,18 @@ private:
     // not that; otherwise reads it and adds what it expands to.
     bool packParameter(std::vector<const Type *> *types,
                        std::vector<std::string> *names);
-    // `packs` is indexed like the others and read only for a parameter that
-    // is one; everything else ignores it.
-    void bindTemplateParameters(const std::vector<TemplateParam> &params,
-                                const std::vector<const Type *> &binding,
-                                const std::vector<long long> &values,
-                                const Packs &packs,
-                                std::vector<Shadow> *undo);
-    // [temp.deduct.type] rather than [temp.deduct.call]: this matches a template
-    // *argument* against a pattern, where nothing decays and nothing may differ.
-    // Deduction from a call is looser, because a conversion may still bridge it.
-    bool matchPattern(const Type *pattern, const Type *arg,
-                      std::vector<const Type *> *binding,
-                      std::string *why, Packs *packs = nullptr, std::vector<long long> *values = nullptr) const;
-    bool matchFunctionParams(const Type *pattern, const Type *arg, std::vector<const Type *> *binding,
-                             std::vector<long long> *values, std::string *why, Packs *packs, bool deduce) const;
-    // The partial specialization these arguments ask for, or npos for none.
-    // Refuses by name where two match and neither is more specialized.
-    std::size_t choosePartial(const TemplateDecl &decl,
-                              const std::vector<TemplateArg> &args,
-                              std::vector<const Type *> *binding,
-                              std::vector<long long> *values,
-                              Packs *packs,
-                              std::size_t pos);
-    // [temp.class.order]: whether one pattern is at least as specialized as
-    // another, which is asked by matching each against the other.
-    bool atLeastAsSpecialized(const TemplateDecl::Partial &a,
-                              const TemplateDecl::Partial &b) const;
-    bool moreSpecialized(const TemplateDecl::Partial &a,
-                         const TemplateDecl::Partial &b) const;
-    static bool mentionsPackExpansion(const Type *t);
-    // `Box<T *>` after `template <class T> struct` - the argument list of a
-    // partial specialization, read as patterns.
-    void partialArguments(TemplateDecl::Partial *ps,
-                          const std::vector<TemplateParam> &primary);
-    void unbindTemplateParameters(const std::vector<Shadow> &undo);
     // The bindings a scope made, put back however it is left: a trial's failure inside them included.
     struct BoundParams {
         Parser *p;
         std::vector<Shadow> undo;
         explicit BoundParams(Parser *parser) : p(parser) {}
-        ~BoundParams() { p->unbindTemplateParameters(undo); }
-        void unbindNow() { p->unbindTemplateParameters(undo); undo.clear(); }
+        ~BoundParams() { p->tmpl_.unbindTemplateParameters(undo); }
+        void unbindNow() { p->tmpl_.unbindTemplateParameters(undo); undo.clear(); }
     };
-    // Deduction: the arguments worked out from the call rather than written.
-    // Answers false and fills `why` when some parameter cannot be deduced.
-    bool deduceTemplateArguments(const TemplateDecl &decl,
-                                 const std::vector<const Type *> &argTypes,
-                                 std::vector<const Type *> *binding,
-                                 std::vector<long long> *values,
-                                 Packs *packs,
-                                 std::string *why, std::size_t explicitCount = 0);
-    // `values` receives a deduced non-type argument (the 3 in V<3>); null where only type parameters occur.
-    // `nested`: inside a template-id an argument is matched as it is - no decay, and a cv-qualifier the pattern
-    // does not write is deduced ([temp.deduct.type]/8: `It<C, V>` against `It<S, const int>` is V = const int).
-    bool deduceOne(const Type *pattern, const Type *arg,
-                   std::vector<const Type *> *binding,
-                   std::vector<long long> *values, std::string *why,
-                   Packs *packs = nullptr, bool nested = false) const;
     // An argument's type as a parameter sees it.
-    const Type *decayedType(const Type *a) const;
+    const Type *decayedArgument(const Type *a) const;
     // ---- WS-E1 (review 2026-10-08): forwarding references, F30, F31, F34, alias templates ----
 
-    // An argument's type for deduction: an lvalue of type U goes as `U &` ([temp.deduct.call]/3).
-    const Type *deductionArgType(const Expr &e) const;
-    // Is this pattern parameter `T &&` with T a bare template parameter - a forwarding reference?
-    static bool forwardingReference(const Type *pattern);
     // `[const] Ts [& | &&] ...`: the tokens it takes (0 if it is not one), where Ts is, and how a member is wrapped.
     std::size_t packDeclarator(int *wrap, std::size_t *nameAt) const;
     const Type *wrapPackMember(const Type *member, int wrap);
@@ -714,25 +479,15 @@ private:
     // Where a pattern's `...` ends and how many members it expands to, and one member's tokens bound.
     std::size_t packPatternEnd(bool angle, std::size_t *members) const;
     void bindPatternMember(std::size_t from, std::size_t end, std::size_t m, std::vector<Shadow> *undo);
-    void checkNonTypeArgument(const Type *pt, long long v, std::size_t argPos) const;
     // `template <> int twice<int>(int)` - F31.
     bool functionExplicitSpecialization(std::size_t pos);
     // A deduction left parameter `i` unbound: its default, if it has one, replayed with the earlier ones bound.
     bool defaultTemplateArgument(const TemplateDecl &decl, std::size_t i,
                                  std::vector<const Type *> *binding, std::vector<long long> *values);
-    // ---- Rung 7.1: `auto` ----
-    // [dcl.spec.auto] deduces a variable's `auto` **as if by template argument deduction
-    // from a call**, so deduceOne does the work and Kind::Deduced stands in.
-    static bool mentionsDeduced(const Type *t);
-    const Type *substituteDeduced(const Type *t, const Type *with);
     // Reads the initialiser to learn its type, puts the tokens back, and
     // answers the declared type with `auto` replaced.
     const Type *deduceAuto(const Type *declared, const std::string &name,
                            std::size_t pos);
-    // The same deduction against a type already in hand, for a `for` whose
-    // initialiser is built rather than written.
-    const Type *deduceAutoFrom(const Type *declared, const Type *from,
-                               const std::string &name, std::size_t pos);
     // ---- Rungs 7.3 and 7.2: the range-based `for`, and `decltype` ----
     // A declaration followed by `:` takes a scan to tell from `for (int x = a?b:c;)`;
     // and [dcl.type.simple] separates `decltype(x)` from `decltype((x))` by shape.
@@ -769,22 +524,10 @@ private:
     // ---- Template template parameters, [temp.param]/1 and [temp.arg.template] ----
     // The stand-in a template template parameter is bound to: the template's name as a Type.
     const Type *templateNameTypeOf(const TemplateDecl &decl) const;
-    // The template a specialization is of, as a binding: its stand-in, or a pattern's own parameter.
-    const Type *templateOf(const Type *spec) const;
     // `$TT0`: a pattern's stand-in for template template parameter 0, and which one it is.
     static bool templateParamRef(const std::string &name, int *index);
-    // [temp.arg.template]/3 as clang applies it under -std=c++11: whether a template with
-    // parameters `arg` can take the argument list the parameter's own list `param` forms.
-    static bool templateTemplateMatches(const std::vector<TemplateParam> &param,
-                                        const std::vector<TemplateParam> &arg, std::string *why,
-                                        std::size_t *at);
     // The argument written for a template template parameter: a class or alias template's name, or a bound parameter's.
     const TemplateDecl &templateTemplateArgument(const TemplateDecl &decl, const TemplateParam &p);
-    // The argument list a deduction's binding amounts to, one TemplateArg per parameter.
-    std::vector<TemplateArg> argumentsFromBinding(const std::vector<TemplateParam> &params,
-                                                  const std::vector<const Type *> &binding,
-                                                  const std::vector<long long> &values,
-                                                  const Packs &packs) const;
     // What the declaration after `template <...>` actually declares: a class template, a
     // function template, or a member of a class template defined outside it.
     // `qualifier` is the class for that last one and empty otherwise.
@@ -794,7 +537,6 @@ private:
     // [temp.param]/11: the first parameter after a pack, or npos; and the class template's refusal of one.
     static std::size_t afterPack(const std::vector<TemplateParam> &params);
     void refuseAfterPack(const std::vector<TemplateParam> &params);
-    void requireDeducibleAfterPack(const TemplateDecl &decl, const Type *fn);
     // `sawInit`, when given, says the declaration ended at a `;` having passed
     // an `=` at depth zero - which is a static data member of a class template
     // being *defined* out of line, not a member left undefined.
@@ -977,6 +719,8 @@ private:
     sema::Lookup lookup_;
     friend class sema::Overload;
     sema::Overload overload_;
+    friend class sema::Templates;
+    sema::Templates tmpl_;
     // **How a class goes to a function, and the two ABIs part company here.** Itanium
     // passes one by address whenever copying or destroying it is a call, and the caller
     // destroys the copy; Microsoft passes by the size rules and the callee destroys.
@@ -2508,10 +2252,6 @@ private:
     bool atOwnTemplateId(const std::string &tag, const std::string &local);
     bool ownArgsThenParen() const;
     const Type *declaringClassOf(const Type *cls, const std::string &name) const;
-    void instantiateViableMemberTemplate(const TemplateDecl &mt,
-                                         const std::vector<const Type *> &argTypes, std::size_t pos);
-    bool deduceFromArgument(const Type *param, const Type *arg, std::vector<const Type *> *binding,
-                            std::vector<long long> *values, std::string *why, Packs *packs = nullptr);
     // `using X = T;` is an alias declaration and not a using-declaration: true if one was read.
     bool aliasDeclaration(const std::string &prefix);
     // ---- WS-C2 (review 2026-10-08): attributes read and ignored, [dcl.attr.grammar]/5 ----

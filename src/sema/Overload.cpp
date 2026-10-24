@@ -371,7 +371,7 @@ bool Overload::moreSpecializedFunction(const Signature &a, const Signature &b) c
             std::vector<const Type *> binding(pb.size() + pa.size());
             std::string why;
             for (std::size_t i = 0; i < pa.size(); i++)
-                if (!p.matchPattern(pb[i], pa[i], &binding, &why)) return false;
+                if (!p.tmpl_.matchPattern(pb[i], pa[i], &binding, &why)) return false;
             return true;
         }
     };
@@ -389,9 +389,9 @@ OperatorChoice Overload::resolveOperator(const std::string &name,
     // class template reaches `template <int N> V<N> operator+(V<N>, V<N>)`.
     {
         std::vector<const Type *> argTypes;
-        argTypes.push_back(p_.deductionArgType(left));
-        if (right != nullptr) argTypes.push_back(p_.deductionArgType(*right));
-        p_.instantiateViableTemplates(name, argTypes, pos);
+        argTypes.push_back(p_.tmpl_.deductionArgType(left));
+        if (right != nullptr) argTypes.push_back(p_.tmpl_.deductionArgType(*right));
+        p_.tmpl_.instantiateViableTemplates(name, argTypes, pos);
     }
 
     // **A member operator may be a template too**, `H * x` where operator* is
@@ -400,8 +400,8 @@ OperatorChoice Overload::resolveOperator(const std::string &name,
         const Type *lp = left.type()->unqualified();
         if (lp->isStructOrUnion()) {
             std::vector<const Type *> one;
-            one.push_back(p_.deductionArgType(*right));
-            p_.instantiateViableMemberTemplates(p_.declaringClassOf(lp, name), name, one, pos);
+            one.push_back(p_.tmpl_.deductionArgType(*right));
+            p_.tmpl_.instantiateViableMemberTemplates(p_.declaringClassOf(lp, name), name, one, pos);
         }
     }
 
@@ -541,8 +541,8 @@ Signature Overload::resolveOverload(const std::string &written,
     // deduces from the arguments is instantiated before the set is read.
     if (p_.memberTemplates_.count(name) != 0) {
         std::vector<const Type *> argTypes;
-        for (std::size_t i = 0; i < args.size(); i++) argTypes.push_back(p_.deductionArgType(*args[i]));
-        p_.instantiateViableMemberTemplatesUnder(name, argTypes, pos);
+        for (std::size_t i = 0; i < args.size(); i++) argTypes.push_back(p_.tmpl_.deductionArgType(*args[i]));
+        p_.tmpl_.instantiateViableMemberTemplatesUnder(name, argTypes, pos);
     }
     const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(name);
 

@@ -7,6 +7,7 @@
 #include "../Type.h"
 
 #include <cstddef>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -176,5 +177,153 @@ enum class Rank { Identity, Qualification, Promotion, Conversion,
 
 // Which side of [over.match.oper] won.
 enum class OperatorChoice { None, Member, NonMember };
+
+// **A pack's members as bound**: the types, and for a non-type pack the values beside them,
+// the types then being the element type once per value. One per template parameter.
+struct PackMembers : std::vector<const Type *> {
+    std::vector<long long> values;
+    PackMembers() {}
+    PackMembers(const std::vector<const Type *> &t) : std::vector<const Type *>(t) {}
+};
+typedef std::vector<PackMembers> Packs;
+// One template parameter as written: `class T` / `typename T`, or a non-type one
+// such as `int N`. Nothing is bound to either yet.
+struct TemplateParam {
+    std::string name;
+    const Type *type = nullptr;   // null for a type parameter
+    // `T v` after `class T`: the index of T, and `type` is T standing for itself. -1 otherwise.
+    int typeOf = -1;
+    std::size_t pos = 0;
+    // Where its name is, or would be: what clang points at for a template template argument of the wrong kind.
+    std::size_t namePos = 0;
+    // `class...`
+    bool isPack = false;
+    // **`template <class> class C`** - [temp.param]/1: a parameter standing for a template, with
+    // its own list in `inner`, whose names nothing can refer to. `type` is null, as a type parameter's.
+    bool isTemplate = false;
+    std::vector<TemplateParam> inner;
+    // A default argument, kept as a half-open token range [begin, end) the way a default
+    // *function* argument is - instantiation replays tokens, so a default is replayed too, with
+    // the earlier parameters bound. begin == 0 means there is none.
+    std::size_t defBegin = 0;
+    std::size_t defEnd = 0;
+};
+
+// What is known about a name that names a template. `start` is the
+// `template` keyword: instantiation here will be a replay of these
+// tokens, so where they begin is the thing worth keeping.
+struct TemplateDecl {
+    std::string name;
+    // The namespace it was declared in, `std::` included. Carried to the
+    // specialization for the manglers alone - see Type::templateNamespace.
+    std::string ns;
+    std::vector<TemplateParam> params;
+    bool isClass = false;
+    // Written `class` rather than `struct`: a specialization made while the
+    // template is only declared has to describe itself the way it was declared.
+    bool classKey = false;
+    bool defined = false;
+    // `template <class T> using Ptr = T *;` - kept with the class templates, its type-id at aliasAt.
+    bool isAlias = false;
+    std::size_t aliasAt = 0;
+    // **A pattern's stand-in for template template parameter `ttParam`**, entered under the
+    // parameter's name while a pattern is read; -1 for every template a program declares.
+    int ttParam = -1;
+    std::size_t start = 0;
+    // The token after the `>` that closed the parameter list, which is
+    // where the declaration proper begins. Instantiating is re-reading
+    // from here with the arguments bound.
+    std::size_t afterParams = 0;
+    std::size_t pos = 0;
+    // **A member of this class template defined outside it** - `template <class T>
+    // T Box<T>::get(int)`. Kept on the class rather than as a template of its own,
+    // because that is what it is. Replayed when the class is instantiated.
+    struct OutOfLine {
+        std::size_t start = 0;
+        std::string member;    // "get", or the class's name for a ctor
+        bool destructor = false;
+        // A constructor, replayed like a held inline one from `start`, the `Box` after `Box<T>::`.
+        bool constructor = false;
+        // **A static data member, not a member function.**
+        bool isData = false;
+        // A member of a nested class, `Tree<T>::It::Deep::count`: "It::Deep", under the specialization.
+        std::string nested;
+    };
+    std::vector<OutOfLine> outOfLine;
+
+    // **A partial specialization: a second body for the argument lists that match a
+    // pattern.** Its arguments are patterns rather than types, which is why they are
+    // kept as written and matched at every use rather than resolved once.
+    struct Partial {
+        std::vector<TemplateParam> params;
+        // One written argument. A type argument is a pattern; a non-type
+        // one is either a value or one of this specialization's own
+        // parameters, which is the only shape of it that deduces.
+        struct Arg {
+            bool isType = true;
+            const Type *type = nullptr;
+            bool isParam = false;
+            std::size_t param = 0;
+            long long value = 0;
+            // `R...` written as the last argument of the pattern, where R is this
+            // specialization's own pack. It takes every argument the fixed ones in
+            // front did not, which lets `L<T, R...>` peel one type off any length.
+            bool isPackExpansion = false;
+        };
+        std::vector<Arg> args;
+        std::size_t bodyAt = 0;      // the '{' of its class body
+        std::size_t pos = 0;
+    };
+    std::vector<Partial> partials;
+
+    // ---- A member function template ----
+    // `template <int M> CVector<M> head() const { ... }` written inside a
+    // class.
+    bool isMember = false;
+    Access memberAccess = Access::Public;
+    std::string ownerTag;
+    const Type *ownerType = nullptr;
+    std::vector<TemplateParam> classParams;
+    std::vector<const Type *> classBinding;
+    std::vector<long long> classValues;
+    Packs classPacks;           // the class's packs, which the member template's body may expand (L16)
+    // **A constructor template**: named by its class's own name, keyed under constructorKey(ownerTag).
+    bool isConstructor = false;
+    bool isExplicit = false;    // `explicit` on a constructor template, read in the class and replayed past
+    // The class's name as the source spells it - `CMatrix` for `CMatrix<3,3>` - which inlineOwnerName_ wants.
+    std::string ownerLocal;
+};
+
+// **A pack while a specialization is being read**: the types it was given and, once its function
+// parameters have been made, the names they were given - `rest` becomes `rest$0` and `rest$1`, and
+// `rest...` in a call is those two names. A non-type pack holds its values beside, of `valueType`.
+struct PackBinding {
+    std::vector<const Type *> types;
+    std::vector<std::string> names;
+    bool isValue = false;
+    const Type *valueType = nullptr;
+    std::vector<long long> values;
+    bool standsForItself() const {
+        return types.size() == 1 && types[0]->kind() == Kind::TemplateParam;
+    }
+};
+// What a binding does to the two name tables, and how to put them back.
+struct Shadow {
+    std::string name;
+    bool isType = true;
+    bool isPack = false;
+    bool had = false;
+    std::size_t was = 0;
+    PackBinding hadPack;
+    // A non-type parameter bound as a pattern reference rather than a value
+    // - `N` in `V<N>` while a signature is read for deduction.
+    bool isParamRef = false;
+    bool hadParamRef = false;
+    int paramRefWas = 0;
+    // A template template parameter is an entry in `templates_` under its name; this is what it hid.
+    bool isTemplate = false;
+    bool hadTemplate = false;
+    TemplateDecl hadDecl;
+};
 
 }   // namespace sema
