@@ -1905,6 +1905,7 @@ void Parser::topLevel(Program &program) {
     if (memberOf != nullptr || !namespaceStack_.empty() || d.name.find("::") != std::string::npos ||
         !instantiatingParams_.empty() || !boundTypeParams_.empty() || !boundValueParams_.empty())
         scopedFunctions_.insert(fnSyntax.v);
+    syntaxFunctions_[fnSyntax.v] = definedSymbol;
     global.d = nullptr;                                                     // the definition is the node
     program.functions.push_back(Function(d.name, emittedReturn, std::move(paramSlots),
                                          std::move(body), frame,

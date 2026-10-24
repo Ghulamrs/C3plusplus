@@ -6,6 +6,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		5FEE87CF01D36BBAE986C997 /* AstDump.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 643F79A42EA4B86A673B777F /* AstDump.cpp */; };
 		DBCA475D1E4FAFCC4CB67EBB /* Driver.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F3DF4061005105B66B7C5431 /* Driver.cpp */; };
 		21FFED23CF93F6A22C422DE2 /* Lexer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = CB2D6E30A0DA359152CB1886 /* Lexer.cpp */; };
 		18E085F0299DB4213F6446F7 /* Mangle.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C8289C58B36F3A87AA5993AC /* Mangle.cpp */; };
@@ -69,6 +70,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		643F79A42EA4B86A673B777F /* AstDump.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = AstDump.cpp; path = "../src/AstDump.cpp"; sourceTree = "<group>"; };
 		F3DF4061005105B66B7C5431 /* Driver.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Driver.cpp; path = "../src/Driver.cpp"; sourceTree = "<group>"; };
 		CB2D6E30A0DA359152CB1886 /* Lexer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Lexer.cpp; path = "../src/Lexer.cpp"; sourceTree = "<group>"; };
 		C8289C58B36F3A87AA5993AC /* Mangle.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Mangle.cpp; path = "../src/Mangle.cpp"; sourceTree = "<group>"; };
@@ -131,6 +133,7 @@
 		7CF20FDF7FFDEBE6904EB30C /* Optimizer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Optimizer.cpp; path = "../src/optimizer/Optimizer.cpp"; sourceTree = "<group>"; };
 		E6EAF1D1441F03E9A41B4855 /* Abi.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Abi.h; path = "../src/Abi.h"; sourceTree = "<group>"; };
 		14EC8B53EDE3CAB952E236AA /* Ast.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Ast.h; path = "../src/Ast.h"; sourceTree = "<group>"; };
+		60930305A132CB4B774D1FA3 /* AstDump.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = AstDump.h; path = "../src/AstDump.h"; sourceTree = "<group>"; };
 		E25192F3CFDB944FC301A31E /* Driver.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Driver.h; path = "../src/Driver.h"; sourceTree = "<group>"; };
 		4C2F56CF1CF972F1F6562B1B /* Lexer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Lexer.h; path = "../src/Lexer.h"; sourceTree = "<group>"; };
 		A6357074452FF76FBCDA06D5 /* Mangle.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Mangle.h; path = "../src/Mangle.h"; sourceTree = "<group>"; };
@@ -203,6 +206,8 @@
 			children = (
 				E6EAF1D1441F03E9A41B4855 /* Abi.h */,
 				14EC8B53EDE3CAB952E236AA /* Ast.h */,
+				643F79A42EA4B86A673B777F /* AstDump.cpp */,
+				60930305A132CB4B774D1FA3 /* AstDump.h */,
 				F3DF4061005105B66B7C5431 /* Driver.cpp */,
 				E25192F3CFDB944FC301A31E /* Driver.h */,
 				CB2D6E30A0DA359152CB1886 /* Lexer.cpp */,
@@ -376,6 +381,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5FEE87CF01D36BBAE986C997 /* AstDump.cpp in Sources */,
 				DBCA475D1E4FAFCC4CB67EBB /* Driver.cpp in Sources */,
 				21FFED23CF93F6A22C422DE2 /* Lexer.cpp in Sources */,
 				18E085F0299DB4213F6446F7 /* Mangle.cpp in Sources */,

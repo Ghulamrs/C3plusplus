@@ -30,8 +30,11 @@ private:
     const Backend *backend_ = &defaultBackend();
     bool toStdout_ = false;
     bool timing_ = false;
-    bool checkTyped_ = false;    // -check=typed: the typed tree held against the parser's Ast.h, on stdout (M2.10)
-    bool dumpSyntax_ = false;    // -dump=syntax: the syntax tree the grammar recorded, on stdout (M2 step 2)
+    bool checkTyped_ = false;
+    bool checkAdapted_ = false;  // -check=adapted: the adapter's Ast.h held against the parser's, on stdout (M2.11)
+    bool frontTyped_ = false;    // -front=typed: a function the adapter reaches takes its Ast.h (M2.11)    // -check=typed: the typed tree held against the parser's Ast.h, on stdout (M2.10)
+    bool dumpSyntax_ = false;
+    bool dumpAst_ = false;       // -dump=ast: each function's Ast.h body as text, on stdout (M2.11)    // -dump=syntax: the syntax tree the grammar recorded, on stdout (M2 step 2)
     int keepGoing_ = 0;          // -keep-going[=N]: report up to N errors a file, not the first alone
     bool assemblyOnly_ = false;
     bool preprocessOnly_ = false;

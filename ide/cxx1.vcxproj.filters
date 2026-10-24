@@ -11,6 +11,7 @@
     <Filter Include="Source Files\parser"><UniqueIdentifier>{F7683C0D-65EA-CABF-2CF9-EF5D0C23C3DF}</UniqueIdentifier></Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\src\AstDump.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="..\src\Driver.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="..\src\Lexer.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="..\src\Mangle.cpp"><Filter>Source Files</Filter></ClCompile>
@@ -75,6 +76,7 @@
   <ItemGroup>
     <ClInclude Include="..\src\Abi.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Ast.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="..\src\AstDump.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Driver.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Lexer.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Mangle.h"><Filter>Header Files</Filter></ClInclude>

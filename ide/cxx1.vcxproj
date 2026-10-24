@@ -71,6 +71,7 @@
     <Link><GenerateDebugInformation>true</GenerateDebugInformation></Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\src\AstDump.cpp" />
     <ClCompile Include="..\src\Driver.cpp" />
     <ClCompile Include="..\src\Lexer.cpp" />
     <ClCompile Include="..\src\Mangle.cpp" />
@@ -135,6 +136,7 @@
   <ItemGroup>
     <ClInclude Include="..\src\Abi.h" />
     <ClInclude Include="..\src\Ast.h" />
+    <ClInclude Include="..\src\AstDump.h" />
     <ClInclude Include="..\src\Driver.h" />
     <ClInclude Include="..\src\Lexer.h" />
     <ClInclude Include="..\src\Mangle.h" />

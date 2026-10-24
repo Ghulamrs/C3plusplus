@@ -127,6 +127,21 @@ node: constants the parser folded, and the bodies of inline functions nothing em
 `make test`. Three recording gaps it found and closed: a functional cast `T(x)` made no node, a range-for's
 variable had none (so its body read an outer name), and a lambda's body leaked into the enclosing function.
 
+**What M2.11 adapts, and how the flag is held.** `src/sema/Adapter.{h,cpp}` builds a function's body as `Ast.h` from
+its typed tree, with the parser's lowerings written out a second time - a declaration as a scope -1 block of
+assignments, a conversion as a `Cast` (to bool as `x != 0`), `a op= b` and prefix `++` as an assignment of the
+converted result, `~x` as `x ^ -1`, an lvalue conditional of two names as `*(c ? &a : &b)`, a variadic argument
+promoted. From the parser it reads layout alone, by syntax handle: a declarator's frame slot, a block's and a `for`'s
+scope number, a string's label, a function's symbol. Anything else is outside, with its reason, and keeps the
+parser's body: a non-scalar local or return, a function whose body is a region (noexcept, landing pads), member
+access, a name a function finds through a class or namespace, an overload set, switch, try, sizeof. `-front=typed`
+puts the adapter's body in place of the parser's for every function inside; `-check=adapted` instead holds the two
+`Ast.h` bodies against each other as text (`src/AstDump.cpp`, also `-dump=ast`). At M2.11, over the cases that
+compile for the host: 1,986 root functions, 316 adapted, **316 the same**; `tools/identical.sh` with the flag on and
+off 5,352 of 5,352 the same, and `tests/adapted.sh` (in `make test`) runs both at -O0 and -O2 per case. The commonest
+reasons for outside: a local of class or pointer type (521), a body that is a region (399), a member or subscript
+expression (284), a name not in the function's scopes or at file scope (168).
+
 **The parser's `Ast.h` is the oracle for the new path while both exist**: the new path is right where it
 produces what the old one produced. That is `tools/identical.sh` again, and the reason the old path is kept
 until the new one has matched it everywhere.

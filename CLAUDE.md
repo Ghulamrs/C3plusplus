@@ -10676,6 +10676,18 @@ count are. **A change that makes it fail is either a typing rule to mend or a re
 its first run were the second kind - a functional cast, a range-for's variable, a lambda's body. Nothing reads the
 typed tree yet; M2.11's adapter is the first.
 
+## M2.11: the adapter, and `-front=typed`, 2026-10-24
+
+**`sema::Adapter` turns the typed tree back into `Ast.h`**, and behind `-front=typed` a function inside the subset
+takes that body instead of the parser's. The gate is the plan's: output identical with the flag on and off -
+`tools/identical.sh` 5,352 of 5,352, and `tests/adapted.sh`, the seventh suite in `make test`, compiles every case
+both ways at -O0 and -O2 and holds `-check=adapted` (the two bodies dumped as text by `src/AstDump.cpp`, `-dump=ast`)
+at 0 different. At M2.11 that is 316 of 1,986 functions adapted; doc-cxx3/M2-PLAN.md lists what is inside and the
+reasons the rest are not. **The adapter reads only layout from the parser** - frame slots, scope numbers, string
+labels, symbols, keyed by syntax handle - and writes the parser's lowerings itself, so a lowering changed in one and
+not the other is what `-check=adapted` exists to show. Its nodes are made by `make_owned`: `tools/memory-gate` failed
+`make test` on the first draft's forty raw `new`s, R6.6 letting the count only go down.
+
 ## Build
 
 ```

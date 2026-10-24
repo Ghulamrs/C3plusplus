@@ -896,7 +896,9 @@ StmtPtr Parser::rangeForStatement(int scope) {
     const int inner = enterBlock();
     const int vSlot = declare(d.name, d.type, d.pos, quals.alignAs);
     // The loop variable's `var` node, over nothing: its range was recorded before it, and its body comes after.
-    declaredTypes_[noteParts(syntax::Kind::Var, d.type->describe() + " " + d.name, d.pos, syntaxTree_.size(), d.pos).v] = d.type;
+    const syntax::NodeId loopVar = noteParts(syntax::Kind::Var, d.type->describe() + " " + d.name, d.pos, syntaxTree_.size(), d.pos);
+    declaredTypes_[loopVar.v] = d.type;
+    noteDeclaredLocal(loopVar, d.name);
     ExprPtr take;
     if (d.type->isReference()) {
         // **`T &x : a` binds x to the element** - [stmt.ranged]/1 - so the
@@ -1438,7 +1440,9 @@ StmtPtr Parser::block(bool functionTry) {
     b->setScope(scope);
 
     b->setPos(pos);
-    return noteStmt(StmtPtr(b), syntax::Kind::Block, "", pos, mark, pos);
+    StmtPtr noted = noteStmt(StmtPtr(b), syntax::Kind::Block, "", pos, mark, pos);
+    syntaxScopes_[noted->syntax().v] = scope;
+    return noted;
 }
 
 // **The syntax of a statement** (M2 step 2): its kind is what its first tokens say, its parts what its parse recorded.
@@ -1472,7 +1476,9 @@ StmtPtr Parser::statement() {
     if (kind == syntax::Kind::Other) return s;
     // `throw e;` is an expression statement whose expression is the throw.
     if (throws) noteParts(syntax::Kind::Throw, "", pos, mark, pos);
-    return noteStmt(std::move(s), kind, text, pos, mark, pos);
+    StmtPtr noted = noteStmt(std::move(s), kind, text, pos, mark, pos);
+    if (const For *f = dynamic_cast<const For *>(noted.get())) syntaxScopes_[noted->syntax().v] = f->scope();
+    return noted;
 }
 
 // **`try` is a block, a landing pad, and no new statement machinery.**

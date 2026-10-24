@@ -688,6 +688,8 @@ public:
     const Type *returns() const { return returns_; }
     const std::vector<Param> &params() const { return params_; }
     const Stmt &body() const { return *body_; }
+    // The adapter's body in place of the parser's (M2.11, -front=typed).
+    void setBody(StmtPtr b) { body_ = std::move(b); }
     int frameSize() const { return frameSize_; }
     // **What the frame must be aligned to**: the stack's 16 unless a local asked for more with
     // `alignas` or its type, when the prologue realigns the frame to it - [basic.align], measured

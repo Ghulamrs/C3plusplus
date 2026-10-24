@@ -7,6 +7,8 @@
 #include "Lexer.h"
 #include "parser/Parser.h"
 #include "sema/Typing.h"
+#include "sema/Adapter.h"
+#include "AstDump.h"
 #include "Preprocessor.h"
 #include "Source.h"
 #include "Type.h"
@@ -203,7 +205,10 @@ void Driver::usage(char *file) {
         "         carries the CRC32 of the sources it was built from\n"
         "       -time reports how long each phase took\n"
         "       -dump=syntax writes the syntax tree the grammar recorded, a root a\n"
-        "         line, on stdout; one input at a time\n"
+        "         line, on stdout; one input at a time; -dump=ast each function's\n"
+        "         Ast.h body, a node a line\n"
+        "       -front=typed builds each function the adapter reaches from Sema's typed\n"
+        "         tree; -check=adapted holds that against the parser's, on stdout\n"
         "       -check=typed types the syntax tree in Sema and holds each type against\n"
         "         the parser's, on stdout; it fails where any differs\n"
         "       -keep-going[=N] reports up to N errors a file (100 if no N) and goes\n"
@@ -1089,15 +1094,20 @@ bool Driver::parseArguments(int argc, char **argv) {
             }
         } else if (std::strcmp(argv[i], "-check=typed") == 0 || std::strcmp(argv[i], "--check=typed") == 0) {
             checkTyped_ = true;
+        } else if (std::strcmp(argv[i], "-check=adapted") == 0 || std::strcmp(argv[i], "--check=adapted") == 0) {
+            checkAdapted_ = true;
+        } else if (std::strcmp(argv[i], "-front=typed") == 0 || std::strcmp(argv[i], "--front=typed") == 0) {
+            frontTyped_ = true;
         } else if (std::strncmp(argv[i], "-dump=", 6) == 0 || std::strncmp(argv[i], "--dump=", 7) == 0) {
             // The boundaries a dump is written at (design section 1): the syntax tree only, so far.
             const char *what = std::strchr(argv[i], '=') + 1;
-            if (std::strcmp(what, "syntax") != 0) {
-                std::fprintf(stderr, "%s: -dump= takes 'syntax', the one boundary written so far - not '%s'\n",
+            if (std::strcmp(what, "syntax") == 0) dumpSyntax_ = true;
+            else if (std::strcmp(what, "ast") == 0) dumpAst_ = true;
+            else {
+                std::fprintf(stderr, "%s: -dump= takes 'syntax' or 'ast', the boundaries written so far - not '%s'\n",
                              argv[0], what);
                 return false;
             }
-            dumpSyntax_ = true;
         } else if (std::strcmp(argv[i], "-time") == 0) {
             timing_ = true;
         } else if (std::strcmp(argv[i], "-version") == 0 ||
@@ -1137,8 +1147,9 @@ bool Driver::parseArguments(int argc, char **argv) {
 
     if (inputs.empty()) { usage(argv[0]); return false; }
     // A dump is in the order its nodes were made; two files compiled at once would interleave.
-    if ((dumpSyntax_ || checkTyped_) && inputs.size() > 1) {
-        std::fprintf(stderr, "%s: %s takes one input at a time\n", argv[0], dumpSyntax_ ? "-dump=syntax" : "-check=typed");
+    if ((dumpSyntax_ || dumpAst_ || checkTyped_ || checkAdapted_) && inputs.size() > 1) {
+        std::fprintf(stderr, "%s: %s takes one input at a time\n", argv[0],
+                     dumpSyntax_ ? "-dump=syntax" : dumpAst_ ? "-dump=ast" : checkTyped_ ? "-check=typed" : "-check=adapted");
         return false;
     }
 
@@ -1313,6 +1324,21 @@ bool Driver::compile(const Job &job) {
     if (dumpSyntax_) {
         std::string dumped;
         parser.syntaxTree().dump(dumped, src);
+        std::fwrite(dumped.data(), 1, dumped.size(), stdout);
+    }
+    if (checkAdapted_) {
+        int differ = 0;
+        const std::string report = sema::Adapter::run(parser, program, false, &differ);
+        std::fwrite(report.data(), 1, report.size(), stdout);
+        if (differ != 0) return false;
+    }
+    if (frontTyped_) {
+        int differ = 0;
+        sema::Adapter::run(parser, program, true, &differ);
+    }
+    if (dumpAst_) {
+        std::string dumped;
+        for (std::size_t i = 0; i < program.functions.size(); i++) dumpFunction(program.functions[i], dumped);
         std::fwrite(dumped.data(), 1, dumped.size(), stdout);
     }
     if (checkTyped_) {

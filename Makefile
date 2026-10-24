@@ -152,6 +152,7 @@ test: $(TARGET)
 	@CXX1=$(TARGET) ./tests/overload.sh
 	@CXX1=$(TARGET) ./tests/syntax.sh
 	@CXX1=$(TARGET) ./tests/typed.sh
+	@CXX1=$(TARGET) ./tests/adapted.sh
 	@./tools/exclusions --check docs/EXCLUSIONS.md || { echo "make test: docs/EXCLUSIONS.md does not match the source - see the lines above"; exit 1; }
 	@./tools/comment-lines --count
 	@./tools/comment-lines >/dev/null || { echo "make test: comment groups over the cap - run make comments"; exit 1; }
@@ -216,7 +217,7 @@ tsan: $(TSANDIR)/cxx3.exe
 
 clean:
 	rm -rf $(OBJDIR) $(TARGET) $(TSANDIR)
-	rm -rf tests/out-run tests/out-emit tests/out-emit-O2 tests/out-corpus tests/out-open tests/out-tsan
+	rm -rf tests/out-run tests/out-emit tests/out-emit-O2 tests/out-corpus tests/out-open tests/out-tsan tests/out-syntax tests/out-typed tests/out-adapted
 # **tests/out-emit.golden is deliberately not on that line**, and this is the
 # exception the rule below is otherwise right about: a golden is recorded before
 # a change and read after one, with a rebuild in between, so a clean that took it

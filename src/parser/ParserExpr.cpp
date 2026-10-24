@@ -1061,6 +1061,8 @@ ExprPtr Parser::primary(Program *program) {
     if (first.kind == TokenKind::Str) {
         r = note(std::move(r), syntax::Kind::StringLit, first.text, pos);
         literalTokens_[r->syntax().v] = start;
+        if (const StrLit *lit = dynamic_cast<const StrLit *>(r.get()))
+            stringLiterals_[r->syntax().v] = std::make_pair(lit->label(), lit->text());
         return r;
     }
     if (first.is("this")) return note(std::move(r), syntax::Kind::This, "this", pos);

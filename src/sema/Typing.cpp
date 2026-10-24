@@ -8,9 +8,10 @@
 
 namespace sema {
 
-TypedId TypedTree::add(syntax::NodeId syn, const Type *type, const std::vector<TypedId> &children) {
+TypedId TypedTree::add(syntax::NodeId syn, const Type *type, const std::vector<TypedId> &children, syntax::NodeId decl) {
     TypedNode n;
     n.syntax = syn;
+    n.decl = decl;
     n.type = type;
     n.first = static_cast<std::uint32_t>(children_.size());
     n.count = static_cast<std::uint32_t>(children.size());
@@ -38,13 +39,16 @@ TypedId Typer::node(syntax::NodeId id) {
     const syntax::Tree &st = p_.syntaxTree_;
     const syntax::Node &n = st.node(id);
     const bool scoped = opensScope(n.kind);
-    if (scoped) scopes_.push_back(std::unordered_map<std::string, const Type *>());
+    if (scoped) scopes_.push_back(std::unordered_map<std::string, Declared>());
     // A variable is in scope from its declarator on, its own initialiser included - [basic.scope.pdecl]/1.
     if (n.kind == syntax::Kind::Var && !scopes_.empty()) {
         std::unordered_map<std::uint32_t, const Type *>::const_iterator t = p_.declaredTypes_.find(id.v);
         const std::string &text = st.text(id);
         const std::string::size_type space = text.rfind(' ');
-        if (t != p_.declaredTypes_.end() && space != std::string::npos) scopes_.back()[text.substr(space + 1)] = t->second;
+        if (t != p_.declaredTypes_.end() && space != std::string::npos) {
+            const Declared d = { t->second, id };
+            scopes_.back()[text.substr(space + 1)] = d;
+        }
     }
     std::vector<TypedId> kids;
     std::vector<const Type *> parts;
@@ -53,9 +57,12 @@ TypedId Typer::node(syntax::NodeId id) {
         kids.push_back(k);
         parts.push_back(tree_.node(k).type);
     }
-    const Type *type = isExpression(n.kind) ? expression(id, parts) : nullptr;
+    syntax::NodeId decl;
+    const Type *type = n.kind == syntax::Kind::Name ? (st.text(id).find("::") == std::string::npos
+                                                         ? named(st.text(id), &decl) : nullptr)
+                     : isExpression(n.kind) ? expression(id, parts) : nullptr;
     if (scoped) scopes_.pop_back();
-    return tree_.add(id, type, kids);
+    return tree_.add(id, type, kids, decl);
 }
 
 // [lex.icon] table 6 and [lex.fcon]: a literal's type from its token, the decimal ladder and the hex or octal one.
@@ -110,11 +117,11 @@ const Type *Typer::literal(syntax::NodeId id) {
 }
 
 // A name, innermost scope first, then the namespace's objects and enumerators. A reference reads as what it refers to.
-const Type *Typer::named(const std::string &name) {
+const Type *Typer::named(const std::string &name, syntax::NodeId *decl) {
     const Type *t = nullptr;
     for (std::size_t i = scopes_.size(); t == nullptr && i > 0; i--) {
-        std::unordered_map<std::string, const Type *>::const_iterator it = scopes_[i - 1].find(name);
-        if (it != scopes_[i - 1].end()) t = it->second;
+        std::unordered_map<std::string, Declared>::const_iterator it = scopes_[i - 1].find(name);
+        if (it != scopes_[i - 1].end()) { t = it->second.type; *decl = it->second.decl; }
     }
     if (t == nullptr && localOnly_) return nullptr;
     if (t == nullptr)
@@ -142,8 +149,6 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
     switch (kind) {
         case syntax::Kind::IntLit: case syntax::Kind::FloatLit: case syntax::Kind::CharLit: case syntax::Kind::StringLit:
             return literal(id);
-        case syntax::Kind::Name:
-            return op.find("::") == std::string::npos ? named(op) : nullptr;
         case syntax::Kind::Unary:
             if (a == nullptr || isClass(a)) return nullptr;     // a class's operator is overload resolution's
             if (op == "!") return types.get(Kind::Bool);

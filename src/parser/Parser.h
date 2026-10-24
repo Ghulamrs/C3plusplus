@@ -23,7 +23,7 @@
 #include <vector>
 
 class Source;
-namespace sema { class Typer; }
+namespace sema { class Typer; class Adapter; }
 
 class Parser {
 public:
@@ -464,6 +464,7 @@ private:
     sema::Linkage linkage_;
     // M2.10: the typer reads the syntax tree and what the parser kept beside it.
     friend class sema::Typer;
+    friend class sema::Adapter;
     // **The syntax tree** (M2 step 2): a node recorded where the grammar returns an Ast.h node, its operands'
     // nodes as children. `note` records one on `e`; `syn` reads one back, none for a node the grammar made itself.
     // What a conditional being read has recorded of its operands (M2 step 2), until conditional() notes it.
@@ -515,6 +516,15 @@ private:
     std::unordered_map<std::uint32_t, const Type *> castTypes_;
     // The `function` nodes whose names outside them are not the file's - a member's, a namespace's, a template's.
     std::set<std::uint32_t> scopedFunctions_;
+    // **What the parser decides of layout as it reads, by node** (M2.11): a `var`'s frame slot, a block's or a `for`'s
+    // scope, and the symbol a `function` node was defined as - what the adapter cannot derive from types.
+    std::unordered_map<std::uint32_t, Local> declaredLocals_;
+    std::unordered_map<std::uint32_t, int> syntaxScopes_;
+    std::unordered_map<std::uint32_t, std::string> syntaxFunctions_;
+    std::unordered_map<std::uint32_t, std::pair<std::string, std::string> > stringLiterals_;   // a string's label and text
+    void noteDeclaredLocal(syntax::NodeId id, const std::string &name) {
+        if (const Local *l = lookup_.findLocal(name)) declaredLocals_[id.v] = *l;
+    }
     // **One declarator's `var` node**, made when the declarator's scope closes - which a loop body that leaves by
     // `continue` from several places does in one place - over the parts its parse recorded: a bound, an initialiser.
     struct VarNote {
@@ -535,6 +545,7 @@ private:
                 ? p.noteParts(syntax::Kind::Function, d->name, d->pos, mark, lo)
                 : p.noteParts(syntax::Kind::Var, varText(), d->pos, mark, lo);
             if (!function && d->type != nullptr) p.declaredTypes_[id.v] = d->type;
+            if (!function) p.noteDeclaredLocal(id, d->name);
         }
     };
     struct KeywordForm { std::size_t start, mark; ExprPtr e; };
