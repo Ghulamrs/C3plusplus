@@ -698,3 +698,12 @@ the entity with a fresh table and spells the type out (`...readERK1P`,
 `SAHAEBVP@@@Z`). Within cxx1's own objects the names agree; a cxx1 object and a
 clang or cl one naming the same local class member - an inline function's, the
 one case where that member crosses a translation unit - do not link.
+
+**The Microsoft half is mended, 2026-10-25, but for a local type in a signature.** The
+function's finished tables are kept by its symbol and the local member goes on from them
+(`Mangle.cpp`, `finishedTables`): `local-class-friend-access` and
+`local-class-member-access` agree with cl 19.51 name for name, and with clang. A local
+*class* named in such a member's signature is still spelled whole inside its own `?1?`
+scope where cl back-references the function there, `?1??2@YAH0@Z@` -
+`local-class-sibling-type` records it; that needs the function's signature, not its
+symbol. The Itanium half is as above.

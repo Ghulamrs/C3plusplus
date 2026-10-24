@@ -216,7 +216,7 @@ is left:
   has no body. `src/parser/ParserType.cpp:1276`
 - **a delegating constructor of a class with a virtual base** - the target
   would have to be told whether the object is the most derived one.
-  `src/parser/ParserTopLevel.cpp:2371`
+  `src/parser/ParserTopLevel.cpp:2372`
 - **a mem-initialiser that would run a constructor once per element of an
   array member** - `src/parser/ParserTopLevel.cpp:1298`
 - **a virtual base initialised with an argument that needs a temporary** - the
@@ -393,7 +393,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   `catch` handler, on x86_64-windows** - the cleanup would be a funclet inside
   the handler's funclet. `src/parser/ParserStmt.cpp:947`
 - **a trailing return type that is itself deduced**, `auto f() -> auto` -
-  C++14. `src/parser/ParserTopLevel.cpp:2304`
+  C++14. `src/parser/ParserTopLevel.cpp:2305`
 - **an expression form the Itanium name was not measured for, over a template's
   parameters in a function template's signature** - a postfix `++` or `--`, a
   lambda, `new`, `throw`, `typeid`, `noexcept`, a C-style cast to a reference
@@ -524,7 +524,7 @@ judgement in a program. They are named here instead:
 - `src/parser/ParserType.cpp:239` - a base class that is not yet defined. An
   ordinary error: a derived object contains its base, so the base has to be
   complete.
-- `src/Mangle.cpp:858`, `src/Mangle.cpp:1465` - a type with no Itanium or
+- `src/Mangle.cpp:860`, `src/Mangle.cpp:1491` - a type with no Itanium or
   Microsoft linkage name. Internal: reaching either means a type was built that
   the mangler was never taught, which is a bug in this compiler and not a
   statement about the language.

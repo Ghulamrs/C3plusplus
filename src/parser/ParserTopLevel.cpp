@@ -2140,6 +2140,7 @@ void Parser::topLevelRecovering(Program &program) {
 }
 
 Program Parser::parse() {
+    microsoftForgetLocalOwners();   // the store holds this unit's Types, and a unit before it had others
     Program program;
     current_ = &program;
     while (peek().kind != TokenKind::End)

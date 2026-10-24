@@ -123,6 +123,9 @@ bool itaniumLocalMemberName(const std::string &owner, const std::string &cls,
                             const Type *fn, bool constThis, RefQual refThis,
                             std::string *out, std::string *problem);
 
+// Empties the store of finished Microsoft names a local class's members read their tables from; each parse.
+void microsoftForgetLocalOwners();
+
 bool microsoftLocalMemberName(const std::string &owner, const std::string &cls,
                               const Type *clsType, const std::string &name,
                               const Type *fn, char access, bool constThis, RefQual refThis,
