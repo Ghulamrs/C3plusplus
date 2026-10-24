@@ -13,6 +13,8 @@ class Parser;
 
 namespace sema {
 
+struct Local;
+
 class Adapter {
 public:
     Adapter(Parser &p, const Typer &typer) : p_(p), typer_(typer) {}
@@ -26,18 +28,26 @@ private:
     StmtPtr stmt(TypedId id);
     StmtPtr declaration(TypedId id);
     StmtPtr forStatement(TypedId id);
+    bool initialised(TypedId var) const;
     ExprPtr expr(TypedId id);
     ExprPtr name(TypedId id);
+    ExprPtr member(TypedId id);
+    ExprPtr classValue(ExprPtr e, const Type *to);
     ExprPtr unary(TypedId id);
     ExprPtr binary(TypedId id, const std::string &op, TypedId l, TypedId r);
     ExprPtr assign(TypedId id);
     ExprPtr call(TypedId id);
+    ExprPtr condition(TypedId id);
     ExprPtr arithmetic(const std::string &op, ExprPtr a, ExprPtr b);
-    ExprPtr convert(ExprPtr e, const Type *to);
+    ExprPtr pointerAdd(ExprPtr ptr, ExprPtr n);
+    ExprPtr pointerSub(ExprPtr l, ExprPtr r);
+    ExprPtr convert(ExprPtr e, const Type *to, bool cast = false);
     ExprPtr promote(ExprPtr e);
     ExprPtr decay(ExprPtr e);
     const syntax::Node &syn(TypedId id) const;
     static void outside(const std::string &why);
+    static bool plainClass(Parser &p, const Type *t);
+    static void plainLocal(Parser &p, const Local &l);
     Parser &p_;
     const Typer &typer_;
     const Type *returns_ = nullptr;

@@ -142,6 +142,21 @@ off 5,352 of 5,352 the same, and `tests/adapted.sh` (in `make test`) runs both a
 reasons for outside: a local of class or pointer type (521), a body that is a region (399), a member or subscript
 expression (284), a name not in the function's scopes or at file scope (168).
 
+**M2.12a, the first growth: what a C program's body holds.** Pointers to objects, to void and to functions;
+arrays of scalars, uninitialised; `a[i]` as `*(a + i)`, a pointer and an integer scaled to bytes in the
+pointer-width integer and two pointers' difference divided back (`pointerAdd`, `pointerSub`, the parser's own
+shapes); a pointer compared as it stands; `&`, `*`, unary `+`; a C-style cast, to void or between scalars;
+`o.m` and `p->m` of a plain struct - no constructor, destructor, vptr or copy of its own - the object's const
+carried onto the member, and a plain struct assigned or initialised from one of its own type; an unscoped
+enumeration's values and enumerators; `sizeof`, `alignof` and `noexcept`, from the value the parser folded
+(`keywordValues_`); a function named as a value. The parser's lowerings were read before each was written
+(`-dump=ast` on a probe), and two of M2.11's turned out wrong where nothing had reached them: a conversion to
+bool compares with zero converted to the source's type (`x != (long)0`, `d != 0.0`), and a conversion of a
+pointer is a `Cast` even where only its top-level const changes. At M2.12a: 811 of 1,986 functions adapted, all
+the same; identical on and off 5,352 of 5,352; `run.sh` under `-front=typed` 987 of 987 at -O0 and -O2. Kept
+outside, commonest first: a body that is a region (399 - noexcept and landing pads, the exceptions step), a
+call of what is not a name (member calls), a return of a class or a reference, an overload set.
+
 **The parser's `Ast.h` is the oracle for the new path while both exist**: the new path is right where it
 produces what the old one produced. That is `tools/identical.sh` again, and the reason the old path is kept
 until the new one has matched it everywhere.

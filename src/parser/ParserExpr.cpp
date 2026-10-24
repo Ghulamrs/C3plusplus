@@ -3150,6 +3150,9 @@ ExprPtr Parser::noteKeywordForm(syntax::Kind kind, KeywordForm f) {
     }
     if (!f.e) { syntaxTree_.add(kind, text, pos, parts); return std::move(f.e); }
     f.e->setSyntax(syntaxTree_.add(kind, text, pos, parts));
+    if (kind == syntax::Kind::Sizeof)
+        if (const Num *folded = dynamic_cast<const Num *>(f.e.get()))
+            keywordValues_[f.e->syntax().v] = std::make_pair(folded->value(), folded->type());
     return std::move(f.e);
 }
 

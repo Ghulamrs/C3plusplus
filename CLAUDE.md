@@ -10688,6 +10688,17 @@ labels, symbols, keyed by syntax handle - and writes the parser's lowerings itse
 not the other is what `-check=adapted` exists to show. Its nodes are made by `make_owned`: `tools/memory-gate` failed
 `make test` on the first draft's forty raw `new`s, R6.6 letting the count only go down.
 
+## M2.12a: the adapter takes pointers, arrays, members, enumerators and sizeof, 2026-10-24
+
+**811 of 1,986 functions now take the adapter's body, from 316**, every one the same as the parser's, and
+doc-cxx3/M2-PLAN.md lists what the slice is. **Each lowering was read from the parser's `-dump=ast` on a probe
+before it was written**, and that is how two of M2.11's were found wrong though no case had reached them: a
+conversion to bool compares with zero converted to the source's type, and a pointer's conversion is a `Cast`
+even where only its own const changes. `sizeof` takes the value the parser folded, recorded by node in
+`keywordValues_` beside `castTypes_` - a fact of layout, which is all the adapter reads from the parser.
+**Found on the way and not this round's:** `bool k = q;` for a pointer `q` is refused ("a pointer is not a
+number here"), where [conv.bool] makes it an ordinary copy-initialisation and clang takes it.
+
 ## Build
 
 ```

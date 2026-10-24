@@ -514,6 +514,8 @@ private:
     // A literal's token, and the type a C-style cast names, by node: what typing either reads.
     std::unordered_map<std::uint32_t, std::size_t> literalTokens_;
     std::unordered_map<std::uint32_t, const Type *> castTypes_;
+    // What a sizeof, alignof or noexcept node folded to, and its type: the constant the adapter writes (M2.12).
+    std::unordered_map<std::uint32_t, std::pair<long long, const Type *> > keywordValues_;
     // The `function` nodes whose names outside them are not the file's - a member's, a namespace's, a template's.
     std::set<std::uint32_t> scopedFunctions_;
     // **What the parser decides of layout as it reads, by node** (M2.11): a `var`'s frame slot, a block's or a `for`'s
