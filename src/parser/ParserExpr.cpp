@@ -1027,6 +1027,20 @@ ExprPtr Parser::primary(Program *program) {
     const Token &t = peek();
     const std::size_t start = at_, pos = t.pos;
     const unsigned gen = argGen_;
+    // A named cast, typeid or a lambda is a form over what it read, as sizeof is.
+    static const struct { const char *word; syntax::Kind kind; } kForms[] = {
+        { "static_cast", syntax::Kind::Cast }, { "dynamic_cast", syntax::Kind::Cast },
+        { "const_cast", syntax::Kind::Cast }, { "reinterpret_cast", syntax::Kind::Cast },
+        { "typeid", syntax::Kind::Sizeof }, { "[", syntax::Kind::Lambda },
+    };
+    for (const auto &w : kForms)
+        if (t.is(w.word)) {
+            KeywordForm f;
+            f.start = start;
+            f.mark = syntaxTree_.size();
+            f.e = primaryNode(program);
+            return noteKeywordForm(w.kind, std::move(f));
+        }
     ExprPtr r = primaryNode(program);
     if (!r || r->syntax().valid()) return r;
     const Token &first = tokens_[start];
@@ -1049,7 +1063,7 @@ ExprPtr Parser::primary(Program *program) {
         name += tokens_[k++].text;
     if (name.empty()) return r;     // a lambda, a cast, a keyword's own form: not recorded yet
     if (k < at_ && tokens_[k].is("(") && argGen_ != gen) {
-        std::vector<syntax::ExprId> call(1, syntaxTree_.add(syntax::Kind::Name, name, pos));
+        std::vector<syntax::NodeId> call(1, syntaxTree_.add(syntax::Kind::Name, name, pos));
         call.insert(call.end(), callArgs_.begin(), callArgs_.end());
         return note(std::move(r), syntax::Kind::Call, "", tokens_[k].pos, call);
     }
@@ -2769,7 +2783,7 @@ Parser::PostfixStep Parser::beginPostfix(const ExprPtr &n) const {
 ExprPtr Parser::notePostfix(ExprPtr n, PostfixStep &st) {
     if (!st.active) return n;
     st.active = false;
-    std::vector<syntax::ExprId> kids(1, st.operand);
+    std::vector<syntax::NodeId> kids(1, st.operand);
     switch (st.kind) {
         case syntax::Kind::Call:
             kids.insert(kids.end(), callArgs_.begin(), callArgs_.end());
@@ -2780,7 +2794,7 @@ ExprPtr Parser::notePostfix(ExprPtr n, PostfixStep &st) {
         case syntax::Kind::Member:
             // `o.f(x)` is read in one turn, so a member that read arguments is the callee of a call.
             if (st.callFollows && argGen_ != st.argGen) {
-                std::vector<syntax::ExprId> call(1, syntaxTree_.add(syntax::Kind::Member, st.text, st.pos, kids));
+                std::vector<syntax::NodeId> call(1, syntaxTree_.add(syntax::Kind::Member, st.text, st.pos, kids));
                 call.insert(call.end(), callArgs_.begin(), callArgs_.end());
                 return note(std::move(n), syntax::Kind::Call, "", st.callPos, call);
             }
@@ -3102,17 +3116,52 @@ ExprPtr Parser::postfix() {
 
 // **The syntax of a prefix operator** (M2 step 2): unaryNode reads the operand and reports its node in unaryOperand_,
 // saved round the call because an operand's own operators nest; the result is noted as the operator applied to it.
+// A keyword's form - sizeof, new, a named cast - over the expressions it read; with none, its tokens are its text.
+Parser::KeywordForm Parser::unaryForm() {
+    KeywordForm f;
+    f.start = at_;
+    f.mark = syntaxTree_.size();
+    f.e = unaryNode();
+    return f;
+}
+
+ExprPtr Parser::noteKeywordForm(syntax::Kind kind, KeywordForm f) {
+    const std::size_t pos = tokens_[f.start].pos;
+    std::vector<syntax::NodeId> parts = syntaxTree_.adopt(f.mark, pos, at_ > 0 ? tokens_[at_ - 1].pos : pos);
+    // The text is the tokens up to the operand - all of them where there is none, the type of a cast where there is.
+    std::size_t end = parts.empty() ? at_ : f.start + 1;
+    if (kind == syntax::Kind::Cast)
+        for (int depth = 0; end < at_ && !(depth == 0 && tokens_[end].is("(")); end++)
+            depth += tokens_[end].is("<") ? 1 : tokens_[end].is(">") ? -1 : 0;
+    std::string text = tokens_[f.start].text;
+    for (std::size_t k = f.start + 1; k < end; k++) {
+        const bool words = tokens_[k].kind != TokenKind::Punct && tokens_[k - 1].kind != TokenKind::Punct;
+        text += (words ? " " : "") + tokens_[k].text;
+    }
+    if (!f.e) { syntaxTree_.add(kind, text, pos, parts); return std::move(f.e); }
+    f.e->setSyntax(syntaxTree_.add(kind, text, pos, parts));
+    return std::move(f.e);
+}
+
 ExprPtr Parser::unary() {
     static const char *const kPrefix[] = { "+", "-", "!", "~", "&", "*", "++", "--" };
     const char *op = nullptr;
     for (const char *k : kPrefix)
         if (peek().is(k)) { op = k; break; }
-    if (op == nullptr) return unaryNode();
+    if (op == nullptr) {
+        static const struct { const char *word; syntax::Kind kind; } kWords[] = {
+            { "sizeof", syntax::Kind::Sizeof }, { "alignof", syntax::Kind::Sizeof }, { "noexcept", syntax::Kind::Sizeof },
+            { "new", syntax::Kind::New }, { "delete", syntax::Kind::Delete },
+        };
+        for (const auto &w : kWords)
+            if (peek().is(w.word)) return noteKeywordForm(w.kind, unaryForm());
+        return unaryNode();
+    }
     const std::size_t pos = peek().pos;
-    const syntax::ExprId outer = unaryOperand_;
-    unaryOperand_ = syntax::ExprId();
+    const syntax::NodeId outer = unaryOperand_;
+    unaryOperand_ = syntax::NodeId();
     ExprPtr r = unaryNode();
-    const syntax::ExprId operand = unaryOperand_;
+    const syntax::NodeId operand = unaryOperand_;
     unaryOperand_ = outer;
     return note(std::move(r), syntax::Kind::Unary, op, pos, {operand});
 }

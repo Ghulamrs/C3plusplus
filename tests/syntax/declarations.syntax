@@ -1,0 +1,5 @@
+tests/syntax/declarations.cpp:2:5: (var "int g" (binary "*" (int "3") (int "4")))
+tests/syntax/declarations.cpp:3:13: (var "const char * s" (string "hi"))
+tests/syntax/declarations.cpp:4:5: (function "f" (block (return (name "g"))))
+tests/syntax/declarations.cpp:5:5: (var "int z" (int "5"))
+tests/syntax/declarations.cpp:6:6: (var "int * p" (new "new" (int "3")))

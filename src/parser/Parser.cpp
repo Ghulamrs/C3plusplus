@@ -618,7 +618,7 @@ void Parser::clearFunctionState() {
     sretSlot_ = 0;
     nrvoName_.clear();
     deducingReturn_ = nullptr;
-    unaryOperand_ = syntax::ExprId();
+    unaryOperand_ = syntax::NodeId();
     condParts_ = CondParts();
     callArgs_.clear();
     lambdaCount_ = 0;

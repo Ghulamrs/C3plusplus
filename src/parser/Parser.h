@@ -213,6 +213,7 @@ private:
         // whose first `>` has been consumed, and a substitution that fails between the
         // halves would leave the outer list unterminated at the next reading.
         std::size_t split;
+        std::size_t syntaxMark;
         explicit Trial(Parser *parser);
         ~Trial();
     };
@@ -466,13 +467,13 @@ private:
     struct CondParts {
         bool seen;
         std::size_t pos;
-        syntax::ExprId parts[3];
+        syntax::NodeId parts[3];
         CondParts() : seen(false), pos(0) {}
     };
-    syntax::ExprId unaryOperand_;
+    syntax::NodeId unaryOperand_;
     CondParts condParts_;
     // The arguments the last parseArguments read, as syntax, for the call postfix records.
-    std::vector<syntax::ExprId> callArgs_;
+    std::vector<syntax::NodeId> callArgs_;
     // Counts the argument lists parseArguments has read, so a postfix step can tell whether it read one.
     unsigned argGen_ = 0;
     struct PostfixStep {
@@ -480,16 +481,46 @@ private:
         syntax::Kind kind;
         std::string text;
         std::size_t pos, callPos;
-        syntax::ExprId operand, index;
+        syntax::NodeId operand, index;
         unsigned argGen;
         PostfixStep() : active(false), callFollows(false), kind(syntax::Kind::Other), pos(0), callPos(0), argGen(0) {}
     };
     PostfixStep beginPostfix(const ExprPtr &n) const;
     ExprPtr notePostfix(ExprPtr n, PostfixStep &st);
     syntax::Tree syntaxTree_;
-    syntax::ExprId syn(const ExprPtr &e) const { return e ? e->syntax() : syntax::ExprId(); }
+    // A node over the parts parsed since node `mark` whose locations lie from `lo` to the last token read: a statement's
+    // or a declaration's, each part having taken its own (Tree::adopt). noteStmt puts it on the Ast.h statement too.
+    syntax::NodeId noteParts(syntax::Kind kind, const std::string &text, std::size_t pos, std::size_t mark, std::size_t lo) {
+        const std::size_t hi = at_ > 0 && tokens_[at_ - 1].pos > lo ? tokens_[at_ - 1].pos : lo;
+        return syntaxTree_.add(kind, text, pos, syntaxTree_.adopt(mark, lo, hi));
+    }
+    StmtPtr noteStmt(StmtPtr s, syntax::Kind kind, const std::string &text, std::size_t pos, std::size_t mark,
+                     std::size_t lo) {
+        const syntax::NodeId id = noteParts(kind, text, pos, mark, lo);
+        if (s) s->setSyntax(id);
+        return s;
+    }
+    // **One declarator's `var` node**, made when the declarator's scope closes - which a loop body that leaves by
+    // `continue` from several places does in one place - over the parts its parse recorded: a bound, an initialiser.
+    struct VarNote {
+        Parser &p;
+        std::size_t mark, lo;
+        const Declared *d = nullptr;
+        VarNote(Parser &parser, std::size_t m, std::size_t l) : p(parser), mark(m), lo(l) {}
+        ~VarNote() {
+            if (d == nullptr) return;
+            p.noteParts(syntax::Kind::Var, (d->type != nullptr ? d->type->describe() + " " : std::string()) + d->name,
+                        d->pos, mark, lo);
+        }
+    };
+    struct KeywordForm { std::size_t start, mark; ExprPtr e; };
+    KeywordForm unaryForm();
+    ExprPtr noteKeywordForm(syntax::Kind kind, KeywordForm f);
+    // The statement kind the tokens ahead begin, and its text - a label's name; Other for a block, which records itself.
+    syntax::Kind statementKindAhead(std::string *text) const;
+    syntax::NodeId syn(const ExprPtr &e) const { return e ? e->syntax() : syntax::NodeId(); }
     ExprPtr note(ExprPtr e, syntax::Kind kind, const std::string &text, std::size_t pos,
-                 const std::vector<syntax::ExprId> &children = std::vector<syntax::ExprId>()) {
+                 const std::vector<syntax::NodeId> &children = std::vector<syntax::NodeId>()) {
         if (e) e->setSyntax(syntaxTree_.add(kind, text, pos, children));
         return e;
     }
@@ -819,9 +850,9 @@ private:
         int sretSlot = 0;
         std::string nrvoName;
         const Type **deducingReturn = nullptr;
-        syntax::ExprId unaryOperand;
+        syntax::NodeId unaryOperand;
         CondParts condParts;
-        std::vector<syntax::ExprId> callArgs;
+        std::vector<syntax::NodeId> callArgs;
         int unevaluated = 0;
         bool absoluteLookup = false;
         int lambdaCount = 0;

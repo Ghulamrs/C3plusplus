@@ -1582,7 +1582,7 @@ bool mentionsParam(const Type *t, std::size_t i) {
 
 Parser::Trial::Trial(Parser *parser)
     : p(parser), at(parser->at_), classes(parser->classStack_.size()),
-      pattern(parser->patternOnly_), split(parser->angleSplit_) {
+      pattern(parser->patternOnly_), split(parser->angleSplit_), syntaxMark(parser->syntaxTree_.size()) {
     p->src_.beginTrial();
 }
 
@@ -1592,6 +1592,7 @@ Parser::Trial::~Trial() {
     p->classStack_.resize(classes);
     p->patternOnly_ = pattern;
     p->angleSplit_ = split;
+    p->syntaxTree_.kill(syntaxMark);     // the tokens are read again, and what this read recorded is not the tree's
 }
 
 // `a::b::` as the stack of namespaces it names, which is what namespaceStack_ holds.

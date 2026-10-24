@@ -86,10 +86,11 @@ void Parser::checkOneDeducedType(const Type *&first, const Type *now,
 
 StmtPtr Parser::declaration() {
     std::size_t pos = peek().pos;
+    const std::size_t mark = syntaxTree_.size();
     attributedDeclarationAhead();  // `[[x]] n = 2;` reaches here, atDeclarationStart taking any `[[`
     StmtPtr s = declarationBody();
     if (s) s->setPos(pos);
-    return s;
+    return noteStmt(std::move(s), syntax::Kind::DeclStmt, "", pos, mark, pos);
 }
 
 StmtPtr Parser::declarationBody() {
@@ -172,7 +173,9 @@ StmtPtr Parser::declarationBody() {
     // checkOneDeducedType. Null while there has been none.
     const Type *deducedSoFar = nullptr;
     do {
+        VarNote var(*this, syntaxTree_.size(), peek().pos);
         Declared d = declarator(base);
+        var.d = &d;
         if (quals.isConstexpr) d.type = constexprObject(d.type);
         // **A condition declares one name and must initialise it**, and both
         // are settled here: the loop below leaves by more than one path, so
@@ -1358,6 +1361,7 @@ void Parser::resolveGotos() {
 StmtPtr Parser::block(bool functionTry) {
     std::size_t pos = peek().pos;
     const Nesting deep(this, pos, "block");
+    const std::size_t mark = syntaxTree_.size();
     if (!functionTry) expect("{");
     enterScope();
     // A `using namespace` written inside this block reaches the '}' and no
@@ -1431,16 +1435,41 @@ StmtPtr Parser::block(bool functionTry) {
     b->setScope(scope);
 
     b->setPos(pos);
-    return StmtPtr(b);
+    return noteStmt(StmtPtr(b), syntax::Kind::Block, "", pos, mark, pos);
+}
+
+// **The syntax of a statement** (M2 step 2): its kind is what its first tokens say, its parts what its parse recorded.
+syntax::Kind Parser::statementKindAhead(std::string *text) const {
+    static const struct { const char *word; syntax::Kind kind; } kWords[] = {
+        { "if", syntax::Kind::If }, { "while", syntax::Kind::While }, { "do", syntax::Kind::Do },
+        { "for", syntax::Kind::For }, { "switch", syntax::Kind::Switch }, { "case", syntax::Kind::Case },
+        { "default", syntax::Kind::Default }, { "break", syntax::Kind::Break },
+        { "continue", syntax::Kind::Continue }, { "return", syntax::Kind::Return },
+        { "goto", syntax::Kind::Goto }, { "try", syntax::Kind::Try }, { ";", syntax::Kind::Null },
+        { "static_assert", syntax::Kind::DeclStmt }, { "using", syntax::Kind::DeclStmt },
+        { "namespace", syntax::Kind::DeclStmt }, { "{", syntax::Kind::Other },
+    };
+    if (peek().is("goto")) *text = peekAt(1).text;
+    for (const auto &w : kWords)
+        if (peek().is(w.word)) return w.kind;
+    if (peek().kind == TokenKind::Ident && peekAt(1).is(":")) { *text = peek().text; return syntax::Kind::Label; }
+    return syntax::Kind::ExprStmt;
 }
 
 StmtPtr Parser::statement() {
     std::size_t pos = peek().pos;
     // An `else if` chain is one statement under another, each arm a level.
     const Nesting deep(this, pos, "statement");
+    const std::size_t mark = syntaxTree_.size();
+    std::string text;
+    const syntax::Kind kind = statementKindAhead(&text);
+    const bool throws = peek().is("throw");
     StmtPtr s = statementBody();
     if (s) s->setPos(pos);
-    return s;
+    if (kind == syntax::Kind::Other) return s;
+    // `throw e;` is an expression statement whose expression is the throw.
+    if (throws) noteParts(syntax::Kind::Throw, "", pos, mark, pos);
+    return noteStmt(std::move(s), kind, text, pos, mark, pos);
 }
 
 // **`try` is a block, a landing pad, and no new statement machinery.**

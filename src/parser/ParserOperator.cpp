@@ -67,7 +67,7 @@ ExprPtr Parser::castExpr() {
         expect(")");
         ExprPtr v;
         { OverloadTarget hold(*this, to); v = decay(castExpr()); }
-        const syntax::ExprId vs = syn(v);
+        const syntax::NodeId vs = syn(v);
         const std::string written = to->describe();
         if (to->isVoid()) return note(ExprPtr(new Cast(to, std::move(v))), syntax::Kind::Cast, written, openPos, {vs});
         refuseUnrelatedClassCast(*v, to, openPos, "a cast");
@@ -398,9 +398,9 @@ ExprPtr Parser::mul() {
         else if (consume("/")) op = BinOp::Div;
         else if (consume("%")) op = BinOp::Mod;
         else return n;
-        const syntax::ExprId l = syn(n);
+        const syntax::NodeId l = syn(n);
         ExprPtr r = memberPointerExpr();
-        const syntax::ExprId rs = syn(r);
+        const syntax::NodeId rs = syn(r);
         n = note(arithmetic(op, std::move(n), std::move(r), pos), syntax::Kind::Binary, binOpSpelling(op), pos, {l, rs});
     }
 }
@@ -413,9 +413,9 @@ ExprPtr Parser::add() {
         if (consume("+"))      op = BinOp::Add;
         else if (consume("-")) op = BinOp::Sub;
         else return n;
-        const syntax::ExprId l = syn(n);
+        const syntax::NodeId l = syn(n);
         ExprPtr r = mul();
-        const syntax::ExprId rs = syn(r);
+        const syntax::NodeId rs = syn(r);
         n = note(arithmetic(op, std::move(n), std::move(r), pos), syntax::Kind::Binary, binOpSpelling(op), pos, {l, rs});
     }
 }
@@ -430,9 +430,9 @@ ExprPtr Parser::shift() {
         else if (consume(">>")) op = BinOp::Shr;
         else return n;
 
-        const syntax::ExprId l = syn(n);
+        const syntax::NodeId l = syn(n);
         ExprPtr r = add();
-        const syntax::ExprId rs = syn(r);
+        const syntax::NodeId rs = syn(r);
         n = note(shiftOf(op, std::move(n), std::move(r), pos), syntax::Kind::Binary, binOpSpelling(op), pos, {l, rs});
     }
 }
@@ -451,9 +451,9 @@ ExprPtr Parser::relational() {
         else if (consume(">"))  op = BinOp::Gt;
         else if (consume(">=")) op = BinOp::Ge;
         else return n;
-        const syntax::ExprId l = syn(n);
+        const syntax::NodeId l = syn(n);
         ExprPtr r = shift();
-        const syntax::ExprId rs = syn(r);
+        const syntax::NodeId rs = syn(r);
         n = note(comparison(op, std::move(n), std::move(r), pos), syntax::Kind::Binary, binOpSpelling(op), pos, {l, rs});
     }
 }
@@ -466,9 +466,9 @@ ExprPtr Parser::equality() {
         if (consume("=="))      op = BinOp::Eq;
         else if (consume("!=")) op = BinOp::Ne;
         else return n;
-        const syntax::ExprId l = syn(n);
+        const syntax::NodeId l = syn(n);
         ExprPtr r = relational();
-        const syntax::ExprId rs = syn(r);
+        const syntax::NodeId rs = syn(r);
         n = note(comparison(op, std::move(n), std::move(r), pos), syntax::Kind::Binary, binOpSpelling(op), pos, {l, rs});
     }
 }
@@ -477,9 +477,9 @@ ExprPtr Parser::bitAnd() {
     ExprPtr n = equality();
     while (peek().is("&")) {
         std::size_t pos = peek().pos; at_++;
-        const syntax::ExprId l = syn(n);
+        const syntax::NodeId l = syn(n);
         ExprPtr r = equality();
-        const syntax::ExprId rs = syn(r);
+        const syntax::NodeId rs = syn(r);
         n = note(arithmetic(BinOp::BitAnd, std::move(n), std::move(r), pos), syntax::Kind::Binary, binOpSpelling(BinOp::BitAnd), pos, {l, rs});
     }
     return n;
@@ -489,9 +489,9 @@ ExprPtr Parser::bitXor() {
     ExprPtr n = bitAnd();
     while (peek().is("^")) {
         std::size_t pos = peek().pos; at_++;
-        const syntax::ExprId l = syn(n);
+        const syntax::NodeId l = syn(n);
         ExprPtr r = bitAnd();
-        const syntax::ExprId rs = syn(r);
+        const syntax::NodeId rs = syn(r);
         n = note(arithmetic(BinOp::BitXor, std::move(n), std::move(r), pos), syntax::Kind::Binary, binOpSpelling(BinOp::BitXor), pos, {l, rs});
     }
     return n;
@@ -501,9 +501,9 @@ ExprPtr Parser::bitOr() {
     ExprPtr n = bitXor();
     while (peek().is("|")) {
         std::size_t pos = peek().pos; at_++;
-        const syntax::ExprId l = syn(n);
+        const syntax::NodeId l = syn(n);
         ExprPtr r = bitXor();
-        const syntax::ExprId rs = syn(r);
+        const syntax::NodeId rs = syn(r);
         n = note(arithmetic(BinOp::BitOr, std::move(n), std::move(r), pos), syntax::Kind::Binary, binOpSpelling(BinOp::BitOr), pos, {l, rs});
     }
     return n;
@@ -515,9 +515,9 @@ ExprPtr Parser::logicalAnd() {
         std::size_t pos = peek().pos;
         at_++;
         const std::size_t before = pendingTemps_.size();
-        const syntax::ExprId l = syn(n);
+        const syntax::NodeId l = syn(n);
         ExprPtr r = decay(bitOr());
-        const syntax::ExprId rs = syn(r);
+        const syntax::NodeId rs = syn(r);
         n = decay(std::move(n));
         n = contextualScalar(std::move(n), pos, "'&&'");
         r = contextualScalar(std::move(r), pos, "'&&'");
@@ -537,9 +537,9 @@ ExprPtr Parser::logicalOr() {
         std::size_t pos = peek().pos;
         at_++;
         const std::size_t before = pendingTemps_.size();
-        const syntax::ExprId l = syn(n);
+        const syntax::NodeId l = syn(n);
         ExprPtr r = decay(logicalAnd());
-        const syntax::ExprId rs = syn(r);
+        const syntax::NodeId rs = syn(r);
         n = decay(std::move(n));
         n = contextualScalar(std::move(n), pos, "'||'");
         r = contextualScalar(std::move(r), pos, "'||'");
@@ -1093,7 +1093,13 @@ ExprPtr Parser::conditionalNode() {
 
 ExprPtr Parser::assign() {
     // [expr.ass]/1: a throw-expression is an assignment-expression (1.27).
-    if (peek().is("throw")) return throwExpression();
+    if (peek().is("throw")) {
+        KeywordForm f;
+        f.start = at_;
+        f.mark = syntaxTree_.size();
+        f.e = throwExpression();
+        return noteKeywordForm(syntax::Kind::Throw, std::move(f));
+    }
     ExprPtr n = conditional();
 
     static const struct { const char *tok; BinOp op; } kCompound[] = {
@@ -1105,9 +1111,9 @@ ExprPtr Parser::assign() {
     for (const auto &c : kCompound) {
         if (peek().is(c.tok)) {
             std::size_t pos = peek().pos; at_++;
-            const syntax::ExprId l = syn(n);
+            const syntax::NodeId l = syn(n);
             ExprPtr value = decay(assign());
-            const syntax::ExprId vs = syn(value);
+            const syntax::NodeId vs = syn(value);
             ExprPtr r = compound(c.op, std::move(n), std::move(value), pos);
             if (dynamic_cast<const Assign *>(r.get())) r->setDeclCategory(Expr::Category::Lvalue);
             return note(std::move(r), syntax::Kind::Assign, c.tok, pos, {l, vs});
@@ -1119,7 +1125,7 @@ ExprPtr Parser::assign() {
     at_++;
 
     requireAssignable(*n, pos, "the left of '='");
-    const syntax::ExprId l = syn(n);
+    const syntax::NodeId l = syn(n);
 
     const Type *to = n->type();
     ExprPtr value;
@@ -1143,7 +1149,7 @@ ExprPtr Parser::assign() {
                     syntax::Kind::Assign, "=", pos, {l});
     }
     { OverloadTarget hold(*this, to); value = decay(assign()); }
-    const syntax::ExprId vs = syn(value);
+    const syntax::NodeId vs = syn(value);
     return note(assignValue(std::move(n), std::move(value), pos), syntax::Kind::Assign, "=", pos, {l, vs});
 }
 
@@ -1231,9 +1237,9 @@ ExprPtr Parser::expr() {
     while (peek().is(",")) {
         const std::size_t pos = peek().pos;
         at_++;
-        const syntax::ExprId l = syn(n);
+        const syntax::NodeId l = syn(n);
         ExprPtr right = decay(assign());
-        const syntax::ExprId rs = syn(right);
+        const syntax::NodeId rs = syn(right);
         const Type *t = right->type();
         ExprPtr c(new Comma(std::move(n), std::move(right)));
         c->setType(t);

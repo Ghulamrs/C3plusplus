@@ -256,7 +256,12 @@ void Parser::topLevel(Program &program) {
     freeSlots_.clear();
     // The guards this frame makes start here, a constructor's mem-initialisers' among them (M1).
     const std::size_t frameGuards = guardSlots_.size();
+    VarNote global(*this, syntaxTree_.size(), peek().pos);
     Declared d = declarator(base);
+    // A variable at namespace scope is a `var` node over its initialiser; a function records its own definition.
+    if (d.type != nullptr && !d.name.empty() &&
+        !((peek().is("(") && !atParenInitialiser()) || d.paramsAt != 0 || d.type->isFunction()))
+        global.d = &d;
     // A closure's `operator()` reads the enclosing function's const locals for their values,
     // [expr.prim.lambda]/12 - declared first, so that a parameter or a local of the body hides one (1.27).
     {
@@ -1830,6 +1835,7 @@ void Parser::topLevel(Program &program) {
     std::string spec = "$spec";
     for (const std::string &sym : specSymbols) spec += "," + sym;
     nrvoName_ = nrvoCandidate();
+    const std::size_t bodyMark = syntaxTree_.size(), bodyLo = peek().pos;
     if (specFilter) {
         const std::size_t bodyAt = peek().pos;
         body = tryStatement(bodyAt, [&]() {
@@ -1891,6 +1897,7 @@ void Parser::topLevel(Program &program) {
     // **`static` on a member says which member, not which linkage.**
     const bool internal = memberOf != nullptr ? inUnnamedNamespace_
                                               : internalLinkage(sc);
+    noteParts(syntax::Kind::Function, d.name, d.pos, bodyMark, bodyLo);   // its body, as syntax (M2 step 2)
     program.functions.push_back(Function(d.name, emittedReturn, std::move(paramSlots),
                                          std::move(body), frame,
                                          internal, sretSlot,

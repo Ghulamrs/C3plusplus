@@ -96,21 +96,25 @@ public:
     Category declCategory() const { return category_; }
     void setDeclCategory(Category c) { category_ = c; }
     // The syntax node the grammar recorded for this expression, if it recorded one (M2 step 2); nothing reads it yet.
-    syntax::ExprId syntax() const { return syntax_; }
-    void setSyntax(syntax::ExprId s) { syntax_ = s; }
+    syntax::NodeId syntax() const { return syntax_; }
+    void setSyntax(syntax::NodeId s) { syntax_ = s; }
 private:
     const Type *type_ = nullptr;
     bool xvalue_ = false;
     Category category_ = Category::Natural;
-    syntax::ExprId syntax_;
+    syntax::NodeId syntax_;
 };
 
 class Stmt : public Node {
 public:
     std::size_t pos() const { return pos_; }
     void setPos(std::size_t p) { pos_ = p; }
+    // The syntax node the grammar recorded for this statement (M2 step 2); nothing reads it yet.
+    syntax::NodeId syntax() const { return syntax_; }
+    void setSyntax(syntax::NodeId s) { syntax_ = s; }
 private:
     std::size_t pos_ = 0;
+    syntax::NodeId syntax_;
 };
 
 using ExprPtr = std::unique_ptr<Expr>;

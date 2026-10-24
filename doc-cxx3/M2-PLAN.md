@@ -102,6 +102,16 @@ records, so step 2 is cut so that each commit is checked by the one before it:
 | M2.11 | the adapter: typed tree to `Ast.h` for that subset; behind `-front=typed`, a function inside the subset takes the adapter's `Ast.h`, any other the parser's | output identical with the flag on and off |
 | M2.12 on | the subset grows - classes, templates by replay, exceptions - until every function takes the adapter's | the same, case by case; then the old path is deleted |
 
+**How M2.9 finds a statement's parts.** Every part records itself, so a statement takes the roots made since its
+first token whose location lies inside its own tokens (`Tree::adopt`): a template body replayed from elsewhere, a
+default argument and a member initialiser are not its, being written elsewhere. A read that rewinds and reads
+again makes a second root at one location, and the later wins; a `Trial`'s nodes are dead. Recorded at M2.9:
+every statement, a declaration statement's declarators (`var`), a function's definition, a variable at namespace
+scope, and sizeof, alignof, noexcept, new, delete, typeid, the named casts, throw and a lambda (as its tokens).
+Not yet: a class's or a template's definition (a member's and a specialization's bodies are recorded as they are
+replayed), a lambda's body, a braced list as a node of its own, the second declarator of `int a, b;` at namespace
+scope, and parameters.
+
 **The parser's `Ast.h` is the oracle for the new path while both exist**: the new path is right where it
 produces what the old one produced. That is `tools/identical.sh` again, and the reason the old path is kept
 until the new one has matched it everywhere.
