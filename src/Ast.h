@@ -98,11 +98,15 @@ public:
     // The syntax node the grammar recorded for this expression, if it recorded one (M2 step 2); nothing reads it yet.
     syntax::NodeId syntax() const { return syntax_; }
     void setSyntax(syntax::NodeId s) { syntax_ = s; }
+    // The entity the parser resolved this expression to, as an index into its table (M2.16); 0 is none. No backend reads it.
+    std::uint32_t resolved() const { return resolved_; }
+    void setResolved(std::uint32_t r) { resolved_ = r; }
 private:
     const Type *type_ = nullptr;
     bool xvalue_ = false;
     Category category_ = Category::Natural;
     syntax::NodeId syntax_;
+    std::uint32_t resolved_ = 0;
 };
 
 class Stmt : public Node {

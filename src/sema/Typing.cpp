@@ -24,7 +24,6 @@ TypedId TypedTree::add(syntax::NodeId syn, const Type *type, const std::vector<T
 
 TypedId Typer::typeFunction(syntax::NodeId fn) {
     scopes_.clear();
-    localOnly_ = p_.scopedFunctions_.count(fn.v) != 0;
     return node(fn);
 }
 
@@ -63,8 +62,7 @@ TypedId Typer::node(syntax::NodeId id) {
         parts.push_back(tree_.node(k).type);
     }
     syntax::NodeId decl;
-    const Type *type = n.kind == syntax::Kind::Name ? (st.text(id).find("::") == std::string::npos
-                                                         ? named(st.text(id), &decl) : nullptr)
+    const Type *type = n.kind == syntax::Kind::Name ? named(id, &decl)
                      : isExpression(n.kind) ? expression(id, parts) : nullptr;
     if (scoped) scopes_.pop_back();
     return tree_.add(id, type, kids, decl);
@@ -121,19 +119,51 @@ const Type *Typer::literal(syntax::NodeId id) {
     return types.get(ladder.back());
 }
 
-// A name, innermost scope first, then the namespace's objects and enumerators. A reference reads as what it refers to.
-const Type *Typer::named(const std::string &name, syntax::NodeId *decl) {
+// **What the parser resolved this node to, recorded where it resolved it** (M2.16): a name's entity, a member's, the
+// function a call or an overloaded operator reached, a class temporary's class. Nothing is looked up after the file.
+const Type *Typer::resolvedType(syntax::NodeId id, syntax::Kind kind) const {
+    std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
+    if (r == p_.resolutions_.end() || r->second.type == nullptr) return nullptr;
+    const Parser::Resolved &res = r->second;
+    const Type *t = res.type;
+    switch (res.what) {
+        case Parser::Resolved::Call:
+            // A call's, an overloaded operator's, a constructor's: the value is what the function returns.
+            t = t->isFunction() ? t->returns() : nullptr;
+            break;
+        case Parser::Resolved::Function:
+            // A function named as a value, `f` or `&f`: the pointer [conv.func] makes of it, as the parser lowers it.
+            if (kind != syntax::Kind::Name && kind != syntax::Kind::Unary) return nullptr;
+            t = p_.types_.pointerTo(t);
+            break;
+        case Parser::Resolved::Local: case Parser::Resolved::Global: case Parser::Resolved::StaticMember:
+        case Parser::Resolved::Enumerator: case Parser::Resolved::This:
+            if (kind != syntax::Kind::Name && kind != syntax::Kind::This) return nullptr;
+            break;
+        case Parser::Resolved::Member:
+            if (kind != syntax::Kind::Name && kind != syntax::Kind::Member) return nullptr;
+            break;
+        case Parser::Resolved::Temporary:
+            if (kind != syntax::Kind::Call) return nullptr;
+            break;
+        case Parser::Resolved::None:
+            return nullptr;
+    }
+    // A reference reads as what it refers to, as every mention of one is lowered.
+    if (t != nullptr && t->isReference()) t = t->referent();
+    return t;
+}
+
+// A name: a local of this function's scopes, which the typer saw declared, else the entity the parser recorded for it.
+const Type *Typer::named(syntax::NodeId id, syntax::NodeId *decl) {
+    const std::string &name = p_.syntaxTree_.text(id);
     const Type *t = nullptr;
     for (std::size_t i = scopes_.size(); t == nullptr && i > 0; i--) {
         std::unordered_map<std::string, Declared>::const_iterator it = scopes_[i - 1].find(name);
         if (it != scopes_[i - 1].end()) { t = it->second.type; *decl = it->second.decl; }
     }
-    if (t == nullptr && localOnly_) return nullptr;
-    if (t == nullptr)
-        if (const GlobalSym *g = p_.lookup_.findGlobal(name)) t = g->type;
-    if (t == nullptr)
-        if (const EnumConst *e = p_.lookup_.findEnum(name)) t = e->type != nullptr ? e->type : p_.types_.intType();
     if (t != nullptr && t->isReference()) t = t->referent();
+    if (t == nullptr) t = resolvedType(id, syntax::Kind::Name);
     return t;
 }
 
@@ -148,6 +178,8 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
     TypeTable &types = p_.types_;
     const Type *a = parts.size() > 0 ? parts[0] : nullptr;
     const Type *b = parts.size() > 1 ? parts[1] : nullptr;
+    // A call, an overloaded operator, a member access, `this` or a class temporary: what the parser recorded.
+    if (const Type *r = resolvedType(id, kind)) return r;
     // An array operand of arithmetic is its first element's address.
     const Type *da = a != nullptr && a->isArray() ? types.pointerTo(a->pointee()) : a;
     const Type *db = b != nullptr && b->isArray() ? types.pointerTo(b->pointee()) : b;
@@ -193,16 +225,9 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
             if (da != nullptr && da->isPointer() && b != nullptr && b->isInteger()) return da->pointee();
             if (db != nullptr && db->isPointer() && a != nullptr && a->isInteger()) return db->pointee();
             return nullptr;
-        case syntax::Kind::Call: {
-            // A call of a name with one function under it, not a template's: its return type.
-            const syntax::NodeId callee = st.node(id).count > 0 ? st.child(id, 0) : syntax::NodeId();
-            if (localOnly_ || !callee.valid() || st.node(callee).kind != syntax::Kind::Name) return nullptr;
-            const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(st.text(callee));
-            if (set == nullptr || set->size() != 1) return nullptr;
-            const Signature &f = p_.lookup_.functions_[(*set)[0]];
-            if (f.fromTemplate || f.returns == nullptr) return nullptr;
-            return f.returns->isReference() ? f.returns->referent() : f.returns;
-        }
+        case syntax::Kind::Call:
+            return nullptr;     // a call the parser recorded no function for: through a pointer, or not yet
+
         case syntax::Kind::Cast: {
             std::unordered_map<std::uint32_t, const Type *>::const_iterator to = p_.castTypes_.find(id.v);
             if (to == p_.castTypes_.end()) return nullptr;

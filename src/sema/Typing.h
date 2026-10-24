@@ -72,12 +72,12 @@ private:
     TypedId node(syntax::NodeId id);
     const Type *expression(syntax::NodeId id, const std::vector<const Type *> &parts);
     const Type *literal(syntax::NodeId id);
-    const Type *named(const std::string &name, syntax::NodeId *decl);
+    const Type *named(syntax::NodeId id, syntax::NodeId *decl);
+    const Type *resolvedType(syntax::NodeId id, syntax::Kind kind) const;
     struct Declared { const Type *type; syntax::NodeId decl; };
     Parser &p_;
     TypedTree tree_;
     std::vector<std::unordered_map<std::string, Declared> > scopes_;
-    bool localOnly_ = false;    // in a function whose other names are a class's or a namespace's: those are not typed yet
 };
 
 }   // namespace sema

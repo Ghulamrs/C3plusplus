@@ -698,6 +698,9 @@ ExprPtr Parser::completeCall(const std::string &name, const std::string &symbol,
     const bool xvalue = n->type()->isReference() && n->type()->isRValueReference();
     ExprPtr made = useReference(std::move(n));
     if (xvalue) made->setXvalue();
+    // The function this call reached, by its symbol: a direct call's, an overloaded operator's, a constructor's.
+    if (!symbol.empty())
+        made = resolve(std::move(made), resolvedAs(Resolved::Call, types_.functionType(returns, params, variadic), symbol));
     return made;
 }
 

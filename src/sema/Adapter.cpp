@@ -390,9 +390,12 @@ void Adapter::ownedLocal(TypedId var, const Local &l, std::vector<StmtPtr> &body
                 outside("a constructor given what is not a scalar");
     }
     if (p_.hasConstructors(cls->tag())) {
-        const std::string key = Parser::constructorKey(cls->tag());
-        // resolveOverload instantiates a constructor template that deduces, as the parser's own call did.
-        const Signature ctor = p_.overload_.resolveOverload(key, args, syn(var).loc);
+        // The constructor the parser chose for this declaration, recorded on its `var` node (M2.16).
+        std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(tree.node(var).syntax.v);
+        const Signature *chosen = r != p_.resolutions_.end() && r->second.what == Parser::Resolved::Call
+                                      ? signatureBySymbol(r->second.symbol) : nullptr;
+        if (chosen == nullptr) outside("a constructor the parser did not record");
+        const Signature ctor = *chosen;
         if (ctor.deleted || args.size() != ctor.params.size()) outside("a constructor with defaults, or deleted");
         const Type *thisType = p_.types_.pointerTo(cls);
         ExprPtr object = typed(std::unique_ptr<Var>(Var::local(l.name, l.offset)), l.type);
@@ -1189,33 +1192,6 @@ ExprPtr Adapter::member(TypedId id) {
     return access;
 }
 
-// Whether a function, an object or an enumerator is declared under `name` inside some namespace or class: then an
-// unqualified use of it in a function inside one may mean that one, and the parser's tables cannot say which.
-bool Adapter::scopedName(const std::string &name) {
-    if (!scopedBuilt_) {
-        scopedBuilt_ = true;
-        for (std::size_t i = 0; i < p_.lookup_.functions_.size(); i++) {
-            const Signature &f = p_.lookup_.functions_[i];
-            if (f.owner.empty() && f.name.find("::") == std::string::npos) globalFunctions_.insert(f.symbol);
-        }
-        struct Add {
-            static void from(std::unordered_set<std::string> &out, const std::string &key) {
-                const std::size_t at = key.rfind("::");
-                if (at != std::string::npos) out.insert(key.substr(at + 2));
-            }
-        };
-        for (std::unordered_map<std::string, std::vector<std::size_t> >::const_iterator i = p_.lookup_.functionIndex_.begin();
-             i != p_.lookup_.functionIndex_.end(); ++i) Add::from(scoped_, i->first);
-        for (std::unordered_map<std::string, std::size_t>::const_iterator i = p_.lookup_.globalIndex_.begin();
-             i != p_.lookup_.globalIndex_.end(); ++i) Add::from(scoped_, i->first);
-        for (std::unordered_map<std::string, std::size_t>::const_iterator i = p_.lookup_.enumIndex_.begin();
-             i != p_.lookup_.enumIndex_.end(); ++i) Add::from(scoped_, i->first);
-    }
-    // A function at file scope with no using-directive open finds a name where the parser's tables, read now, do.
-    if (globalFunctions_.count(fnSymbol_) != 0 && p_.lookup_.usingNamespaces_.empty()) return false;
-    return scoped_.count(name) != 0;
-}
-
 // A name, as the typer found it: a local of this function, else an object or an enumerator at file scope.
 ExprPtr Adapter::name(TypedId id) {
     const TypedNode &n = typer_.tree().node(id);
@@ -1226,33 +1202,51 @@ ExprPtr Adapter::name(TypedId id) {
         try { plainLocal(p_, l->second); } catch (const std::string &why) { outside(why); }
         return localVar(l->second, p_.types_);
     }
-    if (text.find("::") == std::string::npos && scopedName(text)) outside("a name that names something in a scope too");
-    if (const GlobalSym *g = p_.lookup_.findGlobal(text)) {
-        if (g->isThreadLocal) outside("a thread_local");
-        if (!scalar(g->type) && !scalarArray(g->type) && !byteClass(p_, g->type)) outside("an object of type '" + g->type->describe() + "'");
-        Var *v = Var::global(text);
-        v->setSymbol(g->symbol);
-        v->setReadOnly(g->isConst);
-        return typed(std::unique_ptr<Var>(v), g->type);
+    // What the parser resolved the name to, recorded where it did (M2.16): no table is asked after the file.
+    std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(n.syntax.v);
+    if (r == p_.resolutions_.end()) outside("the name '" + text + "'");
+    const Parser::Resolved &res = r->second;
+    if (res.what == Parser::Resolved::Global) {
+        if (res.isThreadLocal) outside("a thread_local");
+        if (!scalar(res.type) && !scalarArray(res.type) && !byteClass(p_, res.type)) outside("an object of type '" + res.type->describe() + "'");
+        Var *v = Var::global(res.name.empty() ? text : res.name);
+        v->setSymbol(res.symbol);
+        v->setReadOnly(res.isConst);
+        return typed(std::unique_ptr<Var>(v), res.type);
     }
-    if (const EnumConst *k = p_.lookup_.findEnum(text)) {
-        const Type *t = k->type != nullptr ? k->type : p_.types_.intType();
-        if (!scalarArithmetic(t)) outside("an enumerator of '" + t->describe() + "'");
-        return typed(make_owned<Num>(k->value), t);
+    if (res.what == Parser::Resolved::Enumerator) {
+        if (!scalarArithmetic(res.type)) outside("an enumerator of '" + res.type->describe() + "'");
+        return typed(make_owned<Num>(res.value), res.type);
     }
     // [conv.func]: a function named as a value is its address.
-    if (const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(text)) {
-        if (set->size() != 1) outside("a function of an overload set named as a value");
-        const Signature &f = p_.lookup_.functions_[(*set)[0]];
-        if (f.fromTemplate || !f.owner.empty() || f.deleted) outside("a template's or a member named as a value");
-        Var *v = Var::global(text);
-        v->setSymbol(f.symbol);
-        const Type *fn = p_.types_.functionType(f.returns, f.params, f.variadic);
+    if (res.what == Parser::Resolved::Function) {
+        const Signature *f = signatureBySymbol(res.symbol);
+        if (f == nullptr || f->fromTemplate || !f->owner.empty() || f->deleted) outside("a template's or a member named as a value");
+        Var *v = Var::global(res.name.empty() ? text : res.name);
+        v->setSymbol(f->symbol);
+        const Type *fn = p_.types_.functionType(f->returns, f->params, f->variadic);
         ExprPtr target = typed(std::unique_ptr<Var>(v), fn);
         return typed(make_owned<Unary>('&', std::move(target)), p_.types_.pointerTo(fn));
     }
-    outside("the name '" + text + "'");
+    outside("the name '" + text + "', " + (res.what == Parser::Resolved::Local ? "a local the typer did not see declared"
+                                            : res.what == Parser::Resolved::Member ? "a member reached through this"
+                                            : res.what == Parser::Resolved::StaticMember ? "a static member" : "of another kind"));
     return ExprPtr();
+}
+
+// The function the parser recorded a call node as reaching, by its symbol; null where it recorded none.
+const Signature *Adapter::recordedFunction(TypedId id) const {
+    std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(typer_.tree().node(id).syntax.v);
+    if (r == p_.resolutions_.end() || r->second.what != Parser::Resolved::Call) return nullptr;
+    return signatureBySymbol(r->second.symbol);
+}
+
+// The signature a recorded symbol names, from the one function table; null where the symbol is nobody's.
+const Signature *Adapter::signatureBySymbol(const std::string &symbol) const {
+    if (bySymbol_.empty())
+        for (std::size_t i = 0; i < p_.lookup_.functions_.size(); i++) bySymbol_[p_.lookup_.functions_[i].symbol] = i;
+    std::unordered_map<std::string, std::size_t>::const_iterator at = bySymbol_.find(symbol);
+    return at == bySymbol_.end() ? nullptr : &p_.lookup_.functions_[at->second];
 }
 
 ExprPtr Adapter::unary(TypedId id) {
@@ -1456,42 +1450,25 @@ ExprPtr Adapter::call(TypedId id) {
     std::string callee = p_.syntaxTree_.text(tree.node(head).syntax);
     if (callee.compare(0, 2, "::") == 0) callee = callee.substr(2);
     const std::string written = callee;
-    // Which `f` an unqualified call means depends on the scope it is written in, which the parser has left by now.
-    if (callee.find("::") == std::string::npos && scopedName(callee)) outside("a call of a name something in a scope shares");
-    const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(callee);
-    if (set == nullptr && callee.find('<') == std::string::npos)
-        if (const Type *cls = p_.lookup_.findTypedef(callee))
-            if (cls->isStructOrUnion()) return classTemporary(id, cls, std::move(args));
-    if (set == nullptr && callee.find("::") != std::string::npos) {
-        // `std::strcpy` through `using ::strcpy;` names the function the declaration names.
-        const std::string aliased = p_.lookup_.followUsingDeclaration(callee);
-        if (aliased != callee && p_.lookup_.overloadsOf(aliased) != nullptr) {
-            callee = aliased;
-            set = p_.lookup_.overloadsOf(callee);
-        }
+    // What the parser reached from this call, recorded on its node where it was resolved (M2.16): a function by its
+    // symbol, a class temporary by its class, or - a call through a global holding a pointer - nothing.
+    std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(n.syntax.v);
+    if (r != p_.resolutions_.end() && r->second.what == Parser::Resolved::Temporary)
+        return classTemporary(id, r->second.type->unqualified(), std::move(args));
+    if (r == p_.resolutions_.end() || r->second.what != Parser::Resolved::Call) {
+        std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator h = p_.resolutions_.find(tree.node(head).syntax.v);
+        if (h != p_.resolutions_.end() && h->second.what == Parser::Resolved::Global) return pointerCall(id, head, std::move(args));
+        outside("a call the parser recorded no function for");
     }
-    if (set == nullptr && p_.lookup_.findGlobal(callee) != nullptr) return pointerCall(id, head, std::move(args));
-    if (set == nullptr) outside("a call of an undeclared name");
-    const std::string bare = Parser::localOf(callee);
-    // A name a function template shares: the parser deduced and chose, and the symbol it called is recorded by node.
-    bool templated = p_.tmpl_.templates_.count(bare) != 0;
-    for (std::size_t k = 0; k < set->size(); k++)
-        if (p_.lookup_.functions_[(*set)[k]].fromTemplate) templated = true;
+    const Signature *chosen = signatureBySymbol(r->second.symbol);
+    if (chosen == nullptr) outside("a call of a function not in the table by its symbol");
+    const Signature f = *chosen;
     if (p_.tmpl_.memberTemplates_.count(callee) != 0) outside("a call of a name a member template shares");
-    if (templated) {
-        std::unordered_map<std::uint32_t, Parser::CallSlots>::const_iterator k = p_.callSlots_.find(n.syntax.v);
-        if (k == p_.callSlots_.end() || k->second.symbol.empty()) outside("a call of a template's not recorded");
-        const Signature *chosen = nullptr;
-        for (std::size_t i = 0; i < set->size(); i++)
-            if (p_.lookup_.functions_[(*set)[i]].symbol == k->second.symbol) chosen = &p_.lookup_.functions_[(*set)[i]];
-        if (chosen == nullptr) outside("a call of a template's not in its set");
-        const Signature f = *chosen;
+    if (f.fromTemplate) {
         if (f.deleted || !f.owner.empty()) outside("a call of a template's member or deleted function");
-        return finishCall(id, f.fromTemplate ? f.name : written, f, f.params, std::move(args), false);
+        return finishCall(id, f.name, f, f.params, std::move(args), false);
     }
     const bool qualified = callee.find("::") != std::string::npos;
-    const Signature f = set->size() == 1 ? p_.lookup_.functions_[(*set)[0]]
-                                         : p_.overload_.resolveOverload(callee, args, syn(id).loc);
     if (f.deleted) outside("a call of a deleted function");
     if (!f.owner.empty() && !(qualified && f.isStaticMember)) outside("a call of a member by its name");
     if (!f.owner.empty()) {
@@ -1523,8 +1500,10 @@ ExprPtr Adapter::classTemporary(TypedId id, const Type *cls, std::vector<ExprPtr
         for (std::size_t i = 0; i < args.size(); i++)
             if (!scalar(args[i]->type())) outside("a temporary given what is not a scalar");
         if (args.empty()) outside("a temporary value-initialised");
-        const std::string key = Parser::constructorKey(plain->tag());
-        const Signature ctor = p_.overload_.resolveOverload(key, args, syn(id).loc);
+        std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(typer_.tree().node(id).syntax.v);
+        const Signature *chosen = r != p_.resolutions_.end() ? signatureBySymbol(r->second.symbol) : nullptr;
+        if (chosen == nullptr) outside("a temporary whose constructor the parser did not record");
+        const Signature ctor = *chosen;
         if (ctor.deleted || args.size() != ctor.params.size()) outside("a constructor with defaults, or deleted");
         std::vector<ExprPtr> all;
         all.push_back(typed(make_owned<Unary>('&', typed(std::unique_ptr<Var>(Var::local("$tmp", slot)), plain)), ptr));
@@ -1571,12 +1550,10 @@ ExprPtr Adapter::objectCall(TypedId id, TypedId head, std::vector<ExprPtr> args)
     if (!pure(*object) || !isLvalue(*object)) outside("a call of an object not named");
     const Type *plain = cls->unqualified();
     const std::string key = plain->tag() + "::operator()";
-    const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(key);
-    if (set == nullptr || p_.tmpl_.memberTemplates_.count(key) != 0) outside("a call of an object with no plain operator()");
-    for (std::size_t k = 0; k < set->size(); k++)
-        if (p_.lookup_.functions_[(*set)[k]].fromTemplate) outside("a call of a template's operator()");
-    if (p_.lookup_.findMemberOwner(plain, "operator()") != plain) outside("an operator() found in a base");
-    const Signature f = p_.overload_.resolveOverload(key, args, syn(id).loc, cls, objectIsLvalue(*object));
+    if (p_.tmpl_.memberTemplates_.count(key) != 0) outside("a call of an object with no plain operator()");
+    const Signature *chosen = recordedFunction(id);
+    if (chosen == nullptr || chosen->fromTemplate) outside("a call of a template's operator(), or one not recorded");
+    const Signature f = *chosen;
     if (f.deleted || f.isVirtual || f.refThis != RefQual::None || f.isStaticMember || f.owner != plain->tag())
         outside("an operator() that is not plain");
     const Type *thisType = p_.types_.pointerTo(f.constThis ? p_.types_.withConst(plain) : plain);
@@ -1626,7 +1603,6 @@ ExprPtr Adapter::lambda(TypedId id) {
 // [expr.ref] with [class.mfct.non-static]: `o.f(a)` is f called with `&o` in front of its arguments.
 ExprPtr Adapter::memberCall(TypedId id, TypedId head, std::vector<ExprPtr> args) {
     const TypedTree &tree = typer_.tree();
-    const std::size_t pos = syn(id).loc;
     const std::string &text = p_.syntaxTree_.text(tree.node(head).syntax);
     const bool arrow = text.compare(0, 2, "->") == 0;
     const std::string name = text.substr(arrow ? 2 : 1);
@@ -1645,13 +1621,11 @@ ExprPtr Adapter::memberCall(TypedId id, TypedId head, std::vector<ExprPtr> args)
     if ((!plainClass(p_, cls) && !ownedClass(p_, cls)) || !pure(*object) || object->isXvalue() || !isLvalue(*object))
         outside("a member call on what is not a plain struct named");
     const Type *plain = cls->unqualified();
-    if (p_.lookup_.findMemberOwner(plain, name) != plain) outside("a member call found in a base");
     const std::string key = plain->tag() + "::" + name;
-    const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(key);
-    if (set == nullptr || p_.tmpl_.memberTemplates_.count(key) != 0) outside("a member call of what is not a function");
-    for (std::size_t k = 0; k < set->size(); k++)
-        if (p_.lookup_.functions_[(*set)[k]].fromTemplate) outside("a member call of a template's");
-    const Signature f = p_.overload_.resolveOverload(key, args, pos, cls, objectIsLvalue(*object));
+    if (p_.tmpl_.memberTemplates_.count(key) != 0) outside("a member call of what is not a function");
+    const Signature *chosen = recordedFunction(id);
+    if (chosen == nullptr || chosen->fromTemplate) outside("a member call of a template's, or one not recorded");
+    const Signature f = *chosen;
     if (f.deleted || f.isVirtual || f.refThis != RefQual::None) outside("a member call of what is not plain");
     if (f.owner != plain->tag()) outside("a member call of a base's, brought in by a using-declaration");
     if (f.isStaticMember) return finishCall(id, key, f, f.params, std::move(args), false);

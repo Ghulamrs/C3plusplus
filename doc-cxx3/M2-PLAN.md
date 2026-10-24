@@ -359,3 +359,32 @@ inside a `Trial`, whose destructor kills on success as on failure - is revived a
 Gated: `make test` green (emit golden 0 of 1,924 changed, typed.sh and adapted.sh 0 differ), `identical.sh` 5,352 compared
 and the known 8 differ.
 
+**M2.16: resolutions recorded per node at parse time** (2026-10-25). `Parser::Resolved` is what a name, a member access, a
+call or an overloaded operator resolved to - Local, Global, Function (named as a value), Call (reached by a call, a
+constructor's included), Member, Enumerator, StaticMember, This, Temporary - with the entity's type as the expression
+has it, its symbol or value, its owner and the name the parser gave its `Var`. It is recorded where the parser resolves
+(`localRef`, `globalRef`, `enumeratorValue`, the `this` branch, the four member paths, `staticMemberRef`,
+`memberWithoutObject`, `functionAddress`, `completeCall`, `noteTemporarySlot`, and a declaration's constructor by the
+local's serial): an `Expr` carries an index into an append-only table, so a record can never be stale, and `note` copies
+it onto the syntax node (`resolutions_`). **The Typer looks nothing up after the file**: `named` asks its own scopes and
+then the record; `resolvedType` answers a call's return, a function's pointer ([conv.func]), a member's access type, and
+`scopedFunctions_` no longer gates it. **Nor does the adapter**: `name`, `call`, `memberCall`, `objectCall`, a declaration's
+and a temporary's constructor read the record and find the signature by symbol; `scopedName`, its two tables and every
+`findGlobal`/`findEnum`/`overloadsOf`/`resolveOverload` are gone from it (`findTypedef(tag)` of a class stays: a tag is
+not a scope-dependent lookup). Over the 647 host cases: **123,874 typed, 110,954 agree, 0 differ, 12,730 with no Ast.h
+node, 5,167 untyped** (84,821 / 44,220 at M2.15); the untyped by kind: member 1,987, name 772, unary 526, new 368, cast
+243, call 228, throw 184, conditional 160, binary 155, assign 153, delete 139, lambda 125, sizeof 92, string 34, comma 1.
+Adapted: 1,266 of 7,420, all the same (1,257 before: the nine are qualified names the heuristic had kept outside).
+
+**Three faults the gate found in the writing.** A record's type for a member is the access's type - the object's const
+applied, `const int [3]` for an array member through a const object - not the member's declared type, since a typed node's
+type is the expression's (137 differences, one shape). A function reached by a call and one named as a value are two kinds:
+`&f` and `f` are the pointer [conv.func] makes, a call is the return. And a member function or member template called by
+its bare name reads its own arguments, so `argGen_` did not move and the call was recorded as a `name` whose Ast was a
+`Call`; a name whose Ast is a call is a `call` node now. **And one of this tree's own**: three times a `resolve(std::move(e),
+...e->type())` read its operand in the argument list beside the move - argument order is unspecified, and `enumeratorValue`'s
+crashed every case including `<string>`; the type is taken into a local first, as CLAUDE.md's M2.12n already said.
+
+Gated: `make test` green (emit golden 0 of 1,924 changed, typed.sh and adapted.sh 0 differ), `identical.sh` 5,352 compared
+and the known 8 differ.
+

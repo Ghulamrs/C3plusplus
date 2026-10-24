@@ -59,6 +59,9 @@ StmtPtr Parser::constructObject(const Declared &d, const std::string &symbol,
     ExprPtr call = completeCall(d.type->tag(), ctor.symbol, nullptr,
                                 types_.get(Kind::Void), full, false, d.pos,
                                 std::move(all));
+    // The constructor this declaration chose, by the local's serial, for its `var` node to carry (M2.16).
+    if (symbol.empty())
+        if (const Local *built = lookup_.findLocal(d.name)) ctorBySerial_[built->serial] = ctor.symbol;
 
     // **The zeroing half of [dcl.init]/8, spelt as the temporary path spells
     // it.** A constructor somebody wrote is the whole of the initialisation; an
@@ -2185,7 +2188,7 @@ ExprPtr Parser::memberWithoutObject(const Type *cls, const Member &m, std::size_
     ptr->setType(types_.pointerTo(t));
     ExprPtr deref(new Unary('*', std::move(ptr)));
     deref->setType(t);
-    return deref;
+    return resolve(std::move(deref), resolvedAs(Resolved::Member, m.type, m.name, m.offset, 0, m.declaredIn));
 }
 
 // `S::x`, `Outer::Inner::y`, `n::S::q`: the longest prefix naming a class that has
@@ -2223,7 +2226,7 @@ ExprPtr Parser::staticMemberRef(const Type *owner, const Type::StaticMember &s,
     if (s.folded) {
         ExprPtr n(new Num(s.value));
         n->setType(s.type);
-        return n;
+        return resolve(std::move(n), resolvedAs(Resolved::StaticMember, s.type, s.symbol, -1, s.value, owner));
     }
     if (unevaluated_ == 0) usedStaticMembers_.insert(s.symbol);
     Var *v = Var::global(cls + "::" + s.name);
@@ -2233,7 +2236,7 @@ ExprPtr Parser::staticMemberRef(const Type *owner, const Type::StaticMember &s,
     if (s.isThreadLocal) tlsVar(v, tlsDynamic_.count(s.symbol) != 0 || tlsDefined_.count(s.symbol) == 0, true);
     ExprPtr n(v);
     n->setType(s.type);
-    return useReference(std::move(n));      // a reference member is read through its slot
+    return resolve(useReference(std::move(n)), resolvedAs(Resolved::StaticMember, s.type, s.symbol, -1, 0, owner));
 }
 
 // A member function declaration, keyed under "Class::name" in the one table

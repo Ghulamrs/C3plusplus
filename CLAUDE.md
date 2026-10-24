@@ -15010,3 +15010,20 @@ inside a reading later killed - an inner lambda's during the outer's deducing re
 which `reviveDefinedBodies` brings back, since the function was emitted. Gated: `make test` green, emit golden 0 of
 1,924 changed, `identical.sh` 5,352 compared and the known 8.
 
+## M2.16: what a name resolved to, recorded where the parser resolved it, 2026-10-25
+
+**Neither the Typer nor the adapter looks a name up after the file now.** `Parser::Resolved` records, at the point of
+resolution and in the scope the parser had then, what a name, a member access, a call or an overloaded operator meant - a
+local by its serial, a global or function by its symbol, a member by its class and offset, an enumerator by its value, a
+call by the function it reached, a temporary by its class and constructor - as an index on the `Expr` into an append-only
+table that `note` copies onto the syntax node. The review's condition 3; the heuristic `scopedName` and the adapter's
+`findGlobal`, `findEnum`, `overloadsOf` and `resolveOverload` are gone with it. **The typed tree went from 84,821 to
+123,874 typed nodes and from 44,220 to 5,167 untyped expressions**, 0 differing from `Ast.h` over the 647 host cases;
+M2-PLAN.md has the kinds left. **Two rules the gate taught**: a typed node's type is the expression's, so a member's record
+carries the access type with the object's const applied (137 array-member differences, one shape); and a call and a
+function named as a value are two kinds, the one a return type and the other the pointer [conv.func] makes. **And the trap
+this file already records under M2.12n bit three times in one afternoon**: `resolve(std::move(e), ...e->type())` reads its
+operand beside the move, in an argument list whose order is unspecified - `enumeratorValue`'s crashed every case that
+includes `<string>`. Gated: `make test` green, emit golden 0 of 1,924 changed, `identical.sh` 5,352 compared and the
+known 8.
+
