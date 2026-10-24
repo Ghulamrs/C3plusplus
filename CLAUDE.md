@@ -10725,6 +10725,14 @@ local's offset: `callSlots_`, recorded in `note` for a `Call` and again in `clai
 that mark a result indirect, since an elision moves the slot after the node is noted. Every ParserStmt and
 ParserExprNew citation past those two lines moved by one in `docs/EXCLUSIONS.md`.
 
+## M2.12e and M2.12f: what builds nothing, calls by qualified name and through a pointer, 2026-10-24
+
+**958 of 1,986 functions take the adapter's body**, all the same. **A gate that compares cannot see a fault no
+case has**, and one sat in the adapter since M2.11: it looks a name up in tables read after the file, with no
+namespace open, so inside `namespace n` an unqualified `f` that means `n::f` would have been taken as `::f` were
+there one. No case had both, so the check was green. `scopedName` keeps such a use outside wherever anything in a
+scope is declared under the name, except in a function at file scope with no using-directive open.
+
 ## Build
 
 ```

@@ -9,6 +9,7 @@
 #include "../Ast.h"
 
 #include <string>
+#include <unordered_set>
 
 class Parser;
 
@@ -42,7 +43,8 @@ private:
     ExprPtr call(TypedId id);
     ExprPtr memberCall(TypedId id, TypedId head, std::vector<ExprPtr> args);
     ExprPtr finishCall(TypedId at, const std::string &name, const Signature &f, const std::vector<const Type *> &params,
-                       std::vector<ExprPtr> args, bool hasThis);
+                       std::vector<ExprPtr> args, bool hasThis, ExprPtr callee = ExprPtr());
+    ExprPtr pointerCall(TypedId id, TypedId head, std::vector<ExprPtr> args);
     ExprPtr condition(TypedId id);
     ExprPtr arithmetic(const std::string &op, ExprPtr a, ExprPtr b);
     ExprPtr pointerAdd(ExprPtr ptr, ExprPtr n);
@@ -57,6 +59,10 @@ private:
     Parser &p_;
     const Typer &typer_;
     const Type *returns_ = nullptr;
+    bool scopedName(const std::string &name);
+    bool scopedBuilt_ = false;
+    std::unordered_set<std::string> scoped_, globalFunctions_;
+    std::string fnSymbol_;
 };
 
 }   // namespace sema

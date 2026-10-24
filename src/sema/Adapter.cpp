@@ -16,6 +16,7 @@ const syntax::Node &Adapter::syn(TypedId id) const { return p_.syntaxTree_.node(
 
 StmtPtr Adapter::body(TypedId typed, const Function &fn, std::string *why) {
     returns_ = fn.returns();
+    fnSymbol_ = fn.symbol();
     std::unordered_map<std::uint32_t, const Type *>::const_iterator declared =
         p_.declaredReturns_.find(typer_.tree().node(typed).syntax.v);
     if (declared != p_.declaredReturns_.end() && declared->second != nullptr) returns_ = declared->second;
@@ -546,6 +547,33 @@ ExprPtr Adapter::member(TypedId id) {
     return access;
 }
 
+// Whether a function, an object or an enumerator is declared under `name` inside some namespace or class: then an
+// unqualified use of it in a function inside one may mean that one, and the parser's tables cannot say which.
+bool Adapter::scopedName(const std::string &name) {
+    if (!scopedBuilt_) {
+        scopedBuilt_ = true;
+        for (std::size_t i = 0; i < p_.lookup_.functions_.size(); i++) {
+            const Signature &f = p_.lookup_.functions_[i];
+            if (f.owner.empty() && f.name.find("::") == std::string::npos) globalFunctions_.insert(f.symbol);
+        }
+        struct Add {
+            static void from(std::unordered_set<std::string> &out, const std::string &key) {
+                const std::size_t at = key.rfind("::");
+                if (at != std::string::npos) out.insert(key.substr(at + 2));
+            }
+        };
+        for (std::unordered_map<std::string, std::vector<std::size_t> >::const_iterator i = p_.lookup_.functionIndex_.begin();
+             i != p_.lookup_.functionIndex_.end(); ++i) Add::from(scoped_, i->first);
+        for (std::unordered_map<std::string, std::size_t>::const_iterator i = p_.lookup_.globalIndex_.begin();
+             i != p_.lookup_.globalIndex_.end(); ++i) Add::from(scoped_, i->first);
+        for (std::unordered_map<std::string, std::size_t>::const_iterator i = p_.lookup_.enumIndex_.begin();
+             i != p_.lookup_.enumIndex_.end(); ++i) Add::from(scoped_, i->first);
+    }
+    // A function at file scope with no using-directive open finds a name where the parser's tables, read now, do.
+    if (globalFunctions_.count(fnSymbol_) != 0 && p_.lookup_.usingNamespaces_.empty()) return false;
+    return scoped_.count(name) != 0;
+}
+
 // A name, as the typer found it: a local of this function, else an object or an enumerator at file scope.
 ExprPtr Adapter::name(TypedId id) {
     const TypedNode &n = typer_.tree().node(id);
@@ -556,6 +584,7 @@ ExprPtr Adapter::name(TypedId id) {
         try { plainLocal(p_, l->second); } catch (const std::string &why) { outside(why); }
         return localVar(l->second, p_.types_);
     }
+    if (text.find("::") == std::string::npos && scopedName(text)) outside("a name that names something in a scope too");
     if (const GlobalSym *g = p_.lookup_.findGlobal(text)) {
         if (g->isThreadLocal) outside("a thread_local");
         if (!scalar(g->type) && !scalarArray(g->type) && !plainClass(p_, g->type)) outside("an object of type '" + g->type->describe() + "'");
@@ -773,10 +802,13 @@ ExprPtr Adapter::call(TypedId id) {
     for (std::size_t i = 0; i < args.size(); i++)
         if (namespaceAssociated(args[i]->type())) outside("a call an argument's namespace may add to");
     if (syn(head).kind == syntax::Kind::Member) return memberCall(id, head, std::move(args));
-    if (syn(head).kind != syntax::Kind::Name) outside("a call of what is not a name");
-    const std::string &callee = p_.syntaxTree_.text(tree.node(head).syntax);
-    if (tree.node(head).decl.valid()) outside("a call through a local");
+    if (syn(head).kind != syntax::Kind::Name || tree.node(head).decl.valid()) return pointerCall(id, head, std::move(args));
+    std::string callee = p_.syntaxTree_.text(tree.node(head).syntax);
+    if (callee.compare(0, 2, "::") == 0) callee = callee.substr(2);
+    // Which `f` an unqualified call means depends on the scope it is written in, which the parser has left by now.
+    if (callee.find("::") == std::string::npos && scopedName(callee)) outside("a call of a name something in a scope shares");
     const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(callee);
+    if (set == nullptr && p_.lookup_.findGlobal(callee) != nullptr) return pointerCall(id, head, std::move(args));
     if (set == nullptr) outside("a call of an undeclared name");
     for (std::size_t k = 0; k < set->size(); k++)
         if (p_.lookup_.functions_[(*set)[k]].fromTemplate) outside("a call of a template's");
@@ -787,14 +819,28 @@ ExprPtr Adapter::call(TypedId id) {
     const Signature f = set->size() == 1 ? p_.lookup_.functions_[(*set)[0]]
                                          : p_.overload_.resolveOverload(callee, args, syn(id).loc);
     if (f.deleted) outside("a call of a deleted function");
-    if (qualified ? !f.isStaticMember : !f.owner.empty()) outside("a call of a member by its name");
-    if (qualified) {
+    if (!f.owner.empty() && !(qualified && f.isStaticMember)) outside("a call of a member by its name");
+    if (!f.owner.empty()) {
         const Type *cls = p_.lookup_.findTypedef(f.owner);
         if (cls == nullptr || !plainClass(p_, cls)) outside("a static member of what is not a plain struct");
-    } else if (callee.find_first_of("<~") != std::string::npos) {
-        outside("a call of '" + callee + "'");
     }
+    if (callee.find_first_of("<~") != std::string::npos) outside("a call of '" + callee + "'");
     return finishCall(id, callee, f, f.params, std::move(args), false);
+}
+
+// [expr.call]/1 through a pointer to a function, `(*p)(a)` and `p(a)` alike: the call names the pointer's type.
+ExprPtr Adapter::pointerCall(TypedId id, TypedId head, std::vector<ExprPtr> args) {
+    const TypedTree &tree = typer_.tree();
+    const syntax::Node &h = syn(head);
+    const bool star = h.kind == syntax::Kind::Unary && p_.syntaxTree_.text(tree.node(head).syntax) == "*" &&
+                      tree.node(head).count == 1;
+    ExprPtr callee = expr(star ? tree.child(head, 0) : head);
+    const Type *pt = callee->type();
+    if (!pt->isFunctionPointer()) outside("a call through what is not a pointer to a function");
+    const Type *fn = pt->pointee();
+    if (fn->refQualifier() != RefQual::None || fn->isConstThisFn()) outside("a call through a qualified function type");
+    Signature f(pt->describe(), std::string(), fn->returns(), fn->params(), fn->isVariadicFn());
+    return finishCall(id, f.name, f, f.params, std::move(args), false, std::move(callee));
 }
 
 // [expr.ref] with [class.mfct.non-static]: `o.f(a)` is f called with `&o` in front of its arguments.
@@ -842,7 +888,7 @@ ExprPtr Adapter::memberCall(TypedId id, TypedId head, std::vector<ExprPtr> args)
 // converted, an argument past the parameters promoted; a reference returned is read through. The frame slots of a
 // struct returned or passed are the parser's, read by node.
 ExprPtr Adapter::finishCall(TypedId at, const std::string &name, const Signature &f, const std::vector<const Type *> &params,
-                            std::vector<ExprPtr> args, bool hasThis) {
+                            std::vector<ExprPtr> args, bool hasThis, ExprPtr callee) {
     const Type *gives = f.returns != nullptr && f.returns->isReference() ? f.returns->referent() : f.returns;
     if (gives == nullptr || !(gives->isVoid() || scalar(gives) || plainClass(p_, gives)))
         outside("a call returning a class");
@@ -874,7 +920,7 @@ ExprPtr Adapter::finishCall(TypedId at, const std::string &name, const Signature
     for (std::size_t i = 0; i < args.size(); i++)
         if (args[i]->type()->isStructOrUnion() && slots.args[i] == 0) outside("a struct argument with no slot");
     if (!f.returns->isReference() && gives->isStructOrUnion() && slots.result == 0) outside("a struct returned to no slot");
-    std::unique_ptr<Call> c = make_owned<Call>(name, ExprPtr(), std::move(args), f.variadic, slots.result,
+    std::unique_ptr<Call> c = make_owned<Call>(name, std::move(callee), std::move(args), f.variadic, slots.result,
                                                static_cast<int>(params.size()), slots.args);
     c->setSymbol(f.symbol);
     c->setHasThis(hasThis);

@@ -190,6 +190,14 @@ result slot holds a pointer, and is brought up to date where an elision later mo
 parameter's bound, are recorded in the syntax tree beside the declarators and are unevaluated or adjusted away,
 so the adapter passes over them. At M2.12e: 928 of 1,986 adapted, all the same.
 
+**M2.12f: calls by a qualified name and through a pointer, and a guard on scope.** `n::f(a)` and `::h(a)` are the
+function the qualifier names; `p(a)` and `(*p)(a)` through a pointer to a function are a `Call` whose callee is the
+pointer and whose name is its type, as the parser writes it. **The guard is the half that matters**: the parser's
+tables are read after the file, when no namespace or class is open, so an unqualified name in a function inside
+one could mean `n::f` where the adapter would find `::f`. Such a use is kept outside wherever anything in a scope
+is declared under the name - unless the function is at file scope and no using-directive is open, where the two
+lookups cannot part. At M2.12f: 958 of 1,986 adapted, all the same.
+
 **The parser's `Ast.h` is the oracle for the new path while both exist**: the new path is right where it
 produces what the old one produced. That is `tools/identical.sh` again, and the reason the old path is kept
 until the new one has matched it everywhere.
