@@ -603,7 +603,7 @@ long long Parser::narrowTo(long long v, const Type *t) const {
 }
 
 // The same types, in any order and however often each is written.
-bool Parser::DynamicSpec::sameSet(const DynamicSpec &o) const {
+bool sema::DynamicSpec::sameSet(const DynamicSpec &o) const {
     auto within = [](const std::vector<const Type *> &a, const std::vector<const Type *> &b) {
         for (const Type *t : a) {
             bool found = false;

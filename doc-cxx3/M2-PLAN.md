@@ -1,0 +1,56 @@
+# M2 step 1: Sema's interfaces extracted in place
+
+Started 2026-10-24, from `214ad71`. Section 12 of `Compiler_Design_Final.md` says what M2 is; this
+note says how step 1 is cut and how each commit is judged.
+
+## What a commit may change
+
+Nothing the compiler emits. Every commit of step 1 is a move. It is judged by:
+
+| gate | where | what must hold |
+| --- | --- | --- |
+| `tools/identical.sh REF NEW` | Mac | every case and Compiler++ unit byte-identical at -O0, -O1 and -O2, for x86_64-windows in both spellings and x86_64-linux |
+| `tests/emit.sh` against the golden recorded at `214ad71` | Mac | 0 changed (arm64-darwin, x86_64-linux, x86_64-windows) |
+| `make test` | Mac, Linux (g++) | run, emit, names, overload, exclusions, comment cap |
+| `tools/self-host` | Mac, Linux | stage 1 = stage 2 |
+| `tests/tms6747.sh`, `tests/asm6x.sh` | Linux | at the end of a batch, not each commit |
+| Windows leg | Windows box | **owed** while the box is offline: run over the whole series when it is back, before any step is called done |
+
+Commits stay local until the Windows leg has passed them.
+
+## How a module leaves the parser
+
+The parser is one class: 679 member functions and 226 data members, every data member ending in `_`.
+A module comes out in two moves.
+
+1. **The interface.** The module is a class in `src/sema/`, namespace `sema`, held by value in the
+   parser (`lookup_`) and built with a reference back to it. The functions of the module move into it
+   with their comments; the parser's call sites call through the member. The bodies still read the
+   parser's state, through the back-reference: the move changes where the code is, not what it does.
+2. **The state.** The tables the module owns move into it, and the parser reaches them through the
+   module. After this the back-reference shrinks to the scope context the module asks of the parser.
+
+The symbol-table entry types (`Local`, `GlobalSym`, `Signature`, `DynamicSpec`, `TypedefName`,
+`EnumConst`, `TableSizes`) go first, to `src/sema/Entities.h`. The interfaces return them, and a type
+nested in `Parser` cannot be named before `Parser` is complete. The parser keeps a typedef for each,
+so no parser code changes for it.
+
+## Order
+
+| commit | module | grown from |
+| --- | --- | --- |
+| M2.0 | `src/sema/`, the entry types | `Parser.h` |
+| M2.1 | `Lookup`: the four name tables' lookups, using-directives and declarations, inline namespaces, ADL keys, class scope | `Parser.cpp`, `ParserOverload.cpp` (`lookupKeys`), `ParserClass.cpp` (`overloadsOf`), `ParserExprCall.cpp` (`findMemberOwner`) |
+| M2.2 | `Overload`: ranking, best viable function, conversions | `ParserOverload.cpp` |
+| M2.3 | `Templates`: deduction, partial ordering, specialisation, instantiation by replay | `ParserTemplate.cpp`, `ParserDependent.cpp` |
+| M2.4 | `Classes`: layout, vtables, special members | `ParserClass.cpp`, `ParserVtable.cpp` |
+| M2.5 | `Constexpr` | `ParserConst.cpp` |
+| M2.6 | the parser's mangling glue (`functionSymbol`, `memberSymbol`, ...), beside `src/Mangle.cpp` | `ParserClass.cpp`, `Parser.cpp` |
+
+A basename may not repeat across `src/` and its directories (`msvc/build.cmd` writes one flat object
+directory), so the M2.6 module is not called `Mangle`.
+
+## What is not in step 1
+
+The parser's question "what kind of name is this?" (`atTypeName`, `localHidesType`) stays in the
+parser and asks `Lookup`; making it one call is step 2's, with the handle syntax tree behind its flag.
