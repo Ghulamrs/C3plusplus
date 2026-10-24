@@ -1582,7 +1582,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
             // ABI - which names a type descriptor instead - must not ask.
             std::string why;
             if (!microsoft) {
-                h.type = typeInfoSymbolFor(caught, cpos, &why);
+                h.type = classes_.typeInfoSymbolFor(caught, cpos, &why);
                 if (h.type.empty())
                     src_.fail(cpos, "'catch' cannot name this type: " + why);
             }
@@ -1699,7 +1699,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
             } else {
                 // **Caught by value, which is a copy-initialisation and was a
                 // block copy**.
-                const Signature *cc = copyConstructorOf(caught->unqualified());
+                const Signature *cc = classes_.copyConstructorOf(caught->unqualified());
                 ExprPtr fromPtr;
                 // **With no `__cxa_get_exception_ptr`** the copy is made from what `__cxa_begin_catch` returns, as cl6x does.
                 const bool copyAfterBegin = cc != nullptr && !target_.hasGetExceptionPtr();
@@ -2223,10 +2223,10 @@ StmtPtr Parser::statementBody() {
                                 returnedParameter;
                 if (const Var *v = dynamic_cast<const Var *>(value.get()))
                     if (v->isLocal()) asRvalue = true;
-                const Signature *mc = moveConstructorOf(returnType_->unqualified());
+                const Signature *mc = classes_.moveConstructorOf(returnType_->unqualified());
                 const Signature *sel = asRvalue && mc != nullptr
                                      ? mc
-                                     : copyConstructorOf(returnType_->unqualified());
+                                     : classes_.copyConstructorOf(returnType_->unqualified());
                 if (sel != nullptr && sel->isExplicit)
                     src_.fail(pos, "'" + returnType_->describe() + "' has an "
                                    "'explicit' " +
@@ -2260,8 +2260,8 @@ StmtPtr Parser::statementBody() {
             value->type() != nullptr &&
             value->type()->unqualified() == returnType_->unqualified() &&
             isGlvalue(*value) &&
-            (copyConstructorOf(returnType_->unqualified()) != nullptr ||
-             moveConstructorOf(returnType_->unqualified()) != nullptr)) {
+            (classes_.copyConstructorOf(returnType_->unqualified()) != nullptr ||
+             classes_.moveConstructorOf(returnType_->unqualified()) != nullptr)) {
             Declared rv;
             rv.name = ".rv" + std::to_string(refTemps_++);
             rv.type = returnType_;
@@ -2271,7 +2271,7 @@ StmtPtr Parser::statementBody() {
             // is actually built: the operand is designated an rvalue first, so a
             // move-only class can be returned by value at all, as C++11 promises.
             if (returnedParameter &&
-                moveConstructorOf(returnType_->unqualified()) != nullptr)
+                classes_.moveConstructorOf(returnType_->unqualified()) != nullptr)
                 value->setXvalue();
             std::vector<ExprPtr> one;
             one.push_back(std::move(value));

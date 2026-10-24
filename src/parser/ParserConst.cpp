@@ -177,13 +177,13 @@ void Parser::applyDefaultedAccess(const std::string &tag, const Type *type) {
     std::map<std::string, Defaulted>::const_iterator it = defaulted_.find(tag);
     if (it == defaulted_.end()) return;
     const Defaulted &df = it->second;
-    if (const Signature *f = defaultConstructorOf(type))
+    if (const Signature *f = classes_.defaultConstructorOf(type))
         if (df.defaultCtor.is) functions_[static_cast<std::size_t>(f - &functions_[0])].access = df.defaultCtor.access;
-    if (const Signature *f = copyConstructorOf(type))
+    if (const Signature *f = classes_.copyConstructorOf(type))
         if (df.copyCtor.is) functions_[static_cast<std::size_t>(f - &functions_[0])].access = df.copyCtor.access;
-    if (const Signature *f = moveConstructorOf(type))
+    if (const Signature *f = classes_.moveConstructorOf(type))
         if (df.moveCtor.is) functions_[static_cast<std::size_t>(f - &functions_[0])].access = df.moveCtor.access;
-    if (const Signature *f = copyAssignOf(type))
+    if (const Signature *f = classes_.copyAssignOf(type))
         if (df.copyAssign.is) functions_[static_cast<std::size_t>(f - &functions_[0])].access = df.copyAssign.access;
     if (const Signature *f = destructorOf(type))
         if (df.dtor.is) functions_[static_cast<std::size_t>(f - &functions_[0])].access = df.dtor.access;

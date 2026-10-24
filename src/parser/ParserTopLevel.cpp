@@ -963,7 +963,7 @@ void Parser::topLevel(Program &program) {
                     if (functions_[(*set)[k]].fromTemplate &&
                         functions_[(*set)[k]].constThis == constThis &&
                         functions_[(*set)[k]].refThis == refThis &&
-                        sameParameters(functions_[(*set)[k]].params, params))
+                        classes_.sameParameters(functions_[(*set)[k]].params, params))
                         declared = true;
             if (!declared) {
                 const Type *fnType =
@@ -1022,7 +1022,7 @@ void Parser::topLevel(Program &program) {
                 const Signature &f = functions_[(*set)[k]];
                 if (memberTemplateInst_ && d.name == memberTemplateOf_ && !f.fromTemplate) continue;
                 if ((f.constThis == constThis || (impliedConst && f.isStaticMember)) &&
-                    f.refThis == refThis && sameParameters(f.params, params))
+                    f.refThis == refThis && classes_.sameParameters(f.params, params))
                     member = &f;
             }
         }
@@ -1290,7 +1290,7 @@ void Parser::topLevel(Program &program) {
                                             mc->describe() + "''s constructor "
                                             "once per element, which an "
                                             "initialiser list cannot say yet");
-                        const Signature *ctor = defaultConstructorOf(mc);
+                        const Signature *ctor = classes_.defaultConstructorOf(mc);
                         if (ctor == nullptr)
                             src_.fail(epos, "'" + entry + "()' needs a "
                                             "constructor of '" + mc->describe() +
@@ -1379,7 +1379,7 @@ void Parser::topLevel(Program &program) {
                 // is ill-formed, since nothing after this can give it a value.
                 if (one == nullptr && memberOf->kind() != Kind::Union &&
                     (m->type->isReference() ||
-                     (m->type->isConst() && !constDefaultInitialisable(m->type))))
+                     (m->type->isConst() && !classes_.constDefaultInitialisable(m->type))))
                     src_.fail(d.pos, "this constructor of '" + d.qualifier +
                                      "' does not initialise its " +
                                      (m->type->isReference() ? "reference" : "const") +
@@ -1630,7 +1630,7 @@ void Parser::topLevel(Program &program) {
         if (memberOf != nullptr && memberOf->hasVptr() && !delegates &&
             (d.name == localOf(d.qualifier) ||
              d.name == "~" + localOf(d.qualifier))) {
-            std::vector<StmtPtr> withVptr = storeVptrs(d.qualifier, memberOf, thisOffset_);
+            std::vector<StmtPtr> withVptr = classes_.storeVptrs(d.qualifier, memberOf, thisOffset_);
             withVptr.push_back(std::move(body));
             body = StmtPtr(new Block(std::move(withVptr)));
         }
@@ -1641,7 +1641,7 @@ void Parser::topLevel(Program &program) {
             std::vector<StmtPtr> withMembers;
             withMembers.push_back(std::move(body));
             std::vector<StmtPtr> mine =
-                memberDestructors(d.qualifier, memberOf, thisOffset_, d.pos);
+                classes_.memberDestructors(d.qualifier, memberOf, thisOffset_, d.pos);
             for (std::size_t i = 0; i < mine.size(); i++)
                 withMembers.push_back(std::move(mine[i]));
             body = StmtPtr(new Block(std::move(withMembers)));
@@ -1687,13 +1687,13 @@ void Parser::topLevel(Program &program) {
                                            ? chosenArgs[0]->type()->unqualified() : nullptr;
                     copyBytes = from != nullptr && from->isStructOrUnion() && isGlvalue(*chosenArgs[0]) &&
                                 (from == base->unqualified() || accessibleBaseOffset(from, base) >= 0) &&
-                                copyConstructorOf(base) == nullptr && moveConstructorOf(base) == nullptr &&
+                                classes_.copyConstructorOf(base) == nullptr && classes_.moveConstructorOf(base) == nullptr &&
                                 !base->nonTrivialCopy();
                     if (!copyBytes) chosen = overload_.resolveOverload(key, chosenArgs, d.pos);
                     found = true;
                 } else if (building) {
                     // No entry names this base, so its default constructor runs.
-                    if (const Signature *dc = defaultConstructorOf(base)) {
+                    if (const Signature *dc = classes_.defaultConstructorOf(base)) {
                         // **Marked used, because a copy is what is kept.**
                         markUsed(dc);
                         chosen = *dc;
@@ -1777,7 +1777,7 @@ void Parser::topLevel(Program &program) {
                 params2.push_back(basePtr);
                 // A base with virtual bases takes its sub-VTT out of this one's.
                 if (takesVtt(base)) {
-                    args.push_back(vttForBase(memberOf, base));
+                    args.push_back(classes_.vttForBase(memberOf, base));
                     params2.push_back(vttType());
                 }
                 for (std::size_t i = 0; i < chosen.params.size(); i++) {
@@ -1823,7 +1823,7 @@ void Parser::topLevel(Program &program) {
     std::vector<std::string> specSymbols;
     for (const Type *t : declaredSpec.types) {
         std::string why;
-        specSymbols.push_back(target_.microsoftNames() ? std::string() : typeInfoSymbolFor(t, declaredSpec.pos, &why));
+        specSymbols.push_back(target_.microsoftNames() ? std::string() : classes_.typeInfoSymbolFor(t, declaredSpec.pos, &why));
         if (!target_.microsoftNames() && specSymbols.back().empty())
             src_.fail(declaredSpec.pos, "a 'throw(...)' list cannot name '" + t->describe() + "': " + why);
     }
@@ -1966,17 +1966,17 @@ void Parser::topLevel(Program &program) {
     if (memberOf != nullptr && d.name == "~" + localOf(d.qualifier) &&
         member != nullptr &&
         member->isVirtual)
-        synthesizeDeleting(d.qualifier, memberOf, member->access, d.pos);
+        classes_.synthesizeDeleting(d.qualifier, memberOf, member->access, d.pos);
     program.functions.back().setBlocks(std::move(blocks_));
     // C1 and D1 beside the C2 and D2 just emitted. Last of all, because each
     // pushes a function of its own and every line above wants
     // `functions.back()` to still be the one being defined.
     if (!splitC1.empty())
-        synthesizeCompleteCtor(memberOf, params, splitC1, splitC2,
+        classes_.synthesizeCompleteCtor(memberOf, params, splitC1, splitC2,
                                program.functions.back().isInline(), d.pos,
                                -1, false, &baseArgs);
     if (!splitD1.empty())
-        synthesizeCompleteDtor(memberOf, splitD1, splitD2,
+        classes_.synthesizeCompleteDtor(memberOf, splitD1, splitD2,
                                program.functions.back().isInline(), d.pos);
     for (std::size_t i = definedAt; discardable && i < program.functions.size(); i++)
         discardableInline_.insert(program.functions[i].symbol());
@@ -2124,10 +2124,10 @@ Program Parser::parse() {
     for (int pass = 0; pass < 64; pass++) {
         const std::size_t had = program.functions.size();
         tmpl_.instantiatePending();
-        defineImplicitFunctions();
+        classes_.defineImplicitFunctions();
         if (program.functions.size() == had) break;
     }
-    pruneExternalVtables(program);
+    classes_.pruneExternalVtables(program);
     pruneUnchosenCandidates(program);
     finishDynamicInit(program);
     finishTlsInit(program);

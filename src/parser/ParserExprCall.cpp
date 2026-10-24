@@ -464,8 +464,8 @@ ExprPtr Parser::materialiseCopy(const Type *type, ExprPtr arg, std::size_t pos,
     // not an lvalue moves into it.** This path predates rvalue references and
     // reaches for the copy by name, so the choice is made here instead.
     const Signature *cc = nullptr;
-    if (!isLvalue(*arg)) cc = moveConstructorOf(cls);
-    if (cc == nullptr) cc = copyConstructorOf(cls);
+    if (!isLvalue(*arg)) cc = classes_.moveConstructorOf(cls);
+    if (cc == nullptr) cc = classes_.copyConstructorOf(cls);
 
     // **[dcl.init]/17 makes this copy-initialization, so the constructor it picks
     // may not be `explicit`** - the third place that rule bites and the least
@@ -481,7 +481,7 @@ ExprPtr Parser::materialiseCopy(const Type *type, ExprPtr arg, std::size_t pos,
     // lvalue**: [class.copy]/7 deletes its implicit copy constructor, and here that
     // deletion is an absence, which the byte path below would answer for.
     if (cc == nullptr) {
-        const Signature *mv = moveConstructorOf(cls);
+        const Signature *mv = classes_.moveConstructorOf(cls);
         if (mv != nullptr && !mv->implicit)
             src_.fail(pos, what + " is a '" + cls->describe() + "' passed by "
                            "value, and this class declares a move constructor "
@@ -808,7 +808,7 @@ ExprPtr Parser::memberCallWith(ExprPtr object, const Type *cls,
         int index = -1;
         const std::vector<VSlot> &slots = vtables_[plain->tag()];
         for (std::size_t i = 0; i < slots.size(); i++) {
-            if (overrides(slots[i], name, sig.params, sig.constThis, sig.refThis)) {
+            if (classes_.overrides(slots[i], name, sig.params, sig.constThis, sig.refThis)) {
                 index = static_cast<int>(i);
                 break;
             }
@@ -819,7 +819,7 @@ ExprPtr Parser::memberCallWith(ExprPtr object, const Type *cls,
         if (index < 0 && owner != plain) {
             const std::vector<VSlot> &theirs = vtables_[owner->tag()];
             for (std::size_t i = 0; i < theirs.size(); i++) {
-                if (overrides(theirs[i], name, sig.params, sig.constThis, sig.refThis)) {
+                if (classes_.overrides(theirs[i], name, sig.params, sig.constThis, sig.refThis)) {
                     index = static_cast<int>(i);
                     break;
                 }

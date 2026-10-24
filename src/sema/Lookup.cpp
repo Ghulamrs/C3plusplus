@@ -477,7 +477,7 @@ Lookup::lookupSignature(const std::string &name,
             for (std::size_t k = 0; k < set->size(); k++) {
                 const Signature &f = p_.functions_[(*set)[k]];
                 if ((!f.fromTemplate && f.name != key) == (pass == 1) && f.variadic == variadic &&
-                    Parser::sameParameters(f.params, params))
+                    Classes::sameParameters(f.params, params))
                     return f;
             }
     }

@@ -165,8 +165,8 @@ ExprPtr Parser::convert(ExprPtr e, const Type *to, bool allowExplicit) const {
     if (e->type() != nullptr && e->type()->unqualified()->isStructOrUnion() &&
         to->unqualified()->isStructOrUnion() && e->type()->unqualified() != to->unqualified() &&
         anyBaseOffset(e->type()->unqualified(), to->unqualified()) >= 0 &&
-        self->copyConstructorOf(to->unqualified()) == nullptr &&
-        self->moveConstructorOf(to->unqualified()) == nullptr) {
+        self->classes_.copyConstructorOf(to->unqualified()) == nullptr &&
+        self->classes_.moveConstructorOf(to->unqualified()) == nullptr) {
         const Type *from = e->type();
         ExprPtr keep;
         if (!isGlvalue(*e)) {
@@ -227,10 +227,10 @@ ExprPtr Parser::convert(ExprPtr e, const Type *to, bool allowExplicit) const {
         const Type *srcCls = e->type()->pointee()->unqualified();
         const Type *dstCls = to->pointee()->unqualified();
         const long long vbBack = target_.microsoftNames()
-                               ? 0 : itaniumVbaseOffsetSlot(srcCls, dstCls);
+                               ? 0 : classes_.itaniumVbaseOffsetSlot(srcCls, dstCls);
         // **The same walk on the Microsoft ABI, through the vbtable.**
         if (target_.microsoftNames() && srcCls->vbptrOffset() >= 0 &&
-            virtualBaseSlot(srcCls, dstCls, nullptr) > 0) {
+            classes_.virtualBaseSlot(srcCls, dstCls, nullptr) > 0) {
             Parser *self = const_cast<Parser *>(this);
             const Type *chars = types_.pointerTo(types_.get(Kind::Char));
             ExprPtr asChars(new Cast(chars, std::move(e)));
@@ -242,7 +242,7 @@ ExprPtr Parser::convert(ExprPtr e, const Type *to, bool allowExplicit) const {
             ExprPtr save(new Assign(std::move(held), std::move(asChars)));
             save->setType(chars);
 
-            ExprPtr step = microsoftVirtualBaseStep(srcCls, dstCls, temp, slot,
+            ExprPtr step = classes_.microsoftVirtualBaseStep(srcCls, dstCls, temp, slot,
                                                     nullptr);
             ExprPtr from(Var::local(temp, slot));
             from->setType(chars);
@@ -257,7 +257,7 @@ ExprPtr Parser::convert(ExprPtr e, const Type *to, bool allowExplicit) const {
         }
         if (vbBack != 0 && !target_.microsoftNames()) {
             const Type *chars = types_.pointerTo(types_.get(Kind::Char));
-            const Type *offType = ptrdiffType();
+            const Type *offType = vtableOffsetType();
             ExprPtr asChars(new Cast(chars, std::move(e)));
             asChars->setType(chars);
             int slot = const_cast<Parser *>(this)->allocateFrameSlot(chars);
@@ -724,8 +724,8 @@ void Parser::checkAssignable(const Expr &from, const Type *to, std::size_t pos,
     // constructor of its own as its base subobject's bytes; convert() takes the subobject.
     if (ft->unqualified()->isStructOrUnion() && to->unqualified()->isStructOrUnion() &&
         accessibleBaseOffset(ft->unqualified(), to->unqualified()) >= 0 &&
-        const_cast<Parser *>(this)->copyConstructorOf(to->unqualified()) == nullptr &&
-        const_cast<Parser *>(this)->moveConstructorOf(to->unqualified()) == nullptr)
+        const_cast<Parser *>(this)->classes_.copyConstructorOf(to->unqualified()) == nullptr &&
+        const_cast<Parser *>(this)->classes_.moveConstructorOf(to->unqualified()) == nullptr)
         return;
     if (ft->unqualified()->isStructOrUnion() && to->unqualified()->isStructOrUnion() &&
         ft->unqualified() != to->unqualified() &&

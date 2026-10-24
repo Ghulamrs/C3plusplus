@@ -104,7 +104,7 @@ goes in the same commit.
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:609` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2162` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:261` |
-| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:5376`, `src/parser/ParserTopLevel.cpp:821` |
+| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:3060`, `src/parser/ParserTopLevel.cpp:821` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:750` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:451` |
 | `template <template <class> typename C>`, `typename` after a template template parameter's list | C++17 | `src/parser/ParserTemplate.cpp:52` |
@@ -211,7 +211,7 @@ is left:
   `src/parser/ParserConst.cpp:76`
 - **a deleted destructor** - every place an object of the class is destroyed
   would have to refuse it, and only calls are checked.
-  `src/parser/ParserClass.cpp:151`
+  `src/parser/ParserClass.cpp:111`
 - **a deleted virtual function** - its vtable slot would name a function that
   has no body. `src/parser/ParserType.cpp:1276`
 - **a delegating constructor of a class with a virtual base** - the target
@@ -243,13 +243,13 @@ is left:
 - **a bit-field of an anonymous union at namespace or block scope** - the
   members are names of the scope, and a bit-field would be a name with no
   object to be a field of. `src/parser/ParserType.cpp:2243`
-- **a member function of a union** - `src/parser/ParserClass.cpp:4617`
+- **a member function of a union** - `src/parser/ParserClass.cpp:2301`
 - **one name holding both a static and a non-static member**, where overload
   resolution picks the non-static one - `src/parser/ParserExpr.cpp:1901`
 - **a covariant return that moves the result** - an override may return a
   pointer or reference to a class derived from the base's, and does when that
   base sits at offset 0; where it sits at an offset the result would need a
-  thunk at every call through the base. `src/parser/ParserClass.cpp:108`
+  thunk at every call through the base. `src/sema/Classes.cpp:38`
 - **a virtual function of a base after the first with no slot in the class's
   own vtable**, reached through the derived class -
   `src/parser/ParserExpr.cpp:737`
@@ -299,7 +299,7 @@ many, or has no object of its own:
 - **a static data member that is an array of a class with a constructor** -
   each element would need its constructor before main and its destructor at
   exit; a file-scope array and a static local of the same shape are built and
-  destroyed element by element. `src/parser/ParserClass.cpp:4433`
+  destroyed element by element. `src/parser/ParserClass.cpp:2117`
 - **a static-duration reference bound to a temporary** - [class.temporary]/5
   gives the temporary the program's lifetime, so it would need static storage
   of its own; a named object binds. `src/parser/ParserInit.cpp:1915`
@@ -413,12 +413,12 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   - **of a virtual base** - the most-derived class would have to be told which
     of them builds it. `src/parser/ParserType.cpp:623`
   - **a constructor template** - its specializations would have to be made
-    for the derived class as calls asked for them. `src/parser/ParserClass.cpp:3367`
+    for the derived class as calls asked for them. `src/sema/Classes.cpp:1687`
   - **a constructor with `...`** - its arguments would have to be forwarded as
-    they came. `src/parser/ParserClass.cpp:3407`
+    they came. `src/sema/Classes.cpp:1727`
   - **a constructor taking a class by value whose copy is not trivial** - the
     copy would have to be passed on rather than made twice.
-    `src/parser/ParserClass.cpp:3411`
+    `src/sema/Classes.cpp:1731`
 - **a using-declaration inside a block** - `src/parser/ParserStmt.cpp:2071`.
   The one at namespace scope works, and so does `using namespace N;`.
 
@@ -469,7 +469,7 @@ between the two lists.**
 - **a polymorphic base that is not the first, on the Microsoft ABI** - cl lays
   the base with the vfptr first wherever it was written and compiles an
   override against a biased `this` where Itanium puts a thunk in front.
-  `src/parser/ParserClass.cpp:1925`, `src/parser/ParserType.cpp:327`
+  `src/sema/Classes.cpp:1078`, `src/parser/ParserType.cpp:327`
 - **a virtual base with virtual functions, on x86_64-windows** - cl dispatches
   through one with vtordisp fields and thunks of its own, measured in CLAUDE.md
   "The Microsoft virtual-base layout" and not built. `src/parser/ParserType.cpp:469`

@@ -731,7 +731,7 @@ ExprPtr Parser::memberFunctionAddress(const Type *cls, const Signature &f, const
         int index = -1;
         const std::vector<VSlot> &slots = vtables_[cls->tag()];
         for (std::size_t i = 0; i < slots.size(); i++)
-            if (overrides(slots[i], f.name, f.params, f.constThis, f.refThis))
+            if (classes_.overrides(slots[i], f.name, f.params, f.constThis, f.refThis))
                 index = static_cast<int>(i);
         if (index < 0)
             src_.fail(pos, "'" + key + "' is virtual but has "
@@ -741,7 +741,7 @@ ExprPtr Parser::memberFunctionAddress(const Type *cls, const Signature &f, const
                            "supported here yet");
         if (target_.microsoftNames())
             return boundMemberPointer(cls, f, pos, 0,
-                                      synthesizeVcallThunk(cls, f, index, pos));
+                                      classes_.synthesizeVcallThunk(cls, f, index, pos));
         return boundMemberPointer(cls, f, pos,
                                   1 + static_cast<long long>(index) * pointerBytes());
     }
@@ -2010,7 +2010,7 @@ ExprPtr Parser::primary(Program *program) {
                     me->setType(self->type);
                     ExprPtr obj(new Unary('*', std::move(me)));
                     obj->setType(held);
-                    if (ExprPtr viaVb = virtualBaseMember(std::move(obj), held, *m))
+                    if (ExprPtr viaVb = classes_.virtualBaseMember(std::move(obj), held, *m))
                         acc = std::move(viaVb);
                 }
                 // The same two rules as the `.` and `->` paths: a const
@@ -2895,7 +2895,7 @@ ExprPtr Parser::postfix() {
             // unconditionally moved `n` away from every ordinary access too.
             if (m->inVirtualBase != nullptr) {
                 refuseVirtualBaseMember(obj, *m, name, pos);
-                if (ExprPtr viaVb = virtualBaseMember(std::move(n), obj, *m)) {
+                if (ExprPtr viaVb = classes_.virtualBaseMember(std::move(n), obj, *m)) {
                     n = std::move(viaVb);
                     continue;
                 }
@@ -2981,7 +2981,7 @@ ExprPtr Parser::postfix() {
             // unconditionally moved `n` away from every ordinary access too.
             if (m->inVirtualBase != nullptr) {
                 refuseVirtualBaseMember(obj, *m, name, pos);
-                if (ExprPtr viaVb = virtualBaseMember(std::move(n), obj, *m)) {
+                if (ExprPtr viaVb = classes_.virtualBaseMember(std::move(n), obj, *m)) {
                     n = std::move(viaVb);
                     continue;
                 }

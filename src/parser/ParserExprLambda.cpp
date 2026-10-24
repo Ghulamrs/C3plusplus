@@ -425,10 +425,10 @@ ExprPtr Parser::lambdaExpression() {
     const int size = members.empty() ? 1 : alignTo(at, widest);
     closure->complete(members, size, widest);
     // **A closure is a class and gets the members a class gets.**
-    declareImplicitSpecials(tag, closure, pos);
+    classes_.declareImplicitSpecials(tag, closure, pos);
     // And is passed as a class is, settled as a class settles it: by address where copying it is a call (M1 -
     // `std::function` moved out of its own byte copy of the closure while the caller still owned it).
-    if (copyConstructorOf(closure) != nullptr || moveConstructorOf(closure) != nullptr)
+    if (classes_.copyConstructorOf(closure) != nullptr || classes_.moveConstructorOf(closure) != nullptr)
         closure->setNonTrivialCopy(true);
     if (destructorOf(closure) != nullptr) closure->setHasDestructor(true);
 
@@ -598,7 +598,7 @@ ExprPtr Parser::buildClosureObject(const MadeLambda &made, std::size_t pos) {
         // copy left a vector's buffer in two objects and both destroyed it (M1, stage 2's frame saves).
         const Type *cls = made.types[i]->unqualified();
         if (cls->isStructOrUnion())
-            if (const Signature *cc = copyConstructorOf(cls)) {
+            if (const Signature *cc = classes_.copyConstructorOf(cls)) {
                 markUsed(cc);
                 const Type *ptr = types_.pointerTo(cls);
                 dst->setType(cls);

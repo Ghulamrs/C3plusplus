@@ -4,6 +4,7 @@
 // return these, and a type nested in Parser cannot be named before Parser is complete. The parser keeps
 // a typedef for each, so its code names them as it always did.
 
+#include "../Ast.h"
 #include "../Type.h"
 
 #include <cstddef>
@@ -325,5 +326,71 @@ struct Shadow {
     bool hadTemplate = false;
     TemplateDecl hadDecl;
 };
+
+// One vtable slot: the function it currently points at, and enough of the
+// declaration to tell an override from an unrelated function of the same name.
+// Slots keep the order the base first declared them in, so the views agree.
+struct VSlot {
+    std::string name;
+    std::string symbol;
+    std::vector<const Type *> params;
+    bool constThis;
+    // **A pure virtual holds a slot it has no function for.** The entry is
+    // the runtime's own trap, and a class with one of these still in its
+    // table is abstract.
+    bool pure;
+    const Type *returns;     // checked when an override takes the slot
+    bool isFinal;            // [class.virtual]/4: no later override may take it
+    RefQual refThis;         // `f() &` and `f() &&` take two slots
+
+    // C++11 has no aggregate with a member initialiser, so the braces call this.
+    VSlot(std::string name = std::string(), std::string symbol = std::string(),
+          std::vector<const Type *> params = std::vector<const Type *>(),
+          bool constThis = false, bool pure = false, const Type *returns = nullptr,
+          bool isFinal = false, RefQual refThis = RefQual::None)
+        : name(std::move(name)), symbol(std::move(symbol)), params(std::move(params)),
+          constThis(constThis), pure(pure), returns(returns), isFinal(isFinal),
+          refThis(refThis) {}
+};
+
+// **The Itanium vtable group and its address points**: for each base
+// subobject with a table in it, by (class, offset in the object), how
+// far into the symbol that table's address point sits.
+struct VtableGroup {
+    std::vector<GlobalPiece> pieces;
+    std::map<std::pair<const Type *, int>, int> points;
+};
+
+// **The VTT of a class with virtual bases**, by tag: where its own
+// constructor finds the sub-VTT for a base, the secondary virtual
+// pointer for a subobject, and the virtual VTT for a virtual base.
+struct VttLayout {
+    std::vector<GlobalPiece> pieces;
+    std::map<const Type *, int> subVtt;
+    std::map<std::pair<const Type *, int>, int> secondary;
+    std::map<const Type *, int> virtualVtt;
+};
+
+// One subobject with a vptr, as the constructor's walk finds it.
+struct VptrSite {
+    const Type *cls;
+    int offset;             // in the complete object being laid out
+    bool morallyVirtual;    // reached through a virtual base
+    const Type *nearestVBase;
+    int fromVBase;          // its distance from that virtual base
+};
+// The final overrider of a base's slot in `root`, and where it sits.
+struct Overrider { const Type *cls; int at; std::string symbol; bool pure; };
+// One `vcall_offset` in a virtual base's table, and whose function it is for.
+struct VcallEntry {
+    const Type *cls;
+    std::string name;
+    std::vector<const Type *> params;
+    bool constThis;
+    RefQual refThis;
+    long long value;
+};
+// One subobject in a walk, which keeps a visited set: a virtual base is one subobject however reached.
+struct Subobject { const Type *cls; int at; };
 
 }   // namespace sema

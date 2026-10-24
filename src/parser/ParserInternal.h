@@ -24,6 +24,15 @@ bool ttRefName(const std::string &name, int *index);
 // Whether type t mentions template parameter i anywhere in it.
 bool mentionsParam(const Type *t, std::size_t i);
 
+// A member array's element type, every dimension counted into `count` (-1 for an unknown bound).
+const Type *memberElements(const Type *t, long long *count);
+
+// The class a member is built from - an array's element - or null when it is not of class type.
+const Type *memberClass(const Type *t);
+
+// One element of an array member by address, the index times the element's size added in bytes.
+ExprPtr indexBytes(TypeTable &types, ExprPtr decayed, const Type *elem, int indexSlot, const Target &target);
+
 // Does this expression name an object with an address of its own?
 bool isLvalue(const Expr &e);
 bool markedLvalue(const Expr &e);

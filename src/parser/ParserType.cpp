@@ -1029,8 +1029,8 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 while (mc->isArray()) mc = mc->pointee()->unqualified();
                 if (mc->isStructOrUnion() && !mc->tag().empty() &&
                     (hasConstructors(mc->tag()) || destructorOf(mc) != nullptr ||
-                     copyConstructorOf(mc) != nullptr || moveConstructorOf(mc) != nullptr ||
-                     copyAssignOf(mc) != nullptr || moveAssignOf(mc) != nullptr))
+                     classes_.copyConstructorOf(mc) != nullptr || classes_.moveConstructorOf(mc) != nullptr ||
+                     classes_.copyAssignOf(mc) != nullptr || classes_.moveAssignOf(mc) != nullptr))
                     src_.fail(d.pos, "'" + d.name + "' is a member of an anonymous union, and its class "
                                      "'" + mc->tag() + "' has a constructor, destructor or assignment of "
                                      "its own - a union holding one is not supported yet: [class.union]/2 "
@@ -1041,8 +1041,8 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 while (mc->isArray()) mc = mc->pointee()->unqualified();
                 if (mc->isStructOrUnion() && !mc->tag().empty() &&
                     (hasConstructors(mc->tag()) || destructorOf(mc) != nullptr ||
-                     copyConstructorOf(mc) != nullptr || moveConstructorOf(mc) != nullptr ||
-                     copyAssignOf(mc) != nullptr || moveAssignOf(mc) != nullptr))
+                     classes_.copyConstructorOf(mc) != nullptr || classes_.moveConstructorOf(mc) != nullptr ||
+                     classes_.copyAssignOf(mc) != nullptr || classes_.moveAssignOf(mc) != nullptr))
                     src_.fail(d.pos, "'" + d.name + "' is a member of a union, and its class '" +
                                      mc->tag() + "' has a constructor, destructor or assignment of its "
                                      "own - a union holding one is not supported yet: [class.union]/2 "
@@ -1530,9 +1530,9 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     }
 
     declareUsingMembers(tag, type);
-    declareImplicitSpecials(tag, type, pos);
+    classes_.declareImplicitSpecials(tag, type, pos);
     // After them: an inherited constructor is not user-declared, so it leaves the implicit default one.
-    declareInheritingCtors(tag, type, pos);
+    classes_.declareInheritingCtors(tag, type, pos);
     // **Who takes cl's hidden flag**, recorded once the class is laid out and
     // its implicit members declared: every constructor of a Microsoft class
     // with a virtual base, by symbol, because the flag is not in the name.
@@ -1546,7 +1546,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     // **Whether copying this is a call decides how it is passed**, and it is settled
     // here because both halves are: a copy constructor exists by now if the class
     // wrote one, or if a base or member made the copy non-trivial.
-    if (copyConstructorOf(type) != nullptr || moveConstructorOf(type) != nullptr)
+    if (classes_.copyConstructorOf(type) != nullptr || classes_.moveConstructorOf(type) != nullptr)
         type->setNonTrivialCopy(true);
     if (destructorOf(type) != nullptr) type->setHasDestructor(true);
     // **Abstract is a question about the finished table**, not about what this
@@ -1560,10 +1560,10 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     // A class with a virtual base needs a table though it has no virtual
     // function: the table is where the offset to that base is kept.
     if (target_.microsoftNames()) {
-        if (type->polymorphic()) emitVtable(type, tag, pos);
-        emitVbtable(type, tag, pos);
+        if (type->polymorphic()) classes_.emitVtable(type, tag, pos);
+        classes_.emitVbtable(type, tag, pos);
     } else if (type->hasVptr()) {
-        emitVtable(type, tag, pos);
+        classes_.emitVtable(type, tag, pos);
     }
     // **A specialization's member bodies are not replayed here.** This is in the
     // middle of whatever asked for the class, and a replay goes through topLevel,

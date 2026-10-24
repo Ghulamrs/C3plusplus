@@ -189,7 +189,7 @@ ExprPtr Parser::classTemporary(const Type *cls, std::size_t pos) {
     buildBracedArguments(key, args, pos);
     if (hasConstructors(plain->tag()))
         convertThroughConversionFunction(args, plain, true, pos);
-    const bool trivialCopyable = copyConstructorOf(plain) == nullptr && moveConstructorOf(plain) == nullptr;
+    const bool trivialCopyable = classes_.copyConstructorOf(plain) == nullptr && classes_.moveConstructorOf(plain) == nullptr;
     // From an object of a class derived from it, `CVector<4>(quat)`, the copy is of the base subobject.
     if (args.size() == 1 && args[0]->type() != nullptr && trivialCopyable && isGlvalue(*args[0]) &&
         args[0]->type()->unqualified() != plain && args[0]->type()->unqualified()->isStructOrUnion() &&
@@ -796,8 +796,8 @@ ExprPtr Parser::buildInto(const Type *cls, int slot, ExprPtr value, int guard,
     if (ExprPtr made = userConversion(cls, value, pos)) value = std::move(made);
 
     ExprPtr built;
-    const Signature *cc = copyConstructorOf(cls);
-    const Signature *mv = moveConstructorOf(cls);
+    const Signature *cc = classes_.copyConstructorOf(cls);
+    const Signature *mv = classes_.moveConstructorOf(cls);
     const Signature *use = (!isLvalue(*value) && mv != nullptr) ? mv : cc;
     if (use != nullptr) {
         markUsed(use);
@@ -847,8 +847,8 @@ ExprPtr Parser::buildReturned(ExprPtr value, std::size_t pos, bool *named) {
     const Type *ptr = types_.pointerTo(cls);
     // [class.copy]/31-32: the constructor is selected, rvalue first, and checked though the copy is elided.
     {
-        const Signature *mc = moveConstructorOf(cls);
-        const Signature *sel = mc != nullptr ? mc : copyConstructorOf(cls);
+        const Signature *mc = classes_.moveConstructorOf(cls);
+        const Signature *sel = mc != nullptr ? mc : classes_.copyConstructorOf(cls);
         if (sel != nullptr && sel->isExplicit)
             src_.fail(pos, "'" + returnType_->describe() + "' has an 'explicit' " + (sel == mc ? "move" : "copy") +
                            " constructor, so it cannot be returned by value - 'return' copy-initialises the "
@@ -903,9 +903,9 @@ ExprPtr Parser::buildReturned(ExprPtr value, std::size_t pos, bool *named) {
                 }
             }
     // A const one binds no `T &&`, so [class.copy]/32's first try fails and the copy is taken.
-    const Signature *mv = moveConstructorOf(cls);
+    const Signature *mv = classes_.moveConstructorOf(cls);
     const bool movable = !isLvalue(*value) && !value->type()->isConst() && mv != nullptr;
-    const Signature *use = movable ? mv : copyConstructorOf(cls);
+    const Signature *use = movable ? mv : classes_.copyConstructorOf(cls);
     if (use == nullptr || use->deleted)
         src_.fail(pos, "'" + returnType_->describe() + "' cannot be returned by value from here - "
                        "'return' copy-initialises the caller's object, and this one has no usable copy or "
@@ -1207,7 +1207,7 @@ ExprPtr Parser::dynamicCastFrom(ExprPtr v, const Type *to, std::size_t pos) {
                 microsoftClassRttiNames(cls, &names, &why))
                 sym = names.descriptor;
         } else {
-            sym = emitClassTypeInfo(cls, cls->tag(), pos);
+            sym = classes_.emitClassTypeInfo(cls, cls->tag(), pos);
         }
         // Itanium writes __vmi_class_type_info for any class; Microsoft's hierarchy is one base deep here.
         if (sym.empty())
@@ -1307,7 +1307,7 @@ void Parser::finishMicrosoftThrow(MicrosoftThrow &names, bool thrown) {
         if (c.cls == nullptr) continue;
         if (c.size == 0) c.size = c.cls->unqualified()->size(target_);
         // The runtime copies the caught object with this, so it is a use.
-        if (const Signature *cc = copyConstructorOf(c.cls->unqualified())) {
+        if (const Signature *cc = classes_.copyConstructorOf(c.cls->unqualified())) {
             markUsed(cc);
             c.copyCtor = cc->symbol;
         }
@@ -1389,7 +1389,7 @@ StmtPtr Parser::microsoftThrow(ExprPtr value, std::size_t pos) {
     // **[except.throw]/3 copy-initialises the exception object**: the copy
     // constructor where there is one, the bytes where there is not.
     ExprPtr store;
-    const Signature *cc = thrown->isStructOrUnion() ? copyConstructorOf(thrown) : nullptr;
+    const Signature *cc = thrown->isStructOrUnion() ? classes_.copyConstructorOf(thrown) : nullptr;
     if (cc != nullptr) {
         const Type *thrownPtr = types_.pointerTo(thrown);
         ExprPtr at(new Unary('&', std::move(held)));
@@ -1445,7 +1445,7 @@ StmtPtr Parser::throwStatement(ExprPtr value, std::size_t pos) {
     if (target_.microsoftNames()) return microsoftThrow(std::move(value), pos);
 
     std::string why;
-    const std::string info = typeInfoSymbolFor(thrown, pos, &why);
+    const std::string info = classes_.typeInfoSymbolFor(thrown, pos, &why);
     if (info.empty())
         src_.fail(pos, "'throw' cannot name the type of this: " + why);
 
@@ -1474,7 +1474,7 @@ StmtPtr Parser::throwStatement(ExprPtr value, std::size_t pos) {
     // **[except.throw]/3 copy-initialises the exception object**, and that
     // means the copy constructor where there is one.
     ExprPtr store;
-    const Signature *cc = copyConstructorOf(thrown);
+    const Signature *cc = classes_.copyConstructorOf(thrown);
     if (cc != nullptr) {
         markUsed(cc);
         std::vector<ExprPtr> ctorArgs;
@@ -1951,7 +1951,7 @@ ExprPtr Parser::newExpression(std::size_t pos) {
         convertThroughConversionFunction(ctorArgs, made, true, pos);
         // A class whose copy is trivial has no copy constructor to resolve: [class.copy]/12 makes
         // `new (p) T(t)` a copy of the bytes, the store a declaration `T u(t);` already makes.
-        if (ctorArgs.size() == 1 && copyConstructorOf(made) == nullptr && moveConstructorOf(made) == nullptr &&
+        if (ctorArgs.size() == 1 && classes_.copyConstructorOf(made) == nullptr && classes_.moveConstructorOf(made) == nullptr &&
             ctorArgs[0]->type()->unqualified() == made) {
             ExprPtr base(Var::local(temp, slot));
             base->setType(pointer);
@@ -2461,7 +2461,7 @@ ExprPtr Parser::typeidExpression(std::size_t pos) {
         address->setType(infoPtr);
     } else {
         std::string why;
-        const std::string sym = typeInfoSymbolFor(subject, pos, &why);
+        const std::string sym = classes_.typeInfoSymbolFor(subject, pos, &why);
         if (sym.empty())
             src_.fail(pos, "'typeid' cannot name the type of this: " + why);
         Var *ti = Var::global(sym);

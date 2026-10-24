@@ -1109,7 +1109,7 @@ ExprPtr Parser::assignValue(ExprPtr n, ExprPtr value, std::size_t pos) {
     // **A class with a copy assignment of its own is assigned by calling it**,
     // not by moving its bytes - the one for the value's category, an lvalue
     // taking `const T &` and an xvalue or prvalue `T &&` (review A22).
-    if (const Signature *op = copyAssignOf(to->unqualified())) {
+    if (const Signature *op = classes_.copyAssignOf(to->unqualified())) {
         const std::vector<std::size_t> *set = lookup_.overloadsOf(assignmentKey(to->unqualified()->tag()));
         if (set != nullptr) {
             const bool wantMove = !isLvalue(*value);
@@ -1147,7 +1147,7 @@ ExprPtr Parser::assignValue(ExprPtr n, ExprPtr value, std::size_t pos) {
     // fall back on**: [class.copy]/23 deletes the implicit copy assignment, and
     // the deletion is unconditional. An implicit move constructor deletes nothing.
     if (to->unqualified()->isStructOrUnion()) {
-        const Signature *mv = moveConstructorOf(to->unqualified());
+        const Signature *mv = classes_.moveConstructorOf(to->unqualified());
         if (mv != nullptr && !mv->implicit)
             src_.fail(pos, "'" + to->unqualified()->describe() + "' declares "
                            "a move constructor, so its copy assignment is "

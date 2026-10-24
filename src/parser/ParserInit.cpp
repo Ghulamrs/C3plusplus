@@ -1131,7 +1131,7 @@ Parser::CtorInit Parser::readConstructorInitialiser(const Declared &d) {
         const Type *argType = args[0]->type();
         const Type *to = d.type->unqualified(), *from = argType->unqualified();
         if (from != to && from->isStructOrUnion() && to->isStructOrUnion() &&
-            copyConstructorOf(to) == nullptr && moveConstructorOf(to) == nullptr &&
+            classes_.copyConstructorOf(to) == nullptr && classes_.moveConstructorOf(to) == nullptr &&
             hasBaseClass(from, to)) {
             const Type *target = argType->isConst() ? types_.withConst(to) : to;
             ExprPtr addr(new Unary('&', std::move(args[0])));
@@ -1150,10 +1150,10 @@ Parser::CtorInit Parser::readConstructorInitialiser(const Declared &d) {
         // The constructor the rule checks is the one resolution would pick:
         // the move for a source that is not an lvalue and has one, the copy
         // otherwise. An explicit copy beside a plain move does not bite.
-        const Signature *mc = moveConstructorOf(d.type->unqualified());
+        const Signature *mc = classes_.moveConstructorOf(d.type->unqualified());
         const Signature *sel = !isLvalue(*args[0]) && mc != nullptr
                              ? mc
-                             : copyConstructorOf(d.type->unqualified());
+                             : classes_.copyConstructorOf(d.type->unqualified());
         if (sel != nullptr && sel->isExplicit)
             src_.fail(d.pos, "'" + d.type->describe() + "' has an "
                              "'explicit' " +
@@ -1165,7 +1165,7 @@ Parser::CtorInit Parser::readConstructorInitialiser(const Declared &d) {
                              "(...)'. The copy may well be elided, "
                              "and the rule is checked all the same");
     }
-    const Signature *mover = moveConstructorOf(d.type->unqualified());
+    const Signature *mover = classes_.moveConstructorOf(d.type->unqualified());
     const bool sameClass =
         args.size() == 1 && args[0]->type() != nullptr &&
         args[0]->type()->unqualified() == d.type->unqualified();
@@ -1173,7 +1173,7 @@ Parser::CtorInit Parser::readConstructorInitialiser(const Declared &d) {
     // xvalue moves, and so does a prvalue - `S d = make();` is a
     // temporary and the move constructor is exactly what it is for.
     if (mover != nullptr && sameClass && isLvalue(*args[0]) &&
-        copyConstructorOf(d.type->unqualified()) == nullptr)
+        classes_.copyConstructorOf(d.type->unqualified()) == nullptr)
         src_.fail(d.pos, "'" + d.type->describe() + "' declares a move "
                          "constructor, so its copy constructor is "
                          "deleted and '" + d.name + "' cannot be built "
@@ -1183,7 +1183,7 @@ Parser::CtorInit Parser::readConstructorInitialiser(const Declared &d) {
 
     ci.trivialCopy =
         sameClass && mover == nullptr &&
-        copyConstructorOf(d.type->unqualified()) == nullptr;
+        classes_.copyConstructorOf(d.type->unqualified()) == nullptr;
         return ci;
 }
 
