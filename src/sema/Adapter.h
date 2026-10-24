@@ -35,6 +35,9 @@ private:
                                       std::size_t aliveAtEntry, std::pair<int, int> slots) const;
     StmtPtr unwindingReturn(TypedId id);
     StmtPtr leaving(TypedId id, StmtPtr jump);
+    StmtPtr tryStatement(TypedId id);
+    std::vector<StmtPtr> throwSteps(TypedId id);
+    void endCatches(std::vector<StmtPtr> &into, int count) const;
     StmtPtr forStatement(TypedId id);
     std::size_t declaratorEnd(TypedId var, int *bounds) const;
     void arrayInitialiser(TypedId var, const Local &l, std::vector<StmtPtr> &body);
@@ -77,6 +80,9 @@ private:
     struct AliveObj { std::string name; int offset; const Type *cls; };
     std::vector<AliveObj> alive_;
     std::vector<std::size_t> loopMarks_;
+    // Inside a `try` body, and the loops open where each handler that encloses this point was entered.
+    int tryDepth_ = 0;
+    std::vector<std::size_t> handlerLoops_;
 };
 
 }   // namespace sema

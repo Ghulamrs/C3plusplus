@@ -22,7 +22,7 @@ enum class Kind : std::uint8_t {
     Call, Subscript, Member, Cast, Sizeof, Paren, New, Delete, Throw, Lambda, Other,
     // statements
     Block, ExprStmt, DeclStmt, Return, If, While, Do, For, Switch, Case, Default,
-    Break, Continue, Goto, Label, Try, Null,
+    Break, Continue, Goto, Label, Try, Catch, Null,
     // declarations
     Var, Function
 };

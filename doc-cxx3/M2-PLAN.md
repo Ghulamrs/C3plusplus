@@ -223,6 +223,17 @@ now recorded by node (`temporarySlots_`). A class with no constructor, destructo
 its bytes wherever the parser does (`byteClass`, which widens M2.12d's plain struct to one with constructors).
 At M2.12i: 1,059 of 1,986 adapted, all the same.
 
+**M2.12j: `throw`, and `try` with its handlers.** A throw of a scalar on the Itanium targets is the three statements
+`throwStatement` writes - the storage asked for, the value stored through a cast, `__cxa_throw` - from the slot and the
+type_info it chose (`throwFacts_`); `throw;` is `rethrowCall`. A `try` with nothing alive round it and no `try` or
+handler round it is the body, then the chain on the selector: each handler begins the catch, binds what it caught by
+value or by reference, runs its block - inside an end-catch region of its own where it can throw - and ends the catch;
+the slots, the labels, the indices and each handler's scope are the parser's (`tryFacts_`). A `return` or a `break`
+out of a handler ends the catches it leaves, as `endCatches` does. **The syntax tree records a handler now**: `catch`
+holding the caught object's `var` and the block, so a name in the block finds it - it had been a bare block whose
+`e` was declared nowhere. A body the parser wraps in a `try` of its own (a `throw(...)` list, a function try block)
+stays the parser's (`wrappedBodies_`). At M2.12j: 1,128 of 1,986 adapted, all the same.
+
 **The parser's `Ast.h` is the oracle for the new path while both exist**: the new path is right where it
 produces what the old one produced. That is `tools/identical.sh` again, and the reason the old path is kept
 until the new one has matched it everywhere.

@@ -1481,10 +1481,16 @@ StmtPtr Parser::statement() {
     if (s) s->setPos(pos);
     if (kind == syntax::Kind::Other) { pendingReturnTemp_ = heldReturn; return s; }
     // `throw e;` is an expression statement whose expression is the throw.
-    if (throws) noteParts(syntax::Kind::Throw, "", pos, mark, pos);
+    if (throws) {
+        const syntax::NodeId thrown = noteParts(syntax::Kind::Throw, "", pos, mark, pos);
+        if (!pendingThrow_.temp.empty()) throwFacts_[thrown.v] = pendingThrow_;
+    }
+    pendingThrow_ = ThrowFacts();
     StmtPtr noted = noteStmt(std::move(s), kind, text, pos, mark, pos);
     if (const For *f = dynamic_cast<const For *>(noted.get())) syntaxScopes_[noted->syntax().v] = f->scope();
     if (kind == syntax::Kind::Return && !pendingReturnTemp_.name.empty()) returnTemps_[noted->syntax().v] = pendingReturnTemp_;
+    if (kind == syntax::Kind::Try && pendingTry_.simple) tryFacts_[noted->syntax().v] = pendingTry_;
+    pendingTry_ = TryFacts();
     pendingReturnTemp_ = heldReturn;
     return noted;
 }
@@ -1574,6 +1580,10 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
     std::vector<int> indices;
     std::vector<std::string> types;
     bool sawCatchAll = false;
+    // What the adapter needs to rebuild this `try`, where it is one it can: nothing outside it alive, nothing round it.
+    TryFacts facts;
+    facts.simple = !microsoft && !bodyFn && spec.empty() && !rethrows && enclosingChain.empty() &&
+                   wasHandlerLabel.empty() && aliveOutside == 0;
 
     // **A `throw(T...)` list is a handler of no type of its own**: the table's filter, the selector negative.
     if (!spec.empty()) {
@@ -1584,6 +1594,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
         const std::size_t cpos = peek().pos;
         at_++;
         expect("(");
+        const std::size_t handlerMark = syntaxTree_.size();
         if (sawCatchAll)
             src_.fail(cpos, "'catch (...)' matches everything, so a handler "
                             "after it could never run");
@@ -1663,6 +1674,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
                 mh.constPointer = names.isConst;
                 if (!caughtName.empty()) {
                     mh.objectSlot = declare(caughtName, declaredType, cpos);
+                    noteCaught(caughtName, declaredType, cpos);
                     // **Caught by value, the runtime built the copy and the handler
                     // destroys it** on every way out - cl's funclet does before returning.
                     if (!byRef && destructorOf(caught->unqualified()) != nullptr)
@@ -1715,6 +1727,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
             inMsHandler_ = wasInHandler;
             inHandlerBody_ = wasBody;
             leaveScope();
+            noteParts(syntax::Kind::Catch, caught == nullptr ? "..." : "", cpos, handlerMark, cpos);
             msHandlers.push_back(std::move(mh));
             continue;
         }
@@ -1728,6 +1741,10 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
 
         if (caught != nullptr && !caughtName.empty()) {
             const int slot = declare(caughtName, declaredType, cpos);
+            noteCaught(caughtName, declaredType, cpos);
+            if (!byRef && (classes_.copyConstructorOf(caught->unqualified()) != nullptr ||
+                           destructorOf(caught->unqualified()) != nullptr))
+                facts.simple = false;
             // **A reference holds what __cxa_begin_catch handed back.**
             const Type *slotType = byRef
                 ? types_.pointerTo(declaredType->referent())
@@ -1935,6 +1952,15 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
         // this point would carry it too.
         alive_.resize(aliveBeforeCaught);
         leaveScope();
+        noteParts(syntax::Kind::Catch, caught == nullptr ? "..." : "", cpos, handlerMark, cpos);
+        TryHandlerFacts hf;
+        hf.scope = scope;
+        hf.endLabel = endCatchLabel;
+        hf.padPtr = padPtr;
+        hf.padSel = padSel;
+        hf.canThrow = canThrow;
+        facts.simple = facts.simple && beyond.empty();
+        facts.handlers.push_back(hf);
         Block *b = new Block(std::move(steps));
         b->setScope(scope);
         h.stmt = StmtPtr(b);
@@ -2070,6 +2096,14 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
     // The one chain, behind the label those segments jump to.
     StmtPtr labelled(new Label(chainLabel, std::move(chain)));
 
+    if (facts.simple && segments.empty()) {
+        facts.ptr = pointerSlot;
+        facts.sel = selectorSlot;
+        facts.chain = chainLabel;
+        facts.types = types;
+        facts.indices = indices;
+        pendingTry_ = facts;
+    }
     std::vector<StmtPtr> guarded;
     guarded.push_back(std::move(body));
     Try *t = new Try(std::move(guarded), std::move(labelled), pointerSlot,

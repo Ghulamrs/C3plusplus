@@ -19,6 +19,8 @@ StmtPtr Adapter::body(TypedId typed, const Function &fn, std::string *why) {
     fnSymbol_ = fn.symbol();
     alive_.clear();
     loopMarks_.clear();
+    tryDepth_ = 0;
+    handlerLoops_.clear();
     std::unordered_map<std::uint32_t, const Type *>::const_iterator declared =
         p_.declaredReturns_.find(typer_.tree().node(typed).syntax.v);
     if (declared != p_.declaredReturns_.end() && declared->second != nullptr) returns_ = declared->second;
@@ -28,6 +30,7 @@ StmtPtr Adapter::body(TypedId typed, const Function &fn, std::string *why) {
         // A Microsoft cleanup is a funclet and a state, wrapMsCleanups' shape, which the adapter does not write.
         if (fn.hasLandingPads() && p_.target_.microsoftNames()) outside("a function with landing pads");
         if (fn.isNoexcept()) outside("a noexcept function");
+        if (p_.wrappedBodies_.count(fn.symbol())) outside("a body wrapped in a try");
         // An array parameter's bound is recorded beside it, and [dcl.fct]/5 has adjusted it away.
         for (std::uint32_t i = 0; i + 1 < f.count; i++)
             if (syn(typer_.tree().child(typed, i)).kind == syntax::Kind::Block) outside("a parameter that is a block");
@@ -107,6 +110,7 @@ StmtPtr Adapter::stmt(TypedId id) {
             if (!built.empty()) {
                 std::unordered_map<std::uint32_t, std::pair<int, int> >::const_iterator k = p_.blockCleanups_.find(n.syntax.v);
                 if (k == p_.blockCleanups_.end()) outside("a block whose cleanup slots were not recorded");
+                if (tryDepth_ > 0 || !handlerLoops_.empty()) outside("an object built inside a try or a handler");
                 body = wrapCleanups(std::move(body), built, aliveAtEntry, k->second);
             }
             alive_.resize(aliveAtEntry);
@@ -118,9 +122,18 @@ StmtPtr Adapter::stmt(TypedId id) {
             return declaration(id);
         case syntax::Kind::ExprStmt:
             if (n.count != 1) outside("an expression statement of " + std::to_string(n.count) + " parts");
+            // `throw e;` is the statements Parser::throwStatement writes, in a block of their own.
+            if (syn(tree.child(id, 0)).kind == syntax::Kind::Throw && p_.syntaxTree_.text(tree.node(tree.child(id, 0)).syntax).empty() &&
+                tree.node(tree.child(id, 0)).count == 1) {
+                std::unique_ptr<Block> b = make_owned<Block>(throwSteps(tree.child(id, 0)));
+                b->setScope(-1);
+                return placed(std::move(b), s, n.syntax);
+            }
             return placed(make_owned<ExprStmt>(expr(tree.child(id, 0))), s, n.syntax);
+        case syntax::Kind::Try:
+            return tryStatement(id);
         case syntax::Kind::Return:
-            if (!alive_.empty()) return unwindingReturn(id);
+            if (!alive_.empty() || !handlerLoops_.empty()) return unwindingReturn(id);
             if (n.count == 0) {
                 if (returns_ != nullptr && !returns_->isVoid()) outside("a return with no value");
                 return placed(make_owned<Return>(ExprPtr()), s, n.syntax);
@@ -356,6 +369,7 @@ StmtPtr Adapter::unwindingReturn(TypedId id) {
     if (n.count == 0) {
         if (returns_ != nullptr && !returns_->isVoid()) outside("a return with no value");
         destroy(steps, 0, alive_.size());
+        endCatches(steps, static_cast<int>(handlerLoops_.size()));
         steps.push_back(make_owned<Return>(ExprPtr()));
         return placed(make_owned<Block>(std::move(steps)), syn(id), n.syntax);
     }
@@ -373,6 +387,7 @@ StmtPtr Adapter::unwindingReturn(TypedId id) {
     ExprPtr keep = typed(std::unique_ptr<Var>(Var::local(k->second.name, k->second.slot)), returns_);
     steps.push_back(make_owned<ExprStmt>(typed(make_owned<Assign>(std::move(keep), std::move(value)), returns_)));
     destroy(steps, 0, alive_.size());
+    endCatches(steps, static_cast<int>(handlerLoops_.size()));
     steps.push_back(make_owned<Return>(typed(std::unique_ptr<Var>(Var::local(k->second.name, k->second.slot)), returns_)));
     return placed(make_owned<Block>(std::move(steps)), syn(id), n.syntax);
 }
@@ -380,13 +395,18 @@ StmtPtr Adapter::unwindingReturn(TypedId id) {
 // Parser::jumpLeaving: a `break` or `continue` destroys what its loop's body built before it jumps.
 StmtPtr Adapter::leaving(TypedId id, StmtPtr jump) {
     const std::size_t mark = loopMarks_.empty() ? alive_.size() : loopMarks_.back();
-    if (alive_.size() <= mark) {
+    // Parser::handlersLeftByBreak: each handler entered inside the loop the jump leaves is ended.
+    int left = 0;
+    for (std::size_t h : handlerLoops_)
+        if (h >= loopMarks_.size()) left++;
+    if (alive_.size() <= mark && left == 0) {
         jump->setPos(syn(id).loc);
         jump->setSyntax(typer_.tree().node(id).syntax);
         return jump;
     }
     std::vector<StmtPtr> steps;
     destroy(steps, mark, alive_.size());
+    endCatches(steps, left);
     steps.push_back(std::move(jump));
     std::unique_ptr<Block> b = make_owned<Block>(std::move(steps));
     b->setScope(-1);
@@ -716,6 +736,19 @@ ExprPtr Adapter::expr(TypedId id) {
             if (!scalar(to->second)) outside("a cast to '" + to->second->describe() + "'");
             if (!scalar(v->type())) outside("a cast of what is not a scalar");
             e = convert(std::move(v), to->second, true);
+            break;
+        }
+        case syntax::Kind::Throw: {
+            if (n.count == 0) { e = p_.rethrowCall(); break; }
+            // statementsAsExpression: the statements chained by commas, each typed void.
+            std::vector<StmtPtr> steps = throwSteps(id);
+            for (StmtPtr &step : steps) {
+                ExprStmt *one = dynamic_cast<ExprStmt *>(step.get());
+                if (one == nullptr) outside("a throw that is not expressions");
+                ExprPtr x = one->release();
+                e = e ? typed(make_owned<Comma>(std::move(e), std::move(x)), p_.types_.get(Kind::Void)) : std::move(x);
+            }
+            e->setType(p_.types_.get(Kind::Void));
             break;
         }
         case syntax::Kind::Sizeof: {
@@ -1292,6 +1325,131 @@ std::string Adapter::run(Parser &p, Program &program, bool replace, int *differ)
         out += line;
     }
     return out;
+}
+
+void Adapter::endCatches(std::vector<StmtPtr> &into, int count) const {
+    for (int i = 0; i < count; i++)
+        into.push_back(make_owned<ExprStmt>(p_.runtimeCall("__cxa_end_catch", p_.types_.get(Kind::Void), std::vector<ExprPtr>())));
+}
+
+// Parser::throwStatement for a scalar on the Itanium targets: the storage asked for, the value stored, the throw.
+std::vector<StmtPtr> Adapter::throwSteps(TypedId id) {
+    std::unordered_map<std::uint32_t, Parser::ThrowFacts>::const_iterator f = p_.throwFacts_.find(typer_.tree().node(id).syntax.v);
+    if (f == p_.throwFacts_.end()) outside("a throw the adapter cannot rebuild");
+    ExprPtr value = decay(expr(typer_.tree().child(id, 0)));
+    const Type *thrown = value->type()->unqualified();
+    if (!scalar(thrown)) outside("a throw of what is not a scalar");
+    const Type *voidPtr = p_.types_.pointerTo(p_.types_.get(Kind::Void));
+    const Type *thrownPtr = p_.types_.pointerTo(thrown);
+    std::vector<ExprPtr> sizeArg;
+    sizeArg.push_back(typed(make_owned<Num>(static_cast<long long>(thrown->size(p_.target_))), p_.types_.get(p_.target_.sizeType())));
+    ExprPtr got = p_.runtimeCall("__cxa_allocate_exception", voidPtr, std::move(sizeArg));
+    ExprPtr save = typed(make_owned<Assign>(typed(std::unique_ptr<Var>(Var::local(f->second.temp, f->second.slot)), voidPtr),
+                                            std::move(got)), voidPtr);
+    ExprPtr cast = typed(make_owned<Cast>(thrownPtr, typed(std::unique_ptr<Var>(Var::local(f->second.temp, f->second.slot)), voidPtr)),
+                         thrownPtr);
+    ExprPtr store = typed(make_owned<Assign>(typed(make_owned<Unary>('*', std::move(cast)), thrown), convert(std::move(value), thrown)),
+                          thrown);
+    std::vector<ExprPtr> args;
+    args.push_back(typed(std::unique_ptr<Var>(Var::local(f->second.temp, f->second.slot)), voidPtr));
+    Var *ti = Var::global(f->second.info);
+    ti->setSymbol(f->second.info);
+    args.push_back(typed(make_owned<Unary>('&', typed(std::unique_ptr<Var>(ti), p_.types_.get(Kind::Char))), voidPtr));
+    args.push_back(typed(make_owned<Num>(0LL), voidPtr));
+    std::vector<StmtPtr> steps;
+    steps.push_back(make_owned<ExprStmt>(typed(make_owned<Comma>(std::move(save), std::move(store)), p_.types_.get(Kind::Void))));
+    steps.push_back(make_owned<ExprStmt>(p_.runtimeCall("__cxa_throw", p_.types_.get(Kind::Void), std::move(args))));
+    return steps;
+}
+
+// Parser::tryStatement for a `try` with nothing alive round it and nothing round it: the body, then a chain on the
+// selector whose arms begin the catch, bind the caught object, run the handler and end the catch.
+StmtPtr Adapter::tryStatement(TypedId id) {
+    const TypedTree &tree = typer_.tree();
+    const TypedNode &n = tree.node(id);
+    std::unordered_map<std::uint32_t, Parser::TryFacts>::const_iterator k = p_.tryFacts_.find(n.syntax.v);
+    if (k == p_.tryFacts_.end()) outside("a try the adapter cannot rebuild");
+    const Parser::TryFacts &facts = k->second;
+    if (!alive_.empty() || tryDepth_ > 0 || !handlerLoops_.empty()) outside("a try inside another or past objects alive");
+    if (n.count != 1 + facts.handlers.size() || facts.types.size() != facts.handlers.size())
+        outside("a try whose handlers were not recorded");
+    const Type *voidPtr = p_.types_.pointerTo(p_.types_.get(Kind::Void));
+    const Type *voidType = p_.types_.get(Kind::Void);
+    tryDepth_++;
+    StmtPtr body = stmt(tree.child(id, 0));
+    tryDepth_--;
+    std::vector<StmtPtr> handlers;
+    for (std::size_t i = 0; i < facts.handlers.size(); i++) {
+        const Parser::TryHandlerFacts &hf = facts.handlers[i];
+        const TypedId c = tree.child(id, static_cast<std::uint32_t>(i + 1));
+        const TypedNode &cn = tree.node(c);
+        if (syn(c).kind != syntax::Kind::Catch || cn.count == 0 || cn.count > 2) outside("a handler not as recorded");
+        std::vector<StmtPtr> steps;
+        std::vector<ExprPtr> beginArgs;
+        beginArgs.push_back(typed(std::unique_ptr<Var>(Var::local(".ex.ptr", facts.ptr)), voidPtr));
+        ExprPtr began = p_.runtimeCall("__cxa_begin_catch", voidPtr, std::move(beginArgs));
+        if (cn.count == 2) {
+            const TypedId var = tree.child(c, 0);
+            std::unordered_map<std::uint32_t, Local>::const_iterator l = p_.declaredLocals_.find(tree.node(var).syntax.v);
+            if (syn(var).kind != syntax::Kind::Var || l == p_.declaredLocals_.end()) outside("a caught object not recorded");
+            const Local &caught = l->second;
+            ExprPtr from;
+            const Type *slotType = caught.type->isReference() ? p_.types_.pointerTo(caught.type->referent())
+                                                              : p_.types_.pointerTo(caught.type);
+            ExprPtr cast = typed(make_owned<Cast>(slotType, std::move(began)), slotType);
+            const Type *as = caught.type->isReference() ? slotType : caught.type;
+            if (caught.type->isReference()) {
+                from = std::move(cast);
+            } else if (caught.type->isPointer()) {
+                if (p_.target_.beginCatchReturnsObject())
+                    from = typed(make_owned<Unary>('*', typed(make_owned<Cast>(slotType, std::move(cast)), slotType)), caught.type);
+                else
+                    from = typed(make_owned<Cast>(caught.type, std::move(cast)), caught.type);
+            } else {
+                from = typed(make_owned<Unary>('*', std::move(cast)), caught.type);
+            }
+            ExprPtr to = typed(std::unique_ptr<Var>(Var::local(caught.name, caught.offset)), as);
+            steps.push_back(make_owned<ExprStmt>(typed(make_owned<Assign>(std::move(to), std::move(from)), as)));
+        } else {
+            steps.push_back(make_owned<ExprStmt>(std::move(began)));
+        }
+        handlerLoops_.push_back(loopMarks_.size());
+        StmtPtr handlerBody = stmt(tree.child(c, cn.count - 1));
+        handlerLoops_.pop_back();
+        // An exception leaving the handler ends the catch in a pad of its own, and unwinds on.
+        if (hf.canThrow) {
+            std::vector<StmtPtr> guarded;
+            guarded.push_back(std::move(handlerBody));
+            std::vector<StmtPtr> padSteps;
+            padSteps.push_back(make_owned<ExprStmt>(p_.runtimeCall("__cxa_end_catch", voidType, std::vector<ExprPtr>())));
+            padSteps.push_back(p_.resumeUnwinding(hf.padPtr));
+            StmtPtr pad = make_owned<Label>(hf.endLabel, p_.unwindPad(std::move(padSteps)));
+            steps.push_back(make_owned<Try>(std::move(guarded), std::move(pad), hf.padPtr, hf.padSel, std::vector<std::string>()));
+        } else {
+            steps.push_back(std::move(handlerBody));
+        }
+        steps.push_back(make_owned<ExprStmt>(p_.runtimeCall("__cxa_end_catch", voidType, std::vector<ExprPtr>())));
+        std::unique_ptr<Block> b = make_owned<Block>(std::move(steps));
+        b->setScope(hf.scope);
+        handlers.push_back(std::move(b));
+    }
+    // What nothing matched unwinds on; each handler with a type tests the selector in front of what came after it.
+    std::vector<StmtPtr> resume;
+    resume.push_back(p_.resumeUnwinding(facts.ptr));
+    StmtPtr chain = p_.unwindPad(std::move(resume));
+    for (std::size_t i = handlers.size(); i-- > 0; ) {
+        if (facts.types[i].empty()) { chain = std::move(handlers[i]); continue; }
+        ExprPtr sel = typed(std::unique_ptr<Var>(Var::local(".ex.sel", facts.sel)), p_.types_.intType());
+        ExprPtr want = typed(make_owned<Num>(static_cast<long long>(facts.indices[i])), p_.types_.intType());
+        ExprPtr test = typed(make_owned<Binary>(BinOp::Eq, std::move(sel), std::move(want)), p_.types_.intType());
+        chain = make_owned<If>(std::move(test), std::move(handlers[i]), std::move(chain));
+    }
+    std::vector<StmtPtr> guarded;
+    guarded.push_back(std::move(body));
+    std::unique_ptr<Try> t = make_owned<Try>(std::move(guarded), make_owned<Label>(facts.chain, std::move(chain)), facts.ptr,
+                                             facts.sel, facts.types);
+    t->setTypeIndices(facts.indices);
+    return placed(std::move(t), syn(id), n.syntax);
 }
 
 }   // namespace sema

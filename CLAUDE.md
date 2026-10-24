@@ -10749,6 +10749,14 @@ bytes, and `X(a, b)` as the temporary `*(X::X(&$tmp, a, b), &$tmp)` in the slot 
 (`temporarySlots_`). A class with constructors but no destructor and no copy of its own moves by its bytes in
 returns, arguments and assignments, as the parser moves it (`byteClass`).
 
+## M2.12j: `throw`, `try` and its handlers in the adapter, 2026-10-24
+
+**1,128 of 1,986 functions take the adapter's body**, all the same: a throw of a scalar, a rethrow, and a `try` with
+nothing alive round it, each handler binding what it caught and ending the catch on every way out - falling off,
+`return`, `break` - from the slots and labels the parser recorded (`throwFacts_`, `tryFacts_`). Itanium only. **A
+handler is a `catch` node in the syntax tree now**, holding its caught object's `var`; it had been a bare block, so
+`catch (int e) { r = e; }` named an `e` the typer could not find.
+
 ## Build
 
 ```

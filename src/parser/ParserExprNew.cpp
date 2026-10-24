@@ -1555,6 +1555,12 @@ StmtPtr Parser::throwStatement(ExprPtr value, std::size_t pos) {
         steps.push_back(StmtPtr(new ExprStmt(setGuard(storageGuard, 0))));
     flushTemporaries(steps);
     steps.push_back(StmtPtr(new ExprStmt(std::move(thrower))));
+    // The adapter rebuilds a throw with nothing to construct or destroy, from these.
+    if (cc == nullptr && dtor == nullptr) {
+        pendingThrow_.temp = temp;
+        pendingThrow_.slot = slot;
+        pendingThrow_.info = info;
+    }
     Block *b = new Block(std::move(steps));
     b->setScope(-1);
     return StmtPtr(b);

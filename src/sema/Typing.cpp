@@ -32,7 +32,8 @@ static bool isExpression(syntax::Kind k) {
 
 static bool opensScope(syntax::Kind k) {
     return k == syntax::Kind::Function || k == syntax::Kind::Block || k == syntax::Kind::For ||
-           k == syntax::Kind::If || k == syntax::Kind::While || k == syntax::Kind::Switch;
+           k == syntax::Kind::If || k == syntax::Kind::While || k == syntax::Kind::Switch ||
+           k == syntax::Kind::Catch;
 }
 
 TypedId Typer::node(syntax::NodeId id) {

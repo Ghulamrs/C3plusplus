@@ -1866,6 +1866,8 @@ void Parser::topLevel(Program &program) {
     if (definedSymbol.empty())
         definedSymbol = lookup_.lookupSignature(absoluteName.empty() ? d.name : absoluteName, params,
                                         variadic, d.pos).symbol;
+    // A body the parser wrapped in a `try` of its own - a throw(...) list, a function try block - the adapter leaves.
+    if (specFilter || ctorTry || functionTry) wrappedBodies_.insert(definedSymbol);
 
     // Recorded before `body` is moved into the Function, where what the pointer names lives on; a
     // constexpr constructor is kept whole, also under the C2 name a derived class calls it by.

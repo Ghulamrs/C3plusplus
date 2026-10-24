@@ -534,6 +534,19 @@ private:
     struct ReturnTemp { std::string name; int slot = 0; };
     std::unordered_map<std::uint32_t, ReturnTemp> returnTemps_;
     ReturnTemp pendingReturnTemp_;
+    // A `try` the adapter can rebuild, by node: its slots, its chain's label, its types and each handler's facts.
+    struct TryHandlerFacts { int scope = 0; std::string endLabel; int padPtr = 0, padSel = 0; bool canThrow = false; };
+    struct TryFacts {
+        bool simple = false; int ptr = 0, sel = 0; std::string chain;
+        std::vector<std::string> types; std::vector<int> indices; std::vector<TryHandlerFacts> handlers;
+    };
+    std::unordered_map<std::uint32_t, TryFacts> tryFacts_;
+    std::set<std::string> wrappedBodies_;
+    TryFacts pendingTry_;
+    // A `throw` of a scalar on the Itanium targets: the slot holding the exception's storage, and its type_info.
+    struct ThrowFacts { std::string temp; int slot = 0; std::string info; };
+    std::unordered_map<std::uint32_t, ThrowFacts> throwFacts_;
+    ThrowFacts pendingThrow_;
     void noteCallSlots(const Call &c) {
         if (!c.syntax().valid()) return;
         CallSlots &k = callSlots_[c.syntax().v];
@@ -543,6 +556,12 @@ private:
         for (std::size_t i = 0; i < c.args().size(); i++) k.args.push_back(c.argSlot(i));
     }
     std::unordered_map<std::uint32_t, std::pair<std::string, std::string> > stringLiterals_;   // a string's label and text
+    // A handler's caught object as a `var` node, so a name in its block finds it.
+    void noteCaught(const std::string &name, const Type *type, std::size_t pos) {
+        const syntax::NodeId id = noteParts(syntax::Kind::Var, type->describe() + " " + name, pos, syntaxTree_.size(), pos);
+        declaredTypes_[id.v] = type;
+        noteDeclaredLocal(id, name);
+    }
     void noteDeclaredLocal(syntax::NodeId id, const std::string &name) {
         if (const Local *l = lookup_.findLocal(name)) declaredLocals_[id.v] = *l;
     }
