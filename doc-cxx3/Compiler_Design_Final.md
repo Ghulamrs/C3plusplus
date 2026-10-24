@@ -27,6 +27,7 @@ A decision cites the code it rests on. Where the three compilers disagree, the o
 | Draft 2.1 | Opus 5.5 | all 4 conditions and 14 flags applied; each piece of evidence re-read in the code |
 | Draft 2.2-2.4 | Opus 5.5 | three things added. First, `__cplusplus` kept at 201103L, as cpp11 1.28 already reports it (`Backend.cpp:104`). Second, refusals only beyond C++11, from cpp11's refuse-by-name rule (`docs/EXCLUSIONS.md`). Third, the oracle policy (section 11.1), from cpp11's existing practice: `tools/feature-sweep` validates with `clang++ -std=c++11 -pedantic-errors`, and cl is the ABI oracle in the 1.25 review. Also the facts found in cpp11's development repository and `GRIDE1/docs`, and proposals P1 (section 4.1) and P2 (section 6.1) |
 | Draft 2.5 | Opus 5.5 | decisions restated on their basis in the compilers and self-hosting; sent to Fable 5.1 for review |
+| M2 interim review (`M2-REVIEW-FABLE-2026-10-24.md`), section 12.1 | Fable 5.1 | agree with conditions; M2's end amended: a complete, checked typed tree, `Ast.h` the oracle until M3, the adapter not grown |
 
 ### The five conflicts of Draft 2, and what the code settled
 
@@ -360,13 +361,62 @@ No single compiler is exactly ISO/IEC 14882:2011, so the bound is set in layers,
 |---|---|---|
 | M0 | **One tree first.**<br>• Bring the development repository's `docs/`, `tests/` and `tools/` (at 1.23) into one tree with GRIDE's 1.28 source. Today 1.24-1.28 exist only as GRIDE commits (`7f0cdce` … `cf1e607`), and GRIDE's copy leaves the rest out (`toolchain/MANIFEST.md:35`).<br>• Re-record the golden outputs at 1.28.<br>Then:<br>• determinism gate;<br>• `--keep-going`;<br>• dumps at existing boundaries;<br>• aggregates removed and the `clang -std=c++11` gate on;<br>• R6 counter;<br>• `docs/EXCLUSIONS.md` refreshed for 1.28 and checked by `tools/exclusions --check`;<br>• `tools/feature-sweep` in the release gates | R9, R1.1, R5.1, R5.4, R3.1, R3.3 |
 | M1 | Library headers (section 8, Win32); `<regex>` and `<deque>` out of the source; the compiler-feature gap list measured in M0 (braced default arguments, `std::function`, `unique_ptr`/`nullptr`, lambda capture, qualified base `operator=`, rethrow, try-in-catch, ...); **first self-host at -O0** | R5.1-R5.3, R5.5, R9.1 |
-| M2 | **Step 1:** extract Sema's interfaces from cpp11's parser **in place**, one module per commit (`Lookup`, `Overload`, `Templates`, `Classes`, `Constexpr`, `Mangle`), each gated by bootstrap and oracle. **Step 2:** the parser, carrying cpp11's grammar code and token replay, builds the handle syntax tree behind a flag; Sema produces the typed tree. A thin adapter lowers the typed tree to cpp11's existing `Ast.h`, which already holds frame slots and EH nodes (`Ast.h:237-238, 510, 536`). The adapter is a lowering pass that M3 replaces. At M2's end the old parser-to-`Ast.h` path is deleted. The grammar code and token replay (in `ParserTemplate.cpp`, 3,672 lines) are **kept** inside the new parser until M8 | R4.1-R4.3 |
+| M2 | **Step 1:** extract Sema's interfaces from cpp11's parser **in place**, one module per commit (`Lookup`, `Overload`, `Templates`, `Classes`, `Constexpr`, `Mangle`), each gated by bootstrap and oracle. **Step 2:** the parser, carrying cpp11's grammar code and token replay, builds the handle syntax tree behind a flag; Sema produces the typed tree, every name, member, call and operator in it carrying the entity Sema resolved it to, recorded at parse time in the scope it was resolved in. A thin adapter lowers the typed tree to cpp11's existing `Ast.h` for a subset, as the harness that proves the typed tree can be lowered; it is not grown past that. **M2 ends when the typed tree is complete and checked** - every function with a source body typed, `-check=typed` at 0 differ against `Ast.h`, the typed fraction reported - and `Ast.h` stays the oracle until M3, which lowers the typed tree to SSA and deletes the parser-to-`Ast.h` path and the adapter together (section 12.1, amended 2026-10-25). The grammar code and token replay (in `ParserTemplate.cpp`, 3,672 lines) are **kept** inside the new parser until M8 | R4.1-R4.3 |
 | M3 | SSA IR, optimizer, MIR and graph-colouring allocator for **targets 1 and 3** together. The adapter and the old x86 text optimizer are selectable during M3 and deleted at its end; -O2 self-host; stage 2 = stage 3 at -O2 | R4.1, R4.2, R5.2 |
 | M4 | Encoder library, `CoffEmitter`, masm re-based, `-S` = `-c`. It starts once M3 has fixed the `MInst` definition and then runs in parallel with the rest of M3 | R4.4 |
 | M5 | arm64-darwin on the new middle end (ends exception 1); library threads over pthreads; self-hosting on targets 3 and 4 | R5.6 |
 | M6 | **Target 2** on the new middle end (ends exception 2), in three steps, each gated by sim6747 cycles: (a) C6000 selection reads the SSA IR and still emits today's text through the old post-passes; (b) selection emits MIR with schedule-aware allocation, still through the old post-passes; (c) packetiser and pipeliner ported onto MIR, and the text passes deleted once cycles are equal or better | R2.1, R4.2, R9.4 |
 | M7 | C90 through the parser and `SemaC`; c90 retired | R3.2 |
 | M8 | Template substitution replaces token replay where the suite allows, and replay is deleted; VM `--run` and VM reference test; `--health` on the typed tree | R4.5, R4.6 |
+
+### 12.1 M2's end, amended (Fable 5.1, 2026-10-25)
+
+The M2 row read "at M2's end the old parser-to-`Ast.h` path is deleted" until 2026-10-25. The interim review of M2
+(`M2-REVIEW-FABLE-2026-10-24.md`) measured what that would take and the user delegated the choice; this is it, with the
+evidence it rests on. Under the revision rule above, it is recorded here rather than rewritten in place.
+
+**Decision.** M2 ends at a complete, checked typed tree. `Ast.h` stays the oracle until M3. The parser-to-`Ast.h` path and
+the adapter are deleted together at M3's end, when the SSA lowering reads the typed tree instead of either.
+
+**Why not delete in M2.** The adapter built by M2.11-M2.12p lowers 1,257 of 1,986 file-scope free functions and reads
+fifteen fact maps the parser records while building `Ast.h` - frame slots, cleanup regions, EH chains, temporaries' guards -
+because the layout half of the parser is interleaved with its grammar: a frame slot is allocated as a declarator is read, a
+cleanup region as a block closes. Deleting the old path in M2 means writing that half a second time, from the typed tree,
+for every function kind the measured denominator left out - members, namespaces, template instantiations by replay, closures,
+the compiler-written specials that have no syntax at all, and the Microsoft funclets - which is the size of the parser's own
+back half. M3 then deletes it: a layer that exists to be deleted next milestone, kept alive beside the one it copies. The
+principle at the head of this section says no layer keeps two live implementations for more than one milestone, and option B
+ends M2 with three - the parser's `Ast.h`, the adapter's, and the typed tree. Its gate would also have to weaken from
+identical `Ast.h` to identical behaviour, which hides a difference until a program reaches it; rule 5 of the development
+record (a claim with no oracle is not allowed to be believed) is against that trade.
+
+**What M3 needs from M2**, and so what M2 must deliver: a typed tree M3 can lower without `Ast.h`. That is not types alone.
+It is, per node, the entity Sema resolved - a local by its declaration, a global or function by its symbol, a member by its
+`Member`, an enumerator by its value, a call or an overloaded operator by the signature overload resolution chose - recorded
+where the parser resolved it, in the scope it had then, so nothing is looked up again after the file when the scopes are
+gone. The frame layout, the cleanup regions and the EH tables are not M2's: M3's lowering makes its own from the typed
+tree's scopes, which is why the adapter's copies of them are not kept.
+
+**What "M2 closed" means**, measurably:
+
+1. Every function the backends emit is counted. One with a source body - read by the grammar, a replayed template body or a
+   lambda's included - has a syntax root and a typed tree. One the compiler writes with no source (an implicit special member,
+   a deleting destructor, a thunk, an init function, a closure's invoker) is counted by kind: today `Classes` and `Linkage`
+   build those straight into `Ast.h`, and lowering them from the typed tree is the first item of M3, since M3 is what deletes
+   `Ast.h`.
+2. `-check=typed` over every emitted function at 0 differ, and the report says what fraction of the syntax nodes is typed
+   and names the kinds that are not, with the reason.
+3. The resolution of every name, member access, call and overloaded operator is recorded per syntax node at parse time;
+   neither the Typer nor the adapter looks a name up after the file.
+4. Every pending fact the parser records between a parse and the node that takes it lives in `FunctionState`, so a nested
+   parse cannot leak it.
+5. `-dump=ast` prints every field of a `Try`, so two bodies differing in one compare different.
+6. `-front=typed` is exercised by `tools/self-host` and by a non-Mac leg, and the adapter reads recorded resolutions, not
+   the tables.
+
+**What this keeps from M2.8-M2.12p**: the syntax tree and its recording, the typed tree and `-check=typed`, the adapter and
+`-check=adapted` as the harness for its subset, and the fact maps the adapter needs - re-keyed into `FunctionState` where
+they were singletons. **What it stops**: growing the adapter's subset.
 
 ## 13. Requirement amendments
 

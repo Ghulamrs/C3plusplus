@@ -100,7 +100,7 @@ records, so step 2 is cut so that each commit is checked by the one before it:
 | M2.9 | statements and declarations recorded the same way; every function body has a syntax root | the same |
 | M2.10 | the typed tree, and Sema typing a subset of the syntax tree into it - scalars, operators, locals, calls | `-check=typed`: every typed node's type against the type the parser gave its `Ast.h` node |
 | M2.11 | the adapter: typed tree to `Ast.h` for that subset; behind `-front=typed`, a function inside the subset takes the adapter's `Ast.h`, any other the parser's | output identical with the flag on and off |
-| M2.12 on | the subset grows - classes, templates by replay, exceptions - until every function takes the adapter's | the same, case by case; then the old path is deleted |
+| M2.12 on | the subset grows - classes, templates by replay, exceptions - until every function takes the adapter's | the same, case by case; then the old path is deleted. **Stopped at M2.12p**: the review of 2026-10-24 and the decision below end M2 at the typed tree, and the adapter is not grown further |
 
 **How M2.9 finds a statement's parts.** Every part records itself, so a statement takes the roots made since its
 first token whose location lies inside its own tokens (`Tree::adopt`): a template body replayed from elsewhere, a
@@ -297,3 +297,29 @@ candidate leaves no syntax behind.
 
 The parser's question "what kind of name is this?" (`atTypeName`, `localHidesType`) stays in the
 parser and asks `Lookup`; making it one call is step 2's, with the handle syntax tree behind its flag.
+
+## M2's end, decided 2026-10-25 (Fable 5.1)
+
+The interim review (`M2-REVIEW-FABLE-2026-10-24.md`) put a choice before the user and the user delegated it: M2 ends at a
+complete, checked typed tree, `Ast.h` stays the oracle until M3, and the adapter is a harness for its subset and is not
+grown. Design section 12.1 carries the reasons; the one that decides it is size: the adapter lowers 1,257 of the 1,986
+file-scope free functions - about 15% of the 8,227 functions the same cases emit - and reads fifteen fact maps the parser
+records while it builds `Ast.h`, so finishing it means writing the parser's layout half a second time for every function
+kind, and M3 then deletes it.
+
+**What is done from here, in this order, each commit gated as before** (make test with its seven suites, the emit golden
+recorded at `a2b39e7`, `tools/identical.sh` against `a2b39e7`'s binary, `tools/self-host`):
+
+| step | what | checked by |
+| --- | --- | --- |
+| M2.13 | the pending facts (`pendingTry_`, `pendingThrow_`, `pendingLambda_`, `pendingRange_`, `pendingReturnTemp_`, `lastCleanupSlots_`) into `FunctionState` | identical; a nested-parse probe |
+| M2.14 | `-dump=ast` prints a `Try`'s types, indices, `alsoCleanup`, `msExits` and unwind-help slot | adapted.sh still 0 differ |
+| M2.15 | the denominator: every emitted function counted - with a syntax root or compiler-written, by kind - and `-check=typed` and `-check=adapted` reporting over all of them; the Typer types every root, a name it cannot resolve typed null and counted | typed.sh 0 differ |
+| M2.16 | resolutions recorded per node at parse time - a name's entity, a member's `Member`, a call's and an overloaded operator's chosen signature - read by the Typer and the adapter in place of `findGlobal`, `findEnum`, `overloadsOf` and `resolveOverload` after the file | typed.sh 0 differ, the typed fraction up; adapted.sh 0 differ |
+| M2.17 | the Typer's remaining kinds: `this`, member access, class operators, `new`, `delete`, `throw`, lambdas, qualified names, string pieces; the untyped kinds named in the report | typed.sh 0 differ |
+| M2.18 | `tools/self-host` with `-front=typed`; a Linux leg (and the Windows leg where the box answers) running run.sh under `-front=typed` at -O0 and -O2 | stage 1 = stage 2; the leg's counts |
+
+**"M2 closed" means** the six points of design section 12.1 hold, with the numbers written here: the count of emitted
+functions, of those with a syntax root and typed, of the compiler-written by kind; the typed fraction of nodes and the
+kinds outside it; `-check=typed` and `-check=adapted` at 0 differ; `identical.sh` and self-host green with and without
+`-front=typed`; the non-Mac leg's counts.
