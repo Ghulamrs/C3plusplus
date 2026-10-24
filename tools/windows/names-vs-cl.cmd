@@ -30,7 +30,7 @@ if "%~1"==":shard" goto :shard
 if "%~1"=="" (echo names-vs-cl.cmd: needs the tree root & exit /b 2)
 set ROOT=%~1
 
-call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul
+call "%~dp0vcvars.cmd" >nul
 if errorlevel 1 (echo names-vs-cl.cmd: no vcvars & exit /b 1)
 
 if not exist %ROOT%\winnames mkdir %ROOT%\winnames

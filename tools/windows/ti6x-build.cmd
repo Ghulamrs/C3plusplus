@@ -8,7 +8,7 @@ setlocal
 set T=%~1
 if "%T%"=="" set T=C:\Users\GRA\work\ti6x
 if "%CPP11%"=="" set CPP11=C:\Users\GRA\work\selfhost-tree\cxx3-msvc.exe
-call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul
+call "%~dp0vcvars.cmd" >nul
 cd /d %T%
 echo started %date% %time% > %T%\build-all.log
 for %%x in (ASM6x LNK6x) do call :one %%x build\%%x.exe

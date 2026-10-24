@@ -17,7 +17,7 @@ rem  reason tools/mangled-names asks clang with -fno-rtti -fno-exceptions.
 
 setlocal
 if "%~1"=="" (echo measure.cmd: needs a basename & exit /b 2)
-call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul
+call "%~dp0vcvars.cmd" >nul
 cd /d C:\Users\GRA\source\measure
 del /q %~1.asm %~1.obj 2>nul
 

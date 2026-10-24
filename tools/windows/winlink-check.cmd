@@ -15,7 +15,7 @@ if not exist %WORK% mkdir %WORK%
 del /q %WORK%\* 2>nul
 if not exist %ROOT%\winout mkdir %ROOT%\winout
 
-call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul
+call "%~dp0vcvars.cmd" >nul
 if errorlevel 1 (echo winlink-check: no vcvars64 & exit /b 1)
 
 rem  Every program both ways round, six at once with par.cmd - see :pair.

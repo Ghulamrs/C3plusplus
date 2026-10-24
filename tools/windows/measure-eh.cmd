@@ -8,7 +8,7 @@ rem  descriptors a throw, a catch or a typeid needs are in the listing.
 rem  Usage:  measure-eh.cmd <basename>   (one unquoted argument, as measure.cmd)
 setlocal
 if "%~1"=="" (echo measure-eh.cmd: needs a basename & exit /b 2)
-call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul
+call "%~dp0vcvars.cmd" >nul
 cd /d C:\Users\GRA\source\measure
 del /q %~1.asm %~1.obj 2>nul
 cl /nologo /c /std:c++14 /EHsc /GR /d2FH4- /FAsc /Fa%~1.asm /Fo:%~1.obj %~1.cpp

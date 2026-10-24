@@ -25,7 +25,7 @@ rem  Six shards at once with par.cmd; each prints a marker line per case, and th
 rem  read off the markers once all six are done.
 rem  Visual Studio's environment once, here: a compiler that finds it set runs its tools
 rem  directly, where without it every asm6x and lnk6x call went through vcvars64.bat again.
-call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul
+call "%~dp0vcvars.cmd" >nul
 call "%~dp0par.cmd" 6 "%~f0" > %ROOT%\winout\ti\shards.log
 findstr /v /b /c:"=" %ROOT%\winout\ti\shards.log
 for /f %%n in ('findstr /b /c:"=LINKED " %ROOT%\winout\ti\shards.log ^| find /c /v ""') do set linked=%%n

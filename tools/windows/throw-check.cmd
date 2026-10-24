@@ -31,7 +31,7 @@ del /q %WORK%\* 2>nul
 
 rem  The same line build.cmd uses, and for the same reason: cl and link reach
 rem  PATH only after vcvars64 has run.
-call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul
+call "%~dp0vcvars.cmd" >nul
 if errorlevel 1 (echo throw-check: no vcvars64 & exit /b 1)
 
 %ROOT%\cxx3-msvc.exe -c %WORK%\risky.cpp -o %WORK%\risky.obj

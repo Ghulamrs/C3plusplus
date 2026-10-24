@@ -26,7 +26,7 @@ del /q %WORK%\* 2>nul
 >> %WORK%\prog.cpp echo   return 0;
 >> %WORK%\prog.cpp echo }
 
-call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul
+call "%~dp0vcvars.cmd" >nul
 if errorlevel 1 (echo catch-check: no vcvars64 & exit /b 1)
 
 %ROOT%\cxx3-msvc.exe %WORK%\prog.cpp -o %WORK%\prog.exe

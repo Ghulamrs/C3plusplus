@@ -26,7 +26,7 @@ REM definition, and the file that reports it is not the file that is wrong.
 REM cc1.vcxproj spells this $(ProjectDir.Replace('\','/')) for the same reason.
 set "ROOTFWD=%ROOT:\=/%"
 
-call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul
+call "%HERE%..\tools\windows\vcvars.cmd" >nul
 if errorlevel 1 ( echo build.cmd: no vcvars64 & exit /b 1 )
 
 if not exist "%ROOT%\obj-msvc" mkdir "%ROOT%\obj-msvc"
