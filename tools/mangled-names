@@ -139,7 +139,11 @@ for pair in "x86_64-linux:x86_64-linux-gnu" \
     if [ "${skip:-}" = yes ]; then skip=; continue; fi
 
     # cxx1 and clang side by side - the compiler under test and the reference at once.
-    ( "$CXX1" -S -arch "$mine" "$SRC" -o "$OUT/mine.s" 2>"$OUT/mine.err"; echo $? > "$OUT/mine.rc" ) &
+    # x86_64-windows's default is -masm=masm; a case no MASM can write (<case>.nomasm) keeps the GNU spelling.
+    spell=
+    n=${SRC%.cpp}
+    [ "$mine" = x86_64-windows ] && [ -f "${n%.part}.nomasm" ] && spell=-masm=gnu
+    ( "$CXX1" -S -arch "$mine" $spell "$SRC" -o "$OUT/mine.s" 2>"$OUT/mine.err"; echo $? > "$OUT/mine.rc" ) &
     EH=-fexceptions
     RTTI=-frtti
     ( clang++ -x c++ -std=c++11 $EH $RTTI -w -target "$theirs" -S "$SRC" -o "$OUT/theirs.s" 2>"$OUT/theirs.err"; echo $? > "$OUT/theirs.rc" ) &

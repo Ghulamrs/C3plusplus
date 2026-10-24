@@ -16,7 +16,11 @@ set HERE=%~dp0
 set CXX1=%1
 if "%CXX1%"=="" set CXX1=cxx3.exe
 
-call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul
+REM The newest Visual Studio vswhere knows, VS 2022 or 18; the 2022 Community path where there is no vswhere.
+set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+set "VCVARS=C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+if exist "%VSWHERE%" for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -property installationPath`) do if exist "%%i\VC\Auxiliary\Build\vcvars64.bat" set "VCVARS=%%i\VC\Auxiliary\Build\vcvars64.bat"
+call "%VCVARS%" >nul
 if errorlevel 1 ( echo build-win.cmd: no vcvars64 - ml64 and link come from it & exit /b 1 )
 
 cd /d "%HERE%"

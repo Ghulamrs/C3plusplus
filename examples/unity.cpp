@@ -1,11 +1,11 @@
-// **A unity build, for `-masm=masm` on x86_64-windows.**
+// **A unity build, for `-masm=ml64` on x86_64-windows.**
 //
-// It is no longer the default path: since 1.2 that target assembles through
-// the GNU spelling, which can mark a definition COMDAT, and Makefile.windows
-// builds one object per source like the other three. This file is what
-// `-masm=masm` still needs, ml64 having no COMDAT directive at all.
+// It is not the default path: that target assembles through the project's own
+// masm (`-masm=masm`, the default since 2026-10-25), which can mark a definition
+// COMDAT, and Makefile.windows builds one object per source like the other three.
+// This file is what `-masm=ml64` needs, ml64 having no COMDAT directive at all.
 //
-// With the MASM spelling this compiler has no way to fold a definition, so a member
+// With ml64 this compiler has no way to fold a definition, so a member
 // function defined inside its class - `std::string`'s own, in this tree's
 // <string> - becomes an ordinary strong symbol in every object that includes
 // the header. Two such objects do not link: `link.exe` answers LNK2005 for
@@ -14,7 +14,7 @@
 // build one object per source and only this target's does not.
 //
 // Compiling the whole program as one translation unit is the way round it, and
-// is what Makefile.windows does. It is a real technique - a "unity build" - and
+// is what this file does. It is a real technique - a "unity build" - and
 // costs a full rebuild for any edit, which for three files is nothing.
 //
 // README.md, "Known shortcomings in 1.1", is where this is written down.

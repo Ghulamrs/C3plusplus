@@ -17,9 +17,9 @@
 # say OBJS with .obj if you prefer that suffix; cxx1 takes either.
 
 # One object per source, as the other three Makefiles do. **That works here
-# because the default assembly spelling for this target is the GNU one**, which
-# clang assembles and which can mark a definition COMDAT; ml64's cannot, so
-# `-masm=masm` still needs the unity build unity.cpp holds.
+# because the default assembly spelling for this target is `masm`**, which the
+# project's own masm assembles and which can mark a definition COMDAT; ml64's
+# cannot, so `-masm=ml64` needs the unity build unity.cpp holds.
 TARGET    = demo.exe
 SRCS      = demo.cpp report.cpp shapes.cpp
 OBJS      = demo.obj report.obj shapes.obj
@@ -39,10 +39,10 @@ $(TARGET): $(OBJS)
 run: $(TARGET)
 	.\$(TARGET)
 
-# **`-masm=masm` is the other spelling**, ml64's, for a machine with no clang.
-# It cannot mark a definition COMDAT, so a program built that way has to be one
-# translation unit - `nmake /f Makefile.windows CXX1FLAGS=-masm=masm` on
-# unity.cpp is that build. Neither spelling changes what the program does.
+# **`-masm=ml64` is the other spelling**, Microsoft's ml64 and link, for a machine
+# without the project's masm. It cannot mark a definition COMDAT, so a program
+# built that way has to be one translation unit - unity.cpp, compiled with
+# CXX1FLAGS=-masm=ml64, is that build. Neither spelling changes what the program does.
 asm:
 	$(CXX1) $(CXX1FLAGS) -S -arch x86_64-windows demo.cpp -o demo.s
 	$(CXX1) $(CXX1FLAGS) -S -arch x86_64-windows report.cpp -o report.s

@@ -266,7 +266,7 @@ building something else.
 
 `Makefile.windows` builds one object per source like the other three, and
 `examples/build-win.cmd` runs the whole thing from a plain shell - it calls
-`vcvars64.bat` first, because that is where `link.exe` and `clang` are.  With
+`vcvars64.bat` first, because that is where `link.exe` and `ml64` are.  With
 `-masm=ml64` it would need the single-translation-unit build `examples/unity.cpp`
 holds; the end of this section says why.  Copy whichever fits, change the first three lines,
 and it builds any project of C++ sources in one directory:
@@ -320,11 +320,12 @@ then runs two programs that are already on the machine:
     what                 Linux and macOS          Windows
     ----------------------------------------------------------------------
     compile to assembly  cxx1                     cxx1
-    assemble             c++     (-c on the .s)   clang -target
-                                                  x86_64-pc-windows-msvc -c
-                                                  (the project's masm.exe where
-                                                  it sits beside cxx1, -masm=masm;
-                                                  or ml64.exe /c /Fo, -masm=ml64)
+    assemble             c++     (-c on the .s)   the project's masm.exe /c /Fo
+                                                  (-masm=masm, the default); or
+                                                  ml64.exe, -masm=ml64, where no
+                                                  masm.exe is found; or clang
+                                                  -target x86_64-pc-windows-msvc
+                                                  -c, -masm=gnu
     link                 c++     (and -lm)        link.exe /subsystem:console
                                                   with the UCRT libraries (the
                                                   project's link.exe beside masm)
@@ -336,7 +337,7 @@ CRT exactly as it would an object from `cl`.  clang ships inside Visual Studio
 2022 as the optional "C++ Clang tools for Windows" component, or as the
 standalone LLVM installer.
 
-**Why it is the default where there is no masm beside the compiler.**  A
+**Why the default is `masm` (since 2026-10-25), and was `gnu` before.**  A
 program of more than one file links only when each inline definition is marked
 COMDAT: a member function defined inside its class - `std::string`'s own, in
 this compiler's own `<string>` - is a strong symbol in every object that
@@ -344,8 +345,12 @@ includes the header.  The `gnu` spelling marks it so through clang, and the
 `masm` spelling through the project's own masm, which reads a COMDAT the way cl
 writes one; Microsoft's `ml64` has no directive that reaches the bit at all, so
 `-masm=ml64` is there for a machine with neither, at the cost of one translation
-unit per program.  The `gnu` spelling is also the only one that carries a line
-table, so `-g` picks it.
+unit per program.  `masm` is the default because the user chose the MASM
+spellings over clang, and it links with the project's LINK.  `-g` under it
+needs GRIDE's masm, which reads the MASM spelling's `.LINE`; the project's masm
+in `Windows/MASM` does not yet, so with it name `-masm=gnu` for `-g`.  The default looks for masm.exe beside
+cxx1, in CPP11_AS, then on PATH, and falls back to ml64 and Microsoft's link.exe,
+saying so, where it finds none.
 
 `c++` rather than `cc` on the Itanium targets, because `operator new` lives in
 the C++ runtime and the C driver links neither libc++ nor libstdc++.  On
@@ -356,7 +361,7 @@ Each of the three can be replaced from the environment, which is what a
 cross-build or an unusual installation needs:
 
     CPP11_CC      the assembler-and-linker driver on Linux and macOS   (c++)
-    CPP11_AS      the assembler on Windows                    (ml64.exe, clang)
+    CPP11_AS      the assembler on Windows               (masm.exe, ml64.exe, clang)
     CPP11_LD      the linker on Windows                              (link.exe)
     CPP11_INCLUDE, CPP11_LIB    the two header directories of section 2
 

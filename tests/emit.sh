@@ -46,7 +46,10 @@ emit_one() {
         echo "  skip $base for $target: $(grep "^$target\b" "tests/cases/$base.notarget" | sed "s/^$target[[:space:]]*//")"
         return
     fi
-    if cxx1 -S -arch "$target" $LEVEL "$src" -o "$OUT/$base.$target.s" 2>"$OUT/$base.$target.err"; then
+    # x86_64-windows's default is -masm=masm; a case no MASM can write (<case>.nomasm) keeps the GNU spelling.
+    spell=
+    [ "$target" = x86_64-windows ] && [ -f "tests/cases/${base%.part}.nomasm" ] && spell=-masm=gnu
+    if cxx1 -S -arch "$target" $spell $LEVEL "$src" -o "$OUT/$base.$target.s" 2>"$OUT/$base.$target.err"; then
         echo pass > "$OUT/$base.$target.verdict"
     else
         echo "FAIL $base for $target:"

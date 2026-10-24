@@ -47,6 +47,7 @@ Draft 2, 2026-10-22. One compiler with the best of cpp11, cppparse and compilerp
 
 ## 7. Dependencies
 - **R7.1** Kept: Microsoft `link.exe`, the CRT, the Windows SDK libraries, cdb. Not built: own debugger, runtime or Windows linker.
+  - *Amended 2026-10-25, the user's decision:* the project's own `LINK` (GRIDE's, `link.exe`'s command line, PE32+, a PDB) is the default linker for x86_64-windows's default spelling, `-masm=masm`, with the project's masm. Microsoft's `link.exe` is kept as R9.3's oracle, and is still the linker of the `ml64` fallback taken where no masm.exe is found.
 - **R7.2** Target 2 needs nothing outside the toolchain (asm6x, lnk6x, RTS6x, sim6747).
 
 ## 8. Diagnostics

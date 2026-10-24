@@ -11,7 +11,8 @@ rem          whose two are not the same. Only cxx3's own include\ and lib\ are o
 setlocal enabledelayedexpansion
 if "%~1"=="" (echo self-host.cmd: needs the tree root & exit /b 2)
 set ROOT=%~1
-set FLAGS=%~2
+rem  -masm=gnu, whatever the default: cxx3's sources use thread_local, which no masm here can write.
+set FLAGS=-masm=gnu %~2
 set OUT=%ROOT%\selfhost
 call "%ROOT%\msvc\build.cmd" >nul
 if errorlevel 1 (echo self-host.cmd: stage 0 did not build & exit /b 1)

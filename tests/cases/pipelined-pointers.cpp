@@ -2,9 +2,10 @@
 // whose pair results are made where the backend copied them to, and whose loads are scheduled late in the kernel -
 // each run at trip counts 0, 1, 2, small, odd and large, so a pointer started one stride off, a copy of a renamed pair
 // missed at entry or exit, or an access scheduled past its reader shows as a wrong sum.
+// The array would be named db, which MASM reserves: the MASM spelling renames it $db, a name the names suite cannot see.
 extern "C" int printf(const char *, ...);
 
-static double da[300], db[300], dc[300];
+static double da[300], dbx[300], dc[300];
 static int ia[300], ib[300];
 static short ha[300];
 static unsigned char ca[300];
@@ -13,7 +14,7 @@ static unsigned char ca[300];
 static double axpy(int n, double x) {
     int i;
     double s = 0;
-    for (i = 0; i < n; ++i) dc[i] += x * db[i];
+    for (i = 0; i < n; ++i) dc[i] += x * dbx[i];
     for (i = 0; i < n; ++i) s += dc[i];
     return s;
 }
@@ -56,7 +57,7 @@ static const int counts[] = { 0, 1, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 31, 33, 64,
 
 int main() {
     int k, i;
-    for (i = 0; i < 300; ++i) { da[i] = i * 0.5 - 20; db[i] = (i % 7) - 3; dc[i] = 0.25 * i; ib[i] = i * 11 - 500; }
+    for (i = 0; i < 300; ++i) { da[i] = i * 0.5 - 20; dbx[i] = (i % 7) - 3; dc[i] = 0.25 * i; ib[i] = i * 11 - 500; }
     // One statement each: tail writes the ib that scale reads, and the order a call's arguments are
     // evaluated in is unspecified - left to right on the Itanium targets, right to left on Microsoft.
     for (k = 0; k < 17; ++k) {

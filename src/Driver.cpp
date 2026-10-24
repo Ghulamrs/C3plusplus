@@ -178,14 +178,13 @@ void Driver::usage(char *file) {
         "         rts6740. Unsaid: RTS6x from RTS6X or lib/rts6x-tms6747\n"
         "         beside this program - as RIDE links - unless CPP11_TI or\n"
         "         CPP11_TILIB names TI's; TI's otherwise; the link says which\n"
-        "       -masm picks the assembly syntax for x86_64-windows: 'masm' is\n"
-        "         the default where this project's masm.exe is beside this\n"
-        "         program (RIDE's bin), assembled by it and linked by the\n"
-        "         link.exe beside it (CPP11_AS, CPP11_LD name others), COMDAT\n"
-        "         and all; 'gnu' is assembled by clang, the default elsewhere\n"
-        "         and for -g where clang is found; 'ml64' is the MASM syntax\n"
-        "         without COMDAT, for ml64, which links one translation unit\n"
-        "         at a time\n"
+        "       -masm picks the assembly syntax for x86_64-windows: 'masm', the\n"
+        "         default, is assembled by this project's masm.exe and linked\n"
+        "         by its link.exe - beside this program (RIDE's bin), named by\n"
+        "         CPP11_AS and CPP11_LD, or on PATH - COMDAT and all; 'ml64' is\n"
+        "         the MASM syntax without COMDAT, for Visual Studio's ml64,\n"
+        "         which links one translation unit at a time, and the default\n"
+        "         where no masm.exe is found; 'gnu' is assembled by clang\n"
         "       -O1 and -O2 improve the code of each function: frame slots and\n"
         "         constants forwarded, pushes paired with their pops, dead\n"
         "         instructions removed. Every spelling; -O0 is the default\n"
@@ -550,6 +549,19 @@ std::string Driver::masmAssembler() const {
     if (env != nullptr && env[0] != '\0') return env;
     std::string own = syntax_ == Syntax::Masm ? besideProgram(program_, "masm.exe") : std::string();
     return own.empty() ? std::string(hostAssembler(syntax_)) : own;
+}
+
+// Whether -masm=masm has an assembler to run: CPP11_AS, the masm.exe beside this program, or one on PATH.
+bool Driver::masmReachable() const {
+    const char *env = std::getenv(program::env("AS").c_str());
+    if (env != nullptr && env[0] != '\0') return true;
+    if (!besideProgram(program_, "masm.exe").empty()) return true;
+#ifdef _WIN32
+    char onPath[MAX_PATH];
+    return SearchPathA(nullptr, "masm.exe", nullptr, MAX_PATH, onPath, nullptr) > 0;
+#else
+    return false;
+#endif
 }
 
 std::string Driver::windowsLinker() const {
@@ -1164,18 +1176,18 @@ bool Driver::parseArguments(int argc, char **argv) {
         std::exit(0);
     }
 
-    // **The project's own masm and LINK when they are beside this program, and no spelling asked
-    // for**: they take COMDAT and a throw, so clang is wanted only for -g's line table.
-    if (hostIsWindows() && !syntaxNamed_ && std::strcmp(backend_->name(), "x86_64-windows") == 0 &&
-        !besideProgram(program_, "masm.exe").empty() && !(debug_ && hostGnuAssembler()[0] != '\0'))
+    // **-masm=masm is x86_64-windows's default on every host** (2026-10-25): the project's own masm and LINK,
+    // which take COMDAT and a throw. Where no masm.exe is beside this program, named by CPP11_AS or on PATH,
+    // Visual Studio's ml64 and link - one translation unit at a time.
+    if (!syntaxNamed_ && std::strcmp(backend_->name(), "x86_64-windows") == 0) {
         syntax_ = Syntax::Masm;
-
-    // No clang and no masm beside this program: masm by name, on PATH, rather than every compile failing.
-    if (hostIsWindows() && syntax_ == Syntax::Gnu && !syntaxNamed_ && !assemblyOnly_ &&
-        std::strcmp(backend_->name(), "x86_64-windows") == 0 && hostGnuAssembler()[0] == '\0') {
-        syntax_ = Syntax::Masm;
-        std::fprintf(stderr, "%s: no clang and no masm.exe beside this program - assembling with the "
-                             "masm.exe on PATH; -g, which needs clang, is not available\n", argv[0]);
+        // -g included (the user's choice): it needs GRIDE's masm, which reads .LINE, or -masm=gnu named.
+        if (hostIsWindows() && !assemblyOnly_ && !masmReachable()) {
+            syntax_ = Syntax::Ml64;
+            std::fprintf(stderr, "%s: no masm.exe beside this program, named by %s or on PATH - assembling "
+                                 "with Visual Studio's ml64 and linking with its link\n",
+                         argv[0], program::env("AS").c_str());
+        }
     }
 
     if (hostIsWindows() && syntax_ == Syntax::Gnu && syntaxNamed_ && !assemblyOnly_ &&

@@ -27,7 +27,7 @@ rem    CXX1_MASM, CXX1_LINK      the two programs, named outright
 rem    CXX1_MASM_SRC, CXX1_LINK_SRC   their trees, built here by cl into <root>\winout-tools
 rem                              (default <root>\..\..\Windows\MASM and <root>\..\..\Windows\LINK)
 rem  and where neither is found the MASM pass is not run, the reason is printed and
-rem  the script exits 1 once the GNU pass is done. CXX1_CASES_SPELLINGS=gnu (or masm)
+rem  the script exits 1 once the GNU pass is done. CXX1_CASES_SPELLINGS=gnu (or masm, or default - no -masm named)
 rem  runs one spelling alone.
 rem
 rem  CXX1_CASES_FLAGS, if set, goes on every compile of both passes - -O2, say.
@@ -49,20 +49,42 @@ if "%CXX1_CASES_COMPILER%"=="" (
 if not exist %ROOT%\winout mkdir %ROOT%\winout
 del /q %ROOT%\winout\* 2>nul
 if exist %ROOT%\winout\masm rmdir /s /q %ROOT%\winout\masm
+if exist %ROOT%\winout\default rmdir /s /q %ROOT%\winout\default
 
 rem  Six shards at once, each taking every sixth case - see par.cmd.
 set CXX1_PASS_FLAGS=-masm=gnu
 if not "!SPELLINGS:gnu=!"=="!SPELLINGS!" call "%~dp0par.cmd" 6 "%~f0" %ROOT% %ROOT%\winout
 
-if "!SPELLINGS:masm=!"=="!SPELLINGS!" goto :done
+set NEEDTOOLS=
+if not "!SPELLINGS:masm=!"=="!SPELLINGS!" set NEEDTOOLS=1
+if not "!SPELLINGS:default=!"=="!SPELLINGS!" set NEEDTOOLS=1
+if not defined NEEDTOOLS goto :done
 call :tools
 if errorlevel 1 (set STATUS=1& goto :done)
+if "!SPELLINGS:masm=!"=="!SPELLINGS!" goto :default
 mkdir %ROOT%\winout\masm
 set CPP11_AS=%MASMEXE%
 set CPP11_LD=%LINKEXE%
 set CXX1_PASS_FLAGS=-masm=masm
 echo run-cases.cmd: the MASM spelling, %MASMEXE% and %LINKEXE%
 call "%~dp0par.cmd" 6 "%~f0" %ROOT% %ROOT%\winout\masm
+
+rem  CXX1_CASES_SPELLINGS=default: no -masm and no CPP11_AS or CPP11_LD, the project's masm and LINK copied
+rem  beside the compiler as RIDE lays them - what a compile naming nothing gets - into winout\default.
+:default
+if "!SPELLINGS:default=!"=="!SPELLINGS!" goto :done
+set COMPILER=%ROOT%\cxx3-msvc.exe
+if not "%CXX1_CASES_COMPILER%"=="" set COMPILER=%CXX1_CASES_COMPILER%
+for %%c in ("%COMPILER%") do set CDIR=%%~dpc
+copy /y "%MASMEXE%" "%CDIR%masm.exe" >nul
+copy /y "%LINKEXE%" "%CDIR%link.exe" >nul
+mkdir %ROOT%\winout\default
+set CPP11_AS=
+set CPP11_LD=
+set CXX1_PASS_FLAGS=
+set CXX1_PASS_DEFAULT=1
+echo run-cases.cmd: no -masm named, %CDIR%masm.exe and %CDIR%link.exe beside the compiler
+call "%~dp0par.cmd" 6 "%~f0" %ROOT% %ROOT%\winout\default
 
 :done
 echo run-cases.cmd: done
@@ -121,6 +143,11 @@ if exist %ROOT%\tests\cases\%NAME%.notarget (
 )
 rem  And one the MASM spelling cannot write, its reason in <case>.nomasm - the GNU pass still runs it.
 if "%CXX1_PASS_FLAGS%"=="-masm=masm" if exist %ROOT%\tests\cases\%NAME%.nomasm (
+    echo   skip %NAME% for the MASM spelling:
+    type %ROOT%\tests\cases\%NAME%.nomasm
+    exit /b 0
+)
+if defined CXX1_PASS_DEFAULT if exist %ROOT%\tests\cases\%NAME%.nomasm (
     echo   skip %NAME% for the MASM spelling:
     type %ROOT%\tests\cases\%NAME%.nomasm
     exit /b 0

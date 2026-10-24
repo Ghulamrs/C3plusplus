@@ -7135,6 +7135,44 @@ nothing of MinGW or a GNU runtime is anywhere near it.
 **The version went to 1.2 rather than re-sealing 1.1.** A seal names a set of
 sources; 1.1 named one and this is not it.
 
+## `-masm=masm` is x86_64-windows's default again, with the project's LINK, 2026-10-25
+
+**The user chose the MASM spellings over clang, and the 2026-09-10 decision above is reversed.** What
+settled it then was that `ml64` has no COMDAT and so links no C++ program of more than one file; the
+project's own masm and LINK (`../Windows/MASM`, `../Windows/LINK`) take COMDAT and a throw, so the reason
+is gone. A build that names no `-masm` for x86_64-windows now writes the MASM spelling, assembled by the
+project's masm.exe and linked by its link.exe - beside cxx3, named by `CPP11_AS`/`CPP11_LD`, or on PATH
+(`Driver::masmReachable`). Where none is found, on a Windows host and not `-S`, it falls back to Visual
+Studio's `ml64` and Microsoft's `link.exe` and says so on stderr: one translation unit per program.
+R7.1 is amended to match (`doc-cxx3/Compiler_Design_Requirements.md`, open question 7 of the Final).
+
+**`-g` under the default needs GRIDE's masm, or `-masm=gnu` named** - the user's choice, over keeping a
+`-g` build on clang. The MASM spelling's `-g` (1.29) writes `.FILE`, `.LINE`, `SECTION` and `SECTIONREL` for
+GRIDE's own masm, and the project's masm in `../Windows/MASM` (1528a7a) refuses all four, so a `-g` build that
+names no spelling, which took clang where clang was found before this change, fails there now. The
+pre-change compiler with `-g -masm=masm` named fails identically: the limit is that masm's, not the default's.
+
+**What it costs**: a case with a `.nomasm` - `thread-local`, `thread-local-extern`, `ucn-identifier` -
+cannot be written in MASM, so `thread_local` and a UCN identifier do not compile under the default for
+x86_64-windows; `tests/emit.sh` and `tools/mangled-names` keep `-masm=gnu` for those cases. Two cases
+renamed arrays MASM reserves (`db`, `cs`, `ds`), which the MASM spelling writes `$db`, a name `names.sh`
+cannot see, as `width` before them. `run-cases.cmd` gained `CXX1_CASES_SPELLINGS=default`: no `-masm`, the
+tools copied beside the compiler.
+
+**Measured.** The emit golden at 7342ead: 620 of 624 x86_64-windows files changed, GNU to MASM spelling,
+the four `.nomasm` ones byte-identical; on the other targets only the two renamed cases, identical once
+the names are mapped. tms6747 at -O0 and -O2, every case, against 7342ead on the Linux box: 0 of 993 changed at either level. zeeshan
+(cl 19.51), the default pass: 955 passed, 0 failed, 33 skipped at -O0 and at -O2, no ml64 fallback taken; a three-file program links and prints what clang's build prints;
+`-g -masm=gnu` links and runs; `-g` alone stops at that masm, as above. Linux run.sh (g++): 989 / 0 at
+-O0 and -O2. Mac `make test` passes: run.sh 987 / 0, emit.sh 1924 / 0 (the golden 624 of 1924 changed, as
+above), names.sh 653 / 0, overload.sh 44 / 0, exclusions 126 sites 0 / 0. `tools/windows/self-host.cmd` names `-masm=gnu`
+itself now: cxx3's own sources use `thread_local`, which no MASM here writes, and ml64 has no COMDAT. On
+zeeshan it builds stage 1 and stage 2, and 70 of 70 sources emit the same assembly from each.
+
+**Found and not mended**: `hostLinker()` asks for a bare `link.exe`, which Windows finds beside the
+compiler before PATH - so where the project's LINK sits beside cxx3 (RIDE's bin), `-g -masm=gnu` links
+with it, and it writes no PDB yet; 7342ead's compiler does the same in that layout.
+
 ## `LNK4078`, and a section name that folded into the wrong one
 
 **Fixed 2026-09-10.** Every Windows link printed

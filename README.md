@@ -51,12 +51,12 @@ cxx1 -I dir f.cpp        add a directory to the ones <...> searches
 
 `-D` defines a macro and `-U` removes one, `-j` sets how many files compile at
 once, `-g` writes a line table for a debugger - DWARF on x86_64-linux and
-arm64-darwin, CodeView on x86_64-windows through the `gnu` spelling (since
-1.6), and on tms6747 cl6x's `.dwpsn` lines and `.dwtag` variables (since 1.8; refused there
+arm64-darwin, CodeView on x86_64-windows (the `gnu` spelling since 1.6, the
+`masm` one since 1.29), and on tms6747 cl6x's `.dwpsn` lines and `.dwtag` variables (since 1.8; refused there
 with `-O`, the scheduler carrying no position) - `-masm` picks the assembly syntax for
-x86_64-windows (`masm` for the project's own masm and link, the default where
-they sit beside the compiler, `gnu` for clang, the default elsewhere and for
-`-g`, `ml64` for Microsoft's assembler, one translation unit per program),
+x86_64-windows (`masm` for the project's own masm and link, the default since
+2026-10-25, `ml64` for Microsoft's assembler, one translation unit per program
+and the default where no masm.exe is found, `gnu` for clang, named only),
 `-O1`/`-O2`/`-Os` optimise, and `-time` reports each phase. `cxx1` with no
 input prints the whole list, and `-version` the release and its seal file.
 
@@ -647,14 +647,17 @@ tree's own `<string>` defines its members that way - and folding them needs a
 COMDAT section, which **ml64 has no directive for at all**. `link.exe` answers
 LNK2005 for each duplicate.
 
-The two other spellings both mark it: `gnu`, which clang turns into an ordinary
-MSVC-ABI COFF object (the default since 1.2 where no masm sits beside the
-compiler, and what `-g` needs, CodeView living in that spelling alone), and
-`masm`, which the project's own masm assembles with the COMDAT written as cl
-writes it and the project's link links (the default in RIDE's `bin`, where both
-sit beside `cpp11.exe`). So a multi-file Windows project links through either.
-`-masm=ml64` is for a machine with neither clang nor the project's masm, and
-`examples/unity.cpp` shows the single-translation-unit build it needs. The
+The two other spellings both mark it: `masm`, which the project's own masm
+assembles with the COMDAT written as cl writes it and the project's link links -
+**the default for x86_64-windows since 2026-10-25**, on every host, with the two
+found beside the compiler (RIDE's `bin`), through `CPP11_AS` and `CPP11_LD`, or on
+PATH - and `gnu`, which clang turns into an ordinary MSVC-ABI COFF object, named
+with `-masm=gnu`. `-g` under the default needs GRIDE's masm, which reads the
+`.LINE` and `SECTIONREL` the MASM spelling's CodeView is written in; the project's
+masm in `Windows/MASM` does not yet, so with it name `-masm=gnu` for `-g`. So a
+multi-file Windows project links through either. Where no masm.exe is found the
+default falls back to `-masm=ml64`, saying so, and `examples/unity.cpp` shows the
+single-translation-unit build that one needs. The
 `masm` spelling's own gaps - ten of 379 cases refused by the project's masm on
 2026-10-08 - are workstream F's in `docs/REVIEW-PLAN-2026-10-08.md`.
 
