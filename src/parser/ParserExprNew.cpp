@@ -315,7 +315,7 @@ bool Parser::isInitializerListType(const Type *t) {
 // The element type is a typedef no program can spell, so any type can be written as one token.
 const Type *Parser::initializerListOf(const Type *elem, std::size_t pos) {
     std::map<std::string, TemplateDecl>::const_iterator it = findTemplate("std::initializer_list");
-    if (it == templates_.end() || !it->second.isClass ||
+    if (it == tmpl_.templates_.end() || !it->second.isClass ||
         (it->second.ns != "std" && it->second.ns != "std::"))
         src_.fail(pos, "a braced list here makes a 'std::initializer_list', and none is declared - "
                        "include <initializer_list>");
@@ -364,7 +364,7 @@ bool Parser::onlyImplicitConstructors(const std::string &tag) const {
     const std::vector<std::size_t> *set = lookup_.overloadsOf(constructorKey(tag));
     if (set == nullptr) return true;
     for (std::size_t i = 0; i < set->size(); i++)
-        if (!functions_[(*set)[i]].implicit) return false;
+        if (!lookup_.functions_[(*set)[i]].implicit) return false;
     return true;
 }
 
@@ -560,8 +560,8 @@ const Parser::Signature *Parser::conversionFunction(const Type *from,
     const Signature *best = nullptr;
     bool exact = false;
     for (const Type *c = plain; c != nullptr; c = c->base()) {
-        for (std::size_t k = 0; k < functions_.size(); k++) {
-            const Signature &f = functions_[k];
+        for (std::size_t k = 0; k < lookup_.functions_.size(); k++) {
+            const Signature &f = lookup_.functions_[k];
             if (f.owner != c->tag()) continue;
             if (!isConversionName(f.name) || !f.params.empty()) continue;
             if (f.isExplicit && !allowExplicit) continue;
@@ -600,8 +600,8 @@ const Parser::Signature *Parser::soleNumericConversion(const Type *from) {
     if (!plain->isStructOrUnion()) return nullptr;
     const Signature *only = nullptr;
     for (const Type *c = plain; c != nullptr; c = c->base())
-        for (std::size_t k = 0; k < functions_.size(); k++) {
-            const Signature &f = functions_[k];
+        for (std::size_t k = 0; k < lookup_.functions_.size(); k++) {
+            const Signature &f = lookup_.functions_[k];
             if (f.owner != c->tag()) continue;
             if (!isConversionName(f.name) || !f.params.empty()) continue;
             if (!f.returns->unqualified()->isScalar()) continue;
@@ -643,7 +643,7 @@ const Parser::Signature *Parser::convertingConstructor(const Type *to,
     Rank foundRank = Rank::None;
     bool ambiguous = false;
     for (std::size_t k = 0; k < set->size(); k++) {
-        const Signature &c = functions_[(*set)[k]];
+        const Signature &c = lookup_.functions_[(*set)[k]];
         // Direct-initialisation - a cast - may take an explicit one, [over.match.ctor].
         if ((c.isExplicit && !directInit) || c.params.size() != 1) continue;
         const Type *want = c.params[0];
@@ -706,7 +706,7 @@ bool Parser::constructorViable(const Type *cls, const std::vector<ExprPtr> &args
     const std::vector<std::size_t> *set =
         lookup_.overloadsOf(constructorKey(cls->unqualified()->tag()));
     for (std::size_t k = 0; set != nullptr && k < set->size(); k++) {
-        const Signature &f = functions_[(*set)[k]];
+        const Signature &f = lookup_.functions_[(*set)[k]];
         if (f.variadic ? args.size() < overload_.leastArguments(f)
                        : (args.size() > f.params.size() ||
                           args.size() < overload_.leastArguments(f))) continue;
@@ -2206,7 +2206,7 @@ ExprPtr Parser::virtualDestructorCall(const std::string &temp, int slot,
                                       const Type *t, const Type *cls,
                                       bool deleting, std::size_t pos) {
     const bool ms = target_.microsoftNames();
-    const std::vector<VSlot> &slots = vtables_[cls->tag()];
+    const std::vector<VSlot> &slots = classes_.vtables_[cls->tag()];
     int index = -1;
     const char *want = ms || !deleting ? "~" : "~$deleting";
     for (std::size_t i = 0; i < slots.size(); i++)
@@ -2262,7 +2262,7 @@ const Parser::Signature *Parser::classAllocator(const Type *made,
     const Type *cls = made->unqualified();
     while (cls != nullptr && cls->isStructOrUnion() && !cls->tag().empty()) {
         if (const std::vector<std::size_t> *set = lookup_.overloadsOf(cls->tag() + "::" + which))
-            return &functions_[(*set)[0]];
+            return &lookup_.functions_[(*set)[0]];
         const std::vector<Type::BaseSpec> &bs = cls->bases();
         cls = bs.empty() ? nullptr : bs[0].type->unqualified();
     }

@@ -75,8 +75,8 @@ void Templates::bindTemplateParameters(const std::vector<TemplateParam> &params,
         // a pattern a stand-in `$TT<i>` with the parameter's own list, so `C<T>` reads as a pattern.
         if (p.isTemplate) {
             s.isTemplate = true;
-            auto had = p_.templates_.find(p.name);
-            if (had != p_.templates_.end()) { s.hadTemplate = true; s.hadDecl = had->second; }
+            auto had = templates_.find(p.name);
+            if (had != templates_.end()) { s.hadTemplate = true; s.hadDecl = had->second; }
             const Type *b = i < binding.size() ? binding[i] : nullptr;
             if (b != nullptr && b->kind() == Kind::TemplateParam) {
                 TemplateDecl stand;
@@ -84,9 +84,9 @@ void Templates::bindTemplateParameters(const std::vector<TemplateParam> &params,
                 stand.params = p.inner;
                 stand.isClass = true;
                 stand.ttParam = static_cast<int>(b->length());
-                p_.templates_[p.name] = stand;
-            } else if (b != nullptr && b->isTemplateName() && p_.findTemplate(b->templateName()) != p_.templates_.end()) {
-                p_.templates_[p.name] = p_.findTemplate(b->templateName())->second;
+                templates_[p.name] = stand;
+            } else if (b != nullptr && b->isTemplateName() && p_.findTemplate(b->templateName()) != templates_.end()) {
+                templates_[p.name] = p_.findTemplate(b->templateName())->second;
             } else {
                 p_.src_.fail(p.pos, "'" + p.name + "' is a template template parameter and this binds "
                                  "it to no template");
@@ -95,10 +95,10 @@ void Templates::bindTemplateParameters(const std::vector<TemplateParam> &params,
             continue;
         }
         if (s.isType) {
-            auto it = p_.typedefIndex_.find(p.name);
-            if (it != p_.typedefIndex_.end()) { s.had = true; s.was = it->second; }
-            p_.typedefIndex_[p.name] = p_.typedefs_.size();
-            p_.typedefs_.push_back(TypedefName{ p.name, binding[i] });
+            auto it = p_.lookup_.typedefIndex_.find(p.name);
+            if (it != p_.lookup_.typedefIndex_.end()) { s.had = true; s.was = it->second; }
+            p_.lookup_.typedefIndex_[p.name] = p_.lookup_.typedefs_.size();
+            p_.lookup_.typedefs_.push_back(TypedefName{ p.name, binding[i] });
             p_.boundTypeParams_[p.name]++;
         } else if (i < binding.size() && binding[i] != nullptr &&
                    binding[i]->kind() == Kind::TemplateParam) {
@@ -115,10 +115,10 @@ void Templates::bindTemplateParameters(const std::vector<TemplateParam> &params,
             Shadow ev;
             ev.name = p.name;
             ev.isType = false;
-            auto en = p_.enumIndex_.find(p.name);
-            if (en != p_.enumIndex_.end()) { ev.had = true; ev.was = en->second; }
-            p_.enumIndex_[p.name] = p_.enums_.size();
-            p_.enums_.push_back(EnumConst{ p.name, values[i] });
+            auto en = p_.lookup_.enumIndex_.find(p.name);
+            if (en != p_.lookup_.enumIndex_.end()) { ev.had = true; ev.was = en->second; }
+            p_.lookup_.enumIndex_[p.name] = p_.lookup_.enums_.size();
+            p_.lookup_.enums_.push_back(EnumConst{ p.name, values[i] });
             p_.boundValueParams_[p.name]++;
             undo->push_back(ev);
         } else {
@@ -135,16 +135,16 @@ void Templates::bindTemplateParameters(const std::vector<TemplateParam> &params,
                 p_.nonTypePatternParams_.erase(ref);
                 undo->push_back(pr);
             }
-            auto it = p_.enumIndex_.find(p.name);
-            if (it != p_.enumIndex_.end()) { s.had = true; s.was = it->second; }
-            p_.enumIndex_[p.name] = p_.enums_.size();
+            auto it = p_.lookup_.enumIndex_.find(p.name);
+            if (it != p_.lookup_.enumIndex_.end()) { s.had = true; s.was = it->second; }
+            p_.lookup_.enumIndex_[p.name] = p_.lookup_.enums_.size();
             EnumConst e{ p.name, values[i] };
             // [temp.param]/5: a non-type parameter is a prvalue of its declared type - an enumeration,
             // `unsigned`, `unsigned long long` - and not an int.
             const Type *pt = Parser::paramTypeIn(p, binding);
             if (pt != nullptr && pt->isInteger()) e.type = pt->unqualified();
             e.paramType = pt;
-            p_.enums_.push_back(e);
+            p_.lookup_.enums_.push_back(e);
             p_.boundValueParams_[p.name]++;
         }
         undo->push_back(s);
@@ -160,20 +160,20 @@ void Templates::unbindTemplateParameters(const std::vector<Shadow> &undo) {
             continue;
         }
         if (s.isTemplate) {
-            if (s.hadTemplate) p_.templates_[s.name] = s.hadDecl;
-            else               p_.templates_.erase(s.name);
+            if (s.hadTemplate) templates_[s.name] = s.hadDecl;
+            else               templates_.erase(s.name);
             continue;
         }
         if (s.isType) {
-            if (s.had) p_.typedefIndex_[s.name] = s.was;
-            else       p_.typedefIndex_.erase(s.name);
+            if (s.had) p_.lookup_.typedefIndex_[s.name] = s.was;
+            else       p_.lookup_.typedefIndex_.erase(s.name);
             if (--p_.boundTypeParams_[s.name] <= 0) p_.boundTypeParams_.erase(s.name);
         } else if (s.isParamRef) {
             if (s.hadParamRef) p_.nonTypePatternParams_[s.name] = s.paramRefWas;
             else               p_.nonTypePatternParams_.erase(s.name);
         } else {
-            if (s.had) p_.enumIndex_[s.name] = s.was;
-            else       p_.enumIndex_.erase(s.name);
+            if (s.had) p_.lookup_.enumIndex_[s.name] = s.was;
+            else       p_.lookup_.enumIndex_.erase(s.name);
             if (--p_.boundValueParams_[s.name] <= 0) p_.boundValueParams_.erase(s.name);
         }
     }
@@ -184,7 +184,7 @@ void Templates::unbindTemplateParameters(const std::vector<Shadow> &undo) {
 const Type *Templates::templateOf(const Type *spec) const {
     int tt;
     if (ttRefName(spec->templateName(), &tt)) return p_.types_.templateParam(tt);
-    return p_.templateNameTypeOf(p_.templates_.find(spec->templateName())->second);
+    return p_.templateNameTypeOf(templates_.find(spec->templateName())->second);
 }
 
 // **The rule is clang's, which takes P0522 as a defect report under -std=c++11** (C++11's letter is
@@ -298,47 +298,47 @@ std::string Templates::specializationKey(const std::string &name,
 bool Templates::memberIsUsed(const std::string &key) const {
     const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(key);
     for (std::size_t k = 0; set != nullptr && k < set->size(); k++)
-        if (p_.functions_[(*set)[k]].used) return true;
+        if (p_.lookup_.functions_[(*set)[k]].used) return true;
     return false;
 }
 
 void Templates::instantiatePending() {
     for (bool again = true; again; ) {
         again = false;
-        for (std::size_t i = 0; i < p_.specializations_.size(); i++) {
-            if (p_.specializations_[i].emitted) continue;
+        for (std::size_t i = 0; i < specializations_.size(); i++) {
+            if (specializations_[i].emitted) continue;
             // **Made where it was asked for, defined only where it was chosen** -
             // deduction instantiates a candidate before it can rank one, and an
             // ordinary function may win. A body skipped now may be wanted later.
             std::vector<Parser::PendingBody> now;
             std::vector<std::size_t> outsideNow;
-            if (p_.specializations_[i].isClass) {
+            if (specializations_[i].isClass) {
                 std::vector<Parser::PendingBody> later;
-                for (std::size_t b = 0; b < p_.specializations_[i].bodies.size(); b++) {
-                    const Parser::PendingBody &body = p_.specializations_[i].bodies[b];
+                for (std::size_t b = 0; b < specializations_[i].bodies.size(); b++) {
+                    const Parser::PendingBody &body = specializations_[i].bodies[b];
                     // **This overload, not this name.** Every constructor of
                     // a class shares one key, so asking the key replays them
                     // all as soon as any is called.
                     const bool wanted =
                         body.which != Parser::PendingBody::npos() &&
-                        body.which < p_.functions_.size()
-                            ? p_.functions_[body.which].used
+                        body.which < p_.lookup_.functions_.size()
+                            ? p_.lookup_.functions_[body.which].used
                             : memberIsUsed(body.key);
                     (wanted ? now : later).push_back(body);
                 }
-                p_.specializations_[i].bodies = later;
+                specializations_[i].bodies = later;
 
                 // **Looked up fresh, because the list can still be growing.** An
                 // out-of-line definition may be written further down the file than
                 // the use that asked for the class.
-                const TemplateDecl &d = p_.templates_[p_.specializations_[i].name];
-                std::vector<bool> &done = p_.specializations_[i].outsideDone;
+                const TemplateDecl &d = templates_[specializations_[i].name];
+                std::vector<bool> &done = specializations_[i].outsideDone;
                 done.resize(d.outOfLine.size(), false);
                 for (std::size_t k = 0; k < d.outOfLine.size(); k++) {
-                    if (done[k] || p_.specializations_[i].fromPartial) continue;
+                    if (done[k] || specializations_[i].fromPartial) continue;
                     const TemplateDecl::OutOfLine &o = d.outOfLine[k];
                     // The class the member is in: the specialization, or a class nested in it.
-                    const std::string tag = p_.specializations_[i].key + (o.nested.empty() ? "" : "::" + o.nested);
+                    const std::string tag = specializations_[i].key + (o.nested.empty() ? "" : "::" + o.nested);
                     if (o.constructor || o.destructor) {
                         if (!memberIsUsed(o.constructor ? Parser::constructorKey(tag) : Parser::destructorKey(tag))) continue;
                         done[k] = true;
@@ -363,16 +363,16 @@ void Templates::instantiatePending() {
                 if (now.empty() && outsideNow.empty()) continue;
             } else {
                 const std::vector<std::size_t> *had =
-                    p_.lookup_.overloadsOf(p_.specializations_[i].key);
-                if (had == nullptr || !p_.functions_[(*had)[0]].used) continue;
-                p_.specializations_[i].emitted = true;
+                    p_.lookup_.overloadsOf(specializations_[i].key);
+                if (had == nullptr || !p_.lookup_.functions_[(*had)[0]].used) continue;
+                specializations_[i].emitted = true;
             }
             again = true;
 
             // Copied, not held by reference: replaying may append to the
             // vector and move it.
-            const Parser::Specialization sp = p_.specializations_[i];
-            TemplateDecl decl = p_.templates_[sp.name];
+            const Parser::Specialization sp = specializations_[i];
+            TemplateDecl decl = templates_[sp.name];
 
             std::vector<Shadow> undo;
             bindTemplateParameters(sp.params, sp.binding, sp.values, sp.packs, &undo);
@@ -404,7 +404,7 @@ void Templates::instantiatePending() {
                 // tokens say `Box<T>::get`, so with T bound the ordinary
                 // member-definition path reads the qualifier itself.
                 for (std::size_t k = 0; k < outsideNow.size(); k++) {
-                    p_.at_ = p_.templates_[sp.name].outOfLine[outsideNow[k]].start;
+                    p_.at_ = templates_[sp.name].outOfLine[outsideNow[k]].start;
                     p_.topLevel(*p_.current_);
                 }
             } else {
@@ -1498,7 +1498,7 @@ const Type *Templates::instantiateClass(const TemplateDecl &decl, std::size_t po
     // Its member bodies, replayed later, ask from one deeper than the body that asked for the class.
     sp.depth = p_.instantiationDepth_ + 1;
     refuseInstantiationDepth(decl.name, sp.depth, pos);
-    p_.specializations_.push_back(sp);
+    specializations_.push_back(sp);
     return made;
 }
 
@@ -1513,8 +1513,8 @@ const Parser::Signature *Templates::instantiateMemberTemplate(
     const std::string key = mt.ownerTag + "::" + display;
     // Two templates of one name may each be instantiated at K = 3: the cache is per template.
     const std::string made = key + "@" + std::to_string(mt.afterParams);
-    if (p_.memberTemplateMade_.count(made) != 0) return &p_.functions_[p_.memberTemplateMade_[made]];
-    const std::size_t before = p_.functions_.size();
+    if (memberTemplateMade_.count(made) != 0) return &p_.lookup_.functions_[memberTemplateMade_[made]];
+    const std::size_t before = p_.lookup_.functions_.size();
     if (!mt.defined)
         p_.src_.fail(pos, "'" + mt.ownerTag + "::" + mt.name + "' is declared but "
                        "not defined, so there is nothing to instantiate");
@@ -1572,11 +1572,11 @@ const Parser::Signature *Templates::instantiateMemberTemplate(
     if (had == nullptr) return nullptr;
     for (std::size_t i = 0; i < had->size(); i++)
         if ((*had)[i] >= before) {
-            p_.memberTemplateMade_[made] = (*had)[i];
-            if (mt.isExplicit) p_.functions_[(*had)[i]].isExplicit = true;
-            return &p_.functions_[(*had)[i]];
+            memberTemplateMade_[made] = (*had)[i];
+            if (mt.isExplicit) p_.lookup_.functions_[(*had)[i]].isExplicit = true;
+            return &p_.lookup_.functions_[(*had)[i]];
         }
-    return &p_.functions_[(*had)[0]];
+    return &p_.lookup_.functions_[(*had)[0]];
 }
 
 // **Function templates as overload-resolution candidates.**
@@ -1584,8 +1584,8 @@ void Templates::instantiateViableTemplates(const std::string &name,
                                         const std::vector<const Type *> &argTypes,
                                         std::size_t pos) {
     std::map<std::string, std::vector<TemplateDecl> >::const_iterator it =
-        p_.fnTemplates_.find(name);
-    if (it == p_.fnTemplates_.end()) return;
+        fnTemplates_.find(name);
+    if (it == fnTemplates_.end()) return;
     const std::vector<TemplateDecl> overloads = it->second;
     instantiateViableTemplates(overloads, argTypes, pos);
 }
@@ -1596,8 +1596,8 @@ std::vector<TemplateDecl> Templates::templatesNamed(const std::string &name, con
     const std::string q = cut == std::string::npos ? std::string() : name.substr(0, cut + 2);
     const std::string bare = cut == std::string::npos ? name : name.substr(cut + 2);
     ns->clear();
-    std::map<std::string, std::vector<TemplateDecl> >::const_iterator it = p_.fnTemplates_.find(bare);
-    if (it == p_.fnTemplates_.end()) return std::vector<TemplateDecl>();
+    std::map<std::string, std::vector<TemplateDecl> >::const_iterator it = fnTemplates_.find(bare);
+    if (it == fnTemplates_.end()) return std::vector<TemplateDecl>();
     std::string here = scope.empty() ? p_.namespacePrefix() : scope + "::";
     if (!scope.empty()) {
         std::vector<TemplateDecl> got;
@@ -1628,7 +1628,7 @@ bool Templates::functionHidesTemplates(const std::string &name) const {
     if (key == name) return false;
     if (const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(key))
         for (std::size_t i : *set)
-            if (!p_.functions_[i].fromTemplate) return true;
+            if (!p_.lookup_.functions_[i].fromTemplate) return true;
     return false;
 }
 
@@ -1662,8 +1662,8 @@ void Templates::instantiateViableMemberTemplates(
     const std::vector<const Type *> &argTypes, std::size_t pos) {
     if (cls == nullptr || cls->tag().empty()) return;
     std::map<std::string, std::vector<TemplateDecl> >::const_iterator it =
-        p_.memberTemplates_.find(cls->tag() + "::" + name);
-    if (it == p_.memberTemplates_.end()) return;
+        memberTemplates_.find(cls->tag() + "::" + name);
+    if (it == memberTemplates_.end()) return;
     const std::vector<TemplateDecl> all = it->second;
     for (std::size_t t = 0; t < all.size(); t++) instantiateViableMemberTemplate(all[t], argTypes, pos);
 }
@@ -1671,8 +1671,8 @@ void Templates::instantiateViableMemberTemplates(
 void Templates::instantiateViableMemberTemplatesUnder(
     const std::string &key, const std::vector<const Type *> &argTypes, std::size_t pos) {
     std::map<std::string, std::vector<TemplateDecl> >::const_iterator it =
-        p_.memberTemplates_.find(key);
-    if (it == p_.memberTemplates_.end()) return;
+        memberTemplates_.find(key);
+    if (it == memberTemplates_.end()) return;
     const std::vector<TemplateDecl> all = it->second;
     for (std::size_t t = 0; t < all.size(); t++) instantiateViableMemberTemplate(all[t], argTypes, pos);
 }
@@ -1711,7 +1711,7 @@ void Templates::instantiateViableMemberTemplate(const TemplateDecl &mt,
     const std::vector<TemplateArg> args = argumentsFromBinding(mt.params, binding, values, packs);
     const bool wasBody = p_.memberTemplateBody_;
     p_.memberTemplateBody_ = false;
-    const std::size_t before = p_.functions_.size();
+    const std::size_t before = p_.lookup_.functions_.size();
     std::vector<std::size_t> uses;
     std::vector<std::size_t> *const wasUses = p_.candidateUses_;
     p_.candidateUses_ = &uses;
@@ -1720,10 +1720,10 @@ void Templates::instantiateViableMemberTemplate(const TemplateDecl &mt,
         const Signature *made = instantiateMemberTemplate(mt, binding, values, args, pos);
         p_.candidateUses_ = wasUses;
         if (made != nullptr) {
-            const std::size_t at = static_cast<std::size_t>(made - &p_.functions_[0]);
+            const std::size_t at = static_cast<std::size_t>(made - &p_.lookup_.functions_[0]);
             p_.candidateSpecializations_.push_back(at);
-            p_.functions_[at].deferredUses.insert(p_.functions_[at].deferredUses.end(), uses.begin(), uses.end());
-            if (p_.functions_[at].used) p_.noteUsed(at);      // already chosen elsewhere: its uses stand
+            p_.lookup_.functions_[at].deferredUses.insert(p_.lookup_.functions_[at].deferredUses.end(), uses.begin(), uses.end());
+            if (p_.lookup_.functions_[at].used) p_.noteUsed(at);      // already chosen elsewhere: its uses stand
         }
     } catch (const SubstitutionFailure &f) {
         p_.candidateUses_ = wasUses;
@@ -1742,9 +1742,9 @@ void Templates::instantiateViableMemberTemplate(const TemplateDecl &mt,
             for (std::size_t i = 0; had != nullptr && i < had->size(); i++)
                 if ((*had)[i] >= before) { found = (*had)[i]; break; }
             if (found == static_cast<std::size_t>(-1)) p_.src_.fail(f.pos, why);
-            p_.functions_[found].bodyFailure = why;
-            p_.functions_[found].bodyFailurePos = f.pos;
-            p_.memberTemplateMade_[mt.ownerTag + "::" + display + "@" + std::to_string(mt.afterParams)] = found;
+            p_.lookup_.functions_[found].bodyFailure = why;
+            p_.lookup_.functions_[found].bodyFailurePos = f.pos;
+            memberTemplateMade_[mt.ownerTag + "::" + display + "@" + std::to_string(mt.afterParams)] = found;
             p_.candidateSpecializations_.push_back(found);
         }
     }

@@ -14,8 +14,8 @@ namespace sema {
 // walked here rather than kept as a stack of tables.
 const Type *Lookup::lookupInClass(const Type *cls, const std::string &name) const {
     for (const Type *c = cls; c != nullptr; c = c->enclosing()) {
-        auto it = p_.typedefIndex_.find(c->tag() + "::" + name);
-        if (it != p_.typedefIndex_.end()) return p_.typedefs_[it->second].type;
+        auto it = typedefIndex_.find(c->tag() + "::" + name);
+        if (it != typedefIndex_.end()) return typedefs_[it->second].type;
         for (const Type::BaseSpec &b : c->bases())
             if (const Type *t = lookupInClass(b.type, name)) return t;
     }
@@ -28,15 +28,15 @@ const std::string *Lookup::localOwnerOf(const std::string &tag) const {
 }
 
 bool Lookup::hasFunctionNamed(const std::string &key) const {
-    return p_.functionIndex_.find(key) != p_.functionIndex_.end();
+    return functionIndex_.find(key) != functionIndex_.end();
 }
 
 bool Lookup::hasGlobalNamed(const std::string &key) const {
-    return p_.globalIndex_.find(key) != p_.globalIndex_.end();
+    return globalIndex_.find(key) != globalIndex_.end();
 }
 
 bool Lookup::hasTypeNamed(const std::string &key) const {
-    return p_.typedefIndex_.find(key) != p_.typedefIndex_.end();
+    return typedefIndex_.find(key) != typedefIndex_.end();
 }
 
 // **Unqualified lookup inside a namespace, and it is a search and not a
@@ -64,9 +64,9 @@ std::string Lookup::qualifyForLookup(const std::string &name,
             for (std::size_t k = 0; k <= i; k++) prefix += p_.namespaceStack_[k] + "::";
             if ((this->*exists)(prefix + name)) return prefix + name;
         }
-        for (std::size_t i = p_.usingNamespaces_.size(); i-- > 0; )
-            if ((this->*exists)(p_.usingNamespaces_[i] + "::" + name))
-                return p_.usingNamespaces_[i] + "::" + name;
+        for (std::size_t i = usingNamespaces_.size(); i-- > 0; )
+            if ((this->*exists)(usingNamespaces_[i] + "::" + name))
+                return usingNamespaces_[i] + "::" + name;
         const std::string aliased = followUsingDeclaration(name);
         return aliased != name && (this->*exists)(aliased) ? aliased : name;
     }
@@ -76,9 +76,9 @@ std::string Lookup::qualifyForLookup(const std::string &name,
         const std::string key = followUsingDeclaration(prefix + name);
         if ((this->*exists)(key)) return key;
     }
-    for (std::size_t i = p_.usingNamespaces_.size(); i-- > 0; ) {
+    for (std::size_t i = usingNamespaces_.size(); i-- > 0; ) {
         const std::string key =
-            followUsingDeclaration(p_.usingNamespaces_[i] + "::" + name);
+            followUsingDeclaration(usingNamespaces_[i] + "::" + name);
         if ((this->*exists)(key)) return key;
     }
     // **Last, the name as written**, which is where a using-declaration at file
@@ -112,12 +112,12 @@ std::string Lookup::namespaceNamed(const std::string &first) const {
         std::string prefix;
         for (std::size_t k = 0; k <= i; k++) prefix += p_.namespaceStack_[k] + "::";
         if (hasTypeNamed(prefix + first)) return std::string();
-        if (p_.namespaces_.count(prefix + first)) return prefix + first;
+        if (namespaces_.count(prefix + first)) return prefix + first;
     }
-    for (std::size_t i = p_.usingNamespaces_.size(); i-- > 0; )
-        if (p_.namespaces_.count(p_.usingNamespaces_[i] + "::" + first))
-            return p_.usingNamespaces_[i] + "::" + first;
-    return p_.namespaces_.count(first) ? first : std::string();
+    for (std::size_t i = usingNamespaces_.size(); i-- > 0; )
+        if (namespaces_.count(usingNamespaces_[i] + "::" + first))
+            return usingNamespaces_[i] + "::" + first;
+    return namespaces_.count(first) ? first : std::string();
 }
 
 std::vector<std::string> Lookup::classNamespacePath(const Type *t) const {
@@ -155,7 +155,7 @@ std::vector<std::string> Lookup::classNamespacePath(const Type *t) const {
 // is entered under both keys: the enclosing one is `prefix` with the inline component gone.
 std::vector<std::string> Lookup::inlineAliasPrefixes(const std::string &prefix) const {
     std::vector<std::string> out;
-    if (p_.inlineNamespaces_.empty() || prefix.empty()) return out;
+    if (inlineNamespaces_.empty() || prefix.empty()) return out;
     std::vector<std::string> parts;
     std::vector<bool> isInline;
     std::string path;
@@ -164,7 +164,7 @@ std::vector<std::string> Lookup::inlineAliasPrefixes(const std::string &prefix) 
         if (e == std::string::npos) e = prefix.size();
         parts.push_back(prefix.substr(s, e - s));
         path += (path.empty() ? "" : "::") + parts.back();
-        isInline.push_back(p_.inlineNamespaces_.count(path) != 0);
+        isInline.push_back(inlineNamespaces_.count(path) != 0);
     }
     // Every subset of the inline components deleted, the empty subset left out.
     std::vector<std::size_t> which;
@@ -185,7 +185,7 @@ void Lookup::aliasTypeKey(const std::string &key, std::size_t index) {
     const std::string &prefix = p_.namespacePrefix();
     if (alts.empty() || key.compare(0, prefix.size(), prefix) != 0) return;
     for (std::size_t a = 0; a < alts.size(); a++)
-        p_.typedefIndex_.insert(std::make_pair(alts[a] + key.substr(prefix.size()), index));
+        typedefIndex_.insert(std::make_pair(alts[a] + key.substr(prefix.size()), index));
 }
 
 void Lookup::aliasFunctionKey(const std::string &key, std::size_t index) {
@@ -193,7 +193,7 @@ void Lookup::aliasFunctionKey(const std::string &key, std::size_t index) {
     const std::string &prefix = p_.namespacePrefix();
     if (alts.empty() || key.compare(0, prefix.size(), prefix) != 0) return;
     for (std::size_t a = 0; a < alts.size(); a++) {
-        std::vector<std::size_t> &set = p_.functionIndex_[alts[a] + key.substr(prefix.size())];
+        std::vector<std::size_t> &set = functionIndex_[alts[a] + key.substr(prefix.size())];
         if (std::find(set.begin(), set.end(), index) == set.end()) set.push_back(index);
     }
 }
@@ -205,30 +205,30 @@ void Lookup::aliasInlineMembers(const TableSizes &before) {
     const std::vector<std::string> alts = inlineAliasPrefixes(p_.namespacePrefix());
     if (alts.empty()) return;
     const std::string prefix = p_.namespacePrefix();
-    for (std::size_t i = before.functions; i < p_.functions_.size(); i++) {
-        const Signature &f = p_.functions_[i];
+    for (std::size_t i = before.functions; i < functions_.size(); i++) {
+        const Signature &f = functions_[i];
         if (!f.owner.empty() || f.fromTemplate || f.cLinkage) continue;
         aliasFunctionKey(f.name, i);
     }
-    for (std::size_t i = before.globals; i < p_.globals_.size(); i++) {
-        const std::string &key = p_.globals_[i].name;
+    for (std::size_t i = before.globals; i < globals_.size(); i++) {
+        const std::string &key = globals_[i].name;
         if (key.compare(0, prefix.size(), prefix) != 0) continue;
         for (std::size_t a = 0; a < alts.size(); a++)
-            p_.globalIndex_.insert(std::make_pair(alts[a] + key.substr(prefix.size()), i));
+            globalIndex_.insert(std::make_pair(alts[a] + key.substr(prefix.size()), i));
     }
-    for (std::size_t i = before.typedefs; i < p_.typedefs_.size(); i++) aliasTypeKey(p_.typedefs_[i].name, i);
-    for (std::size_t i = before.enums; i < p_.enums_.size(); i++) {
-        const std::string &key = p_.enums_[i].name;
+    for (std::size_t i = before.typedefs; i < typedefs_.size(); i++) aliasTypeKey(typedefs_[i].name, i);
+    for (std::size_t i = before.enums; i < enums_.size(); i++) {
+        const std::string &key = enums_[i].name;
         if (key.compare(0, prefix.size(), prefix) != 0) continue;
         for (std::size_t a = 0; a < alts.size(); a++)
-            p_.enumIndex_.insert(std::make_pair(alts[a] + key.substr(prefix.size()), i));
+            enumIndex_.insert(std::make_pair(alts[a] + key.substr(prefix.size()), i));
     }
 }
 
 void Lookup::refuseInlineAmbiguity(const std::string &key, std::size_t index,
                                    const std::unordered_map<std::string, std::size_t> &table,
                                    bool (Lookup::*same)(std::size_t, std::size_t) const) const {
-    if (p_.inlineNamespaces_.empty()) return;
+    if (inlineNamespaces_.empty()) return;
     int depth = 0;
     std::size_t cut = std::string::npos;
     for (std::size_t i = 0; i + 1 < key.size(); i++) {
@@ -239,8 +239,8 @@ void Lookup::refuseInlineAmbiguity(const std::string &key, std::size_t index,
     if (cut == std::string::npos) return;
     const std::string scope = key.substr(0, cut), name = key.substr(cut + 2);
     // The namespace's own entry and every inline descendant's, as distinct entities.
-    for (std::set<std::string>::const_iterator it = p_.inlineNamespaces_.lower_bound(scope + "::");
-         it != p_.inlineNamespaces_.end() && it->compare(0, scope.size() + 2, scope + "::") == 0; ++it) {
+    for (std::set<std::string>::const_iterator it = inlineNamespaces_.lower_bound(scope + "::");
+         it != inlineNamespaces_.end() && it->compare(0, scope.size() + 2, scope + "::") == 0; ++it) {
         std::unordered_map<std::string, std::size_t>::const_iterator at = table.find(*it + "::" + name);
         if (at == table.end() || at->second == index) continue;
         if (same != nullptr && (this->*same)(index, at->second)) continue;
@@ -252,8 +252,8 @@ void Lookup::refuseInlineAmbiguity(const std::string &key, std::size_t index,
 }
 
 const Type *Lookup::findGlobalTypedef(const std::string &name) const {
-    auto it = p_.typedefIndex_.find(name);
-    return it == p_.typedefIndex_.end() ? nullptr : p_.typedefs_[it->second].type;
+    auto it = typedefIndex_.find(name);
+    return it == typedefIndex_.end() ? nullptr : typedefs_[it->second].type;
 }
 
 const Type *Lookup::findTypedef(const std::string &name) const {
@@ -265,8 +265,8 @@ const Type *Lookup::findTypedef(const std::string &name) const {
 
     // A bound template parameter's scope is inside every class and namespace around it ([temp.local]/6).
     if (p_.boundTypeParams_.count(name) != 0) {
-        auto it = p_.typedefIndex_.find(name);
-        if (it != p_.typedefIndex_.end()) return p_.typedefs_[it->second].type;
+        auto it = typedefIndex_.find(name);
+        if (it != typedefIndex_.end()) return typedefs_[it->second].type;
     }
     // Unqualified, the classes this is inside come next, then the enclosing namespaces,
     // and only then a global: [basic.lookup.unqual]/1, the nearest declaration wins.
@@ -274,10 +274,10 @@ const Type *Lookup::findTypedef(const std::string &name) const {
         if (const Type *t = classScopeType(name)) return t;
     // The entry a key names, refused where an inline namespace makes it two.
     auto typeAt = [&](const std::string &key) {
-        auto q = p_.typedefIndex_.find(key);
-        if (q == p_.typedefIndex_.end()) return static_cast<const Type *>(nullptr);
-        refuseInlineAmbiguity(key, q->second, p_.typedefIndex_, &Lookup::sameTypedef);
-        return p_.typedefs_[q->second].type;
+        auto q = typedefIndex_.find(key);
+        if (q == typedefIndex_.end()) return static_cast<const Type *>(nullptr);
+        refuseInlineAmbiguity(key, q->second, typedefIndex_, &Lookup::sameTypedef);
+        return typedefs_[q->second].type;
     };
     const std::string nearer = enclosingNamespaceKey(name, &Lookup::hasTypeNamed);
     if (!nearer.empty()) return typeAt(nearer);
@@ -295,8 +295,8 @@ const Type *Lookup::findTypedef(const std::string &name) const {
     // gives N a using-directive for it, and a qualified name honours that.
     const std::size_t last = name.rfind("::");
     if (last != std::string::npos && last > 0) {
-        auto u = p_.typedefIndex_.find(name.substr(0, last) + "::_GLOBAL__N_1" + name.substr(last));
-        if (u != p_.typedefIndex_.end()) return p_.typedefs_[u->second].type;
+        auto u = typedefIndex_.find(name.substr(0, last) + "::_GLOBAL__N_1" + name.substr(last));
+        if (u != typedefIndex_.end()) return typedefs_[u->second].type;
     }
 
     // A class named without its namespace, from inside that namespace or from
@@ -327,9 +327,9 @@ const Type *Lookup::classScopeType(const std::string &name) const {
     // anything says which class it belongs to.** `Holder *self()` is the case, and
     // inlineOwner_ is the one thing that knows, so it is asked here.
     if (!p_.inlineOwner_.empty()) {
-        auto it = p_.typedefIndex_.find(p_.inlineOwner_);
-        if (it != p_.typedefIndex_.end())
-            if (const Type *t = lookupInClass(p_.typedefs_[it->second].type, name))
+        auto it = typedefIndex_.find(p_.inlineOwner_);
+        if (it != typedefIndex_.end())
+            if (const Type *t = lookupInClass(typedefs_[it->second].type, name))
                 return t;
     }
     return nullptr;
@@ -339,23 +339,23 @@ const Type *Lookup::classScopeType(const std::string &name) const {
 // the definition appears in, the one table this parser has; an entry an inline namespace's member
 // put under the key is not a declaration of it. Not implemented: an object hiding the class name.
 void Lookup::declareTypeName(const std::string &name, const Type *type) {
-    auto it = p_.typedefIndex_.find(name);
-    const bool aliasHere = it != p_.typedefIndex_.end() && p_.typedefs_[it->second].name != name;
+    auto it = typedefIndex_.find(name);
+    const bool aliasHere = it != typedefIndex_.end() && typedefs_[it->second].name != name;
     if (!aliasHere && findTypedef(name) != nullptr) return;
-    p_.typedefIndex_[name] = p_.typedefs_.size();
-    p_.typedefs_.push_back(TypedefName{ name, type });
-    aliasTypeKey(name, p_.typedefs_.size() - 1);
+    typedefIndex_[name] = typedefs_.size();
+    typedefs_.push_back(TypedefName{ name, type });
+    aliasTypeKey(name, typedefs_.size() - 1);
 }
 
 bool Lookup::hasEnumNamed(const std::string &key) const {
-    return p_.enumIndex_.find(key) != p_.enumIndex_.end();
+    return enumIndex_.find(key) != enumIndex_.end();
 }
 
 const Parser::EnumConst *Lookup::enumInClass(const Type *cls,
                                              const std::string &name) const {
     for (const Type *c = cls; c != nullptr; c = c->enclosing()) {
-        auto it = p_.enumIndex_.find(c->tag() + "::" + name);
-        if (it != p_.enumIndex_.end()) return &p_.enums_[it->second];
+        auto it = enumIndex_.find(c->tag() + "::" + name);
+        if (it != enumIndex_.end()) return &enums_[it->second];
         for (const Type::BaseSpec &b : c->bases())
             if (const EnumConst *e = enumInClass(b.type, name)) return e;
     }
@@ -367,14 +367,14 @@ const Parser::EnumConst *Lookup::enumInClass(const Type *cls,
 // here too.
 const Parser::EnumConst *Lookup::findEnum(const std::string &name) const {
     if (p_.boundValueParams_.count(name) != 0) {
-        auto bound = p_.enumIndex_.find(name);
-        if (bound != p_.enumIndex_.end()) return &p_.enums_[bound->second];
+        auto bound = enumIndex_.find(name);
+        if (bound != enumIndex_.end()) return &enums_[bound->second];
     }
     auto enumAt = [&](const std::string &key) {
-        auto q = p_.enumIndex_.find(key);
-        if (q == p_.enumIndex_.end()) return static_cast<const EnumConst *>(nullptr);
-        refuseInlineAmbiguity(key, q->second, p_.enumIndex_);
-        return static_cast<const EnumConst *>(&p_.enums_[q->second]);
+        auto q = enumIndex_.find(key);
+        if (q == enumIndex_.end()) return static_cast<const EnumConst *>(nullptr);
+        refuseInlineAmbiguity(key, q->second, enumIndex_);
+        return static_cast<const EnumConst *>(&enums_[q->second]);
     };
     const std::string nearer = enclosingNamespaceKey(name, &Lookup::hasEnumNamed);
     if (!nearer.empty()) return enumAt(nearer);
@@ -401,10 +401,10 @@ const Parser::EnumConst *Lookup::findClassEnum(const std::string &name) const {
     if (p_.signatureClass_ != nullptr)
         if (const EnumConst *e = enumInClass(p_.signatureClass_, name)) return e;
     if (!p_.inlineOwner_.empty()) {
-        auto owner = p_.typedefIndex_.find(p_.inlineOwner_);
-        if (owner != p_.typedefIndex_.end())
+        auto owner = typedefIndex_.find(p_.inlineOwner_);
+        if (owner != typedefIndex_.end())
             if (const EnumConst *e =
-                    enumInClass(p_.typedefs_[owner->second].type, name))
+                    enumInClass(typedefs_[owner->second].type, name))
                 return e;
     }
     return nullptr;
@@ -418,10 +418,10 @@ const Parser::Local *Lookup::findLocal(const std::string &name) const {
 
 const Parser::GlobalSym *Lookup::findGlobal(const std::string &name) const {
     auto globalAt = [&](const std::string &key) {
-        auto q = p_.globalIndex_.find(key);
-        if (q == p_.globalIndex_.end()) return static_cast<const GlobalSym *>(nullptr);
-        refuseInlineAmbiguity(key, q->second, p_.globalIndex_);
-        return static_cast<const GlobalSym *>(&p_.globals_[q->second]);
+        auto q = globalIndex_.find(key);
+        if (q == globalIndex_.end()) return static_cast<const GlobalSym *>(nullptr);
+        refuseInlineAmbiguity(key, q->second, globalIndex_);
+        return static_cast<const GlobalSym *>(&globals_[q->second]);
     };
     const std::string nearer = enclosingNamespaceKey(name, &Lookup::hasGlobalNamed);
     if (!nearer.empty()) return globalAt(nearer);
@@ -435,15 +435,15 @@ const Parser::GlobalSym *Lookup::findGlobal(const std::string &name) const {
 // The entry a declaration of this name would redeclare: one an inline namespace's member
 // put here under the enclosing name is not it, and the declaration takes the key over.
 Parser::GlobalSym *Lookup::findGlobalToUpdate(const std::string &name) {
-    auto it = p_.globalIndex_.find(name);
-    if (it == p_.globalIndex_.end() || p_.globals_[it->second].name != name) return nullptr;
-    return &p_.globals_[it->second];
+    auto it = globalIndex_.find(name);
+    if (it == globalIndex_.end() || globals_[it->second].name != name) return nullptr;
+    return &globals_[it->second];
 }
 
 const std::vector<std::size_t> *
 Lookup::overloadsOf(const std::string &name) const {
-    auto it = p_.functionIndex_.find(name);
-    if (it == p_.functionIndex_.end() || it->second.empty()) return nullptr;
+    auto it = functionIndex_.find(name);
+    if (it == functionIndex_.end() || it->second.empty()) return nullptr;
     return &it->second;
 }
 
@@ -454,8 +454,8 @@ const Parser::Signature *Lookup::findFunction(const std::string &name) const {
     const std::vector<std::size_t> *set = overloadsOf(name);
     if (set == nullptr || set->size() != 1) return nullptr;
     // Its one caller names the function as a value, which is a use: [dcl.fct.def.delete]/2.
-    p_.refuseDeleted(p_.functions_[(*set)[0]], p_.peek().pos);
-    return &p_.functions_[(*set)[0]];
+    p_.refuseDeleted(functions_[(*set)[0]], p_.peek().pos);
+    return &functions_[(*set)[0]];
 }
 
 // The one function of this name with these parameters - the only question a definition
@@ -475,7 +475,7 @@ Lookup::lookupSignature(const std::string &name,
     if (const std::vector<std::size_t> *set = overloadsOf(key)) {
         for (int pass = 0; pass < 2; pass++)
             for (std::size_t k = 0; k < set->size(); k++) {
-                const Signature &f = p_.functions_[(*set)[k]];
+                const Signature &f = functions_[(*set)[k]];
                 if ((!f.fromTemplate && f.name != key) == (pass == 1) && f.variadic == variadic &&
                     Classes::sameParameters(f.params, params))
                     return f;
@@ -561,7 +561,7 @@ std::vector<std::string> Lookup::lookupKeys(const std::string &name,
                 const std::size_t cut = prefix.rfind("::");
                 if (cut == std::string::npos) { prefix.clear(); break; }
                 prefix = prefix.substr(0, cut);
-                if (p_.namespaces_.count(prefix) != 0) break;
+                if (namespaces_.count(prefix) != 0) break;
             }
             if (prefix.empty()) continue;   // a global enumeration's namespace is the bare name's
         } else continue;
@@ -574,9 +574,9 @@ std::vector<std::string> Lookup::lookupKeys(const std::string &name,
 }
 
 TableSizes Lookup::tableSizes() const {
-    return TableSizes{ p_.functions_.size(), p_.globals_.size(), p_.typedefs_.size(), p_.enums_.size() };
+    return TableSizes{ functions_.size(), globals_.size(), typedefs_.size(), enums_.size() };
 }
 
-bool Lookup::sameTypedef(std::size_t a, std::size_t b) const { return p_.typedefs_[a].type == p_.typedefs_[b].type; }
+bool Lookup::sameTypedef(std::size_t a, std::size_t b) const { return typedefs_[a].type == typedefs_[b].type; }
 
 }   // namespace sema

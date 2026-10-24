@@ -55,12 +55,7 @@ private:
         std::size_t overrideAt, finalAt;
         VirtSpecifiers() : isOverride(false), isFinal(false), overrideAt(0), finalAt(0) {}
     };
-    std::map<std::string, std::vector<VSlot> > vtables_;
-    // Where a class's own new slots begin, after its primary base's - the Microsoft overload order is kept within that run only.
-    std::map<std::string, std::size_t> ownSlotsFrom_;
     typedef sema::VtableGroup VtableGroup;
-    // Every group written, by symbol: a `_ZTV`, or a construction `_ZTC`.
-    std::map<std::string, VtableGroup> groups_;
     typedef sema::VttLayout VttLayout;
     std::map<std::string, VttLayout> vtts_;
     // The hidden VTT parameter of the C2 or D2 being emitted, -1 outside one.
@@ -83,29 +78,7 @@ private:
     std::set<std::string> msVbaseClasses_;
     // Where the flag sits in the constructor being emitted, -1 for a function that has none.
     int msVbInitSlot_ = -1;
-    // A member function body written inside the class, held until the class closes.
-    // `start` is the token the whole declaration begins at, so the replay re-reads the
-    // return type and parameters too rather than trying to reconstruct them.
-    struct PendingBody {
-        std::string tag;
-        std::size_t start;
-        // The class's name **as the source wrote it**, which is not the tag for a specialization.
-        std::string local;
-        // The function table's key for the member this body belongs to.
-        std::string key;
-        // **And which overload under that key**, because a constructor shares its key with every other constructor of the class.
-        std::size_t which;
-        // **A friend defined inside the class is not a member of it.**
-        bool freeFunction = false;
-        static std::size_t npos() { return (std::size_t)-1; }
-
-        // C++11 has no aggregate with a member initialiser, so the braces call this.
-        PendingBody(std::string tag = std::string(), std::size_t start = 0,
-                    std::string local = std::string(), std::string key = std::string(),
-                    std::size_t which = 0)
-            : tag(std::move(tag)), start(start), local(std::move(local)), key(std::move(key)),
-              which(which) {}
-    };
+    typedef sema::PendingBody PendingBody;
     std::vector<PendingBody> pendingBodies_;
     // **Where a declaration actually put its signature.**
     std::size_t signatureAddedUnder(const std::string &key,
@@ -132,13 +105,6 @@ private:
         return p.type;
     }
     typedef sema::TemplateDecl TemplateDecl;
-    std::map<std::string, TemplateDecl> templates_;
-    // **Function templates overload; class templates do not.**
-    std::map<std::string, std::vector<TemplateDecl> > fnTemplates_;
-    // Member function templates by "<ownerTag>::<member>", every one of a name (operator* twice).
-    std::map<std::string, std::vector<TemplateDecl> > memberTemplates_;
-    // An instantiation made, keyed by the template's own position and its arguments.
-    std::map<std::string, std::size_t> memberTemplateMade_;
     // Set one-shot while a member-template specialization's body is replayed through declareMember:
     // the source member name, the display name with its arguments ("head<3>"), and those arguments,
     // so declareMember keys and mangles the specialization rather than the plain member.
@@ -161,7 +127,7 @@ private:
     void pruneUnusedInline(Program &program);
     bool isMemberTemplate(const Type *obj, const std::string &name) const {
         return obj != nullptr &&
-               memberTemplates_.count(obj->unqualified()->tag() + "::" + name) != 0;
+               tmpl_.memberTemplates_.count(obj->unqualified()->tag() + "::" + name) != 0;
     }
     // The class that declares `name` as a member template, `cls` or a base of it, or null.
     const Type *memberTemplateOwner(const Type *cls, const std::string &name) const {
@@ -174,62 +140,22 @@ private:
     std::map<std::string, TemplateDecl>::const_iterator
     findTemplate(const std::string &written) const {
         std::map<std::string, TemplateDecl>::const_iterator it =
-            templates_.find(written);
-        if (it != templates_.end()) return it;
+            tmpl_.templates_.find(written);
+        if (it != tmpl_.templates_.end()) return it;
         const std::string::size_type cut = written.rfind("::");
-        if (cut == std::string::npos) return templates_.end();
-        return templates_.find(written.substr(cut + 2));
+        if (cut == std::string::npos) return tmpl_.templates_.end();
+        return tmpl_.templates_.find(written.substr(cut + 2));
     }
     // Whether a name, either spelling, is a class template - which is the one
     // question the type and expression paths both have to ask.
     bool isClassTemplate(const std::string &written) const {
         std::map<std::string, TemplateDecl>::const_iterator it =
             findTemplate(written);
-        return it != templates_.end() && it->second.isClass;
+        return it != tmpl_.templates_.end() && it->second.isClass;
     }
 
     // ---- Rung 5.2: function templates, explicit arguments ----
-    // One specialization that has been asked for. The body is not written where the
-    // call is, so the request is recorded and the definitions are replayed afterwards.
-    struct Specialization {
-        std::string key;                    // "twice<int>", and the table key
-        std::string name;                   // "twice"
-        std::string display;                // "ns::twice<int>": what a debugger shows for it (1.29)
-        std::string symbol;
-        const Type *fn = nullptr;           // the substituted signature
-        std::vector<const Type *> binding;  // by parameter index
-        std::vector<long long> values;      // non-type arguments, same index
-        Packs packs;   // same index again
-        std::size_t start = 0;              // the template's own tokens
-        std::size_t pos = 0;                // where it was first asked for
-        // How many replayed bodies deep the request came from: one more than the specialization whose
-        // body asked for this one, 1 from the program itself - bounded by kMaxNesting (2026-10-21, fix 5).
-        int depth = 1;
-        bool emitted = false;
-        // A class specialization instead of a function one.
-        bool isClass = false;
-        // Written out rather than made, so there are no parameters to bind and no primary template to replay.
-        bool explicitly = false;
-        // From a partial specialization: the primary's out-of-line members are not its (A16).
-        bool fromPartial = false;
-        // The parameters `binding` and `values` are for. Usually the
-        // template's own; for a partial specialization they are its.
-        std::vector<TemplateParam> params;
-        std::vector<PendingBody> bodies;
-        // Out-of-line definitions already turned into keys for this tag. They are
-        // replayed through topLevel and not replayInlineBodies: the tokens carry
-        // `Box<T>::get`, so the qualifier is written and the ordinary path reads it.
-        struct Outside {
-            std::size_t start = 0;
-            std::string key;
-        };
-        std::vector<Outside> outside;
-        // Which of the class template's out-of-line definitions have been replayed for
-        // this specialization. Not a count: the list can grow after the class is made,
-        // a definition being writable further down the file than the first use.
-        std::vector<bool> outsideDone;
-    };
-    std::vector<Specialization> specializations_;
+    typedef sema::Specialization Specialization;
     // Set while a specialization's definition is being replayed: the name the
     // function must be given, and the symbol it must carry. One-shot, taken
     // by the declarator that names the function.
@@ -375,7 +301,7 @@ private:
                            Packs *packs = nullptr);
     // **A name declared as an object is not a template name.**
     bool isTemplateName(const std::string &name, bool qualified = false) const {
-        if (templates_.find(name) == templates_.end()) return false;
+        if (tmpl_.templates_.find(name) == tmpl_.templates_.end()) return false;
         if (qualified) return true;
         return lookup_.findLocal(name) == nullptr && lookup_.findGlobal(name) == nullptr;
     }
@@ -423,9 +349,9 @@ private:
     // **Emitting a vtable uses everything the table points at.**
     void markSymbolUsed(const std::string &symbol);
 
-    // **Mark a signature that came out of `functions_` used, and the one place the pointer arithmetic this file warns about is written.**
+    // **Mark a signature that came out of `lookup_.functions_` used, and the one place the pointer arithmetic this file warns about is written.**
     void markUsed(const Signature *f);
-    // Marks functions_[i] used, and what its body used; while a candidate's body is read, records it instead.
+    // Marks lookup_.functions_[i] used, and what its body used; while a candidate's body is read, records it instead.
     void noteUsed(std::size_t i);
     std::vector<std::size_t> *candidateUses_ = nullptr;
     // **A vtable entry, a typeinfo field and the vptr are one pointer wide** - eight bytes on the 64-bit
@@ -587,24 +513,11 @@ private:
     // not checked against returnType_, there being none yet.
     const Type **deducingReturn_ = nullptr;
     std::string functionName_;
-    std::vector<std::string> staticSymbols_;
     // Above 0 inside sizeof, decltype, noexcept: [expr.prim.general]/13 lets `S::x` go without an object.
     int unevaluated_ = 0;
     // A `::`-qualified name being resolved: its key is absolute, no enclosing namespace asked.
     bool absoluteLookup_ = false;
 
-    std::vector<Signature> functions_;
-    // One name, every function declared under it. C had one; C++ has a set,
-    // and the set is ordered by declaration so a diagnostic can list the
-    // candidates in the order the reader wrote them.
-    std::vector<Signature> &functionTable() { return functions_; }
-    std::unordered_map<std::string, std::vector<std::size_t> > functionIndex_;
-    std::vector<GlobalSym> globals_;
-    std::unordered_map<std::string, std::size_t> globalIndex_;
-    std::vector<TypedefName> typedefs_;
-    std::unordered_map<std::string, std::size_t> typedefIndex_;
-    std::vector<EnumConst> enums_;
-    std::unordered_map<std::string, std::size_t> enumIndex_;
     int strings_ = 0;
     int loopDepth_ = 0;
     int switchDepth_ = 0;
@@ -738,7 +651,7 @@ private:
     // though none of its specializations is in the table until something asks for one.
     bool hasConstructors(const std::string &cls) const {
         return lookup_.overloadsOf(constructorKey(cls)) != nullptr ||
-               memberTemplates_.count(constructorKey(cls)) != 0;
+               tmpl_.memberTemplates_.count(constructorKey(cls)) != 0;
     }
     void declareConstructor(const std::string &cls, std::size_t pos, Access access,
                             bool isExplicit);
@@ -782,16 +695,13 @@ private:
     // `using B::f;` in a class body, by the class's tag: the base and the name, joined at completion (M1 L2).
     std::map<std::string, std::vector<std::pair<const Type *, std::string> > > usingMembers_;
     void declareUsingMembers(const std::string &tag, const Type *type);
-    // `using B::B;` [class.inhctor]: the bases a class inherits constructors from, and per declared
-    // constructor the base and the base constructor (an index into functions_) it forwards to.
+    // `using B::B;` [class.inhctor]: the bases a class inherits constructors from (Classes::inheriting_ says what each forwards to).
     std::map<std::string, std::vector<const Type *> > inheritFrom_;
-    struct Inheriting { const Type *base; std::size_t from; };
-    std::map<std::size_t, Inheriting> inheriting_;
     // An inherited constructor's symbol to the class that first declared it - `E : D : B` makes E's `ECI11BEi`.
     std::map<std::string, const Type *> inheritedFrom_;
     // The vtable, type_info and name string each class emitted, by tag, so the key-function rule can take them back.
     std::map<std::string, std::vector<std::string> > classSymbols_;
-    void markInlineBody(std::size_t which) { if (which != PendingBody::npos()) functions_[which].inlineBody = true; }
+    void markInlineBody(std::size_t which) { if (which != PendingBody::npos()) lookup_.functions_[which].inlineBody = true; }
     static std::string assignmentKey(const std::string &cls) {
         return cls + "::operator=";
     }
@@ -1120,7 +1030,7 @@ private:
         const std::vector<std::size_t> *set = lookup_.overloadsOf(key);
         if (set == nullptr) return false;
         for (std::size_t i = 0; i < set->size(); i++)
-            if (functions_[(*set)[i]].isStaticMember) return true;
+            if (lookup_.functions_[(*set)[i]].isStaticMember) return true;
         return false;
     }
     void declareStaticMember(const std::string &cls, Type *owner,
@@ -1515,10 +1425,6 @@ private:
     ExprPtr contextualScalar(ExprPtr e, std::size_t pos, const char *what);
     // The single conversion to a scalar, or null where there are none or two.
     const Signature *soleNumericConversion(const Type *from);
-    // **Only one user-defined conversion may appear in a sequence**.
-    int rankingConversion_ = 0;
-    // The arguments being ranked, by position - the object first, then operands - for closerTarget (1.27).
-    std::vector<const Type *> rankingGiven_;
     // The conversion itself, or null when none is needed or possible.
     ExprPtr userConversion(const Type *param, ExprPtr &arg, std::size_t pos);
     // **[over.ics.user] through a conversion *function***: one argument of
@@ -1615,8 +1521,6 @@ private:
     void skipDefaultArgument();
     // **A member's own initialiser is kept as a place in the token stream**, the same way a default argument is and for the same reason.
     std::vector<std::string> namespaceStack_;
-    // Namespaces named by a `using namespace` still open here, innermost last.
-    std::vector<std::string> usingNamespaces_;
     // **A using-declaration is an alias, not a table.**
     std::map<std::string, std::string> usingDeclarations_;
     // `namespace A = N;` - the alias's qualified name to the namespace it names, for the
@@ -1657,18 +1561,12 @@ private:
     bool internalLinkage(StorageClass sc) const {
         return sc == StorageStatic || inUnnamedNamespace_;
     }
-    // Every namespace ever opened, by full path. A qualified name has to be
-    // told from a class's - `N::f` and `S::f` are written the same and mean
-    // different lookups - and this is what tells them apart.
-    std::set<std::string> namespaces_;
     std::string namespacePrefix() const {
         std::string out;
         for (std::size_t i = 0; i < namespaceStack_.size(); i++)
             out += namespaceStack_[i] + "::";
         return out;
     }
-    // Every namespace defined `inline`, by full path - [namespace.def]/8.
-    std::set<std::string> inlineNamespaces_;
     typedef sema::TableSizes TableSizes;
     // The namespace an out-of-line definition was written for, while it is read; its defaults read there.
     std::vector<std::string> definitionNamespace_;
@@ -1728,7 +1626,7 @@ private:
                                    std::size_t pos);
     // Fill in what the call left out, by re-reading each default expression. By value for
     // the same reason, and this is the site that does the parsing: re-reading tokens is
-    // exactly what can grow `functions_` under a caller still holding a reference.
+    // exactly what can grow `lookup_.functions_` under a caller still holding a reference.
     void applyDefaults(Signature f, std::vector<ExprPtr> &args,
                        std::size_t pos);
     void blockFunctionDeclaration(const Declared &d);
@@ -1826,19 +1724,13 @@ private:
     bool initialiserNames(const std::string &name) const;
 
     typedef sema::ConstexprFn ConstexprFn;
-    std::map<std::string, ConstexprFn> constexprFns_;   // by mangled symbol
 
     typedef sema::ConstLeaf ConstLeaf;
     typedef sema::ConstObject ConstObject;
     typedef sema::ConstObjectPtr ConstObjectPtr;
     typedef sema::ConstexprCtor ConstexprCtor;
-    std::map<std::string, ConstexprCtor> constexprCtors_;   // by C1 and C2 symbol
-    std::set<std::string> constexprCtorSymbols_;           // declared `constexpr` in their class
-    // Named constexpr objects: a global by its name, a local by function and slot.
-    std::map<std::string, ConstObject> constObjects_;
 
     typedef sema::ConstexprSlot ConstexprSlot;
-    mutable std::vector<std::vector<ConstexprSlot> > constexprFrames_;
 
     void foldLocalObject(const Declared &d, int off, const std::vector<StmtPtr> &inits, std::size_t from);
     ExprPtr targetFor(const std::string &name, const std::vector<InitStep> &path);

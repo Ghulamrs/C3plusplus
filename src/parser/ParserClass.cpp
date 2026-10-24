@@ -129,7 +129,7 @@ void Parser::registerDestructor(const std::string &cls, std::size_t pos,
     // **A base with a virtual destructor makes this one virtual**, keyword or not -
     // [class.dtor]. The base's slots are already in this class's table, so it is
     // answered by looking for the "~" entry, and before the name is built.
-    std::vector<VSlot> &slots = vtables_[cls];
+    std::vector<VSlot> &slots = classes_.vtables_[cls];
     std::size_t slot = slots.size();
     bool foundBase = false;
     for (std::size_t i = 0; i < slots.size(); i++)
@@ -144,8 +144,8 @@ void Parser::registerDestructor(const std::string &cls, std::size_t pos,
             const std::vector<Type::BaseSpec> &bs = self->bases();
             for (std::size_t bi = 0; bi < bs.size() && !isVirtual; bi++) {
                 std::map<std::string, std::vector<VSlot> >::const_iterator it =
-                    vtables_.find(bs[bi].type->tag());
-                if (it == vtables_.end()) continue;
+                    classes_.vtables_.find(bs[bi].type->tag());
+                if (it == classes_.vtables_.end()) continue;
                 for (std::size_t i = 0; i < it->second.size(); i++)
                     if (it->second[i].name == "~") {
                         checkNotFinal(it->second[i], cls, name, pos);
@@ -172,11 +172,11 @@ void Parser::registerDestructor(const std::string &cls, std::size_t pos,
     if (target_.microsoftNames()) out = microsoftDestructorName(cls, lookup_.findTypedef(cls), code);
     else                          itaniumDestructorName(cls, lookup_.findTypedef(cls), true, &out);
 
-    functionIndex_[key].push_back(functions_.size());
-    functions_.push_back(Signature{ "~" + localOf(cls), out, types_.get(Kind::Void),
+    lookup_.functionIndex_[key].push_back(lookup_.functions_.size());
+    lookup_.functions_.push_back(Signature{ "~" + localOf(cls), out, types_.get(Kind::Void),
                                     params, false, false, pos, false, cls, false,
                                     access, isVirtual });
-    functions_.back().implicit = implicit;
+    lookup_.functions_.back().implicit = implicit;
 
     // **A virtual destructor claims slots where it is declared**, and how many
     // depends on the ABI: Itanium two and adjacent, Microsoft one holding only the
@@ -430,7 +430,7 @@ const Parser::Signature *Parser::destructorOf(const Type *cls) const {
     if (cls == nullptr || !cls->isStructOrUnion() || cls->tag().empty())
         return nullptr;
     const std::vector<std::size_t> *set = lookup_.overloadsOf(destructorKey(cls->tag()));
-    return set == nullptr ? nullptr : &functions_[(*set)[0]];
+    return set == nullptr ? nullptr : &lookup_.functions_[(*set)[0]];
 }
 
 // One destructor call, given the address of what to destroy. A destructor
@@ -778,10 +778,10 @@ void Parser::destroyObject(std::vector<StmtPtr> &into, const Alive &a,
 
 void Parser::markSymbolUsed(const std::string &symbol) {
     if (symbol.empty()) return;
-    for (std::size_t i = 0; i < functions_.size(); i++)
-        if (functions_[i].symbol == symbol) {
-            refuseDeleted(functions_[i], at_ + 1 < tokens_.size() ? peek().pos : functions_[i].pos);
-            functions_[i].used = true;
+    for (std::size_t i = 0; i < lookup_.functions_.size(); i++)
+        if (lookup_.functions_[i].symbol == symbol) {
+            refuseDeleted(lookup_.functions_[i], at_ + 1 < tokens_.size() ? peek().pos : lookup_.functions_[i].pos);
+            lookup_.functions_[i].used = true;
             return;
         }
 }
@@ -789,16 +789,16 @@ void Parser::markSymbolUsed(const std::string &symbol) {
 // A use of a deleted function is refused here as well as at a call: the compiler-written members reach their bases' and members' through this.
 void Parser::markUsed(const Signature *f) {
     refuseDeleted(*f, at_ + 1 < tokens_.size() ? peek().pos : f->pos);
-    noteUsed(static_cast<std::size_t>(f - &functions_[0]));
+    noteUsed(static_cast<std::size_t>(f - &lookup_.functions_[0]));
 }
 
 // [temp.inst]: a candidate made for ranking uses nothing until it is chosen - clang declares such a
 // specialization and never instantiates its body - so while one's body is read, its uses are its own.
 void Parser::noteUsed(std::size_t i) {
     if (candidateUses_ != nullptr) { candidateUses_->push_back(i); return; }
-    functions_[i].used = true;
+    lookup_.functions_[i].used = true;
     std::vector<std::size_t> later;
-    later.swap(functions_[i].deferredUses);
+    later.swap(lookup_.functions_[i].deferredUses);
     for (std::size_t k : later) noteUsed(k);
 }
 
@@ -887,9 +887,9 @@ void Parser::declareConstructor(const std::string &cls, std::size_t pos,
     const Type *fn = types_.functionType(types_.get(Kind::Void), params, false);
 
     std::string key = constructorKey(cls);
-    std::vector<std::size_t> &set = functionIndex_[key];
+    std::vector<std::size_t> &set = lookup_.functionIndex_[key];
     for (std::size_t k = 0; k < set.size(); k++) {
-        const Signature &f = functions_[set[k]];
+        const Signature &f = lookup_.functions_[set[k]];
         if (classes_.sameParameters(f.params, params))
             src_.fail(pos, "'" + cls + "::" + cls + "' is declared twice");
     }
@@ -906,17 +906,17 @@ void Parser::declareConstructor(const std::string &cls, std::size_t pos,
         src_.fail(pos, "'" + cls + "::" + cls + "' cannot be given a name the "
                        "linker can hold: " + why);
 
-    set.push_back(functions_.size());
+    set.push_back(lookup_.functions_.size());
     if (!pendingDefaults_.empty()) defaultArgs_[out] = pendingDefaults_;
     if (!pendingDefaults_.empty())
         defaultArgNamespace_[out] = namespaceStack_;
     pendingDefaults_.clear();
-    functions_.push_back(Signature{ cls, out, types_.get(Kind::Void), params,
+    lookup_.functions_.push_back(Signature{ cls, out, types_.get(Kind::Void), params,
                                     false, false, pos, false, cls, false, access });
-    functions_.back().isExplicit = isExplicit;
-    functions_.back().isNoexcept = pendingNoexcept_;
-    functions_.back().spec = pendingSpec_;
-    functions_.back().deleted = special == SpecialDef::Deleted;
+    lookup_.functions_.back().isExplicit = isExplicit;
+    lookup_.functions_.back().isNoexcept = pendingNoexcept_;
+    lookup_.functions_.back().spec = pendingSpec_;
+    lookup_.functions_.back().deleted = special == SpecialDef::Deleted;
     pendingNoexcept_ = false;
 }
 
@@ -969,7 +969,7 @@ Parser::initializerListConstructor(const Type *cls, const Type **ilType) {
     const std::vector<std::size_t> *set = lookup_.overloadsOf(constructorKey(cls->tag()));
     if (set == nullptr) return nullptr;
     for (std::size_t i = 0; i < set->size(); i++) {
-        const Signature &c = functions_[(*set)[i]];
+        const Signature &c = lookup_.functions_[(*set)[i]];
         if (c.params.size() != 1) continue;
         const Type *p = c.params[0]->unqualified();
         if (p->isStructOrUnion() && p->isSpecialization() &&
@@ -1146,7 +1146,7 @@ StmtPtr Parser::constructLocalArray(const Declared &d, int offset,
     // **Marked used, or an implicit one is declared and never emitted.**
     markUsed(ctor);
     // **Copied before the defaults are read**: reading one can parse an expression
-    // that grows `functions_` under the pointer just taken into it. The defaults sit
+    // that grows `lookup_.functions_` under the pointer just taken into it. The defaults sit
     // inside the statement the loop repeats, so they are evaluated once per element.
     const Signature chosen = *ctor;
     std::vector<ExprPtr> defaults;
@@ -1713,7 +1713,7 @@ StmtPtr Parser::eachElement(int indexSlot, ExprPtr n, StmtPtr one) {
 // a member template's is replayed as it is formed, so what was emitted for one is taken back here.
 void Parser::pruneUnchosenCandidates(Program &program) {
     for (std::size_t k = 0; k < candidateSpecializations_.size(); k++) {
-        const Signature &f = functions_[candidateSpecializations_[k]];
+        const Signature &f = lookup_.functions_[candidateSpecializations_[k]];
         if (f.used && !f.bodyFailure.empty()) src_.fail(f.bodyFailurePos, f.bodyFailure);
         if (f.used) continue;
         for (std::size_t i = program.functions.size(); i-- > 0; )
@@ -1787,12 +1787,12 @@ public:
 // [basic.def.odr]/3, and what clang, g++ and cl do. Reached from every function and global not held;
 // a symbol is dropped only if it was held and nothing reachable names it or its alias.
 void Parser::pruneUnusedInline(Program &program) {
-    for (std::size_t i = 0; i < functions_.size(); i++)
-        if (functions_[i].fromTemplate) discardableInline_.erase(functions_[i].symbol);
+    for (std::size_t i = 0; i < lookup_.functions_.size(); i++)
+        if (lookup_.functions_[i].fromTemplate) discardableInline_.erase(lookup_.functions_[i].symbol);
     // What the compiler writes is inline by [class.copy] and [class.dtor]: reached, or not emitted.
     std::set<std::string> fromTemplate;
-    for (std::size_t i = 0; i < functions_.size(); i++)
-        if (functions_[i].fromTemplate) fromTemplate.insert(functions_[i].symbol);
+    for (std::size_t i = 0; i < lookup_.functions_.size(); i++)
+        if (lookup_.functions_[i].fromTemplate) fromTemplate.insert(lookup_.functions_[i].symbol);
     std::set<std::string> held = discardableInline_;
     for (const Function &f : program.functions)
         if (f.isInline() && fromTemplate.count(f.symbol()) == 0) held.insert(f.symbol());
@@ -1972,13 +1972,13 @@ void Parser::declareUsingMembers(const std::string &tag, const Type *type) {
     if (it == usingMembers_.end()) return;
     for (const std::pair<const Type *, std::string> &u : it->second) {
         const std::vector<std::size_t> from = *lookup_.overloadsOf(u.first->tag() + "::" + u.second);
-        std::vector<std::size_t> &mine = functionIndex_[tag + "::" + u.second];
+        std::vector<std::size_t> &mine = lookup_.functionIndex_[tag + "::" + u.second];
         const std::vector<std::size_t> own = mine;
         for (std::size_t i : from) {
             bool hidden = false;
             for (std::size_t k : own)
-                if (classes_.sameParameters(functions_[k].params, functions_[i].params) &&
-                    functions_[k].constThis == functions_[i].constThis && functions_[k].refThis == functions_[i].refThis)
+                if (classes_.sameParameters(lookup_.functions_[k].params, lookup_.functions_[i].params) &&
+                    lookup_.functions_[k].constThis == lookup_.functions_[i].constThis && lookup_.functions_[k].refThis == lookup_.functions_[i].refThis)
                     hidden = true;
             if (!hidden) mine.push_back(i);
         }
@@ -2013,7 +2013,7 @@ void Parser::defineConstexprStaticMember(const std::string &full, const std::str
             staticConsts_[symbol] = rec;
             flattenScalar(d.type, in, 0, pieces);
         } else if (cls->isStructOrUnion() && constant_.constObjectFromInit(d.type, in, 0, &value)) {
-            constObjects_[symbol] = value;
+            constant_.constObjects_[symbol] = value;
             constant_.constObjectPieces(value, pieces);
         } else if (addressConstant(d.type, in)) {
             std::string sym;
@@ -2241,7 +2241,7 @@ void Parser::checkNotAbstract(const Type *t, std::size_t pos,
     while (c != nullptr && c->isArray()) c = c->pointee();
     if (c == nullptr || !c->isStructOrUnion() || !c->abstract()) return;
     std::string why = what + " is '" + c->describe() + "', which is abstract - ";
-    const std::vector<VSlot> &slots = vtables_[c->tag()];
+    const std::vector<VSlot> &slots = classes_.vtables_[c->tag()];
     for (std::size_t i = 0; i < slots.size(); i++)
         if (slots[i].pure) {
             why += "'" + slots[i].name + "' is pure and nothing has overridden "
@@ -2268,11 +2268,11 @@ void Parser::declareMember(const std::string &cls, const Declared &d,
     pendingExplicitConversion_ = false;
 
     std::string key = cls + "::" + d.name;
-    std::vector<std::size_t> &set = functionIndex_[key];
+    std::vector<std::size_t> &set = lookup_.functionIndex_[key];
 
     const std::vector<const Type *> &params = fn->params();
     for (std::size_t k = 0; k < set.size(); k++) {
-        const Signature &f = functions_[set[k]];
+        const Signature &f = lookup_.functions_[set[k]];
         if (!classes_.sameParameters(f.params, params)) continue;
         if (f.constThis == constThis && f.refThis == refThis)
             src_.fail(d.pos, "'" + key + "' is declared twice");
@@ -2292,14 +2292,14 @@ void Parser::declareMember(const std::string &cls, const Declared &d,
             defaultArgNamespace_[sym] = namespaceStack_;
         }
         pendingDefaults_.clear();
-        set.push_back(functions_.size());
-        functions_.push_back(Signature{
+        set.push_back(lookup_.functions_.size());
+        lookup_.functions_.push_back(Signature{
             d.name, sym,
             fn->returns(), params, fn->isVariadicFn(), false, d.pos, false,
             cls, false, access, false });
-        functions_.back().isStaticMember = true;
-        functions_.back().isNoexcept = pendingNoexcept_;
-        functions_.back().spec = pendingSpec_;
+        lookup_.functions_.back().isStaticMember = true;
+        lookup_.functions_.back().isNoexcept = pendingNoexcept_;
+        lookup_.functions_.back().spec = pendingSpec_;
         pendingNoexcept_ = false;
         return;
     }
@@ -2307,7 +2307,7 @@ void Parser::declareMember(const std::string &cls, const Declared &d,
     // **A slot is taken once and then kept**: an override replaces the entry the base
     // put there, matching on the signature minus the return type. **And finding that
     // slot is what makes this virtual**, keyword or not - so the search runs first.
-    std::vector<VSlot> &slots = vtables_[cls];
+    std::vector<VSlot> &slots = classes_.vtables_[cls];
     std::size_t slot = slots.size();
     bool foundBase = false;
     for (std::size_t i = 0; i < slots.size(); i++) {
@@ -2331,8 +2331,8 @@ void Parser::declareMember(const std::string &cls, const Declared &d,
             const std::vector<Type::BaseSpec> &bs = self->bases();
             for (std::size_t bi = 0; bi < bs.size() && !isVirtual; bi++) {
                 std::map<std::string, std::vector<VSlot> >::const_iterator it =
-                    vtables_.find(bs[bi].type->tag());
-                if (it == vtables_.end()) continue;
+                    classes_.vtables_.find(bs[bi].type->tag());
+                if (it == classes_.vtables_.end()) continue;
                 for (std::size_t i = 0; i < it->second.size(); i++)
                     if (classes_.overrides(it->second[i], d.name, params, constThis, refThis)) {
                         classes_.checkOverrideReturn(it->second[i], fn->returns(), cls, d.name, d.pos);
@@ -2361,15 +2361,15 @@ void Parser::declareMember(const std::string &cls, const Declared &d,
     if (!pendingDefaults_.empty())
         defaultArgNamespace_[symbol] = namespaceStack_;
     pendingDefaults_.clear();
-    set.push_back(functions_.size());
-    functions_.push_back(Signature{
+    set.push_back(lookup_.functions_.size());
+    lookup_.functions_.push_back(Signature{
         d.name, symbol,
         fn->returns(), params, fn->isVariadicFn(), false, d.pos, false,
         cls, constThis, access, isVirtual });
-    functions_.back().isNoexcept = pendingNoexcept_;
-    functions_.back().spec = pendingSpec_;
-    functions_.back().refThis = refThis;
-    functions_.back().isExplicit = explicitConversion;
+    lookup_.functions_.back().isNoexcept = pendingNoexcept_;
+    lookup_.functions_.back().spec = pendingSpec_;
+    lookup_.functions_.back().refThis = refThis;
+    lookup_.functions_.back().isExplicit = explicitConversion;
     pendingNoexcept_ = false;
 
     if (!isVirtual) return;
@@ -2388,8 +2388,8 @@ void Parser::declareMember(const std::string &cls, const Declared &d,
     // g(double) g(int) h()`, measured 2026-09-17 - where Itanium appends.
     std::size_t at = slots.size();
     if (target_.microsoftNames()) {
-        std::map<std::string, std::size_t>::const_iterator own = ownSlotsFrom_.find(cls);
-        for (std::size_t i = own == ownSlotsFrom_.end() ? 0 : own->second; i < slots.size(); i++)
+        std::map<std::string, std::size_t>::const_iterator own = classes_.ownSlotsFrom_.find(cls);
+        for (std::size_t i = own == classes_.ownSlotsFrom_.end() ? 0 : own->second; i < slots.size(); i++)
             if (slots[i].name == d.name) { at = i; break; }
     }
     slots.insert(slots.begin() + static_cast<std::ptrdiff_t>(at),
@@ -2422,14 +2422,14 @@ void Parser::declareFunction(const std::string &name, const Type *returns,
     const std::string &key = qualified;
     checkOperatorDeclarable(key, params, false, pos, internal);
     const bool cName = cLinkage_ > 0 || key == "main";
-    std::vector<std::size_t> &set = functionIndex_[key];
+    std::vector<std::size_t> &set = lookup_.functionIndex_[key];
     const SpecialDef special = takeSpecialDef();
 
     // An inline namespace's member sits under the enclosing name too, and only a qualified
     // declarator reaches it there - `int lib::f(int) {}` defines lib::v2::f - after lib's own.
     for (std::size_t pass = 0, k = 0; pass < (definingQualified_ ? 2u : 1u); k++) {
         if (k == set.size()) { pass++; k = static_cast<std::size_t>(-1); continue; }
-        Signature &f = functions_[set[k]];
+        Signature &f = lookup_.functions_[set[k]];
         // A specialization sits in this list under the template's plain name
         // so that resolution can see it. It is not a declaration of that
         // name, so a function written with the same parameters is a new one.
@@ -2502,7 +2502,7 @@ void Parser::declareFunction(const std::string &name, const Type *returns,
     // one. Both halves of that are refused here rather than at the link, where
     // the report would be about a duplicate symbol in a file nobody wrote.
     if (!set.empty()) {
-        const Signature &first = functions_[set[0]];
+        const Signature &first = lookup_.functions_[set[0]];
         if (cName || first.cLinkage)
             src_.fail(pos, "'" + key + "' cannot be overloaded - " +
                            (key == "main" ? std::string("'main' is one function")
@@ -2510,24 +2510,24 @@ void Parser::declareFunction(const std::string &name, const Type *returns,
                                              "carries one symbol")));
     }
 
-    set.push_back(functions_.size());
-    functions_.push_back(Signature{ key,
+    set.push_back(lookup_.functions_.size());
+    lookup_.functions_.push_back(Signature{ key,
                                     linkage_.functionSymbol(key, returns, params, variadic,
                                                    internal, pos),
                                     returns, params, variadic, defining, pos,
                                     cName, std::string(), false,
                                     Access::Public });
-    functions_.back().isNoexcept = pendingNoexcept_;
-    functions_.back().spec = pendingSpec_;
-    functions_.back().deleted = special == SpecialDef::Deleted;
+    lookup_.functions_.back().isNoexcept = pendingNoexcept_;
+    lookup_.functions_.back().spec = pendingSpec_;
+    lookup_.functions_.back().deleted = special == SpecialDef::Deleted;
     pendingNoexcept_ = false;
-    if (!cName) lookup_.aliasFunctionKey(key, functions_.size() - 1);
+    if (!cName) lookup_.aliasFunctionKey(key, lookup_.functions_.size() - 1);
     if (pendingExplicitConversion_ && isConversionName(instantiationName(name)))
-        functions_.back().isExplicit = true;
+        lookup_.functions_.back().isExplicit = true;
     pendingExplicitConversion_ = false;
     if (!pendingDefaults_.empty()) {
-        defaultArgs_[functions_.back().symbol] = pendingDefaults_;
-        defaultArgNamespace_[functions_.back().symbol] = definitionNamespace_.empty() ? namespaceStack_ : definitionNamespace_;
+        defaultArgs_[lookup_.functions_.back().symbol] = pendingDefaults_;
+        defaultArgNamespace_[lookup_.functions_.back().symbol] = definitionNamespace_.empty() ? namespaceStack_ : definitionNamespace_;
     }
     pendingDefaults_.clear();
 }
@@ -2839,7 +2839,7 @@ StmtPtr Parser::constructMember(const std::string &cls, const Type *type,
         }
     }
 
-    // Held by value: reading a default argument can grow `functions_`.
+    // Held by value: reading a default argument can grow `lookup_.functions_`.
     Signature chosen;
     if (!args.empty()) {
         chosen = overload_.resolveOverload(key, args, pos);
@@ -2868,8 +2868,8 @@ StmtPtr Parser::constructMember(const std::string &cls, const Type *type,
               "arguments for '" + m.name + "' - the one that matches is " +
               (chosen.access == Access::Private ? "private" : "protected"));
     // Through noteUsed: inside a candidate's body, ranked and not yet chosen, the use waits with the rest.
-    for (std::size_t k = 0; k < functions_.size(); k++)
-        if (functions_[k].symbol == chosen.symbol) noteUsed(k);
+    for (std::size_t k = 0; k < lookup_.functions_.size(); k++)
+        if (lookup_.functions_[k].symbol == chosen.symbol) noteUsed(k);
     applyDefaults(chosen, args, pos);
 
     int indexSlot = 0;

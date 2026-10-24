@@ -52,6 +52,8 @@ public:
     std::string dataSymbol(const std::string &name, const Type *type,
                            bool isStatic, std::size_t pos);
 
+    std::vector<std::string> staticSymbols_;
+
 private:
     Parser &p_;
 };

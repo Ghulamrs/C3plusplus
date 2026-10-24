@@ -677,7 +677,7 @@ const Parser::Signature *Parser::pickByTarget(const std::vector<std::size_t> &se
                          t->enclosing() == cls->unqualified() ? t->pointee() : nullptr;
     const Signature *found = nullptr;
     for (std::size_t i : set) {
-        const Signature &f = functions_[i];
+        const Signature &f = lookup_.functions_[i];
         const Type *fn = !f.owner.empty() && !f.isStaticMember ? member : plain;
         if (fn == nullptr ||
             types_.functionType(f.returns, f.params, f.variadic, f.refThis, fn == member && f.constThis) != fn)
@@ -729,7 +729,7 @@ ExprPtr Parser::memberFunctionAddress(const Type *cls, const Signature &f, const
     // call; Microsoft: the address of a vcall thunk.
     if (f.isVirtual) {
         int index = -1;
-        const std::vector<VSlot> &slots = vtables_[cls->tag()];
+        const std::vector<VSlot> &slots = classes_.vtables_[cls->tag()];
         for (std::size_t i = 0; i < slots.size(); i++)
             if (classes_.overrides(slots[i], f.name, f.params, f.constThis, f.refThis))
                 index = static_cast<int>(i);
@@ -772,7 +772,7 @@ ExprPtr Parser::memberFunctionByName(const std::string &name, std::size_t pos) {
                 name == localOf(c->tag()) ? nullptr : lookup_.overloadsOf(c->tag() + "::" + name);
             if (set == nullptr) continue;
             bool anyStatic = false;
-            for (std::size_t i : *set) anyStatic = anyStatic || functions_[i].isStaticMember;
+            for (std::size_t i : *set) anyStatic = anyStatic || lookup_.functions_[i].isStaticMember;
             if (!anyStatic)
                 src_.fail(pos, "'" + name + "' names a non-static member function, which must be "
                                "called - write '&" + localOf(c->tag()) + "::" + name + "' for its "
@@ -917,7 +917,7 @@ ExprPtr Parser::userDefinedLiteral(Program *program) {
         bool cooked = false, raw = false;
         if (set != nullptr)
             for (std::size_t k = 0; k < set->size(); k++) {
-                const Signature &f = functions_[(*set)[k]];
+                const Signature &f = lookup_.functions_[(*set)[k]];
                 if (f.fromTemplate || f.params.size() != 1) continue;
                 const Type *p = f.params[0]->unqualified();
                 if (p->kind() == (lit.isFloat ? Kind::LongDouble : Kind::ULongLong)) cooked = true;
@@ -1382,7 +1382,7 @@ ExprPtr Parser::primary(Program *program) {
             std::map<std::string, TemplateDecl>::const_iterator td =
                 findTemplate(q);
             const std::size_t after = qualifiedTypeEndPastArgs();
-            if (td != templates_.end() && td->second.isClass && after != 0 &&
+            if (td != tmpl_.templates_.end() && td->second.isClass && after != 0 &&
                 peekAt(after).is("::")) {
                 const std::size_t qpos = peek().pos;
                 at_ += typeEnd;                      // to the `<`
@@ -1427,7 +1427,7 @@ ExprPtr Parser::primary(Program *program) {
         std::size_t k = 1;
         std::string scope;
         while (peekAt(k).kind == TokenKind::Ident && peekAt(k + 1).is("::") &&
-               namespaces_.count(scope.empty() ? peekAt(k).text : scope + "::" + peekAt(k).text)) {
+               lookup_.namespaces_.count(scope.empty() ? peekAt(k).text : scope + "::" + peekAt(k).text)) {
             scope = scope.empty() ? peekAt(k).text : scope + "::" + peekAt(k).text;
             k += 2;
         }
@@ -1493,7 +1493,7 @@ ExprPtr Parser::primary(Program *program) {
         std::string scope = lookup_.namespaceNamed(peek().text);
         at_ += 2;
         while (peek().kind == TokenKind::Ident && peekAt(1).is("::") &&
-               namespaces_.find(scope + "::" + peek().text) != namespaces_.end()) {
+               lookup_.namespaces_.find(scope + "::" + peek().text) != lookup_.namespaces_.end()) {
             scope += "::" + peek().text;
             at_ += 2;
         }
@@ -1508,7 +1508,7 @@ ExprPtr Parser::primary(Program *program) {
         {
             const std::string inner = scope + "::_GLOBAL__N_1::" + full.substr(scope.size() + 2);
             if (lookup_.overloadsOf(full) == nullptr && lookup_.findGlobalToUpdate(full) == nullptr &&
-                lookup_.findEnum(full) == nullptr && namespaces_.count(scope + "::_GLOBAL__N_1") &&
+                lookup_.findEnum(full) == nullptr && lookup_.namespaces_.count(scope + "::_GLOBAL__N_1") &&
                 (lookup_.overloadsOf(inner) != nullptr || lookup_.findGlobalToUpdate(inner) != nullptr ||
                  lookup_.findEnum(inner) != nullptr))
                 full = inner;
@@ -1636,7 +1636,7 @@ ExprPtr Parser::primary(Program *program) {
             if (!peekAt(k + 2).is("(") && !peekAt(k + 2).is("::") && hasStaticMemberNamed(candidate)) {
                 const std::size_t qpos = peek().pos;
                 for (std::size_t i : *lookup_.overloadsOf(candidate)) {
-                    const Signature &f = functions_[i];
+                    const Signature &f = lookup_.functions_[i];
                     const Type *ownerType = lookup_.findTypedef(f.owner);
                     if (f.access != Access::Public &&
                         (ownerType == nullptr || (!insideAccessOf(ownerType, f.access) && !isFriendOf(ownerType))))
@@ -1840,7 +1840,7 @@ ExprPtr Parser::primary(Program *program) {
                 if (ordinary != nullptr)
                     if (const std::vector<std::size_t> *set = lookup_.overloadsOf(ordinary->unqualified()->tag() + "::" + name))
                         for (std::size_t k = 0; k < set->size(); k++)
-                            if (!functions_[(*set)[k]].fromTemplate) alone = false;
+                            if (!lookup_.functions_[(*set)[k]].fromTemplate) alone = false;
             }
             // A base's, or a static one called from a static member function, where there is no `this`.
             if (memberTemplateOwner(owner, name) != nullptr && alone) {
@@ -2474,7 +2474,7 @@ bool Parser::hasOrdinaryMember(const Type *cls, const std::string &name) {
     if (ordinary == nullptr) return false;
     if (const std::vector<std::size_t> *set = lookup_.overloadsOf(ordinary->unqualified()->tag() + "::" + name))
         for (std::size_t k = 0; k < set->size(); k++)
-            if (!functions_[(*set)[k]].fromTemplate) return true;
+            if (!lookup_.functions_[(*set)[k]].fromTemplate) return true;
     return false;
 }
 
@@ -3112,7 +3112,7 @@ ExprPtr Parser::unary() {
                                            std::to_string(set->size()) +
                                            " functions, and which one this is "
                                            "cannot be told from the use alone");
-                        const Signature &f = picked != nullptr ? *picked : functions_[(*set)[0]];
+                        const Signature &f = picked != nullptr ? *picked : lookup_.functions_[(*set)[0]];
                         at_ += q + 1;
                         return memberFunctionAddress(cls, f, key, pos);
                     }

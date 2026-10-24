@@ -18,7 +18,7 @@ void Parser::foldLocalObject(const Declared &d, int off, const std::vector<StmtP
     const std::unique_ptr<Var> self(Var::local(d.name, off));
     ConstObject value;
     if (!constant_.foldDeclaredObject(steps, *self, &value, d.pos)) constant_.refuseConstexprClassObject(d.name, d.pos);
-    constObjects_[constant_.constObjectKey(*self)] = value;
+    constant_.constObjects_[constant_.constObjectKey(*self)] = value;
 }
 
 Parser::Init Parser::parenthesisedInitialiser(const Declared &d) {
@@ -1363,7 +1363,7 @@ StmtPtr Parser::block(bool functionTry) {
     // A `using namespace` written inside this block reaches the '}' and no
     // further - [namespace.udir]/2 - so the list is cut back to what it held
     // on the way in.
-    const std::size_t usingAtEntry = usingNamespaces_.size();
+    const std::size_t usingAtEntry = lookup_.usingNamespaces_.size();
     const std::size_t aliveAtEntry = alive_.size();
     bool isBody = atFunctionBody_;
     atFunctionBody_ = false;
@@ -1422,7 +1422,7 @@ StmtPtr Parser::block(bool functionTry) {
                                   temps, tryAt);
     }
     alive_.resize(aliveAtEntry);
-    usingNamespaces_.resize(usingAtEntry);
+    lookup_.usingNamespaces_.resize(usingAtEntry);
 
     if (!functionTry) expect("}");
     if (!isBody) leaveBlock();
@@ -2055,7 +2055,7 @@ StmtPtr Parser::statementBody() {
         const std::string resolved = resolveNamespaceName(opened);
         if (resolved.empty())
             src_.fail(peek().pos, "'" + opened + "' is not a namespace");
-        usingNamespaces_.push_back(resolved);
+        lookup_.usingNamespaces_.push_back(resolved);
         return StmtPtr(new Block({}));
     }
     // [namespace.alias] allows one in a block; the rewrite behind it reaches a namespace's

@@ -72,7 +72,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     // **`struct lib::P *` and `struct lib::Box<char> *`**, [dcl.type.elab]: a qualified name, or a
     // template-id, names a class already declared - read as the type name it is, unless a body follows.
     if (classInstantiationTag_.empty() && peek().kind == TokenKind::Ident &&
-        (peekAt(1).is("::") || (peekAt(1).is("<") && findTemplate(peek().text) != templates_.end()))) {
+        (peekAt(1).is("::") || (peekAt(1).is("<") && findTemplate(peek().text) != tmpl_.templates_.end()))) {
         std::size_t i = at_ + 1;
         int depth = 0;
         for (; i < tokens_.size() && tokens_[i].kind != TokenKind::End; i++) {
@@ -401,8 +401,8 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
         // does that.
         const bool atZero = primary != nullptr ? b == primary : bi == 0;
         if (!tag.empty() && atZero && b->polymorphic()) {
-            vtables_[tag] = vtables_[b->tag()];
-            ownSlotsFrom_[tag] = vtables_[tag].size();
+            classes_.vtables_[tag] = classes_.vtables_[b->tag()];
+            classes_.ownSlotsFrom_[tag] = classes_.vtables_[tag].size();
         }
     }
     // Recorded in the order written, whatever order they were laid in: the
@@ -590,7 +590,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                                   "its class must be defined there too - an "
                                   "out-of-line member template is not supported "
                                   "yet");
-            memberTemplates_[tag + "::" + mname].push_back(mt);
+            tmpl_.memberTemplates_[tag + "::" + mname].push_back(mt);
             continue;
         }
 
@@ -644,7 +644,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             bool sameAccess = owner != nullptr;
             if (sameAccess)
                 for (std::size_t i : *lookup_.overloadsOf(owner->tag() + "::" + peekAt(3).text))
-                    if (functions_[i].access != access) sameAccess = false;
+                    if (lookup_.functions_[i].access != access) sameAccess = false;
             if (sameAccess) {
                 usingMembers_[tag].push_back(std::make_pair(owner, peekAt(3).text));
                 at_ += 5;
@@ -693,9 +693,9 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                       peek().text == local && peekAt(1).is("("))) {
             std::size_t cpos = namedAt;
             if (!ownId) at_++;
-            const std::size_t sigAt = functions_.size();
+            const std::size_t sigAt = lookup_.functions_.size();
             declareConstructor(tag, cpos, access, isExplicit);
-            if (constexprCtorAhead && functions_.size() > sigAt) constexprCtorSymbols_.insert(functions_[sigAt].symbol);
+            if (constexprCtorAhead && lookup_.functions_.size() > sigAt) constant_.constexprCtorSymbols_.insert(lookup_.functions_[sigAt].symbol);
             isExplicit = false;
             refuseVirtSpecifiers("a constructor");
             if (peek().is("{") || peek().is(":") || peek().is("try")) {
@@ -747,7 +747,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                         peekAt(1).text == local && peekAt(2).is("("))) {
             std::size_t dpos = tildeAt;
             if (!ownDtor) at_ += 2;
-            const std::size_t sigAt = functions_.size();
+            const std::size_t sigAt = lookup_.functions_.size();
             declareDestructor(tag, dpos, access, isVirtual);
             if (peek().is("{") || peek().is("try")) {
                 pendingBodies_.push_back(PendingBody{
@@ -826,7 +826,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                                       "a 'this' to leave alone, and a friend "
                                       "is not a member function");
             const bool friendHasBody = peek().is("{");
-            const std::size_t fsigAt = functions_.size();
+            const std::size_t fsigAt = lookup_.functions_.size();
             declareFunction(fd.name, fd.type, fparams, fvariadic, false, fd.pos,
                             false);
             // **A friend defined here is held and replayed as a free
@@ -1253,7 +1253,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                     if (tag.empty())
                         src_.fail(d.pos, "a member function needs a class with "
                                          "a name - this one is anonymous");
-                    const std::size_t sigAt = functions_.size();
+                    const std::size_t sigAt = lookup_.functions_.size();
                     declareMember(tag, d, constThis, refThis, access,
                                   kind == Kind::Union, isVirtual, memberIsStatic,
                                   isPure, virt);
@@ -1272,10 +1272,10 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                               isVirtual, memberIsStatic, isPure, virt);
                 if (special == SpecialDef::Deleted) {
                     // A deleted virtual would leave its slot naming a function with no body.
-                    if (functions_.back().isVirtual)
+                    if (lookup_.functions_.back().isVirtual)
                         src_.fail(pendingSpecialAt_, "a deleted virtual function is not supported yet: "
                                                      "its vtable slot would name a function that has no body");
-                    functions_.back().deleted = true;
+                    lookup_.functions_.back().deleted = true;
                 }
                 if (!consume(",")) break;
                 continue;
@@ -1366,7 +1366,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     classStack_.pop_back();
 
     // Polymorphism is only knowable now, so the vptr slot is made here.
-    const bool anyVirtual = !tag.empty() && !vtables_[tag].empty();
+    const bool anyVirtual = !tag.empty() && !classes_.vtables_[tag].empty();
     // **Polymorphic stays the language's question** - a virtual function,
     // declared or inherited - because `dynamic_cast` and `typeid` hang off it.
     if (anyVirtual || (base != nullptr && base->polymorphic()))
@@ -1541,7 +1541,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
         if (const std::vector<std::size_t> *set =
                 lookup_.overloadsOf(constructorKey(tag)))
             for (std::size_t i = 0; i < set->size(); i++)
-                msVbaseCtors_.insert(functions_[(*set)[i]].symbol);
+                msVbaseCtors_.insert(lookup_.functions_[(*set)[i]].symbol);
     }
     // **Whether copying this is a call decides how it is passed**, and it is settled
     // here because both halves are: a copy constructor exists by now if the class
@@ -1553,7 +1553,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     // class declared: a derived class that overrides every pure virtual has
     // replaced those entries and is concrete, and one that leaves any is not.
     if (!tag.empty()) {
-        const std::vector<VSlot> &slots = vtables_[tag];
+        const std::vector<VSlot> &slots = classes_.vtables_[tag];
         for (std::size_t i = 0; i < slots.size(); i++)
             if (slots[i].pure) { type->setAbstract(true); break; }
     }
@@ -1695,15 +1695,15 @@ const Type *Parser::enumSpecifier() {
     std::vector<std::pair<std::string, std::size_t> > inBody;
     std::vector<std::size_t> made;
     long long next = 0;
-    const std::size_t first = enums_.size();
+    const std::size_t first = lookup_.enums_.size();
     while (!peek().is("}")) {
         std::size_t npos = peek().pos;
         std::string name = expectIdent("an enumerator");
         // Declared twice under this very key - not one an inline namespace's enumerator put here.
         const std::unordered_map<std::string, std::size_t>::const_iterator twice =
-            enumIndex_.find(within_ + name);
-        if ((twice != enumIndex_.end() && enums_[twice->second].name == within_ + name) ||
-            (!scoped && twice == enumIndex_.end() && lookup_.findEnum(prefix + name)))
+            lookup_.enumIndex_.find(within_ + name);
+        if ((twice != lookup_.enumIndex_.end() && lookup_.enums_[twice->second].name == within_ + name) ||
+            (!scoped && twice == lookup_.enumIndex_.end() && lookup_.findEnum(prefix + name)))
             src_.fail(npos, "'" + name + "' is declared twice");
         if (consume("=")) {
             const long long given = constantExpression("a constant");
@@ -1714,28 +1714,28 @@ const Type *Parser::enumSpecifier() {
                                 "' does not fit the enum-base '" +
                                 underlying->describe() + "'");
         }
-        enumIndex_[within_ + name] = enums_.size();
-        enums_.push_back(EnumConst{ within_ + name, next,
+        lookup_.enumIndex_[within_ + name] = lookup_.enums_.size();
+        lookup_.enums_.push_back(EnumConst{ within_ + name, next,
                                     scoped ? underlying : valueType });
-        made.push_back(enums_.size() - 1);
+        made.push_back(lookup_.enums_.size() - 1);
         // C++11's `E::a` for an unscoped E too, [dcl.enum]/11.
-        if (!scoped && !tag.empty()) enumIndex_[prefix + tag + "::" + name] = enums_.size() - 1;
+        if (!scoped && !tag.empty()) lookup_.enumIndex_[prefix + tag + "::" + name] = lookup_.enums_.size() - 1;
         // And under the enclosing namespace's name where this one is inline.
         {
             const std::vector<std::string> alts = within == nullptr ? lookup_.inlineAliasPrefixes(prefix)
                                                                     : std::vector<std::string>();
             const std::string tail = scoped ? tag + "::" + name : name;
             for (std::size_t a = 0; a < alts.size(); a++) {
-                enumIndex_.insert(std::make_pair(alts[a] + tail, enums_.size() - 1));
+                lookup_.enumIndex_.insert(std::make_pair(alts[a] + tail, lookup_.enums_.size() - 1));
                 if (!scoped && !tag.empty())
-                    enumIndex_.insert(std::make_pair(alts[a] + tag + "::" + name, enums_.size() - 1));
+                    lookup_.enumIndex_.insert(std::make_pair(alts[a] + tag + "::" + name, lookup_.enums_.size() - 1));
             }
         }
         if (scoped) {
-            const std::size_t had = enumIndex_.count(prefix + name);
+            const std::size_t had = lookup_.enumIndex_.count(prefix + name);
             inBody.push_back(std::make_pair(prefix + name,
-                                            had ? enumIndex_[prefix + name] : enums_.size()));
-            enumIndex_[prefix + name] = enums_.size() - 1;
+                                            had ? lookup_.enumIndex_[prefix + name] : lookup_.enums_.size()));
+            lookup_.enumIndex_[prefix + name] = lookup_.enums_.size() - 1;
         }
         if (self != nullptr) self->addEnumerator(name, next);
         next = next + 1;
@@ -1743,11 +1743,11 @@ const Type *Parser::enumSpecifier() {
     }
     expect("}");
     for (std::size_t i = inBody.size(); i-- > 0; ) {
-        if (inBody[i].second >= first) enumIndex_.erase(inBody[i].first);
-        else                           enumIndex_[inBody[i].first] = inBody[i].second;
+        if (inBody[i].second >= first) lookup_.enumIndex_.erase(inBody[i].first);
+        else                           lookup_.enumIndex_[inBody[i].first] = inBody[i].second;
     }
-    for (std::size_t i = 0; i < made.size(); i++) enums_[made[i]].type = valueType;
-    if (enums_.empty()) src_.fail(pos, "enum has no enumerators");
+    for (std::size_t i = 0; i < made.size(); i++) lookup_.enums_[made[i]].type = valueType;
+    if (lookup_.enums_.empty()) src_.fail(pos, "enum has no enumerators");
     return valueType != nullptr ? valueType : types_.intType();
 }
 
@@ -1764,12 +1764,12 @@ ExprPtr Parser::enumeratorThroughEnum() {
     }
     if (found == nullptr) return nullptr;
     const std::string name = peekAt(took + 1).text;
-    const auto it = enumIndex_.find(found->enumTag() + "::" + name);
-    if (it == enumIndex_.end())
+    const auto it = lookup_.enumIndex_.find(found->enumTag() + "::" + name);
+    if (it == lookup_.enumIndex_.end())
         src_.fail(peekAt(took + 1).pos, "'" + name + "' is not an enumerator of '" +
                                         found->enumTag() + "'");
     at_ += took + 2;
-    ExprPtr n(new Num(enums_[it->second].value));
+    ExprPtr n(new Num(lookup_.enums_[it->second].value));
     n->setType(found);
     return n;
 }
@@ -2270,8 +2270,8 @@ void Parser::declareAnonymousUnionObject(const Type *u, StorageClass sc, std::si
         for (std::size_t i = 0; i < ms.size(); i++) {
             const std::string gname = namespacePrefix() + ms[i].name;
             if (lookup_.findGlobalToUpdate(gname) != nullptr) redeclares(i);
-            globalIndex_[gname] = globals_.size();
-            globals_.push_back(GlobalSym{ gname, symbol, ms[i].type, ms[i].type->isConst(), true, false, false, 0 });
+            lookup_.globalIndex_[gname] = lookup_.globals_.size();
+            lookup_.globals_.push_back(GlobalSym{ gname, symbol, ms[i].type, ms[i].type->isConst(), true, false, false, 0 });
         }
         current_->globals.push_back(Global{ hidden, symbol, u, std::vector<GlobalPiece>(), false, true, false });
         return;
@@ -2787,7 +2787,7 @@ Parser::Declared Parser::declarator(const Type *base, bool nameOptional,
     // the class it makes is the qualifier. The rest is read by the loop below.
     {
         auto tmpl = findTemplate(name);
-        if (!name.empty() && peek().is("<") && tmpl != templates_.end() &&
+        if (!name.empty() && peek().is("<") && tmpl != tmpl_.templates_.end() &&
             tmpl->second.isClass) {
             const std::size_t tpos = pos;
             const Type *cls = tmpl_.instantiateClass(tmpl->second, tpos);
@@ -2861,7 +2861,7 @@ Parser::Declared Parser::declarator(const Type *base, bool nameOptional,
         if (destructor) name = "~" + name;
     }
     // `int b::f()` inside `namespace a`: the qualifier's first name is found innermost first, `a::b`.
-    if (!qualifier.empty() && !namespaces_.count(qualifier)) {
+    if (!qualifier.empty() && !lookup_.namespaces_.count(qualifier)) {
         const std::size_t cut = qualifier.find("::");
         const std::string head = qualifier.substr(0, cut);
         const std::string ns = lookup_.namespaceNamed(head);
@@ -2892,7 +2892,7 @@ Parser::Declared Parser::declarator(const Type *base, bool nameOptional,
             std::vector<std::string> &stack; const std::vector<std::string> saved;
             ~Restore() { stack = saved; }
         } restore{ namespaceStack_, namespaceStack_ };
-        if (declaredIn == nullptr && !qualifier.empty() && namespaces_.count(qualifier)) {
+        if (declaredIn == nullptr && !qualifier.empty() && lookup_.namespaces_.count(qualifier)) {
             namespaceStack_.clear();
             for (std::size_t s = 0, e; s <= qualifier.size(); s = e + 2) {
                 e = qualifier.find("::", s);
@@ -2930,7 +2930,7 @@ bool Parser::atOwnTemplateId(const std::string &tag, const std::string &local) {
         tag.find('<') == std::string::npos)
         return false;
     auto tmpl = findTemplate(local);
-    if (tmpl == templates_.end() || !tmpl->second.isClass) return false;
+    if (tmpl == tmpl_.templates_.end() || !tmpl->second.isClass) return false;
     const std::size_t save = at_;
     at_++;
     const Type *cls = tmpl_.instantiateClass(tmpl->second, peek().pos);

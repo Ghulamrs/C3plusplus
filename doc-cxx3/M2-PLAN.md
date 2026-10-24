@@ -77,6 +77,16 @@ from 3,013 lines to 2,151. Every commit was byte-identical to the one before ove
 Compiler++ unit at -O0, -O1 and -O2 for x86_64-windows in both spellings and x86_64-linux, and
 self-hosted on the Mac. The state moves come next, then the Windows leg over the whole series.
 
+## The state moves, M2.7
+
+Measured first: of the parser's 226 fields, six were read by one module alone and not by the parser, and
+those moved as the modules' private state. The tables a module answers about moved too, public, because the
+parser fills them: the four name tables and the three namespace tables to `Lookup`; the template tables and
+the specializations to `Templates`; the vtables to `Classes`; the constexpr functions, constructors and
+objects to `Constexpr`; the static symbols to `Linkage`. 132 fields are read by the parser alone, and the rest
+are the parse position and scope context - the token stream, `currentClass_`, the locals, the namespace stack,
+the type table, `src_` - which is what `p_` is for now.
+
 ## What is not in step 1
 
 The parser's question "what kind of name is this?" (`atTypeName`, `localHidesType`) stays in the

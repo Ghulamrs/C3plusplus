@@ -127,7 +127,7 @@ std::vector<StmtPtr> Classes::storeVptrs(const std::string &cls,
     // **The table's ADDRESS, not its contents.** A global Var is an lvalue and
     // reading one loads from it, which stored the table's first word in the vptr and
     // crashed on the first call. Giving it the array type and decaying it is it.
-    const std::size_t entryCount = p_.vtables_[cls].size();
+    const std::size_t entryCount = vtables_[cls].size();
     ExprPtr base(Var::global(table));
     base->setType(p_.types_.arrayOf(entry, static_cast<long long>(entryCount)));
     ExprPtr value = p_.decay(std::move(base));
@@ -413,7 +413,7 @@ std::string Classes::synthesizeThunk(const std::string &cls, const Type *type,
     const Signature *target = nullptr;
     if (const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(cls + "::" + slot.name))
         for (std::size_t k = 0; k < set->size(); k++)
-            if (p_.functions_[(*set)[k]].symbol == slot.symbol) target = &p_.functions_[(*set)[k]];
+            if (p_.lookup_.functions_[(*set)[k]].symbol == slot.symbol) target = &p_.lookup_.functions_[(*set)[k]];
     const Type *returns = target != nullptr ? target->returns : p_.types_.get(Kind::Void);
 
     // A thunk forwards a member call and carries the same `this`, which is
@@ -1044,7 +1044,7 @@ void Classes::emitVtable(const Type *cls, const std::string &tag,
         p_.src_.fail(pos, "a class with a virtual function needs a name - its "
                        "vtable is a symbol, and an anonymous class has none");
 
-    const std::vector<VSlot> &slots = p_.vtables_[tag];
+    const std::vector<VSlot> &slots = vtables_[tag];
     const bool ms = p_.target_.microsoftNames();
     const std::string symbol = cls->unqualified()->tag() == tag
                              ? vtableSymbol(cls, ms) : vtableSymbol(tag, ms);
@@ -1122,7 +1122,7 @@ const Parser::Signature *Classes::defaultConstructorOf(const Type *cls) const {
     if (set == nullptr) return nullptr;
     const Signature *found = nullptr;
     for (std::size_t k = 0; k < set->size(); k++) {
-        const Signature &f = p_.functions_[(*set)[k]];
+        const Signature &f = p_.lookup_.functions_[(*set)[k]];
         if (p_.overload_.leastArguments(f) != 0) continue;
         if (found != nullptr) return nullptr;
         found = &f;
@@ -1136,7 +1136,7 @@ const Parser::Signature *Classes::copyConstructorOf(const Type *cls) const {
     const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(Parser::constructorKey(cls->tag()));
     if (set == nullptr) return nullptr;
     for (std::size_t k = 0; k < set->size(); k++) {
-        const Signature &f = p_.functions_[(*set)[k]];
+        const Signature &f = p_.lookup_.functions_[(*set)[k]];
         if (f.params.size() != 1 || !f.params[0]->isReference()) continue;
         // **`S(S &&)` is not a copy constructor**, and until rung 7 there was no way
         // to write one, so isReference() alone was enough. Answering one here would
@@ -1157,7 +1157,7 @@ const Parser::Signature *Classes::moveConstructorOf(const Type *cls) const {
     const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(Parser::constructorKey(cls->tag()));
     if (set == nullptr) return nullptr;
     for (std::size_t k = 0; k < set->size(); k++) {
-        const Signature &f = p_.functions_[(*set)[k]];
+        const Signature &f = p_.lookup_.functions_[(*set)[k]];
         if (f.params.size() != 1 || !f.params[0]->isRValueReference()) continue;
         if (f.params[0]->referent()->unqualified() != cls->unqualified()) continue;
         return &f;
@@ -1175,7 +1175,7 @@ const Parser::Signature *Classes::copyAssignOf(const Type *cls) const {
     if (set == nullptr) return nullptr;
     const Signature *move = nullptr;
     for (std::size_t i = 0; i < set->size(); i++) {
-        const Signature &f = p_.functions_[(*set)[i]];
+        const Signature &f = p_.lookup_.functions_[(*set)[i]];
         if (f.params.size() != 1) continue;
         const Type *p = f.params[0];
         const bool ref = p->isReference();
@@ -1192,7 +1192,7 @@ const Parser::Signature *Classes::moveAssignOf(const Type *cls) const {
     const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(Parser::assignmentKey(cls->tag()));
     if (set == nullptr) return nullptr;
     for (std::size_t i = 0; i < set->size(); i++) {
-        const Signature &f = p_.functions_[(*set)[i]];
+        const Signature &f = p_.lookup_.functions_[(*set)[i]];
         if (f.params.size() == 1 && f.params[0]->isRValueReference() &&
             f.params[0]->referent()->unqualified() == cls->unqualified()) return &f;
     }
@@ -1281,10 +1281,10 @@ void Classes::declareImplicitDefaultCtor(const std::string &tag, const Type *typ
                        "would write, and it cannot be given a name the linker "
                        "can hold: " + why);
 
-    p_.functionIndex_[Parser::constructorKey(tag)].push_back(p_.functions_.size());
-    p_.functions_.push_back(Signature{ tag, out, p_.types_.get(Kind::Void), params,
+    p_.lookup_.functionIndex_[Parser::constructorKey(tag)].push_back(p_.lookup_.functions_.size());
+    p_.lookup_.functions_.push_back(Signature{ tag, out, p_.types_.get(Kind::Void), params,
                                     false, false, pos, false, tag, false, access, false });
-    p_.functions_.back().implicit = true;
+    p_.lookup_.functions_.back().implicit = true;
 }
 
 // **The destructor the class did not write**, which becomes a function exactly when a
@@ -1385,10 +1385,10 @@ void Classes::memberDestructor(std::vector<StmtPtr> &out, const std::string &cls
 }
 
 void Classes::synthesizeDestructor(std::size_t which) {
-    const std::string cls = p_.functions_[which].owner;
-    const std::size_t pos = p_.functions_[which].pos;
-    const std::string symbol = p_.functions_[which].symbol;
-    const bool isVirtual = p_.functions_[which].isVirtual;
+    const std::string cls = p_.lookup_.functions_[which].owner;
+    const std::size_t pos = p_.lookup_.functions_[which].pos;
+    const std::string symbol = p_.lookup_.functions_[which].symbol;
+    const bool isVirtual = p_.lookup_.functions_[which].isVirtual;
     const Type *type = p_.lookup_.findTypedef(cls);
     if (type == nullptr || !type->isStructOrUnion()) return;
 
@@ -1538,12 +1538,12 @@ void Classes::declareImplicitCopyAssign(const std::string &tag, const Type *type
                        "write, and it cannot be given a name the linker can "
                        "hold: " + why);
 
-    p_.functionIndex_[Parser::assignmentKey(tag)].push_back(p_.functions_.size());
-    p_.functions_.push_back(Signature{ "operator=", out, self, params, false, false,
+    p_.lookup_.functionIndex_[Parser::assignmentKey(tag)].push_back(p_.lookup_.functions_.size());
+    p_.lookup_.functions_.push_back(Signature{ "operator=", out, self, params, false, false,
                                     pos, false, tag, false, Access::Public,
                                     false });
-    p_.functions_.back().implicit = true;
-    p_.functions_.back().deleted = deleted;
+    p_.lookup_.functions_.back().implicit = true;
+    p_.lookup_.functions_.back().deleted = deleted;
 }
 
 // The implicit move assignment - [class.copy]/20: declared where none of /9's five is user-declared; trivial ones
@@ -1589,10 +1589,10 @@ void Classes::declareDefaultedMoveAssign(const std::string &tag, const Type *typ
     if (!ok)
         p_.src_.fail(pos, "'" + tag + "' needs a move assignment the compiler would write, and it "
                        "cannot be given a name the linker can hold: " + why);
-    p_.functionIndex_[Parser::assignmentKey(tag)].push_back(p_.functions_.size());
-    p_.functions_.push_back(Signature{ "operator=", out, self, params, false, false,
+    p_.lookup_.functionIndex_[Parser::assignmentKey(tag)].push_back(p_.lookup_.functions_.size());
+    p_.lookup_.functions_.push_back(Signature{ "operator=", out, self, params, false, false,
                                     pos, false, tag, false, Access::Public, false });
-    p_.functions_.back().implicit = true;
+    p_.lookup_.functions_.back().implicit = true;
 }
 
 // The copy constructor the class did not write, on the same measured line: a class
@@ -1631,11 +1631,11 @@ void Classes::declareImplicitMoveCtor(const std::string &tag, const Type *type,
                        "would write, and it cannot be given a name the linker "
                        "can hold: " + why);
 
-    p_.functionIndex_[Parser::constructorKey(tag)].push_back(p_.functions_.size());
-    p_.functions_.push_back(Signature{ tag, out, p_.types_.get(Kind::Void), params,
+    p_.lookup_.functionIndex_[Parser::constructorKey(tag)].push_back(p_.lookup_.functions_.size());
+    p_.lookup_.functions_.push_back(Signature{ tag, out, p_.types_.get(Kind::Void), params,
                                     false, false, pos, false, tag, false,
                                     Access::Public, false });
-    p_.functions_.back().implicit = true;
+    p_.lookup_.functions_.back().implicit = true;
 }
 
 void Classes::declareImplicitCopyCtor(const std::string &tag, const Type *type,
@@ -1677,12 +1677,12 @@ void Classes::declareImplicitCopyCtor(const std::string &tag, const Type *type,
                        "would write, and it cannot be given a name the linker "
                        "can hold: " + why);
 
-    p_.functionIndex_[Parser::constructorKey(tag)].push_back(p_.functions_.size());
-    p_.functions_.push_back(Signature{ tag, out, p_.types_.get(Kind::Void), params,
+    p_.lookup_.functionIndex_[Parser::constructorKey(tag)].push_back(p_.lookup_.functions_.size());
+    p_.lookup_.functions_.push_back(Signature{ tag, out, p_.types_.get(Kind::Void), params,
                                     false, false, pos, false, tag, false,
                                     Access::Public, false });
-    p_.functions_.back().implicit = true;
-    p_.functions_.back().deleted = deleted;
+    p_.lookup_.functions_.back().implicit = true;
+    p_.lookup_.functions_.back().deleted = deleted;
 }
 
 // **`using B::B;`**: each constructor of B but its default, copy and move ones becomes one of this
@@ -1693,21 +1693,21 @@ void Classes::declareInheritingCtors(const std::string &tag, const Type *type, s
     if (it == p_.inheritFrom_.end()) return;
     const std::vector<const Type *> bases = it->second;
     for (const Type *base : bases) {
-        if (p_.memberTemplates_.count(Parser::constructorKey(base->tag())) != 0)
+        if (p_.tmpl_.memberTemplates_.count(Parser::constructorKey(base->tag())) != 0)
             p_.src_.fail(pos, "inheriting '" + base->describe() + "''s constructor template is not "
                            "supported yet - its specializations would have to be made for the derived class");
         const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(Parser::constructorKey(base->tag()));
         if (set == nullptr) continue;
         const std::vector<std::size_t> from = *set;
         for (std::size_t idx : from) {
-            const Signature b = p_.functions_[idx];
+            const Signature b = p_.lookup_.functions_[idx];
             if (b.deleted || b.owner != base->tag()) continue;
             // An inherited default constructor is D's own default one, by name and body, as clang has it.
             if (b.params.empty()) {
                 bool has = false;
                 if (const std::vector<std::size_t> *own = p_.lookup_.overloadsOf(Parser::constructorKey(tag)))
                     for (std::size_t k : *own)
-                        if (p_.functions_[k].params.empty()) has = true;
+                        if (p_.lookup_.functions_[k].params.empty()) has = true;
                 if (has) continue;
                 const Type *fn0 = p_.types_.functionType(p_.types_.get(Kind::Void), std::vector<const Type *>(), false);
                 const char code0 = b.access == Access::Public ? 'Q' : b.access == Access::Protected ? 'I' : 'A';
@@ -1718,10 +1718,10 @@ void Classes::declareInheritingCtors(const std::string &tag, const Type *type, s
                 if (!ok0)
                     p_.src_.fail(pos, "'" + tag + "''s default constructor cannot be given a name the linker "
                                    "can hold: " + why0);
-                p_.functionIndex_[Parser::constructorKey(tag)].push_back(p_.functions_.size());
-                p_.functions_.push_back(Signature{ tag, out0, p_.types_.get(Kind::Void), std::vector<const Type *>(),
+                p_.lookup_.functionIndex_[Parser::constructorKey(tag)].push_back(p_.lookup_.functions_.size());
+                p_.lookup_.functions_.push_back(Signature{ tag, out0, p_.types_.get(Kind::Void), std::vector<const Type *>(),
                                                 false, false, pos, false, tag, false, b.access, false });
-                p_.functions_.back().implicit = true;
+                p_.lookup_.functions_.back().implicit = true;
                 continue;
             }
             if (b.params.size() == 1 && b.params[0]->isReference() &&
@@ -1731,7 +1731,7 @@ void Classes::declareInheritingCtors(const std::string &tag, const Type *type, s
             bool hidden = false;
             if (const std::vector<std::size_t> *own = p_.lookup_.overloadsOf(Parser::constructorKey(tag)))
                 for (std::size_t k : *own)
-                    if (sameParameters(p_.functions_[k].params, b.params)) hidden = true;
+                    if (sameParameters(p_.lookup_.functions_[k].params, b.params)) hidden = true;
             if (hidden) continue;
             if (b.variadic)
                 p_.src_.fail(pos, "inheriting '" + base->tag() + "''s constructor with '...' is not "
@@ -1752,18 +1752,18 @@ void Classes::declareInheritingCtors(const std::string &tag, const Type *type, s
             if (!ok)
                 p_.src_.fail(pos, "'" + tag + "''s constructor inherited from '" + base->tag() +
                                "' cannot be given a name the linker can hold: " + why);
-            p_.functionIndex_[Parser::constructorKey(tag)].push_back(p_.functions_.size());
-            p_.functions_.push_back(Signature{ tag, out, p_.types_.get(Kind::Void), b.params,
+            p_.lookup_.functionIndex_[Parser::constructorKey(tag)].push_back(p_.lookup_.functions_.size());
+            p_.lookup_.functions_.push_back(Signature{ tag, out, p_.types_.get(Kind::Void), b.params,
                                             false, false, pos, false, tag, false, b.access, false });
-            p_.functions_.back().implicit = true;
-            p_.functions_.back().isExplicit = b.isExplicit;
+            p_.lookup_.functions_.back().implicit = true;
+            p_.lookup_.functions_.back().isExplicit = b.isExplicit;
             auto dflt = p_.defaultArgs_.find(b.symbol);
             if (dflt != p_.defaultArgs_.end()) {
                 p_.defaultArgs_[out] = dflt->second;
                 auto ns = p_.defaultArgNamespace_.find(b.symbol);
                 if (ns != p_.defaultArgNamespace_.end()) p_.defaultArgNamespace_[out] = ns->second;
             }
-            p_.inheriting_[p_.functions_.size() - 1] = Parser::Inheriting{ base, idx };
+            inheriting_[p_.lookup_.functions_.size() - 1] = Inheriting{ base, idx };
             p_.inheritedFrom_[out] = origin;
         }
     }
@@ -1773,9 +1773,9 @@ void Classes::declareInheritingCtors(const std::string &tag, const Type *type, s
 // written, then the vptrs, then the members with constructors of their own. Scalars
 // are left alone, as [dcl.init] has it; an inheriting constructor's forwards its parameters to its base.
 void Classes::synthesizeDefaultCtor(std::size_t which) {
-    const std::string cls = p_.functions_[which].owner;
-    const std::size_t pos = p_.functions_[which].pos;
-    const std::string symbol = p_.functions_[which].symbol;
+    const std::string cls = p_.lookup_.functions_[which].owner;
+    const std::size_t pos = p_.lookup_.functions_[which].pos;
+    const std::string symbol = p_.lookup_.functions_[which].symbol;
     const Type *type = p_.lookup_.findTypedef(cls);
     if (type == nullptr || !type->isStructOrUnion()) return;
 
@@ -1794,9 +1794,9 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
         params.push_back(Param{ p_.vttType(), p_.vttSlot_ });
     }
     // An inheriting constructor's own parameters, B's: a reference arrives as its address.
-    const auto inh = p_.inheriting_.find(which);
-    const Type *inhBase = inh != p_.inheriting_.end() ? inh->second.base : nullptr;
-    const std::vector<const Type *> forwarded = p_.functions_[which].params;
+    const auto inh = inheriting_.find(which);
+    const Type *inhBase = inh != inheriting_.end() ? inh->second.base : nullptr;
+    const std::vector<const Type *> forwarded = p_.lookup_.functions_[which].params;
     std::vector<int> fwdSlots;
     for (const Type *p : forwarded) {
         const Type *slotType = p->isReference() ? p_.types_.pointerTo(p->referent()) : p;
@@ -1826,7 +1826,7 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
         if (bs[i].isVirtual) continue;
         if (!p_.hasConstructors(base->tag())) continue;
         const bool inherited = inhBase != nullptr && base->unqualified() == inhBase->unqualified();
-        const Signature *ctor = inherited ? &p_.functions_[inh->second.from] : defaultConstructorOf(base);
+        const Signature *ctor = inherited ? &p_.lookup_.functions_[inh->second.from] : defaultConstructorOf(base);
         if (ctor == nullptr)
             p_.src_.fail(pos, "'" + cls + "' has no constructor of its own, and the "
                            "one the compiler would write cannot build its base '" +
@@ -1985,10 +1985,10 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
 // the vptrs, then every member no base copied. **The vptr is set and not copied** -
 // measured in cl's listing. Members go one at a time, for the tail-padding rule.
 void Classes::synthesizeCopy(std::size_t which, bool assigning) {
-    const std::string cls = p_.functions_[which].owner;
-    const std::size_t pos = p_.functions_[which].pos;
-    const std::string symbol = p_.functions_[which].symbol;
-    const Type *srcRef = p_.functions_[which].params[0];
+    const std::string cls = p_.lookup_.functions_[which].owner;
+    const std::size_t pos = p_.lookup_.functions_[which].pos;
+    const std::string symbol = p_.lookup_.functions_[which].symbol;
+    const Type *srcRef = p_.lookup_.functions_[which].params[0];
     const Type *type = p_.lookup_.findTypedef(cls);
     if (type == nullptr || !type->isStructOrUnion()) return;
 
@@ -2278,12 +2278,12 @@ bool Classes::hasKeyFunction(const std::string &tag) const {
 }
 
 const Parser::Signature *Classes::keyFunction(const std::string &tag) const {
-    std::map<std::string, std::vector<VSlot> >::const_iterator vt = p_.vtables_.find(tag);
-    for (std::size_t i = 0; i < p_.functions_.size(); i++) {
-        const Signature &f = p_.functions_[i];
+    std::map<std::string, std::vector<VSlot> >::const_iterator vt = vtables_.find(tag);
+    for (std::size_t i = 0; i < p_.lookup_.functions_.size(); i++) {
+        const Signature &f = p_.lookup_.functions_[i];
         if (f.owner != tag || !f.isVirtual || f.implicit || f.inlineBody) continue;
         bool pure = false;
-        if (vt != p_.vtables_.end())
+        if (vt != vtables_.end())
             for (std::size_t k = 0; k < vt->second.size(); k++)
                 if (vt->second[k].pure && overrides(vt->second[k], f.name, f.params, f.constThis, f.refThis))
                     pure = true;
@@ -2322,15 +2322,15 @@ void Classes::pruneExternalVtables(Program &program) {
 void Classes::defineImplicitFunctions() {
     for (bool again = true; again; ) {
         again = false;
-        for (std::size_t i = 0; i < p_.functions_.size(); i++) {
-            if (!p_.functions_[i].implicit || !p_.functions_[i].used ||
-                p_.functions_[i].defined)
+        for (std::size_t i = 0; i < p_.lookup_.functions_.size(); i++) {
+            if (!p_.lookup_.functions_[i].implicit || !p_.lookup_.functions_[i].used ||
+                p_.lookup_.functions_[i].defined)
                 continue;
-            p_.functions_[i].defined = true;
-            if (!p_.functions_[i].name.empty() && p_.functions_[i].name[0] == '~')
+            p_.lookup_.functions_[i].defined = true;
+            if (!p_.lookup_.functions_[i].name.empty() && p_.lookup_.functions_[i].name[0] == '~')
                                                     synthesizeDestructor(i);
-            else if (p_.functions_[i].name == "operator=") synthesizeCopy(i, true);
-            else if (p_.functions_[i].params.empty() || p_.inheriting_.count(i)) synthesizeDefaultCtor(i);
+            else if (p_.lookup_.functions_[i].name == "operator=") synthesizeCopy(i, true);
+            else if (p_.lookup_.functions_[i].params.empty() || inheriting_.count(i)) synthesizeDefaultCtor(i);
             else                                    synthesizeCopy(i, false);
             again = true;
         }
@@ -2407,8 +2407,8 @@ bool Classes::containsSubobject(const Type *y, int yAt, const Type *x, int xAt,
 // declared - not one it inherited - matching a base's slot; null otherwise.
 const VSlot *Classes::declaredSlot(const Type *cls, const VSlot &s) const {
     std::map<std::string, std::vector<VSlot> >::const_iterator it =
-        p_.vtables_.find(cls->tag());
-    if (it == p_.vtables_.end()) return nullptr;
+        vtables_.find(cls->tag());
+    if (it == vtables_.end()) return nullptr;
     const bool dtor = s.name == "~" || s.name == "~$deleting";
     if (dtor) {
         if (p_.destructorOf(cls) == nullptr) return nullptr;
@@ -2417,7 +2417,7 @@ const VSlot *Classes::declaredSlot(const Type *cls, const VSlot &s) const {
         if (set == nullptr) return nullptr;
         bool own = false;
         for (std::size_t k = 0; k < set->size() && !own; k++) {
-            const Signature &f = p_.functions_[(*set)[k]];
+            const Signature &f = p_.lookup_.functions_[(*set)[k]];
             if (f.owner == cls->tag() && f.constThis == s.constThis &&
                 f.refThis == s.refThis &&
                 f.isVirtual && sameParameters(f.params, s.params))
@@ -2490,9 +2490,9 @@ void Classes::vcallEntries(const Type *y, int yAt, const Type *vbase,
     std::size_t from = 0;
     if (const Type *p = y->primaryBase()) {
         vcallEntries(p, yAt, vbase, vbaseAt, root, rootAt, layout, out, pos);
-        from = p_.vtables_[p->tag()].size();
+        from = vtables_[p->tag()].size();
     }
-    const std::vector<VSlot> &slots = p_.vtables_[y->tag()];
+    const std::vector<VSlot> &slots = vtables_[y->tag()];
     for (std::size_t i = from; i < slots.size(); i++) {
         if (slots[i].name == "~$deleting") continue;
         const Overrider ov = finalOverrider(root, rootAt, slots[i], y, yAt,
@@ -2591,8 +2591,8 @@ std::string Classes::synthesizeVirtualThunk(const Type *type, const VSlot &slot,
         if (const std::vector<std::size_t> *set =
                 p_.lookup_.overloadsOf(type->tag() + "::" + slot.name))
             for (std::size_t k = 0; k < set->size(); k++)
-                if (p_.functions_[(*set)[k]].symbol == slot.symbol)
-                    returns = p_.functions_[(*set)[k]].returns;
+                if (p_.lookup_.functions_[(*set)[k]].symbol == slot.symbol)
+                    returns = p_.lookup_.functions_[(*set)[k]].returns;
     ExprPtr call = p_.completeCall(slot.name, slot.symbol, nullptr, returns, full,
                                 false, pos, std::move(args), true);
     if (returns->isVoid()) {
@@ -2621,7 +2621,7 @@ void Classes::layoutOneVtable(VtableGroup &g, const Type *x, int xAt,
                              const std::string &typeInfo, std::size_t pos) {
     const int w = p_.pointerBytes();
     int at = g.pieces.empty() ? 0 : g.pieces.back().offset + g.pieces.back().size;
-    const std::vector<VSlot> slots = p_.vtables_[x->tag()];
+    const std::vector<VSlot> slots = vtables_[x->tag()];
 
     std::vector<Overrider> ov;
     for (std::size_t i = 0; i < slots.size(); i++)
@@ -2767,14 +2767,14 @@ VtableGroup Classes::buildVtableGroup(const Type *cls, int clsAt,
 }
 
 void Classes::emitVtableGroup(const std::string &symbol, VtableGroup g) {
-    if (p_.groups_.count(symbol) != 0) return;
+    if (groups_.count(symbol) != 0) return;
     const Type *entry = p_.types_.pointerTo(p_.types_.get(Kind::Void));
     const Type *table = p_.types_.arrayOf(entry,
                                        static_cast<long long>(g.pieces.size()));
     p_.current_->globals.push_back(Global{ symbol, symbol, table, g.pieces,
                                         true, false, true, std::string(),
                                         true });
-    p_.groups_[symbol] = std::move(g);
+    groups_[symbol] = std::move(g);
 }
 
 // **A construction vtable**, `_ZTC<layout><offset>_<base>`: the base's group
@@ -2788,7 +2788,7 @@ std::string Classes::constructionVtable(const Type *base, int at,
     const std::string symbol = "_ZTC" + itaniumClassEncoding(layout) +
                                std::to_string(at) + "_" +
                                itaniumClassEncoding(base);
-    if (p_.groups_.count(symbol) != 0) return symbol;
+    if (groups_.count(symbol) != 0) return symbol;
     const std::string ti = emitClassTypeInfo(base, base->tag(), pos);
     emitVtableGroup(symbol, buildVtableGroup(base, at, baseIsVirtual, layout,
                                              ti, pos));
@@ -2803,7 +2803,7 @@ void Classes::vttPart(const Type *cls, int clsAt, const std::string &group,
                      VttLayout &out, std::size_t pos) {
     const int w = p_.pointerBytes();
     const std::size_t from = out.pieces.size();
-    const VtableGroup &g = p_.groups_[group];
+    const VtableGroup &g = groups_[group];
     std::map<std::pair<const Type *, int>, int>::const_iterator own =
         g.points.find(std::make_pair(cls, clsAt));
     if (own == g.points.end())
@@ -2849,7 +2849,7 @@ void Classes::vttSecondaryPointers(const Type *x, int xAt, bool morally,
             nvPrimary = false;
         }
         if (!nvPrimary && b->hasVptr() && (b->hasVirtualBase() || morallyB)) {
-            const VtableGroup &g = p_.groups_[group];
+            const VtableGroup &g = groups_[group];
             std::map<std::pair<const Type *, int>, int>::const_iterator p =
                 g.points.find(std::make_pair(b, bAt));
             if (p == g.points.end())
@@ -3024,8 +3024,8 @@ std::vector<StmtPtr> Classes::itaniumVptrStores(const std::string &cls,
     const Type *plain = memberOf->unqualified();
     const std::string table = plain->tag() == cls ? vtableSymbol(plain, false)
                                                    : vtableSymbol(cls, false);
-    std::map<std::string, VtableGroup>::const_iterator git = p_.groups_.find(table);
-    if (git == p_.groups_.end()) return out;
+    std::map<std::string, VtableGroup>::const_iterator git = groups_.find(table);
+    if (git == groups_.end()) return out;
     const VtableGroup &g = git->second;
     const bool useVtt = p_.takesVtt(plain) && p_.vttSlot_ >= 0;
     const VttLayout *vtt = useVtt ? &p_.vtts_[cls] : nullptr;

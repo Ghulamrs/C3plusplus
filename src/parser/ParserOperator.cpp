@@ -1069,7 +1069,7 @@ ExprPtr Parser::assign() {
         if (plain->isStructOrUnion()) {
             if (const std::vector<std::size_t> *set = lookup_.overloadsOf(assignmentKey(plain->tag())))
                 for (std::size_t i : *set) {
-                    const Signature &f = functions_[i];
+                    const Signature &f = lookup_.functions_[i];
                     if (f.params.size() != 1 || !isInitializerListType(f.params[0]->unqualified())) continue;
                     std::vector<ExprPtr> args;
                     args.push_back(initializerListExpr(f.params[0]->unqualified(), in, pos));
@@ -1114,7 +1114,7 @@ ExprPtr Parser::assignValue(ExprPtr n, ExprPtr value, std::size_t pos) {
         if (set != nullptr) {
             const bool wantMove = !isLvalue(*value);
             for (std::size_t i = 0; i < set->size(); i++) {
-                const Signature &cand = functions_[(*set)[i]];
+                const Signature &cand = lookup_.functions_[(*set)[i]];
                 if (cand.params.empty()) continue;
                 if (cand.params[0]->isReference() && cand.params[0]->isRValueReference() == wantMove) {
                     op = &cand;

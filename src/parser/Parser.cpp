@@ -170,7 +170,7 @@ std::size_t Parser::namespaceQualifierTokens(std::size_t from) const {
     if (scope.empty()) return 0;
     std::size_t n = 2;
     while (peekAt(from + n).kind == TokenKind::Ident && peekAt(from + n + 1).is("::") &&
-           namespaces_.count(scope + "::" + peekAt(from + n).text)) {
+           lookup_.namespaces_.count(scope + "::" + peekAt(from + n).text)) {
         scope += "::" + peekAt(from + n).text;
         n += 2;
     }
@@ -222,8 +222,8 @@ bool Parser::atTypeName() const {
     if (localHidesType()) return false;
     // `Box<int> b;` declares a variable, so the name has to answer yes here -
     // but only with a `<` after it, since the bare name is not a type.
-    auto tmpl = templates_.find(peek().text);
-    if (tmpl != templates_.end() && tmpl->second.isClass && peekAt(1).is("<"))
+    auto tmpl = tmpl_.templates_.find(peek().text);
+    if (tmpl != tmpl_.templates_.end() && tmpl->second.isClass && peekAt(1).is("<"))
         return true;
     if (lookup_.findTypedef(peek().text) != nullptr) return true;
     // `N::S` names a type as much as `Outer::Inner` does, and neither answers to
@@ -474,7 +474,7 @@ Parser::FunctionState Parser::captureFunctionState() const {
     s.variadicBody = variadicBody_;
     s.inStaticMember = inStaticMember_;
     s.inParams = inParams_;
-    s.staticSymbols = staticSymbols_;
+    s.staticSymbols = linkage_.staticSymbols_;
     s.pendingDefaults = pendingDefaults_;
     s.pendingNoexcept = pendingNoexcept_;
     s.pendingSpec = pendingSpec_;
@@ -507,7 +507,7 @@ Parser::FunctionState Parser::captureFunctionState() const {
     s.mayThrow = mayThrow_;
     s.conditionDecl = conditionDecl_;
     s.conditionName = conditionName_;
-    s.usingNamespaces = usingNamespaces_;
+    s.usingNamespaces = lookup_.usingNamespaces_;
     return s;
 }
 
@@ -549,7 +549,7 @@ void Parser::restoreFunctionState(const FunctionState &s) {
     variadicBody_ = s.variadicBody;
     inStaticMember_ = s.inStaticMember;
     inParams_ = s.inParams;
-    staticSymbols_ = s.staticSymbols;
+    linkage_.staticSymbols_ = s.staticSymbols;
     pendingDefaults_ = s.pendingDefaults;
     pendingNoexcept_ = s.pendingNoexcept;
     pendingSpec_ = s.pendingSpec;
@@ -582,7 +582,7 @@ void Parser::restoreFunctionState(const FunctionState &s) {
     mayThrow_ = s.mayThrow;
     conditionDecl_ = s.conditionDecl;
     conditionName_ = s.conditionName;
-    usingNamespaces_ = s.usingNamespaces;
+    lookup_.usingNamespaces_ = s.usingNamespaces;
 }
 
 // A body parsed behind one of these doors is a *different* function, so it
@@ -625,7 +625,7 @@ void Parser::clearFunctionState() {
     variadicBody_ = false;
     inStaticMember_ = false;
     inParams_ = false;
-    staticSymbols_.clear();
+    linkage_.staticSymbols_.clear();
     pendingDefaults_.clear();
     pendingNoexcept_ = false;
     pendingSpec_ = DynamicSpec();

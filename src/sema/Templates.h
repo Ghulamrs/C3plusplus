@@ -147,8 +147,18 @@ public:
     bool deduceFromArgument(const Type *param, const Type *arg, std::vector<const Type *> *binding,
                             std::vector<long long> *values, std::string *why, Packs *packs = nullptr);
 
+    std::map<std::string, TemplateDecl> templates_;
+    // **Function templates overload; class templates do not.**
+    std::map<std::string, std::vector<TemplateDecl> > fnTemplates_;
+    // Member function templates by "<ownerTag>::<member>", every one of a name (operator* twice).
+    std::map<std::string, std::vector<TemplateDecl> > memberTemplates_;
+
+    std::vector<Specialization> specializations_;
+
 private:
     Parser &p_;
+    // An instantiation made, keyed by the template's own position and its arguments.
+    std::map<std::string, std::size_t> memberTemplateMade_;
 };
 
 }   // namespace sema

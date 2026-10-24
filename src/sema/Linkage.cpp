@@ -192,24 +192,24 @@ std::string Linkage::uniqueStaticSymbol(const std::string &name, const Type *typ
         } else if (owner.compare(0, 2, "_Z") == 0) {
             abi = "_ZZ" + owner.substr(2) + "E" + std::to_string(name.size()) + name;
             int seen = 0;
-            for (const std::string &used : p_.staticSymbols_)
+            for (const std::string &used : staticSymbols_)
                 if (used == abi || used.compare(0, abi.size() + 1, abi + "_") == 0) seen++;
             if (seen > 0) abi += "_" + std::to_string(seen - 1);
         }
         if (!abi.empty()) {
-            p_.staticSymbols_.push_back(abi);
+            staticSymbols_.push_back(abi);
             return abi;
         }
     }
     std::string symbol = owner + "." + name;
     for (int n = 1; ; n++) {
         bool taken = false;
-        for (const std::string &used : p_.staticSymbols_)
+        for (const std::string &used : staticSymbols_)
             if (used == symbol) { taken = true; break; }
         if (!taken) break;
         symbol = owner + "." + name + "." + std::to_string(n);
     }
-    p_.staticSymbols_.push_back(symbol);
+    staticSymbols_.push_back(symbol);
     return symbol;
 }
 

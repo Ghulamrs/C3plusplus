@@ -431,4 +431,69 @@ struct ConstexprSlot {
     std::string global;   // a global object being built, named by this slot
 };
 
+// A member function body written inside the class, held until the class closes.
+// `start` is the token the whole declaration begins at, so the replay re-reads the
+// return type and parameters too rather than trying to reconstruct them.
+struct PendingBody {
+    std::string tag;
+    std::size_t start;
+    // The class's name **as the source wrote it**, which is not the tag for a specialization.
+    std::string local;
+    // The function table's key for the member this body belongs to.
+    std::string key;
+    // **And which overload under that key**, because a constructor shares its key with every other constructor of the class.
+    std::size_t which;
+    // **A friend defined inside the class is not a member of it.**
+    bool freeFunction = false;
+    static std::size_t npos() { return (std::size_t)-1; }
+
+    // C++11 has no aggregate with a member initialiser, so the braces call this.
+    PendingBody(std::string tag = std::string(), std::size_t start = 0,
+                std::string local = std::string(), std::string key = std::string(),
+                std::size_t which = 0)
+        : tag(std::move(tag)), start(start), local(std::move(local)), key(std::move(key)),
+          which(which) {}
+};
+
+// One specialization that has been asked for. The body is not written where the
+// call is, so the request is recorded and the definitions are replayed afterwards.
+struct Specialization {
+    std::string key;                    // "twice<int>", and the table key
+    std::string name;                   // "twice"
+    std::string display;                // "ns::twice<int>": what a debugger shows for it (1.29)
+    std::string symbol;
+    const Type *fn = nullptr;           // the substituted signature
+    std::vector<const Type *> binding;  // by parameter index
+    std::vector<long long> values;      // non-type arguments, same index
+    Packs packs;   // same index again
+    std::size_t start = 0;              // the template's own tokens
+    std::size_t pos = 0;                // where it was first asked for
+    // How many replayed bodies deep the request came from: one more than the specialization whose
+    // body asked for this one, 1 from the program itself - bounded by kMaxNesting (2026-10-21, fix 5).
+    int depth = 1;
+    bool emitted = false;
+    // A class specialization instead of a function one.
+    bool isClass = false;
+    // Written out rather than made, so there are no parameters to bind and no primary template to replay.
+    bool explicitly = false;
+    // From a partial specialization: the primary's out-of-line members are not its (A16).
+    bool fromPartial = false;
+    // The parameters `binding` and `values` are for. Usually the
+    // template's own; for a partial specialization they are its.
+    std::vector<TemplateParam> params;
+    std::vector<PendingBody> bodies;
+    // Out-of-line definitions already turned into keys for this tag. They are
+    // replayed through topLevel and not replayInlineBodies: the tokens carry
+    // `Box<T>::get`, so the qualifier is written and the ordinary path reads it.
+    struct Outside {
+        std::size_t start = 0;
+        std::string key;
+    };
+    std::vector<Outside> outside;
+    // Which of the class template's out-of-line definitions have been replayed for
+    // this specialization. Not a count: the list can grow after the class is made,
+    // a definition being writable further down the file than the first use.
+    std::vector<bool> outsideDone;
+};
+
 }   // namespace sema

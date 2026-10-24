@@ -341,7 +341,7 @@ const DepExpr *Parser::depPrimary(bool angle) {
         return depCast(specifiers(&sc));
     }
     if (tok.kind == TokenKind::Ident) {
-        if (peekAt(1).is("<") && findTemplate(tok.text) != templates_.end())
+        if (peekAt(1).is("<") && findTemplate(tok.text) != tmpl_.templates_.end())
             depRefuse(pos, "a template-id");
         if (peekAt(1).is("::")) depRefuse(pos, "a qualified name");
         if (peekAt(1).is("(")) {

@@ -238,8 +238,17 @@ public:
                                    bool userDeclared);
     const Signature *moveAssignOf(const Type *cls) const;
 
+    std::map<std::string, std::vector<VSlot> > vtables_;
+    // Where a class's own new slots begin, after its primary base's - the Microsoft overload order is kept within that run only.
+    std::map<std::string, std::size_t> ownSlotsFrom_;
+
 private:
     Parser &p_;
+    // Per inheriting constructor (its index in lookup_.functions_), the base and the base constructor it forwards to.
+    struct Inheriting { const Type *base; std::size_t from; };
+    std::map<std::size_t, Inheriting> inheriting_;
+    // Every group written, by symbol: a `_ZTV`, or a construction `_ZTC`.
+    std::map<std::string, VtableGroup> groups_;
 };
 
 }   // namespace sema

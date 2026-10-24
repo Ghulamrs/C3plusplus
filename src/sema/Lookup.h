@@ -89,6 +89,29 @@ public:
                                         const Type *left,
                                         const Type *right) const;
 
+    // **The four tables the parser fills and this module answers about**: functions, objects, type names and enumerators.
+    std::vector<Signature> functions_;
+    // One name, every function declared under it. C had one; C++ has a set,
+    // and the set is ordered by declaration so a diagnostic can list the
+    // candidates in the order the reader wrote them.
+    std::vector<Signature> &functionTable() { return functions_; }
+    std::unordered_map<std::string, std::vector<std::size_t> > functionIndex_;
+    std::vector<GlobalSym> globals_;
+    std::unordered_map<std::string, std::size_t> globalIndex_;
+    std::vector<TypedefName> typedefs_;
+    std::unordered_map<std::string, std::size_t> typedefIndex_;
+    std::vector<EnumConst> enums_;
+    std::unordered_map<std::string, std::size_t> enumIndex_;
+
+    // Namespaces named by a `using namespace` still open here, innermost last.
+    std::vector<std::string> usingNamespaces_;
+
+    // Every namespace ever opened, by full path: `N::f` and `S::f` are written alike and looked up apart, and this tells them apart.
+    std::set<std::string> namespaces_;
+
+    // Every namespace defined `inline`, by full path - [namespace.def]/8.
+    std::set<std::string> inlineNamespaces_;
+
 private:
     Parser &p_;
 };

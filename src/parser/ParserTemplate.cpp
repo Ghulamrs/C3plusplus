@@ -235,7 +235,7 @@ const Parser::TemplateDecl &Parser::templateTemplateArgument(const TemplateDecl 
         src_.fail(pos, "'" + written + "' is given arguments here, and '" + p.name + "' is a template "
                        "template parameter, which takes a template's name alone");
     std::map<std::string, TemplateDecl>::const_iterator it = findTemplate(written);
-    if (it == templates_.end() || !it->second.isClass)
+    if (it == tmpl_.templates_.end() || !it->second.isClass)
         src_.fail(pos, "'" + written + "' does not name a class template or an alias template, "
                        "which is what '" + p.name + "' of '" + decl.name + "' takes");
     std::string why;
@@ -292,8 +292,8 @@ const Type *Parser::readTemplateDeclaration(const TemplateDecl &decl,
         ~Scope() { p->signatureClass_ = was; }
     } scope{ this, signatureClass_ };
     if (decl.isMember && !decl.isConstructor) {
-        auto own = typedefIndex_.find(decl.ownerTag);
-        if (own != typedefIndex_.end()) signatureClass_ = typedefs_[own->second].type;
+        auto own = lookup_.typedefIndex_.find(decl.ownerTag);
+        if (own != lookup_.typedefIndex_.end()) signatureClass_ = lookup_.typedefs_[own->second].type;
     }
     // **The signature names things in the namespace the template was declared in**, as its body
     // does when replayed: `template <class T> int adl(T, Tag)` inside NS reads NS's Tag from a call
@@ -424,7 +424,7 @@ bool Parser::templateDeclaration() {
         decl.aliasAt = at_;
         decl.isAlias = decl.isClass = decl.defined = true;
         decl.ns = namespacePrefix();
-        if (templates_.count(decl.name) != 0)
+        if (tmpl_.templates_.count(decl.name) != 0)
             src_.fail(decl.pos, "'" + decl.name + "' is already a template");
         int depth = 0;
         while (peek().kind != TokenKind::End && !(depth == 0 && peek().is(";"))) {
@@ -433,7 +433,7 @@ bool Parser::templateDeclaration() {
             at_++;
         }
         expect(";");
-        templates_[decl.name] = decl;
+        tmpl_.templates_[decl.name] = decl;
         return true;
     }
 
@@ -463,7 +463,7 @@ bool Parser::templateDeclaration() {
     // held inside the class, so it is kept on the class and replayed by that path.
     std::string special, nestedPath;
     if (atOutOfLineSpecial(&special, &nestedPath)) {
-        TemplateDecl &owner = templates_[peek().text];
+        TemplateDecl &owner = tmpl_.templates_[peek().text];
         at_++;
         skipTemplateArguments();
         expect("::");
@@ -491,8 +491,8 @@ bool Parser::templateDeclaration() {
                         ? namespaceQualifierTokens(1) : 0;
     if ((peek().is("struct") || peek().is("class") || peek().is("union")) &&
         peekAt(1 + q).kind == TokenKind::Ident && peekAt(2 + q).is("<")) {
-        auto primary = templates_.find(peekAt(1 + q).text);
-        if (primary == templates_.end() || !primary->second.isClass)
+        auto primary = tmpl_.templates_.find(peekAt(1 + q).text);
+        if (primary == tmpl_.templates_.end() || !primary->second.isClass)
             src_.fail(peekAt(1 + q).pos, "'" + peekAt(1 + q).text + "' is not a class "
                                          "template, so there is nothing here to "
                                          "specialize");
@@ -594,8 +594,8 @@ bool Parser::templateDeclaration() {
         if (of == nullptr || !of->isSpecialization())
             src_.fail(decl.pos, "'" + qualifier + "' is not a class template, "
                                 "so this defines a member of nothing");
-        auto owner = templates_.find(of->templateName());
-        if (owner == templates_.end())
+        auto owner = tmpl_.templates_.find(of->templateName());
+        if (owner == tmpl_.templates_.end())
             src_.fail(decl.pos, "'" + of->templateName() + "' is not a class "
                                 "template");
         // The template's own name, not the qualifier: that is the pattern's
@@ -620,10 +620,10 @@ bool Parser::templateDeclaration() {
     // template of a name already seen is another overload, kept beside the
     // first; a call tries each by deduction.
     if (!decl.isClass) {
-        if (decl.defined) fnTemplates_[decl.name].push_back(decl);
-        auto it = templates_.find(decl.name);
-        if (it == templates_.end()) {
-            templates_[decl.name] = decl;
+        if (decl.defined) tmpl_.fnTemplates_[decl.name].push_back(decl);
+        auto it = tmpl_.templates_.find(decl.name);
+        if (it == tmpl_.templates_.end()) {
+            tmpl_.templates_[decl.name] = decl;
         } else if (decl.defined && !it->second.defined && !it->second.isClass) {
             decl.outOfLine = it->second.outOfLine;
             it->second = decl;
@@ -634,9 +634,9 @@ bool Parser::templateDeclaration() {
     // A template may be declared and then defined. The definition is the one
     // worth keeping, since instantiating is replaying its tokens - but any
     // out-of-line members gathered against the declaration come with it.
-    auto it = templates_.find(decl.name);
-    if (it == templates_.end()) {
-        templates_[decl.name] = decl;
+    auto it = tmpl_.templates_.find(decl.name);
+    if (it == tmpl_.templates_.end()) {
+        tmpl_.templates_[decl.name] = decl;
     } else if (decl.defined && !it->second.defined) {
         decl.outOfLine = it->second.outOfLine;
         // [temp.param]/10: the defaults are merged - one written on the declaration is the definition's too.
@@ -666,7 +666,7 @@ bool Parser::functionExplicitSpecialization(std::size_t pos) {
         if (t.is("(") && depth == 0 && nameAt != 0) break;
         if (t.is("(")) depth++;
         else if (t.is(")") && depth > 0) depth--;
-        else if (t.kind == TokenKind::Ident && depth == 0 && fnTemplates_.count(t.text) != 0 &&
+        else if (t.kind == TokenKind::Ident && depth == 0 && tmpl_.fnTemplates_.count(t.text) != 0 &&
                  (tokens_[i + 1].is("<") || tokens_[i + 1].is("("))) nameAt = i;
         if (t.is(";") || t.is("{")) break;
     }
@@ -708,7 +708,7 @@ bool Parser::functionExplicitSpecialization(std::size_t pos) {
         const Type *pattern;
     };
     std::vector<Match> matches;
-    const std::vector<TemplateDecl> overloads = fnTemplates_[name];
+    const std::vector<TemplateDecl> overloads = tmpl_.fnTemplates_[name];
     for (std::size_t k = 0; k < overloads.size(); k++) {
         const TemplateDecl &decl = overloads[k];
         Match m;
@@ -755,13 +755,13 @@ bool Parser::functionExplicitSpecialization(std::size_t pos) {
                 best = false;
         if (!best) continue;
         const Match &m = matches[c];
-        const std::size_t before = functions_.size();
+        const std::size_t before = lookup_.functions_.size();
         instantiate(overloads[m.which], m.binding, m.values, m.args, pos, m.packs);
-        if (functions_.size() == before)
+        if (lookup_.functions_.size() == before)
             src_.fail(pos, "'" + tmpl_.specializationKey(name, m.args) + "' has already been used further up, "
                            "so specializing it here is too late - the specialization goes before the first use");
-        specializations_.back().start = copy;
-        functions_.back().used = true;          // a definition the program wrote, emitted as one
+        tmpl_.specializations_.back().start = copy;
+        lookup_.functions_.back().used = true;          // a definition the program wrote, emitted as one
         at_ = defEnd;
         return true;
     }
@@ -791,8 +791,8 @@ bool Parser::explicitSpecialization() {
     if (peek().kind != TokenKind::Ident)
         src_.fail(peek().pos, "this specialization names no class");
     const std::string name = peek().text;
-    auto primary = templates_.find(name);
-    if (primary == templates_.end() || !primary->second.isClass)
+    auto primary = tmpl_.templates_.find(name);
+    if (primary == tmpl_.templates_.end() || !primary->second.isClass)
         src_.fail(peek().pos, "'" + name + "' is not a class template, so "
                               "there is nothing here to specialize");
     at_++;
@@ -839,8 +839,8 @@ bool Parser::explicitSpecialization() {
 // the argument list, so the `>>` split has to be put back too.
 bool Parser::atOutOfLineSpecial(std::string *what, std::string *nested) {
     if (peek().kind != TokenKind::Ident) return false;
-    auto t = templates_.find(peek().text);
-    if (t == templates_.end() || !t->second.isClass || !peekAt(1).is("<"))
+    auto t = tmpl_.templates_.find(peek().text);
+    if (t == tmpl_.templates_.end() || !t->second.isClass || !peekAt(1).is("<"))
         return false;
 
     const std::string name = peek().text;
@@ -1202,7 +1202,7 @@ Parser::instantiate(const TemplateDecl &decl,
     key += "@" + std::to_string(decl.afterParams);
 
     if (const std::vector<std::size_t> *had = lookup_.overloadsOf(key))
-        return functions_[(*had)[0]];
+        return lookup_.functions_[(*had)[0]];
 
     // **The pattern the Itanium name is spelled from** keeps every parameter
     // as a reference to itself - a type parameter as Kind::TemplateParam, a
@@ -1242,35 +1242,35 @@ Parser::instantiate(const TemplateDecl &decl,
     sp.pos = pos;
     sp.depth = instantiationDepth_ + 1;
     tmpl_.refuseInstantiationDepth(decl.name, sp.depth, pos);
-    specializations_.push_back(sp);
+    tmpl_.specializations_.push_back(sp);
 
     // **Under two keys, on purpose.** "twice<int>" is what the replayed definition
     // declares and what a repeat of the same arguments finds; "twice" is what
     // overload resolution must see, a specialization competing with the ordinary.
-    const std::size_t at = functions_.size();
-    functionIndex_[key].push_back(at);
-    functionIndex_[decl.name].push_back(at);
+    const std::size_t at = lookup_.functions_.size();
+    lookup_.functionIndex_[key].push_back(at);
+    lookup_.functionIndex_[decl.name].push_back(at);
     // And under the template's namespace, where that namespace's ordinary functions of the name
     // are: a template and a non-template there compete as one set, and the non-template wins a tie.
     // Where that namespace is inline, under the enclosing one's as well - `lib::twice(1)`.
-    if (!decl.ns.empty()) functionIndex_[decl.ns + decl.name].push_back(at);
-    else functionIndex_["::" + decl.name].push_back(at);   // the global namespace's own
+    if (!decl.ns.empty()) lookup_.functionIndex_[decl.ns + decl.name].push_back(at);
+    else lookup_.functionIndex_["::" + decl.name].push_back(at);   // the global namespace's own
     {
         const std::vector<std::string> alts = lookup_.inlineAliasPrefixes(decl.ns);
-        for (std::size_t a = 0; a < alts.size(); a++) functionIndex_[alts[a] + decl.name].push_back(at);
+        for (std::size_t a = 0; a < alts.size(); a++) lookup_.functionIndex_[alts[a] + decl.name].push_back(at);
     }
-    functions_.push_back(Signature{ display, symbol, fn->returns(), fn->params(),
+    lookup_.functions_.push_back(Signature{ display, symbol, fn->returns(), fn->params(),
                                     fn->isVariadicFn(), false, pos, false,
                                     std::string(), false, Access::Public });
-    functions_.back().fromTemplate = true;
-    functions_.back().pattern = patternFn;
-    functions_.back().isNoexcept = patternNoexcept_;   // the pattern's bare `noexcept`, read above (1.27)
+    lookup_.functions_.back().fromTemplate = true;
+    lookup_.functions_.back().pattern = patternFn;
+    lookup_.functions_.back().isNoexcept = patternNoexcept_;   // the pattern's bare `noexcept`, read above (1.27)
     // **The defaults the pattern's parameter list just read.**
     if (!pendingDefaults_.empty()) {
         defaultArgs_[symbol] = pendingDefaults_;
         defaultArgNamespace_[symbol] = namespaceStack_;
     }
-    return functions_.back();
+    return lookup_.functions_.back();
 }
 
 // **The initialiser is read twice: once to learn its type, once to build it.** The
@@ -1521,8 +1521,8 @@ bool Parser::defaultTemplateArgument(const TemplateDecl &decl, std::size_t i,
         ~Scopes() { p->signatureClass_ = cls; p->namespaceStack_ = ns; }
     } scopes{ this, signatureClass_, namespaceStack_ };
     if (decl.isMember) {
-        auto own = typedefIndex_.find(decl.ownerTag);
-        if (own != typedefIndex_.end()) signatureClass_ = typedefs_[own->second].type;
+        auto own = lookup_.typedefIndex_.find(decl.ownerTag);
+        if (own != lookup_.typedefIndex_.end()) signatureClass_ = lookup_.typedefs_[own->second].type;
     }
     if (!decl.ns.empty()) namespaceStack_ = namespacePathStack(decl.ns);
     at_ = p.defBegin;
@@ -1610,7 +1610,7 @@ std::vector<std::string> Parser::namespacePathStack(const std::string &ns) {
 ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
     const std::string name = peek().text;
     const std::size_t pos = peek().pos;
-    const TemplateDecl decl = templates_[name];
+    const TemplateDecl decl = tmpl_.templates_[name];
     if (decl.isClass) {
         // **`vector<int>()` is a temporary, not an instantiation this cannot
         // do.**
@@ -1702,10 +1702,10 @@ ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
         if (named == "::") {
             std::vector<std::size_t> mine;
             if (const std::vector<std::size_t> *all = lookup_.overloadsOf(bare))
-                for (std::size_t i : *all) if (!functions_[i].fromTemplate) mine.push_back(i);
+                for (std::size_t i : *all) if (!lookup_.functions_[i].fromTemplate) mine.push_back(i);
             if (const std::vector<std::size_t> *own = lookup_.overloadsOf("::" + bare))
                 mine.insert(mine.end(), own->begin(), own->end());
-            functionIndex_["$global:" + bare] = mine;
+            lookup_.functionIndex_["$global:" + bare] = mine;
             named = "$global:";
         }
         const std::string key = !named.empty() && lookup_.overloadsOf(named + bare) != nullptr ? named + bare
@@ -1768,8 +1768,8 @@ ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
             if (f.unsupported) src_.fail(f.pos, f.why);
             continue;
         }
-        for (std::size_t i = 0; i < functions_.size() && !symbol.empty(); i++)
-            if (functions_[i].symbol == symbol) { made.push_back(i); break; }
+        for (std::size_t i = 0; i < lookup_.functions_.size() && !symbol.empty(); i++)
+            if (lookup_.functions_[i].symbol == symbol) { made.push_back(i); break; }
     }
     // Nothing applied: read the one template outside the trial, so its own diagnostic is printed.
     if (made.empty()) {
@@ -1781,18 +1781,18 @@ ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
     at_ = afterCall;
 
     // One candidate is the answer; several are ranked under a key of their own, so nothing
-    // else of this name joins. **A copy, not a reference**: parsing can move `functions_`.
-    Signature sig = functions_[made[0]];
+    // else of this name joins. **A copy, not a reference**: parsing can move `lookup_.functions_`.
+    Signature sig = lookup_.functions_[made[0]];
     if (made.size() > 1) {
         const std::string key = "$explicit:" + name;
-        functionIndex_[key] = made;
+        lookup_.functionIndex_[key] = made;
         sig = overload_.resolveOverload(key, callArgs, pos);
-        functionIndex_.erase(key);
+        lookup_.functionIndex_.erase(key);
     }
     // Written out rather than deduced, so no ranking chose it and nothing else
     // will mark it - a specialization is defined only where it was chosen.
-    for (std::size_t i = 0; i < functions_.size(); i++)
-        if (functions_[i].symbol == sig.symbol) { functions_[i].used = true; break; }
+    for (std::size_t i = 0; i < lookup_.functions_.size(); i++)
+        if (lookup_.functions_[i].symbol == sig.symbol) { lookup_.functions_[i].used = true; break; }
     // The same defaults, on the path where the arguments were written out.
     applyDefaults(sig, callArgs, pos);
     return completeCall(sig.name, sig.symbol, nullptr, sig.returns, sig.params,
@@ -1813,7 +1813,7 @@ void Parser::refuseTemplateId() {
                        "the type itself is made, so 'typedef " + name +
                        "<...> Name;' and then 'Name::' reaches the member");
     src_.fail(pos, "'" + name + "' is a " +
-                   (templates_[name].isClass ? "class" : "function") +
+                   (tmpl_.templates_[name].isClass ? "class" : "function") +
                    " template, and instantiating one is not supported yet");
 }
 
@@ -1825,7 +1825,7 @@ ExprPtr Parser::memberTemplateCall(ExprPtr object, const Type *obj,
     const Type *named = obj->unqualified();
     const Type *plain = memberTemplateOwner(named, name);
     if (plain == nullptr) plain = named;
-    const std::vector<TemplateDecl> &templates = memberTemplates_[plain->tag() + "::" + name];
+    const std::vector<TemplateDecl> &templates = tmpl_.memberTemplates_[plain->tag() + "::" + name];
     TemplateDecl mt = templates.front();
     // [class.access.base]/5: the member's own access, and every base on the way from the class it was named in.
     if (!insideAccessOf(plain, mt.memberAccess) && !isFriendOf(plain) &&
@@ -1892,7 +1892,7 @@ ExprPtr Parser::memberTemplateCall(ExprPtr object, const Type *obj,
     // **Odr-used here**: `s.m<int>(1)` bypasses resolveOverload, so pruning dropped it - a link error (1.28).
     markUsed(sig);
     // A copy, since applyDefaults and completeCall read it while the arguments
-    // can grow functions_ out from under a reference.
+    // can grow lookup_.functions_ out from under a reference.
     const Signature chosen = *sig;
     applyDefaults(chosen, callArgs, pos);
 
@@ -1988,7 +1988,7 @@ ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
             (currentClass_->unqualified() == cls->unqualified() ||
              publicBaseOffset(currentClass_, cls->unqualified()) >= 0)) {
             bool anyMember = false;
-            for (std::size_t i : *lookup_.overloadsOf(key)) anyMember = anyMember || needsThis(functions_[i]);
+            for (std::size_t i : *lookup_.overloadsOf(key)) anyMember = anyMember || needsThis(lookup_.functions_[i]);
             if (anyMember) {
                 ExprPtr obj = thisObject();
                 const Type *objType = obj->type();
@@ -2026,7 +2026,7 @@ ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
     // `&C<int>::f`, f a static member function named and not called - a function as a value (M1).
     if (const std::vector<std::size_t> *set = lookup_.overloadsOf(key)) {
         bool allStatic = true;
-        for (std::size_t i : *set) allStatic = allStatic && functions_[i].isStaticMember;
+        for (std::size_t i : *set) allStatic = allStatic && lookup_.functions_[i].isStaticMember;
         if (allStatic)
             if (ExprPtr f = functionAsValue(key, mpos)) return f;
     }

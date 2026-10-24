@@ -63,6 +63,10 @@ public:
 
 private:
     Parser &p_;
+    // **Only one user-defined conversion may appear in a sequence**.
+    int rankingConversion_ = 0;
+    // The arguments being ranked, by position - the object first, then operands - for closerTarget (1.27).
+    std::vector<const Type *> rankingGiven_;
 };
 
 }   // namespace sema

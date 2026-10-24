@@ -186,7 +186,7 @@ bool Parser::isAggregateClass(const Type *t) const {
         if (m.declaredIn == nullptr && m.access != Access::Public) return false;
     if (const std::vector<std::size_t> *set = lookup_.overloadsOf(constructorKey(t->tag())))
         for (std::size_t i : *set)
-            if (!functions_[i].implicit) return false;
+            if (!lookup_.functions_[i].implicit) return false;
     return true;
 }
 
@@ -1401,7 +1401,7 @@ void Parser::dynamicInitialise(Declared &d, const std::string &symbol,
         ConstObject value;
         if (d.type->isArray() || !constant_.foldDeclaredObject(steps, *self, &value, d.pos))
             constant_.refuseConstexprClassObject(d.name, d.pos);
-        constObjects_[symbol] = value;
+        constant_.constObjects_[symbol] = value;
         constant_.constObjectPieces(value, *folded);
         leaveInitFunction(outer);
         return;

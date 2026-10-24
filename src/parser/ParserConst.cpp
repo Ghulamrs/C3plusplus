@@ -35,13 +35,13 @@ bool Parser::aliasDeclaration(const std::string &prefix) {
                          "of that type - write 'using " + name + " = T;' with T a type alone");
     expect(";");
     const std::string key = prefix + name;
-    std::unordered_map<std::string, std::size_t>::const_iterator had = typedefIndex_.find(key);
-    if (had != typedefIndex_.end() && typedefs_[had->second].type != d.type &&
-        typedefs_[had->second].name == key)
+    std::unordered_map<std::string, std::size_t>::const_iterator had = lookup_.typedefIndex_.find(key);
+    if (had != lookup_.typedefIndex_.end() && lookup_.typedefs_[had->second].type != d.type &&
+        lookup_.typedefs_[had->second].name == key)
         src_.fail(pos, "'" + name + "' is declared twice, and not as the same type: it was '" +
-                       typedefs_[had->second].type->describe() + "' and is now '" + d.type->describe() + "'");
-    typedefIndex_[key] = typedefs_.size();
-    typedefs_.push_back(TypedefName{ key, d.type });
+                       lookup_.typedefs_[had->second].type->describe() + "' and is now '" + d.type->describe() + "'");
+    lookup_.typedefIndex_[key] = lookup_.typedefs_.size();
+    lookup_.typedefs_.push_back(TypedefName{ key, d.type });
     return true;
 }
 
@@ -178,15 +178,15 @@ void Parser::applyDefaultedAccess(const std::string &tag, const Type *type) {
     if (it == defaulted_.end()) return;
     const Defaulted &df = it->second;
     if (const Signature *f = classes_.defaultConstructorOf(type))
-        if (df.defaultCtor.is) functions_[static_cast<std::size_t>(f - &functions_[0])].access = df.defaultCtor.access;
+        if (df.defaultCtor.is) lookup_.functions_[static_cast<std::size_t>(f - &lookup_.functions_[0])].access = df.defaultCtor.access;
     if (const Signature *f = classes_.copyConstructorOf(type))
-        if (df.copyCtor.is) functions_[static_cast<std::size_t>(f - &functions_[0])].access = df.copyCtor.access;
+        if (df.copyCtor.is) lookup_.functions_[static_cast<std::size_t>(f - &lookup_.functions_[0])].access = df.copyCtor.access;
     if (const Signature *f = classes_.moveConstructorOf(type))
-        if (df.moveCtor.is) functions_[static_cast<std::size_t>(f - &functions_[0])].access = df.moveCtor.access;
+        if (df.moveCtor.is) lookup_.functions_[static_cast<std::size_t>(f - &lookup_.functions_[0])].access = df.moveCtor.access;
     if (const Signature *f = classes_.copyAssignOf(type))
-        if (df.copyAssign.is) functions_[static_cast<std::size_t>(f - &functions_[0])].access = df.copyAssign.access;
+        if (df.copyAssign.is) lookup_.functions_[static_cast<std::size_t>(f - &lookup_.functions_[0])].access = df.copyAssign.access;
     if (const Signature *f = destructorOf(type))
-        if (df.dtor.is) functions_[static_cast<std::size_t>(f - &functions_[0])].access = df.dtor.access;
+        if (df.dtor.is) lookup_.functions_[static_cast<std::size_t>(f - &lookup_.functions_[0])].access = df.dtor.access;
 }
 
 bool Parser::staticAssertion() {

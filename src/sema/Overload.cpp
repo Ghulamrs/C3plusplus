@@ -92,8 +92,8 @@ Rank Overload::rankArgument(const Expr &arg, const Type *param) {
             const bool related = given->unqualified()->isStructOrUnion() && want->unqualified()->isStructOrUnion() &&
                                  p_.accessibleBaseOffset(given, want) > -1;
             const bool takesTemporary = want->isConst() || (param->isRValueReference() && !related);
-            if (takesTemporary && p_.rankingConversion_ == 0) {
-                p_.rankingConversion_++;
+            if (takesTemporary && rankingConversion_ == 0) {
+                rankingConversion_++;
                 // A class target is reached by its converting constructor or by
                 // the argument's conversion function, [over.ics.user]; the second
                 // was missing, and `take(const B &)` refused an A with `operator B`.
@@ -104,7 +104,7 @@ Rank Overload::rankArgument(const Expr &arg, const Type *param) {
                             p_.conversionFunction(given, want->unqualified()) != nullptr))
                         : (given->unqualified()->isStructOrUnion() &&
                            p_.conversionFunction(given, want) != nullptr);
-                p_.rankingConversion_--;
+                rankingConversion_--;
                 if (usable) return userDefinedRank(given, want);
             }
             // **And a standard conversion makes that temporary too.**
@@ -186,8 +186,8 @@ Rank Overload::rankArgument(const Expr &arg, const Type *param) {
     // **Last of all, a user-defined conversion** - [over.ics.rank]/2 puts one
     // below every standard conversion, so this is asked only where nothing
     // above it answered.
-    if (p_.rankingConversion_ == 0) {
-        p_.rankingConversion_++;
+    if (rankingConversion_ == 0) {
+        rankingConversion_++;
         const bool usable =
             to->unqualified()->isStructOrUnion()
                 ? (p_.convertingConstructor(to, arg) != nullptr ||
@@ -195,7 +195,7 @@ Rank Overload::rankArgument(const Expr &arg, const Type *param) {
                     p_.conversionFunction(from, to->unqualified()) != nullptr))
                 : (from->unqualified()->isStructOrUnion() &&
                    p_.conversionFunction(from, to) != nullptr);
-        p_.rankingConversion_--;
+        rankingConversion_--;
         if (usable) return userDefinedRank(from, to);
     }
 
@@ -326,7 +326,7 @@ bool Overload::betterCandidate(const std::vector<Rank> &a,
             }
             if (a[i] > Rank::Conversion) continue;
             const int closer =
-                closerTarget(pa, pb, i < p_.rankingGiven_.size() ? p_.rankingGiven_[i] : nullptr);
+                closerTarget(pa, pb, i < rankingGiven_.size() ? rankingGiven_[i] : nullptr);
             if (closer > 0) better = true;
             if (closer < 0) worse = true;
             continue;
@@ -421,7 +421,7 @@ OperatorChoice Overload::resolveOperator(const std::string &name,
             const std::string key = owner->tag() + "::" + name;
             if (const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(key))
                 for (std::size_t k = 0; k < set->size(); k++) {
-                    const Signature &f = p_.functions_[(*set)[k]];
+                    const Signature &f = p_.lookup_.functions_[(*set)[k]];
                     if (f.params.size() != written) continue;
                     // The object parameter binds like any other reference: exact
                     // where the constness agrees, a qualification conversion for a
@@ -450,7 +450,7 @@ OperatorChoice Overload::resolveOperator(const std::string &name,
         for (std::size_t k = 0; k < set->size(); k++) {
             // Two keys may reach one function - the bare name and its namespace's - and it is one candidate.
             if (std::find(which.begin(), which.end(), (*set)[k]) != which.end()) continue;
-            const Signature &f = p_.functions_[(*set)[k]];
+            const Signature &f = p_.lookup_.functions_[(*set)[k]];
             if (f.params.size() != written + 1) continue;
             // [over.match.oper]/3.2: with no operand of class type, a non-member is a candidate only if a
             // parameter takes an operand's enumeration itself - `op == __fn_clone` is no call (M1).
@@ -478,25 +478,25 @@ OperatorChoice Overload::resolveOperator(const std::string &name,
 
     if (which.empty()) return OperatorChoice::None;
 
-    p_.rankingGiven_.clear();
-    p_.rankingGiven_.push_back(lt);
-    if (right != nullptr) p_.rankingGiven_.push_back(right->type());
+    rankingGiven_.clear();
+    rankingGiven_.push_back(lt);
+    if (right != nullptr) rankingGiven_.push_back(right->type());
     std::size_t best = 0;
     for (std::size_t k = 1; k < which.size(); k++)
         if (betterCandidate(ranks[k], ranks[best],
-                            p_.functions_[which[k]], p_.functions_[which[best]],
+                            p_.lookup_.functions_[which[k]], p_.lookup_.functions_[which[best]],
                             member[k], member[best]))
             best = k;
     for (std::size_t k = 0; k < which.size(); k++) {
         if (k == best) continue;
         if (!betterCandidate(ranks[best], ranks[k],
-                             p_.functions_[which[best]], p_.functions_[which[k]],
+                             p_.lookup_.functions_[which[best]], p_.lookup_.functions_[which[k]],
                              member[best], member[k])) {
             std::string why = "this use of '" + name + "' is ambiguous";
             for (std::size_t j = 0; j < which.size(); j++)
                 why += std::string("\n    candidate: ") +
                        (member[j] ? "member " : "") +
-                       describeSignature(p_.functions_[which[j]]);
+                       describeSignature(p_.lookup_.functions_[which[j]]);
             p_.src_.fail(pos, why);
         }
     }
@@ -539,7 +539,7 @@ Signature Overload::resolveOverload(const std::string &written,
     }
     // **A constructor template is a candidate too**: every one under this key that
     // deduces from the arguments is instantiated before the set is read.
-    if (p_.memberTemplates_.count(name) != 0) {
+    if (p_.tmpl_.memberTemplates_.count(name) != 0) {
         std::vector<const Type *> argTypes;
         for (std::size_t i = 0; i < args.size(); i++) argTypes.push_back(p_.tmpl_.deductionArgType(*args[i]));
         p_.tmpl_.instantiateViableMemberTemplatesUnder(name, argTypes, pos);
@@ -567,7 +567,7 @@ Signature Overload::resolveOverload(const std::string &written,
 
     if (set == nullptr) {
         // Only constructor templates, and none of them deduced from these arguments.
-        if (p_.memberTemplates_.count(name) != 0)
+        if (p_.tmpl_.memberTemplates_.count(name) != 0)
             p_.src_.fail(pos, "no constructor template of '" + name.substr(0, name.rfind("::")) +
                            "' can be used with these " + std::to_string(args.size()) +
                            " argument(s)");
@@ -589,7 +589,7 @@ Signature Overload::resolveOverload(const std::string &written,
     bool droppedForRef = false;
 
     for (std::size_t k = 0; k < set->size(); k++) {
-        const Signature &f = p_.functions_[(*set)[k]];
+        const Signature &f = p_.lookup_.functions_[(*set)[k]];
         // A default makes the parameter optional, so the count a call may
         // give is a range rather than one number.
         if (f.variadic ? args.size() < leastArguments(f)
@@ -635,44 +635,44 @@ Signature Overload::resolveOverload(const std::string &written,
         std::string why = "no function called '" + name + "' takes these " +
                           std::to_string(args.size()) + " argument(s)";
         for (std::size_t k = 0; k < set->size(); k++)
-            why += "\n    candidate: " + describeSignature(p_.functions_[(*set)[k]]);
+            why += "\n    candidate: " + describeSignature(p_.lookup_.functions_[(*set)[k]]);
         p_.src_.fail(pos, why);
     }
     if (viable.size() == 1) {
-        p_.refuseDeleted(p_.functions_[viable[0]], pos);
+        p_.refuseDeleted(p_.lookup_.functions_[viable[0]], pos);
         p_.noteUsed(viable[0]);
-        if (!p_.functions_[viable[0]].isNoexcept) p_.mayThrow_++;
-        return p_.functions_[viable[0]];
+        if (!p_.lookup_.functions_[viable[0]].isNoexcept) p_.mayThrow_++;
+        return p_.lookup_.functions_[viable[0]];
     }
 
-    p_.rankingGiven_.clear();
-    if (object != nullptr) p_.rankingGiven_.push_back(object);
-    for (std::size_t i = 0; i < args.size(); i++) p_.rankingGiven_.push_back(args[i]->type());
+    rankingGiven_.clear();
+    if (object != nullptr) rankingGiven_.push_back(object);
+    for (std::size_t i = 0; i < args.size(); i++) rankingGiven_.push_back(args[i]->type());
     std::size_t best = 0;
     for (std::size_t k = 1; k < viable.size(); k++)
         if (betterCandidate(ranks[k], ranks[best],
-                            p_.functions_[viable[k]], p_.functions_[viable[best]],
+                            p_.lookup_.functions_[viable[k]], p_.lookup_.functions_[viable[best]],
                             object != nullptr, object != nullptr))
             best = k;
     for (std::size_t k = 0; k < viable.size(); k++) {
         if (k == best) continue;
         if (!betterCandidate(ranks[best], ranks[k],
-                             p_.functions_[viable[best]], p_.functions_[viable[k]],
+                             p_.lookup_.functions_[viable[best]], p_.lookup_.functions_[viable[k]],
                              object != nullptr, object != nullptr)) {
             std::string why = "this call to '" + name + "' is ambiguous";
             for (std::size_t j = 0; j < viable.size(); j++)
-                why += "\n    candidate: " + describeSignature(p_.functions_[viable[j]]);
+                why += "\n    candidate: " + describeSignature(p_.lookup_.functions_[viable[j]]);
             p_.src_.fail(pos, why);
         }
     }
     // [dcl.fct.def.delete]: a deleted candidate is ranked like any other and refused only where it wins.
-    p_.refuseDeleted(p_.functions_[viable[best]], pos);
+    p_.refuseDeleted(p_.lookup_.functions_[viable[best]], pos);
     p_.noteUsed(viable[best]);
     // **Every call is potentially-throwing unless the function promised
     // otherwise**, and this is the one place a call finds out which function it
     // reached. `noexcept(e)` reads the count this leaves behind.
-    if (!p_.functions_[viable[best]].isNoexcept) p_.mayThrow_++;
-    return p_.functions_[viable[best]];
+    if (!p_.lookup_.functions_[viable[best]].isNoexcept) p_.mayThrow_++;
+    return p_.lookup_.functions_[viable[best]];
 }
 
 }   // namespace sema

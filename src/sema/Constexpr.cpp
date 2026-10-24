@@ -26,8 +26,8 @@ static long double inType(const Type *t, const Target &target, long double v) {
 }
 
 const ConstexprSlot *Constexpr::constexprSlot(const Var &v) const {
-    if (p_.constexprFrames_.empty()) return nullptr;
-    const std::vector<ConstexprSlot> &frame = p_.constexprFrames_.back();
+    if (constexprFrames_.empty()) return nullptr;
+    const std::vector<ConstexprSlot> &frame = constexprFrames_.back();
     for (std::size_t i = 0; i < frame.size(); i++) {
         if (frame[i].offset == kScratchFrame) continue;
         if (v.isLocal() ? frame[i].global.empty() && frame[i].offset == v.offset()
@@ -38,9 +38,9 @@ const ConstexprSlot *Constexpr::constexprSlot(const Var &v) const {
 
 bool Constexpr::enterConstexprCall(const Call &c, const ConstexprFn **out,
                                 std::size_t pos) const {
-    auto it = p_.constexprFns_.find(c.symbol());
-    if (it == p_.constexprFns_.end() && instantiateForConstant(c.symbol())) it = p_.constexprFns_.find(c.symbol());
-    if (it == p_.constexprFns_.end()) return false;
+    auto it = constexprFns_.find(c.symbol());
+    if (it == constexprFns_.end() && instantiateForConstant(c.symbol())) it = constexprFns_.find(c.symbol());
+    if (it == constexprFns_.end()) return false;
     const ConstexprFn &fn = it->second;
     if (fn.value == nullptr || c.args().size() != fn.slots.size())
         return false;
@@ -48,7 +48,7 @@ bool Constexpr::enterConstexprCall(const Call &c, const ConstexprFn **out,
     // A recursion that does not end is a compiler that does not either.
     // The standard lets an implementation set a limit and say so; this is
     // that limit, and it is said where it is reached.
-    if (p_.constexprFrames_.size() >= 256)
+    if (constexprFrames_.size() >= 256)
         p_.src_.fail(pos, "this constant expression is more than 256 calls "
                        "deep - a 'constexpr' function that never stops "
                            "recursing cannot be worked out while compiling");
@@ -64,7 +64,7 @@ bool Constexpr::enterConstexprCall(const Call &c, const ConstexprFn **out,
         if (!foldArgument(a, &slot, pos)) return false;
         frame.push_back(slot);
     }
-    p_.constexprFrames_.push_back(frame);
+    constexprFrames_.push_back(frame);
     *out = &fn;
     return true;
 }
@@ -126,7 +126,7 @@ bool Constexpr::fold(const Expr &e, long long *out, std::size_t pos) const {
         if (!enterConstexprCall(*c, &fn, pos)) return false;
         long long result = 0;
         const bool ok = fold(*fn->value, &result, pos);
-        p_.constexprFrames_.pop_back();
+        constexprFrames_.pop_back();
         if (!ok) return false;
         *out = result;
         return true;
@@ -364,12 +364,12 @@ bool Constexpr::objectAddress(const Expr &e, ConstObjectPtr *obj, int *at, std::
             return true;
         }
         // A named object outside any call: inside one, every name is a parameter or a temporary.
-        if (!p_.constexprFrames_.empty() && (p_.constexprFrames_.back().empty() ||
-                                          p_.constexprFrames_.back()[0].offset != kScratchFrame))
+        if (!constexprFrames_.empty() && (constexprFrames_.back().empty() ||
+                                          constexprFrames_.back()[0].offset != kScratchFrame))
             return false;
-        std::map<std::string, ConstObject>::const_iterator it = p_.constObjects_.find(constObjectKey(*v));
-        if (it == p_.constObjects_.end() && !v->isLocal()) it = p_.constObjects_.find(v->name());
-        if (it == p_.constObjects_.end()) return false;
+        std::map<std::string, ConstObject>::const_iterator it = constObjects_.find(constObjectKey(*v));
+        if (it == constObjects_.end() && !v->isLocal()) it = constObjects_.find(v->name());
+        if (it == constObjects_.end()) return false;
         *obj = std::make_shared<ConstObject>(it->second);
         *at = 0;
         return true;
@@ -442,19 +442,19 @@ bool Constexpr::instantiateForConstant(const std::string &symbol) const {
     std::string complete = symbol;
     const std::size_t c2 = complete.find("C2E");
     if (c2 != std::string::npos) complete.replace(c2, 3, "C1E");
-    for (std::size_t i = 0; i < p_.specializations_.size(); i++) {
-        if (!p_.specializations_[i].isClass) continue;
-        std::vector<Parser::PendingBody> &bodies = self.specializations_[i].bodies;
+    for (std::size_t i = 0; i < p_.tmpl_.specializations_.size(); i++) {
+        if (!p_.tmpl_.specializations_[i].isClass) continue;
+        std::vector<Parser::PendingBody> &bodies = self.tmpl_.specializations_[i].bodies;
         for (std::size_t b = 0; b < bodies.size(); b++) {
-            if (bodies[b].which >= p_.functions_.size() || p_.functions_[bodies[b].which].symbol != complete) continue;
+            if (bodies[b].which >= p_.lookup_.functions_.size() || p_.lookup_.functions_[bodies[b].which].symbol != complete) continue;
             const Parser::PendingBody body = bodies[b];
             bodies.erase(bodies.begin() + static_cast<std::ptrdiff_t>(b));
-            self.functions_[body.which].used = true;
-            const Parser::Specialization sp = p_.specializations_[i];
+            self.lookup_.functions_[body.which].used = true;
+            const Parser::Specialization sp = p_.tmpl_.specializations_[i];
             std::vector<Shadow> undo;
             self.tmpl_.bindTemplateParameters(sp.params, sp.binding, sp.values, sp.packs, &undo);
             std::vector<std::vector<ConstexprSlot> > frames;
-            frames.swap(p_.constexprFrames_);
+            frames.swap(constexprFrames_);
             const std::string wasKey = p_.instantiationKey_, wasOf = p_.instantiationOf_, wasDisplay = p_.instantiationDisplay_;
             self.instantiationKey_.clear();
             self.instantiationOf_.clear();
@@ -467,7 +467,7 @@ bool Constexpr::instantiateForConstant(const std::string &symbol) const {
             self.instantiationKey_ = wasKey;
             self.instantiationOf_ = wasOf;
             self.instantiationDisplay_ = wasDisplay;
-            frames.swap(p_.constexprFrames_);
+            frames.swap(constexprFrames_);
             self.tmpl_.unbindTemplateParameters(undo);
             return true;
         }
@@ -479,9 +479,9 @@ bool Constexpr::instantiateForConstant(const std::string &symbol) const {
 bool Constexpr::foldObject(const Expr &e, ConstObject *out, std::size_t pos) const {
     const Type *t = e.type();
     if (t == nullptr || !t->unqualified()->isStructOrUnion()) return false;
-    const bool scratch = p_.constexprFrames_.empty();
-    if (scratch) p_.constexprFrames_.push_back(std::vector<ConstexprSlot>(1, ConstexprSlot()));
-    if (scratch) p_.constexprFrames_.back()[0].offset = kScratchFrame;
+    const bool scratch = constexprFrames_.empty();
+    if (scratch) constexprFrames_.push_back(std::vector<ConstexprSlot>(1, ConstexprSlot()));
+    if (scratch) constexprFrames_.back()[0].offset = kScratchFrame;
     bool ok = false;
     ConstObjectPtr obj;
     int at = 0;
@@ -489,7 +489,7 @@ bool Constexpr::foldObject(const Expr &e, ConstObject *out, std::size_t pos) con
         const ConstexprFn *fn = nullptr;
         if (enterConstexprCall(*c, &fn, pos)) {
             ok = foldObject(*fn->value, out, pos);
-            p_.constexprFrames_.pop_back();
+            constexprFrames_.pop_back();
         }
     } else if (const Cast *c = dynamic_cast<const Cast *>(&e)) {
         ok = c->value().type() != nullptr && c->value().type()->unqualified() == t->unqualified() &&
@@ -503,7 +503,7 @@ bool Constexpr::foldObject(const Expr &e, ConstObject *out, std::size_t pos) con
         ok = !m->isBitField() && foldObject(m->object(), &whole, pos);
         if (ok) *out = subObject(whole, m->offset(), t->size(p_.target_));
     }
-    if (scratch) p_.constexprFrames_.pop_back();
+    if (scratch) constexprFrames_.pop_back();
     return ok;
 }
 
@@ -513,9 +513,9 @@ bool Constexpr::foldLeaf(const Expr &e, ConstLeaf *out, std::size_t pos) const {
     if (t == nullptr || !t->isArithmetic()) return false;
     const MemberAccess *m = dynamic_cast<const MemberAccess *>(&e);
     if (m != nullptr && m->isBitField()) return false;
-    const bool scratch = p_.constexprFrames_.empty();
-    if (scratch) p_.constexprFrames_.push_back(std::vector<ConstexprSlot>(1, ConstexprSlot()));
-    if (scratch) p_.constexprFrames_.back()[0].offset = kScratchFrame;
+    const bool scratch = constexprFrames_.empty();
+    if (scratch) constexprFrames_.push_back(std::vector<ConstexprSlot>(1, ConstexprSlot()));
+    if (scratch) constexprFrames_.back()[0].offset = kScratchFrame;
     ConstObjectPtr obj;
     int at = 0;
     bool ok = objectAddress(e, &obj, &at, pos);
@@ -524,7 +524,7 @@ bool Constexpr::foldLeaf(const Expr &e, ConstLeaf *out, std::size_t pos) const {
         ok = foldObject(m->object(), &whole, pos);
         if (ok) { obj = std::make_shared<ConstObject>(std::move(whole)); at = m->offset(); }
     }
-    if (scratch) p_.constexprFrames_.pop_back();
+    if (scratch) constexprFrames_.pop_back();
     if (!ok) return false;
     ConstObject::const_iterator it = obj->find(at);
     if (it == obj->end() || it->second.type->isFloating() != t->isFloating() ||
@@ -536,12 +536,12 @@ bool Constexpr::foldLeaf(const Expr &e, ConstLeaf *out, std::size_t pos) const {
 
 // **A constexpr constructor run on the object its first argument points at.**
 bool Constexpr::constructConst(const Call &c, std::size_t pos) const {
-    std::map<std::string, ConstexprCtor>::const_iterator it = p_.constexprCtors_.find(c.symbol());
-    if (it == p_.constexprCtors_.end() && instantiateForConstant(c.symbol())) it = p_.constexprCtors_.find(c.symbol());
-    if (it == p_.constexprCtors_.end() || c.args().empty()) return false;
+    std::map<std::string, ConstexprCtor>::const_iterator it = constexprCtors_.find(c.symbol());
+    if (it == constexprCtors_.end() && instantiateForConstant(c.symbol())) it = constexprCtors_.find(c.symbol());
+    if (it == constexprCtors_.end() || c.args().empty()) return false;
     const ConstexprCtor &ctor = it->second;
     if (ctor.slots.size() + 1 != c.args().size()) return false;
-    if (p_.constexprFrames_.size() >= 256)
+    if (constexprFrames_.size() >= 256)
         p_.src_.fail(pos, "this constant expression is more than 256 calls deep - a 'constexpr' "
                        "function that never stops recursing cannot be worked out while compiling");
     // A temporary the comma around this call reads back is made here, in the caller's frame.
@@ -552,11 +552,11 @@ bool Constexpr::constructConst(const Call &c, std::size_t pos) const {
     if (!foldObjectPointer(*c.args()[0], &self.obj, &at, pos)) {
         const Unary *u = dynamic_cast<const Unary *>(c.args()[0].get());
         const Var *v = u != nullptr && u->op() == '&' ? dynamic_cast<const Var *>(&u->operand()) : nullptr;
-        if (v == nullptr || !v->isLocal() || p_.constexprFrames_.empty()) return false;
+        if (v == nullptr || !v->isLocal() || constexprFrames_.empty()) return false;
         ConstexprSlot made;
         made.offset = v->offset();
         made.obj = std::make_shared<ConstObject>();
-        p_.constexprFrames_.back().push_back(made);
+        constexprFrames_.back().push_back(made);
         self.obj = made.obj;
         at = 0;
     }
@@ -568,9 +568,9 @@ bool Constexpr::constructConst(const Call &c, std::size_t pos) const {
         if (!foldArgument(*c.args()[i], &slot, pos)) return false;
         frame.push_back(slot);
     }
-    p_.constexprFrames_.push_back(frame);
+    constexprFrames_.push_back(frame);
     const bool ok = runConstexpr(*ctor.body, pos);
-    p_.constexprFrames_.pop_back();
+    constexprFrames_.pop_back();
     return ok;
 }
 
@@ -591,12 +591,12 @@ bool Constexpr::runConstexprEffect(const Expr &e, std::size_t pos) const {
     if (const Call *c = dynamic_cast<const Call *>(&e)) {
         // A function returning an object into a slot of the frame - the slot holds its value from here.
         if (c->resultSlot() != 0 && c->type() != nullptr && c->type()->unqualified()->isStructOrUnion() &&
-            !p_.constexprFrames_.empty()) {
+            !constexprFrames_.empty()) {
             ConstexprSlot made;
             made.offset = c->resultSlot();
             made.obj = std::make_shared<ConstObject>();
             if (!foldObject(*c, made.obj.get(), pos)) return false;
-            p_.constexprFrames_.back().push_back(made);
+            constexprFrames_.back().push_back(made);
             return true;
         }
         return constructConst(*c, pos);
@@ -607,14 +607,14 @@ bool Constexpr::runConstexprEffect(const Expr &e, std::size_t pos) const {
     // A pointer the lowering keeps in a temporary of its own - a base's address on its way.
     if (t->isPointer()) {
         const Var *v = dynamic_cast<const Var *>(&a->target());
-        if (v == nullptr || !v->isLocal() || p_.constexprFrames_.empty()) return false;
+        if (v == nullptr || !v->isLocal() || constexprFrames_.empty()) return false;
         ConstexprSlot slot;
         slot.offset = v->offset();
         int at = 0;
         if (!foldObjectPointer(a->value(), &slot.obj, &at, pos)) return false;
         slot.pointer = true;
         slot.i = at;
-        std::vector<ConstexprSlot> &frame = p_.constexprFrames_.back();
+        std::vector<ConstexprSlot> &frame = constexprFrames_.back();
         for (std::size_t i = 0; i < frame.size(); i++)
             if (frame[i].offset == slot.offset && frame[i].global.empty()) { frame[i] = slot; return true; }
         frame.push_back(slot);
@@ -655,10 +655,10 @@ bool Constexpr::foldDeclaredObject(const std::vector<const Stmt *> &init, const 
     std::vector<ConstexprSlot> frame;
     frame.push_back(scratch);
     frame.push_back(self);
-    p_.constexprFrames_.push_back(frame);
+    constexprFrames_.push_back(frame);
     bool ok = true;
     for (const Stmt *s : init) ok = ok && runConstexpr(*s, pos);
-    p_.constexprFrames_.pop_back();
+    constexprFrames_.pop_back();
     if (ok) *out = *self.obj;
     return ok;
 }
@@ -807,12 +807,12 @@ bool Constexpr::foldDouble(const Expr &e, const Target &target, long double *out
     if (const Call *c = dynamic_cast<const Call *>(&e)) {
         // No expression carries a position, so the depth limit is reported at
         // the constexpr function's own definition.
-        auto it = p_.constexprFns_.find(c->symbol());
+        auto it = constexprFns_.find(c->symbol());
         const ConstexprFn *fn = nullptr;
-        if (!enterConstexprCall(*c, &fn, it == p_.constexprFns_.end() ? 0 : it->second.pos))
+        if (!enterConstexprCall(*c, &fn, it == constexprFns_.end() ? 0 : it->second.pos))
             return false;
         const bool ok = foldDouble(*fn->value, target, out, past53, x87Rounded);
-        p_.constexprFrames_.pop_back();
+        constexprFrames_.pop_back();
         if (ok && !e.type()->isFloating())
             *out = static_cast<long double>(static_cast<long long>(*out));
         return ok;

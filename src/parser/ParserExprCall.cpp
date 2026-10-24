@@ -97,11 +97,11 @@ bool Parser::bracedListViable(const Type *param, const Init &in) {
     const Type *ilType = nullptr;
     if (n != 0 && initializerListConstructor(plain, &ilType) != nullptr) return true;
     // A constructor template's parameters are not known until it is deduced: it may take the list.
-    if (n != 0 && memberTemplates_.count(constructorKey(plain->tag())) != 0) return true;
+    if (n != 0 && tmpl_.memberTemplates_.count(constructorKey(plain->tag())) != 0) return true;
     const std::vector<std::size_t> *set = lookup_.overloadsOf(constructorKey(plain->tag()));
     if (set == nullptr) return n == 0;
     for (std::size_t k = 0; k < set->size(); k++) {
-        const Signature &f = functions_[(*set)[k]];
+        const Signature &f = lookup_.functions_[(*set)[k]];
         if (f.isExplicit || n < overload_.leastArguments(f) || (!f.variadic && n > f.params.size())) continue;
         return true;
     }
@@ -154,7 +154,7 @@ void Parser::buildBracedArguments(const std::string &key, std::vector<ExprPtr> &
     // initialised from (bracedListViable). If none is left, all of them are asked, as before 1.25.
     std::vector<std::size_t> asked;
     for (std::size_t k = 0; k < set->size(); k++) {
-        const Signature &f = functions_[(*set)[k]];
+        const Signature &f = lookup_.functions_[(*set)[k]];
         if (f.variadic ? args.size() < overload_.leastArguments(f)
                        : (args.size() > f.params.size() || args.size() < overload_.leastArguments(f))) continue;
         bool viable = true;
@@ -171,7 +171,7 @@ void Parser::buildBracedArguments(const std::string &key, std::vector<ExprPtr> &
         bool disagree = false;
         if (isBracedPlaceholder(*args[i]))
             for (std::size_t k = 0; k < asked.size(); k++) {
-                const Signature &f = functions_[asked[k]];
+                const Signature &f = lookup_.functions_[asked[k]];
                 if (i >= f.params.size()) continue;
                 const Type *p = f.params[i]->isReference() ? f.params[i]->referent()->unqualified()
                                                            : f.params[i]->unqualified();
@@ -209,7 +209,7 @@ void Parser::pickOverloadArguments(const std::string &key, std::vector<ExprPtr> 
         const Type *param = nullptr;
         bool differ = false;
         for (std::size_t k = 0; k < callee->size(); k++) {
-            const Signature &f = functions_[(*callee)[k]];
+            const Signature &f = lookup_.functions_[(*callee)[k]];
             if (f.variadic ? args.size() < overload_.leastArguments(f)
                            : (args.size() > f.params.size() || args.size() < overload_.leastArguments(f))) continue;
             if (i >= f.params.size()) continue;
@@ -806,7 +806,7 @@ ExprPtr Parser::memberCallWith(ExprPtr object, const Type *cls,
     // whole reason an override writes `Base::f(...)` to reach what it replaced.
     if (sig.isVirtual && forceOwner == nullptr) {
         int index = -1;
-        const std::vector<VSlot> &slots = vtables_[plain->tag()];
+        const std::vector<VSlot> &slots = classes_.vtables_[plain->tag()];
         for (std::size_t i = 0; i < slots.size(); i++) {
             if (classes_.overrides(slots[i], name, sig.params, sig.constThis, sig.refThis)) {
                 index = static_cast<int>(i);
@@ -817,7 +817,7 @@ ExprPtr Parser::memberCallWith(ExprPtr object, const Type *cls,
         // virtual one - is not in this class's table: `addr` is that base's
         // subobject by now, and its own vptr and slot are what dispatch it.
         if (index < 0 && owner != plain) {
-            const std::vector<VSlot> &theirs = vtables_[owner->tag()];
+            const std::vector<VSlot> &theirs = classes_.vtables_[owner->tag()];
             for (std::size_t i = 0; i < theirs.size(); i++) {
                 if (classes_.overrides(theirs[i], name, sig.params, sig.constThis, sig.refThis)) {
                     index = static_cast<int>(i);

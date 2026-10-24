@@ -61,9 +61,9 @@ void Parser::topLevel(Program &program) {
             const std::string tag = "_GLOBAL__N_1";
             const bool outer = inUnnamedNamespace_;
             namespaceStack_.push_back(tag);
-            namespaces_.insert(namespacePrefix().substr(
+            lookup_.namespaces_.insert(namespacePrefix().substr(
                                    0, namespacePrefix().size() - 2));
-            if (inlineNs) inlineNamespaces_.insert(namespacePrefix().substr(0, namespacePrefix().size() - 2));
+            if (inlineNs) lookup_.inlineNamespaces_.insert(namespacePrefix().substr(0, namespacePrefix().size() - 2));
             inUnnamedNamespace_ = true;
             while (!peek().is("}")) {
                 if (peek().kind == TokenKind::End)
@@ -78,7 +78,7 @@ void Parser::topLevel(Program &program) {
             // The directive is not undone at the closing brace: an unnamed
             // namespace's names answer an unqualified lookup for the rest of
             // the file, which is the whole of what it is for.
-            usingNamespaces_.push_back(opened);
+            lookup_.usingNamespaces_.push_back(opened);
             return;
         }
         const std::size_t namePos = peek().pos;
@@ -93,15 +93,15 @@ void Parser::topLevel(Program &program) {
         const std::string path = namespacePrefix().substr(0, namespacePrefix().size() - 2);
         // The first definition decides: reopened later with or without `inline` it stays
         // what it was, and a plain one reopened `inline` is refused as clang refuses it.
-        if (inlineNs && namespaces_.count(path) && !inlineNamespaces_.count(path))
+        if (inlineNs && lookup_.namespaces_.count(path) && !lookup_.inlineNamespaces_.count(path))
             src_.fail(namePos, "non-inline namespace cannot be reopened as inline");
-        if (inlineNs) inlineNamespaces_.insert(path);
-        namespaces_.insert(path);
+        if (inlineNs) lookup_.inlineNamespaces_.insert(path);
+        lookup_.namespaces_.insert(path);
         // Nested in an inline one it is the enclosing namespace's too: `lib::inner` for `lib::v2::inner`.
         {
             const std::vector<std::string> alts = lookup_.inlineAliasPrefixes(namespacePrefix());
             for (std::size_t a = 0; a < alts.size(); a++)
-                namespaces_.insert(alts[a].substr(0, alts[a].size() - 2));
+                lookup_.namespaces_.insert(alts[a].substr(0, alts[a].size() - 2));
         }
         const bool aliased = !lookup_.inlineAliasPrefixes(namespacePrefix()).empty();
         while (!peek().is("}")) {
@@ -156,7 +156,7 @@ void Parser::topLevel(Program &program) {
             // one that says which name was meant.
             if (!lookup_.hasTypeNamed(target) && !lookup_.hasFunctionNamed(target) &&
                 !lookup_.hasGlobalNamed(target) &&
-                namespaces_.find(target) == namespaces_.end())
+                lookup_.namespaces_.find(target) == lookup_.namespaces_.end())
                 src_.fail(pos, "'" + written + "' is not declared, so there is "
                                "nothing here for this using-declaration to "
                                "name");
@@ -175,7 +175,7 @@ void Parser::topLevel(Program &program) {
         expect(";");
         // The directive names the namespace an alias stands for, [namespace.alias]/2.
         const std::string resolved = resolveNamespaceName(opened);
-        usingNamespaces_.push_back(resolved.empty() ? opened : resolved);
+        lookup_.usingNamespaces_.push_back(resolved.empty() ? opened : resolved);
         return;
     }
 
@@ -231,13 +231,13 @@ void Parser::topLevel(Program &program) {
             // [dcl.typedef]/2 lets this scope's own be redeclared to the same type ("typedef struct S S;"),
             // and a namespace's `typedef short T;` hides a global `T` rather than redeclaring it.
             if (const Type *had = lookup_.findGlobalTypedef(key))
-                if (had != td.type && typedefs_[typedefIndex_.find(key)->second].name == key)
+                if (had != td.type && lookup_.typedefs_[lookup_.typedefIndex_.find(key)->second].name == key)
                     src_.fail(td.pos, "'" + td.name + "' is typedefed twice, "
                                       "and not to the same type: it was '" +
                                       had->describe() + "' and is now '" +
                                       td.type->describe() + "'");
-            typedefIndex_[key] = typedefs_.size();
-            typedefs_.push_back(TypedefName{ key, td.type });
+            lookup_.typedefIndex_[key] = lookup_.typedefs_.size();
+            lookup_.typedefs_.push_back(TypedefName{ key, td.type });
             if (td.type->tag().empty()) td.type->nameForLinkage(key, td.name, nullptr, key != td.name);
         } while (consume(","));
         expect(";");
@@ -292,7 +292,7 @@ void Parser::topLevel(Program &program) {
     // a function in a namespace is keyed throughout (the review's A17).
     std::vector<std::string> definedIn;
     std::string absoluteName;
-    if (!d.qualifier.empty() && namespaces_.find(d.qualifier) != namespaces_.end() &&
+    if (!d.qualifier.empty() && lookup_.namespaces_.find(d.qualifier) != lookup_.namespaces_.end() &&
         lookup_.findTypedef(d.qualifier) == nullptr) {
         // [basic.lookup.unqual]/6: its body looks names up in that namespace, as if written there.
         for (std::size_t s = 0, e; s <= d.qualifier.size(); s = e + 2) {
@@ -429,13 +429,13 @@ void Parser::topLevel(Program &program) {
                 if (prev != nullptr) {
                     if (defines) { prev->emitted = true; prev->hasInit = true; }
                 } else {
-                    globalIndex_[gname] = globals_.size();
-                    globals_.push_back(GlobalSym{ gname, symbol, d.type, false,
+                    lookup_.globalIndex_[gname] = lookup_.globals_.size();
+                    lookup_.globals_.push_back(GlobalSym{ gname, symbol, d.type, false,
                                                   defines, defines, false, 0 });
                 }
                 // A thread_local reference bound in __tls_init is reached through the wrapper, one
                 // bound in the image directly; what another unit defines, through the wrapper.
-                noteThreadLocal(prev != nullptr ? *prev : globals_.back(), prev != nullptr, quals.isThreadLocal,
+                noteThreadLocal(prev != nullptr ? *prev : lookup_.globals_.back(), prev != nullptr, quals.isThreadLocal,
                                 d.name, defines ? !hasInit : true, !internal, defines, d.pos);
                 if (defines)
                     program.globals.push_back(Global{ gname, symbol,
@@ -522,28 +522,28 @@ void Parser::topLevel(Program &program) {
                     // In scope in its own initialiser - `S s(&s);` - [basic.scope.pdecl]/1.
                     const bool early = prev == nullptr && initialiserNames(d.name);
                     if (early) {
-                        globalIndex_[gname] = globals_.size();
-                        globals_.push_back(GlobalSym{ gname, symbol, d.type,
+                        lookup_.globalIndex_[gname] = lookup_.globals_.size();
+                        lookup_.globals_.push_back(GlobalSym{ gname, symbol, d.type,
                                                       d.type->isConst(), true,
                                                       true, false, 0 });
-                        noteThreadLocal(globals_.back(), false, quals.isThreadLocal, d.name, true, !internal, true, d.pos);
+                        noteThreadLocal(lookup_.globals_.back(), false, quals.isThreadLocal, d.name, true, !internal, true, d.pos);
                     }
                     const ThreadLocalObject tlo(this, quals.isThreadLocal);
                     if (quals.isThreadLocal) tlsDefining(symbol, !internal);
                     std::vector<GlobalPiece> folded;
                     dynamicInitialise(d, symbol, helper, false, quals.isConstexpr ? &folded : nullptr);
-                    if (quals.isConstexpr) constObjects_[gname] = constObjects_[symbol];
+                    if (quals.isConstexpr) constant_.constObjects_[gname] = constant_.constObjects_[symbol];
                     if (prev != nullptr) {
                         prev->emitted = true;
                         prev->hasInit = true;
                     } else if (!early) {
-                        globalIndex_[gname] = globals_.size();
-                        globals_.push_back(GlobalSym{ gname, symbol, d.type,
+                        lookup_.globalIndex_[gname] = lookup_.globals_.size();
+                        lookup_.globals_.push_back(GlobalSym{ gname, symbol, d.type,
                                                       d.type->isConst(), true,
                                                       true, false, 0 });
                     }
                     if (!early)
-                        noteThreadLocal(prev != nullptr ? *prev : globals_.back(), prev != nullptr, quals.isThreadLocal,
+                        noteThreadLocal(prev != nullptr ? *prev : lookup_.globals_.back(), prev != nullptr, quals.isThreadLocal,
                                         d.name, true, !internal, true, d.pos);
                     // Not isConst: the constructor writes it, so it cannot
                     // be laid down read-only - unless it was folded, and no constructor runs.
@@ -580,10 +580,10 @@ void Parser::topLevel(Program &program) {
                 initialiserNames(d.name)) {
                 const bool c = d.type->isConst();
                 const bool hidden = sc == StorageStatic || (c && sc != StorageExtern);
-                early = globals_.size();
+                early = lookup_.globals_.size();
                 registered = true;
-                globalIndex_[selfKey] = early;
-                globals_.push_back(GlobalSym{ selfKey, linkage_.dataSymbol(selfKey, d.type, hidden, d.pos),
+                lookup_.globalIndex_[selfKey] = early;
+                lookup_.globals_.push_back(GlobalSym{ selfKey, linkage_.dataSymbol(selfKey, d.type, hidden, d.pos),
                                               d.type, c, false, false, false, 0 });
             }
             if (scalarInitAhead || consume("=") || atBracedInitialiser(d.name)) {
@@ -609,7 +609,7 @@ void Parser::topLevel(Program &program) {
                     ConstObject value;
                     if (d.type->isArray() || !constant_.constObjectFromInit(d.type, in, 0, &value))
                         constant_.refuseConstexprClassObject(d.name, d.pos);
-                    constObjects_[selfKey] = value;
+                    constant_.constObjects_[selfKey] = value;
                 }
                 if (quals.isConstexpr && !constantKnown && addressConstant(d.type, in)) {
                     std::string sym;
@@ -702,7 +702,7 @@ void Parser::topLevel(Program &program) {
             // A variable declared in a namespace is keyed and mangled by its qualified
             // name, the same as a function. `extern "C"` does not reach into one, so a
             // name with C linkage keeps what it was written with - `gname` above.
-            globalIndex_[gname] = registered ? early : globals_.size();
+            lookup_.globalIndex_[gname] = registered ? early : lookup_.globals_.size();
             bool objectIsConst = d.type->isConst();
             // A const object at namespace scope has internal linkage of its own -
             // [basic.link]/3 - which is why a header may define one and C, where it
@@ -717,10 +717,10 @@ void Parser::topLevel(Program &program) {
                             hasInit || dynamic, constantKnown, constantValue };
             made.isConstantDouble = constantDoubleKnown;
             made.constantDouble = constantDoubleValue;
-            if (registered) globals_[early] = made;
-            else globals_.push_back(made);
+            if (registered) lookup_.globals_[early] = made;
+            else lookup_.globals_.push_back(made);
             const bool definesHere = sc != StorageExtern || hasInit || dynamic;
-            noteThreadLocal(registered ? globals_[early] : globals_.back(), false, quals.isThreadLocal, d.name,
+            noteThreadLocal(registered ? lookup_.globals_[early] : lookup_.globals_.back(), false, quals.isThreadLocal, d.name,
                             dynamic || !definesHere, !internal, definesHere, d.pos);
             const ThreadLocalObject tlo(this, quals.isThreadLocal);
             if (dynamic) dynamicInitialiseScalar(gname, d.type, dynamicScalar);
@@ -960,10 +960,10 @@ void Parser::topLevel(Program &program) {
             bool declared = false;
             if (const std::vector<std::size_t> *set = lookup_.overloadsOf(key))
                 for (std::size_t k = 0; k < set->size(); k++)
-                    if (functions_[(*set)[k]].fromTemplate &&
-                        functions_[(*set)[k]].constThis == constThis &&
-                        functions_[(*set)[k]].refThis == refThis &&
-                        classes_.sameParameters(functions_[(*set)[k]].params, params))
+                    if (lookup_.functions_[(*set)[k]].fromTemplate &&
+                        lookup_.functions_[(*set)[k]].constThis == constThis &&
+                        lookup_.functions_[(*set)[k]].refThis == refThis &&
+                        classes_.sameParameters(lookup_.functions_[(*set)[k]].params, params))
                         declared = true;
             if (!declared) {
                 const Type *fnType =
@@ -999,17 +999,17 @@ void Parser::topLevel(Program &program) {
                                      "linker can hold: " + why);
                 if (!c2.empty()) constructorC2_[sym] = c2;
                 // **Under two keys, as a free specialization is.**
-                functionIndex_[d.qualifier + "::" + d.name]
-                    .push_back(functions_.size());
+                lookup_.functionIndex_[d.qualifier + "::" + d.name]
+                    .push_back(lookup_.functions_.size());
                 // One key when they meet: `Box<M>`'s constructor template at U = M is `Box<M>::Box<M>`.
-                if (key != d.qualifier + "::" + d.name) functionIndex_[key].push_back(functions_.size());
-                functions_.push_back(Signature{
+                if (key != d.qualifier + "::" + d.name) lookup_.functionIndex_[key].push_back(lookup_.functions_.size());
+                lookup_.functions_.push_back(Signature{
                     memberTemplateName_, sym, d.type, params, variadic, false,
                     d.pos, false, d.qualifier, constThis,
                     memberTemplateAccess_, false });
-                functions_.back().fromTemplate = true;
-                functions_.back().isStaticMember = staticTemplate;
-                functions_.back().refThis = refThis;
+                lookup_.functions_.back().fromTemplate = true;
+                lookup_.functions_.back().isStaticMember = staticTemplate;
+                lookup_.functions_.back().refThis = refThis;
                 // **The defaults its parameter list just read.**
                 if (!pendingDefaults_.empty()) {
                     defaultArgs_[sym] = pendingDefaults_;
@@ -1019,7 +1019,7 @@ void Parser::topLevel(Program &program) {
         }
         if (const std::vector<std::size_t> *set = lookup_.overloadsOf(key)) {
             for (std::size_t k = 0; k < set->size() && member == nullptr; k++) {
-                const Signature &f = functions_[(*set)[k]];
+                const Signature &f = lookup_.functions_[(*set)[k]];
                 if (memberTemplateInst_ && d.name == memberTemplateOf_ && !f.fromTemplate) continue;
                 if ((f.constThis == constThis || (impliedConst && f.isStaticMember)) &&
                     f.refThis == refThis && classes_.sameParameters(f.params, params))
@@ -1123,7 +1123,7 @@ void Parser::topLevel(Program &program) {
     std::map<std::string, std::vector<Temporary> > memberTemps;
     std::map<std::string, std::size_t> where;
     // The members written `: m()`, and for one with a constructor the index of the one
-    // to run; functions_.size() says there is none. Out here with the other two: the
+    // to run; lookup_.functions_.size() says there is none. Out here with the other two: the
     // declaration-order walk below reads all three from outside that block.
     std::map<std::string, std::size_t> valueInit;
     const bool isCtor = memberOf != nullptr && d.name == localOf(d.qualifier);
@@ -1282,7 +1282,7 @@ void Parser::topLevel(Program &program) {
                     const Type *mc = mt;
                     while (mc->isArray()) mc = mc->pointee();
                     mc = mc->isStructOrUnion() ? mc->unqualified() : nullptr;
-                    std::size_t ctorIndex = functions_.size();
+                    std::size_t ctorIndex = lookup_.functions_.size();
                     if (mc != nullptr && !mc->tag().empty() &&
                         hasConstructors(mc->tag())) {
                         if (mt->isArray())
@@ -1303,8 +1303,8 @@ void Parser::topLevel(Program &program) {
                                                         ? "private" : "protected") +
                                             " constructor of '" + mc->describe() +
                                             "'");
-                        ctorIndex = static_cast<std::size_t>(ctor - &functions_[0]);
-                        functions_[ctorIndex].used = true;
+                        ctorIndex = static_cast<std::size_t>(ctor - &lookup_.functions_[0]);
+                        lookup_.functions_[ctorIndex].used = true;
                     }
                     valueInit[entry] = ctorIndex;
                 }
@@ -1434,11 +1434,11 @@ void Parser::topLevel(Program &program) {
                 valueInit.find(m->name);
             if (vi != valueInit.end()) {
                 const Type *mt = m->type->unqualified();
-                const bool hasCtor = vi->second != functions_.size();
+                const bool hasCtor = vi->second != lookup_.functions_.size();
                 // The zeroing first, cloned from the member's own access so
                 // every store lands on the member; then the constructor, on
                 // the member's address, when there is one to run.
-                if (!hasCtor || functions_[vi->second].implicit)
+                if (!hasCtor || lookup_.functions_[vi->second].implicit)
                     if (ExprPtr chain = zeroChain(*field, mt))
                         memberInits.push_back(StmtPtr(new ExprStmt(std::move(chain))));
                 if (hasCtor) {
@@ -1450,7 +1450,7 @@ void Parser::topLevel(Program &program) {
                     std::vector<const Type *> ps;
                     ps.push_back(ptr);
                     memberInits.push_back(StmtPtr(new ExprStmt(
-                        completeCall(mt->tag(), functions_[vi->second].symbol,
+                        completeCall(mt->tag(), lookup_.functions_[vi->second].symbol,
                                      nullptr, types_.get(Kind::Void), ps, false,
                                      epos, std::move(one)))));
                 }
@@ -1469,7 +1469,7 @@ void Parser::topLevel(Program &program) {
 
     returnType_ = d.type;
     functionName_ = d.name;
-    staticSymbols_.clear();
+    linkage_.staticSymbols_.clear();
 
     // A member function is the second argument: on the Microsoft ABI the
     // hidden pointer serves every class a *non-static* member returns,
@@ -1674,7 +1674,7 @@ void Parser::topLevel(Program &program) {
                 std::map<std::string, std::vector<ExprPtr> >::iterator named =
                     baseArgs.find(base->tag());
                 // **Held by value, like everything else that comes out of
-                // overload resolution.** A pointer into `functions_` is a pointer
+                // overload resolution.** A pointer into `lookup_.functions_` is a pointer
                 // into a vector that anything parsed after this can move.
                 Signature chosen;
                 bool found = false;
@@ -1701,9 +1701,9 @@ void Parser::topLevel(Program &program) {
                     }
                 } else {
                     for (std::size_t k = 0; k < set->size(); k++)
-                        if (functions_[(*set)[k]].params.empty()) {
-                            markUsed(&functions_[(*set)[k]]);
-                            chosen = functions_[(*set)[k]];
+                        if (lookup_.functions_[(*set)[k]].params.empty()) {
+                            markUsed(&lookup_.functions_[(*set)[k]]);
+                            chosen = lookup_.functions_[(*set)[k]];
                             found = true;
                         }
                 }
@@ -1860,15 +1860,15 @@ void Parser::topLevel(Program &program) {
 
     // Recorded before `body` is moved into the Function, where what the pointer names lives on; a
     // constexpr constructor is kept whole, also under the C2 name a derived class calls it by.
-    if (isCtor && body != nullptr && (constexprFunction || constexprCtorSymbols_.count(definedSymbol))) {
+    if (isCtor && body != nullptr && (constexprFunction || constant_.constexprCtorSymbols_.count(definedSymbol))) {
         ConstexprCtor ctor;
         ctor.body = body.get();
         ctor.thisSlot = thisOffset_;
         for (const Param &p : paramSlots)
             if (p.offset != thisOffset_) ctor.slots.push_back(p.offset);
-        constexprCtors_[definedSymbol] = ctor;
+        constant_.constexprCtors_[definedSymbol] = ctor;
         const std::size_t c1 = definedSymbol.find("C1E");
-        if (c1 != std::string::npos) constexprCtors_[std::string(definedSymbol).replace(c1, 3, "C2E")] = ctor;
+        if (c1 != std::string::npos) constant_.constexprCtors_[std::string(definedSymbol).replace(c1, 3, "C2E")] = ctor;
     } else if (constexprFunction && body != nullptr) {
         const Expr *value = constant_.singleReturnValue(*body);
         if (value == nullptr)
@@ -1881,7 +1881,7 @@ void Parser::topLevel(Program &program) {
         fn.pos = d.pos;
         for (std::size_t i = 0; i < paramSlots.size(); i++)
             fn.slots.push_back(paramSlots[i].offset);
-        constexprFns_[definedSymbol] = fn;
+        constant_.constexprFns_[definedSymbol] = fn;
     }
     currentClass_ = nullptr;
     currentFunction_.clear();
@@ -2168,7 +2168,7 @@ std::string Parser::resolveNamespaceName(const std::string &written) const {
             cur += parts[p];
             std::map<std::string, std::string>::const_iterator a = namespaceAliases_.find(cur);
             if (a != namespaceAliases_.end()) cur = a->second;
-            else if (namespaces_.find(cur) == namespaces_.end()) ok = false;
+            else if (lookup_.namespaces_.find(cur) == lookup_.namespaces_.end()) ok = false;
             if (p + 1 < parts.size()) cur += "::";
         }
         if (ok) return cur;
@@ -2192,7 +2192,7 @@ void Parser::namespaceAlias(const std::string &name, std::size_t pos) {
         src_.fail(pos, "'" + written + "' is not a namespace, so there is nothing for "
                        "'namespace " + name + "' to be an alias of");
     if (lookup_.findTypedef(namespacePrefix() + name) != nullptr ||
-        namespaces_.count(namespacePrefix() + name))
+        lookup_.namespaces_.count(namespacePrefix() + name))
         src_.fail(pos, "'" + name + "' is already declared here, and a namespace alias "
                        "cannot reuse the name");
     namespaceAliases_[namespacePrefix() + name] = target;

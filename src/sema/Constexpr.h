@@ -56,8 +56,16 @@ public:
     bool fold(const Expr &e, long long *out, std::size_t pos) const;
     long long narrowTo(long long v, const Type *t) const;
 
+    std::map<std::string, ConstexprFn> constexprFns_;   // by mangled symbol
+
+    std::map<std::string, ConstexprCtor> constexprCtors_;   // by C1 and C2 symbol
+    std::set<std::string> constexprCtorSymbols_;           // declared `constexpr` in their class
+    // Named constexpr objects: a global by its name, a local by function and slot.
+    std::map<std::string, ConstObject> constObjects_;
+
 private:
     Parser &p_;
+    mutable std::vector<std::vector<ConstexprSlot> > constexprFrames_;
 };
 
 }   // namespace sema
