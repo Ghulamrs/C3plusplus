@@ -2049,20 +2049,20 @@ void Parser::defineConstexprStaticMember(const std::string &full, const std::str
         Init in = parseInitialiser();
         ConstObject value;
         StaticConst rec;
-        if (d.type->isFloating() && !in.isList && in.value != nullptr && foldFloating(*in.value, &rec.dvalue)) {
+        if (d.type->isFloating() && !in.isList && in.value != nullptr && constant_.foldFloating(*in.value, &rec.dvalue)) {
             rec.dknown = true;
             staticConsts_[symbol] = rec;
             flattenScalar(d.type, in, 0, pieces);
-        } else if (cls->isStructOrUnion() && constObjectFromInit(d.type, in, 0, &value)) {
+        } else if (cls->isStructOrUnion() && constant_.constObjectFromInit(d.type, in, 0, &value)) {
             constObjects_[symbol] = value;
-            constObjectPieces(value, pieces);
+            constant_.constObjectPieces(value, pieces);
         } else if (addressConstant(d.type, in)) {
             std::string sym;
             long long off = 0;
             if (foldAddress(*in.value, &sym, &off)) constAddresses_[full] = std::make_pair(sym, off);
             flattenInit(d.type, in, 0, pieces);
         } else {
-            refuseConstexprClassObject(full, d.pos);
+            constant_.refuseConstexprClassObject(full, d.pos);
         }
     }
     current_->globals.push_back(Global{ full, symbol, d.type, pieces, true, false, true });
@@ -2164,13 +2164,13 @@ void Parser::defineStaticMember(Declared &d, Program &program, bool threadLocal)
         if (s->type->isConst()) {
             StaticConst rec;
             long long iv = 0;
-            if (constantInitialiser(s->type, in, &iv)) {
+            if (constant_.constantInitialiser(s->type, in, &iv)) {
                 rec.known = true; rec.value = iv;
             }
             if (s->type->isFloating() && !in.isList && in.value != nullptr) {
                 bool p53 = false, x87 = false;
                 long double dv = 0;
-                if (foldDouble(*in.value, target_, &dv, &p53, &x87)) {
+                if (constant_.foldDouble(*in.value, target_, &dv, &p53, &x87)) {
                     rec.dknown = true; rec.dvalue = dv;
                 }
             }

@@ -108,7 +108,7 @@ goes in the same commit.
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:750` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:451` |
 | `template <template <class> typename C>`, `typename` after a template template parameter's list | C++17 | `src/parser/ParserTemplate.cpp:52` |
-| `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:840`, `src/parser/ParserInit.cpp:1073`, `src/parser/ParserTopLevel.cpp:474`, `src/parser/ParserExprNew.cpp:506` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:207` |
+| `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:664`, `src/parser/ParserInit.cpp:897`, `src/parser/ParserTopLevel.cpp:474`, `src/parser/ParserExprNew.cpp:506` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:207` |
 | `namespace N::M { }` | C++17 | `src/parser/ParserTopLevel.cpp:88` |
 | an inline variable | C++17 | `src/parser/ParserTopLevel.cpp:280` |
 
@@ -228,7 +228,7 @@ is left:
   argument is taken as a value. `src/parser/ParserInit.cpp:333`
 - **a `constexpr` object the object fold cannot build** - an array of class
   objects, a pointer or reference member (an address), a bit-field; the fold
-  holds an object as its scalar leaves. `src/parser/ParserConst.cpp:1054`,
+  holds an object as its scalar leaves. `src/sema/Constexpr.cpp:726`,
   `tests/cases/constexpr-object-array-refused.cpp`; **statements in a `constexpr`
   constructor's body** are C++14. `src/parser/ParserConst.cpp:121`
 - **befriending one member function of another class** - `src/parser/ParserType.cpp:812`
@@ -281,14 +281,14 @@ is left:
 - **`auto &` or `auto *` from a braced list** - only `auto` and `const auto`
   deduce `std::initializer_list` here. `src/parser/ParserTemplate.cpp:1297`
 - **a `std::initializer_list` with static storage made from braces** - its
-  backing array would need static storage too. `src/parser/ParserInit.cpp:1372`
+  backing array would need static storage too. `src/parser/ParserInit.cpp:1196`
 - **a braced member initialiser with values on a reference or an array of a
   class** - a scalar member takes `{v}`, a class or an array of scalars a list
   (M1 L4), and `= {}` and `= {0}` zero an array. `src/parser/ParserType.cpp:1348`
 - **a braced list for an array of a class with a destructor and no
-  constructor** - `src/parser/ParserInit.cpp:1414`,
+  constructor** - `src/parser/ParserInit.cpp:1238`,
   `src/parser/ParserStmt.cpp:241`
-- **a bit-field initialised at file scope** - `src/parser/ParserInit.cpp:806`
+- **a bit-field initialised at file scope** - `src/parser/ParserInit.cpp:630`
 ## Objects that would run code before `main`
 
 Dynamic initialisation runs - a file-scope object with a constructor, a static
@@ -302,7 +302,7 @@ many, or has no object of its own:
   destroyed element by element. `src/parser/ParserClass.cpp:2117`
 - **a static-duration reference bound to a temporary** - [class.temporary]/5
   gives the temporary the program's lifetime, so it would need static storage
-  of its own; a named object binds. `src/parser/ParserInit.cpp:1915`
+  of its own; a named object binds. `src/parser/ParserInit.cpp:1739`
 
 ## Expressions
 

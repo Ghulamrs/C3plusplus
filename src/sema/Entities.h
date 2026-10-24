@@ -9,6 +9,7 @@
 
 #include <cstddef>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -392,5 +393,42 @@ struct VcallEntry {
 };
 // One subobject in a walk, which keeps a visited set: a virtual base is one subobject however reached.
 struct Subobject { const Type *cls; int at; };
+
+struct Init {
+    bool isList = false;
+    ExprPtr value;
+    std::vector<Init> items;
+    std::size_t pos = 0;
+};
+
+// **A `constexpr` function, kept so that fold() can run it.** [dcl.constexpr] in
+// C++11 lets the body be one return statement, which makes evaluating a call an
+// expression fold. The function is still compiled and callable at run time.
+struct ConstexprFn {
+    const Expr *value = nullptr;   // owned by the Function in the Program
+    std::vector<int> slots;        // parameter frame slots, in order
+    std::size_t pos = 0;
+};
+
+// **A constant object of literal class type** - [basic.types]/10, [expr.const]/2: its scalar
+// leaves by byte offset, which is all a constant expression reads of it.
+struct ConstLeaf { const Type *type = nullptr; long long i = 0; long double d = 0; };
+typedef std::map<int, ConstLeaf> ConstObject;
+typedef std::shared_ptr<ConstObject> ConstObjectPtr;
+// A `constexpr` constructor, kept as its lowered body: this slot, then the parameters'.
+struct ConstexprCtor { const Stmt *body = nullptr; std::vector<int> slots; int thisSlot = 0; };
+
+// One frame per call being folded, holding what each parameter slot is worth:
+// an integer, or a double when the parameter's type is floating (A11).
+// A class parameter holds its object; a pointer to one the object and an offset in it.
+struct ConstexprSlot {
+    int offset = 0;
+    bool floating = false;
+    long long i = 0;
+    long double d = 0;
+    ConstObjectPtr obj;
+    bool pointer = false;
+    std::string global;   // a global object being built, named by this slot
+};
 
 }   // namespace sema

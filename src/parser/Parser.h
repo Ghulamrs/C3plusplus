@@ -10,6 +10,7 @@
 #include "../sema/Overload.h"
 #include "../sema/Templates.h"
 #include "../sema/Classes.h"
+#include "../sema/Constexpr.h"
 
 #include <functional>
 #include <map>
@@ -29,7 +30,7 @@ public:
     Parser(const Source &src, std::vector<Token> tokens,
            TypeTable &types, const Target &target, const Abi &abi)
         : src_(src), tokens_(std::move(tokens)), types_(types), target_(target),
-          abi_(abi), lookup_(*this), overload_(*this), tmpl_(*this), classes_(*this) {}
+          abi_(abi), lookup_(*this), overload_(*this), tmpl_(*this), classes_(*this), constant_(*this) {}
 
     Program parse();
 
@@ -329,7 +330,7 @@ private:
     // `f(g(a)...)`, `std::forward<A>(a)...`: one argument per member, the pattern read once for each.
     bool expandPackPattern(std::vector<ExprPtr> &args);
     // The same for `{ 0, Ns... }` in a braced list and `List<(Ns * 2)...>` in an argument list.
-    struct Init;
+    typedef sema::Init Init;
     bool expandPackInitialiser(std::vector<Init> &items);
     bool expandPackValues(TemplateArg &a);
     // Where a pattern's `...` ends and how many members it expands to, and one member's tokens bound.
@@ -522,6 +523,8 @@ private:
     sema::Templates tmpl_;
     friend class sema::Classes;
     sema::Classes classes_;
+    friend class sema::Constexpr;
+    sema::Constexpr constant_;
     // **How a class goes to a function, and the two ABIs part company here.** Itanium
     // passes one by address whenever copying or destroying it is a call, and the caller
     // destroys the copy; Microsoft passes by the size rules and the callee destroys.
@@ -1777,13 +1780,6 @@ private:
                           const std::string &what);
     int refTemps_ = 0;
 
-    struct Init {
-        bool isList = false;
-        ExprPtr value;
-        std::vector<Init> items;
-        std::size_t pos = 0;
-    };
-
     struct InitStep {
         const Member *member;
         long long index;
@@ -1809,9 +1805,6 @@ private:
     ExprPtr functionalCast(const Type *to, std::size_t pos);
     // `T{}` in an expression: the value-initialisation `T()` already gives.
     ExprPtr bracedValueInit(const Type *to, std::size_t pos);
-    // Every value carried as a double, exactly, or the fold says so.
-    bool foldDouble(const Expr &e, const Target &target, long double *out,
-                    bool *past53, bool *x87Rounded) const;
     const Type *simpleTypeKeyword() const;
 
     struct InitCursor {
@@ -1850,77 +1843,27 @@ private:
     Init parenthesisedInitialiser(const Declared &d);
     // **Is the `(` this sits on an initialiser rather than a parameter list?**
     bool atParenInitialiser();
-    // Answers whether a declaration is initialised by braces, and refuses the
-    // braces this compiler does not read - which is every pair with a value in
-    // it. The empty pair is value-initialisation and parseInitialiser takes it.
+    // Whether braces initialise this declaration; refuses a pair with a value in it, `{}` being parseInitialiser's.
     bool atBracedInitialiser(const std::string &name);
-    bool constantInitialiser(const Type *t, const Init &in, long long *out) const;
-    bool constantFloatingInitialiser(const Type *t, const Init &in,
-                                     long double *out) const;
-    bool foldFloating(const Expr &e, long double *out) const;
     // Does the initialiser ahead name `name`? Only then is it registered first ([basic.scope.pdecl]/1).
     bool initialiserNames(const std::string &name) const;
 
-    // **A `constexpr` function, kept so that fold() can run it.** [dcl.constexpr] in
-    // C++11 lets the body be one return statement, which makes evaluating a call an
-    // expression fold. The function is still compiled and callable at run time.
-    struct ConstexprFn {
-        const Expr *value = nullptr;   // owned by the Function in the Program
-        std::vector<int> slots;        // parameter frame slots, in order
-        std::size_t pos = 0;
-    };
+    typedef sema::ConstexprFn ConstexprFn;
     std::map<std::string, ConstexprFn> constexprFns_;   // by mangled symbol
 
-    // **A constant object of literal class type** - [basic.types]/10, [expr.const]/2: its scalar
-    // leaves by byte offset, which is all a constant expression reads of it.
-    struct ConstLeaf { const Type *type = nullptr; long long i = 0; long double d = 0; };
-    typedef std::map<int, ConstLeaf> ConstObject;
-    typedef std::shared_ptr<ConstObject> ConstObjectPtr;
-    // A `constexpr` constructor, kept as its lowered body: this slot, then the parameters'.
-    struct ConstexprCtor { const Stmt *body = nullptr; std::vector<int> slots; int thisSlot = 0; };
+    typedef sema::ConstLeaf ConstLeaf;
+    typedef sema::ConstObject ConstObject;
+    typedef sema::ConstObjectPtr ConstObjectPtr;
+    typedef sema::ConstexprCtor ConstexprCtor;
     std::map<std::string, ConstexprCtor> constexprCtors_;   // by C1 and C2 symbol
     std::set<std::string> constexprCtorSymbols_;           // declared `constexpr` in their class
     // Named constexpr objects: a global by its name, a local by function and slot.
     std::map<std::string, ConstObject> constObjects_;
 
-    // One frame per call being folded, holding what each parameter slot is worth:
-    // an integer, or a double when the parameter's type is floating (A11).
-    // A class parameter holds its object; a pointer to one the object and an offset in it.
-    struct ConstexprSlot {
-        int offset = 0;
-        bool floating = false;
-        long long i = 0;
-        long double d = 0;
-        ConstObjectPtr obj;
-        bool pointer = false;
-        std::string global;   // a global object being built, named by this slot
-    };
+    typedef sema::ConstexprSlot ConstexprSlot;
     mutable std::vector<std::vector<ConstexprSlot> > constexprFrames_;
-    const ConstexprSlot *constexprSlot(const Var &v) const;
-    // Folds the arguments and pushes a frame; false when the call cannot fold.
-    bool enterConstexprCall(const Call &c, const ConstexprFn **fn,
-                            std::size_t pos) const;
 
-    const Expr *singleReturnValue(const Stmt &body) const;
-    bool foldArgument(const Expr &a, ConstexprSlot *slot, std::size_t pos) const;
-    bool foldObject(const Expr &e, ConstObject *out, std::size_t pos) const;
-    bool foldObjectPointer(const Expr &e, ConstObjectPtr *obj, int *at, std::size_t pos) const;
-    bool objectAddress(const Expr &lvalue, ConstObjectPtr *obj, int *at, std::size_t pos) const;
-    bool foldLeaf(const Expr &lvalue, ConstLeaf *out, std::size_t pos) const;
-    bool runConstexpr(const Stmt &s, std::size_t pos) const;
-    bool runConstexprEffect(const Expr &e, std::size_t pos) const;
-    bool constructConst(const Call &c, std::size_t pos) const;
-    std::string constObjectKey(const Var &v) const;
-    bool instantiateForConstant(const std::string &symbol) const;
-    static ConstObject subObject(const ConstObject &from, int at, int size);
-    static void storeSubObject(ConstObject &into, int at, int size, const ConstObject &what);
-    // The object a declaration's own statements build, run with `target` standing for it.
-    bool foldDeclaredObject(const std::vector<const Stmt *> &init, const Var &target, ConstObject *out,
-                            std::size_t pos);
-    bool constObjectFromInit(const Type *t, const Init &in, int base, ConstObject *out) const;
     void foldLocalObject(const Declared &d, int off, const std::vector<StmtPtr> &inits, std::size_t from);
-    void constObjectPieces(const ConstObject &o, std::vector<GlobalPiece> &out);
-    void refuseConstexprClassObject(const std::string &name, std::size_t pos) const;
     ExprPtr targetFor(const std::string &name, const std::vector<InitStep> &path);
 
     void initStore(const std::string &name, std::vector<InitStep> &path,
@@ -2043,8 +1986,6 @@ private:
     // reached. `noexcept(e)` reads it; nothing else does.
     int mayThrow_ = 0;
     long long constantExpression(const char *what);
-    bool foldPointerConstant(const Expr &e, long long *out, std::size_t pos) const;
-    bool fold(const Expr &e, long long *out, std::size_t pos) const;
 
     void typedefFunctionSuffix(Declared &td);
 
@@ -2054,7 +1995,6 @@ private:
     // A namespace-scope constexpr pointer's address constant, by its key, for one defined from it.
     std::map<std::string, std::pair<std::string, long long> > constAddresses_;
     bool addressOfObject(const Expr &e, std::string *sym, long long *off) const;
-    long long narrowTo(long long v, const Type *t) const;
 
     ExprPtr expr();
     ExprPtr assign();

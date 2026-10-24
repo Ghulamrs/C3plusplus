@@ -449,182 +449,6 @@ void Parser::emitInit(const std::string &name, std::vector<InitStep> &path,
                                " more initialiser(s) after this one");
 }
 
-static long double inType(const Type *t, const Target &target, long double v) {
-    if (t->kind() == Kind::Float) return static_cast<float>(v);
-    if (t->kind() == Kind::Double ||
-        (t->kind() == Kind::LongDouble && !t->isX87(target)))
-        return static_cast<double>(v);
-    return v;
-}
-
-// **Every value below is carried as a `double`, exactly, or the fold says so.**
-// A host `long double` is 64 bits of significand on the Linux box and 53 on the
-// Mac, so the fold works in double and flags `past53` and `x87Rounded`.
-bool Parser::foldDouble(const Expr &e, const Target &target, long double *out,
-                        bool *past53, bool *x87Rounded) const {
-    // **A const floating object read back**, the twin of the integral read-back fold() already
-    // makes: `const double b = (1 - f) * a;` is dynamic initialisation by the letter of
-    // [basic.start.init], and folding it is what every compiler does instead.
-    if (const Var *v = dynamic_cast<const Var *>(&e)) {
-        if (const ConstexprSlot *slot = constexprSlot(*v)) {
-            if (slot->obj != nullptr) return false;
-            *out = slot->floating ? slot->d : static_cast<long double>(slot->i);
-            return true;
-        }
-        if (v->isLocal()) {
-            if (const Local *l = lookup_.findLocal(v->name()))
-                if (l->isConstantDouble) { *out = l->constantDouble; return true; }
-            return false;
-        }
-        if (const GlobalSym *g = lookup_.findGlobal(v->name()))
-            if (g->isConstantDouble) { *out = g->constantDouble; return true; }
-        // As in fold(): a static member lives under its symbol, not in globals_.
-        if (const StaticConst *sc = findStaticConst(v->symbol()))
-            if (sc->dknown) { *out = sc->dvalue; return true; }
-        return false;
-    }
-    // A member of a constant object, as fold() reads one.
-    if (dynamic_cast<const MemberAccess *>(&e) != nullptr ||
-        (dynamic_cast<const Unary *>(&e) != nullptr && static_cast<const Unary &>(e).op() == '*')) {
-        ConstLeaf leaf;
-        if (!foldLeaf(e, &leaf, 0)) return false;
-        *out = leaf.type->isFloating() ? leaf.d
-             : leaf.type->isSigned(target) ? static_cast<long double>(leaf.i)
-             : static_cast<long double>(static_cast<unsigned long long>(leaf.i));
-        return true;
-    }
-    if (const Num *n = dynamic_cast<const Num *>(&e)) {
-        if (n->type()->isFloating()) {
-            *out = inType(n->type(), target, n->dvalue());
-        } else {
-            unsigned long long a = n->value() < 0
-                ? 0ULL - static_cast<unsigned long long>(n->value())
-                : static_cast<unsigned long long>(n->value());
-            while (a != 0 && (a & 1) == 0) a >>= 1;
-            if (a >= (1ULL << 53)) *past53 = true;
-            *out = static_cast<double>(n->value());
-        }
-        return true;
-    }
-    if (const Cast *c = dynamic_cast<const Cast *>(&e)) {
-        if (!foldDouble(c->value(), target, out, past53, x87Rounded))
-            return false;
-
-        const Type *ct = c->type();
-        if (ct->kind() == Kind::Float)       *out = static_cast<float>(*out);
-        else if (ct->kind() == Kind::Double) *out = static_cast<double>(*out);
-        else if (ct->kind() == Kind::LongDouble && !ct->isX87(target))
-                                             *out = static_cast<double>(*out);
-        else if (!ct->isFloating()) {
-            if (ct->isSigned(target))
-                *out = static_cast<long double>(
-                           static_cast<long long>(*out));
-            else
-                *out = static_cast<long double>(
-                           static_cast<unsigned long long>(*out));
-        }
-        return true;
-    }
-    // **A call to a constexpr function, as fold() runs one** (A11).
-    if (const Call *c = dynamic_cast<const Call *>(&e)) {
-        // No expression carries a position, so the depth limit is reported at
-        // the constexpr function's own definition.
-        auto it = constexprFns_.find(c->symbol());
-        const ConstexprFn *fn = nullptr;
-        if (!enterConstexprCall(*c, &fn, it == constexprFns_.end() ? 0 : it->second.pos))
-            return false;
-        const bool ok = foldDouble(*fn->value, target, out, past53, x87Rounded);
-        constexprFrames_.pop_back();
-        if (ok && !e.type()->isFloating())
-            *out = static_cast<long double>(static_cast<long long>(*out));
-        return ok;
-    }
-    if (const Conditional *c = dynamic_cast<const Conditional *>(&e)) {
-        long long t;
-        if (!fold(c->cond(), &t, 0)) return false;
-        return foldDouble(t ? c->thenArm() : c->elseArm(), target, out, past53, x87Rounded);
-    }
-    if (const Unary *u = dynamic_cast<const Unary *>(&e)) {
-        if (u->op() == '-' &&
-            foldDouble(u->operand(), target, out, past53, x87Rounded)) {
-            *out = -*out;
-            return true;
-        }
-    }
-
-    if (const Binary *b = dynamic_cast<const Binary *>(&e)) {
-        long double l, r;
-        if (!foldDouble(b->lhs(), target, &l, past53, x87Rounded) ||
-            !foldDouble(b->rhs(), target, &r, past53, x87Rounded))
-            return false;
-
-        Kind bk = b->type()->kind();
-        bool asDouble = bk == Kind::Double ||
-                        (bk == Kind::LongDouble && !b->type()->isX87(target));
-        if (bk == Kind::Float) {
-            float fl = static_cast<float>(l), fr = static_cast<float>(r);
-            switch (b->op()) {
-            case BinOp::Add: *out = fl + fr; return true;
-            case BinOp::Sub: *out = fl - fr; return true;
-            case BinOp::Mul: *out = fl * fr; return true;
-            case BinOp::Div: if (fr == 0) return false;
-                             *out = fl / fr; return true;
-            default: return false;
-            }
-        }
-        if (asDouble) {
-            double dl = static_cast<double>(l), dr = static_cast<double>(r);
-            switch (b->op()) {
-            case BinOp::Add: *out = dl + dr; return true;
-            case BinOp::Sub: *out = dl - dr; return true;
-            case BinOp::Mul: *out = dl * dr; return true;
-            case BinOp::Div: if (dr == 0) return false;
-                             *out = dl / dr; return true;
-            default: return false;
-            }
-        }
-        // The x87 lane. The operands are exact doubles by construction, so the
-        // one question is whether this result still fits one - unless an integer
-        // past 53 bits fed in, where the only honest answer is the flag.
-        if (*past53) *x87Rounded = true;
-        const double dl = static_cast<double>(l);
-        const double dr = static_cast<double>(r);
-        double sum;
-        bool fits;
-        switch (b->op()) {
-        case BinOp::Add: {
-            sum = dl + dr;
-            const double bb = sum - dl;
-            fits = (dl - (sum - bb)) + (dr - bb) == 0.0;
-            break;
-        }
-        case BinOp::Sub: {
-            sum = dl - dr;
-            const double bb = sum - dl;
-            fits = (dl - (sum - bb)) + (-dr - bb) == 0.0;
-            break;
-        }
-        case BinOp::Mul:
-            sum = dl * dr;
-            fits = std::fma(dl, dr, -sum) == 0.0;
-            break;
-        case BinOp::Div:
-            if (dr == 0) return false;
-            sum = dl / dr;
-            fits = std::fma(sum, dr, -dl) == 0.0;
-            break;
-        default: return false;
-        }
-        if (sum != 0.0 && sum > -2.2250738585072014e-308 &&
-                          sum <  2.2250738585072014e-308)
-            fits = false;
-        if (!fits) *x87Rounded = true;
-        *out = sum;
-        return true;
-    }
-    return false;
-}
-
 // Whether every value of `from` is a value of `to` - the question
 // [dcl.init.list]/7 asks about an integer source that is not a constant.
 static bool holdsEvery(const Type *from, const Type *to, const Target &target) {
@@ -690,7 +514,7 @@ void Parser::checkNarrowing(const Type *to, const Expr &value, std::size_t pos,
     if (from->isInteger()) {
         const bool fromUnsigned = !from->isBool() && !from->isSigned(target_);
         long long v = 0;
-        if (!fold(value, &v, pos)) {
+        if (!constant_.fold(value, &v, pos)) {
             if (to->isFloating())
                 src_.fail(pos, "a value of type " + fromName + " cannot be "
                                "narrowed to " + target + " in a braced "
@@ -721,7 +545,7 @@ void Parser::checkNarrowing(const Type *to, const Expr &value, std::size_t pos,
         else if (to->size(target_) >= 8)
             // Between two 64-bit types only the sign bit can be lost.
             fits = v >= 0 || fromUnsigned == !to->isSigned(target_);
-        else fits = !(fromUnsigned && v < 0) && narrowTo(v, to) == v;
+        else fits = !(fromUnsigned && v < 0) && constant_.narrowTo(v, to) == v;
         if (!fits)
             src_.fail(pos, shown + " cannot be narrowed to " + target + " - it "
                            "is not a value '" + to->describe() + "' can hold, "
@@ -740,7 +564,7 @@ void Parser::checkNarrowing(const Type *to, const Expr &value, std::size_t pos,
     // foldDouble's flags ask what the build host can represent; this rule asks
     // what the target type can hold. Different questions - see the handover.
     bool past53 = false, x87Rounded = false;
-    if (!foldDouble(value, target_, &d, &past53, &x87Rounded))
+    if (!constant_.foldDouble(value, target_, &d, &past53, &x87Rounded))
         src_.fail(pos, cannotHoldEvery);
     const long double limit = to->kind() == Kind::Float
                             ? static_cast<long double>(FLT_MAX)
@@ -870,7 +694,7 @@ void Parser::flattenScalar(const Type *type, Init &in, int base,
     if (type->isFloating()) {
         long double d;
         bool past53 = false, x87Rounded = false;
-        if (!foldDouble(*value, target_, &d, &past53, &x87Rounded))
+        if (!constant_.foldDouble(*value, target_, &d, &past53, &x87Rounded))
             src_.fail(in.pos, "expected a constant initialiser, and this is not "
                               "a constant");
         // **The same refusal the literal gets, for the same reason.** The gate
@@ -936,10 +760,10 @@ void Parser::flattenScalar(const Type *type, Init &in, int base,
     }
 
     long long v;
-    if (!fold(*value, &v, in.pos))
+    if (!constant_.fold(*value, &v, in.pos))
         src_.fail(in.pos, "expected a constant initialiser, and this is not an "
                           "integer constant expression");
-    if (type->isInteger()) v = narrowTo(v, type);
+    if (type->isInteger()) v = constant_.narrowTo(v, type);
     out.push_back(GlobalPiece{ base, type->size(target_), v, std::string() });
 }
 
@@ -975,12 +799,12 @@ bool Parser::foldAddress(const Expr &e, std::string *sym, long long *off) const 
         if (b->op() != BinOp::Add && b->op() != BinOp::Sub) return false;
         long long n = 0;
 
-        if (foldAddress(b->lhs(), sym, off) && fold(b->rhs(), &n, 0)) {
+        if (foldAddress(b->lhs(), sym, off) && constant_.fold(b->rhs(), &n, 0)) {
             *off += (b->op() == BinOp::Add) ? n : -n;
             return true;
         }
 
-        if (b->op() == BinOp::Add && fold(b->lhs(), &n, 0) &&
+        if (b->op() == BinOp::Add && constant_.fold(b->lhs(), &n, 0) &&
             foldAddress(b->rhs(), sym, off)) {
             *off += n;
             return true;
@@ -1596,10 +1420,10 @@ void Parser::dynamicInitialise(Declared &d, const std::string &symbol,
         const std::unique_ptr<Var> self(Var::global(d.name));
         self->setSymbol(symbol);
         ConstObject value;
-        if (d.type->isArray() || !foldDeclaredObject(steps, *self, &value, d.pos))
-            refuseConstexprClassObject(d.name, d.pos);
+        if (d.type->isArray() || !constant_.foldDeclaredObject(steps, *self, &value, d.pos))
+            constant_.refuseConstexprClassObject(d.name, d.pos);
         constObjects_[symbol] = value;
-        constObjectPieces(value, *folded);
+        constant_.constObjectPieces(value, *folded);
         leaveInitFunction(outer);
         return;
     }
@@ -1625,13 +1449,13 @@ bool Parser::staticallyInitialisable(const Type *t, Init &in) {
     if (t->isArray()) return true;
     if (t->isStructOrUnion()) return false;
     in.value = decay(std::move(in.value));
-    if (t->isFloating()) { long double d; return foldFloating(*in.value, &d); }
+    if (t->isFloating()) { long double d; return constant_.foldFloating(*in.value, &d); }
     long long v;
     if (t->isPointer()) {
         std::string sym;
         if (foldAddress(*in.value, &sym, &v)) return true;
     }
-    return fold(*in.value, &v, in.pos);
+    return constant_.fold(*in.value, &v, in.pos);
 }
 
 void Parser::dynamicInitialiseScalar(const std::string &name, const Type *type,

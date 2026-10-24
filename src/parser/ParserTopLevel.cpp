@@ -594,12 +594,12 @@ void Parser::topLevel(Program &program) {
                 if (d.type->isArray() && d.type->length() < 0)
                     d.type = types_.arrayOf(d.type->pointee(),
                                             inferredLength(in, d.type->pointee(), d.pos));
-                constantKnown = constantInitialiser(d.type, in, &constantValue);
+                constantKnown = constant_.constantInitialiser(d.type, in, &constantValue);
                 if (quals.isConst && d.type->isFloating() && !in.isList &&
                     in.value != nullptr) {
                     bool p53 = false, x87 = false;
                     long double dv = 0;
-                    if (foldDouble(*in.value, target_, &dv, &p53, &x87)) {
+                    if (constant_.foldDouble(*in.value, target_, &dv, &p53, &x87)) {
                         constantDoubleValue = dv;
                         constantDoubleKnown = true;
                     }
@@ -607,8 +607,8 @@ void Parser::topLevel(Program &program) {
                 // An aggregate's list, folded leaf by leaf for a constant expression to read.
                 if (quals.isConstexpr && d.type->innermostElement()->unqualified()->isStructOrUnion()) {
                     ConstObject value;
-                    if (d.type->isArray() || !constObjectFromInit(d.type, in, 0, &value))
-                        refuseConstexprClassObject(d.name, d.pos);
+                    if (d.type->isArray() || !constant_.constObjectFromInit(d.type, in, 0, &value))
+                        constant_.refuseConstexprClassObject(d.name, d.pos);
                     constObjects_[selfKey] = value;
                 }
                 if (quals.isConstexpr && !constantKnown && addressConstant(d.type, in)) {
@@ -1870,7 +1870,7 @@ void Parser::topLevel(Program &program) {
         const std::size_t c1 = definedSymbol.find("C1E");
         if (c1 != std::string::npos) constexprCtors_[std::string(definedSymbol).replace(c1, 3, "C2E")] = ctor;
     } else if (constexprFunction && body != nullptr) {
-        const Expr *value = singleReturnValue(*body);
+        const Expr *value = constant_.singleReturnValue(*body);
         if (value == nullptr)
             src_.fail(d.pos, "'" + d.name + "' is 'constexpr', so in C++11 its "
                              "body has to be a single return statement and "

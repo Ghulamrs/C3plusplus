@@ -64,6 +64,8 @@ before M2.4, which moves the code that reaches it. The template table's entry ty
 `TemplateDecl`, `PackMembers`, `PackBinding`, `Shadow`) went to `Entities.h` with M2.3.
 M2.3's self-host found a third gap: a friend naming a class's private nested type (`Parser::PendingBody`)
 was refused - the type path asked only whether it was inside the class, never friendship.
+M2.5's self-host found a missing `#include <cmath>`: the moved code had it through ParserInit.cpp, and
+clang supplied `std::fma` transitively where cxx3's own headers do not. A module carries its sources' includes.
 
 A basename may not repeat across `src/` and its directories (`msvc/build.cmd` writes one flat object
 directory), so the M2.6 module is not called `Mangle`.

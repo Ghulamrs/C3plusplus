@@ -1703,7 +1703,7 @@ const Type *Parser::enumSpecifier() {
             src_.fail(npos, "'" + name + "' is declared twice");
         if (consume("=")) {
             const long long given = constantExpression("a constant");
-            next = narrowTo(given, narrowAs);
+            next = constant_.narrowTo(given, narrowAs);
             // [dcl.enum]/5: a value the base cannot hold is ill-formed, not wrapped.
             if (underlying != nullptr && next != given)
                 src_.fail(npos, "'" + name + " = " + std::to_string(given) +

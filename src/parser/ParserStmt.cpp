@@ -17,8 +17,8 @@ void Parser::foldLocalObject(const Declared &d, int off, const std::vector<StmtP
     for (std::size_t k = from; k < inits.size(); k++) steps.push_back(inits[k].get());
     const std::unique_ptr<Var> self(Var::local(d.name, off));
     ConstObject value;
-    if (!foldDeclaredObject(steps, *self, &value, d.pos)) refuseConstexprClassObject(d.name, d.pos);
-    constObjects_[constObjectKey(*self)] = value;
+    if (!constant_.foldDeclaredObject(steps, *self, &value, d.pos)) constant_.refuseConstexprClassObject(d.name, d.pos);
+    constObjects_[constant_.constObjectKey(*self)] = value;
 }
 
 Parser::Init Parser::parenthesisedInitialiser(const Declared &d) {
@@ -568,15 +568,15 @@ StmtPtr Parser::declarationBody() {
         if (hasInit) {
             long long value = 0;
             long double dvalue = 0;
-            if (constantInitialiser(d.type, in, &value)) {
+            if (constant_.constantInitialiser(d.type, in, &value)) {
                 locals_[mine].isConstantValue = true;
                 locals_[mine].constantValue = value;
-            } else if (constantFloatingInitialiser(d.type, in, &dvalue)) {
+            } else if (constant_.constantFloatingInitialiser(d.type, in, &dvalue)) {
                 // A const floating local reads back the same way a global does.
                 locals_[mine].isConstantDouble = true;
                 locals_[mine].constantDouble = dvalue;
             } else if (quals.isConstexpr && d.type->innermostElement()->unqualified()->isStructOrUnion()) {
-                if (d.type->isArray()) refuseConstexprClassObject(d.name, d.pos);
+                if (d.type->isArray()) constant_.refuseConstexprClassObject(d.name, d.pos);
             } else if (quals.isConstexpr && !addressConstant(d.type, in)) {
                 src_.fail(d.pos, "'" + d.name + "' is 'constexpr', so its value "
                                  "has to be known while this is compiled, and "
@@ -1137,9 +1137,9 @@ StmtPtr Parser::caseLabel() {
             src_.fail(at, "value of type '" + et->describe() + "' is not implicitly "
                           "convertible to '" + governing->describe() + "'");
         long long folded;
-        if (!fold(*e, &folded, at))
+        if (!constant_.fold(*e, &folded, at))
             src_.fail(at, "expected a case value, and this is not an integer constant expression");
-        value = narrowTo(folded, governing);
+        value = constant_.narrowTo(folded, governing);
         for (const Case *c : switches_.back().cases)
             if (c->value() == value)
                 src_.fail(pos, "duplicate case value " + std::to_string(value));
