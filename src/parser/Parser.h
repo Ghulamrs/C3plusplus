@@ -631,8 +631,16 @@ private:
         const Comma *both = star != nullptr && star->op() == '*' ? dynamic_cast<const Comma *>(&star->operand()) : nullptr;
         const Unary *at = both != nullptr ? dynamic_cast<const Unary *>(&both->right()) : nullptr;
         const Var *tmp = at != nullptr && at->op() == '&' ? dynamic_cast<const Var *>(&at->operand()) : nullptr;
-        if (tmp != nullptr && tmp->name() == "$tmp") temporarySlots_[e->syntax().v] = tmp->offset();
+        if (tmp == nullptr || tmp->name() != "$tmp") return;
+        temporarySlots_[e->syntax().v] = tmp->offset();
+        for (std::size_t i = 0; i < pendingTemps_.size(); i++)
+            if (pendingTemps_[i].slot == tmp->offset()) temporaryGuards_[e->syntax().v] = pendingTemps_[i].flag;
     }
+    // A temporary's guard flag, by node; the guards a function clears at its entry, by symbol; and the slot a
+    // full expression's value is kept in while its temporaries die, by the expression's node (M2.12p).
+    std::unordered_map<std::uint32_t, int> temporaryGuards_;
+    std::map<std::string, std::vector<int> > functionGuards_;
+    std::unordered_map<std::uint32_t, int> fullSlots_;
     // **How a class goes to a function, and the two ABIs part company here.** Itanium
     // passes one by address whenever copying or destroying it is a call, and the caller
     // destroys the copy; Microsoft passes by the size rules and the callee destroys.

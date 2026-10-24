@@ -1518,9 +1518,11 @@ void Parser::topLevel(Program &program) {
     const std::size_t guardsFrom = frameGuards;
     StmtPtr body;
     // What every function does once its body is read - in a constructor's function try block, after its handlers.
+    std::vector<int> entryGuards;
     auto wrapUp = [&]() {
         // **Every guard this function made is cleared at its entry.**
         if (guardSlots_.size() > guardsFrom) {
+            entryGuards.assign(guardSlots_.begin() + static_cast<long>(guardsFrom), guardSlots_.end());
             std::vector<StmtPtr> withClears;
             for (std::size_t i = guardsFrom; i < guardSlots_.size(); i++)
                 withClears.push_back(StmtPtr(new ExprStmt(
@@ -1870,6 +1872,7 @@ void Parser::topLevel(Program &program) {
                                         variadic, d.pos).symbol;
     // A body the parser wrapped in a `try` of its own - a throw(...) list, a function try block - the adapter leaves.
     if (specFilter || ctorTry || functionTry || noexceptWrapped) wrappedBodies_.insert(definedSymbol);
+    if (!entryGuards.empty()) functionGuards_[definedSymbol] = entryGuards;
 
     // Recorded before `body` is moved into the Function, where what the pointer names lives on; a
     // constexpr constructor is kept whole, also under the C2 name a derived class calls it by.

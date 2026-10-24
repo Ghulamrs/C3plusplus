@@ -401,6 +401,7 @@ bool Parser::extendTemporary(const Expr &addr, const std::string &name) {
 
 ExprPtr Parser::endFullExpression(ExprPtr e) {
     if (pendingTemps_.empty()) return e;
+    const syntax::NodeId node = e->syntax();
     std::vector<Temporary> mine;
     mine.swap(pendingTemps_);
 
@@ -420,6 +421,7 @@ ExprPtr Parser::endFullExpression(ExprPtr e) {
     int keep = 0;
     if (hasValue) {
         keep = allocateFrameSlot(t);
+        if (node.valid()) fullSlots_[node.v] = keep;
         ExprPtr where(Var::local("$full", keep));
         where->setType(t);
         ExprPtr save(new Assign(std::move(where), std::move(e)));

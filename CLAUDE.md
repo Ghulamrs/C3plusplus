@@ -10792,6 +10792,15 @@ is adapted unless the parser wrapped it in the terminate region. **A use after `
 parser's rewrite in the slots it chose (`rangeFacts_`), and `static_cast<T &>` and `const_cast<T &>` take the type
 and value category the parser recorded (`refCastTypes_`) - the typed tree gave neither a type.
 
+## M2.12p: a struct's braced list, and temporaries with a destructor, 2026-10-24
+
+**1,257 of 1,986 functions take the adapter's body**, all the same: a plain struct initialised from a flat braced list,
+and a class temporary or call result with a destructor carried to the end of its full expression as the parser carries
+it - guard, `$full` slot, guarded destruction, the block's pads and the guards cleared at entry. **Self-host found a gap
+in cxx3 itself**: a member of a local class in a member function cannot name the enclosing class's static member
+(`twice` for `A::twice`), which clang takes; the adapter writes `Adapter::plainClass`, and
+`tests/open/local-class-sees-enclosing-class.cpp` holds the program.
+
 ## Build
 
 ```

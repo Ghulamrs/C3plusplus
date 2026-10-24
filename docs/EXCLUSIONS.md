@@ -216,7 +216,7 @@ is left:
   has no body. `src/parser/ParserType.cpp:1276`
 - **a delegating constructor of a class with a virtual base** - the target
   would have to be told whether the object is the most derived one.
-  `src/parser/ParserTopLevel.cpp:2368`
+  `src/parser/ParserTopLevel.cpp:2371`
 - **a mem-initialiser that would run a constructor once per element of an
   array member** - `src/parser/ParserTopLevel.cpp:1298`
 - **a virtual base initialised with an argument that needs a temporary** - the
@@ -274,7 +274,7 @@ is left:
 
 - **a braced call argument on a road that never asks the parameter's type** -
   a call through a function pointer or a member pointer; name the type,
-  `T{...}`. `src/parser/ParserExprCall.cpp:631`
+  `T{...}`. `src/parser/ParserExprCall.cpp:633`
 - **`auto x{...}`** - C++11 makes it `std::initializer_list`, N3922 the
   element's type, and compilers apply N3922 to C++11; `auto x = {...}` deduces
   the list. `src/parser/ParserTemplate.cpp:1307`
@@ -393,7 +393,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   `catch` handler, on x86_64-windows** - the cleanup would be a funclet inside
   the handler's funclet. `src/parser/ParserStmt.cpp:947`
 - **a trailing return type that is itself deduced**, `auto f() -> auto` -
-  C++14. `src/parser/ParserTopLevel.cpp:2301`
+  C++14. `src/parser/ParserTopLevel.cpp:2304`
 - **an expression form the Itanium name was not measured for, over a template's
   parameters in a function template's signature** - a postfix `++` or `--`, a
   lambda, `new`, `throw`, `typeid`, `noexcept`, a C-style cast to a reference

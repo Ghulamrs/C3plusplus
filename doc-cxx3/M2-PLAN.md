@@ -275,6 +275,16 @@ loop must destroy), the test `.rb != .re`, the step `.rb = .rb + 1`, and the var
 body's own scope. `static_cast<T &>` and `const_cast<T &>` take the type and the xvalue mark the parser gave the
 cast (`refCastTypes_`), since the typed tree types neither. At M2.12o: 1,233 of 1,986 adapted, all the same.
 
+**M2.12p: a plain struct's braced list, and temporaries that have a destructor.** `Pt p = {1, 2};` is the parser's
+store per leaf, brace elision its and what the list leaves zeroed; a list holding braces stays the parser's, the syntax
+tree keeping none. A class temporary or a call's result with a destructor joins the adapter's pending list
+(`temporaryGuards_` gives a temporary's guard), and every place the parser ends a full expression the adapter does
+too: an expression statement, a condition, a `for`'s parts and a `return` keep the value in the parser's slot
+(`fullSlots_`), clear the guards in front and destroy what was built under them; a declaration flushes; a block's pads
+release the guarded ones; and the guards a function made are cleared at its entry (`functionGuards_`). A temporary
+returned is the caller's and not destroyed. A temporary an operand of `&&`, `||` or `?:` may skip stays the parser's.
+At M2.12p: 1,257 of 1,986 adapted, all the same.
+
 **The parser's `Ast.h` is the oracle for the new path while both exist**: the new path is right where it
 produces what the old one produced. That is `tools/identical.sh` again, and the reason the old path is kept
 until the new one has matched it everywhere.

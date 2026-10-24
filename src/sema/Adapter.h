@@ -31,8 +31,19 @@ private:
     StmtPtr declaration(TypedId id, bool owns = false);
     void ownedLocal(TypedId var, const Local &l, std::vector<StmtPtr> &body);
     void destroy(std::vector<StmtPtr> &into, std::size_t from, std::size_t to, int except = -1) const;
+    // Parser::pendingTemps_ for a class temporary or a call's result with a destructor: its slot, its class and its
+    // guard (0 for a call's result); and Parser::statementTemps_, the guarded ones a block's pads release (M2.12p).
+    struct Pending { int slot; const Type *cls; int flag; };
     std::vector<StmtPtr> wrapCleanups(std::vector<StmtPtr> body, const std::vector<std::pair<std::size_t, std::size_t> > &built,
-                                      std::size_t aliveAtEntry, std::pair<int, int> slots, const std::vector<std::size_t> &tryAt);
+                                      std::size_t aliveAtEntry, std::pair<int, int> slots, const std::vector<std::size_t> &tryAt,
+                                      const std::vector<Pending> &temps);
+    ExprPtr destruction(const std::string &name, int offset, const Type *cls) const;
+    ExprPtr setGuard(int flag, int value) const;
+    ExprPtr fullExpression(ExprPtr e, syntax::NodeId node);
+    void flushPending(std::vector<StmtPtr> &into);
+    bool releasePending(const Expr &value);
+    void releaseGuarded(std::vector<StmtPtr> &steps, const Pending &t) const;
+    void noTemporarySince(std::size_t mark, const char *where) const;
     StmtPtr unwindingReturn(TypedId id);
     StmtPtr leaving(TypedId id, StmtPtr jump);
     StmtPtr tryStatement(TypedId id);
@@ -42,6 +53,7 @@ private:
     StmtPtr rangeFor(TypedId id);
     std::size_t declaratorEnd(TypedId var, int *bounds) const;
     void arrayInitialiser(TypedId var, const Local &l, std::vector<StmtPtr> &body);
+    bool aggregateList(TypedId var, const Local &l, std::vector<StmtPtr> &body);
     ExprPtr expr(TypedId id);
     ExprPtr name(TypedId id);
     ExprPtr member(TypedId id);
@@ -98,6 +110,7 @@ private:
     std::vector<Handover> handovers_;
     // The local a call returning a class with a destructor builds its result in - Parser::claimCallResult.
     int claimedSlot_ = 0;
+    std::vector<Pending> pending_, stmtTemps_;
 };
 
 }   // namespace sema
