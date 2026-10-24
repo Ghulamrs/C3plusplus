@@ -153,7 +153,7 @@ StmtPtr Parser::declarationBody() {
             const GlobalSym *seen = lookup_.findGlobal(d.name);
             declareStaticLocal(d.name, d.type, d.pos,
                                seen != nullptr ? seen->symbol
-                                               : dataSymbol(d.name, d.type, false, d.pos));
+                                               : linkage_.dataSymbol(d.name, d.type, false, d.pos));
             // `extern thread_local int t;` in a block: reached through its wrapper, as at file scope.
             if (seen != nullptr && seen->isThreadLocal != quals.isThreadLocal)
                 src_.fail(d.pos, std::string(quals.isThreadLocal ? "thread-local" : "non-thread-local") +
@@ -406,7 +406,7 @@ StmtPtr Parser::declarationBody() {
             // [stmt.dcl]/4 again: bound once, statically where the initialiser
             // is a global's address and under a guard otherwise.
             if (sc == StorageStatic) {
-                const std::string symbol = uniqueStaticSymbol(d.name);
+                const std::string symbol = linkage_.uniqueStaticSymbol(d.name);
                 std::vector<GlobalPiece> pieces;
                 bool hasInit = false;
                 std::vector<StmtPtr> body;
@@ -479,7 +479,7 @@ StmtPtr Parser::declarationBody() {
         checkNotAbstract(d.type, d.pos, "'" + d.name + "'");
 
         if (sc == StorageStatic) {
-            const std::string symbol = uniqueStaticSymbol(d.name, quals.isThreadLocal ? nullptr : d.type);
+            const std::string symbol = linkage_.uniqueStaticSymbol(d.name, quals.isThreadLocal ? nullptr : d.type);
             std::vector<GlobalPiece> pieces;
             bool hasInit = false;
             // In scope in its own initialiser, as an automatic one is.

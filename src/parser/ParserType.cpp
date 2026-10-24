@@ -2246,25 +2246,6 @@ void Parser::refuseAnonymousUnionShape(const Type *u, std::size_t pos) {
                       "be a field of; give the union a name");
 }
 
-// The storage's name, measured from clang: Itanium spells the first member as a mangled variable with
-// no `L` (`_Z1a`, `_ZN1n1eE`); Microsoft numbers the object `$S<n>` of type `<unnamed-type-$S<n>>`.
-std::string Parser::anonymousUnionSymbol(const Type *u, std::size_t pos) {
-    const std::string hidden = "$S" + std::to_string(anonUnionSeq_);
-    const std::string first = u->members().empty() ? hidden : u->members()[0].name;
-    if (!target_.microsoftNames()) {
-        const std::string q = namespacePrefix() + first;
-        if (q.find("::") != std::string::npos) return itaniumDataName(q, false);
-        return "_Z" + std::to_string(first.size()) + first;
-    }
-    Type *shape = types_.structType(Kind::Union, namespacePrefix() + "<unnamed-type-" + hidden + ">");
-    shape->setLocalName("<unnamed-type-" + hidden + ">");
-    if (!namespaceStack_.empty()) shape->setInNamespace();
-    std::string out, why;
-    if (!microsoftDataName(namespacePrefix() + hidden, shape, &out, &why))
-        src_.fail(pos, "this anonymous union cannot be given a name the linker can hold: " + why);
-    return out;
-}
-
 // **[class.union]/6: an anonymous union at namespace scope is `static`**, its members names of that scope
 // sharing one object; in a block they are locals sharing one frame slot, or one static object.
 void Parser::declareAnonymousUnionObject(const Type *u, StorageClass sc, std::size_t pos, bool local) {
@@ -2281,7 +2262,7 @@ void Parser::declareAnonymousUnionObject(const Type *u, StorageClass sc, std::si
     if (!local) {
         if (sc != StorageStatic && !inUnnamedNamespace_)
             src_.fail(pos, "anonymous unions at namespace or global scope must be declared 'static'");
-        const std::string symbol = anonymousUnionSymbol(u, pos);
+        const std::string symbol = linkage_.anonymousUnionSymbol(u, pos);
         for (std::size_t i = 0; i < ms.size(); i++) {
             const std::string gname = namespacePrefix() + ms[i].name;
             if (lookup_.findGlobalToUpdate(gname) != nullptr) redeclares(i);
@@ -2296,7 +2277,7 @@ void Parser::declareAnonymousUnionObject(const Type *u, StorageClass sc, std::si
         for (std::size_t k = from; k < locals_.size(); k++)
             if (locals_[k].name == ms[i].name) redeclares(i);
     if (sc == StorageStatic) {
-        const std::string symbol = uniqueStaticSymbol(ms.empty() ? hidden : ms[0].name);
+        const std::string symbol = linkage_.uniqueStaticSymbol(ms.empty() ? hidden : ms[0].name);
         for (std::size_t i = 0; i < ms.size(); i++)
             declareStaticLocal(ms[i].name, ms[i].type, i < where.size() ? where[i] : pos, symbol);
         current_->globals.push_back(Global{ symbol, symbol, u, std::vector<GlobalPiece>(), false, true, false });

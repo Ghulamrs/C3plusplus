@@ -70,6 +70,13 @@ clang supplied `std::fma` transitively where cxx3's own headers do not. A module
 A basename may not repeat across `src/` and its directories (`msvc/build.cmd` writes one flat object
 directory), so the M2.6 module is not called `Mangle`.
 
+## Where step 1 stands, 2026-10-24
+
+All six interfaces exist (M2.1 to M2.6): 287 functions in `src/sema/`, 8,377 lines, and `Parser.h`
+from 3,013 lines to 2,151. Every commit was byte-identical to the one before over every case and
+Compiler++ unit at -O0, -O1 and -O2 for x86_64-windows in both spellings and x86_64-linux, and
+self-hosted on the Mac. The state moves come next, then the Windows leg over the whole series.
+
 ## What is not in step 1
 
 The parser's question "what kind of name is this?" (`atTypeName`, `localHidesType`) stays in the

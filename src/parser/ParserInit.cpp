@@ -1013,20 +1013,6 @@ Parser::CtorInit Parser::readConstructorInitialiser(const Declared &d) {
 
 // ---- Dynamic initialisation: the objects that are built before main --------
 
-// `_GLOBAL__sub_I_<file>`, the name clang gives it: the main file's basename
-// with every character that is not a letter, a digit, '_' or '.' made '_'.
-std::string Parser::initFunctionSymbol() const {
-    std::string file = src_.files().empty() ? std::string("a.cpp")
-                                            : src_.files().front();
-    const std::size_t slash = file.find_last_of("/\\");
-    if (slash != std::string::npos) file = file.substr(slash + 1);
-    for (std::size_t i = 0; i < file.size(); i++) {
-        const unsigned char c = static_cast<unsigned char>(file[i]);
-        if (!std::isalnum(c) && c != '_' && c != '.') file[i] = '_';
-    }
-    return "_GLOBAL__sub_I_" + file;
-}
-
 // The init function's frame is entered the way every other re-entry door enters one, the state saved,
 // cleared and the frame put in its place - holding the slots a namespace-scope initialiser read before
 // this made its temporaries in: `int g = f(S(3));` wrote past it.
@@ -1035,7 +1021,7 @@ Parser::FunctionState Parser::enterInitFunction() {
     FunctionState outer = captureFunctionState();
     clearFunctionState();
     frameSize_ = std::max(tlsObject_ ? tlsInitFrame_ : dynInitFrame_, parsed);
-    functionName_ = tlsObject_ ? "__tls_init" : initFunctionSymbol();
+    functionName_ = tlsObject_ ? "__tls_init" : linkage_.initFunctionSymbol();
     currentFunction_ = functionName_;
     atFunctionBody_ = true;
     initGuardMark_ = guardSlots_.size();
@@ -1066,7 +1052,7 @@ void Parser::finishDynamicInit(Program &program) {
         body.push_back(std::move(dynInit_[i]));
     dynInit_.clear();
     dynInitGuards_.clear();
-    const std::string symbol = initFunctionSymbol();
+    const std::string symbol = linkage_.initFunctionSymbol();
     program.functions.push_back(Function(symbol, types_.get(Kind::Void),
                                          std::vector<Param>(),
                                          StmtPtr(new Block(std::move(body))),
@@ -1173,13 +1159,6 @@ ExprPtr Parser::objectAt(const Declared &d, const std::string &symbol, int offse
     ExprPtr there(new Unary('*', std::move(back)));
     there->setType(d.type);
     return there;
-}
-
-// `??__F<scoped>@YAXXZ`, cl's name for the function atexit is handed for one
-// object - measured: ??__Fg1@@YAXXZ, ??__Fmg@M@N@@YAXXZ, and for a static
-// member the object's whole symbol, ??__F?member@H@@2US@@A@@YAXXZ.
-std::string Parser::atexitHelperName(const std::string &scoped) const {
-    return "??__F" + scoped + "@YAXXZ";
 }
 
 // The construction of one object with static storage duration, in whatever
@@ -1653,56 +1632,17 @@ StmtPtr Parser::guardOnce(const std::string &symbol, std::vector<StmtPtr> body) 
     return StmtPtr(new Block(std::move(whole)));
 }
 
-// A static local's symbol: the *mangled* function plus the object's name, numbered where a name repeats (the bare
-// name made S::f, T::f, f(double) one `f.n`). **An inline function's static local is one object for the program**
-// ([basic.def.odr]/6): the ABI's name in a COMDAT (1.28, item 14) - cl `?a@?1??f@@YAHXZ@4HA`, Itanium `_ZZ1fvE1a`.
-std::string Parser::uniqueStaticSymbol(const std::string &name, const Type *type) {
-    const std::string &owner = currentFunction_.empty() ? functionName_
-                                                        : currentFunction_;
-    if (currentFunctionInline_ && type != nullptr) {
-        std::string abi;
-        if (target_.microsoftNames()) {
-            std::string data, why;
-            const std::string head = "?" + name + "@@3";
-            if (!owner.empty() && owner[0] == '?' && microsoftDataName(name, type, &data, &why) &&
-                data.compare(0, head.size(), head) == 0)
-                abi = "?" + name + "@?" + std::to_string(currentBlock() + 1) + "?" + owner + "@4" +
-                      data.substr(head.size());
-        } else if (owner.compare(0, 2, "_Z") == 0) {
-            abi = "_ZZ" + owner.substr(2) + "E" + std::to_string(name.size()) + name;
-            int seen = 0;
-            for (const std::string &used : staticSymbols_)
-                if (used == abi || used.compare(0, abi.size() + 1, abi + "_") == 0) seen++;
-            if (seen > 0) abi += "_" + std::to_string(seen - 1);
-        }
-        if (!abi.empty()) {
-            staticSymbols_.push_back(abi);
-            return abi;
-        }
-    }
-    std::string symbol = owner + "." + name;
-    for (int n = 1; ; n++) {
-        bool taken = false;
-        for (const std::string &used : staticSymbols_)
-            if (used == symbol) { taken = true; break; }
-        if (!taken) break;
-        symbol = owner + "." + name + "." + std::to_string(n);
-    }
-    staticSymbols_.push_back(symbol);
-    return symbol;
-}
-
 // The Microsoft helper for a static local is scoped to its function -
 // `??__Floc@?1??f@@YAHXZ@YAXXZ` - with an undecorated owner written ?name@@9.
 void Parser::staticLocalWithConstructor(Declared &d,
                                         std::vector<StmtPtr> &inits) {
-    const std::string symbol = uniqueStaticSymbol(d.name, tlsObject_ ? nullptr : d.type);
+    const std::string symbol = linkage_.uniqueStaticSymbol(d.name, tlsObject_ ? nullptr : d.type);
     std::string helper;
     if (target_.microsoftNames()) {
         const std::string owner =
             !currentFunction_.empty() && currentFunction_[0] == '?'
                 ? currentFunction_ : "?" + currentFunction_ + "@@9";
-        helper = atexitHelperName(d.name + "@?1?" + owner);
+        helper = linkage_.atexitHelperName(d.name + "@?1?" + owner);
     }
     const bool early = initialiserNames(d.name);
     if (early) declareStaticLocal(d.name, d.type, d.pos, symbol);

@@ -909,24 +909,6 @@ ExprPtr Parser::defaultPromote(ExprPtr e) {
     return e;
 }
 
-// The name the linker is given: `main` keeps its own, extern "C" keeps a name with external
-// linkage as written ([dcl.link]/4 - an internal one is a C++ name there too, `_ZL2sfi`), and
-// everything else is mangled in the target's ABI.
-std::string Parser::functionSymbol(const std::string &name, const Type *returns,
-                                   const std::vector<const Type *> &params,
-                                   bool variadic, bool internal, std::size_t pos) {
-    if ((cLinkage_ > 0 && !internal) || name == "main") return name;
-    const Type *fn = types_.functionType(returns, params, variadic);
-    std::string out, why;
-    bool ok = target_.microsoftNames()
-            ? microsoftFunctionName(name, manglingType(fn), internal, &out, &why)
-            : itaniumFunctionName(name, fn, internal, &out, &why);
-    if (!ok)
-        src_.fail(pos, "'" + name + "' cannot be given a name the linker can "
-                       "hold: " + why);
-    return out;
-}
-
 // Building an object: the constructor is chosen from the arguments as any overload
 // is, then called with the object's address in front of them. The object exists
 // before the call - a frame slot like any local - and the constructor fills it.

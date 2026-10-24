@@ -11,6 +11,7 @@
 #include "../sema/Templates.h"
 #include "../sema/Classes.h"
 #include "../sema/Constexpr.h"
+#include "../sema/Linkage.h"
 
 #include <functional>
 #include <map>
@@ -30,7 +31,7 @@ public:
     Parser(const Source &src, std::vector<Token> tokens,
            TypeTable &types, const Target &target, const Abi &abi)
         : src_(src), tokens_(std::move(tokens)), types_(types), target_(target),
-          abi_(abi), lookup_(*this), overload_(*this), tmpl_(*this), classes_(*this), constant_(*this) {}
+          abi_(abi), lookup_(*this), overload_(*this), tmpl_(*this), classes_(*this), constant_(*this), linkage_(*this) {}
 
     Program parse();
 
@@ -525,6 +526,8 @@ private:
     sema::Classes classes_;
     friend class sema::Constexpr;
     sema::Constexpr constant_;
+    friend class sema::Linkage;
+    sema::Linkage linkage_;
     // **How a class goes to a function, and the two ABIs part company here.** Itanium
     // passes one by address whenever copying or destroying it is a call, and the caller
     // destroys the copy; Microsoft passes by the size rules and the callee destroys.
@@ -738,7 +741,6 @@ private:
                             bool isExplicit);
     void declareDestructor(const std::string &cls, std::size_t pos, Access access,
                            bool isVirtual);
-    std::string deletingDestructorSymbol(const std::string &cls);
     void registerDestructor(const std::string &cls, std::size_t pos,
                             Access access, bool isVirtual, bool implicit,
                             VirtSpecifiers virt = VirtSpecifiers());
@@ -806,10 +808,6 @@ private:
     std::vector<StmtPtr> buildStaticArrayConstruction(Declared &d,
                                                       const std::string &symbol,
                                                       const std::string &helper);
-    // The name a base subobject's constructor is called by: Itanium's C2
-    // rather than the C1 the signature carries, and on Windows the one name
-    // there is.
-    std::string baseConstructorSymbol(const Signature &ctor, const Type *base);
     const Signature *destructorOf(const Type *cls) const;
     // **Whether a class is a POD for layout**, which decides tail-padding reuse.
     bool podForLayout(const Type *t) const;
@@ -1042,7 +1040,6 @@ private:
     std::vector<StmtPtr> dynInit_;
     int dynInitFrame_ = 0;
     std::vector<int> dynInitGuards_;
-    std::string initFunctionSymbol() const;
     // **The same for thread storage** - [basic.stc.thread]: `__tls_init`, its frame and its guards,
     // built while tlsObject_ says the object being declared is a thread_local; the init functions
     // below write to initSink(), and registerDestruction asks the target's threadAtexit().
@@ -1085,7 +1082,6 @@ private:
     void registerDestruction(const Declared &d, const std::string &symbol,
                              const std::string &helper,
                              std::vector<StmtPtr> &into);
-    std::string atexitHelperName(const std::string &object) const;
     ExprPtr functionAddress(const std::string &symbol, const Type *fnType);
     // A file-scope object with a constructor, and a static data member of one.
     void dynamicInitialise(Declared &d, const std::string &symbol,
@@ -1097,8 +1093,6 @@ private:
     std::size_t initGuardMark_ = 0;
     void staticLocalWithConstructor(Declared &d,
                                     std::vector<StmtPtr> &inits);
-    // With its type, an inline function's static local takes the ABI's name (1.28).
-    std::string uniqueStaticSymbol(const std::string &name, const Type *type = nullptr);
     // Whether that symbol is one - the per-unit `owner.name` has a dot, the ABI's names have none -
     // so that it and its guard are external and in a COMDAT, one object for the program.
     bool sharedStaticLocal(const std::string &symbol) const {
@@ -1110,10 +1104,6 @@ private:
                              std::vector<GlobalPiece> &pieces, bool &hasInit,
                              std::vector<StmtPtr> *into);
 
-    // A static data member: declared inside the class, defined outside it,
-    // and reached by all three of `C::n`, `obj.n` and `p->n`.
-    std::string staticMemberSymbol(const std::string &cls, const std::string &name,
-                                   const Type *t, Access access, std::size_t pos);
     // Whether a call to this function has to be given an object. A member's
     // `owner` used to answer it on its own, and a static member is exactly the
     // case where the two questions come apart.
@@ -1170,10 +1160,6 @@ private:
     const char *pureVirtualSymbol() const {
         return target_.microsoftNames() ? "_purecall" : "__cxa_pure_virtual";
     }
-    std::string memberSymbol(const std::string &cls, const std::string &name,
-                             const Type *fn, Access access, bool constThis,
-                             RefQual refThis, std::size_t pos, bool isVirtual = false,
-                             bool isStatic = false);
     // `S a[4];` - the default constructor once per element, and `S a[3] = { ... };` - each element
     // from its initialiser, the rest value-initialised. Apart from constructLocal, which builds a
     // single object and names the class through d.type, which for an array is the array.
@@ -1612,12 +1598,6 @@ private:
                         bool hasThis = false, int vbInit = 1);
 
     void parameterTypes(std::vector<const Type *> &params, bool &variadic);
-    // **Microsoft mangles a parameter from before [dcl.fct]/5 drops its cv.**
-    const Type *parameterAsWritten(const Type *declared, const Type *adjusted);
-    // `fn` respelled for the Microsoft mangler where this function's
-    // parameters were written differently from their types, and `fn` itself
-    // otherwise.
-    const Type *manglingType(const Type *fn);
     std::vector<const Type *> writtenParams_;
     std::vector<const Type *> writtenFor_;
 
@@ -1710,7 +1690,6 @@ private:
     int anonUnionSeq_ = 0;
     bool anonymousUnionAhead() const;
     void refuseAnonymousUnionShape(const Type *u, std::size_t pos);
-    std::string anonymousUnionSymbol(const Type *u, std::size_t pos);
     void declareAnonymousUnionObject(const Type *u, StorageClass sc, std::size_t pos, bool local);
     std::set<const Type *> unionsNamedBy(const Type *cls, const std::set<std::string> &names) const;
     // Whether this class wrote a member initialiser - [dcl.init.aggr]/1.
@@ -1762,11 +1741,6 @@ private:
     int cLinkage_ = 0;
     bool directLinkage_ = false;
     bool linkageSpecification();
-    std::string functionSymbol(const std::string &name, const Type *returns,
-                               const std::vector<const Type *> &params,
-                               bool variadic, bool internal, std::size_t pos);
-    std::string dataSymbol(const std::string &name, const Type *type,
-                           bool isStatic, std::size_t pos);
 
     ExprPtr objectRef(const std::string &name);
     const Type *qualifiedMemberScope(const Type *obj, std::string &name,

@@ -414,7 +414,7 @@ void Parser::topLevel(Program &program) {
                 const bool internal = internalLinkage(sc);
                 refuseVolatileWithLinkage(quals.isVolatile, internal, d.pos);
                 const std::string symbol = prev != nullptr
-                    ? prev->symbol : dataSymbol(gname, d.type, internal, d.pos);
+                    ? prev->symbol : linkage_.dataSymbol(gname, d.type, internal, d.pos);
                 const bool defines = !(sc == StorageExtern && !peek().is("="));
                 std::vector<GlobalPiece> pieces;
                 bool hasInit = false;
@@ -500,7 +500,7 @@ void Parser::topLevel(Program &program) {
                     refuseVolatileWithLinkage(quals.isVolatile, internal, d.pos);
                     const std::string symbol = prev != nullptr
                         ? prev->symbol
-                        : dataSymbol(gname, d.type, internal, d.pos);
+                        : linkage_.dataSymbol(gname, d.type, internal, d.pos);
                     // The Microsoft helper is scoped innermost first:
                     // ??__Fmg@M@N@@YAXXZ for N::M::mg, measured.
                     std::string helper;
@@ -517,7 +517,7 @@ void Parser::topLevel(Program &program) {
                         std::string scoped;
                         for (std::size_t i = parts.size(); i-- > 0; )
                             scoped += parts[i] + "@";
-                        helper = atexitHelperName(scoped);
+                        helper = linkage_.atexitHelperName(scoped);
                     }
                     // In scope in its own initialiser - `S s(&s);` - [basic.scope.pdecl]/1.
                     const bool early = prev == nullptr && initialiserNames(d.name);
@@ -583,7 +583,7 @@ void Parser::topLevel(Program &program) {
                 early = globals_.size();
                 registered = true;
                 globalIndex_[selfKey] = early;
-                globals_.push_back(GlobalSym{ selfKey, dataSymbol(selfKey, d.type, hidden, d.pos),
+                globals_.push_back(GlobalSym{ selfKey, linkage_.dataSymbol(selfKey, d.type, hidden, d.pos),
                                               d.type, c, false, false, false, 0 });
             }
             if (scalarInitAhead || consume("=") || atBracedInitialiser(d.name)) {
@@ -710,7 +710,7 @@ void Parser::topLevel(Program &program) {
             bool internal = sc == StorageStatic ||
                             (objectIsConst && sc != StorageExtern);
             refuseVolatileWithLinkage(quals.isVolatile, internal, d.pos);
-            std::string symbol = dataSymbol(gname, d.type, internal, d.pos);
+            std::string symbol = linkage_.dataSymbol(gname, d.type, internal, d.pos);
             const bool dynamic = (dynamicScalar.value != nullptr || dynamicScalar.isList);
             GlobalSym made{ gname, symbol, d.type, objectIsConst,
                             sc != StorageExtern || hasInit || dynamic,
@@ -862,7 +862,7 @@ void Parser::topLevel(Program &program) {
                     }
                 }
                 params.push_back(types_.withoutConst(pd.type));
-                written.push_back(parameterAsWritten(declared, params.back()));
+                written.push_back(linkage_.parameterAsWritten(declared, params.back()));
                 paramSlots.push_back(Param{ held->isReference()
                                             ? types_.pointerTo(held->referent())
                                             : held, off });
@@ -981,7 +981,7 @@ void Parser::topLevel(Program &program) {
                 std::string sym, why, c2;
                 bool ok;
                 if (ctor && target_.microsoftNames())
-                    ok = microsoftConstructorTemplateName(d.qualifier, memberOf, manglingType(fnType),
+                    ok = microsoftConstructorTemplateName(d.qualifier, memberOf, linkage_.manglingType(fnType),
                                                           memberTemplateArgs_, code, &sym, &why);
                 else if (ctor)
                     ok = itaniumConstructorTemplateName(d.qualifier, memberOf, patternFn,
@@ -1718,7 +1718,7 @@ void Parser::topLevel(Program &program) {
                 if (!target_.microsoftNames() && !copyBytes) {
                     std::string sub;
                     if (building) {
-                        sub = baseConstructorSymbol(chosen, base);
+                        sub = linkage_.baseConstructorSymbol(chosen, base);
                     } else {
                         itaniumDestructorName(base->tag(), base, false, &sub);
                     }

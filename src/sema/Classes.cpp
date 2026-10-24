@@ -147,7 +147,7 @@ void Classes::synthesizeDeleting(const std::string &cls, const Type *type,
                                 Access access, std::size_t pos) {
     const bool ms = p_.target_.microsoftNames();
     const Type *self = p_.types_.pointerTo(type);
-    const std::string symbol = p_.deletingDestructorSymbol(cls);
+    const std::string symbol = p_.linkage_.deletingDestructorSymbol(cls);
     (void)access;
 
     // Its own frame: `this`, and on Windows the flag beside it.
@@ -1852,7 +1852,7 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
         } else {
             p_.applyDefaults(chosen, defaults, pos);
         }
-        const std::string sym = p_.baseConstructorSymbol(chosen, base);
+        const std::string sym = p_.linkage_.baseConstructorSymbol(chosen, base);
 
         const Type *basePtr = p_.types_.pointerTo(base);
         ExprPtr me(Var::local("this", thisSlot));
@@ -2050,7 +2050,7 @@ void Classes::synthesizeCopy(std::size_t which, bool assigning) {
                            (cc->access == Access::Private ? "private" : "protected"));
         p_.markUsed(cc);
         const std::string sym = assigning ? cc->symbol
-                                          : p_.baseConstructorSymbol(*cc, base);
+                                          : p_.linkage_.baseConstructorSymbol(*cc, base);
         const Type *basePtr = p_.types_.pointerTo(base);
 
         ExprPtr me(Var::local("this", thisSlot));
@@ -2292,7 +2292,7 @@ void Classes::pruneExternalVtables(Program &program) {
         if (cls != nullptr && cls->unqualified()->isSpecialization()) continue;
         if (!keyFunctionUndefined(it->first)) continue;
         std::vector<std::string> gone = it->second;
-        gone.push_back(p_.deletingDestructorSymbol(it->first));
+        gone.push_back(p_.linkage_.deletingDestructorSymbol(it->first));
         for (std::size_t g = 0; g < gone.size(); g++) {
             for (std::size_t i = program.globals.size(); i-- > 0; )
                 if (program.globals[i].symbol == gone[g])

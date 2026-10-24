@@ -104,7 +104,7 @@ goes in the same commit.
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:609` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2162` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:261` |
-| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:3060`, `src/parser/ParserTopLevel.cpp:821` |
+| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:2943`, `src/parser/ParserTopLevel.cpp:821` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:750` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:451` |
 | `template <template <class> typename C>`, `typename` after a template template parameter's list | C++17 | `src/parser/ParserTemplate.cpp:52` |
@@ -211,7 +211,7 @@ is left:
   `src/parser/ParserConst.cpp:76`
 - **a deleted destructor** - every place an object of the class is destroyed
   would have to refuse it, and only calls are checked.
-  `src/parser/ParserClass.cpp:111`
+  `src/parser/ParserClass.cpp:105`
 - **a deleted virtual function** - its vtable slot would name a function that
   has no body. `src/parser/ParserType.cpp:1276`
 - **a delegating constructor of a class with a virtual base** - the target
@@ -228,7 +228,7 @@ is left:
   argument is taken as a value. `src/parser/ParserInit.cpp:333`
 - **a `constexpr` object the object fold cannot build** - an array of class
   objects, a pointer or reference member (an address), a bit-field; the fold
-  holds an object as its scalar leaves. `src/sema/Constexpr.cpp:726`,
+  holds an object as its scalar leaves. `src/sema/Constexpr.cpp:730`,
   `tests/cases/constexpr-object-array-refused.cpp`; **statements in a `constexpr`
   constructor's body** are C++14. `src/parser/ParserConst.cpp:121`
 - **befriending one member function of another class** - `src/parser/ParserType.cpp:812`
@@ -243,7 +243,7 @@ is left:
 - **a bit-field of an anonymous union at namespace or block scope** - the
   members are names of the scope, and a bit-field would be a name with no
   object to be a field of. `src/parser/ParserType.cpp:2243`
-- **a member function of a union** - `src/parser/ParserClass.cpp:2301`
+- **a member function of a union** - `src/parser/ParserClass.cpp:2260`
 - **one name holding both a static and a non-static member**, where overload
   resolution picks the non-static one - `src/parser/ParserExpr.cpp:1901`
 - **a covariant return that moves the result** - an override may return a
@@ -260,7 +260,7 @@ is left:
 
 ## Conversion functions and operators
 
-- **`operator->*`** - `src/parser/ParserType.cpp:2437`
+- **`operator->*`** - `src/parser/ParserType.cpp:2418`
 - **an operator that can be named but not reached** - `operator&&`,
   `operator||` and `operator,`: refused at the declaration, because a function
   that links and can never be called is the half-built thing this project
@@ -268,7 +268,7 @@ is left:
   expression, asked of a one-line program each: `+ - * / % & | ^ << >> == != <
   <= > >=` binary, `+ - * & ! ~ ++ --` unary, `() [] = ->`, the ten compound
   assignments, and `operator new`, `operator delete` and the placement forms.
-  `src/parser/ParserType.cpp:2606`
+  `src/parser/ParserType.cpp:2587`
 
 ## Initialisation, and braces
 
@@ -281,12 +281,12 @@ is left:
 - **`auto &` or `auto *` from a braced list** - only `auto` and `const auto`
   deduce `std::initializer_list` here. `src/parser/ParserTemplate.cpp:1297`
 - **a `std::initializer_list` with static storage made from braces** - its
-  backing array would need static storage too. `src/parser/ParserInit.cpp:1196`
+  backing array would need static storage too. `src/parser/ParserInit.cpp:1175`
 - **a braced member initialiser with values on a reference or an array of a
   class** - a scalar member takes `{v}`, a class or an array of scalars a list
   (M1 L4), and `= {}` and `= {0}` zero an array. `src/parser/ParserType.cpp:1348`
 - **a braced list for an array of a class with a destructor and no
-  constructor** - `src/parser/ParserInit.cpp:1238`,
+  constructor** - `src/parser/ParserInit.cpp:1217`,
   `src/parser/ParserStmt.cpp:241`
 - **a bit-field initialised at file scope** - `src/parser/ParserInit.cpp:630`
 ## Objects that would run code before `main`
@@ -299,10 +299,10 @@ many, or has no object of its own:
 - **a static data member that is an array of a class with a constructor** -
   each element would need its constructor before main and its destructor at
   exit; a file-scope array and a static local of the same shape are built and
-  destroyed element by element. `src/parser/ParserClass.cpp:2117`
+  destroyed element by element. `src/parser/ParserClass.cpp:2076`
 - **a static-duration reference bound to a temporary** - [class.temporary]/5
   gives the temporary the program's lifetime, so it would need static storage
-  of its own; a named object binds. `src/parser/ParserInit.cpp:1739`
+  of its own; a named object binds. `src/parser/ParserInit.cpp:1679`
 
 ## Expressions
 
@@ -476,7 +476,7 @@ between the two lists.**
 - **a pointer to a member of an incomplete class, on x86_64-windows** - the
   Microsoft ABI sizes one by the class's inheritance model, and an incomplete
   class takes cl's widest form. A class being defined with no base is single
-  and is taken (M1 L13). `src/parser/ParserType.cpp:2853`
+  and is taken (M1 L13). `src/parser/ParserType.cpp:2834`
 - **a `volatile` object with external linkage, on x86_64-windows** - cl
   decorates its name with the qualifier, `?g@@3HC` for `?g@@3HA`.
   `src/parser/ParserType.cpp:1874`

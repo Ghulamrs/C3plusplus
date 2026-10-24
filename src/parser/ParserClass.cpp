@@ -79,12 +79,6 @@ static bool mixesRefQualifier(RefQual a, RefQual b) {
     return (a == RefQual::None) != (b == RefQual::None);
 }
 
-std::string Parser::deletingDestructorSymbol(const std::string &cls) {
-    return target_.microsoftNames()
-         ? microsoftDeletingDestructorName(cls, lookup_.findTypedef(cls))
-         : itaniumDeletingDestructorName(cls, lookup_.findTypedef(cls));
-}
-
 // [class.ctor]/1 and [class.dtor]/1 give neither a cv-qualifier nor a ref-qualifier, as clang says.
 void Parser::refuseSpecialRefQualifier(const char *what) const {
     if (!peek().is("&") && !peek().is("&&")) return;
@@ -189,7 +183,7 @@ void Parser::registerDestructor(const std::string &cls, std::size_t pos,
     // deleting form. A derived class overrides in place, matching on "~".
     if (!isVirtual) return;
     const bool ms = target_.microsoftNames();
-    const std::string deleting = deletingDestructorSymbol(cls);
+    const std::string deleting = linkage_.deletingDestructorSymbol(cls);
 
     std::vector<const Type *> none;
     if (slot < slots.size()) {
@@ -354,7 +348,7 @@ std::vector<StmtPtr> Parser::virtualBaseCalls(const Type *type, int thisSlot,
             // spells C2 differently from C1; Microsoft has one name and says
             // "subobject" with the flag instead, which `completeCall` adds.
             if (!target_.microsoftNames()) {
-                symbol = baseConstructorSymbol(*ctor, base);
+                symbol = linkage_.baseConstructorSymbol(*ctor, base);
             } else {
                 symbol = ctor->symbol;
             }
@@ -905,7 +899,7 @@ void Parser::declareConstructor(const std::string &cls, std::size_t pos,
                                                   : 'A';
     std::string out, why;
     bool ok = target_.microsoftNames()
-            ? microsoftConstructorName(cls, lookup_.findTypedef(cls), manglingType(fn),
+            ? microsoftConstructorName(cls, lookup_.findTypedef(cls), linkage_.manglingType(fn),
                                        code, &out, &why)
             : itaniumConstructorName(cls, lookup_.findTypedef(cls), fn, true, &out, &why);
     if (!ok)
@@ -1543,24 +1537,6 @@ int Parser::arrayCookie(const Type *elem) const {
     return align > words ? align : words;
 }
 
-std::string Parser::baseConstructorSymbol(const Signature &ctor, const Type *base) {
-    if (target_.microsoftNames()) return ctor.symbol;
-    // A constructor template's C2 was spelled with its C1, from the pattern.
-    const std::map<std::string, std::string>::const_iterator tc2 = constructorC2_.find(ctor.symbol);
-    if (tc2 != constructorC2_.end()) return tc2->second;
-    const Type *fnType = types_.functionType(types_.get(Kind::Void), ctor.params,
-                                             false);
-    std::string sub, why;
-    // An inherited constructor's base-subobject form is its CI2.
-    const std::map<std::string, const Type *>::const_iterator inh = inheritedFrom_.find(ctor.symbol);
-    if (inh != inheritedFrom_.end())
-        return itaniumInheritingConstructorName(base->tag(), base, inh->second, fnType, false, &sub, &why)
-               ? sub : ctor.symbol;
-    if (itaniumConstructorName(base->tag(), base, fnType, false, &sub, &why))
-        return sub;
-    return ctor.symbol;
-}
-
 StmtPtr Parser::baseDestructorCall(const Type *cls, std::size_t which, int thisSlot,
                                    std::size_t pos) {
     const Type::BaseSpec &spec = cls->bases()[which];
@@ -1921,23 +1897,6 @@ void Parser::pruneUnusedInline(Program &program) {
     program.rtti.swap(rtti);
 }
 
-std::string Parser::staticMemberSymbol(const std::string &cls,
-                                       const std::string &name, const Type *t,
-                                       Access access, std::size_t pos) {
-    if (!target_.microsoftNames()) return itaniumStaticMemberName(cls, lookup_.findTypedef(cls), name);
-    // Microsoft writes the access as a digit where a member function writes a letter,
-    // so a static member that changes from private to public changes its symbol on
-    // Windows and keeps it on Linux - the same asymmetry, measured the same way.
-    const char code = access == Access::Public    ? '2'
-                    : access == Access::Protected ? '1'
-                                                  : '0';
-    std::string out, why;
-    if (!microsoftStaticMemberName(cls, lookup_.findTypedef(cls), name, t, code, &out, &why))
-        src_.fail(pos, "'" + cls + "::" + name + "' cannot be given a name the "
-                       "linker can hold: " + why);
-    return out;
-}
-
 // `static int total;` inside a class: one object shared by every object of the class,
 // taking no room in any of them, so nothing here touches the layout. What it needs is
 // a name the linker can hold and a definition outside the class to go with it.
@@ -1963,7 +1922,7 @@ void Parser::declareStaticMember(const std::string &cls, Type *owner,
     // **[class.static.data]/3: a `static constexpr` member of any literal type is initialised here.**
     if (isConstexpr && !d.type->isInteger() && (peek().is("=") || peek().is("{"))) {
         refuseVolatileWithLinkage(volatileWritten, false, d.pos);
-        s.symbol = staticMemberSymbol(cls, d.name, s.type, access, d.pos);
+        s.symbol = linkage_.staticMemberSymbol(cls, d.name, s.type, access, d.pos);
         owner->addStaticMember(s);
         Declared typed = d;
         typed.type = s.type;
@@ -1990,7 +1949,7 @@ void Parser::declareStaticMember(const std::string &cls, Type *owner,
     // A static member is one object for the whole program, so it has a name
     // outside this file whatever else it is.
     refuseVolatileWithLinkage(volatileWritten, false, d.pos);
-    s.symbol = staticMemberSymbol(cls, d.name, d.type, access, d.pos);
+    s.symbol = linkage_.staticMemberSymbol(cls, d.name, d.type, access, d.pos);
     owner->addStaticMember(s);
 }
 
@@ -2123,7 +2082,7 @@ void Parser::defineStaticMember(Declared &d, Program &program, bool threadLocal)
             m.name = full;
             m.type = s->type;
             const std::string helper = target_.microsoftNames()
-                ? atexitHelperName(s->symbol + "@") : std::string();
+                ? linkage_.atexitHelperName(s->symbol + "@") : std::string();
             dynamicInitialise(m, s->symbol, helper, owner->isSpecialization());
             expect(";");
             // Not isConst whatever the member says: the constructor writes it.
@@ -2326,7 +2285,7 @@ void Parser::declareMember(const std::string &cls, const Declared &d,
 
     // **A static member takes no slot and overrides nothing.**
     if (isStatic) {
-        const std::string sym = memberSymbol(cls, d.name, fn, access, false,
+        const std::string sym = linkage_.memberSymbol(cls, d.name, fn, access, false,
                                              RefQual::None, d.pos, false, true);
         if (!pendingDefaults_.empty()) {
             defaultArgs_[sym] = pendingDefaults_;
@@ -2396,7 +2355,7 @@ void Parser::declareMember(const std::string &cls, const Declared &d,
         src_.fail(d.pos, "'= 0' makes a function pure, and only a virtual one can be - '" +
                          d.name + "' is not declared 'virtual' and overrides nothing");
 
-    const std::string symbol = memberSymbol(cls, d.name, fn, access, constThis,
+    const std::string symbol = linkage_.memberSymbol(cls, d.name, fn, access, constThis,
                                             refThis, d.pos, isVirtual);
     if (!pendingDefaults_.empty()) defaultArgs_[symbol] = pendingDefaults_;
     if (!pendingDefaults_.empty())
@@ -2443,64 +2402,6 @@ void Parser::checkNotFinal(const VSlot &s, const std::string &cls, const std::st
     if (!s.isFinal) return;
     src_.fail(pos, "'" + cls + "::" + name + "' overrides a virtual function marked "
                    "'final' - [class.virtual]/4 - and nothing may override one");
-}
-
-// A member function's linkage name. Never plain, and never affected by
-// `extern "C"`: a member cannot have C linkage, so the two ABIs are the only
-// choice here.
-std::string Parser::memberSymbol(const std::string &cls, const std::string &name,
-                                 const Type *fn, Access access, bool constThis,
-                                 RefQual refThis, std::size_t pos, bool isVirtual,
-                                 bool isStatic) {
-    // Q public, I protected, A private - the Microsoft ABI puts the access in
-    // the name and Itanium does not, both measured.
-    const char code = isStatic && access == Access::Public    ? 'S'
-                    : isStatic && access == Access::Protected ? 'K'
-                    : isStatic                                ? 'C'
-                    : isVirtual        ? 'U'
-                    : access == Access::Public    ? 'Q'
-                    : access == Access::Protected ? 'I'
-                                                  : 'A';
-    // A class defined inside a function body.
-    const std::string *owner = lookup_.localOwnerOf(cls);
-
-    std::string out, why;
-    const Type *shown = target_.microsoftNames() ? manglingType(fn) : fn;
-    bool ok = target_.microsoftNames()
-            ? (owner != nullptr
-                   ? microsoftLocalMemberName(*owner, cls, lookup_.findTypedef(cls), name,
-                                              shown, code, constThis, refThis, &out, &why)
-                   : microsoftMemberName(cls, lookup_.findTypedef(cls), name, shown, code,
-                                         constThis, refThis, &out, &why))
-            : (owner != nullptr
-                   ? itaniumLocalMemberName(*owner, cls, lookup_.findTypedef(cls), name,
-                                            fn, constThis, refThis, &out, &why)
-                   : itaniumMemberName(cls, lookup_.findTypedef(cls), name, fn, constThis,
-                                       refThis, &out, &why));
-    if (!ok)
-        src_.fail(pos, "'" + cls + "::" + name + "' cannot be given a name the "
-                       "linker can hold: " + why);
-    return out;
-}
-
-// A variable at namespace scope is mangled by the Microsoft ABI and left
-// alone by Itanium. A static one is nobody else's business either way, so it
-// keeps the name it was written with.
-std::string Parser::dataSymbol(const std::string &name, const Type *type,
-                               bool isStatic, std::size_t pos) {
-    // [dcl.link]/4: extern "C" names a variable with external linkage only; an internal one
-    // is spelled as any internal C++ name is - `_ZL2sv`, or as written on Microsoft.
-    if (cLinkage_ > 0 && !isStatic) return name;
-    if (!target_.microsoftNames()) return itaniumDataName(name, isStatic);
-    // Microsoft mangles a variable only where something outside could name it.
-    // An internal one keeps what it was written with - measured against clang,
-    // which spells it the same way.
-    if (isStatic && name.find("::") == std::string::npos) return name;
-    std::string out, why;
-    if (!microsoftDataName(name, type, &out, &why))
-        src_.fail(pos, "'" + name + "' cannot be given a name the linker can "
-                       "hold: " + why);
-    return out;
 }
 
 // **The parameter list is what identifies a function now, not the name.** A difference
@@ -2611,7 +2512,7 @@ void Parser::declareFunction(const std::string &name, const Type *returns,
 
     set.push_back(functions_.size());
     functions_.push_back(Signature{ key,
-                                    functionSymbol(key, returns, params, variadic,
+                                    linkage_.functionSymbol(key, returns, params, variadic,
                                                    internal, pos),
                                     returns, params, variadic, defining, pos,
                                     cName, std::string(), false,
@@ -3012,24 +2913,6 @@ StmtPtr Parser::constructMember(const std::string &cls, const Type *type,
     return built.member < 0 ? std::move(loop) : guardElements(std::move(loop), built, indexSlot, pos);
 }
 
-const Type *Parser::parameterAsWritten(const Type *declared,
-                                       const Type *adjusted) {
-    if (!adjusted->isPointer()) return adjusted;
-    // An array of const elements is a const *array*, so isConst() answers for
-    // `const int a[]` as well - and both want the same const pointer.
-    if (declared->isArray() || declared->isConst())
-        return types_.withConst(adjusted);
-    return adjusted;
-}
-
-// **A function type is interned on its parameters, so two functions with one
-// signature are one type** - which is why the written list cannot be kept on
-// it: `f1(int a[])` and `f2(int *a)` would then be the same Q.
-const Type *Parser::manglingType(const Type *fn) {
-    if (writtenParams_.empty() || writtenFor_ != fn->params()) return fn;
-    return types_.functionType(fn->returns(), writtenParams_, fn->isVariadicFn());
-}
-
 void Parser::parameterTypes(std::vector<const Type *> &params, bool &variadic) {
     expect("(");
     variadic = false;
@@ -3065,7 +2948,7 @@ void Parser::parameterTypes(std::vector<const Type *> &params, bool &variadic) {
         if (pd.type->isVoid())
             src_.fail(pd.pos, "'void' is only a parameter list on its own");
         params.push_back(types_.withoutConst(pd.type));
-        written.push_back(parameterAsWritten(declared, params.back()));
+        written.push_back(linkage_.parameterAsWritten(declared, params.back()));
 
         // `int b = 3`. The tokens are left where they are and their position
         // recorded; a call that omits the argument reads them again.
