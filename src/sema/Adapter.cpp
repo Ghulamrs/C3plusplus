@@ -16,6 +16,9 @@ const syntax::Node &Adapter::syn(TypedId id) const { return p_.syntaxTree_.node(
 
 StmtPtr Adapter::body(TypedId typed, const Function &fn, std::string *why) {
     returns_ = fn.returns();
+    std::unordered_map<std::uint32_t, const Type *>::const_iterator declared =
+        p_.declaredReturns_.find(typer_.tree().node(typed).syntax.v);
+    if (declared != p_.declaredReturns_.end() && declared->second != nullptr) returns_ = declared->second;
     try {
         const TypedNode &f = typer_.tree().node(typed);
         if (f.count == 0) outside("a function with no body");
@@ -99,6 +102,8 @@ StmtPtr Adapter::stmt(TypedId id) {
                 if (returns_ != nullptr && !returns_->isVoid()) outside("a return with no value");
                 return placed(make_owned<Return>(ExprPtr()), s, n.syntax);
             }
+            if (n.count == 1 && returns_ != nullptr && returns_->isReference())
+                return placed(make_owned<Return>(bind(returns_, expr(tree.child(id, 0)))), s, n.syntax);
             if (n.count != 1 || !scalar(returns_)) outside("a return of what is not a scalar");
             return placed(make_owned<Return>(convert(decay(expr(tree.child(id, 0))), returns_)), s, n.syntax);
         case syntax::Kind::If: {
@@ -134,11 +139,15 @@ StmtPtr Adapter::stmt(TypedId id) {
 }
 
 // A local read or written by name, as Parser::localRef builds it.
-static ExprPtr localVar(const Local &l) {
+static ExprPtr localVar(const Local &l, TypeTable &types) {
     Var *v = Var::local(l.name, l.offset);
     v->setReadOnly(l.isConst);
     v->setNoAddress(l.isRegister);
-    return typed(std::unique_ptr<Var>(v), l.type);
+    if (!l.type->isReference()) return typed(std::unique_ptr<Var>(v), l.type);
+    // A reference's slot holds an address, and every mention reads through it - Parser::useReference.
+    const Type *referent = l.type->referent();
+    ExprPtr slot = typed(std::unique_ptr<Var>(v), types.pointerTo(referent));
+    return typed(make_owned<Unary>('*', std::move(slot)), referent);
 }
 
 // A struct the parser copies by its bytes and builds by doing nothing: no constructor, destructor, vptr or copy of its own.
@@ -154,6 +163,11 @@ void Adapter::plainLocal(Parser &p, const Local &l) {
     if (!l.staticName.empty()) throw std::string("a static local");
     if (l.isThreadLocal) throw std::string("a thread_local");
     if (l.constantOnly) throw std::string("a local read for its value only");
+    if (l.type->isReference()) {
+        const Type *r = l.type->referent();
+        if (!scalar(r) && !plainClass(p, r)) throw std::string("a reference to '" + r->describe() + "'");
+        return;
+    }
     if (!scalar(l.type) && !scalarArray(l.type) && !plainClass(p, l.type)) throw std::string("a local of type '" + l.type->describe() + "'");
 }
 
@@ -169,6 +183,16 @@ StmtPtr Adapter::declaration(TypedId id) {
         if (l == p_.declaredLocals_.end()) outside("a var whose local was not recorded");
         try { plainLocal(p_, l->second); } catch (const std::string &why) { outside(why); }
         const TypedNode &v = tree.node(var);
+        if (l->second.type->isReference()) {
+            if (v.count != 1) outside("a reference of " + std::to_string(v.count) + " parts");
+            const Type *slotType = p_.types_.pointerTo(l->second.type->referent());
+            Var *slot = Var::local(l->second.name, l->second.offset);
+            slot->setReadOnly(l->second.isConst);
+            ExprPtr store = typed(make_owned<Assign>(typed(std::unique_ptr<Var>(slot), slotType),
+                                                     bind(l->second.type, expr(tree.child(var, 0)))), slotType);
+            body.push_back(make_owned<ExprStmt>(std::move(store)));
+            continue;
+        }
         if (l->second.type->isArray()) {
             // An array's bounds are its var's first parts, so what follows the brackets says whether it is initialised.
             if (initialised(var)) outside("an array with an initialiser");
@@ -181,7 +205,7 @@ StmtPtr Adapter::declaration(TypedId id) {
         if (plainClass(p_, l->second.type) && init->type()->unqualified() != l->second.type->unqualified())
             outside("a struct initialised from what is not one");
         init = classValue(std::move(init), l->second.type);
-        ExprPtr store = typed(make_owned<Assign>(localVar(l->second), std::move(init)), l->second.type);
+        ExprPtr store = typed(make_owned<Assign>(localVar(l->second, p_.types_), std::move(init)), l->second.type);
         body.push_back(make_owned<ExprStmt>(std::move(store)));
     }
     std::unique_ptr<Block> b = make_owned<Block>(std::move(body));
@@ -435,7 +459,7 @@ ExprPtr Adapter::name(TypedId id) {
         std::unordered_map<std::uint32_t, Local>::const_iterator l = p_.declaredLocals_.find(n.decl.v);
         if (l == p_.declaredLocals_.end()) outside("a name whose local was not recorded");
         try { plainLocal(p_, l->second); } catch (const std::string &why) { outside(why); }
-        return localVar(l->second);
+        return localVar(l->second, p_.types_);
     }
     if (const GlobalSym *g = p_.lookup_.findGlobal(text)) {
         if (g->isThreadLocal) outside("a thread_local");
@@ -634,38 +658,131 @@ ExprPtr Adapter::assign(TypedId id) {
     return typed(make_owned<Assign>(std::move(target), convert(std::move(value), t)), t);
 }
 
-// A call of a name with one function under it, the arguments converted to its parameters and an extra one promoted.
+// Whether a type names a class or an enumeration declared in a namespace, whose functions argument-dependent lookup
+// would add to a call's candidates - which the adapter does not do, so such a call stays the parser's.
+static bool namespaceAssociated(const Type *t) {
+    while (t->isReference() || t->isPointer() || t->isArray()) t = t->isReference() ? t->referent() : t->pointee();
+    t = t->unqualified();
+    return (t->isStructOrUnion() || t->isEnumeration()) && t->tag().find("::") != std::string::npos;
+}
+
+// A call: of a name with one function under it or an overload set Sema resolves, of a static member by its
+// qualified name, or of a member function of a plain struct through `.` or `->`.
 ExprPtr Adapter::call(TypedId id) {
     const TypedTree &tree = typer_.tree();
     const TypedNode &n = tree.node(id);
-    if (n.count == 0 || syn(tree.child(id, 0)).kind != syntax::Kind::Name) outside("a call of what is not a name");
-    const std::string &callee = p_.syntaxTree_.text(tree.node(tree.child(id, 0)).syntax);
-    if (tree.node(tree.child(id, 0)).decl.valid()) outside("a call through a local");
-    const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(callee);
-    if (set == nullptr || set->size() != 1) outside("a call of an overload set");
-    const Signature f = p_.lookup_.functions_[(*set)[0]];
-    if (f.fromTemplate || !f.owner.empty() || f.deleted) outside("a call of a template's or a member");
-    if (f.returns == nullptr || !(f.returns->isVoid() || scalar(f.returns))) outside("a call returning a class");
-    const std::size_t given = n.count - 1;
-    if (given < f.params.size() || (given > f.params.size() && !f.variadic)) outside("a call with defaults or too many");
+    if (n.count == 0) outside("a call of nothing");
+    const TypedId head = tree.child(id, 0);
     std::vector<ExprPtr> args;
-    for (std::size_t i = 0; i < given; i++) {
-        ExprPtr a = decay(expr(tree.child(id, static_cast<std::uint32_t>(i + 1))));
-        if (i < f.params.size()) {
-            const Type *p = f.params[i];
-            if (!scalar(p)) outside("a parameter of type '" + p->describe() + "'");
-            args.push_back(convert(std::move(a), p));
-        } else {
-            const Type *t = a->type();
-            if (t->isPointer()) { args.push_back(std::move(a)); continue; }
-            if (!scalarArithmetic(t)) outside("a variadic argument of type '" + t->describe() + "'");
-            if (t->kind() == Kind::Float) args.push_back(convert(std::move(a), p_.types_.get(Kind::Double)));
-            else args.push_back(promote(std::move(a)));
-        }
+    for (std::uint32_t i = 1; i < n.count; i++) args.push_back(expr(tree.child(id, i)));
+    for (std::size_t i = 0; i < args.size(); i++)
+        if (namespaceAssociated(args[i]->type())) outside("a call an argument's namespace may add to");
+    if (syn(head).kind == syntax::Kind::Member) return memberCall(head, std::move(args), syn(id).loc);
+    if (syn(head).kind != syntax::Kind::Name) outside("a call of what is not a name");
+    const std::string &callee = p_.syntaxTree_.text(tree.node(head).syntax);
+    if (tree.node(head).decl.valid()) outside("a call through a local");
+    const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(callee);
+    if (set == nullptr) outside("a call of an undeclared name");
+    for (std::size_t k = 0; k < set->size(); k++)
+        if (p_.lookup_.functions_[(*set)[k]].fromTemplate) outside("a call of a template's");
+    const std::string bare = Parser::localOf(callee);
+    if (p_.tmpl_.templates_.count(bare) != 0 || p_.tmpl_.memberTemplates_.count(callee) != 0)
+        outside("a call of a name a template shares");
+    const bool qualified = callee.find("::") != std::string::npos;
+    const Signature f = set->size() == 1 ? p_.lookup_.functions_[(*set)[0]]
+                                         : p_.overload_.resolveOverload(callee, args, syn(id).loc);
+    if (f.deleted) outside("a call of a deleted function");
+    if (qualified ? !f.isStaticMember : !f.owner.empty()) outside("a call of a member by its name");
+    if (qualified) {
+        const Type *cls = p_.lookup_.findTypedef(f.owner);
+        if (cls == nullptr || !plainClass(p_, cls)) outside("a static member of what is not a plain struct");
+    } else if (callee.find_first_of("<~") != std::string::npos) {
+        outside("a call of '" + callee + "'");
     }
-    std::unique_ptr<Call> c = make_owned<Call>(callee, ExprPtr(), std::move(args), f.variadic, 0, static_cast<int>(f.params.size()));
+    return finishCall(callee, f, f.params, std::move(args), false);
+}
+
+// [expr.ref] with [class.mfct.non-static]: `o.f(a)` is f called with `&o` in front of its arguments.
+ExprPtr Adapter::memberCall(TypedId head, std::vector<ExprPtr> args, std::size_t pos) {
+    const TypedTree &tree = typer_.tree();
+    const std::string &text = p_.syntaxTree_.text(tree.node(head).syntax);
+    const bool arrow = text.compare(0, 2, "->") == 0;
+    const std::string name = text.substr(arrow ? 2 : 1);
+    if (name.empty() || name.find_first_of(":~<") != std::string::npos || name.compare(0, 8, "template") == 0 ||
+        name.compare(0, 8, "operator") == 0)
+        outside("a member call of '" + name + "'");
+    if (tree.node(head).count != 1) outside("a member call of what is not one object");
+    ExprPtr object = expr(tree.child(head, 0));
+    if (arrow) {
+        const Type *pt = object->type();
+        if (!pt->isPointer() || !pt->pointee()->isStructOrUnion()) outside("a '->' of what is not a pointer to a struct");
+        const Type *pointee = pt->pointee();
+        object = typed(make_owned<Unary>('*', std::move(object)), pointee);
+    }
+    const Type *cls = object->type();
+    if (!plainClass(p_, cls) || !pure(*object) || object->isXvalue() || !isLvalue(*object))
+        outside("a member call on what is not a plain struct named");
+    const Type *plain = cls->unqualified();
+    if (p_.lookup_.findMemberOwner(plain, name) != plain) outside("a member call found in a base");
+    const std::string key = plain->tag() + "::" + name;
+    const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(key);
+    if (set == nullptr || p_.tmpl_.memberTemplates_.count(key) != 0) outside("a member call of what is not a function");
+    for (std::size_t k = 0; k < set->size(); k++)
+        if (p_.lookup_.functions_[(*set)[k]].fromTemplate) outside("a member call of a template's");
+    const Signature f = p_.overload_.resolveOverload(key, args, pos, cls, objectIsLvalue(*object));
+    if (f.deleted || f.isVirtual || f.refThis != RefQual::None) outside("a member call of what is not plain");
+    if (f.owner != plain->tag()) outside("a member call of a base's, brought in by a using-declaration");
+    if (f.isStaticMember) return finishCall(key, f, f.params, std::move(args), false);
+    const Type *thisType = p_.types_.pointerTo(f.constThis ? p_.types_.withConst(plain) : plain);
+    std::vector<ExprPtr> all;
+    all.push_back(typed(make_owned<Unary>('&', std::move(object)), thisType));
+    for (std::size_t i = 0; i < args.size(); i++) all.push_back(std::move(args[i]));
+    std::vector<const Type *> full(1, thisType);
+    full.insert(full.end(), f.params.begin(), f.params.end());
+    return finishCall(name, f, full, std::move(all), true);
+}
+
+// Parser::completeCall for what the adapter takes: no default, no class by value or returned, a reference bound,
+// a scalar converted, an argument past the parameters promoted; a reference returned is read through.
+ExprPtr Adapter::finishCall(const std::string &name, const Signature &f, const std::vector<const Type *> &params,
+                            std::vector<ExprPtr> args, bool hasThis) {
+    const Type *gives = f.returns != nullptr && f.returns->isReference() ? f.returns->referent() : f.returns;
+    if (gives == nullptr || !(gives->isVoid() || scalar(gives) || (f.returns->isReference() && plainClass(p_, gives))))
+        outside("a call returning a class");
+    if (args.size() < params.size() || (args.size() > params.size() && !f.variadic)) outside("a call with defaults or too many");
+    for (std::size_t i = 0; i < args.size(); i++) {
+        if (i >= params.size()) {
+            ExprPtr a = decay(std::move(args[i]));
+            const Type *t = a->type();
+            if (t->isPointer()) { args[i] = std::move(a); continue; }
+            if (!scalarArithmetic(t)) outside("a variadic argument of type '" + t->describe() + "'");
+            args[i] = t->kind() == Kind::Float ? convert(std::move(a), p_.types_.get(Kind::Double)) : promote(std::move(a));
+            continue;
+        }
+        if (params[i]->isReference()) { args[i] = bind(params[i], std::move(args[i])); continue; }
+        if (!scalar(params[i])) outside("a parameter of type '" + params[i]->describe() + "'");
+        args[i] = convert(decay(std::move(args[i])), params[i]);
+    }
+    std::unique_ptr<Call> c = make_owned<Call>(name, ExprPtr(), std::move(args), f.variadic, 0, static_cast<int>(params.size()));
     c->setSymbol(f.symbol);
-    return typed(std::move(c), f.returns);
+    c->setHasThis(hasThis);
+    if (!f.returns->isReference()) return typed(std::move(c), f.returns);
+    ExprPtr through = typed(std::move(c), p_.types_.pointerTo(gives));
+    return typed(make_owned<Unary>('*', std::move(through)), gives);
+}
+
+// [dcl.init.ref]/5, the direct binding alone: an lvalue of the referent's type, its address taken.
+ExprPtr Adapter::bind(const Type *ref, ExprPtr init) {
+    const Type *referent = ref->referent(), *it = init->type();
+    if (ref->isRValueReference() || referent->isFunction() || referent->isArray()) outside("a binding of '" + ref->describe() + "'");
+    const MemberAccess *field = dynamic_cast<const MemberAccess *>(init.get());
+    const Var *var = dynamic_cast<const Var *>(init.get());
+    const Unary *deref = dynamic_cast<const Unary *>(init.get());
+    const bool glvalue = (var != nullptr && !var->noAddress()) || (field != nullptr && field->width() == 0) ||
+                         (deref != nullptr && deref->op() == '*');
+    if (!glvalue || init->isXvalue() || it->unqualified() != referent->unqualified() || (it->isConst() && !referent->isConst()))
+        outside("a reference bound to what is not an lvalue of its type");
+    return typed(make_owned<Unary>('&', std::move(init)), p_.types_.pointerTo(referent));
 }
 
 // [conv]: a scalar to another - a Cast, but to bool a comparison with zero, as Parser::convertNode builds them.

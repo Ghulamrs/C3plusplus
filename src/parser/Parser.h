@@ -523,6 +523,7 @@ private:
     std::unordered_map<std::uint32_t, Local> declaredLocals_;
     std::unordered_map<std::uint32_t, int> syntaxScopes_;
     std::unordered_map<std::uint32_t, std::string> syntaxFunctions_;
+    std::unordered_map<std::uint32_t, const Type *> declaredReturns_;   // a reference return as written (M2.12)
     std::unordered_map<std::uint32_t, std::pair<std::string, std::string> > stringLiterals_;   // a string's label and text
     void noteDeclaredLocal(syntax::NodeId id, const std::string &name) {
         if (const Local *l = lookup_.findLocal(name)) declaredLocals_[id.v] = *l;

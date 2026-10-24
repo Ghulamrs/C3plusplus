@@ -10699,6 +10699,16 @@ even where only its own const changes. `sizeof` takes the value the parser folde
 **Found on the way and not this round's:** `bool k = q;` for a pointer `q` is refused ("a pointer is not a
 number here"), where [conv.bool] makes it an ordinary copy-initialisation and clang takes it.
 
+## M2.12b: references, member calls and overload sets in the adapter, 2026-10-24
+
+**874 of 1,986 functions take the adapter's body**, all the same as the parser's; doc-cxx3/M2-PLAN.md says
+what was added and what stays outside. A member call is `&o` in front of the arguments, the call marked
+`hasThis`, and the overload is the parser's own `resolveOverload`, asked with the object's type and category -
+Sema does not rank twice. **The one fault the gate found was a using-declaration**: `d.f()` for a `using
+B::f;` in D resolved to B's member, whose `this` wants D's pointer converted, which the adapter does not do; a
+member whose owner is not the object's class stays the parser's. A function returning a reference keeps its
+written return in `declaredReturns_`, by function node, since the definition's own type has lost the `&`.
+
 ## Build
 
 ```

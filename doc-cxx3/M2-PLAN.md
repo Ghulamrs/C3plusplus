@@ -157,6 +157,19 @@ the same; identical on and off 5,352 of 5,352; `run.sh` under `-front=typed` 987
 outside, commonest first: a body that is a region (399 - noexcept and landing pads, the exceptions step), a
 call of what is not a name (member calls), a return of a class or a reference, an overload set.
 
+**M2.12b: references and calls.** A reference is a slot holding an address, every mention read through it, a
+binding the address of an lvalue of the referent's type; a reference parameter is bound, a reference returned
+read through (`*call`), and a function returning one keeps its declared return (`declaredReturns_`, by
+function node, since the definition's own type has lost the `&`). A call reaches an overload set the parser's
+own `resolveOverload` ranks, a static member by its qualified name, and a member function of a plain struct
+through `.` or `->` - `&o` in front, the call marked `hasThis` - with its arguments as `completeCall` builds
+them: a scalar converted, a reference bound, one past the parameters promoted. Outside: a default, a class
+passed or returned by value (the parser gives it a frame slot), a template's, a member reached through a base
+or a using-declaration, a virtual or ref-qualified one, and any call whose arguments name a class or enum in a
+namespace, since argument-dependent lookup could add a candidate. At M2.12b: 874 of 1,986 adapted, all the
+same; identical on and off 5,352 of 5,352; `run.sh` under `-front=typed` 987 of 987 at -O0 and -O2. Outside,
+commonest first: a body that is a region (399), a return of a class (68), an array with an initialiser (39).
+
 **The parser's `Ast.h` is the oracle for the new path while both exist**: the new path is right where it
 produces what the old one produced. That is `tools/identical.sh` again, and the reason the old path is kept
 until the new one has matched it everywhere.

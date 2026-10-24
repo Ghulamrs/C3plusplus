@@ -4,6 +4,7 @@
 // parser's lowerings, reading from it only what it decides of layout (frame slots, scopes, string labels). A function
 // that reaches past the subset is answered null, with the reason, and keeps the parser's body.
 
+#include "Entities.h"
 #include "Typing.h"
 #include "../Ast.h"
 
@@ -33,10 +34,14 @@ private:
     ExprPtr name(TypedId id);
     ExprPtr member(TypedId id);
     ExprPtr classValue(ExprPtr e, const Type *to);
+    ExprPtr bind(const Type *ref, ExprPtr init);
     ExprPtr unary(TypedId id);
     ExprPtr binary(TypedId id, const std::string &op, TypedId l, TypedId r);
     ExprPtr assign(TypedId id);
     ExprPtr call(TypedId id);
+    ExprPtr memberCall(TypedId head, std::vector<ExprPtr> args, std::size_t pos);
+    ExprPtr finishCall(const std::string &name, const Signature &f, const std::vector<const Type *> &params,
+                       std::vector<ExprPtr> args, bool hasThis);
     ExprPtr condition(TypedId id);
     ExprPtr arithmetic(const std::string &op, ExprPtr a, ExprPtr b);
     ExprPtr pointerAdd(ExprPtr ptr, ExprPtr n);

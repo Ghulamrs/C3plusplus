@@ -1906,6 +1906,7 @@ void Parser::topLevel(Program &program) {
         !instantiatingParams_.empty() || !boundTypeParams_.empty() || !boundValueParams_.empty())
         scopedFunctions_.insert(fnSyntax.v);
     syntaxFunctions_[fnSyntax.v] = definedSymbol;
+    declaredReturns_[fnSyntax.v] = returnType_;
     global.d = nullptr;                                                     // the definition is the node
     program.functions.push_back(Function(d.name, emittedReturn, std::move(paramSlots),
                                          std::move(body), frame,
