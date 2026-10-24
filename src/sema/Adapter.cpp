@@ -135,7 +135,7 @@ StmtPtr Adapter::stmt(TypedId id) {
         case syntax::Kind::Try:
             return tryStatement(id);
         case syntax::Kind::Return:
-            if (!alive_.empty() || !handlerLoops_.empty()) return unwindingReturn(id);
+            if (!alive_.empty() || !handlerLoops_.empty() || dyingBytes(p_, returns_)) return unwindingReturn(id);
             if (n.count == 0) {
                 if (returns_ != nullptr && !returns_->isVoid()) outside("a return with no value");
                 return placed(make_owned<Return>(ExprPtr()), s, n.syntax);
@@ -213,6 +213,15 @@ bool Adapter::byteClass(Parser &p, const Type *t) {
            p.classes_.moveConstructorOf(u) == nullptr;
 }
 
+// A struct copied by its bytes that has a destructor: what byteClass takes, with the destructor allowed.
+bool Adapter::dyingBytes(Parser &p, const Type *t) {
+    if (t == nullptr || !t->isStructOrUnion()) return false;
+    const Type *u = t->unqualified();
+    return u->isComplete() && u->kind() != Kind::Union && u->hasDestructor() && !u->hasVptr() &&
+           p.classes_.copyAssignOf(u) == nullptr && p.classes_.copyConstructorOf(u) == nullptr &&
+           p.classes_.moveConstructorOf(u) == nullptr;
+}
+
 void Adapter::plainLocal(Parser &p, const Local &l) {
     if (!l.staticName.empty()) throw std::string("a static local");
     if (l.isThreadLocal) throw std::string("a thread_local");
@@ -245,7 +254,8 @@ void Adapter::ownedLocal(TypedId var, const Local &l, std::vector<StmtPtr> &body
     const bool dies = p_.destructorOf(cls) != nullptr;
     if (dies && p_.target_.microsoftNames()) outside("an object a Microsoft funclet would destroy");
     // A named return value is built in the caller's storage, which only a class with a copy of its own gets (nrvoCandidate).
-    if (returns_ != nullptr && returns_->isStructOrUnion() && returns_->unqualified() == cls && !byteClass(p_, cls))
+    if (returns_ != nullptr && returns_->isStructOrUnion() && returns_->unqualified() == cls && !byteClass(p_, cls) &&
+        !dyingBytes(p_, cls))
         outside("a local of the class returned");
     int bounds = 0;
     const std::size_t end = declaratorEnd(var, &bounds);
@@ -265,7 +275,18 @@ void Adapter::ownedLocal(TypedId var, const Local &l, std::vector<StmtPtr> &body
         // Copy-initialisation, [dcl.init]/16: one argument, an explicit constructor being the parser's to refuse.
         if (end + 1 >= p_.tokens_.size() || p_.tokens_[end + 1].is("{") || v.count != 1)
             outside("a class object initialised by braces");
+        // A call returning this class, destructor and all, builds its result here: the copy is elided.
+        const bool claims = dies && dyingBytes(p_, cls) && syn(tree.child(var, 0)).kind == syntax::Kind::Call;
+        if (claims) claimedSlot_ = l.offset;
         args.push_back(expr(tree.child(var, 0)));
+        claimedSlot_ = 0;
+        if (claims) {
+            const Call *made = dynamic_cast<const Call *>(args[0].get());
+            if (made == nullptr || made->resultSlot() != l.offset) outside("a class result not built where it was claimed");
+            body.push_back(make_owned<ExprStmt>(std::move(args[0])));
+            alive_.push_back(AliveObj{ l.name, l.offset, cls });
+            return;
+        }
     } else if (!t.is(";") && !t.is(",")) {
         outside("a class object initialised by '" + t.text + "'");
     } else if (v.count != 0) {
@@ -312,9 +333,10 @@ void Adapter::ownedLocal(TypedId var, const Local &l, std::vector<StmtPtr> &body
 }
 
 // Parser::emitDestructors: the objects alive in [from, to) destroyed last first, each by its destructor's call.
-void Adapter::destroy(std::vector<StmtPtr> &into, std::size_t from, std::size_t to) const {
+void Adapter::destroy(std::vector<StmtPtr> &into, std::size_t from, std::size_t to, int except) const {
     for (std::size_t i = to; i > from; i--) {
         const AliveObj &a = alive_[i - 1];
+        if (except >= 0 && a.offset == except) continue;
         const Signature *dtor = p_.destructorOf(a.cls);
         ExprPtr object = typed(std::unique_ptr<Var>(Var::local(a.name, a.offset)), a.cls);
         std::vector<ExprPtr> args;
@@ -375,10 +397,18 @@ StmtPtr Adapter::unwindingReturn(TypedId id) {
         steps.push_back(make_owned<Return>(ExprPtr()));
         return placed(make_owned<Block>(std::move(steps)), syn(id), n.syntax);
     }
-    if (n.count != 1 || returns_ == nullptr || !(scalar(returns_) || byteClass(p_, returns_)))
+    if (n.count != 1 || returns_ == nullptr || !(scalar(returns_) || byteClass(p_, returns_) || dyingBytes(p_, returns_)))
         outside("a return of what is not a scalar, past objects alive");
     ExprPtr value = decay(expr(tree.child(id, 0)));
-    if (byteClass(p_, returns_)) {
+    // A local of a class with a destructor goes out as its bytes and is not destroyed here: the elision.
+    int elided = -1;
+    if (dyingBytes(p_, returns_)) {
+        const Var *v = dynamic_cast<const Var *>(value.get());
+        for (std::size_t i = 0; v != nullptr && v->isLocal() && i < alive_.size(); i++)
+            if (alive_[i].offset == v->offset() && alive_[i].name == v->name()) elided = v->offset();
+        if (elided < 0 || value->type()->unqualified() != returns_->unqualified()) outside("a class returned from what is not its local");
+        value = classValue(std::move(value), returns_);
+    } else if (byteClass(p_, returns_)) {
         if (value->type()->unqualified() != returns_->unqualified()) outside("a struct returned from what is not one");
         value = classValue(std::move(value), returns_);
     } else {
@@ -388,7 +418,7 @@ StmtPtr Adapter::unwindingReturn(TypedId id) {
     if (k == p_.returnTemps_.end()) outside("a return whose slot was not recorded");
     ExprPtr keep = typed(std::unique_ptr<Var>(Var::local(k->second.name, k->second.slot)), returns_);
     steps.push_back(make_owned<ExprStmt>(typed(make_owned<Assign>(std::move(keep), std::move(value)), returns_)));
-    destroy(steps, 0, alive_.size());
+    destroy(steps, 0, alive_.size(), elided);
     endCatches(steps, static_cast<int>(handlerLoops_.size()));
     steps.push_back(make_owned<Return>(typed(std::unique_ptr<Var>(Var::local(k->second.name, k->second.slot)), returns_)));
     return placed(make_owned<Block>(std::move(steps)), syn(id), n.syntax);
@@ -1074,11 +1104,23 @@ ExprPtr Adapter::call(TypedId id) {
             if (cls->isStructOrUnion()) return classTemporary(id, cls, std::move(args));
     if (set == nullptr && p_.lookup_.findGlobal(callee) != nullptr) return pointerCall(id, head, std::move(args));
     if (set == nullptr) outside("a call of an undeclared name");
-    for (std::size_t k = 0; k < set->size(); k++)
-        if (p_.lookup_.functions_[(*set)[k]].fromTemplate) outside("a call of a template's");
     const std::string bare = Parser::localOf(callee);
-    if (p_.tmpl_.templates_.count(bare) != 0 || p_.tmpl_.memberTemplates_.count(callee) != 0)
-        outside("a call of a name a template shares");
+    // A name a function template shares: the parser deduced and chose, and the symbol it called is recorded by node.
+    bool templated = p_.tmpl_.templates_.count(bare) != 0;
+    for (std::size_t k = 0; k < set->size(); k++)
+        if (p_.lookup_.functions_[(*set)[k]].fromTemplate) templated = true;
+    if (p_.tmpl_.memberTemplates_.count(callee) != 0) outside("a call of a name a member template shares");
+    if (templated) {
+        std::unordered_map<std::uint32_t, Parser::CallSlots>::const_iterator k = p_.callSlots_.find(n.syntax.v);
+        if (k == p_.callSlots_.end() || k->second.symbol.empty()) outside("a call of a template's not recorded");
+        const Signature *chosen = nullptr;
+        for (std::size_t i = 0; i < set->size(); i++)
+            if (p_.lookup_.functions_[(*set)[i]].symbol == k->second.symbol) chosen = &p_.lookup_.functions_[(*set)[i]];
+        if (chosen == nullptr) outside("a call of a template's not in its set");
+        const Signature f = *chosen;
+        if (f.deleted || !f.owner.empty()) outside("a call of a template's member or deleted function");
+        return finishCall(id, f.fromTemplate ? f.name : callee, f, f.params, std::move(args), false);
+    }
     const bool qualified = callee.find("::") != std::string::npos;
     const Signature f = set->size() == 1 ? p_.lookup_.functions_[(*set)[0]]
                                          : p_.overload_.resolveOverload(callee, args, syn(id).loc);
@@ -1193,7 +1235,9 @@ ExprPtr Adapter::memberCall(TypedId id, TypedId head, std::vector<ExprPtr> args)
 ExprPtr Adapter::finishCall(TypedId at, const std::string &name, const Signature &f, const std::vector<const Type *> &params,
                             std::vector<ExprPtr> args, bool hasThis, ExprPtr callee) {
     const Type *gives = f.returns != nullptr && f.returns->isReference() ? f.returns->referent() : f.returns;
-    if (gives == nullptr || !(gives->isVoid() || scalar(gives) || byteClass(p_, gives)))
+    const bool claimed = claimedSlot_ != 0 && dyingBytes(p_, gives);
+    claimedSlot_ = 0;
+    if (gives == nullptr || !(gives->isVoid() || scalar(gives) || byteClass(p_, gives) || claimed))
         outside("a call returning a class");
     if (args.size() < params.size() || (args.size() > params.size() && !f.variadic)) outside("a call with defaults or too many");
     for (std::size_t i = 0; i < args.size(); i++) {
@@ -1223,6 +1267,7 @@ ExprPtr Adapter::finishCall(TypedId at, const std::string &name, const Signature
     for (std::size_t i = 0; i < args.size(); i++)
         if (args[i]->type()->isStructOrUnion() && slots.args[i] == 0) outside("a struct argument with no slot");
     if (!f.returns->isReference() && gives->isStructOrUnion() && slots.result == 0) outside("a struct returned to no slot");
+    if (claimed && slots.result != 0 && f.returns->isReference()) outside("a reference returned where a class was claimed");
     std::unique_ptr<Call> c = make_owned<Call>(name, std::move(callee), std::move(args), f.variadic, slots.result,
                                                static_cast<int>(params.size()), slots.args);
     c->setSymbol(f.symbol);

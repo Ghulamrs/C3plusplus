@@ -181,13 +181,13 @@ is left:
   body** - give it the body there. `src/parser/ParserTemplate.cpp:685`
 - **naming a function template without calling it**, and **instantiating one
   that was only declared** - `src/parser/ParserTemplate.cpp:1666`,
-  `src/parser/ParserTemplate.cpp:1733`, `src/parser/ParserTemplate.cpp:1816`
+  `src/parser/ParserTemplate.cpp:1733`, `src/parser/ParserTemplate.cpp:1820`
 - **naming a member through a class template's argument list**,
   `Box<int>::m` in a declaration - the type is made, so a typedef for it
   reaches the member: `typedef Box<int> B; B::m`.
-  `src/parser/ParserTemplate.cpp:1812`, `src/parser/ParserType.cpp:36`
+  `src/parser/ParserTemplate.cpp:1816`, `src/parser/ParserType.cpp:36`
 - **a member function template named without being called** -
-  `src/parser/ParserTemplate.cpp:1886`; **a member class template** -
+  `src/parser/ParserTemplate.cpp:1890`; **a member class template** -
   `src/parser/ParserType.cpp:529`; **an out-of-line member template
   definition** - `src/parser/ParserType.cpp:589`
 - **`sizeof` of a template parameter in a signature outside a template argument

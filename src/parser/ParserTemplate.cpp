@@ -1796,8 +1796,12 @@ ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
         if (lookup_.functions_[i].symbol == sig.symbol) { lookup_.functions_[i].used = true; break; }
     // The same defaults, on the path where the arguments were written out.
     applyDefaults(sig, callArgs, pos);
-    return completeCall(sig.name, sig.symbol, nullptr, sig.returns, sig.params,
-                        sig.variadic, pos, std::move(callArgs));
+    // Its syntax is a call of the name as written, the arguments after it (M2.12l).
+    std::vector<syntax::NodeId> kids(1, syntaxTree_.add(syntax::Kind::Name, scope.empty() ? name : scope + "::" + name, pos,
+                                                        std::vector<syntax::NodeId>()));
+    kids.insert(kids.end(), callArgs_.begin(), callArgs_.end());
+    return note(completeCall(sig.name, sig.symbol, nullptr, sig.returns, sig.params,
+                             sig.variadic, pos, std::move(callArgs)), syntax::Kind::Call, "", pos, kids);
 }
 
 void Parser::refuseTemplateId() {

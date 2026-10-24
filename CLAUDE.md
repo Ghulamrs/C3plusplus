@@ -10763,6 +10763,13 @@ handler is a `catch` node in the syntax tree now**, holding its caught object's 
 `try` destroys what is alive round it from `owesFrom`; a class local in its body or in a handler is a cleanup segment
 that hands over - to the chain, carrying the `try`'s types, or to the end-catch pad - as `Parser::unwindTarget` says.
 
+## M2.12l: function template calls, and a class with a destructor returned, 2026-10-24
+
+**1,174 of 1,986 functions take the adapter's body**, all the same. A call of a name a function template shares takes
+the signature the parser chose, its symbol recorded by node (`CallSlots::symbol`), so nothing is deduced or ranked
+twice. **`twice<int>(k)` had no syntax node** - a bare `name` with its arguments loose in its parent - and is a `call`
+now. A class with a destructor and no copy of its own is returned from its local, elided, and built in place by a call.
+
 ## Build
 
 ```

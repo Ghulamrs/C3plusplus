@@ -30,7 +30,7 @@ private:
     StmtPtr stmt(TypedId id);
     StmtPtr declaration(TypedId id, bool owns = false);
     void ownedLocal(TypedId var, const Local &l, std::vector<StmtPtr> &body);
-    void destroy(std::vector<StmtPtr> &into, std::size_t from, std::size_t to) const;
+    void destroy(std::vector<StmtPtr> &into, std::size_t from, std::size_t to, int except = -1) const;
     std::vector<StmtPtr> wrapCleanups(std::vector<StmtPtr> body, const std::vector<std::pair<std::size_t, std::size_t> > &built,
                                       std::size_t aliveAtEntry, std::pair<int, int> slots, const std::vector<std::size_t> &tryAt);
     StmtPtr unwindingReturn(TypedId id);
@@ -66,6 +66,7 @@ private:
     static void outside(const std::string &why);
     static bool plainClass(Parser &p, const Type *t);
     static bool byteClass(Parser &p, const Type *t);
+    static bool dyingBytes(Parser &p, const Type *t);
     static bool ownedClass(Parser &p, const Type *t);
     static void plainLocal(Parser &p, const Local &l);
     Parser &p_;
@@ -87,6 +88,8 @@ private:
     // destroys from the try's entry and whose segments take its types, or a handler's end-catch pad.
     struct Handover { std::string label; int ptr = 0, sel = 0; std::size_t aliveFrom = 0; bool chain = false; std::vector<Try *> segments; };
     std::vector<Handover> handovers_;
+    // The local a call returning a class with a destructor builds its result in - Parser::claimCallResult.
+    int claimedSlot_ = 0;
 };
 
 }   // namespace sema

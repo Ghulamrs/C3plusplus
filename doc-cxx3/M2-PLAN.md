@@ -241,6 +241,15 @@ parser says it owes (`TryFacts::owesFrom`). A class local in the `try`'s body is
 handler hands to that handler's end-catch pad - `Parser::unwindTarget`, kept as a stack (`handovers_`). A throw of a
 class copied by its bytes is the scalar's shape. At M2.12k: 1,151 of 1,986 adapted, all the same.
 
+**M2.12l: calls of function templates, and a class with a destructor returned.** A call of a name a function
+template shares is the call the parser made: the symbol it chose is recorded by node beside the call's slots
+(`CallSlots::symbol`) and the adapter takes that signature from the set - deduction and ranking are not done twice.
+**A call with explicit template arguments had no syntax node**: `twice<int>(k)` left a bare `name` and its arguments
+loose in whatever held it; it is a `call` of the name as written now. A class with a destructor and no copy of its
+own (`dyingBytes`) returned from its local goes out as its bytes, that local not destroyed; one initialised from a
+call returning it is built where the call puts its result (`claimedSlot_`, Parser::claimCallResult). At M2.12l: 1,174
+of 1,986 adapted, all the same.
+
 **The parser's `Ast.h` is the oracle for the new path while both exist**: the new path is right where it
 produces what the old one produced. That is `tools/identical.sh` again, and the reason the old path is kept
 until the new one has matched it everywhere.

@@ -525,7 +525,7 @@ private:
     std::unordered_map<std::uint32_t, std::string> syntaxFunctions_;
     std::unordered_map<std::uint32_t, const Type *> declaredReturns_;   // a reference return as written (M2.12)
     // A call's frame slots - its result's, each argument's, and whether the result's holds a pointer - by node (M2.12).
-    struct CallSlots { int result = 0; bool indirect = false; std::vector<int> args; };
+    struct CallSlots { int result = 0; bool indirect = false; std::vector<int> args; std::string symbol; };
     std::unordered_map<std::uint32_t, CallSlots> callSlots_;
     // A block's cleanup slots - the exception pointer's and the selector's - and the `.ret` a return saves its value
     // in before destroying what is alive, by node (M2.12h). The last pair wrapCleanups chose is what block() records.
@@ -553,6 +553,7 @@ private:
         CallSlots &k = callSlots_[c.syntax().v];
         k.result = c.resultSlot();
         k.indirect = c.resultIndirect();
+        k.symbol = c.symbol();
         k.args.clear();
         for (std::size_t i = 0; i < c.args().size(); i++) k.args.push_back(c.argSlot(i));
     }
