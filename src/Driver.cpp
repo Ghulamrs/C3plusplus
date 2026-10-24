@@ -568,6 +568,15 @@ std::string Driver::windowsLinker() const {
     const char *env = std::getenv(program::env("LD").c_str());
     if (env != nullptr && env[0] != '\0') return env;
     std::string own = syntax_ == Syntax::Masm ? besideProgram(program_, "link.exe") : std::string();
+#ifdef _WIN32
+    // **-g in the gnu spelling wants a PDB, which Microsoft's link writes and the project's does not yet**: the
+    // one on PATH (vcvars puts it there), looked up by path, since a bare name finds the one beside this program.
+    const char *path = std::getenv("PATH");
+    char found[MAX_PATH];
+    if (debug_ && syntax_ == Syntax::Gnu && path != nullptr &&
+        SearchPathA(path, "link.exe", nullptr, MAX_PATH, found, nullptr) > 0)
+        return found;
+#endif
     return own.empty() ? std::string(hostLinker()) : own;
 }
 

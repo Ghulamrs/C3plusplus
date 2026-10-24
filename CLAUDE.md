@@ -7169,9 +7169,11 @@ above), names.sh 653 / 0, overload.sh 44 / 0, exclusions 126 sites 0 / 0. `tools
 itself now: cxx3's own sources use `thread_local`, which no MASM here writes, and ml64 has no COMDAT. On
 zeeshan it builds stage 1 and stage 2, and 70 of 70 sources emit the same assembly from each.
 
-**Found and not mended**: `hostLinker()` asks for a bare `link.exe`, which Windows finds beside the
-compiler before PATH - so where the project's LINK sits beside cxx3 (RIDE's bin), `-g -masm=gnu` links
-with it, and it writes no PDB yet; 7342ead's compiler does the same in that layout.
+**Found, and mended the same day**: `hostLinker()` asks for a bare `link.exe`, which Windows finds beside
+the compiler before PATH - so where the project's LINK sat beside cxx3 (RIDE's bin), `-g -masm=gnu` linked
+with it, which writes no PDB yet; 7342ead's compiler did the same. `windowsLinker()` now looks link.exe up
+on PATH by path for `-g` in the gnu spelling, where vcvars puts Microsoft's: on zeeshan, from a folder
+other than the compiler's, `-g -masm=gnu` writes the .pdb and the plain build stays on the project's LINK.
 
 ## `LNK4078`, and a section name that folded into the wrong one
 
