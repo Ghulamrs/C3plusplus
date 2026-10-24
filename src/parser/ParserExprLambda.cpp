@@ -362,6 +362,8 @@ ExprPtr Parser::lambdaExpression() {
         capturedThisFrom = from;
     }
 
+    // The body is recorded as the lambda's text and no deeper yet: what reading it notes is dropped (M2.10).
+    const std::size_t bodySyntax = syntaxTree_.size();
     if (returns == nullptr) {
         returns = deduceLambdaReturn(paramsFrom, paramsTo, bodyFrom, bodyTo,
                                      capNames, capTypes);
@@ -467,6 +469,7 @@ ExprPtr Parser::lambdaExpression() {
                                 PendingBody::npos() });
     if (capNames.empty()) captureFreeConversion(tag, local, returns, params, pos, mine);
     replayInlineBodies(std::move(mine));
+    syntaxTree_.kill(bodySyntax);
 
     // The object itself: a slot in this frame, and the expression is its name.
     MadeLambda record;

@@ -23,6 +23,7 @@
 #include <vector>
 
 class Source;
+namespace sema { class Typer; }
 
 class Parser {
 public:
@@ -461,6 +462,8 @@ private:
     sema::Constexpr constant_;
     friend class sema::Linkage;
     sema::Linkage linkage_;
+    // M2.10: the typer reads the syntax tree and what the parser kept beside it.
+    friend class sema::Typer;
     // **The syntax tree** (M2 step 2): a node recorded where the grammar returns an Ast.h node, its operands'
     // nodes as children. `note` records one on `e`; `syn` reads one back, none for a node the grammar made itself.
     // What a conditional being read has recorded of its operands (M2 step 2), until conditional() notes it.
@@ -500,17 +503,38 @@ private:
         if (s) s->setSyntax(id);
         return s;
     }
+    // The type each `var` node declares, by node - what Sema's typing reads a name's type from (M2.10).
+    std::unordered_map<std::uint32_t, const Type *> declaredTypes_;
+    ExprPtr noteCast(ExprPtr e, const Type *to, const std::string &written, std::size_t pos, syntax::NodeId operand) {
+        e = note(std::move(e), syntax::Kind::Cast, written, pos, std::vector<syntax::NodeId>(1, operand));
+        if (e) castTypes_[e->syntax().v] = to;
+        return e;
+    }
+    // A literal's token, and the type a C-style cast names, by node: what typing either reads.
+    std::unordered_map<std::uint32_t, std::size_t> literalTokens_;
+    std::unordered_map<std::uint32_t, const Type *> castTypes_;
+    // The `function` nodes whose names outside them are not the file's - a member's, a namespace's, a template's.
+    std::set<std::uint32_t> scopedFunctions_;
     // **One declarator's `var` node**, made when the declarator's scope closes - which a loop body that leaves by
     // `continue` from several places does in one place - over the parts its parse recorded: a bound, an initialiser.
     struct VarNote {
         Parser &p;
         std::size_t mark, lo;
         const Declared *d = nullptr;
+        bool function = false;      // a function's declaration with no definition: its node is over its parameters
         VarNote(Parser &parser, std::size_t m, std::size_t l) : p(parser), mark(m), lo(l) {}
+        // The type and the name; an unnamed parameter's `$unnamed<n>` is the parser's, and no source spells it.
+        std::string varText() const {
+            const std::string name = d->name.empty() || d->name[0] == '$' ? std::string() : d->name;
+            const std::string type = d->type != nullptr ? d->type->describe() : std::string();
+            return type.empty() || name.empty() ? type + name : type + " " + name;
+        }
         ~VarNote() {
             if (d == nullptr) return;
-            p.noteParts(syntax::Kind::Var, (d->type != nullptr ? d->type->describe() + " " : std::string()) + d->name,
-                        d->pos, mark, lo);
+            const syntax::NodeId id = function
+                ? p.noteParts(syntax::Kind::Function, d->name, d->pos, mark, lo)
+                : p.noteParts(syntax::Kind::Var, varText(), d->pos, mark, lo);
+            if (!function && d->type != nullptr) p.declaredTypes_[id.v] = d->type;
         }
     };
     struct KeywordForm { std::size_t start, mark; ExprPtr e; };

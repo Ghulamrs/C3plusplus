@@ -65,6 +65,8 @@ public:
     // Every node made after `from` is dead: a trial rewound past them.
     void kill(std::size_t from);
     // Every live root - a node no other node holds - in creation order, as an S-expression a line.
+    // Every live root, in creation order.
+    std::vector<NodeId> roots() const;
     void dump(std::string &out, const Source &src) const;
 private:
     void dumpNode(std::string &out, NodeId id) const;

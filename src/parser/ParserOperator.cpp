@@ -69,7 +69,7 @@ ExprPtr Parser::castExpr() {
         { OverloadTarget hold(*this, to); v = decay(castExpr()); }
         const syntax::NodeId vs = syn(v);
         const std::string written = to->describe();
-        if (to->isVoid()) return note(ExprPtr(new Cast(to, std::move(v))), syntax::Kind::Cast, written, openPos, {vs});
+        if (to->isVoid()) return noteCast(ExprPtr(new Cast(to, std::move(v))), to, written, openPos, vs);
         refuseUnrelatedClassCast(*v, to, openPos, "a cast");
         // **`(const V &)q` and `(int &)k` name an lvalue of the referent**, [expr.cast]/4 - built on
         // addresses, which carries a base's offset, so the result is an operand, not a reference-typed value.
@@ -83,11 +83,11 @@ ExprPtr Parser::castExpr() {
             at = convert(std::move(at), types_.pointerTo(ref), true);
             ExprPtr r(new Unary('*', std::move(at)));
             r->setType(ref);
-            return note(std::move(r), syntax::Kind::Cast, written, openPos, {vs});
+            return noteCast(std::move(r), to, written, openPos, vs);
         }
         ExprPtr r = convert(std::move(v), to, true);   // a cast allows explicit
         if (!to->isReference()) r->setDeclCategory(Expr::Category::Prvalue);
-        return note(std::move(r), syntax::Kind::Cast, written, openPos, {vs});
+        return noteCast(std::move(r), to, written, openPos, vs);
     }
     return unary();
 }

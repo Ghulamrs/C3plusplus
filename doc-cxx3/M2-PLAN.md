@@ -110,7 +110,22 @@ every statement, a declaration statement's declarators (`var`), a function's def
 scope, and sizeof, alignof, noexcept, new, delete, typeid, the named casts, throw and a lambda (as its tokens).
 Not yet: a class's or a template's definition (a member's and a specialization's bodies are recorded as they are
 replayed), a lambda's body, a braced list as a node of its own, the second declarator of `int a, b;` at namespace
-scope, and parameters.
+scope, and parameters (recorded from M2.10, with a prototype as a `function` over them).
+
+**What M2.10 types, and what -check=typed counts.** `src/sema/Typing.{h,cpp}`: a `TypedTree` arena of
+`{syntax handle, type, children}`, and a `Typer` that walks each root `function` and types literals ([lex.icon]'s
+two ladders, read from the token the parser kept), a name in the function's own scopes (a `var` declares from its
+node on) and then at file scope, the scalar operators, a subscript, an assignment, a comma, a conditional, a call of
+a name with one non-template function, a cast, and sizeof/alignof/noexcept. Out of the subset, typed null with its
+parts still typed: an operand of class type (operator overloading is resolution's), a name a function finds through
+a class, a namespace or a template's bindings (`scopedFunctions_`), a qualified name, a member access and a lambda.
+`-check=typed` holds each typed node against the innermost `Ast.h` node carrying its handle. At M2.10, over the 647
+cases that compile for the host: 118,633 typed, 81,886 the same type, **0 different**, 67 differing in top-level cv
+alone (the parser keeps cv on some prvalues and drops it through a reference) and some conditionals whose arms the
+parser promotes or decays - both lowerings, named in the report rather than counted - and 36,662 with no `Ast.h`
+node: constants the parser folded, and the bodies of inline functions nothing emits. `tests/typed.sh` runs it in
+`make test`. Three recording gaps it found and closed: a functional cast `T(x)` made no node, a range-for's
+variable had none (so its body read an outer name), and a lambda's body leaked into the enclosing function.
 
 **The parser's `Ast.h` is the oracle for the new path while both exist**: the new path is right where it
 produces what the old one produced. That is `tools/identical.sh` again, and the reason the old path is kept

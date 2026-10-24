@@ -173,8 +173,9 @@ StmtPtr Parser::declarationBody() {
     // checkOneDeducedType. Null while there has been none.
     const Type *deducedSoFar = nullptr;
     do {
-        VarNote var(*this, syntaxTree_.size(), peek().pos);
+        const std::size_t varMark = syntaxTree_.size(), varLo = peek().pos;
         Declared d = declarator(base);
+        VarNote var(*this, varMark, varLo);     // after d, so that it is destroyed - and reads d - first
         var.d = &d;
         if (quals.isConstexpr) d.type = constexprObject(d.type);
         // **A condition declares one name and must initialise it**, and both
@@ -894,6 +895,8 @@ StmtPtr Parser::rangeForStatement(int scope) {
     enterScope();
     const int inner = enterBlock();
     const int vSlot = declare(d.name, d.type, d.pos, quals.alignAs);
+    // The loop variable's `var` node, over nothing: its range was recorded before it, and its body comes after.
+    declaredTypes_[noteParts(syntax::Kind::Var, d.type->describe() + " " + d.name, d.pos, syntaxTree_.size(), d.pos).v] = d.type;
     ExprPtr take;
     if (d.type->isReference()) {
         // **`T &x : a` binds x to the element** - [stmt.ranged]/1 - so the

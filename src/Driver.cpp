@@ -6,6 +6,7 @@
 #include "backend/Backend.h"
 #include "Lexer.h"
 #include "parser/Parser.h"
+#include "sema/Typing.h"
 #include "Preprocessor.h"
 #include "Source.h"
 #include "Type.h"
@@ -203,6 +204,8 @@ void Driver::usage(char *file) {
         "       -time reports how long each phase took\n"
         "       -dump=syntax writes the syntax tree the grammar recorded, a root a\n"
         "         line, on stdout; one input at a time\n"
+        "       -check=typed types the syntax tree in Sema and holds each type against\n"
+        "         the parser's, on stdout; it fails where any differs\n"
         "       -keep-going[=N] reports up to N errors a file (100 if no N) and goes\n"
         "         on from the next declaration after each; the file still fails\n", file);
 }
@@ -1084,6 +1087,8 @@ bool Driver::parseArguments(int argc, char **argv) {
                 std::fprintf(stderr, "%s: -keep-going= wants a number of errors, 1 or more\n", argv[0]);
                 return false;
             }
+        } else if (std::strcmp(argv[i], "-check=typed") == 0 || std::strcmp(argv[i], "--check=typed") == 0) {
+            checkTyped_ = true;
         } else if (std::strncmp(argv[i], "-dump=", 6) == 0 || std::strncmp(argv[i], "--dump=", 7) == 0) {
             // The boundaries a dump is written at (design section 1): the syntax tree only, so far.
             const char *what = std::strchr(argv[i], '=') + 1;
@@ -1132,8 +1137,8 @@ bool Driver::parseArguments(int argc, char **argv) {
 
     if (inputs.empty()) { usage(argv[0]); return false; }
     // A dump is in the order its nodes were made; two files compiled at once would interleave.
-    if (dumpSyntax_ && inputs.size() > 1) {
-        std::fprintf(stderr, "%s: -dump=syntax takes one input at a time\n", argv[0]);
+    if ((dumpSyntax_ || checkTyped_) && inputs.size() > 1) {
+        std::fprintf(stderr, "%s: %s takes one input at a time\n", argv[0], dumpSyntax_ ? "-dump=syntax" : "-check=typed");
         return false;
     }
 
@@ -1309,6 +1314,12 @@ bool Driver::compile(const Job &job) {
         std::string dumped;
         parser.syntaxTree().dump(dumped, src);
         std::fwrite(dumped.data(), 1, dumped.size(), stdout);
+    }
+    if (checkTyped_) {
+        int differ = 0;
+        const std::string report = sema::Typer::check(parser, program, src, &differ);
+        std::fwrite(report.data(), 1, report.size(), stdout);
+        if (differ != 0) return false;
     }
 
     // **A file that writes `volatile` is compiled without -O**: the type system drops the qualifier, so an

@@ -256,12 +256,14 @@ void Parser::topLevel(Program &program) {
     freeSlots_.clear();
     // The guards this frame makes start here, a constructor's mem-initialisers' among them (M1).
     const std::size_t frameGuards = guardSlots_.size();
-    VarNote global(*this, syntaxTree_.size(), peek().pos);
+    const std::size_t declMark = syntaxTree_.size(), declLo = peek().pos;
     Declared d = declarator(base);
+    VarNote global(*this, declMark, declLo);     // after d, so that it is destroyed - and reads d - first
     // A variable at namespace scope is a `var` node over its initialiser; a function records its own definition.
-    if (d.type != nullptr && !d.name.empty() &&
-        !((peek().is("(") && !atParenInitialiser()) || d.paramsAt != 0 || d.type->isFunction()))
+    if (d.type != nullptr && !d.name.empty()) {
         global.d = &d;
+        global.function = (peek().is("(") && !atParenInitialiser()) || d.paramsAt != 0 || d.type->isFunction();
+    }
     // A closure's `operator()` reads the enclosing function's const locals for their values,
     // [expr.prim.lambda]/12 - declared first, so that a parameter or a local of the body hides one (1.27).
     {
@@ -830,6 +832,8 @@ void Parser::topLevel(Program &program) {
                 if (pd.type->isArray())
                     pd.type = types_.pointerTo(pd.type->pointee());
                 if (pd.type->isFunction()) pd.type = types_.pointerTo(pd.type);   // [dcl.fct]/5
+                VarNote param(*this, syntaxTree_.size(), pd.pos);   // a parameter, as the body's names will want it
+                param.d = &pd;
 
                 // **A class whose copy is a constructor call arrives by address**, on
                 // both ABIs and whatever its size. The parameter is lowered to a
@@ -1835,7 +1839,6 @@ void Parser::topLevel(Program &program) {
     std::string spec = "$spec";
     for (const std::string &sym : specSymbols) spec += "," + sym;
     nrvoName_ = nrvoCandidate();
-    const std::size_t bodyMark = syntaxTree_.size(), bodyLo = peek().pos;
     if (specFilter) {
         const std::size_t bodyAt = peek().pos;
         body = tryStatement(bodyAt, [&]() {
@@ -1897,7 +1900,12 @@ void Parser::topLevel(Program &program) {
     // **`static` on a member says which member, not which linkage.**
     const bool internal = memberOf != nullptr ? inUnnamedNamespace_
                                               : internalLinkage(sc);
-    noteParts(syntax::Kind::Function, d.name, d.pos, bodyMark, bodyLo);   // its body, as syntax (M2 step 2)
+    const syntax::NodeId fnSyntax = noteParts(syntax::Kind::Function, d.name, d.pos, declMark, declLo);   // as syntax
+    // A name not local to it is found through a class, a namespace or a template's bindings: typing's subset stops there.
+    if (memberOf != nullptr || !namespaceStack_.empty() || d.name.find("::") != std::string::npos ||
+        !instantiatingParams_.empty() || !boundTypeParams_.empty() || !boundValueParams_.empty())
+        scopedFunctions_.insert(fnSyntax.v);
+    global.d = nullptr;                                                     // the definition is the node
     program.functions.push_back(Function(d.name, emittedReturn, std::move(paramSlots),
                                          std::move(body), frame,
                                          internal, sretSlot,

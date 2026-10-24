@@ -10666,6 +10666,16 @@ and 1.29 built here agree with this tree's wherever their 1.28s agreed, but for 
 tree's `.pdata$x` for a funclet, and `first<enum Colour>` where GRIDE says `first<int>` - cl settles that one.
 **The rule it leaves**: cpp11 is changed here, and GRIDE copies from here.
 
+## M2.10: Sema types the syntax tree, and `-check=typed` holds it against the parser, 2026-10-24
+
+**`make test` runs a sixth suite, `tests/typed.sh`**: every case that compiles for the host goes through
+`-check=typed`, which types the syntax tree in `sema::Typer` (`src/sema/Typing.cpp`) and fails where a typed node's
+type is not the one the parser gave the `Ast.h` node carrying its handle. At M2.10 it is 0 different of 81,886 held,
+and doc-cxx3/M2-PLAN.md says what the subset is and what the report's two named lowerings and its "no `Ast.h` node"
+count are. **A change that makes it fail is either a typing rule to mend or a recording gap**: the three it found on
+its first run were the second kind - a functional cast, a range-for's variable, a lambda's body. Nothing reads the
+typed tree yet; M2.11's adapter is the first.
+
 ## Build
 
 ```

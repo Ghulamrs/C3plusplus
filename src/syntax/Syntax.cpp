@@ -126,6 +126,13 @@ void Tree::kill(std::size_t from) {
     for (std::size_t i = from + 1; i < nodes_.size(); i++) nodes_[i].dead = true;
 }
 
+std::vector<NodeId> Tree::roots() const {
+    std::vector<NodeId> out;
+    for (std::size_t i = 1; i < nodes_.size(); i++)
+        if (!nodes_[i].hasParent && !nodes_[i].dead) out.push_back(NodeId(static_cast<std::uint32_t>(i)));
+    return out;
+}
+
 void Tree::dump(std::string &out, const Source &src) const {
     for (std::size_t i = 1; i < nodes_.size(); i++) {
         if (nodes_[i].hasParent || nodes_[i].dead) continue;

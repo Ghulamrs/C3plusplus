@@ -641,6 +641,7 @@ ExprPtr Parser::bracedValueInit(const Type *to, std::size_t pos) {
 
 ExprPtr Parser::functionalCast(const Type *to, std::size_t pos) {
     // `T(x)` is a prvalue ([expr.type.conv]/2), whatever node the conversion hands back.
+    syntax::NodeId operand;
     ExprPtr r = [&]() -> ExprPtr {
         expect("(");
         if (consume(")")) {
@@ -649,6 +650,7 @@ ExprPtr Parser::functionalCast(const Type *to, std::size_t pos) {
             return convert(zeroOf(to), types_.withoutConst(to), true);
         }
         ExprPtr v = decay(assign());
+        operand = syn(v);
         if (peek().is(","))
             src_.fail(peek().pos, "'" + to->describe() + "(a, b)' would need a "
                                   "constructor, and '" + to->describe() +
@@ -662,7 +664,7 @@ ExprPtr Parser::functionalCast(const Type *to, std::size_t pos) {
         return convert(std::move(v), types_.withoutConst(to), true);
     }();
     r->setDeclCategory(Expr::Category::Prvalue);
-    return r;
+    return noteCast(std::move(r), to->isVoid() ? to : types_.withoutConst(to), to->describe(), pos, operand);
 }
 
 // **A function's address, from its key.**
@@ -1051,10 +1053,16 @@ ExprPtr Parser::primary(Program *program) {
             std::snprintf(buf, sizeof buf, "%.17g", static_cast<double>(first.dvalue));
             text = buf;
         }
-        return note(std::move(r), first.isFloat ? syntax::Kind::FloatLit
-                                  : first.isChar ? syntax::Kind::CharLit : syntax::Kind::IntLit, text, pos);
+        r = note(std::move(r), first.isFloat ? syntax::Kind::FloatLit
+                               : first.isChar ? syntax::Kind::CharLit : syntax::Kind::IntLit, text, pos);
+        literalTokens_[r->syntax().v] = start;
+        return r;
     }
-    if (first.kind == TokenKind::Str) return note(std::move(r), syntax::Kind::StringLit, first.text, pos);
+    if (first.kind == TokenKind::Str) {
+        r = note(std::move(r), syntax::Kind::StringLit, first.text, pos);
+        literalTokens_[r->syntax().v] = start;
+        return r;
+    }
     if (first.is("this")) return note(std::move(r), syntax::Kind::This, "this", pos);
     std::size_t k = start;
     std::string name;
