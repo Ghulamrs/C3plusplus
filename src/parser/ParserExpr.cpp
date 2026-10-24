@@ -1066,6 +1066,9 @@ ExprPtr Parser::primary(Program *program) {
         return r;
     }
     if (first.is("this")) return note(std::move(r), syntax::Kind::This, "this", pos);
+    // `true`, `false` and `nullptr`, the literals spelt as words (M2.12h: an initialiser of one was a `var` with no part).
+    if (first.is("true") || first.is("false") || first.is("nullptr"))
+        return note(std::move(r), syntax::Kind::WordLit, first.text, pos);
     std::size_t k = start;
     std::string name;
     while (k < at_ && (tokens_[k].kind == TokenKind::Ident || tokens_[k].is("::") || tokens_[k].is("~") ||

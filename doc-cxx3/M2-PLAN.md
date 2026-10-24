@@ -204,6 +204,18 @@ C-style cast's, which also lets Sema type them (`typed.sh`: 1,368 more nodes typ
 reference is a glvalue and `dynamic_cast` a runtime call, and both stay unrecorded. At M2.12g: 965 of 1,986
 adapted, all the same.
 
+**M2.12h: objects with constructors and destructors, and the regions that unwind them.** A local of a class the
+parser builds by a constructor or destroys at a scope's end - nothing virtual in it - is taken where it is a block's
+own statement: `X x;` or `X x(a, b)` with scalar arguments, its constructor resolved as `constructObject` resolves
+it. Each block keeps what it built, as `Parser::alive_` does: the `}` destroys it last first, a `return` saves its
+value in a `.ret` slot and destroys everything, a `break` or `continue` what its loop built, and each stretch from
+one construction to the next is a `Try` whose pad destroys what was alive by then and resumes unwinding -
+wrapCleanups' shape, in the two frame slots it chose, which the parser now records by node with the return's slot
+(`blockCleanups_`, `returnTemps_`). On the Itanium targets only: a Microsoft cleanup is a funclet and a state. **The
+syntax tree records `true`, `false` and `nullptr` now** (`literal`): an initialiser of one had been a `var` with no
+part, which the adapter read as no initialiser - found by the first function it took that had one,
+`alternative-tokens`' `main`. At M2.12h: 1,027 of 1,986 adapted, all the same.
+
 **The parser's `Ast.h` is the oracle for the new path while both exist**: the new path is right where it
 produces what the old one produced. That is `tools/identical.sh` again, and the reason the old path is kept
 until the new one has matched it everywhere.

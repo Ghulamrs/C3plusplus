@@ -149,6 +149,8 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
     switch (kind) {
         case syntax::Kind::IntLit: case syntax::Kind::FloatLit: case syntax::Kind::CharLit: case syntax::Kind::StringLit:
             return literal(id);
+        case syntax::Kind::WordLit:
+            return types.get(op == "nullptr" ? Kind::NullPtr : Kind::Bool);
         case syntax::Kind::Unary:
             if (a == nullptr || isClass(a)) return nullptr;     // a class's operator is overload resolution's
             if (op == "!") return types.get(Kind::Bool);
@@ -290,9 +292,14 @@ std::string Typer::check(Parser &p, const Program &program, const Source &src, i
         std::unordered_map<std::uint32_t, const Type *>::const_iterator theirs = collect.types.find(n.syntax.v);
         if (theirs == collect.types.end()) { absent++; continue; }
         if (theirs->second == n.type) { agree++; continue; }
-        // Two lowerings the parser makes, named rather than counted as differences: top-level cv, which its
-        // Ast.h keeps on some prvalues and drops through a reference, and a conditional's arms promoted or decayed.
+        // Three lowerings the parser makes, named rather than counted as differences: top-level cv, which its Ast.h
+        // keeps on some prvalues and drops through a reference, a conditional's arms promoted or decayed, and a null
+        // constant made a member pointer's -1, which takes the literal's handle with it.
         if (theirs->second->unqualified() == n.type->unqualified()) { cv++; continue; }
+        if (theirs->second->unqualified()->isMemberPointer() && (n.type->isNullPtr() || n.type->isInteger())) {
+            lowered++;
+            continue;
+        }
         if (st.node(n.syntax).kind == syntax::Kind::Conditional &&
             (theirs->second->unqualified() == (n.type->isArithmetic() ? p.promote(n.type)->unqualified() : nullptr) ||
              (n.type->isArray() && theirs->second == p.types_.pointerTo(n.type->pointee())))) {
@@ -306,7 +313,7 @@ std::string Typer::check(Parser &p, const Program &program, const Source &src, i
     }
     char line[240];
     std::snprintf(line, sizeof line, "-check=typed: %d typed, %d agree, %d differ, %d with no Ast.h node to hold against"
-                  " (%d in top-level cv alone, %d conditionals the parser promotes or decays)\n",
+                  " (%d in top-level cv alone, %d lowered: a conditional promoted or decayed, a null member pointer)\n",
                   typed, agree, *differ, absent, cv, lowered);
     return out + line;
 }

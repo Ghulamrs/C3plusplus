@@ -17,7 +17,7 @@ class Source;
 namespace syntax {
 
 enum class Kind : std::uint8_t {
-    IntLit, FloatLit, CharLit, StringLit, Name, This,
+    IntLit, FloatLit, CharLit, StringLit, WordLit, Name, This,
     Unary, Postfix, Binary, Assign, Conditional, Comma,
     Call, Subscript, Member, Cast, Sizeof, Paren, New, Delete, Throw, Lambda, Other,
     // statements

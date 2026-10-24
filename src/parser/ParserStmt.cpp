@@ -1421,6 +1421,7 @@ StmtPtr Parser::block(bool functionTry) {
     // Everything this block constructed is destroyed here, last first.
     emitDestructors(body, aliveAtEntry, peek().pos);
 
+    std::pair<int, int> cleanup(0, 0);
     if (!built.empty()) {
         // **A `try` among these statements is split around, not refused.** It
         // is a row of its own and its pad destroys what it found alive.
@@ -1430,6 +1431,7 @@ StmtPtr Parser::block(bool functionTry) {
                                     temps)
                    : wrapCleanups(std::move(body), built, regionFrom, pos,
                                   temps, tryAt);
+        if (!target_.microsoftNames()) cleanup = lastCleanupSlots_;
     }
     alive_.resize(aliveAtEntry);
     lookup_.usingNamespaces_.resize(usingAtEntry);
@@ -1443,6 +1445,7 @@ StmtPtr Parser::block(bool functionTry) {
     b->setPos(pos);
     StmtPtr noted = noteStmt(StmtPtr(b), syntax::Kind::Block, "", pos, mark, pos);
     syntaxScopes_[noted->syntax().v] = scope;
+    if (cleanup.first != 0) blockCleanups_[noted->syntax().v] = cleanup;
     return noted;
 }
 
@@ -1472,13 +1475,17 @@ StmtPtr Parser::statement() {
     std::string text;
     const syntax::Kind kind = statementKindAhead(&text);
     const bool throws = peek().is("throw");
+    const ReturnTemp heldReturn = pendingReturnTemp_;
+    pendingReturnTemp_ = ReturnTemp();
     StmtPtr s = statementBody();
     if (s) s->setPos(pos);
-    if (kind == syntax::Kind::Other) return s;
+    if (kind == syntax::Kind::Other) { pendingReturnTemp_ = heldReturn; return s; }
     // `throw e;` is an expression statement whose expression is the throw.
     if (throws) noteParts(syntax::Kind::Throw, "", pos, mark, pos);
     StmtPtr noted = noteStmt(std::move(s), kind, text, pos, mark, pos);
     if (const For *f = dynamic_cast<const For *>(noted.get())) syntaxScopes_[noted->syntax().v] = f->scope();
+    if (kind == syntax::Kind::Return && !pendingReturnTemp_.name.empty()) returnTemps_[noted->syntax().v] = pendingReturnTemp_;
+    pendingReturnTemp_ = heldReturn;
     return noted;
 }
 
@@ -2361,6 +2368,8 @@ StmtPtr Parser::statementBody() {
             } else {
                 slot = allocateFrameSlot(returnType_);
                 temp = ".ret" + std::to_string(refTemps_++);
+                pendingReturnTemp_.name = temp;
+                pendingReturnTemp_.slot = slot;
             }
 
             ExprPtr keep(Var::local(temp, slot));

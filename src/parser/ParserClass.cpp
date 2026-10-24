@@ -518,6 +518,7 @@ std::vector<StmtPtr> Parser::wrapCleanups(
     const int selectorSlot = intoTry ? targetSel
                                      : allocateFrameSlot(types_.intType());
     functionHasPads_ = true;
+    lastCleanupSlots_ = std::make_pair(pointerSlot, selectorSlot);
 
     std::vector<StmtPtr> out;
     for (std::size_t i = 0; i < built[0].first; i++)

@@ -28,7 +28,13 @@ public:
 private:
     struct Outside { std::string why; explicit Outside(const std::string &w) : why(w) {} };
     StmtPtr stmt(TypedId id);
-    StmtPtr declaration(TypedId id);
+    StmtPtr declaration(TypedId id, bool owns = false);
+    void ownedLocal(TypedId var, const Local &l, std::vector<StmtPtr> &body);
+    void destroy(std::vector<StmtPtr> &into, std::size_t from, std::size_t to) const;
+    std::vector<StmtPtr> wrapCleanups(std::vector<StmtPtr> body, const std::vector<std::pair<std::size_t, std::size_t> > &built,
+                                      std::size_t aliveAtEntry, std::pair<int, int> slots) const;
+    StmtPtr unwindingReturn(TypedId id);
+    StmtPtr leaving(TypedId id, StmtPtr jump);
     StmtPtr forStatement(TypedId id);
     std::size_t declaratorEnd(TypedId var, int *bounds) const;
     void arrayInitialiser(TypedId var, const Local &l, std::vector<StmtPtr> &body);
@@ -55,6 +61,7 @@ private:
     const syntax::Node &syn(TypedId id) const;
     static void outside(const std::string &why);
     static bool plainClass(Parser &p, const Type *t);
+    static bool ownedClass(Parser &p, const Type *t);
     static void plainLocal(Parser &p, const Local &l);
     Parser &p_;
     const Typer &typer_;
@@ -63,6 +70,11 @@ private:
     bool scopedBuilt_ = false;
     std::unordered_set<std::string> scoped_, globalFunctions_;
     std::string fnSymbol_;
+    // What a block's statements built and have not destroyed - Parser::alive_ for a plain local - and where each loop
+    // the adapter is in began, which a `break` or `continue` destroys back to (M2.12h).
+    struct AliveObj { std::string name; int offset; const Type *cls; };
+    std::vector<AliveObj> alive_;
+    std::vector<std::size_t> loopMarks_;
 };
 
 }   // namespace sema

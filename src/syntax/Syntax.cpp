@@ -13,6 +13,7 @@ const char *kindName(Kind k) {
         case Kind::StringLit: return "string";
         case Kind::Name: return "name";
         case Kind::This: return "this";
+        case Kind::WordLit: return "literal";
         case Kind::Unary: return "unary";
         case Kind::Postfix: return "postfix";
         case Kind::Binary: return "binary";

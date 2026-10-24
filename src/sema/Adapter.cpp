@@ -17,13 +17,17 @@ const syntax::Node &Adapter::syn(TypedId id) const { return p_.syntaxTree_.node(
 StmtPtr Adapter::body(TypedId typed, const Function &fn, std::string *why) {
     returns_ = fn.returns();
     fnSymbol_ = fn.symbol();
+    alive_.clear();
+    loopMarks_.clear();
     std::unordered_map<std::uint32_t, const Type *>::const_iterator declared =
         p_.declaredReturns_.find(typer_.tree().node(typed).syntax.v);
     if (declared != p_.declaredReturns_.end() && declared->second != nullptr) returns_ = declared->second;
     try {
         const TypedNode &f = typer_.tree().node(typed);
         if (f.count == 0) outside("a function with no body");
-        if (fn.isNoexcept() || fn.hasLandingPads()) outside("a function whose body is a region");
+        // A Microsoft cleanup is a funclet and a state, wrapMsCleanups' shape, which the adapter does not write.
+        if (fn.hasLandingPads() && p_.target_.microsoftNames()) outside("a function with landing pads");
+        if (fn.isNoexcept()) outside("a noexcept function");
         // An array parameter's bound is recorded beside it, and [dcl.fct]/5 has adjusted it away.
         for (std::uint32_t i = 0; i + 1 < f.count; i++)
             if (syn(typer_.tree().child(typed, i)).kind == syntax::Kind::Block) outside("a parameter that is a block");
@@ -88,8 +92,24 @@ StmtPtr Adapter::stmt(TypedId id) {
         case syntax::Kind::Block: {
             std::unordered_map<std::uint32_t, int>::const_iterator scope = p_.syntaxScopes_.find(n.syntax.v);
             if (scope == p_.syntaxScopes_.end()) outside("a block whose scope was not recorded");
+            // Parser::block: each object built opens a region to the next, the '}' destroys them last first, and the
+            // regions are wrapped in the slots the parser chose.
+            const std::size_t aliveAtEntry = alive_.size();
+            std::vector<std::pair<std::size_t, std::size_t> > built;
             std::vector<StmtPtr> body;
-            for (std::uint32_t i = 0; i < n.count; i++) body.push_back(stmt(tree.child(id, i)));
+            for (std::uint32_t i = 0; i < n.count; i++) {
+                const TypedId part = tree.child(id, i);
+                const std::size_t before = alive_.size();
+                body.push_back(syn(part).kind == syntax::Kind::DeclStmt ? declaration(part, true) : stmt(part));
+                if (alive_.size() > before) built.push_back(std::make_pair(body.size(), alive_.size()));
+            }
+            destroy(body, aliveAtEntry, alive_.size());
+            if (!built.empty()) {
+                std::unordered_map<std::uint32_t, std::pair<int, int> >::const_iterator k = p_.blockCleanups_.find(n.syntax.v);
+                if (k == p_.blockCleanups_.end()) outside("a block whose cleanup slots were not recorded");
+                body = wrapCleanups(std::move(body), built, aliveAtEntry, k->second);
+            }
+            alive_.resize(aliveAtEntry);
             std::unique_ptr<Block> b = make_owned<Block>(std::move(body));
             b->setScope(scope->second);
             return placed(std::move(b), s, n.syntax);
@@ -100,6 +120,7 @@ StmtPtr Adapter::stmt(TypedId id) {
             if (n.count != 1) outside("an expression statement of " + std::to_string(n.count) + " parts");
             return placed(make_owned<ExprStmt>(expr(tree.child(id, 0))), s, n.syntax);
         case syntax::Kind::Return:
+            if (!alive_.empty()) return unwindingReturn(id);
             if (n.count == 0) {
                 if (returns_ != nullptr && !returns_->isVoid()) outside("a return with no value");
                 return placed(make_owned<Return>(ExprPtr()), s, n.syntax);
@@ -125,20 +146,25 @@ StmtPtr Adapter::stmt(TypedId id) {
             if (n.count != 2) outside("a while of " + std::to_string(n.count) + " parts");
             if (syn(tree.child(id, 0)).kind == syntax::Kind::DeclStmt) outside("a declaration in a condition");
             ExprPtr cond = condition(tree.child(id, 0));
-            return placed(make_owned<While>(std::move(cond), stmt(tree.child(id, 1))), s, n.syntax);
+            loopMarks_.push_back(alive_.size());
+            StmtPtr body = stmt(tree.child(id, 1));
+            loopMarks_.pop_back();
+            return placed(make_owned<While>(std::move(cond), std::move(body)), s, n.syntax);
         }
         case syntax::Kind::Do: {
             if (n.count != 2) outside("a do of " + std::to_string(n.count) + " parts");
+            loopMarks_.push_back(alive_.size());
             StmtPtr body = stmt(tree.child(id, 0));
+            loopMarks_.pop_back();
             ExprPtr cond = condition(tree.child(id, 1));
             return placed(make_owned<DoWhile>(std::move(body), std::move(cond)), s, n.syntax);
         }
         case syntax::Kind::For:
             return forStatement(id);
         case syntax::Kind::Break:
-            return placed(make_owned<Break>(), s, n.syntax);
+            return leaving(id, make_owned<Break>());
         case syntax::Kind::Continue:
-            return placed(make_owned<Continue>(), s, n.syntax);
+            return leaving(id, make_owned<Continue>());
         default:
             outside(std::string("a '") + syntax::kindName(s.kind) + "' statement");
     }
@@ -175,11 +201,174 @@ void Adapter::plainLocal(Parser &p, const Local &l) {
         if (!scalar(r) && !plainClass(p, r)) throw std::string("a reference to '" + r->describe() + "'");
         return;
     }
-    if (!scalar(l.type) && !scalarArray(l.type) && !plainClass(p, l.type)) throw std::string("a local of type '" + l.type->describe() + "'");
+    if (!scalar(l.type) && !scalarArray(l.type) && !plainClass(p, l.type) && !ownedClass(p, l.type))
+        throw std::string("a local of type '" + l.type->describe() + "'");
+}
+
+static bool namespaceAssociated(const Type *t);
+
+// A class the parser builds by a constructor and destroys at the end of a scope, with nothing virtual in it.
+bool Adapter::ownedClass(Parser &p, const Type *t) {
+    if (t == nullptr || !t->isStructOrUnion()) return false;
+    const Type *u = t->unqualified();
+    if (!u->isComplete() || u->kind() == Kind::Union || u->hasVptr() || u->tag().empty() || plainClass(p, u)) return false;
+    return p.hasConstructors(u->tag()) || u->hasDestructor();
+}
+
+// One object of an owned class at a block's level: `X x;` or `X x(a, b)`, its constructor resolved over the arguments
+// as Parser::constructObject resolves it, and alive from here if it has a destructor.
+void Adapter::ownedLocal(TypedId var, const Local &l, std::vector<StmtPtr> &body) {
+    const TypedTree &tree = typer_.tree();
+    const TypedNode &v = tree.node(var);
+    const Type *cls = l.type->unqualified();
+    const bool dies = p_.destructorOf(cls) != nullptr;
+    if (dies && p_.target_.microsoftNames()) outside("an object a Microsoft funclet would destroy");
+    if (returns_ != nullptr && returns_->isStructOrUnion() && returns_->unqualified() == cls) outside("a local of the class returned");
+    int bounds = 0;
+    const std::size_t end = declaratorEnd(var, &bounds);
+    if (bounds != 0 || end >= p_.tokens_.size()) outside("a class object not where it was");
+    const Token &t = p_.tokens_[end];
+    std::vector<ExprPtr> args;
+    if (t.is("(")) {
+        // The syntax tree keeps no braces inside a list, so `X x({7})` would read as `X x(7)`.
+        for (std::size_t k = end, depth = 0; k < p_.tokens_.size(); k++) {
+            const Token &w = p_.tokens_[k];
+            if (w.is("{")) outside("a braced constructor argument");
+            if (w.is("(")) depth++;
+            else if (w.is(")") && --depth == 0) break;
+        }
+        for (std::uint32_t i = 0; i < v.count; i++) args.push_back(expr(tree.child(var, i)));
+    } else if (!t.is(";") && !t.is(",")) {
+        outside("a class object initialised by '" + t.text + "'");
+    } else if (v.count != 0) {
+        outside("a class object of " + std::to_string(v.count) + " parts");
+    }
+    // A class argument is a copy, a slice or a conversion function, which the parser decides before it resolves.
+    for (std::size_t i = 0; i < args.size(); i++)
+        if (!scalar(args[i]->type()) && !(args[i]->type()->isArray() && scalar(args[i]->type()->pointee())))
+            outside("a constructor given what is not a scalar");
+    if (p_.hasConstructors(cls->tag())) {
+        const std::string key = Parser::constructorKey(cls->tag());
+        const std::vector<std::size_t> *set = p_.lookup_.overloadsOf(key);
+        if (set == nullptr || p_.tmpl_.memberTemplates_.count(key) != 0) outside("a constructor that is a template");
+        for (std::size_t k = 0; k < set->size(); k++)
+            if (p_.lookup_.functions_[(*set)[k]].fromTemplate) outside("a constructor of a template's");
+        const Signature ctor = p_.overload_.resolveOverload(key, args, syn(var).loc);
+        if (ctor.deleted || args.size() != ctor.params.size()) outside("a constructor with defaults, or deleted");
+        const Type *thisType = p_.types_.pointerTo(cls);
+        ExprPtr object = typed(std::unique_ptr<Var>(Var::local(l.name, l.offset)), l.type);
+        std::vector<ExprPtr> all;
+        all.push_back(typed(make_owned<Unary>('&', std::move(object)), thisType));
+        for (std::size_t i = 0; i < args.size(); i++) all.push_back(std::move(args[i]));
+        std::vector<const Type *> full(1, thisType);
+        full.insert(full.end(), ctor.params.begin(), ctor.params.end());
+        const Signature made(cls->tag(), ctor.symbol, p_.types_.get(Kind::Void), full, false);
+        body.push_back(make_owned<ExprStmt>(finishCall(var, cls->tag(), made, full, std::move(all), false)));
+    } else if (!args.empty()) {
+        outside("a class with no constructor given arguments");
+    }
+    if (dies) alive_.push_back(AliveObj{ l.name, l.offset, cls });
+}
+
+// Parser::emitDestructors: the objects alive in [from, to) destroyed last first, each by its destructor's call.
+void Adapter::destroy(std::vector<StmtPtr> &into, std::size_t from, std::size_t to) const {
+    for (std::size_t i = to; i > from; i--) {
+        const AliveObj &a = alive_[i - 1];
+        const Signature *dtor = p_.destructorOf(a.cls);
+        ExprPtr object = typed(std::unique_ptr<Var>(Var::local(a.name, a.offset)), a.cls);
+        std::vector<ExprPtr> args;
+        args.push_back(typed(make_owned<Unary>('&', std::move(object)), p_.types_.pointerTo(a.cls)));
+        std::unique_ptr<Call> c = make_owned<Call>("~" + dtor->owner, ExprPtr(), std::move(args), false, 0, 1,
+                                                   std::vector<int>(1, 0));
+        c->setSymbol(dtor->symbol);
+        into.push_back(make_owned<ExprStmt>(typed(std::move(c), p_.types_.get(Kind::Void))));
+    }
+}
+
+// Parser::wrapCleanups, cleanupPad and unwindPad for a block with no `try` and no temporary: each stretch from one
+// construction to the next a Try whose pad destroys what was built by then and resumes unwinding.
+std::vector<StmtPtr> Adapter::wrapCleanups(std::vector<StmtPtr> body, const std::vector<std::pair<std::size_t, std::size_t> > &built,
+                                           std::size_t aliveAtEntry, std::pair<int, int> slots) const {
+    const Type *voidPtr = p_.types_.pointerTo(p_.types_.get(Kind::Void));
+    std::vector<StmtPtr> out;
+    for (std::size_t i = 0; i < built[0].first; i++) out.push_back(std::move(body[i]));
+    for (std::size_t k = 0; k < built.size(); k++) {
+        const std::size_t from = built[k].first, to = k + 1 < built.size() ? built[k + 1].first : body.size();
+        std::vector<StmtPtr> guarded;
+        for (std::size_t i = from; i < to; i++) guarded.push_back(std::move(body[i]));
+        if (guarded.empty()) continue;
+        std::vector<StmtPtr> steps;
+        destroy(steps, aliveAtEntry, built[k].second);
+        std::vector<ExprPtr> resumeArgs;
+        const char *resume = "__cxa_end_cleanup";
+        if (p_.target_.resumeTakesException()) {
+            resume = "_Unwind_Resume";
+            resumeArgs.push_back(typed(std::unique_ptr<Var>(Var::local(".ex.ptr", slots.first)), voidPtr));
+        }
+        const int named = static_cast<int>(resumeArgs.size());
+        std::unique_ptr<Call> r = make_owned<Call>(resume, ExprPtr(), std::move(resumeArgs), false, 0, named,
+                                                   std::vector<int>(static_cast<std::size_t>(named), 0));
+        r->setSymbol(resume);
+        std::unique_ptr<Block> inner = make_owned<Block>(std::move(steps));
+        inner->setScope(-1);
+        inner->setUnwindCleanup();
+        std::vector<StmtPtr> padBody;
+        padBody.push_back(std::move(inner));
+        padBody.push_back(make_owned<ExprStmt>(typed(std::move(r), p_.types_.get(Kind::Void))));
+        std::unique_ptr<Block> pad = make_owned<Block>(std::move(padBody));
+        pad->setScope(-1);
+        out.push_back(make_owned<Try>(std::move(guarded), std::move(pad), slots.first, slots.second, std::vector<std::string>()));
+    }
+    return out;
+}
+
+// A `return` with objects alive: the value saved in the slot the parser chose, everything destroyed, the slot returned.
+StmtPtr Adapter::unwindingReturn(TypedId id) {
+    const TypedTree &tree = typer_.tree();
+    const TypedNode &n = tree.node(id);
+    std::vector<StmtPtr> steps;
+    if (n.count == 0) {
+        if (returns_ != nullptr && !returns_->isVoid()) outside("a return with no value");
+        destroy(steps, 0, alive_.size());
+        steps.push_back(make_owned<Return>(ExprPtr()));
+        return placed(make_owned<Block>(std::move(steps)), syn(id), n.syntax);
+    }
+    if (n.count != 1 || returns_ == nullptr || !(scalar(returns_) || plainClass(p_, returns_)))
+        outside("a return of what is not a scalar, past objects alive");
+    ExprPtr value = decay(expr(tree.child(id, 0)));
+    if (plainClass(p_, returns_)) {
+        if (value->type()->unqualified() != returns_->unqualified()) outside("a struct returned from what is not one");
+        value = classValue(std::move(value), returns_);
+    } else {
+        value = convert(std::move(value), returns_);
+    }
+    std::unordered_map<std::uint32_t, Parser::ReturnTemp>::const_iterator k = p_.returnTemps_.find(n.syntax.v);
+    if (k == p_.returnTemps_.end()) outside("a return whose slot was not recorded");
+    ExprPtr keep = typed(std::unique_ptr<Var>(Var::local(k->second.name, k->second.slot)), returns_);
+    steps.push_back(make_owned<ExprStmt>(typed(make_owned<Assign>(std::move(keep), std::move(value)), returns_)));
+    destroy(steps, 0, alive_.size());
+    steps.push_back(make_owned<Return>(typed(std::unique_ptr<Var>(Var::local(k->second.name, k->second.slot)), returns_)));
+    return placed(make_owned<Block>(std::move(steps)), syn(id), n.syntax);
+}
+
+// Parser::jumpLeaving: a `break` or `continue` destroys what its loop's body built before it jumps.
+StmtPtr Adapter::leaving(TypedId id, StmtPtr jump) {
+    const std::size_t mark = loopMarks_.empty() ? alive_.size() : loopMarks_.back();
+    if (alive_.size() <= mark) {
+        jump->setPos(syn(id).loc);
+        jump->setSyntax(typer_.tree().node(id).syntax);
+        return jump;
+    }
+    std::vector<StmtPtr> steps;
+    destroy(steps, mark, alive_.size());
+    steps.push_back(std::move(jump));
+    std::unique_ptr<Block> b = make_owned<Block>(std::move(steps));
+    b->setScope(-1);
+    return placed(std::move(b), syn(id), typer_.tree().node(id).syntax);
 }
 
 // [stmt.dcl]: the declarators that have an initialiser, each an assignment in a block of their own.
-StmtPtr Adapter::declaration(TypedId id) {
+StmtPtr Adapter::declaration(TypedId id, bool owns) {
     const TypedTree &tree = typer_.tree();
     const TypedNode &n = tree.node(id);
     std::vector<StmtPtr> body;
@@ -191,6 +380,11 @@ StmtPtr Adapter::declaration(TypedId id) {
         if (l == p_.declaredLocals_.end()) outside("a var whose local was not recorded");
         try { plainLocal(p_, l->second); } catch (const std::string &why) { outside(why); }
         const TypedNode &v = tree.node(var);
+        if (ownedClass(p_, l->second.type)) {
+            if (!owns) outside("a class object declared where it is not a block's statement");
+            ownedLocal(var, l->second, body);
+            continue;
+        }
         if (l->second.type->isReference()) {
             if (v.count != 1) outside("a reference of " + std::to_string(v.count) + " parts");
             const Type *slotType = p_.types_.pointerTo(l->second.type->referent());
@@ -358,7 +552,9 @@ StmtPtr Adapter::forStatement(TypedId id) {
         } else if (loc < close) {
             step = expr(part);
         } else {
+            loopMarks_.push_back(alive_.size());
             body = stmt(part);
+            loopMarks_.pop_back();
         }
     }
     if (!body) outside("a for with no body");
@@ -382,6 +578,10 @@ ExprPtr Adapter::expr(TypedId id) {
             e = t.isFloat ? typed(make_owned<Num>(static_cast<long double>(t.dvalue)), n.type) : typed(make_owned<Num>(t.value), n.type);
             break;
         }
+        case syntax::Kind::WordLit:
+            if (n.type == nullptr) outside("a literal not typed");
+            e = typed(make_owned<Num>(static_cast<long long>(text == "true" ? 1 : 0)), n.type);
+            break;
         case syntax::Kind::StringLit: {
             std::unordered_map<std::uint32_t, std::pair<std::string, std::string> >::const_iterator lit =
                 p_.stringLiterals_.find(n.syntax.v);
@@ -532,7 +732,7 @@ ExprPtr Adapter::member(TypedId id) {
         object = typed(make_owned<Unary>('*', std::move(object)), pointee);
     }
     const Type *obj = object->type();
-    if (!plainClass(p_, obj)) outside("a member of '" + obj->describe() + "'");
+    if (!plainClass(p_, obj) && !ownedClass(p_, obj)) outside("a member of '" + obj->describe() + "'");
     // [expr.ref]/4: a member of an rvalue object - `make().x` - is an xvalue.
     const bool rvalue = object->isXvalue() || !isLvalue(*object);
     if (p_.lookup_.findMemberOwner(obj->unqualified(), name) != nullptr || obj->findStaticMember(name) != nullptr)
@@ -862,7 +1062,7 @@ ExprPtr Adapter::memberCall(TypedId id, TypedId head, std::vector<ExprPtr> args)
         object = typed(make_owned<Unary>('*', std::move(object)), pointee);
     }
     const Type *cls = object->type();
-    if (!plainClass(p_, cls) || !pure(*object) || object->isXvalue() || !isLvalue(*object))
+    if ((!plainClass(p_, cls) && !ownedClass(p_, cls)) || !pure(*object) || object->isXvalue() || !isLvalue(*object))
         outside("a member call on what is not a plain struct named");
     const Type *plain = cls->unqualified();
     if (p_.lookup_.findMemberOwner(plain, name) != plain) outside("a member call found in a base");

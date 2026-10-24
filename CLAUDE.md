@@ -10733,6 +10733,15 @@ namespace open, so inside `namespace n` an unqualified `f` that means `n::f` wou
 there one. No case had both, so the check was green. `scopedName` keeps such a use outside wherever anything in a
 scope is declared under the name, except in a function at file scope with no using-directive open.
 
+## M2.12h: class locals, their destructors, and the regions that unwind them, 2026-10-24
+
+**1,027 of 1,986 functions take the adapter's body**, all the same: a class local built by its constructor and
+destroyed at its block's end, on a `return`, a `break` or a `continue`, inside the cleanup regions the parser wraps
+around it - in the frame slots it chose, recorded by node (`blockCleanups_`, `returnTemps_`). Itanium only.
+**`true`, `false` and `nullptr` had no syntax node**, so `bool p = true;` was a `var` with no initialiser and the
+adapter wrote none - silent until the first function holding one was adapted; they are `literal` nodes now. A null
+constant made a member pointer's -1 takes the literal's handle with it, the third lowering `-check=typed` names.
+
 ## Build
 
 ```

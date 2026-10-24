@@ -527,6 +527,13 @@ private:
     // A call's frame slots - its result's, each argument's, and whether the result's holds a pointer - by node (M2.12).
     struct CallSlots { int result = 0; bool indirect = false; std::vector<int> args; };
     std::unordered_map<std::uint32_t, CallSlots> callSlots_;
+    // A block's cleanup slots - the exception pointer's and the selector's - and the `.ret` a return saves its value
+    // in before destroying what is alive, by node (M2.12h). The last pair wrapCleanups chose is what block() records.
+    std::unordered_map<std::uint32_t, std::pair<int, int> > blockCleanups_;
+    std::pair<int, int> lastCleanupSlots_;
+    struct ReturnTemp { std::string name; int slot = 0; };
+    std::unordered_map<std::uint32_t, ReturnTemp> returnTemps_;
+    ReturnTemp pendingReturnTemp_;
     void noteCallSlots(const Call &c) {
         if (!c.syntax().valid()) return;
         CallSlots &k = callSlots_[c.syntax().v];
