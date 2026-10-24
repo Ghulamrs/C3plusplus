@@ -29,6 +29,8 @@ A module comes out in two moves.
    parser's state, through the back-reference: the move changes where the code is, not what it does.
 2. **The state.** The tables the module owns move into it, and the parser reaches them through the
    module. After this the back-reference shrinks to the scope context the module asks of the parser.
+   This comes after all six interfaces, not module by module: `functions_` and the name tables are
+   read by Lookup, Overload and Classes alike, and which one owns each is clearer once all six exist.
 
 The symbol-table entry types (`Local`, `GlobalSym`, `Signature`, `DynamicSpec`, `TypedefName`,
 `EnumConst`, `TableSizes`) go first, to `src/sema/Entities.h`. The interfaces return them, and a type
@@ -46,6 +48,9 @@ so no parser code changes for it.
 | M2.4 | `Classes`: layout, vtables, special members | `ParserClass.cpp`, `ParserVtable.cpp` |
 | M2.5 | `Constexpr` | `ParserConst.cpp` |
 | M2.6 | the parser's mangling glue (`functionSymbol`, `memberSymbol`, ...), beside `src/Mangle.cpp` | `ParserClass.cpp`, `Parser.cpp` |
+
+M2.1 found a gap the self-host needed mended at once: `friend class sema::Lookup;`, a qualified
+friend class, was refused with "expected ';'". Each module's commit may carry such a fix, with its case.
 
 A basename may not repeat across `src/` and its directories (`msvc/build.cmd` writes one flat object
 directory), so the M2.6 module is not called `Mangle`.

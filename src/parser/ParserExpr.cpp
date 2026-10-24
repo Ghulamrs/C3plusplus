@@ -690,7 +690,7 @@ const Parser::Signature *Parser::pickByTarget(const std::vector<std::size_t> &se
 
 ExprPtr Parser::functionAsValue(const std::string &key, std::size_t pos) {
     const Signature *sig = nullptr;
-    if (const std::vector<std::size_t> *set = overloadsOf(key)) {
+    if (const std::vector<std::size_t> *set = lookup_.overloadsOf(key)) {
         if (set->size() > 1) sig = pickByTarget(*set, nullptr, overloadTarget_);
         if (set->size() > 1 && sig == nullptr && overloadArgument_)
             return overloadPlaceholder(*set, key, nullptr, pos);
@@ -702,7 +702,7 @@ ExprPtr Parser::functionAsValue(const std::string &key, std::size_t pos) {
                            "not supported yet here; initialise a pointer of the "
                            "type wanted and use that");
     }
-    if (sig == nullptr) sig = findFunction(key);
+    if (sig == nullptr) sig = lookup_.findFunction(key);
     if (sig == nullptr) return nullptr;
     markUsed(sig);      // its address is an odr-use: a class template's member is instantiated for it
     return functionAddress(*sig, key);
@@ -769,7 +769,7 @@ ExprPtr Parser::memberFunctionByName(const std::string &name, std::size_t pos) {
     for (const Type *root : roots)
         for (const Type *c = root; c != nullptr; c = c->base()) {
             const std::vector<std::size_t> *set =
-                name == localOf(c->tag()) ? nullptr : overloadsOf(c->tag() + "::" + name);
+                name == localOf(c->tag()) ? nullptr : lookup_.overloadsOf(c->tag() + "::" + name);
             if (set == nullptr) continue;
             bool anyStatic = false;
             for (std::size_t i : *set) anyStatic = anyStatic || functions_[i].isStaticMember;
@@ -896,8 +896,8 @@ ExprPtr Parser::userDefinedLiteral(Program *program) {
                              "that does not begin with '_' is reserved, [usrlit.suffix]");
     const std::string name = "operator\"\" " + suffix;
     const std::string shown = "operator\"\"" + suffix;
-    const std::string key = qualifyForLookup(name, &Parser::hasFunctionNamed);
-    const std::vector<std::size_t> *set = overloadsOf(key);
+    const std::string key = lookup_.qualifyForLookup(name, &sema::Lookup::hasFunctionNamed);
+    const std::vector<std::size_t> *set = lookup_.overloadsOf(key);
 
     std::vector<Token> call;
     auto put = [&](TokenKind kind, const std::string &text) {
@@ -1002,7 +1002,7 @@ ExprPtr Parser::userDefinedLiteral(Program *program) {
 // (1.27, 2026-10-21, review of 1.25, item 3: "needs an object here"). Null where no `this` has the member.
 ExprPtr Parser::qualifiedMemberThroughThis(const Type *cls, const Member &m,
                                             const std::string &member, std::size_t pos) {
-    const Local *self = findLocal("this");
+    const Local *self = lookup_.findLocal("this");
     const Type *mine = self != nullptr && self->type->isPointer() ? self->type->pointee() : nullptr;
     if (mine == nullptr || m.inVirtualBase != nullptr || m.ambiguous) return nullptr;
     if (mine->unqualified() != cls && accessibleBaseOffset(mine, cls) < 0) return nullptr;
@@ -1095,7 +1095,7 @@ ExprPtr Parser::primary(Program *program) {
             src_.fail(pos, "'this' is not available in a static member "
                            "function - it is not called on an object, so there "
                            "is none to point at");
-        const Local *slot = findLocal("this");
+        const Local *slot = lookup_.findLocal("this");
         ExprPtr v(Var::local("this", slot != nullptr ? slot->offset : thisOffset_));
         v->setType(slot != nullptr ? slot->type
                                    : types_.pointerTo(currentClass_));
@@ -1136,7 +1136,7 @@ ExprPtr Parser::primary(Program *program) {
         auto memberOf = [&](const Type *cls) {
             return cls != nullptr &&
                    ((peekAt(1).is("(") &&
-                     (findMemberOwner(cls, peek().text) != nullptr ||
+                     (lookup_.findMemberOwner(cls, peek().text) != nullptr ||
                       memberTemplateOwner(cls, peek().text) != nullptr)) ||
                     (!peekAt(1).is("<") && (cls->findMember(peek().text) != nullptr ||
                                             cls->findStaticMember(peek().text) != nullptr)));
@@ -1435,7 +1435,7 @@ ExprPtr Parser::primary(Program *program) {
         const std::string full = scope.empty() ? last.text : scope + "::" + last.text;
         const bool plain = last.kind == TokenKind::Ident && !peekAt(k + 1).is("::") &&
                            !peekAt(k + 1).is("<") && !isTemplateName(full, true) &&
-                           findGlobalTypedef(full) == nullptr;
+                           lookup_.findGlobalTypedef(full) == nullptr;
         if (plain) {
             at_ += k + 1;
             if (consume("(")) {
@@ -1445,7 +1445,7 @@ ExprPtr Parser::primary(Program *program) {
                 {
                     const bool was = absoluteLookup_;
                     absoluteLookup_ = true;
-                    if (overloadsOf(full) == nullptr)
+                    if (lookup_.overloadsOf(full) == nullptr)
                         src_.fail(qpos, "'::" + full + "' was not declared in the global namespace");
                     sig = resolveOverloadBraced(full, args, qpos);
                     absoluteLookup_ = was;
@@ -1458,14 +1458,14 @@ ExprPtr Parser::primary(Program *program) {
             absoluteLookup_ = true;
             ExprPtr v = globalRef(full);
             if (v == nullptr)
-                if (const EnumConst *e = findEnum(full)) v = enumeratorValue(*e);
+                if (const EnumConst *e = lookup_.findEnum(full)) v = enumeratorValue(*e);
             if (v == nullptr) v = functionAsValue(full, qpos);
             absoluteLookup_ = was;
             if (v == nullptr) src_.fail(qpos, "'::" + full + "' was not declared in the global namespace");
             return v;
         }
         // `::S(x)`, `::S{x}` - a temporary of a class (or a cast to a type) found from the global namespace.
-        const Type *named = last.kind == TokenKind::Ident && !peekAt(k + 1).is("::") ? findGlobalTypedef(full) : nullptr;
+        const Type *named = last.kind == TokenKind::Ident && !peekAt(k + 1).is("::") ? lookup_.findGlobalTypedef(full) : nullptr;
         if (named != nullptr && (peekAt(k + 1).is("(") || peekAt(k + 1).is("{"))) {
             at_ += k + 1;
             if (peek().is("{")) return listTemporary(named, qpos);
@@ -1482,7 +1482,7 @@ ExprPtr Parser::primary(Program *program) {
     // class is a member, which the branch below already knows how to find. Asked
     // before the namespace is eaten, since eating it loses the start of the name.
     if (peek().kind == TokenKind::Ident && peekAt(1).is("::") &&
-        !namespaceNamed(peek().text).empty() &&
+        !lookup_.namespaceNamed(peek().text).empty() &&
         // **...unless what follows the type is a `(`**, which makes it a
         // temporary rather than the qualifier of a member: `std::vector<T>()`
         // belongs to this branch, `std::vector<T>::size_type` does not.
@@ -1490,7 +1490,7 @@ ExprPtr Parser::primary(Program *program) {
          peekAt(qualifiedTypeEndPastArgs()).is("(") ||
          peekAt(qualifiedTypeEndPastArgs()).is("{"))) {
         const std::size_t qpos = peek().pos;
-        std::string scope = namespaceNamed(peek().text);
+        std::string scope = lookup_.namespaceNamed(peek().text);
         at_ += 2;
         while (peek().kind == TokenKind::Ident && peekAt(1).is("::") &&
                namespaces_.find(scope + "::" + peek().text) != namespaces_.end()) {
@@ -1507,10 +1507,10 @@ ExprPtr Parser::primary(Program *program) {
         // qualified lookup honours: what N itself lacks is asked of it.
         {
             const std::string inner = scope + "::_GLOBAL__N_1::" + full.substr(scope.size() + 2);
-            if (overloadsOf(full) == nullptr && findGlobalToUpdate(full) == nullptr &&
-                findEnum(full) == nullptr && namespaces_.count(scope + "::_GLOBAL__N_1") &&
-                (overloadsOf(inner) != nullptr || findGlobalToUpdate(inner) != nullptr ||
-                 findEnum(inner) != nullptr))
+            if (lookup_.overloadsOf(full) == nullptr && lookup_.findGlobalToUpdate(full) == nullptr &&
+                lookup_.findEnum(full) == nullptr && namespaces_.count(scope + "::_GLOBAL__N_1") &&
+                (lookup_.overloadsOf(inner) != nullptr || lookup_.findGlobalToUpdate(inner) != nullptr ||
+                 lookup_.findEnum(inner) != nullptr))
                 full = inner;
         }
         if (consume("(")) {
@@ -1523,7 +1523,7 @@ ExprPtr Parser::primary(Program *program) {
                                 !sig.owner.empty());
         }
         if (ExprPtr v = objectRef(full)) return v;
-        if (const EnumConst *e = findEnum(full)) {
+        if (const EnumConst *e = lookup_.findEnum(full)) {
             return enumeratorValue(*e);
         }
         // `take(N::nl)` - the function itself, written qualified and not called.
@@ -1543,7 +1543,7 @@ ExprPtr Parser::primary(Program *program) {
         for (std::size_t k = 1; peekAt(k).is("::") &&
                                 peekAt(k + 1).kind == TokenKind::Ident; k += 2) {
             const std::string component = peekAt(k + 1).text;
-            if (const Type *cls = findTypedef(q))
+            if (const Type *cls = lookup_.findTypedef(q))
                 if (cls->isStructOrUnion() &&
                     cls->findStaticMember(component) != nullptr) {
                     owner = cls;
@@ -1568,9 +1568,9 @@ ExprPtr Parser::primary(Program *program) {
         for (std::size_t k = 1; peekAt(k).is("::") &&
                                 peekAt(k + 1).kind == TokenKind::Ident; k += 2) {
             const std::string component = peekAt(k + 1).text;
-            if (const Type *cls = findTypedef(e))
+            if (const Type *cls = lookup_.findTypedef(e))
                 if (cls->isStructOrUnion())
-                    if (const EnumConst *c = enumInClass(cls, component)) {
+                    if (const EnumConst *c = lookup_.enumInClass(cls, component)) {
                         found = c;
                         took = k + 2;
                     }
@@ -1590,13 +1590,13 @@ ExprPtr Parser::primary(Program *program) {
         std::string q = peek().text;
         for (std::size_t k = 1; peekAt(k).is("::") && peekAt(k + 1).kind == TokenKind::Ident; k += 2) {
             const std::string component = peekAt(k + 1).text;
-            const Type *cls = findTypedef(q);
+            const Type *cls = lookup_.findTypedef(q);
             if (cls != nullptr && cls->isStructOrUnion() &&
                 (peekAt(k + 2).is("(") || peekAt(k + 2).is("<")) &&
                 memberTemplateOwner(cls, component) != nullptr) {
                 const std::size_t qpos = peek().pos;
                 at_ += k + 2;                  // the name; memberTemplateCall reads from the '<' or '('
-                const Local *self = findLocal("this");
+                const Local *self = lookup_.findLocal("this");
                 const bool related = self != nullptr && !inStaticMember_ && currentClass_ != nullptr &&
                                      (currentClass_->unqualified() == cls->unqualified() ||
                                       publicBaseOffset(currentClass_, cls->unqualified()) >= 0);
@@ -1625,7 +1625,7 @@ ExprPtr Parser::primary(Program *program) {
             // **Through findTypedef, as the static *data* member walk above
             // does.**
             std::string candidate = q + "::" + component;
-            if (const Type *cls = findTypedef(q))
+            if (const Type *cls = lookup_.findTypedef(q))
                 if (cls->isStructOrUnion())
                     candidate = cls->tag() + "::" + component;
             if (peekAt(k + 2).is("(") && hasStaticMemberNamed(candidate)) {
@@ -1635,9 +1635,9 @@ ExprPtr Parser::primary(Program *program) {
             // `S::f` not called - a static member function as a value, [expr.prim.general]/9.
             if (!peekAt(k + 2).is("(") && !peekAt(k + 2).is("::") && hasStaticMemberNamed(candidate)) {
                 const std::size_t qpos = peek().pos;
-                for (std::size_t i : *overloadsOf(candidate)) {
+                for (std::size_t i : *lookup_.overloadsOf(candidate)) {
                     const Signature &f = functions_[i];
-                    const Type *ownerType = findTypedef(f.owner);
+                    const Type *ownerType = lookup_.findTypedef(f.owner);
                     if (f.access != Access::Public &&
                         (ownerType == nullptr || (!insideAccessOf(ownerType, f.access) && !isFriendOf(ownerType))))
                         src_.fail(qpos, "'" + candidate + "' is " +
@@ -1661,7 +1661,7 @@ ExprPtr Parser::primary(Program *program) {
             // `.` and `->` paths make in memberCallWith, made here because
             // this call never goes through them.
             if (sig.access != Access::Public) {
-                const Type *ownerType = findTypedef(sig.owner);
+                const Type *ownerType = lookup_.findTypedef(sig.owner);
                 if (ownerType == nullptr ||
                     (!insideAccessOf(ownerType, sig.access) &&
                      !isFriendOf(ownerType))) {
@@ -1687,7 +1687,7 @@ ExprPtr Parser::primary(Program *program) {
     // is trivial and so no function here, by its bytes. Any other operator is an ordinary member (M1 L8).
     if (currentClass_ != nullptr && !inStaticMember_ && peek().kind == TokenKind::Ident &&
         peekAt(1).is("::") && peekAt(2).is("operator")) {
-        const Type *cls = findTypedef(peek().text);
+        const Type *cls = lookup_.findTypedef(peek().text);
         if (cls == nullptr) cls = FindBase::named(currentClass_, peek().text);
         if (cls != nullptr && cls->isStructOrUnion() &&
             (currentClass_->unqualified() == cls->unqualified() ||
@@ -1697,7 +1697,7 @@ ExprPtr Parser::primary(Program *program) {
             at_ += 2;
             const std::string op = operatorName();
             if (peek().is("(") &&
-                (op == "operator=" || overloadsOf(cls->tag() + "::" + op) != nullptr)) {
+                (op == "operator=" || lookup_.overloadsOf(cls->tag() + "::" + op) != nullptr)) {
                 at_++;
                 std::vector<ExprPtr> args;
                 parseArguments(args);
@@ -1738,10 +1738,10 @@ ExprPtr Parser::primary(Program *program) {
                                 peekAt(k + 1).kind == TokenKind::Ident; k += 2) {
             const std::string component = peekAt(k + 1).text;
             if (peekAt(k + 2).is("(")) {
-                const Type *cls = findTypedef(q);
+                const Type *cls = lookup_.findTypedef(q);
                 if (cls == nullptr) cls = FindBase::named(currentClass_, q);
                 if (cls != nullptr && cls->isStructOrUnion() &&
-                    overloadsOf(cls->tag() + "::" + component) != nullptr) {
+                    lookup_.overloadsOf(cls->tag() + "::" + component) != nullptr) {
                     owner = cls;
                     member = component;
                     consumed = k + 2;
@@ -1771,17 +1771,17 @@ ExprPtr Parser::primary(Program *program) {
         std::string name = peek().text;
         std::size_t pos = peek().pos;
 
-        const Local *l = findLocal(name);
+        const Local *l = lookup_.findLocal(name);
         // A bound non-type template parameter hides a member and a namespace's name alike ([temp.local]/6).
         if (l == nullptr && boundValueParams_.count(name) != 0 && !peekAt(1).is("::"))
-            if (const EnumConst *e = findEnum(name)) {
+            if (const EnumConst *e = lookup_.findEnum(name)) {
                 at_++;
                 return enumeratorValue(*e);
             }
-        const GlobalSym *g = l != nullptr ? nullptr : findGlobal(name);
+        const GlobalSym *g = l != nullptr ? nullptr : lookup_.findGlobal(name);
         // **Class scope comes before the namespace** - [basic.lookup.unqual]/8: a static member, a
         // member function or an enumerator of the class (or a base) hides a global of the same name.
-        if (g != nullptr && classScopeDeclares(name)) g = nullptr;
+        if (g != nullptr && lookup_.classScopeDeclares(name)) g = nullptr;
         const Type *held = l != nullptr ? l->type : (g != nullptr ? g->type : nullptr);
         // A name that holds something callable rather than naming a function:
         // a function pointer, or an object whose `(` is [over.call].
@@ -1830,15 +1830,15 @@ ExprPtr Parser::primary(Program *program) {
         if ((peekAt(1).is("(") || peekAt(1).is("<")) && !callsThroughObject &&
             currentClass_ != nullptr && l == nullptr && g == nullptr) {
             const Type *owner = currentClass_->unqualified();
-            const Local *self = findLocal("this");
+            const Local *self = lookup_.findLocal("this");
             // Beside an ordinary member of the name, overload resolution below ranks the two.
             // A specialization of the template already made is listed under the name too, and is not one.
             bool alone = peekAt(1).is("<");
             if (!alone) {
-                const Type *ordinary = findMemberOwner(owner, name);
+                const Type *ordinary = lookup_.findMemberOwner(owner, name);
                 alone = true;
                 if (ordinary != nullptr)
-                    if (const std::vector<std::size_t> *set = overloadsOf(ordinary->unqualified()->tag() + "::" + name))
+                    if (const std::vector<std::size_t> *set = lookup_.overloadsOf(ordinary->unqualified()->tag() + "::" + name))
                         for (std::size_t k = 0; k < set->size(); k++)
                             if (!functions_[(*set)[k]].fromTemplate) alone = false;
             }
@@ -1860,7 +1860,7 @@ ExprPtr Parser::primary(Program *program) {
         bool inherited = false;
         for (const Type *c = currentClass_; c != nullptr; c = c->base()) {
             if (name == localOf(c->tag())) break;
-            if (overloadsOf(c->tag() + "::" + name) != nullptr) { inherited = true; break; }
+            if (lookup_.overloadsOf(c->tag() + "::" + name) != nullptr) { inherited = true; break; }
         }
         // **A static member called by its bare name, from inside the class.**
         // [class.static]/1 makes it `C::f(...)` and not `this->f(...)`: the
@@ -1883,7 +1883,7 @@ ExprPtr Parser::primary(Program *program) {
                 // `.` and `->` paths make in memberCallWith, made here because
                 // this call never goes through them.
                 if (sig.access != Access::Public) {
-                    const Type *ownerType = findTypedef(sig.owner);
+                    const Type *ownerType = lookup_.findTypedef(sig.owner);
                     if (ownerType == nullptr ||
                         (!insideAccessOf(ownerType, sig.access) &&
                          !isFriendOf(ownerType))) {
@@ -1911,7 +1911,7 @@ ExprPtr Parser::primary(Program *program) {
 
         if (peekAt(1).is("(") && !callsThroughObject && currentClass_ != nullptr &&
             l == nullptr && g == nullptr && inherited) {
-            if (const Local *self = findLocal("this")) {
+            if (const Local *self = lookup_.findLocal("this")) {
                 at_ += 2;
                 ExprPtr me(Var::local("this", self->offset));
                 me->setType(self->type);
@@ -1926,7 +1926,7 @@ ExprPtr Parser::primary(Program *program) {
         // look the name up in the function table and report it undeclared.
         if (peekAt(1).is("{") && !callsThroughObject &&
             l == nullptr && g == nullptr) {
-            if (const Type *named = findTypedef(name)) {
+            if (const Type *named = lookup_.findTypedef(name)) {
                 at_++;
                 return bracedValueInit(named, pos);
             }
@@ -1934,7 +1934,7 @@ ExprPtr Parser::primary(Program *program) {
 
         if (peekAt(1).is("(") && !callsThroughObject && l == nullptr &&
             g == nullptr && !localHidesType()) {
-            const Type *named = findTypedef(name);
+            const Type *named = lookup_.findTypedef(name);
             if (named != nullptr && named->isStructOrUnion()) {
                 at_ += 2;
                 return classTemporary(named, pos);
@@ -1955,7 +1955,7 @@ ExprPtr Parser::primary(Program *program) {
                 const Type *of = outer->type()->pointee();
                 bool has = false;
                 for (const Type *c = of; c != nullptr; c = c->base())
-                    if (overloadsOf(c->tag() + "::" + name) != nullptr) {
+                    if (lookup_.overloadsOf(c->tag() + "::" + name) != nullptr) {
                         has = true;
                         break;
                     }
@@ -1987,7 +1987,7 @@ ExprPtr Parser::primary(Program *program) {
 
         // Class scope.
         if (currentClass_ != nullptr) {
-            const Local *self = findLocal("this");
+            const Local *self = lookup_.findLocal("this");
             if (const Member *m = currentClass_->findMember(name)) {
                 if (m->ambiguous) refuseAmbiguousMember(currentClass_, *m, pos);
                 // **[class.access]/1 applies however the member is spelled**, and this path checked
@@ -2044,7 +2044,7 @@ ExprPtr Parser::primary(Program *program) {
                 }
             }
 
-            if (const EnumConst *e = findClassEnum(name)) {
+            if (const EnumConst *e = lookup_.findClassEnum(name)) {
                 return enumeratorValue(*e);
             }
         }
@@ -2054,12 +2054,12 @@ ExprPtr Parser::primary(Program *program) {
         // Namespace scope, last of the three - and within it the nearer declaration, an enumerator or
         // a variable: `Tag` in `namespace q` is q's variable before the global enumerator.
         {
-            const std::string enumKey = enclosingNamespaceKey(name, &Parser::hasEnumNamed);
-            const std::string globalKey = enclosingNamespaceKey(name, &Parser::hasGlobalNamed);
+            const std::string enumKey = lookup_.enclosingNamespaceKey(name, &sema::Lookup::hasEnumNamed);
+            const std::string globalKey = lookup_.enclosingNamespaceKey(name, &sema::Lookup::hasGlobalNamed);
             if (globalKey.size() > enumKey.size())
                 if (ExprPtr v = globalRef(name)) return v;
         }
-        if (const EnumConst *e = findEnum(name)) {
+        if (const EnumConst *e = lookup_.findEnum(name)) {
             return enumeratorValue(*e);
         }
         if (ExprPtr v = globalRef(name)) return v;
@@ -2067,22 +2067,22 @@ ExprPtr Parser::primary(Program *program) {
         // Taking the address of an overloaded name needs a target type to
         // choose by - [over.over] - and there is none here.
         if (ExprPtr f = functionAsValue(
-                qualifyForLookup(name, &Parser::hasFunctionNamed), pos))
+                lookup_.qualifyForLookup(name, &sema::Lookup::hasFunctionNamed), pos))
             return f;
         // `S{...}` with a variable or function S in scope: the name hides the type, [basic.scope.hiding]/2.
-        if (peek().is("{") && findTypedef(name) != nullptr)
+        if (peek().is("{") && lookup_.findTypedef(name) != nullptr)
             src_.fail(pos, "'" + name + "' names an object or function here, which hides the type "
                            "of that name, so '" + name + "{...}' is no temporary");
         // `S::x` reached here found no static member, enumerator or function: say which it was.
         // The class is the longest prefix naming one, `n::S::nope` reaching S through n.
         std::size_t k = 0;
-        const Type *cls = findTypedef(name);
+        const Type *cls = lookup_.findTypedef(name);
         for (std::string q = name; peekAt(k).is("::") && peekAt(k + 1).kind == TokenKind::Ident &&
                                    peekAt(k + 2).is("::"); k += 2) {
             q += "::" + peekAt(k + 1).text;
-            const Type *next = findTypedef(q);
+            const Type *next = lookup_.findTypedef(q);
             if (next == nullptr && cls != nullptr && cls->isStructOrUnion())
-                next = lookupInClass(cls, peekAt(k + 1).text);
+                next = lookup_.lookupInClass(cls, peekAt(k + 1).text);
             if (next == nullptr && cls != nullptr) break;
             cls = next;                        // a namespace leaves it null for the next step
         }
@@ -2191,8 +2191,8 @@ const Type *Parser::decltypeSpecifier() {
     if (namePath && peekAt(1).is(")")) {
         const std::string name = peek().text;
         const Type *declared = nullptr;
-        if (const Local *l = findLocal(name)) declared = l->type;
-        else if (const GlobalSym *g = findGlobal(name)) declared = g->type;
+        if (const Local *l = lookup_.findLocal(name)) declared = l->type;
+        else if (const GlobalSym *g = lookup_.findGlobal(name)) declared = g->type;
         if (declared != nullptr) {
             at_ += 2;
             return declared;
@@ -2203,7 +2203,7 @@ const Type *Parser::decltypeSpecifier() {
         std::string q = peek().text;
         for (std::size_t k = 1; peekAt(k).is("::") && peekAt(k + 1).kind == TokenKind::Ident;
              k += 2) {
-            const Type *cls = findTypedef(q);
+            const Type *cls = lookup_.findTypedef(q);
             if (cls != nullptr && cls->isStructOrUnion() && peekAt(k + 2).is(")"))
                 if (const Type::StaticMember *sm = cls->findStaticMember(peekAt(k + 1).text)) {
                     at_ += k + 3;
@@ -2470,36 +2470,16 @@ ExprPtr Parser::objectRef(const std::string &name) {
 // An ordinary member function of this name, beside which a member template is ranked rather
 // than taken ([over.match.best]); a made specialization is not one.
 bool Parser::hasOrdinaryMember(const Type *cls, const std::string &name) {
-    const Type *ordinary = findMemberOwner(cls->unqualified(), name);
+    const Type *ordinary = lookup_.findMemberOwner(cls->unqualified(), name);
     if (ordinary == nullptr) return false;
-    if (const std::vector<std::size_t> *set = overloadsOf(ordinary->unqualified()->tag() + "::" + name))
+    if (const std::vector<std::size_t> *set = lookup_.overloadsOf(ordinary->unqualified()->tag() + "::" + name))
         for (std::size_t k = 0; k < set->size(); k++)
             if (!functions_[(*set)[k]].fromTemplate) return true;
     return false;
 }
 
-// Does class scope, between block scope and the namespace, declare this name - a data member, a
-// static one, a member function or an enumerator of the class being read, a base, or the class a
-// lambda was written in. Asked of a name a global also answers, which the class then hides.
-bool Parser::classScopeDeclares(const std::string &name) {
-    if (boundValueParams_.count(name) != 0) return false;
-    const Type *roots[2] = { currentClass_ != nullptr ? currentClass_
-                                                      : classStack_.empty() ? nullptr
-                                                                            : classStack_.back(),
-                             lambdaScope() };
-    for (const Type *root : roots) {
-        if (root == nullptr) continue;
-        if (root->findMember(name) != nullptr || root->findStaticMember(name) != nullptr)
-            return true;
-        for (const Type *c = root; c != nullptr; c = c->base())
-            if (name != localOf(c->tag()) && overloadsOf(c->tag() + "::" + name) != nullptr)
-                return true;
-    }
-    return findClassEnum(name) != nullptr;
-}
-
 ExprPtr Parser::localRef(const std::string &name) {
-    if (const Local *l = findLocal(name)) {
+    if (const Local *l = lookup_.findLocal(name)) {
         // [expr.prim.lambda]/12: a const local of the enclosing function, read in a lambda for its
         // value, is no odr-use and needs no capture - its value stands in (1.27, 2026-10-21, review of
         // 1.25, item 3: `[] { return k + 1; }` found no `k`).
@@ -2530,7 +2510,7 @@ ExprPtr Parser::enumeratorValue(const EnumConst &e) {
 
 // `*this` in the member function being read, of the class `this` points at - its const included.
 ExprPtr Parser::thisObject() {
-    const Local *held = findLocal("this");
+    const Local *held = lookup_.findLocal("this");
     ExprPtr self(Var::local("this", held != nullptr ? held->offset : thisOffset_));
     const Type *selfType = held != nullptr ? held->type : types_.pointerTo(currentClass_);
     self->setType(selfType);
@@ -2553,7 +2533,7 @@ ExprPtr Parser::namedAfter(ExprPtr effect, ExprPtr obj) {
 }
 
 ExprPtr Parser::globalRef(const std::string &name) {
-    if (const GlobalSym *g = findGlobal(name)) {
+    if (const GlobalSym *g = lookup_.findGlobal(name)) {
         Var *v = Var::global(name);
         v->setSymbol(g->symbol);
         v->setReadOnly(g->isConst);
@@ -2589,7 +2569,7 @@ const Type *Parser::qualifiedMemberScope(const Type *obj, std::string &name,
         if (!peek().is("::") || peekAt(1).kind != TokenKind::Ident) break;
         q += "::" + name;
     }
-    const Type *cls = findTypedef(q);
+    const Type *cls = lookup_.findTypedef(q);
     if (cls == nullptr) cls = FindBase::named(obj, q);
     if (cls == nullptr || !cls->isStructOrUnion())
         src_.fail(pos, "'" + q + "' is not a class, so '" + q + "::" + name +
@@ -2635,19 +2615,19 @@ ExprPtr Parser::explicitDestructorCall(ExprPtr &object, std::size_t pos) {
     // which must be the object's class or a base; a typedef reaches either.
     const Type *named = nullptr;
     if (!qualifier.empty()) {
-        named = findTypedef(qualifier);
+        named = lookup_.findTypedef(qualifier);
         if (named == nullptr && plain->isStructOrUnion())
             named = FindBase::named(plain, qualifier);
         if (named == nullptr)
             src_.fail(pos, "'" + qualifier + "' names no type, so '" + qualifier +
                            "::~" + name + "' names no destructor");
-        const Type *inner = findTypedef(name);
+        const Type *inner = lookup_.findTypedef(name);
         if (name != localOf(named->unqualified()->tag()) &&
             (inner == nullptr || inner->unqualified() != named->unqualified()))
             src_.fail(pos, "'~" + name + "' is not the destructor of '" +
                            named->describe() + "'");
     } else {
-        named = findTypedef(name);
+        named = lookup_.findTypedef(name);
         if (named == nullptr && plain->isStructOrUnion() &&
             plain->localName() == name)
             named = plain;
@@ -2793,7 +2773,7 @@ ExprPtr Parser::postfix() {
             // `a[arr]` for `arr[a]` (1.27, 2026-10-21, review of 1.25, item 3).
             if (subscripted->isStructOrUnion() &&
                 (index->type()->unqualified()->isPointer() || index->type()->unqualified()->isArray()) &&
-                findMemberOwner(subscripted, "operator[]") == nullptr) {
+                lookup_.findMemberOwner(subscripted, "operator[]") == nullptr) {
                 const Signature *asInteger = soleNumericConversion(subscripted);
                 if (asInteger != nullptr && asInteger->returns->unqualified()->isInteger()) {
                     n.swap(index);
@@ -2801,7 +2781,7 @@ ExprPtr Parser::postfix() {
                 }
             }
             if (subscripted->isStructOrUnion()) {
-                if (findMemberOwner(subscripted, "operator[]") == nullptr)
+                if (lookup_.findMemberOwner(subscripted, "operator[]") == nullptr)
                     src_.fail(pos, "'" + subscripted->describe() + "' is "
                                    "subscripted here and declares no "
                                    "'operator[]' - a class is not an array, so "
@@ -2841,7 +2821,7 @@ ExprPtr Parser::postfix() {
             // pointer, and the answer is asked again.**
             for (int hops = 0; n->type()->unqualified()->isStructOrUnion(); hops++) {
                 const Type *held = n->type()->unqualified();
-                if (findMemberOwner(held, "operator->") == nullptr)
+                if (lookup_.findMemberOwner(held, "operator->") == nullptr)
                     src_.fail(pos, "'->' needs a pointer, and '" +
                                    held->describe() + "' is a class that "
                                    "declares no 'operator->' to get one from");
@@ -2880,7 +2860,7 @@ ExprPtr Parser::postfix() {
             // **A data member that is itself callable**: `p.H(i, j)` reaches H
             // and then applies its operator(), where `p.f(i)` calls a member
             // function f.
-            if (findMemberOwner(in->unqualified(), name) != nullptr &&
+            if (lookup_.findMemberOwner(in->unqualified(), name) != nullptr &&
                 consume("(")) {
                 // A qualified call is never dispatched - [expr.call]/1.
                 std::vector<ExprPtr> args;
@@ -2966,7 +2946,7 @@ ExprPtr Parser::postfix() {
             // **A data member that is itself callable**: `p.H(i, j)` reaches H
             // and then applies its operator(), where `p.f(i)` calls a member
             // function f.
-            if (findMemberOwner(in->unqualified(), name) != nullptr &&
+            if (lookup_.findMemberOwner(in->unqualified(), name) != nullptr &&
                 consume("(")) {
                 // A qualified call is never dispatched - [expr.call]/1.
                 std::vector<ExprPtr> args;
@@ -3108,7 +3088,7 @@ ExprPtr Parser::unary() {
         }
         if (q > 0) {
             const std::string memberName = peekAt(q).text;
-            if (const Type *cls = findTypedef(qualified))
+            if (const Type *cls = lookup_.findTypedef(qualified))
                 if (cls->isStructOrUnion()) {
                     if (const Member *m = cls->findMember(memberName)) {
                         checkAccessible(cls, *m, pos);
@@ -3120,7 +3100,7 @@ ExprPtr Parser::unary() {
                     // `&S::f` for a member function: the ABI's pair, built in
                     // a slot of this frame the way a class temporary is.
                     const std::string key = cls->tag() + "::" + memberName;
-                    if (const std::vector<std::size_t> *set = overloadsOf(key)) {
+                    if (const std::vector<std::size_t> *set = lookup_.overloadsOf(key)) {
                         const Signature *picked = set->size() > 1 ? pickByTarget(*set, cls, overloadTarget_)
                                                                   : nullptr;
                         if (set->size() > 1 && picked == nullptr && overloadArgument_) {

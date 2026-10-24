@@ -22,7 +22,7 @@ const Type *Parser::memberTypeWalk(const Type *t) {
             continue;
         }
         if (!t->isStructOrUnion()) break;
-        const Type *found = lookupInClass(t, member);
+        const Type *found = lookup_.lookupInClass(t, member);
         // A member that exists and is not a type reads differently from a name the class lacks.
         // Inside sizeof or decltype this only tells parenHoldsTypeId the operand is an expression.
         if (found == nullptr && t->findMember(member) != nullptr)
@@ -131,7 +131,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     const bool forwardOnly = !defining && peek().is(";");
     bool introduced = false;
     if (!tag.empty() && !defining && !forwardOnly && specializationOf.empty()) {
-        if (const Type *had = findTypedef(tag))
+        if (const Type *had = lookup_.findTypedef(tag))
             if (had->isStructOrUnion() && had->localName() == local) return had;
         introduced = true;
     }
@@ -172,7 +172,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
         // **The injected class name.** Inside `Holder`'s own body the word `Holder`
         // means this specialization and not the template, which is what makes
         // `const Holder &` a legal parameter there. Registered as a member type.
-        declareTypeName(tag + "::" + specializationOf, type);
+        lookup_.declareTypeName(tag + "::" + specializationOf, type);
     }
     // A class in a namespace: the manglers want the name without the
     // namespaces, and there is no enclosing type to point at - a namespace is
@@ -197,7 +197,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
         if (currentClass_ != nullptr) localClassOuter_[tag] = currentClass_;
         localTypes_[local] = type;
     }
-    if (!tag.empty()) declareTypeName(tag, type);
+    if (!tag.empty()) lookup_.declareTypeName(tag, type);
 
     // `class Derived : public Base {` - the base-clause, which may name more than
     // one. Default access is private for a class and public for a struct. Bases are
@@ -637,13 +637,13 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             const Type *named = nullptr;
             for (const Type::BaseSpec &b : type->bases())
                 if (b.type->localName() == peekAt(1).text || b.type->tag() == peekAt(1).text ||
-                    b.type->unqualified() == (findTypedef(peekAt(1).text) != nullptr
-                                                  ? findTypedef(peekAt(1).text)->unqualified() : nullptr))
+                    b.type->unqualified() == (lookup_.findTypedef(peekAt(1).text) != nullptr
+                                                  ? lookup_.findTypedef(peekAt(1).text)->unqualified() : nullptr))
                     named = b.type;
-            const Type *owner = named != nullptr ? findMemberOwner(named, peekAt(3).text) : nullptr;
+            const Type *owner = named != nullptr ? lookup_.findMemberOwner(named, peekAt(3).text) : nullptr;
             bool sameAccess = owner != nullptr;
             if (sameAccess)
-                for (std::size_t i : *overloadsOf(owner->tag() + "::" + peekAt(3).text))
+                for (std::size_t i : *lookup_.overloadsOf(owner->tag() + "::" + peekAt(3).text))
                     if (functions_[i].access != access) sameAccess = false;
             if (sameAccess) {
                 usingMembers_[tag].push_back(std::make_pair(owner, peekAt(3).text));
@@ -786,9 +786,18 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 src_.fail(fpos, "an anonymous class has no name to grant "
                                 "friendship with");
             const bool keyed = peek().is("class") || peek().is("struct") || peek().is("union");
-            if (keyed || (peek().kind == TokenKind::Ident && peekAt(1).is(";") &&
-                          findTypedef(peek().text) != nullptr &&
-                          findTypedef(peek().text)->unqualified()->isStructOrUnion())) {
+            // `friend X;` and `friend n::X;` for a class already declared: a name chain and a `;`.
+            std::size_t chain = peek().is("::") ? 1 : 0;
+            std::string written;
+            while (peekAt(chain).kind == TokenKind::Ident) {
+                written += (written.empty() ? "" : "::") + peekAt(chain).text;
+                if (!peekAt(chain + 1).is("::")) break;
+                chain += 2;
+            }
+            const Type *unkeyed = peekAt(chain).kind == TokenKind::Ident && peekAt(chain + 1).is(";")
+                                ? (peek().is("::") ? lookup_.findGlobalTypedef(written) : lookup_.findTypedef(written))
+                                : nullptr;
+            if (keyed || (unkeyed != nullptr && unkeyed->unqualified()->isStructOrUnion())) {
                 befriendClass(tag, keyed);
                 continue;
             }
@@ -833,7 +842,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             // the name would befriend every overload of it, including ones
             // declared later that the class never saw.
             friends_[tag].push_back(
-                lookupSignature(fd.name, fparams, fvariadic, fd.pos).symbol);
+                lookup_.lookupSignature(fd.name, fparams, fvariadic, fd.pos).symbol);
             // A definition ends at its '}' and has no ';' to consume.
             if (friendHasBody) skipBracedBlock();
             else expect(";");
@@ -865,7 +874,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 typedefFunctionSuffix(td);
                 if (td.name.empty())
                     src_.fail(td.pos, "this typedef names nothing");
-                declareTypeName(tag + "::" + td.name, td.type);
+                lookup_.declareTypeName(tag + "::" + td.name, td.type);
                 if (td.type->tag().empty()) td.type->nameForLinkage(tag + "::" + td.name, td.name, type, false);
             } while (consume(","));
             expect(";");
@@ -1211,7 +1220,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 // and is the implicit one, so nothing is declared; `= delete` declares and stamps.
                 const SpecialDef special = takeSpecialDef();
                 if (special == SpecialDef::Defaulted) {
-                    const Type *self = tag.empty() ? nullptr : findTypedef(tag);
+                    const Type *self = tag.empty() ? nullptr : lookup_.findTypedef(tag);
                     const Type *p = d.type->params().size() == 1 ? d.type->params()[0] : nullptr;
                     const bool ofSelf = p != nullptr && p->isReference() && self != nullptr &&
                                         p->referent()->unqualified() == self->unqualified();
@@ -1530,7 +1539,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     if (target_.microsoftNames() && type->hasVirtualBase()) {
         msVbaseClasses_.insert(tag);
         if (const std::vector<std::size_t> *set =
-                overloadsOf(constructorKey(tag)))
+                lookup_.overloadsOf(constructorKey(tag)))
             for (std::size_t i = 0; i < set->size(); i++)
                 msVbaseCtors_.insert(functions_[(*set)[i]].symbol);
     }
@@ -1644,7 +1653,7 @@ const Type *Parser::enumSpecifier() {
     // reaches it only by a cast (checkAssignable, rankArgument), and it promotes back.
     Type *self = nullptr;
     if (!tag.empty()) {
-        const Type *before = findTypedef(prefix + tag);
+        const Type *before = lookup_.findTypedef(prefix + tag);
         self = types_.enumType(prefix + tag,
                                underlying != nullptr ? underlying->kind() : Kind::Int);
         // [dcl.enum]/3: a redeclaration says the same thing about scope and base as the first.
@@ -1654,7 +1663,7 @@ const Type *Parser::enumSpecifier() {
             src_.fail(pos, "'" + tag + "' was declared before as a different enumeration - a "
                            "redeclaration repeats 'class' and the enum-base exactly");
         if (scoped) self->setScoped();
-        declareTypeName(prefix + tag, self);
+        lookup_.declareTypeName(prefix + tag, self);
     }
     // [dcl.enum]/5: an enumerator has its enumeration's type once the enum is complete, so
     // `colour c = RED` is a copy and `colour c = 1` is not. An unnamed one keeps its integer.
@@ -1690,7 +1699,7 @@ const Type *Parser::enumSpecifier() {
         const std::unordered_map<std::string, std::size_t>::const_iterator twice =
             enumIndex_.find(within_ + name);
         if ((twice != enumIndex_.end() && enums_[twice->second].name == within_ + name) ||
-            (!scoped && twice == enumIndex_.end() && findEnum(prefix + name)))
+            (!scoped && twice == enumIndex_.end() && lookup_.findEnum(prefix + name)))
             src_.fail(npos, "'" + name + "' is declared twice");
         if (consume("=")) {
             const long long given = constantExpression("a constant");
@@ -1709,7 +1718,7 @@ const Type *Parser::enumSpecifier() {
         if (!scoped && !tag.empty()) enumIndex_[prefix + tag + "::" + name] = enums_.size() - 1;
         // And under the enclosing namespace's name where this one is inline.
         {
-            const std::vector<std::string> alts = within == nullptr ? inlineAliasPrefixes(prefix)
+            const std::vector<std::string> alts = within == nullptr ? lookup_.inlineAliasPrefixes(prefix)
                                                                     : std::vector<std::string>();
             const std::string tail = scoped ? tag + "::" + name : name;
             for (std::size_t a = 0; a < alts.size(); a++) {
@@ -1745,7 +1754,7 @@ ExprPtr Parser::enumeratorThroughEnum() {
     const Type *found = nullptr;
     std::size_t took = 0;
     for (std::size_t k = 1; peekAt(k).is("::") && peekAt(k + 1).kind == TokenKind::Ident; k += 2) {
-        const Type *t = findTypedef(q);
+        const Type *t = lookup_.findTypedef(q);
         if (t != nullptr && t->unqualified()->isEnumeration()) { found = t->unqualified(); took = k; }
         q += "::" + peekAt(k + 1).text;
     }
@@ -2051,7 +2060,7 @@ const Type *Parser::unqualifiedSpecifiers(StorageClass *storage, Qualifiers *qua
                                     peekAt(k + 1).kind == TokenKind::Ident;
                  k += 2) {
                 q += "::" + peekAt(k + 1).text;
-                if (const Type *n = findTypedef(q)) {
+                if (const Type *n = lookup_.findTypedef(q)) {
                     found = n;
                     consumed = k + 2;
                 }
@@ -2083,7 +2092,7 @@ const Type *Parser::unqualifiedSpecifiers(StorageClass *storage, Qualifiers *qua
                 return memberTypeWalk(found);
             }
         }
-        if (const Type *t = findTypedef(peek().text)) {
+        if (const Type *t = lookup_.findTypedef(peek().text)) {
             at_++;
             return memberTypeWalk(t);
         }
@@ -2093,7 +2102,7 @@ const Type *Parser::unqualifiedSpecifiers(StorageClass *storage, Qualifiers *qua
     // when a member, a local or a namespace has taken the name it wants - `::Lexer *lexer;` inside
     // a `cc::Parser` that also knows a `Lexer`.
     if (peek().is("::") && peekAt(1).kind == TokenKind::Ident) {
-        if (const Type *t = findGlobalTypedef(peekAt(1).text)) {
+        if (const Type *t = lookup_.findGlobalTypedef(peekAt(1).text)) {
             at_ += 2;
             return memberTypeWalk(t);
         }
@@ -2273,7 +2282,7 @@ void Parser::declareAnonymousUnionObject(const Type *u, StorageClass sc, std::si
         const std::string symbol = anonymousUnionSymbol(u, pos);
         for (std::size_t i = 0; i < ms.size(); i++) {
             const std::string gname = namespacePrefix() + ms[i].name;
-            if (findGlobalToUpdate(gname) != nullptr) redeclares(i);
+            if (lookup_.findGlobalToUpdate(gname) != nullptr) redeclares(i);
             globalIndex_[gname] = globals_.size();
             globals_.push_back(GlobalSym{ gname, symbol, ms[i].type, ms[i].type->isConst(), true, false, false, 0 });
         }
@@ -2831,7 +2840,7 @@ Parser::Declared Parser::declarator(const Type *base, bool nameOptional,
         if (peekAt(1).is("*")) {
             const std::string of = qualifier.empty() ? name
                                                      : qualifier + "::" + name;
-            const Type *cls = findTypedef(of);
+            const Type *cls = lookup_.findTypedef(of);
             if (cls == nullptr || !cls->isStructOrUnion())
                 src_.fail(pos, "'" + of + "' is not a class, so '" + of +
                                "::*' names no member of anything");
@@ -2868,14 +2877,14 @@ Parser::Declared Parser::declarator(const Type *base, bool nameOptional,
     if (!qualifier.empty() && !namespaces_.count(qualifier)) {
         const std::size_t cut = qualifier.find("::");
         const std::string head = qualifier.substr(0, cut);
-        const std::string ns = namespaceNamed(head);
+        const std::string ns = lookup_.namespaceNamed(head);
         if (!ns.empty() && ns != head)
             qualifier = ns + (cut == std::string::npos ? std::string() : qualifier.substr(cut));
     }
 
     skipAttributes();
     // `int D::modes_[Count]`: the bound after a class's declarator-id is in its scope.
-    const Type *declaredIn = qualifier.empty() ? nullptr : findTypedef(qualifier);
+    const Type *declaredIn = qualifier.empty() ? nullptr : lookup_.findTypedef(qualifier);
     const Type *t;
     if (patternOnly_ && !qualifier.empty() && peek().is("[")) {
         // `C<T>::arr[Count]` read as a pattern: the class has no members to fold the

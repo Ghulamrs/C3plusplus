@@ -132,19 +132,6 @@ long long Parser::expectNumber(const char *what) {
     return v;
 }
 
-// A class's own nested types, and its bases'. The one table this parser has
-// for type names is flat and keyed by the *qualified* name, so the scope is
-// walked here rather than kept as a stack of tables.
-const Type *Parser::lookupInClass(const Type *cls, const std::string &name) const {
-    for (const Type *c = cls; c != nullptr; c = c->enclosing()) {
-        auto it = typedefIndex_.find(c->tag() + "::" + name);
-        if (it != typedefIndex_.end()) return typedefs_[it->second].type;
-        for (const Type::BaseSpec &b : c->bases())
-            if (const Type *t = lookupInClass(b.type, name)) return t;
-    }
-    return nullptr;
-}
-
 bool Parser::insideClass(const Type *cls) const {
     for (std::size_t i = 0; i < classStack_.size(); i++)
         for (const Type *c = classStack_[i]; c != nullptr; c = c->enclosing())
@@ -169,7 +156,7 @@ bool Parser::definesMemberOf(const Type *cls, std::size_t from) const {
         for (std::size_t j = k; peekAt(j).kind == TokenKind::Ident &&
                                 peekAt(j + 1).is("::"); j += 2) {
             if (j != k) name += "::" + peekAt(j).text;
-            if (const Type *found = findTypedef(name)) best = found;
+            if (const Type *found = lookup_.findTypedef(name)) best = found;
         }
         if (best != nullptr)
             for (const Type *c = best; c != nullptr; c = c->enclosing())
@@ -177,107 +164,9 @@ bool Parser::definesMemberOf(const Type *cls, std::size_t from) const {
     }
 }
 
-const std::string *Parser::localOwnerOf(const std::string &tag) const {
-    auto it = localClassOwner_.find(tag);
-    return it == localClassOwner_.end() ? nullptr : &it->second;
-}
-
-bool Parser::hasFunctionNamed(const std::string &key) const {
-    return functionIndex_.find(key) != functionIndex_.end();
-}
-
-bool Parser::hasGlobalNamed(const std::string &key) const {
-    return globalIndex_.find(key) != globalIndex_.end();
-}
-
-bool Parser::hasTypeNamed(const std::string &key) const {
-    return typedefIndex_.find(key) != typedefIndex_.end();
-}
-
-// **Unqualified lookup inside a namespace, and it is a search and not a
-// rule.**
-std::string Parser::followUsingDeclaration(const std::string &key) const {
-    std::string at = key;
-    for (int hops = 0; hops < 16; hops++) {
-        auto it = usingDeclarations_.find(at);
-        if (it == usingDeclarations_.end()) break;
-        at = it->second;
-    }
-    return at;
-}
-
-std::string Parser::qualifyForLookup(const std::string &name,
-                                     bool (Parser::*exists)(const std::string &) const) const {
-    if (absoluteLookup_) return name;
-    // Written qualified: the first component is searched for, then a using-declaration followed.
-    if (name.find("::") != std::string::npos) {
-        // [basic.lookup.qual]/1: the first component is looked up unqualified, so
-        // `inner::S` inside `outer` is `outer::inner::S` - the enclosing namespaces
-        // innermost first, then the ones a using-directive opened.
-        for (std::size_t i = namespaceStack_.size(); i-- > 0; ) {
-            std::string prefix;
-            for (std::size_t k = 0; k <= i; k++) prefix += namespaceStack_[k] + "::";
-            if ((this->*exists)(prefix + name)) return prefix + name;
-        }
-        for (std::size_t i = usingNamespaces_.size(); i-- > 0; )
-            if ((this->*exists)(usingNamespaces_[i] + "::" + name))
-                return usingNamespaces_[i] + "::" + name;
-        const std::string aliased = followUsingDeclaration(name);
-        return aliased != name && (this->*exists)(aliased) ? aliased : name;
-    }
-    for (std::size_t i = namespaceStack_.size(); i-- > 0; ) {
-        std::string prefix;
-        for (std::size_t k = 0; k <= i; k++) prefix += namespaceStack_[k] + "::";
-        const std::string key = followUsingDeclaration(prefix + name);
-        if ((this->*exists)(key)) return key;
-    }
-    for (std::size_t i = usingNamespaces_.size(); i-- > 0; ) {
-        const std::string key =
-            followUsingDeclaration(usingNamespaces_[i] + "::" + name);
-        if ((this->*exists)(key)) return key;
-    }
-    // **Last, the name as written**, which is where a using-declaration at file
-    // scope is found: it declares an unqualified name and there is no prefix to
-    // put in front of it.
-    const std::string aliased = followUsingDeclaration(name);
-    if (aliased != name && (this->*exists)(aliased)) return aliased;
-    return name;
-}
-
-std::string Parser::enclosingNamespaceKey(const std::string &name,
-                                          bool (Parser::*exists)(const std::string &) const) const {
-    if (absoluteLookup_ || name.find("::") != std::string::npos) return std::string();
-    for (std::size_t i = namespaceStack_.size(); i-- > 0; ) {
-        std::string prefix;
-        for (std::size_t k = 0; k <= i; k++) prefix += namespaceStack_[k] + "::";
-        const std::string key = followUsingDeclaration(prefix + name);
-        if ((this->*exists)(key)) return key;
-    }
-    return std::string();
-}
-
-std::string Parser::namespaceNamed(const std::string &first) const {
-    // Innermost out, and a class of the name hides a namespace as a nearer namespace does:
-    // inside `outer`, `inner::k` is `outer::inner`'s whichever kind it is.
-    for (std::size_t i = classStack_.size(); i-- > 0; )
-        if (lookupInClass(classStack_[i], first) != nullptr) return std::string();
-    if (currentClass_ != nullptr && lookupInClass(currentClass_, first) != nullptr)
-        return std::string();
-    for (std::size_t i = namespaceStack_.size(); i-- > 0; ) {
-        std::string prefix;
-        for (std::size_t k = 0; k <= i; k++) prefix += namespaceStack_[k] + "::";
-        if (hasTypeNamed(prefix + first)) return std::string();
-        if (namespaces_.count(prefix + first)) return prefix + first;
-    }
-    for (std::size_t i = usingNamespaces_.size(); i-- > 0; )
-        if (namespaces_.count(usingNamespaces_[i] + "::" + first))
-            return usingNamespaces_[i] + "::" + first;
-    return namespaces_.count(first) ? first : std::string();
-}
-
 std::size_t Parser::namespaceQualifierTokens(std::size_t from) const {
     if (peekAt(from).kind != TokenKind::Ident || !peekAt(from + 1).is("::")) return 0;
-    std::string scope = namespaceNamed(peekAt(from).text);
+    std::string scope = lookup_.namespaceNamed(peekAt(from).text);
     if (scope.empty()) return 0;
     std::size_t n = 2;
     while (peekAt(from + n).kind == TokenKind::Ident && peekAt(from + n + 1).is("::") &&
@@ -286,296 +175,6 @@ std::size_t Parser::namespaceQualifierTokens(std::size_t from) const {
         n += 2;
     }
     return n;
-}
-
-std::vector<std::string> Parser::classNamespacePath(const Type *t) const {
-    const Type *o = t->unqualified();
-    while (o->enclosing() != nullptr) o = o->enclosing()->unqualified();
-    std::string ns = o->templateNamespace();
-    if (ns.empty() && o->inNamespace()) {
-        const std::string &tag = o->tag();
-        int depth = 0;
-        for (std::size_t i = 0; i + 1 < tag.size(); i++) {
-            if (tag[i] == '<') depth++;
-            else if (tag[i] == '>') depth--;
-            else if (depth == 0 && tag[i] == ':' && tag[i + 1] == ':') ns = tag.substr(0, i);
-        }
-    }
-    std::vector<std::string> path;
-    int depth = 0;
-    std::string part;
-    for (std::size_t i = 0; i < ns.size(); i++) {
-        if (ns[i] == '<') depth++;
-        else if (ns[i] == '>') depth--;
-        if (depth == 0 && ns[i] == ':' && i + 1 < ns.size() && ns[i + 1] == ':') {
-            if (!part.empty()) path.push_back(part);
-            part.clear();
-            i++;
-            continue;
-        }
-        part += ns[i];
-    }
-    if (!part.empty()) path.push_back(part);
-    return path;
-}
-
-// **An inline namespace's members are its enclosing namespace's for every lookup**, so each
-// is entered under both keys: the enclosing one is `prefix` with the inline component gone.
-std::vector<std::string> Parser::inlineAliasPrefixes(const std::string &prefix) const {
-    std::vector<std::string> out;
-    if (inlineNamespaces_.empty() || prefix.empty()) return out;
-    std::vector<std::string> parts;
-    std::vector<bool> isInline;
-    std::string path;
-    for (std::size_t s = 0, e; s < prefix.size(); s = e + 2) {
-        e = prefix.find("::", s);
-        if (e == std::string::npos) e = prefix.size();
-        parts.push_back(prefix.substr(s, e - s));
-        path += (path.empty() ? "" : "::") + parts.back();
-        isInline.push_back(inlineNamespaces_.count(path) != 0);
-    }
-    // Every subset of the inline components deleted, the empty subset left out.
-    std::vector<std::size_t> which;
-    for (std::size_t i = 0; i < parts.size(); i++) if (isInline[i]) which.push_back(i);
-    for (std::size_t mask = 1; mask < (std::size_t(1) << which.size()); mask++) {
-        std::string alt;
-        for (std::size_t i = 0, w = 0; i < parts.size(); i++) {
-            if (w < which.size() && which[w] == i) { w++; if (mask & (std::size_t(1) << (w - 1))) continue; }
-            alt += parts[i] + "::";
-        }
-        out.push_back(alt);
-    }
-    return out;
-}
-
-void Parser::aliasTypeKey(const std::string &key, std::size_t index) {
-    const std::vector<std::string> alts = inlineAliasPrefixes(namespacePrefix());
-    const std::string &prefix = namespacePrefix();
-    if (alts.empty() || key.compare(0, prefix.size(), prefix) != 0) return;
-    for (std::size_t a = 0; a < alts.size(); a++)
-        typedefIndex_.insert(std::make_pair(alts[a] + key.substr(prefix.size()), index));
-}
-
-void Parser::aliasFunctionKey(const std::string &key, std::size_t index) {
-    const std::vector<std::string> alts = inlineAliasPrefixes(namespacePrefix());
-    const std::string &prefix = namespacePrefix();
-    if (alts.empty() || key.compare(0, prefix.size(), prefix) != 0) return;
-    for (std::size_t a = 0; a < alts.size(); a++) {
-        std::vector<std::size_t> &set = functionIndex_[alts[a] + key.substr(prefix.size())];
-        if (std::find(set.begin(), set.end(), index) == set.end()) set.push_back(index);
-    }
-}
-
-// After each declaration in a namespace with an inline component above or at it: what it added
-// to the four tables under this namespace's prefix is entered under the enclosing ones as well.
-// A key already taken by another entity is left to it - the ambiguity is refused at the use.
-void Parser::aliasInlineMembers(const TableSizes &before) {
-    const std::vector<std::string> alts = inlineAliasPrefixes(namespacePrefix());
-    if (alts.empty()) return;
-    const std::string prefix = namespacePrefix();
-    for (std::size_t i = before.functions; i < functions_.size(); i++) {
-        const Signature &f = functions_[i];
-        if (!f.owner.empty() || f.fromTemplate || f.cLinkage) continue;
-        aliasFunctionKey(f.name, i);
-    }
-    for (std::size_t i = before.globals; i < globals_.size(); i++) {
-        const std::string &key = globals_[i].name;
-        if (key.compare(0, prefix.size(), prefix) != 0) continue;
-        for (std::size_t a = 0; a < alts.size(); a++)
-            globalIndex_.insert(std::make_pair(alts[a] + key.substr(prefix.size()), i));
-    }
-    for (std::size_t i = before.typedefs; i < typedefs_.size(); i++) aliasTypeKey(typedefs_[i].name, i);
-    for (std::size_t i = before.enums; i < enums_.size(); i++) {
-        const std::string &key = enums_[i].name;
-        if (key.compare(0, prefix.size(), prefix) != 0) continue;
-        for (std::size_t a = 0; a < alts.size(); a++)
-            enumIndex_.insert(std::make_pair(alts[a] + key.substr(prefix.size()), i));
-    }
-}
-
-void Parser::refuseInlineAmbiguity(const std::string &key, std::size_t index,
-                                   const std::unordered_map<std::string, std::size_t> &table,
-                                   bool (Parser::*same)(std::size_t, std::size_t) const) const {
-    if (inlineNamespaces_.empty()) return;
-    int depth = 0;
-    std::size_t cut = std::string::npos;
-    for (std::size_t i = 0; i + 1 < key.size(); i++) {
-        if (key[i] == '<') depth++;
-        else if (key[i] == '>') depth--;
-        else if (depth == 0 && key[i] == ':' && key[i + 1] == ':') cut = i;
-    }
-    if (cut == std::string::npos) return;
-    const std::string scope = key.substr(0, cut), name = key.substr(cut + 2);
-    // The namespace's own entry and every inline descendant's, as distinct entities.
-    for (std::set<std::string>::const_iterator it = inlineNamespaces_.lower_bound(scope + "::");
-         it != inlineNamespaces_.end() && it->compare(0, scope.size() + 2, scope + "::") == 0; ++it) {
-        std::unordered_map<std::string, std::size_t>::const_iterator at = table.find(*it + "::" + name);
-        if (at == table.end() || at->second == index) continue;
-        if (same != nullptr && (this->*same)(index, at->second)) continue;
-        // At the name, which is the token here or the one a qualified read just took.
-        const Token &named = peek().kind == TokenKind::Ident || at_ == 0 ? peek() : tokens_[at_ - 1];
-        src_.fail(named.pos, "reference to '" + name + "' is ambiguous - it is declared in '" +
-                             scope + "' and in its inline namespace '" + *it + "'");
-    }
-}
-
-const Type *Parser::findGlobalTypedef(const std::string &name) const {
-    auto it = typedefIndex_.find(name);
-    return it == typedefIndex_.end() ? nullptr : typedefs_[it->second].type;
-}
-
-const Type *Parser::findTypedef(const std::string &name) const {
-    // **A class local to this function is found first, and that is what makes it
-    // shadow a global of the same name** - [basic.scope.local], and the reason the
-    // local scope is a table of its own rather than an entry in the global one.
-    auto local = localTypes_.find(name);
-    if (local != localTypes_.end()) return local->second;
-
-    // A bound template parameter's scope is inside every class and namespace around it ([temp.local]/6).
-    if (boundTypeParams_.count(name) != 0) {
-        auto it = typedefIndex_.find(name);
-        if (it != typedefIndex_.end()) return typedefs_[it->second].type;
-    }
-    // Unqualified, the classes this is inside come next, then the enclosing namespaces,
-    // and only then a global: [basic.lookup.unqual]/1, the nearest declaration wins.
-    if (name.find("::") == std::string::npos)
-        if (const Type *t = classScopeType(name)) return t;
-    // The entry a key names, refused where an inline namespace makes it two.
-    auto typeAt = [&](const std::string &key) {
-        auto q = typedefIndex_.find(key);
-        if (q == typedefIndex_.end()) return static_cast<const Type *>(nullptr);
-        refuseInlineAmbiguity(key, q->second, typedefIndex_, &Parser::sameTypedef);
-        return typedefs_[q->second].type;
-    };
-    const std::string nearer = enclosingNamespaceKey(name, &Parser::hasTypeNamed);
-    if (!nearer.empty()) return typeAt(nearer);
-
-    // A qualified name's first component is found innermost first, so a nearer
-    // `inner::S` hides one at file scope before the name as written is tried.
-    if (name.find("::") != std::string::npos && !namespaceStack_.empty()) {
-        const std::string key = qualifyForLookup(name, &Parser::hasTypeNamed);
-        if (key != name)
-            if (const Type *t = typeAt(key)) return t;
-    }
-
-    if (const Type *t = typeAt(name)) return t;
-    // **`N::D` where D is in N's unnamed namespace** - [namespace.unnamed]/1
-    // gives N a using-directive for it, and a qualified name honours that.
-    const std::size_t last = name.rfind("::");
-    if (last != std::string::npos && last > 0) {
-        auto u = typedefIndex_.find(name.substr(0, last) + "::_GLOBAL__N_1" + name.substr(last));
-        if (u != typedefIndex_.end()) return typedefs_[u->second].type;
-    }
-
-    // A class named without its namespace, from inside that namespace or from
-    // one a `using namespace` has opened.
-    {
-        const std::string key = qualifyForLookup(name, &Parser::hasTypeNamed);
-        if (key != name)
-            if (const Type *t = typeAt(key)) return t;
-    }
-
-    return classScopeType(name);
-}
-
-// **The classes this is inside, innermost first**: a class body being parsed, then the class whose
-// member function's body this is - a nested class is unqualified only from inside.
-const Type *Parser::classScopeType(const std::string &name) const {
-    if (boundTypeParams_.count(name) != 0) return nullptr;      // a bound parameter hides it
-    for (std::size_t i = classStack_.size(); i-- > 0; )
-        if (const Type *t = lookupInClass(classStack_[i], name)) return t;
-    if (currentClass_ != nullptr)
-        if (const Type *t = lookupInClass(currentClass_, name)) return t;
-    if (const Type *scope = lambdaScope())
-        if (const Type *t = lookupInClass(scope, name)) return t;
-    if (signatureClass_ != nullptr)
-        if (const Type *t = lookupInClass(signatureClass_, name)) return t;
-
-    // **A held body is replayed at file scope, and its return type is read before
-    // anything says which class it belongs to.** `Holder *self()` is the case, and
-    // inlineOwner_ is the one thing that knows, so it is asked here.
-    if (!inlineOwner_.empty()) {
-        auto it = typedefIndex_.find(inlineOwner_);
-        if (it != typedefIndex_.end())
-            if (const Type *t = lookupInClass(typedefs_[it->second].type, name))
-                return t;
-    }
-    return nullptr;
-}
-
-// A class or enum name is a type name in C++ with no typedef written - inserted into the scope
-// the definition appears in, the one table this parser has; an entry an inline namespace's member
-// put under the key is not a declaration of it. Not implemented: an object hiding the class name.
-void Parser::declareTypeName(const std::string &name, const Type *type) {
-    auto it = typedefIndex_.find(name);
-    const bool aliasHere = it != typedefIndex_.end() && typedefs_[it->second].name != name;
-    if (!aliasHere && findTypedef(name) != nullptr) return;
-    typedefIndex_[name] = typedefs_.size();
-    typedefs_.push_back(TypedefName{ name, type });
-    aliasTypeKey(name, typedefs_.size() - 1);
-}
-
-bool Parser::hasEnumNamed(const std::string &key) const {
-    return enumIndex_.find(key) != enumIndex_.end();
-}
-
-const Parser::EnumConst *Parser::enumInClass(const Type *cls,
-                                             const std::string &name) const {
-    for (const Type *c = cls; c != nullptr; c = c->enclosing()) {
-        auto it = enumIndex_.find(c->tag() + "::" + name);
-        if (it != enumIndex_.end()) return &enums_[it->second];
-        for (const Type::BaseSpec &b : c->bases())
-            if (const EnumConst *e = enumInClass(b.type, name)) return e;
-    }
-    return nullptr;
-}
-
-// **An enumerator is named through what encloses it**, the same as a class -
-// `Layout::StepBase`, `n::Red` - so the scopes findTypedef walks are walked
-// here too.
-const Parser::EnumConst *Parser::findEnum(const std::string &name) const {
-    if (boundValueParams_.count(name) != 0) {
-        auto bound = enumIndex_.find(name);
-        if (bound != enumIndex_.end()) return &enums_[bound->second];
-    }
-    auto enumAt = [&](const std::string &key) {
-        auto q = enumIndex_.find(key);
-        if (q == enumIndex_.end()) return static_cast<const EnumConst *>(nullptr);
-        refuseInlineAmbiguity(key, q->second, enumIndex_);
-        return &enums_[q->second];
-    };
-    const std::string nearer = enclosingNamespaceKey(name, &Parser::hasEnumNamed);
-    if (!nearer.empty()) return enumAt(nearer);
-    if (const EnumConst *e = enumAt(name)) return e;
-
-    const std::string key = qualifyForLookup(name, &Parser::hasEnumNamed);
-    if (key != name)
-        if (const EnumConst *e = enumAt(key)) return e;
-
-    return findClassEnum(name);
-}
-
-// The class half on its own. An enumerator of the class being parsed is at
-// class scope, so it beats a global and loses to a local - which the caller
-// in `primary` needs to ask separately from the namespace-scope table above.
-const Parser::EnumConst *Parser::findClassEnum(const std::string &name) const {
-    if (boundValueParams_.count(name) != 0) return nullptr;     // a bound parameter hides it
-    for (std::size_t i = classStack_.size(); i-- > 0; )
-        if (const EnumConst *e = enumInClass(classStack_[i], name)) return e;
-    if (currentClass_ != nullptr)
-        if (const EnumConst *e = enumInClass(currentClass_, name)) return e;
-    if (const Type *scope = lambdaScope())
-        if (const EnumConst *e = enumInClass(scope, name)) return e;
-    if (signatureClass_ != nullptr)
-        if (const EnumConst *e = enumInClass(signatureClass_, name)) return e;
-    if (!inlineOwner_.empty()) {
-        auto owner = typedefIndex_.find(inlineOwner_);
-        if (owner != typedefIndex_.end())
-            if (const EnumConst *e =
-                    enumInClass(typedefs_[owner->second].type, name))
-                return e;
-    }
-    return nullptr;
 }
 
 // `Point::Point(`, `Outer::Inner::Inner(` and `Outer::Inner::~Inner(` - a
@@ -590,7 +189,7 @@ bool Parser::atUntypedMemberDefinition() const {
         if (destructor) n++;
         if (peekAt(n).kind != TokenKind::Ident) return false;
         const std::string component = peekAt(n).text;
-        const Type *cls = findTypedef(q);
+        const Type *cls = lookup_.findTypedef(q);
         if (cls != nullptr && cls->isStructOrUnion() &&
             cls->localName() == component && peekAt(n + 1).is("("))
             return true;
@@ -618,7 +217,7 @@ bool Parser::atTypeName() const {
     // `::Lexer *p;` declares a p - the leading `::` says where to look and
     // nothing else, so the question is about the name after it.
     if (peek().is("::") && peekAt(1).kind == TokenKind::Ident)
-        return findGlobalTypedef(peekAt(1).text) != nullptr;
+        return lookup_.findGlobalTypedef(peekAt(1).text) != nullptr;
     if (peek().kind != TokenKind::Ident) return false;
     if (localHidesType()) return false;
     // `Box<int> b;` declares a variable, so the name has to answer yes here -
@@ -626,7 +225,7 @@ bool Parser::atTypeName() const {
     auto tmpl = templates_.find(peek().text);
     if (tmpl != templates_.end() && tmpl->second.isClass && peekAt(1).is("<"))
         return true;
-    if (findTypedef(peek().text) != nullptr) return true;
+    if (lookup_.findTypedef(peek().text) != nullptr) return true;
     // `N::S` names a type as much as `Outer::Inner` does, and neither answers to
     // its leading name alone. One of those is a namespace and the other a class;
     // past that first token the walk is the same walk.
@@ -640,15 +239,15 @@ std::size_t Parser::qualifiedTypeEnd() const {
     if (peek().kind != TokenKind::Ident || !peekAt(1).is("::")) return 0;
     std::string q = peek().text;
     std::size_t typeEnd = 0;
-    const Type *cur = findTypedef(q);
+    const Type *cur = lookup_.findTypedef(q);
     for (std::size_t k = 1; peekAt(k).is("::") &&
                             peekAt(k + 1).kind == TokenKind::Ident;
          k += 2) {
         q += "::" + peekAt(k + 1).text;
-        if (const Type *t = findTypedef(q)) { typeEnd = k + 2; cur = t; }
+        if (const Type *t = lookup_.findTypedef(q)) { typeEnd = k + 2; cur = t; }
         // `std::string::size_type`: a member type of the class a typedef reached.
         else if (cur != nullptr && cur->isStructOrUnion() &&
-                 (cur = lookupInClass(cur, peekAt(k + 1).text)) != nullptr)
+                 (cur = lookup_.lookupInClass(cur, peekAt(k + 1).text)) != nullptr)
             typeEnd = k + 2;
         // **`std::vector<int> v;` - the name stops at a class template too.**
         if (peekAt(k + 2).is("<") && isClassTemplate(q)) typeEnd = k + 2;
@@ -658,12 +257,12 @@ std::size_t Parser::qualifiedTypeEnd() const {
 
 const Type *Parser::qualifiedTypeAt(std::size_t end) const {
     std::string q = peek().text;
-    const Type *cur = findTypedef(q);
+    const Type *cur = lookup_.findTypedef(q);
     for (std::size_t k = 1; k + 1 < end; k += 2) {
         q += "::" + peekAt(k + 1).text;
-        if (const Type *t = findTypedef(q)) cur = t;
+        if (const Type *t = lookup_.findTypedef(q)) cur = t;
         else cur = cur != nullptr && cur->isStructOrUnion()
-                       ? lookupInClass(cur, peekAt(k + 1).text) : nullptr;
+                       ? lookup_.lookupInClass(cur, peekAt(k + 1).text) : nullptr;
     }
     return cur;
 }
@@ -699,7 +298,7 @@ std::size_t Parser::temporaryCallEnd() const {
             else if (t.is(">")) { if (--depth == 0) { k++; break; } }
             else if (t.is(">>")) { depth -= 2; if (depth <= 0) { k++; break; } }
         }
-    } else if (findTypedef(peek().text) != nullptr) k = 1;
+    } else if (lookup_.findTypedef(peek().text) != nullptr) k = 1;
     if (k == 0 || !peekAt(k).is("(")) return 0;
     int depth = 0;
     for (;; k++) {
@@ -729,12 +328,12 @@ bool Parser::atDeclarationStart() const {
     // with a name that names a type: a declaration spelled `C::something` needs a
     // nested class, so a class name before '::' always begins an expression here.
     if (peek().kind == TokenKind::Ident && peekAt(1).is("::")) {
-        const Type *named = findTypedef(peek().text);
+        const Type *named = lookup_.findTypedef(peek().text);
         // A namespace comes here for the same reason a class does: `N::v = 1;`
         // is a statement and `N::S s;` is a declaration, and only the walk
         // below tells them apart.
         if ((named != nullptr && named->isStructOrUnion()) ||
-            !namespaceNamed(peek().text).empty()) {
+            !lookup_.namespaceNamed(peek().text).empty()) {
             // ...**unless the qualified name is itself a type**: it declares only
             // where the name *stops* at one. `Outer::Inner x;` declares an x;
             // `Outer::Inner::shared = 1;` goes on past the type and assigns.
@@ -778,7 +377,7 @@ bool Parser::atDeclarationStart() const {
     // The same empty pair, for a type named without a qualifier: `P().get();`
     // is the temporary and not a declaration of anything.
     if (peek().kind == TokenKind::Ident && peekAt(1).is("(") &&
-        peekAt(2).is(")") && findTypedef(peek().text) != nullptr)
+        peekAt(2).is(")") && lookup_.findTypedef(peek().text) != nullptr)
         return false;
 
     // `constexpr` beside the storage classes, and here rather than in atTypeName:
@@ -1086,7 +685,7 @@ void Parser::replayInlineBodies(std::vector<PendingBody> mine) {
         pendingNoexcept_ = false;
         pendingSpec_ = DynamicSpec();
         const bool scoped = mine[i].freeFunction && !mine[i].tag.empty();
-        const Type *scope = scoped ? findTypedef(mine[i].tag) : nullptr;
+        const Type *scope = scoped ? lookup_.findTypedef(mine[i].tag) : nullptr;
         if (scope != nullptr) classStack_.push_back(scope);
         topLevel(*current_);
         if (scope != nullptr) classStack_.pop_back();
@@ -1277,45 +876,15 @@ void Parser::noteThreadLocal(GlobalSym &g, bool prior, bool threadLocal, const s
 // is an object there; a name before `::` still looks at types only, [basic.lookup.qual]/1.
 bool Parser::localHidesType() const {
     if (peekAt(1).is("::") || localTypes_.count(peek().text) != 0) return false;
-    if (findLocal(peek().text) != nullptr) return true;
+    if (lookup_.findLocal(peek().text) != nullptr) return true;
     // [basic.scope.hiding]/2: a function declared in the class's own scope under its name hides
     // it, so `stat(p, &st)` beside `struct stat` is a call; `struct stat` still names the class.
-    const Type *named = findTypedef(peek().text);
+    const Type *named = lookup_.findTypedef(peek().text);
     if (named == nullptr || !named->isStructOrUnion() || named->localName() != peek().text) return false;
     for (std::size_t i = 0; i < classStack_.size(); i++)
         if (classStack_[i]->unqualified() == named->unqualified()) return false;
     if (currentClass_ != nullptr && currentClass_->unqualified() == named->unqualified()) return false;
-    return hasFunctionNamed(named->tag());
-}
-
-const Parser::Local *Parser::findLocal(const std::string &name) const {
-    for (std::size_t i = locals_.size(); i-- > 0; )
-        if (locals_[i].name == name) return &locals_[i];
-    return nullptr;
-}
-
-const Parser::GlobalSym *Parser::findGlobal(const std::string &name) const {
-    auto globalAt = [&](const std::string &key) {
-        auto q = globalIndex_.find(key);
-        if (q == globalIndex_.end()) return static_cast<const GlobalSym *>(nullptr);
-        refuseInlineAmbiguity(key, q->second, globalIndex_);
-        return &globals_[q->second];
-    };
-    const std::string nearer = enclosingNamespaceKey(name, &Parser::hasGlobalNamed);
-    if (!nearer.empty()) return globalAt(nearer);
-    if (const GlobalSym *g = globalAt(name)) return g;
-    // Not under the name as written: an unqualified one inside a namespace
-    // names that namespace's variable if it has one.
-    const std::string key = qualifyForLookup(name, &Parser::hasGlobalNamed);
-    return key == name ? nullptr : globalAt(key);
-}
-
-// The entry a declaration of this name would redeclare: one an inline namespace's member
-// put here under the enclosing name is not it, and the declaration takes the key over.
-Parser::GlobalSym *Parser::findGlobalToUpdate(const std::string &name) {
-    auto it = globalIndex_.find(name);
-    if (it == globalIndex_.end() || globals_[it->second].name != name) return nullptr;
-    return &globals_[it->second];
+    return lookup_.hasFunctionNamed(named->tag());
 }
 
 const Type *Parser::composite(const Type *a, const Type *b) {

@@ -790,7 +790,7 @@ bool Parser::templateDeclaration() {
     // to a template of its own. The declarator already reads a qualified name; what
     // is new is that the qualifier is a template-id, naming the pattern.
     if (!qualifier.empty()) {
-        const Type *of = findTypedef(qualifier);
+        const Type *of = lookup_.findTypedef(qualifier);
         // A nested class of the pattern, `Tree<T>::It::Deep`: the member belongs to the template whose
         // specialization encloses it, and its path down is kept for the replay to find it by.
         std::string nestedIn;
@@ -806,7 +806,7 @@ bool Parser::templateDeclaration() {
                 if (qualifier[c] == '<') depth++;
                 else if (qualifier[c] == '>') depth--;
                 else if (depth == 0 && qualifier[c] == ':' && qualifier[c + 1] == ':') {
-                    const Type *head = findTypedef(qualifier.substr(0, c));
+                    const Type *head = lookup_.findTypedef(qualifier.substr(0, c));
                     if (head != nullptr && head->isSpecialization()) {
                         of = head;
                         nestedIn = qualifier.substr(c + 2);
@@ -1033,7 +1033,7 @@ bool Parser::explicitSpecialization() {
     // **Too late is an error, not a redefinition.** [temp.expl.spec]: a
     // specialization has to be declared before the first use that would instantiate
     // the template, or two different classes have been given one name.
-    if (findTypedef(tag) != nullptr)
+    if (lookup_.findTypedef(tag) != nullptr)
         src_.fail(pos, "'" + tag + "' has already been used further up, so "
                        "specializing it here is too late - the specialization "
                        "goes before the first use");
@@ -1054,7 +1054,7 @@ bool Parser::explicitSpecialization() {
     instantiatingValues_.clear();
     instantiatingArgs_.clear();
 
-    declareTypeName(tag, made);
+    lookup_.declareTypeName(tag, made);
     expect(";");
     return true;
 }
@@ -1475,7 +1475,7 @@ Parser::instantiate(const TemplateDecl &decl,
     // And which template: two differing only in `decltype(...)` returns were one key, the first.
     key += "@" + std::to_string(decl.afterParams);
 
-    if (const std::vector<std::size_t> *had = overloadsOf(key))
+    if (const std::vector<std::size_t> *had = lookup_.overloadsOf(key))
         return functions_[(*had)[0]];
 
     // **The pattern the Itanium name is spelled from** keeps every parameter
@@ -1529,7 +1529,7 @@ Parser::instantiate(const TemplateDecl &decl,
     if (!decl.ns.empty()) functionIndex_[decl.ns + decl.name].push_back(at);
     else functionIndex_["::" + decl.name].push_back(at);   // the global namespace's own
     {
-        const std::vector<std::string> alts = inlineAliasPrefixes(decl.ns);
+        const std::vector<std::string> alts = lookup_.inlineAliasPrefixes(decl.ns);
         for (std::size_t a = 0; a < alts.size(); a++) functionIndex_[alts[a] + decl.name].push_back(at);
     }
     functions_.push_back(Signature{ display, symbol, fn->returns(), fn->params(),
@@ -1550,7 +1550,7 @@ Parser::instantiate(const TemplateDecl &decl,
 // recorded and the definitions replayed afterwards, to a fixed point. And whether
 // anything under this key was chosen by a call, which gates every body it holds.
 bool Parser::memberIsUsed(const std::string &key) const {
-    const std::vector<std::size_t> *set = overloadsOf(key);
+    const std::vector<std::size_t> *set = lookup_.overloadsOf(key);
     for (std::size_t k = 0; set != nullptr && k < set->size(); k++)
         if (functions_[(*set)[k]].used) return true;
     return false;
@@ -1605,7 +1605,7 @@ void Parser::instantiatePending() {
                     // **A static data member is defined only where an evaluated
                     // expression named it**, [temp.inst]/3, as clang emits it.
                     if (d.outOfLine[k].isData) {
-                        const Type *spec = findTypedef(tag);
+                        const Type *spec = lookup_.findTypedef(tag);
                         const Type::StaticMember *sm =
                             spec != nullptr ? spec->findStaticMember(d.outOfLine[k].member)
                                             : nullptr;
@@ -1617,7 +1617,7 @@ void Parser::instantiatePending() {
                 if (now.empty() && outsideNow.empty()) continue;
             } else {
                 const std::vector<std::size_t> *had =
-                    overloadsOf(specializations_[i].key);
+                    lookup_.overloadsOf(specializations_[i].key);
                 if (had == nullptr || !functions_[(*had)[0]].used) continue;
                 specializations_[i].emitted = true;
             }
@@ -2958,7 +2958,7 @@ const Type *Parser::instantiateClass(const TemplateDecl &decl, std::size_t pos) 
     if (decl.ttParam >= 0) {
         Type *shallow = types_.structType(Kind::Struct, tag);
         if (!shallow->isSpecialization()) shallow->setSpecialization(decl.name, args);
-        declareTypeName(tag, shallow);
+        lookup_.declareTypeName(tag, shallow);
         return shallow;
     }
 
@@ -2974,11 +2974,11 @@ const Type *Parser::instantiateClass(const TemplateDecl &decl, std::size_t pos) 
         // Registered so that `Box<T>::get` reads: the declarator's qualified
         // path looks the class up by name, and this is the only name it has.
         // The tag holds a `$` and so cannot collide with anything written.
-        declareTypeName(tag, shallow);
+        lookup_.declareTypeName(tag, shallow);
         return shallow;
     }
 
-    if (const Type *had = findTypedef(tag)) return had;
+    if (const Type *had = lookup_.findTypedef(tag)) return had;
 
     // **A partial specialization is chosen before anything is replayed**, and what
     // it changes is which tokens get replayed and with which parameters bound. The
@@ -3071,7 +3071,7 @@ const Type *Parser::instantiateClass(const TemplateDecl &decl, std::size_t pos) 
 
     if (!made->isStructOrUnion())
         src_.fail(pos, "'" + decl.name + "' is not a class template");
-    declareTypeName(tag, made);
+    lookup_.declareTypeName(tag, made);
 
     Specialization sp;
     sp.key = tag;
@@ -3125,7 +3125,7 @@ ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
         // this specialization, not the template - [temp.local] - so `V(x)` is
         // a temporary of it and needs no argument list.
         if (peek().is("(")) {
-            if (const Type *self = findTypedef(name))
+            if (const Type *self = lookup_.findTypedef(name))
                 if (self->isStructOrUnion()) {
                     at_++;
                     return classTemporary(self, pos);
@@ -3135,7 +3135,7 @@ ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
         // classes is the road `Tree<T>::next(n)` takes - [temp.local]/1. At file scope nothing
         // answers for the bare name and the refusal below stands.
         if (peek().is("::")) {
-            if (const Type *self = findTypedef(name))
+            if (const Type *self = lookup_.findTypedef(name))
                 if (self->isStructOrUnion() && self->isSpecialization() &&
                     self->templateName() == name) {
                     at_++;
@@ -3170,7 +3170,7 @@ ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
         // Nothing deduced and no ordinary function - so say why the template
         // failed, which beats "not declared". With more than one overload the
         // first is representative enough for the message.
-        if (overloadsOf(name) == nullptr) {
+        if (lookup_.overloadsOf(name) == nullptr) {
             std::vector<const Type *> b;
             std::vector<long long> v;
             Packs p;
@@ -3191,15 +3191,15 @@ ExprPtr Parser::templateCall(Program *program, const std::string &scope) {
         // The global namespace's is its ordinary functions and its own specializations, no other's.
         if (named == "::") {
             std::vector<std::size_t> mine;
-            if (const std::vector<std::size_t> *all = overloadsOf(bare))
+            if (const std::vector<std::size_t> *all = lookup_.overloadsOf(bare))
                 for (std::size_t i : *all) if (!functions_[i].fromTemplate) mine.push_back(i);
-            if (const std::vector<std::size_t> *own = overloadsOf("::" + bare))
+            if (const std::vector<std::size_t> *own = lookup_.overloadsOf("::" + bare))
                 mine.insert(mine.end(), own->begin(), own->end());
             functionIndex_["$global:" + bare] = mine;
             named = "$global:";
         }
-        const std::string key = !named.empty() && overloadsOf(named + bare) != nullptr ? named + bare
-                              : !decl.ns.empty() && overloadsOf(decl.ns + name) != nullptr
+        const std::string key = !named.empty() && lookup_.overloadsOf(named + bare) != nullptr ? named + bare
+                              : !decl.ns.empty() && lookup_.overloadsOf(decl.ns + name) != nullptr
                               ? decl.ns + name : name;
         const Signature sig = resolveOverload(key, callArgs, pos);
         // **A specialization's defaults, as every ordinary call reads them.**
@@ -3494,7 +3494,7 @@ const Parser::Signature *Parser::instantiateMemberTemplate(
     bound.unbindNow();
 
     // The function this replay declared under the key - the first one past `before`.
-    const std::vector<std::size_t> *had = overloadsOf(key);
+    const std::vector<std::size_t> *had = lookup_.overloadsOf(key);
     if (had == nullptr) return nullptr;
     for (std::size_t i = 0; i < had->size(); i++)
         if ((*had)[i] >= before) {
@@ -3550,9 +3550,9 @@ bool Parser::functionHidesTemplates(const std::string &name) const {
     std::string ns;
     templatesNamed(name, std::string(), &ns);
     if (!ns.empty()) return false;
-    const std::string key = qualifyForLookup(name, &Parser::hasFunctionNamed);
+    const std::string key = lookup_.qualifyForLookup(name, &sema::Lookup::hasFunctionNamed);
     if (key == name) return false;
-    if (const std::vector<std::size_t> *set = overloadsOf(key))
+    if (const std::vector<std::size_t> *set = lookup_.overloadsOf(key))
         for (std::size_t i : *set)
             if (!functions_[i].fromTemplate) return true;
     return false;
@@ -3590,7 +3590,7 @@ ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
     std::string member = declaredName("a member name");
     // `Tree<int>::It::Deep::twice(2)`: a nested class is a scope of its own, walked a name at a time.
     while (peek().is("::") && peekAt(1).kind == TokenKind::Ident) {
-        const Type *nested = lookupInClass(cls, member);
+        const Type *nested = lookup_.lookupInClass(cls, member);
         if (nested == nullptr || !nested->isStructOrUnion()) break;
         at_++;
         cls = nested;
@@ -3603,15 +3603,15 @@ ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
                         "not a type - write '" + member + "(...)'");
     const std::string key = cls->tag() + "::" + member;
     // **`C<int>::T(3)` and `C<int>::Nested(1)`** - a member type, cast to or built as a temporary.
-    if (peek().is("(") && overloadsOf(key) == nullptr)
-        if (const Type *named = lookupInClass(cls, member)) {
+    if (peek().is("(") && lookup_.overloadsOf(key) == nullptr)
+        if (const Type *named = lookup_.lookupInClass(cls, member)) {
             if (named->isStructOrUnion()) { at_++; return classTemporary(named, mpos); }
             return functionalCast(named, mpos);
         }
     // **`C<int>::f(x)` or `C<int>::f<T>(x)` where f is a member template**: static, or through `*this`
     // from a member of C<int> or of a class derived from it - `FlowOf<Entry>::build(...)` (M1 L14).
     if ((peek().is("(") || peek().is("<")) && memberTemplateOwner(cls, member) != nullptr) {
-        const bool related = findLocal("this") != nullptr && !inStaticMember_ && currentClass_ != nullptr &&
+        const bool related = lookup_.findLocal("this") != nullptr && !inStaticMember_ && currentClass_ != nullptr &&
                              (currentClass_->unqualified() == cls->unqualified() ||
                               publicBaseOffset(currentClass_, cls->unqualified()) >= 0);
         if (!related) return memberTemplateCall(nullptr, cls, member, mpos);
@@ -3627,19 +3627,19 @@ ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
         parseArguments(callArgs);
         // **`CVector<I>::operator*(s)` in a member of CVector<4> or of a class derived from it** is
         // `Base::f(...)`: called on `this`, never dispatched, [expr.call]/1 - as for a plain base name.
-        const Local *held = findLocal("this");
-        if (held != nullptr && !inStaticMember_ && currentClass_ != nullptr && overloadsOf(key) != nullptr &&
+        const Local *held = lookup_.findLocal("this");
+        if (held != nullptr && !inStaticMember_ && currentClass_ != nullptr && lookup_.overloadsOf(key) != nullptr &&
             (currentClass_->unqualified() == cls->unqualified() ||
              publicBaseOffset(currentClass_, cls->unqualified()) >= 0)) {
             bool anyMember = false;
-            for (std::size_t i : *overloadsOf(key)) anyMember = anyMember || needsThis(functions_[i]);
+            for (std::size_t i : *lookup_.overloadsOf(key)) anyMember = anyMember || needsThis(functions_[i]);
             if (anyMember) {
                 ExprPtr obj = thisObject();
                 const Type *objType = obj->type();
                 return memberCallWith(std::move(obj), objType, member, mpos, std::move(callArgs), cls);
             }
         }
-        if (overloadsOf(key) == nullptr)
+        if (lookup_.overloadsOf(key) == nullptr)
             src_.fail(mpos, "'" + cls->describe() + "' has no static "
                             "member function '" + member + "' - only "
                             "a static member is reachable through a "
@@ -3651,7 +3651,7 @@ ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
                             "function, so it has to be called on an "
                             "object");
         if (sig.access != Access::Public) {
-            const Type *ownerType = findTypedef(sig.owner);
+            const Type *ownerType = lookup_.findTypedef(sig.owner);
             if (ownerType == nullptr ||
                 (!insideAccessOf(ownerType, sig.access) &&
                  !isFriendOf(ownerType))) {
@@ -3668,7 +3668,7 @@ ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
     if (const Type::StaticMember *sm = cls->findStaticMember(member))
         return staticMemberRef(cls, *sm, cls->tag(), mpos);
     // `&C<int>::f`, f a static member function named and not called - a function as a value (M1).
-    if (const std::vector<std::size_t> *set = overloadsOf(key)) {
+    if (const std::vector<std::size_t> *set = lookup_.overloadsOf(key)) {
         bool allStatic = true;
         for (std::size_t i : *set) allStatic = allStatic && functions_[i].isStaticMember;
         if (allStatic)
@@ -3677,7 +3677,7 @@ ExprPtr Parser::templateIdMember(const Type *cls, std::size_t pos) {
     // **An enumerator of the specialization is reached the same way**, and is
     // a value rather than an object - so there is nothing to take the address
     // of and the number is the whole of it.
-    if (const EnumConst *e = enumInClass(cls, member)) {
+    if (const EnumConst *e = lookup_.enumInClass(cls, member)) {
         return enumeratorValue(*e);
     }
     // `Base<T>::v = x` inside a member of a class derived from the specialization: `(*this).Base<T>::v`,
@@ -3771,7 +3771,7 @@ void Parser::instantiateViableMemberTemplate(const TemplateDecl &mt,
                                     display + "', asked for at " + src_.where(pos);
             // **Its signature stands as a candidate**; the body's error waits for it to be chosen,
             // which pruneUnchosenCandidates asks - a pair<pair<A, B>, C> ranks pair(const pair<U1, U2> &).
-            const std::vector<std::size_t> *had = overloadsOf(mt.ownerTag + "::" + display);
+            const std::vector<std::size_t> *had = lookup_.overloadsOf(mt.ownerTag + "::" + display);
             std::size_t found = static_cast<std::size_t>(-1);
             for (std::size_t i = 0; had != nullptr && i < had->size(); i++)
                 if ((*had)[i] >= before) { found = (*had)[i]; break; }

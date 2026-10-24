@@ -99,17 +99,17 @@ void Parser::topLevel(Program &program) {
         namespaces_.insert(path);
         // Nested in an inline one it is the enclosing namespace's too: `lib::inner` for `lib::v2::inner`.
         {
-            const std::vector<std::string> alts = inlineAliasPrefixes(namespacePrefix());
+            const std::vector<std::string> alts = lookup_.inlineAliasPrefixes(namespacePrefix());
             for (std::size_t a = 0; a < alts.size(); a++)
                 namespaces_.insert(alts[a].substr(0, alts[a].size() - 2));
         }
-        const bool aliased = !inlineAliasPrefixes(namespacePrefix()).empty();
+        const bool aliased = !lookup_.inlineAliasPrefixes(namespacePrefix()).empty();
         while (!peek().is("}")) {
             if (peek().kind == TokenKind::End)
                 src_.fail(pos, "this namespace never closes");
-            const TableSizes before = tableSizes();
+            const TableSizes before = lookup_.tableSizes();
             topLevelRecovering(program);
-            if (aliased) aliasInlineMembers(before);
+            if (aliased) lookup_.aliasInlineMembers(before);
         }
         at_++;                                  // the '}'
         namespaceStack_.pop_back();
@@ -146,16 +146,16 @@ void Parser::topLevel(Program &program) {
             // `using s::Sy;` inside `namespace a` names `a::s::Sy`.
             if (!fromGlobal && cut != std::string::npos) {
                 const std::string::size_type first = target.find("::");
-                const std::string scope = namespaceNamed(target.substr(0, first));
+                const std::string scope = lookup_.namespaceNamed(target.substr(0, first));
                 if (!scope.empty()) target = scope + target.substr(first);
             }
             // What another using-declaration put there: `using std::scanf;` over <cstdio>'s `using ::scanf;`.
-            target = followUsingDeclaration(target);
+            target = lookup_.followUsingDeclaration(target);
             // **Refused by name if it names nothing**, rather than recorded and
             // found missing at the use - the position of the declaration is the
             // one that says which name was meant.
-            if (!hasTypeNamed(target) && !hasFunctionNamed(target) &&
-                !hasGlobalNamed(target) &&
+            if (!lookup_.hasTypeNamed(target) && !lookup_.hasFunctionNamed(target) &&
+                !lookup_.hasGlobalNamed(target) &&
                 namespaces_.find(target) == namespaces_.end())
                 src_.fail(pos, "'" + written + "' is not declared, so there is "
                                "nothing here for this using-declaration to "
@@ -230,7 +230,7 @@ void Parser::topLevel(Program &program) {
             const std::string key = namespacePrefix() + td.name;
             // [dcl.typedef]/2 lets this scope's own be redeclared to the same type ("typedef struct S S;"),
             // and a namespace's `typedef short T;` hides a global `T` rather than redeclaring it.
-            if (const Type *had = findGlobalTypedef(key))
+            if (const Type *had = lookup_.findGlobalTypedef(key))
                 if (had != td.type && typedefs_[typedefIndex_.find(key)->second].name == key)
                     src_.fail(td.pos, "'" + td.name + "' is typedefed twice, "
                                       "and not to the same type: it was '" +
@@ -293,7 +293,7 @@ void Parser::topLevel(Program &program) {
     std::vector<std::string> definedIn;
     std::string absoluteName;
     if (!d.qualifier.empty() && namespaces_.find(d.qualifier) != namespaces_.end() &&
-        findTypedef(d.qualifier) == nullptr) {
+        lookup_.findTypedef(d.qualifier) == nullptr) {
         // [basic.lookup.unqual]/6: its body looks names up in that namespace, as if written there.
         for (std::size_t s = 0, e; s <= d.qualifier.size(); s = e + 2) {
             e = d.qualifier.find("::", s);
@@ -309,8 +309,8 @@ void Parser::topLevel(Program &program) {
         d.qualifier.clear();
     } else if (!d.qualifier.empty()) {
         // A member of a class in a namespace: its body, parameters and initialiser read there too.
-        const Type *owner = findTypedef(d.qualifier);
-        if (owner != nullptr && owner->isStructOrUnion()) definedIn = classNamespacePath(owner);
+        const Type *owner = lookup_.findTypedef(d.qualifier);
+        if (owner != nullptr && owner->isStructOrUnion()) definedIn = lookup_.classNamespacePath(owner);
     }
     struct DefinitionNamespace {
         std::vector<std::string> &slot; std::vector<std::string> saved;
@@ -345,7 +345,7 @@ void Parser::topLevel(Program &program) {
             // Qualified, the class answers: `S H::m(4)` defines a static member
             // only where H declares one - a member function's parameters may be
             // class-scope typedefs the scan cannot see (`string::substr` was).
-            const Type *owner = findTypedef(d.qualifier);
+            const Type *owner = lookup_.findTypedef(d.qualifier);
             constructionAhead = owner != nullptr && owner->isStructOrUnion() &&
                                 owner->findStaticMember(d.name) != nullptr;
         } else {
@@ -406,7 +406,7 @@ void Parser::topLevel(Program &program) {
                 const std::string gname =
                     (namespaceStack_.empty() || cLinkage_ > 0)
                         ? d.name : namespacePrefix() + d.name;
-                GlobalSym *prev = findGlobalToUpdate(gname);
+                GlobalSym *prev = lookup_.findGlobalToUpdate(gname);
                 if (prev != nullptr && prev->type != d.type)
                     src_.fail(d.pos, "'" + d.name + "' was already declared as '" +
                                      prev->type->describe() + "', not '" +
@@ -488,7 +488,7 @@ void Parser::topLevel(Program &program) {
                     const std::string gname =
                         (namespaceStack_.empty() || cLinkage_ > 0)
                             ? d.name : namespacePrefix() + d.name;
-                    GlobalSym *prev = findGlobalToUpdate(gname);
+                    GlobalSym *prev = lookup_.findGlobalToUpdate(gname);
                     if (prev != nullptr &&
                         prev->type->unqualified() != d.type->unqualified())
                         src_.fail(d.pos, "'" + d.name + "' was already declared "
@@ -576,7 +576,7 @@ void Parser::topLevel(Program &program) {
                                       ? d.name : namespacePrefix() + d.name;
             bool registered = false;
             std::size_t early = 0;
-            if (d.type->isComplete() && findGlobalToUpdate(selfKey) == nullptr &&
+            if (d.type->isComplete() && lookup_.findGlobalToUpdate(selfKey) == nullptr &&
                 initialiserNames(d.name)) {
                 const bool c = d.type->isConst();
                 const bool hidden = sc == StorageStatic || (c && sc != StorageExtern);
@@ -651,7 +651,7 @@ void Parser::topLevel(Program &program) {
             const std::string gname =
                 (namespaceStack_.empty() || cLinkage_ > 0)
                     ? d.name : namespacePrefix() + d.name;
-            GlobalSym *prev = registered ? nullptr : findGlobalToUpdate(gname);
+            GlobalSym *prev = registered ? nullptr : lookup_.findGlobalToUpdate(gname);
             if (prev != nullptr) {
                 const Type *both = composite(prev->type, d.type);
                 if (both == nullptr)
@@ -769,7 +769,7 @@ void Parser::topLevel(Program &program) {
     // machine. It is not in `params`, which is the declared signature.
     const Type *memberOf = nullptr;
     if (!d.qualifier.empty()) {
-        memberOf = findTypedef(d.qualifier);
+        memberOf = lookup_.findTypedef(d.qualifier);
         if (memberOf == nullptr || !memberOf->isStructOrUnion())
             src_.fail(d.pos, "'" + d.qualifier + "' is not a class");
         // `void S::f()` written inside `namespace N` defines `N::S::f`, and every table
@@ -958,7 +958,7 @@ void Parser::topLevel(Program &program) {
             // Only another specialization counts - `unique_ptr<R>`'s converting constructor at U = R
             // is not its move constructor, which [over.match.best] prefers over it.
             bool declared = false;
-            if (const std::vector<std::size_t> *set = overloadsOf(key))
+            if (const std::vector<std::size_t> *set = lookup_.overloadsOf(key))
                 for (std::size_t k = 0; k < set->size(); k++)
                     if (functions_[(*set)[k]].fromTemplate &&
                         functions_[(*set)[k]].constThis == constThis &&
@@ -1017,7 +1017,7 @@ void Parser::topLevel(Program &program) {
                 }
             }
         }
-        if (const std::vector<std::size_t> *set = overloadsOf(key)) {
+        if (const std::vector<std::size_t> *set = lookup_.overloadsOf(key)) {
             for (std::size_t k = 0; k < set->size() && member == nullptr; k++) {
                 const Signature &f = functions_[(*set)[k]];
                 if (memberTemplateInst_ && d.name == memberTemplateOf_ && !f.fromTemplate) continue;
@@ -1086,7 +1086,7 @@ void Parser::topLevel(Program &program) {
         // Which function's body is about to be read, so that an access check inside it
         // can ask whether a class befriended *this* function. A member's is left empty:
         // the qualified form that would befriend a member is refused where written.
-        currentFunction_ = lookupSignature(absoluteName.empty() ? d.name : absoluteName, params, variadic,
+        currentFunction_ = lookup_.lookupSignature(absoluteName.empty() ? d.name : absoluteName, params, variadic,
                                            d.pos).symbol;
     }
     // Set for a member's body too, unlike the friend question above, because a local
@@ -1191,7 +1191,7 @@ void Parser::topLevel(Program &program) {
             std::vector<ExprPtr> args;
             if (peek().is("{")) {
                 // [class.base.init]/1: `j{3}`, `v{1, 2}`, `Base{...}` - direct-list-initialisation (M1 L15).
-                const Type *named = templateBase != nullptr ? templateBase : findTypedef(entry);
+                const Type *named = templateBase != nullptr ? templateBase : lookup_.findTypedef(entry);
                 const Type *target = nullptr;
                 if (entry == d.qualifier || entry == localOf(d.qualifier) ||
                     (named != nullptr && named->unqualified() == memberOf->unqualified()))
@@ -1213,7 +1213,7 @@ void Parser::topLevel(Program &program) {
             }
             entries++;
             {
-                const Type *named = templateBase != nullptr ? templateBase : findTypedef(entry);
+                const Type *named = templateBase != nullptr ? templateBase : lookup_.findTypedef(entry);
                 if (entry == d.qualifier || entry == localOf(d.qualifier) ||
                     (named != nullptr && named->unqualified() == memberOf->unqualified())) {
                     delegates = true;
@@ -1231,7 +1231,7 @@ void Parser::topLevel(Program &program) {
             bool wasVirtualBase = false;
             std::string baseKey = entry;
             const Type *namedBase = templateBase != nullptr ? templateBase
-                                                            : findTypedef(entry);
+                                                            : lookup_.findTypedef(entry);
             const std::vector<Type::BaseSpec> &bs = memberOf->bases();
             for (std::size_t i = 0; i < bs.size(); i++)
                 // **And the injected class name**: inside a derived class the base is `Base`,
@@ -1666,7 +1666,7 @@ void Parser::topLevel(Program &program) {
             const std::string key = building ? constructorKey(base->tag())
                                              : destructorKey(base->tag());
 
-            if (const std::vector<std::size_t> *set = overloadsOf(key)) {
+            if (const std::vector<std::size_t> *set = lookup_.overloadsOf(key)) {
                 // The initialiser list's arguments for this base, or none - in
                 // which case the default constructor is what runs, and a base
                 // without one is refused where the reader can fix it.
@@ -1855,7 +1855,7 @@ void Parser::topLevel(Program &program) {
     const Type *emittedReturn = d.type->isReference()
                               ? types_.pointerTo(d.type->referent()) : d.type;
     if (definedSymbol.empty())
-        definedSymbol = lookupSignature(absoluteName.empty() ? d.name : absoluteName, params,
+        definedSymbol = lookup_.lookupSignature(absoluteName.empty() ? d.name : absoluteName, params,
                                         variadic, d.pos).symbol;
 
     // Recorded before `body` is moved into the Function, where what the pointer names lives on; a
@@ -1932,7 +1932,7 @@ void Parser::topLevel(Program &program) {
             constructorC2_.find(program.functions.back().symbol());
         if (tc2 != constructorC2_.end()) c2 = tc2->second;
         if (!c2.empty() ||
-            itaniumConstructorName(d.qualifier, findTypedef(d.qualifier),
+            itaniumConstructorName(d.qualifier, lookup_.findTypedef(d.qualifier),
                                    fnType, false, &c2, &why)) {
             if (splitForVirtualBase) {
                 splitC1 = program.functions.back().symbol();
@@ -2182,7 +2182,7 @@ void Parser::namespaceAlias(const std::string &name, std::size_t pos) {
     if (target.empty())
         src_.fail(pos, "'" + written + "' is not a namespace, so there is nothing for "
                        "'namespace " + name + "' to be an alias of");
-    if (findTypedef(namespacePrefix() + name) != nullptr ||
+    if (lookup_.findTypedef(namespacePrefix() + name) != nullptr ||
         namespaces_.count(namespacePrefix() + name))
         src_.fail(pos, "'" + name + "' is already declared here, and a namespace alias "
                        "cannot reuse the name");

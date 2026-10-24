@@ -130,8 +130,8 @@ void Parser::checkOverrideReturn(const VSlot &s, const Type *returns, const std:
 
 std::string Parser::deletingDestructorSymbol(const std::string &cls) {
     return target_.microsoftNames()
-         ? microsoftDeletingDestructorName(cls, findTypedef(cls))
-         : itaniumDeletingDestructorName(cls, findTypedef(cls));
+         ? microsoftDeletingDestructorName(cls, lookup_.findTypedef(cls))
+         : itaniumDeletingDestructorName(cls, lookup_.findTypedef(cls));
 }
 
 // [class.ctor]/1 and [class.dtor]/1 give neither a cv-qualifier nor a ref-qualifier, as clang says.
@@ -153,7 +153,7 @@ void Parser::declareDestructor(const std::string &cls, std::size_t pos,
     const VirtSpecifiers virt = takeVirtSpecifiers();
     const SpecialDef special = takeSpecialDef();
 
-    if (overloadsOf(destructorKey(cls)) != nullptr)
+    if (lookup_.overloadsOf(destructorKey(cls)) != nullptr)
         src_.fail(pos, "'" + cls + "' has two destructors, and a class has one");
     // Every object's death is a use, and the destroy sites are many: a deleted destructor is refused by name.
     if (special == SpecialDef::Deleted)
@@ -195,7 +195,7 @@ void Parser::registerDestructor(const std::string &cls, std::size_t pos,
     // And a base off the primary chain - a second base, a virtual one - whose
     // destructor is virtual makes this one virtual too, in a slot of its own.
     if (!isVirtual)
-        if (const Type *self = findTypedef(cls)) {
+        if (const Type *self = lookup_.findTypedef(cls)) {
             const std::vector<Type::BaseSpec> &bs = self->bases();
             for (std::size_t bi = 0; bi < bs.size() && !isVirtual; bi++) {
                 std::map<std::string, std::vector<VSlot> >::const_iterator it =
@@ -224,8 +224,8 @@ void Parser::registerDestructor(const std::string &cls, std::size_t pos,
                     : access == Access::Protected ? 'I'
                                                   : 'A';
     std::string out;
-    if (target_.microsoftNames()) out = microsoftDestructorName(cls, findTypedef(cls), code);
-    else                          itaniumDestructorName(cls, findTypedef(cls), true, &out);
+    if (target_.microsoftNames()) out = microsoftDestructorName(cls, lookup_.findTypedef(cls), code);
+    else                          itaniumDestructorName(cls, lookup_.findTypedef(cls), true, &out);
 
     functionIndex_[key].push_back(functions_.size());
     functions_.push_back(Signature{ "~" + localOf(cls), out, types_.get(Kind::Void),
@@ -785,7 +785,7 @@ void Parser::synthesizeCompleteDtor(const Type *type, const std::string &d1,
 const Parser::Signature *Parser::destructorOf(const Type *cls) const {
     if (cls == nullptr || !cls->isStructOrUnion() || cls->tag().empty())
         return nullptr;
-    const std::vector<std::size_t> *set = overloadsOf(destructorKey(cls->tag()));
+    const std::vector<std::size_t> *set = lookup_.overloadsOf(destructorKey(cls->tag()));
     return set == nullptr ? nullptr : &functions_[(*set)[0]];
 }
 
@@ -1184,7 +1184,7 @@ std::string Parser::synthesizeThunk(const std::string &cls, const Type *type,
     }
 
     const Signature *target = nullptr;
-    if (const std::vector<std::size_t> *set = overloadsOf(cls + "::" + slot.name))
+    if (const std::vector<std::size_t> *set = lookup_.overloadsOf(cls + "::" + slot.name))
         for (std::size_t k = 0; k < set->size(); k++)
             if (functions_[(*set)[k]].symbol == slot.symbol) target = &functions_[(*set)[k]];
     const Type *returns = target != nullptr ? target->returns : types_.get(Kind::Void);
@@ -1977,7 +1977,7 @@ void Parser::declareConstructor(const std::string &cls, std::size_t pos,
     // **A defaulted constructor is the implicit one and is not declared here**: declareImplicitSpecials
     // writes it exactly as it would have, and reads `defaulted_` for the access and for [class.copy]/9.
     if (special == SpecialDef::Defaulted) {
-        const Type *self = findTypedef(cls);
+        const Type *self = lookup_.findTypedef(cls);
         Defaulted &df = defaulted_[cls];
         const Type *p = params.size() == 1 ? params[0] : nullptr;
         const bool ofSelf = p != nullptr && p->isReference() && self != nullptr &&
@@ -2008,9 +2008,9 @@ void Parser::declareConstructor(const std::string &cls, std::size_t pos,
                                                   : 'A';
     std::string out, why;
     bool ok = target_.microsoftNames()
-            ? microsoftConstructorName(cls, findTypedef(cls), manglingType(fn),
+            ? microsoftConstructorName(cls, lookup_.findTypedef(cls), manglingType(fn),
                                        code, &out, &why)
-            : itaniumConstructorName(cls, findTypedef(cls), fn, true, &out, &why);
+            : itaniumConstructorName(cls, lookup_.findTypedef(cls), fn, true, &out, &why);
     if (!ok)
         src_.fail(pos, "'" + cls + "::" + cls + "' cannot be given a name the "
                        "linker can hold: " + why);
@@ -2075,7 +2075,7 @@ static ExprPtr indexBytes(TypeTable &types, ExprPtr decayed, const Type *elem,
 // element, in a loop.
 const Parser::Signature *
 Parser::initializerListConstructor(const Type *cls, const Type **ilType) {
-    const std::vector<std::size_t> *set = overloadsOf(constructorKey(cls->tag()));
+    const std::vector<std::size_t> *set = lookup_.overloadsOf(constructorKey(cls->tag()));
     if (set == nullptr) return nullptr;
     for (std::size_t i = 0; i < set->size(); i++) {
         const Signature &c = functions_[(*set)[i]];
@@ -2652,7 +2652,7 @@ int Parser::arrayCookie(const Type *elem) const {
 const Parser::Signature *Parser::defaultConstructorOf(const Type *cls) const {
     if (cls == nullptr || !cls->isStructOrUnion() || cls->tag().empty())
         return nullptr;
-    const std::vector<std::size_t> *set = overloadsOf(constructorKey(cls->tag()));
+    const std::vector<std::size_t> *set = lookup_.overloadsOf(constructorKey(cls->tag()));
     if (set == nullptr) return nullptr;
     const Signature *found = nullptr;
     for (std::size_t k = 0; k < set->size(); k++) {
@@ -2667,7 +2667,7 @@ const Parser::Signature *Parser::defaultConstructorOf(const Type *cls) const {
 const Parser::Signature *Parser::copyConstructorOf(const Type *cls) const {
     if (cls == nullptr || !cls->isStructOrUnion() || cls->tag().empty())
         return nullptr;
-    const std::vector<std::size_t> *set = overloadsOf(constructorKey(cls->tag()));
+    const std::vector<std::size_t> *set = lookup_.overloadsOf(constructorKey(cls->tag()));
     if (set == nullptr) return nullptr;
     for (std::size_t k = 0; k < set->size(); k++) {
         const Signature &f = functions_[(*set)[k]];
@@ -2688,7 +2688,7 @@ const Parser::Signature *Parser::copyConstructorOf(const Type *cls) const {
 const Parser::Signature *Parser::moveConstructorOf(const Type *cls) const {
     if (cls == nullptr || !cls->isStructOrUnion() || cls->tag().empty())
         return nullptr;
-    const std::vector<std::size_t> *set = overloadsOf(constructorKey(cls->tag()));
+    const std::vector<std::size_t> *set = lookup_.overloadsOf(constructorKey(cls->tag()));
     if (set == nullptr) return nullptr;
     for (std::size_t k = 0; k < set->size(); k++) {
         const Signature &f = functions_[(*set)[k]];
@@ -2705,7 +2705,7 @@ const Parser::Signature *Parser::moveConstructorOf(const Type *cls) const {
 const Parser::Signature *Parser::copyAssignOf(const Type *cls) const {
     if (cls == nullptr || !cls->isStructOrUnion() || cls->tag().empty())
         return nullptr;
-    const std::vector<std::size_t> *set = overloadsOf(assignmentKey(cls->tag()));
+    const std::vector<std::size_t> *set = lookup_.overloadsOf(assignmentKey(cls->tag()));
     if (set == nullptr) return nullptr;
     const Signature *move = nullptr;
     for (std::size_t i = 0; i < set->size(); i++) {
@@ -2723,7 +2723,7 @@ const Parser::Signature *Parser::copyAssignOf(const Type *cls) const {
 // The move assignment of a class, `X &operator=(X &&)`, written or defaulted; copyAssignOf answers the copy first.
 const Parser::Signature *Parser::moveAssignOf(const Type *cls) const {
     if (cls == nullptr || !cls->isStructOrUnion() || cls->tag().empty()) return nullptr;
-    const std::vector<std::size_t> *set = overloadsOf(assignmentKey(cls->tag()));
+    const std::vector<std::size_t> *set = lookup_.overloadsOf(assignmentKey(cls->tag()));
     if (set == nullptr) return nullptr;
     for (std::size_t i = 0; i < set->size(); i++) {
         const Signature &f = functions_[(*set)[i]];
@@ -2774,7 +2774,7 @@ void Parser::declareImplicitSpecials(const std::string &tag, const Type *type,
     const bool wroteCopyOrDtor = copyConstructorOf(type) != nullptr ||
                                  moveConstructorOf(type) != nullptr ||
                                  copyAssignOf(type) != nullptr ||
-                                 overloadsOf(destructorKey(tag)) != nullptr ||
+                                 lookup_.overloadsOf(destructorKey(tag)) != nullptr ||
                                  df.copyCtor.is || df.copyAssign.is || df.moveAssign.is || df.dtor.is;
     // [class.copy]/7 and /18: a defaulted move constructor or move assignment deletes the implicit copies.
     declareImplicitDestructor(tag, type, pos);
@@ -2844,7 +2844,7 @@ void Parser::declareImplicitDefaultCtor(const std::string &tag, const Type *type
 // does not make it non-trivial**; a base whose destructor is virtual makes it virtual.
 void Parser::declareImplicitDestructor(const std::string &tag, const Type *type,
                                        std::size_t pos) {
-    if (overloadsOf(destructorKey(tag)) != nullptr) return;
+    if (lookup_.overloadsOf(destructorKey(tag)) != nullptr) return;
 
     bool work = false;
     bool isVirtual = false;
@@ -3069,7 +3069,7 @@ void Parser::synthesizeDestructor(std::size_t which) {
     const std::size_t pos = functions_[which].pos;
     const std::string symbol = functions_[which].symbol;
     const bool isVirtual = functions_[which].isVirtual;
-    const Type *type = findTypedef(cls);
+    const Type *type = lookup_.findTypedef(cls);
     if (type == nullptr || !type->isStructOrUnion()) return;
 
     const FrameSave savedFrame = openFrame();
@@ -3375,7 +3375,7 @@ void Parser::declareInheritingCtors(const std::string &tag, const Type *type, st
         if (memberTemplates_.count(constructorKey(base->tag())) != 0)
             src_.fail(pos, "inheriting '" + base->describe() + "''s constructor template is not "
                            "supported yet - its specializations would have to be made for the derived class");
-        const std::vector<std::size_t> *set = overloadsOf(constructorKey(base->tag()));
+        const std::vector<std::size_t> *set = lookup_.overloadsOf(constructorKey(base->tag()));
         if (set == nullptr) continue;
         const std::vector<std::size_t> from = *set;
         for (std::size_t idx : from) {
@@ -3384,7 +3384,7 @@ void Parser::declareInheritingCtors(const std::string &tag, const Type *type, st
             // An inherited default constructor is D's own default one, by name and body, as clang has it.
             if (b.params.empty()) {
                 bool has = false;
-                if (const std::vector<std::size_t> *own = overloadsOf(constructorKey(tag)))
+                if (const std::vector<std::size_t> *own = lookup_.overloadsOf(constructorKey(tag)))
                     for (std::size_t k : *own)
                         if (functions_[k].params.empty()) has = true;
                 if (has) continue;
@@ -3408,7 +3408,7 @@ void Parser::declareInheritingCtors(const std::string &tag, const Type *type, st
                 continue;
             // One this class declared itself with the same parameters hides it.
             bool hidden = false;
-            if (const std::vector<std::size_t> *own = overloadsOf(constructorKey(tag)))
+            if (const std::vector<std::size_t> *own = lookup_.overloadsOf(constructorKey(tag)))
                 for (std::size_t k : *own)
                     if (sameParameters(functions_[k].params, b.params)) hidden = true;
             if (hidden) continue;
@@ -3455,7 +3455,7 @@ void Parser::synthesizeDefaultCtor(std::size_t which) {
     const std::string cls = functions_[which].owner;
     const std::size_t pos = functions_[which].pos;
     const std::string symbol = functions_[which].symbol;
-    const Type *type = findTypedef(cls);
+    const Type *type = lookup_.findTypedef(cls);
     if (type == nullptr || !type->isStructOrUnion()) return;
 
     const FrameSave savedFrame = openFrame();
@@ -3711,7 +3711,7 @@ void Parser::synthesizeCopy(std::size_t which, bool assigning) {
     const std::size_t pos = functions_[which].pos;
     const std::string symbol = functions_[which].symbol;
     const Type *srcRef = functions_[which].params[0];
-    const Type *type = findTypedef(cls);
+    const Type *type = lookup_.findTypedef(cls);
     if (type == nullptr || !type->isStructOrUnion()) return;
 
     // **The signature says which of the three this is**, so nothing that calls
@@ -4021,7 +4021,7 @@ void Parser::pruneExternalVtables(Program &program) {
     if (target_.microsoftNames()) return;   // cl emits every vftable, as a COMDAT
     for (std::map<std::string, std::vector<std::string> >::const_iterator it =
              classSymbols_.begin(); it != classSymbols_.end(); ++it) {
-        const Type *cls = findTypedef(it->first);
+        const Type *cls = lookup_.findTypedef(it->first);
         if (cls != nullptr && cls->unqualified()->isSpecialization()) continue;
         if (!keyFunctionUndefined(it->first)) continue;
         std::vector<std::string> gone = it->second;
@@ -4249,7 +4249,7 @@ void Parser::defineImplicitFunctions() {
 std::string Parser::staticMemberSymbol(const std::string &cls,
                                        const std::string &name, const Type *t,
                                        Access access, std::size_t pos) {
-    if (!target_.microsoftNames()) return itaniumStaticMemberName(cls, findTypedef(cls), name);
+    if (!target_.microsoftNames()) return itaniumStaticMemberName(cls, lookup_.findTypedef(cls), name);
     // Microsoft writes the access as a digit where a member function writes a letter,
     // so a static member that changes from private to public changes its symbol on
     // Windows and keeps it on Linux - the same asymmetry, measured the same way.
@@ -4257,7 +4257,7 @@ std::string Parser::staticMemberSymbol(const std::string &cls,
                     : access == Access::Protected ? '1'
                                                   : '0';
     std::string out, why;
-    if (!microsoftStaticMemberName(cls, findTypedef(cls), name, t, code, &out, &why))
+    if (!microsoftStaticMemberName(cls, lookup_.findTypedef(cls), name, t, code, &out, &why))
         src_.fail(pos, "'" + cls + "::" + name + "' cannot be given a name the "
                        "linker can hold: " + why);
     return out;
@@ -4337,7 +4337,7 @@ void Parser::declareUsingMembers(const std::string &tag, const Type *type) {
     auto it = usingMembers_.find(tag);
     if (it == usingMembers_.end()) return;
     for (const std::pair<const Type *, std::string> &u : it->second) {
-        const std::vector<std::size_t> from = *overloadsOf(u.first->tag() + "::" + u.second);
+        const std::vector<std::size_t> from = *lookup_.overloadsOf(u.first->tag() + "::" + u.second);
         std::vector<std::size_t> &mine = functionIndex_[tag + "::" + u.second];
         const std::vector<std::size_t> own = mine;
         for (std::size_t i : from) {
@@ -4398,7 +4398,7 @@ void Parser::defineConstexprStaticMember(const std::string &full, const std::str
 // class asked for. An ordinary global the class gave its name to, so all this adds is
 // finding which member it is and taking the symbol from it.
 void Parser::defineStaticMember(Declared &d, Program &program, bool threadLocal) {
-    const Type *owner = findTypedef(d.qualifier);
+    const Type *owner = lookup_.findTypedef(d.qualifier);
     if (owner == nullptr || !owner->isStructOrUnion())
         src_.fail(d.pos, "'" + d.qualifier + "' is not a class");
     const Type::StaticMember *s = owner->findStaticMember(d.name);
@@ -4560,7 +4560,7 @@ ExprPtr Parser::unevaluatedMember() {
     std::size_t consumed = 0;
     for (std::size_t k = 1; peekAt(k).is("::") && peekAt(k + 1).kind == TokenKind::Ident;
          k += 2) {
-        if (const Type *cls = findTypedef(q))
+        if (const Type *cls = lookup_.findTypedef(q))
             if (cls->isStructOrUnion())
                 if (const Member *m = cls->findMember(peekAt(k + 1).text)) {
                     owner = cls;
@@ -4693,7 +4693,7 @@ void Parser::declareMember(const std::string &cls, const Declared &d,
     // override a virtual of any base - a second one, or a virtual one, whose
     // function then takes a new slot here and a thunk in that base's table.
     if (!isVirtual)
-        if (const Type *self = findTypedef(cls)) {
+        if (const Type *self = lookup_.findTypedef(cls)) {
             const std::vector<Type::BaseSpec> &bs = self->bases();
             for (std::size_t bi = 0; bi < bs.size() && !isVirtual; bi++) {
                 std::map<std::string, std::vector<VSlot> >::const_iterator it =
@@ -4787,20 +4787,20 @@ std::string Parser::memberSymbol(const std::string &cls, const std::string &name
                     : access == Access::Protected ? 'I'
                                                   : 'A';
     // A class defined inside a function body.
-    const std::string *owner = localOwnerOf(cls);
+    const std::string *owner = lookup_.localOwnerOf(cls);
 
     std::string out, why;
     const Type *shown = target_.microsoftNames() ? manglingType(fn) : fn;
     bool ok = target_.microsoftNames()
             ? (owner != nullptr
-                   ? microsoftLocalMemberName(*owner, cls, findTypedef(cls), name,
+                   ? microsoftLocalMemberName(*owner, cls, lookup_.findTypedef(cls), name,
                                               shown, code, constThis, refThis, &out, &why)
-                   : microsoftMemberName(cls, findTypedef(cls), name, shown, code,
+                   : microsoftMemberName(cls, lookup_.findTypedef(cls), name, shown, code,
                                          constThis, refThis, &out, &why))
             : (owner != nullptr
-                   ? itaniumLocalMemberName(*owner, cls, findTypedef(cls), name,
+                   ? itaniumLocalMemberName(*owner, cls, lookup_.findTypedef(cls), name,
                                             fn, constThis, refThis, &out, &why)
-                   : itaniumMemberName(cls, findTypedef(cls), name, fn, constThis,
+                   : itaniumMemberName(cls, lookup_.findTypedef(cls), name, fn, constThis,
                                        refThis, &out, &why));
     if (!ok)
         src_.fail(pos, "'" + cls + "::" + name + "' cannot be given a name the "
@@ -4945,7 +4945,7 @@ void Parser::declareFunction(const std::string &name, const Type *returns,
     functions_.back().spec = pendingSpec_;
     functions_.back().deleted = special == SpecialDef::Deleted;
     pendingNoexcept_ = false;
-    if (!cName) aliasFunctionKey(key, functions_.size() - 1);
+    if (!cName) lookup_.aliasFunctionKey(key, functions_.size() - 1);
     if (pendingExplicitConversion_ && isConversionName(instantiationName(name)))
         functions_.back().isExplicit = true;
     pendingExplicitConversion_ = false;
@@ -4954,56 +4954,6 @@ void Parser::declareFunction(const std::string &name, const Type *returns,
         defaultArgNamespace_[functions_.back().symbol] = definitionNamespace_.empty() ? namespaceStack_ : definitionNamespace_;
     }
     pendingDefaults_.clear();
-}
-
-const std::vector<std::size_t> *
-Parser::overloadsOf(const std::string &name) const {
-    auto it = functionIndex_.find(name);
-    if (it == functionIndex_.end() || it->second.empty()) return nullptr;
-    return &it->second;
-}
-
-// The sole function of that name, or nothing when the name is overloaded. Every caller
-// wants one function without having any arguments to choose by, so "there are several"
-// is not an answer it can use - each one says so in its own words instead.
-const Parser::Signature *Parser::findFunction(const std::string &name) const {
-    const std::vector<std::size_t> *set = overloadsOf(name);
-    if (set == nullptr || set->size() != 1) return nullptr;
-    // Its one caller names the function as a value, which is a use: [dcl.fct.def.delete]/2.
-    refuseDeleted(functions_[(*set)[0]], peek().pos);
-    return &functions_[(*set)[0]];
-}
-
-// The one function of this name with these parameters - the only question a definition
-// can ask, since a definition IS a parameter list. Going through lookupFunction broke
-// the moment a name could hold two: it answers "which one", and a definition knows.
-const Parser::Signature &
-Parser::lookupSignature(const std::string &name,
-                        const std::vector<const Type *> &params,
-                        bool variadic, std::size_t pos) const {
-    // The same qualification the declaration used, or a definition written
-    // inside a namespace cannot find the prototype it is defining.
-    const std::string key = name.find("::") != std::string::npos
-                          ? name
-                          : qualifyForLookup(instantiationName(name),
-                                             &Parser::hasFunctionNamed);
-    // The namespace's own function before one an inline namespace put under its name.
-    if (const std::vector<std::size_t> *set = overloadsOf(key)) {
-        for (int pass = 0; pass < 2; pass++)
-            for (std::size_t k = 0; k < set->size(); k++) {
-                const Signature &f = functions_[(*set)[k]];
-                if ((!f.fromTemplate && f.name != key) == (pass == 1) && f.variadic == variadic &&
-                    sameParameters(f.params, params))
-                    return f;
-            }
-    }
-    src_.fail(pos, "'" + name + "' was not declared - a prototype must come first");
-}
-
-const Parser::Signature &Parser::lookupFunction(const std::string &name,
-                                                std::size_t pos) const {
-    if (const Signature *s = findFunction(name)) return *s;
-    src_.fail(pos, "'" + name + "' was not declared - a prototype must come first");
 }
 
 void Parser::blockFunctionDeclaration(const Declared &d) {
@@ -5295,7 +5245,7 @@ StmtPtr Parser::constructMember(const std::string &cls, const Type *type,
     const Type *mc = memberClass(m.type);
     if (mc == nullptr || mc->tag().empty() || m.type->isReference()) return nullptr;
     const std::string key = constructorKey(mc->tag());
-    if (overloadsOf(key) == nullptr) return nullptr;
+    if (lookup_.overloadsOf(key) == nullptr) return nullptr;
     if (!args.empty() && m.type->isArray())
         src_.fail(pos, "'" + m.name + "' is an array, and an initialiser list "
                        "cannot say what to pass to each element of it");

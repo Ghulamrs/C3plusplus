@@ -320,7 +320,7 @@ const Type *Parser::initializerListOf(const Type *elem, std::size_t pos) {
         src_.fail(pos, "a braced list here makes a 'std::initializer_list', and none is declared - "
                        "include <initializer_list>");
     const std::string name = "$ilelem" + std::to_string(ilElemSeq_++);
-    declareTypeName(name, elem);
+    lookup_.declareTypeName(name, elem);
     const std::size_t resume = at_;
     at_ = tokens_.size();
     Token t;
@@ -361,7 +361,7 @@ const Type *Parser::deduceBracedAuto(const std::string &name, std::size_t pos) {
 }
 
 bool Parser::onlyImplicitConstructors(const std::string &tag) const {
-    const std::vector<std::size_t> *set = overloadsOf(constructorKey(tag));
+    const std::vector<std::size_t> *set = lookup_.overloadsOf(constructorKey(tag));
     if (set == nullptr) return true;
     for (std::size_t i = 0; i < set->size(); i++)
         if (!functions_[(*set)[i]].implicit) return false;
@@ -634,7 +634,7 @@ const Parser::Signature *Parser::convertingConstructor(const Type *to,
     if (!plain->isStructOrUnion()) return nullptr;
     std::vector<const Type *> one(1, from.type());
     instantiateConstructorTemplates(plain, one, pos);
-    const std::vector<std::size_t> *set = overloadsOf(constructorKey(plain->tag()));
+    const std::vector<std::size_t> *set = lookup_.overloadsOf(constructorKey(plain->tag()));
     if (set == nullptr) return nullptr;
 
     // **Ranked, not counted**: once a constructor template has been instantiated for an int,
@@ -704,7 +704,7 @@ bool Parser::constructorViable(const Type *cls, const std::vector<ExprPtr> &args
                                std::size_t pos) {
     instantiateConstructorTemplates(cls->unqualified(), args, pos);
     const std::vector<std::size_t> *set =
-        overloadsOf(constructorKey(cls->unqualified()->tag()));
+        lookup_.overloadsOf(constructorKey(cls->unqualified()->tag()));
     for (std::size_t k = 0; set != nullptr && k < set->size(); k++) {
         const Signature &f = functions_[(*set)[k]];
         if (f.variadic ? args.size() < leastArguments(f)
@@ -867,7 +867,7 @@ ExprPtr Parser::buildReturned(ExprPtr value, std::size_t pos, bool *named) {
             if (u->op() == '*') { operand = const_cast<Expr *>(&u->operand()); viaDeref = true; }
         if (const Var *v = dynamic_cast<const Var *>(operand))
             if (v->isLocal())
-                if (const Local *l = findLocal(v->name()))
+                if (const Local *l = lookup_.findLocal(v->name()))
                     if (viaDeref ? (l->isParameter && l->byValueByAddress) : !l->type->isReference())
                         value->setXvalue();
     }
@@ -2261,7 +2261,7 @@ const Parser::Signature *Parser::classAllocator(const Type *made,
                                                 const char *which) {
     const Type *cls = made->unqualified();
     while (cls != nullptr && cls->isStructOrUnion() && !cls->tag().empty()) {
-        if (const std::vector<std::size_t> *set = overloadsOf(cls->tag() + "::" + which))
+        if (const std::vector<std::size_t> *set = lookup_.overloadsOf(cls->tag() + "::" + which))
             return &functions_[(*set)[0]];
         const std::vector<Type::BaseSpec> &bs = cls->bases();
         cls = bs.empty() ? nullptr : bs[0].type->unqualified();
@@ -2306,8 +2306,8 @@ ExprPtr Parser::userPlacementAllocation(const Type *made, bool array, ExprPtr by
     for (const Type *cls = made->unqualified();
          cls != nullptr && cls->isStructOrUnion() && !cls->tag().empty();
          cls = cls->bases().empty() ? nullptr : cls->bases()[0].type->unqualified())
-        if (overloadsOf(cls->tag() + "::" + which) != nullptr) { key = cls->tag() + "::" + which; break; }
-    if (overloadsOf(key) == nullptr)
+        if (lookup_.overloadsOf(cls->tag() + "::" + which) != nullptr) { key = cls->tag() + "::" + which; break; }
+    if (lookup_.overloadsOf(key) == nullptr)
         src_.fail(pos, "'new' with placement arguments needs an 'operator " +
                        std::string(array ? "new[]" : "new") + "' declared to "
                        "take them, and none is declared");
@@ -2377,7 +2377,7 @@ ExprPtr Parser::guardAgainstNull(const std::string &temp, int slot,
 // vptr for a polymorphic glvalue, a word before the vtable's address point.
 ExprPtr Parser::typeidExpression(std::size_t pos) {
     const bool microsoft = target_.microsoftNames();
-    const Type *info = findTypedef("std::type_info");
+    const Type *info = lookup_.findTypedef("std::type_info");
     if (info == nullptr || !info->isStructOrUnion())
         src_.fail(pos, "'typeid' needs std::type_info, so include <typeinfo>");
     const Type *infoPtr = types_.pointerTo(types_.withConst(info));

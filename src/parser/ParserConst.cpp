@@ -124,14 +124,30 @@ void Parser::refuseConstexprConstructorBody(std::size_t parenAt) const {
 }
 
 
-// `friend class X;`, or `friend X;` for a class already declared - [class.friend]/2: every member
-// of X reaches what `owner` keeps private. An X not yet declared is declared by it in the namespace
-// around `owner`, [namespace.memdef]/3.
+// `friend class X;`, or `friend X;` for a class already declared - [class.friend]/2: every member of X reaches
+// what `owner` keeps private. An unqualified X not yet declared is declared in the namespace around `owner`,
+// [namespace.memdef]/3; a qualified one, `friend class n::X;`, names a class already declared ([class.friend]/3).
 void Parser::befriendClass(const std::string &owner, bool keyed) {
     if (keyed) at_++;
-    const std::string name = expectIdent("the class to befriend");
+    const bool global = peek().is("::") && peekAt(1).kind == TokenKind::Ident;
+    if (global) at_++;
+    std::size_t namePos = peek().pos;
+    std::string name = expectIdent("the class to befriend");
+    std::string scope;
+    while (peek().is("::") && peekAt(1).kind == TokenKind::Ident) {
+        at_++;
+        scope = name;
+        namePos = peek().pos;
+        name += "::" + expectIdent("the class to befriend");
+    }
     std::string key = name;
-    if (const Type *t = findTypedef(name)) key = t->unqualified()->tag();
+    const Type *t = global ? lookup_.findGlobalTypedef(name) : lookup_.findTypedef(name);
+    if (t != nullptr) key = t->unqualified()->tag();
+    else if (global || !scope.empty())
+        src_.fail(namePos, "no class named '" + name.substr(scope.size() + (scope.empty() ? 0 : 2)) +
+                           "' in " + (scope.empty() ? std::string("the global namespace")
+                                          : (lookup_.findTypedef(scope) != nullptr ? "class '" : "namespace '") + scope + "'") +
+                           " - a qualified friend names a class declared before it");
     else if (!namespaceStack_.empty()) key = namespacePrefix() + name;
     friendClasses_[owner].push_back(key);
     expect(";");
@@ -390,11 +406,11 @@ bool Parser::fold(const Expr &e, long long *out, std::size_t pos) const {
             return true;
         }
         if (v->isLocal()) {
-            if (const Local *l = findLocal(v->name()))
+            if (const Local *l = lookup_.findLocal(v->name()))
                 if (l->isConstantValue) { *out = l->constantValue; return true; }
             return false;
         }
-        if (const GlobalSym *g = findGlobal(v->name()))
+        if (const GlobalSym *g = lookup_.findGlobal(v->name()))
             if (g->isConstantValue) { *out = g->constantValue; return true; }
         // A static member is not in globals_ - it is kept apart from the
         // member list so nothing walking a layout has to skip it - so the

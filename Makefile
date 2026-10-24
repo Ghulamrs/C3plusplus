@@ -78,7 +78,8 @@ CXXFLAGS = -std=c++11 -O2 -g -Wall -Wextra -Werror -pedantic -pthread \
 # build `src/backend/Tms6747` and `2.cpp` as sources. Requiring both the prefix
 # and the suffix drops both halves and keeps every real source.
 SRCS     = $(filter src/%.cpp,$(wildcard src/*.cpp) $(wildcard src/parser/*.cpp) \
-                              $(wildcard src/backend/*.cpp) $(wildcard src/optimizer/*.cpp))
+                              $(wildcard src/backend/*.cpp) $(wildcard src/optimizer/*.cpp) \
+                              $(wildcard src/sema/*.cpp))
 # Objects and their dependency files go under obj/ rather than beside the
 # sources they came from, so that a listing of src/ is the code and nothing
 # else. The tree under obj/ mirrors src/ - src/backend/X86_64.cpp becomes

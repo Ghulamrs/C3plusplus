@@ -973,55 +973,6 @@ bool Parser::moreSpecializedFunction(const Signature &a, const Signature &b) con
            !Order::atLeast(*this, b.pattern, a.pattern);
 }
 
-// [over.match.oper]: one candidate set with both halves in it - a member's implicit
-// object parameter is what makes the two rank vectors comparable. This answers
-// which half won, not which function. Then [basic.lookup.argdep], operands only.
-std::vector<std::string> Parser::lookupKeys(const std::string &name,
-                                            const Type *left,
-                                            const Type *right) const {
-    std::vector<std::string> keys;
-    auto add = [&](const std::string &k) {
-        if (!hasFunctionNamed(k)) return;
-        for (std::size_t i = 0; i < keys.size(); i++)
-            if (keys[i] == k) return;
-        keys.push_back(k);
-    };
-    add(name);
-    add(qualifyForLookup(name, &Parser::hasFunctionNamed));
-
-    const Type *operands[2] = { left, right };
-    for (std::size_t i = 0; i < 2; i++) {
-        const Type *t = operands[i];
-        while (t != nullptr && (t->isPointer() || t->isReference()))
-            t = t->pointee();
-        if (t == nullptr) continue;
-        t = t->unqualified();
-        // [basic.lookup.argdep]/2: a class's namespace; and an enumeration's, the innermost namespace
-        // around it - a class-scoped one's is its class's - so that `N::A | N::B` reaches N's
-        // operator| and not the built-in (1.27, review item 3; the enumeration case was missing).
-        std::string prefix;
-        if (t->isStructOrUnion() && t->inNamespace()) {
-            const std::size_t cut = t->tag().rfind("::");
-            if (cut == std::string::npos) continue;
-            prefix = t->tag().substr(0, cut);
-        } else if (t->isEnumeration()) {
-            prefix = t->tag();
-            for (;;) {
-                const std::size_t cut = prefix.rfind("::");
-                if (cut == std::string::npos) { prefix.clear(); break; }
-                prefix = prefix.substr(0, cut);
-                if (namespaces_.count(prefix) != 0) break;
-            }
-            if (prefix.empty()) continue;   // a global enumeration's namespace is the bare name's
-        } else continue;
-        add(prefix + "::" + name);
-        // [basic.lookup.argdep]/2: an inline namespace's class has the enclosing one too.
-        const std::vector<std::string> alts = inlineAliasPrefixes(prefix + "::");
-        for (std::size_t a = 0; a < alts.size(); a++) add(alts[a] + name);
-    }
-    return keys;
-}
-
 Parser::OperatorChoice Parser::resolveOperator(const std::string &name,
                                                const Expr &left,
                                                const Expr *right,
@@ -1058,10 +1009,10 @@ Parser::OperatorChoice Parser::resolveOperator(const std::string &name,
     const Type *lt = left.type();
     const Type *plain = lt->unqualified();
     if (plain->isStructOrUnion()) {
-        const Type *owner = findMemberOwner(plain, name);
+        const Type *owner = lookup_.findMemberOwner(plain, name);
         if (owner != nullptr) {
             const std::string key = owner->tag() + "::" + name;
-            if (const std::vector<std::size_t> *set = overloadsOf(key))
+            if (const std::vector<std::size_t> *set = lookup_.overloadsOf(key))
                 for (std::size_t k = 0; k < set->size(); k++) {
                     const Signature &f = functions_[(*set)[k]];
                     if (f.params.size() != written) continue;
@@ -1086,9 +1037,9 @@ Parser::OperatorChoice Parser::resolveOperator(const std::string &name,
     }
 
     const std::vector<std::string> keys =
-        lookupKeys(name, lt, right != nullptr ? right->type() : nullptr);
+        lookup_.lookupKeys(name, lt, right != nullptr ? right->type() : nullptr);
     for (std::size_t ki = 0; ki < keys.size(); ki++)
-    if (const std::vector<std::size_t> *set = overloadsOf(keys[ki]))
+    if (const std::vector<std::size_t> *set = lookup_.overloadsOf(keys[ki]))
         for (std::size_t k = 0; k < set->size(); k++) {
             // Two keys may reach one function - the bare name and its namespace's - and it is one candidate.
             if (std::find(which.begin(), which.end(), (*set)[k]) != which.end()) continue;
@@ -1188,7 +1139,7 @@ void Parser::applyDefaults(Signature f, std::vector<ExprPtr> &args,
     if (ns != defaultArgNamespace_.end()) namespaceStack_ = ns->second;
     const Type *outerClass = currentClass_;
     if (!f.owner.empty()) {
-        if (const Type *owner = findTypedef(f.owner)) currentClass_ = owner;
+        if (const Type *owner = lookup_.findTypedef(f.owner)) currentClass_ = owner;
     }
     for (std::size_t i = args.size(); i < f.params.size(); i++) {
         if (i >= it->second.size() || it->second[i] == 0)
@@ -1224,13 +1175,13 @@ Parser::Signature Parser::resolveOverload(const std::string &written,
     // then whatever a `using namespace` has opened.
     std::string name = object != nullptr
                      ? written
-                     : qualifyForLookup(written, &Parser::hasFunctionNamed);
+                     : lookup_.qualifyForLookup(written, &sema::Lookup::hasFunctionNamed);
     // An argument's own namespace is searched too - `twice(s)` finds
     // `N::twice` when `s` is an `N::S`. Only where nothing else answered, so a
     // name that is in scope is never quietly outranked by a far one.
-    if (object == nullptr && overloadsOf(name) == nullptr && !args.empty()) {
+    if (object == nullptr && lookup_.overloadsOf(name) == nullptr && !args.empty()) {
         const std::vector<std::string> keys =
-            lookupKeys(written, args[0]->type(),
+            lookup_.lookupKeys(written, args[0]->type(),
                        args.size() > 1 ? args[1]->type() : nullptr);
         if (!keys.empty()) name = keys.back();
     }
@@ -1241,7 +1192,7 @@ Parser::Signature Parser::resolveOverload(const std::string &written,
         for (std::size_t i = 0; i < args.size(); i++) argTypes.push_back(deductionArgType(*args[i]));
         instantiateViableMemberTemplatesUnder(name, argTypes, pos);
     }
-    const std::vector<std::size_t> *set = overloadsOf(name);
+    const std::vector<std::size_t> *set = lookup_.overloadsOf(name);
 
     // **For an operator the candidate set is the union, not the first scope
     // that answers.**
@@ -1249,10 +1200,10 @@ Parser::Signature Parser::resolveOverload(const std::string &written,
     if (object == nullptr && !args.empty() &&
         written.compare(0, 8, "operator") == 0) {
         const std::vector<std::string> keys =
-            lookupKeys(written, args[0]->type(),
+            lookup_.lookupKeys(written, args[0]->type(),
                        args.size() > 1 ? args[1]->type() : nullptr);
         for (std::size_t i = 0; i < keys.size(); i++)
-            if (const std::vector<std::size_t> *s = overloadsOf(keys[i]))
+            if (const std::vector<std::size_t> *s = lookup_.overloadsOf(keys[i]))
                 for (std::size_t k = 0; k < s->size(); k++) {
                     bool seen = false;
                     for (std::size_t j = 0; j < merged.size() && !seen; j++)
@@ -1271,7 +1222,7 @@ Parser::Signature Parser::resolveOverload(const std::string &written,
         // **`C(...)` where C is a class** is a temporary and not a call to a
         // function nobody declared; "no prototype" sends the reader after a
         // declaration never meant to exist. Live now a class is copied by value.
-        if (const Type *cls = findTypedef(name))
+        if (const Type *cls = lookup_.findTypedef(name))
             if (cls->isStructOrUnion())
                 src_.fail(pos, "'" + name + "(...)' makes a temporary of type '" +
                                cls->describe() + "', which is not supported yet - "

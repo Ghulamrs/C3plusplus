@@ -145,12 +145,12 @@ StmtPtr Parser::declarationBody() {
                 src_.fail(d.pos, "'" + d.name + "' is extern, and an extern "
                                  "declaration cannot have an initialiser - the "
                                  "definition it names belongs at file scope");
-            if (const GlobalSym *g = findGlobal(d.name))
+            if (const GlobalSym *g = lookup_.findGlobal(d.name))
                 if (g->type != d.type)
                     src_.fail(d.pos, "'" + d.name + "' is declared '" +
                                      d.type->describe() + "' here and '" +
                                      g->type->describe() + "' at file scope");
-            const GlobalSym *seen = findGlobal(d.name);
+            const GlobalSym *seen = lookup_.findGlobal(d.name);
             declareStaticLocal(d.name, d.type, d.pos,
                                seen != nullptr ? seen->symbol
                                                : dataSymbol(d.name, d.type, false, d.pos));
@@ -255,7 +255,7 @@ StmtPtr Parser::declarationBody() {
                 if (listed) {
                     consume("=");
                     StmtPtr built = constructLocalArrayFromList(d, off, declareIt);
-                    if (late) off = findLocal(d.name)->offset;
+                    if (late) off = lookup_.findLocal(d.name)->offset;
                     inits.push_back(std::move(built));
                 } else if (arrayCtor) {
                     int indexSlot = allocateFrameSlot(types_.intType());
@@ -666,13 +666,13 @@ const Type *Parser::classRangeEnds(ExprPtr range, std::size_t rpos,
 
     // [stmt.ranged]/1: members if the class has either, else `begin(r)` and `end(r)`
     // found by argument-dependent lookup.
-    const bool members = findMemberOwner(cls, "begin") != nullptr ||
-                         findMemberOwner(cls, "end") != nullptr;
+    const bool members = lookup_.findMemberOwner(cls, "begin") != nullptr ||
+                         lookup_.findMemberOwner(cls, "end") != nullptr;
     // Lookup by the argument alone: the class's own namespace, or the global one.
     const std::string::size_type cut = cls->tag().rfind("::");
     const std::string scope = cls->inNamespace() && cut != std::string::npos
                             ? cls->tag().substr(0, cut + 2) : std::string();
-    if (!members && (!hasFunctionNamed(scope + "begin") || !hasFunctionNamed(scope + "end")))
+    if (!members && (!lookup_.hasFunctionNamed(scope + "begin") || !lookup_.hasFunctionNamed(scope + "end")))
         src_.fail(rpos, "'" + cls->describe() + "' has no 'begin' and 'end', as "
                         "members or as functions found by argument-dependent lookup, "
                         "so a range-based 'for' has nothing to walk");
@@ -2205,7 +2205,7 @@ StmtPtr Parser::statementBody() {
                     if (u->op() == '*') { named = &u->operand(); viaDeref = true; }
                 if (const Var *v = dynamic_cast<const Var *>(named))
                     if (v->isLocal())
-                        if (const Local *l = findLocal(v->name()))
+                        if (const Local *l = lookup_.findLocal(v->name()))
                             if (l->isParameter)
                                 returnedParameter = viaDeref
                                                   ? l->byValueByAddress
@@ -2248,7 +2248,7 @@ StmtPtr Parser::statementBody() {
         bool elidable = false;
         if (const Var *v = dynamic_cast<const Var *>(value.get()))
             if (v->isLocal()) {
-                const Local *l = findLocal(v->name());
+                const Local *l = lookup_.findLocal(v->name());
                 elidable = l == nullptr || !l->isParameter;
             }
 

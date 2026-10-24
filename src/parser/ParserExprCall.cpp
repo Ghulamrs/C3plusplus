@@ -98,7 +98,7 @@ bool Parser::bracedListViable(const Type *param, const Init &in) {
     if (n != 0 && initializerListConstructor(plain, &ilType) != nullptr) return true;
     // A constructor template's parameters are not known until it is deduced: it may take the list.
     if (n != 0 && memberTemplates_.count(constructorKey(plain->tag())) != 0) return true;
-    const std::vector<std::size_t> *set = overloadsOf(constructorKey(plain->tag()));
+    const std::vector<std::size_t> *set = lookup_.overloadsOf(constructorKey(plain->tag()));
     if (set == nullptr) return n == 0;
     for (std::size_t k = 0; k < set->size(); k++) {
         const Signature &f = functions_[(*set)[k]];
@@ -144,8 +144,8 @@ void Parser::buildBracedArguments(const std::string &key, std::vector<ExprPtr> &
     bool any = false;
     for (std::size_t i = 0; i < args.size() && !any; i++) any = isBracedPlaceholder(*args[i]);
     if (!any) return;
-    const std::string name = object != nullptr ? key : qualifyForLookup(key, &Parser::hasFunctionNamed);
-    const std::vector<std::size_t> *set = overloadsOf(name);
+    const std::string name = object != nullptr ? key : lookup_.qualifyForLookup(key, &sema::Lookup::hasFunctionNamed);
+    const std::vector<std::size_t> *set = lookup_.overloadsOf(name);
     if (set == nullptr)
         src_.fail(pos, "a braced list is given as an argument of '" + key + "', and no function "
                        "of that name is declared to say what it should make");
@@ -199,8 +199,8 @@ void Parser::pickOverloadArguments(const std::string &key, std::vector<ExprPtr> 
     bool any = false;
     for (std::size_t i = 0; i < args.size() && !any; i++) any = overloadArgOf(*args[i]) != nullptr;
     if (!any) return;
-    const std::string name = object != nullptr ? key : qualifyForLookup(key, &Parser::hasFunctionNamed);
-    const std::vector<std::size_t> *callee = overloadsOf(name);
+    const std::string name = object != nullptr ? key : lookup_.qualifyForLookup(key, &sema::Lookup::hasFunctionNamed);
+    const std::vector<std::size_t> *callee = lookup_.overloadsOf(name);
     if (callee == nullptr) return;
     for (std::size_t i = 0; i < args.size(); i++) {
         const OverloadArg *oa = overloadArgOf(*args[i]);
@@ -706,26 +706,12 @@ void Parser::claimCallResult(Call &c, int slot) {
     c.setResultSlot(slot);
 }
 
-// A call through an object: `p.move(1, 2)`. The object's address goes in front of
-// the written arguments and the declared parameters gain a matching leading
-// pointer, so from here down it is an ordinary call.
-const Type *Parser::findMemberOwner(const Type *cls,
-                                    const std::string &name) const {
-    if (cls == nullptr) return nullptr;
-    const Type *c = cls->unqualified();
-    if (overloadsOf(c->tag() + "::" + name) != nullptr) return c;
-    const std::vector<Type::BaseSpec> &bases = c->bases();
-    for (std::size_t i = 0; i < bases.size(); i++)
-        if (const Type *found = findMemberOwner(bases[i].type, name)) return found;
-    return nullptr;
-}
-
 // **The class whose scope declares `name`**, a member template counting as a declaration:
 // `q * r` for a `Q : V` finds V's `template <int K> operator*`, [class.member.lookup].
 const Type *Parser::declaringClassOf(const Type *cls, const std::string &name) const {
     if (cls == nullptr) return nullptr;
     const Type *c = cls->unqualified();
-    if (overloadsOf(c->tag() + "::" + name) != nullptr || isMemberTemplate(c, name)) return c;
+    if (lookup_.overloadsOf(c->tag() + "::" + name) != nullptr || isMemberTemplate(c, name)) return c;
     for (const Type::BaseSpec &b : c->bases())
         if (const Type *found = declaringClassOf(b.type, name)) return found;
     return nullptr;
@@ -751,7 +737,7 @@ ExprPtr Parser::memberCallWith(ExprPtr object, const Type *cls,
     // member, which the layout copied down: a member lives at an offset and a
     // function under a name.
     const Type *owner = forceOwner != nullptr ? forceOwner->unqualified()
-                                              : findMemberOwner(plain, name);
+                                              : lookup_.findMemberOwner(plain, name);
     if (owner == nullptr) owner = plain;
     std::string key = owner->tag() + "::" + name;
 
@@ -760,7 +746,7 @@ ExprPtr Parser::memberCallWith(ExprPtr object, const Type *cls,
     applyDefaults(sig, args, pos);
     // One a using-declaration brought in is the base's, called on the base as if found there (M1 L2).
     if (forceOwner == nullptr && !sig.owner.empty() && sig.owner != owner->tag())
-        if (const Type *declared = findTypedef(sig.owner))
+        if (const Type *declared = lookup_.findTypedef(sig.owner))
             if (declared->isStructOrUnion() && accessibleBaseOffset(plain, declared->unqualified()) >= 0) {
                 owner = declared->unqualified();
                 key = owner->tag() + "::" + name;

@@ -184,7 +184,7 @@ bool Parser::isAggregateClass(const Type *t) const {
         return false;
     for (const Member &m : t->members())
         if (m.declaredIn == nullptr && m.access != Access::Public) return false;
-    if (const std::vector<std::size_t> *set = overloadsOf(constructorKey(t->tag())))
+    if (const std::vector<std::size_t> *set = lookup_.overloadsOf(constructorKey(t->tag())))
         for (std::size_t i : *set)
             if (!functions_[i].implicit) return false;
     return true;
@@ -472,11 +472,11 @@ bool Parser::foldDouble(const Expr &e, const Target &target, long double *out,
             return true;
         }
         if (v->isLocal()) {
-            if (const Local *l = findLocal(v->name()))
+            if (const Local *l = lookup_.findLocal(v->name()))
                 if (l->isConstantDouble) { *out = l->constantDouble; return true; }
             return false;
         }
-        if (const GlobalSym *g = findGlobal(v->name()))
+        if (const GlobalSym *g = lookup_.findGlobal(v->name()))
             if (g->isConstantDouble) { *out = g->constantDouble; return true; }
         // As in fold(): a static member lives under its symbol, not in globals_.
         if (const StaticConst *sc = findStaticConst(v->symbol()))

@@ -6,6 +6,7 @@
 #include "../Mangle.h"
 #include "../Type.h"
 #include "../sema/Entities.h"
+#include "../sema/Lookup.h"
 
 #include <functional>
 #include <map>
@@ -25,7 +26,7 @@ public:
     Parser(const Source &src, std::vector<Token> tokens,
            TypeTable &types, const Target &target, const Abi &abi)
         : src_(src), tokens_(std::move(tokens)), types_(types), target_(target),
-          abi_(abi) {}
+          abi_(abi), lookup_(*this) {}
 
     Program parse();
 
@@ -249,7 +250,7 @@ private:
     // **Where a declaration actually put its signature.**
     std::size_t signatureAddedUnder(const std::string &key,
                                     std::size_t before) const {
-        const std::vector<std::size_t> *set = overloadsOf(key);
+        const std::vector<std::size_t> *set = lookup_.overloadsOf(key);
         if (set == nullptr || set->empty()) return PendingBody::npos();
         return set->back() >= before ? set->back() : PendingBody::npos();
     }
@@ -759,7 +760,7 @@ private:
     bool isTemplateName(const std::string &name, bool qualified = false) const {
         if (templates_.find(name) == templates_.end()) return false;
         if (qualified) return true;
-        return findLocal(name) == nullptr && findGlobal(name) == nullptr;
+        return lookup_.findLocal(name) == nullptr && lookup_.findGlobal(name) == nullptr;
     }
     bool templateDeclaration();
     // `allowUnnamed` for a template template parameter's own list, whose names nothing refers to.
@@ -992,6 +993,10 @@ private:
 
     // Read here for one question - how a class comes back - and by each backend for the rest.
     const Abi &abi_;
+    // **Sema's modules, out of the parser in place** (M2 step 1, doc-cxx3/M2-PLAN.md): each reads the
+    // parser's state through a reference back to it until that state moves to the module.
+    friend class sema::Lookup;
+    sema::Lookup lookup_;
     // **How a class goes to a function, and the two ABIs part company here.** Itanium
     // passes one by address whenever copying or destroying it is a call, and the caller
     // destroys the copy; Microsoft passes by the size rules and the callee destroys.
@@ -1182,12 +1187,6 @@ private:
     long long expectNumber(const char *what);
 
     bool atTypeName() const;
-    const Type *findTypedef(const std::string &name) const;
-    // **`::Lexer` - the global scope and nothing nearer**, which is the whole
-    // of what a leading `::` asks for.
-    const Type *findGlobalTypedef(const std::string &name) const;
-    void declareTypeName(const std::string &name, const Type *type);
-    const EnumConst *findEnum(const std::string &name) const;
     const Type *memberTypeWalk(const Type *t);
     const Type *structOrUnionSpecifier(Kind kind, bool isClass = false);
     void checkAccessible(const Type *object, const Member &m, std::size_t pos) const;
@@ -1204,7 +1203,7 @@ private:
     // Whether the class declares a constructor - a constructor *template* counts, [class.ctor]/5,
     // though none of its specializations is in the table until something asks for one.
     bool hasConstructors(const std::string &cls) const {
-        return overloadsOf(constructorKey(cls)) != nullptr ||
+        return lookup_.overloadsOf(constructorKey(cls)) != nullptr ||
                memberTemplates_.count(constructorKey(cls)) != 0;
     }
     void declareConstructor(const std::string &cls, std::size_t pos, Access access,
@@ -1662,7 +1661,7 @@ private:
     // `C::f(...)` means one only if it is - `Base::f(...)` on an ordinary
     // member is a different construct and must not be taken for this one.
     bool hasStaticMemberNamed(const std::string &key) const {
-        const std::vector<std::size_t> *set = overloadsOf(key);
+        const std::vector<std::size_t> *set = lookup_.overloadsOf(key);
         if (set == nullptr) return false;
         for (std::size_t i = 0; i < set->size(); i++)
             if (functions_[(*set)[i]].isStaticMember) return true;
@@ -1727,16 +1726,11 @@ private:
                            const std::string &name, std::size_t pos,
                            std::vector<ExprPtr> args,
                            const Type *forceOwner = nullptr);
-    // The class up the chain that declares this member function, searching every base rather than only the first.
-    const Type *findMemberOwner(const Type *cls, const std::string &name) const;
 
     // The class a member template's signature is read in, for lookup alone ([basic.scope.class]).
     const Type *signatureClass_ = nullptr;
-    // The class whose member function is being parsed, and the frame offset of its
-    // hidden `this` parameter; empty and 0 outside one. Below it, the classes whose
-    // bodies are being parsed, outermost first, which gives a nested class its tag.
+    // The classes whose bodies are being parsed, outermost first, which gives a nested class its tag.
     std::vector<const Type *> classStack_;
-    const Type *lookupInClass(const Type *cls, const std::string &name) const;
     // Whether the class being parsed, or the one whose member function is being parsed, is this class or something derived from it.
     bool insideClass(const Type *cls) const;
     // **[class.access]/6**.
@@ -1792,8 +1786,6 @@ private:
     // its body reads them without a capture, [expr.prim.lambda]/12 (1.27).
     std::map<std::string, std::vector<Local> > closureConstants_;
     std::vector<Local> constantLocals() const;
-    // Whether class scope declares the name, so that it hides a global of that name.
-    bool classScopeDeclares(const std::string &name);
     bool hasOrdinaryMember(const Type *cls, const std::string &name);
     // Does this type mention a template parameter - the one test the pattern read's stand-ins ask.
     bool dependentType(const Type *t) const;
@@ -1895,8 +1887,6 @@ private:
     // from these tables - a qualified tag, and a scope emptied when the function ends.
     std::map<std::string, const Type *> localTypes_;   // written name -> type
     std::map<std::string, std::string> localClassOwner_;  // tag -> enclosing symbol
-    // The enclosing function's linkage name, for a class that is local to one.
-    const std::string *localOwnerOf(const std::string &tag) const;
     // An operator this compiler can *name* but cannot yet reach from an expression is
     // refused where it is declared. The arity decides which - `operator-` is two
     // functions and only one is missing - so it is asked once the parameters are known.
@@ -1949,7 +1939,6 @@ private:
     void declareStaticLocal(const std::string &name, const Type *type,
                             std::size_t pos, const std::string &symbol);
     void requireAssignable(const Expr &e, std::size_t pos, const char *what);
-    const Local *findLocal(const std::string &name) const;
     // **A template's own scope has none of the locals of the function that named it**: held aside
     // while its declaration or class body is read, put back on every way out.
     struct LocalsHidden {
@@ -1967,8 +1956,6 @@ private:
     int enterBlock();
     void leaveBlock();
     int currentBlock() const { return blockStack_.empty() ? 0 : blockStack_.back(); }
-    const GlobalSym *findGlobal(const std::string &name) const;
-    GlobalSym *findGlobalToUpdate(const std::string &name);
 
     const Type *composite(const Type *a, const Type *b);
     const Type *compositePointer(const Type *a, const Type *b);
@@ -1977,12 +1964,6 @@ private:
                          bool variadic, bool defining, std::size_t pos,
                          bool internal = false);
     ExprPtr defaultPromote(ExprPtr e);
-    const Signature &lookupFunction(const std::string &name, std::size_t pos) const;
-    const Signature *findFunction(const std::string &name) const;
-    const std::vector<std::size_t> *overloadsOf(const std::string &name) const;
-    const Signature &lookupSignature(const std::string &name,
-                                     const std::vector<const Type *> &params,
-                                     bool variadic, std::size_t pos) const;
 
     static std::string describeSignature(const Signature &f);
     const Type *decayedType(const Type *t);
@@ -2256,64 +2237,17 @@ private:
     }
     // Every namespace defined `inline`, by full path - [namespace.def]/8.
     std::set<std::string> inlineNamespaces_;
-    // Every prefix `a::b::` becomes with inline components taken out: `lib::v2::`'s member is `lib::`'s.
-    std::vector<std::string> inlineAliasPrefixes(const std::string &prefix) const;
     typedef sema::TableSizes TableSizes;
-    TableSizes tableSizes() const {
-        return TableSizes{ functions_.size(), globals_.size(), typedefs_.size(), enums_.size() };
-    }
-    void aliasInlineMembers(const TableSizes &before);
-    void aliasTypeKey(const std::string &key, std::size_t index);
-    void aliasFunctionKey(const std::string &key, std::size_t index);
-    // [namespace.udir]/6: a name found in the namespace and in an inline one of it, as two
-    // entities, is ambiguous - refused where the key is turned into the entity it names.
-    void refuseInlineAmbiguity(const std::string &key, std::size_t index,
-                               const std::unordered_map<std::string, std::size_t> &table,
-                               bool (Parser::*same)(std::size_t, std::size_t) const = nullptr) const;
-    // Two typedef entries naming one type are one entity, as a typedef written twice is.
-    bool sameTypedef(std::size_t a, std::size_t b) const { return typedefs_[a].type == typedefs_[b].type; }
-    // The namespace a class was declared in, as namespaceStack_ spells it (n::m as {n, m}).
-    std::vector<std::string> classNamespacePath(const Type *t) const;
     // The namespace an out-of-line definition was written for, while it is read; its defaults read there.
     std::vector<std::string> definitionNamespace_;
     // `int lib::f(int) {}` reaches an f declared in an inline namespace of lib; an unqualified one declares anew.
     bool definingQualified_ = false;
-    // The qualified name to look a written one up under: the enclosing namespaces from
-    // the innermost outwards, then whatever a `using namespace` has opened, then the
-    // name itself. `exists` says which table to ask, functions and variables differing.
-    std::string qualifyForLookup(const std::string &name,
-                                 bool (Parser::*exists)(const std::string &) const) const;
-    // The namespace a first component names, innermost out: `inner` in `outer` is "outer::inner".
-    std::string namespaceNamed(const std::string &first) const;
     static std::vector<std::string> namespacePathStack(const std::string &ns);
     // How many tokens from `from` spell a namespace qualifier, `lib :: v2 ::` being four; 0 for none.
     std::size_t namespaceQualifierTokens(std::size_t from) const;
-    // An unqualified name declared in an enclosing namespace, innermost first, or "" -
-    // asked before the flat table, since [basic.lookup.unqual]/1 lets the nearer one hide a global.
-    // A type named in the classes this is inside, innermost first, or null.
-    const Type *classScopeType(const std::string &name) const;
-    std::string enclosingNamespaceKey(const std::string &name,
-                                      bool (Parser::*exists)(const std::string &) const) const;
-    // The name a using-declaration redirects `key` to, following a chain of them
-    // and stopping at a fixed depth so that `using A::x;` and `using B::x;`
-    // written into a cycle cannot hang the parser instead of failing a lookup.
-    std::string followUsingDeclaration(const std::string &key) const;
-    bool hasFunctionNamed(const std::string &key) const;
-    bool hasGlobalNamed(const std::string &key) const;
-    bool hasTypeNamed(const std::string &key) const;
-    bool hasEnumNamed(const std::string &key) const;
-    // An enumerator named through the class it was written in, and through that class's bases.
-    const EnumConst *enumInClass(const Type *cls, const std::string &name) const;
-    // findEnum's class half on its own: an enumerator of the class being
-    // parsed is at *class* scope and beats a global, where one at namespace
-    // scope does not beat a member.
-    const EnumConst *findClassEnum(const std::string &name) const;
     std::size_t qualifiedTypeEnd() const;
     // The type the chain qualifiedTypeEnd measured reaches, a member typedef included.
     const Type *qualifiedTypeAt(std::size_t end) const;
-    std::vector<std::string> lookupKeys(const std::string &name,
-                                        const Type *left,
-                                        const Type *right) const;
 
     std::map<std::string, std::size_t> memberInit_;
     // The members whose initialiser is written `= {...}`, copy-list rather than direct (M1 L4).

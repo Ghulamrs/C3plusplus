@@ -674,3 +674,13 @@ members in the declaring unit and cpp11 emits them all, which
 suppressed specializations consulted where a use would instantiate, and a
 refusal where the promised definition never appears; it is recorded here rather
 than built because nothing observable but the object's size depends on it.
+
+## A class first named `struct X` and defined `class X` is spelled U in a name read before its definition
+
+**Found 2026-10-24 writing `friend-class-qualified` (M2.1), and not mended.** The Microsoft ABI writes U
+for a struct and V for a class, and clang spells `class Box` V even where Box was first named by the
+elaborated `struct Box` in a parameter. cxx3 computes a member's symbol where it is declared, so in
+`struct Outer { struct Inner { int minus(const struct Box &); }; }; class Box { ... };` the symbol of
+`minus` is `?minus@Inner@Outer@@QEBAHAEBUBox@@@Z` where clang writes `...AEBVBox@@@Z`. A cxx3 object and a
+cl object naming that member do not link. The Itanium ABI does not spell the key, so only x86_64-windows
+is affected.

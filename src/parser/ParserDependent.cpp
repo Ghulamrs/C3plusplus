@@ -21,10 +21,10 @@ bool Parser::dependentAhead(bool angle) const {
             if (k > 0 && (peekAt(k - 1).is(".") || peekAt(k - 1).is("->"))) continue;
             if (nonTypePatternParams_.count(t.text) != 0 || packs_.count(t.text) != 0) return true;
             if (boundTypeParams_.count(t.text) != 0) {
-                const Type *bound = findTypedef(t.text);
+                const Type *bound = lookup_.findTypedef(t.text);
                 if (bound != nullptr && dependentType(bound)) return true;
             }
-            if (const Local *l = findLocal(t.text))
+            if (const Local *l = lookup_.findLocal(t.text))
                 if (l->trailingParam >= 0 && dependentType(l->type)) return true;
         }
     }
@@ -293,7 +293,7 @@ const DepExpr *Parser::depPrimary(bool angle) {
         if (packs_.count(name) != 0) depRefuse(pos, "a parameter pack");
         // A type parameter: `T(x)` is a cast, `T::count` the unresolved `sr T_ 5count`.
         if (boundTypeParams_.count(name) != 0) {
-            const Type *t = findTypedef(name);
+            const Type *t = lookup_.findTypedef(name);
             if (t != nullptr && t->kind() == Kind::TemplateParam) {
                 if (peekAt(1).is("::")) {
                     if (peekAt(2).kind != TokenKind::Ident || peekAt(3).is("::") ||
@@ -319,7 +319,7 @@ const DepExpr *Parser::depPrimary(bool angle) {
         // An enclosing template's non-type parameter is bound to its value here, and clang spells
         // that value: `V<N + K>` in `V<3>` is `XplLm3ET_E`, measured.
         if (boundValueParams_.count(name) != 0) {
-            const EnumConst *e = findEnum(name);
+            const EnumConst *e = lookup_.findEnum(name);
             if (e != nullptr && e->paramType != nullptr && e->paramType->isInteger()) {
                 at_++;
                 n.op = DepExpr::Literal;
@@ -328,7 +328,7 @@ const DepExpr *Parser::depPrimary(bool angle) {
                 return depNode(n);
             }
         }
-        if (const Local *l = findLocal(name)) {
+        if (const Local *l = lookup_.findLocal(name)) {
             if (l->trailingParam < 0) depRefuse(pos, "a local name");
             at_++;
             n.op = DepExpr::FunctionParam;

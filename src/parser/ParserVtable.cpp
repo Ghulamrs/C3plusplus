@@ -89,7 +89,7 @@ const Parser::VSlot *Parser::declaredSlot(const Type *cls, const VSlot &s) const
     if (dtor) {
         if (destructorOf(cls) == nullptr) return nullptr;
     } else {
-        const std::vector<std::size_t> *set = overloadsOf(cls->tag() + "::" + s.name);
+        const std::vector<std::size_t> *set = lookup_.overloadsOf(cls->tag() + "::" + s.name);
         if (set == nullptr) return nullptr;
         bool own = false;
         for (std::size_t k = 0; k < set->size() && !own; k++) {
@@ -265,7 +265,7 @@ std::string Parser::synthesizeVirtualThunk(const Type *type, const VSlot &slot,
     const Type *returns = types_.get(Kind::Void);
     if (slot.name != "~" && slot.name != "~$deleting")
         if (const std::vector<std::size_t> *set =
-                overloadsOf(type->tag() + "::" + slot.name))
+                lookup_.overloadsOf(type->tag() + "::" + slot.name))
             for (std::size_t k = 0; k < set->size(); k++)
                 if (functions_[(*set)[k]].symbol == slot.symbol)
                     returns = functions_[(*set)[k]].returns;

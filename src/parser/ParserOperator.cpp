@@ -1067,7 +1067,7 @@ ExprPtr Parser::assign() {
         Init in = parseInitialiser();
         const Type *plain = to->unqualified();
         if (plain->isStructOrUnion()) {
-            if (const std::vector<std::size_t> *set = overloadsOf(assignmentKey(plain->tag())))
+            if (const std::vector<std::size_t> *set = lookup_.overloadsOf(assignmentKey(plain->tag())))
                 for (std::size_t i : *set) {
                     const Signature &f = functions_[i];
                     if (f.params.size() != 1 || !isInitializerListType(f.params[0]->unqualified())) continue;
@@ -1110,7 +1110,7 @@ ExprPtr Parser::assignValue(ExprPtr n, ExprPtr value, std::size_t pos) {
     // not by moving its bytes - the one for the value's category, an lvalue
     // taking `const T &` and an xvalue or prvalue `T &&` (review A22).
     if (const Signature *op = copyAssignOf(to->unqualified())) {
-        const std::vector<std::size_t> *set = overloadsOf(assignmentKey(to->unqualified()->tag()));
+        const std::vector<std::size_t> *set = lookup_.overloadsOf(assignmentKey(to->unqualified()->tag()));
         if (set != nullptr) {
             const bool wantMove = !isLvalue(*value);
             for (std::size_t i = 0; i < set->size(); i++) {

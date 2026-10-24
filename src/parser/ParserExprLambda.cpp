@@ -32,7 +32,7 @@ const Type *Parser::deduceLambdaReturn(std::size_t paramsFrom,
     const std::size_t enclosingGuards = guardSlots_.size();
     // **`this` is the exception**: a member is reached through it, and the body
     // may name one, so it is carried across the clear.
-    const Local *hadThis = findLocal("this");
+    const Local *hadThis = lookup_.findLocal("this");
     Local keptThis;
     const bool haveThis = hadThis != nullptr;
     if (haveThis) keptThis = *hadThis;
@@ -167,17 +167,17 @@ std::vector<Parser::Local> Parser::constantLocals() const {
 // **The captured pointer has the type `this` has in the enclosing function** -
 // [expr.prim.lambda]/18.
 const Type *Parser::capturedThisClass() {
-    const Local *enclosing = findLocal("this");
+    const Local *enclosing = lookup_.findLocal("this");
     if (enclosing != nullptr && enclosing->type->pointee() != nullptr)
         return enclosing->type->pointee();
     return currentClass_;
 }
 
 bool Parser::namesOwnMember(const std::string &name) {
-    if (currentClass_ == nullptr || findLocal("this") == nullptr) return false;
+    if (currentClass_ == nullptr || lookup_.findLocal("this") == nullptr) return false;
     const Type *cls = currentClass_->unqualified();
     return cls->findMember(name) != nullptr ||
-           findMemberOwner(cls, name) != nullptr;
+           lookup_.findMemberOwner(cls, name) != nullptr;
 }
 
 ExprPtr Parser::lambdaExpression() {
@@ -263,7 +263,7 @@ ExprPtr Parser::lambdaExpression() {
                                   "compiler is C++11: a capture here names "
                                   "something the enclosing function already "
                                   "declared");
-        const Local *have = findLocal(cname);
+        const Local *have = lookup_.findLocal(cname);
         // [expr.prim.lambda]/10: a member of an anonymous union is no variable to capture, clang's words.
         if (have != nullptr && have->sharesSlot)
             src_.fail(cpos, "'" + cname + "' in capture list does not name a variable");
@@ -331,7 +331,7 @@ ExprPtr Parser::lambdaExpression() {
             for (std::size_t k = 0; k < capNames.size(); k++)
                 if (capNames[k] == n) { had = true; break; }
             if (had) continue;
-            const Local *have = findLocal(n);
+            const Local *have = lookup_.findLocal(n);
             if (have != nullptr && have->sharesSlot)
                 src_.fail(tokens_[i].pos, "unnamed variable cannot be implicitly captured in a lambda expression");
             const Type *raw = have != nullptr ? have->type : nullptr;
@@ -403,7 +403,7 @@ ExprPtr Parser::lambdaExpression() {
     else if (currentClass_ != nullptr) closureScope_[tag] = currentClass_->unqualified();
     // The enclosing function's constants, for the body's replay as `operator()` (1.27).
     closureConstants_[tag] = constantLocals();
-    declareTypeName(tag, closure);
+    lookup_.declareTypeName(tag, closure);
     // Laid out as any class is: each member at the next offset its own
     // alignment allows, and the whole thing aligned to the widest of them.
     std::vector<Member> members;
@@ -443,7 +443,7 @@ ExprPtr Parser::lambdaExpression() {
     // into tokens_ is what PendingBody keeps, and an index survives the vector
     // growing where a pointer would not.
     const std::string retName = "$lret" + std::to_string(lambdaRetSeq_++);
-    declareTypeName(retName, returns);
+    lookup_.declareTypeName(retName, returns);
     const std::size_t start = tokens_.size();
     Token t;
     t.pos = pos;
@@ -515,7 +515,7 @@ ExprPtr Parser::buildClosureObject(const MadeLambda &made, std::size_t pos) {
             // or, inside a closure that captured it, that closure's copy.
             src = capturedThisPointer();
             if (src == nullptr) {
-                const Local *self = findLocal("this");
+                const Local *self = lookup_.findLocal("this");
                 src.reset(Var::local("this", self != nullptr ? self->offset
                                                              : thisOffset_));
                 src->setType(self != nullptr ? self->type : made.types[i]);
@@ -668,7 +668,7 @@ ExprPtr Parser::capturedThisPointer() {
     if (outer == closureOuter_.end()) return nullptr;
     const Member *held = currentClass_->unqualified()->findMember(capturedThis());
     if (held == nullptr) return nullptr;
-    const Local *self = findLocal("this");
+    const Local *self = lookup_.findLocal("this");
     if (self == nullptr) return nullptr;
 
     ExprPtr acc = thisMember(self->offset, self->type->pointee(), *held);
@@ -703,7 +703,7 @@ ExprPtr Parser::outerCaptureAccess(const std::string &name) {
         return nullptr;
     const Member *m = closure->findMember(name);
     if (m == nullptr) return nullptr;
-    const Local *self = findLocal("this");
+    const Local *self = lookup_.findLocal("this");
     if (self == nullptr) return nullptr;
 
     ExprPtr acc = thisMember(self->offset, closure, *m);
@@ -715,7 +715,7 @@ ExprPtr Parser::outerCaptureAccess(const std::string &name) {
 void Parser::captureFreeConversion(const std::string &tag, const std::string &local,
                                    const Type *returns, const std::vector<const Type *> &params,
                                    std::size_t pos, std::vector<PendingBody> &bodies) {
-    const Type *closure = findTypedef(tag);
+    const Type *closure = lookup_.findTypedef(tag);
     const Type *fn = types_.functionType(returns, params, false);
     const Type *fp = types_.pointerTo(fn);
     Declared inv;
@@ -731,9 +731,9 @@ void Parser::captureFreeConversion(const std::string &tag, const std::string &lo
 
     const std::string k = std::to_string(lambdaConvSeq_++);
     const std::string cls = "$lcls" + k, ptr = "$lfp" + k, ret = "$lret" + std::to_string(lambdaRetSeq_++);
-    declareTypeName(cls, closure);
-    declareTypeName(ptr, fp);
-    declareTypeName(ret, returns);
+    lookup_.declareTypeName(cls, closure);
+    lookup_.declareTypeName(ptr, fp);
+    lookup_.declareTypeName(ret, returns);
     Token t;
     t.pos = pos;
     auto put = [&](TokenKind kind, const std::string &text) { t.kind = kind; t.text = text; tokens_.push_back(t); };
@@ -741,7 +741,7 @@ void Parser::captureFreeConversion(const std::string &tag, const std::string &lo
     put(TokenKind::Ident, ret); put(TokenKind::Ident, "__invoke"); put(TokenKind::Punct, "(");
     for (std::size_t i = 0; i < params.size(); i++) {
         const std::string pt = "$lpt" + k + "_" + std::to_string(i);
-        declareTypeName(pt, params[i]);
+        lookup_.declareTypeName(pt, params[i]);
         if (i > 0) put(TokenKind::Punct, ",");
         put(TokenKind::Ident, pt); put(TokenKind::Ident, "$a" + std::to_string(i));
     }
