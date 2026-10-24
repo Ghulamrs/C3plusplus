@@ -234,6 +234,13 @@ holding the caught object's `var` and the block, so a name in the block finds it
 `e` was declared nowhere. A body the parser wraps in a `try` of its own (a `throw(...)` list, a function try block)
 stays the parser's (`wrappedBodies_`). At M2.12j: 1,128 of 1,986 adapted, all the same.
 
+**M2.12k: a `try` among objects, and objects in a `try`.** A block's cleanup regions split round a `try` it holds,
+which answers for itself; the `try`'s chain and its handlers' pads destroy what is alive round it from where the
+parser says it owes (`TryFacts::owesFrom`). A class local in the `try`'s body is a segment whose pad destroys from the
+`try`'s entry and hands the selector to the chain, taking the `try`'s types once its handlers are read; one in a
+handler hands to that handler's end-catch pad - `Parser::unwindTarget`, kept as a stack (`handovers_`). A throw of a
+class copied by its bytes is the scalar's shape. At M2.12k: 1,151 of 1,986 adapted, all the same.
+
 **The parser's `Ast.h` is the oracle for the new path while both exist**: the new path is right where it
 produces what the old one produced. That is `tools/identical.sh` again, and the reason the old path is kept
 until the new one has matched it everywhere.

@@ -32,7 +32,7 @@ private:
     void ownedLocal(TypedId var, const Local &l, std::vector<StmtPtr> &body);
     void destroy(std::vector<StmtPtr> &into, std::size_t from, std::size_t to) const;
     std::vector<StmtPtr> wrapCleanups(std::vector<StmtPtr> body, const std::vector<std::pair<std::size_t, std::size_t> > &built,
-                                      std::size_t aliveAtEntry, std::pair<int, int> slots) const;
+                                      std::size_t aliveAtEntry, std::pair<int, int> slots, const std::vector<std::size_t> &tryAt);
     StmtPtr unwindingReturn(TypedId id);
     StmtPtr leaving(TypedId id, StmtPtr jump);
     StmtPtr tryStatement(TypedId id);
@@ -83,6 +83,10 @@ private:
     // Inside a `try` body, and the loops open where each handler that encloses this point was entered.
     int tryDepth_ = 0;
     std::vector<std::size_t> handlerLoops_;
+    // Parser::unwindTarget: where a cleanup inside a `try` body or a handler hands over - the try's chain, which
+    // destroys from the try's entry and whose segments take its types, or a handler's end-catch pad.
+    struct Handover { std::string label; int ptr = 0, sel = 0; std::size_t aliveFrom = 0; bool chain = false; std::vector<Try *> segments; };
+    std::vector<Handover> handovers_;
 };
 
 }   // namespace sema

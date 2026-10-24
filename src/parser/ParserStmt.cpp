@@ -1583,7 +1583,9 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
     // What the adapter needs to rebuild this `try`, where it is one it can: nothing outside it alive, nothing round it.
     TryFacts facts;
     facts.simple = !microsoft && !bodyFn && spec.empty() && !rethrows && enclosingChain.empty() &&
-                   wasHandlerLabel.empty() && aliveOutside == 0;
+                   wasHandlerLabel.empty();
+    facts.aliveOutside = aliveOutside;
+    facts.owesFrom = owesFrom;
 
     // **A `throw(T...)` list is a handler of no type of its own**: the table's filter, the selector negative.
     if (!spec.empty()) {
@@ -2096,7 +2098,8 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
     // The one chain, behind the label those segments jump to.
     StmtPtr labelled(new Label(chainLabel, std::move(chain)));
 
-    if (facts.simple && segments.empty()) {
+    if (facts.simple) {
+        facts.unwindsHere = unwindsHere;
         facts.ptr = pointerSlot;
         facts.sel = selectorSlot;
         facts.chain = chainLabel;

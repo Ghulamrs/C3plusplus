@@ -538,6 +538,7 @@ private:
     struct TryHandlerFacts { int scope = 0; std::string endLabel; int padPtr = 0, padSel = 0; bool canThrow = false; };
     struct TryFacts {
         bool simple = false; int ptr = 0, sel = 0; std::string chain;
+        std::size_t aliveOutside = 0, owesFrom = 0; bool unwindsHere = false;
         std::vector<std::string> types; std::vector<int> indices; std::vector<TryHandlerFacts> handlers;
     };
     std::unordered_map<std::uint32_t, TryFacts> tryFacts_;

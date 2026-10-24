@@ -10757,6 +10757,12 @@ nothing alive round it, each handler binding what it caught and ending the catch
 handler is a `catch` node in the syntax tree now**, holding its caught object's `var`; it had been a bare block, so
 `catch (int e) { r = e; }` named an `e` the typer could not find.
 
+## M2.12k: a `try` among objects, and objects in a `try`, 2026-10-24
+
+**1,151 of 1,986 functions take the adapter's body**, all the same. A block's regions split round a `try`; the
+`try` destroys what is alive round it from `owesFrom`; a class local in its body or in a handler is a cleanup segment
+that hands over - to the chain, carrying the `try`'s types, or to the end-catch pad - as `Parser::unwindTarget` says.
+
 ## Build
 
 ```

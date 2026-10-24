@@ -21,6 +21,7 @@ StmtPtr Adapter::body(TypedId typed, const Function &fn, std::string *why) {
     loopMarks_.clear();
     tryDepth_ = 0;
     handlerLoops_.clear();
+    handovers_.clear();
     std::unordered_map<std::uint32_t, const Type *>::const_iterator declared =
         p_.declaredReturns_.find(typer_.tree().node(typed).syntax.v);
     if (declared != p_.declaredReturns_.end() && declared->second != nullptr) returns_ = declared->second;
@@ -99,19 +100,20 @@ StmtPtr Adapter::stmt(TypedId id) {
             // regions are wrapped in the slots the parser chose.
             const std::size_t aliveAtEntry = alive_.size();
             std::vector<std::pair<std::size_t, std::size_t> > built;
+            std::vector<std::size_t> tryAt;
             std::vector<StmtPtr> body;
             for (std::uint32_t i = 0; i < n.count; i++) {
                 const TypedId part = tree.child(id, i);
                 const std::size_t before = alive_.size();
                 body.push_back(syn(part).kind == syntax::Kind::DeclStmt ? declaration(part, true) : stmt(part));
+                if (syn(part).kind == syntax::Kind::Try) tryAt.push_back(body.size() - 1);
                 if (alive_.size() > before) built.push_back(std::make_pair(body.size(), alive_.size()));
             }
             destroy(body, aliveAtEntry, alive_.size());
             if (!built.empty()) {
                 std::unordered_map<std::uint32_t, std::pair<int, int> >::const_iterator k = p_.blockCleanups_.find(n.syntax.v);
                 if (k == p_.blockCleanups_.end()) outside("a block whose cleanup slots were not recorded");
-                if (tryDepth_ > 0 || !handlerLoops_.empty()) outside("an object built inside a try or a handler");
-                body = wrapCleanups(std::move(body), built, aliveAtEntry, k->second);
+                body = wrapCleanups(std::move(body), built, aliveAtEntry, k->second, tryAt);
             }
             alive_.resize(aliveAtEntry);
             std::unique_ptr<Block> b = make_owned<Block>(std::move(body));
@@ -327,36 +329,36 @@ void Adapter::destroy(std::vector<StmtPtr> &into, std::size_t from, std::size_t 
 // Parser::wrapCleanups, cleanupPad and unwindPad for a block with no `try` and no temporary: each stretch from one
 // construction to the next a Try whose pad destroys what was built by then and resumes unwinding.
 std::vector<StmtPtr> Adapter::wrapCleanups(std::vector<StmtPtr> body, const std::vector<std::pair<std::size_t, std::size_t> > &built,
-                                           std::size_t aliveAtEntry, std::pair<int, int> slots) const {
-    const Type *voidPtr = p_.types_.pointerTo(p_.types_.get(Kind::Void));
+                                           std::size_t aliveAtEntry, std::pair<int, int> slots,
+                                           const std::vector<std::size_t> &tryAt) {
+    Handover *into = handovers_.empty() ? nullptr : &handovers_.back();
+    if (into != nullptr && (slots.first != into->ptr || slots.second != into->sel)) outside("a cleanup in slots not its handover's");
     std::vector<StmtPtr> out;
     for (std::size_t i = 0; i < built[0].first; i++) out.push_back(std::move(body[i]));
     for (std::size_t k = 0; k < built.size(); k++) {
         const std::size_t from = built[k].first, to = k + 1 < built.size() ? built[k + 1].first : body.size();
-        std::vector<StmtPtr> guarded;
-        for (std::size_t i = from; i < to; i++) guarded.push_back(std::move(body[i]));
-        if (guarded.empty()) continue;
-        std::vector<StmtPtr> steps;
-        destroy(steps, aliveAtEntry, built[k].second);
-        std::vector<ExprPtr> resumeArgs;
-        const char *resume = "__cxa_end_cleanup";
-        if (p_.target_.resumeTakesException()) {
-            resume = "_Unwind_Resume";
-            resumeArgs.push_back(typed(std::unique_ptr<Var>(Var::local(".ex.ptr", slots.first)), voidPtr));
+        // A region is split around every `try` in it, the `try` answering for itself.
+        std::size_t cur = from;
+        while (cur < to) {
+            std::size_t stop = to;
+            for (std::size_t t : tryAt)
+                if (t >= cur && t < stop) stop = t;
+            std::vector<StmtPtr> guarded;
+            for (std::size_t i = cur; i < stop; i++) guarded.push_back(std::move(body[i]));
+            if (!guarded.empty()) {
+                std::vector<StmtPtr> steps;
+                destroy(steps, into != nullptr && into->chain ? into->aliveFrom : aliveAtEntry, built[k].second);
+                if (into != nullptr) steps.push_back(make_owned<Goto>(into->label));
+                else steps.push_back(p_.resumeUnwinding(slots.first));
+                std::unique_ptr<Try> seg = make_owned<Try>(std::move(guarded), p_.unwindPad(std::move(steps)), slots.first,
+                                                           slots.second, std::vector<std::string>());
+                if (into != nullptr && into->chain) into->segments.push_back(seg.get());
+                out.push_back(std::move(seg));
+            }
+            if (stop == to) break;
+            out.push_back(std::move(body[stop]));
+            cur = stop + 1;
         }
-        const int named = static_cast<int>(resumeArgs.size());
-        std::unique_ptr<Call> r = make_owned<Call>(resume, ExprPtr(), std::move(resumeArgs), false, 0, named,
-                                                   std::vector<int>(static_cast<std::size_t>(named), 0));
-        r->setSymbol(resume);
-        std::unique_ptr<Block> inner = make_owned<Block>(std::move(steps));
-        inner->setScope(-1);
-        inner->setUnwindCleanup();
-        std::vector<StmtPtr> padBody;
-        padBody.push_back(std::move(inner));
-        padBody.push_back(make_owned<ExprStmt>(typed(std::move(r), p_.types_.get(Kind::Void))));
-        std::unique_ptr<Block> pad = make_owned<Block>(std::move(padBody));
-        pad->setScope(-1);
-        out.push_back(make_owned<Try>(std::move(guarded), std::move(pad), slots.first, slots.second, std::vector<std::string>()));
     }
     return out;
 }
@@ -1338,7 +1340,8 @@ std::vector<StmtPtr> Adapter::throwSteps(TypedId id) {
     if (f == p_.throwFacts_.end()) outside("a throw the adapter cannot rebuild");
     ExprPtr value = decay(expr(typer_.tree().child(id, 0)));
     const Type *thrown = value->type()->unqualified();
-    if (!scalar(thrown)) outside("a throw of what is not a scalar");
+    const bool bytes = thrown->isStructOrUnion() && byteClass(p_, thrown);
+    if (!scalar(thrown) && !bytes) outside("a throw of what is not a scalar");
     const Type *voidPtr = p_.types_.pointerTo(p_.types_.get(Kind::Void));
     const Type *thrownPtr = p_.types_.pointerTo(thrown);
     std::vector<ExprPtr> sizeArg;
@@ -1348,8 +1351,8 @@ std::vector<StmtPtr> Adapter::throwSteps(TypedId id) {
                                             std::move(got)), voidPtr);
     ExprPtr cast = typed(make_owned<Cast>(thrownPtr, typed(std::unique_ptr<Var>(Var::local(f->second.temp, f->second.slot)), voidPtr)),
                          thrownPtr);
-    ExprPtr store = typed(make_owned<Assign>(typed(make_owned<Unary>('*', std::move(cast)), thrown), convert(std::move(value), thrown)),
-                          thrown);
+    ExprPtr stored = bytes ? classValue(std::move(value), thrown) : convert(std::move(value), thrown);
+    ExprPtr store = typed(make_owned<Assign>(typed(make_owned<Unary>('*', std::move(cast)), thrown), std::move(stored)), thrown);
     std::vector<ExprPtr> args;
     args.push_back(typed(std::unique_ptr<Var>(Var::local(f->second.temp, f->second.slot)), voidPtr));
     Var *ti = Var::global(f->second.info);
@@ -1370,14 +1373,24 @@ StmtPtr Adapter::tryStatement(TypedId id) {
     std::unordered_map<std::uint32_t, Parser::TryFacts>::const_iterator k = p_.tryFacts_.find(n.syntax.v);
     if (k == p_.tryFacts_.end()) outside("a try the adapter cannot rebuild");
     const Parser::TryFacts &facts = k->second;
-    if (!alive_.empty() || tryDepth_ > 0 || !handlerLoops_.empty()) outside("a try inside another or past objects alive");
+    if (alive_.size() != facts.aliveOutside || tryDepth_ > 0 || !handlerLoops_.empty())
+        outside("a try inside another, or with other objects alive");
     if (n.count != 1 + facts.handlers.size() || facts.types.size() != facts.handlers.size())
         outside("a try whose handlers were not recorded");
     const Type *voidPtr = p_.types_.pointerTo(p_.types_.get(Kind::Void));
     const Type *voidType = p_.types_.get(Kind::Void);
+    Handover chainTo;
+    chainTo.label = facts.chain;
+    chainTo.ptr = facts.ptr;
+    chainTo.sel = facts.sel;
+    chainTo.aliveFrom = facts.aliveOutside;
+    chainTo.chain = true;
+    handovers_.push_back(chainTo);
     tryDepth_++;
     StmtPtr body = stmt(tree.child(id, 0));
     tryDepth_--;
+    std::vector<Try *> segments = handovers_.back().segments;
+    handovers_.pop_back();
     std::vector<StmtPtr> handlers;
     for (std::size_t i = 0; i < facts.handlers.size(); i++) {
         const Parser::TryHandlerFacts &hf = facts.handlers[i];
@@ -1413,15 +1426,22 @@ StmtPtr Adapter::tryStatement(TypedId id) {
         } else {
             steps.push_back(make_owned<ExprStmt>(std::move(began)));
         }
+        Handover endTo;
+        endTo.label = hf.endLabel;
+        endTo.ptr = hf.padPtr;
+        endTo.sel = hf.padSel;
+        handovers_.push_back(endTo);
         handlerLoops_.push_back(loopMarks_.size());
         StmtPtr handlerBody = stmt(tree.child(c, cn.count - 1));
         handlerLoops_.pop_back();
+        handovers_.pop_back();
         // An exception leaving the handler ends the catch in a pad of its own, and unwinds on.
         if (hf.canThrow) {
             std::vector<StmtPtr> guarded;
             guarded.push_back(std::move(handlerBody));
             std::vector<StmtPtr> padSteps;
             padSteps.push_back(make_owned<ExprStmt>(p_.runtimeCall("__cxa_end_catch", voidType, std::vector<ExprPtr>())));
+            if (facts.aliveOutside > facts.owesFrom) destroy(padSteps, facts.owesFrom, facts.aliveOutside);
             padSteps.push_back(p_.resumeUnwinding(hf.padPtr));
             StmtPtr pad = make_owned<Label>(hf.endLabel, p_.unwindPad(std::move(padSteps)));
             steps.push_back(make_owned<Try>(std::move(guarded), std::move(pad), hf.padPtr, hf.padSel, std::vector<std::string>()));
@@ -1435,6 +1455,7 @@ StmtPtr Adapter::tryStatement(TypedId id) {
     }
     // What nothing matched unwinds on; each handler with a type tests the selector in front of what came after it.
     std::vector<StmtPtr> resume;
+    if (facts.unwindsHere && facts.aliveOutside > facts.owesFrom) destroy(resume, facts.owesFrom, facts.aliveOutside);
     resume.push_back(p_.resumeUnwinding(facts.ptr));
     StmtPtr chain = p_.unwindPad(std::move(resume));
     for (std::size_t i = handlers.size(); i-- > 0; ) {
@@ -1449,6 +1470,13 @@ StmtPtr Adapter::tryStatement(TypedId id) {
     std::unique_ptr<Try> t = make_owned<Try>(std::move(guarded), make_owned<Label>(facts.chain, std::move(chain)), facts.ptr,
                                              facts.sel, facts.types);
     t->setTypeIndices(facts.indices);
+    if (facts.unwindsHere) t->setAlsoCleanup();
+    // Every segment of the body carries this `try`'s catch types, and hands its selector to the chain.
+    for (Try *seg : segments) {
+        seg->setTypes(facts.types);
+        seg->setTypeIndices(facts.indices);
+        seg->setAlsoCleanup();
+    }
     return placed(std::move(t), syn(id), n.syntax);
 }
 
