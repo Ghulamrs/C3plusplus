@@ -461,6 +461,9 @@ Parser::FunctionState Parser::captureFunctionState() const {
     s.sretSlot = sretSlot_;
     s.nrvoName = nrvoName_;
     s.deducingReturn = deducingReturn_;
+    s.unaryOperand = unaryOperand_;
+    s.condParts = condParts_;
+    s.callArgs = callArgs_;
     s.unevaluated = unevaluated_;
     s.absoluteLookup = absoluteLookup_;
     s.lambdaCount = lambdaCount_;
@@ -536,6 +539,9 @@ void Parser::restoreFunctionState(const FunctionState &s) {
     sretSlot_ = s.sretSlot;
     nrvoName_ = s.nrvoName;
     deducingReturn_ = s.deducingReturn;
+    unaryOperand_ = s.unaryOperand;
+    condParts_ = s.condParts;
+    callArgs_ = s.callArgs;
     unevaluated_ = s.unevaluated;
     absoluteLookup_ = s.absoluteLookup;
     lambdaCount_ = s.lambdaCount;
@@ -612,6 +618,9 @@ void Parser::clearFunctionState() {
     sretSlot_ = 0;
     nrvoName_.clear();
     deducingReturn_ = nullptr;
+    unaryOperand_ = syntax::ExprId();
+    condParts_ = CondParts();
+    callArgs_.clear();
     lambdaCount_ = 0;
     unevaluated_ = 0;
     absoluteLookup_ = false;

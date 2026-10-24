@@ -201,6 +201,8 @@ void Driver::usage(char *file) {
         "       -version says which release this is, and which seal file\n"
         "         carries the CRC32 of the sources it was built from\n"
         "       -time reports how long each phase took\n"
+        "       -dump=syntax writes the syntax tree the grammar recorded, a root a\n"
+        "         line, on stdout; one input at a time\n"
         "       -keep-going[=N] reports up to N errors a file (100 if no N) and goes\n"
         "         on from the next declaration after each; the file still fails\n", file);
 }
@@ -1082,6 +1084,15 @@ bool Driver::parseArguments(int argc, char **argv) {
                 std::fprintf(stderr, "%s: -keep-going= wants a number of errors, 1 or more\n", argv[0]);
                 return false;
             }
+        } else if (std::strncmp(argv[i], "-dump=", 6) == 0 || std::strncmp(argv[i], "--dump=", 7) == 0) {
+            // The boundaries a dump is written at (design section 1): the syntax tree only, so far.
+            const char *what = std::strchr(argv[i], '=') + 1;
+            if (std::strcmp(what, "syntax") != 0) {
+                std::fprintf(stderr, "%s: -dump= takes 'syntax', the one boundary written so far - not '%s'\n",
+                             argv[0], what);
+                return false;
+            }
+            dumpSyntax_ = true;
         } else if (std::strcmp(argv[i], "-time") == 0) {
             timing_ = true;
         } else if (std::strcmp(argv[i], "-version") == 0 ||
@@ -1120,6 +1131,11 @@ bool Driver::parseArguments(int argc, char **argv) {
     standardIncludeDirectories(argv[0]);
 
     if (inputs.empty()) { usage(argv[0]); return false; }
+    // A dump is in the order its nodes were made; two files compiled at once would interleave.
+    if (dumpSyntax_ && inputs.size() > 1) {
+        std::fprintf(stderr, "%s: -dump=syntax takes one input at a time\n", argv[0]);
+        return false;
+    }
 
     // -E: each input after phase 4, on stdout, and nothing compiled.
     if (preprocessOnly_) {
@@ -1289,6 +1305,11 @@ bool Driver::compile(const Job &job) {
     Parser parser(src, std::move(tokens), types, target, backend_->abi());
     Program program = parser.parse();
     auto t3 = Clock::now();
+    if (dumpSyntax_) {
+        std::string dumped;
+        parser.syntaxTree().dump(dumped, src);
+        std::fwrite(dumped.data(), 1, dumped.size(), stdout);
+    }
 
     // **A file that writes `volatile` is compiled without -O**: the type system drops the qualifier, so an
     // optimizer would keep a volatile read in a register or delete it. **Said as a warning at the first

@@ -2,6 +2,7 @@
 
 #include "Type.h"
 #include "Mangle.h"
+#include "syntax/SyntaxId.h"
 
 #include <cstddef>
 #include <memory>
@@ -94,10 +95,14 @@ public:
     enum class Category { Natural, Lvalue, Prvalue };
     Category declCategory() const { return category_; }
     void setDeclCategory(Category c) { category_ = c; }
+    // The syntax node the grammar recorded for this expression, if it recorded one (M2 step 2); nothing reads it yet.
+    syntax::ExprId syntax() const { return syntax_; }
+    void setSyntax(syntax::ExprId s) { syntax_ = s; }
 private:
     const Type *type_ = nullptr;
     bool xvalue_ = false;
     Category category_ = Category::Natural;
+    syntax::ExprId syntax_;
 };
 
 class Stmt : public Node {

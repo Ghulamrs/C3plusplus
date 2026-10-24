@@ -30,6 +30,7 @@ private:
     const Backend *backend_ = &defaultBackend();
     bool toStdout_ = false;
     bool timing_ = false;
+    bool dumpSyntax_ = false;    // -dump=syntax: the syntax tree the grammar recorded, on stdout (M2 step 2)
     int keepGoing_ = 0;          // -keep-going[=N]: report up to N errors a file, not the first alone
     bool assemblyOnly_ = false;
     bool preprocessOnly_ = false;

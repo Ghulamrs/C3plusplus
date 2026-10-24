@@ -8,6 +8,7 @@
 #include "../Source.h"
 
 #include <climits>
+#include <cstdio>
 #include <cstring>
 
 // The pointer-width integer an offset is computed in: `long` where it is as wide as a pointer, else
@@ -1019,7 +1020,43 @@ ExprPtr Parser::qualifiedMemberThroughThis(const Type *cls, const Member &m,
     return useReference(std::move(acc));
 }
 
+// **The syntax of a primary expression** (M2 step 2): a literal, `this`, or a name - qualified, a destructor's
+// or an operator's - taken from the tokens it was read from. A parenthesised one keeps its inner node; a name
+// that read an argument list is the callee of a call, `f(x)` being resolved here and not in postfix.
 ExprPtr Parser::primary(Program *program) {
+    const Token &t = peek();
+    const std::size_t start = at_, pos = t.pos;
+    const unsigned gen = argGen_;
+    ExprPtr r = primaryNode(program);
+    if (!r || r->syntax().valid()) return r;
+    const Token &first = tokens_[start];
+    if (first.kind == TokenKind::Num) {
+        std::string text = !first.spelling.empty() ? first.spelling : std::to_string(first.value);
+        if (first.spelling.empty() && first.isFloat) {
+            char buf[40];
+            std::snprintf(buf, sizeof buf, "%.17g", static_cast<double>(first.dvalue));
+            text = buf;
+        }
+        return note(std::move(r), first.isFloat ? syntax::Kind::FloatLit
+                                  : first.isChar ? syntax::Kind::CharLit : syntax::Kind::IntLit, text, pos);
+    }
+    if (first.kind == TokenKind::Str) return note(std::move(r), syntax::Kind::StringLit, first.text, pos);
+    if (first.is("this")) return note(std::move(r), syntax::Kind::This, "this", pos);
+    std::size_t k = start;
+    std::string name;
+    while (k < at_ && (tokens_[k].kind == TokenKind::Ident || tokens_[k].is("::") || tokens_[k].is("~") ||
+                       tokens_[k].is("operator")))
+        name += tokens_[k++].text;
+    if (name.empty()) return r;     // a lambda, a cast, a keyword's own form: not recorded yet
+    if (k < at_ && tokens_[k].is("(") && argGen_ != gen) {
+        std::vector<syntax::ExprId> call(1, syntaxTree_.add(syntax::Kind::Name, name, pos));
+        call.insert(call.end(), callArgs_.begin(), callArgs_.end());
+        return note(std::move(r), syntax::Kind::Call, "", tokens_[k].pos, call);
+    }
+    return note(std::move(r), syntax::Kind::Name, name, pos);
+}
+
+ExprPtr Parser::primaryNode(Program *program) {
     // **`typename X<T>::type()` makes a temporary** - [temp.res]/3 says the name is a type,
     // and the body replays with T bound, so the hint is dropped here as in a declaration.
     if (peek().is("typename")) {
@@ -2705,9 +2742,60 @@ ExprPtr Parser::explicitDestructorCall(ExprPtr &object, std::size_t pos) {
     return both;
 }
 
+// **The syntax of one postfix step** (M2 step 2): what the token after the operand begins - a call, a subscript, a
+// member, a `++` or `--` - taken before the loop's branch reads it, and noted on the result at the top of the next turn.
+Parser::PostfixStep Parser::beginPostfix(const ExprPtr &n) const {
+    PostfixStep st;
+    st.pos = peek().pos;
+    st.operand = syn(n);
+    st.argGen = argGen_;
+    if (peek().is("(")) { st.kind = syntax::Kind::Call; st.active = true; }
+    else if (peek().is("[")) { st.kind = syntax::Kind::Subscript; st.active = true; }
+    else if (peek().is("++") || peek().is("--")) { st.kind = syntax::Kind::Postfix; st.text = peek().text; st.active = true; }
+    else if (peek().is(".") || peek().is("->")) {
+        st.kind = syntax::Kind::Member;
+        st.active = true;
+        std::size_t k = 1;
+        if (peekAt(k).is("template")) k++;
+        st.text = peek().text;
+        if (peekAt(k).is("~")) { st.text += "~"; k++; }
+        st.text += peekAt(k).text;
+        st.callFollows = peekAt(k + 1).is("(");
+        st.callPos = peekAt(k + 1).pos;
+    }
+    return st;
+}
+
+ExprPtr Parser::notePostfix(ExprPtr n, PostfixStep &st) {
+    if (!st.active) return n;
+    st.active = false;
+    std::vector<syntax::ExprId> kids(1, st.operand);
+    switch (st.kind) {
+        case syntax::Kind::Call:
+            kids.insert(kids.end(), callArgs_.begin(), callArgs_.end());
+            return note(std::move(n), syntax::Kind::Call, "", st.pos, kids);
+        case syntax::Kind::Subscript:
+            kids.push_back(st.index);
+            return note(std::move(n), syntax::Kind::Subscript, "", st.pos, kids);
+        case syntax::Kind::Member:
+            // `o.f(x)` is read in one turn, so a member that read arguments is the callee of a call.
+            if (st.callFollows && argGen_ != st.argGen) {
+                std::vector<syntax::ExprId> call(1, syntaxTree_.add(syntax::Kind::Member, st.text, st.pos, kids));
+                call.insert(call.end(), callArgs_.begin(), callArgs_.end());
+                return note(std::move(n), syntax::Kind::Call, "", st.callPos, call);
+            }
+            return note(std::move(n), syntax::Kind::Member, st.text, st.pos, kids);
+        default:
+            return note(std::move(n), st.kind, st.text, st.pos, kids);
+    }
+}
+
 ExprPtr Parser::postfix() {
     ExprPtr n = primary(current_);
+    PostfixStep step;
     for (;;) {
+        n = notePostfix(std::move(n), step);
+        step = beginPostfix(n);
         std::size_t pos = peek().pos;
 
         // `f(1, 2)` where f is an object. **[over.call]: the call operator has to be
@@ -2765,6 +2853,7 @@ ExprPtr Parser::postfix() {
         if (peek().is("[")) {
             at_++;
             ExprPtr index = expr();
+            step.index = syn(index);
             expect("]");
             // **A class is subscripted by its own operator, not by pointer arithmetic.**
             const Type *subscripted = n->type()->unqualified();
@@ -3011,7 +3100,24 @@ ExprPtr Parser::postfix() {
     }
 }
 
+// **The syntax of a prefix operator** (M2 step 2): unaryNode reads the operand and reports its node in unaryOperand_,
+// saved round the call because an operand's own operators nest; the result is noted as the operator applied to it.
 ExprPtr Parser::unary() {
+    static const char *const kPrefix[] = { "+", "-", "!", "~", "&", "*", "++", "--" };
+    const char *op = nullptr;
+    for (const char *k : kPrefix)
+        if (peek().is(k)) { op = k; break; }
+    if (op == nullptr) return unaryNode();
+    const std::size_t pos = peek().pos;
+    const syntax::ExprId outer = unaryOperand_;
+    unaryOperand_ = syntax::ExprId();
+    ExprPtr r = unaryNode();
+    const syntax::ExprId operand = unaryOperand_;
+    unaryOperand_ = outer;
+    return note(std::move(r), syntax::Kind::Unary, op, pos, {operand});
+}
+
+ExprPtr Parser::unaryNode() {
     std::size_t pos = peek().pos;
 
     // Unary `+` is a no-op on a built-in operand and is not one on a class, where
@@ -3019,6 +3125,7 @@ ExprPtr Parser::unary() {
     // path to that yet, so the *use* is refused rather than passed through.
     if (consume("+")) {
         ExprPtr v = castExpr();
+        unaryOperand_ = syn(v);
         if (ExprPtr call = overloadedUnary("+", v, pos)) return call;
         v = decay(std::move(v));
         v = contextualScalar(std::move(v), pos, "unary '+'");
@@ -3035,6 +3142,7 @@ ExprPtr Parser::unary() {
         bool inc = peek().is("++");
         at_++;
         ExprPtr operand = unary();
+        unaryOperand_ = syn(operand);
         const bool scalar = !operand->type()->unqualified()->isStructOrUnion();
         ExprPtr r = incDec(std::move(operand), inc, true, pos);
         if (scalar) r->setDeclCategory(Expr::Category::Lvalue);   // [expr.pre.incr]/1
@@ -3042,6 +3150,7 @@ ExprPtr Parser::unary() {
     }
     if (consume("~")) {
         ExprPtr v = castExpr();
+        unaryOperand_ = syn(v);
         if (ExprPtr call = overloadedUnary("~", v, pos)) return call;
         v = decay(std::move(v));
         refuseScopedOperand(v->type(), nullptr, "~", pos);
@@ -3056,6 +3165,7 @@ ExprPtr Parser::unary() {
     }
     if (consume("!")) {
         ExprPtr v = castExpr();
+        unaryOperand_ = syn(v);
         if (ExprPtr call = overloadedUnary("!", v, pos)) return call;
         v = decay(std::move(v));
         v = contextualScalar(std::move(v), pos, "'!'");
@@ -3065,6 +3175,7 @@ ExprPtr Parser::unary() {
     }
     if (consume("-")) {
         ExprPtr v = castExpr();
+        unaryOperand_ = syn(v);
         if (ExprPtr call = overloadedUnary("-", v, pos)) return call;
         v = decay(std::move(v));
         refuseScopedOperand(v->type(), nullptr, "-", pos);
@@ -3140,6 +3251,7 @@ ExprPtr Parser::unary() {
                 }
         }
         ExprPtr v = castExpr();
+        unaryOperand_ = syn(v);
         // `&f` for an overloaded f as an argument is the set itself, still waiting for its parameter.
         if (overloadArgOf(*v) != nullptr) return v;
         // Only when the class declared one.
@@ -3172,6 +3284,7 @@ ExprPtr Parser::unary() {
     }
     if (consume("*")) {
         ExprPtr v = castExpr();
+        unaryOperand_ = syn(v);
         if (ExprPtr call = overloadedUnary("*", v, pos)) return call;
         v = decay(std::move(v));
         if (!v->type()->isPointer())
@@ -3278,6 +3391,7 @@ ExprPtr Parser::unary() {
             Discarded held(this);
             Unevaluated unevaluated(this);
             ExprPtr operand = unary();
+        unaryOperand_ = syn(operand);
             if (const MemberAccess *m = dynamic_cast<const MemberAccess *>(operand.get()))
                 if (m->isBitField())
                     src_.fail(pos, "sizeof cannot be applied to '" + m->name() +

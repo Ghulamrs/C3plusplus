@@ -14,7 +14,8 @@ void Parser::parseArguments(std::vector<ExprPtr> &args) {
     OverloadTarget none(*this, nullptr);
     // `f(f(f(...)))` re-enters the whole expression grammar per call.
     const Nesting deep(this, peek().pos, "argument list");
-    if (consume(")")) return;
+    const std::size_t first = args.size();
+    if (consume(")")) { callArgs_.clear(); argGen_++; return; }
     for (;;) {
         // **`rest...` - one thing written, one argument per member.** The names
         // were made when the parameter list expanded, so this is a lookup and not
@@ -52,6 +53,10 @@ void Parser::parseArguments(std::vector<ExprPtr> &args) {
         if (consume(")")) break;
         expect(",");
     }
+    // What was read, as syntax, for the call node postfix records (M2 step 2).
+    callArgs_.clear();
+    for (std::size_t i = first; i < args.size(); i++) callArgs_.push_back(syn(args[i]));
+    argGen_++;
 }
 
 // The placeholder is a `void` constant nothing can rank, so a list that is never

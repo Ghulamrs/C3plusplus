@@ -23,7 +23,7 @@ rem  The include directories are compiled in as string literals, so with forward
 set "ROOTFWD=%ROOT:\=/%"
 set DEFS=-I "%ROOT%\src" -DCXX1_INCLUDE_DIR=\"%ROOTFWD%/lib\" -DCXX1_CXX_INCLUDE_DIR=\"%ROOTFWD%/include\"
 set SRCS=
-for %%d in (src src\parser src\backend src\optimizer src\sema) do for %%f in ("%ROOT%\%%d\*.cpp") do set SRCS=!SRCS! "%%f"
+for %%d in (src src\parser src\backend src\optimizer src\sema src\syntax) do for %%f in ("%ROOT%\%%d\*.cpp") do set SRCS=!SRCS! "%%f"
 
 "%ROOT%\cxx3-msvc.exe" -nologo %FLAGS% %DEFS% !SRCS! -o "%OUT%\cxx3-stage1.exe" > "%OUT%\stage1.log" 2>&1
 rem  A crash's status is negative, which `if errorlevel 1` does not see - so the status, and the file.
@@ -41,7 +41,7 @@ set CLOCK="-D__DATE__=\"Jan 01 2000\"" -D__TIME__=\"00:00:00\"
 set N=0
 set SAME=0
 type nul > "%OUT%\differ.txt"
-for %%d in (src src\parser src\backend src\optimizer src\sema) do for %%f in ("%ROOT%\%%d\*.cpp") do (
+for %%d in (src src\parser src\backend src\optimizer src\sema src\syntax) do for %%f in ("%ROOT%\%%d\*.cpp") do (
     set /a N+=1
     "%OUT%\cxx3-stage1.exe" -nologo -S %FLAGS% %DEFS% %CLOCK% "%%f" -o "%OUT%\s1\%%~nf.s" > nul 2>&1
     "%OUT%\cxx3-stage2.exe" -nologo -S %FLAGS% %DEFS% %CLOCK% "%%f" -o "%OUT%\s2\%%~nf.s" > nul 2>&1

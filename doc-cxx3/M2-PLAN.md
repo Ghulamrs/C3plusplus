@@ -87,6 +87,29 @@ objects to `Constexpr`; the static symbols to `Linkage`. 132 fields are read by 
 are the parse position and scope context - the token stream, `currentClass_`, the locals, the namespace stack,
 the type table, `src_` - which is what `p_` is for now.
 
+## Step 2: the syntax tree, the typed tree and the adapter
+
+Design section 12: the parser, carrying cpp11's grammar code and token replay, builds the handle syntax tree
+behind a flag; Sema produces the typed tree; a thin adapter lowers the typed tree to `Ast.h`; at M2's end the
+old parser-to-`Ast.h` path is deleted. A second front end built beside the first is the risk section 14
+records, so step 2 is cut so that each commit is checked by the one before it:
+
+| commit | what | checked by |
+| --- | --- | --- |
+| M2.8 | the handle data model (`src/syntax/`: arena, ids, string table, 32-bit locations), and the grammar's expression productions recording a syntax node beside the `Ast.h` node they return; `-dump=syntax` | output identical: nothing reads the tree yet; the dump on cases |
+| M2.9 | statements and declarations recorded the same way; every function body has a syntax root | the same |
+| M2.10 | the typed tree, and Sema typing a subset of the syntax tree into it - scalars, operators, locals, calls | `-check=typed`: every typed node's type against the type the parser gave its `Ast.h` node |
+| M2.11 | the adapter: typed tree to `Ast.h` for that subset; behind `-front=typed`, a function inside the subset takes the adapter's `Ast.h`, any other the parser's | output identical with the flag on and off |
+| M2.12 on | the subset grows - classes, templates by replay, exceptions - until every function takes the adapter's | the same, case by case; then the old path is deleted |
+
+**The parser's `Ast.h` is the oracle for the new path while both exist**: the new path is right where it
+produces what the old one produced. That is `tools/identical.sh` again, and the reason the old path is kept
+until the new one has matched it everywhere.
+
+Data model (design section 2): one arena per tree, a node `{kind, children range, payload}`, handles numbered
+in creation order, a `switch` on kind. A trial parse that fails gives its nodes back, so a failed SFINAE
+candidate leaves no syntax behind.
+
 ## What is not in step 1
 
 The parser's question "what kind of name is this?" (`atTypeName`, `localHidesType`) stays in the

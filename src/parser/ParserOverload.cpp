@@ -96,7 +96,15 @@ ExprPtr Parser::baseSubobject(ExprPtr e, const Type *base) const {
     return sub;
 }
 
+// The node a conversion makes carries the syntax of the one it converts (M2 step 2): a wrapper is not a node written.
 ExprPtr Parser::convert(ExprPtr e, const Type *to, bool allowExplicit) const {
+    const syntax::ExprId written = e ? e->syntax() : syntax::ExprId();
+    ExprPtr r = convertNode(std::move(e), to, allowExplicit);
+    if (r && !r->syntax().valid()) r->setSyntax(written);
+    return r;
+}
+
+ExprPtr Parser::convertNode(ExprPtr e, const Type *to, bool allowExplicit) const {
     if (e->type() == to) return e;
     // A scoped enumeration converts only by a cast, in either direction - [dcl.enum]/10, [expr.static.cast]/9.
     if (!allowExplicit && e->type() != nullptr && e->type()->unqualified() != to->unqualified() &&
@@ -379,7 +387,10 @@ void Parser::refuseUnrelatedClassCast(const Expr &v, const Type *to,
 ExprPtr Parser::decay(ExprPtr e) {
     if (!e->type()->isArray()) return e;
     const Type *to = types_.pointerTo(e->type()->pointee());
-    return ExprPtr(new Cast(to, std::move(e)));
+    const syntax::ExprId written = e->syntax();
+    ExprPtr r(new Cast(to, std::move(e)));
+    r->setSyntax(written);
+    return r;
 }
 
 void Parser::requireScalar(const Expr &e, std::size_t pos, const char *what) {

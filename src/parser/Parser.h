@@ -12,6 +12,7 @@
 #include "../sema/Classes.h"
 #include "../sema/Constexpr.h"
 #include "../sema/Linkage.h"
+#include "../syntax/Syntax.h"
 
 #include <functional>
 #include <map>
@@ -33,6 +34,8 @@ public:
         : src_(src), tokens_(std::move(tokens)), types_(types), target_(target),
           abi_(abi), lookup_(*this), overload_(*this), tmpl_(*this), classes_(*this), constant_(*this), linkage_(*this) {}
 
+    // What the grammar recorded, for -dump=syntax.
+    const syntax::Tree &syntaxTree() const { return syntaxTree_; }
     Program parse();
 
 private:
@@ -457,6 +460,39 @@ private:
     sema::Constexpr constant_;
     friend class sema::Linkage;
     sema::Linkage linkage_;
+    // **The syntax tree** (M2 step 2): a node recorded where the grammar returns an Ast.h node, its operands'
+    // nodes as children. `note` records one on `e`; `syn` reads one back, none for a node the grammar made itself.
+    // What a conditional being read has recorded of its operands (M2 step 2), until conditional() notes it.
+    struct CondParts {
+        bool seen;
+        std::size_t pos;
+        syntax::ExprId parts[3];
+        CondParts() : seen(false), pos(0) {}
+    };
+    syntax::ExprId unaryOperand_;
+    CondParts condParts_;
+    // The arguments the last parseArguments read, as syntax, for the call postfix records.
+    std::vector<syntax::ExprId> callArgs_;
+    // Counts the argument lists parseArguments has read, so a postfix step can tell whether it read one.
+    unsigned argGen_ = 0;
+    struct PostfixStep {
+        bool active, callFollows;
+        syntax::Kind kind;
+        std::string text;
+        std::size_t pos, callPos;
+        syntax::ExprId operand, index;
+        unsigned argGen;
+        PostfixStep() : active(false), callFollows(false), kind(syntax::Kind::Other), pos(0), callPos(0), argGen(0) {}
+    };
+    PostfixStep beginPostfix(const ExprPtr &n) const;
+    ExprPtr notePostfix(ExprPtr n, PostfixStep &st);
+    syntax::Tree syntaxTree_;
+    syntax::ExprId syn(const ExprPtr &e) const { return e ? e->syntax() : syntax::ExprId(); }
+    ExprPtr note(ExprPtr e, syntax::Kind kind, const std::string &text, std::size_t pos,
+                 const std::vector<syntax::ExprId> &children = std::vector<syntax::ExprId>()) {
+        if (e) e->setSyntax(syntaxTree_.add(kind, text, pos, children));
+        return e;
+    }
     // **How a class goes to a function, and the two ABIs part company here.** Itanium
     // passes one by address whenever copying or destroying it is a call, and the caller
     // destroys the copy; Microsoft passes by the size rules and the callee destroys.
@@ -783,6 +819,9 @@ private:
         int sretSlot = 0;
         std::string nrvoName;
         const Type **deducingReturn = nullptr;
+        syntax::ExprId unaryOperand;
+        CondParts condParts;
+        std::vector<syntax::ExprId> callArgs;
         int unevaluated = 0;
         bool absoluteLookup = false;
         int lambdaCount = 0;
@@ -1269,6 +1308,7 @@ private:
     const Type *promote(const Type *t) const;
     const Type *usualArithmetic(const Type *a, const Type *b) const;
     ExprPtr convert(ExprPtr e, const Type *to, bool allowExplicit = false) const;
+    ExprPtr convertNode(ExprPtr e, const Type *to, bool allowExplicit) const;
     // The base subobject of a glvalue of a derived class, `*(B *)&d` - a base's offset carried.
     ExprPtr baseSubobject(ExprPtr e, const Type *base) const;
     ExprPtr assignValue(ExprPtr n, ExprPtr value, std::size_t pos);
@@ -1868,6 +1908,7 @@ private:
     ExprPtr expr();
     ExprPtr assign();
     ExprPtr conditional();
+    ExprPtr conditionalNode();
     ExprPtr bitOr();
     ExprPtr bitXor();
     ExprPtr bitAnd();
@@ -1964,8 +2005,10 @@ private:
     void refuseOverloadArguments(const std::vector<ExprPtr> &args, const std::string &callee) const;
     ExprPtr reinterpretCast(std::size_t pos);
     ExprPtr unary();
+    ExprPtr unaryNode();
     ExprPtr postfix();
     ExprPtr primary(Program *program);
+    ExprPtr primaryNode(Program *program);
 
     ExprPtr arithmetic(BinOp op, ExprPtr lhs, ExprPtr rhs, std::size_t pos);
     ExprPtr comparison(BinOp op, ExprPtr lhs, ExprPtr rhs, std::size_t pos);

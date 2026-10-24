@@ -67,7 +67,9 @@ ExprPtr Parser::castExpr() {
         expect(")");
         ExprPtr v;
         { OverloadTarget hold(*this, to); v = decay(castExpr()); }
-        if (to->isVoid()) return ExprPtr(new Cast(to, std::move(v)));
+        const syntax::ExprId vs = syn(v);
+        const std::string written = to->describe();
+        if (to->isVoid()) return note(ExprPtr(new Cast(to, std::move(v))), syntax::Kind::Cast, written, openPos, {vs});
         refuseUnrelatedClassCast(*v, to, openPos, "a cast");
         // **`(const V &)q` and `(int &)k` name an lvalue of the referent**, [expr.cast]/4 - built on
         // addresses, which carries a base's offset, so the result is an operand, not a reference-typed value.
@@ -81,11 +83,11 @@ ExprPtr Parser::castExpr() {
             at = convert(std::move(at), types_.pointerTo(ref), true);
             ExprPtr r(new Unary('*', std::move(at)));
             r->setType(ref);
-            return r;
+            return note(std::move(r), syntax::Kind::Cast, written, openPos, {vs});
         }
         ExprPtr r = convert(std::move(v), to, true);   // a cast allows explicit
         if (!to->isReference()) r->setDeclCategory(Expr::Category::Prvalue);
-        return r;
+        return note(std::move(r), syntax::Kind::Cast, written, openPos, {vs});
     }
     return unary();
 }
@@ -391,10 +393,15 @@ ExprPtr Parser::mul() {
     ExprPtr n = memberPointerExpr();
     for (;;) {
         std::size_t pos = peek().pos;
-        if (consume("*"))      n = arithmetic(BinOp::Mul, std::move(n), memberPointerExpr(), pos);
-        else if (consume("/")) n = arithmetic(BinOp::Div, std::move(n), memberPointerExpr(), pos);
-        else if (consume("%")) n = arithmetic(BinOp::Mod, std::move(n), memberPointerExpr(), pos);
+        BinOp op;
+        if (consume("*"))      op = BinOp::Mul;
+        else if (consume("/")) op = BinOp::Div;
+        else if (consume("%")) op = BinOp::Mod;
         else return n;
+        const syntax::ExprId l = syn(n);
+        ExprPtr r = memberPointerExpr();
+        const syntax::ExprId rs = syn(r);
+        n = note(arithmetic(op, std::move(n), std::move(r), pos), syntax::Kind::Binary, binOpSpelling(op), pos, {l, rs});
     }
 }
 
@@ -402,9 +409,14 @@ ExprPtr Parser::add() {
     ExprPtr n = mul();
     for (;;) {
         std::size_t pos = peek().pos;
-        if (consume("+"))      n = arithmetic(BinOp::Add, std::move(n), mul(), pos);
-        else if (consume("-")) n = arithmetic(BinOp::Sub, std::move(n), mul(), pos);
+        BinOp op;
+        if (consume("+"))      op = BinOp::Add;
+        else if (consume("-")) op = BinOp::Sub;
         else return n;
+        const syntax::ExprId l = syn(n);
+        ExprPtr r = mul();
+        const syntax::ExprId rs = syn(r);
+        n = note(arithmetic(op, std::move(n), std::move(r), pos), syntax::Kind::Binary, binOpSpelling(op), pos, {l, rs});
     }
 }
 
@@ -418,7 +430,10 @@ ExprPtr Parser::shift() {
         else if (consume(">>")) op = BinOp::Shr;
         else return n;
 
-        n = shiftOf(op, std::move(n), add(), pos);
+        const syntax::ExprId l = syn(n);
+        ExprPtr r = add();
+        const syntax::ExprId rs = syn(r);
+        n = note(shiftOf(op, std::move(n), std::move(r), pos), syntax::Kind::Binary, binOpSpelling(op), pos, {l, rs});
     }
 }
 
@@ -430,11 +445,16 @@ ExprPtr Parser::relational() {
         // and the parentheses are where the flag is cleared.
         if (inTemplateArgs_ && (peek().is(">") || peek().is(">>"))) return n;
         std::size_t pos = peek().pos;
-        if (consume("<"))       n = comparison(BinOp::Lt, std::move(n), shift(), pos);
-        else if (consume("<=")) n = comparison(BinOp::Le, std::move(n), shift(), pos);
-        else if (consume(">"))  n = comparison(BinOp::Gt, std::move(n), shift(), pos);
-        else if (consume(">=")) n = comparison(BinOp::Ge, std::move(n), shift(), pos);
+        BinOp op;
+        if (consume("<"))       op = BinOp::Lt;
+        else if (consume("<=")) op = BinOp::Le;
+        else if (consume(">"))  op = BinOp::Gt;
+        else if (consume(">=")) op = BinOp::Ge;
         else return n;
+        const syntax::ExprId l = syn(n);
+        ExprPtr r = shift();
+        const syntax::ExprId rs = syn(r);
+        n = note(comparison(op, std::move(n), std::move(r), pos), syntax::Kind::Binary, binOpSpelling(op), pos, {l, rs});
     }
 }
 
@@ -442,9 +462,14 @@ ExprPtr Parser::equality() {
     ExprPtr n = relational();
     for (;;) {
         std::size_t pos = peek().pos;
-        if (consume("=="))      n = comparison(BinOp::Eq, std::move(n), relational(), pos);
-        else if (consume("!=")) n = comparison(BinOp::Ne, std::move(n), relational(), pos);
+        BinOp op;
+        if (consume("=="))      op = BinOp::Eq;
+        else if (consume("!=")) op = BinOp::Ne;
         else return n;
+        const syntax::ExprId l = syn(n);
+        ExprPtr r = relational();
+        const syntax::ExprId rs = syn(r);
+        n = note(comparison(op, std::move(n), std::move(r), pos), syntax::Kind::Binary, binOpSpelling(op), pos, {l, rs});
     }
 }
 
@@ -452,7 +477,10 @@ ExprPtr Parser::bitAnd() {
     ExprPtr n = equality();
     while (peek().is("&")) {
         std::size_t pos = peek().pos; at_++;
-        n = arithmetic(BinOp::BitAnd, std::move(n), equality(), pos);
+        const syntax::ExprId l = syn(n);
+        ExprPtr r = equality();
+        const syntax::ExprId rs = syn(r);
+        n = note(arithmetic(BinOp::BitAnd, std::move(n), std::move(r), pos), syntax::Kind::Binary, binOpSpelling(BinOp::BitAnd), pos, {l, rs});
     }
     return n;
 }
@@ -461,7 +489,10 @@ ExprPtr Parser::bitXor() {
     ExprPtr n = bitAnd();
     while (peek().is("^")) {
         std::size_t pos = peek().pos; at_++;
-        n = arithmetic(BinOp::BitXor, std::move(n), bitAnd(), pos);
+        const syntax::ExprId l = syn(n);
+        ExprPtr r = bitAnd();
+        const syntax::ExprId rs = syn(r);
+        n = note(arithmetic(BinOp::BitXor, std::move(n), std::move(r), pos), syntax::Kind::Binary, binOpSpelling(BinOp::BitXor), pos, {l, rs});
     }
     return n;
 }
@@ -470,7 +501,10 @@ ExprPtr Parser::bitOr() {
     ExprPtr n = bitXor();
     while (peek().is("|")) {
         std::size_t pos = peek().pos; at_++;
-        n = arithmetic(BinOp::BitOr, std::move(n), bitXor(), pos);
+        const syntax::ExprId l = syn(n);
+        ExprPtr r = bitXor();
+        const syntax::ExprId rs = syn(r);
+        n = note(arithmetic(BinOp::BitOr, std::move(n), std::move(r), pos), syntax::Kind::Binary, binOpSpelling(BinOp::BitOr), pos, {l, rs});
     }
     return n;
 }
@@ -481,13 +515,16 @@ ExprPtr Parser::logicalAnd() {
         std::size_t pos = peek().pos;
         at_++;
         const std::size_t before = pendingTemps_.size();
+        const syntax::ExprId l = syn(n);
         ExprPtr r = decay(bitOr());
+        const syntax::ExprId rs = syn(r);
         n = decay(std::move(n));
         n = contextualScalar(std::move(n), pos, "'&&'");
         r = contextualScalar(std::move(r), pos, "'&&'");
         r = markSkippableTemporaries(std::move(r), before,
                                      pendingTemps_.size());
         ExprPtr node(new Binary(BinOp::LAnd, std::move(n), std::move(r)));
+        node = note(std::move(node), syntax::Kind::Binary, "&&", pos, {l, rs});
         node->setType(types_.get(Kind::Bool));   // [expr.log.and]/1
         n = std::move(node);
     }
@@ -500,13 +537,16 @@ ExprPtr Parser::logicalOr() {
         std::size_t pos = peek().pos;
         at_++;
         const std::size_t before = pendingTemps_.size();
+        const syntax::ExprId l = syn(n);
         ExprPtr r = decay(logicalAnd());
+        const syntax::ExprId rs = syn(r);
         n = decay(std::move(n));
         n = contextualScalar(std::move(n), pos, "'||'");
         r = contextualScalar(std::move(r), pos, "'||'");
         r = markSkippableTemporaries(std::move(r), before,
                                      pendingTemps_.size());
         ExprPtr node(new Binary(BinOp::LOr, std::move(n), std::move(r)));
+        node = note(std::move(node), syntax::Kind::Binary, "||", pos, {l, rs});
         node->setType(types_.get(Kind::Bool));   // [expr.log.or]/1
         n = std::move(node);
     }
@@ -838,12 +878,28 @@ const Type *Parser::compositePointer(const Type *a, const Type *b) {
     return t;
 }
 
+// **The syntax of `c ? a : b`** (M2 step 2): conditionalNode reports its three operands in condParts_, saved round
+// the call as unaryOperand_ is, and a condition with no `?` is no conditional and records nothing.
 ExprPtr Parser::conditional() {
+    const CondParts outer = condParts_;
+    condParts_ = CondParts();
+    ExprPtr r = conditionalNode();
+    const CondParts mine = condParts_;
+    condParts_ = outer;
+    if (!mine.seen) return r;
+    return note(std::move(r), syntax::Kind::Conditional, "?:", mine.pos,
+                {mine.parts[0], mine.parts[1], mine.parts[2]});
+}
+
+ExprPtr Parser::conditionalNode() {
     ExprPtr cond = logicalOr();
     if (!peek().is("?")) return cond;
 
     std::size_t pos = peek().pos;
     at_++;
+    condParts_.seen = true;
+    condParts_.pos = pos;
+    condParts_.parts[0] = syn(cond);
     cond = decay(std::move(cond));
     cond = contextualScalar(std::move(cond), pos, "the condition of '?:'");
 
@@ -852,12 +908,14 @@ ExprPtr Parser::conditional() {
     const std::size_t tempsBeforeA = pendingTemps_.size();
     const int throwsBeforeA = throwsSeen_;
     ExprPtr a = decay(expr());
+    condParts_.parts[1] = syn(a);
     const std::size_t tempsAfterA = pendingTemps_.size();
     const int throwsAfterA = throwsSeen_;
     expect(":");
     // [expr.cond]/1: the third operand is an assignment-expression - `c ? x : y = 1` assigns to y, and
     // `c ? x : throw e` throws (1.27; it was read one level down, as C reads it).
     ExprPtr b = decay(assign());
+    condParts_.parts[2] = syn(b);
     const std::size_t tempsAfterB = pendingTemps_.size();
 
     const Type *ta = a->type();
@@ -1047,9 +1105,12 @@ ExprPtr Parser::assign() {
     for (const auto &c : kCompound) {
         if (peek().is(c.tok)) {
             std::size_t pos = peek().pos; at_++;
-            ExprPtr r = compound(c.op, std::move(n), decay(assign()), pos);
+            const syntax::ExprId l = syn(n);
+            ExprPtr value = decay(assign());
+            const syntax::ExprId vs = syn(value);
+            ExprPtr r = compound(c.op, std::move(n), std::move(value), pos);
             if (dynamic_cast<const Assign *>(r.get())) r->setDeclCategory(Expr::Category::Lvalue);
-            return r;
+            return note(std::move(r), syntax::Kind::Assign, c.tok, pos, {l, vs});
         }
     }
 
@@ -1058,6 +1119,7 @@ ExprPtr Parser::assign() {
     at_++;
 
     requireAssignable(*n, pos, "the left of '='");
+    const syntax::ExprId l = syn(n);
 
     const Type *to = n->type();
     ExprPtr value;
@@ -1073,13 +1135,16 @@ ExprPtr Parser::assign() {
                     if (f.params.size() != 1 || !isInitializerListType(f.params[0]->unqualified())) continue;
                     std::vector<ExprPtr> args;
                     args.push_back(initializerListExpr(f.params[0]->unqualified(), in, pos));
-                    return memberCallWith(std::move(n), to, "operator=", pos, std::move(args));
+                    return note(memberCallWith(std::move(n), to, "operator=", pos, std::move(args)),
+                                syntax::Kind::Assign, "=", pos, {l});
                 }
         }
-        return assignValue(std::move(n), listTemporaryFrom(plain, in, true, pos), pos);
+        return note(assignValue(std::move(n), listTemporaryFrom(plain, in, true, pos), pos),
+                    syntax::Kind::Assign, "=", pos, {l});
     }
     { OverloadTarget hold(*this, to); value = decay(assign()); }
-    return assignValue(std::move(n), std::move(value), pos);
+    const syntax::ExprId vs = syn(value);
+    return note(assignValue(std::move(n), std::move(value), pos), syntax::Kind::Assign, "=", pos, {l, vs});
 }
 
 // `n = value` once both are read - by the class's `operator=` where it has one, else by bytes. Also
@@ -1163,12 +1228,16 @@ ExprPtr Parser::assignValue(ExprPtr n, ExprPtr value, std::size_t pos) {
 
 ExprPtr Parser::expr() {
     ExprPtr n = assign();
-    while (consume(",")) {
+    while (peek().is(",")) {
+        const std::size_t pos = peek().pos;
+        at_++;
+        const syntax::ExprId l = syn(n);
         ExprPtr right = decay(assign());
+        const syntax::ExprId rs = syn(right);
         const Type *t = right->type();
         ExprPtr c(new Comma(std::move(n), std::move(right)));
         c->setType(t);
-        n = std::move(c);
+        n = note(std::move(c), syntax::Kind::Comma, ",", pos, {l, rs});
     }
     return n;
 }

@@ -79,7 +79,7 @@ CXXFLAGS = -std=c++11 -O2 -g -Wall -Wextra -Werror -pedantic -pthread \
 # and the suffix drops both halves and keeps every real source.
 SRCS     = $(filter src/%.cpp,$(wildcard src/*.cpp) $(wildcard src/parser/*.cpp) \
                               $(wildcard src/backend/*.cpp) $(wildcard src/optimizer/*.cpp) \
-                              $(wildcard src/sema/*.cpp))
+                              $(wildcard src/sema/*.cpp) $(wildcard src/syntax/*.cpp))
 # Objects and their dependency files go under obj/ rather than beside the
 # sources they came from, so that a listing of src/ is the code and nothing
 # else. The tree under obj/ mirrors src/ - src/backend/X86_64.cpp becomes
@@ -150,6 +150,7 @@ test: $(TARGET)
 	@CXX1=$(TARGET) ./tests/emit.sh
 	@CXX1=$(TARGET) ./tests/names.sh
 	@CXX1=$(TARGET) ./tests/overload.sh
+	@CXX1=$(TARGET) ./tests/syntax.sh
 	@./tools/exclusions --check docs/EXCLUSIONS.md || { echo "make test: docs/EXCLUSIONS.md does not match the source - see the lines above"; exit 1; }
 	@./tools/comment-lines --count
 	@./tools/comment-lines >/dev/null || { echo "make test: comment groups over the cap - run make comments"; exit 1; }
