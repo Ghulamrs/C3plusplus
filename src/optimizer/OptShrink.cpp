@@ -22,7 +22,7 @@ bool scaleByOne(const Instr &i) {
 bool shorter(Instr &i, RegSet wide, bool flagsLive) {
     if (gpr(i.b) && frameReg(i.b.reg.id)) return false;
     // `cmp $0, %r` is `test %r, %r`, a byte shorter, flags and all: both clear CF and OF and set ZF, SF and PF from %r.
-    if (is(i.m, {"cmp", "cmpl", "cmpq"}) && i.operands == 2 && i.a.kind == Operand::Immediate && i.a.numeric &&
+    if (is(i.m.name(), {"cmp", "cmpl", "cmpq"}) && i.operands == 2 && i.a.kind == Operand::Immediate && i.a.numeric &&
         i.a.value == 0 && gpr(i.b)) {
         i = Instr{"test", i.b, i.b, 2};
         return true;
@@ -36,12 +36,12 @@ bool shorter(Instr &i, RegSet wide, bool flagsLive) {
         i = Instr{"shl", Operand::ofImm(n), i.b, 2};
         return true;
     }
-    if (is(i.m, {"movzbq", "movzwq"}) && reg64(i.b)) {
+    if (is(i.m.name(), {"movzbq", "movzwq"}) && reg64(i.b)) {
         i.m = i.m.substr(0, i.m.size() - 1) + "l";
         i.b.reg.width = 4;
         return true;
     }
-    if (gpr(i.b) && i.b.reg.width == 4 && is(i.m, {"mov", "movl"}) && i.a.kind == Operand::Immediate &&
+    if (gpr(i.b) && i.b.reg.width == 4 && is(i.m.name(), {"mov", "movl"}) && i.a.kind == Operand::Immediate &&
         i.a.numeric && i.a.value == 0 && !flagsLive) {
         i = Instr{"xor", i.b, i.b, 2};
         return true;
@@ -56,7 +56,7 @@ bool shorter(Instr &i, RegSet wide, bool flagsLive) {
     }
     if (upperRead) return false;
     // Arithmetic whose low half depends on the low halves alone.
-    const bool arith = is(i.m, {"add", "sub", "and", "or", "xor", "imul"}) && i.operands == 2 && !flagsLive;
+    const bool arith = is(i.m.name(), {"add", "sub", "and", "or", "xor", "imul"}) && i.operands == 2 && !flagsLive;
     if (arith && ((i.a.kind == Operand::Immediate && i.a.numeric && i.a.value == static_cast<int>(i.a.value)) || reg64(i.a))) {
         if (reg64(i.a)) i.a.reg.width = 4;
         i.b.reg.width = 4;

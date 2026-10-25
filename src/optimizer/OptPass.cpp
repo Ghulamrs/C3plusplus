@@ -84,7 +84,7 @@ bool PassManager::runGroup(Group &group, Function &fn) {
 void dropUnnamedLabels(Function &fn) {
     std::set<std::string> named;
     for (const Entry &e : fn.stream)
-        if (e.kind == Entry::Ins && !e.dead && e.ins.a.kind == Operand::Label) named.insert(e.ins.a.text);
+        if (e.kind == Entry::Ins && !e.dead && e.ins.a.kind == Operand::Label) named.insert(e.ins.a.text.str());
     for (Entry &e : fn.stream)
         if (e.kind == Entry::Label && fn.jumpOnly.count(e.label) && !named.count(e.label)) e.dead = true;
 }
@@ -100,15 +100,15 @@ std::string regText(const Reg &r, const std::string &text) {
 std::string operandText(const Operand &o) {
     switch (o.kind) {
     case Operand::None: return "";
-    case Operand::Register: return regText(o.reg, o.text);
+    case Operand::Register: return regText(o.reg, o.text.str());
     case Operand::Immediate: return "$" + (o.numeric ? std::to_string(o.value) : o.text.str());
     case Operand::Memory:
         return (o.hasDisp ? std::to_string(o.disp) : std::string()) + "(" +
-               (o.reg.id >= 0 ? regText(Reg{o.reg.id, 8}, o.text) : o.text.str()) +
+               (o.reg.id >= 0 ? regText(Reg{o.reg.id, 8}, o.text.str()) : o.text.str()) +
                (o.scale != 0 ? "," + regText(Reg{o.index.id, 8}, "") + "," + std::to_string(o.scale) : "") + ")";
-    case Operand::RipSymbol: return o.text + "(%rip)";
-    case Operand::Indirect: return "*" + regText(o.reg, o.text);
-    case Operand::Label: return o.text;
+    case Operand::RipSymbol: return o.text.str() + "(%rip)";
+    case Operand::Indirect: return "*" + regText(o.reg, o.text.str());
+    case Operand::Label: return o.text.str();
     case Operand::SegMemory: return o.text + ":" + std::to_string(o.disp);
     case Operand::TlsSymbol: return o.text + "@TPOFF(" + regText(Reg{o.reg.id, 8}, "") + ")";
     }

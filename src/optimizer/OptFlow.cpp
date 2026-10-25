@@ -11,7 +11,7 @@ Control controlOf(const Instr &i) {
     if (i.m[0] != 'j') return c;
     c.ends = true;
     c.falls = i.m != "jmp";
-    if (i.a.kind == Operand::Label) c.target = i.a.text;
+    if (i.a.kind == Operand::Label) c.target = i.a.text.str();
     return c;
 }
 

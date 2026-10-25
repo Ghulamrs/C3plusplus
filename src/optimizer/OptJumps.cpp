@@ -101,7 +101,7 @@ bool threadJumps(Function &fn) {
     // **A jump to a block that only jumps on** goes where that one goes.
     for (Entry &e : s) {
         if (e.kind != Entry::Ins || e.dead || !isJump(e.ins)) continue;
-        const auto it = heads.find(e.ins.a.text);
+        const auto it = heads.find(e.ins.a.text.str());
         if (it == heads.end()) continue;
         const std::vector<int> only = liveInstrs(s, f.blocks[it->second]);
         if (only.size() != 1 || s[only[0]].ins.m != "jmp" || s[only[0]].ins.a.kind != Operand::Label) continue;
@@ -119,7 +119,7 @@ bool threadJumps(Function &fn) {
         int last = own.empty() ? -1 : own.back();
         const bool jumps = last >= 0 && s[last].ins.m == "jmp" && s[last].ins.a.kind == Operand::Label;
         int t;
-        if (jumps) { const auto it = heads.find(s[last].ins.a.text); if (it == heads.end()) continue; t = it->second; }
+        if (jumps) { const auto it = heads.find(s[last].ins.a.text.str()); if (it == heads.end()) continue; t = it->second; }
         else { if (last >= 0 && !controlOf(s[last].ins).falls) continue; t = b + 1; }
         if (t < 0 || t >= static_cast<int>(f.blocks.size()) || t + 1 >= static_cast<int>(f.blocks.size())) continue;
         const std::vector<int> pair = liveInstrs(s, f.blocks[t]);
@@ -130,7 +130,7 @@ bool threadJumps(Function &fn) {
         long long value;
         bool taken;
         if (!constantAtEnd(s, f, blk, cmp.b.reg.id, value) || !decides(cmp, cc, value, taken)) continue;
-        const auto target = heads.find(jcc.a.text);
+        const auto target = heads.find(jcc.a.text.str());
         if (target == heads.end() || f.blocks[target->second].in.flags || f.blocks[t + 1].in.flags) continue;
         if (jumps) {
             if (taken) { s[last].ins.a.text = jcc.a.text; changed = true; continue; }
@@ -163,7 +163,7 @@ bool threadJumps(Function &fn) {
             if (own.empty()) continue;
             const int last = own.back();
             if (s[last].ins.m != "jmp" || s[last].ins.a.kind != Operand::Label) continue;
-            const auto it = heads.find(s[last].ins.a.text);
+            const auto it = heads.find(s[last].ins.a.text.str());
             if (it == heads.end() || it->second >= b || it->second + 1 >= static_cast<int>(f.blocks.size())) continue;
             const int t = it->second;
             const std::vector<int> pair = liveInstrs(s, f.blocks[t]);
@@ -171,8 +171,8 @@ bool threadJumps(Function &fn) {
             const Instr cmp = s[pair[0]].ins, jcc = s[pair[1]].ins;
             const std::string cc = conditionOf(jcc.m);
             static const std::set<std::string> tests = {"cmp", "cmpb", "cmpw", "cmpl", "cmpq", "test", "testb", "testw", "testl", "testq"};
-            if (cc.empty() || jcc.a.kind != Operand::Label || !tests.count(cmp.m)) continue;
-            const auto exit = heads.find(jcc.a.text);
+            if (cc.empty() || jcc.a.kind != Operand::Label || !tests.count(cmp.m.name())) continue;
+            const auto exit = heads.find(jcc.a.text.str());
             if (exit == heads.end() || exit->second != b + 1) continue;
             const Block &body = f.blocks[t + 1];
             if (body.in.flags || f.blocks[b + 1].in.flags) continue;

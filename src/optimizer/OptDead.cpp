@@ -91,7 +91,7 @@ bool coalesceXmm(Stream &s, Flow &f, const Convention &conv) {
             if (u < 0) continue;
             Instr &n = s[u].ins;
             // `movapd %s,%d; op %d,%x` with d dead after: `op %s,%x`.
-            if (sseArith(n.m) && xmm(n.a) && n.a.reg.id == dst && xmm(n.b) && n.b.reg.id != dst &&
+            if (sseArith(n.m.name()) && xmm(n.a) && n.a.reg.id == dst && xmm(n.b) && n.b.reg.id != dst &&
                 !(after[u].regs & bit(dst))) {
                 n.a.reg.id = src;
                 f.effects[u] = effectsOf(n, conv);

@@ -23,8 +23,8 @@ int accessWidth(const Instr &i, const Operand &at) {
     if (i.m == "movslq" || i.m == "movss") return 4;
     if (isPush(i.m) || i.m == "movsd") return 8;
     const char last = i.m.back();
-    if (renamable(i.m) && gpr(other)) return other.reg.width;
-    if (renamable(i.m) && i.m.size() > 3 && (last == 'l' || last == 'q')) return last == 'l' ? 4 : 8;
+    if (renamable(i.m.name()) && gpr(other)) return other.reg.width;
+    if (renamable(i.m.name()) && i.m.size() > 3 && (last == 'l' || last == 'q')) return last == 'l' ? 4 : 8;
     return 16;
 }
 
@@ -79,7 +79,7 @@ std::vector<Local> promotableLocals(const Stream &s, const std::vector<Local> &l
             }
             const int w = accessWidth(i, *o);
             overlapping(o->disp, w, [&](Candidate &cd) {
-                if (cd.local.disp != o->disp || cd.local.size != w || !renamable(i.m) || xmm(i.a) || xmm(i.b)) cd.ok = false;
+                if (cd.local.disp != o->disp || cd.local.size != w || !renamable(i.m.name()) || xmm(i.a) || xmm(i.b)) cd.ok = false;
             });
         }
     }

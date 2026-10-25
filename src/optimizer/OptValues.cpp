@@ -216,12 +216,12 @@ private:
     // **A known constant becomes an immediate** where the form allows one: into
     // a register always, into memory only where the mnemonic names the width.
     bool immediateSource(Instr &i) const {
-        if (!takesImmediate(i.m) || i.operands != 2 || !gpr(i.a)) return false;
+        if (!takesImmediate(i.m.name()) || i.operands != 2 || !gpr(i.a)) return false;
         if (gpr(i.b) && i.a.reg.id == i.b.reg.id) return false;     // xor %eax,%eax and the like
         const Value &v = regs_[i.a.reg.id];
         if (v.kind != Value::Const) return false;
         const long long x = atWidth(v.k, i.a.reg.width);
-        const bool into = gpr(i.b) || ((i.b.isMem() || i.b.kind == Operand::RipSymbol) && suffixWidth(i.m) != 0);
+        const bool into = gpr(i.b) || ((i.b.isMem() || i.b.kind == Operand::RipSymbol) && suffixWidth(i.m.name()) != 0);
         if (!fitsImm32(x) || !into) return false;
         i.a = Operand::ofImm(x);
         return true;
@@ -295,8 +295,8 @@ private:
     // nothing wider - is a copy of the whole register, which can then go.
     bool extensionUnread(Instr &i, int k) const {
         int ws = 0;
-        if (is(i.m, {"movsbq", "movzbq", "movsbl", "movzbl"})) ws = 1;
-        else if (is(i.m, {"movswq", "movzwq", "movswl", "movzwl"})) ws = 2;
+        if (is(i.m.name(), {"movsbq", "movzbq", "movsbl", "movzbl"})) ws = 1;
+        else if (is(i.m.name(), {"movswq", "movzwq", "movswl", "movzwl"})) ws = 2;
         if (ws == 0 || !gpr(i.a) || !gpr(i.b) || i.a.reg.width != ws || i.b.reg.width < 4) return false;
         const int d = i.b.reg.id;
         if (frameReg(d) || frameReg(i.a.reg.id)) return false;
@@ -462,7 +462,7 @@ private:
         const bool sourceOnly = i.operands == 2 || isPush(i.m);
         const bool shift = opcodeOf(i.m).has(Opcode::kShift);
         if (sourceOnly && !shift && gpr(i.a)) edited = original(i.a.reg) || edited;
-        if (is(i.m, {"cmp", "cmpl", "cmpq", "test", "testl", "testq"}) && gpr(i.b)) edited = original(i.b.reg) || edited;
+        if (is(i.m.name(), {"cmp", "cmpl", "cmpq", "test", "testl", "testq"}) && gpr(i.b)) edited = original(i.b.reg) || edited;
         for (Operand *o : {&i.a, &i.b}) {
             if (o->basedOnReg() && o->reg.id >= 0 && o->reg.id < kGprs && o->reg.id != RBP && o->reg.id != RSP)
                 edited = original(o->reg) || edited;
@@ -481,7 +481,7 @@ private:
     // **setcc, a zero extension, and a compare of it against zero** ask again
     // what the flags already say: the jump that follows tests them directly.
     bool foldCondition(const Instr &i, int k) {
-        if (!is(i.m, {"cmp", "cmpq", "test", "testq"}) || !gpr(i.b)) return false;
+        if (!is(i.m.name(), {"cmp", "cmpq", "test", "testq"}) || !gpr(i.b)) return false;
         const bool againstZero = i.m[0] == 'c' ? i.a.kind == Operand::Immediate && i.a.numeric && i.a.value == 0
                                                : i.a.isReg(i.b.reg.id);
         const Value &v = regs_[i.b.reg.id];
@@ -501,7 +501,7 @@ private:
     // **The instruction's effect on what is known**, once it is rewritten.
     void learn(const Instr &i, int k) {
         const Effects &e = f_.effects[k];
-        const std::string &m = i.m;
+        const std::string &m = i.m.name();
         const bool extendsCond = is(m, {"movzbq", "movzbl"}) && i.a.isReg(condReg_) && i.b.isReg(condReg_);
         if (condReg_ >= 0 && !extendsCond && ((e.writes | e.partial) & bit(condReg_))) condReg_ = -1;
         for (int r = 0; r < kGprs; ++r) if ((e.writes | e.partial) & bit(r)) version_[r]++;
@@ -572,7 +572,7 @@ private:
     // A store into the frame is remembered; any other forgets the frame.
     void store(const Instr &i) {
         if (!i.b.isMem() || i.b.reg.id != RBP || i.b.scale != 0) { slots_.clear(); return; }
-        const int w = suffixWidth(i.m) ? suffixWidth(i.m) : i.a.kind == Operand::Register ? i.a.reg.width : 16;
+        const int w = suffixWidth(i.m.name()) ? suffixWidth(i.m.name()) : i.a.kind == Operand::Register ? i.a.reg.width : 16;
         for (auto it = slots_.begin(); it != slots_.end();) {
             const bool overlaps = it->first < i.b.disp + w && i.b.disp < it->first + it->second.width;
             it = overlaps ? slots_.erase(it) : std::next(it);
@@ -586,7 +586,7 @@ private:
 
     // What an instruction writing register b leaves in it.
     Value result(const Instr &i, bool extendsCond) {
-        const std::string &m = i.m;
+        const std::string &m = i.m.name();
         const int w = i.b.reg.width;
         const Value src = gpr(i.a) ? regs_[i.a.reg.id] : Value();
         const bool constSrc = i.a.kind == Operand::Immediate && i.a.numeric;

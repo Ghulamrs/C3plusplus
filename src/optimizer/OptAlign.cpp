@@ -43,7 +43,7 @@ int memoryBytes(const Operand &o) {
 
 // The bytes of one instruction as it will most likely be encoded, erring long.
 int bytesOf(const Instr &i) {
-    const std::string &m = i.m;
+    const std::string &m = i.m.name();
     if (m[0] == 'j') return 2;                  // short: a loop this size exits nearby
     if (m == "call") return i.a.kind == Operand::Indirect ? 3 : 5;
     if (m == "ret") return 1;

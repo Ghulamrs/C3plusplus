@@ -41,7 +41,7 @@ bool foldLoads(Stream &s, Flow &f, const Convention &c) {
             if (use.kind != Entry::Ins || use.dead) continue;
             f.joinPads(b, k, live);
             Instr &u = use.ins;
-            const bool arith = is(u.m, {"add", "sub", "and", "or", "xor", "cmp", "imul"}) && u.operands == 2;
+            const bool arith = is(u.m.name(), {"add", "sub", "and", "or", "xor", "cmp", "imul"}) && u.operands == 2;
             // The operand a load could stand in for: the source, or cmp's other side.
             Operand *slot = nullptr;
             if (arith && gpr(u.a) && gpr(u.b) && u.a.reg.id != u.b.reg.id) slot = &u.a;

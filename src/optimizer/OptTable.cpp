@@ -201,7 +201,12 @@ std::string inverse(const std::string &cc) {
 // **The registry an OpId indexes**: written once per new mnemonic under a lock, read with no lock - a slot is
 // published after its record is complete - since the passes ask a mnemonic's name at every turn.
 namespace {
-struct Mnemonic { std::string name; const Opcode *row; bool listed; };
+struct Mnemonic {
+    std::string name;
+    const Opcode *row;
+    bool listed;
+    Mnemonic(const std::string &n, const Opcode *r, bool l) : name(n), row(r), listed(l) {}
+};
 constexpr unsigned kMaxMnemonics = 1u << 16;
 std::atomic<const Mnemonic *> gSlots[kMaxMnemonics];
 std::mutex gIntern;
@@ -210,7 +215,7 @@ unsigned gCount = 0;
 
 unsigned publish(const std::string &m, const Opcode *row, bool listed) {
     const unsigned id = gCount++;
-    gSlots[id].store(new Mnemonic{m, row, listed}, std::memory_order_release);
+    gSlots[id].store(new Mnemonic(m, row, listed), std::memory_order_release);
     gByName()[m] = id;
     return id;
 }

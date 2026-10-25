@@ -64,6 +64,7 @@
 		15E251D87000D7B0AC5DEDB1 /* OptPass.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E127FC62FDEF8872D8F93B81 /* OptPass.cpp */; };
 		2D9CC719278E31759D3E4BEA /* OptPipeline.cpp in Sources */ = {isa = PBXBuildFile; fileRef = EB8DD9B7225ADD892249006F /* OptPipeline.cpp */; };
 		EF8AD4977F0622A8A774BABD /* OptShrink.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DECDFB54423F21F62E631F11 /* OptShrink.cpp */; };
+		11095AD769B6DDCF67FA8451 /* OptStrings.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DA66F45D766C080E18802540 /* OptStrings.cpp */; };
 		03B240F26ED19F82251EFD97 /* OptTable.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 22BDBC67E9D15E6A036F16CD /* OptTable.cpp */; };
 		DAADAA6DF773BF201DB8B5CF /* OptValues.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8ACB2B5625252545ECC02F5B /* OptValues.cpp */; };
 		CD768E1153CBE125A833A3CB /* Optimizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7CF20FDF7FFDEBE6904EB30C /* Optimizer.cpp */; };
@@ -128,6 +129,7 @@
 		E127FC62FDEF8872D8F93B81 /* OptPass.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = OptPass.cpp; path = "../src/optimizer/OptPass.cpp"; sourceTree = "<group>"; };
 		EB8DD9B7225ADD892249006F /* OptPipeline.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = OptPipeline.cpp; path = "../src/optimizer/OptPipeline.cpp"; sourceTree = "<group>"; };
 		DECDFB54423F21F62E631F11 /* OptShrink.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = OptShrink.cpp; path = "../src/optimizer/OptShrink.cpp"; sourceTree = "<group>"; };
+		DA66F45D766C080E18802540 /* OptStrings.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = OptStrings.cpp; path = "../src/optimizer/OptStrings.cpp"; sourceTree = "<group>"; };
 		22BDBC67E9D15E6A036F16CD /* OptTable.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = OptTable.cpp; path = "../src/optimizer/OptTable.cpp"; sourceTree = "<group>"; };
 		8ACB2B5625252545ECC02F5B /* OptValues.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = OptValues.cpp; path = "../src/optimizer/OptValues.cpp"; sourceTree = "<group>"; };
 		7CF20FDF7FFDEBE6904EB30C /* Optimizer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Optimizer.cpp; path = "../src/optimizer/Optimizer.cpp"; sourceTree = "<group>"; };
@@ -176,6 +178,7 @@
 		45B39C4A9CF47F00A27F68EE /* OptPass.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OptPass.h; path = "../src/optimizer/OptPass.h"; sourceTree = "<group>"; };
 		1C234FCB5247C18D9516CB5F /* OptPasses.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OptPasses.h; path = "../src/optimizer/OptPasses.h"; sourceTree = "<group>"; };
 		6334D4556B061FAF3642EDA7 /* OptPipeline.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OptPipeline.h; path = "../src/optimizer/OptPipeline.h"; sourceTree = "<group>"; };
+		1491EAD374C322E95A1B0387 /* OptStrings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OptStrings.h; path = "../src/optimizer/OptStrings.h"; sourceTree = "<group>"; };
 		D81302B456EA78F011062EF7 /* OptTable.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OptTable.h; path = "../src/optimizer/OptTable.h"; sourceTree = "<group>"; };
 		DDAAA6CE03164FFC62F4FCCC /* Optimizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Optimizer.h; path = "../src/optimizer/Optimizer.h"; sourceTree = "<group>"; };
 		2DC24FDB4CCDA14233AB5364 /* cpp11.exe */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = cpp11.exe; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -303,6 +306,8 @@
 				EB8DD9B7225ADD892249006F /* OptPipeline.cpp */,
 				6334D4556B061FAF3642EDA7 /* OptPipeline.h */,
 				DECDFB54423F21F62E631F11 /* OptShrink.cpp */,
+				DA66F45D766C080E18802540 /* OptStrings.cpp */,
+				1491EAD374C322E95A1B0387 /* OptStrings.h */,
 				22BDBC67E9D15E6A036F16CD /* OptTable.cpp */,
 				D81302B456EA78F011062EF7 /* OptTable.h */,
 				8ACB2B5625252545ECC02F5B /* OptValues.cpp */,
@@ -439,6 +444,7 @@
 				15E251D87000D7B0AC5DEDB1 /* OptPass.cpp in Sources */,
 				2D9CC719278E31759D3E4BEA /* OptPipeline.cpp in Sources */,
 				EF8AD4977F0622A8A774BABD /* OptShrink.cpp in Sources */,
+				11095AD769B6DDCF67FA8451 /* OptStrings.cpp in Sources */,
 				03B240F26ED19F82251EFD97 /* OptTable.cpp in Sources */,
 				DAADAA6DF773BF201DB8B5CF /* OptValues.cpp in Sources */,
 				CD768E1153CBE125A833A3CB /* Optimizer.cpp in Sources */,

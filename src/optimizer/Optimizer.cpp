@@ -236,9 +236,9 @@ void Optimizer::replay(const opt::Stream &s) {
         switch (e.kind) {
         case Entry::Ins: {
             const opt::Instr &i = e.ins;
-            if (i.operands == 0) under_.ins(i.m);
-            else if (i.operands == 1) under_.ins(i.m, i.a.op());
-            else under_.ins(i.m, i.a.op(), i.b.op());
+            if (i.operands == 0) under_.ins(i.m.name());
+            else if (i.operands == 1) under_.ins(i.m.name(), i.a.op());
+            else under_.ins(i.m.name(), i.a.op(), i.b.op());
             break;
         }
         case Entry::Label:

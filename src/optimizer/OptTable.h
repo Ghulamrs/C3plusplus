@@ -50,7 +50,7 @@ const Opcode &opcodeOf(const std::string &m);
 
 // **A mnemonic as an index into the one table** (M3a.1, M3-IR.md 2.3): a table row's index, or one interned after the
 // rows for a mnemonic only a prefix family or nothing catches, its spelling kept and counted (CPP11_MIR_STRICT=1). It
-// reads like the string it was, so the passes' tests by spelling stand until M3a.3.
+// reads like the string it was through name() - no conversion operator, which cxx3 cannot yet bind a reference through.
 class OpId {
 public:
     OpId() : id_(0) {}                  // the empty mnemonic
@@ -60,7 +60,6 @@ public:
     const Opcode &row() const;
     bool listed() const;                // a row of the table's own, not a prefix family's or none
     unsigned index() const { return id_; }
-    operator const std::string &() const { return name(); }
     std::size_t size() const { return name().size(); }
     bool empty() const { return name().empty(); }
     char operator[](std::size_t i) const { return name()[i]; }
@@ -96,6 +95,13 @@ bool isPop(const std::string &m);     // pop, popq
 
 // The condition a jcc or setcc tests, and its opposite; "" for anything else.
 std::string conditionOf(const std::string &m);
+// The same, asked of an instruction's mnemonic - spelled out, since cxx3 binds no reference through a conversion.
+inline bool isMovQ(const OpId &m) { return isMovQ(m.name()); }
+inline bool isMovQL(const OpId &m) { return isMovQL(m.name()); }
+inline bool isMovAny(const OpId &m) { return isMovAny(m.name()); }
+inline bool isPush(const OpId &m) { return isPush(m.name()); }
+inline bool isPop(const OpId &m) { return isPop(m.name()); }
+inline std::string conditionOf(const OpId &m) { return conditionOf(m.name()); }
 std::string inverse(const std::string &cc);
 
 }

@@ -69,6 +69,7 @@
     <ClCompile Include="..\src\optimizer\OptPass.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\OptPipeline.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\OptShrink.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
+    <ClCompile Include="..\src\optimizer\OptStrings.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\OptTable.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\OptValues.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\Optimizer.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
@@ -119,6 +120,7 @@
     <ClInclude Include="..\src\optimizer\OptPass.h"><Filter>Header Files\optimizer</Filter></ClInclude>
     <ClInclude Include="..\src\optimizer\OptPasses.h"><Filter>Header Files\optimizer</Filter></ClInclude>
     <ClInclude Include="..\src\optimizer\OptPipeline.h"><Filter>Header Files\optimizer</Filter></ClInclude>
+    <ClInclude Include="..\src\optimizer\OptStrings.h"><Filter>Header Files\optimizer</Filter></ClInclude>
     <ClInclude Include="..\src\optimizer\OptTable.h"><Filter>Header Files\optimizer</Filter></ClInclude>
     <ClInclude Include="..\src\optimizer\Optimizer.h"><Filter>Header Files\optimizer</Filter></ClInclude>
   </ItemGroup>
