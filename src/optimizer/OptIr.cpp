@@ -134,4 +134,65 @@ Op Operand::op() const {
     return immText("");
 }
 
+
+void Directive::replay(Spelling &sp) const {
+    switch (kind) {
+    case Prologue:
+        if (withSaves) sp.calleeSaves(saves);
+        sp.prologue(static_cast<int>(n[0]), s, static_cast<int>(n[1]), static_cast<int>(n[2]));
+        break;
+    case FileEntry: sp.fileEntry(static_cast<int>(n[0]), s); break;
+    case Location: sp.location(static_cast<int>(n[0]), static_cast<int>(n[1]), static_cast<int>(n[2])); break;
+    case FuncletLinesBegin: sp.funcletLinesBegin(); break;
+    case FuncletLinesEnd: sp.funcletLinesEnd(); break;
+    case Globl: sp.globl(s); break;
+    case WeakDefinition: sp.weakDefinition(s); break;
+    case ObjectType: sp.objectType(s); break;
+    case ObjectSize: sp.objectSize(s, static_cast<int>(n[0])); break;
+    case TextSection: sp.textSection(); break;
+    case RodataSection: sp.rodataSection(); break;
+    case RelroSection: sp.relroSection(); break;
+    case DataSection: sp.dataSection(); break;
+    case BssSection: sp.bssSection(); break;
+    case TlsDataSection: sp.tlsDataSection(); break;
+    case TlsBssSection: sp.tlsBssSection(); break;
+    case TlsInitialiserEntry: sp.tlsInitialiserEntry(s); break;
+    case InitialiserEntry: sp.initialiserEntry(s, n[0] != 0); break;
+    case Align: sp.align(static_cast<int>(n[0])); break;
+    case LoopAlign: sp.loopAlign(static_cast<int>(n[0])); break;
+    case Zero: sp.zero(static_cast<int>(n[0])); break;
+    case DataInt: sp.dataInt(static_cast<int>(n[0]), n[1]); break;
+    case DataSym: sp.dataSym(s, n[0]); break;
+    case DataBytes: sp.dataBytes(s); break;
+    case NoteHasEh: sp.noteHasEh(n[0] != 0); break;
+    case Deferred: deferred(); break;
+    }
+}
+
+// What -dump=mir prints for a directive: its kind and its arguments.
+std::string Directive::describe() const {
+    static const char *const kNames[] = {
+        "prologue", "file", "location", "funclet-lines-begin", "funclet-lines-end", "globl", "weak", "type", "size",
+        "text", "rodata", "relro", "data", "bss", "tdata", "tbss", "tls-init", "init", "align", "loop-align", "zero",
+        "int", "sym", "bytes", "has-eh", "deferred"};
+    std::string t = std::string(".") + kNames[kind];
+    switch (kind) {
+    case Prologue:
+        t += " frame=" + std::to_string(n[0]) + " outgoing=" + std::to_string(n[1]) + " realign=" + std::to_string(n[2]);
+        if (!s.empty()) t += " lsda=" + s;
+        if (withSaves) { t += " saves="; for (std::size_t i = 0; i < saves.size(); i++) t += (i ? "," : "") + saves[i].reg; }
+        break;
+    case FileEntry: t += " " + std::to_string(n[0]) + " " + s; break;
+    case Location: t += " " + std::to_string(n[0]) + ":" + std::to_string(n[1]) + ":" + std::to_string(n[2]); break;
+    case Globl: case WeakDefinition: case ObjectType: case TlsInitialiserEntry: case DataBytes: t += " " + s; break;
+    case ObjectSize: t += " " + s + " " + std::to_string(n[0]); break;
+    case InitialiserEntry: t += " " + s + (n[0] ? " dso" : ""); break;
+    case Align: case LoopAlign: case Zero: case NoteHasEh: t += " " + std::to_string(n[0]); break;
+    case DataInt: t += " " + std::to_string(n[0]) + " " + std::to_string(n[1]); break;
+    case DataSym: t += " " + s + (n[0] ? "+" + std::to_string(n[0]) : ""); break;
+    default: break;
+    }
+    return t;
+}
+
 }

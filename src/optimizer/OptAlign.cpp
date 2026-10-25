@@ -136,8 +136,8 @@ bool alignLoops(Function &fn) {
     for (auto p = pads.rbegin(); p != pads.rend(); ++p) {
         Entry e;
         e.kind = Entry::Event;
-        const int bytes = p->second;
-        e.event = [bytes](Spelling &s) { s.loopAlign(bytes); };
+        e.event = Directive(Directive::LoopAlign);
+        e.event.n[0] = p->second;
         fn.stream.insert(fn.stream.begin() + p->first, e);
     }
     return true;

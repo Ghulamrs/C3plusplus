@@ -147,7 +147,7 @@ void dumpStream(std::ostream &o, Function &fn) {
             if (e.ins.operands >= 2) o << ", " << operandText(e.ins.b);
             break;
         case Entry::Label: o << e.label << ":" << (e.state ? "  ; state" : ""); break;
-        case Entry::Event: o << "<event>"; break;
+        case Entry::Event: o << e.event.describe(); break;
         }
         o << "\n";
     }

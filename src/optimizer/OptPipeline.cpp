@@ -155,11 +155,14 @@ struct FinishFrame : Pass {
         fn.size = fn.frameBase() + ((8 * static_cast<int>(fn.saves.size()) + 15) & ~15);
         if (fn.size != fn.frameSize) {
             assert(fn.prologueAt >= 0 && "a frame can grow only while its prologue is held");
-            const std::vector<SavedReg> saves = fn.saves;
-            const int size = fn.size;
-            const std::string lsda = fn.lsda;
-            const int outgoing = fn.outgoing;
-            fn.stream[fn.prologueAt].event = [=](Spelling &sp) { sp.calleeSaves(saves); sp.prologue(size, lsda, outgoing); };
+            opt::Directive &p = fn.stream[fn.prologueAt].event;
+            assert(p.kind == opt::Directive::Prologue && "the prologue's entry holds the prologue");
+            p.n[0] = fn.size;
+            p.s = fn.lsda;
+            p.n[1] = fn.outgoing;
+            p.n[2] = 0;
+            p.withSaves = true;
+            p.saves = fn.saves;
         }
         return had;
     }

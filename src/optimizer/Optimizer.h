@@ -129,9 +129,9 @@ private:
     opt::Function &current() { return funclet_.empty() ? fn_ : *funclet_.back(); }
     void hold(opt::Entry e);
     void instruction(const std::string &m, int operands, const Op *a, const Op *b);
-    // A call that is not an instruction: held in its place inside a function,
-    // passed on at once outside one.
-    void event(std::function<void(Spelling &)> call);
+    // A call that is not an instruction, as a directive: held in its place inside a function, replayed at once
+    // outside one.
+    void event(opt::Directive d);
     void improve(opt::Function &fn);
     void flush();
     void replay(const opt::Stream &s);

@@ -43,11 +43,11 @@ void Optimizer::instruction(const std::string &m, int operands, const Op *a, con
     hold(std::move(e));
 }
 
-void Optimizer::event(std::function<void(Spelling &)> call) {
-    if (!inFunction_) { call(under_); return; }
+void Optimizer::event(opt::Directive d) {
+    if (!inFunction_) { d.replay(under_); return; }
     Entry e;
     e.kind = Entry::Event;
-    e.event = std::move(call);
+    e.event = std::move(d);
     hold(std::move(e));
 }
 
@@ -111,7 +111,9 @@ void Optimizer::funcletEnd() {
 }
 
 void Optimizer::defer(std::function<void()> call) {
-    event([call](Spelling &) { call(); });
+    opt::Directive d(opt::Directive::Deferred);
+    d.deferred = std::move(call);
+    event(std::move(d));
 }
 
 void Optimizer::sharedSlot(long long disp, int size) { fn_.shared.add(disp, size); }
@@ -229,59 +231,53 @@ void Optimizer::replay(const opt::Stream &s) {
             if (e.state) under_.stateLabel(e.label);
             else under_.defLabel(e.label);
             break;
-        case Entry::Event: e.event(under_); break;
+        case Entry::Event: e.event.replay(under_); break;
         }
     }
 }
 
-// Everything else is an event: held where it stood, with its arguments copied.
+// Everything else is a directive: held where it stood, with its arguments copied.
+namespace {
+opt::Directive dir(opt::Directive::Kind k, long long a = 0, long long b = 0, long long c = 0,
+                   const std::string &s = std::string()) {
+    opt::Directive d(k);
+    d.n[0] = a; d.n[1] = b; d.n[2] = c;
+    d.s = s;
+    return d;
+}
+}
+using D = opt::Directive;
 void Optimizer::prologue(int frameSize, const std::string &lsda, int outgoing, int realign) {
     assert((realign == 0 || !passes_) && "a realigned frame is written past the passes");
     fn_.prologueAt = static_cast<int>(fn_.stream.size());
     fn_.frameSize = frameSize;
     fn_.lsda = lsda;
     fn_.outgoing = outgoing;
-    event([=](Spelling &s) { s.prologue(frameSize, lsda, outgoing, realign); });
+    event(dir(D::Prologue, frameSize, outgoing, realign, lsda));
 }
-void Optimizer::fileEntry(int n, const std::string &name) {
-    event([=](Spelling &s) { s.fileEntry(n, name); });
-}
-void Optimizer::location(int file, int line, int column) {
-    event([=](Spelling &s) { s.location(file, line, column); });
-}
-void Optimizer::funcletLinesBegin() { event([](Spelling &s) { s.funcletLinesBegin(); }); }
-void Optimizer::funcletLinesEnd() { event([](Spelling &s) { s.funcletLinesEnd(); }); }
-void Optimizer::globl(const std::string &name) { event([=](Spelling &s) { s.globl(name); }); }
-void Optimizer::weakDefinition(const std::string &name) {
-    event([=](Spelling &s) { s.weakDefinition(name); });
-}
-void Optimizer::textSection() { event([](Spelling &s) { s.textSection(); }); }
-void Optimizer::rodataSection() { event([](Spelling &s) { s.rodataSection(); }); }
-void Optimizer::relroSection() { event([](Spelling &s) { s.relroSection(); }); }
-void Optimizer::dataSection() { event([](Spelling &s) { s.dataSection(); }); }
-void Optimizer::bssSection() { event([](Spelling &s) { s.bssSection(); }); }
-void Optimizer::tlsDataSection() { event([](Spelling &s) { s.tlsDataSection(); }); }
-void Optimizer::tlsBssSection() { event([](Spelling &s) { s.tlsBssSection(); }); }
-void Optimizer::tlsInitialiserEntry(const std::string &fn) {
-    event([=](Spelling &s) { s.tlsInitialiserEntry(fn); });
-}
-void Optimizer::objectType(const std::string &name) {
-    event([=](Spelling &s) { s.objectType(name); });
-}
-void Optimizer::objectSize(const std::string &name, int size) {
-    event([=](Spelling &s) { s.objectSize(name, size); });
-}
-void Optimizer::align(int n) { event([=](Spelling &s) { s.align(n); }); }
-void Optimizer::loopAlign(int bytes) { event([=](Spelling &s) { s.loopAlign(bytes); }); }
-void Optimizer::zero(int n) { event([=](Spelling &s) { s.zero(n); }); }
-void Optimizer::dataInt(int size, long long v) { event([=](Spelling &s) { s.dataInt(size, v); }); }
-void Optimizer::dataSym(const std::string &sym, long long off) {
-    event([=](Spelling &s) { s.dataSym(sym, off); });
-}
-void Optimizer::noteHasEh(bool yes) { event([=](Spelling &s) { s.noteHasEh(yes); }); }
+void Optimizer::fileEntry(int n, const std::string &name) { event(dir(D::FileEntry, n, 0, 0, name)); }
+void Optimizer::location(int file, int line, int column) { event(dir(D::Location, file, line, column)); }
+void Optimizer::funcletLinesBegin() { event(dir(D::FuncletLinesBegin)); }
+void Optimizer::funcletLinesEnd() { event(dir(D::FuncletLinesEnd)); }
+void Optimizer::globl(const std::string &name) { event(dir(D::Globl, 0, 0, 0, name)); }
+void Optimizer::weakDefinition(const std::string &name) { event(dir(D::WeakDefinition, 0, 0, 0, name)); }
+void Optimizer::textSection() { event(dir(D::TextSection)); }
+void Optimizer::rodataSection() { event(dir(D::RodataSection)); }
+void Optimizer::relroSection() { event(dir(D::RelroSection)); }
+void Optimizer::dataSection() { event(dir(D::DataSection)); }
+void Optimizer::bssSection() { event(dir(D::BssSection)); }
+void Optimizer::tlsDataSection() { event(dir(D::TlsDataSection)); }
+void Optimizer::tlsBssSection() { event(dir(D::TlsBssSection)); }
+void Optimizer::tlsInitialiserEntry(const std::string &fn) { event(dir(D::TlsInitialiserEntry, 0, 0, 0, fn)); }
+void Optimizer::objectType(const std::string &name) { event(dir(D::ObjectType, 0, 0, 0, name)); }
+void Optimizer::objectSize(const std::string &name, int size) { event(dir(D::ObjectSize, size, 0, 0, name)); }
+void Optimizer::align(int n) { event(dir(D::Align, n)); }
+void Optimizer::loopAlign(int bytes) { event(dir(D::LoopAlign, bytes)); }
+void Optimizer::zero(int n) { event(dir(D::Zero, n)); }
+void Optimizer::dataInt(int size, long long v) { event(dir(D::DataInt, size, v)); }
+void Optimizer::dataSym(const std::string &sym, long long off) { event(dir(D::DataSym, off, 0, 0, sym)); }
+void Optimizer::noteHasEh(bool yes) { event(dir(D::NoteHasEh, yes ? 1 : 0)); }
 void Optimizer::initialiserEntry(const std::string &fn, bool dsoHandle) {
-    event([=](Spelling &s) { s.initialiserEntry(fn, dsoHandle); });
+    event(dir(D::InitialiserEntry, dsoHandle ? 1 : 0, 0, 0, fn));
 }
-void Optimizer::dataBytes(const std::string &bytes) {
-    event([=](Spelling &s) { s.dataBytes(bytes); });
-}
+void Optimizer::dataBytes(const std::string &bytes) { event(dir(D::DataBytes, 0, 0, 0, bytes)); }
