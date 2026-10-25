@@ -175,6 +175,15 @@ beside; the Xcode project of `Windows/MASM` still lists the old files; the funcl
 a non-Windows host writes the object but a link there is still refused, the CRT and link.exe being Windows's. The
 Linux rows are recorded below as they come back.
 
+**The Linux leg and the in-tree suite** (2026-10-26, `e5b624c`). `tests/coff.sh` joins `make test`: every case with `-c`
+through the structural door and through `-coff=text`, the two objects cmp'd - masm's own code on the text side, so the
+structural door is held to what `-S` + masm writes with no masm.exe on the machine; Mac 1,310 pairs, 1,270 objects, 0
+differ, 49 seconds; `make test` on this tree exit 0 with every suite's number as at M4.4. Linux box (g++ 11.5, `-Werror`,
+`~/m4-a`, removed after): build ok, `run.sh` 990/0 at -O0 and at -O2, `coff.sh` 1,310 pairs, 1,269 objects, 0 differ,
+comment cap 0; and **the objects are the same bytes on both hosts** - `class.cpp` at -O0 and `try-catch-value.cpp` at
+-O2 written on Linux carry the Mac's digests (`668406b0...`, `67efd529...`). The re-based masm, rebuilt against the final
+library, passes its `make test` and writes the same 48 objects as `6bcb5d2`.
+
 ## Notes the comment cap would not hold
 
 The library's three long comments, cut to three lines in `src/encoder/`; the full text is here, as CLAUDE.md keeps the
