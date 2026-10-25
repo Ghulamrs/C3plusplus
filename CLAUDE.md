@@ -7178,9 +7178,18 @@ or taken from beside stage 0. On zeeshan: the cases 957 / 0 / 31 at -O0 and -O2,
 printing their `.expected`; the three-file example under `-g` links, writes `demog.pdb` and prints what clang's build
 prints; self-host 70 of 70. tms6747 against `108000a` on the Linux box 0 of 993 changed at -O0 and -O2, run.sh
 989 / 0 at both; Mac `make test` green, the golden 3 of 1,924 changed - the three `thread_local` files of
-x86_64-windows, now the MASM spelling. **Found by that work and not mended**: `-masm=ml64` thread_local output is
-refused by ml64 itself (A2024 on `lea ..., [base + SECTIONREL x]`; ml64 takes `SECTIONREL` only in a `mov` to a
-32-bit register or a `cmp BYTE`); this file's `thread_local` section describes the `mov` form the spelling once wrote.
+x86_64-windows, now the MASM spelling.
+
+**And `-masm=ml64`'s `thread_local`, which ml64 refused** (A2024 on every `lea R, [B + SECTIONREL x]` and
+`cmp BYTE PTR [B + SECTIONREL x], 0` the spelling wrote since `thread_local` landed). Measured on zeeshan: ml64
+takes `SECTIONREL` after a 32-bit register - `mov r32, SECTIONREL x`, `add eax, ...`, `mov eax, DWORD PTR [rax +
+SECTIONREL x]` - and refuses it in `lea`, a 64-bit `add`, a byte `cmp` and every `OFFSET` form. So the ml64
+spelling (`MasmSpelling::ml64Tls`) borrows a register neither operand names - r11, r10, rdx, rcx - with `push`,
+puts the offset in its 32-bit half and rewrites the operand as `[B + S]`, then `pop`s it: the -O2 allocator offers
+r11 (`MirAlloc.cpp:40`), so no register is assumed free, and an rsp operand beside it is refused by name since the
+push would move it. The project's masm keeps `[B + SECTIONREL x]`, which it takes. On zeeshan with ml64 and
+link.exe, `thread-local` and `thread-local-extern` print their `.expected` at -O0 and -O2; the emit golden's
+default-spelling files are unchanged.
 
 **Found, and mended the same day**: `hostLinker()` asks for a bare `link.exe`, which Windows finds beside
 the compiler before PATH - so where the project's LINK sat beside cxx3 (RIDE's bin), `-g -masm=gnu` linked
@@ -14876,7 +14885,7 @@ decorate nothing extra for thread storage (`?t@@3HA` as for a plain int). MASM: 
 names a section `_TLS`, which the linker builds no template from - `.tls$ SEGMENT` it is; ml64
 relocates `mov r11d, SECTIONREL x` as SECREL and refuses `SECTIONREL` inside every memory operand
 tried (`lea rax, [rcx + SECTIONREL x]` A2024, with and without a PTR size, in `_TLS` and `.tls$`),
-so the MASM spelling writes a `Tls` operand as that `mov` and the register added; `gs:[88]` has to
+so the ml64 spelling writes a `Tls` operand through that `mov` into a borrowed register (`MasmSpelling::ml64Tls`); `gs:[88]` has to
 be `QWORD PTR gs:[88]`; a symbol inside `SECTIONREL` must be `EXTERN x:BYTE`, not `:PROC` (A2102).
 The project's own masm had no `SECTIONREL` until Windows/MASM `6bcb5d2` (2026-10-25), and `-masm=masm`
 refused a thread_local by name until then; it writes `[base + SECTIONREL x]`, which that masm relocates as

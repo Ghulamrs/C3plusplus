@@ -282,10 +282,45 @@ void MasmSpelling::ins(const std::string &m, const Op &a) {
     o_ += "  "; o_ += r->masm; o_ += ' '; o_ += t; o_ += '\n';
 }
 
+// The 64-bit name of a register any width names (`ecx`, `cl` -> `rcx`), or "" for none.
+static std::string reg64(const std::string &n) {
+    static const char *const kRows[][4] = {
+        {"rax","eax","ax","al"}, {"rcx","ecx","cx","cl"}, {"rdx","edx","dx","dl"}, {"rbx","ebx","bx","bl"},
+        {"rsi","esi","si","sil"}, {"rdi","edi","di","dil"}, {"rbp","ebp","bp","bpl"}, {"rsp","esp","sp","spl"},
+        {"r8","r8d","r8w","r8b"}, {"r9","r9d","r9w","r9b"}, {"r10","r10d","r10w","r10b"}, {"r11","r11d","r11w","r11b"}};
+    for (const auto &row : kRows)
+        for (const char *w : row)
+            if (n == w) return row[0];
+    return "";
+}
+
+// **ml64 takes SECTIONREL only after a 32-bit register** (measured 2026-10-25: `mov r32, SECTIONREL x` and
+// `add eax, ...` relocate as SECREL; `lea rax, [rax + SECTIONREL x]` and `cmp BYTE PTR [...]` are A2024). The offset
+// goes into a register neither operand names, borrowed by push and pop - the -O2 allocator may hold any of them.
+void MasmSpelling::ml64Tls(const std::string &m, const Op &a, const Op &b) {
+    const Op &t = a.kind == Op::Tls ? a : b, &other = a.kind == Op::Tls ? b : a;
+    if (other.kind == Op::Mem && reg64(std::string(other.text.substr(1))) == "rsp")
+        give_up(std::string(t.text), "a thread_local beside an rsp operand in the ml64 spelling, whose push would move it");
+    const std::string base(t.index.substr(1)), near = other.kind == Op::Reg || other.kind == Op::Mem
+                                                         ? reg64(std::string(other.text.substr(1))) : "";
+    static const char *const kScratch[][3] = {{"r11","r11d","%r11"}, {"r10","r10d","%r10"}, {"rdx","edx","%rdx"},
+                                              {"rcx","ecx","%rcx"}};
+    const char *const *s = nullptr;
+    for (const auto &c : kScratch)
+        if (base != c[0] && near != c[0]) { s = c; break; }
+    std::string sym(t.text);
+    referencedData_.insert(sym);
+    o_ += "  push "; o_ += s[0]; o_ += "\n  mov "; o_ += s[1]; o_ += ", SECTIONREL "; o_ += mangle(sym); o_ += '\n';
+    const Op via = memIndexed(0, false, t.index, Str(s[2]), 1);
+    if (a.kind == Op::Tls) ins(m, via, b); else ins(m, a, via);
+    o_ += "  pop "; o_ += s[0]; o_ += '\n';
+}
+
 void MasmSpelling::ins(const std::string &m, const Op &a, const Op &b) {
     afterCall_ = false;
     const Rule *r = ruleFor(m);
     if (r == nullptr) give_up(m, "an instruction this spelling does not know");
+    if (!comdat_ && (a.kind == Op::Tls || b.kind == Op::Tls)) { ml64Tls(m, a, b); return; }
 
     Rendered src = render(a), dst = render(b);
 
