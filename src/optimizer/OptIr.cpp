@@ -171,11 +171,11 @@ void Directive::replay(Spelling &sp) const {
 
 // What -dump=mir prints for a directive: its kind and its arguments.
 std::string Directive::describe() const {
-    static const char *const kNames[] = {
+    static const char *const kKindNames[] = {
         "prologue", "file", "location", "funclet-lines-begin", "funclet-lines-end", "globl", "weak", "type", "size",
         "text", "rodata", "relro", "data", "bss", "tdata", "tbss", "tls-init", "init", "align", "loop-align", "zero",
         "int", "sym", "bytes", "has-eh", "deferred"};
-    std::string t = std::string(".") + kNames[kind];
+    std::string t = std::string(".") + kKindNames[kind];
     switch (kind) {
     case Prologue:
         t += " frame=" + std::to_string(n[0]) + " outgoing=" + std::to_string(n[1]) + " realign=" + std::to_string(n[2]);
