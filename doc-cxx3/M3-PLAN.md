@@ -214,15 +214,24 @@ holder's round trip); and `5252c0a`, the two registries owning their records in 
 or `PUBLIC` gone or that `L` dropped); and no reference binds through a conversion operator, so `OpId` and `StrId`
 convert by `name()`/`str()` (`d31857c`, `tests/open/conversion-to-reference-binds.cpp`).
 
-The gate, at `5252c0a` merged with main's `eb930cc`. `identical.sh` against a REF of main plus `55885d0`, `b9628c6`
-and `40b5bca`: **6,039 compared, 9 differ, the known nine** (a diagnostic naming `lib/` by its path), no assembly.
-Emit golden (recorded at `7d593d5`): 6 of 1,924 changed, `namespace-unnamed` on three targets and main's three
-thread-local Windows files. `-check=mir` at -O0 over every case and Compiler++ for x86_64-linux and both Windows
-spellings: **1,959 units, 0 differ**. `CPP11_MIR_STRICT=1` at -O0 and -O2, the same sources and targets: **0
-mnemonics the table lacks**. `-dump=mir` at -O2 run twice: **1,980 units, 0 differ**. Mac `make test` green. zeeshan:
-cl build, the cases **958/0 at -O0 and at -O2 under MASM**, `self-host.cmd` 71 of 71 in the default spelling; the GNU
-spelling's row is not run there, the box having no clang. Linux: g++ build, `run.sh` 988/0 at -O0 and -O2, self-host
-71 of 71, `asm6x.sh` 652/0, `tms6747.sh` 571/0 and `ti-link.sh` 571 linked at -O0 and -O2.
+The gate, at `210054e` (`5252c0a` merged with main's `eb930cc`, and cl's C4459 fix: `Directive::describe`'s table was
+`kNames`, hiding OptIr.cpp's register table, and cl's `/WX` refused it). `identical.sh` against a REF of main plus
+`55885d0`, `b9628c6` and `40b5bca`: **6,039 compared, 9 differ, the known nine** (a diagnostic naming `lib/` by its
+path), no assembly. Emit golden (recorded at `7d593d5`): 6 of 1,924 changed, `namespace-unnamed` on three targets and
+main's three thread-local Windows files. `-check=mir` at -O0 over every case and Compiler++ for x86_64-linux and both
+Windows spellings: **1,973 units, 0 differ**. `CPP11_MIR_STRICT=1` at -O0 and -O2, the same sources and targets: **0
+mnemonics the table lacks**. `-dump=mir` at -O2 run twice: **1,973 units, 0 differ**. Mac `make test` green,
+memory-gate 1,063. zeeshan: cl build, the cases **958/0 (31 skipped) at -O0 and at -O2 under MASM**, `self-host.cmd`
+71 of 71 in the default spelling - with the project's masm 6bcb5d2 and LINK 959dac2; the first run, against an older
+masm with no `SECTIONREL`, failed the two `thread_local` cases and stage 1, the tool's limit and not the compiler's.
+The GNU spelling's row, which the box cannot run for want of clang, was run by another session: the tip compiled
+every case `-masm=gnu` on the Mac, the Mac's clang assembled them, zeeshan's link.exe linked and ran them - 619/619
+and 340/340 refusals at -O0 and -O2. Linux: g++ build, `run.sh` 990/0 at -O0 and -O2, self-host 71 of 71, `asm6x.sh`
+635/0, `tms6747.sh` 621/0 at -O0 and -O2 with every pass also on sim6747, `ti-link.sh` 630 linked, 0 failed, at -O0
+and -O2. **Compile time, R1.2's row**: the 70 sources of 7d593d5 one at a time with `-S`, REF and the tip both clang
+-O2 builds, three interleaved rounds on the Mac: medians -O0 24.12 s against 24.12, -O2 45.16 against 45.32 (+0.4%);
+best of three -O0 22.92 against 23.47, -O2 44.64 against 45.31, the first round run beside a box build. A second
+session's run reads -O0 23.97 against 24.18 (+0.9%) and -O2 44.85 against 44.85.
 
 **What part 2 of M3-IR.md says and the code does not, for RP2a to rule on**: the types keep today's names and file
 (`opt::Instr`, `Operand`, `Entry`, `Directive` in `OptIr.h`), the rename into `Mir.h` being M3a.5's by the file table
