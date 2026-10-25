@@ -251,3 +251,16 @@ cases run under `-masm=ml64` on zeeshan) before the merge is called done; 2 (`to
 RP2b. The C7 `-S` item is ruled separate: `-S` with no `-o` writes beside the source and a link build's
 intermediates go to the current directory - two modes of one binary - and stage 0 and stage 1 agree on all 71
 sources' `-S` output on the Mac.
+
+**After RP2a, 2026-10-25.** Main's `98eeda3` is merged into `m3a` (`f6223ba`); on the merged tree the Mac's `make
+test` is green, `-check=mir` and `-dump=mir` read 1,973 units 0 differ, and the Linux box reads `run.sh` 990/0 at
+-O0 and -O2 and self-host 71 of 71. **Condition 4 is half met.** `run-cases.cmd` gained an ml64 pass
+(`CXX1_CASES_SPELLINGS=ml64`, `3e0ed41`), and on zeeshan the merged tree read 895 passed, 63 failed, 31 skipped at
+-O0 and at -O2: 58 `LNK2005` (ml64 cannot mark an inline definition COMDAT, so `std::exception`'s copy
+constructor collides with libvcruntime's), 4 `A2043` (an identifier too long for ml64), 1 `A2008` (`k7`, a name ml64
+reserves, in `const-return-name`) - none a wrong answer, every one the ml64 spelling's known limit. Main at
+`98eeda3` under the same pass was cut short when zeeshan was withdrawn; on the 164 cases it finished at -O0 it gives
+the same verdict as the merged tree on every one, 14 failing on each. The whole baseline at -O0 and -O2 is owed on
+the GRA box before "merged" is written here. **The C7 probe on zeeshan** (stage 0 and stage 1, one and two inputs,
+relative and absolute paths, no `-o`): with two inputs both stages write each `.s` beside its source; with one, both
+write it to stdout and no file. The two stages agree in every shape, as the review read it.
