@@ -13,6 +13,21 @@ namespace mir {
 constexpr int kFirstPseudo = opt::kPhysical;
 inline bool isPseudo(int id) { return id >= kFirstPseudo; }
 
+// **The target's register files, as the webs and the allocator ask about them** (M3-IR 2.8): which registers
+// each class may be coloured with, and the order they are offered in, cheapest encoding first.
+struct TargetDesc {
+    opt::RegSet members[3] = {0, 0, 0};    // per RegClass; the frame's registers in none
+    std::vector<int> offer[3];
+    opt::RegClass classOf(int r) const {
+        return r < opt::kGprs ? opt::RegClass::Gpr : r < opt::kXmm0 + 16 ? opt::RegClass::Xmm : opt::RegClass::X87;
+    }
+    bool candidate(int r) const {
+        return r >= 0 && r < opt::kPhysical && (members[static_cast<int>(classOf(r))] >> r & 1);
+    }
+    // Both x86 targets: the general registers but rsp and rbp; the convention is the function's own.
+    static const TargetDesc &x86_64();
+};
+
 // **A web is one value's life in one register**: every definition joined with every use it reaches, over reaching definitions, as GCC's web pass makes them. Those the ABI does not pin become pseudos; the register each was found in is kept as its home, which is what it is given back until an allocator chooses better.
 // An instruction that wants a value in one register - a call its arguments, a shift its count in %cl, `idiv` its dividend in rdx:rax - or that leaves one there - a call its result in rax - would pin the whole web the value belongs to.
 // Split first: the value is copied into or out of that register just there, so only the copy is pinned and the web that computed it is free. That is how GCC's expander places every fixed-register operand, and its allocator coalesces the copies it can.

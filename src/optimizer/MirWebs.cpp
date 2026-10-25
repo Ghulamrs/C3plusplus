@@ -11,8 +11,8 @@ using namespace opt;
 
 namespace {
 
-// The registers webs are made of: the general ones but the frame's.
-bool candidate(int r) { return r >= 0 && r < kGprs && !frameReg(r); }
+// The registers webs are made of: those the target description offers.
+bool candidate(int r) { return TargetDesc::x86_64().candidate(r); }
 
 bool isShift(const std::string &m) { return opcodeOf(m).has(Opcode::kShift); }
 
@@ -24,6 +24,18 @@ Entry copy(int reg) {
     return e;
 }
 
+}
+
+const TargetDesc &TargetDesc::x86_64() {
+    static const TargetDesc d = [] {
+        TargetDesc t;
+        for (int r : {RAX, RCX, RDX, RSI, RDI, R8, R9, R10, R11, RBX, R12, R13, R14, R15}) {
+            t.members[static_cast<int>(RegClass::Gpr)] |= bit(r);
+            t.offer[static_cast<int>(RegClass::Gpr)].push_back(r);
+        }
+        return t;
+    }();
+    return d;
 }
 
 int Webs::Sets::make(bool pin) {

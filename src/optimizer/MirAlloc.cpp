@@ -11,8 +11,8 @@ using namespace opt;
 
 namespace {
 
-// The registers a pseudo may be given: the general ones but the frame's.
-bool candidate(int r) { return r >= 0 && r < kGprs && !frameReg(r); }
+// The registers a pseudo may be given: those the target description offers.
+bool candidate(int r) { return TargetDesc::x86_64().candidate(r); }
 
 bool wholeReg(const Operand &o) { return o.kind == Operand::Register && o.reg.width == 8; }
 
@@ -35,10 +35,8 @@ int popcount(unsigned long long x) {
     return n;
 }
 
-// The registers offered, cheapest encoding first; the frame's never, and
-// the preserved ones only for a save charged.
-const int kOffer[] = {RAX, RCX, RDX, RSI, RDI, R8, R9, R10, R11,
-                      RBX, R12, R13, R14, R15};
+// The registers offered, cheapest encoding first; the frame's never, and the preserved ones only for a save charged.
+const std::vector<int> &kOffer = TargetDesc::x86_64().offer[static_cast<int>(RegClass::Gpr)];
 
 }
 
