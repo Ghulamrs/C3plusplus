@@ -88,6 +88,7 @@ public:
     void postamble(std::ostream &sink) override;
 
 private:
+    void ml64Tls(const std::string &m, const Op &a, const Op &b);
     const bool comdat_;
     std::string &o_;
     std::vector<SavedReg> saves_;
