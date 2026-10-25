@@ -3,7 +3,8 @@
 # that is meant to reorganize the optimizer without changing what it emits:
 # every case in tests/cases that compiles, and every unit of Compiler++,
 # through both compilers at -O0, -O1 and -O2 for x86_64-windows in the GNU and
-# the MASM spellings, and at -O1 and -O2 for x86_64-linux; the outputs diffed,
+# the MASM spellings, and at -O0, -O1 and -O2 for x86_64-linux (-O0 added for M3a, whose MIR holder runs at
+# every level - doc-cxx3/M3-PLAN.md); the outputs diffed,
 # the diagnostics and exit status with them.
 #
 # Usage: tools/identical.sh REF NEW [CPP] [OUT]
@@ -57,7 +58,7 @@ for src in $(sources); do
     for L in $LEVELS; do
         echo "$n.win.gnu.O$L $src -nologo -arch x86_64-windows -masm=gnu -O$L -S" >> "$jobs"
         echo "$n.win.masm.O$L $src -nologo -arch x86_64-windows -masm=masm -O$L -S" >> "$jobs"
-        [ "$L" = 0 ] || echo "$n.linux.O$L $src -nologo -arch x86_64-linux -O$L -S" >> "$jobs"
+        echo "$n.linux.O$L $src -nologo -arch x86_64-linux -O$L -S" >> "$jobs"
     done
 done
 

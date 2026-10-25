@@ -1,1 +1,0 @@
-the project's own masm has no SECTIONREL operator, the one ml64 relocates a thread_local's offset with (IMAGE_REL_AMD64_SECREL, measured with dumpbin 2026-10-20); cpp11 refuses a thread_local by name under -masm=masm, and the GNU spelling runs this case.

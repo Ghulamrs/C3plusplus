@@ -1,1 +1,0 @@
-the project's own masm has no SECTIONREL operator (see thread-local.nomasm); cpp11 refuses a thread_local by name under -masm=masm, and the GNU spelling runs this case and its second unit.
