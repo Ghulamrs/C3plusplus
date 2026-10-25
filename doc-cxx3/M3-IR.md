@@ -206,6 +206,11 @@ fstps, fstpt, fildq, fistpq, faddp, fsubp, fmulp, fdivp, fchs, fxch, fucomip, fl
 families (`OptTable.cpp:129-134`) stay as the fallback that marks a row `Unknown` for the strict check to count;
 M3a.1's gate is that the count is zero over the corpus and Compiler++ on both x86 targets at every level.
 
+**The table is read-only once initialised** (C7, the WS-F race at `OptTable.cpp:150-151`): its rows are built once,
+before any job reads them, and no pass writes one. What grows at run time is the registry an `OpId` indexes - a
+mnemonic no row lists is interned once, under a lock, and published by address after its record is complete - so a
+reader takes no lock and never sees a record half made. `StrId`'s registry is the same shape (M3a.1).
+
 **The quirk rows are kept at M3a.1 and settled at M3a.3**, one commit each, because each changes what is emitted
 and `identical.sh` must name the files: `addq`/`subq` (`Unknown` with a width, `OptTable.cpp:119-120`), `sal`,
 `rol`, `ror` (shifts by flag, opaque by kind), `testb/testl/testq` (not `kExplicit` where `test` is).

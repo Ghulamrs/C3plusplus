@@ -199,3 +199,34 @@ writes the TLS directory and the PDB), so `tools/windows/self-host.cmd` no longe
 and stage 2 built in the default `-masm=masm`, 70 of 70 sources the same. The gate-table rows above that name the GNU
 spelling (lines 59 and 157) are to be read as the default spelling from here, left as written above this heading;
 design section 10, item 5 says so.
+
+**M3a.1, MIR as data at every level** (2026-10-25, Opus 5.5, branch `m3a`, commits `fd051f0` to `5252c0a`; for review
+point 2a). Four steps, each measured with `identical.sh` at 0 assembly differences before the next began:
+`fd051f0` the holder in front of the spelling at -O0 too, running no pass there (`passesRun()`, not `optimizing()`,
+is what the funclet and temporaries paths ask); `4bb6f71` every `Event` closure a `Directive` of kind and arguments,
+bar the five text-lifting `Deferred` ones; `857e6d9` the mnemonic an `OpId` into the one table, which gained the
+jcc/setcc rows for all 18 conditions, six `cvt` forms and 21 x87 mnemonics; `80ca39f` an operand's text a `StrId`;
+`270067f` `-dump=mir[=pass]`, `-check=mir` and `-mir=off`. Two fixes rode with it: `b9628c6`, the holder forwarding
+`hasRelro`/`relroSection` (a vtable at -O1/-O2 had been going to `.rodata` since the GOT round, found by the -O0
+holder's round trip); and `5252c0a`, the two registries owning their records in deques, so memory-gate stays at 1,063.
+**Self-host found two gaps in cxx3, one mended**: an object in an unnamed namespace was exported, and clang writes no
+`L` inside one (`40b5bca`, `unnamed-namespace-two-units.cpp`, 45 of 6,039 outputs changed, every line a `.globl`
+or `PUBLIC` gone or that `L` dropped); and no reference binds through a conversion operator, so `OpId` and `StrId`
+convert by `name()`/`str()` (`d31857c`, `tests/open/conversion-to-reference-binds.cpp`).
+
+The gate, at `5252c0a` merged with main's `eb930cc`. `identical.sh` against a REF of main plus `55885d0`, `b9628c6`
+and `40b5bca`: **6,039 compared, 9 differ, the known nine** (a diagnostic naming `lib/` by its path), no assembly.
+Emit golden (recorded at `7d593d5`): 6 of 1,924 changed, `namespace-unnamed` on three targets and main's three
+thread-local Windows files. `-check=mir` at -O0 over every case and Compiler++ for x86_64-linux and both Windows
+spellings: **1,959 units, 0 differ**. `CPP11_MIR_STRICT=1` at -O0 and -O2, the same sources and targets: **0
+mnemonics the table lacks**. `-dump=mir` at -O2 run twice: **1,980 units, 0 differ**. Mac `make test` green. zeeshan:
+cl build, the cases **958/0 at -O0 and at -O2 under MASM**, `self-host.cmd` 71 of 71 in the default spelling; the GNU
+spelling's row is not run there, the box having no clang. Linux: g++ build, `run.sh` 988/0 at -O0 and -O2, self-host
+71 of 71, `asm6x.sh` 652/0, `tms6747.sh` 571/0 and `ti-link.sh` 571 linked at -O0 and -O2.
+
+**What part 2 of M3-IR.md says and the code does not, for RP2a to rule on**: the types keep today's names and file
+(`opt::Instr`, `Operand`, `Entry`, `Directive` in `OptIr.h`), the rename into `Mir.h` being M3a.5's by the file table
+of 2.1; `StrId` is one process-wide registry, written under a lock and read without one as the opcode table is, not a
+per-function `StringTable` - a function's dump is still complete, since a dump prints the text; `Directive` has a
+`RelroSection` kind the table in 2.4 lacks; and an immediate keeps `unsignedSpelling`, the `imm(unsigned)` past
+`LLONG_MAX` the walker writes, which M3a.3 may fold into the table's widths.
