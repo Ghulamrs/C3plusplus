@@ -28,7 +28,7 @@ rem    CXX1_MASM_SRC, CXX1_LINK_SRC   their trees, built here by cl into <root>\
 rem                              (default <root>\..\..\Windows\MASM and <root>\..\..\Windows\LINK)
 rem  and where neither is found the MASM pass is not run, the reason is printed and
 rem  the script exits 1 once the GNU pass is done. CXX1_CASES_SPELLINGS=gnu (or masm, or default - no -masm named)
-rem  runs one spelling alone.
+rem  runs one spelling alone; =ml64 runs Visual Studio's ml64 and link.exe, one translation unit a program.
 rem
 rem  CXX1_CASES_FLAGS, if set, goes on every compile of both passes - -O2, say.
 rem  CXX1_CASES_COMPILER, if set, is the compiler every case is built by, and the tree's is not built -
@@ -50,10 +50,21 @@ if not exist %ROOT%\winout mkdir %ROOT%\winout
 del /q %ROOT%\winout\* 2>nul
 if exist %ROOT%\winout\masm rmdir /s /q %ROOT%\winout\masm
 if exist %ROOT%\winout\default rmdir /s /q %ROOT%\winout\default
+if exist %ROOT%\winout\ml64 rmdir /s /q %ROOT%\winout\ml64
 
 rem  Six shards at once, each taking every sixth case - see par.cmd.
 set CXX1_PASS_FLAGS=-masm=gnu
 if not "!SPELLINGS:gnu=!"=="!SPELLINGS!" call "%~dp0par.cmd" 6 "%~f0" %ROOT% %ROOT%\winout
+
+rem  -masm=ml64: Visual Studio's ml64 and link.exe, which the driver finds itself, into winout\ml64.
+if "!SPELLINGS:ml64=!"=="!SPELLINGS!" goto :ml64done
+mkdir %ROOT%\winout\ml64
+set CPP11_AS=
+set CPP11_LD=
+set CXX1_PASS_FLAGS=-masm=ml64
+echo run-cases.cmd: the ml64 spelling, Visual Studio's ml64 and link
+call "%~dp0par.cmd" 6 "%~f0" %ROOT% %ROOT%\winout\ml64
+:ml64done
 
 set NEEDTOOLS=
 if not "!SPELLINGS:masm=!"=="!SPELLINGS!" set NEEDTOOLS=1
@@ -142,7 +153,10 @@ if exist %ROOT%\tests\cases\%NAME%.notarget (
     )
 )
 rem  And one the MASM spelling cannot write, its reason in <case>.nomasm - the GNU pass still runs it.
-if "%CXX1_PASS_FLAGS%"=="-masm=masm" if exist %ROOT%\tests\cases\%NAME%.nomasm (
+set NOMASM=
+if "%CXX1_PASS_FLAGS%"=="-masm=masm" set NOMASM=1
+if "%CXX1_PASS_FLAGS%"=="-masm=ml64" set NOMASM=1
+if defined NOMASM if exist %ROOT%\tests\cases\%NAME%.nomasm (
     echo   skip %NAME% for the MASM spelling:
     type %ROOT%\tests\cases\%NAME%.nomasm
     exit /b 0
