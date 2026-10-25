@@ -166,6 +166,7 @@ const Type *Typer::recordedValue(syntax::NodeId id) {
     std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
     if (r == p_.resolutions_.end() || r->second.what != Parser::Resolved::Value) return nullptr;
     recorded_++;
+    source_[id.v] = 'v';
     return r->second.type;
 }
 
@@ -178,7 +179,7 @@ const Type *Typer::named(syntax::NodeId id, syntax::NodeId *decl) {
         if (it != scopes_[i - 1].end()) { t = it->second.type; *decl = it->second.decl; }
     }
     if (t != nullptr && t->isReference()) t = t->referent();
-    if (t == nullptr) t = resolvedType(id, syntax::Kind::Name);
+    if (t == nullptr && (t = resolvedType(id, syntax::Kind::Name)) != nullptr) source_[id.v] = 'e';
     return t;
 }
 
@@ -194,7 +195,7 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
     const Type *a = parts.size() > 0 ? parts[0] : nullptr;
     const Type *b = parts.size() > 1 ? parts[1] : nullptr;
     // A call, an overloaded operator, a member access, `this` or a class temporary: what the parser recorded.
-    if (const Type *r = resolvedType(id, kind)) return r;
+    if (const Type *r = resolvedType(id, kind)) { source_[id.v] = 'e'; return r; }
     // An array operand of arithmetic is its first element's address.
     const Type *da = a != nullptr && a->isArray() ? types.pointerTo(a->pointee()) : a;
     const Type *db = b != nullptr && b->isArray() ? types.pointerTo(b->pointee()) : b;
@@ -387,7 +388,7 @@ std::string Typer::check(Parser &p, const Program &program, const Source &src, i
         nodes += static_cast<int>(typer.tree().size() - before);
     }
     std::string out;
-    int typed = 0, agree = 0, absent = 0, cv = 0, lowered = 0;
+    int typed = 0, agree = 0, absent = 0, cv = 0, lowered = 0, entity = 0, agreeEntity = 0, agreeValue = 0;
     *differ = 0;
     for (std::uint32_t i = 1; i <= typer.tree().size(); i++) {
         const TypedNode &n = typer.tree().node(TypedId(i));
@@ -400,9 +401,17 @@ std::string Typer::check(Parser &p, const Program &program, const Source &src, i
             continue;
         }
         typed++;
+        std::unordered_map<std::uint32_t, char>::const_iterator from = typer.source_.find(n.syntax.v);
+        const char source = from == typer.source_.end() ? 'r' : from->second;
+        if (source == 'e') entity++;
         std::unordered_map<std::uint32_t, const Type *>::const_iterator theirs = collect.types.find(n.syntax.v);
         if (theirs == collect.types.end()) { absent++; continue; }
-        if (theirs->second == n.type) { agree++; continue; }
+        if (theirs->second == n.type) {
+            agree++;
+            if (source == 'e') agreeEntity++;
+            if (source == 'v') agreeValue++;
+            continue;
+        }
         // Three lowerings the parser makes, named rather than counted as differences: top-level cv, which its Ast.h
         // keeps on some prvalues and drops through a reference, a conditional's arms promoted or decayed, and a null
         // constant made a member pointer's -1, which takes the literal's handle with it.
@@ -430,9 +439,11 @@ std::string Typer::check(Parser &p, const Program &program, const Source &src, i
         unt += k->second;
         kinds += (kinds.empty() ? "  untyped: " : ", ") + k->first + "=" + std::to_string(k->second);
     }
-    char line[240];
-    std::snprintf(line, sizeof line, "-check=typed: %s nodes=%d typed=%d untyped=%d agree=%d differ=%d absent=%d cv=%d lowered=%d recorded=%d\n",
-                  censusLine(c).c_str(), nodes, typed, unt, agree, *differ, absent, cv, lowered, typer.recorded_);
+    // An agreement whose type the typer read back from a record is the parser agreeing with itself, counted apart (C3).
+    char line[320];
+    std::snprintf(line, sizeof line, "-check=typed: %s nodes=%d typed=%d untyped=%d agree=%d differ=%d absent=%d cv=%d lowered=%d "
+                  "recorded=%d entity=%d agreeEntity=%d agreeValue=%d\n", censusLine(c).c_str(), nodes, typed, unt, agree,
+                  *differ, absent, cv, lowered, typer.recorded_, entity, agreeEntity, agreeValue);
     return out + line + censusKinds(c) + (kinds.empty() ? std::string() : kinds + "\n");
 }
 

@@ -674,6 +674,7 @@ ExprPtr Parser::completeCall(const std::string &name, const std::string &symbol,
         if (args[i]->type()->isStructOrUnion())
             argSlots[i] = allocateFrameSlot(args[i]->type());
 
+    const bool indirect = callee != nullptr;     // asked before the callee is moved into the Call (C2)
     Call *call = new Call(name, std::move(callee), std::move(args), variadic,
                           slot, named, std::move(argSlots));
     call->setSymbol(symbol);
@@ -700,7 +701,7 @@ ExprPtr Parser::completeCall(const std::string &name, const std::string &symbol,
     if (xvalue) made->setXvalue();
     // The function this call reached, by its symbol - a direct call's, an overloaded operator's, a constructor's - or
     // the function type it calls through, with no symbol, for a call through a pointer or a vtable slot.
-    if (!symbol.empty() || callee != nullptr)
+    if (!symbol.empty() || indirect)
         made = resolve(std::move(made), resolvedAs(Resolved::Call, types_.functionType(returns, params, variadic), symbol));
     return made;
 }
@@ -780,8 +781,10 @@ ExprPtr Parser::memberCallWith(ExprPtr object, const Type *cls,
                                     std::move(args), false);
         if (clonePure(*object) != nullptr) return call;
         const Type *rt = call->type();
+        const std::uint32_t reached = call->resolved();
         ExprPtr both(new Comma(std::move(object), std::move(call)));
         both->setType(rt);
+        both->setResolved(reached);    // the call's record on the node the syntax takes (C2)
         return both;
     }
 
@@ -894,8 +897,10 @@ ExprPtr Parser::memberCallWith(ExprPtr object, const Type *cls,
     // The address is saved, then the call reads it - in that order, which the
     // comma operator is exactly for.
     const Type *result = call->type();
+    const std::uint32_t reached = call->resolved();
     ExprPtr both(new Comma(std::move(keepAddress), std::move(call)));
     both->setType(result);
+    both->setResolved(reached);    // the call's record on the node the syntax takes (C2)
     return both;
 }
 

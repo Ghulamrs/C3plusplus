@@ -437,3 +437,14 @@ initialiser (`std::pair`'s default constructor is the same value), and the gap i
 own sources use `thread_local`, which needs SECTIONREL, and the project's masm has none - refused by name; ml64 has no
 COMDAT, so a program of seventy objects does not link. Until the project's masm gains SECTIONREL (or M4's COFF writer
 lands, R4.4), R9.1's target-1 gate is assembled by clang.
+
+**After the close: Fable's conditions C1-C3** (2026-10-25, `doc-cxx3/M2-CLOSE-REVIEW-FABLE-2026-10-25.md`).
+**The M2.17 paragraph above named the wrong shapes.** By source line the 228 untyped calls were 141 virtual member
+calls, 54 calls through a pointer to member, 5 temporaries or function objects and 28 others, not mostly temporaries.
+The cause was one line: `completeCall` asked whether it had a callee after moving the callee into the `Call`, so a call
+through a pointer, a vtable slot or a member pointer was never recorded; and a virtual call, a static member called
+through an object and a virtual destructor's call sit under a Comma that now carries their record (C2). Untyped falls
+from 656 to 273 - name 98, unary 58, member 58, assign 27, call 16, binary 12, cast 4 - with 0 differ and the adapter
+unchanged at 1,268. `-check=typed` counts where an agreeing type came from (C3): of 113,207, 83,869 by the typer's own
+rule, 28,321 read back from an entity's record (a name's, a call's, a member's), 1,017 from a Value record - the last
+two are the parser agreeing with itself. `-dump=ast` prints each Microsoft handler's fields and a region's cleanup (C1).

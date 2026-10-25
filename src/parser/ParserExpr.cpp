@@ -2782,8 +2782,10 @@ ExprPtr Parser::explicitDestructorCall(ExprPtr &object, std::size_t pos) {
     ExprPtr save(new Assign(std::move(keep), std::move(addr)));
     save->setType(thisType);
     ExprPtr call = virtualDestructorCall(temp, slot, thisType, cls, false, pos);
+    const std::uint32_t reached = call->resolved();
     ExprPtr both(new Comma(std::move(save), std::move(call)));
     both->setType(types_.get(Kind::Void));
+    both->setResolved(reached);    // the call's record on the node the syntax takes (C2)
     return both;
 }
 

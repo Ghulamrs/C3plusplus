@@ -160,6 +160,15 @@ struct Dump final : Visitor {
         stmtLine(n, text);
         for (std::size_t i = 0; i < n.body().size(); i++) sub(*n.body()[i]);
         if (n.hasPad()) { depth++; line("pad"); depth--; sub(n.pad()); }
+        // A Microsoft handler's every field, and the cleanup a region runs (M2 close, condition C1).
+        for (const MsHandler &h : n.handlers()) {
+            std::snprintf(b, sizeof b, "handler %s obj=%d size=%d ref=%d const=%d pos=%zu",
+                          h.descriptor.empty() ? "..." : h.descriptor.c_str(), h.objectSlot, h.objectSize,
+                          h.byReference ? 1 : 0, h.constPointer ? 1 : 0, h.pos);
+            depth++; line(b); depth--;
+            if (h.body) sub(*h.body);
+        }
+        if (n.cleanup() != nullptr) { depth++; line("cleanup"); depth--; sub(*n.cleanup()); }
     }
 };
 

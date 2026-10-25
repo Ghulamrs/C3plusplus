@@ -344,8 +344,10 @@ if [ "$WHICH" = all ] || [ "$WHICH" = windows ]; then
         fi
     done
     # **The cases again at -O2**: run.sh and the loop above build at -O0, and five wrong answers of the x86
-    # optimizer stood under a green verify-three for that reason (2026-10-07). Recorded output only.
-    ssh -o BatchMode=yes "$WINDOWS" "${MASMENV}set CXX1_CASES_FLAGS=-O2&& $REMOTE\\tools\\windows\\run-cases.cmd $REMOTE" >/dev/null || STATUS=1
+    # optimizer stood under a green verify-three for that reason (2026-10-07). Recorded output only. And under
+    # -front=typed at both levels - M2's typed front end on the primary target (M2 close, condition C4).
+    for flags in "-O2" "-front=typed" "-front=typed -O2"; do
+    ssh -o BatchMode=yes "$WINDOWS" "${MASMENV}set CXX1_CASES_FLAGS=$flags&& $REMOTE\\tools\\windows\\run-cases.cmd $REMOTE" >/dev/null || STATUS=1
     OUT2=$(mktemp -d)
     scp -q -r -o BatchMode=yes "$WINDOWS:$WIN_WORK_FWD/verify/winout" "$OUT2"
     p2=0; f2=0
@@ -361,13 +363,14 @@ if [ "$WHICH" = all ] || [ "$WHICH" = windows ]; then
             if [ -f "$OUT2/winout/$sp$n.out" ] && tr -d '\r' < "$OUT2/winout/$sp$n.out" | diff -q - "$e" >/dev/null; then
                 p2=$((p2 + 1))
             else
-                echo "  $n at -O2${sp:+ (-masm=masm)}: did not run, or output differs"; f2=$((f2 + 1))
+                echo "  $n at $flags${sp:+ (-masm=masm)}: did not run, or output differs"; f2=$((f2 + 1))
             fi
         done
     done
-    echo "windows cases at -O2: $p2 passed, $f2 failed"
+    echo "windows cases at $flags: $p2 passed, $f2 failed"
     fail=$((fail + f2))
     rm -rf "$OUT2"
+    done
     # The Windows half of tools/unwind-check: something cxx1 threw, caught by
     # cl. A run rather than a diff, for the same reason.
     if ssh -o BatchMode=yes "$WINDOWS" "$REMOTE\\tools\\windows\\throw-check.cmd $REMOTE" \
