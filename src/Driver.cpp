@@ -194,8 +194,8 @@ void Driver::usage(char *file) {
         "       -g writes a line table, so a debugger can stop on a line of C++\n"
         "         and step through it: DWARF on x86_64-linux and arm64-darwin,\n"
         "         CodeView on x86_64-windows (linked with /debug into a PDB) -\n"
-        "         for clang in the gnu spelling, for GRIDE's masm as the .FILE\n"
-        "         and .LINE directives it reads with -masm=masm - and cl6x's\n"
+        "         for clang in the gnu spelling, for the project's masm as the\n"
+        "         .FILE and .LINE directives it reads with -masm=masm - and cl6x's\n"
         "         .dwpsn and .dwtag on tms6747; refused for -masm=ml64, and on\n"
         "         tms6747 with -O\n"
         "       -nologo leaves out the line this compiler prints before it\n"
@@ -1199,7 +1199,6 @@ bool Driver::parseArguments(int argc, char **argv) {
     // Visual Studio's ml64 and link - one translation unit at a time.
     if (!syntaxNamed_ && std::strcmp(backend_->name(), "x86_64-windows") == 0) {
         syntax_ = Syntax::Masm;
-        // -g included (the user's choice): it needs GRIDE's masm, which reads .LINE, or -masm=gnu named.
         if (hostIsWindows() && !assemblyOnly_ && !masmReachable()) {
             syntax_ = Syntax::Ml64;
             std::fprintf(stderr, "%s: no masm.exe beside this program, named by %s or on PATH - assembling "
@@ -1226,7 +1225,7 @@ bool Driver::parseArguments(int argc, char **argv) {
                      "%s: -g asks where each line of C++ went, and this compiler "
                      "writes no such thing for %s with -masm=ml64: MASM carries no "
                      "line table and ml64 builds none from it. -masm=masm writes the "
-                     ".FILE and .LINE directives GRIDE's masm reads, -masm=gnu a line "
+                     ".FILE and .LINE directives the project's masm reads, -masm=gnu a line "
                      "table clang assembles; or compile without -g.\n",
                      argv[0], backend_->name());
         return false;

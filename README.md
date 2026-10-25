@@ -652,9 +652,8 @@ assembles with the COMDAT written as cl writes it and the project's link links -
 **the default for x86_64-windows since 2026-10-25**, on every host, with the two
 found beside the compiler (RIDE's `bin`), through `CPP11_AS` and `CPP11_LD`, or on
 PATH - and `gnu`, which clang turns into an ordinary MSVC-ABI COFF object, named
-with `-masm=gnu`. `-g` under the default needs GRIDE's masm, which reads the
-`.LINE` and `SECTIONREL` the MASM spelling's CodeView is written in; the project's
-masm in `Windows/MASM` does not yet, so with it name `-masm=gnu` for `-g`. So a
+with `-masm=gnu`. The default takes `-g` and `thread_local` too, with the
+project's masm and LINK from Windows/MASM `6bcb5d2` and LINK `959dac2`. So a
 multi-file Windows project links through either. Where no masm.exe is found the
 default falls back to `-masm=ml64`, saying so, and `examples/unity.cpp` shows the
 single-translation-unit build that one needs. The

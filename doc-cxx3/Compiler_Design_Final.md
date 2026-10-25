@@ -311,6 +311,10 @@ The review and Draft 2.1 saw that "the project owns masm", but neither looked in
    project's masm (`Masm.cpp`, `Op::Tls`); ml64 has no COMDAT. The project's masm gained SECTIONREL in Windows/MASM
    `6bcb5d2`, so the gate moves to the default `-masm=masm` once the MASM spelling writes it - or when M4's COFF
    writer (R4.4) lands, whichever is first.
+   **Moved 2026-10-25**: the MASM spelling writes it for the project's masm (`[base + SECTIONREL x]`, the two refusals
+   in `Masm.cpp` lifted), and `tools/windows/self-host.cmd` runs in the default spelling with the project's masm
+   `6bcb5d2` and LINK `959dac2`. On zeeshan: stage 1 and stage 2 built, 70 of 70 sources the same; the cases 957 / 0 /
+   31 at -O0 and -O2, `thread-local` and `thread-local-extern` among them.
 
 **Baseline** (reproduced by the review):
 - 2 of 60 files compile.

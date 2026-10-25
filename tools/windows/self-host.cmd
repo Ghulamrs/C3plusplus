@@ -11,8 +11,12 @@ rem          whose two are not the same. Only cxx3's own include\ and lib\ are o
 setlocal enabledelayedexpansion
 if "%~1"=="" (echo self-host.cmd: needs the tree root & exit /b 2)
 set ROOT=%~1
-rem  -masm=gnu, whatever the default: cxx3's sources use thread_local, which no masm here can write.
-set FLAGS=-masm=gnu %~2
+set FLAGS=%~2
+rem  The default spelling: the project's masm and LINK (6bcb5d2 and 959dac2 or later, for thread_local),
+rem  named by CPP11_AS and CPP11_LD or taken from beside stage 0 - stage 1 runs from elsewhere, so it is told.
+if not defined CPP11_AS if exist "%ROOT%\masm.exe" set "CPP11_AS=%ROOT%\masm.exe"
+if not defined CPP11_LD if exist "%ROOT%\link.exe" set "CPP11_LD=%ROOT%\link.exe"
+if not defined CPP11_AS (echo self-host.cmd: no masm.exe beside cxx3-msvc.exe and no CPP11_AS - ml64 cannot link it & exit /b 2)
 set OUT=%ROOT%\selfhost
 call "%ROOT%\msvc\build.cmd" >nul
 if errorlevel 1 (echo self-host.cmd: stage 0 did not build & exit /b 1)

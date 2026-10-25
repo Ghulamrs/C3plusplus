@@ -491,12 +491,6 @@ between the two lists.**
   establisher, which a realigned frame no longer measures its locals from. The
   backend refuses it (`X86_64Linux::emit`), so this entry is hand-written.
   `tests/cases/alignas-local-unwind.notarget`
-- **a `thread_local` under `-masm=masm`**, the project's own masm, which has no
-  `SECTIONREL` operator - the one ml64 relocates a thread_local's offset with
-  (IMAGE_REL_AMD64_SECREL, measured with dumpbin); `-masm=ml64` and the GNU
-  spelling take it. The spelling refuses it (`MasmSpelling::render` and
-  `MasmSpelling::tlsDataSection`), so this entry is hand-written.
-  `tests/cases/thread-local.nomasm`
 - **a member under `#pragma pack`, on tms6747** - the C6000 backend loads words
   aligned only, and cl6x has no `#pragma pack`. `src/parser/ParserType.cpp:56`
 - **`-g` with `-O`, on tms6747** - the C6000 scheduler treats a `.dwpsn` line
