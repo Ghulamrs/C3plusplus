@@ -145,6 +145,36 @@ reads the three objects of `examples/` and resolves every symbol between them; *
 with the CRT and the run of `demo.exe` are **owed to the Windows box**. `make test` green, the emit golden recorded by
 a build of `b8290cb` reading 0 of 1,930 changed.
 
+**M4.4, the structural door** (2026-10-25, `b99e00c`). `MasmSpelling::structuredOperand` is `render()` as data - the same
+cases and arithmetic, the frame added to an rbp displacement, the segment byte of a `gs:[88]`, a label an `O_MEM` the unit
+types, the referenced-symbol bookkeeping the preamble's EXTERN lines read; `structuredIns` puts the PTR width where
+render's `isMem` put it, keeps MASM's operand order (destination first, as the parse refers to symbols), and leaves a
+`\001k` line in the text where instruction k stood. The library's `Assembler::runText(text, structured)` encodes
+`structured[k]` at that line through `X64Target::encode` - the symbols `ref`'d in operand order, a label `typed` as a
+parsed one is, the REP prefix byte in front - so the object's symbol table is the text path's byte for byte. The
+prologue's `push`, `sub`, `mov`, the saves, `and` and the `__chkstk` probe go through `ins()` now, the same text
+(`stack-probe` and `alignas-local` against the golden). An operand with no structured form - a textual immediate that is
+not a plain decimal - sends its instruction through the text; none in the corpus did. `-coff=text` is the control.
+Mac, structural door against -S + masm `6bcb5d2`: **-O0 and -O2, 1,342 pairs, 1,302 objects, 0 differ; -g at -O0, 671
+pairs, 626 objects, 0 differ**. The census (`-time`) over Compiler++'s `Parser.cpp` at -O2: 11,914 instructions as data,
+7,306 directive lines, **889 instruction lines as text = 127 funclets x 7** (`mov [rsp+16], rdx; push rbp; sub rsp, 32;
+mov rbp, rdx` ... `add rsp, 32; pop rbp; ret 0`, the head and tail `closeFunclet` composes) - the one text site left, and
+M3a.4's `FuncletBegin`/`FuncletEnd` directives are what make it data; the data directives (`DB`/`DD`/`DQ`, `ALIGN`,
+`.LINE`, the segments, the FH3 tables, the RTTI) stay text by this plan's decision. `make test` green (run 988/0, emit 0 of
+1,930 changed, names 655/0, overload 44/0, typed and adapted 648/0, exclusions 126/0/0, comment cap 0, memory gate 1,063);
+`tools/determinism.sh` 9,856 outputs, 0 differ.
+
+**M4.5, the close** (2026-10-25). Design section 6.1 marked decided, item 2 of section 15 with it; CLAUDE.md gained "M4:
+the encoder library in the tree". **Owed, every one to a Windows box, none claimed**: link.exe linking CoffEmitter's
+objects with the CRT and the three-file example run; `tools/windows/run-cases.cmd` with `-c` through CoffEmitter at -O0
+and -O2; cdb on `-g` objects as M10 W1-W5 measured them (the CodeView is byte-equal with masm's, which cdb read before,
+so the expectation is "as before"); `tools/windows/self-host.cmd` through `-c`; `msvc/build.cmd` of the tree with
+`src/encoder/` in it (the library compiles with clang and g++ under `-Werror`; cl 19.51 has not seen it). **Not done,
+and said**: `tools/verify-three` does not run `coff-equal.sh` - its Mac step is the place, with the re-based masm built
+beside; the Xcode project of `Windows/MASM` still lists the old files; the funclet text (above) waits for M3a.4; `-c` on
+a non-Windows host writes the object but a link there is still refused, the CRT and link.exe being Windows's. The
+Linux rows are recorded below as they come back.
+
 ## Notes the comment cap would not hold
 
 The library's three long comments, cut to three lines in `src/encoder/`; the full text is here, as CLAUDE.md keeps the
