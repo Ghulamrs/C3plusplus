@@ -251,6 +251,7 @@ void Optimizer::weakDefinition(const std::string &name) {
 }
 void Optimizer::textSection() { event([](Spelling &s) { s.textSection(); }); }
 void Optimizer::rodataSection() { event([](Spelling &s) { s.rodataSection(); }); }
+void Optimizer::relroSection() { event([](Spelling &s) { s.relroSection(); }); }
 void Optimizer::dataSection() { event([](Spelling &s) { s.dataSection(); }); }
 void Optimizer::bssSection() { event([](Spelling &s) { s.bssSection(); }); }
 void Optimizer::tlsDataSection() { event([](Spelling &s) { s.tlsDataSection(); }); }

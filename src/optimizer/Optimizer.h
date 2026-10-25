@@ -78,6 +78,10 @@ public:
     void weakDefinition(const std::string &name) override;
     void textSection() override;
     void rodataSection() override;
+    // Asked of the spelling underneath, not answered by Spelling's default: without these two a vtable at -O1 and
+    // -O2 went to .rodata on x86_64-linux, where -O0 put it in .data.rel.ro (2026-09-27, a PIE's relocations).
+    void relroSection() override;
+    bool hasRelro() const override { return under_.hasRelro(); }
     void dataSection() override;
     void bssSection() override;
     void tlsDataSection() override;
