@@ -1,6 +1,7 @@
 #include "OptStrings.h"
 
 #include <atomic>
+#include <deque>
 #include <map>
 #include <mutex>
 #include <stdexcept>
@@ -14,6 +15,13 @@ namespace {
 constexpr unsigned kChunk = 4096, kChunks = 4096;
 std::atomic<std::atomic<const std::string *> *> gChunks[kChunks];
 std::mutex gIntern;
+// The owners, written under the lock: a deque moves no element as it grows, so a published address stands (R6).
+struct Chunk {
+    std::atomic<const std::string *> slot[kChunk];
+    Chunk() { for (unsigned i = 0; i < kChunk; i++) slot[i].store(nullptr, std::memory_order_relaxed); }
+};
+std::deque<Chunk> &gChunkStore() { static std::deque<Chunk> d; return d; }
+std::deque<std::string> &gTexts() { static std::deque<std::string> d; return d; }
 std::map<std::string, unsigned> &gByName() { static std::map<std::string, unsigned> m; return m; }
 unsigned gCount = 1;            // id 0 is the empty text and has no slot
 
@@ -24,10 +32,12 @@ unsigned internLocked(const std::string &s) {
     if (id / kChunk >= kChunks) throw std::length_error("opt::StrId: more operand texts than the registry holds");
     std::atomic<const std::string *> *chunk = gChunks[id / kChunk].load(std::memory_order_acquire);
     if (chunk == nullptr) {
-        chunk = new std::atomic<const std::string *>[kChunk]();
+        gChunkStore().emplace_back();
+        chunk = gChunkStore().back().slot;
         gChunks[id / kChunk].store(chunk, std::memory_order_release);
     }
-    chunk[id % kChunk].store(new std::string(s), std::memory_order_release);
+    gTexts().push_back(s);
+    chunk[id % kChunk].store(&gTexts().back(), std::memory_order_release);
     gByName()[s] = id;
     return id;
 }

@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstring>
+#include <deque>
 #include <map>
 #include <mutex>
 #include <unordered_map>
@@ -211,11 +212,13 @@ constexpr unsigned kMaxMnemonics = 1u << 16;
 std::atomic<const Mnemonic *> gSlots[kMaxMnemonics];
 std::mutex gIntern;
 std::map<std::string, unsigned> &gByName() { static std::map<std::string, unsigned> m; return m; }
+std::deque<Mnemonic> &gRecords() { static std::deque<Mnemonic> d; return d; }   // the owner: no element moves (R6)
 unsigned gCount = 0;
 
 unsigned publish(const std::string &m, const Opcode *row, bool listed) {
     const unsigned id = gCount++;
-    gSlots[id].store(new Mnemonic(m, row, listed), std::memory_order_release);
+    gRecords().emplace_back(m, row, listed);
+    gSlots[id].store(&gRecords().back(), std::memory_order_release);
     gByName()[m] = id;
     return id;
 }
