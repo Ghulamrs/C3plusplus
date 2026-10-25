@@ -105,7 +105,7 @@ if [ "$record" = 1 ]; then
     find "$GOLD" -name '* [0-9].err' -delete
     { echo "recorded $(date -u '+%Y-%m-%d %H:%M UTC')"
       echo "commit   $(git rev-parse --short HEAD 2>/dev/null || echo 'not a git checkout')"
-      echo "tree     $(git status --porcelain 2>/dev/null | wc -l | tr -d ' ') file(s) modified when recorded"
+      echo "tree     $(git status --porcelain --untracked-files=no 2>/dev/null | wc -l | tr -d ' ') file(s) modified when recorded"
     } > "$GOLD/RECORDED"
     kept=$(find "$GOLD" -name '*.s' | wc -l | tr -d ' ')
     made=$(find "$OUT" -name '*.s' | wc -l | tr -d ' ')

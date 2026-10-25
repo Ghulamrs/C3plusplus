@@ -26,10 +26,12 @@ set -u
 if [ "${1:-}" = --one ]; then
     # --one REF NEW OUT NAME SRC FLAGS...
     REF=$2 NEW=$3 OUT=$4 NAME=$5 SRC=$6; shift 6
-    # A diagnostic names the compiler by its own path, which differs between
-    # the two sides by construction; that name is made the same before the diff.
-    ( ulimit -t 60; "$REF" "$@" "$SRC" -o "$OUT/$NAME.ref.s" < /dev/null 2>&1; echo "exit=$?" ) | sed "s|$REF|cxx1|g" > "$OUT/$NAME.ref.err"
-    ( ulimit -t 60; "$NEW" "$@" "$SRC" -o "$OUT/$NAME.new.s" < /dev/null 2>&1; echo "exit=$?" ) | sed "s|$NEW|cxx1|g" > "$OUT/$NAME.new.err"
+    # A diagnostic names the compiler by its own path and a header by its tree's lib/, which differ between the
+    # two sides by construction, and indents its caret by that path; all three are made the same before the diff.
+    ( ulimit -t 60; "$REF" "$@" "$SRC" -o "$OUT/$NAME.ref.s" < /dev/null 2>&1; echo "exit=$?" ) |
+        sed -e "s|$REF|cxx1|g" -e "s|$(dirname "$REF")/|<tree>/|g" -e "s/^ *^/^/" > "$OUT/$NAME.ref.err"
+    ( ulimit -t 60; "$NEW" "$@" "$SRC" -o "$OUT/$NAME.new.s" < /dev/null 2>&1; echo "exit=$?" ) |
+        sed -e "s|$NEW|cxx1|g" -e "s|$(dirname "$NEW")/|<tree>/|g" -e "s/^ *^/^/" > "$OUT/$NAME.new.err"
     exit 0
 fi
 
