@@ -66,10 +66,13 @@ class PassManager {
 public:
     PassManager();
     bool run(Pass &pass, Function &fn);
+    // -dump=mir=<pass>: the function after that pass, to `to` - what CPP11_DUMP_MIR does to stderr, retired at M3a.5.
+    void dumpAfter(const std::string &pass, std::ostream *to) { dump_.push_back(pass); out_ = to; }
 
 private:
     std::vector<std::string> dump_;
     bool dumpAll_ = false;
+    std::ostream *out_ = nullptr;      // where a dump goes: stderr unless -dump=mir named it
 
     bool runLeaf(Pass &pass, Function &fn);
     bool runGroup(Group &group, Function &fn);

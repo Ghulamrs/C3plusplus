@@ -7,6 +7,7 @@
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
+#include <ostream>
 #include <utility>
 
 using opt::Entry;
@@ -117,6 +118,11 @@ void Optimizer::funcletEnd() {
     funclet_.pop_back();
 }
 
+void Optimizer::dumpTo(std::ostream *to, const std::string &afterPass) {
+    if (afterPass.empty()) dump_ = to;
+    else manager_.dumpAfter(afterPass, to);
+}
+
 void Optimizer::defer(std::function<void()> call) {
     opt::Directive d(opt::Directive::Deferred);
     d.deferred = std::move(call);
@@ -213,6 +219,7 @@ void Optimizer::flush() {
     if (fn_.stream.empty()) return;
     if (fn_.prologueAt < 0 && passes_) opt::noteDecline("no-prologue-no-frame-passes", fn_.name);
     improve(fn_);
+    if (dump_ != nullptr) { *dump_ << ";; " << fn_.name << "\n"; opt::dumpStream(*dump_, fn_); }
     replay(fn_.stream);
     for (const opt::Stream &f : funclets_) replay(f);
     frameSize_ = fn_.size;

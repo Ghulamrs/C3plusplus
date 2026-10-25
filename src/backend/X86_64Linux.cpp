@@ -1558,9 +1558,10 @@ std::string X86_64Linux::userLabel(const std::string &name) const {
 // **The holder, made at every level** (M3a.1, doc-cxx3/M3-IR.md 2.7): at -O0 it holds each function and replays
 // it as written, no pass run, so MIR is what every level writes through. Both spellings: MasmCodeGen derives from this.
 void X86_64Linux::setOptimize(int level) {
-    if (optimizer_) return;
+    if (optimizer_ || (mirOff_ && level == 0)) return;     // -mir=off at -O0 writes past it, for -check=mir
     plain_ = a_;
     optimizer_.reset(new Optimizer(*a_, abi_, level));
+    if (mirDump_ != nullptr) optimizer_->dumpTo(mirDump_, mirDumpAfter_);
     if (optimizer_->costs().inlines()) inliner_.reset(new Inliner(optimizer_->costs()));
     a_ = optimizer_.get();
 }

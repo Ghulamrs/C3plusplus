@@ -48,8 +48,9 @@ void PassManager::after(const Pass &pass, Function &fn, bool changed) {
     fn.props = (fn.props | info.provided) & ~info.destroyed;
     if (changed) fn.flow.touch();
     if (wanted(pass)) {
-        std::cerr << ";; " << fn.name << " after " << info.name << (changed ? " (changed)" : "") << "\n";
-        dumpStream(std::cerr, fn);
+        std::ostream &o = out_ != nullptr ? *out_ : std::cerr;
+        o << ";; " << fn.name << " after " << info.name << (changed ? " (changed)" : "") << "\n";
+        dumpStream(o, fn);
     }
 }
 

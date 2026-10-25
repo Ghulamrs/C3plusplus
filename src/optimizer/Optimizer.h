@@ -22,6 +22,8 @@ public:
     // written out after the function; the function's stream stays held, so the passes see it whole.
     void funcletBegin();
     void funcletEnd();
+    // -dump=mir: every function written to `to` after the pipeline, or after the pass named (M3-IR.md 2.10).
+    void dumpTo(std::ostream *to, const std::string &afterPass);
     // Run where it stands in the output: after everything held before it.
     void defer(std::function<void()> call);
     // A frame slot something outside the stream reads or writes - the runtime's scratch word - which no pass may take for its own.
@@ -123,6 +125,7 @@ private:
     // The bytes of inlined callees' frames that are not their scalars.
     std::vector<opt::Local> opaque_;
     bool argsPending_ = false;
+    std::ostream *dump_ = nullptr;
     opt::RegSet args_ = 0;
 
     // Where an entry goes: the funclet being held, or the function.
