@@ -46,6 +46,7 @@
     <ClCompile Include="..\src\backend\Backend.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\CodeView.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\CodeViewTypes.cpp"><Filter>Source Files\backend</Filter></ClCompile>
+    <ClCompile Include="..\src\backend\CoffEmitter.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\Dwarf.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\Masm.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\Spelling.cpp"><Filter>Source Files\backend</Filter></ClCompile>
@@ -116,6 +117,7 @@
     <ClInclude Include="..\src\backend\Backend.h"><Filter>Header Files\backend</Filter></ClInclude>
     <ClInclude Include="..\src\backend\CodeView.h"><Filter>Header Files\backend</Filter></ClInclude>
     <ClInclude Include="..\src\backend\CodeViewTypes.h"><Filter>Header Files\backend</Filter></ClInclude>
+    <ClInclude Include="..\src\backend\CoffEmitter.h"><Filter>Header Files\backend</Filter></ClInclude>
     <ClInclude Include="..\src\backend\Dwarf.h"><Filter>Header Files\backend</Filter></ClInclude>
     <ClInclude Include="..\src\backend\Masm.h"><Filter>Header Files\backend</Filter></ClInclude>
     <ClInclude Include="..\src\backend\Spelling.h"><Filter>Header Files\backend</Filter></ClInclude>
