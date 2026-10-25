@@ -586,7 +586,7 @@ void Parser::topLevel(Program &program) {
             if (d.type->isComplete() && lookup_.findGlobalToUpdate(selfKey) == nullptr &&
                 initialiserNames(d.name)) {
                 const bool c = d.type->isConst();
-                const bool hidden = sc == StorageStatic || (c && sc != StorageExtern);
+                const bool hidden = internalLinkage(sc) || (c && sc != StorageExtern);
                 early = lookup_.globals_.size();
                 registered = true;
                 lookup_.globalIndex_[selfKey] = early;
@@ -714,7 +714,7 @@ void Parser::topLevel(Program &program) {
             // A const object at namespace scope has internal linkage of its own -
             // [basic.link]/3 - which is why a header may define one and C, where it
             // would be external, may not. Nothing outside can name it.
-            bool internal = sc == StorageStatic ||
+            bool internal = internalLinkage(sc) ||
                             (objectIsConst && sc != StorageExtern);
             refuseVolatileWithLinkage(quals.isVolatile, internal, d.pos);
             std::string symbol = linkage_.dataSymbol(gname, d.type, internal, d.pos);

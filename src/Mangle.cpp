@@ -21,6 +21,13 @@ static std::vector<std::string> scopeComponents(const std::string &name) {
     return out;
 }
 
+// **No `L` inside an unnamed namespace** - measured with clang: `_ZN12_GLOBAL__N_11bE` for a static
+// object there, `_ZN12_GLOBAL__N_11hEi` for a static function; the namespace already says internal.
+static bool inUnnamedNamespace(const std::string &name) {
+    const std::vector<std::string> parts = scopeComponents(name);
+    return std::find(parts.begin(), parts.end(), "_GLOBAL__N_1") != parts.end();
+}
+
 #include "Type.h"
 
 #include <vector>
@@ -360,6 +367,7 @@ public:
         if (internal && (findOperator(operatorSpelling(name)) != nullptr ||
                          isConversionFunction(name) || !literalSuffix(name).empty()))
             internal = false;
+        if (inUnnamedNamespace(name)) internal = false;
         // The L marks the unqualified name and stands in front of it: `_ZN1nL1fEi`, `_ZStL1hi`.
         const char *L = internal ? "L" : "";
         out = "_Z";
@@ -398,6 +406,7 @@ public:
     // return type and an ordinary function does not**, or two would share a symbol.
     void templateFunction(const std::string &name, const Type *pattern,
                           const std::vector<TemplateArg> &args, bool internal) {
+        if (inUnnamedNamespace(name)) internal = false;
         out = "_Z";
         // **One declared in a namespace is a nested-name**, `_ZN1n5twiceIiEET_S1_`: the namespace
         // a candidate, then the template's name, then its arguments inside the N...E; directly in
@@ -2061,6 +2070,7 @@ bool microsoftConstructorName(const std::string &cls, const Type *clsType,
 // One at file scope keeps the name it was written with, which is what lets
 // C name it, and that is the case this used to be the whole of.
 std::string itaniumDataName(const std::string &name, bool internal) {
+    if (inUnnamedNamespace(name)) internal = false;
     const std::vector<std::string> parts = scopeComponents(name);
     // `_ZSt7nothrow` and a static `_ZStL4cout`, the abbreviation alone; deeper, `_ZNSt1a1vE`. Measured.
     if (parts.size() == 2 && parts[0] == "std")

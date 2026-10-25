@@ -15083,3 +15083,17 @@ M2-PLAN.md: calls the parser builds by hand as a Comma rather than through `comp
 above all - and their operands. Gated: `make test` green, emit golden 0 of 1,924 changed, `identical.sh` 5,352
 compared and the known 8.
 
+
+## An object in an unnamed namespace has internal linkage, 2026-10-25
+
+**[basic.link]/4 makes every name in an unnamed namespace internal, and cxx3 exported its objects**:
+the two scalar paths at namespace scope asked `sc == StorageStatic` where the reference, class and
+function paths asked `internalLinkage(sc)`, so `namespace { unsigned count; }` in two units was a
+duplicate symbol at the link. Self-host found it, M3a.1 giving OptTable.cpp and OptStrings.cpp each
+an anonymous-namespace `gCount`. `unnamed-namespace-two-units.cpp` is two units of the same three
+names; 1.23's compiler does not link it. **And clang writes no Itanium `L` inside one**, `static` or
+`const` or neither - `_ZN12_GLOBAL__N_11bE`, `_ZN12_GLOBAL__N_11hEi` - where cxx3 wrote it on a static
+function; `inUnnamedNamespace` in Mangle.cpp drops it. `identical.sh`: 45 of 6,039 outputs changed,
+every line a `.globl` or `PUBLIC` gone or that `L` dropped. **Self-host found one more gap, registered in `tests/open`**:
+no reference binds through a conversion operator, so M3a.1's OpId and StrId convert by `.name()` and
+`.str()` where the strings they replaced had been read as they stood.

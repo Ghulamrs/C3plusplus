@@ -1,0 +1,1 @@
+x86_64-windows the Microsoft ABI names an unnamed namespace `?A0x<hash>@` with a hash derived from the translation unit, which is that compiler's answer for this file and not a name to agree on - recorded beside namespace-unnamed.nonames. Both Itanium targets agree with clang.
