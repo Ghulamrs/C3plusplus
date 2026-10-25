@@ -10,7 +10,7 @@
 using opt::Entry;
 
 Optimizer::Optimizer(Spelling &under, const Abi &abi, int level)
-    : under_(under), costs_(opt::Costs::forLevel(level)), fn_(*costs_), pipeline_(opt::pipelineFor()) {
+    : under_(under), passes_(level > 0), costs_(opt::Costs::forLevel(level)), fn_(*costs_), pipeline_(opt::pipelineFor()) {
     fn_.convention = opt::conventionOf(abi);
 }
 
@@ -98,7 +98,7 @@ void Optimizer::funcletBegin() {
     f.name = fn_.name;
     f.convention = fn_.convention;
     f.whole = false;
-    opt::noteDecline("funclet-no-frame-passes", fn_.name);
+    if (passes_) opt::noteDecline("funclet-no-frame-passes", fn_.name);
 }
 
 void Optimizer::funcletEnd() {
@@ -189,14 +189,20 @@ void Optimizer::returnsPair(bool pair) {
 }
 
 // **The passes, through the manager.** What ran here as hand-written loops is the pipeline in OptPipeline.cpp; the manager runs it, checks what each pass requires, and dumps after any pass CPP11_DUMP_MIR names.
-void Optimizer::improve(opt::Function &fn) { manager_.run(*pipeline_, fn); }
+void Optimizer::improve(opt::Function &fn) {
+    if (!passes_) return;
+    // The passes write a large immediate signed, as -O1 and -O2 always have; -O0 keeps the walker's spelling.
+    for (Entry &e : fn.stream)
+        if (e.kind == Entry::Ins) e.ins.a.unsignedSpelling = e.ins.b.unsignedSpelling = false;
+    manager_.run(*pipeline_, fn);
+}
 
 // **The function, then its funclets**, the frame's final size having been
 // written with the function's prologue - a funclet's operands are rendered
 // against it.
 void Optimizer::flush() {
     if (fn_.stream.empty()) return;
-    if (fn_.prologueAt < 0) opt::noteDecline("no-prologue-no-frame-passes", fn_.name);
+    if (fn_.prologueAt < 0 && passes_) opt::noteDecline("no-prologue-no-frame-passes", fn_.name);
     improve(fn_);
     replay(fn_.stream);
     for (const opt::Stream &f : funclets_) replay(f);
@@ -230,7 +236,7 @@ void Optimizer::replay(const opt::Stream &s) {
 
 // Everything else is an event: held where it stood, with its arguments copied.
 void Optimizer::prologue(int frameSize, const std::string &lsda, int outgoing, int realign) {
-    assert(realign == 0 && "a realigned frame is written past the optimizer");
+    assert((realign == 0 || !passes_) && "a realigned frame is written past the passes");
     fn_.prologueAt = static_cast<int>(fn_.stream.size());
     fn_.frameSize = frameSize;
     fn_.lsda = lsda;

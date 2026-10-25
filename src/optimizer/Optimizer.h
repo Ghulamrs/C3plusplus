@@ -1,7 +1,7 @@
 #pragma once
 
-// **-O1 and -O2, as a spelling in front of the spelling.** The walker writes a
-// function as it always has; this holds it, improves it and hands it on.
+// **A spelling in front of the spelling, at every level** (M3a.1): the walker writes a function as it always
+// has; this holds it, improves it at -O1 and -O2, and hands it on - at -O0 held and replayed, no pass run.
 // Outside a function every call passes straight through.
 
 #include "OptFunction.h"
@@ -48,6 +48,8 @@ public:
     // A call between the two labels that throws continues at the target.
     void exceptionRegion(const std::string &begin, const std::string &end, const std::string &target);
     int level() const { return costs_->level(); }
+    // Whether the passes run: -O1 and above. At -O0 the function is held and replayed as it was written.
+    bool runsPasses() const { return passes_; }
     const opt::Costs &costs() const { return *costs_; }
     // Whether this level copies a block with `rep movsq` rather than unrolled.
     bool copiesByString() const { return costs_->stringCopies(); }
@@ -101,6 +103,7 @@ public:
 
 private:
     Spelling &under_;
+    bool passes_;
     // The level, as the costs its passes ask.
     std::unique_ptr<const opt::Costs> costs_;
     // **The function being held**, and what the walker has said of it so far; the funclets being held, a stack

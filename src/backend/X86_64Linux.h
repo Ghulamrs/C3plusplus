@@ -132,10 +132,12 @@ protected:
     std::string out_;
     std::size_t emittedSize() override { return out_.size() + (optimizer_ ? optimizer_->held() : 0); }
     Spelling *a_ = &gnu_;
-    // In front of a_ at -O1 and above. It holds a function whole, its funclets apart, so anything that lifts text out of out_ goes through atOutput.
+    // In front of a_ at every level (M3a.1). It holds a function whole, its funclets apart, so anything that lifts text out of out_ goes through atOutput.
     std::unique_ptr<Optimizer> optimizer_;
+    // Whether the holder is in front: a different fact from passesRun(), and only atOutput and emittedSize ask it.
+    bool holding() const { return optimizer_ && a_ == optimizer_.get(); }
     // Done where it stands in the output: at once, or after what an optimizer holds.
-    void atOutput(std::function<void()> f) { if (optimizing()) optimizer_->defer(std::move(f)); else f(); }
+    void atOutput(std::function<void()> f) { if (holding()) optimizer_->defer(std::move(f)); else f(); }
 
     void landingPad(int pointerSlot, int selectorSlot) override;
     void exceptionRegion(const std::string &begin, const std::string &end, const std::string &target) override;
@@ -155,7 +157,9 @@ protected:
     int realign_ = 0;
     int top_ = 0;
     Spelling *plain_ = nullptr;   // under the optimizer, written to directly for a realigned frame - see emit()
-    bool optimizing() const { return optimizer_ && a_ == optimizer_.get(); }
+    // Whether the passes run on the function being written: -O1 and above, the holder in front. Every walker
+    // decision that depends on the optimizer asks this, never holding(), so -O0 writes what it always wrote.
+    bool passesRun() const { return holding() && optimizer_->runsPasses(); }
     int frameSize_ = 0;
     // **The shadow space, allocated once at the floor of the frame** rather than around each call; 0 where the ABI has none or the body calls nothing. A call finds it at rsp only when nothing is pushed above it.
     int outgoing_ = 0;
@@ -243,7 +247,7 @@ private:
     bool tempsAllowed_ = false;
     int tempDepth_ = 0;
     int tempHigh_ = 0;
-    bool tempsInSlots() const { return tempsAllowed_ && !inFunclet_ && optimizing(); }
+    bool tempsInSlots() const { return tempsAllowed_ && !inFunclet_ && passesRun(); }
     // One stack per function, inlined callees included, placed below every frame once the walk is done.
     Op tempSlot(int t) const { return local(Optimizer::kTempBase + 8 * (t + 1)); }
     void pushF();

@@ -481,7 +481,7 @@ void X86_64Linux::visit(const MemberAccess &n) {
 void X86_64Linux::copyBlock(int size) {
     const char *from = "%rax", *to = abi_.scratch;
     const int words = size / 8;
-    const bool string = words >= 3 && optimizing() && optimizer_->copiesByString();
+    const bool string = words >= 3 && passesRun() && optimizer_->copiesByString();
     bool save = false;
     int off = 0;
     if (string) {
@@ -942,7 +942,7 @@ void X86_64Linux::visit(const Binary &n) {
         a_->ins("mov", imm((isAnd ? 0 : 1)), reg("%rax"));
         a_->defLabel(label("scend", id));
         // Named by these jumps and nothing else, so droppable once threaded past.
-        if (optimizing()) { optimizer_->jumpOnly(label("sc", id)); optimizer_->jumpOnly(label("scend", id)); }
+        if (passesRun()) { optimizer_->jumpOnly(label("sc", id)); optimizer_->jumpOnly(label("scend", id)); }
         return;
     }
 
@@ -1266,7 +1266,7 @@ void X86_64Linux::visit(const Call &n) {
 
         // **The call reads the registers the plan filled and no other**: the
         // optimizer need not keep the rest alive into it, nor copy into them.
-        if (optimizing()) {
+        if (passesRun()) {
             opt::RegSet reads = (n.isVariadic() && abi_.variadicSseCountInAl) ? opt::bit(opt::RAX) : 0;
             for (int k = 0; k < plan.intsUsed && k < abi_.intCount; ++k) reads |= opt::bit(opt::parseReg(abi_.intRegs[k]).id);
             for (int k = 0; k < plan.ssesUsed && k < abi_.sseCount; ++k) reads |= opt::bit(opt::parseReg(abi_.sseRegs[k]).id);
@@ -1488,7 +1488,7 @@ std::string X86_64Linux::label(const char *kind, int id) const {
 // The SysV pair: %rax holds the exception object and %rdx the selector, and
 // both go into frame slots the parser already knows the numbers of.
 void X86_64Linux::exceptionRegion(const std::string &begin, const std::string &end, const std::string &target) {
-    if (optimizing()) optimizer_->exceptionRegion(begin, end, target);
+    if (passesRun()) optimizer_->exceptionRegion(begin, end, target);
 }
 
 void X86_64Linux::landingPad(int pointerSlot, int selectorSlot) {
@@ -1555,10 +1555,10 @@ std::string X86_64Linux::userLabel(const std::string &name) const {
     return labelPrefix_ + "user." + name;
 }
 
-// **The GNU and COFF spellings only.** The MASM path has its own spelling and
-// its own funclet cutting, and is written as it was.
+// **The holder, made at every level** (M3a.1, doc-cxx3/M3-IR.md 2.7): at -O0 it holds each function and replays
+// it as written, no pass run, so MIR is what every level writes through. Both spellings: MasmCodeGen derives from this.
 void X86_64Linux::setOptimize(int level) {
-    if (level <= 0 || optimizer_) return;
+    if (optimizer_) return;
     plain_ = a_;
     optimizer_.reset(new Optimizer(*a_, abi_, level));
     if (optimizer_->costs().inlines()) inliner_.reset(new Inliner(optimizer_->costs()));
@@ -1601,14 +1601,15 @@ void X86_64Linux::emit(const Function &fn) {
         }
     if (realign_ > 0 && fn.hasLandingPads() && usesFunclets())
         unsupported("an over-aligned local in a function with a try or a local with a destructor");
-    if (realign_ > 0 && optimizing()) {
+    // At -O0 the holder holds it too, `realign` on its prologue; the passes would address it from rbp and take rbx.
+    if (realign_ > 0 && passesRun()) {
         optimizer_->finish();
         a_ = plain_;
         opt::noteDecline("realigned-frame-no-optimizer", fn.symbol());
     }
 
     a_->functionBegin(fn.symbol(), !fn.isStatic(), fn.isInline());
-    if (optimizing())
+    if (passesRun())
         optimizer_->returnsPair(!abi_.aggregatesByReference && fn.returns()->isStructOrUnion() &&
                                 fn.returns()->size(target_) > 8);
     if (fn.isInline()) a_->weakDefinition(fn.symbol());
@@ -1667,7 +1668,7 @@ void X86_64Linux::emit(const Function &fn) {
     fnMergeable_ = fn.isInline();
     // On Windows the entry is named by the `{` line, as cl names it - see openingBrace.
     markLine(target_.microsoftNames() ? openingBrace(fn.pos()) : fn.pos());
-    if (optimizing()) optimizer_->frame(scalarsOf(fn));
+    if (passesRun()) optimizer_->frame(scalarsOf(fn));
     // The shadow space and the widest stack arguments of a call not inside another's operands, in 16s.
     // A nested call is evaluated with the outer one's values pushed, so it never finds the area; counting it
     // only made frames larger, and with them the displacements into the frame - 1.6 KB of .text at -O2, measured.
@@ -1681,7 +1682,7 @@ void X86_64Linux::emit(const Function &fn) {
         if (!calls.empty() || tlsGuarded) outgoing_ = (abi_.shadowBytes + 8 * words + 15) & ~15;
     }
     floorDepth_ = 0;
-    tempsAllowed_ = optimizing() && !(fn.hasLandingPads() && usesFunclets());
+    tempsAllowed_ = passesRun() && !(fn.hasLandingPads() && usesFunclets());
     tempDepth_ = tempHigh_ = 0;
     // The frame's top, rounded to the alignment, is what a realigned prologue allocates.
     top_ = frameSize_ + outgoing_;
@@ -1694,7 +1695,7 @@ void X86_64Linux::emit(const Function &fn) {
     receiveParameters(fn);
 
     walkBody(fn);
-    if (optimizing()) optimizer_->temporaries(tempHigh_);
+    if (passesRun()) optimizer_->temporaries(tempHigh_);
     // **rsp is restored *from rbp*, never by adding to itself.** Resuming after a catch it holds
     // whatever the runtime left, and adding the frame size landed on the unwind-help slot, so `ret`
     // took -2. The renderer adds the size; a realigned frame's rbx sits just under the saved rbp.
@@ -1716,7 +1717,7 @@ void X86_64Linux::emit(const Function &fn) {
     if (target_.microsoftNames()) a_->noteHasEh(!msStates().empty());
     a_->functionEnd(fn.symbol());
     // The tables below measure slots from the frame as the passes left it.
-    if (optimizing()) frameSize_ = optimizer_->frameSize();
+    if (passesRun()) frameSize_ = optimizer_->frameSize();
     emitExceptionTables(fn);
     if (lineSource()) {
         a_->defLabel(".Lfunc.end." + fn.symbol());
@@ -2011,7 +2012,7 @@ void X86_64Linux::walkBody(const Function &fn) {
 // appends its code like any other, so remembering where that began and cutting
 // back to it gives the body exactly - and the code generator knows none of it.
 std::string X86_64Linux::beginFunclet(std::size_t pos, int number, bool cleanup) {
-    if (optimizing()) optimizer_->funcletBegin();
+    if (passesRun()) optimizer_->funcletBegin();
     funcletOuter_.push_back(std::make_pair(funcletSymbol_, inFunclet_));
     inFunclet_ = true;
     atOutput([this] { funcletMarks_.push_back(out_.size()); });
@@ -2075,7 +2076,7 @@ void X86_64Linux::funcletLeave(const std::string &label) {
 // Write -2 into the runtime's scratch word: the personality routine reads it
 // through the FuncInfo's dispUnwindHelp to know how far this frame had got.
 void X86_64Linux::storeUnwindHelp(int slot) {
-    if (optimizing()) optimizer_->sharedSlot(-slot, 8);
+    if (passesRun()) optimizer_->sharedSlot(-slot, 8);
     a_->ins("movq", immText("-2"), local(slot));
 }
 
@@ -2165,7 +2166,7 @@ void X86_64Linux::closeFunclet(const std::string &tail) {
         funclets_ += declared + head + body + f;
         funcletPdata_ += pdata;
     });
-    if (optimizing()) optimizer_->funcletEnd();
+    if (passesRun()) optimizer_->funcletEnd();
     funcletSymbol_ = funcletOuter_.back().first;
     inFunclet_ = funcletOuter_.back().second;
     funcletOuter_.pop_back();

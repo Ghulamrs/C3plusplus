@@ -47,6 +47,7 @@ struct Operand {
     Reg index;                // Memory: `disp(base,index,scale)`; scale 0 is none
     int scale = 0;
     long long value = 0;      // Immediate, when numeric
+    bool unsignedSpelling = false;   // written as imm(unsigned) past LLONG_MAX: spelled back so at -O0 (M3a.1)
     bool numeric = false;
     std::string text;         // an Immediate that is not numeric, a symbol, a label
 

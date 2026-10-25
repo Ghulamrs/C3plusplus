@@ -878,7 +878,7 @@ int MasmCodeGen::establisherOffset(int slot) const {
 // only place the frame moves: `[rbp-slot]` written here comes out as `[rbp + frameSize - slot]`
 // there, which is the same arithmetic establisherOffset does for the tables.
 void MasmCodeGen::storeUnwindHelp(int slot) {
-    if (optimizer_) optimizer_->sharedSlot(-slot, 8);
+    if (passesRun()) optimizer_->sharedSlot(-slot, 8);
     a_->ins("movq", imm(-2), mem(-slot, "%rbp"));
 }
 
@@ -886,7 +886,7 @@ void MasmCodeGen::storeUnwindHelp(int slot) {
 // appends its code like any other, so remembering where that began and cutting
 // back to it gives the body exactly - and the code generator knows none of it.
 std::string MasmCodeGen::beginFunclet(std::size_t pos, int number, bool cleanup) {
-    if (optimizer_) optimizer_->funcletBegin();
+    if (passesRun()) optimizer_->funcletBegin();   // at -O0 a funclet stays where it was written, as the GNU path keeps it
     funcletOuter_.push_back(funcletSymbol_);
     atOutput([this] {
         masm_.raw("");                   // nothing pending inside the slice
@@ -982,7 +982,7 @@ void MasmCodeGen::closeFunclet(const std::string &tail) {
         out_.resize(mark);
         funclets_ += head + body + f;
     });
-    if (optimizer_) optimizer_->funcletEnd();
+    if (passesRun()) optimizer_->funcletEnd();
     funcletSymbol_ = funcletOuter_.back();
     funcletOuter_.pop_back();
 }

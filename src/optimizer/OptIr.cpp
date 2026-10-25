@@ -60,6 +60,7 @@ Operand Operand::from(const Op &o) {
         if (o.immNumeric)
             x.value = o.immNeg ? -static_cast<long long>(o.uimm) : static_cast<long long>(o.uimm);
         else x.text = std::string(o.text);
+        x.unsignedSpelling = o.immNumeric && !o.immNeg && x.value < 0;
         // `immText("8")` is a number too, when it spells back the same.
         if (!o.immNumeric && !x.text.empty() && x.text.find_first_not_of("-0123456789") == std::string::npos) {
             const long long v = std::strtoll(x.text.c_str(), nullptr, 10);
@@ -115,7 +116,9 @@ Op Operand::op() const {
     const Str name = reg.id >= 0 ? Str(regName(reg.id, reg.width)) : Str(text);
     switch (kind) {
     case Register: return ::reg(name);
-    case Immediate: return numeric ? ::imm(value) : immText(text);
+    case Immediate:
+        if (numeric && unsignedSpelling) return ::imm(static_cast<unsigned long long>(value));
+        return numeric ? ::imm(value) : immText(text);
     case Memory: {
         const Str base = reg.id >= 0 ? Str(regName(reg.id, 8)) : Str(text);
         if (scale != 0) return memIndexed(disp, hasDisp, base, Str(regName(index.id, 8)), scale);
