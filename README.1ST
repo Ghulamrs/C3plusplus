@@ -346,9 +346,8 @@ includes the header.  The `gnu` spelling marks it so through clang, and the
 writes one; Microsoft's `ml64` has no directive that reaches the bit at all, so
 `-masm=ml64` is there for a machine with neither, at the cost of one translation
 unit per program.  `masm` is the default because the user chose the MASM
-spellings over clang, and it links with the project's LINK.  `-g` under it
-needs GRIDE's masm, which reads the MASM spelling's `.LINE`; the project's masm
-in `Windows/MASM` does not yet, so with it name `-masm=gnu` for `-g`.  The default looks for masm.exe beside
+spellings over clang, and it links with the project's LINK, `-g` and
+`thread_local` included (Windows/MASM 6bcb5d2, LINK 959dac2).  The default looks for masm.exe beside
 cxx1, in CPP11_AS, then on PATH, and falls back to ml64 and Microsoft's link.exe,
 saying so, where it finds none.
 

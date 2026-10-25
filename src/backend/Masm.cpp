@@ -255,10 +255,8 @@ MasmSpelling::Rendered MasmSpelling::render(const Op &x) {
     case Op::Seg:
         return { "QWORD PTR " + std::string(x.text.substr(1)) + ":[" + std::to_string(x.disp) + "]", false, false, false };
     case Op::Tls: {
-        // **ml64 relocates `[base + SECTIONREL x]` as SECREL** (measured with dumpbin); `lea eax,
-        // SECTIONREL x` is REL32 and wrong. The project's own masm has no SECTIONREL operator yet.
-        if (comdat_) give_up(std::string(x.text), "a thread_local is not supported yet in the project's own masm, "
-                                                  "which has no SECTIONREL operator - the GNU spelling and ml64 have it");
+        // **The project's masm relocates `[base + SECTIONREL x]` as SECREL** (6bcb5d2, as ml64 relocates its
+        // `mov r32, SECTIONREL x`); `lea eax, SECTIONREL x` would be REL32 and wrong.
         std::string sym(x.text);
         referencedData_.insert(sym);
         return { "[" + std::string(x.index.substr(1)) + " + SECTIONREL " + mangle(sym) + "]", true, false, false };
@@ -711,10 +709,8 @@ void MasmSpelling::bssSection() {
 }
 
 // **`.tls$`, with the dot**: ml64 names a `_TLS SEGMENT` `_TLS` and the linker builds no template
-// from it - measured with dumpbin. The project's masm has no SECTIONREL to reach the object with.
+// from it - measured with dumpbin.
 void MasmSpelling::tlsDataSection() {
-    if (comdat_) give_up(".tls$", "a thread_local is not supported yet in the project's own masm, "
-                                  "which has no SECTIONREL operator - the GNU spelling and ml64 have it");
     flushPending();
     if (seg_ == Tls) return;
     closeDataBlock();

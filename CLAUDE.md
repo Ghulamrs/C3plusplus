@@ -7146,15 +7146,15 @@ project's masm.exe and linked by its link.exe - beside cxx3, named by `CPP11_AS`
 Studio's `ml64` and Microsoft's `link.exe` and says so on stderr: one translation unit per program.
 R7.1 is amended to match (`doc-cxx3/Compiler_Design_Requirements.md`, open question 7 of the Final).
 
-**`-g` under the default needs GRIDE's masm, or `-masm=gnu` named** - the user's choice, over keeping a
-`-g` build on clang. The MASM spelling's `-g` (1.29) writes `.FILE`, `.LINE`, `SECTION` and `SECTIONREL` for
+**`-g` under the default needed GRIDE's masm, or `-masm=gnu` named** - the user's choice, over keeping a
+`-g` build on clang; lifted the same day, below. The MASM spelling's `-g` (1.29) writes `.FILE`, `.LINE`, `SECTION` and `SECTIONREL` for
 GRIDE's own masm, and the project's masm in `../Windows/MASM` (1528a7a) refuses all four, so a `-g` build that
 names no spelling, which took clang where clang was found before this change, fails there now. The
 pre-change compiler with `-g -masm=masm` named fails identically: the limit is that masm's, not the default's.
 
-**What it costs**: a case with a `.nomasm` - `thread-local`, `thread-local-extern`, `ucn-identifier` -
-cannot be written in MASM, so `thread_local` and a UCN identifier do not compile under the default for
-x86_64-windows; `tests/emit.sh` and `tools/mangled-names` keep `-masm=gnu` for those cases. Two cases
+**What it cost**: a case with a `.nomasm` - `thread-local`, `thread-local-extern`, `ucn-identifier` -
+could not be written in MASM, so `thread_local` and a UCN identifier did not compile under the default for
+x86_64-windows (the two `thread_local` ones lifted the same day, below); `tests/emit.sh` and `tools/mangled-names` keep `-masm=gnu` for those cases. Two cases
 renamed arrays MASM reserves (`db`, `cs`, `ds`), which the MASM spelling writes `$db`, a name `names.sh`
 cannot see, as `width` before them. `run-cases.cmd` gained `CXX1_CASES_SPELLINGS=default`: no `-masm`, the
 tools copied beside the compiler.
@@ -7168,6 +7168,19 @@ the names are mapped. tms6747 at -O0 and -O2, every case, against 7342ead on the
 above), names.sh 653 / 0, overload.sh 44 / 0, exclusions 126 sites 0 / 0. `tools/windows/self-host.cmd` names `-masm=gnu`
 itself now: cxx3's own sources use `thread_local`, which no MASM here writes, and ml64 has no COMDAT. On
 zeeshan it builds stage 1 and stage 2, and 70 of 70 sources emit the same assembly from each.
+
+**And the two limits lifted the same day.** Windows/MASM `6bcb5d2` reads `.FILE`, `.LINE`, `SECTION` and `SECTIONREL`
+(ported from GRIDE's masm) and takes `[base + SECTIONREL x]` and a `gs:` override; LINK `959dac2` writes the PDB. So
+`-g` with no `-masm` links with the project's masm and LINK and writes a PDB, the two `SECTIONREL` refusals in
+`Masm.cpp` are gone, and `thread-local.nomasm` and `thread-local-extern.nomasm` with them; `ucn-identifier.nomasm`
+stays. `tools/windows/self-host.cmd` runs in the default spelling, the masm and LINK named by `CPP11_AS`/`CPP11_LD`
+or taken from beside stage 0. On zeeshan: the cases 957 / 0 / 31 at -O0 and -O2, the two `thread_local` cases
+printing their `.expected`; the three-file example under `-g` links, writes `demog.pdb` and prints what clang's build
+prints; self-host 70 of 70. tms6747 against `108000a` on the Linux box 0 of 993 changed at -O0 and -O2, run.sh
+989 / 0 at both; Mac `make test` green, the golden 3 of 1,924 changed - the three `thread_local` files of
+x86_64-windows, now the MASM spelling. **Found by that work and not mended**: `-masm=ml64` thread_local output is
+refused by ml64 itself (A2024 on `lea ..., [base + SECTIONREL x]`; ml64 takes `SECTIONREL` only in a `mov` to a
+32-bit register or a `cmp BYTE`); this file's `thread_local` section describes the `mov` form the spelling once wrote.
 
 **Found, and mended the same day**: `hostLinker()` asks for a bare `link.exe`, which Windows finds beside
 the compiler before PATH - so where the project's LINK sat beside cxx3 (RIDE's bin), `-g -masm=gnu` linked
@@ -14865,9 +14878,9 @@ relocates `mov r11d, SECTIONREL x` as SECREL and refuses `SECTIONREL` inside eve
 tried (`lea rax, [rcx + SECTIONREL x]` A2024, with and without a PTR size, in `_TLS` and `.tls$`),
 so the MASM spelling writes a `Tls` operand as that `mov` and the register added; `gs:[88]` has to
 be `QWORD PTR gs:[88]`; a symbol inside `SECTIONREL` must be `EXTERN x:BYTE`, not `:PROC` (A2102).
-The project's own masm has no `SECTIONREL` at all, so `-masm=masm` refuses a thread_local by name
-(`tests/cases/thread-local.nomasm`, a per-spelling skip run-cases.cmd and verify-three honour);
-`-masm=ml64` and the GNU spelling run the case. cl6x 7.4.4 and 8.2.2 do not know the word (8.2.2
+The project's own masm had no `SECTIONREL` until Windows/MASM `6bcb5d2` (2026-10-25), and `-masm=masm`
+refused a thread_local by name until then; it writes `[base + SECTIONREL x]`, which that masm relocates as
+SECREL (see "-masm=masm is x86_64-windows's default again"). cl6x 7.4.4 and 8.2.2 do not know the word (8.2.2
 has no `--c++14` either), so tms6747 refuses it by name.
 
 **In the compiler.** `Var` carries `isThreadLocal` and `viaWrapper`; `Global.isThreadLocal` picks

@@ -192,3 +192,10 @@ diagnostic naming `lib/` by its path** - `posix-headers` for x86_64-windows at t
 `windows-h-layout` for x86_64-linux at the three, REF's tree being another folder; no assembly differs. **Compile time,
 the R1.2 baseline**: the 70 sources of the self-host corpus compiled one at a time with `-S` by a clang -O2 build of
 cxx3 on the Mac (M4 Pro), best of three: **23.91 s at -O0, 44.67 s at -O2**.
+
+**R9.1's target-1 gate on the default toolchain** (2026-10-25, outside M3, Opus 5.5). cxx3's MASM spelling now writes
+`thread_local` for the project's masm (Windows/MASM `6bcb5d2` relocates `[base + SECTIONREL x]` as SECREL, LINK `959dac2`
+writes the TLS directory and the PDB), so `tools/windows/self-host.cmd` no longer names `-masm=gnu`: on zeeshan, stage 1
+and stage 2 built in the default `-masm=masm`, 70 of 70 sources the same. The gate-table rows above that name the GNU
+spelling (lines 59 and 157) are to be read as the default spelling from here, left as written above this heading;
+design section 10, item 5 says so.
