@@ -1,0 +1,1 @@
+cl gives a local class's members internal linkage - Static in its symbol table - where cxx1 makes them External, so names-vs-cl, which compares External names, reads them as cxx1's alone. The spellings are the same: every ?1? name here, back-references included, matches cl 19.51's Static one and clang's (measured 2026-10-25). Local names nothing outside the unit links against.
