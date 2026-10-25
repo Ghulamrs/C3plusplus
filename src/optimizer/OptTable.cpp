@@ -5,6 +5,7 @@
 #include <deque>
 #include <map>
 #include <mutex>
+#include <stdexcept>
 #include <unordered_map>
 
 namespace opt {
@@ -216,6 +217,7 @@ std::deque<Mnemonic> &gRecords() { static std::deque<Mnemonic> d; return d; }   
 unsigned gCount = 0;
 
 unsigned publish(const std::string &m, const Opcode *row, bool listed) {
+    if (gCount >= kMaxMnemonics) throw std::length_error("opt::OpId: more mnemonics than the registry holds");
     const unsigned id = gCount++;
     gRecords().emplace_back(m, row, listed);
     gSlots[id].store(&gRecords().back(), std::memory_order_release);

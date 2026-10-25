@@ -239,3 +239,15 @@ of 2.1; `StrId` is one process-wide registry, written under a lock and read with
 per-function `StringTable` - a function's dump is still complete, since a dump prints the text; `Directive` has a
 `RelroSection` kind the table in 2.4 lacks; and an immediate keeps `unsignedSpelling`, the `imm(unsigned)` past
 `LLONG_MAX` the walker writes, which M3a.3 may fold into the table's widths.
+
+**Review point 2a, Fable 5.1, 2026-10-25: agree with conditions** (`doc-cxx3/M3-RP2A-REVIEW-FABLE-2026-10-25.md`).
+M3a.1 may merge, `MInst` is fixed as section 4 of the review lists, M4 may start, and M3a.2 and M3a.3 may begin. All
+four departures are accepted; **M3a.1's row above says "in `src/optimizer/Mir.h`" and is read, from this date, as 2.1's
+file table says: the types keep their `OptIr.h` names until M3a.5's rename**. M3-IR part 2 carries the review's seven
+amendments, each marked where it stands. Of the six conditions, 1 (the `OpId` registry's bound check) and 3 (the
+amendments, and `-mir=off`'s usage line saying "at -O0") are in the merge; 4 (main's `98eeda3` taken and the Windows
+cases run under `-masm=ml64` on zeeshan) before the merge is called done; 2 (`tools/determinism.sh` runs
+`-dump=mir`), 5 (`identical.sh` reads 0, REF beside its own tree) and 6 (TSan in RP2b's gate, run on Linux) before
+RP2b. The C7 `-S` item is ruled separate: `-S` with no `-o` writes beside the source and a link build's
+intermediates go to the current directory - two modes of one binary - and stage 0 and stage 1 agree on all 71
+sources' `-S` output on the Mac.

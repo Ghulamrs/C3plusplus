@@ -74,12 +74,17 @@ struct MOperand {
     bool hasDisp = false;
     long long value = 0; // Immediate, when numeric
     bool numeric = false;
-    StringId text;       // an Immediate that is not numeric, a symbol, a label, an x87 register's spelling
+    StrId text;          // an Immediate that is not numeric, a symbol, a label, an x87 register's spelling
+    bool unsignedSpelling = false;   // an imm(unsigned) past LLONG_MAX, spelled back as written; gone at M3a.3
 };
 ```
 
-This is `opt::Operand` (`OptIr.h:38-63`) with one change: `text` is a `StringId` into the function's string table
-rather than a `std::string`, so an `MOperand` is a plain value a vector copies cheaply and a dump prints by index.
+This is `opt::Operand` (`OptIr.h:38-63`) with one change: `text` is a `StrId` into the process's registry
+(`OptStrings.h`), written under a lock and read lock-free, rather than a `std::string`, so an `MOperand` is a plain
+value a vector copies cheaply; an index never reaches a dump or an output, which print the text. *(Amended at RP2a,
+2026-10-25: this said `StringId` into the function's string table.)* `unsignedSpelling` keeps the walker's
+`imm(unsigned long long)` past `LLONG_MAX` spelled as written at -O0; `improve` clears it before the passes so -O1
+and -O2 write what they always did, and M3a.3 folds it into the table's widths or keeps it at every level.
 `Operand::from(const Op &)` and `Operand::op()` are kept as `MOperand::from` and `MOperand::op`, byte for byte
 in behaviour: the immediate normalisation (`immText("8")` read as the number 8 when it spells back the same,
 `OptIr.cpp:63-67`), the register name canonicalised through `regName`, an x87 `%st(0)` kept as text with
@@ -102,8 +107,9 @@ struct MInst {
 
 What `Instr` carries today, with `m` replaced by `OpId`. The width the suffix names, the kind, the flags, the
 roles and the implicit registers are all the row's and not the instruction's, so an `MInst` is 40 bytes of
-plain data. A mnemonic the table does not hold cannot be built: `opcodeOf` returns `kUnknown` today
-(`OptTable.cpp:163`) and the passes treat it as opaque; M3a.1 keeps that row *and* counts it, so that
+plain data. A mnemonic the table does not hold is interned as an unlisted `OpId` whose row is its prefix
+family's or `kUnknown` *(amended at RP2a, 2026-10-25: this said it "cannot be built")*, and the passes treat it as
+opaque; M3a.1 keeps that row *and* counts it, so that
 `CPP11_MIR_STRICT=1` can refuse the function naming the mnemonic - which is how the table's completeness is
 measured over the corpus (M3-PLAN, M3a.1's gate) and how M4's mnemonic list is taken from the oracle rather
 than from the source (design section 6).
@@ -112,13 +118,12 @@ than from the source (design section 6).
 
 ```cpp
 struct MEntry {
-    enum Kind : std::uint8_t { Inst, Label, Directive, Deferred };
+    enum Kind : std::uint8_t { Inst, Label, Directive };
     Kind kind;
     MInst ins;                 // Inst
-    StringId label;            // Label
+    std::string label;         // Label
     bool state = false;        // Label: a Microsoft state label (Spelling::stateLabel)
-    MDirective dir;            // Directive
-    std::function<void()> deferred;   // Deferred - M3a.1 only, gone at M3a.4
+    MDirective dir;            // Directive; its kind Deferred holds a closure - M3a.1 only, gone at M3a.4
     bool dead = false;
 };
 ```
@@ -141,9 +146,14 @@ struct MEntry {
 | `Align`, `LoopAlign`, `Zero` | `n`; `bytes`; `n` | `OptAlign.cpp:138-140` makes `LoopAlign` today as a closure |
 | `DataInt`, `DataSym`, `DataBytes` | `size, v`; `sym, off`; `bytes` | |
 | `NoteHasEh` | `yes` | |
+| `RelroSection` | - | `relroSection`: a vtable on a PIE target (b9628c6); added at RP2a, 2026-10-25 |
+| `Deferred` | a closure | the five text-lifting `atOutput` calls below, M3a.1 to M3a.4 |
 | `FuncletBegin`, `FuncletEnd`, `FuncletLeave` | `symbol, cleanup, pos`; `resume`; `label` | **M3a.4**: the funclet's head and tail, written by the emitter in place of `closeFunclet`'s lifted text |
 
-`Deferred` holds the five `atOutput` closures that cut text out of `out_` and move it (`X86_64Linux.cpp:2017,
+`Deferred` is a directive kind, not an `MEntry` kind, and a directive's string argument (an LSDA name, a
+`DataBytes` payload) is a `std::string`, there being nothing to gain from interning one *(amended at RP2a,
+2026-10-25: the struct above had `Deferred` beside `Directive` and the string as a `StringId`)*. It holds the
+five `atOutput` closures that cut text out of `out_` and move it (`X86_64Linux.cpp:2017,
 2152, 2544`; `Masm.cpp:891, 977`). They are the one thing in the stream that is not data at M3a.1, they are
 named here so that the count is known to be five, and M3a.4 removes them with the funclet directives above; the
 `emitTlsWrappers` one (`:2544`) is a raw-text emission after the functions and becomes a `DataBytes`-shaped
@@ -158,7 +168,7 @@ M3a.2 keeps rbx out of its palette there.
 
 `opt::Function` (`OptFunction.h:28-88`) as it stands - `name`, `stream`, `convention`, `flow`, `props`, the
 temporaries' region (`tempFrom`, `tempBase`, `tempCount`), `locals`, `shared`, `whole`, `jumpOnly`, `regions`,
-the frame (`prologueAt`, `frameSize`, `inlineTop`, `lsda`, `outgoing`, `saves`, `size`) - with three additions:
+the frame (`prologueAt`, `frameSize`, `inlineTop`, `lsda`, `outgoing`, `saves`, `size`) - with two additions:
 
 ```cpp
 struct PseudoInfo {        // M3a.2: one record per pseudo, replacing homes[] + slots[]
@@ -168,12 +178,11 @@ struct PseudoInfo {        // M3a.2: one record per pseudo, replacing homes[] + 
     int width = 8;
 };
 std::vector<PseudoInfo> pseudos;      // indexed by id - kPhysical
-StringTable strings;                  // every StringId of this function's stream
 std::vector<FuncletRange> funclets;   // M3a.4: [begin, end) of the stream, each a funclet's blocks, with its symbol and kind
 ```
 
-`strings` is per function so that a function's MIR is self-contained and a dump of one is complete; the
-spelling's symbol strings are rebuilt from it at replay. A funclet range is a slice of the parent's stream - the
+*(Amended at RP2a, 2026-10-25: a per-function `StringTable strings` stood here; `StrId` is process-wide, 2.2,
+and a dump is complete because it prints the text.)* A funclet range is a slice of the parent's stream - the
 parent and its funclets are one `MFunction` from M3a.4, which is what lets the allocator see the whole (P1's
 funclet decision) - and emission writes each range to `.text$x` after the function, with its own prologue and
 unwind data, exactly the text `closeFunclet` composes today (`X86_64Linux.cpp:2083-2168`).
@@ -235,7 +244,9 @@ What byte-identity rests on, so that each is kept:
 2. **A label is replayed as `defLabel` or `stateLabel`** by its mark (`Optimizer.cpp:222-224`): the MASM spelling
    pads a state label after a call (`stateLabel`, `Spelling.h:131`), so the mark must survive.
 3. **A directive's arguments are copied whole** at the time of the call, as the closures capture them by value
-   today; a `std::string` argument becomes a `StringId` and comes back as the same string.
+   today; a `std::string` argument is copied whole, and an operand's text is a `StrId` that comes back as the
+   same string *(amended at RP2a, 2026-10-25)*. An immediate's `unsignedSpelling` (2.2) is the one field the
+   passes' levels clear.
 4. **The `Deferred` closures run where they stood** (`event` semantics), until M3a.4.
 5. **The -O0 walker's behaviour does not change**: `optimizing()` (`X86_64Linux.h:158`) is renamed to say what it
    means - `passesRun()`, true at -O1 and -O2 - and every site that reads it (`tempsInSlots`, `copiesByString`,
