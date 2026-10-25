@@ -17,6 +17,18 @@
 
 namespace opt {
 
+// **The register file a pseudo is coloured from** (M3-IR 2.8): X87 is never allocated, its operands being opaque text.
+enum class RegClass : unsigned char { Gpr, Xmm, X87 };
+
+// **One pseudo's record**: a web's has the register it was found in, a promoted local's the frame slot it left.
+struct PseudoInfo {
+    RegClass cls;
+    int home;               // a web's register; -1 for a promoted local
+    Local slot;             // a promoted local's frame slot, to give back
+    PseudoInfo(RegClass c, int h, const Local &s = Local()) : cls(c), home(h), slot(s) {}
+    bool fromSlot() const { return home < 0; }
+};
+
 // **Properties a pass requires, provides or destroys**, as GCC's PROP_ bits.
 // The pass manager checks a pass's requirements before it runs and updates
 // the set after, so a pass that reads a stale flow graph is caught at once.
@@ -33,10 +45,8 @@ struct Function {
     Convention convention;
     Flow flow;
     unsigned props = kPropPhysical;
-    // While the stream names pseudos: the register each web's was found in,
-    // and after those, the frame slot each promoted local's stood in.
-    std::vector<int> homes;
-    std::vector<Local> slots;
+    // While the stream names pseudos: one record each, indexed by id - kPhysical; the webs' come first.
+    std::vector<PseudoInfo> pseudos;
     bool promoted = false;          // whether any local left its slot for a register
     // The walker's temporaries: every slot at this displacement or below is
     // one, written once per value and read once, by nothing else. 0: none.

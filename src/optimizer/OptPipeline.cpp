@@ -96,7 +96,8 @@ struct Webs : Pass {
         mir::Webs webs(fn);
         const bool split = webs.splitPinned();
         webs.build();
-        fn.homes = webs.homes();
+        fn.pseudos.clear();
+        for (int h : webs.homes()) fn.pseudos.push_back(PseudoInfo(RegClass::Gpr, h));
         return split;
     }
 };
@@ -116,8 +117,7 @@ struct Allocate : Pass {
     bool execute(Function &fn) override {
         mir::Allocator alloc(fn);
         const bool changed = alloc.run();
-        fn.homes.clear();
-        fn.slots.clear();
+        fn.pseudos.clear();
         return changed;
     }
 };

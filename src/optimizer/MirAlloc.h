@@ -49,7 +49,7 @@ private:
     };
 
     opt::Function &fn_;
-    const std::vector<int> &homes_;
+    std::vector<int> homes_;                // the webs' registers, from Function::pseudos
     int nHomes_ = 0;                        // the webs' pseudos; the promoted locals' follow
     int n_ = 0;
     int words_ = 0;

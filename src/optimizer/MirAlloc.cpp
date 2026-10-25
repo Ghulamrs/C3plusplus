@@ -42,9 +42,13 @@ const int kOffer[] = {RAX, RCX, RDX, RSI, RDI, R8, R9, R10, R11,
 
 }
 
-Allocator::Allocator(Function &fn) : fn_(fn), homes_(fn.homes) {
-    nHomes_ = static_cast<int>(fn.homes.size());
-    n_ = nHomes_ + static_cast<int>(fn.slots.size());
+Allocator::Allocator(Function &fn) : fn_(fn) {
+    for (const PseudoInfo &p : fn.pseudos) {
+        if (p.fromSlot()) break;
+        homes_.push_back(p.home);
+    }
+    nHomes_ = static_cast<int>(homes_.size());
+    n_ = static_cast<int>(fn.pseudos.size());
     words_ = (n_ + 63) / 64;
 }
 

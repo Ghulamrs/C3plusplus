@@ -16,8 +16,8 @@ int Locals::promote() {
     if (found.empty()) return 0;
     std::map<long long, int> pseudoOf;
     for (const Local &l : found) {
-        pseudoOf[l.disp] = kFirstPseudo + static_cast<int>(fn_.homes.size() + fn_.slots.size());
-        fn_.slots.push_back(l);
+        pseudoOf[l.disp] = kFirstPseudo + static_cast<int>(fn_.pseudos.size());
+        fn_.pseudos.push_back(PseudoInfo(RegClass::Gpr, -1, l));
     }
     for (int k = 0; k < static_cast<int>(fn_.stream.size()); ++k) {
         Entry &e = fn_.stream[k];
@@ -27,7 +27,7 @@ int Locals::promote() {
             if (o->kind != Operand::Memory || o->reg.id != RBP) continue;
             const auto p = pseudoOf.find(o->disp);
             if (p == pseudoOf.end()) continue;
-            *o = Operand::ofReg(p->second, fn_.slots[p->second - kFirstPseudo - fn_.homes.size()].size);
+            *o = Operand::ofReg(p->second, fn_.pseudos[p->second - kFirstPseudo].slot.size);
             renamed = true;
         }
         if (renamed) fn_.flow.effects[k] = effectsOf(e.ins, fn_.convention);

@@ -278,7 +278,7 @@ void Webs::assign(Function &fn, const std::vector<int> &colour) {
             if (!isPseudo(o->reg.id) || colour[o->reg.id - kFirstPseudo] == kAsIs) continue;
             const int c = colour[o->reg.id - kFirstPseudo];
             if (c >= 0) o->reg.id = c;
-            else *o = Operand::ofMem(RBP, fn.slots[o->reg.id - kFirstPseudo - fn.homes.size()].disp);
+            else *o = Operand::ofMem(RBP, fn.pseudos[o->reg.id - kFirstPseudo].slot.disp);
             renamed = true;
         }
         if (renamed) fn.flow.effects[k] = effectsOf(e.ins, fn.convention);
