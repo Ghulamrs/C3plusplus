@@ -306,6 +306,11 @@ The review and Draft 2.1 saw that "the project owns masm", but neither looked in
 2. **Stage 1** is built by stage 0 at -O0, then at -O2 once M3 lands. Stage 2 is built by stage 1, and stage 3 by stage 2.
 3. **Stage 2 must equal stage 3:** identical assembly and objects.
 4. **From M1 on,** every milestone ends self-hosting on target 1 with its own front end.
+5. **The target-1 self-host runs in the GNU spelling, assembled by clang** (M2 close, condition C6, 2026-10-25):
+   cxx3's own sources use `thread_local`, whose offset needs SECTIONREL, and cxx3's MASM spelling refuses it for the
+   project's masm (`Masm.cpp`, `Op::Tls`); ml64 has no COMDAT. The project's masm gained SECTIONREL in Windows/MASM
+   `6bcb5d2`, so the gate moves to the default `-masm=masm` once the MASM spelling writes it - or when M4's COFF
+   writer (R4.4) lands, whichever is first.
 
 **Baseline** (reproduced by the review):
 - 2 of 60 files compile.
@@ -412,7 +417,7 @@ tree's scopes, which is why the adapter's copies of them are not kept.
    parse cannot leak it.
 5. `-dump=ast` prints every field of a `Try`, so two bodies differing in one compare different.
 6. `-front=typed` is exercised by `tools/self-host` and by a non-Mac leg, and the adapter reads recorded resolutions, not
-   the tables.
+   the tables. On target 1 the self-host is the GNU spelling's (section 10, item 5).
 
 **What this keeps from M2.8-M2.12p**: the syntax tree and its recording, the typed tree and `-check=typed`, the adapter and
 `-check=adapted` as the harness for its subset, and the fact maps the adapter needs - re-keyed into `FunctionState` where
