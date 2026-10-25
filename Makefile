@@ -154,6 +154,7 @@ test: $(TARGET)
 	@CXX1=$(TARGET) ./tests/syntax.sh
 	@CXX1=$(TARGET) ./tests/typed.sh
 	@CXX1=$(TARGET) ./tests/adapted.sh
+	@CXX1=$(TARGET) ./tests/coff.sh
 	@./tools/exclusions --check docs/EXCLUSIONS.md || { echo "make test: docs/EXCLUSIONS.md does not match the source - see the lines above"; exit 1; }
 	@./tools/comment-lines --count
 	@./tools/comment-lines >/dev/null || { echo "make test: comment groups over the cap - run make comments"; exit 1; }
