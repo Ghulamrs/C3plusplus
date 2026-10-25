@@ -518,7 +518,7 @@ judgement in a program. They are named here instead:
 - `src/parser/ParserType.cpp:239` - a base class that is not yet defined. An
   ordinary error: a derived object contains its base, so the base has to be
   complete.
-- `src/Mangle.cpp:860`, `src/Mangle.cpp:1491` - a type with no Itanium or
+- `src/Mangle.cpp:869`, `src/Mangle.cpp:1500` - a type with no Itanium or
   Microsoft linkage name. Internal: reaching either means a type was built that
   the mangler was never taught, which is a bug in this compiler and not a
   statement about the language.
