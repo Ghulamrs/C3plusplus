@@ -280,7 +280,7 @@ private:
                 step.sources.push_back(std::make_pair(slotFor(0, false), curVn[i.a.reg.id]));
             }
             break;
-        case Operand::Immediate: key += "i" + (i.a.numeric ? desc(i.a.value) : i.a.text); break;
+        case Operand::Immediate: key += "i" + (i.a.numeric ? desc(i.a.value) : i.a.text.str()); break;
         case Operand::RipSymbol: key += "s" + i.a.text; break;
         case Operand::Memory:
             key += "m" + desc(i.a.disp) + ",";

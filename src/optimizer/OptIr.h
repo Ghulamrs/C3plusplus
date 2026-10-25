@@ -5,6 +5,7 @@
 // kept in one ordered stream with the labels and the events between them.
 
 #include "OptCore.h"
+#include "OptStrings.h"
 #include "OptTable.h"
 #include "../backend/Spelling.h"
 
@@ -51,7 +52,7 @@ struct Operand {
     long long value = 0;      // Immediate, when numeric
     bool unsignedSpelling = false;   // written as imm(unsigned) past LLONG_MAX: spelled back so at -O0 (M3a.1)
     bool numeric = false;
-    std::string text;         // an Immediate that is not numeric, a symbol, a label
+    StrId text;               // an Immediate that is not numeric, a symbol, a label: an index, never a string (M3a.1)
 
     static Operand from(const Op &o);
     static Operand ofReg(int id, int width);

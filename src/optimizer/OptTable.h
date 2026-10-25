@@ -82,6 +82,8 @@ inline bool operator==(const std::string &a, const OpId &b) { return b.name() ==
 inline bool operator!=(const std::string &a, const OpId &b) { return b.name() != a; }
 inline std::string operator+(const std::string &a, const OpId &b) { return a + b.name(); }
 inline std::string operator+(const char *a, const OpId &b) { return a + b.name(); }
+inline std::string operator+(const OpId &a, const char *b) { return a.name() + b; }
+inline std::string operator+(const OpId &a, const std::string &b) { return a.name() + b; }
 inline const Opcode &opcodeOf(const OpId &m) { return m.row(); }
 
 // The move families the passes recognise by spelling: a plain copy at eight

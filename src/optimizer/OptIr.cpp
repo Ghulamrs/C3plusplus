@@ -62,9 +62,9 @@ Operand Operand::from(const Op &o) {
         else x.text = std::string(o.text);
         x.unsignedSpelling = o.immNumeric && !o.immNeg && x.value < 0;
         // `immText("8")` is a number too, when it spells back the same.
-        if (!o.immNumeric && !x.text.empty() && x.text.find_first_not_of("-0123456789") == std::string::npos) {
+        if (!o.immNumeric && !x.text.empty() && x.text.str().find_first_not_of("-0123456789") == std::string::npos) {
             const long long v = std::strtoll(x.text.c_str(), nullptr, 10);
-            if (std::to_string(v) == x.text) { x.numeric = true; x.value = v; x.text.clear(); }
+            if (std::to_string(v) == x.text) { x.numeric = true; x.value = v; x.text = StrId(); }
         }
         break;
     case Op::Mem:
@@ -113,22 +113,22 @@ Operand Operand::ofMem(int base, long long disp) {
 }
 
 Op Operand::op() const {
-    const Str name = reg.id >= 0 ? Str(regName(reg.id, reg.width)) : Str(text);
+    const Str name = reg.id >= 0 ? Str(regName(reg.id, reg.width)) : Str(text.str());
     switch (kind) {
     case Register: return ::reg(name);
     case Immediate:
         if (numeric && unsignedSpelling) return ::imm(static_cast<unsigned long long>(value));
-        return numeric ? ::imm(value) : immText(text);
+        return numeric ? ::imm(value) : immText(text.str());
     case Memory: {
-        const Str base = reg.id >= 0 ? Str(regName(reg.id, 8)) : Str(text);
+        const Str base = reg.id >= 0 ? Str(regName(reg.id, 8)) : Str(text.str());
         if (scale != 0) return memIndexed(disp, hasDisp, base, Str(regName(index.id, 8)), scale);
         return hasDisp ? mem(disp, base) : mem(base);
     }
-    case RipSymbol: return rip(text);
+    case RipSymbol: return rip(text.str());
     case Indirect: return ind(name);
-    case Label: return lbl(text);
-    case SegMemory: return seg(text, disp);
-    case TlsSymbol: return tls(text, Str(regName(reg.id, 8)));
+    case Label: return lbl(text.str());
+    case SegMemory: return seg(text.str(), disp);
+    case TlsSymbol: return tls(text.str(), Str(regName(reg.id, 8)));
     case None: break;
     }
     return immText("");

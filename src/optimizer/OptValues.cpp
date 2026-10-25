@@ -209,7 +209,7 @@ private:
         o.reg = Reg{RBP, 8};
         o.disp += v.k;
         o.hasDisp = true;
-        o.text.clear();
+        o.text = StrId();
         return true;
     }
 
