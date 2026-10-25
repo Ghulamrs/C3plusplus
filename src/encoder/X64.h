@@ -39,11 +39,26 @@ struct Code {
     bool bad;   // both: the combination ml64 refuses (A2218)
 };
 
+// **An instruction a compiler hands over already parsed** (M4.4): its MASM name, a REP or LOCK prefix byte, and its
+// operands with their symbols by name - what the text path's split_line and operand() make of a line. The unit
+// resolves the names each pass, in operand order, as the parse would have.
+struct Instruction {
+    std::string name;                 // upper case: "MOV", "MOVSQ"
+    unsigned prefix;                  // 0, or 0xF0 LOCK, 0xF3 REP, 0xF2 REPNE, emitted in front
+    std::vector<Operand> ops;         // sym -1; the name in syms stands for it
+    std::vector<std::string> syms;    // one per operand: the symbol it names, or empty
+};
+// An operand with nothing in it yet, as operand() begins one; and a register by its MASM name (AL, R15, XMM3).
+void clearOperand(Operand &o);
+bool registerNamed(const std::string &upperName, Operand &o);
+
 class X64Target : public Target {
 public:
     X64Target();
     void begin_pass(int pass);
     void statement(Unit &u, std::vector<Token> &t);
+    // An Instruction in place of a line: its symbols resolved, a label typed as a parsed one is, then encoded.
+    void encode(Unit &u, const Instruction &ins);
     bool finished() const;
     bool again() const;
     bool resolve_here(const Unit &u, const Fixup &f, const Symbol &s, long long &value, int &width) const;
@@ -54,8 +69,8 @@ private:
     int proc;
     int anon;   // the @@ labels defined so far this pass
     std::vector<unsigned char> jsize;   // each jump in source order: 0 short, 1 near; only ever grows
-    std::vector<long long> jhere;       /* where each jump was in the previous pass, for a forward target
-                                           whose value is that pass's too - the two must not be mixed */
+    // Where each jump was in the previous pass, for a forward target whose value is that pass's too.
+    std::vector<long long> jhere;
     size_t jn;   // the jumps seen this pass
     bool grew;   // a jump was widened this pass
     bool proc_private;   // OPTION PROC:PRIVATE: PROCs are Static unless PUBLIC

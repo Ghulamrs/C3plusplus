@@ -3,6 +3,7 @@
 #include "Version.h"
 #include "backend/X86_64Windows.h"
 #include "backend/CoffEmitter.h"
+#include "encoder/X64.h"
 
 #include "backend/Backend.h"
 #include "Lexer.h"
@@ -1112,6 +1113,8 @@ bool Driver::parseArguments(int argc, char **argv) {
             assemblyOnly_ = true;
         } else if (std::strcmp(argv[i], "-c") == 0) {
             objectOnly_ = true;
+        } else if (std::strcmp(argv[i], "-coff=text") == 0) {
+            coffText_ = true;
         } else if (std::strcmp(argv[i], "-keep-going") == 0 || std::strcmp(argv[i], "--keep-going") == 0) {
             keepGoing_ = 100;
         } else if (std::strncmp(argv[i], "-keep-going=", 12) == 0) {
@@ -1390,8 +1393,11 @@ bool Driver::compile(const Job &job) {
 
     bool ok = true;
     std::ostringstream made, mir;
+    // The instructions the spelling hands the encoder as data (M4.4), for an object written in process.
+    std::vector<masm::Instruction> structured;
     {
         std::unique_ptr<CodeGen> gen = backend_->codegen(made, syntax_);
+        if (!job.object.empty() && !coffText_) gen->setStructured(&structured);
         if (debug_) gen->setLineSource(&src, workingDirectory());
         gen->setMirOff(mirOff_);
         if (dumpMir_) gen->setMirDump(&mir, dumpMirAfter_);
@@ -1438,7 +1444,7 @@ bool Driver::compile(const Job &job) {
         // **The object, in process** (M4.2): the text the .s would have held goes to the encoder library instead.
         // A refusal names the library's line of that text, and the text is written as the .s so it can be read.
         std::vector<std::string> errors;
-        if (!CoffEmitter::assemble(text, job.output, job.object, errors)) {
+        if (!CoffEmitter::assemble(text, job.output, job.object, errors, &structured)) {
             std::ofstream kept(job.output, std::ios::binary);
             if (kept) kept << text;
             std::fprintf(stderr, "%s: %s: the assembler refused the compiler's own output - the text is %s\n",
@@ -1447,6 +1453,8 @@ bool Driver::compile(const Job &job) {
                 std::fprintf(stderr, "  %s\n", e.c_str());
             return false;
         }
+        if (timing_)
+            std::fprintf(stderr, "%s: %s\n", job.input.c_str(), CoffEmitter::census(text, &structured).c_str());
     } else if (job.output.empty()) {
         std::cout << text;
     } else {

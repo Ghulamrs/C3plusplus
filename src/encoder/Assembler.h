@@ -13,12 +13,13 @@ class Assembler {
 public:
     Assembler(const std::string &input, const std::string &output, bool debug);
     bool run();
-    bool runText(const std::string &text);
+    // The text, with a line reading `\001k` standing for structured[k], an Instruction handed over already parsed (M4.4).
+    bool runText(const std::string &text, const std::vector<Instruction> *structured = 0);
     const std::vector<std::string> &errors() const;
     void fail(const std::string &why) { unit.errors.push_back(why); }
 
 private:
-    bool assemble(const std::vector<std::string> &lines);
+    bool assemble(const std::vector<std::string> &lines, const std::vector<Instruction> *structured);
     std::string input;
     std::string output;
     X64Target target;

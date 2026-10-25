@@ -47,6 +47,42 @@ static const RegName *find_reg(const Token &k)
     return 0;
 }
 
+void clearOperand(Operand &o)
+{
+    o.kind = O_IMM;
+    o.size = 0;
+    o.reg = -1;
+    o.base = -1;
+    o.index = -1;
+    o.scale = 1;
+    o.value = 0;
+    o.sym = -1;
+    o.label = false;
+    o.high = false;
+    o.rexonly = false;
+    o.wide = false;
+    o.ptr = false;
+    o.near = false;
+    o.short_ptr = false;
+    o.near_ptr = false;
+    o.seg = 0;
+    o.secrel = false;
+}
+
+bool registerNamed(const std::string &s, Operand &o)
+{
+    for (size_t i = 0; i < sizeof reg_names / sizeof reg_names[0]; i++) {
+        if (s != reg_names[i].name) continue;
+        o.kind = O_REG;
+        o.reg = reg_names[i].num;
+        o.size = reg_names[i].size;
+        o.high = reg_names[i].flag == 2;
+        o.rexonly = reg_names[i].flag == 1;
+        return true;
+    }
+    return false;
+}
+
 static bool is_word(const std::vector<Token> &t, size_t i, const char *w)
 {
     return i < t.size() && t[i].kind == T_NAME && upper(t[i].text) == w;
@@ -259,6 +295,20 @@ void X64Target::statement(Unit &u, std::vector<Token> &t)
         }
     }
     instruction(u, upper(t[0].text), ops);
+}
+
+// The symbols are referred to in operand order, as a parsed line refers to them left to right - a symbol's index
+// is its place in the object's table; the prefix byte goes in front as statement() puts it; a label operand
+// takes its symbol's type as operand() gives it, so a code label is near and a data label has its width.
+void X64Target::encode(Unit &u, const Instruction &ins)
+{
+    if (ins.prefix != 0 && u.cur() && u.cur()->code) u.emit8(ins.prefix);
+    std::vector<Operand> ops = ins.ops;
+    for (size_t i = 0; i < ops.size(); i++) {
+        if (i < ins.syms.size() && !ins.syms[i].empty()) ops[i].sym = u.ref(ins.syms[i]);
+        typed(u, ops[i]);
+    }
+    instruction(u, ins.name, ops);
 }
 
 bool X64Target::directive(Unit &u, std::vector<Token> &t)
@@ -947,24 +997,7 @@ void X64Target::data(Unit &u, const std::vector<Token> &t, size_t from, int widt
 
 bool X64Target::operand(Unit &u, const std::vector<Token> &t, size_t a, size_t b, Operand &o)
 {
-    o.kind = O_IMM;
-    o.size = 0;
-    o.reg = -1;
-    o.base = -1;
-    o.index = -1;
-    o.scale = 1;
-    o.value = 0;
-    o.sym = -1;
-    o.label = false;
-    o.high = false;
-    o.rexonly = false;
-    o.wide = false;
-    o.ptr = false;
-    o.near = false;
-    o.short_ptr = false;
-    o.near_ptr = false;
-    o.seg = 0;
-    o.secrel = false;
+    clearOperand(o);
 
     if (is_word(t, a, "SHORT") && b - a > 1) {
         o.short_ptr = true;

@@ -112,3 +112,68 @@ and names the text sites as measured by M4.2's inventory.
 
 *(Appended as each step lands: the commit, the gate rows with their numbers on the box they were measured on,
 what was found and not mended. Nothing above this line is edited; a correction is recorded below with its date.)*
+
+**M4.1, the library** (2026-10-25, Fable 5.1, branch `m4`, `d02b7ad`). masm `6bcb5d2`'s nine sources less `main.cpp`
+are `src/encoder/` under `namespace masm`: `AsmUnit.h/.cpp`, `Assembler.h/.cpp`, `AsmLexer.cpp`, `AsmExpr.cpp`,
+`X64.h`, `X64Parse.cpp`, `X64Encode.cpp`, `Coff.h/.cpp`, `AsmCodeView.cpp` - renamed where a basename collided with
+cxx3's (`lexer`, `codeview`, `main`) for `msvc/build.cmd`'s one object directory; block comments made `//` runs under
+the cap, six of them shortened by hand (the long forms are below, "Notes the cap would not hold"); `Assembler` owns
+its `X64Target` and `CoffWriter` by value - the two abstract interfaces had one implementation each - and reads text
+from memory (`runText`) as well as a file; no `new` in the library. Globbed by the Makefile, `msvc/build.cmd` and
+`ide/generate.py`, which now also lists `sema/` and `syntax/` - **the ide projects had neither since M2**, which is
+RIDE's Windows build's to notice. Mac: builds `-std=c++11 -Werror`; comment cap 0; memory gate held at 1,063.
+
+**M4.3, masm re-based** (2026-10-25, `Windows/MASM` branch `m4-rebase`, `920928c`; done before M4.2's gate because it
+is the library's own test). `src/` keeps `main.cpp` over `masm::Assembler`; `ENCODER` in the Makefile, a CMake cache
+variable and the `Encoder` MSBuild property name the library's directory, `../../C3++/src/encoder` by default. Mac,
+against the build of `6bcb5d2`: masm's `make test` passes as before - `enc.sh` 23 of 23 identical to ml64's bytes,
+`cpp11.sh` 4 of 4, `errors.asm`, `refuse/`, `deep.asm`, the eight jobs - and **the 48 objects its tests write are
+byte-identical** (`cmpdirs` over `build/test`). The Xcode project (`masm.xcodeproj`) lists the old files and is
+RIDE's `tools/make-projects.py`'s to rewrite.
+
+**M4.2, `CoffEmitter`, the text door** (2026-10-25, `8e6a564`). `src/backend/CoffEmitter.{h,cpp}`: the spelling's
+text assembled in process; a `Job` carries the object it writes; `assembleObjects` has nothing to run and `link()`'s
+per-file step nothing to spawn for the MASM spelling; the "cannot assemble x86_64-windows code on this machine"
+refusal is lifted for `-c` in that spelling, so the Mac and Linux write Windows objects; the ml64 fallback for a machine
+with no masm.exe is gone with the need for one (`masmReachable` deleted, `-masm=ml64` stays by name). A refusal of the
+compiler's own text names the library's line and leaves the text as the .s. `tools/coff-equal.sh` is the gate.
+Mac, against masm `6bcb5d2`: **-O0 and -O2, 1,342 pairs, 1,302 objects compared, 0 differ** (40 pairs refused on both
+sides - `.notarget`/`.nomasm` cases); **-g at -O0, 671 pairs, 626 objects, 0 differ**; against the re-based masm
+`920928c` at -O0, 671 pairs, 651 objects, 0 differ; `-c` twice on one file, the same bytes. LINK, built on the Mac,
+reads the three objects of `examples/` and resolves every symbol between them; **18 unresolved, every one the CRT's**
+(`??2@YAPEAX_K@Z`, `__CxxFrameHandler3`, `fwrite`, `mainCRTStartup`, ...) - this machine has no libcmt, so the link
+with the CRT and the run of `demo.exe` are **owed to the Windows box**. `make test` green, the emit golden recorded by
+a build of `b8290cb` reading 0 of 1,930 changed.
+
+## Notes the comment cap would not hold
+
+The library's three long comments, cut to three lines in `src/encoder/`; the full text is here, as CLAUDE.md keeps the
+optimizer's.
+
+**`AsmCodeView.cpp`, the layout of `.debug$S`** (the CodeView a debugger reads this object's code by, as ml64 /Zi and cl
+write it, for a linker's /DEBUG to make a PDB of). The `.debug$S` of the plain sections is the signature
+(CV_SIGNATURE_C13, 4), then subsections of {kind, length, data, padding to four}: DEBUG_S_SYMBOLS (0xF1) - S_OBJNAME
+and S_COMPILE3, then per PROC S_GPROC32 (S_LPROC32 for a private one), S_FRAMEPROC and S_END, the PROC's address a
+SECREL and a SECTION relocation on its symbol; DEBUG_S_LINES (0xF2) - per PROC, and per run of code outside every PROC,
+the offsets its lines start at, in a block per run of one file; DEBUG_S_FILECHKSMS (0xF4) - per file the offset of its
+name in the string table (no checksum); DEBUG_S_STRINGTABLE (0xF3) - "", then the file names, absolute. A PROC in a
+COMDAT section has its symbols and lines in a `.debug$S` of its own, associative to that section, as cl writes it: a
+linker keeping one copy of the COMDAT keeps that copy's lines. The lines are the .asm's own (/Zi, as ml64) or, in a
+file with `.LINE` directives, the source lines those name and nothing else - what a compiler's -g asks for. A source
+that writes a `.debug$S` of its own - a compiler describing its variables - keeps it, and only the lines, files and
+strings are added after what it wrote.
+
+**`X64Parse.cpp`, `jump_width` - the shalimar note.** The width of a JMP or Jcc: SHORT or NEAR PTR decide; otherwise
+short when the target is known to be in reach, near once it was ever found not to be (the choice only widens, pass by
+pass); a target not seen yet is assumed short on the first pass. A forward target's value is the previous pass's, so
+the distance to it is measured from where this jump was in that pass, not where it is now: with jumps before it
+widened in between, the two differ by their growth, and a jump in easy reach read as out of it and widened for good -
+shalimar's `if_chain` had 707 bytes of that, all Jcc rel32 that ml64 made rel8.
+
+**`X64Parse.cpp`, `source_line` - `.FILE` and `.LINE`.** The source a compiler assembled this file from, for the
+debugger - a directive of this assembler's own (ml64 has no words for it; documented in GRIDE's
+`docs\MASM_LINK_Reference.html`): `.FILE n, "path"` - source file n (1, 2, ...) is path; `.LINE line [, n]` - the
+instructions that follow come from that line of file n, the file of the `.LINE` before in the PROC when n is left
+out, else file 1. A `.LINE` stays in force until the next one or the PROC's ENDP, and the code after it starts a line
+entry even when it names the line already in force (a one-line function's body, after its prologue). A file that has
+any is described by them alone: the .asm's own lines are not recorded for it, though /Zi asked.

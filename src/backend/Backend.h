@@ -11,11 +11,14 @@
 #include <vector>
 
 class Source;
+namespace masm { struct Instruction; }
 
 class CodeGen : public Visitor {
 public:
     ~CodeGen() override = default;
     virtual void run(const Program &program) = 0;
+    // **The structural door** (M4.4): a spelling that hands instructions to the encoder library as data appends them here, leaving a `\001k` line in its text.
+    virtual void setStructured(std::vector<masm::Instruction> *to) { (void)to; }
 
     virtual void setLineSource(const Source *, const std::string &) {}
     // -O1 and -O2; a code generator with no optimizer takes 0 for either.

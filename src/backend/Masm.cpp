@@ -3,6 +3,7 @@
 #include "../Mangle.h"
 #include "../Name.h"
 #include "../optimizer/OptIr.h"
+#include "../encoder/X64.h"
 #include "CodeView.h"
 
 #include "../Source.h"
@@ -265,10 +266,131 @@ MasmSpelling::Rendered MasmSpelling::render(const Op &x) {
     return {};
 }
 
+// The operand kinds render() answers isMem for, which is what decides where a PTR goes.
+static bool memLike(Op::Kind k) { return k == Op::Mem || k == Op::Rip || k == Op::Tls; }
+
+// The register's MASM name in upper case, from the spelling's `%rax`.
+static std::string upperReg(Str r) {
+    std::string s(r.substr(1));
+    for (char &c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    return s;
+}
+
+// **render(), as data**: the same cases, the same arithmetic (`[rbp + d]` moves by the frame), the same bookkeeping
+// of what is referenced - so the preamble's EXTERN lines do not depend on which door an instruction took. The
+// segment bytes and the `[88]` of a Seg are what the text parser makes of `gs:[88]`; a label is an O_MEM the unit types.
+bool MasmSpelling::structuredOperand(const Op &x, masm::Operand &o, std::string &sym) {
+    masm::clearOperand(o);
+    sym.clear();
+    switch (x.kind) {
+    case Op::Reg:
+    case Op::Ind:
+        return masm::registerNamed(upperReg(x.text), o);
+    case Op::Imm: {
+        o.kind = masm::O_IMM;
+        if (x.immNumeric) {
+            o.value = static_cast<long long>(x.uimm);
+            if (x.immNeg) o.value = -o.value;
+            o.wide = x.uimm >= 0x100000000ULL;
+            return true;
+        }
+        // A textual immediate is one the walker spelled itself; only a plain decimal is a number to the MASM lexer.
+        const std::string t(x.text);
+        if (t.empty() || t.find_first_not_of("0123456789") != std::string::npos) return false;
+        o.value = std::strtoll(t.c_str(), nullptr, 10);
+        o.wide = static_cast<unsigned long long>(o.value) >= 0x100000000ULL;
+        return true;
+    }
+    case Op::Mem: {
+        o.kind = masm::O_MEM;
+        masm::Operand base;
+        if (!masm::registerNamed(upperReg(x.text), base) || base.size != 64) return false;
+        o.base = base.reg;
+        long long d = x.hasDisp ? x.disp : 0;
+        if (std::string(x.text.substr(1)) == "rbp") d += frameSize_;
+        if (x.scale != 0) {
+            masm::Operand index;
+            if (!masm::registerNamed(upperReg(x.index), index) || index.size != 64 || index.reg == 4) return false;
+            o.index = index.reg;
+            o.scale = x.scale;
+        }
+        o.value = d;
+        return true;
+    }
+    case Op::Rip:
+    case Op::Lbl: {
+        std::string s(x.text);
+        referenced_.insert(s);
+        o.kind = masm::O_MEM;
+        o.label = true;
+        sym = mangle(s);
+        return true;
+    }
+    case Op::Seg: {
+        const std::string r(x.text.substr(1));
+        o.kind = masm::O_MEM;
+        o.size = 64;
+        o.ptr = true;
+        o.seg = r == "gs" ? 0x65 : r == "fs" ? 0x64 : 0;
+        o.value = x.disp;
+        return o.seg != 0;
+    }
+    case Op::Tls: {
+        std::string s(x.text);
+        referencedData_.insert(s);
+        masm::Operand base;
+        if (!masm::registerNamed(upperReg(x.index), base) || base.size != 64) return false;
+        o.kind = masm::O_MEM;
+        o.base = base.reg;
+        o.secrel = true;
+        sym = mangle(s);
+        return true;
+    }
+    }
+    return false;
+}
+
+// The PTR width the text would have carried goes on the operand (`ptr`, so a label's own type does not override it);
+// the operands are in MASM's order, the destination first, as the parse would refer to their symbols.
+bool MasmSpelling::structuredIns(const std::string &m, const char *masmName, int width, const Op *a, const Op *b) {
+    if (structured_ == nullptr) return false;
+    masm::Instruction ins;
+    std::string name = masmName;
+    ins.prefix = 0;
+    if (name.compare(0, 4, "rep ") == 0) { ins.prefix = 0xF3; name = name.substr(4); }
+    for (char &c : name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    ins.name = name;
+    const Op *order[2] = { b, a };    // b is the destination, written first; a alone is the one operand
+    if (b == nullptr) { order[0] = a; order[1] = nullptr; }
+    for (int i = 0; i < 2; i++) {
+        if (order[i] == nullptr) continue;
+        masm::Operand o;
+        std::string sym;
+        if (!structuredOperand(*order[i], o, sym)) return false;
+        ins.ops.push_back(o);
+        ins.syms.push_back(sym);
+    }
+    if (width != 0) {
+        // One memory operand takes the PTR, as render's isMem decides: the source where it is memory, else the destination - but not movsxd's.
+        std::size_t at = ins.ops.size();
+        if (b != nullptr && memLike(a->kind)) at = 1;
+        else if (b != nullptr && memLike(b->kind) && m != "movsxd") at = 0;
+        else if (b == nullptr && memLike(a->kind)) at = 0;
+        if (at < ins.ops.size() && !ins.ops[at].ptr) {
+            ins.ops[at].size = width * 8;
+            ins.ops[at].ptr = true;
+        }
+    }
+    structured_->push_back(ins);
+    o_ += "  \001"; appendNum(o_, static_cast<long long>(structured_->size() - 1)); o_ += '\n';
+    return true;
+}
+
 void MasmSpelling::ins(const std::string &m) {
     afterCall_ = false;
     const Rule *r = ruleFor(m);
     if (r == nullptr) give_up(m, "an instruction this spelling does not know");
+    if (structuredIns(m, r->masm, r->width, nullptr, nullptr)) return;
     o_ += "  "; o_ += r->masm; o_ += '\n';
 }
 
@@ -276,6 +398,7 @@ void MasmSpelling::ins(const std::string &m, const Op &a) {
     afterCall_ = m == "call";
     const Rule *r = ruleFor(m);
     if (r == nullptr) give_up(m, "an instruction this spelling does not know");
+    if (structuredIns(m, r->masm, r->width, &a, nullptr)) return;
     Rendered x = render(a);
     std::string t = x.text;
     if (x.isMem && r->width != 0) t = std::string(ptrFor(r->width)) + t;
@@ -322,10 +445,17 @@ void MasmSpelling::ins(const std::string &m, const Op &a, const Op &b) {
     if (r == nullptr) give_up(m, "an instruction this spelling does not know");
     if (!comdat_ && (a.kind == Op::Tls || b.kind == Op::Tls)) { ml64Tls(m, a, b); return; }
 
+    // Both checks are about the operands' kinds, so both doors meet them before either is taken.
+    if (r->width == 0 && memLike(b.kind) && a.kind == Op::Imm)
+        give_up(m, "a store of an immediate with no width to infer");
+    const bool xmm = (a.kind == Op::Reg && a.text.substr(1).startsWith("xmm")) ||
+                     (b.kind == Op::Reg && b.text.substr(1).startsWith("xmm"));
+    const char *masmName = m == "movq" && xmm ? "movq" : r->masm;
+    if (structuredIns(m, masmName, r->width, &a, &b)) return;
+
     Rendered src = render(a), dst = render(b);
 
-    std::string name = r->masm;
-    if (m == "movq" && (src.isXmm || dst.isXmm)) name = "movq";
+    std::string name = masmName;
 
     std::string sTxt = src.text, dTxt = dst.text;
     if (r->width != 0) {
@@ -333,9 +463,6 @@ void MasmSpelling::ins(const std::string &m, const Op &a, const Op &b) {
         else if (dst.isMem && m != "movsxd")
             dTxt = std::string(ptrFor(r->width)) + dTxt;
     }
-
-    if (r->width == 0 && dst.isMem && src.isImm)
-        give_up(m, "a store of an immediate with no width to infer");
 
     o_ += "  "; o_ += name; o_ += ' '; o_ += dTxt; o_ += ", "; o_ += sTxt; o_ += '\n';
 }
@@ -400,35 +527,35 @@ void MasmSpelling::prologue(int frameSize, const std::string &lsda, int outgoing
     frameSize_ = frameSize;
     const std::string m = mangle(fnName_);
 
-    // **The frame pointer is taken *after* the allocation on this target**, which
-    // is the whole difference from the Itanium prologue: every displacement in an
-    // FH3 table is an unsigned offset up from the establisher. Measured against cl.
-    o_ += "  push rbp\n";
+    // **The frame pointer is taken *after* the allocation on this target**, which is the whole difference from the
+    // Itanium prologue: every displacement in an FH3 table is an unsigned offset up from the establisher. Measured
+    // against cl. Each instruction goes through ins(), so the structural door (M4.4) carries it too; the text is the same.
+    ins("push", reg("%rbp"));
     o_ += "$LNpush$" + m + ":\n";
     // rbx as a second pushed nonvolatile, the realignment after the prologue - see CoffSpelling.
-    if (realign > 0) o_ += "  push rbx\n$LNpushb$" + m + ":\n";
+    if (realign > 0) { ins("push", reg("%rbx")); o_ += "$LNpushb$" + m + ":\n"; }
     // A frame of a page or more is probed first - cl's rule, measured: 4056 is
     // a plain sub, 4120 calls __chkstk. Unprobed, the first write at the bottom
     // skips the guard page and is an access violation, not a stack overflow.
     if (frameSize >= 4096) {
-        o_ += "  mov eax, "; appendNum(o_, frameSize);
-        o_ += "\n  call __chkstk\n  sub rsp, rax\n";
-        referenced_.insert("__chkstk");
+        ins("movl", imm(frameSize), reg("%eax"));
+        ins("call", lbl("__chkstk"));
+        ins("sub", reg("%rax"), reg("%rsp"));
     } else if (frameSize > 0) {
-        o_ += "  sub rsp, "; appendNum(o_, frameSize); o_ += '\n';
+        ins("sub", imm(frameSize), reg("%rsp"));
     }
     o_ += "$LNalloc$" + m + ":\n";
-    o_ += "  mov rbp, rsp\n";
+    ins("mov", reg("%rsp"), reg("%rbp"));
     o_ += "$LNfp$" + m + ":\n";
     // **The callee-saved registers an optimizer took, stored up from rbp**, as
-    // the COFF prologue does: each slot is `disp` below the frame's top.
+    // the COFF prologue does: each slot is `disp` below the frame's top - which render() adds for an rbp operand.
     for (std::size_t i = 0; i < saves_.size(); ++i) {
-        o_ += "  mov QWORD PTR [rbp+" + std::to_string(frameSize + saves_[i].disp) + "], " +
-              saves_[i].reg.substr(1) + "\n";
+        ins("movq", reg(saves_[i].reg), mem(saves_[i].disp, "%rbp"));
         o_ += "$LNsave" + std::to_string(i) + "$" + m + ":\n";
     }
     o_ += "$LNprolog$" + m + ":\n";
-    if (realign > 0) o_ += "  and rsp, " + std::to_string(-realign) + "\n  mov rbx, rsp\n";
+    if (realign > 0) { ins("and", imm(-realign), reg("%rsp")); ins("mov", reg("%rsp"), reg("%rbx")); }
+    afterCall_ = false;
 
     // Last instruction first, which is the order an unwinder undoes them in:
     // the saves, SET_FPREG, the allocation, the push.

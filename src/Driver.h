@@ -48,6 +48,7 @@ private:
     int optimize_ = 0;
     bool forSize_ = false;      // -Os: -O1, the smaller code chosen where a backend offers the choice
     bool objectOnly_ = false;
+    bool coffText_ = false;      // -coff=text: every instruction through the text door, the control for M4.4's gate
     unsigned threads_ = 0;
     // **Which assembler the Windows target is written for.**
     Syntax syntax_ = Syntax::Gnu;

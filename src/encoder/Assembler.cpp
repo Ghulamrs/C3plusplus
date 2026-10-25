@@ -1,5 +1,6 @@
 #include "Assembler.h"
 
+#include <cstdlib>
 #include <fstream>
 
 namespace masm {
@@ -28,11 +29,11 @@ bool Assembler::run()
             text.erase(text.size() - 1);
         lines.push_back(text);
     }
-    return assemble(lines);
+    return assemble(lines, 0);
 }
 
 // The text as a compiler holds it before writing a .s: split at its line ends, a CR before one dropped.
-bool Assembler::runText(const std::string &text)
+bool Assembler::runText(const std::string &text, const std::vector<Instruction> *structured)
 {
     std::vector<std::string> lines;
     size_t at = 0;
@@ -44,12 +45,21 @@ bool Assembler::runText(const std::string &text)
         lines.push_back(text.substr(at, end - at));
         at = nl + 1;
     }
-    return assemble(lines);
+    return assemble(lines, structured);
+}
+
+// A line standing for a structured instruction: blanks, \001, its index; -1 for an ordinary line.
+static long structuredIndex(const std::string &line)
+{
+    size_t i = 0;
+    while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) i++;
+    if (i >= line.size() || line[i] != '\001') return -1;
+    return atol(line.c_str() + i + 1);
 }
 
 // **Passes until the layout settles**: the first sees a forward jump as short and a forward label as untyped, the
 // next knows every label from the pass before, one more confirms nothing moved; a jump only grows, so this ends.
-bool Assembler::assemble(const std::vector<std::string> &lines)
+bool Assembler::assemble(const std::vector<std::string> &lines, const std::vector<Instruction> *structured)
 {
     std::vector<Token> tokens;
     for (int pass = 1; ; pass++) {
@@ -58,6 +68,15 @@ bool Assembler::assemble(const std::vector<std::string> &lines)
         for (size_t i = 0; i < lines.size() && !target.finished(); i++) {
             unit.line = (int)i + 1;
             std::string err;
+            const long k = structured ? structuredIndex(lines[i]) : -1;
+            if (k >= 0) {
+                if ((size_t)k >= structured->size()) { unit.error("no such structured instruction"); continue; }
+                const int sec = unit.current;
+                const unsigned long at = sec >= 0 ? (unsigned long)unit.sections[sec].bytes.size() : 0;
+                target.encode(unit, (*structured)[(size_t)k]);
+                unit.note_line(sec, at);
+                continue;
+            }
             if (!split_line(lines[i], tokens, err)) {
                 unit.error(err);
                 continue;
