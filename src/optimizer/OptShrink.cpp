@@ -37,7 +37,7 @@ bool shorter(Instr &i, RegSet wide, bool flagsLive) {
         return true;
     }
     if (is(i.m, {"movzbq", "movzwq"}) && reg64(i.b)) {
-        i.m[i.m.size() - 1] = 'l';
+        i.m = i.m.substr(0, i.m.size() - 1) + "l";
         i.b.reg.width = 4;
         return true;
     }

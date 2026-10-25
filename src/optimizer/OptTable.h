@@ -4,6 +4,7 @@
 // Each mnemonic has a kind, which says how `effectsOf` reads it, a set of flags the passes ask about, and the width its suffix names.
 // The table records what the passes recognised before it existed, quirks included: `addq` names a width but is not arithmetic here, `sal` is a shift but not arithmetic, `testl` reads only through its operands but is not marked so. Each is a candidate for a later change; none is one now.
 
+#include <cstddef>
 #include <string>
 
 namespace opt {
@@ -46,6 +47,42 @@ struct Opcode {
 
 // The entry for a mnemonic; an unknown one gets `Unknown`, with the flags a prefix family carries (mov*, set*, cvt*, f*) so the passes see it as before.
 const Opcode &opcodeOf(const std::string &m);
+
+// **A mnemonic as an index into the one table** (M3a.1, M3-IR.md 2.3): a table row's index, or one interned after the
+// rows for a mnemonic only a prefix family or nothing catches, its spelling kept and counted (CPP11_MIR_STRICT=1). It
+// reads like the string it was, so the passes' tests by spelling stand until M3a.3.
+class OpId {
+public:
+    OpId() : id_(0) {}                  // the empty mnemonic
+    OpId(const std::string &m);         // a spelling is interned where it is written
+    OpId(const char *m);
+    const std::string &name() const;
+    const Opcode &row() const;
+    bool listed() const;                // a row of the table's own, not a prefix family's or none
+    unsigned index() const { return id_; }
+    operator const std::string &() const { return name(); }
+    std::size_t size() const { return name().size(); }
+    bool empty() const { return name().empty(); }
+    char operator[](std::size_t i) const { return name()[i]; }
+    char back() const { return name().back(); }
+    int compare(std::size_t pos, std::size_t n, const char *s) const { return name().compare(pos, n, s); }
+    std::string substr(std::size_t pos, std::size_t n = std::string::npos) const { return name().substr(pos, n); }
+private:
+    unsigned id_;
+};
+inline bool operator==(const OpId &a, const OpId &b) { return a.index() == b.index(); }
+inline bool operator!=(const OpId &a, const OpId &b) { return a.index() != b.index(); }
+inline bool operator==(const OpId &a, const char *b) { return a.name() == b; }
+inline bool operator!=(const OpId &a, const char *b) { return a.name() != b; }
+inline bool operator==(const char *a, const OpId &b) { return b.name() == a; }
+inline bool operator!=(const char *a, const OpId &b) { return b.name() != a; }
+inline bool operator==(const OpId &a, const std::string &b) { return a.name() == b; }
+inline bool operator!=(const OpId &a, const std::string &b) { return a.name() != b; }
+inline bool operator==(const std::string &a, const OpId &b) { return b.name() == a; }
+inline bool operator!=(const std::string &a, const OpId &b) { return b.name() != a; }
+inline std::string operator+(const std::string &a, const OpId &b) { return a + b.name(); }
+inline std::string operator+(const char *a, const OpId &b) { return a + b.name(); }
+inline const Opcode &opcodeOf(const OpId &m) { return m.row(); }
 
 // The move families the passes recognise by spelling: a plain copy at eight
 // bytes (mov, movq), at four too (movl), and every plain width (movw, movb).

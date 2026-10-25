@@ -142,7 +142,7 @@ void dumpStream(std::ostream &o, Function &fn) {
         o << (e.dead ? "  -" : "   ") << k << "\t";
         switch (e.kind) {
         case Entry::Ins:
-            o << e.ins.m;
+            o << e.ins.m.name();
             if (e.ins.operands >= 1) o << " " << operandText(e.ins.a);
             if (e.ins.operands >= 2) o << ", " << operandText(e.ins.b);
             break;

@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstdio>
+#include <cstdlib>
 #include <utility>
 
 using opt::Entry;
@@ -28,6 +30,11 @@ void Optimizer::instruction(const std::string &m, int operands, const Op *a, con
     }
     Entry e;
     e.ins.m = m;
+    // CPP11_MIR_STRICT=1 names every mnemonic held that the table does not list: the measure of its completeness,
+    // which is also M4's list of what the encoder must take (M3-IR.md 2.6).
+    static const bool strict = std::getenv("CPP11_MIR_STRICT") != nullptr;
+    if (strict && !e.ins.m.listed())
+        std::fprintf(stderr, "mir-strict: '%s' is not in the opcode table, in %s\n", m.c_str(), fn_.name.c_str());
     e.ins.operands = operands;
     if (a) e.ins.a = opt::Operand::from(*a);
     if (b) e.ins.b = opt::Operand::from(*b);

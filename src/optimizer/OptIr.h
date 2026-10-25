@@ -5,6 +5,7 @@
 // kept in one ordered stream with the labels and the events between them.
 
 #include "OptCore.h"
+#include "OptTable.h"
 #include "../backend/Spelling.h"
 
 #include <cstdint>
@@ -65,7 +66,7 @@ struct Operand {
 };
 
 struct Instr {
-    std::string m;
+    OpId m;                   // an index into the opcode table, never a string (M3a.1)
     Operand a, b;             // AT&T order: a is the source, b the destination
     int operands;
     // A call's argument registers as the walker placed them; without the
@@ -74,9 +75,8 @@ struct Instr {
     bool exactArgs = false;
 
     // C++11 has no aggregate with a member initialiser, so the braces call this.
-    Instr(std::string m = std::string(), Operand a = Operand(), Operand b = Operand(),
-          int operands = 0)
-        : m(std::move(m)), a(a), b(b), operands(operands) {}
+    Instr(OpId m = OpId(), Operand a = Operand(), Operand b = Operand(), int operands = 0)
+        : m(m), a(a), b(b), operands(operands) {}
 };
 
 // **A spelling call that is not an instruction, held as data** (M3a.1, doc-cxx3/M3-IR.md 2.4): its kind and its
