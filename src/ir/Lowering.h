@@ -9,6 +9,7 @@
 #include "../syntax/Syntax.h"
 #include "../Type.h"
 
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -38,6 +39,8 @@ public:
     Program &program() const { return program_; }
     // One function's typed `function` node lowered into the module, or none with the reason the subset does not reach it.
     FuncId lower(sema::TypedId fn, const FunctionFacts &facts, std::string &why);
+    // Which classes a constructor builds - the parser's to say, asked by the glue (M3b.2).
+    void setConstructed(std::function<bool(const Type *)> f) { constructed_ = f; }
 private:
     struct Outside { std::string why; explicit Outside(const std::string &w) : why(w) {} };
     struct Val { ValueId v; TypeId type; Val() {} Val(ValueId a, TypeId t) : v(a), type(t) {} };
@@ -116,6 +119,9 @@ private:
     TypeId ptrdiffType() const;
     static bool scalar(const Type &t);
     static bool referable(const Type &t);
+    bool plainClass(const Type &t) const;
+    void classLocal(sema::TypedId var, ValueId slot, const Type &t);
+    void copyObject(ValueId to, ValueId from, const Type &t);
     static bool scalarArithmetic(const Type &t);
     static long long normalise(long long v, const Type &t, const Target &target);
 
@@ -132,6 +138,7 @@ private:
     TypeId returns_;
     ValueId this_;          // a member function's `this`, none in any other
     TypeId thisType_;
+    std::function<bool(const Type *)> constructed_;
     BlockId returnBlock_;
     std::map<std::uint32_t, std::pair<ValueId, TypeId> > locals_;    // a `var` node -> its alloca and declared type
     std::vector<Loop> loops_;

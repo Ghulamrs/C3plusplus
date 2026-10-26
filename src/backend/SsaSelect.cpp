@@ -153,6 +153,20 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         store(typeOf(f, v));
         return;
     }
+    case ir::Op::Memcpy:
+        // The walker's block copy: from (%rax) to (scratch).
+        ssaLoad(f, f.operand(i, 1));
+        a_->ins("mov", vslot(f.operand(i, 0)), reg(abi_.scratch));
+        copyBlock(static_cast<int>(i.k));
+        return;
+    case ir::Op::Memset: {
+        ssaLoad(f, f.operand(i, 0));
+        long long off = 0;
+        for (; off + 8 <= i.k; off += 8) a_->ins("movq", immText("0"), mem(static_cast<int>(off), "%rax"));
+        for (; off + 4 <= i.k; off += 4) a_->ins("movl", immText("0"), mem(static_cast<int>(off), "%rax"));
+        for (; off < i.k; off++) a_->ins("movb", immText("0"), mem(static_cast<int>(off), "%rax"));
+        return;
+    }
     case ir::Op::Gep:
         ssaLoad(f, f.operand(i, 0));
         if (i.count == 2) a_->ins("add", vslot(f.operand(i, 1)), reg("%rax"));

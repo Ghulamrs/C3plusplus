@@ -262,6 +262,7 @@ void Parser::topLevel(Program &program) {
     // A variable at namespace scope is a `var` node over its initialiser; a function records its own definition.
     if (d.type != nullptr && !d.name.empty()) {
         global.d = &d;
+        global.form = initFormAhead();
         global.function = (peek().is("(") && !atParenInitialiser()) || d.paramsAt != 0 || d.type->isFunction();
     }
     // A closure's `operator()` reads the enclosing function's const locals for their values,

@@ -16,6 +16,64 @@ void Lowering::outside(const std::string &why) { throw Outside(why); }
 
 bool Lowering::scalarArithmetic(const Type &t) { return t.isArithmetic() && !t.isScopedEnumeration(); }
 bool Lowering::scalar(const Type &t) { return scalarArithmetic(t) || t.isPointer(); }
+// [class]/6 and [basic.types]/9 as far as the lowering needs them: a complete class with no vptr, no virtual base, no
+// destructor, no copy of its own and no constructor - an object of it is its bytes, made and copied as such.
+bool Lowering::plainClass(const Type &t) const {
+    if (!t.isStructOrUnion() || !t.isComplete()) return false;
+    const Type &c = *t.unqualified();
+    return !c.polymorphic() && !c.hasVirtualBase() && !c.hasDestructor() && !c.nonTrivialCopy() &&
+           !(constructed_ && constructed_(&c));
+}
+
+// A plain class's local from its form ([dcl.init]): default-initialised, it is left as it is; `{}` zeroes it;
+// a braced list of scalars stores each member in order and zeroes the rest; `= o` or `(o)` copies o's bytes.
+void Lowering::classLocal(sema::TypedId var, ValueId slot, const Type &t) {
+    const sema::TypedNode &v = tree_.node(var);
+    if (tree_.resolution(var).what == sema::Resolution::Call) outside("a local a constructor builds");
+    const long long size = t.size(target_);
+    switch (v.initForm) {
+    case 0:
+        if (v.count != 0) outside("a class local's initialiser of no form");
+        return;
+    case 3: {
+        const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, slot));
+        at(z).k = size;
+        return;
+    }
+    case 1: {
+        if (v.count != 1 || !isLvalueNode(child(var, 0))) outside("a class local initialised by what is not an object");
+        const Val o = lvalue(child(var, 0));
+        if (T(o.type).unqualified() != t.unqualified()) outside("a class local initialised from another type");
+        copyObject(slot, o.v, t);
+        return;
+    }
+    default: {
+        const std::vector<Member> &ms = t.unqualified()->members();
+        if (!t.unqualified()->bases().empty() || v.count > ms.size()) outside("a braced list for a class with bases or more values than members");
+        for (std::size_t i = 0; i < ms.size(); i++)
+            if (!scalar(*ms[i].type) || ms[i].width != 0 || ms[i].anonUnion != nullptr || ms[i].type->isX87(target_))
+                outside("a braced list for a member that is not a plain scalar");
+        const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, slot));
+        at(z).k = size;
+        for (std::uint32_t i = 0; i < v.count; i++) {
+            const TypeId mt = tid(*ms[i].type->unqualified());
+            const InstId g = add(Op::Gep, tid(*types_.pointerTo(&T(mt))), std::vector<ValueId>(1, slot));
+            at(g).k = ms[i].offset;
+            store(result(g), exprTo(child(var, i), mt).v);
+        }
+        return;
+    }
+    }
+}
+
+void Lowering::copyObject(ValueId to, ValueId from, const Type &t) {
+    std::vector<ValueId> ops;
+    ops.push_back(to);
+    ops.push_back(from);
+    const InstId c = add(Op::Memcpy, TypeId(), ops);
+    at(c).k = t.size(target_);
+}
+
 // What a reference may refer to here: a scalar, or a complete class, which a reference only ever names by its address.
 bool Lowering::referable(const Type &t) { return scalar(t) || (t.isStructOrUnion() && t.isComplete()); }
 
@@ -510,6 +568,8 @@ void Lowering::declaration(sema::TypedId id) {
             if (!t.pointee()->isComplete() || !scalar(*t.pointee()) || t.pointee()->isX87(target_) || t.length() <= 0)
                 outside("an array of '" + t.pointee()->describe() + "'");
             slotType = tid(t);
+        } else if (plainClass(t)) {
+            slotType = tid(*t.unqualified());
         } else {
             if (!scalar(t) || t.isX87(target_)) outside("a local of type '" + t.describe() + "'");
             slotType = tid(t);
@@ -551,6 +611,7 @@ void Lowering::declaration(sema::TypedId id) {
             continue;
         }
         if (t.isArray()) { localArray(var, slot, slotType); continue; }
+        if (t.isStructOrUnion()) { classLocal(var, slot, t); continue; }
         if (v.count > 1) outside("a var of " + std::to_string(v.count) + " parts");
         if (v.count == 0) continue;
         store(slot, exprTo(child(var, 0), slotType).v);
@@ -1269,6 +1330,13 @@ Lowering::Val Lowering::assign(sema::TypedId id) {
     if (!isLvalueNode(tn)) outside("an assignment to what is not an object");
     const Val target = lvalue(tn);
     const Type &t = T(target.type);
+    // [class.copy]/18: a plain class's implicit copy assignment copies its bytes; a written operator= is a call.
+    if (op == "=" && plainClass(t) && !t.isConst() && tree_.resolution(id).what != sema::Resolution::Call && isLvalueNode(child(id, 1))) {
+        const Val from = lvalue(child(id, 1));
+        if (T(from.type).unqualified() != t.unqualified()) outside("a class assigned from another type");
+        copyObject(target.v, from.v, t);
+        return target;
+    }
     if (!scalar(t) || t.isConst() || t.isX87(target_)) outside("an assignment to what is not a scalar object");
     Val value;
     if (op == "=") {

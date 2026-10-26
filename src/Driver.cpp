@@ -1352,6 +1352,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     sema::Typer typer(parser);
     const sema::Census c = sema::Typer::census(parser, program);
     ir::Lowering lowering(typer.tree(), parser.syntaxTree(), types, target, program, into);
+    lowering.setConstructed([&typer](const Type *cls) { return typer.constructed(cls); });
     std::map<std::string, int> reasons;
     int lowered = 0;
     for (std::size_t r = 0; r < c.bodies.size(); r++) {

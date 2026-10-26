@@ -71,6 +71,7 @@ struct TypedNode {
     bool castXvalue;            // such a reference cast's operand is an xvalue: `static_cast<T &&>`
     Folded folded;
     std::uint32_t literal;
+    std::uint8_t initForm;      // a `var`'s initialiser form: 0 none, 1 `= e` or `(e)`, 2 a braced list, 3 empty braces
 };
 
 class TypedTree {
@@ -85,6 +86,7 @@ public:
     void setResolution(TypedId id, const Resolution &r);
     void setCast(TypedId id, TypeId to, bool xvalue);
     void setFolded(TypedId id, long long value, TypeId type);
+    void setInitForm(TypedId id, int form) { nodes_[id.v].initForm = static_cast<std::uint8_t>(form); }
     // A string literal's token comes with the label the program's data holds its bytes under (M3b.1: the lowering's `addr`).
     void setLiteral(TypedId id, const Token &token, const std::string &label = std::string());
     const Resolution &resolution(TypedId id) const { return resolutions_[nodes_[id.v].resolved]; }
@@ -124,7 +126,8 @@ public:
     bool wrappedBody(const std::string &symbol) const;
     // A body read in a class's, a namespace's or a template's scope (Parser::scopedFunctions_), which the adapter left alone too.
     int scopedBody(syntax::NodeId fn) const;
-    bool packBody(const std::string &symbol) const;   // a pack was expanded in the body: one node stands for its members   // Parser::scopedFunctions_'s bits, 0 for a body at file scope
+    bool packBody(const std::string &symbol) const;
+    bool constructed(const Type *cls) const;          // a class some constructor builds, written or implicit   // a pack was expanded in the body: one node stands for its members   // Parser::scopedFunctions_'s bits, 0 for a body at file scope
     // Whether the function of this symbol is a template specialization (Signature::fromTemplate): its body is a replay.
     bool fromTemplate(const std::string &symbol) const;
     // The census's counts as the report spells them, "functions=N bodies=K synthesised=M", and the kinds behind M.
