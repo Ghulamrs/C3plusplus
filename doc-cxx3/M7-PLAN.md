@@ -258,3 +258,70 @@ within each file after the inline ladder left `ParserExpr.cpp`, then checked by 
 memory gate held. Not run: the Linux box, tms6747, Windows - all owed to M7.4.
 **Not done in M7.2**: the refusal probes of M7.3; the `.c` leg of `tests/open.sh`; the Linux, tms6747 and
 Windows legs; `-g`'s language bytes.
+
+**M7.3, the refusals** (2026-10-26, Fable 5.1, Mac; `234601d` on `m7b`, branched from `1b350ae` on `m3-line`, the
+REF rebuilt there at `~/cxxopt-build/ref-m7b-src/cxx3.exe` and the golden re-recorded from it, 1,933 files). Seven
+refusals through `SemaC::refuseCxxOnly`, each guarded by the dialect at the site "For the implementer" named: a
+reference at the declarator's `&`/`&&` (covering a parameter and a local; the conversion-function site at
+`ParserType.cpp:2464` is unreachable in C90, `operator` being a name there); a function declared in a struct on
+`memberIsFunction` - `int (*fp)(int);` passes, the probe holds one before the function; a member initialiser at the
+member loop's `=`/`{`; a default argument at its three sites (the definition's parameter loop, `parameterTypes`,
+`declareConstructor`); a functional cast at the head of `Parser::functionalCast`; a function try block where a body
+begins with the identifier `try` (`Token::keywordAsName`), which had been "expected '{'". Nine probes in
+`tests/c90/refused/`, each checked first - `clang -std=c89 -pedantic-errors` refuses all nine, `clang++ -std=c++11`
+accepts all nine - and each refused with its row's words. `tests/c90.sh` on the Mac: **446 passed, 0 failed, 9 refused
+as recorded**, at -O0 and at -O2 (437 programs plus the nine). c90 1.4's probe sets through `cxx3 -std=c90`: 32 of 34
+(K&R, trigraphs refused) and 9 of 9, as at M7.2. `tests/open.sh` has a `.c` leg and the five `c90-*.c` entries, each
+printing 3 under `clang -std=c89 -pedantic-errors -w` and refused here: 11 open, 0 closed. The gate: `identical.sh`
+6,048 compared, 9 differ, the known nine; golden 0 of 1,933; `tools/exclusions --check` 126 sites 0/0 (32 citations
+re-paired by line order - every change a pure insertion, so each stays about its line); comment cap 0; memory gate held.
+
+**M7.4, the other targets** (2026-10-26, Fable 5.1). The `-g` language bytes: `Program::dialect`, set by the parser,
+read by `X86_64Linux::run`, `Arm64Darwin::run` (and the MASM generator through its base) into `writeDwarf`'s new last
+parameter and `writeCodeView`'s language - measured on `ar_index.c`: DWARF `.byte 1` (`DW_LANG_C89`) on x86_64-linux
+and arm64-darwin where the same source as C++ gives `.byte 4`; CodeView's S_COMPILE3 `.long 0` (C) in both Windows
+spellings where C++ gives `.long 1`; tms6747 compiles under `-g` with its `.dwpsn` lines (cl6x's record carries no
+language). `Typing.cpp`'s two `Kind::Bool` sites (`!`, and the comparisons with `&&`/`||`) ask
+`p_.rules().truthType()` - two lines, named here for `m3b0`. **Found by the Windows leg and mended**: a `volatile`
+object with external linkage was refused for x86_64-windows in C90 too, by the refusal written for cl's decorated name
+(`?g@@3HC`) - a C name is its own symbol, so `refuseVolatileWithLinkage` asks `rules().mangles()` first
+(`qs_volatile`); and `bf_types` - `unsigned long l : 40` - does not fit a 32-bit long, so `-arch x86_64-windows`
+honours the lp64 list as tms6747 does (that list is about a 64-bit long, which the Windows target has not).
+Mac: `tests/c90.sh -arch x86_64-windows` **412 passed, 0 failed, 26 skipped for a 64-bit long** at -O0 and at -O2 -
+the MASM spelling assembled in process, the GNU spelling by the Mac's clang. `tools/wine-c90.sh` is the run leg's
+stand-in, in `tools/wine-cases.sh`'s shape: the cases built here by `cxx3 -std=c90 -c -arch x86_64-windows`, linked
+on the Linux box by the project's LINK against xwin's CRT and run under Wine 6.0.3, against the box's gcc.
+**Linux box, the leg** (`~/m7b-leg`, g++ 11.5, the tree built there, 2026-10-26 10:04-10:20 UTC, then re-run on
+tms6747 after the two harness mends below): `tests/c90.sh` **447 passed, 0 failed** at -O0 and at -O2 (x86_64-linux;
+`pp_predefined` passes on its own host); `tests/c90.sh -arch tms6747` **411 passed, 0 failed, 27 skipped for a 64-bit
+long at -O0**, every pass also on sim6747 against RTS6x's `rts6x.lib` through asm6x and lnk6x, and **410 passed, 1
+failed, 27 skipped at -O2**; `tests/open.sh` 11 open, the five `c90-*.c` among them; `run.sh` 991 / 0 at -O0 beside it.
+Two of the three first-run failures were the harness's and are mended: `file_streams` writes a line to stderr, which
+vm6747 and sim6747 both put on their own stderr, and the harness had merged it into stdout where the reference's was
+dropped - both are captured apart now, as the host leg captures them; and `multi.examples` prints `sizeof(long)` and
+64-bit `long` values, so it is in `tests/c90/tms6747-lp64.txt` (the only multi directory the list names).
+**The third is a wrong answer and is not mended, being in `src/optimizer/`**: `lp_break_while` - `int i = 0; while (1)
+{ i = i + 1; if (i == 3) break; } return i;` - exits 1 on vm6747 at -O2 where every other level and target exits 3.
+In C90 the comparison is an `int`, so the condition is `CMPEQ 3, A10, A4; CMPEQ 0, A4, A1; [!A1] B end`, and the
+`while (1)`'s back edge then comes out `[!A1] BNOP begin` too - the constant-true test folded away and the branch left
+under the `if`'s predicate, so the first turn falls through. `CPP11_C6XSKIP=arms` (`predicateArms`) mends it; every
+other pass skipped alone leaves it wrong. **It is reachable from C++**: `int b = (i == 3); if (b) break;` in a `while
+(1)` gives the same shape and the same wrong 1 at -O2 (`for (;;)` is right), so it is a pre-existing C6000 optimizer
+defect that c90's suite is the first to reach - named here and in the handover for the owner of `src/optimizer/`, the
+reproduction being those two programs on the box's vm6747. The -O2 count stands at 410 / 1 rather than hiding it in a list.
+**The Windows run leg, through the Wine stand-in** (`tools/wine-c90.sh`, the objects built on the Mac by `cxx3 -std=c90
+-c -arch x86_64-windows`, linked on the box by the project's LINK against xwin's CRT, run under Wine 6.0.3 in `c3wine`
+against the box's gcc): **404 passed, 0 failed at -O0 and at -O2**, of the 438 programs - 34 skipped by the lp64, msvc and linux-only lists, whose reasons hold for that target and that CRT; a first run had `up_prototype` exit 1 once and 7 on every rerun, which is why a failure is run a second time and called FLAKY, as `tools/wine-cases.sh` does. It is a stand-in and recorded as one: the sign-off is a Windows box's, owed.
+
+**M7.5, the close** (2026-10-26, Fable 5.1, Mac). `make test` runs `tests/c90.sh` after `coff.sh`, and is green with it:
+run.sh 989 / 0, emit.sh 1,933 / 0 with the golden 0 of 1,933 changed, names.sh 656 / 0, overload.sh 44 / 0, syntax 3 / 0,
+typed.sh 649 / 0, adapted.sh 649 / 0, coff.sh 1,272 compared 0 differ, c90.sh 446 / 0 with 9 refused as recorded,
+win-structure 0 differ, `tools/exclusions --check` 126 sites 0 uncited 0 stale, comment cap 0, memory gate held.
+`identical.sh` against the REF of `1b350ae` on the final tree: 6,048 compared, 9 differ, the known nine. README says
+the compiler reads C90 and how ("C90", and the headline paragraph); CLAUDE.md has "M7: C90 through the parser and
+`SemaC`"; `docs/CONFORMANCE.md` has its C90 section - the typedef redeclaration, `S x;` after `struct S {}` refused as C
+refuses it, a label before a declaration accepted, the digraphs read, the five decisions kept from c90 1.4, the
+hexadecimal literal's ladder - each claim re-measured against clang and cxx3 before it was written. `docs/EXCLUSIONS.md`
+is unchanged in substance (the citations re-paired twice, by line order, each change a pure insertion).
+**Owed**: a Windows box for the run leg and cdb; the `lp_break_while` shape for the C6000 optimizer's owner;
+`tools/self-host` was not run on `m7b` (its source list lacked `src/encoder/*.cpp` at `1b350ae`, mended on `m3-line`).

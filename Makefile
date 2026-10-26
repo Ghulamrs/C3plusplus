@@ -156,6 +156,7 @@ test: $(TARGET)
 	@CXX1=$(TARGET) ./tests/typed.sh
 	@CXX1=$(TARGET) ./tests/adapted.sh
 	@CXX1=$(TARGET) ./tests/coff.sh
+	@CXX1=$(TARGET) ./tests/c90.sh
 	@CXX1=$(TARGET) ./tests/win-structure.sh
 	@./tools/exclusions --check docs/EXCLUSIONS.md || { echo "make test: docs/EXCLUSIONS.md does not match the source - see the lines above"; exit 1; }
 	@./tools/comment-lines --count
