@@ -615,6 +615,11 @@ private:
     struct ThrowFacts { std::string temp; int slot = 0; std::string info; };
     std::unordered_map<std::uint32_t, ThrowFacts> throwFacts_;
     ThrowFacts pendingThrow_;
+    // A `new` or `delete` as the SSA lowering may take it (M3b.2): the global allocation function the parser called, the
+    // type made or freed, the initialiser - 0 none, 1 value-initialised, 2 one value - and `why` where it may not.
+    struct NewFacts { std::string symbol, why; const Type *made = nullptr; bool array = false; int init = 0; };
+    std::unordered_map<std::uint32_t, NewFacts> newFacts_;
+    NewFacts pendingNew_;
     void noteCallSlots(const Call &c) {
         if (!c.syntax().valid()) return;
         CallSlots &k = callSlots_[c.syntax().v];
@@ -1114,6 +1119,7 @@ private:
         ReturnTemp pendingReturnTemp;
         TryFacts pendingTry;
         ThrowFacts pendingThrow;
+        NewFacts pendingNew;
         RangeFacts pendingRange = RangeFacts();
         LambdaFacts pendingLambda;
         std::vector<syntax::NodeId> lambdaBodies;

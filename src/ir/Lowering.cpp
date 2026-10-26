@@ -921,6 +921,8 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
         e = convert(v, n.castType, true);
         break;
     }
+    case syntax::Kind::New: e = newExpression(id); break;
+    case syntax::Kind::Delete: e = deleteExpression(id); break;
     case syntax::Kind::Sizeof:
         if (!n.folded.has) outside("a sizeof not folded");
         e = Val(iconst(n.folded.type, n.folded.value), n.folded.type);
@@ -1584,6 +1586,84 @@ Lowering::Val Lowering::call(sema::TypedId id) {
     const InstId c = callOrInvoke(carries, ops);
     at(c).call = callIndex;
     return Val(result(c), carries.valid() ? carries : tid(gives));
+}
+
+// The parser's facts for a `new` or `delete` node, which the lowering takes only for a scalar or a plain class.
+sema::NewFacts Lowering::newFacts(sema::TypedId id, const char *what) {
+    sema::NewFacts f;
+    if (!newFacts_ || !newFacts_(tree_.node(id).syntax, f) || (f.why.empty() && f.symbol.empty()))
+        outside(std::string("a '") + what + "' not recorded");
+    if (!f.why.empty()) outside(f.why);
+    const Type &t = T(f.made);
+    if (t.isX87(target_) || !(scalar(t) || plainClass(t))) outside(std::string("a '") + what + "' of '" + t.describe() + "'");
+    return f;
+}
+
+// [expr.new] for a scalar or a plain class: the global allocation function the parser called, given the bytes - n of
+// them times the size for an array, counted first - then the initialiser's stores: none, zeroes, or the one value.
+Lowering::Val Lowering::newExpression(sema::TypedId id) {
+    const sema::NewFacts f = newFacts(id, "new");
+    const Type &made = T(f.made);
+    const std::uint32_t parts = (f.array ? 1u : 0u) + (f.init == 2 ? 1u : 0u);
+    if (count(id) != parts) outside("a 'new' of " + std::to_string(count(id)) + " parts");
+    const TypeId sizeT = tid(*types_.get(target_.sizeType()));
+    ValueId bytes = iconst(sizeT, made.size(target_));
+    if (f.array) {
+        std::vector<ValueId> ops;
+        ops.push_back(exprTo(child(id, 0), sizeT).v);
+        ops.push_back(bytes);
+        bytes = result(add(Op::Mul, sizeT, ops));
+    }
+    const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType()));
+    CallInfo info;
+    info.symbol = f.symbol;
+    info.signature = tid(*types_.functionType(&T(voidPtr), std::vector<const Type *>(1, &T(sizeT)), false));
+    info.namedArgs = 1;
+    const std::uint32_t callIndex = static_cast<std::uint32_t>(F().calls.size());
+    F().calls.push_back(info);
+    const InstId c = callOrInvoke(voidPtr, std::vector<ValueId>(1, bytes));      // bad_alloc may unwind
+    at(c).call = callIndex;
+    const TypeId pt = tid(*types_.pointerTo(&made));
+    const ValueId p = result(add(Op::Bitcast, pt, std::vector<ValueId>(1, result(c))));
+    if (f.init == 1 && f.array) {
+        // `new T[n]()` zeroes n elements with the platform's memset, as the parser and clang do.
+        std::vector<ValueId> args;
+        args.push_back(result(c));
+        args.push_back(iconst(tid(*types_.get(Kind::Int)), 0));
+        args.push_back(bytes);
+        runtimeCall("memset", voidPtr, args);
+    } else if (f.init == 1) {
+        const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, p));      // [dcl.init]/8: zero
+        at(z).k = made.size(target_);
+    } else if (f.init == 2 && made.isStructOrUnion()) {
+        const sema::TypedId v = child(id, parts - 1);
+        if (!isLvalueNode(v)) outside("a 'new' of a class copied from what is not an object");
+        const Val o = lvalue(v);
+        if (T(o.type).unqualified() != made.unqualified()) outside("a 'new' of a class copied from another type");
+        copyObject(p, o.v, made);
+    } else if (f.init == 2) {
+        store(p, exprTo(child(id, parts - 1), tid(*made.unqualified())).v);
+    }
+    return Val(p, pt);
+}
+
+// [expr.delete] for a scalar or a plain class: nothing to destroy, the pointer handed to the global deallocation
+// function the parser called - which takes a null and does nothing, [expr.delete]/2.
+Lowering::Val Lowering::deleteExpression(sema::TypedId id) {
+    const sema::NewFacts f = newFacts(id, "delete");
+    if (count(id) != 1) outside("a 'delete' of " + std::to_string(count(id)) + " parts");
+    const Val p = decay(expr(child(id, 0)));
+    if (!T(p.type).isPointer() || T(p.type).pointee()->unqualified() != T(f.made).unqualified()) outside("a 'delete' of another type");
+    const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType()));
+    CallInfo info;
+    info.symbol = f.symbol;
+    info.signature = tid(*types_.functionType(types_.voidType(), std::vector<const Type *>(1, &T(voidPtr)), false));
+    info.namedArgs = 1;
+    const std::uint32_t callIndex = static_cast<std::uint32_t>(F().calls.size());
+    F().calls.push_back(info);
+    const InstId c = add(Op::Call, TypeId(), std::vector<ValueId>(1, result(add(Op::Bitcast, voidPtr, std::vector<ValueId>(1, p.v)))));
+    at(c).call = callIndex;
+    return Val(ValueId(), tid(*types_.voidType()));
 }
 
 // ----- exceptions (M3-IR 3.6, the Itanium half)

@@ -467,6 +467,17 @@ bool Typer::defaultInit(const Type *cls, const std::string &member) const {
     return p_.memberInit_.count(cls->unqualified()->tag() + "::" + member) != 0;
 }
 
+bool Typer::newFacts(syntax::NodeId id, NewFacts &out) const {
+    const std::unordered_map<std::uint32_t, Parser::NewFacts>::const_iterator f = p_.newFacts_.find(id.v);
+    if (f == p_.newFacts_.end() || f->second.made == nullptr) return false;
+    out.symbol = f->second.symbol;
+    out.why = f->second.why;
+    out.made = f->second.made->id();
+    out.array = f->second.array;
+    out.init = f->second.init;
+    return true;
+}
+
 bool Typer::assigned(const Type *cls) const { return p_.lookup_.overloadsOf(cls->unqualified()->tag() + "::operator=") != nullptr; }
 
 bool Typer::fromTemplate(const std::string &symbol) const {

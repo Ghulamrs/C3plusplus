@@ -44,6 +44,7 @@ public:
     void setAssigned(std::function<bool(const Type *)> f) { assigned_ = f; }
     void setDefaultInit(std::function<bool(const Type *, const std::string &)> f) { defaultInit_ = f; }
     void setTypeInfo(std::function<std::string(const Type *)> f) { typeInfo_ = f; }
+    void setNewFacts(std::function<bool(syntax::NodeId, sema::NewFacts &)> f) { newFacts_ = f; }
 private:
     struct Outside { std::string why; explicit Outside(const std::string &w) : why(w) {} };
     struct Val { ValueId v; TypeId type; Val() {} Val(ValueId a, TypeId t) : v(a), type(t) {} };
@@ -115,6 +116,9 @@ private:
     Val conditional(sema::TypedId id);
     Val assign(sema::TypedId id);
     Val call(sema::TypedId id);
+    Val newExpression(sema::TypedId id);
+    Val deleteExpression(sema::TypedId id);
+    sema::NewFacts newFacts(sema::TypedId id, const char *what);
     Val literal(sema::TypedId id);
     Val truth(Val v);
     Val convert(Val v, TypeId to, bool cast = false);
@@ -158,6 +162,7 @@ private:
     std::function<bool(const Type *)> constructed_, assigned_;
     std::function<bool(const Type *, const std::string &)> defaultInit_;
     std::function<std::string(const Type *)> typeInfo_;
+    std::function<bool(syntax::NodeId, sema::NewFacts &)> newFacts_;
     std::vector<Pad> pads_;                     // innermost last
     std::vector<std::string> typeTable_;        // the function's selector indices: one per type, first occurrence, 1-based
     std::size_t handlerDepth_;                  // handlers the statement being lowered is inside

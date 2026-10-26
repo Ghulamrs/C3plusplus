@@ -3158,6 +3158,10 @@ ExprPtr Parser::noteKeywordForm(syntax::Kind kind, KeywordForm f) {
         noteValue(f.e.get());
     if (kind == syntax::Kind::Throw && !pendingThrow_.temp.empty()) throwFacts_[f.e->syntax().v] = pendingThrow_;
     if (kind == syntax::Kind::Throw) pendingThrow_ = ThrowFacts();
+    if (kind == syntax::Kind::New || kind == syntax::Kind::Delete) {
+        newFacts_[f.e->syntax().v] = pendingNew_;
+        pendingNew_ = NewFacts();
+    }
     if (kind == syntax::Kind::Lambda && pendingLambda_.simple) lambdaFacts_[f.e->syntax().v] = pendingLambda_;
     if (kind == syntax::Kind::Lambda) pendingLambda_ = LambdaFacts();
     if (kind == syntax::Kind::Sizeof)
