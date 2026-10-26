@@ -107,6 +107,13 @@ COPYFILE_DISABLE=1 tar -C "$ROOT" --no-xattrs -czf "$TAR" \
 echo "=== mac (text checks) ==="
 "$ROOT/tools/exclusions" --check "$ROOT/docs/EXCLUSIONS.md" | tail -1 || STATUS=1
 "$ROOT/tools/comment-lines" | tail -1 || STATUS=1
+# M4's gate: `-c` and `-S` + the project's masm the same object, byte for byte, where that masm is built beside this tree.
+MASMEXE=${CXX1_MASM:-$ROOT/../Windows/MASM/build/masm.exe}
+if [ -x "$MASMEXE" ] && [ -x "$ROOT/cxx3.exe" ]; then
+    (cd "$ROOT" && sh tools/coff-equal.sh "$MASMEXE" ./cxx3.exe | tail -1) || STATUS=1
+else
+    echo "coff-equal: skipped - no masm.exe at $MASMEXE (CXX1_MASM names one)"
+fi
 
 LEGS=$(mktemp -d)
 BG=""
