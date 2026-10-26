@@ -1717,7 +1717,23 @@ bool Lowering::pseudoDestructor(sema::TypedId member) {
     const Val o = arrow ? decay(expr(child(member, 0))) : lvalue(child(member, 0));
     if (arrow && !T(o.type).isPointer()) outside("a destructor called through what is not a pointer");
     const Type &ot = arrow ? *T(o.type).pointee() : T(o.type);
-    if (!(scalar(ot) || plainClass(*ot.unqualified()))) outside("a destructor called by name");
+    if (scalar(ot) || plainClass(*ot.unqualified())) return true;
+    // [class.dtor]/14: a class's own destructor, called on the object; a virtual one would dispatch and stays outside.
+    const Type &cls = *ot.unqualified();
+    if (!cls.isStructOrUnion() || cls.hasVptr() || cls.hasVirtualBase()) outside("a destructor called by name");
+    const std::string sym = destructor_ ? destructor_(&cls) : std::string();
+    if (sym.empty() || sym.find_first_of(" ()*&[") != std::string::npos) outside("a destructor called by name whose symbol is not recorded");
+    const TypeId self = tid(*types_.pointerTo(&cls));
+    CallInfo info;
+    info.symbol = sym;
+    info.hasThis = true;
+    info.signature = tid(*types_.functionType(types_.voidType(), std::vector<const Type *>(1, &T(self)), false));
+    info.namedArgs = 1;
+    Function &f = F();
+    const std::uint32_t callIndex = static_cast<std::uint32_t>(f.calls.size());
+    f.calls.push_back(info);
+    const InstId c = callOrInvoke(TypeId(), std::vector<ValueId>(1, result(add(Op::Bitcast, self, std::vector<ValueId>(1, o.v)))));
+    at(c).call = callIndex;
     return true;
 }
 
