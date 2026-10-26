@@ -2713,6 +2713,12 @@ StmtPtr Parser::memberInitialiser(const std::string &tag, const Type *type,
         Parser *p; const Type *was;
         ~RestoreClass() { p->currentClass_ = was; }
     } restoreClass{ this, outerClass };
+    // And in the class's namespace, wherever the constructor is being made: [basic.lookup.unqual]/7.
+    struct RestoreNamespace {
+        std::vector<std::string> &stack; std::vector<std::string> saved;
+        ~RestoreNamespace() { stack = saved; }
+    } restoreNamespace{ namespaceStack_, namespaceStack_ };
+    namespaceStack_ = lookup_.classNamespacePath(type);
     at_ = it->second;
 
     // `{v}` on a scalar: the value, which may not narrow - [dcl.init.list]/7.
