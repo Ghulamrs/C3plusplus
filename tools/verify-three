@@ -109,14 +109,19 @@ echo "=== mac (text checks) ==="
 "$ROOT/tools/comment-lines" | tail -1 || STATUS=1
 # M4's gate: `-c` and `-S` + the project's masm the same object, byte for byte, where that masm is built beside this tree.
 MASMEXE=${CXX1_MASM:-$ROOT/../Windows/MASM/build/masm.exe}
-if [ -x "$MASMEXE" ] && [ -x "$ROOT/cxx3.exe" ]; then
+# **The Mac rests** where ~/.cxx3-mac-light exists (2026-10-26, the user's): the two checks below compile every case
+# here, and both stood in for a Windows box that now answers for itself. They are skipped, and say so.
+LIGHT=; [ -f "$HOME/.cxx3-mac-light" ] && LIGHT=1
+if [ -n "$LIGHT" ]; then
+    echo "coff-equal, win-structure: skipped - the Mac rests (~/.cxx3-mac-light); the Windows box runs the objects"
+elif [ -x "$MASMEXE" ] && [ -x "$ROOT/cxx3.exe" ]; then
     (cd "$ROOT" && sh tools/coff-equal.sh "$MASMEXE" ./cxx3.exe | tail -1) || STATUS=1
 else
     echo "coff-equal: skipped - no masm.exe at $MASMEXE (CXX1_MASM names one)"
 fi
 # The Windows objects held to their own tables without a Windows box (2026-10-26): .pdata, UNWIND_INFO against the
 # prologue, the FH3 tables, and the RTTI and vftables beside clang's. In `make test` too; here so a release reads it.
-if [ -x "$ROOT/cxx3.exe" ]; then
+if [ -z "$LIGHT" ] && [ -x "$ROOT/cxx3.exe" ]; then
     (cd "$ROOT" && CXX1=./cxx3.exe sh tests/win-structure.sh > tests/out-winstructure.log 2>&1; rc=$?
      grep -v '^recorded' tests/out-winstructure.log | tail -5; exit $rc) || STATUS=1
 fi
