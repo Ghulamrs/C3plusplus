@@ -130,8 +130,9 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
     // name found nowhere declares one, and that one in the namespace, never the class.
     const bool forwardOnly = !defining && peek().is(";");
     bool introduced = false;
+    const char *const classKey = kind == Kind::Union ? "union" : "struct";
     if (!tag.empty() && !defining && !forwardOnly && specializationOf.empty()) {
-        if (const Type *had = lookup_.findTypedef(tag))
+        if (const Type *had = lookup_.findTypedef(tagKey(classKey, tag)))
             if (had->isStructOrUnion() && had->localName() == local) return had;
         introduced = true;
     }
@@ -195,9 +196,9 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
         type->setLocalOwner(localOwner);
         localClassOwner_[tag] = localOwner;
         if (currentClass_ != nullptr) localClassOuter_[tag] = currentClass_;
-        localTypes_[local] = type;
+        localTypes_[tagKey(classKey, local)] = type;
     }
-    if (!tag.empty()) lookup_.declareTypeName(tag, type);
+    if (!tag.empty()) lookup_.declareTypeName(tagKey(classKey, tag), type);
 
     // `class Derived : public Base {` - the base-clause, which may name more than
     // one. Default access is private for a class and public for a struct. Bases are
@@ -1653,7 +1654,7 @@ const Type *Parser::enumSpecifier() {
     // reaches it only by a cast (checkAssignable, rankArgument), and it promotes back.
     Type *self = nullptr;
     if (!tag.empty()) {
-        const Type *before = lookup_.findTypedef(prefix + tag);
+        const Type *before = lookup_.findTypedef(tagKey("enum", prefix + tag));
         self = types_.enumType(prefix + tag,
                                underlying != nullptr ? underlying->kind() : Kind::Int);
         // [dcl.enum]/3: a redeclaration says the same thing about scope and base as the first.
@@ -1667,7 +1668,7 @@ const Type *Parser::enumSpecifier() {
         if (within != nullptr) self->setDisplayTag(within->displayTag() + "::" + tag);
         // and mangled through the class, a specialization's `?$Box@H@` included (1.29)
         if (within != nullptr) self->setEnumScope(within);
-        lookup_.declareTypeName(prefix + tag, self);
+        lookup_.declareTypeName(tagKey("enum", prefix + tag), self);
     }
     // [dcl.enum]/5: an enumerator has its enumeration's type once the enum is complete, so
     // `colour c = RED` is a copy and `colour c = 1` is not. An unnamed one keeps its integer.
@@ -1988,7 +1989,7 @@ const Type *Parser::unqualifiedSpecifiers(StorageClass *storage, Qualifiers *qua
     }
 
     // `auto S::f() -> T`: after `auto` a qualified declarator-id, not a type, [dcl.fct]/2.
-    if (*storage == StorageAuto && autoBeforeQualifiedName()) {
+    if (*storage == StorageAuto && rules().autoDeduces() && autoBeforeQualifiedName()) {
         *storage = StorageNone;
         return quals->isConst ? types_.withConst(types_.deducedType()) : types_.deducedType();
     }
@@ -2173,8 +2174,8 @@ const Type *Parser::unqualifiedSpecifiers(StorageClass *storage, Qualifiers *qua
 
     // **In C++11 `auto` is a type specifier, not the storage class C90 made it.** This
     // parser still reads it as one, so reaching here having consumed it is exactly
-    // where a type was to be deduced: the storage class is dropped, a stand-in given.
-    if (*storage == StorageAuto) {
+    // where a type was to be deduced: the storage class is dropped, a stand-in given. In C90 it stays a storage class.
+    if (*storage == StorageAuto && rules().autoDeduces()) {
         *storage = StorageNone;
         const Type *deduced = types_.deducedType();
         return quals->isConst ? types_.withConst(deduced) : deduced;

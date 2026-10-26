@@ -525,7 +525,7 @@ ExprPtr Parser::logicalAnd() {
                                      pendingTemps_.size());
         ExprPtr node(new Binary(BinOp::LAnd, std::move(n), std::move(r)));
         node = note(std::move(node), syntax::Kind::Binary, "&&", pos, {l, rs});
-        node->setType(types_.get(Kind::Bool));   // [expr.log.and]/1
+        node->setType(rules().truthType());   // [expr.log.and]/1; int in C90
         n = std::move(node);
     }
     return n;
@@ -547,7 +547,7 @@ ExprPtr Parser::logicalOr() {
                                      pendingTemps_.size());
         ExprPtr node(new Binary(BinOp::LOr, std::move(n), std::move(r)));
         node = note(std::move(node), syntax::Kind::Binary, "||", pos, {l, rs});
-        node->setType(types_.get(Kind::Bool));   // [expr.log.or]/1
+        node->setType(rules().truthType());   // [expr.log.or]/1; int in C90
         n = std::move(node);
     }
     return n;

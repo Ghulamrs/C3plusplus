@@ -248,6 +248,13 @@ the re-run's number is in the handover). The four probes: `p2` and `p3` print wh
 a 10 3`; `5 7 5 1` / `8 4`, the `8 4` being clang's and not c90's `8 8`), `p4` refused by name through
 the table, `p1` refused as c90 refuses it. c90's probe sets through `cxx3 -std=c90`: the same 32 of 34
 and 8 of 9 as c90 1.4, plus the typedef redefinition accepted (9 of 9) - the one over-acceptance.
-**`make test` on this build**: the result is in the handover (it was running when the budget closed).
+**The gate on the final M7.2 build, Mac, 2026-10-26**: `tests/c90.sh` **437 passed, 0 failed at -O0 and
+at -O2** (arm64-darwin; the one Linux-only case skipped by name) - every case and every directory of
+c90 1.4's suite, which is c90's own baseline on this host; `identical.sh` against REF 6,039 compared, 9
+differ, the known nine; `make test` green - run.sh 988/0, emit golden 0 of 1,930, names.sh 655/0,
+overload.sh 44/0, syntax 3/0, typed.sh 648/0 (0 differ), adapted.sh 648/0, coff.sh 1,270 compared 0
+differ, `tools/exclusions --check` 126 sites 0 uncited 0 stale (46 citations re-paired by line order
+within each file after the inline ladder left `ParserExpr.cpp`, then checked by the tool), comment cap 0,
+memory gate held. Not run: the Linux box, tms6747, Windows - all owed to M7.4.
 **Not done in M7.2**: the refusal probes of M7.3; the `.c` leg of `tests/open.sh`; the Linux, tms6747 and
 Windows legs; `-g`'s language bytes.

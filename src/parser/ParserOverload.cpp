@@ -691,7 +691,7 @@ void Parser::checkAssignable(const Expr &from, const Type *to, std::size_t pos,
     if (ft->unqualified() == to->unqualified()) return;
 
     if (ft->unqualified()->isScopedEnumeration()) refuseScopedConversion(ft, to, pos);
-    if (ft->isArithmetic() && to->unqualified()->isEnumeration()) {
+    if (ft->isArithmetic() && to->unqualified()->isEnumeration() && !rules().integerConvertsToEnumeration()) {
         // describe() spells an enumeration as its integer; this message is about the difference.
         auto shown = [](const Type *t) {
             if (t->unqualified()->isScopedEnumeration()) return "enum class " + t->unqualified()->enumTag();
@@ -763,6 +763,9 @@ void Parser::checkAssignable(const Expr &from, const Type *to, std::size_t pos,
             ft->pointee()->isConst())
             refuse(" - 'void *' would drop the const; 'const void *' keeps it");
         if (to->pointee()->isVoid()) return;
+        if (ft->pointee()->isVoid() && rules().voidPointerConvertsToObjectPointer() &&
+            (to->pointee()->isConst() || !ft->pointee()->isConst()))
+            return;
         if (ft->pointee()->isVoid())
             refuse(" - 'void *' converts to another pointer only with a cast in C++, where C allows it");
         // The commonest way to meet this rule is a C program handing a

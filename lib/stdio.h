@@ -15,10 +15,10 @@
 #ifndef _CC1_STDIO_H
 #define _CC1_STDIO_H
 
-// Everything here is the C library, so it is named the way C names it.
-// Without this the compiler would give every declaration below a C++
-// linkage name and ask the linker for a symbol libc has never had.
+// Everything here is the C library, so it is named the way C names it: from C++, with C linkage.
+#ifdef __cplusplus
 extern "C" {
+#endif
 
 
 #include <stddef.h>
@@ -172,5 +172,7 @@ int rename(const char *, const char *);
 int _fileno(FILE *stream);
 int fileno(FILE *stream);
 
+#ifdef __cplusplus
 }  // extern "C"
+#endif
 #endif

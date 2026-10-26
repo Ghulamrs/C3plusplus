@@ -18,10 +18,10 @@
 #ifndef _CC1_SIGNAL_H
 #define _CC1_SIGNAL_H
 
-// Everything here is the C library, so it is named the way C names it.
-// Without this the compiler would give every declaration below a C++
-// linkage name and ask the linker for a symbol libc has never had.
+// Everything here is the C library, so it is named the way C names it: from C++, with C linkage.
+#ifdef __cplusplus
 extern "C" {
+#endif
 
 
 // An integer type that can be read and written atomically with respect to a
@@ -51,5 +51,7 @@ void (*signal(int sig, void (*handler)(int)))(int);
 int raise(int sig);
 
 
+#ifdef __cplusplus
 }  // extern "C"
+#endif
 #endif

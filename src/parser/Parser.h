@@ -12,6 +12,7 @@
 #include "../sema/Classes.h"
 #include "../sema/Constexpr.h"
 #include "../sema/Linkage.h"
+#include "../sema/SemaC.h"
 #include "../syntax/Syntax.h"
 
 #include <functional>
@@ -27,14 +28,23 @@ namespace sema { class Typer; class Adapter; }
 
 class Parser {
 public:
-    // **The whole ABI table, not the three fields of it a return happens to
-    // need.** They arrived as three positional arguments, which is a thing to get
-    // in the wrong order once; the parser and the backends now read one struct.
+    // **The whole ABI table, not the three fields of it a return happens to need** - three positionals
+    // were a thing to get in the wrong order once. And the dialect (M7): C90's rules are `sema::SemaC`,
+    // C++11's `sema::SemaCxx`; a C unit has C linkage from its first token.
     Parser(const Source &src, std::vector<Token> tokens,
-           TypeTable &types, const Target &target, const Abi &abi)
+           TypeTable &types, const Target &target, const Abi &abi, Dialect dialect = Dialect::Cxx11)
         : src_(src), tokens_(std::move(tokens)), types_(types), target_(target),
-          abi_(abi), lookup_(*this), overload_(*this), tmpl_(*this), classes_(*this), constant_(*this), linkage_(*this) {
+          abi_(abi), rules_(sema::rulesFor(dialect, types, target)),
+          lookup_(*this), overload_(*this), tmpl_(*this), classes_(*this), constant_(*this), linkage_(*this) {
         resolvedTable_.push_back(Resolved());
+        if (dialect == Dialect::C90) cLinkage_ = 1;
+    }
+    // The rules the dialect answers differently, and which one this unit is read as.
+    const sema::SemaC &rules() const { return *rules_; }
+    Dialect dialect() const { return rules_->dialect(); }
+    // A tag's key in the type-name table: the tag in C++, where it names a type; `struct S` in C90, whose tags live apart (6.1.2.3).
+    std::string tagKey(const char *keyword, const std::string &tag) const {
+        return rules().tagIsTypeName() || tag.empty() ? tag : std::string(keyword) + " " + tag;
     }
 
     // What the grammar recorded, for -dump=syntax.
@@ -450,6 +460,8 @@ private:
 
     // Read here for one question - how a class comes back - and by each backend for the rest.
     const Abi &abi_;
+    // The dialect's rules (M7): C90's or C++11's, asked wherever the two answer differently.
+    std::unique_ptr<sema::SemaC> rules_;
     // **Sema's modules, out of the parser in place** (M2 step 1, doc-cxx3/M2-PLAN.md): each reads the
     // parser's state through a reference back to it until that state moves to the module.
     friend class sema::Lookup;

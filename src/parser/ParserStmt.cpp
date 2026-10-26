@@ -1285,6 +1285,8 @@ StmtPtr Parser::jumpLeaving(StmtPtr jump, std::size_t mark, std::size_t pos,
 void Parser::checkJump(const std::vector<JumpGuard> &from,
                        const std::vector<JumpGuard> &to, std::size_t pos,
                        const std::string &jump, const std::string &origin) const {
+    // C90 (6.6.6.4) lets a jump pass an initialisation: the object is then indeterminate, and nothing is destroyed.
+    if (rules().jumpMayPassInitialisation()) return;
     for (const JumpGuard &g : to) {
         bool inScopeAtOrigin = false;
         for (const JumpGuard &f : from)

@@ -140,6 +140,7 @@
     <ClCompile Include="..\src\sema\Linkage.cpp" />
     <ClCompile Include="..\src\sema\Lookup.cpp" />
     <ClCompile Include="..\src\sema\Overload.cpp" />
+    <ClCompile Include="..\src\sema\SemaC.cpp" />
     <ClCompile Include="..\src\sema\Templates.cpp" />
     <ClCompile Include="..\src\sema\Typing.cpp" />
     <ClCompile Include="..\src\syntax\Syntax.cpp" />
@@ -156,6 +157,7 @@
     <ClInclude Include="..\src\Abi.h" />
     <ClInclude Include="..\src\Ast.h" />
     <ClInclude Include="..\src\AstDump.h" />
+    <ClInclude Include="..\src\Dialect.h" />
     <ClInclude Include="..\src\Driver.h" />
     <ClInclude Include="..\src\Lexer.h" />
     <ClInclude Include="..\src\Mangle.h" />
@@ -209,6 +211,7 @@
     <ClInclude Include="..\src\sema\Linkage.h" />
     <ClInclude Include="..\src\sema\Lookup.h" />
     <ClInclude Include="..\src\sema\Overload.h" />
+    <ClInclude Include="..\src\sema\SemaC.h" />
     <ClInclude Include="..\src\sema\Templates.h" />
     <ClInclude Include="..\src\sema\Typing.h" />
     <ClInclude Include="..\src\syntax\Syntax.h" />

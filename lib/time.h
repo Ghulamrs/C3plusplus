@@ -22,10 +22,10 @@
 #ifndef _CC1_TIME_H
 #define _CC1_TIME_H
 
-// Everything here is the C library, so it is named the way C names it.
-// Without this the compiler would give every declaration below a C++
-// linkage name and ask the linker for a symbol libc has never had.
+// Everything here is the C library, so it is named the way C names it: from C++, with C linkage.
+#ifdef __cplusplus
 extern "C" {
+#endif
 
 
 #include <stddef.h>
@@ -73,19 +73,24 @@ struct tm {
 // **The UCRT has these under their 64-bit names only**: its own header makes
 // time(), localtime() and the four others inline functions over _time64 and
 // its neighbours, and libucrt holds no symbol `time` - a call to the plain
-// name did not link. So here they are the same inline functions.
+// name did not link. So here they are the same inline functions - `static` alone in C90, which has no `inline`.
+#ifdef __cplusplus
+#define _CXX1_INLINE inline
+#else
+#define _CXX1_INLINE
+#endif
 time_t _time64(time_t *t);
 double _difftime64(time_t end, time_t start);
 struct tm *_localtime64(const time_t *t);
 struct tm *_gmtime64(const time_t *t);
 time_t _mktime64(struct tm *tm);
 char *_ctime64(const time_t *t);
-static inline time_t time(time_t *t) { return _time64(t); }
-static inline double difftime(time_t end, time_t start) { return _difftime64(end, start); }
-static inline struct tm *localtime(const time_t *t) { return _localtime64(t); }
-static inline struct tm *gmtime(const time_t *t) { return _gmtime64(t); }
-static inline time_t mktime(struct tm *tm) { return _mktime64(tm); }
-static inline char *ctime(const time_t *t) { return _ctime64(t); }
+static _CXX1_INLINE time_t time(time_t *t) { return _time64(t); }
+static _CXX1_INLINE double difftime(time_t end, time_t start) { return _difftime64(end, start); }
+static _CXX1_INLINE struct tm *localtime(const time_t *t) { return _localtime64(t); }
+static _CXX1_INLINE struct tm *gmtime(const time_t *t) { return _gmtime64(t); }
+static _CXX1_INLINE time_t mktime(struct tm *tm) { return _mktime64(tm); }
+static _CXX1_INLINE char *ctime(const time_t *t) { return _ctime64(t); }
 clock_t clock(void);
 char *asctime(const struct tm *tm);
 #else
@@ -112,5 +117,7 @@ char *ctime(const time_t *t);
 size_t strftime(char *s, size_t max, const char *fmt, const struct tm *tm);
 
 
+#ifdef __cplusplus
 }  // extern "C"
+#endif
 #endif

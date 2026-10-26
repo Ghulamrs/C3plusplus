@@ -22,7 +22,13 @@ private:
         std::string output;
         // The COFF object CoffEmitter writes in process from the text, where `output` names the .s it stands for (M4.2).
         std::string object;
+        // C90 or C++11, as the input's name or -std= decided (M7).
+        Dialect dialect;
     };
+    // `.c` is C90 and everything else C++11, unless -std= named the language for every input.
+    Dialect dialectFor(const std::string &input) const;
+    bool stdNamed_ = false;
+    Dialect std_ = Dialect::Cxx11;
 
     std::string program_;
     std::vector<Job> jobs_;
@@ -77,7 +83,7 @@ private:
     bool link();
     bool assembleObjects();
     void removeTemporaries();
-    std::vector<std::pair<std::string, std::string> > macrosFor() const;
+    std::vector<std::pair<std::string, std::string> > macrosFor(Dialect dialect = Dialect::Cxx11) const;
     void addMacroEdit(const char *text, bool undef);
 
     static unsigned availableCores();
@@ -119,4 +125,6 @@ private:
     std::string rtsChoice_;
     // The predefined macros, made once on the main thread: __DATE__ and __TIME__ call localtime (review P4).
     std::vector<std::pair<std::string, std::string> > macros_;
+    // And the C90 set, without __cplusplus (M7).
+    std::vector<std::pair<std::string, std::string> > macrosC_;
 };

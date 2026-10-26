@@ -2509,6 +2509,8 @@ void Parser::declareFunction(const std::string &name, const Type *returns,
     // the report would be about a duplicate symbol in a file nobody wrote.
     if (!set.empty()) {
         const Signature &first = lookup_.functions_[set[0]];
+        if (!rules().overloads())
+            rules().refuseCxxOnly(src_, pos, "a second declaration of one name with another parameter list");
         if (cName || first.cLinkage)
             src_.fail(pos, "'" + key + "' cannot be overloaded - " +
                            (key == "main" ? std::string("'main' is one function")

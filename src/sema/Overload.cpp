@@ -139,7 +139,8 @@ Rank Overload::rankArgument(const Expr &arg, const Type *param) {
 
     // Nothing converts to an enumeration implicitly - [conv.integral]/1 starts from one - and a
     // scoped one converts to nothing, [dcl.enum]/10.
-    if (from->isArithmetic() && to->unqualified()->isEnumeration()) return Rank::None;
+    if (from->isArithmetic() && to->unqualified()->isEnumeration() && !p_.rules().integerConvertsToEnumeration())
+        return Rank::None;
     if (from->isScopedEnumeration()) return Rank::None;
     if (from->isArithmetic() && to->isArithmetic())
         return isPromotion(from, to) ? Rank::Promotion : Rank::Conversion;
@@ -157,8 +158,11 @@ Rank Overload::rankArgument(const Expr &arg, const Type *param) {
         if (to->pointee()->isVoid() && !to->pointee()->isConst() &&
             from->pointee()->isConst())
             return Rank::None;
-        // [conv.ptr]/2: any object pointer to void *, and never back without a cast.
+        // [conv.ptr]/2: any object pointer to void *, and never back without a cast - in C++; C (6.3.16.1) goes both ways.
         if (to->pointee()->isVoid()) return Rank::Conversion;
+        if (from->pointee()->isVoid() && p_.rules().voidPointerConvertsToObjectPointer() &&
+            (to->pointee()->isConst() || !from->pointee()->isConst()))
+            return Rank::Conversion;
         return Rank::None;
     }
 

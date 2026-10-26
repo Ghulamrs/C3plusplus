@@ -3,10 +3,10 @@
 
 #include <stddef.h>  // size_t, for vsnprintf
 
-// Everything here is the C library, so it is named the way C names it.
-// Without this the compiler would give every declaration below a C++
-// linkage name and ask the linker for a symbol libc has never had.
+// Everything here is the C library, so it is named the way C names it: from C++, with C linkage.
+#ifdef __cplusplus
 extern "C" {
+#endif
 
 
 /* Three targets, two va_lists, and the split is not where you would guess.
@@ -80,5 +80,7 @@ int vsprintf(char *, const char *, va_list);
 int vsnprintf(char *, size_t, const char *, va_list);
 
 
+#ifdef __cplusplus
 }  // extern "C"
+#endif
 #endif

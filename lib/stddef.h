@@ -11,10 +11,10 @@
 #ifndef _CC1_STDDEF_H
 #define _CC1_STDDEF_H
 
-// Everything here is the C library, so it is named the way C names it.
-// Without this the compiler would give every declaration below a C++
-// linkage name and ask the linker for a symbol libc has never had.
+// Everything here is the C library, so it is named the way C names it: from C++, with C linkage.
+#ifdef __cplusplus
 extern "C" {
+#endif
 
 
 #ifdef _WIN32
@@ -27,6 +27,9 @@ extern "C" {
 // half of it.
 typedef unsigned long long size_t;
 typedef long long          ptrdiff_t;
+#ifndef __cplusplus
+typedef unsigned short     wchar_t;   /* a keyword in C++, a typedef in C (7.1.6) */
+#endif
 
 #elif defined(__TMS320C6X__)
 
@@ -35,12 +38,18 @@ typedef long long          ptrdiff_t;
 // letter in every mangled name that takes a size.
 typedef unsigned int size_t;
 typedef int          ptrdiff_t;
+#ifndef __cplusplus
+typedef unsigned short wchar_t;   /* 16-bit and unsigned, as cl6x has it; a typedef in C */
+#endif
 
 #else
 
 // LP64 on Linux and macOS alike: long is eight bytes and matches a pointer.
 typedef unsigned long size_t;
 typedef long          ptrdiff_t;
+#ifndef __cplusplus
+typedef int           wchar_t;    /* a keyword in C++, a typedef in C (7.1.6) */
+#endif
 
 #endif
 
@@ -58,5 +67,7 @@ typedef long          ptrdiff_t;
 #define offsetof(type, member) ((size_t)&(((type *)0)->member))
 
 
+#ifdef __cplusplus
 }  // extern "C"
+#endif
 #endif

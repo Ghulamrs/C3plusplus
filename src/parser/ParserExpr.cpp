@@ -280,8 +280,8 @@ ExprPtr Parser::comparison(BinOp op, ExprPtr lhs, ExprPtr rhs, std::size_t pos) 
     }
     // **[expr.rel]/1 and [expr.eq]/1: the result is `bool`.** It had been `int`,
     // which is C's answer, and the difference shows in `sizeof(a == b)`, in
-    // overloading bool against int, and in `auto`. A bool promotes to int anyway.
-    n->setType(types_.get(Kind::Bool));
+    // overloading bool against int, and in `auto`. In C90 it is int (6.3.8).
+    n->setType(rules().truthType());
     return n;
 }
 
@@ -1313,7 +1313,7 @@ ExprPtr Parser::primaryNode(Program *program) {
 
         const Type *elem = prefix == 'u' ? types_.get(Kind::Char16)
                          : prefix == 'U' ? types_.get(Kind::Char32)
-                         : wide          ? types_.get(Kind::WChar)
+                         : wide          ? rules().wideElement()
                                          : types_.charType();
         int width = elem->size(target_);
 
@@ -1345,7 +1345,8 @@ ExprPtr Parser::primaryNode(Program *program) {
 
         program->strings.push_back(StringLit{ label, bytes, width });
         ExprPtr n(new StrLit(label, text));
-        n->setType(types_.arrayOf(types_.withConst(elem),
+        // const char[N] in C++, char[N] in C: the dialect's.
+        n->setType(types_.arrayOf(rules().stringLiteralElement(elem),
                                   static_cast<long long>(units.size()) + 1));
         return n;
     }
@@ -1373,51 +1374,8 @@ ExprPtr Parser::primaryNode(Program *program) {
 
     if (peek().kind == TokenKind::Num) {
         const Token &t = peek();
-        const Type *ty;
-        unsigned long long u = static_cast<unsigned long long>(t.value);
-
-        auto fits = [&](Kind k) {
-            const Type *c = types_.get(k);
-            int bits = c->size(target_) * 8;
-            unsigned long long limit =
-                c->isSigned(target_) ? (1ULL << (bits - 1)) - 1
-                                     : (bits >= 64 ? ~0ULL : (1ULL << bits) - 1);
-            return u <= limit;
-        };
-
-        if (t.suffixU && t.suffixLL)     ty = types_.get(Kind::ULongLong);
-        else if (t.suffixLL)             ty = fits(Kind::LongLong)
-                                            ? types_.get(Kind::LongLong)
-                                            : types_.get(Kind::ULongLong);
-        else if (t.suffixU && t.suffixL) ty = fits(Kind::ULong)
-                                            ? types_.get(Kind::ULong)
-                                            : types_.get(Kind::ULongLong);
-        else if (t.suffixU)              ty = fits(Kind::UInt)  ? types_.get(Kind::UInt)
-                                            : fits(Kind::ULong) ? types_.get(Kind::ULong)
-                                            : types_.get(Kind::ULongLong);
-        else if (t.suffixL)              ty = fits(Kind::Long)  ? types_.get(Kind::Long)
-                                            : (!t.decimal && fits(Kind::ULong))
-                                                               ? types_.get(Kind::ULong)
-                                            : fits(Kind::LongLong)
-                                                               ? types_.get(Kind::LongLong)
-                                            : types_.get(Kind::ULongLong);
-
-        else if (t.prefix == 'u')        ty = types_.get(Kind::Char16);
-        else if (t.prefix == 'U')        ty = types_.get(Kind::Char32);
-        else if (t.wide)                 ty = types_.get(Kind::WChar);
-        // [lex.ccon]/2: an ordinary character literal has type char, where C gives it int.
-        else if (t.isChar)               ty = types_.get(Kind::Char);
-        // **[lex.icon] table 6, and the two ladders it holds.** A decimal literal
-        // climbs int, long, long long and never reaches unsigned; a hex or octal
-        // one has an unsigned rung above each. One ladder served both, wrongly.
-        else if (fits(Kind::Int))        ty = types_.intType();
-        else if (!t.decimal && fits(Kind::UInt))
-                                         ty = types_.get(Kind::UInt);
-        else if (fits(Kind::Long))       ty = types_.get(Kind::Long);
-        else if (!t.decimal && fits(Kind::ULong))
-                                         ty = types_.get(Kind::ULong);
-        else if (fits(Kind::LongLong))   ty = types_.get(Kind::LongLong);
-        else                             ty = types_.get(Kind::ULongLong);
+        // The literal's type is the dialect's: C90 6.1.3.2's ladders or [lex.icon] table 6's, and 'a' int or char (M7).
+        const Type *ty = rules().integerLiteralType(t);
         ExprPtr n(new Num(t.value));
         n->setType(ty);
         at_++;
@@ -3291,7 +3249,7 @@ ExprPtr Parser::unaryNode() {
         v = decay(std::move(v));
         v = contextualScalar(std::move(v), pos, "'!'");
         ExprPtr node(new Unary('!', std::move(v)));
-        node->setType(types_.get(Kind::Bool));   // [expr.unary.op]/9
+        node->setType(rules().truthType());   // [expr.unary.op]/9; int in C90
         return node;
     }
     if (consume("-")) {

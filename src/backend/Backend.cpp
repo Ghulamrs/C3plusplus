@@ -90,7 +90,7 @@ static void addTranslationTime(std::vector<std::pair<std::string, std::string> >
     out.push_back(std::make_pair("__TIME__", "\"" + time + "\""));
 }
 
-std::vector<std::pair<std::string, std::string> > predefinedMacros(const Backend &b) {
+std::vector<std::pair<std::string, std::string> > predefinedMacros(const Backend &b, Dialect dialect) {
     const Target &t = b.target();
     std::vector<std::pair<std::string, std::string> > out;
     auto add = [&out](const std::string &k, const std::string &v) {
@@ -100,8 +100,8 @@ std::vector<std::pair<std::string, std::string> > predefinedMacros(const Backend
 
     add("__STDC__", "1");
     // The language this compiler reads is C++11, and a program is entitled to
-    // ask. 201103L is the value the standard fixes for it.
-    add("__cplusplus", "201103L");
+    // ask. 201103L is the value the standard fixes for it. A C90 unit has none.
+    if (dialect == Dialect::Cxx11) add("__cplusplus", "201103L");
     add("__STDC_HOSTED__", "1");
     addTranslationTime(out);
     add("__CHAR_BIT__", "8");
