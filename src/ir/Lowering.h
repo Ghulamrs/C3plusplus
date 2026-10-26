@@ -41,6 +41,7 @@ public:
     FuncId lower(sema::TypedId fn, const FunctionFacts &facts, std::string &why);
     // Which classes a constructor builds - the parser's to say, asked by the glue (M3b.2).
     void setConstructed(std::function<bool(const Type *)> f) { constructed_ = f; }
+    void setAssigned(std::function<bool(const Type *)> f) { assigned_ = f; }
 private:
     struct Outside { std::string why; explicit Outside(const std::string &w) : why(w) {} };
     struct Val { ValueId v; TypeId type; Val() {} Val(ValueId a, TypeId t) : v(a), type(t) {} };
@@ -138,7 +139,7 @@ private:
     TypeId returns_;
     ValueId this_;          // a member function's `this`, none in any other
     TypeId thisType_;
-    std::function<bool(const Type *)> constructed_;
+    std::function<bool(const Type *)> constructed_, assigned_;
     BlockId returnBlock_;
     std::map<std::uint32_t, std::pair<ValueId, TypeId> > locals_;    // a `var` node -> its alloca and declared type
     std::vector<Loop> loops_;

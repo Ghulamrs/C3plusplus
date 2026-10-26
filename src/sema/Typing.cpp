@@ -462,6 +462,8 @@ bool Typer::packBody(const std::string &symbol) const { return p_.packBodies_.co
 
 bool Typer::constructed(const Type *cls) const { return p_.hasConstructors(cls->unqualified()->tag()); }
 
+bool Typer::assigned(const Type *cls) const { return p_.lookup_.overloadsOf(cls->unqualified()->tag() + "::operator=") != nullptr; }
+
 bool Typer::fromTemplate(const std::string &symbol) const {
     for (std::size_t i = 0; i < p_.lookup_.functions_.size(); i++)
         if (p_.lookup_.functions_[i].symbol == symbol) return p_.lookup_.functions_[i].fromTemplate;

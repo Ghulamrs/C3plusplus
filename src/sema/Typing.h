@@ -127,7 +127,8 @@ public:
     // A body read in a class's, a namespace's or a template's scope (Parser::scopedFunctions_), which the adapter left alone too.
     int scopedBody(syntax::NodeId fn) const;
     bool packBody(const std::string &symbol) const;
-    bool constructed(const Type *cls) const;          // a class some constructor builds, written or implicit   // a pack was expanded in the body: one node stands for its members   // Parser::scopedFunctions_'s bits, 0 for a body at file scope
+    bool constructed(const Type *cls) const;          // a class some constructor builds, written or implicit
+    bool assigned(const Type *cls) const;             // a class with an operator= of its own, written or implicit   // a pack was expanded in the body: one node stands for its members   // Parser::scopedFunctions_'s bits, 0 for a body at file scope
     // Whether the function of this symbol is a template specialization (Signature::fromTemplate): its body is a replay.
     bool fromTemplate(const std::string &symbol) const;
     // The census's counts as the report spells them, "functions=N bodies=K synthesised=M", and the kinds behind M.

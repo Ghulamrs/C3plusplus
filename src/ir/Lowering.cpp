@@ -623,7 +623,11 @@ void Lowering::declaration(sema::TypedId id) {
 // exactly the length whose first value is the length is refused rather than guessed. The tail past the list is zeroed.
 void Lowering::localArray(sema::TypedId var, ValueId slot, TypeId type) {
     const sema::TypedNode &v = tree_.node(var);
-    if (v.count == 0) return;
+    if (v.count == 0) {
+        // `T a[n] = {}` is value-initialised: zeroed (the form, not the parts, says so).
+        if (v.initForm >= 2) { const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, slot)); at(z).k = T(type).size(target_); }
+        return;
+    }
     const Type &t = T(type);
     const long long length = t.length();
     long long bound = 0;
@@ -1331,7 +1335,7 @@ Lowering::Val Lowering::assign(sema::TypedId id) {
     const Val target = lvalue(tn);
     const Type &t = T(target.type);
     // [class.copy]/18: a plain class's implicit copy assignment copies its bytes; a written operator= is a call.
-    if (op == "=" && plainClass(t) && !t.isConst() && tree_.resolution(id).what != sema::Resolution::Call && isLvalueNode(child(id, 1))) {
+    if (op == "=" && plainClass(t) && !t.isConst() && !(assigned_ && assigned_(&t)) && isLvalueNode(child(id, 1))) {
         const Val from = lvalue(child(id, 1));
         if (T(from.type).unqualified() != t.unqualified()) outside("a class assigned from another type");
         copyObject(target.v, from.v, t);
