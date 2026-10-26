@@ -14,16 +14,8 @@ namespace {
 // The registers a pseudo may be given: those the target description offers.
 bool candidate(int r) { return TargetDesc::x86_64().candidate(r); }
 
-bool wholeReg(const Operand &o) { return o.kind == Operand::Register && o.reg.width == 8; }
-
-// A whole copy between two registers, at least one of them a pseudo; the
-// operands else -1. Assigned alike, such a copy is of a register to itself.
-bool copyOf(const Instr &i, int &src, int &dst) {
-    if (!isMovQ(i.m) || i.operands != 2 || !wholeReg(i.a) || !wholeReg(i.b)) return false;
-    src = i.a.reg.id;
-    dst = i.b.reg.id;
-    if (!isPseudo(src) && !isPseudo(dst)) return false;
-    return (isPseudo(src) || candidate(src)) && (isPseudo(dst) || candidate(dst));
+bool wholeReg(const Operand &o) {
+    return o.kind == Operand::Register && (o.reg.width == 8 || (o.reg.width == 16 && o.reg.id >= kXmm0));
 }
 
 // Pseudos are numbered from kFirstPseudo; the graph numbers them from 0.
@@ -38,6 +30,25 @@ int popcount(unsigned long long x) {
 // The registers offered, cheapest encoding first; the frame's never, and the preserved ones only for a save charged.
 const std::vector<int> &kOffer = TargetDesc::x86_64().offer[static_cast<int>(RegClass::Gpr)];
 
+}
+
+int Allocator::classOfReg(int reg) const {
+    if (isPseudo(reg)) return static_cast<int>(fn_.pseudos[reg - kFirstPseudo].cls);
+    return static_cast<int>(TargetDesc::x86_64().classOf(reg));
+}
+
+// A whole copy between two registers of one class, at least one of them a pseudo; the operands else -1. Assigned
+// alike, such a copy is of a register to itself: `mov`/`movq` for the general class, `movapd`/`movaps` for xmm.
+bool Allocator::copyOf(const Instr &i, int &src, int &dst) const {
+    if (i.operands != 2 || !wholeReg(i.a) || !wholeReg(i.b)) return false;
+    const bool xmm = i.m == "movapd" || i.m == "movaps";
+    if (!xmm && !isMovQ(i.m)) return false;
+    src = i.a.reg.id;
+    dst = i.b.reg.id;
+    if (!isPseudo(src) && !isPseudo(dst)) return false;
+    if (!(isPseudo(src) || candidate(src)) || !(isPseudo(dst) || candidate(dst))) return false;
+    const int want = static_cast<int>(xmm ? RegClass::Xmm : RegClass::Gpr);
+    return classOfReg(src) == want && classOfReg(dst) == want;
 }
 
 Allocator::Allocator(Function &fn) : fn_(fn) {
@@ -118,8 +129,9 @@ void Allocator::solveLiveness() {
     }
 }
 
+// Two pseudos of different classes never share a register, so they never interfere.
 void Allocator::addEdge(int p, int q) {
-    if (p == q || interferes(p, q)) return;
+    if (p == q || cls(p) != cls(q) || interferes(p, q)) return;
     matrix_[static_cast<std::size_t>(p) * words_ + q / 64] |= 1ull << (q % 64);
     matrix_[static_cast<std::size_t>(q) * words_ + p / 64] |= 1ull << (p % 64);
     nodes_[p].adj.push_back(q);
@@ -140,6 +152,7 @@ void Allocator::buildInterference() {
     for (int p = 0; p < n_; ++p) {
         nodes_[p].home = p < nHomes_ ? homes_[p] : -1;
         nodes_[p].slot = isSlot(p);
+        nodes_[p].cls = fn_.pseudos[p].cls;
     }
     // A preserved register the stream never names is offered with a save
     // and a restore, so its life from the entry to the return does not count.
@@ -154,8 +167,8 @@ void Allocator::buildInterference() {
             if (o->indexed()) mentioned |= bit(o->index.id);
     }
     offered_ = 0;
-    for (int r = 0; r < kGprs; ++r)
-        if (candidate(r) && (fn_.convention.preserved & bit(r)) && !(mentioned & bit(r))) offered_ |= bit(r);
+    for (int r : kOffer)
+        if ((fn_.convention.preserved & bit(r)) && !(mentioned & bit(r))) offered_ |= bit(r);
     std::vector<int> live;
     for (int b = 0; b < static_cast<int>(f.blocks.size()); ++b) {
         const Block &blk = f.blocks[b];
@@ -228,7 +241,7 @@ void Allocator::collectCosts() {
 bool Allocator::valid(const std::vector<int> &colour) const {
     for (int p = 0; p < n_; ++p) {
         if (colour[p] < 0) { if (isSlot(p)) continue; return false; }
-        if (!candidate(colour[p]) || (nodes_[p].forbid & bit(colour[p]))) return false;
+        if (!candidate(colour[p]) || classOfReg(colour[p]) != cls(p) || (nodes_[p].forbid & bit(colour[p]))) return false;
         for (int q : nodes_[p].adj) if (colour[q] == colour[p]) return false;
     }
     return true;
@@ -261,8 +274,8 @@ void Allocator::merge(int u, int v) {
 // **Briggs' test**: the neighbours of significant degree the two would have
 // as one, a forbidden register counting as one each.
 int Allocator::significant(int u, int v) const {
-    const int k = popcount(palette_);
-    int count = popcount((nodes_[u].forbid | nodes_[v].forbid) & palette_);
+    const int k = popcount(palette(u));
+    int count = popcount((nodes_[u].forbid | nodes_[v].forbid) & palette(u));
     for (int q = 0; q < n_; ++q)
         if ((interferes(u, q) || interferes(v, q)) && alive(q) && degree_[q] >= k) ++count;
     return count;
@@ -271,9 +284,9 @@ int Allocator::significant(int u, int v) const {
 // The most a node's copies to and from physical registers can save, all
 // of them to one register it may take.
 long Allocator::bestPreference(const std::vector<Copy> &prefs, RegSet forbid) const {
-    long score[kGprs] = {0}, best = 0;
+    long score[kWebRegs] = {0}, best = 0;
     for (const Copy &c : prefs) score[isPseudo(c.src) ? c.dst : c.src] += c.weight;
-    for (int r = 0; r < kGprs; ++r)
+    for (int r = 0; r < kWebRegs; ++r)
         if (!(forbid & bit(r))) best = std::max(best, score[r]);
     return best;
 }
@@ -282,7 +295,6 @@ long Allocator::bestPreference(const std::vector<Copy> &prefs, RegSet forbid) co
 // colourable by Briggs' test, and where the copy saved outweighs the
 // copies to physical registers the two nodes could no longer both drop.**
 void Allocator::coalesce() {
-    const int k = popcount(palette_);
     std::vector<int> byWeight;
     for (std::size_t c = 0; c < copies_.size(); ++c)
         if (isPseudo(copies_[c].src) && isPseudo(copies_[c].dst)) byWeight.push_back(static_cast<int>(c));
@@ -290,13 +302,13 @@ void Allocator::coalesce() {
                      [&](int x, int y) { return copies_[x].weight > copies_[y].weight; });
     for (int c : byWeight) {
         const int u = find(indexOf(copies_[c].src)), v = find(indexOf(copies_[c].dst));
-        if (u == v || interferes(u, v) || significant(u, v) >= k) continue;
+        if (u == v || cls(u) != cls(v) || interferes(u, v) || significant(u, v) >= popcount(palette(u))) continue;
         std::vector<Copy> both = physCopies_[u];
         both.insert(both.end(), physCopies_[v].begin(), physCopies_[v].end());
         const long apart = bestPreference(physCopies_[u], nodes_[u].forbid) + bestPreference(physCopies_[v], nodes_[v].forbid);
         if (copies_[c].weight + bestPreference(both, nodes_[u].forbid | nodes_[v].forbid) < apart) continue;
         merge(u, v);
-        for (int q = 0; q < n_; ++q) if (rep_[q] == q) degree_[q] = popcount(nodes_[q].forbid & palette_);
+        for (int q = 0; q < n_; ++q) if (rep_[q] == q) degree_[q] = popcount(nodes_[q].forbid & palette(q));
         for (int q = 0; q < n_; ++q)
             if (rep_[q] == q)
                 for (int w = 0; w < words_; ++w) degree_[q] += popcount(row(q)[w]);
@@ -308,12 +320,11 @@ void Allocator::coalesce() {
 // always colours and goes on the stack; when none is left, the cheapest
 // by weight over degree goes anyway, and select finds out.
 void Allocator::simplify(std::vector<int> &stack) {
-    const int k = popcount(palette_);
     removed_.assign(n_, false);
     for (;;) {
         int p = -1;
         for (int q = 0; q < n_; ++q)
-            if (alive(q) && degree_[q] < k) { p = q; break; }
+            if (alive(q) && degree_[q] < popcount(palette(q))) { p = q; break; }
         if (p < 0)
             for (int q = 0; q < n_; ++q)
                 if (alive(q) && (p < 0 || nodes_[q].weight * (degree_[p] + 1) < nodes_[p].weight * (degree_[q] + 1))) p = q;
@@ -329,21 +340,23 @@ void Allocator::simplify(std::vector<int> &stack) {
 // last, and a fresh one only where reserveFresh said so.
 int Allocator::pick(int p) {
     const Node &nd = nodes_[p];
-    RegSet allowed = palette_ & ~nd.forbid;
+    RegSet allowed = palette(p) & ~nd.forbid;
     if (nd.home >= 0) allowed |= bit(nd.home) & ~nd.forbid;
     for (int q = 0; q < n_; ++q)
         if (interferes(p, q) && colour_[q] >= 0) allowed &= ~bit(colour_[q]);
     const bool fresh = freshFor_[p];
-    long score[kGprs] = {0};
+    long score[kWebRegs] = {0};
     for (int c : copiesOf_[p]) {
         const int other = isPseudo(copies_[c].src) && find(indexOf(copies_[c].src)) == p ? copies_[c].dst : copies_[c].src;
         const int reg = isPseudo(other) ? colour_[find(indexOf(other))] : other;
         if (reg >= 0 && (allowed & bit(reg))) score[reg] += copies_[c].weight;
     }
-    std::vector<int> offer = order_;
-    if (nd.home >= 0 && !(palette_ & bit(nd.home))) offer.push_back(nd.home);
-    for (int r : kOffer) if ((offered_ & taken_ & bit(r))) offer.push_back(r);
-    if (fresh) for (int r : kOffer) if ((offered_ & ~taken_ & bit(r))) offer.push_back(r);
+    std::vector<int> offer = order_[cls(p)];
+    if (nd.home >= 0 && !(palette(p) & bit(nd.home))) offer.push_back(nd.home);
+    if (nd.cls == RegClass::Gpr) {
+        for (int r : kOffer) if ((offered_ & taken_ & bit(r))) offer.push_back(r);
+        if (fresh) for (int r : kOffer) if ((offered_ & ~taken_ & bit(r))) offer.push_back(r);
+    }
     int best = -1;
     for (int r : offer)
         if ((allowed & bit(r)) && (best < 0 || score[r] > score[best] || (score[r] == score[best] && r == nd.home)))
@@ -359,7 +372,7 @@ void Allocator::reserveFresh() {
     freshFor_.assign(n_, false);
     std::vector<int> needy;
     for (int p = 0; p < n_; ++p)
-        if (alive(p) && nodes_[p].slot && (palette_ & ~offered_ & ~nodes_[p].forbid) == 0 &&
+        if (alive(p) && nodes_[p].slot && nodes_[p].cls == RegClass::Gpr && (palette(p) & ~offered_ & ~nodes_[p].forbid) == 0 &&
             nodes_[p].slotWeight >= fn_.costs().minWeight())
             needy.push_back(p);
     std::stable_sort(needy.begin(), needy.end(),
@@ -383,18 +396,20 @@ int Allocator::select(const std::vector<int> &stack) {
 
 // Chaitin-Briggs over the graph; the node left without a register, or -1.
 int Allocator::colour() {
-    palette_ = 0;
-    order_.clear();
     taken_ = 0;
-    for (int r : kOffer)
-        if (candidate(r) && !(fn_.convention.preserved & bit(r))) { palette_ |= bit(r); order_.push_back(r); }
-    palette_ |= offered_;
+    for (int c = 0; c < 3; ++c) {
+        palette_[c] = 0;
+        order_[c].clear();
+        for (int r : TargetDesc::x86_64().offer[c])
+            if (!(fn_.convention.preserved & bit(r))) { palette_[c] |= bit(r); order_[c].push_back(r); }
+    }
+    palette_[static_cast<int>(RegClass::Gpr)] |= offered_;
     rep_.resize(n_);
     for (int p = 0; p < n_; ++p) rep_[p] = p;
     removed_.assign(n_, false);
     degree_.assign(n_, 0);
     for (int p = 0; p < n_; ++p)
-        degree_[p] = static_cast<int>(nodes_[p].adj.size()) + popcount(nodes_[p].forbid & palette_);
+        degree_[p] = static_cast<int>(nodes_[p].adj.size()) + popcount(nodes_[p].forbid & palette(p));
     physCopies_.assign(n_, std::vector<Copy>());
     for (const Copy &c : copies_)
         if (isPseudo(c.src) != isPseudo(c.dst)) physCopies_[indexOf(isPseudo(c.src) ? c.src : c.dst)].push_back(c);

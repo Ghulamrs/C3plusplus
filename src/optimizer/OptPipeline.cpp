@@ -97,7 +97,7 @@ struct Webs : Pass {
         const bool split = webs.splitPinned();
         webs.build();
         fn.pseudos.clear();
-        for (int h : webs.homes()) fn.pseudos.push_back(PseudoInfo(RegClass::Gpr, h));
+        for (int h : webs.homes()) fn.pseudos.push_back(PseudoInfo(mir::TargetDesc::x86_64().classOf(h), h));
         return split;
     }
 };

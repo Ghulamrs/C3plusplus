@@ -16,11 +16,12 @@ bool candidate(int r) { return TargetDesc::x86_64().candidate(r); }
 
 bool isShift(const std::string &m) { return opcodeOf(m).has(Opcode::kShift); }
 
-// A copy of a register to itself, whole: the one move that is truly
-// nothing, where a four-byte one zero-extends.
+// A copy of a register to itself, whole: the one move that is truly nothing, where a four-byte one zero-extends
+// and an xmm one by `movsd` merges; an xmm register is copied by `movapd`, all 16 bytes.
 Entry copy(int reg) {
     Entry e;
-    e.ins = Instr{"mov", Operand::ofReg(reg, 8), Operand::ofReg(reg, 8), 2};
+    if (reg >= kXmm0) e.ins = Instr{"movapd", Operand::ofReg(reg, 16), Operand::ofReg(reg, 16), 2};
+    else e.ins = Instr{"mov", Operand::ofReg(reg, 8), Operand::ofReg(reg, 8), 2};
     return e;
 }
 
@@ -32,6 +33,10 @@ const TargetDesc &TargetDesc::x86_64() {
         for (int r : {RAX, RCX, RDX, RSI, RDI, R8, R9, R10, R11, RBX, R12, R13, R14, R15}) {
             t.members[static_cast<int>(RegClass::Gpr)] |= bit(r);
             t.offer[static_cast<int>(RegClass::Gpr)].push_back(r);
+        }
+        for (int x = 0; x < 16; ++x) {     // xmm0-7 need no REX, so they come first
+            t.members[static_cast<int>(RegClass::Xmm)] |= bit(kXmm0 + x);
+            t.offer[static_cast<int>(RegClass::Xmm)].push_back(kXmm0 + x);
         }
         return t;
     }();
@@ -134,7 +139,7 @@ bool Webs::splitPinned() {
             const bool ret = ins && opcodeOf(s[k].ins.m).kind == Opcode::Ret;
             if (ins && !ret) {
                 const RegSet wanted = implicitReads(k);
-                for (int r = 0; r < kGprs; ++r)
+                for (int r = 0; r < kWebRegs; ++r)
                     if (candidate(r) && (wanted & bit(r))) { out.push_back(copy(r)); changed = true; }
                 for (const Occurrence &o : occ_[k])
                     if (o.pinned) { out.push_back(copy(o.reg)); changed = true; }
@@ -143,7 +148,7 @@ bool Webs::splitPinned() {
             out.push_back(std::move(s[k]));
             if (ins && !ret) {
                 const RegSet leftLive = implicitWrites(k) & liveAfter[k - blk.begin];
-                for (int r = 0; r < kGprs; ++r)
+                for (int r = 0; r < kWebRegs; ++r)
                     if (candidate(r) && (leftLive & bit(r))) { out.push_back(copy(r)); changed = true; }
             }
         }
@@ -168,18 +173,18 @@ void Webs::makeDefinitions() {
         occ_[k] = occurrencesOf(s[k].ins, k);
         for (const Occurrence &o : occ_[k])
             if (o.write) defAt_[k][o.operand] = sets_.make(false);
-        implicitDef_[k].assign(kGprs, -1);
+        implicitDef_[k].assign(kWebRegs, -1);
         const RegSet unnamed = implicitWrites(k);
-        for (int r = 0; r < kGprs; ++r)
+        for (int r = 0; r < kWebRegs; ++r)
             if (candidate(r) && (unnamed & bit(r))) implicitDef_[k][r] = sets_.make(true);
     }
     // **A block entered from nowhere this function shows** - the entry, or a
     // label only a table names - starts from a value the ABI placed: pinned.
     const int nb = static_cast<int>(fn_.flow.blocks.size());
-    unknownIn_.assign(nb, std::vector<int>(kGprs, -1));
+    unknownIn_.assign(nb, std::vector<int>(kWebRegs, -1));
     for (int b = 0; b < nb; ++b)
         if (b == 0 || fn_.flow.blocks[b].preds.empty())
-            for (int r = 0; r < kGprs; ++r)
+            for (int r = 0; r < kWebRegs; ++r)
                 if (candidate(r)) unknownIn_[b][r] = sets_.make(true);
 }
 
@@ -193,17 +198,17 @@ void Webs::joinUsesToDefinitions() {
 
     // The definition of r each instruction leaves, if it makes one; then the
     // reaching definitions solved over the flow from that.
-    std::vector<std::vector<int>> lastDef(s.size(), std::vector<int>(kGprs, -1));
+    std::vector<std::vector<int>> lastDef(s.size(), std::vector<int>(kWebRegs, -1));
     for (int k = 0; k < static_cast<int>(s.size()); ++k) {
         if (implicitDef_[k].empty()) continue;
-        for (int r = 0; r < kGprs; ++r) {
+        for (int r = 0; r < kWebRegs; ++r) {
             int d = implicitDef_[k][r];
             for (const Occurrence &o : occ_[k]) if (o.write && o.reg == r) { d = defAt_[k][o.operand]; break; }
             lastDef[k][r] = d;
         }
     }
     ReachingDefs rd;
-    rd.solve(f, s, kGprs, lastDef, unknownIn_);
+    rd.solve(f, s, kWebRegs, lastDef, unknownIn_);
 
     useWeb_.assign(s.size(), std::vector<int>(2, -1));
     for (int b = 0; b < static_cast<int>(f.blocks.size()); ++b) {
@@ -219,7 +224,7 @@ void Webs::joinUsesToDefinitions() {
                 useWeb_[k][o.operand] = from[0];
             }
             const RegSet unnamed = implicitReads(k);
-            for (int r = 0; r < kGprs; ++r)
+            for (int r = 0; r < kWebRegs; ++r)
                 if (candidate(r) && (unnamed & bit(r)))
                     for (int d : reach[r]) sets_.pin(d);
             // A write joins the use in the same operand: one name for both.
@@ -229,7 +234,7 @@ void Webs::joinUsesToDefinitions() {
                 if (useWeb_[k][o.operand] >= 0) sets_.unite(useWeb_[k][o.operand], d);
                 reach[o.reg].assign(1, d);
             }
-            for (int r = 0; r < kGprs; ++r)
+            for (int r = 0; r < kWebRegs; ++r)
                 if (implicitDef_[k][r] >= 0) reach[r].assign(1, implicitDef_[k][r]);
             // An operand with no role takes the name of this instruction's write.
             for (const Occurrence &o : occ_[k]) {
@@ -240,7 +245,7 @@ void Webs::joinUsesToDefinitions() {
         }
         // What leaves for somewhere unseen may be read there.
         if (f.blocks[b].leaves)
-            for (int r = 0; r < kGprs; ++r)
+            for (int r = 0; r < kWebRegs; ++r)
                 for (int d : reach[r]) sets_.pin(d);
     }
 }
@@ -303,8 +308,11 @@ bool Webs::dropSelfCopies(Function &fn) {
     for (Entry &e : fn.stream) {
         if (e.kind != Entry::Ins || e.dead) continue;
         const Instr &i = e.ins;
-        if (i.m == "mov" && i.operands == 2 && i.a.kind == Operand::Register && i.b.kind == Operand::Register &&
-            i.a.reg.id == i.b.reg.id && i.a.reg.width == 8 && i.b.reg.width == 8) {
+        const bool gpr = i.m == "mov" && i.a.reg.width == 8 && i.b.reg.width == 8;
+        // `movsd %xmm0, %xmm0` merges a register's low lanes with themselves: nothing too.
+        const bool xmm = (i.m == "movapd" || i.m == "movaps" || i.m == "movsd" || i.m == "movss") && i.a.reg.id >= kXmm0;
+        if ((gpr || xmm) && i.operands == 2 && i.a.kind == Operand::Register && i.b.kind == Operand::Register &&
+            i.a.reg.id == i.b.reg.id) {
             e.dead = true;
             changed = true;
         }

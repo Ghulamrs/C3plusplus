@@ -12,6 +12,8 @@ namespace mir {
 
 constexpr int kFirstPseudo = opt::kPhysical;
 inline bool isPseudo(int id) { return id >= kFirstPseudo; }
+// The registers a web may be made of: the general ones and the xmm ones, numbered below this.
+constexpr int kWebRegs = opt::kXmm0 + 16;
 
 // **The target's register files, as the webs and the allocator ask about them** (M3-IR 2.8): which registers
 // each class may be coloured with, and the order they are offered in, cheapest encoding first.
@@ -24,7 +26,7 @@ struct TargetDesc {
     bool candidate(int r) const {
         return r >= 0 && r < opt::kPhysical && (members[static_cast<int>(classOf(r))] >> r & 1);
     }
-    // Both x86 targets: the general registers but rsp and rbp; the convention is the function's own.
+    // Both x86 targets: the general registers but rsp and rbp, and xmm0-15; which are preserved is the convention's.
     static const TargetDesc &x86_64();
 };
 
@@ -50,7 +52,7 @@ public:
     // kAsIs leaves the pseudo standing.
     enum { kToSlot = -1, kAsIs = -2 };
     static void assign(opt::Function &fn, const std::vector<int> &colour);
-    // A whole copy of a register to itself, which an assignment leaves where a split was made or a copy coalesced, goes; a four-byte one zero-extends and stays.
+    // A whole copy of a register to itself, which an assignment leaves where a split was made or a copy coalesced, goes, and so does an xmm scalar move of one to itself; a four-byte one zero-extends and stays.
     static bool dropSelfCopies(opt::Function &fn);
 
 private:

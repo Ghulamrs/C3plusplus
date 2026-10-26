@@ -46,6 +46,7 @@ private:
         long slotWeight = 0;        // a promoted local's accesses, in minWeight's unit
         int home = -1;              // a web's register; a promoted local has none
         bool slot = false;          // holds a promoted local, whose slot could serve
+        opt::RegClass cls = opt::RegClass::Gpr;     // the file it is coloured from
     };
 
     opt::Function &fn_;
@@ -65,10 +66,10 @@ private:
     // The colouring's state: the registers on offer - the caller-saved
     // ones, and the preserved ones a save can be charged for - each node's
     // representative once coalesced, its degree, and its copies.
-    opt::RegSet palette_ = 0;
-    opt::RegSet offered_ = 0;
+    opt::RegSet palette_[3] = {0, 0, 0};    // per class
+    opt::RegSet offered_ = 0;               // general registers only: a preserved xmm one needs a 16-byte save
     opt::RegSet taken_ = 0;
-    std::vector<int> order_;
+    std::vector<int> order_[3];
     std::vector<int> rep_;
     std::vector<int> degree_;
     std::vector<bool> removed_;
@@ -99,6 +100,10 @@ private:
     unsigned long long *row(int p) { return &matrix_[static_cast<std::size_t>(p) * words_]; }
     const unsigned long long *row(int p) const { return &matrix_[static_cast<std::size_t>(p) * words_]; }
     void addEdge(int p, int q);
+    int cls(int p) const { return static_cast<int>(nodes_[p].cls); }
+    opt::RegSet palette(int p) const { return palette_[cls(p)]; }
+    int classOfReg(int reg) const;
+    bool copyOf(const opt::Instr &i, int &src, int &dst) const;
     bool alive(int p) const { return rep_[p] == p && !removed_[p] && !demoted_[p]; }
     static void set(Bits &b, int p) { b[p / 64] |= 1ull << (p % 64); }
     static void clear(Bits &b, int p) { b[p / 64] &= ~(1ull << (p % 64)); }
