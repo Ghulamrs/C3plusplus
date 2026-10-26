@@ -115,11 +115,14 @@ names() {
 }
 
 status=0
+# TARGETS in the environment names the targets to compare, all three unless set: tests/win-structure.sh asks
+# for the x86_64-windows row alone, beside its object-level checks.
 for pair in "x86_64-linux:x86_64-linux-gnu" \
             "x86_64-windows:x86_64-pc-windows-msvc" \
             "arm64-darwin:arm64-apple-macos"; do
     mine=${pair%%:*}
     theirs=${pair#*:}
+    case " ${TARGETS:-x86_64-linux x86_64-windows arm64-darwin} " in *" $mine "*) ;; *) continue ;; esac
 
     # The same <case>.notarget tests/emit.sh reads: a case may name a target it
     # does not compile for yet, with the reason on the line. Printed every run,

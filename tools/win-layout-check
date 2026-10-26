@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+"""The Microsoft-ABI records cxx3 lays out, beside clang's for the same source - vftables, vbtables, RTTI, throw info.
+
+`tests/names.sh` says whether cxx3 spells a symbol as clang does; this says whether the *object behind the symbol*
+is the one clang builds: for every record both objects define, the section it sits in, where in that section,
+how long it is, which symbol each slot points at and what the other bytes hold. A vftable slot pointing at the
+wrong override (A3, "cl groups a class's own overloads at the first one's slot"), a base class descriptor with the
+wrong offset or attributes ("the Microsoft RTTI of a non-public base"), a complete object locator naming the wrong
+hierarchy - each is a difference here and a program that runs wrong on Windows, and none of them is a name.
+
+    tools/win-layout-check [-v] MINE THEIRS      MINE from `cxx3 -c -arch x86_64-windows`, THEIRS from
+                                                 `clang++ -target x86_64-pc-windows-msvc -c` of the same source
+
+The records compared are the ones the ABI lays out by rule: `??_7` (vftable), `??_8` (vbtable), `??_R0`-`??_R4`
+(type descriptor, base class descriptor, base class array, class hierarchy descriptor, complete object locator),
+`_CT`, `_CTA`, `_TI` (the throw chain). A record only one side has is a names difference - `tests/names.sh`'s to
+report, with its `.nonames` - and is listed only under -v. Each record is one COMDAT section on both sides, so the
+section is the record: its size is compared rounded to 8, the two assemblers padding differently; a relocation's
+target is compared by name, with each side's own name for a string literal and a section symbol folded to one word.
+Exit 1 when a record both define differs.
+"""
+import os
+import re
+import signal
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import coffobj  # noqa: E402
+
+signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+
+KINDS = re.compile(r"^(\?\?_7|\?\?_8|\?\?_R[0-4]|_CT\?\?|_CTA|_TI)")
+
+
+class Record(object):
+    def __init__(self, obj, sym):
+        self.name = sym.name
+        self.section = obj.section_of(sym)
+        self.offset = sym.value
+        sec = self.section
+        self.size = sec.size
+        self.relocs = []
+        masked = bytearray(sec.data)
+        for r in sec.relocs:
+            place = obj.resolve(sec, r)
+            width = 8 if r.type == coffobj.REL_ADDR64 else 4
+            masked[r.offset:r.offset + width] = b"\0" * width
+            self.relocs.append((r.offset, coffobj.REL_NAMES.get(r.type, str(r.type)), target_name(place, obj)))
+        self.bytes = bytes(masked)
+
+
+def target_name(place, obj):
+    """A relocation's target as a word both sides can agree on."""
+    name = place.name
+    if place.section is not None and place.symbol is not None and place.symbol.scl == coffobj.IMAGE_SYM_CLASS_STATIC \
+            and place.symbol.value == 0 and name == place.section.name:
+        # A section symbol plus an offset: the defined symbol at that place, if one is there.
+        for s in obj.symbols_in(place.section):
+            if s.value == place.offset and s.scl == coffobj.IMAGE_SYM_CLASS_EXTERNAL:
+                return s.name
+        return "<%s+0x%x>" % (place.section.base_name, place.offset)
+    if name.startswith("??_C@") or name.startswith("$_L_str_") or name.startswith(".L"):
+        return "<string>"
+    return name
+
+
+def records(obj):
+    out = {}
+    for name, syms in obj.defined.items():
+        if not KINDS.match(name) or len(syms) != 1:
+            continue
+        out[name] = Record(obj, syms[0])
+    return out
+
+
+def rounded(n):
+    return (n + 7) // 8 * 8
+
+
+def compare(mine, theirs):
+    """The differences between one record's two layouts, as lines."""
+    out = []
+    if mine.section.base_name != theirs.section.base_name:
+        out.append("section %s here, %s in clang's" % (mine.section.name, theirs.section.name))
+    if mine.offset != theirs.offset:
+        out.append("at +0x%x of its section here, +0x%x in clang's" % (mine.offset, theirs.offset))
+    if rounded(mine.size) != rounded(theirs.size):
+        out.append("%d bytes here, %d in clang's" % (mine.size, theirs.size))
+    if mine.relocs != theirs.relocs:
+        a = ["+0x%x %s %s" % r for r in mine.relocs]
+        b = ["+0x%x %s %s" % r for r in theirs.relocs]
+        out.append("relocations here [%s], in clang's [%s]" % ("; ".join(a), "; ".join(b)))
+    n = min(len(mine.bytes), len(theirs.bytes))
+    if mine.bytes[:n] != theirs.bytes[:n]:
+        at = next(i for i in range(n) if mine.bytes[i] != theirs.bytes[i])
+        out.append("bytes differ from +0x%x: %s here, %s in clang's"
+                   % (at, mine.bytes[at:at + 8].hex(), theirs.bytes[at:at + 8].hex()))
+    elif any(mine.bytes[n:]) or any(theirs.bytes[n:]):
+        out.append("the longer record carries bytes past the shorter's end")
+    return out
+
+
+def main(argv):
+    verbose = "-v" in argv
+    paths = [a for a in argv[1:] if a != "-v"]
+    if len(paths) != 2:
+        sys.stderr.write(__doc__)
+        return 2
+    mine = coffobj.Coff(paths[0])
+    theirs = coffobj.Coff(paths[1])
+    rm, rt = records(mine), records(theirs)
+    both = sorted(set(rm) & set(rt))
+    faults = 0
+    for name in both:
+        for line in compare(rm[name], rt[name]):
+            print("%s: %s: %s" % (os.path.basename(paths[0]), name, line))
+            faults += 1
+    if verbose:
+        for name in sorted(set(rm) - set(rt)):
+            print("%s: only cxx3: %s" % (os.path.basename(paths[0]), name))
+        for name in sorted(set(rt) - set(rm)):
+            print("%s: only clang: %s" % (os.path.basename(paths[0]), name))
+    print("win-layout-check: %d records in both, %d only cxx3, %d only clang, %d differences"
+          % (len(both), len(set(rm) - set(rt)), len(set(rt) - set(rm)), faults))
+    return 1 if faults else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
