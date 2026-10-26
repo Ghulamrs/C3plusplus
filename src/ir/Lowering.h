@@ -49,10 +49,14 @@ public:
     // The constructor the parser chose for a member, and a class's destructor - Sema's records, asked by the glue.
     void setMemberBuilt(std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> f) { memberBuilt_ = f; }
     void setDestructor(std::function<std::string(const Type *)> f) { destructor_ = f; }
+    // The constructor the parser chose for a local's `var` node - Sema's record, asked by the glue.
+    void setLocalBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &, bool &)> f) { localBuilt_ = f; }
 private:
     struct Outside { std::string why; explicit Outside(const std::string &w) : why(w) {} };
     struct Val { ValueId v; TypeId type; Val() {} Val(ValueId a, TypeId t) : v(a), type(t) {} };
-    struct Loop { BlockId brk, cont; std::size_t handlers; };
+    struct Loop { BlockId brk, cont; std::size_t handlers, live; };
+    // A local a destructor destroys, alive from its construction to the end of its scope; `pad` is its cleanup's index in pads_.
+    struct Live { ValueId slot; const Type *cls; std::string dtor; std::size_t pad; };
     // A landing pad a call inside its region unwinds to (M3-IR 3.6): a try's, or a handler's end-catch cleanup. Its block is
     // made on first use; `types` is the whole action chain, own handlers first, then the enclosing pads' - the walker's.
     struct Pad { BlockId block; ValueId ptr, sel; bool cleanup; std::vector<std::string> types; std::vector<int> indices; std::size_t own; };
@@ -164,6 +168,12 @@ private:
     void basePaths(const Type &cls, const Type &base, int at, int &found, int &offset);
     void memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32_t to);
     void classLocal(sema::TypedId var, ValueId slot, const Type &t);
+    bool builtClass(const Type &t) const;
+    void builtLocal(sema::TypedId var, ValueId slot, const Type &t);
+    void destroy(const Live &l, bool invoke = false);
+    void destroyLive(std::size_t mark);
+    void closeScope(std::size_t mark);
+    void scopedStmt(sema::TypedId id);
     void copyObject(ValueId to, ValueId from, const Type &t);
     static bool scalarArithmetic(const Type &t);
     static long long normalise(long long v, const Type &t, const Target &target);
@@ -188,6 +198,9 @@ private:
     std::function<bool(syntax::NodeId, sema::NewFacts &)> newFacts_;
     std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> memberBuilt_;
     std::function<std::string(const Type *)> destructor_;
+    std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &, bool &)> localBuilt_;
+    std::vector<Live> live_;                    // innermost last
+    bool landingPads_;                          // the parser gave the function landing pads: the prologue names an LSDA
     std::vector<Pad> pads_;                     // innermost last
     std::vector<std::string> typeTable_;        // the function's selector indices: one per type, first occurrence, 1-based
     std::size_t handlerDepth_;                  // handlers the statement being lowered is inside
