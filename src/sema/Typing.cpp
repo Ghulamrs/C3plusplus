@@ -124,6 +124,7 @@ void Typer::record(syntax::NodeId id, TypedId t) {
         out.isConst = r->second.isConst;
         out.isThreadLocal = r->second.isThreadLocal;
         out.hasThis = r->second.hasThis;
+        out.indirect = r->second.indirect;
         out.name = r->second.name;
         tree_.setResolution(t, out);
     }
@@ -425,7 +426,7 @@ std::string Typer::recordDiffers(const Parser &p, const TypedTree &tree, TypedId
         if (r.what != pr->second.what || p.types_.type(r.type) != pr->second.type ||
             p.types_.type(r.owner) != pr->second.owner || r.symbol != pr->second.symbol || r.serial != pr->second.serial ||
             r.value != pr->second.value || r.isConst != pr->second.isConst || r.isThreadLocal != pr->second.isThreadLocal ||
-            r.hasThis != pr->second.hasThis || r.name != pr->second.name)
+            r.hasThis != pr->second.hasThis || r.indirect != pr->second.indirect || r.name != pr->second.name)
             return "the record's fields";
     }
     const auto cast = p.castTypes_.find(id);

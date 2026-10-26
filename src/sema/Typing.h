@@ -46,8 +46,9 @@ struct Resolution : ResolutionKind {
     long long value;        // an enumerator's, a folded static member's
     bool isConst, isThreadLocal;    // a global's
     bool hasThis;           // a call's: its function type's first parameter is the object's address
+    bool indirect;          // a call's: through a value - a pointer or a vtable slot
     std::string name;       // a global's or a function's lookup name, which its Var is named by
-    Resolution() : what(None), serial(-1), value(0), isConst(false), isThreadLocal(false), hasThis(false) {}
+    Resolution() : what(None), serial(-1), value(0), isConst(false), isThreadLocal(false), hasThis(false), indirect(false) {}
 };
 
 // What a sizeof, alignof or noexcept folded to, or an integer or character literal's value, with its type.

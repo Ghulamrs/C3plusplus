@@ -704,6 +704,7 @@ ExprPtr Parser::completeCall(const std::string &name, const std::string &symbol,
     if (!symbol.empty() || indirect) {
         Resolved r = resolvedAs(Resolved::Call, types_.functionType(returns, params, variadic), symbol);
         r.hasThis = hasThis;
+        r.indirect = indirect;
         made = resolve(std::move(made), r);
     }
     return made;

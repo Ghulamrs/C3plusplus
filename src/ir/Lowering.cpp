@@ -1292,9 +1292,10 @@ Lowering::Val Lowering::call(sema::TypedId id) {
     std::vector<ValueId> ops;
     TypeId sig;
     // A call by name reaches the recorded function; one through a value - a local, a call's result - is read as such.
-    const bool direct = r.what == sema::Resolution::Call && !r.symbol.empty() && !r.hasThis && syn(head).kind == syntax::Kind::Name &&
+    const bool direct = r.what == sema::Resolution::Call && !r.symbol.empty() && !r.hasThis && !r.indirect && syn(head).kind == syntax::Kind::Name &&
                         !tree_.node(head).decl.valid() && r.symbol.find_first_of(" ()*&[") == std::string::npos;
     // A member function called by name, its object's address the first argument: `o.f()`, `p->f()`, `f()` for `this->f()`.
+    if (r.what == sema::Resolution::Call && r.hasThis && r.indirect) outside("a virtual call or a call through a member pointer");
     const bool member = r.what == sema::Resolution::Call && !r.symbol.empty() && r.hasThis &&
                         r.symbol.find_first_of(" ()*&[") == std::string::npos;
     if (member) {

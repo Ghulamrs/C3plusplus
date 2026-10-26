@@ -538,6 +538,7 @@ private:
         long long value = 0;             // an enumerator's, a folded static member's
         bool isConst = false, isThreadLocal = false;    // a global's
         bool hasThis = false;                            // a call's: its function type's first parameter is the object's address
+        bool indirect = false;                           // a call's: through a value - a pointer or a vtable slot
         std::string name;                                // a global's or a function's lookup name, which its Var is named by
     };
     std::vector<Resolved> resolvedTable_;
