@@ -107,26 +107,25 @@ void X86_64Linux::ssaUnsupported(const ir::Inst &i) {
 
 // One instruction. The operands are read from their slots; the result goes to its own.
 void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
-    using ir::Op;
     const Type *rt = i.type.valid() ? ssaTypes_->type(i.type) : nullptr;
     switch (i.op) {
-    case Op::Alloca:
+    case ir::Op::Alloca:
         // The frame object's address is the alloca's value: taken once, here, into its slot.
         a_->ins("lea", local(ssaAllocaSlot_[static_cast<std::size_t>(i.k)]), reg("%rax"));
         ssaStore(f, i.result);
         return;
-    case Op::Unreachable:
-    case Op::Undef:
+    case ir::Op::Unreachable:
+    case ir::Op::Undef:
         return;
-    case Op::IConst:
+    case ir::Op::IConst:
         a_->ins("mov", imm(i.k), reg("%rax"));
         ssaStore(f, i.result);
         return;
-    case Op::Null:
+    case ir::Op::Null:
         a_->ins("mov", immText("0"), reg("%rax"));
         ssaStore(f, i.result);
         return;
-    case Op::FConst:
+    case ir::Op::FConst:
         if (genKind(rt) == Kind::Float) {
             a_->ins("mov", imm(static_cast<unsigned int>(i.bits)), reg("%eax"));
             a_->ins("movd", reg("%eax"), reg("%xmm0"));
@@ -136,38 +135,52 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         }
         ssaStore(f, i.result);
         return;
-    case Op::Addr:
+    case ir::Op::Addr:
         if (target_.microsoftNames() || definedHere_.count(i.sym) != 0) a_->ins("lea", rip(i.sym), reg("%rax"));
         else a_->ins("mov", rip(i.sym + "@GOTPCREL"), reg("%rax"));
         if (i.k != 0) a_->ins("add", imm(i.k), reg("%rax"));
         ssaStore(f, i.result);
         return;
-    case Op::Load:
+    case ir::Op::Load:
         ssaLoad(f, f.operand(i, 0));
         load(rt);
         ssaStore(f, i.result);
         return;
-    case Op::Store: {
+    case ir::Op::Store: {
         const ir::ValueId p = f.operand(i, 0), v = f.operand(i, 1);
         ssaLoad(f, v);
         a_->ins("mov", vslot(p), reg(abi_.scratch));
         store(typeOf(f, v));
         return;
     }
-    case Op::Gep:
+    case ir::Op::Memcpy:
+        // The walker's block copy: from (%rax) to (scratch).
+        ssaLoad(f, f.operand(i, 1));
+        a_->ins("mov", vslot(f.operand(i, 0)), reg(abi_.scratch));
+        copyBlock(static_cast<int>(i.k));
+        return;
+    case ir::Op::Memset: {
+        ssaLoad(f, f.operand(i, 0));
+        long long off = 0;
+        for (; off + 8 <= i.k; off += 8) a_->ins("movq", immText("0"), mem(static_cast<int>(off), "%rax"));
+        for (; off + 4 <= i.k; off += 4) a_->ins("movl", immText("0"), mem(static_cast<int>(off), "%rax"));
+        for (; off < i.k; off++) a_->ins("movb", immText("0"), mem(static_cast<int>(off), "%rax"));
+        return;
+    }
+    case ir::Op::Gep:
         ssaLoad(f, f.operand(i, 0));
         if (i.count == 2) a_->ins("add", vslot(f.operand(i, 1)), reg("%rax"));
         else if (i.k != 0) a_->ins("add", imm(i.k), reg("%rax"));
         ssaStore(f, i.result);
         return;
-    case Op::Add: case Op::Sub: case Op::Mul: case Op::And: case Op::Or: case Op::Xor:
-    case Op::SDiv: case Op::UDiv: case Op::SRem: case Op::URem: case Op::Shl: case Op::LShr: case Op::AShr: {
+    case ir::Op::Add: case ir::Op::Sub: case ir::Op::Mul: case ir::Op::And: case ir::Op::Or: case ir::Op::Xor:
+    case ir::Op::SDiv: case ir::Op::UDiv: case ir::Op::SRem: case ir::Op::URem: case ir::Op::Shl: case ir::Op::LShr: case ir::Op::AShr: {
         const bool wide = rt->size(target_) == 8;
         const char *acc_ = acc(rt), *d = rhs(rt);
-        if (i.op == Op::Shl || i.op == Op::LShr || i.op == Op::AShr) {
+        if (i.op == ir::Op::Shl || i.op == ir::Op::LShr || i.op == ir::Op::AShr) {
             a_->ins("mov", vslot(f.operand(i, 1)), reg("%rcx"));
             ssaLoad(f, f.operand(i, 0));
-            a_->ins(i.op == Op::Shl ? "shl" : i.op == Op::AShr ? "sar" : "shr", reg("%cl"), reg(acc_));
+            a_->ins(i.op == ir::Op::Shl ? "shl" : i.op == ir::Op::AShr ? "sar" : "shr", reg("%cl"), reg(acc_));
             canonicalise(rt);
             ssaStore(f, i.result);
             return;
@@ -175,18 +188,18 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         a_->ins("mov", vslot(f.operand(i, 1)), reg(abi_.scratch));
         ssaLoad(f, f.operand(i, 0));
         switch (i.op) {
-        case Op::Add: a_->ins("add", reg(d), reg(acc_)); break;
-        case Op::Sub: a_->ins("sub", reg(d), reg(acc_)); break;
-        case Op::Mul: a_->ins("imul", reg(d), reg(acc_)); break;
-        case Op::And: a_->ins("and", reg(d), reg(acc_)); break;
-        case Op::Or:  a_->ins("or", reg(d), reg(acc_)); break;
-        case Op::Xor: a_->ins("xor", reg(d), reg(acc_)); break;
+        case ir::Op::Add: a_->ins("add", reg(d), reg(acc_)); break;
+        case ir::Op::Sub: a_->ins("sub", reg(d), reg(acc_)); break;
+        case ir::Op::Mul: a_->ins("imul", reg(d), reg(acc_)); break;
+        case ir::Op::And: a_->ins("and", reg(d), reg(acc_)); break;
+        case ir::Op::Or:  a_->ins("or", reg(d), reg(acc_)); break;
+        case ir::Op::Xor: a_->ins("xor", reg(d), reg(acc_)); break;
         default: {
-            const bool sign = i.op == Op::SDiv || i.op == Op::SRem;
+            const bool sign = i.op == ir::Op::SDiv || i.op == ir::Op::SRem;
             if (sign) a_->ins(wide ? "cqo" : "cdq");
             else      a_->ins("xor", reg("%edx"), reg("%edx"));
             a_->ins(sign ? "idiv" : "div", reg(d));
-            if (i.op == Op::SRem || i.op == Op::URem) a_->ins("mov", reg(wide ? "%rdx" : "%edx"), reg(acc_));
+            if (i.op == ir::Op::SRem || i.op == ir::Op::URem) a_->ins("mov", reg(wide ? "%rdx" : "%edx"), reg(acc_));
             break;
         }
         }
@@ -194,13 +207,13 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         ssaStore(f, i.result);
         return;
     }
-    case Op::Neg: case Op::Not:
+    case ir::Op::Neg: case ir::Op::Not:
         ssaLoad(f, f.operand(i, 0));
-        a_->ins(i.op == Op::Neg ? "neg" : "not", reg(acc(rt)));
+        a_->ins(i.op == ir::Op::Neg ? "neg" : "not", reg(acc(rt)));
         canonicalise(rt);
         ssaStore(f, i.result);
         return;
-    case Op::ICmp: {
+    case ir::Op::ICmp: {
         const Type *t = typeOf(f, f.operand(i, 0));
         a_->ins("mov", vslot(f.operand(i, 1)), reg(abi_.scratch));
         ssaLoad(f, f.operand(i, 0));
@@ -224,17 +237,17 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         ssaStore(f, i.result);
         return;
     }
-    case Op::FAdd: case Op::FSub: case Op::FMul: case Op::FDiv: {
+    case ir::Op::FAdd: case ir::Op::FSub: case ir::Op::FMul: case ir::Op::FDiv: {
         const bool dbl = genKind(rt) == Kind::Double;
         const char *sfx = dbl ? "sd" : "ss";
         ssaLoad(f, f.operand(i, 0));
         a_->ins(dbl ? "movsd" : "movss", vslot(f.operand(i, 1)), reg("%xmm1"));
-        const char *name = i.op == Op::FAdd ? "add" : i.op == Op::FSub ? "sub" : i.op == Op::FMul ? "mul" : "div";
+        const char *name = i.op == ir::Op::FAdd ? "add" : i.op == ir::Op::FSub ? "sub" : i.op == ir::Op::FMul ? "mul" : "div";
         a_->ins(std::string(name) + sfx, reg("%xmm1"), reg("%xmm0"));
         ssaStore(f, i.result);
         return;
     }
-    case Op::FNeg:
+    case ir::Op::FNeg:
         ssaLoad(f, f.operand(i, 0));
         if (genKind(rt) == Kind::Double) {
             a_->ins("movabs", imm(0x8000000000000000ULL), reg("%rax"));
@@ -247,7 +260,7 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         }
         ssaStore(f, i.result);
         return;
-    case Op::FCmp: {
+    case ir::Op::FCmp: {
         const Type *t = typeOf(f, f.operand(i, 0));
         const bool dbl = genKind(t) == Kind::Double;
         const std::string ucomi = dbl ? "ucomisd" : "ucomiss";
@@ -268,17 +281,17 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         ssaStore(f, i.result);
         return;
     }
-    case Op::Trunc: case Op::SExt: case Op::ZExt: case Op::FpToSi: case Op::FpToUi: case Op::SiToFp: case Op::UiToFp:
-    case Op::FpExt: case Op::FpTrunc: case Op::Bitcast: case Op::PtrToInt: case Op::IntToPtr:
+    case ir::Op::Trunc: case ir::Op::SExt: case ir::Op::ZExt: case ir::Op::FpToSi: case ir::Op::FpToUi: case ir::Op::SiToFp: case ir::Op::UiToFp:
+    case ir::Op::FpExt: case ir::Op::FpTrunc: case ir::Op::Bitcast: case ir::Op::PtrToInt: case ir::Op::IntToPtr:
         ssaLoad(f, f.operand(i, 0));
         genConversion(typeOf(f, f.operand(i, 0)), rt);
         ssaStore(f, i.result);
         return;
-    case Op::Br:
+    case ir::Op::Br:
         ssaBranchArgs(f, i.succ[0]);
         a_->ins("jmp", lbl(ssaBlockLabel(i.succ[0].block)));
         return;
-    case Op::CondBr: {
+    case ir::Op::CondBr: {
         ssaLoad(f, f.operand(i, 0));
         a_->ins("cmp", immText("0"), reg("%rax"));
         if (i.succ[0].count == 0 && i.succ[1].count == 0) {
@@ -295,17 +308,17 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         a_->ins("jmp", lbl(ssaBlockLabel(i.succ[1].block)));
         return;
     }
-    case Op::Switch:
+    case ir::Op::Switch:
         for (std::size_t s = 0; s < i.succ.size(); s++) if (i.succ[s].count != 0) { ssaUnsupported(i); return; }
         ssaLoad(f, f.operand(i, 0));
         for (std::size_t s = 1; s < i.succ.size(); s++) caseBranch(i.cases[s - 1], ssaBlockLabel(i.succ[s].block));
         a_->ins("jmp", lbl(ssaBlockLabel(i.succ[0].block)));
         return;
-    case Op::Ret:
+    case ir::Op::Ret:
         if (i.count == 1) ssaLoad(f, f.operand(i, 0));
         a_->ins("jmp", lbl(returnLabel_));
         return;
-    case Op::Call: {
+    case ir::Op::Call: {
         // The walker's own call, over Var nodes naming the slots: placeArguments and every ABI rule stay where they are.
         const ir::CallInfo &c = f.calls[i.call];
         const Type *sig = ssaTypes_->type(c.signature);

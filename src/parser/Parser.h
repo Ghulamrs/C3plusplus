@@ -321,6 +321,12 @@ private:
     bool isTemplateName(const std::string &name, bool qualified = false) const {
         if (tmpl_.templates_.find(name) == tmpl_.templates_.end()) return false;
         if (qualified) return true;
+        // A lambda's capture is the enclosing function's local, which hides a template as any local does - in the
+        // body's own tokens, not in a template instantiated from inside it.
+        if (currentClass_ != nullptr && currentClass_->findMember(name) != nullptr) {
+            const std::map<std::string, std::pair<std::size_t, std::size_t> >::const_iterator c = closureTokens_.find(currentClass_->tag());
+            if (c != closureTokens_.end() && at_ >= c->second.first && at_ < c->second.second) return false;
+        }
         return lookup_.findLocal(name) == nullptr && lookup_.findGlobal(name) == nullptr;
     }
     bool templateDeclaration();
@@ -531,6 +537,8 @@ private:
         int serial = -1;                 // a local's serial; a member's offset
         long long value = 0;             // an enumerator's, a folded static member's
         bool isConst = false, isThreadLocal = false;    // a global's
+        bool hasThis = false;                            // a call's: its function type's first parameter is the object's address
+        bool indirect = false;                           // a call's: through a value - a pointer or a vtable slot
         std::string name;                                // a global's or a function's lookup name, which its Var is named by
     };
     std::vector<Resolved> resolvedTable_;
@@ -573,7 +581,8 @@ private:
     // What a sizeof, alignof or noexcept node folded to, and its type: the constant the adapter writes (M2.12).
     std::unordered_map<std::uint32_t, std::pair<long long, const Type *> > keywordValues_;
     // The `function` nodes whose names outside them are not the file's - a member's, a namespace's, a template's.
-    std::set<std::uint32_t> scopedFunctions_;
+    std::map<std::uint32_t, int> scopedFunctions_;
+    std::set<std::string> packBodies_;   // the symbols of bodies in which a pack was expanded   // a body's scope: 1 a member, 2 a namespace, 4 a qualified name, 8 a template
     // **What the parser decides of layout as it reads, by node** (M2.11): a `var`'s frame slot, a block's or a `for`'s
     // scope, and the symbol a `function` node was defined as - what the adapter cannot derive from types.
     std::unordered_map<std::uint32_t, Local> declaredLocals_;
@@ -616,6 +625,15 @@ private:
         for (std::size_t i = 0; i < c.args().size(); i++) k.args.push_back(c.argSlot(i));
     }
     std::unordered_map<std::uint32_t, std::pair<std::string, std::string> > stringLiterals_;   // a string's label and text
+    // **A declarator's initialiser form** (M3b.2), what its `var` node's parts cannot say: `S a;` and `S a = {};` hold
+    // nothing either way. 0 none, 1 `= e` or `(e)`, 2 a braced list, 3 empty braces - value-initialisation.
+    std::unordered_map<std::uint32_t, int> varForms_;
+    int initFormAhead() const {
+        const bool eq = peek().is("=");
+        const Token &t = eq ? peekAt(1) : peek();
+        if (t.is("{")) return (eq ? peekAt(2) : peekAt(1)).is("}") ? 3 : 2;
+        return eq || peek().is("(") ? 1 : 0;
+    }
     // A handler's caught object as a `var` node, so a name in its block finds it.
     void noteCaught(const std::string &name, const Type *type, std::size_t pos) {
         const syntax::NodeId id = noteParts(syntax::Kind::Var, type->describe() + " " + name, pos, syntaxTree_.size(), pos);
@@ -638,6 +656,7 @@ private:
         std::size_t mark, lo;
         const Declared *d = nullptr;
         bool function = false;      // a function's declaration with no definition: its node is over its parameters
+        int form = 0;               // its initialiser's form, Parser::InitForm, read before the initialiser is
         VarNote(Parser &parser, std::size_t m, std::size_t l) : p(parser), mark(m), lo(l) {}
         // The type and the name; an unnamed parameter's `$unnamed<n>` is the parser's, and no source spells it.
         std::string varText() const {
@@ -651,6 +670,7 @@ private:
                 ? p.noteParts(syntax::Kind::Function, d->name, d->pos, mark, lo)
                 : p.noteParts(syntax::Kind::Var, varText(), d->pos, mark, lo);
             if (!function && d->type != nullptr) p.declaredTypes_[id.v] = d->type;
+            if (!function && form != 0) p.varForms_[id.v] = form;
             if (!function) p.noteDeclaredLocal(id, d->name);
         }
     };
@@ -1421,6 +1441,8 @@ private:
     // its body reads them without a capture, [expr.prim.lambda]/12 (1.27).
     std::map<std::string, std::vector<Local> > closureConstants_;
     std::vector<Local> constantLocals() const;
+    // Each closure's call-operator tokens, as appended for its replay: where its captures are its names.
+    std::map<std::string, std::pair<std::size_t, std::size_t> > closureTokens_;
     bool hasOrdinaryMember(const Type *cls, const std::string &name);
     // Does this type mention a template parameter - the one test the pattern read's stand-ins ask.
     bool dependentType(const Type *t) const;

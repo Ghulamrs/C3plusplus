@@ -177,6 +177,7 @@ StmtPtr Parser::declarationBody() {
         Declared d = declarator(base);
         VarNote var(*this, varMark, varLo);     // after d, so that it is destroyed - and reads d - first
         var.d = &d;
+        var.form = initFormAhead();
         if (quals.isConstexpr) d.type = constexprObject(d.type);
         // **A condition declares one name and must initialise it**, and both
         // are settled here: the loop below leaves by more than one path, so

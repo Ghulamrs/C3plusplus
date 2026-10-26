@@ -1,0 +1,1 @@
+x86_64-windows	clang-cl spells a closure `<lambda_N>`, numbered in its own order, and encodes the deduced return as `@`, where cxx1 writes `$_N` and the deduced type; nothing links against a closure, whose call operator is reached through the object. Every other name in this case agrees on all three targets.

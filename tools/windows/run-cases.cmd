@@ -120,7 +120,10 @@ if not exist "%SRCTREE%\src\main.cpp" exit /b 0
 if not exist %TOOLS%\%2 mkdir %TOOLS%\%2
 setlocal
 call "%~dp0vcvars.cmd" >nul
-cl /nologo /MP /std:c++14 /W4 /permissive- /O2 /EHsc /D_CRT_SECURE_NO_WARNINGS /Fo:%TOOLS%\%2\ /Fe:%TOOLS%\%2.exe "%SRCTREE%\src\*.cpp" > %TOOLS%\%2-cl.log 2>&1
+rem  masm is built on this tree's src\encoder since M4.3 - one assembler, so cxx3 -c and masm make the same bytes.
+set EXTRA=
+if "%2"=="masm" set EXTRA=/I "%ROOT%\src\encoder" "%ROOT%\src\encoder\*.cpp"
+cl /nologo /MP /std:c++14 /W4 /permissive- /O2 /EHsc /D_CRT_SECURE_NO_WARNINGS /Fo:%TOOLS%\%2\ /Fe:%TOOLS%\%2.exe "%SRCTREE%\src\*.cpp" %EXTRA% > %TOOLS%\%2-cl.log 2>&1
 endlocal
 if not exist %TOOLS%\%2.exe (echo run-cases.cmd: %1 did not build from %SRCTREE% - see %TOOLS%\%2-cl.log& exit /b 0)
 if "%2"=="masm" (set MASMEXE=%TOOLS%\masm.exe) else (set LINKEXE=%TOOLS%\link.exe)

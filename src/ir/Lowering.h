@@ -9,6 +9,7 @@
 #include "../syntax/Syntax.h"
 #include "../Type.h"
 
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -22,6 +23,7 @@ struct FunctionFacts {
     std::string symbol, displayName;
     bool isStatic, isInline, variadic, hasThis, sret, landingPads, noexcept_;
     TypeId returns;
+    TypeId thisType;        // a member function's `this`, the first of the parser's parameter slots
     std::size_t pos, paramCount;
     FunctionFacts() : isStatic(false), isInline(false), variadic(false), hasThis(false), sret(false), landingPads(false),
                       noexcept_(false), pos(0), paramCount(0) {}
@@ -37,6 +39,9 @@ public:
     Program &program() const { return program_; }
     // One function's typed `function` node lowered into the module, or none with the reason the subset does not reach it.
     FuncId lower(sema::TypedId fn, const FunctionFacts &facts, std::string &why);
+    // Which classes a constructor builds - the parser's to say, asked by the glue (M3b.2).
+    void setConstructed(std::function<bool(const Type *)> f) { constructed_ = f; }
+    void setAssigned(std::function<bool(const Type *)> f) { assigned_ = f; }
 private:
     struct Outside { std::string why; explicit Outside(const std::string &w) : why(w) {} };
     struct Val { ValueId v; TypeId type; Val() {} Val(ValueId a, TypeId t) : v(a), type(t) {} };
@@ -87,6 +92,8 @@ private:
     Val nameAddress(sema::TypedId id);
     Val member(sema::TypedId id);
     Val memberAddress(sema::TypedId id);
+    Val memberOfThis(sema::TypedId id);
+    Val readOf(ValueId p, TypeId type);
     Val unary(sema::TypedId id);
     Val step(sema::TypedId id, bool increment, bool prefix);
     Val binary(const std::string &op, sema::TypedId l, sema::TypedId r);
@@ -112,6 +119,10 @@ private:
     TypeId unsignedVersion(TypeId t) const;
     TypeId ptrdiffType() const;
     static bool scalar(const Type &t);
+    static bool referable(const Type &t);
+    bool plainClass(const Type &t) const;
+    void classLocal(sema::TypedId var, ValueId slot, const Type &t);
+    void copyObject(ValueId to, ValueId from, const Type &t);
     static bool scalarArithmetic(const Type &t);
     static long long normalise(long long v, const Type &t, const Target &target);
 
@@ -126,6 +137,9 @@ private:
     std::size_t fnIndex_;
     BlockId cur_;
     TypeId returns_;
+    ValueId this_;          // a member function's `this`, none in any other
+    TypeId thisType_;
+    std::function<bool(const Type *)> constructed_, assigned_;
     BlockId returnBlock_;
     std::map<std::uint32_t, std::pair<ValueId, TypeId> > locals_;    // a `var` node -> its alloca and declared type
     std::vector<Loop> loops_;

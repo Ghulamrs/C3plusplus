@@ -1352,6 +1352,8 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     sema::Typer typer(parser);
     const sema::Census c = sema::Typer::census(parser, program);
     ir::Lowering lowering(typer.tree(), parser.syntaxTree(), types, target, program, into);
+    lowering.setConstructed([&typer](const Type *cls) { return typer.constructed(cls); });
+    lowering.setAssigned([&typer](const Type *cls) { return typer.assigned(cls); });
     std::map<std::string, int> reasons;
     int lowered = 0;
     for (std::size_t r = 0; r < c.bodies.size(); r++) {
@@ -1369,14 +1371,16 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         facts.noexcept_ = fn.isNoexcept();
         facts.pos = fn.pos();
         facts.paramCount = fn.params().size();
+        if (fn.hasThis() && !fn.params().empty()) facts.thisType = TypeTable::id(fn.params()[0].type);
         const TypeId declared = typer.declaredReturn(c.bodies[r].first);
         facts.returns = declared.valid() ? declared : TypeTable::id(fn.returns());
         std::string why;
-        // An over-aligned local realigns the frame, which the selector's layout does not know about yet.
+        // A local aligned past its type (alignas) or past the frame: the selector lays a slot out at its type's alignment.
         bool aligned = fn.frameAlign() > 16;
-        for (const Local &l : fn.locals()) if (l.align > 16) aligned = true;
-        // A template's body is replayed per instantiation and a pack expansion is one node of it: not this round's.
-        if (typer.scopedBody(c.bodies[r].first) || typer.fromTemplate(fn.symbol())) why = "a body whose names are a class's, a namespace's or a template's";
+        for (const Local &l : fn.locals())
+            if (l.align > 16 || (l.type != nullptr && !l.type->isReference() && l.align > l.type->align(target))) aligned = true;
+        // A pack expansion's members are one node of the typed tree: such a body stays the parser's.
+        if (typer.packBody(fn.symbol())) why = "a body with a pack expansion";
         else if (aligned) why = "a local with alignas";
         else if (!lowering.lower(t, facts, why).valid() && why.empty()) why = "the lowering gave no reason";
         if (why.empty()) { lowered++; continue; }

@@ -8,9 +8,9 @@
 #include <direct.h>
 #else
 #include <unistd.h>
+#endif
 
 namespace masm {
-#endif
 
 typedef std::vector<unsigned char> Bytes;
 

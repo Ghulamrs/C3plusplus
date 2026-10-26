@@ -45,8 +45,10 @@ struct Resolution : ResolutionKind {
     int serial;             // a local's serial; a member's offset
     long long value;        // an enumerator's, a folded static member's
     bool isConst, isThreadLocal;    // a global's
+    bool hasThis;           // a call's: its function type's first parameter is the object's address
+    bool indirect;          // a call's: through a value - a pointer or a vtable slot
     std::string name;       // a global's or a function's lookup name, which its Var is named by
-    Resolution() : what(None), serial(-1), value(0), isConst(false), isThreadLocal(false) {}
+    Resolution() : what(None), serial(-1), value(0), isConst(false), isThreadLocal(false), hasThis(false), indirect(false) {}
 };
 
 // What a sizeof, alignof or noexcept folded to, or an integer or character literal's value, with its type.
@@ -69,6 +71,7 @@ struct TypedNode {
     bool castXvalue;            // such a reference cast's operand is an xvalue: `static_cast<T &&>`
     Folded folded;
     std::uint32_t literal;
+    std::uint8_t initForm;      // a `var`'s initialiser form: 0 none, 1 `= e` or `(e)`, 2 a braced list, 3 empty braces
 };
 
 class TypedTree {
@@ -83,6 +86,7 @@ public:
     void setResolution(TypedId id, const Resolution &r);
     void setCast(TypedId id, TypeId to, bool xvalue);
     void setFolded(TypedId id, long long value, TypeId type);
+    void setInitForm(TypedId id, int form) { nodes_[id.v].initForm = static_cast<std::uint8_t>(form); }
     // A string literal's token comes with the label the program's data holds its bytes under (M3b.1: the lowering's `addr`).
     void setLiteral(TypedId id, const Token &token, const std::string &label = std::string());
     const Resolution &resolution(TypedId id) const { return resolutions_[nodes_[id.v].resolved]; }
@@ -121,7 +125,10 @@ public:
     TypeId declaredReturn(syntax::NodeId fn) const;
     bool wrappedBody(const std::string &symbol) const;
     // A body read in a class's, a namespace's or a template's scope (Parser::scopedFunctions_), which the adapter left alone too.
-    bool scopedBody(syntax::NodeId fn) const;
+    int scopedBody(syntax::NodeId fn) const;
+    bool packBody(const std::string &symbol) const;
+    bool constructed(const Type *cls) const;          // a class some constructor builds, written or implicit
+    bool assigned(const Type *cls) const;             // a class with an operator= of its own, written or implicit   // a pack was expanded in the body: one node stands for its members   // Parser::scopedFunctions_'s bits, 0 for a body at file scope
     // Whether the function of this symbol is a template specialization (Signature::fromTemplate): its body is a replay.
     bool fromTemplate(const std::string &symbol) const;
     // The census's counts as the report spells them, "functions=N bodies=K synthesised=M", and the kinds behind M.
