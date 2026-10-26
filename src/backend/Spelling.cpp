@@ -520,3 +520,94 @@ void CoffSpelling::op(const Op &x) {
     if (x.scale != 0) { o_ += ','; o_ += x.index; o_ += ','; appendNum(o_, x.scale); }
     o_ += ')';
 }
+
+// **The head of a funclet is written when it closes**, round the body lifted out of where it was written (M3a.4): the
+// slice between the mark and the end is the body exactly, whichever door - the walker's or the holder's replay - wrote it.
+void CoffSpelling::funcletBegin(const std::string &symbol, const std::string &entryLoc) {
+    openFunclets_.push_back(OpenFunclet{o_.size(), symbol, entryLoc});
+}
+
+// An early exit: the continuation in rax, then the funclet's own epilogue, which funcletEnd labels.
+void CoffSpelling::funcletLeave(const std::string &label) {
+    ins("lea", rip(label), reg("%rax"));
+    ins("jmp", lbl("$LNleave$" + openFunclets_.back().symbol));
+}
+
+// **The funclet's own frame, and the assembler writes its unwind data.** `resume` is where a catch carries on; a cleanup
+// has nowhere to carry on to and passes none.
+void CoffSpelling::funcletEnd(const std::string &resume) {
+    const OpenFunclet open = openFunclets_.back();
+    openFunclets_.pop_back();
+    const std::string q = "\"" + open.symbol + "\"";
+    const std::string b = "\"$LNbeg$" + open.symbol + "\"";
+    const std::string e = "\"$LNend$" + open.symbol + "\"";
+    const std::string pu = "\"$LNpush$" + open.symbol + "\"";
+    const std::string pr = "\"$LNprolog$" + open.symbol + "\"";
+    const std::string u = "\"$unwind$" + open.symbol + "\"";
+
+    // **A funclet of a mergeable parent is mergeable with it.**
+    const std::string assoc = mergeable_ ? ",associative," + sym(fnName_) : std::string();
+
+    // The text around the body: the head, then the body as written out, then the tail with the unwind data.
+    std::string head, f;
+    // **Not `.globl`.**
+    head += "\n  .section .text$x,\"xr\"" + assoc + "\n";
+    head += q + ":\n";
+    head += b + ":\n";
+    // -g: the prologue is on the `catch` line, as cl's funclet begins (1.29).
+    head += open.entryLoc;
+    head += "  movq %rdx, 16(%rsp)\n";
+    head += "  push %rbp\n";
+    head += pu + ":\n";
+    head += "  sub $32, %rsp\n";
+    head += pr + ":\n";
+    // rdx is the establisher frame, which on this target is exactly the parent's rbp - the two became one thing when
+    // the frame pointer moved to the bottom of the allocation - so the handler reaches the parent's locals as they are.
+    head += "  mov %rdx, %rbp\n";
+    if (!resume.empty()) f += "  lea " + sym(resume) + "(%rip), %rax\n";
+    f += "\"$LNleave$" + open.symbol + "\":\n";
+    f += "  add $32, %rsp\n";
+    f += "  pop %rbp\n";
+    f += "  ret\n";
+    f += e + ":\n";
+
+    // **Written out rather than left to `.seh_*`**, for the reason prologue records: the directives cannot carry
+    // handler data, and a funclet's names the parent's FuncInfo. Two codes, no frame register.
+    f += "  .section .xdata,\"dr\"" + assoc + "\n";
+    f += "  .p2align 3\n";
+    f += u + ":\n";
+    f += "  .byte 0x19\n";
+    f += "  .byte " + pr + "-" + b + "\n";
+    f += "  .byte 2\n";
+    f += "  .byte 0\n";
+    // UWOP_ALLOC_SMALL for 32 bytes: 2 with (32/8 - 1) in the high nibble.
+    f += "  .byte " + pr + "-" + b + "\n";
+    f += "  .byte 0x32\n";
+    f += "  .byte " + pu + "-" + b + "\n";
+    f += "  .byte 0x50\n";
+    f += "  .long __CxxFrameHandler3@IMGREL\n";
+    // The funclet shares the parent's FuncInfo: one description of the try.
+    f += "  .long \"$cppxdata$" + fnName_ + "\"@IMGREL\n";
+    f += "  .text\n";
+
+    // **`.pdata$x`, so the funclets' entries sort after every function's**: an inline function's COMDAT code lands
+    // after `.text`, and a funclet entry among the functions' put its entry out of order - a throw from inside it
+    // found no handler.
+    funcletPdata_ += "  .section .pdata$x,\"dr\"" + assoc + "\n";
+    funcletPdata_ += "  .p2align 2\n";
+    funcletPdata_ += "  .long " + b + "@IMGREL\n";
+    funcletPdata_ += "  .long " + e + "@IMGREL\n";
+    funcletPdata_ += "  .long " + u + "@IMGREL\n";
+
+    std::string body = o_.substr(open.mark);
+    o_.resize(open.mark);
+    // -g: the funclet's `.cv_func_id` (funcletLinesBegin) goes before the head, whose `.cv_loc` names that id - the
+    // assembler takes a location only of an id it has been told of.
+    std::string declared;
+    if (body.compare(0, 14, "  .cv_func_id ") == 0) {
+        const std::size_t nl = body.find('\n');
+        declared = body.substr(0, nl + 1);
+        body.erase(0, nl + 1);
+    }
+    funclets_ += declared + head + body + f;
+}

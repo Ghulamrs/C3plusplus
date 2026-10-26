@@ -832,116 +832,21 @@ void MasmCodeGen::storeUnwindHelp(int slot) {
     a_->ins("movq", imm(-2), mem(-slot, "%rbp"));
 }
 
-// **A funclet is a slice of the ordinary output, lifted.** Walking the handler
-// appends its code like any other, so remembering where that began and cutting
-// back to it gives the body exactly - and the code generator knows none of it.
+// The funclet's symbol is cl's shape, `fn$catch$0`; the spelling writes its head and tail (M3a.4), and closeFunclet is
+// the base's. `inFunclet_` is left as it stands here, as this code generator never set it: a call inside a handler
+// finds the funclet's 32 bytes at the floor, which is what it emitted before. The .pdata goes to MasmSpelling::trailer_.
 std::string MasmCodeGen::beginFunclet(std::size_t pos, int number, bool cleanup) {
-    if (passesRun()) optimizer_->funcletBegin();   // at -O0 a funclet stays where it was written, as the GNU path keeps it
-    funcletOuter_.push_back(funcletSymbol_);
-    atOutput([this] {
-        masm_.raw("");                   // nothing pending inside the slice
-        funcletMarks_.push_back(out_.size());
-    });
-    funcletSymbol_ = masm_.mangledName() + funcletKind_ +
-                     std::to_string(funcletIndex_++);
-    funcletDebugBegin(funcletSymbol_, pos, number, cleanup);
+    funcletOuter_.push_back(std::make_pair(funcletSymbol_, inFunclet_));
+    funcletSymbol_ = masm_.mangledName() + funcletKind_ + std::to_string(funcletIndex_++);
+    a_->funcletBegin(funcletSymbol_, funcletEntryLocation(pos));
+    funcletDebugBegin(pos, number, cleanup);
     return funcletSymbol_;
-}
-
-// The funclet's own frame: `rdx` is the establisher frame, so adding the parent's
-// frame size back recovers the rbp every local was written against, and a funclet
-// *returns* where to carry on, in rax. A cleanup has nothing to return to.
-void MasmCodeGen::endCleanupFunclet() {
-    closeFunclet(std::string());
-    funcletKind_ = "$catch$";
-}
-
-void MasmCodeGen::endFunclet(const std::string &resume) {
-    closeFunclet("  lea rax, " + masm_.labelName(resume) + "\n");
-}
-
-// An early exit: the continuation in rax, then the funclet's epilogue.
-void MasmCodeGen::funcletLeave(const std::string &label) {
-    a_->ins("lea", rip(label), reg("%rax"));
-    a_->ins("jmp", lbl("$LNleave$" + funcletSymbol_));
-}
-
-void MasmCodeGen::closeFunclet(const std::string &tail) {
-    const std::string sym = funcletSymbol_;
-    funcletDebugEnd();
-    // Written here as raw text, so said to be defined: an early exit's `jmp $LNleave$` made it an EXTERN otherwise.
-    masm_.predefine({ sym, "$LNbeg$" + sym, "$LNpush$" + sym, "$LNprolog$" + sym, "$LNleave$" + sym, "$LNend$" + sym });
-    // The text around the body: the head, then the body as written out, then the tail with the unwind data.
-    std::string head, f;
-    // **`.text$x`, and the dot is the whole of it** - the same trap as `.pdata`. A
-    // segment called `text` gets data attributes, so the handler faults at its own
-    // first instruction; 'CODE' is what gives it execute permission beside .text.
-    head += "\n.text$x SEGMENT ALIGN(16) 'CODE'" + masm_.associative() + "\n";
-    head += sym + " PROC\n";
-    head += "$LNbeg$" + sym + ":\n";
-    // -g: the prologue is on the `catch` line, as cl's funclet begins (1.29).
-    head += funcletEntryLoc_;
-    head += "  mov QWORD PTR [rsp+16], rdx\n";
-    head += "  push rbp\n";
-    head += "$LNpush$" + sym + ":\n";
-    head += "  sub rsp, 32\n";
-    head += "$LNprolog$" + sym + ":\n";
-    // **rdx is the establisher frame, and that is now exactly the parent's rbp** -
-    // the two became one thing when the frame pointer moved to the bottom of the
-    // allocation, so the handler reaches the parent's locals with no adjustment.
-    head += "  mov rbp, rdx\n";
-    f += tail;
-    f += "$LNleave$" + sym + ":\n";
-    f += "  add rsp, 32\n";
-    f += "  pop rbp\n";
-    f += "  ret 0\n";
-    f += "$LNend$" + sym + ":\n";
-    f += sym + " ENDP\n";
-    f += ".text$x ENDS\n";
-
-    // A funclet carries unwind data of its own, naming the same handler and *the
-    // parent's* FuncInfo - the two share one description of the try. Its entry is in `.pdata$x`, as the GNU
-    // spelling's is: Microsoft's link does not sort .pdata, and `.text$x` lands after the CRT's code (M1).
-    masm_.trailer_ += "\n.pdata$x SEGMENT READONLY ALIGN(4) 'DATA'" + masm_.associative() + "\n";
-    masm_.trailer_ += "$pdata$" + sym + " DD imagerel $LNbeg$" + sym + "\n";
-    masm_.trailer_ += "  DD imagerel $LNend$" + sym + "\n";
-    masm_.trailer_ += "  DD imagerel $unwind$" + sym + "\n";
-    masm_.trailer_ += ".pdata$x ENDS\n";
-    f += ".xdata SEGMENT READONLY ALIGN(8) 'DATA'" + masm_.associative() + "\n";
-    f += "$unwind$" + sym + " DB 019H\n";
-    f += "  DB $LNprolog$" + sym + "-$LNbeg$" + sym + "\n";
-    f += "  DB 02H\n";
-    f += "  DB 00H\n";
-    // UWOP_ALLOC_SMALL for 32 bytes: the code is 2 with (size/8 - 1) in the
-    // high nibble, so (32/8 - 1) = 3 gives 032H. 042H would claim 40 and
-    // leave the runtime unwinding through this funclet to the wrong place.
-    f += "  DB $LNprolog$" + sym + "-$LNbeg$" + sym + "\n";
-    f += "  DB 032H\n";
-    f += "  DB $LNpush$" + sym + "-$LNbeg$" + sym + "\n";
-    f += "  DB 050H\n";
-    f += "  DD imagerel __CxxFrameHandler3\n";
-    f += "  DD imagerel $cppxdata$" + masm_.mangledName() + "\n";
-    f += ".xdata ENDS\n";
-    // **The body is lifted out of the output where it was written**, which
-    // with an optimizer in front is after the function it belongs to.
-    atOutput([this, head, f] {
-        masm_.raw("");
-        const std::size_t mark = funcletMarks_.back();
-        funcletMarks_.pop_back();
-        const std::string body = out_.substr(mark);
-        out_.resize(mark);
-        funclets_ += head + body + f;
-    });
-    if (passesRun()) optimizer_->funcletEnd();
-    funcletSymbol_ = funcletOuter_.back();
-    funcletOuter_.pop_back();
 }
 
 void MasmCodeGen::emitExceptionTables(const Function &fn) {
     if (msStates().empty()) {
         if (!callSites().empty()) emitLsda(fn.symbol(), false);
-        out_ += funclets_;
-        funclets_.clear();
+        out_ += a_->takeFunclets();
         funcletIndex_ = 0;
         return;
     }
@@ -950,8 +855,7 @@ void MasmCodeGen::emitExceptionTables(const Function &fn) {
     const std::vector<MsState> &states = msStates();
     const std::vector<MsTryBlock> &tries = msTryBlocks();
     std::string o;
-    o += funclets_;
-    funclets_.clear();
+    o += a_->takeFunclets();
     funcletIndex_ = 0;
 
     // **Every offset is measured from the establisher frame**, so a slot at
@@ -1216,4 +1120,79 @@ void MasmCodeGen::run(const Program &program) {
     emitClassRtti(program);
     emitThrowInfo(program);
     X86_64Linux::run(program);
+}
+
+// **A funclet's head is written when it closes**, round the body lifted out of where it was written (M3a.4); the
+// slice between the mark and the end is the body exactly, whichever door - the walker's or the holder's replay - wrote it.
+void MasmSpelling::funcletBegin(const std::string &symbol, const std::string &entryLoc) {
+    flushPending();                  // nothing pending inside the slice
+    openFunclets_.push_back(OpenFunclet{o_.size(), symbol, entryLoc});
+}
+
+// An early exit: the continuation in rax, then the funclet's epilogue, which funcletEnd labels.
+void MasmSpelling::funcletLeave(const std::string &label) {
+    ins("lea", rip(label), reg("%rax"));
+    ins("jmp", lbl("$LNleave$" + openFunclets_.back().symbol));
+}
+
+// The funclet's own frame: `rdx` is the establisher frame, so adding the parent's frame size back recovers the rbp
+// every local was written against, and a funclet *returns* where to carry on, in rax. A cleanup passes no `resume`.
+void MasmSpelling::funcletEnd(const std::string &resume) {
+    const OpenFunclet open = openFunclets_.back();
+    openFunclets_.pop_back();
+    const std::string sym = open.symbol;
+    // Written here as raw text, so said to be defined: an early exit's `jmp $LNleave$` made it an EXTERN otherwise.
+    predefine({ sym, "$LNbeg$" + sym, "$LNpush$" + sym, "$LNprolog$" + sym, "$LNleave$" + sym, "$LNend$" + sym });
+    // The text around the body: the head, then the body as written out, then the tail with the unwind data.
+    std::string head, f;
+    // **`.text$x`, and the dot is the whole of it** - the same trap as `.pdata`. A segment called `text` gets data
+    // attributes, so the handler faults at its own first instruction; 'CODE' is what gives it execute permission.
+    head += "\n.text$x SEGMENT ALIGN(16) 'CODE'" + associative() + "\n";
+    head += sym + " PROC\n";
+    head += "$LNbeg$" + sym + ":\n";
+    // -g: the prologue is on the `catch` line, as cl's funclet begins (1.29).
+    head += open.entryLoc;
+    head += "  mov QWORD PTR [rsp+16], rdx\n";
+    head += "  push rbp\n";
+    head += "$LNpush$" + sym + ":\n";
+    head += "  sub rsp, 32\n";
+    head += "$LNprolog$" + sym + ":\n";
+    // **rdx is the establisher frame, and that is now exactly the parent's rbp** - the two became one thing when the
+    // frame pointer moved to the bottom of the allocation, so the handler reaches the parent's locals as they are.
+    head += "  mov rbp, rdx\n";
+    if (!resume.empty()) f += "  lea rax, " + labelName(resume) + "\n";
+    f += "$LNleave$" + sym + ":\n";
+    f += "  add rsp, 32\n";
+    f += "  pop rbp\n";
+    f += "  ret 0\n";
+    f += "$LNend$" + sym + ":\n";
+    f += sym + " ENDP\n";
+    f += ".text$x ENDS\n";
+
+    // A funclet carries unwind data of its own, naming the same handler and *the parent's* FuncInfo - the two share
+    // one description of the try. Its entry is in `.pdata$x`, as the GNU spelling's is: Microsoft's link does not
+    // sort .pdata, and `.text$x` lands after the CRT's code (M1).
+    trailer_ += "\n.pdata$x SEGMENT READONLY ALIGN(4) 'DATA'" + associative() + "\n";
+    trailer_ += "$pdata$" + sym + " DD imagerel $LNbeg$" + sym + "\n";
+    trailer_ += "  DD imagerel $LNend$" + sym + "\n";
+    trailer_ += "  DD imagerel $unwind$" + sym + "\n";
+    trailer_ += ".pdata$x ENDS\n";
+    f += ".xdata SEGMENT READONLY ALIGN(8) 'DATA'" + associative() + "\n";
+    f += "$unwind$" + sym + " DB 019H\n";
+    f += "  DB $LNprolog$" + sym + "-$LNbeg$" + sym + "\n";
+    f += "  DB 02H\n";
+    f += "  DB 00H\n";
+    // UWOP_ALLOC_SMALL for 32 bytes: the code is 2 with (size/8 - 1) in the high nibble, so (32/8 - 1) = 3 gives
+    // 032H. 042H would claim 40 and leave the runtime unwinding through this funclet to the wrong place.
+    f += "  DB $LNprolog$" + sym + "-$LNbeg$" + sym + "\n";
+    f += "  DB 032H\n";
+    f += "  DB $LNpush$" + sym + "-$LNbeg$" + sym + "\n";
+    f += "  DB 050H\n";
+    f += "  DD imagerel __CxxFrameHandler3\n";
+    f += "  DD imagerel $cppxdata$" + mangledName() + "\n";
+    f += ".xdata ENDS\n";
+    flushPending();
+    const std::string body = o_.substr(open.mark);
+    o_.resize(open.mark);
+    funclets_ += head + body + f;
 }

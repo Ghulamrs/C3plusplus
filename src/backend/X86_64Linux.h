@@ -87,7 +87,7 @@ protected:
     void endCleanupFunclet() override;
     void endFunclet(const std::string &resume) override;
     void storeUnwindHelp(int slot) override;
-    void closeFunclet(const std::string &tail);
+    void closeFunclet(const std::string &resume);
     // A Windows local is `frameSize - slot` above the establisher frame, which
     // is the whole translation between how cxx1 addresses a local and how an
     // FH3 table describes one.
@@ -102,12 +102,8 @@ protected:
     void coffRecord(const char *section, const std::string &label, int p2align,
                     const char *flags = "dr");
 
-    // A funclet is written by walking the handler into the ordinary output and lifting the text back out - what
-    // the body appended, in order, IS the funclet. One may open inside another (M1): the marks are a stack the
-    // output lambdas keep, and the outer funclet's symbol and flag come back when the inner one closes.
-    std::vector<std::size_t> funcletMarks_;
+    // One funclet may open inside another (M1): the outer one's symbol and flag come back when the inner closes.
     std::vector<std::pair<std::string, bool> > funcletOuter_;
-    std::string funclets_;
     int funcletIndex_ = 0;
     std::string funcletSymbol_;
     // The Microsoft type descriptors this file has laid down, so a class both
@@ -118,31 +114,29 @@ protected:
     std::set<std::string> definedHere_;
     // The function being emitted, which the tables and funclets name.
     std::string fnSymbol_;
-    // Whether the function being emitted went into a COMDAT, which its funclets and their unwind data have to join - see closeFunclet.
+    // Whether the function being emitted went into a COMDAT, which its funclets and their unwind data have to join.
     bool fnMergeable_ = false;
-    // **A funclet's .pdata goes last, after every ordinary function's.**
+    // **A funclet's .pdata goes last, after every ordinary function's** - taken from the spelling with its text.
     std::string funcletPdata_;
     // **-g describes a funclet as a procedure of its own** (1.29, DwarfFunction::funclet), pushed after its function's record, the
-    // spelling's lines going to it until it closes. `funcletEntryLoc_` is its first instruction's location - the `catch` line, as cl
-    // names it - which closeFunclet writes into the head it builds, since no instruction of the walk is there.
-    void funcletDebugBegin(const std::string &symbol, std::size_t pos, int number, bool cleanup);
+    // spelling's lines going to it until it closes; its entry's location - the `catch` line, as cl names it - goes into the head
+    // the spelling writes, since no instruction of the walk is there.
+    void funcletDebugBegin(std::size_t pos, int number, bool cleanup);
     void funcletDebugEnd();
-    std::string funcletEntryLoc_;
+    std::string funcletEntryLocation(std::size_t pos) const;
     // The function being emitted, among dwarfFns_: its funclets' records follow it.
     std::size_t dwarfFnAt_ = 0;
 
     std::string out_;
     std::size_t emittedSize() override { return out_.size() + (optimizer_ ? optimizer_->held() : 0); }
     Spelling *a_ = &gnu_;
-    // In front of a_ at every level (M3a.1). It holds a function whole, its funclets apart, so anything that lifts text out of out_ goes through atOutput.
+    // In front of a_ at every level (M3a.1), holding a function whole, its funclets blocks of it (M3a.4).
     std::unique_ptr<Optimizer> optimizer_;
     bool mirOff_ = false;
     std::ostream *mirDump_ = nullptr;
     std::string mirDumpAfter_;
-    // Whether the holder is in front: a different fact from passesRun(), and only atOutput and emittedSize ask it.
+    // Whether the holder is in front: a different fact from passesRun(), and only emittedSize asks it.
     bool holding() const { return optimizer_ && a_ == optimizer_.get(); }
-    // Done where it stands in the output: at once, or after what an optimizer holds.
-    void atOutput(std::function<void()> f) { if (holding()) optimizer_->defer(std::move(f)); else f(); }
 
     void landingPad(int pointerSlot, int selectorSlot) override;
     void exceptionRegion(const std::string &begin, const std::string &end, const std::string &target) override;
@@ -179,7 +173,7 @@ protected:
         if (target_.microsoftNames()) {
             // One table for cleanups and tries alike, nested or not: a state tree.
             if (msStates().empty()) {
-                out_ += funclets_; funclets_.clear(); funcletIndex_ = 0;
+                out_ += a_->takeFunclets(); funcletPdata_ += a_->takeFuncletPdata(); funcletIndex_ = 0;
             } else {
                 emitCoffEhTables(fn);
             }

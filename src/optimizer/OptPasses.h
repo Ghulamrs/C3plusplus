@@ -66,8 +66,9 @@ public:
         add(disp, 1);
         escapesFrom_ = escapesFrom_ < disp ? escapesFrom_ : disp;
     }
-    // Every frame slot the stream reads, writes or takes the address of.
+    // Every frame slot the stream, or one instruction of it, reads, writes or takes the address of.
     void addAccessesOf(const Stream &s);
+    void addAccessOf(const Entry &e);
     // Whether an access of `width` bytes at `disp` touches a shared slot.
     bool overlaps(long long disp, int width) const {
         for (const Local &l : slots_)

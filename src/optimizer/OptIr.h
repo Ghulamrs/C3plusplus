@@ -10,7 +10,6 @@
 #include "../backend/Spelling.h"
 
 #include <cstdint>
-#include <functional>
 #include <string>
 #include <vector>
 
@@ -81,26 +80,34 @@ struct Instr {
 };
 
 // **A spelling call that is not an instruction, held as data** (M3a.1, doc-cxx3/M3-IR.md 2.4): its kind and its
-// arguments, replayed as the same call where it stood. Deferred is the one closure left, a text-lifting atOutput
-// call, until M3a.4; a dump prints every other kind with its arguments, where it printed <event>.
+// arguments, replayed as the same call where it stood. FuncletBegin, FuncletLeave and FuncletEnd bound a Microsoft
+// funclet's blocks inside its function's stream (M3a.4): a block entered from nowhere, then one that returns.
 struct Directive {
     enum Kind : std::uint8_t {
         Prologue, FileEntry, Location, FuncletLinesBegin, FuncletLinesEnd, Globl, WeakDefinition, ObjectType,
         ObjectSize, TextSection, RodataSection, RelroSection, DataSection, BssSection, TlsDataSection, TlsBssSection,
-        TlsInitialiserEntry, InitialiserEntry, Align, LoopAlign, Zero, DataInt, DataSym, DataBytes, NoteHasEh, Deferred
+        TlsInitialiserEntry, InitialiserEntry, Align, LoopAlign, Zero, DataInt, DataSym, DataBytes, NoteHasEh,
+        FuncletBegin, FuncletLeave, FuncletEnd
     };
-    Kind kind = Deferred;
+    Kind kind = Align;
     long long n[4] = {0, 0, 0, 0};     // the integer arguments, in the call's order
-    std::string s;                     // the string argument: a name, a symbol, the bytes, the LSDA
+    std::string s;                     // the string argument: a name, a symbol, the bytes, the LSDA, a funclet's symbol
+    std::string t;                     // FuncletBegin's second: the location of the funclet's entry under -g
     bool withSaves = false;            // Prologue: the saves finish-frame settled, said by calleeSaves first
     std::vector<SavedReg> saves;
-    std::function<void()> deferred;
 
     Directive() {}
     explicit Directive(Kind k) : kind(k) {}
     void replay(Spelling &s) const;
     std::string describe() const;
+    // Whether this begins a funclet, or ends one (FuncletEnd and FuncletLeave alike: the block returns).
+    bool beginsFunclet() const { return kind == FuncletBegin; }
+    bool endsFunclet() const { return kind == FuncletEnd || kind == FuncletLeave; }
+    bool leavesFunclet() const { return kind == FuncletLeave; }
 };
+
+// How a directive moves control: a funclet's end returns, its beginning starts a block, the rest do nothing.
+Control controlOf(const Directive &d);
 
 // Everything between functionBegin and functionEnd: instructions, labels, and directives, replayed where they stood.
 using Entry = EntryOf<Instr, Directive>;

@@ -83,6 +83,10 @@ public:
     void dataBytes(const std::string &bytes) override;
 
     void predefine(const std::vector<std::string> &names) override;
+    void funcletBegin(const std::string &symbol, const std::string &entryLoc) override;
+    void funcletLeave(const std::string &label) override;
+    void funcletEnd(const std::string &resume) override;
+    std::string takeFunclets() override { std::string t; t.swap(funclets_); return t; }
     void initialiserEntry(const std::string &fn, bool dsoHandle) override;
     void preamble(std::ostream &sink) override;
     void postamble(std::ostream &sink) override;
@@ -118,6 +122,11 @@ private:
     std::vector<LineState> outerLines_;
     std::string mangleNames(const std::string &expr);
 
+    // **A funclet is a slice of the ordinary output, lifted at its end**: where each open one began, with its symbol
+    // and entry location, and the text of the closed ones; their .pdata goes to trailer_.
+    struct OpenFunclet { std::size_t mark; std::string symbol, entryLoc; };
+    std::vector<OpenFunclet> openFunclets_;
+    std::string funclets_;
     std::set<std::string> defined_, exported_, referenced_, unreserved_;
     // Referenced inside a SECTIONREL expression, which ml64 refuses to add to a `:PROC` (A2102).
     std::set<std::string> referencedData_;
@@ -148,26 +157,12 @@ private:
     bool usesFunclets() const override { return true; }
     bool localsAboveFrameBase() const override { return true; }
     std::string beginFunclet(std::size_t pos, int number, bool cleanup) override;
-    void funcletLeave(const std::string &label) override;
-    void endFunclet(const std::string &resume) override;
-    void endCleanupFunclet() override;
-    void closeFunclet(const std::string &tail);
     // **A Windows local is `frameSize**`.
     int establisherOffset(int slot) const;
 
     void storeUnwindHelp(int slot) override;
     void emitExceptionTables(const Function &fn) override;
 
-    // A funclet is the text the body appended, lifted back out in order.
-    std::string funclets_;
-    // The funclets' .pdata goes to MasmSpelling::trailer_, after every function:
-    // .pdata has to be sorted by the address it describes and every funclet
-    // lives in .text$x, so emitting beside the parent gives LNK1223.
-    std::vector<std::size_t> funcletMarks_;          // as X86_64Linux's: a funclet may open inside one
-    std::vector<std::string> funcletOuter_;
-    int funcletIndex_ = 0;
-    std::string funcletSymbol_;
-    const char *funcletKind_ = "$catch$";
     // -g: the variables and types as CodeView, which GRIDE's masm carries into the object
     // (writeDebug); not for ml64, which the driver refuses -g for (1.29).
     bool writesDwarf() const override { return masm_.comdat(); }

@@ -17,15 +17,8 @@ class Optimizer final : public Spelling {
 public:
     Optimizer(Spelling &under, const Abi &abi, int level);
 
-    // **A funclet is held apart from the function it belongs to.** Between these two calls every
-    // entry goes to the funclet's own stream, which is improved as a piece of its own when it ends and
-    // written out after the function; the function's stream stays held, so the passes see it whole.
-    void funcletBegin();
-    void funcletEnd();
     // -dump=mir: every function written to `to` after the pipeline, or after the pass named (M3-IR.md 2.10).
     void dumpTo(std::ostream *to, const std::string &afterPass);
-    // Run where it stands in the output: after everything held before it.
-    void defer(std::function<void()> call);
     // A frame slot something outside the stream reads or writes - the runtime's scratch word - which no pass may take for its own.
     void sharedSlot(long long disp, int size);
     // The frame as the passes left the function last written out.
@@ -104,18 +97,21 @@ public:
     void initialiserEntry(const std::string &fn, bool dsoHandle) override;
     std::string labelText(const std::string &l) const override { return under_.labelText(l); }
     void dataBytes(const std::string &bytes) override;
+    // **A funclet is blocks of its function** (M3a.4): its head, tail and early exit are directives in the one
+    // stream, the frame slots it touches shared with the function at flush; the text it becomes is the spelling's.
+    void funcletBegin(const std::string &symbol, const std::string &entryLoc) override;
+    void funcletLeave(const std::string &label) override;
+    void funcletEnd(const std::string &resume) override;
+    std::string takeFunclets() override { flush(); return under_.takeFunclets(); }
+    std::string takeFuncletPdata() override { flush(); return under_.takeFuncletPdata(); }
 
 private:
     Spelling &under_;
     bool passes_;
     // The level, as the costs its passes ask.
     std::unique_ptr<const opt::Costs> costs_;
-    // **The function being held**, and what the walker has said of it so far; the funclets being held, a stack
-    // since a cleanup funclet may open inside a handler's (M1), the innermost taking the code; and the funclets
-    // done, each improved, waiting to be written after the function.
-    std::vector<std::unique_ptr<opt::Function> > funclet_;
+    // **The function being held**, and what the walker has said of it so far.
     opt::Function fn_;
-    std::vector<opt::Stream> funclets_;
     int frameSize_ = 0;
     // The pipeline, built once per spelling, and the manager that runs it.
     std::unique_ptr<opt::Pass> pipeline_;
@@ -132,8 +128,6 @@ private:
     std::ostream *dump_ = nullptr;
     opt::RegSet args_ = 0;
 
-    // Where an entry goes: the funclet being held, or the function.
-    opt::Function &current() { return funclet_.empty() ? fn_ : *funclet_.back(); }
     void hold(opt::Entry e);
     void instruction(const std::string &m, int operands, const Op *a, const Op *b);
     // A call that is not an instruction, as a directive: held in its place inside a function, replayed at once

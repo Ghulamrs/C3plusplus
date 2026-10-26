@@ -18,7 +18,7 @@ Optimizer::Optimizer(Spelling &under, const Abi &abi, int level)
 }
 
 void Optimizer::hold(Entry e) {
-    current().stream.push_back(std::move(e));
+    fn_.stream.push_back(std::move(e));
     held_++;
 }
 
@@ -78,7 +78,7 @@ void Optimizer::defLabel(const std::string &l) {
 void Optimizer::stateLabel(const std::string &l) {
     if (!inFunction_) { under_.stateLabel(l); return; }
     defLabel(l);
-    current().stream.back().state = true;     // a funclet's own stream, where a handler holds a try (M1)
+    fn_.stream.back().state = true;
 }
 
 void Optimizer::functionBegin(const std::string &name, bool exported, bool mergeable) {
@@ -86,7 +86,6 @@ void Optimizer::functionBegin(const std::string &name, bool exported, bool merge
     under_.functionBegin(name, exported, mergeable);
     inFunction_ = true;
     fn_.name = name;
-    fn_.whole = true;
     fn_.prologueAt = -1;
     fn_.inlineTop = 0;
     fn_.saves.clear();
@@ -98,37 +97,9 @@ void Optimizer::functionBegin(const std::string &name, bool exported, bool merge
     opaque_.clear();
 }
 
-// **A funclet is a function of its own to the passes** - the runtime calls it, with the parent's
-// frame under rbp - and a piece, never whole: no pass takes a register for it that its prologue does
-// not save. What it reads or writes of the parent's frame is shared with the parent, whose passes then leave those slots alone.
-void Optimizer::funcletBegin() {
-    assert(inFunction_ && "a funclet outside a function");
-    funclet_.emplace_back(new opt::Function(*costs_));
-    opt::Function &f = *funclet_.back();
-    f.name = fn_.name;
-    f.convention = fn_.convention;
-    f.whole = false;
-    if (passes_) opt::noteDecline("funclet-no-frame-passes", fn_.name);
-}
-
-void Optimizer::funcletEnd() {
-    assert(!funclet_.empty() && "no funclet is held");
-    opt::Function &f = *funclet_.back();
-    improve(f);
-    fn_.shared.addAccessesOf(f.stream);
-    funclets_.push_back(std::move(f.stream));
-    funclet_.pop_back();
-}
-
 void Optimizer::dumpTo(std::ostream *to, const std::string &afterPass) {
     if (afterPass.empty()) dump_ = to;
     else manager_.dumpAfter(afterPass, to);
-}
-
-void Optimizer::defer(std::function<void()> call) {
-    opt::Directive d(opt::Directive::Deferred);
-    d.deferred = std::move(call);
-    event(std::move(d));
 }
 
 void Optimizer::sharedSlot(long long disp, int size) { fn_.shared.add(disp, size); }
@@ -219,18 +190,22 @@ void Optimizer::improve(opt::Function &fn) {
     manager_.run(*pipeline_, fn);
 }
 
-// **The function, then its funclets**, the frame's final size having been
-// written with the function's prologue - a funclet's operands are rendered
-// against it.
+// **The function with its funclets' blocks in place**, which the spelling lifts out as it meets their directives; a
+// frame slot a funclet reads or writes is shared with the function first, so no register takes it (P1's decision:
+// a value live into a funclet stays in its slot) and no store to it is dead.
 void Optimizer::flush() {
     if (fn_.stream.empty()) return;
     if (fn_.prologueAt < 0 && passes_) opt::noteDecline("no-prologue-no-frame-passes", fn_.name);
+    int depth = 0;
+    for (const Entry &e : fn_.stream) {
+        if (e.kind == Entry::Event && e.event.beginsFunclet()) ++depth;
+        else if (e.kind == Entry::Event && e.event.kind == opt::Directive::FuncletEnd) --depth;
+        else if (depth > 0 && e.kind == Entry::Ins) fn_.shared.addAccessOf(e);
+    }
     improve(fn_);
     if (dump_ != nullptr) { *dump_ << ";; " << fn_.name << "\n"; opt::dumpStream(*dump_, fn_); }
     replay(fn_.stream);
-    for (const opt::Stream &f : funclets_) replay(f);
     frameSize_ = fn_.size;
-    funclets_.clear();
     fn_.stream.clear();
     fn_.regions.clear();       // written out with the labels they name
     fn_.props = opt::kPropPhysical;   // a new stream: the flow describes nothing yet
@@ -302,3 +277,11 @@ void Optimizer::initialiserEntry(const std::string &fn, bool dsoHandle) {
     event(dir(D::InitialiserEntry, dsoHandle ? 1 : 0, 0, 0, fn));
 }
 void Optimizer::dataBytes(const std::string &bytes) { event(dir(D::DataBytes, 0, 0, 0, bytes)); }
+void Optimizer::funcletBegin(const std::string &symbol, const std::string &entryLoc) {
+    assert(inFunction_ && "a funclet outside a function");
+    opt::Directive d = dir(D::FuncletBegin, 0, 0, 0, symbol);
+    d.t = entryLoc;
+    event(d);
+}
+void Optimizer::funcletLeave(const std::string &label) { event(dir(D::FuncletLeave, 0, 0, 0, label)); }
+void Optimizer::funcletEnd(const std::string &resume) { event(dir(D::FuncletEnd, 0, 0, 0, resume)); }

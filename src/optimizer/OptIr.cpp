@@ -165,7 +165,9 @@ void Directive::replay(Spelling &sp) const {
     case DataSym: sp.dataSym(s, n[0]); break;
     case DataBytes: sp.dataBytes(s); break;
     case NoteHasEh: sp.noteHasEh(n[0] != 0); break;
-    case Deferred: deferred(); break;
+    case FuncletBegin: sp.funcletBegin(s, t); break;
+    case FuncletLeave: sp.funcletLeave(s); break;
+    case FuncletEnd: sp.funcletEnd(s); break;
     }
 }
 
@@ -174,7 +176,7 @@ std::string Directive::describe() const {
     static const char *const kKindNames[] = {
         "prologue", "file", "location", "funclet-lines-begin", "funclet-lines-end", "globl", "weak", "type", "size",
         "text", "rodata", "relro", "data", "bss", "tdata", "tbss", "tls-init", "init", "align", "loop-align", "zero",
-        "int", "sym", "bytes", "has-eh", "deferred"};
+        "int", "sym", "bytes", "has-eh", "funclet-begin", "funclet-leave", "funclet-end"};
     std::string t = std::string(".") + kKindNames[kind];
     switch (kind) {
     case Prologue:
@@ -184,7 +186,8 @@ std::string Directive::describe() const {
         break;
     case FileEntry: t += " " + std::to_string(n[0]) + " " + s; break;
     case Location: t += " " + std::to_string(n[0]) + ":" + std::to_string(n[1]) + ":" + std::to_string(n[2]); break;
-    case Globl: case WeakDefinition: case ObjectType: case TlsInitialiserEntry: case DataBytes: t += " " + s; break;
+    case Globl: case WeakDefinition: case ObjectType: case TlsInitialiserEntry: case DataBytes:
+    case FuncletBegin: case FuncletLeave: case FuncletEnd: t += " " + s; break;
     case ObjectSize: t += " " + s + " " + std::to_string(n[0]); break;
     case InitialiserEntry: t += " " + s + (n[0] ? " dso" : ""); break;
     case Align: case LoopAlign: case Zero: case NoteHasEh: t += " " + std::to_string(n[0]); break;
@@ -193,6 +196,15 @@ std::string Directive::describe() const {
     default: break;
     }
     return t;
+}
+
+
+// FuncletEnd and FuncletLeave end their block as a return does, reading nothing the stream names: the continuation a
+// catch hands back in rax is the spelling's text. FuncletBegin ends the block before it and begins the funclet's.
+Control controlOf(const Directive &d) {
+    Control c;
+    if (d.endsFunclet()) { c.ends = true; c.falls = false; c.returns = true; }
+    return c;
 }
 
 }

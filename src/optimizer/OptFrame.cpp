@@ -51,13 +51,15 @@ struct Candidate {
 }
 
 void SharedSlots::addAccessesOf(const Stream &s) {
-    for (const Entry &e : s) {
-        if (e.kind != Entry::Ins || e.dead) continue;
-        for (const Operand *o : {&e.ins.a, &e.ins.b}) {
-            if (!frameSlot(*o)) continue;
-            if (e.ins.m == mn::Lea) addressTaken(o->disp);
-            else add(o->disp, accessWidth(e.ins, *o));
-        }
+    for (const Entry &e : s) addAccessOf(e);
+}
+
+void SharedSlots::addAccessOf(const Entry &e) {
+    if (e.kind != Entry::Ins || e.dead) return;
+    for (const Operand *o : {&e.ins.a, &e.ins.b}) {
+        if (!frameSlot(*o)) continue;
+        if (e.ins.m == mn::Lea) addressTaken(o->disp);
+        else add(o->disp, accessWidth(e.ins, *o));
     }
 }
 

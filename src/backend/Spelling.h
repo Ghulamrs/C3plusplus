@@ -193,6 +193,15 @@ public:
     // relocation - see CoffSpelling::sym.
     virtual std::string labelText(const std::string &l) const { return l; }
     virtual void dataBytes(const std::string &bytes) = 0;
+
+    // **A Microsoft handler funclet, as data** (M3a.4): opened by its symbol and its entry's location under -g, left
+    // early for `label` (the continuation in rax, then its epilogue), closed with the resume label a catch hands back
+    // (none for a cleanup); the spelling writes the head, tail and unwind data and keeps the text until it is taken.
+    virtual void funcletBegin(const std::string &symbol, const std::string &entryLoc) { (void)symbol; (void)entryLoc; }
+    virtual void funcletLeave(const std::string &label) { (void)label; }
+    virtual void funcletEnd(const std::string &resume) { (void)resume; }
+    virtual std::string takeFunclets() { return std::string(); }
+    virtual std::string takeFuncletPdata() { return std::string(); }
 };
 
 // **The GNU spelling, and the one place a COFF variant needs to differ.**
@@ -282,12 +291,22 @@ public:
     std::string locationDirective(int fn, int file, int line, int column) const override;
 
     std::string labelText(const std::string &l) const override { return sym(l); }
+    void funcletBegin(const std::string &symbol, const std::string &entryLoc) override;
+    void funcletLeave(const std::string &label) override;
+    void funcletEnd(const std::string &resume) override;
+    std::string takeFunclets() override { std::string t; t.swap(funclets_); return t; }
+    std::string takeFuncletPdata() override { std::string t; t.swap(funcletPdata_); return t; }
 
 protected:
     std::string sym(const std::string &name) const override;
     void op(const Op &x) override;
 
 private:
+    // **A funclet is a slice of the ordinary output, lifted at its end**: where each open one began, its symbol and
+    // entry location, the text of the closed ones, and their .pdata, which goes after every function's.
+    struct OpenFunclet { std::size_t mark; std::string symbol, entryLoc; };
+    std::vector<OpenFunclet> openFunclets_;
+    std::string funclets_, funcletPdata_;
     // What functionBegin has already given a COMDAT section, so the weakDefinition that follows it does not open a second one.
     std::string opened_;
     // The function being written, whether it needs a FuncInfo beside it, and

@@ -2013,25 +2013,32 @@ void X86_64Linux::walkBody(const Function &fn) {
         a_->ins("mov", local(ps[0].offset), reg("%rax"));
 }
 
-// **A funclet is a slice of the ordinary output, lifted.** Walking the handler
-// appends its code like any other, so remembering where that began and cutting
-// back to it gives the body exactly - and the code generator knows none of it.
+// **A funclet is opened and closed as data** (M3a.4): the spelling is told its symbol and the location of its entry,
+// marks where its body begins, and at the end lifts the body out and writes the head and tail round it. Through the
+// holder, that is a FuncletBegin directive in the one stream, the body its blocks, and a FuncletEnd that returns.
 std::string X86_64Linux::beginFunclet(std::size_t pos, int number, bool cleanup) {
-    if (passesRun()) optimizer_->funcletBegin();
     funcletOuter_.push_back(std::make_pair(funcletSymbol_, inFunclet_));
     inFunclet_ = true;
-    atOutput([this] { funcletMarks_.push_back(out_.size()); });
     funcletSymbol_ = "$" + std::string(funcletKind_).substr(1) +
                      std::to_string(funcletIndex_++) + "$" + fnSymbol_;
-    funcletDebugBegin(funcletSymbol_, pos, number, cleanup);
+    a_->funcletBegin(funcletSymbol_, funcletEntryLocation(pos));
+    funcletDebugBegin(pos, number, cleanup);
     return funcletSymbol_;
+}
+
+// -g: its first instructions are the prologue, which the walk writes no location for: named by the handler's own
+// line, as cl names them, in the head the spelling puts before them - the next function id, which funcletDebugBegin declares.
+std::string X86_64Linux::funcletEntryLocation(std::size_t pos) const {
+    if (!lineSource() || pos == 0) return std::string();
+    const Source::Place at = lineSource()->locate(pos);
+    return a_->locationDirective(static_cast<int>(dwarfFns_.size()), at.file + 1, at.line, at.column);
 }
 
 // **-g: the funclet is a procedure of its own, over the parent's frame** - cl's `` `f'::`1'::catch$0 ``,
 // an S_LPROC32 with no type whose locals are the parent's (rbp is the parent's in a funclet) and whose
 // blocks are the ones walked inside it; its lines are a table of its own, the spelling told so (1.29).
-void X86_64Linux::funcletDebugBegin(const std::string &symbol, std::size_t pos, int number, bool cleanup) {
-    funcletEntryLoc_.clear();
+void X86_64Linux::funcletDebugBegin(std::size_t pos, int number, bool cleanup) {
+    (void)pos;
     if (!lineSource()) return;
     const DwarfFunction &parent = dwarfFns_[dwarfFnAt_];
     DwarfFunction d;
@@ -2041,20 +2048,13 @@ void X86_64Linux::funcletDebugBegin(const std::string &symbol, std::size_t pos, 
     d.external = false;
     d.returns = parent.returns;
     d.locals = parent.locals;
-    d.symbol = a_->labelText(symbol);
-    d.prologEnd = a_->labelText("$LNprolog$" + symbol);
-    d.codeEnd = a_->labelText("$LNend$" + symbol);
+    d.symbol = a_->labelText(funcletSymbol_);
+    d.prologEnd = a_->labelText("$LNprolog$" + funcletSymbol_);
+    d.codeEnd = a_->labelText("$LNend$" + funcletSymbol_);
     d.mergeable = parent.mergeable;
     d.funclet = number;
-    const int id = static_cast<int>(dwarfFns_.size());
     dwarfFns_.push_back(d);
     a_->funcletLinesBegin();
-    // Its first instructions are the prologue, which the walk writes no location for: named by the
-    // handler's own line, as cl names them, in the text closeFunclet puts before them.
-    if (pos != 0) {
-        const Source::Place at = lineSource()->locate(pos);
-        funcletEntryLoc_ = a_->locationDirective(id, at.file + 1, at.line, at.column);
-    }
 }
 
 void X86_64Linux::funcletDebugEnd() {
@@ -2066,17 +2066,10 @@ void X86_64Linux::endCleanupFunclet() {
     funcletKind_ = "$catch$";
 }
 
-// **The resume label goes through labelText like every table entry does.**
-void X86_64Linux::endFunclet(const std::string &resume) {
-    closeFunclet("  lea " + a_->labelText(resume) + "(%rip), %rax\n");
-}
+void X86_64Linux::endFunclet(const std::string &resume) { closeFunclet(resume); }
 
-// An early exit: the continuation in rax, then the funclet's own epilogue,
-// which closeFunclet labels. The jump leaves the stream, so nothing is dead.
-void X86_64Linux::funcletLeave(const std::string &label) {
-    a_->ins("lea", rip(label), reg("%rax"));
-    a_->ins("jmp", lbl("$LNleave$" + funcletSymbol_));
-}
+// An early exit: the continuation in rax, then the funclet's own epilogue, which the spelling labels.
+void X86_64Linux::funcletLeave(const std::string &label) { a_->funcletLeave(label); }
 
 // Write -2 into the runtime's scratch word: the personality routine reads it
 // through the FuncInfo's dispUnwindHelp to know how far this frame had got.
@@ -2085,93 +2078,11 @@ void X86_64Linux::storeUnwindHelp(int slot) {
     a_->ins("movq", immText("-2"), local(slot));
 }
 
-// **The funclet's own frame, and the assembler writes its unwind data.**
-void X86_64Linux::closeFunclet(const std::string &tail) {
+// The spelling writes the funclet's head, tail and unwind data, and keeps the text for emitExceptionTables.
+void X86_64Linux::closeFunclet(const std::string &resume) {
     inFunclet_ = false;
     funcletDebugEnd();
-    const std::string q = "\"" + funcletSymbol_ + "\"";
-    const std::string b = "\"$LNbeg$" + funcletSymbol_ + "\"";
-    const std::string e = "\"$LNend$" + funcletSymbol_ + "\"";
-    const std::string pu = "\"$LNpush$" + funcletSymbol_ + "\"";
-    const std::string pr = "\"$LNprolog$" + funcletSymbol_ + "\"";
-    const std::string u = "\"$unwind$" + funcletSymbol_ + "\"";
-
-    // **A funclet of a mergeable parent is mergeable with it.**
-    const std::string assoc =
-        fnMergeable_ ? ",associative," + a_->labelText(fnSymbol_) : std::string();
-
-    // The text around the body: the head, then the body as written out, then the tail with the unwind data.
-    std::string head, f;
-    // **Not `.globl`.**
-    head += "\n  .section .text$x,\"xr\"" + assoc + "\n";
-    head += q + ":\n";
-    head += b + ":\n";
-    // -g: the prologue is on the `catch` line, as cl's funclet begins (1.29).
-    head += funcletEntryLoc_;
-    head += "  movq %rdx, 16(%rsp)\n";
-    head += "  push %rbp\n";
-    head += pu + ":\n";
-    head += "  sub $32, %rsp\n";
-    head += pr + ":\n";
-    // rdx is the establisher frame, which on this target is exactly the parent's rbp - the two
-    // became one thing when the frame pointer moved to the bottom of the allocation - so the
-    // handler reaches the parent's locals with no adjustment.
-    head += "  mov %rdx, %rbp\n";
-    f += tail;
-    f += "\"$LNleave$" + funcletSymbol_ + "\":\n";
-    f += "  add $32, %rsp\n";
-    f += "  pop %rbp\n";
-    f += "  ret\n";
-    f += e + ":\n";
-
-    // **Written out rather than left to `.seh_*`**, for the reason
-    // CoffSpelling::prologue records: the directives cannot carry handler data,
-    // and a funclet's names the parent's FuncInfo. Two codes, no frame register.
-    f += "  .section .xdata,\"dr\"" + assoc + "\n";
-    f += "  .p2align 3\n";
-    f += u + ":\n";
-    f += "  .byte 0x19\n";
-    f += "  .byte " + pr + "-" + b + "\n";
-    f += "  .byte 2\n";
-    f += "  .byte 0\n";
-    // UWOP_ALLOC_SMALL for 32 bytes: 2 with (32/8 - 1) in the high nibble.
-    f += "  .byte " + pr + "-" + b + "\n";
-    f += "  .byte 0x32\n";
-    f += "  .byte " + pu + "-" + b + "\n";
-    f += "  .byte 0x50\n";
-    f += "  .long __CxxFrameHandler3@IMGREL\n";
-    // The funclet shares the parent's FuncInfo: one description of the try.
-    f += "  .long \"$cppxdata$" + fnSymbol_ + "\"@IMGREL\n";
-    f += "  .text\n";
-
-    // **`.pdata$x`, so the funclets' entries sort after every function's**: an inline
-    // function's COMDAT code lands after `.text`, and a funclet entry among the
-    // functions' put its entry out of order - a throw from inside it found no handler.
-    std::string pdata;
-    pdata += "  .section .pdata$x,\"dr\"" + assoc + "\n";
-    pdata += "  .p2align 2\n";
-    pdata += "  .long " + b + "@IMGREL\n";
-    pdata += "  .long " + e + "@IMGREL\n";
-    pdata += "  .long " + u + "@IMGREL\n";
-    // **The body is lifted out of the output where it was written**, which
-    // with an optimizer in front is after the function it belongs to.
-    atOutput([this, head, f, pdata] {
-        const std::size_t mark = funcletMarks_.back();
-        funcletMarks_.pop_back();
-        std::string body = out_.substr(mark);
-        out_.resize(mark);
-        // -g: the funclet's `.cv_func_id` (funcletLinesBegin) goes before the head, whose `.cv_loc` names that id -
-        // the assembler takes a location only of an id it has been told of.
-        std::string declared;
-        if (body.compare(0, 14, "  .cv_func_id ") == 0) {
-            const std::size_t nl = body.find('\n');
-            declared = body.substr(0, nl + 1);
-            body.erase(0, nl + 1);
-        }
-        funclets_ += declared + head + body + f;
-        funcletPdata_ += pdata;
-    });
-    if (passesRun()) optimizer_->funcletEnd();
+    a_->funcletEnd(resume);
     funcletSymbol_ = funcletOuter_.back().first;
     inFunclet_ = funcletOuter_.back().second;
     funcletOuter_.pop_back();
@@ -2185,8 +2096,8 @@ void X86_64Linux::emitCoffEhTables(const Function &fn) {
     const std::vector<MsTryBlock> &tries = msTryBlocks();
 
     std::string o;
-    o += funclets_;
-    funclets_.clear();
+    o += a_->takeFunclets();
+    funcletPdata_ += a_->takeFuncletPdata();
     funcletIndex_ = 0;
 
     o += "\n  .section .xdata,\"dr\"\n";
@@ -2547,7 +2458,7 @@ void X86_64Linux::run(const Program &program) {
         finishChunk();
     }
     if (!target_.microsoftNames() && !program.tlsWrappers.empty()) {
-        atOutput([this, &program] { emitTlsWrappers(program); });
+        emitTlsWrappers(program);
         finishChunk();
     }
 

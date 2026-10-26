@@ -62,21 +62,21 @@ struct DivideByConstant : Pass {
 // loop never touches can be seen to be free; a speed level's alone.
 struct HoistInvariants : Pass {
     HoistInvariants() : Pass(PassInfo{"hoist-invariants", kFlow | kPropPhysical, 0, 0, kTodoBuildFlow}) {}
-    bool gate(const Function &fn) const override { return fn.whole && !fn.costs().forSize(); }
+    bool gate(const Function &fn) const override { return !fn.costs().forSize(); }
     bool execute(Function &fn) override { return hoistInvariants(fn); }
 };
 
 // **A double the loop reads from an unwritten frame slot, held in a free xmm register**; a speed level's alone.
 struct HoistXmmSlots : Pass {
     HoistXmmSlots() : Pass(PassInfo{"hoist-xmm-slots", kFlow | kPropPhysical, 0, 0, kTodoBuildFlow}) {}
-    bool gate(const Function &fn) const override { return fn.whole && !fn.costs().forSize(); }
+    bool gate(const Function &fn) const override { return !fn.costs().forSize(); }
     bool execute(Function &fn) override { return hoistXmmSlots(fn); }
 };
 
 // **A loop counter that never goes negative read as its own 64-bit register**, its `movslq` then dead.
 struct WidenCounters : Pass {
     WidenCounters() : Pass(PassInfo{"widen-counters", kFlow | kPropPhysical, 0, 0, kTodoBuildFlow}) {}
-    bool gate(const Function &fn) const override { return fn.whole && !fn.costs().forSize(); }
+    bool gate(const Function &fn) const override { return !fn.costs().forSize(); }
     bool execute(Function &fn) override { return widenCounters(fn); }
 };
 
@@ -181,11 +181,10 @@ struct Shrink : Pass {
     bool execute(Function &fn) override { return shrink(fn.stream, fn.flow, fn.convention); }
 };
 
-// The frame passes run only on a whole function - a funclet's frame is its
-// parent's - while its prologue is still held.
+// The frame passes run while the prologue is still held; a funclet's frame is its parent's, and its blocks are in the stream (M3a.4).
 struct FrameGroup : Group {
     FrameGroup() : Group(PassInfo{"frame", 0, 0, 0, 0}, 1, WhenNoneChanged) {}
-    bool gate(const Function &fn) const override { return fn.whole && fn.prologueAt >= 0; }
+    bool gate(const Function &fn) const override { return fn.prologueAt >= 0; }
 };
 
 // Everything again once locals have registers - if any left its slot.

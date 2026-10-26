@@ -177,12 +177,19 @@ void Allocator::buildInterference() {
     for (int r : kOffer)
         if ((fn_.convention.preserved & bit(r)) && !(mentioned & bit(r))) offered_ |= bit(r);
     std::vector<int> live;
+    // **A funclet saves no register of its own** (P1's funclet decision): a pseudo it names takes no preserved one,
+    // and none crosses its boundary - a value live into a funclet stays in its frame slot, which SharedSlots holds.
+    std::vector<bool> inFunclet(n_, false), inBody(n_, false);
     for (int b = 0; b < static_cast<int>(f.blocks.size()); ++b) {
         const Block &blk = f.blocks[b];
         Live phys = blk.out;
         Bits bits = liveOut_[b];
         for (int k = blk.end - 1; k >= blk.begin; --k) {
             if (s[k].kind != Entry::Ins || s[k].dead) continue;
+            for (const Use &u : uses_[k]) {
+                (blk.funclet > 0 ? inFunclet : inBody)[u.pseudo] = true;
+                if (blk.funclet > 0) nodes_[u.pseudo].forbid |= fn_.convention.preserved;
+            }
             f.joinPads(b, k, phys);
             for (int e : blk.succs)
                 if (f.edges[e].kind == Edge::Eh && f.edges[e].at == k && f.edges[e].to != Edge::kExit)
@@ -216,6 +223,7 @@ void Allocator::buildInterference() {
         }
     }
     for (Node &nd : nodes_) nd.forbid &= ~(bit(RSP) | bit(RBP));
+    for (int p = 0; p < n_; ++p) assert(!(inFunclet[p] && inBody[p]) && "a pseudo spans a funclet's boundary");
 }
 
 // **A reference counts by where it stands**: the level says what one is

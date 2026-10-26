@@ -109,6 +109,7 @@ struct Block {
     bool leaves = false;                 // has a Leave edge: all live at its end
     Live in, out;                        // live at its start, and at its end
     int idom = -1;                       // immediate dominator; -1 for the entry, or not computed
+    int funclet = 0;                     // how many funclets the block is inside (M3a.4): 0, the function's own code
 };
 
 // **The function as blocks and edges, and what is live across each.** A block starts at a label
@@ -158,14 +159,22 @@ struct FlowOf {
         struct Throw { int call; std::string pad; };
         std::vector<Throw> throws;
         Block cur;
+        int depth = 0;                       // the funclets open at this entry
         for (int k = 0; k < static_cast<int>(s.size()); ++k) {
             const Entry &e = s[k];
             if (e.kind == Entry::Label && e.dead) continue;       // dropped: it joins
+            // **A funclet's blocks are its function's** (M3a.4): FuncletBegin starts one entered from nowhere, and
+            // FuncletEnd or FuncletLeave ends one that returns; the code after a funclet continues the block before it.
+            if (e.kind == Entry::Event && e.event.beginsFunclet()) {
+                if (k > cur.begin) { cur.end = k; blocks.push_back(cur); cur = Block(); cur.begin = k; }
+                cur.funclet = ++depth;
+            }
             if (e.kind == Entry::Label && k > cur.begin) {
                 cur.end = k;
                 blocks.push_back(cur);
                 cur = Block();
                 cur.begin = k;
+                cur.funclet = depth;
             }
             if (e.kind == Entry::Label) {
                 at[e.label] = static_cast<int>(blocks.size());
@@ -173,6 +182,14 @@ struct FlowOf {
                     if (r.begin == e.label) open.push_back(&r);
                     if (r.end == e.label) open.erase(std::remove(open.begin(), open.end(), &r), open.end());
                 }
+            }
+            if (e.kind == Entry::Event && e.event.endsFunclet()) {
+                cur.end = k + 1;
+                blocks.push_back(cur);
+                if (!e.event.leavesFunclet()) --depth;
+                cur = Block();
+                cur.begin = k + 1;
+                cur.funclet = depth;
             }
             if (e.kind != Entry::Ins) continue;
             effects[k] = effectsOf(e.ins);
@@ -185,6 +202,7 @@ struct FlowOf {
                 blocks.push_back(cur);
                 cur = Block();
                 cur.begin = k + 1;
+                cur.funclet = depth;
             }
         }
         cur.end = static_cast<int>(s.size());
@@ -194,8 +212,10 @@ struct FlowOf {
         // instruction can fall through, and the pads the calls may leave for.
         for (std::size_t b = 0; b < blocks.size(); ++b) {
             Control c;
-            for (int k = blocks[b].end - 1; k >= blocks[b].begin; --k)
+            for (int k = blocks[b].end - 1; k >= blocks[b].begin; --k) {
                 if (s[k].kind == Entry::Ins && !s[k].dead) { c = controlOf(s[k].ins); break; }
+                if (s[k].kind == Entry::Event && s[k].event.endsFunclet()) { c = controlOf(s[k].event); break; }
+            }
             if (c.ends && !c.target.empty()) {
                 const auto t = at.find(c.target);
                 if (t != at.end()) connect(static_cast<int>(b), t->second, Edge::Jump);
@@ -206,7 +226,10 @@ struct FlowOf {
                 connect(static_cast<int>(b), Edge::kExit, Edge::Return);
             }
             if (!c.ends || c.falls) {
-                if (b + 1 < blocks.size()) connect(static_cast<int>(b), static_cast<int>(b + 1), Edge::Fallthrough);
+                // Falling through steps over a funclet's blocks to the next of the block's own depth.
+                std::size_t t = b + 1;
+                while (t < blocks.size() && blocks[t].funclet > blocks[b].funclet) ++t;
+                if (t < blocks.size() && blocks[t].funclet == blocks[b].funclet) connect(static_cast<int>(b), static_cast<int>(t), Edge::Fallthrough);
                 else connect(static_cast<int>(b), Edge::kExit, Edge::Leave);
             }
         }
@@ -361,9 +384,19 @@ bool removeDeadIn(std::vector<Entry> &s, FlowOf<Entry> &f, RegSet frame, IdleFn 
 template <class Entry>
 bool removeUnreachableIn(std::vector<Entry> &s) {
     bool changed = false, gone = false;
+    std::vector<bool> outside;           // `gone` as it stood before each open funclet, to come back to at its end
     for (std::size_t k = 0; k < s.size(); ++k) {
         Entry &en = s[k];
         if (en.kind == Entry::Label && !en.dead) gone = false;
+        // A funclet is entered by the runtime and the code after it carries on from before it; its early exit,
+        // where nothing reaches it, goes.
+        if (en.kind == Entry::Event && en.event.beginsFunclet()) { outside.push_back(gone); gone = false; }
+        if (en.kind == Entry::Event && en.event.endsFunclet() && !en.dead) {
+            if (en.event.leavesFunclet()) { if (gone) en.dead = changed = true; else gone = true; continue; }
+            gone = outside.back();
+            outside.pop_back();
+            continue;
+        }
         if (en.kind != Entry::Ins || en.dead) continue;
         if (gone) { en.dead = changed = true; continue; }
         const Control c = controlOf(en.ins);
