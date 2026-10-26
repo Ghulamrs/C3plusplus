@@ -67,4 +67,4 @@ extern const DwarfSpelling kMachODwarf;
 void writeDwarf(std::string &out, const DwarfSpelling &sp, const Target &target,
                 const std::string &file, const std::string &compDir,
                 const std::vector<DwarfFunction> &fns,
-                const std::vector<DwarfGlobal> &globals);
+                const std::vector<DwarfGlobal> &globals, Dialect dialect = Dialect::Cxx11);

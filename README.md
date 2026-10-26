@@ -8,7 +8,8 @@ in, is `doc-cxx3/Compiler_Design_README.md`.*
 assembly for **x86_64-linux**, **x86_64-windows**, **arm64-darwin** and
 **tms6747** (TI's C6747 DSP). It is written in ISO C++11 and depends on no
 compiler framework: its own lexer, preprocessor, parser, type system and four
-code generators.
+code generators. It reads **C90** too - a `.c` file, or `-std=c90` - through the
+same parser, which is what lets c90 be retired ("C90" below).
 
 **The headline is measured, and it changed on 2026-10-08.** Every document in
 this tree used to say "C++11 minus `docs/EXCLUSIONS.md`"; an independent review
@@ -78,6 +79,29 @@ which run-time it took, and a `-rts=` naming no `.lib` that exists is refused.
 `tests/asm6x.sh` holds every case's driver-made object to asm6x's own;
 `tools/windows/ti-link.cmd` links every case on the box, and `verify-three`
 runs both.
+
+## C90
+
+`cxx1` reads C90 as well (M7 of cpp11 2, `doc-cxx3/M7-PLAN.md`): a `.c` file is C90, and
+`-std=c90` (`c89`, `iso9899:1990`, `gnu89`) says so for every input; `-std=c++11` says C++. One
+parser reads both, through `sema::SemaC`, the rules C++ derives from C and answers differently -
+`'a'` is an `int`, a string literal is `char[]`, a comparison is an `int`, `void *` converts to any
+object pointer without a cast, `struct S` and `S` are two namespaces, `int v; int v;` is one
+tentative definition, a `const` at file scope is external, `auto` is a storage class, and every
+name is its own symbol with no `__cplusplus` defined. The C headers in `lib/` serve both. What is
+C++ and not C is refused by name - a reference, a function declared in a struct, a member
+initialiser, a default argument, a functional cast `T(x)`, two functions of one name, a function
+try block - each saying it is C++ and that the file is being compiled as C90; the C++ keywords are
+plain identifiers there (`int new;` is C). What c90 1.4 refused by decision this refuses too - K&R
+definitions, trigraphs, implicit `int`, an implicit function declaration, `int f();` called with
+arguments - each in `tests/open/c90-*.c` with clang's answer, and the one over-acceptance (a
+typedef redeclared in one scope, C++'s rule) is in `docs/CONFORMANCE.md`'s C90 section. The
+oracle is c90 1.4's own suite: `tests/c90.sh` compiles its 431 cases and 8 multi-file programs
+twice, by this compiler and the host's C compiler, and the two must agree; it runs on every
+`make test`, on tms6747 (`-arch tms6747`, vm6747 and sim6747) and, for x86_64-windows, compiles
+and assembles both spellings (`-arch x86_64-windows`) with the run leg under Wine
+(`tools/wine-c90.sh`) until a Windows box is back. `-g` writes DWARF's `DW_LANG_C89` and
+CodeView's C for a C90 unit.
 
 ## The library
 

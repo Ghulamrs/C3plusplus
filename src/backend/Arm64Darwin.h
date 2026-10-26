@@ -80,6 +80,8 @@ private:
     std::ostream &sink_;
     const Target &target_;
     const Abi &abi_;
+    // The unit's dialect, for DWARF's language byte (M7).
+    Dialect dialect_ = Dialect::Cxx11;
 
     std::string returnLabel_;
     std::string labelPrefix_;

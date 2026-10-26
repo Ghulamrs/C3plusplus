@@ -2421,6 +2421,7 @@ void X86_64Linux::coffRecord(const char *section, const std::string &label,
 }
 
 void X86_64Linux::run(const Program &program) {
+    dialect_ = program.dialect;
     // The Microsoft RTTI records, where this generator serves that target.
     // The MASM path emits its own in the same place and for the same reason:
     // no other target has anything like them.
@@ -2490,9 +2491,9 @@ void X86_64Linux::writeDebug(const std::vector<DwarfFunction> &fns,
                              const std::vector<DwarfGlobal> &globals) {
     // The object's name plain: S_OBJNAME's writer escapes it (it was escaped twice until 1.29).
     if (target_.microsoftNames())
-        writeCodeView(out_, target_, CodeViewLanguage::Cpp,
+        writeCodeView(out_, target_, dialect_ == Dialect::C90 ? CodeViewLanguage::C : CodeViewLanguage::Cpp,
                       codeViewPath(compDir(), lineSource()->files().front() + ".obj", false), fns, globals,
                       [this](const std::string &s) { return a_->labelText(s); });
     else
-        writeDwarf(out_, kElfDwarf, target_, lineSource()->files().front(), compDir(), fns, globals);
+        writeDwarf(out_, kElfDwarf, target_, lineSource()->files().front(), compDir(), fns, globals, dialect_);
 }

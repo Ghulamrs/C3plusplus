@@ -640,7 +640,8 @@ ExprPtr Parser::bracedValueInit(const Type *to, std::size_t pos) {
 }
 
 ExprPtr Parser::functionalCast(const Type *to, std::size_t pos) {
-    // `T(x)` is a prvalue ([expr.type.conv]/2), whatever node the conversion hands back.
+    // `T(x)` is a prvalue ([expr.type.conv]/2), whatever node the conversion hands back; C writes `(T)x`.
+    if (dialect() == Dialect::C90) rules().refuseCxxOnly(src_, pos, "a functional cast");
     syntax::NodeId operand;
     ExprPtr r = [&]() -> ExprPtr {
         expect("(");

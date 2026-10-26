@@ -15228,3 +15228,42 @@ Target &, Program &)`, its header including nothing of `src/parser/` - for M3b.1
 the parser's. **Found on the way and not M3b.0's**: stage 0 at `f5967f9` does not build stage 1 - `OptValues.cpp:18`'s
 `Cond cc = kNoCond;` is refused "'kNoCond' was not declared" - so `tools/self-host` could not run on this branch;
 registered in `tests/open/` with the reduced shape, and `make test` never sees it because it never compiles `src/`.
+
+## M7: C90 through the parser and `SemaC`, 2026-10-26
+
+**The compiler reads C90** - a `.c` file, or `-std=c90` (`c89`, `iso9899:1990`, `gnu89`) for every input - through
+the one parser, so that c90 1.4 can be retired (design section 12, R3.2; `doc-cxx3/M7-PLAN.md` is the plan and its
+"Where it stands" the measures). `sema::Dialect { C90, Cxx11 }` is decided by the driver per input and handed to the
+lexer (C90's 32 keywords; a C++ keyword is an identifier with `Token::keywordAsName`, so `is("new")` says no), the
+preprocessor (no `__cplusplus`, no `__STDC_VERSION__`) and the parser. **Every rule C++ derives from C is asked through
+`SemaC`** (`src/sema/SemaC.h`), `SemaCxx` overriding each to C++11's answer - the truth type, the character and string
+literal, the integer ladder, `void *` and integer-to-enumeration conversions, the tag namespace (`Parser::tagKey`:
+`struct S` is the type-name table's key in C90), tentative definitions, the const object's linkage, a jump past an
+initialisation, `auto` as a storage class, mangling (a C name is its own symbol, a static function's too) and
+overloading - never through `dialect() == C90` at a site, so that the C++ answer stays in one place and `identical.sh`
+holds it. The grammar is the exception: the keyword table, `auto`, `T(x)`.
+
+**What is C++ and not C is refused by name through one table** (`SemaC::refuseCxxOnly`, `kCxxOnly[]`): a reference, a
+function declared in a struct, a member initialiser, a default argument, a functional cast, a second declaration of one
+name with another parameter list, a function try block - "`<construct>` is C++, and this file is being compiled as C90
+(-std=c90) - `<hint>`". **These are not exclusions**: `tools/exclusions` counts a refusal by "not supported", "is C++1x"
+or "yet", and a dialect refusal says none of them on purpose - a C++ construct in a C file is ill-formed C, an error, not
+a missing feature. `tests/c90/refused/*.c`, each beside its `.error`, run in `tests/c90.sh`'s host leg; each was checked
+against `clang -std=c89 -pedantic-errors` (refuses) and `clang++ -std=c++11` (accepts) before it was written.
+
+**The oracle is c90 1.4's own suite.** `tests/c90/cases` and `tests/c90/multi` are its 431 cases and 8 directories,
+verbatim; `tests/c90.sh` compiles each twice, by `cxx3 -std=c90` and by the host's C compiler, runs both, and the two
+must agree on stdout and exit status, which must be the case's `// expect: N`. It runs on every `make test`; `-arch
+tms6747` runs the assembly on vm6747 and the TI program on sim6747; `-arch x86_64-windows` compiles and assembles both
+spellings (the lp64 list skipped, that target's long being 32 bits) and `tools/wine-c90.sh` is the run leg's stand-in
+under Wine on the Linux box until a Windows box is back. Where cxx3 and c90 1.4 disagree, the case is read against clang
+and the verdict recorded in the plan; what c90 refused by decision - K&R definitions, `int f();` called with arguments,
+implicit `int`, an implicit declaration, trigraphs - this refuses too, each in `tests/open/c90-*.c` with clang's answer
+(`tests/open.sh` has a `.c` leg), and the one over-acceptance, a typedef redeclared in one scope, is in
+`docs/CONFORMANCE.md`'s C90 section. `-g` writes `DW_LANG_C89` and CodeView's C for a C90 unit (`Program::dialect`,
+set by the parser, read by the two debug writers); nothing in c90's suite measures it, so cdb parity is owed.
+
+**What held at every step**: `tools/identical.sh` against a REF of the base - 0 assembly differences bar the known nine
+diagnostics naming `lib/` by path; the emit golden 0 changed; `make test` green; `tools/exclusions --check` 0/0; the
+memory gate; the comment cap. The emit golden and `identical.sh` compile `.cpp` files only, so a C-mode change cannot
+show there - which is why `tests/c90.sh` runs beside them and is in `make test`.

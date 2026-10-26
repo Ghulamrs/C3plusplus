@@ -184,6 +184,8 @@ protected:
     bool lsdaPersonality_ = false;
     // Reachable from the MASM subclass, which needs the target to size the objects the Microsoft ABI wants a throw to carry.
     const Target &target_;
+    // The unit's dialect, for the debug records' language byte (M7).
+    Dialect dialect_ = Dialect::Cxx11;
 
 private:
     std::vector<std::string> chunks_;

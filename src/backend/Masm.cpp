@@ -724,7 +724,7 @@ void MasmSpelling::codeView(const std::string &gnu) {
 void MasmCodeGen::writeDebug(const std::vector<DwarfFunction> &fns,
                              const std::vector<DwarfGlobal> &globals) {
     std::string gnu;
-    writeCodeView(gnu, target_, CodeViewLanguage::Cpp,
+    writeCodeView(gnu, target_, dialect_ == Dialect::C90 ? CodeViewLanguage::C : CodeViewLanguage::Cpp,
                   codeViewPath(compDir(), lineSource()->files().front() + ".obj", false), fns, globals,
                   [](const std::string &s) { return s; });
     masm_.codeView(gnu);

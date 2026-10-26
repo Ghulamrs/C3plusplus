@@ -707,3 +707,37 @@ function's finished tables are kept by its symbol and the local member goes on f
 scope where cl back-references the function there, `?1??2@YAH0@Z@` -
 `local-class-sibling-type` records it; that needs the function's signature, not its
 symbol. The Itanium half is as above.
+
+## C90: where the C dialect and ISO C90 disagree (M7)
+
+cxx1 reads a `.c` file, or any input under `-std=c90`, as C90 through the same parser, the rules C++
+derives from C answered by `sema::SemaC` (doc-cxx3/M7-PLAN.md). The oracle is c90 1.4's own suite
+(`tests/c90.sh`, 437 programs agreeing with the host's C compiler on four targets) and, where the two
+part, `clang -std=c89 -pedantic-errors`. What compiles here and is not C90, or is refused here and
+is, each a decision:
+
+- **A typedef redeclared in one scope is accepted.** `typedef int T; typedef int T;` is ill-formed C90
+  (6.5.7 allows one declaration of a name in a scope; C11 and C++ allow this one) and this takes it,
+  the C++ rule standing. c90 1.4 refused it; clang `-std=c89` refuses it. An over-acceptance, recorded
+  rather than built against.
+- **`S x;` after `struct S { ... };` is refused**, as C refuses it: the tag and the ordinary name are two
+  namespaces (6.1.2.3), and `struct S` is the type-name table's key in C90 (`Parser::tagKey`). In the
+  same file `int S;` beside `struct S` is two names, as clang and c90 have them.
+- **A label before a declaration is accepted**, as C++ accepts it; C90 6.6.1 wants a statement after a
+  label, and a declaration is not one there. clang `-std=c89 -pedantic-errors` refuses it; this does not.
+- **The six digraphs are read** (`<: :> <% %> %: %:%:`), which C94 added and C90 does not have; the eleven
+  alternative tokens (`and`, `or`, ...) are identifiers in C90, as they should be. c90 1.4 read the
+  digraphs too.
+- **What c90 1.4 refused by decision this refuses too**, each valid C90 and each in `tests/open/c90-*.c`
+  with clang's answer: a K&R definition, an unspecified `()` parameter list called with arguments,
+  implicit `int`, an implicit function declaration, trigraphs. `tests/open.sh` counts them.
+- **The eight extensions c90 1.4 took, this takes**: `//` comments, `long long`, variadic macros, a
+  declaration after a statement, a `for`-init declaration, a trailing enum comma, an empty macro
+  argument, GNU's `, ## __VA_ARGS__`. Every case of c90's suite opens with a `//` comment.
+- **A C++-only construct is refused by name, and is not an exclusion**: a reference, a function declared
+  in a struct, a member initialiser, a default argument, a functional cast `T(x)`, a second function
+  of one name, a function try block - each "is C++, and this file is being compiled as C90". That is
+  ill-formed C, an error, not a missing feature; `tools/exclusions` does not count it and
+  `docs/EXCLUSIONS.md` is unchanged (`tests/c90/refused/`).
+- **`sizeof(0xFFFFFFFF)` is 4 on an LP64 target**, C90 6.1.3.2's ladder for a hexadecimal literal (int,
+  unsigned int, long, unsigned long); c90 1.4 said 8. clang's answer, taken.

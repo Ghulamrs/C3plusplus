@@ -14,7 +14,9 @@
 #                                     tests/c90/tms6747-lp64.txt names the cases whose reference needs a
 #                                     64-bit long, tests/c90/tms6747-sim.txt the ones TI's rts6740 cannot run
 #   tests/c90.sh -arch x86_64-windows compile and assemble only (no Windows box this round): the MASM spelling
-#                                     written and assembled in process (-c), the GNU spelling assembled by clang
+#                                     written and assembled in process (-c), the GNU spelling assembled by clang;
+#                                     the lp64 list is skipped there too, that target's long being 32 bits -
+#                                     tools/wine-c90.sh is the run leg's stand-in, under Wine on the Linux box
 #   CXX1=<cxx3.exe>                   the compiler under test; CXX1_FLAGS="-O2" runs the cases through the optimizer
 #   C90CC=<c90.exe>                   measure c90 1.4 itself through the same harness (it takes .c, and no -std)
 #
@@ -93,7 +95,8 @@ one() {
     else srcs=$(ls tests/c90/multi/$name/*.c); main="tests/c90/multi/$name/main.c"; name="multi.$name"; fi
     expect=$(sed -n '1s|^// expect: *\([0-9-]*\).*|\1|p' "$main")
     [ -n "$expect" ] || { echo "FAIL $name - no '// expect: N' on line 1"; echo fail > "$OUT/$name.verdict"; return; }
-    if [ "$ARCH" = tms6747 ] && [ -z "$only" ] && grep -q "^${name#multi.}[[:space:]]" tests/c90/tms6747-lp64.txt; then echo lp64 > "$OUT/$name.verdict"; return; fi
+    # A 32-bit long on tms6747 and on x86_64-windows alike: the lp64 list's cases measure the 64-bit one (bf_types' source needs it).
+    if [ "$ARCH" != host ] && [ -z "$only" ] && grep -q "^${name#multi.}[[:space:]]" tests/c90/tms6747-lp64.txt; then echo lp64 > "$OUT/$name.verdict"; return; fi
     # A case whose reference is Linux's (tests/c90/linux-only.txt) on another host, said aloud.
     if [ "$ARCH" = host ] && [ "$(uname -s)" != Linux ] && [ -z "$only" ] && grep -q "^${name#multi.}[[:space:]]" tests/c90/linux-only.txt; then
         echo "  skip $name on $(uname -s): $(grep "^${name#multi.}[[:space:]]" tests/c90/linux-only.txt | sed 's/^[^ ]*[[:space:]]*//')"
@@ -143,8 +146,9 @@ one() {
         compareRuns "$name" "$expect"; return
     fi
 
-    # tms6747: the assembly on the emulator, and the machine code on sim6747 through asm6x and lnk6x.
-    { ( ulimit -t 20; "$VM" $asm < /dev/null ) > "$OUT/$name.ours.out" 2>&1; echo $? > "$OUT/$name.ours.rc"; } 2>/dev/null
+    # tms6747: the assembly on the emulator, and the machine code on sim6747 through asm6x and lnk6x. The program's
+    # stderr comes out on the emulator's and the simulator's own, kept apart as the host leg keeps the reference's.
+    { ( ulimit -t 20; "$VM" $asm < /dev/null ) > "$OUT/$name.ours.out" 2> "$OUT/$name.ours.err"; echo $? > "$OUT/$name.ours.rc"; } 2>/dev/null
     compareRuns "$name" "$expect"
     [ "$(cat "$OUT/$name.verdict")" = pass ] || return
     if [ "$SIM" = 1 ]; then
@@ -158,7 +162,7 @@ one() {
         if ! "$LNK6X" -mv6740 --abi=eabi -i "$TIRTS" "$OUT/link.cmd" $objs -l "$RTSLIB" -o "$OUT/$name.ti.out" >> "$OUT/$name.ti.log" 2>&1 < /dev/null; then
             echo "FAIL $name (sim6747) - lnk6x refused it:"; sed 's/^/       /' "$OUT/$name.ti.log" | head -3; echo fail > "$OUT/$name.verdict"; return
         fi
-        { ( ulimit -t 20; "$SIM6747" --run --main-status "$OUT/$name.ti.out" < /dev/null ) > "$OUT/$name.sim.out" 2>&1; echo $? > "$OUT/$name.sim.rc"; } 2>/dev/null
+        { ( ulimit -t 20; "$SIM6747" --run --main-status "$OUT/$name.ti.out" < /dev/null ) > "$OUT/$name.sim.out" 2> "$OUT/$name.sim.err"; echo $? > "$OUT/$name.sim.rc"; } 2>/dev/null
         if [ "$(cat "$OUT/$name.sim.out")" != "$(cat "$OUT/$name.ref.out")" ] || [ "$(cat "$OUT/$name.sim.rc")" != "$(cat "$OUT/$name.ref.rc")" ]; then
             echo "FAIL $name (sim6747) - disagrees with $HOSTCC: sim rc=$(cat "$OUT/$name.sim.rc") ref rc=$(cat "$OUT/$name.ref.rc")"
             echo fail > "$OUT/$name.verdict"; return

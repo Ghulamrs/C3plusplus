@@ -881,6 +881,7 @@ void Parser::topLevel(Program &program) {
                 // happens twice, and the same way: a place in the token stream.
                 defaults.resize(params.size(), 0);
                 if (consume("=")) {
+                    if (dialect() == Dialect::C90) rules().refuseCxxOnly(src_, peek().pos, "a default argument");
                     defaults.back() = at_;
                     skipDefaultArgument();
                 }
@@ -1504,8 +1505,10 @@ void Parser::topLevel(Program &program) {
     // Anything already alive belongs to an enclosing function.
     const std::size_t paramsFrom = alive_.size() - aliveParams;
 
-    // A function try block is a body that is one `try` statement, [dcl.fct.def.general]/1.
+    // A function try block is a body that is one `try` statement, [dcl.fct.def.general]/1; in C90 `try` is a name.
     const bool functionTry = peek().is("try");
+    if (dialect() == Dialect::C90 && peek().keywordAsName && peek().text == "try")
+        rules().refuseCxxOnly(src_, peek().pos, "a function try block");
     bool noexceptWrapped = false;
 
     atFunctionBody_ = true;
@@ -2173,6 +2176,7 @@ Program Parser::parse() {
         if (a != frameAligns_.end()) f.setFrameAlign(a->second);
     }
     pruneUnusedInline(program);
+    program.dialect = dialect();
     return program;
 }
 
@@ -2293,7 +2297,10 @@ const Type *Parser::readTrailingReturn(std::size_t paramsOpen) {
                 locals_.back().trailingParam = index;
             }
             if (!pd.type->isVoid()) index++;
-            if (consume("=")) skipDefaultArgument();
+            if (consume("=")) {
+                if (dialect() == Dialect::C90) rules().refuseCxxOnly(src_, peek().pos, "a default argument");
+                skipDefaultArgument();
+            }
             consume(",");
         }
         at_ = typeAt;
