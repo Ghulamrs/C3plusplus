@@ -1623,7 +1623,15 @@ Lowering::Val Lowering::call(sema::TypedId id) {
             continue;
         }
         if (p.isReference()) {
-            // [dcl.init.ref]/5: an object of the referent's type, its address passed; a temporary is M3b.2's.
+            // [dcl.init.ref]/5: an object of the referent's type, its address passed; a scalar value bound to a const
+            // or an rvalue reference is a temporary of the frame holding it, alive until the call is done.
+            const Type &ref = *p.referent();
+            if (!isLvalueNode(an) && scalar(ref) && !ref.isX87(target_) && (ref.isConst() || p.isRValueReference())) {
+                const ValueId temp = entryAlloca(tid(*ref.unqualified()), "$bound");
+                store(temp, exprTo(an, tid(*ref.unqualified())).v);
+                ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(&ref)), std::vector<ValueId>(1, temp))));
+                continue;
+            }
             if (!isLvalueNode(an)) outside("a reference parameter bound to what is not an object");
             const Val a = lvalue(an);
             if (T(a.type).unqualified() != p.referent()->unqualified()) outside("a reference parameter bound to another type");
