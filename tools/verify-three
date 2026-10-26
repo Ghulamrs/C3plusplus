@@ -358,8 +358,12 @@ if [ "$WHICH" = all ] || [ "$WHICH" = windows ]; then
     done
     # **The cases again at -O2**: run.sh and the loop above build at -O0, and five wrong answers of the x86
     # optimizer stood under a green verify-three for that reason (2026-10-07). Recorded output only. And under
-    # -front=typed at both levels - M2's typed front end on the primary target (M2 close, condition C4).
-    for flags in "-O2" "-front=typed" "-front=typed -O2"; do
+    # -front=typed at both levels - M2's typed front end on the primary target (M2 close, condition C4) - and under
+    # -front=ssa, M3b's lowering: the Mac selects nothing there, being arm64. CXX1_WINDOWS_PASSES, ;-separated, overrides.
+    PASSES=${CXX1_WINDOWS_PASSES:--O2;-front=typed;-front=typed -O2;-front=ssa;-front=ssa -O2}
+    SAVEIFS=$IFS; IFS=';'
+    for flags in $PASSES; do
+    IFS=$SAVEIFS
     ssh -o BatchMode=yes "$WINDOWS" "${MASMENV}set CXX1_CASES_FLAGS=$flags&& $REMOTE\\tools\\windows\\run-cases.cmd $REMOTE" >/dev/null || STATUS=1
     OUT2=$(mktemp -d)
     scp -q -r -o BatchMode=yes "$WINDOWS:$WIN_WORK_FWD/verify/winout" "$OUT2"
@@ -384,6 +388,7 @@ if [ "$WHICH" = all ] || [ "$WHICH" = windows ]; then
     fail=$((fail + f2))
     rm -rf "$OUT2"
     done
+    IFS=$SAVEIFS
     # The Windows half of tools/unwind-check: something cxx1 threw, caught by
     # cl. A run rather than a diff, for the same reason.
     if ssh -o BatchMode=yes "$WINDOWS" "$REMOTE\\tools\\windows\\throw-check.cmd $REMOTE" \
