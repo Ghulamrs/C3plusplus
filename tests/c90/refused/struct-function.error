@@ -1,0 +1,1 @@
+a function declared in a struct is C++, and this file is being compiled as C90 (-std=c90)

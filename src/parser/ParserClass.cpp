@@ -2968,6 +2968,7 @@ void Parser::parameterTypes(std::vector<const Type *> &params, bool &variadic) {
         // recorded; a call that omits the argument reads them again.
         defaults.resize(params.size(), 0);
         if (consume("=")) {
+            if (dialect() == Dialect::C90) rules().refuseCxxOnly(src_, peek().pos, "a default argument");
             defaults.back() = at_;
             skipDefaultArgument();
             if (at_ == defaults.back())

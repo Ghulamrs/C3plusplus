@@ -1015,6 +1015,8 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             // member at all**: `int &get()` is a function and d.type is its return.
             const bool memberIsFunction = peek().is("(") || d.paramsAt != 0 ||
                                           d.type->isFunction();
+            if (dialect() == Dialect::C90 && memberIsFunction)
+                rules().refuseCxxOnly(src_, d.pos, "a function declared in a struct");
 
             // [class.union]/5: what an anonymous union may not hold, each refused at the name clang points at;
             // a member whose class has special members of its own is the unrestricted union, not built.
@@ -1333,6 +1335,8 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             // where they are and their place is recorded; every constructor that does
             // not name this member in its own list reads them again.
             if (peek().is("=") || peek().is("{")) {
+                if (dialect() == Dialect::C90)
+                    rules().refuseCxxOnly(src_, peek().pos, "a member initialiser");
                 if (kind == Kind::Union && unionInits++ > 0)
                     src_.fail(d.pos, "initializing multiple members of union");
                 if (consume("=")) memberInitCopy_.insert(tag + "::" + d.name);
@@ -2671,6 +2675,8 @@ Parser::Declared Parser::declarator(const Type *base, bool nameOptional,
     // A reference binds after every star - `int *&r` is a reference to a pointer -
     // and there is nothing on the other side of it, a reference being no object to
     // point at. **`&&` binds like `&`**, differing only in what it will take.
+    if (dialect() == Dialect::C90 && (peek().is("&") || peek().is("&&")))
+        rules().refuseCxxOnly(src_, peek().pos, "a reference");
     if (consume("&&")) {
         skipAttributes();
         base = base->isReference() ? base : types_.rvalueReferenceTo(base);  // [dcl.ref]/6 collapsing

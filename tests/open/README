@@ -13,6 +13,13 @@ a line of its own, or `ACCEPT` followed by the exact stdout, recorded with
 
     clang++ -x c++ -std=c++11 -pedantic-errors
 
+A `.c` program is the C90 dialect's (M7): open.sh compiles it with -std=c90, and
+its .clang is recorded with `clang -std=c89 -pedantic-errors -w`. The five
+c90-*.c entries are what c90 1.4 refuses by decision and clang accepts - a K&R
+definition, an unspecified `()` parameter list, implicit int, an implicit
+function declaration, trigraphs - kept here so the refusal is counted, not hidden
+(doc-cxx3/M7-PLAN.md, the disagreement table).
+
 A case is closed when cxx1 agrees with that file, and open.sh says so by name.
 **A closed case does not belong here.** Move it to tests/cases with its
 .expected or .error, where the suites will hold it from then on, and delete it

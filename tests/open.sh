@@ -39,8 +39,14 @@ rm -rf "$OUT"; mkdir -p "$OUT"
 
 only="$1"
 open_count=0; closed=0
-for src in tests/open/*.cpp; do
-    base=$(basename "$src" .cpp)
+# A `.c` program is the C90 dialect's (M7): compiled with -std=c90, its oracle
+# recorded from `clang -std=c89 -pedantic-errors -w` the way a .cpp's is from clang++.
+for src in tests/open/*.cpp tests/open/*.c; do
+    [ -f "$src" ] || continue
+    case "$src" in
+        *.cpp) base=$(basename "$src" .cpp); std="" ;;
+        *)     base=$(basename "$src" .c); std="-std=c90" ;;
+    esac
     [ -n "$only" ] && [ "$only" != "$base" ] && continue
     want="tests/open/$base.clang"
     if [ ! -f "$want" ]; then
@@ -49,7 +55,7 @@ for src in tests/open/*.cpp; do
     fi
     verdict=$(head -1 "$want")
 
-    if cxx1 "$src" -o "$OUT/$base.exe" > "$OUT/$base.err" 2>&1; then
+    if cxx1 $std "$src" -o "$OUT/$base.exe" > "$OUT/$base.err" 2>&1; then
         ( ulimit -t 10; "$OUT/$base.exe" ) > "$OUT/$base.out" 2>/dev/null || true
         if [ "$verdict" = "REFUSE" ]; then
             state="OPEN   over-accepts what clang refuses"
