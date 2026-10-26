@@ -27,6 +27,13 @@ int popcount(unsigned long long x) {
     return n;
 }
 
+// The index of the lowest set bit of a non-zero word; written out, since neither cl nor cxx3 has a builtin for it.
+int lowestBit(unsigned long long x) {
+    int n = 0;
+    for (; !(x & 1); x >>= 1) ++n;
+    return n;
+}
+
 // The registers offered, cheapest encoding first; the frame's never, and the preserved ones only for a save charged.
 const std::vector<int> &kOffer = TargetDesc::x86_64().offer[static_cast<int>(RegClass::Gpr)];
 
@@ -180,8 +187,7 @@ void Allocator::buildInterference() {
             for (int e : blk.succs)
                 if (f.edges[e].kind == Edge::Eh && f.edges[e].at == k && f.edges[e].to != Edge::kExit)
                     for (int w = 0; w < words_; ++w) bits[w] |= liveIn_[f.edges[e].to][w];
-            live.clear();
-            for (int p = 0; p < n_; ++p) if (has(bits, p)) live.push_back(p);
+            setBits(bits, live);
             const Effects &e = f.effects[k];
             const RegSet written = e.writes | e.partial;
             int src = -1, dst = -1;
@@ -203,8 +209,7 @@ void Allocator::buildInterference() {
         // was placed by nobody here: those pseudos interfere with each other
         // and with every physical register live there.
         if (b != 0 && !blk.preds.empty()) continue;
-        live.clear();
-        for (int p = 0; p < n_; ++p) if (has(liveIn_[b], p)) live.push_back(p);
+        setBits(liveIn_[b], live);
         for (int p : live) {
             nodes_[p].forbid |= blk.in.regs & ~offered_;
             for (int q : live) addEdge(p, q);
@@ -247,6 +252,12 @@ bool Allocator::valid(const std::vector<int> &colour) const {
     return true;
 }
 
+void Allocator::setBits(const Bits &b, std::vector<int> &out) const {
+    out.clear();
+    for (int w = 0; w < words_; ++w)
+        for (unsigned long long bits = b[w]; bits; bits &= bits - 1) out.push_back(w * 64 + lowestBit(bits));
+}
+
 int Allocator::find(int p) {
     while (rep_[p] != p) p = rep_[p] = rep_[rep_[p]];
     return p;
@@ -276,8 +287,12 @@ void Allocator::merge(int u, int v) {
 int Allocator::significant(int u, int v) const {
     const int k = popcount(palette(u));
     int count = popcount((nodes_[u].forbid | nodes_[v].forbid) & palette(u));
-    for (int q = 0; q < n_; ++q)
-        if ((interferes(u, q) || interferes(v, q)) && alive(q) && degree_[q] >= k) ++count;
+    // Over the set bits of the two rows, not every node: a function of thousands of pseudos asks this per copy.
+    for (int w = 0; w < words_; ++w)
+        for (unsigned long long bits = row(u)[w] | row(v)[w]; bits; bits &= bits - 1) {
+            const int q = w * 64 + lowestBit(bits);
+            if (alive(q) && degree_[q] >= k) ++count;
+        }
     return count;
 }
 
@@ -307,11 +322,15 @@ void Allocator::coalesce() {
         both.insert(both.end(), physCopies_[v].begin(), physCopies_[v].end());
         const long apart = bestPreference(physCopies_[u], nodes_[u].forbid) + bestPreference(physCopies_[v], nodes_[v].forbid);
         if (copies_[c].weight + bestPreference(both, nodes_[u].forbid | nodes_[v].forbid) < apart) continue;
+        // **Only the degrees the merge touches move**: a neighbour of both had two neighbours and has one; a
+        // neighbour of v alone keeps its count, v's place taken by u; u's is counted afresh. The whole matrix
+        // was recounted after every merge, which made ParserTopLevel.cpp's 180 s at -O2 (R1.2, 2026-10-26).
+        for (int w = 0; w < words_; ++w)
+            for (unsigned long long shared = row(u)[w] & row(v)[w]; shared; shared &= shared - 1)
+                --degree_[w * 64 + lowestBit(shared)];
         merge(u, v);
-        for (int q = 0; q < n_; ++q) if (rep_[q] == q) degree_[q] = popcount(nodes_[q].forbid & palette(q));
-        for (int q = 0; q < n_; ++q)
-            if (rep_[q] == q)
-                for (int w = 0; w < words_; ++w) degree_[q] += popcount(row(q)[w]);
+        degree_[u] = popcount(nodes_[u].forbid & palette(u));
+        for (int w = 0; w < words_; ++w) degree_[u] += popcount(row(u)[w]);
         ++coalesced_;
     }
 }
@@ -321,17 +340,27 @@ void Allocator::coalesce() {
 // by weight over degree goes anyway, and select finds out.
 void Allocator::simplify(std::vector<int> &stack) {
     removed_.assign(n_, false);
+    // The nodes of low degree, one bit each: the lowest goes first, as the scan over every node took it.
+    Bits low(words_, 0);
+    for (int q = 0; q < n_; ++q)
+        if (alive(q) && degree_[q] < popcount(palette(q))) set(low, q);
     for (;;) {
         int p = -1;
-        for (int q = 0; q < n_; ++q)
-            if (alive(q) && degree_[q] < popcount(palette(q))) { p = q; break; }
+        for (int w = 0; w < words_ && p < 0; ++w)
+            if (low[w]) p = w * 64 + lowestBit(low[w]);
         if (p < 0)
             for (int q = 0; q < n_; ++q)
                 if (alive(q) && (p < 0 || nodes_[q].weight * (degree_[p] + 1) < nodes_[p].weight * (degree_[q] + 1))) p = q;
         if (p < 0) return;
         removed_[p] = true;
+        clear(low, p);
         stack.push_back(p);
-        for (int q = 0; q < n_; ++q) if (interferes(p, q) && alive(q)) --degree_[q];
+        for (int w = 0; w < words_; ++w)
+            for (unsigned long long bits = row(p)[w]; bits; bits &= bits - 1) {
+                const int q = w * 64 + lowestBit(bits);
+                if (!alive(q)) continue;
+                if (--degree_[q] < popcount(palette(q))) set(low, q);
+            }
     }
 }
 

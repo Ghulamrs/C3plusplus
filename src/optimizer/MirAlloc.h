@@ -108,6 +108,8 @@ private:
     static void set(Bits &b, int p) { b[p / 64] |= 1ull << (p % 64); }
     static void clear(Bits &b, int p) { b[p / 64] &= ~(1ull << (p % 64)); }
     static bool has(const Bits &b, int p) { return (b[p / 64] >> (p % 64)) & 1; }
+    // The set bits, ascending, into `out`.
+    void setBits(const Bits &b, std::vector<int> &out) const;
 };
 
 }
