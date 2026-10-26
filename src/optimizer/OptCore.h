@@ -406,6 +406,8 @@ bool removeUnreachableIn(std::vector<Entry> &s) {
         for (std::size_t j = k + 1; j < s.size(); ++j) {
             if (s[j].kind == Entry::Label && !s[j].dead && s[j].label == c.target) { en.dead = changed = true; break; }
             if (s[j].kind == Entry::Inst && !s[j].dead) break;
+            // A funclet's boundary is control: a label past one is not the jump's next (nested-handler-exits, -O2).
+            if (s[j].kind == Entry::Directive && !s[j].dead && (s[j].dir.beginsFunclet() || s[j].dir.endsFunclet())) break;
         }
     }
     return changed;
