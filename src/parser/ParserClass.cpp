@@ -2884,6 +2884,7 @@ StmtPtr Parser::constructMember(const std::string &cls, const Type *type,
     // Through noteUsed: inside a candidate's body, ranked and not yet chosen, the use waits with the rest.
     for (std::size_t k = 0; k < lookup_.functions_.size(); k++)
         if (lookup_.functions_[k].symbol == chosen.symbol) noteUsed(k);
+    const std::size_t written = args.size();
     applyDefaults(chosen, args, pos);
 
     int indexSlot = 0;
@@ -2914,6 +2915,15 @@ StmtPtr Parser::constructMember(const std::string &cls, const Type *type,
     for (std::size_t k = 0; k < args.size(); k++) {
         all.push_back(std::move(args[k]));
         ps.push_back(chosen.params[k]);
+    }
+    // A member template's specialization is defined with no declaration of its own, so currentFunction_ is not its name.
+    if (!implicit && !m.type->isArray() && !memberTemplateInst_) {
+        const MemberBuilt b = { chosen.symbol, types_.functionType(types_.get(Kind::Void), ps, false), args.size() != written };
+        const std::string key = currentFunction_ + "|" + m.name + "|" + std::to_string(written == 0 ? 0 : static_cast<std::uint32_t>(pos));
+        // Two choices under one key - a constructor template's specializations read under one name - are no record at all.
+        const std::map<std::string, MemberBuilt>::iterator had = memberBuilt_.find(key);
+        if (had == memberBuilt_.end()) memberBuilt_[key] = b;
+        else if (had->second.symbol != b.symbol || had->second.signature != b.signature) had->second.symbol.clear();
     }
     StmtPtr one(new ExprStmt(
         completeCall(mc->tag(), chosen.symbol, nullptr, types_.get(Kind::Void),

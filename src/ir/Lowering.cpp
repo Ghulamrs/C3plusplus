@@ -38,6 +38,74 @@ bool Lowering::simpleLayout(const Type &cls) const {
     return true;
 }
 
+// A member a constructor or destructor of its own builds or destroys: a class that is not its bytes, no virtual base in it.
+bool Lowering::builtMember(const Type &t) const {
+    return t.isStructOrUnion() && t.isComplete() && !plainClass(t) && !t.unqualified()->hasVirtualBase();
+}
+
+// simpleLayout's class with members of class type besides: each built by the constructor the parser chose for it.
+bool Lowering::buildableLayout(const Type &cls) const {
+    if (cls.polymorphic() || cls.hasVirtualBase() || !cls.bases().empty() || cls.kind() == Kind::Union) return false;
+    for (const Member &m : cls.members()) {
+        const Type &t = *m.type->unqualified();
+        if (m.width != 0 || m.anonUnion != nullptr || t.isX87(target_)) return false;
+        if (m.type->isReference() ? !referable(*m.type->referent())
+                                  : !scalar(t) && !plainClass(t) && !builtMember(t) && !(t.isArray() && t.pointee()->isComplete() && scalar(*t.pointee())))
+            return false;
+    }
+    return true;
+}
+
+// A call of a function the parser chose by symbol, its type the record's: a constructor or a destructor of a member.
+void Lowering::directCall(const std::string &symbol, TypeId signature, const std::vector<ValueId> &ops) {
+    CallInfo info;
+    info.symbol = symbol;
+    info.signature = signature;
+    info.namedArgs = static_cast<int>(T(signature).params().size());
+    Function &f = F();
+    const std::uint32_t callIndex = static_cast<std::uint32_t>(f.calls.size());
+    f.calls.push_back(info);
+    const InstId c = callOrInvoke(TypeId(), ops);
+    at(c).call = callIndex;
+}
+
+// [class.base.init]/8 for a member of class type: the constructor the parser chose for it from the list's entry - or,
+// the list leaving it, its default constructor - called on its address with the entry's values; none where none was.
+void Lowering::buildMember(ValueId at, const Member &m, sema::TypedId entry) {
+    const Type &mt = *m.type->unqualified();
+    const std::uint32_t pos = entry.valid() ? syn(entry).loc : 0;
+    std::string symbol;
+    TypeId sig;
+    bool defaulted = false;
+    if (!memberBuilt_ || !memberBuilt_(F().symbol, m.name, pos, symbol, sig, defaulted)) {
+        if (!entry.valid() && !(constructed_ && constructed_(&mt))) return;
+        outside("a member built by no constructor the parser recorded");
+    }
+    if (defaulted) outside("a member built with default arguments");
+    const Type &ft = T(sig);
+    if (ft.params().empty() || ft.params()[0]->pointee()->unqualified() != &mt) outside("a member's constructor of another class");
+    std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, at))));
+    if (entry.valid()) arguments(entry, 0, ft, 1, false, ops);
+    else if (ft.params().size() != 1) outside("a member's default constructor of parameters");
+    directCall(symbol, sig, ops);
+}
+
+// [class.dtor]/8: after a destructor's body, the members a destructor of their own destroys, last declared first.
+void Lowering::destroyMembers(const Type &cls) {
+    const std::vector<Member> &ms = cls.members();
+    for (std::size_t n = ms.size(); n-- > 0; ) {
+        const Type &mt = *ms[n].type->unqualified();
+        if (!builtMember(mt) || !destructor_) continue;
+        const std::string symbol = destructor_(&mt);
+        if (symbol.empty()) continue;
+        const Type *self = types_.pointerTo(&mt);
+        const InstId g = add(Op::Gep, tid(*self), std::vector<ValueId>(1, this_));
+        at(g).k = ms[n].offset;
+        directCall(symbol, tid(*types_.functionType(types_.get(Kind::Void), std::vector<const Type *>(1, self), false)),
+                   std::vector<ValueId>(1, result(g)));
+    }
+}
+
 // The members in declaration order: each named in the list initialised from it - `m()` and `m{}` value-initialised,
 // one value stored or a plain class copied - and one the list leaves alone default-initialised, which is nothing.
 void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32_t to) {
@@ -51,13 +119,30 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
     }
     for (const Member &m : cls.members()) {
         const std::map<std::string, sema::TypedId>::const_iterator e = named.find(m.name);
+        const Type &mt = *m.type->unqualified();
         if (e == named.end()) {
             if (defaultInit_ && defaultInit_(&cls, m.name)) outside("a member's default initialiser");
+            if (!builtMember(mt)) continue;
+        }
+        if (m.type->isReference()) {
+            // [class.base.init]/8: a reference member bound to an object of its referent's type - the address stored.
+            if (count(e->second) != 1 || !isLvalueNode(child(e->second, 0))) outside("a reference member bound to what is not an object");
+            const Val a = lvalue(child(e->second, 0));
+            const Type &referent = *m.type->referent();
+            if (T(a.type).unqualified() != referent.unqualified() || (T(a.type).isConst() && !referent.isConst())) outside("a reference member bound to another type");
+            const Type *held = types_.pointerTo(&referent);
+            const InstId r = add(Op::Gep, tid(*types_.pointerTo(held)), std::vector<ValueId>(1, this_));
+            at(r).k = m.offset;
+            store(result(r), result(add(Op::Bitcast, tid(*held), std::vector<ValueId>(1, a.v))));
             continue;
         }
-        const Type &mt = *m.type->unqualified();
         const InstId g = add(Op::Gep, tid(*types_.pointerTo(&mt)), std::vector<ValueId>(1, this_));
         at(g).k = m.offset;
+        if (builtMember(mt)) {
+            if (e != named.end() && count(e->second) == 0) outside("a member of class type value-initialised");
+            buildMember(result(g), m, e != named.end() ? e->second : sema::TypedId());
+            continue;
+        }
         const std::uint32_t k = count(e->second);
         if (k == 0) {
             const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, result(g)));
@@ -314,13 +399,19 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         if (rt.isX87(target_)) outside("an x87 long double");
         // A constructor and a destructor of a class with a base, a vptr or a member that needs building or
         // destroying are M3b.3's: what they do beyond their syntax comes from the class's layout.
-        bool isCtor = false;
+        bool isCtor = false, destroys = false;
         if (facts.hasThis && facts.thisType.valid() && T(facts.thisType).isPointer()) {
             const Type &cls = *T(facts.thisType).pointee()->unqualified();
             isCtor = text(fnNode) == cls.localName();
             const bool isDtor = !text(fnNode).empty() && text(fnNode)[0] == '~';
-            if ((isCtor || isDtor) && !simpleLayout(cls)) outside(isCtor ? "a constructor of a class with bases, a vptr or members to build"
-                                                                    : "a destructor of a class with bases, a vptr or members to destroy");
+            if ((isCtor || isDtor) && !simpleLayout(cls)) {
+                if (!buildableLayout(cls)) outside(isCtor ? "a constructor of a class with bases, a vptr or members to build"
+                                                          : "a destructor of a class with bases, a vptr or members to destroy");
+                // The parser's guards that destroy what was built when a later part throws are not in the syntax.
+                if (facts.landingPads) outside(isCtor ? "a constructor whose members are destroyed on unwinding"
+                                                      : "a destructor with landing pads that destroys members");
+                destroys = isDtor;
+            }
         }
         const std::uint32_t n = count(fnNode);
         if (n == 0) outside("a function with no body");
@@ -387,6 +478,9 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         }
         // The return block: one `ret`, reached by a branch carrying the value.
         returnBlock_ = newBlock();
+        const BlockId ret = returnBlock_;
+        // A destructor's every way out of its body goes through the members' destruction first.
+        if (destroys) returnBlock_ = newBlock();
         const BlockId first = newBlock();
         br(first);
         place(first);
@@ -395,6 +489,12 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         if (!terminated()) {
             if (!rt.isVoid()) outside("a body that falls off its end without a value");
             br(returnBlock_);
+        }
+        if (destroys) {
+            place(returnBlock_);
+            destroyMembers(*T(thisType_).pointee()->unqualified());
+            br(ret);
+            returnBlock_ = ret;
         }
         place(returnBlock_);
         if (rt.isVoid()) {
@@ -1628,9 +1728,30 @@ Lowering::Val Lowering::callTail(TypeId sig, CallInfo info, std::vector<ValueId>
     if (!(gives.isVoid() || scalar(gives) || plainClass(gives) || (gives.isReference() && referable(*gives.referent()))))
         outside("a call returning '" + gives.describe() + "'");
     if (gives.isX87(target_)) outside("an x87 long double");
+    argumentList(ft, skip, info.variadic, args, dummyInt, ops);
+    if (dummyInt) ops.push_back(iconst(tid(*types_.get(Kind::Int)), 0));      // [over.inc]/1: the postfix form's 0
+    // A plain class comes back into a temporary of this frame, and the call carries its address, as a reference's does.
+    if (gives.isStructOrUnion()) {
+        entryAlloca(tid(*gives.unqualified()), "$result");
+        info.resultAlloca = static_cast<int>(F().frame.size() - 1);
+    }
+    Function &f = F();
+    const std::uint32_t callIndex = static_cast<std::uint32_t>(f.calls.size());
+    f.calls.push_back(info);
+    const TypeId carries = gives.isVoid() ? TypeId() : gives.isReference() ? tid(*types_.pointerTo(gives.referent()))
+                         : gives.isStructOrUnion() ? tid(*types_.pointerTo(gives.unqualified())) : tid(gives);
+    const InstId c = callOrInvoke(carries, ops);
+    at(c).call = callIndex;
+    return Val(result(c), carries.valid() ? carries : tid(gives));
+}
+
+// A call's arguments against function type `ft` whose first `skip` parameters are already given: a variadic one
+// promoted, a plain class by its address, a reference bound, a scalar converted; `dummyInt` is a postfix ++'s 0.
+void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, const std::vector<sema::TypedId> &args,
+                            bool dummyInt, std::vector<ValueId> &ops) {
     const std::size_t argc = args.size() + (dummyInt ? 1 : 0);
     const std::size_t paramCount = ft.params().size() - skip;
-    if (argc < paramCount || (argc > paramCount && !info.variadic)) outside("a call with defaults or too many arguments");
+    if (argc < paramCount || (argc > paramCount && !variadic)) outside("a call with defaults or too many arguments");
     for (std::size_t i = 0; i < args.size(); i++) {
         const sema::TypedId an = args[i];
         if (i >= paramCount) {
@@ -1672,20 +1793,14 @@ Lowering::Val Lowering::callTail(TypeId sig, CallInfo info, std::vector<ValueId>
         if (!scalar(p) || p.isX87(target_)) outside("a parameter of type '" + p.describe() + "'");
         ops.push_back(exprTo(an, tid(p)).v);
     }
-    if (dummyInt) ops.push_back(iconst(tid(*types_.get(Kind::Int)), 0));      // [over.inc]/1: the postfix form's 0
-    // A plain class comes back into a temporary of this frame, and the call carries its address, as a reference's does.
-    if (gives.isStructOrUnion()) {
-        entryAlloca(tid(*gives.unqualified()), "$result");
-        info.resultAlloca = static_cast<int>(F().frame.size() - 1);
-    }
-    Function &f = F();
-    const std::uint32_t callIndex = static_cast<std::uint32_t>(f.calls.size());
-    f.calls.push_back(info);
-    const TypeId carries = gives.isVoid() ? TypeId() : gives.isReference() ? tid(*types_.pointerTo(gives.referent()))
-                         : gives.isStructOrUnion() ? tid(*types_.pointerTo(gives.unqualified())) : tid(gives);
-    const InstId c = callOrInvoke(carries, ops);
-    at(c).call = callIndex;
-    return Val(result(c), carries.valid() ? carries : tid(gives));
+}
+
+// A call's arguments from child `from` of node `id` on.
+void Lowering::arguments(sema::TypedId id, std::uint32_t from, const Type &ft, std::size_t skip, bool variadic,
+                         std::vector<ValueId> &ops) {
+    std::vector<sema::TypedId> args;
+    for (std::uint32_t i = from; i < count(id); i++) args.push_back(child(id, i));
+    argumentList(ft, skip, variadic, args, false, ops);
 }
 
 // Whether a node is an operator the parser resolved to a function - [over.match.oper] - rather than a built-in one.

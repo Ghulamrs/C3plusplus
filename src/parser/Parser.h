@@ -582,6 +582,10 @@ private:
     std::unordered_map<std::uint32_t, std::pair<long long, const Type *> > keywordValues_;
     // The `function` nodes whose names outside them are not the file's - a member's, a namespace's, a template's.
     std::map<std::uint32_t, int> scopedFunctions_;
+    // **What builds each member a written constructor names or leaves** (M3b.2): the constructor overload resolution
+    // chose, keyed "constructor|member|pos" - the constructor's symbol, the entry's position, 0 for one left alone.
+    struct MemberBuilt { std::string symbol; const Type *signature; bool defaulted; };
+    std::map<std::string, MemberBuilt> memberBuilt_;
     std::set<std::string> packBodies_;   // the symbols of bodies in which a pack was expanded   // a body's scope: 1 a member, 2 a namespace, 4 a qualified name, 8 a template
     // **What the parser decides of layout as it reads, by node** (M2.11): a `var`'s frame slot, a block's or a `for`'s
     // scope, and the symbol a `function` node was defined as - what the adapter cannot derive from types.

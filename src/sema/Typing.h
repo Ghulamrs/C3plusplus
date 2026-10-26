@@ -145,6 +145,11 @@ public:
     bool newFacts(syntax::NodeId id, NewFacts &out) const;  // a `new` or `delete` node's facts; false where none were recorded
     bool defaultInit(const Type *cls, const std::string &member) const;   // the member has an initialiser of its own
     bool guardedStatic(const std::string &symbol) const;  // a static local built at run time, under its guard   // a pack was expanded in the body: one node stands for its members   // Parser::scopedFunctions_'s bits, 0 for a body at file scope
+    // The constructor the parser chose, in constructor `ctor`, for a member an entry at `pos` names (0: one the list leaves alone), and
+    // whether default arguments were added to the written ones; false where it built none. A class's destructor's symbol.
+    bool memberBuilt(const std::string &ctor, const std::string &member, std::uint32_t pos, std::string &symbol, TypeId &signature,
+                     bool &defaulted) const;
+    std::string destructorSymbol(const Type *cls) const;
     // Whether the function of this symbol is a template specialization (Signature::fromTemplate): its body is a replay.
     bool fromTemplate(const std::string &symbol) const;
     // The census's counts as the report spells them, "functions=N bodies=K synthesised=M", and the kinds behind M.
