@@ -184,9 +184,6 @@ void Optimizer::returnsPair(bool pair) {
 // **The passes, through the manager.** What ran here as hand-written loops is the pipeline in OptPipeline.cpp; the manager runs it, checks what each pass requires, and dumps after any pass CPP11_DUMP_MIR names.
 void Optimizer::improve(opt::Function &fn) {
     if (!passes_) return;
-    // The passes write a large immediate signed, as -O1 and -O2 always have; -O0 keeps the walker's spelling.
-    for (Entry &e : fn.stream)
-        if (e.kind == Entry::Ins) e.ins.a.unsignedSpelling = e.ins.b.unsignedSpelling = false;
     manager_.run(*pipeline_, fn);
 }
 
