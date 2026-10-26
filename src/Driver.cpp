@@ -1376,7 +1376,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         bool aligned = fn.frameAlign() > 16;
         for (const Local &l : fn.locals()) if (l.align > 16) aligned = true;
         // A template's body is replayed per instantiation and a pack expansion is one node of it: not this round's.
-        if (typer.scopedBody(c.bodies[r].first)) why = "a body whose names are a class's, a namespace's or a template's";
+        if (typer.scopedBody(c.bodies[r].first) || typer.fromTemplate(fn.symbol())) why = "a body whose names are a class's, a namespace's or a template's";
         else if (aligned) why = "a local with alignas";
         else if (!lowering.lower(t, facts, why).valid() && why.empty()) why = "the lowering gave no reason";
         if (why.empty()) { lowered++; continue; }

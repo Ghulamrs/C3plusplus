@@ -450,6 +450,12 @@ bool Typer::wrappedBody(const std::string &symbol) const { return p_.wrappedBodi
 
 bool Typer::scopedBody(syntax::NodeId fn) const { return p_.scopedFunctions_.count(fn.v) != 0; }
 
+bool Typer::fromTemplate(const std::string &symbol) const {
+    for (std::size_t i = 0; i < p_.lookup_.functions_.size(); i++)
+        if (p_.lookup_.functions_[i].symbol == symbol) return p_.lookup_.functions_[i].fromTemplate;
+    return false;
+}
+
 Census Typer::census(const Parser &p, const Program &program) {
     Census c;
     std::map<std::string, std::size_t> bySymbol;

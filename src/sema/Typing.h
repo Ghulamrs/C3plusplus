@@ -122,6 +122,8 @@ public:
     bool wrappedBody(const std::string &symbol) const;
     // A body read in a class's, a namespace's or a template's scope (Parser::scopedFunctions_), which the adapter left alone too.
     bool scopedBody(syntax::NodeId fn) const;
+    // Whether the function of this symbol is a template specialization (Signature::fromTemplate): its body is a replay.
+    bool fromTemplate(const std::string &symbol) const;
     // The census's counts as the report spells them, "functions=N bodies=K synthesised=M", and the kinds behind M.
     static std::string censusLine(const Census &c);
     static std::string censusKinds(const Census &c);
