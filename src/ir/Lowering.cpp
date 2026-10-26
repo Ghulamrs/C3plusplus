@@ -1561,7 +1561,11 @@ Lowering::Val Lowering::call(sema::TypedId id) {
         const Type &self = *T(r.type).params()[0];
         if (!self.isPointer() || !self.pointee()->isStructOrUnion()) outside("a member call whose object is not a class");
         Val object;
-        if (syn(head).kind == syntax::Kind::Name) {
+        if (syn(head).kind == syntax::Kind::Name && tree_.node(head).decl.valid()) {
+            // [over.call.object]: a local or a parameter of class type called - its operator(), on that object.
+            const Val o = lvalue(head);
+            object = Val(o.v, tid(*types_.pointerTo(&T(o.type))));
+        } else if (syn(head).kind == syntax::Kind::Name) {
             if (!this_.valid()) outside("a member call where there is no `this`");
             object = Val(this_, thisType_);
         } else if (syn(head).kind == syntax::Kind::Member && count(head) == 1) {
