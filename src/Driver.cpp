@@ -2,6 +2,8 @@
 #include "Name.h"
 #include "Version.h"
 #include "backend/X86_64Windows.h"
+#include "backend/CoffEmitter.h"
+#include "encoder/X64.h"
 
 #include "backend/Backend.h"
 #include "Lexer.h"
@@ -179,12 +181,13 @@ void Driver::usage(char *file) {
         "         beside this program - as RIDE links - unless CPP11_TI or\n"
         "         CPP11_TILIB names TI's; TI's otherwise; the link says which\n"
         "       -masm picks the assembly syntax for x86_64-windows: 'masm', the\n"
-        "         default, is assembled by this project's masm.exe and linked\n"
-        "         by its link.exe - beside this program (RIDE's bin), named by\n"
-        "         CPP11_AS and CPP11_LD, or on PATH - COMDAT and all; 'ml64' is\n"
+        "         default, is assembled by this compiler itself - the project's\n"
+        "         masm as a library, so -c writes the object on any host - and\n"
+        "         linked by the project's link.exe, beside this program (RIDE's\n"
+        "         bin), named by CPP11_LD, or on PATH - COMDAT and all; 'ml64' is\n"
         "         the MASM syntax without COMDAT, for Visual Studio's ml64,\n"
-        "         which links one translation unit at a time, and the default\n"
-        "         where no masm.exe is found; 'gnu' is assembled by clang\n"
+        "         which links one translation unit at a time; 'gnu' is\n"
+        "         assembled by clang\n"
         "       -O1 and -O2 improve the code of each function: frame slots and\n"
         "         constants forwarded, pushes paired with their pops, dead\n"
         "         instructions removed. Every spelling; -O0 is the default\n"
@@ -552,17 +555,16 @@ std::string Driver::masmAssembler() const {
     return own.empty() ? std::string(hostAssembler(syntax_)) : own;
 }
 
-// Whether -masm=masm has an assembler to run: CPP11_AS, the masm.exe beside this program, or one on PATH.
-bool Driver::masmReachable() const {
-    const char *env = std::getenv(program::env("AS").c_str());
-    if (env != nullptr && env[0] != '\0') return true;
-    if (!besideProgram(program_, "masm.exe").empty()) return true;
-#ifdef _WIN32
-    char onPath[MAX_PATH];
-    return SearchPathA(nullptr, "masm.exe", nullptr, MAX_PATH, onPath, nullptr) > 0;
-#else
-    return false;
-#endif
+// The MASM spelling of x86_64-windows is assembled by CoffEmitter, the library masm itself is a command line
+// over, so the object is byte-equal with -S + masm and no assembler is run; ml64 and gnu keep their tools.
+bool Driver::assemblesInProcess() const {
+    return std::strcmp(backend_->name(), "x86_64-windows") == 0 && syntax_ == Syntax::Masm;
+}
+
+// The object beside an assembly file: its name with .obj, which is what link()'s per-file step always wrote.
+std::string Driver::objectBeside(const std::string &asmPath) {
+    std::size_t dot = asmPath.rfind('.');
+    return (dot == std::string::npos ? asmPath : asmPath.substr(0, dot)) + ".obj";
 }
 
 std::string Driver::windowsLinker() const {
@@ -760,6 +762,8 @@ std::vector<std::pair<std::string, std::string> > Driver::macrosFor() const {
 }
 
 bool Driver::assembleObjects() {
+    // The jobs wrote the objects themselves (M4.2); nothing is left to run.
+    if (assemblesInProcess()) return true;
     // Built first and run afterwards: composing a command touches this object's
     // state, and only the running has to be concurrent.
     std::vector<std::string> commands;
@@ -931,21 +935,21 @@ bool Driver::link() {
         objects.reserve(temporaries_.size());
         steps.reserve(temporaries_.size());
         for (const std::string &t : temporaries_) {
-            std::size_t dot = t.rfind('.');
-            std::string obj = (dot == std::string::npos ? t : t.substr(0, dot))
-                              + ".obj";
+            const std::string obj = objectBeside(t);
             // The same choice assembleObjects makes, and for the same reason -
-            // ml64 cannot mark a mergeable definition COMDAT and clang can.
-            std::string step;
-            if (syntax_ == Syntax::Gnu) {
-                step = shellQuote(hostGnuAssembler());
-                step += " -target x86_64-pc-windows-msvc -c " + shellQuote(t);
-                step += " -o " + shellQuote(obj);
-            } else {
-                step = shellQuote(masmAssembler());
-                step += " /nologo /c /Fo " + shellQuote(obj) + " " + shellQuote(t);
+            // ml64 cannot mark a mergeable definition COMDAT and clang can; the MASM spelling's job wrote its object.
+            if (!assemblesInProcess()) {
+                std::string step;
+                if (syntax_ == Syntax::Gnu) {
+                    step = shellQuote(hostGnuAssembler());
+                    step += " -target x86_64-pc-windows-msvc -c " + shellQuote(t);
+                    step += " -o " + shellQuote(obj);
+                } else {
+                    step = shellQuote(masmAssembler());
+                    step += " /nologo /c /Fo " + shellQuote(obj) + " " + shellQuote(t);
+                }
+                steps.push_back(step);
             }
-            steps.push_back(step);
             objects.push_back(obj);
             // Recorded before the run, so a failure still cleans up whatever
             // the batch managed to write.
@@ -1106,6 +1110,8 @@ bool Driver::parseArguments(int argc, char **argv) {
             assemblyOnly_ = true;
         } else if (std::strcmp(argv[i], "-c") == 0) {
             objectOnly_ = true;
+        } else if (std::strcmp(argv[i], "-coff=text") == 0) {
+            coffText_ = true;
         } else if (std::strcmp(argv[i], "-keep-going") == 0 || std::strcmp(argv[i], "--keep-going") == 0) {
             keepGoing_ = 100;
         } else if (std::strncmp(argv[i], "-keep-going=", 12) == 0) {
@@ -1188,18 +1194,8 @@ bool Driver::parseArguments(int argc, char **argv) {
         std::exit(0);
     }
 
-    // **-masm=masm is x86_64-windows's default on every host** (2026-10-25): the project's own masm and LINK,
-    // which take COMDAT and a throw. Where no masm.exe is beside this program, named by CPP11_AS or on PATH,
-    // Visual Studio's ml64 and link - one translation unit at a time.
-    if (!syntaxNamed_ && std::strcmp(backend_->name(), "x86_64-windows") == 0) {
-        syntax_ = Syntax::Masm;
-        if (hostIsWindows() && !assemblyOnly_ && !masmReachable()) {
-            syntax_ = Syntax::Ml64;
-            std::fprintf(stderr, "%s: no masm.exe beside this program, named by %s or on PATH - assembling "
-                                 "with Visual Studio's ml64 and linking with its link\n",
-                         argv[0], program::env("AS").c_str());
-        }
-    }
+    // **-masm=masm is x86_64-windows's default on every host** (2026-10-25): assembled in process by CoffEmitter (M4.2), so no masm.exe and no ml64 fallback.
+    if (!syntaxNamed_ && std::strcmp(backend_->name(), "x86_64-windows") == 0) syntax_ = Syntax::Masm;
 
     if (hostIsWindows() && syntax_ == Syntax::Gnu && syntaxNamed_ && !assemblyOnly_ &&
         std::strcmp(backend_->name(), "x86_64-windows") == 0 && hostGnuAssembler()[0] == '\0') {
@@ -1286,15 +1282,17 @@ bool Driver::parseArguments(int argc, char **argv) {
         }
         std::vector<std::string> outs;
         for (const std::string &in : inputs) {
-            if (!output.empty()) jobs_.push_back(Job{ in, output });
-            else if (toStdout_)  jobs_.push_back(Job{ in, "" });
-            else                 jobs_.push_back(Job{ in, assemblyNameFor(in) });
+            if (!output.empty()) jobs_.push_back(Job{ in, output, "" });
+            else if (toStdout_)  jobs_.push_back(Job{ in, "", "" });
+            else                 jobs_.push_back(Job{ in, assemblyNameFor(in), "" });
             outs.push_back(jobs_.back().output);
         }
         return distinctOutputs(argv[0], inputs, outs);
     }
 
-    if (backend_ != &defaultBackend() && !targetIsTi()) {
+    // A -c for x86_64-windows in the MASM spelling is assembled in process on any host (M4.2); a link still wants the
+    // host's linker and libraries.
+    if (backend_ != &defaultBackend() && !targetIsTi() && !(objectOnly_ && assemblesInProcess())) {
         std::fprintf(stderr,
             "%s: cannot assemble %s code on this machine, which is %s - use -S "
             "to write the assembly and take it there\n",
@@ -1317,9 +1315,12 @@ bool Driver::parseArguments(int argc, char **argv) {
         std::string temp = temporaryName(static_cast<int>(i), inputs[i]);
         temporaries_.push_back(temp);
         temporaryNames().push_back(temp);
-        jobs_.push_back(Job{ inputs[i], temp });
         if (objectOnly_) objects_.push_back(output.empty()
                                             ? objectNameFor(inputs[i]) : output);
+        // In process, the job writes the object itself: -c's, or the one link() reads beside the .s.
+        std::string object;
+        if (assemblesInProcess()) object = objectOnly_ ? objects_.back() : objectBeside(temp);
+        jobs_.push_back(Job{ inputs[i], temp, object });
     }
     return !objectOnly_ || distinctOutputs(argv[0], inputs, objects_);
 }
@@ -1385,8 +1386,11 @@ bool Driver::compile(const Job &job) {
 
     bool ok = true;
     std::ostringstream made, mir;
+    // The instructions the spelling hands the encoder as data (M4.4), for an object written in process.
+    std::vector<masm::Instruction> structured;
     {
         std::unique_ptr<CodeGen> gen = backend_->codegen(made, syntax_);
+        if (!job.object.empty() && !coffText_) gen->setStructured(&structured);
         if (debug_) gen->setLineSource(&src, workingDirectory());
         if (dumpMir_) gen->setMirDump(&mir, dumpMirAfter_);
         gen->setOptimize(level);
@@ -1400,7 +1404,22 @@ bool Driver::compile(const Job &job) {
         std::fprintf(stderr, "%s: %s: %s\n", program_.c_str(), job.input.c_str(), refused.c_str());
         return false;
     }
-    if (job.output.empty()) {
+    if (!job.object.empty()) {
+        // **The object, in process** (M4.2): the text the .s would have held goes to the encoder library instead.
+        // A refusal names the library's line of that text, and the text is written as the .s so it can be read.
+        std::vector<std::string> errors;
+        if (!CoffEmitter::assemble(text, job.output, job.object, errors, &structured)) {
+            std::ofstream kept(job.output, std::ios::binary);
+            if (kept) kept << text;
+            std::fprintf(stderr, "%s: %s: the assembler refused the compiler's own output - the text is %s\n",
+                         program_.c_str(), job.input.c_str(), job.output.c_str());
+            for (const std::string &e : errors)
+                std::fprintf(stderr, "  %s\n", e.c_str());
+            return false;
+        }
+        if (timing_)
+            std::fprintf(stderr, "%s: %s\n", job.input.c_str(), CoffEmitter::census(text, &structured).c_str());
+    } else if (job.output.empty()) {
         std::cout << text;
     } else {
         // Binary, so the assembly is byte-identical on every host: text mode wrote CRLF on Windows (C5).

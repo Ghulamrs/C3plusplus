@@ -246,9 +246,14 @@ Neither review knew of this document. Draft 2.1's M3 builds the target-neutral S
 - **The project's masm is re-based on the same library.** Until then the `-S`/`-c` test is semantic: both outputs disassemble to the same instructions, relocations, unwind information and COMDATs. After the re-base it is byte equality.
 - masm and clang become optional on target 1. link.exe, the CRT, the SDK and cdb are kept (R7.1).
 
-### 6.1 Proposal P2: the encoder library comes out of the project's own masm (not yet agreed)
+### 6.1 Proposal P2: the encoder library comes out of the project's own masm (decided 2026-10-25)
 
-*Proposed by Opus 5.5 in Draft 2.3 and under Fable 5.1's review. Until it is agreed, the signed-off text above stands.*
+*Proposed by Opus 5.5 in Draft 2.3. **Decided by Fable 5.1 at M4.0** (`doc-cxx3/M4-PLAN.md`, "P2, settled"): taken, and
+whole - the library is all of masm but `main.cpp`, the MASM statement layer included, because the unwind data, the
+funclets, the FH3 tables, the RTTI and the CodeView conversion are composed as text in `Masm.cpp` and would each need a
+structured writer of their own; `CoffEmitter`'s structural door (M4.4) hands instructions over as data and the text
+sites that remain are counted - at M4's close the funclet head and tail, which M3a.4's directives are to replace. The
+text below is the proposal as reviewed.*
 
 **The finding.** The project's masm, `toolchain/Windows/MASM/src` (3,850 lines), already contains most of what the bullets above ask cppparse's `Coff.cpp` to grow into:
 - an x86-64 encoder over a structured `Operand`, not text (`x64.h`, `x64_encode.cpp`: 785 lines). It covers the string instructions (`MOVSB`/`MOVSQ`/`CMPSB` ..., `:266-273`) with `REP`/`REPE`/`REPNE` prefixes (`x64_parse.cpp:239-240`), the SSE scalar forms (`:224-225`) and `MOVSX`/`MOVZX`/`MOVSXD` (`:540-548`);
@@ -472,7 +477,7 @@ So, as of 1.28, the failure is *usually* explicit, with two known silent excepti
 ## 15. Open items
 
 1. Accept or reject each section 13 amendment other than R3.1, which is decided.
-2. **Proposals P1** (section 4.1, the machine-IR order) **and P2** (section 6.1, the encoder from masm): under Fable 5.1's review with Draft 2.5.
+2. **Proposals P1** (section 4.1, the machine-IR order) **and P2** (section 6.1, the encoder from masm): under Fable 5.1's review with Draft 2.5. **P1 decided** by the M2 closing review (`M3-PLAN.md`); **P2 decided 2026-10-25** at M4.0 (`M4-PLAN.md`, "P2, settled"), taken whole.
 3. **Which "14 probes" does R9.2 mean?** No set of exactly 14 exists in any of the places searched:
    - both repositories;
    - the local workspaces holding older cpp11 copies (1.2, 1.4) and the tool repositories.

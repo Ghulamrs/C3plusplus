@@ -15119,3 +15119,87 @@ function; `inUnnamedNamespace` in Mangle.cpp drops it. `identical.sh`: 45 of 6,0
 every line a `.globl` or `PUBLIC` gone or that `L` dropped. **Self-host found one more gap, registered in `tests/open`**:
 no reference binds through a conversion operator, so M3a.1's OpId and StrId convert by `.name()` and
 `.str()` where the strings they replaced had been read as they stood.
+
+## M4: the encoder library in the tree, `cxx3 -c` writes a Windows object on every host, masm re-based, 2026-10-25
+
+**The project's masm is a library of this tree now, and `-c` for x86_64-windows runs it in process.** P2 of the design
+(`doc-cxx3/Compiler_Design_Final.md` 6.1) was taken whole, for a reason measured before deciding: half of a Windows object
+is composed as text in `Masm.cpp` - the unwind data and `.pdata`/`.xdata` (`functionEnd`), the funclet head and tail with
+the body lifted out of the output as a string (`closeFunclet`), the FH3 tables, the RTTI and throw records, the CodeView
+records converted from the GNU text - so an encoder reached without the MASM statement layer would have needed a second
+writer for every one of those. `src/encoder/` is masm `6bcb5d2` less `main.cpp`, under `namespace masm`: the x64 encoder,
+the unit with its fixups and multi-pass layout, the COFF writer, the CodeView line tables and the statement layer; the
+`Windows/MASM` repository keeps `main.cpp` over it (branch `m4-rebase`, `ENCODER=` naming the directory). Three of its
+basenames were renamed (`lexer`, `codeview`, `main`): `msvc/build.cmd` has one object directory and cxx3 has files of
+those names, the rule "A basename may not repeat" above.
+
+**`CoffEmitter` is the door** (`src/backend/CoffEmitter.*`): the spelling's text assembled in process into the object the
+`Job` names, so `assembleObjects` runs nothing and `link()` spawns no masm.exe for this spelling, and the Mac and the Linux
+box write Windows objects (`-c -arch x86_64-windows`). The ml64 fallback for a machine with no masm.exe is gone with the
+need for one; the paragraph "`-masm=masm` is x86_64-windows's default again" above names `Driver::masmReachable`, which is
+deleted - `-masm=ml64` stays by name. **The structural door** (M4.4): `MasmSpelling` builds each instruction's operands
+from the `Op`s as `masm::Operand`s - render's cases and arithmetic, the frame added to an rbp displacement, the PTR width
+where render's `isMem` put it, the referenced-symbol bookkeeping - and leaves a `\001k` line in the text where the
+instruction stood; the library's `Assembler::runText` encodes `structured[k]` there, its symbols resolved by name in
+operand order so the object's symbol table is the text path's. The prologue goes through `ins()` now, the same text.
+What the text still carries, by the census `-time` prints: the funclet head and tail (7 lines each), M3a.4's
+`FuncletBegin`/`FuncletEnd` directives to make data. `-coff=text` keeps every instruction in the text, the control.
+
+**Measured on the Mac** (`tools/coff-equal.sh`, every case and the 16 Compiler++ units, `-c` against `-S` + masm, `cmp`):
+against masm `6bcb5d2` at -O0 and -O2, 1,342 pairs, 1,302 objects compared, 0 differ (40 refused on both sides); with
+`-g`, 626 objects, 0 differ; the structural door the same numbers; the re-based masm's own `make test` as before and its
+48 test objects byte-identical to `6bcb5d2`'s. `make test` green, the emit golden 0 of 1,930 changed - the text never
+moved. The project's LINK, built on the Mac, reads the three objects of `examples/` and leaves 18 unresolved, every one
+the CRT's, which this machine does not have. **No Windows box this round**: link.exe with the CRT, the run of the image,
+`run-cases.cmd` with `-c`, cdb on `-g` objects and the self-host through `-c` are owed, and `doc-cxx3/M4-PLAN.md` says so.
+
+**Two things found on the way.** `ide/generate.py` listed `src/`, `parser/`, `backend/` and `optimizer/` and not `sema/` or
+`syntax/`, so the Visual Studio and Xcode projects had none of M2's sources; it lists all seven directories now. And a
+job line handed to `xargs -L 1` must not end in a blank - xargs reads one as "the next line continues this one", and the
+gate's first run compiled every case as one job of 1,072 inputs.
+
+## The Windows object held to its own tables, with no Windows box, 2026-10-26
+
+**No Windows box this round, and the x86_64-windows output of the M3+M4 line was checked for what can be checked
+without running it.** Three checks, in `tests/win-structure.sh`, in `make test` and in `tools/verify-three`'s Mac
+step (32 seconds on the 12-processor Mac; skipped where there is no clang++): `tools/win-unwind-check` reads every
+object's `.pdata`, UNWIND_INFO and FH3 FuncInfo back out of the bytes (`tools/coffobj.py`, a COFF reader of its own,
+since llvm-objdump prints names and not resolved places) and holds each to the rule this file measured it against -
+every function and funclet covered once, in order; the unwind codes matched against the prologue's own bytes,
+instruction by instruction and offset by offset, push rbp, push rbx of a realigned frame, the `sub` or the `__chkstk`
+probe, SET_FPREG, the saves, 032H for a funclet; the handler flags and the `$cppxdata$` they name; the state map's
+chains, the try map's nesting, the handler map's adjectives, catch object, funclet and dispFrame 56, the ip2state
+map's order and reach, the -2 in the scratch slot before the first call, a catch funclet's resume addresses inside
+the function or its funclets. `tools/win-layout-check` puts every vftable, vbtable, RTTI and throw record beside
+clang's object of the same source - section, offset, size, each slot's target, the bytes between - and
+`tools/mangled-names` under `TARGETS=x86_64-windows` is the names row. **Each checker was proved to bite before it
+was believed**: nine objects bent in one place each (an ALLOC_SMALL claiming 64 for a `sub` of 112, dispFrame 112, a
+`.pdata` with its entries swapped, an ip2state state of 99, `push rbx` for `push rbp`, the handler flags cleared
+over a FuncInfo, the -2 stores gone or past the first call, a vftable with two slots swapped, a base class
+descriptor's attributes changed) and every one named by the tool.
+
+**What the first run said, and what each thing was.** 2,502 objects, both spellings at -O0 and -O2, 34,208
+functions, 6,128 funclets: **0 faults** once the checker's own three wrong rules were mended, and each of those is
+worth keeping. A try block inside a *handler* has states disjoint from its enclosing try's, so "inner try blocks
+first" is only a rule where two blocks' `[tryLow, tryHigh]` nest - the first draft asked it of every pair and
+flagged 11 functions that were right. A `lea rax, [rip+x]` inside a catch funclet is a string literal's address as
+often as the resume address, and the resume may lie in the *enclosing handler's funclet* when the try is inside a
+catch - so only the `lea` in front of the tail and the ones before a `jmp` to it are resumes, and a sibling funclet
+is inside. The -2 store is written after the parameters are homed, which cannot throw, so "first after the
+prologue" was wrong and "before the first call" is the measured rule (1.22, `storeUnwindHelpAtEntry`). **One
+weakness of cxx3's tables, a note and not a fault**: 124 pairs of ip2state rows at one address with different
+states - a region closing where another opens or closes - of which the runtime's `StateFromIp`, taking the last row
+not past the pc, reads the later one, which is the one in force; cl writes no such dead row. The layout check over
+534 cases: 0 differ; **7 differ under a recorded names difference and every one is the HANDOVER-2026-09-11 gap** -
+the `??_R2` base class arrays naming `??_R1A@?0A@EA@X@@8` where clang names `??_R17?0A@EA@X@@8` (a base at offset
+8) or `??_R1A@?0A@EN@X@@8` (a non-public base, attributes 0x4d), and in `qualified-member-access` and
+`using-declaration-member` a vftable written with **no locator slot in front** where cxx3 refuses the class's RTTI
+(`C : A, B`, B plain): `dynamic_cast` or `typeid` on such an object reads `vftable - 8` as the locator and finds
+whatever the linker laid before it. Known, recorded, not mended here: the mend is the RTTI of a base away from
+offset 0, which is the Walker's and the parser's, not the Windows writers'. Names: 413 agreeing, 0 differing, 213
+under a `.nonames`.
+
+**What it cannot see**, said plainly: that the code between a prologue and its return does what the program says,
+that a handler resumes at the *right* place in its function, that a cleanup funclet destroys the right object, what
+cl writes in an ip2state map for a cleanup funclet (none is asked of one), and anything link.exe or the CRT would
+say. Those are the run suite's, on a Windows box or under the Wine stand-in the Linux box is getting.

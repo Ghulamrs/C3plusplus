@@ -9,10 +9,14 @@
 #include <string>
 #include <vector>
 
+namespace masm { struct Instruction; struct Operand; }
+
 class MasmSpelling final : public Spelling {
 public:
     // `comdat` says the assembler reads `SEGMENT ... COMDAT`: the project's does, ml64 does not - see Syntax in Backend.h.
     MasmSpelling(std::string &o, bool comdat) : comdat_(comdat), o_(o) {}
+    // **The structural door** (M4.4): with a vector given, an instruction goes to the encoder library as data and the text keeps `\001k` where it stood; without one, text as -S writes it.
+    void structured(std::vector<masm::Instruction> *to) { structured_ = to; }
 
     void ins(const std::string &m) override;
     void ins(const std::string &m, const Op &a) override;
@@ -141,6 +145,11 @@ private:
             : text(std::move(text)), isMem(isMem), isImm(isImm), isXmm(isXmm) {}
     };
     Rendered render(const Op &x);
+    // An operand as the library takes it, and the symbol it names; false where only the text can carry it.
+    bool structuredOperand(const Op &x, masm::Operand &o, std::string &sym);
+    // The instruction handed over as data and a `\001k` line written for it; false means write the text.
+    bool structuredIns(const std::string &m, const char *masmName, int width, const Op *a, const Op *b);
+    std::vector<masm::Instruction> *structured_ = nullptr;
     std::string mangle(const std::string &name);
     void flushPending();
     void items(const char *dir, const std::vector<std::string> &it);
@@ -152,6 +161,7 @@ public:
         : X86_64Linux(sink, target, abi), masm_(out_, comdat) { a_ = plain_ = &masm_; }
 
     void run(const Program &program) override;
+    void setStructured(std::vector<masm::Instruction> *to) override { masm_.structured(to); }
 
 private:
     bool usesFunclets() const override { return true; }
