@@ -24,10 +24,10 @@
 #ifndef _CC1_ASSERT_H
 #define _CC1_ASSERT_H
 
-// Everything here is the C library, so it is named the way C names it.
-// Without this the compiler would give every declaration below a C++
-// linkage name and ask the linker for a symbol libc has never had.
+// Everything here is the C library, so it is named the way C names it: from C++, with C linkage.
+#ifdef __cplusplus
 extern "C" {
+#endif
 
 
 #ifdef _WIN32
@@ -50,7 +50,9 @@ void __assert_fail(const char *expr, const char *file, unsigned line,
 // include - which is allowed, the macro being re-read every time - skips the
 // open and emits an orphan `}` at file scope. cassert included both directly
 // and through another header is exactly that second include.
+#ifdef __cplusplus
 }  // extern "C"
+#endif
 
 #endif
 

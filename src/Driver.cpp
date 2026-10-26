@@ -151,8 +151,10 @@ void Driver::standardIncludeDirectories(const std::string &argv0) {
 
 void Driver::usage(char *file) {
     std::fprintf(stderr,
-        "usage: %s <file.cpp> [more.cpp ...] [-S|-c] [-o out] [-D n[=v]] [-U n]\n"
+        "usage: %s <file.cpp|file.c> [more ...] [-S|-c] [-o out] [-D n[=v]] [-U n] [-std=s]\n"
         "               [-I dir] [-j n] [-arch a] [-masm=m] [-rts=r] [-O0|-O1|-O2|-Os] [-g] [-time]\n"
+        "       a .c is read as C90 and anything else as C++11; -std=c90 (c89, gnu89)\n"
+        "         or -std=c++11 names the language for every input instead\n"
         "       with neither -S nor -c the inputs are compiled, assembled and\n"
         "         linked into a program, named by -o, or a.out - a.exe on a\n"
         "         Windows host; several inputs\n"
@@ -748,9 +750,9 @@ void Driver::addMacroEdit(const char *text, bool undef) {
         macroEdits_.push_back(MacroEdit{ s.substr(0, eq), s.substr(eq + 1), false });
 }
 
-std::vector<std::pair<std::string, std::string> > Driver::macrosFor() const {
+std::vector<std::pair<std::string, std::string> > Driver::macrosFor(Dialect dialect) const {
     std::vector<std::pair<std::string, std::string> > macros =
-        predefinedMacros(*backend_);
+        predefinedMacros(*backend_, dialect);
 
     for (const MacroEdit &e : macroEdits_) {
         for (std::size_t i = macros.size(); i-- > 0; )
@@ -1001,6 +1003,12 @@ std::string Driver::assemblyNameFor(const std::string &source) {
     return hasSuffix ? source.substr(0, dot) + ".s" : source + ".s";
 }
 
+Dialect Driver::dialectFor(const std::string &input) const {
+    if (stdNamed_) return std_;
+    const std::size_t dot = input.find_last_of('.');
+    return dot != std::string::npos && input.substr(dot) == ".c" ? Dialect::C90 : Dialect::Cxx11;
+}
+
 std::string Driver::objectNameFor(const std::string &source) const {
     std::size_t slash = source.find_last_of(hostIsWindows() ? "/\\" : "/");
     std::string base = slash == std::string::npos ? source
@@ -1163,6 +1171,22 @@ bool Driver::parseArguments(int argc, char **argv) {
             forSize_ = true;
         } else if (std::strcmp(argv[i], "-g") == 0) {
             debug_ = true;
+        } else if (std::strncmp(argv[i], "-std=", 5) == 0) {
+            // The language every input is read as; without it a .c is C90 and the rest C++11 (M7).
+            const char *want = argv[i] + 5;
+            stdNamed_ = true;
+            if (std::strcmp(want, "c90") == 0 || std::strcmp(want, "c89") == 0 ||
+                std::strcmp(want, "iso9899:1990") == 0 || std::strcmp(want, "gnu89") == 0 ||
+                std::strcmp(want, "gnu90") == 0) {
+                std_ = Dialect::C90;
+            } else if (std::strcmp(want, "c++11") == 0 || std::strcmp(want, "gnu++11") == 0) {
+                std_ = Dialect::Cxx11;
+            } else {
+                std::fprintf(stderr, "%s: -std= takes 'c90' (or 'c89', 'gnu89') or 'c++11', not '%s' - "
+                                     "this compiler reads C90 and C++11 and nothing between or past them\n",
+                             argv[0], want);
+                return false;
+            }
         } else if (argv[i][0] == '-' && argv[i][1] != '\0') {
             std::fprintf(stderr, "%s: unknown option %s\n", argv[0], argv[i]);
             return false;
@@ -1187,7 +1211,7 @@ bool Driver::parseArguments(int argc, char **argv) {
     if (preprocessOnly_) {
         try {
             for (const std::string &in : inputs)
-                std::fputs(Preprocessor(in, searchPath_, macrosFor()).run().text().c_str(), stdout);
+                std::fputs(Preprocessor(in, searchPath_, macrosFor(dialectFor(in))).run().text().c_str(), stdout);
         } catch (const CompileFailed &) {
             std::exit(1);  // the diagnostic is written; one thread here, so the exit is the verdict
         }
@@ -1247,20 +1271,6 @@ bool Driver::parseArguments(int argc, char **argv) {
         if (inputs.empty() && alreadyObjects_.empty()) { usage(argv[0]); return false; }
     }
 
-    // A .c is turned away by name - the mirror of cc1 refusing a .cpp. cxx1
-    // compiles C++, and C read as C++ miscompiles where they disagree rather
-    // than stopping; say so and point at cc1. (.cpp/.cc/.cxx are cxx1's own.)
-    for (std::size_t k = 0; k < inputs.size(); k++) {
-        const std::size_t dot = inputs[k].find_last_of('.');
-        if (dot != std::string::npos && inputs[k].substr(dot) == ".c") {
-            std::fprintf(stderr,
-                "%s: %s looks like C (.c), and %s compiles C++, not C - "
-                "compile it with c90\n",
-                argv[0], inputs[k].c_str(), program::kName);
-            return false;
-        }
-    }
-
     if (!asmCompress_.empty() && !targetIsTi()) {
         std::fprintf(stderr, "%s: %s is for -arch tms6747, whose compact instructions it turns on or off\n",
                      argv[0], asmCompress_.c_str());
@@ -1282,9 +1292,9 @@ bool Driver::parseArguments(int argc, char **argv) {
         }
         std::vector<std::string> outs;
         for (const std::string &in : inputs) {
-            if (!output.empty()) jobs_.push_back(Job{ in, output, "" });
-            else if (toStdout_)  jobs_.push_back(Job{ in, "", "" });
-            else                 jobs_.push_back(Job{ in, assemblyNameFor(in), "" });
+            if (!output.empty()) jobs_.push_back(Job{ in, output, "", dialectFor(in) });
+            else if (toStdout_)  jobs_.push_back(Job{ in, "", "", dialectFor(in) });
+            else                 jobs_.push_back(Job{ in, assemblyNameFor(in), "", dialectFor(in) });
             outs.push_back(jobs_.back().output);
         }
         return distinctOutputs(argv[0], inputs, outs);
@@ -1320,7 +1330,7 @@ bool Driver::parseArguments(int argc, char **argv) {
         // In process, the job writes the object itself: -c's, or the one link() reads beside the .s.
         std::string object;
         if (assemblesInProcess()) object = objectOnly_ ? objects_.back() : objectBeside(temp);
-        jobs_.push_back(Job{ inputs[i], temp, object });
+        jobs_.push_back(Job{ inputs[i], temp, object, dialectFor(inputs[i]) });
     }
     return !objectOnly_ || distinctOutputs(argv[0], inputs, objects_);
 }
@@ -1335,14 +1345,14 @@ bool Driver::compile(const Job &job) {
     TypeTable types;
 
     auto t0 = Clock::now();
-    Source src = Preprocessor(job.input, searchPath_, macros_).run();
+    Source src = Preprocessor(job.input, searchPath_, job.dialect == Dialect::C90 ? macrosC_ : macros_).run();
     src.setKeepGoing(keepGoing_);
     auto t1 = Clock::now();
 
-    std::vector<Token> tokens = Lexer(src).tokenize();
+    std::vector<Token> tokens = Lexer(src, job.dialect).tokenize();
     auto t2 = Clock::now();
 
-    Parser parser(src, std::move(tokens), types, target, backend_->abi());
+    Parser parser(src, std::move(tokens), types, target, backend_->abi(), job.dialect);
     Program program = parser.parse();
     auto t3 = Clock::now();
     if (dumpSyntax_) {
@@ -1553,6 +1563,7 @@ bool Driver::compileCaught(const Job &job) {
 bool Driver::runJobs() {
     unsigned n = threadCount();
     macros_ = macrosFor();
+    macrosC_ = macrosFor(Dialect::C90);
 
     if (timing_)
         std::fprintf(stderr, "%s: %zu jobs on %u thread%s\n", program_.c_str(),

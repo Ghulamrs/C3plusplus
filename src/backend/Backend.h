@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../Dialect.h"
+
 #include "../Abi.h"
 #include "../Ast.h"
 #include "../Type.h"
@@ -62,7 +64,8 @@ public:
     virtual const char *const *identityMacros() const = 0;
 };
 
-std::vector<std::pair<std::string, std::string> > predefinedMacros(const Backend &b);
+// The macros every unit begins with; a C90 unit has no __cplusplus (and no __STDC_VERSION__, as clang -std=c89 and c90 1.4 have none).
+std::vector<std::pair<std::string, std::string> > predefinedMacros(const Backend &b, Dialect dialect = Dialect::Cxx11);
 
 // A name past ASCII quoted for GNU as, `"_caf\u00e9"@PAGE` in UTF-8; tms6747's refusal, or empty.
 std::string spellWideNames(const Backend &b, std::string *text);

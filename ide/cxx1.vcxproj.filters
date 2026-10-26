@@ -86,6 +86,7 @@
     <ClCompile Include="..\src\sema\Linkage.cpp"><Filter>Source Files\sema</Filter></ClCompile>
     <ClCompile Include="..\src\sema\Lookup.cpp"><Filter>Source Files\sema</Filter></ClCompile>
     <ClCompile Include="..\src\sema\Overload.cpp"><Filter>Source Files\sema</Filter></ClCompile>
+    <ClCompile Include="..\src\sema\SemaC.cpp"><Filter>Source Files\sema</Filter></ClCompile>
     <ClCompile Include="..\src\sema\Templates.cpp"><Filter>Source Files\sema</Filter></ClCompile>
     <ClCompile Include="..\src\sema\Typing.cpp"><Filter>Source Files\sema</Filter></ClCompile>
     <ClCompile Include="..\src\syntax\Syntax.cpp"><Filter>Source Files\syntax</Filter></ClCompile>
@@ -102,6 +103,7 @@
     <ClInclude Include="..\src\Abi.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Ast.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\AstDump.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="..\src\Dialect.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Driver.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Lexer.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Mangle.h"><Filter>Header Files</Filter></ClInclude>
@@ -155,6 +157,7 @@
     <ClInclude Include="..\src\sema\Linkage.h"><Filter>Header Files\sema</Filter></ClInclude>
     <ClInclude Include="..\src\sema\Lookup.h"><Filter>Header Files\sema</Filter></ClInclude>
     <ClInclude Include="..\src\sema\Overload.h"><Filter>Header Files\sema</Filter></ClInclude>
+    <ClInclude Include="..\src\sema\SemaC.h"><Filter>Header Files\sema</Filter></ClInclude>
     <ClInclude Include="..\src\sema\Templates.h"><Filter>Header Files\sema</Filter></ClInclude>
     <ClInclude Include="..\src\sema\Typing.h"><Filter>Header Files\sema</Filter></ClInclude>
     <ClInclude Include="..\src\syntax\Syntax.h"><Filter>Header Files\syntax</Filter></ClInclude>

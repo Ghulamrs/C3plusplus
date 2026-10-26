@@ -24,7 +24,7 @@ namespace sema {
 std::string Linkage::functionSymbol(const std::string &name, const Type *returns,
                                    const std::vector<const Type *> &params,
                                    bool variadic, bool internal, std::size_t pos) {
-    if ((p_.cLinkage_ > 0 && !internal) || name == "main") return name;
+    if ((p_.cLinkage_ > 0 && !internal) || name == "main" || !p_.rules().mangles()) return name;
     const Type *fn = p_.types_.functionType(returns, params, variadic);
     std::string out, why;
     bool ok = p_.target_.microsoftNames()
@@ -122,7 +122,7 @@ std::string Linkage::dataSymbol(const std::string &name, const Type *type,
                                bool isStatic, std::size_t pos) {
     // [dcl.link]/4: extern "C" names a variable with external linkage only; an internal one
     // is spelled as any internal C++ name is - `_ZL2sv`, or as written on Microsoft.
-    if (p_.cLinkage_ > 0 && !isStatic) return name;
+    if ((p_.cLinkage_ > 0 && !isStatic) || !p_.rules().mangles()) return name;
     if (!p_.target_.microsoftNames()) return itaniumDataName(name, isStatic);
     // Microsoft mangles a variable only where something outside could name it.
     // An internal one keeps what it was written with - measured against clang,

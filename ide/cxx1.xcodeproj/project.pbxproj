@@ -75,6 +75,7 @@
 		8D03F5F23BAD4ADD0D8535ED /* Linkage.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DBAE2C24402373FC3DF070FD /* Linkage.cpp */; };
 		787F8F9C60269056BA70C19D /* Lookup.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 9C38551AFE19A2162E2761D9 /* Lookup.cpp */; };
 		96EF0B449B50CCA4A7E75242 /* Overload.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B18EAE2C265DF27E5A3EE324 /* Overload.cpp */; };
+		842AA6A96268764A95939597 /* SemaC.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DD80D0E8D8D15B26E1658282 /* SemaC.cpp */; };
 		518707161BBA1E4FA4CE19C5 /* Templates.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C473F640D433ECD50F0CB76C /* Templates.cpp */; };
 		6AAB4C51EB2FA54CDC1C53A0 /* Typing.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F7B7DA0656A8A64F42802A59 /* Typing.cpp */; };
 		62506187E9B3B6C31F9F5022 /* Syntax.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 331C861B13C116D3C8FCD477 /* Syntax.cpp */; };
@@ -158,6 +159,7 @@
 		DBAE2C24402373FC3DF070FD /* Linkage.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Linkage.cpp; path = "../src/sema/Linkage.cpp"; sourceTree = "<group>"; };
 		9C38551AFE19A2162E2761D9 /* Lookup.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Lookup.cpp; path = "../src/sema/Lookup.cpp"; sourceTree = "<group>"; };
 		B18EAE2C265DF27E5A3EE324 /* Overload.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Overload.cpp; path = "../src/sema/Overload.cpp"; sourceTree = "<group>"; };
+		DD80D0E8D8D15B26E1658282 /* SemaC.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SemaC.cpp; path = "../src/sema/SemaC.cpp"; sourceTree = "<group>"; };
 		C473F640D433ECD50F0CB76C /* Templates.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Templates.cpp; path = "../src/sema/Templates.cpp"; sourceTree = "<group>"; };
 		F7B7DA0656A8A64F42802A59 /* Typing.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Typing.cpp; path = "../src/sema/Typing.cpp"; sourceTree = "<group>"; };
 		331C861B13C116D3C8FCD477 /* Syntax.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Syntax.cpp; path = "../src/syntax/Syntax.cpp"; sourceTree = "<group>"; };
@@ -172,6 +174,7 @@
 		E6EAF1D1441F03E9A41B4855 /* Abi.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Abi.h; path = "../src/Abi.h"; sourceTree = "<group>"; };
 		14EC8B53EDE3CAB952E236AA /* Ast.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Ast.h; path = "../src/Ast.h"; sourceTree = "<group>"; };
 		60930305A132CB4B774D1FA3 /* AstDump.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = AstDump.h; path = "../src/AstDump.h"; sourceTree = "<group>"; };
+		16C9671A9E9ACF650CAEAED8 /* Dialect.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Dialect.h; path = "../src/Dialect.h"; sourceTree = "<group>"; };
 		E25192F3CFDB944FC301A31E /* Driver.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Driver.h; path = "../src/Driver.h"; sourceTree = "<group>"; };
 		4C2F56CF1CF972F1F6562B1B /* Lexer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Lexer.h; path = "../src/Lexer.h"; sourceTree = "<group>"; };
 		A6357074452FF76FBCDA06D5 /* Mangle.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Mangle.h; path = "../src/Mangle.h"; sourceTree = "<group>"; };
@@ -225,6 +228,7 @@
 		28ADC71E06631963B61B2286 /* Linkage.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Linkage.h; path = "../src/sema/Linkage.h"; sourceTree = "<group>"; };
 		0D12085238A5023495A514C3 /* Lookup.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Lookup.h; path = "../src/sema/Lookup.h"; sourceTree = "<group>"; };
 		E67D228B2BBBEBAD76FF0055 /* Overload.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Overload.h; path = "../src/sema/Overload.h"; sourceTree = "<group>"; };
+		3EF484A74FCB0F3DF72037A0 /* SemaC.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = SemaC.h; path = "../src/sema/SemaC.h"; sourceTree = "<group>"; };
 		9B7860AB9CD7533DE7CA0DF5 /* Templates.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Templates.h; path = "../src/sema/Templates.h"; sourceTree = "<group>"; };
 		B427A8B60A15DABDD0B216A7 /* Typing.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Typing.h; path = "../src/sema/Typing.h"; sourceTree = "<group>"; };
 		436CA1BCB67741B99F2FF254 /* Syntax.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Syntax.h; path = "../src/syntax/Syntax.h"; sourceTree = "<group>"; };
@@ -266,6 +270,7 @@
 				14EC8B53EDE3CAB952E236AA /* Ast.h */,
 				643F79A42EA4B86A673B777F /* AstDump.cpp */,
 				60930305A132CB4B774D1FA3 /* AstDump.h */,
+				16C9671A9E9ACF650CAEAED8 /* Dialect.h */,
 				F3DF4061005105B66B7C5431 /* Driver.cpp */,
 				E25192F3CFDB944FC301A31E /* Driver.h */,
 				CB2D6E30A0DA359152CB1886 /* Lexer.cpp */,
@@ -434,6 +439,8 @@
 				0D12085238A5023495A514C3 /* Lookup.h */,
 				B18EAE2C265DF27E5A3EE324 /* Overload.cpp */,
 				E67D228B2BBBEBAD76FF0055 /* Overload.h */,
+				DD80D0E8D8D15B26E1658282 /* SemaC.cpp */,
+				3EF484A74FCB0F3DF72037A0 /* SemaC.h */,
 				C473F640D433ECD50F0CB76C /* Templates.cpp */,
 				9B7860AB9CD7533DE7CA0DF5 /* Templates.h */,
 				F7B7DA0656A8A64F42802A59 /* Typing.cpp */,
@@ -565,6 +572,7 @@
 				8D03F5F23BAD4ADD0D8535ED /* Linkage.cpp in Sources */,
 				787F8F9C60269056BA70C19D /* Lookup.cpp in Sources */,
 				96EF0B449B50CCA4A7E75242 /* Overload.cpp in Sources */,
+				842AA6A96268764A95939597 /* SemaC.cpp in Sources */,
 				518707161BBA1E4FA4CE19C5 /* Templates.cpp in Sources */,
 				6AAB4C51EB2FA54CDC1C53A0 /* Typing.cpp in Sources */,
 				62506187E9B3B6C31F9F5022 /* Syntax.cpp in Sources */,

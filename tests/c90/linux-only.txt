@@ -1,0 +1,4 @@
+# Cases whose reference run is Linux's: on another host the host compiler and this one agree with each
+# other and not with the case, so tests/c90.sh skips them there and says so. c90 1.4's own suite ran on
+# the Linux box alone and never met this; on the Mac c90 1.4 fails the same case the same way (M7.0).
+pp_predefined         asks for __linux__ and __x86_64__ by name

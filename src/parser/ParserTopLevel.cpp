@@ -503,7 +503,7 @@ void Parser::topLevel(Program &program) {
                                          "', not '" + d.type->describe() + "'");
                     if (prev != nullptr && prev->emitted)
                         src_.fail(d.pos, "'" + d.name + "' is defined twice");
-                    const bool internal = internalLinkage(sc) || d.type->isConst();
+                    const bool internal = internalLinkage(sc) || (d.type->isConst() && rules().constObjectHasInternalLinkage());
                     refuseVolatileWithLinkage(quals.isVolatile, internal, d.pos);
                     const std::string symbol = prev != nullptr
                         ? prev->symbol
@@ -585,7 +585,7 @@ void Parser::topLevel(Program &program) {
             std::size_t early = 0;
             if (d.type->isComplete() && lookup_.findGlobalToUpdate(selfKey) == nullptr &&
                 initialiserNames(d.name)) {
-                const bool c = d.type->isConst();
+                const bool c = d.type->isConst() && rules().constObjectHasInternalLinkage();
                 const bool hidden = internalLinkage(sc) || (c && sc != StorageExtern);
                 early = lookup_.globals_.size();
                 registered = true;
@@ -668,9 +668,10 @@ void Parser::topLevel(Program &program) {
 
                 prev->type = both;
                 d.type = both;
-                // [basic.def.odr]/1: `int v;` already defines - C++ has no tentative definition.
+                // [basic.def.odr]/1: `int v;` already defines - C++ has no tentative definition; C (6.7.2) has, and
+                // `int v; int v = 5;` is one object whose definition carries the initialiser.
                 const bool defines = sc != StorageExtern || hasInit || (dynamicScalar.value != nullptr || dynamicScalar.isList);
-                if (defines && prev->emitted)
+                if (defines && prev->emitted && !rules().tentativeDefinitions())
                     src_.fail(d.pos, "'" + d.name + "' is defined twice");
                 if ((hasInit || (dynamicScalar.value != nullptr || dynamicScalar.isList)) && prev->hasInit)
                     src_.fail(d.pos, "'" + d.name + "' is given an initialiser twice");
@@ -713,9 +714,9 @@ void Parser::topLevel(Program &program) {
             bool objectIsConst = d.type->isConst();
             // A const object at namespace scope has internal linkage of its own -
             // [basic.link]/3 - which is why a header may define one and C, where it
-            // would be external, may not. Nothing outside can name it.
+            // is external (6.1.2.2), may not. Nothing outside can name it.
             bool internal = internalLinkage(sc) ||
-                            (objectIsConst && sc != StorageExtern);
+                            (objectIsConst && sc != StorageExtern && rules().constObjectHasInternalLinkage());
             refuseVolatileWithLinkage(quals.isVolatile, internal, d.pos);
             std::string symbol = linkage_.dataSymbol(gname, d.type, internal, d.pos);
             const bool dynamic = (dynamicScalar.value != nullptr || dynamicScalar.isList);

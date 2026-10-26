@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Dialect.h"
+
 #include <string>
 #include <vector>
 
@@ -41,15 +43,18 @@ struct Token {
     // Just past the token's last character (0 for a token the parser made): where a missing ';' is reported, the end of the statement that wants it rather than the token after.
     std::size_t end = 0;
 
+    // In C90 an identifier spelt like a C++ keyword (`int new;`): a name to every rule, so is("new") says no.
+    bool keywordAsName = false;
+
     bool is(const char *s) const {
         return (kind == TokenKind::Punct || kind == TokenKind::Ident ||
-                kind == TokenKind::Keyword) && text == s;
+                kind == TokenKind::Keyword) && !keywordAsName && text == s;
     }
 };
 
 class Lexer {
 public:
-    explicit Lexer(const Source &src) : src_(src) {}
+    explicit Lexer(const Source &src, Dialect dialect = Dialect::Cxx11) : src_(src), dialect_(dialect) {}
 
     std::vector<Token> tokenize();
 
@@ -76,6 +81,9 @@ private:
                                std::size_t to);
 
     static bool isKeyword(const std::string &word);
+    // C90's 32 keywords (6.1.1), which is the whole table in C90 mode.
+    static bool isKeywordC90(const std::string &word);
+    const Dialect dialect_;
     // One character of a name at i past ASCII - UTF-8 or a universal character name -
     // appended to *text as UTF-8; i moves past it. Refused where Annex E refuses it.
     void identifierCharacter(const std::string &s, std::size_t &i, std::string *text,

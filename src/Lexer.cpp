@@ -248,6 +248,18 @@ bool Lexer::isKeyword(const std::string &word) {
     return false;
 }
 
+bool Lexer::isKeywordC90(const std::string &word) {
+    static const char *const kw[] = {
+        "auto", "break", "case", "char", "const", "continue", "default", "do",
+        "double", "else", "enum", "extern", "float", "for", "goto", "if",
+        "int", "long", "register", "return", "short", "signed", "sizeof", "static",
+        "struct", "switch", "typedef", "union", "unsigned", "void", "volatile", "while"
+    };
+    for (const char *k : kw)
+        if (word == k) return true;
+    return false;
+}
+
 // **The digits as a number of any length**, base 10^9 and least significant first: an exact value
 // with twenty digits - 18446744073709551616.0L is 2^64 - overflowed a 64-bit accumulator (M1).
 namespace {
@@ -612,7 +624,12 @@ std::vector<Token> Lexer::tokenize() {
             t.text = name;
             // [lex.digraph]/2: an alternative token *is* its primary token from
             // here on, so nothing downstream needs a rule for the spelling.
-            if (const char *primary = alternativeToken(t.text)) {
+            // C90's keywords alone; a C++ keyword is a name there, marked so no rule mistakes it (M7).
+            if (dialect_ == Dialect::C90) {
+                t.kind = isKeywordC90(t.text) ? TokenKind::Keyword : TokenKind::Ident;
+                if (t.kind == TokenKind::Ident && (isKeyword(t.text) || alternativeToken(t.text) != nullptr))
+                    t.keywordAsName = true;
+            } else if (const char *primary = alternativeToken(t.text)) {
                 t.text = primary;
                 t.kind = TokenKind::Punct;
             } else {
