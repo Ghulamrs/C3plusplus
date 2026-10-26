@@ -97,8 +97,8 @@ struct Opcode {
     _(Test, "test", Compare, E | R, 0, kNoCond, "test", 0)                                    \
     _(Testb, "testb", Compare, 0, 0, kNoCond, "test", 1)                                      \
     _(Testw, "testw", Unknown, 0, 0, kNoCond, "test", 2)                                      \
-    _(Testl, "testl", Compare, 0, 0, kNoCond, "test", 4)                                      \
-    _(Testq, "testq", Compare, 0, 0, kNoCond, "test", 8)                                      \
+    _(Testl, "testl", Compare, E | R, 4, kNoCond, "test", 4)                                  \
+    _(Testq, "testq", Compare, E | R, 8, kNoCond, "test", 8)                                  \
     _(Ucomisd, "ucomisd", Compare, X, 0, kNoCond, "ucomisd", 0)                               \
     _(Ucomiss, "ucomiss", Compare, X, 0, kNoCond, "ucomiss", 0)                               \
     _(Comisd, "comisd", Compare, X, 0, kNoCond, nullptr, 0)                                   \
@@ -201,12 +201,12 @@ struct Opcode {
     _(Xorpd, "xorpd", Rmw, N | Z | X, 0, kNoCond, "xorpd", 0)                                 \
     _(Andpd, "andpd", Rmw, N | X, 0, kNoCond, nullptr, 0)                                     \
     _(Andps, "andps", Rmw, N | X, 0, kNoCond, nullptr, 0)                                     \
-    /* Known by some pass or spelling, opaque to the effects: see OptTable.cpp's note. */      \
-    _(Sal, "sal", Unknown, S, 0, kNoCond, nullptr, 0)                                         \
-    _(Rol, "rol", Unknown, S, 0, kNoCond, nullptr, 0)                                         \
-    _(Ror, "ror", Unknown, S, 0, kNoCond, nullptr, 0)                                         \
-    _(Addq, "addq", Unknown, 0, 8, kNoCond, "add", 8)                                         \
-    _(Subq, "subq", Unknown, 0, 8, kNoCond, "sub", 8)                                         \
+    _(Sal, "sal", Rmw, S, 0, kNoCond, nullptr, 0)                                             \
+    _(Rol, "rol", Rmw, S, 0, kNoCond, nullptr, 0)                                             \
+    _(Ror, "ror", Rmw, S, 0, kNoCond, nullptr, 0)                                             \
+    _(Addq, "addq", Rmw, E | I | R, 8, kNoCond, "add", 8)                                     \
+    _(Subq, "subq", Rmw, E | I | R | Z, 8, kNoCond, "sub", 8)                                 \
+    /* A row the MASM spelling alone knew, nothing writing it: see OptTable.cpp's note. */      \
     _(Nop, "nop", Unknown, 0, 0, kNoCond, "nop", 0)                                           \
     /* x87 compares set the flags; the rest of the x87 leaves them alone. */                  \
     _(Fucomip, "fucomip", X87, 0, 0, kNoCond, nullptr, 0)                                     \

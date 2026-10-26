@@ -20,9 +20,9 @@ constexpr unsigned OPT_OPCODE_FLAGS_ABBREVIATED;
 #define OPT_ROW(id, att, kind, flags, width, cc, masm, mw) {att, K::kind, flags, width, cc, masm, mw},
 const Opcode kTable[] = { OPT_OPCODES(OPT_ROW) };
 #undef OPT_ROW
-// Quirks the table records as it found them, each a candidate for a later measured change (M3a.3): `addq`/`subq` name
-// a width but are Unknown, `sal`/`rol`/`ror` are shifts by flag and opaque by kind, `testb/l/q` are not kExplicit where
-// `test` is; and a row the MASM spelling alone knew (`addb`, `incq`, `nop` ...) is Unknown with no flags, as it was unlisted.
+// A row the MASM spelling alone knew (`addb`, `incq`, `nop` ...) is Unknown with no flags, as it was unlisted; the
+// quirk rows the table once kept (addq/subq Unknown, sal/rol/ror opaque, testl/testq not explicit) were settled at
+// M3a.3 by a measurement: no output of the corpus and Compiler++ at any level writes one, so each has its natural kind.
 
 // The families a prefix names, for a mnemonic not listed above.
 const Opcode kMovFamily = {"mov*", K::Unknown, E | W, 0, kNoCond, nullptr, 0};
