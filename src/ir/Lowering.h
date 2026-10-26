@@ -153,7 +153,7 @@ private:
     void directCall(const std::string &symbol, TypeId signature, const std::vector<ValueId> &ops);
     bool pseudoDestructor(sema::TypedId member);
     bool threadLocalGlobal(const std::string &symbol) const;
-    Val toBase(Val v, TypeId to);
+    Val toBase(Val v, TypeId to, bool cast = false);
     Val callTail(TypeId sig, CallInfo info, std::vector<ValueId> ops, std::size_t skip, const std::vector<sema::TypedId> &args,
                  bool dummyInt);
     bool operatorCalls(sema::TypedId id) const;

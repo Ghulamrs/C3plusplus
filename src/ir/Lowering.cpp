@@ -1104,6 +1104,11 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
         if (to.isVoid()) { e = Val(ValueId(), n.castType); break; }
         if (!scalar(to) || to.isX87(target_)) outside("a cast to '" + to.describe() + "'");
         if (!scalar(T(v.type)) && !T(v.type).isNullPtr()) outside("a cast of what is not a scalar");
+        // [expr.reinterpret.cast]/7: a pointer reinterpreted is the same address, never stepped to a base or back.
+        if (text(id).compare(0, 16, "reinterpret_cast") == 0 && to.isPointer() && T(v.type).isPointer()) {
+            e = Val(result(add(Op::Bitcast, n.castType, std::vector<ValueId>(1, v.v))), n.castType);
+            break;
+        }
         e = convert(v, n.castType, true);
         break;
     }
@@ -1386,7 +1391,7 @@ Lowering::Val Lowering::convert(Val v, TypeId to, bool cast) {
         if (from.isPointer()) {
             if (from.pointee()->unqualified()->isStructOrUnion() && t.pointee()->unqualified()->isStructOrUnion() &&
                 from.pointee()->unqualified() != t.pointee()->unqualified())
-                return toBase(v, to);
+                return toBase(v, to, cast);
             return Val(result(add(Op::Bitcast, to, std::vector<ValueId>(1, v.v))), to);
         }
         if (!cast) outside("a conversion of a number to a pointer");
@@ -1666,10 +1671,15 @@ Lowering::Val Lowering::assign(sema::TypedId id) {
 // A call of the function the parser recorded, by its symbol, or through a pointer to a function.
 // [conv.ptr]/3: a pointer to a class to one to its unambiguous non-virtual base, by the base's offset in the class,
 // a null pointer kept null. A cast down, across, or to a virtual base stays outside.
-Lowering::Val Lowering::toBase(Val v, TypeId to) {
+Lowering::Val Lowering::toBase(Val v, TypeId to, bool cast) {
     const Type &from = *T(v.type).pointee()->unqualified(), &base = *T(to).pointee()->unqualified();
     int found = 0, offset = 0;
     basePaths(from, base, 0, found, offset);
+    // [expr.static.cast]/11: a cast down from a non-virtual base to the class steps back by the base's offset.
+    if (found == 0 && cast) {
+        basePaths(base, from, 0, found, offset);
+        offset = -offset;
+    }
     if (found != 1) outside("a conversion of a pointer to a class to one that is not its base");
     if (offset == 0) return Val(result(add(Op::Bitcast, to, std::vector<ValueId>(1, v.v))), to);
     const Val nonNull = truth(v);
