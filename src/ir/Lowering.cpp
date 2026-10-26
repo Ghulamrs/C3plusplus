@@ -112,6 +112,12 @@ ValueId Lowering::addrOf(const std::string &sym, TypeId type) {
 
 ValueId Lowering::load(ValueId p, TypeId type) { return result(add(Op::Load, type, std::vector<ValueId>(1, p))); }
 
+// [expr]/6: what is read from an object is a value, and a value of a scalar type carries no cv-qualifier.
+Lowering::Val Lowering::readOf(ValueId p, TypeId type) {
+    const TypeId u = tid(*T(type).unqualified());
+    return Val(load(p, u), u);
+}
+
 void Lowering::store(ValueId p, ValueId v) {
     std::vector<ValueId> ops;
     ops.push_back(p);
@@ -687,7 +693,7 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
         e = decay(Val(a.v, a.type));
         if (T(e.type).isPointer() && T(a.type).isArray()) break;
         if (!scalar(T(a.type))) outside("a read of an object of type '" + T(a.type).describe() + "'");
-        e = Val(load(a.v, a.type), a.type);
+        e = readOf(a.v, a.type);
         break;
     }
     case syntax::Kind::Name: e = name(id); break;
@@ -720,7 +726,7 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
         e = call(id);
         const sema::Resolution &r = tree_.resolution(id);
         if (r.what == sema::Resolution::Call && T(r.type).returns()->isReference())
-            e = Val(load(e.v, tid(*T(r.type).returns()->referent())), tid(*T(r.type).returns()->referent()));
+            e = readOf(e.v, tid(*T(r.type).returns()->referent()));
         break;
     }
     case syntax::Kind::Cast: {
@@ -834,7 +840,7 @@ Lowering::Val Lowering::name(sema::TypedId id) {
     const Type &t = T(a.type);
     if (t.isArray()) return decay(Val(a.v, a.type));
     if (!scalar(t) || t.isX87(target_)) outside("a read of an object of type '" + t.describe() + "'");
-    return Val(load(a.v, a.type), a.type);
+    return readOf(a.v, a.type);
 }
 
 // [expr.ref]: `o.m` and `p->m` of a struct's scalar data member, the object's const carried onto the member.
@@ -904,7 +910,7 @@ Lowering::Val Lowering::unary(sema::TypedId id) {
         if (!t.isPointer() || t.pointee()->isVoid() || t.pointee()->isFunction()) outside("a '*' of what is not an object pointer");
         const Type &e = *t.pointee();
         if (!scalar(e) || e.isX87(target_)) outside("a read through a pointer to '" + e.describe() + "'");
-        return Val(load(a.v, tid(e)), tid(e));
+        return readOf(a.v, tid(e));
     }
     if (op == "!") {
         if (!scalar(t) && !t.isNullPtr()) outside("a '!' of what is not a scalar");
@@ -1216,7 +1222,7 @@ Lowering::Val Lowering::conditional(sema::TypedId id) {
         const Val a = lvalue(id);
         const Type &t = T(a.type);
         if (!scalar(t)) outside("a conditional of lvalues of type '" + t.describe() + "'");
-        return Val(load(a.v, a.type), a.type);
+        return readOf(a.v, a.type);
     }
     const Val c = truth(expr(child(id, 0)));
     const BlockId a = newBlock(), b = newBlock(), merge = newBlock();

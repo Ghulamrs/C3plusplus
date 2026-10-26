@@ -89,6 +89,7 @@ private:
     Val member(sema::TypedId id);
     Val memberAddress(sema::TypedId id);
     Val memberOfThis(sema::TypedId id);
+    Val readOf(ValueId p, TypeId type);
     Val unary(sema::TypedId id);
     Val step(sema::TypedId id, bool increment, bool prefix);
     Val binary(const std::string &op, sema::TypedId l, sema::TypedId r);

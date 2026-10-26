@@ -454,6 +454,8 @@ int Typer::scopedBody(syntax::NodeId fn) const {
     return i != p_.scopedFunctions_.end() ? i->second : 0;
 }
 
+bool Typer::packBody(const std::string &symbol) const { return p_.packBodies_.count(symbol) != 0; }
+
 bool Typer::fromTemplate(const std::string &symbol) const {
     for (std::size_t i = 0; i < p_.lookup_.functions_.size(); i++)
         if (p_.lookup_.functions_[i].symbol == symbol) return p_.lookup_.functions_[i].fromTemplate;

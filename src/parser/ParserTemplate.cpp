@@ -1420,6 +1420,8 @@ void Parser::bindPatternMember(std::size_t from, std::size_t end, std::size_t m,
     tokens_.push_back(stop);
     tmpl_.bindTemplateParameters(bound, types, values, Packs(bound.size()), undo);
     at_ = copy;
+    // The members' syntax shares the pattern's place, so the tree keeps one of them: the body is the parser's (M3b.2).
+    if (!currentFunction_.empty()) packBodies_.insert(currentFunction_);
 }
 
 // `f(g(a)...)`, `std::forward<A>(a)...`, `f(Ns...)`, `f((Ns * 2)...)`: one argument per member.
