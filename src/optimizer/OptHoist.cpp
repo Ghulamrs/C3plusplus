@@ -100,7 +100,7 @@ private:
             else return false;
         }
         if (entries != 1 || f_.blocks[preBlock_].leaves) return false;
-        if (pos_ < 0 || (s_[pos_].kind == Entry::Ins && s_[pos_].ins.m != "jmp")) return false;
+        if (pos_ < 0 || (s_[pos_].kind == Entry::Ins && s_[pos_].ins.m != mn::Jmp)) return false;
         for (int b : loop_.blocks) {
             if (b == loop_.head) continue;
             for (int e : f_.blocks[b].preds)
@@ -272,7 +272,7 @@ private:
         step.k = k;
         step.srcVn = -1;
         step.narrow = false;
-        std::string key = i.m + "|w" + desc(i.b.reg.width) + "|";
+        std::string key = i.m.name() + "|w" + desc(i.b.reg.width) + "|";
         switch (i.a.kind) {
         case Operand::Register:
             if (roles.a & kRead) {
@@ -392,7 +392,7 @@ private:
             i.b.reg.id = assigned_[st];
             if (copyFirst_[st]) {
                 Entry c;
-                c.ins = Instr{"mov", Operand::ofReg(registerOf(step.srcVn), 8), Operand::ofReg(assigned_[st], 8), 2};
+                c.ins = Instr{mn::Mov, Operand::ofReg(registerOf(step.srcVn), 8), Operand::ofReg(assigned_[st], 8), 2};
                 pre.push_back(c);
             }
             Entry e;
@@ -437,10 +437,10 @@ bool hoistXmmSlotsIn(Function &fn, const Loops::Loop &loop) {
             if (s[k].kind == Entry::Event) return false;
             if (s[k].kind != Entry::Ins || s[k].dead) continue;
             const Effects &e = f.effects[k];
-            if (e.opaque || (e.control && s[k].ins.m == "call")) return false;
+            if (e.opaque || (e.control && s[k].ins.m == mn::Call)) return false;
             touched |= e.reads | e.writes | e.partial;
             const Instr &i = s[k].ins;
-            if (i.operands == 2 && i.m == "movsd" && i.a.isMem() && i.a.reg.id == RBP && i.a.scale == 0 &&
+            if (i.operands == 2 && i.m == mn::Movsd && i.a.isMem() && i.a.reg.id == RBP && i.a.scale == 0 &&
                 i.b.kind == Operand::Register && i.b.reg.id >= kXmm0)
                 reads[i.a.disp].push_back(k);
             else if (e.memoryWritten)
@@ -458,12 +458,12 @@ bool hoistXmmSlotsIn(Function &fn, const Loops::Loop &loop) {
             if (s[k].kind != Entry::Ins || s[k].dead) continue;
             f.joinPads(b, k, live);
             const Instr &i = s[k].ins;
-            if (i.m == "lea" && i.a.isMem() && i.a.reg.id == RBP && i.a.scale == 0 &&
+            if (i.m == mn::Lea && i.a.isMem() && i.a.reg.id == RBP && i.a.scale == 0 &&
                 !(i.b.kind == Operand::Register && i.b.reg.id >= 0 && !(live.regs & bit(i.b.reg.id)))) {
                 long long upTo = LLONG_MAX;
                 for (const Local &l : fn.locals) if (l.disp == i.a.disp) upTo = l.disp + l.size;
                 taken.push_back({i.a.disp, upTo});
-            } else if (i.m == "lea" && i.a.isMem() && i.a.reg.id == RBP) {
+            } else if (i.m == mn::Lea && i.a.isMem() && i.a.reg.id == RBP) {
                 taken.push_back({LLONG_MIN, LLONG_MAX});
             }
             live.step(f.effects[k]);
@@ -492,13 +492,13 @@ bool hoistXmmSlotsIn(Function &fn, const Loops::Loop &loop) {
     for (const auto &p : plan)
         for (int k : reads[p.first]) {
             Instr &i = s[k].ins;
-            i.m = "movapd";
+            i.m = mn::Movapd;
             i.a = Operand::ofReg(p.second, 16);
         }
     const int at = f.blocks[loop.head].begin;
     for (const auto &p : plan) {
         Entry e;
-        e.ins = Instr{"movsd", Operand::ofMem(RBP, p.first), Operand::ofReg(p.second, 16), 2};
+        e.ins = Instr{mn::Movsd, Operand::ofMem(RBP, p.first), Operand::ofReg(p.second, 16), 2};
         s.insert(s.begin() + at, e);
     }
     return true;
@@ -524,10 +524,10 @@ bool widenCounterIn(Function &fn, const Loops::Loop &loop) {
     if (latch.size() < 3) return false;
     const Instr &add = s[latch[latch.size() - 3]].ins, &cmp = s[latch[latch.size() - 2]].ins,
                 &jl = s[latch.back()].ins;
-    if (add.m != "add" || add.a.kind != Operand::Immediate || !add.a.numeric || add.a.value != 1) return false;
+    if (add.m != mn::Add || add.a.kind != Operand::Immediate || !add.a.numeric || add.a.value != 1) return false;
     if (add.b.kind != Operand::Register || add.b.reg.width != 4 || add.b.reg.id >= kGprs) return false;
     const int r = add.b.reg.id;
-    if (frameReg(r) || cmp.m != "cmp" || !cmp.b.isReg(r) || cmp.b.reg.width != 4 || jl.m != "jl") return false;
+    if (frameReg(r) || cmp.m != mn::Cmp || !cmp.b.isReg(r) || cmp.b.reg.width != 4 || jl.m != mn::Jl) return false;
     if (cmp.a.kind == Operand::Register && cmp.a.reg.width != 4) return false;
     std::vector<bool> inLoop(f.blocks.size(), false);
     for (int b : loop.blocks) inLoop[b] = true;
@@ -544,8 +544,8 @@ bool widenCounterIn(Function &fn, const Loops::Loop &loop) {
             const Effects &e = f.effects[*it];
             if (!((e.writes | e.partial) & bit(r))) continue;
             const Instr &w = s[*it].ins;
-            const bool zero = w.m == "xor" && w.a.isReg(r) && w.b.isReg(r) && w.b.reg.width == 4;
-            const bool constant = (w.m == "mov" || w.m == "movl") && w.b.isReg(r) && w.b.reg.width == 4 &&
+            const bool zero = w.m == mn::Xor && w.a.isReg(r) && w.b.isReg(r) && w.b.reg.width == 4;
+            const bool constant = w.m.is({mn::Mov, mn::Movl}) && w.b.isReg(r) && w.b.reg.width == 4 &&
                                   w.a.kind == Operand::Immediate && w.a.numeric && w.a.value >= 0 && w.a.value < 0x7fffffff;
             if (!zero && !constant) return false;
             from = -2;
@@ -562,7 +562,7 @@ bool widenCounterIn(Function &fn, const Loops::Loop &loop) {
         const std::vector<int> ins = liveIns(s, f.blocks[b]);
         for (std::size_t n = 0; n < ins.size(); ++n) {
             const Instr &x = s[ins[n]].ins;
-            if (x.m != "movslq" || !x.a.isReg(r) || x.a.reg.width != 4 || x.b.kind != Operand::Register ||
+            if (x.m != mn::Movslq || !x.a.isReg(r) || x.a.reg.width != 4 || x.b.kind != Operand::Register ||
                 x.b.reg.width != 8 || x.b.reg.id == r || x.b.reg.id >= kGprs || frameReg(x.b.reg.id))
                 continue;
             const int d = x.b.reg.id;

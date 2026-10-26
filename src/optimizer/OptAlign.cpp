@@ -13,25 +13,14 @@ namespace opt {
 
 namespace {
 
-bool startsWith(const std::string &s, const char *p) { return s.compare(0, std::string(p).size(), p) == 0; }
-bool endsWith(const std::string &s, const char *p) {
-    const std::string t(p);
-    return s.size() >= t.size() && s.compare(s.size() - t.size(), t.size(), t) == 0;
-}
 bool fitsByte(long long v) { return v >= -128 && v <= 127; }
 bool fitsInt(long long v) { return v >= -(1LL << 31) && v < (1LL << 31); }
 
-// An SSE instruction: a mandatory prefix and the 0F escape in front of the opcode.
-bool sse(const std::string &m) {
-    return endsWith(m, "sd") || endsWith(m, "ss") || endsWith(m, "pd") || endsWith(m, "ps") || startsWith(m, "cvt") ||
-           startsWith(m, "ucomi") || startsWith(m, "comi") || m == "pxor" || m == "movd" || m == "movq";
-}
+// An SSE instruction: a mandatory prefix and the 0F escape in front of the opcode (the table's kSse).
+bool sse(const OpId &m) { return m.row().has(Opcode::kSse); }
 
-// An instruction whose opcode has the 0F escape: imul r,r/m, the extensions, setcc, cmovcc.
-bool twoByte(const std::string &m) {
-    return m == "imul" || startsWith(m, "movs") || startsWith(m, "movz") || startsWith(m, "set") ||
-           startsWith(m, "cmov") || startsWith(m, "bt");
-}
+// An instruction whose opcode has the 0F escape: imul r,r/m, the extensions, setcc (the table's kEscape0F).
+bool twoByte(const OpId &m) { return m.row().has(Opcode::kEscape0F); }
 
 int memoryBytes(const Operand &o) {
     int n = 0;
@@ -43,10 +32,11 @@ int memoryBytes(const Operand &o) {
 
 // The bytes of one instruction as it will most likely be encoded, erring long.
 int bytesOf(const Instr &i) {
-    const std::string &m = i.m.name();
-    if (m[0] == 'j') return 2;                  // short: a loop this size exits nearby
-    if (m == "call") return i.a.kind == Operand::Indirect ? 3 : 5;
-    if (m == "ret") return 1;
+    const OpId m = i.m;
+    const Opcode::Kind kind = m.row().kind;
+    if (kind == Opcode::Jmp || kind == Opcode::Jcc) return 2;   // short: a loop this size exits nearby
+    if (kind == Opcode::Call) return i.a.kind == Operand::Indirect ? 3 : 5;
+    if (kind == Opcode::Ret) return 1;
     if (i.operands == 0) return 3;
     int n = 2;                                  // opcode and modrm
     if (sse(m)) n += 2;
@@ -63,14 +53,14 @@ int bytesOf(const Instr &i) {
         case Operand::TlsSymbol: n += 4; break;    // a disp32 the linker fills
         case Operand::Immediate:
             if (!o->numeric) n += 4;
-            else if (m == "mov" || startsWith(m, "movabs")) n += fitsInt(o->value) ? 4 : 8;
+            else if (m.is({mn::Mov, mn::Movabs})) n += fitsInt(o->value) ? 4 : 8;
             else n += fitsByte(o->value) ? 1 : 4;
             break;
         default: break;
         }
     }
     // A 64-bit register, or a numbered one, wants the REX prefix; so does a 64-bit move of a constant.
-    if (rex || (m == "mov" && i.a.kind == Operand::Immediate && i.b.kind == Operand::Register && i.b.reg.width == 8)) n += 1;
+    if (rex || (m == mn::Mov && i.a.kind == Operand::Immediate && i.b.kind == Operand::Register && i.b.reg.width == 8)) n += 1;
     return n;
 }
 
@@ -88,7 +78,7 @@ int runFrom(const Stream &s, int from, int to) {
     for (int k = from; k < to; ++k) {
         if (s[k].dead || s[k].kind != Entry::Ins) continue;
         n += bytesOf(s[k].ins);
-        if (s[k].ins.m == "jmp" || s[k].ins.m == "ret") break;
+        if (s[k].ins.m.is({mn::Jmp, mn::Ret})) break;
     }
     return n;
 }

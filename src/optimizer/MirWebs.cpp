@@ -14,14 +14,14 @@ namespace {
 // The registers webs are made of: those the target description offers.
 bool candidate(int r) { return TargetDesc::x86_64().candidate(r); }
 
-bool isShift(const std::string &m) { return opcodeOf(m).has(Opcode::kShift); }
+bool isShift(const OpId &m) { return m.row().has(Opcode::kShift); }
 
 // A copy of a register to itself, whole: the one move that is truly nothing, where a four-byte one zero-extends
 // and an xmm one by `movsd` merges; an xmm register is copied by `movapd`, all 16 bytes.
 Entry copy(int reg) {
     Entry e;
-    if (reg >= kXmm0) e.ins = Instr{"movapd", Operand::ofReg(reg, 16), Operand::ofReg(reg, 16), 2};
-    else e.ins = Instr{"mov", Operand::ofReg(reg, 8), Operand::ofReg(reg, 8), 2};
+    if (reg >= kXmm0) e.ins = Instr{mn::Movapd, Operand::ofReg(reg, 16), Operand::ofReg(reg, 16), 2};
+    else e.ins = Instr{mn::Mov, Operand::ofReg(reg, 8), Operand::ofReg(reg, 8), 2};
     return e;
 }
 
@@ -82,7 +82,7 @@ std::vector<Webs::Occurrence> Webs::occurrencesOf(const Instr &i, int entry) {
             oc.read = (role[n] & kRead) != 0;
             oc.write = (role[n] & kWrite) != 0;
             oc.keeps = oc.write && ((role[n] & kKeep) || o.reg.width < 4);
-            oc.pinned = n == 0 && isShift(i.m.name());
+            oc.pinned = n == 0 && isShift(i.m);
             oc.tied = role[n] == 0;
         } else if (o.basedOnReg() || o.kind == Operand::Indirect) {
             assert(o.scale == 0 && "fold-index makes indexed operands after webs and allocate");
@@ -298,7 +298,7 @@ void Webs::assign(Function &fn, const std::vector<int> &colour) {
             else {
                 // A float or double given its slot back is moved by its own width: `movapd` to memory moves 16 aligned bytes.
                 const Local &l = fn.pseudos[o->reg.id - kFirstPseudo].slot;
-                if (l.floating && (e.ins.m == "movapd" || e.ins.m == "movaps")) e.ins.m = l.size == 4 ? "movss" : "movsd";
+                if (l.floating && e.ins.m.is({mn::Movapd, mn::Movaps})) e.ins.m = l.size == 4 ? mn::Movss : mn::Movsd;
                 *o = Operand::ofMem(RBP, l.disp);
             }
             renamed = true;
@@ -313,9 +313,9 @@ bool Webs::dropSelfCopies(Function &fn) {
     for (Entry &e : fn.stream) {
         if (e.kind != Entry::Ins || e.dead) continue;
         const Instr &i = e.ins;
-        const bool gpr = i.m == "mov" && i.a.reg.width == 8 && i.b.reg.width == 8;
+        const bool gpr = i.m == mn::Mov && i.a.reg.width == 8 && i.b.reg.width == 8;
         // `movsd %xmm0, %xmm0` merges a register's low lanes with themselves: nothing too.
-        const bool xmm = (i.m == "movapd" || i.m == "movaps" || i.m == "movsd" || i.m == "movss") && i.a.reg.id >= kXmm0;
+        const bool xmm = i.m.is({mn::Movapd, mn::Movaps, mn::Movsd, mn::Movss}) && i.a.reg.id >= kXmm0;
         if ((gpr || xmm) && i.operands == 2 && i.a.kind == Operand::Register && i.b.kind == Operand::Register &&
             i.a.reg.id == i.b.reg.id) {
             e.dead = true;

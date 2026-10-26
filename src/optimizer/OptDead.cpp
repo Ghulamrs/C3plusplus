@@ -9,7 +9,7 @@ bool gpr(const Operand &o) { return o.kind == Operand::Register && o.reg.id >= 0
 // `movslq %eax, %rax` and `mov %eax, %eax`: the low half stays as it was.
 bool extendsInPlace(const Instr &i) {
     if (!gpr(i.a) || !gpr(i.b) || i.a.reg.id != i.b.reg.id || i.a.reg.width != 4) return false;
-    return (i.m == "movslq" && i.b.reg.width == 8) || (isMovQL(i.m) && i.b.reg.width == 4);
+    return (i.m == mn::Movslq && i.b.reg.width == 8) || (isMovQL(i.m) && i.b.reg.width == 4);
 }
 
 }
@@ -29,7 +29,7 @@ namespace {
 // `mov %X,%t ... mov %t,%X` with X untouched between and t dead after.
 bool workInPlace(Stream &s, Flow &f, const Convention &conv, int k, int begin, const Live &live) {
     const Instr &c = s[k].ins;
-    if (!(c.m == "mov" || c.m == "movl" || c.m == "movq") || !gpr(c.a) || !gpr(c.b)) return false;
+    if (!isMovQL(c.m) || !gpr(c.a) || !gpr(c.b)) return false;
     const int t = c.a.reg.id, x = c.b.reg.id, w = c.b.reg.width;
     if (t == x || frameReg(t) || frameReg(x) || c.a.reg.width != w || w < 4 || (live.regs & bit(t)) || (w == 4 && (live.wide & bit(x)))) return false;
     for (int p = k - 1, n = 0; p >= begin && n < 32; --p, ++n) {
@@ -37,9 +37,9 @@ bool workInPlace(Stream &s, Flow &f, const Convention &conv, int k, int begin, c
         const Instr &i = s[p].ins;
         const Effects &e = f.effects[p];
         const bool copyIn = gpr(i.a) && i.a.reg.id == x && gpr(i.b) && i.b.reg.id == t && i.b.reg.width >= 4 &&
-                            (i.m == "mov" || i.m == "movl" || i.m == "movq" || i.m == "movslq");
+                            (isMovQL(i.m) || i.m == mn::Movslq);
         // A plain four-byte copy-in zeroed the upper half the renamed value keeps.
-        if (copyIn && i.m != "movslq" && i.b.reg.width < w) return false;
+        if (copyIn && i.m != mn::Movslq && i.b.reg.width < w) return false;
         if (copyIn) {
             for (int q = p; q < k; ++q) {
                 if (s[q].kind != Entry::Ins || s[q].dead) continue;
@@ -50,7 +50,7 @@ bool workInPlace(Stream &s, Flow &f, const Convention &conv, int k, int begin, c
                 f.effects[q] = effectsOf(s[q].ins, conv);
             }
             s[k].dead = true;
-            if (s[p].ins.m != "movslq" && s[p].ins.a.reg.width == s[p].ins.b.reg.width) s[p].dead = true;
+            if (s[p].ins.m != mn::Movslq && s[p].ins.a.reg.width == s[p].ins.b.reg.width) s[p].dead = true;
             return true;
         }
         const RegSet touched = e.reads | e.writes | e.partial;
@@ -61,8 +61,8 @@ bool workInPlace(Stream &s, Flow &f, const Convention &conv, int k, int begin, c
 }
 
 bool xmm(const Operand &o) { return o.kind == Operand::Register && o.reg.id >= kXmm0 && o.reg.id < kXmm0 + 16; }
-bool xmmCopy(const Instr &i) { return i.m == "movapd" && xmm(i.a) && xmm(i.b) && i.a.reg.id != i.b.reg.id; }
-bool sseArith(const std::string &m) { return m == "addsd" || m == "subsd" || m == "mulsd" || m == "divsd"; }
+bool xmmCopy(const Instr &i) { return i.m == mn::Movapd && xmm(i.a) && xmm(i.b) && i.a.reg.id != i.b.reg.id; }
+bool sseArith(const OpId &m) { return m.is({mn::Addsd, mn::Subsd, mn::Mulsd, mn::Divsd}); }
 int nextIns(const Stream &s, int k, int end) {
     for (++k; k < end; ++k) if (s[k].kind == Entry::Ins && !s[k].dead) return k;
     return -1;
@@ -91,7 +91,7 @@ bool coalesceXmm(Stream &s, Flow &f, const Convention &conv) {
             if (u < 0) continue;
             Instr &n = s[u].ins;
             // `movapd %s,%d; op %d,%x` with d dead after: `op %s,%x`.
-            if (sseArith(n.m.name()) && xmm(n.a) && n.a.reg.id == dst && xmm(n.b) && n.b.reg.id != dst &&
+            if (sseArith(n.m) && xmm(n.a) && n.a.reg.id == dst && xmm(n.b) && n.b.reg.id != dst &&
                 !(after[u].regs & bit(dst))) {
                 n.a.reg.id = src;
                 f.effects[u] = effectsOf(n, conv);
@@ -101,8 +101,8 @@ bool coalesceXmm(Stream &s, Flow &f, const Convention &conv) {
             // `movapd %s,%d; movsd mem,%s; addsd %d,%s` with d dead: `addsd mem,%s`. A
             // frame slot is left alone, or the locals pass could not promote it.
             const int v = nextIns(s, u, blk.end);
-            if (v >= 0 && n.m == "movsd" && n.a.isMem() && xmm(n.b) && n.b.reg.id == src &&
-                !frameReg(n.a.reg.id) && (s[v].ins.m == "addsd" || s[v].ins.m == "mulsd") &&
+            if (v >= 0 && n.m == mn::Movsd && n.a.isMem() && xmm(n.b) && n.b.reg.id == src &&
+                !frameReg(n.a.reg.id) && s[v].ins.m.is({mn::Addsd, mn::Mulsd}) &&
                 xmm(s[v].ins.a) && s[v].ins.a.reg.id == dst && xmm(s[v].ins.b) && s[v].ins.b.reg.id == src &&
                 !(after[v].regs & bit(dst))) {
                 s[v].ins.a = n.a;
@@ -128,7 +128,7 @@ bool coalesceCopies(Stream &s, Flow &f, const Convention &conv) {
             if (copy.kind != Entry::Ins || copy.dead) continue;
             f.joinPads(b, k, live);
             const Instr &c = copy.ins;
-            const bool isCopy = ((c.m == "mov" || c.m == "movq") && gpr(c.a) && gpr(c.b) &&
+            const bool isCopy = (isMovQ(c.m) && gpr(c.a) && gpr(c.b) &&
                                 !frameReg(c.a.reg.id) && !frameReg(c.b.reg.id) &&
                                 c.a.reg.width == 8 && c.b.reg.width == 8 && c.a.reg.id != c.b.reg.id) || xmmCopy(c);
             int p = k - 1;

@@ -30,7 +30,7 @@ void Optimizer::instruction(const std::string &m, int operands, const Op *a, con
         return;
     }
     Entry e;
-    e.ins.m = m;
+    e.ins.m = opt::OpId(m);
     // CPP11_MIR_STRICT=1 names every mnemonic held that the table does not list: the measure of its completeness,
     // which is also M4's list of what the encoder must take (M3-IR.md 2.6).
     static const bool strict = std::getenv("CPP11_MIR_STRICT") != nullptr;
@@ -39,8 +39,8 @@ void Optimizer::instruction(const std::string &m, int operands, const Op *a, con
     e.ins.operands = operands;
     if (a) e.ins.a = opt::Operand::from(*a);
     if (b) e.ins.b = opt::Operand::from(*b);
-    if (argsPending_ && m == "call") { e.ins.args = args_; e.ins.exactArgs = true; }
-    if (retPending_ && m == "ret") { e.ins.args = rets_; e.ins.exactArgs = true; }
+    if (argsPending_ && e.ins.m == opt::mn::Call) { e.ins.args = args_; e.ins.exactArgs = true; }
+    if (retPending_ && e.ins.m == opt::mn::Ret) { e.ins.args = rets_; e.ins.exactArgs = true; }
     argsPending_ = false;
     retPending_ = false;
     if (inlining_)

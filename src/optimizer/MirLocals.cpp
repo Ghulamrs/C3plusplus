@@ -34,9 +34,8 @@ int Locals::promote() {
             floating = floating || l.floating;
         }
         // A scalar move between two xmm registers is a copy of the whole register, which the allocator can coalesce.
-        const std::string m = e.ins.m.name();
-        if (floating && (m == "movsd" || m == "movss" || m == "movq" || m == "movd")) {
-            e.ins.m = "movapd";
+        if (floating && e.ins.m.is({mn::Movsd, mn::Movss, mn::Movq, mn::Movd})) {
+            e.ins.m = mn::Movapd;
             e.ins.a.reg.width = e.ins.b.reg.width = 16;
         }
         if (renamed) fn_.flow.effects[k] = effectsOf(e.ins, fn_.convention);

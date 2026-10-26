@@ -3,6 +3,7 @@
 #include "../Mangle.h"
 #include "../Name.h"
 #include "../optimizer/OptIr.h"
+#include "../optimizer/OptTable.h"
 #include "CodeView.h"
 
 #include "../Source.h"
@@ -99,91 +100,12 @@ const char *ptrFor(int bytes) {
     }
 }
 
-struct Rule {
-    const char *att;
-    const char *masm;
-    int width;
-
-};
-
-const Rule kRules[] = {
-    { "movb", "mov", 1 }, { "movw", "mov", 2 },
-    { "movl", "mov", 4 }, { "movq", "mov", 8 },
-    { "mov",  "mov", 0 }, { "movabs", "mov", 0 },
-    { "movslq", "movsxd", 4 },
-    { "movsbq", "movsx", 1 }, { "movswq", "movsx", 2 },
-
-    { "movzbq", "movzx", 1 }, { "movzwq", "movzx", 2 },
-    { "movzbl", "movzx", 1 }, { "movzwl", "movzx", 2 },
-
-    { "lea", "lea", 0 },
-    { "push", "push", 0 }, { "pop", "pop", 0 },
-
-    { "add", "add", 0 }, { "sub", "sub", 0 }, { "imul", "imul", 0 },
-    { "idiv", "idiv", 0 }, { "div", "div", 0 }, { "neg", "neg", 0 },
-    { "and", "and", 0 }, { "or", "or", 0 }, { "xor", "xor", 0 },
-    { "shl", "shl", 0 }, { "shr", "shr", 0 }, { "sar", "sar", 0 },
-    { "cmp", "cmp", 0 }, { "cdq", "cdq", 0 }, { "cqo", "cqo", 0 },
-    { "addl", "add", 4 }, { "cmpl", "cmp", 4 }, { "testb", "test", 1 },
-
-    { "call", "call", 0 }, { "ret", "ret", 0 }, { "nop", "nop", 0 },
-    { "jmp", "jmp", 0 }, { "je", "je", 0 }, { "jne", "jne", 0 },
-    { "jae", "jae", 0 }, { "jns", "jns", 0 },
-
-    { "sete", "sete", 0 }, { "setne", "setne", 0 },
-    { "setl", "setl", 0 }, { "setle", "setle", 0 },
-    { "setg", "setg", 0 }, { "setge", "setge", 0 },
-    { "seta", "seta", 0 }, { "setae", "setae", 0 },
-    { "setb", "setb", 0 }, { "setbe", "setbe", 0 },
-    { "setp", "setp", 0 }, { "setnp", "setnp", 0 },
-
-    { "movsd", "movsd", 8 }, { "movss", "movss", 4 },
-    { "movapd", "movapd", 0 }, { "movaps", "movaps", 0 },
-    { "movd", "movd", 0 },
-    { "addsd", "addsd", 8 }, { "subsd", "subsd", 8 },
-    { "mulsd", "mulsd", 8 }, { "divsd", "divsd", 8 },
-    { "addss", "addss", 0 }, { "subss", "subss", 0 },
-    { "mulss", "mulss", 0 }, { "divss", "divss", 0 },
-    { "ucomisd", "ucomisd", 0 }, { "ucomiss", "ucomiss", 0 },
-    { "pxor", "pxor", 0 }, { "xorpd", "xorpd", 0 }, { "xorps", "xorps", 0 },
-    { "cvtsi2sdq", "cvtsi2sd", 8 }, { "cvtsi2ssq", "cvtsi2ss", 8 },
-    { "cvttsd2si", "cvttsd2si", 0 }, { "cvttss2si", "cvttss2si", 0 },
-    { "cvtss2sd", "cvtss2sd", 0 }, { "cvtsd2ss", "cvtsd2ss", 0 },
-
-    // **What the optimizer writes as well as the walker**: every condition its
-    // inversion can reach, and the widths its shortening pass narrows to.
-    { "jz", "jz", 0 }, { "setz", "setz", 0 }, { "jnz", "jnz", 0 },
-    { "setnz", "setnz", 0 }, { "jl", "jl", 0 }, { "jge", "jge", 0 },
-    { "jle", "jle", 0 }, { "jg", "jg", 0 }, { "jb", "jb", 0 },
-    { "jbe", "jbe", 0 }, { "ja", "ja", 0 }, { "js", "js", 0 },
-    { "sets", "sets", 0 }, { "setns", "setns", 0 }, { "jp", "jp", 0 },
-    { "jnp", "jnp", 0 }, { "jo", "jo", 0 }, { "seto", "seto", 0 },
-    { "jno", "jno", 0 }, { "setno", "setno", 0 }, { "addb", "add", 1 },
-    { "addw", "add", 2 }, { "addq", "add", 8 }, { "subb", "sub", 1 },
-    { "subw", "sub", 2 }, { "subl", "sub", 4 }, { "subq", "sub", 8 },
-    { "andb", "and", 1 }, { "andw", "and", 2 }, { "andl", "and", 4 },
-    { "andq", "and", 8 }, { "orb", "or", 1 }, { "orw", "or", 2 },
-    { "orl", "or", 4 }, { "orq", "or", 8 }, { "xorb", "xor", 1 },
-    { "xorw", "xor", 2 }, { "xorl", "xor", 4 }, { "xorq", "xor", 8 },
-    { "cmpb", "cmp", 1 }, { "cmpw", "cmp", 2 }, { "cmpq", "cmp", 8 },
-    { "test", "test", 0 }, { "testw", "test", 2 }, { "testl", "test", 4 },
-    { "testq", "test", 8 }, { "shlb", "shl", 1 }, { "shlw", "shl", 2 },
-    { "shll", "shl", 4 }, { "shlq", "shl", 8 }, { "shrb", "shr", 1 },
-    { "shrw", "shr", 2 }, { "shrl", "shr", 4 }, { "shrq", "shr", 8 },
-    { "sarb", "sar", 1 }, { "sarw", "sar", 2 }, { "sarl", "sar", 4 },
-    { "sarq", "sar", 8 }, { "negb", "neg", 1 }, { "negw", "neg", 2 },
-    { "negl", "neg", 4 }, { "negq", "neg", 8 }, { "not", "not", 0 },
-    { "notb", "not", 1 }, { "notw", "not", 2 }, { "notl", "not", 4 },
-    { "notq", "not", 8 }, { "inc", "inc", 0 }, { "incb", "inc", 1 },
-    { "incw", "inc", 2 }, { "incl", "inc", 4 }, { "incq", "inc", 8 },
-    { "dec", "dec", 0 }, { "decb", "dec", 1 }, { "decw", "dec", 2 },
-    { "decl", "dec", 4 }, { "decq", "dec", 8 }, { "rep movsq", "rep movsq", 0 },
-};
-
-const Rule *ruleFor(const std::string &m) {
-    for (const Rule &r : kRules)
-        if (m == r.att) return &r;
-    return nullptr;
+// **The MASM name and PTR width come from the one opcode table** (M3a.3): a row with no MASM name is one this
+// spelling does not know, as its own 156-row table once said by leaving it out.
+opt::OpId masmRow(const std::string &m) {
+    const opt::OpId id(m);
+    if (id.row().masm == nullptr) give_up(m, "an instruction this spelling does not know");
+    return id;
 }
 
 }
@@ -267,19 +189,17 @@ MasmSpelling::Rendered MasmSpelling::render(const Op &x) {
 
 void MasmSpelling::ins(const std::string &m) {
     afterCall_ = false;
-    const Rule *r = ruleFor(m);
-    if (r == nullptr) give_up(m, "an instruction this spelling does not know");
-    o_ += "  "; o_ += r->masm; o_ += '\n';
+    const opt::Opcode &r = masmRow(m).row();
+    o_ += "  "; o_ += r.masm; o_ += '\n';
 }
 
 void MasmSpelling::ins(const std::string &m, const Op &a) {
-    afterCall_ = m == "call";
-    const Rule *r = ruleFor(m);
-    if (r == nullptr) give_up(m, "an instruction this spelling does not know");
+    const opt::Opcode &r = masmRow(m).row();
+    afterCall_ = r.kind == opt::Opcode::Call;
     Rendered x = render(a);
     std::string t = x.text;
-    if (x.isMem && r->width != 0) t = std::string(ptrFor(r->width)) + t;
-    o_ += "  "; o_ += r->masm; o_ += ' '; o_ += t; o_ += '\n';
+    if (x.isMem && r.masmWidth != 0) t = std::string(ptrFor(r.masmWidth)) + t;
+    o_ += "  "; o_ += r.masm; o_ += ' '; o_ += t; o_ += '\n';
 }
 
 // The 64-bit name of a register any width names (`ecx`, `cl` -> `rcx`), or "" for none.
@@ -318,23 +238,22 @@ void MasmSpelling::ml64Tls(const std::string &m, const Op &a, const Op &b) {
 
 void MasmSpelling::ins(const std::string &m, const Op &a, const Op &b) {
     afterCall_ = false;
-    const Rule *r = ruleFor(m);
-    if (r == nullptr) give_up(m, "an instruction this spelling does not know");
+    const opt::OpId id = masmRow(m);
+    const opt::Opcode &r = id.row();
     if (!comdat_ && (a.kind == Op::Tls || b.kind == Op::Tls)) { ml64Tls(m, a, b); return; }
 
     Rendered src = render(a), dst = render(b);
 
-    std::string name = r->masm;
-    if (m == "movq" && (src.isXmm || dst.isXmm)) name = "movq";
+    // `movq` between an xmm register and anything is the SSE move of that name, not a plain `mov`.
+    const char *name = id == opt::mn::Movq && (src.isXmm || dst.isXmm) ? "movq" : r.masm;
 
     std::string sTxt = src.text, dTxt = dst.text;
-    if (r->width != 0) {
-        if (src.isMem) sTxt = std::string(ptrFor(r->width)) + sTxt;
-        else if (dst.isMem && m != "movsxd")
-            dTxt = std::string(ptrFor(r->width)) + dTxt;
+    if (r.masmWidth != 0) {
+        if (src.isMem) sTxt = std::string(ptrFor(r.masmWidth)) + sTxt;
+        else if (dst.isMem) dTxt = std::string(ptrFor(r.masmWidth)) + dTxt;
     }
 
-    if (r->width == 0 && dst.isMem && src.isImm)
+    if (r.masmWidth == 0 && dst.isMem && src.isImm)
         give_up(m, "a store of an immediate with no width to infer");
 
     o_ += "  "; o_ += name; o_ += ' '; o_ += dTxt; o_ += ", "; o_ += sTxt; o_ += '\n';

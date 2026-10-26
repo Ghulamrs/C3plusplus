@@ -10,7 +10,7 @@ namespace opt {
 namespace {
 
 bool gpr(const Operand &o) { return o.kind == Operand::Register && o.reg.id >= 0 && o.reg.id < kGprs; }
-bool isJump(const Instr &i) { return i.a.kind == Operand::Label && (i.m == "jmp" || !conditionOf(i.m).empty()); }
+bool isJump(const Instr &i) { return i.a.kind == Operand::Label && (i.m == mn::Jmp || conditionOf(i.m) != kNoCond); }
 
 // The first block each label heads.
 std::map<std::string, int> labelBlocks(const Stream &s, const Flow &f) {
@@ -45,17 +45,17 @@ bool constantAtEnd(const Stream &s, const Flow &f, const Block &blk, int r, long
             value = i.b.reg.width == 4 ? static_cast<long long>(static_cast<unsigned>(i.a.value)) : i.a.value;
             return true;
         }
-        if (i.m == "xor" && i.a.isReg(r)) { value = 0; return true; }
+        if (i.m == mn::Xor && i.a.isReg(r)) { value = 0; return true; }
         return false;
     }
     return false;
 }
 
 // Whether `jcc` is taken for a compare of a known register against an immediate, or a test of it.
-bool decides(const Instr &cmp, const std::string &cc, long long r64, bool &taken) {
-    const bool test = cmp.m == "test";
+bool decides(const Instr &cmp, Cond cc, long long r64, bool &taken) {
+    const bool test = cmp.m == mn::Test;
     if (test) { if (!(gpr(cmp.a) && gpr(cmp.b) && cmp.a.reg.id == cmp.b.reg.id)) return false; }
-    else if (!((cmp.m == "cmp" || cmp.m == "cmpl" || cmp.m == "cmpq") && cmp.a.kind == Operand::Immediate &&
+    else if (!(cmp.m.is({mn::Cmp, mn::Cmpl, mn::Cmpq}) && cmp.a.kind == Operand::Immediate &&
                cmp.a.numeric && gpr(cmp.b)))
         return false;
     const int w = cmp.b.reg.width;
@@ -64,18 +64,18 @@ bool decides(const Instr &cmp, const std::string &cc, long long r64, bool &taken
     const long long rhs = test ? 0 : (w == 4 ? static_cast<int>(static_cast<unsigned>(cmp.a.value)) : cmp.a.value);
     const unsigned long long ul = w == 4 ? static_cast<unsigned>(lhs) : static_cast<unsigned long long>(lhs);
     const unsigned long long ur = w == 4 ? static_cast<unsigned>(rhs) : static_cast<unsigned long long>(rhs);
-    if (cc == "e" || cc == "z") taken = lhs == rhs;
-    else if (cc == "ne" || cc == "nz") taken = lhs != rhs;
-    else if (cc == "l") taken = lhs < rhs;
-    else if (cc == "le") taken = lhs <= rhs;
-    else if (cc == "g") taken = lhs > rhs;
-    else if (cc == "ge") taken = lhs >= rhs;
-    else if (test && cc == "s") taken = lhs < 0;
-    else if (test && cc == "ns") taken = lhs >= 0;
-    else if (!test && cc == "b") taken = ul < ur;
-    else if (!test && cc == "be") taken = ul <= ur;
-    else if (!test && cc == "a") taken = ul > ur;
-    else if (!test && cc == "ae") taken = ul >= ur;
+    if (cc == CcE || cc == CcZ) taken = lhs == rhs;
+    else if (cc == CcNe || cc == CcNz) taken = lhs != rhs;
+    else if (cc == CcL) taken = lhs < rhs;
+    else if (cc == CcLe) taken = lhs <= rhs;
+    else if (cc == CcG) taken = lhs > rhs;
+    else if (cc == CcGe) taken = lhs >= rhs;
+    else if (test && cc == CcS) taken = lhs < 0;
+    else if (test && cc == CcNs) taken = lhs >= 0;
+    else if (!test && cc == CcB) taken = ul < ur;
+    else if (!test && cc == CcBe) taken = ul <= ur;
+    else if (!test && cc == CcA) taken = ul > ur;
+    else if (!test && cc == CcAe) taken = ul >= ur;
     else return false;
     return true;
 }
@@ -104,7 +104,7 @@ bool threadJumps(Function &fn) {
         const auto it = heads.find(e.ins.a.text.str());
         if (it == heads.end()) continue;
         const std::vector<int> only = liveInstrs(s, f.blocks[it->second]);
-        if (only.size() != 1 || s[only[0]].ins.m != "jmp" || s[only[0]].ins.a.kind != Operand::Label) continue;
+        if (only.size() != 1 || s[only[0]].ins.m != mn::Jmp || s[only[0]].ins.a.kind != Operand::Label) continue;
         if (s[only[0]].ins.a.text == e.ins.a.text) continue;
         e.ins.a.text = s[only[0]].ins.a.text;
         changed = true;
@@ -117,7 +117,7 @@ bool threadJumps(Function &fn) {
         const Block &blk = f.blocks[b];
         const std::vector<int> own = liveInstrs(s, blk);
         int last = own.empty() ? -1 : own.back();
-        const bool jumps = last >= 0 && s[last].ins.m == "jmp" && s[last].ins.a.kind == Operand::Label;
+        const bool jumps = last >= 0 && s[last].ins.m == mn::Jmp && s[last].ins.a.kind == Operand::Label;
         int t;
         if (jumps) { const auto it = heads.find(s[last].ins.a.text.str()); if (it == heads.end()) continue; t = it->second; }
         else { if (last >= 0 && !controlOf(s[last].ins).falls) continue; t = b + 1; }
@@ -125,8 +125,8 @@ bool threadJumps(Function &fn) {
         const std::vector<int> pair = liveInstrs(s, f.blocks[t]);
         if (pair.size() != 2) continue;
         const Instr &cmp = s[pair[0]].ins, &jcc = s[pair[1]].ins;
-        const std::string cc = conditionOf(jcc.m);
-        if (cc.empty() || jcc.a.kind != Operand::Label || !gpr(cmp.b)) continue;
+        const Cond cc = conditionOf(jcc.m);
+        if (cc == kNoCond || jcc.a.kind != Operand::Label || !gpr(cmp.b)) continue;
         long long value;
         bool taken;
         if (!constantAtEnd(s, f, blk, cmp.b.reg.id, value) || !decides(cmp, cc, value, taken)) continue;
@@ -150,7 +150,7 @@ bool threadJumps(Function &fn) {
             changed = true;
         } else if (taken) {
             Entry j;
-            j.ins = Instr{"jmp", jcc.a, Operand(), 1};
+            j.ins = Instr{mn::Jmp, jcc.a, Operand(), 1};
             inserts.push_back(Insert{last >= 0 ? last + 1 : blk.end, j});
             changed = true;
         }
@@ -162,16 +162,16 @@ bool threadJumps(Function &fn) {
             const std::vector<int> own = liveInstrs(s, f.blocks[b]);
             if (own.empty()) continue;
             const int last = own.back();
-            if (s[last].ins.m != "jmp" || s[last].ins.a.kind != Operand::Label) continue;
+            if (s[last].ins.m != mn::Jmp || s[last].ins.a.kind != Operand::Label) continue;
             const auto it = heads.find(s[last].ins.a.text.str());
             if (it == heads.end() || it->second >= b || it->second + 1 >= static_cast<int>(f.blocks.size())) continue;
             const int t = it->second;
             const std::vector<int> pair = liveInstrs(s, f.blocks[t]);
             if (pair.size() != 2) continue;
             const Instr cmp = s[pair[0]].ins, jcc = s[pair[1]].ins;
-            const std::string cc = conditionOf(jcc.m);
-            static const std::set<std::string> tests = {"cmp", "cmpb", "cmpw", "cmpl", "cmpq", "test", "testb", "testw", "testl", "testq"};
-            if (cc.empty() || jcc.a.kind != Operand::Label || !tests.count(cmp.m.name())) continue;
+            const Cond cc = conditionOf(jcc.m);
+            const bool tests = cmp.m.is({mn::Cmp, mn::Cmpb, mn::Cmpw, mn::Cmpl, mn::Cmpq, mn::Test, mn::Testb, mn::Testw, mn::Testl, mn::Testq});
+            if (cc == kNoCond || jcc.a.kind != Operand::Label || !tests) continue;
             const auto exit = heads.find(jcc.a.text.str());
             if (exit == heads.end() || exit->second != b + 1) continue;
             const Block &body = f.blocks[t + 1];
@@ -191,7 +191,7 @@ bool threadJumps(Function &fn) {
             Entry back;
             Operand to = jcc.a;
             to.text = name;
-            back.ins = Instr{"j" + inverse(cc), to, Operand(), 1};
+            back.ins = Instr{opt::jcc(inverse(cc)), to, Operand(), 1};
             inserts.push_back(Insert{last + 1, back});
             changed = true;
         }

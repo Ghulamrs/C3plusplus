@@ -45,7 +45,7 @@ void read(Effects &e, const Operand &o) {
 }
 
 bool explicitOnly(const Instr &i) {
-    if (i.m == "imul" && i.operands != 2) return false;           // rdx:rax, unnamed
+    if (i.m == mn::Imul && i.operands != 2) return false;         // rdx:rax, unnamed
     return opcodeOf(i.m).has(Opcode::kExplicit);
 }
 

@@ -5,15 +5,10 @@ namespace opt {
 namespace {
 
 bool gpr(const Operand &o) { return o.kind == Operand::Register && o.reg.id >= 0 && o.reg.id < kGprs; }
-bool is(const std::string &m, std::initializer_list<const char *> names) {
-    for (const char *n : names) if (m == n) return true;
-    return false;
-}
-
 // The bytes a load fetches, and whether what it leaves may stand for them at four bytes.
 int loadWidth(const Instr &l) {
     if (!l.a.isMem() || !gpr(l.b)) return 0;
-    if (l.m == "movl" || l.m == "movslq") return 4;
+    if (l.m.is({mn::Movl, mn::Movslq})) return 4;
     if (isMovQ(l.m) && l.b.reg.width == 8) return 8;
     return 0;
 }
@@ -23,7 +18,7 @@ int loadWidth(const Instr &l) {
 bool readsAsValue(const Instr &i, const Effects &e, int r) {
     if ((i.a.kind == Operand::Register || i.a.kind == Operand::Indirect) && i.a.reg.id == r) return true;
     if ((i.a.indexed() && i.a.index.id == r) || (i.b.indexed() && i.b.index.id == r)) return true;
-    const bool overwrites = i.m.compare(0, 3, "mov") == 0 || i.m.compare(0, 3, "set") == 0 || i.m == "lea";
+    const bool overwrites = i.m.row().has(Opcode::kWritesOnly) || i.m.row().kind == Opcode::Setcc;
     if (i.b.isReg(r) && (!overwrites || i.b.reg.width < 4)) return true;
     return !explicitOnly(i) && (e.reads & bit(r));
 }
@@ -41,11 +36,11 @@ bool foldLoads(Stream &s, Flow &f, const Convention &c) {
             if (use.kind != Entry::Ins || use.dead) continue;
             f.joinPads(b, k, live);
             Instr &u = use.ins;
-            const bool arith = is(u.m.name(), {"add", "sub", "and", "or", "xor", "cmp", "imul"}) && u.operands == 2;
+            const bool arith = u.m.is({mn::Add, mn::Sub, mn::And, mn::Or, mn::Xor, mn::Cmp, mn::Imul}) && u.operands == 2;
             // The operand a load could stand in for: the source, or cmp's other side.
             Operand *slot = nullptr;
             if (arith && gpr(u.a) && gpr(u.b) && u.a.reg.id != u.b.reg.id) slot = &u.a;
-            else if (u.m == "cmp" && gpr(u.b) && (gpr(u.a) || u.a.kind == Operand::Immediate) &&
+            else if (u.m == mn::Cmp && gpr(u.b) && (gpr(u.a) || u.a.kind == Operand::Immediate) &&
                      !(gpr(u.a) && u.a.reg.id == u.b.reg.id)) slot = &u.b;
             const int r = slot ? slot->reg.id : -1;
             if (slot && !(live.regs & bit(r))) {
@@ -68,7 +63,7 @@ bool foldLoads(Stream &s, Flow &f, const Convention &c) {
                     (base < 0 || !(written & bit(base))) && (index < 0 || !(written & bit(index)))) {
                     const int width = slot->reg.width;
                     *slot = s[l].ins.a;
-                    if (slot == &u.b && u.a.kind == Operand::Immediate) u.m = width == 4 ? "cmpl" : "cmpq";
+                    if (slot == &u.b && u.a.kind == Operand::Immediate) u.m = width == 4 ? mn::Cmpl : mn::Cmpq;
                     s[l].dead = true;
                     f.effects[k] = effectsOf(u, c);
                     changed = true;
@@ -87,7 +82,7 @@ bool foldOffsets(Stream &s, Flow &f, const Convention &c) {
         for (int k = blk.begin; k < blk.end; ++k) {
             if (s[k].kind != Entry::Ins || s[k].dead) continue;
             const Instr &add = s[k].ins;
-            if (!(add.m == "add" || add.m == "addq") || !gpr(add.b) || add.b.reg.width != 8 || frameReg(add.b.reg.id) ||
+            if (!add.m.is({mn::Add, mn::Addq}) || !gpr(add.b) || add.b.reg.width != 8 || frameReg(add.b.reg.id) ||
                 add.a.kind != Operand::Immediate || !add.a.numeric)
                 continue;
             const int r = add.b.reg.id;
@@ -133,7 +128,7 @@ bool jump(const Instr &i) { const Opcode::Kind k = opcodeOf(i.m).kind; return k 
 // flags unread - becomes `(%base,%idx,1)` at each use, and the add goes.
 bool foldAdd(Stream &s, Flow &f, const Convention &c, const Block &blk, int k) {
     const Instr &add = s[k].ins;
-    if (add.m != "add" || add.operands != 2 || !reg64(add.a) || !reg64(add.b) || add.a.reg.id == add.b.reg.id) return false;
+    if (add.m != mn::Add || add.operands != 2 || !reg64(add.a) || !reg64(add.b) || add.a.reg.id == add.b.reg.id) return false;
     const int idx = add.a.reg.id, base = add.b.reg.id;
     std::vector<Operand *> uses;
     bool ok = true, ended = false, flagsSettled = false, idxGone = false;
@@ -163,8 +158,8 @@ bool foldAdd(Stream &s, Flow &f, const Convention &c, const Block &blk, int k) {
 // The scale a `shl $k` or an `imul $s` of an index register stands for; 0 for neither.
 int scaleOf(const Instr &i) {
     if (i.operands != 2 || i.a.kind != Operand::Immediate || !i.a.numeric || !reg64(i.b)) return 0;
-    if (i.m == "shl" && i.a.value >= 1 && i.a.value <= 3) return 1 << i.a.value;
-    if (i.m == "imul" && (i.a.value == 2 || i.a.value == 4 || i.a.value == 8)) return static_cast<int>(i.a.value);
+    if (i.m == mn::Shl && i.a.value >= 1 && i.a.value <= 3) return 1 << i.a.value;
+    if (i.m == mn::Imul && (i.a.value == 2 || i.a.value == 4 || i.a.value == 8)) return static_cast<int>(i.a.value);
     return 0;
 }
 

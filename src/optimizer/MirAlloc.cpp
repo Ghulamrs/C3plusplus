@@ -48,7 +48,7 @@ int Allocator::classOfReg(int reg) const {
 // alike, such a copy is of a register to itself: `mov`/`movq` for the general class, `movapd`/`movaps` for xmm.
 bool Allocator::copyOf(const Instr &i, int &src, int &dst) const {
     if (i.operands != 2 || !wholeReg(i.a) || !wholeReg(i.b)) return false;
-    const bool xmm = i.m == "movapd" || i.m == "movaps";
+    const bool xmm = i.m.is({mn::Movapd, mn::Movaps});
     if (!xmm && !isMovQ(i.m)) return false;
     src = i.a.reg.id;
     dst = i.b.reg.id;

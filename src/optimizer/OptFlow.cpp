@@ -6,11 +6,12 @@ namespace opt {
 // register goes where nothing here can follow.
 Control controlOf(const Instr &i) {
     Control c;
-    if (i.m == "ret") { c.ends = true; c.falls = false; c.returns = true; return c; }
-    if (i.m == "call") { c.calls = true; return c; }
-    if (i.m[0] != 'j') return c;
+    const Opcode::Kind kind = i.m.row().kind;
+    if (kind == Opcode::Ret) { c.ends = true; c.falls = false; c.returns = true; return c; }
+    if (kind == Opcode::Call) { c.calls = true; return c; }
+    if (kind != Opcode::Jmp && kind != Opcode::Jcc) return c;
     c.ends = true;
-    c.falls = i.m != "jmp";
+    c.falls = kind != Opcode::Jmp;
     if (i.a.kind == Operand::Label) c.target = i.a.text.str();
     return c;
 }
