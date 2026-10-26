@@ -343,20 +343,26 @@ bytes (`tools/determinism.sh` runs it).
 module per translation unit for functions. Handles are `std::uint32_t` wrapped one type apiece - `ValueId`,
 `BlockId`, `InstId`, `FuncId` - with 0 as none, numbered in creation order, so two runs make the same IR and
 stage 2 = stage 3 has what it needs (design section 2). A node is `{kind, operands range, payload}` and every
-reader is a `switch` on kind. **Types are `const Type *`** from the front end's `TypeTable`, which interns them
-for the unit (`Type.h`, "Surviving cpp11 modules keep their shape: the TypeTable", section 2): the design's
-`TypeId` is that pointer, and a wrapper buys nothing while the table is pointer-interned. A value's type is the
-front end's type - `int`, `unsigned char`, `double`, `bool`, a pointer, an enumeration - sized by the `Target`;
-there is no separate `i32`/`i64` alphabet.
+reader is a `switch` on kind. **Types are `TypeId`**, the design's handle (section 2, R6.3; C7, 2026-10-26): a
+wrapped index into the front end's `TypeTable`, which interns every type for the unit (`Type.h`, "Surviving cpp11
+modules keep their shape: the TypeTable") and numbers each as it is made - the fundamental kinds first, in `Kind`
+order, then every derived type in creation order - so `TypeTable::id(t)` and `TypeTable::type(id)` are each
+other's inverse, 0 is none, and two runs number alike. An earlier draft of this paragraph kept `const Type *`
+and said a wrapper bought nothing while the table is pointer-interned; it bought the one thing the design asks of
+every new structure, that a type in the IR is data a dump can print and a determinism check can compare, and
+the user approved the handle at RP2a's C7 item. The IR holds `TypeId` and asks the table for the `Type` where it
+needs layout; the typed tree (3.8) keeps `const Type *`, being read beside the table by the Typer and the
+lowering alike, and converts at the boundary. A value's type is the front end's type - `int`, `unsigned char`,
+`double`, `bool`, a pointer, an enumeration - sized by the `Target`; there is no separate `i32`/`i64` alphabet.
 
 ```cpp
-struct Value { const Type *type; InstId def; BlockId param; std::uint16_t index; };   // defined by an instruction, or block param i
-struct Inst  { Op op; const Type *type; std::uint32_t first, count;   // operands in Function::operands
+struct Value { TypeId type; InstId def; BlockId param; std::uint16_t index; };   // defined by an instruction, or block param i
+struct Inst  { Op op; TypeId type; std::uint32_t first, count;        // operands in Function::operands
                Payload payload; syntax::NodeId at; };                 // the syntax node, for diagnostics and -g
 struct Block { std::vector<ValueId> params; std::vector<InstId> insts; InstId term; bool pad; };
 struct Function {
     std::string symbol, alias, displayName; bool isStatic, isInline, variadic, hasThis, noexcept_;
-    const Type *returns; std::vector<ValueId> params; ValueId sret;      // the hidden result pointer, where the ABI gives one
+    TypeId returns; std::vector<ValueId> params; ValueId sret;           // the hidden result pointer, where the ABI gives one
     std::vector<AllocaInfo> frame;                                       // every alloca: type, align, syntax var
     BlockId entry; std::vector<BlockId> blocks;                          // entry first; the rest in creation order
     std::vector<std::string> spec;                                       // throw(T...)'s type_info symbols, as Ast.h's Function carries them
@@ -521,12 +527,16 @@ promotes. The fifteen layout maps the adapter reads (`callSlots_`, `blockCleanup
 **The record moved onto the typed tree (M3b.0).** `Parser::Resolved` (`Parser.h:512-526`: `what` in {Local,
 Global, Function, Call, Callee, Member, Enumerator, StaticMember, This, Temporary, TypeName, Value}, `type`,
 `owner`, `symbol`, `serial`, `value`, `isConst`, `isThreadLocal`, `name`) becomes `sema::Resolution` in
-`Typing.h`, held in `TypedTree::resolutions_`; `TypedNode` gains `std::uint32_t resolved` (0 none), `const Type
-*castType`, and a `Folded {long long v; const Type *t; bool has}` for `sizeof`/`alignof`/`noexcept` and a
-literal's value - the parser's `castTypes_`, `keywordValues_`, `literalTokens_`, `refCastTypes_` (`Parser.h:
-562-565, 680`) copied in by the Typer as it types each node, from the maps the parser fills at parse time in the
-scope it had then (12.1's point 3 is unchanged by the copy). `declaredTypes_` is already `TypedNode::type` for a
-`var`. The parser's maps stay until M3b.7 for the adapter and `-check=typed`'s cross-check.
+`Typing.h`, held in `TypedTree::resolutions_`; `TypedNode` gains `std::uint32_t resolved` (0 none), `TypeId
+castType` with `bool castXvalue`, a `Folded {long long value; TypeId type; bool has}` for `sizeof`/`alignof`/
+`noexcept` and an integer or character literal's value, and `std::uint32_t literal`, an index into
+`TypedTree::literals_` holding the literal's `Token` whole (a floating literal's `dvalue`, a string's text) - the
+parser's `castTypes_`, `keywordValues_`, `literalTokens_`, `refCastTypes_` copied in by the Typer as it types each
+node, from the maps the parser fills at parse time in the scope it had then (12.1's point 3 is unchanged by the
+copy). **As built, 2026-10-26**: the record's `type` and `owner` are `TypeId` (R6.3; `Parser::Resolved` keeps its
+pointers, both structs over one `ResolutionKind::What`), and `-check=typed` holds every typed node's copy against
+the parser's maps, a missing or different one counted into `differ`. `declaredTypes_` is already `TypedNode::type`
+for a `var`. The parser's maps stay until M3b.7 for the adapter and `-check=typed`'s cross-check.
 
 ### 3.9 Selection into MIR
 

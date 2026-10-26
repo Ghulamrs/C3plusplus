@@ -5,6 +5,7 @@
     tools/memory-gate --count     the counts, one per kind
     tools/memory-gate --check     fail if any count is above tools/memory-gate.baseline
     tools/memory-gate --record    write today's counts as the baseline
+    tools/memory-gate --pointers  every raw-pointer declarator in the handle-rule files
 
 R6.1 forbids `new`, `delete`, `malloc`, `calloc`, `realloc`, `free` and `alloca` in the
 compiler's source; R6.6 converts what exists module by module, so the gate is that no
@@ -12,6 +13,13 @@ count ever rises. Comments, string and character literals are skipped, and so ar
 two spellings that are not allocation: `= delete` on a function and `operator new` /
 `operator delete` named as functions. `make_owned`'s one `new` (R6.4) will be the only
 one left when the count reaches it.
+
+**The second count** (C7, 2026-10-26) is R6.3's: the new structures - the syntax tree, the
+typed tree, the IR, the MIR - use index handles, so a raw-pointer declarator in `src/syntax`,
+`src/sema/Typing*`, `src/ir` and `src/optimizer/Mir*` is counted, `T *name` wherever a
+declaration can stand, with a function's `operator*` and an arithmetic `a * b` told apart by
+what stands on either side. Like the first it may only go down; it started at the value
+the baseline records. `const Type *` in the typed tree is most of it (M3-IR 3.1).
 """
 import os
 import re
@@ -24,6 +32,11 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 SRC = os.path.join(ROOT, "src")
 BASELINE = os.path.join(ROOT, "tools", "memory-gate.baseline")
 KINDS = ("new", "delete", "malloc", "calloc", "realloc", "free", "alloca")
+# The files the handle rule (R6.3) covers: the new structures, by directory or file prefix.
+HANDLE_FILES = (("src/syntax", ""), ("src/sema", "Typing"), ("src/ir", ""), ("src/optimizer", "Mir"))
+POINTERS = "raw-pointers"
+# A word before `*` that makes it a dereference or an arithmetic operator, never a declarator's type.
+NOT_A_TYPE = set("return sizeof case else do while if for switch new delete throw typedef".split())
 
 
 def code_only(text):
@@ -87,29 +100,64 @@ def counts(found):
     return c
 
 
+# A pointer type written: `T *name`, `const T *name`, `ns::T **name`, `T *const name`, a function `T *f(`, and a bare
+# `T *` as a template argument or an unnamed parameter - with a keyword, a number, a `)` or an operator before the type
+# ruled out, which is what tells `a * b` and `*p` apart from a declarator.
+DECLARATOR = re.compile(
+    r"(?<![\w)\]>.])(?:const\s+)?([A-Za-z_]\w*(?:::[A-Za-z_]\w*)*)\s*(\*+)\s*"
+    r"(?:(?:const\s+)?([A-Za-z_]\w*)\s*(?=[;,=)\[{(]|$)|(?=[>,)]))")
+
+
+def pointer_sites():
+    found = []
+    for base, prefix in HANDLE_FILES:
+        folder = os.path.join(ROOT, base)
+        if not os.path.isdir(folder):
+            continue
+        for name in sorted(os.listdir(folder)):
+            if not name.endswith((".cpp", ".h")) or not name.startswith(prefix):
+                continue
+            path = os.path.join(folder, name)
+            with open(path, encoding="utf-8", errors="replace") as f:
+                code = code_only(f.read())
+            for lineno, line in enumerate(code.split("\n"), 1):
+                for m in DECLARATOR.finditer(line):
+                    if m.group(1) in NOT_A_TYPE or (m.group(3) or "") in NOT_A_TYPE:
+                        continue
+                    found.append((os.path.relpath(path, ROOT), lineno, m.group(0).strip()))
+    return found
+
+
 def main(argv):
     found = sites()
     now = counts(found)
+    pointers = pointer_sites()
+    now[POINTERS] = len(pointers)
+    all_kinds = KINDS + (POINTERS,)
     if len(argv) == 1:
         for path, lineno, word in found:
             print("%s:%d: %s" % (path, lineno, word))
         return 0
+    if argv[1] == "--pointers":
+        for path, lineno, text in pointers:
+            print("%s:%d: %s" % (path, lineno, text))
+        return 0
     if argv[1] == "--count":
-        print(" ".join("%s %d" % (k, now[k]) for k in KINDS))
+        print(" ".join("%s %d" % (k, now[k]) for k in all_kinds))
         return 0
     if argv[1] == "--record":
         with open(BASELINE, "w") as f:
-            for k in KINDS:
+            for k in all_kinds:
                 f.write("%s %d\n" % (k, now[k]))
-        print("memory-gate: baseline recorded: " + " ".join("%s %d" % (k, now[k]) for k in KINDS))
+        print("memory-gate: baseline recorded: " + " ".join("%s %d" % (k, now[k]) for k in all_kinds))
         return 0
     if argv[1] == "--check":
         with open(BASELINE) as f:
             was = dict((k, int(v)) for k, v in (l.split() for l in f if l.strip()))
-        risen = [k for k in KINDS if now[k] > was.get(k, 0)]
+        risen = [k for k in all_kinds if k in was and now[k] > was[k]]
         for k in risen:
-            print("memory-gate: %s rose from %d to %d - R6.6 lets a count only go down" % (k, was.get(k, 0), now[k]))
-        fallen = [k for k in KINDS if now[k] < was.get(k, 0)]
+            print("memory-gate: %s rose from %d to %d - R6.6 lets a count only go down" % (k, was[k], now[k]))
+        fallen = [k for k in all_kinds if k in was and now[k] < was[k]]
         if fallen and not risen:
             print("memory-gate: lower than the baseline (" + ", ".join(fallen) + "); run --record to keep it")
         return 1 if risen else 0

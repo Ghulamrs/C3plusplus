@@ -17,9 +17,33 @@ TypedId TypedTree::add(syntax::NodeId syn, const Type *type, const std::vector<T
     n.type = type;
     n.first = static_cast<std::uint32_t>(children_.size());
     n.count = static_cast<std::uint32_t>(children.size());
+    n.resolved = 0;
+    n.castXvalue = false;
+    n.literal = 0;
     children_.insert(children_.end(), children.begin(), children.end());
     nodes_.push_back(n);
     return TypedId(static_cast<std::uint32_t>(nodes_.size() - 1));
+}
+
+void TypedTree::setResolution(TypedId id, const Resolution &r) {
+    nodes_[id.v].resolved = static_cast<std::uint32_t>(resolutions_.size());
+    resolutions_.push_back(r);
+}
+
+void TypedTree::setCast(TypedId id, TypeId to, bool xvalue) {
+    nodes_[id.v].castType = to;
+    nodes_[id.v].castXvalue = xvalue;
+}
+
+void TypedTree::setFolded(TypedId id, long long value, TypeId type) {
+    nodes_[id.v].folded.value = value;
+    nodes_[id.v].folded.type = type;
+    nodes_[id.v].folded.has = true;
+}
+
+void TypedTree::setLiteral(TypedId id, const Token &token) {
+    nodes_[id.v].literal = static_cast<std::uint32_t>(literals_.size());
+    literals_.push_back(token);
 }
 
 TypedId Typer::typeFunction(syntax::NodeId fn) {
@@ -66,7 +90,47 @@ TypedId Typer::node(syntax::NodeId id) {
                      : isExpression(n.kind) ? expression(id, parts) : nullptr;
     if (type == nullptr && isExpression(n.kind)) type = recordedValue(id);
     if (scoped) scopes_.pop_back();
-    return tree_.add(id, type, kids, decl);
+    const TypedId made = tree_.add(id, type, kids, decl);
+    record(id, made);
+    return made;
+}
+
+// **The parser's facts move onto the typed node** (M3b.0, M3-IR 3.8): the record as the parser made it, a cast's type
+// (a reference cast's with its category), a sizeof's or a literal's folded value, and a literal's token - so the
+// lowering reads the typed tree and nothing of the parser. The layout maps stay the parser's: M3's layout is its own.
+void Typer::record(syntax::NodeId id, TypedId t) {
+    std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
+    if (r != p_.resolutions_.end()) {
+        // The record field for field, its two types as the table's handles.
+        Resolution out;
+        out.what = r->second.what;
+        out.type = TypeTable::id(r->second.type);
+        out.owner = TypeTable::id(r->second.owner);
+        out.symbol = r->second.symbol;
+        out.serial = r->second.serial;
+        out.value = r->second.value;
+        out.isConst = r->second.isConst;
+        out.isThreadLocal = r->second.isThreadLocal;
+        out.name = r->second.name;
+        tree_.setResolution(t, out);
+    }
+    const auto cast = p_.castTypes_.find(id.v);
+    if (cast != p_.castTypes_.end()) tree_.setCast(t, TypeTable::id(cast->second), false);
+    const auto ref = p_.refCastTypes_.find(id.v);
+    if (ref != p_.refCastTypes_.end()) tree_.setCast(t, TypeTable::id(ref->second.first), ref->second.second);
+    const auto k = p_.keywordValues_.find(id.v);
+    if (k != p_.keywordValues_.end()) tree_.setFolded(t, k->second.first, TypeTable::id(k->second.second));
+    std::unordered_map<std::uint32_t, std::size_t>::const_iterator lit = p_.literalTokens_.find(id.v);
+    if (lit != p_.literalTokens_.end()) {
+        const Token &token = p_.tokens_[lit->second];
+        tree_.setLiteral(t, token);
+        // An integer or character literal's value is a fact of the token; a floating one is its token's dvalue.
+        if (token.kind == TokenKind::Num && !token.isFloat && tree_.node(t).type != nullptr)
+            tree_.setFolded(t, token.value, TypeTable::id(tree_.node(t).type));
+    }
+    // `true`, `false` and `nullptr` have no token recorded; their values are the words'.
+    if (p_.syntaxTree_.node(id).kind == syntax::Kind::WordLit && tree_.node(t).type != nullptr)
+        tree_.setFolded(t, p_.syntaxTree_.text(id) == "true" ? 1 : 0, TypeTable::id(tree_.node(t).type));
 }
 
 // [lex.icon] table 6 and [lex.fcon]: a literal's type from its token, the decimal ladder and the hex or octal one.
@@ -333,6 +397,36 @@ struct Collect final : Visitor {
 
 }   // namespace
 
+// **The copy held against its source** (M3b.0): the record, cast type, folded value and literal token the Typer put on
+// typed node `t` against the parser's maps for its syntax node - what is missing, or copied differently, by name.
+std::string Typer::recordDiffers(const Parser &p, const TypedTree &tree, TypedId t) {
+    const TypedNode &n = tree.node(t);
+    const std::uint32_t id = n.syntax.v;
+    std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator pr = p.resolutions_.find(id);
+    if ((pr != p.resolutions_.end()) != (n.resolved != 0)) return "the record";
+    if (n.resolved != 0) {
+        const Resolution &r = tree.resolution(t);
+        if (r.what != pr->second.what || p.types_.type(r.type) != pr->second.type ||
+            p.types_.type(r.owner) != pr->second.owner || r.symbol != pr->second.symbol || r.serial != pr->second.serial ||
+            r.value != pr->second.value || r.isConst != pr->second.isConst || r.isThreadLocal != pr->second.isThreadLocal ||
+            r.name != pr->second.name)
+            return "the record's fields";
+    }
+    const auto cast = p.castTypes_.find(id);
+    const auto ref = p.refCastTypes_.find(id);
+    const TypeId to = TypeTable::id(ref != p.refCastTypes_.end() ? ref->second.first
+                                    : cast != p.castTypes_.end() ? cast->second : nullptr);
+    if (n.castType != to || n.castXvalue != (ref != p.refCastTypes_.end() && ref->second.second)) return "the cast's type";
+    const auto k = p.keywordValues_.find(id);
+    if (k != p.keywordValues_.end() &&
+        (!n.folded.has || n.folded.value != k->second.first || p.types_.type(n.folded.type) != k->second.second))
+        return "the folded value";
+    const auto lit = p.literalTokens_.find(id);
+    if ((lit != p.literalTokens_.end()) != (n.literal != 0)) return "the literal's token";
+    if (n.literal != 0 && tree.literal(t).pos != p.tokens_[lit->second].pos) return "the literal's token";
+    return std::string();
+}
+
 Census Typer::census(const Parser &p, const Program &program) {
     Census c;
     std::map<std::string, std::size_t> bySymbol;
@@ -393,6 +487,12 @@ std::string Typer::check(Parser &p, const Program &program, const Source &src, i
     for (std::uint32_t i = 1; i <= typer.tree().size(); i++) {
         const TypedNode &n = typer.tree().node(TypedId(i));
         const syntax::Kind kind = st.node(n.syntax).kind;
+        const std::string copy = recordDiffers(p, typer.tree(), TypedId(i));
+        if (!copy.empty()) {
+            (*differ)++;
+            out += src.where(st.node(n.syntax).loc) + ": " + syntax::kindName(kind) + " '" + st.text(n.syntax) +
+                   "': " + copy + " on the typed tree is not the parser's\n";
+        }
         if (n.type == nullptr) {
             if (kind < syntax::Kind::Block) untyped[syntax::kindName(kind)]++;      // an expression typed null
             if (kind < syntax::Kind::Block && std::getenv("CXX1_UNTYPED") != nullptr)

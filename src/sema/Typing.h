@@ -1,9 +1,10 @@
 #pragma once
 
 // **Sema's typing of the syntax tree** - M2.10, doc-cxx3/M2-PLAN.md. The typed tree is an arena like the syntax tree's,
-// a node per syntax node with the type Sema gives it; the subset typed so far is scalars, operators, locals and calls,
-// and a node outside it is typed null with its parts still typed. -check=typed holds it against the parser's Ast.h.
+// a node per syntax node with the type Sema gives it and, from M3b.0, the record the parser made where it resolved the
+// node (M3-IR 3.8); a node outside the subset is typed null with its parts still typed. -check=typed holds it to Ast.h.
 
+#include "../Lexer.h"
 #include "../syntax/Syntax.h"
 #include "../Type.h"
 
@@ -26,24 +27,72 @@ struct TypedId {
     bool valid() const { return v != 0; }
 };
 
+// **The kinds of thing a node resolves to** (M2.16), one enum for the parser's record and the typed tree's copy, so
+// the two cannot drift: Function is a function named as a value, Call one reached by a call, Callee the function on a
+// call's callee node, TypeName the class a temporary's callee names, Value a type the parser gave a form naming no entity.
+struct ResolutionKind {
+    enum What { None, Local, Global, Function, Call, Callee, Member, Enumerator, StaticMember, This, Temporary,
+                TypeName, Value };
+};
+
+// **The record on the typed tree** (M3b.0, M3-IR 3.8): Parser::Resolved field for field, its types as TypeId handles
+// (R6.3), copied by the Typer from the record the parser made where it resolved the node, in the scope it had then.
+struct Resolution : ResolutionKind {
+    What what;
+    TypeId type;            // as declared: a reference keeps its `&`, a function is its function type
+    TypeId owner;           // a member's class, a member function's
+    std::string symbol;     // a global's, a function's or a static member's linkage name; a local's static name
+    int serial;             // a local's serial; a member's offset
+    long long value;        // an enumerator's, a folded static member's
+    bool isConst, isThreadLocal;    // a global's
+    std::string name;       // a global's or a function's lookup name, which its Var is named by
+    Resolution() : what(None), serial(-1), value(0), isConst(false), isThreadLocal(false) {}
+};
+
+// What a sizeof, alignof or noexcept folded to, or an integer or character literal's value, with its type.
+struct Folded {
+    long long value;
+    TypeId type;
+    bool has;
+    Folded() : value(0), has(false) {}
+};
+
 struct TypedNode {
     syntax::NodeId syntax;
     const Type *type;           // null where the subset does not reach
     std::uint32_t first, count;
     syntax::NodeId decl;        // a name's: the `var` node it names, none for one at file scope
+    // **The parser's facts for this node, copied as it was typed** (M3b.0): its record (an index into
+    // TypedTree::resolution, 0 none), a cast's named type, what it folded to, and a literal's token (0 none).
+    std::uint32_t resolved;
+    TypeId castType;            // a cast's type as named; a static_cast or const_cast to a reference keeps its `&`
+    bool castXvalue;            // such a reference cast's operand is an xvalue: `static_cast<T &&>`
+    Folded folded;
+    std::uint32_t literal;
 };
 
 class TypedTree {
 public:
-    TypedTree() { nodes_.push_back(TypedNode()); }
+    TypedTree() { nodes_.push_back(TypedNode()); resolutions_.push_back(Resolution()); literals_.push_back(Token()); }
     TypedId add(syntax::NodeId syn, const Type *type, const std::vector<TypedId> &children,
                 syntax::NodeId decl = syntax::NodeId());
     const TypedNode &node(TypedId id) const { return nodes_[id.v]; }
     TypedId child(TypedId id, std::uint32_t i) const { return children_[nodes_[id.v].first + i]; }
     std::size_t size() const { return nodes_.size() - 1; }
+    // The record and the other facts of node `id`, each set once as the Typer types it (M3b.0).
+    void setResolution(TypedId id, const Resolution &r);
+    void setCast(TypedId id, TypeId to, bool xvalue);
+    void setFolded(TypedId id, long long value, TypeId type);
+    void setLiteral(TypedId id, const Token &token);
+    const Resolution &resolution(TypedId id) const { return resolutions_[nodes_[id.v].resolved]; }
+    // The token a literal node was read from; `node(id).literal` says whether there is one, and 0 gives an End token.
+    const Token &literal(TypedId id) const { return literals_[nodes_[id.v].literal]; }
+    std::size_t resolutionCount() const { return resolutions_.size() - 1; }
 private:
     std::vector<TypedNode> nodes_;
     std::vector<TypedId> children_;
+    std::vector<Resolution> resolutions_;    // index 0 is the none record
+    std::vector<Token> literals_;            // index 0 is no token
 };
 
 // **The census of what the typed tree covers** (M2.15): every function the backends emit, split into those whose body the
@@ -70,6 +119,10 @@ public:
     static std::string censusKinds(const Census &c);
 private:
     TypedId node(syntax::NodeId id);
+    // The parser's record, cast type, folded value and literal token for syntax node `id`, copied onto typed node `t`.
+    void record(syntax::NodeId id, TypedId t);
+    // -check=typed's half for the copy: what on typed node `t` is not the parser's, or nothing.
+    static std::string recordDiffers(const Parser &p, const TypedTree &tree, TypedId t);
     const Type *expression(syntax::NodeId id, const std::vector<const Type *> &parts);
     const Type *literal(syntax::NodeId id);
     const Type *named(syntax::NodeId id, syntax::NodeId *decl);

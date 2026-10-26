@@ -453,3 +453,86 @@ fill them in; a quiet interleaved compile-time round; `make_owned` into a header
 `new`s and `OptCosts.h`'s two can go (memory gate 1,060); the `tests/open/member-initialiser-namespace-enumerator`
 fix in `Parser::memberInitialiser` (set `namespaceStack_` to the class's namespace for the replay, as the 1.14
 round did for out-of-line members - one guard, measured by that case and `make test`); then M3b.1 on `m3b0`. **The coordinator is mending that lookup on `fix-nsdmi-enum` (off `f5967f9`) and registered the same shape as `tests/open/member-initialiser-enumerator-in-namespace.cpp`**; mine, `member-initialiser-namespace-enumerator`, is the duplicate and goes with the fix, and `OptValues.cpp:18`'s `opt::kNoCond` may be unqualified again then. M3a.5's self-host row above was measured on the Mac with the line qualified (71 of 71 at both levels), not with the fix.
+
+**C7, the design-conformance items the user approved at RP2a** (2026-10-26, Fable 5.1, branch `m3b0` off `f5967f9`,
+one commit; the Windows rows owed, the box being absent). Five items, each where the design says it belongs:
+
+- **`TypeId` is a wrapped index into the `TypeTable`** (`Type.h`, `Type.cpp`): the fundamental kinds take 1..N in `Kind`
+  order as the table is made, and every derived type the next number as `TypeTable::adopt` interns it - the one place a
+  derived type is now registered, so a copy (`withConst`'s) is renumbered there; `TypeTable::id(t)` and `type(id)` are
+  each other's inverse and 0 is none. Nothing reads it yet but M3b.1's IR; `identical.sh` against a REF of `f5967f9` in
+  its own tree reads **6,039 compared, 0 differ** - the nine lib-path diagnostics of earlier runs are gone because the
+  REF's binary sits beside its own `lib/`, which is RP2a's condition 5 met by construction.
+- **`M3-IR.md` 3.1 rewritten**: the IR's `Value`, `Inst` and `Function` carry `TypeId`; the earlier sentence that a
+  wrapper bought nothing is kept in the paragraph as what it was, with the reason it was reversed. The typed tree keeps
+  `const Type *` and converts at the boundary (3.8).
+- **The adapter is an R6.3 exception, dated and bounded.** `src/sema/Adapter.*` holds a `Parser &`, reads the parser's
+  fifteen layout maps and builds `Ast.h` nodes through raw owning pointers; it is M2's harness and is deleted whole at
+  M3b.7. Until then it is excepted from R6.3's handle rule and left out of the second memory count below. The
+  exception ends when M3b.7 lands; a reader finding it after that date has found a defect.
+- **`tools/memory-gate` counts raw-pointer declarators** in the files the handle rule covers - `src/syntax`,
+  `src/sema/Typing*`, `src/ir`, `src/optimizer/Mir*` - as `raw-pointers`, the second line of the baseline. It
+  started at **38** on `f5967f9` (`--pointers` lists them: 28 `const Type *`, two `syntax::NodeId *` and two `int *`
+  in the Typer, `const char *kindName` twice, and `const Operand *ops` and `long *row` twice each in the allocator),
+  and like the first count may only go down. **One rule written down now rather than discovered by a red leg**: M3a.5 renames `OptIr.h` into `Mir.h` and
+  may bring old pointer code under the `Mir*` prefix; that is a rename and not new pointers, so the baseline is
+  re-recorded once at that merge with the renamed files' count stated here, and goes only down from there.
+- **`tools/self-host` has a stage-0 column**: every source compiled `-S` by stage 0 as well, `s0/` against `s1/`, in the
+  tool's exit status - the claim RP2a section 6 made by hand ("stage 0 and stage 1 agree on all 71") is the tool's
+  now. `self-host.cmd` is owed the same column when the box is back.
+- The opcode table read-only once initialised was done at M3a.1 (`125db80`, M3-IR 2.6); nothing to add.
+
+**M3b.0, the record moves onto the typed tree** (2026-10-26, Fable 5.1, branch `m3b0`, one commit after C7's; for
+review point 3 with M3b.1). What the row above asked, and what each part turned out to be:
+
+- **`TypedNode` carries the parser's facts** (`src/sema/Typing.h`): `resolved`, an index into
+  `TypedTree::resolutions_` (0 none); `castType` and `castXvalue`, a cast's named type with a reference cast's
+  category; `folded`, what a `sizeof`, `alignof` or `noexcept` folded to and an integer or character literal's value,
+  with its type; `literal`, an index into `TypedTree::literals_`, the `Token` a literal was read from, copied whole so a
+  floating literal's `dvalue` and a string's text travel with it. `Typer::record` fills them as each node is typed, from
+  the parser's `resolutions_`, `castTypes_`, `refCastTypes_`, `keywordValues_` and `literalTokens_` - the maps the
+  parser fills at parse time in the scope it had then, so 12.1's point 3 is unchanged by the copy.
+- **The record is `sema::Resolution`, field for field `Parser::Resolved`, its two types as `TypeId`** - the handle rule
+  applied to the typed tree's new fields on the day the handle landed, and the reason the second memory count stayed
+  at 38 rather than rising by the twelve pointers a straight copy of the struct would have added. The kinds are one
+  enum, `sema::ResolutionKind::What`, that both structs derive from, so the parser's record and the tree's cannot drift
+  by a kind; `Parser::Resolved` keeps its `const Type *` and every parser site is untouched. `TypeId` is exercised
+  from the first commit after its own: `TypeTable::id` on the way in, `TypeTable::type` on the way out.
+- **The copy has an oracle.** `-check=typed` holds every typed node's copy against the parser's maps
+  (`Typer::recordDiffers`: the record's every field with the types read back through the table, the cast type and
+  category, the folded value, the literal's token by position) and counts a missing or different copy as a
+  difference - so `differ=0` now says the copy is complete as well as the types right. Over the 648 host cases it
+  found none; the report's fields are unchanged.
+- **`ir::Lowering` exists with its constructor and nothing else** (`src/ir/Lowering.h`, `.cpp`): `(const
+  sema::TypedTree &, TypeTable &, const Target &, Program &)`, no `Parser` in reach - the header includes nothing of
+  `src/parser/`, which is the compile-time gate the row asked for; M3b.1 fills the class in. `src/ir` is in every
+  source list (`Makefile`, `msvc/build.cmd`, `tools/self-host`, `self-host.cmd`) and in the second memory count.
+- **The fifteen layout maps did not move**, and the adapter still reads them and the parser's record directly - it is
+  deleted at M3b.7 and excepted until then (C7 above). **C2 is confirmed in**: the Comma a virtual call with a
+  computed address, a member-pointer call or a conversion-operator call is wrapped in carries the call's record at
+  five sites (`ParserExprCall.cpp:787, 903`, `ParserExpr.cpp:2788, 3022, 3112`).
+
+The gate, on the Mac (clang, `make test` green): `tests/typed.sh` **648 passed, 0 differ** (8,230 functions, 7,423
+bodies, 807 compiler-written; 185,006 nodes, 128,798 typed, 273 untyped) and every one of the 648 per-case reports
+**byte-identical** to the REF's but `windows-h-layout`, which does not compile for this host and names its tree's
+`lib/`; `tests/adapted.sh` **648 passed, 0 differ**, 1,269 adapted and 1,269 the same; `identical.sh` against the REF of
+`f5967f9` **6,039 compared, 0 differ**; run.sh 988/0, emit.sh 1,930/0, names.sh 655/0, overload.sh 44/0, syntax.sh 3/0,
+exclusions 126 sites 0/0, comment cap 0, memory gate held at `new` 1,062 and `raw-pointers` 38. **Linux**: owed for both commits - the session's budget ended while the box was still building C7's leg (g++ 11.5,
+`~/m3b0-c7/`, started by `~/linux-leg.sh c7`, which prints run.sh at -O0 and -O2, typed.sh, adapted.sh and the memory
+gate); the M3b.0 tree is on the box as `~/m3b0-m3b0.tgz`, and `sh ~/linux-leg.sh m3b0` runs its leg once the C7 one
+has finished (one build at a time there). Both are Opus 5.5's to read and record here; the leg script deletes nothing,
+so `~/m3b0-c7` and `~/m3b0-m3b0` are to be removed after.
+**Windows**: owed, the box being absent. **`tools/self-host` could not be run on this branch**, and the reason is not
+M3b.0's: stage 0 at `f5967f9` does not build stage 1 - `src/optimizer/OptValues.cpp:18`, `Cond cc = kNoCond;`, is
+refused "'kNoCond' was not declared" by the REF binary as by this one, and `make test` never compiles the compiler's
+own sources. Reduced to one shape - a default member initialiser naming an enumerator of an enum declared in the
+enclosing namespace, which the initialiser's per-constructor replay reads with no namespace open (a mem-initialiser,
+or the enum at global scope, is found) - and registered as
+`tests/open/member-initialiser-enumerator-in-namespace.cpp` with clang's `-1`. It is M3a.5's to meet, its gate being
+the self-host; the stage-0 column is measured there, or on a tree whose stage 0 builds stage 1. **And one more,
+older than the branch**: `-check=typed` run for `-arch x86_64-windows -masm=masm` over the 631 cases that compile for
+it (the M2 close review's census target) reads 8,712 functions, 131,374 typed, 266 untyped, **differ=1** - the REF
+reads the same one: `explicit-destructor-call.cpp:76`, `p->~Base()` on a virtual destructor, which the Typer types
+`void` by [class.dtor] and the parser `void *`, the Microsoft deleting destructor `??_G` returning `this`. The copy's
+self-check found nothing on that target either. `typed.sh` runs the host target only, so no gate reads it; it is
+written here for M3b.2, which lowers that call on the Microsoft ABI and must decide which answer the typed tree gives.

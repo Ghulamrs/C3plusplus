@@ -12,6 +12,7 @@
 #include "../sema/Classes.h"
 #include "../sema/Constexpr.h"
 #include "../sema/Linkage.h"
+#include "../sema/Typing.h"
 #include "../syntax/Syntax.h"
 
 #include <functional>
@@ -509,12 +510,8 @@ private:
     // The type each `var` node declares, by node - what Sema's typing reads a name's type from (M2.10).
     std::unordered_map<std::uint32_t, const Type *> declaredTypes_;
     // **What a name, a member, a call or an operator resolved to, recorded where the parser resolved it** (M2.16).
-    struct Resolved {
-        // Function: named as a value, the type its function type; Call: reached by a call, the value its return;
-        // Callee: the function a call reached, on its callee's node; TypeName: a type a temporary's callee names;
-        // Value: the type the parser gave a form that names no entity - new, delete, throw, a lambda, a string.
-        enum What { None, Local, Global, Function, Call, Callee, Member, Enumerator, StaticMember, This, Temporary,
-                    TypeName, Value };
+    // The kinds are sema::ResolutionKind's, shared with the typed tree's copy (sema::Resolution, M3b.0).
+    struct Resolved : sema::ResolutionKind {
         What what = None;
         const Type *type = nullptr;      // as declared: a reference keeps its `&`, a function is its function type
         const Type *owner = nullptr;     // a member's class, a member function's
