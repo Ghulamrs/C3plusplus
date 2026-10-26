@@ -1,0 +1,11 @@
+# Cases whose reference cannot be built or printed faithfully on a Windows
+# host, where clang links against Microsoft's C runtime: the C6000 side is the
+# same as on Linux and macOS, where these pass, and the reference is what
+# differs. tests/tms6747.sh reports these as SKIP on a Windows host only.
+arg_types             the CRT prints a null %p as 0000000000000000, not 0x0
+fp_nan_ordering       the CRT prints a NaN as -nan(ind), not nan
+file_text             the reference opens /tmp, which a Windows program has not got
+file_binary           the reference opens /tmp, which a Windows program has not got
+io_three_agree        the reference opens /dev/null, which Windows calls NUL
+vd_forward            declares vprintf itself, against the Microsoft header's own
+vd_named_before_dots  declares vprintf itself, against the Microsoft header's own

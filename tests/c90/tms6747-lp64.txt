@@ -1,0 +1,31 @@
+# Cases whose reference run needs a 64-bit long or an 8-byte pointer: the
+# host compiler here has both and the C6000 has neither, so the two programs
+# are correct and disagree. tests/tms6747.sh reports these as SKIP rather
+# than FAIL. Each is listed with what it measures. (bf_types is the one the
+# front end refuses outright: a 40-bit field cannot fit a 32-bit long.)
+ar_decay_param        sizeof a pointer
+bf_types              a 40-bit bit-field in unsigned long
+ce_conditional_const  sizeof(long) == 8 chooses an arm
+ce_sizeof_relations   sizeof(long) against int and short
+fnptr                 sizeof a function pointer
+fp_unsigned_to_float  an unsigned long constant past 32 bits
+gl_long               a long global holding a 64-bit value
+header_stddef         sizeof size_t and ptrdiff_t
+ld_arith              (long)1234567890123L round-trips only with a 64-bit long
+literals_escapes      %ld of LONG_MAX-sized literals
+memory                sizeof pointers in a struct
+pd_abstract_declarators  sizeof pointer arrays
+pp_predefined         asks for __linux__ and __x86_64__ by name
+pt_sizeof             sizeof pointer
+su_offsets            8-byte pointer members
+su_typedef_sizeof     8-byte pointer members
+su_union_size         a union with a pointer member
+toolkit               prints sizeof(long) and sizeof(pointer)
+ty_int_overflow_vs_long  int overflow caught by a wider long
+ty_long_arith         64-bit long arithmetic
+ty_long_param         a long parameter carrying 64 bits
+ty_long_vs_unsigned   long wider than unsigned int
+ty_mixed_params       long parameters carrying 64 bits
+ty_sizeof             sizeof long
+ty_sizeof_expr        sizeof long
+ty_sizeof_unsigned    sizeof unsigned long

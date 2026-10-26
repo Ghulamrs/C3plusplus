@@ -1,0 +1,7 @@
+# Cases the sim6747 leg cannot run with TI's rts6740 (RTSLIB=rts6740_elf_eh.lib), the reason beside each; rts6x.lib runs them all.
+file_binary          reads back a file it wrote: TI's runtime does that over CIO to the host, and sim6747 carries CIO console output but not file I/O (G1)
+file_text            the same: file I/O over CIO, which sim6747 does not carry (G1)
+hd_standard_headers  errno is still 0 after a failed fopen: TI's rts6740 does not set it there, and on sim6747 every fopen fails (G1)
+arg_types            TI's rts6740 printf writes a null %p as "0" where the host writes "0x0"
+fp_nan_ordering      TI's rts6740 printf writes "+inf" where the host writes "inf" - cl6x's own builds print the same on TI's C6747 simulator
+fp_negate_zero       TI's rts6740 printf writes -0.0 as "0.0": the value's bits are 80000000 00000000, a negative zero, on sim6747; the printing drops the sign
