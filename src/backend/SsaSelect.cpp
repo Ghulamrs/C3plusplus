@@ -37,6 +37,24 @@ int X86_64Linux::layoutSsa(const Function &fn, const ir::Function &f) {
         cur = roundUp(cur + size, align);
         ssaAllocaSlot_[i] = cur;
     }
+    // A class passed by value has a copy of its own in the frame on the Microsoft ABI, as the parser gives each call.
+    ssaArgSlots_.assign(f.calls.size(), std::vector<int>());
+    for (std::size_t n = 1; n < f.insts.size(); n++) {
+        const ir::Inst &i = f.insts[n];
+        if (i.op != ir::Op::Call) continue;
+        const ir::CallInfo &c = f.calls[i.call];
+        const Type *sig = ssaTypes_->type(c.signature);
+        const std::uint32_t firstArg = c.symbol.empty() ? 1 : 0;
+        std::vector<int> &slots = ssaArgSlots_[i.call];
+        for (std::uint32_t k = firstArg; k < i.count; k++) {
+            const std::size_t at = k - firstArg;
+            const Type *want = at < sig->params().size() ? sig->params()[at] : nullptr;
+            slots.push_back(0);
+            if (want == nullptr || !want->isStructOrUnion()) continue;
+            cur = roundUp(cur + want->size(target_), want->align(target_));
+            slots.back() = static_cast<int>(cur);
+        }
+    }
     ssaValueSlot_.assign(f.values.size(), 0);
     for (std::size_t i = 1; i < f.values.size(); i++) {
         if (!f.values[i].type.valid() || ssaTypes_->type(f.values[i].type)->isVoid()) continue;
@@ -346,7 +364,8 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
             p->setType(typeOf(f, v));
             callee = std::move(p);
         }
-        std::unique_ptr<Call> call = make_owned<Call>(c.symbol, std::move(callee), std::move(args), c.variadic, 0, c.namedArgs);
+        std::unique_ptr<Call> call = make_owned<Call>(c.symbol, std::move(callee), std::move(args), c.variadic, 0, c.namedArgs,
+                                                     ssaArgSlots_[i.call]);
         call->setSymbol(c.symbol);
         call->setHasThis(c.hasThis);
         call->setType(rt != nullptr ? rt : sig->returns());

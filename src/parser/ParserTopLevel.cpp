@@ -1200,6 +1200,7 @@ void Parser::topLevel(Program &program) {
             }
             const int frameBeforeArgs = frameSize_;
             const std::size_t tempsBeforeArgs = pendingTemps_.size();
+            const std::size_t initMark = syntaxTree_.size();
             std::vector<ExprPtr> args;
             if (peek().is("{")) {
                 // [class.base.init]/1: `j{3}`, `v{1, 2}`, `Base{...}` - direct-list-initialisation (M1 L15).
@@ -1223,6 +1224,7 @@ void Parser::topLevel(Program &program) {
                 expect("(");
                 parseArguments(args);
             }
+            noteParts(syntax::Kind::MemInit, entry, epos, initMark, epos);   // what the entry names, over its arguments (M3b.2)
             entries++;
             {
                 const Type *named = templateBase != nullptr ? templateBase : lookup_.findTypedef(entry);

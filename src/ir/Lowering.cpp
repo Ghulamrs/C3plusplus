@@ -25,6 +25,54 @@ bool Lowering::plainClass(const Type &t) const {
            !(constructed_ && constructed_(&c));
 }
 
+// [class.base.init] for a class with no base and no vptr whose members are scalars or plain classes: nothing is
+// built but what the list names, so every member's code is in the constructor's syntax but a default initialiser.
+bool Lowering::simpleLayout(const Type &cls) const {
+    if (cls.polymorphic() || cls.hasVirtualBase() || !cls.bases().empty()) return false;
+    for (const Member &m : cls.members()) {
+        const Type &t = *m.type->unqualified();
+        if (m.width != 0 || m.anonUnion != nullptr || m.type->isReference() || t.isX87(target_)) return false;
+        if (!scalar(t) && !plainClass(t) && !(t.isArray() && t.pointee()->isComplete() && scalar(*t.pointee()))) return false;
+    }
+    return true;
+}
+
+// The members in declaration order: each named in the list initialised from it - `m()` and `m{}` value-initialised,
+// one value stored or a plain class copied - and one the list leaves alone default-initialised, which is nothing.
+void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32_t to) {
+    const Type &cls = *T(thisType_).pointee()->unqualified();
+    std::map<std::string, sema::TypedId> named;
+    for (std::uint32_t i = from; i < to; i++) {
+        const sema::TypedId mi = child(fnNode, i);
+        if (syn(mi).kind != syntax::Kind::MemInit) outside("a constructor part that is not a mem-initialiser");
+        if (cls.findMember(text(mi)) == nullptr) outside("a mem-initialiser of a base or of the class itself");
+        named[text(mi)] = mi;
+    }
+    for (const Member &m : cls.members()) {
+        const std::map<std::string, sema::TypedId>::const_iterator e = named.find(m.name);
+        if (e == named.end()) {
+            if (defaultInit_ && defaultInit_(&cls, m.name)) outside("a member's default initialiser");
+            continue;
+        }
+        const Type &mt = *m.type->unqualified();
+        const InstId g = add(Op::Gep, tid(*types_.pointerTo(&mt)), std::vector<ValueId>(1, this_));
+        at(g).k = m.offset;
+        const std::uint32_t k = count(e->second);
+        if (k == 0) {
+            const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, result(g)));
+            at(z).k = mt.size(target_);
+        } else if (k == 1 && scalar(mt)) {
+            store(result(g), exprTo(child(e->second, 0), tid(mt)).v);
+        } else if (k == 1 && plainClass(mt) && isLvalueNode(child(e->second, 0))) {
+            const Val src = lvalue(child(e->second, 0));
+            if (T(src.type).unqualified() != &mt) outside("a member built from another type");
+            copyObject(result(g), src.v, mt);
+        } else {
+            outside("a mem-initialiser of " + std::to_string(k) + " values for '" + m.name + "'");
+        }
+    }
+}
+
 // A plain class's local from its form ([dcl.init]): default-initialised, it is left as it is; `{}` zeroes it;
 // a braced list of scalars stores each member in order and zeroes the rest; `= o` or `(o)` copies o's bytes.
 void Lowering::classLocal(sema::TypedId var, ValueId slot, const Type &t) {
@@ -257,16 +305,24 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         const Type &rt = T(returns_);
         if (!(rt.isVoid() || scalar(rt) || (rt.isReference() && referable(*rt.referent())))) outside("a return type of '" + rt.describe() + "'");
         if (rt.isX87(target_)) outside("an x87 long double");
-        // A constructor's mem-initialisers and a destructor's member destruction are not in its syntax yet.
+        // A constructor and a destructor of a class with a base, a vptr or a member that needs building or
+        // destroying are M3b.3's: what they do beyond their syntax comes from the class's layout.
+        bool isCtor = false;
         if (facts.hasThis && facts.thisType.valid() && T(facts.thisType).isPointer()) {
-            if (text(fnNode) == T(facts.thisType).pointee()->unqualified()->localName()) outside("a constructor");
-            if (!text(fnNode).empty() && text(fnNode)[0] == '~') outside("a destructor");
+            const Type &cls = *T(facts.thisType).pointee()->unqualified();
+            isCtor = text(fnNode) == cls.localName();
+            const bool isDtor = !text(fnNode).empty() && text(fnNode)[0] == '~';
+            if ((isCtor || isDtor) && !simpleLayout(cls)) outside(isCtor ? "a constructor of a class with bases, a vptr or members to build"
+                                                                    : "a destructor of a class with bases, a vptr or members to destroy");
         }
         const std::uint32_t n = count(fnNode);
         if (n == 0) outside("a function with no body");
         const sema::TypedId body = child(fnNode, n - 1);
         if (syn(body).kind != syntax::Kind::Block) outside("a body that is not a block");
-        if (n - 1 + (facts.hasThis ? 1 : 0) != facts.paramCount) outside("a parameter list the typed tree and the function disagree about");
+        std::uint32_t params = 0;       // the parameters lead; a constructor's mem-initialisers follow them
+        while (params + 1 < n && syn(child(fnNode, params)).kind == syntax::Kind::Var) params++;
+        if (params + 1 != n && !isCtor) outside("a function part that is neither a parameter nor its body");
+        if (params + (facts.hasThis ? 1 : 0) != facts.paramCount) outside("a parameter list the typed tree and the function disagree about");
         f.entry = newBlock();
         place(f.entry);
         // [class.this]: `this` is the first parameter, a value never stored to - nothing can assign to it.
@@ -280,7 +336,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
             f.params.push_back(this_);
         }
         // The parameters: a value each, copied into an alloca so that every local is one (no mem2reg at M3b.1).
-        for (std::uint32_t i = 0; i + 1 < n; i++) {
+        for (std::uint32_t i = 0; i < params; i++) {
             const sema::TypedId p = child(fnNode, i);
             if (syn(p).kind != syntax::Kind::Var) outside("a parameter that is not a var");
             if (tree_.node(p).type == nullptr) outside("a parameter not typed");
@@ -319,6 +375,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         const BlockId first = newBlock();
         br(first);
         place(first);
+        if (isCtor) memberInits(fnNode, params, n - 1);
         block(body);
         if (!terminated()) {
             if (!rt.isVoid()) outside("a body that falls off its end without a value");
@@ -584,6 +641,8 @@ void Lowering::declaration(sema::TypedId id) {
         AllocaInfo a;
         a.type = slotType;
         a.align = T(slotType).align(target_);
+        const Type &st = T(slotType);
+        if ((st.isArray() || st.isStructOrUnion()) && st.size(target_) >= 16 && a.align < 16) a.align = 16;   // as the walker lays it
         a.name = text(var);
         // Allocas go to the entry block, whatever block the declaration stands in.
         const BlockId here = cur_;

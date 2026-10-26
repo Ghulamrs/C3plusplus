@@ -42,6 +42,7 @@ public:
     // Which classes a constructor builds - the parser's to say, asked by the glue (M3b.2).
     void setConstructed(std::function<bool(const Type *)> f) { constructed_ = f; }
     void setAssigned(std::function<bool(const Type *)> f) { assigned_ = f; }
+    void setDefaultInit(std::function<bool(const Type *, const std::string &)> f) { defaultInit_ = f; }
 private:
     struct Outside { std::string why; explicit Outside(const std::string &w) : why(w) {} };
     struct Val { ValueId v; TypeId type; Val() {} Val(ValueId a, TypeId t) : v(a), type(t) {} };
@@ -121,6 +122,8 @@ private:
     static bool scalar(const Type &t);
     static bool referable(const Type &t);
     bool plainClass(const Type &t) const;
+    bool simpleLayout(const Type &cls) const;
+    void memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32_t to);
     void classLocal(sema::TypedId var, ValueId slot, const Type &t);
     void copyObject(ValueId to, ValueId from, const Type &t);
     static bool scalarArithmetic(const Type &t);
@@ -140,6 +143,7 @@ private:
     ValueId this_;          // a member function's `this`, none in any other
     TypeId thisType_;
     std::function<bool(const Type *)> constructed_, assigned_;
+    std::function<bool(const Type *, const std::string &)> defaultInit_;
     BlockId returnBlock_;
     std::map<std::uint32_t, std::pair<ValueId, TypeId> > locals_;    // a `var` node -> its alloca and declared type
     std::vector<Loop> loops_;

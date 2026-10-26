@@ -220,6 +220,7 @@ private:
     const ir::Module *ssa_ = nullptr;
     const TypeTable *ssaTypes_ = nullptr;
     std::vector<long long> ssaAllocaSlot_, ssaValueSlot_;
+    std::vector<std::vector<int> > ssaArgSlots_;      // per call, each argument's copy slot (0 where it has none)
     const ir::Function *ssaFunction(const Function &fn) const;
     int layoutSsa(const Function &fn, const ir::Function &f);
     void ssaScalars(const ir::Function &f, std::vector<opt::Local> &into) const;

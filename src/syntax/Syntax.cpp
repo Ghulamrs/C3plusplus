@@ -51,6 +51,7 @@ const char *kindName(Kind k) {
         case Kind::Null: return "null";
         case Kind::Var: return "var";
         case Kind::Function: return "function";
+        case Kind::MemInit: return "meminit";
     }
     return "?";
 }

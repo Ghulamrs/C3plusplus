@@ -1354,6 +1354,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     ir::Lowering lowering(typer.tree(), parser.syntaxTree(), types, target, program, into);
     lowering.setConstructed([&typer](const Type *cls) { return typer.constructed(cls); });
     lowering.setAssigned([&typer](const Type *cls) { return typer.assigned(cls); });
+    lowering.setDefaultInit([&typer](const Type *cls, const std::string &m) { return typer.defaultInit(cls, m); });
     std::map<std::string, int> reasons;
     int lowered = 0;
     for (std::size_t r = 0; r < c.bodies.size(); r++) {
@@ -1381,7 +1382,8 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
             if (l.align > 16) aligned = true;
             if (l.isParam || l.type == nullptr || l.type->isReference()) continue;
             int natural = l.type->align(target);
-            if (l.type->isArray() && l.type->size(target) >= 16 && natural < 16) natural = 16;   // not std::max: windows.h's macro
+            const bool aggregate = l.type->isArray() || l.type->isStructOrUnion();      // Microsoft lays one of 16 at 16
+            if (aggregate && l.type->size(target) >= 16 && natural < 16) natural = 16;   // not std::max: windows.h's macro
             if (l.align > natural) aligned = true;
         }
         // A pack expansion's members are one node of the typed tree: such a body stays the parser's.

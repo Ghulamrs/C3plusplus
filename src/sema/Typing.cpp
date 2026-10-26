@@ -462,6 +462,10 @@ bool Typer::packBody(const std::string &symbol) const { return p_.packBodies_.co
 
 bool Typer::constructed(const Type *cls) const { return p_.hasConstructors(cls->unqualified()->tag()); }
 
+bool Typer::defaultInit(const Type *cls, const std::string &member) const {
+    return p_.memberInit_.count(cls->unqualified()->tag() + "::" + member) != 0;
+}
+
 bool Typer::assigned(const Type *cls) const { return p_.lookup_.overloadsOf(cls->unqualified()->tag() + "::operator=") != nullptr; }
 
 bool Typer::fromTemplate(const std::string &symbol) const {
