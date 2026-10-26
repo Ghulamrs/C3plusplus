@@ -512,12 +512,16 @@ promotes. The fifteen layout maps the adapter reads (`callSlots_`, `blockCleanup
 **The record moved onto the typed tree (M3b.0).** `Parser::Resolved` (`Parser.h:512-526`: `what` in {Local,
 Global, Function, Call, Callee, Member, Enumerator, StaticMember, This, Temporary, TypeName, Value}, `type`,
 `owner`, `symbol`, `serial`, `value`, `isConst`, `isThreadLocal`, `name`) becomes `sema::Resolution` in
-`Typing.h`, held in `TypedTree::resolutions_`; `TypedNode` gains `std::uint32_t resolved` (0 none), `const Type
-*castType`, and a `Folded {long long v; const Type *t; bool has}` for `sizeof`/`alignof`/`noexcept` and a
-literal's value - the parser's `castTypes_`, `keywordValues_`, `literalTokens_`, `refCastTypes_` (`Parser.h:
-562-565, 680`) copied in by the Typer as it types each node, from the maps the parser fills at parse time in the
-scope it had then (12.1's point 3 is unchanged by the copy). `declaredTypes_` is already `TypedNode::type` for a
-`var`. The parser's maps stay until M3b.7 for the adapter and `-check=typed`'s cross-check.
+`Typing.h`, held in `TypedTree::resolutions_`; `TypedNode` gains `std::uint32_t resolved` (0 none), `TypeId
+castType` with `bool castXvalue`, a `Folded {long long value; TypeId type; bool has}` for `sizeof`/`alignof`/
+`noexcept` and an integer or character literal's value, and `std::uint32_t literal`, an index into
+`TypedTree::literals_` holding the literal's `Token` whole (a floating literal's `dvalue`, a string's text) - the
+parser's `castTypes_`, `keywordValues_`, `literalTokens_`, `refCastTypes_` copied in by the Typer as it types each
+node, from the maps the parser fills at parse time in the scope it had then (12.1's point 3 is unchanged by the
+copy). **As built, 2026-10-26**: the record's `type` and `owner` are `TypeId` (R6.3; `Parser::Resolved` keeps its
+pointers, both structs over one `ResolutionKind::What`), and `-check=typed` holds every typed node's copy against
+the parser's maps, a missing or different one counted into `differ`. `declaredTypes_` is already `TypedNode::type`
+for a `var`. The parser's maps stay until M3b.7 for the adapter and `-check=typed`'s cross-check.
 
 ### 3.9 Selection into MIR
 

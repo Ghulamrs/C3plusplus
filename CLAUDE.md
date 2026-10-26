@@ -15119,3 +15119,28 @@ function; `inUnnamedNamespace` in Mangle.cpp drops it. `identical.sh`: 45 of 6,0
 every line a `.globl` or `PUBLIC` gone or that `L` dropped. **Self-host found one more gap, registered in `tests/open`**:
 no reference binds through a conversion operator, so M3a.1's OpId and StrId convert by `.name()` and
 `.str()` where the strings they replaced had been read as they stood.
+
+## C7 and M3b.0: a type's handle, and the record on the typed tree, 2026-10-26
+
+**`TypeId` is a wrapped index into the `TypeTable`** (C7, approved at RP2a): the fundamental kinds take 1..N in `Kind`
+order and every derived type the next number as `TypeTable::adopt` interns it - the one place a derived type is
+registered now, so `withConst`'s copy is renumbered there; `id(t)` and `type(id)` are each other's inverse, 0 is none.
+Nothing emitted moved (`identical.sh` 6,039 / 0 against a REF of `f5967f9` in its own tree - and the nine lib-path
+diagnostics that every earlier run had to recognise by eye are gone with the REF beside its own `lib/`). With it:
+`tools/memory-gate` counts raw-pointer declarators in the handle-rule files (`src/syntax`, `src/sema/Typing*`, `src/ir`,
+`src/optimizer/Mir*`) as a second line of the baseline, 38 at `f5967f9`, down only - a rename at M3a.5 that brings old
+code under `Mir*` re-records once, the plan says so; `tools/self-host` compiles every source with stage 0 as well and
+fails unless `s0` = `s1` = `s2`; the adapter is a dated R6.3 exception until M3b.7.
+
+**M3b.0 moves the parser's record onto the typed tree** (M3-IR 3.8). `TypedNode` carries `resolved` (into
+`TypedTree::resolutions_`), a cast's type and category, what a `sizeof` or a literal folded to, and a literal's `Token`
+whole; `Typer::record` copies them from the five parser maps as each node is typed. **The copy's types are `TypeId`**:
+`sema::Resolution` is `Parser::Resolved` field for field with handles where it had pointers, both over one
+`ResolutionKind::What`, and that is why the second memory count stayed at 38 on the first day it could have risen - a
+pointer copy of the struct would have added twelve. **The copy has an oracle**: `-check=typed` holds every typed node's
+copy against the parser's maps, the types read back through the table, and counts a missing or different one into
+`differ`; 648 cases, 0. `ir::Lowering` exists with its constructor alone - `(const sema::TypedTree &, TypeTable &, const
+Target &, Program &)`, its header including nothing of `src/parser/` - for M3b.1 to fill. The fifteen layout maps stay
+the parser's. **Found on the way and not M3b.0's**: stage 0 at `f5967f9` does not build stage 1 - `OptValues.cpp:18`'s
+`Cond cc = kNoCond;` is refused "'kNoCond' was not declared" - so `tools/self-host` could not run on this branch;
+registered in `tests/open/` with the reduced shape, and `make test` never sees it because it never compiles `src/`.
