@@ -1380,7 +1380,8 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         for (const Local &l : fn.locals()) {
             if (l.align > 16) aligned = true;
             if (l.isParam || l.type == nullptr || l.type->isReference()) continue;
-            const int natural = l.type->isArray() && l.type->size(target) >= 16 ? std::max(16, l.type->align(target)) : l.type->align(target);
+            int natural = l.type->align(target);
+            if (l.type->isArray() && l.type->size(target) >= 16 && natural < 16) natural = 16;   // not std::max: windows.h's macro
             if (l.align > natural) aligned = true;
         }
         // A pack expansion's members are one node of the typed tree: such a body stays the parser's.
