@@ -139,6 +139,7 @@ private:
     bool pseudoDestructor(sema::TypedId member);
     bool threadLocalGlobal(const std::string &symbol) const;
     Val toBase(Val v, TypeId to);
+    Val condition(sema::TypedId id);
     void throwExpr(sema::TypedId id);
     void throwCall(const char *symbol, const std::vector<ValueId> &args);
     void basePaths(const Type &cls, const Type &base, int at, int &found, int &offset);

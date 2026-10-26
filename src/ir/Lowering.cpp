@@ -435,8 +435,7 @@ void Lowering::stmt(sema::TypedId id) {
     case syntax::Kind::Try: tryStatement(id); return;
     case syntax::Kind::If: {
         if (n != 2 && n != 3) outside("an if of " + std::to_string(n) + " parts");
-        if (syn(child(id, 0)).kind == syntax::Kind::DeclStmt) outside("a declaration in a condition");
-        const Val c = truth(expr(child(id, 0)));
+        const Val c = condition(child(id, 0));
         const BlockId then = newBlock(), merge = newBlock();
         const BlockId otherwise = n == 3 ? newBlock() : merge;
         condbr(c.v, then, otherwise);
@@ -453,11 +452,10 @@ void Lowering::stmt(sema::TypedId id) {
     }
     case syntax::Kind::While: {
         if (n != 2) outside("a while of " + std::to_string(n) + " parts");
-        if (syn(child(id, 0)).kind == syntax::Kind::DeclStmt) outside("a declaration in a condition");
         const BlockId cond = newBlock(), body = newBlock(), exit = newBlock();
         br(cond);
         place(cond);
-        const Val c = truth(expr(child(id, 0)));
+        const Val c = condition(child(id, 0));
         condbr(c.v, body, exit);
         place(body);
         loops_.push_back(Loop{ exit, cond, handlerDepth_ });
@@ -574,6 +572,20 @@ void Lowering::returnStmt(sema::TypedId id) {
     }
     const Val v = exprTo(child(id, 0), returns_);
     endCatches(handlerDepth_); br(returnBlock_, std::vector<ValueId>(1, v.v));
+}
+
+// [stmt.select]/2: a condition, or a declaration whose variable's value is the condition - declared where the test
+// runs, so a `while` declares it again each turn. Only a scalar's value is converted to bool here.
+Lowering::Val Lowering::condition(sema::TypedId id) {
+    if (syn(id).kind != syntax::Kind::DeclStmt) return truth(expr(id));
+    if (count(id) != 1 || syn(child(id, 0)).kind != syntax::Kind::Var) outside("a condition declaring more than one name");
+    const sema::TypedId var = child(id, 0);
+    const Type *t = tree_.node(var).type;
+    if (t == nullptr || !scalar(*t) || t->isX87(target_)) outside("a condition declaring what is not a scalar");
+    declaration(id);
+    const std::map<std::uint32_t, std::pair<ValueId, TypeId> >::const_iterator l = locals_.find(tree_.node(var).syntax.v);
+    if (l == locals_.end()) outside("a condition's variable the lowering did not declare");
+    return truth(readOf(l->second.first, l->second.second));
 }
 
 // A `for` keeps its parts in order and leaves an empty one out; which ones it has the parser records on the node
