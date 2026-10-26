@@ -613,3 +613,13 @@ parser's path (the Wine stand-in on `cb33a21` reads them passing at both levels)
 `cb33a21` itself is owed**: it was queued on the box behind the earlier leg and never ran (the waiting job was killed
 with the Mac's); its one difference from `d5ea461` is the template rule, and the stand-in's 617/2 on `cb33a21` is
 what says the four are mended on x86.
+
+**Review point 3, Opus 5.5, 2026-10-26: agree with conditions** (`doc-cxx3/M3-RP3-REVIEW-OPUS-2026-10-26.md`).
+Re-measured from a fresh copy of `2da6019`: `make test` green, `ssa.sh` 777 lowered and verified, `identical.sh` 6,048
+compared 0 differ, determinism 0 differ; and on the Linux box at the merge `a877396` - the x86 selection the Mac
+cannot exercise - run.sh under `-front=ssa` **992/0 at -O0 and -O2**. With it, `tests/c90.sh` on the box: host 447/0
+and tms6747 411/0 at -O0 and -O2 on vm6747 and sim6747, `lp_break_while` passing since `50da3f2`. The conditions,
+for M3b.2: the self-host is part of every step's gate (stage 0 did not build stage 1 at the merge - a block-scope
+using-declaration in `SsaSelect.cpp`, and a lambda capture taken for a template of its name, both mended on `m3b2`);
+the parameter slots borrowed from the parser go; `-g` under the flag before M3b.7; the `var` bound mark before the
+subset grows past it; `fromTemplate` a map.
