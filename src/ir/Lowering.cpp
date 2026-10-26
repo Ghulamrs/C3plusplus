@@ -1666,31 +1666,36 @@ sema::NewFacts Lowering::newFacts(sema::TypedId id, const char *what) {
 Lowering::Val Lowering::newExpression(sema::TypedId id) {
     const sema::NewFacts f = newFacts(id, "new");
     const Type &made = T(f.made);
-    const std::uint32_t parts = (f.array ? 1u : 0u) + (f.init == 2 ? 1u : 0u);
+    const std::uint32_t lead = f.placed ? 1u : 0u;        // the placement's address is the first part
+    const std::uint32_t parts = lead + (f.array ? 1u : 0u) + (f.init == 2 ? 1u : 0u);
     if (count(id) != parts) outside("a 'new' of " + std::to_string(count(id)) + " parts");
     const TypeId sizeT = tid(*types_.get(target_.sizeType()));
+    const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType()));
+    ValueId at0 = f.placed ? exprTo(child(id, 0), voidPtr).v : ValueId();
     ValueId bytes = iconst(sizeT, made.size(target_));
     if (f.array) {
         std::vector<ValueId> ops;
-        ops.push_back(exprTo(child(id, 0), sizeT).v);
+        ops.push_back(exprTo(child(id, lead), sizeT).v);
         ops.push_back(bytes);
         bytes = result(add(Op::Mul, sizeT, ops));
     }
-    const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType()));
-    CallInfo info;
-    info.symbol = f.symbol;
-    info.signature = tid(*types_.functionType(&T(voidPtr), std::vector<const Type *>(1, &T(sizeT)), false));
-    info.namedArgs = 1;
-    const std::uint32_t callIndex = static_cast<std::uint32_t>(F().calls.size());
-    F().calls.push_back(info);
-    const InstId c = callOrInvoke(voidPtr, std::vector<ValueId>(1, bytes));      // bad_alloc may unwind
-    at(c).call = callIndex;
+    if (!f.placed) {
+        CallInfo info;
+        info.symbol = f.symbol;
+        info.signature = tid(*types_.functionType(&T(voidPtr), std::vector<const Type *>(1, &T(sizeT)), false));
+        info.namedArgs = 1;
+        const std::uint32_t callIndex = static_cast<std::uint32_t>(F().calls.size());
+        F().calls.push_back(info);
+        const InstId c = callOrInvoke(voidPtr, std::vector<ValueId>(1, bytes));      // bad_alloc may unwind
+        at(c).call = callIndex;
+        at0 = result(c);
+    }
     const TypeId pt = tid(*types_.pointerTo(&made));
-    const ValueId p = result(add(Op::Bitcast, pt, std::vector<ValueId>(1, result(c))));
+    const ValueId p = result(add(Op::Bitcast, pt, std::vector<ValueId>(1, at0)));
     if (f.init == 1 && f.array) {
         // `new T[n]()` zeroes n elements with the platform's memset, as the parser and clang do.
         std::vector<ValueId> args;
-        args.push_back(result(c));
+        args.push_back(at0);
         args.push_back(iconst(tid(*types_.get(Kind::Int)), 0));
         args.push_back(bytes);
         runtimeCall("memset", voidPtr, args);

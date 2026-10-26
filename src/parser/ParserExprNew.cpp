@@ -1732,11 +1732,12 @@ ExprPtr Parser::newExpression(std::size_t pos) {
     pendingNew_.array = array;
     pendingNew_.init = !hasInit ? 0 : init ? 2 : 1;
     if (nothrow) pendingNew_.why = "a nothrow 'new'";
-    else if (placement != nullptr || userAlloc) pendingNew_.why = "a placement 'new'";
+    else if (userAlloc) pendingNew_.why = "a placement 'new' of an allocation function of the program's";
     else if (constructed) pendingNew_.why = "a 'new' of a class with constructors";
     else if (braces && init) pendingNew_.why = "a 'new' with a braced list";
     else if (classAllocator(made, array ? "operatornew[]" : "operatornew") != nullptr) pendingNew_.why = "a class's own operator new";
     else if (array && arrayCookie(made) != 0) pendingNew_.why = "an array 'new' with a cookie";
+    else if (placement != nullptr) { pendingNew_.placed = true; pendingNew_.symbol = "$placed"; }   // [new.delete.placement]
     else if (target_.microsoftNames()) pendingNew_.symbol = array ? "??_U@YAPEAX_K@Z" : "??2@YAPEAX_K@Z";
     else pendingNew_.symbol = std::string(array ? "_Zna" : "_Znw") + itaniumBuiltinCode(target_.sizeType());
     const Type *sizeT = types_.get(target_.sizeType());

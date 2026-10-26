@@ -56,9 +56,9 @@ struct Resolution : ResolutionKind {
 struct NewFacts {
     std::string symbol, why;
     TypeId made;
-    bool array;
+    bool array, placed;     // placed: the reserved placement form, `new (p) T` - no allocation, the address given
     int init;
-    NewFacts() : array(false), init(0) {}
+    NewFacts() : array(false), placed(false), init(0) {}
 };
 
 // What a sizeof, alignof or noexcept folded to, or an integer or character literal's value, with its type.

@@ -479,6 +479,7 @@ bool Typer::newFacts(syntax::NodeId id, NewFacts &out) const {
     out.why = f->second.why;
     out.made = f->second.made->id();
     out.array = f->second.array;
+    out.placed = f->second.placed;
     out.init = f->second.init;
     return true;
 }
