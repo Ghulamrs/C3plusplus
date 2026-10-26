@@ -43,7 +43,7 @@ REM 4456 is one shadowed local in X86_64Linux.cpp. Building without the list
 REM says nothing new about this project - it re-reports Compiler-C's decisions
 REM as though they were faults found here. Anything cxx1 adds of its own must
 REM still compile clean at /W4 /WX with these five off.
-cl /nologo /std:c++14 /permissive- /EHsc /W4 /WX /O2 ^
+cl /nologo /MP /std:c++14 /permissive- /EHsc /W4 /WX /O2 ^
    /wd4996 /wd4267 /wd4244 /wd4456 /wd4146 ^
    /I"%HERE%compat" /I"%ROOT%\src" ^
    /D_CRT_SECURE_NO_WARNINGS ^

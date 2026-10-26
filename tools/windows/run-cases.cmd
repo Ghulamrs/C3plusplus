@@ -40,6 +40,10 @@ set ROOT=%~1
 set SPELLINGS=%CXX1_CASES_SPELLINGS%
 if "%SPELLINGS%"=="" set SPELLINGS=gnu masm
 set STATUS=0
+rem  One lane per processor the box has (CXX1_CASES_LANES overrides).
+set LANES=%CXX1_CASES_LANES%
+if "%LANES%"=="" set LANES=%NUMBER_OF_PROCESSORS%
+if "%LANES%"=="" set LANES=6
 
 if "%CXX1_CASES_COMPILER%"=="" (
     call %ROOT%\msvc\build.cmd
@@ -54,7 +58,7 @@ if exist %ROOT%\winout\ml64 rmdir /s /q %ROOT%\winout\ml64
 
 rem  Six shards at once, each taking every sixth case - see par.cmd.
 set CXX1_PASS_FLAGS=-masm=gnu
-if not "!SPELLINGS:gnu=!"=="!SPELLINGS!" call "%~dp0par.cmd" 6 "%~f0" %ROOT% %ROOT%\winout
+if not "!SPELLINGS:gnu=!"=="!SPELLINGS!" call "%~dp0par.cmd" %LANES% "%~f0" %ROOT% %ROOT%\winout
 
 rem  -masm=ml64: Visual Studio's ml64 and link.exe, which the driver finds itself, into winout\ml64.
 if "!SPELLINGS:ml64=!"=="!SPELLINGS!" goto :ml64done
@@ -63,7 +67,7 @@ set CPP11_AS=
 set CPP11_LD=
 set CXX1_PASS_FLAGS=-masm=ml64
 echo run-cases.cmd: the ml64 spelling, Visual Studio's ml64 and link
-call "%~dp0par.cmd" 6 "%~f0" %ROOT% %ROOT%\winout\ml64
+call "%~dp0par.cmd" %LANES% "%~f0" %ROOT% %ROOT%\winout\ml64
 :ml64done
 
 set NEEDTOOLS=
@@ -78,7 +82,7 @@ set CPP11_AS=%MASMEXE%
 set CPP11_LD=%LINKEXE%
 set CXX1_PASS_FLAGS=-masm=masm
 echo run-cases.cmd: the MASM spelling, %MASMEXE% and %LINKEXE%
-call "%~dp0par.cmd" 6 "%~f0" %ROOT% %ROOT%\winout\masm
+call "%~dp0par.cmd" %LANES% "%~f0" %ROOT% %ROOT%\winout\masm
 
 rem  CXX1_CASES_SPELLINGS=default: no -masm and no CPP11_AS or CPP11_LD, the project's masm and LINK copied
 rem  beside the compiler as RIDE lays them - what a compile naming nothing gets - into winout\default.
@@ -95,7 +99,7 @@ set CPP11_LD=
 set CXX1_PASS_FLAGS=
 set CXX1_PASS_DEFAULT=1
 echo run-cases.cmd: no -masm named, %CDIR%masm.exe and %CDIR%link.exe beside the compiler
-call "%~dp0par.cmd" 6 "%~f0" %ROOT% %ROOT%\winout\default
+call "%~dp0par.cmd" %LANES% "%~f0" %ROOT% %ROOT%\winout\default
 
 :done
 echo run-cases.cmd: done

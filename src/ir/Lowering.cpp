@@ -325,14 +325,13 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         const sema::TypedId body = child(fnNode, n - 1);
         if (syn(body).kind != syntax::Kind::Block) outside("a body that is not a block");
         // The parameters, then a constructor's mem-initialisers, then the body. A declarator's array bounds and a
-        // template-id's arguments are noted among the parameters: constants the parameter types already hold.
+        // template-id's arguments are noted among the parameters: constants the parameter types already hold, never run.
         std::vector<sema::TypedId> paramNodes;
         std::uint32_t inits = n - 1;
         for (std::uint32_t i = 0; i + 1 < n; i++) {
             const syntax::Kind k = syn(child(fnNode, i)).kind;
             if (k == syntax::Kind::MemInit) { inits = i; break; }
             if (k == syntax::Kind::Var) paramNodes.push_back(child(fnNode, i));
-            else if (k != syntax::Kind::IntLit) outside("a function part that is neither a parameter nor its body");
         }
         if (inits != n - 1 && !isCtor) outside("a mem-initialiser outside a constructor");
         const std::uint32_t params = static_cast<std::uint32_t>(paramNodes.size());
@@ -773,6 +772,9 @@ bool Lowering::isLvalueNode(sema::TypedId id) const {
     case syntax::Kind::StringLit: case syntax::Kind::Member: case syntax::Kind::Subscript: return true;
     case syntax::Kind::Unary: return text(id) == "*";
     case syntax::Kind::Paren: return count(id) == 1 && isLvalueNode(child(id, 0));
+    case syntax::Kind::Cast:
+        return count(id) == 1 && tree_.node(id).castType.valid() &&
+               (T(tree_.node(id).castType).isReference() || tree_.node(id).castXvalue) && isLvalueNode(child(id, 0));
     case syntax::Kind::Conditional:
         return count(id) == 3 && isLvalueNode(child(id, 1)) && isLvalueNode(child(id, 2)) &&
                tree_.node(child(id, 1)).type != nullptr && tree_.node(child(id, 1)).type == tree_.node(child(id, 2)).type;
@@ -811,6 +813,16 @@ Lowering::Val Lowering::lvalue(sema::TypedId id) {
         const Type &pt = T(p.type);
         if (!pt.isPointer() || pt.pointee()->isVoid() || pt.pointee()->isFunction()) outside("a '*' of what is not an object pointer");
         return Val(p.v, tid(*pt.pointee()));
+    }
+    case syntax::Kind::Cast: {
+        // A cast to a reference names its operand's object: the same type, const or an rvalue's && aside.
+        if (!isLvalueNode(id)) outside("a cast to a reference of what is not an object");
+        const Type &cast = T(tree_.node(id).castType);
+        const Type &to = cast.isReference() ? *cast.referent() : cast;      // static_cast<T &&> is noted as T, an xvalue
+        const Val a = lvalue(child(id, 0));
+        if (T(a.type).unqualified() != to.unqualified()) outside("a cast to a reference to another type");
+        if (T(a.type).isConst() && !to.isConst()) outside("a cast that takes a const away");
+        return Val(a.v, tid(to));
     }
     case syntax::Kind::Conditional: {
         if (!isLvalueNode(id)) outside("a conditional that is no lvalue");
@@ -851,6 +863,7 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
         e = literal(id);
         break;
     case syntax::Kind::StringLit: case syntax::Kind::Member: case syntax::Kind::Subscript: {
+        if (s.kind == syntax::Kind::Member && pseudoDestructor(id)) { e = Val(ValueId(), tid(*types_.get(Kind::Void))); break; }
         const Val a = lvalue(id);
         e = decay(Val(a.v, a.type));
         if (T(e.type).isPointer() && T(a.type).isArray()) break;
@@ -894,6 +907,12 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
     case syntax::Kind::Cast: {
         if (k != 1 || !n.castType.valid()) outside("a cast not recorded");
         const Type &to = T(n.castType);
+        const Type &named = to.isReference() ? *to.referent() : to;
+        if ((to.isReference() || n.castXvalue) && scalar(named) && !named.isX87(target_) && isLvalueNode(id)) {
+            const Val a = lvalue(id);            // a cast to a reference read as a value: the object it names
+            e = readOf(a.v, a.type);
+            break;
+        }
         if (to.isReference() || n.castXvalue) outside("a cast to a reference");
         const Val v = decay(expr(child(id, 0)));
         if (to.isVoid()) { e = Val(ValueId(), n.castType); break; }
@@ -1451,12 +1470,26 @@ Lowering::Val Lowering::assign(sema::TypedId id) {
 }
 
 // A call of the function the parser recorded, by its symbol, or through a pointer to a function.
+// [expr.pseudo]: `p->~T()` of a scalar or a class with nothing to destroy ends no one's life but by name - the
+// object is evaluated and nothing more is done. The syntax notes the call as the member alone, or inside a call.
+bool Lowering::pseudoDestructor(sema::TypedId member) {
+    const std::string &t = text(member);
+    const bool arrow = t.compare(0, 2, "->") == 0;
+    if (count(member) != 1 || t.size() <= (arrow ? 2u : 1u) || t[arrow ? 2 : 1] != '~') return false;
+    const Val o = arrow ? decay(expr(child(member, 0))) : lvalue(child(member, 0));
+    if (arrow && !T(o.type).isPointer()) outside("a destructor called through what is not a pointer");
+    const Type &ot = arrow ? *T(o.type).pointee() : T(o.type);
+    if (!(scalar(ot) || plainClass(*ot.unqualified()))) outside("a destructor called by name");
+    return true;
+}
+
 Lowering::Val Lowering::call(sema::TypedId id) {
     const std::uint32_t n = count(id);
     if (n == 0) outside("a call of nothing");
     const sema::TypedId head = child(id, 0);
     const sema::Resolution &r = tree_.resolution(id);
     if (r.what == sema::Resolution::Temporary || r.what == sema::Resolution::TypeName) outside("a class temporary");
+    if (n == 1 && syn(head).kind == syntax::Kind::Member && pseudoDestructor(head)) return Val(ValueId(), tid(*types_.get(Kind::Void)));
     CallInfo info;
     std::vector<ValueId> ops;
     TypeId sig;

@@ -135,6 +135,7 @@ private:
     static bool referable(const Type &t);
     bool plainClass(const Type &t) const;
     bool simpleLayout(const Type &cls) const;
+    bool pseudoDestructor(sema::TypedId member);
     void memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32_t to);
     void classLocal(sema::TypedId var, ValueId slot, const Type &t);
     void copyObject(ValueId to, ValueId from, const Type &t);
