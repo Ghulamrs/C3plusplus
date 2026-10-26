@@ -149,8 +149,8 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
             at(z).k = mt.size(target_);
         } else if (k == 1 && scalar(mt)) {
             store(result(g), exprTo(child(e->second, 0), tid(mt)).v);
-        } else if (k == 1 && plainClass(mt) && isLvalueNode(child(e->second, 0))) {
-            const Val src = lvalue(child(e->second, 0));
+        } else if (k == 1 && plainClass(mt) && objectNode(child(e->second, 0))) {
+            const Val src = object(child(e->second, 0));
             if (T(src.type).unqualified() != &mt) outside("a member built from another type");
             copyObject(result(g), src.v, mt);
         } else {
@@ -175,8 +175,8 @@ void Lowering::classLocal(sema::TypedId var, ValueId slot, const Type &t) {
         return;
     }
     case 1: {
-        if (v.count != 1 || !isLvalueNode(child(var, 0))) outside("a class local initialised by what is not an object");
-        const Val o = lvalue(child(var, 0));
+        if (v.count != 1 || !objectNode(child(var, 0))) outside("a class local initialised by what is not an object");
+        const Val o = object(child(var, 0));
         if (T(o.type).unqualified() != t.unqualified()) outside("a class local initialised from another type");
         copyObject(slot, o.v, t);
         return;
@@ -206,6 +206,70 @@ void Lowering::copyObject(ValueId to, ValueId from, const Type &t) {
     ops.push_back(from);
     const InstId c = add(Op::Memcpy, TypeId(), ops);
     at(c).k = t.size(target_);
+}
+
+// A plain class's temporary as the parser recorded it, `P()` or `P(o)`: a call of the class's name that no constructor
+// built. `P{...}` is not one of them - its list's values are loose in the syntax tree's parent, and it stays refused.
+bool Lowering::plainTemporary(sema::TypedId id) const {
+    if (syn(id).kind != syntax::Kind::Call || count(id) == 0 || count(id) > 2) return false;
+    const sema::Resolution &r = tree_.resolution(id);
+    const Type *t = tree_.node(id).type;
+    return r.what == sema::Resolution::Temporary && r.symbol.empty() && t != nullptr && plainClass(*t) &&
+           tree_.resolution(child(id, 0)).what == sema::Resolution::TypeName;
+}
+
+// [expr.type.conv] into a slot of this frame, which lives as long as the frame: `P()` value-initialised, which for a
+// plain class is zeroing ([dcl.init]/8), and `P(o)` a copy of o's bytes. The slot's address is the temporary's value.
+Lowering::Val Lowering::temporary(sema::TypedId id) {
+    const Type &t = *tree_.node(id).type->unqualified();
+    const ValueId slot = entryAlloca(tid(t), "$tmp");
+    if (count(id) == 1) {
+        const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, slot));
+        at(z).k = t.size(target_);
+    } else {
+        if (!objectNode(child(id, 1))) outside("a class temporary from what is not an object");
+        const Val o = object(child(id, 1));
+        if (T(o.type).unqualified() != &t) outside("a class temporary from another type");
+        copyObject(slot, o.v, t);
+    }
+    return Val(slot, tid(t));
+}
+
+// What a plain class's value can be copied from: an lvalue, a call's result, a temporary, an assignment, or a
+// conditional of two such.
+bool Lowering::objectNode(sema::TypedId id) const {
+    if (isLvalueNode(id) || plainTemporary(id)) return true;
+    const syntax::Kind k = syn(id).kind;
+    if (k == syntax::Kind::Paren) return count(id) == 1 && objectNode(child(id, 0));
+    // [expr.ass]/1: an assignment's value is its left object, which a plain class's copy assignment hands back.
+    if (k == syntax::Kind::Assign) return text(id) == "=" && tree_.node(id).type != nullptr && plainClass(*tree_.node(id).type);
+    if (k != syntax::Kind::Conditional || count(id) != 3) return false;
+    const Type *x = tree_.node(child(id, 1)).type, *y = tree_.node(child(id, 2)).type;
+    return x != nullptr && y != nullptr && x->unqualified() == y->unqualified() && plainClass(*x) &&
+           objectNode(child(id, 1)) && objectNode(child(id, 2));
+}
+
+// Such a value's address: a conditional's is the chosen arm's, each built in its own branch, as a conditional lvalue's.
+Lowering::Val Lowering::object(sema::TypedId id) {
+    if (isLvalueNode(id)) return lvalue(id);
+    if (plainTemporary(id)) return temporary(id);
+    if (syn(id).kind == syntax::Kind::Paren && count(id) == 1) return object(child(id, 0));
+    if (syn(id).kind == syntax::Kind::Assign && objectNode(id)) return assign(id);
+    if (syn(id).kind != syntax::Kind::Conditional || !objectNode(id)) outside("a class value that is not an object");
+    const Val c = truth(expr(child(id, 0)));
+    const BlockId a = newBlock(), b = newBlock(), merge = newBlock();
+    condbr(c.v, a, b);
+    place(a);
+    const Val x = object(child(id, 1));
+    const Type &cls = *T(x.type).unqualified();
+    const TypeId pt = tid(*types_.pointerTo(&cls));
+    br(merge, std::vector<ValueId>(1, result(add(Op::Bitcast, pt, std::vector<ValueId>(1, x.v)))));
+    place(b);
+    const Val y = object(child(id, 2));
+    if (T(y.type).unqualified() != &cls) outside("a conditional of two objects apart in type");
+    br(merge, std::vector<ValueId>(1, result(add(Op::Bitcast, pt, std::vector<ValueId>(1, y.v)))));
+    place(merge);
+    return Val(param(merge, pt), tid(cls));
 }
 
 // What a reference may refer to here: a scalar, or a complete class, which a reference only ever names by its address.
@@ -663,8 +727,8 @@ void Lowering::returnStmt(sema::TypedId id) {
         return;
     }
     if (rt.isStructOrUnion()) {
-        if (!isLvalueNode(child(id, 0))) outside("a class returned from what is not an object");
-        const Val a = lvalue(child(id, 0));
+        if (!objectNode(child(id, 0))) outside("a class returned from what is not an object");
+        const Val a = object(child(id, 0));
         if (T(a.type).unqualified() != &rt) outside("a class returned from another type");
         const InstId c = add(Op::Bitcast, tid(*types_.pointerTo(&rt)), std::vector<ValueId>(1, a.v));
         br(returnBlock_, std::vector<ValueId>(1, result(c)));
@@ -952,6 +1016,7 @@ Lowering::Val Lowering::lvalue(sema::TypedId id) {
         return Val(param(merge, pt), x.type);
     }
     case syntax::Kind::Call: {
+        if (plainTemporary(id)) return temporary(id);
         const Val r = call(id);
         if (!T(r.type).isPointer()) outside("a call that is no lvalue");
         return Val(r.v, tid(*T(r.type).pointee()));
@@ -1016,6 +1081,7 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
         break;
     case syntax::Kind::Conditional: e = conditional(id); break;
     case syntax::Kind::Call: {
+        if (plainTemporary(id)) { temporary(id); e = Val(); break; }      // a class value as a statement: built, unread
         e = call(id);
         const sema::Resolution &r = tree_.resolution(id);
         if (r.what == sema::Resolution::Call && T(r.type).returns()->isReference())
@@ -1577,8 +1643,8 @@ Lowering::Val Lowering::assign(sema::TypedId id) {
     const Val target = lvalue(tn);
     const Type &t = T(target.type);
     // [class.copy]/18: a plain class's implicit copy assignment copies its bytes; a written operator= is a call.
-    if (op == "=" && plainClass(t) && !t.isConst() && !(assigned_ && assigned_(&t)) && isLvalueNode(child(id, 1))) {
-        const Val from = lvalue(child(id, 1));
+    if (op == "=" && plainClass(t) && !t.isConst() && !(assigned_ && assigned_(&t)) && objectNode(child(id, 1))) {
+        const Val from = object(child(id, 1));
         if (T(from.type).unqualified() != t.unqualified()) outside("a class assigned from another type");
         copyObject(target.v, from.v, t);
         return target;
@@ -1660,6 +1726,7 @@ Lowering::Val Lowering::call(sema::TypedId id) {
     if (n == 0) outside("a call of nothing");
     const sema::TypedId head = child(id, 0);
     const sema::Resolution &r = tree_.resolution(id);
+    if (r.what == sema::Resolution::Temporary && !r.symbol.empty()) outside("a class temporary a constructor builds");
     if (r.what == sema::Resolution::Temporary || r.what == sema::Resolution::TypeName) outside("a class temporary");
     if (n == 1 && syn(head).kind == syntax::Kind::Member && pseudoDestructor(head)) return Val(ValueId(), tid(*types_.get(Kind::Void)));
     CallInfo info;
@@ -1766,8 +1833,8 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
         const Type &p = *ft.params()[i + skip];
         if (plainClass(p)) {
             // A plain class by value: its address, which the selector hands the walker as the object to copy in.
-            if (!isLvalueNode(an)) outside("a class argument that is not an object");
-            const Val a = lvalue(an);
+            if (!objectNode(an)) outside("a class argument that is not an object");
+            const Val a = object(an);
             if (T(a.type).unqualified() != p.unqualified()) outside("a class argument of another type");
             ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(p.unqualified())), std::vector<ValueId>(1, a.v))));
             continue;

@@ -165,6 +165,10 @@ private:
     void memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32_t to);
     void classLocal(sema::TypedId var, ValueId slot, const Type &t);
     void copyObject(ValueId to, ValueId from, const Type &t);
+    bool plainTemporary(sema::TypedId id) const;
+    Val temporary(sema::TypedId id);
+    bool objectNode(sema::TypedId id) const;
+    Val object(sema::TypedId id);
     static bool scalarArithmetic(const Type &t);
     static long long normalise(long long v, const Type &t, const Target &target);
 
