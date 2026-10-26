@@ -637,7 +637,10 @@ void Lowering::localArray(sema::TypedId var, ValueId slot, TypeId type) {
         first = 1;
     }
     const long long items = static_cast<long long>(v.count - first);
-    if (items == 0) return;
+    if (items == 0) {
+        if (v.initForm >= 2) { const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, slot)); at(z).k = t.size(target_); }
+        return;
+    }
     if (items > length) outside("an array initialised with more values than it holds");
     if (syn(child(var, first)).kind == syntax::Kind::StringLit) outside("an array initialised from a string");
     if (length - items > 64) outside("an array zeroed past 64 elements");
