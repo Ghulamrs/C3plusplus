@@ -1,0 +1,851 @@
+#!/usr/bin/env python3
+"""The Windows unwind and exception tables of an object, held to what was measured - without running it.
+
+An x86_64-windows object of cxx3 (`cxx3 -c`, or `-S -masm=gnu` assembled by clang) carries three things the
+runtime reads only when an exception passes through, and that no Mac or Linux box ever runs: `.pdata`, the
+UNWIND_INFO in `.xdata`, and the FH3 FuncInfo a function with a handler points at. This reads them back
+out of the bytes and holds each to the rule CLAUDE.md measured it against. Every rule names its section.
+
+    tools/win-unwind-check [-v] OBJECT...        every object checked; a fault is one line, exit 1 if any
+
+What it checks, and where each rule comes from:
+
+  .pdata      every function and funclet (a `$LNbeg$X`/`$LNend$X` pair in a code section) has exactly one
+              entry, from begin to end; an entry begins at a function; entries of one .pdata section are in
+              address order and do not overlap; a section's entries point into one code section.
+              ("6.5b step 4: The .pdata has to be sorted, and funclets break the order" - LNK1223;
+              "The Windows frame now has its base at the bottom"; M3a.4's `.pdata$x`.)
+  UNWIND_INFO version 1; flags 0 or EHANDLER|UHANDLER (0x19 >> 3, "what cl writes for a function with a try");
+              frame register rbp with offset 0 for a function, none for a funclet; the codes decoded and
+              matched against the prologue's own bytes, instruction by instruction and offset by offset - push
+              rbp (0x50), push rbx for a realigned frame (0x30), ALLOC_SMALL/ALLOC_LARGE for the `sub` or the
+              `__chkstk` probe of a page or more, SET_FPREG (3) at `mov rbp, rsp`, SAVE_NONVOL for each
+              callee-saved store; the prolog size is the last of them; a funclet's `mov [rsp+16], rdx` is the one
+              instruction with no code. ("6.5b step 1: unwind data by hand" - every offset a label difference;
+              "A frame that skipped the guard page" - cl probes at 4096; "alignas on a local past the stack's
+              alignment" - rbx a second nonvolatile; "6.5b steps 2 and 3" - 032H not 042H for the funclet.)
+  handler     a function with the flags names `__CxxFrameHandler3` and a `$cppxdata$F` this object defines;
+              one without them has no `$cppxdata$F`; a funclet names its parent's. ("$cppxdata$, and a
+              question asked of the wrong witness" - one signal, one place.)
+  FuncInfo    magic 0x19930522, EHFlags 1, no ESTypeList; maxState entries in the unwind map, each toState
+              -1 or an earlier state and the chain ending at -1, an action a funclet of this function; every
+              try block tryLow <= tryHigh < catchHigh < maxState with nCatches >= 1 and its handler map here;
+              try blocks nest or are disjoint and inner ones come first; a handler's adjectives are
+              HT_IsReference 8, HT_IsConst 1 or HT_IsCatchAll 0x40 (a catch-all names no type, the rest a
+              `??_R0`), its catch object inside the frame, its funclet one of this function's, dispFrame 56;
+              the ip2state map starts at the function with state -1, is in address order and inside the
+              function or its funclets, every handler funclet having a row at its entry; dispUnwindHelp inside
+              the frame, the body storing -2 there before its first call; a catch funclet's tail `add rsp, 32;
+              pop rbp; ret` behind a `lea rax` that lands in the function or one of its funclets, as does the
+              one before each `jmp` to that tail. ("6.5b steps 2 and 3: the FH3 tables, decoded from cl"; "The
+              FH3 state tree on x86_64-windows, and dispFrame, which is not a frame size"; "Catching by
+              reference, which is a slot and not a copy" - adjectives 8; "The COM Core sources compile" - the
+              -2 before anything can throw, `storeUnwindHelpAtEntry`; "Version 1.22" - the -2 at a function's
+              own entry.)
+
+Notes, not faults (-v lists them): two ip2state rows at one address with different states - the runtime's
+StateFromIp takes the last row not past the pc, and cxx3 writes the later transition last, so the first is a
+dead row cl would not write. A cleanup funclet has no ip2state row and none is asked: cl's answer there is
+unmeasured (owed to a Windows box).
+
+What it cannot check: that a resume address is the *right* place in the function, that a cleanup funclet
+destroys the right object, or anything about the code between the prologue and the return - those are the
+run suite's, on a Windows box or under Wine.
+"""
+import os
+import signal
+import struct
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import coffobj  # noqa: E402
+
+signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+
+REGS = ["rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi",
+        "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"]
+UWOP_PUSH_NONVOL, UWOP_ALLOC_LARGE, UWOP_ALLOC_SMALL, UWOP_SET_FPREG = 0, 1, 2, 3
+UWOP_SAVE_NONVOL, UWOP_SAVE_NONVOL_FAR = 4, 5
+UNW_FLAG_EHANDLER, UNW_FLAG_UHANDLER, UNW_FLAG_CHAININFO = 1, 2, 4
+FH3_MAGIC = 0x19930522
+HT_IS_CONST, HT_IS_REFERENCE, HT_IS_CATCHALL = 1, 8, 0x40
+DISP_FRAME = 56     # the funclet's own [rsp+16] past `push rbp; sub rsp, 32`: cl's 038H, for every handler
+
+verbose = False
+dump = False        # --dump: every FuncInfo printed as it is read, each address with the label nearest it
+
+
+def label(obj, place):
+    """A place as `label+k`, the label being the defined symbol at or nearest before it in its section."""
+    best = None
+    for s in obj.symbols_in(place.section):
+        if s.value <= place.offset and not s.name.startswith("$LN") and not s.name.startswith("$unwind"):
+            best = s
+    if best is None:
+        return "%s+0x%x" % (place.section.name, place.offset)
+    return best.name if best.value == place.offset else "%s+0x%x" % (best.name, place.offset - best.value)
+
+
+class Checker(object):
+    def __init__(self, path):
+        self.path = path
+        self.obj = coffobj.Coff(path)
+        self.faults = []
+        self.notes = []         # what is not wrong and not what cl writes either
+        self.functions = {}     # name -> Function
+        self.by_begin = {}      # (section index, offset) -> Function
+        self.funclet_count = 0
+
+    def fault(self, what):
+        self.faults.append(what)
+
+    def note(self, what):
+        self.notes.append(what)
+
+    def run(self):
+        self.collect_functions()
+        self.check_pdata()
+        for fn in sorted(self.functions.values(), key=lambda f: (f.section.index, f.begin)):
+            self.check_unwind(fn)
+        for fn in sorted(self.functions.values(), key=lambda f: (f.section.index, f.begin)):
+            if not fn.is_funclet:
+                self.check_funcinfo(fn)
+        return self.faults
+
+    # ---- functions and funclets ------------------------------------------------------------------------
+
+    def collect_functions(self):
+        obj = self.obj
+        for name, syms in obj.defined.items():
+            if not name.startswith("$LNbeg$"):
+                continue
+            fname = name[len("$LNbeg$"):]
+            if len(syms) != 1:
+                self.fault("%s: defined %d times" % (name, len(syms)))
+                continue
+            beg = syms[0]
+            end = obj.one("$LNend$" + fname)
+            if end is None:
+                self.fault("%s: has $LNbeg$ and no one $LNend$" % fname)
+                continue
+            sec = obj.section_of(beg)
+            if end.section != beg.section:
+                self.fault("%s: $LNbeg$ and $LNend$ in two sections" % fname)
+                continue
+            if not sec.is_code:
+                self.fault("%s: begins in %s, which is not a code section" % (fname, sec.name))
+                continue
+            if end.value <= beg.value:
+                self.fault("%s: $LNend$ (0x%x) is not past $LNbeg$ (0x%x)" % (fname, end.value, beg.value))
+                continue
+            fn = Function(fname, sec, beg.value, end.value)
+            fn.parent = funclet_parent(fname)
+            if fn.parent is not None:
+                self.funclet_count += 1
+            self.functions[fname] = fn
+            self.by_begin[(sec.index, beg.value)] = fn
+        # A funclet belongs to a function this object defines.
+        for fn in self.functions.values():
+            if fn.parent is not None:
+                p = self.functions.get(fn.parent)
+                if p is None:
+                    self.fault("%s: a funclet of %s, which has no $LNbeg$ here" % (fn.name, fn.parent))
+                else:
+                    p.funclets.append(fn)
+        # Every symbol typed as a function (MASM's PROC) is one of these; the GNU spelling types none.
+        for name, syms in self.obj.defined.items():
+            for s in syms:
+                if s.is_function and name not in self.functions:
+                    self.fault("%s: typed as a function and has no $LNbeg$/$LNend$ pair" % name)
+
+    # ---- .pdata --------------------------------------------------------------------------------------------
+
+    def check_pdata(self):
+        obj = self.obj
+        covered = {}
+        for sec in obj.sections:
+            if sec.base_name != ".pdata":
+                continue
+            if sec.size % 12 != 0:
+                self.fault("%s: size 0x%x is not a whole number of 12-byte entries" % (sec.name, sec.size))
+                continue
+            last = None
+            for k in range(sec.size // 12):
+                at = 12 * k
+                b = obj.place_at(sec, at, coffobj.REL_ADDR32NB)
+                e = obj.place_at(sec, at + 4, coffobj.REL_ADDR32NB)
+                u = obj.place_at(sec, at + 8, coffobj.REL_ADDR32NB)
+                where = "%s entry %d" % (sec.name, k)
+                if b is None or e is None or u is None:
+                    self.fault("%s: a field with no ADDR32NB relocation" % where)
+                    continue
+                if not (b.defined and e.defined and u.defined):
+                    self.fault("%s: names a symbol this object does not define (%s %s %s)" % (where, b, e, u))
+                    continue
+                if not b.section.is_code or e.section is not b.section:
+                    self.fault("%s: begin %r and end %r are not one code section" % (where, b, e))
+                    continue
+                if u.section.base_name != ".xdata":
+                    self.fault("%s: unwind info %r is not in .xdata" % (where, u))
+                fn = self.by_begin.get((b.section.index, b.offset))
+                if fn is None:
+                    self.fault("%s: begins at %r, where no function begins" % (where, b))
+                    continue
+                if e.offset != fn.end:
+                    self.fault("%s: %s ends at 0x%x and the entry says 0x%x" % (where, fn.name, fn.end, e.offset))
+                if fn.name in covered:
+                    self.fault("%s: %s already has an entry (%s)" % (where, fn.name, covered[fn.name]))
+                covered[fn.name] = where
+                fn.unwind = u
+                fn.pdata = where
+                if last is not None:
+                    if last.section is not b.section:
+                        self.fault("%s: points into %s where the entry before points into %s - one .pdata "
+                                   "section, two code sections" % (where, b.section.name, last.section.name))
+                    elif b.offset < last.end:
+                        self.fault("%s: begins at 0x%x, before or inside the entry before it (ends 0x%x) - the "
+                                   ".pdata is out of order or overlaps" % (where, b.offset, last.end))
+                last = Range(b.section, b.offset, e.offset)
+        for fn in self.functions.values():
+            if fn.unwind is None:
+                self.fault("%s: no .pdata entry" % fn.name)
+
+    # ---- UNWIND_INFO against the prologue -----------------------------------------------------------------
+
+    def check_unwind(self, fn):
+        if fn.unwind is None:
+            return
+        obj = self.obj
+        sec, at = fn.unwind.section, fn.unwind.offset
+        if at + 4 > sec.size:
+            self.fault("%s: unwind info runs past %s" % (fn.name, sec.name))
+            return
+        version = sec.u8(at) & 7
+        flags = sec.u8(at) >> 3
+        prolog = sec.u8(at + 1)
+        count = sec.u8(at + 2)
+        frame_reg = sec.u8(at + 3) & 0xF
+        frame_off = sec.u8(at + 3) >> 4
+        fn.flags = flags
+        if version != 1:
+            self.fault("%s: UNWIND_INFO version %d" % (fn.name, version))
+        if flags not in (0, UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER):
+            self.fault("%s: unwind flags 0x%x - 0 or EHANDLER|UHANDLER (0x19 >> 3) is what is measured" % (fn.name, flags))
+        if fn.is_funclet:
+            if frame_reg != 0 or frame_off != 0:
+                self.fault("%s: a funclet with a frame register (byte 0x%02x)" % (fn.name, sec.u8(at + 3)))
+            if flags != (UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER):
+                self.fault("%s: a funclet without the handler flags" % fn.name)
+        elif frame_reg != 5 or frame_off != 0:
+            self.fault("%s: frame register %s offset %d - rbp with offset 0 is the frame cxx3 builds"
+                       % (fn.name, REGS[frame_reg] if frame_reg else "none", frame_off))
+        codes = []
+        p = at + 4
+        if p + 2 * count > sec.size:
+            self.fault("%s: %d unwind codes run past %s" % (fn.name, count, sec.name))
+            return
+        k = 0
+        while k < count:
+            off, op = sec.u8(p + 2 * k), sec.u8(p + 2 * k + 1)
+            opcode, info = op & 0xF, op >> 4
+            extra = None
+            slots = 1
+            if opcode == UWOP_ALLOC_LARGE:
+                slots = 2 if info == 0 else 3
+                if k + slots > count:
+                    self.fault("%s: an ALLOC_LARGE code past the count" % fn.name)
+                    break
+                extra = sec.u16(p + 2 * k + 2) if info == 0 else sec.u32(p + 2 * k + 2)
+            elif opcode == UWOP_SAVE_NONVOL:
+                slots = 2
+                if k + slots > count:
+                    self.fault("%s: a SAVE_NONVOL code past the count" % fn.name)
+                    break
+                extra = sec.u16(p + 2 * k + 2)
+            elif opcode in (UWOP_SAVE_NONVOL_FAR, 8, 9, 10):
+                self.fault("%s: unwind opcode %d, which cxx3 does not write" % (fn.name, opcode))
+                break
+            codes.append(Code(off, opcode, info, extra))
+            k += slots
+        # The codes are in descending offset order: the unwinder applies those past the current offset.
+        for a, b in zip(codes, codes[1:]):
+            if b.offset > a.offset:
+                self.fault("%s: unwind codes out of order (offset 0x%x after 0x%x)" % (fn.name, b.offset, a.offset))
+        p += 2 * count
+        if count % 2:
+            p += 2
+        # The handler and its data, where the flags ask for them.
+        if flags & (UNW_FLAG_EHANDLER | UNW_FLAG_UHANDLER):
+            h = obj.place_at(sec, p, coffobj.REL_ADDR32NB)
+            d = obj.place_at(sec, p + 4, coffobj.REL_ADDR32NB)
+            if h is None or h.name != "__CxxFrameHandler3":
+                self.fault("%s: the handler is %s, not __CxxFrameHandler3" % (fn.name, h.name if h else "no relocation"))
+            owner = fn.parent if fn.is_funclet else fn.name
+            if d is None or not d.defined or d.name != "$cppxdata$" + owner:
+                self.fault("%s: the handler data is %s, not this object's $cppxdata$%s"
+                           % (fn.name, d if d else "no relocation", owner))
+            elif d.section.base_name != ".xdata":
+                self.fault("%s: $cppxdata$%s is in %s, not .xdata" % (fn.name, owner, d.section.name))
+            else:
+                fn.funcinfo = d
+        elif not fn.is_funclet and obj.one("$cppxdata$" + fn.name) is not None:
+            self.fault("%s: has a $cppxdata$ and no handler flags - the FuncInfo would never be read" % fn.name)
+        self.match_prologue(fn, prolog, codes)
+
+    def match_prologue(self, fn, prolog, codes):
+        """The prologue's bytes decoded and walked beside the codes, which are in reverse order."""
+        sec = fn.section
+        data = sec.data
+        if fn.begin + prolog > fn.end:
+            self.fault("%s: prolog size %d reaches past the function" % (fn.name, prolog))
+            return
+        expect = list(reversed(codes))
+        fn.prolog = prolog
+        at = fn.begin
+        end = fn.begin + prolog
+        last_code_end = 0
+        pending_probe = None    # (size) of a `mov eax, N; call __chkstk` seen, waiting for its `sub rsp, rax`
+        while at < end:
+            ins = decode(data, at, sec, self.obj)
+            if ins is None:
+                self.fault("%s: byte 0x%02x at +0x%x is an instruction this check cannot decode in a prologue"
+                           % (fn.name, data[at], at - fn.begin))
+                return
+            kind, length, arg = ins
+            at += length
+            rel = at - fn.begin
+            if kind == "mov-eax-imm":
+                pending_probe = arg
+                continue
+            if kind == "call":
+                if arg != "__chkstk" or pending_probe is None:
+                    self.fault("%s: a call to %s inside the prologue" % (fn.name, arg))
+                    return
+                continue
+            if kind == "store-rsp16-rdx":
+                if not fn.is_funclet:
+                    self.fault("%s: `mov [rsp+16], rdx` in a function that is not a funclet" % fn.name)
+                continue
+            if not expect:
+                self.fault("%s: %s at +0x%x has no unwind code" % (fn.name, describe(kind, arg), rel))
+                return
+            code = expect.pop(0)
+            if code.offset != rel:
+                self.fault("%s: unwind code %s is at offset 0x%x and its instruction %s ends at 0x%x"
+                           % (fn.name, code, code.offset, describe(kind, arg), rel))
+                return
+            last_code_end = rel
+            if code.opcode == UWOP_PUSH_NONVOL:
+                if kind != "push" or arg != code.info:
+                    self.fault("%s: code %s against %s" % (fn.name, code, describe(kind, arg)))
+                    return
+                if fn.is_funclet and code.info != 5:
+                    self.fault("%s: a funclet pushing %s" % (fn.name, REGS[code.info]))
+            elif code.opcode in (UWOP_ALLOC_SMALL, UWOP_ALLOC_LARGE):
+                size = (code.info + 1) * 8 if code.opcode == UWOP_ALLOC_SMALL else \
+                    (code.extra * 8 if code.info == 0 else code.extra)
+                if kind == "sub-rsp-imm":
+                    if arg != size:
+                        self.fault("%s: the unwind code allocates %d and `sub rsp` %d" % (fn.name, size, arg))
+                        return
+                    if arg >= 4096:
+                        self.fault("%s: a frame of %d taken in one `sub` - cl probes through __chkstk from a page "
+                                   "(a frame that skipped the guard page)" % (fn.name, arg))
+                elif kind == "sub-rsp-rax":
+                    if pending_probe is None:
+                        self.fault("%s: `sub rsp, rax` with no `mov eax, N; call __chkstk` before it" % fn.name)
+                        return
+                    if pending_probe != size:
+                        self.fault("%s: __chkstk probes %d and the unwind code allocates %d" % (fn.name, pending_probe, size))
+                        return
+                    if pending_probe < 4096:
+                        self.fault("%s: __chkstk for a frame of %d, under a page" % (fn.name, pending_probe))
+                    pending_probe = None
+                else:
+                    self.fault("%s: code %s against %s" % (fn.name, code, describe(kind, arg)))
+                    return
+                if fn.is_funclet and size != 32:
+                    self.fault("%s: a funclet allocating %d, not the 32 of its home area (032H, not 042H)" % (fn.name, size))
+                fn.frame = size
+            elif code.opcode == UWOP_SET_FPREG:
+                if kind != "mov-rbp-rsp":
+                    self.fault("%s: SET_FPREG against %s" % (fn.name, describe(kind, arg)))
+                    return
+            elif code.opcode == UWOP_SAVE_NONVOL:
+                if kind != "store-rbp" or arg[0] != code.info or arg[1] != code.extra * 8:
+                    self.fault("%s: code %s against %s" % (fn.name, code, describe(kind, arg)))
+                    return
+                fn.saves.append((code.info, code.extra * 8))
+            else:
+                self.fault("%s: unwind code %s is not one this check knows" % (fn.name, code))
+                return
+        if pending_probe is not None:
+            self.fault("%s: a __chkstk probe with no `sub rsp, rax` in the prologue" % fn.name)
+        if expect:
+            self.fault("%s: %d unwind code(s) with no instruction in the prologue: %s"
+                       % (fn.name, len(expect), ", ".join(str(c) for c in expect)))
+        elif codes and last_code_end != prolog:
+            self.fault("%s: prolog size %d where the last unwind code's instruction ends at %d" % (fn.name, prolog, last_code_end))
+        if fn.is_funclet and fn.frame != 32:
+            self.fault("%s: a funclet whose prologue allocates no home area" % fn.name)
+
+    # ---- the FuncInfo ---------------------------------------------------------------------------------------
+
+    def check_funcinfo(self, fn):
+        if fn.funcinfo is None:
+            return
+        obj = self.obj
+        sec, at = fn.funcinfo.section, fn.funcinfo.offset
+        name = fn.name
+        if at + 40 > sec.size:
+            self.fault("%s: FuncInfo runs past %s" % (name, sec.name))
+            return
+        magic = sec.u32(at)
+        max_state = sec.i32(at + 4)
+        n_try = sec.i32(at + 12)
+        n_ip = sec.i32(at + 20)
+        disp_help = sec.i32(at + 28)
+        es_list = sec.u32(at + 32)
+        eh_flags = sec.u32(at + 36)
+        if magic != FH3_MAGIC:
+            self.fault("%s: FuncInfo magic 0x%08x, not 0x19930522" % (name, magic))
+            return
+        if eh_flags != 1:
+            self.fault("%s: EHFlags %d - 1 is /EHsc" % (name, eh_flags))
+        if es_list != 0 or sec.reloc_at(at + 32) is not None:
+            self.fault("%s: an ESTypeList, which cxx3 never writes" % name)
+        if max_state < 1:
+            self.fault("%s: maxState %d" % (name, max_state))
+            return
+        frame = fn.frame
+        if frame is None:
+            self.fault("%s: a FuncInfo and no frame allocation to measure its displacements against" % name)
+            return
+        if disp_help <= 0 or disp_help % 8 or disp_help + 8 > frame:
+            self.fault("%s: dispUnwindHelp %d is not an 8-byte slot inside the %d-byte frame" % (name, disp_help, frame))
+        elif not self.stores_minus_two(fn, disp_help):
+            self.fault("%s: no `mov qword ptr [rbp+%d], -2` in the body - the runtime reads that slot as the "
+                       "frame's state (storeUnwindHelpAtEntry)" % (name, disp_help))
+
+        # The state unwind map.
+        um = obj.place_at(sec, at + 8, coffobj.REL_ADDR32NB)
+        if um is None or not um.defined or um.section.base_name != ".xdata":
+            self.fault("%s: pUnwindMap %s" % (name, um))
+            return
+        if um.offset + 8 * max_state > um.section.size:
+            self.fault("%s: unwind map of %d states runs past %s" % (name, max_state, um.section.name))
+            return
+        to_state = []
+        for s in range(max_state):
+            o = um.offset + 8 * s
+            t = um.section.i32(o)
+            to_state.append(t)
+            if dump:
+                act = obj.place_at(um.section, o + 4, coffobj.REL_ADDR32NB)
+                print("  %s state %d: toState %d%s" % (name, s, t, " action " + act.name if act else ""))
+            if t < -1 or t >= max_state or t == s:
+                self.fault("%s: state %d has toState %d" % (name, s, t))
+            action = obj.place_at(um.section, o + 4, coffobj.REL_ADDR32NB)
+            if um.section.u32(o + 4) != 0 and action is None:
+                self.fault("%s: state %d has a non-zero action with no relocation" % (name, s))
+            if action is not None:
+                f = self.funclet_at(action)
+                if f is None or f.parent != name:
+                    self.fault("%s: state %d's action %r is not a funclet of this function" % (name, s, action))
+                else:
+                    f.named += 1
+        for s in range(max_state):
+            seen, t = set(), s
+            while t != -1 and t not in seen and 0 <= t < max_state:
+                seen.add(t)
+                t = to_state[t]
+            if t != -1:
+                self.fault("%s: state %d's toState chain never reaches -1" % (name, s))
+                break
+
+        # The try blocks and their handler maps.
+        tries = []
+        if n_try < 0:
+            self.fault("%s: nTryBlocks %d" % (name, n_try))
+            return
+        tm = obj.place_at(sec, at + 16, coffobj.REL_ADDR32NB)
+        if n_try == 0:
+            if tm is not None or sec.u32(at + 16) != 0:
+                self.fault("%s: no try blocks and a pTryBlockMap" % name)
+        else:
+            if tm is None or not tm.defined or tm.section.base_name != ".xdata":
+                self.fault("%s: pTryBlockMap %s" % (name, tm))
+                return
+            if tm.offset + 20 * n_try > tm.section.size:
+                self.fault("%s: try map of %d runs past %s" % (name, n_try, tm.section.name))
+                return
+            for k in range(n_try):
+                o = tm.offset + 20 * k
+                lo, hi, ch, nc = (tm.section.i32(o + 4 * i) for i in range(4))
+                hm = obj.place_at(tm.section, o + 16, coffobj.REL_ADDR32NB)
+                tries.append((lo, hi, ch))
+                if dump:
+                    print("  %s try %d: tryLow %d tryHigh %d catchHigh %d, %d handlers" % (name, k, lo, hi, ch, nc))
+                if not (0 <= lo <= hi < ch < max_state):
+                    self.fault("%s: try block %d has tryLow %d tryHigh %d catchHigh %d of %d states"
+                               % (name, k, lo, hi, ch, max_state))
+                if nc < 1:
+                    self.fault("%s: try block %d has %d handlers" % (name, k, nc))
+                    continue
+                if hm is None or not hm.defined or hm.section.base_name != ".xdata":
+                    self.fault("%s: try block %d's handler map %s" % (name, k, hm))
+                    continue
+                self.check_handlers(fn, k, hm, nc, lo, hi, ch)
+            # The runtime takes the first block whose [tryLow, tryHigh] holds the state and whose handlers match,
+            # so where two blocks' ranges nest the inner must come first; disjoint ranges may stand in any order.
+            for a in range(n_try):
+                for b in range(a + 1, n_try):
+                    lo1, hi1, ch1 = tries[a]
+                    lo2, hi2, ch2 = tries[b]
+                    nested = (lo1 <= lo2 and ch2 <= ch1) or (lo2 <= lo1 and ch1 <= ch2)
+                    disjoint = ch1 < lo2 or ch2 < lo1
+                    if not (nested or disjoint):
+                        self.fault("%s: try blocks %d [%d,%d,%d] and %d [%d,%d,%d] neither nest nor stand apart"
+                                   % (name, a, lo1, hi1, ch1, b, lo2, hi2, ch2))
+                    if lo1 <= lo2 and hi2 <= hi1 and (lo1, hi1) != (lo2, hi2):
+                        self.fault("%s: try block %d [%d,%d] holds try block %d [%d,%d] and comes first - the runtime "
+                                   "would take the outer handler" % (name, a, lo1, hi1, b, lo2, hi2))
+
+        # The ip2state map.
+        im = obj.place_at(sec, at + 24, coffobj.REL_ADDR32NB)
+        if im is None or not im.defined or im.section.base_name != ".xdata":
+            self.fault("%s: pIPtoStateMap %s" % (name, im))
+            return
+        if n_ip < 1 or im.offset + 8 * n_ip > im.section.size:
+            self.fault("%s: ip2state map of %d entries runs past %s" % (name, n_ip, im.section.name))
+            return
+        rows = []
+        for r in range(n_ip):
+            o = im.offset + 8 * r
+            ip = obj.place_at(im.section, o, coffobj.REL_ADDR32NB)
+            st = im.section.i32(o + 4)
+            if ip is None or not ip.defined:
+                self.fault("%s: ip2state row %d names %s" % (name, r, ip))
+                continue
+            if st < -1 or st >= max_state:
+                self.fault("%s: ip2state row %d has state %d of %d" % (name, r, st, max_state))
+            rows.append((ip, st))
+            if dump:
+                print("  %s ip2state %d: %s state %d" % (name, r, label(obj, ip), st))
+        if not rows:
+            return
+        ip0, st0 = rows[0]
+        if ip0.section is not fn.section or ip0.offset != fn.begin or st0 != -1:
+            self.fault("%s: the ip2state map does not begin at the function with state -1 (%r, %d)" % (name, ip0, st0))
+        body = [(ip, st) for ip, st in rows if ip.section is fn.section]
+        rest = [(ip, st) for ip, st in rows if ip.section is not fn.section]
+        for (ip, st) in body:
+            if not (fn.begin <= ip.offset < fn.end):
+                self.fault("%s: ip2state row at %r is outside the function" % (name, ip))
+        # Two rows at one address are not a fault: the runtime's StateFromIp takes the last row whose address is
+        # not past the pc, and cxx3 writes the later transition last - a dead row cl would not write (a note).
+        for (a, sa), (b, sb) in zip(body, body[1:]):
+            if b.offset < a.offset:
+                self.fault("%s: ip2state rows out of address order (0x%x after 0x%x)" % (name, b.offset, a.offset))
+            elif b.offset == a.offset and sa != sb:
+                self.note("%s: two ip2state rows at 0x%x, states %d then %d - the second is in force" % (name, a.offset, sa, sb))
+        # The rows in funclets: inside a funclet of this function, each funclet's entry among them.
+        seen_entry = set()
+        for ip, st in rest:
+            f = self.function_holding(ip)
+            if f is None or f.parent != name:
+                self.fault("%s: ip2state row at %r is in no funclet of this function" % (name, ip))
+                continue
+            if ip.offset == f.begin:
+                seen_entry.add(f.name)
+        # A handler's funclet has a row at its entry - the state a throw from inside it is seen in. cxx3 writes none
+        # for a cleanup funclet; what cl writes there is unmeasured (owed to a Windows box), so none is asked.
+        for f in fn.funclets:
+            if f.handler_of is not None and f.name not in seen_entry:
+                self.fault("%s: handler funclet %s has no ip2state row at its entry" % (name, f.name))
+            if f.named == 0:
+                self.fault("%s: funclet %s is named by no handler and no cleanup state" % (name, f.name))
+            self.check_resumes(fn, f)
+        self.check_entry_store(fn, disp_help)
+
+    def check_resumes(self, fn, f):
+        """A catch funclet returns where the try carries on, in rax: the `lea rax, [rip+X]` in front of its tail
+        (`add rsp, 32; pop rbp; ret`), and the one in front of each `jmp` to that tail. Each X is inside the parent."""
+        data, sec = f.section.data, f.section
+        tail = f.end - 6
+        if data[tail:f.end] != b"\x48\x83\xc4\x20\x5d\xc3":
+            self.fault("%s: funclet %s does not end `add rsp, 32; pop rbp; ret`" % (fn.name, f.name))
+            return
+        leas = []
+        if data[tail - 7:tail - 4] == b"\x48\x8d\x05":
+            leas.append(tail - 7)
+        at = f.begin
+        while at + 12 <= tail:
+            if data[at:at + 3] == b"\x48\x8d\x05" and data[at + 7] == 0xE9 \
+                    and at + 12 + struct.unpack_from("<i", data, at + 8)[0] == tail:
+                leas.append(at)
+            at += 1
+        # A try inside a handler carries on inside the enclosing handler's funclet, so a sibling funclet is inside too.
+        inside = [fn] + fn.funclets
+        for at in leas:
+            target = self.obj.place_at(sec, at + 3, coffobj.REL_REL32)
+            if target is None:      # clang resolves a rip-relative reference within one section with no relocation
+                target = coffobj.Place(sec, at + 7 + struct.unpack_from("<i", data, at + 3)[0], "", None)
+            if not target.defined:
+                self.fault("%s: funclet %s resumes at %s" % (fn.name, f.name, target))
+            elif not any(g.section is target.section and g.begin <= target.offset < g.end for g in inside):
+                self.fault("%s: funclet %s resumes at %r, outside the function and its funclets" % (fn.name, f.name, target))
+        if f.handler_of is not None and not leas:
+            self.fault("%s: handler funclet %s hands back no address to carry on at" % (fn.name, f.name))
+
+    def check_entry_store(self, fn, disp):
+        """The -2 goes into the scratch slot before anything that can throw (storeUnwindHelpAtEntry): before the
+        first call, which is the first REL32 relocation naming a function. The parameters may be homed first."""
+        if fn.prolog is None:
+            return
+        data, sec = fn.section.data, fn.section
+        store = bytes([0x48, 0xC7, 0x45, disp]) + b"\xfe\xff\xff\xff" if 0 <= disp < 128 else \
+            bytes([0x48, 0xC7, 0x85]) + struct.pack("<i", disp) + b"\xfe\xff\xff\xff"
+        at = data.find(store, fn.begin + fn.prolog, fn.end)
+        if at < 0:
+            return      # the body has no such store: check_funcinfo has said so
+        for r in sec.relocs:
+            if r.offset < fn.begin + fn.prolog or r.offset >= at:
+                continue
+            if r.type != coffobj.REL_REL32:
+                continue
+            target = self.obj.resolve(sec, r)
+            is_call = target.name in self.functions or (not target.defined and not target.name.startswith("_tls_index"))
+            if is_call:
+                self.fault("%s: a call to %s at +0x%x comes before the `mov qword ptr [rbp+%d], -2` at +0x%x - a throw there "
+                           "finds the frame's state uninitialised" % (fn.name, target.name, r.offset - fn.begin, disp, at - fn.begin))
+                return
+
+    def check_handlers(self, fn, k, hm, nc, lo, hi, ch):
+        obj = self.obj
+        name = fn.name
+        if hm.offset + 20 * nc > hm.section.size:
+            self.fault("%s: handler map %d of %d runs past %s" % (name, k, nc, hm.section.name))
+            return
+        for i in range(nc):
+            o = hm.offset + 20 * i
+            adj = hm.section.u32(o)
+            ptype = obj.place_at(hm.section, o + 4, coffobj.REL_ADDR32NB)
+            disp_obj = hm.section.i32(o + 8)
+            handler = obj.place_at(hm.section, o + 12, coffobj.REL_ADDR32NB)
+            disp_frame = hm.section.i32(o + 16)
+            where = "%s: try block %d handler %d" % (name, k, i)
+            if dump:
+                print("  %s handler %d.%d: adjectives 0x%x type %s object +%d funclet %s dispFrame %d"
+                      % (name, k, i, adj, ptype.name if ptype else "-", disp_obj, handler.name if handler else "-", disp_frame))
+            if adj & ~(HT_IS_CONST | HT_IS_REFERENCE | HT_IS_CATCHALL):
+                self.fault("%s: adjectives 0x%x hold a bit cxx3 does not write" % (where, adj))
+            if adj & HT_IS_CATCHALL:
+                if ptype is not None or hm.section.u32(o + 4) != 0:
+                    self.fault("%s: a catch-all naming a type" % where)
+            elif ptype is None or not ptype.name.startswith("??_R0"):
+                self.fault("%s: the type is %s, not a ??_R0 descriptor" % (where, ptype.name if ptype else "no relocation"))
+            # A `catch (char c)` keeps its byte at an odd displacement, so only the frame bounds it.
+            if disp_obj != 0 and (disp_obj < 0 or disp_obj >= fn.frame):
+                self.fault("%s: dispCatchObj %d is not inside the %d-byte frame" % (where, disp_obj, fn.frame))
+            if handler is None or not handler.defined:
+                self.fault("%s: handler %s" % (where, handler))
+            else:
+                f = self.funclet_at(handler)
+                if f is None or f.parent != name:
+                    self.fault("%s: handler %r is not a funclet of this function" % (where, handler))
+                else:
+                    f.named += 1
+                    f.handler_of = (k, hi, ch)
+            if disp_frame != DISP_FRAME:
+                self.fault("%s: dispFrame %d - it is the funclet's own saved-frame slot, 56 for every handler, not a "
+                           "frame size" % (where, disp_frame))
+
+    # ---- helpers --------------------------------------------------------------------------------------------
+
+    def funclet_at(self, place):
+        f = self.by_begin.get((place.section.index, place.offset)) if place.defined else None
+        return f if f is not None and f.is_funclet else None
+
+    def function_holding(self, place):
+        if not place.defined:
+            return None
+        for fn in self.functions.values():
+            if fn.section is place.section and fn.begin <= place.offset < fn.end:
+                return fn
+        return None
+
+    def stores_minus_two(self, fn, disp):
+        """`mov qword ptr [rbp+disp], -2` somewhere in the body: 48 C7 45 ib / 48 C7 85 id, then FE FF FF FF."""
+        data = fn.section.data
+        pats = []
+        if disp < 128:
+            pats.append(bytes([0x48, 0xC7, 0x45, disp]) + b"\xfe\xff\xff\xff")
+        pats.append(bytes([0x48, 0xC7, 0x85]) + struct.pack("<i", disp) + b"\xfe\xff\xff\xff")
+        body = data[fn.begin:fn.end]
+        return any(p in body for p in pats)
+
+
+class Function(object):
+    def __init__(self, name, section, begin, end):
+        self.name, self.section, self.begin, self.end = name, section, begin, end
+        self.parent = None
+        self.funclets = []
+        self.unwind = None
+        self.pdata = None
+        self.flags = 0
+        self.funcinfo = None
+        self.frame = None
+        self.saves = []
+        self.prolog = None
+        self.named = 0
+        self.handler_of = None
+
+    @property
+    def is_funclet(self):
+        return self.parent is not None
+
+
+class Range(object):
+    def __init__(self, section, begin, end):
+        self.section, self.begin, self.end = section, begin, end
+
+
+class Code(object):
+    def __init__(self, offset, opcode, info, extra):
+        self.offset, self.opcode, self.info, self.extra = offset, opcode, info, extra
+
+    def __str__(self):
+        names = {0: "PUSH_NONVOL", 1: "ALLOC_LARGE", 2: "ALLOC_SMALL", 3: "SET_FPREG", 4: "SAVE_NONVOL"}
+        s = "%s@0x%x" % (names.get(self.opcode, "op%d" % self.opcode), self.offset)
+        if self.opcode in (0, 4):
+            s += " " + REGS[self.info]
+        if self.opcode == 2:
+            s += " %d" % ((self.info + 1) * 8)
+        if self.extra is not None:
+            s += " %d" % self.extra
+        return s
+
+
+def funclet_parent(name):
+    """MASM names a funclet `parent$catch$N`, the GNU spelling `$catch$N$parent`; neither is a program's name."""
+    marker = "$catch$"
+    if name.startswith(marker):
+        rest = name[len(marker):]
+        k = 0
+        while k < len(rest) and rest[k].isdigit():
+            k += 1
+        if k and k < len(rest) and rest[k] == "$":
+            return rest[k + 1:]
+    i = name.rfind(marker)
+    if i > 0 and name[i + len(marker):].isdigit():
+        return name[:i]
+    return None
+
+
+def decode(data, at, section, obj):
+    """One prologue instruction at `at`: (kind, length, argument), or None where the bytes are something else."""
+    b = data
+    n = len(b)
+    if at >= n:
+        return None
+    op = b[at]
+    if op == 0x55:
+        return ("push", 1, 5)
+    if op == 0x53:
+        return ("push", 1, 3)
+    if op in (0x50, 0x51, 0x52, 0x54, 0x56, 0x57):
+        return ("push", 1, op - 0x50)
+    if op == 0x41 and at + 1 < n and 0x50 <= b[at + 1] <= 0x57:
+        return ("push", 2, 8 + b[at + 1] - 0x50)
+    if op == 0xB8 and at + 5 <= n:
+        return ("mov-eax-imm", 5, struct.unpack_from("<I", b, at + 1)[0])
+    if op == 0xE8 and at + 5 <= n:
+        place = obj.place_at(section, at + 1, coffobj.REL_REL32)
+        return ("call", 5, place.name if place else "?")
+    if op == 0x48 and at + 3 <= n:
+        op2, modrm = b[at + 1], b[at + 2]
+        if op2 == 0x83 and modrm == 0xEC and at + 4 <= n:
+            return ("sub-rsp-imm", 4, struct.unpack_from("<b", b, at + 3)[0])
+        if op2 == 0x81 and modrm == 0xEC and at + 7 <= n:
+            return ("sub-rsp-imm", 7, struct.unpack_from("<i", b, at + 3)[0])
+        if (op2, modrm) in ((0x89, 0xE5), (0x8B, 0xEC)):
+            return ("mov-rbp-rsp", 3, None)
+        if (op2, modrm) in ((0x29, 0xC4), (0x2B, 0xE0)):
+            return ("sub-rsp-rax", 3, None)
+        if op2 == 0x83 and modrm == 0xE4 and at + 4 <= n:
+            return ("and-rsp", 4, struct.unpack_from("<b", b, at + 3)[0])
+    if op in (0x48, 0x4C) and at + 3 <= n and b[at + 1] == 0x89:
+        modrm = b[at + 2]
+        mod, reg, rm = modrm >> 6, (modrm >> 3) & 7, modrm & 7
+        reg += 8 if op == 0x4C else 0
+        if rm == 5 and mod in (1, 2):
+            if mod == 1 and at + 4 <= n:
+                return ("store-rbp", 4, (reg, struct.unpack_from("<b", b, at + 3)[0]))
+            if mod == 2 and at + 7 <= n:
+                return ("store-rbp", 7, (reg, struct.unpack_from("<i", b, at + 3)[0]))
+        if rm == 4 and mod == 1 and at + 5 <= n and b[at + 3] == 0x24:
+            disp = struct.unpack_from("<b", b, at + 4)[0]
+            if reg == 2 and disp == 16:
+                return ("store-rsp16-rdx", 5, None)
+            return ("store-rsp", 5, (reg, disp))
+    return None
+
+
+def describe(kind, arg):
+    if kind == "push":
+        return "push %s" % REGS[arg]
+    if kind == "sub-rsp-imm":
+        return "sub rsp, %d" % arg
+    if kind == "store-rbp":
+        return "mov [rbp+%d], %s" % (arg[1], REGS[arg[0]])
+    if kind == "store-rsp":
+        return "mov [rsp+%d], %s" % (arg[1], REGS[arg[0]])
+    if kind == "and-rsp":
+        return "and rsp, %d" % arg
+    return kind
+
+
+def main(argv):
+    global verbose, dump
+    paths = []
+    for a in argv[1:]:
+        if a == "-v":
+            verbose = True
+        elif a == "--dump":
+            dump = True
+        else:
+            paths.append(a)
+    if not paths:
+        sys.stderr.write(__doc__)
+        return 2
+    objects = functions = funclets = 0
+    faults = notes = 0
+    for p in paths:
+        try:
+            c = Checker(p)
+            found = c.run()
+        except Exception as e:  # a file the reader cannot parse is a fault of its own
+            found = ["cannot read: %s" % e]
+            c = None
+        objects += 1
+        if c is not None:
+            functions += len(c.functions) - c.funclet_count
+            funclets += c.funclet_count
+            notes += len(c.notes)
+        for f in found:
+            print("%s: %s" % (os.path.basename(p), f))
+        faults += len(found)
+        if verbose and c is not None:
+            for n in c.notes:
+                print("%s: note: %s" % (os.path.basename(p), n))
+            for fn in sorted(c.functions.values(), key=lambda f: (f.section.index, f.begin)):
+                print("  %s %s [0x%x,0x%x) frame=%s flags=%d funcinfo=%s"
+                      % (os.path.basename(p), fn.name, fn.begin, fn.end, fn.frame, fn.flags, fn.funcinfo is not None))
+    print("win-unwind-check: %d objects, %d functions, %d funclets, %d faults, %d notes (-v lists them)"
+          % (objects, functions, funclets, faults, notes))
+    return 1 if faults else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

@@ -114,6 +114,12 @@ if [ -x "$MASMEXE" ] && [ -x "$ROOT/cxx3.exe" ]; then
 else
     echo "coff-equal: skipped - no masm.exe at $MASMEXE (CXX1_MASM names one)"
 fi
+# The Windows objects held to their own tables without a Windows box (2026-10-26): .pdata, UNWIND_INFO against the
+# prologue, the FH3 tables, and the RTTI and vftables beside clang's. In `make test` too; here so a release reads it.
+if [ -x "$ROOT/cxx3.exe" ]; then
+    (cd "$ROOT" && CXX1=./cxx3.exe sh tests/win-structure.sh > tests/out-winstructure.log 2>&1; rc=$?
+     grep -v '^recorded' tests/out-winstructure.log | tail -5; exit $rc) || STATUS=1
+fi
 
 LEGS=$(mktemp -d)
 BG=""
