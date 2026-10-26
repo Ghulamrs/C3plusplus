@@ -49,6 +49,7 @@ public:
     // The constructor the parser chose for a member, and a class's destructor - Sema's records, asked by the glue.
     void setMemberBuilt(std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> f) { memberBuilt_ = f; }
     void setDestructor(std::function<std::string(const Type *)> f) { destructor_ = f; }
+    void setTemporaryBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> f) { temporaryBuilt_ = f; }
 private:
     struct Outside { std::string why; explicit Outside(const std::string &w) : why(w) {} };
     struct Val { ValueId v; TypeId type; Val() {} Val(ValueId a, TypeId t) : v(a), type(t) {} };
@@ -166,7 +167,11 @@ private:
     void classLocal(sema::TypedId var, ValueId slot, const Type &t);
     void copyObject(ValueId to, ValueId from, const Type &t);
     bool plainTemporary(sema::TypedId id) const;
+    bool constructedClass(const Type &t) const;
+    bool constructedTemporary(sema::TypedId id) const;
+    bool temporaryNode(sema::TypedId id) const { return plainTemporary(id) || constructedTemporary(id); }
     Val temporary(sema::TypedId id);
+    void construct(ValueId where, const std::string &symbol, TypeId sig, const Type &cls, bool zeroFirst, sema::TypedId args, std::uint32_t from);
     bool objectNode(sema::TypedId id) const;
     Val object(sema::TypedId id);
     static bool scalarArithmetic(const Type &t);
@@ -192,6 +197,7 @@ private:
     std::function<bool(syntax::NodeId, sema::NewFacts &)> newFacts_;
     std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> memberBuilt_;
     std::function<std::string(const Type *)> destructor_;
+    std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> temporaryBuilt_;
     std::vector<Pad> pads_;                     // innermost last
     std::vector<std::string> typeTable_;        // the function's selector indices: one per type, first occurrence, 1-based
     std::size_t handlerDepth_;                  // handlers the statement being lowered is inside

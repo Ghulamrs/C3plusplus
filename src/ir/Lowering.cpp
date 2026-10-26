@@ -218,11 +218,56 @@ bool Lowering::plainTemporary(sema::TypedId id) const {
            tree_.resolution(child(id, 0)).what == sema::Resolution::TypeName;
 }
 
+// A class with constructors the lowering can build on storage it has: buildableLayout's, with no destructor to run
+// at a temporary's end and no virtual base - the constructor the parser chose called on the address, nothing else.
+bool Lowering::constructedClass(const Type &t) const {
+    if (!t.isStructOrUnion() || !t.isComplete()) return false;
+    const Type &c = *t.unqualified();
+    return constructed_ && constructed_(&c) && !c.hasDestructor() && !c.hasVirtualBase() && buildableLayout(c);
+}
+
+// `T(...)` of such a class, the constructor the parser chose recorded for the node: `*(ctor(&$tmp, ...), &$tmp)`.
+bool Lowering::constructedTemporary(sema::TypedId id) const {
+    if (syn(id).kind != syntax::Kind::Call || count(id) == 0 || !temporaryBuilt_) return false;
+    const Type *t = tree_.node(id).type;
+    if (tree_.resolution(id).what != sema::Resolution::Temporary || t == nullptr || !constructedClass(*t)) return false;
+    std::string symbol;
+    TypeId sig;
+    bool zero;
+    return tree_.resolution(child(id, 0)).what == sema::Resolution::TypeName && temporaryBuilt_(tree_.node(id).syntax, symbol, sig, zero);
+}
+
+// The recorded constructor called on `at`: zeroed first where `T()` of an implicit one is ([dcl.init]/8), then the
+// arguments from child `from` of `args` on against the constructor's type - one written per parameter, no default.
+void Lowering::construct(ValueId where, const std::string &symbol, TypeId sig, const Type &cls, bool zeroFirst, sema::TypedId args,
+                         std::uint32_t from) {
+    const Type &ft = T(sig);
+    if (!ft.isFunction() || ft.params().empty() || ft.params()[0]->pointee()->unqualified() != cls.unqualified())
+        outside("a constructor of another class");
+    if (ft.params().size() != static_cast<std::size_t>(count(args) - from) + 1) outside("a constructor called with default arguments");
+    if (zeroFirst) {
+        const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, where));
+        at(z).k = cls.size(target_);
+    }
+    std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, where))));
+    arguments(args, from, ft, 1, false, ops);
+    directCall(symbol, sig, ops);
+}
+
 // [expr.type.conv] into a slot of this frame, which lives as long as the frame: `P()` value-initialised, which for a
 // plain class is zeroing ([dcl.init]/8), and `P(o)` a copy of o's bytes. The slot's address is the temporary's value.
+// A class with constructors is built in its slot by the constructor the parser chose, its arguments the call's.
 Lowering::Val Lowering::temporary(sema::TypedId id) {
     const Type &t = *tree_.node(id).type->unqualified();
     const ValueId slot = entryAlloca(tid(t), "$tmp");
+    if (constructedTemporary(id)) {
+        std::string symbol;
+        TypeId sig;
+        bool zero = false;
+        temporaryBuilt_(tree_.node(id).syntax, symbol, sig, zero);
+        construct(slot, symbol, sig, t, zero, id, 1);
+        return Val(slot, tid(t));
+    }
     if (count(id) == 1) {
         const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, slot));
         at(z).k = t.size(target_);
@@ -1016,7 +1061,7 @@ Lowering::Val Lowering::lvalue(sema::TypedId id) {
         return Val(param(merge, pt), x.type);
     }
     case syntax::Kind::Call: {
-        if (plainTemporary(id)) return temporary(id);
+        if (temporaryNode(id)) return temporary(id);
         const Val r = call(id);
         if (!T(r.type).isPointer()) outside("a call that is no lvalue");
         return Val(r.v, tid(*T(r.type).pointee()));
@@ -1081,7 +1126,7 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
         break;
     case syntax::Kind::Conditional: e = conditional(id); break;
     case syntax::Kind::Call: {
-        if (plainTemporary(id)) { temporary(id); e = Val(); break; }      // a class value as a statement: built, unread
+        if (temporaryNode(id)) { temporary(id); e = Val(); break; }      // a class value as a statement: built, unread
         e = call(id);
         const sema::Resolution &r = tree_.resolution(id);
         if (r.what == sema::Resolution::Call && T(r.type).returns()->isReference())
@@ -1936,17 +1981,26 @@ sema::NewFacts Lowering::newFacts(sema::TypedId id, const char *what) {
         outside(std::string("a '") + what + "' not recorded");
     if (!f.why.empty()) outside(f.why);
     const Type &t = T(f.made);
-    if (t.isX87(target_) || !(scalar(t) || plainClass(t))) outside(std::string("a '") + what + "' of '" + t.describe() + "'");
+    if (t.isX87(target_) || !(scalar(t) || plainClass(t) || constructedClass(t)))
+        outside(std::string("a '") + what + "' of '" + t.describe() + "'");
     return f;
 }
 
 // [expr.new] for a scalar or a plain class: the global allocation function the parser called, given the bytes - n of
 // them times the size for an array, counted first - then the initialiser's stores: none, zeroes, or the one value.
+// A class with constructors takes the constructor the parser chose, called on the storage with the trailing parts.
 Lowering::Val Lowering::newExpression(sema::TypedId id) {
     const sema::NewFacts f = newFacts(id, "new");
     const Type &made = T(f.made);
+    const bool built = constructedClass(made);
+    if (built && f.ctor.empty()) outside("a 'new' of a class with constructors");
+    if (built && f.array) outside("an array 'new' of a class with constructors");
+    if (built && f.ctorDefaulted) outside("a 'new' with default arguments");
+    // [expr.new]/20: a constructor that throws has the storage freed, which no pad here does - the walker's own gap.
+    if (built && !pads_.empty()) outside("a 'new' of a class with constructors inside a try");
     const std::uint32_t lead = f.placed ? 1u : 0u;        // the placement's address is the first part
-    const std::uint32_t parts = lead + (f.array ? 1u : 0u) + (f.init == 2 ? 1u : 0u);
+    const std::uint32_t argc = built ? static_cast<std::uint32_t>(T(f.ctorSig).params().size()) - 1u : (f.init == 2 ? 1u : 0u);
+    const std::uint32_t parts = lead + (f.array ? 1u : 0u) + argc;
     if (count(id) != parts) outside("a 'new' of " + std::to_string(count(id)) + " parts");
     const TypeId sizeT = tid(*types_.get(target_.sizeType()));
     const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType()));
@@ -1971,7 +2025,9 @@ Lowering::Val Lowering::newExpression(sema::TypedId id) {
     }
     const TypeId pt = tid(*types_.pointerTo(&made));
     const ValueId p = result(add(Op::Bitcast, pt, std::vector<ValueId>(1, at0)));
-    if (f.init == 1 && f.array) {
+    if (built) {
+        construct(p, f.ctor, f.ctorSig, made, f.ctorZero, id, lead);
+    } else if (f.init == 1 && f.array) {
         // `new T[n]()` zeroes n elements with the platform's memset, as the parser and clang do.
         std::vector<ValueId> args;
         args.push_back(at0);

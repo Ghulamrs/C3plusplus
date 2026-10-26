@@ -621,7 +621,10 @@ private:
     ThrowFacts pendingThrow_;
     // A `new` or `delete` as the SSA lowering may take it (M3b.2): the global allocation function the parser called, the
     // type made or freed, the initialiser - 0 none, 1 value-initialised, 2 one value - and `why` where it may not.
-    struct NewFacts { std::string symbol, why; const Type *made = nullptr; bool array = false, placed = false; int init = 0; };
+    // The constructor chosen for `new T(...)` of a class with constructors: its symbol, its type with `T *` first, whether
+    // the object is zeroed first and whether defaults filled the written arguments out (M3b.2).
+    struct NewFacts { std::string symbol, why, ctor; const Type *made = nullptr, *ctorSig = nullptr;
+                      bool array = false, placed = false, ctorZero = false, ctorDefaulted = false; int init = 0; };
     std::unordered_map<std::uint32_t, NewFacts> newFacts_;
     NewFacts pendingNew_;
     void noteCallSlots(const Call &c) {
@@ -705,6 +708,9 @@ private:
     }
     // A class temporary `T(a)` is `*(ctor(&$tmp, a), &$tmp)`, its slot the parser's: kept by node (M2.12i).
     std::unordered_map<std::uint32_t, int> temporarySlots_;
+    // And the constructor that built it, by node: its symbol, its type with `T *` first, and whether `T()` zeroed first.
+    struct TemporaryBuilt { std::string symbol; const Type *signature; bool zeroFirst; };
+    std::unordered_map<std::uint32_t, TemporaryBuilt> temporaryBuilt_;
     // A value a const or rvalue reference binds copied into a frame slot by bindReference: its name and slot, by node.
     std::unordered_map<std::uint32_t, std::pair<std::string, int> > bindTemps_;
     // A lambda whose captures are scalar locals: the closure's slot and each capture's member and source, by node.
@@ -738,9 +744,16 @@ private:
         const Var *tmp = at != nullptr && at->op() == '&' ? dynamic_cast<const Var *>(&at->operand()) : nullptr;
         if (tmp == nullptr || tmp->name() != "$tmp") return;
         temporarySlots_[e->syntax().v] = tmp->offset();
-        // The temporary's class, and the constructor that built it where one did.
+        // The temporary's class, and the constructor that built it where one did - behind the zeroing of `T()` for an
+        // implicit one, which the SSA lowering's record says (M3b.2).
         const std::uint32_t ctor = both->left().resolved();
         resolutions_[e->syntax().v] = resolvedAs(Resolved::Temporary, e->type(), ctor != 0 ? resolvedTable_[ctor].symbol : std::string());
+        const Comma *zeroed = ctor == 0 ? dynamic_cast<const Comma *>(&both->left()) : nullptr;
+        const std::uint32_t built = zeroed != nullptr ? zeroed->right().resolved() : ctor;
+        if (built != 0 && resolvedTable_[built].what == Resolved::Call) {
+            const TemporaryBuilt b = { resolvedTable_[built].symbol, resolvedTable_[built].type, zeroed != nullptr };
+            temporaryBuilt_[e->syntax().v] = b;
+        }
         for (std::size_t i = 0; i < pendingTemps_.size(); i++)
             if (pendingTemps_[i].slot == tmp->offset()) temporaryGuards_[e->syntax().v] = pendingTemps_[i].flag;
     }
