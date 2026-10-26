@@ -291,6 +291,12 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
                 slotType = tid(*types_.pointerTo(pt.referent()));
             } else if (pt.isArray()) {
                 slotType = tid(*types_.pointerTo(pt.pointee()));
+            } else if (plainClass(pt)) {
+                // A plain class by value is the callee's own copy, in the slot the receive fills on both ABIs: its address.
+                const ValueId pv = param(f.entry, tid(*types_.pointerTo(&pt)));
+                f.params.push_back(pv);
+                locals_[tree_.node(p).syntax.v] = std::make_pair(pv, tid(pt));
+                continue;
             } else {
                 if (!scalar(pt) || pt.isX87(target_)) outside("a parameter of type '" + pt.describe() + "'");
                 slotType = tid(pt);
@@ -1431,6 +1437,14 @@ Lowering::Val Lowering::call(sema::TypedId id) {
             continue;
         }
         const Type &p = *ft.params()[i + skip];
+        if (plainClass(p)) {
+            // A plain class by value: its address, which the selector hands the walker as the object to copy in.
+            if (!isLvalueNode(an)) outside("a class argument that is not an object");
+            const Val a = lvalue(an);
+            if (T(a.type).unqualified() != p.unqualified()) outside("a class argument of another type");
+            ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(p.unqualified())), std::vector<ValueId>(1, a.v))));
+            continue;
+        }
         if (p.isReference()) {
             // [dcl.init.ref]/5: an object of the referent's type, its address passed; a temporary is M3b.2's.
             if (!isLvalueNode(an)) outside("a reference parameter bound to what is not an object");

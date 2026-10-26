@@ -1377,8 +1377,12 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         std::string why;
         // A local aligned past its type (alignas) or past the frame: the selector lays a slot out at its type's alignment.
         bool aligned = fn.frameAlign() > 16;
-        for (const Local &l : fn.locals())
-            if (l.align > 16 || (l.type != nullptr && !l.type->isReference() && l.align > l.type->align(target))) aligned = true;
+        for (const Local &l : fn.locals()) {
+            if (l.align > 16) aligned = true;
+            if (l.isParam || l.type == nullptr || l.type->isReference()) continue;
+            const int natural = l.type->isArray() && l.type->size(target) >= 16 ? std::max(16, l.type->align(target)) : l.type->align(target);
+            if (l.align > natural) aligned = true;
+        }
         // A pack expansion's members are one node of the typed tree: such a body stays the parser's.
         if (typer.packBody(fn.symbol())) why = "a body with a pack expansion";
         else if (aligned) why = "a local with alignas";
