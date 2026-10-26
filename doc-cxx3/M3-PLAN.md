@@ -264,3 +264,40 @@ the same verdict as the merged tree on every one, 14 failing on each. The whole 
 the GRA box before "merged" is written here. **The C7 probe on zeeshan** (stage 0 and stage 1, one and two inputs,
 relative and absolute paths, no `-o`): with two inputs both stages write each `.s` beside its source; with one, both
 write it to stdout and no file. The two stages agree in every shape, as the review read it.
+
+**M3a.2, the target description and register classes** (2026-10-26, Opus 5.5, branch `m3a`, commits `43a4e8d` to
+`623897f`). **No Windows box this round** - the GRA box is unreachable and zeeshan was withdrawn - so the user had M3
+qualified on Linux with TMS6747 and on the Mac, and every Windows row is owed. `43a4e8d` (A): one `PseudoInfo` vector
+(class, home, slot) in place of `homes` and `slots`. `b8290cb` (B): `mir::TargetDesc`, the register files the webs and
+the allocator ask. Both byte-identical: `identical.sh` against a REF of `4eed537`, 6,039 compared, the known nine.
+`7747b2f` (C1): the xmm class - webs over the 16 general and 16 xmm registers, a split copying xmm by `movapd`, a
+pseudo's class its home's, the allocator colouring each class from its own palette (System V all sixteen, Windows
+xmm0-5, no preserved xmm register offered since it would want a 16-byte save), no edge and no coalescing across
+classes. `8e89161` (C2): a `float` or `double` local promoted to an xmm pseudo where every access is a scalar SSE
+instruction of its width an xmm register can stand in; its moves become `movapd`, and given its slot back it takes
+`movsd`/`movss` again (`movapd` to memory faulted 30 cases at -O1 and 20 at -O2 on Linux until it did). `623897f`
+(C3): a function returning `float` or `double` tells the optimizer its `ret` reads xmm0 alone, so the address of the
+returned local left in rax is dead and the local can leave its slot (a `void` function keeps the whole set: a
+Microsoft constructor returns `this` in rax). In a probe of a dot product the sum stays in an xmm register across the
+loop where it went through its slot each turn, and a polynomial's three doubles have no slot.
+
+The gate. **Mac**: `identical.sh LEVELS=0` against a REF of `4eed537`, 2,013 compared, the known three; at -O1/-O2,
+815 of 4,026 outputs changed, no diagnostic changed, all 546 changed GNU outputs (x86_64-linux and x86_64-windows)
+assemble with clang; `make test` green (run.sh 988/0, emit golden the six known files, names.sh 655/0, typed and
+adapted 648/0, exclusions 126 sites 0/0, comment cap 0), memory gate held at 1,063. **Linux** (g++ 11.5): run.sh
+990/0 at -O0, -O1 and -O2; `tools/self-host` 71 of 71 at -O0 and at -O2; `asm6x.sh` 635/0; `tms6747.sh` 621/0 at
+-O0 and -O2 with every pass also on sim6747; `ti-link.sh` 630 linked at -O0 and -O2. **Bench stand-in** (Linux,
+`bench-kernels.cpp` compiled for x86_64-linux on the Mac, assembled and run there, 11 interleaved rounds, checksums
+equal): no kernel slower - base and new both fib 10, sieve 94, matmul 15, isort 35, hash 327, virtual 211, total
+692 ms, against g++ -O2's 533; these kernels' doubles were already held by `hoist-xmm-slots`. **.text** over every
+case, assembled by clang: x86_64-linux -O1 873,528 to 871,072 (-0.28%), -O2 -0.33%; x86_64-windows -O1 951,369 to
+950,538 (-0.09%), -O2 -0.11%. **Compile time**, the 71 self-host sources one at a time with `-S -arch
+x86_64-linux`, three interleaved rounds on the Mac, best: -O0 21.24 s against 21.06, -O2 409.31 against 413.25
+(+1.0%, the webs now spanning 32 registers). **Owed**: the Windows cases at -O2 in both spellings, `bench.cmd`.
+
+**Found, and owed to R1.2**: the compile-time baseline recorded for M3a.1 (23.91 s at -O0, 44.67 s at -O2) must have
+been measured for the Mac's own target, arm64-darwin, whose optimizer is the text peephole - for x86_64-linux the
+corpus takes about 410 s at -O2, at `7d593d5` as at this commit, and four sources take 339 s of it:
+`ParserTopLevel.cpp` 180 s (179 at `7d593d5`), `ParserType.cpp` 75, `ParserExpr.cpp` 48, `ParserStmt.cpp` 37. The
+x86 optimizer is super-linear in a function's size somewhere; R1.2's row is to be re-recorded for x86_64-linux and
+the cause found.
