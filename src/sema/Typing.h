@@ -73,7 +73,7 @@ struct TypedNode {
 
 class TypedTree {
 public:
-    TypedTree() { nodes_.push_back(TypedNode()); resolutions_.push_back(Resolution()); literals_.push_back(Token()); }
+    TypedTree() { nodes_.push_back(TypedNode()); resolutions_.push_back(Resolution()); literals_.push_back(Token()); labels_.push_back(std::string()); }
     TypedId add(syntax::NodeId syn, const Type *type, const std::vector<TypedId> &children,
                 syntax::NodeId decl = syntax::NodeId());
     const TypedNode &node(TypedId id) const { return nodes_[id.v]; }
@@ -83,16 +83,19 @@ public:
     void setResolution(TypedId id, const Resolution &r);
     void setCast(TypedId id, TypeId to, bool xvalue);
     void setFolded(TypedId id, long long value, TypeId type);
-    void setLiteral(TypedId id, const Token &token);
+    // A string literal's token comes with the label the program's data holds its bytes under (M3b.1: the lowering's `addr`).
+    void setLiteral(TypedId id, const Token &token, const std::string &label = std::string());
     const Resolution &resolution(TypedId id) const { return resolutions_[nodes_[id.v].resolved]; }
     // The token a literal node was read from; `node(id).literal` says whether there is one, and 0 gives an End token.
     const Token &literal(TypedId id) const { return literals_[nodes_[id.v].literal]; }
+    const std::string &stringLabel(TypedId id) const { return labels_[nodes_[id.v].literal]; }
     std::size_t resolutionCount() const { return resolutions_.size() - 1; }
 private:
     std::vector<TypedNode> nodes_;
     std::vector<TypedId> children_;
     std::vector<Resolution> resolutions_;    // index 0 is the none record
     std::vector<Token> literals_;            // index 0 is no token
+    std::vector<std::string> labels_;        // beside literals_: a string literal's label, else empty
 };
 
 // **The census of what the typed tree covers** (M2.15): every function the backends emit, split into those whose body the
@@ -114,6 +117,9 @@ public:
     // Ast.h node carrying the same syntax - the innermost such node, before any conversion wrapped it.
     static std::string check(Parser &p, const Program &program, const Source &src, int *differ);
     static Census census(const Parser &p, const Program &program);
+    // Facts of a function's declaration the lowering is told (M3b.1): its return type as written, and whether its body is a try.
+    TypeId declaredReturn(syntax::NodeId fn) const;
+    bool wrappedBody(const std::string &symbol) const;
     // The census's counts as the report spells them, "functions=N bodies=K synthesised=M", and the kinds behind M.
     static std::string censusLine(const Census &c);
     static std::string censusKinds(const Census &c);

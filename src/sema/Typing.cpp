@@ -41,9 +41,10 @@ void TypedTree::setFolded(TypedId id, long long value, TypeId type) {
     nodes_[id.v].folded.has = true;
 }
 
-void TypedTree::setLiteral(TypedId id, const Token &token) {
+void TypedTree::setLiteral(TypedId id, const Token &token, const std::string &label) {
     nodes_[id.v].literal = static_cast<std::uint32_t>(literals_.size());
     literals_.push_back(token);
+    labels_.push_back(label);
 }
 
 TypedId Typer::typeFunction(syntax::NodeId fn) {
@@ -89,6 +90,8 @@ TypedId Typer::node(syntax::NodeId id) {
     const Type *type = n.kind == syntax::Kind::Name ? named(id, &decl)
                      : isExpression(n.kind) ? expression(id, parts) : nullptr;
     if (type == nullptr && isExpression(n.kind)) type = recordedValue(id);
+    // A `var` is typed as declared, its `&` kept (M3b.1, M3-IR 3.8): what the lowering sizes its alloca by.
+    if (n.kind == syntax::Kind::Var && p_.declaredTypes_.count(id.v) != 0) type = p_.declaredTypes_.at(id.v);
     if (scoped) scopes_.pop_back();
     const TypedId made = tree_.add(id, type, kids, decl);
     record(id, made);
@@ -99,6 +102,15 @@ TypedId Typer::node(syntax::NodeId id) {
 // (a reference cast's with its category), a sizeof's or a literal's folded value, and a literal's token - so the
 // lowering reads the typed tree and nothing of the parser. The layout maps stay the parser's: M3's layout is its own.
 void Typer::record(syntax::NodeId id, TypedId t) {
+    if (p_.syntaxTree_.node(id).kind == syntax::Kind::Var && p_.declaredLocals_.count(id.v) != 0 &&
+        !p_.declaredLocals_.at(id.v).staticName.empty()) {
+        // A static local's `var` carries the record its names carry - kind Local, its static name - so the lowering can tell it.
+        Resolution out;
+        out.what = Resolution::Local;
+        out.symbol = p_.declaredLocals_.at(id.v).staticName;
+        out.type = TypeTable::id(p_.declaredLocals_.at(id.v).type);
+        tree_.setResolution(t, out);
+    }
     std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
     if (r != p_.resolutions_.end()) {
         // The record field for field, its two types as the table's handles.
@@ -123,7 +135,8 @@ void Typer::record(syntax::NodeId id, TypedId t) {
     std::unordered_map<std::uint32_t, std::size_t>::const_iterator lit = p_.literalTokens_.find(id.v);
     if (lit != p_.literalTokens_.end()) {
         const Token &token = p_.tokens_[lit->second];
-        tree_.setLiteral(t, token);
+        const auto str = p_.stringLiterals_.find(id.v);
+        tree_.setLiteral(t, token, str == p_.stringLiterals_.end() ? std::string() : str->second.first);
         // An integer or character literal's value is a fact of the token; a floating one is its token's dvalue.
         if (token.kind == TokenKind::Num && !token.isFloat && tree_.node(t).type != nullptr)
             tree_.setFolded(t, token.value, TypeTable::id(tree_.node(t).type));
@@ -403,6 +416,8 @@ std::string Typer::recordDiffers(const Parser &p, const TypedTree &tree, TypedId
     const TypedNode &n = tree.node(t);
     const std::uint32_t id = n.syntax.v;
     std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator pr = p.resolutions_.find(id);
+    // A static local's `var` carries a record the parser's maps keep as declaredLocals_ (M3b.1), not as a resolution.
+    if (pr == p.resolutions_.end() && n.resolved != 0 && p.syntaxTree_.node(n.syntax).kind == syntax::Kind::Var) return std::string();
     if ((pr != p.resolutions_.end()) != (n.resolved != 0)) return "the record";
     if (n.resolved != 0) {
         const Resolution &r = tree.resolution(t);
@@ -426,6 +441,12 @@ std::string Typer::recordDiffers(const Parser &p, const TypedTree &tree, TypedId
     if (n.literal != 0 && tree.literal(t).pos != p.tokens_[lit->second].pos) return "the literal's token";
     return std::string();
 }
+
+TypeId Typer::declaredReturn(syntax::NodeId fn) const {
+    return p_.declaredReturns_.count(fn.v) != 0 ? TypeTable::id(p_.declaredReturns_.at(fn.v)) : TypeId();
+}
+
+bool Typer::wrappedBody(const std::string &symbol) const { return p_.wrappedBodies_.count(symbol) != 0; }
 
 Census Typer::census(const Parser &p, const Program &program) {
     Census c;

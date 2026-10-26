@@ -10,6 +10,7 @@
 #include "parser/Parser.h"
 #include "sema/Typing.h"
 #include "sema/Adapter.h"
+#include "ir/Lowering.h"
 #include "AstDump.h"
 #include "Preprocessor.h"
 #include "Source.h"
@@ -27,6 +28,7 @@
 #include <chrono>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <mutex>
 #include <sstream>
 #include <thread>
@@ -212,6 +214,9 @@ void Driver::usage(char *file) {
         "         line, on stdout; one input at a time; -dump=ast each function's\n"
         "         Ast.h body, a node a line; -dump=mir each x86 function's MIR\n"
         "         after the pipeline, -dump=mir=<pass> after that pass\n"
+        "       -front=ssa lowers each function the SSA lowering reaches to the SSA IR\n"
+        "         and selects it from there (x86 only); -dump=ssa writes the IR, -check=ssa\n"
+        "         verifies it and reports on stdout\n"
         "       -front=typed builds each function the adapter reaches from Sema's typed\n"
         "         tree; -check=adapted holds that against the parser's, on stdout\n"
         "       -check=typed types the syntax tree in Sema and holds each type against\n"
@@ -1134,6 +1139,10 @@ bool Driver::parseArguments(int argc, char **argv) {
             checkAdapted_ = true;
         } else if (std::strcmp(argv[i], "-front=typed") == 0 || std::strcmp(argv[i], "--front=typed") == 0) {
             frontTyped_ = true;
+        } else if (std::strcmp(argv[i], "-front=ssa") == 0 || std::strcmp(argv[i], "--front=ssa") == 0) {
+            frontSsa_ = true;
+        } else if (std::strcmp(argv[i], "-check=ssa") == 0 || std::strcmp(argv[i], "--check=ssa") == 0) {
+            checkSsa_ = true;
         } else if (std::strncmp(argv[i], "-dump=", 6) == 0 || std::strncmp(argv[i], "--dump=", 7) == 0) {
             // The boundaries a dump is written at (design section 1): the syntax tree only, so far.
             const char *what = std::strchr(argv[i], '=') + 1;
@@ -1141,8 +1150,9 @@ bool Driver::parseArguments(int argc, char **argv) {
             else if (std::strcmp(what, "ast") == 0) dumpAst_ = true;
             else if (std::strcmp(what, "mir") == 0) dumpMir_ = true;
             else if (std::strncmp(what, "mir=", 4) == 0) { dumpMir_ = true; dumpMirAfter_ = what + 4; }
+            else if (std::strcmp(what, "ssa") == 0) dumpSsa_ = true;
             else {
-                std::fprintf(stderr, "%s: -dump= takes 'syntax', 'ast' or 'mir', the boundaries written so far - not '%s'\n",
+                std::fprintf(stderr, "%s: -dump= takes 'syntax', 'ast', 'mir' or 'ssa', the boundaries written so far - not '%s'\n",
                              argv[0], what);
                 return false;
             }
@@ -1335,6 +1345,53 @@ bool Driver::parseArguments(int argc, char **argv) {
     return !objectOnly_ || distinctOutputs(argv[0], inputs, objects_);
 }
 
+// **The SSA lowering over every source body** (M3b.1): the typed tree of each function the census found is lowered;
+// a function the subset does not reach is counted with its reason and keeps the parser's Ast.h path. With `report` the
+// text is -check=ssa's: the verifier over the module, then `functions= lowered= outside= ok= failed=`.
+static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, const Target &target, ir::Module &into, bool report) {
+    sema::Typer typer(parser);
+    const sema::Census c = sema::Typer::census(parser, program);
+    ir::Lowering lowering(typer.tree(), parser.syntaxTree(), types, target, program, into);
+    std::map<std::string, int> reasons;
+    int lowered = 0;
+    for (std::size_t r = 0; r < c.bodies.size(); r++) {
+        const Function &fn = program.functions[c.bodies[r].second];
+        const sema::TypedId t = typer.typeFunction(c.bodies[r].first);
+        ir::FunctionFacts facts;
+        facts.symbol = fn.symbol();
+        facts.displayName = fn.displayName();
+        facts.isStatic = fn.isStatic();
+        facts.isInline = fn.isInline();
+        facts.variadic = fn.isVariadic();
+        facts.hasThis = fn.hasThis();
+        facts.sret = fn.sretSlot() != 0;
+        facts.landingPads = fn.hasLandingPads() || typer.wrappedBody(fn.symbol());
+        facts.noexcept_ = fn.isNoexcept();
+        facts.pos = fn.pos();
+        facts.paramCount = fn.params().size();
+        const TypeId declared = typer.declaredReturn(c.bodies[r].first);
+        facts.returns = declared.valid() ? declared : TypeTable::id(fn.returns());
+        std::string why;
+        // An over-aligned local realigns the frame, which the selector's layout does not know about yet.
+        bool aligned = fn.frameAlign() > 16;
+        for (const Local &l : fn.locals()) if (l.align > 16) aligned = true;
+        if (aligned) why = "a local with alignas";
+        else if (!lowering.lower(t, facts, why).valid() && why.empty()) why = "the lowering gave no reason";
+        if (why.empty()) { lowered++; continue; }
+        reasons[why]++;
+        if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "outside %s: %s\n", fn.symbol().c_str(), why.c_str());
+    }
+    if (!report) return std::string();
+    std::string out;
+    const int failed = ir::verify(into, types, out);
+    for (std::map<std::string, int>::const_iterator i = reasons.begin(); i != reasons.end(); ++i)
+        out += "  outside (" + std::to_string(i->second) + "): " + i->first + "\n";
+    char line[200];
+    std::snprintf(line, sizeof line, "-check=ssa: functions=%zu lowered=%d outside=%zu ok=%d failed=%d\n", c.bodies.size(), lowered,
+                  c.bodies.size() - lowered, lowered - failed, failed);
+    return out + line;
+}
+
 bool Driver::compile(const Job &job) {
     using Clock = std::chrono::steady_clock;
     auto ms = [](Clock::time_point a, Clock::time_point b) {
@@ -1381,6 +1438,14 @@ bool Driver::compile(const Job &job) {
         std::fwrite(report.data(), 1, report.size(), stdout);
         if (differ != 0) return false;
     }
+    // **The SSA IR** (M3b.1): every source body the lowering reaches, lowered; dumped, verified, or handed to the selector.
+    ir::Module ssa;
+    if (frontSsa_ || dumpSsa_ || checkSsa_) {
+        const std::string report = lowerSsa(parser, program, types, target, ssa, checkSsa_);
+        if (checkSsa_) std::fwrite(report.data(), 1, report.size(), stdout);
+        if (checkSsa_ && report.find(" failed=0") == std::string::npos) return false;
+        if (dumpSsa_) { const std::string text = ir::dump(ssa, types); std::fwrite(text.data(), 1, text.size(), stdout); }
+    }
 
     // **A file that writes `volatile` is compiled without -O**: the type system drops the qualifier, so an
     // optimizer would keep a volatile read in a register or delete it. **Said as a warning at the first
@@ -1403,6 +1468,7 @@ bool Driver::compile(const Job &job) {
         if (!job.object.empty() && !coffText_) gen->setStructured(&structured);
         if (debug_) gen->setLineSource(&src, workingDirectory());
         if (dumpMir_) gen->setMirDump(&mir, dumpMirAfter_);
+        if (frontSsa_) gen->setSsa(&ssa, &types);
         gen->setOptimize(level);
         gen->setOptimizeForSize(forSize_ && level > 0);
         gen->run(program);

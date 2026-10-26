@@ -37,16 +37,20 @@ run() {
         sed -i.bak "s|'"$OUT/$side"'|OUT|g" "$o.out" && rm -f "$o.out.bak"
         case $t in x86_64-*)
             ( ulimit -t 120; "'"$CXX1"'" -dump=mir -S $l -arch $t "tests/cases/$base.cpp" -o "$o.mir.s" < /dev/null > "$o.mir" 2>/dev/null ) ;;
+        esac
+        # **And the SSA dump** (M3b.1): the IR the lowering made, before any selection, the same bytes twice.
+        case $l in -O0)
+            ( ulimit -t 120; "'"$CXX1"'" -dump=ssa -S -arch $t "tests/cases/$base.cpp" -o "$o.ssa.s" < /dev/null > "$o.ssa" 2>/dev/null ) ;;
         esac'
 }
 run a
 run b
 n=$(ls "$OUT/a" | wc -l | tr -d ' ')
-m=$(ls "$OUT/a" | grep -c '\.mir$')
+m=$(ls "$OUT/a" | grep -c '\.mir$'); k=$(ls "$OUT/a" | grep -c '\.ssa$')
 diffs=$(diff -rq "$OUT/a" "$OUT/b" | sed -E 's|.*/a/([^ ]*) and .*|\1|')
 if [ -n "$diffs" ]; then
     echo "$diffs" | sed 's/^/  differs /'
     echo "determinism: $n outputs compared ($m of them -dump=mir), $(echo "$diffs" | wc -l | tr -d ' ') differ"
     exit 1
 fi
-echo "determinism: $n outputs compared ($m of them -dump=mir), 0 differ"
+echo "determinism: $n outputs compared ($m of them -dump=mir, $k -dump=ssa), 0 differ"

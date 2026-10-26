@@ -6,6 +6,7 @@
 #include "../optimizer/Optimizer.h"
 #include "Spelling.h"
 #include "Walker.h"
+#include "../ir/Ir.h"
 
 #include <iosfwd>
 #include <map>
@@ -52,6 +53,7 @@ public:
     void run(const Program &program) override;
     void setOptimize(int level) override;
     void setMirDump(std::ostream *to, const std::string &afterPass) override { mirDump_ = to; mirDumpAfter_ = afterPass; }
+    void setSsa(const ir::Module *module, const TypeTable *types) override { ssa_ = module; ssaTypes_ = types; }
 
     void visit(const Num &) override;
     void visit(const Var &) override;
@@ -212,6 +214,22 @@ private:
     void emit(const Function &fn);
     void receiveParameters(const Function &fn);
     void walkBody(const Function &fn);
+    // **The SSA selector** (M3b.1, SsaSelect.cpp): the module -front=ssa handed over, and the frame it lays above the parser's.
+    const ir::Module *ssa_ = nullptr;
+    const TypeTable *ssaTypes_ = nullptr;
+    std::vector<long long> ssaAllocaSlot_, ssaValueSlot_;
+    const ir::Function *ssaFunction(const Function &fn) const;
+    int layoutSsa(const Function &fn, const ir::Function &f);
+    void ssaScalars(const ir::Function &f, std::vector<opt::Local> &into) const;
+    Op vslot(ir::ValueId v) const;
+    const Type *typeOf(const ir::Function &f, ir::ValueId v) const;
+    void ssaLoad(const ir::Function &f, ir::ValueId v);
+    void ssaStore(const ir::Function &f, ir::ValueId v);
+    std::string ssaBlockLabel(ir::BlockId b) const;
+    void ssaBranchArgs(const ir::Function &f, const ir::Succ &s);
+    void ssaUnsupported(const ir::Inst &i);
+    void selectInst(const ir::Function &f, const ir::Inst &i);
+    void selectBody(const Function &fn, const ir::Function &f);
     std::vector<opt::Local> scalarsOf(const Function &fn) const;
     // Inline expansion - see inlineTarget; the inliner decides, by the
     // level's costs, which sites are worth it.

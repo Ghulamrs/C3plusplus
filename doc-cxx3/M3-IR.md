@@ -574,6 +574,47 @@ match[es]"). `-check=ssa` runs the verifier of 3.4 and reports `-check=ssa: func
 - `select` vs a branch for a scalar `?:`: the parser lowers `?:` of lvalues to `*(c ? &a : &b)`; the IR keeps a
   `select` for the rvalue scalar case and blocks for the rest.
 
+### 3.12 As built at M3b.1, and the answers to 3.11 (2026-10-26, Fable 5.1)
+
+**The data model** is `src/ir/Ir.h`: `Value`, `Inst`, `Block`, `Function`, `Module`, `CallInfo` and `AllocaInfo` as 3.1
+writes them, every handle a wrapped index and every type a `TypeId`; a `Succ` carries a branch target with its argument
+range, a `switch` its case values beside its successors. Two fields 3.1 did not list: `Inst::pos`, the source offset the
+instruction came from, which the selector marks a line at under `-g` (the syntax node's handle alone cannot reach the
+`Source` from the backend), and `Inst::call`, an index into `Function::calls`. `src/ir` holds no raw pointer: the second
+memory count stayed at 44. The dump (`-dump=ssa`) and the verifier (`-check=ssa`: dominance by Cooper-Harvey-Kennedy over
+the reachable blocks, block-argument arity and types, one terminator a block, allocas in the entry) are `IrText.cpp`.
+
+**The lowering** (`Lowering.cpp`) reads the typed tree, the syntax tree it points into, the `TypeTable` and the `Target`,
+and three facts the driver hands it of the function's own declaration (`FunctionFacts`: symbol, linkage, the return type
+as written, whether the body is wrapped in a try). It takes **the scalar core of the adapter's subset** - free functions
+over scalars, pointers, references to scalars, one-dimensional arrays of scalars and a struct's scalar members, every
+statement kind but `try`, calls by the record's symbol or through a function pointer - and refuses by name what it does
+not: a member function, a class object or temporary, a static local, a throw, an x87 `long double`, a `for` with a part
+missing (the typed tree keeps the parts in order and leaves an empty one out, so a three-part `for` cannot be read), an
+array whose written bound cannot be told from its first value, a tail zeroed past 64 elements. The entry block holds
+the allocas and nothing else; one `ret`, in a return block whose parameter the branches carry; `&&`, `||` and `?:`
+merge through block parameters - the only block arguments the lowering writes before mem2reg.
+
+**Selection** (`src/backend/SsaSelect.cpp`) is the x86 walker's: every SSA value has an 8-byte frame slot above the
+parser's frame holding the walker's canonical form, an instruction loads its operands into rax/xmm0 and the scratch
+register and stores its result, a `call` is an Ast.h `Call` node over `Var`s naming the slots so `placeArguments` and
+every ABI rule run unchanged, a conversion is `genConversion`, a parameter is copied from the slot `receiveParameters`
+filled. The slots go to the MIR passes as promotable locals, so -O2 cleans them. **The parser's parameter slots are the
+one layout fact borrowed**: `receiveParameters` stores the arguments where the parser's `Param` says, and the selector
+reads them from there; M3b.2 re-points the receive to the SSA parameters.
+
+**3.11, answered.** `volatile`: untouched at M3b.1 - the typed tree carries no qualifier, the lowering writes no
+`volatile` bit, and the driver's -O-off rule stands; the four corpus cases are M3b.2's to measure. `Temporary` and
+`TypeName`: a class temporary is refused at M3b.1, and when it lands it is an `alloca` the lowering makes (12.1's
+answer; the slot the parser chose is not read). The lambda: refused at M3b.1 (its call operator has `this`). The Itanium
+selector: no pads are made yet. `select`: not emitted - a scalar `?:` is blocks with a merge parameter, which mem2reg
+and the MIR passes already handle; `select` stays in the instruction set for M3b.4.
+
+**The typed tree gained three facts for it** (`Typing.h`, `.cpp`, small): a `var` is typed as declared, its `&` kept
+(3.8 said it was; it was not); a string literal's label travels beside its token (`stringLabel`); a static local's `var`
+carries the Local record its names carry. And two accessors on the Typer give the driver the declared return type and
+whether a body is a function-try - facts of the declaration that `Ast.h`'s `Function` has lost.
+
 ## 4. Kept, changed, retired - the one table
 
 | | kept | changed | retired |

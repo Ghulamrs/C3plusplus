@@ -1664,12 +1664,17 @@ void X86_64Linux::emit(const Function &fn) {
     // so it reserves room for any callee it may walk in place from the start.
     current_ = &fn;
     inlineReserve_ = fn.hasLandingPads() && usesFunclets() && inlining() ? inliner_->largestFrame() : 0;
-    frameSize_ = fn.frameSize() + inlineReserve_;
+    const ir::Function *ssaFn = ssaFunction(fn);
+    frameSize_ = (ssaFn != nullptr ? layoutSsa(fn, *ssaFn) : fn.frameSize()) + inlineReserve_;
     fnSymbol_ = fn.symbol();
     fnMergeable_ = fn.isInline();
     // On Windows the entry is named by the `{` line, as cl names it - see openingBrace.
     markLine(target_.microsoftNames() ? openingBrace(fn.pos()) : fn.pos());
-    if (passesRun()) optimizer_->frame(scalarsOf(fn));
+    if (passesRun()) {
+        std::vector<opt::Local> scalars = scalarsOf(fn);
+        if (ssaFn != nullptr) ssaScalars(*ssaFn, scalars);
+        optimizer_->frame(scalars);
+    }
     // The shadow space and the widest stack arguments of a call not inside another's operands, in 16s.
     // A nested call is evaluated with the outer one's values pushed, so it never finds the area; counting it
     // only made frames larger, and with them the displacements into the frame - 1.6 KB of .text at -O2, measured.
@@ -1695,7 +1700,7 @@ void X86_64Linux::emit(const Function &fn) {
 
     receiveParameters(fn);
 
-    walkBody(fn);
+    if (ssaFn != nullptr) selectBody(fn, *ssaFn); else walkBody(fn);
     if (passesRun()) optimizer_->temporaries(tempHigh_);
     // **rsp is restored *from rbp*, never by adding to itself.** Resuming after a catch it holds
     // whatever the runtime left, and adding the frame size landed on the unwind-help slot, so `ret`
@@ -1976,7 +1981,9 @@ void X86_64Linux::walkInPlace(const Function &fn) {
     returnLabel_ = label("inline", nextLabel());
     optimizer_->jumpOnly(returnLabel_);
     inPlace_ = true;
-    optimizer_->inlineBegin(current_->frameSize(), fn.frameSize(), scalarsOf(fn));
+    // The callee's frame goes below the caller's whole frame: the parser's, or the selector's layout above it (M3b.1).
+    const int base = ssaFunction(*current_) != nullptr ? frameSize_ - inlineReserve_ : current_->frameSize();
+    optimizer_->inlineBegin(base, fn.frameSize(), scalarsOf(fn));
     receiveParameters(fn);
     walkBody(fn);
     optimizer_->inlineEnd();
