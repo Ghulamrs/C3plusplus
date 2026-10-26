@@ -764,6 +764,10 @@ void Lowering::localArray(sema::TypedId var, ValueId slot, TypeId type) {
 
 bool Lowering::isLvalueNode(sema::TypedId id) const {
     const syntax::Node &s = syn(id);
+    if (operatorCalls(id)) {
+        const sema::Resolution &r = tree_.resolution(id);
+        return r.type.valid() && T(r.type).isFunction() && (T(r.type).returns()->isReference() || plainClass(*T(r.type).returns()));
+    }
     switch (s.kind) {
     case syntax::Kind::Name: {
         if (tree_.node(id).decl.valid()) return true;
@@ -791,6 +795,11 @@ bool Lowering::isLvalueNode(sema::TypedId id) const {
 // An object's address and its type, const kept on the type.
 Lowering::Val Lowering::lvalue(sema::TypedId id) {
     const syntax::Node &s = syn(id);
+    if (operatorCalls(id)) {
+        const Val r = operatorCall(id);
+        if (!T(r.type).isPointer()) outside("an operator that is no lvalue");
+        return Val(r.v, tid(*T(r.type).pointee()));
+    }
     switch (s.kind) {
     case syntax::Kind::Name: return nameAddress(id);
     case syntax::Kind::Paren:
@@ -859,6 +868,13 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
     const std::uint32_t k = n.count;
     // What the typer left untyped - a pack's name in a list, a form past its subset - the lowering does not read either.
     if (n.type == nullptr) outside(std::string("a '") + syntax::kindName(s.kind) + "' the typer did not type");
+    if (operatorCalls(id)) {
+        const Val c = operatorCall(id);
+        const Type &gives = *T(tree_.resolution(id).type).returns();
+        // A scalar returned by reference is read; a class's address is no value - the statement is the call.
+        if (gives.isReference()) return scalar(*gives.referent()) && !gives.referent()->isX87(target_) ? readOf(c.v, tid(*gives.referent())) : Val();
+        return gives.isStructOrUnion() ? Val() : c;
+    }
     Val e;
     switch (s.kind) {
     case syntax::Kind::IntLit: case syntax::Kind::CharLit: case syntax::Kind::FloatLit: case syntax::Kind::WordLit:
@@ -1595,6 +1611,15 @@ Lowering::Val Lowering::call(sema::TypedId id) {
         sig = tid(*ct.pointee());
         ops.push_back(callee.v);
     }
+    std::vector<sema::TypedId> args;
+    for (std::uint32_t i = 1; i < n; i++) args.push_back(child(id, i));
+    return callTail(sig, info, ops, member ? 1 : 0, args, false);
+}
+
+// A call once its function is known: the arguments by the parameters' rules, a class result's temporary, the call
+// itself - an invoke inside a try. `skip` parameters are taken already (`this`); `dummyInt` is a postfix ++'s 0.
+Lowering::Val Lowering::callTail(TypeId sig, CallInfo info, std::vector<ValueId> ops, std::size_t skip,
+                                 const std::vector<sema::TypedId> &args, bool dummyInt) {
     const Type &ft = T(sig);
     info.signature = sig;
     info.variadic = ft.isVariadicFn();
@@ -1603,11 +1628,11 @@ Lowering::Val Lowering::call(sema::TypedId id) {
     if (!(gives.isVoid() || scalar(gives) || plainClass(gives) || (gives.isReference() && referable(*gives.referent()))))
         outside("a call returning '" + gives.describe() + "'");
     if (gives.isX87(target_)) outside("an x87 long double");
-    const std::size_t argc = n - 1, skip = member ? 1 : 0;
+    const std::size_t argc = args.size() + (dummyInt ? 1 : 0);
     const std::size_t paramCount = ft.params().size() - skip;
     if (argc < paramCount || (argc > paramCount && !info.variadic)) outside("a call with defaults or too many arguments");
-    for (std::size_t i = 0; i < argc; i++) {
-        const sema::TypedId an = child(id, static_cast<std::uint32_t>(i + 1));
+    for (std::size_t i = 0; i < args.size(); i++) {
+        const sema::TypedId an = args[i];
         if (i >= paramCount) {
             Val a = decay(expr(an));
             const Type &t = T(a.type);
@@ -1647,6 +1672,7 @@ Lowering::Val Lowering::call(sema::TypedId id) {
         if (!scalar(p) || p.isX87(target_)) outside("a parameter of type '" + p.describe() + "'");
         ops.push_back(exprTo(an, tid(p)).v);
     }
+    if (dummyInt) ops.push_back(iconst(tid(*types_.get(Kind::Int)), 0));      // [over.inc]/1: the postfix form's 0
     // A plain class comes back into a temporary of this frame, and the call carries its address, as a reference's does.
     if (gives.isStructOrUnion()) {
         entryAlloca(tid(*gives.unqualified()), "$result");
@@ -1660,6 +1686,49 @@ Lowering::Val Lowering::call(sema::TypedId id) {
     const InstId c = callOrInvoke(carries, ops);
     at(c).call = callIndex;
     return Val(result(c), carries.valid() ? carries : tid(gives));
+}
+
+// Whether a node is an operator the parser resolved to a function - [over.match.oper] - rather than a built-in one.
+bool Lowering::operatorCalls(sema::TypedId id) const {
+    const syntax::Kind k = syn(id).kind;
+    if (k != syntax::Kind::Binary && k != syntax::Kind::Unary && k != syntax::Kind::Postfix && k != syntax::Kind::Assign &&
+        k != syntax::Kind::Subscript)
+        return false;
+    const sema::Resolution &r = tree_.resolution(id);
+    return r.what == sema::Resolution::Call && !r.symbol.empty();
+}
+
+// An overloaded operator as the call it is: a member operator's left operand its object, a free one's operands all
+// arguments, a postfix ++ or -- given its 0. What it returns is what the call carries.
+Lowering::Val Lowering::operatorCall(sema::TypedId id) {
+    const sema::Resolution &r = tree_.resolution(id);
+    if (r.indirect) outside("a virtual operator");
+    if (!r.type.valid() || !T(r.type).isFunction()) outside("an operator whose function type was not recorded");
+    if (r.symbol.find_first_of(" ()*&[") != std::string::npos) outside("an operator of no plain symbol");
+    const Type &ft = T(r.type);
+    std::vector<sema::TypedId> operands;
+    for (std::uint32_t i = 0; i < count(id); i++) operands.push_back(child(id, i));
+    if (operands.empty()) outside("an operator of no operands");
+    CallInfo info;
+    info.symbol = r.symbol;
+    std::vector<ValueId> ops;
+    std::size_t skip = 0;
+    if (r.hasThis) {
+        if (ft.params().empty() || !ft.params()[0]->isPointer()) outside("a member operator whose `this` was not recorded");
+        const Type &self = *ft.params()[0];
+        if (!isLvalueNode(operands[0])) outside("a member operator of what is not an object");
+        const Val o = lvalue(operands[0]);
+        if (T(o.type).isConst() && !self.pointee()->isConst()) outside("a member operator that drops const");
+        Val object(o.v, tid(*types_.pointerTo(&T(o.type))));
+        if (T(o.type).unqualified() != self.pointee()->unqualified()) object = toBase(object, tid(self));
+        ops.push_back(result(add(Op::Bitcast, tid(self), std::vector<ValueId>(1, object.v))));
+        info.hasThis = true;
+        operands.erase(operands.begin());
+        skip = 1;
+    }
+    const std::size_t want = ft.params().size() - skip;
+    const bool dummyInt = syn(id).kind == syntax::Kind::Postfix && want == operands.size() + 1;
+    return callTail(r.type, info, ops, skip, operands, dummyInt);
 }
 
 // The parser's facts for a `new` or `delete` node, which the lowering takes only for a scalar or a plain class.

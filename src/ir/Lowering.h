@@ -143,6 +143,10 @@ private:
     bool pseudoDestructor(sema::TypedId member);
     bool threadLocalGlobal(const std::string &symbol) const;
     Val toBase(Val v, TypeId to);
+    Val callTail(TypeId sig, CallInfo info, std::vector<ValueId> ops, std::size_t skip, const std::vector<sema::TypedId> &args,
+                 bool dummyInt);
+    bool operatorCalls(sema::TypedId id) const;
+    Val operatorCall(sema::TypedId id);
     Val condition(sema::TypedId id);
     void throwExpr(sema::TypedId id);
     void throwCall(const char *symbol, const std::vector<ValueId> &args);
