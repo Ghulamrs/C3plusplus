@@ -1,6 +1,6 @@
 #include "OptPipeline.h"
 
-#include "Mir.h"
+#include "MirWebs.h"
 #include "MirAlloc.h"
 #include "MirLocals.h"
 #include "OptPasses.h"
@@ -17,74 +17,74 @@ constexpr unsigned kFlow = kPropFlow;
 
 struct ForwardValues : Pass {
     ForwardValues() : Pass(PassInfo{"forward-values", kFlow, 0, 0, 0}) {}
-    bool execute(Function &fn) override { return forwardValues(fn.stream, fn.flow, fn.convention, fn.tempFrom); }
+    bool execute(MFunction &fn) override { return forwardValues(fn.stream, fn.flow, fn.convention, fn.tempFrom); }
 };
 
 struct RemoveUnreachable : Pass {
     RemoveUnreachable() : Pass(PassInfo{"remove-unreachable", 0, 0, 0, 0}) {}
-    bool execute(Function &fn) override { return removeUnreachable(fn.stream); }
+    bool execute(MFunction &fn) override { return removeUnreachable(fn.stream); }
 };
 
 struct RemoveDead : Pass {
     RemoveDead() : Pass(PassInfo{"remove-dead", kFlow, 0, 0, 0}) {}
-    bool execute(Function &fn) override { return removeDead(fn.stream, fn.flow); }
+    bool execute(MFunction &fn) override { return removeDead(fn.stream, fn.flow); }
 };
 
 struct CoalesceCopies : Pass {
     CoalesceCopies() : Pass(PassInfo{"coalesce-copies", kFlow, 0, 0, 0}) {}
-    bool execute(Function &fn) override { return coalesceCopies(fn.stream, fn.flow, fn.convention); }
+    bool execute(MFunction &fn) override { return coalesceCopies(fn.stream, fn.flow, fn.convention); }
 };
 
 struct FoldLoads : Pass {
     FoldLoads() : Pass(PassInfo{"fold-loads", kFlow, 0, 0, 0}) {}
-    bool execute(Function &fn) override { return foldLoads(fn.stream, fn.flow, fn.convention); }
+    bool execute(MFunction &fn) override { return foldLoads(fn.stream, fn.flow, fn.convention); }
 };
 
 struct FoldOffsets : Pass {
     FoldOffsets() : Pass(PassInfo{"fold-offsets", kFlow, 0, 0, 0}) {}
-    bool execute(Function &fn) override { return foldOffsets(fn.stream, fn.flow, fn.convention); }
+    bool execute(MFunction &fn) override { return foldOffsets(fn.stream, fn.flow, fn.convention); }
 };
 
 struct ThreadJumps : Pass {
     ThreadJumps() : Pass(PassInfo{"thread-jumps", kFlow, 0, 0, 0}) {}
-    bool execute(Function &fn) override { return threadJumps(fn); }
+    bool execute(MFunction &fn) override { return threadJumps(fn); }
 };
 
 // Ten instructions for three, so a speed level's alone; the flow is rebuilt before anything reads the entries this inserts,
 // and before this reads any: thread-jumps runs just ahead of it and inserts labels and jumps without rebuilding.
 struct DivideByConstant : Pass {
     DivideByConstant() : Pass(PassInfo{"divide-by-constant", kFlow, 0, 0, kTodoBuildFlow}) {}
-    bool gate(const Function &fn) const override { return !fn.costs().forSize(); }
-    bool execute(Function &fn) override { return divideByConstant(fn.stream, fn.flow); }
+    bool gate(const MFunction &fn) const override { return !fn.costs().forSize(); }
+    bool execute(MFunction &fn) override { return divideByConstant(fn.stream, fn.flow); }
 };
 
 // **Loop-invariant code motion**, after allocation, where a register the
 // loop never touches can be seen to be free; a speed level's alone.
 struct HoistInvariants : Pass {
     HoistInvariants() : Pass(PassInfo{"hoist-invariants", kFlow | kPropPhysical, 0, 0, kTodoBuildFlow}) {}
-    bool gate(const Function &fn) const override { return !fn.costs().forSize(); }
-    bool execute(Function &fn) override { return hoistInvariants(fn); }
+    bool gate(const MFunction &fn) const override { return !fn.costs().forSize(); }
+    bool execute(MFunction &fn) override { return hoistInvariants(fn); }
 };
 
 // **A double the loop reads from an unwritten frame slot, held in a free xmm register**; a speed level's alone.
 struct HoistXmmSlots : Pass {
     HoistXmmSlots() : Pass(PassInfo{"hoist-xmm-slots", kFlow | kPropPhysical, 0, 0, kTodoBuildFlow}) {}
-    bool gate(const Function &fn) const override { return !fn.costs().forSize(); }
-    bool execute(Function &fn) override { return hoistXmmSlots(fn); }
+    bool gate(const MFunction &fn) const override { return !fn.costs().forSize(); }
+    bool execute(MFunction &fn) override { return hoistXmmSlots(fn); }
 };
 
 // **A loop counter that never goes negative read as its own 64-bit register**, its `movslq` then dead.
 struct WidenCounters : Pass {
     WidenCounters() : Pass(PassInfo{"widen-counters", kFlow | kPropPhysical, 0, 0, kTodoBuildFlow}) {}
-    bool gate(const Function &fn) const override { return !fn.costs().forSize(); }
-    bool execute(Function &fn) override { return widenCounters(fn); }
+    bool gate(const MFunction &fn) const override { return !fn.costs().forSize(); }
+    bool execute(MFunction &fn) override { return widenCounters(fn); }
 };
 
 // **Scaled-index addressing**, after allocation so that webs and the
 // allocator never meet an indexed operand; `imul $8` is still a multiply here.
 struct FoldIndex : Pass {
     FoldIndex() : Pass(PassInfo{"fold-index", kFlow | kPropPhysical, 0, 0, kTodoBuildFlow}) {}
-    bool execute(Function &fn) override { return foldIndex(fn.stream, fn.flow, fn.convention); }
+    bool execute(MFunction &fn) override { return foldIndex(fn.stream, fn.flow, fn.convention); }
 };
 
 // **The pinned occurrences split off with copies, every web a pseudo**, the
@@ -92,7 +92,7 @@ struct FoldIndex : Pass {
 // follows the inserted entries and the renaming; the stream names pseudos now.
 struct Webs : Pass {
     Webs() : Pass(PassInfo{"webs", kFlow | kPropPhysical, 0, kPropPhysical, kTodoBuildFlow}) {}
-    bool execute(Function &fn) override {
+    bool execute(MFunction &fn) override {
         mir::Webs webs(fn);
         const bool split = webs.splitPinned();
         webs.build();
@@ -106,7 +106,7 @@ struct Webs : Pass {
 // the slot kept for the allocator to give back.
 struct LocalsPass : Pass {
     LocalsPass() : Pass(PassInfo{"locals", kFlow, 0, 0, 0}) {}
-    bool execute(Function &fn) override { return mir::Locals(fn).promote() > 0; }
+    bool execute(MFunction &fn) override { return mir::Locals(fn).promote() > 0; }
 };
 
 // **Every pseudo given a register**, or its slot back, and the copies that
@@ -114,7 +114,7 @@ struct LocalsPass : Pass {
 // registers it took leave the flow describing the stream no longer.
 struct Allocate : Pass {
     Allocate() : Pass(PassInfo{"allocate", kFlow, kPropPhysical, kFlow, 0}) {}
-    bool execute(Function &fn) override {
+    bool execute(MFunction &fn) override {
         mir::Allocator alloc(fn);
         const bool changed = alloc.run();
         fn.pseudos.clear();
@@ -124,18 +124,18 @@ struct Allocate : Pass {
 
 struct RemoveDeadStores : Pass {
     RemoveDeadStores() : Pass(PassInfo{"remove-dead-stores", 0, 0, 0, 0}) {}
-    bool execute(Function &fn) override { return removeDeadStores(fn.stream, fn.shared); }
+    bool execute(MFunction &fn) override { return removeDeadStores(fn.stream, fn.shared); }
 };
 
 // **The temporaries' region shrinks to the slots still named**: the passes
 // resolve most into registers, and a frame reserved for the rest moves every
 // rendered displacement on Windows.
-static void shrinkTemporaries(Function &fn) {
+static void shrinkTemporaries(MFunction &fn) {
     if (fn.tempCount == 0) return;
     int used = 0;
-    for (const Entry &e : fn.stream) {
-        if (e.kind != Entry::Ins || e.dead) continue;
-        for (const Operand *o : {&e.ins.a, &e.ins.b}) {
+    for (const MEntry &e : fn.stream) {
+        if (e.kind != MEntry::Inst || e.dead) continue;
+        for (const MOperand *o : {&e.ins.a, &e.ins.b}) {
             if (!o->isMem() || o->reg.id != RBP || o->scale != 0 || o->disp > fn.tempFrom) continue;
             const long long t = (-o->disp - fn.tempBase) / 8;
             if (t <= fn.tempCount && t > used) used = static_cast<int>(t);
@@ -148,15 +148,15 @@ static void shrinkTemporaries(Function &fn) {
 // dropped, and the prologue rewritten with the rest and the final size.
 struct FinishFrame : Pass {
     FinishFrame() : Pass(PassInfo{"finish-frame", 0, 0, 0, 0}) {}
-    bool execute(Function &fn) override {
+    bool execute(MFunction &fn) override {
         const bool had = !fn.saves.empty();
         shrinkTemporaries(fn);
         dropUnusedSaves(fn.stream, fn.saves, fn.frameBase());
         fn.size = fn.frameBase() + ((8 * static_cast<int>(fn.saves.size()) + 15) & ~15);
         if (fn.size != fn.frameSize) {
             assert(fn.prologueAt >= 0 && "a frame can grow only while its prologue is held");
-            opt::Directive &p = fn.stream[fn.prologueAt].event;
-            assert(p.kind == opt::Directive::Prologue && "the prologue's entry holds the prologue");
+            opt::MDirective &p = fn.stream[fn.prologueAt].dir;
+            assert(p.kind == opt::MDirective::Prologue && "the prologue's entry holds the prologue");
             p.n[0] = fn.size;
             p.s = fn.lsda;
             p.n[1] = fn.outgoing;
@@ -172,25 +172,25 @@ struct FinishFrame : Pass {
 // and every pass after it would have to see past them.
 struct AlignLoops : Pass {
     AlignLoops() : Pass(PassInfo{"align-loops", kFlow, 0, kFlow, kTodoBuildFlow}) {}
-    bool gate(const Function &fn) const override { return fn.costs().loopLine() > 0; }
-    bool execute(Function &fn) override { return alignLoops(fn); }
+    bool gate(const MFunction &fn) const override { return fn.costs().loopLine() > 0; }
+    bool execute(MFunction &fn) override { return alignLoops(fn); }
 };
 
 struct Shrink : Pass {
     Shrink() : Pass(PassInfo{"shrink", kFlow, 0, 0, 0}) {}
-    bool execute(Function &fn) override { return shrink(fn.stream, fn.flow, fn.convention); }
+    bool execute(MFunction &fn) override { return shrink(fn.stream, fn.flow, fn.convention); }
 };
 
 // The frame passes run while the prologue is still held; a funclet's frame is its parent's, and its blocks are in the stream (M3a.4).
 struct FrameGroup : Group {
     FrameGroup() : Group(PassInfo{"frame", 0, 0, 0, 0}, 1, WhenNoneChanged) {}
-    bool gate(const Function &fn) const override { return fn.prologueAt >= 0; }
+    bool gate(const MFunction &fn) const override { return fn.prologueAt >= 0; }
 };
 
 // Everything again once locals have registers - if any left its slot.
 struct RoundsIfPromoted : Group {
     RoundsIfPromoted() : Group(PassInfo{"rounds", 0, 0, 0, kTodoDropLabels | kTodoBuildFlow}, 0, WhenNoneChanged) {}
-    bool gate(const Function &fn) const override { return fn.promoted || !fn.saves.empty(); }
+    bool gate(const MFunction &fn) const override { return fn.promoted || !fn.saves.empty(); }
 };
 
 template <class G>

@@ -7,42 +7,42 @@ namespace opt {
 
 namespace {
 
-bool gpr(const Operand &o) { return o.kind == Operand::Register && o.reg.id >= 0 && o.reg.id < kGprs; }
+bool gpr(const MOperand &o) { return o.kind == MOperand::Register && o.reg.id >= 0 && o.reg.id < kGprs; }
 
-Instr two(mn::Mn m, Operand a, Operand b) { return Instr{m, a, b, 2}; }
-Operand r32(int id) { return Operand::ofReg(id, 4); }
-Operand r64(int id) { return Operand::ofReg(id, 8); }
+MInst two(mn::Mn m, MOperand a, MOperand b) { return MInst{m, a, b, 2}; }
+MOperand r32(int id) { return MOperand::ofReg(id, 4); }
+MOperand r64(int id) { return MOperand::ofReg(id, 8); }
 
 }
 
 // **`mov $d, %R; cdq; idiv %R` (or `xor %edx, %edx; div %R`) becomes a
 // multiply by the divisor's magic number**, eax and edx left as the divide
 // leaves them; R, dead after, carries the product.
-bool divideByConstant(Stream &s, Flow &f) {
+bool divideByConstant(MStream &s, Flow &f) {
     f.live(s);
-    struct Site { int at; std::vector<Instr> seq; };
+    struct Site { int at; std::vector<MInst> seq; };
     std::vector<Site> sites;
     for (int b = 0; b < static_cast<int>(f.blocks.size()); ++b) {
         const Block &blk = f.blocks[b];
         Live live = blk.out;
         for (int k = blk.end - 1; k >= blk.begin; --k) {
-            if (s[k].kind != Entry::Ins || s[k].dead) continue;
+            if (s[k].kind != MEntry::Inst || s[k].dead) continue;
             f.joinPads(b, k, live);
             const Live after = live;
             live.step(f.effects[k]);
-            const Instr &dv = s[k].ins;
+            const MInst &dv = s[k].ins;
             if (!dv.m.is({mn::Idiv, mn::Div}) || dv.operands != 1 || !gpr(dv.a) || dv.a.reg.width != 4) continue;
             const int R = dv.a.reg.id;
             if (R == RAX || R == RDX || frameReg(R) || (after.regs & bit(R))) continue;
             int k1 = k - 1, k0;
-            while (k1 >= blk.begin && s[k1].kind == Entry::Ins && s[k1].dead) --k1;
+            while (k1 >= blk.begin && s[k1].kind == MEntry::Inst && s[k1].dead) --k1;
             k0 = k1 - 1;
-            while (k0 >= blk.begin && s[k0].kind == Entry::Ins && s[k0].dead) --k0;
-            if (k0 < blk.begin || s[k1].kind != Entry::Ins || s[k0].kind != Entry::Ins) continue;
-            const Instr &ext = s[k1].ins, &mv = s[k0].ins;
+            while (k0 >= blk.begin && s[k0].kind == MEntry::Inst && s[k0].dead) --k0;
+            if (k0 < blk.begin || s[k1].kind != MEntry::Inst || s[k0].kind != MEntry::Inst) continue;
+            const MInst &ext = s[k1].ins, &mv = s[k0].ins;
             const bool sign = dv.m == mn::Idiv;
             if (sign ? ext.m != mn::Cdq : !(ext.m == mn::Xor && ext.a.isReg(RDX) && ext.b.isReg(RDX) && ext.a.reg.width == 4)) continue;
-            if (!isMovQL(mv.m) || mv.a.kind != Operand::Immediate || !mv.a.numeric || !gpr(mv.b) || mv.b.reg.id != R ||
+            if (!isMovQL(mv.m) || mv.a.kind != MOperand::Immediate || !mv.a.numeric || !gpr(mv.b) || mv.b.reg.id != R ||
                 mv.b.reg.width < 4)
                 continue;
             const long long d = mv.b.reg.width == 4 ? static_cast<unsigned>(mv.a.value) : mv.a.value;
@@ -52,20 +52,20 @@ bool divideByConstant(Stream &s, Flow &f) {
             if (sign) signedMagic(static_cast<unsigned>(d), M, sh);
             else if (!unsignedMagic(static_cast<unsigned>(d), M, sh)) continue;
             Site site{k0, {}};
-            std::vector<Instr> &q = site.seq;
+            std::vector<MInst> &q = site.seq;
             q.push_back(two(sign ? mn::Movslq : mn::Mov, r32(RAX), sign ? r64(RDX) : r32(RDX)));
-            q.push_back(two(mn::Mov, Operand::ofImm(static_cast<long long>(M)), r32(R)));
+            q.push_back(two(mn::Mov, MOperand::ofImm(static_cast<long long>(M)), r32(R)));
             q.push_back(two(mn::Imul, r64(RDX), r64(R)));
-            q.push_back(two(sign ? mn::Sar : mn::Shr, Operand::ofImm(32 + sh), r64(R)));
+            q.push_back(two(sign ? mn::Sar : mn::Shr, MOperand::ofImm(32 + sh), r64(R)));
             if (sign) {
                 q.push_back(two(mn::Mov, r64(RDX), r64(RAX)));
-                q.push_back(two(mn::Shr, Operand::ofImm(63), r64(RAX)));
+                q.push_back(two(mn::Shr, MOperand::ofImm(63), r64(RAX)));
                 q.push_back(two(mn::Add, r32(R), r32(RAX)));
                 q.push_back(two(mn::Mov, r32(RAX), r32(R)));
             } else {
                 q.push_back(two(mn::Mov, r32(R), r32(RAX)));
             }
-            q.push_back(two(mn::Imul, Operand::ofImm(d), r32(R)));
+            q.push_back(two(mn::Imul, MOperand::ofImm(d), r32(R)));
             q.push_back(two(mn::Sub, r32(R), r32(RDX)));
             s[k0].dead = s[k1].dead = s[k].dead = true;
             sites.push_back(site);
@@ -74,8 +74,8 @@ bool divideByConstant(Stream &s, Flow &f) {
     if (sites.empty()) return false;
     std::stable_sort(sites.begin(), sites.end(), [](const Site &x, const Site &y) { return x.at > y.at; });
     for (const Site &site : sites) {
-        std::vector<Entry> es;
-        for (const Instr &i : site.seq) { Entry e; e.ins = i; es.push_back(e); }
+        std::vector<MEntry> es;
+        for (const MInst &i : site.seq) { MEntry e; e.ins = i; es.push_back(e); }
         s.insert(s.begin() + site.at, es.begin(), es.end());
     }
     return true;

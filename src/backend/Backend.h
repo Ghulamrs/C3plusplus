@@ -22,9 +22,8 @@ public:
     virtual void setOptimize(int level) { (void)level; }
     // -Os: the smaller code where the generator has a choice; one with none takes -O1 as it stands.
     virtual void setOptimizeForSize(bool size) { (void)size; }
-    // **MIR** (M3a.1): -mir=off writes past the holder, as before it was made at every level; -dump=mir writes each
-    // function's MIR to `to` after the pipeline, or after the pass named. A generator with no MIR ignores both.
-    virtual void setMirOff(bool off) { (void)off; }
+    // **MIR** (M3a.1): -dump=mir writes each function's MIR to `to` after the pipeline, or after the pass named. A
+    // generator with no MIR ignores it.
     virtual void setMirDump(std::ostream *to, const std::string &afterPass) { (void)to; (void)afterPass; }
 };
 

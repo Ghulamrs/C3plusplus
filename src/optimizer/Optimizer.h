@@ -111,7 +111,7 @@ private:
     // The level, as the costs its passes ask.
     std::unique_ptr<const opt::Costs> costs_;
     // **The function being held**, and what the walker has said of it so far.
-    opt::Function fn_;
+    opt::MFunction fn_;
     int frameSize_ = 0;
     // The pipeline, built once per spelling, and the manager that runs it.
     std::unique_ptr<opt::Pass> pipeline_;
@@ -128,12 +128,12 @@ private:
     std::ostream *dump_ = nullptr;
     opt::RegSet args_ = 0;
 
-    void hold(opt::Entry e);
+    void hold(opt::MEntry e);
     void instruction(const std::string &m, int operands, const Op *a, const Op *b);
     // A call that is not an instruction, as a directive: held in its place inside a function, replayed at once
     // outside one.
-    void event(opt::Directive d);
-    void improve(opt::Function &fn);
+    void directive(opt::MDirective d);
+    void improve(opt::MFunction &fn);
     void flush();
-    void replay(const opt::Stream &s);
+    void replay(const opt::MStream &s);
 };

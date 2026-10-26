@@ -4,7 +4,7 @@
 // regions: interference from liveness over the pseudos, Chaitin-Briggs
 // colouring with the copies as preferences, costs from the level.
 
-#include "Mir.h"
+#include "OptFunction.h"
 
 #include <vector>
 
@@ -15,7 +15,7 @@ namespace mir {
 // answer where no better is found, and the graph's check; a local has its slot.
 class Allocator {
 public:
-    explicit Allocator(opt::Function &fn);
+    explicit Allocator(opt::MFunction &fn);
 
     // Colours and writes the registers back; whether the stream changed.
     bool run();
@@ -49,8 +49,8 @@ private:
         opt::RegClass cls = opt::RegClass::Gpr;     // the file it is coloured from
     };
 
-    opt::Function &fn_;
-    std::vector<int> homes_;                // the webs' registers, from Function::pseudos
+    opt::MFunction &fn_;
+    std::vector<int> homes_;                // the webs' registers, from MFunction::pseudos
     int nHomes_ = 0;                        // the webs' pseudos; the promoted locals' follow
     int n_ = 0;
     int words_ = 0;
@@ -103,7 +103,7 @@ private:
     int cls(int p) const { return static_cast<int>(nodes_[p].cls); }
     opt::RegSet palette(int p) const { return palette_[cls(p)]; }
     int classOfReg(int reg) const;
-    bool copyOf(const opt::Instr &i, int &src, int &dst) const;
+    bool copyOf(const opt::MInst &i, int &src, int &dst) const;
     bool alive(int p) const { return rep_[p] == p && !removed_[p] && !demoted_[p]; }
     static void set(Bits &b, int p) { b[p / 64] |= 1ull << (p % 64); }
     static void clear(Bits &b, int p) { b[p / 64] &= ~(1ull << (p % 64)); }

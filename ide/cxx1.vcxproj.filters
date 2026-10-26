@@ -51,6 +51,7 @@
     <ClCompile Include="..\src\optimizer\C6xPipe.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\C6xSched.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\Inliner.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
+    <ClCompile Include="..\src\optimizer\Mir.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\MirAlloc.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\MirLocals.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\MirWebs.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
@@ -62,7 +63,6 @@
     <ClCompile Include="..\src\optimizer\OptFlow.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\OptFrame.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\OptHoist.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
-    <ClCompile Include="..\src\optimizer\OptIr.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\OptJumps.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\OptLoops.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\OptMemory.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
@@ -108,6 +108,7 @@
     <ClInclude Include="..\src\optimizer\Mir.h"><Filter>Header Files\optimizer</Filter></ClInclude>
     <ClInclude Include="..\src\optimizer\MirAlloc.h"><Filter>Header Files\optimizer</Filter></ClInclude>
     <ClInclude Include="..\src\optimizer\MirLocals.h"><Filter>Header Files\optimizer</Filter></ClInclude>
+    <ClInclude Include="..\src\optimizer\MirWebs.h"><Filter>Header Files\optimizer</Filter></ClInclude>
     <ClInclude Include="..\src\optimizer\OptCore.h"><Filter>Header Files\optimizer</Filter></ClInclude>
     <ClInclude Include="..\src\optimizer\OptCosts.h"><Filter>Header Files\optimizer</Filter></ClInclude>
     <ClInclude Include="..\src\optimizer\OptDataflow.h"><Filter>Header Files\optimizer</Filter></ClInclude>
@@ -115,7 +116,6 @@
     <ClInclude Include="..\src\optimizer\OptEffects.h"><Filter>Header Files\optimizer</Filter></ClInclude>
     <ClInclude Include="..\src\optimizer\OptFlow.h"><Filter>Header Files\optimizer</Filter></ClInclude>
     <ClInclude Include="..\src\optimizer\OptFunction.h"><Filter>Header Files\optimizer</Filter></ClInclude>
-    <ClInclude Include="..\src\optimizer\OptIr.h"><Filter>Header Files\optimizer</Filter></ClInclude>
     <ClInclude Include="..\src\optimizer\OptLoops.h"><Filter>Header Files\optimizer</Filter></ClInclude>
     <ClInclude Include="..\src\optimizer\OptPass.h"><Filter>Header Files\optimizer</Filter></ClInclude>
     <ClInclude Include="..\src\optimizer\OptPasses.h"><Filter>Header Files\optimizer</Filter></ClInclude>

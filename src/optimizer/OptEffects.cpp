@@ -8,12 +8,12 @@ namespace {
 
 // What an operand reads when it is only a source: its register, or the
 // register an address is formed from.
-RegSet readsOf(const Operand &o) {
+RegSet readsOf(const MOperand &o) {
     switch (o.kind) {
-    case Operand::Register:
-    case Operand::Indirect:
-    case Operand::TlsSymbol:
-    case Operand::Memory: return (o.reg.id >= 0 && o.reg.id < kPhysical ? bit(o.reg.id) : 0) |
+    case MOperand::Register:
+    case MOperand::Indirect:
+    case MOperand::TlsSymbol:
+    case MOperand::Memory: return (o.reg.id >= 0 && o.reg.id < kPhysical ? bit(o.reg.id) : 0) |
                                  (o.scale != 0 && o.index.id < kPhysical ? bit(o.index.id) : 0);
     default: return 0;
     }
@@ -21,49 +21,49 @@ RegSet readsOf(const Operand &o) {
 
 // A thread-local operand is memory like any other to the effects: the base register read, the
 // access noted. What differs is that no pass folds one, since none takes it for a Memory operand.
-bool inMemory(const Operand &o) {
-    return o.kind == Operand::Memory || o.kind == Operand::RipSymbol ||
-           o.kind == Operand::SegMemory || o.kind == Operand::TlsSymbol;
+bool inMemory(const MOperand &o) {
+    return o.kind == MOperand::Memory || o.kind == MOperand::RipSymbol ||
+           o.kind == MOperand::SegMemory || o.kind == MOperand::TlsSymbol;
 }
 
 // **A write of four or eight bytes is whole**; a narrower one leaves the rest.
-void write(Effects &e, const Operand &o) {
+void write(Effects &e, const MOperand &o) {
     if (inMemory(o)) { e.memoryWritten = true; e.reads |= readsOf(o); return; }
-    if (o.kind != Operand::Register) return;
+    if (o.kind != MOperand::Register) return;
     if (o.reg.id < 0) { e.opaque = true; return; }
     if (o.reg.id >= kPhysical) return;                  // a pseudo: the IR's to track
     if (o.reg.id < kGprs && o.reg.width < 4) e.partial |= bit(o.reg.id);
     else e.writes |= bit(o.reg.id);
 }
 
-void read(Effects &e, const Operand &o) {
+void read(Effects &e, const MOperand &o) {
     e.reads |= readsOf(o);
     if (inMemory(o)) e.memoryRead = true;
-    if (o.kind == Operand::Register && o.reg.id < 0) e.opaque = true;
+    if (o.kind == MOperand::Register && o.reg.id < 0) e.opaque = true;
 }
 
 }
 
-bool explicitOnly(const Instr &i) {
+bool explicitOnly(const MInst &i) {
     if (i.m == mn::Imul && i.operands != 2) return false;         // rdx:rax, unnamed
     return opcodeOf(i.m).has(Opcode::kExplicit);
 }
 
 namespace {
 
-bool gpr(const Operand &o) { return o.kind == Operand::Register && o.reg.id >= 0 && o.reg.id < kGprs; }
+bool gpr(const MOperand &o) { return o.kind == MOperand::Register && o.reg.id >= 0 && o.reg.id < kGprs; }
 
 // **A register named at four bytes or fewer is read only there**; anything
 // implicit, or an address, is read whole.
-RegSet wideOf(const Instr &i, const Effects &e) {
+RegSet wideOf(const MInst &i, const Effects &e) {
     if (!explicitOnly(i)) return e.reads;
     // A move's destination, and setcc's, is written, not read.
     const bool writesOnly = opcodeOf(i.m).has(Opcode::kWritesOnly);
     RegSet narrow = 0, wide = 0;
-    for (const Operand *o : {&i.a, &i.b}) {
+    for (const MOperand *o : {&i.a, &i.b}) {
         const bool destination = o == (i.operands == 1 ? &i.a : &i.b) && writesOnly;
         if (gpr(*o) && !destination) (o->reg.width <= 4 ? narrow : wide) |= bit(o->reg.id);
-        else if (o->kind == Operand::Memory && o->reg.id >= 0) wide |= bit(o->reg.id);
+        else if (o->kind == MOperand::Memory && o->reg.id >= 0) wide |= bit(o->reg.id);
         if (o->indexed()) wide |= bit(o->index.id);
     }
     return e.reads & ~(narrow & ~wide);
@@ -87,7 +87,7 @@ namespace {
 // **What an instruction does with each operand it names, and what it does
 // beyond them** - one branch per kind in the opcode table, read by both
 // effectsOf and rolesOf.
-Roles classify(const Instr &i, const Convention &conv, Effects &e) {
+Roles classify(const MInst &i, const Convention &conv, Effects &e) {
     const Opcode &op = opcodeOf(i.m);
     Roles r;
     switch (op.kind) {
@@ -104,7 +104,7 @@ Roles classify(const Instr &i, const Convention &conv, Effects &e) {
         break;
     case Opcode::Jmp:
         e.control = true;
-        if (i.a.kind != Operand::Label) { r.a = kRead; e.opaque = true; }
+        if (i.a.kind != MOperand::Label) { r.a = kRead; e.opaque = true; }
         break;
     case Opcode::Jcc:
         e.control = true;
@@ -156,7 +156,7 @@ Roles classify(const Instr &i, const Convention &conv, Effects &e) {
         break;
     case Opcode::Move: {
         r.a = op.has(Opcode::kAddress) ? kAddress : kRead;
-        const bool keeps = op.has(Opcode::kMergeXmm) && i.b.kind == Operand::Register && i.a.kind == Operand::Register;
+        const bool keeps = op.has(Opcode::kMergeXmm) && i.b.kind == MOperand::Register && i.a.kind == MOperand::Register;
         r.b = keeps ? kWrite | kKeep : kWrite;
         break;
     }
@@ -164,7 +164,7 @@ Roles classify(const Instr &i, const Convention &conv, Effects &e) {
         if (i.operands != 2) { e.opaque = true; break; }   // imul's rdx:rax, a shift by one
         {
             const bool zeroing = op.has(Opcode::kZeroIdiom) &&
-                                 i.a.kind == Operand::Register && i.b.kind == Operand::Register &&
+                                 i.a.kind == MOperand::Register && i.b.kind == MOperand::Register &&
                                  i.a.reg.id == i.b.reg.id && i.a.reg.id >= 0;
             r.a = zeroing ? 0 : kRead;
             r.b = zeroing ? kWrite : kRead | kWrite;
@@ -184,23 +184,23 @@ Roles classify(const Instr &i, const Convention &conv, Effects &e) {
     return r;
 }
 
-void apply(Effects &e, const Operand &o, unsigned role) {
+void apply(Effects &e, const MOperand &o, unsigned role) {
     if (role & kAddress) { e.reads |= readsOf(o); return; }
     if (role & kRead) read(e, o);
     if (!(role & kWrite)) return;
-    if ((role & kKeep) && o.kind == Operand::Register && o.reg.id >= 0 && o.reg.id < kPhysical)
+    if ((role & kKeep) && o.kind == MOperand::Register && o.reg.id >= 0 && o.reg.id < kPhysical)
         e.partial |= bit(o.reg.id);
     else write(e, o);
 }
 
 }
 
-Roles rolesOf(const Instr &i) {
+Roles rolesOf(const MInst &i) {
     Effects ignored;
     return classify(i, Convention(), ignored);
 }
 
-Effects effectsOf(const Instr &i, const Convention &conv) {
+Effects effectsOf(const MInst &i, const Convention &conv) {
     Effects e;
     const Roles r = classify(i, conv, e);
     apply(e, i.a, r.a);

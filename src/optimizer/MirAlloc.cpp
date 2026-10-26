@@ -1,4 +1,5 @@
 #include "MirAlloc.h"
+#include "MirWebs.h"
 
 #include "OptPasses.h"
 
@@ -14,8 +15,8 @@ namespace {
 // The registers a pseudo may be given: those the target description offers.
 bool candidate(int r) { return TargetDesc::x86_64().candidate(r); }
 
-bool wholeReg(const Operand &o) {
-    return o.kind == Operand::Register && (o.reg.width == 8 || (o.reg.width == 16 && o.reg.id >= kXmm0));
+bool wholeReg(const MOperand &o) {
+    return o.kind == MOperand::Register && (o.reg.width == 8 || (o.reg.width == 16 && o.reg.id >= kXmm0));
 }
 
 // Pseudos are numbered from kFirstPseudo; the graph numbers them from 0.
@@ -46,7 +47,7 @@ int Allocator::classOfReg(int reg) const {
 
 // A whole copy between two registers of one class, at least one of them a pseudo; the operands else -1. Assigned
 // alike, such a copy is of a register to itself: `mov`/`movq` for the general class, `movapd`/`movaps` for xmm.
-bool Allocator::copyOf(const Instr &i, int &src, int &dst) const {
+bool Allocator::copyOf(const MInst &i, int &src, int &dst) const {
     if (i.operands != 2 || !wholeReg(i.a) || !wholeReg(i.b)) return false;
     const bool xmm = i.m.is({mn::Movapd, mn::Movaps});
     if (!xmm && !isMovQ(i.m)) return false;
@@ -58,7 +59,7 @@ bool Allocator::copyOf(const Instr &i, int &src, int &dst) const {
     return classOfReg(src) == want && classOfReg(dst) == want;
 }
 
-Allocator::Allocator(Function &fn) : fn_(fn) {
+Allocator::Allocator(MFunction &fn) : fn_(fn) {
     for (const PseudoInfo &p : fn.pseudos) {
         if (p.fromSlot()) break;
         homes_.push_back(p.home);
@@ -72,25 +73,25 @@ Allocator::Allocator(Function &fn) : fn_(fn) {
 // operand by its role, a memory or indirect operand's base read; a write
 // narrower than four bytes keeps the rest, so reads too.
 void Allocator::findUses() {
-    const Stream &s = fn_.stream;
+    const MStream &s = fn_.stream;
     uses_.assign(s.size(), std::vector<Use>());
     copies_.clear();
     for (int k = 0; k < static_cast<int>(s.size()); ++k) {
-        if (s[k].kind != Entry::Ins || s[k].dead) continue;
-        const Instr &i = s[k].ins;
+        if (s[k].kind != MEntry::Inst || s[k].dead) continue;
+        const MInst &i = s[k].ins;
         const Roles roles = rolesOf(i);
-        const Operand *ops[2] = {&i.a, &i.b};
+        const MOperand *ops[2] = {&i.a, &i.b};
         const unsigned role[2] = {roles.a, roles.b};
         for (int n = 0; n < 2; ++n) {
-            const Operand &o = *ops[n];
+            const MOperand &o = *ops[n];
             if (!isPseudo(o.reg.id)) continue;
             Use u{indexOf(o.reg.id), false, false};
-            if (o.kind == Operand::Register) {
+            if (o.kind == MOperand::Register) {
                 if (role[n] == 0) continue;
                 u.read = (role[n] & kRead) != 0;
                 u.write = (role[n] & kWrite) != 0;
                 if (u.write && ((role[n] & kKeep) || o.reg.width < 4)) u.read = true;
-            } else if (o.basedOnReg() || o.kind == Operand::Indirect) {
+            } else if (o.basedOnReg() || o.kind == MOperand::Indirect) {
                 u.read = true;
             } else {
                 continue;
@@ -106,7 +107,7 @@ void Allocator::findUses() {
 // physical registers, one bit per pseudo: to a fixpoint backward over the
 // blocks, and what a pad reads joined at the call that may leave for it.
 void Allocator::solveLiveness() {
-    const Stream &s = fn_.stream;
+    const MStream &s = fn_.stream;
     const Flow &f = fn_.flow;
     const int nb = static_cast<int>(f.blocks.size());
     liveIn_.assign(nb, Bits(words_, 0));
@@ -124,7 +125,7 @@ void Allocator::solveLiveness() {
                 for (int p = nHomes_; p < n_; ++p) if (!demoted_[p]) set(live, p);
             liveOut_[b] = live;
             for (int k = blk.end - 1; k >= blk.begin; --k) {
-                if (s[k].kind != Entry::Ins || s[k].dead) continue;
+                if (s[k].kind != MEntry::Inst || s[k].dead) continue;
                 for (int e : blk.succs)
                     if (f.edges[e].kind == Edge::Eh && f.edges[e].at == k && f.edges[e].to != Edge::kExit)
                         for (int w = 0; w < words_; ++w) live[w] |= liveIn_[f.edges[e].to][w];
@@ -149,7 +150,7 @@ void Allocator::addEdge(int p, int q) {
 // the source of a copy** (Chaitin), and may not take a physical register
 // live after, nor one written here; one live across may not be in one written here.
 void Allocator::buildInterference() {
-    const Stream &s = fn_.stream;
+    const MStream &s = fn_.stream;
     Flow &f = fn_.flow;
     // The physical liveness is the flow's, in which a pseudo's write kills
     // no physical register, which one it kills being what is decided here.
@@ -164,13 +165,13 @@ void Allocator::buildInterference() {
     // A preserved register the stream never names is offered with a save
     // and a restore, so its life from the entry to the return does not count.
     RegSet mentioned = 0;
-    for (const Entry &e : s) {
-        if (e.kind != Entry::Ins || e.dead) continue;
-        for (const Operand *o : {&e.ins.a, &e.ins.b})
-            if ((o->kind == Operand::Register || o->basedOnReg() || o->kind == Operand::Indirect) &&
+    for (const MEntry &e : s) {
+        if (e.kind != MEntry::Inst || e.dead) continue;
+        for (const MOperand *o : {&e.ins.a, &e.ins.b})
+            if ((o->kind == MOperand::Register || o->basedOnReg() || o->kind == MOperand::Indirect) &&
                 o->reg.id >= 0 && o->reg.id < kPhysical)
                 mentioned |= bit(o->reg.id);
-        for (const Operand *o : {&e.ins.a, &e.ins.b})
+        for (const MOperand *o : {&e.ins.a, &e.ins.b})
             if (o->indexed()) mentioned |= bit(o->index.id);
     }
     offered_ = 0;
@@ -185,7 +186,7 @@ void Allocator::buildInterference() {
         Live phys = blk.out;
         Bits bits = liveOut_[b];
         for (int k = blk.end - 1; k >= blk.begin; --k) {
-            if (s[k].kind != Entry::Ins || s[k].dead) continue;
+            if (s[k].kind != MEntry::Inst || s[k].dead) continue;
             for (const Use &u : uses_[k]) {
                 (blk.funclet > 0 ? inFunclet : inBody)[u.pseudo] = true;
                 if (blk.funclet > 0) nodes_[u.pseudo].forbid |= fn_.convention.preserved;
@@ -229,7 +230,7 @@ void Allocator::buildInterference() {
 // **A reference counts by where it stands**: the level says what one is
 // worth at each loop depth. A copy's weight is what coalescing it saves.
 void Allocator::collectCosts() {
-    const Stream &s = fn_.stream;
+    const MStream &s = fn_.stream;
     const Flow &f = fn_.flow;
     const Loops &loops = fn_.loops();
     const Costs &costs = fn_.costs();
@@ -238,7 +239,7 @@ void Allocator::collectCosts() {
         const long w = costs.referenceWeight(loops.depthOf(b));
         const long lw = costs.loopWeight(loops.depthOf(b));
         for (int k = f.blocks[b].begin; k < f.blocks[b].end; ++k) {
-            if (s[k].kind != Entry::Ins || s[k].dead) continue;
+            if (s[k].kind != MEntry::Inst || s[k].dead) continue;
             for (const Use &u : uses_[k]) {
                 nodes_[u.pseudo].weight += w;
                 if (isSlot(u.pseudo)) nodes_[u.pseudo].slotWeight += lw;

@@ -36,8 +36,6 @@ private:
     bool dumpSyntax_ = false;
     bool dumpMir_ = false;       // -dump=mir[=pass]: each function's MIR on stdout, after the pipeline or the pass (M3a.1)
     std::string dumpMirAfter_;
-    bool mirOff_ = false;        // -mir=off: written past the holder, as before M3a.1 - kept through M3a
-    bool checkMir_ = false;      // -check=mir: the unit written past the holder and through it, the two texts held equal
     bool dumpAst_ = false;       // -dump=ast: each function's Ast.h body as text, on stdout (M2.11)    // -dump=syntax: the syntax tree the grammar recorded, on stdout (M2 step 2)
     int keepGoing_ = 0;          // -keep-going[=N]: report up to N errors a file, not the first alone
     bool assemblyOnly_ = false;

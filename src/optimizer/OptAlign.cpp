@@ -22,7 +22,7 @@ bool sse(const OpId &m) { return m.row().has(Opcode::kSse); }
 // An instruction whose opcode has the 0F escape: imul r,r/m, the extensions, setcc (the table's kEscape0F).
 bool twoByte(const OpId &m) { return m.row().has(Opcode::kEscape0F); }
 
-int memoryBytes(const Operand &o) {
+int memoryBytes(const MOperand &o) {
     int n = 0;
     if (o.scale != 0 || o.reg.id == RSP || o.reg.id == R12) n += 1;     // a SIB byte
     const bool needsDisp = o.hasDisp && o.disp != 0;
@@ -31,27 +31,27 @@ int memoryBytes(const Operand &o) {
 }
 
 // The bytes of one instruction as it will most likely be encoded, erring long.
-int bytesOf(const Instr &i) {
+int bytesOf(const MInst &i) {
     const OpId m = i.m;
     const Opcode::Kind kind = m.row().kind;
     if (kind == Opcode::Jmp || kind == Opcode::Jcc) return 2;   // short: a loop this size exits nearby
-    if (kind == Opcode::Call) return i.a.kind == Operand::Indirect ? 3 : 5;
+    if (kind == Opcode::Call) return i.a.kind == MOperand::Indirect ? 3 : 5;
     if (kind == Opcode::Ret) return 1;
     if (i.operands == 0) return 3;
     int n = 2;                                  // opcode and modrm
     if (sse(m)) n += 2;
     else if (twoByte(m)) n += 1;
     bool rex = false;
-    for (const Operand *o : {&i.a, &i.b}) {
-        if (o->kind == Operand::Register || o->kind == Operand::Memory || o->kind == Operand::Indirect)
-            rex = rex || (o->kind == Operand::Register && o->reg.width == 8) || (o->reg.id >= R8 && o->reg.id < kGprs) ||
-                  (o->kind == Operand::Memory && o->scale != 0 && o->index.id >= R8);
+    for (const MOperand *o : {&i.a, &i.b}) {
+        if (o->kind == MOperand::Register || o->kind == MOperand::Memory || o->kind == MOperand::Indirect)
+            rex = rex || (o->kind == MOperand::Register && o->reg.width == 8) || (o->reg.id >= R8 && o->reg.id < kGprs) ||
+                  (o->kind == MOperand::Memory && o->scale != 0 && o->index.id >= R8);
         switch (o->kind) {
-        case Operand::Memory: n += memoryBytes(*o); break;
-        case Operand::RipSymbol: n += 4; break;
-        case Operand::SegMemory: n += 5; break;    // the prefix and an absolute disp32
-        case Operand::TlsSymbol: n += 4; break;    // a disp32 the linker fills
-        case Operand::Immediate:
+        case MOperand::Memory: n += memoryBytes(*o); break;
+        case MOperand::RipSymbol: n += 4; break;
+        case MOperand::SegMemory: n += 5; break;    // the prefix and an absolute disp32
+        case MOperand::TlsSymbol: n += 4; break;    // a disp32 the linker fills
+        case MOperand::Immediate:
             if (!o->numeric) n += 4;
             else if (m.is({mn::Mov, mn::Movabs})) n += fitsInt(o->value) ? 4 : 8;
             else n += fitsByte(o->value) ? 1 : 4;
@@ -60,23 +60,23 @@ int bytesOf(const Instr &i) {
         }
     }
     // A 64-bit register, or a numbered one, wants the REX prefix; so does a 64-bit move of a constant.
-    if (rex || (m == mn::Mov && i.a.kind == Operand::Immediate && i.b.kind == Operand::Register && i.b.reg.width == 8)) n += 1;
+    if (rex || (m == mn::Mov && i.a.kind == MOperand::Immediate && i.b.kind == MOperand::Register && i.b.reg.width == 8)) n += 1;
     return n;
 }
 
 // The estimated bytes of the instructions in [from, to).
-int bytesFrom(const Stream &s, int from, int to) {
+int bytesFrom(const MStream &s, int from, int to) {
     int n = 0;
     for (int k = from; k < to; ++k)
-        if (!s[k].dead && s[k].kind == Entry::Ins) n += bytesOf(s[k].ins);
+        if (!s[k].dead && s[k].kind == MEntry::Inst) n += bytesOf(s[k].ins);
     return n;
 }
 
 // The bytes from `from` through the first unconditional jump or return, or of [from, to).
-int runFrom(const Stream &s, int from, int to) {
+int runFrom(const MStream &s, int from, int to) {
     int n = 0;
     for (int k = from; k < to; ++k) {
-        if (s[k].dead || s[k].kind != Entry::Ins) continue;
+        if (s[k].dead || s[k].kind != MEntry::Inst) continue;
         n += bytesOf(s[k].ins);
         if (s[k].ins.m.is({mn::Jmp, mn::Ret})) break;
     }
@@ -84,18 +84,18 @@ int runFrom(const Stream &s, int from, int to) {
 }
 
 // The first label of the block, before any instruction, or -1.
-int headLabel(const Stream &s, const Block &b) {
+int headLabel(const MStream &s, const Block &b) {
     for (int k = b.begin; k < b.end; ++k) {
         if (s[k].dead) continue;
-        if (s[k].kind == Entry::Label) return k;
-        if (s[k].kind == Entry::Ins) return -1;
+        if (s[k].kind == MEntry::Label) return k;
+        if (s[k].kind == MEntry::Inst) return -1;
     }
     return -1;
 }
 
 }
 
-bool alignLoops(Function &fn) {
+bool alignLoops(MFunction &fn) {
     const int line = fn.costs().loopLine();
     const Loops &loops = fn.loops();
     std::vector<bool> isHead(fn.flow.blocks.size(), false);
@@ -124,10 +124,10 @@ bool alignLoops(Function &fn) {
     if (pads.empty()) return false;
     // Inserted from the back, so the earlier positions stay what they were.
     for (auto p = pads.rbegin(); p != pads.rend(); ++p) {
-        Entry e;
-        e.kind = Entry::Event;
-        e.event = Directive(Directive::LoopAlign);
-        e.event.n[0] = p->second;
+        MEntry e;
+        e.kind = MEntry::Directive;
+        e.dir = MDirective(MDirective::LoopAlign);
+        e.dir.n[0] = p->second;
         fn.stream.insert(fn.stream.begin() + p->first, e);
     }
     return true;

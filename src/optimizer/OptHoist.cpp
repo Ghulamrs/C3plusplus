@@ -11,18 +11,18 @@ namespace opt {
 
 namespace {
 
-bool gpr(const Operand &o) { return o.kind == Operand::Register && o.reg.id >= 0 && o.reg.id < kGprs; }
+bool gpr(const MOperand &o) { return o.kind == MOperand::Register && o.reg.id >= 0 && o.reg.id < kGprs; }
 
 // An operand's register slots: the register (or an address's base) and the index.
-Reg *slotOf(Instr &i, int slot) {
-    Operand &o = slot < 2 ? i.a : i.b;
+Reg *slotOf(MInst &i, int slot) {
+    MOperand &o = slot < 2 ? i.a : i.b;
     if (slot & 1) return o.indexed() ? &o.index : nullptr;
-    return (o.kind == Operand::Register || o.basedOnReg() || o.kind == Operand::Indirect) && o.reg.id >= 0 &&
+    return (o.kind == MOperand::Register || o.basedOnReg() || o.kind == MOperand::Indirect) && o.reg.id >= 0 &&
                    o.reg.id < kGprs
                ? &o.reg
                : nullptr;
 }
-const Reg *slotOf(const Instr &i, int slot) { return slotOf(const_cast<Instr &>(i), slot); }
+const Reg *slotOf(const MInst &i, int slot) { return slotOf(const_cast<MInst &>(i), slot); }
 int slotFor(int operand, bool index) { return operand * 2 + (index ? 1 : 0); }   // 0 a, 1 a's index, 2 b, 3 b's index
 
 std::string desc(long long v) { return std::to_string(v); }
@@ -31,7 +31,7 @@ std::string desc(long long v) { return std::to_string(v); }
 // hoisted, and which reads take the register that value is given.
 class Hoister {
 public:
-    Hoister(Function &fn, const Loops::Loop &loop) : s_(fn.stream), f_(fn.flow), loop_(loop) {}
+    Hoister(MFunction &fn, const Loops::Loop &loop) : s_(fn.stream), f_(fn.flow), loop_(loop) {}
 
     // Whether the loop changed; the stream and the flow are then stale.
     bool run() {
@@ -61,7 +61,7 @@ private:
     struct Rename { int k; int slot; int vn; int definer; };
     struct Holder { int reg = -1; int step = -1; };    // an invariant register, or the step that computes it
 
-    Stream &s_;
+    MStream &s_;
     Flow &f_;
     const Loops::Loop &loop_;
     std::vector<bool> inLoop_;
@@ -100,7 +100,7 @@ private:
             else return false;
         }
         if (entries != 1 || f_.blocks[preBlock_].leaves) return false;
-        if (pos_ < 0 || (s_[pos_].kind == Entry::Ins && s_[pos_].ins.m != mn::Jmp)) return false;
+        if (pos_ < 0 || (s_[pos_].kind == MEntry::Inst && s_[pos_].ins.m != mn::Jmp)) return false;
         for (int b : loop_.blocks) {
             if (b == loop_.head) continue;
             for (int e : f_.blocks[b].preds)
@@ -119,7 +119,7 @@ private:
             if (blk.leaves) return false;
             Live live = blk.out;
             for (int k = blk.end - 1; k >= blk.begin; --k) {
-                if (s_[k].kind != Entry::Ins || s_[k].dead) continue;
+                if (s_[k].kind != MEntry::Inst || s_[k].dead) continue;
                 f_.joinPads(b, k, live);
                 flagsDeadAfter_[k] = !live.flags;
                 live.step(f_.effects[k]);
@@ -176,8 +176,8 @@ private:
             definer[r] = -1;
         }
         for (int k = blk.begin; k < blk.end; ++k) {
-            if (s_[k].kind != Entry::Ins || s_[k].dead) continue;
-            const Instr &i = s_[k].ins;
+            if (s_[k].kind != MEntry::Inst || s_[k].dead) continue;
+            const MInst &i = s_[k].ins;
             const Effects &e = f_.effects[k];
             const Roles roles = rolesOf(i);
             // The registers this instruction names, and whether it reads the
@@ -193,7 +193,7 @@ private:
             for (int r = 0; r < kGprs; ++r) {
                 if (definer[r] < 0) continue;
                 const bool implicit = (e.reads & bit(r)) && !(named & bit(r));
-                const bool count = opcodeOf(i.m).has(Opcode::kShift) && i.a.kind == Operand::Register && i.a.reg.id == r;
+                const bool count = opcodeOf(i.m).has(Opcode::kShift) && i.a.kind == MOperand::Register && i.a.reg.id == r;
                 const bool clobbered = (e.partial & bit(r)) || ((e.writes & bit(r)) && r != dst);
                 if (implicit || count || clobbered) return seq_[definer[r]].k;
             }
@@ -212,7 +212,7 @@ private:
             for (int slot = 0; slot < 4; ++slot) {
                 const Reg *r = slotOf(i, slot);
                 if (r == nullptr || definer[r->id] < 0) continue;
-                if (slot == 2 && i.b.kind == Operand::Register && (roles.b & kWrite)) continue;   // written, not read
+                if (slot == 2 && i.b.kind == MOperand::Register && (roles.b & kWrite)) continue;   // written, not read
                 const Step &def = seq_[definer[r->id]];
                 if (def.narrow && !readsNarrow(i, slot)) return def.k;
                 const int vn = curVn[r->id];
@@ -233,12 +233,12 @@ private:
     // **What may leave the loop**: two operands, a whole general register
     // written, nothing implicit, no memory, no flags read, the flags dead
     // after where it writes them, and every register it reads invariant.
-    static bool readsNarrow(const Instr &i, int slot) {
-        const Operand &o = slot < 2 ? i.a : i.b;
-        return !(slot & 1) && o.kind == Operand::Register && o.reg.width <= 4;
+    static bool readsNarrow(const MInst &i, int slot) {
+        const MOperand &o = slot < 2 ? i.a : i.b;
+        return !(slot & 1) && o.kind == MOperand::Register && o.reg.width <= 4;
     }
 
-    bool hoistable(int k, const Instr &i, const Effects &e, const Roles &roles, const int *curVn, const int *definer) const {
+    bool hoistable(int k, const MInst &i, const Effects &e, const Roles &roles, const int *curVn, const int *definer) const {
         if (refused_.count(k) || i.operands != 2 || !gpr(i.b) || i.b.reg.width < 4 || frameReg(i.b.reg.id)) return false;
         if (!(roles.b & kWrite) || (roles.b & kKeep) || !explicitOnly(i)) return false;
         if (e.control || e.opaque || e.stack || e.memoryRead || e.memoryWritten || e.flagsRead) return false;
@@ -248,10 +248,10 @@ private:
         // A constant is an immediate wherever one is taken, a zeroing is
         // free, and a frame address folds into the operand: none is worth a register.
         switch (i.a.kind) {
-        case Operand::Register: if (!gpr(i.a) || !(roles.a & kRead)) return false; break;
-        case Operand::Immediate: if (op.kind == Opcode::Move) return false; break;
-        case Operand::RipSymbol: break;
-        case Operand::Memory: if (!(roles.a & kAddress) || frameReg(i.a.reg.id)) return false; break;
+        case MOperand::Register: if (!gpr(i.a) || !(roles.a & kRead)) return false; break;
+        case MOperand::Immediate: if (op.kind == Opcode::Move) return false; break;
+        case MOperand::RipSymbol: break;
+        case MOperand::Memory: if (!(roles.a & kAddress) || frameReg(i.a.reg.id)) return false; break;
         default: return false;
         }
         for (int r = 0; r < kGprs; ++r)
@@ -266,7 +266,7 @@ private:
     // The step for a hoistable instruction: its value's number from its
     // mnemonic, its immediate and its sources' numbers, so one computed
     // twice is held once.
-    Step makeStep(int k, const Instr &i, const Roles &roles, const int *curVn) {
+    Step makeStep(int k, const MInst &i, const Roles &roles, const int *curVn) {
         Step step;
         step.kind = Item;
         step.k = k;
@@ -274,15 +274,15 @@ private:
         step.narrow = false;
         std::string key = i.m.name() + "|w" + desc(i.b.reg.width) + "|";
         switch (i.a.kind) {
-        case Operand::Register:
+        case MOperand::Register:
             if (roles.a & kRead) {
                 key += "r" + desc(curVn[i.a.reg.id]) + "." + desc(i.a.reg.width);
                 step.sources.push_back(std::make_pair(slotFor(0, false), curVn[i.a.reg.id]));
             }
             break;
-        case Operand::Immediate: key += "i" + (i.a.numeric ? desc(i.a.value) : i.a.text.str()); break;
-        case Operand::RipSymbol: key += "s" + i.a.text; break;
-        case Operand::Memory:
+        case MOperand::Immediate: key += "i" + (i.a.numeric ? desc(i.a.value) : i.a.text.str()); break;
+        case MOperand::RipSymbol: key += "s" + i.a.text; break;
+        case MOperand::Memory:
             key += "m" + desc(i.a.disp) + ",";
             if (i.a.reg.id >= 0) {
                 key += desc(curVn[i.a.reg.id]);
@@ -381,21 +381,21 @@ private:
     // **The plan made real**: the hoisted instructions before the head, each
     // with its registers; the loop's copies of them dead; the reads renamed.
     void apply() {
-        std::vector<Entry> pre;
+        std::vector<MEntry> pre;
         for (std::size_t st = 0; st < seq_.size(); ++st) {
             const Step &step = seq_[st];
             s_[step.k].dead = true;
             if (step.kind == Replaced) continue;
-            Instr i = s_[step.k].ins;
+            MInst i = s_[step.k].ins;
             for (const auto &src : step.sources)
                 if (Reg *r = slotOf(i, src.first)) r->id = registerOf(src.second);
             i.b.reg.id = assigned_[st];
             if (copyFirst_[st]) {
-                Entry c;
-                c.ins = Instr{mn::Mov, Operand::ofReg(registerOf(step.srcVn), 8), Operand::ofReg(assigned_[st], 8), 2};
+                MEntry c;
+                c.ins = MInst{mn::Mov, MOperand::ofReg(registerOf(step.srcVn), 8), MOperand::ofReg(assigned_[st], 8), 2};
                 pre.push_back(c);
             }
-            Entry e;
+            MEntry e;
             e.ins = i;
             pre.push_back(e);
         }
@@ -411,8 +411,8 @@ namespace {
 
 // **A double read from the frame in a loop that never writes it**, loaded once before the loop into an xmm
 // register the loop leaves alone and the convention lets any function overwrite, each read a register copy.
-bool hoistXmmSlotsIn(Function &fn, const Loops::Loop &loop) {
-    Stream &s = fn.stream;
+bool hoistXmmSlotsIn(MFunction &fn, const Loops::Loop &loop) {
+    MStream &s = fn.stream;
     Flow &f = fn.flow;
     std::vector<bool> inLoop(f.blocks.size(), false);
     for (int b : loop.blocks) inLoop[b] = true;
@@ -434,17 +434,17 @@ bool hoistXmmSlotsIn(Function &fn, const Loops::Loop &loop) {
         const Block &blk = f.blocks[b];
         if (blk.leaves) return false;
         for (int k = blk.begin; k < blk.end; ++k) {
-            if (s[k].kind == Entry::Event) return false;
-            if (s[k].kind != Entry::Ins || s[k].dead) continue;
+            if (s[k].kind == MEntry::Directive) return false;
+            if (s[k].kind != MEntry::Inst || s[k].dead) continue;
             const Effects &e = f.effects[k];
             if (e.opaque || (e.control && s[k].ins.m == mn::Call)) return false;
             touched |= e.reads | e.writes | e.partial;
-            const Instr &i = s[k].ins;
+            const MInst &i = s[k].ins;
             if (i.operands == 2 && i.m == mn::Movsd && i.a.isMem() && i.a.reg.id == RBP && i.a.scale == 0 &&
-                i.b.kind == Operand::Register && i.b.reg.id >= kXmm0)
+                i.b.kind == MOperand::Register && i.b.reg.id >= kXmm0)
                 reads[i.a.disp].push_back(k);
             else if (e.memoryWritten)
-                for (const Operand *o : {&i.a, &i.b})
+                for (const MOperand *o : {&i.a, &i.b})
                     if (o->isMem() && o->reg.id == RBP) written.insert(o->disp);
         }
     }
@@ -455,11 +455,11 @@ bool hoistXmmSlotsIn(Function &fn, const Loops::Loop &loop) {
     for (int b = 0; b < static_cast<int>(f.blocks.size()); ++b) {
         Live live = f.blocks[b].out;
         for (int k = f.blocks[b].end - 1; k >= f.blocks[b].begin; --k) {
-            if (s[k].kind != Entry::Ins || s[k].dead) continue;
+            if (s[k].kind != MEntry::Inst || s[k].dead) continue;
             f.joinPads(b, k, live);
-            const Instr &i = s[k].ins;
+            const MInst &i = s[k].ins;
             if (i.m == mn::Lea && i.a.isMem() && i.a.reg.id == RBP && i.a.scale == 0 &&
-                !(i.b.kind == Operand::Register && i.b.reg.id >= 0 && !(live.regs & bit(i.b.reg.id)))) {
+                !(i.b.kind == MOperand::Register && i.b.reg.id >= 0 && !(live.regs & bit(i.b.reg.id)))) {
                 long long upTo = LLONG_MAX;
                 for (const Local &l : fn.locals) if (l.disp == i.a.disp) upTo = l.disp + l.size;
                 taken.push_back({i.a.disp, upTo});
@@ -491,14 +491,14 @@ bool hoistXmmSlotsIn(Function &fn, const Loops::Loop &loop) {
     if (plan.empty()) return false;
     for (const auto &p : plan)
         for (int k : reads[p.first]) {
-            Instr &i = s[k].ins;
+            MInst &i = s[k].ins;
             i.m = mn::Movapd;
-            i.a = Operand::ofReg(p.second, 16);
+            i.a = MOperand::ofReg(p.second, 16);
         }
     const int at = f.blocks[loop.head].begin;
     for (const auto &p : plan) {
-        Entry e;
-        e.ins = Instr{mn::Movsd, Operand::ofMem(RBP, p.first), Operand::ofReg(p.second, 16), 2};
+        MEntry e;
+        e.ins = MInst{mn::Movsd, MOperand::ofMem(RBP, p.first), MOperand::ofReg(p.second, 16), 2};
         s.insert(s.begin() + at, e);
     }
     return true;
@@ -507,28 +507,28 @@ bool hoistXmmSlotsIn(Function &fn, const Loops::Loop &loop) {
 }
 
 // The live instructions of a block, in order.
-std::vector<int> liveIns(const Stream &s, const Block &blk) {
+std::vector<int> liveIns(const MStream &s, const Block &blk) {
     std::vector<int> out;
     for (int k = blk.begin; k < blk.end; ++k)
-        if (s[k].kind == Entry::Ins && !s[k].dead) out.push_back(k);
+        if (s[k].kind == MEntry::Inst && !s[k].dead) out.push_back(k);
     return out;
 }
 
 // **A counter that only counts up from a non-negative start, one at a time, while below a signed bound**:
 // `add $1, %esi; cmp X, %esi; jl head` the latch's last three, and nothing else in the loop writing esi. Its
 // value never passes INT_MAX, and every write is 32-bit, so %rsi already is its sign extension.
-bool widenCounterIn(Function &fn, const Loops::Loop &loop) {
-    Stream &s = fn.stream;
+bool widenCounterIn(MFunction &fn, const Loops::Loop &loop) {
+    MStream &s = fn.stream;
     Flow &f = fn.flow;
     const std::vector<int> latch = liveIns(s, f.blocks[loop.back]);
     if (latch.size() < 3) return false;
-    const Instr &add = s[latch[latch.size() - 3]].ins, &cmp = s[latch[latch.size() - 2]].ins,
+    const MInst &add = s[latch[latch.size() - 3]].ins, &cmp = s[latch[latch.size() - 2]].ins,
                 &jl = s[latch.back()].ins;
-    if (add.m != mn::Add || add.a.kind != Operand::Immediate || !add.a.numeric || add.a.value != 1) return false;
-    if (add.b.kind != Operand::Register || add.b.reg.width != 4 || add.b.reg.id >= kGprs) return false;
+    if (add.m != mn::Add || add.a.kind != MOperand::Immediate || !add.a.numeric || add.a.value != 1) return false;
+    if (add.b.kind != MOperand::Register || add.b.reg.width != 4 || add.b.reg.id >= kGprs) return false;
     const int r = add.b.reg.id;
     if (frameReg(r) || cmp.m != mn::Cmp || !cmp.b.isReg(r) || cmp.b.reg.width != 4 || jl.m != mn::Jl) return false;
-    if (cmp.a.kind == Operand::Register && cmp.a.reg.width != 4) return false;
+    if (cmp.a.kind == MOperand::Register && cmp.a.reg.width != 4) return false;
     std::vector<bool> inLoop(f.blocks.size(), false);
     for (int b : loop.blocks) inLoop[b] = true;
     for (int b : loop.blocks)
@@ -543,10 +543,10 @@ bool widenCounterIn(Function &fn, const Loops::Loop &loop) {
         for (auto it = ins.rbegin(); it != ins.rend(); ++it) {
             const Effects &e = f.effects[*it];
             if (!((e.writes | e.partial) & bit(r))) continue;
-            const Instr &w = s[*it].ins;
+            const MInst &w = s[*it].ins;
             const bool zero = w.m == mn::Xor && w.a.isReg(r) && w.b.isReg(r) && w.b.reg.width == 4;
             const bool constant = w.m.is({mn::Mov, mn::Movl}) && w.b.isReg(r) && w.b.reg.width == 4 &&
-                                  w.a.kind == Operand::Immediate && w.a.numeric && w.a.value >= 0 && w.a.value < 0x7fffffff;
+                                  w.a.kind == MOperand::Immediate && w.a.numeric && w.a.value >= 0 && w.a.value < 0x7fffffff;
             if (!zero && !constant) return false;
             from = -2;
             break;
@@ -561,22 +561,22 @@ bool widenCounterIn(Function &fn, const Loops::Loop &loop) {
     for (int b : loop.blocks) {
         const std::vector<int> ins = liveIns(s, f.blocks[b]);
         for (std::size_t n = 0; n < ins.size(); ++n) {
-            const Instr &x = s[ins[n]].ins;
-            if (x.m != mn::Movslq || !x.a.isReg(r) || x.a.reg.width != 4 || x.b.kind != Operand::Register ||
+            const MInst &x = s[ins[n]].ins;
+            if (x.m != mn::Movslq || !x.a.isReg(r) || x.a.reg.width != 4 || x.b.kind != MOperand::Register ||
                 x.b.reg.width != 8 || x.b.reg.id == r || x.b.reg.id >= kGprs || frameReg(x.b.reg.id))
                 continue;
             const int d = x.b.reg.id;
             for (std::size_t m = n + 1; m < ins.size(); ++m) {
-                Instr &u = s[ins[m]].ins;
+                MInst &u = s[ins[m]].ins;
                 const Effects &e = f.effects[ins[m]];
                 if (!((e.reads | e.writes | e.partial) & (bit(d) | bit(r)))) continue;
                 if (!explicitOnly(u)) break;
                 const bool writesD = ((e.writes | e.partial) & bit(d)) != 0;
                 const Roles roles = rolesOf(u);
                 bool renamed = false;
-                for (Operand *o : {&u.a, &u.b}) {
+                for (MOperand *o : {&u.a, &u.b}) {
                     const unsigned role = o == &u.a ? roles.a : roles.b;
-                    if (o->kind == Operand::Register && o->reg.id == d && !(role & kWrite)) { o->reg.id = r; renamed = true; }
+                    if (o->kind == MOperand::Register && o->reg.id == d && !(role & kWrite)) { o->reg.id = r; renamed = true; }
                     if (o->basedOnReg() && o->reg.id == d) { o->reg.id = r; renamed = true; }
                     if (o->indexed() && o->index.id == d) { o->index.id = r; renamed = true; }
                 }
@@ -588,14 +588,14 @@ bool widenCounterIn(Function &fn, const Loops::Loop &loop) {
     return changed;
 }
 
-bool widenCounters(Function &fn) {
+bool widenCounters(MFunction &fn) {
     bool changed = false;
     for (const Loops::Loop &l : fn.loops().all()) changed |= widenCounterIn(fn, l);
     if (changed) fn.buildFlow();
     return changed;
 }
 
-bool hoistXmmSlots(Function &fn) {
+bool hoistXmmSlots(MFunction &fn) {
     bool changed = false;
     std::set<std::string> done;
     for (;;) {
@@ -603,8 +603,8 @@ bool hoistXmmSlots(Function &fn) {
         const Loops &loops = fn.loops();
         const Loops::Loop *pick = nullptr;
         for (const Loops::Loop &l : loops.all()) {
-            const Entry &head = fn.stream[f.blocks[l.head].begin];
-            if (head.kind != Entry::Label || done.count(head.label)) continue;
+            const MEntry &head = fn.stream[f.blocks[l.head].begin];
+            if (head.kind != MEntry::Label || done.count(head.label)) continue;
             if (pick == nullptr || l.blocks.size() < pick->blocks.size()) pick = &l;
         }
         if (pick == nullptr) break;
@@ -620,7 +620,7 @@ bool hoistXmmSlots(Function &fn) {
 // **Loop-invariant code motion, after allocation**: a computation of what the
 // loop never writes moves in front of its head, into a register free there;
 // the innermost loop first, the flow rebuilt after each one that changed.
-bool hoistInvariants(Function &fn) {
+bool hoistInvariants(MFunction &fn) {
     bool changed = false;
     std::set<std::string> done;
     for (;;) {
@@ -628,8 +628,8 @@ bool hoistInvariants(Function &fn) {
         const Loops &loops = fn.loops();
         const Loops::Loop *pick = nullptr;
         for (const Loops::Loop &l : loops.all()) {
-            const Entry &head = fn.stream[f.blocks[l.head].begin];
-            if (head.kind != Entry::Label || done.count(head.label)) continue;
+            const MEntry &head = fn.stream[f.blocks[l.head].begin];
+            if (head.kind != MEntry::Label || done.count(head.label)) continue;
             if (pick == nullptr || l.blocks.size() < pick->blocks.size()) pick = &l;
         }
         if (pick == nullptr) break;

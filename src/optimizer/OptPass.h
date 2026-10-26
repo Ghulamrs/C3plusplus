@@ -32,9 +32,9 @@ public:
     virtual ~Pass() {}
     const PassInfo &info() const { return info_; }
     // Whether the pass runs on this function at all.
-    virtual bool gate(const Function &) const { return true; }
+    virtual bool gate(const MFunction &) const { return true; }
     // Does the work; says whether anything changed, which the manager takes as "solve the liveness again" and a group as "go round again".
-    virtual bool execute(Function &fn) = 0;
+    virtual bool execute(MFunction &fn) = 0;
 
 private:
     PassInfo info_;
@@ -48,8 +48,8 @@ public:
     enum Stop { WhenNoneChanged, WhenFirstUnchanged };
     Group(const PassInfo &info, int repeat, Stop stop) : Pass(info), repeat_(repeat), stop_(stop) {}
     Group &add(std::unique_ptr<Pass> p) { subs_.push_back(std::move(p)); return *this; }
-    bool execute(Function &) override { return false; }     // the manager runs the subs
-    int repeat(const Function &fn) const { return repeat_ > 0 ? repeat_ : fn.costs().rounds(); }
+    bool execute(MFunction &) override { return false; }     // the manager runs the subs
+    int repeat(const MFunction &fn) const { return repeat_ > 0 ? repeat_ : fn.costs().rounds(); }
     Stop stop() const { return stop_; }
     const std::vector<std::unique_ptr<Pass>> &subs() const { return subs_; }
 
@@ -61,30 +61,27 @@ private:
 
 // **Runs a pass tree over a function.** For each pass whose gate holds: the start work, a check of
 // what it requires, execute, the property update, the liveness marked stale if it changed, and the dump if asked for.
-// CPP11_DUMP_MIR names the passes to dump after, comma-separated, or `all`; the dump goes to stderr, one section per pass per function.
+// -dump=mir=<pass> names the pass to dump after, or `all`: one section per pass per function (M3-IR.md 2.10).
 class PassManager {
 public:
-    PassManager();
-    bool run(Pass &pass, Function &fn);
-    // -dump=mir=<pass>: the function after that pass, to `to` - what CPP11_DUMP_MIR does to stderr, retired at M3a.5.
-    void dumpAfter(const std::string &pass, std::ostream *to) { dump_.push_back(pass); out_ = to; }
+    bool run(Pass &pass, MFunction &fn);
+    void dumpAfter(const std::string &pass, std::ostream *to) { dump_ = pass; out_ = to; }
 
 private:
-    std::vector<std::string> dump_;
-    bool dumpAll_ = false;
-    std::ostream *out_ = nullptr;      // where a dump goes: stderr unless -dump=mir named it
+    std::string dump_;                 // the pass -dump=mir named, `all`, or none
+    std::ostream *out_ = nullptr;      // where the dump goes
 
-    bool runLeaf(Pass &pass, Function &fn);
-    bool runGroup(Group &group, Function &fn);
-    void before(const Pass &pass, Function &fn);
-    void after(const Pass &pass, Function &fn, bool changed);
+    bool runLeaf(Pass &pass, MFunction &fn);
+    bool runGroup(Group &group, MFunction &fn);
+    void before(const Pass &pass, MFunction &fn);
+    void after(const Pass &pass, MFunction &fn, bool changed);
     bool wanted(const Pass &pass) const;
 };
 
 // The labels only jumps name, that no jump names any more, marked dead: each joins its block to the one before, so what is known flows through.
-void dropUnnamedLabels(Function &fn);
+void dropUnnamedLabels(MFunction &fn);
 
 // One function's stream as text, for the dumps: each block with its edges, what is live at its ends, and the loops that hold it - the analyses asked for as a pass would ask.
-void dumpStream(std::ostream &o, Function &fn);
+void dumpStream(std::ostream &o, MFunction &fn);
 
 }

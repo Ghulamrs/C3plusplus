@@ -7,7 +7,7 @@ namespace opt {
 // A forward problem to a fixpoint: what reaches a block is the union of
 // what leaves its predecessors, each register's last definition replacing
 // the rest; an exception edge leaves at its call, the call's own made.
-void ReachingDefs::solve(const Flow &f, const Stream &s, int registers,
+void ReachingDefs::solve(const Flow &f, const MStream &s, int registers,
                          const std::vector<std::vector<int>> &lastDef,
                          const std::vector<std::vector<int>> &unknownIn) {
     const int nb = static_cast<int>(f.blocks.size());
@@ -28,7 +28,7 @@ void ReachingDefs::solve(const Flow &f, const Stream &s, int registers,
                 reach.erase(std::unique(reach.begin(), reach.end()), reach.end());
                 in[b][r] = reach;
                 for (int k = f.blocks[b].begin; k < f.blocks[b].end; ++k) {
-                    if (s[k].kind != Entry::Ins || s[k].dead) continue;
+                    if (s[k].kind != MEntry::Inst || s[k].dead) continue;
                     const int d = lastDef[k][r];
                     if (d >= 0) reach.assign(1, d);
                     for (int e : f.blocks[b].succs)

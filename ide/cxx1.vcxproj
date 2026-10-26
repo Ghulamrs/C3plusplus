@@ -111,6 +111,7 @@
     <ClCompile Include="..\src\optimizer\C6xPipe.cpp" />
     <ClCompile Include="..\src\optimizer\C6xSched.cpp" />
     <ClCompile Include="..\src\optimizer\Inliner.cpp" />
+    <ClCompile Include="..\src\optimizer\Mir.cpp" />
     <ClCompile Include="..\src\optimizer\MirAlloc.cpp" />
     <ClCompile Include="..\src\optimizer\MirLocals.cpp" />
     <ClCompile Include="..\src\optimizer\MirWebs.cpp" />
@@ -122,7 +123,6 @@
     <ClCompile Include="..\src\optimizer\OptFlow.cpp" />
     <ClCompile Include="..\src\optimizer\OptFrame.cpp" />
     <ClCompile Include="..\src\optimizer\OptHoist.cpp" />
-    <ClCompile Include="..\src\optimizer\OptIr.cpp" />
     <ClCompile Include="..\src\optimizer\OptJumps.cpp" />
     <ClCompile Include="..\src\optimizer\OptLoops.cpp" />
     <ClCompile Include="..\src\optimizer\OptMemory.cpp" />
@@ -168,6 +168,7 @@
     <ClInclude Include="..\src\optimizer\Mir.h" />
     <ClInclude Include="..\src\optimizer\MirAlloc.h" />
     <ClInclude Include="..\src\optimizer\MirLocals.h" />
+    <ClInclude Include="..\src\optimizer\MirWebs.h" />
     <ClInclude Include="..\src\optimizer\OptCore.h" />
     <ClInclude Include="..\src\optimizer\OptCosts.h" />
     <ClInclude Include="..\src\optimizer\OptDataflow.h" />
@@ -175,7 +176,6 @@
     <ClInclude Include="..\src\optimizer\OptEffects.h" />
     <ClInclude Include="..\src\optimizer\OptFlow.h" />
     <ClInclude Include="..\src\optimizer\OptFunction.h" />
-    <ClInclude Include="..\src\optimizer\OptIr.h" />
     <ClInclude Include="..\src\optimizer\OptLoops.h" />
     <ClInclude Include="..\src\optimizer\OptPass.h" />
     <ClInclude Include="..\src\optimizer\OptPasses.h" />

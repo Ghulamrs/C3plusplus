@@ -4,7 +4,7 @@
 // asks. An instruction this table does not know is opaque: it reads and
 // writes everything, so no pass moves anything across it.
 
-#include "OptIr.h"
+#include "Mir.h"
 #include "OptTable.h"
 
 struct Abi;
@@ -20,7 +20,7 @@ struct Convention {
 };
 Convention conventionOf(const Abi &abi);
 
-Effects effectsOf(const Instr &i, const Convention &c);
+Effects effectsOf(const MInst &i, const Convention &c);
 
 // **What an instruction does with each operand it names**: read it, write it,
 // write part of it and keep the rest, or only form an address from it.
@@ -28,9 +28,9 @@ constexpr unsigned kRead = 1, kWrite = 2, kKeep = 4, kAddress = 8;
 struct Roles {
     unsigned a = 0, b = 0;
 };
-Roles rolesOf(const Instr &i);
+Roles rolesOf(const MInst &i);
 
 // Whether an instruction reads registers only through its operands.
-bool explicitOnly(const Instr &i);
+bool explicitOnly(const MInst &i);
 
 }

@@ -17,7 +17,7 @@ struct ReachingDefs {
     typedef std::vector<int> DefList;
     std::vector<std::vector<DefList>> in;      // [block][register], sorted, unique
 
-    void solve(const Flow &f, const Stream &s, int registers,
+    void solve(const Flow &f, const MStream &s, int registers,
                const std::vector<std::vector<int>> &lastDef,
                const std::vector<std::vector<int>> &unknownIn);
 };

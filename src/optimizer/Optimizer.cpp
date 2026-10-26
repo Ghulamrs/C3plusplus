@@ -10,14 +10,14 @@
 #include <ostream>
 #include <utility>
 
-using opt::Entry;
+using opt::MEntry;
 
 Optimizer::Optimizer(Spelling &under, const Abi &abi, int level)
     : under_(under), passes_(level > 0), costs_(opt::Costs::forLevel(level)), fn_(*costs_), pipeline_(opt::pipelineFor()) {
     fn_.convention = opt::conventionOf(abi);
 }
 
-void Optimizer::hold(Entry e) {
+void Optimizer::hold(MEntry e) {
     fn_.stream.push_back(std::move(e));
     held_++;
 }
@@ -29,7 +29,7 @@ void Optimizer::instruction(const std::string &m, int operands, const Op *a, con
         else under_.ins(m, *a, *b);
         return;
     }
-    Entry e;
+    MEntry e;
     e.ins.m = opt::OpId(m);
     // CPP11_MIR_STRICT=1 names every mnemonic held that the table does not list: the measure of its completeness,
     // which is also M4's list of what the encoder must take (M3-IR.md 2.6).
@@ -37,14 +37,14 @@ void Optimizer::instruction(const std::string &m, int operands, const Op *a, con
     if (strict && !e.ins.m.listed())
         std::fprintf(stderr, "mir-strict: '%s' is not in the opcode table, in %s\n", m.c_str(), fn_.name.c_str());
     e.ins.operands = operands;
-    if (a) e.ins.a = opt::Operand::from(*a);
-    if (b) e.ins.b = opt::Operand::from(*b);
+    if (a) e.ins.a = opt::MOperand::from(*a);
+    if (b) e.ins.b = opt::MOperand::from(*b);
     if (argsPending_ && e.ins.m == opt::mn::Call) { e.ins.args = args_; e.ins.exactArgs = true; }
     if (retPending_ && e.ins.m == opt::mn::Ret) { e.ins.args = rets_; e.ins.exactArgs = true; }
     argsPending_ = false;
     retPending_ = false;
     if (inlining_)
-        for (opt::Operand *o : {&e.ins.a, &e.ins.b})
+        for (opt::MOperand *o : {&e.ins.a, &e.ins.b})
             if (o->isMem() && o->reg.id == opt::RBP && o->disp > -kTempBase) {
                 assert(o->disp < 0 && "an inlined callee reads only its own frame");
                 o->disp -= inlineBase_;
@@ -53,11 +53,11 @@ void Optimizer::instruction(const std::string &m, int operands, const Op *a, con
     hold(std::move(e));
 }
 
-void Optimizer::event(opt::Directive d) {
+void Optimizer::directive(opt::MDirective d) {
     if (!inFunction_) { d.replay(under_); return; }
-    Entry e;
-    e.kind = Entry::Event;
-    e.event = std::move(d);
+    MEntry e;
+    e.kind = MEntry::Directive;
+    e.dir = std::move(d);
     hold(std::move(e));
 }
 
@@ -67,8 +67,8 @@ void Optimizer::ins(const std::string &m, const Op &a, const Op &b) { instructio
 
 void Optimizer::defLabel(const std::string &l) {
     if (!inFunction_) { under_.defLabel(l); return; }
-    Entry e;
-    e.kind = Entry::Label;
+    MEntry e;
+    e.kind = MEntry::Label;
     e.label = l;
     hold(std::move(e));
 }
@@ -154,9 +154,9 @@ void Optimizer::frame(std::vector<opt::Local> locals) { fn_.locals = std::move(l
 void Optimizer::temporaries(int count) {
     if (count == 0) return;
     const long long top = fn_.frameBase();
-    for (Entry &e : fn_.stream) {
-        if (e.kind != Entry::Ins) continue;
-        for (opt::Operand *o : {&e.ins.a, &e.ins.b})
+    for (MEntry &e : fn_.stream) {
+        if (e.kind != MEntry::Inst) continue;
+        for (opt::MOperand *o : {&e.ins.a, &e.ins.b})
             if (o->isMem() && o->reg.id == opt::RBP && o->disp <= -kTempBase) o->disp += kTempBase - top;
     }
     for (int t = 0; t < count; ++t) fn_.locals.push_back(opt::Local{-(top + 8 * (t + 1)), 8});
@@ -181,8 +181,8 @@ void Optimizer::returnsPair(bool pair) {
     if (pair) fn_.convention.returned |= opt::bit(opt::RDX) | opt::bit(opt::kXmm0 + 1);
 }
 
-// **The passes, through the manager.** What ran here as hand-written loops is the pipeline in OptPipeline.cpp; the manager runs it, checks what each pass requires, and dumps after any pass CPP11_DUMP_MIR names.
-void Optimizer::improve(opt::Function &fn) {
+// **The passes, through the manager.** What ran here as hand-written loops is the pipeline in OptPipeline.cpp; the manager runs it, checks what each pass requires, and dumps after the pass -dump=mir names.
+void Optimizer::improve(opt::MFunction &fn) {
     if (!passes_) return;
     manager_.run(*pipeline_, fn);
 }
@@ -194,10 +194,10 @@ void Optimizer::flush() {
     if (fn_.stream.empty()) return;
     if (fn_.prologueAt < 0 && passes_) opt::noteDecline("no-prologue-no-frame-passes", fn_.name);
     int depth = 0;
-    for (const Entry &e : fn_.stream) {
-        if (e.kind == Entry::Event && e.event.beginsFunclet()) ++depth;
-        else if (e.kind == Entry::Event && e.event.kind == opt::Directive::FuncletEnd) --depth;
-        else if (depth > 0 && e.kind == Entry::Ins) fn_.shared.addAccessOf(e);
+    for (const MEntry &e : fn_.stream) {
+        if (e.kind == MEntry::Directive && e.dir.beginsFunclet()) ++depth;
+        else if (e.kind == MEntry::Directive && e.dir.kind == opt::MDirective::FuncletEnd) --depth;
+        else if (depth > 0 && e.kind == MEntry::Inst) fn_.shared.addAccessOf(e);
     }
     improve(fn_);
     if (dump_ != nullptr) { *dump_ << ";; " << fn_.name << "\n"; opt::dumpStream(*dump_, fn_); }
@@ -209,76 +209,76 @@ void Optimizer::flush() {
     fn_.prologueAt = -1;       // written out: from here on the frame is what it is
 }
 
-void Optimizer::replay(const opt::Stream &s) {
-    for (const Entry &e : s) {
+void Optimizer::replay(const opt::MStream &s) {
+    for (const MEntry &e : s) {
         if (e.dead) continue;
         switch (e.kind) {
-        case Entry::Ins: {
-            const opt::Instr &i = e.ins;
+        case MEntry::Inst: {
+            const opt::MInst &i = e.ins;
             if (i.operands == 0) under_.ins(i.m.name());
             else if (i.operands == 1) under_.ins(i.m.name(), i.a.op());
             else under_.ins(i.m.name(), i.a.op(), i.b.op());
             break;
         }
-        case Entry::Label:
+        case MEntry::Label:
             if (e.state) under_.stateLabel(e.label);
             else under_.defLabel(e.label);
             break;
-        case Entry::Event: e.event.replay(under_); break;
+        case MEntry::Directive: e.dir.replay(under_); break;
         }
     }
 }
 
 // Everything else is a directive: held where it stood, with its arguments copied.
 namespace {
-opt::Directive dir(opt::Directive::Kind k, long long a = 0, long long b = 0, long long c = 0,
+opt::MDirective dir(opt::MDirective::Kind k, long long a = 0, long long b = 0, long long c = 0,
                    const std::string &s = std::string()) {
-    opt::Directive d(k);
+    opt::MDirective d(k);
     d.n[0] = a; d.n[1] = b; d.n[2] = c;
     d.s = s;
     return d;
 }
 }
-using D = opt::Directive;
+using D = opt::MDirective;
 void Optimizer::prologue(int frameSize, const std::string &lsda, int outgoing, int realign) {
     assert((realign == 0 || !passes_) && "a realigned frame is written past the passes");
     fn_.prologueAt = static_cast<int>(fn_.stream.size());
     fn_.frameSize = frameSize;
     fn_.lsda = lsda;
     fn_.outgoing = outgoing;
-    event(dir(D::Prologue, frameSize, outgoing, realign, lsda));
+    directive(dir(D::Prologue, frameSize, outgoing, realign, lsda));
 }
-void Optimizer::fileEntry(int n, const std::string &name) { event(dir(D::FileEntry, n, 0, 0, name)); }
-void Optimizer::location(int file, int line, int column) { event(dir(D::Location, file, line, column)); }
-void Optimizer::funcletLinesBegin() { event(dir(D::FuncletLinesBegin)); }
-void Optimizer::funcletLinesEnd() { event(dir(D::FuncletLinesEnd)); }
-void Optimizer::globl(const std::string &name) { event(dir(D::Globl, 0, 0, 0, name)); }
-void Optimizer::weakDefinition(const std::string &name) { event(dir(D::WeakDefinition, 0, 0, 0, name)); }
-void Optimizer::textSection() { event(dir(D::TextSection)); }
-void Optimizer::rodataSection() { event(dir(D::RodataSection)); }
-void Optimizer::relroSection() { event(dir(D::RelroSection)); }
-void Optimizer::dataSection() { event(dir(D::DataSection)); }
-void Optimizer::bssSection() { event(dir(D::BssSection)); }
-void Optimizer::tlsDataSection() { event(dir(D::TlsDataSection)); }
-void Optimizer::tlsBssSection() { event(dir(D::TlsBssSection)); }
-void Optimizer::tlsInitialiserEntry(const std::string &fn) { event(dir(D::TlsInitialiserEntry, 0, 0, 0, fn)); }
-void Optimizer::objectType(const std::string &name) { event(dir(D::ObjectType, 0, 0, 0, name)); }
-void Optimizer::objectSize(const std::string &name, int size) { event(dir(D::ObjectSize, size, 0, 0, name)); }
-void Optimizer::align(int n) { event(dir(D::Align, n)); }
-void Optimizer::loopAlign(int bytes) { event(dir(D::LoopAlign, bytes)); }
-void Optimizer::zero(int n) { event(dir(D::Zero, n)); }
-void Optimizer::dataInt(int size, long long v) { event(dir(D::DataInt, size, v)); }
-void Optimizer::dataSym(const std::string &sym, long long off) { event(dir(D::DataSym, off, 0, 0, sym)); }
-void Optimizer::noteHasEh(bool yes) { event(dir(D::NoteHasEh, yes ? 1 : 0)); }
+void Optimizer::fileEntry(int n, const std::string &name) { directive(dir(D::FileEntry, n, 0, 0, name)); }
+void Optimizer::location(int file, int line, int column) { directive(dir(D::Location, file, line, column)); }
+void Optimizer::funcletLinesBegin() { directive(dir(D::FuncletLinesBegin)); }
+void Optimizer::funcletLinesEnd() { directive(dir(D::FuncletLinesEnd)); }
+void Optimizer::globl(const std::string &name) { directive(dir(D::Globl, 0, 0, 0, name)); }
+void Optimizer::weakDefinition(const std::string &name) { directive(dir(D::WeakDefinition, 0, 0, 0, name)); }
+void Optimizer::textSection() { directive(dir(D::TextSection)); }
+void Optimizer::rodataSection() { directive(dir(D::RodataSection)); }
+void Optimizer::relroSection() { directive(dir(D::RelroSection)); }
+void Optimizer::dataSection() { directive(dir(D::DataSection)); }
+void Optimizer::bssSection() { directive(dir(D::BssSection)); }
+void Optimizer::tlsDataSection() { directive(dir(D::TlsDataSection)); }
+void Optimizer::tlsBssSection() { directive(dir(D::TlsBssSection)); }
+void Optimizer::tlsInitialiserEntry(const std::string &fn) { directive(dir(D::TlsInitialiserEntry, 0, 0, 0, fn)); }
+void Optimizer::objectType(const std::string &name) { directive(dir(D::ObjectType, 0, 0, 0, name)); }
+void Optimizer::objectSize(const std::string &name, int size) { directive(dir(D::ObjectSize, size, 0, 0, name)); }
+void Optimizer::align(int n) { directive(dir(D::Align, n)); }
+void Optimizer::loopAlign(int bytes) { directive(dir(D::LoopAlign, bytes)); }
+void Optimizer::zero(int n) { directive(dir(D::Zero, n)); }
+void Optimizer::dataInt(int size, long long v) { directive(dir(D::DataInt, size, v)); }
+void Optimizer::dataSym(const std::string &sym, long long off) { directive(dir(D::DataSym, off, 0, 0, sym)); }
+void Optimizer::noteHasEh(bool yes) { directive(dir(D::NoteHasEh, yes ? 1 : 0)); }
 void Optimizer::initialiserEntry(const std::string &fn, bool dsoHandle) {
-    event(dir(D::InitialiserEntry, dsoHandle ? 1 : 0, 0, 0, fn));
+    directive(dir(D::InitialiserEntry, dsoHandle ? 1 : 0, 0, 0, fn));
 }
-void Optimizer::dataBytes(const std::string &bytes) { event(dir(D::DataBytes, 0, 0, 0, bytes)); }
+void Optimizer::dataBytes(const std::string &bytes) { directive(dir(D::DataBytes, 0, 0, 0, bytes)); }
 void Optimizer::funcletBegin(const std::string &symbol, const std::string &entryLoc) {
     assert(inFunction_ && "a funclet outside a function");
-    opt::Directive d = dir(D::FuncletBegin, 0, 0, 0, symbol);
+    opt::MDirective d = dir(D::FuncletBegin, 0, 0, 0, symbol);
     d.t = entryLoc;
-    event(d);
+    directive(d);
 }
-void Optimizer::funcletLeave(const std::string &label) { event(dir(D::FuncletLeave, 0, 0, 0, label)); }
-void Optimizer::funcletEnd(const std::string &resume) { event(dir(D::FuncletEnd, 0, 0, 0, resume)); }
+void Optimizer::funcletLeave(const std::string &label) { directive(dir(D::FuncletLeave, 0, 0, 0, label)); }
+void Optimizer::funcletEnd(const std::string &resume) { directive(dir(D::FuncletEnd, 0, 0, 0, resume)); }

@@ -17,9 +17,6 @@
 
 namespace opt {
 
-// **The register file a pseudo is coloured from** (M3-IR 2.8): X87 is never allocated, its operands being opaque text.
-enum class RegClass : unsigned char { Gpr, Xmm, X87 };
-
 // **One pseudo's record**: a web's has the register it was found in, a promoted local's the frame slot it left.
 struct PseudoInfo {
     RegClass cls;
@@ -37,11 +34,11 @@ enum Prop : unsigned {
     kPropPhysical = 1u << 1,    // every register named is a physical one (no pseudos)
 };
 
-struct Function {
-    explicit Function(const Costs &costs) : costs_(&costs) {}
+struct MFunction {
+    explicit MFunction(const Costs &costs) : costs_(&costs) {}
 
     std::string name;
-    Stream stream;
+    MStream stream;
     Convention convention;
     Flow flow;
     unsigned props = kPropPhysical;

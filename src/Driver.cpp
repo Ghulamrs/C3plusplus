@@ -207,9 +207,6 @@ void Driver::usage(char *file) {
         "         line, on stdout; one input at a time; -dump=ast each function's\n"
         "         Ast.h body, a node a line; -dump=mir each x86 function's MIR\n"
         "         after the pipeline, -dump=mir=<pass> after that pass\n"
-        "       -check=mir writes the unit at -O0 past the MIR holder and through\n"
-        "         it, and fails where the two texts differ; -mir=off writes past it,\n"
-        "         at -O0 only (above -O0 the passes need the holder)\n"
         "       -front=typed builds each function the adapter reaches from Sema's typed\n"
         "         tree; -check=adapted holds that against the parser's, on stdout\n"
         "       -check=typed types the syntax tree in Sema and holds each type against\n"
@@ -1135,10 +1132,6 @@ bool Driver::parseArguments(int argc, char **argv) {
                              argv[0], what);
                 return false;
             }
-        } else if (std::strcmp(argv[i], "-mir=off") == 0 || std::strcmp(argv[i], "--mir=off") == 0) {
-            mirOff_ = true;
-        } else if (std::strcmp(argv[i], "-check=mir") == 0 || std::strcmp(argv[i], "--check=mir") == 0) {
-            checkMir_ = true;
         } else if (std::strcmp(argv[i], "-time") == 0) {
             timing_ = true;
         } else if (std::strcmp(argv[i], "-version") == 0 ||
@@ -1178,9 +1171,9 @@ bool Driver::parseArguments(int argc, char **argv) {
 
     if (inputs.empty()) { usage(argv[0]); return false; }
     // A dump is in the order its nodes were made; two files compiled at once would interleave.
-    if ((dumpSyntax_ || dumpAst_ || dumpMir_ || checkTyped_ || checkAdapted_ || checkMir_) && inputs.size() > 1) {
+    if ((dumpSyntax_ || dumpAst_ || dumpMir_ || checkTyped_ || checkAdapted_) && inputs.size() > 1) {
         std::fprintf(stderr, "%s: %s takes one input at a time\n", argv[0],
-                     dumpSyntax_ ? "-dump=syntax" : dumpAst_ ? "-dump=ast" : dumpMir_ ? "-dump=mir" : checkTyped_ ? "-check=typed" : checkMir_ ? "-check=mir" : "-check=adapted");
+                     dumpSyntax_ ? "-dump=syntax" : dumpAst_ ? "-dump=ast" : dumpMir_ ? "-dump=mir" : checkTyped_ ? "-check=typed" : "-check=adapted");
         return false;
     }
 
@@ -1395,41 +1388,12 @@ bool Driver::compile(const Job &job) {
     {
         std::unique_ptr<CodeGen> gen = backend_->codegen(made, syntax_);
         if (debug_) gen->setLineSource(&src, workingDirectory());
-        gen->setMirOff(mirOff_);
         if (dumpMir_) gen->setMirDump(&mir, dumpMirAfter_);
         gen->setOptimize(level);
         gen->setOptimizeForSize(forSize_ && level > 0);
         gen->run(program);
     }
     if (dumpMir_) std::fwrite(mir.str().data(), 1, mir.str().size(), stdout);
-    // **-check=mir** (M3-IR.md 2.7): the unit at -O0 written past the holder and through it - the round trip, with
-    // no pass to change what comes back - and the two texts held equal; the first difference named with its function.
-    if (checkMir_) {
-        std::ostringstream past, through;
-        for (int pass = 0; pass < 2; pass++) {
-            std::unique_ptr<CodeGen> gen = backend_->codegen(pass == 0 ? past : through, syntax_);
-            if (debug_) gen->setLineSource(&src, workingDirectory());
-            gen->setMirOff(pass == 0);
-            gen->setOptimize(0);
-            gen->run(program);
-        }
-        const std::string a = past.str(), b = through.str();
-        std::string report = "-check=mir: functions=" + std::to_string(program.functions.size());
-        if (a == b) {
-            report += " same=" + std::to_string(program.functions.size()) + " differ=0\n";
-        } else {
-            std::size_t at = 0, line = 1;
-            while (at < a.size() && at < b.size() && a[at] == b[at]) { if (a[at] == '\n') line++; at++; }
-            std::string where = "?";
-            for (const Function &f : program.functions) {
-                const std::size_t p = a.find(f.symbol());
-                if (p != std::string::npos && p <= at) where = f.symbol();
-            }
-            report += " differ=1 - first at line " + std::to_string(line) + ", in or after " + where + "\n";
-            ok = false;
-        }
-        std::fwrite(report.data(), 1, report.size(), stdout);
-    }
     std::string text = made.str();
     const std::string refused = spellWideNames(*backend_, &text);
     if (!refused.empty()) {

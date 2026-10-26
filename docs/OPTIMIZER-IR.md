@@ -57,7 +57,7 @@ and sits where GCC's RTL sits right after expansion:
    registers used, with CFI or SEH as each format requires.
 
 Each target brings a reader and a description: operands, effects and constraints.
-x86 has these already (`OptIr`, `OptEffects`); arm64 gets its own. The passes
+x86 has these already (`Mir`, `OptEffects`); arm64 gets its own. The passes
 belong to neither target.
 
 ## The levels
@@ -87,6 +87,13 @@ cl /O2, cxx1's 264 cases) and neither level's size nor speed got worse.
 3. **SSA and the -O1 scalar passes.**
 4. **The -O2 passes:** PRE, loop-invariant motion, alignment.
 5. **arm64:** its reader and description, the same passes.
+
+**Stages 1 and 2 are done** (M3a, 2026-10-25 to 2026-10-26, `doc-cxx3/M3-PLAN.md` "Where it stands"): MIR
+holds every x86 function at every level and replays it byte for byte (`src/optimizer/Mir.h`, `Optimizer.cpp`;
+`tools/identical.sh` is the gate), and webs, promoted locals and a Chaitin-Briggs allocator over register classes
+colour it (`MirWebs.h`, `MirLocals.h`, `MirAlloc.h`, the `frame` group of `OptPipeline.cpp`). Stage 3 is M3b's SSA
+IR above the walkers, `M3-IR.md` part 3. The x87 stack is not modelled: an operand with `reg.id < 0` is opaque text
+and the `X87` class is never allocated; x86_64-linux's `long double` is its only user.
 
 ## What stage 2 needs first
 

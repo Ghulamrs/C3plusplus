@@ -1,4 +1,4 @@
-#include "OptIr.h"
+#include "Mir.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -46,8 +46,8 @@ const char *regName(int id, int width) {
     return kNames[id][0];
 }
 
-Operand Operand::from(const Op &o) {
-    Operand x;
+MOperand MOperand::from(const Op &o) {
+    MOperand x;
     switch (o.kind) {
     case Op::Reg:
         x.reg = parseReg(o.text);
@@ -88,23 +88,23 @@ Operand Operand::from(const Op &o) {
     return x;
 }
 
-Operand Operand::ofReg(int id, int width) {
-    Operand x;
+MOperand MOperand::ofReg(int id, int width) {
+    MOperand x;
     x.kind = Register;
     x.reg = Reg{id, width};
     return x;
 }
 
-Operand Operand::ofImm(long long v) {
-    Operand x;
+MOperand MOperand::ofImm(long long v) {
+    MOperand x;
     x.kind = Immediate;
     x.value = v;
     x.numeric = true;
     return x;
 }
 
-Operand Operand::ofMem(int base, long long disp) {
-    Operand x;
+MOperand MOperand::ofMem(int base, long long disp) {
+    MOperand x;
     x.kind = Memory;
     x.reg = Reg{base, 8};
     x.disp = disp;
@@ -112,7 +112,7 @@ Operand Operand::ofMem(int base, long long disp) {
     return x;
 }
 
-Op Operand::op() const {
+Op MOperand::op() const {
     const Str name = reg.id >= 0 ? Str(regName(reg.id, reg.width)) : Str(text.str());
     switch (kind) {
     case Register: return ::reg(name);
@@ -135,7 +135,7 @@ Op Operand::op() const {
 }
 
 
-void Directive::replay(Spelling &sp) const {
+void MDirective::replay(Spelling &sp) const {
     switch (kind) {
     case Prologue:
         if (withSaves) sp.calleeSaves(saves);
@@ -172,7 +172,7 @@ void Directive::replay(Spelling &sp) const {
 }
 
 // What -dump=mir prints for a directive: its kind and its arguments.
-std::string Directive::describe() const {
+std::string MDirective::describe() const {
     static const char *const kKindNames[] = {
         "prologue", "file", "location", "funclet-lines-begin", "funclet-lines-end", "globl", "weak", "type", "size",
         "text", "rodata", "relro", "data", "bss", "tdata", "tbss", "tls-init", "init", "align", "loop-align", "zero",
@@ -201,7 +201,7 @@ std::string Directive::describe() const {
 
 // FuncletEnd and FuncletLeave end their block as a return does, reading nothing the stream names: the continuation a
 // catch hands back in rax is the spelling's text. FuncletBegin ends the block before it and begins the funclet's.
-Control controlOf(const Directive &d) {
+Control controlOf(const MDirective &d) {
     Control c;
     if (d.endsFunclet()) { c.ends = true; c.falls = false; c.returns = true; }
     return c;

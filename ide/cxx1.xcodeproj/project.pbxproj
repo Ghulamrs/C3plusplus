@@ -46,6 +46,7 @@
 		399E4BB5F93D70D7DEC56D50 /* C6xPipe.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4C545AD0A2E8762CE81AC088 /* C6xPipe.cpp */; };
 		927838A3415C47BEFF72D53C /* C6xSched.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4F9178B9F267416156C0C111 /* C6xSched.cpp */; };
 		F88959C76FB177A1B06356A5 /* Inliner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A34D7BA64BC85EB6858B59E7 /* Inliner.cpp */; };
+		9A408FCABFA897322F052F94 /* Mir.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7C3986181D2D465484286E06 /* Mir.cpp */; };
 		1A6F388AA4B4BF059CD442C7 /* MirAlloc.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 402C6A145E36EDB389E81B69 /* MirAlloc.cpp */; };
 		974A77A814EA5DCC7FF333BC /* MirLocals.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2A060109E1E58D62D4A34285 /* MirLocals.cpp */; };
 		A4C6A59E2B7D4970D93EDFA3 /* MirWebs.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E8FC246EFD8DE3080D5A86CB /* MirWebs.cpp */; };
@@ -57,7 +58,6 @@
 		3B2C5543F6CD7B7729BE7B19 /* OptFlow.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 9FA8479D16CE6F0AEE451115 /* OptFlow.cpp */; };
 		55251DDD1D830DFE50FF5BFD /* OptFrame.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C3655BD7E1CB501470508EBE /* OptFrame.cpp */; };
 		5FEA3526349039FF1F1B939B /* OptHoist.cpp in Sources */ = {isa = PBXBuildFile; fileRef = CBCCA0B6CDCEE9EEDE323112 /* OptHoist.cpp */; };
-		3DE6DFF8A51248B136DF2D5C /* OptIr.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 24706A928CEA612BD245066A /* OptIr.cpp */; };
 		C21108E27539644110809859 /* OptJumps.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8121EA4F235AFC3129421244 /* OptJumps.cpp */; };
 		E45E0954145AA2A34C24C912 /* OptLoops.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 3F3342E906CC0832FFB48E61 /* OptLoops.cpp */; };
 		C9478821684042E6B1A5D69C /* OptMemory.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4D2B10D07BE3C4338C7CF3F7 /* OptMemory.cpp */; };
@@ -111,6 +111,7 @@
 		4C545AD0A2E8762CE81AC088 /* C6xPipe.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = C6xPipe.cpp; path = "../src/optimizer/C6xPipe.cpp"; sourceTree = "<group>"; };
 		4F9178B9F267416156C0C111 /* C6xSched.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = C6xSched.cpp; path = "../src/optimizer/C6xSched.cpp"; sourceTree = "<group>"; };
 		A34D7BA64BC85EB6858B59E7 /* Inliner.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Inliner.cpp; path = "../src/optimizer/Inliner.cpp"; sourceTree = "<group>"; };
+		7C3986181D2D465484286E06 /* Mir.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Mir.cpp; path = "../src/optimizer/Mir.cpp"; sourceTree = "<group>"; };
 		402C6A145E36EDB389E81B69 /* MirAlloc.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MirAlloc.cpp; path = "../src/optimizer/MirAlloc.cpp"; sourceTree = "<group>"; };
 		2A060109E1E58D62D4A34285 /* MirLocals.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MirLocals.cpp; path = "../src/optimizer/MirLocals.cpp"; sourceTree = "<group>"; };
 		E8FC246EFD8DE3080D5A86CB /* MirWebs.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MirWebs.cpp; path = "../src/optimizer/MirWebs.cpp"; sourceTree = "<group>"; };
@@ -122,7 +123,6 @@
 		9FA8479D16CE6F0AEE451115 /* OptFlow.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = OptFlow.cpp; path = "../src/optimizer/OptFlow.cpp"; sourceTree = "<group>"; };
 		C3655BD7E1CB501470508EBE /* OptFrame.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = OptFrame.cpp; path = "../src/optimizer/OptFrame.cpp"; sourceTree = "<group>"; };
 		CBCCA0B6CDCEE9EEDE323112 /* OptHoist.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = OptHoist.cpp; path = "../src/optimizer/OptHoist.cpp"; sourceTree = "<group>"; };
-		24706A928CEA612BD245066A /* OptIr.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = OptIr.cpp; path = "../src/optimizer/OptIr.cpp"; sourceTree = "<group>"; };
 		8121EA4F235AFC3129421244 /* OptJumps.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = OptJumps.cpp; path = "../src/optimizer/OptJumps.cpp"; sourceTree = "<group>"; };
 		3F3342E906CC0832FFB48E61 /* OptLoops.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = OptLoops.cpp; path = "../src/optimizer/OptLoops.cpp"; sourceTree = "<group>"; };
 		4D2B10D07BE3C4338C7CF3F7 /* OptMemory.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = OptMemory.cpp; path = "../src/optimizer/OptMemory.cpp"; sourceTree = "<group>"; };
@@ -166,6 +166,7 @@
 		00D1AC912B4C6D97F9D444E5 /* Mir.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Mir.h; path = "../src/optimizer/Mir.h"; sourceTree = "<group>"; };
 		CAF0405A93A429E84704DCB7 /* MirAlloc.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = MirAlloc.h; path = "../src/optimizer/MirAlloc.h"; sourceTree = "<group>"; };
 		2B64F295DAD7848BFD4FA540 /* MirLocals.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = MirLocals.h; path = "../src/optimizer/MirLocals.h"; sourceTree = "<group>"; };
+		7B3A7C7D0E66D4707BA83BE3 /* MirWebs.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = MirWebs.h; path = "../src/optimizer/MirWebs.h"; sourceTree = "<group>"; };
 		F3EF6094C02F382B885BEBA0 /* OptCore.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OptCore.h; path = "../src/optimizer/OptCore.h"; sourceTree = "<group>"; };
 		4119EA1BB49D7DE2EAFB4253 /* OptCosts.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OptCosts.h; path = "../src/optimizer/OptCosts.h"; sourceTree = "<group>"; };
 		C697DFFD356551E5F8785CC9 /* OptDataflow.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OptDataflow.h; path = "../src/optimizer/OptDataflow.h"; sourceTree = "<group>"; };
@@ -173,7 +174,6 @@
 		1DE350643A12378E5A3F7C5D /* OptEffects.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OptEffects.h; path = "../src/optimizer/OptEffects.h"; sourceTree = "<group>"; };
 		84F596E5A9B1A3F5885283BB /* OptFlow.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OptFlow.h; path = "../src/optimizer/OptFlow.h"; sourceTree = "<group>"; };
 		2435E41947D9679DB5373A78 /* OptFunction.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OptFunction.h; path = "../src/optimizer/OptFunction.h"; sourceTree = "<group>"; };
-		124594E5FA481ADC6B45E140 /* OptIr.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OptIr.h; path = "../src/optimizer/OptIr.h"; sourceTree = "<group>"; };
 		9BA7A4471F78043F79351ECF /* OptLoops.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OptLoops.h; path = "../src/optimizer/OptLoops.h"; sourceTree = "<group>"; };
 		45B39C4A9CF47F00A27F68EE /* OptPass.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OptPass.h; path = "../src/optimizer/OptPass.h"; sourceTree = "<group>"; };
 		1C234FCB5247C18D9516CB5F /* OptPasses.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OptPasses.h; path = "../src/optimizer/OptPasses.h"; sourceTree = "<group>"; };
@@ -273,12 +273,14 @@
 				B32EA0424FFF11FA6974916D /* DivMagic.h */,
 				A34D7BA64BC85EB6858B59E7 /* Inliner.cpp */,
 				3CF254951132485608A65AC4 /* Inliner.h */,
+				7C3986181D2D465484286E06 /* Mir.cpp */,
 				00D1AC912B4C6D97F9D444E5 /* Mir.h */,
 				402C6A145E36EDB389E81B69 /* MirAlloc.cpp */,
 				CAF0405A93A429E84704DCB7 /* MirAlloc.h */,
 				2A060109E1E58D62D4A34285 /* MirLocals.cpp */,
 				2B64F295DAD7848BFD4FA540 /* MirLocals.h */,
 				E8FC246EFD8DE3080D5A86CB /* MirWebs.cpp */,
+				7B3A7C7D0E66D4707BA83BE3 /* MirWebs.h */,
 				245887B975394FC53C296E6C /* OptAlign.cpp */,
 				F3EF6094C02F382B885BEBA0 /* OptCore.h */,
 				4119EA1BB49D7DE2EAFB4253 /* OptCosts.h */,
@@ -294,8 +296,6 @@
 				C3655BD7E1CB501470508EBE /* OptFrame.cpp */,
 				2435E41947D9679DB5373A78 /* OptFunction.h */,
 				CBCCA0B6CDCEE9EEDE323112 /* OptHoist.cpp */,
-				24706A928CEA612BD245066A /* OptIr.cpp */,
-				124594E5FA481ADC6B45E140 /* OptIr.h */,
 				8121EA4F235AFC3129421244 /* OptJumps.cpp */,
 				3F3342E906CC0832FFB48E61 /* OptLoops.cpp */,
 				9BA7A4471F78043F79351ECF /* OptLoops.h */,
@@ -426,6 +426,7 @@
 				399E4BB5F93D70D7DEC56D50 /* C6xPipe.cpp in Sources */,
 				927838A3415C47BEFF72D53C /* C6xSched.cpp in Sources */,
 				F88959C76FB177A1B06356A5 /* Inliner.cpp in Sources */,
+				9A408FCABFA897322F052F94 /* Mir.cpp in Sources */,
 				1A6F388AA4B4BF059CD442C7 /* MirAlloc.cpp in Sources */,
 				974A77A814EA5DCC7FF333BC /* MirLocals.cpp in Sources */,
 				A4C6A59E2B7D4970D93EDFA3 /* MirWebs.cpp in Sources */,
@@ -437,7 +438,6 @@
 				3B2C5543F6CD7B7729BE7B19 /* OptFlow.cpp in Sources */,
 				55251DDD1D830DFE50FF5BFD /* OptFrame.cpp in Sources */,
 				5FEA3526349039FF1F1B939B /* OptHoist.cpp in Sources */,
-				3DE6DFF8A51248B136DF2D5C /* OptIr.cpp in Sources */,
 				C21108E27539644110809859 /* OptJumps.cpp in Sources */,
 				E45E0954145AA2A34C24C912 /* OptLoops.cpp in Sources */,
 				C9478821684042E6B1A5D69C /* OptMemory.cpp in Sources */,

@@ -149,15 +149,15 @@ the spellings stay in `src/backend/`:
 | File | Holds |
 |---|---|
 | `OptTable.{h,cpp}` | `Opcode`, `opcodeOf`, the move families, `conditionOf`/`inverse` |
-| `OptIr.{h,cpp}` | `Reg`, `Operand` (a memory operand carries an index register and a scale since session 7), `Instr`, `Entry`, `Stream` |
+| `Mir.{h,cpp}` | the IR as `doc-cxx3/M3-IR.md` part 2 names it (M3a.5, was `OptIr.{h,cpp}`): `Reg`, `MOperand` (a memory operand carries an index register and a scale since session 7), `MInst` with its `OpId`, `MDirective`, `MEntry`, `MStream`; `RegClass`, `mir::TargetDesc` |
 | `OptEffects.{h,cpp}` | `Effects`/`Roles` of one instruction from the table; `Convention` |
 | `OptCore.h` | `RegSet`, `Effects`, `Control`, `Region`, `EntryOf`, `Edge`, `Live`, `Block`, `FlowOf` (build, liveness, dominators), `removeDeadIn`, `removeUnreachableIn` |
-| `OptFlow.{h,cpp}` | `controlOf` for x86; `Flow` = `FlowOf<Entry>` with the x86 effects |
+| `OptFlow.{h,cpp}` | `controlOf` for x86; `Flow` = `FlowOf<MEntry>` with the x86 effects |
 | `OptDataflow.{h,cpp}` | `ReachingDefs` |
 | `OptLoops.{h,cpp}` | `Loops`: the natural loops from the dominators |
 | `OptCosts.h` | `Costs`, `SizeCosts`, `SpeedCosts` |
 | `Inliner.{h,cpp}` | `Inliner`: which calls the walker walks in place, by the costs' budgets |
-| `OptFunction.h` | `Prop`, `Function` |
+| `OptFunction.h` | `Prop`, `PseudoInfo`, `MFunction` |
 | `OptPass.{h,cpp}` | `Todo`, `PassInfo`, `Pass`, `Group`, `PassManager`, `dropUnnamedLabels`, `dumpStream` |
 | `OptPipeline.{h,cpp}` | the `Pass` subclasses and `pipelineFor()` |
 | `OptPasses.h`, `OptValues.cpp`, `OptDead.cpp`, `OptMemory.cpp`, `OptFrame.cpp`, `OptShrink.cpp` | the pass algorithms as free functions; `OptFrame.cpp` holds `promotableLocals`, `insertRestores`, `dropUnusedSaves` and the frame's shared slots; `OptMemory.cpp` holds `fold-index` beside the two older folds |
@@ -165,7 +165,7 @@ the spellings stay in `src/backend/`:
 | `OptDivide.cpp` | `divideByConstant`: a 32-bit divide by a constant as a multiply by its magic number, -O2 only (session 7) |
 | `OptHoist.cpp` | `hoistInvariants`: loop-invariant code motion after allocation, into registers the loop leaves free (session 8) |
 | `OptAlign.cpp` | `alignLoops`: a loop that fits one 64-byte line padded in front so that it does not cross one, -O2 only (session 9) |
-| `Mir.h`, `MirWebs.cpp` | `mir::Webs`: pinned occurrences split by copies, webs to pseudos; `assign` and `dropSelfCopies` for whoever colours |
+| `MirWebs.{h,cpp}` | `mir::Webs`: pinned occurrences split by copies, webs to pseudos; `assign` and `dropSelfCopies` for whoever colours |
 | `MirLocals.{h,cpp}` | `mir::Locals`: every promotable scalar local renamed to a pseudo, its slot kept |
 | `MirAlloc.{h,cpp}` | `mir::Allocator`: liveness and interference over the pseudos, Chaitin-Briggs colouring with the copies as preferences, preserved registers charged their save, a local's slot given back where no register can hold it |
 | `Optimizer.{h,cpp}` | the Spelling that holds a function, runs the pipeline, replays |
@@ -512,7 +512,7 @@ and the rest of the round is skipped).
 with the group's start TODOs then its subs; for a leaf, the start TODOs, the
 `required` check (an assert), `execute`, the property update
 `props = (props | provided) & ~destroyed`, `flow.touch()` if it changed,
-and the dump if `CPP11_DUMP_MIR` names the pass.
+and the dump if `-dump=mir=<pass>` names the pass.
 
 ## 3. The pipeline declaration
 
@@ -581,8 +581,8 @@ left it fresh. Both are marked in the source.
    more than one place is constructed once per place.
 4. Gate: `tools/identical.sh` for a pass meant to change nothing; the suites,
    Compiler++ and the box measurements for one meant to.
-5. Read its dump: `CPP11_DUMP_MIR=<name> cxx1.exe -O2 -S x.cpp` prints the
-   function after that pass; `all` prints after every pass.
+5. Read its dump: `cxx3.exe -dump=mir=<name> -O2 -S x.cpp` prints the
+   function after that pass; `-dump=mir=all` prints after every pass.
 
 ## 5. Properties and invalidation
 

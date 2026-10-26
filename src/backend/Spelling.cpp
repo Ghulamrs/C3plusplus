@@ -1,6 +1,6 @@
 #include "Spelling.h"
 
-#include "../optimizer/OptIr.h"
+#include "../optimizer/Mir.h"
 
 #include <ostream>
 #include <string>

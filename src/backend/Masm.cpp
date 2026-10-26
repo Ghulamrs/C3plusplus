@@ -2,7 +2,7 @@
 
 #include "../Mangle.h"
 #include "../Name.h"
-#include "../optimizer/OptIr.h"
+#include "../optimizer/Mir.h"
 #include "../optimizer/OptTable.h"
 #include "CodeView.h"
 

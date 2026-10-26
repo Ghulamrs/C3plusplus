@@ -21,15 +21,15 @@ int Locals::promote() {
         fn_.pseudos.push_back(PseudoInfo(l.floating ? RegClass::Xmm : RegClass::Gpr, -1, l));
     }
     for (int k = 0; k < static_cast<int>(fn_.stream.size()); ++k) {
-        Entry &e = fn_.stream[k];
-        if (e.kind != Entry::Ins || e.dead) continue;
+        MEntry &e = fn_.stream[k];
+        if (e.kind != MEntry::Inst || e.dead) continue;
         bool renamed = false, floating = false;
-        for (Operand *o : {&e.ins.a, &e.ins.b}) {
-            if (o->kind != Operand::Memory || o->reg.id != RBP) continue;
+        for (MOperand *o : {&e.ins.a, &e.ins.b}) {
+            if (o->kind != MOperand::Memory || o->reg.id != RBP) continue;
             const auto p = pseudoOf.find(o->disp);
             if (p == pseudoOf.end()) continue;
             const Local &l = fn_.pseudos[p->second - kFirstPseudo].slot;
-            *o = Operand::ofReg(p->second, l.floating ? 16 : l.size);
+            *o = MOperand::ofReg(p->second, l.floating ? 16 : l.size);
             renamed = true;
             floating = floating || l.floating;
         }

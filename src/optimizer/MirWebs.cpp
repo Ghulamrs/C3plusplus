@@ -1,4 +1,4 @@
-#include "Mir.h"
+#include "MirWebs.h"
 
 #include <cassert>
 
@@ -18,10 +18,10 @@ bool isShift(const OpId &m) { return m.row().has(Opcode::kShift); }
 
 // A copy of a register to itself, whole: the one move that is truly nothing, where a four-byte one zero-extends
 // and an xmm one by `movsd` merges; an xmm register is copied by `movapd`, all 16 bytes.
-Entry copy(int reg) {
-    Entry e;
-    if (reg >= kXmm0) e.ins = Instr{mn::Movapd, Operand::ofReg(reg, 16), Operand::ofReg(reg, 16), 2};
-    else e.ins = Instr{mn::Mov, Operand::ofReg(reg, 8), Operand::ofReg(reg, 8), 2};
+MEntry copy(int reg) {
+    MEntry e;
+    if (reg >= kXmm0) e.ins = MInst{mn::Movapd, MOperand::ofReg(reg, 16), MOperand::ofReg(reg, 16), 2};
+    else e.ins = MInst{mn::Mov, MOperand::ofReg(reg, 8), MOperand::ofReg(reg, 8), 2};
     return e;
 }
 
@@ -62,29 +62,29 @@ void Webs::Sets::unite(int x, int y) {
     pinned_[x] = pinned_[x] || pinned_[y];
 }
 
-Webs::Webs(Function &fn) : fn_(fn) {}
+Webs::Webs(MFunction &fn) : fn_(fn) {}
 
 // **What each operand of an instruction does with a candidate register.** An
 // operand with no role (xor's first, zeroing) is tied to the other's write.
-std::vector<Webs::Occurrence> Webs::occurrencesOf(const Instr &i, int entry) {
+std::vector<Webs::Occurrence> Webs::occurrencesOf(const MInst &i, int entry) {
     std::vector<Occurrence> out;
     const Roles roles = rolesOf(i);
-    const Operand *ops[2] = {&i.a, &i.b};
+    const MOperand *ops[2] = {&i.a, &i.b};
     const unsigned role[2] = {roles.a, roles.b};
     for (int n = 0; n < 2; ++n) {
-        const Operand &o = *ops[n];
+        const MOperand &o = *ops[n];
         if (!candidate(o.reg.id)) continue;
         Occurrence oc;
         oc.entry = entry;
         oc.operand = n;
         oc.reg = o.reg.id;
-        if (o.kind == Operand::Register) {
+        if (o.kind == MOperand::Register) {
             oc.read = (role[n] & kRead) != 0;
             oc.write = (role[n] & kWrite) != 0;
             oc.keeps = oc.write && ((role[n] & kKeep) || o.reg.width < 4);
             oc.pinned = n == 0 && isShift(i.m);
             oc.tied = role[n] == 0;
-        } else if (o.basedOnReg() || o.kind == Operand::Indirect) {
+        } else if (o.basedOnReg() || o.kind == MOperand::Indirect) {
             assert(o.scale == 0 && "fold-index makes indexed operands after webs and allocate");
             oc.read = true;
         } else {
@@ -112,14 +112,14 @@ RegSet Webs::implicitWrites(int k) const {
 // where it writes one that is read after, the value is copied out just after** - a shift's count in %cl among the former, since the operand names the register but no other would do.
 // A return's implicit reads are the calling convention's own protocol - the result in rax, the callee-saved registers restored - and stay as they are.
 bool Webs::splitPinned() {
-    Stream &s = fn_.stream;
+    MStream &s = fn_.stream;
     Flow &f = fn_.flow;
     f.live(s);
     occ_.assign(s.size(), std::vector<Occurrence>());
     for (int k = 0; k < static_cast<int>(s.size()); ++k)
-        if (s[k].kind == Entry::Ins && !s[k].dead) occ_[k] = occurrencesOf(s[k].ins, k);
+        if (s[k].kind == MEntry::Inst && !s[k].dead) occ_[k] = occurrencesOf(s[k].ins, k);
 
-    Stream out;
+    MStream out;
     out.reserve(s.size() + s.size() / 8);
     int prologueAt = fn_.prologueAt;
     bool changed = false;
@@ -130,12 +130,12 @@ bool Webs::splitPinned() {
         Live live = blk.out;
         for (int k = blk.end - 1; k >= blk.begin; --k) {
             liveAfter[k - blk.begin] = live.regs;
-            if (s[k].kind != Entry::Ins || s[k].dead) continue;
+            if (s[k].kind != MEntry::Inst || s[k].dead) continue;
             f.joinPads(b, k, live);
             live.step(f.effects[k]);
         }
         for (int k = blk.begin; k < blk.end; ++k) {
-            const bool ins = s[k].kind == Entry::Ins && !s[k].dead;
+            const bool ins = s[k].kind == MEntry::Inst && !s[k].dead;
             const bool ret = ins && opcodeOf(s[k].ins.m).kind == Opcode::Ret;
             if (ins && !ret) {
                 const RegSet wanted = implicitReads(k);
@@ -164,12 +164,12 @@ bool Webs::splitPinned() {
 // stable: one per operand that writes, one per register an instruction
 // writes without naming it - the latter pinned, the ABI having placed it.
 void Webs::makeDefinitions() {
-    const Stream &s = fn_.stream;
+    const MStream &s = fn_.stream;
     occ_.assign(s.size(), std::vector<Occurrence>());
     defAt_.assign(s.size(), std::vector<int>(2, -1));
     implicitDef_.assign(s.size(), std::vector<int>());
     for (int k = 0; k < static_cast<int>(s.size()); ++k) {
-        if (s[k].kind != Entry::Ins || s[k].dead) continue;
+        if (s[k].kind != MEntry::Inst || s[k].dead) continue;
         occ_[k] = occurrencesOf(s[k].ins, k);
         for (const Occurrence &o : occ_[k])
             if (o.write) defAt_[k][o.operand] = sets_.make(false);
@@ -192,7 +192,7 @@ void Webs::makeDefinitions() {
 // definitions.** A read the instruction makes implicitly, or at a place
 // that must be this register, pins what it reads.
 void Webs::joinUsesToDefinitions() {
-    const Stream &s = fn_.stream;
+    const MStream &s = fn_.stream;
     const Flow &f = fn_.flow;
     typedef ReachingDefs::DefList DefList;
 
@@ -214,7 +214,7 @@ void Webs::joinUsesToDefinitions() {
     for (int b = 0; b < static_cast<int>(f.blocks.size()); ++b) {
         std::vector<DefList> reach = rd.in[b];
         for (int k = f.blocks[b].begin; k < f.blocks[b].end; ++k) {
-            if (s[k].kind != Entry::Ins || s[k].dead) continue;
+            if (s[k].kind != MEntry::Inst || s[k].dead) continue;
             for (const Occurrence &o : occ_[k]) {
                 if (!o.read && !o.keeps) continue;
                 const DefList &from = reach[o.reg];
@@ -252,7 +252,7 @@ void Webs::joinUsesToDefinitions() {
 
 // **Every unpinned web a pseudo**, and each operand renamed to its web's.
 void Webs::renameToPseudos() {
-    Stream &s = fn_.stream;
+    MStream &s = fn_.stream;
     std::vector<int> pseudoOf(sets_.size(), -1);
     std::vector<bool> counted(sets_.size(), false);
     for (int k = 0; k < static_cast<int>(s.size()); ++k) {
@@ -268,7 +268,7 @@ void Webs::renameToPseudos() {
                 pseudoOf[root] = kFirstPseudo + count();
                 home_.push_back(o.reg);
             }
-            Operand &op = o.operand == 0 ? s[k].ins.a : s[k].ins.b;
+            MOperand &op = o.operand == 0 ? s[k].ins.a : s[k].ins.b;
             op.reg.id = pseudoOf[root];
             fn_.flow.effects[k] = effectsOf(s[k].ins, fn_.convention);
         }
@@ -286,12 +286,12 @@ void Webs::build() {
 }
 
 // The entry's effects follow the rename, so the flow describes the stream still.
-void Webs::assign(Function &fn, const std::vector<int> &colour) {
+void Webs::assign(MFunction &fn, const std::vector<int> &colour) {
     for (int k = 0; k < static_cast<int>(fn.stream.size()); ++k) {
-        Entry &e = fn.stream[k];
-        if (e.kind != Entry::Ins) continue;
+        MEntry &e = fn.stream[k];
+        if (e.kind != MEntry::Inst) continue;
         bool renamed = false;
-        for (Operand *o : {&e.ins.a, &e.ins.b}) {
+        for (MOperand *o : {&e.ins.a, &e.ins.b}) {
             if (!isPseudo(o->reg.id) || colour[o->reg.id - kFirstPseudo] == kAsIs) continue;
             const int c = colour[o->reg.id - kFirstPseudo];
             if (c >= 0) o->reg.id = c;
@@ -299,7 +299,7 @@ void Webs::assign(Function &fn, const std::vector<int> &colour) {
                 // A float or double given its slot back is moved by its own width: `movapd` to memory moves 16 aligned bytes.
                 const Local &l = fn.pseudos[o->reg.id - kFirstPseudo].slot;
                 if (l.floating && e.ins.m.is({mn::Movapd, mn::Movaps})) e.ins.m = l.size == 4 ? mn::Movss : mn::Movsd;
-                *o = Operand::ofMem(RBP, l.disp);
+                *o = MOperand::ofMem(RBP, l.disp);
             }
             renamed = true;
         }
@@ -308,15 +308,15 @@ void Webs::assign(Function &fn, const std::vector<int> &colour) {
     fn.flow.touch();
 }
 
-bool Webs::dropSelfCopies(Function &fn) {
+bool Webs::dropSelfCopies(MFunction &fn) {
     bool changed = false;
-    for (Entry &e : fn.stream) {
-        if (e.kind != Entry::Ins || e.dead) continue;
-        const Instr &i = e.ins;
+    for (MEntry &e : fn.stream) {
+        if (e.kind != MEntry::Inst || e.dead) continue;
+        const MInst &i = e.ins;
         const bool gpr = i.m == mn::Mov && i.a.reg.width == 8 && i.b.reg.width == 8;
         // `movsd %xmm0, %xmm0` merges a register's low lanes with themselves: nothing too.
         const bool xmm = i.m.is({mn::Movapd, mn::Movaps, mn::Movsd, mn::Movss}) && i.a.reg.id >= kXmm0;
-        if ((gpr || xmm) && i.operands == 2 && i.a.kind == Operand::Register && i.b.kind == Operand::Register &&
+        if ((gpr || xmm) && i.operands == 2 && i.a.kind == MOperand::Register && i.b.kind == MOperand::Register &&
             i.a.reg.id == i.b.reg.id) {
             e.dead = true;
             changed = true;

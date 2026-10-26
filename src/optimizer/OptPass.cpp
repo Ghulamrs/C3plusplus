@@ -1,40 +1,23 @@
 #include "OptPass.h"
-#include "../Name.h"
-
 #include "Mir.h"
 
 #include <cassert>
-#include <cstdlib>
 #include <iostream>
 #include <set>
-#include <sstream>
 
 namespace opt {
 
-PassManager::PassManager() {
-    const char *want = std::getenv(program::env("DUMP_MIR").c_str());
-    if (!want) return;
-    std::stringstream in(want);
-    std::string name;
-    while (std::getline(in, name, ',')) {
-        if (name == "all") dumpAll_ = true;
-        else if (!name.empty()) dump_.push_back(name);
-    }
-}
-
 bool PassManager::wanted(const Pass &pass) const {
-    if (dumpAll_) return true;
-    for (const std::string &n : dump_) if (n == pass.info().name) return true;
-    return false;
+    return out_ != nullptr && (dump_ == "all" || dump_ == pass.info().name);
 }
 
-bool PassManager::run(Pass &pass, Function &fn) {
+bool PassManager::run(Pass &pass, MFunction &fn) {
     if (!pass.gate(fn)) return false;
     if (Group *g = dynamic_cast<Group *>(&pass)) return runGroup(*g, fn);
     return runLeaf(pass, fn);
 }
 
-void PassManager::before(const Pass &pass, Function &fn) {
+void PassManager::before(const Pass &pass, MFunction &fn) {
     const PassInfo &info = pass.info();
     if (info.todoStart & kTodoDropLabels) dropUnnamedLabels(fn);
     if (info.todoStart & kTodoBuildFlow) fn.buildFlow();
@@ -43,25 +26,25 @@ void PassManager::before(const Pass &pass, Function &fn) {
 
 // The properties as GCC updates them, one line; a change leaves the
 // liveness to be solved again before anything reads it.
-void PassManager::after(const Pass &pass, Function &fn, bool changed) {
+void PassManager::after(const Pass &pass, MFunction &fn, bool changed) {
     const PassInfo &info = pass.info();
     fn.props = (fn.props | info.provided) & ~info.destroyed;
     if (changed) fn.flow.touch();
     if (wanted(pass)) {
-        std::ostream &o = out_ != nullptr ? *out_ : std::cerr;
+        std::ostream &o = *out_;
         o << ";; " << fn.name << " after " << info.name << (changed ? " (changed)" : "") << "\n";
         dumpStream(o, fn);
     }
 }
 
-bool PassManager::runLeaf(Pass &pass, Function &fn) {
+bool PassManager::runLeaf(Pass &pass, MFunction &fn) {
     before(pass, fn);
     const bool changed = pass.execute(fn);
     after(pass, fn, changed);
     return changed;
 }
 
-bool PassManager::runGroup(Group &group, Function &fn) {
+bool PassManager::runGroup(Group &group, MFunction &fn) {
     bool any = false;
     const int limit = group.repeat(fn);
     for (int round = 0; round < limit; ++round) {
@@ -81,12 +64,12 @@ bool PassManager::runGroup(Group &group, Function &fn) {
     return any;
 }
 
-void dropUnnamedLabels(Function &fn) {
+void dropUnnamedLabels(MFunction &fn) {
     std::set<std::string> named;
-    for (const Entry &e : fn.stream)
-        if (e.kind == Entry::Ins && !e.dead && e.ins.a.kind == Operand::Label) named.insert(e.ins.a.text.str());
-    for (Entry &e : fn.stream)
-        if (e.kind == Entry::Label && fn.jumpOnly.count(e.label) && !named.count(e.label)) e.dead = true;
+    for (const MEntry &e : fn.stream)
+        if (e.kind == MEntry::Inst && !e.dead && e.ins.a.kind == MOperand::Label) named.insert(e.ins.a.text.str());
+    for (MEntry &e : fn.stream)
+        if (e.kind == MEntry::Label && fn.jumpOnly.count(e.label) && !named.count(e.label)) e.dead = true;
 }
 
 namespace {
@@ -97,20 +80,20 @@ std::string regText(const Reg &r, const std::string &text) {
     return regName(r.id, r.width);
 }
 
-std::string operandText(const Operand &o) {
+std::string operandText(const MOperand &o) {
     switch (o.kind) {
-    case Operand::None: return "";
-    case Operand::Register: return regText(o.reg, o.text.str());
-    case Operand::Immediate: return "$" + (o.numeric ? std::to_string(o.value) : o.text.str());
-    case Operand::Memory:
+    case MOperand::None: return "";
+    case MOperand::Register: return regText(o.reg, o.text.str());
+    case MOperand::Immediate: return "$" + (o.numeric ? std::to_string(o.value) : o.text.str());
+    case MOperand::Memory:
         return (o.hasDisp ? std::to_string(o.disp) : std::string()) + "(" +
                (o.reg.id >= 0 ? regText(Reg{o.reg.id, 8}, o.text.str()) : o.text.str()) +
                (o.scale != 0 ? "," + regText(Reg{o.index.id, 8}, "") + "," + std::to_string(o.scale) : "") + ")";
-    case Operand::RipSymbol: return o.text.str() + "(%rip)";
-    case Operand::Indirect: return "*" + regText(o.reg, o.text.str());
-    case Operand::Label: return o.text.str();
-    case Operand::SegMemory: return o.text + ":" + std::to_string(o.disp);
-    case Operand::TlsSymbol: return o.text + "@TPOFF(" + regText(Reg{o.reg.id, 8}, "") + ")";
+    case MOperand::RipSymbol: return o.text.str() + "(%rip)";
+    case MOperand::Indirect: return "*" + regText(o.reg, o.text.str());
+    case MOperand::Label: return o.text.str();
+    case MOperand::SegMemory: return o.text + ":" + std::to_string(o.disp);
+    case MOperand::TlsSymbol: return o.text + "@TPOFF(" + regText(Reg{o.reg.id, 8}, "") + ")";
     }
     return "";
 }
@@ -118,9 +101,9 @@ std::string operandText(const Operand &o) {
 }
 
 // **The stream, one entry a line**: its index, a `-` for a dead entry, the
-// instruction, `label:` or `<event>`; a block boundary where the flow has
+// instruction, `label:` or a directive by its kind; a block boundary where the flow has
 // one, with what is live in and out of it when that has been solved.
-void dumpStream(std::ostream &o, Function &fn) {
+void dumpStream(std::ostream &o, MFunction &fn) {
     std::vector<int> blockAt(fn.stream.size() + 1, -1);
     if (fn.has(kPropFlow))
         for (std::size_t b = 0; b < fn.flow.blocks.size(); ++b) blockAt[fn.flow.blocks[b].begin] = static_cast<int>(b);
@@ -139,16 +122,16 @@ void dumpStream(std::ostream &o, Function &fn) {
             }
             o << "\n";
         }
-        const Entry &e = fn.stream[k];
+        const MEntry &e = fn.stream[k];
         o << (e.dead ? "  -" : "   ") << k << "\t";
         switch (e.kind) {
-        case Entry::Ins:
+        case MEntry::Inst:
             o << e.ins.m.name();
             if (e.ins.operands >= 1) o << " " << operandText(e.ins.a);
             if (e.ins.operands >= 2) o << ", " << operandText(e.ins.b);
             break;
-        case Entry::Label: o << e.label << ":" << (e.state ? "  ; state" : ""); break;
-        case Entry::Event: o << e.event.describe(); break;
+        case MEntry::Label: o << e.label << ":" << (e.state ? "  ; state" : ""); break;
+        case MEntry::Directive: o << e.dir.describe(); break;
         }
         o << "\n";
     }

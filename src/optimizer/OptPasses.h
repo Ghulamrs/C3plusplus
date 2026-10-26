@@ -10,40 +10,40 @@
 namespace opt {
 
 // What nobody reads, a sign extension included when only its low half is read.
-bool removeDead(Stream &s, Flow &f);
+bool removeDead(MStream &s, Flow &f);
 
 // Code no label leads to after a jump or return, and a jump to the next label.
-bool removeUnreachable(Stream &s);
+bool removeUnreachable(MStream &s);
 
 // **A copy out of a dying register** folds into the instruction that wrote it.
-bool coalesceCopies(Stream &s, Flow &f, const Convention &c);
+bool coalesceCopies(MStream &s, Flow &f, const Convention &c);
 
 // The shortest encoding of what is read after it: no REX where no upper half is read.
-bool shrink(Stream &s, Flow &f, const Convention &c);
+bool shrink(MStream &s, Flow &f, const Convention &c);
 
 // **A load read once** becomes that instruction's memory operand.
-bool foldLoads(Stream &s, Flow &f, const Convention &c);
+bool foldLoads(MStream &s, Flow &f, const Convention &c);
 
 // **A constant added to a register only used as an address** moves into the displacements.
-bool foldOffsets(Stream &s, Flow &f, const Convention &c);
+bool foldOffsets(MStream &s, Flow &f, const Convention &c);
 
 // **A register added to one only used as an address** becomes its index, a shift of it the scale.
-bool foldIndex(Stream &s, Flow &f, const Convention &c);
+bool foldIndex(MStream &s, Flow &f, const Convention &c);
 
 // **A division by a constant is a multiply by its magic number** - see OptDivide.cpp.
-bool divideByConstant(Stream &s, Flow &f);
+bool divideByConstant(MStream &s, Flow &f);
 
-struct Function;
+struct MFunction;
 // **A loop-invariant computation moves in front of the loop**, into a register dead there - see OptHoist.cpp.
-bool hoistInvariants(Function &fn);
-bool hoistXmmSlots(Function &fn);
-bool widenCounters(Function &fn);
+bool hoistInvariants(MFunction &fn);
+bool hoistXmmSlots(MFunction &fn);
+bool widenCounters(MFunction &fn);
 
 // **A loop that fits one line is padded in front so that it does not cross one** - see OptAlign.cpp.
-bool alignLoops(Function &fn);
+bool alignLoops(MFunction &fn);
 
 // **A jump that only jumps on, and a constant that decides the compare-and-branch it reaches** - see OptJumps.cpp.
-bool threadJumps(Function &fn);
+bool threadJumps(MFunction &fn);
 
 // A local the walker placed in the frame, rbp-relative.
 struct Local {
@@ -67,8 +67,8 @@ public:
         escapesFrom_ = escapesFrom_ < disp ? escapesFrom_ : disp;
     }
     // Every frame slot the stream, or one instruction of it, reads, writes or takes the address of.
-    void addAccessesOf(const Stream &s);
-    void addAccessOf(const Entry &e);
+    void addAccessesOf(const MStream &s);
+    void addAccessOf(const MEntry &e);
     // Whether an access of `width` bytes at `disp` touches a shared slot.
     bool overlaps(long long disp, int width) const {
         for (const Local &l : slots_)
@@ -88,19 +88,19 @@ private:
 // **The scalar locals a register could hold**: not shared, never addressed, every access whole and by an instruction
 // that takes a register there - an xmm one for a float or double; none where the frame escapes or setjmp is called.
 // `mentioned`: every register named; `xmmPseudo`: whether a pseudo stands for an xmm register.
-std::vector<Local> promotableLocals(const Stream &s, const std::vector<Local> &locals, const SharedSlots &shared,
+std::vector<Local> promotableLocals(const MStream &s, const std::vector<Local> &locals, const SharedSlots &shared,
                                     RegSet &mentioned, const std::function<bool(int)> &xmmPseudo);
 
 // Each register goes back before rsp is taken from the frame for the return, ahead of the epilogue.
-void insertRestores(Stream &s, const std::vector<SavedReg> &saves);
+void insertRestores(MStream &s, const std::vector<SavedReg> &saves);
 
 // **A frame store never read back**, where no address reaches it; whole functions only.
-bool removeDeadStores(Stream &s, const SharedSlots &shared);
+bool removeDeadStores(MStream &s, const SharedSlots &shared);
 
 // A register saved for a local that no longer names it, and its restores, go.
-void dropUnusedSaves(Stream &s, std::vector<SavedReg> &saves, long long top);
+void dropUnusedSaves(MStream &s, std::vector<SavedReg> &saves, long long top);
 
 // **What each register holds, followed forward through a block** - see OptValues.cpp.
-bool forwardValues(Stream &s, Flow &f, const Convention &c, long long tempFrom = 0);
+bool forwardValues(MStream &s, Flow &f, const Convention &c, long long tempFrom = 0);
 
 }

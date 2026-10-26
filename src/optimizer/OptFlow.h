@@ -7,11 +7,11 @@
 
 namespace opt {
 
-Control controlOf(const Instr &i);
+Control controlOf(const MInst &i);
 
-struct Flow : FlowOf<Entry> {
-    void build(const Stream &s, const Convention &c, const std::vector<Region> &regions) {
-        FlowOf<Entry>::build(s, [&c](const Instr &i) { return effectsOf(i, c); }, regions);
+struct Flow : FlowOf<MEntry> {
+    void build(const MStream &s, const Convention &c, const std::vector<Region> &regions) {
+        FlowOf<MEntry>::build(s, [&c](const MInst &i) { return effectsOf(i, c); }, regions);
     }
 };
 

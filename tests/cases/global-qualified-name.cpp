@@ -1,5 +1,5 @@
 // [namespace.qual]: `::f(x)`, `::g` and `::n::f()` look up from the global namespace - no enclosing
-// namespace, no local, no class member of the name is asked. The compiler's own OptIr.cpp writes
+// namespace, no local, no class member of the name is asked. The compiler's own Mir.cpp writes
 // `::reg(name)` (M1 L11, 2026-10-23).
 extern "C" int printf(const char *, ...);
 static int reg(int n) { return n * 2; }

@@ -51,7 +51,6 @@ public:
     using Walker::visit;
     void run(const Program &program) override;
     void setOptimize(int level) override;
-    void setMirOff(bool off) override { mirOff_ = off; }
     void setMirDump(std::ostream *to, const std::string &afterPass) override { mirDump_ = to; mirDumpAfter_ = afterPass; }
 
     void visit(const Num &) override;
@@ -132,7 +131,6 @@ protected:
     Spelling *a_ = &gnu_;
     // In front of a_ at every level (M3a.1), holding a function whole, its funclets blocks of it (M3a.4).
     std::unique_ptr<Optimizer> optimizer_;
-    bool mirOff_ = false;
     std::ostream *mirDump_ = nullptr;
     std::string mirDumpAfter_;
     // Whether the holder is in front: a different fact from passesRun(), and only emittedSize asks it.

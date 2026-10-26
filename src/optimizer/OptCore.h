@@ -50,15 +50,15 @@ struct Region {
     std::string begin, end, target;
 };
 
-// **One function, in the order it came**: instructions, labels, and events -
+// **One function, in the order it came**: instructions, labels, and directives -
 // whatever else was written there, replayed where it stood.
 template <class I, class Payload>
 struct EntryOf {
-    enum Kind { Ins, Label, Event };
-    Kind kind = Ins;
+    enum Kind { Inst, Label, Directive };
+    Kind kind = Inst;
     I ins;
     std::string label;
-    Payload event;
+    Payload dir;
     bool dead = false;
     // A label where the exception state changes: see Spelling::stateLabel.
     bool state = false;
@@ -119,7 +119,7 @@ template <class Entry>
 struct FlowOf {
     std::vector<Block> blocks;
     std::vector<Edge> edges;
-    std::vector<Effects> effects;        // one per entry; empty for labels and events
+    std::vector<Effects> effects;        // one per entry; empty for labels and directives
     bool dominated = false;              // whether each block's idom is current
     bool solutionsDirty = true;          // whether liveness must be solved again
 
@@ -165,7 +165,7 @@ struct FlowOf {
             if (e.kind == Entry::Label && e.dead) continue;       // dropped: it joins
             // **A funclet's blocks are its function's** (M3a.4): FuncletBegin starts one entered from nowhere, and
             // FuncletEnd or FuncletLeave ends one that returns; the code after a funclet continues the block before it.
-            if (e.kind == Entry::Event && e.event.beginsFunclet()) {
+            if (e.kind == Entry::Directive && e.dir.beginsFunclet()) {
                 if (k > cur.begin) { cur.end = k; blocks.push_back(cur); cur = Block(); cur.begin = k; }
                 cur.funclet = ++depth;
             }
@@ -183,15 +183,15 @@ struct FlowOf {
                     if (r.end == e.label) open.erase(std::remove(open.begin(), open.end(), &r), open.end());
                 }
             }
-            if (e.kind == Entry::Event && e.event.endsFunclet()) {
+            if (e.kind == Entry::Directive && e.dir.endsFunclet()) {
                 cur.end = k + 1;
                 blocks.push_back(cur);
-                if (!e.event.leavesFunclet()) --depth;
+                if (!e.dir.leavesFunclet()) --depth;
                 cur = Block();
                 cur.begin = k + 1;
                 cur.funclet = depth;
             }
-            if (e.kind != Entry::Ins) continue;
+            if (e.kind != Entry::Inst) continue;
             effects[k] = effectsOf(e.ins);
             if (e.dead) continue;
             const Control c = controlOf(e.ins);
@@ -213,8 +213,8 @@ struct FlowOf {
         for (std::size_t b = 0; b < blocks.size(); ++b) {
             Control c;
             for (int k = blocks[b].end - 1; k >= blocks[b].begin; --k) {
-                if (s[k].kind == Entry::Ins && !s[k].dead) { c = controlOf(s[k].ins); break; }
-                if (s[k].kind == Entry::Event && s[k].event.endsFunclet()) { c = controlOf(s[k].event); break; }
+                if (s[k].kind == Entry::Inst && !s[k].dead) { c = controlOf(s[k].ins); break; }
+                if (s[k].kind == Entry::Directive && s[k].dir.endsFunclet()) { c = controlOf(s[k].dir); break; }
             }
             if (c.ends && !c.target.empty()) {
                 const auto t = at.find(c.target);
@@ -282,7 +282,7 @@ struct FlowOf {
                     if (edges[e].kind != Edge::Eh && edges[e].to != Edge::kExit) live.join(blocks[edges[e].to].in);
                 blk.out = live;
                 for (int k = blk.end - 1; k >= blk.begin; --k) {
-                    if (s[k].kind != Entry::Ins || s[k].dead) continue;
+                    if (s[k].kind != Entry::Inst || s[k].dead) continue;
                     joinPads(b, k, live);
                     live.step(effects[k]);
                 }
@@ -362,7 +362,7 @@ bool removeDeadIn(std::vector<Entry> &s, FlowOf<Entry> &f, RegSet frame, IdleFn 
         Live live = blk.out;
         for (int k = blk.end - 1; k >= blk.begin; --k) {
             Entry &en = s[k];
-            if (en.kind != Entry::Ins || en.dead) continue;
+            if (en.kind != Entry::Inst || en.dead) continue;
             f.joinPads(b, k, live);
             const Effects &e = f.effects[k];
             const bool removable = !e.control && !e.memoryWritten && !e.stack && !e.opaque &&
@@ -390,14 +390,14 @@ bool removeUnreachableIn(std::vector<Entry> &s) {
         if (en.kind == Entry::Label && !en.dead) gone = false;
         // A funclet is entered by the runtime and the code after it carries on from before it; its early exit,
         // where nothing reaches it, goes.
-        if (en.kind == Entry::Event && en.event.beginsFunclet()) { outside.push_back(gone); gone = false; }
-        if (en.kind == Entry::Event && en.event.endsFunclet() && !en.dead) {
-            if (en.event.leavesFunclet()) { if (gone) en.dead = changed = true; else gone = true; continue; }
+        if (en.kind == Entry::Directive && en.dir.beginsFunclet()) { outside.push_back(gone); gone = false; }
+        if (en.kind == Entry::Directive && en.dir.endsFunclet() && !en.dead) {
+            if (en.dir.leavesFunclet()) { if (gone) en.dead = changed = true; else gone = true; continue; }
             gone = outside.back();
             outside.pop_back();
             continue;
         }
-        if (en.kind != Entry::Ins || en.dead) continue;
+        if (en.kind != Entry::Inst || en.dead) continue;
         if (gone) { en.dead = changed = true; continue; }
         const Control c = controlOf(en.ins);
         if (!c.ends || c.falls) continue;
@@ -405,7 +405,7 @@ bool removeUnreachableIn(std::vector<Entry> &s) {
         if (c.target.empty()) continue;
         for (std::size_t j = k + 1; j < s.size(); ++j) {
             if (s[j].kind == Entry::Label && !s[j].dead && s[j].label == c.target) { en.dead = changed = true; break; }
-            if (s[j].kind == Entry::Ins && !s[j].dead) break;
+            if (s[j].kind == Entry::Inst && !s[j].dead) break;
         }
     }
     return changed;
