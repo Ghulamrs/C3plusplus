@@ -48,7 +48,8 @@ struct CallInfo {
     TypeId signature;       // the function type called through
     bool variadic, hasThis, sret, noexcept_;
     int namedArgs;
-    CallInfo() : variadic(false), hasThis(false), sret(false), noexcept_(false), namedArgs(0) {}
+    int resultAlloca;       // a class returned by value: the frame object it comes back into, -1 for none
+    CallInfo() : variadic(false), hasThis(false), sret(false), noexcept_(false), namedArgs(0), resultAlloca(-1) {}
 };
 
 struct Value { TypeId type; InstId def; BlockId param; std::uint16_t index; Value() : index(0) {} };

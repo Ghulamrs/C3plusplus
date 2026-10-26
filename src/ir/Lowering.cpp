@@ -680,35 +680,7 @@ void Lowering::declaration(sema::TypedId id) {
             if (!scalar(t) || t.isX87(target_)) outside("a local of type '" + t.describe() + "'");
             slotType = tid(t);
         }
-        Function &f = F();
-        AllocaInfo a;
-        a.type = slotType;
-        a.align = T(slotType).align(target_);
-        const Type &st = T(slotType);
-        if ((st.isArray() || st.isStructOrUnion()) && st.size(target_) >= 16 && a.align < 16) a.align = 16;   // as the walker lays it
-        a.name = text(var);
-        // Allocas go to the entry block, whatever block the declaration stands in.
-        const BlockId here = cur_;
-        place(f.entry);
-        // The entry block ends in its branch already; the alloca is appended in front of it.
-        Inst in;
-        in.op = Op::Alloca;
-        in.type = tid(*types_.pointerTo(&T(slotType)));
-        in.first = static_cast<std::uint32_t>(f.operands.size());
-        in.count = 0;
-        in.k = static_cast<long long>(f.frame.size());
-        in.align = a.align;
-        const InstId al(static_cast<std::uint32_t>(f.insts.size()));
-        Value val;
-        val.type = in.type;
-        val.def = al;
-        in.result = ValueId(static_cast<std::uint32_t>(f.values.size()));
-        f.values.push_back(val);
-        f.insts.push_back(in);
-        f.blockArena[f.entry.v].insts.push_back(al);
-        f.frame.push_back(a);
-        place(here);
-        const ValueId slot = result(al);
+        const ValueId slot = entryAlloca(slotType, text(var));
         locals_[v.syntax.v] = std::make_pair(slot, tid(t));
         if (t.isReference()) {
             if (v.count != 1) outside("a reference of " + std::to_string(v.count) + " parts");
@@ -797,7 +769,8 @@ bool Lowering::isLvalueNode(sema::TypedId id) const {
                tree_.node(child(id, 1)).type != nullptr && tree_.node(child(id, 1)).type == tree_.node(child(id, 2)).type;
     case syntax::Kind::Call: {
         const sema::Resolution &r = tree_.resolution(id);
-        return r.what == sema::Resolution::Call && r.type.valid() && T(r.type).isFunction() && T(r.type).returns()->isReference();
+        return r.what == sema::Resolution::Call && r.type.valid() && T(r.type).isFunction() &&
+               (T(r.type).returns()->isReference() || plainClass(*T(r.type).returns()));
     }
     default: return false;
     }
@@ -919,6 +892,8 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
         const sema::Resolution &r = tree_.resolution(id);
         if (r.what == sema::Resolution::Call && T(r.type).returns()->isReference())
             e = readOf(e.v, tid(*T(r.type).returns()->referent()));
+        else if (r.what == sema::Resolution::Call && T(r.type).returns()->isStructOrUnion())
+            e = Val();      // a class result read as no value: its statement is the call
         break;
     }
     case syntax::Kind::Cast: {
@@ -1602,7 +1577,8 @@ Lowering::Val Lowering::call(sema::TypedId id) {
     info.variadic = ft.isVariadicFn();
     info.namedArgs = static_cast<int>(ft.params().size());
     const Type &gives = *ft.returns();
-    if (!(gives.isVoid() || scalar(gives) || (gives.isReference() && referable(*gives.referent())))) outside("a call returning '" + gives.describe() + "'");
+    if (!(gives.isVoid() || scalar(gives) || plainClass(gives) || (gives.isReference() && referable(*gives.referent()))))
+        outside("a call returning '" + gives.describe() + "'");
     if (gives.isX87(target_)) outside("an x87 long double");
     const std::size_t argc = n - 1, skip = member ? 1 : 0;
     const std::size_t paramCount = ft.params().size() - skip;
@@ -1640,10 +1616,16 @@ Lowering::Val Lowering::call(sema::TypedId id) {
         if (!scalar(p) || p.isX87(target_)) outside("a parameter of type '" + p.describe() + "'");
         ops.push_back(exprTo(an, tid(p)).v);
     }
+    // A plain class comes back into a temporary of this frame, and the call carries its address, as a reference's does.
+    if (gives.isStructOrUnion()) {
+        entryAlloca(tid(*gives.unqualified()), "$result");
+        info.resultAlloca = static_cast<int>(F().frame.size() - 1);
+    }
     Function &f = F();
     const std::uint32_t callIndex = static_cast<std::uint32_t>(f.calls.size());
     f.calls.push_back(info);
-    const TypeId carries = gives.isVoid() ? TypeId() : gives.isReference() ? tid(*types_.pointerTo(gives.referent())) : tid(gives);
+    const TypeId carries = gives.isVoid() ? TypeId() : gives.isReference() ? tid(*types_.pointerTo(gives.referent()))
+                         : gives.isStructOrUnion() ? tid(*types_.pointerTo(gives.unqualified())) : tid(gives);
     const InstId c = callOrInvoke(carries, ops);
     at(c).call = callIndex;
     return Val(result(c), carries.valid() ? carries : tid(gives));
@@ -1700,12 +1682,15 @@ BlockId Lowering::padBlock(Pad &p) {
     return p.block;
 }
 
-// An alloca in the entry block, whatever block the statement stands in; its value is the object's address.
+// An alloca in the entry block, whatever block the statement stands in; its value is the object's address. A frame
+// object of 16 bytes or more is aligned at 16, as the walker lays it.
 ValueId Lowering::entryAlloca(TypeId slotType, const std::string &name) {
     Function &f = F();
     AllocaInfo a;
     a.type = slotType;
     a.align = T(slotType).align(target_);
+    const Type &st = T(slotType);
+    if ((st.isArray() || st.isStructOrUnion()) && st.size(target_) >= 16 && a.align < 16) a.align = 16;
     a.name = name;
     Inst in;
     in.op = Op::Alloca;

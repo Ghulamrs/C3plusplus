@@ -408,11 +408,13 @@ void X86_64Linux::selectCall(const ir::Function &f, const ir::Inst &i, const Typ
             p->setType(typeOf(f, v));
             callee = std::move(p);
         }
-        std::unique_ptr<Call> call = make_owned<Call>(c.symbol, std::move(callee), std::move(args), c.variadic, 0, c.namedArgs,
-                                                     ssaArgSlots_[i.call]);
+        // A class result comes back into its alloca's slot and the walker leaves its address in rax: the call's value.
+        const int resultSlot = c.resultAlloca >= 0 ? static_cast<int>(ssaAllocaSlot_[static_cast<std::size_t>(c.resultAlloca)]) : 0;
+        std::unique_ptr<Call> call = make_owned<Call>(c.symbol, std::move(callee), std::move(args), c.variadic, resultSlot,
+                                                     c.namedArgs, ssaArgSlots_[i.call]);
         call->setSymbol(c.symbol);
         call->setHasThis(c.hasThis);
-        call->setType(rt != nullptr ? rt : sig->returns());
+        call->setType(c.resultAlloca >= 0 ? sig->returns() : rt != nullptr ? rt : sig->returns());
         call->accept(*this);
     }
 }
