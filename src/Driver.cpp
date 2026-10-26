@@ -1357,6 +1357,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     lowering.setDefaultInit([&typer](const Type *cls, const std::string &m) { return typer.defaultInit(cls, m); });
     lowering.setGuarded([&typer](const std::string &symbol) { return typer.guardedStatic(symbol); });
     lowering.setTypeInfo([&typer](const Type *t) { return typer.typeInfoSymbol(t); });
+    lowering.setNewFacts([&typer](syntax::NodeId id, sema::NewFacts &out) { return typer.newFacts(id, out); });
     std::map<std::string, int> reasons;
     int lowered = 0;
     for (std::size_t r = 0; r < c.bodies.size(); r++) {

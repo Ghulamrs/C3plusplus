@@ -1726,6 +1726,19 @@ ExprPtr Parser::newExpression(std::size_t pos) {
             if (!vals.empty()) init = std::move(vals[0]);
         }
     }
+    // What the SSA lowering is told of this `new` (M3b.2); the nested ones in its operands have taken theirs.
+    pendingNew_ = NewFacts();
+    pendingNew_.made = made;
+    pendingNew_.array = array;
+    pendingNew_.init = !hasInit ? 0 : init ? 2 : 1;
+    if (nothrow) pendingNew_.why = "a nothrow 'new'";
+    else if (placement != nullptr || userAlloc) pendingNew_.why = "a placement 'new'";
+    else if (constructed) pendingNew_.why = "a 'new' of a class with constructors";
+    else if (braces && init) pendingNew_.why = "a 'new' with a braced list";
+    else if (classAllocator(made, array ? "operatornew[]" : "operatornew") != nullptr) pendingNew_.why = "a class's own operator new";
+    else if (array && arrayCookie(made) != 0) pendingNew_.why = "an array 'new' with a cookie";
+    else if (target_.microsoftNames()) pendingNew_.symbol = array ? "??_U@YAPEAX_K@Z" : "??2@YAPEAX_K@Z";
+    else pendingNew_.symbol = std::string(array ? "_Zna" : "_Znw") + itaniumBuiltinCode(target_.sizeType());
     const Type *sizeT = types_.get(target_.sizeType());
     ExprPtr bytes(new Num(static_cast<long long>(made->size(target_))));
     bytes->setType(sizeT);
@@ -2107,6 +2120,13 @@ ExprPtr Parser::deleteExpression(std::size_t pos) {
 
     // **The destructor runs before the memory goes back**, as clang emits it.
     const Signature *dtor = destructorOf(t->pointee());
+    pendingNew_ = NewFacts();
+    pendingNew_.made = t->pointee();
+    pendingNew_.array = array;
+    if (dtor != nullptr) pendingNew_.why = "a 'delete' of a class with a destructor";
+    else if (classAllocator(t->pointee(), array ? "operatordelete[]" : "operatordelete") != nullptr) pendingNew_.why = "a class's own operator delete";
+    else if (target_.microsoftNames()) pendingNew_.symbol = array ? "??_V@YAXPEAX@Z" : "??3@YAXPEAX@Z";
+    else pendingNew_.symbol = array ? "_ZdaPv" : "_ZdlPv";
 
     // **A virtual destructor is reached through the vtable**, the static type
     // not being the one to destroy; the slot's deleting form frees as well.

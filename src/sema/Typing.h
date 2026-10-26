@@ -51,6 +51,16 @@ struct Resolution : ResolutionKind {
     Resolution() : what(None), serial(-1), value(0), isConst(false), isThreadLocal(false), hasThis(false), indirect(false) {}
 };
 
+// A `new` or `delete` as the parser built it (M3b.2): the global allocation function it called, the type made or freed,
+// the initialiser - 0 none, 1 value-initialised, 2 one value - and `why` where the SSA lowering may not take it.
+struct NewFacts {
+    std::string symbol, why;
+    TypeId made;
+    bool array;
+    int init;
+    NewFacts() : array(false), init(0) {}
+};
+
 // What a sizeof, alignof or noexcept folded to, or an integer or character literal's value, with its type.
 struct Folded {
     long long value;
@@ -132,6 +142,7 @@ public:
     std::string typeInfoSymbol(const Type *t) const;   // the type_info a catch of t names, Sema's; empty where none can be made
     bool constructed(const Type *cls) const;          // a class some constructor builds, written or implicit
     bool assigned(const Type *cls) const;             // a class with an operator= of its own, written or implicit
+    bool newFacts(syntax::NodeId id, NewFacts &out) const;  // a `new` or `delete` node's facts; false where none were recorded
     bool defaultInit(const Type *cls, const std::string &member) const;   // the member has an initialiser of its own
     bool guardedStatic(const std::string &symbol) const;  // a static local built at run time, under its guard   // a pack was expanded in the body: one node stands for its members   // Parser::scopedFunctions_'s bits, 0 for a body at file scope
     // Whether the function of this symbol is a template specialization (Signature::fromTemplate): its body is a replay.
