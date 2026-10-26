@@ -635,3 +635,13 @@ namespace on Windows, a local hiding a member in `Mir.cpp`); the cases in the GN
 `-front=typed` and `-front=typed -O2`**; the `-front=ssa` passes, the MASM pass (its masm build mended in
 `run-cases.cmd`), the tms6747 legs on the box's TI tools, self-host.cmd, bench.cmd, examples and the ml64 baseline
 are queued on the box and recorded when they report.
+
+**The Windows rows, filled** (2026-10-26 evening, GRA box, cl 19.44, the tree at `4b0fb63` on `m3b2`). cl builds the
+tree under `/W4 /WX`; the cases in the GNU spelling **622/622 at -O0, -O2, `-front=typed`, `-front=typed -O2`,
+`-front=ssa` and `-front=ssa -O2`** - x86_64-windows selection from the SSA IR agreeing with the parser's path on every
+case it reaches; `throw-check` (a cxx1 throw caught by cl), `catch-check` and `sret-check` (cl calling a cxx1 member
+for its struct) pass, `winlink-check` ran; names against cl **423 agreed, 19 differed**, 170 recorded in `.nocl`. The
+MASM pass did not run in this leg (masm is built on `src/encoder` since M4.3 and `run-cases.cmd` had not been told -
+mended in `4b0fb63`) and is queued, with TI's lnk6x, `release-check` and `c6747-levels` on the box's TI tools,
+`self-host.cmd`, `bench.cmd`, `examples/` and the ml64 baseline. The hang the Mac met under `-front=ssa -O1` on
+`stack-probe` came from M3b.1's sweep binary and does not reproduce on the current tree at any level.
