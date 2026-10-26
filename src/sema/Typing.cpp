@@ -448,6 +448,8 @@ TypeId Typer::declaredReturn(syntax::NodeId fn) const {
 
 bool Typer::wrappedBody(const std::string &symbol) const { return p_.wrappedBodies_.count(symbol) != 0; }
 
+bool Typer::scopedBody(syntax::NodeId fn) const { return p_.scopedFunctions_.count(fn.v) != 0; }
+
 Census Typer::census(const Parser &p, const Program &program) {
     Census c;
     std::map<std::string, std::size_t> bySymbol;

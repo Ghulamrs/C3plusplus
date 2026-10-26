@@ -1375,7 +1375,9 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         // An over-aligned local realigns the frame, which the selector's layout does not know about yet.
         bool aligned = fn.frameAlign() > 16;
         for (const Local &l : fn.locals()) if (l.align > 16) aligned = true;
-        if (aligned) why = "a local with alignas";
+        // A template's body is replayed per instantiation and a pack expansion is one node of it: not this round's.
+        if (typer.scopedBody(c.bodies[r].first)) why = "a body whose names are a class's, a namespace's or a template's";
+        else if (aligned) why = "a local with alignas";
         else if (!lowering.lower(t, facts, why).valid() && why.empty()) why = "the lowering gave no reason";
         if (why.empty()) { lowered++; continue; }
         reasons[why]++;

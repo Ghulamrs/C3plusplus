@@ -120,6 +120,8 @@ public:
     // Facts of a function's declaration the lowering is told (M3b.1): its return type as written, and whether its body is a try.
     TypeId declaredReturn(syntax::NodeId fn) const;
     bool wrappedBody(const std::string &symbol) const;
+    // A body read in a class's, a namespace's or a template's scope (Parser::scopedFunctions_), which the adapter left alone too.
+    bool scopedBody(syntax::NodeId fn) const;
     // The census's counts as the report spells them, "functions=N bodies=K synthesised=M", and the kinds behind M.
     static std::string censusLine(const Census &c);
     static std::string censusKinds(const Census &c);

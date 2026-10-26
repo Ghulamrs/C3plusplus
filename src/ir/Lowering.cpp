@@ -661,6 +661,8 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
     const syntax::Node &s = syn(id);
     const sema::TypedNode &n = tree_.node(id);
     const std::uint32_t k = n.count;
+    // What the typer left untyped - a pack's name in a list, a form past its subset - the lowering does not read either.
+    if (n.type == nullptr) outside(std::string("a '") + syntax::kindName(s.kind) + "' the typer did not type");
     Val e;
     switch (s.kind) {
     case syntax::Kind::IntLit: case syntax::Kind::CharLit: case syntax::Kind::FloatLit: case syntax::Kind::WordLit:
@@ -1248,9 +1250,10 @@ Lowering::Val Lowering::call(sema::TypedId id) {
     CallInfo info;
     std::vector<ValueId> ops;
     TypeId sig;
-    if (r.what == sema::Resolution::Call && !r.symbol.empty()) {
-        if (syn(head).kind == syntax::Kind::Member) outside("a member call");
-        if (syn(head).kind == syntax::Kind::Name && tree_.node(head).decl.valid()) outside("a call of an object");
+    // A call by name reaches the recorded function; one through a value - a local, a call's result - is read as such.
+    const bool direct = r.what == sema::Resolution::Call && !r.symbol.empty() && syn(head).kind == syntax::Kind::Name &&
+                        !tree_.node(head).decl.valid() && r.symbol.find_first_of(" ()*&[") == std::string::npos;
+    if (direct) {
         if (!r.type.valid() || !T(r.type).isFunction()) outside("a call whose function type was not recorded");
         info.symbol = r.symbol;
         sig = r.type;

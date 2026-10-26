@@ -6,6 +6,7 @@
 #include "../ir/Ir.h"
 #include "../Source.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -23,9 +24,12 @@ const ir::Function *X86_64Linux::ssaFunction(const Function &fn) const {
     return id.valid() ? &ssa_->functions[id.v] : nullptr;
 }
 
-// The frame above the parser's: each alloca at its alignment, then one 8-byte slot per value. Returns the new size.
+// The frame above the parser's parameter slots - the one part of its layout the selector reads - each alloca at its
+// alignment, then one 8-byte slot per value. Returns the new size.
 int X86_64Linux::layoutSsa(const Function &fn, const ir::Function &f) {
-    long long cur = fn.frameSize();
+    long long cur = 0;
+    for (const Param &p : fn.params()) cur = std::max(cur, static_cast<long long>(p.offset));
+    cur = roundUp(cur, 16);
     ssaAllocaSlot_.assign(f.frame.size(), 0);
     for (std::size_t i = 0; i < f.frame.size(); i++) {
         const Type *t = ssaTypes_->type(f.frame[i].type);
