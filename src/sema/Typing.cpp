@@ -123,6 +123,7 @@ void Typer::record(syntax::NodeId id, TypedId t) {
         out.value = r->second.value;
         out.isConst = r->second.isConst;
         out.isThreadLocal = r->second.isThreadLocal;
+        out.hasThis = r->second.hasThis;
         out.name = r->second.name;
         tree_.setResolution(t, out);
     }
@@ -424,7 +425,7 @@ std::string Typer::recordDiffers(const Parser &p, const TypedTree &tree, TypedId
         if (r.what != pr->second.what || p.types_.type(r.type) != pr->second.type ||
             p.types_.type(r.owner) != pr->second.owner || r.symbol != pr->second.symbol || r.serial != pr->second.serial ||
             r.value != pr->second.value || r.isConst != pr->second.isConst || r.isThreadLocal != pr->second.isThreadLocal ||
-            r.name != pr->second.name)
+            r.hasThis != pr->second.hasThis || r.name != pr->second.name)
             return "the record's fields";
     }
     const auto cast = p.castTypes_.find(id);
@@ -448,7 +449,10 @@ TypeId Typer::declaredReturn(syntax::NodeId fn) const {
 
 bool Typer::wrappedBody(const std::string &symbol) const { return p_.wrappedBodies_.count(symbol) != 0; }
 
-bool Typer::scopedBody(syntax::NodeId fn) const { return p_.scopedFunctions_.count(fn.v) != 0; }
+int Typer::scopedBody(syntax::NodeId fn) const {
+    const std::map<std::uint32_t, int>::const_iterator i = p_.scopedFunctions_.find(fn.v);
+    return i != p_.scopedFunctions_.end() ? i->second : 0;
+}
 
 bool Typer::fromTemplate(const std::string &symbol) const {
     for (std::size_t i = 0; i < p_.lookup_.functions_.size(); i++)

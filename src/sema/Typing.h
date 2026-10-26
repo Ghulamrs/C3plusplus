@@ -45,8 +45,9 @@ struct Resolution : ResolutionKind {
     int serial;             // a local's serial; a member's offset
     long long value;        // an enumerator's, a folded static member's
     bool isConst, isThreadLocal;    // a global's
+    bool hasThis;           // a call's: its function type's first parameter is the object's address
     std::string name;       // a global's or a function's lookup name, which its Var is named by
-    Resolution() : what(None), serial(-1), value(0), isConst(false), isThreadLocal(false) {}
+    Resolution() : what(None), serial(-1), value(0), isConst(false), isThreadLocal(false), hasThis(false) {}
 };
 
 // What a sizeof, alignof or noexcept folded to, or an integer or character literal's value, with its type.
@@ -121,7 +122,7 @@ public:
     TypeId declaredReturn(syntax::NodeId fn) const;
     bool wrappedBody(const std::string &symbol) const;
     // A body read in a class's, a namespace's or a template's scope (Parser::scopedFunctions_), which the adapter left alone too.
-    bool scopedBody(syntax::NodeId fn) const;
+    int scopedBody(syntax::NodeId fn) const;   // Parser::scopedFunctions_'s bits, 0 for a body at file scope
     // Whether the function of this symbol is a template specialization (Signature::fromTemplate): its body is a replay.
     bool fromTemplate(const std::string &symbol) const;
     // The census's counts as the report spells them, "functions=N bodies=K synthesised=M", and the kinds behind M.

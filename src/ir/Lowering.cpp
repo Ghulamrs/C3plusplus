@@ -176,7 +176,6 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
     labels_.clear();
     hasGoto_ = false;
     try {
-        if (facts.hasThis) outside("a member function");
         if (facts.variadic) outside("a variadic function");
         if (facts.sret) outside("a function returning a class through a pointer");
         if (facts.landingPads) outside("a function with landing pads");
@@ -192,13 +191,28 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         const Type &rt = T(returns_);
         if (!(rt.isVoid() || scalar(rt) || (rt.isReference() && scalar(*rt.referent())))) outside("a return type of '" + rt.describe() + "'");
         if (rt.isX87(target_)) outside("an x87 long double");
+        // A constructor's mem-initialisers and a destructor's member destruction are not in its syntax yet.
+        if (facts.hasThis && facts.thisType.valid() && T(facts.thisType).isPointer()) {
+            if (text(fnNode) == T(facts.thisType).pointee()->unqualified()->localName()) outside("a constructor");
+            if (!text(fnNode).empty() && text(fnNode)[0] == '~') outside("a destructor");
+        }
         const std::uint32_t n = count(fnNode);
         if (n == 0) outside("a function with no body");
         const sema::TypedId body = child(fnNode, n - 1);
         if (syn(body).kind != syntax::Kind::Block) outside("a body that is not a block");
-        if (n - 1 != facts.paramCount) outside("a parameter list the typed tree and the function disagree about");
+        if (n - 1 + (facts.hasThis ? 1 : 0) != facts.paramCount) outside("a parameter list the typed tree and the function disagree about");
         f.entry = newBlock();
         place(f.entry);
+        // [class.this]: `this` is the first parameter, a value never stored to - nothing can assign to it.
+        this_ = ValueId();
+        thisType_ = TypeId();
+        f.hasThis = facts.hasThis;
+        if (facts.hasThis) {
+            if (!facts.thisType.valid() || !T(facts.thisType).isPointer() || !T(facts.thisType).pointee()->isStructOrUnion()) outside("a `this` not recorded");
+            thisType_ = facts.thisType;
+            this_ = param(f.entry, thisType_);
+            f.params.push_back(this_);
+        }
         // The parameters: a value each, copied into an alloca so that every local is one (no mem2reg at M3b.1).
         for (std::uint32_t i = 0; i + 1 < n; i++) {
             const sema::TypedId p = child(fnNode, i);
@@ -586,7 +600,7 @@ bool Lowering::isLvalueNode(sema::TypedId id) const {
     case syntax::Kind::Name: {
         if (tree_.node(id).decl.valid()) return true;
         const sema::Resolution &r = tree_.resolution(id);
-        return r.what == sema::Resolution::Global;
+        return r.what == sema::Resolution::Global || r.what == sema::Resolution::Member;
     }
     case syntax::Kind::StringLit: case syntax::Kind::Member: case syntax::Kind::Subscript: return true;
     case syntax::Kind::Unary: return text(id) == "*";
@@ -677,6 +691,10 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
         break;
     }
     case syntax::Kind::Name: e = name(id); break;
+    case syntax::Kind::This:
+        if (!this_.valid()) outside("`this` where there is none");
+        e = Val(this_, thisType_);
+        break;
     case syntax::Kind::Paren:
         if (k != 1) outside("a parenthesis of " + std::to_string(k) + " parts");
         e = expr(child(id, 0));
@@ -782,6 +800,7 @@ Lowering::Val Lowering::nameAddress(sema::TypedId id) {
         return Val(l->second.first, l->second.second);
     }
     const sema::Resolution &r = tree_.resolution(id);
+    if (r.what == sema::Resolution::Member) return memberOfThis(id);
     if (r.what != sema::Resolution::Global) outside("the name '" + text(id) + "' is no object");
     if (r.isThreadLocal) outside("a thread_local");
     if (!r.type.valid()) outside("a global not typed");
@@ -807,14 +826,13 @@ Lowering::Val Lowering::name(sema::TypedId id) {
             const TypeId pt = tid(*types_.pointerTo(&T(r.type)));
             return Val(addrOf(r.symbol, pt), pt);
         }
-        if (r.what != sema::Resolution::Global)
-            outside("the name '" + text(id) + "', " + (r.what == sema::Resolution::Member ? "a member reached through this"
-                                                        : r.what == sema::Resolution::StaticMember ? "a static member"
+        if (r.what != sema::Resolution::Global && r.what != sema::Resolution::Member)
+            outside("the name '" + text(id) + "', " + (r.what == sema::Resolution::StaticMember ? "a static member"
                                                         : r.what == sema::Resolution::This ? "this" : "of another kind"));
     }
     const Val a = nameAddress(id);
     const Type &t = T(a.type);
-    if (t.isArray()) return Val(a.v, tid(*types_.pointerTo(t.pointee())));
+    if (t.isArray()) return decay(Val(a.v, a.type));
     if (!scalar(t) || t.isX87(target_)) outside("a read of an object of type '" + t.describe() + "'");
     return Val(load(a.v, a.type), a.type);
 }
@@ -849,6 +867,23 @@ Lowering::Val Lowering::memberAddress(sema::TypedId id) {
 }
 
 Lowering::Val Lowering::member(sema::TypedId id) { return memberAddress(id); }
+
+// [class.mfct.non-static]/3: a member's bare name in a member function is `(*this).m` - the record's offset from
+// `this`, its type the access's. One reached through another object - a lambda's captured `this` - is refused.
+Lowering::Val Lowering::memberOfThis(sema::TypedId id) {
+    const sema::Resolution &r = tree_.resolution(id);
+    if (!this_.valid()) outside("a member named where there is no `this`");
+    const Type &cls = *T(thisType_).pointee()->unqualified();
+    const Member *m = cls.findMember(text(id));
+    if (m == nullptr || m->offset != r.serial || !r.type.valid()) outside("a member reached through another object's `this`");
+    if (m->ambiguous || m->inVirtualBase != nullptr || m->anonUnion != nullptr || m->type->isReference() || m->width != 0)
+        outside("a member '" + text(id) + "' the lowering does not reach");
+    const Type &mt = T(r.type);
+    if (!scalar(mt) && !mt.isArray() && !mt.isStructOrUnion()) outside("a member of type '" + mt.describe() + "'");
+    const InstId g = add(Op::Gep, tid(*types_.pointerTo(&mt)), std::vector<ValueId>(1, this_));
+    at(g).k = m->offset;
+    return Val(result(g), r.type);
+}
 
 Lowering::Val Lowering::unary(sema::TypedId id) {
     const std::string &op = text(id);
@@ -1251,9 +1286,34 @@ Lowering::Val Lowering::call(sema::TypedId id) {
     std::vector<ValueId> ops;
     TypeId sig;
     // A call by name reaches the recorded function; one through a value - a local, a call's result - is read as such.
-    const bool direct = r.what == sema::Resolution::Call && !r.symbol.empty() && syn(head).kind == syntax::Kind::Name &&
+    const bool direct = r.what == sema::Resolution::Call && !r.symbol.empty() && !r.hasThis && syn(head).kind == syntax::Kind::Name &&
                         !tree_.node(head).decl.valid() && r.symbol.find_first_of(" ()*&[") == std::string::npos;
-    if (direct) {
+    // A member function called by name, its object's address the first argument: `o.f()`, `p->f()`, `f()` for `this->f()`.
+    const bool member = r.what == sema::Resolution::Call && !r.symbol.empty() && r.hasThis &&
+                        r.symbol.find_first_of(" ()*&[") == std::string::npos;
+    if (member) {
+        if (!r.type.valid() || !T(r.type).isFunction() || T(r.type).params().empty()) outside("a member call whose function type was not recorded");
+        const Type &self = *T(r.type).params()[0];
+        if (!self.isPointer() || !self.pointee()->isStructOrUnion()) outside("a member call whose object is not a class");
+        Val object;
+        if (syn(head).kind == syntax::Kind::Name) {
+            if (!this_.valid()) outside("a member call where there is no `this`");
+            object = Val(this_, thisType_);
+        } else if (syn(head).kind == syntax::Kind::Member && count(head) == 1) {
+            const bool arrow = text(head).compare(0, 2, "->") == 0;
+            if (arrow) object = decay(expr(child(head, 0)));
+            else { const Val o = lvalue(child(head, 0)); object = Val(o.v, tid(*types_.pointerTo(&T(o.type)))); }
+        } else {
+            outside("a member call through '" + text(head) + "'");
+        }
+        if (!T(object.type).isPointer() || T(object.type).pointee()->unqualified() != self.pointee()->unqualified())
+            outside("a member call on a base's function");
+        if (T(object.type).pointee()->isConst() && !self.pointee()->isConst()) outside("a member call that drops const");
+        info.symbol = r.symbol;
+        info.hasThis = true;
+        sig = r.type;
+        ops.push_back(result(add(Op::Bitcast, tid(self), std::vector<ValueId>(1, object.v))));
+    } else if (direct) {
         if (!r.type.valid() || !T(r.type).isFunction()) outside("a call whose function type was not recorded");
         info.symbol = r.symbol;
         sig = r.type;
@@ -1272,8 +1332,8 @@ Lowering::Val Lowering::call(sema::TypedId id) {
     const Type &gives = *ft.returns();
     if (!(gives.isVoid() || scalar(gives) || (gives.isReference() && scalar(*gives.referent())))) outside("a call returning '" + gives.describe() + "'");
     if (gives.isX87(target_)) outside("an x87 long double");
-    const std::size_t argc = n - 1;
-    const std::size_t paramCount = ft.params().size();
+    const std::size_t argc = n - 1, skip = member ? 1 : 0;
+    const std::size_t paramCount = ft.params().size() - skip;
     if (argc < paramCount || (argc > paramCount && !info.variadic)) outside("a call with defaults or too many arguments");
     for (std::size_t i = 0; i < argc; i++) {
         const sema::TypedId an = child(id, static_cast<std::uint32_t>(i + 1));
@@ -1286,7 +1346,7 @@ Lowering::Val Lowering::call(sema::TypedId id) {
             ops.push_back(a.v);
             continue;
         }
-        const Type &p = *ft.params()[i];
+        const Type &p = *ft.params()[i + skip];
         if (p.isReference()) {
             // [dcl.init.ref]/5: an object of the referent's type, its address passed; a temporary is M3b.2's.
             if (!isLvalueNode(an)) outside("a reference parameter bound to what is not an object");

@@ -1369,6 +1369,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         facts.noexcept_ = fn.isNoexcept();
         facts.pos = fn.pos();
         facts.paramCount = fn.params().size();
+        if (fn.hasThis() && !fn.params().empty()) facts.thisType = TypeTable::id(fn.params()[0].type);
         const TypeId declared = typer.declaredReturn(c.bodies[r].first);
         facts.returns = declared.valid() ? declared : TypeTable::id(fn.returns());
         std::string why;
@@ -1376,7 +1377,8 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         bool aligned = fn.frameAlign() > 16;
         for (const Local &l : fn.locals()) if (l.align > 16) aligned = true;
         // A template's body is replayed per instantiation and a pack expansion is one node of it: not this round's.
-        if (typer.scopedBody(c.bodies[r].first) || typer.fromTemplate(fn.symbol())) why = "a body whose names are a class's, a namespace's or a template's";
+        const int scope = typer.scopedBody(c.bodies[r].first);
+        if ((scope & 8) || typer.fromTemplate(fn.symbol())) why = "a template's body";
         else if (aligned) why = "a local with alignas";
         else if (!lowering.lower(t, facts, why).valid() && why.empty()) why = "the lowering gave no reason";
         if (why.empty()) { lowered++; continue; }

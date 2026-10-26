@@ -22,6 +22,7 @@ struct FunctionFacts {
     std::string symbol, displayName;
     bool isStatic, isInline, variadic, hasThis, sret, landingPads, noexcept_;
     TypeId returns;
+    TypeId thisType;        // a member function's `this`, the first of the parser's parameter slots
     std::size_t pos, paramCount;
     FunctionFacts() : isStatic(false), isInline(false), variadic(false), hasThis(false), sret(false), landingPads(false),
                       noexcept_(false), pos(0), paramCount(0) {}
@@ -87,6 +88,7 @@ private:
     Val nameAddress(sema::TypedId id);
     Val member(sema::TypedId id);
     Val memberAddress(sema::TypedId id);
+    Val memberOfThis(sema::TypedId id);
     Val unary(sema::TypedId id);
     Val step(sema::TypedId id, bool increment, bool prefix);
     Val binary(const std::string &op, sema::TypedId l, sema::TypedId r);
@@ -126,6 +128,8 @@ private:
     std::size_t fnIndex_;
     BlockId cur_;
     TypeId returns_;
+    ValueId this_;          // a member function's `this`, none in any other
+    TypeId thisType_;
     BlockId returnBlock_;
     std::map<std::uint32_t, std::pair<ValueId, TypeId> > locals_;    // a `var` node -> its alloca and declared type
     std::vector<Loop> loops_;

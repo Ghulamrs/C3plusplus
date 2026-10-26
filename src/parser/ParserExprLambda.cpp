@@ -463,6 +463,7 @@ ExprPtr Parser::lambdaExpression() {
     }
     for (std::size_t i = bodyFrom; i < bodyTo; i++) tokens_.push_back(tokens_[i]);
     t.kind = TokenKind::End;    t.text = "";           tokens_.push_back(t);
+    closureTokens_[tag] = std::make_pair(start, tokens_.size());
 
     // Replayed on the deducing reading too: that closure is the one the real
     // reading hands back (A21), so it needs its call operator like any other.

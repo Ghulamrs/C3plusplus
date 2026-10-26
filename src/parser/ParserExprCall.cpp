@@ -701,8 +701,11 @@ ExprPtr Parser::completeCall(const std::string &name, const std::string &symbol,
     if (xvalue) made->setXvalue();
     // The function this call reached, by its symbol - a direct call's, an overloaded operator's, a constructor's - or
     // the function type it calls through, with no symbol, for a call through a pointer or a vtable slot.
-    if (!symbol.empty() || indirect)
-        made = resolve(std::move(made), resolvedAs(Resolved::Call, types_.functionType(returns, params, variadic), symbol));
+    if (!symbol.empty() || indirect) {
+        Resolved r = resolvedAs(Resolved::Call, types_.functionType(returns, params, variadic), symbol);
+        r.hasThis = hasThis;
+        made = resolve(std::move(made), r);
+    }
     return made;
 }
 

@@ -1913,9 +1913,9 @@ void Parser::topLevel(Program &program) {
                                               : internalLinkage(sc);
     const syntax::NodeId fnSyntax = noteParts(syntax::Kind::Function, d.name, d.pos, declMark, declLo);   // as syntax
     // A name not local to it is found through a class, a namespace or a template's bindings: typing's subset stops there.
-    if (memberOf != nullptr || !namespaceStack_.empty() || d.name.find("::") != std::string::npos ||
-        !instantiatingParams_.empty() || !boundTypeParams_.empty() || !boundValueParams_.empty())
-        scopedFunctions_.insert(fnSyntax.v);
+    const int scope = (memberOf != nullptr ? 1 : 0) | (!namespaceStack_.empty() ? 2 : 0) | (d.name.find("::") != std::string::npos ? 4 : 0) |
+                      (!instantiatingParams_.empty() || !boundTypeParams_.empty() || !boundValueParams_.empty() ? 8 : 0);
+    if (scope != 0) scopedFunctions_[fnSyntax.v] = scope;
     declaredReturns_[fnSyntax.v] = returnType_;
     global.d = nullptr;                                                     // the definition is the node
     program.functions.push_back(Function(d.name, emittedReturn, std::move(paramSlots),

@@ -321,6 +321,12 @@ private:
     bool isTemplateName(const std::string &name, bool qualified = false) const {
         if (tmpl_.templates_.find(name) == tmpl_.templates_.end()) return false;
         if (qualified) return true;
+        // A lambda's capture is the enclosing function's local, which hides a template as any local does - in the
+        // body's own tokens, not in a template instantiated from inside it.
+        if (currentClass_ != nullptr && currentClass_->findMember(name) != nullptr) {
+            const std::map<std::string, std::pair<std::size_t, std::size_t> >::const_iterator c = closureTokens_.find(currentClass_->tag());
+            if (c != closureTokens_.end() && at_ >= c->second.first && at_ < c->second.second) return false;
+        }
         return lookup_.findLocal(name) == nullptr && lookup_.findGlobal(name) == nullptr;
     }
     bool templateDeclaration();
@@ -531,6 +537,7 @@ private:
         int serial = -1;                 // a local's serial; a member's offset
         long long value = 0;             // an enumerator's, a folded static member's
         bool isConst = false, isThreadLocal = false;    // a global's
+        bool hasThis = false;                            // a call's: its function type's first parameter is the object's address
         std::string name;                                // a global's or a function's lookup name, which its Var is named by
     };
     std::vector<Resolved> resolvedTable_;
@@ -573,7 +580,7 @@ private:
     // What a sizeof, alignof or noexcept node folded to, and its type: the constant the adapter writes (M2.12).
     std::unordered_map<std::uint32_t, std::pair<long long, const Type *> > keywordValues_;
     // The `function` nodes whose names outside them are not the file's - a member's, a namespace's, a template's.
-    std::set<std::uint32_t> scopedFunctions_;
+    std::map<std::uint32_t, int> scopedFunctions_;   // a body's scope: 1 a member, 2 a namespace, 4 a qualified name, 8 a template
     // **What the parser decides of layout as it reads, by node** (M2.11): a `var`'s frame slot, a block's or a `for`'s
     // scope, and the symbol a `function` node was defined as - what the adapter cannot derive from types.
     std::unordered_map<std::uint32_t, Local> declaredLocals_;
@@ -1421,6 +1428,8 @@ private:
     // its body reads them without a capture, [expr.prim.lambda]/12 (1.27).
     std::map<std::string, std::vector<Local> > closureConstants_;
     std::vector<Local> constantLocals() const;
+    // Each closure's call-operator tokens, as appended for its replay: where its captures are its names.
+    std::map<std::string, std::pair<std::size_t, std::size_t> > closureTokens_;
     bool hasOrdinaryMember(const Type *cls, const std::string &name);
     // Does this type mention a template parameter - the one test the pattern read's stand-ins ask.
     bool dependentType(const Type *t) const;
