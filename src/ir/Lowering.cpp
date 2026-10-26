@@ -1211,7 +1211,7 @@ Lowering::Val Lowering::convert(Val v, TypeId to, bool cast) {
         if (from.isPointer()) {
             if (from.pointee()->unqualified()->isStructOrUnion() && t.pointee()->unqualified()->isStructOrUnion() &&
                 from.pointee()->unqualified() != t.pointee()->unqualified())
-                outside("a conversion of a pointer to a class to one to another class");
+                return toBase(v, to);
             return Val(result(add(Op::Bitcast, to, std::vector<ValueId>(1, v.v))), to);
         }
         if (!cast) outside("a conversion of a number to a pointer");
@@ -1489,6 +1489,43 @@ Lowering::Val Lowering::assign(sema::TypedId id) {
 }
 
 // A call of the function the parser recorded, by its symbol, or through a pointer to a function.
+// [conv.ptr]/3: a pointer to a class to one to its unambiguous non-virtual base, by the base's offset in the class,
+// a null pointer kept null. A cast down, across, or to a virtual base stays outside.
+Lowering::Val Lowering::toBase(Val v, TypeId to) {
+    const Type &from = *T(v.type).pointee()->unqualified(), &base = *T(to).pointee()->unqualified();
+    int found = 0, offset = 0;
+    basePaths(from, base, 0, found, offset);
+    if (found != 1) outside("a conversion of a pointer to a class to one that is not its base");
+    if (offset == 0) return Val(result(add(Op::Bitcast, to, std::vector<ValueId>(1, v.v))), to);
+    const Val nonNull = truth(v);
+    const BlockId step = newBlock(), null = newBlock(), merge = newBlock();
+    condbr(nonNull.v, step, null);
+    place(step);
+    const InstId g = add(Op::Gep, to, std::vector<ValueId>(1, v.v));
+    at(g).k = offset;
+    br(merge, std::vector<ValueId>(1, result(g)));
+    place(null);
+    br(merge, std::vector<ValueId>(1, result(add(Op::Null, to, std::vector<ValueId>()))));
+    place(merge);
+    return Val(param(merge, to), to);
+}
+
+// Every path from `cls` down its direct bases to `base`, as the parser walks them; a virtual one stays outside.
+void Lowering::basePaths(const Type &cls, const Type &base, int at, int &found, int &offset) {
+    for (const Type::BaseSpec &b : cls.bases()) {
+        if (!b.direct) continue;
+        const Type &bt = *b.type->unqualified();
+        if (b.isVirtual) {
+            int through = &bt == &base ? 1 : 0, ignored = 0;
+            if (through == 0) basePaths(bt, base, 0, through, ignored);
+            if (through != 0) outside("a conversion through a virtual base");
+            continue;
+        }
+        if (&bt == &base) { found++; offset = at + b.offset; }
+        else basePaths(bt, base, at + b.offset, found, offset);
+    }
+}
+
 // Whether the program's global of this symbol is a thread_local: a block-scope one's record is made before its mark.
 bool Lowering::threadLocalGlobal(const std::string &symbol) const {
     for (const ::Global &g : program_.globals)

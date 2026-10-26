@@ -138,6 +138,8 @@ private:
     bool simpleLayout(const Type &cls) const;
     bool pseudoDestructor(sema::TypedId member);
     bool threadLocalGlobal(const std::string &symbol) const;
+    Val toBase(Val v, TypeId to);
+    void basePaths(const Type &cls, const Type &base, int at, int &found, int &offset);
     void memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32_t to);
     void classLocal(sema::TypedId var, ValueId slot, const Type &t);
     void copyObject(ValueId to, ValueId from, const Type &t);
