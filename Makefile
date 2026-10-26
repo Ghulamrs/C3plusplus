@@ -155,6 +155,7 @@ test: $(TARGET)
 	@CXX1=$(TARGET) ./tests/syntax.sh
 	@CXX1=$(TARGET) ./tests/typed.sh
 	@CXX1=$(TARGET) ./tests/adapted.sh
+	@CXX1=$(TARGET) ./tests/ssa.sh
 	@CXX1=$(TARGET) ./tests/coff.sh
 	@CXX1=$(TARGET) ./tests/c90.sh
 	@CXX1=$(TARGET) ./tests/win-structure.sh

@@ -559,3 +559,57 @@ that pass removes the shape, not the fault. A branch in the web whose predicate 
 Box: `tms6747.sh` 623/0 at -O0, -O1 and -O2 on vm6747 and sim6747, `ti-link.sh` 632 linked at -O2, `asm6x.sh` 637/0;
 `tests/cases/hoist-back-edge-predicate.cpp`. **M7.3-M7.5** (`m7b`) are merged (`cb10ae6`) after a re-measurement from
 a fresh copy - `make test` green, `tests/c90.sh` 446/0 at -O0 and -O2.
+**M3b.1, the SSA IR and the first lowering** (2026-10-26, Fable 5.1, branch `m3b1` off `1b350ae`, commits `2a46504`,
+`d5ea461`, `cb33a21` and the record's; review point 3). What the row asked, and what each part turned out to be -
+`M3-IR.md` 3.12 has the design as built and the answers to 3.11; `M3-RP3-PACKET-FABLE-2026-10-26.md` is the packet:
+
+- **`src/ir/Ir.h`, `IrText.cpp`**: the data model of M3-IR part 3 as handles over `TypeId`, `-dump=ssa` in the format of
+  3.3, `-check=ssa` the verifier of 3.4 (dominance by Cooper-Harvey-Kennedy, block-argument arity and types, one
+  terminator, allocas in the entry), and `tests/ssa.sh`, which runs it over every host case and is in `make test`;
+  `tools/determinism.sh` compares `-dump=ssa` beside `-dump=mir`. No raw pointer in `src/ir`: the second memory count
+  held at 44.
+- **The lowering** (`Lowering.cpp`) reaches **the scalar core of the adapter's subset, in the adapter's scope**: free
+  functions at file scope - a member's, a namespace's or a template specialization's body stays the parser's, as the
+  adapter left them - over scalars, pointers, references to scalars, 1-D arrays of scalars and a struct's scalar
+  members, every statement kind but `try`. What the adapter did by reading the parser's layout maps (class objects by
+  their bytes, struct arguments and results, temporaries into the parser's slots, the parser's guards) it refuses by
+  name, 12.1 saying M3's layout is its own; those are M3b.2's rows. Measured over the 649 host cases: **777 of 7,425
+  source bodies lowered, every one verified**; the 6,648 outside are named by reason, the first being a member function
+  (4,320), a template's or scoped body, a function with landing pads (402), one returning a class through a pointer (82).
+- **Selection** is the walker re-pointed (`SsaSelect.cpp`): an 8-byte slot per value above the parser's parameter slots,
+  the walker's canonical form in it, `Call` nodes over `Var`s for the ABI code, `genConversion` for the conversions,
+  the slots handed to the MIR passes as promotable locals, an inlined callee's frame below the selector's layout.
+  **The parser's parameter slots are the one layout fact borrowed** (`receiveParameters` fills them; the selector copies
+  each into its value's slot), to be re-pointed at M3b.2.
+- **`-front=ssa`** selects a lowered function on the two x86 targets and leaves every other to the parser's path; on
+  arm64-darwin and tms6747 the lowering and verifier run and selection does not, so the Mac's run.sh under the flag
+  proves the typed tree is read without a fault and nothing more.
+- **The typed tree gained three facts** (`Typing.h/.cpp`, the M3 line's file, kept small): a `var` typed as declared
+  with its `&`, a string literal's label, a static local's Local record on its `var`; the Typer answers the declared
+  return type, whether a body is a function-try, whether it is scoped and whether its function is a specialization.
+  `-check=typed` exempts the `var` record it has no parser map for; its typed count rose from 128,798 to 140,195 (the
+  `var` nodes), its differ count is 0 as before.
+
+**Three faults the gate found, each mended before the record** - and none by a Mac suite: the Wine stand-in caught the
+four `nontype-*` cases, whose template bodies hold a pack expansion the typed tree records as one node (a specialization's
+body is the parser's now), a call through a call's result emitted as a call of a symbol named `int (*)(int)` (a call
+whose head is not a bare name is a call through the value), and `stack-probe`'s frame doubled past `UWOP_ALLOC_LARGE`'s
+one slot (the selector's frame begins above the parameter slots, not the parser's whole frame); reading `walkInPlace`
+found an inlined callee laid over the selector's slots at -O2.
+
+The gate, on `cb33a21`. **Mac** (clang, `make test` green): run.sh **989/0** with the flag off and **989/0 under
+`-front=ssa` at -O0 and at -O2**; emit.sh 1,933/0; names.sh 656/0; overload.sh 44/0; syntax.sh 3/0; typed.sh 649/0;
+adapted.sh 649/0 (1,270 adapted); **ssa.sh 649/0, 777 lowered, 777 verified**; exclusions 126 sites 0/0; comment cap 0;
+memory gate held (`new` 1,060, `raw-pointers` 44). `identical.sh` against the REF of `1b350ae` built in
+`~/cxxopt-build/ref-1b350ae`, flag off: **6,048 compared, 0 differ**. `determinism.sh`: **21,368 outputs compared
+(3,984 `-dump=mir`, 2,988 `-dump=ssa`), 0 differ**. **Windows, the Wine stand-in** (`tools/wine-cases.sh`, x86_64-windows
+objects by `cxx3 -c`, linked by the project's LINK, run under Wine 6.0.3 on the Linux box): **617 passed, 2 failed at
+-O0 and at -O2 under the flag**, the two `noexcept-terminates` and `temporary-unwind`, Wine's unwinder (the baseline's
+own); recorded as a stand-in, the box's rows owed. **Linux** (g++ 11.5, `~/m3b1-b`, the tree at `d5ea461` - one commit before the record): run.sh **987 passed, 4
+failed under `-front=ssa` at -O0 and at -O2**, the four the `nontype-*` pack cases that `cb33a21` returns to the
+parser's path (the Wine stand-in on `cb33a21` reads them passing at both levels); the control run with the flag off
+**991/0 at -O0 and -O2**; the ledger cases under the flag at -O0 **balance** (`lifetime-ledger` built=12 gone=12 live=0,
+`for-init-unwinds` built=5 gone=5 live=0); ssa.sh 649/0 (799 lowered on that tree), typed.sh 649/0. **The Linux leg of
+`cb33a21` itself is owed**: it was queued on the box behind the earlier leg and never ran (the waiting job was killed
+with the Mac's); its one difference from `d5ea461` is the template rule, and the stand-in's 617/2 on `cb33a21` is
+what says the four are mended on x86.

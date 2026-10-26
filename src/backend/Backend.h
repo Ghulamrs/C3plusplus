@@ -15,10 +15,14 @@
 class Source;
 namespace masm { struct Instruction; }
 
+namespace ir { struct Module; }
+
 class CodeGen : public Visitor {
 public:
     ~CodeGen() override = default;
     virtual void run(const Program &program) = 0;
+    // **-front=ssa** (M3b.1): a function the module holds is selected from its SSA; a generator with no selector ignores it.
+    virtual void setSsa(const ir::Module *module, const TypeTable *types) { (void)module; (void)types; }
     // **The structural door** (M4.4): a spelling that hands instructions to the encoder library as data appends them here, leaving a `\001k` line in its text.
     virtual void setStructured(std::vector<masm::Instruction> *to) { (void)to; }
 
