@@ -29,6 +29,7 @@ const ir::Function *X86_64Linux::ssaFunction(const Function &fn) const {
 int X86_64Linux::layoutSsa(const Function &fn, const ir::Function &f) {
     long long cur = 0;
     for (const Param &p : fn.params()) cur = std::max(cur, static_cast<long long>(p.offset));
+    cur = std::max(cur, static_cast<long long>(fn.sretSlot()));   // where the prologue keeps the caller's result pointer
     cur = roundUp(cur, 16);
     ssaAllocaSlot_.assign(f.frame.size(), 0);
     for (std::size_t i = 0; i < f.frame.size(); i++) {
@@ -333,6 +334,17 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         a_->ins("jmp", lbl(ssaBlockLabel(i.succ[0].block)));
         return;
     case ir::Op::Ret:
+        if (i.count == 1 && ssaTypes_->type(f.returns)->isStructOrUnion()) {
+            // A class's address: the walker's own return copies it out - through the result pointer or into registers.
+            std::unique_ptr<Var> p(Var::local("$v" + std::to_string(f.operand(i, 0).v),
+                                              static_cast<int>(ssaValueSlot_[f.operand(i, 0).v])));
+            p->setType(typeOf(f, f.operand(i, 0)));
+            std::unique_ptr<Unary> d = make_owned<Unary>('*', ExprPtr(p.release()));
+            d->setType(ssaTypes_->type(f.returns));
+            Return r{ExprPtr(d.release())};
+            r.accept(*this);
+            return;
+        }
         if (i.count == 1) ssaLoad(f, f.operand(i, 0));
         a_->ins("jmp", lbl(returnLabel_));
         return;

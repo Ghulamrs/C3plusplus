@@ -291,7 +291,6 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
     hasGoto_ = false;
     try {
         if (facts.variadic) outside("a variadic function");
-        if (facts.sret) outside("a function returning a class through a pointer");
         if (facts.landingPads) outside("a function with landing pads");
         Function &f = F();
         f.symbol = facts.symbol;
@@ -303,7 +302,8 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         returns_ = T(facts.returns).isReference() ? facts.returns : tid(*T(facts.returns).unqualified());
         f.returns = returns_;
         const Type &rt = T(returns_);
-        if (!(rt.isVoid() || scalar(rt) || (rt.isReference() && referable(*rt.referent())))) outside("a return type of '" + rt.describe() + "'");
+        if (!(rt.isVoid() || scalar(rt) || plainClass(rt) || (rt.isReference() && referable(*rt.referent()))))
+            outside("a return type of '" + rt.describe() + "'");
         if (rt.isX87(target_)) outside("an x87 long double");
         // A constructor and a destructor of a class with a base, a vptr or a member that needs building or
         // destroying are M3b.3's: what they do beyond their syntax comes from the class's layout.
@@ -385,7 +385,9 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         if (rt.isVoid()) {
             add(Op::Ret, TypeId(), std::vector<ValueId>());
         } else {
-            const TypeId carried = rt.isReference() ? tid(*types_.pointerTo(rt.referent())) : returns_;
+            // A reference and a class are returned as an address: the selector copies a class out by the ABI's rule.
+            const TypeId carried = rt.isReference() ? tid(*types_.pointerTo(rt.referent()))
+                                 : rt.isStructOrUnion() ? tid(*types_.pointerTo(&rt)) : returns_;
             const ValueId rv = param(returnBlock_, carried);
             add(Op::Ret, TypeId(), std::vector<ValueId>(1, rv));
         }
@@ -541,6 +543,14 @@ void Lowering::returnStmt(sema::TypedId id) {
         if (T(a.type).unqualified() != rt.referent()->unqualified()) outside("a reference returned to another type");
         if (T(a.type).isConst() && !rt.referent()->isConst()) outside("a reference that can write returned from a const");
         const InstId c = add(Op::Bitcast, tid(*types_.pointerTo(rt.referent())), std::vector<ValueId>(1, a.v));
+        br(returnBlock_, std::vector<ValueId>(1, result(c)));
+        return;
+    }
+    if (rt.isStructOrUnion()) {
+        if (!isLvalueNode(child(id, 0))) outside("a class returned from what is not an object");
+        const Val a = lvalue(child(id, 0));
+        if (T(a.type).unqualified() != &rt) outside("a class returned from another type");
+        const InstId c = add(Op::Bitcast, tid(*types_.pointerTo(&rt)), std::vector<ValueId>(1, a.v));
         br(returnBlock_, std::vector<ValueId>(1, result(c)));
         return;
     }
