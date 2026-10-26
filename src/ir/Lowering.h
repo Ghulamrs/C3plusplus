@@ -21,12 +21,12 @@ namespace ir {
 // What the lowering is told of the function being lowered, which Ast.h's Function carries and the typed tree does not.
 struct FunctionFacts {
     std::string symbol, displayName;
-    bool isStatic, isInline, variadic, hasThis, sret, landingPads, noexcept_;
+    bool isStatic, isInline, variadic, hasThis, sret, landingPads, wrappedBody, noexcept_;
     TypeId returns;
     TypeId thisType;        // a member function's `this`, the first of the parser's parameter slots
     std::size_t pos, paramCount;
     FunctionFacts() : isStatic(false), isInline(false), variadic(false), hasThis(false), sret(false), landingPads(false),
-                      noexcept_(false), pos(0), paramCount(0) {}
+                      wrappedBody(false), noexcept_(false), pos(0), paramCount(0) {}
 };
 
 class Lowering {
@@ -43,10 +43,14 @@ public:
     void setConstructed(std::function<bool(const Type *)> f) { constructed_ = f; }
     void setAssigned(std::function<bool(const Type *)> f) { assigned_ = f; }
     void setDefaultInit(std::function<bool(const Type *, const std::string &)> f) { defaultInit_ = f; }
+    void setTypeInfo(std::function<std::string(const Type *)> f) { typeInfo_ = f; }
 private:
     struct Outside { std::string why; explicit Outside(const std::string &w) : why(w) {} };
     struct Val { ValueId v; TypeId type; Val() {} Val(ValueId a, TypeId t) : v(a), type(t) {} };
-    struct Loop { BlockId brk, cont; };
+    struct Loop { BlockId brk, cont; std::size_t handlers; };
+    // A landing pad a call inside its region unwinds to (M3-IR 3.6): a try's, or a handler's end-catch cleanup. Its block is
+    // made on first use; `types` is the whole action chain, own handlers first, then the enclosing pads' - the walker's.
+    struct Pad { BlockId block; ValueId ptr, sel; bool cleanup; std::vector<std::string> types; std::vector<int> indices; std::size_t own; };
     struct SwitchCtx { std::vector<long long> values; std::vector<BlockId> targets; BlockId deflt; BlockId brk; };
 
     // The builder: a new instruction in the current block, its result value made where `type` is one.
@@ -84,6 +88,14 @@ private:
     void forStmt(sema::TypedId id);
     void switchStmt(sema::TypedId id);
     BlockId labelBlock(const std::string &name);
+    void tryStatement(sema::TypedId id);
+    BlockId padBlock(Pad &p);
+    void resumeFrom(const Pad &p, const Pad *enclosing);
+    void endCatches(std::size_t n);
+    int typeIndexFor(const std::string &sym);
+    ValueId entryAlloca(TypeId slotType, const std::string &name);
+    Val runtimeCall(const char *symbol, TypeId returns, const std::vector<ValueId> &args);
+    InstId callOrInvoke(TypeId carries, const std::vector<ValueId> &ops);
 
     // Expressions: an rvalue, or an object's address with its type.
     Val expr(sema::TypedId id);
@@ -144,6 +156,10 @@ private:
     TypeId thisType_;
     std::function<bool(const Type *)> constructed_, assigned_;
     std::function<bool(const Type *, const std::string &)> defaultInit_;
+    std::function<std::string(const Type *)> typeInfo_;
+    std::vector<Pad> pads_;                     // innermost last
+    std::vector<std::string> typeTable_;        // the function's selector indices: one per type, first occurrence, 1-based
+    std::size_t handlerDepth_;                  // handlers the statement being lowered is inside
     BlockId returnBlock_;
     std::map<std::uint32_t, std::pair<ValueId, TypeId> > locals_;    // a `var` node -> its alloca and declared type
     std::vector<Loop> loops_;

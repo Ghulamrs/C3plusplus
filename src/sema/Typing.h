@@ -127,6 +127,7 @@ public:
     // A body read in a class's, a namespace's or a template's scope (Parser::scopedFunctions_), which the adapter left alone too.
     int scopedBody(syntax::NodeId fn) const;
     bool packBody(const std::string &symbol) const;
+    std::string typeInfoSymbol(const Type *t) const;   // the type_info a catch of t names, Sema's; empty where none can be made
     bool constructed(const Type *cls) const;          // a class some constructor builds, written or implicit
     bool assigned(const Type *cls) const;             // a class with an operator= of its own, written or implicit
     bool defaultInit(const Type *cls, const std::string &member) const;   // the member has an initialiser of its own   // a pack was expanded in the body: one node stands for its members   // Parser::scopedFunctions_'s bits, 0 for a body at file scope

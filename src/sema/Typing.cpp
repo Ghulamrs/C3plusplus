@@ -460,6 +460,7 @@ int Typer::scopedBody(syntax::NodeId fn) const {
 
 bool Typer::packBody(const std::string &symbol) const { return p_.packBodies_.count(symbol) != 0; }
 
+std::string Typer::typeInfoSymbol(const Type *t) const { std::string why; return p_.classes_.typeInfoSymbolFor(t, 0, &why); }
 bool Typer::constructed(const Type *cls) const { return p_.hasConstructors(cls->unqualified()->tag()); }
 
 bool Typer::defaultInit(const Type *cls, const std::string &member) const {

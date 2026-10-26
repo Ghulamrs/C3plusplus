@@ -1355,6 +1355,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     lowering.setConstructed([&typer](const Type *cls) { return typer.constructed(cls); });
     lowering.setAssigned([&typer](const Type *cls) { return typer.assigned(cls); });
     lowering.setDefaultInit([&typer](const Type *cls, const std::string &m) { return typer.defaultInit(cls, m); });
+    lowering.setTypeInfo([&typer](const Type *t) { return typer.typeInfoSymbol(t); });
     std::map<std::string, int> reasons;
     int lowered = 0;
     for (std::size_t r = 0; r < c.bodies.size(); r++) {
@@ -1368,7 +1369,8 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         facts.variadic = fn.isVariadic();
         facts.hasThis = fn.hasThis();
         facts.sret = fn.sretSlot() != 0;
-        facts.landingPads = fn.hasLandingPads() || typer.wrappedBody(fn.symbol());
+        facts.landingPads = fn.hasLandingPads();
+        facts.wrappedBody = typer.wrappedBody(fn.symbol()) || !fn.exceptionSpec().empty();
         facts.noexcept_ = fn.isNoexcept();
         facts.pos = fn.pos();
         facts.paramCount = fn.params().size();

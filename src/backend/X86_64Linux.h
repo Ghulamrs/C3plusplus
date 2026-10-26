@@ -231,6 +231,9 @@ private:
     std::string ssaBlockLabel(ir::BlockId b) const;
     void ssaBranchArgs(const ir::Function &f, const ir::Succ &s);
     void ssaUnsupported(const ir::Inst &i);
+    void selectCall(const ir::Function &f, const ir::Inst &i, const Type *rt);
+    std::string ssaLandLabel(ir::BlockId b) const;
+    int ssaRegionAt_ = 0;
     void selectInst(const ir::Function &f, const ir::Inst &i);
     void selectBody(const Function &fn, const ir::Function &f);
     std::vector<opt::Local> scalarsOf(const Function &fn) const;

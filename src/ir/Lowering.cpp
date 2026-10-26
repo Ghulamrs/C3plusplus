@@ -10,7 +10,7 @@ namespace ir {
 
 Lowering::Lowering(const sema::TypedTree &tree, const syntax::Tree &syntax, TypeTable &types, const Target &target,
                    Program &program, Module &into)
-    : tree_(tree), syntax_(syntax), types_(types), target_(target), program_(program), module_(into), fnIndex_(0), hasGoto_(false) {}
+    : tree_(tree), syntax_(syntax), types_(types), target_(target), program_(program), module_(into), fnIndex_(0), handlerDepth_(0), hasGoto_(false) {}
 
 void Lowering::outside(const std::string &why) { throw Outside(why); }
 
@@ -148,7 +148,7 @@ InstId Lowering::add(Op op, TypeId type, const std::vector<ValueId> &ops) {
     i.count = static_cast<std::uint32_t>(ops.size());
     for (ValueId v : ops) f.operands.push_back(v);
     const InstId id(static_cast<std::uint32_t>(f.insts.size()));
-    if (type.valid() && !T(type).isVoid() && op != Op::Store && op != Op::Memcpy && op != Op::Memset && !isTerminator(op)) {
+    if (type.valid() && !T(type).isVoid() && op != Op::Store && op != Op::Memcpy && op != Op::Memset && (!isTerminator(op) || op == Op::Invoke)) {
         Value v;
         v.type = type;
         v.def = id;
@@ -289,9 +289,14 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
     switches_.clear();
     labels_.clear();
     hasGoto_ = false;
+    pads_.clear();
+    typeTable_.clear();
+    handlerDepth_ = 0;
     try {
         if (facts.variadic) outside("a variadic function");
-        if (facts.landingPads) outside("a function with landing pads");
+        if (facts.wrappedBody) outside("a function try block or an exception specification");
+        if (facts.landingPads && facts.noexcept_) outside("a noexcept function with landing pads");
+        if (facts.landingPads && target_.microsoftNames()) outside("exceptions on the Microsoft ABI");
         Function &f = F();
         f.symbol = facts.symbol;
         f.displayName = facts.displayName;
@@ -319,9 +324,18 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         if (n == 0) outside("a function with no body");
         const sema::TypedId body = child(fnNode, n - 1);
         if (syn(body).kind != syntax::Kind::Block) outside("a body that is not a block");
-        std::uint32_t params = 0;       // the parameters lead; a constructor's mem-initialisers follow them
-        while (params + 1 < n && syn(child(fnNode, params)).kind == syntax::Kind::Var) params++;
-        if (params + 1 != n && !isCtor) outside("a function part that is neither a parameter nor its body");
+        // The parameters, then a constructor's mem-initialisers, then the body. A declarator's array bounds and a
+        // template-id's arguments are noted among the parameters: constants the parameter types already hold.
+        std::vector<sema::TypedId> paramNodes;
+        std::uint32_t inits = n - 1;
+        for (std::uint32_t i = 0; i + 1 < n; i++) {
+            const syntax::Kind k = syn(child(fnNode, i)).kind;
+            if (k == syntax::Kind::MemInit) { inits = i; break; }
+            if (k == syntax::Kind::Var) paramNodes.push_back(child(fnNode, i));
+            else if (k != syntax::Kind::IntLit) outside("a function part that is neither a parameter nor its body");
+        }
+        if (inits != n - 1 && !isCtor) outside("a mem-initialiser outside a constructor");
+        const std::uint32_t params = static_cast<std::uint32_t>(paramNodes.size());
         if (params + (facts.hasThis ? 1 : 0) != facts.paramCount) outside("a parameter list the typed tree and the function disagree about");
         f.entry = newBlock();
         place(f.entry);
@@ -337,7 +351,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         }
         // The parameters: a value each, copied into an alloca so that every local is one (no mem2reg at M3b.1).
         for (std::uint32_t i = 0; i < params; i++) {
-            const sema::TypedId p = child(fnNode, i);
+            const sema::TypedId p = paramNodes[i];
             if (syn(p).kind != syntax::Kind::Var) outside("a parameter that is not a var");
             if (tree_.node(p).type == nullptr) outside("a parameter not typed");
             const Type &pt = *tree_.node(p).type;
@@ -375,7 +389,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         const BlockId first = newBlock();
         br(first);
         place(first);
-        if (isCtor) memberInits(fnNode, params, n - 1);
+        if (isCtor) memberInits(fnNode, inits, n - 1);
         block(body);
         if (!terminated()) {
             if (!rt.isVoid()) outside("a body that falls off its end without a value");
@@ -417,6 +431,7 @@ void Lowering::stmt(sema::TypedId id) {
         expr(child(id, 0));
         return;
     case syntax::Kind::Return: returnStmt(id); return;
+    case syntax::Kind::Try: tryStatement(id); return;
     case syntax::Kind::If: {
         if (n != 2 && n != 3) outside("an if of " + std::to_string(n) + " parts");
         if (syn(child(id, 0)).kind == syntax::Kind::DeclStmt) outside("a declaration in a condition");
@@ -444,7 +459,7 @@ void Lowering::stmt(sema::TypedId id) {
         const Val c = truth(expr(child(id, 0)));
         condbr(c.v, body, exit);
         place(body);
-        loops_.push_back(Loop{ exit, cond });
+        loops_.push_back(Loop{ exit, cond, handlerDepth_ });
         stmt(child(id, 1));
         loops_.pop_back();
         br(cond);
@@ -456,7 +471,7 @@ void Lowering::stmt(sema::TypedId id) {
         const BlockId body = newBlock(), cond = newBlock(), exit = newBlock();
         br(body);
         place(body);
-        loops_.push_back(Loop{ exit, cond });
+        loops_.push_back(Loop{ exit, cond, handlerDepth_ });
         stmt(child(id, 0));
         loops_.pop_back();
         br(cond);
@@ -490,11 +505,12 @@ void Lowering::stmt(sema::TypedId id) {
     }
     case syntax::Kind::Break:
         if (loops_.empty()) outside("a break outside a loop or switch");
+        endCatches(handlerDepth_ - loops_.back().handlers);
         br(loops_.back().brk);
         return;
     case syntax::Kind::Continue: {
         for (std::size_t i = loops_.size(); i-- > 0; )
-            if (loops_[i].cont.valid()) { br(loops_[i].cont); return; }
+            if (loops_[i].cont.valid()) { endCatches(handlerDepth_ - loops_[i].handlers); br(loops_[i].cont); return; }
         outside("a continue outside a loop");
         return;
     }
@@ -507,6 +523,7 @@ void Lowering::stmt(sema::TypedId id) {
         return;
     }
     case syntax::Kind::Goto:
+        if (handlerDepth_ != 0 || !pads_.empty()) outside("a goto inside a try or a handler");
         hasGoto_ = true;
         br(labelBlock(text(id)));
         return;
@@ -528,13 +545,13 @@ void Lowering::returnStmt(sema::TypedId id) {
     const Type &rt = T(returns_);
     if (n == 0) {
         if (!rt.isVoid()) outside("a return with no value");
-        br(returnBlock_);
+        endCatches(handlerDepth_); br(returnBlock_);
         return;
     }
     if (n == 1 && rt.isVoid()) {
         const Val v = expr(child(id, 0));
         if (v.type.valid() && !T(v.type).isVoid()) outside("a return of a value from a void function");
-        br(returnBlock_);
+        endCatches(handlerDepth_); br(returnBlock_);
         return;
     }
     if (n != 1) outside("a return of " + std::to_string(n) + " parts");
@@ -543,7 +560,7 @@ void Lowering::returnStmt(sema::TypedId id) {
         if (T(a.type).unqualified() != rt.referent()->unqualified()) outside("a reference returned to another type");
         if (T(a.type).isConst() && !rt.referent()->isConst()) outside("a reference that can write returned from a const");
         const InstId c = add(Op::Bitcast, tid(*types_.pointerTo(rt.referent())), std::vector<ValueId>(1, a.v));
-        br(returnBlock_, std::vector<ValueId>(1, result(c)));
+        endCatches(handlerDepth_); br(returnBlock_, std::vector<ValueId>(1, result(c)));
         return;
     }
     if (rt.isStructOrUnion()) {
@@ -555,7 +572,7 @@ void Lowering::returnStmt(sema::TypedId id) {
         return;
     }
     const Val v = exprTo(child(id, 0), returns_);
-    br(returnBlock_, std::vector<ValueId>(1, v.v));
+    endCatches(handlerDepth_); br(returnBlock_, std::vector<ValueId>(1, v.v));
 }
 
 // A `for` keeps its parts in order and leaves an empty one out, so only the four-part shape - and `for (;;)` - can be
@@ -577,7 +594,7 @@ void Lowering::forStmt(sema::TypedId id) {
         br(body);
     }
     place(body);
-    loops_.push_back(Loop{ exit, step });
+    loops_.push_back(Loop{ exit, step, handlerDepth_ });
     stmt(child(id, n - 1));
     loops_.pop_back();
     br(step);
@@ -598,7 +615,7 @@ void Lowering::switchStmt(sema::TypedId id) {
     SwitchCtx ctx;
     ctx.brk = exit;
     switches_.push_back(ctx);
-    loops_.push_back(Loop{ exit, BlockId() });
+    loops_.push_back(Loop{ exit, BlockId(), handlerDepth_ });
     place(body);
     stmt(child(id, 1));
     br(exit);
@@ -1531,9 +1548,233 @@ Lowering::Val Lowering::call(sema::TypedId id) {
     const std::uint32_t callIndex = static_cast<std::uint32_t>(f.calls.size());
     f.calls.push_back(info);
     const TypeId carries = gives.isVoid() ? TypeId() : gives.isReference() ? tid(*types_.pointerTo(gives.referent())) : tid(gives);
-    const InstId c = add(Op::Call, carries, ops);
+    const InstId c = callOrInvoke(carries, ops);
     at(c).call = callIndex;
     return Val(result(c), carries.valid() ? carries : tid(gives));
+}
+
+// ----- exceptions (M3-IR 3.6, the Itanium half)
+
+// A call inside a try's body or a handler is an invoke: it continues in a fresh block and unwinds to the innermost pad.
+InstId Lowering::callOrInvoke(TypeId carries, const std::vector<ValueId> &ops) {
+    if (pads_.empty()) return add(Op::Call, carries, ops);
+    const BlockId pad = padBlock(pads_.back());
+    const BlockId normal = newBlock();
+    const InstId c = add(Op::Invoke, carries, ops);
+    Succ n, u;
+    n.block = normal;
+    u.block = pad;
+    at(c).succ.push_back(n);
+    at(c).succ.push_back(u);
+    place(normal);
+    return c;
+}
+
+// A call of the runtime's own: never an invoke, the way the parser's runtimeCall is written.
+Lowering::Val Lowering::runtimeCall(const char *symbol, TypeId returns, const std::vector<ValueId> &args) {
+    std::vector<const Type *> params;
+    for (std::size_t i = 0; i < args.size(); i++) params.push_back(&T(F().value(args[i]).type));
+    CallInfo info;
+    info.symbol = symbol;
+    info.signature = tid(*types_.functionType(&T(returns), params, false));
+    info.namedArgs = static_cast<int>(params.size());
+    Function &f = F();
+    const std::uint32_t callIndex = static_cast<std::uint32_t>(f.calls.size());
+    f.calls.push_back(info);
+    const TypeId carries = T(returns).isVoid() ? TypeId() : returns;
+    const InstId c = add(Op::Call, carries, args);
+    at(c).call = callIndex;
+    return Val(result(c), returns);
+}
+
+// One selector index per type_info, however many rows name it - the parser's typeIndexFor, per function.
+int Lowering::typeIndexFor(const std::string &sym) {
+    for (std::size_t i = 0; i < typeTable_.size(); i++) if (typeTable_[i] == sym) return static_cast<int>(i) + 1;
+    typeTable_.push_back(sym);
+    return static_cast<int>(typeTable_.size());
+}
+
+// A pad's block, made on first use: the runtime arrives with the exception pointer and the selector as its parameters.
+BlockId Lowering::padBlock(Pad &p) {
+    if (p.block.valid()) return p.block;
+    p.block = newBlock();
+    F().blockArena[p.block.v].pad = true;
+    p.ptr = param(p.block, tid(*types_.pointerTo(types_.voidType())));
+    p.sel = param(p.block, tid(*types_.get(Kind::Int)));
+    return p.block;
+}
+
+// An alloca in the entry block, whatever block the statement stands in; its value is the object's address.
+ValueId Lowering::entryAlloca(TypeId slotType, const std::string &name) {
+    Function &f = F();
+    AllocaInfo a;
+    a.type = slotType;
+    a.align = T(slotType).align(target_);
+    a.name = name;
+    Inst in;
+    in.op = Op::Alloca;
+    in.type = tid(*types_.pointerTo(&T(slotType)));
+    in.first = static_cast<std::uint32_t>(f.operands.size());
+    in.k = static_cast<long long>(f.frame.size());
+    in.align = a.align;
+    const InstId al(static_cast<std::uint32_t>(f.insts.size()));
+    Value val;
+    val.type = in.type;
+    val.def = al;
+    in.result = ValueId(static_cast<std::uint32_t>(f.values.size()));
+    f.values.push_back(val);
+    f.insts.push_back(in);
+    f.blockArena[f.entry.v].insts.push_back(al);
+    f.frame.push_back(a);
+    return result(al);
+}
+
+// Where a pad goes when it is done: the enclosing pad with the same pointer and selector, or out of the frame.
+void Lowering::resumeFrom(const Pad &p, const Pad *enclosing) {
+    if (enclosing != nullptr) {
+        std::vector<ValueId> args;
+        args.push_back(p.ptr);
+        args.push_back(p.sel);
+        br(padBlock(*const_cast<Pad *>(enclosing)), args);
+        return;
+    }
+    runtimeCall("_Unwind_Resume", tid(*types_.voidType()), std::vector<ValueId>(1, p.ptr));
+    add(Op::Unreachable, TypeId(), std::vector<ValueId>());
+}
+
+// [except.handle]/16: a jump out of n handlers ends each catch, innermost first.
+void Lowering::endCatches(std::size_t n) {
+    for (std::size_t i = 0; i < n; i++) runtimeCall("__cxa_end_catch", tid(*types_.voidType()), std::vector<ValueId>());
+}
+
+// **A `try` and its handlers, as the parser writes them for the Itanium ABI**: the body's calls unwind to one pad, whose
+// chain tests the selector against each handler's index and hands what nothing matched to the enclosing pad or to
+// _Unwind_Resume; a handler begins its catch, binds its object, and ends it on every way out (a jump: endCatches; a throw: its own cleanup pad).
+void Lowering::tryStatement(sema::TypedId id) {
+    const std::uint32_t n = count(id);
+    if (n < 2) outside("a try with no handler");
+    const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType()));
+    struct Handler { sema::TypedId node, var, body; const Type *caught; std::string sym; int index; };
+    std::vector<Handler> hs;
+    Pad p;
+    p.cleanup = false;
+    p.own = n - 1;
+    for (std::uint32_t i = 1; i < n; i++) {
+        Handler h;
+        h.node = child(id, i);
+        if (syn(h.node).kind != syntax::Kind::Catch) outside("a try whose part is not a handler");
+        const std::uint32_t parts = count(h.node);
+        h.caught = nullptr;
+        h.index = 0;
+        if (parts == 1 && text(h.node) == "...") {
+            h.body = child(h.node, 0);
+        } else if (parts == 2 && syn(child(h.node, 0)).kind == syntax::Kind::Var) {
+            h.var = child(h.node, 0);
+            h.body = child(h.node, 1);
+            const Type *t = tree_.node(h.var).type;
+            if (t == nullptr) outside("a caught object not typed");
+            h.caught = t->isReference() ? t->referent()->unqualified() : t->unqualified();
+            if (t->isReference() ? !referable(*h.caught) : (!scalar(*h.caught) || h.caught->isPointer() || h.caught->isX87(target_)))
+                outside("a catch of '" + t->describe() + "'");
+            if (!typeInfo_) outside("a catch with no type_info to name");
+            h.sym = typeInfo_(h.caught);
+            if (h.sym.empty()) outside("a catch of a type with no type_info");
+        } else {
+            // `catch (T)` with no name has no var node; so, in one shape of the suite, has a named one the tree lost (M3-PLAN).
+            outside(parts == 1 ? "a handler whose caught object the syntax tree does not hold" : "a handler of " + std::to_string(parts) + " parts");
+        }
+        h.index = typeIndexFor(h.sym);
+        hs.push_back(h);
+        p.types.push_back(h.sym);
+        p.indices.push_back(h.index);
+    }
+    // The chain goes on with the enclosing pads' types, each once; a cleanup anywhere outside asks for the filter-0 row.
+    for (std::size_t k = pads_.size(); k-- > 0; ) {
+        const Pad &outer = pads_[k];
+        if (outer.cleanup) p.cleanup = true;
+        for (std::size_t t = 0; t < outer.types.size(); t++) {
+            bool have = false;
+            for (std::size_t c = 0; c < p.types.size(); c++) if (p.types[c] == outer.types[t] && p.indices[c] == outer.indices[t]) have = true;
+            if (!have) { p.types.push_back(outer.types[t]); p.indices.push_back(outer.indices[t]); }
+        }
+    }
+    const BlockId done = newBlock();
+    pads_.push_back(p);
+    block(child(id, 0));
+    p = pads_.back();
+    pads_.pop_back();
+    br(done);
+    if (!p.block.valid()) { place(done); return; }       // nothing in the body could throw: the handlers are dead code
+    // The enclosing pad by index: pads_ grows under a handler and a pointer into it would not survive.
+    const std::size_t encAt = pads_.size();
+    const Pad *enclosing = encAt != 0 ? &pads_[encAt - 1] : nullptr;
+
+    place(p.block);
+    const InstId cp = add(Op::CatchPad, TypeId(), std::vector<ValueId>());
+    at(cp).syms = p.types;
+    for (std::size_t i = 0; i < p.indices.size(); i++) at(cp).cases.push_back(p.indices[i]);
+    at(cp).k = static_cast<long long>(p.own);
+    at(cp).bits = (p.cleanup ? 1u : 0u) | (enclosing != nullptr ? 2u : 0u);
+    std::vector<BlockId> handlerBlocks;
+    for (std::size_t i = 0; i < hs.size(); i++) {
+        const BlockId hb = newBlock(), next = newBlock();
+        handlerBlocks.push_back(hb);
+        std::vector<ValueId> cmp;
+        cmp.push_back(p.sel);
+        cmp.push_back(iconst(tid(*types_.get(Kind::Int)), hs[i].index));
+        const InstId c = add(Op::ICmp, tid(*types_.get(Kind::Bool)), cmp);
+        at(c).cc = Cmp::Eq;
+        condbr(result(c), hb, next);
+        place(next);
+    }
+    resumeFrom(p, enclosing);
+
+    for (std::size_t i = 0; i < hs.size(); i++) {
+        place(handlerBlocks[i]);
+        const Val obj = runtimeCall("__cxa_begin_catch", voidPtr, std::vector<ValueId>(1, p.ptr));
+        if (hs[i].var.valid()) {
+            const Type &t = *tree_.node(hs[i].var).type;
+            // By value, the scalar is copied out of the exception object; a reference holds what __cxa_begin_catch handed back.
+            const TypeId objPtr = tid(*types_.pointerTo(hs[i].caught));
+            const ValueId asT = result(add(Op::Bitcast, objPtr, std::vector<ValueId>(1, obj.v)));
+            if (t.isReference()) {
+                const TypeId slotType = tid(*types_.pointerTo(t.referent()));
+                const ValueId slot = entryAlloca(slotType, text(hs[i].var));
+                store(slot, result(add(Op::Bitcast, slotType, std::vector<ValueId>(1, asT))));
+                locals_[tree_.node(hs[i].var).syntax.v] = std::make_pair(slot, tid(t));
+            } else {
+                const ValueId slot = entryAlloca(tid(t), text(hs[i].var));
+                store(slot, load(asT, tid(*hs[i].caught)));
+                locals_[tree_.node(hs[i].var).syntax.v] = std::make_pair(slot, tid(t));
+            }
+        }
+        // The handler's own cleanup: an exception out of it ends this catch and goes on to what encloses the try.
+        Pad cleanup;
+        cleanup.cleanup = true;
+        cleanup.own = 0;
+        if (encAt != 0) { cleanup.types = pads_[encAt - 1].types; cleanup.indices = pads_[encAt - 1].indices; }
+        pads_.push_back(cleanup);
+        handlerDepth_++;
+        block(hs[i].body);
+        handlerDepth_--;
+        cleanup = pads_.back();
+        pads_.pop_back();
+        if (!terminated()) {
+            endCatches(1);
+            br(done);
+        }
+        if (cleanup.block.valid()) {
+            place(cleanup.block);
+            const InstId cl = add(Op::CleanupPad, TypeId(), std::vector<ValueId>());
+            at(cl).syms = cleanup.types;
+            for (std::size_t k = 0; k < cleanup.indices.size(); k++) at(cl).cases.push_back(cleanup.indices[k]);
+            // A row of no types is a cleanup by its action 0; the filter-0 record is asked only where the chain has types.
+            at(cl).bits = (cleanup.types.empty() ? 0u : 1u) | (encAt != 0 ? 2u : 0u);
+            endCatches(1);
+            resumeFrom(cleanup, encAt != 0 ? &pads_[encAt - 1] : nullptr);
+        }
+    }
+    place(done);
 }
 
 // A case label's constant: a literal, an enumerator, a sizeof, a sign or a parenthesis over one.
