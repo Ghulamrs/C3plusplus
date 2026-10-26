@@ -115,6 +115,7 @@ private:
     TypeId unsignedVersion(TypeId t) const;
     TypeId ptrdiffType() const;
     static bool scalar(const Type &t);
+    static bool referable(const Type &t);
     static bool scalarArithmetic(const Type &t);
     static long long normalise(long long v, const Type &t, const Target &target);
 

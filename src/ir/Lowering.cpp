@@ -16,6 +16,8 @@ void Lowering::outside(const std::string &why) { throw Outside(why); }
 
 bool Lowering::scalarArithmetic(const Type &t) { return t.isArithmetic() && !t.isScopedEnumeration(); }
 bool Lowering::scalar(const Type &t) { return scalarArithmetic(t) || t.isPointer(); }
+// What a reference may refer to here: a scalar, or a complete class, which a reference only ever names by its address.
+bool Lowering::referable(const Type &t) { return scalar(t) || (t.isStructOrUnion() && t.isComplete()); }
 
 // A constant as the walker keeps every value in a register: sign- or zero-extended to 64 bits by its type.
 long long Lowering::normalise(long long v, const Type &t, const Target &target) {
@@ -195,7 +197,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         returns_ = T(facts.returns).isReference() ? facts.returns : tid(*T(facts.returns).unqualified());
         f.returns = returns_;
         const Type &rt = T(returns_);
-        if (!(rt.isVoid() || scalar(rt) || (rt.isReference() && scalar(*rt.referent())))) outside("a return type of '" + rt.describe() + "'");
+        if (!(rt.isVoid() || scalar(rt) || (rt.isReference() && referable(*rt.referent())))) outside("a return type of '" + rt.describe() + "'");
         if (rt.isX87(target_)) outside("an x87 long double");
         // A constructor's mem-initialisers and a destructor's member destruction are not in its syntax yet.
         if (facts.hasThis && facts.thisType.valid() && T(facts.thisType).isPointer()) {
@@ -227,7 +229,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
             const Type &pt = *tree_.node(p).type;
             TypeId slotType;
             if (pt.isReference()) {
-                if (!scalar(*pt.referent())) outside("a reference parameter to '" + pt.referent()->describe() + "'");
+                if (!referable(*pt.referent())) outside("a reference parameter to '" + pt.referent()->describe() + "'");
                 slotType = tid(*types_.pointerTo(pt.referent()));
             } else if (pt.isArray()) {
                 slotType = tid(*types_.pointerTo(pt.pointee()));
@@ -502,7 +504,7 @@ void Lowering::declaration(sema::TypedId id) {
         const Type &t = *v.type;
         TypeId slotType;
         if (t.isReference()) {
-            if (!scalar(*t.referent())) outside("a reference to '" + t.referent()->describe() + "'");
+            if (!referable(*t.referent())) outside("a reference to '" + t.referent()->describe() + "'");
             slotType = tid(*types_.pointerTo(t.referent()));
         } else if (t.isArray()) {
             if (!t.pointee()->isComplete() || !scalar(*t.pointee()) || t.pointee()->isX87(target_) || t.length() <= 0)
@@ -813,7 +815,7 @@ Lowering::Val Lowering::nameAddress(sema::TypedId id) {
     const Type &t = T(r.type);
     if (t.isReference()) {
         const TypeId pt = tid(*types_.pointerTo(t.referent()));
-        if (!scalar(*t.referent())) outside("a reference to '" + t.referent()->describe() + "'");
+        if (!referable(*t.referent())) outside("a reference to '" + t.referent()->describe() + "'");
         return Val(load(addrOf(r.symbol, tid(*types_.pointerTo(&T(pt)))), pt), tid(*t.referent()));
     }
     return Val(addrOf(r.symbol, tid(*types_.pointerTo(&t))), r.type);
@@ -1337,7 +1339,7 @@ Lowering::Val Lowering::call(sema::TypedId id) {
     info.variadic = ft.isVariadicFn();
     info.namedArgs = static_cast<int>(ft.params().size());
     const Type &gives = *ft.returns();
-    if (!(gives.isVoid() || scalar(gives) || (gives.isReference() && scalar(*gives.referent())))) outside("a call returning '" + gives.describe() + "'");
+    if (!(gives.isVoid() || scalar(gives) || (gives.isReference() && referable(*gives.referent())))) outside("a call returning '" + gives.describe() + "'");
     if (gives.isX87(target_)) outside("an x87 long double");
     const std::size_t argc = n - 1, skip = member ? 1 : 0;
     const std::size_t paramCount = ft.params().size() - skip;
@@ -1360,7 +1362,7 @@ Lowering::Val Lowering::call(sema::TypedId id) {
             const Val a = lvalue(an);
             if (T(a.type).unqualified() != p.referent()->unqualified()) outside("a reference parameter bound to another type");
             if (T(a.type).isConst() && !p.referent()->isConst()) outside("a reference that can write bound to a const");
-            if (!scalar(T(a.type))) outside("a reference parameter to '" + p.referent()->describe() + "'");
+            if (!referable(T(a.type))) outside("a reference parameter to '" + p.referent()->describe() + "'");
             ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(p.referent())), std::vector<ValueId>(1, a.v))));
             continue;
         }
