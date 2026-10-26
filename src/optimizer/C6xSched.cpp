@@ -1212,6 +1212,9 @@ void hoistInvariants(std::vector<Line> &v) {
                 auto renameWeb = [&](const std::string &f, bool apply) -> bool {
                     Line own = l; own.ops.back() = f;                          // the hoisted instruction's own form
                     if (crossings(rebuilt(own.mnem, own.ops)) > 1 || unitsFor(rebuilt(own.mnem, own.ops)) == 0) return false;
+                    // A branch in the web - an exit, or the back edge itself - may read d as its predicate, which keeps its register.
+                    for (std::size_t x = body[b] + 1; x <= (next < body.size() ? body[next] : i); x++)
+                        if (v[x].instr && isBranch(v[x].mnem) && !v[x].pred.empty() && renamed(v[x].pred, d, f) != v[x].pred) return false;
                     for (std::size_t k = b + 1; k <= next && k < body.size(); k++) {
                         if (gone[k] || (pair && k == b + 1)) continue;
                         Line &u = v[body[k]];
