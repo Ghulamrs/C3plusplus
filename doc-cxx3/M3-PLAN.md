@@ -301,3 +301,155 @@ corpus takes about 410 s at -O2, at `7d593d5` as at this commit, and four source
 `ParserTopLevel.cpp` 180 s (179 at `7d593d5`), `ParserType.cpp` 75, `ParserExpr.cpp` 48, `ParserStmt.cpp` 37. The
 x86 optimizer is super-linear in a function's size somewhere; R1.2's row is to be re-recorded for x86_64-linux and
 the cause found.
+
+**No Windows box this round either** (2026-10-26, Fable 5.1, branch `m3-fable` from `478f504`): the GRA box is
+unreachable and zeeshan withdrawn, so every Windows row below - `run-cases.cmd` at -O0 and -O2 in both spellings,
+`catch-check`, `throw-check`, `sret-check`, `winlink-check`, `self-host.cmd`, `bench.cmd`, cdb on the -g cases - is
+**owed**, written as owed and never as passed. The stand-ins the coordinator set: x86_64-linux identical at every
+level, every x86_64-windows GNU output assembled by `clang -c -target x86_64-pc-windows-msvc`, `identical.sh` at
+every level, and the bench kernels run on the Linux box. Each step was qualified on Linux with TMS6747 first and
+then on the Mac; the Linux numbers are a leg's, run from a `git archive` of the commit named.
+
+**R1.2's finding, mended first** (2026-10-26, `6552790`). The super-linear part was the allocator's `coalesce()`,
+which recounted every node's degree over the whole interference matrix after each merge - O(merges x n x n/64) -
+where a merge moves only the merged node's degree and the degrees of the neighbours the two shared.
+`significant()`, the live scans of `buildInterference` and `simplify`'s selection walk set bits rather than every
+node (`lowestBit` is written out: neither cl nor cxx3 has a builtin for it). The self-host corpus for
+x86_64-linux at -O2, one source at a time with `-S` on the Mac (M4 Pro, clang -O2 build): **413 s to 62 s**;
+`ParserTopLevel.cpp` 180 s to 7 s; -O0 unchanged (24.6 s against 24.2). `identical.sh` against a REF of
+`478f504` at -O0, -O1 and -O2: 6,039 compared, 0 differ. **R1.2's compile-time row is re-recorded for x86_64-linux
+at M3a.5 below.** One REF compile over `identical.sh`'s 60 s CPU limit on the old allocator
+(`exception-table-large` at -O2, 33 s against 8 s) was re-run by hand and is identical; later REFs are built from
+this commit or after it, so the limit is not met again.
+
+**M3a.3, one table and no string tests** (2026-10-26, `8f79594`, `7040edf`, `f5967f9`, `a601975`). `8f79594` (A):
+`OPT_OPCODES` in `OptTable.h` is the one list - a row's enumerator (`mn::Mov`), AT&T name, kind, flags, suffix
+width, condition, and the MASM name and PTR width `MasmSpelling`'s own 156-row `kRules` carried - and the table and
+the enumerators are made from the same macro, so neither drifts; the 38 rows only `kRules` knew (`addb`, `incq`,
+`nop`...) join as `Unknown` with no flags. Three flags replace the spelling tests (`kPlainMov` for `isMovQ` and its
+kin by width; `kSse` and `kEscape0F` for `OptAlign`'s size estimate); the condition is a column read by
+`conditionOf`/`inverse`/`jcc`/`setcc` as `Cond` values; `OpId` has no string comparison and no `char *` constructor
+left, its one string door the walker's `ins` and the strict check; every `m == "lea"`, `is(m, {...})`,
+`starts(m, "cvt")`, `substr + "l"` and `"j" + cc` in the passes reads the table (131 edits); `MasmSpelling` asks
+the table for the name and width it used to look up. `identical.sh` against a REF of `478f504` at all three
+levels, REF beside its own tree: **6,039 compared, 0 differ** - which is RP2a's condition 5, the nine lib-path
+differences gone. `tools/determinism.sh` runs `-dump=mir` for the two x86 targets at -O0 and -O2 beside each
+compile (RP2a's condition 2): 16,414 outputs, 3,980 of them `-dump=mir`, 0 differ. **The quirk rows, one commit
+each where output could move**: `7040edf` (B) `addq`/`subq` Rmw E|I|R(|Z) 8, `sal`/`rol`/`ror` Rmw S,
+`testl`/`testq` Compare E|R at 4 and 8 - measured over every output `identical.sh` writes, none of the six is ever
+written by the walker or a pass, 6,039 / 0; `f5967f9` (C) `testb` Compare E|R at 1 - 21 outputs write one, all a
+bool tested against itself, 6,039 / 0 against a REF of `7b3f339`; `a601975` (D) an unsigned immediate keeps the
+walker's spelling at every level (RP2a departure (d)): `improve` had cleared the mark before the passes, so -O1 and
+-O2 wrote the value signed - against the same REF **6,039 compared, 92 differ, every one at -O1 or -O2, in 18
+sources** (`bitfield-zero-width`, `catch-by-reference`, `constructor-template`,
+`constructor-template-in-member-template`, `handler-exit-ms`, `include-c-wrappers`,
+`long-double-literal-exact-digits`, `longlong-switch-bitfield`, `pipelined-reduction`, `runtime-shapes`,
+`string-stoi`, `template-id-qualified-base-call`, `template-nontype-numeric`, `unsigned-from-double`,
+`user-defined-literal`, Compiler++'s `Semantic.cpp` and `VM.cpp`); of their 163 changed lines every one is an
+immediate whose two spellings are one value modulo 2^64 (`movabs $-9223372036854775808` to
+`movabs $9223372036854775808`), checked mechanically, no file changed length, and all 62 changed GNU outputs
+assemble with clang for their target. **Departures from `M3-IR.md` 2.6, each recorded there**: the `roles`,
+`implicit`, `classes` and `fixed` columns are not added - the roles follow from the kind and two flags by one rule
+(`rolesOf`), the implicit registers of five kinds are `effectsOf`'s `switch`, a pseudo's class is its register's and
+`mir::TargetDesc` holds the files, and `kShift`/`Div` are the pins - so each column would have been a second copy
+of a rule already in one place; the MASM inference for a store of an immediate with no width to take it from, and
+`movq` with an xmm operand keeping its name, stay in `Masm.cpp` beside the `masm` column (2.11's open item). Mac
+`make test` green at each commit; memory gate 1,063 then 1,062 (below).
+
+**M3a.4, funclets as blocks of their function** (2026-10-26, `7b3f339`). A Microsoft handler is no longer a stream
+held beside its function: the walker's `beginFunclet`, `funcletLeave` and `endFunclet` become `Spelling` calls -
+`funcletBegin(symbol, entryLoc)`, `funcletLeave(label)`, `funcletEnd(resume)` - which the holder keeps as
+directives in the one stream, so the funclet's instructions are blocks of the function's flow graph: `Flow::build`
+begins a block entered from nowhere at `FuncletBegin` and ends one that returns at `FuncletEnd` or `FuncletLeave`
+(`Block::funclet` is the nesting depth, in place of 2.5's `FuncletRange` vector), a block before a funclet falls
+through to the next block of its own depth, and `removeUnreachable` comes back to the state before the funclet at
+its end (the first draft dropped live `printf` calls after a `try` at -O2). The passes run over the whole, the
+frame passes included (`funclet-no-frame-passes` is gone): the allocator colours the function with its funclets,
+**forbids every preserved register to a pseudo a funclet names** (2.9's open question, decided as cl does: its
+funclets are leaf-shaped) and asserts that no pseudo spans a funclet's boundary; the frame slots a funclet touches
+are shared at flush (`SharedSlots::addAccessOf`), so a value live into one stays in its slot (P1's decision) and no
+store to it is dead. The text is the spelling's: `CoffSpelling` and `MasmSpelling` compose the head, tail and
+unwind data `closeFunclet` composed, lift the body out of their own output at `funcletEnd`, and hand the funclets
+over through `takeFunclets()`/`takeFuncletPdata()` where `emitExceptionTables` appended them; the five text-lifting
+closures, the code generators' marks and buffers, `Optimizer::funcletBegin/funcletEnd/defer` and the `Deferred`
+kind are gone, and `emitTlsWrappers` is called where it stood. `MasmCodeGen`'s own copies of `funcletSymbol_`,
+`funcletIndex_`, `funcletKind_` and `funcletOuter_` went with it - they shadowed the base's, which is how a
+funclet's CodeView record lost its symbol in the first draft and `-g -masm=masm` aborted. **Mac**, against a REF of
+`6552790`: `identical.sh` at -O0, -O1 and -O2 - 6,039 compared, **888 differ, every one x86_64-windows at -O1 or
+-O2** (the funclets' bodies now through the passes: dead loads of a slot's address gone, a handler's copy in r11
+where it took rcx and a reload); x86_64-linux identical at every level, both Windows spellings at -O0; all 1,304
+Windows GNU outputs at -O1/-O2 assemble with clang; under `-g` at -O0 `tests/m10/*.cpp` byte-identical in both
+spellings, and two funclet cases differ, both fixes - a handler whose body opens a cleanup funclet had lost its
+entry location, and a handler enclosing a `try` took the inner handler's, one member having held the location for
+every open funclet; `make test` green (run.sh 988/0, emit golden 0 of 1,930, names 655/0, typed and adapted 648/0,
+exclusions 126 sites 0/0, comment cap 0); determinism 16,414 outputs 0 differ; memory gate 1,062, down one.
+**Owed**: `run-cases.cmd` at -O0 and -O2 in both spellings, `catch-check`, `throw-check`, `winlink-check`, the -g
+cases through cdb - the funclet's CodeView records are byte-identical to the base's where the base had them right,
+and the two fixes are measured against the location the handler's own source line names, not against cl.
+
+**Linux, at `a601975`** (the M3a.3 D tip; g++ 11.5, the leg from a `git archive`): `run.sh` 990/0 at -O0, -O1
+and -O2; `tms6747.sh` 621/0 at -O0 and at -O2 on vm6747 with every pass also on sim6747 (2 skipped for exceptions, 7 for a 64-bit long, 19 not for this target); `ti-link.sh` 630 linked by TI's lnk6x, 0 failed, at -O0 and at -O2; `asm6x.sh` did not run - the leg script named no `C6XDIFF` (`~/ti6x/ASM6x/tests/c6xdiff.py` is where it is), mended for the next leg. `tools/self-host` at -O0 **stopped at stage 1**: stage 0 refused `OptValues.cpp`'s
+`Cond cc = kNoCond;` - a default member initialiser naming a namespace-scope enumerator, which cxx3 reads with no
+namespace open ([class.mem]/4; `kNone` written `n::kNone`, or in a constructor's mem-initialiser, is found). The
+line M3a.3 A wrote is qualified `opt::kNoCond` at M3a.5, and the defect is registered:
+`tests/open/member-initialiser-namespace-enumerator.cpp`, clang `ACCEPT -1 0`. No suite had the shape: the
+self-host corpus is what met it, which is what R9.1 is for.
+
+**M3a.5, the retirement** (2026-10-26, `df365f0`). `OptIr.h` is `Mir.h` and `OptIr.cpp` is `Mir.cpp` (`git mv`);
+the types take part 2's names - `MOperand`, `MInst`, `MDirective`, `MEntry` (`EntryOf<MInst, MDirective>`, kinds
+`Inst`/`Label`/`Directive`, the payload `dir`), `MStream`, `MFunction`, `RegClass` and `mir::TargetDesc` beside them
+- and **stay `opt::`**, the passes' namespace (the departure from 2.2's `namespace mir`, recorded under 2.5 with its
+reason: a second namespace for the data the passes hold would put a qualifier on every line of every pass for no
+information; `mir::` keeps what colours - `TargetDesc`, `Webs` in `MirWebs.h`, `Locals`, `Allocator`). 847 renames
+over 30 files, none a change of shape: `MInst` is as RP2a fixed it (`m`, `a`, `b`, `int operands`, `args`,
+`exactArgs`). `-mir=off`, `-check=mir`, `CodeGen::setMirOff` and the bypass in `X86_64Linux::setOptimize` are gone -
+`identical.sh` is the round-trip gate from here - and `CPP11_DUMP_MIR` with them: `-dump=mir=<pass>` or `=all`
+through `PassManager::dumpAfter` is the one dump. The two `new`s at `X86_64Linux.cpp:1563-1565` are `make_owned`
+(memory gate **1,062 to 1,060**; the pipeline's 21 `new`s in `OptPipeline.cpp`, `OptCosts.h`'s two and
+`OptFunction.h`'s `new Loops` stay, `make_owned` living in `Ast.h`, which the optimizer does not include - a header
+of its own is the next step down). `ide/generate.py` regenerated the projects; `docs/OPTIMIZER-IR.md` says stages 1
+and 2 are done and where and that the x87 stack is not modelled (2.11), `OPTIMIZER-ARCHITECTURE.md`'s file table and
+`GCC-SOURCE-STUDY.md`'s dump row name the new files and flag. **Mac**: `identical.sh` against a REF of `a601975` at
+-O0, -O1 and -O2, **6,039 compared, 0 differ**; `make test` green (run.sh 988/0, emit golden 0 of 1,930, names.sh
+655/0, overload 44/0, typed and adapted 648/0, exclusions 126 sites 0/0, comment cap 0); determinism 16,414 outputs
+(3,980 `-dump=mir`) 0 differ; `tools/self-host` 71 of 71 sources the same from stage 1 and stage 2 at -O0 and at -O2. **Linux** (g++ 11.5, the leg from a `git archive` of
+`df365f0`): **queued and not yet read at this commit** - `~/linux-leg.sh df365f0` runs on the box behind `a601975`'s TSan (`~/queue.sh`), its log `~/m3f-df365f0/leg.log`: run.sh at -O0/-O1/-O2, self-host at -O0 and -O2 (the two that stopped at stage 1 on `a601975`, now expected 71 of 71 as on the Mac), asm6x.sh, tms6747.sh and ti-link.sh at both levels. The compiler's output is byte-identical to `a601975`'s at every level (identical.sh above), so what the leg adds is the self-host and the C6000 suites on g++'s build. **Bench stand-in**: the bench kernels' x86_64-linux -O2 assembly from `df365f0` is **byte-identical to `478f504`'s** (cmp), so M3a.2's Linux numbers stand - fib 10, sieve 94, matmul 15, isort 35, hash 327, virtual 211, total 692 ms against g++ -O2's 533 (11 interleaved rounds, checksums equal); the run of `df365f0`'s against main's (`ref-7d593d5`) and g++ is queued after the leg, `~/m3f-bench/bench.log` (`bench-linux.sh`, 11 rounds, medians). **Compile time, R1.2's row re-recorded for x86_64-linux**: the 71 sources one at a time with `-S -arch x86_64-linux` on the Mac, REF4 (`a601975`) against `df365f0`: one run -O2 66.55 s against 74.53, -O0 31.17 against 30.12; the first interleaved round -O2 75.27 against 67.30, -O0 27.53 against 28.87 - the Mac was not quiet (a later REF round read 118 s), the differences run both ways, and the retirement renames and deletes and changes no algorithm, so the row is **-O2 about 67 s and -O0 about 28 s for x86_64-linux**, from 413 s and 24.6 s before `6552790`; a quiet re-measurement is owed with the Windows rows.
+**TSan** (RP2a condition 6, on Linux): `make tsan` on `a601975` was building on the box at this commit (`~/m3f-a601975/leg.log`, then `tsan.log`; `tests/out-tsan/reports` empty so far); its result is to be read there and written here. The two races WS-F found and mended are the only ones the pool has had, and nothing in M3a.3-M3a.5 touches the pool or the registries' locking. **Owed**: `run-cases.cmd` at -O0 and -O2 in both spellings,
+`self-host.cmd` plain and `-O2`, `bench.cmd` against main's binary.
+
+**Review point 2b, the packet** (2026-10-26, Fable 5.1, branch `m3-fable`, `478f504` to `this commit`). What the
+reviewer reads: the seven commits above (`6552790`, `8f79594`, `7040edf`, `7b3f339`, `f5967f9`, `a601975`,
+`df365f0`), `src/optimizer/Mir.h`, `OptTable.h` (the one table), `OptCore.h`'s `EntryOf` and `FlowOf::build`
+(the funclet blocks), `MirAlloc.cpp`'s `buildInterference` (the funclet rule), and part 2 of `M3-IR.md` with its
+ten dated amendments. **M3a's gate, as the table at the top of this plan asks it**: the round trip - `identical.sh`
+at every level 0 differ for every renaming commit and the retirement, the files named for the two commits whose
+output moved (M3a.4's 888, all Windows funclet bodies at -O1/-O2; M3a.3 D's 92, all one immediate's spelling); the
+retirement - `OptIr.h`, the string mnemonic, `Operand`, `Entry::Event` and `-mir=off`/`-check=mir` gone, `Mir.h`
+the one header; `bench-kernels` - the Linux stand-in above, the Windows `bench.cmd` owed. **RP2a's conditions**: 2
+(`determinism.sh` runs `-dump=mir`) in `8f79594`; 5 (`identical.sh` 0 with REF beside its own tree) at every
+commit since `8f79594`; 6 (TSan on Linux) running on the box at this commit, to be read from `~/m3f-a601975/leg.log`; 4 (the ml64 pass on the Windows cases) still owed with every
+other Windows row; 1 and 3 were M3a.1's. **Decisions taken here, for the review to rule on**: the IR types' namespace
+(`opt::`, 2.5); the four 2.6 columns not added; `unsignedSpelling` kept at every level (RP2a departure (d)); the
+funclet rule (no preserved register for a funclet's pseudo, 2.9's open question, as cl does); `Block::funclet` in
+place of `FuncletRange`; the MASM width inference beside the column (2.11). **Found and not mended**, each in
+`tests/open/` with clang's answer: `member-initialiser-namespace-enumerator` (above); the M3a.1 round's
+`conversion-to-reference-binds` stands. **R1.2's measures at M3a's close**: the compile-time row the 71 sources one at a time with `-S -arch x86_64-linux` on the Mac, REF4 (`a601975`) against `df365f0`: one run -O2 66.55 s against 74.53, -O0 31.17 against 30.12; the first interleaved round -O2 75.27 against 67.30, -O0 27.53 against 28.87 - the Mac was not quiet (a later REF round read 118 s), the differences run both ways, and the retirement renames and deletes and changes no algorithm, so the row is **-O2 about 67 s and -O0 about 28 s for x86_64-linux**, from 413 s and 24.6 s before `6552790`; a quiet re-measurement is owed with the Windows rows; the bench
+row unchanged by construction (identical assembly), the run queued; the conformance count unchanged by construction (no front-end change but one qualified
+enumerator in the compiler's own source). **What M3b.1 starts from**: `MFunction` and the spellings as they are, the
+Windows rows owed, and `m3b0`'s C7 and M3b.0 once merged.
+
+**Handover at RP2b** (2026-10-26, Fable 5.1, the budget ending here; Opus 5.5 implements M3b). Branch `m3-fable`,
+`478f504` to this commit, local and never pushed; no merge into `m3a` or `main`; `m4` (now `m3-m4`, M4 merged with
+M3a.4) is the coordinator's to bring in after RP2b, and the rename touches files M4 also touched -
+`Mir.h`/`OptIr.h`, `MirAlloc.*`, `MirWebs.cpp`, `OptEffects.cpp`, `OptFrame.cpp`, `OptPasses.h`, `OptPipeline.cpp`,
+`Optimizer.*`, `Masm.cpp`, `X86_64Linux.cpp` - so that merge resolves the type names onto `M*` (847 mechanical
+renames; `MEntry::Inst`/`MEntry::Directive`/`.dir` for `Entry::Ins`/`Entry::Event`/`.event`). **Still running on
+the Linux box when this was written**, each to be read and written into the entries above: `~/m3f-a601975/leg.log`
+(TSan, condition 6), `~/m3f-df365f0/leg.log` (M3a.5's leg) and `~/m3f-bench/bench.log` (the bench stand-in);
+`~/m3f-*` are mine to delete once read, with `~/m3f-*.tar`, `~/linux-leg*.sh`, `~/queue.sh`, `~/bench-*`. On the Mac
+`~/cxxopt-build/m3f-*` hold the REF builds (`m3f-ref` 478f504, `m3f-ref2` 6552790, `m3f-ref3` 7b3f339, `m3f-ref4`
+a601975), the identical.sh outputs and the self-host trees. **What I would have done next**: read the three logs and
+fill them in; a quiet interleaved compile-time round; `make_owned` into a header of its own so the pipeline's 21
+`new`s and `OptCosts.h`'s two can go (memory gate 1,060); the `tests/open/member-initialiser-namespace-enumerator`
+fix in `Parser::memberInitialiser` (set `namespaceStack_` to the class's namespace for the replay, as the 1.14
+round did for out-of-line members - one guard, measured by that case and `make test`); then M3b.1 on `m3b0`. **The coordinator is mending that lookup on `fix-nsdmi-enum` (off `f5967f9`) and registered the same shape as `tests/open/member-initialiser-enumerator-in-namespace.cpp`**; mine, `member-initialiser-namespace-enumerator`, is the duplicate and goes with the fix, and `OptValues.cpp:18`'s `opt::kNoCond` may be unqualified again then. M3a.5's self-host row above was measured on the Mac with the line qualified (71 of 71 at both levels), not with the fix.

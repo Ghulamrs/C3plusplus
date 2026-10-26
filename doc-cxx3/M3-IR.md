@@ -56,7 +56,7 @@ The operand kinds are the `Op` kinds the walker builds (`Spelling.h:41-54`), one
 copy and not a translation:
 
 ```cpp
-namespace mir {
+namespace mir {    // amended at M3a.5, 2026-10-26: the IR's types are opt::, in Mir.h - see the note under 2.5
 
 // A register: a physical one (0..63 as OptIr.h numbers them: RAX..R15, xmm0-15 as 16-31) or a pseudo (>= 64).
 struct Reg {
@@ -75,7 +75,7 @@ struct MOperand {
     long long value = 0; // Immediate, when numeric
     bool numeric = false;
     StrId text;          // an Immediate that is not numeric, a symbol, a label, an x87 register's spelling
-    bool unsignedSpelling = false;   // an imm(unsigned) past LLONG_MAX, spelled back as written; gone at M3a.3
+    bool unsignedSpelling = false;   // an imm(unsigned) past LLONG_MAX, spelled back as written at every level (M3a.3)
 };
 ```
 
@@ -83,8 +83,10 @@ This is `opt::Operand` (`OptIr.h:38-63`) with one change: `text` is a `StrId` in
 (`OptStrings.h`), written under a lock and read lock-free, rather than a `std::string`, so an `MOperand` is a plain
 value a vector copies cheaply; an index never reaches a dump or an output, which print the text. *(Amended at RP2a,
 2026-10-25: this said `StringId` into the function's string table.)* `unsignedSpelling` keeps the walker's
-`imm(unsigned long long)` past `LLONG_MAX` spelled as written at -O0; `improve` clears it before the passes so -O1
-and -O2 write what they always did, and M3a.3 folds it into the table's widths or keeps it at every level.
+`imm(unsigned long long)` past `LLONG_MAX` spelled as written at every level *(amended at M3a.3, 2026-10-26: `improve`
+had cleared it before the passes so -O1 and -O2 wrote the value signed; the mark is a property of the operand now and
+travels through every pass - commit `a601975`, 92 outputs of 18 sources changed, every changed line one immediate's
+spelling)*.
 `Operand::from(const Op &)` and `Operand::op()` are kept as `MOperand::from` and `MOperand::op`, byte for byte
 in behaviour: the immediate normalisation (`immText("8")` read as the number 8 when it spells back the same,
 `OptIr.cpp:63-67`), the register name canonicalised through `regName`, an x87 `%st(0)` kept as text with
@@ -105,7 +107,8 @@ struct MInst {
 };
 ```
 
-What `Instr` carries today, with `m` replaced by `OpId`. The width the suffix names, the kind, the flags, the
+What `Instr` carries today, with `m` replaced by `OpId` *(amended at M3a.5: the field keeps the name `m`, `operands`
+is an `int`, and `args`/`exactArgs` also carry a `ret`'s narrowed result registers, as RP2a fixed the shape)*. The width the suffix names, the kind, the flags, the
 roles and the implicit registers are all the row's and not the instruction's, so an `MInst` is 40 bytes of
 plain data. A mnemonic the table does not hold is interned as an unlisted `OpId` whose row is its prefix
 family's or `kUnknown` *(amended at RP2a, 2026-10-25: this said it "cannot be built")*, and the passes treat it as
@@ -123,7 +126,7 @@ struct MEntry {
     MInst ins;                 // Inst
     std::string label;         // Label
     bool state = false;        // Label: a Microsoft state label (Spelling::stateLabel)
-    MDirective dir;            // Directive; its kind Deferred holds a closure - M3a.1 only, gone at M3a.4
+    MDirective dir;            // Directive; the Deferred kind that held a closure (M3a.1) went at M3a.4
     bool dead = false;
 };
 ```
@@ -147,8 +150,8 @@ struct MEntry {
 | `DataInt`, `DataSym`, `DataBytes` | `size, v`; `sym, off`; `bytes` | |
 | `NoteHasEh` | `yes` | |
 | `RelroSection` | - | `relroSection`: a vtable on a PIE target (b9628c6); added at RP2a, 2026-10-25 |
-| `Deferred` | a closure | the five text-lifting `atOutput` calls below, M3a.1 to M3a.4 |
-| `FuncletBegin`, `FuncletEnd`, `FuncletLeave` | `symbol, cleanup, pos`; `resume`; `label` | **M3a.4**: the funclet's head and tail, written by the emitter in place of `closeFunclet`'s lifted text |
+| `Deferred` | a closure | the five text-lifting `atOutput` calls below, M3a.1 to M3a.4 - **gone at M3a.4** (`7b3f339`) |
+| `FuncletBegin`, `FuncletEnd`, `FuncletLeave` | `symbol, entryLoc` (the entry's location under -g); `resume`; `label` | **M3a.4**: Spelling calls `funcletBegin/funcletEnd/funcletLeave`; the spelling composes the head, tail and unwind data `closeFunclet` composed and lifts the body out of its own output at `funcletEnd` (`takeFunclets()`) *(amended 2026-10-26: the arguments as built)* |
 
 `Deferred` is a directive kind, not an `MEntry` kind, and a directive's string argument (an LSDA name, a
 `DataBytes` payload) is a `std::string`, there being nothing to gain from interning one *(amended at RP2a,
@@ -181,6 +184,15 @@ std::vector<PseudoInfo> pseudos;      // indexed by id - kPhysical
 std::vector<FuncletRange> funclets;   // M3a.4: [begin, end) of the stream, each a funclet's blocks, with its symbol and kind
 ```
 
+*(Amended at M3a.4 and M3a.5, 2026-10-26.)* There is no `FuncletRange` vector: the funclet directives in the stream
+are the range, and `Flow::build` marks each block with its funclet depth (`Block::funclet`, 0 for the body), which is
+what every pass asks. The types are `opt::MOperand`, `opt::MInst`, `opt::MDirective`, `opt::MEntry`
+(`EntryOf<MInst, MDirective>`, kinds `Inst`, `Label`, `Directive`, the payload field `dir`), `opt::MStream`,
+`opt::MFunction` and `opt::PseudoInfo`, declared in `Mir.h` and `OptFunction.h`; `namespace mir` keeps `TargetDesc`,
+`kFirstPseudo`, `Webs` (`MirWebs.h`), `Locals` and `Allocator`. The passes, `OptCore.h`'s shared pieces and the
+registers are `opt`'s, so a second namespace for the data they hold would have put a qualifier on every line of
+every pass for no information; the code blocks above that say `namespace mir` are read as `opt`.
+
 *(Amended at RP2a, 2026-10-25: a per-function `StringTable strings` stood here; `StrId` is process-wide, 2.2,
 and a dump is complete because it prints the text.)* A funclet range is a slice of the parent's stream - the
 parent and its funclets are one `MFunction` from M3a.4, which is what lets the allocator see the whole (P1's
@@ -201,10 +213,11 @@ dozen mnemonic lists become one table with flags":
 | `kind` | how `effectsOf` reads it: `Call, Ret, Jmp, Jcc, Setcc, Push, Pop, Leave, SignExtendAx, ExtendAx, StringMove, Div, Compare, Unary, Move, Rmw, X87, Unknown` | `Opcode::Kind` |
 | `flags` | `kMergeXmm, kNoFlags, kExplicit, kWritesOnly, kImmSource, kRenamable, kShift, kZeroIdiom, kAddress, kCvt` | `Opcode::flags` |
 | `width` | the bytes the suffix names, 0 where only a register can | `Opcode::width` |
-| `roles` | what the instruction does with `a` and with `b`: read, write, keep (written in part), address | `rolesOf` (`OptEffects.cpp`), computed from kind today; a column from M3a.3 |
-| `implicit` | registers read and written without being named: `cqo` rdx:rax, `idiv` rdx:rax, `rep movsq` rcx/rsi/rdi, a shift's count in `%cl`, `call` by the convention | spread through `effectsOf`'s `switch` |
-| `classes` | which operand kinds and register classes each operand may take: `a: Gpr|Imm|Mem`, `b: Gpr|Mem`; `movsd`: `a: Xmm|Mem, b: Xmm|Mem`; `movd`/`movq` between files | **new** at M3a.2: what an allocator giving a pseudo a class must know, and what today's `candidate()` (general registers only, `MirWebs.cpp:15`) hard-codes |
-| `fixed` | an operand pinned to one register: the shift count to `%cl`; `Div`'s dividend | `Webs::occurrencesOf`'s `isShift` (`MirWebs.cpp:68`) |
+| `roles` | what the instruction does with `a` and with `b`: read, write, keep (written in part), address | `rolesOf` (`OptEffects.cpp`), computed from kind today; a column from M3a.3 - **not added** *(amended at M3a.3, 2026-10-26: the roles follow from the kind and the `kExplicit`/`kWritesOnly` flags by one rule, so a column would be a second copy of that rule for `rolesOf` to agree with)* |
+| `implicit` | registers read and written without being named: `cqo` rdx:rax, `idiv` rdx:rax, `rep movsq` rcx/rsi/rdi, a shift's count in `%cl`, `call` by the convention | spread through `effectsOf`'s `switch` - **kept there** *(amended at M3a.3: five kinds have implicit registers and `effectsOf`'s `switch` on the kind is the one place; a column would name the same five)* |
+| `classes` | which operand kinds and register classes each operand may take: `a: Gpr|Imm|Mem`, `b: Gpr|Mem`; `movsd`: `a: Xmm|Mem, b: Xmm|Mem`; `movd`/`movq` between files | **not added** *(amended at M3a.2/M3a.3: a pseudo's class is the register it was made from, and `mir::TargetDesc` answers which registers each class holds; `kMergeXmm`/`kSse` mark the SSE rows)* |
+| `fixed` | an operand pinned to one register: the shift count to `%cl`; `Div`'s dividend | `Webs::occurrencesOf`'s `isShift` (`MirWebs.cpp:68`) - **kept as the `kShift` flag and the `Div` kind** *(amended at M3a.3)* |
+| `masm`, `masmWidth` | the MASM name and the width its `PTR` needs | **added at M3a.3** (`8f79594`): `MasmSpelling::kRules`'s 156 rows are columns of the one table, its 38 MASM-only mnemonics rows marked `Unknown`; the inference for a store of an immediate with no width to take it from, and `movq` with an xmm operand keeping its name, stay in `Masm.cpp` beside the column (2.11's open item, decided) |
 
 The rows: the ~105 of `OptTable.cpp:16-126`, plus every mnemonic the walker writes that the prefix families
 catch today - the 73 literal mnemonics in `X86_64Linux.cpp` (`grep -o 'ins("[a-z0-9 ]*"'`) and the composed ones
@@ -245,20 +258,19 @@ What byte-identity rests on, so that each is kept:
    pads a state label after a call (`stateLabel`, `Spelling.h:131`), so the mark must survive.
 3. **A directive's arguments are copied whole** at the time of the call, as the closures capture them by value
    today; a `std::string` argument is copied whole, and an operand's text is a `StrId` that comes back as the
-   same string *(amended at RP2a, 2026-10-25)*. An immediate's `unsignedSpelling` (2.2) is the one field the
-   passes' levels clear.
-4. **The `Deferred` closures run where they stood** (`event` semantics), until M3a.4.
+   same string *(amended at RP2a, 2026-10-25)*. An immediate's `unsignedSpelling` (2.2) travels through the
+   passes unchanged *(amended at M3a.3: it was the one field the passes' levels cleared)*.
+4. **The `Deferred` closures run where they stood** (`event` semantics), until M3a.4 - gone since (`7b3f339`).
 5. **The -O0 walker's behaviour does not change**: `optimizing()` (`X86_64Linux.h:158`) is renamed to say what it
    means - `passesRun()`, true at -O1 and -O2 - and every site that reads it (`tempsInSlots`, `copiesByString`,
    `callArguments`, `jumpOnly`, `exceptionRegion`, `frame`, `temporaries`, `inlineBegin`, `sharedSlot`,
    `returnsPair`, `funcletBegin`, `finish`) keeps asking that question. The holder being in front is a different
    fact, `a_ == holder`, and only `emittedSize()` (`:133`) and `atOutput` need it.
 
-**`-check=mir`** is the in-compiler form of the gate, the device `-check=adapted` uses: the driver generates the
-unit twice, once with the holder bypassed (`-mir=off`, a flag kept through M3a and removed at M3a.5) and once
-through it, and compares the two texts; `-check=mir: functions=N same=N differ=0` on stdout, the first differing
-function named with its first differing line. `identical.sh` against the base binary is the external form; both
-are run, since the second also catches a change to the walker.
+**`-check=mir`** was the in-compiler form of the gate, the device `-check=adapted` uses: the driver generated the
+unit twice, once with the holder bypassed (`-mir=off`) and once through it, and compared the two texts. Both flags
+went at M3a.5 with the bypass they needed (`setMirOff`), as 2.1 and the plan said they would: `identical.sh`
+against the base binary is the gate from here, and it also catches a change to the walker.
 
 ### 2.8 Register classes and the target description - M3a.2
 
@@ -292,16 +304,18 @@ prerequisites: the edge exists; pins are on an occurrence (`Webs::splitPinned`);
 has a budget (`OptCosts.h:33-41`).
 
 **Funclets (M3a.4).** P1's decision: *allocate the whole function before funclets are outlined, and keep any value
-live into a funclet in a frame slot.* In MIR that is: a funclet is a `FuncletRange` of its parent's stream, its
-code blocks of the parent's flow graph reached by no edge from the body (the runtime calls it; its entry is a
+live into a funclet in a frame slot.* In MIR that is: a funclet is a run of blocks of its parent's flow graph marked with their depth
+(`Block::funclet`; *amended at M3a.4: no `FuncletRange` vector*), reached by no edge from the body (the runtime calls it; its entry is a
 `FuncletBegin` directive, its exits `FuncletEnd`/`FuncletLeave`, which `controlOf` reads as a return); the
 allocator colours the whole; a frame slot a funclet reads or writes is in `SharedSlots` (`OptPasses.h:60`) as
 today, so promotion leaves it and dead-store removal keeps its stores; a funclet's own registers are its own
 prologue's concern and it saves none (it is `push %rbp; sub $32, %rsp; mov %rdx, %rbp` and back,
 `X86_64Linux.cpp:2105-2113`), so a pseudo whose live range crosses a funclet boundary is not allowed - the
-walker's own code never produces one (a funclet body begins from the frame), and the verifier of `-check=mir`
-asserts it. *Open for RP2b*: whether a cleanup funclet that runs a destructor may take a callee-saved register
-the parent saved - cl does not (its funclets are leaf-shaped), and the first version follows cl.
+walker's own code never produces one (a funclet body begins from the frame), and the allocator asserts it as it
+builds interference (`MirAlloc.cpp`, `buildInterference`; *amended at M3a.5: `-check=mir` is gone*). *Open for
+RP2b*: whether a cleanup funclet that runs a destructor may take a callee-saved register the parent saved - cl does
+not (its funclets are leaf-shaped), and the first version follows cl: a pseudo a funclet names is forbidden every
+preserved register (`7b3f339`).
 
 ### 2.10 `-dump=mir`
 
@@ -316,7 +330,8 @@ bytes (`tools/determinism.sh` runs it).
 - the x87 stack: operands with `reg.id < 0` stay opaque text and the `X87` class is never allocated; x86_64-linux's
   `long double` is the only user. Not modelled in M3; said in `OPTIMIZER-IR.md` at M3a.5.
 - whether `MasmSpelling`'s width-inference rules (`ptrFor`, the `movq`-with-xmm rename, `Masm.cpp:287-305`) move
-  into the `masm` column whole or stay beside it - decided at M3a.3 by which leaves `identical.sh` at 0.
+  into the `masm` column whole or stay beside it - decided at M3a.3 by which leaves `identical.sh` at 0: the name
+  and the `PTR` width are the column; the two inferences stay beside it (2.6's last row).
 - the cleanup-funclet register question above (RP2b).
 - the arm64 and C6000 descriptions are not written: exceptions 1 and 2.
 
