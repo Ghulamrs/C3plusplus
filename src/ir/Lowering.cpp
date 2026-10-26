@@ -1569,9 +1569,10 @@ Lowering::Val Lowering::call(sema::TypedId id) {
         } else {
             outside("a member call through '" + text(head) + "'");
         }
-        if (!T(object.type).isPointer() || T(object.type).pointee()->unqualified() != self.pointee()->unqualified())
-            outside("a member call on a base's function");
+        if (!T(object.type).isPointer()) outside("a member call whose object is not a pointer");
         if (T(object.type).pointee()->isConst() && !self.pointee()->isConst()) outside("a member call that drops const");
+        // A base's function, found through a derived object: `this` is the base subobject's address.
+        if (T(object.type).pointee()->unqualified() != self.pointee()->unqualified()) object = toBase(object, tid(self));
         info.symbol = r.symbol;
         info.hasThis = true;
         sig = r.type;
