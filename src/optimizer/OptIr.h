@@ -70,8 +70,8 @@ struct Instr {
     OpId m;                   // an index into the opcode table, never a string (M3a.1)
     Operand a, b;             // AT&T order: a is the source, b the destination
     int operands;
-    // A call's argument registers as the walker placed them; without the
-    // word, the convention's whole set is read.
+    // A call's argument registers as the walker placed them, or a ret's result registers where the walker narrowed
+    // them; without the word, the convention's whole set is read.
     RegSet args = 0;
     bool exactArgs = false;
 

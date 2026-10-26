@@ -40,7 +40,9 @@ void Optimizer::instruction(const std::string &m, int operands, const Op *a, con
     if (a) e.ins.a = opt::Operand::from(*a);
     if (b) e.ins.b = opt::Operand::from(*b);
     if (argsPending_ && m == "call") { e.ins.args = args_; e.ins.exactArgs = true; }
+    if (retPending_ && m == "ret") { e.ins.args = rets_; e.ins.exactArgs = true; }
     argsPending_ = false;
+    retPending_ = false;
     if (inlining_)
         for (opt::Operand *o : {&e.ins.a, &e.ins.b})
             if (o->isMem() && o->reg.id == opt::RBP && o->disp > -kTempBase) {
@@ -196,6 +198,11 @@ void Optimizer::temporaries(int count) {
 void Optimizer::callArguments(opt::RegSet regs) {
     argsPending_ = true;
     args_ = regs;
+}
+
+void Optimizer::returnReads(opt::RegSet regs) {
+    retPending_ = true;
+    rets_ = regs;
 }
 
 void Optimizer::returnsPair(bool pair) {

@@ -1709,6 +1709,10 @@ void X86_64Linux::emit(const Function &fn) {
     }
     if (realign_ > 0) a_->ins("pop", reg("%rbx"));
     a_->ins("pop", reg("%rbp"));
+    // A float or double comes back in xmm0 alone, so rax and xmm1 are not read there (a void one may be a Microsoft
+    // constructor, which returns `this` in rax).
+    const Kind rk = fn.returns() ? genKind(fn.returns()) : Kind::Void;
+    if (passesRun() && (rk == Kind::Float || rk == Kind::Double)) optimizer_->returnReads(opt::bit(opt::kXmm0));
     a_->ins("ret");
     // Before .cfi_endproc, because the last call-site range measures to it.
     if (!lineSource() && !callSites().empty() && !usesFunclets())

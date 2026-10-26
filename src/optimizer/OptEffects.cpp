@@ -100,7 +100,7 @@ Roles classify(const Instr &i, const Convention &conv, Effects &e) {
         break;
     case Opcode::Ret:
         e.control = true;
-        e.reads = conv.returned | conv.preserved | bit(RSP);
+        e.reads = (i.exactArgs ? i.args : conv.returned) | conv.preserved | bit(RSP);
         break;
     case Opcode::Jmp:
         e.control = true;
