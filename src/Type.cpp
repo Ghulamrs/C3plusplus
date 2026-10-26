@@ -7,12 +7,28 @@
 
 TypeTable::TypeTable() {
     for (int k = static_cast<int>(Kind::Void);
-         k <= static_cast<int>(Kind::Function); k++)
+         k <= static_cast<int>(Kind::Function); k++) {
         types_.push_back(Type(static_cast<Kind>(k)));
+        types_.back().id_ = static_cast<std::uint32_t>(types_.size());
+    }
 }
 
 const Type *TypeTable::get(Kind k) const {
     return &types_[static_cast<std::size_t>(k)];
+}
+
+// The fundamentals take handles 1..N in Kind order and a derived type the next one as it is made; a copy
+// (withConst's) arrives carrying its source's number and is renumbered here.
+Type *TypeTable::adopt(Type *t) {
+    t->id_ = static_cast<std::uint32_t>(types_.size() + derived_.size() + 1);
+    derived_.push_back(t);
+    return t;
+}
+
+const Type *TypeTable::type(TypeId id) const {
+    if (!id.valid() || id.v > typeCount()) return nullptr;
+    if (id.v <= types_.size()) return &types_[id.v - 1];
+    return derived_[id.v - 1 - types_.size()];
 }
 
 // clang's calculateInheritanceModel, measured against cl: virtual bases anywhere
@@ -172,7 +188,7 @@ const Type *TypeTable::functionType(const Type *returns,
     t->variadic_ = variadic;
     t->refQual_ = ref;
     t->constThis_ = constThis;
-    derived_.push_back(t);
+    adopt(t);
     return derived_.back();
 }
 
@@ -194,7 +210,7 @@ const Type *TypeTable::withConst(const Type *t) {
     Type *c = new Type(*t);
     c->const_ = true;
     c->unqual_ = t;
-    derived_.push_back(c);
+    adopt(c);
     return c;
 }
 
@@ -208,7 +224,7 @@ const Type *TypeTable::pointerTo(const Type *t) {
     for (Type *d : derived_)
         if (!d->isConst() && d->kind() == Kind::Pointer && d->pointee() == t)
             return d;
-    derived_.push_back(new Type(Kind::Pointer, t, -1));
+    adopt(new Type(Kind::Pointer, t, -1));
     return derived_.back();
 }
 
@@ -221,7 +237,7 @@ const Type *TypeTable::memberPointerTo(const Type *cls, const Type *member) {
             return d;
     Type *made = new Type(Kind::MemberPointer, member, -1);
     made->setEnclosing(cls);
-    derived_.push_back(made);
+    adopt(made);
     return derived_.back();
 }
 
@@ -254,7 +270,7 @@ const Type *TypeTable::memberFunctionPointerTo(const Type *cls, const Type *fn,
     if (microsoft && model == 2)
         ms.push_back(Member{ "$vbi", get(Kind::Int), word + 4, 0, 0, Access::Public });
     made->complete(ms, !microsoft ? 2 * word : model == 0 ? word : 2 * word, word);
-    derived_.push_back(made);
+    adopt(made);
     return derived_.back();
 }
 
@@ -262,7 +278,7 @@ const Type *TypeTable::referenceTo(const Type *t) {
     for (Type *d : derived_)
         if (!d->isConst() && d->kind() == Kind::LValueRef && d->pointee() == t)
             return d;
-    derived_.push_back(new Type(Kind::LValueRef, t, -1));
+    adopt(new Type(Kind::LValueRef, t, -1));
     return derived_.back();
 }
 
@@ -274,7 +290,7 @@ const Type *TypeTable::templateParam(int index) {
         if (!d->isConst() && d->kind() == Kind::TemplateParam &&
             d->length() == index)
             return d;
-    derived_.push_back(new Type(Kind::TemplateParam, nullptr, index));
+    adopt(new Type(Kind::TemplateParam, nullptr, index));
     return derived_.back();
 }
 
@@ -286,7 +302,7 @@ const Type *TypeTable::dependentMember(const Type *owner,
         if (!d->isConst() && d->kind() == Kind::DependentMember &&
             d->pointee() == owner && d->tag() == name)
             return d;
-    derived_.push_back(new Type(Kind::DependentMember, owner, -1));
+    adopt(new Type(Kind::DependentMember, owner, -1));
     derived_.back()->tag_ = name;
     return derived_.back();
 }
@@ -297,7 +313,7 @@ const Type *TypeTable::dependentExpr(const DepExpr *e, bool id) {
         if (!d->isConst() && d->kind() == Kind::DependentExpr && d->expr_ == e &&
             d->length() == (id ? 1 : 0))
             return d;
-    derived_.push_back(new Type(Kind::DependentExpr, nullptr, id ? 1 : 0));
+    adopt(new Type(Kind::DependentExpr, nullptr, id ? 1 : 0));
     derived_.back()->expr_ = e;
     return derived_.back();
 }
@@ -342,14 +358,14 @@ const Type *TypeTable::packExpansion(const Type *of) {
     for (Type *d : derived_)
         if (!d->isConst() && d->kind() == Kind::PackExpansion && d->pointee() == of)
             return d;
-    derived_.push_back(new Type(Kind::PackExpansion, of, -1));
+    adopt(new Type(Kind::PackExpansion, of, -1));
     return derived_.back();
 }
 
 const Type *TypeTable::deducedType() {
     for (Type *d : derived_)
         if (!d->isConst() && d->kind() == Kind::Deduced) return d;
-    derived_.push_back(new Type(Kind::Deduced, nullptr, -1));
+    adopt(new Type(Kind::Deduced, nullptr, -1));
     return derived_.back();
 }
 
@@ -357,7 +373,7 @@ const Type *TypeTable::rvalueReferenceTo(const Type *t) {
     for (Type *d : derived_)
         if (!d->isConst() && d->kind() == Kind::RValueRef && d->pointee() == t)
             return d;
-    derived_.push_back(new Type(Kind::RValueRef, t, -1));
+    adopt(new Type(Kind::RValueRef, t, -1));
     return derived_.back();
 }
 
@@ -366,7 +382,7 @@ const Type *TypeTable::arrayOf(const Type *t, long long length) {
         if (!d->const_ && d->kind() == Kind::Array && d->pointee() == t &&
             d->length() == length)
             return d;
-    derived_.push_back(new Type(Kind::Array, t, length));
+    adopt(new Type(Kind::Array, t, length));
     return derived_.back();
 }
 
@@ -405,7 +421,7 @@ Type *TypeTable::structType(Kind kind, const std::string &tag) {
         if (!d->isConst() && d->kind() == kind && d->tag_ == tag) return d;
     Type *t = new Type(kind);
     t->tag_ = tag;
-    derived_.push_back(t);
+    adopt(t);
     return t;
 }
 
@@ -425,13 +441,13 @@ Type *TypeTable::enumType(const std::string &tag, Kind underlying) {
         if (!d->isConst() && d->isEnumeration() && d->tag_ == tag) return d;
     Type *t = new Type(underlying);
     t->tag_ = tag;
-    derived_.push_back(t);
+    adopt(t);
     return t;
 }
 
 Type *TypeTable::anonymousStruct(Kind kind) {
     Type *t = new Type(kind);
-    derived_.push_back(t);
+    adopt(t);
     return t;
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
@@ -156,6 +157,17 @@ struct Member {
     }
 };
 
+// **A type's handle** (C7, R6.3): a wrapped index into the TypeTable, 0 for none, numbered in creation order - the
+// fundamental kinds first, then each derived type as it is interned - so the IR carries a type as data (M3-IR 3.1).
+struct TypeId {
+    std::uint32_t v;
+    TypeId() : v(0) {}
+    explicit TypeId(std::uint32_t value) : v(value) {}
+    bool valid() const { return v != 0; }
+    bool operator==(TypeId o) const { return v == o.v; }
+    bool operator!=(TypeId o) const { return v != o.v; }
+};
+
 class Type {
 public:
     explicit Type(Kind k) : kind_(k) {}
@@ -163,6 +175,8 @@ public:
         : kind_(k), pointee_(pointee), length_(length) {}
 
     Kind kind() const { return kind_; }
+    // The handle the TypeTable gave this type when it was made; TypeTable::type reads it back.
+    TypeId id() const { return TypeId(id_); }
 
     // Constness belongs to the type, not to the object that has it: `const char *`
     // and `char *` must be two types, overload resolution ranking between them and
@@ -553,6 +567,7 @@ public:
 private:
     friend class TypeTable;
     Kind kind_;
+    std::uint32_t id_ = 0;
 
     // Set only on a qualified type, pointing at the unqualified one it was made
     // from. Everything that depends on state a struct gains later is asked of that
@@ -657,7 +672,15 @@ public:
     const Type *doubleType() const { return get(Kind::Double); }
     const Type *charType() const   { return get(Kind::Char); }
 
+    // **A type by its handle, and back** (C7): every type this table made has one, and `type(id(t)) == t`.
+    const Type *type(TypeId id) const;
+    static TypeId id(const Type *t) { return t == nullptr ? TypeId() : t->id(); }
+    // How many handles are taken: the fundamental kinds and every derived type so far.
+    std::uint32_t typeCount() const { return static_cast<std::uint32_t>(types_.size() + derived_.size()); }
+
 private:
+    // Every derived type is registered here, which numbers it after the fundamentals and keeps it.
+    Type *adopt(Type *t);
     std::vector<Type> types_;
     std::vector<Type *> derived_;
     std::vector<DepExpr *> exprs_;

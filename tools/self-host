@@ -2,20 +2,22 @@
 # **M1's stages 1 and 2 on Linux and macOS**, as tools/windows/self-host.cmd is on Windows. Stage 0 is
 # ./cxx3.exe, built by make with clang++ or g++; it compiles and links every source in src/ into
 # stage 1, and stage 1 does the same into stage 2. Each source's assembly from the two, for this host's
-# target and the clock pinned, must be the same byte for byte.
+# target and the clock pinned, must be the same byte for byte - and from stage 0 too (C7, 2026-10-26):
+# a stage-0-against-stage-1 difference is one the stage-1-against-stage-2 fixed point cannot see, so
+# the stronger claim is the tool's and not a reviewer's hand run.
 #
 #   tools/self-host [out-dir] [flags for every compile, -O2 say]
 #
-# Writes <out>/cxx3-stage1 and cxx3-stage2, each source's assembly from each in <out>/s1 and <out>/s2,
-# and <out>/differ.txt naming the sources whose two are not the same.
+# Writes <out>/cxx3-stage1 and cxx3-stage2, each source's assembly from stage 0, 1 and 2 in <out>/s0,
+# <out>/s1 and <out>/s2, and <out>/differ.txt naming the sources whose three are not the same.
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 OUT=${1:-$ROOT/selfhost}
 FLAGS=${2:-}
 cd "$ROOT" || exit 2
 make cxx3.exe > /dev/null || { echo "self-host: stage 0 did not build"; exit 1; }
-rm -rf "$OUT"; mkdir -p "$OUT/s1" "$OUT/s2"
-SRCS=$(ls src/*.cpp src/parser/*.cpp src/backend/*.cpp src/optimizer/*.cpp src/sema/*.cpp src/syntax/*.cpp)
+rm -rf "$OUT"; mkdir -p "$OUT/s0" "$OUT/s1" "$OUT/s2"
+SRCS=$(ls src/*.cpp src/parser/*.cpp src/backend/*.cpp src/optimizer/*.cpp src/sema/*.cpp src/syntax/*.cpp src/ir/*.cpp)
 
 build() {   # $1 compiler, $2 output
     "$1" -nologo $FLAGS -I src -DCXX1_INCLUDE_DIR="\"$ROOT/lib\"" -DCXX1_CXX_INCLUDE_DIR="\"$ROOT/include\"" \
@@ -29,15 +31,19 @@ build "$OUT/cxx3-stage1" "$OUT/cxx3-stage2" > "$OUT/stage2.log" 2>&1 && [ -x "$O
 echo "self-host: stage 2 built"
 
 # The fixed point, the clock pinned: Driver.cpp's -version names the build's __DATE__ and __TIME__.
-n=0; same=0; : > "$OUT/differ.txt"
+n=0; same=0; same0=0; : > "$OUT/differ.txt"
+cp ./cxx3.exe "$OUT/cxx3-stage0"
 for f in $SRCS; do
     b=$(basename "$f" .cpp); n=$((n + 1))
-    for s in 1 2; do
+    for s in 0 1 2; do
         "$OUT/cxx3-stage$s" -nologo -S $FLAGS -I src -DCXX1_INCLUDE_DIR="\"$ROOT/lib\"" \
             -DCXX1_CXX_INCLUDE_DIR="\"$ROOT/include\"" '-D__DATE__="Jan 01 2000"' '-D__TIME__="00:00:00"' \
             "$f" -o "$OUT/s$s/$b.s" > /dev/null 2>&1
     done
-    if cmp -s "$OUT/s1/$b.s" "$OUT/s2/$b.s" && [ -s "$OUT/s1/$b.s" ]; then same=$((same + 1)); else echo "$f" >> "$OUT/differ.txt"; fi
+    ok=1
+    if cmp -s "$OUT/s1/$b.s" "$OUT/s2/$b.s" && [ -s "$OUT/s1/$b.s" ]; then same=$((same + 1)); else ok=0; fi
+    if cmp -s "$OUT/s0/$b.s" "$OUT/s1/$b.s" && [ -s "$OUT/s0/$b.s" ]; then same0=$((same0 + 1)); else ok=0; fi
+    [ $ok = 1 ] || echo "$f" >> "$OUT/differ.txt"
 done
-echo "self-host: $same of $n sources emit the same assembly from stage 1 and stage 2"
-[ "$same" -eq "$n" ]
+echo "self-host: $same of $n sources emit the same assembly from stage 1 and stage 2, $same0 of $n from stage 0 and stage 1"
+[ "$same" -eq "$n" ] && [ "$same0" -eq "$n" ]

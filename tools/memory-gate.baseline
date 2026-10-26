@@ -5,3 +5,4 @@ calloc 0
 realloc 0
 free 0
 alloca 0
+raw-pointers 38

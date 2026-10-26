@@ -301,3 +301,31 @@ corpus takes about 410 s at -O2, at `7d593d5` as at this commit, and four source
 `ParserTopLevel.cpp` 180 s (179 at `7d593d5`), `ParserType.cpp` 75, `ParserExpr.cpp` 48, `ParserStmt.cpp` 37. The
 x86 optimizer is super-linear in a function's size somewhere; R1.2's row is to be re-recorded for x86_64-linux and
 the cause found.
+
+**C7, the design-conformance items the user approved at RP2a** (2026-10-26, Fable 5.1, branch `m3b0` off `f5967f9`,
+one commit; the Windows rows owed, the box being absent). Five items, each where the design says it belongs:
+
+- **`TypeId` is a wrapped index into the `TypeTable`** (`Type.h`, `Type.cpp`): the fundamental kinds take 1..N in `Kind`
+  order as the table is made, and every derived type the next number as `TypeTable::adopt` interns it - the one place a
+  derived type is now registered, so a copy (`withConst`'s) is renumbered there; `TypeTable::id(t)` and `type(id)` are
+  each other's inverse and 0 is none. Nothing reads it yet but M3b.1's IR; `identical.sh` against a REF of `f5967f9` in
+  its own tree reads **6,039 compared, 0 differ** - the nine lib-path diagnostics of earlier runs are gone because the
+  REF's binary sits beside its own `lib/`, which is RP2a's condition 5 met by construction.
+- **`M3-IR.md` 3.1 rewritten**: the IR's `Value`, `Inst` and `Function` carry `TypeId`; the earlier sentence that a
+  wrapper bought nothing is kept in the paragraph as what it was, with the reason it was reversed. The typed tree keeps
+  `const Type *` and converts at the boundary (3.8).
+- **The adapter is an R6.3 exception, dated and bounded.** `src/sema/Adapter.*` holds a `Parser &`, reads the parser's
+  fifteen layout maps and builds `Ast.h` nodes through raw owning pointers; it is M2's harness and is deleted whole at
+  M3b.7. Until then it is excepted from R6.3's handle rule and left out of the second memory count below. The
+  exception ends when M3b.7 lands; a reader finding it after that date has found a defect.
+- **`tools/memory-gate` counts raw-pointer declarators** in the files the handle rule covers - `src/syntax`,
+  `src/sema/Typing*`, `src/ir`, `src/optimizer/Mir*` - as `raw-pointers`, the second line of the baseline. It
+  started at **38** on `f5967f9` (`--pointers` lists them: 28 `const Type *`, two `syntax::NodeId *` and two `int *`
+  in the Typer, `const char *kindName` twice, and `const Operand *ops` and `long *row` twice each in the allocator),
+  and like the first count may only go down. **One rule written down now rather than discovered by a red leg**: M3a.5 renames `OptIr.h` into `Mir.h` and
+  may bring old pointer code under the `Mir*` prefix; that is a rename and not new pointers, so the baseline is
+  re-recorded once at that merge with the renamed files' count stated here, and goes only down from there.
+- **`tools/self-host` has a stage-0 column**: every source compiled `-S` by stage 0 as well, `s0/` against `s1/`, in the
+  tool's exit status - the claim RP2a section 6 made by hand ("stage 0 and stage 1 agree on all 71") is the tool's
+  now. `self-host.cmd` is owed the same column when the box is back.
+- The opcode table read-only once initialised was done at M3a.1 (`125db80`, M3-IR 2.6); nothing to add.
