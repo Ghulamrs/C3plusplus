@@ -328,6 +328,15 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
             const ir::ValueId v = f.operand(i, n);
             std::unique_ptr<Var> a(Var::local("$v" + std::to_string(v.v), static_cast<int>(ssaValueSlot_[v.v])));
             a->setType(typeOf(f, v));
+            // Where the signature takes a class by value the operand is its address: the walker copies `*p` in.
+            const std::size_t at = n - firstArg;
+            const Type *want = at < sig->params().size() ? sig->params()[at] : nullptr;
+            if (want != nullptr && want->isStructOrUnion() && typeOf(f, v)->isPointer()) {
+                std::unique_ptr<Unary> d = make_owned<Unary>('*', ExprPtr(a.release()));
+                d->setType(want);
+                args.push_back(std::move(d));
+                continue;
+            }
             args.push_back(std::move(a));
         }
         ExprPtr callee;
