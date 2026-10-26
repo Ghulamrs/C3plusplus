@@ -21,6 +21,7 @@ TypedId TypedTree::add(syntax::NodeId syn, const Type *type, const std::vector<T
     n.castXvalue = false;
     n.literal = 0;
     n.initForm = 0;
+    n.forParts = 0;
     children_.insert(children_.end(), children.begin(), children.end());
     nodes_.push_back(n);
     return TypedId(static_cast<std::uint32_t>(nodes_.size() - 1));
@@ -133,6 +134,8 @@ void Typer::record(syntax::NodeId id, TypedId t) {
     if (cast != p_.castTypes_.end()) tree_.setCast(t, TypeTable::id(cast->second), false);
     const auto form = p_.varForms_.find(id.v);
     if (form != p_.varForms_.end()) tree_.setInitForm(t, form->second);
+    const auto parts = p_.forParts_.find(id.v);
+    if (parts != p_.forParts_.end()) tree_.setForParts(t, parts->second);
     const auto ref = p_.refCastTypes_.find(id.v);
     if (ref != p_.refCastTypes_.end()) tree_.setCast(t, TypeTable::id(ref->second.first), ref->second.second);
     const auto k = p_.keywordValues_.find(id.v);
@@ -462,6 +465,8 @@ bool Typer::packBody(const std::string &symbol) const { return p_.packBodies_.co
 
 std::string Typer::typeInfoSymbol(const Type *t) const { std::string why; return p_.classes_.typeInfoSymbolFor(t, 0, &why); }
 bool Typer::constructed(const Type *cls) const { return p_.hasConstructors(cls->unqualified()->tag()); }
+
+bool Typer::guardedStatic(const std::string &symbol) const { return p_.guardedStatics_.count(symbol) != 0; }
 
 bool Typer::defaultInit(const Type *cls, const std::string &member) const {
     return p_.memberInit_.count(cls->unqualified()->tag() + "::" + member) != 0;

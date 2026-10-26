@@ -628,6 +628,7 @@ private:
     // **A declarator's initialiser form** (M3b.2), what its `var` node's parts cannot say: `S a;` and `S a = {};` hold
     // nothing either way. 0 none, 1 `= e` or `(e)`, 2 a braced list, 3 empty braces - value-initialisation.
     std::unordered_map<std::uint32_t, int> varForms_;
+    std::unordered_map<std::uint32_t, int> forParts_;   // a `for`'s parts present: 1 init, 2 condition, 4 step (M3b.2)
     int initFormAhead() const {
         const bool eq = peek().is("=");
         const Token &t = eq ? peekAt(1) : peek();

@@ -3,6 +3,7 @@
 // `try`; a class object, a temporary, a member call, `this`, a static local or a throw leaves the function outside.
 
 #include "Lowering.h"
+#include "../Ast.h"
 
 #include <cstring>
 
@@ -285,6 +286,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
     module_.functions.push_back(Function());
     fnIndex_ = index;
     locals_.clear();
+    staticLocals_.clear();
     loops_.clear();
     switches_.clear();
     labels_.clear();
@@ -574,20 +576,27 @@ void Lowering::returnStmt(sema::TypedId id) {
     endCatches(handlerDepth_); br(returnBlock_, std::vector<ValueId>(1, v.v));
 }
 
-// A `for` keeps its parts in order and leaves an empty one out, so only the four-part shape - and `for (;;)` - can be
-// read with certainty from the typed tree; which part a three-part `for` lacks is M3b.2's to record on the node.
+// A `for` keeps its parts in order and leaves an empty one out; which ones it has the parser records on the node
+// (8 says it did - a range-based `for` is not recorded, being a rewrite of its own).
 void Lowering::forStmt(sema::TypedId id) {
     const std::uint32_t n = count(id);
-    if (n != 4 && n != 1) outside("a for of " + std::to_string(n) + " parts");
-    if (n == 4) {
-        const sema::TypedId init = child(id, 0);
+    const int parts = tree_.node(id).forParts;
+    if (!(parts & 8)) outside("a range-based for");
+    const std::uint32_t want = 1 + ((parts & 1) ? 1 : 0) + ((parts & 2) ? 1 : 0) + ((parts & 4) ? 1 : 0);
+    if (n != want) outside("a for whose parts the record and the syntax disagree about");
+    std::uint32_t at = 0;
+    if (parts & 1) {
+        const sema::TypedId init = child(id, at++);
         if (syn(init).kind == syntax::Kind::DeclStmt) declaration(init); else expr(init);
     }
+    const sema::TypedId condNode = (parts & 2) ? child(id, at++) : sema::TypedId();
+    const sema::TypedId stepNode = (parts & 4) ? child(id, at++) : sema::TypedId();
+    if (condNode.valid() && syn(condNode).kind == syntax::Kind::DeclStmt) outside("a declaration in a for's condition");
     const BlockId cond = newBlock(), body = newBlock(), step = newBlock(), exit = newBlock();
     br(cond);
     place(cond);
-    if (n == 4) {
-        const Val c = truth(expr(child(id, 1)));
+    if (condNode.valid()) {
+        const Val c = truth(expr(condNode));
         condbr(c.v, body, exit);
     } else {
         br(body);
@@ -598,7 +607,7 @@ void Lowering::forStmt(sema::TypedId id) {
     loops_.pop_back();
     br(step);
     place(step);
-    if (n == 4) expr(child(id, 2));
+    if (stepNode.valid()) expr(stepNode);
     br(cond);
     place(exit);
 }
@@ -647,7 +656,15 @@ void Lowering::declaration(sema::TypedId id) {
         const sema::TypedNode &v = tree_.node(var);
         if (v.type == nullptr) outside("a var not typed");
         const sema::Resolution &r = tree_.resolution(var);
-        if (r.what == sema::Resolution::Local && !r.symbol.empty()) outside("a static local");
+        if (r.what == sema::Resolution::Local && !r.symbol.empty()) {
+            // [stmt.dcl]/4: a static local is the global the parser laid down, its address taken where it is named;
+            // one built at run time under a guard, a thread_local and a reference stay outside.
+            if (r.isThreadLocal || threadLocalGlobal(r.symbol)) outside("a thread_local");
+            if (!guarded_ || guarded_(r.symbol)) outside("a static local built at run time");
+            if (v.type->isReference()) outside("a static reference");
+            staticLocals_[v.syntax.v] = std::make_pair(r.symbol, tid(*v.type));
+            continue;
+        }
         const Type &t = *v.type;
         TypeId slotType;
         if (t.isReference()) {
@@ -975,6 +992,8 @@ Lowering::Val Lowering::literal(sema::TypedId id) {
 Lowering::Val Lowering::nameAddress(sema::TypedId id) {
     const sema::TypedNode &n = tree_.node(id);
     if (n.decl.valid()) {
+        const std::map<std::uint32_t, std::pair<std::string, TypeId> >::const_iterator s = staticLocals_.find(n.decl.v);
+        if (s != staticLocals_.end()) return Val(addrOf(s->second.first, tid(*types_.pointerTo(&T(s->second.second)))), s->second.second);
         std::map<std::uint32_t, std::pair<ValueId, TypeId> >::const_iterator l = locals_.find(n.decl.v);
         if (l == locals_.end()) outside("a name whose local the lowering did not declare");
         const sema::Resolution &r = tree_.resolution(id);
@@ -1470,6 +1489,13 @@ Lowering::Val Lowering::assign(sema::TypedId id) {
 }
 
 // A call of the function the parser recorded, by its symbol, or through a pointer to a function.
+// Whether the program's global of this symbol is a thread_local: a block-scope one's record is made before its mark.
+bool Lowering::threadLocalGlobal(const std::string &symbol) const {
+    for (const ::Global &g : program_.globals)
+        if (g.symbol == symbol) return g.isThreadLocal;
+    return false;
+}
+
 // [expr.pseudo]: `p->~T()` of a scalar or a class with nothing to destroy ends no one's life but by name - the
 // object is evaluated and nothing more is done. The syntax notes the call as the member alone, or inside a call.
 bool Lowering::pseudoDestructor(sema::TypedId member) {

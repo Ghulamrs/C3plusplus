@@ -1355,6 +1355,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     lowering.setConstructed([&typer](const Type *cls) { return typer.constructed(cls); });
     lowering.setAssigned([&typer](const Type *cls) { return typer.assigned(cls); });
     lowering.setDefaultInit([&typer](const Type *cls, const std::string &m) { return typer.defaultInit(cls, m); });
+    lowering.setGuarded([&typer](const std::string &symbol) { return typer.guardedStatic(symbol); });
     lowering.setTypeInfo([&typer](const Type *t) { return typer.typeInfoSymbol(t); });
     std::map<std::string, int> reasons;
     int lowered = 0;

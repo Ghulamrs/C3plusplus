@@ -1492,7 +1492,11 @@ StmtPtr Parser::statement() {
     }
     pendingThrow_ = ThrowFacts();
     StmtPtr noted = noteStmt(std::move(s), kind, text, pos, mark, pos);
-    if (const For *f = dynamic_cast<const For *>(noted.get())) syntaxScopes_[noted->syntax().v] = f->scope();
+    if (const For *f = dynamic_cast<const For *>(noted.get())) {
+        syntaxScopes_[noted->syntax().v] = f->scope();
+        if (pendingRange_.bName.empty())
+            forParts_[noted->syntax().v] = (f->init() != nullptr ? 1 : 0) | (f->cond() != nullptr ? 2 : 0) | (f->step() != nullptr ? 4 : 0);
+    }
     if (kind == syntax::Kind::For && !pendingRange_.bName.empty()) rangeFacts_[noted->syntax().v] = pendingRange_;
     pendingRange_ = RangeFacts();
     if (const Case *c = dynamic_cast<const Case *>(noted.get()))

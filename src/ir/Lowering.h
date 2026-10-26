@@ -43,6 +43,7 @@ public:
     void setConstructed(std::function<bool(const Type *)> f) { constructed_ = f; }
     void setAssigned(std::function<bool(const Type *)> f) { assigned_ = f; }
     void setDefaultInit(std::function<bool(const Type *, const std::string &)> f) { defaultInit_ = f; }
+    void setGuarded(std::function<bool(const std::string &)> f) { guarded_ = f; }
     void setTypeInfo(std::function<std::string(const Type *)> f) { typeInfo_ = f; }
 private:
     struct Outside { std::string why; explicit Outside(const std::string &w) : why(w) {} };
@@ -136,6 +137,7 @@ private:
     bool plainClass(const Type &t) const;
     bool simpleLayout(const Type &cls) const;
     bool pseudoDestructor(sema::TypedId member);
+    bool threadLocalGlobal(const std::string &symbol) const;
     void memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32_t to);
     void classLocal(sema::TypedId var, ValueId slot, const Type &t);
     void copyObject(ValueId to, ValueId from, const Type &t);
@@ -157,12 +159,14 @@ private:
     TypeId thisType_;
     std::function<bool(const Type *)> constructed_, assigned_;
     std::function<bool(const Type *, const std::string &)> defaultInit_;
+    std::function<bool(const std::string &)> guarded_;
     std::function<std::string(const Type *)> typeInfo_;
     std::vector<Pad> pads_;                     // innermost last
     std::vector<std::string> typeTable_;        // the function's selector indices: one per type, first occurrence, 1-based
     std::size_t handlerDepth_;                  // handlers the statement being lowered is inside
     BlockId returnBlock_;
     std::map<std::uint32_t, std::pair<ValueId, TypeId> > locals_;    // a `var` node -> its alloca and declared type
+    std::map<std::uint32_t, std::pair<std::string, TypeId> > staticLocals_;   // a static `var` -> its symbol and type
     std::vector<Loop> loops_;
     std::vector<SwitchCtx> switches_;
     std::map<std::string, BlockId> labels_;

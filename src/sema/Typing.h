@@ -72,6 +72,7 @@ struct TypedNode {
     Folded folded;
     std::uint32_t literal;
     std::uint8_t initForm;      // a `var`'s initialiser form: 0 none, 1 `= e` or `(e)`, 2 a braced list, 3 empty braces
+    std::uint8_t forParts;      // a `for`'s parts present: 1 init, 2 condition, 4 step, 8 recorded at all
 };
 
 class TypedTree {
@@ -87,6 +88,7 @@ public:
     void setCast(TypedId id, TypeId to, bool xvalue);
     void setFolded(TypedId id, long long value, TypeId type);
     void setInitForm(TypedId id, int form) { nodes_[id.v].initForm = static_cast<std::uint8_t>(form); }
+    void setForParts(TypedId id, int parts) { nodes_[id.v].forParts = static_cast<std::uint8_t>(parts | 8); }
     // A string literal's token comes with the label the program's data holds its bytes under (M3b.1: the lowering's `addr`).
     void setLiteral(TypedId id, const Token &token, const std::string &label = std::string());
     const Resolution &resolution(TypedId id) const { return resolutions_[nodes_[id.v].resolved]; }
@@ -130,7 +132,8 @@ public:
     std::string typeInfoSymbol(const Type *t) const;   // the type_info a catch of t names, Sema's; empty where none can be made
     bool constructed(const Type *cls) const;          // a class some constructor builds, written or implicit
     bool assigned(const Type *cls) const;             // a class with an operator= of its own, written or implicit
-    bool defaultInit(const Type *cls, const std::string &member) const;   // the member has an initialiser of its own   // a pack was expanded in the body: one node stands for its members   // Parser::scopedFunctions_'s bits, 0 for a body at file scope
+    bool defaultInit(const Type *cls, const std::string &member) const;   // the member has an initialiser of its own
+    bool guardedStatic(const std::string &symbol) const;  // a static local built at run time, under its guard   // a pack was expanded in the body: one node stands for its members   // Parser::scopedFunctions_'s bits, 0 for a body at file scope
     // Whether the function of this symbol is a template specialization (Signature::fromTemplate): its body is a replay.
     bool fromTemplate(const std::string &symbol) const;
     // The census's counts as the report spells them, "functions=N bodies=K synthesised=M", and the kinds behind M.
