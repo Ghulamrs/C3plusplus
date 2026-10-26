@@ -15,7 +15,7 @@ struct Value {
     long long k = 0;          // the constant, or the frame offset
     int id = 0;               // an unknown's number; 0 is equal to nothing
     bool sext32 = false;      // equal to the sign extension of its low half
-    Cond cc = kNoCond;   // Condition: what was tested, and the entry (qualified: tests/open/member-initialiser-namespace-enumerator)
+    Cond cc = kNoCond;        // Condition: what was tested, and the entry
     int flagsFrom = -1;       // whose flags it was tested on
 
     static Value constant(long long v) {
