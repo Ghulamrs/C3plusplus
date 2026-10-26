@@ -613,3 +613,25 @@ parser's path (the Wine stand-in on `cb33a21` reads them passing at both levels)
 `cb33a21` itself is owed**: it was queued on the box behind the earlier leg and never ran (the waiting job was killed
 with the Mac's); its one difference from `d5ea461` is the template rule, and the stand-in's 617/2 on `cb33a21` is
 what says the four are mended on x86.
+
+**M3b.2, the first four growths** (2026-10-26, Opus 5.5, branch `m3b2`, `88d889d` to `16c5cae`). `tests/ssa.sh`: **3,370
+of 7,440 source bodies lowered and verified** (782 at M3b.1). What grew, each by its own commit: namespace bodies and
+member functions (`this` the first parameter, a bare member `(*this).m` by the record's offset, a member call with
+the object's address first - the record carries the call's `this` and whether it went through a value); a
+template's body unless a pack was expanded in it (`Parser::packBodies_`); a reference to a class, as a parameter, a
+result, a local or a global; a plain class's local and assignment - with each declarator's initialiser form on its
+`var` node (`TypedNode::initForm`, the mark RP3 asked for), and `memcpy`/`memset` selected through the walker's
+`copyBlock`. Refused by name, each counted: a constructor and a destructor (their mem-initialisers and member
+destruction are not in the syntax; M3b.3's class-layout builder), a virtual call, a member call on a base's
+function, a body with landing pads, a class returned through a pointer. **Found by the boxes, not by any Mac suite**,
+and mended: a virtual call lowered as a static one (Linux, six cases); an array zeroed by `{}` left as the stack had
+it, an `alignas` local laid out at its type's alignment, and a class with a written `operator=` assigned by its bytes
+(Linux, three cases); and two faults the self-host met in the compiler's own source - `SsaSelect.cpp`'s block-scope
+using-declaration, and a lambda's capture taken for a template of its name. **Linux** (g++ 11.5) at `16c5cae`:
+run.sh under `-front=ssa` **994/0 at -O0 and -O2**, `make test`'s suites green, tms6747 624/0 at -O0 and -O2 at
+`04067ef`. **Mac**: `tools/self-host` 84 of 84 at -O0 and -O2 at `88d889d`. **Windows** (GRA, cl 19.44, back
+2026-10-26): cl builds the tree under `/W4 /WX` again after two fixes the box found (`AsmCodeView.cpp` outside its
+namespace on Windows, a local hiding a member in `Mir.cpp`); the cases in the GNU spelling **622/622 at -O0, -O2,
+`-front=typed` and `-front=typed -O2`**; the `-front=ssa` passes, the MASM pass (its masm build mended in
+`run-cases.cmd`), the tms6747 legs on the box's TI tools, self-host.cmd, bench.cmd, examples and the ml64 baseline
+are queued on the box and recorded when they report.
