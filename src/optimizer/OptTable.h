@@ -95,7 +95,7 @@ struct Opcode {
     _(Cmpb, "cmpb", Compare, 0, 1, kNoCond, "cmp", 1)                                         \
     _(Cmpw, "cmpw", Unknown, 0, 0, kNoCond, "cmp", 2)                                         \
     _(Test, "test", Compare, E | R, 0, kNoCond, "test", 0)                                    \
-    _(Testb, "testb", Compare, 0, 0, kNoCond, "test", 1)                                      \
+    _(Testb, "testb", Compare, E | R, 1, kNoCond, "test", 1)                                  \
     _(Testw, "testw", Unknown, 0, 0, kNoCond, "test", 2)                                      \
     _(Testl, "testl", Compare, E | R, 4, kNoCond, "test", 4)                                  \
     _(Testq, "testq", Compare, E | R, 8, kNoCond, "test", 8)                                  \
