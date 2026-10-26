@@ -139,6 +139,8 @@ private:
     bool pseudoDestructor(sema::TypedId member);
     bool threadLocalGlobal(const std::string &symbol) const;
     Val toBase(Val v, TypeId to);
+    void throwExpr(sema::TypedId id);
+    void throwCall(const char *symbol, const std::vector<ValueId> &args);
     void basePaths(const Type &cls, const Type &base, int at, int &found, int &offset);
     void memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32_t to);
     void classLocal(sema::TypedId var, ValueId slot, const Type &t);
