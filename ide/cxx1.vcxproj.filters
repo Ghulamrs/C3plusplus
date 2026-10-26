@@ -3,12 +3,18 @@
   <ItemGroup>
     <Filter Include="Header Files"><UniqueIdentifier>{B1043908-38C6-799F-9FFA-F085E08CBA37}</UniqueIdentifier></Filter>
     <Filter Include="Header Files\backend"><UniqueIdentifier>{DA402ED2-5280-A303-1883-541A88579ED4}</UniqueIdentifier></Filter>
+    <Filter Include="Header Files\encoder"><UniqueIdentifier>{49524441-B2AD-7335-EB3F-C22026F96277}</UniqueIdentifier></Filter>
     <Filter Include="Header Files\optimizer"><UniqueIdentifier>{968B60CF-71CB-C68D-AE8F-0E31CA89BC24}</UniqueIdentifier></Filter>
     <Filter Include="Header Files\parser"><UniqueIdentifier>{4EF6DBE6-71E9-9BB6-D7FF-6A93564BBB34}</UniqueIdentifier></Filter>
+    <Filter Include="Header Files\sema"><UniqueIdentifier>{4F6DE602-BD68-F887-2729-01B78B8DE7E1}</UniqueIdentifier></Filter>
+    <Filter Include="Header Files\syntax"><UniqueIdentifier>{5A05DC05-B7C7-6384-702D-3AE958E1860C}</UniqueIdentifier></Filter>
     <Filter Include="Source Files"><UniqueIdentifier>{17D24EA4-A08E-901F-6B67-41767BC0C46F}</UniqueIdentifier></Filter>
     <Filter Include="Source Files\backend"><UniqueIdentifier>{BAC44DA1-1890-263F-43B6-2DBBD19F7288}</UniqueIdentifier></Filter>
+    <Filter Include="Source Files\encoder"><UniqueIdentifier>{4F5CBEE8-FAF3-96D7-D86B-579E160D4847}</UniqueIdentifier></Filter>
     <Filter Include="Source Files\optimizer"><UniqueIdentifier>{ED5EE651-2AB1-29E2-BCB5-10A86AC974CB}</UniqueIdentifier></Filter>
     <Filter Include="Source Files\parser"><UniqueIdentifier>{F7683C0D-65EA-CABF-2CF9-EF5D0C23C3DF}</UniqueIdentifier></Filter>
+    <Filter Include="Source Files\sema"><UniqueIdentifier>{A1C27191-77EF-2363-9D80-BC36B1B0CE23}</UniqueIdentifier></Filter>
+    <Filter Include="Source Files\syntax"><UniqueIdentifier>{8077FCDB-B247-EFB6-9FD4-2387FCE98BA5}</UniqueIdentifier></Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\AstDump.cpp"><Filter>Source Files</Filter></ClCompile>
@@ -40,6 +46,7 @@
     <ClCompile Include="..\src\backend\Backend.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\CodeView.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\CodeViewTypes.cpp"><Filter>Source Files\backend</Filter></ClCompile>
+    <ClCompile Include="..\src\backend\CoffEmitter.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\Dwarf.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\Masm.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\Spelling.cpp"><Filter>Source Files\backend</Filter></ClCompile>
@@ -73,6 +80,23 @@
     <ClCompile Include="..\src\optimizer\OptTable.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\OptValues.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\Optimizer.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
+    <ClCompile Include="..\src\sema\Adapter.cpp"><Filter>Source Files\sema</Filter></ClCompile>
+    <ClCompile Include="..\src\sema\Classes.cpp"><Filter>Source Files\sema</Filter></ClCompile>
+    <ClCompile Include="..\src\sema\Constexpr.cpp"><Filter>Source Files\sema</Filter></ClCompile>
+    <ClCompile Include="..\src\sema\Linkage.cpp"><Filter>Source Files\sema</Filter></ClCompile>
+    <ClCompile Include="..\src\sema\Lookup.cpp"><Filter>Source Files\sema</Filter></ClCompile>
+    <ClCompile Include="..\src\sema\Overload.cpp"><Filter>Source Files\sema</Filter></ClCompile>
+    <ClCompile Include="..\src\sema\Templates.cpp"><Filter>Source Files\sema</Filter></ClCompile>
+    <ClCompile Include="..\src\sema\Typing.cpp"><Filter>Source Files\sema</Filter></ClCompile>
+    <ClCompile Include="..\src\syntax\Syntax.cpp"><Filter>Source Files\syntax</Filter></ClCompile>
+    <ClCompile Include="..\src\encoder\AsmCodeView.cpp"><Filter>Source Files\encoder</Filter></ClCompile>
+    <ClCompile Include="..\src\encoder\AsmExpr.cpp"><Filter>Source Files\encoder</Filter></ClCompile>
+    <ClCompile Include="..\src\encoder\AsmLexer.cpp"><Filter>Source Files\encoder</Filter></ClCompile>
+    <ClCompile Include="..\src\encoder\AsmUnit.cpp"><Filter>Source Files\encoder</Filter></ClCompile>
+    <ClCompile Include="..\src\encoder\Assembler.cpp"><Filter>Source Files\encoder</Filter></ClCompile>
+    <ClCompile Include="..\src\encoder\Coff.cpp"><Filter>Source Files\encoder</Filter></ClCompile>
+    <ClCompile Include="..\src\encoder\X64Encode.cpp"><Filter>Source Files\encoder</Filter></ClCompile>
+    <ClCompile Include="..\src\encoder\X64Parse.cpp"><Filter>Source Files\encoder</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\src\Abi.h"><Filter>Header Files</Filter></ClInclude>
@@ -93,6 +117,7 @@
     <ClInclude Include="..\src\backend\Backend.h"><Filter>Header Files\backend</Filter></ClInclude>
     <ClInclude Include="..\src\backend\CodeView.h"><Filter>Header Files\backend</Filter></ClInclude>
     <ClInclude Include="..\src\backend\CodeViewTypes.h"><Filter>Header Files\backend</Filter></ClInclude>
+    <ClInclude Include="..\src\backend\CoffEmitter.h"><Filter>Header Files\backend</Filter></ClInclude>
     <ClInclude Include="..\src\backend\Dwarf.h"><Filter>Header Files\backend</Filter></ClInclude>
     <ClInclude Include="..\src\backend\Masm.h"><Filter>Header Files\backend</Filter></ClInclude>
     <ClInclude Include="..\src\backend\Spelling.h"><Filter>Header Files\backend</Filter></ClInclude>
@@ -123,5 +148,20 @@
     <ClInclude Include="..\src\optimizer\OptStrings.h"><Filter>Header Files\optimizer</Filter></ClInclude>
     <ClInclude Include="..\src\optimizer\OptTable.h"><Filter>Header Files\optimizer</Filter></ClInclude>
     <ClInclude Include="..\src\optimizer\Optimizer.h"><Filter>Header Files\optimizer</Filter></ClInclude>
+    <ClInclude Include="..\src\sema\Adapter.h"><Filter>Header Files\sema</Filter></ClInclude>
+    <ClInclude Include="..\src\sema\Classes.h"><Filter>Header Files\sema</Filter></ClInclude>
+    <ClInclude Include="..\src\sema\Constexpr.h"><Filter>Header Files\sema</Filter></ClInclude>
+    <ClInclude Include="..\src\sema\Entities.h"><Filter>Header Files\sema</Filter></ClInclude>
+    <ClInclude Include="..\src\sema\Linkage.h"><Filter>Header Files\sema</Filter></ClInclude>
+    <ClInclude Include="..\src\sema\Lookup.h"><Filter>Header Files\sema</Filter></ClInclude>
+    <ClInclude Include="..\src\sema\Overload.h"><Filter>Header Files\sema</Filter></ClInclude>
+    <ClInclude Include="..\src\sema\Templates.h"><Filter>Header Files\sema</Filter></ClInclude>
+    <ClInclude Include="..\src\sema\Typing.h"><Filter>Header Files\sema</Filter></ClInclude>
+    <ClInclude Include="..\src\syntax\Syntax.h"><Filter>Header Files\syntax</Filter></ClInclude>
+    <ClInclude Include="..\src\syntax\SyntaxId.h"><Filter>Header Files\syntax</Filter></ClInclude>
+    <ClInclude Include="..\src\encoder\AsmUnit.h"><Filter>Header Files\encoder</Filter></ClInclude>
+    <ClInclude Include="..\src\encoder\Assembler.h"><Filter>Header Files\encoder</Filter></ClInclude>
+    <ClInclude Include="..\src\encoder\Coff.h"><Filter>Header Files\encoder</Filter></ClInclude>
+    <ClInclude Include="..\src\encoder\X64.h"><Filter>Header Files\encoder</Filter></ClInclude>
   </ItemGroup>
 </Project>

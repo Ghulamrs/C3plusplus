@@ -15119,3 +15119,41 @@ function; `inUnnamedNamespace` in Mangle.cpp drops it. `identical.sh`: 45 of 6,0
 every line a `.globl` or `PUBLIC` gone or that `L` dropped. **Self-host found one more gap, registered in `tests/open`**:
 no reference binds through a conversion operator, so M3a.1's OpId and StrId convert by `.name()` and
 `.str()` where the strings they replaced had been read as they stood.
+
+## M4: the encoder library in the tree, `cxx3 -c` writes a Windows object on every host, masm re-based, 2026-10-25
+
+**The project's masm is a library of this tree now, and `-c` for x86_64-windows runs it in process.** P2 of the design
+(`doc-cxx3/Compiler_Design_Final.md` 6.1) was taken whole, for a reason measured before deciding: half of a Windows object
+is composed as text in `Masm.cpp` - the unwind data and `.pdata`/`.xdata` (`functionEnd`), the funclet head and tail with
+the body lifted out of the output as a string (`closeFunclet`), the FH3 tables, the RTTI and throw records, the CodeView
+records converted from the GNU text - so an encoder reached without the MASM statement layer would have needed a second
+writer for every one of those. `src/encoder/` is masm `6bcb5d2` less `main.cpp`, under `namespace masm`: the x64 encoder,
+the unit with its fixups and multi-pass layout, the COFF writer, the CodeView line tables and the statement layer; the
+`Windows/MASM` repository keeps `main.cpp` over it (branch `m4-rebase`, `ENCODER=` naming the directory). Three of its
+basenames were renamed (`lexer`, `codeview`, `main`): `msvc/build.cmd` has one object directory and cxx3 has files of
+those names, the rule "A basename may not repeat" above.
+
+**`CoffEmitter` is the door** (`src/backend/CoffEmitter.*`): the spelling's text assembled in process into the object the
+`Job` names, so `assembleObjects` runs nothing and `link()` spawns no masm.exe for this spelling, and the Mac and the Linux
+box write Windows objects (`-c -arch x86_64-windows`). The ml64 fallback for a machine with no masm.exe is gone with the
+need for one; the paragraph "`-masm=masm` is x86_64-windows's default again" above names `Driver::masmReachable`, which is
+deleted - `-masm=ml64` stays by name. **The structural door** (M4.4): `MasmSpelling` builds each instruction's operands
+from the `Op`s as `masm::Operand`s - render's cases and arithmetic, the frame added to an rbp displacement, the PTR width
+where render's `isMem` put it, the referenced-symbol bookkeeping - and leaves a `\001k` line in the text where the
+instruction stood; the library's `Assembler::runText` encodes `structured[k]` there, its symbols resolved by name in
+operand order so the object's symbol table is the text path's. The prologue goes through `ins()` now, the same text.
+What the text still carries, by the census `-time` prints: the funclet head and tail (7 lines each), M3a.4's
+`FuncletBegin`/`FuncletEnd` directives to make data. `-coff=text` keeps every instruction in the text, the control.
+
+**Measured on the Mac** (`tools/coff-equal.sh`, every case and the 16 Compiler++ units, `-c` against `-S` + masm, `cmp`):
+against masm `6bcb5d2` at -O0 and -O2, 1,342 pairs, 1,302 objects compared, 0 differ (40 refused on both sides); with
+`-g`, 626 objects, 0 differ; the structural door the same numbers; the re-based masm's own `make test` as before and its
+48 test objects byte-identical to `6bcb5d2`'s. `make test` green, the emit golden 0 of 1,930 changed - the text never
+moved. The project's LINK, built on the Mac, reads the three objects of `examples/` and leaves 18 unresolved, every one
+the CRT's, which this machine does not have. **No Windows box this round**: link.exe with the CRT, the run of the image,
+`run-cases.cmd` with `-c`, cdb on `-g` objects and the self-host through `-c` are owed, and `doc-cxx3/M4-PLAN.md` says so.
+
+**Two things found on the way.** `ide/generate.py` listed `src/`, `parser/`, `backend/` and `optimizer/` and not `sema/` or
+`syntax/`, so the Visual Studio and Xcode projects had none of M2's sources; it lists all seven directories now. And a
+job line handed to `xargs -L 1` must not end in a blank - xargs reads one as "the next line continues this one", and the
+gate's first run compiled every case as one job of 1,072 inputs.

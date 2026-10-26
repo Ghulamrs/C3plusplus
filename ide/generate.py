@@ -27,7 +27,7 @@ SHARED_BUILD = "$(TMPDIR)/ride-xcode"   # the build folder RIDE's projects share
 def sources():
     """Every .cpp the build compiles, in the Makefile's own order."""
     out = []
-    for d in ("", "parser", "backend", "optimizer"):
+    for d in ("", "parser", "backend", "optimizer", "sema", "syntax", "encoder"):
         base = os.path.join(ROOT, "src", d)
         for f in sorted(os.listdir(base)):
             if f.endswith(".cpp") and " " not in f:      # macOS " 2.cpp" copies
@@ -37,7 +37,7 @@ def sources():
 
 def headers():
     out = []
-    for d in ("", "parser", "backend", "optimizer"):
+    for d in ("", "parser", "backend", "optimizer", "sema", "syntax", "encoder"):
         base = os.path.join(ROOT, "src", d)
         for f in sorted(os.listdir(base)):
             if f.endswith(".h") and " " not in f:

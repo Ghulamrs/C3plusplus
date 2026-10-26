@@ -20,6 +20,8 @@ private:
     struct Job {
         std::string input;
         std::string output;
+        // The COFF object CoffEmitter writes in process from the text, where `output` names the .s it stands for (M4.2).
+        std::string object;
     };
 
     std::string program_;
@@ -46,6 +48,7 @@ private:
     int optimize_ = 0;
     bool forSize_ = false;      // -Os: -O1, the smaller code chosen where a backend offers the choice
     bool objectOnly_ = false;
+    bool coffText_ = false;      // -coff=text: every instruction through the text door, the control for M4.4's gate
     unsigned threads_ = 0;
     // **Which assembler the Windows target is written for.**
     Syntax syntax_ = Syntax::Gnu;
@@ -90,8 +93,10 @@ private:
     static const char *hostGnuAssembler();
     static const char *hostLinker();
     std::string masmAssembler() const;
-    bool masmReachable() const;
     std::string windowsLinker() const;
+    // **x86_64-windows in the MASM spelling is assembled in process** (M4.2), on every host; no masm.exe is run.
+    bool assemblesInProcess() const;
+    static std::string objectBeside(const std::string &asmPath);
     // **The tms6747 target is assembled and linked on any host**: by asm6x,
     // the project's own C6000 assembler, and by TI's lnk6x where CCS is.
     bool targetIsTi() const;
