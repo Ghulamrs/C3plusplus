@@ -43,9 +43,11 @@ bool Lowering::builtMember(const Type &t) const {
     return t.isStructOrUnion() && t.isComplete() && !plainClass(t) && !t.unqualified()->hasVirtualBase();
 }
 
-// simpleLayout's class with members of class type besides: each built by the constructor the parser chose for it.
+// simpleLayout's class with members of class type and non-virtual bases besides, each built by what the parser chose.
 bool Lowering::buildableLayout(const Type &cls) const {
-    if (cls.polymorphic() || cls.hasVirtualBase() || !cls.bases().empty() || cls.kind() == Kind::Union) return false;
+    if (cls.polymorphic() || cls.hasVirtualBase() || cls.kind() == Kind::Union) return false;
+    for (const Type::BaseSpec &b : cls.bases())
+        if (b.isVirtual || !b.direct || !b.type->isComplete() || b.type->unqualified()->hasVirtualBase() || b.type->unqualified()->polymorphic()) return false;
     for (const Member &m : cls.members()) {
         const Type &t = *m.type->unqualified();
         if (m.width != 0 || m.anonUnion != nullptr || t.isX87(target_)) return false;
@@ -95,7 +97,7 @@ void Lowering::destroyMembers(const Type &cls) {
     const std::vector<Member> &ms = cls.members();
     for (std::size_t n = ms.size(); n-- > 0; ) {
         const Type &mt = *ms[n].type->unqualified();
-        if (!builtMember(mt) || !destructor_) continue;
+        if (ms[n].declaredIn != nullptr || !builtMember(mt) || !destructor_) continue;
         const std::string symbol = destructor_(&mt);
         if (symbol.empty()) continue;
         const Type *self = types_.pointerTo(&mt);
@@ -103,6 +105,59 @@ void Lowering::destroyMembers(const Type &cls) {
         at(g).k = ms[n].offset;
         directCall(symbol, tid(*types_.functionType(types_.get(Kind::Void), std::vector<const Type *>(1, self), false)),
                    std::vector<ValueId>(1, result(g)));
+    }
+}
+
+// Which of the class's bases a mem-initialiser's name is - its tag or its own name - or -1.
+int Lowering::baseNamed(const Type &cls, const std::string &name) const {
+    for (std::size_t b = 0; b < cls.bases().size(); b++) {
+        const Type &bt = *cls.bases()[b].type->unqualified();
+        if (bt.tag() == name || bt.localName() == name) return static_cast<int>(b);
+    }
+    return -1;
+}
+
+// The address of a non-virtual base: this, moved to where the layout put it.
+ValueId Lowering::baseAddress(const Type::BaseSpec &b) {
+    const InstId g = add(Op::Gep, tid(*types_.pointerTo(b.type->unqualified())), std::vector<ValueId>(1, this_));
+    at(g).k = b.offset;
+    return result(g);
+}
+
+// A base built by the base-object constructor the parser chose for it - Itanium's C2 - from its entry or by default.
+void Lowering::buildBase(const Type::BaseSpec &b, sema::TypedId entry) {
+    const Type &bt = *b.type->unqualified();
+    std::string symbol;
+    TypeId sig;
+    bool defaulted = false;
+    if (!memberBuilt_ || !memberBuilt_(F().symbol, "^" + bt.tag(), 0, symbol, sig, defaulted)) {
+        if (!entry.valid() && !(constructed_ && constructed_(&bt))) return;
+        outside("a base built by no constructor the parser recorded");
+    }
+    if (defaulted) outside("a base built with default arguments");
+    const Type &ft = T(sig);
+    if (ft.params().empty() || ft.params()[0]->pointee()->unqualified() != &bt) outside("a base's constructor of another class");
+    std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, baseAddress(b)))));
+    if (entry.valid()) arguments(entry, 0, ft, 1, false, ops);
+    else if (ft.params().size() != 1) outside("a base's default constructor of parameters");
+    directCall(symbol, sig, ops);
+}
+
+// [class.dtor]/8: last of all, the bases by their base-object destructors - Itanium's D2 - in the reverse order.
+void Lowering::destroyBases(const Type &cls) {
+    for (std::size_t n = cls.bases().size(); n-- > 0; ) {
+        const Type::BaseSpec &b = cls.bases()[n];
+        const Type &bt = *b.type->unqualified();
+        std::string symbol;
+        TypeId sig;
+        bool defaulted = false;
+        if (!memberBuilt_ || !memberBuilt_(F().symbol, "~" + bt.tag(), 0, symbol, sig, defaulted)) {
+            if (destructor_ && !destructor_(&bt).empty()) outside("a base destroyed by no destructor the parser recorded");
+            continue;
+        }
+        const Type &ft = T(sig);
+        if (ft.params().size() != 1 || ft.params()[0]->pointee()->unqualified() != &bt) outside("a base's destructor of another class");
+        directCall(symbol, sig, std::vector<ValueId>(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, baseAddress(b))))));
     }
 }
 
@@ -114,10 +169,18 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
     for (std::uint32_t i = from; i < to; i++) {
         const sema::TypedId mi = child(fnNode, i);
         if (syn(mi).kind != syntax::Kind::MemInit) outside("a constructor part that is not a mem-initialiser");
-        if (cls.findMember(text(mi)) == nullptr) outside("a mem-initialiser of a base or of the class itself");
+        if (cls.findMember(text(mi)) == nullptr && baseNamed(cls, text(mi)) < 0) outside("a mem-initialiser of the class itself or of no base");
         named[text(mi)] = mi;
     }
+    // [class.base.init]/10: the bases first, in the order the class names them, each by the constructor the parser chose.
+    for (std::size_t b = 0; b < cls.bases().size(); b++) {
+        sema::TypedId entry;
+        for (std::map<std::string, sema::TypedId>::const_iterator e = named.begin(); e != named.end(); ++e)
+            if (cls.findMember(e->first) == nullptr && baseNamed(cls, e->first) == static_cast<int>(b)) entry = e->second;
+        buildBase(cls.bases()[b], entry);
+    }
     for (const Member &m : cls.members()) {
+        if (m.declaredIn != nullptr) continue;     // a base's, which its constructor built
         const std::map<std::string, sema::TypedId>::const_iterator e = named.find(m.name);
         const Type &mt = *m.type->unqualified();
         if (e == named.end()) {
@@ -493,6 +556,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         if (destroys) {
             place(returnBlock_);
             destroyMembers(*T(thisType_).pointee()->unqualified());
+            destroyBases(*T(thisType_).pointee()->unqualified());
             br(ret);
             returnBlock_ = ret;
         }

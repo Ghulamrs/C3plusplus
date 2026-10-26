@@ -1732,6 +1732,7 @@ void Parser::topLevel(Program &program) {
                                      "taking nothing - name one in the initialiser "
                                      "list, ': " + base->tag() + "(...)'");
                 // **The defaults the entry left out are read here, as every other call reads them.**
+                const std::size_t baseWritten = chosenArgs.size();
                 if (building && !copyBytes) applyDefaults(chosen, chosenArgs, d.pos);
 
                 std::string symbol = chosen.symbol;
@@ -1803,6 +1804,12 @@ void Parser::topLevel(Program &program) {
                 for (std::size_t i = 0; i < chosen.params.size(); i++) {
                     args.push_back(std::move(chosenArgs[i]));
                     params2.push_back(chosen.params[i]);
+                }
+                // What builds or destroys this base, for the SSA lowering (M3b.2): keyed as a member is, "^B" or "~B".
+                if (!memberTemplateInst_ && !takesVtt(base)) {
+                    const MemberBuilt b = { symbol, types_.functionType(types_.get(Kind::Void), params2, false),
+                                            building && chosenArgs.size() != baseWritten };
+                    memberBuilt_[currentFunction_ + "|" + (building ? "^" : "~") + base->tag() + "|0"] = b;
                 }
                 ExprPtr call = completeCall(base->tag(), symbol, nullptr,
                                             types_.get(Kind::Void), params2, false,

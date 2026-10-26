@@ -147,6 +147,10 @@ private:
     bool buildableLayout(const Type &cls) const;
     void buildMember(ValueId at, const Member &m, sema::TypedId entry);
     void destroyMembers(const Type &cls);
+    int baseNamed(const Type &cls, const std::string &name) const;
+    ValueId baseAddress(const Type::BaseSpec &b);
+    void buildBase(const Type::BaseSpec &b, sema::TypedId entry);
+    void destroyBases(const Type &cls);
     void arguments(sema::TypedId id, std::uint32_t from, const Type &ft, std::size_t skip, bool variadic, std::vector<ValueId> &ops);
     void argumentList(const Type &ft, std::size_t skip, bool variadic, const std::vector<sema::TypedId> &args, bool dummyInt,
                       std::vector<ValueId> &ops);
