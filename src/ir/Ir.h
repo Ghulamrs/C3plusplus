@@ -61,6 +61,7 @@ struct Inst {
     long long k;                    // an integer constant, a gep's constant offset, an alloca's frame index, a switch's case count
     unsigned long long bits;        // fconst's IEEE bits
     std::string sym;                // addr's and tlsaddr's symbol
+    std::vector<std::string> syms;  // a catchpad's or cleanuppad's type_info chain, "" for catch(...); `k` its own handlers' count
     Cmp cc;
     std::vector<Succ> succ;         // br: one; condbr: true then false; switch: default then one per case value in `cases`
     std::vector<long long> cases;

@@ -645,3 +645,44 @@ MASM pass did not run in this leg (masm is built on `src/encoder` since M4.3 and
 mended in `4b0fb63`) and is queued, with TI's lnk6x, `release-check` and `c6747-levels` on the box's TI tools,
 `self-host.cmd`, `bench.cmd`, `examples/` and the ml64 baseline. The hang the Mac met under `-front=ssa -O1` on
 `stack-probe` came from M3b.1's sweep binary and does not reproduce on the current tree at any level.
+
+**M3b.2, the exception growth: `try`/`catch` on the Itanium ABI** (2026-10-26, Fable 5.1, branch `m3b2-eh` off `fbc00f7`,
+local). A function with landing pads was refused whole; now a `try` whose body and handlers are in the subset is lowered
+(`Lowering::tryStatement`, M3-IR 3.6's Itanium half): every call inside a try's body or a handler is an `invoke` whose unwind
+successor is the innermost pad, a block marked `pad` with two parameters - the exception pointer and the selector the runtime
+hands over - opening with a `catchpad` (a try's) or a `cleanuppad` (a handler's end-catch) that carries the whole action
+chain (`Inst::syms`, the indices in `cases`, `k` the try's own handlers, `bits` 1 for a filter-0 row and 2 for a pad that
+hands on). The chain tests the selector per handler in the parser's own first-occurrence numbering (`typeIndexFor`, per
+function) and hands what nothing matched to the enclosing pad with both parameters, or to `_Unwind_Resume`; a handler
+calls `__cxa_begin_catch`, binds a scalar by value (copied out of the object) or a reference (holding the pointer), and
+ends its catch on every way out - falling off, `return`, `break`, `continue` (`endCatches`, the catch ended after the
+returned value is computed), or a throw through its own cleanup pad, which ends the catch and goes on to the enclosing
+pad or out of the frame. **Selection** (`SsaSelect.cpp`): an `invoke` is the walker's call between two labels and one
+call-site row naming the pad's landing label (`ssaland.N`, where rax and edx are stored into the two parameters before
+the block's own label, so a pad branching to another pad arrives past the stores) - rows registered in address order,
+disjoint, never sorted, `lsdaTable` filling the gaps as it always did; a function with pads whose tries nothing can
+throw through gets one empty row so the LSDA the prologue named exists. The type_info symbols are Sema's
+(`Typer::typeInfoSymbol` over `Classes::typeInfoSymbolFor`, handed to the lowering as `setTypeInfo`). **Refused by name**:
+a function try block or a dynamic exception specification (`FunctionFacts::wrappedBody`), a `noexcept` function with
+landing pads (its terminate region), exceptions on the Microsoft ABI (funclets: FH3's state tree is not written from the
+IR yet), a catch of a pointer, of a class by value, or of an unnamed type (the typed tree keeps no node for `catch (T)`
+with no name), a `goto` inside a try or a handler, a `throw` (as before). **Case**: `tests/cases/ssa-try-catch.cpp` -
+by value, by reference, catch-all, a handler left by return/break/continue, a try in a body, in a handler, a handler
+throwing out to an enclosing try, a call outside the try in a function with one, and a try nothing throws through.
+**Measured on the Linux box** (g++ 11.5, `~/fable-eh`): `tests/ssa.sh` **3,526 of 7,457 source bodies lowered and
+verified, 0 failed** (3,370 before); run.sh under `-front=ssa` **996 passed, 0 failed at -O0 and at -O2** (652 printed their recorded output, 340 refused as recorded; 994/0 before this growth); the case prints clang's output at -O0
+and -O2 with 8 of its 12 functions on the SSA path (`thrower` throws; see below for the other three). The first run of
+the gates failed `try-in-handler` and `two-try-same-type` with `terminate`: a handler's cleanup row with no types was
+registered with the filter-0 flag, and `lsdaTable` writes action 0 for a row of no types while advancing its action
+counter as if the record were there - so every later row named an action past the table. The flag is asked only
+where the chain has types now; `lsdaTable`'s arithmetic is left as it is, a shape the parser never produces.
+`tools/comment-lines` 0 over the cap, `tools/exclusions --check` 126 sites 0/0; the Mac only syntax-checked the
+changed files (`clang++ -std=c++11 -Wall -Wextra -Werror -pedantic -fsyntax-only`), which caught a `-Wreorder` the
+box would have refused. The box's lock was held by another session's full leg until 21:37 and my queued build was
+dropped with it, so the hour was extended to 22:30 and the Windows cases under the flag were not run.
+**Found and not mended**: a non-void function whose last statement is a `try` (or an `if`/`else`) with every path
+returning is refused "a body that falls off its end without a value" - the merge block is unreachable and unterminated,
+a shape older than this round; `byReference` and `throughGap` in the case take the parser's path for it. And the syntax
+tree keeps no `var` for the second handler of the case's `nestedInBody` (`catch (double unused)`), `(catch (block ...))`
+in `-dump=syntax`, where the same function alone keeps it - a recording fault of the parser's `noteCaught`, not probed
+further; the lowering refuses the handler by name ("a handler whose caught object the syntax tree does not hold").

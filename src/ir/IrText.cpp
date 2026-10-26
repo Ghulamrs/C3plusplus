@@ -50,6 +50,10 @@ void dumpInst(const Function &f, const TypeTable &types, InstId id, std::string 
     case Op::FConst: { char b[24]; std::snprintf(b, sizeof b, " 0x%llx", i.bits); out += b; break; }
     case Op::Addr: case Op::TlsAddr: out += " @" + i.sym; if (i.k != 0) out += " +" + std::to_string(i.k); break;
     case Op::Alloca: out += " align " + std::to_string(i.align) + " ; " + f.frame[static_cast<std::size_t>(i.k)].name; break;
+    case Op::CatchPad: case Op::CleanupPad:
+        for (std::size_t n = 0; n < i.syms.size(); n++) out += (n ? ", " : " [") + (i.syms[n].empty() ? std::string("...") : "@" + i.syms[n]) + (n + 1 == i.syms.size() ? "]" : "");
+        out += " own " + std::to_string(i.k);
+        break;
     default: break;
     }
     if (i.op == Op::Call || i.op == Op::Invoke) {
@@ -242,6 +246,7 @@ struct Verifier {
             const Succ &sc = i.succ[s];
             if (!sc.block.valid() || sc.block.v >= f.blockArena.size()) { fault(bid, "a branch to no block"); continue; }
             const Block &to = f.blockArena[sc.block.v];
+            if (i.op == Op::Invoke && s == 1) continue;     // the unwind successor's parameters are the runtime's: the pointer and the selector
             if (to.params.size() != sc.count) { fault(bid, "a branch to " + blockName(sc.block) + " with " + std::to_string(sc.count) +
                                                             " arguments for " + std::to_string(to.params.size()) + " parameters"); continue; }
             for (std::uint32_t a = 0; a < sc.count; a++) {

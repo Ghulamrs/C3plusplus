@@ -318,8 +318,40 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         if (i.count == 1) ssaLoad(f, f.operand(i, 0));
         a_->ins("jmp", lbl(returnLabel_));
         return;
-    case ir::Op::Call: {
-        // The walker's own call, over Var nodes naming the slots: placeArguments and every ABI rule stay where they are.
+    case ir::Op::Call:
+        selectCall(f, i, rt);
+        ssaStore(f, i.result);
+        return;
+    case ir::Op::Invoke: {
+        // One call-site row per invoke, naming the pad's landing label and the chain its pad carries (M3-IR 3.6): the rows
+        // are registered in address order and are disjoint, which is the order the walker's table wants and never sorts.
+        const int id = nextLabel();
+        const std::string begin = label("ssatry", id), end = label("ssatryend", id);
+        a_->defLabel(begin);
+        selectCall(f, i, rt);
+        a_->defLabel(end);
+        const ir::Block &pb = f.block(i.succ[1].block);
+        const ir::Inst &pad = f.inst(pb.insts[0]);
+        std::vector<int> indices;
+        for (std::size_t k = 0; k < pad.cases.size(); k++) indices.push_back(static_cast<int>(pad.cases[k]));
+        const std::string land = ssaLandLabel(i.succ[1].block);
+        callSite(begin, end, land, pad.syms, indices, (pad.bits & 1) != 0, ++ssaRegionAt_, (pad.bits & 2) != 0);
+        exceptionRegion(begin, end, land);
+        ssaStore(f, i.result);
+        a_->ins("jmp", lbl(ssaBlockLabel(i.succ[0].block)));
+        return;
+    }
+    case ir::Op::CatchPad:
+    case ir::Op::CleanupPad:
+        return;     // the row facts the invokes read; the landing stores are the block's own (selectBody)
+    default:
+        ssaUnsupported(i);
+    }
+}
+
+// The walker's own call, over Var nodes naming the slots: placeArguments and every ABI rule stay where they are.
+void X86_64Linux::selectCall(const ir::Function &f, const ir::Inst &i, const Type *rt) {
+    {
         const ir::CallInfo &c = f.calls[i.call];
         const Type *sig = ssaTypes_->type(c.signature);
         std::vector<ExprPtr> args;
@@ -351,13 +383,10 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         call->setHasThis(c.hasThis);
         call->setType(rt != nullptr ? rt : sig->returns());
         call->accept(*this);
-        ssaStore(f, i.result);
-        return;
-    }
-    default:
-        ssaUnsupported(i);
     }
 }
+
+std::string X86_64Linux::ssaLandLabel(ir::BlockId b) const { return label("ssaland", static_cast<int>(b.v)); }
 
 // The body: the parameters copied from the slots receiveParameters filled into their values' slots, then each block.
 void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
@@ -368,8 +397,17 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
         ssaStore(f, f.params[i]);
     }
     std::size_t lastPos = 0;
+    ssaRegionAt_ = 0;
     for (std::size_t b = 0; b < f.blocks.size(); b++) {
         const ir::Block &blk = f.block(f.blocks[b]);
+        // A pad: the runtime lands here with the pointer in rax and the selector in edx, stored into the block's two
+        // parameters; a branch from another pad arrives past the stores, at the block's own label, carrying both.
+        if (blk.pad && blk.params.size() == 2) {
+            a_->defLabel(ssaLandLabel(f.blocks[b]));
+            a_->ins("mov", reg("%rax"), vslot(blk.params[0]));
+            a_->ins("movslq", reg("%edx"), reg("%rdx"));     // the selector in its canonical 8-byte form
+            a_->ins("mov", reg("%rdx"), vslot(blk.params[1]));
+        }
         a_->defLabel(ssaBlockLabel(f.blocks[b]));
         for (std::size_t k = 0; k <= blk.insts.size(); k++) {
             const ir::InstId id = k < blk.insts.size() ? blk.insts[k] : blk.term;
@@ -378,6 +416,13 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
             if (in.pos != 0 && in.pos != lastPos) { markLine(in.pos); lastPos = in.pos; }
             selectInst(f, in);
         }
+    }
+    // A function the parser gave landing pads whose tries nothing can throw through registered no row: the prologue
+    // named the LSDA already, so an empty row defines it, as the walker's empty try does.
+    if (fn.hasLandingPads() && callSites().empty() && !usesFunclets()) {
+        const std::string none = label("ssatry", nextLabel());
+        a_->defLabel(none);
+        callSite(none, none, none, std::vector<std::string>(), std::vector<int>(), false, ++ssaRegionAt_, false);
     }
     // What walkBody writes after the body: the default return and the return label.
     if (isX87(fn.returns()))              a_->ins("fldz");
