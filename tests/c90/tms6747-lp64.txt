@@ -5,6 +5,7 @@
 # front end refuses outright: a 40-bit field cannot fit a 32-bit long.)
 ar_decay_param        sizeof a pointer
 bf_types              a 40-bit bit-field in unsigned long
+examples              (tests/c90/multi) prints sizeof(long) and 64-bit long values
 ce_conditional_const  sizeof(long) == 8 chooses an arm
 ce_sizeof_relations   sizeof(long) against int and short
 fnptr                 sizeof a function pointer

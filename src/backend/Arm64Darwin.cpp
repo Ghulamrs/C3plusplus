@@ -1292,6 +1292,7 @@ void Arm64Darwin::emitTlsWrappers(const Program &program) {
 }
 
 void Arm64Darwin::run(const Program &program) {
+    dialect_ = program.dialect;
     definedHere_.clear();
     for (const Global &g : program.globals)   definedHere_.insert(g.symbol);
     for (const Function &f : program.functions) definedHere_.insert(f.symbol());
@@ -1322,7 +1323,7 @@ void Arm64Darwin::run(const Program &program) {
         }
         std::string dwarf;
         writeDwarf(dwarf, kMachODwarf, target_, src->files().front(), compDir(),
-                   dwarfFns_, dwarfGlobals_);
+                   dwarfFns_, dwarfGlobals_, dialect_);
         out_ << dwarf;
     }
     out_ << ".subsections_via_symbols\n";

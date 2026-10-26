@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Dialect.h"
 #include "Type.h"
 #include "Mangle.h"
 #include "syntax/SyntaxId.h"
@@ -832,4 +833,6 @@ struct Program {
     bool usesVolatile = false;
     // Where the first `volatile` is, `file:line:col`, for the warning that says so.
     std::string volatileAt;
+    // The dialect the unit was read as (M7): the debug records' language byte is C's for C90.
+    Dialect dialect = Dialect::Cxx11;
 };

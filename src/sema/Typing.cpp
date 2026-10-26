@@ -274,7 +274,7 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
             if (op == "&" && !a->isFunction()) return types.pointerTo(a);
             if (op == "*" && da->isPointer() && !da->pointee()->isFunction()) return da->pointee();
             if (isClass(a)) return nullptr;
-            if (op == "!") return types.get(Kind::Bool);
+            if (op == "!") return p_.rules().truthType();
             if ((op == "+" || op == "-") && a->isArithmetic()) return p_.promote(a);
             if (op == "~" && a->isInteger()) return p_.promote(a);
             if (op == "*" && da->isPointer() && !da->pointee()->isFunction()) return da->pointee();
@@ -287,7 +287,7 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
             if (a == nullptr || b == nullptr || isClass(a) || isClass(b)) return nullptr;
             if (op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=" ||
                 op == "&&" || op == "||")
-                return (scalarOrArray(a) || a->isNullPtr()) && (scalarOrArray(b) || b->isNullPtr()) ? types.get(Kind::Bool) : nullptr;
+                return (scalarOrArray(a) || a->isNullPtr()) && (scalarOrArray(b) || b->isNullPtr()) ? p_.rules().truthType() : nullptr;
             if (op == "<<" || op == ">>") return a->isInteger() && b->isInteger() ? p_.promote(a) : nullptr;
             if (a->isArithmetic() && b->isArithmetic()) return p_.usualArithmetic(a, b);
             if ((op == "+" || op == "-") && da->isPointer() && b->isInteger()) return da;

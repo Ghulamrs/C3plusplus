@@ -42,10 +42,9 @@ const int kFormAddr = 0x01, kFormData2 = 0x05, kFormData4 = 0x06;
 const int kFormString = 0x08, kFormData1 = 0x0b, kFormFlag = 0x0c;
 const int kFormRef4 = 0x13, kFormSecOffset = 0x17, kFormExprLoc = 0x18;
 
-// DW_LANG_C_plus_plus. It was DW_LANG_C89 - 0x01, inherited from the compiler
-// this was forked from - which is a debugger being told the wrong language by a
-// C++ compiler, and it decides how a name is printed and demangled.
-const int kLangCpp = 0x04;
+// DW_LANG_C_plus_plus, and DW_LANG_C89 for a unit read as C90 (M7): it decides how a debugger prints and demangles a
+// name, and a C++ compiler saying C89 - the fork's inheritance until 2026-09-06 - told it the wrong language.
+const int kLangCpp = 0x04, kLangC89 = 0x01;
 const int kAteFloat = 0x04, kAteSigned = 0x05, kAteSignedChar = 0x06;
 const int kAteUnsigned = 0x07, kAteUnsignedChar = 0x08;
 
@@ -435,7 +434,7 @@ void writeScope(std::string &o, const DwarfFunction &f, int scope,
 void writeDwarf(std::string &out, const DwarfSpelling &sp, const Target &target,
                 const std::string &file, const std::string &compDir,
                 const std::vector<DwarfFunction> &fns,
-                const std::vector<DwarfGlobal> &globals) {
+                const std::vector<DwarfGlobal> &globals, Dialect dialect) {
     if (fns.empty()) return;
 
     writeAbbrevTable(out, sp);
@@ -458,7 +457,7 @@ void writeDwarf(std::string &out, const DwarfSpelling &sp, const Target &target,
 
     num(out, "  .byte", kAbCompileUnit);
     str(out, "cxx1");
-    num(out, "  .byte", kLangCpp);
+    num(out, "  .byte", dialect == Dialect::C90 ? kLangC89 : kLangCpp);
     str(out, file);
     str(out, compDir);
     line(out, "  .quad " + fns.front().begin);

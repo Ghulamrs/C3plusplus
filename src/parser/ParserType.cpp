@@ -1879,7 +1879,8 @@ void Parser::refuseVolatilePointer() {
 // targets, which do not decorate a variable at all.
 void Parser::refuseVolatileWithLinkage(bool written, bool internal,
                                        std::size_t pos) {
-    if (!written || internal || !target_.microsoftNames()) return;
+    // A C name is its own symbol, so there is no decoration to carry the qualifier (M7).
+    if (!written || internal || !target_.microsoftNames() || !rules().mangles()) return;
     src_.fail(pos, "a 'volatile' object with external linkage is not supported "
                    "yet for x86_64-windows: cl decorates its name with the "
                    "qualifier - '?g@@3HC' where a plain int is '?g@@3HA' - and "
