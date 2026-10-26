@@ -177,25 +177,25 @@ std::string MDirective::describe() const {
         "prologue", "file", "location", "funclet-lines-begin", "funclet-lines-end", "globl", "weak", "type", "size",
         "text", "rodata", "relro", "data", "bss", "tdata", "tbss", "tls-init", "init", "align", "loop-align", "zero",
         "int", "sym", "bytes", "has-eh", "funclet-begin", "funclet-leave", "funclet-end"};
-    std::string t = std::string(".") + kKindNames[kind];
+    std::string out = std::string(".") + kKindNames[kind];
     switch (kind) {
     case Prologue:
-        t += " frame=" + std::to_string(n[0]) + " outgoing=" + std::to_string(n[1]) + " realign=" + std::to_string(n[2]);
-        if (!s.empty()) t += " lsda=" + s;
-        if (withSaves) { t += " saves="; for (std::size_t i = 0; i < saves.size(); i++) t += (i ? "," : "") + saves[i].reg; }
+        out += " frame=" + std::to_string(n[0]) + " outgoing=" + std::to_string(n[1]) + " realign=" + std::to_string(n[2]);
+        if (!s.empty()) out += " lsda=" + s;
+        if (withSaves) { out += " saves="; for (std::size_t i = 0; i < saves.size(); i++) out += (i ? "," : "") + saves[i].reg; }
         break;
-    case FileEntry: t += " " + std::to_string(n[0]) + " " + s; break;
-    case Location: t += " " + std::to_string(n[0]) + ":" + std::to_string(n[1]) + ":" + std::to_string(n[2]); break;
+    case FileEntry: out += " " + std::to_string(n[0]) + " " + s; break;
+    case Location: out += " " + std::to_string(n[0]) + ":" + std::to_string(n[1]) + ":" + std::to_string(n[2]); break;
     case Globl: case WeakDefinition: case ObjectType: case TlsInitialiserEntry: case DataBytes:
-    case FuncletBegin: case FuncletLeave: case FuncletEnd: t += " " + s; break;
-    case ObjectSize: t += " " + s + " " + std::to_string(n[0]); break;
-    case InitialiserEntry: t += " " + s + (n[0] ? " dso" : ""); break;
-    case Align: case LoopAlign: case Zero: case NoteHasEh: t += " " + std::to_string(n[0]); break;
-    case DataInt: t += " " + std::to_string(n[0]) + " " + std::to_string(n[1]); break;
-    case DataSym: t += " " + s + (n[0] ? "+" + std::to_string(n[0]) : ""); break;
+    case FuncletBegin: case FuncletLeave: case FuncletEnd: out += " " + s; break;
+    case ObjectSize: out += " " + s + " " + std::to_string(n[0]); break;
+    case InitialiserEntry: out += " " + s + (n[0] ? " dso" : ""); break;
+    case Align: case LoopAlign: case Zero: case NoteHasEh: out += " " + std::to_string(n[0]); break;
+    case DataInt: out += " " + std::to_string(n[0]) + " " + std::to_string(n[1]); break;
+    case DataSym: out += " " + s + (n[0] ? "+" + std::to_string(n[0]) : ""); break;
     default: break;
     }
-    return t;
+    return out;
 }
 
 
