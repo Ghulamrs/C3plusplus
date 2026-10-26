@@ -28,6 +28,21 @@ int accessWidth(const Instr &i, const Operand &at) {
     return 16;
 }
 
+// **How many bytes a scalar SSE instruction reads or writes at a frame operand an xmm register could take**: a
+// move to or from an xmm register, or the source of an arithmetic, compare or conversion; 0 for anything else.
+int floatingAccessWidth(const Instr &i, const Operand &at, const std::function<bool(const Operand &)> &isXmm) {
+    const Operand &other = &at == &i.a ? i.b : i.a;
+    const std::string m = i.m.name();
+    if (m == "movsd" || m == "movq") return isXmm(other) ? 8 : 0;
+    if (m == "movss" || m == "movd") return isXmm(other) ? 4 : 0;
+    if (&at != &i.a) return 0;
+    for (const char *d : {"addsd", "subsd", "mulsd", "divsd", "ucomisd", "comisd", "cvtsd2ss", "cvttsd2si", "cvttsd2siq"})
+        if (m == d) return 8;
+    for (const char *s : {"addss", "subss", "mulss", "divss", "ucomiss", "comiss", "cvtss2sd", "cvttss2si", "cvttss2siq"})
+        if (m == s) return 4;
+    return 0;
+}
+
 struct Candidate {
     Local local;
     bool ok;
@@ -50,10 +65,13 @@ void SharedSlots::addAccessesOf(const Stream &s) {
 }
 
 std::vector<Local> promotableLocals(const Stream &s, const std::vector<Local> &locals, const SharedSlots &shared,
-                                    RegSet &mentioned) {
+                                    RegSet &mentioned, const std::function<bool(int)> &xmmPseudo) {
     std::vector<Candidate> cands;
     for (const Local &l : locals)
-        if (!l.floating && (l.size == 4 || l.size == 8) && !shared.overlaps(l.disp, l.size)) cands.push_back(Candidate{l});
+        if ((l.size == 4 || l.size == 8) && !shared.overlaps(l.disp, l.size)) cands.push_back(Candidate{l});
+    const auto isXmm = [&](const Operand &o) {
+        return xmm(o) || (o.kind == Operand::Register && o.reg.id >= kPhysical && xmmPseudo(o.reg.id));
+    };
     mentioned = 0;
     auto overlapping = [&](long long disp, int width, const std::function<void(Candidate &)> &f) {
         for (Candidate &cd : cands)
@@ -77,9 +95,11 @@ std::vector<Local> promotableLocals(const Stream &s, const std::vector<Local> &l
                 if (!i.b.isReg(RSP)) overlapping(o->disp, 1, [](Candidate &cd) { cd.ok = false; });
                 continue;
             }
-            const int w = accessWidth(i, *o);
+            const int fw = floatingAccessWidth(i, *o, isXmm);
+            const int w = fw ? fw : accessWidth(i, *o);
             overlapping(o->disp, w, [&](Candidate &cd) {
-                if (cd.local.disp != o->disp || cd.local.size != w || !renamable(i.m.name()) || xmm(i.a) || xmm(i.b)) cd.ok = false;
+                if (cd.local.disp != o->disp || cd.local.size != w) cd.ok = false;
+                else if (cd.local.floating ? fw == 0 : !renamable(i.m.name()) || isXmm(i.a) || isXmm(i.b)) cd.ok = false;
             });
         }
     }

@@ -295,7 +295,12 @@ void Webs::assign(Function &fn, const std::vector<int> &colour) {
             if (!isPseudo(o->reg.id) || colour[o->reg.id - kFirstPseudo] == kAsIs) continue;
             const int c = colour[o->reg.id - kFirstPseudo];
             if (c >= 0) o->reg.id = c;
-            else *o = Operand::ofMem(RBP, fn.pseudos[o->reg.id - kFirstPseudo].slot.disp);
+            else {
+                // A float or double given its slot back is moved by its own width: `movapd` to memory moves 16 aligned bytes.
+                const Local &l = fn.pseudos[o->reg.id - kFirstPseudo].slot;
+                if (l.floating && (e.ins.m == "movapd" || e.ins.m == "movaps")) e.ins.m = l.size == 4 ? "movss" : "movsd";
+                *o = Operand::ofMem(RBP, l.disp);
+            }
             renamed = true;
         }
         if (renamed) fn.flow.effects[k] = effectsOf(e.ins, fn.convention);

@@ -5,6 +5,8 @@
 
 #include "OptFlow.h"
 
+#include <functional>
+
 namespace opt {
 
 // What nobody reads, a sign extension included when only its low half is read.
@@ -47,7 +49,7 @@ bool threadJumps(Function &fn);
 struct Local {
     long long disp;
     int size;
-    bool floating;      // a float or double: never promoted, only held by hoist-xmm-slots
+    bool floating;      // a float or double: promoted to an xmm register, or held by hoist-xmm-slots
 
     // C++11 has no aggregate with a member initialiser, so the braces call this.
     Local(long long disp = 0, int size = 0, bool floating = false)
@@ -82,11 +84,11 @@ private:
     long long escapesFrom_ = 0;
 };
 
-// **The scalar locals a register could hold**: not shared, never addressed,
-// every access whole and by an instruction that takes a register there;
-// none where the frame escapes or setjmp is called. `mentioned`: every register named.
+// **The scalar locals a register could hold**: not shared, never addressed, every access whole and by an instruction
+// that takes a register there - an xmm one for a float or double; none where the frame escapes or setjmp is called.
+// `mentioned`: every register named; `xmmPseudo`: whether a pseudo stands for an xmm register.
 std::vector<Local> promotableLocals(const Stream &s, const std::vector<Local> &locals, const SharedSlots &shared,
-                                    RegSet &mentioned);
+                                    RegSet &mentioned, const std::function<bool(int)> &xmmPseudo);
 
 // Each register goes back before rsp is taken from the frame for the return, ahead of the epilogue.
 void insertRestores(Stream &s, const std::vector<SavedReg> &saves);
