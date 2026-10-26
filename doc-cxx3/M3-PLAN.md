@@ -536,3 +536,26 @@ reads the same one: `explicit-destructor-call.cpp:76`, `p->~Base()` on a virtual
 `void` by [class.dtor] and the parser `void *`, the Microsoft deleting destructor `??_G` returning `this`. The copy's
 self-check found nothing on that target either. `typed.sh` runs the host target only, so no gate reads it; it is
 written here for M3b.2, which lowers that call on the Microsoft ABI and must decide which answer the typed tree gives.
+
+**M3a closed without a Windows box** (2026-10-26, Opus 5.5, `m3-line` at `1b350ae` to `cb10ae6`). Every row the plan
+sets M3a that a Mac or the Linux box can measure is measured; the Windows rows are owed and written as owed.
+**Linux** (g++ 11.5, a `git archive` of `1b350ae`): `run.sh` 991/0 at -O0, -O1 and -O2; `asm6x.sh` 636/0;
+`tms6747.sh` 622/0 at -O0 and -O2 on vm6747 with every pass also on sim6747; `ti-link.sh` 631 linked at both levels;
+`tests/c90.sh` on the host 438/0 at -O0 and -O2; `make tsan` and `tools/tsan-check` **clean** (RP2a condition 6).
+`tools/self-host` on the Linux box at `4ad06d0` (the source list given `src/encoder`): **82 of 82 the same from stage
+0, 1 and 2 at -O0 and at -O2**; on the Mac, 82 of 82 at both levels. **The Wine stand-in** (`tools/wine-cases.sh`):
+617 passed, 2 failed at -O0 and at -O2 - `noexcept-terminates` and `temporary-unwind`, which Wine 6.0's unwinder fails
+on every tree. **bench-kernels** on the box against main's binary: total 1,105 ms against 1,106, no kernel slower
+(sieve 131 against 140, isort 53 against 55, the rest equal), checksums equal. **Owed**: the R1.2 compile-time row on a
+quiet Mac (the runs recorded above were taken under load); every Windows row - the cl build, `run-cases.cmd` at -O0 and
+-O2 in both spellings, `catch-check`, `throw-check`, `sret-check`, `winlink-check`, `self-host.cmd` plain and -O2,
+`bench.cmd`, the -g cases through cdb, and RP2a condition 4's ml64 pass.
+
+**Found beside it, and mended apart** (`50da3f2`, outside M3's scope). The C6000's `hoistInvariants` renamed a
+hoisted value's readers among the loop's body lines, and an exit or the back edge is not a body line: `while (1) {
+i = i + 1; int b = (i == lim); if (b) break; }` returned 1 at -O2, the back edge left reading the exit's predicate.
+c90's `lp_break_while` is what met it (M7-PLAN, M7.4); the M7 agent's bisection named `predicateArms` because skipping
+that pass removes the shape, not the fault. A branch in the web whose predicate reads the value now refuses the rename.
+Box: `tms6747.sh` 623/0 at -O0, -O1 and -O2 on vm6747 and sim6747, `ti-link.sh` 632 linked at -O2, `asm6x.sh` 637/0;
+`tests/cases/hoist-back-edge-predicate.cpp`. **M7.3-M7.5** (`m7b`) are merged (`cb10ae6`) after a re-measurement from
+a fresh copy - `make test` green, `tests/c90.sh` 446/0 at -O0 and -O2.

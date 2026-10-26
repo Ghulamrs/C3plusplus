@@ -35,11 +35,13 @@ n=0; same=0; same0=0; : > "$OUT/differ.txt"
 cp ./cxx3.exe "$OUT/cxx3-stage0"
 for f in $SRCS; do
     b=$(basename "$f" .cpp); n=$((n + 1))
+    # The three stages compile at once: one at a time left a two-core box's second core idle for an hour.
     for s in 0 1 2; do
         "$OUT/cxx3-stage$s" -nologo -S $FLAGS -I src -DCXX1_INCLUDE_DIR="\"$ROOT/lib\"" \
             -DCXX1_CXX_INCLUDE_DIR="\"$ROOT/include\"" '-D__DATE__="Jan 01 2000"' '-D__TIME__="00:00:00"' \
-            "$f" -o "$OUT/s$s/$b.s" > /dev/null 2>&1
+            "$f" -o "$OUT/s$s/$b.s" > /dev/null 2>&1 &
     done
+    wait
     ok=1
     if cmp -s "$OUT/s1/$b.s" "$OUT/s2/$b.s" && [ -s "$OUT/s1/$b.s" ]; then same=$((same + 1)); else ok=0; fi
     if cmp -s "$OUT/s0/$b.s" "$OUT/s1/$b.s" && [ -s "$OUT/s0/$b.s" ]; then same0=$((same0 + 1)); else ok=0; fi
