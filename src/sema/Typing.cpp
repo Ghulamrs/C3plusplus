@@ -467,6 +467,22 @@ bool Typer::defaultInit(const Type *cls, const std::string &member) const {
     return p_.memberInit_.count(cls->unqualified()->tag() + "::" + member) != 0;
 }
 
+bool Typer::memberBuilt(const std::string &ctor, const std::string &member, std::uint32_t pos, std::string &symbol, TypeId &signature,
+                        bool &defaulted) const {
+    const std::map<std::string, Parser::MemberBuilt>::const_iterator i =
+        p_.memberBuilt_.find(ctor + "|" + member + "|" + std::to_string(pos));
+    if (i == p_.memberBuilt_.end() || i->second.symbol.empty()) return false;
+    symbol = i->second.symbol;
+    signature = TypeTable::id(i->second.signature);
+    defaulted = i->second.defaulted;
+    return true;
+}
+
+std::string Typer::destructorSymbol(const Type *cls) const {
+    const Signature *d = p_.destructorOf(cls->unqualified());
+    return d != nullptr ? d->symbol : std::string();
+}
+
 bool Typer::assigned(const Type *cls) const { return p_.lookup_.overloadsOf(cls->unqualified()->tag() + "::operator=") != nullptr; }
 
 bool Typer::fromTemplate(const std::string &symbol) const {

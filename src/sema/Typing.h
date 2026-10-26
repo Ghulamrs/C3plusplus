@@ -130,6 +130,11 @@ public:
     std::string typeInfoSymbol(const Type *t) const;   // the type_info a catch of t names, Sema's; empty where none can be made
     bool constructed(const Type *cls) const;          // a class some constructor builds, written or implicit
     bool assigned(const Type *cls) const;             // a class with an operator= of its own, written or implicit
+    // The constructor the parser chose, in constructor `ctor`, for a member an entry at `pos` names (0: one the list leaves alone), and
+    // whether default arguments were added to the written ones; false where it built none. A class's destructor's symbol.
+    bool memberBuilt(const std::string &ctor, const std::string &member, std::uint32_t pos, std::string &symbol, TypeId &signature,
+                     bool &defaulted) const;
+    std::string destructorSymbol(const Type *cls) const;
     bool defaultInit(const Type *cls, const std::string &member) const;   // the member has an initialiser of its own   // a pack was expanded in the body: one node stands for its members   // Parser::scopedFunctions_'s bits, 0 for a body at file scope
     // Whether the function of this symbol is a template specialization (Signature::fromTemplate): its body is a replay.
     bool fromTemplate(const std::string &symbol) const;

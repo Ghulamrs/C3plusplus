@@ -44,6 +44,9 @@ public:
     void setAssigned(std::function<bool(const Type *)> f) { assigned_ = f; }
     void setDefaultInit(std::function<bool(const Type *, const std::string &)> f) { defaultInit_ = f; }
     void setTypeInfo(std::function<std::string(const Type *)> f) { typeInfo_ = f; }
+    // The constructor the parser chose for a member, and a class's destructor - Sema's records, asked by the glue.
+    void setMemberBuilt(std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> f) { memberBuilt_ = f; }
+    void setDestructor(std::function<std::string(const Type *)> f) { destructor_ = f; }
 private:
     struct Outside { std::string why; explicit Outside(const std::string &w) : why(w) {} };
     struct Val { ValueId v; TypeId type; Val() {} Val(ValueId a, TypeId t) : v(a), type(t) {} };
@@ -135,6 +138,12 @@ private:
     static bool referable(const Type &t);
     bool plainClass(const Type &t) const;
     bool simpleLayout(const Type &cls) const;
+    bool builtMember(const Type &t) const;
+    bool buildableLayout(const Type &cls) const;
+    void buildMember(ValueId at, const Member &m, sema::TypedId entry);
+    void destroyMembers(const Type &cls);
+    void arguments(sema::TypedId id, std::uint32_t from, const Type &ft, std::size_t skip, bool variadic, std::vector<ValueId> &ops);
+    void directCall(const std::string &symbol, TypeId signature, const std::vector<ValueId> &ops);
     bool pseudoDestructor(sema::TypedId member);
     void memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32_t to);
     void classLocal(sema::TypedId var, ValueId slot, const Type &t);
@@ -158,6 +167,8 @@ private:
     std::function<bool(const Type *)> constructed_, assigned_;
     std::function<bool(const Type *, const std::string &)> defaultInit_;
     std::function<std::string(const Type *)> typeInfo_;
+    std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> memberBuilt_;
+    std::function<std::string(const Type *)> destructor_;
     std::vector<Pad> pads_;                     // innermost last
     std::vector<std::string> typeTable_;        // the function's selector indices: one per type, first occurrence, 1-based
     std::size_t handlerDepth_;                  // handlers the statement being lowered is inside

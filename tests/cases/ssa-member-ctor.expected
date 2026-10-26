@@ -1,0 +1,8 @@
+Part() Part(1,3) Holder(1) | sum 21
+~Holder(1) body-end ~Part(13) ~Tag(h) ~Part(7) 
+Part(3) Part() Holder(2,x) | sum 12
+~Holder(2) ~Part(7) ~Tag(x) ~Part(3) 
+c 5 5
+seg 13 0 -10 9
+Part(3) box 2.5 3
+~Box ~Part(3) 
