@@ -1,0 +1,7 @@
+E1 E2 E3 P4 P5 P6 P7 Holder(5) | 16 |
+~Holder(5) ~D ~D ~E3 ~E2 ~E1 
+E1 T2 T3 T4 E5 Box | built |
+~Box ~E5 ~T4 ~T3 ~T2 ~E1 
+E1 ~E1 | caught 2
+E1 T2 ~T2 ~E1 | caught 3
+E1 T2 T3 ~T3 ~T2 ~E1 | caught 4
