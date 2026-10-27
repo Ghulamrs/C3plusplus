@@ -829,6 +829,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
     msTryPad_ = BlockId();
     sret_ = ValueId();
     elidedSlot_ = ValueId();
+    intoSret_ = false;
     landingPads_ = facts.landingPads;
     vptrs_.clear();
     try {
@@ -1377,8 +1378,18 @@ void Lowering::returnCopied(sema::TypedId id, sema::TypedId value) {
         ops.push_back(result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, sret_))));
         ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(ft.params()[1]->referent())), std::vector<ValueId>(1, a.v))));
         directCall(symbol, sig, ops);
+    } else if (form == 2) {
+        // `return f();`: the callee builds the caller's object through this function's own result pointer.
+        if (syn(value).kind != syntax::Kind::Call && !operatorCalls(value)) outside("a return built in place by what is not a call");
+        const std::size_t was = openFull();
+        intoSret_ = true;
+        const Val v = syn(value).kind == syntax::Kind::Call ? call(value) : operatorCall(value);
+        intoSret_ = false;
+        if (!v.type.valid() || !T(v.type).isPointer() || T(v.type).pointee()->unqualified() != rt.unqualified())
+            outside("a return built in place by a call of another type");
+        closeFull(was);
     } else {
-        outside("a class with a copy of its own returned from a call built in place");
+        outside("a class with a copy of its own returned by a form not recorded");
     }
     leaveHandlers(handlerDepth_, liveFloor_, returnBlock_, std::vector<ValueId>(1, sret_));
 }
@@ -2529,6 +2540,8 @@ bool Lowering::pseudoDestructor(sema::TypedId member) {
 }
 
 Lowering::Val Lowering::call(sema::TypedId id) {
+    const bool sret = intoSret_;
+    intoSret_ = false;
     const std::uint32_t n = count(id);
     if (n == 0) outside("a call of nothing");
     const sema::TypedId head = child(id, 0);
@@ -2537,6 +2550,7 @@ Lowering::Val Lowering::call(sema::TypedId id) {
     if (r.what == sema::Resolution::Temporary || r.what == sema::Resolution::TypeName) outside("a class temporary");
     if (n == 1 && syn(head).kind == syntax::Kind::Member && pseudoDestructor(head)) return Val(ValueId(), tid(*types_.get(Kind::Void)));
     CallInfo info;
+    info.sret = sret;
     std::vector<ValueId> ops;
     TypeId sig;
     // A call by name reaches the recorded function; one through a value - a local, a call's result - is read as such.
@@ -2628,8 +2642,10 @@ Lowering::Val Lowering::callTail(TypeId sig, CallInfo info, std::vector<ValueId>
     info.variadic = ft.isVariadicFn();
     info.namedArgs = static_cast<int>(ft.params().size());
     const Type &gives = *ft.returns();
-    const bool destroyed = destroyedResultClass(gives);
-    if (!(gives.isVoid() || scalar(gives) || plainClass(gives) || bytesReturned(gives) || destroyed ||
+    // info.sret: a class with a copy of its own built in this function's result object, which no scope here destroys.
+    if (info.sret && !(copiedReturn(gives) && sret_.valid())) outside("a call built in place of what is not this function's result");
+    const bool destroyed = !info.sret && destroyedResultClass(gives);
+    if (!(gives.isVoid() || scalar(gives) || plainClass(gives) || bytesReturned(gives) || destroyed || info.sret ||
           (gives.isReference() && referable(*gives.referent()))))
         outside("a call returning '" + gives.describe() + "'");
     if (gives.isX87(target_)) outside("an x87 long double");
@@ -2639,7 +2655,7 @@ Lowering::Val Lowering::callTail(TypeId sig, CallInfo info, std::vector<ValueId>
     if (dummyInt) ops.push_back(iconst(tid(*types_.get(Kind::Int)), 0));      // [over.inc]/1: the postfix form's 0
     // A plain class comes back into a temporary of this frame, and the call carries its address, as a reference's does.
     ValueId resultSlot;
-    if (gives.isStructOrUnion()) {
+    if (gives.isStructOrUnion() && !info.sret) {
         resultSlot = entryAlloca(tid(*gives.unqualified()), "$result");
         info.resultAlloca = static_cast<int>(F().frame.size() - 1);
     }
@@ -2783,6 +2799,8 @@ bool Lowering::operatorCalls(sema::TypedId id) const {
 // An overloaded operator as the call it is: a member operator's left operand its object, a free one's operands all
 // arguments, a postfix ++ or -- given its 0. What it returns is what the call carries.
 Lowering::Val Lowering::operatorCall(sema::TypedId id) {
+    const bool sret = intoSret_;
+    intoSret_ = false;
     const sema::Resolution &r = tree_.resolution(id);
     if (r.indirect) outside("a virtual operator");
     if (!r.type.valid() || !T(r.type).isFunction()) outside("an operator whose function type was not recorded");
@@ -2793,6 +2811,7 @@ Lowering::Val Lowering::operatorCall(sema::TypedId id) {
     if (operands.empty()) outside("an operator of no operands");
     CallInfo info;
     info.symbol = r.symbol;
+    info.sret = sret;
     std::vector<ValueId> ops;
     std::size_t skip = 0;
     if (r.hasThis) {

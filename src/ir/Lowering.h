@@ -273,6 +273,7 @@ private:
     std::vector<Live> live_;                    // innermost last
     ValueId sret_;                              // the caller's result pointer, where a copied class is returned
     ValueId elidedSlot_;                        // the named return value, not destroyed by the `return` naming it
+    bool intoSret_ = false;                     // the next call builds its class result in the caller's object
     std::function<bool(syntax::NodeId, int &, std::string &, TypeId &)> returnBuilt_;
     std::function<bool(syntax::NodeId)> namedReturn_;
     std::size_t liveFloor_;                     // a constructor's built bases and members: below it, kept by a return
