@@ -26,6 +26,7 @@ StmtPtr Parser::constructObject(const Declared &d, const std::string &symbol,
     checkNotAbstract(d.type, d.pos, "'" + d.name + "'");
     const std::string key = constructorKey(d.type->tag());
     const Signature &ctor = overload_.resolveOverload(key, args, d.pos);
+    const std::size_t written = args.size();
     applyDefaults(ctor, args, d.pos);
 
     // **[dcl.init]/16: copy-initialization may not pick an `explicit` constructor.**
@@ -61,7 +62,11 @@ StmtPtr Parser::constructObject(const Declared &d, const std::string &symbol,
                                 std::move(all));
     // The constructor this declaration chose, by the local's serial, for its `var` node to carry (M2.16).
     if (symbol.empty())
-        if (const Local *built = lookup_.findLocal(d.name)) ctorBySerial_[built->serial] = ctor.symbol;
+        if (const Local *built = lookup_.findLocal(d.name)) {
+            const LocalBuilt b = { ctor.symbol, types_.functionType(types_.get(Kind::Void), full, false), args.size() != written,
+                                   valueInit && ctor.implicit };
+            ctorBySerial_[built->serial] = b;
+        }
 
     // **The zeroing half of [dcl.init]/8, spelt as the temporary path spells
     // it.** A constructor somebody wrote is the whole of the initialisation; an

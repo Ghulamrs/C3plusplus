@@ -495,6 +495,16 @@ bool Typer::memberBuilt(const std::string &ctor, const std::string &member, std:
     return true;
 }
 
+bool Typer::localBuilt(syntax::NodeId var, std::string &symbol, TypeId &signature, bool &defaulted, bool &zeroed) const {
+    const std::unordered_map<std::uint32_t, Parser::LocalBuilt>::const_iterator i = p_.localBuilt_.find(var.v);
+    if (i == p_.localBuilt_.end() || i->second.symbol.empty()) return false;
+    symbol = i->second.symbol;
+    signature = TypeTable::id(i->second.signature);
+    defaulted = i->second.defaulted;
+    zeroed = i->second.zeroed;
+    return true;
+}
+
 std::string Typer::destructorSymbol(const Type *cls) const {
     const Signature *d = p_.destructorOf(cls->unqualified());
     return d != nullptr ? d->symbol : std::string();

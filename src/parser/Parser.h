@@ -654,11 +654,16 @@ private:
         const Local *l = lookup_.findLocal(name);
         if (l == nullptr) return;
         declaredLocals_[id.v] = *l;
-        std::map<int, std::string>::const_iterator c = ctorBySerial_.find(l->serial);
-        if (c != ctorBySerial_.end()) resolutions_[id.v] = resolvedAs(Resolved::Call, nullptr, c->second);
+        std::map<int, LocalBuilt>::const_iterator c = ctorBySerial_.find(l->serial);
+        if (c == ctorBySerial_.end()) return;
+        resolutions_[id.v] = resolvedAs(Resolved::Call, nullptr, c->second.symbol);
+        localBuilt_[id.v] = c->second;
     }
-    // The constructor a declaration called, by the declared local's serial, until its `var` node is made (M2.16).
-    std::map<int, std::string> ctorBySerial_;
+    // The constructor a declaration called, by the declared local's serial, until its `var` node is made (M2.16): its
+    // signature with `this`, whether defaults were added to the written arguments, whether [dcl.init]/8 zeroed first.
+    struct LocalBuilt { std::string symbol; const Type *signature; bool defaulted, zeroed; };
+    std::map<int, LocalBuilt> ctorBySerial_;
+    std::unordered_map<std::uint32_t, LocalBuilt> localBuilt_;      // the same, by `var` node (M3b.2)
     // **One declarator's `var` node**, made when the declarator's scope closes - which a loop body that leaves by
     // `continue` from several places does in one place - over the parts its parse recorded: a bound, an initialiser.
     struct VarNote {
@@ -1128,7 +1133,7 @@ private:
         RangeFacts pendingRange = RangeFacts();
         LambdaFacts pendingLambda;
         std::vector<syntax::NodeId> lambdaBodies;
-        std::map<int, std::string> ctorBySerial;
+        std::map<int, LocalBuilt> ctorBySerial;
     };
     // **A parse whose result is discarded must put back what it accumulated.**
     struct Discarded {

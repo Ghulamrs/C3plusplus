@@ -150,6 +150,8 @@ public:
     bool memberBuilt(const std::string &ctor, const std::string &member, std::uint32_t pos, std::string &symbol, TypeId &signature,
                      bool &defaulted) const;
     std::string destructorSymbol(const Type *cls) const;
+    // A local's constructor, its signature with `this`, defaults added, zeroed first ([dcl.init]/8); false where none built it.
+    bool localBuilt(syntax::NodeId var, std::string &symbol, TypeId &signature, bool &defaulted, bool &zeroed) const;
     // Whether the function of this symbol is a template specialization (Signature::fromTemplate): its body is a replay.
     bool fromTemplate(const std::string &symbol) const;
     // The census's counts as the report spells them, "functions=N bodies=K synthesised=M", and the kinds behind M.
