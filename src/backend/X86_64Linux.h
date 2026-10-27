@@ -234,6 +234,7 @@ private:
     void selectCall(const ir::Function &f, const ir::Inst &i, const Type *rt);
     std::string ssaLandLabel(ir::BlockId b) const;
     int ssaRegionAt_ = 0;
+    int ssaSretSlot_ = 0;                           // the slot of the body's own result pointer, for a call built there
     // Microsoft: the FH3 state of each pad block (M3-IR 3.6), the frame's scratch word, and whether a funclet is being selected.
     std::vector<int> ssaPadState_;
     int ssaUnwindHelpSlot_ = 0;

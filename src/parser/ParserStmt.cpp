@@ -1691,7 +1691,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
                 mh.constPointer = names.isConst;
                 if (!caughtName.empty()) {
                     mh.objectSlot = declare(caughtName, declaredType, cpos);
-                    noteCaught(caughtName, declaredType, cpos);
+                    noteDeclaredVar(caughtName, declaredType, cpos);
                     // **Caught by value, the runtime built the copy and the handler
                     // destroys it** on every way out - cl's funclet does before returning.
                     if (!byRef && destructorOf(caught->unqualified()) != nullptr)
@@ -1758,7 +1758,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
 
         if (caught != nullptr && !caughtName.empty()) {
             const int slot = declare(caughtName, declaredType, cpos);
-            noteCaught(caughtName, declaredType, cpos);
+            noteDeclaredVar(caughtName, declaredType, cpos);
             if (!byRef && (classes_.copyConstructorOf(caught->unqualified()) != nullptr ||
                            destructorOf(caught->unqualified()) != nullptr))
                 facts.simple = false;

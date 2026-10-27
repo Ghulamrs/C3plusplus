@@ -44,17 +44,22 @@ bool Lowering::builtMember(const Type &t) const {
 }
 
 // simpleLayout's class with members of class type and non-virtual bases besides, each built by what the parser chose;
-// with `vptr`, a class with one and polymorphic bases besides - a written constructor's or destructor's, which stores it.
-bool Lowering::buildableLayout(const Type &cls, bool vptr) const {
-    if ((cls.polymorphic() && !vptr) || cls.hasVirtualBase() || cls.kind() == Kind::Union) return false;
-    for (const Type::BaseSpec &b : cls.bases())
-        if (b.isVirtual || !b.direct || !b.type->isComplete() || b.type->unqualified()->hasVirtualBase() ||
+// `vptr`, one with a vptr a written constructor or destructor stores; `arrays`, members arrays of such classes; `vbases`,
+// virtual bases and bases that have them, left to the most-derived object.
+bool Lowering::buildableLayout(const Type &cls, bool vptr, bool arrays, bool vbases) const {
+    if ((cls.polymorphic() && !vptr) || (cls.hasVirtualBase() && !vbases) || cls.kind() == Kind::Union) return false;
+    for (const Type::BaseSpec &b : cls.bases()) {
+        if (b.isVirtual && vbases) continue;     // not this function's to build or destroy
+        if (b.isVirtual || !b.direct || !b.type->isComplete() || (b.type->unqualified()->hasVirtualBase() && !vbases) ||
             (b.type->unqualified()->polymorphic() && !vptr))
             return false;
+    }
+    long long elems = 0;
     for (const Member &m : cls.members()) {
         const Type &t = *m.type->unqualified();
         if (m.width != 0 || t.isX87(target_)) return false;
-        if (m.type->isReference() ? !referable(*m.type->referent()) : !scalar(t) && !plainClass(t) && !builtMember(t) && !scalarArray(t))
+        if (m.type->isReference() ? !referable(*m.type->referent())
+                                  : !scalar(t) && !plainClass(t) && !builtMember(t) && !scalarArray(t) && !(arrays && builtArray(t, elems).valid()))
             return false;
     }
     return true;
@@ -65,6 +70,48 @@ bool Lowering::scalarArray(const Type &t) {
     if (!t.isArray() || !t.pointee()->isComplete()) return false;
     const Type &e = *t.pointee()->unqualified();
     return scalar(e) || scalarArray(e);
+}
+
+// An array, of any depth, of a class builtMember takes - builtClass, as a `local` - its elements counted into `count`:
+// its element class, or none.
+TypeId Lowering::builtArray(const Type &t, long long &count, bool local) const {
+    if (!t.isArray()) return TypeId();
+    long long n = 1;
+    TypeId e = tid(t);
+    while (T(e).isArray()) {
+        if (T(e).length() <= 0) return TypeId();
+        n *= T(e).length();
+        e = tid(*T(e).pointee()->unqualified());
+    }
+    if (local ? !builtClass(T(e)) : !builtMember(T(e))) return TypeId();
+    count = n;
+    return e;
+}
+
+// [class.base.init]/8 for an array member: each element, first to last, by the default constructor the parser chose;
+// [except.ctor]/3, each element built is destroyed - the last built first - if a later element or part throws.
+void Lowering::buildElements(const Member &m, const Type &et, long long elems) {
+    const bool guarded = landingPads_ && et.hasDestructor();
+    if (elems > (guarded ? 16 : 64)) outside("an array member of more elements than the lowering builds one by one");
+    std::string symbol;
+    TypeId sig;
+    bool defaulted = false;
+    if (!memberBuilt_ || !memberBuilt_(F().symbol, m.name, 0, symbol, sig, defaulted)) {
+        if (constructed_ && constructed_(et.id())) outside("an array member built by no constructor the parser recorded");
+        return;
+    }
+    if (defaulted) outside("an array member built with default arguments");
+    const Type &ft = T(sig);
+    if (ft.params().size() != 1 || ft.params()[0]->pointee()->unqualified() != &et) outside("an array member's constructor of another class");
+    for (long long k = 0; k < elems; k++) {
+        const InstId g = add(Op::Gep, tid(*ft.params()[0]), std::vector<ValueId>(1, this_));
+        at(g).k = m.offset + k * et.size(target_);
+        directCall(symbol, sig, std::vector<ValueId>(1, result(g)));
+        if (!guarded) continue;
+        const std::string dtor = destructor_ ? destructor_(et.id()) : std::string();
+        if (dtor.empty()) outside("an array member destroyed on unwinding by no destructor the parser recorded");
+        guard(result(g), et, dtor);
+    }
 }
 
 // A call of a function the parser chose by symbol, its type the record's: a constructor or a destructor of a member.
@@ -114,14 +161,21 @@ void Lowering::destroyMembers(const Type &cls) {
     const std::vector<Member> &ms = cls.members();
     for (std::size_t n = ms.size(); n-- > 0; ) {
         const Type &mt = *ms[n].type->unqualified();
-        if (ms[n].declaredIn != nullptr || !builtMember(mt) || !destructor_) continue;
-        const std::string symbol = destructor_(mt.id());
+        long long elems = 1;
+        const TypeId array = builtArray(mt, elems);
+        const Type &et = array.valid() ? T(array) : mt;
+        if (ms[n].declaredIn != nullptr || !builtMember(et) || !destructor_) continue;
+        const std::string symbol = destructor_(et.id());
         if (symbol.empty()) continue;
-        const TypeId self = types_.pointerTo(mt.id());
-        const InstId g = add(Op::Gep, self, std::vector<ValueId>(1, this_));
-        at(g).k = ms[n].offset;
-        directCall(symbol, types_.functionType(types_.voidType()->id(), std::vector<TypeId>(1, self)),
-                   std::vector<ValueId>(1, result(g)));
+        if (elems > 64) outside("an array member of more elements than the lowering destroys one by one");
+        // An array's elements in the reverse of the order they were built.
+        const TypeId self = types_.pointerTo(et.id());
+        for (long long k = elems; k-- > 0; ) {
+            const InstId g = add(Op::Gep, self, std::vector<ValueId>(1, this_));
+            at(g).k = ms[n].offset + k * et.size(target_);
+            directCall(symbol, types_.functionType(types_.voidType()->id(), std::vector<TypeId>(1, self)),
+                       std::vector<ValueId>(1, result(g)));
+        }
     }
 }
 
@@ -164,6 +218,7 @@ void Lowering::buildBase(const Type::BaseSpec &b, sema::TypedId entry) {
 void Lowering::destroyBases(const Type &cls) {
     for (std::size_t n = cls.bases().size(); n-- > 0; ) {
         const Type::BaseSpec &b = cls.bases()[n];
+        if (b.isVirtual) continue;     // the most-derived object's to destroy, never a base-object destructor's
         const Type &bt = *b.type->unqualified();
         std::string symbol;
         TypeId sig;
@@ -212,6 +267,13 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
         if (m.declaredIn != nullptr) continue;     // a base's, which its constructor built
         std::map<std::string, sema::TypedId>::const_iterator e = named.find(m.name);
         const Type &mt = *m.type->unqualified();
+        long long elems = 0;
+        const TypeId array = builtArray(mt, elems);
+        if (array.valid()) {
+            if (e != named.end() || (defaultInit_ && defaultInit_(cls.id(), m.name))) outside("an array member given an initialiser");
+            buildElements(m, T(array), elems);
+            continue;
+        }
         if (e == named.end() && defaultInit_ && defaultInit_(cls.id(), m.name)) {
             // [class.base.init]/9: the member's own initialiser, which the parser replayed as this constructor's entry.
             const sema::TypedId d = memberDefault_ ? memberDefault_(F().symbol, cls.tag() + "::" + m.name) : sema::TypedId();
@@ -320,7 +382,7 @@ void Lowering::classLocal(sema::TypedId var, ValueId slot, const Type &t) {
 bool Lowering::builtClass(const Type &t) const {
     if (!t.isStructOrUnion() || !t.isComplete() || plainClass(t)) return false;
     const Type &c = *t.unqualified();
-    return c.kind() != Kind::Union && (simpleLayout(c) || buildableLayout(c));
+    return c.kind() != Kind::Union && (simpleLayout(c) || buildableLayout(c, false, true));
 }
 
 // [dcl.init]/17 and [class.dtor]/4 for such a local: the constructor the parser chose called on
@@ -829,6 +891,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
     msTryPad_ = BlockId();
     sret_ = ValueId();
     elidedSlot_ = ValueId();
+    intoSret_ = false;
     landingPads_ = facts.landingPads;
     vptrs_.clear();
     try {
@@ -856,11 +919,15 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
             const Type &cls = *T(facts.thisType).pointee()->unqualified();
             isCtor = facts.isConstructor;
             const bool isDtor = !text(fnNode).empty() && text(fnNode)[0] == '~';
+            // A destructor of a class with a virtual base destroys its own part: cl's ??1, the virtual bases left to ??_D.
+            const bool vbaseDtor = isDtor && cls.hasVirtualBase();
+            if (vbaseDtor && !target_.microsoftNames()) outside("a destructor of a class with a virtual base, handed a VTT");
+            if (vbaseDtor && cls.polymorphic()) outside("a destructor of a polymorphic class with a virtual base");
             if ((isCtor || isDtor) && !simpleLayout(cls)) {
-                if (!buildableLayout(cls, true)) outside(isCtor ? "a constructor of a class with bases, a vptr or members to build"
+                if (!buildableLayout(cls, true, true, vbaseDtor)) outside(isCtor ? "a constructor of a class with bases, a vptr or members to build"
                                                                 : "a destructor of a class with bases, a vptr or members to destroy");
                 // The vptr stores are the parser's record, made where it stores them: one, out of the class's own table.
-                if (cls.hasVptr()) {
+                if (cls.hasVptr() && !vbaseDtor) {
                     if (!vptrStores_ || !vptrStores_(facts.symbol, vptrs_) || vptrs_.empty()) outside("a vptr the parser recorded no store for");
                     if (vptrs_.size() != 1) outside("a polymorphic base that is not primary");
                     if (vptrs_[0].symbol.empty()) outside("a vptr out of a VTT");
@@ -1377,8 +1444,18 @@ void Lowering::returnCopied(sema::TypedId id, sema::TypedId value) {
         ops.push_back(result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, sret_))));
         ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(ft.params()[1]->referent())), std::vector<ValueId>(1, a.v))));
         directCall(symbol, sig, ops);
+    } else if (form == 2) {
+        // `return f();`: the callee builds the caller's object through this function's own result pointer.
+        if (syn(value).kind != syntax::Kind::Call && !operatorCalls(value)) outside("a return built in place by what is not a call");
+        const std::size_t was = openFull();
+        intoSret_ = true;
+        const Val v = syn(value).kind == syntax::Kind::Call ? call(value) : operatorCall(value);
+        intoSret_ = false;
+        if (!v.type.valid() || !T(v.type).isPointer() || T(v.type).pointee()->unqualified() != rt.unqualified())
+            outside("a return built in place by a call of another type");
+        closeFull(was);
     } else {
-        outside("a class with a copy of its own returned from a call built in place");
+        outside("a class with a copy of its own returned by a form not recorded");
     }
     leaveHandlers(handlerDepth_, liveFloor_, returnBlock_, std::vector<ValueId>(1, sret_));
 }
@@ -1552,7 +1629,9 @@ void Lowering::declaration(sema::TypedId id) {
             if (!referable(*t.referent())) outside("a reference to '" + t.referent()->describe() + "'");
             slotType = tid(*types_.pointerTo(t.referent()));
         } else if (t.isArray()) {
-            if (!t.pointee()->isComplete() || !scalar(*t.pointee()) || t.pointee()->isX87(target_) || t.length() <= 0)
+            long long elems = 0;
+            if (!builtArray(t, elems, true).valid() &&
+                (!t.pointee()->isComplete() || !scalar(*t.pointee()) || t.pointee()->isX87(target_) || t.length() <= 0))
                 outside("an array of '" + t.pointee()->describe() + "'");
             slotType = tid(t);
         } else if (plainClass(t) || builtClass(t)) {
@@ -1579,13 +1658,46 @@ void Lowering::declaration(sema::TypedId id) {
             store(slot, result(add(Op::Bitcast, slotType, std::vector<ValueId>(1, b.v))));
             continue;
         }
-        if (t.isArray()) { localArray(var, slot, slotType); continue; }
+        if (t.isArray()) {
+            long long elems = 0;
+            const TypeId e = builtArray(t, elems, true);
+            if (e.valid()) builtArrayLocal(var, slot, T(e), elems);
+            else localArray(var, slot, slotType);
+            continue;
+        }
         if (t.isStructOrUnion()) { if (plainClass(t)) classLocal(var, slot, t); else builtLocal(var, slot, t); continue; }
         if (v.count > 1) outside("a var of " + std::to_string(v.count) + " parts");
         if (v.count == 0) continue;
         const std::size_t was = openFull();
         store(slot, exprTo(child(var, 0), slotType).v);
         closeFull(was);
+    }
+}
+
+// [dcl.init]/7 and [class.dtor]/10 for an array of such a class with no initialiser: each element, first to last, by the
+// default constructor the parser chose - where it chose one - and alive to the scope's end, the last built destroyed first.
+void Lowering::builtArrayLocal(sema::TypedId var, ValueId slot, const Type &et, long long elems) {
+    const sema::TypedNode &v = tree_.node(var);
+    if (v.initForm != 0) outside("an array of a class initialised from a list");
+    const bool dies = et.hasDestructor();
+    if (elems > (dies ? 16 : 64)) outside("an array of more elements than the lowering builds one by one");
+    if (dies && handlerDepth_ != 0) outside("a local with a destructor inside a handler");
+    const std::string dtor = dies && destructor_ ? destructor_(et.id()) : std::string();
+    if (dies && dtor.empty()) outside("an array whose elements' destructor the parser recorded none for");
+    std::string symbol;
+    TypeId sig;
+    bool defaulted = false, zeroed = false;
+    const bool built = localBuilt_ && localBuilt_(v.syntax, symbol, sig, defaulted, zeroed);
+    if (!built && constructed_ && constructed_(et.id())) outside("an array built by no constructor the parser recorded");
+    if (defaulted || zeroed) outside("an array built with default arguments or zeroed");
+    if (built && (T(sig).params().size() != 1 || T(sig).params()[0]->pointee()->unqualified() != &et))
+        outside("an array's constructor of another class");
+    const TypeId self = types_.pointerTo(et.id());
+    for (long long k = 0; k < elems; k++) {
+        const InstId g = add(Op::Gep, self, std::vector<ValueId>(1, slot));
+        at(g).k = k * et.size(target_);
+        if (built) directCall(symbol, sig, std::vector<ValueId>(1, result(g)));
+        if (dies) guard(result(g), et, dtor);
     }
 }
 
@@ -2529,6 +2641,8 @@ bool Lowering::pseudoDestructor(sema::TypedId member) {
 }
 
 Lowering::Val Lowering::call(sema::TypedId id) {
+    const bool sret = intoSret_;
+    intoSret_ = false;
     const std::uint32_t n = count(id);
     if (n == 0) outside("a call of nothing");
     const sema::TypedId head = child(id, 0);
@@ -2537,6 +2651,7 @@ Lowering::Val Lowering::call(sema::TypedId id) {
     if (r.what == sema::Resolution::Temporary || r.what == sema::Resolution::TypeName) outside("a class temporary");
     if (n == 1 && syn(head).kind == syntax::Kind::Member && pseudoDestructor(head)) return Val(ValueId(), tid(*types_.get(Kind::Void)));
     CallInfo info;
+    info.sret = sret;
     std::vector<ValueId> ops;
     TypeId sig;
     // A call by name reaches the recorded function; one through a value - a local, a call's result - is read as such.
@@ -2628,8 +2743,10 @@ Lowering::Val Lowering::callTail(TypeId sig, CallInfo info, std::vector<ValueId>
     info.variadic = ft.isVariadicFn();
     info.namedArgs = static_cast<int>(ft.params().size());
     const Type &gives = *ft.returns();
-    const bool destroyed = destroyedResultClass(gives);
-    if (!(gives.isVoid() || scalar(gives) || plainClass(gives) || bytesReturned(gives) || destroyed ||
+    // info.sret: a class with a copy of its own built in this function's result object, which no scope here destroys.
+    if (info.sret && !(copiedReturn(gives) && sret_.valid())) outside("a call built in place of what is not this function's result");
+    const bool destroyed = !info.sret && destroyedResultClass(gives);
+    if (!(gives.isVoid() || scalar(gives) || plainClass(gives) || bytesReturned(gives) || destroyed || info.sret ||
           (gives.isReference() && referable(*gives.referent()))))
         outside("a call returning '" + gives.describe() + "'");
     if (gives.isX87(target_)) outside("an x87 long double");
@@ -2639,7 +2756,7 @@ Lowering::Val Lowering::callTail(TypeId sig, CallInfo info, std::vector<ValueId>
     if (dummyInt) ops.push_back(iconst(tid(*types_.get(Kind::Int)), 0));      // [over.inc]/1: the postfix form's 0
     // A plain class comes back into a temporary of this frame, and the call carries its address, as a reference's does.
     ValueId resultSlot;
-    if (gives.isStructOrUnion()) {
+    if (gives.isStructOrUnion() && !info.sret) {
         resultSlot = entryAlloca(tid(*gives.unqualified()), "$result");
         info.resultAlloca = static_cast<int>(F().frame.size() - 1);
     }
@@ -2783,6 +2900,8 @@ bool Lowering::operatorCalls(sema::TypedId id) const {
 // An overloaded operator as the call it is: a member operator's left operand its object, a free one's operands all
 // arguments, a postfix ++ or -- given its 0. What it returns is what the call carries.
 Lowering::Val Lowering::operatorCall(sema::TypedId id) {
+    const bool sret = intoSret_;
+    intoSret_ = false;
     const sema::Resolution &r = tree_.resolution(id);
     if (r.indirect) outside("a virtual operator");
     if (!r.type.valid() || !T(r.type).isFunction()) outside("an operator whose function type was not recorded");
@@ -2793,6 +2912,7 @@ Lowering::Val Lowering::operatorCall(sema::TypedId id) {
     if (operands.empty()) outside("an operator of no operands");
     CallInfo info;
     info.symbol = r.symbol;
+    info.sret = sret;
     std::vector<ValueId> ops;
     std::size_t skip = 0;
     if (r.hasThis) {

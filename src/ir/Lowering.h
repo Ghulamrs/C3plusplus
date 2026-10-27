@@ -174,7 +174,10 @@ private:
     bool plainClass(const Type &t) const;
     bool simpleLayout(const Type &cls) const;
     bool builtMember(const Type &t) const;
-    bool buildableLayout(const Type &cls, bool vptr = false) const;
+    bool buildableLayout(const Type &cls, bool vptr = false, bool arrays = false, bool vbases = false) const;
+    TypeId builtArray(const Type &t, long long &count, bool local = false) const;
+    void buildElements(const Member &m, const Type &et, long long elems);
+    void builtArrayLocal(sema::TypedId var, ValueId slot, const Type &et, long long elems);
     static bool scalarArray(const Type &t);
     void buildMember(ValueId at, const Member &m, sema::TypedId entry);
     void destroyMembers(const Type &cls);
@@ -273,6 +276,7 @@ private:
     std::vector<Live> live_;                    // innermost last
     ValueId sret_;                              // the caller's result pointer, where a copied class is returned
     ValueId elidedSlot_;                        // the named return value, not destroyed by the `return` naming it
+    bool intoSret_ = false;                     // the next call builds its class result in the caller's object
     std::function<bool(syntax::NodeId, int &, std::string &, TypeId &)> returnBuilt_;
     std::function<bool(syntax::NodeId)> namedReturn_;
     std::size_t liveFloor_;                     // a constructor's built bases and members: below it, kept by a return

@@ -23,12 +23,14 @@ void Parser::parseArguments(std::vector<ExprPtr> &args) {
         if (peek().kind == TokenKind::Ident && peekAt(1).is("...")) {
             auto pk = packs_.find(peek().text);
             if (pk != packs_.end() && !pk->second.names.empty()) {
+                const std::size_t namePos = peek().pos;
                 at_ += 2;
                 for (std::size_t i = 0; i < pk->second.names.size(); i++) {
                     ExprPtr one = objectRef(pk->second.names[i]);
                     if (one == nullptr)
                         src_.fail(peek().pos, "'" + pk->second.names[i] +
                                               "' went missing from this pack");
+                    one = note(std::move(one), syntax::Kind::Name, pk->second.names[i], namePos);   // a part per member
                     args.push_back(decay(std::move(one)));
                 }
                 if (consume(")")) break;

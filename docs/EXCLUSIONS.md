@@ -104,7 +104,7 @@ goes in the same commit.
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:621` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2252` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:263` |
-| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:2988`, `src/parser/ParserTopLevel.cpp:830` |
+| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:2993`, `src/parser/ParserTopLevel.cpp:831` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:759` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:451` |
 | `template <template <class> typename C>`, `typename` after a template template parameter's list | C++17 | `src/parser/ParserTemplate.cpp:52` |
@@ -216,13 +216,13 @@ is left:
   has no body. `src/parser/ParserType.cpp:1279`
 - **a delegating constructor of a class with a virtual base** - the target
   would have to be told whether the object is the most derived one.
-  `src/parser/ParserTopLevel.cpp:2412`
+  `src/parser/ParserTopLevel.cpp:2413`
 - **a mem-initialiser that would run a constructor once per element of an
-  array member** - `src/parser/ParserTopLevel.cpp:1303`
+  array member** - `src/parser/ParserTopLevel.cpp:1304`
 - **a virtual base initialised with an argument that needs a temporary** - the
   base is built by the most-derived constructor, in a frame the temporary is
   not in; an argument of parameters and constants works.
-  `src/parser/ParserTopLevel.cpp:1270`
+  `src/parser/ParserTopLevel.cpp:1271`
 - **a braced list among the arguments of an aggregate member's constructor**,
   `B b = { 1, { 2, { 3 } } }` where the member's class has a constructor - each
   argument is taken as a value. `src/parser/ParserInit.cpp:333`
@@ -243,7 +243,7 @@ is left:
 - **a bit-field of an anonymous union at namespace or block scope** - the
   members are names of the scope, and a bit-field would be a name with no
   object to be a field of. `src/parser/ParserType.cpp:2253`
-- **a member function of a union** - `src/parser/ParserClass.cpp:2273`
+- **a member function of a union** - `src/parser/ParserClass.cpp:2278`
 - **one name holding both a static and a non-static member**, where overload
   resolution picks the non-static one - `src/parser/ParserExpr.cpp:1989`
 - **a covariant return that moves the result** - an override may return a
@@ -274,7 +274,7 @@ is left:
 
 - **a braced call argument on a road that never asks the parameter's type** -
   a call through a function pointer or a member pointer; name the type,
-  `T{...}`. `src/parser/ParserExprCall.cpp:637`
+  `T{...}`. `src/parser/ParserExprCall.cpp:639`
 - **`auto x{...}`** - C++11 makes it `std::initializer_list`, N3922 the
   element's type, and compilers apply N3922 to C++11; `auto x = {...}` deduces
   the list. `src/parser/ParserTemplate.cpp:1310`
@@ -299,7 +299,7 @@ many, or has no object of its own:
 - **a static data member that is an array of a class with a constructor** -
   each element would need its constructor before main and its destructor at
   exit; a file-scope array and a static local of the same shape are built and
-  destroyed element by element. `src/parser/ParserClass.cpp:2087`
+  destroyed element by element. `src/parser/ParserClass.cpp:2092`
 - **a static-duration reference bound to a temporary** - [class.temporary]/5
   gives the temporary the program's lifetime, so it would need static storage
   of its own; a named object binds. `src/parser/ParserInit.cpp:1684`
@@ -380,12 +380,12 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 
 - **a constructor's or destructor's function try block in a class with a virtual base** - the
   complete object's constructor or destructor builds or destroys those, outside the one the handler
-  covers, where [except.handle]/14 wants them destroyed before the handler. `src/parser/ParserTopLevel.cpp:1154`
+  covers, where [except.handle]/14 wants them destroyed before the handler. `src/parser/ParserTopLevel.cpp:1155`
 - **a pack expansion in a dynamic exception specification**, `throw(Ts...)` - the list is read
   as types written out. `src/parser/ParserConst.cpp:258`
 - **a `throw(...)` list on a constructor or destructor of a class with a virtual base** - the
   filter would have to cover what the complete object's constructor builds outside this one, as
-  a function try block's handlers would. `src/parser/ParserTopLevel.cpp:1163`
+  a function try block's handlers would. `src/parser/ParserTopLevel.cpp:1164`
 - **a class declared in the condition of a loop** - [stmt.iter]/2 builds it
   afresh on every turn, and only a scalar can be written where the test is; a
   class in the condition of an `if` works. `src/parser/ParserStmt.cpp:1022`
@@ -393,7 +393,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   `catch` handler, on x86_64-windows** - the cleanup would be a funclet inside
   the handler's funclet. `src/parser/ParserStmt.cpp:948`
 - **a trailing return type that is itself deduced**, `auto f() -> auto` -
-  C++14. `src/parser/ParserTopLevel.cpp:2345`
+  C++14. `src/parser/ParserTopLevel.cpp:2346`
 - **an expression form the Itanium name was not measured for, over a template's
   parameters in a function template's signature** - a postfix `++` or `--`, a
   lambda, `new`, `throw`, `typeid`, `noexcept`, a C-style cast to a reference
