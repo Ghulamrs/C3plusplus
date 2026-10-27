@@ -963,3 +963,17 @@ destroys, each guarded and destroyed at the end of its full expression. **The me
 (96 added), ssa.sh **7,999 bodies, 7,087 lowered and verified (88.6%)**, 0 failed, coff 0 differ, c90 447 / 0,
 exclusions 126 sites 0 / 0, comment cap 0, the memory gate under its baseline; Windows **675 same, 0 differ, 340
 refused as recorded** at -O0, `-front=ssa` and `-front=ssa -O2`.
+
+**M3b.2, round 10 of 2026-10-27 evening: parameter packs, a class returned from a call built in place, array members,
+cl's `??1` of a class with a virtual base** (lane-pack2 `014e4fa` and lane-vbase `462c297`, `cffdfdb`, Opus 5.5, both
+off round 9's `86d87bf`, merged as `928ba8e`). lane-pack2: `Ts... rest` makes one `var` node per parameter it declares
+and `rest...` at a call one `name` node per argument (`noteDeclaredVar`, renamed from `noteCaught`), so packs lower
+with nothing new in the lowering; `return f();` built in place lowers the call with `CallInfo::sret`, its result slot
+the function's own result object (`ssaSretSlot_`). lane-vbase: the parser records an array member's element constructor
+in `memberBuilt_` and a local array's in `ctorBySerial_`; the lowering builds each element first to last, guarded per
+[except.ctor]/3, and destroys them last to first; a destructor of a non-polymorphic class with a virtual base is cl's
+`??1`, leaving the virtual bases to `??_D`. Constructors of a class with a virtual base stay outside on both ABIs.
+**The merged tree, gated as one:** Linux `make test` exit 0, run.sh **1049 / 0** at -O0, -O2, `-front=ssa` and
+`-front=ssa -O2`, the golden 0 of 2,693 changed (108 added), ssa.sh **8,062 bodies, 7,192 lowered and verified
+(89.2%)**, 0 failed, coff 0 differ, c90 447 / 0, exclusions 126 sites 0 / 0, comment cap 0, the memory gate under its
+baseline; Windows **678 same, 0 differ, 340 refused as recorded** at -O0, `-front=ssa` and `-front=ssa -O2`.
