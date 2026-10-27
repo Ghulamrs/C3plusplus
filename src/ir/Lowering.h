@@ -154,6 +154,8 @@ private:
     Val member(sema::TypedId id);
     Val memberAddress(sema::TypedId id);
     Val memberOfThis(sema::TypedId id);
+    bool namesCalledFunction(const std::string &head, const std::string &symbol) const;
+    Val functorMember(sema::TypedId head, const Type &self);
     Val capturedThis();
     Val readOf(ValueId p, TypeId type);
     Val unary(sema::TypedId id);
@@ -162,6 +164,7 @@ private:
     Val arithmetic(const std::string &op, Val a, Val b);
     Val logical(bool isAnd, sema::TypedId l, sema::TypedId r);
     Val conditional(sema::TypedId id);
+    bool compositePointer(sema::TypedId id, const Type &tx, const Type &ty) const;
     Val assign(sema::TypedId id);
     Val call(sema::TypedId id);
     Val newExpression(sema::TypedId id);
