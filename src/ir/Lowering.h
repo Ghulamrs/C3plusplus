@@ -204,7 +204,7 @@ private:
     void classLocal(sema::TypedId var, ValueId slot, const Type &t);
     bool builtClass(const Type &t) const;
     void builtLocal(sema::TypedId var, ValueId slot, const Type &t);
-    void guard(ValueId slot, const Type &c, const std::string &dtor);
+    void guard(ValueId slot, const Type &c, const std::string &dtor, bool unwinds = true);
     void destroy(const Live &l, bool invoke = false);
     void destroyLive(std::size_t mark);
     void closeScope(std::size_t mark, bool keep = false);
@@ -215,8 +215,16 @@ private:
     bool placedClass(const Type &t) const;
     bool bytesReturned(const Type &t) const;
     bool destroyedReturned(const Type &t) const;
-    bool constructedTemporary(sema::TypedId id) const;
-    bool temporaryNode(sema::TypedId id) const { return plainTemporary(id) || constructedTemporary(id); }
+    bool destroyedClass(const Type &t) const;
+    bool builtTemporary(sema::TypedId id, bool destroyed) const;
+    bool constructedTemporary(sema::TypedId id) const { return builtTemporary(id, false); }
+    bool destroyedTemporary(sema::TypedId id) const { return builtTemporary(id, true); }
+    bool temporaryNode(sema::TypedId id) const { return plainTemporary(id) || constructedTemporary(id) || destroyedTemporary(id); }
+    std::string temporaryDestructor(const Type &c);
+    bool destroyedResultClass(const Type &t) const;
+    bool destroyedResult(sema::TypedId id) const;
+    std::size_t openFull();
+    void closeFull(std::size_t was);
     Val temporary(sema::TypedId id);
     void construct(ValueId where, const std::string &symbol, TypeId sig, const Type &cls, bool zeroFirst, sema::TypedId args, std::uint32_t from);
     bool objectNode(sema::TypedId id) const;
@@ -262,6 +270,9 @@ private:
     std::vector<Pad> pads_;                     // innermost last
     std::vector<std::string> typeTable_;        // the function's selector indices: one per type, first occurrence, 1-based
     std::size_t handlerDepth_;                  // handlers the statement being lowered is inside
+    std::size_t fullFrom_;                      // live_ where the full expression being lowered began; kNoFull, none open
+    std::size_t skippable_;                     // operands being lowered that may not be evaluated: `&&`, `||`, `?:`, `new`
+    static const std::size_t kNoFull = static_cast<std::size_t>(-1);
     BlockId returnBlock_;
     std::map<std::uint32_t, std::pair<ValueId, TypeId> > locals_;    // a `var` node -> its alloca and declared type
     std::map<std::uint32_t, std::pair<std::string, TypeId> > staticLocals_;   // a static `var` -> its symbol and type

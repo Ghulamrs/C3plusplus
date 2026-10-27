@@ -11,7 +11,7 @@ namespace ir {
 
 Lowering::Lowering(const sema::TypedTree &tree, const syntax::Tree &syntax, TypeTable &types, const Target &target,
                    Program &program, Module &into)
-    : tree_(tree), syntax_(syntax), types_(types), target_(target), program_(program), module_(into), fnIndex_(0), landingPads_(false), handlerDepth_(0), hasGoto_(false) {}
+    : tree_(tree), syntax_(syntax), types_(types), target_(target), program_(program), module_(into), fnIndex_(0), landingPads_(false), handlerDepth_(0), fullFrom_(kNoFull), skippable_(0), hasGoto_(false) {}
 
 void Lowering::outside(const std::string &why) { throw Outside(why); }
 
@@ -356,12 +356,18 @@ void Lowering::builtLocal(sema::TypedId var, ValueId slot, const Type &t) {
     guard(slot, c, l.dtor);
 }
 
-// An object alive from here: destroyed by `dtor` at its scope's end, and by a cleanup where a call in its region unwinds.
-void Lowering::guard(ValueId slot, const Type &c, const std::string &dtor) {
+// An object alive from here: destroyed by `dtor` at its scope's end, and by a cleanup where a call in its region unwinds -
+// unless `unwinds` is false: a call's result in a function the parser gave no landing pads, which its unwinding leaves be.
+void Lowering::guard(ValueId slot, const Type &c, const std::string &dtor, bool unwinds) {
     Live l;
     l.slot = slot;
     l.cls = c.id();
     l.dtor = dtor;
+    if (!unwinds) {
+        l.pad = kNoFull;
+        live_.push_back(l);
+        return;
+    }
     Pad p;
     p.cleanup = true;
     p.own = 0;
@@ -396,6 +402,7 @@ void Lowering::closeScope(std::size_t mark, bool keep) {
     while (live_.size() > mark) {
         const Live l = live_.back();
         live_.pop_back();
+        if (l.pad == kNoFull) { if (!terminated() && !keep) destroy(l); continue; }
         if (l.pad + 1 != pads_.size()) outside("a scope's cleanup that is not the innermost pad");
         const Pad p = pads_.back();
         pads_.pop_back();
@@ -486,11 +493,21 @@ bool Lowering::placedClass(const Type &t) const {
     return constructed_ && constructed_(c.id()) && !c.hasVirtualBase() && c.kind() != Kind::Union && buildableLayout(c);
 }
 
+// constructedClass's layout with a destructor besides, which the end of the temporary's full expression runs.
+bool Lowering::destroyedClass(const Type &t) const {
+    if (!t.isStructOrUnion() || !t.isComplete()) return false;
+    const Type &c = *t.unqualified();
+    return constructed_ && constructed_(c.id()) && c.hasDestructor() && !c.hasVirtualBase() && c.kind() != Kind::Union &&
+           buildableLayout(c);
+}
+
 // `T(...)` of such a class, the constructor the parser chose recorded for the node: `*(ctor(&$tmp, ...), &$tmp)`.
-bool Lowering::constructedTemporary(sema::TypedId id) const {
+bool Lowering::builtTemporary(sema::TypedId id, bool destroyed) const {
     if (syn(id).kind != syntax::Kind::Call || count(id) == 0 || !temporaryBuilt_) return false;
     const TypeId t = TypeTable::id(tree_.node(id).type);
-    if (tree_.resolution(id).what != sema::Resolution::Temporary || !t.valid() || !constructedClass(T(t))) return false;
+    if (tree_.resolution(id).what != sema::Resolution::Temporary || !t.valid() ||
+        !(destroyed ? destroyedClass(T(t)) : constructedClass(T(t))))
+        return false;
     std::string symbol;
     TypeId sig;
     bool zero;
@@ -520,18 +537,21 @@ void Lowering::construct(ValueId where, const std::string &symbol, TypeId sig, c
     directCall(symbol, sig, ops);
 }
 
-// [expr.type.conv] into a slot of this frame, which lives as long as the frame: `P()` value-initialised, which for a
-// plain class is zeroing ([dcl.init]/8), and `P(o)` a copy of o's bytes. The slot's address is the temporary's value.
-// A class with constructors is built in its slot by the constructor the parser chose, its arguments the call's.
+// [expr.type.conv] into a slot of this frame: `P()` zeroed ([dcl.init]/8), `P(o)` o's bytes, a class with constructors built
+// by the one the parser chose - with a destructor, alive to its full expression's end ([class.temporary]/3), which
+// destroys it, as its cleanup does. The slot's address is the temporary's value.
 Lowering::Val Lowering::temporary(sema::TypedId id) {
     const Type &t = *tree_.node(id).type->unqualified();
     const ValueId slot = entryAlloca(tid(t), "$tmp");
-    if (constructedTemporary(id)) {
+    const bool destroyed = destroyedTemporary(id);
+    if (destroyed || constructedTemporary(id)) {
+        const std::string dtor = destroyed ? temporaryDestructor(t) : std::string();
         std::string symbol;
         TypeId sig;
         bool zero = false;
         temporaryBuilt_(tree_.node(id).syntax, symbol, sig, zero);
         construct(slot, symbol, sig, t, zero, id, 1);
+        if (destroyed) guard(slot, t, dtor);
         return Val(slot, tid(t));
     }
     if (count(id) == 1) {
@@ -573,12 +593,14 @@ Lowering::Val Lowering::object(sema::TypedId id) {
     const BlockId a = newBlock(), b = newBlock(), merge = newBlock();
     condbr(c.v, a, b);
     place(a);
+    skippable_++;
     const Val x = object(child(id, 1));
     const Type &cls = *T(x.type).unqualified();
     const TypeId pt = tid(*types_.pointerTo(&cls));
     br(merge, std::vector<ValueId>(1, result(add(Op::Bitcast, pt, std::vector<ValueId>(1, x.v)))));
     place(b);
     const Val y = object(child(id, 2));
+    skippable_--;
     if (T(y.type).unqualified() != &cls) outside("a conditional of two objects apart in type");
     br(merge, std::vector<ValueId>(1, result(add(Op::Bitcast, pt, std::vector<ValueId>(1, y.v)))));
     place(merge);
@@ -796,6 +818,8 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
     liveFloor_ = 0;
     typeTable_.clear();
     handlerDepth_ = 0;
+    fullFrom_ = kNoFull;
+    skippable_ = 0;
     funclet_ = BlockId();
     msTryPad_ = BlockId();
     landingPads_ = facts.landingPads;
@@ -982,6 +1006,40 @@ void Lowering::block(sema::TypedId id) {
 }
 
 // A substatement is a scope of its own ([stmt.select]/1, [stmt.iter]/2): what a bare declaration there builds ends with it.
+// The destructor of a temporary this full expression builds, which only an unconditional operand of one may hold.
+std::string Lowering::temporaryDestructor(const Type &c) {
+    if (fullFrom_ == kNoFull) outside("a class temporary with a destructor outside a full expression the lowering ends");
+    if (skippable_ != 0) outside("a class temporary with a destructor in an operand that may not be evaluated");
+    if (handlerDepth_ != 0) outside("a class temporary with a destructor inside a handler");
+    const std::string dtor = destructor_ ? destructor_(c.id()) : std::string();
+    if (dtor.empty()) outside("a class temporary whose destructor the parser recorded none for");
+    return dtor;
+}
+
+// A class a call returns into its caller's temporary, the caller destroying it ([class.temporary]/3): any with a destructor.
+bool Lowering::destroyedResultClass(const Type &t) const {
+    return t.isStructOrUnion() && t.isComplete() && t.unqualified()->hasDestructor() && t.unqualified()->kind() != Kind::Union;
+}
+
+// A call, or an operator the parser resolved to one, whose result is such a class.
+bool Lowering::destroyedResult(sema::TypedId id) const {
+    if (syn(id).kind != syntax::Kind::Call && !operatorCalls(id)) return false;
+    const sema::Resolution &r = tree_.resolution(id);
+    return r.what == sema::Resolution::Call && r.type.valid() && T(r.type).isFunction() && destroyedResultClass(*T(r.type).returns());
+}
+
+// A full expression opened: the temporaries it builds are alive from live_'s size now; closeFull destroys them at its end.
+std::size_t Lowering::openFull() {
+    const std::size_t was = fullFrom_;
+    fullFrom_ = live_.size();
+    return was;
+}
+
+void Lowering::closeFull(std::size_t was) {
+    closeScope(fullFrom_);
+    fullFrom_ = was;
+}
+
 void Lowering::scopedStmt(sema::TypedId id) {
     const std::size_t mark = live_.size();
     stmt(id);
@@ -997,13 +1055,19 @@ void Lowering::stmt(sema::TypedId id) {
     case syntax::Kind::DeclStmt: declaration(id); return;
     case syntax::Kind::ExprStmt:
         if (n != 1) outside("an expression statement of " + std::to_string(n) + " parts");
-        expr(child(id, 0));
+        {
+            const std::size_t was = openFull();
+            expr(child(id, 0));
+            closeFull(was);
+        }
         return;
     case syntax::Kind::Return: returnStmt(id); return;
     case syntax::Kind::Try: tryStatement(id); return;
     case syntax::Kind::If: {
         if (n != 2 && n != 3) outside("an if of " + std::to_string(n) + " parts");
+        const std::size_t was = openFull();
         const Val c = condition(child(id, 0));
+        closeFull(was);
         const BlockId then = newBlock(), merge = newBlock();
         const BlockId otherwise = n == 3 ? newBlock() : merge;
         condbr(c.v, then, otherwise);
@@ -1023,7 +1087,9 @@ void Lowering::stmt(sema::TypedId id) {
         const BlockId cond = newBlock(), body = newBlock(), exit = newBlock();
         br(cond);
         place(cond);
+        const std::size_t was = openFull();
         const Val c = condition(child(id, 0));
+        closeFull(was);
         condbr(c.v, body, exit);
         place(body);
         loops_.push_back(Loop{ exit, cond, handlerDepth_, live_.size() });
@@ -1043,7 +1109,9 @@ void Lowering::stmt(sema::TypedId id) {
         loops_.pop_back();
         br(cond);
         place(cond);
+        const std::size_t was = openFull();
         const Val c = truth(expr(child(id, 1)));
+        closeFull(was);
         condbr(c.v, body, exit);
         place(exit);
         return;
@@ -1115,7 +1183,9 @@ void Lowering::returnStmt(sema::TypedId id) {
         return;
     }
     if (n == 1 && rt.isVoid()) {
+        const std::size_t was = openFull();
         const Val v = expr(child(id, 0));
+        closeFull(was);
         if (v.type.valid() && !T(v.type).isVoid()) outside("a return of a value from a void function");
         leaveHandlers(handlerDepth_, liveFloor_, returnBlock_);
         return;
@@ -1139,7 +1209,10 @@ void Lowering::returnStmt(sema::TypedId id) {
         br(returnBlock_, std::vector<ValueId>(1, result(c)));
         return;
     }
+    // [stmt.return]: the value computed, then its full expression's temporaries destroyed, then the scopes left.
+    const std::size_t was = openFull();
     const Val v = exprTo(child(id, 0), returns_);
+    closeFull(was);
     leaveHandlers(handlerDepth_, liveFloor_, returnBlock_, std::vector<ValueId>(1, v.v));
 }
 
@@ -1247,7 +1320,8 @@ void Lowering::forStmt(sema::TypedId id) {
     const std::size_t scope = live_.size();      // [stmt.for]/1: the init's objects live to the loop's end
     if (parts & 1) {
         const sema::TypedId init = child(id, at++);
-        if (syn(init).kind == syntax::Kind::DeclStmt) declaration(init); else expr(init);
+        if (syn(init).kind == syntax::Kind::DeclStmt) declaration(init);
+        else { const std::size_t was = openFull(); expr(init); closeFull(was); }
     }
     const sema::TypedId condNode = (parts & 2) ? child(id, at++) : sema::TypedId();
     const sema::TypedId stepNode = (parts & 4) ? child(id, at++) : sema::TypedId();
@@ -1256,7 +1330,9 @@ void Lowering::forStmt(sema::TypedId id) {
     br(cond);
     place(cond);
     if (condNode.valid()) {
+        const std::size_t was = openFull();
         const Val c = truth(expr(condNode));
+        closeFull(was);
         condbr(c.v, body, exit);
     } else {
         br(body);
@@ -1267,7 +1343,7 @@ void Lowering::forStmt(sema::TypedId id) {
     loops_.pop_back();
     br(step);
     place(step);
-    if (stepNode.valid()) expr(stepNode);
+    if (stepNode.valid()) { const std::size_t was = openFull(); expr(stepNode); closeFull(was); }
     br(cond);
     place(exit);
     closeScope(scope);
@@ -1410,7 +1486,9 @@ void Lowering::declaration(sema::TypedId id) {
         if (t.isStructOrUnion()) { if (plainClass(t)) classLocal(var, slot, t); else builtLocal(var, slot, t); continue; }
         if (v.count > 1) outside("a var of " + std::to_string(v.count) + " parts");
         if (v.count == 0) continue;
+        const std::size_t was = openFull();
         store(slot, exprTo(child(var, 0), slotType).v);
+        closeFull(was);
     }
 }
 
@@ -1558,11 +1636,13 @@ Lowering::Val Lowering::lvalue(sema::TypedId id) {
         const BlockId a = newBlock(), b = newBlock(), merge = newBlock();
         condbr(c.v, a, b);
         place(a);
+        skippable_++;
         const Val x = lvalue(child(id, 1));
         const TypeId pt = tid(*types_.pointerTo(&T(x.type)));
         br(merge, std::vector<ValueId>(1, x.v));
         place(b);
         const Val y = lvalue(child(id, 2));
+        skippable_--;
         if (y.type != x.type) outside("a conditional of two lvalues apart in type");
         br(merge, std::vector<ValueId>(1, y.v));
         place(merge);
@@ -1667,12 +1747,17 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
         e = convert(v, n.castType, true);
         break;
     }
-    case syntax::Kind::Throw:
+    case syntax::Kind::Throw: {
+        // [except.throw]/3 destroys the operand's temporaries before the throw, which no full expression here ends.
+        const std::size_t was = fullFrom_;
+        fullFrom_ = kNoFull;
         throwExpr(id);
+        fullFrom_ = was;
         e = Val();
         break;
-    case syntax::Kind::New: e = newExpression(id); break;
-    case syntax::Kind::Delete: e = deleteExpression(id); break;
+    }
+    case syntax::Kind::New: skippable_++; e = newExpression(id); skippable_--; break;
+    case syntax::Kind::Delete: skippable_++; e = deleteExpression(id); skippable_--; break;
     case syntax::Kind::Sizeof:
         if (!n.folded.has) outside("a sizeof not folded");
         e = Val(iconst(n.folded.type, n.folded.value), n.folded.type);
@@ -2176,7 +2261,9 @@ Lowering::Val Lowering::logical(bool isAnd, sema::TypedId l, sema::TypedId r) {
     // The merge's parameter: the short-circuit value from here, the second operand's truth from the other block.
     const BlockId from = cur_;
     place(rhs);
+    skippable_++;
     const Val b = truth(decay(expr(r)));
+    skippable_--;
     br(merge, std::vector<ValueId>(1, b.v));
     // The first branch's argument, written now that the merge's parameter exists.
     Function &f = F();
@@ -2225,10 +2312,12 @@ Lowering::Val Lowering::conditional(sema::TypedId id) {
         outside("a conditional of '" + tx.describe() + "' and '" + ty.describe() + "'");
     }
     place(a);
+    skippable_++;
     const Val x = exprTo(child(id, 1), t);       // an arm that is the literal 0 is the null pointer, [conv.ptr]/1
     br(merge, std::vector<ValueId>(1, x.v));
     place(b);
     const Val y = exprTo(child(id, 2), t);
+    skippable_--;
     br(merge, std::vector<ValueId>(1, y.v));
     place(merge);
     return Val(param(merge, t), t);
@@ -2442,15 +2531,19 @@ Lowering::Val Lowering::callTail(TypeId sig, CallInfo info, std::vector<ValueId>
     info.variadic = ft.isVariadicFn();
     info.namedArgs = static_cast<int>(ft.params().size());
     const Type &gives = *ft.returns();
-    if (!(gives.isVoid() || scalar(gives) || plainClass(gives) || bytesReturned(gives) ||
+    const bool destroyed = destroyedResultClass(gives);
+    if (!(gives.isVoid() || scalar(gives) || plainClass(gives) || bytesReturned(gives) || destroyed ||
           (gives.isReference() && referable(*gives.referent()))))
         outside("a call returning '" + gives.describe() + "'");
     if (gives.isX87(target_)) outside("an x87 long double");
+    std::string dtor;
+    if (destroyed) dtor = temporaryDestructor(*gives.unqualified());
     argumentList(ft, skip, info.variadic, args, dummyInt, ops);
     if (dummyInt) ops.push_back(iconst(tid(*types_.get(Kind::Int)), 0));      // [over.inc]/1: the postfix form's 0
     // A plain class comes back into a temporary of this frame, and the call carries its address, as a reference's does.
+    ValueId resultSlot;
     if (gives.isStructOrUnion()) {
-        entryAlloca(tid(*gives.unqualified()), "$result");
+        resultSlot = entryAlloca(tid(*gives.unqualified()), "$result");
         info.resultAlloca = static_cast<int>(F().frame.size() - 1);
     }
     Function &f = F();
@@ -2460,6 +2553,8 @@ Lowering::Val Lowering::callTail(TypeId sig, CallInfo info, std::vector<ValueId>
                          : gives.isStructOrUnion() ? tid(*types_.pointerTo(gives.unqualified())) : tid(gives);
     const InstId c = callOrInvoke(carries, ops);
     at(c).call = callIndex;
+    // [class.temporary]/3: a result with a destructor is the caller's, alive once the call has returned it.
+    if (destroyed) guard(resultSlot, *gives.unqualified(), dtor, landingPads_);
     return Val(result(c), carries.valid() ? carries : tid(gives));
 }
 
@@ -2508,6 +2603,14 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
             if (!isLvalueNode(an) && (ref.isConst() || p.isRValueReference()) && (temporaryNode(an) || closureNode(an))) {
                 const Val a = closureNode(an) ? closure(an) : temporary(an);
                 if (T(a.type).unqualified() != ref.unqualified()) outside("a reference parameter bound to a temporary of another type");
+                ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(&ref)), std::vector<ValueId>(1, a.v))));
+                continue;
+            }
+            // A call's result with a destructor, the caller's temporary to its full expression's end, bound the same way.
+            if (!isLvalueNode(an) && (ref.isConst() || p.isRValueReference()) && destroyedResult(an)) {
+                const Val a = syn(an).kind == syntax::Kind::Call ? call(an) : operatorCall(an);
+                if (!a.type.valid() || !T(a.type).isPointer() || T(a.type).pointee()->unqualified() != ref.unqualified())
+                    outside("a reference parameter bound to a call's result of another type");
                 ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(&ref)), std::vector<ValueId>(1, a.v))));
                 continue;
             }
