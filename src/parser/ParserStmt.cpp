@@ -2219,6 +2219,12 @@ StmtPtr Parser::statementBody() {
                               "[except.handle]/13; it ends by rethrowing, or by a 'throw' of its own");
     if (consume("return")) {
         std::size_t pos = peek().pos;
+        // A written destructor's `return` jumps past its body, [class.dtor]/8; any other leaves the function.
+        auto leaveVoid = [&]() -> StmtPtr {
+            if (dtorExit_.empty()) return make_owned<Return>(nullptr);
+            dtorExitTaken_ = true;
+            return make_owned<Goto>(dtorExit_);
+        };
         // **A lambda's body, read to find what it returns**: the operand's
         // type is the answer, the first `return` deciding, and the statement
         // built here is thrown away with the rest of that reading.
@@ -2245,10 +2251,10 @@ StmtPtr Parser::statementBody() {
                 if (leavesFunclet)
                     unwind.push_back(StmtPtr(make_owned<FuncletLeave>(msExitLabel(msExit_->ret, "ret"))));
                 else
-                    unwind.push_back(StmtPtr(new Return(nullptr)));
+                    unwind.push_back(leaveVoid());
                 return StmtPtr(new Block(std::move(unwind)));
             }
-            return StmtPtr(new Return(nullptr));
+            return leaveVoid();
         }
         ExprPtr returned;
         {
@@ -2399,7 +2405,7 @@ StmtPtr Parser::statementBody() {
                 if (leavesFunclet)
                     unwind.push_back(StmtPtr(make_owned<FuncletLeave>(msExitLabel(msExit_->ret, "ret"))));
                 else
-                    unwind.push_back(StmtPtr(new Return(nullptr)));
+                    unwind.push_back(leaveVoid());
                 return StmtPtr(new Block(std::move(unwind)));
             }
             // **The value is computed into a slot before the catch ends**, and

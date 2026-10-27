@@ -460,6 +460,8 @@ Parser::FunctionState Parser::captureFunctionState() const {
     s.returnType = returnType_;
     s.sretSlot = sretSlot_;
     s.nrvoName = nrvoName_;
+    s.dtorExit = dtorExit_;
+    s.dtorExitTaken = dtorExitTaken_;
     s.deducingReturn = deducingReturn_;
     s.unaryOperand = unaryOperand_;
     s.condParts = condParts_;
@@ -547,6 +549,8 @@ void Parser::restoreFunctionState(const FunctionState &s) {
     returnType_ = s.returnType;
     sretSlot_ = s.sretSlot;
     nrvoName_ = s.nrvoName;
+    dtorExit_ = s.dtorExit;
+    dtorExitTaken_ = s.dtorExitTaken;
     deducingReturn_ = s.deducingReturn;
     unaryOperand_ = s.unaryOperand;
     condParts_ = s.condParts;
@@ -635,6 +639,8 @@ void Parser::clearFunctionState() {
     returnType_ = nullptr;
     sretSlot_ = 0;
     nrvoName_.clear();
+    dtorExit_.clear();
+    dtorExitTaken_ = false;
     deducingReturn_ = nullptr;
     unaryOperand_ = syntax::NodeId();
     condParts_ = CondParts();

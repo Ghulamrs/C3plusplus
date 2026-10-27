@@ -818,6 +818,9 @@ private:
     int sretSlot_ = 0;
     // The one local every `return` of this body names, built where the caller asked (NRVO), or empty.
     std::string nrvoName_;
+    // In a written destructor, where `return` goes: past the body, to the member and base destructors (empty elsewhere).
+    std::string dtorExit_;
+    bool dtorExitTaken_ = false;
     std::string nrvoCandidate() const;
     // Set while a lambda's body is read to find its return type: a `return`
     // writes the type of its operand here, the first one deciding, and is
@@ -1092,7 +1095,8 @@ private:
         const Type *currentClass = nullptr;
         const Type *returnType = nullptr;
         int sretSlot = 0;
-        std::string nrvoName;
+        std::string nrvoName, dtorExit;
+        bool dtorExitTaken = false;
         const Type **deducingReturn = nullptr;
         syntax::NodeId unaryOperand;
         CondParts condParts;

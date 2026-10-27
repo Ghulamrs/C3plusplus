@@ -1662,6 +1662,8 @@ void Parser::topLevel(Program &program) {
         if (memberOf != nullptr && d.name == "~" + localOf(d.qualifier)) {
             std::vector<StmtPtr> withMembers;
             withMembers.push_back(std::move(body));
+            // A `return` in the body comes here, so the members and bases are destroyed on that way out too.
+            if (dtorExitTaken_) withMembers.push_back(make_owned<Label>(dtorExit_, make_owned<Block>(std::vector<StmtPtr>())));
             std::vector<StmtPtr> mine =
                 classes_.memberDestructors(d.qualifier, memberOf, thisOffset_, d.pos);
             for (std::size_t i = 0; i < mine.size(); i++)
@@ -1859,6 +1861,8 @@ void Parser::topLevel(Program &program) {
     std::string spec = "$spec";
     for (const std::string &sym : specSymbols) spec += "," + sym;
     nrvoName_ = nrvoCandidate();
+    dtorExit_ = memberOf != nullptr && !ctorTry && d.name == "~" + localOf(d.qualifier) ? "$dtorexit" : "";
+    dtorExitTaken_ = false;
     if (specFilter) {
         const std::size_t bodyAt = peek().pos;
         body = tryStatement(bodyAt, [&]() {
