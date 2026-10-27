@@ -764,7 +764,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
     try {
         if (facts.variadic) outside("a variadic function");
         if (facts.wrappedBody) outside("a function try block or an exception specification");
-        if (facts.landingPads && facts.noexcept_) outside("a noexcept function with landing pads");
+        // A noexcept body with pads of its own is not wrapped (wrappedBody says when it is): its pads are any function's.
         Function &f = F();
         f.symbol = facts.symbol;
         f.displayName = facts.displayName;
@@ -872,6 +872,16 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         place(first);
         if (isCtor) memberInits(fnNode, inits, n - 1);
         else if (destroys) storeVptrs();
+        // [except.unexpected]: a throw(...) list is one filter row over the body, under every pad the body makes.
+        if (!facts.specFilter.empty()) {
+            if (target_.microsoftNames()) outside("a throw(...) list on the Microsoft ABI");
+            Pad spec;
+            spec.cleanup = false;
+            spec.own = 1;
+            spec.types.push_back(facts.specFilter);
+            spec.indices.push_back(-1);
+            pads_.push_back(spec);
+        }
         liveFloor_ = live_.size();
         block(body);
         if (!terminated()) {
@@ -879,6 +889,11 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
             else br(returnBlock_, std::vector<ValueId>(1, fallOffValue(rt)));
         }
         closeScope(0, true);
+        if (!facts.specFilter.empty()) {
+            const Pad spec = pads_.back();
+            pads_.pop_back();
+            if (spec.block.valid()) specFilterChain(spec);
+        }
         if (destroys) {
             place(returnBlock_);
             destroyMembers(*T(thisType_).pointee()->unqualified());
@@ -2785,8 +2800,12 @@ void Lowering::tryStatement(sema::TypedId id) {
             if (!typeInfo_) outside("a catch with no type_info to name");
             h.sym = typeInfo_(h.caught);
             if (h.sym.empty()) outside("a catch of a type with no type_info");
+        } else if (parts == 1 && text(h.node).empty() && unnamedCaught_ && !unnamedCaught_(tree_.node(h.node).syntax).empty()) {
+            // `catch (T)` with no name: nothing to bind, only the type_info the parser named for it.
+            h.body = child(h.node, 0);
+            h.sym = unnamedCaught_(tree_.node(h.node).syntax);
         } else {
-            // `catch (T)` with no name has no var node; so, in one shape of the suite, has a named one the tree lost (M3-PLAN).
+            // A named handler whose var node the tree lost, in one shape of the suite (M3-PLAN), stays the parser's.
             outside(parts == 1 ? "a handler whose caught object the syntax tree does not hold" : "a handler of " + std::to_string(parts) + " parts");
         }
         h.index = typeIndexFor(h.sym);
@@ -2880,6 +2899,31 @@ void Lowering::tryStatement(sema::TypedId id) {
         }
     }
     place(done);
+}
+
+// The filter's chain: a selector below 0 is an exception the list does not allow, handed to __cxa_call_unexpected;
+// anything else the list allowed, and the frame unwinds on.
+void Lowering::specFilterChain(const Pad &p) {
+    if (!landingPads_) outside("a throw(...) filter in a function the parser gave no landing pads");
+    const BlockId back = cur_;
+    place(p.block);
+    const InstId cp = add(Op::CatchPad, TypeId(), std::vector<ValueId>());
+    at(cp).syms = p.types;
+    at(cp).cases.push_back(p.indices[0]);
+    at(cp).k = 1;
+    const BlockId unexpected = newBlock(), allowed = newBlock();
+    std::vector<ValueId> cmp;
+    cmp.push_back(p.sel);
+    cmp.push_back(iconst(tid(*types_.get(Kind::Int)), 0));
+    const InstId c = add(Op::ICmp, tid(*types_.get(Kind::Bool)), cmp);
+    at(c).cc = Cmp::Slt;
+    condbr(result(c), unexpected, allowed);
+    place(unexpected);
+    runtimeCall("__cxa_call_unexpected", tid(*types_.voidType()), std::vector<ValueId>(1, p.ptr));
+    add(Op::Unreachable, TypeId(), std::vector<ValueId>());
+    place(allowed);
+    resumeFrom(p, 0);
+    place(back);
 }
 
 // A case label's constant: a literal, an enumerator, a sizeof, a sign or a parenthesis over one.

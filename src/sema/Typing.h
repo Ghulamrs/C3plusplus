@@ -147,9 +147,12 @@ public:
     // Facts of a function's declaration the lowering is told (M3b.1): its return type as written, and whether its body is a try.
     TypeId declaredReturn(syntax::NodeId fn) const;
     bool wrappedBody(const std::string &symbol) const;
+    bool plainFunctionTry(const std::string &symbol) const;   // wrapped only by an ordinary function's try block
+    std::string specFilter(const std::string &symbol) const;  // an ordinary function's throw(...) filter; empty if none
     // A body read in a class's, a namespace's or a template's scope (Parser::scopedFunctions_), which the adapter left alone too.
     int scopedBody(syntax::NodeId fn) const;
     std::string typeInfoSymbol(TypeId t) const;   // the type_info a catch of t names, Sema's; empty where none can be made
+    std::string unnamedCaught(syntax::NodeId handler) const;   // what an Itanium `catch (T)` with no name named; empty otherwise
     // The Microsoft ThrowInfo a throw of t names (`_TI1H`), where the parser finished the chain for a throw; empty otherwise.
     std::string microsoftThrowInfo(TypeId t) const;
     bool constructed(TypeId cls) const;          // a class some constructor builds, written or implicit

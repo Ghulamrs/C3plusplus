@@ -25,6 +25,7 @@ struct FunctionFacts {
     TypeId returns;
     TypeId thisType;        // a member function's `this`, the first of the parser's parameter slots
     std::size_t pos, paramCount;
+    std::string specFilter;     // an ordinary function's throw(...) list as the parser's filter row names it: `$spec,<types>`
     FunctionFacts() : isStatic(false), isInline(false), variadic(false), hasThis(false), sret(false), landingPads(false),
                       wrappedBody(false), noexcept_(false), pos(0), paramCount(0) {}
 };
@@ -45,6 +46,7 @@ public:
     void setDefaultInit(std::function<bool(TypeId, const std::string &)> f) { defaultInit_ = f; }
     void setGuarded(std::function<bool(const std::string &)> f) { guarded_ = f; }
     void setTypeInfo(std::function<std::string(TypeId)> f) { typeInfo_ = f; }
+    void setUnnamedCaught(std::function<std::string(syntax::NodeId)> f) { unnamedCaught_ = f; }
     void setMicrosoftThrowInfo(std::function<std::string(TypeId)> f) { msThrowInfo_ = f; }
     void setNewFacts(std::function<bool(syntax::NodeId, sema::NewFacts &)> f) { newFacts_ = f; }
     // The constructor the parser chose for a member, and a class's destructor - Sema's records, asked by the glue.
@@ -77,6 +79,7 @@ private:
     BlockId newBlock();
     void place(BlockId b);
     bool terminated() const;
+    void specFilterChain(const Pad &p);
     void br(BlockId to, const std::vector<ValueId> &args = std::vector<ValueId>());
     void condbr(ValueId c, BlockId t, BlockId f);
     ValueId param(BlockId b, TypeId type);
@@ -225,6 +228,7 @@ private:
     std::function<bool(TypeId, const std::string &)> defaultInit_;
     std::function<bool(const std::string &)> guarded_;
     std::function<std::string(TypeId)> typeInfo_;
+    std::function<std::string(syntax::NodeId)> unnamedCaught_;
     std::function<std::string(TypeId)> msThrowInfo_;
     std::function<bool(syntax::NodeId, sema::NewFacts &)> newFacts_;
     std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> memberBuilt_;

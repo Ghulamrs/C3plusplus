@@ -622,6 +622,8 @@ private:
     };
     std::unordered_map<std::uint32_t, TryFacts> tryFacts_;
     std::set<std::string> wrappedBodies_;
+    std::set<std::string> plainFunctionTries_;   // of those, an ordinary function's try block alone (M3b.2)
+    std::map<std::string, std::string> specFilters_;   // an ordinary function's throw(...) filter, `$spec,<types>`
     // The static locals guardOnce builds at run time; the adapter takes only those laid down as data.
     std::set<std::string> guardedStatics_;
     TryFacts pendingTry_;
@@ -650,6 +652,7 @@ private:
     // nothing either way. 0 none, 1 `= e` or `(e)`, 2 a braced list, 3 empty braces - value-initialisation.
     std::unordered_map<std::uint32_t, int> varForms_;
     std::unordered_map<std::uint32_t, int> forParts_;   // a `for`'s parts present: 1 init, 2 condition, 4 step (M3b.2)
+    std::unordered_map<std::uint32_t, std::string> unnamedCaught_;   // `catch (T)` with no name: T's type_info, by `catch` node
     int initFormAhead() const {
         const bool eq = peek().is("=");
         const Token &t = eq ? peekAt(1) : peek();
