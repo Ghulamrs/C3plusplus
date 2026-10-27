@@ -909,3 +909,18 @@ under its baseline; Windows **668 same, 0 differ, 340 refused as recorded** at -
 **Left, as each lane found it**: a pack's parameters (the syntax tree has one node for `Ts... rest`), a call's default
 arguments (no record of the default's expression), a member's default initialiser (no node in the constructor's
 syntax), virtual bases, and array members of a class.
+
+**M3b.2, round 6 of 2026-10-27 evening: a class with a destructor returned, placement new, values taken as objects**
+(lane-ret3 `deaf9bf` and lane-obj `fd15a0a`, Opus 5.5, both off `837c299`, merged over round 5 as `0d1df8f`).
+lane-ret3: a class with a destructor and no copy of its own returned by value as the parser returns it - a local a
+scope destroys keeps its bytes for the `ret`, `T(...)` is built in a slot no scope destroys, any other object's bytes
+are saved before the destructors run (`returnDestroyed`); placement new of such a class (every `new` of
+`basic_string<char>` in the list, 19). Which local escapes destruction is written to match the parser's rule rather
+than read from a record. lane-obj: a static data member named by its bare name is an lvalue; a `static_cast` or
+`const_cast` written to an lvalue reference names its operand (`referenceCast`, recognised from the cast's spelling
+where the operand has the type the parser noted); a lambda capturing `this` in a member function, the parser noting the
+capture's offset and type (`LambdaFacts::thisOffset`/`thisType`). **The merged tree, gated as one:** Linux `make test`
+exit 0, run.sh **1041 / 0** at -O0, -O2, `-front=ssa` and `-front=ssa -O2`, the golden 0 of 2,693 changed (76 added),
+ssa.sh **7,928 bodies, 6,859 lowered and verified (86.5%)**, 0 failed, coff 0 differ, c90 447 / 0, exclusions 126 sites
+0 / 0, comment cap 0, the memory gate under its baseline; Windows **670 same, 0 differ, 340 refused as recorded** at
+-O0, `-front=ssa` and `-front=ssa -O2`.
