@@ -48,6 +48,7 @@ public:
     void setTypeInfo(std::function<std::string(TypeId)> f) { typeInfo_ = f; }
     void setUnnamedCaught(std::function<std::string(syntax::NodeId)> f) { unnamedCaught_ = f; }
     void setMicrosoftThrowInfo(std::function<std::string(TypeId)> f) { msThrowInfo_ = f; }
+    void setMicrosoftCatch(std::function<bool(TypeId, std::string &, bool &)> f) { msCatch_ = f; }
     void setNewFacts(std::function<bool(syntax::NodeId, sema::NewFacts &)> f) { newFacts_ = f; }
     // The constructor the parser chose for a member, and a class's destructor - Sema's records, asked by the glue.
     void setMemberBuilt(std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> f) { memberBuilt_ = f; }
@@ -109,6 +110,9 @@ private:
     void switchStmt(sema::TypedId id);
     BlockId labelBlock(const std::string &name);
     void tryStatement(sema::TypedId id);
+    void microsoftTry(sema::TypedId id);
+    void leaveHandlers(std::size_t n, std::size_t mark, BlockId target, const std::vector<ValueId> &args = std::vector<ValueId>());
+    void checkFuncletUses(BlockId hb);
     BlockId padBlock(Pad &p);
     void resumeFrom(const Pad &p, std::size_t enclosing);
     void endCatches(std::size_t n);
@@ -230,6 +234,9 @@ private:
     std::function<std::string(TypeId)> typeInfo_;
     std::function<std::string(syntax::NodeId)> unnamedCaught_;
     std::function<std::string(TypeId)> msThrowInfo_;
+    std::function<bool(TypeId, std::string &, bool &)> msCatch_;
+    BlockId funclet_;                           // the Microsoft handler whose funclet the blocks made now belong to
+    BlockId msTryPad_;                          // the try that handler is of: its pad's CatchPad lists the exits
     std::function<bool(syntax::NodeId, sema::NewFacts &)> newFacts_;
     std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> memberBuilt_;
     std::function<std::string(TypeId)> destructor_;

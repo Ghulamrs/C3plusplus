@@ -360,11 +360,18 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         const std::string begin = label("ssatry", id), end = label("ssatryend", id);
         // Microsoft: the call's own range in the ip2state map, in its pad's state; nothing in the body stays in one.
         if (usesFunclets()) {
+            // Inside a handler's funclet the call stays in the handler's state, which chains to the enclosing pad: FH3
+            // searches from a catch funclet only the tries whose handler states hold it, and terminates otherwise.
+            const bool inHandler = ssaFuncletState_ >= 0;
             defineStateLabel(begin);
-            msAddIpRow(begin, ssaPadState_[i.succ[1].block.v]);
+            if (!inHandler) msAddIpRow(begin, ssaPadState_[i.succ[1].block.v]);
             selectCall(f, i, rt);
             defineStateLabel(end);
-            msAddIpRow(end, -1);
+            if (!inHandler) msAddIpRow(end, -1);
+            // A try's handlers hand back one of its exits: the flow is told the call may continue at each.
+            const ir::Inst &pf = f.inst(f.block(i.succ[1].block).insts[0]);
+            if (pf.op == ir::Op::CatchPad && pf.k == -1)
+                for (std::size_t c = 0; c < pf.cases.size(); c++) exceptionRegion(begin, end, ssaBlockLabel(ir::BlockId(static_cast<std::uint32_t>(pf.cases[c]))));
             ssaStore(f, i.result);
             a_->ins("jmp", lbl(ssaBlockLabel(i.succ[0].block)));
             return;
@@ -385,7 +392,17 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         a_->ins("jmp", lbl(ssaBlockLabel(i.succ[0].block)));
         return;
     }
+    case ir::Op::CatchRet: {
+        // The funclet leaves with the exit's address in rax; the exit's parameters are slots the body reads and the
+        // passes may not hold in a register, written here from another function's text.
+        ssaBranchArgs(f, i.succ[0]);
+        const ir::Block &to = f.block(i.succ[0].block);
+        if (passesRun()) for (std::size_t p = 0; p < to.params.size(); p++) optimizer_->sharedSlot(-ssaValueSlot_[to.params[p].v], 8);
+        funcletLeave(ssaBlockLabel(i.succ[0].block));
+        return;
+    }
     case ir::Op::CatchPad:
+    case ir::Op::CatchSwitch:
     case ir::Op::CleanupPad:
     case ir::Op::CleanupRet:
         return;     // the row facts the invokes read; the landing stores are the block's own, and a funclet's return its end (selectBody)
@@ -446,6 +463,72 @@ void X86_64Linux::selectCall(const ir::Function &f, const ir::Inst &i, const Typ
 
 std::string X86_64Linux::ssaLandLabel(ir::BlockId b) const { return label("ssaland", static_cast<int>(b.v)); }
 
+// **A handler as a funclet** (M3-IR 3.6, the Microsoft half): its pad block and every block tagged with it emitted whole
+// inside openFunclet/endFunclet, each alloca it reads taken afresh by lea first (the body's slot for the address may be a
+// register); its state beside the try's under the same parent; its handler-map row, the try block registered at the last.
+void X86_64Linux::selectHandler(const ir::Function &f, ir::BlockId hb) {
+    const ir::Block &blk = f.block(hb);
+    const ir::Inst &cp = f.inst(blk.insts[0]);
+    const ir::BlockId tryPad(static_cast<std::uint32_t>(cp.k));
+    const ir::Inst &cs = f.inst(f.block(tryPad).term);
+    const ir::Inst &dispatch = f.inst(f.block(tryPad).insts[0]);
+    const int state = ssaPadState_[hb.v], parent = cs.k != 0 ? ssaPadState_[static_cast<std::size_t>(cs.k)] : -1;
+    const std::string funclet = openFunclet(cp.pos, false);
+    msAddFuncletRow(funclet, state, true);
+    ssaInFunclet_ = true;
+    ssaFuncletState_ = state;
+    std::vector<ir::BlockId> blocks(1, hb);
+    for (std::size_t b = 0; b < f.blocks.size(); b++) if (f.block(f.blocks[b]).funclet == hb.v) blocks.push_back(f.blocks[b]);
+    a_->defLabel(ssaBlockLabel(hb));
+    std::vector<char> made(f.frame.size(), 0);
+    for (std::size_t b = 0; b < blocks.size(); b++) {
+        const ir::Block &in = f.block(blocks[b]);
+        for (std::size_t k = 0; k <= in.insts.size(); k++) {
+            const ir::InstId id = k < in.insts.size() ? in.insts[k] : in.term;
+            if (!id.valid()) continue;
+            const ir::Inst &i = f.inst(id);
+            std::vector<ir::ValueId> used;
+            for (std::uint32_t n = 0; n < i.count; n++) used.push_back(f.operand(i, n));
+            for (std::size_t s = 0; s < i.succ.size(); s++)
+                for (std::uint32_t a = 0; a < i.succ[s].count; a++) used.push_back(f.arg(i.succ[s], a));
+            for (std::size_t u = 0; u < used.size(); u++) {
+                const ir::Inst &def = f.inst(f.value(used[u]).def);
+                if (!f.value(used[u]).def.valid() || def.op != ir::Op::Alloca || made[static_cast<std::size_t>(def.k)]) continue;
+                made[static_cast<std::size_t>(def.k)] = 1;
+                a_->ins("lea", local(ssaAllocaSlot_[static_cast<std::size_t>(def.k)]), reg("%rax"));
+                ssaStore(f, def.result);
+            }
+        }
+    }
+    for (std::size_t b = 0; b < blocks.size(); b++) {
+        const ir::Block &in = f.block(blocks[b]);
+        if (b != 0) a_->defLabel(ssaBlockLabel(blocks[b]));
+        for (std::size_t k = 0; k <= in.insts.size(); k++) {
+            const ir::InstId id = k < in.insts.size() ? in.insts[k] : in.term;
+            if (id.valid()) selectInst(f, f.inst(id));
+        }
+    }
+    ssaInFunclet_ = false;
+    ssaFuncletState_ = -1;
+    endFunclet(ssaBlockLabel(ir::BlockId(static_cast<std::uint32_t>(dispatch.cases[0]))));
+    leaveFunclet();
+    msSetState(state, parent, std::string());
+    MsHandlerRow row;
+    row.descriptor = cp.syms.empty() ? std::string() : cp.syms[0];
+    row.byReference = (cp.bits & 1) != 0;
+    row.constPointer = (cp.bits & 2) != 0;
+    row.funclet = funclet;
+    if (cp.count == 1) {
+        // The caught object's slot: the runtime writes it, so the passes may not hold it in a register.
+        const std::size_t k = static_cast<std::size_t>(f.inst(f.value(f.operand(cp, 0)).def).k);
+        row.objectSlot = ssaAllocaSlot_[k];
+        if (passesRun()) optimizer_->sharedSlot(-ssaAllocaSlot_[k], ssaTypes_->type(f.frame[k].type)->size(target_));
+    }
+    MsTryBlock &tb = ssaTries_[tryPad.v];
+    tb.handlers.push_back(row);
+    if (hb.v == cs.succ.back().block.v) msAddTryBlock(tb);
+}
+
 // The body: the parameters copied from the slots receiveParameters filled into their values' slots, then each block.
 void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
     const std::vector<Param> &ps = fn.params();
@@ -456,6 +539,7 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
     }
     std::size_t lastPos = 0;
     ssaRegionAt_ = 0;
+    ssaTries_.clear();
     // Microsoft (M3-IR 3.6): every pad is a cleanup funclet and a state of the FH3 tree, numbered before the invokes
     // that name it; the scratch word is set to -2 before the first call, as the walker's entry sets it.
     ssaPadState_.assign(f.blockArena.size(), -1);
@@ -467,6 +551,24 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
     }
     for (std::size_t b = 0; b < f.blocks.size(); b++) {
         const ir::Block &blk = f.block(f.blocks[b]);
+        if (blk.pad && usesFunclets() && f.inst(blk.insts[0]).op == ir::Op::CatchPad) {
+            // A try's dispatch pad: its state and its try block, the handlers' states following the body's (M3-IR 3.6).
+            const ir::Inst &first = f.inst(blk.insts[0]);
+            if (first.k == -1) {
+                const ir::Inst &cs = f.inst(blk.term);
+                const int state = ssaPadState_[f.blocks[b].v];
+                msSetState(state, cs.k != 0 ? ssaPadState_[static_cast<std::size_t>(cs.k)] : -1, std::string());
+                MsTryBlock tb;
+                tb.tryLow = state;
+                tb.tryHigh = ssaPadState_[cs.succ[0].block.v] - 1;
+                tb.catchHigh = ssaPadState_[cs.succ.back().block.v];
+                ssaTries_[f.blocks[b].v] = tb;
+            } else {
+                selectHandler(f, f.blocks[b]);
+            }
+            continue;
+        }
+        if (blk.funclet != 0) continue;    // a handler's block: emitted inside its funclet by selectHandler
         if (blk.pad && usesFunclets()) {
             // The funclet destroys and returns to the runtime; its cleanupret names the pad it chains to, or none.
             const std::string funclet = openFunclet(blk.insts.empty() ? 0 : f.inst(blk.insts[0]).pos, true);

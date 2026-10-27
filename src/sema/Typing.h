@@ -155,6 +155,8 @@ public:
     std::string unnamedCaught(syntax::NodeId handler) const;   // what an Itanium `catch (T)` with no name named; empty otherwise
     // The Microsoft ThrowInfo a throw of t names (`_TI1H`), where the parser finished the chain for a throw; empty otherwise.
     std::string microsoftThrowInfo(TypeId t) const;
+    // The Microsoft type descriptor a catch of t names (`??_R0H@8`) and HT_IsConst, where the parser finished a chain for the type.
+    bool microsoftCatchDescriptor(TypeId t, std::string &descriptor, bool &isConst) const;
     bool constructed(TypeId cls) const;          // a class some constructor builds, written or implicit
     bool assigned(TypeId cls) const;             // a class with an operator= of its own, written or implicit
     bool newFacts(syntax::NodeId id, NewFacts &out) const;  // a `new` or `delete` node's facts; false where none were recorded

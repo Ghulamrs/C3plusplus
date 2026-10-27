@@ -210,6 +210,9 @@ protected:
     void msSetState(int state, int toState, const std::string &action) { msStates_[state].toState = toState; msStates_[state].action = action; }
     void msAddIpRow(const std::string &label, int state) { msIpRows_.push_back(MsIpRow{ label, state, false }); }
     void msSetUnwindHelpSlot(int slot) { msUnwindHelpSlot_ = slot; }
+    // A row inside a funclet's text, after its start row; and a try's handlers once their funclets are out.
+    void msAddFuncletRow(const std::string &label, int state, bool funclet) { msFuncletRows_.push_back(MsIpRow{ label, state, funclet }); }
+    void msAddTryBlock(const MsTryBlock &tb) { msTryBlocks_.push_back(tb); }
     const std::vector<MsIpRow> &msFuncletRows() const { return msFuncletRows_; }
     int msUnwindHelpSlot() const { return msUnwindHelpSlot_; }
     void clearMsTries() {
