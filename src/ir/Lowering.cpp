@@ -181,6 +181,16 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
         for (std::map<std::string, sema::TypedId>::const_iterator e = named.begin(); e != named.end(); ++e)
             if (cls.findMember(e->first) == nullptr && baseNamed(cls, e->first) == static_cast<int>(b)) entry = e->second;
         buildBase(cls.bases()[b], entry);
+        // [except.ctor]/3: a base with a destructor, built, is destroyed - by its D2 - if a later part throws.
+        const Type &bt = *cls.bases()[b].type->unqualified();
+        if (landingPads_ && bt.hasDestructor()) {
+            std::string symbol;
+            TypeId sig;
+            bool defaulted = false;
+            if (!memberBuilt_ || !memberBuilt_(F().symbol, "~" + bt.tag(), 0, symbol, sig, defaulted))
+                outside("a base destroyed on unwinding by no destructor the parser recorded");
+            guard(result(add(Op::Bitcast, tid(*T(sig).params()[0]), std::vector<ValueId>(1, baseAddress(cls.bases()[b])))), bt, symbol);
+        }
     }
     // [class.cdtor]/4: once the bases are built the object is of this class - its vptrs, before any member.
     storeVptrs();
@@ -209,6 +219,12 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
         if (builtMember(mt)) {
             if (e != named.end() && count(e->second) == 0) outside("a member of class type value-initialised");
             buildMember(result(g), m, e != named.end() ? e->second : sema::TypedId());
+            // [except.ctor]/3: a member with a destructor, built, is destroyed if a later part of the constructor throws.
+            if (landingPads_ && mt.hasDestructor()) {
+                const std::string dtor = destructor_ ? destructor_(mt.id()) : std::string();
+                if (dtor.empty()) outside("a member destroyed on unwinding by no destructor the parser recorded");
+                guard(result(g), mt, dtor);
+            }
             continue;
         }
         const std::uint32_t k = count(e->second);
@@ -321,10 +337,17 @@ void Lowering::builtLocal(sema::TypedId var, ValueId slot, const Type &t) {
     // [except.handle]/16 ends a catch after its handler's objects are destroyed; a jump here ends it first.
     if (handlerDepth_ != 0) outside("a local with a destructor inside a handler");
     Live l;
-    l.slot = slot;
-    l.cls = c.id();
     l.dtor = destructor_ ? destructor_(c.id()) : std::string();
     if (l.dtor.empty()) outside("a local whose destructor the parser recorded none for");
+    guard(slot, c, l.dtor);
+}
+
+// An object alive from here: destroyed by `dtor` at its scope's end, and by a cleanup where a call in its region unwinds.
+void Lowering::guard(ValueId slot, const Type &c, const std::string &dtor) {
+    Live l;
+    l.slot = slot;
+    l.cls = c.id();
+    l.dtor = dtor;
     Pad p;
     p.cleanup = true;
     p.own = 0;
@@ -353,15 +376,16 @@ void Lowering::destroyLive(std::size_t mark) {
 }
 
 // A scope's end: each object it built destroyed on the way out, last built first, and its cleanup - made where a call in
-// its region could unwind - destroying it and handing on to the enclosing pad, or out of the frame.
-void Lowering::closeScope(std::size_t mark) {
+// its region could unwind - destroying it and handing on to the enclosing pad, or out of the frame. `keep`: a
+// constructor's own parts, which its normal way out leaves built and only its cleanups destroy ([except.ctor]/3).
+void Lowering::closeScope(std::size_t mark, bool keep) {
     while (live_.size() > mark) {
         const Live l = live_.back();
         live_.pop_back();
         if (l.pad + 1 != pads_.size()) outside("a scope's cleanup that is not the innermost pad");
         const Pad p = pads_.back();
         pads_.pop_back();
-        if (!terminated()) destroy(l);
+        if (!terminated() && !keep) destroy(l);
         if (!p.block.valid()) continue;
         if (!landingPads_) outside("a local's cleanup in a function the parser gave no landing pads");
         const BlockId back = cur_;
@@ -701,6 +725,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
     hasGoto_ = false;
     pads_.clear();
     live_.clear();
+    liveFloor_ = 0;
     typeTable_.clear();
     handlerDepth_ = 0;
     landingPads_ = facts.landingPads;
@@ -738,9 +763,8 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
                     if (vptrs_.size() != 1) outside("a polymorphic base that is not primary");
                     if (vptrs_[0].symbol.empty()) outside("a vptr out of a VTT");
                 }
-                // The parser's guards that destroy what was built when a later part throws are not in the syntax.
-                if (facts.landingPads) outside(isCtor ? "a constructor whose members are destroyed on unwinding"
-                                                      : "a destructor with landing pads that destroys members");
+                // A constructor's guards are memberInits' own; a destructor's - what a throwing body still destroys - are not yet.
+                if (facts.landingPads && !isCtor) outside("a destructor with landing pads that destroys members");
                 destroys = isDtor;
             }
         }
@@ -817,11 +841,13 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         place(first);
         if (isCtor) memberInits(fnNode, inits, n - 1);
         else if (destroys) storeVptrs();
+        liveFloor_ = live_.size();
         block(body);
         if (!terminated()) {
             if (!rt.isVoid()) outside("a body that falls off its end without a value");
             br(returnBlock_);
         }
+        closeScope(0, true);
         if (destroys) {
             place(returnBlock_);
             destroyMembers(*T(thisType_).pointee()->unqualified());
@@ -987,13 +1013,13 @@ void Lowering::returnStmt(sema::TypedId id) {
     const Type &rt = T(returns_);
     if (n == 0) {
         if (!rt.isVoid()) outside("a return with no value");
-        endCatches(handlerDepth_); destroyLive(0); br(returnBlock_);
+        endCatches(handlerDepth_); destroyLive(liveFloor_); br(returnBlock_);
         return;
     }
     if (n == 1 && rt.isVoid()) {
         const Val v = expr(child(id, 0));
         if (v.type.valid() && !T(v.type).isVoid()) outside("a return of a value from a void function");
-        endCatches(handlerDepth_); destroyLive(0); br(returnBlock_);
+        endCatches(handlerDepth_); destroyLive(liveFloor_); br(returnBlock_);
         return;
     }
     if (n != 1) outside("a return of " + std::to_string(n) + " parts");
@@ -1002,7 +1028,7 @@ void Lowering::returnStmt(sema::TypedId id) {
         if (T(a.type).unqualified() != rt.referent()->unqualified()) outside("a reference returned to another type");
         if (T(a.type).isConst() && !rt.referent()->isConst()) outside("a reference that can write returned from a const");
         const InstId c = add(Op::Bitcast, tid(*types_.pointerTo(rt.referent())), std::vector<ValueId>(1, a.v));
-        endCatches(handlerDepth_); destroyLive(0); br(returnBlock_, std::vector<ValueId>(1, result(c)));
+        endCatches(handlerDepth_); destroyLive(liveFloor_); br(returnBlock_, std::vector<ValueId>(1, result(c)));
         return;
     }
     if (rt.isStructOrUnion()) {
@@ -1015,7 +1041,7 @@ void Lowering::returnStmt(sema::TypedId id) {
         return;
     }
     const Val v = exprTo(child(id, 0), returns_);
-    endCatches(handlerDepth_); destroyLive(0); br(returnBlock_, std::vector<ValueId>(1, v.v));
+    endCatches(handlerDepth_); destroyLive(liveFloor_); br(returnBlock_, std::vector<ValueId>(1, v.v));
 }
 
 // [stmt.select]/2: a condition, or a declaration whose variable's value is the condition - declared where the test
@@ -2409,31 +2435,37 @@ void Lowering::resumeFrom(const Pad &p, std::size_t enclosing) {
     add(Op::Unreachable, TypeId(), std::vector<ValueId>());
 }
 
+// The thrown operand and the type the exception object takes: a plain class lvalue's bytes, or a scalar's value. A
+// class the lowering cannot copy into the object by its bytes - one a constructor builds - stays out.
+Lowering::Val Lowering::thrownValue(sema::TypedId id, TypeId &thrown) {
+    if (count(id) != 1) outside("a throw of " + std::to_string(count(id)) + " parts");
+    const sema::TypedId operand = child(id, 0);
+    Val v;
+    if (tree_.node(operand).type != nullptr && plainClass(*tree_.node(operand).type->unqualified()) && isLvalueNode(operand)) {
+        v = lvalue(operand);
+    } else {
+        if (tree_.node(operand).type != nullptr && tree_.node(operand).type->unqualified()->isStructOrUnion())
+            outside("a throw of a class that is not plain");
+        v = decay(expr(operand));
+        if (!v.type.valid() || !scalar(T(v.type)) || T(v.type).isX87(target_)) outside("a throw of what is not a scalar");
+    }
+    thrown = T(v.type).unqualified()->id();
+    return v;
+}
+
 // [except.throw] on the Itanium ABI, as the parser writes it: the exception object allocated by the runtime, the
 // operand stored into it - a scalar's value or a plain class's bytes - and __cxa_throw, an invoke inside a try;
-// `throw;` is __cxa_rethrow. A class with a destructor or a copy of its own, and the Microsoft ABI, stay outside.
+// `throw;` is __cxa_rethrow. A class with a copy of its own stays outside, so does a throw in a noexcept function - the parser's value-then-abort, [except.spec]/9, with no pad on the Microsoft ABI; that ABI's own shape is below.
 void Lowering::throwExpr(sema::TypedId id) {
-    if (target_.microsoftNames()) outside("a throw on the Microsoft ABI");
+    if (F().noexcept_) outside("a throw in a noexcept function");
+    if (target_.microsoftNames()) { microsoftThrow(id); return; }
     const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType()));
     if (count(id) == 0) {
         throwCall("__cxa_rethrow", std::vector<ValueId>());
         return;
     }
-    if (count(id) != 1) outside("a throw of " + std::to_string(count(id)) + " parts");
-    const sema::TypedId operand = child(id, 0);
-    Val v;
     TypeId thrown;
-    if (tree_.node(operand).type != nullptr && plainClass(*tree_.node(operand).type->unqualified()) && isLvalueNode(operand)) {
-        v = lvalue(operand);
-        thrown = T(v.type).unqualified()->id();
-    } else {
-        // A class the lowering cannot copy into the exception object by its bytes - one a constructor builds - stays out.
-        if (tree_.node(operand).type != nullptr && tree_.node(operand).type->unqualified()->isStructOrUnion())
-            outside("a throw of a class that is not plain");
-        v = decay(expr(operand));
-        if (!v.type.valid() || !scalar(T(v.type)) || T(v.type).isX87(target_)) outside("a throw of what is not a scalar");
-        thrown = T(v.type).unqualified()->id();
-    }
+    const Val v = thrownValue(id, thrown);
     if (!typeInfo_) outside("a throw with no type_info to name");
     const std::string info = typeInfo_(thrown);
     if (info.empty()) outside("a throw of a type with no type_info");
@@ -2448,6 +2480,31 @@ void Lowering::throwExpr(sema::TypedId id) {
     args.push_back(addrOf(info, voidPtr));
     args.push_back(result(add(Op::Null, voidPtr, std::vector<ValueId>())));
     throwCall("__cxa_throw", args);
+}
+
+// **The Microsoft ABI throws from the stack**, as the parser writes it: the object in a slot of the frame, then
+// _CxxThrowException(&object, &_TI...) with the ThrowInfo chain the parser finished for this type - an invoke inside
+// a cleanup's region. `throw;` is the same call with two nulls. A class with a copy of its own stays outside.
+void Lowering::microsoftThrow(sema::TypedId id) {
+    const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType()));
+    std::vector<ValueId> args;
+    if (count(id) == 0) {
+        args.push_back(result(add(Op::Null, voidPtr, std::vector<ValueId>())));
+        args.push_back(args[0]);
+        throwCall("_CxxThrowException", args);
+        return;
+    }
+    TypeId thrown;
+    const Val v = thrownValue(id, thrown);
+    if (!msThrowInfo_) outside("a throw with no ThrowInfo to name");
+    const std::string info = msThrowInfo_(thrown);
+    if (info.empty()) outside("a throw of a type whose ThrowInfo the parser did not finish");
+    const ValueId object = entryAlloca(thrown, ".ex");
+    if (T(thrown).isStructOrUnion()) copyObject(object, v.v, T(thrown));
+    else store(object, convert(v, thrown).v);
+    args.push_back(result(add(Op::Bitcast, voidPtr, std::vector<ValueId>(1, object))));
+    args.push_back(addrOf(info, voidPtr));
+    throwCall("_CxxThrowException", args);
 }
 
 // A runtime call that does not return: an invoke inside a try or a handler, so the throw reaches its pad, then the

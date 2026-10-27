@@ -759,3 +759,30 @@ the catching and throwing functions take the parser's path, the five lowered one
 **Measured on the Windows box**: `-check=ssa` over every case **7,939 bodies, 5,833 lowered, 0 failed** (7,929 / 5,701 before, the ten more bodies the new case's; +132 lowered), the refusal list now reading "a try on the Microsoft ABI" 148 and "a throw" 52 where "exceptions on the Microsoft ABI" read 718; the cases under `-front=ssa` **648 same, 0 differ, 340 refused as recorded at -O0 and at -O2** (the whole suite on
 the default path was not re-run in the hour; the new case was, below); `throw-check` and `catch-check` both pass (`int 7`, `double 2.5`; `before / caught 7 / after`), and the new case prints clang's output on the default path at -O0 and -O2, under `-front=ssa -O2` and in the GNU spelling. **Linux** (g++, `~/lane-ms`): run.sh
 under `-front=ssa` **1019 passed, 0 failed at -O0 and at -O2** (675 printed their recorded output, 340 refused as recorded), and the default path 1017 / 2 - `downcast-ssa` and `ssa-member-ctor`, the two parser faults another lane is mending, as expected. `tools/comment-lines` 0 over the cap.
+
+**M3b.2, a throw on the Microsoft ABI** (2026-10-27, Fable 5.1, branch `m3b2-mstry` off `f8abb56`, local). Of the two
+constructs the cleanup growth left outside on x86_64-windows, the throw is the smaller and is lowered now; the `try`
+stays outside by name (below). `Lowering::microsoftThrow` writes the parser's own shape of M3-IR 3.6: the exception
+object in an alloca of the frame - a scalar's converted value, or a plain class lvalue's bytes - then
+`_CxxThrowException(&object, &_TI...)` through `throwCall`, so inside a cleanup's region it is an invoke to that pad
+and the selector's ip2state rows cover it; `throw;` is the same call with two nulls, as `Parser::rethrowCall` writes
+it. **The ThrowInfo chain is the parser's, asked and never rebuilt**: `Typer::microsoftThrowInfo` spells the `_TI`
+name with `microsoftThrowNames`/`microsoftThrowFinish` and answers it only where `Program::msThrows` already holds that
+chain finished for a throw - the parser's body for the same function made it, and the backend emits it - so a type the
+parser never threw stays outside by name. The thrown operand's rules are the Itanium path's, in one `thrownValue`:
+a plain class lvalue or a non-x87 scalar (a pointer included here, its chain carrying `void *`). **One refusal the
+first run on the box found**: a throw in a `noexcept` function outside any try, which the parser lowers to the value
+and `abort` ([except.spec]/9) and gives no landing pad on this ABI - `noexcept-terminates` printed "caught" under
+`-front=ssa`; refused by name now on both ABIs, in front of the split. Nothing in `SsaSelect.cpp` changed: a call
+that does not return and an invoke to a cleanup pad were already selected. **Refused by name**: a `try` on the
+Microsoft ABI - a handler is a funclet of its own that hands the resume address back, its blocks must be emitted
+contiguously inside `openFunclet`/`endFunclet(resume)`, the FH3 try map wants each handler's object slot and
+descriptor, and none of that is a shape the IR carries yet - a throw of a class with a constructor or a copy of its
+own, and everything the Itanium growths refuse. **Case**: `tests/cases/ssa-ms-throw.cpp` (clang's output): an int, a
+converted double, a `const char *`, a plain class by its bytes, a throw past one and past two locals with
+destructors (the invoke in the cleanup's region, the destructors run by the runtime), and a rethrow from a function
+the handler calls; the catching functions take the parser's path. **Measured on the Windows box** (cl 19.44, /W4 /WX
+clean): `-check=ssa` over every case **7,990 bodies, 6,115 lowered, 0 failed** against the base `f8abb56`'s own 7,979 / 6,068 (the eleven more bodies the new case's; +47 lowered), the refusal list no longer naming "a throw on the Microsoft ABI" (52 at the base) - of those, twelve now read "a throw of a class that is not plain" and one "a throw in a noexcept function", the rest are lowered - and "a try on the Microsoft ABI" at 150; the cases under `-front=ssa` **652 same, 0 differ, 340 refused as recorded** and under `-front=ssa -O2` **652 same, 0 differ, 340 refused as recorded**; on the default path at `-O0` **652 same, 0 differ, 340 refused as recorded**; `throw-check` and
+`catch-check` pass on the default path and with `-front=ssa` written into both (`int 7`, `double 2.5`; `before /
+caught 7 / after`), the thrower under the flag being this lowering's. **Linux** (g++, `~/lane-mstry`): the full `make test`: run.sh **1023 passed, 0 failed** (679 printed their recorded output, 340 refused as recorded), emit 2697 / 0, typed 681 / 0, adapted 681 / 0, ssa.sh 7,687 bodies, 5,794 lowered, 0 failed, coff 1,336 / 0, c90 447 / 0, exclusions 126 sites 0 / 0, the memory gate at its baseline of 44 (a first run read 45: the one raw `const Type *` the hook added, a reference now), and the comment cap - which that run failed on one group of the throw's header, cut to three lines afterwards and read 0 by the same tool; the suite was not re-run on the comment-only change; then run.sh at `-O2` and under `-front=ssa` at -O0 and at -O2, each **1023 / 0**.
+`tools/comment-lines` 0 over the cap.

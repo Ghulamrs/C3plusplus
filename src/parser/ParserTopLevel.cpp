@@ -1814,6 +1814,13 @@ void Parser::topLevel(Program &program) {
                     const MemberBuilt b = { symbol, types_.functionType(types_.get(Kind::Void), params2, false),
                                             building && chosenArgs.size() != baseWritten };
                     memberBuilt_[currentFunction_ + "|" + (building ? "^" : "~") + base->tag() + "|0"] = b;
+                    // And in a constructor what destroys it when a later part throws: baseDestructorCall's.
+                    if (building && destructorOf(base) != nullptr) {
+                        std::string dtor = destructorOf(base)->symbol;
+                        if (!target_.microsoftNames()) itaniumDestructorName(base->tag(), base, false, &dtor);
+                        const MemberBuilt u = { dtor, types_.functionType(types_.get(Kind::Void), std::vector<const Type *>(1, basePtr), false), false };
+                        memberBuilt_[currentFunction_ + "|~" + base->tag() + "|0"] = u;
+                    }
                 }
                 ExprPtr call = completeCall(base->tag(), symbol, nullptr,
                                             types_.get(Kind::Void), params2, false,

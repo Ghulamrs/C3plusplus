@@ -45,6 +45,7 @@ public:
     void setDefaultInit(std::function<bool(TypeId, const std::string &)> f) { defaultInit_ = f; }
     void setGuarded(std::function<bool(const std::string &)> f) { guarded_ = f; }
     void setTypeInfo(std::function<std::string(TypeId)> f) { typeInfo_ = f; }
+    void setMicrosoftThrowInfo(std::function<std::string(TypeId)> f) { msThrowInfo_ = f; }
     void setNewFacts(std::function<bool(syntax::NodeId, sema::NewFacts &)> f) { newFacts_ = f; }
     // The constructor the parser chose for a member, and a class's destructor - Sema's records, asked by the glue.
     void setMemberBuilt(std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> f) { memberBuilt_ = f; }
@@ -171,6 +172,8 @@ private:
     Val operatorCall(sema::TypedId id);
     Val condition(sema::TypedId id);
     void throwExpr(sema::TypedId id);
+    void microsoftThrow(sema::TypedId id);
+    Val thrownValue(sema::TypedId id, TypeId &thrown);
     void throwCall(const std::string &symbol, const std::vector<ValueId> &args);
     void basePaths(const Type &cls, const Type &base, int at, int &found, int &offset);
     void memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32_t to);
@@ -178,9 +181,10 @@ private:
     void classLocal(sema::TypedId var, ValueId slot, const Type &t);
     bool builtClass(const Type &t) const;
     void builtLocal(sema::TypedId var, ValueId slot, const Type &t);
+    void guard(ValueId slot, const Type &c, const std::string &dtor);
     void destroy(const Live &l, bool invoke = false);
     void destroyLive(std::size_t mark);
-    void closeScope(std::size_t mark);
+    void closeScope(std::size_t mark, bool keep = false);
     void scopedStmt(sema::TypedId id);
     void copyObject(ValueId to, ValueId from, const Type &t);
     bool plainTemporary(sema::TypedId id) const;
@@ -211,6 +215,7 @@ private:
     std::function<bool(TypeId, const std::string &)> defaultInit_;
     std::function<bool(const std::string &)> guarded_;
     std::function<std::string(TypeId)> typeInfo_;
+    std::function<std::string(TypeId)> msThrowInfo_;
     std::function<bool(syntax::NodeId, sema::NewFacts &)> newFacts_;
     std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> memberBuilt_;
     std::function<std::string(TypeId)> destructor_;
@@ -218,6 +223,7 @@ private:
     std::vector<sema::VptrStore> vptrs_;        // what a constructor or destructor of a class with a vptr stores
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &, bool &)> localBuilt_;
     std::vector<Live> live_;                    // innermost last
+    std::size_t liveFloor_;                     // a constructor's built bases and members: below it, kept by a return
     bool landingPads_;                          // the parser gave the function landing pads: the prologue names an LSDA
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> temporaryBuilt_;
     std::vector<Pad> pads_;                     // innermost last
