@@ -104,7 +104,7 @@ goes in the same commit.
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:621` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2202` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:263` |
-| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:2974`, `src/parser/ParserTopLevel.cpp:830` |
+| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:2979`, `src/parser/ParserTopLevel.cpp:830` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:759` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:451` |
 | `template <template <class> typename C>`, `typename` after a template template parameter's list | C++17 | `src/parser/ParserTemplate.cpp:52` |
@@ -216,7 +216,7 @@ is left:
   has no body. `src/parser/ParserType.cpp:1279`
 - **a delegating constructor of a class with a virtual base** - the target
   would have to be told whether the object is the most derived one.
-  `src/parser/ParserTopLevel.cpp:2409`
+  `src/parser/ParserTopLevel.cpp:2410`
 - **a mem-initialiser that would run a constructor once per element of an
   array member** - `src/parser/ParserTopLevel.cpp:1303`
 - **a virtual base initialised with an argument that needs a temporary** - the
@@ -393,7 +393,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   `catch` handler, on x86_64-windows** - the cleanup would be a funclet inside
   the handler's funclet. `src/parser/ParserStmt.cpp:948`
 - **a trailing return type that is itself deduced**, `auto f() -> auto` -
-  C++14. `src/parser/ParserTopLevel.cpp:2342`
+  C++14. `src/parser/ParserTopLevel.cpp:2343`
 - **an expression form the Itanium name was not measured for, over a template's
   parameters in a function template's signature** - a postfix `++` or `--`, a
   lambda, `new`, `throw`, `typeid`, `noexcept`, a C-style cast to a reference
