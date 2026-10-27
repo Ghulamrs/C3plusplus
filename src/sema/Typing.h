@@ -155,6 +155,8 @@ public:
     bool isConstructor(syntax::NodeId fn) const;   // a `function` node the parser read as a constructor
     std::string typeInfoSymbol(TypeId t) const;   // the type_info a catch of t names, Sema's; empty where none can be made
     std::string unnamedCaught(syntax::NodeId handler) const;   // what an Itanium `catch (T)` with no name named; empty otherwise
+    // A Microsoft `catch (T)` with no name: the descriptor the parser named, whether by reference, HT_IsConst.
+    bool microsoftUnnamedCaught(syntax::NodeId handler, std::string &descriptor, bool &byRef, bool &isConst) const;
     // The Microsoft ThrowInfo a throw of t names (`_TI1H`), where the parser finished the chain for a throw; empty otherwise.
     std::string microsoftThrowInfo(TypeId t) const;
     // The Microsoft type descriptor a catch of t names (`??_R0H@8`) and HT_IsConst, where the parser finished a chain for the type.
@@ -181,6 +183,8 @@ public:
     // What a `return` of a class with a copy of its own built (Parser::ReturnBuilt): false where the parser recorded none.
     bool returnBuilt(syntax::NodeId ret, int &form, std::string &symbol, TypeId &signature) const;
     bool namedReturnLocal(syntax::NodeId var) const;   // the local nrvoCandidate chose: built in the caller's object
+    bool elidedInto(syntax::NodeId var, syntax::NodeId call) const;   // the call's result built straight into the local
+    bool assignCall(syntax::NodeId value, std::string &symbol, TypeId &signature) const;   // `a = value`'s operator=
     bool closureFacts(syntax::NodeId id, ClosureFacts &out) const;   // a lambda's, where the parser kept them and every source was found
     // Whether the function of this symbol is a template specialization (Signature::fromTemplate): its body is a replay.
     bool fromTemplate(const std::string &symbol) const;

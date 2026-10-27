@@ -660,6 +660,12 @@ private:
     std::unordered_map<std::uint32_t, int> varForms_;
     std::unordered_map<std::uint32_t, int> forParts_;   // a `for`'s parts present: 1 init, 2 condition, 4 step (M3b.2)
     std::unordered_map<std::uint32_t, std::string> unnamedCaught_;   // `catch (T)` with no name: T's type_info, by `catch` node
+    struct MsUnnamed { std::string descriptor; bool byRef, isConst; };
+    std::unordered_map<std::uint32_t, MsUnnamed> msUnnamedCaught_;   // the same on Microsoft: T's descriptor, by `catch` node
+    void noteMsCatch(bool typed, bool unnamed, const MsHandler &mh, std::size_t pos, std::size_t mark) {
+        const syntax::NodeId id = noteParts(syntax::Kind::Catch, typed ? "" : "...", pos, mark, pos);
+        if (typed && unnamed) msUnnamedCaught_[id.v] = MsUnnamed{ mh.descriptor, mh.byReference, mh.constPointer };
+    }
     int initFormAhead() const {
         const bool eq = peek().is("=");
         const Token &t = eq ? peekAt(1) : peek();
@@ -686,6 +692,8 @@ private:
     struct LocalBuilt { std::string symbol; const Type *signature; bool defaulted, zeroed; };
     std::map<int, LocalBuilt> ctorBySerial_;
     std::unordered_map<std::uint32_t, LocalBuilt> localBuilt_;      // the same, by `var` node (M3b.2)
+    // The copy or move assignment `a = b` called for a class with one of its own, by b's node: its symbol and type (M3b.2).
+    std::unordered_map<std::uint32_t, LocalBuilt> assignCalls_;
     // **One declarator's `var` node**, made when the declarator's scope closes - which a loop body that leaves by
     // `continue` from several places does in one place - over the parts its parse recorded: a bound, an initialiser.
     struct VarNote {

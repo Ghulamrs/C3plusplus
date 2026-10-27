@@ -52,6 +52,7 @@ public:
     void setUnnamedCaught(std::function<std::string(syntax::NodeId)> f) { unnamedCaught_ = f; }
     void setMicrosoftThrowInfo(std::function<std::string(TypeId)> f) { msThrowInfo_ = f; }
     void setMicrosoftCatch(std::function<bool(TypeId, std::string &, bool &)> f) { msCatch_ = f; }
+    void setMicrosoftUnnamedCaught(std::function<bool(syntax::NodeId, std::string &, bool &, bool &)> f) { msUnnamedCaught_ = f; }
     void setNewFacts(std::function<bool(syntax::NodeId, sema::NewFacts &)> f) { newFacts_ = f; }
     // The constructor the parser chose for a member, and a class's destructor - Sema's records, asked by the glue.
     void setMemberBuilt(std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> f) { memberBuilt_ = f; }
@@ -65,6 +66,10 @@ public:
     void setClosure(std::function<bool(syntax::NodeId, sema::ClosureFacts &)> f) { closure_ = f; }
     void setReturnBuilt(std::function<bool(syntax::NodeId, int &, std::string &, TypeId &)> f) { returnBuilt_ = f; }
     void setNamedReturn(std::function<bool(syntax::NodeId)> f) { namedReturn_ = f; }
+    // Whether the parser built a call's class result straight into a local (`var`, the call) - Sema's record.
+    void setElidedInto(std::function<bool(syntax::NodeId, syntax::NodeId)> f) { elidedInto_ = f; }
+    // The copy or move assignment the parser called for `a = b`, by b's node - Sema's record.
+    void setAssignCall(std::function<bool(syntax::NodeId, std::string &, TypeId &)> f) { assignCall_ = f; }
 private:
     struct Outside { std::string why; explicit Outside(const std::string &w) : why(w) {} };
     struct Val { ValueId v; TypeId type; Val() {} Val(ValueId a, TypeId t) : v(a), type(t) {} };
@@ -114,10 +119,18 @@ private:
     void returnDestroyed(sema::TypedId value);
     void returnCopied(sema::TypedId id, sema::TypedId value);
     void namedReturnLocal(sema::TypedId var, ValueId slot, const Type &t);
+    bool elidedLocal(sema::TypedId var) const;
+    void elidedCall(sema::TypedId call, ValueId slot);
+    bool classAssign(sema::TypedId id, Val &out);
+    bool listFits(const Type &t, std::uint32_t values) const;
+    void listInit(ValueId slot, const Type &t, sema::TypedId list, std::uint32_t from);
+    Val classValue(sema::TypedId id, const Type &t);
     void forStmt(sema::TypedId id);
     void rangeForStmt(sema::TypedId id);
     void switchStmt(sema::TypedId id);
     BlockId labelBlock(const std::string &name);
+    void gotoStmt(const std::string &name);
+    void labelReached(const std::string &name, BlockId b);
     void tryStatement(sema::TypedId id);
     void microsoftTry(sema::TypedId id);
     void leaveHandlers(std::size_t n, std::size_t mark, BlockId target, const std::vector<ValueId> &args = std::vector<ValueId>());
@@ -125,6 +138,7 @@ private:
     BlockId padBlock(Pad &p);
     void resumeFrom(const Pad &p, std::size_t enclosing);
     void endCatches(std::size_t n);
+    void leaveCatches(std::size_t n, std::size_t mark);
     int typeIndexFor(const std::string &sym);
     ValueId entryAlloca(TypeId slotType, const std::string &name);
     Val runtimeCall(const std::string &symbol, TypeId returns, const std::vector<ValueId> &args);
@@ -140,6 +154,8 @@ private:
     Val member(sema::TypedId id);
     Val memberAddress(sema::TypedId id);
     Val memberOfThis(sema::TypedId id);
+    bool namesCalledFunction(const std::string &head, const std::string &symbol) const;
+    Val functorMember(sema::TypedId head, const Type &self);
     Val capturedThis();
     Val readOf(ValueId p, TypeId type);
     Val unary(sema::TypedId id);
@@ -148,6 +164,7 @@ private:
     Val arithmetic(const std::string &op, Val a, Val b);
     Val logical(bool isAnd, sema::TypedId l, sema::TypedId r);
     Val conditional(sema::TypedId id);
+    bool compositePointer(sema::TypedId id, const Type &tx, const Type &ty) const;
     Val assign(sema::TypedId id);
     Val call(sema::TypedId id);
     Val newExpression(sema::TypedId id);
@@ -265,6 +282,7 @@ private:
     std::function<std::string(syntax::NodeId)> unnamedCaught_;
     std::function<std::string(TypeId)> msThrowInfo_;
     std::function<bool(TypeId, std::string &, bool &)> msCatch_;
+    std::function<bool(syntax::NodeId, std::string &, bool &, bool &)> msUnnamedCaught_;
     BlockId funclet_;                           // the Microsoft handler whose funclet the blocks made now belong to
     BlockId msTryPad_;                          // the try that handler is of: its pad's CatchPad lists the exits
     std::function<bool(syntax::NodeId, sema::NewFacts &)> newFacts_;
@@ -279,6 +297,10 @@ private:
     bool intoSret_ = false;                     // the next call builds its class result in the caller's object
     std::function<bool(syntax::NodeId, int &, std::string &, TypeId &)> returnBuilt_;
     std::function<bool(syntax::NodeId)> namedReturn_;
+    std::function<bool(syntax::NodeId, syntax::NodeId)> elidedInto_;
+    std::function<bool(syntax::NodeId, std::string &, TypeId &)> assignCall_;
+    sema::TypedId intoCall_;                    // the call elidedCall lowers, whose result goes into a local's alloca
+    int intoAlloca_ = -1, intoNow_ = -1;        // that alloca; and callTail's, set only as that call's tail is entered
     std::size_t liveFloor_;                     // a constructor's built bases and members: below it, kept by a return
     bool landingPads_;                          // the parser gave the function landing pads: the prologue names an LSDA
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> temporaryBuilt_;
@@ -286,6 +308,7 @@ private:
     std::vector<Pad> pads_;                     // innermost last
     std::vector<std::string> typeTable_;        // the function's selector indices: one per type, first occurrence, 1-based
     std::size_t handlerDepth_;                  // handlers the statement being lowered is inside
+    std::vector<std::size_t> handlerLive_;      // live_ where each handler's body began, innermost last
     std::size_t fullFrom_;                      // live_ where the full expression being lowered began; kNoFull, none open
     std::size_t skippable_;                     // operands being lowered that may not be evaluated: `&&`, `||`, `?:`, `new`
     static const std::size_t kNoFull = static_cast<std::size_t>(-1);
@@ -295,6 +318,10 @@ private:
     std::vector<Loop> loops_;
     std::vector<SwitchCtx> switches_;
     std::map<std::string, BlockId> labels_;
+    std::map<std::string, std::pair<std::size_t, std::size_t> > labelScope_;    // a placed label: live_ and handlers there
+    // A goto ahead of its label: the block it branches to, and what was alive and which handlers were open there.
+    struct PendingGoto { std::string label; BlockId from; std::vector<Live> live; std::vector<std::size_t> handlerLive; };
+    std::vector<PendingGoto> pendingGotos_;
     bool hasGoto_;
 };
 

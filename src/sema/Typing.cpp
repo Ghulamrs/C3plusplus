@@ -473,6 +473,15 @@ std::string Typer::unnamedCaught(syntax::NodeId handler) const {
     return c == p_.unnamedCaught_.end() ? std::string() : c->second;
 }
 
+bool Typer::microsoftUnnamedCaught(syntax::NodeId handler, std::string &descriptor, bool &byRef, bool &isConst) const {
+    const auto c = p_.msUnnamedCaught_.find(handler.v);
+    if (c == p_.msUnnamedCaught_.end()) return false;
+    descriptor = c->second.descriptor;
+    byRef = c->second.byRef;
+    isConst = c->second.isConst;
+    return true;
+}
+
 int Typer::scopedBody(syntax::NodeId fn) const {
     const std::map<std::uint32_t, int>::const_iterator i = p_.scopedFunctions_.find(fn.v);
     return i != p_.scopedFunctions_.end() ? i->second : 0;
@@ -571,6 +580,21 @@ bool Typer::returnBuilt(syntax::NodeId ret, int &form, std::string &symbol, Type
 bool Typer::namedReturnLocal(syntax::NodeId var) const {
     const std::unordered_map<std::uint32_t, Local>::const_iterator i = p_.declaredLocals_.find(var.v);
     return i != p_.declaredLocals_.end() && i->second.byValueByAddress && !i->second.isParameter;
+}
+
+bool Typer::assignCall(syntax::NodeId value, std::string &symbol, TypeId &signature) const {
+    const std::unordered_map<std::uint32_t, Parser::LocalBuilt>::const_iterator i = p_.assignCalls_.find(value.v);
+    if (i == p_.assignCalls_.end() || i->second.symbol.empty()) return false;
+    symbol = i->second.symbol;
+    signature = TypeTable::id(i->second.signature);
+    return true;
+}
+
+// [class.copy]/31 as the parser took it for `T x = f();`: the call claimed the local's slot for its result.
+bool Typer::elidedInto(syntax::NodeId var, syntax::NodeId call) const {
+    const std::unordered_map<std::uint32_t, Local>::const_iterator l = p_.declaredLocals_.find(var.v);
+    const std::unordered_map<std::uint32_t, Parser::CallSlots>::const_iterator c = p_.callSlots_.find(call.v);
+    return l != p_.declaredLocals_.end() && c != p_.callSlots_.end() && c->second.result != 0 && c->second.result == l->second.offset;
 }
 
 // Each capture's source `var`, looked up as a name is in the scopes at the lambda, and kept only where it is the
