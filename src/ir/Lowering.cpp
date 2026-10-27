@@ -592,6 +592,14 @@ Lowering::Val Lowering::closure(sema::TypedId id) {
     closure_(tree_.node(id).syntax, f);
     const Type &cls = *T(f.closure).unqualified();
     const ValueId slot = entryAlloca(tid(cls), "$closure");
+    // [expr.prim.lambda]/18: `this` captured is the enclosing member function's own, copied in; a closure's is not.
+    if (f.thisOffset >= 0) {
+        if (!this_.valid() || !f.thisType.valid() || T(f.thisType).pointee()->unqualified() != T(thisType_).pointee()->unqualified())
+            outside("a lambda capturing a `this` that is not the member function's");
+        const InstId g = add(Op::Gep, tid(*types_.pointerTo(&T(f.thisType))), std::vector<ValueId>(1, slot));
+        at(g).k = f.thisOffset;
+        store(result(g), result(add(Op::Bitcast, f.thisType, std::vector<ValueId>(1, this_))));
+    }
     for (const sema::ClosureCapture &c : f.captures) {
         const std::map<std::uint32_t, std::pair<ValueId, TypeId> >::const_iterator l = locals_.find(c.source.v);
         if (l == locals_.end() || T(l->second.second).isReference()) outside("a lambda capturing what is not a local of the body");
@@ -1463,14 +1471,14 @@ bool Lowering::isLvalueNode(sema::TypedId id) const {
     case syntax::Kind::Name: {
         if (tree_.node(id).decl.valid()) return true;
         const sema::Resolution &r = tree_.resolution(id);
-        return r.what == sema::Resolution::Global || r.what == sema::Resolution::Member;
+        // A static data member with storage is an object as a global is; a folded one has none.
+        return r.what == sema::Resolution::Global || r.what == sema::Resolution::Member ||
+               (r.what == sema::Resolution::StaticMember && r.serial != 1);
     }
     case syntax::Kind::StringLit: case syntax::Kind::Member: case syntax::Kind::Subscript: return true;
     case syntax::Kind::Unary: return text(id) == "*";
     case syntax::Kind::Paren: return count(id) == 1 && isLvalueNode(child(id, 0));
-    case syntax::Kind::Cast:
-        return count(id) == 1 && tree_.node(id).castType.valid() &&
-               (T(tree_.node(id).castType).isReference() || tree_.node(id).castXvalue) && isLvalueNode(child(id, 0));
+    case syntax::Kind::Cast: return referenceCast(id) && isLvalueNode(child(id, 0));
     case syntax::Kind::Conditional:
         return count(id) == 3 && isLvalueNode(child(id, 1)) && isLvalueNode(child(id, 2)) &&
                tree_.node(child(id, 1)).type != nullptr && tree_.node(child(id, 1)).type == tree_.node(child(id, 2)).type;
@@ -1481,6 +1489,18 @@ bool Lowering::isLvalueNode(sema::TypedId id) const {
     }
     default: return false;
     }
+}
+
+// A cast that names its operand's object: to a reference, an xvalue, or a static_cast or const_cast written to an
+// lvalue reference, which the parser notes as its referent - only where the operand already has that type.
+bool Lowering::referenceCast(sema::TypedId id) const {
+    const sema::TypedNode &n = tree_.node(id);
+    if (count(id) != 1 || !n.castType.valid()) return false;
+    if (T(n.castType).isReference() || n.castXvalue) return true;
+    const std::string &w = text(id);
+    const TypeId from = TypeTable::id(tree_.node(child(id, 0)).type);
+    return w.find("&>") != std::string::npos && (w.compare(0, 12, "static_cast<") == 0 || w.compare(0, 11, "const_cast<") == 0) &&
+           from.valid() && T(from).unqualified() == T(n.castType).unqualified();
 }
 
 // An object's address and its type, const kept on the type.
@@ -1622,7 +1642,7 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
         if (k != 1 || !n.castType.valid()) outside("a cast not recorded");
         const Type &to = T(n.castType);
         const Type &named = to.isReference() ? *to.referent() : to;
-        if ((to.isReference() || n.castXvalue) && scalar(named) && !named.isX87(target_) && isLvalueNode(id)) {
+        if (referenceCast(id) && scalar(named) && !named.isX87(target_) && isLvalueNode(id)) {
             const Val a = lvalue(id);            // a cast to a reference read as a value: the object it names
             e = readOf(a.v, a.type);
             break;
