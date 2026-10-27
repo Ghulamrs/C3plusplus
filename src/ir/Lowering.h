@@ -81,6 +81,7 @@ private:
     void condbr(ValueId c, BlockId t, BlockId f);
     ValueId param(BlockId b, TypeId type);
     ValueId iconst(TypeId type, long long k);
+    ValueId fallOffValue(const Type &rt);   // the zero a body that falls off its end returns
     ValueId addrOf(const std::string &sym, TypeId type);
     ValueId load(ValueId p, TypeId type);
     void store(ValueId p, ValueId v);

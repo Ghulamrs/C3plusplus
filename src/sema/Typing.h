@@ -149,7 +149,6 @@ public:
     bool wrappedBody(const std::string &symbol) const;
     // A body read in a class's, a namespace's or a template's scope (Parser::scopedFunctions_), which the adapter left alone too.
     int scopedBody(syntax::NodeId fn) const;
-    bool packBody(const std::string &symbol) const;
     std::string typeInfoSymbol(TypeId t) const;   // the type_info a catch of t names, Sema's; empty where none can be made
     // The Microsoft ThrowInfo a throw of t names (`_TI1H`), where the parser finished the chain for a throw; empty otherwise.
     std::string microsoftThrowInfo(TypeId t) const;

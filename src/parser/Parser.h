@@ -589,7 +589,6 @@ private:
     std::map<std::string, MemberBuilt> memberBuilt_;
     // The vptrs each written constructor and destructor of a class with one stores, by its symbol (M3b.2).
     std::map<std::string, std::vector<sema::VptrStore> > vptrStores_;
-    std::set<std::string> packBodies_;   // the symbols of bodies in which a pack was expanded   // a body's scope: 1 a member, 2 a namespace, 4 a qualified name, 8 a template
     // **What the parser decides of layout as it reads, by node** (M2.11): a `var`'s frame slot, a block's or a `for`'s
     // scope, and the symbol a `function` node was defined as - what the adapter cannot derive from types.
     std::unordered_map<std::uint32_t, Local> declaredLocals_;

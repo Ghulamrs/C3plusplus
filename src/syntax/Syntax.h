@@ -50,6 +50,7 @@ struct Node {
     std::uint32_t loc;      // the source offset, Source's position cut to 32 bits
     bool hasParent;
     bool dead;              // made by a trial that rewound: its tokens are read again, and these nodes are not the tree's
+    std::uint32_t member;   // 1 + the pack member a pattern's copy was read for, 0 outside an expansion
 };
 
 class Tree {
@@ -65,6 +66,10 @@ public:
     std::vector<NodeId> adopt(std::size_t from, std::size_t lo, std::size_t hi);
     // Every node made after `from` is dead: a trial rewound past them.
     void kill(std::size_t from);
+    // The live roots made after `from` located in [lo, hi] are dead: a template's arguments, folded, are no expression.
+    void drop(std::size_t from, std::size_t lo, std::size_t hi);
+    // The live roots made after `from` are pack member m's: they share the pattern's place, and are not a rewound read.
+    void markMember(std::size_t from, std::size_t m);
     // A node whose parent died is a root again, for the live node that records the same tokens to adopt (M2.15).
     void release(NodeId id) { nodes_[id.v].hasParent = false; }
     // A subtree a kill took that is the tree's after all: a lambda's replayed body made inside a discarded reading.
