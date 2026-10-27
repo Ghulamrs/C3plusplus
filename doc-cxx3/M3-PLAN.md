@@ -777,3 +777,17 @@ clean): `-check=ssa` over every case **7,990 bodies, 6,115 lowered, 0 failed** a
 `catch-check` pass on the default path and with `-front=ssa` written into both (`int 7`, `double 2.5`; `before /
 caught 7 / after`), the thrower under the flag being this lowering's. **Linux** (g++, `~/lane-mstry`): the full `make test`: run.sh **1023 passed, 0 failed** (679 printed their recorded output, 340 refused as recorded), emit 2697 / 0, typed 681 / 0, adapted 681 / 0, ssa.sh 7,687 bodies, 5,794 lowered, 0 failed, coff 1,336 / 0, c90 447 / 0, exclusions 126 sites 0 / 0, the memory gate at its baseline of 44 (a first run read 45: the one raw `const Type *` the hook added, a reference now), and the comment cap - which that run failed on one group of the throw's header, cut to three lines afterwards and read 0 by the same tool; the suite was not re-run on the comment-only change; then run.sh at `-O2` and under `-front=ssa` at -O0 and at -O2, each **1023 / 0**.
 `tools/comment-lines` 0 over the cap.
+
+**M3b.2, a constructor whose members are destroyed on unwinding, and the two lanes merged** (2026-10-27, Opus 5.5
+worker on `m3b2-cunw`, `8de0e1b`; merged with `m3b2-mstry` as `729bcec`, local). In `memberInits` each base and member
+with a destructor becomes live once built (`Lowering::guard`, the tail of `builtLocal` lifted out), so a later call is
+an invoke whose pad destroys what was built, last first, on both ABIs; the normal way out keeps them (`closeScope`'s
+`keep`, `liveFloor_`). The parser records a base's destructor beside its `^B` record (`|~B|0`), a record and no code;
+two exclusion citations moved and were re-pointed. Case `constructor-unwinds-parts`, its ledger 35 built and 35 gone.
+**The merged tree, gated together:** Linux `make test` exit 0 - run.sh **1024 / 0** at -O0, -O2, `-front=ssa` and
+`-front=ssa -O2`; the emit golden recorded at m3-line `ecf4055` **0 of 2,693 changed**, 8 added; ssa.sh **7,705 source
+bodies, 5,937 lowered and verified (77.0%), 0 failed**; coff 0 differ, c90 447 / 0, exclusions 126 sites 0 / 0, comment
+cap 0, the memory gate under its baseline. Windows: **653 same, 0 differ, 340 refused as recorded** at -O0, under
+`-front=ssa` and under `-front=ssa -O2`. Fable's one ungated step - `make test` after its comment-only change - is closed
+by this run. **Not mended**: a destructor with landing pads that destroys members (1 body); on the Microsoft ABI a
+constructor that throws itself stays the walker's while a `try` there is refused.
