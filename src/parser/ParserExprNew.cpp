@@ -1401,6 +1401,7 @@ StmtPtr Parser::microsoftThrow(ExprPtr value, std::size_t pos) {
         std::vector<const Type *> ps;
         ps.push_back(thrownPtr);
         ps.push_back(cc->params[0]);
+        noteThrowCopy(cc, thrownPtr, pos);
         store = completeCall(thrown->tag(), cc->symbol, nullptr,
                              types_.get(Kind::Void), ps, false, pos,
                              std::move(ctorArgs));
@@ -1484,6 +1485,7 @@ StmtPtr Parser::throwStatement(ExprPtr value, std::size_t pos) {
         std::vector<const Type *> ps;
         ps.push_back(thrownPtr);
         ps.push_back(cc->params[0]);
+        noteThrowCopy(cc, thrownPtr, pos);
         store = completeCall(thrown->tag(), cc->symbol, nullptr,
                              types_.get(Kind::Void), ps, false, pos,
                              std::move(ctorArgs));

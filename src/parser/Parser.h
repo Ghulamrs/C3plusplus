@@ -587,6 +587,14 @@ private:
     // chose, keyed "constructor|member|pos" - the constructor's symbol, the entry's position, 0 for one left alone.
     struct MemberBuilt { std::string symbol; const Type *signature; bool defaulted; };
     std::map<std::string, MemberBuilt> memberBuilt_;
+    // The copy constructor a throw chose for its exception object, keyed as a member is under "$throw" (M3b.2).
+    void noteThrowCopy(const Signature *cc, const Type *thrownPtr, std::size_t pos) {
+        const MemberBuilt b = { cc->symbol, types_.functionType(types_.get(Kind::Void), std::vector<const Type *>{ thrownPtr, cc->params[0] }, false), false };
+        const std::string key = currentFunction_ + "|$throw|" + std::to_string(static_cast<std::uint32_t>(pos));
+        const std::map<std::string, MemberBuilt>::iterator had = memberBuilt_.find(key);
+        if (had == memberBuilt_.end()) memberBuilt_[key] = b;
+        else if (had->second.symbol != b.symbol || had->second.signature != b.signature) had->second.symbol.clear();
+    }
     // The vptrs each written constructor and destructor of a class with one stores, by its symbol (M3b.2).
     std::map<std::string, std::vector<sema::VptrStore> > vptrStores_;
     // **What the parser decides of layout as it reads, by node** (M2.11): a `var`'s frame slot, a block's or a `for`'s
@@ -754,8 +762,13 @@ private:
         // implicit one, which the SSA lowering's record says (M3b.2).
         const std::uint32_t ctor = both->left().resolved();
         resolutions_[e->syntax().v] = resolvedAs(Resolved::Temporary, e->type(), ctor != 0 ? resolvedTable_[ctor].symbol : std::string());
-        const Comma *zeroed = ctor == 0 ? dynamic_cast<const Comma *>(&both->left()) : nullptr;
-        const std::uint32_t built = zeroed != nullptr ? zeroed->right().resolved() : ctor;
+        // A temporary with a destructor sets its guard after the constructor returns: the constructor is that comma's left.
+        const Expr *call = &both->left();
+        for (std::size_t i = 0; i < pendingTemps_.size(); i++)
+            if (pendingTemps_[i].slot == tmp->offset() && pendingTemps_[i].flag != 0 && dynamic_cast<const Comma *>(call) != nullptr)
+            { call = &static_cast<const Comma *>(call)->left(); break; }
+        const Comma *zeroed = call->resolved() == 0 ? dynamic_cast<const Comma *>(call) : nullptr;
+        const std::uint32_t built = zeroed != nullptr ? zeroed->right().resolved() : call->resolved();
         if (built != 0 && resolvedTable_[built].what == Resolved::Call) {
             const TemporaryBuilt b = { resolvedTable_[built].symbol, resolvedTable_[built].type, zeroed != nullptr };
             temporaryBuilt_[e->syntax().v] = b;

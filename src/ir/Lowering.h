@@ -180,6 +180,7 @@ private:
     void throwExpr(sema::TypedId id);
     void microsoftThrow(sema::TypedId id);
     Val thrownValue(sema::TypedId id, TypeId &thrown);
+    bool classThrow(sema::TypedId id, ValueId &object, TypeId &thrown);
     void throwCall(const std::string &symbol, const std::vector<ValueId> &args);
     void basePaths(const Type &cls, const Type &base, int at, int &found, int &offset);
     void memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32_t to);
