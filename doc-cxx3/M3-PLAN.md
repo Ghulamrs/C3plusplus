@@ -727,3 +727,26 @@ declaration (`functional-cast-statement-of-call`), a class object declared as an
 which is why such constructors stay outside. **What is left**, largest first on the latest lists: exceptions on the
 Microsoft ABI (about 700 bodies, Windows only - funclets from the IR), constructors and destructors of a class with a
 vptr or a virtual base, a class local initialised from what is not yet an object, a body with a pack expansion.
+
+**M3b.2, cleanups on the Microsoft ABI: a local with a destructor, its funclet and its FH3 state** (2026-10-27, Fable 5.1,
+branch `m3b2-ms` off `fdf7870`, local). Every function with landing pads on x86_64-windows was refused whole ("exceptions on
+the Microsoft ABI", 718 bodies on the box's list), and every local a constructor builds or a destructor destroys there (122
+more). Now the function-wide refusal is gone and the lowering refuses by construct: a `try` and a `throw` stay outside on
+that ABI by name, and a local with a destructor is lowered as it is on Itanium but for its pad - `Lowering::closeScope`
+writes the Microsoft shape of M3-IR 3.6: a `cleanuppad`, the destructor as a plain call (the runtime ends the program itself
+should it throw, as the walker's cleanup funclet does), and a `cleanupret` naming the enclosing pad or none. **Selection**
+(`SsaSelect.cpp`, `usesFunclets()`): every pad block is a state of the FH3 tree, numbered before the body so an `invoke` can
+name it (`Walker::msAddState`, the one door the selector has to the tree, beside `msSetState`, `msAddIpRow`,
+`msSetUnwindHelpSlot`); an invoke is its call between two state labels with an ip2state row at each - the pad's state in,
+-1 out, so a call's own range and no more is in a state; a pad block is selected inside `openFunclet`/`endCleanupFunclet`
+as the walker's cleanup funclet is, its state's `toState` the `cleanupret`'s target, its action the funclet; the frame
+gets the runtime's scratch word (`layoutSsa`) and the entry writes -2 into it where the function has a pad. Inside a
+funclet an alloca's address is taken afresh by `lea` rather than read from the body's value slot, which the passes may
+have promoted. The four FH3 tables are the walker's own emitters, unchanged. **Refused by name**: a `try` and a `throw` on
+the Microsoft ABI (a handler funclet returns the address to carry on at, and the four-object ThrowInfo chain is the
+walker's), and everything the Itanium growths refuse. **Case**: `tests/cases/ssa-ms-cleanup.cpp` - one local, two in one
+scope, nested scopes, a loop body's with `continue`, an early return, each left by an exception and by the normal path;
+the catching and throwing functions take the parser's path, the five lowered ones' funclets are what it runs.
+**Measured on the Windows box**: `-check=ssa` over every case **7,939 bodies, 5,833 lowered, 0 failed** (7,929 / 5,701 before, the ten more bodies the new case's; +132 lowered), the refusal list now reading "a try on the Microsoft ABI" 148 and "a throw" 52 where "exceptions on the Microsoft ABI" read 718; the cases under `-front=ssa` **648 same, 0 differ, 340 refused as recorded at -O0 and at -O2** (the whole suite on
+the default path was not re-run in the hour; the new case was, below); `throw-check` and `catch-check` both pass (`int 7`, `double 2.5`; `before / caught 7 / after`), and the new case prints clang's output on the default path at -O0 and -O2, under `-front=ssa -O2` and in the GNU spelling. **Linux** (g++, `~/lane-ms`): run.sh
+under `-front=ssa` **1019 passed, 0 failed at -O0 and at -O2** (675 printed their recorded output, 340 refused as recorded), and the default path 1017 / 2 - `downcast-ssa` and `ssa-member-ctor`, the two parser faults another lane is mending, as expected. `tools/comment-lines` 0 over the cap.

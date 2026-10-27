@@ -234,6 +234,10 @@ private:
     void selectCall(const ir::Function &f, const ir::Inst &i, const Type *rt);
     std::string ssaLandLabel(ir::BlockId b) const;
     int ssaRegionAt_ = 0;
+    // Microsoft: the FH3 state of each pad block (M3-IR 3.6), the frame's scratch word, and whether a funclet is being selected.
+    std::vector<int> ssaPadState_;
+    int ssaUnwindHelpSlot_ = 0;
+    bool ssaInFunclet_ = false;
     void selectInst(const ir::Function &f, const ir::Inst &i);
     void selectBody(const Function &fn, const ir::Function &f);
     std::vector<opt::Local> scalarsOf(const Function &fn) const;

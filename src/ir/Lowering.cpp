@@ -271,11 +271,10 @@ bool Lowering::builtClass(const Type &t) const {
     return c.kind() != Kind::Union && (simpleLayout(c) || buildableLayout(c));
 }
 
-// [dcl.init]/17 and [class.dtor]/4 for such a local, on the Itanium ABI: the constructor the parser chose called on
+// [dcl.init]/17 and [class.dtor]/4 for such a local: the constructor the parser chose called on
 // its slot with the declarator's values - after a zeroing where [dcl.init]/8 asked one - or, where none built it, the
 // plain forms; then, with a destructor, alive to its scope's end and its region unwinding to a cleanup that destroys it.
 void Lowering::builtLocal(sema::TypedId var, ValueId slot, const Type &t) {
-    if (target_.microsoftNames()) outside("a local a constructor builds or a destructor destroys, on the Microsoft ABI");
     const Type &c = *t.unqualified();
     const sema::TypedNode &v = tree_.node(var);
     if (tree_.resolution(var).what == sema::Resolution::Call) {
@@ -353,6 +352,25 @@ void Lowering::closeScope(std::size_t mark) {
         at(cl).syms = p.types;
         for (std::size_t k = 0; k < p.indices.size(); k++) at(cl).cases.push_back(p.indices[k]);
         at(cl).bits = (p.types.empty() ? 0u : 1u) | (!pads_.empty() ? 2u : 0u);
+        // Microsoft (M3-IR 3.6): the funclet destroys and returns to the runtime, which ends the program itself should the
+        // destructor throw, as the walker's cleanup does; the cleanupret names the pad whose state this one chains to.
+        if (target_.microsoftNames()) {
+            destroy(l);
+            const InstId r = add(Op::CleanupRet, TypeId(), std::vector<ValueId>());
+            if (!pads_.empty()) {
+                std::vector<ValueId> args;
+                args.push_back(p.ptr);
+                args.push_back(p.sel);
+                Succ s;
+                s.block = padBlock(pads_.back());
+                s.first = static_cast<std::uint32_t>(F().operands.size());
+                s.count = 2;
+                F().operands.insert(F().operands.end(), args.begin(), args.end());
+                at(r).succ.push_back(s);
+            }
+            place(back);
+            continue;
+        }
         // [except.terminate]: a destructor that throws while the stack unwinds ends the program - a catch-all row's pad.
         Pad t;
         t.cleanup = false;
@@ -672,7 +690,6 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         if (facts.variadic) outside("a variadic function");
         if (facts.wrappedBody) outside("a function try block or an exception specification");
         if (facts.landingPads && facts.noexcept_) outside("a noexcept function with landing pads");
-        if (facts.landingPads && target_.microsoftNames()) outside("exceptions on the Microsoft ABI");
         Function &f = F();
         f.symbol = facts.symbol;
         f.displayName = facts.displayName;
@@ -2432,6 +2449,7 @@ void Lowering::endCatches(std::size_t n) {
 // chain tests the selector against each handler's index and hands what nothing matched to the enclosing pad or to
 // _Unwind_Resume; a handler begins its catch, binds its object, and ends it on every way out (a jump: endCatches; a throw: its own cleanup pad).
 void Lowering::tryStatement(sema::TypedId id) {
+    if (target_.microsoftNames()) outside("a try on the Microsoft ABI");
     const std::uint32_t n = count(id);
     if (n < 2) outside("a try with no handler");
     const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType()));
