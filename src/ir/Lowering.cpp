@@ -1082,8 +1082,8 @@ bool Lowering::bytesReturned(const Type &t) const {
     return t.isStructOrUnion() && t.isComplete() && constructedClass(t) && !t.unqualified()->nonTrivialCopy();
 }
 
-// The forms the parser elides for such a class - a local of the function, a temporary the return builds - and a call's
-// result, which comes back into a slot of this frame by the same ABI rule and is copied out from there.
+// The forms the parser elides for such a class - a local of the function, a temporary the return builds - and any other
+// object of it, a call's result among them (a slot of this frame, by the same ABI rule): its bytes copied out from there.
 void Lowering::returnConstructed(sema::TypedId value) {
     const Type &rt = T(returns_);
     if (!live_.empty() || handlerDepth_ != 0) outside("a constructed class returned inside a handler or beside a destructor");
@@ -1093,6 +1093,9 @@ void Lowering::returnConstructed(sema::TypedId value) {
         a = temporary(value);
     } else if ((syn(value).kind == syntax::Kind::Call || operatorCalls(value)) && isLvalueNode(value)) {
         a = lvalue(value);      // a call's result: the slot of this frame the callee built into, or the object it names
+    } else if (!(syn(value).kind == syntax::Kind::Name && tree_.node(value).decl.valid() &&
+                 locals_.find(tree_.node(value).decl.v) != locals_.end()) && isLvalueNode(value)) {
+        a = lvalue(value);      // `*this`, a member, an element, a global: an object whose bytes the return copies out
     } else {
         const sema::TypedNode &n = tree_.node(value);
         if (syn(value).kind != syntax::Kind::Name || !n.decl.valid() || locals_.find(n.decl.v) == locals_.end())
