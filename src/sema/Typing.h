@@ -174,6 +174,9 @@ public:
     bool localBuilt(syntax::NodeId var, std::string &symbol, TypeId &signature, bool &defaulted, bool &zeroed) const;
     // The constructor a class temporary `T(...)` at node `id` was built by, and whether `T()` zeroed the object first.
     bool temporaryBuilt(syntax::NodeId id, std::string &symbol, TypeId &signature, bool &zeroFirst) const;
+    // What a `return` of a class with a copy of its own built (Parser::ReturnBuilt): false where the parser recorded none.
+    bool returnBuilt(syntax::NodeId ret, int &form, std::string &symbol, TypeId &signature) const;
+    bool namedReturnLocal(syntax::NodeId var) const;   // the local nrvoCandidate chose: built in the caller's object
     bool closureFacts(syntax::NodeId id, ClosureFacts &out) const;   // a lambda's, where the parser kept them and every source was found
     // Whether the function of this symbol is a template specialization (Signature::fromTemplate): its body is a replay.
     bool fromTemplate(const std::string &symbol) const;

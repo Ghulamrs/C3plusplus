@@ -859,7 +859,7 @@ ExprPtr Parser::buildReturned(ExprPtr value, std::size_t pos, bool *named) {
     if (const Unary *u = dynamic_cast<const Unary *>(value.get()))
         if (u->op() == '*')
             if (const Var *v = dynamic_cast<const Var *>(&u->operand()))
-                if (v->isLocal() && v->offset() == sretSlot_) { *named = true; return value; }
+                if (v->isLocal() && v->offset() == sretSlot_) { *named = true; pendingReturnBuilt_.form = 1; return value; }
     {
         Expr *operand = value.get();
         bool viaDeref = false;
@@ -879,6 +879,7 @@ ExprPtr Parser::buildReturned(ExprPtr value, std::size_t pos, bool *named) {
             claimCallResult(*c, sretSlot_);
             c->setResultIndirect(true);
             noteCallSlots(*c);
+            pendingReturnBuilt_.form = 2;
             return value;
         }
     if (Unary *deref = dynamic_cast<Unary *>(value.get()))
@@ -899,6 +900,7 @@ ExprPtr Parser::buildReturned(ExprPtr value, std::size_t pos, bool *named) {
                         ExprPtr again(Var::local(".sret", sretSlot_));
                         again->setType(ptr);
                         both->rightSlot() = std::move(again);
+                        pendingReturnBuilt_.form = 3;
                         return value;
                     }
                 }
@@ -927,6 +929,11 @@ ExprPtr Parser::buildReturned(ExprPtr value, std::size_t pos, bool *named) {
     params.push_back(use->params[0]);
     ExprPtr built = completeCall(cls->tag(), use->symbol, nullptr, types_.get(Kind::Void), params,
                                  false, pos, std::move(args), true);
+    if (built->resolved() != 0 && resolvedTable_[built->resolved()].what == Resolved::Call) {
+        pendingReturnBuilt_.form = 4;
+        pendingReturnBuilt_.symbol = use->symbol;
+        pendingReturnBuilt_.signature = resolvedTable_[built->resolved()].type;
+    }
     ExprPtr again(Var::local(".sret", sretSlot_));
     again->setType(ptr);
     ExprPtr both(make_owned<Comma>(std::move(built), std::move(again)));

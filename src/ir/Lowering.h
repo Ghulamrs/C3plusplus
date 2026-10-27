@@ -61,6 +61,8 @@ public:
     void setTemporaryBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> f) { temporaryBuilt_ = f; }
     // A lambda's closure and its captures' members and sources - Sema's record, asked by the glue.
     void setClosure(std::function<bool(syntax::NodeId, sema::ClosureFacts &)> f) { closure_ = f; }
+    void setReturnBuilt(std::function<bool(syntax::NodeId, int &, std::string &, TypeId &)> f) { returnBuilt_ = f; }
+    void setNamedReturn(std::function<bool(syntax::NodeId)> f) { namedReturn_ = f; }
 private:
     struct Outside { std::string why; explicit Outside(const std::string &w) : why(w) {} };
     struct Val { ValueId v; TypeId type; Val() {} Val(ValueId a, TypeId t) : v(a), type(t) {} };
@@ -108,6 +110,8 @@ private:
     void returnStmt(sema::TypedId id);
     void returnConstructed(sema::TypedId value);
     void returnDestroyed(sema::TypedId value);
+    void returnCopied(sema::TypedId id, sema::TypedId value);
+    void namedReturnLocal(sema::TypedId var, ValueId slot, const Type &t);
     void forStmt(sema::TypedId id);
     void rangeForStmt(sema::TypedId id);
     void switchStmt(sema::TypedId id);
@@ -215,6 +219,7 @@ private:
     bool placedClass(const Type &t) const;
     bool bytesReturned(const Type &t) const;
     bool destroyedReturned(const Type &t) const;
+    bool copiedReturn(const Type &t) const;
     bool constructedTemporary(sema::TypedId id) const;
     bool temporaryNode(sema::TypedId id) const { return plainTemporary(id) || constructedTemporary(id); }
     Val temporary(sema::TypedId id);
@@ -255,6 +260,10 @@ private:
     std::vector<sema::VptrStore> vptrs_;        // what a constructor or destructor of a class with a vptr stores
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &, bool &)> localBuilt_;
     std::vector<Live> live_;                    // innermost last
+    ValueId sret_;                              // the caller's result pointer, where a copied class is returned
+    ValueId elidedSlot_;                        // the named return value, not destroyed by the `return` naming it
+    std::function<bool(syntax::NodeId, int &, std::string &, TypeId &)> returnBuilt_;
+    std::function<bool(syntax::NodeId)> namedReturn_;
     std::size_t liveFloor_;                     // a constructor's built bases and members: below it, kept by a return
     bool landingPads_;                          // the parser gave the function landing pads: the prologue names an LSDA
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> temporaryBuilt_;

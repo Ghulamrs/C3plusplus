@@ -1492,6 +1492,8 @@ StmtPtr Parser::statement() {
     }
     pendingThrow_ = ThrowFacts();
     StmtPtr noted = noteStmt(std::move(s), kind, text, pos, mark, pos);
+    if (kind == syntax::Kind::Return && pendingReturnBuilt_.form != 0) returnBuilt_[noted->syntax().v] = pendingReturnBuilt_;
+    pendingReturnBuilt_ = ReturnBuilt();
     if (const For *f = dynamic_cast<const For *>(noted.get())) {
         syntaxScopes_[noted->syntax().v] = f->scope();
         if (pendingRange_.bName.empty())

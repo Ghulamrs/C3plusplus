@@ -538,6 +538,7 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
         load(ps[i].type);
         ssaStore(f, f.params[i]);
     }
+    if (f.sret.valid() && fn.sretSlot() != 0) { a_->ins("mov", local(fn.sretSlot()), reg("%rax")); ssaStore(f, f.sret); }
     std::size_t lastPos = 0;
     ssaRegionAt_ = 0;
     ssaTries_.clear();
