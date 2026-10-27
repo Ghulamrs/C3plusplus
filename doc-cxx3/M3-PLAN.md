@@ -892,3 +892,20 @@ one:** Linux `make test` exit 0, run.sh **1035 / 0** at -O0, -O2, `-front=ssa` a
 `-front=ssa` 1036 / 0, ssa.sh and typed.sh 694 / 0; Windows **664 same, 0 differ, 340 refused as recorded** at
 `-front=ssa` and `-front=ssa -O2` (the -O0 pass, which does not reach `layoutSsa`, clean on the tree before the fix),
 winlane hist 8,157 bodies, 6,962 lowered, 0 failed.
+
+**M3b.2, round 5 of 2026-10-27 evening: calls and parameters, and constructors of class templates** (lane-call2,
+Opus 5.5, `fbdb586`, and lane-ctor2, Fable 5.1, `2c5d8a8`, both off round 4's `837c299`, merged as `2add48d`).
+lane-call2: a `std::nullptr_t` parameter, local or argument (a read of one is a null constant, [conv.lval]/2), a static
+member function called through an object (the object evaluated, the function called by its symbol), a data member
+holding a function pointer called through it, and a lambda's body reaching the members of the class whose `this` it
+captured (through the closure's `$this`). lane-ctor2: the parser records which `function` nodes are constructors
+(`constructorNodes_`, `Typer::isConstructor`), so a class template's constructor is recognised where its text names
+the described type; a member of a class with constructors but no copy of its own, initialised from one object of its
+type, is recorded as copied by bytes (`$bytes`) and lowered so; and a constructor's layout takes arrays of arrays of
+scalars and anonymous unions. **The merged tree, gated as one:** Linux `make test` exit 0, run.sh **1039 / 0** at -O0,
+-O2, `-front=ssa` and `-front=ssa -O2`, the golden 0 of 2,693 changed (68 added), ssa.sh **7,898 bodies, 6,723 lowered
+and verified (85.1%)**, 0 failed, coff 0 differ, c90 447 / 0, exclusions 126 sites 0 / 0, comment cap 0, the memory gate
+under its baseline; Windows **668 same, 0 differ, 340 refused as recorded** at -O0, `-front=ssa` and `-front=ssa -O2`.
+**Left, as each lane found it**: a pack's parameters (the syntax tree has one node for `Ts... rest`), a call's default
+arguments (no record of the default's expression), a member's default initialiser (no node in the constructor's
+syntax), virtual bases, and array members of a class.
