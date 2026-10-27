@@ -40,15 +40,15 @@ public:
     // One function's typed `function` node lowered into the module, or none with the reason the subset does not reach it.
     FuncId lower(sema::TypedId fn, const FunctionFacts &facts, std::string &why);
     // Which classes a constructor builds - the parser's to say, asked by the glue (M3b.2).
-    void setConstructed(std::function<bool(const Type *)> f) { constructed_ = f; }
-    void setAssigned(std::function<bool(const Type *)> f) { assigned_ = f; }
-    void setDefaultInit(std::function<bool(const Type *, const std::string &)> f) { defaultInit_ = f; }
+    void setConstructed(std::function<bool(TypeId)> f) { constructed_ = f; }
+    void setAssigned(std::function<bool(TypeId)> f) { assigned_ = f; }
+    void setDefaultInit(std::function<bool(TypeId, const std::string &)> f) { defaultInit_ = f; }
     void setGuarded(std::function<bool(const std::string &)> f) { guarded_ = f; }
-    void setTypeInfo(std::function<std::string(const Type *)> f) { typeInfo_ = f; }
+    void setTypeInfo(std::function<std::string(TypeId)> f) { typeInfo_ = f; }
     void setNewFacts(std::function<bool(syntax::NodeId, sema::NewFacts &)> f) { newFacts_ = f; }
     // The constructor the parser chose for a member, and a class's destructor - Sema's records, asked by the glue.
     void setMemberBuilt(std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> f) { memberBuilt_ = f; }
-    void setDestructor(std::function<std::string(const Type *)> f) { destructor_ = f; }
+    void setDestructor(std::function<std::string(TypeId)> f) { destructor_ = f; }
     // The vptr stores the parser made in a written constructor or destructor, by its symbol.
     void setVptrStores(std::function<bool(const std::string &, std::vector<sema::VptrStore> &)> f) { vptrStores_ = f; }
     // The constructor the parser chose for a local's `var` node - Sema's record, asked by the glue.
@@ -59,7 +59,7 @@ private:
     struct Val { ValueId v; TypeId type; Val() {} Val(ValueId a, TypeId t) : v(a), type(t) {} };
     struct Loop { BlockId brk, cont; std::size_t handlers, live; };
     // A local a destructor destroys, alive from its construction to the end of its scope; `pad` is its cleanup's index in pads_.
-    struct Live { ValueId slot; const Type *cls; std::string dtor; std::size_t pad; };
+    struct Live { ValueId slot; TypeId cls; std::string dtor; std::size_t pad; };
     // A landing pad a call inside its region unwinds to (M3-IR 3.6): a try's, or a handler's end-catch cleanup. Its block is
     // made on first use; `types` is the whole action chain, own handlers first, then the enclosing pads' - the walker's.
     struct Pad { BlockId block; ValueId ptr, sel; bool cleanup; std::vector<std::string> types; std::vector<int> indices; std::size_t own; };
@@ -102,11 +102,11 @@ private:
     BlockId labelBlock(const std::string &name);
     void tryStatement(sema::TypedId id);
     BlockId padBlock(Pad &p);
-    void resumeFrom(const Pad &p, const Pad *enclosing);
+    void resumeFrom(const Pad &p, std::size_t enclosing);
     void endCatches(std::size_t n);
     int typeIndexFor(const std::string &sym);
     ValueId entryAlloca(TypeId slotType, const std::string &name);
-    Val runtimeCall(const char *symbol, TypeId returns, const std::vector<ValueId> &args);
+    Val runtimeCall(const std::string &symbol, TypeId returns, const std::vector<ValueId> &args);
     InstId callOrInvoke(TypeId carries, const std::vector<ValueId> &ops);
 
     // Expressions: an rvalue, or an object's address with its type.
@@ -129,7 +129,7 @@ private:
     Val call(sema::TypedId id);
     Val newExpression(sema::TypedId id);
     Val deleteExpression(sema::TypedId id);
-    sema::NewFacts newFacts(sema::TypedId id, const char *what);
+    sema::NewFacts newFacts(sema::TypedId id, const std::string &what);
     Val literal(sema::TypedId id);
     Val truth(Val v);
     Val convert(Val v, TypeId to, bool cast = false);
@@ -171,7 +171,7 @@ private:
     Val operatorCall(sema::TypedId id);
     Val condition(sema::TypedId id);
     void throwExpr(sema::TypedId id);
-    void throwCall(const char *symbol, const std::vector<ValueId> &args);
+    void throwCall(const std::string &symbol, const std::vector<ValueId> &args);
     void basePaths(const Type &cls, const Type &base, int at, int &found, int &offset);
     void memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32_t to);
     void storeVptrs();
@@ -207,13 +207,13 @@ private:
     TypeId returns_;
     ValueId this_;          // a member function's `this`, none in any other
     TypeId thisType_;
-    std::function<bool(const Type *)> constructed_, assigned_;
-    std::function<bool(const Type *, const std::string &)> defaultInit_;
+    std::function<bool(TypeId)> constructed_, assigned_;
+    std::function<bool(TypeId, const std::string &)> defaultInit_;
     std::function<bool(const std::string &)> guarded_;
-    std::function<std::string(const Type *)> typeInfo_;
+    std::function<std::string(TypeId)> typeInfo_;
     std::function<bool(syntax::NodeId, sema::NewFacts &)> newFacts_;
     std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> memberBuilt_;
-    std::function<std::string(const Type *)> destructor_;
+    std::function<std::string(TypeId)> destructor_;
     std::function<bool(const std::string &, std::vector<sema::VptrStore> &)> vptrStores_;
     std::vector<sema::VptrStore> vptrs_;        // what a constructor or destructor of a class with a vptr stores
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &, bool &)> localBuilt_;

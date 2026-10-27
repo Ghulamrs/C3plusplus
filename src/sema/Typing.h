@@ -141,17 +141,17 @@ public:
     // A body read in a class's, a namespace's or a template's scope (Parser::scopedFunctions_), which the adapter left alone too.
     int scopedBody(syntax::NodeId fn) const;
     bool packBody(const std::string &symbol) const;
-    std::string typeInfoSymbol(const Type *t) const;   // the type_info a catch of t names, Sema's; empty where none can be made
-    bool constructed(const Type *cls) const;          // a class some constructor builds, written or implicit
-    bool assigned(const Type *cls) const;             // a class with an operator= of its own, written or implicit
+    std::string typeInfoSymbol(TypeId t) const;   // the type_info a catch of t names, Sema's; empty where none can be made
+    bool constructed(TypeId cls) const;          // a class some constructor builds, written or implicit
+    bool assigned(TypeId cls) const;             // a class with an operator= of its own, written or implicit
     bool newFacts(syntax::NodeId id, NewFacts &out) const;  // a `new` or `delete` node's facts; false where none were recorded
-    bool defaultInit(const Type *cls, const std::string &member) const;   // the member has an initialiser of its own
+    bool defaultInit(TypeId cls, const std::string &member) const;   // the member has an initialiser of its own
     bool guardedStatic(const std::string &symbol) const;  // a static local built at run time, under its guard   // a pack was expanded in the body: one node stands for its members   // Parser::scopedFunctions_'s bits, 0 for a body at file scope
     // The constructor the parser chose, in constructor `ctor`, for a member an entry at `pos` names (0: one the list leaves alone), and
     // whether default arguments were added to the written ones; false where it built none. A class's destructor's symbol.
     bool memberBuilt(const std::string &ctor, const std::string &member, std::uint32_t pos, std::string &symbol, TypeId &signature,
                      bool &defaulted) const;
-    std::string destructorSymbol(const Type *cls) const;
+    std::string destructorSymbol(TypeId cls) const;
     // The vptr stores the parser made in a written constructor or destructor `fn`; false where it made none.
     bool vptrStores(const std::string &fn, std::vector<VptrStore> &out) const;
     // A local's constructor, its signature with `this`, defaults added, zeroed first ([dcl.init]/8); false where none built it.

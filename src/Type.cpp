@@ -25,6 +25,12 @@ Type *TypeTable::adopt(Type *t) {
     return t;
 }
 
+TypeId TypeTable::functionType(TypeId returns, const std::vector<TypeId> &params) {
+    std::vector<const Type *> ps;
+    for (std::size_t i = 0; i < params.size(); i++) ps.push_back(type(params[i]));
+    return id(functionType(type(returns), ps, false));
+}
+
 const Type *TypeTable::type(TypeId id) const {
     if (!id.valid() || id.v > typeCount()) return nullptr;
     if (id.v <= types_.size()) return &types_[id.v - 1];

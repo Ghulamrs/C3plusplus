@@ -23,7 +23,7 @@ bool Lowering::plainClass(const Type &t) const {
     if (!t.isStructOrUnion() || !t.isComplete()) return false;
     const Type &c = *t.unqualified();
     return !c.polymorphic() && !c.hasVirtualBase() && !c.hasDestructor() && !c.nonTrivialCopy() &&
-           !(constructed_ && constructed_(&c));
+           !(constructed_ && constructed_(c.id()));
 }
 
 // [class.base.init] for a class with no base and no vptr whose members are scalars or plain classes: nothing is
@@ -83,7 +83,7 @@ void Lowering::buildMember(ValueId at, const Member &m, sema::TypedId entry) {
     TypeId sig;
     bool defaulted = false;
     if (!memberBuilt_ || !memberBuilt_(F().symbol, m.name, pos, symbol, sig, defaulted)) {
-        if (!entry.valid() && !(constructed_ && constructed_(&mt))) return;
+        if (!entry.valid() && !(constructed_ && constructed_(mt.id()))) return;
         outside("a member built by no constructor the parser recorded");
     }
     if (defaulted) outside("a member built with default arguments");
@@ -101,12 +101,12 @@ void Lowering::destroyMembers(const Type &cls) {
     for (std::size_t n = ms.size(); n-- > 0; ) {
         const Type &mt = *ms[n].type->unqualified();
         if (ms[n].declaredIn != nullptr || !builtMember(mt) || !destructor_) continue;
-        const std::string symbol = destructor_(&mt);
+        const std::string symbol = destructor_(mt.id());
         if (symbol.empty()) continue;
-        const Type *self = types_.pointerTo(&mt);
-        const InstId g = add(Op::Gep, tid(*self), std::vector<ValueId>(1, this_));
+        const TypeId self = types_.pointerTo(mt.id());
+        const InstId g = add(Op::Gep, self, std::vector<ValueId>(1, this_));
         at(g).k = ms[n].offset;
-        directCall(symbol, tid(*types_.functionType(types_.get(Kind::Void), std::vector<const Type *>(1, self), false)),
+        directCall(symbol, types_.functionType(types_.voidType()->id(), std::vector<TypeId>(1, self)),
                    std::vector<ValueId>(1, result(g)));
     }
 }
@@ -134,7 +134,7 @@ void Lowering::buildBase(const Type::BaseSpec &b, sema::TypedId entry) {
     TypeId sig;
     bool defaulted = false;
     if (!memberBuilt_ || !memberBuilt_(F().symbol, "^" + bt.tag(), 0, symbol, sig, defaulted)) {
-        if (!entry.valid() && !(constructed_ && constructed_(&bt))) return;
+        if (!entry.valid() && !(constructed_ && constructed_(bt.id()))) return;
         outside("a base built by no constructor the parser recorded");
     }
     if (defaulted) outside("a base built with default arguments");
@@ -155,7 +155,7 @@ void Lowering::destroyBases(const Type &cls) {
         TypeId sig;
         bool defaulted = false;
         if (!memberBuilt_ || !memberBuilt_(F().symbol, "~" + bt.tag(), 0, symbol, sig, defaulted)) {
-            if (destructor_ && !destructor_(&bt).empty()) outside("a base destroyed by no destructor the parser recorded");
+            if (destructor_ && !destructor_(bt.id()).empty()) outside("a base destroyed by no destructor the parser recorded");
             continue;
         }
         const Type &ft = T(sig);
@@ -189,7 +189,7 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
         const std::map<std::string, sema::TypedId>::const_iterator e = named.find(m.name);
         const Type &mt = *m.type->unqualified();
         if (e == named.end()) {
-            if (defaultInit_ && defaultInit_(&cls, m.name)) outside("a member's default initialiser");
+            if (defaultInit_ && defaultInit_(cls.id(), m.name)) outside("a member's default initialiser");
             if (!builtMember(mt)) continue;
         }
         if (m.type->isReference()) {
@@ -198,10 +198,10 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
             const Val a = lvalue(child(e->second, 0));
             const Type &referent = *m.type->referent();
             if (T(a.type).unqualified() != referent.unqualified() || (T(a.type).isConst() && !referent.isConst())) outside("a reference member bound to another type");
-            const Type *held = types_.pointerTo(&referent);
-            const InstId r = add(Op::Gep, tid(*types_.pointerTo(held)), std::vector<ValueId>(1, this_));
+            const TypeId held = types_.pointerTo(referent.id());
+            const InstId r = add(Op::Gep, types_.pointerTo(held), std::vector<ValueId>(1, this_));
             at(r).k = m.offset;
-            store(result(r), result(add(Op::Bitcast, tid(*held), std::vector<ValueId>(1, a.v))));
+            store(result(r), result(add(Op::Bitcast, held, std::vector<ValueId>(1, a.v))));
             continue;
         }
         const InstId g = add(Op::Gep, tid(*types_.pointerTo(&mt)), std::vector<ValueId>(1, this_));
@@ -229,11 +229,11 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
 
 // The vptrs the parser stores in this constructor or destructor: each the address point of a table, at its offset.
 void Lowering::storeVptrs() {
-    const Type *word = types_.pointerTo(types_.get(Kind::Void));
+    const TypeId word = types_.pointerTo(types_.voidType()->id());
     for (const sema::VptrStore &s : vptrs_) {
-        const InstId g = add(Op::Gep, tid(*types_.pointerTo(word)), std::vector<ValueId>(1, this_));
+        const InstId g = add(Op::Gep, types_.pointerTo(word), std::vector<ValueId>(1, this_));
         at(g).k = s.at;
-        const InstId a = add(Op::Addr, tid(*word), std::vector<ValueId>());
+        const InstId a = add(Op::Addr, word, std::vector<ValueId>());
         at(a).sym = s.symbol;
         at(a).k = s.addend;
         store(result(g), result(a));
@@ -314,7 +314,7 @@ void Lowering::builtLocal(sema::TypedId var, ValueId slot, const Type &t) {
         directCall(symbol, sig, ops);
     } else {
         // No constructor ran: a copy of bytes, which a class whose copy is a constructor would have recorded as a call.
-        if (constructed_ && constructed_(&c) && v.initForm != 1) outside("a local of a constructed class built by no constructor");
+        if (constructed_ && constructed_(c.id()) && v.initForm != 1) outside("a local of a constructed class built by no constructor");
         classLocal(var, slot, t);
     }
     if (!c.hasDestructor()) return;
@@ -322,8 +322,8 @@ void Lowering::builtLocal(sema::TypedId var, ValueId slot, const Type &t) {
     if (handlerDepth_ != 0) outside("a local with a destructor inside a handler");
     Live l;
     l.slot = slot;
-    l.cls = &c;
-    l.dtor = destructor_ ? destructor_(&c) : std::string();
+    l.cls = c.id();
+    l.dtor = destructor_ ? destructor_(c.id()) : std::string();
     if (l.dtor.empty()) outside("a local whose destructor the parser recorded none for");
     Pad p;
     p.cleanup = true;
@@ -336,10 +336,10 @@ void Lowering::builtLocal(sema::TypedId var, ValueId slot, const Type &t) {
 
 // The destructor called on the object: a call on the normal path, as the walker's is; an invoke in a cleanup's terminate scope.
 void Lowering::destroy(const Live &l, bool invoke) {
-    const Type *self = types_.pointerTo(l.cls);
+    const TypeId self = types_.pointerTo(l.cls);
     CallInfo info;
     info.symbol = l.dtor;
-    info.signature = tid(*types_.functionType(types_.voidType(), std::vector<const Type *>(1, self), false));
+    info.signature = types_.functionType(types_.voidType()->id(), std::vector<TypeId>(1, self));
     info.namedArgs = 1;
     Function &f = F();
     const std::uint32_t callIndex = static_cast<std::uint32_t>(f.calls.size());
@@ -399,7 +399,7 @@ void Lowering::closeScope(std::size_t mark) {
         destroy(l, true);
         t = pads_.back();
         pads_.pop_back();
-        resumeFrom(p, pads_.empty() ? nullptr : &pads_.back());
+        resumeFrom(p, pads_.size());
         if (t.block.valid()) {
             place(t.block);
             const InstId tp = add(Op::CatchPad, TypeId(), std::vector<ValueId>());
@@ -427,8 +427,8 @@ void Lowering::copyObject(ValueId to, ValueId from, const Type &t) {
 bool Lowering::plainTemporary(sema::TypedId id) const {
     if (syn(id).kind != syntax::Kind::Call || count(id) == 0 || count(id) > 2) return false;
     const sema::Resolution &r = tree_.resolution(id);
-    const Type *t = tree_.node(id).type;
-    return r.what == sema::Resolution::Temporary && r.symbol.empty() && t != nullptr && plainClass(*t) &&
+    const TypeId t = TypeTable::id(tree_.node(id).type);
+    return r.what == sema::Resolution::Temporary && r.symbol.empty() && t.valid() && plainClass(T(t)) &&
            tree_.resolution(child(id, 0)).what == sema::Resolution::TypeName;
 }
 
@@ -437,14 +437,14 @@ bool Lowering::plainTemporary(sema::TypedId id) const {
 bool Lowering::constructedClass(const Type &t) const {
     if (!t.isStructOrUnion() || !t.isComplete()) return false;
     const Type &c = *t.unqualified();
-    return constructed_ && constructed_(&c) && !c.hasDestructor() && !c.hasVirtualBase() && buildableLayout(c);
+    return constructed_ && constructed_(c.id()) && !c.hasDestructor() && !c.hasVirtualBase() && buildableLayout(c);
 }
 
 // `T(...)` of such a class, the constructor the parser chose recorded for the node: `*(ctor(&$tmp, ...), &$tmp)`.
 bool Lowering::constructedTemporary(sema::TypedId id) const {
     if (syn(id).kind != syntax::Kind::Call || count(id) == 0 || !temporaryBuilt_) return false;
-    const Type *t = tree_.node(id).type;
-    if (tree_.resolution(id).what != sema::Resolution::Temporary || t == nullptr || !constructedClass(*t)) return false;
+    const TypeId t = TypeTable::id(tree_.node(id).type);
+    if (tree_.resolution(id).what != sema::Resolution::Temporary || !t.valid() || !constructedClass(T(t))) return false;
     std::string symbol;
     TypeId sig;
     bool zero;
@@ -503,8 +503,8 @@ bool Lowering::objectNode(sema::TypedId id) const {
     // [expr.ass]/1: an assignment's value is its left object, which a plain class's copy assignment hands back.
     if (k == syntax::Kind::Assign) return text(id) == "=" && tree_.node(id).type != nullptr && plainClass(*tree_.node(id).type);
     if (k != syntax::Kind::Conditional || count(id) != 3) return false;
-    const Type *x = tree_.node(child(id, 1)).type, *y = tree_.node(child(id, 2)).type;
-    return x != nullptr && y != nullptr && x->unqualified() == y->unqualified() && plainClass(*x) &&
+    const TypeId x = TypeTable::id(tree_.node(child(id, 1)).type), y = TypeTable::id(tree_.node(child(id, 2)).type);
+    return x.valid() && y.valid() && T(x).unqualified() == T(y).unqualified() && plainClass(T(x)) &&
            objectNode(child(id, 1)) && objectNode(child(id, 2));
 }
 
@@ -1024,8 +1024,8 @@ Lowering::Val Lowering::condition(sema::TypedId id) {
     if (syn(id).kind != syntax::Kind::DeclStmt) return truth(expr(id));
     if (count(id) != 1 || syn(child(id, 0)).kind != syntax::Kind::Var) outside("a condition declaring more than one name");
     const sema::TypedId var = child(id, 0);
-    const Type *t = tree_.node(var).type;
-    if (t == nullptr || !scalar(*t) || t->isX87(target_)) outside("a condition declaring what is not a scalar");
+    const TypeId t = TypeTable::id(tree_.node(var).type);
+    if (!t.valid() || !scalar(T(t)) || T(t).isX87(target_)) outside("a condition declaring what is not a scalar");
     declaration(id);
     const std::map<std::uint32_t, std::pair<ValueId, TypeId> >::const_iterator l = locals_.find(tree_.node(var).syntax.v);
     if (l == locals_.end()) outside("a condition's variable the lowering did not declare");
@@ -1543,14 +1543,15 @@ Lowering::Val Lowering::memberOfThis(sema::TypedId id) {
     const sema::Resolution &r = tree_.resolution(id);
     if (!this_.valid()) outside("a member named where there is no `this`");
     const Type &cls = *T(thisType_).pointee()->unqualified();
-    const Member *m = cls.findMember(text(id));
-    if (m == nullptr || m->offset != r.serial || !r.type.valid()) outside("a member reached through another object's `this`");
-    if (m->ambiguous || m->inVirtualBase != nullptr || m->anonUnion != nullptr || m->type->isReference() || m->width != 0)
+    if (cls.findMember(text(id)) == nullptr) outside("a member reached through another object's `this`");
+    const Member &m = *cls.findMember(text(id));
+    if (m.offset != r.serial || !r.type.valid()) outside("a member reached through another object's `this`");
+    if (m.ambiguous || m.inVirtualBase != nullptr || m.anonUnion != nullptr || m.type->isReference() || m.width != 0)
         outside("a member '" + text(id) + "' the lowering does not reach");
     const Type &mt = T(r.type);
     if (!scalar(mt) && !mt.isArray() && !mt.isStructOrUnion()) outside("a member of type '" + mt.describe() + "'");
     const InstId g = add(Op::Gep, tid(*types_.pointerTo(&mt)), std::vector<ValueId>(1, this_));
-    at(g).k = m->offset;
+    at(g).k = m.offset;
     return Val(result(g), r.type);
 }
 
@@ -1931,7 +1932,7 @@ Lowering::Val Lowering::assign(sema::TypedId id) {
     const Val target = lvalue(tn);
     const Type &t = T(target.type);
     // [class.copy]/18: a plain class's implicit copy assignment copies its bytes; a written operator= is a call.
-    if (op == "=" && plainClass(t) && !t.isConst() && !(assigned_ && assigned_(&t)) && objectNode(child(id, 1))) {
+    if (op == "=" && plainClass(t) && !t.isConst() && !(assigned_ && assigned_(t.id())) && objectNode(child(id, 1))) {
         const Val from = object(child(id, 1));
         if (T(from.type).unqualified() != t.unqualified()) outside("a class assigned from another type");
         copyObject(target.v, from.v, t);
@@ -2014,13 +2015,13 @@ bool Lowering::pseudoDestructor(sema::TypedId member) {
     // [class.dtor]/14: a class's own destructor, called on the object; a virtual one would dispatch and stays outside.
     const Type &cls = *ot.unqualified();
     if (!cls.isStructOrUnion() || cls.hasVptr() || cls.hasVirtualBase()) outside("a destructor called by name");
-    const std::string sym = destructor_ ? destructor_(&cls) : std::string();
+    const std::string sym = destructor_ ? destructor_(cls.id()) : std::string();
     if (sym.empty() || sym.find_first_of(" ()*&[") != std::string::npos) outside("a destructor called by name whose symbol is not recorded");
     const TypeId self = tid(*types_.pointerTo(&cls));
     CallInfo info;
     info.symbol = sym;
     info.hasThis = true;
-    info.signature = tid(*types_.functionType(types_.voidType(), std::vector<const Type *>(1, &T(self)), false));
+    info.signature = types_.functionType(types_.voidType()->id(), std::vector<TypeId>(1, self));
     info.namedArgs = 1;
     Function &f = F();
     const std::uint32_t callIndex = static_cast<std::uint32_t>(f.calls.size());
@@ -2223,7 +2224,7 @@ Lowering::Val Lowering::operatorCall(sema::TypedId id) {
 }
 
 // The parser's facts for a `new` or `delete` node, which the lowering takes only for a scalar or a plain class.
-sema::NewFacts Lowering::newFacts(sema::TypedId id, const char *what) {
+sema::NewFacts Lowering::newFacts(sema::TypedId id, const std::string &what) {
     sema::NewFacts f;
     if (!newFacts_ || !newFacts_(tree_.node(id).syntax, f) || (f.why.empty() && f.symbol.empty()))
         outside(std::string("a '") + what + "' not recorded");
@@ -2263,7 +2264,7 @@ Lowering::Val Lowering::newExpression(sema::TypedId id) {
     if (!f.placed) {
         CallInfo info;
         info.symbol = f.symbol;
-        info.signature = tid(*types_.functionType(&T(voidPtr), std::vector<const Type *>(1, &T(sizeT)), false));
+        info.signature = types_.functionType(voidPtr, std::vector<TypeId>(1, sizeT));
         info.namedArgs = 1;
         const std::uint32_t callIndex = static_cast<std::uint32_t>(F().calls.size());
         F().calls.push_back(info);
@@ -2307,7 +2308,7 @@ Lowering::Val Lowering::deleteExpression(sema::TypedId id) {
     const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType()));
     CallInfo info;
     info.symbol = f.symbol;
-    info.signature = tid(*types_.functionType(types_.voidType(), std::vector<const Type *>(1, &T(voidPtr)), false));
+    info.signature = types_.functionType(types_.voidType()->id(), std::vector<TypeId>(1, voidPtr));
     info.namedArgs = 1;
     const std::uint32_t callIndex = static_cast<std::uint32_t>(F().calls.size());
     F().calls.push_back(info);
@@ -2334,12 +2335,12 @@ InstId Lowering::callOrInvoke(TypeId carries, const std::vector<ValueId> &ops) {
 }
 
 // A call of the runtime's own: never an invoke, the way the parser's runtimeCall is written.
-Lowering::Val Lowering::runtimeCall(const char *symbol, TypeId returns, const std::vector<ValueId> &args) {
-    std::vector<const Type *> params;
-    for (std::size_t i = 0; i < args.size(); i++) params.push_back(&T(F().value(args[i]).type));
+Lowering::Val Lowering::runtimeCall(const std::string &symbol, TypeId returns, const std::vector<ValueId> &args) {
+    std::vector<TypeId> params;
+    for (std::size_t i = 0; i < args.size(); i++) params.push_back(F().value(args[i]).type);
     CallInfo info;
     info.symbol = symbol;
-    info.signature = tid(*types_.functionType(&T(returns), params, false));
+    info.signature = types_.functionType(returns, params);
     info.namedArgs = static_cast<int>(params.size());
     Function &f = F();
     const std::uint32_t callIndex = static_cast<std::uint32_t>(f.calls.size());
@@ -2396,12 +2397,12 @@ ValueId Lowering::entryAlloca(TypeId slotType, const std::string &name) {
 }
 
 // Where a pad goes when it is done: the enclosing pad with the same pointer and selector, or out of the frame.
-void Lowering::resumeFrom(const Pad &p, const Pad *enclosing) {
-    if (enclosing != nullptr) {
+void Lowering::resumeFrom(const Pad &p, std::size_t enclosing) {
+    if (enclosing != 0) {
         std::vector<ValueId> args;
         args.push_back(p.ptr);
         args.push_back(p.sel);
-        br(padBlock(*const_cast<Pad *>(enclosing)), args);
+        br(padBlock(pads_[enclosing - 1]), args);
         return;
     }
     runtimeCall("_Unwind_Resume", tid(*types_.voidType()), std::vector<ValueId>(1, p.ptr));
@@ -2421,27 +2422,27 @@ void Lowering::throwExpr(sema::TypedId id) {
     if (count(id) != 1) outside("a throw of " + std::to_string(count(id)) + " parts");
     const sema::TypedId operand = child(id, 0);
     Val v;
-    const Type *thrown = nullptr;
+    TypeId thrown;
     if (tree_.node(operand).type != nullptr && plainClass(*tree_.node(operand).type->unqualified()) && isLvalueNode(operand)) {
         v = lvalue(operand);
-        thrown = T(v.type).unqualified();
+        thrown = T(v.type).unqualified()->id();
     } else {
         // A class the lowering cannot copy into the exception object by its bytes - one a constructor builds - stays out.
         if (tree_.node(operand).type != nullptr && tree_.node(operand).type->unqualified()->isStructOrUnion())
             outside("a throw of a class that is not plain");
         v = decay(expr(operand));
         if (!v.type.valid() || !scalar(T(v.type)) || T(v.type).isX87(target_)) outside("a throw of what is not a scalar");
-        thrown = T(v.type).unqualified();
+        thrown = T(v.type).unqualified()->id();
     }
     if (!typeInfo_) outside("a throw with no type_info to name");
     const std::string info = typeInfo_(thrown);
     if (info.empty()) outside("a throw of a type with no type_info");
     const TypeId size = tid(*types_.get(target_.sizeType()));
     const Val object = runtimeCall("__cxa_allocate_exception", voidPtr,
-                                   std::vector<ValueId>(1, iconst(size, thrown->size(target_))));
-    const ValueId typed = result(add(Op::Bitcast, tid(*types_.pointerTo(thrown)), std::vector<ValueId>(1, object.v)));
-    if (thrown->isStructOrUnion()) copyObject(typed, v.v, *thrown);
-    else store(typed, convert(v, tid(*thrown)).v);
+                                   std::vector<ValueId>(1, iconst(size, T(thrown).size(target_))));
+    const ValueId typed = result(add(Op::Bitcast, types_.pointerTo(thrown), std::vector<ValueId>(1, object.v)));
+    if (T(thrown).isStructOrUnion()) copyObject(typed, v.v, T(thrown));
+    else store(typed, convert(v, thrown).v);
     std::vector<ValueId> args;
     args.push_back(object.v);
     args.push_back(addrOf(info, voidPtr));
@@ -2451,12 +2452,12 @@ void Lowering::throwExpr(sema::TypedId id) {
 
 // A runtime call that does not return: an invoke inside a try or a handler, so the throw reaches its pad, then the
 // end of the block.
-void Lowering::throwCall(const char *symbol, const std::vector<ValueId> &args) {
-    std::vector<const Type *> params;
-    for (std::size_t i = 0; i < args.size(); i++) params.push_back(&T(F().value(args[i]).type));
+void Lowering::throwCall(const std::string &symbol, const std::vector<ValueId> &args) {
+    std::vector<TypeId> params;
+    for (std::size_t i = 0; i < args.size(); i++) params.push_back(F().value(args[i]).type);
     CallInfo info;
     info.symbol = symbol;
-    info.signature = tid(*types_.functionType(types_.voidType(), params, false));
+    info.signature = types_.functionType(types_.voidType()->id(), params);
     info.namedArgs = static_cast<int>(params.size());
     Function &f = F();
     const std::uint32_t callIndex = static_cast<std::uint32_t>(f.calls.size());
@@ -2479,7 +2480,7 @@ void Lowering::tryStatement(sema::TypedId id) {
     const std::uint32_t n = count(id);
     if (n < 2) outside("a try with no handler");
     const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType()));
-    struct Handler { sema::TypedId node, var, body; const Type *caught; std::string sym; int index; };
+    struct Handler { sema::TypedId node, var, body; TypeId caught; std::string sym; int index; };
     std::vector<Handler> hs;
     Pad p;
     p.cleanup = false;
@@ -2489,18 +2490,19 @@ void Lowering::tryStatement(sema::TypedId id) {
         h.node = child(id, i);
         if (syn(h.node).kind != syntax::Kind::Catch) outside("a try whose part is not a handler");
         const std::uint32_t parts = count(h.node);
-        h.caught = nullptr;
+        h.caught = TypeId();
         h.index = 0;
         if (parts == 1 && text(h.node) == "...") {
             h.body = child(h.node, 0);
         } else if (parts == 2 && syn(child(h.node, 0)).kind == syntax::Kind::Var) {
             h.var = child(h.node, 0);
             h.body = child(h.node, 1);
-            const Type *t = tree_.node(h.var).type;
-            if (t == nullptr) outside("a caught object not typed");
-            h.caught = t->isReference() ? t->referent()->unqualified() : t->unqualified();
-            if (t->isReference() ? !referable(*h.caught) : (!scalar(*h.caught) || h.caught->isPointer() || h.caught->isX87(target_)))
-                outside("a catch of '" + t->describe() + "'");
+            if (tree_.node(h.var).type == nullptr) outside("a caught object not typed");
+            const Type &t = *tree_.node(h.var).type;
+            h.caught = (t.isReference() ? t.referent()->unqualified() : t.unqualified())->id();
+            const Type &c = T(h.caught);
+            if (t.isReference() ? !referable(c) : (!scalar(c) || c.isPointer() || c.isX87(target_)))
+                outside("a catch of '" + t.describe() + "'");
             if (!typeInfo_) outside("a catch with no type_info to name");
             h.sym = typeInfo_(h.caught);
             if (h.sym.empty()) outside("a catch of a type with no type_info");
@@ -2532,14 +2534,13 @@ void Lowering::tryStatement(sema::TypedId id) {
     if (!p.block.valid()) { place(done); return; }       // nothing in the body could throw: the handlers are dead code
     // The enclosing pad by index: pads_ grows under a handler and a pointer into it would not survive.
     const std::size_t encAt = pads_.size();
-    const Pad *enclosing = encAt != 0 ? &pads_[encAt - 1] : nullptr;
 
     place(p.block);
     const InstId cp = add(Op::CatchPad, TypeId(), std::vector<ValueId>());
     at(cp).syms = p.types;
     for (std::size_t i = 0; i < p.indices.size(); i++) at(cp).cases.push_back(p.indices[i]);
     at(cp).k = static_cast<long long>(p.own);
-    at(cp).bits = (p.cleanup ? 1u : 0u) | (enclosing != nullptr ? 2u : 0u);
+    at(cp).bits = (p.cleanup ? 1u : 0u) | (encAt != 0 ? 2u : 0u);
     std::vector<BlockId> handlerBlocks;
     for (std::size_t i = 0; i < hs.size(); i++) {
         const BlockId hb = newBlock(), next = newBlock();
@@ -2552,7 +2553,7 @@ void Lowering::tryStatement(sema::TypedId id) {
         condbr(result(c), hb, next);
         place(next);
     }
-    resumeFrom(p, enclosing);
+    resumeFrom(p, encAt);
 
     for (std::size_t i = 0; i < hs.size(); i++) {
         place(handlerBlocks[i]);
@@ -2560,7 +2561,7 @@ void Lowering::tryStatement(sema::TypedId id) {
         if (hs[i].var.valid()) {
             const Type &t = *tree_.node(hs[i].var).type;
             // By value, the scalar is copied out of the exception object; a reference holds what __cxa_begin_catch handed back.
-            const TypeId objPtr = tid(*types_.pointerTo(hs[i].caught));
+            const TypeId objPtr = types_.pointerTo(hs[i].caught);
             const ValueId asT = result(add(Op::Bitcast, objPtr, std::vector<ValueId>(1, obj.v)));
             if (t.isReference()) {
                 const TypeId slotType = tid(*types_.pointerTo(t.referent()));
@@ -2569,7 +2570,7 @@ void Lowering::tryStatement(sema::TypedId id) {
                 locals_[tree_.node(hs[i].var).syntax.v] = std::make_pair(slot, tid(t));
             } else {
                 const ValueId slot = entryAlloca(tid(t), text(hs[i].var));
-                store(slot, load(asT, tid(*hs[i].caught)));
+                store(slot, load(asT, hs[i].caught));
                 locals_[tree_.node(hs[i].var).syntax.v] = std::make_pair(slot, tid(t));
             }
         }
@@ -2596,7 +2597,7 @@ void Lowering::tryStatement(sema::TypedId id) {
             // A row of no types is a cleanup by its action 0; the filter-0 record is asked only where the chain has types.
             at(cl).bits = (cleanup.types.empty() ? 0u : 1u) | (encAt != 0 ? 2u : 0u);
             endCatches(1);
-            resumeFrom(cleanup, encAt != 0 ? &pads_[encAt - 1] : nullptr);
+            resumeFrom(cleanup, encAt);
         }
     }
     place(done);

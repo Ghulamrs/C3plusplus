@@ -463,13 +463,16 @@ int Typer::scopedBody(syntax::NodeId fn) const {
 
 bool Typer::packBody(const std::string &symbol) const { return p_.packBodies_.count(symbol) != 0; }
 
-std::string Typer::typeInfoSymbol(const Type *t) const { std::string why; return p_.classes_.typeInfoSymbolFor(t, 0, &why); }
-bool Typer::constructed(const Type *cls) const { return p_.hasConstructors(cls->unqualified()->tag()); }
+std::string Typer::typeInfoSymbol(TypeId t) const {
+    std::string why;
+    return p_.classes_.typeInfoSymbolFor(p_.types_.type(t), 0, &why);
+}
+bool Typer::constructed(TypeId cls) const { return p_.hasConstructors(p_.types_.type(cls)->unqualified()->tag()); }
 
 bool Typer::guardedStatic(const std::string &symbol) const { return p_.guardedStatics_.count(symbol) != 0; }
 
-bool Typer::defaultInit(const Type *cls, const std::string &member) const {
-    return p_.memberInit_.count(cls->unqualified()->tag() + "::" + member) != 0;
+bool Typer::defaultInit(TypeId cls, const std::string &member) const {
+    return p_.memberInit_.count(p_.types_.type(cls)->unqualified()->tag() + "::" + member) != 0;
 }
 
 bool Typer::newFacts(syntax::NodeId id, NewFacts &out) const {
@@ -525,12 +528,14 @@ bool Typer::localBuilt(syntax::NodeId var, std::string &symbol, TypeId &signatur
     return true;
 }
 
-std::string Typer::destructorSymbol(const Type *cls) const {
-    const Signature *d = p_.destructorOf(cls->unqualified());
-    return d != nullptr ? d->symbol : std::string();
+std::string Typer::destructorSymbol(TypeId cls) const {
+    const Type &c = *p_.types_.type(cls)->unqualified();
+    return p_.destructorOf(&c) != nullptr ? p_.destructorOf(&c)->symbol : std::string();
 }
 
-bool Typer::assigned(const Type *cls) const { return p_.lookup_.overloadsOf(cls->unqualified()->tag() + "::operator=") != nullptr; }
+bool Typer::assigned(TypeId cls) const {
+    return p_.lookup_.overloadsOf(p_.types_.type(cls)->unqualified()->tag() + "::operator=") != nullptr;
+}
 
 bool Typer::fromTemplate(const std::string &symbol) const {
     for (std::size_t i = 0; i < p_.lookup_.functions_.size(); i++)

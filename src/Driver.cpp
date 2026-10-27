@@ -1352,16 +1352,16 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     sema::Typer typer(parser);
     const sema::Census c = sema::Typer::census(parser, program);
     ir::Lowering lowering(typer.tree(), parser.syntaxTree(), types, target, program, into);
-    lowering.setConstructed([&typer](const Type *cls) { return typer.constructed(cls); });
-    lowering.setAssigned([&typer](const Type *cls) { return typer.assigned(cls); });
-    lowering.setDefaultInit([&typer](const Type *cls, const std::string &m) { return typer.defaultInit(cls, m); });
+    lowering.setConstructed([&typer](TypeId cls) { return typer.constructed(cls); });
+    lowering.setAssigned([&typer](TypeId cls) { return typer.assigned(cls); });
+    lowering.setDefaultInit([&typer](TypeId cls, const std::string &m) { return typer.defaultInit(cls, m); });
     lowering.setGuarded([&typer](const std::string &symbol) { return typer.guardedStatic(symbol); });
-    lowering.setTypeInfo([&typer](const Type *t) { return typer.typeInfoSymbol(t); });
+    lowering.setTypeInfo([&typer](TypeId t) { return typer.typeInfoSymbol(t); });
     lowering.setNewFacts([&typer](syntax::NodeId id, sema::NewFacts &out) { return typer.newFacts(id, out); });
     lowering.setMemberBuilt([&typer](const std::string &ctor, const std::string &m, std::uint32_t pos, std::string &sym, TypeId &sig, bool &dflt) {
         return typer.memberBuilt(ctor, m, pos, sym, sig, dflt);
     });
-    lowering.setDestructor([&typer](const Type *cls) { return typer.destructorSymbol(cls); });
+    lowering.setDestructor([&typer](TypeId cls) { return typer.destructorSymbol(cls); });
     lowering.setVptrStores([&typer](const std::string &fn, std::vector<sema::VptrStore> &out) { return typer.vptrStores(fn, out); });
     lowering.setLocalBuilt([&typer](syntax::NodeId v, std::string &sym, TypeId &sig, bool &dflt, bool &zeroed) {
         return typer.localBuilt(v, sym, sig, dflt, zeroed);
