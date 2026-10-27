@@ -842,7 +842,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
                 slotType = tid(*types_.pointerTo(pt.referent()));
             } else if (pt.isArray()) {
                 slotType = tid(*types_.pointerTo(pt.pointee()));
-            } else if (plainClass(pt)) {
+            } else if (plainClass(pt) || bytesReturned(pt)) {
                 // A plain class by value is the callee's own copy, in the slot the receive fills on both ABIs: its address.
                 const ValueId pv = param(f.entry, tid(*types_.pointerTo(&pt)));
                 f.params.push_back(pv);
@@ -1112,7 +1112,8 @@ bool Lowering::bytesReturned(const Type &t) const {
     return t.isStructOrUnion() && t.isComplete() && constructedClass(t) && !t.unqualified()->nonTrivialCopy();
 }
 
-// The two forms the parser elides for such a class: a local of the function, and a temporary the return builds.
+// The forms the parser elides for such a class - a local of the function, a temporary the return builds - and any other
+// object of it, a call's result among them (a slot of this frame, by the same ABI rule): its bytes copied out from there.
 void Lowering::returnConstructed(sema::TypedId value) {
     const Type &rt = T(returns_);
     if (!live_.empty() || handlerDepth_ != 0) outside("a constructed class returned inside a handler or beside a destructor");
@@ -1120,6 +1121,11 @@ void Lowering::returnConstructed(sema::TypedId value) {
     Val a;
     if (constructedTemporary(value)) {
         a = temporary(value);
+    } else if ((syn(value).kind == syntax::Kind::Call || operatorCalls(value)) && isLvalueNode(value)) {
+        a = lvalue(value);      // a call's result: the slot of this frame the callee built into, or the object it names
+    } else if (!(syn(value).kind == syntax::Kind::Name && tree_.node(value).decl.valid() &&
+                 locals_.find(tree_.node(value).decl.v) != locals_.end()) && isLvalueNode(value)) {
+        a = lvalue(value);      // `*this`, a member, an element, a global: an object whose bytes the return copies out
     } else {
         const sema::TypedNode &n = tree_.node(value);
         if (syn(value).kind != syntax::Kind::Name || !n.decl.valid() || locals_.find(n.decl.v) == locals_.end())
@@ -1327,7 +1333,8 @@ bool Lowering::isLvalueNode(sema::TypedId id) const {
     const syntax::Node &s = syn(id);
     if (operatorCalls(id)) {
         const sema::Resolution &r = tree_.resolution(id);
-        return r.type.valid() && T(r.type).isFunction() && (T(r.type).returns()->isReference() || plainClass(*T(r.type).returns()));
+        return r.type.valid() && T(r.type).isFunction() &&
+               (T(r.type).returns()->isReference() || plainClass(*T(r.type).returns()) || bytesReturned(*T(r.type).returns()));
     }
     switch (s.kind) {
     case syntax::Kind::Name: {
@@ -1347,7 +1354,7 @@ bool Lowering::isLvalueNode(sema::TypedId id) const {
     case syntax::Kind::Call: {
         const sema::Resolution &r = tree_.resolution(id);
         return r.what == sema::Resolution::Call && r.type.valid() && T(r.type).isFunction() &&
-               (T(r.type).returns()->isReference() || plainClass(*T(r.type).returns()));
+               (T(r.type).returns()->isReference() || plainClass(*T(r.type).returns()) || bytesReturned(*T(r.type).returns()));
     }
     default: return false;
     }
@@ -2231,7 +2238,8 @@ Lowering::Val Lowering::callTail(TypeId sig, CallInfo info, std::vector<ValueId>
     info.variadic = ft.isVariadicFn();
     info.namedArgs = static_cast<int>(ft.params().size());
     const Type &gives = *ft.returns();
-    if (!(gives.isVoid() || scalar(gives) || plainClass(gives) || (gives.isReference() && referable(*gives.referent()))))
+    if (!(gives.isVoid() || scalar(gives) || plainClass(gives) || bytesReturned(gives) ||
+          (gives.isReference() && referable(*gives.referent()))))
         outside("a call returning '" + gives.describe() + "'");
     if (gives.isX87(target_)) outside("an x87 long double");
     argumentList(ft, skip, info.variadic, args, dummyInt, ops);
@@ -2270,10 +2278,11 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
             continue;
         }
         const Type &p = *ft.params()[i + skip];
-        if (plainClass(p)) {
-            // A plain class by value: its address, which the selector hands the walker as the object to copy in.
-            if (!objectNode(an)) outside("a class argument that is not an object");
-            const Val a = object(an);
+        if (plainClass(p) || bytesReturned(p)) {
+            // A plain class by value: its address, which the selector hands the walker as the object to copy in; one with
+            // constructors and no copy of its own goes the same way, a temporary of it built in a slot of this frame first.
+            if (!objectNode(an) && !constructedTemporary(an)) outside("a class argument that is not an object");
+            const Val a = constructedTemporary(an) ? temporary(an) : object(an);
             if (T(a.type).unqualified() != p.unqualified()) outside("a class argument of another type");
             ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(p.unqualified())), std::vector<ValueId>(1, a.v))));
             continue;
