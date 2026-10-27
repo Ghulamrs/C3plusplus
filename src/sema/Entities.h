@@ -167,6 +167,14 @@ struct EnumConst {
         : name(std::move(name)), value(value), type(type) {}
 };
 
+// A vptr a constructor or destructor stores (M3b.2): `symbol` + `addend` into the word `at` bytes from `this`,
+// the symbol empty where the value comes from a VTT or the word sits below a virtual base.
+struct VptrStore {
+    int at;
+    std::string symbol;
+    long long addend;
+};
+
 // The four tables' sizes before a declaration, so the entries it added can be aliased.
 struct TableSizes { std::size_t functions, globals, typedefs, enums; };
 

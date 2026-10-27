@@ -49,6 +49,8 @@ public:
     // The constructor the parser chose for a member, and a class's destructor - Sema's records, asked by the glue.
     void setMemberBuilt(std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> f) { memberBuilt_ = f; }
     void setDestructor(std::function<std::string(const Type *)> f) { destructor_ = f; }
+    // The vptr stores the parser made in a written constructor or destructor, by its symbol.
+    void setVptrStores(std::function<bool(const std::string &, std::vector<sema::VptrStore> &)> f) { vptrStores_ = f; }
     // The constructor the parser chose for a local's `var` node - Sema's record, asked by the glue.
     void setLocalBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &, bool &)> f) { localBuilt_ = f; }
     void setTemporaryBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> f) { temporaryBuilt_ = f; }
@@ -149,7 +151,7 @@ private:
     bool plainClass(const Type &t) const;
     bool simpleLayout(const Type &cls) const;
     bool builtMember(const Type &t) const;
-    bool buildableLayout(const Type &cls) const;
+    bool buildableLayout(const Type &cls, bool vptr = false) const;
     void buildMember(ValueId at, const Member &m, sema::TypedId entry);
     void destroyMembers(const Type &cls);
     int baseNamed(const Type &cls, const std::string &name) const;
@@ -172,6 +174,7 @@ private:
     void throwCall(const char *symbol, const std::vector<ValueId> &args);
     void basePaths(const Type &cls, const Type &base, int at, int &found, int &offset);
     void memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32_t to);
+    void storeVptrs();
     void classLocal(sema::TypedId var, ValueId slot, const Type &t);
     bool builtClass(const Type &t) const;
     void builtLocal(sema::TypedId var, ValueId slot, const Type &t);
@@ -211,6 +214,8 @@ private:
     std::function<bool(syntax::NodeId, sema::NewFacts &)> newFacts_;
     std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> memberBuilt_;
     std::function<std::string(const Type *)> destructor_;
+    std::function<bool(const std::string &, std::vector<sema::VptrStore> &)> vptrStores_;
+    std::vector<sema::VptrStore> vptrs_;        // what a constructor or destructor of a class with a vptr stores
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &, bool &)> localBuilt_;
     std::vector<Live> live_;                    // innermost last
     bool landingPads_;                          // the parser gave the function landing pads: the prologue names an LSDA

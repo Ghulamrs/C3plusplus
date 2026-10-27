@@ -1650,7 +1650,9 @@ void Parser::topLevel(Program &program) {
         if (memberOf != nullptr && memberOf->hasVptr() && !delegates &&
             (d.name == localOf(d.qualifier) ||
              d.name == "~" + localOf(d.qualifier))) {
-            std::vector<StmtPtr> withVptr = classes_.storeVptrs(d.qualifier, memberOf, thisOffset_);
+            std::vector<sema::VptrStore> &stores = vptrStores_[currentFunction_];
+            stores.clear();
+            std::vector<StmtPtr> withVptr = classes_.storeVptrs(d.qualifier, memberOf, thisOffset_, &stores);
             withVptr.push_back(std::move(body));
             body = StmtPtr(new Block(std::move(withVptr)));
         }

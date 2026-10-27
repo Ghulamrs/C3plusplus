@@ -1362,6 +1362,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         return typer.memberBuilt(ctor, m, pos, sym, sig, dflt);
     });
     lowering.setDestructor([&typer](const Type *cls) { return typer.destructorSymbol(cls); });
+    lowering.setVptrStores([&typer](const std::string &fn, std::vector<sema::VptrStore> &out) { return typer.vptrStores(fn, out); });
     lowering.setLocalBuilt([&typer](syntax::NodeId v, std::string &sym, TypeId &sig, bool &dflt, bool &zeroed) {
         return typer.localBuilt(v, sym, sig, dflt, zeroed);
     });

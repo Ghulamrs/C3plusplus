@@ -43,11 +43,14 @@ bool Lowering::builtMember(const Type &t) const {
     return t.isStructOrUnion() && t.isComplete() && !plainClass(t) && !t.unqualified()->hasVirtualBase();
 }
 
-// simpleLayout's class with members of class type and non-virtual bases besides, each built by what the parser chose.
-bool Lowering::buildableLayout(const Type &cls) const {
-    if (cls.polymorphic() || cls.hasVirtualBase() || cls.kind() == Kind::Union) return false;
+// simpleLayout's class with members of class type and non-virtual bases besides, each built by what the parser chose;
+// with `vptr`, a class with one and polymorphic bases besides - a written constructor's or destructor's, which stores it.
+bool Lowering::buildableLayout(const Type &cls, bool vptr) const {
+    if ((cls.polymorphic() && !vptr) || cls.hasVirtualBase() || cls.kind() == Kind::Union) return false;
     for (const Type::BaseSpec &b : cls.bases())
-        if (b.isVirtual || !b.direct || !b.type->isComplete() || b.type->unqualified()->hasVirtualBase() || b.type->unqualified()->polymorphic()) return false;
+        if (b.isVirtual || !b.direct || !b.type->isComplete() || b.type->unqualified()->hasVirtualBase() ||
+            (b.type->unqualified()->polymorphic() && !vptr))
+            return false;
     for (const Member &m : cls.members()) {
         const Type &t = *m.type->unqualified();
         if (m.width != 0 || m.anonUnion != nullptr || t.isX87(target_)) return false;
@@ -179,6 +182,8 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
             if (cls.findMember(e->first) == nullptr && baseNamed(cls, e->first) == static_cast<int>(b)) entry = e->second;
         buildBase(cls.bases()[b], entry);
     }
+    // [class.cdtor]/4: once the bases are built the object is of this class - its vptrs, before any member.
+    storeVptrs();
     for (const Member &m : cls.members()) {
         if (m.declaredIn != nullptr) continue;     // a base's, which its constructor built
         const std::map<std::string, sema::TypedId>::const_iterator e = named.find(m.name);
@@ -219,6 +224,19 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
         } else {
             outside("a mem-initialiser of " + std::to_string(k) + " values for '" + m.name + "'");
         }
+    }
+}
+
+// The vptrs the parser stores in this constructor or destructor: each the address point of a table, at its offset.
+void Lowering::storeVptrs() {
+    const Type *word = types_.pointerTo(types_.get(Kind::Void));
+    for (const sema::VptrStore &s : vptrs_) {
+        const InstId g = add(Op::Gep, tid(*types_.pointerTo(word)), std::vector<ValueId>(1, this_));
+        at(g).k = s.at;
+        const InstId a = add(Op::Addr, tid(*word), std::vector<ValueId>());
+        at(a).sym = s.symbol;
+        at(a).k = s.addend;
+        store(result(g), result(a));
     }
 }
 
@@ -668,6 +686,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
     typeTable_.clear();
     handlerDepth_ = 0;
     landingPads_ = facts.landingPads;
+    vptrs_.clear();
     try {
         if (facts.variadic) outside("a variadic function");
         if (facts.wrappedBody) outside("a function try block or an exception specification");
@@ -694,8 +713,14 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
             isCtor = text(fnNode) == cls.localName();
             const bool isDtor = !text(fnNode).empty() && text(fnNode)[0] == '~';
             if ((isCtor || isDtor) && !simpleLayout(cls)) {
-                if (!buildableLayout(cls)) outside(isCtor ? "a constructor of a class with bases, a vptr or members to build"
-                                                          : "a destructor of a class with bases, a vptr or members to destroy");
+                if (!buildableLayout(cls, true)) outside(isCtor ? "a constructor of a class with bases, a vptr or members to build"
+                                                                : "a destructor of a class with bases, a vptr or members to destroy");
+                // The vptr stores are the parser's record, made where it stores them: one, out of the class's own table.
+                if (cls.hasVptr()) {
+                    if (!vptrStores_ || !vptrStores_(facts.symbol, vptrs_) || vptrs_.empty()) outside("a vptr the parser recorded no store for");
+                    if (vptrs_.size() != 1) outside("a polymorphic base that is not primary");
+                    if (vptrs_[0].symbol.empty()) outside("a vptr out of a VTT");
+                }
                 // The parser's guards that destroy what was built when a later part throws are not in the syntax.
                 if (facts.landingPads) outside(isCtor ? "a constructor whose members are destroyed on unwinding"
                                                       : "a destructor with landing pads that destroys members");
@@ -774,6 +799,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         br(first);
         place(first);
         if (isCtor) memberInits(fnNode, inits, n - 1);
+        else if (destroys) storeVptrs();
         block(body);
         if (!terminated()) {
             if (!rt.isVoid()) outside("a body that falls off its end without a value");
