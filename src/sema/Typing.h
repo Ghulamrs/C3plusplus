@@ -4,6 +4,7 @@
 // a node per syntax node with the type Sema gives it and, from M3b.0, the record the parser made where it resolved the
 // node (M3-IR 3.8); a node outside the subset is typed null with its parts still typed. -check=typed holds it to Ast.h.
 
+#include "Entities.h"
 #include "../Lexer.h"
 #include "../syntax/Syntax.h"
 #include "../Type.h"
@@ -151,6 +152,8 @@ public:
     bool memberBuilt(const std::string &ctor, const std::string &member, std::uint32_t pos, std::string &symbol, TypeId &signature,
                      bool &defaulted) const;
     std::string destructorSymbol(const Type *cls) const;
+    // The vptr stores the parser made in a written constructor or destructor `fn`; false where it made none.
+    bool vptrStores(const std::string &fn, std::vector<VptrStore> &out) const;
     // A local's constructor, its signature with `this`, defaults added, zeroed first ([dcl.init]/8); false where none built it.
     bool localBuilt(syntax::NodeId var, std::string &symbol, TypeId &signature, bool &defaulted, bool &zeroed) const;
     // The constructor a class temporary `T(...)` at node `id` was built by, and whether `T()` zeroed the object first.

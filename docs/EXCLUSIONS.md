@@ -413,12 +413,12 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   - **of a virtual base** - the most-derived class would have to be told which
     of them builds it. `src/parser/ParserType.cpp:624`
   - **a constructor template** - its specializations would have to be made
-    for the derived class as calls asked for them. `src/sema/Classes.cpp:1703`
+    for the derived class as calls asked for them. `src/sema/Classes.cpp:1705`
   - **a constructor with `...`** - its arguments would have to be forwarded as
-    they came. `src/sema/Classes.cpp:1743`
+    they came. `src/sema/Classes.cpp:1745`
   - **a constructor taking a class by value whose copy is not trivial** - the
     copy would have to be passed on rather than made twice.
-    `src/sema/Classes.cpp:1747`
+    `src/sema/Classes.cpp:1749`
 - **a using-declaration inside a block** - `src/parser/ParserStmt.cpp:2164`.
   The one at namespace scope works, and so does `using namespace N;`.
 
@@ -469,7 +469,7 @@ between the two lists.**
 - **a polymorphic base that is not the first, on the Microsoft ABI** - cl lays
   the base with the vfptr first wherever it was written and compiles an
   override against a biased `this` where Itanium puts a thunk in front.
-  `src/sema/Classes.cpp:1092`, `src/parser/ParserType.cpp:328`
+  `src/sema/Classes.cpp:1094`, `src/parser/ParserType.cpp:328`
 - **a virtual base with virtual functions, on x86_64-windows** - cl dispatches
   through one with vtordisp fields and thunks of its own, measured in CLAUDE.md
   "The Microsoft virtual-base layout" and not built. `src/parser/ParserType.cpp:470`

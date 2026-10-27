@@ -508,6 +508,13 @@ bool Typer::memberBuilt(const std::string &ctor, const std::string &member, std:
     return true;
 }
 
+bool Typer::vptrStores(const std::string &fn, std::vector<VptrStore> &out) const {
+    const std::map<std::string, std::vector<VptrStore> >::const_iterator i = p_.vptrStores_.find(fn);
+    if (i == p_.vptrStores_.end()) return false;
+    out = i->second;
+    return true;
+}
+
 bool Typer::localBuilt(syntax::NodeId var, std::string &symbol, TypeId &signature, bool &defaulted, bool &zeroed) const {
     const std::unordered_map<std::uint32_t, Parser::LocalBuilt>::const_iterator i = p_.localBuilt_.find(var.v);
     if (i == p_.localBuilt_.end() || i->second.symbol.empty()) return false;

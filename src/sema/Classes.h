@@ -110,7 +110,8 @@ public:
     // object's - its own, every non-primary base's at any depth, every
     // virtual base's - and where each comes from.
     std::vector<StmtPtr> itaniumVptrStores(const std::string &cls,
-                                           const Type *memberOf, int thisSlot);
+                                           const Type *memberOf, int thisSlot,
+                                           std::vector<VptrStore> *record);
     // The _ZTI a throw or a catch names, emitting one for a class on the way.
     // Answers empty and fills `why` where this compiler cannot describe it.
     std::string emitPointerTypeInfo(const Type *ptr, std::size_t pos,
@@ -154,7 +155,7 @@ public:
     // polymorphic second base needs. Every constructor emits these, written
     // or implicit, which is why they live in one place.
     std::vector<StmtPtr> storeVptrs(const std::string &cls, const Type *memberOf,
-                                    int thisSlot);
+                                    int thisSlot, std::vector<VptrStore> *record = nullptr);
     // And the vbtable pointer beside them, Microsoft only.
     void storeVbptr(const std::string &cls, const Type *memberOf, int thisSlot,
                     std::vector<StmtPtr> &into);
