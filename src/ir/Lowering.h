@@ -45,6 +45,8 @@ public:
     void setConstructed(std::function<bool(TypeId)> f) { constructed_ = f; }
     void setAssigned(std::function<bool(TypeId)> f) { assigned_ = f; }
     void setDefaultInit(std::function<bool(TypeId, const std::string &)> f) { defaultInit_ = f; }
+    // A member's own initialiser as a written constructor's mem-initialiser, typed: by constructor and "class::member".
+    void setMemberDefault(std::function<sema::TypedId(const std::string &, const std::string &)> f) { memberDefault_ = f; }
     void setGuarded(std::function<bool(const std::string &)> f) { guarded_ = f; }
     void setTypeInfo(std::function<std::string(TypeId)> f) { typeInfo_ = f; }
     void setUnnamedCaught(std::function<std::string(syntax::NodeId)> f) { unnamedCaught_ = f; }
@@ -246,6 +248,7 @@ private:
     TypeId thisType_;
     std::function<bool(TypeId)> constructed_, assigned_;
     std::function<bool(TypeId, const std::string &)> defaultInit_;
+    std::function<sema::TypedId(const std::string &, const std::string &)> memberDefault_;
     std::function<bool(const std::string &)> guarded_;
     std::function<std::string(TypeId)> typeInfo_;
     std::function<std::string(syntax::NodeId)> unnamedCaught_;

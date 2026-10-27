@@ -11,6 +11,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -162,6 +163,9 @@ public:
     bool assigned(TypeId cls) const;             // a class with an operator= of its own, written or implicit
     bool newFacts(syntax::NodeId id, NewFacts &out) const;  // a `new` or `delete` node's facts; false where none were recorded
     bool defaultInit(TypeId cls, const std::string &member) const;   // the member has an initialiser of its own
+    // The member initialisers the parser replayed into written constructor `ctor`, typed; then each by "class::member".
+    void typeMemberDefaults(const std::string &ctor);
+    TypedId memberDefault(const std::string &ctor, const std::string &member) const;
     bool guardedStatic(const std::string &symbol) const;  // a static local built at run time, under its guard   // a pack was expanded in the body: one node stands for its members   // Parser::scopedFunctions_'s bits, 0 for a body at file scope
     // The constructor the parser chose, in constructor `ctor`, for a member an entry at `pos` names (0: one the list leaves alone), and
     // whether default arguments were added to the written ones; false where it built none. A class's destructor's symbol.
@@ -202,6 +206,7 @@ private:
     Parser &p_;
     TypedTree tree_;
     std::vector<std::unordered_map<std::string, Declared> > scopes_;
+    std::map<std::string, TypedId> memberDefaults_;    // typeMemberDefaults' nodes, by "constructor|class::member"
     std::unordered_map<std::uint32_t, std::vector<syntax::NodeId> > closureSources_;   // a lambda's capture sources, by node
 };
 

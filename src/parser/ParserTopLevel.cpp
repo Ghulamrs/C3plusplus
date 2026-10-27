@@ -1383,8 +1383,10 @@ void Parser::topLevel(Program &program) {
                 memberExprs.find(m->name);
             if (found == memberExprs.end()) {
                 if (m->anonUnion != nullptr && namedUnions.count(m->anonUnion) != 0) continue;
+                memberDefaultFor_ = currentFunction_;
                 StmtPtr one = memberInitialiser(d.qualifier, memberOf, *m,
                                                 thisOffset_, d.pos);
+                memberDefaultFor_.clear();
                 std::vector<ExprPtr> none;
                 if (one == nullptr && memberOf->kind() != Kind::Union && m->anonUnion == nullptr)
                     one = constructMember(d.qualifier, memberOf, *m,

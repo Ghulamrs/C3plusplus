@@ -1355,6 +1355,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     lowering.setConstructed([&typer](TypeId cls) { return typer.constructed(cls); });
     lowering.setAssigned([&typer](TypeId cls) { return typer.assigned(cls); });
     lowering.setDefaultInit([&typer](TypeId cls, const std::string &m) { return typer.defaultInit(cls, m); });
+    lowering.setMemberDefault([&typer](const std::string &ctor, const std::string &m) { return typer.memberDefault(ctor, m); });
     lowering.setGuarded([&typer](const std::string &symbol) { return typer.guardedStatic(symbol); });
     lowering.setTypeInfo([&typer](TypeId t) { return typer.typeInfoSymbol(t); });
     lowering.setUnnamedCaught([&typer](syntax::NodeId id) { return typer.unnamedCaught(id); });
@@ -1390,6 +1391,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         facts.variadic = fn.isVariadic();
         facts.hasThis = fn.hasThis();
         facts.isConstructor = typer.isConstructor(c.bodies[r].first);
+        if (facts.isConstructor) typer.typeMemberDefaults(fn.symbol());
         facts.sret = fn.sretSlot() != 0;
         facts.landingPads = fn.hasLandingPads();
         // A plain function's try block is a `try` in its body to the lowering, its throw(...) list a filter it
