@@ -102,6 +102,7 @@ std::string dump(const Module &m, const TypeTable &types) {
         out += "function @" + f.symbol + "(";
         for (std::size_t p = 0; p < f.params.size(); p++)
             out += (p ? ", " : "") + valueName(f.params[p]) + ": " + typeName(types, f.value(f.params[p]).type);
+        if (f.sret.valid()) out += std::string(f.params.empty() ? "" : ", ") + valueName(f.sret) + " sret: " + typeName(types, f.value(f.sret).type);
         out += ") -> " + typeName(types, f.returns);
         if (f.isStatic) out += " static";
         if (f.isInline) out += " inline";
@@ -208,6 +209,7 @@ struct Verifier {
             if (b.term.valid() && f.inst(b.term).result.valid()) defBlock[f.inst(b.term).result.v] = bi;
         }
         for (ValueId p : f.params) defBlock[p.v] = f.entry.v;
+        if (f.sret.valid()) defBlock[f.sret.v] = f.entry.v;
         if (!f.entry.valid()) { fault(BlockId(), "no entry block"); return; }
         dominators();
         for (std::uint32_t bi = 1; bi < n; bi++) {

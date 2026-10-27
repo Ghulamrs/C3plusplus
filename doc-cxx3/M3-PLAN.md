@@ -945,3 +945,17 @@ run.sh **1042 / 0** at -O0, -O2, `-front=ssa` and `-front=ssa -O2`, the golden 0
 **7,949 bodies, 6,943 lowered and verified (87.3%)**, 0 failed, coff 0 differ, c90 447 / 0, exclusions 126 sites 0 / 0,
 comment cap 0, the memory gate under its baseline; Windows **671 same, 0 differ, 340 refused as recorded** at -O0,
 `-front=ssa` and `-front=ssa -O2`.
+
+**M3b.2, round 8 of 2026-10-27 evening: a class with a copy of its own returned through the caller's result pointer**
+(lane-sret `f108262`, Opus 5.5, off round 7's `343cb40`, merged as `90ea44e`, with `ac15cf8` restoring the brace the
+merge dropped after `returnDestroyed`). The parser records what `buildReturned` made of each `return`
+(`Parser::ReturnBuilt`, read by `Typer::returnBuilt`): the named return value already in the caller's object, a
+temporary built there, or another object copied there by the constructor it chose; and which local `nrvoCandidate`
+placed in the caller's object (`Typer::namedReturnLocal`). The lowering gives such a function its result pointer as an
+IR value (`ir::Function::sret`, copied by the selector from the slot the prologue keeps it in, on both ABIs), builds the
+named local there with its guard - destroyed on every way out but the `return` naming it - and lowers the three forms.
+`return f();` built in place is refused by name. **The merged tree, gated as one:** Linux `make test` exit 0, run.sh
+**1043 / 0** at -O0, -O2, `-front=ssa` and `-front=ssa -O2`, the golden 0 of 2,693 changed (84 added), ssa.sh **7,963
+bodies, 7,016 lowered and verified (88.1%)**, 0 failed, coff 0 differ, c90 447 / 0, exclusions 126 sites 0 / 0, comment
+cap 0, the memory gate under its baseline; Windows **672 same, 0 differ, 340 refused as recorded** at -O0,
+`-front=ssa` and `-front=ssa -O2`.

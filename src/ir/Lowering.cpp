@@ -386,7 +386,8 @@ void Lowering::destroy(const Live &l, bool invoke) {
 
 // A jump out of the scopes above `mark`: their objects destroyed, last built first; they stay alive on the path not taken.
 void Lowering::destroyLive(std::size_t mark) {
-    for (std::size_t k = live_.size(); k-- > mark; ) destroy(live_[k]);
+    for (std::size_t k = live_.size(); k-- > mark; )
+        if (live_[k].slot.v != elidedSlot_.v) destroy(live_[k]);     // the named return value a `return` hands back
 }
 
 // A scope's end: each object it built destroyed on the way out, last built first, and its cleanup - made where a call in
@@ -798,6 +799,8 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
     handlerDepth_ = 0;
     funclet_ = BlockId();
     msTryPad_ = BlockId();
+    sret_ = ValueId();
+    elidedSlot_ = ValueId();
     landingPads_ = facts.landingPads;
     vptrs_.clear();
     try {
@@ -814,7 +817,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         returns_ = T(facts.returns).isReference() ? facts.returns : tid(*T(facts.returns).unqualified());
         f.returns = returns_;
         const Type &rt = T(returns_);
-        if (!(rt.isVoid() || scalar(rt) || plainClass(rt) || bytesReturned(rt) || destroyedReturned(rt) ||
+        if (!(rt.isVoid() || scalar(rt) || plainClass(rt) || bytesReturned(rt) || destroyedReturned(rt) || copiedReturn(rt) ||
               (rt.isReference() && referable(*rt.referent()))))
             outside("a return type of '" + rt.describe() + "'");
         if (rt.isX87(target_)) outside("an x87 long double");
@@ -866,6 +869,13 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
             thisType_ = facts.thisType;
             this_ = param(f.entry, thisType_);
             f.params.push_back(this_);
+        }
+        // The caller's result pointer, which the parser's prologue keeps in its slot: every `return` of such a class
+        // builds there and hands it back (buildReturned). Not among params: the selector copies it from that slot.
+        if (copiedReturn(rt)) {
+            if (!facts.sret) outside("a class with a copy of its own returned with no result pointer");
+            sret_ = param(f.entry, tid(*types_.pointerTo(&rt)));
+            f.sret = sret_;
         }
         // The parameters: a value each, copied into an alloca so that every local is one (no mem2reg at M3b.1).
         for (std::uint32_t i = 0; i < params; i++) {
@@ -1129,6 +1139,7 @@ void Lowering::returnStmt(sema::TypedId id) {
         leaveHandlers(handlerDepth_, liveFloor_, returnBlock_, std::vector<ValueId>(1, result(c)));
         return;
     }
+    if (copiedReturn(rt)) { returnCopied(id, child(id, 0)); return; }
     if (rt.isStructOrUnion() && !plainClass(rt)) { returnConstructed(child(id, 0)); return; }
     if (rt.isStructOrUnion()) {
         if (!objectNode(child(id, 0))) outside("a class returned from what is not an object");
@@ -1219,6 +1230,80 @@ void Lowering::returnDestroyed(sema::TypedId value) {
         if (live_[k].slot.v != kept.v) destroy(live_[k]);
     const InstId c = add(Op::Bitcast, tid(*types_.pointerTo(&rt)), std::vector<ValueId>(1, at0));
     br(returnBlock_, std::vector<ValueId>(1, result(c)));
+}
+
+// A class with a copy or move constructor of its own: the parser builds the caller's object through the hidden
+// pointer (buildReturned), and the lowering does what it recorded for each `return`.
+bool Lowering::copiedReturn(const Type &t) const {
+    return t.isStructOrUnion() && t.isComplete() && t.unqualified()->nonTrivialCopy();
+}
+
+// The named return value is built where it is declared, by its constructor, into the caller's object: builtLocal
+// again, over the result pointer - its guard destroys it on every way out but the `return` that names it.
+void Lowering::namedReturnLocal(sema::TypedId var, ValueId slot, const Type &t) {
+    const Type &c = *t.unqualified();
+    const sema::TypedNode &v = tree_.node(var);
+    if (tree_.resolution(var).what != sema::Resolution::Call) outside("a named return value built by no constructor");
+    std::string symbol;
+    TypeId sig;
+    bool defaulted = false, zeroed = false;
+    if (!localBuilt_ || !localBuilt_(v.syntax, symbol, sig, defaulted, zeroed)) outside("a named return value built by no constructor the parser recorded");
+    if (defaulted || zeroed || v.initForm == 2) outside("a named return value built with defaults, zeroed or from a braced list");
+    const Type &ft = T(sig);
+    if (ft.params().empty() || ft.params()[0]->pointee()->unqualified() != &c) outside("a named return value's constructor of another class");
+    std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, slot))));
+    if (v.count != 0) arguments(var, 0, ft, 1, false, ops);
+    else if (ft.params().size() != 1) outside("a named return value's default constructor of parameters");
+    directCall(symbol, sig, ops);
+    if (!c.hasDestructor()) return;
+    if (handlerDepth_ != 0) outside("a named return value inside a handler");
+    const std::string dtor = destructor_ ? destructor_(c.id()) : std::string();
+    if (dtor.empty()) outside("a named return value whose destructor the parser recorded none for");
+    guard(slot, c, dtor);
+}
+
+// The forms buildReturned records: the named return value, already the caller's object; a temporary `T(...)` built
+// there; and any other object copied there by the constructor it chose - then the destructors every return runs.
+void Lowering::returnCopied(sema::TypedId id, sema::TypedId value) {
+    const Type &rt = T(returns_);
+    int form = 0;
+    std::string symbol;
+    TypeId sig;
+    if (!returnBuilt_ || !returnBuilt_(tree_.node(id).syntax, form, symbol, sig)) outside("a class with a copy of its own returned with no record of how");
+    while (syn(value).kind == syntax::Kind::Paren && count(value) == 1) value = child(value, 0);
+    if (form == 1) {
+        const sema::TypedNode &n = tree_.node(value);
+        if (syn(value).kind != syntax::Kind::Name || !n.decl.valid() || locals_.find(n.decl.v) == locals_.end() ||
+            locals_.find(n.decl.v)->second.first.v != sret_.v)
+            outside("a named return value that is not the recorded local");
+        elidedSlot_ = sret_;
+        leaveHandlers(handlerDepth_, liveFloor_, returnBlock_, std::vector<ValueId>(1, sret_));
+        elidedSlot_ = ValueId();
+        return;
+    } else if (form == 3) {
+        // Built in the caller's object and never destroyed here, so a destructor is no bar, as it is for a temporary of the frame.
+        bool zero = false;
+        if (syn(value).kind != syntax::Kind::Call || count(value) == 0 || tree_.resolution(value).what != sema::Resolution::Temporary ||
+            tree_.resolution(child(value, 0)).what != sema::Resolution::TypeName || !temporaryBuilt_ ||
+            !temporaryBuilt_(tree_.node(value).syntax, symbol, sig, zero))
+            outside("a return's temporary the parser recorded no constructor for");
+        construct(sret_, symbol, sig, rt, zero, value, 1);
+    } else if (form == 4) {
+        if (!isLvalueNode(value)) outside("a class copied on return from what is not an lvalue");
+        const Val a = lvalue(value);
+        if (T(a.type).unqualified() != rt.unqualified()) outside("a class copied on return from another type");
+        const Type &ft = T(sig);
+        if (!ft.isFunction() || ft.params().size() != 2 || !ft.params()[1]->isReference() ||
+            ft.params()[0]->pointee()->unqualified() != rt.unqualified())
+            outside("a return's copy constructor of another shape");
+        std::vector<ValueId> ops;
+        ops.push_back(result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, sret_))));
+        ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(ft.params()[1]->referent())), std::vector<ValueId>(1, a.v))));
+        directCall(symbol, sig, ops);
+    } else {
+        outside("a class with a copy of its own returned from a call built in place");
+    }
+    leaveHandlers(handlerDepth_, liveFloor_, returnBlock_, std::vector<ValueId>(1, sret_));
 }
 
 // [stmt.select]/2: a condition, or a declaration whose variable's value is the condition - declared where the test
@@ -1395,6 +1480,14 @@ void Lowering::declaration(sema::TypedId id) {
         } else {
             if ((!scalar(t) && !t.isNullPtr()) || t.isX87(target_)) outside("a local of type '" + t.describe() + "'");
             slotType = tid(t);
+        }
+        // nrvoCandidate's local is built in the caller's object: alive as any local - its scope's end, a jump out and a
+        // cleanup destroy it - but for the `return` that names it, which hands it back ([class.copy]/31).
+        if (namedReturn_ && namedReturn_(v.syntax)) {
+            if (!sret_.valid() || !t.isStructOrUnion() || t.unqualified() != T(returns_).unqualified()) outside("a named return value of another type");
+            locals_[v.syntax.v] = std::make_pair(sret_, tid(t));
+            namedReturnLocal(var, sret_, t);
+            continue;
         }
         const ValueId slot = entryAlloca(slotType, text(var));
         locals_[v.syntax.v] = std::make_pair(slot, tid(t));
