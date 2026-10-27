@@ -924,3 +924,15 @@ exit 0, run.sh **1041 / 0** at -O0, -O2, `-front=ssa` and `-front=ssa -O2`, the 
 ssa.sh **7,928 bodies, 6,859 lowered and verified (86.5%)**, 0 failed, coff 0 differ, c90 447 / 0, exclusions 126 sites
 0 / 0, comment cap 0, the memory gate under its baseline; Windows **670 same, 0 differ, 340 refused as recorded** at
 -O0, `-front=ssa` and `-front=ssa -O2`.
+
+**M3b.2, round 7 of 2026-10-27 evening: operands the syntax tree left loose given their nodes** (lane-loose `84fce47`,
+Opus 5.5, off round 6's `0d1df8f`, merged as `343cb40`). The record, not the lowering: a name read with a template-id's
+argument list or an operator's spelling is one name - `Box<int>(n)`, `B::twice<int>(2)`, `At<4>::get()`,
+`W::operator+(k)` are calls of it; `T{a, b}` of a class temporary is a call `{}` whose parts are the list's values,
+built as `T(a, b)` where every constructor parameter is a scalar and refused by name otherwise; a braced argument is an
+`other` `{}` over its elements, so a call keeps one part per argument, refused by name in the lowering; and `&C::k` and
+`&C::f` of a static member record their operand's name. **The merged tree, gated as one:** Linux `make test` exit 0,
+run.sh **1042 / 0** at -O0, -O2, `-front=ssa` and `-front=ssa -O2`, the golden 0 of 2,693 changed (80 added), ssa.sh
+**7,949 bodies, 6,943 lowered and verified (87.3%)**, 0 failed, coff 0 differ, c90 447 / 0, exclusions 126 sites 0 / 0,
+comment cap 0, the memory gate under its baseline; Windows **671 same, 0 differ, 340 refused as recorded** at -O0,
+`-front=ssa` and `-front=ssa -O2`.
