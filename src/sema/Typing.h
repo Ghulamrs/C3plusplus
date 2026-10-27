@@ -48,8 +48,9 @@ struct Resolution : ResolutionKind {
     bool isConst, isThreadLocal;    // a global's
     bool hasThis;           // a call's: its function type's first parameter is the object's address
     bool indirect;          // a call's: through a value - a pointer or a vtable slot
+    int vslot;              // a virtual call's: the vtable slot it reads, -1 for none
     std::string name;       // a global's or a function's lookup name, which its Var is named by
-    Resolution() : what(None), serial(-1), value(0), isConst(false), isThreadLocal(false), hasThis(false), indirect(false) {}
+    Resolution() : what(None), serial(-1), value(0), isConst(false), isThreadLocal(false), hasThis(false), indirect(false), vslot(-1) {}
 };
 
 // A lambda whose captures are scalar locals (M3b.2): its closure, and each capture's member - its offset and type, a
@@ -62,10 +63,13 @@ struct ClosureFacts { TypeId closure; std::vector<ClosureCapture> captures; };
 struct NewFacts {
     std::string symbol, why, ctor;   // ctor: the constructor `new T(...)` calls on the storage, its type with `T *` first
     TypeId made, ctorSig;
+    std::string dtor;       // a `delete`'s: the destructor it runs first, or none where `dslot` names the deleting slot
+    TypeId dtorSig;
+    int dslot;
     bool array, placed;     // placed: the reserved placement form, `new (p) T` - no allocation, the address given
     bool ctorZero, ctorDefaulted;    // the object zeroed before the constructor; defaults filled the written arguments out
     int init;
-    NewFacts() : array(false), placed(false), ctorZero(false), ctorDefaulted(false), init(0) {}
+    NewFacts() : dslot(-1), array(false), placed(false), ctorZero(false), ctorDefaulted(false), init(0) {}
 };
 
 // What a sizeof, alignof or noexcept folded to, or an integer or character literal's value, with its type.

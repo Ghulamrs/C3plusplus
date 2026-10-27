@@ -1998,10 +1998,10 @@ Lowering::Val Lowering::conditional(sema::TypedId id) {
         outside("a conditional of '" + tx.describe() + "' and '" + ty.describe() + "'");
     }
     place(a);
-    const Val x = convert(decay(expr(child(id, 1))), t);
+    const Val x = exprTo(child(id, 1), t);       // an arm that is the literal 0 is the null pointer, [conv.ptr]/1
     br(merge, std::vector<ValueId>(1, x.v));
     place(b);
-    const Val y = convert(decay(expr(child(id, 2))), t);
+    const Val y = exprTo(child(id, 2), t);
     br(merge, std::vector<ValueId>(1, y.v));
     place(merge);
     return Val(param(merge, t), t);
@@ -2130,7 +2130,7 @@ Lowering::Val Lowering::call(sema::TypedId id) {
     const bool direct = r.what == sema::Resolution::Call && !r.symbol.empty() && !r.hasThis && !r.indirect && syn(head).kind == syntax::Kind::Name &&
                         !tree_.node(head).decl.valid() && r.symbol.find_first_of(" ()*&[") == std::string::npos;
     // A member function called by name, its object's address the first argument: `o.f()`, `p->f()`, `f()` for `this->f()`.
-    if (r.what == sema::Resolution::Call && r.hasThis && r.indirect) outside("a virtual call or a call through a member pointer");
+    if (r.what == sema::Resolution::Call && r.hasThis && r.indirect && r.vslot < 0) outside("a call through a member pointer");
     const bool member = r.what == sema::Resolution::Call && !r.symbol.empty() && r.hasThis &&
                         r.symbol.find_first_of(" ()*&[") == std::string::npos;
     if (member) {
@@ -2160,6 +2160,10 @@ Lowering::Val Lowering::call(sema::TypedId id) {
         info.hasThis = true;
         sig = r.type;
         ops.push_back(result(add(Op::Bitcast, tid(self), std::vector<ValueId>(1, object.v))));
+        if (r.indirect) {
+            ops.insert(ops.begin(), virtualCallee(ops[0], r.type, r.vslot));
+            info.symbol.clear();
+        }
     } else if (direct) {
         if (!r.type.valid() || !T(r.type).isFunction()) outside("a call whose function type was not recorded");
         info.symbol = r.symbol;
@@ -2175,6 +2179,16 @@ Lowering::Val Lowering::call(sema::TypedId id) {
     std::vector<sema::TypedId> args;
     for (std::uint32_t i = 1; i < n; i++) args.push_back(child(id, i));
     return callTail(sig, info, ops, member ? 1 : 0, args, false);
+}
+
+// [class.virtual]: a virtual call reads the vptr at the object's first word and the function at the slot the parser
+// recorded, as its own dispatch does on both ABIs; `self` is the object's address, already the slot's class.
+ValueId Lowering::virtualCallee(ValueId self, TypeId fnType, int slot) {
+    const TypeId fnPtr = tid(*types_.pointerTo(&T(fnType)));
+    const TypeId table = tid(*types_.pointerTo(&T(fnPtr)));
+    const ValueId vptr = load(result(add(Op::Bitcast, tid(*types_.pointerTo(&T(table))), std::vector<ValueId>(1, self))), table);
+    const Val entry = pointerAdd(Val(vptr, table), Val(iconst(tid(*types_.get(Kind::Int)), slot), tid(*types_.get(Kind::Int))));
+    return load(entry.v, fnPtr);
 }
 
 // A call once its function is known: the arguments by the parameters' rules, a class result's temporary, the call
@@ -2393,6 +2407,8 @@ Lowering::Val Lowering::newExpression(sema::TypedId id) {
 // [expr.delete] for a scalar or a plain class: nothing to destroy, the pointer handed to the global deallocation
 // function the parser called - which takes a null and does nothing, [expr.delete]/2.
 Lowering::Val Lowering::deleteExpression(sema::TypedId id) {
+    sema::NewFacts d;
+    if (newFacts_ && newFacts_(tree_.node(id).syntax, d) && d.why.empty() && (!d.dtor.empty() || d.dslot >= 0)) return deleteDestroying(id, d);
     const sema::NewFacts f = newFacts(id, "delete");
     if (count(id) != 1) outside("a 'delete' of " + std::to_string(count(id)) + " parts");
     const Val p = decay(expr(child(id, 0)));
@@ -2406,6 +2422,48 @@ Lowering::Val Lowering::deleteExpression(sema::TypedId id) {
     F().calls.push_back(info);
     const InstId c = add(Op::Call, TypeId(), std::vector<ValueId>(1, result(add(Op::Bitcast, voidPtr, std::vector<ValueId>(1, p.v)))));
     at(c).call = callIndex;
+    return Val(ValueId(), tid(*types_.voidType()));
+}
+
+// [expr.delete]/6 for a class with a destructor, as the parser built it: a null pointer is not destroyed (/2); the
+// destructor the parser called, then the global operator delete - or, a virtual one, the deleting slot it read, which
+// frees as well: Itanium's D0, Microsoft's ??_G given 1.
+Lowering::Val Lowering::deleteDestroying(sema::TypedId id, const sema::NewFacts &f) {
+    if (count(id) != 1) outside("a 'delete' of " + std::to_string(count(id)) + " parts");
+    const Val p = decay(expr(child(id, 0)));
+    if (!T(p.type).isPointer() || T(p.type).pointee()->unqualified() != T(f.made).unqualified()) outside("a 'delete' of another type");
+    const Type &ft = T(f.dtorSig);
+    if (!ft.isFunction() || ft.params().empty() || !ft.params()[0]->isPointer()) outside("a destructor whose type was not recorded");
+    const BlockId run = newBlock(), done = newBlock();
+    condbr(truth(p).v, run, done);
+    place(run);
+    std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, p.v))));
+    CallInfo info;
+    info.symbol = f.dtor;
+    info.signature = f.dtorSig;
+    info.namedArgs = static_cast<int>(ft.params().size());
+    if (f.dslot >= 0) {
+        if (ft.params().size() > 1) ops.push_back(iconst(tid(*ft.params()[1]), 1));
+        ops.insert(ops.begin(), virtualCallee(ops[0], f.dtorSig, f.dslot));
+        info.symbol.clear();
+    }
+    if (ops.size() != ft.params().size() + (info.symbol.empty() ? 1 : 0)) outside("a destructor of another shape");
+    const std::uint32_t callIndex = static_cast<std::uint32_t>(F().calls.size());
+    F().calls.push_back(info);
+    const InstId c = callOrInvoke(ft.returns()->isVoid() ? TypeId() : tid(*ft.returns()), ops);
+    at(c).call = callIndex;
+    if (!terminated()) br(done);
+    place(done);
+    if (f.dslot >= 0) return Val(ValueId(), tid(*types_.voidType()));
+    const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType()));
+    CallInfo release;
+    release.symbol = f.symbol;
+    release.signature = types_.functionType(types_.voidType()->id(), std::vector<TypeId>(1, voidPtr));
+    release.namedArgs = 1;
+    const std::uint32_t freeIndex = static_cast<std::uint32_t>(F().calls.size());
+    F().calls.push_back(release);
+    const InstId g = add(Op::Call, TypeId(), std::vector<ValueId>(1, result(add(Op::Bitcast, voidPtr, std::vector<ValueId>(1, p.v)))));
+    at(g).call = freeIndex;
     return Val(ValueId(), tid(*types_.voidType()));
 }
 

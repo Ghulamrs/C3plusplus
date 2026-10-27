@@ -2150,6 +2150,7 @@ ExprPtr Parser::deleteExpression(std::size_t pos) {
         ExprPtr save(new Assign(std::move(keep), std::move(what)));
         save->setType(t);
         ExprPtr call = virtualDestructorCall(temp, slot, t, cls, true, pos);
+        noteDeleteDestroys(*call);
         ExprPtr both(new Comma(std::move(save),
                                guardAgainstNull(temp, slot, t, std::move(call))));
         both->setType(types_.get(Kind::Void));
@@ -2212,6 +2213,10 @@ ExprPtr Parser::deleteExpression(std::size_t pos) {
         ExprPtr held(Var::local(temp, slot));
         held->setType(t);
         ExprPtr run = destructorCall(std::move(held), *dtor, pos);
+        if (classAllocator(t->pointee(), "operatordelete") == nullptr) {
+            pendingNew_.symbol = target_.microsoftNames() ? "??3@YAXPEAX@Z" : "_ZdlPv";
+            noteDeleteDestroys(*run);
+        }
 
         ExprPtr both(new Comma(std::move(save),
                                guardAgainstNull(temp, slot, t, std::move(run))));
@@ -2234,6 +2239,17 @@ ExprPtr Parser::deleteExpression(std::size_t pos) {
 
     if (array) return deallocateArray(t->pointee(), std::move(raw), pos);
     return deallocate(t->pointee(), std::move(raw), pos);
+}
+
+// What a `delete` of a class with a destructor runs, for the SSA lowering (M3b.2): the destructor's call record, its
+// symbol or the deleting slot it reads, and its function type.
+void Parser::noteDeleteDestroys(const Expr &run) {
+    if (run.resolved() == 0) return;
+    const Resolved &r = resolvedTable_[run.resolved()];
+    pendingNew_.dtor = r.symbol;
+    pendingNew_.dtorSig = r.type;
+    pendingNew_.dslot = r.vslot;
+    if (!r.symbol.empty() || r.vslot >= 0) pendingNew_.why.clear();
 }
 
 // **The deleting slot frees; the complete-object slot does not.** Itanium
@@ -2288,8 +2304,10 @@ ExprPtr Parser::virtualDestructorCall(const std::string &temp, int slot,
         flag->setType(flagType);
         args.push_back(std::move(flag));
     }
-    return completeCall("~", std::string(), std::move(entry), ret, full, false,
-                        pos, std::move(args));
+    ExprPtr call = completeCall("~", std::string(), std::move(entry), ret, full, false,
+                                pos, std::move(args));
+    if (call->resolved() != 0) resolvedTable_[call->resolved()].vslot = index;   // the slot it reads (M3b.2)
+    return call;
 }
 
 // A class's own `operator new` or `operator delete`, else null - looked up

@@ -791,3 +791,23 @@ cap 0, the memory gate under its baseline. Windows: **653 same, 0 differ, 340 re
 `-front=ssa` and under `-front=ssa -O2`. Fable's one ungated step - `make test` after its comment-only change - is closed
 by this run. **Not mended**: a destructor with landing pads that destroys members (1 body); on the Microsoft ABI a
 constructor that throws itself stays the walker's while a `try` there is refused.
+
+**M3b.2, virtual calls and a `delete` of a class with a destructor** (2026-10-27, Opus 5.5 worker on `m3b2-call`, lane
+`lane-call`, from `da147b2`). The parser records the slot a virtual call reads on its call record (`Resolved::vslot`,
+copied by the Typer as `Resolution::vslot`), and the lowering reads the vptr at the object's first word and the function
+at that slot (`virtualCallee`), the object first converted to the slot's class as the parser converts it - one shape on
+both ABIs, the parser's own. A `delete` of a class with a destructor carries the destructor the parser called - its
+symbol and type, or the deleting slot it read (Itanium D0, Microsoft `??_G` given 1) - on its `NewFacts`
+(`noteDeleteDestroys`); the lowering destroys under a null test ([expr.delete]/2) and frees with the global operator
+delete the parser named (`deleteDestroying`). A conditional's arm that is the literal 0 is the null pointer
+([conv.ptr]/1, `exprTo` in `conditional`), which was every "conversion of a number to a pointer". **Refused as before**:
+a call through a member pointer (none in the suite), `delete[]` of a class with a destructor, a class's own operator
+delete, and a call with defaults - a default is read again by the parser at each call and its expression has no node in
+the typed tree to lower. **Case**: `tests/cases/virtual-call-delete-ssa.cpp` (clang's output). **Measured**: Windows
+`-check=ssa` **8,029 bodies, 6,336 lowered, 0 failed** against `da147b2`'s 8,008 / 6,254 (the 21 more bodies the new
+case's); the three reasons gone (21 bodies each), and per function the only new refusals are two `main`s that now stop
+at a later statement (`delete-null`'s `new` of a class with a destructor, the case's polymorphic local). Linux (g++,
+`~/lane-call`) the full `make test` exit 0 - run.sh **1025 / 0**, emit 2705 / 0, typed 683 / 0, adapted 683 / 0, ssa.sh
+**7,726 source bodies, 6,025 lowered, 0 failed**, coff 0 differ, c90 447 / 0, exclusions 126 sites 0 / 0, comment cap
+0, the memory gate passing - then run.sh at -O2 and under `-front=ssa` at -O0 and -O2, each **1025 / 0**. Windows under
+`-front=ssa` and under `-front=ssa -O2` **654 same, 0 differ, 340 refused as recorded**.
