@@ -481,6 +481,19 @@ bool Typer::newFacts(syntax::NodeId id, NewFacts &out) const {
     out.array = f->second.array;
     out.placed = f->second.placed;
     out.init = f->second.init;
+    out.ctor = f->second.ctor;
+    if (f->second.ctorSig != nullptr) out.ctorSig = f->second.ctorSig->id();
+    out.ctorZero = f->second.ctorZero;
+    out.ctorDefaulted = f->second.ctorDefaulted;
+    return true;
+}
+
+bool Typer::temporaryBuilt(syntax::NodeId id, std::string &symbol, TypeId &signature, bool &zeroFirst) const {
+    const std::unordered_map<std::uint32_t, Parser::TemporaryBuilt>::const_iterator i = p_.temporaryBuilt_.find(id.v);
+    if (i == p_.temporaryBuilt_.end() || i->second.symbol.empty() || i->second.signature == nullptr) return false;
+    symbol = i->second.symbol;
+    signature = TypeTable::id(i->second.signature);
+    zeroFirst = i->second.zeroFirst;
     return true;
 }
 

@@ -54,11 +54,12 @@ struct Resolution : ResolutionKind {
 // A `new` or `delete` as the parser built it (M3b.2): the global allocation function it called, the type made or freed,
 // the initialiser - 0 none, 1 value-initialised, 2 one value - and `why` where the SSA lowering may not take it.
 struct NewFacts {
-    std::string symbol, why;
-    TypeId made;
+    std::string symbol, why, ctor;   // ctor: the constructor `new T(...)` calls on the storage, its type with `T *` first
+    TypeId made, ctorSig;
     bool array, placed;     // placed: the reserved placement form, `new (p) T` - no allocation, the address given
+    bool ctorZero, ctorDefaulted;    // the object zeroed before the constructor; defaults filled the written arguments out
     int init;
-    NewFacts() : array(false), placed(false), init(0) {}
+    NewFacts() : array(false), placed(false), ctorZero(false), ctorDefaulted(false), init(0) {}
 };
 
 // What a sizeof, alignof or noexcept folded to, or an integer or character literal's value, with its type.
@@ -152,6 +153,8 @@ public:
     std::string destructorSymbol(const Type *cls) const;
     // A local's constructor, its signature with `this`, defaults added, zeroed first ([dcl.init]/8); false where none built it.
     bool localBuilt(syntax::NodeId var, std::string &symbol, TypeId &signature, bool &defaulted, bool &zeroed) const;
+    // The constructor a class temporary `T(...)` at node `id` was built by, and whether `T()` zeroed the object first.
+    bool temporaryBuilt(syntax::NodeId id, std::string &symbol, TypeId &signature, bool &zeroFirst) const;
     // Whether the function of this symbol is a template specialization (Signature::fromTemplate): its body is a replay.
     bool fromTemplate(const std::string &symbol) const;
     // The census's counts as the report spells them, "functions=N bodies=K synthesised=M", and the kinds behind M.

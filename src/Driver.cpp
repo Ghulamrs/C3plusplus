@@ -1365,6 +1365,9 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     lowering.setLocalBuilt([&typer](syntax::NodeId v, std::string &sym, TypeId &sig, bool &dflt, bool &zeroed) {
         return typer.localBuilt(v, sym, sig, dflt, zeroed);
     });
+    lowering.setTemporaryBuilt([&typer](syntax::NodeId id, std::string &sym, TypeId &sig, bool &zero) {
+        return typer.temporaryBuilt(id, sym, sig, zero);
+    });
     std::map<std::string, int> reasons;
     int lowered = 0;
     for (std::size_t r = 0; r < c.bodies.size(); r++) {
