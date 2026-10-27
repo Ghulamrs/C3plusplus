@@ -2388,6 +2388,8 @@ int Lowering::typeIndexFor(const std::string &sym) {
 // A pad's block, made on first use: the runtime arrives with the exception pointer and the selector as its parameters.
 BlockId Lowering::padBlock(Pad &p) {
     if (p.block.valid()) return p.block;
+    // A handler's funclet has one state, its own: a pad of its own inside it would want a state FH3 cannot search.
+    if (target_.microsoftNames() && funclet_.valid()) outside("a cleanup inside a handler on the Microsoft ABI");
     p.block = newBlock();
     F().blockArena[p.block.v].pad = true;
     p.ptr = param(p.block, tid(*types_.pointerTo(types_.voidType())));

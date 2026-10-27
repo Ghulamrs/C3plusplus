@@ -360,14 +360,14 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         const std::string begin = label("ssatry", id), end = label("ssatryend", id);
         // Microsoft: the call's own range in the ip2state map, in its pad's state; nothing in the body stays in one.
         if (usesFunclets()) {
-            // Inside a handler's funclet the rows follow its start row, and the state out is the handler's own.
+            // Inside a handler's funclet the call stays in the handler's state, which chains to the enclosing pad: FH3
+            // searches from a catch funclet only the tries whose handler states hold it, and terminates otherwise.
+            const bool inHandler = ssaFuncletState_ >= 0;
             defineStateLabel(begin);
-            if (ssaInFunclet_) msAddFuncletRow(begin, ssaPadState_[i.succ[1].block.v], false);
-            else msAddIpRow(begin, ssaPadState_[i.succ[1].block.v]);
+            if (!inHandler) msAddIpRow(begin, ssaPadState_[i.succ[1].block.v]);
             selectCall(f, i, rt);
             defineStateLabel(end);
-            if (ssaInFunclet_) msAddFuncletRow(end, ssaFuncletState_, false);
-            else msAddIpRow(end, -1);
+            if (!inHandler) msAddIpRow(end, -1);
             // A try's handlers hand back one of its exits: the flow is told the call may continue at each.
             const ir::Inst &pf = f.inst(f.block(i.succ[1].block).insts[0]);
             if (pf.op == ir::Op::CatchPad && pf.k == -1)
