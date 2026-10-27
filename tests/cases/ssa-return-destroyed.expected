@@ -1,0 +1,65 @@
+  +D 70
+  +D 101
+  +D 1
+  ~D 101
+fromLocal 1
+  ~D 1
+  +D 202
+  +D 2
+  ~D 202
+fromInner 2
+  ~D 2
+  +D 303
+  +D 6
+  ~D 303
+fromTemporary 6
+  ~D 6
+  +D 5
+  ~D 5
+fromGlobal 70
+  ~D 70
+  +D 11
+  +D 22
+  ~D 22
+  ~D 11
+pick 11
+  ~D 11
+  +D 11
+  +D 22
+  ~D 22
+  ~D 11
+pick 22
+  ~D 22
+  +D 0
+  ~D 0
+  +D 1
+  ~D 1
+  +D 2
+inLoop 2
+  ~D 2
+  +D 0
+  ~D 0
+  +D 1
+  ~D 1
+  +D 2
+  ~D 2
+  +D 3
+  ~D 3
+  +D 4
+  ~D 4
+  +D -9
+inLoop -9
+  ~D -9
+  +D 40
+get 40
+  ~D 40
+  ~D 40
+  +D 55
+  ~D 55
+placed 55
+  +D 61
+  +D 60
+  ~D 60
+  ~D 61
+placedBeside 121
+  ~D 70

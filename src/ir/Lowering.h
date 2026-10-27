@@ -106,6 +106,7 @@ private:
     void localArray(sema::TypedId var, ValueId slot, TypeId type);
     void returnStmt(sema::TypedId id);
     void returnConstructed(sema::TypedId value);
+    void returnDestroyed(sema::TypedId value);
     void forStmt(sema::TypedId id);
     void rangeForStmt(sema::TypedId id);
     void switchStmt(sema::TypedId id);
@@ -207,7 +208,9 @@ private:
     void copyObject(ValueId to, ValueId from, const Type &t);
     bool plainTemporary(sema::TypedId id) const;
     bool constructedClass(const Type &t) const;
+    bool placedClass(const Type &t) const;
     bool bytesReturned(const Type &t) const;
+    bool destroyedReturned(const Type &t) const;
     bool constructedTemporary(sema::TypedId id) const;
     bool temporaryNode(sema::TypedId id) const { return plainTemporary(id) || constructedTemporary(id); }
     Val temporary(sema::TypedId id);
