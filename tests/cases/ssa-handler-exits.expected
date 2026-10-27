@@ -1,0 +1,12 @@
++4 -4 ~E4 fallOff 40
+fallOff 0
++101 -101 ~E1 returnOut 1
++203 -203 ~E3 breakOut 3
++301 -301 ~E1 throwOut 7
+unnamed 1
+~E2 unnamed 2
+unnamed 0
+~E9 gotoInTry 13
+gotoInTry 2
+[index 1] polyThrow 1 alive 0
+polyThrow 0 alive 0

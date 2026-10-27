@@ -52,6 +52,7 @@ public:
     void setUnnamedCaught(std::function<std::string(syntax::NodeId)> f) { unnamedCaught_ = f; }
     void setMicrosoftThrowInfo(std::function<std::string(TypeId)> f) { msThrowInfo_ = f; }
     void setMicrosoftCatch(std::function<bool(TypeId, std::string &, bool &)> f) { msCatch_ = f; }
+    void setMicrosoftUnnamedCaught(std::function<bool(syntax::NodeId, std::string &, bool &, bool &)> f) { msUnnamedCaught_ = f; }
     void setNewFacts(std::function<bool(syntax::NodeId, sema::NewFacts &)> f) { newFacts_ = f; }
     // The constructor the parser chose for a member, and a class's destructor - Sema's records, asked by the glue.
     void setMemberBuilt(std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> f) { memberBuilt_ = f; }
@@ -128,6 +129,8 @@ private:
     void rangeForStmt(sema::TypedId id);
     void switchStmt(sema::TypedId id);
     BlockId labelBlock(const std::string &name);
+    void gotoStmt(const std::string &name);
+    void labelReached(const std::string &name, BlockId b);
     void tryStatement(sema::TypedId id);
     void microsoftTry(sema::TypedId id);
     void leaveHandlers(std::size_t n, std::size_t mark, BlockId target, const std::vector<ValueId> &args = std::vector<ValueId>());
@@ -135,6 +138,7 @@ private:
     BlockId padBlock(Pad &p);
     void resumeFrom(const Pad &p, std::size_t enclosing);
     void endCatches(std::size_t n);
+    void leaveCatches(std::size_t n, std::size_t mark);
     int typeIndexFor(const std::string &sym);
     ValueId entryAlloca(TypeId slotType, const std::string &name);
     Val runtimeCall(const std::string &symbol, TypeId returns, const std::vector<ValueId> &args);
@@ -275,6 +279,7 @@ private:
     std::function<std::string(syntax::NodeId)> unnamedCaught_;
     std::function<std::string(TypeId)> msThrowInfo_;
     std::function<bool(TypeId, std::string &, bool &)> msCatch_;
+    std::function<bool(syntax::NodeId, std::string &, bool &, bool &)> msUnnamedCaught_;
     BlockId funclet_;                           // the Microsoft handler whose funclet the blocks made now belong to
     BlockId msTryPad_;                          // the try that handler is of: its pad's CatchPad lists the exits
     std::function<bool(syntax::NodeId, sema::NewFacts &)> newFacts_;
@@ -300,6 +305,7 @@ private:
     std::vector<Pad> pads_;                     // innermost last
     std::vector<std::string> typeTable_;        // the function's selector indices: one per type, first occurrence, 1-based
     std::size_t handlerDepth_;                  // handlers the statement being lowered is inside
+    std::vector<std::size_t> handlerLive_;      // live_ where each handler's body began, innermost last
     std::size_t fullFrom_;                      // live_ where the full expression being lowered began; kNoFull, none open
     std::size_t skippable_;                     // operands being lowered that may not be evaluated: `&&`, `||`, `?:`, `new`
     static const std::size_t kNoFull = static_cast<std::size_t>(-1);
@@ -309,6 +315,10 @@ private:
     std::vector<Loop> loops_;
     std::vector<SwitchCtx> switches_;
     std::map<std::string, BlockId> labels_;
+    std::map<std::string, std::pair<std::size_t, std::size_t> > labelScope_;    // a placed label: live_ and handlers there
+    // A goto ahead of its label: the block it branches to, and what was alive and which handlers were open there.
+    struct PendingGoto { std::string label; BlockId from; std::vector<Live> live; std::vector<std::size_t> handlerLive; };
+    std::vector<PendingGoto> pendingGotos_;
     bool hasGoto_;
 };
 

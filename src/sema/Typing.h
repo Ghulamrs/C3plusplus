@@ -155,6 +155,8 @@ public:
     bool isConstructor(syntax::NodeId fn) const;   // a `function` node the parser read as a constructor
     std::string typeInfoSymbol(TypeId t) const;   // the type_info a catch of t names, Sema's; empty where none can be made
     std::string unnamedCaught(syntax::NodeId handler) const;   // what an Itanium `catch (T)` with no name named; empty otherwise
+    // A Microsoft `catch (T)` with no name: the descriptor the parser named, whether by reference, HT_IsConst.
+    bool microsoftUnnamedCaught(syntax::NodeId handler, std::string &descriptor, bool &byRef, bool &isConst) const;
     // The Microsoft ThrowInfo a throw of t names (`_TI1H`), where the parser finished the chain for a throw; empty otherwise.
     std::string microsoftThrowInfo(TypeId t) const;
     // The Microsoft type descriptor a catch of t names (`??_R0H@8`) and HT_IsConst, where the parser finished a chain for the type.
