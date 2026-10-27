@@ -2326,6 +2326,9 @@ private:
     ExprPtr postfix();
     ExprPtr primary(Program *program);
     ExprPtr primaryNode(Program *program);
+    std::size_t operatorSpelled(std::size_t k, std::string &name) const;
+    std::size_t templateArgsEnd(std::size_t k) const;
+    bool flatBraces(std::size_t k) const;
 
     ExprPtr arithmetic(BinOp op, ExprPtr lhs, ExprPtr rhs, std::size_t pos);
     ExprPtr comparison(BinOp op, ExprPtr lhs, ExprPtr rhs, std::size_t pos);

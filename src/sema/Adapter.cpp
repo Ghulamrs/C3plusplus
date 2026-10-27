@@ -1453,6 +1453,8 @@ ExprPtr Adapter::call(TypedId id) {
     // What the parser reached from this call, recorded on its node where it was resolved (M2.16): a function by its
     // symbol, a class temporary by its class, or - a call through a global holding a pointer - nothing.
     std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(n.syntax.v);
+    if (r != p_.resolutions_.end() && r->second.what == Parser::Resolved::Temporary && p_.syntaxTree_.text(n.syntax) == "{}")
+        outside("a temporary list-initialised");
     if (r != p_.resolutions_.end() && r->second.what == Parser::Resolved::Temporary)
         return classTemporary(id, r->second.type->unqualified(), std::move(args));
     if (r == p_.resolutions_.end() || r->second.what != Parser::Resolved::Call || r->second.symbol.empty()) {

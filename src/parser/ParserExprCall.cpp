@@ -45,8 +45,12 @@ void Parser::parseArguments(std::vector<ExprPtr> &args) {
         }
         // **A braced list as an argument** is kept behind a placeholder until the parameter
         // it copy-list-initialises is known - [dcl.init]/16 cannot be applied before that.
-        if (peek().is("{")) args.push_back(bracedPlaceholder(parseInitialiser()));
-        else if (atBareFunctionArgument()) {
+        if (peek().is("{")) {
+            const std::size_t mark = syntaxTree_.size(), lo = peek().pos;
+            args.push_back(bracedPlaceholder(parseInitialiser()));
+            // Its syntax is an `other` holding the elements, so the call keeps one part per argument.
+            args.back()->setSyntax(noteParts(syntax::Kind::Other, "{}", lo, mark, lo));
+        } else if (atBareFunctionArgument()) {
             OverloadTarget waits(*this, nullptr, true);
             args.push_back(assign());
         } else if (!expandPackPattern(args)) args.push_back(assign());
