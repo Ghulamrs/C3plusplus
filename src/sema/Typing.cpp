@@ -84,7 +84,13 @@ TypedId Typer::node(syntax::NodeId id) {
     for (std::uint32_t i = 0; i < n.count; i++) {
         // A lambda's call operator is a function of its own, typed by the census from its own node and not from here.
         if (n.kind == syntax::Kind::Lambda && st.node(st.child(id, i)).kind == syntax::Kind::Function) continue;
-        const TypedId k = node(st.child(id, i));
+        const syntax::NodeId c = st.child(id, i);
+        // A default argument is read in its declaration's scope, where no local of the calling function is seen.
+        std::vector<std::unordered_map<std::string, Declared> > outer;
+        const bool dflt = n.kind == syntax::Kind::Call && p_.defaultArgNodes_.count(c.v) != 0;
+        if (dflt) outer.swap(scopes_);
+        const TypedId k = node(c);
+        if (dflt) scopes_.swap(outer);
         kids.push_back(k);
         parts.push_back(tree_.node(k).type);
     }
@@ -507,6 +513,21 @@ bool Typer::guardedStatic(const std::string &symbol) const { return p_.guardedSt
 
 bool Typer::defaultInit(TypeId cls, const std::string &member) const {
     return p_.memberInit_.count(p_.types_.type(cls)->unqualified()->tag() + "::" + member) != 0;
+}
+
+void Typer::typeMemberDefaults(const std::string &ctor) {
+    const std::string from = ctor + "|";
+    for (std::map<std::string, syntax::NodeId>::const_iterator i = p_.memberDefaults_.lower_bound(from);
+         i != p_.memberDefaults_.end() && i->first.compare(0, from.size(), from) == 0; ++i) {
+        scopes_.assign(1, std::unordered_map<std::string, Declared>());
+        memberDefaults_[i->first] = node(i->second);
+    }
+    scopes_.clear();
+}
+
+TypedId Typer::memberDefault(const std::string &ctor, const std::string &member) const {
+    const std::map<std::string, TypedId>::const_iterator i = memberDefaults_.find(ctor + "|" + member);
+    return i == memberDefaults_.end() ? TypedId() : i->second;
 }
 
 bool Typer::newFacts(syntax::NodeId id, NewFacts &out) const {

@@ -657,6 +657,7 @@ void Parser::applyDefaults(Signature f, std::vector<ExprPtr> &args,
     if (!f.owner.empty()) {
         if (const Type *owner = lookup_.findTypedef(f.owner)) currentClass_ = owner;
     }
+    std::vector<syntax::NodeId> made;
     for (std::size_t i = args.size(); i < f.params.size(); i++) {
         if (i >= it->second.size() || it->second[i] == 0)
             src_.fail(pos, "'" + f.name + "' has no default for parameter " +
@@ -668,10 +669,16 @@ void Parser::applyDefaults(Signature f, std::vector<ExprPtr> &args,
             const Type *p = f.params[i]->isReference() ? f.params[i]->referent() : f.params[i];
             Init in = parseInitialiser();
             args.push_back(listTemporaryFrom(p->unqualified(), in, true, pos));
+            made.push_back(args.back()->syntax());
             continue;
         }
         args.push_back(assign());
+        made.push_back(args.back()->syntax());
     }
+    // The defaults' syntax, for the call they complete to take as its last parts (M3b.2); a part with none, none of them.
+    bool whole = !made.empty();
+    for (std::size_t i = 0; i < made.size(); i++) whole = whole && made[i].valid();
+    if (whole) defaultGroups_[made.back().v] = made;
     at_ = resume;
     locals_.swap(hidden);
     scopeStarts_.swap(starts);
@@ -679,6 +686,26 @@ void Parser::applyDefaults(Signature f, std::vector<ExprPtr> &args,
     currentFunctionName_ = outerFunctionName;
     namespaceStack_ = outerNs;
     currentClass_ = outerClass;
+}
+
+// A call's syntax parts with the defaults it was completed by after them, where its arguments end in exactly those and the
+// rest are the parts written; the parts as they were otherwise.
+std::vector<syntax::NodeId> Parser::withDefaults(const Expr &e, const std::vector<syntax::NodeId> &children) {
+    const Call *c = dynamic_cast<const Call *>(&e);
+    if (c == nullptr || c->args().empty() || children.empty()) return children;
+    const std::unordered_map<std::uint32_t, std::vector<syntax::NodeId> >::iterator g =
+        defaultGroups_.find(c->args().back()->syntax().v);
+    if (g == defaultGroups_.end()) return children;
+    const std::vector<syntax::NodeId> group = g->second;
+    defaultGroups_.erase(g);
+    const std::size_t given = c->args().size() - (c->hasThis() ? 1 : 0);
+    if (given != children.size() - 1 + group.size()) return children;
+    for (std::size_t i = 0; i < group.size(); i++)
+        if (c->args()[c->args().size() - group.size() + i]->syntax().v != group[i].v) return children;
+    std::vector<syntax::NodeId> whole = children;
+    whole.insert(whole.end(), group.begin(), group.end());
+    for (std::size_t i = 0; i < group.size(); i++) defaultArgNodes_.insert(group[i].v);
+    return whole;
 }
 
 void Parser::checkAssignable(const Expr &from, const Type *to, std::size_t pos,

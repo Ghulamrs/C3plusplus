@@ -210,11 +210,15 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
     storeVptrs();
     for (const Member &m : cls.members()) {
         if (m.declaredIn != nullptr) continue;     // a base's, which its constructor built
-        const std::map<std::string, sema::TypedId>::const_iterator e = named.find(m.name);
+        std::map<std::string, sema::TypedId>::const_iterator e = named.find(m.name);
         const Type &mt = *m.type->unqualified();
-        if (e == named.end()) {
-            if (defaultInit_ && defaultInit_(cls.id(), m.name)) outside("a member's default initialiser");
-            if (!builtMember(mt)) continue;
+        if (e == named.end() && defaultInit_ && defaultInit_(cls.id(), m.name)) {
+            // [class.base.init]/9: the member's own initialiser, which the parser replayed as this constructor's entry.
+            const sema::TypedId d = memberDefault_ ? memberDefault_(F().symbol, cls.tag() + "::" + m.name) : sema::TypedId();
+            if (!d.valid() || m.type->isReference() || builtMember(mt)) outside("a member's default initialiser");
+            e = named.insert(std::make_pair(m.name, d)).first;
+        } else if (e == named.end() && !builtMember(mt)) {
+            continue;
         }
         if (m.type->isReference()) {
             // [class.base.init]/8: a reference member bound to an object of its referent's type - the address stored.

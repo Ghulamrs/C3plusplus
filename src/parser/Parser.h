@@ -22,6 +22,7 @@
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 class Source;
@@ -713,7 +714,12 @@ private:
     syntax::NodeId syn(const ExprPtr &e) const { return e ? e->syntax() : syntax::NodeId(); }
     ExprPtr note(ExprPtr e, syntax::Kind kind, const std::string &text, std::size_t pos,
                  const std::vector<syntax::NodeId> &children = std::vector<syntax::NodeId>()) {
-        if (e) e->setSyntax(syntaxTree_.add(kind, text, pos, children));
+        if (e && kind == syntax::Kind::Call && !defaultGroups_.empty()) {
+            const std::vector<syntax::NodeId> whole = withDefaults(*e, children);
+            e->setSyntax(syntaxTree_.add(kind, text, pos, whole));
+        } else if (e) {
+            e->setSyntax(syntaxTree_.add(kind, text, pos, children));
+        }
         if (e) noteResolved(e->syntax(), e.get());
         if (kind == syntax::Kind::Call) {
             if (const Call *c = dynamic_cast<const Call *>(e.get())) noteCallSlots(*c);
@@ -724,6 +730,15 @@ private:
         }
         return e;
     }
+    // The default arguments applyDefaults read for one call, by the node of the last (M3b.2): the call's syntax takes them
+    // as its last parts where its Ast.h call ends in exactly those, after the parts written.
+    std::unordered_map<std::uint32_t, std::vector<syntax::NodeId> > defaultGroups_;
+    std::unordered_set<std::uint32_t> defaultArgNodes_;    // each a call's part, read in its declaration's scope
+    std::vector<syntax::NodeId> withDefaults(const Expr &e, const std::vector<syntax::NodeId> &children);
+    // A member's own initialiser replayed into a written constructor: a mem-initialiser node over the value's syntax,
+    // by "constructor|class::member" (M3b.2); memberDefaultFor_ names the constructor while memberInitialiser runs for it.
+    std::map<std::string, syntax::NodeId> memberDefaults_;
+    std::string memberDefaultFor_;
     // A class temporary `T(a)` is `*(ctor(&$tmp, a), &$tmp)`, its slot the parser's: kept by node (M2.12i).
     std::unordered_map<std::uint32_t, int> temporarySlots_;
     // And the constructor that built it, by node: its symbol, its type with `T *` first, and whether `T()` zeroed first.
