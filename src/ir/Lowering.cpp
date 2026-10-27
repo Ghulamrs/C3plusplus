@@ -72,8 +72,9 @@ bool Lowering::scalarArray(const Type &t) {
     return scalar(e) || scalarArray(e);
 }
 
-// An array, of any depth, of a class builtMember takes, its elements counted into `count` - its element class, or none.
-TypeId Lowering::builtArray(const Type &t, long long &count) const {
+// An array, of any depth, of a class builtMember takes - builtClass, as a `local` - its elements counted into `count`:
+// its element class, or none.
+TypeId Lowering::builtArray(const Type &t, long long &count, bool local) const {
     if (!t.isArray()) return TypeId();
     long long n = 1;
     TypeId e = tid(t);
@@ -82,7 +83,7 @@ TypeId Lowering::builtArray(const Type &t, long long &count) const {
         n *= T(e).length();
         e = tid(*T(e).pointee()->unqualified());
     }
-    if (!builtMember(T(e))) return TypeId();
+    if (local ? !builtClass(T(e)) : !builtMember(T(e))) return TypeId();
     count = n;
     return e;
 }
@@ -1617,7 +1618,9 @@ void Lowering::declaration(sema::TypedId id) {
             if (!referable(*t.referent())) outside("a reference to '" + t.referent()->describe() + "'");
             slotType = tid(*types_.pointerTo(t.referent()));
         } else if (t.isArray()) {
-            if (!t.pointee()->isComplete() || !scalar(*t.pointee()) || t.pointee()->isX87(target_) || t.length() <= 0)
+            long long elems = 0;
+            if (!builtArray(t, elems, true).valid() &&
+                (!t.pointee()->isComplete() || !scalar(*t.pointee()) || t.pointee()->isX87(target_) || t.length() <= 0))
                 outside("an array of '" + t.pointee()->describe() + "'");
             slotType = tid(t);
         } else if (plainClass(t) || builtClass(t)) {
@@ -1644,13 +1647,46 @@ void Lowering::declaration(sema::TypedId id) {
             store(slot, result(add(Op::Bitcast, slotType, std::vector<ValueId>(1, b.v))));
             continue;
         }
-        if (t.isArray()) { localArray(var, slot, slotType); continue; }
+        if (t.isArray()) {
+            long long elems = 0;
+            const TypeId e = builtArray(t, elems, true);
+            if (e.valid()) builtArrayLocal(var, slot, T(e), elems);
+            else localArray(var, slot, slotType);
+            continue;
+        }
         if (t.isStructOrUnion()) { if (plainClass(t)) classLocal(var, slot, t); else builtLocal(var, slot, t); continue; }
         if (v.count > 1) outside("a var of " + std::to_string(v.count) + " parts");
         if (v.count == 0) continue;
         const std::size_t was = openFull();
         store(slot, exprTo(child(var, 0), slotType).v);
         closeFull(was);
+    }
+}
+
+// [dcl.init]/7 and [class.dtor]/10 for an array of such a class with no initialiser: each element, first to last, by the
+// default constructor the parser chose - where it chose one - and alive to the scope's end, the last built destroyed first.
+void Lowering::builtArrayLocal(sema::TypedId var, ValueId slot, const Type &et, long long elems) {
+    const sema::TypedNode &v = tree_.node(var);
+    if (v.initForm != 0) outside("an array of a class initialised from a list");
+    const bool dies = et.hasDestructor();
+    if (elems > (dies ? 16 : 64)) outside("an array of more elements than the lowering builds one by one");
+    if (dies && handlerDepth_ != 0) outside("a local with a destructor inside a handler");
+    const std::string dtor = dies && destructor_ ? destructor_(et.id()) : std::string();
+    if (dies && dtor.empty()) outside("an array whose elements' destructor the parser recorded none for");
+    std::string symbol;
+    TypeId sig;
+    bool defaulted = false, zeroed = false;
+    const bool built = localBuilt_ && localBuilt_(v.syntax, symbol, sig, defaulted, zeroed);
+    if (!built && constructed_ && constructed_(et.id())) outside("an array built by no constructor the parser recorded");
+    if (defaulted || zeroed) outside("an array built with default arguments or zeroed");
+    if (built && (T(sig).params().size() != 1 || T(sig).params()[0]->pointee()->unqualified() != &et))
+        outside("an array's constructor of another class");
+    const TypeId self = types_.pointerTo(et.id());
+    for (long long k = 0; k < elems; k++) {
+        const InstId g = add(Op::Gep, self, std::vector<ValueId>(1, slot));
+        at(g).k = k * et.size(target_);
+        if (built) directCall(symbol, sig, std::vector<ValueId>(1, result(g)));
+        if (dies) guard(result(g), et, dtor);
     }
 }
 

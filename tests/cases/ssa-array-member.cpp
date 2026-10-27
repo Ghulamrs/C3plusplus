@@ -1,6 +1,7 @@
 // A constructor and a destructor of a class with array members of classes (M3b.2): each element built first to last
 // by its default constructor, of any depth, and destroyed last to first after the destructor's body; an element
-// that throws leaves the elements built before it destroyed, the last first, and the members built before them.
+// that throws leaves the elements built before it destroyed, the last first, and the members built before them; and
+// local arrays of those classes, built the same way and destroyed at their scope's end, the last element first.
 extern "C" int printf(const char *, ...);
 
 struct E {
@@ -57,6 +58,25 @@ struct Box {
 Box::Box() { printf("Box "); }
 Box::~Box() { printf("~Box "); }
 
+static void locals(int at) {
+    made = 0;
+    left = at;
+    try {
+        E e[2];
+        P g[2][2];
+        D d[3];
+        T t[3];
+        printf("| %d %d ", e[1].v, g[1][0].v);
+        {
+            E inner[2];
+            printf("%d | ", inner[0].v);
+        }
+    } catch (int x) {
+        printf("| caught %d", x);
+    }
+    printf("\n");
+}
+
 int main() {
     {
         Holder h(5);
@@ -81,5 +101,6 @@ int main() {
             printf("| caught %d\n", x);
         }
     }
+    for (int at = 1; at <= 4; at++) locals(at == 4 ? 99 : at);
     return 0;
 }

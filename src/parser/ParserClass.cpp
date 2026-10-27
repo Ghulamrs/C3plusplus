@@ -1176,6 +1176,11 @@ StmtPtr Parser::constructLocalArray(const Declared &d, int offset,
         ps.push_back(chosen.params[i]);
     }
 
+    // The constructor every element takes, by the local's serial, for its `var` node to carry (M3b.2).
+    if (const Local *built = lookup_.findLocal(d.name)) {
+        const LocalBuilt b = { chosen.symbol, types_.functionType(types_.get(Kind::Void), ps, false), !defaults.empty(), false };
+        ctorBySerial_[built->serial] = b;
+    }
     StmtPtr one(new ExprStmt(completeCall(plain->tag(), chosen.symbol, nullptr,
                                           types_.get(Kind::Void), ps, false,
                                           d.pos, std::move(args))));

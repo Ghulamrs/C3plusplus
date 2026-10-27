@@ -175,8 +175,9 @@ private:
     bool simpleLayout(const Type &cls) const;
     bool builtMember(const Type &t) const;
     bool buildableLayout(const Type &cls, bool vptr = false, bool arrays = false, bool vbases = false) const;
-    TypeId builtArray(const Type &t, long long &count) const;
+    TypeId builtArray(const Type &t, long long &count, bool local = false) const;
     void buildElements(const Member &m, const Type &et, long long elems);
+    void builtArrayLocal(sema::TypedId var, ValueId slot, const Type &et, long long elems);
     static bool scalarArray(const Type &t);
     void buildMember(ValueId at, const Member &m, sema::TypedId entry);
     void destroyMembers(const Type &cls);
