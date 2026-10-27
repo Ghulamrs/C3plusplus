@@ -1,0 +1,3 @@
+x86_64-linux  the closures are spelled $_N where clang spells them UlvE_ and its numbered equivalents, which [expr.prim.lambda] leaves to the implementation - the divergence lambda-capture-by-value.nonames records. What this case is about - the closure built from its captures and the temporary bound to a reference parameter - is checked by run.sh against clang's output.
+x86_64-windows  the same: cxx1 names a closure $_N where clang-msvc names it <lambda_N>.
+arm64-darwin  the same difference as x86_64-linux, the two Itanium targets naming these the same way as each other.

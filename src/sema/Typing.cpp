@@ -88,6 +88,7 @@ TypedId Typer::node(syntax::NodeId id) {
         kids.push_back(k);
         parts.push_back(tree_.node(k).type);
     }
+    if (n.kind == syntax::Kind::Lambda) closureSources(id);
     syntax::NodeId decl;
     const Type *type = n.kind == syntax::Kind::Name ? named(id, &decl)
                      : isExpression(n.kind) ? expression(id, parts) : nullptr;
@@ -127,6 +128,7 @@ void Typer::record(syntax::NodeId id, TypedId t) {
         out.isThreadLocal = r->second.isThreadLocal;
         out.hasThis = r->second.hasThis;
         out.indirect = r->second.indirect;
+        out.vslot = r->second.vslot;
         out.name = r->second.name;
         tree_.setResolution(t, out);
     }
@@ -432,7 +434,7 @@ std::string Typer::recordDiffers(const Parser &p, const TypedTree &tree, TypedId
         if (r.what != pr->second.what || p.types_.type(r.type) != pr->second.type ||
             p.types_.type(r.owner) != pr->second.owner || r.symbol != pr->second.symbol || r.serial != pr->second.serial ||
             r.value != pr->second.value || r.isConst != pr->second.isConst || r.isThreadLocal != pr->second.isThreadLocal ||
-            r.hasThis != pr->second.hasThis || r.indirect != pr->second.indirect || r.name != pr->second.name)
+            r.hasThis != pr->second.hasThis || r.indirect != pr->second.indirect || r.vslot != pr->second.vslot || r.name != pr->second.name)
             return "the record's fields";
     }
     const auto cast = p.castTypes_.find(id);
@@ -499,6 +501,9 @@ bool Typer::newFacts(syntax::NodeId id, NewFacts &out) const {
     if (f->second.ctorSig != nullptr) out.ctorSig = f->second.ctorSig->id();
     out.ctorZero = f->second.ctorZero;
     out.ctorDefaulted = f->second.ctorDefaulted;
+    out.dtor = f->second.dtor;
+    if (f->second.dtorSig != nullptr) out.dtorSig = f->second.dtorSig->id();
+    out.dslot = f->second.dslot;
     return true;
 }
 
@@ -508,6 +513,41 @@ bool Typer::temporaryBuilt(syntax::NodeId id, std::string &symbol, TypeId &signa
     symbol = i->second.symbol;
     signature = TypeTable::id(i->second.signature);
     zeroFirst = i->second.zeroFirst;
+    return true;
+}
+
+// Each capture's source `var`, looked up as a name is in the scopes at the lambda, and kept only where it is the
+// parser's local - the same slot - for every capture.
+void Typer::closureSources(syntax::NodeId id) {
+    const std::unordered_map<std::uint32_t, Parser::LambdaFacts>::const_iterator k = p_.lambdaFacts_.find(id.v);
+    if (k == p_.lambdaFacts_.end() || !k->second.simple) return;
+    std::vector<syntax::NodeId> sources;
+    for (const Parser::LambdaCapture &c : k->second.captures) {
+        syntax::NodeId decl;
+        for (std::size_t i = scopes_.size(); !decl.valid() && i > 0; i--) {
+            std::unordered_map<std::string, Declared>::const_iterator it = scopes_[i - 1].find(c.src);
+            if (it != scopes_[i - 1].end()) decl = it->second.decl;
+        }
+        const std::unordered_map<std::uint32_t, Local>::const_iterator l = p_.declaredLocals_.find(decl.v);
+        if (!decl.valid() || l == p_.declaredLocals_.end() || l->second.offset != c.srcOffset) return;
+        sources.push_back(decl);
+    }
+    closureSources_[id.v] = sources;
+}
+
+bool Typer::closureFacts(syntax::NodeId id, ClosureFacts &out) const {
+    const std::unordered_map<std::uint32_t, Parser::LambdaFacts>::const_iterator k = p_.lambdaFacts_.find(id.v);
+    const std::unordered_map<std::uint32_t, std::vector<syntax::NodeId> >::const_iterator s = closureSources_.find(id.v);
+    if (k == p_.lambdaFacts_.end() || s == closureSources_.end() || k->second.type == nullptr) return false;
+    out.closure = TypeTable::id(k->second.type);
+    out.captures.clear();
+    for (std::size_t i = 0; i < k->second.captures.size(); i++) {
+        ClosureCapture c;
+        c.offset = k->second.captures[i].offset;
+        c.type = TypeTable::id(k->second.captures[i].type);
+        c.source = s->second[i];
+        out.captures.push_back(c);
+    }
     return true;
 }
 
