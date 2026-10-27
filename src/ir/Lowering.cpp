@@ -744,7 +744,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         returns_ = T(facts.returns).isReference() ? facts.returns : tid(*T(facts.returns).unqualified());
         f.returns = returns_;
         const Type &rt = T(returns_);
-        if (!(rt.isVoid() || scalar(rt) || plainClass(rt) || (rt.isReference() && referable(*rt.referent()))))
+        if (!(rt.isVoid() || scalar(rt) || plainClass(rt) || bytesReturned(rt) || (rt.isReference() && referable(*rt.referent()))))
             outside("a return type of '" + rt.describe() + "'");
         if (rt.isX87(target_)) outside("an x87 long double");
         // A constructor and a destructor of a class with a base, a vptr or a member that needs building or
@@ -1031,6 +1031,7 @@ void Lowering::returnStmt(sema::TypedId id) {
         endCatches(handlerDepth_); destroyLive(liveFloor_); br(returnBlock_, std::vector<ValueId>(1, result(c)));
         return;
     }
+    if (rt.isStructOrUnion() && !plainClass(rt)) { returnConstructed(child(id, 0)); return; }
     if (rt.isStructOrUnion()) {
         if (!objectNode(child(id, 0))) outside("a class returned from what is not an object");
         const Val a = object(child(id, 0));
@@ -1042,6 +1043,32 @@ void Lowering::returnStmt(sema::TypedId id) {
     }
     const Val v = exprTo(child(id, 0), returns_);
     endCatches(handlerDepth_); destroyLive(liveFloor_); br(returnBlock_, std::vector<ValueId>(1, v.v));
+}
+
+// A class with constructors and no copy of its own or destructor, returned as a plain one is - its bytes, which the
+// walker's return copies out by the ABI's rule: so the parser builds no copy for its own local or for `T(...)`.
+bool Lowering::bytesReturned(const Type &t) const {
+    return t.isStructOrUnion() && t.isComplete() && constructedClass(t) && !t.unqualified()->nonTrivialCopy();
+}
+
+// The two forms the parser elides for such a class: a local of the function, and a temporary the return builds.
+void Lowering::returnConstructed(sema::TypedId value) {
+    const Type &rt = T(returns_);
+    if (!live_.empty() || handlerDepth_ != 0) outside("a constructed class returned inside a handler or beside a destructor");
+    while (syn(value).kind == syntax::Kind::Paren && count(value) == 1) value = child(value, 0);
+    Val a;
+    if (constructedTemporary(value)) {
+        a = temporary(value);
+    } else {
+        const sema::TypedNode &n = tree_.node(value);
+        if (syn(value).kind != syntax::Kind::Name || !n.decl.valid() || locals_.find(n.decl.v) == locals_.end())
+            outside("a constructed class returned from what is neither a local nor a temporary");
+        if (!T(locals_.find(n.decl.v)->second.second).isStructOrUnion()) outside("a constructed class returned through a reference");
+        a = nameAddress(value);
+    }
+    if (T(a.type).unqualified() != rt.unqualified()) outside("a constructed class returned from another type");
+    const InstId c = add(Op::Bitcast, tid(*types_.pointerTo(&rt)), std::vector<ValueId>(1, a.v));
+    br(returnBlock_, std::vector<ValueId>(1, result(c)));
 }
 
 // [stmt.select]/2: a condition, or a declaration whose variable's value is the condition - declared where the test
