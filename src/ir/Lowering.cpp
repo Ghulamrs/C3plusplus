@@ -461,9 +461,9 @@ void Lowering::copyObject(ValueId to, ValueId from, const Type &t) {
 }
 
 // A plain class's temporary as the parser recorded it, `P()` or `P(o)`: a call of the class's name that no constructor
-// built. `P{...}` is not one of them - its list's values are loose in the syntax tree's parent, and it stays refused.
+// built. `P{...}`, a call `{}`, is not one of them: an aggregate's list initialises its members, which it stays refused for.
 bool Lowering::plainTemporary(sema::TypedId id) const {
-    if (syn(id).kind != syntax::Kind::Call || count(id) == 0 || count(id) > 2) return false;
+    if (syn(id).kind != syntax::Kind::Call || count(id) == 0 || count(id) > 2 || text(id) == "{}") return false;
     const sema::Resolution &r = tree_.resolution(id);
     const TypeId t = TypeTable::id(tree_.node(id).type);
     return r.what == sema::Resolution::Temporary && r.symbol.empty() && t.valid() && plainClass(T(t)) &&
@@ -494,7 +494,13 @@ bool Lowering::constructedTemporary(sema::TypedId id) const {
     std::string symbol;
     TypeId sig;
     bool zero;
-    return tree_.resolution(child(id, 0)).what == sema::Resolution::TypeName && temporaryBuilt_(tree_.node(id).syntax, symbol, sig, zero);
+    if (tree_.resolution(child(id, 0)).what != sema::Resolution::TypeName || !temporaryBuilt_(tree_.node(id).syntax, symbol, sig, zero))
+        return false;
+    // `T{a, b}` reaches its constructor as `T(a, b)` does where every parameter is a scalar: no list becomes a class.
+    if (text(id) == "{}")
+        for (std::size_t i = 1; i < T(sig).params().size(); i++)
+            if (!scalar(*T(sig).params()[i])) return false;
+    return true;
 }
 
 // The recorded constructor called on `at`: zeroed first where `T()` of an implicit one is ([dcl.init]/8), then the
@@ -1578,6 +1584,7 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
     const syntax::Node &s = syn(id);
     const sema::TypedNode &n = tree_.node(id);
     const std::uint32_t k = n.count;
+    if (s.kind == syntax::Kind::Other && text(id) == "{}") outside("a braced list as an argument");
     // What the typer left untyped - a pack's name in a list, a form past its subset - the lowering does not read either.
     if (n.type == nullptr) outside(std::string("a '") + syntax::kindName(s.kind) + "' the typer did not type");
     if (operatorCalls(id)) {
@@ -2904,6 +2911,7 @@ bool Lowering::classThrow(sema::TypedId id, ValueId &object, TypeId &thrown) {
         TypeId built;
         bool zero = false;
         if (!temporaryBuilt_(tree_.node(operand).syntax, symbol, built, zero)) outside("a thrown temporary built by no constructor the parser recorded");
+        if (text(operand) == "{}") outside("a thrown temporary list-initialised");
         from = entryAlloca(thrown, "$tmp");
         construct(from, symbol, built, t, zero, operand, 1);
         if (t.hasDestructor() && landingPads_) guard(from, t, dtor);

@@ -1039,6 +1039,7 @@ ExprPtr Parser::primary(Program *program) {
     const Token &t = peek();
     const std::size_t start = at_, pos = t.pos;
     const unsigned gen = argGen_;
+    const std::size_t mark = syntaxTree_.size();
     // A named cast, typeid or a lambda is a form over what it read, as sizeof is.
     static const struct { const char *word; syntax::Kind kind; } kForms[] = {
         { "static_cast", syntax::Kind::Cast }, { "dynamic_cast", syntax::Kind::Cast },
@@ -1082,9 +1083,15 @@ ExprPtr Parser::primary(Program *program) {
         return note(std::move(r), syntax::Kind::WordLit, first.text, pos);
     std::size_t k = start;
     std::string name;
-    while (k < at_ && (tokens_[k].kind == TokenKind::Ident || tokens_[k].is("::") || tokens_[k].is("~") ||
-                       tokens_[k].is("operator")))
-        name += tokens_[k++].text;
+    while (k < at_) {
+        const Token &w = tokens_[k];
+        if (w.kind == TokenKind::Ident || w.is("::") || w.is("~")) { name += tokens_[k++].text; continue; }
+        if (w.is("operator")) { name += tokens_[k++].text; k = operatorSpelled(k, name); continue; }
+        // A template-id's argument list is part of the name: `Box<int>(n)` and `B::twice<int>(2)` are calls of it.
+        const std::size_t past = w.is("<") && !name.empty() && tokens_[k - 1].kind == TokenKind::Ident ? templateArgsEnd(k) : 0;
+        if (past == 0) break;
+        for (; k < past; k++) name += tokens_[k].text;
+    }
     if (name.empty()) return r;     // a lambda, a cast, a keyword's own form: not recorded yet
     if (k < at_ && tokens_[k].is("(") && (argGen_ != gen || dynamic_cast<const Call *>(r.get()) != nullptr)) {
         std::vector<syntax::NodeId> call(1, syntaxTree_.add(syntax::Kind::Name, name, pos));
@@ -1092,7 +1099,50 @@ ExprPtr Parser::primary(Program *program) {
         if (argGen_ != gen) call.insert(call.end(), callArgs_.begin(), callArgs_.end());
         return note(std::move(r), syntax::Kind::Call, "", tokens_[k].pos, call);
     }
+    // `T{a, b}`: a call `{}` of the class, its parts the list's values - only where no value is itself a braced list.
+    if (k < at_ && tokens_[k].is("{") && temporaryOf(r.get()).what == Resolved::Temporary && flatBraces(k)) {
+        std::vector<syntax::NodeId> call(1, syntaxTree_.add(syntax::Kind::Name, name, pos));
+        noteCallee(call[0], r.get());
+        const std::vector<syntax::NodeId> values = syntaxTree_.adopt(mark, tokens_[k].pos, tokens_[at_ - 1].pos);
+        call.insert(call.end(), values.begin(), values.end());
+        return note(std::move(r), syntax::Kind::Call, "{}", tokens_[k].pos, call);
+    }
     return note(std::move(r), syntax::Kind::Name, name, pos);
+}
+
+// The operator a name spells after `operator`, from token k - `+`, `()`, `[]` - added to `name`; the token after it.
+std::size_t Parser::operatorSpelled(std::size_t k, std::string &name) const {
+    if (k + 1 < at_ && ((tokens_[k].is("(") && tokens_[k + 1].is(")")) || (tokens_[k].is("[") && tokens_[k + 1].is("]")))) {
+        name += tokens_[k].text + tokens_[k + 1].text;
+        return k + 2;
+    }
+    if (k < at_ && tokens_[k].kind == TokenKind::Punct && !tokens_[k].is("(")) name += tokens_[k++].text;
+    return k;
+}
+
+// Whether the braced list whose `{` is token k, read to at_, holds no `{` of its own: its values are one node each.
+bool Parser::flatBraces(std::size_t k) const {
+    if (!tokens_[at_ - 1].is("}")) return false;
+    for (std::size_t i = k + 1; i + 1 < at_; i++)
+        if (tokens_[i].is("{") || tokens_[i].is("...")) return false;
+    return true;
+}
+
+// The token after the `>` closing the argument list whose `<` is token k, read before at_; 0 where none closes there.
+std::size_t Parser::templateArgsEnd(std::size_t k) const {
+    int angles = 0, parens = 0;
+    for (; k < at_; k++) {
+        const Token &w = tokens_[k];
+        if (w.is("(") || w.is("[") || w.is("{")) parens++;
+        else if (w.is(")") || w.is("]") || w.is("}")) { if (--parens < 0) return 0; }
+        else if (parens == 0 && w.is("<")) angles++;
+        else if (parens == 0 && (w.is(">") || w.is(">>"))) {
+            angles -= w.is(">>") ? 2 : 1;
+            if (angles == 0) return k + 1;
+            if (angles < 0) return 0;     // a `>>` split with a list around this one: not this name's alone
+        }
+    }
+    return 0;
 }
 
 ExprPtr Parser::primaryNode(Program *program) {
@@ -3313,8 +3363,15 @@ ExprPtr Parser::unaryNode() {
                                            " functions, and which one this is "
                                            "cannot be told from the use alone");
                         const Signature &f = picked != nullptr ? *picked : lookup_.functions_[(*set)[0]];
+                        const std::size_t namePos = peek().pos;
                         at_ += q + 1;
-                        return memberFunctionAddress(cls, f, key, pos);
+                        ExprPtr made = memberFunctionAddress(cls, f, key, pos);
+                        // A static one's operand is its name, the function it resolved to, as `&f` records a free one.
+                        if (f.isStaticMember && made && made->resolved() != 0) {
+                            unaryOperand_ = syntaxTree_.add(syntax::Kind::Name, key, namePos);
+                            resolutions_[unaryOperand_.v] = resolvedTable_[made->resolved()];
+                        }
+                        return made;
                     }
                     // `&Outer::K` for a static member: the object itself, whose value a plain mention
                     // folds to a constant - [class.static.data]/3 wants its definition for this (1.27,
@@ -3325,13 +3382,18 @@ ExprPtr Parser::unaryNode() {
                                 !isFriendOf(cls))
                                 src_.fail(pos, "'" + cls->tag() + "::" + s->name + "' is " +
                                                (s->access == Access::Private ? "private" : "protected"));
+                            const std::size_t namePos = peek().pos;
                             at_ += q + 1;
                             if (unevaluated_ == 0) usedStaticMembers_.insert(s->symbol);
                             Var *sv = Var::global(cls->tag() + "::" + s->name);
                             sv->setSymbol(s->symbol);
                             ExprPtr object(sv);
                             object->setType(s->type);
-                            object = useReference(std::move(object));
+                            // Its operand is the static member's name, recorded as staticMemberRef records one.
+                            object = note(resolve(useReference(std::move(object)),
+                                                  resolvedAs(Resolved::StaticMember, s->type, s->symbol, -1, 0, cls)),
+                                          syntax::Kind::Name, qualified + "::" + memberName, namePos);
+                            unaryOperand_ = syn(object);
                             const Type *of = object->type();
                             ExprPtr addr(new Unary('&', std::move(object)));
                             addr->setType(types_.pointerTo(of));
