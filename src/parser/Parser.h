@@ -587,9 +587,16 @@ private:
     // chose, keyed "constructor|member|pos" - the constructor's symbol, the entry's position, 0 for one left alone.
     struct MemberBuilt { std::string symbol; const Type *signature; bool defaulted; };
     std::map<std::string, MemberBuilt> memberBuilt_;
+    // The copy constructor a throw chose for its exception object, keyed as a member is under "$throw" (M3b.2).
+    void noteThrowCopy(const Signature *cc, const Type *thrownPtr, std::size_t pos) {
+        const MemberBuilt b = { cc->symbol, types_.functionType(types_.get(Kind::Void), std::vector<const Type *>{ thrownPtr, cc->params[0] }, false), false };
+        const std::string key = currentFunction_ + "|$throw|" + std::to_string(static_cast<std::uint32_t>(pos));
+        const std::map<std::string, MemberBuilt>::iterator had = memberBuilt_.find(key);
+        if (had == memberBuilt_.end()) memberBuilt_[key] = b;
+        else if (had->second.symbol != b.symbol || had->second.signature != b.signature) had->second.symbol.clear();
+    }
     // The vptrs each written constructor and destructor of a class with one stores, by its symbol (M3b.2).
     std::map<std::string, std::vector<sema::VptrStore> > vptrStores_;
-    std::set<std::string> packBodies_;   // the symbols of bodies in which a pack was expanded   // a body's scope: 1 a member, 2 a namespace, 4 a qualified name, 8 a template
     // **What the parser decides of layout as it reads, by node** (M2.11): a `var`'s frame slot, a block's or a `for`'s
     // scope, and the symbol a `function` node was defined as - what the adapter cannot derive from types.
     std::unordered_map<std::uint32_t, Local> declaredLocals_;
@@ -615,6 +622,8 @@ private:
     };
     std::unordered_map<std::uint32_t, TryFacts> tryFacts_;
     std::set<std::string> wrappedBodies_;
+    std::set<std::string> plainFunctionTries_;   // of those, an ordinary function's try block alone (M3b.2)
+    std::map<std::string, std::string> specFilters_;   // an ordinary function's throw(...) filter, `$spec,<types>`
     // The static locals guardOnce builds at run time; the adapter takes only those laid down as data.
     std::set<std::string> guardedStatics_;
     TryFacts pendingTry_;
@@ -643,6 +652,7 @@ private:
     // nothing either way. 0 none, 1 `= e` or `(e)`, 2 a braced list, 3 empty braces - value-initialisation.
     std::unordered_map<std::uint32_t, int> varForms_;
     std::unordered_map<std::uint32_t, int> forParts_;   // a `for`'s parts present: 1 init, 2 condition, 4 step (M3b.2)
+    std::unordered_map<std::uint32_t, std::string> unnamedCaught_;   // `catch (T)` with no name: T's type_info, by `catch` node
     int initFormAhead() const {
         const bool eq = peek().is("=");
         const Token &t = eq ? peekAt(1) : peek();
@@ -755,8 +765,13 @@ private:
         // implicit one, which the SSA lowering's record says (M3b.2).
         const std::uint32_t ctor = both->left().resolved();
         resolutions_[e->syntax().v] = resolvedAs(Resolved::Temporary, e->type(), ctor != 0 ? resolvedTable_[ctor].symbol : std::string());
-        const Comma *zeroed = ctor == 0 ? dynamic_cast<const Comma *>(&both->left()) : nullptr;
-        const std::uint32_t built = zeroed != nullptr ? zeroed->right().resolved() : ctor;
+        // A temporary with a destructor sets its guard after the constructor returns: the constructor is that comma's left.
+        const Expr *call = &both->left();
+        for (std::size_t i = 0; i < pendingTemps_.size(); i++)
+            if (pendingTemps_[i].slot == tmp->offset() && pendingTemps_[i].flag != 0 && dynamic_cast<const Comma *>(call) != nullptr)
+            { call = &static_cast<const Comma *>(call)->left(); break; }
+        const Comma *zeroed = call->resolved() == 0 ? dynamic_cast<const Comma *>(call) : nullptr;
+        const std::uint32_t built = zeroed != nullptr ? zeroed->right().resolved() : call->resolved();
         if (built != 0 && resolvedTable_[built].what == Resolved::Call) {
             const TemporaryBuilt b = { resolvedTable_[built].symbol, resolvedTable_[built].type, zeroed != nullptr };
             temporaryBuilt_[e->syntax().v] = b;

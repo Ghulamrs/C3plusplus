@@ -457,13 +457,21 @@ TypeId Typer::declaredReturn(syntax::NodeId fn) const {
 }
 
 bool Typer::wrappedBody(const std::string &symbol) const { return p_.wrappedBodies_.count(symbol) != 0; }
+bool Typer::plainFunctionTry(const std::string &symbol) const { return p_.plainFunctionTries_.count(symbol) != 0; }
+std::string Typer::specFilter(const std::string &symbol) const {
+    const auto s = p_.specFilters_.find(symbol);
+    return s == p_.specFilters_.end() ? std::string() : s->second;
+}
+std::string Typer::unnamedCaught(syntax::NodeId handler) const {
+    const auto c = p_.unnamedCaught_.find(handler.v);
+    return c == p_.unnamedCaught_.end() ? std::string() : c->second;
+}
 
 int Typer::scopedBody(syntax::NodeId fn) const {
     const std::map<std::uint32_t, int>::const_iterator i = p_.scopedFunctions_.find(fn.v);
     return i != p_.scopedFunctions_.end() ? i->second : 0;
 }
 
-bool Typer::packBody(const std::string &symbol) const { return p_.packBodies_.count(symbol) != 0; }
 
 std::string Typer::typeInfoSymbol(TypeId t) const {
     std::string why;

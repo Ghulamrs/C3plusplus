@@ -835,3 +835,19 @@ changed, ssa.sh **7,759 bodies, 6,144 lowered and verified (79.2%)**, 0 failed; 
 state, fixed in `be61c7d` and taken in a later round. **Found on the way**: `winssa.sh` reads an empty flag as
 `-front=ssa`, so a gate's "default" pass must name `-O0`; and a tree laid over a built one by `tar` keeps the files'
 own times, so the gate touches them before `make`.
+
+**M3b.2, round 2 of 2026-10-27 evening: pack expansions, a thrown class copied, the Itanium exception tail** (three
+Opus 5.5 workers off `0bd1089`, merged as `6f1ee79`). lane-pack (`739d942`): a pack expansion's members carry their
+member in the syntax tree (Tree::markMember), so a body with one is lowered and the Driver's packBody refusal is gone;
+a template's arguments are dropped from the statement round them (Tree::drop); a conditional of one arithmetic type has
+that type; a body that falls off its end returns a zero. lane-cbase (`28f4fbe`): a throw of a class with a copy
+constructor, on both ABIs (Lowering::classThrow) - the exception object built by the copy the parser chose for the throw
+(noteThrowCopy), a temporary operand built and destroyed round it, guarded where the parser made pads, Itanium's storage
+freed by __cxa_free_exception on unwind. lane-ehtail (`a4a5c16`): on Itanium an unnamed handler, an ordinary function's
+try block, its throw(...) list as one filter pad calling __cxa_call_unexpected, and a noexcept function with pads of its
+own. **The merged tree, gated as one:** Linux `make test` exit 0, run.sh **1030 / 0** at -O0, -O2, `-front=ssa` and
+`-front=ssa -O2`, the golden 0 of 2,693 changed (32 added), ssa.sh **7,796 bodies, 6,309 lowered and verified (80.9%)**,
+0 failed, coff 0 differ, c90 447 / 0, exclusions 126 sites 0 / 0, comment cap 0, the memory gate under its baseline;
+Windows **659 same, 0 differ, 340 refused as recorded** at -O0, `-front=ssa` and `-front=ssa -O2`. Before landing, every
+file the round changed (29 of 30; `M3-PLAN.md` itself held round 1's newer text) was checked by md5 to be the same in
+the Linux gate tree as here, since a stale job had shipped round 1's files into it while this gate ran.

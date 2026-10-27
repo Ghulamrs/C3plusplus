@@ -912,6 +912,7 @@ void Parser::templateArguments(const TemplateDecl &decl,
                                std::vector<TemplateArg> *args,
                                Packs *packs) {
     expect("<");
+    const std::size_t argMark = syntaxTree_.size(), argFrom = tokens_[at_ - 1].pos;
     const bool wasInArgs = inTemplateArgs_;
     inTemplateArgs_ = true;
     if (packs != nullptr) packs->assign(decl.params.size(),
@@ -1172,6 +1173,8 @@ void Parser::templateArguments(const TemplateDecl &decl,
                               "call once the pack's arguments are written is not supported yet");
     takeClosingAngle();
     inTemplateArgs_ = wasInArgs;
+    // The arguments are types and folded constants: their syntax is no part of the expression or declaration around them.
+    syntaxTree_.drop(argMark, argFrom, tokens_[at_ - 1].pos);
 }
 
 // The specialization these arguments ask for, made if it is new. **The two ABIs are
@@ -1420,8 +1423,6 @@ void Parser::bindPatternMember(std::size_t from, std::size_t end, std::size_t m,
     tokens_.push_back(stop);
     tmpl_.bindTemplateParameters(bound, types, values, Packs(bound.size()), undo);
     at_ = copy;
-    // The members' syntax shares the pattern's place, so the tree keeps one of them: the body is the parser's (M3b.2).
-    if (!currentFunction_.empty()) packBodies_.insert(currentFunction_);
 }
 
 // `f(g(a)...)`, `std::forward<A>(a)...`, `f(Ns...)`, `f((Ns * 2)...)`: one argument per member.
@@ -1436,8 +1437,10 @@ bool Parser::expandPackPattern(std::vector<ExprPtr> &args) {
             Parser *p; std::vector<Shadow> *u;
             ~Unbind() { p->tmpl_.unbindTemplateParameters(*u); }
         } unbind{ this, &undo };
+        const std::size_t mark = syntaxTree_.size();
         bindPatternMember(from, end, m, &undo);
         args.push_back(assign());
+        syntaxTree_.markMember(mark, m);
         if (peek().kind != TokenKind::End)
             src_.fail(peek().pos, "this pack expansion's pattern is not one expression");
     }
@@ -1457,8 +1460,10 @@ bool Parser::expandPackInitialiser(std::vector<Init> &items) {
             Parser *p; std::vector<Shadow> *u;
             ~Unbind() { p->tmpl_.unbindTemplateParameters(*u); }
         } unbind{ this, &undo };
+        const std::size_t mark = syntaxTree_.size();
         bindPatternMember(from, end, m, &undo);
         items.push_back(parseInitialiser());
+        syntaxTree_.markMember(mark, m);
         if (peek().kind != TokenKind::End)
             src_.fail(peek().pos, "this pack expansion's pattern is not one initialiser");
     }
