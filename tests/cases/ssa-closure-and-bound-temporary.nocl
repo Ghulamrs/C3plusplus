@@ -1,0 +1,1 @@
+the same COMDAT difference lambda-capture-by-value.nocl records: cl inlines the closures away and emits no symbol for their call operators, where cxx1 emits a real function for each. What this case is about is checked by run-cases.cmd on the box against clang's output.

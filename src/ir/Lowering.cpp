@@ -524,6 +524,7 @@ bool Lowering::objectNode(sema::TypedId id) const {
     if (isLvalueNode(id) || plainTemporary(id)) return true;
     const syntax::Kind k = syn(id).kind;
     if (k == syntax::Kind::Paren) return count(id) == 1 && objectNode(child(id, 0));
+    if (k == syntax::Kind::Lambda) return closureNode(id);
     // [expr.ass]/1: an assignment's value is its left object, which a plain class's copy assignment hands back.
     if (k == syntax::Kind::Assign) return text(id) == "=" && tree_.node(id).type != nullptr && plainClass(*tree_.node(id).type);
     if (k != syntax::Kind::Conditional || count(id) != 3) return false;
@@ -538,6 +539,7 @@ Lowering::Val Lowering::object(sema::TypedId id) {
     if (plainTemporary(id)) return temporary(id);
     if (syn(id).kind == syntax::Kind::Paren && count(id) == 1) return object(child(id, 0));
     if (syn(id).kind == syntax::Kind::Assign && objectNode(id)) return assign(id);
+    if (syn(id).kind == syntax::Kind::Lambda && closureNode(id)) return closure(id);
     if (syn(id).kind != syntax::Kind::Conditional || !objectNode(id)) outside("a class value that is not an object");
     const Val c = truth(expr(child(id, 0)));
     const BlockId a = newBlock(), b = newBlock(), merge = newBlock();
@@ -553,6 +555,35 @@ Lowering::Val Lowering::object(sema::TypedId id) {
     br(merge, std::vector<ValueId>(1, result(add(Op::Bitcast, pt, std::vector<ValueId>(1, y.v)))));
     place(merge);
     return Val(param(merge, pt), tid(cls));
+}
+
+// A lambda whose closure is a plain class, its captures the parser recorded: scalar locals, each copied or bound.
+bool Lowering::closureNode(sema::TypedId id) const {
+    sema::ClosureFacts f;
+    return closure_ && closure_(tree_.node(id).syntax, f) && f.closure.valid() && plainClass(T(f.closure));
+}
+
+// [expr.prim.lambda]/2: the closure a temporary of this frame - each by-copy member the local's value, each by-reference
+// one its address ([expr.prim.lambda]/21) - and the slot's address the lambda's value, as a plain temporary's is.
+Lowering::Val Lowering::closure(sema::TypedId id) {
+    sema::ClosureFacts f;
+    closure_(tree_.node(id).syntax, f);
+    const Type &cls = *T(f.closure).unqualified();
+    const ValueId slot = entryAlloca(tid(cls), "$closure");
+    for (const sema::ClosureCapture &c : f.captures) {
+        const std::map<std::uint32_t, std::pair<ValueId, TypeId> >::const_iterator l = locals_.find(c.source.v);
+        if (l == locals_.end() || T(l->second.second).isReference()) outside("a lambda capturing what is not a local of the body");
+        const Type &src = *T(l->second.second).unqualified(), &mt = T(c.type);
+        if (!scalar(src) || src.isX87(target_)) outside("a lambda capturing what is not a scalar");
+        const bool byRef = mt.isReference();
+        if ((byRef ? mt.referent() : &mt)->unqualified() != &src) outside("a lambda's capture of another type");
+        const TypeId held = byRef ? tid(*types_.pointerTo(&src)) : tid(src);
+        const InstId g = add(Op::Gep, tid(*types_.pointerTo(&T(held))), std::vector<ValueId>(1, slot));
+        at(g).k = c.offset;
+        const ValueId at0 = result(add(Op::Bitcast, tid(*types_.pointerTo(&src)), std::vector<ValueId>(1, l->second.first)));
+        store(result(g), byRef ? at0 : load(at0, held));
+    }
+    return Val(slot, tid(cls));
 }
 
 // What a reference may refer to here: a scalar, or a complete class, which a reference only ever names by its address.
@@ -2183,6 +2214,14 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
                 const ValueId temp = entryAlloca(tid(*ref.unqualified()), "$bound");
                 store(temp, exprTo(an, tid(*ref.unqualified())).v);
                 ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(&ref)), std::vector<ValueId>(1, temp))));
+                continue;
+            }
+            // A class prvalue bound to one - a temporary or a closure in a slot of the frame, alive to the call's end;
+            // neither has a destructor for the full expression's end to run.
+            if (!isLvalueNode(an) && (ref.isConst() || p.isRValueReference()) && (temporaryNode(an) || closureNode(an))) {
+                const Val a = closureNode(an) ? closure(an) : temporary(an);
+                if (T(a.type).unqualified() != ref.unqualified()) outside("a reference parameter bound to a temporary of another type");
+                ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(&ref)), std::vector<ValueId>(1, a.v))));
                 continue;
             }
             if (!isLvalueNode(an)) outside("a reference parameter bound to what is not an object");

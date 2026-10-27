@@ -52,6 +52,11 @@ struct Resolution : ResolutionKind {
     Resolution() : what(None), serial(-1), value(0), isConst(false), isThreadLocal(false), hasThis(false), indirect(false) {}
 };
 
+// A lambda whose captures are scalar locals (M3b.2): its closure, and each capture's member - its offset and type, a
+// reference for one by reference - and the `var` of the local it copies or binds, found in the scopes at the lambda.
+struct ClosureCapture { int offset; TypeId type; syntax::NodeId source; ClosureCapture() : offset(0) {} };
+struct ClosureFacts { TypeId closure; std::vector<ClosureCapture> captures; };
+
 // A `new` or `delete` as the parser built it (M3b.2): the global allocation function it called, the type made or freed,
 // the initialiser - 0 none, 1 value-initialised, 2 one value - and `why` where the SSA lowering may not take it.
 struct NewFacts {
@@ -160,6 +165,7 @@ public:
     bool localBuilt(syntax::NodeId var, std::string &symbol, TypeId &signature, bool &defaulted, bool &zeroed) const;
     // The constructor a class temporary `T(...)` at node `id` was built by, and whether `T()` zeroed the object first.
     bool temporaryBuilt(syntax::NodeId id, std::string &symbol, TypeId &signature, bool &zeroFirst) const;
+    bool closureFacts(syntax::NodeId id, ClosureFacts &out) const;   // a lambda's, where the parser kept them and every source was found
     // Whether the function of this symbol is a template specialization (Signature::fromTemplate): its body is a replay.
     bool fromTemplate(const std::string &symbol) const;
     // The census's counts as the report spells them, "functions=N bodies=K synthesised=M", and the kinds behind M.
@@ -176,6 +182,7 @@ private:
     const Type *named(syntax::NodeId id, syntax::NodeId *decl);
     const Type *resolvedType(syntax::NodeId id, syntax::Kind kind) const;
     const Type *recordedValue(syntax::NodeId id);
+    void closureSources(syntax::NodeId id);
     int recorded_ = 0;      // nodes typed from a Value record, the parser's own answer: not independent agreement
     // Where a node's type came from, if not the typer's own rule: 'e' an entity's record, 'v' a Value record (C3).
     std::unordered_map<std::uint32_t, char> source_;
@@ -183,6 +190,7 @@ private:
     Parser &p_;
     TypedTree tree_;
     std::vector<std::unordered_map<std::string, Declared> > scopes_;
+    std::unordered_map<std::uint32_t, std::vector<syntax::NodeId> > closureSources_;   // a lambda's capture sources, by node
 };
 
 }   // namespace sema
