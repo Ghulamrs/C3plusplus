@@ -811,3 +811,24 @@ at a later statement (`delete-null`'s `new` of a class with a destructor, the ca
 **7,726 source bodies, 6,025 lowered, 0 failed**, coff 0 differ, c90 447 / 0, exclusions 126 sites 0 / 0, comment cap
 0, the memory gate passing - then run.sh at -O2 and under `-front=ssa` at -O0 and -O2, each **1025 / 0**. Windows under
 `-front=ssa` and under `-front=ssa -O2` **654 same, 0 differ, 340 refused as recorded**.
+
+**M3b.2, four small groups: a static member read, a reference bound across types, a range-based `for` over an array,
+and `T()`** (2026-10-27, Opus 5.5 worker on `m3b2-misc`, lane `lane-misc`, from `0bd1089`). A static data member named
+in a body is the parser's record: one folded in its class (`static const int k = 5;`, `std::string::npos`) is recorded
+with serial 1 and lowered as its value, any other is the object its symbol names, read or written like a global, a
+thread_local one recorded as such and refused; a static member function named as a value is its address, as every
+`Resolved::Function` is a plain pointer. A reference parameter bound to an lvalue of another type is
+[dcl.init.ref]/5's: a scalar converted into a temporary of the frame for a const or rvalue reference
+(`boundConverted`), a class's unambiguous non-virtual base subobject by its offset (`baseOfObject`). A range-based
+`for` over an array object of scalars (`rangeForStmt`) is the parser's rewrite with a cursor of the frame - read once,
+walked to one past the last element, the variable taking or binding each; a class range stays outside. `T()` of a
+scalar is recorded as folded to 0 by `functionalCast`, which tells it from a cast whose operand went unnoted, and is
+lowered as zero, null or `false` (`valueInitialised`). **Cases**: `ssa-static-member-read`, `ssa-reference-converted`,
+`ssa-range-for-array` (clang's output). **Measured**: Windows `-check=ssa` **8,079 bodies, 6,574 lowered, 0 failed**
+against `0bd1089`'s 8,062 / 6,453 (the 17 more bodies the new cases'): gone are "a cast not recorded" (22), "a member
+named as a value" (14), every "the name '...', a static member" (77 over 44 names) and "a range-based for" (10, now 5
+over what is not an array and 4 of other parts); "a reference parameter bound to another type" 18 to 11. Windows, the
+76 cases whose functions' reasons moved, under `-front=ssa` and `-front=ssa -O2`: **73 same, 0 differ**. **Left**: a
+static local built at run time, an `initializer_list<int>` parameter, a member through a closure's captured `this`,
+and "a mem-initialiser outside a constructor" - every one a constructor of a class template, not recognised as a
+constructor, the cause not yet measured.

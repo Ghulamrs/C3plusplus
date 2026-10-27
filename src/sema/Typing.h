@@ -43,7 +43,7 @@ struct Resolution : ResolutionKind {
     TypeId type;            // as declared: a reference keeps its `&`, a function is its function type
     TypeId owner;           // a member's class, a member function's
     std::string symbol;     // a global's, a function's or a static member's linkage name; a local's static name
-    int serial;             // a local's serial; a member's offset
+    int serial;             // a local's serial; a member's offset; 1 for a folded static member
     long long value;        // an enumerator's, a folded static member's
     bool isConst, isThreadLocal;    // a global's
     bool hasThis;           // a call's: its function type's first parameter is the object's address

@@ -1157,7 +1157,7 @@ Lowering::Val Lowering::condition(sema::TypedId id) {
 void Lowering::forStmt(sema::TypedId id) {
     const std::uint32_t n = count(id);
     const int parts = tree_.node(id).forParts;
-    if (!(parts & 8)) outside("a range-based for");
+    if (!(parts & 8)) { rangeForStmt(id); return; }
     const std::uint32_t want = 1 + ((parts & 1) ? 1 : 0) + ((parts & 2) ? 1 : 0) + ((parts & 4) ? 1 : 0);
     if (n != want) outside("a for whose parts the record and the syntax disagree about");
     std::uint32_t at = 0;
@@ -1185,6 +1185,60 @@ void Lowering::forStmt(sema::TypedId id) {
     br(step);
     place(step);
     if (stepNode.valid()) expr(stepNode);
+    br(cond);
+    place(exit);
+    closeScope(scope);
+}
+
+// [stmt.ranged]/1 over an array, the parser's rewrite: `__b` walks the elements to one past the last, the range read
+// once, and the variable takes `*__b` - or binds it - each turn. A class's range, or one not an object, stays outside.
+void Lowering::rangeForStmt(sema::TypedId id) {
+    if (count(id) != 3 || syn(child(id, 1)).kind != syntax::Kind::Var) outside("a range-based for of other parts");
+    const sema::TypedId range = child(id, 0), var = child(id, 1);
+    const TypeId rid = TypeTable::id(tree_.node(range).type), vid = TypeTable::id(tree_.node(var).type);
+    if (!rid.valid() || !T(rid).isArray() || T(rid).length() <= 0) outside("a range-based for over what is not an array");
+    if (!isLvalueNode(range)) outside("a range-based for over what is not an object");
+    const Type &rt = T(rid), &elem = *rt.pointee();
+    if (!vid.valid() || !scalar(elem) || elem.isX87(target_)) outside("a range-based for over an array of '" + elem.describe() + "'");
+    const Type &vt = T(vid);
+    TypeId slotType;
+    if (vt.isReference()) {
+        if (vt.referent()->unqualified() != elem.unqualified() || (elem.isConst() && !vt.referent()->isConst()))
+            outside("a range-based for's reference of another type");
+        slotType = tid(*types_.pointerTo(vt.referent()));
+    } else {
+        if (!scalar(vt) || vt.isX87(target_)) outside("a range-based for's variable of type '" + vt.describe() + "'");
+        slotType = vid;
+    }
+    const std::size_t scope = live_.size();
+    const Val first = decay(lvalue(range));
+    const InstId e = add(Op::Gep, first.type, std::vector<ValueId>(1, first.v));
+    at(e).k = rt.length() * elem.size(target_);
+    const ValueId past = result(e), cursor = entryAlloca(first.type, "$range");
+    store(cursor, first.v);
+    const ValueId slot = entryAlloca(slotType, text(var));
+    locals_[tree_.node(var).syntax.v] = std::make_pair(slot, vid);
+    const BlockId cond = newBlock(), body = newBlock(), step = newBlock(), exit = newBlock();
+    br(cond);
+    place(cond);
+    std::vector<ValueId> ops;
+    ops.push_back(load(cursor, first.type));
+    ops.push_back(past);
+    const InstId c = add(Op::ICmp, tid(*types_.get(Kind::Bool)), ops);
+    at(c).cc = Cmp::Ne;
+    condbr(result(c), body, exit);
+    place(body);
+    const ValueId here = load(cursor, first.type);
+    if (vt.isReference()) store(slot, result(add(Op::Bitcast, slotType, std::vector<ValueId>(1, here))));
+    else store(slot, convert(readOf(here, tid(elem)), slotType).v);
+    loops_.push_back(Loop{ exit, step, handlerDepth_, live_.size() });
+    scopedStmt(child(id, 2));
+    loops_.pop_back();
+    br(step);
+    place(step);
+    const InstId next = add(Op::Gep, first.type, std::vector<ValueId>(1, load(cursor, first.type)));
+    at(next).k = elem.size(target_);
+    store(cursor, result(next));
     br(cond);
     place(exit);
     closeScope(scope);
@@ -1495,6 +1549,7 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
         break;
     }
     case syntax::Kind::Cast: {
+        if (k == 0) { e = valueInitialised(id); break; }
         if (k != 1 || !n.castType.valid()) outside("a cast not recorded");
         const Type &to = T(n.castType);
         const Type &named = to.isReference() ? *to.referent() : to;
@@ -1572,6 +1627,17 @@ Lowering::Val Lowering::literal(sema::TypedId id) {
     return Val(result(c), t);
 }
 
+// [expr.type.conv]/2: `T()` of a scalar is value-initialised - zero, a null pointer, `false`.
+Lowering::Val Lowering::valueInitialised(sema::TypedId id) {
+    const TypeId id0 = TypeTable::id(tree_.node(id).type);
+    if (!tree_.node(id).folded.has) outside("a cast not recorded");
+    if (!id0.valid() || !scalar(T(id0)) || T(id0).isX87(target_)) outside("a value-initialised cast to what is not a scalar");
+    const TypeId ut = tid(*T(id0).unqualified());
+    if (T(ut).isPointer()) return Val(result(add(Op::Null, ut, std::vector<ValueId>())), ut);
+    if (!T(ut).isFloating()) return Val(iconst(ut, 0), ut);
+    return Val(result(add(Op::FConst, ut, std::vector<ValueId>())), ut);
+}
+
 // A name's address: a local's alloca, a global's symbol; a reference holds the address it binds.
 Lowering::Val Lowering::nameAddress(sema::TypedId id) {
     const sema::TypedNode &n = tree_.node(id);
@@ -1591,7 +1657,8 @@ Lowering::Val Lowering::nameAddress(sema::TypedId id) {
     }
     const sema::Resolution &r = tree_.resolution(id);
     if (r.what == sema::Resolution::Member) return memberOfThis(id);
-    if (r.what != sema::Resolution::Global) outside("the name '" + text(id) + "' is no object");
+    if (r.what == sema::Resolution::StaticMember && r.serial == 1) outside("a folded static member, which has no storage");
+    if (r.what != sema::Resolution::Global && r.what != sema::Resolution::StaticMember) outside("the name '" + text(id) + "' is no object");
     if (r.isThreadLocal) outside("a thread_local");
     if (!r.type.valid()) outside("a global not typed");
     const Type &t = T(r.type);
@@ -1612,11 +1679,17 @@ Lowering::Val Lowering::name(sema::TypedId id) {
             return Val(iconst(r.type, r.value), r.type);
         }
         if (r.what == sema::Resolution::Function) {
-            if (r.owner.valid() || !r.type.valid() || !T(r.type).isFunction()) outside("a member named as a value");
+            if (!r.type.valid() || !T(r.type).isFunction()) outside("a function named as a value whose type was not recorded");
             const TypeId pt = tid(*types_.pointerTo(&T(r.type)));
             return Val(addrOf(r.symbol, pt), pt);
         }
-        if (r.what != sema::Resolution::Global && r.what != sema::Resolution::Member)
+        // A static member folded in its class is its value; any other is the one object its symbol names.
+        if (r.what == sema::Resolution::StaticMember && r.serial == 1) {
+            if (!r.type.valid() || !scalarArithmetic(T(r.type)) || !T(r.type).isInteger()) outside("a folded static member of no integer type");
+            const TypeId ut = tid(*T(r.type).unqualified());
+            return Val(iconst(ut, r.value), ut);
+        }
+        if (r.what != sema::Resolution::Global && r.what != sema::Resolution::Member && r.what != sema::Resolution::StaticMember)
             outside("the name '" + text(id) + "', " + (r.what == sema::Resolution::StaticMember ? "a static member"
                                                         : r.what == sema::Resolution::This ? "this" : "of another kind"));
     }
@@ -2306,7 +2379,14 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
                 continue;
             }
             if (!isLvalueNode(an)) outside("a reference parameter bound to what is not an object");
-            const Val a = lvalue(an);
+            if (scalar(ref) && !ref.isX87(target_) && (ref.isConst() || p.isRValueReference()) && tree_.node(an).type != nullptr &&
+                tree_.node(an).type->unqualified() != ref.unqualified()) {
+                ops.push_back(boundConverted(an, p));
+                continue;
+            }
+            Val a = lvalue(an);
+            if (T(a.type).isStructOrUnion() && ref.isStructOrUnion() && T(a.type).unqualified() != ref.unqualified())
+                a = baseOfObject(a, p);
             if (T(a.type).unqualified() != p.referent()->unqualified()) outside("a reference parameter bound to another type");
             if (T(a.type).isConst() && !p.referent()->isConst()) outside("a reference that can write bound to a const");
             if (!referable(T(a.type))) outside("a reference parameter to '" + p.referent()->describe() + "'");
@@ -2316,6 +2396,30 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
         if (!scalar(p) || p.isX87(target_)) outside("a parameter of type '" + p.describe() + "'");
         ops.push_back(exprTo(an, tid(p)).v);
     }
+}
+
+// [dcl.init.ref]/5: a scalar lvalue of another type bound to a const or an rvalue reference - converted into a
+// temporary of the frame, which the reference binds, alive until the call is done.
+ValueId Lowering::boundConverted(sema::TypedId an, const Type &p) {
+    const Type &ref = *p.referent();
+    const ValueId temp = entryAlloca(tid(*ref.unqualified()), "$bound");
+    store(temp, exprTo(an, tid(*ref.unqualified())).v);
+    return result(add(Op::Bitcast, tid(*types_.pointerTo(&ref)), std::vector<ValueId>(1, temp)));
+}
+
+// [dcl.init.ref]/5: an lvalue of a class bound to a reference to its unambiguous non-virtual base - the base
+// subobject, at its offset; an object is never null, so there is nothing to test.
+Lowering::Val Lowering::baseOfObject(Val a, const Type &p) {
+    const Type &base = *p.referent();
+    int found = 0, offset = 0;
+    basePaths(*T(a.type).unqualified(), *base.unqualified(), 0, found, offset);
+    if (found != 1) outside("a reference parameter bound to another type");
+    const Type &bt = T(a.type).isConst() ? *types_.withConst(base.unqualified()) : *base.unqualified();
+    const TypeId pt = tid(*types_.pointerTo(&bt));
+    if (offset == 0) return Val(result(add(Op::Bitcast, pt, std::vector<ValueId>(1, a.v))), tid(bt));
+    const InstId g = add(Op::Gep, pt, std::vector<ValueId>(1, a.v));
+    at(g).k = offset;
+    return Val(result(g), tid(bt));
 }
 
 // A call's arguments from child `from` of node `id` on.

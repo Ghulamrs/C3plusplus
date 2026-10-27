@@ -534,7 +534,7 @@ private:
         const Type *type = nullptr;      // as declared: a reference keeps its `&`, a function is its function type
         const Type *owner = nullptr;     // a member's class, a member function's
         std::string symbol;              // a global's, a function's or a static member's linkage name; a local's static name
-        int serial = -1;                 // a local's serial; a member's offset
+        int serial = -1;                 // a local's serial; a member's offset; 1 for a folded static member
         long long value = 0;             // an enumerator's, a folded static member's
         bool isConst = false, isThreadLocal = false;    // a global's
         bool hasThis = false;                            // a call's: its function type's first parameter is the object's address
