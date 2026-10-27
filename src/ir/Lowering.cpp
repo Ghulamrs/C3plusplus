@@ -1307,6 +1307,7 @@ void Lowering::returnDestroyed(sema::TypedId value) {
         if (live_[k].slot.v != kept.v) destroy(live_[k]);
     const InstId c = add(Op::Bitcast, tid(*types_.pointerTo(&rt)), std::vector<ValueId>(1, at0));
     br(returnBlock_, std::vector<ValueId>(1, result(c)));
+}
 
 // A class with a copy or move constructor of its own: the parser builds the caller's object through the hidden
 // pointer (buildReturned), and the lowering does what it recorded for each `return`.
