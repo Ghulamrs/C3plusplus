@@ -2852,6 +2852,11 @@ StmtPtr Parser::constructMember(const std::string &cls, const Type *type,
         classes_.copyConstructorOf(mc) == nullptr && classes_.moveConstructorOf(mc) == nullptr) {
         const Type *at = args[0]->type();
         if (at != nullptr && memberClass(at) == mc) {
+            // Recorded as `$bytes`, the member's type for its signature: the lowering copies the same way (M3b.2).
+            if (!implicit) {
+                const MemberBuilt b = { "$bytes", m.type, false };
+                memberBuilt_[currentFunction_ + "|" + m.name + "|" + std::to_string(static_cast<std::uint32_t>(pos))] = b;
+            }
             ExprPtr dst = thisMember(thisSlot, type, m);
             dst->setType(m.type);
             ExprPtr store(new Assign(std::move(dst), std::move(args[0])));

@@ -583,6 +583,7 @@ private:
     std::unordered_map<std::uint32_t, std::pair<long long, const Type *> > keywordValues_;
     // The `function` nodes whose names outside them are not the file's - a member's, a namespace's, a template's.
     std::map<std::uint32_t, int> scopedFunctions_;
+    std::set<std::uint32_t> constructorNodes_;    // the `function` nodes that are constructors, as topLevel decided (M3b.2)
     // **What builds each member a written constructor names or leaves** (M3b.2): the constructor overload resolution
     // chose, keyed "constructor|member|pos" - the constructor's symbol, the entry's position, 0 for one left alone.
     struct MemberBuilt { std::string symbol; const Type *signature; bool defaulted; };

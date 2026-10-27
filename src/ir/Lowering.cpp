@@ -53,12 +53,18 @@ bool Lowering::buildableLayout(const Type &cls, bool vptr) const {
             return false;
     for (const Member &m : cls.members()) {
         const Type &t = *m.type->unqualified();
-        if (m.width != 0 || m.anonUnion != nullptr || t.isX87(target_)) return false;
-        if (m.type->isReference() ? !referable(*m.type->referent())
-                                  : !scalar(t) && !plainClass(t) && !builtMember(t) && !(t.isArray() && t.pointee()->isComplete() && scalar(*t.pointee())))
+        if (m.width != 0 || t.isX87(target_)) return false;
+        if (m.type->isReference() ? !referable(*m.type->referent()) : !scalar(t) && !plainClass(t) && !builtMember(t) && !scalarArray(t))
             return false;
     }
     return true;
+}
+
+// An array, of any depth, of complete scalar elements: its bytes, built by nothing.
+bool Lowering::scalarArray(const Type &t) {
+    if (!t.isArray() || !t.pointee()->isComplete()) return false;
+    const Type &e = *t.pointee()->unqualified();
+    return scalar(e) || scalarArray(e);
 }
 
 // A call of a function the parser chose by symbol, its type the record's: a constructor or a destructor of a member.
@@ -87,6 +93,14 @@ void Lowering::buildMember(ValueId at, const Member &m, sema::TypedId entry) {
         outside("a member built by no constructor the parser recorded");
     }
     if (defaulted) outside("a member built with default arguments");
+    // A member the parser copied as bytes - one object of its type, the class having no copy constructor of its own.
+    if (symbol == "$bytes") {
+        if (!entry.valid() || count(entry) != 1 || !objectNode(child(entry, 0))) outside("a member copied from what is not an object");
+        const Val src = object(child(entry, 0));
+        if (T(src.type).unqualified() != &mt || T(sig).unqualified() != &mt) outside("a member copied from another type");
+        copyObject(at, src.v, mt);
+        return;
+    }
     const Type &ft = T(sig);
     if (ft.params().empty() || ft.params()[0]->pointee()->unqualified() != &mt) outside("a member's constructor of another class");
     std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, at))));
@@ -786,7 +800,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         bool isCtor = false, destroys = false;
         if (facts.hasThis && facts.thisType.valid() && T(facts.thisType).isPointer()) {
             const Type &cls = *T(facts.thisType).pointee()->unqualified();
-            isCtor = text(fnNode) == cls.localName();
+            isCtor = facts.isConstructor;
             const bool isDtor = !text(fnNode).empty() && text(fnNode)[0] == '~';
             if ((isCtor || isDtor) && !simpleLayout(cls)) {
                 if (!buildableLayout(cls, true)) outside(isCtor ? "a constructor of a class with bases, a vptr or members to build"

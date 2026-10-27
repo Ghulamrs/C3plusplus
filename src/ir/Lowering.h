@@ -22,12 +22,13 @@ namespace ir {
 struct FunctionFacts {
     std::string symbol, displayName;
     bool isStatic, isInline, variadic, hasThis, sret, landingPads, wrappedBody, noexcept_;
+    bool isConstructor;     // the parser read the definition as its class's constructor
     TypeId returns;
     TypeId thisType;        // a member function's `this`, the first of the parser's parameter slots
     std::size_t pos, paramCount;
     std::string specFilter;     // an ordinary function's throw(...) list as the parser's filter row names it: `$spec,<types>`
     FunctionFacts() : isStatic(false), isInline(false), variadic(false), hasThis(false), sret(false), landingPads(false),
-                      wrappedBody(false), noexcept_(false), pos(0), paramCount(0) {}
+                      wrappedBody(false), noexcept_(false), isConstructor(false), pos(0), paramCount(0) {}
 };
 
 class Lowering {
@@ -165,6 +166,7 @@ private:
     bool simpleLayout(const Type &cls) const;
     bool builtMember(const Type &t) const;
     bool buildableLayout(const Type &cls, bool vptr = false) const;
+    static bool scalarArray(const Type &t);
     void buildMember(ValueId at, const Member &m, sema::TypedId entry);
     void destroyMembers(const Type &cls);
     int baseNamed(const Type &cls, const std::string &name) const;
