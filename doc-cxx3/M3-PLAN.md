@@ -686,3 +686,44 @@ a shape older than this round; `byReference` and `throughGap` in the case take t
 tree keeps no `var` for the second handler of the case's `nestedInBody` (`catch (double unused)`), `(catch (block ...))`
 in `-dump=syntax`, where the same function alone keeps it - a recording fault of the parser's `noteCaught`, not probed
 further; the lowering refuses the handler by name ("a handler whose caught object the syntax tree does not hold").
+
+**M3b.2, the growths of 2026-10-26 evening to 10-27 morning** (Opus 5.5 with four Opus 5.5 workers and one Fable 5.1,
+branch `m3b2`, `b4e8778` to `f05280c`, local). `tests/ssa.sh` on the Linux box: **3,490 of 7,445 source bodies lowered
+and verified (47%) at `b22b257`, **5,640 of 7,626 (74.0%)** at `f05280c`**, 0 failed throughout; run.sh under `-front=ssa` 0 failed at
+-O0 and at -O2 at every commit; the Windows box's cases under `-front=ssa` 0 differ at -O0 and at -O2 at every merge.
+Each growth is one commit with its own case, its `.expected` clang's; in order:
+
+- **Constructors and destructors of a simple class** (`b4e8778`): a constructor's mem-initialisers are `meminit` nodes
+  in the syntax tree now, each member named set from its list, `m()` zeroed, a plain class copied; a member's own
+  initialiser stays outside (`Typer::defaultInit`). With it two Windows faults the box found: a class passed by value
+  is copied into a frame slot the parser gives each call on the Microsoft ABI (`argSlots`), which the selector had
+  left at 0 - past the frame, over the return address; and a local of 16 bytes or more, aligned at 16 there, was
+  taken for `alignas` (312 bodies).
+- **A plain class returned by value, and a call returning one** (`913aa70`, `aaa67eb`): the address is what is
+  carried, as a reference return's; the call's result goes into an alloca the call names (`CallInfo::resultAlloca`),
+  which the walker's own call fills by every ABI rule.
+- **Fable's try/catch on Itanium** (merged `858fbc1`), with the parameter scan stepping over a declarator's constants.
+- **Casts to a reference** - `std::move`'s `static_cast<T &&>`, noted as an xvalue of T - and **pseudo-destructors**
+  (`554b7c6`); **a `for` missing any part** (the parser records which, `forParts_`) and **a static local with a
+  constant initialiser** as its global, a thread_local asked of the program's own global (`72161e7`).
+- **Pointer conversions to a non-virtual base** and back down by `static_cast` (`11bd1a1`, `ad87c35`), a null kept
+  null; **a base's member function called through a derived object** (`1e652e7`); **`throw` and rethrow on
+  Itanium** (`112194d`); **a declaration as an `if` or `while` condition** (`9ed105f`).
+- **Placement new** (`8b51170`), **a value bound to a `const T &` or `T &&` parameter** (`079457f`), **a function
+  object called by its name** (`22b55ac`), **an overloaded operator lowered as the call it is** (`658cef1`, +127
+  bodies: a member operator's left operand its object, postfix ++ given its 0), **a class's own destructor called by
+  name** (`fb915fa`).
+- **Workers, each merged after a gate of the merged tree on both boxes**: `new`/`delete` of a scalar or plain class
+  (`1555402`); members of class type built and destroyed by the constructor the parser recorded (`bbf710b`); plain
+  class temporaries and class values copied from any source (`a042599`); non-virtual bases (`5952ae3`); locals whose
+  class has a destructor, destroyed on every way out and on unwinding, Itanium (`35b3f73`); Fable's `new T(args)` of a
+  class with constructors and constructor-built temporaries (`f05280c`).
+
+Also measured in the round: the Windows self-host (`self-host.cmd`, the project's masm and LINK) **84 of 84 at -O0
+and at -O2**; the MASM spelling under `-front=ssa` 631 same, 0 differ. **Found and not mended**, each in tests/open:
+a second base's member function called unqualified (`second-base-member-unqualified`), `P(make(8));` read as a
+declaration (`functional-cast-statement-of-call`), a class object declared as an `if`'s bare body
+(`class-declared-as-if-body`); and `currentFunction_` is stale while a member template's specialization is defined,
+which is why such constructors stay outside. **What is left**, largest first on the latest lists: exceptions on the
+Microsoft ABI (about 700 bodies, Windows only - funclets from the IR), constructors and destructors of a class with a
+vptr or a virtual base, a class local initialised from what is not yet an object, a body with a pack expansion.
