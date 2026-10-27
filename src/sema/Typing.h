@@ -56,7 +56,7 @@ struct Resolution : ResolutionKind {
 // A lambda whose captures are scalar locals (M3b.2): its closure, and each capture's member - its offset and type, a
 // reference for one by reference - and the `var` of the local it copies or binds, found in the scopes at the lambda.
 struct ClosureCapture { int offset; TypeId type; syntax::NodeId source; ClosureCapture() : offset(0) {} };
-struct ClosureFacts { TypeId closure; std::vector<ClosureCapture> captures; };
+struct ClosureFacts { TypeId closure; std::vector<ClosureCapture> captures; int thisOffset; TypeId thisType; ClosureFacts() : thisOffset(-1) {} };
 
 // A `new` or `delete` as the parser built it (M3b.2): the global allocation function it called, the type made or freed,
 // the initialiser - 0 none, 1 value-initialised, 2 one value - and `why` where the SSA lowering may not take it.

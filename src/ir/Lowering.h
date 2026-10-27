@@ -126,6 +126,7 @@ private:
     Val expr(sema::TypedId id);
     Val lvalue(sema::TypedId id);
     bool isLvalueNode(sema::TypedId id) const;
+    bool referenceCast(sema::TypedId id) const;
     Val name(sema::TypedId id);
     Val nameAddress(sema::TypedId id);
     Val member(sema::TypedId id);
