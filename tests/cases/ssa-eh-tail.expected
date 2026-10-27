@@ -1,0 +1,15 @@
+| unnamed(0)=1
+| unnamed(1)=10
+| unnamed(2)=20
+| unnamed(3)=30
+| unnamed(4)=40
+nested(0)=0
+nested(1)=1
+nested(4)=104
++R0 -R0 | tried(0) seen=1
++R1 -R1 | tried(1) seen=17
++R2 -R2 | tried(2) seen=50
+counted 1 2
++R20 -R20 | specified(0)=0
++R21 -R21 | specified(1) threw 7
++R5 +R10 -R10 -R5 | quiet=20

@@ -1899,6 +1899,10 @@ void Parser::topLevel(Program &program) {
                                         variadic, d.pos).symbol;
     // A body the parser wrapped in a `try` of its own - a throw(...) list, a function try block - the adapter leaves.
     if (specFilter || ctorTry || functionTry || noexceptWrapped) wrappedBodies_.insert(definedSymbol);
+    // An ordinary function's try block and nothing else: its body is that `try`, as the syntax tree holds it (M3b.2).
+    if (functionTry && !specFilter && !noexceptWrapped) plainFunctionTries_.insert(definedSymbol);
+    // A throw(...) list's filter over an ordinary function's body: the list as its row names it (M3b.2).
+    if (specFilter && !specialHandsOver && !noexceptWrapped) specFilters_[definedSymbol] = spec;
     if (!entryGuards.empty()) functionGuards_[definedSymbol] = entryGuards;
 
     // Recorded before `body` is moved into the Function, where what the pointer names lives on; a

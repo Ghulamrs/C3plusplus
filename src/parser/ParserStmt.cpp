@@ -1967,7 +1967,8 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
         // this point would carry it too.
         alive_.resize(aliveBeforeCaught);
         leaveScope();
-        noteParts(syntax::Kind::Catch, caught == nullptr ? "..." : "", cpos, handlerMark, cpos);
+        const syntax::NodeId catchNode = noteParts(syntax::Kind::Catch, caught == nullptr ? "..." : "", cpos, handlerMark, cpos);
+        if (caught != nullptr && caughtName.empty()) unnamedCaught_[catchNode.v] = h.type;
         TryHandlerFacts hf;
         hf.scope = scope;
         hf.endLabel = endCatchLabel;
