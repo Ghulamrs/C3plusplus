@@ -866,3 +866,38 @@ name. **The merged tree, gated as one:** Linux `make test` exit 0, run.sh **1031
 `-front=ssa -O2`, the golden 0 of 2,693 changed (36 added), ssa.sh **7,811 bodies, 6,323 lowered and verified
 (80.9%)**, 0 failed, coff 0 differ, c90 447 / 0, exclusions 126 sites 0 / 0, comment cap 0, the memory gate under its
 baseline; Windows **660 same, 0 differ, 340 refused as recorded** at -O0, `-front=ssa` and `-front=ssa -O2`.
+
+**M3b.2, four small groups: a static member read, a reference bound across types, a range-based `for` over an array,
+and `T()`** (2026-10-27, Opus 5.5 worker on `m3b2-misc`, lane `lane-misc`, from `0bd1089`). A static data member named
+in a body is the parser's record: one folded in its class (`static const int k = 5;`, `std::string::npos`) is recorded
+with serial 1 and lowered as its value, any other is the object its symbol names, read or written like a global, a
+thread_local one recorded as such and refused; a static member function named as a value is its address, as every
+`Resolved::Function` is a plain pointer. A reference parameter bound to an lvalue of another type is
+[dcl.init.ref]/5's: a scalar converted into a temporary of the frame for a const or rvalue reference
+(`boundConverted`), a class's unambiguous non-virtual base subobject by its offset (`baseOfObject`). A range-based
+`for` over an array object of scalars (`rangeForStmt`) is the parser's rewrite with a cursor of the frame - read once,
+walked to one past the last element, the variable taking or binding each; a class range stays outside. `T()` of a
+scalar is recorded as folded to 0 by `functionalCast`, which tells it from a cast whose operand went unnoted, and is
+lowered as zero, null or `false` (`valueInitialised`). **Cases**: `ssa-static-member-read`, `ssa-reference-converted`,
+`ssa-range-for-array` (clang's output). **Measured**: Windows `-check=ssa` **8,079 bodies, 6,574 lowered, 0 failed**
+against `0bd1089`'s 8,062 / 6,453 (the 17 more bodies the new cases'): gone are "a cast not recorded" (22), "a member
+named as a value" (14), every "the name '...', a static member" (77 over 44 names) and "a range-based for" (10, now 5
+over what is not an array and 4 of other parts); "a reference parameter bound to another type" 18 to 11. Windows, the
+76 cases whose functions' reasons moved, under `-front=ssa` and `-front=ssa -O2`: **73 same, 0 differ**. **Left**: a
+static local built at run time, an `initializer_list<int>` parameter, a member through a closure's captured `this`,
+and "a mem-initialiser outside a constructor" - every one a constructor of a class template, not recognised as a
+constructor, the cause not yet measured.
+
+**M3b.2, round 4 of 2026-10-27 evening: calls returning a constructed class, four small groups, and an invoke's copy
+slots** (two Opus 5.5 lanes off round 3, lane-ret2 `4eb1978`/`77f06e5` and lane-misc `001e32f`, merged as `837c299`,
+with lane-r4fix's `6c8f617`). Merged, the two lanes lowered one shape neither did alone - `set`'s and `map`'s range
+constructors, whose `insert(first, last)` is an invoke, `tree_` having a destructor - and on the Microsoft ABI
+`map-set-node-stability` printed nothing under `-front=ssa`: `layoutSsa` reserved a frame slot for a class passed by
+value at a `Call` and not at an `Invoke`, so the two 16-byte iterators were copied over the saved rbp and the return
+address. An invoke's arguments get their slots now; `invoke-by-value-class` is the case. **The merged tree, gated as
+one:** Linux `make test` exit 0, run.sh **1035 / 0** at -O0, -O2, `-front=ssa` and `-front=ssa -O2`, the golden 0 of
+2,693 changed (52 added), ssa.sh **7,854 bodies, 6,614 lowered and verified (84.2%)**, 0 failed, coff 0 differ, c90
+447 / 0, exclusions 126 sites 0 / 0, comment cap 0, the memory gate under its baseline; with the fix, Linux run.sh
+`-front=ssa` 1036 / 0, ssa.sh and typed.sh 694 / 0; Windows **664 same, 0 differ, 340 refused as recorded** at
+`-front=ssa` and `-front=ssa -O2` (the -O0 pass, which does not reach `layoutSsa`, clean on the tree before the fix),
+winlane hist 8,157 bodies, 6,962 lowered, 0 failed.

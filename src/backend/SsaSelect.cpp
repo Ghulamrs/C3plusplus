@@ -38,11 +38,12 @@ int X86_64Linux::layoutSsa(const Function &fn, const ir::Function &f) {
         cur = roundUp(cur + size, align);
         ssaAllocaSlot_[i] = cur;
     }
-    // A class passed by value has a copy of its own in the frame on the Microsoft ABI, as the parser gives each call.
+    // A class passed by value has a copy of its own in the frame on the Microsoft ABI, as the parser gives each call -
+    // an invoke's too, or its copies are written at slot 0, over the saved rbp and the return address.
     ssaArgSlots_.assign(f.calls.size(), std::vector<int>());
     for (std::size_t n = 1; n < f.insts.size(); n++) {
         const ir::Inst &i = f.insts[n];
-        if (i.op != ir::Op::Call) continue;
+        if (i.op != ir::Op::Call && i.op != ir::Op::Invoke) continue;
         const ir::CallInfo &c = f.calls[i.call];
         const Type *sig = ssaTypes_->type(c.signature);
         const std::uint32_t firstArg = c.symbol.empty() ? 1 : 0;

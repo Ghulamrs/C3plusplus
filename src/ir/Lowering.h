@@ -107,6 +107,7 @@ private:
     void returnStmt(sema::TypedId id);
     void returnConstructed(sema::TypedId value);
     void forStmt(sema::TypedId id);
+    void rangeForStmt(sema::TypedId id);
     void switchStmt(sema::TypedId id);
     BlockId labelBlock(const std::string &name);
     void tryStatement(sema::TypedId id);
@@ -177,6 +178,9 @@ private:
     bool pseudoDestructor(sema::TypedId member);
     bool threadLocalGlobal(const std::string &symbol) const;
     Val toBase(Val v, TypeId to, bool cast = false);
+    ValueId boundConverted(sema::TypedId an, const Type &p);
+    Val baseOfObject(Val a, const Type &p);
+    Val valueInitialised(sema::TypedId id);
     Val deleteDestroying(sema::TypedId id, const sema::NewFacts &f);
     ValueId virtualCallee(ValueId self, TypeId fnType, int slot);
     Val callTail(TypeId sig, CallInfo info, std::vector<ValueId> ops, std::size_t skip, const std::vector<sema::TypedId> &args,
