@@ -1,0 +1,12 @@
++B1 +B2 +P2 +P3 body +P4 -P4 made4 -P3 -P2 -B2 -B1 
++B1 -B1 threw100 
++B1 +B2 -B2 -B1 threw200 
++B1 +B2 +P2 -P2 -B2 -B1 threw300 
++B1 +B2 +P2 +P4 body made0 -P4 -P2 -B2 -B1 
++B1 +B2 +P2 +P5 body +P6 -P6 -P5 -P2 -B2 -B1 threw5 
++B1 +B2 +P2 +P6 body +P7 caught60 -P7 made7 -P6 -P2 -B2 -B1 
++B1 +P1 +P2 body3 made3 -P2 -P1 -B1 
++B1 +P1 -P1 -B1 threw200 
++B1 -B1 threw100 
++B1 +B2 +P2 +P2 body -P2 -P2 -B2 -B1 threw3 
+LEDGER built=35 gone=35 live=0 double=0 phantom=0 over=0 lost=0

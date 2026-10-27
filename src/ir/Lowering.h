@@ -178,9 +178,10 @@ private:
     void classLocal(sema::TypedId var, ValueId slot, const Type &t);
     bool builtClass(const Type &t) const;
     void builtLocal(sema::TypedId var, ValueId slot, const Type &t);
+    void guard(ValueId slot, const Type &c, const std::string &dtor);
     void destroy(const Live &l, bool invoke = false);
     void destroyLive(std::size_t mark);
-    void closeScope(std::size_t mark);
+    void closeScope(std::size_t mark, bool keep = false);
     void scopedStmt(sema::TypedId id);
     void copyObject(ValueId to, ValueId from, const Type &t);
     bool plainTemporary(sema::TypedId id) const;
@@ -218,6 +219,7 @@ private:
     std::vector<sema::VptrStore> vptrs_;        // what a constructor or destructor of a class with a vptr stores
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &, bool &)> localBuilt_;
     std::vector<Live> live_;                    // innermost last
+    std::size_t liveFloor_;                     // a constructor's built bases and members: below it, kept by a return
     bool landingPads_;                          // the parser gave the function landing pads: the prologue names an LSDA
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> temporaryBuilt_;
     std::vector<Pad> pads_;                     // innermost last

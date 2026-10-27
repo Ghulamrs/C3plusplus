@@ -181,6 +181,16 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
         for (std::map<std::string, sema::TypedId>::const_iterator e = named.begin(); e != named.end(); ++e)
             if (cls.findMember(e->first) == nullptr && baseNamed(cls, e->first) == static_cast<int>(b)) entry = e->second;
         buildBase(cls.bases()[b], entry);
+        // [except.ctor]/3: a base with a destructor, built, is destroyed - by its D2 - if a later part throws.
+        const Type &bt = *cls.bases()[b].type->unqualified();
+        if (landingPads_ && bt.hasDestructor()) {
+            std::string symbol;
+            TypeId sig;
+            bool defaulted = false;
+            if (!memberBuilt_ || !memberBuilt_(F().symbol, "~" + bt.tag(), 0, symbol, sig, defaulted))
+                outside("a base destroyed on unwinding by no destructor the parser recorded");
+            guard(result(add(Op::Bitcast, tid(*T(sig).params()[0]), std::vector<ValueId>(1, baseAddress(cls.bases()[b])))), bt, symbol);
+        }
     }
     // [class.cdtor]/4: once the bases are built the object is of this class - its vptrs, before any member.
     storeVptrs();
@@ -209,6 +219,12 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
         if (builtMember(mt)) {
             if (e != named.end() && count(e->second) == 0) outside("a member of class type value-initialised");
             buildMember(result(g), m, e != named.end() ? e->second : sema::TypedId());
+            // [except.ctor]/3: a member with a destructor, built, is destroyed if a later part of the constructor throws.
+            if (landingPads_ && mt.hasDestructor()) {
+                const std::string dtor = destructor_ ? destructor_(mt.id()) : std::string();
+                if (dtor.empty()) outside("a member destroyed on unwinding by no destructor the parser recorded");
+                guard(result(g), mt, dtor);
+            }
             continue;
         }
         const std::uint32_t k = count(e->second);
@@ -321,10 +337,17 @@ void Lowering::builtLocal(sema::TypedId var, ValueId slot, const Type &t) {
     // [except.handle]/16 ends a catch after its handler's objects are destroyed; a jump here ends it first.
     if (handlerDepth_ != 0) outside("a local with a destructor inside a handler");
     Live l;
-    l.slot = slot;
-    l.cls = c.id();
     l.dtor = destructor_ ? destructor_(c.id()) : std::string();
     if (l.dtor.empty()) outside("a local whose destructor the parser recorded none for");
+    guard(slot, c, l.dtor);
+}
+
+// An object alive from here: destroyed by `dtor` at its scope's end, and by a cleanup where a call in its region unwinds.
+void Lowering::guard(ValueId slot, const Type &c, const std::string &dtor) {
+    Live l;
+    l.slot = slot;
+    l.cls = c.id();
+    l.dtor = dtor;
     Pad p;
     p.cleanup = true;
     p.own = 0;
@@ -353,15 +376,16 @@ void Lowering::destroyLive(std::size_t mark) {
 }
 
 // A scope's end: each object it built destroyed on the way out, last built first, and its cleanup - made where a call in
-// its region could unwind - destroying it and handing on to the enclosing pad, or out of the frame.
-void Lowering::closeScope(std::size_t mark) {
+// its region could unwind - destroying it and handing on to the enclosing pad, or out of the frame. `keep`: a
+// constructor's own parts, which its normal way out leaves built and only its cleanups destroy ([except.ctor]/3).
+void Lowering::closeScope(std::size_t mark, bool keep) {
     while (live_.size() > mark) {
         const Live l = live_.back();
         live_.pop_back();
         if (l.pad + 1 != pads_.size()) outside("a scope's cleanup that is not the innermost pad");
         const Pad p = pads_.back();
         pads_.pop_back();
-        if (!terminated()) destroy(l);
+        if (!terminated() && !keep) destroy(l);
         if (!p.block.valid()) continue;
         if (!landingPads_) outside("a local's cleanup in a function the parser gave no landing pads");
         const BlockId back = cur_;
@@ -701,6 +725,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
     hasGoto_ = false;
     pads_.clear();
     live_.clear();
+    liveFloor_ = 0;
     typeTable_.clear();
     handlerDepth_ = 0;
     landingPads_ = facts.landingPads;
@@ -738,9 +763,8 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
                     if (vptrs_.size() != 1) outside("a polymorphic base that is not primary");
                     if (vptrs_[0].symbol.empty()) outside("a vptr out of a VTT");
                 }
-                // The parser's guards that destroy what was built when a later part throws are not in the syntax.
-                if (facts.landingPads) outside(isCtor ? "a constructor whose members are destroyed on unwinding"
-                                                      : "a destructor with landing pads that destroys members");
+                // A constructor's guards are memberInits' own; a destructor's - what a throwing body still destroys - are not yet.
+                if (facts.landingPads && !isCtor) outside("a destructor with landing pads that destroys members");
                 destroys = isDtor;
             }
         }
@@ -817,11 +841,13 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         place(first);
         if (isCtor) memberInits(fnNode, inits, n - 1);
         else if (destroys) storeVptrs();
+        liveFloor_ = live_.size();
         block(body);
         if (!terminated()) {
             if (!rt.isVoid()) outside("a body that falls off its end without a value");
             br(returnBlock_);
         }
+        closeScope(0, true);
         if (destroys) {
             place(returnBlock_);
             destroyMembers(*T(thisType_).pointee()->unqualified());
@@ -987,13 +1013,13 @@ void Lowering::returnStmt(sema::TypedId id) {
     const Type &rt = T(returns_);
     if (n == 0) {
         if (!rt.isVoid()) outside("a return with no value");
-        endCatches(handlerDepth_); destroyLive(0); br(returnBlock_);
+        endCatches(handlerDepth_); destroyLive(liveFloor_); br(returnBlock_);
         return;
     }
     if (n == 1 && rt.isVoid()) {
         const Val v = expr(child(id, 0));
         if (v.type.valid() && !T(v.type).isVoid()) outside("a return of a value from a void function");
-        endCatches(handlerDepth_); destroyLive(0); br(returnBlock_);
+        endCatches(handlerDepth_); destroyLive(liveFloor_); br(returnBlock_);
         return;
     }
     if (n != 1) outside("a return of " + std::to_string(n) + " parts");
@@ -1002,7 +1028,7 @@ void Lowering::returnStmt(sema::TypedId id) {
         if (T(a.type).unqualified() != rt.referent()->unqualified()) outside("a reference returned to another type");
         if (T(a.type).isConst() && !rt.referent()->isConst()) outside("a reference that can write returned from a const");
         const InstId c = add(Op::Bitcast, tid(*types_.pointerTo(rt.referent())), std::vector<ValueId>(1, a.v));
-        endCatches(handlerDepth_); destroyLive(0); br(returnBlock_, std::vector<ValueId>(1, result(c)));
+        endCatches(handlerDepth_); destroyLive(liveFloor_); br(returnBlock_, std::vector<ValueId>(1, result(c)));
         return;
     }
     if (rt.isStructOrUnion()) {
@@ -1015,7 +1041,7 @@ void Lowering::returnStmt(sema::TypedId id) {
         return;
     }
     const Val v = exprTo(child(id, 0), returns_);
-    endCatches(handlerDepth_); destroyLive(0); br(returnBlock_, std::vector<ValueId>(1, v.v));
+    endCatches(handlerDepth_); destroyLive(liveFloor_); br(returnBlock_, std::vector<ValueId>(1, v.v));
 }
 
 // [stmt.select]/2: a condition, or a declaration whose variable's value is the condition - declared where the test
