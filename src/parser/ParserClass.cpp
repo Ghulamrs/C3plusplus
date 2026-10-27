@@ -2231,7 +2231,7 @@ ExprPtr Parser::staticMemberRef(const Type *owner, const Type::StaticMember &s,
     if (s.folded) {
         ExprPtr n(new Num(s.value));
         n->setType(s.type);
-        return resolve(std::move(n), resolvedAs(Resolved::StaticMember, s.type, s.symbol, -1, s.value, owner));
+        return resolve(std::move(n), resolvedAs(Resolved::StaticMember, s.type, s.symbol, 1, s.value, owner));
     }
     if (unevaluated_ == 0) usedStaticMembers_.insert(s.symbol);
     Var *v = Var::global(cls + "::" + s.name);
@@ -2241,7 +2241,9 @@ ExprPtr Parser::staticMemberRef(const Type *owner, const Type::StaticMember &s,
     if (s.isThreadLocal) tlsVar(v, tlsDynamic_.count(s.symbol) != 0 || tlsDefined_.count(s.symbol) == 0, true);
     ExprPtr n(v);
     n->setType(s.type);
-    return resolve(useReference(std::move(n)), resolvedAs(Resolved::StaticMember, s.type, s.symbol, -1, 0, owner));
+    Resolved r = resolvedAs(Resolved::StaticMember, s.type, s.symbol, -1, 0, owner);
+    r.isThreadLocal = s.isThreadLocal;
+    return resolve(useReference(std::move(n)), r);
 }
 
 // A member function declaration, keyed under "Class::name" in the one table

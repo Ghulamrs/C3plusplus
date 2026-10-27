@@ -643,9 +643,11 @@ ExprPtr Parser::functionalCast(const Type *to, std::size_t pos) {
     // `T(x)` is a prvalue ([expr.type.conv]/2), whatever node the conversion hands back; C writes `(T)x`.
     if (dialect() == Dialect::C90) rules().refuseCxxOnly(src_, pos, "a functional cast");
     syntax::NodeId operand;
+    bool empty = false;
     ExprPtr r = [&]() -> ExprPtr {
         expect("(");
         if (consume(")")) {
+            empty = true;
             if (to->isVoid())
                 src_.fail(pos, "'void()' has no value");
             return convert(zeroOf(to), types_.withoutConst(to), true);
@@ -665,7 +667,10 @@ ExprPtr Parser::functionalCast(const Type *to, std::size_t pos) {
         return convert(std::move(v), types_.withoutConst(to), true);
     }();
     r->setDeclCategory(Expr::Category::Prvalue);
-    return noteCast(std::move(r), to->isVoid() ? to : types_.withoutConst(to), to->describe(), pos, operand);
+    ExprPtr made = noteCast(std::move(r), to->isVoid() ? to : types_.withoutConst(to), to->describe(), pos, operand);
+    // `T()` of a scalar is a zero ([dcl.init]/8), recorded as folded so the typed tree tells it from an operand unnoted.
+    if (empty && made && made->syntax().valid() && to->isScalar()) keywordValues_[made->syntax().v] = std::make_pair(0LL, types_.withoutConst(to));
+    return made;
 }
 
 // **A function's address, from its key.**
