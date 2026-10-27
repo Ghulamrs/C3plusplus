@@ -467,6 +467,17 @@ std::string Typer::typeInfoSymbol(TypeId t) const {
     std::string why;
     return p_.classes_.typeInfoSymbolFor(p_.types_.type(t), 0, &why);
 }
+std::string Typer::microsoftThrowInfo(TypeId t) const {
+    const Type &thrown = *p_.types_.type(t)->unqualified();
+    MicrosoftThrow names;
+    std::string why;
+    if (!microsoftThrowNames(&thrown, thrown.size(p_.target_), &names, &why)) return std::string();
+    microsoftThrowFinish(&names);
+    for (std::size_t i = 0; i < p_.current_->msThrows.size(); i++)
+        if (p_.current_->msThrows[i].info == names.info && p_.current_->msThrows[i].thrown) return names.info;
+    return std::string();
+}
+
 bool Typer::constructed(TypeId cls) const { return p_.hasConstructors(p_.types_.type(cls)->unqualified()->tag()); }
 
 bool Typer::guardedStatic(const std::string &symbol) const { return p_.guardedStatics_.count(symbol) != 0; }

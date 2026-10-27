@@ -2435,31 +2435,37 @@ void Lowering::resumeFrom(const Pad &p, std::size_t enclosing) {
     add(Op::Unreachable, TypeId(), std::vector<ValueId>());
 }
 
+// The thrown operand and the type the exception object takes: a plain class lvalue's bytes, or a scalar's value. A
+// class the lowering cannot copy into the object by its bytes - one a constructor builds - stays out.
+Lowering::Val Lowering::thrownValue(sema::TypedId id, TypeId &thrown) {
+    if (count(id) != 1) outside("a throw of " + std::to_string(count(id)) + " parts");
+    const sema::TypedId operand = child(id, 0);
+    Val v;
+    if (tree_.node(operand).type != nullptr && plainClass(*tree_.node(operand).type->unqualified()) && isLvalueNode(operand)) {
+        v = lvalue(operand);
+    } else {
+        if (tree_.node(operand).type != nullptr && tree_.node(operand).type->unqualified()->isStructOrUnion())
+            outside("a throw of a class that is not plain");
+        v = decay(expr(operand));
+        if (!v.type.valid() || !scalar(T(v.type)) || T(v.type).isX87(target_)) outside("a throw of what is not a scalar");
+    }
+    thrown = T(v.type).unqualified()->id();
+    return v;
+}
+
 // [except.throw] on the Itanium ABI, as the parser writes it: the exception object allocated by the runtime, the
 // operand stored into it - a scalar's value or a plain class's bytes - and __cxa_throw, an invoke inside a try;
-// `throw;` is __cxa_rethrow. A class with a destructor or a copy of its own, and the Microsoft ABI, stay outside.
+// `throw;` is __cxa_rethrow. A class with a copy of its own stays outside, so does a throw in a noexcept function - the parser's value-then-abort, [except.spec]/9, with no pad on the Microsoft ABI; that ABI's own shape is below.
 void Lowering::throwExpr(sema::TypedId id) {
-    if (target_.microsoftNames()) outside("a throw on the Microsoft ABI");
+    if (F().noexcept_) outside("a throw in a noexcept function");
+    if (target_.microsoftNames()) { microsoftThrow(id); return; }
     const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType()));
     if (count(id) == 0) {
         throwCall("__cxa_rethrow", std::vector<ValueId>());
         return;
     }
-    if (count(id) != 1) outside("a throw of " + std::to_string(count(id)) + " parts");
-    const sema::TypedId operand = child(id, 0);
-    Val v;
     TypeId thrown;
-    if (tree_.node(operand).type != nullptr && plainClass(*tree_.node(operand).type->unqualified()) && isLvalueNode(operand)) {
-        v = lvalue(operand);
-        thrown = T(v.type).unqualified()->id();
-    } else {
-        // A class the lowering cannot copy into the exception object by its bytes - one a constructor builds - stays out.
-        if (tree_.node(operand).type != nullptr && tree_.node(operand).type->unqualified()->isStructOrUnion())
-            outside("a throw of a class that is not plain");
-        v = decay(expr(operand));
-        if (!v.type.valid() || !scalar(T(v.type)) || T(v.type).isX87(target_)) outside("a throw of what is not a scalar");
-        thrown = T(v.type).unqualified()->id();
-    }
+    const Val v = thrownValue(id, thrown);
     if (!typeInfo_) outside("a throw with no type_info to name");
     const std::string info = typeInfo_(thrown);
     if (info.empty()) outside("a throw of a type with no type_info");
@@ -2474,6 +2480,31 @@ void Lowering::throwExpr(sema::TypedId id) {
     args.push_back(addrOf(info, voidPtr));
     args.push_back(result(add(Op::Null, voidPtr, std::vector<ValueId>())));
     throwCall("__cxa_throw", args);
+}
+
+// **The Microsoft ABI throws from the stack**, as the parser writes it: the object in a slot of the frame, then
+// _CxxThrowException(&object, &_TI...) with the ThrowInfo chain the parser finished for this type - an invoke inside
+// a cleanup's region. `throw;` is the same call with two nulls. A class with a copy of its own stays outside.
+void Lowering::microsoftThrow(sema::TypedId id) {
+    const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType()));
+    std::vector<ValueId> args;
+    if (count(id) == 0) {
+        args.push_back(result(add(Op::Null, voidPtr, std::vector<ValueId>())));
+        args.push_back(args[0]);
+        throwCall("_CxxThrowException", args);
+        return;
+    }
+    TypeId thrown;
+    const Val v = thrownValue(id, thrown);
+    if (!msThrowInfo_) outside("a throw with no ThrowInfo to name");
+    const std::string info = msThrowInfo_(thrown);
+    if (info.empty()) outside("a throw of a type whose ThrowInfo the parser did not finish");
+    const ValueId object = entryAlloca(thrown, ".ex");
+    if (T(thrown).isStructOrUnion()) copyObject(object, v.v, T(thrown));
+    else store(object, convert(v, thrown).v);
+    args.push_back(result(add(Op::Bitcast, voidPtr, std::vector<ValueId>(1, object))));
+    args.push_back(addrOf(info, voidPtr));
+    throwCall("_CxxThrowException", args);
 }
 
 // A runtime call that does not return: an invoke inside a try or a handler, so the throw reaches its pad, then the
