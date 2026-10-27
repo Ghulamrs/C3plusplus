@@ -539,6 +539,7 @@ private:
         bool isConst = false, isThreadLocal = false;    // a global's
         bool hasThis = false;                            // a call's: its function type's first parameter is the object's address
         bool indirect = false;                           // a call's: through a value - a pointer or a vtable slot
+        int vslot = -1;                                  // a virtual call's: the vtable slot it reads, -1 for none
         std::string name;                                // a global's or a function's lookup name, which its Var is named by
     };
     std::vector<Resolved> resolvedTable_;
@@ -624,8 +625,8 @@ private:
     // A `new` or `delete` as the SSA lowering may take it (M3b.2): the allocation function called, the type, the initialiser
     // (0 none, 1 value-initialised, 2 one value), `why` where it may not; for a class with constructors the one chosen,
     // its type with `T *` first, whether the object is zeroed first and whether defaults filled the arguments out.
-    struct NewFacts { std::string symbol, why, ctor; const Type *made = nullptr, *ctorSig = nullptr;
-                      bool array = false, placed = false, ctorZero = false, ctorDefaulted = false; int init = 0; };
+    struct NewFacts { std::string symbol, why, ctor, dtor; const Type *made = nullptr, *ctorSig = nullptr, *dtorSig = nullptr;
+                      bool array = false, placed = false, ctorZero = false, ctorDefaulted = false; int init = 0, dslot = -1; };
     std::unordered_map<std::uint32_t, NewFacts> newFacts_;
     NewFacts pendingNew_;
     void noteCallSlots(const Call &c) {
@@ -1676,6 +1677,7 @@ private:
     ExprPtr deleteExpression(std::size_t pos);
     // `p->~T()`, `o.~T()`, `p->B::~B()` and the pseudo-destructor on a scalar; null, nothing read, when the tokens are not that.
     ExprPtr explicitDestructorCall(ExprPtr &object, std::size_t pos);
+    void noteDeleteDestroys(const Expr &run);
     // The virtual destructor read out of the object held in `temp`: Itanium's D1 or D0 slot, Microsoft's `??_G` with the flag.
     ExprPtr virtualDestructorCall(const std::string &temp, int slot, const Type *t,
                                   const Type *cls, bool deleting, std::size_t pos);

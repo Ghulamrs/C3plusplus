@@ -821,6 +821,7 @@ ExprPtr Parser::memberCallWith(ExprPtr object, const Type *cls,
     // class of the chain; below the load it is an ordinary indirect call.
     ExprPtr callee;
     ExprPtr keepAddress;
+    int vslot = -1;
     // **A qualified call is never dispatched** - [expr.call]/1 - which is the
     // whole reason an override writes `Base::f(...)` to reach what it replaced.
     if (sig.isVirtual && forceOwner == nullptr) {
@@ -847,6 +848,7 @@ ExprPtr Parser::memberCallWith(ExprPtr object, const Type *cls,
         if (index < 0)
             src_.fail(pos, "'" + name + "' is virtual but has no vtable slot in "
                            "'" + plain->describe() + "'");
+        vslot = index;
 
         const Type *fnType = types_.functionType(sig.returns, full, sig.variadic);
         const Type *fnPtr = types_.pointerTo(fnType);
@@ -896,6 +898,7 @@ ExprPtr Parser::memberCallWith(ExprPtr object, const Type *cls,
     // Microsoft ABI has to be told, its hidden return pointer following `this`.
     ExprPtr call = completeCall(name, sig.symbol, std::move(callee), sig.returns,
                                 full, sig.variadic, pos, std::move(all), true);
+    if (vslot >= 0 && call->resolved() != 0) resolvedTable_[call->resolved()].vslot = vslot;   // the slot it reads (M3b.2)
     if (keepAddress == nullptr) return call;
 
     // The address is saved, then the call reads it - in that order, which the

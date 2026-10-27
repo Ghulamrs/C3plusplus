@@ -166,6 +166,8 @@ private:
     bool pseudoDestructor(sema::TypedId member);
     bool threadLocalGlobal(const std::string &symbol) const;
     Val toBase(Val v, TypeId to, bool cast = false);
+    Val deleteDestroying(sema::TypedId id, const sema::NewFacts &f);
+    ValueId virtualCallee(ValueId self, TypeId fnType, int slot);
     Val callTail(TypeId sig, CallInfo info, std::vector<ValueId> ops, std::size_t skip, const std::vector<sema::TypedId> &args,
                  bool dummyInt);
     bool operatorCalls(sema::TypedId id) const;
