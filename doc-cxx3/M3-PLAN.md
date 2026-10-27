@@ -959,3 +959,16 @@ named local there with its guard - destroyed on every way out but the `return` n
 bodies, 7,016 lowered and verified (88.1%)**, 0 failed, coff 0 differ, c90 447 / 0, exclusions 126 sites 0 / 0, comment
 cap 0, the memory gate under its baseline; Windows **672 same, 0 differ, 340 refused as recorded** at -O0,
 `-front=ssa` and `-front=ssa -O2`.
+
+**M3b.2, round 9 of 2026-10-27 evening: a call's default arguments, a member's own initialiser, class temporaries with
+destructors** (lane-rec `03a86d7` and lane-temp `93ad8c3`, Opus 5.5, merged over round 8 as `86d87bf`; `be184fd` makes
+`ssa-temporary-destructor` independent of the order of a sum's operands, which the walker evaluates differently on Linux
+and Windows). lane-rec: a call completed by default arguments takes them as its last syntax parts (`applyDefaults`
+records the defaults' nodes, `Parser::withDefaults`), typed in no scope of the calling function ([dcl.fct.default]/5);
+a member's `= v` replayed into a written constructor is a mem-initialiser node (`Typer::typeMemberDefaults`), lowered as
+the entry the list did not write. lane-temp: a class temporary with a destructor and a call's class result the caller
+destroys, each guarded and destroyed at the end of its full expression. **The merged tree, gated as one:** Linux
+`make test` exit 0, run.sh **1046 / 0** at -O0, -O2, `-front=ssa` and `-front=ssa -O2`, the golden 0 of 2,693 changed
+(96 added), ssa.sh **7,999 bodies, 7,087 lowered and verified (88.6%)**, 0 failed, coff 0 differ, c90 447 / 0,
+exclusions 126 sites 0 / 0, comment cap 0, the memory gate under its baseline; Windows **675 same, 0 differ, 340
+refused as recorded** at -O0, `-front=ssa` and `-front=ssa -O2`.

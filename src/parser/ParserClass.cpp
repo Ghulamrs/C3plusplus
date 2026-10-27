@@ -2706,6 +2706,9 @@ StmtPtr Parser::memberInitialiser(const std::string &tag, const Type *type,
                                   std::size_t pos) {
     std::map<std::string, std::size_t>::const_iterator it =
         memberInit_.find(tag + "::" + m.name);
+    // The written constructor this replay is for, if any: a nested replay is another constructor's.
+    const std::string forCtor = memberDefaultFor_;
+    memberDefaultFor_.clear();
     if (it == memberInit_.end()) return nullptr;
 
     // Read where it was written, with the constructor's locals put aside and
@@ -2790,11 +2793,17 @@ StmtPtr Parser::memberInitialiser(const std::string &tag, const Type *type,
     }
     if (braced) at_++;
     const std::size_t valueAt = peek().pos;
-    ExprPtr value = decay(assign());
+    ExprPtr read = assign();
+    const syntax::NodeId valueSyntax = read->syntax();
+    ExprPtr value = decay(std::move(read));
     if (braced) {
         checkNarrowing(m.type, *value, valueAt, "'" + m.name + "'");
         expect("}");
     }
+    // In a written constructor, the value's syntax under a mem-initialiser of its own, by constructor and member (M3b.2).
+    if (!forCtor.empty() && valueSyntax.valid())
+        memberDefaults_[forCtor + "|" + tag + "::" + m.name] =
+            syntaxTree_.add(syntax::Kind::MemInit, m.name, pos, std::vector<syntax::NodeId>(1, valueSyntax));
 
     // **A class-typed member is *built* from its initialiser, not assigned
     // one.**
