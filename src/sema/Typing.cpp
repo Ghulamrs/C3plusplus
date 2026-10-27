@@ -478,6 +478,17 @@ std::string Typer::microsoftThrowInfo(TypeId t) const {
     return std::string();
 }
 
+bool Typer::microsoftCatchDescriptor(TypeId t, std::string &descriptor, bool &isConst) const {
+    const Type &caught = *p_.types_.type(t)->unqualified();
+    MicrosoftThrow names;
+    std::string why;
+    if (!microsoftThrowNames(&caught, caught.size(p_.target_), &names, &why)) return false;
+    microsoftThrowFinish(&names);
+    for (std::size_t i = 0; i < p_.current_->msThrows.size(); i++)
+        if (p_.current_->msThrows[i].descriptor == names.descriptor) { descriptor = names.descriptor; isConst = names.isConst; return true; }
+    return false;
+}
+
 bool Typer::constructed(TypeId cls) const { return p_.hasConstructors(p_.types_.type(cls)->unqualified()->tag()); }
 
 bool Typer::guardedStatic(const std::string &symbol) const { return p_.guardedStatics_.count(symbol) != 0; }

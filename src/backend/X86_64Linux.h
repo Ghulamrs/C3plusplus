@@ -238,6 +238,9 @@ private:
     std::vector<int> ssaPadState_;
     int ssaUnwindHelpSlot_ = 0;
     bool ssaInFunclet_ = false;
+    int ssaFuncletState_ = -1;                      // the handler state in force inside the funclet being selected
+    std::map<std::uint32_t, MsTryBlock> ssaTries_;  // a try's block, filled as its handlers' funclets come out
+    void selectHandler(const ir::Function &f, ir::BlockId hb);
     void selectInst(const ir::Function &f, const ir::Inst &i);
     void selectBody(const Function &fn, const ir::Function &f);
     std::vector<opt::Local> scalarsOf(const Function &fn) const;
