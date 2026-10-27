@@ -977,3 +977,22 @@ in `memberBuilt_` and a local array's in `ctorBySerial_`; the lowering builds ea
 `-front=ssa -O2`, the golden 0 of 2,693 changed (108 added), ssa.sh **8,062 bodies, 7,192 lowered and verified
 (89.2%)**, 0 failed, coff 0 differ, c90 447 / 0, exclusions 126 sites 0 / 0, comment cap 0, the memory gate under its
 baseline; Windows **678 same, 0 differ, 340 refused as recorded** at -O0, `-front=ssa` and `-front=ssa -O2`.
+
+**M3b.2, rounds 11 and 12 of 2026-10-27 evening, gated as one: class values as objects, handlers and throws, a functor
+called by its name - and past 90%** (lane-asg `b15b1df`, lane-eh2 `346d4a4`, lane-misc3 `2e9a0d0`, Opus 5.5, each off
+round 10's `928ba8e`; round 11 merged as `b8bf83f`, round 12 over it as `0f4ebbc`). lane-asg: a class assigned by the
+copy or move assignment the parser called (`Parser::assignCalls_`, `Typer::assignCall`) or by bytes where it copied
+bytes, an assignment as an lvalue, `T x = f()` built straight into the local (`Typer::elidedInto`), and braces reaching
+a constructor as parentheses do. lane-eh2: Microsoft `catch (T)` with no name (`noteMsCatch`,
+`Typer::microsoftUnnamedCaught`), a thrown polymorphic temporary built by its own constructor and its argument
+temporaries destroyed before the throw, a handler's own objects destroyed on every way out (`handlerLive_`), and a
+`goto` that destroys what it leaves and ends the catches it leaves. lane-misc3: **a `-front=ssa` miscompile on main
+mended** - a member function calling a class object by its bare name passed `this` (`ssa-functor-member`: `6 8` where
+clang prints `105 1007`); the head must now name the member function the parser reached, a data member otherwise, and
+anything else is refused by name. With it: `(*p)(x)`, the composite pointer type of a `?:`, and a local reference to a
+base subobject. Round 11 alone measured 8,086 bodies, 7,263 lowered (89.8%) on Linux. **The merged tree, gated as one:**
+Linux `make test` exit 0, run.sh **1054 / 0** at -O0, -O2, `-front=ssa` and `-front=ssa -O2`, the golden 0 of 2,693
+changed (128 added), ssa.sh **8,132 bodies, 7,376 lowered and verified (90.7%)**, 0 failed, coff 0 differ, c90 447 / 0,
+exclusions 126 sites 0 / 0, comment cap 0, the memory gate under its baseline; Windows **683 same, 0 differ, 340
+refused as recorded** at -O0, `-front=ssa` and `-front=ssa -O2`. **Found, not mended**: an inherited `operator()`
+called unqualified, `operator()(4)`, is refused "'operator()' was not declared" where clang takes it.
