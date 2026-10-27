@@ -892,3 +892,88 @@ one:** Linux `make test` exit 0, run.sh **1035 / 0** at -O0, -O2, `-front=ssa` a
 `-front=ssa` 1036 / 0, ssa.sh and typed.sh 694 / 0; Windows **664 same, 0 differ, 340 refused as recorded** at
 `-front=ssa` and `-front=ssa -O2` (the -O0 pass, which does not reach `layoutSsa`, clean on the tree before the fix),
 winlane hist 8,157 bodies, 6,962 lowered, 0 failed.
+
+**M3b.2, round 5 of 2026-10-27 evening: calls and parameters, and constructors of class templates** (lane-call2,
+Opus 5.5, `fbdb586`, and lane-ctor2, Fable 5.1, `2c5d8a8`, both off round 4's `837c299`, merged as `2add48d`).
+lane-call2: a `std::nullptr_t` parameter, local or argument (a read of one is a null constant, [conv.lval]/2), a static
+member function called through an object (the object evaluated, the function called by its symbol), a data member
+holding a function pointer called through it, and a lambda's body reaching the members of the class whose `this` it
+captured (through the closure's `$this`). lane-ctor2: the parser records which `function` nodes are constructors
+(`constructorNodes_`, `Typer::isConstructor`), so a class template's constructor is recognised where its text names
+the described type; a member of a class with constructors but no copy of its own, initialised from one object of its
+type, is recorded as copied by bytes (`$bytes`) and lowered so; and a constructor's layout takes arrays of arrays of
+scalars and anonymous unions. **The merged tree, gated as one:** Linux `make test` exit 0, run.sh **1039 / 0** at -O0,
+-O2, `-front=ssa` and `-front=ssa -O2`, the golden 0 of 2,693 changed (68 added), ssa.sh **7,898 bodies, 6,723 lowered
+and verified (85.1%)**, 0 failed, coff 0 differ, c90 447 / 0, exclusions 126 sites 0 / 0, comment cap 0, the memory gate
+under its baseline; Windows **668 same, 0 differ, 340 refused as recorded** at -O0, `-front=ssa` and `-front=ssa -O2`.
+**Left, as each lane found it**: a pack's parameters (the syntax tree has one node for `Ts... rest`), a call's default
+arguments (no record of the default's expression), a member's default initialiser (no node in the constructor's
+syntax), virtual bases, and array members of a class.
+
+**M3b.2, round 6 of 2026-10-27 evening: a class with a destructor returned, placement new, values taken as objects**
+(lane-ret3 `deaf9bf` and lane-obj `fd15a0a`, Opus 5.5, both off `837c299`, merged over round 5 as `0d1df8f`).
+lane-ret3: a class with a destructor and no copy of its own returned by value as the parser returns it - a local a
+scope destroys keeps its bytes for the `ret`, `T(...)` is built in a slot no scope destroys, any other object's bytes
+are saved before the destructors run (`returnDestroyed`); placement new of such a class (every `new` of
+`basic_string<char>` in the list, 19). Which local escapes destruction is written to match the parser's rule rather
+than read from a record. lane-obj: a static data member named by its bare name is an lvalue; a `static_cast` or
+`const_cast` written to an lvalue reference names its operand (`referenceCast`, recognised from the cast's spelling
+where the operand has the type the parser noted); a lambda capturing `this` in a member function, the parser noting the
+capture's offset and type (`LambdaFacts::thisOffset`/`thisType`). **The merged tree, gated as one:** Linux `make test`
+exit 0, run.sh **1041 / 0** at -O0, -O2, `-front=ssa` and `-front=ssa -O2`, the golden 0 of 2,693 changed (76 added),
+ssa.sh **7,928 bodies, 6,859 lowered and verified (86.5%)**, 0 failed, coff 0 differ, c90 447 / 0, exclusions 126 sites
+0 / 0, comment cap 0, the memory gate under its baseline; Windows **670 same, 0 differ, 340 refused as recorded** at
+-O0, `-front=ssa` and `-front=ssa -O2`.
+
+**M3b.2, round 7 of 2026-10-27 evening: operands the syntax tree left loose given their nodes** (lane-loose `84fce47`,
+Opus 5.5, off round 6's `0d1df8f`, merged as `343cb40`). The record, not the lowering: a name read with a template-id's
+argument list or an operator's spelling is one name - `Box<int>(n)`, `B::twice<int>(2)`, `At<4>::get()`,
+`W::operator+(k)` are calls of it; `T{a, b}` of a class temporary is a call `{}` whose parts are the list's values,
+built as `T(a, b)` where every constructor parameter is a scalar and refused by name otherwise; a braced argument is an
+`other` `{}` over its elements, so a call keeps one part per argument, refused by name in the lowering; and `&C::k` and
+`&C::f` of a static member record their operand's name. **The merged tree, gated as one:** Linux `make test` exit 0,
+run.sh **1042 / 0** at -O0, -O2, `-front=ssa` and `-front=ssa -O2`, the golden 0 of 2,693 changed (80 added), ssa.sh
+**7,949 bodies, 6,943 lowered and verified (87.3%)**, 0 failed, coff 0 differ, c90 447 / 0, exclusions 126 sites 0 / 0,
+comment cap 0, the memory gate under its baseline; Windows **671 same, 0 differ, 340 refused as recorded** at -O0,
+`-front=ssa` and `-front=ssa -O2`.
+
+**M3b.2, round 8 of 2026-10-27 evening: a class with a copy of its own returned through the caller's result pointer**
+(lane-sret `f108262`, Opus 5.5, off round 7's `343cb40`, merged as `90ea44e`, with `ac15cf8` restoring the brace the
+merge dropped after `returnDestroyed`). The parser records what `buildReturned` made of each `return`
+(`Parser::ReturnBuilt`, read by `Typer::returnBuilt`): the named return value already in the caller's object, a
+temporary built there, or another object copied there by the constructor it chose; and which local `nrvoCandidate`
+placed in the caller's object (`Typer::namedReturnLocal`). The lowering gives such a function its result pointer as an
+IR value (`ir::Function::sret`, copied by the selector from the slot the prologue keeps it in, on both ABIs), builds the
+named local there with its guard - destroyed on every way out but the `return` naming it - and lowers the three forms.
+`return f();` built in place is refused by name. **The merged tree, gated as one:** Linux `make test` exit 0, run.sh
+**1043 / 0** at -O0, -O2, `-front=ssa` and `-front=ssa -O2`, the golden 0 of 2,693 changed (84 added), ssa.sh **7,963
+bodies, 7,016 lowered and verified (88.1%)**, 0 failed, coff 0 differ, c90 447 / 0, exclusions 126 sites 0 / 0, comment
+cap 0, the memory gate under its baseline; Windows **672 same, 0 differ, 340 refused as recorded** at -O0,
+`-front=ssa` and `-front=ssa -O2`.
+
+**M3b.2, round 9 of 2026-10-27 evening: a call's default arguments, a member's own initialiser, class temporaries with
+destructors** (lane-rec `03a86d7` and lane-temp `93ad8c3`, Opus 5.5, merged over round 8 as `86d87bf`; `be184fd` makes
+`ssa-temporary-destructor` independent of the order of a sum's operands, which the walker evaluates differently on Linux
+and Windows). lane-rec: a call completed by default arguments takes them as its last syntax parts (`applyDefaults`
+records the defaults' nodes, `Parser::withDefaults`), typed in no scope of the calling function ([dcl.fct.default]/5);
+a member's `= v` replayed into a written constructor is a mem-initialiser node (`Typer::typeMemberDefaults`), lowered as
+the entry the list did not write. lane-temp: a class temporary with a destructor and a call's class result the caller
+destroys, each guarded and destroyed at the end of its full expression. **The merged tree, gated as one:** Linux
+`make test` exit 0, run.sh **1046 / 0** at -O0, -O2, `-front=ssa` and `-front=ssa -O2`, the golden 0 of 2,693 changed
+(96 added), ssa.sh **7,999 bodies, 7,087 lowered and verified (88.6%)**, 0 failed, coff 0 differ, c90 447 / 0,
+exclusions 126 sites 0 / 0, comment cap 0, the memory gate under its baseline; Windows **675 same, 0 differ, 340
+refused as recorded** at -O0, `-front=ssa` and `-front=ssa -O2`.
+
+**M3b.2, round 10 of 2026-10-27 evening: parameter packs, a class returned from a call built in place, array members,
+cl's `??1` of a class with a virtual base** (lane-pack2 `014e4fa` and lane-vbase `462c297`, `cffdfdb`, Opus 5.5, both
+off round 9's `86d87bf`, merged as `928ba8e`). lane-pack2: `Ts... rest` makes one `var` node per parameter it declares
+and `rest...` at a call one `name` node per argument (`noteDeclaredVar`, renamed from `noteCaught`), so packs lower
+with nothing new in the lowering; `return f();` built in place lowers the call with `CallInfo::sret`, its result slot
+the function's own result object (`ssaSretSlot_`). lane-vbase: the parser records an array member's element constructor
+in `memberBuilt_` and a local array's in `ctorBySerial_`; the lowering builds each element first to last, guarded per
+[except.ctor]/3, and destroys them last to first; a destructor of a non-polymorphic class with a virtual base is cl's
+`??1`, leaving the virtual bases to `??_D`. Constructors of a class with a virtual base stay outside on both ABIs.
+**The merged tree, gated as one:** Linux `make test` exit 0, run.sh **1049 / 0** at -O0, -O2, `-front=ssa` and
+`-front=ssa -O2`, the golden 0 of 2,693 changed (108 added), ssa.sh **8,062 bodies, 7,192 lowered and verified
+(89.2%)**, 0 failed, coff 0 differ, c90 447 / 0, exclusions 126 sites 0 / 0, comment cap 0, the memory gate under its
+baseline; Windows **678 same, 0 differ, 340 refused as recorded** at -O0, `-front=ssa` and `-front=ssa -O2`.
