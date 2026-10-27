@@ -1,0 +1,7 @@
+viaCall 5
+viaMember 10
+viaOperator 15
+viaTemporary 70
+besideLocal 15 noted 5
+twoWays 3 6
+LEDGER built=9 gone=9 live=0 double=0 phantom=0 over=0 lost=0

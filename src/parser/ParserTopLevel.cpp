@@ -808,6 +808,7 @@ void Parser::topLevel(Program &program) {
                             int poff = declare(packNames[k], packTypes[k],
                                                peek().pos);
                             inParams_ = false;
+                            noteDeclaredVar(packNames[k], packTypes[k], tokens_[at_ - 1].pos);   // a node for each one made
                             params.push_back(types_.withoutConst(packTypes[k]));
                             const Type *pt = packTypes[k];   // a reference member arrives as its address
                             paramSlots.push_back(Param{ pt->isReference() ? types_.pointerTo(pt->referent()) : pt, poff });

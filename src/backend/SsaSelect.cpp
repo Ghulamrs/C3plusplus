@@ -452,12 +452,14 @@ void X86_64Linux::selectCall(const ir::Function &f, const ir::Inst &i, const Typ
             callee = std::move(p);
         }
         // A class result comes back into its alloca's slot and the walker leaves its address in rax: the call's value.
-        const int resultSlot = c.resultAlloca >= 0 ? static_cast<int>(ssaAllocaSlot_[static_cast<std::size_t>(c.resultAlloca)]) : 0;
+        // One built in the caller's object (c.sret) goes through this function's own result pointer, as `return f();` does.
+        const int resultSlot = c.sret ? ssaSretSlot_ : c.resultAlloca >= 0 ? static_cast<int>(ssaAllocaSlot_[static_cast<std::size_t>(c.resultAlloca)]) : 0;
         std::unique_ptr<Call> call = make_owned<Call>(c.symbol, std::move(callee), std::move(args), c.variadic, resultSlot,
                                                      c.namedArgs, ssaArgSlots_[i.call]);
         call->setSymbol(c.symbol);
         call->setHasThis(c.hasThis);
-        call->setType(c.resultAlloca >= 0 ? sig->returns() : rt != nullptr ? rt : sig->returns());
+        call->setResultIndirect(c.sret);
+        call->setType(c.resultAlloca >= 0 || c.sret ? sig->returns() : rt != nullptr ? rt : sig->returns());
         call->accept(*this);
     }
 }
@@ -538,6 +540,7 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
         load(ps[i].type);
         ssaStore(f, f.params[i]);
     }
+    ssaSretSlot_ = fn.sretSlot();
     if (f.sret.valid() && fn.sretSlot() != 0) { a_->ins("mov", local(fn.sretSlot()), reg("%rax")); ssaStore(f, f.sret); }
     std::size_t lastPos = 0;
     ssaRegionAt_ = 0;

@@ -666,8 +666,8 @@ private:
         if (t.is("{")) return (eq ? peekAt(2) : peekAt(1)).is("}") ? 3 : 2;
         return eq || peek().is("(") ? 1 : 0;
     }
-    // A handler's caught object as a `var` node, so a name in its block finds it.
-    void noteCaught(const std::string &name, const Type *type, std::size_t pos) {
+    // A handler's caught object, or one parameter `Ts... rest` made, as a `var` node, so a name in its block finds it.
+    void noteDeclaredVar(const std::string &name, const Type *type, std::size_t pos) {
         const syntax::NodeId id = noteParts(syntax::Kind::Var, type->describe() + " " + name, pos, syntaxTree_.size(), pos);
         declaredTypes_[id.v] = type;
         noteDeclaredLocal(id, name);

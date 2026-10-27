@@ -99,7 +99,9 @@ int main() {
     printf("| %d %d %d\n", m, l, r);
     int u = unwinds(60);
     int v = unwinds(9);
-    int w = shortCircuit(2) + shortCircuit(0) + shortCircuit(-3);
+    int w = shortCircuit(2);
+    w += shortCircuit(0);
+    w += shortCircuit(-3);
     printf("%d %d %d %d %d\n", s, c, u, v, w);
     printf("built %d gone %d\n", built, gone);
     return 0;
