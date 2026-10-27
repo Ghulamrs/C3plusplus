@@ -1943,6 +1943,7 @@ void Parser::topLevel(Program &program) {
     const int scope = (memberOf != nullptr ? 1 : 0) | (!namespaceStack_.empty() ? 2 : 0) | (d.name.find("::") != std::string::npos ? 4 : 0) |
                       (!instantiatingParams_.empty() || !boundTypeParams_.empty() || !boundValueParams_.empty() ? 8 : 0);
     if (scope != 0) scopedFunctions_[fnSyntax.v] = scope;
+    if (isCtor) constructorNodes_.insert(fnSyntax.v);
     declaredReturns_[fnSyntax.v] = returnType_;
     global.d = nullptr;                                                     // the definition is the node
     program.functions.push_back(Function(d.name, emittedReturn, std::move(paramSlots),

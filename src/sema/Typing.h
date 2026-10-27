@@ -151,6 +151,7 @@ public:
     std::string specFilter(const std::string &symbol) const;  // an ordinary function's throw(...) filter; empty if none
     // A body read in a class's, a namespace's or a template's scope (Parser::scopedFunctions_), which the adapter left alone too.
     int scopedBody(syntax::NodeId fn) const;
+    bool isConstructor(syntax::NodeId fn) const;   // a `function` node the parser read as a constructor
     std::string typeInfoSymbol(TypeId t) const;   // the type_info a catch of t names, Sema's; empty where none can be made
     std::string unnamedCaught(syntax::NodeId handler) const;   // what an Itanium `catch (T)` with no name named; empty otherwise
     // The Microsoft ThrowInfo a throw of t names (`_TI1H`), where the parser finished the chain for a throw; empty otherwise.

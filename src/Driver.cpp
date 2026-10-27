@@ -1385,6 +1385,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         facts.isInline = fn.isInline();
         facts.variadic = fn.isVariadic();
         facts.hasThis = fn.hasThis();
+        facts.isConstructor = typer.isConstructor(c.bodies[r].first);
         facts.sret = fn.sretSlot() != 0;
         facts.landingPads = fn.hasLandingPads();
         // A plain function's try block is a `try` in its body to the lowering, its throw(...) list a filter it
