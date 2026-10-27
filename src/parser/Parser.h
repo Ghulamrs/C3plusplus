@@ -735,7 +735,7 @@ private:
     struct LambdaCapture { std::string member; int offset = 0; const Type *type = nullptr;
                            std::string src; int srcOffset = 0; const Type *srcType = nullptr; bool srcConst = false; };
     struct LambdaFacts { bool simple = false; std::string slotName; int slot = 0; const Type *type = nullptr;
-                         std::vector<LambdaCapture> captures; };
+                         std::vector<LambdaCapture> captures; int thisOffset = -1; const Type *thisType = nullptr; };
     std::unordered_map<std::uint32_t, LambdaFacts> lambdaFacts_;
     // A case label's folded value and the number caseLabel gave it, by node (M2.12n).
     struct CaseFacts { long long value; bool isDefault; int id; };

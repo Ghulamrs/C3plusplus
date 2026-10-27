@@ -513,7 +513,7 @@ ExprPtr Parser::buildClosure(const MadeLambda &made, std::size_t pos) {
 }
 
 // What the adapter needs to build the closure again (M2.12n): kept only where every capture is a scalar local
-// of this function, by value or by reference, and the closure has nothing to destroy.
+// of this function, by value or by reference, or `this`, and the closure has nothing to destroy.
 void Parser::noteClosure(const MadeLambda &made, const std::string &name, int off) {
     pendingLambda_ = LambdaFacts();
     pendingLambda_.simple = destructorOf(made.type) == nullptr;
@@ -521,7 +521,12 @@ void Parser::noteClosure(const MadeLambda &made, const std::string &name, int of
     pendingLambda_.slot = off;
     pendingLambda_.type = made.type;
     for (std::size_t i = 0; i < made.names.size() && pendingLambda_.simple; i++) {
-        const Local *l = made.names[i] == capturedThis() ? nullptr : lookup_.findLocal(made.names[i]);
+        if (made.names[i] == capturedThis()) {      // the pointer the walker copies in, whose member is noted apart
+            pendingLambda_.thisOffset = made.offsets[i];
+            pendingLambda_.thisType = made.types[i];
+            continue;
+        }
+        const Local *l = lookup_.findLocal(made.names[i]);
         const Type *held = made.types[i]->isReference() ? made.types[i]->referent() : made.types[i];
         if (l == nullptr || !l->staticName.empty() || l->isThreadLocal || l->constantOnly || l->type->isReference() ||
             l->isRegister || !held->isScalar() || l->type->unqualified() != held->unqualified()) {

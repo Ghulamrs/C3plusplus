@@ -1571,6 +1571,7 @@ ExprPtr Adapter::lambda(TypedId id) {
         p_.lambdaFacts_.find(typer_.tree().node(id).syntax.v);
     if (k == p_.lambdaFacts_.end()) outside("a lambda whose closure was not recorded");
     const Parser::LambdaFacts &f = k->second;
+    if (f.thisOffset >= 0) outside("a lambda capturing `this`");
     const Type *cls = f.type;
     ExprPtr e;
     if (f.captures.empty()) {

@@ -561,6 +561,8 @@ bool Typer::closureFacts(syntax::NodeId id, ClosureFacts &out) const {
     const std::unordered_map<std::uint32_t, std::vector<syntax::NodeId> >::const_iterator s = closureSources_.find(id.v);
     if (k == p_.lambdaFacts_.end() || s == closureSources_.end() || k->second.type == nullptr) return false;
     out.closure = TypeTable::id(k->second.type);
+    out.thisOffset = k->second.thisOffset;
+    out.thisType = TypeTable::id(k->second.thisType);
     out.captures.clear();
     for (std::size_t i = 0; i < k->second.captures.size(); i++) {
         ClosureCapture c;
