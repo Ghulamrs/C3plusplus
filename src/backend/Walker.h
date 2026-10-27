@@ -204,6 +204,12 @@ protected:
     const std::vector<MsState> &msStates() const { return msStates_; }
     const std::vector<MsTryBlock> &msTryBlocks() const { return msTryBlocks_; }
     const std::vector<MsIpRow> &msIpRows() const { return msIpRows_; }
+    // **The SSA selector's door to the tree** (SsaSelect.cpp, M3-IR 3.6): a state numbered before the invokes that name
+    // it, set once its funclet is out; a row where the state in force changes; the scratch word the selector laid.
+    int msAddState() { msStates_.push_back(MsState()); return static_cast<int>(msStates_.size()) - 1; }
+    void msSetState(int state, int toState, const std::string &action) { msStates_[state].toState = toState; msStates_[state].action = action; }
+    void msAddIpRow(const std::string &label, int state) { msIpRows_.push_back(MsIpRow{ label, state, false }); }
+    void msSetUnwindHelpSlot(int slot) { msUnwindHelpSlot_ = slot; }
     const std::vector<MsIpRow> &msFuncletRows() const { return msFuncletRows_; }
     int msUnwindHelpSlot() const { return msUnwindHelpSlot_; }
     void clearMsTries() {
