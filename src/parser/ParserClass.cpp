@@ -26,6 +26,7 @@ StmtPtr Parser::constructObject(const Declared &d, const std::string &symbol,
     checkNotAbstract(d.type, d.pos, "'" + d.name + "'");
     const std::string key = constructorKey(d.type->tag());
     const Signature &ctor = overload_.resolveOverload(key, args, d.pos);
+    const std::size_t written = args.size();
     applyDefaults(ctor, args, d.pos);
 
     // **[dcl.init]/16: copy-initialization may not pick an `explicit` constructor.**
@@ -61,7 +62,11 @@ StmtPtr Parser::constructObject(const Declared &d, const std::string &symbol,
                                 std::move(all));
     // The constructor this declaration chose, by the local's serial, for its `var` node to carry (M2.16).
     if (symbol.empty())
-        if (const Local *built = lookup_.findLocal(d.name)) ctorBySerial_[built->serial] = ctor.symbol;
+        if (const Local *built = lookup_.findLocal(d.name)) {
+            const LocalBuilt b = { ctor.symbol, types_.functionType(types_.get(Kind::Void), full, false), args.size() != written,
+                                   valueInit && ctor.implicit };
+            ctorBySerial_[built->serial] = b;
+        }
 
     // **The zeroing half of [dcl.init]/8, spelt as the temporary path spells
     // it.** A constructor somebody wrote is the whole of the initialisation; an
@@ -2884,6 +2889,7 @@ StmtPtr Parser::constructMember(const std::string &cls, const Type *type,
     // Through noteUsed: inside a candidate's body, ranked and not yet chosen, the use waits with the rest.
     for (std::size_t k = 0; k < lookup_.functions_.size(); k++)
         if (lookup_.functions_[k].symbol == chosen.symbol) noteUsed(k);
+    const std::size_t written = args.size();
     applyDefaults(chosen, args, pos);
 
     int indexSlot = 0;
@@ -2914,6 +2920,15 @@ StmtPtr Parser::constructMember(const std::string &cls, const Type *type,
     for (std::size_t k = 0; k < args.size(); k++) {
         all.push_back(std::move(args[k]));
         ps.push_back(chosen.params[k]);
+    }
+    // A member template's specialization is defined with no declaration of its own, so currentFunction_ is not its name.
+    if (!implicit && !m.type->isArray() && !memberTemplateInst_) {
+        const MemberBuilt b = { chosen.symbol, types_.functionType(types_.get(Kind::Void), ps, false), args.size() != written };
+        const std::string key = currentFunction_ + "|" + m.name + "|" + std::to_string(written == 0 ? 0 : static_cast<std::uint32_t>(pos));
+        // Two choices under one key - a constructor template's specializations read under one name - are no record at all.
+        const std::map<std::string, MemberBuilt>::iterator had = memberBuilt_.find(key);
+        if (had == memberBuilt_.end()) memberBuilt_[key] = b;
+        else if (had->second.symbol != b.symbol || had->second.signature != b.signature) had->second.symbol.clear();
     }
     StmtPtr one(new ExprStmt(
         completeCall(mc->tag(), chosen.symbol, nullptr, types_.get(Kind::Void),

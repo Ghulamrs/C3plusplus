@@ -29,6 +29,7 @@ const ir::Function *X86_64Linux::ssaFunction(const Function &fn) const {
 int X86_64Linux::layoutSsa(const Function &fn, const ir::Function &f) {
     long long cur = 0;
     for (const Param &p : fn.params()) cur = std::max(cur, static_cast<long long>(p.offset));
+    cur = std::max(cur, static_cast<long long>(fn.sretSlot()));   // where the prologue keeps the caller's result pointer
     cur = roundUp(cur, 16);
     ssaAllocaSlot_.assign(f.frame.size(), 0);
     for (std::size_t i = 0; i < f.frame.size(); i++) {
@@ -37,12 +38,33 @@ int X86_64Linux::layoutSsa(const Function &fn, const ir::Function &f) {
         cur = roundUp(cur + size, align);
         ssaAllocaSlot_[i] = cur;
     }
+    // A class passed by value has a copy of its own in the frame on the Microsoft ABI, as the parser gives each call.
+    ssaArgSlots_.assign(f.calls.size(), std::vector<int>());
+    for (std::size_t n = 1; n < f.insts.size(); n++) {
+        const ir::Inst &i = f.insts[n];
+        if (i.op != ir::Op::Call) continue;
+        const ir::CallInfo &c = f.calls[i.call];
+        const Type *sig = ssaTypes_->type(c.signature);
+        const std::uint32_t firstArg = c.symbol.empty() ? 1 : 0;
+        std::vector<int> &slots = ssaArgSlots_[i.call];
+        for (std::uint32_t k = firstArg; k < i.count; k++) {
+            const std::size_t at = k - firstArg;
+            const Type *want = at < sig->params().size() ? sig->params()[at] : nullptr;
+            slots.push_back(0);
+            if (want == nullptr || !want->isStructOrUnion()) continue;
+            cur = roundUp(cur + want->size(target_), want->align(target_));
+            slots.back() = static_cast<int>(cur);
+        }
+    }
     ssaValueSlot_.assign(f.values.size(), 0);
     for (std::size_t i = 1; i < f.values.size(); i++) {
         if (!f.values[i].type.valid() || ssaTypes_->type(f.values[i].type)->isVoid()) continue;
         cur += 8;
         ssaValueSlot_[i] = cur;
     }
+    // The word the Microsoft runtime scribbles its state in, where the function has a pad (M3-IR 3.6).
+    ssaUnwindHelpSlot_ = 0;
+    if (usesFunclets() && fn.hasLandingPads()) { cur = roundUp(cur, 8) + 8; ssaUnwindHelpSlot_ = static_cast<int>(cur); }
     return static_cast<int>(roundUp(cur, 16));
 }
 
@@ -315,22 +337,87 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         a_->ins("jmp", lbl(ssaBlockLabel(i.succ[0].block)));
         return;
     case ir::Op::Ret:
+        if (i.count == 1 && ssaTypes_->type(f.returns)->isStructOrUnion()) {
+            // A class's address: the walker's own return copies it out - through the result pointer or into registers.
+            std::unique_ptr<Var> p(Var::local("$v" + std::to_string(f.operand(i, 0).v),
+                                              static_cast<int>(ssaValueSlot_[f.operand(i, 0).v])));
+            p->setType(typeOf(f, f.operand(i, 0)));
+            std::unique_ptr<Unary> d = make_owned<Unary>('*', ExprPtr(p.release()));
+            d->setType(ssaTypes_->type(f.returns));
+            Return r{ExprPtr(d.release())};
+            r.accept(*this);
+            return;
+        }
         if (i.count == 1) ssaLoad(f, f.operand(i, 0));
         a_->ins("jmp", lbl(returnLabel_));
         return;
-    case ir::Op::Call: {
-        // The walker's own call, over Var nodes naming the slots: placeArguments and every ABI rule stay where they are.
+    case ir::Op::Call:
+        selectCall(f, i, rt);
+        ssaStore(f, i.result);
+        return;
+    case ir::Op::Invoke: {
+        const int id = nextLabel();
+        const std::string begin = label("ssatry", id), end = label("ssatryend", id);
+        // Microsoft: the call's own range in the ip2state map, in its pad's state; nothing in the body stays in one.
+        if (usesFunclets()) {
+            defineStateLabel(begin);
+            msAddIpRow(begin, ssaPadState_[i.succ[1].block.v]);
+            selectCall(f, i, rt);
+            defineStateLabel(end);
+            msAddIpRow(end, -1);
+            ssaStore(f, i.result);
+            a_->ins("jmp", lbl(ssaBlockLabel(i.succ[0].block)));
+            return;
+        }
+        // One call-site row per invoke, naming the pad's landing label and the chain its pad carries (M3-IR 3.6): the rows
+        // are registered in address order and are disjoint, which is the order the walker's table wants and never sorts.
+        a_->defLabel(begin);
+        selectCall(f, i, rt);
+        a_->defLabel(end);
+        const ir::Block &pb = f.block(i.succ[1].block);
+        const ir::Inst &pad = f.inst(pb.insts[0]);
+        std::vector<int> indices;
+        for (std::size_t k = 0; k < pad.cases.size(); k++) indices.push_back(static_cast<int>(pad.cases[k]));
+        const std::string land = ssaLandLabel(i.succ[1].block);
+        callSite(begin, end, land, pad.syms, indices, (pad.bits & 1) != 0, ++ssaRegionAt_, (pad.bits & 2) != 0);
+        exceptionRegion(begin, end, land);
+        ssaStore(f, i.result);
+        a_->ins("jmp", lbl(ssaBlockLabel(i.succ[0].block)));
+        return;
+    }
+    case ir::Op::CatchPad:
+    case ir::Op::CleanupPad:
+    case ir::Op::CleanupRet:
+        return;     // the row facts the invokes read; the landing stores are the block's own, and a funclet's return its end (selectBody)
+    default:
+        ssaUnsupported(i);
+    }
+}
+
+// The walker's own call, over Var nodes naming the slots: placeArguments and every ABI rule stay where they are.
+void X86_64Linux::selectCall(const ir::Function &f, const ir::Inst &i, const Type *rt) {
+    {
         const ir::CallInfo &c = f.calls[i.call];
         const Type *sig = ssaTypes_->type(c.signature);
         std::vector<ExprPtr> args;
         const std::uint32_t firstArg = c.symbol.empty() ? 1 : 0;
         for (std::uint32_t n = firstArg; n < i.count; n++) {
             const ir::ValueId v = f.operand(i, n);
+            const std::size_t at = n - firstArg;
+            const Type *want = at < sig->params().size() ? sig->params()[at] : nullptr;
+            const ir::Inst &def = f.inst(f.value(v).def);
+            // In a funclet an alloca's address is taken afresh: the body's slot for it may have been promoted to a register.
+            if (ssaInFunclet_ && def.op == ir::Op::Alloca && (want == nullptr || !want->isStructOrUnion())) {
+                std::unique_ptr<Var> o(Var::local("$a" + std::to_string(def.k), static_cast<int>(ssaAllocaSlot_[static_cast<std::size_t>(def.k)])));
+                o->setType(ssaTypes_->type(f.frame[static_cast<std::size_t>(def.k)].type));
+                std::unique_ptr<Unary> addr = make_owned<Unary>('&', ExprPtr(o.release()));
+                addr->setType(typeOf(f, v));
+                args.push_back(std::move(addr));
+                continue;
+            }
             std::unique_ptr<Var> a(Var::local("$v" + std::to_string(v.v), static_cast<int>(ssaValueSlot_[v.v])));
             a->setType(typeOf(f, v));
             // Where the signature takes a class by value the operand is its address: the walker copies `*p` in.
-            const std::size_t at = n - firstArg;
-            const Type *want = at < sig->params().size() ? sig->params()[at] : nullptr;
             if (want != nullptr && want->isStructOrUnion() && typeOf(f, v)->isPointer()) {
                 std::unique_ptr<Unary> d = make_owned<Unary>('*', ExprPtr(a.release()));
                 d->setType(want);
@@ -346,18 +433,18 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
             p->setType(typeOf(f, v));
             callee = std::move(p);
         }
-        std::unique_ptr<Call> call = make_owned<Call>(c.symbol, std::move(callee), std::move(args), c.variadic, 0, c.namedArgs);
+        // A class result comes back into its alloca's slot and the walker leaves its address in rax: the call's value.
+        const int resultSlot = c.resultAlloca >= 0 ? static_cast<int>(ssaAllocaSlot_[static_cast<std::size_t>(c.resultAlloca)]) : 0;
+        std::unique_ptr<Call> call = make_owned<Call>(c.symbol, std::move(callee), std::move(args), c.variadic, resultSlot,
+                                                     c.namedArgs, ssaArgSlots_[i.call]);
         call->setSymbol(c.symbol);
         call->setHasThis(c.hasThis);
-        call->setType(rt != nullptr ? rt : sig->returns());
+        call->setType(c.resultAlloca >= 0 ? sig->returns() : rt != nullptr ? rt : sig->returns());
         call->accept(*this);
-        ssaStore(f, i.result);
-        return;
-    }
-    default:
-        ssaUnsupported(i);
     }
 }
+
+std::string X86_64Linux::ssaLandLabel(ir::BlockId b) const { return label("ssaland", static_cast<int>(b.v)); }
 
 // The body: the parameters copied from the slots receiveParameters filled into their values' slots, then each block.
 void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
@@ -368,8 +455,41 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
         ssaStore(f, f.params[i]);
     }
     std::size_t lastPos = 0;
+    ssaRegionAt_ = 0;
+    // Microsoft (M3-IR 3.6): every pad is a cleanup funclet and a state of the FH3 tree, numbered before the invokes
+    // that name it; the scratch word is set to -2 before the first call, as the walker's entry sets it.
+    ssaPadState_.assign(f.blockArena.size(), -1);
+    if (usesFunclets()) {
+        bool any = false;
+        for (std::size_t b = 0; b < f.blocks.size(); b++)
+            if (f.block(f.blocks[b]).pad) { ssaPadState_[f.blocks[b].v] = msAddState(); any = true; }
+        if (any) { msSetUnwindHelpSlot(ssaUnwindHelpSlot_); storeUnwindHelp(ssaUnwindHelpSlot_); }
+    }
     for (std::size_t b = 0; b < f.blocks.size(); b++) {
         const ir::Block &blk = f.block(f.blocks[b]);
+        if (blk.pad && usesFunclets()) {
+            // The funclet destroys and returns to the runtime; its cleanupret names the pad it chains to, or none.
+            const std::string funclet = openFunclet(blk.insts.empty() ? 0 : f.inst(blk.insts[0]).pos, true);
+            ssaInFunclet_ = true;
+            a_->defLabel(ssaBlockLabel(f.blocks[b]));
+            for (std::size_t k = 0; k < blk.insts.size(); k++) selectInst(f, f.inst(blk.insts[k]));
+            ssaInFunclet_ = false;
+            endCleanupFunclet();
+            leaveFunclet();
+            int toState = -1;
+            if (blk.term.valid() && f.inst(blk.term).op == ir::Op::CleanupRet && !f.inst(blk.term).succ.empty())
+                toState = ssaPadState_[f.inst(blk.term).succ[0].block.v];
+            msSetState(ssaPadState_[f.blocks[b].v], toState, funclet);
+            continue;
+        }
+        // A pad: the runtime lands here with the pointer in rax and the selector in edx, stored into the block's two
+        // parameters; a branch from another pad arrives past the stores, at the block's own label, carrying both.
+        if (blk.pad && blk.params.size() == 2) {
+            a_->defLabel(ssaLandLabel(f.blocks[b]));
+            a_->ins("mov", reg("%rax"), vslot(blk.params[0]));
+            a_->ins("movslq", reg("%edx"), reg("%rdx"));     // the selector in its canonical 8-byte form
+            a_->ins("mov", reg("%rdx"), vslot(blk.params[1]));
+        }
         a_->defLabel(ssaBlockLabel(f.blocks[b]));
         for (std::size_t k = 0; k <= blk.insts.size(); k++) {
             const ir::InstId id = k < blk.insts.size() ? blk.insts[k] : blk.term;
@@ -378,6 +498,13 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
             if (in.pos != 0 && in.pos != lastPos) { markLine(in.pos); lastPos = in.pos; }
             selectInst(f, in);
         }
+    }
+    // A function the parser gave landing pads whose tries nothing can throw through registered no row: the prologue
+    // named the LSDA already, so an empty row defines it, as the walker's empty try does.
+    if (fn.hasLandingPads() && callSites().empty() && !usesFunclets()) {
+        const std::string none = label("ssatry", nextLabel());
+        a_->defLabel(none);
+        callSite(none, none, none, std::vector<std::string>(), std::vector<int>(), false, ++ssaRegionAt_, false);
     }
     // What walkBody writes after the body: the default return and the return label.
     if (isX87(fn.returns()))              a_->ins("fldz");

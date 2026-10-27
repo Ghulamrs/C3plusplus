@@ -220,6 +220,7 @@ private:
     const ir::Module *ssa_ = nullptr;
     const TypeTable *ssaTypes_ = nullptr;
     std::vector<long long> ssaAllocaSlot_, ssaValueSlot_;
+    std::vector<std::vector<int> > ssaArgSlots_;      // per call, each argument's copy slot (0 where it has none)
     const ir::Function *ssaFunction(const Function &fn) const;
     int layoutSsa(const Function &fn, const ir::Function &f);
     void ssaScalars(const ir::Function &f, std::vector<opt::Local> &into) const;
@@ -230,6 +231,13 @@ private:
     std::string ssaBlockLabel(ir::BlockId b) const;
     void ssaBranchArgs(const ir::Function &f, const ir::Succ &s);
     void ssaUnsupported(const ir::Inst &i);
+    void selectCall(const ir::Function &f, const ir::Inst &i, const Type *rt);
+    std::string ssaLandLabel(ir::BlockId b) const;
+    int ssaRegionAt_ = 0;
+    // Microsoft: the FH3 state of each pad block (M3-IR 3.6), the frame's scratch word, and whether a funclet is being selected.
+    std::vector<int> ssaPadState_;
+    int ssaUnwindHelpSlot_ = 0;
+    bool ssaInFunclet_ = false;
     void selectInst(const ir::Function &f, const ir::Inst &i);
     void selectBody(const Function &fn, const ir::Function &f);
     std::vector<opt::Local> scalarsOf(const Function &fn) const;

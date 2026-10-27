@@ -1352,8 +1352,23 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     sema::Typer typer(parser);
     const sema::Census c = sema::Typer::census(parser, program);
     ir::Lowering lowering(typer.tree(), parser.syntaxTree(), types, target, program, into);
-    lowering.setConstructed([&typer](const Type *cls) { return typer.constructed(cls); });
-    lowering.setAssigned([&typer](const Type *cls) { return typer.assigned(cls); });
+    lowering.setConstructed([&typer](TypeId cls) { return typer.constructed(cls); });
+    lowering.setAssigned([&typer](TypeId cls) { return typer.assigned(cls); });
+    lowering.setDefaultInit([&typer](TypeId cls, const std::string &m) { return typer.defaultInit(cls, m); });
+    lowering.setGuarded([&typer](const std::string &symbol) { return typer.guardedStatic(symbol); });
+    lowering.setTypeInfo([&typer](TypeId t) { return typer.typeInfoSymbol(t); });
+    lowering.setNewFacts([&typer](syntax::NodeId id, sema::NewFacts &out) { return typer.newFacts(id, out); });
+    lowering.setMemberBuilt([&typer](const std::string &ctor, const std::string &m, std::uint32_t pos, std::string &sym, TypeId &sig, bool &dflt) {
+        return typer.memberBuilt(ctor, m, pos, sym, sig, dflt);
+    });
+    lowering.setDestructor([&typer](TypeId cls) { return typer.destructorSymbol(cls); });
+    lowering.setVptrStores([&typer](const std::string &fn, std::vector<sema::VptrStore> &out) { return typer.vptrStores(fn, out); });
+    lowering.setLocalBuilt([&typer](syntax::NodeId v, std::string &sym, TypeId &sig, bool &dflt, bool &zeroed) {
+        return typer.localBuilt(v, sym, sig, dflt, zeroed);
+    });
+    lowering.setTemporaryBuilt([&typer](syntax::NodeId id, std::string &sym, TypeId &sig, bool &zero) {
+        return typer.temporaryBuilt(id, sym, sig, zero);
+    });
     std::map<std::string, int> reasons;
     int lowered = 0;
     for (std::size_t r = 0; r < c.bodies.size(); r++) {
@@ -1367,7 +1382,8 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         facts.variadic = fn.isVariadic();
         facts.hasThis = fn.hasThis();
         facts.sret = fn.sretSlot() != 0;
-        facts.landingPads = fn.hasLandingPads() || typer.wrappedBody(fn.symbol());
+        facts.landingPads = fn.hasLandingPads();
+        facts.wrappedBody = typer.wrappedBody(fn.symbol()) || !fn.exceptionSpec().empty();
         facts.noexcept_ = fn.isNoexcept();
         facts.pos = fn.pos();
         facts.paramCount = fn.params().size();
@@ -1381,7 +1397,8 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
             if (l.align > 16) aligned = true;
             if (l.isParam || l.type == nullptr || l.type->isReference()) continue;
             int natural = l.type->align(target);
-            if (l.type->isArray() && l.type->size(target) >= 16 && natural < 16) natural = 16;   // not std::max: windows.h's macro
+            const bool aggregate = l.type->isArray() || l.type->isStructOrUnion();      // Microsoft lays one of 16 at 16
+            if (aggregate && l.type->size(target) >= 16 && natural < 16) natural = 16;   // not std::max: windows.h's macro
             if (l.align > natural) aligned = true;
         }
         // A pack expansion's members are one node of the typed tree: such a body stays the parser's.

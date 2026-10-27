@@ -48,7 +48,8 @@ struct CallInfo {
     TypeId signature;       // the function type called through
     bool variadic, hasThis, sret, noexcept_;
     int namedArgs;
-    CallInfo() : variadic(false), hasThis(false), sret(false), noexcept_(false), namedArgs(0) {}
+    int resultAlloca;       // a class returned by value: the frame object it comes back into, -1 for none
+    CallInfo() : variadic(false), hasThis(false), sret(false), noexcept_(false), namedArgs(0), resultAlloca(-1) {}
 };
 
 struct Value { TypeId type; InstId def; BlockId param; std::uint16_t index; Value() : index(0) {} };
@@ -61,6 +62,7 @@ struct Inst {
     long long k;                    // an integer constant, a gep's constant offset, an alloca's frame index, a switch's case count
     unsigned long long bits;        // fconst's IEEE bits
     std::string sym;                // addr's and tlsaddr's symbol
+    std::vector<std::string> syms;  // a catchpad's or cleanuppad's type_info chain, "" for catch(...); `k` its own handlers' count
     Cmp cc;
     std::vector<Succ> succ;         // br: one; condbr: true then false; switch: default then one per case value in `cases`
     std::vector<long long> cases;

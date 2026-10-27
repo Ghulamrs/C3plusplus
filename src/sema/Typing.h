@@ -4,6 +4,7 @@
 // a node per syntax node with the type Sema gives it and, from M3b.0, the record the parser made where it resolved the
 // node (M3-IR 3.8); a node outside the subset is typed null with its parts still typed. -check=typed holds it to Ast.h.
 
+#include "Entities.h"
 #include "../Lexer.h"
 #include "../syntax/Syntax.h"
 #include "../Type.h"
@@ -51,6 +52,17 @@ struct Resolution : ResolutionKind {
     Resolution() : what(None), serial(-1), value(0), isConst(false), isThreadLocal(false), hasThis(false), indirect(false) {}
 };
 
+// A `new` or `delete` as the parser built it (M3b.2): the global allocation function it called, the type made or freed,
+// the initialiser - 0 none, 1 value-initialised, 2 one value - and `why` where the SSA lowering may not take it.
+struct NewFacts {
+    std::string symbol, why, ctor;   // ctor: the constructor `new T(...)` calls on the storage, its type with `T *` first
+    TypeId made, ctorSig;
+    bool array, placed;     // placed: the reserved placement form, `new (p) T` - no allocation, the address given
+    bool ctorZero, ctorDefaulted;    // the object zeroed before the constructor; defaults filled the written arguments out
+    int init;
+    NewFacts() : array(false), placed(false), ctorZero(false), ctorDefaulted(false), init(0) {}
+};
+
 // What a sizeof, alignof or noexcept folded to, or an integer or character literal's value, with its type.
 struct Folded {
     long long value;
@@ -72,6 +84,7 @@ struct TypedNode {
     Folded folded;
     std::uint32_t literal;
     std::uint8_t initForm;      // a `var`'s initialiser form: 0 none, 1 `= e` or `(e)`, 2 a braced list, 3 empty braces
+    std::uint8_t forParts;      // a `for`'s parts present: 1 init, 2 condition, 4 step, 8 recorded at all
 };
 
 class TypedTree {
@@ -87,6 +100,7 @@ public:
     void setCast(TypedId id, TypeId to, bool xvalue);
     void setFolded(TypedId id, long long value, TypeId type);
     void setInitForm(TypedId id, int form) { nodes_[id.v].initForm = static_cast<std::uint8_t>(form); }
+    void setForParts(TypedId id, int parts) { nodes_[id.v].forParts = static_cast<std::uint8_t>(parts | 8); }
     // A string literal's token comes with the label the program's data holds its bytes under (M3b.1: the lowering's `addr`).
     void setLiteral(TypedId id, const Token &token, const std::string &label = std::string());
     const Resolution &resolution(TypedId id) const { return resolutions_[nodes_[id.v].resolved]; }
@@ -127,8 +141,23 @@ public:
     // A body read in a class's, a namespace's or a template's scope (Parser::scopedFunctions_), which the adapter left alone too.
     int scopedBody(syntax::NodeId fn) const;
     bool packBody(const std::string &symbol) const;
-    bool constructed(const Type *cls) const;          // a class some constructor builds, written or implicit
-    bool assigned(const Type *cls) const;             // a class with an operator= of its own, written or implicit   // a pack was expanded in the body: one node stands for its members   // Parser::scopedFunctions_'s bits, 0 for a body at file scope
+    std::string typeInfoSymbol(TypeId t) const;   // the type_info a catch of t names, Sema's; empty where none can be made
+    bool constructed(TypeId cls) const;          // a class some constructor builds, written or implicit
+    bool assigned(TypeId cls) const;             // a class with an operator= of its own, written or implicit
+    bool newFacts(syntax::NodeId id, NewFacts &out) const;  // a `new` or `delete` node's facts; false where none were recorded
+    bool defaultInit(TypeId cls, const std::string &member) const;   // the member has an initialiser of its own
+    bool guardedStatic(const std::string &symbol) const;  // a static local built at run time, under its guard   // a pack was expanded in the body: one node stands for its members   // Parser::scopedFunctions_'s bits, 0 for a body at file scope
+    // The constructor the parser chose, in constructor `ctor`, for a member an entry at `pos` names (0: one the list leaves alone), and
+    // whether default arguments were added to the written ones; false where it built none. A class's destructor's symbol.
+    bool memberBuilt(const std::string &ctor, const std::string &member, std::uint32_t pos, std::string &symbol, TypeId &signature,
+                     bool &defaulted) const;
+    std::string destructorSymbol(TypeId cls) const;
+    // The vptr stores the parser made in a written constructor or destructor `fn`; false where it made none.
+    bool vptrStores(const std::string &fn, std::vector<VptrStore> &out) const;
+    // A local's constructor, its signature with `this`, defaults added, zeroed first ([dcl.init]/8); false where none built it.
+    bool localBuilt(syntax::NodeId var, std::string &symbol, TypeId &signature, bool &defaulted, bool &zeroed) const;
+    // The constructor a class temporary `T(...)` at node `id` was built by, and whether `T()` zeroed the object first.
+    bool temporaryBuilt(syntax::NodeId id, std::string &symbol, TypeId &signature, bool &zeroFirst) const;
     // Whether the function of this symbol is a template specialization (Signature::fromTemplate): its body is a replay.
     bool fromTemplate(const std::string &symbol) const;
     // The census's counts as the report spells them, "functions=N bodies=K synthesised=M", and the kinds behind M.

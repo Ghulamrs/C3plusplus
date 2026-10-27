@@ -21,6 +21,7 @@ TypedId TypedTree::add(syntax::NodeId syn, const Type *type, const std::vector<T
     n.castXvalue = false;
     n.literal = 0;
     n.initForm = 0;
+    n.forParts = 0;
     children_.insert(children_.end(), children.begin(), children.end());
     nodes_.push_back(n);
     return TypedId(static_cast<std::uint32_t>(nodes_.size() - 1));
@@ -133,6 +134,8 @@ void Typer::record(syntax::NodeId id, TypedId t) {
     if (cast != p_.castTypes_.end()) tree_.setCast(t, TypeTable::id(cast->second), false);
     const auto form = p_.varForms_.find(id.v);
     if (form != p_.varForms_.end()) tree_.setInitForm(t, form->second);
+    const auto parts = p_.forParts_.find(id.v);
+    if (parts != p_.forParts_.end()) tree_.setForParts(t, parts->second);
     const auto ref = p_.refCastTypes_.find(id.v);
     if (ref != p_.refCastTypes_.end()) tree_.setCast(t, TypeTable::id(ref->second.first), ref->second.second);
     const auto k = p_.keywordValues_.find(id.v);
@@ -460,9 +463,79 @@ int Typer::scopedBody(syntax::NodeId fn) const {
 
 bool Typer::packBody(const std::string &symbol) const { return p_.packBodies_.count(symbol) != 0; }
 
-bool Typer::constructed(const Type *cls) const { return p_.hasConstructors(cls->unqualified()->tag()); }
+std::string Typer::typeInfoSymbol(TypeId t) const {
+    std::string why;
+    return p_.classes_.typeInfoSymbolFor(p_.types_.type(t), 0, &why);
+}
+bool Typer::constructed(TypeId cls) const { return p_.hasConstructors(p_.types_.type(cls)->unqualified()->tag()); }
 
-bool Typer::assigned(const Type *cls) const { return p_.lookup_.overloadsOf(cls->unqualified()->tag() + "::operator=") != nullptr; }
+bool Typer::guardedStatic(const std::string &symbol) const { return p_.guardedStatics_.count(symbol) != 0; }
+
+bool Typer::defaultInit(TypeId cls, const std::string &member) const {
+    return p_.memberInit_.count(p_.types_.type(cls)->unqualified()->tag() + "::" + member) != 0;
+}
+
+bool Typer::newFacts(syntax::NodeId id, NewFacts &out) const {
+    const std::unordered_map<std::uint32_t, Parser::NewFacts>::const_iterator f = p_.newFacts_.find(id.v);
+    if (f == p_.newFacts_.end() || f->second.made == nullptr) return false;
+    out.symbol = f->second.symbol;
+    out.why = f->second.why;
+    out.made = f->second.made->id();
+    out.array = f->second.array;
+    out.placed = f->second.placed;
+    out.init = f->second.init;
+    out.ctor = f->second.ctor;
+    if (f->second.ctorSig != nullptr) out.ctorSig = f->second.ctorSig->id();
+    out.ctorZero = f->second.ctorZero;
+    out.ctorDefaulted = f->second.ctorDefaulted;
+    return true;
+}
+
+bool Typer::temporaryBuilt(syntax::NodeId id, std::string &symbol, TypeId &signature, bool &zeroFirst) const {
+    const std::unordered_map<std::uint32_t, Parser::TemporaryBuilt>::const_iterator i = p_.temporaryBuilt_.find(id.v);
+    if (i == p_.temporaryBuilt_.end() || i->second.symbol.empty() || i->second.signature == nullptr) return false;
+    symbol = i->second.symbol;
+    signature = TypeTable::id(i->second.signature);
+    zeroFirst = i->second.zeroFirst;
+    return true;
+}
+
+bool Typer::memberBuilt(const std::string &ctor, const std::string &member, std::uint32_t pos, std::string &symbol, TypeId &signature,
+                        bool &defaulted) const {
+    const std::map<std::string, Parser::MemberBuilt>::const_iterator i =
+        p_.memberBuilt_.find(ctor + "|" + member + "|" + std::to_string(pos));
+    if (i == p_.memberBuilt_.end() || i->second.symbol.empty()) return false;
+    symbol = i->second.symbol;
+    signature = TypeTable::id(i->second.signature);
+    defaulted = i->second.defaulted;
+    return true;
+}
+
+bool Typer::vptrStores(const std::string &fn, std::vector<VptrStore> &out) const {
+    const std::map<std::string, std::vector<VptrStore> >::const_iterator i = p_.vptrStores_.find(fn);
+    if (i == p_.vptrStores_.end()) return false;
+    out = i->second;
+    return true;
+}
+
+bool Typer::localBuilt(syntax::NodeId var, std::string &symbol, TypeId &signature, bool &defaulted, bool &zeroed) const {
+    const std::unordered_map<std::uint32_t, Parser::LocalBuilt>::const_iterator i = p_.localBuilt_.find(var.v);
+    if (i == p_.localBuilt_.end() || i->second.symbol.empty()) return false;
+    symbol = i->second.symbol;
+    signature = TypeTable::id(i->second.signature);
+    defaulted = i->second.defaulted;
+    zeroed = i->second.zeroed;
+    return true;
+}
+
+std::string Typer::destructorSymbol(TypeId cls) const {
+    const Type &c = *p_.types_.type(cls)->unqualified();
+    return p_.destructorOf(&c) != nullptr ? p_.destructorOf(&c)->symbol : std::string();
+}
+
+bool Typer::assigned(TypeId cls) const {
+    return p_.lookup_.overloadsOf(p_.types_.type(cls)->unqualified()->tag() + "::operator=") != nullptr;
+}
 
 bool Typer::fromTemplate(const std::string &symbol) const {
     for (std::size_t i = 0; i < p_.lookup_.functions_.size(); i++)

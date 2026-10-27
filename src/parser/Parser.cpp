@@ -460,6 +460,8 @@ Parser::FunctionState Parser::captureFunctionState() const {
     s.returnType = returnType_;
     s.sretSlot = sretSlot_;
     s.nrvoName = nrvoName_;
+    s.dtorExit = dtorExit_;
+    s.dtorExitTaken = dtorExitTaken_;
     s.deducingReturn = deducingReturn_;
     s.unaryOperand = unaryOperand_;
     s.condParts = condParts_;
@@ -515,6 +517,7 @@ Parser::FunctionState Parser::captureFunctionState() const {
     s.pendingReturnTemp = pendingReturnTemp_;
     s.pendingTry = pendingTry_;
     s.pendingThrow = pendingThrow_;
+    s.pendingNew = pendingNew_;
     s.pendingRange = pendingRange_;
     s.pendingLambda = pendingLambda_;
     s.lambdaBodies = lambdaBodies_;
@@ -546,6 +549,8 @@ void Parser::restoreFunctionState(const FunctionState &s) {
     returnType_ = s.returnType;
     sretSlot_ = s.sretSlot;
     nrvoName_ = s.nrvoName;
+    dtorExit_ = s.dtorExit;
+    dtorExitTaken_ = s.dtorExitTaken;
     deducingReturn_ = s.deducingReturn;
     unaryOperand_ = s.unaryOperand;
     condParts_ = s.condParts;
@@ -601,6 +606,7 @@ void Parser::restoreFunctionState(const FunctionState &s) {
     pendingReturnTemp_ = s.pendingReturnTemp;
     pendingTry_ = s.pendingTry;
     pendingThrow_ = s.pendingThrow;
+    pendingNew_ = s.pendingNew;
     pendingRange_ = s.pendingRange;
     pendingLambda_ = s.pendingLambda;
     lambdaBodies_ = s.lambdaBodies;
@@ -633,6 +639,8 @@ void Parser::clearFunctionState() {
     returnType_ = nullptr;
     sretSlot_ = 0;
     nrvoName_.clear();
+    dtorExit_.clear();
+    dtorExitTaken_ = false;
     deducingReturn_ = nullptr;
     unaryOperand_ = syntax::NodeId();
     condParts_ = CondParts();
@@ -685,6 +693,7 @@ void Parser::clearFunctionState() {
     pendingReturnTemp_ = ReturnTemp();
     pendingTry_ = TryFacts();
     pendingThrow_ = ThrowFacts();
+    pendingNew_ = NewFacts();
     pendingRange_ = RangeFacts();
     pendingLambda_ = LambdaFacts();
     lambdaBodies_.clear();

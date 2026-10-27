@@ -582,6 +582,12 @@ private:
     std::unordered_map<std::uint32_t, std::pair<long long, const Type *> > keywordValues_;
     // The `function` nodes whose names outside them are not the file's - a member's, a namespace's, a template's.
     std::map<std::uint32_t, int> scopedFunctions_;
+    // **What builds each member a written constructor names or leaves** (M3b.2): the constructor overload resolution
+    // chose, keyed "constructor|member|pos" - the constructor's symbol, the entry's position, 0 for one left alone.
+    struct MemberBuilt { std::string symbol; const Type *signature; bool defaulted; };
+    std::map<std::string, MemberBuilt> memberBuilt_;
+    // The vptrs each written constructor and destructor of a class with one stores, by its symbol (M3b.2).
+    std::map<std::string, std::vector<sema::VptrStore> > vptrStores_;
     std::set<std::string> packBodies_;   // the symbols of bodies in which a pack was expanded   // a body's scope: 1 a member, 2 a namespace, 4 a qualified name, 8 a template
     // **What the parser decides of layout as it reads, by node** (M2.11): a `var`'s frame slot, a block's or a `for`'s
     // scope, and the symbol a `function` node was defined as - what the adapter cannot derive from types.
@@ -615,6 +621,13 @@ private:
     struct ThrowFacts { std::string temp; int slot = 0; std::string info; };
     std::unordered_map<std::uint32_t, ThrowFacts> throwFacts_;
     ThrowFacts pendingThrow_;
+    // A `new` or `delete` as the SSA lowering may take it (M3b.2): the allocation function called, the type, the initialiser
+    // (0 none, 1 value-initialised, 2 one value), `why` where it may not; for a class with constructors the one chosen,
+    // its type with `T *` first, whether the object is zeroed first and whether defaults filled the arguments out.
+    struct NewFacts { std::string symbol, why, ctor; const Type *made = nullptr, *ctorSig = nullptr;
+                      bool array = false, placed = false, ctorZero = false, ctorDefaulted = false; int init = 0; };
+    std::unordered_map<std::uint32_t, NewFacts> newFacts_;
+    NewFacts pendingNew_;
     void noteCallSlots(const Call &c) {
         if (!c.syntax().valid()) return;
         CallSlots &k = callSlots_[c.syntax().v];
@@ -628,6 +641,7 @@ private:
     // **A declarator's initialiser form** (M3b.2), what its `var` node's parts cannot say: `S a;` and `S a = {};` hold
     // nothing either way. 0 none, 1 `= e` or `(e)`, 2 a braced list, 3 empty braces - value-initialisation.
     std::unordered_map<std::uint32_t, int> varForms_;
+    std::unordered_map<std::uint32_t, int> forParts_;   // a `for`'s parts present: 1 init, 2 condition, 4 step (M3b.2)
     int initFormAhead() const {
         const bool eq = peek().is("=");
         const Token &t = eq ? peekAt(1) : peek();
@@ -644,11 +658,16 @@ private:
         const Local *l = lookup_.findLocal(name);
         if (l == nullptr) return;
         declaredLocals_[id.v] = *l;
-        std::map<int, std::string>::const_iterator c = ctorBySerial_.find(l->serial);
-        if (c != ctorBySerial_.end()) resolutions_[id.v] = resolvedAs(Resolved::Call, nullptr, c->second);
+        std::map<int, LocalBuilt>::const_iterator c = ctorBySerial_.find(l->serial);
+        if (c == ctorBySerial_.end()) return;
+        resolutions_[id.v] = resolvedAs(Resolved::Call, nullptr, c->second.symbol);
+        localBuilt_[id.v] = c->second;
     }
-    // The constructor a declaration called, by the declared local's serial, until its `var` node is made (M2.16).
-    std::map<int, std::string> ctorBySerial_;
+    // The constructor a declaration called, by the declared local's serial, until its `var` node is made (M2.16): its
+    // signature with `this`, whether defaults were added to the written arguments, whether [dcl.init]/8 zeroed first.
+    struct LocalBuilt { std::string symbol; const Type *signature; bool defaulted, zeroed; };
+    std::map<int, LocalBuilt> ctorBySerial_;
+    std::unordered_map<std::uint32_t, LocalBuilt> localBuilt_;      // the same, by `var` node (M3b.2)
     // **One declarator's `var` node**, made when the declarator's scope closes - which a loop body that leaves by
     // `continue` from several places does in one place - over the parts its parse recorded: a bound, an initialiser.
     struct VarNote {
@@ -695,6 +714,9 @@ private:
     }
     // A class temporary `T(a)` is `*(ctor(&$tmp, a), &$tmp)`, its slot the parser's: kept by node (M2.12i).
     std::unordered_map<std::uint32_t, int> temporarySlots_;
+    // And the constructor that built it, by node: its symbol, its type with `T *` first, and whether `T()` zeroed first.
+    struct TemporaryBuilt { std::string symbol; const Type *signature; bool zeroFirst; };
+    std::unordered_map<std::uint32_t, TemporaryBuilt> temporaryBuilt_;
     // A value a const or rvalue reference binds copied into a frame slot by bindReference: its name and slot, by node.
     std::unordered_map<std::uint32_t, std::pair<std::string, int> > bindTemps_;
     // A lambda whose captures are scalar locals: the closure's slot and each capture's member and source, by node.
@@ -728,9 +750,16 @@ private:
         const Var *tmp = at != nullptr && at->op() == '&' ? dynamic_cast<const Var *>(&at->operand()) : nullptr;
         if (tmp == nullptr || tmp->name() != "$tmp") return;
         temporarySlots_[e->syntax().v] = tmp->offset();
-        // The temporary's class, and the constructor that built it where one did.
+        // The temporary's class, and the constructor that built it where one did - behind the zeroing of `T()` for an
+        // implicit one, which the SSA lowering's record says (M3b.2).
         const std::uint32_t ctor = both->left().resolved();
         resolutions_[e->syntax().v] = resolvedAs(Resolved::Temporary, e->type(), ctor != 0 ? resolvedTable_[ctor].symbol : std::string());
+        const Comma *zeroed = ctor == 0 ? dynamic_cast<const Comma *>(&both->left()) : nullptr;
+        const std::uint32_t built = zeroed != nullptr ? zeroed->right().resolved() : ctor;
+        if (built != 0 && resolvedTable_[built].what == Resolved::Call) {
+            const TemporaryBuilt b = { resolvedTable_[built].symbol, resolvedTable_[built].type, zeroed != nullptr };
+            temporaryBuilt_[e->syntax().v] = b;
+        }
         for (std::size_t i = 0; i < pendingTemps_.size(); i++)
             if (pendingTemps_[i].slot == tmp->offset()) temporaryGuards_[e->syntax().v] = pendingTemps_[i].flag;
     }
@@ -789,6 +818,9 @@ private:
     int sretSlot_ = 0;
     // The one local every `return` of this body names, built where the caller asked (NRVO), or empty.
     std::string nrvoName_;
+    // In a written destructor, where `return` goes: past the body, to the member and base destructors (empty elsewhere).
+    std::string dtorExit_;
+    bool dtorExitTaken_ = false;
     std::string nrvoCandidate() const;
     // Set while a lambda's body is read to find its return type: a `return`
     // writes the type of its operand here, the first one deciding, and is
@@ -1063,7 +1095,8 @@ private:
         const Type *currentClass = nullptr;
         const Type *returnType = nullptr;
         int sretSlot = 0;
-        std::string nrvoName;
+        std::string nrvoName, dtorExit;
+        bool dtorExitTaken = false;
         const Type **deducingReturn = nullptr;
         syntax::NodeId unaryOperand;
         CondParts condParts;
@@ -1114,10 +1147,11 @@ private:
         ReturnTemp pendingReturnTemp;
         TryFacts pendingTry;
         ThrowFacts pendingThrow;
+        NewFacts pendingNew;
         RangeFacts pendingRange = RangeFacts();
         LambdaFacts pendingLambda;
         std::vector<syntax::NodeId> lambdaBodies;
-        std::map<int, std::string> ctorBySerial;
+        std::map<int, LocalBuilt> ctorBySerial;
     };
     // **A parse whose result is discarded must put back what it accumulated.**
     struct Discarded {

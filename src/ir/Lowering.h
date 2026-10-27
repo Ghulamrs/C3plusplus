@@ -21,12 +21,12 @@ namespace ir {
 // What the lowering is told of the function being lowered, which Ast.h's Function carries and the typed tree does not.
 struct FunctionFacts {
     std::string symbol, displayName;
-    bool isStatic, isInline, variadic, hasThis, sret, landingPads, noexcept_;
+    bool isStatic, isInline, variadic, hasThis, sret, landingPads, wrappedBody, noexcept_;
     TypeId returns;
     TypeId thisType;        // a member function's `this`, the first of the parser's parameter slots
     std::size_t pos, paramCount;
     FunctionFacts() : isStatic(false), isInline(false), variadic(false), hasThis(false), sret(false), landingPads(false),
-                      noexcept_(false), pos(0), paramCount(0) {}
+                      wrappedBody(false), noexcept_(false), pos(0), paramCount(0) {}
 };
 
 class Lowering {
@@ -40,12 +40,29 @@ public:
     // One function's typed `function` node lowered into the module, or none with the reason the subset does not reach it.
     FuncId lower(sema::TypedId fn, const FunctionFacts &facts, std::string &why);
     // Which classes a constructor builds - the parser's to say, asked by the glue (M3b.2).
-    void setConstructed(std::function<bool(const Type *)> f) { constructed_ = f; }
-    void setAssigned(std::function<bool(const Type *)> f) { assigned_ = f; }
+    void setConstructed(std::function<bool(TypeId)> f) { constructed_ = f; }
+    void setAssigned(std::function<bool(TypeId)> f) { assigned_ = f; }
+    void setDefaultInit(std::function<bool(TypeId, const std::string &)> f) { defaultInit_ = f; }
+    void setGuarded(std::function<bool(const std::string &)> f) { guarded_ = f; }
+    void setTypeInfo(std::function<std::string(TypeId)> f) { typeInfo_ = f; }
+    void setNewFacts(std::function<bool(syntax::NodeId, sema::NewFacts &)> f) { newFacts_ = f; }
+    // The constructor the parser chose for a member, and a class's destructor - Sema's records, asked by the glue.
+    void setMemberBuilt(std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> f) { memberBuilt_ = f; }
+    void setDestructor(std::function<std::string(TypeId)> f) { destructor_ = f; }
+    // The vptr stores the parser made in a written constructor or destructor, by its symbol.
+    void setVptrStores(std::function<bool(const std::string &, std::vector<sema::VptrStore> &)> f) { vptrStores_ = f; }
+    // The constructor the parser chose for a local's `var` node - Sema's record, asked by the glue.
+    void setLocalBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &, bool &)> f) { localBuilt_ = f; }
+    void setTemporaryBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> f) { temporaryBuilt_ = f; }
 private:
     struct Outside { std::string why; explicit Outside(const std::string &w) : why(w) {} };
     struct Val { ValueId v; TypeId type; Val() {} Val(ValueId a, TypeId t) : v(a), type(t) {} };
-    struct Loop { BlockId brk, cont; };
+    struct Loop { BlockId brk, cont; std::size_t handlers, live; };
+    // A local a destructor destroys, alive from its construction to the end of its scope; `pad` is its cleanup's index in pads_.
+    struct Live { ValueId slot; TypeId cls; std::string dtor; std::size_t pad; };
+    // A landing pad a call inside its region unwinds to (M3-IR 3.6): a try's, or a handler's end-catch cleanup. Its block is
+    // made on first use; `types` is the whole action chain, own handlers first, then the enclosing pads' - the walker's.
+    struct Pad { BlockId block; ValueId ptr, sel; bool cleanup; std::vector<std::string> types; std::vector<int> indices; std::size_t own; };
     struct SwitchCtx { std::vector<long long> values; std::vector<BlockId> targets; BlockId deflt; BlockId brk; };
 
     // The builder: a new instruction in the current block, its result value made where `type` is one.
@@ -83,6 +100,14 @@ private:
     void forStmt(sema::TypedId id);
     void switchStmt(sema::TypedId id);
     BlockId labelBlock(const std::string &name);
+    void tryStatement(sema::TypedId id);
+    BlockId padBlock(Pad &p);
+    void resumeFrom(const Pad &p, std::size_t enclosing);
+    void endCatches(std::size_t n);
+    int typeIndexFor(const std::string &sym);
+    ValueId entryAlloca(TypeId slotType, const std::string &name);
+    Val runtimeCall(const std::string &symbol, TypeId returns, const std::vector<ValueId> &args);
+    InstId callOrInvoke(TypeId carries, const std::vector<ValueId> &ops);
 
     // Expressions: an rvalue, or an object's address with its type.
     Val expr(sema::TypedId id);
@@ -102,6 +127,9 @@ private:
     Val conditional(sema::TypedId id);
     Val assign(sema::TypedId id);
     Val call(sema::TypedId id);
+    Val newExpression(sema::TypedId id);
+    Val deleteExpression(sema::TypedId id);
+    sema::NewFacts newFacts(sema::TypedId id, const std::string &what);
     Val literal(sema::TypedId id);
     Val truth(Val v);
     Val convert(Val v, TypeId to, bool cast = false);
@@ -121,8 +149,48 @@ private:
     static bool scalar(const Type &t);
     static bool referable(const Type &t);
     bool plainClass(const Type &t) const;
+    bool simpleLayout(const Type &cls) const;
+    bool builtMember(const Type &t) const;
+    bool buildableLayout(const Type &cls, bool vptr = false) const;
+    void buildMember(ValueId at, const Member &m, sema::TypedId entry);
+    void destroyMembers(const Type &cls);
+    int baseNamed(const Type &cls, const std::string &name) const;
+    ValueId baseAddress(const Type::BaseSpec &b);
+    void buildBase(const Type::BaseSpec &b, sema::TypedId entry);
+    void destroyBases(const Type &cls);
+    void arguments(sema::TypedId id, std::uint32_t from, const Type &ft, std::size_t skip, bool variadic, std::vector<ValueId> &ops);
+    void argumentList(const Type &ft, std::size_t skip, bool variadic, const std::vector<sema::TypedId> &args, bool dummyInt,
+                      std::vector<ValueId> &ops);
+    void directCall(const std::string &symbol, TypeId signature, const std::vector<ValueId> &ops);
+    bool pseudoDestructor(sema::TypedId member);
+    bool threadLocalGlobal(const std::string &symbol) const;
+    Val toBase(Val v, TypeId to, bool cast = false);
+    Val callTail(TypeId sig, CallInfo info, std::vector<ValueId> ops, std::size_t skip, const std::vector<sema::TypedId> &args,
+                 bool dummyInt);
+    bool operatorCalls(sema::TypedId id) const;
+    Val operatorCall(sema::TypedId id);
+    Val condition(sema::TypedId id);
+    void throwExpr(sema::TypedId id);
+    void throwCall(const std::string &symbol, const std::vector<ValueId> &args);
+    void basePaths(const Type &cls, const Type &base, int at, int &found, int &offset);
+    void memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32_t to);
+    void storeVptrs();
     void classLocal(sema::TypedId var, ValueId slot, const Type &t);
+    bool builtClass(const Type &t) const;
+    void builtLocal(sema::TypedId var, ValueId slot, const Type &t);
+    void destroy(const Live &l, bool invoke = false);
+    void destroyLive(std::size_t mark);
+    void closeScope(std::size_t mark);
+    void scopedStmt(sema::TypedId id);
     void copyObject(ValueId to, ValueId from, const Type &t);
+    bool plainTemporary(sema::TypedId id) const;
+    bool constructedClass(const Type &t) const;
+    bool constructedTemporary(sema::TypedId id) const;
+    bool temporaryNode(sema::TypedId id) const { return plainTemporary(id) || constructedTemporary(id); }
+    Val temporary(sema::TypedId id);
+    void construct(ValueId where, const std::string &symbol, TypeId sig, const Type &cls, bool zeroFirst, sema::TypedId args, std::uint32_t from);
+    bool objectNode(sema::TypedId id) const;
+    Val object(sema::TypedId id);
     static bool scalarArithmetic(const Type &t);
     static long long normalise(long long v, const Type &t, const Target &target);
 
@@ -139,9 +207,25 @@ private:
     TypeId returns_;
     ValueId this_;          // a member function's `this`, none in any other
     TypeId thisType_;
-    std::function<bool(const Type *)> constructed_, assigned_;
+    std::function<bool(TypeId)> constructed_, assigned_;
+    std::function<bool(TypeId, const std::string &)> defaultInit_;
+    std::function<bool(const std::string &)> guarded_;
+    std::function<std::string(TypeId)> typeInfo_;
+    std::function<bool(syntax::NodeId, sema::NewFacts &)> newFacts_;
+    std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> memberBuilt_;
+    std::function<std::string(TypeId)> destructor_;
+    std::function<bool(const std::string &, std::vector<sema::VptrStore> &)> vptrStores_;
+    std::vector<sema::VptrStore> vptrs_;        // what a constructor or destructor of a class with a vptr stores
+    std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &, bool &)> localBuilt_;
+    std::vector<Live> live_;                    // innermost last
+    bool landingPads_;                          // the parser gave the function landing pads: the prologue names an LSDA
+    std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> temporaryBuilt_;
+    std::vector<Pad> pads_;                     // innermost last
+    std::vector<std::string> typeTable_;        // the function's selector indices: one per type, first occurrence, 1-based
+    std::size_t handlerDepth_;                  // handlers the statement being lowered is inside
     BlockId returnBlock_;
     std::map<std::uint32_t, std::pair<ValueId, TypeId> > locals_;    // a `var` node -> its alloca and declared type
+    std::map<std::uint32_t, std::pair<std::string, TypeId> > staticLocals_;   // a static `var` -> its symbol and type
     std::vector<Loop> loops_;
     std::vector<SwitchCtx> switches_;
     std::map<std::string, BlockId> labels_;

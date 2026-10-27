@@ -1200,6 +1200,7 @@ void Parser::topLevel(Program &program) {
             }
             const int frameBeforeArgs = frameSize_;
             const std::size_t tempsBeforeArgs = pendingTemps_.size();
+            const std::size_t initMark = syntaxTree_.size();
             std::vector<ExprPtr> args;
             if (peek().is("{")) {
                 // [class.base.init]/1: `j{3}`, `v{1, 2}`, `Base{...}` - direct-list-initialisation (M1 L15).
@@ -1223,6 +1224,7 @@ void Parser::topLevel(Program &program) {
                 expect("(");
                 parseArguments(args);
             }
+            noteParts(syntax::Kind::MemInit, entry, epos, initMark, epos);   // what the entry names, over its arguments (M3b.2)
             entries++;
             {
                 const Type *named = templateBase != nullptr ? templateBase : lookup_.findTypedef(entry);
@@ -1648,7 +1650,9 @@ void Parser::topLevel(Program &program) {
         if (memberOf != nullptr && memberOf->hasVptr() && !delegates &&
             (d.name == localOf(d.qualifier) ||
              d.name == "~" + localOf(d.qualifier))) {
-            std::vector<StmtPtr> withVptr = classes_.storeVptrs(d.qualifier, memberOf, thisOffset_);
+            std::vector<sema::VptrStore> &stores = vptrStores_[currentFunction_];
+            stores.clear();
+            std::vector<StmtPtr> withVptr = classes_.storeVptrs(d.qualifier, memberOf, thisOffset_, &stores);
             withVptr.push_back(std::move(body));
             body = StmtPtr(new Block(std::move(withVptr)));
         }
@@ -1658,6 +1662,8 @@ void Parser::topLevel(Program &program) {
         if (memberOf != nullptr && d.name == "~" + localOf(d.qualifier)) {
             std::vector<StmtPtr> withMembers;
             withMembers.push_back(std::move(body));
+            // A `return` in the body comes here, so the members and bases are destroyed on that way out too.
+            if (dtorExitTaken_) withMembers.push_back(make_owned<Label>(dtorExit_, make_owned<Block>(std::vector<StmtPtr>())));
             std::vector<StmtPtr> mine =
                 classes_.memberDestructors(d.qualifier, memberOf, thisOffset_, d.pos);
             for (std::size_t i = 0; i < mine.size(); i++)
@@ -1730,6 +1736,7 @@ void Parser::topLevel(Program &program) {
                                      "taking nothing - name one in the initialiser "
                                      "list, ': " + base->tag() + "(...)'");
                 // **The defaults the entry left out are read here, as every other call reads them.**
+                const std::size_t baseWritten = chosenArgs.size();
                 if (building && !copyBytes) applyDefaults(chosen, chosenArgs, d.pos);
 
                 std::string symbol = chosen.symbol;
@@ -1802,6 +1809,12 @@ void Parser::topLevel(Program &program) {
                     args.push_back(std::move(chosenArgs[i]));
                     params2.push_back(chosen.params[i]);
                 }
+                // What builds or destroys this base, for the SSA lowering (M3b.2): keyed as a member is, "^B" or "~B".
+                if (!memberTemplateInst_ && !takesVtt(base)) {
+                    const MemberBuilt b = { symbol, types_.functionType(types_.get(Kind::Void), params2, false),
+                                            building && chosenArgs.size() != baseWritten };
+                    memberBuilt_[currentFunction_ + "|" + (building ? "^" : "~") + base->tag() + "|0"] = b;
+                }
                 ExprPtr call = completeCall(base->tag(), symbol, nullptr,
                                             types_.get(Kind::Void), params2, false,
                                             d.pos, std::move(args), false, 0);
@@ -1848,6 +1861,8 @@ void Parser::topLevel(Program &program) {
     std::string spec = "$spec";
     for (const std::string &sym : specSymbols) spec += "," + sym;
     nrvoName_ = nrvoCandidate();
+    dtorExit_ = memberOf != nullptr && !ctorTry && d.name == "~" + localOf(d.qualifier) ? "$dtorexit" : "";
+    dtorExitTaken_ = false;
     if (specFilter) {
         const std::size_t bodyAt = peek().pos;
         body = tryStatement(bodyAt, [&]() {

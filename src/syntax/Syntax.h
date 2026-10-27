@@ -24,7 +24,8 @@ enum class Kind : std::uint8_t {
     Block, ExprStmt, DeclStmt, Return, If, While, Do, For, Switch, Case, Default,
     Break, Continue, Goto, Label, Try, Catch, Null,
     // declarations
-    Var, Function
+    Var, Function,
+    MemInit     // a constructor's mem-initialiser: its text the member or base it names, its parts the arguments
 };
 
 // The name of a kind, as the dump spells it.

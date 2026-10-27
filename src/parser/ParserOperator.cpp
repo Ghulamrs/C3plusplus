@@ -71,6 +71,18 @@ ExprPtr Parser::castExpr() {
         const std::string written = to->describe();
         if (to->isVoid()) return noteCast(ExprPtr(new Cast(to, std::move(v))), to, written, openPos, vs);
         refuseUnrelatedClassCast(*v, to, openPos, "a cast");
+        // [expr.cast]/4: a cast that can be a static_cast is one, so a base pointer cast to its class steps back.
+        auto pointerCast = [&](ExprPtr from, const Type *toPtr) -> ExprPtr {
+            const Type *have = from->type();
+            if (toPtr->isPointer() && have->isPointer() && toPtr->pointee()->unqualified()->isStructOrUnion() &&
+                have->pointee()->unqualified()->isStructOrUnion() &&
+                toPtr->pointee()->unqualified() != have->pointee()->unqualified()) {
+                bool viaVirtual = false;
+                const int off = downcastOffset(toPtr->pointee(), have->pointee(), &viaVirtual);
+                if (off > 0) return downcastPointer(std::move(from), toPtr, off);
+            }
+            return convert(std::move(from), toPtr, true);
+        };
         // **`(const V &)q` and `(int &)k` name an lvalue of the referent**, [expr.cast]/4 - built on
         // addresses, which carries a base's offset, so the result is an operand, not a reference-typed value.
         if (to->isReference() && !to->isRValueReference() && v->type() != nullptr &&
@@ -80,12 +92,12 @@ ExprPtr Parser::castExpr() {
             const Type *from = v->type();
             ExprPtr at(new Unary('&', std::move(v)));
             at->setType(types_.pointerTo(from));
-            at = convert(std::move(at), types_.pointerTo(ref), true);
+            at = pointerCast(std::move(at), types_.pointerTo(ref));
             ExprPtr r(new Unary('*', std::move(at)));
             r->setType(ref);
             return noteCast(std::move(r), to, written, openPos, vs);
         }
-        ExprPtr r = convert(std::move(v), to, true);   // a cast allows explicit
+        ExprPtr r = pointerCast(std::move(v), to);   // a cast allows explicit
         if (!to->isReference()) r->setDeclCategory(Expr::Category::Prvalue);
         return noteCast(std::move(r), to, written, openPos, vs);
     }

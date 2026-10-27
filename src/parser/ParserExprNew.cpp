@@ -1688,7 +1688,8 @@ ExprPtr Parser::newExpression(std::size_t pos) {
     // **`new T{}` is `new T()`**, [dcl.init]/11; `new T{...}` list-initialises the object,
     // [expr.new]/15 - a constructor's arguments, or an aggregate or scalar made as `T{...}`.
     const bool braces = peek().is("{");
-    if (braces && !peekAt(1).is("}")) {
+    const bool bracedList = braces && !peekAt(1).is("}");
+    if (bracedList) {
         if (array)
             src_.fail(peek().pos, "'new " + made->describe() + "[n]{...}' - a braced list for "
                                   "the elements of 'new[]' is not supported yet; the empty "
@@ -1726,6 +1727,19 @@ ExprPtr Parser::newExpression(std::size_t pos) {
             if (!vals.empty()) init = std::move(vals[0]);
         }
     }
+    // What the SSA lowering is told of this `new` (M3b.2); the nested ones in its operands have taken theirs.
+    pendingNew_ = NewFacts();
+    pendingNew_.made = made;
+    pendingNew_.array = array;
+    pendingNew_.init = !hasInit ? 0 : init ? 2 : 1;
+    if (nothrow) pendingNew_.why = "a nothrow 'new'";
+    else if (userAlloc) pendingNew_.why = "a placement 'new' of an allocation function of the program's";
+    else if (bracedList) pendingNew_.why = "a 'new' with a braced list";
+    else if (classAllocator(made, array ? "operatornew[]" : "operatornew") != nullptr) pendingNew_.why = "a class's own operator new";
+    else if (array && arrayCookie(made) != 0) pendingNew_.why = "an array 'new' with a cookie";
+    else if (placement != nullptr) { pendingNew_.placed = true; pendingNew_.symbol = "$placed"; }   // [new.delete.placement]
+    else if (target_.microsoftNames()) pendingNew_.symbol = array ? "??_U@YAPEAX_K@Z" : "??2@YAPEAX_K@Z";
+    else pendingNew_.symbol = std::string(array ? "_Zna" : "_Znw") + itaniumBuiltinCode(target_.sizeType());
     const Type *sizeT = types_.get(target_.sizeType());
     ExprPtr bytes(new Num(static_cast<long long>(made->size(target_))));
     bytes->setType(sizeT);
@@ -1870,6 +1884,7 @@ ExprPtr Parser::newExpression(std::size_t pos) {
     // **`new T[n]` of a class runs the default constructor once per element**
     // - [expr.new]/17 - by the class's loop, given the array and the count.
     if (constructed && array) {
+        pendingNew_.why = "an array 'new' of a class with constructors";
         const int baseSlot = allocateFrameSlot(pointer);
         const std::string baseTemp = ".newb" + std::to_string(newTemps_++);
         ExprPtr held(Var::local(baseTemp, baseSlot));
@@ -1960,6 +1975,7 @@ ExprPtr Parser::newExpression(std::size_t pos) {
         // `new (p) T(t)` a copy of the bytes, the store a declaration `T u(t);` already makes.
         if (ctorArgs.size() == 1 && classes_.copyConstructorOf(made) == nullptr && classes_.moveConstructorOf(made) == nullptr &&
             ctorArgs[0]->type()->unqualified() == made) {
+            pendingNew_.why = "a 'new' of a class with constructors copied from an object";
             ExprPtr base(Var::local(temp, slot));
             base->setType(pointer);
             ExprPtr target(new Unary('*', std::move(base)));
@@ -1990,7 +2006,10 @@ ExprPtr Parser::newExpression(std::size_t pos) {
         // **The defaults, as every other constructor call reads them.** This call
         // is built by hand, one argument per parameter, and `new M` of an
         // `M(int a = 5)` was refused after resolution had already accepted it.
+        const std::size_t written = ctorArgs.size();
+        const NewFacts facts = pendingNew_;      // a `new` in a default argument would take these as its own
         applyDefaults(ctor, ctorArgs, pos);
+        pendingNew_ = facts;
         std::vector<ExprPtr> all;
         ExprPtr self(Var::local(temp, slot));
         self->setType(pointer);
@@ -2002,6 +2021,10 @@ ExprPtr Parser::newExpression(std::size_t pos) {
         full.push_back(pointer);
         for (std::size_t i = 0; i < ctor.params.size(); i++)
             full.push_back(ctor.params[i]);
+        pendingNew_.ctor = ctor.symbol;
+        pendingNew_.ctorSig = types_.functionType(types_.get(Kind::Void), full, false);
+        pendingNew_.ctorZero = zeroFirst;
+        pendingNew_.ctorDefaulted = ctorArgs.size() != written;
 
         ExprPtr build = completeCall(made->tag(), ctor.symbol, nullptr,
                                      types_.get(Kind::Void), full, false, pos,
@@ -2107,6 +2130,13 @@ ExprPtr Parser::deleteExpression(std::size_t pos) {
 
     // **The destructor runs before the memory goes back**, as clang emits it.
     const Signature *dtor = destructorOf(t->pointee());
+    pendingNew_ = NewFacts();
+    pendingNew_.made = t->pointee();
+    pendingNew_.array = array;
+    if (dtor != nullptr) pendingNew_.why = "a 'delete' of a class with a destructor";
+    else if (classAllocator(t->pointee(), array ? "operatordelete[]" : "operatordelete") != nullptr) pendingNew_.why = "a class's own operator delete";
+    else if (target_.microsoftNames()) pendingNew_.symbol = array ? "??_V@YAXPEAX@Z" : "??3@YAXPEAX@Z";
+    else pendingNew_.symbol = array ? "_ZdaPv" : "_ZdlPv";
 
     // **A virtual destructor is reached through the vtable**, the static type
     // not being the one to destroy; the slot's deleting form frees as well.

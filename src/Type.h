@@ -675,6 +675,9 @@ public:
     // **A type by its handle, and back** (C7): every type this table made has one, and `type(id(t)) == t`.
     const Type *type(TypeId id) const;
     static TypeId id(const Type *t) { return t == nullptr ? TypeId() : t->id(); }
+    // A function type made of handles, for the IR (M3-IR 3.1): `returns(params...)`, not variadic.
+    TypeId functionType(TypeId returns, const std::vector<TypeId> &params);
+    TypeId pointerTo(TypeId t) { return id(pointerTo(type(t))); }
     // How many handles are taken: the fundamental kinds and every derived type so far.
     std::uint32_t typeCount() const { return static_cast<std::uint32_t>(types_.size() + derived_.size()); }
 

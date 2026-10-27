@@ -109,10 +109,11 @@ void Classes::storeVbptr(const std::string &cls, const Type *memberOf,
 // constructor path when implicit constructors arrived. Itanium's whole walk
 // is ParserVtable.cpp's; Microsoft has one table, and no header before it.
 std::vector<StmtPtr> Classes::storeVptrs(const std::string &cls,
-                                        const Type *memberOf, int thisSlot) {
+                                        const Type *memberOf, int thisSlot,
+                                        std::vector<VptrStore> *record) {
     std::vector<StmtPtr> withVptr;
     if (!p_.target_.microsoftNames())
-        return itaniumVptrStores(cls, memberOf, thisSlot);
+        return itaniumVptrStores(cls, memberOf, thisSlot, record);
     // **Microsoft has two pointers and a class can want either alone.**
     if (!memberOf->polymorphic()) return withVptr;
     // **The class itself where it is the one named**, so a specialization's
@@ -143,6 +144,7 @@ std::vector<StmtPtr> Classes::storeVptrs(const std::string &cls,
     store->setType(entry);
 
     withVptr.push_back(StmtPtr(new ExprStmt(std::move(store))));
+    if (record != nullptr) record->push_back(VptrStore{ 0, table, 0 });
     return withVptr;
 }
 
@@ -3028,7 +3030,8 @@ void Classes::vptrSites(const Type *x, int xAt, bool morally, const Type *vbase,
 // depending on the complete object; every other vptr is the class's own group's.
 std::vector<StmtPtr> Classes::itaniumVptrStores(const std::string &cls,
                                                const Type *memberOf,
-                                               int thisSlot) {
+                                               int thisSlot,
+                                               std::vector<VptrStore> *record) {
     std::vector<StmtPtr> out;
     const Type *plain = memberOf->unqualified();
     const std::string table = plain->tag() == cls ? vtableSymbol(plain, false)
@@ -3122,6 +3125,12 @@ std::vector<StmtPtr> Classes::itaniumVptrStores(const std::string &cls,
         ExprPtr store(new Assign(std::move(there), std::move(value)));
         store->setType(word);
         out.push_back(StmtPtr(new ExprStmt(std::move(store))));
+        // The same store as a record for the SSA lowering (M3b.2), the symbol left empty where no constant names it.
+        if (record != nullptr) {
+            const bool constant = !fromVtt && !s.morallyVirtual;
+            const long long point = constant ? g.points.find(key)->second : 0;
+            record->push_back(VptrStore{ s.offset, constant ? table : std::string(), point });
+        }
     }
     return out;
 }

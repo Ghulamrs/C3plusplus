@@ -654,3 +654,108 @@ MASM pass did not run in this leg (masm is built on `src/encoder` since M4.3 and
 mended in `4b0fb63`) and is queued, with TI's lnk6x, `release-check` and `c6747-levels` on the box's TI tools,
 `self-host.cmd`, `bench.cmd`, `examples/` and the ml64 baseline. The hang the Mac met under `-front=ssa -O1` on
 `stack-probe` came from M3b.1's sweep binary and does not reproduce on the current tree at any level.
+
+**M3b.2, the exception growth: `try`/`catch` on the Itanium ABI** (2026-10-26, Fable 5.1, branch `m3b2-eh` off `fbc00f7`,
+local). A function with landing pads was refused whole; now a `try` whose body and handlers are in the subset is lowered
+(`Lowering::tryStatement`, M3-IR 3.6's Itanium half): every call inside a try's body or a handler is an `invoke` whose unwind
+successor is the innermost pad, a block marked `pad` with two parameters - the exception pointer and the selector the runtime
+hands over - opening with a `catchpad` (a try's) or a `cleanuppad` (a handler's end-catch) that carries the whole action
+chain (`Inst::syms`, the indices in `cases`, `k` the try's own handlers, `bits` 1 for a filter-0 row and 2 for a pad that
+hands on). The chain tests the selector per handler in the parser's own first-occurrence numbering (`typeIndexFor`, per
+function) and hands what nothing matched to the enclosing pad with both parameters, or to `_Unwind_Resume`; a handler
+calls `__cxa_begin_catch`, binds a scalar by value (copied out of the object) or a reference (holding the pointer), and
+ends its catch on every way out - falling off, `return`, `break`, `continue` (`endCatches`, the catch ended after the
+returned value is computed), or a throw through its own cleanup pad, which ends the catch and goes on to the enclosing
+pad or out of the frame. **Selection** (`SsaSelect.cpp`): an `invoke` is the walker's call between two labels and one
+call-site row naming the pad's landing label (`ssaland.N`, where rax and edx are stored into the two parameters before
+the block's own label, so a pad branching to another pad arrives past the stores) - rows registered in address order,
+disjoint, never sorted, `lsdaTable` filling the gaps as it always did; a function with pads whose tries nothing can
+throw through gets one empty row so the LSDA the prologue named exists. The type_info symbols are Sema's
+(`Typer::typeInfoSymbol` over `Classes::typeInfoSymbolFor`, handed to the lowering as `setTypeInfo`). **Refused by name**:
+a function try block or a dynamic exception specification (`FunctionFacts::wrappedBody`), a `noexcept` function with
+landing pads (its terminate region), exceptions on the Microsoft ABI (funclets: FH3's state tree is not written from the
+IR yet), a catch of a pointer, of a class by value, or of an unnamed type (the typed tree keeps no node for `catch (T)`
+with no name), a `goto` inside a try or a handler, a `throw` (as before). **Case**: `tests/cases/ssa-try-catch.cpp` -
+by value, by reference, catch-all, a handler left by return/break/continue, a try in a body, in a handler, a handler
+throwing out to an enclosing try, a call outside the try in a function with one, and a try nothing throws through.
+**Measured on the Linux box** (g++ 11.5, `~/fable-eh`): `tests/ssa.sh` **3,526 of 7,457 source bodies lowered and
+verified, 0 failed** (3,370 before); run.sh under `-front=ssa` **996 passed, 0 failed at -O0 and at -O2** (652 printed their recorded output, 340 refused as recorded; 994/0 before this growth); the case prints clang's output at -O0
+and -O2 with 8 of its 12 functions on the SSA path (`thrower` throws; see below for the other three). The first run of
+the gates failed `try-in-handler` and `two-try-same-type` with `terminate`: a handler's cleanup row with no types was
+registered with the filter-0 flag, and `lsdaTable` writes action 0 for a row of no types while advancing its action
+counter as if the record were there - so every later row named an action past the table. The flag is asked only
+where the chain has types now; `lsdaTable`'s arithmetic is left as it is, a shape the parser never produces.
+`tools/comment-lines` 0 over the cap, `tools/exclusions --check` 126 sites 0/0; the Mac only syntax-checked the
+changed files (`clang++ -std=c++11 -Wall -Wextra -Werror -pedantic -fsyntax-only`), which caught a `-Wreorder` the
+box would have refused. The box's lock was held by another session's full leg until 21:37 and my queued build was
+dropped with it, so the hour was extended to 22:30 and the Windows cases under the flag were not run.
+**Found and not mended**: a non-void function whose last statement is a `try` (or an `if`/`else`) with every path
+returning is refused "a body that falls off its end without a value" - the merge block is unreachable and unterminated,
+a shape older than this round; `byReference` and `throughGap` in the case take the parser's path for it. And the syntax
+tree keeps no `var` for the second handler of the case's `nestedInBody` (`catch (double unused)`), `(catch (block ...))`
+in `-dump=syntax`, where the same function alone keeps it - a recording fault of the parser's `noteCaught`, not probed
+further; the lowering refuses the handler by name ("a handler whose caught object the syntax tree does not hold").
+
+**M3b.2, the growths of 2026-10-26 evening to 10-27 morning** (Opus 5.5 with four Opus 5.5 workers and one Fable 5.1,
+branch `m3b2`, `b4e8778` to `f05280c`, local). `tests/ssa.sh` on the Linux box: **3,490 of 7,445 source bodies lowered
+and verified (47%) at `b22b257`, **5,640 of 7,626 (74.0%)** at `f05280c`**, 0 failed throughout; run.sh under `-front=ssa` 0 failed at
+-O0 and at -O2 at every commit; the Windows box's cases under `-front=ssa` 0 differ at -O0 and at -O2 at every merge.
+Each growth is one commit with its own case, its `.expected` clang's; in order:
+
+- **Constructors and destructors of a simple class** (`b4e8778`): a constructor's mem-initialisers are `meminit` nodes
+  in the syntax tree now, each member named set from its list, `m()` zeroed, a plain class copied; a member's own
+  initialiser stays outside (`Typer::defaultInit`). With it two Windows faults the box found: a class passed by value
+  is copied into a frame slot the parser gives each call on the Microsoft ABI (`argSlots`), which the selector had
+  left at 0 - past the frame, over the return address; and a local of 16 bytes or more, aligned at 16 there, was
+  taken for `alignas` (312 bodies).
+- **A plain class returned by value, and a call returning one** (`913aa70`, `aaa67eb`): the address is what is
+  carried, as a reference return's; the call's result goes into an alloca the call names (`CallInfo::resultAlloca`),
+  which the walker's own call fills by every ABI rule.
+- **Fable's try/catch on Itanium** (merged `858fbc1`), with the parameter scan stepping over a declarator's constants.
+- **Casts to a reference** - `std::move`'s `static_cast<T &&>`, noted as an xvalue of T - and **pseudo-destructors**
+  (`554b7c6`); **a `for` missing any part** (the parser records which, `forParts_`) and **a static local with a
+  constant initialiser** as its global, a thread_local asked of the program's own global (`72161e7`).
+- **Pointer conversions to a non-virtual base** and back down by `static_cast` (`11bd1a1`, `ad87c35`), a null kept
+  null; **a base's member function called through a derived object** (`1e652e7`); **`throw` and rethrow on
+  Itanium** (`112194d`); **a declaration as an `if` or `while` condition** (`9ed105f`).
+- **Placement new** (`8b51170`), **a value bound to a `const T &` or `T &&` parameter** (`079457f`), **a function
+  object called by its name** (`22b55ac`), **an overloaded operator lowered as the call it is** (`658cef1`, +127
+  bodies: a member operator's left operand its object, postfix ++ given its 0), **a class's own destructor called by
+  name** (`fb915fa`).
+- **Workers, each merged after a gate of the merged tree on both boxes**: `new`/`delete` of a scalar or plain class
+  (`1555402`); members of class type built and destroyed by the constructor the parser recorded (`bbf710b`); plain
+  class temporaries and class values copied from any source (`a042599`); non-virtual bases (`5952ae3`); locals whose
+  class has a destructor, destroyed on every way out and on unwinding, Itanium (`35b3f73`); Fable's `new T(args)` of a
+  class with constructors and constructor-built temporaries (`f05280c`).
+
+Also measured in the round: the Windows self-host (`self-host.cmd`, the project's masm and LINK) **84 of 84 at -O0
+and at -O2**; the MASM spelling under `-front=ssa` 631 same, 0 differ. **Found and not mended**, each in tests/open:
+a second base's member function called unqualified (`second-base-member-unqualified`), `P(make(8));` read as a
+declaration (`functional-cast-statement-of-call`), a class object declared as an `if`'s bare body
+(`class-declared-as-if-body`); and `currentFunction_` is stale while a member template's specialization is defined,
+which is why such constructors stay outside. **What is left**, largest first on the latest lists: exceptions on the
+Microsoft ABI (about 700 bodies, Windows only - funclets from the IR), constructors and destructors of a class with a
+vptr or a virtual base, a class local initialised from what is not yet an object, a body with a pack expansion.
+
+**M3b.2, cleanups on the Microsoft ABI: a local with a destructor, its funclet and its FH3 state** (2026-10-27, Fable 5.1,
+branch `m3b2-ms` off `fdf7870`, local). Every function with landing pads on x86_64-windows was refused whole ("exceptions on
+the Microsoft ABI", 718 bodies on the box's list), and every local a constructor builds or a destructor destroys there (122
+more). Now the function-wide refusal is gone and the lowering refuses by construct: a `try` and a `throw` stay outside on
+that ABI by name, and a local with a destructor is lowered as it is on Itanium but for its pad - `Lowering::closeScope`
+writes the Microsoft shape of M3-IR 3.6: a `cleanuppad`, the destructor as a plain call (the runtime ends the program itself
+should it throw, as the walker's cleanup funclet does), and a `cleanupret` naming the enclosing pad or none. **Selection**
+(`SsaSelect.cpp`, `usesFunclets()`): every pad block is a state of the FH3 tree, numbered before the body so an `invoke` can
+name it (`Walker::msAddState`, the one door the selector has to the tree, beside `msSetState`, `msAddIpRow`,
+`msSetUnwindHelpSlot`); an invoke is its call between two state labels with an ip2state row at each - the pad's state in,
+-1 out, so a call's own range and no more is in a state; a pad block is selected inside `openFunclet`/`endCleanupFunclet`
+as the walker's cleanup funclet is, its state's `toState` the `cleanupret`'s target, its action the funclet; the frame
+gets the runtime's scratch word (`layoutSsa`) and the entry writes -2 into it where the function has a pad. Inside a
+funclet an alloca's address is taken afresh by `lea` rather than read from the body's value slot, which the passes may
+have promoted. The four FH3 tables are the walker's own emitters, unchanged. **Refused by name**: a `try` and a `throw` on
+the Microsoft ABI (a handler funclet returns the address to carry on at, and the four-object ThrowInfo chain is the
+walker's), and everything the Itanium growths refuse. **Case**: `tests/cases/ssa-ms-cleanup.cpp` - one local, two in one
+scope, nested scopes, a loop body's with `continue`, an early return, each left by an exception and by the normal path;
+the catching and throwing functions take the parser's path, the five lowered ones' funclets are what it runs.
+**Measured on the Windows box**: `-check=ssa` over every case **7,939 bodies, 5,833 lowered, 0 failed** (7,929 / 5,701 before, the ten more bodies the new case's; +132 lowered), the refusal list now reading "a try on the Microsoft ABI" 148 and "a throw" 52 where "exceptions on the Microsoft ABI" read 718; the cases under `-front=ssa` **648 same, 0 differ, 340 refused as recorded at -O0 and at -O2** (the whole suite on
+the default path was not re-run in the hour; the new case was, below); `throw-check` and `catch-check` both pass (`int 7`, `double 2.5`; `before / caught 7 / after`), and the new case prints clang's output on the default path at -O0 and -O2, under `-front=ssa -O2` and in the GNU spelling. **Linux** (g++, `~/lane-ms`): run.sh
+under `-front=ssa` **1019 passed, 0 failed at -O0 and at -O2** (675 printed their recorded output, 340 refused as recorded), and the default path 1017 / 2 - `downcast-ssa` and `ssa-member-ctor`, the two parser faults another lane is mending, as expected. `tools/comment-lines` 0 over the cap.

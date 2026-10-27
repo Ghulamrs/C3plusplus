@@ -64,7 +64,8 @@ const Type *SemaCxx::integerLiteralType(const Token &t) const {
 
 namespace {
 // The constructs a C90 token stream can reach and C++ alone allows: the construct as the message names it, and the hint.
-const struct { const char *construct; const char *hint; } kCxxOnly[] = {
+struct CxxOnlyRow { const char *construct; const char *hint; };   // tagged: cl's ABI names no unnamed class
+const CxxOnlyRow kCxxOnly[] = {
     { "a reference",                       "C has pointers: write 'T *' and take the address" },
     { "a function declared in a struct",   "C's struct holds data; declare the function outside it and pass the struct" },
     { "a member initialiser",              "initialise the member where the object is defined, or in a function" },
