@@ -1402,9 +1402,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
             if (aggregate && l.type->size(target) >= 16 && natural < 16) natural = 16;   // not std::max: windows.h's macro
             if (l.align > natural) aligned = true;
         }
-        // A pack expansion's members are one node of the typed tree: such a body stays the parser's.
-        if (typer.packBody(fn.symbol())) why = "a body with a pack expansion";
-        else if (aligned) why = "a local with alignas";
+        if (aligned) why = "a local with alignas";
         else if (!lowering.lower(t, facts, why).valid() && why.empty()) why = "the lowering gave no reason";
         if (why.empty()) { lowered++; continue; }
         reasons[why]++;

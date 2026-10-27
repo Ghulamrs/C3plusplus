@@ -74,6 +74,7 @@ NodeId Tree::add(Kind kind, const std::string &text, std::size_t pos, const std:
     n.loc = static_cast<std::uint32_t>(pos);
     n.hasParent = false;
     n.dead = false;
+    n.member = 0;
     for (std::size_t i = 0; i < children.size(); i++) {
         if (!children[i].valid()) continue;     // an operand the grammar did not record is left out
         children_.push_back(children[i]);
@@ -109,20 +110,21 @@ void Tree::dumpNode(std::string &out, NodeId id) const {
 
 std::vector<NodeId> Tree::adopt(std::size_t from, std::size_t lo, std::size_t hi) {
     std::vector<NodeId> out;
-    std::unordered_map<std::uint32_t, std::size_t> at;     // location -> its place in `out`
+    std::unordered_map<std::uint64_t, std::size_t> at;     // location and pack member -> its place in `out`
     for (std::size_t i = from + 1; i < nodes_.size(); i++) {
         const Node &n = nodes_[i];
         if (n.hasParent || n.dead || n.loc < lo || n.loc > hi) continue;
+        const std::uint64_t key = n.loc | static_cast<std::uint64_t>(n.member) << 32;
         // A rewound read records the same node again - the same kind and text at one location - and the later wins;
         // a lambda's replayed call operator, its `__invoke` and the lambda itself share a location and are three (M2.15).
-        std::unordered_map<std::uint32_t, std::size_t>::const_iterator seen = at.find(n.loc);
+        std::unordered_map<std::uint64_t, std::size_t>::const_iterator seen = at.find(key);
         if (seen != at.end() && nodes_[out[seen->second].v].kind == n.kind && nodes_[out[seen->second].v].text == n.text) {
             nodes_[out[seen->second].v].dead = true;
             out[seen->second] = NodeId(static_cast<std::uint32_t>(i));
             continue;
         }
         if (seen != at.end()) { out.push_back(NodeId(static_cast<std::uint32_t>(i))); continue; }
-        at[n.loc] = out.size();
+        at[key] = out.size();
         out.push_back(NodeId(static_cast<std::uint32_t>(i)));
     }
     return out;
@@ -130,6 +132,16 @@ std::vector<NodeId> Tree::adopt(std::size_t from, std::size_t lo, std::size_t hi
 
 void Tree::kill(std::size_t from) {
     for (std::size_t i = from + 1; i < nodes_.size(); i++) nodes_[i].dead = true;
+}
+
+void Tree::drop(std::size_t from, std::size_t lo, std::size_t hi) {
+    for (std::size_t i = from + 1; i < nodes_.size(); i++)
+        if (!nodes_[i].hasParent && nodes_[i].loc >= lo && nodes_[i].loc <= hi) nodes_[i].dead = true;
+}
+
+void Tree::markMember(std::size_t from, std::size_t m) {
+    for (std::size_t i = from + 1; i < nodes_.size(); i++)
+        if (!nodes_[i].hasParent && !nodes_[i].dead) nodes_[i].member = static_cast<std::uint32_t>(m + 1);
 }
 
 void Tree::revive(NodeId id) {

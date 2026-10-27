@@ -844,8 +844,8 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         liveFloor_ = live_.size();
         block(body);
         if (!terminated()) {
-            if (!rt.isVoid()) outside("a body that falls off its end without a value");
-            br(returnBlock_);
+            if (rt.isVoid()) br(returnBlock_);
+            else br(returnBlock_, std::vector<ValueId>(1, fallOffValue(rt)));
         }
         closeScope(0, true);
         if (destroys) {
@@ -871,6 +871,20 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         module_.functions.pop_back();
         return FuncId();
     }
+}
+
+// [basic.start.main]/5 for main, and the walker's answer for any other body that falls off its end: a zero of the
+// return type in the return register. A class, a reference or an x87 value has no such zero here.
+ValueId Lowering::fallOffValue(const Type &rt) {
+    if (rt.isStructOrUnion() || rt.isReference() || rt.isX87(target_) || !scalar(rt))
+        outside("a body that falls off its end without a value");
+    if (rt.isFloating()) {
+        const InstId z = add(Op::FConst, returns_, std::vector<ValueId>());
+        at(z).bits = 0;
+        return result(z);
+    }
+    if (rt.isPointer()) return result(add(Op::Null, returns_, std::vector<ValueId>()));
+    return iconst(returns_, 0);
 }
 
 // ----- statements
@@ -1926,8 +1940,9 @@ Lowering::Val Lowering::conditional(sema::TypedId id) {
     if (!(scalar(tx) || tx.isNullPtr()) || !(scalar(ty) || ty.isNullPtr())) outside("a conditional of what is not a scalar");
     TypeId t;
     if (scalarArithmetic(tx) && scalarArithmetic(ty)) {
-        const bool oneEnum = tx.unqualified() == ty.unqualified() && tx.unqualified()->isEnumeration();
-        t = oneEnum ? tid(*tx.unqualified()) : usualArithmetic(tid(tx), tid(ty));
+        // [expr.cond]/6: arms of one type give that type, as the typer says (the parser promotes and converts back).
+        const bool oneType = tx.unqualified() == ty.unqualified();
+        t = oneType ? tid(*tx.unqualified()) : usualArithmetic(tid(tx), tid(ty));
     } else if (&tx == &ty) {
         t = tid(tx);
     } else if (tx.unqualified() == ty.unqualified()) {
