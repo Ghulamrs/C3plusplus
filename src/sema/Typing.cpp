@@ -473,6 +473,15 @@ std::string Typer::unnamedCaught(syntax::NodeId handler) const {
     return c == p_.unnamedCaught_.end() ? std::string() : c->second;
 }
 
+bool Typer::microsoftUnnamedCaught(syntax::NodeId handler, std::string &descriptor, bool &byRef, bool &isConst) const {
+    const auto c = p_.msUnnamedCaught_.find(handler.v);
+    if (c == p_.msUnnamedCaught_.end()) return false;
+    descriptor = c->second.descriptor;
+    byRef = c->second.byRef;
+    isConst = c->second.isConst;
+    return true;
+}
+
 int Typer::scopedBody(syntax::NodeId fn) const {
     const std::map<std::uint32_t, int>::const_iterator i = p_.scopedFunctions_.find(fn.v);
     return i != p_.scopedFunctions_.end() ? i->second : 0;

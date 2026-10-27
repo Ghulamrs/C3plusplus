@@ -414,8 +414,6 @@ void Lowering::builtLocal(sema::TypedId var, ValueId slot, const Type &t) {
         classLocal(var, slot, t);
     }
     if (!c.hasDestructor()) return;
-    // [except.handle]/16 ends a catch after its handler's objects are destroyed; a jump here ends it first.
-    if (handlerDepth_ != 0) outside("a local with a destructor inside a handler");
     Live l;
     l.dtor = destructor_ ? destructor_(c.id()) : std::string();
     if (l.dtor.empty()) outside("a local whose destructor the parser recorded none for");
@@ -879,12 +877,15 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
     loops_.clear();
     switches_.clear();
     labels_.clear();
+    labelScope_.clear();
+    pendingGotos_.clear();
     hasGoto_ = false;
     pads_.clear();
     live_.clear();
     liveFloor_ = 0;
     typeTable_.clear();
     handlerDepth_ = 0;
+    handlerLive_.clear();
     fullFrom_ = kNoFull;
     skippable_ = 0;
     funclet_ = BlockId();
@@ -1029,6 +1030,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         }
         liveFloor_ = live_.size();
         block(body);
+        if (!pendingGotos_.empty()) outside("a goto to a label the body does not place");
         if (!terminated()) {
             if (rt.isVoid()) br(returnBlock_);
             else br(returnBlock_, std::vector<ValueId>(1, fallOffValue(rt)));
@@ -1091,7 +1093,6 @@ void Lowering::block(sema::TypedId id) {
 std::string Lowering::temporaryDestructor(const Type &c) {
     if (fullFrom_ == kNoFull) outside("a class temporary with a destructor outside a full expression the lowering ends");
     if (skippable_ != 0) outside("a class temporary with a destructor in an operand that may not be evaluated");
-    if (handlerDepth_ != 0) outside("a class temporary with a destructor inside a handler");
     const std::string dtor = destructor_ ? destructor_(c.id()) : std::string();
     if (dtor.empty()) outside("a class temporary whose destructor the parser recorded none for");
     return dtor;
@@ -1233,17 +1234,62 @@ void Lowering::stmt(sema::TypedId id) {
         if (n != 1) outside("a label of " + std::to_string(n) + " parts");
         const BlockId b = labelBlock(text(id));
         br(b);
+        labelReached(text(id), b);
         place(b);
         stmt(child(id, 0));
         return;
     }
     case syntax::Kind::Goto:
-        if (handlerDepth_ != 0 || !pads_.empty()) outside("a goto inside a try or a handler");
-        hasGoto_ = true;
-        br(labelBlock(text(id)));
+        gotoStmt(text(id));
         return;
     default:
         outside(std::string("a '") + syntax::kindName(s.kind) + "' statement");
+    }
+}
+
+// [stmt.jump]/2 for a goto: what it leaves destroyed and the catches it leaves ended, as a jump out of a scope does. A
+// label already passed says where it stands; a later one is reached through a block of the goto's own, filled there.
+void Lowering::gotoStmt(const std::string &name) {
+    if (target_.microsoftNames() && handlerDepth_ != 0) outside("a goto inside a handler on the Microsoft ABI");
+    if (elidedSlot_.valid()) outside("a goto in a function with a named return value");
+    hasGoto_ = true;
+    const std::map<std::string, std::pair<std::size_t, std::size_t> >::const_iterator at = labelScope_.find(name);
+    if (at != labelScope_.end()) {
+        if (at->second.first > live_.size() || at->second.second > handlerDepth_) outside("a goto into a scope it is not in");
+        leaveCatches(handlerDepth_ - at->second.second, at->second.first);
+        br(labelBlock(name));
+        return;
+    }
+    PendingGoto g;
+    g.label = name;
+    g.from = newBlock();
+    g.live = live_;
+    g.handlerLive = handlerLive_;
+    br(g.from);
+    pendingGotos_.push_back(g);
+}
+
+// A label placed: each goto that went ahead of it destroys, in a block of its own, what it leaves beyond the label's
+// objects - which [stmt.dcl]/3 makes a prefix of its own, checked here - ending its catches on the way, then joins it.
+void Lowering::labelReached(const std::string &name, BlockId b) {
+    labelScope_[name] = std::make_pair(live_.size(), handlerDepth_);
+    for (std::size_t i = 0; i < pendingGotos_.size(); ) {
+        const PendingGoto g = pendingGotos_[i];
+        if (g.label != name) { i++; continue; }
+        pendingGotos_.erase(pendingGotos_.begin() + static_cast<std::ptrdiff_t>(i));
+        const std::size_t keep = live_.size(), depth = handlerLive_.size();
+        if (keep > g.live.size() || depth > g.handlerLive.size()) outside("a goto into a scope it is not in");
+        for (std::size_t k = 0; k < keep; k++) if (g.live[k].slot.v != live_[k].slot.v) outside("a goto into a scope it is not in");
+        for (std::size_t k = 0; k < depth; k++) if (g.handlerLive[k] != handlerLive_[k]) outside("a goto into a scope it is not in");
+        place(g.from);
+        std::size_t upper = g.live.size();
+        for (std::size_t h = g.handlerLive.size(); h-- > depth; ) {
+            for (std::size_t k = upper; k-- > g.handlerLive[h]; ) destroy(g.live[k]);
+            endCatches(1);
+            upper = g.handlerLive[h];
+        }
+        for (std::size_t k = upper; k-- > keep; ) destroy(g.live[k]);
+        br(b);
     }
 }
 
@@ -3226,14 +3272,20 @@ bool Lowering::classThrow(sema::TypedId id, ValueId &object, TypeId &thrown) {
         if (T(o.type).isConst() && !ft.params()[1]->referent()->isConst()) outside("a throw whose copy drops const");
         from = o.v;
     } else {
-        if (!constructed_ || !constructed_(t.id()) || !buildableLayout(t)) outside("a throw of a temporary the lowering cannot build");
+        // A polymorphic class's constructor stores its own vptr: the temporary is that call on a slot of the frame.
+        if (!constructed_ || !constructed_(t.id()) || !buildableLayout(t, true)) outside("a throw of a temporary the lowering cannot build");
         std::string symbol;
         TypeId built;
         bool zero = false;
         if (!temporaryBuilt_(tree_.node(operand).syntax, symbol, built, zero)) outside("a thrown temporary built by no constructor the parser recorded");
         if (text(operand) == "{}") outside("a thrown temporary list-initialised");
         from = entryAlloca(thrown, "$tmp");
+        // Its arguments' temporaries are the operand's: alive to the copy below, which destroys them before the throw.
+        const std::size_t argMark = live_.size(), wasFull = fullFrom_;
+        fullFrom_ = argMark;
         construct(from, symbol, built, t, zero, operand, 1);
+        fullFrom_ = wasFull;
+        if (live_.size() != argMark && !landingPads_) outside("a thrown temporary whose arguments make temporaries, with no landing pads");
         if (t.hasDestructor() && landingPads_) guard(from, t, dtor);
     }
     const bool dies = !isLvalueNode(operand) && t.hasDestructor();
@@ -3241,8 +3293,8 @@ bool Lowering::classThrow(sema::TypedId id, ValueId &object, TypeId &thrown) {
     ops.push_back(result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, object))));
     ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(ft.params()[1]->referent())), std::vector<ValueId>(1, from))));
     directCall(copy, sig, ops);
-    // [except.throw]/3: the object made, the operand's temporary destroyed; the storage's guard ends without a free.
-    if (live_.size() > mark + (target_.microsoftNames() || !landingPads_ ? 0 : 1)) closeScope(live_.size() - 1);
+    // [except.throw]/3: the object made, the operand's temporaries destroyed, last made first; the storage's guard ends without a free.
+    closeScope(mark + (target_.microsoftNames() || !landingPads_ ? 0 : 1));
     closeScope(mark, true);
     if (dies && !landingPads_) {
         const TypeId self = types_.pointerTo(t.id());
@@ -3341,6 +3393,20 @@ void Lowering::throwCall(const std::string &symbol, const std::vector<ValueId> &
 // [except.handle]/16: a jump out of n handlers ends each catch, innermost first.
 void Lowering::endCatches(std::size_t n) {
     for (std::size_t i = 0; i < n; i++) runtimeCall("__cxa_end_catch", tid(*types_.voidType()), std::vector<ValueId>());
+}
+
+// [except.handle]/16 for a jump out of n Itanium handlers: each handler's own objects destroyed, then its catch ended,
+// innermost first; then what the jump leaves above `mark` outside them.
+void Lowering::leaveCatches(std::size_t n, std::size_t mark) {
+    if (n > handlerLive_.size()) outside("a jump out of handlers the lowering did not open");
+    std::size_t upper = live_.size();
+    for (std::size_t h = 0; h < n; h++) {
+        const std::size_t from = handlerLive_[handlerLive_.size() - 1 - h];
+        for (std::size_t k = upper; k-- > from; ) if (live_[k].slot.v != elidedSlot_.v) destroy(live_[k]);
+        endCatches(1);
+        upper = from;
+    }
+    for (std::size_t k = upper; k-- > mark; ) if (live_[k].slot.v != elidedSlot_.v) destroy(live_[k]);
 }
 
 // **A `try` and its handlers, as the parser writes them for the Itanium ABI**: the body's calls unwind to one pad, whose
@@ -3456,7 +3522,9 @@ void Lowering::tryStatement(sema::TypedId id) {
         if (encAt != 0) { cleanup.types = pads_[encAt - 1].types; cleanup.indices = pads_[encAt - 1].indices; }
         pads_.push_back(cleanup);
         handlerDepth_++;
+        handlerLive_.push_back(live_.size());
         block(hs[i].body);
+        handlerLive_.pop_back();
         handlerDepth_--;
         cleanup = pads_.back();
         pads_.pop_back();
@@ -3508,12 +3576,15 @@ void Lowering::specFilterChain(const Pad &p) {
 // body, destroys and branches on; the exit is listed on the try's CatchPad for the selector's flow.
 void Lowering::leaveHandlers(std::size_t n, std::size_t mark, BlockId target, const std::vector<ValueId> &args) {
     if (!target_.microsoftNames() || n == 0) {
-        endCatches(n);
-        destroyLive(mark);
+        leaveCatches(n, mark);
         br(target, args);
         return;
     }
     if (terminated()) return;
+    // The handler's own objects are destroyed in its funclet, before the runtime ends the catch; the exit destroys the rest.
+    if (n != 1 || handlerLive_.empty() || handlerLive_.back() < mark) outside("a jump out of Microsoft handlers the lowering did not open");
+    const std::size_t own = handlerLive_.back();
+    for (std::size_t k = live_.size(); k-- > own; ) if (live_[k].slot.v != elidedSlot_.v) destroy(live_[k]);
     const BlockId was = funclet_;
     funclet_ = BlockId();
     const BlockId exit = newBlock();
@@ -3530,7 +3601,7 @@ void Lowering::leaveHandlers(std::size_t n, std::size_t mark, BlockId target, co
     at(add(Op::CatchRet, TypeId(), std::vector<ValueId>())).succ.push_back(s);
     const BlockId back = cur_;
     place(exit);
-    destroyLive(mark);
+    for (std::size_t k = own; k-- > mark; ) if (live_[k].slot.v != elidedSlot_.v) destroy(live_[k]);
     br(target, params);
     place(back);
 }
@@ -3596,6 +3667,10 @@ void Lowering::microsoftTry(sema::TypedId id) {
             // The runtime makes the object in the slot: a scalar's or a plain class's bytes, or a pointer to it.
             if (h.byRef ? !referable(c) : !(scalar(c) || plainClass(c)) || c.isX87(target_)) outside("a catch of '" + t.describe() + "'");
             if (!msCatch_ || !msCatch_(h.caught, h.descriptor, h.isConst)) outside("a catch of a type whose descriptor the parser did not finish");
+        } else if (parts == 1 && text(h.node).empty() && msUnnamedCaught_ &&
+                   msUnnamedCaught_(tree_.node(h.node).syntax, h.descriptor, h.byRef, h.isConst)) {
+            // `catch (T)` with no name: no slot for the runtime to fill, only the descriptor the parser named.
+            h.body = child(h.node, 0);
         } else {
             outside(parts == 1 ? "a handler whose caught object the syntax tree does not hold" : "a handler of " + std::to_string(parts) + " parts");
         }
@@ -3652,7 +3727,9 @@ void Lowering::microsoftTry(sema::TypedId id) {
         at(cp).k = static_cast<long long>(p.block.v);
         at(cp).pos = syn(hs[i].node).loc;
         handlerDepth_++;
+        handlerLive_.push_back(live_.size());
         block(hs[i].body);
+        handlerLive_.pop_back();
         handlerDepth_--;
         if (!terminated()) {
             Succ s;

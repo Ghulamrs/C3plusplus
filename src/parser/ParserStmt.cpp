@@ -1744,7 +1744,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
             inMsHandler_ = wasInHandler;
             inHandlerBody_ = wasBody;
             leaveScope();
-            noteParts(syntax::Kind::Catch, caught == nullptr ? "..." : "", cpos, handlerMark, cpos);
+            noteMsCatch(caught != nullptr, caughtName.empty(), mh, cpos, handlerMark);
             msHandlers.push_back(std::move(mh));
             continue;
         }
