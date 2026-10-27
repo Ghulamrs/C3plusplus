@@ -537,6 +537,21 @@ bool Typer::temporaryBuilt(syntax::NodeId id, std::string &symbol, TypeId &signa
     return true;
 }
 
+bool Typer::returnBuilt(syntax::NodeId ret, int &form, std::string &symbol, TypeId &signature) const {
+    const std::unordered_map<std::uint32_t, Parser::ReturnBuilt>::const_iterator i = p_.returnBuilt_.find(ret.v);
+    if (i == p_.returnBuilt_.end() || i->second.form == 0) return false;
+    form = i->second.form;
+    symbol = i->second.symbol;
+    signature = i->second.signature != nullptr ? TypeTable::id(i->second.signature) : TypeId();
+    return true;
+}
+
+// A by-value parameter is the only other local that reads through its slot's address.
+bool Typer::namedReturnLocal(syntax::NodeId var) const {
+    const std::unordered_map<std::uint32_t, Local>::const_iterator i = p_.declaredLocals_.find(var.v);
+    return i != p_.declaredLocals_.end() && i->second.byValueByAddress && !i->second.isParameter;
+}
+
 // Each capture's source `var`, looked up as a name is in the scopes at the lambda, and kept only where it is the
 // parser's local - the same slot - for every capture.
 void Typer::closureSources(syntax::NodeId id) {

@@ -1373,6 +1373,10 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         return typer.temporaryBuilt(id, sym, sig, zero);
     });
     lowering.setClosure([&typer](syntax::NodeId id, sema::ClosureFacts &out) { return typer.closureFacts(id, out); });
+    lowering.setReturnBuilt([&typer](syntax::NodeId id, int &form, std::string &sym, TypeId &sig) {
+        return typer.returnBuilt(id, form, sym, sig);
+    });
+    lowering.setNamedReturn([&typer](syntax::NodeId id) { return typer.namedReturnLocal(id); });
     std::map<std::string, int> reasons;
     int lowered = 0;
     for (std::size_t r = 0; r < c.bodies.size(); r++) {

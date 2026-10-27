@@ -332,11 +332,11 @@ many, or has no object of its own:
 ## `new` and `delete`
 
 - **more than one value in a new-expression** without a constructor -
-  `src/parser/ParserExprNew.cpp:1726`
+  `src/parser/ParserExprNew.cpp:1733`
 - **`new T[n][m]`** - only the first dimension may be given.
-  `src/parser/ParserExprNew.cpp:1669`
+  `src/parser/ParserExprNew.cpp:1676`
 - **`new T[n]{...}`** with values inside - the empty pair value-initialises
-  the elements; `new T{...}` works. `src/parser/ParserExprNew.cpp:1696`
+  the elements; `new T{...}` works. `src/parser/ParserExprNew.cpp:1703`
 
 Plain `new` and `delete`, a class's own `operator new`/`operator delete`, the
 placement forms and `<new>` all work; the entries that said otherwise were
@@ -353,12 +353,12 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 - **`dynamic_cast` to a reference on x86_64-windows** - a failure throws
   `std::bad_cast`, a class this target neither throws nor catches yet; the
   Itanium targets call `__cxa_bad_cast`. And **to an rvalue reference** on
-  every target. `src/parser/ParserExprNew.cpp:1118`, `src/parser/ParserExprNew.cpp:1115`
+  every target. `src/parser/ParserExprNew.cpp:1125`, `src/parser/ParserExprNew.cpp:1122`
 - **`dynamic_cast` through a class with more than one base, on
   x86_64-windows** - the Microsoft hierarchy is written one base deep; the
-  Itanium targets walk `__vmi_class_type_info`. `src/parser/ParserExprNew.cpp:1215`
+  Itanium targets walk `__vmi_class_type_info`. `src/parser/ParserExprNew.cpp:1222`
 - **catching a pointer by reference** - the runtime hands a handler the pointer
-  itself, so catch it by value. `src/parser/ParserStmt.cpp:1649`
+  itself, so catch it by value. `src/parser/ParserStmt.cpp:1651`
 - **throwing a pointer to a function** - it has no `type_info`; the message
   splices its reason in at run time, so this entry is hand-written.
   `tests/cases/throw-refused.cpp`
@@ -404,7 +404,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 
 - **a namespace alias inside a block** - the alias is a rewrite to the end of
   the enclosing namespace; at namespace scope it works.
-  `src/parser/ParserStmt.cpp:2161`
+  `src/parser/ParserStmt.cpp:2163`
 - **a using-declaration inside a class of a data member, or one that changes
   an access** - `using B::f;` of a base's member functions in the access they
   already have joins them to the class's set (M1 L2).
@@ -419,7 +419,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   - **a constructor taking a class by value whose copy is not trivial** - the
     copy would have to be passed on rather than made twice.
     `src/sema/Classes.cpp:1749`
-- **a using-declaration inside a block** - `src/parser/ParserStmt.cpp:2169`.
+- **a using-declaration inside a block** - `src/parser/ParserStmt.cpp:2171`.
   The one at namespace scope works, and so does `using namespace N;`.
 
 ## Lambdas

@@ -612,6 +612,11 @@ private:
     std::unordered_map<std::uint32_t, std::pair<int, int> > blockCleanups_;
     std::pair<int, int> lastCleanupSlots_;
     struct ReturnTemp { std::string name; int slot = 0; };
+    // What buildReturned made of `return value;` (M3b.2): 1 the named return value, in the caller's object already;
+    // 2 a call built into it; 3 a temporary built into it; 4 a copy by `symbol`, its type with `T *` first. By the `return` node.
+    struct ReturnBuilt { int form = 0; std::string symbol; const Type *signature = nullptr; };
+    std::unordered_map<std::uint32_t, ReturnBuilt> returnBuilt_;
+    ReturnBuilt pendingReturnBuilt_;
     std::unordered_map<std::uint32_t, ReturnTemp> returnTemps_;
     ReturnTemp pendingReturnTemp_;
     // A `try` the adapter can rebuild, by node: its slots, its chain's label, its types and each handler's facts.
