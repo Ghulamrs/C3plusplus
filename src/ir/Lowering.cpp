@@ -849,7 +849,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
                 locals_[tree_.node(p).syntax.v] = std::make_pair(pv, tid(pt));
                 continue;
             } else {
-                if (!scalar(pt) || pt.isX87(target_)) outside("a parameter of type '" + pt.describe() + "'");
+                if ((!scalar(pt) && !pt.isNullPtr()) || pt.isX87(target_)) outside("a parameter of type '" + pt.describe() + "'");
                 slotType = tid(pt);
             }
             const ValueId pv = param(f.entry, slotType);
@@ -1310,7 +1310,7 @@ void Lowering::declaration(sema::TypedId id) {
         } else if (plainClass(t) || builtClass(t)) {
             slotType = tid(*t.unqualified());
         } else {
-            if (!scalar(t) || t.isX87(target_)) outside("a local of type '" + t.describe() + "'");
+            if ((!scalar(t) && !t.isNullPtr()) || t.isX87(target_)) outside("a local of type '" + t.describe() + "'");
             slotType = tid(t);
         }
         const ValueId slot = entryAlloca(slotType, text(var));
@@ -1696,6 +1696,8 @@ Lowering::Val Lowering::name(sema::TypedId id) {
     const Val a = nameAddress(id);
     const Type &t = T(a.type);
     if (t.isArray()) return decay(Val(a.v, a.type));
+    // [conv.lval]/2: a std::nullptr_t object read is a null pointer constant - no value is fetched.
+    if (t.isNullPtr()) return Val(result(add(Op::Null, tid(*t.unqualified()), std::vector<ValueId>())), tid(*t.unqualified()));
     if (!scalar(t) || t.isX87(target_)) outside("a read of an object of type '" + t.describe() + "'");
     return readOf(a.v, a.type);
 }
@@ -1736,7 +1738,13 @@ Lowering::Val Lowering::member(sema::TypedId id) { return memberAddress(id); }
 Lowering::Val Lowering::memberOfThis(sema::TypedId id) {
     const sema::Resolution &r = tree_.resolution(id);
     if (!this_.valid()) outside("a member named where there is no `this`");
-    const Type &cls = *T(thisType_).pointee()->unqualified();
+    Val self(this_, thisType_);
+    // [expr.prim.lambda]/7: in a closure's body a name of the enclosing class is reached through the `this` it captured.
+    if (T(thisType_).pointee()->unqualified()->findMember(text(id)) == nullptr) {
+        const Val outer = capturedThis();
+        if (outer.v.valid()) self = outer;
+    }
+    const Type &cls = *T(self.type).pointee()->unqualified();
     if (cls.findMember(text(id)) == nullptr) outside("a member reached through another object's `this`");
     const Member &m = *cls.findMember(text(id));
     if (m.offset != r.serial || !r.type.valid()) outside("a member reached through another object's `this`");
@@ -1744,9 +1752,21 @@ Lowering::Val Lowering::memberOfThis(sema::TypedId id) {
         outside("a member '" + text(id) + "' the lowering does not reach");
     const Type &mt = T(r.type);
     if (!scalar(mt) && !mt.isArray() && !mt.isStructOrUnion()) outside("a member of type '" + mt.describe() + "'");
-    const InstId g = add(Op::Gep, tid(*types_.pointerTo(&mt)), std::vector<ValueId>(1, this_));
+    const InstId g = add(Op::Gep, tid(*types_.pointerTo(&mt)), std::vector<ValueId>(1, self.v));
     at(g).k = m.offset;
     return Val(result(g), r.type);
+}
+
+// The enclosing object's address in a closure that captured `this`: its `$this` member, the parser's name for it;
+// none (an invalid value) in any other function.
+Lowering::Val Lowering::capturedThis() {
+    if (!this_.valid() || T(thisType_).pointee()->unqualified()->findMember("$this") == nullptr) return Val();
+    const Member &held = *T(thisType_).pointee()->unqualified()->findMember("$this");
+    if (!held.type->isPointer() || !held.type->pointee()->isStructOrUnion() || held.width != 0) return Val();
+    const TypeId pt = tid(*held.type->unqualified());
+    const InstId g = add(Op::Gep, tid(*types_.pointerTo(&T(pt))), std::vector<ValueId>(1, this_));
+    at(g).k = held.offset;
+    return Val(load(result(g), pt), pt);
 }
 
 Lowering::Val Lowering::unary(sema::TypedId id) {
@@ -2244,6 +2264,8 @@ Lowering::Val Lowering::call(sema::TypedId id) {
     if (r.what == sema::Resolution::Call && r.hasThis && r.indirect && r.vslot < 0) outside("a call through a member pointer");
     const bool member = r.what == sema::Resolution::Call && !r.symbol.empty() && r.hasThis &&
                         r.symbol.find_first_of(" ()*&[") == std::string::npos;
+    const bool staticThrough = r.what == sema::Resolution::Call && !r.symbol.empty() && !r.hasThis && !r.indirect &&
+                               syn(head).kind == syntax::Kind::Member && count(head) == 1 && r.symbol.find_first_of(" ()*&[") == std::string::npos;
     if (member) {
         if (!r.type.valid() || !T(r.type).isFunction() || T(r.type).params().empty()) outside("a member call whose function type was not recorded");
         const Type &self = *T(r.type).params()[0];
@@ -2256,6 +2278,11 @@ Lowering::Val Lowering::call(sema::TypedId id) {
         } else if (syn(head).kind == syntax::Kind::Name) {
             if (!this_.valid()) outside("a member call where there is no `this`");
             object = Val(this_, thisType_);
+            // A closure's body calling a member of the class whose `this` it captured: on that object.
+            if (T(thisType_).pointee()->unqualified() != self.pointee()->unqualified()) {
+                const Val outer = capturedThis();
+                if (outer.v.valid()) object = outer;
+            }
         } else if (syn(head).kind == syntax::Kind::Member && count(head) == 1) {
             const bool arrow = text(head).compare(0, 2, "->") == 0;
             if (arrow) object = decay(expr(child(head, 0)));
@@ -2275,12 +2302,20 @@ Lowering::Val Lowering::call(sema::TypedId id) {
             ops.insert(ops.begin(), virtualCallee(ops[0], r.type, r.vslot));
             info.symbol.clear();
         }
-    } else if (direct) {
+    } else if (direct || staticThrough) {
         if (!r.type.valid() || !T(r.type).isFunction()) outside("a call whose function type was not recorded");
+        // [expr.ref]/4: a static member function named through an object - the object is evaluated, and nothing more.
+        if (staticThrough) {
+            const sema::TypedId o = child(head, 0);
+            if (text(head).compare(0, 2, "->") == 0) decay(expr(o));
+            else if (isLvalueNode(o)) lvalue(o);
+            else outside("a static member function called through what is not an object");
+        }
         info.symbol = r.symbol;
         sig = r.type;
     } else {
-        if (syn(head).kind == syntax::Kind::Member) outside("a member call");
+        // A data member holding a pointer to a function, read and called; a member function reaches no data member and stays outside.
+        if (syn(head).kind == syntax::Kind::Member && count(head) != 1) outside("a member call");
         const Val callee = decay(expr(head));
         const Type &ct = T(callee.type);
         if (!ct.isPointer() || !ct.pointee()->isFunction()) outside("a call of what is not a function pointer");
@@ -2345,6 +2380,8 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
             Val a = decay(expr(an));
             const Type &t = T(a.type);
             if (t.isPointer()) { ops.push_back(a.v); continue; }
+            // [expr.call]/7: a std::nullptr_t through `...` is a void *.
+            if (t.isNullPtr()) { ops.push_back(result(add(Op::Null, tid(*types_.pointerTo(types_.voidType())), std::vector<ValueId>()))); continue; }
             if (!scalarArithmetic(t)) outside("a variadic argument of type '" + t.describe() + "'");
             a = t.kind() == Kind::Float ? convert(a, tid(*types_.doubleType())) : promote(a);
             ops.push_back(a.v);
@@ -2391,6 +2428,13 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
             if (T(a.type).isConst() && !p.referent()->isConst()) outside("a reference that can write bound to a const");
             if (!referable(T(a.type))) outside("a reference parameter to '" + p.referent()->describe() + "'");
             ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(p.referent())), std::vector<ValueId>(1, a.v))));
+            continue;
+        }
+        // [conv.ptr]/1: a std::nullptr_t parameter takes a null pointer constant, a value with nothing in it to read.
+        if (p.isNullPtr()) {
+            if (tree_.node(an).type != nullptr && tree_.node(an).type->isNullPtr()) expr(an);
+            else if (!isNullConstant(an)) outside("a std::nullptr_t parameter given what is not a null pointer constant");
+            ops.push_back(result(add(Op::Null, tid(*p.unqualified()), std::vector<ValueId>())));
             continue;
         }
         if (!scalar(p) || p.isX87(target_)) outside("a parameter of type '" + p.describe() + "'");

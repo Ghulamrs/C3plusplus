@@ -131,6 +131,7 @@ private:
     Val member(sema::TypedId id);
     Val memberAddress(sema::TypedId id);
     Val memberOfThis(sema::TypedId id);
+    Val capturedThis();
     Val readOf(ValueId p, TypeId type);
     Val unary(sema::TypedId id);
     Val step(sema::TypedId id, bool increment, bool prefix);
