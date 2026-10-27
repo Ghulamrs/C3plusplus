@@ -851,3 +851,18 @@ own. **The merged tree, gated as one:** Linux `make test` exit 0, run.sh **1030 
 Windows **659 same, 0 differ, 340 refused as recorded** at -O0, `-front=ssa` and `-front=ssa -O2`. Before landing, every
 file the round changed (29 of 30; `M3-PLAN.md` itself held round 1's newer text) was checked by md5 to be the same in
 the Linux gate tree as here, since a stale job had shipped round 1's files into it while this gate ran.
+
+**M3b.2, round 3 of 2026-10-27 evening: try and catch on the Microsoft ABI** (Fable 5.1's lane-mstry2, `9a0589f`, with
+its fix `be61c7d`, merged over round 2 as `0be9c97`). A handler is a funclet of its own on that ABI: the lowering builds
+a dispatch pad over the handler blocks (CatchSwitch), each handler a pad block with the parser's descriptor, its caught
+object's slot and its by-reference and const marks (CatchPad), the handler's blocks tagged with their funclet, and every
+way out a CatchRet to an exit that destroys and branches on (leaveHandlers); the selector emits each handler with
+openFunclet/endFunclet and writes the try map and handler-map rows through two new doors in the walker. Held out of
+round 1 because `ssa-try-catch` ended (0xC0000409) under `-front=ssa` on Windows: a call inside a handler that throws to
+an enclosing try of the same function had been given that try's state in the funclet's ip2state rows, and
+__CxxFrameHandler3 searches from a catch funclet only the tries whose handler states hold the state in force - so a call
+in a handler now stays in the handler's own state, as cl writes it, and a pad of its own inside a handler is refused by
+name. **The merged tree, gated as one:** Linux `make test` exit 0, run.sh **1031 / 0** at -O0, -O2, `-front=ssa` and
+`-front=ssa -O2`, the golden 0 of 2,693 changed (36 added), ssa.sh **7,811 bodies, 6,323 lowered and verified
+(80.9%)**, 0 failed, coff 0 differ, c90 447 / 0, exclusions 126 sites 0 / 0, comment cap 0, the memory gate under its
+baseline; Windows **660 same, 0 differ, 340 refused as recorded** at -O0, `-front=ssa` and `-front=ssa -O2`.

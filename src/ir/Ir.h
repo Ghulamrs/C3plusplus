@@ -74,7 +74,8 @@ struct Inst {
     Inst() : op(Op::Undef), first(0), count(0), k(0), bits(0), cc(Cmp::Eq), call(0), isVolatile(false), align(0), pos(0) {}
 };
 
-struct Block { std::vector<ValueId> params; std::vector<InstId> insts; InstId term; bool pad; Block() : pad(false) {} };
+// `funclet`: the Microsoft handler pad whose funclet this block is emitted inside, 0 for the body's own (M3-IR 3.6).
+struct Block { std::vector<ValueId> params; std::vector<InstId> insts; InstId term; bool pad; std::uint32_t funclet; Block() : pad(false), funclet(0) {} };
 
 struct AllocaInfo { TypeId type; int align; std::string name; AllocaInfo() : align(0) {} };
 

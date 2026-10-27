@@ -629,6 +629,7 @@ BlockId Lowering::newBlock() {
     Function &f = F();
     const BlockId b(static_cast<std::uint32_t>(f.blockArena.size()));
     f.blockArena.push_back(Block());
+    f.blockArena.back().funclet = funclet_.v;
     f.blocks.push_back(b);
     return b;
 }
@@ -759,6 +760,8 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
     liveFloor_ = 0;
     typeTable_.clear();
     handlerDepth_ = 0;
+    funclet_ = BlockId();
+    msTryPad_ = BlockId();
     landingPads_ = facts.landingPads;
     vptrs_.clear();
     try {
@@ -1032,13 +1035,11 @@ void Lowering::stmt(sema::TypedId id) {
     }
     case syntax::Kind::Break:
         if (loops_.empty()) outside("a break outside a loop or switch");
-        endCatches(handlerDepth_ - loops_.back().handlers);
-        destroyLive(loops_.back().live);
-        br(loops_.back().brk);
+        leaveHandlers(handlerDepth_ - loops_.back().handlers, loops_.back().live, loops_.back().brk);
         return;
     case syntax::Kind::Continue: {
         for (std::size_t i = loops_.size(); i-- > 0; )
-            if (loops_[i].cont.valid()) { endCatches(handlerDepth_ - loops_[i].handlers); destroyLive(loops_[i].live); br(loops_[i].cont); return; }
+            if (loops_[i].cont.valid()) { leaveHandlers(handlerDepth_ - loops_[i].handlers, loops_[i].live, loops_[i].cont); return; }
         outside("a continue outside a loop");
         return;
     }
@@ -1073,13 +1074,13 @@ void Lowering::returnStmt(sema::TypedId id) {
     const Type &rt = T(returns_);
     if (n == 0) {
         if (!rt.isVoid()) outside("a return with no value");
-        endCatches(handlerDepth_); destroyLive(liveFloor_); br(returnBlock_);
+        leaveHandlers(handlerDepth_, liveFloor_, returnBlock_);
         return;
     }
     if (n == 1 && rt.isVoid()) {
         const Val v = expr(child(id, 0));
         if (v.type.valid() && !T(v.type).isVoid()) outside("a return of a value from a void function");
-        endCatches(handlerDepth_); destroyLive(liveFloor_); br(returnBlock_);
+        leaveHandlers(handlerDepth_, liveFloor_, returnBlock_);
         return;
     }
     if (n != 1) outside("a return of " + std::to_string(n) + " parts");
@@ -1088,7 +1089,7 @@ void Lowering::returnStmt(sema::TypedId id) {
         if (T(a.type).unqualified() != rt.referent()->unqualified()) outside("a reference returned to another type");
         if (T(a.type).isConst() && !rt.referent()->isConst()) outside("a reference that can write returned from a const");
         const InstId c = add(Op::Bitcast, tid(*types_.pointerTo(rt.referent())), std::vector<ValueId>(1, a.v));
-        endCatches(handlerDepth_); destroyLive(liveFloor_); br(returnBlock_, std::vector<ValueId>(1, result(c)));
+        leaveHandlers(handlerDepth_, liveFloor_, returnBlock_, std::vector<ValueId>(1, result(c)));
         return;
     }
     if (rt.isStructOrUnion() && !plainClass(rt)) { returnConstructed(child(id, 0)); return; }
@@ -1102,7 +1103,7 @@ void Lowering::returnStmt(sema::TypedId id) {
         return;
     }
     const Val v = exprTo(child(id, 0), returns_);
-    endCatches(handlerDepth_); destroyLive(liveFloor_); br(returnBlock_, std::vector<ValueId>(1, v.v));
+    leaveHandlers(handlerDepth_, liveFloor_, returnBlock_, std::vector<ValueId>(1, v.v));
 }
 
 // A class with constructors and no copy of its own or destructor, returned as a plain one is - its bytes, which the
@@ -2541,6 +2542,8 @@ int Lowering::typeIndexFor(const std::string &sym) {
 // A pad's block, made on first use: the runtime arrives with the exception pointer and the selector as its parameters.
 BlockId Lowering::padBlock(Pad &p) {
     if (p.block.valid()) return p.block;
+    // A handler's funclet has one state, its own: a pad of its own inside it would want a state FH3 cannot search.
+    if (target_.microsoftNames() && funclet_.valid()) outside("a cleanup inside a handler on the Microsoft ABI");
     p.block = newBlock();
     F().blockArena[p.block.v].pad = true;
     p.ptr = param(p.block, tid(*types_.pointerTo(types_.voidType())));
@@ -2770,7 +2773,7 @@ void Lowering::endCatches(std::size_t n) {
 // chain tests the selector against each handler's index and hands what nothing matched to the enclosing pad or to
 // _Unwind_Resume; a handler begins its catch, binds its object, and ends it on every way out (a jump: endCatches; a throw: its own cleanup pad).
 void Lowering::tryStatement(sema::TypedId id) {
-    if (target_.microsoftNames()) outside("a try on the Microsoft ABI");
+    if (target_.microsoftNames()) { microsoftTry(id); return; }
     const std::uint32_t n = count(id);
     if (n < 2) outside("a try with no handler");
     const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType()));
@@ -2924,6 +2927,169 @@ void Lowering::specFilterChain(const Pad &p) {
     place(allowed);
     resumeFrom(p, 0);
     place(back);
+}
+
+// A jump out of n handlers: the catches ended, what the jump leaves destroyed, and the branch. On the Microsoft ABI a
+// handler is a funclet, so it hands the runtime an exit block's address (a catchret, M3-IR 3.6) and the exit, in the
+// body, destroys and branches on; the exit is listed on the try's CatchPad for the selector's flow.
+void Lowering::leaveHandlers(std::size_t n, std::size_t mark, BlockId target, const std::vector<ValueId> &args) {
+    if (!target_.microsoftNames() || n == 0) {
+        endCatches(n);
+        destroyLive(mark);
+        br(target, args);
+        return;
+    }
+    if (terminated()) return;
+    const BlockId was = funclet_;
+    funclet_ = BlockId();
+    const BlockId exit = newBlock();
+    funclet_ = was;
+    Function &f = F();
+    std::vector<ValueId> params;
+    for (std::size_t i = 0; i < args.size(); i++) params.push_back(param(exit, f.value(args[i]).type));
+    at(f.block(msTryPad_).insts[0]).cases.push_back(exit.v);
+    Succ s;
+    s.block = exit;
+    s.first = static_cast<std::uint32_t>(f.operands.size());
+    s.count = static_cast<std::uint32_t>(args.size());
+    f.operands.insert(f.operands.end(), args.begin(), args.end());
+    at(add(Op::CatchRet, TypeId(), std::vector<ValueId>())).succ.push_back(s);
+    const BlockId back = cur_;
+    place(exit);
+    destroyLive(mark);
+    br(target, params);
+    place(back);
+}
+
+// A funclet runs on the parent's frame with none of its registers: a handler may read an alloca, made afresh there,
+// and what its own blocks compute, and nothing else the body holds in a value.
+void Lowering::checkFuncletUses(BlockId hb) {
+    const Function &f = F();
+    std::vector<char> inBlock(f.blockArena.size(), 0), inInst(f.insts.size(), 0);
+    for (std::size_t b = 0; b < f.blocks.size(); b++) {
+        const Block &blk = f.block(f.blocks[b]);
+        if (f.blocks[b].v != hb.v && blk.funclet != hb.v) continue;
+        inBlock[f.blocks[b].v] = 1;
+        for (std::size_t k = 0; k < blk.insts.size(); k++) inInst[blk.insts[k].v] = 1;
+        if (blk.term.valid()) inInst[blk.term.v] = 1;
+    }
+    for (std::size_t b = 0; b < f.blocks.size(); b++) {
+        if (!inBlock[f.blocks[b].v]) continue;
+        const Block &blk = f.block(f.blocks[b]);
+        for (std::size_t k = 0; k <= blk.insts.size(); k++) {
+            const InstId id = k < blk.insts.size() ? blk.insts[k] : blk.term;
+            if (!id.valid()) continue;
+            const Inst &i = f.inst(id);
+            std::vector<ValueId> used;
+            for (std::uint32_t n = 0; n < i.count; n++) used.push_back(f.operand(i, n));
+            for (std::size_t s = 0; s < i.succ.size(); s++)
+                for (std::uint32_t a = 0; a < i.succ[s].count; a++) used.push_back(f.arg(i.succ[s], a));
+            for (std::size_t u = 0; u < used.size(); u++) {
+                const Value &v = f.value(used[u]);
+                const bool own = v.param.valid() ? inBlock[v.param.v] != 0
+                               : !v.def.valid() || inInst[v.def.v] != 0 || f.inst(v.def).op == Op::Alloca;
+                if (!own) outside("a handler reading a value of the body on the Microsoft ABI");
+            }
+        }
+    }
+}
+
+// **A `try` on the Microsoft ABI** (M3-IR 3.6): the body's calls unwind to a dispatch pad - a CatchPad of k -1 whose `cases`
+// list the exits, ended by a CatchSwitch over the handlers - and each handler is a pad of its own: a CatchPad naming the
+// descriptor, the flags in `bits` (1 by reference, 2 const), the object's alloca, the try's pad in `k`; a CatchRet exits.
+void Lowering::microsoftTry(sema::TypedId id) {
+    if (handlerDepth_ != 0) outside("a try inside a handler on the Microsoft ABI");
+    const std::uint32_t n = count(id);
+    if (n < 2) outside("a try with no handler");
+    struct Handler { sema::TypedId node, var, body; TypeId caught; std::string descriptor; bool byRef, isConst; };
+    std::vector<Handler> hs;
+    for (std::uint32_t i = 1; i < n; i++) {
+        Handler h;
+        h.node = child(id, i);
+        h.byRef = h.isConst = false;
+        if (syn(h.node).kind != syntax::Kind::Catch) outside("a try whose part is not a handler");
+        const std::uint32_t parts = count(h.node);
+        if (parts == 1 && text(h.node) == "...") {
+            h.body = child(h.node, 0);
+        } else if (parts == 2 && syn(child(h.node, 0)).kind == syntax::Kind::Var) {
+            h.var = child(h.node, 0);
+            h.body = child(h.node, 1);
+            if (tree_.node(h.var).type == nullptr) outside("a caught object not typed");
+            const Type &t = *tree_.node(h.var).type;
+            h.byRef = t.isReference();
+            h.caught = (h.byRef ? t.referent()->unqualified() : t.unqualified())->id();
+            const Type &c = T(h.caught);
+            // The runtime makes the object in the slot: a scalar's or a plain class's bytes, or a pointer to it.
+            if (h.byRef ? !referable(c) : !(scalar(c) || plainClass(c)) || c.isX87(target_)) outside("a catch of '" + t.describe() + "'");
+            if (!msCatch_ || !msCatch_(h.caught, h.descriptor, h.isConst)) outside("a catch of a type whose descriptor the parser did not finish");
+        } else {
+            outside(parts == 1 ? "a handler whose caught object the syntax tree does not hold" : "a handler of " + std::to_string(parts) + " parts");
+        }
+        hs.push_back(h);
+    }
+    // The enclosing pad's block before the try's, so its state precedes tryLow; the try's before the body's, so the
+    // states made inside the body are tryLow..tryHigh, and the handlers', made after it, follow (the walker's numbering).
+    const std::size_t encAt = pads_.size();
+    if (encAt != 0) padBlock(pads_[encAt - 1]);
+    Pad p;
+    p.cleanup = false;
+    p.own = n - 1;
+    padBlock(p);
+    const BlockId body = cur_;
+    place(p.block);
+    const InstId dispatch = add(Op::CatchPad, TypeId(), std::vector<ValueId>());
+    at(dispatch).k = -1;
+    place(body);
+    const BlockId done = newBlock();
+    at(dispatch).cases.push_back(done.v);
+    pads_.push_back(p);
+    block(child(id, 0));
+    pads_.pop_back();
+    br(done);
+    std::vector<BlockId> handlerBlocks;
+    for (std::size_t i = 0; i < hs.size(); i++) {
+        handlerBlocks.push_back(newBlock());
+        F().blockArena[handlerBlocks.back().v].pad = true;
+    }
+    place(p.block);
+    const InstId cs = add(Op::CatchSwitch, TypeId(), std::vector<ValueId>());
+    at(cs).k = encAt != 0 ? static_cast<long long>(pads_[encAt - 1].block.v) : 0;
+    for (std::size_t i = 0; i < hs.size(); i++) {
+        Succ s;
+        s.block = handlerBlocks[i];
+        at(cs).succ.push_back(s);
+    }
+    const BlockId wasTry = msTryPad_;
+    msTryPad_ = p.block;
+    for (std::size_t i = 0; i < hs.size(); i++) {
+        place(handlerBlocks[i]);
+        funclet_ = handlerBlocks[i];
+        std::vector<ValueId> ops;
+        if (hs[i].var.valid()) {
+            const Type &t = *tree_.node(hs[i].var).type;
+            const TypeId slotType = hs[i].byRef ? tid(*types_.pointerTo(t.referent())) : tid(t);
+            const ValueId slot = entryAlloca(slotType, text(hs[i].var));
+            locals_[tree_.node(hs[i].var).syntax.v] = std::make_pair(slot, tid(t));
+            ops.push_back(slot);
+        }
+        const InstId cp = add(Op::CatchPad, TypeId(), ops);
+        at(cp).syms.push_back(hs[i].descriptor);
+        at(cp).bits = (hs[i].byRef ? 1u : 0u) | (hs[i].isConst ? 2u : 0u);
+        at(cp).k = static_cast<long long>(p.block.v);
+        at(cp).pos = syn(hs[i].node).loc;
+        handlerDepth_++;
+        block(hs[i].body);
+        handlerDepth_--;
+        if (!terminated()) {
+            Succ s;
+            s.block = done;
+            at(add(Op::CatchRet, TypeId(), std::vector<ValueId>())).succ.push_back(s);
+        }
+        funclet_ = BlockId();
+        checkFuncletUses(handlerBlocks[i]);
+    }
+    msTryPad_ = wasTry;
+    place(done);
 }
 
 // A case label's constant: a literal, an enumerator, a sizeof, a sign or a parenthesis over one.
