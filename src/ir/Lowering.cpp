@@ -5,6 +5,7 @@
 #include "Lowering.h"
 #include "../Ast.h"
 
+#include <cctype>
 #include <cstring>
 
 namespace ir {
@@ -1652,7 +1653,10 @@ void Lowering::declaration(sema::TypedId id) {
         locals_[v.syntax.v] = std::make_pair(slot, tid(t));
         if (t.isReference()) {
             if (v.count != 1) outside("a reference of " + std::to_string(v.count) + " parts");
-            const Val b = lvalue(child(var, 0));
+            Val b = lvalue(child(var, 0));
+            // [dcl.init.ref]/5: a class lvalue bound to a reference to its base binds the base subobject.
+            if (T(b.type).isStructOrUnion() && t.referent()->isStructOrUnion() && T(b.type).unqualified() != t.referent()->unqualified())
+                b = baseOfObject(b, t);
             if (T(b.type).unqualified() != t.referent()->unqualified()) outside("a reference bound to another type");
             if (T(b.type).isConst() && !t.referent()->isConst()) outside("a reference that can write bound to a const");
             store(slot, result(add(Op::Bitcast, slotType, std::vector<ValueId>(1, b.v))));
@@ -2147,6 +2151,43 @@ Lowering::Val Lowering::memberOfThis(sema::TypedId id) {
     return Val(result(g), r.type);
 }
 
+// Whether a call's head `f` names the member function the parser reached, as `this->f()`: its last name is in the
+// symbol where the ABI spells it; an operator() - a class object called by its name - is not.
+bool Lowering::namesCalledFunction(const std::string &head, const std::string &symbol) const {
+    std::string last = head.substr(head.rfind(':') == std::string::npos ? 0 : head.rfind(':') + 1);
+    last = last.substr(0, last.find('<'));
+    if (last.empty() || symbol.empty()) return false;
+    // `operator=(o)`, `B::operator+(n)`: an operator function called by its name, which no object can be named.
+    if (last.compare(0, 8, "operator") == 0 && (last.size() == 8 || !(std::isalnum(static_cast<unsigned char>(last[8])) || last[8] == '_')))
+        return true;
+    if (symbol[0] == '?')
+        return symbol.compare(0, last.size() + 2, "?" + last + "@") == 0 || symbol.compare(0, last.size() + 4, "??$" + last + "@") == 0;
+    if (symbol.find("clE") != std::string::npos || symbol.find("clI") != std::string::npos) return false;
+    const std::string spelt = std::to_string(last.size()) + last;
+    for (std::size_t at = symbol.find(spelt); at != std::string::npos; at = symbol.find(spelt, at + 1)) {
+        const std::size_t end = at + spelt.size();
+        if (at > 0 && std::isdigit(static_cast<unsigned char>(symbol[at - 1]))) continue;
+        if (end < symbol.size() && (symbol[end] == 'E' || symbol[end] == 'I')) return true;
+    }
+    return false;
+}
+
+// The member object `m` of `m(x)`, found as `this`'s data member of that name - the class whose operator() the parser
+// called, at its own offset; anything else (a global, a static member, an inherited ambiguity) stays outside.
+Lowering::Val Lowering::functorMember(sema::TypedId head, const Type &self) {
+    const Type &cls = *T(thisType_).pointee()->unqualified();
+    if (cls.findMember(text(head)) == nullptr) outside("a class object called by its name");
+    const Member &m = *cls.findMember(text(head));
+    if (m.ambiguous || m.inVirtualBase != nullptr || m.anonUnion != nullptr || m.type->isReference() || m.width != 0 ||
+        m.type->unqualified() != self.pointee()->unqualified())
+        outside("a class object called by its name");
+    const bool constant = T(thisType_).pointee()->isConst() && !m.isMutable;
+    const Type &mt = constant ? *types_.withConst(m.type->unqualified()) : *m.type;
+    const InstId g = add(Op::Gep, tid(*types_.pointerTo(&mt)), std::vector<ValueId>(1, this_));
+    at(g).k = m.offset;
+    return Val(result(g), tid(*types_.pointerTo(&mt)));
+}
+
 // The enclosing object's address in a closure that captured `this`: its `$this` member, the parser's name for it;
 // none (an invalid value) in any other function.
 Lowering::Val Lowering::capturedThis() {
@@ -2517,6 +2558,8 @@ Lowering::Val Lowering::conditional(sema::TypedId id) {
         t = tid(tx);
     } else if (ty.isPointer() && (tx.isNullPtr() || isNullConstant(child(id, 1)))) {
         t = tid(ty);
+    } else if (tx.isPointer() && ty.isPointer() && compositePointer(id, tx, ty)) {
+        t = tid(*tree_.node(id).type);
     } else {
         outside("a conditional of '" + tx.describe() + "' and '" + ty.describe() + "'");
     }
@@ -2530,6 +2573,21 @@ Lowering::Val Lowering::conditional(sema::TypedId id) {
     br(merge, std::vector<ValueId>(1, y.v));
     place(merge);
     return Val(param(merge, t), t);
+}
+
+// [expr.cond]/6 with [expr]/13: two pointers whose composite pointer type the typer gave the node - the pointees one
+// type apart in cv, a pointer to void, or a class and its base - each arm converted to it.
+bool Lowering::compositePointer(sema::TypedId id, const Type &tx, const Type &ty) const {
+    if (tree_.node(id).type == nullptr || !tree_.node(id).type->isPointer()) return false;
+    const Type &c = *tree_.node(id).type;
+    const Type &cp = *c.pointee()->unqualified();
+    const auto fits = [&](const Type &a) -> bool {
+        const Type &ap = *a.pointee();
+        if (ap.isConst() && !c.pointee()->isConst()) return false;
+        if (ap.unqualified() == &cp || (cp.isVoid() && !ap.isFunction())) return true;
+        return ap.unqualified()->isStructOrUnion() && cp.isStructOrUnion();
+    };
+    return fits(tx) && fits(ty);
 }
 
 // `a = b` converts b to a's type; `a op= b` is `a = a op b` with a read once.
@@ -2680,10 +2738,16 @@ Lowering::Val Lowering::call(sema::TypedId id) {
                 const Val outer = capturedThis();
                 if (outer.v.valid()) object = outer;
             }
+            // `m(x)` for a member object m: its operator(), on the member - never `this` ([over.call.object]).
+            if (!namesCalledFunction(text(head), r.symbol)) object = functorMember(head, self);
         } else if (syn(head).kind == syntax::Kind::Member && count(head) == 1) {
             const bool arrow = text(head).compare(0, 2, "->") == 0;
             if (arrow) object = decay(expr(child(head, 0)));
             else { const Val o = lvalue(child(head, 0)); object = Val(o.v, tid(*types_.pointerTo(&T(o.type)))); }
+        } else if (syn(head).kind == syntax::Kind::Unary && text(head) == "*" && count(head) == 1) {
+            // [over.call.object] on `*p`: the class object p points at is the object, p its address.
+            object = decay(expr(child(head, 0)));
+            if (!T(object.type).isPointer() || !T(object.type).pointee()->isStructOrUnion()) outside("a member call through '*' of what is not a pointer to a class");
         } else {
             outside("a member call through '" + text(head) + "'");
         }
