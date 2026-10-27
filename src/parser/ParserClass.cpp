@@ -2921,8 +2921,8 @@ StmtPtr Parser::constructMember(const std::string &cls, const Type *type,
         all.push_back(std::move(args[k]));
         ps.push_back(chosen.params[k]);
     }
-    // A member template's specialization is defined with no declaration of its own, so currentFunction_ is not its name.
-    if (!implicit && !m.type->isArray() && !memberTemplateInst_) {
+    // Keyed by the function being defined - a member template's specialization by its own symbol, which topLevel set.
+    if (!implicit && !m.type->isArray()) {
         const MemberBuilt b = { chosen.symbol, types_.functionType(types_.get(Kind::Void), ps, false), args.size() != written };
         const std::string key = currentFunction_ + "|" + m.name + "|" + std::to_string(written == 0 ? 0 : static_cast<std::uint32_t>(pos));
         // Two choices under one key - a constructor template's specializations read under one name - are no record at all.

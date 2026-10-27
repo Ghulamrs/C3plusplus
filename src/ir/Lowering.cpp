@@ -2453,6 +2453,73 @@ Lowering::Val Lowering::thrownValue(sema::TypedId id, TypeId &thrown) {
     return v;
 }
 
+// [except.throw]/3 for a class a constructor copies: the exception object - the runtime's on Itanium, the frame's on
+// Microsoft - built by the copy constructor the parser chose for this throw from an object, or from a temporary built
+// here that dies after it; where the parser made pads, those of a copy that throws. False for any other operand.
+bool Lowering::classThrow(sema::TypedId id, ValueId &object, TypeId &thrown) {
+    if (count(id) != 1) return false;
+    const sema::TypedId operand = child(id, 0);
+    const TypeId ot = TypeTable::id(tree_.node(operand).type);
+    if (!ot.valid() || !T(ot).unqualified()->isStructOrUnion() || plainClass(*T(ot).unqualified())) return false;
+    const Type &t = *T(ot).unqualified();
+    std::string copy;
+    TypeId sig;
+    bool defaulted = false;
+    if (!memberBuilt_ || !memberBuilt_(F().symbol, "$throw", syn(id).loc, copy, sig, defaulted))
+        outside("a throw of a class that is not plain");
+    if (t.hasVirtualBase()) outside("a throw of a class with a virtual base");
+    const Type &ft = T(sig);
+    if (ft.params().size() != 2 || ft.params()[0]->pointee()->unqualified() != &t || !ft.params()[1]->isReference() ||
+        ft.params()[1]->referent()->unqualified() != &t)
+        outside("a throw copied by a constructor of another class");
+    const bool temporaryOperand = syn(operand).kind == syntax::Kind::Call && count(operand) != 0 && temporaryBuilt_ &&
+                                  tree_.resolution(operand).what == sema::Resolution::Temporary &&
+                                  tree_.resolution(child(operand, 0)).what == sema::Resolution::TypeName;
+    if (!isLvalueNode(operand) && !temporaryOperand) outside("a throw of a class value that is not an object or a temporary");
+    const std::string dtor = t.hasDestructor() && destructor_ ? destructor_(t.id()) : std::string();
+    if (t.hasDestructor() && dtor.empty()) outside("a throw of a class whose destructor the parser recorded none for");
+    thrown = t.id();
+    const std::size_t mark = live_.size();
+    if (target_.microsoftNames()) {
+        object = entryAlloca(thrown, ".ex");
+    } else {
+        const TypeId size = tid(*types_.get(target_.sizeType()));
+        const Val got = runtimeCall("__cxa_allocate_exception", tid(*types_.pointerTo(types_.voidType())),
+                                    std::vector<ValueId>(1, iconst(size, t.size(target_))));
+        object = result(add(Op::Bitcast, types_.pointerTo(thrown), std::vector<ValueId>(1, got.v)));
+        if (landingPads_) guard(object, t, "__cxa_free_exception");
+    }
+    ValueId from;
+    if (isLvalueNode(operand)) {
+        const Val o = lvalue(operand);
+        if (T(o.type).unqualified() != &t) outside("a throw of an object of another class");
+        if (T(o.type).isConst() && !ft.params()[1]->referent()->isConst()) outside("a throw whose copy drops const");
+        from = o.v;
+    } else {
+        if (!constructed_ || !constructed_(t.id()) || !buildableLayout(t)) outside("a throw of a temporary the lowering cannot build");
+        std::string symbol;
+        TypeId built;
+        bool zero = false;
+        if (!temporaryBuilt_(tree_.node(operand).syntax, symbol, built, zero)) outside("a thrown temporary built by no constructor the parser recorded");
+        from = entryAlloca(thrown, "$tmp");
+        construct(from, symbol, built, t, zero, operand, 1);
+        if (t.hasDestructor() && landingPads_) guard(from, t, dtor);
+    }
+    const bool dies = !isLvalueNode(operand) && t.hasDestructor();
+    std::vector<ValueId> ops;
+    ops.push_back(result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, object))));
+    ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(ft.params()[1]->referent())), std::vector<ValueId>(1, from))));
+    directCall(copy, sig, ops);
+    // [except.throw]/3: the object made, the operand's temporary destroyed; the storage's guard ends without a free.
+    if (live_.size() > mark + (target_.microsoftNames() || !landingPads_ ? 0 : 1)) closeScope(live_.size() - 1);
+    closeScope(mark, true);
+    if (dies && !landingPads_) {
+        const TypeId self = types_.pointerTo(t.id());
+        directCall(dtor, types_.functionType(types_.voidType()->id(), std::vector<TypeId>(1, self)), std::vector<ValueId>(1, from));
+    }
+    return true;
+}
+
 // [except.throw] on the Itanium ABI, as the parser writes it: the exception object allocated by the runtime, the
 // operand stored into it - a scalar's value or a plain class's bytes - and __cxa_throw, an invoke inside a try;
 // `throw;` is __cxa_rethrow. A class with a copy of its own stays outside, so does a throw in a noexcept function - the parser's value-then-abort, [except.spec]/9, with no pad on the Microsoft ABI; that ABI's own shape is below.
@@ -2465,6 +2532,19 @@ void Lowering::throwExpr(sema::TypedId id) {
         return;
     }
     TypeId thrown;
+    ValueId built;
+    if (classThrow(id, built, thrown)) {
+        if (!typeInfo_) outside("a throw with no type_info to name");
+        const std::string info = typeInfo_(thrown);
+        if (info.empty()) outside("a throw of a type with no type_info");
+        const std::string dtor = T(thrown).hasDestructor() && destructor_ ? destructor_(thrown) : std::string();
+        std::vector<ValueId> args;
+        args.push_back(result(add(Op::Bitcast, voidPtr, std::vector<ValueId>(1, built))));
+        args.push_back(addrOf(info, voidPtr));
+        args.push_back(dtor.empty() ? result(add(Op::Null, voidPtr, std::vector<ValueId>())) : addrOf(dtor, voidPtr));
+        throwCall("__cxa_throw", args);
+        return;
+    }
     const Val v = thrownValue(id, thrown);
     if (!typeInfo_) outside("a throw with no type_info to name");
     const std::string info = typeInfo_(thrown);
@@ -2495,13 +2575,16 @@ void Lowering::microsoftThrow(sema::TypedId id) {
         return;
     }
     TypeId thrown;
-    const Val v = thrownValue(id, thrown);
+    ValueId object;
+    if (!classThrow(id, object, thrown)) {
+        const Val v = thrownValue(id, thrown);
+        object = entryAlloca(thrown, ".ex");
+        if (T(thrown).isStructOrUnion()) copyObject(object, v.v, T(thrown));
+        else store(object, convert(v, thrown).v);
+    }
     if (!msThrowInfo_) outside("a throw with no ThrowInfo to name");
     const std::string info = msThrowInfo_(thrown);
     if (info.empty()) outside("a throw of a type whose ThrowInfo the parser did not finish");
-    const ValueId object = entryAlloca(thrown, ".ex");
-    if (T(thrown).isStructOrUnion()) copyObject(object, v.v, T(thrown));
-    else store(object, convert(v, thrown).v);
     args.push_back(result(add(Op::Bitcast, voidPtr, std::vector<ValueId>(1, object))));
     args.push_back(addrOf(info, voidPtr));
     throwCall("_CxxThrowException", args);
