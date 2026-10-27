@@ -45,6 +45,7 @@ public:
     void setDefaultInit(std::function<bool(TypeId, const std::string &)> f) { defaultInit_ = f; }
     void setGuarded(std::function<bool(const std::string &)> f) { guarded_ = f; }
     void setTypeInfo(std::function<std::string(TypeId)> f) { typeInfo_ = f; }
+    void setMicrosoftThrowInfo(std::function<std::string(TypeId)> f) { msThrowInfo_ = f; }
     void setNewFacts(std::function<bool(syntax::NodeId, sema::NewFacts &)> f) { newFacts_ = f; }
     // The constructor the parser chose for a member, and a class's destructor - Sema's records, asked by the glue.
     void setMemberBuilt(std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> f) { memberBuilt_ = f; }
@@ -171,6 +172,8 @@ private:
     Val operatorCall(sema::TypedId id);
     Val condition(sema::TypedId id);
     void throwExpr(sema::TypedId id);
+    void microsoftThrow(sema::TypedId id);
+    Val thrownValue(sema::TypedId id, TypeId &thrown);
     void throwCall(const std::string &symbol, const std::vector<ValueId> &args);
     void basePaths(const Type &cls, const Type &base, int at, int &found, int &offset);
     void memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32_t to);
@@ -211,6 +214,7 @@ private:
     std::function<bool(TypeId, const std::string &)> defaultInit_;
     std::function<bool(const std::string &)> guarded_;
     std::function<std::string(TypeId)> typeInfo_;
+    std::function<std::string(TypeId)> msThrowInfo_;
     std::function<bool(syntax::NodeId, sema::NewFacts &)> newFacts_;
     std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> memberBuilt_;
     std::function<std::string(TypeId)> destructor_;

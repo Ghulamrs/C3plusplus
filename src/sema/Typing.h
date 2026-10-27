@@ -142,6 +142,8 @@ public:
     int scopedBody(syntax::NodeId fn) const;
     bool packBody(const std::string &symbol) const;
     std::string typeInfoSymbol(TypeId t) const;   // the type_info a catch of t names, Sema's; empty where none can be made
+    // The Microsoft ThrowInfo a throw of t names (`_TI1H`), where the parser finished the chain for a throw; empty otherwise.
+    std::string microsoftThrowInfo(TypeId t) const;
     bool constructed(TypeId cls) const;          // a class some constructor builds, written or implicit
     bool assigned(TypeId cls) const;             // a class with an operator= of its own, written or implicit
     bool newFacts(syntax::NodeId id, NewFacts &out) const;  // a `new` or `delete` node's facts; false where none were recorded
