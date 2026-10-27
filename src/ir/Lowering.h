@@ -65,6 +65,10 @@ public:
     void setClosure(std::function<bool(syntax::NodeId, sema::ClosureFacts &)> f) { closure_ = f; }
     void setReturnBuilt(std::function<bool(syntax::NodeId, int &, std::string &, TypeId &)> f) { returnBuilt_ = f; }
     void setNamedReturn(std::function<bool(syntax::NodeId)> f) { namedReturn_ = f; }
+    // Whether the parser built a call's class result straight into a local (`var`, the call) - Sema's record.
+    void setElidedInto(std::function<bool(syntax::NodeId, syntax::NodeId)> f) { elidedInto_ = f; }
+    // The copy or move assignment the parser called for `a = b`, by b's node - Sema's record.
+    void setAssignCall(std::function<bool(syntax::NodeId, std::string &, TypeId &)> f) { assignCall_ = f; }
 private:
     struct Outside { std::string why; explicit Outside(const std::string &w) : why(w) {} };
     struct Val { ValueId v; TypeId type; Val() {} Val(ValueId a, TypeId t) : v(a), type(t) {} };
@@ -114,6 +118,12 @@ private:
     void returnDestroyed(sema::TypedId value);
     void returnCopied(sema::TypedId id, sema::TypedId value);
     void namedReturnLocal(sema::TypedId var, ValueId slot, const Type &t);
+    bool elidedLocal(sema::TypedId var) const;
+    void elidedCall(sema::TypedId call, ValueId slot);
+    bool classAssign(sema::TypedId id, Val &out);
+    bool listFits(const Type &t, std::uint32_t values) const;
+    void listInit(ValueId slot, const Type &t, sema::TypedId list, std::uint32_t from);
+    Val classValue(sema::TypedId id, const Type &t);
     void forStmt(sema::TypedId id);
     void rangeForStmt(sema::TypedId id);
     void switchStmt(sema::TypedId id);
@@ -275,6 +285,10 @@ private:
     ValueId elidedSlot_;                        // the named return value, not destroyed by the `return` naming it
     std::function<bool(syntax::NodeId, int &, std::string &, TypeId &)> returnBuilt_;
     std::function<bool(syntax::NodeId)> namedReturn_;
+    std::function<bool(syntax::NodeId, syntax::NodeId)> elidedInto_;
+    std::function<bool(syntax::NodeId, std::string &, TypeId &)> assignCall_;
+    sema::TypedId intoCall_;                    // the call elidedCall lowers, whose result goes into a local's alloca
+    int intoAlloca_ = -1, intoNow_ = -1;        // that alloca; and callTail's, set only as that call's tail is entered
     std::size_t liveFloor_;                     // a constructor's built bases and members: below it, kept by a return
     bool landingPads_;                          // the parser gave the function landing pads: the prologue names an LSDA
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> temporaryBuilt_;

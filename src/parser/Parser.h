@@ -686,6 +686,8 @@ private:
     struct LocalBuilt { std::string symbol; const Type *signature; bool defaulted, zeroed; };
     std::map<int, LocalBuilt> ctorBySerial_;
     std::unordered_map<std::uint32_t, LocalBuilt> localBuilt_;      // the same, by `var` node (M3b.2)
+    // The copy or move assignment `a = b` called for a class with one of its own, by b's node: its symbol and type (M3b.2).
+    std::unordered_map<std::uint32_t, LocalBuilt> assignCalls_;
     // **One declarator's `var` node**, made when the declarator's scope closes - which a loop body that leaves by
     // `continue` from several places does in one place - over the parts its parse recorded: a bound, an initialiser.
     struct VarNote {

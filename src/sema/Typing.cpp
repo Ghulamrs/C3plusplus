@@ -573,6 +573,21 @@ bool Typer::namedReturnLocal(syntax::NodeId var) const {
     return i != p_.declaredLocals_.end() && i->second.byValueByAddress && !i->second.isParameter;
 }
 
+bool Typer::assignCall(syntax::NodeId value, std::string &symbol, TypeId &signature) const {
+    const std::unordered_map<std::uint32_t, Parser::LocalBuilt>::const_iterator i = p_.assignCalls_.find(value.v);
+    if (i == p_.assignCalls_.end() || i->second.symbol.empty()) return false;
+    symbol = i->second.symbol;
+    signature = TypeTable::id(i->second.signature);
+    return true;
+}
+
+// [class.copy]/31 as the parser took it for `T x = f();`: the call claimed the local's slot for its result.
+bool Typer::elidedInto(syntax::NodeId var, syntax::NodeId call) const {
+    const std::unordered_map<std::uint32_t, Local>::const_iterator l = p_.declaredLocals_.find(var.v);
+    const std::unordered_map<std::uint32_t, Parser::CallSlots>::const_iterator c = p_.callSlots_.find(call.v);
+    return l != p_.declaredLocals_.end() && c != p_.callSlots_.end() && c->second.result != 0 && c->second.result == l->second.offset;
+}
+
 // Each capture's source `var`, looked up as a name is in the scopes at the lambda, and kept only where it is the
 // parser's local - the same slot - for every capture.
 void Typer::closureSources(syntax::NodeId id) {

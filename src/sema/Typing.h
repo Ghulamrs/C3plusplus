@@ -181,6 +181,8 @@ public:
     // What a `return` of a class with a copy of its own built (Parser::ReturnBuilt): false where the parser recorded none.
     bool returnBuilt(syntax::NodeId ret, int &form, std::string &symbol, TypeId &signature) const;
     bool namedReturnLocal(syntax::NodeId var) const;   // the local nrvoCandidate chose: built in the caller's object
+    bool elidedInto(syntax::NodeId var, syntax::NodeId call) const;   // the call's result built straight into the local
+    bool assignCall(syntax::NodeId value, std::string &symbol, TypeId &signature) const;   // `a = value`'s operator=
     bool closureFacts(syntax::NodeId id, ClosureFacts &out) const;   // a lambda's, where the parser kept them and every source was found
     // Whether the function of this symbol is a template specialization (Signature::fromTemplate): its body is a replay.
     bool fromTemplate(const std::string &symbol) const;
