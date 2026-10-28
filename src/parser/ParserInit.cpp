@@ -31,7 +31,13 @@ Parser::Init Parser::parseInitialiser() {
         // of an `Init` below takes no items as "zero it", so none tests for this.
         if (consume("}")) return in;
         for (;;) {
-            if (!expandPackInitialiser(in.items)) in.items.push_back(parseInitialiser());
+            // A nested braced list is one syntax node, `{}` over its values, so the tree says where the braces were (M3b.2).
+            const std::size_t mark = syntaxTree_.size(), lo = peek().pos;
+            const bool nested = peek().is("{");
+            if (!expandPackInitialiser(in.items)) {
+                in.items.push_back(parseInitialiser());
+                if (nested) noteParts(syntax::Kind::Other, "{}", lo, mark, lo);
+            }
             if (consume("}")) break;
             expect(",");
             if (consume("}")) break;

@@ -133,6 +133,7 @@ private:
     void block(sema::TypedId id);
     void declaration(sema::TypedId id);
     void localArray(sema::TypedId var, ValueId slot, TypeId type);
+    void stringArray(sema::TypedId lit, ValueId slot, const Type &t);
     void returnStmt(sema::TypedId id);
     void returnConstructed(sema::TypedId value);
     void returnDestroyed(sema::TypedId value);

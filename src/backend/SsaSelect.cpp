@@ -618,4 +618,5 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
     else if (fn.returns()->isFloating())  a_->ins("pxor", reg("%xmm0"), reg("%xmm0"));
     else                                  a_->ins("mov", immText("0"), reg("%rax"));
     a_->defLabel(returnLabel_);
+    returnThis(fn);
 }

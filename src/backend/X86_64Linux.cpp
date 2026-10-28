@@ -2001,7 +2001,6 @@ void X86_64Linux::walkInPlace(const Function &fn) {
 // The body, the value a function that falls off its end returns, and the
 // return label every `return` jumps to.
 void X86_64Linux::walkBody(const Function &fn) {
-    const std::vector<Param> &ps = fn.params();
     if (!inPlace_) storeUnwindHelpAtEntry(fn.body());   // a body walked in place is not an entry
     fn.body().accept(*this);
 
@@ -2010,9 +2009,13 @@ void X86_64Linux::walkBody(const Function &fn) {
     else if (fn.returns()->isFloating())    a_->ins("pxor", reg("%xmm0"), reg("%xmm0"));
     else                                    a_->ins("mov", immText("0"), reg("%rax"));
     a_->defLabel(returnLabel_);
-    // **A Microsoft constructor or deleting destructor returns `this` in
-    // RAX**, and cl's callers read it - `new V(4)` hands back the constructor's
-    // RAX as it stands. Measured 2026-09-17; after the label, for every path.
+    returnThis(fn);
+}
+
+// **A Microsoft constructor or deleting destructor returns `this` in RAX**, and cl's callers read it - `new V(4)`
+// hands back the constructor's RAX as it stands. Measured 2026-09-17; after the return label, for every path.
+void X86_64Linux::returnThis(const Function &fn) {
+    const std::vector<Param> &ps = fn.params();
     if (abi_.positional && fn.hasThis() && !ps.empty() &&
         (fn.symbol().compare(0, 3, "??0") == 0 ||
          fn.symbol().compare(0, 4, "??_G") == 0 ||
