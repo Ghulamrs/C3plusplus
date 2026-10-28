@@ -1034,3 +1034,20 @@ one:** Linux `make test` exit 0, run.sh **1061 / 0** at -O0, -O2, `-front=ssa` a
 2,693 changed (156 added), ssa.sh **8,217 bodies, 7,557 lowered and verified (92.0%)**, 0 failed, coff 0 differ, c90
 447 / 0, exclusions 126 sites 0 / 0, comment cap 0, the memory gate under its baseline; Windows hist 8,520 / 7,865 / 0,
 and **690 same, 0 differ, 340 refused as recorded** at -O0, `-front=ssa` and `-front=ssa -O2`.
+
+**M3b.2, round 16 of 2026-10-28: exceptions nested inside a Microsoft handler** (lane-msnest `7c5e410` and lane-mstry
+`3206820`, Fable 5.1, off `d05cc58`, merged as `80acf60`; `d2822b8` and `53f2d5e` from the coordinator). A cleanup and a
+`goto` inside a Microsoft handler (the pad's block a cleanup funclet of its own, chained through `msEnclosingPad()`); a
+`try` inside one (its handlers funclets of their own, `msAddTryBlock` deferred and ordered post-order so an inner try
+precedes its outer); and a Microsoft virtual base destroyed on unwinding under the walker's `$vb` count. The gate found a
+walker fault the new case reached on Linux: a handler's end-catch pad was written only when the handler itself could
+throw, so a `try` inside it whose body calls nothing jumped to an undefined `$endcatch` and did not link (`d2822b8`,
+`handlerResumeUsed_`; the golden's 9 changed files are that pad, written over an empty range, on the three Itanium-ABI
+targets). Behind it, a walker leak on Itanium: a handler's local is not destroyed when an exception leaves a `try`
+nested in that handler (the inner chain hands over to the end-catch pad, past the local's cleanup) - registered as
+`tests/open/handler-local-past-inner-try`; `-front=ssa` answers clang's. **The merged tree, gated as one:** Linux `make
+test` exit 0, run.sh **1064 / 0** at -O0, -O2, `-front=ssa` and `-front=ssa -O2`, ssa.sh **8,250 bodies, 7,587 lowered
+and verified (92.0%)**, 0 failed, coff 0 differ, c90 447 / 0, exclusions 126 sites 0 / 0, comment cap 0, the memory gate
+under its baseline; Windows **693 same, 0 differ, 340 refused as recorded** at -O0, `-front=ssa` and `-front=ssa -O2`.
+Also measured on 10-28: `-front=ssa` output is deterministic - 28,521 outputs over four targets at -O0 and -O2, 4,264 of
+them `-dump=ssa`, 0 differ.
