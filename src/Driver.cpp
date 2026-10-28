@@ -1357,6 +1357,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     lowering.setDefaultInit([&typer](TypeId cls, const std::string &m) { return typer.defaultInit(cls, m); });
     lowering.setMemberDefault([&typer](const std::string &ctor, const std::string &m) { return typer.memberDefault(ctor, m); });
     lowering.setGuarded([&typer](const std::string &symbol) { return typer.guardedStatic(symbol); });
+    lowering.setStaticGuard([&typer](const std::string &symbol, sema::StaticGuard &out) { return typer.staticGuard(symbol, out); });
     lowering.setTypeInfo([&typer](TypeId t) { return typer.typeInfoSymbol(t); });
     lowering.setUnnamedCaught([&typer](syntax::NodeId id) { return typer.unnamedCaught(id); });
     lowering.setMicrosoftThrowInfo([&typer](TypeId t) { return typer.microsoftThrowInfo(t); });
@@ -1402,8 +1403,10 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         // A plain function's try block is a `try` in its body to the lowering, its throw(...) list a filter it
         // makes; any other wrap stays the parser's.
         facts.specFilter = typer.specFilter(fn.symbol());
-        facts.wrappedBody = facts.specFilter.empty() && ((typer.wrappedBody(fn.symbol()) && !typer.plainFunctionTry(fn.symbol())) ||
-                                                         !fn.exceptionSpec().empty());
+        facts.noexceptWrap = typer.noexceptWrap(fn.symbol());
+        facts.ctorTry = typer.ctorTry(fn.symbol());
+        facts.wrappedBody = facts.specFilter.empty() && ((typer.wrappedBody(fn.symbol()) && !typer.plainFunctionTry(fn.symbol()) &&
+                                                          !facts.noexceptWrap && !facts.ctorTry) || !fn.exceptionSpec().empty());
         facts.noexcept_ = fn.isNoexcept();
         facts.pos = fn.pos();
         facts.paramCount = fn.params().size();

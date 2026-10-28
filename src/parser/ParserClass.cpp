@@ -67,6 +67,14 @@ StmtPtr Parser::constructObject(const Declared &d, const std::string &symbol,
                                    valueInit && ctor.implicit };
             ctorBySerial_[built->serial] = b;
         }
+    // The same for an object with a symbol, which a static local's guarded construction reads (M3b.2).
+    if (!symbol.empty() && offset == 0) {
+        StaticGuard &g = staticGuards_[symbol];
+        g.ctor = ctor.symbol;
+        g.ctorSig = types_.functionType(types_.get(Kind::Void), full, false);
+        g.defaulted = args.size() != written;
+        g.zeroed = valueInit && ctor.implicit;
+    }
 
     // **The zeroing half of [dcl.init]/8, spelt as the temporary path spells
     // it.** A constructor somebody wrote is the whole of the initialisation; an
