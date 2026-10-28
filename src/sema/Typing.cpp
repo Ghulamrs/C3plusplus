@@ -464,6 +464,10 @@ TypeId Typer::declaredReturn(syntax::NodeId fn) const {
 
 bool Typer::wrappedBody(const std::string &symbol) const { return p_.wrappedBodies_.count(symbol) != 0; }
 bool Typer::plainFunctionTry(const std::string &symbol) const { return p_.plainFunctionTries_.count(symbol) != 0; }
+bool Typer::ctorTry(const std::string &symbol) const { return p_.ctorTries_.count(symbol) != 0; }
+
+bool Typer::noexceptWrap(const std::string &symbol) const { return p_.noexceptWraps_.count(symbol) != 0; }
+
 std::string Typer::specFilter(const std::string &symbol) const {
     const auto s = p_.specFilters_.find(symbol);
     return s == p_.specFilters_.end() ? std::string() : s->second;
@@ -519,6 +523,24 @@ bool Typer::microsoftCatchDescriptor(TypeId t, std::string &descriptor, bool &is
 bool Typer::constructed(TypeId cls) const { return p_.hasConstructors(p_.types_.type(cls)->unqualified()->tag()); }
 
 bool Typer::guardedStatic(const std::string &symbol) const { return p_.guardedStatics_.count(symbol) != 0; }
+
+bool Typer::staticGuard(const std::string &symbol, StaticGuard &out) const {
+    const auto g = p_.staticGuards_.find(symbol);
+    if (g == p_.staticGuards_.end() || g->second.guard.empty()) return false;
+    const Parser::StaticGuard &r = g->second;
+    out.guard = r.guard;
+    out.ctor = r.ctor;
+    out.helper = r.helper;
+    out.ctorSig = TypeTable::id(r.ctorSig);
+    out.aborts = r.aborts;
+    out.built = r.built;
+    out.defaulted = r.defaulted;
+    out.zeroed = r.zeroed;
+    out.copied = r.copied;
+    out.list = r.list;
+    out.registered = r.registered;
+    return true;
+}
 
 bool Typer::defaultInit(TypeId cls, const std::string &member) const {
     return p_.memberInit_.count(p_.types_.type(cls)->unqualified()->tag() + "::" + member) != 0;

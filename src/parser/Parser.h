@@ -632,8 +632,17 @@ private:
     std::set<std::string> wrappedBodies_;
     std::set<std::string> plainFunctionTries_;   // of those, an ordinary function's try block alone (M3b.2)
     std::map<std::string, std::string> specFilters_;   // an ordinary function's throw(...) filter, `$spec,<types>`
+    std::set<std::string> ctorTries_;       // a constructor's function try block and nothing else around its body (M3b.2)
+    std::set<std::string> noexceptWraps_;   // a noexcept body with no pads of its own, wrapped in a catch-all that aborts (M3b.2)
     // The static locals guardOnce builds at run time; the adapter takes only those laid down as data.
     std::set<std::string> guardedStatics_;
+    // What guardOnce built for one, by its symbol (M3b.2): the guard it named; whether a throw out of the construction aborts
+    // it; the constructor that builds it, with its type and the [dcl.init]/8 facts; the destructor's registration.
+    struct StaticGuard {
+        std::string guard, ctor, helper; const Type *ctorSig = nullptr;
+        bool aborts = false, built = false, defaulted = false, zeroed = false, copied = false, list = false, registered = false;
+    };
+    std::map<std::string, StaticGuard> staticGuards_;
     TryFacts pendingTry_;
     // A `throw` of a scalar on the Itanium targets: the slot holding the exception's storage, and its type_info.
     struct ThrowFacts { std::string temp; int slot = 0; std::string info; };

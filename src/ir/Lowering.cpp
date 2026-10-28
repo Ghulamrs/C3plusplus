@@ -505,6 +505,145 @@ void Lowering::guard(ValueId slot, const Type &c, const std::string &dtor, bool 
     live_.push_back(l);
 }
 
+// [stmt.dcl]/4: a static local built the first time control passes, under the guard guardOnce named - a byte read, then
+// __cxa_guard_acquire and _release on Itanium; _Init_thread_header and _footer with the guard at -1 on Microsoft. A throw
+// out of the construction aborts the guard, as the parser's cleanup does, so the next pass tries again.
+void Lowering::guardedStatic(sema::TypedId var, const std::string &symbol) {
+    const sema::TypedNode &v = tree_.node(var);
+    sema::StaticGuard g;
+    if (!staticGuard_ || !staticGuard_(symbol, g)) outside("a static local built at run time with no guard recorded");
+    if (v.type->isArray()) outside("a static array built at run time");
+    const bool ms = target_.microsoftNames();
+    if (ms && handlerDepth_ != 0) outside("a static local built at run time inside a handler on the Microsoft ABI");
+    staticLocals_[v.syntax.v] = std::make_pair(symbol, tid(*v.type));
+    const TypeId gt = tid(*types_.get(ms ? Kind::Int : Kind::LongLong)), gp = tid(*types_.pointerTo(&T(gt)));
+    const TypeId intT = tid(*types_.get(Kind::Int)), boolT = tid(*types_.get(Kind::Bool)), voidT = tid(*types_.voidType());
+    const BlockId build = newBlock(), done = newBlock();
+    std::vector<ValueId> ops;
+    if (!ms) {
+        const TypeId byte = tid(*types_.get(Kind::UChar));
+        ops.push_back(promote(Val(load(addrOf(g.guard, tid(*types_.pointerTo(&T(byte)))), byte), byte)).v);
+        ops.push_back(iconst(intT, 0));
+        const BlockId acquire = newBlock();
+        const InstId fresh = add(Op::ICmp, boolT, ops);
+        at(fresh).cc = Cmp::Eq;
+        condbr(result(fresh), acquire, done);
+        place(acquire);
+        condbr(truth(runtimeCall("__cxa_guard_acquire", intT, std::vector<ValueId>(1, addrOf(g.guard, gp)))).v, build, done);
+    } else {
+        runtimeCall("_Init_thread_header", voidT, std::vector<ValueId>(1, addrOf(g.guard, gp)));
+        ops.push_back(load(addrOf(g.guard, gp), gt));
+        ops.push_back(iconst(gt, -1));
+        const InstId unbuilt = add(Op::ICmp, boolT, ops);
+        at(unbuilt).cc = Cmp::Eq;
+        condbr(result(unbuilt), build, done);
+    }
+    place(build);
+    // The abort's region: a cleanup pad of its own, under every pad the construction makes.
+    Pad p;
+    p.cleanup = true;
+    p.own = 0;
+    if (!pads_.empty()) { p.types = pads_.back().types; p.indices = pads_.back().indices; }
+    const std::size_t mark = pads_.size(), liveMark = live_.size();
+    if (g.aborts) pads_.push_back(p);
+    staticConstruction(var, symbol, g);
+    if (live_.size() != liveMark || pads_.size() != mark + (g.aborts ? 1 : 0)) outside("a static local whose construction left a scope open");
+    if (g.aborts) {
+        p = pads_.back();
+        pads_.pop_back();
+    }
+    if (g.aborts && p.block.valid()) {
+        if (!landingPads_) outside("a static local's abort in a function the parser gave no landing pads");
+        const BlockId back = cur_;
+        place(p.block);
+        const InstId cl = add(Op::CleanupPad, TypeId(), std::vector<ValueId>());
+        at(cl).syms = p.types;
+        for (std::size_t k = 0; k < p.indices.size(); k++) at(cl).cases.push_back(p.indices[k]);
+        at(cl).bits = (p.types.empty() ? 0u : 1u) | (!pads_.empty() ? 2u : 0u);
+        runtimeCall(ms ? "_Init_thread_abort" : "__cxa_guard_abort", voidT, std::vector<ValueId>(1, addrOf(g.guard, gp)));
+        if (ms) {
+            const InstId r = add(Op::CleanupRet, TypeId(), std::vector<ValueId>());
+            if (!pads_.empty()) {
+                Succ s;
+                s.block = padBlock(pads_.back());
+                s.first = static_cast<std::uint32_t>(F().operands.size());
+                s.count = 2;
+                F().operands.push_back(p.ptr);
+                F().operands.push_back(p.sel);
+                at(r).succ.push_back(s);
+            }
+        } else {
+            resumeFrom(p, pads_.size());
+        }
+        place(back);
+    }
+    runtimeCall(ms ? "_Init_thread_footer" : "__cxa_guard_release", voidT, std::vector<ValueId>(1, addrOf(g.guard, gp)));
+    br(done);
+    place(done);
+}
+
+// What guardOnce guards: emitInit's store of a scalar or a plain class's bytes; or the constructor the parser chose, its
+// temporaries destroyed after it, then the destructor registered - __cxa_atexit with D1 on Itanium, atexit(helper) on Microsoft.
+void Lowering::staticConstruction(sema::TypedId var, const std::string &symbol, const sema::StaticGuard &g) {
+    const sema::TypedNode &v = tree_.node(var);
+    const Type &c = *v.type->unqualified();
+    const std::size_t was = openFull();
+    // bindStaticReference's binding: the global holds the address of the lvalue, as a local reference's alloca would.
+    if (c.isReference()) {
+        if (v.count != 1) outside("a static reference of " + std::to_string(v.count) + " parts");
+        Val b = lvalue(child(var, 0));
+        if (T(b.type).isStructOrUnion() && c.referent()->isStructOrUnion() && T(b.type).unqualified() != c.referent()->unqualified())
+            b = baseOfObject(b, c);
+        if (T(b.type).unqualified() != c.referent()->unqualified()) outside("a static reference bound to another type");
+        if (T(b.type).isConst() && !c.referent()->isConst()) outside("a static reference that can write bound to a const");
+        const TypeId slotType = tid(*types_.pointerTo(c.referent()));
+        store(addrOf(symbol, tid(*types_.pointerTo(&T(slotType)))), result(add(Op::Bitcast, slotType, std::vector<ValueId>(1, b.v))));
+        closeFull(was);
+        return;
+    }
+    const ValueId obj = addrOf(symbol, tid(*types_.pointerTo(&c)));
+    if (g.built && !g.copied) {
+        if (g.list) outside("a static local built from a braced list");
+        if (g.ctor.empty() || !g.ctorSig.valid()) outside("a static local built by no constructor the parser recorded");
+        if (g.defaulted) outside("a static local built with default arguments");
+        const Type &ft = T(g.ctorSig);
+        if (ft.params().empty() || ft.params()[0]->pointee()->unqualified() != &c) outside("a static local's constructor of another class");
+        if (g.zeroed) {
+            const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, obj));
+            at(z).k = c.size(target_);
+        }
+        std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, obj))));
+        if (v.count != 0) arguments(var, 0, ft, 1, false, ops);
+        else if (ft.params().size() != 1) outside("a static local's default constructor of parameters");
+        directCall(g.ctor, g.ctorSig, ops);
+    } else if (c.isStructOrUnion()) {
+        if (v.count != 1) outside("a static class of " + std::to_string(v.count) + " parts");
+        const Val o = classValue(child(var, 0), c);
+        copyObject(obj, o.v, c);
+    } else {
+        if ((!scalar(c) && !c.isNullPtr()) || c.isX87(target_)) outside("a static local of type '" + c.describe() + "'");
+        if (v.count != 1) outside("a static local of " + std::to_string(v.count) + " parts");
+        store(obj, exprTo(child(var, 0), tid(c)).v);
+    }
+    closeFull(was);
+    if (!c.isStructOrUnion() || !c.hasDestructor()) return;
+    if (!g.registered) outside("a static local whose destructor the parser registered none for");
+    const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType())), intT = tid(*types_.get(Kind::Int));
+    std::vector<ValueId> args;
+    if (target_.microsoftNames()) {
+        if (g.helper.empty()) outside("a static local with no atexit helper recorded");
+        args.push_back(addrOf(g.helper, types_.pointerTo(types_.functionType(types_.voidType()->id(), std::vector<TypeId>()))));
+        runtimeCall("atexit", intT, args);
+        return;
+    }
+    const std::string dtor = destructor_ ? destructor_(c.id()) : std::string();
+    if (dtor.empty()) outside("a static local whose destructor the parser recorded none for");
+    args.push_back(addrOf(dtor, types_.pointerTo(types_.functionType(types_.voidType()->id(), std::vector<TypeId>(1, types_.pointerTo(c.id()))))));
+    args.push_back(result(add(Op::Bitcast, voidPtr, std::vector<ValueId>(1, obj))));
+    args.push_back(addrOf("__dso_handle", voidPtr));
+    runtimeCall("__cxa_atexit", intT, args);
+}
+
 // The destructor called on the object: a call on the normal path, as the walker's is; an invoke in a cleanup's terminate scope.
 void Lowering::destroy(const Live &l, bool invoke) {
     const TypeId self = types_.pointerTo(l.cls);
@@ -1011,8 +1150,12 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
                 destroys = isDtor;
             }
         }
-        const std::uint32_t n = count(fnNode);
+        std::uint32_t n = count(fnNode);
         if (n == 0) outside("a function with no body");
+        // A constructor's function try block: its handlers follow the body, which is then the last block.
+        std::vector<sema::TypedId> ctorHandlers;
+        while (facts.ctorTry && n > 1 && syn(child(fnNode, n - 1)).kind == syntax::Kind::Catch) ctorHandlers.insert(ctorHandlers.begin(), child(fnNode, --n));
+        if (facts.ctorTry && (ctorHandlers.empty() || !isCtor || target_.microsoftNames())) outside("a function try block or an exception specification");
         const sema::TypedId body = child(fnNode, n - 1);
         if (syn(body).kind != syntax::Kind::Block) outside("a body that is not a block");
         // The parameters, then a constructor's mem-initialisers, then the body. A declarator's array bounds and a
@@ -1089,6 +1232,9 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         const BlockId first = newBlock();
         br(first);
         place(first);
+        // A constructor's function try block: one region over its mem-initialisers and its body, the parts' cleanups in it.
+        TryState ctorTry;
+        if (facts.ctorTry) tryOpen(ctorHandlers, ctorTry);
         if (isCtor) memberInits(fnNode, inits, n - 1);
         else if (destroys) storeVptrs();
         // [except.unexpected]: a throw(...) list is one filter row over the body, under every pad the body makes.
@@ -1101,6 +1247,17 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
             spec.indices.push_back(-1);
             pads_.push_back(spec);
         }
+        // [except.spec]/9: a noexcept body the parser wrapped is under a catch-all, inside the constructor's own parts.
+        if (facts.noexceptWrap) {
+            if (target_.microsoftNames() || !facts.specFilter.empty()) outside("a noexcept wrap beside another");
+            Pad wrap;
+            wrap.cleanup = false;
+            wrap.own = 1;
+            wrap.types.push_back(std::string());
+            wrap.indices.push_back(typeIndexFor(std::string()));
+            pads_.push_back(wrap);
+        }
+        const std::size_t wrapAt = pads_.size();
         liveFloor_ = live_.size();
         block(body);
         if (!pendingGotos_.empty()) outside("a goto to a label the body does not place");
@@ -1108,7 +1265,14 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
             if (rt.isVoid()) br(returnBlock_);
             else br(returnBlock_, std::vector<ValueId>(1, fallOffValue(rt)));
         }
+        if (facts.noexceptWrap) {
+            if (pads_.size() != wrapAt) outside("a noexcept body that left a pad open");
+            const Pad wrap = pads_.back();
+            pads_.pop_back();
+            if (wrap.block.valid()) noexceptAbort(wrap);
+        }
         closeScope(0, true);
+        if (facts.ctorTry) tryClose(ctorTry, true);
         if (!facts.specFilter.empty()) {
             const Pad spec = pads_.back();
             pads_.pop_back();
@@ -1740,8 +1904,9 @@ void Lowering::declaration(sema::TypedId id) {
             // [stmt.dcl]/4: a static local is the global the parser laid down, its address taken where it is named;
             // one built at run time under a guard, a thread_local and a reference stay outside.
             if (r.isThreadLocal || threadLocalGlobal(r.symbol)) outside("a thread_local");
-            if (!guarded_ || guarded_(r.symbol)) outside("a static local built at run time");
-            if (v.type->isReference()) outside("a static reference");
+            if (v.type->isReference() && !referable(*v.type->referent())) outside("a static reference to '" + v.type->referent()->describe() + "'");
+            if (!guarded_) outside("a static local built at run time");
+            if (guarded_(r.symbol)) { guardedStatic(var, r.symbol); continue; }
             if (v.type->isStructOrUnion() && v.type->unqualified()->hasDestructor()) outside("a static local with a destructor");
             staticLocals_[v.syntax.v] = std::make_pair(r.symbol, tid(*v.type));
             continue;
@@ -2170,6 +2335,11 @@ Lowering::Val Lowering::nameAddress(sema::TypedId id) {
     const sema::TypedNode &n = tree_.node(id);
     if (n.decl.valid()) {
         const std::map<std::uint32_t, std::pair<std::string, TypeId> >::const_iterator s = staticLocals_.find(n.decl.v);
+        if (s != staticLocals_.end() && T(s->second.second).isReference()) {
+            // A static reference is a global holding the address it binds, as a local reference's alloca does.
+            const TypeId pt = tid(*types_.pointerTo(T(s->second.second).referent()));
+            return Val(load(addrOf(s->second.first, tid(*types_.pointerTo(&T(pt)))), pt), tid(*T(s->second.second).referent()));
+        }
         if (s != staticLocals_.end()) return Val(addrOf(s->second.first, tid(*types_.pointerTo(&T(s->second.second)))), s->second.second);
         std::map<std::uint32_t, std::pair<ValueId, TypeId> >::const_iterator l = locals_.find(n.decl.v);
         if (l == locals_.end()) outside("a name whose local the lowering did not declare");
@@ -3675,15 +3845,22 @@ void Lowering::tryStatement(sema::TypedId id) {
     if (target_.microsoftNames()) { microsoftTry(id); return; }
     const std::uint32_t n = count(id);
     if (n < 2) outside("a try with no handler");
-    const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType()));
-    struct Handler { sema::TypedId node, var, body; TypeId caught; std::string sym; int index; };
-    std::vector<Handler> hs;
+    std::vector<sema::TypedId> handlers;
+    for (std::uint32_t i = 1; i < n; i++) handlers.push_back(child(id, i));
+    TryState st;
+    tryOpen(handlers, st);
+    block(child(id, 0));
+    tryClose(st, false);
+}
+
+void Lowering::tryOpen(const std::vector<sema::TypedId> &handlers, TryState &st) {
+    std::vector<TryHandler> &hs = st.hs;
     Pad p;
     p.cleanup = false;
-    p.own = n - 1;
-    for (std::uint32_t i = 1; i < n; i++) {
-        Handler h;
-        h.node = child(id, i);
+    p.own = handlers.size();
+    for (std::size_t i = 0; i < handlers.size(); i++) {
+        TryHandler h;
+        h.node = handlers[i];
         if (syn(h.node).kind != syntax::Kind::Catch) outside("a try whose part is not a handler");
         const std::uint32_t parts = count(h.node);
         h.caught = TypeId();
@@ -3725,13 +3902,22 @@ void Lowering::tryStatement(sema::TypedId id) {
             if (!have) { p.types.push_back(outer.types[t]); p.indices.push_back(outer.indices[t]); }
         }
     }
-    const BlockId done = newBlock();
+    st.done = newBlock();
     pads_.push_back(p);
-    block(child(id, 0));
-    p = pads_.back();
+}
+
+void Lowering::tryClose(TryState &st, bool rethrows) {
+    const std::vector<TryHandler> &hs = st.hs;
+    const BlockId done = st.done;
+    const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType()));
+    Pad p = pads_.back();
     pads_.pop_back();
     br(done);
-    if (!p.block.valid()) { place(done); return; }       // nothing in the body could throw: the handlers are dead code
+    if (!p.block.valid()) {     // nothing in the body could throw: the handlers are dead code
+        place(done);
+        if (rethrows && !terminated()) add(Op::Unreachable, TypeId(), std::vector<ValueId>());
+        return;
+    }
     // The enclosing pad by index: pads_ grows under a handler and a pointer into it would not survive.
     const std::size_t encAt = pads_.size();
 
@@ -3783,6 +3969,8 @@ void Lowering::tryStatement(sema::TypedId id) {
         handlerDepth_++;
         handlerLive_.push_back(live_.size());
         block(hs[i].body);
+        // A constructor's handler that falls off its end rethrows, inside its own cleanup: the catch ends as the exception goes.
+        if (rethrows && !terminated()) throwCall("__cxa_rethrow", std::vector<ValueId>());
         handlerLive_.pop_back();
         handlerDepth_--;
         cleanup = pads_.back();
@@ -3803,10 +3991,26 @@ void Lowering::tryStatement(sema::TypedId id) {
         }
     }
     place(done);
+    if (rethrows && !terminated()) add(Op::Unreachable, TypeId(), std::vector<ValueId>());     // a constructor's body returned
 }
 
 // The filter's chain: a selector below 0 is an exception the list does not allow, handed to __cxa_call_unexpected;
 // anything else the list allowed, and the frame unwinds on.
+// The catch-all a noexcept body is wrapped in: the exception begun, as clang's __clang_call_terminate does, then abort().
+void Lowering::noexceptAbort(const Pad &p) {
+    if (!landingPads_) outside("a noexcept wrap in a function the parser gave no landing pads");
+    const BlockId back = cur_;
+    place(p.block);
+    const InstId cp = add(Op::CatchPad, TypeId(), std::vector<ValueId>());
+    at(cp).syms = p.types;
+    at(cp).cases.push_back(p.indices[0]);
+    at(cp).k = 1;
+    runtimeCall("__cxa_begin_catch", tid(*types_.pointerTo(types_.voidType())), std::vector<ValueId>(1, p.ptr));
+    runtimeCall("abort", tid(*types_.voidType()), std::vector<ValueId>());
+    add(Op::Unreachable, TypeId(), std::vector<ValueId>());
+    place(back);
+}
+
 void Lowering::specFilterChain(const Pad &p) {
     if (!landingPads_) outside("a throw(...) filter in a function the parser gave no landing pads");
     const BlockId back = cur_;

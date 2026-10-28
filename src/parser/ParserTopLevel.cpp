@@ -1906,6 +1906,8 @@ void Parser::topLevel(Program &program) {
     if (functionTry && !specFilter && !noexceptWrapped) plainFunctionTries_.insert(definedSymbol);
     // A throw(...) list's filter over an ordinary function's body: the list as its row names it (M3b.2).
     if (specFilter && !specialHandsOver && !noexceptWrapped) specFilters_[definedSymbol] = spec;
+    if (noexceptWrapped) noexceptWraps_.insert(definedSymbol);
+    if (ctorTry && isCtor && !specFilter && !noexceptWrapped) ctorTries_.insert(definedSymbol);
     if (!entryGuards.empty()) functionGuards_[definedSymbol] = entryGuards;
 
     // Recorded before `body` is moved into the Function, where what the pointer names lives on; a

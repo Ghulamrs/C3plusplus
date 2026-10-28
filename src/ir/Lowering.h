@@ -27,8 +27,10 @@ struct FunctionFacts {
     TypeId thisType;        // a member function's `this`, the first of the parser's parameter slots
     std::size_t pos, paramCount;
     std::string specFilter;     // an ordinary function's throw(...) list as the parser's filter row names it: `$spec,<types>`
+    bool noexceptWrap;          // [except.spec]/9 as the parser kept it: the body under a catch-all that aborts
+    bool ctorTry;               // [except.pre]/4: a constructor's try block, over its mem-initialisers and its body
     FunctionFacts() : isStatic(false), isInline(false), variadic(false), hasThis(false), sret(false), landingPads(false),
-                      wrappedBody(false), noexcept_(false), isConstructor(false), pos(0), paramCount(0) {}
+                      wrappedBody(false), noexcept_(false), isConstructor(false), pos(0), paramCount(0), noexceptWrap(false), ctorTry(false) {}
 };
 
 class Lowering {
@@ -48,6 +50,7 @@ public:
     // A member's own initialiser as a written constructor's mem-initialiser, typed: by constructor and "class::member".
     void setMemberDefault(std::function<sema::TypedId(const std::string &, const std::string &)> f) { memberDefault_ = f; }
     void setGuarded(std::function<bool(const std::string &)> f) { guarded_ = f; }
+    void setStaticGuard(std::function<bool(const std::string &, sema::StaticGuard &)> f) { staticGuard_ = f; }
     void setTypeInfo(std::function<std::string(TypeId)> f) { typeInfo_ = f; }
     void setUnnamedCaught(std::function<std::string(syntax::NodeId)> f) { unnamedCaught_ = f; }
     void setMicrosoftThrowInfo(std::function<std::string(TypeId)> f) { msThrowInfo_ = f; }
@@ -93,6 +96,7 @@ private:
     void place(BlockId b);
     bool terminated() const;
     void specFilterChain(const Pad &p);
+    void noexceptAbort(const Pad &p);
     void br(BlockId to, const std::vector<ValueId> &args = std::vector<ValueId>());
     void condbr(ValueId c, BlockId t, BlockId f);
     ValueId param(BlockId b, TypeId type);
@@ -134,6 +138,12 @@ private:
     void gotoStmt(const std::string &name);
     void labelReached(const std::string &name, BlockId b);
     void tryStatement(sema::TypedId id);
+    // An Itanium try's handlers read and its pad pushed, then its body lowered, then its chain: a statement's, or a
+    // constructor's function try block, whose handlers rethrow at their end ([except.handle]/15).
+    struct TryHandler { sema::TypedId node, var, body; TypeId caught; std::string sym; int index; };
+    struct TryState { std::vector<TryHandler> hs; BlockId done; };
+    void tryOpen(const std::vector<sema::TypedId> &handlers, TryState &st);
+    void tryClose(TryState &st, bool rethrows);
     void microsoftTry(sema::TypedId id);
     void leaveHandlers(std::size_t n, std::size_t mark, BlockId target, const std::vector<ValueId> &args = std::vector<ValueId>());
     void checkFuncletUses(BlockId hb);
@@ -233,6 +243,8 @@ private:
     void memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32_t to);
     void storeVptrs();
     void classLocal(sema::TypedId var, ValueId slot, const Type &t);
+    void guardedStatic(sema::TypedId var, const std::string &symbol);
+    void staticConstruction(sema::TypedId var, const std::string &symbol, const sema::StaticGuard &g);
     bool builtClass(const Type &t) const;
     void builtLocal(sema::TypedId var, ValueId slot, const Type &t);
     void guard(ValueId slot, const Type &c, const std::string &dtor, bool unwinds = true);
@@ -283,6 +295,7 @@ private:
     std::function<bool(TypeId, const std::string &)> defaultInit_;
     std::function<sema::TypedId(const std::string &, const std::string &)> memberDefault_;
     std::function<bool(const std::string &)> guarded_;
+    std::function<bool(const std::string &, sema::StaticGuard &)> staticGuard_;
     std::function<std::string(TypeId)> typeInfo_;
     std::function<std::string(syntax::NodeId)> unnamedCaught_;
     std::function<std::string(TypeId)> msThrowInfo_;
