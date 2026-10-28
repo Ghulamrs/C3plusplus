@@ -1020,3 +1020,17 @@ self-host under the flag fails), `winlink-check`'s `this-return` (ab) prints the
 every case passes at `-front=ssa -O1` on both boxes, and the `ml64` spelling fails the same 64 cases with and without
 it. **Found, not mended**: the walker segfaults converting a null pointer to a virtual base (x86_64-linux at -O1 and
 -O2, x86_64-windows at -O0).
+
+**M3b.2, round 15 of 2026-10-28: the three faults the exit checks found under `-front=ssa`, and arrays from strings**
+(lane-shfix `a8e494b`, Opus 5.5, and lane-brace `b68cb5c`, Fable 5.1, both off `2aefedc`, merged over round 14 as
+`d05cc58`). The M3b.2 exit checks, run under `-front=ssa` for the first time on 10-28, found three faults no case had:
+`winlink-check`'s `this-return` (ab) printed the wrong output - a constructor the selection wrote did not leave `this`
+in RAX for cl's callers (`X86_64Linux::returnThis`, now called by both `walkBody` and `selectBody`); stage 0 segfaulted
+compiling four of the compiler's own sources - `->` on a class a call returns (its `operator->`) was read as a pointer,
+now refused by name in `decay()`; and C90's `ce_cast_narrows` lost a case label's narrowing cast (`foldConstant` narrows
+as the parser's fold does). lane-brace: an array of characters from a string literal (`stringArray`, narrow and wide),
+a scoped enumerator as a constant, and a `{}` node per nested braced list (the record only). **The merged tree, gated as
+one:** Linux `make test` exit 0, run.sh **1061 / 0** at -O0, -O2, `-front=ssa` and `-front=ssa -O2`, the golden 0 of
+2,693 changed (156 added), ssa.sh **8,217 bodies, 7,557 lowered and verified (92.0%)**, 0 failed, coff 0 differ, c90
+447 / 0, exclusions 126 sites 0 / 0, comment cap 0, the memory gate under its baseline; Windows hist 8,520 / 7,865 / 0,
+and **690 same, 0 differ, 340 refused as recorded** at -O0, `-front=ssa` and `-front=ssa -O2`.
