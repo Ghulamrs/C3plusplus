@@ -1782,6 +1782,8 @@ private:
     std::string handlerResumeLabel_;
     int handlerResumePtr_ = 0;
     int handlerResumeSel_ = 0;
+    // Whether a region inside the handler handed over to that pad, which must then be written.
+    mutable bool handlerResumeUsed_ = false;
     // Where an exception leaving this point goes.
     std::string unwindTarget(int *ptrSlot, int *selSlot) const;
     // One temporary of a block, released under its guard by a pad.
