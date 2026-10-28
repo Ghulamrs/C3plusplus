@@ -213,16 +213,19 @@ std::vector<StmtPtr> Parser::guardedVirtualBaseInit(
         const Type *type, const std::string &cls, int thisSlot, int flagSlot,
         std::size_t pos, int srcSlot, bool moving,
         std::map<std::string, std::vector<ExprPtr> > *vbaseArgs,
-        std::vector<Alive> *vbs) {
+        std::vector<Alive> *vbs, bool record) {
     std::vector<StmtPtr> out;
     if (!target_.microsoftNames() || !type->hasVirtualBase() || flagSlot < 0)
         return out;
 
     std::vector<StmtPtr> inside;
-    classes_.storeVbptr(cls, type, thisSlot, inside);
+    std::vector<sema::VptrStore> *stores = record ? &msVbptrs_[currentFunction_] : nullptr;
+    std::vector<std::string> *order = record ? &msVbaseOrder_[currentFunction_] : nullptr;
+    if (record) { stores->clear(); order->clear(); }
+    classes_.storeVbptr(cls, type, thisSlot, inside, stores);
     std::vector<int> builtBase;
     std::vector<StmtPtr> built = virtualBaseCalls(type, thisSlot, true, pos,
-                                                  srcSlot, moving, vbaseArgs, &builtBase);
+                                                  srcSlot, moving, vbaseArgs, &builtBase, order);
     const int count = vbs != nullptr ? allocateFrameSlot(types_.intType()) : 0;
     auto counted = [&](long long n) {
         ExprPtr slot(Var::local("$vb", count));
@@ -262,7 +265,8 @@ std::vector<StmtPtr> Parser::virtualBaseCalls(const Type *type, int thisSlot,
                                               std::map<std::string,
                                                   std::vector<ExprPtr> >
                                                   *vbaseArgs,
-                                              std::vector<int> *builtBase) {
+                                              std::vector<int> *builtBase,
+                                              std::vector<std::string> *order) {
     std::vector<StmtPtr> out;
     // **[class.base.init]/10's order, which is not the layout's**: a base's
     // own virtual bases come before it, each direct base in turn - clang's
@@ -323,6 +327,7 @@ std::vector<StmtPtr> Parser::virtualBaseCalls(const Type *type, int thisSlot,
         ExprPtr srcArg;
         const Type *srcParam = nullptr;
         Signature namedCtor;
+        std::size_t namedWritten = 0;
         const Signature *ctor = nullptr;
         std::vector<ExprPtr> ctorArgs;
         if (building) {
@@ -338,6 +343,7 @@ std::vector<StmtPtr> Parser::virtualBaseCalls(const Type *type, int thisSlot,
                 ctorArgs.swap(said->second);
                 namedCtor = overload_.resolveOverload(constructorKey(base->tag()),
                                             ctorArgs, pos);
+                namedWritten = ctorArgs.size();
                 applyDefaults(namedCtor, ctorArgs, pos);
                 ctor = &namedCtor;
             } else if (srcSlot >= 0) {
@@ -421,6 +427,13 @@ std::vector<StmtPtr> Parser::virtualBaseCalls(const Type *type, int thisSlot,
             checkAssignable(*one, want, pos, "'" + base->tag() + "'");
             args.push_back(convert(std::move(one), want));
             ps.push_back(want);
+        }
+        // What builds this virtual base, for the SSA lowering (M3b.2): keyed as a base is, "^V", in the order built.
+        if (order != nullptr && building && srcSlot < 0 && !memberTemplateInst_) {
+            const MemberBuilt b = { symbol, types_.functionType(types_.get(Kind::Void), ps, false),
+                                    ctor == &namedCtor && ctorArgs.size() != namedWritten };
+            memberBuilt_[currentFunction_ + "|^" + base->tag() + "|0"] = b;
+            order->push_back(base->tag());
         }
         // **A virtual base is a subobject and not the complete object**, so
         // the flag it is handed is 0: anything *it* has virtually is this

@@ -27,8 +27,12 @@ struct FunctionFacts {
     TypeId thisType;        // a member function's `this`, the first of the parser's parameter slots
     std::size_t pos, paramCount;
     std::string specFilter;     // an ordinary function's throw(...) list as the parser's filter row names it: `$spec,<types>`
+    std::string recordKey;      // the symbol the parser keyed this function's records by: Itanium's C1 or D1 for a split C2 or D2
+    bool takesVtt;              // Itanium's C2 or D2 of a class with virtual bases: a VTT is its second parameter
+    bool msFlag;                // a Microsoft constructor of a class with virtual bases: cl's most-derived flag, last
     FunctionFacts() : isStatic(false), isInline(false), variadic(false), hasThis(false), sret(false), landingPads(false),
-                      wrappedBody(false), noexcept_(false), isConstructor(false), pos(0), paramCount(0) {}
+                      wrappedBody(false), noexcept_(false), isConstructor(false), pos(0), paramCount(0), takesVtt(false),
+                      msFlag(false) {}
 };
 
 class Lowering {
@@ -59,6 +63,15 @@ public:
     void setDestructor(std::function<std::string(TypeId)> f) { destructor_ = f; }
     // The vptr stores the parser made in a written constructor or destructor, by its symbol.
     void setVptrStores(std::function<bool(const std::string &, std::vector<sema::VptrStore> &)> f) { vptrStores_ = f; }
+    void setBaseVtt(std::function<int(const std::string &, const std::string &)> f) { baseVtt_ = f; }
+    // Itanium's vbase_offset slot, bytes before the vptr, for a virtual base of a class - Sema's record, asked by the glue.
+    void setVbaseSlot(std::function<long long(TypeId, TypeId)> f) { vbaseSlot_ = f; }
+    // Microsoft: which constructors take cl's most-derived flag, and what a written one's guard stores and builds.
+    void setMsVbase(std::function<bool(const std::string &)> takes,
+                    std::function<bool(const std::string &, std::vector<sema::VptrStore> &, std::vector<std::string> &)> init) {
+        msVbaseCtor_ = takes;
+        msVbaseInit_ = init;
+    }
     // The constructor the parser chose for a local's `var` node - Sema's record, asked by the glue.
     void setLocalBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &, bool &)> f) { localBuilt_ = f; }
     void setTemporaryBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> f) { temporaryBuilt_ = f; }
@@ -75,7 +88,7 @@ private:
     struct Val { ValueId v; TypeId type; Val() {} Val(ValueId a, TypeId t) : v(a), type(t) {} };
     struct Loop { BlockId brk, cont; std::size_t handlers, live; };
     // A local a destructor destroys, alive from its construction to the end of its scope; `pad` is its cleanup's index in pads_.
-    struct Live { ValueId slot; TypeId cls; std::string dtor; std::size_t pad; };
+    struct Live { ValueId slot; TypeId cls; std::string dtor; std::size_t pad; ValueId vtt; };   // vtt: a base D2's sub-VTT
     // A landing pad a call inside its region unwinds to (M3-IR 3.6): a try's, or a handler's end-catch cleanup. Its block is
     // made on first use; `types` is the whole action chain, own handlers first, then the enclosing pads' - the walker's.
     struct Pad { BlockId block; ValueId ptr, sel; bool cleanup; std::vector<std::string> types; std::vector<int> indices; std::size_t own; };
@@ -157,6 +170,8 @@ private:
     bool namesCalledFunction(const std::string &head, const std::string &symbol) const;
     Val functorMember(sema::TypedId head, const Type &self);
     Val capturedThis();
+    ValueId virtualBaseAddress(ValueId object, const Type &owner, const Type &vbase);
+    ValueId virtualBaseMember(ValueId object, const Type &owner, const Member &m, TypeId type);
     Val readOf(ValueId p, TypeId type);
     Val unary(sema::TypedId id);
     Val step(sema::TypedId id, bool increment, bool prefix);
@@ -201,6 +216,7 @@ private:
     int baseNamed(const Type &cls, const std::string &name) const;
     ValueId baseAddress(const Type::BaseSpec &b);
     void buildBase(const Type::BaseSpec &b, sema::TypedId entry);
+    void msVirtualBases(const Type &cls, const std::map<std::string, sema::TypedId> &named);
     void destroyBases(const Type &cls);
     void arguments(sema::TypedId id, std::uint32_t from, const Type &ft, std::size_t skip, bool variadic, std::vector<ValueId> &ops);
     void argumentList(const Type &ft, std::size_t skip, bool variadic, const std::vector<sema::TypedId> &args, bool dummyInt,
@@ -227,6 +243,8 @@ private:
     void basePaths(const Type &cls, const Type &base, int at, int &found, int &offset);
     void memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32_t to);
     void storeVptrs();
+    ValueId vttAt(int entry);
+    std::size_t baseVttArgument(const Type &base, const Type &ft, std::vector<ValueId> &ops);
     void classLocal(sema::TypedId var, ValueId slot, const Type &t);
     bool builtClass(const Type &t) const;
     void builtLocal(sema::TypedId var, ValueId slot, const Type &t);
@@ -290,6 +308,13 @@ private:
     std::function<std::string(TypeId)> destructor_;
     std::function<bool(const std::string &, std::vector<sema::VptrStore> &)> vptrStores_;
     std::vector<sema::VptrStore> vptrs_;        // what a constructor or destructor of a class with a vptr stores
+    std::function<int(const std::string &, const std::string &)> baseVtt_;
+    std::function<long long(TypeId, TypeId)> vbaseSlot_;
+    std::function<bool(const std::string &)> msVbaseCtor_;
+    std::function<bool(const std::string &, std::vector<sema::VptrStore> &, std::vector<std::string> &)> msVbaseInit_;
+    ValueId msFlag_;                            // a Microsoft constructor's most-derived flag; none otherwise
+    std::string key_;                           // FunctionFacts::recordKey: the memberBuilt_ and vptrStores_ records' key
+    ValueId vtt_;                               // Itanium's C2 or D2 handed a VTT: it, the second parameter; none otherwise
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &, bool &)> localBuilt_;
     std::vector<Live> live_;                    // innermost last
     ValueId sret_;                              // the caller's result pointer, where a copied class is returned

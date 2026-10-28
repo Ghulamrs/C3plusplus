@@ -176,6 +176,13 @@ public:
     std::string destructorSymbol(TypeId cls) const;
     // The vptr stores the parser made in a written constructor or destructor `fn`; false where it made none.
     bool vptrStores(const std::string &fn, std::vector<VptrStore> &out) const;
+    // Itanium's C2 or D2 `symbol` handed a VTT: the C1 or D1 symbol its records are keyed by; empty for any other function.
+    std::string vttSplit(const std::string &symbol) const;
+    int baseVtt(const std::string &fn, const std::string &baseTag) const;   // the sub-VTT entry `fn` hands a base; -1, none
+    long long vbaseOffsetSlot(TypeId cls, TypeId vbase) const;   // Itanium's vbase_offset slot of vbase in cls; 0, none
+    bool msVbaseCtor(const std::string &symbol) const;   // a Microsoft constructor handed cl's most-derived flag, last
+    // What written Microsoft constructor `fn`'s most-derived guard stores and builds, in order; false where none recorded.
+    bool msVbaseInit(const std::string &fn, std::vector<VptrStore> &vbptrs, std::vector<std::string> &order) const;
     // A local's constructor, its signature with `this`, defaults added, zeroed first ([dcl.init]/8); false where none built it.
     bool localBuilt(syntax::NodeId var, std::string &symbol, TypeId &signature, bool &defaulted, bool &zeroed) const;
     // The constructor a class temporary `T(...)` at node `id` was built by, and whether `T()` zeroed the object first.

@@ -418,7 +418,7 @@ private:
         const Type *type, const std::string &cls, int thisSlot, int flagSlot,
         std::size_t pos, int srcSlot, bool moving,
         std::map<std::string, std::vector<ExprPtr> > *vbaseArgs,
-        std::vector<Alive> *vbs = nullptr);
+        std::vector<Alive> *vbs = nullptr, bool record = false);
 
     typedef sema::Rank Rank;
 
@@ -599,6 +599,14 @@ private:
     }
     // The vptrs each written constructor and destructor of a class with one stores, by its symbol (M3b.2).
     std::map<std::string, std::vector<sema::VptrStore> > vptrStores_;
+    // Itanium's written C2 or D2 of a class with virtual bases, which takes a VTT: its symbol -> the C1 or D1 symbol the
+    // records above are keyed by; and each base it hands a sub-VTT, "function|base" -> that sub-VTT's entry (M3b.2).
+    std::map<std::string, std::string> vttSplit_;
+    std::map<std::string, int> baseVtt_;
+    // A written Microsoft constructor of a class with virtual bases: what its most-derived guard does - the vbtable
+    // pointers it stores, and the virtual bases it builds in order, each's constructor in memberBuilt_ as "^V" (M3b.2).
+    std::map<std::string, std::vector<sema::VptrStore> > msVbptrs_;
+    std::map<std::string, std::vector<std::string> > msVbaseOrder_;
     // **What the parser decides of layout as it reads, by node** (M2.11): a `var`'s frame slot, a block's or a `for`'s
     // scope, and the symbol a `function` node was defined as - what the adapter cannot derive from types.
     std::unordered_map<std::uint32_t, Local> declaredLocals_;
@@ -1047,7 +1055,8 @@ private:
                                           std::map<std::string,
                                               std::vector<ExprPtr> >
                                               *vbaseArgs = nullptr,
-                                          std::vector<int> *builtBase = nullptr);
+                                          std::vector<int> *builtBase = nullptr,
+                                          std::vector<std::string> *order = nullptr);
     static std::string destructorKey(const std::string &cls) {
         return cls + "::~" + localOf(cls);
     }

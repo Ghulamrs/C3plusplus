@@ -158,7 +158,7 @@ public:
                                     int thisSlot, std::vector<VptrStore> *record = nullptr);
     // And the vbtable pointer beside them, Microsoft only.
     void storeVbptr(const std::string &cls, const Type *memberOf, int thisSlot,
-                    std::vector<StmtPtr> &into);
+                    std::vector<StmtPtr> &into, std::vector<VptrStore> *record = nullptr);
     // A thunk: the entry a secondary table holds for a function this class
     // overrides. It moves `this` back to the complete object and calls the
     // real one. Named for the offset it undoes - _ZThn16_N1C1gEv.
