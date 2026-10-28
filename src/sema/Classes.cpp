@@ -57,7 +57,8 @@ void Classes::checkOverrideReturn(const VSlot &s, const Type *returns, const std
 
 // **The vbtable pointer, which only the Microsoft ABI has.**
 void Classes::storeVbptr(const std::string &cls, const Type *memberOf,
-                        int thisSlot, std::vector<StmtPtr> &into) {
+                        int thisSlot, std::vector<StmtPtr> &into,
+                        std::vector<VptrStore> *record) {
     const std::vector<Type::VbPtr> &ptrs = memberOf->vbptrs();
     const Type *charPtr = p_.types_.pointerTo(p_.types_.get(Kind::Char));
     const Type *entry = p_.types_.intType();
@@ -102,6 +103,8 @@ void Classes::storeVbptr(const std::string &cls, const Type *memberOf,
         ExprPtr store(new Assign(std::move(there), std::move(value)));
         store->setType(charPtr);
         into.push_back(StmtPtr(new ExprStmt(std::move(store))));
+        // The same store as a record for the SSA lowering (M3b.2): the table's address into the word `vbp` from `this`.
+        if (record != nullptr) record->push_back(VptrStore{ vbp, symbol, 0, false, false, 0, 0, 0 });
     }
 }
 
@@ -144,7 +147,7 @@ std::vector<StmtPtr> Classes::storeVptrs(const std::string &cls,
     store->setType(entry);
 
     withVptr.push_back(StmtPtr(new ExprStmt(std::move(store))));
-    if (record != nullptr) record->push_back(VptrStore{ 0, table, 0 });
+    if (record != nullptr) record->push_back(VptrStore{ 0, table, 0, false, false, 0, 0, 0 });
     return withVptr;
 }
 
@@ -3129,7 +3132,11 @@ std::vector<StmtPtr> Classes::itaniumVptrStores(const std::string &cls,
         if (record != nullptr) {
             const bool constant = !fromVtt && !s.morallyVirtual;
             const long long point = constant ? g.points.find(key)->second : 0;
-            record->push_back(VptrStore{ s.offset, constant ? table : std::string(), point });
+            VptrStore r = { s.offset, constant ? table : std::string(), point, fromVtt, s.morallyVirtual, 0, 0,
+                            s.morallyVirtual ? s.fromVBase : 0 };
+            if (fromVtt && i != 0) r.vttEntry = vtt->secondary.find(key)->second;
+            if (s.morallyVirtual) r.vbaseSlot = itaniumVbaseOffsetSlot(plain, s.nearestVBase);
+            record->push_back(r);
         }
     }
     return out;

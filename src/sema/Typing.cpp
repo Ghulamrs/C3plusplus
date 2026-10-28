@@ -682,6 +682,31 @@ bool Typer::vptrStores(const std::string &fn, std::vector<VptrStore> &out) const
     return true;
 }
 
+std::string Typer::vttSplit(const std::string &symbol) const {
+    const std::map<std::string, std::string>::const_iterator i = p_.vttSplit_.find(symbol);
+    return i == p_.vttSplit_.end() ? std::string() : i->second;
+}
+
+int Typer::baseVtt(const std::string &fn, const std::string &baseTag) const {
+    const std::map<std::string, int>::const_iterator i = p_.baseVtt_.find(fn + "|" + baseTag);
+    return i == p_.baseVtt_.end() ? -1 : i->second;
+}
+
+bool Typer::msVbaseCtor(const std::string &symbol) const { return p_.msVbaseCtors_.count(symbol) != 0; }
+
+bool Typer::msVbaseInit(const std::string &fn, std::vector<VptrStore> &vbptrs, std::vector<std::string> &order) const {
+    const std::map<std::string, std::vector<VptrStore> >::const_iterator s = p_.msVbptrs_.find(fn);
+    const std::map<std::string, std::vector<std::string> >::const_iterator o = p_.msVbaseOrder_.find(fn);
+    if (s == p_.msVbptrs_.end() || o == p_.msVbaseOrder_.end()) return false;
+    vbptrs = s->second;
+    order = o->second;
+    return true;
+}
+
+long long Typer::vbaseOffsetSlot(TypeId cls, TypeId vbase) const {
+    return p_.classes_.itaniumVbaseOffsetSlot(p_.types_.type(cls), p_.types_.type(vbase));
+}
+
 bool Typer::localBuilt(syntax::NodeId var, std::string &symbol, TypeId &signature, bool &defaulted, bool &zeroed) const {
     const std::unordered_map<std::uint32_t, Parser::LocalBuilt>::const_iterator i = p_.localBuilt_.find(var.v);
     if (i == p_.localBuilt_.end() || i->second.symbol.empty()) return false;

@@ -1813,15 +1813,19 @@ void Parser::topLevel(Program &program) {
                     params2.push_back(chosen.params[i]);
                 }
                 // What builds or destroys this base, for the SSA lowering (M3b.2): keyed as a member is, "^B" or "~B".
-                if (!memberTemplateInst_ && !takesVtt(base)) {
+                if (!memberTemplateInst_) {
                     const MemberBuilt b = { symbol, types_.functionType(types_.get(Kind::Void), params2, false),
                                             building && chosenArgs.size() != baseWritten };
                     memberBuilt_[currentFunction_ + "|" + (building ? "^" : "~") + base->tag() + "|0"] = b;
+                    // A base handed a VTT: its sub-VTT's entry in this function's, which vttForBase just found.
+                    if (takesVtt(base)) baseVtt_[currentFunction_ + "|" + base->tag()] = vtts_.find(memberOf->tag())->second.subVtt.find(base)->second;
                     // And in a constructor what destroys it when a later part throws: baseDestructorCall's.
                     if (building && destructorOf(base) != nullptr) {
                         std::string dtor = destructorOf(base)->symbol;
                         if (!target_.microsoftNames()) itaniumDestructorName(base->tag(), base, false, &dtor);
-                        const MemberBuilt u = { dtor, types_.functionType(types_.get(Kind::Void), std::vector<const Type *>(1, basePtr), false), false };
+                        std::vector<const Type *> self(1, basePtr);
+                        if (takesVtt(base)) self.push_back(vttType());
+                        const MemberBuilt u = { dtor, types_.functionType(types_.get(Kind::Void), self, false), false };
                         memberBuilt_[currentFunction_ + "|~" + base->tag() + "|0"] = u;
                     }
                 }
@@ -1856,7 +1860,7 @@ void Parser::topLevel(Program &program) {
             std::vector<Alive> vbs;
             std::vector<StmtPtr> guarded =
                 guardedVirtualBaseInit(memberOf, d.qualifier, thisOffset_,
-                                       msVbInitSlot_, d.pos, -1, false, &baseArgs, &vbs);
+                                       msVbInitSlot_, d.pos, -1, false, &baseArgs, &vbs, true);
             body = withVirtualBases(std::move(guarded), vbs, std::move(body), d.pos);
         }
     };
@@ -2007,6 +2011,7 @@ void Parser::topLevel(Program &program) {
                 splitC1 = program.functions.back().symbol();
                 splitC2 = c2;
                 program.functions.back().setSymbol(c2);
+                vttSplit_[c2] = splitC1;
             } else {
                 program.functions.back().setAlias(c2);
             }
@@ -2026,6 +2031,7 @@ void Parser::topLevel(Program &program) {
             splitD1 = program.functions.back().symbol();
             splitD2 = d2;
             program.functions.back().setSymbol(d2);
+            vttSplit_[d2] = splitD1;
         } else {
             program.functions.back().setAlias(d2);
         }

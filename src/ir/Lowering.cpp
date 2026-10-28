@@ -97,7 +97,7 @@ void Lowering::buildElements(const Member &m, const Type &et, long long elems) {
     std::string symbol;
     TypeId sig;
     bool defaulted = false;
-    if (!memberBuilt_ || !memberBuilt_(F().symbol, m.name, 0, symbol, sig, defaulted)) {
+    if (!memberBuilt_ || !memberBuilt_(key_, m.name, 0, symbol, sig, defaulted)) {
         if (constructed_ && constructed_(et.id())) outside("an array member built by no constructor the parser recorded");
         return;
     }
@@ -136,7 +136,7 @@ void Lowering::buildMember(ValueId at, const Member &m, sema::TypedId entry) {
     std::string symbol;
     TypeId sig;
     bool defaulted = false;
-    if (!memberBuilt_ || !memberBuilt_(F().symbol, m.name, pos, symbol, sig, defaulted)) {
+    if (!memberBuilt_ || !memberBuilt_(key_, m.name, pos, symbol, sig, defaulted)) {
         if (!entry.valid() && !(constructed_ && constructed_(mt.id()))) return;
         outside("a member built by no constructor the parser recorded");
     }
@@ -202,7 +202,7 @@ void Lowering::buildBase(const Type::BaseSpec &b, sema::TypedId entry) {
     std::string symbol;
     TypeId sig;
     bool defaulted = false;
-    if (!memberBuilt_ || !memberBuilt_(F().symbol, "^" + bt.tag(), 0, symbol, sig, defaulted)) {
+    if (!memberBuilt_ || !memberBuilt_(key_, "^" + bt.tag(), 0, symbol, sig, defaulted)) {
         if (!entry.valid() && !(constructed_ && constructed_(bt.id()))) return;
         outside("a base built by no constructor the parser recorded");
     }
@@ -210,9 +210,69 @@ void Lowering::buildBase(const Type::BaseSpec &b, sema::TypedId entry) {
     const Type &ft = T(sig);
     if (ft.params().empty() || ft.params()[0]->pointee()->unqualified() != &bt) outside("a base's constructor of another class");
     std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, baseAddress(b)))));
-    if (entry.valid()) arguments(entry, 0, ft, 1, false, ops);
-    else if (ft.params().size() != 1) outside("a base's default constructor of parameters");
+    const std::size_t skip = baseVttArgument(bt, ft, ops);
+    if (entry.valid()) arguments(entry, 0, ft, skip, false, ops);
+    else if (ft.params().size() != skip) outside("a base's default constructor of parameters");
+    // cl's most-derived flag, last, where the base's constructor takes one: 0, a subobject's ([class.base.init]/7).
+    if (target_.microsoftNames() && msVbaseCtor_ && msVbaseCtor_(symbol)) {
+        std::vector<TypeId> ps;
+        for (const Type *p : ft.params()) ps.push_back(p->id());
+        ps.push_back(types_.intType()->id());
+        ops.push_back(iconst(types_.intType()->id(), 0));
+        directCall(symbol, types_.functionType(types_.voidType()->id(), ps), ops);
+        return;
+    }
     directCall(symbol, sig, ops);
+}
+
+// cl's `if (mostDerived)` in front of a constructor of a class with virtual bases: the vbtable pointers the parser
+// stored, then each virtual base it built, in its order, by the constructor it chose ([class.base.init]/10).
+void Lowering::msVirtualBases(const Type &cls, const std::map<std::string, sema::TypedId> &named) {
+    std::vector<sema::VptrStore> vbptrs;
+    std::vector<std::string> order;
+    if (!msVbaseInit_ || !msVbaseInit_(key_, vbptrs, order)) outside("a most-derived guard the parser recorded nothing of");
+    const BlockId then = newBlock(), join = newBlock();
+    condbr(truth(Val(msFlag_, types_.intType()->id())).v, then, join);
+    place(then);
+    const TypeId word = types_.pointerTo(types_.voidType()->id());
+    for (const sema::VptrStore &s : vbptrs) {
+        const InstId g = add(Op::Gep, types_.pointerTo(word), std::vector<ValueId>(1, this_));
+        at(g).k = s.at;
+        const InstId a = add(Op::Addr, word, std::vector<ValueId>());
+        at(a).sym = s.symbol;
+        store(result(g), result(a));
+    }
+    for (const std::string &tag : order) {
+        int which = -1;
+        for (std::size_t b = 0; b < cls.bases().size(); b++)
+            if (cls.bases()[b].isVirtual && cls.bases()[b].type->unqualified()->tag() == tag) which = static_cast<int>(b);
+        if (which < 0) outside("a virtual base the class does not lay out");
+        if (landingPads_ && cls.bases()[which].type->unqualified()->hasDestructor()) outside("a virtual base destroyed on unwinding on the Microsoft ABI");
+        sema::TypedId entry;
+        for (std::map<std::string, sema::TypedId>::const_iterator e = named.begin(); e != named.end(); ++e)
+            if (cls.findMember(e->first) == nullptr && baseNamed(cls, e->first) == which) entry = e->second;
+        buildBase(cls.bases()[which], entry);
+    }
+    br(join);
+    place(join);
+}
+
+// [2.6.2]: a base with virtual bases of its own is handed its sub-VTT, `vtt + n` in this C2's or D2's - the entry
+// the parser chose for it - as its second argument. What the ops take before the written arguments: 1, or 2.
+std::size_t Lowering::baseVttArgument(const Type &base, const Type &ft, std::vector<ValueId> &ops) {
+    const int entry = baseVtt_ ? baseVtt_(key_, base.tag()) : -1;
+    if (entry < 0 && base.hasVirtualBase() && !target_.microsoftNames()) outside("a base handed a VTT the parser recorded no entry for");
+    if (entry < 0) return 1;
+    if (!vtt_.valid() || ft.params().size() < 2) outside("a base handed a VTT where this function has none");
+    ops.push_back(vttAt(entry));
+    return 2;
+}
+
+// Entry `entry` of this function's VTT, as the address a sub-VTT is: `vtt + entry` words.
+ValueId Lowering::vttAt(int entry) {
+    const InstId g = add(Op::Gep, F().value(vtt_).type, std::vector<ValueId>(1, vtt_));
+    at(g).k = static_cast<long long>(entry) * T(types_.pointerTo(types_.voidType()->id())).size(target_);
+    return result(g);
 }
 
 // [class.dtor]/8: last of all, the bases by their base-object destructors - Itanium's D2 - in the reverse order.
@@ -224,13 +284,15 @@ void Lowering::destroyBases(const Type &cls) {
         std::string symbol;
         TypeId sig;
         bool defaulted = false;
-        if (!memberBuilt_ || !memberBuilt_(F().symbol, "~" + bt.tag(), 0, symbol, sig, defaulted)) {
+        if (!memberBuilt_ || !memberBuilt_(key_, "~" + bt.tag(), 0, symbol, sig, defaulted)) {
             if (destructor_ && !destructor_(bt.id()).empty()) outside("a base destroyed by no destructor the parser recorded");
             continue;
         }
         const Type &ft = T(sig);
-        if (ft.params().size() != 1 || ft.params()[0]->pointee()->unqualified() != &bt) outside("a base's destructor of another class");
-        directCall(symbol, sig, std::vector<ValueId>(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, baseAddress(b))))));
+        if (ft.params().empty() || ft.params()[0]->pointee()->unqualified() != &bt) outside("a base's destructor of another class");
+        std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, baseAddress(b)))));
+        if (ft.params().size() != baseVttArgument(bt, ft, ops)) outside("a base's destructor of another class");
+        directCall(symbol, sig, ops);
     }
 }
 
@@ -245,8 +307,10 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
         if (cls.findMember(text(mi)) == nullptr && baseNamed(cls, text(mi)) < 0) outside("a mem-initialiser of the class itself or of no base");
         named[text(mi)] = mi;
     }
+    if (msFlag_.valid()) msVirtualBases(cls, named);
     // [class.base.init]/10: the bases first, in the order the class names them, each by the constructor the parser chose.
     for (std::size_t b = 0; b < cls.bases().size(); b++) {
+        if (cls.bases()[b].isVirtual && (vtt_.valid() || msFlag_.valid())) continue;     // C1's, or the guard's, never here
         sema::TypedId entry;
         for (std::map<std::string, sema::TypedId>::const_iterator e = named.begin(); e != named.end(); ++e)
             if (cls.findMember(e->first) == nullptr && baseNamed(cls, e->first) == static_cast<int>(b)) entry = e->second;
@@ -259,9 +323,12 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
             std::string symbol;
             TypeId sig;
             bool defaulted = false;
-            if (!memberBuilt_ || !memberBuilt_(F().symbol, "~" + bt.tag(), 0, symbol, sig, defaulted))
+            if (!memberBuilt_ || !memberBuilt_(key_, "~" + bt.tag(), 0, symbol, sig, defaulted))
                 outside("a base destroyed on unwinding by no destructor the parser recorded");
-            guard(result(add(Op::Bitcast, tid(*T(sig).params()[0]), std::vector<ValueId>(1, baseAddress(cls.bases()[b])))), bt, symbol);
+            std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*T(sig).params()[0]), std::vector<ValueId>(1, baseAddress(cls.bases()[b])))));
+            if (T(sig).params().size() != baseVttArgument(bt, T(sig), ops)) outside("a base's destructor of another class");
+            guard(ops[0], bt, symbol);
+            if (ops.size() == 2) live_.back().vtt = ops[1];     // its D2, handed the same sub-VTT
         }
     }
     // [class.cdtor]/4: once the bases are built the object is of this class - its vptrs, before any member.
@@ -279,7 +346,7 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
         }
         if (e == named.end() && defaultInit_ && defaultInit_(cls.id(), m.name)) {
             // [class.base.init]/9: the member's own initialiser, which the parser replayed as this constructor's entry.
-            const sema::TypedId d = memberDefault_ ? memberDefault_(F().symbol, cls.tag() + "::" + m.name) : sema::TypedId();
+            const sema::TypedId d = memberDefault_ ? memberDefault_(key_, cls.tag() + "::" + m.name) : sema::TypedId();
             if (!d.valid() || m.type->isReference() || builtMember(mt)) outside("a member's default initialiser");
             e = named.insert(std::make_pair(m.name, d)).first;
         } else if (e == named.end() && !builtMember(mt)) {
@@ -330,16 +397,38 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
     }
 }
 
-// The vptrs the parser stores in this constructor or destructor: each the address point of a table, at its offset.
+// The vptrs the parser stores in this constructor or destructor: each the address point of a table, at its offset -
+// or, in Itanium's C2 or D2, the VTT's entry, into a word below a virtual base found through the vptr stored first.
 void Lowering::storeVptrs() {
     const TypeId word = types_.pointerTo(types_.voidType()->id());
     for (const sema::VptrStore &s : vptrs_) {
-        const InstId g = add(Op::Gep, types_.pointerTo(word), std::vector<ValueId>(1, this_));
-        at(g).k = s.at;
+        ValueId where;
+        if (s.viaVBase) {
+            // `this` + the vbase_offset `vbaseSlot` bytes from the vptr at `this`, + `fromVBase`: clang's getVTablePointers.
+            const TypeId chars = types_.pointerTo(types_.charType()->id());
+            const ValueId vptr = load(result(add(Op::Bitcast, types_.pointerTo(chars), std::vector<ValueId>(1, this_))), chars);
+            const InstId slot = add(Op::Gep, types_.pointerTo(ptrdiffType()), std::vector<ValueId>(1, vptr));
+            at(slot).k = s.vbaseSlot;
+            std::vector<ValueId> moved(1, result(add(Op::Bitcast, chars, std::vector<ValueId>(1, this_))));
+            moved.push_back(load(result(slot), ptrdiffType()));
+            const InstId g = add(Op::Gep, types_.pointerTo(word), std::vector<ValueId>(1, result(add(Op::Gep, chars, moved))));
+            at(g).k = s.fromVBase;
+            where = result(g);
+        } else {
+            const InstId g = add(Op::Gep, types_.pointerTo(word), std::vector<ValueId>(1, this_));
+            at(g).k = s.at;
+            where = result(g);
+        }
+        if (s.fromVtt) {
+            if (!vtt_.valid()) outside("a vptr out of a VTT this function is not handed");
+            store(where, load(result(add(Op::Bitcast, types_.pointerTo(word), std::vector<ValueId>(1, vttAt(s.vttEntry)))), word));
+            continue;
+        }
+        if (s.symbol.empty()) outside("a vptr out of no table the parser named");
         const InstId a = add(Op::Addr, word, std::vector<ValueId>());
         at(a).sym = s.symbol;
         at(a).k = s.addend;
-        store(result(g), result(a));
+        store(where, result(a));
     }
 }
 
@@ -646,15 +735,17 @@ void Lowering::staticConstruction(sema::TypedId var, const std::string &symbol, 
 
 // The destructor called on the object: a call on the normal path, as the walker's is; an invoke in a cleanup's terminate scope.
 void Lowering::destroy(const Live &l, bool invoke) {
-    const TypeId self = types_.pointerTo(l.cls);
+    std::vector<TypeId> params(1, types_.pointerTo(l.cls));
+    std::vector<ValueId> ops(1, l.slot);
+    if (l.vtt.valid()) { params.push_back(F().value(l.vtt).type); ops.push_back(l.vtt); }     // a base's D2, handed its sub-VTT
     CallInfo info;
     info.symbol = l.dtor;
-    info.signature = types_.functionType(types_.voidType()->id(), std::vector<TypeId>(1, self));
-    info.namedArgs = 1;
+    info.signature = types_.functionType(types_.voidType()->id(), params);
+    info.namedArgs = static_cast<int>(params.size());
     Function &f = F();
     const std::uint32_t callIndex = static_cast<std::uint32_t>(f.calls.size());
     f.calls.push_back(info);
-    at(invoke ? callOrInvoke(TypeId(), std::vector<ValueId>(1, l.slot)) : add(Op::Call, TypeId(), std::vector<ValueId>(1, l.slot))).call = callIndex;
+    at(invoke ? callOrInvoke(TypeId(), ops) : add(Op::Call, TypeId(), ops)).call = callIndex;
 }
 
 // A jump out of the scopes above `mark`: their objects destroyed, last built first; they stay alive on the path not taken.
@@ -1107,6 +1198,9 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
     intoSret_ = false;
     landingPads_ = facts.landingPads;
     vptrs_.clear();
+    key_ = facts.recordKey.empty() ? facts.symbol : facts.recordKey;
+    vtt_ = ValueId();
+    msFlag_ = ValueId();
     try {
         if (facts.variadic) outside("a variadic function");
         if (facts.wrappedBody) outside("a function try block or an exception specification");
@@ -1132,18 +1226,21 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
             const Type &cls = *T(facts.thisType).pointee()->unqualified();
             isCtor = facts.isConstructor;
             const bool isDtor = !text(fnNode).empty() && text(fnNode)[0] == '~';
-            // A destructor of a class with a virtual base destroys its own part: cl's ??1, the virtual bases left to ??_D.
-            const bool vbaseDtor = isDtor && cls.hasVirtualBase();
-            if (vbaseDtor && !target_.microsoftNames()) outside("a destructor of a class with a virtual base, handed a VTT");
-            if (vbaseDtor && cls.polymorphic()) outside("a destructor of a polymorphic class with a virtual base");
+            // A destructor of a class with a virtual base destroys its own part: cl's ??1, the virtual bases left to ??_D;
+            // Itanium's C2 and D2, handed a VTT, build and destroy theirs, the virtual bases left to C1 and D1.
+            const bool msVbaseDtor = isDtor && cls.hasVirtualBase() && target_.microsoftNames();
+            const bool vbaseParts = (isCtor || isDtor) && cls.hasVirtualBase() && (msVbaseDtor || facts.takesVtt || (isCtor && facts.msFlag));
+            if (isDtor && cls.hasVirtualBase() && !vbaseParts) outside("a destructor of a class with a virtual base, handed a VTT");
+            if (msVbaseDtor && cls.polymorphic()) outside("a destructor of a polymorphic class with a virtual base");
             if ((isCtor || isDtor) && !simpleLayout(cls)) {
-                if (!buildableLayout(cls, true, true, vbaseDtor)) outside(isCtor ? "a constructor of a class with bases, a vptr or members to build"
+                if (!buildableLayout(cls, true, true, vbaseParts)) outside(isCtor ? "a constructor of a class with bases, a vptr or members to build"
                                                                 : "a destructor of a class with bases, a vptr or members to destroy");
-                // The vptr stores are the parser's record, made where it stores them: one, out of the class's own table.
-                if (cls.hasVptr() && !vbaseDtor) {
-                    if (!vptrStores_ || !vptrStores_(facts.symbol, vptrs_) || vptrs_.empty()) outside("a vptr the parser recorded no store for");
-                    if (vptrs_.size() != 1) outside("a polymorphic base that is not primary");
-                    if (vptrs_[0].symbol.empty()) outside("a vptr out of a VTT");
+                // The vptr stores are the parser's record, made where it stores them: one, out of the class's own table -
+                // or, in a C2 or D2, every vptr in the object, the VTT's where the complete object decides it.
+                if (cls.hasVptr() && !msVbaseDtor && !(target_.microsoftNames() && !cls.polymorphic())) {
+                    if (!vptrStores_ || !vptrStores_(key_, vptrs_) || vptrs_.empty()) outside("a vptr the parser recorded no store for");
+                    if (vptrs_.size() != 1 && !facts.takesVtt) outside("a polymorphic base that is not primary");
+                    if (!vptrs_[0].fromVtt && vptrs_[0].symbol.empty()) outside("a vptr out of a VTT");
                 }
                 // A constructor's guards are memberInits' own; a destructor's - what a throwing body still destroys - are not yet.
                 if (facts.landingPads && !isCtor) outside("a destructor with landing pads that destroys members");
@@ -1169,7 +1266,8 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         }
         if (inits != n - 1 && !isCtor) outside("a mem-initialiser outside a constructor");
         const std::uint32_t params = static_cast<std::uint32_t>(paramNodes.size());
-        if (params + (facts.hasThis ? 1 : 0) != facts.paramCount) outside("a parameter list the typed tree and the function disagree about");
+        if (params + (facts.hasThis ? 1 : 0) + (facts.takesVtt ? 1 : 0) + (facts.msFlag ? 1 : 0) != facts.paramCount)
+            outside("a parameter list the typed tree and the function disagree about");
         f.entry = newBlock();
         place(f.entry);
         // [class.this]: `this` is the first parameter, a value never stored to - nothing can assign to it.
@@ -1181,6 +1279,11 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
             thisType_ = facts.thisType;
             this_ = param(f.entry, thisType_);
             f.params.push_back(this_);
+            // [2.6.2]: Itanium's C2 or D2 of a class with virtual bases is handed its VTT second.
+            if (facts.takesVtt) {
+                vtt_ = param(f.entry, types_.pointerTo(types_.pointerTo(types_.voidType()->id())));
+                f.params.push_back(vtt_);
+            }
         }
         // The caller's result pointer, which the parser's prologue keeps in its slot: every `return` of such a class
         // builds there and hands it back (buildReturned). Not among params: the selector copies it from that slot.
@@ -1223,6 +1326,11 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
             f.frame.push_back(a);
             store(result(al), pv);
             locals_[tree_.node(p).syntax.v] = std::make_pair(result(al), pt.isReference() ? tid(pt) : slotType);
+        }
+        // cl's most-derived flag, after every written parameter.
+        if (facts.msFlag) {
+            msFlag_ = param(f.entry, types_.intType()->id());
+            f.params.push_back(msFlag_);
         }
         // The return block: one `ret`, reached by a branch carrying the value.
         returnBlock_ = newBlock();
@@ -2419,10 +2527,11 @@ Lowering::Val Lowering::memberAddress(sema::TypedId id) {
     if (obj.unqualified()->findStaticMember(mname) != nullptr) outside("a static member");
     if (obj.unqualified()->findMember(mname) == nullptr) outside("a member '" + mname + "' that is not a data member");
     const Member &m = *obj.unqualified()->findMember(mname);
-    if (m.ambiguous || m.inVirtualBase != nullptr || m.anonUnion != nullptr || m.type->isReference() || m.width != 0)
+    if (m.ambiguous || m.anonUnion != nullptr || m.type->isReference() || m.width != 0)
         outside("a member '" + mname + "' the lowering does not reach");
     const Type &mt = obj.isConst() && !m.isMutable ? *types_.withConst(m.type) : *m.type;
     if (!scalar(mt) && !mt.isArray() && !mt.isStructOrUnion()) outside("a member of type '" + mt.describe() + "'");
+    if (m.inVirtualBase != nullptr) return Val(virtualBaseMember(object.v, *obj.unqualified(), m, tid(mt)), tid(mt));
     const InstId g = add(Op::Gep, tid(*types_.pointerTo(&mt)), std::vector<ValueId>(1, object.v));
     at(g).k = m.offset;
     return Val(result(g), tid(mt));
@@ -2445,13 +2554,40 @@ Lowering::Val Lowering::memberOfThis(sema::TypedId id) {
     if (cls.findMember(text(id)) == nullptr) outside("a member reached through another object's `this`");
     const Member &m = *cls.findMember(text(id));
     if (m.offset != r.serial || !r.type.valid()) outside("a member reached through another object's `this`");
-    if (m.ambiguous || m.inVirtualBase != nullptr || m.anonUnion != nullptr || m.type->isReference() || m.width != 0)
+    if (m.ambiguous || m.anonUnion != nullptr || m.type->isReference() || m.width != 0)
         outside("a member '" + text(id) + "' the lowering does not reach");
     const Type &mt = T(r.type);
     if (!scalar(mt) && !mt.isArray() && !mt.isStructOrUnion()) outside("a member of type '" + mt.describe() + "'");
+    if (m.inVirtualBase != nullptr) return Val(virtualBaseMember(self.v, cls, m, r.type), r.type);
     const InstId g = add(Op::Gep, tid(*types_.pointerTo(&mt)), std::vector<ValueId>(1, self.v));
     at(g).k = m.offset;
     return Val(result(g), r.type);
+}
+
+// The address of a virtual base of the object at `object`, of class `owner`, on Itanium: moved by the vbase_offset
+// behind its vptr, the slot the parser's record names - the walk the parser's virtualBaseMember makes.
+ValueId Lowering::virtualBaseAddress(ValueId object, const Type &owner, const Type &vbase) {
+    if (target_.microsoftNames()) outside("a virtual base reached through its vbtable");
+    const long long slot = vbaseSlot_ ? vbaseSlot_(owner.id(), vbase.id()) : 0;
+    if (slot == 0) outside("a virtual base the parser recorded no vbase_offset for");
+    const TypeId chars = types_.pointerTo(types_.charType()->id());
+    const ValueId vptr = load(result(add(Op::Bitcast, types_.pointerTo(chars), std::vector<ValueId>(1, object))), chars);
+    const InstId back = add(Op::Gep, types_.pointerTo(ptrdiffType()), std::vector<ValueId>(1, vptr));
+    at(back).k = slot;
+    std::vector<ValueId> moved(1, result(add(Op::Bitcast, chars, std::vector<ValueId>(1, object))));
+    moved.push_back(load(result(back), ptrdiffType()));
+    return result(add(Op::Gep, chars, moved));
+}
+
+// A member of a virtual base: the base's address, then where the member sits inside it, which is constant.
+ValueId Lowering::virtualBaseMember(ValueId object, const Type &owner, const Member &m, TypeId type) {
+    int baseAt = -1;
+    for (const Type::BaseSpec &b : owner.bases())
+        if (b.isVirtual && b.type->unqualified() == m.inVirtualBase->unqualified()) baseAt = b.offset;
+    if (baseAt < 0) outside("a member of a virtual base the class does not lay out");
+    const InstId g = add(Op::Gep, tid(*types_.pointerTo(&T(type))), std::vector<ValueId>(1, virtualBaseAddress(object, owner, *m.inVirtualBase)));
+    at(g).k = m.offset - baseAt;
+    return result(g);
 }
 
 // Whether a call's head `f` names the member function the parser reached, as `this->f()`: its last name is in the
@@ -2984,6 +3120,19 @@ Lowering::Val Lowering::classValue(sema::TypedId id, const Type &t) {
 // a null pointer kept null. A cast down, across, or to a virtual base stays outside.
 Lowering::Val Lowering::toBase(Val v, TypeId to, bool cast) {
     const Type &from = *T(v.type).pointee()->unqualified(), &base = *T(to).pointee()->unqualified();
+    // A virtual base, direct or not, which [class.mi]/4 makes one subobject however many paths reach it.
+    for (const Type::BaseSpec &b : from.bases())
+        if (b.isVirtual && b.type->unqualified() == &base) {
+            const Val nonNull = truth(v);
+            const BlockId step = newBlock(), null = newBlock(), merge = newBlock();
+            condbr(nonNull.v, step, null);
+            place(step);
+            br(merge, std::vector<ValueId>(1, result(add(Op::Bitcast, to, std::vector<ValueId>(1, virtualBaseAddress(v.v, from, base))))));
+            place(null);
+            br(merge, std::vector<ValueId>(1, result(add(Op::Null, to, std::vector<ValueId>()))));
+            place(merge);
+            return Val(param(merge, to), to);
+        }
     int found = 0, offset = 0;
     basePaths(from, base, 0, found, offset);
     // [expr.static.cast]/11: a cast down from a non-virtual base to the class steps back by the base's offset.
@@ -3670,7 +3819,7 @@ bool Lowering::classThrow(sema::TypedId id, ValueId &object, TypeId &thrown) {
     std::string copy;
     TypeId sig;
     bool defaulted = false;
-    if (!memberBuilt_ || !memberBuilt_(F().symbol, "$throw", syn(id).loc, copy, sig, defaulted))
+    if (!memberBuilt_ || !memberBuilt_(key_, "$throw", syn(id).loc, copy, sig, defaulted))
         outside("a throw of a class that is not plain");
     if (t.hasVirtualBase()) outside("a throw of a class with a virtual base");
     const Type &ft = T(sig);

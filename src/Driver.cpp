@@ -1371,6 +1371,12 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     });
     lowering.setDestructor([&typer](TypeId cls) { return typer.destructorSymbol(cls); });
     lowering.setVptrStores([&typer](const std::string &fn, std::vector<sema::VptrStore> &out) { return typer.vptrStores(fn, out); });
+    lowering.setBaseVtt([&typer](const std::string &fn, const std::string &base) { return typer.baseVtt(fn, base); });
+    lowering.setVbaseSlot([&typer](TypeId cls, TypeId vbase) { return typer.vbaseOffsetSlot(cls, vbase); });
+    lowering.setMsVbase([&typer](const std::string &s) { return typer.msVbaseCtor(s); },
+                        [&typer](const std::string &fn, std::vector<sema::VptrStore> &v, std::vector<std::string> &o) {
+                            return typer.msVbaseInit(fn, v, o);
+                        });
     lowering.setLocalBuilt([&typer](syntax::NodeId v, std::string &sym, TypeId &sig, bool &dflt, bool &zeroed) {
         return typer.localBuilt(v, sym, sig, dflt, zeroed);
     });
@@ -1398,15 +1404,20 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         facts.variadic = fn.isVariadic();
         facts.hasThis = fn.hasThis();
         facts.isConstructor = typer.isConstructor(c.bodies[r].first);
-        if (facts.isConstructor) typer.typeMemberDefaults(fn.symbol());
+        // Itanium's C2 or D2 handed a VTT was renamed from the C1 or D1 its records are keyed by.
+        const std::string split = typer.vttSplit(fn.symbol());
+        facts.recordKey = split.empty() ? fn.symbol() : split;
+        facts.takesVtt = !split.empty();
+        facts.msFlag = facts.isConstructor && typer.msVbaseCtor(fn.symbol());
+        if (facts.isConstructor) typer.typeMemberDefaults(facts.recordKey);
         facts.sret = fn.sretSlot() != 0;
         facts.landingPads = fn.hasLandingPads();
         // A plain function's try block is a `try` in its body to the lowering, its throw(...) list a filter it
         // makes; any other wrap stays the parser's.
-        facts.specFilter = typer.specFilter(fn.symbol());
-        facts.noexceptWrap = typer.noexceptWrap(fn.symbol());
-        facts.ctorTry = typer.ctorTry(fn.symbol());
-        facts.wrappedBody = facts.specFilter.empty() && ((typer.wrappedBody(fn.symbol()) && !typer.plainFunctionTry(fn.symbol()) &&
+        facts.specFilter = typer.specFilter(facts.recordKey);
+        facts.noexceptWrap = typer.noexceptWrap(facts.recordKey);
+        facts.ctorTry = typer.ctorTry(facts.recordKey);
+        facts.wrappedBody = facts.specFilter.empty() && ((typer.wrappedBody(facts.recordKey) && !typer.plainFunctionTry(facts.recordKey) &&
                                                           !facts.noexceptWrap && !facts.ctorTry) || !fn.exceptionSpec().empty());
         facts.noexcept_ = fn.isNoexcept();
         facts.pos = fn.pos();

@@ -1,0 +1,29 @@
+A built, f 1, v 7
+B built, g 3
+C built, f 11 h 12
+through A 11, through B 3
+own 12
+live 3
+viaPointer 808
+viaNull 2
+vee 9
+C gone, f 11
+B gone
+A gone, f 1
+live 0
+A built, f 2, v 7
+B built, g 3
+C built, f 12 h 13
+D built
+v 7, d 2, live 3
+D gone
+C gone, f 12
+B gone
+A gone, f 2
+live 0
+A built, f 60, v 7
+B built, g 3
+B gone
+A gone, f 60
+caught 120, live 0
+caught 201, live 0

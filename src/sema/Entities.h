@@ -173,6 +173,11 @@ struct VptrStore {
     int at;
     std::string symbol;
     long long addend;
+    // Itanium's C2 or D2: the value VTT entry `vttEntry` where `fromVtt`; a word below a virtual base, where `viaVBase`,
+    // at `this` moved by the vbase_offset `vbaseSlot` bytes before the vptr at `this`, then by `fromVBase`.
+    bool fromVtt, viaVBase;
+    int vttEntry;
+    long long vbaseSlot, fromVBase;
 };
 
 // The four tables' sizes before a declaration, so the entries it added can be aliased.

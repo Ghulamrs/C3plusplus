@@ -3049,7 +3049,8 @@ ExprPtr Parser::postfix() {
             if (m->inVirtualBase != nullptr) {
                 refuseVirtualBaseMember(obj, *m, name, pos);
                 if (ExprPtr viaVb = classes_.virtualBaseMember(std::move(n), obj, *m)) {
-                    n = std::move(viaVb);
+                    const Type *reached = viaVb->type();
+                    n = resolve(std::move(viaVb), resolvedAs(Resolved::Member, reached, name, m->offset, 0, m->declaredIn));
                     continue;
                 }
             }
@@ -3139,7 +3140,8 @@ ExprPtr Parser::postfix() {
             if (m->inVirtualBase != nullptr) {
                 refuseVirtualBaseMember(obj, *m, name, pos);
                 if (ExprPtr viaVb = classes_.virtualBaseMember(std::move(n), obj, *m)) {
-                    n = std::move(viaVb);
+                    const Type *reached = viaVb->type();
+                    n = resolve(std::move(viaVb), resolvedAs(Resolved::Member, reached, name, m->offset, 0, m->declaredIn));
                     continue;
                 }
             }
