@@ -216,6 +216,7 @@ private:
     void emit(const Function &fn);
     void receiveParameters(const Function &fn);
     void walkBody(const Function &fn);
+    void returnThis(const Function &fn);
     // **The SSA selector** (M3b.1, SsaSelect.cpp): the module -front=ssa handed over, and the frame it lays above the parser's.
     const ir::Module *ssa_ = nullptr;
     const TypeTable *ssaTypes_ = nullptr;

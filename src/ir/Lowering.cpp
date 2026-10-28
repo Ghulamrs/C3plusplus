@@ -2828,7 +2828,8 @@ Lowering::Val Lowering::promote(Val v) {
 
 // An array is its first element's address; a function named as a value is already its address.
 Lowering::Val Lowering::decay(Val v) {
-    if (!v.type.valid()) return v;
+    // A class a call hands back is no value (expr) - `f()->m` reaches its operator->, which the lowering does not take.
+    if (!v.type.valid()) outside("a class value read where a value is wanted");
     const Type &t = T(v.type);
     if (t.isFunction()) outside("a function named as a value");
     if (!t.isArray()) return v;
@@ -4412,7 +4413,11 @@ bool Lowering::foldConstant(sema::TypedId id, long long &out) {
         return true;
     }
     case syntax::Kind::Cast:
-        return count(id) == 1 && foldConstant(child(id, 0), out);
+        // The cast narrows: `(char)258` is 2 ([conv.integral]/3, as the parser's fold reads it).
+        if (count(id) != 1 || !n.castType.valid() || !T(n.castType).isInteger() || T(n.castType).isBool()) return false;
+        if (!foldConstant(child(id, 0), out)) return false;
+        out = normalise(out, T(n.castType), target_);
+        return true;
     default:
         return false;
     }
