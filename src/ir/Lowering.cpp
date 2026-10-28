@@ -250,7 +250,9 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
         sema::TypedId entry;
         for (std::map<std::string, sema::TypedId>::const_iterator e = named.begin(); e != named.end(); ++e)
             if (cls.findMember(e->first) == nullptr && baseNamed(cls, e->first) == static_cast<int>(b)) entry = e->second;
+        const std::size_t was = openFull();     // [class.base.init]/7: each entry a full expression of its own
         buildBase(cls.bases()[b], entry);
+        closeFull(was);
         // [except.ctor]/3: a base with a destructor, built, is destroyed - by its D2 - if a later part throws.
         const Type &bt = *cls.bases()[b].type->unqualified();
         if (landingPads_ && bt.hasDestructor()) {
@@ -299,7 +301,9 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
         at(g).k = m.offset;
         if (builtMember(mt)) {
             if (e != named.end() && count(e->second) == 0) outside("a member of class type value-initialised");
+            const std::size_t was = openFull();
             buildMember(result(g), m, e != named.end() ? e->second : sema::TypedId());
+            closeFull(was);
             // [except.ctor]/3: a member with a destructor, built, is destroyed if a later part of the constructor throws.
             if (landingPads_ && mt.hasDestructor()) {
                 const std::string dtor = destructor_ ? destructor_(mt.id()) : std::string();
@@ -313,7 +317,9 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
             const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, result(g)));
             at(z).k = mt.size(target_);
         } else if (k == 1 && scalar(mt)) {
+            const std::size_t was = openFull();
             store(result(g), exprTo(child(e->second, 0), tid(mt)).v);
+            closeFull(was);
         } else if (k == 1 && plainClass(mt) && objectNode(child(e->second, 0))) {
             const Val src = object(child(e->second, 0));
             if (T(src.type).unqualified() != &mt) outside("a member built from another type");
@@ -1386,7 +1392,10 @@ void Lowering::returnStmt(sema::TypedId id) {
     }
     if (n != 1) outside("a return of " + std::to_string(n) + " parts");
     if (rt.isReference()) {
+        // [stmt.return]/2 with [class.temporary]/4: the address taken, then the full expression's temporaries destroyed.
+        const std::size_t was = openFull();
         const Val a = lvalue(child(id, 0));
+        closeFull(was);
         if (T(a.type).unqualified() != rt.referent()->unqualified()) outside("a reference returned to another type");
         if (T(a.type).isConst() && !rt.referent()->isConst()) outside("a reference that can write returned from a const");
         const InstId c = add(Op::Bitcast, tid(*types_.pointerTo(rt.referent())), std::vector<ValueId>(1, a.v));

@@ -1,8 +1,9 @@
 // Arguments lowered to SSA under -front=ssa that are made on the way in: an empty class's temporary `Less()` and a
 // template-id's `ns::Greater<int>()` passed by value; a value of another type made a temporary by a converting
 // constructor, bound to a const or an rvalue reference - of a class with a destructor, destroyed at the full expression's
-// end - or passed by value, or given a local's constructor, destroyed before the local is alive; and an array bound to a
-// reference to an array of its shape. Counted as live objects and values, never as constructor calls - elision is permitted.
+// end - or passed by value, or given a local's or a member's constructor, destroyed before that object is alive, or met
+// in a reference's return; and an array bound to a reference to an array of its shape. Counted as live objects and
+// values, never as constructor calls - elision is permitted.
 extern "C" int printf(const char *, ...);
 
 int live = 0;
@@ -34,6 +35,13 @@ struct Holds {
     int v;
     Holds(const Owned &o) : v(o.v + live * 100) {}
 };
+struct Pair {
+    Holds h;
+    int n;
+    Pair(int k) : h(k), n(live) {}
+};
+int table[4];
+int &cell(int k) { return table[seen(k) % 4]; }
 int sum3(const int (&a)[3]) { return a[0] + a[1] + a[2]; }
 
 int functors(int k) {
@@ -64,6 +72,12 @@ int held(int k) {
     return h.v * 1000 + g.v + live * 7;
 }
 
+int parts(int k) {
+    Pair p(k);
+    cell(1) = 5;
+    return p.h.v * 1000 + p.n * 100 + table[3] * 10 + live;
+}
+
 int arrays() {
     int a[3] = { 1, 2, 3 };
     const int b[3] = { 4, 5, 6 };
@@ -77,5 +91,6 @@ int main() {
     printf("scaled %d\n", scaled(4));
     printf("arrays %d\n", arrays());
     printf("held %d live %d\n", held(2), live);
+    printf("parts %d\n", parts(4));
     return 0;
 }
