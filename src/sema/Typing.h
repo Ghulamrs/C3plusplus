@@ -59,6 +59,13 @@ struct Resolution : ResolutionKind {
 struct ClosureCapture { int offset; TypeId type; syntax::NodeId source; ClosureCapture() : offset(0) {} };
 struct ClosureFacts { TypeId closure; std::vector<ClosureCapture> captures; int thisOffset; TypeId thisType; ClosureFacts() : thisOffset(-1) {} };
 
+// A static local built at run time as guardOnce built it (M3b.2): its guard, whether a throw out of the construction aborts
+// it, the constructor that builds it (empty: an initialiser stored), and the destructor's registration - Microsoft's helper.
+struct StaticGuard {
+    std::string guard, ctor, helper; TypeId ctorSig; bool aborts, built, defaulted, zeroed, copied, list, registered;
+    StaticGuard() : aborts(false), built(false), defaulted(false), zeroed(false), copied(false), list(false), registered(false) {}
+};
+
 // A `new` or `delete` as the parser built it (M3b.2): the global allocation function it called, the type made or freed,
 // the initialiser - 0 none, 1 value-initialised, 2 one value - and `why` where the SSA lowering may not take it.
 struct NewFacts {
@@ -150,6 +157,8 @@ public:
     bool wrappedBody(const std::string &symbol) const;
     bool plainFunctionTry(const std::string &symbol) const;   // wrapped only by an ordinary function's try block
     std::string specFilter(const std::string &symbol) const;  // an ordinary function's throw(...) filter; empty if none
+    bool ctorTry(const std::string &symbol) const;            // a constructor's function try block, its handlers after its body
+    bool noexceptWrap(const std::string &symbol) const;       // a noexcept body the parser wrapped in a catch-all that aborts
     // A body read in a class's, a namespace's or a template's scope (Parser::scopedFunctions_), which the adapter left alone too.
     int scopedBody(syntax::NodeId fn) const;
     bool isConstructor(syntax::NodeId fn) const;   // a `function` node the parser read as a constructor
@@ -168,6 +177,7 @@ public:
     // The member initialisers the parser replayed into written constructor `ctor`, typed; then each by "class::member".
     void typeMemberDefaults(const std::string &ctor);
     TypedId memberDefault(const std::string &ctor, const std::string &member) const;
+    bool staticGuard(const std::string &symbol, StaticGuard &out) const;   // false where guardOnce built none
     bool guardedStatic(const std::string &symbol) const;  // a static local built at run time, under its guard   // a pack was expanded in the body: one node stands for its members   // Parser::scopedFunctions_'s bits, 0 for a body at file scope
     // The constructor the parser chose, in constructor `ctor`, for a member an entry at `pos` names (0: one the list leaves alone), and
     // whether default arguments were added to the written ones; false where it built none. A class's destructor's symbol.
@@ -176,10 +186,19 @@ public:
     std::string destructorSymbol(TypeId cls) const;
     // The vptr stores the parser made in a written constructor or destructor `fn`; false where it made none.
     bool vptrStores(const std::string &fn, std::vector<VptrStore> &out) const;
+    // Itanium's C2 or D2 `symbol` handed a VTT: the C1 or D1 symbol its records are keyed by; empty for any other function.
+    std::string vttSplit(const std::string &symbol) const;
+    int baseVtt(const std::string &fn, const std::string &baseTag) const;   // the sub-VTT entry `fn` hands a base; -1, none
+    long long vbaseOffsetSlot(TypeId cls, TypeId vbase) const;   // Itanium's vbase_offset slot of vbase in cls; 0, none
+    bool msVbaseCtor(const std::string &symbol) const;   // a Microsoft constructor handed cl's most-derived flag, last
+    // What written Microsoft constructor `fn`'s most-derived guard stores and builds, in order; false where none recorded.
+    bool msVbaseInit(const std::string &fn, std::vector<VptrStore> &vbptrs, std::vector<std::string> &order) const;
     // A local's constructor, its signature with `this`, defaults added, zeroed first ([dcl.init]/8); false where none built it.
     bool localBuilt(syntax::NodeId var, std::string &symbol, TypeId &signature, bool &defaulted, bool &zeroed) const;
     // The constructor a class temporary `T(...)` at node `id` was built by, and whether `T()` zeroed the object first.
     bool temporaryBuilt(syntax::NodeId id, std::string &symbol, TypeId &signature, bool &zeroFirst) const;
+    // The converting constructor that made a temporary of the value at node `id` (Parser::userConversion); false where none.
+    bool convertedBuilt(syntax::NodeId id, std::string &symbol, TypeId &signature) const;
     // What a `return` of a class with a copy of its own built (Parser::ReturnBuilt): false where the parser recorded none.
     bool returnBuilt(syntax::NodeId ret, int &form, std::string &symbol, TypeId &signature) const;
     bool namedReturnLocal(syntax::NodeId var) const;   // the local nrvoCandidate chose: built in the caller's object

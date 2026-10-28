@@ -1005,3 +1005,27 @@ changed (128 added), ssa.sh **8,132 bodies, 7,376 lowered and verified (90.7%)**
 exclusions 126 sites 0 / 0, comment cap 0, the memory gate under its baseline; Windows **683 same, 0 differ, 340
 refused as recorded** at -O0, `-front=ssa` and `-front=ssa -O2`. **Found, not mended**: an inherited `operator()`
 called unqualified, `operator()(4)`, is refused "'operator()' was not declared" where clang takes it.
+
+**M3b.2, round 14 of 2026-10-28 morning: conversions into temporaries, static locals built at run time, virtual-base
+constructors** (lane-conv `3533320`, `26ba5e2`, lane-sloc `7521f55`, lane-vctor `489e5b5`, Opus 5.5, each off `2aefedc`,
+merged as `9a2e574`; the Driver and `FunctionFacts` conflicts between lane-sloc and lane-vctor kept both sides, every
+record looked up through `facts.recordKey`). lane-conv: an empty class's `T()` recorded as a temporary, the converting
+constructor `userConversion` chose recorded by the argument's node (`convertedBuilt_`) and built as the temporary a
+const or rvalue reference or a by-value parameter takes, an array bound to a reference to an array, a derived object
+copied to its base (`baseSubobject`), `P{a, b}` temporaries, and class captures by reference. lane-sloc: a static local
+built at run time from a record of what `guardOnce` built (`Parser::staticGuards_`) - the guard, the abort pad or
+funclet and the destructor's registration, on both ABIs; a noexcept body the parser wrapped; a constructor's function
+try block on Itanium (`tryStatement` split into `tryOpen`/`tryClose`). lane-vctor: Itanium's C2 and D2 of a class with
+virtual bases (the VTT as the second parameter, vptrs stored from it, each base built and guarded with its sub-VTT;
+`vttSplit_`, `baseVtt_`), members of and conversions to a virtual base through the vbase_offset, and Microsoft's
+constructors of such a class under cl's most-derived flag. **The merged tree, gated as one:** Linux `make test` exit
+0, run.sh **1058 / 0** at -O0, -O2, `-front=ssa` and `-front=ssa -O2`, the golden 0 of 2,693 changed (144 added), ssa.sh
+**8,199 bodies, 7,540 lowered and verified (92.0%)**, 0 failed, coff 0 differ, c90 447 / 0, exclusions 126 sites 0 / 0,
+comment cap 0, the memory gate under its baseline; Windows hist 8,502 / 7,849 / 0, and **687 same, 0 differ, 340
+refused as recorded** at -O0, `-front=ssa` and `-front=ssa -O2`. **Found by the M3b.2 exit checks run under
+`-front=ssa` this morning, with lane-shfix:** stage 0 segfaults compiling four of the compiler's own sources (so the
+self-host under the flag fails), `winlink-check`'s `this-return` (ab) prints the wrong output, and the C90 case
+`ce_cast_narrows` loses a case label's narrowing cast; throw-, sret- and catch-check pass under the flag at -O0 and -O2,
+every case passes at `-front=ssa -O1` on both boxes, and the `ml64` spelling fails the same 64 cases with and without
+it. **Found, not mended**: the walker segfaults converting a null pointer to a virtual base (x86_64-linux at -O1 and
+-O2, x86_64-windows at -O0).

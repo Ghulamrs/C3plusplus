@@ -1357,6 +1357,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     lowering.setDefaultInit([&typer](TypeId cls, const std::string &m) { return typer.defaultInit(cls, m); });
     lowering.setMemberDefault([&typer](const std::string &ctor, const std::string &m) { return typer.memberDefault(ctor, m); });
     lowering.setGuarded([&typer](const std::string &symbol) { return typer.guardedStatic(symbol); });
+    lowering.setStaticGuard([&typer](const std::string &symbol, sema::StaticGuard &out) { return typer.staticGuard(symbol, out); });
     lowering.setTypeInfo([&typer](TypeId t) { return typer.typeInfoSymbol(t); });
     lowering.setUnnamedCaught([&typer](syntax::NodeId id) { return typer.unnamedCaught(id); });
     lowering.setMicrosoftThrowInfo([&typer](TypeId t) { return typer.microsoftThrowInfo(t); });
@@ -1370,12 +1371,19 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     });
     lowering.setDestructor([&typer](TypeId cls) { return typer.destructorSymbol(cls); });
     lowering.setVptrStores([&typer](const std::string &fn, std::vector<sema::VptrStore> &out) { return typer.vptrStores(fn, out); });
+    lowering.setBaseVtt([&typer](const std::string &fn, const std::string &base) { return typer.baseVtt(fn, base); });
+    lowering.setVbaseSlot([&typer](TypeId cls, TypeId vbase) { return typer.vbaseOffsetSlot(cls, vbase); });
+    lowering.setMsVbase([&typer](const std::string &s) { return typer.msVbaseCtor(s); },
+                        [&typer](const std::string &fn, std::vector<sema::VptrStore> &v, std::vector<std::string> &o) {
+                            return typer.msVbaseInit(fn, v, o);
+                        });
     lowering.setLocalBuilt([&typer](syntax::NodeId v, std::string &sym, TypeId &sig, bool &dflt, bool &zeroed) {
         return typer.localBuilt(v, sym, sig, dflt, zeroed);
     });
     lowering.setTemporaryBuilt([&typer](syntax::NodeId id, std::string &sym, TypeId &sig, bool &zero) {
         return typer.temporaryBuilt(id, sym, sig, zero);
     });
+    lowering.setConvertedBuilt([&typer](syntax::NodeId id, std::string &sym, TypeId &sig) { return typer.convertedBuilt(id, sym, sig); });
     lowering.setClosure([&typer](syntax::NodeId id, sema::ClosureFacts &out) { return typer.closureFacts(id, out); });
     lowering.setReturnBuilt([&typer](syntax::NodeId id, int &form, std::string &sym, TypeId &sig) {
         return typer.returnBuilt(id, form, sym, sig);
@@ -1396,14 +1404,21 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         facts.variadic = fn.isVariadic();
         facts.hasThis = fn.hasThis();
         facts.isConstructor = typer.isConstructor(c.bodies[r].first);
-        if (facts.isConstructor) typer.typeMemberDefaults(fn.symbol());
+        // Itanium's C2 or D2 handed a VTT was renamed from the C1 or D1 its records are keyed by.
+        const std::string split = typer.vttSplit(fn.symbol());
+        facts.recordKey = split.empty() ? fn.symbol() : split;
+        facts.takesVtt = !split.empty();
+        facts.msFlag = facts.isConstructor && typer.msVbaseCtor(fn.symbol());
+        if (facts.isConstructor) typer.typeMemberDefaults(facts.recordKey);
         facts.sret = fn.sretSlot() != 0;
         facts.landingPads = fn.hasLandingPads();
         // A plain function's try block is a `try` in its body to the lowering, its throw(...) list a filter it
         // makes; any other wrap stays the parser's.
-        facts.specFilter = typer.specFilter(fn.symbol());
-        facts.wrappedBody = facts.specFilter.empty() && ((typer.wrappedBody(fn.symbol()) && !typer.plainFunctionTry(fn.symbol())) ||
-                                                         !fn.exceptionSpec().empty());
+        facts.specFilter = typer.specFilter(facts.recordKey);
+        facts.noexceptWrap = typer.noexceptWrap(facts.recordKey);
+        facts.ctorTry = typer.ctorTry(facts.recordKey);
+        facts.wrappedBody = facts.specFilter.empty() && ((typer.wrappedBody(facts.recordKey) && !typer.plainFunctionTry(facts.recordKey) &&
+                                                          !facts.noexceptWrap && !facts.ctorTry) || !fn.exceptionSpec().empty());
         facts.noexcept_ = fn.isNoexcept();
         facts.pos = fn.pos();
         facts.paramCount = fn.params().size();

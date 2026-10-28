@@ -27,8 +27,14 @@ struct FunctionFacts {
     TypeId thisType;        // a member function's `this`, the first of the parser's parameter slots
     std::size_t pos, paramCount;
     std::string specFilter;     // an ordinary function's throw(...) list as the parser's filter row names it: `$spec,<types>`
+    bool noexceptWrap;          // [except.spec]/9 as the parser kept it: the body under a catch-all that aborts
+    bool ctorTry;               // [except.pre]/4: a constructor's try block, over its mem-initialisers and its body
+    std::string recordKey;      // the symbol the parser keyed this function's records by: Itanium's C1 or D1 for a split C2 or D2
+    bool takesVtt;              // Itanium's C2 or D2 of a class with virtual bases: a VTT is its second parameter
+    bool msFlag;                // a Microsoft constructor of a class with virtual bases: cl's most-derived flag, last
     FunctionFacts() : isStatic(false), isInline(false), variadic(false), hasThis(false), sret(false), landingPads(false),
-                      wrappedBody(false), noexcept_(false), isConstructor(false), pos(0), paramCount(0) {}
+                      wrappedBody(false), noexcept_(false), isConstructor(false), pos(0), paramCount(0), noexceptWrap(false),
+                      ctorTry(false), takesVtt(false), msFlag(false) {}
 };
 
 class Lowering {
@@ -48,6 +54,7 @@ public:
     // A member's own initialiser as a written constructor's mem-initialiser, typed: by constructor and "class::member".
     void setMemberDefault(std::function<sema::TypedId(const std::string &, const std::string &)> f) { memberDefault_ = f; }
     void setGuarded(std::function<bool(const std::string &)> f) { guarded_ = f; }
+    void setStaticGuard(std::function<bool(const std::string &, sema::StaticGuard &)> f) { staticGuard_ = f; }
     void setTypeInfo(std::function<std::string(TypeId)> f) { typeInfo_ = f; }
     void setUnnamedCaught(std::function<std::string(syntax::NodeId)> f) { unnamedCaught_ = f; }
     void setMicrosoftThrowInfo(std::function<std::string(TypeId)> f) { msThrowInfo_ = f; }
@@ -59,9 +66,20 @@ public:
     void setDestructor(std::function<std::string(TypeId)> f) { destructor_ = f; }
     // The vptr stores the parser made in a written constructor or destructor, by its symbol.
     void setVptrStores(std::function<bool(const std::string &, std::vector<sema::VptrStore> &)> f) { vptrStores_ = f; }
+    void setBaseVtt(std::function<int(const std::string &, const std::string &)> f) { baseVtt_ = f; }
+    // Itanium's vbase_offset slot, bytes before the vptr, for a virtual base of a class - Sema's record, asked by the glue.
+    void setVbaseSlot(std::function<long long(TypeId, TypeId)> f) { vbaseSlot_ = f; }
+    // Microsoft: which constructors take cl's most-derived flag, and what a written one's guard stores and builds.
+    void setMsVbase(std::function<bool(const std::string &)> takes,
+                    std::function<bool(const std::string &, std::vector<sema::VptrStore> &, std::vector<std::string> &)> init) {
+        msVbaseCtor_ = takes;
+        msVbaseInit_ = init;
+    }
     // The constructor the parser chose for a local's `var` node - Sema's record, asked by the glue.
     void setLocalBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &, bool &)> f) { localBuilt_ = f; }
     void setTemporaryBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> f) { temporaryBuilt_ = f; }
+    // The converting constructor that made a temporary of a value at a node - Sema's record, asked by the glue.
+    void setConvertedBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &)> f) { convertedBuilt_ = f; }
     // A lambda's closure and its captures' members and sources - Sema's record, asked by the glue.
     void setClosure(std::function<bool(syntax::NodeId, sema::ClosureFacts &)> f) { closure_ = f; }
     void setReturnBuilt(std::function<bool(syntax::NodeId, int &, std::string &, TypeId &)> f) { returnBuilt_ = f; }
@@ -75,7 +93,7 @@ private:
     struct Val { ValueId v; TypeId type; Val() {} Val(ValueId a, TypeId t) : v(a), type(t) {} };
     struct Loop { BlockId brk, cont; std::size_t handlers, live; };
     // A local a destructor destroys, alive from its construction to the end of its scope; `pad` is its cleanup's index in pads_.
-    struct Live { ValueId slot; TypeId cls; std::string dtor; std::size_t pad; };
+    struct Live { ValueId slot; TypeId cls; std::string dtor; std::size_t pad; ValueId vtt; };   // vtt: a base D2's sub-VTT
     // A landing pad a call inside its region unwinds to (M3-IR 3.6): a try's, or a handler's end-catch cleanup. Its block is
     // made on first use; `types` is the whole action chain, own handlers first, then the enclosing pads' - the walker's.
     struct Pad { BlockId block; ValueId ptr, sel; bool cleanup; std::vector<std::string> types; std::vector<int> indices; std::size_t own; };
@@ -91,6 +109,7 @@ private:
     void place(BlockId b);
     bool terminated() const;
     void specFilterChain(const Pad &p);
+    void noexceptAbort(const Pad &p);
     void br(BlockId to, const std::vector<ValueId> &args = std::vector<ValueId>());
     void condbr(ValueId c, BlockId t, BlockId f);
     ValueId param(BlockId b, TypeId type);
@@ -132,6 +151,12 @@ private:
     void gotoStmt(const std::string &name);
     void labelReached(const std::string &name, BlockId b);
     void tryStatement(sema::TypedId id);
+    // An Itanium try's handlers read and its pad pushed, then its body lowered, then its chain: a statement's, or a
+    // constructor's function try block, whose handlers rethrow at their end ([except.handle]/15).
+    struct TryHandler { sema::TypedId node, var, body; TypeId caught; std::string sym; int index; };
+    struct TryState { std::vector<TryHandler> hs; BlockId done; };
+    void tryOpen(const std::vector<sema::TypedId> &handlers, TryState &st);
+    void tryClose(TryState &st, bool rethrows);
     void microsoftTry(sema::TypedId id);
     void leaveHandlers(std::size_t n, std::size_t mark, BlockId target, const std::vector<ValueId> &args = std::vector<ValueId>());
     void checkFuncletUses(BlockId hb);
@@ -157,6 +182,8 @@ private:
     bool namesCalledFunction(const std::string &head, const std::string &symbol) const;
     Val functorMember(sema::TypedId head, const Type &self);
     Val capturedThis();
+    ValueId virtualBaseAddress(ValueId object, const Type &owner, const Type &vbase);
+    ValueId virtualBaseMember(ValueId object, const Type &owner, const Member &m, TypeId type);
     Val readOf(ValueId p, TypeId type);
     Val unary(sema::TypedId id);
     Val step(sema::TypedId id, bool increment, bool prefix);
@@ -201,6 +228,7 @@ private:
     int baseNamed(const Type &cls, const std::string &name) const;
     ValueId baseAddress(const Type::BaseSpec &b);
     void buildBase(const Type::BaseSpec &b, sema::TypedId entry);
+    void msVirtualBases(const Type &cls, const std::map<std::string, sema::TypedId> &named);
     void destroyBases(const Type &cls);
     void arguments(sema::TypedId id, std::uint32_t from, const Type &ft, std::size_t skip, bool variadic, std::vector<ValueId> &ops);
     void argumentList(const Type &ft, std::size_t skip, bool variadic, const std::vector<sema::TypedId> &args, bool dummyInt,
@@ -210,7 +238,10 @@ private:
     bool threadLocalGlobal(const std::string &symbol) const;
     Val toBase(Val v, TypeId to, bool cast = false);
     ValueId boundConverted(sema::TypedId an, const Type &p);
+    bool convertedTemporary(sema::TypedId an, const Type &c, bool destroys, ValueId &slot);
+    static bool arrayBinds(const Type &from, const Type &referent);
     Val baseOfObject(Val a, const Type &p);
+    Val baseSubobject(Val a, const Type &base, const std::string &why);
     Val valueInitialised(sema::TypedId id);
     Val deleteDestroying(sema::TypedId id, const sema::NewFacts &f);
     ValueId virtualCallee(ValueId self, TypeId fnType, int slot);
@@ -227,7 +258,11 @@ private:
     void basePaths(const Type &cls, const Type &base, int at, int &found, int &offset);
     void memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32_t to);
     void storeVptrs();
+    ValueId vttAt(int entry);
+    std::size_t baseVttArgument(const Type &base, const Type &ft, std::vector<ValueId> &ops);
     void classLocal(sema::TypedId var, ValueId slot, const Type &t);
+    void guardedStatic(sema::TypedId var, const std::string &symbol);
+    void staticConstruction(sema::TypedId var, const std::string &symbol, const sema::StaticGuard &g);
     bool builtClass(const Type &t) const;
     void builtLocal(sema::TypedId var, ValueId slot, const Type &t);
     void guard(ValueId slot, const Type &c, const std::string &dtor, bool unwinds = true);
@@ -278,6 +313,7 @@ private:
     std::function<bool(TypeId, const std::string &)> defaultInit_;
     std::function<sema::TypedId(const std::string &, const std::string &)> memberDefault_;
     std::function<bool(const std::string &)> guarded_;
+    std::function<bool(const std::string &, sema::StaticGuard &)> staticGuard_;
     std::function<std::string(TypeId)> typeInfo_;
     std::function<std::string(syntax::NodeId)> unnamedCaught_;
     std::function<std::string(TypeId)> msThrowInfo_;
@@ -290,6 +326,13 @@ private:
     std::function<std::string(TypeId)> destructor_;
     std::function<bool(const std::string &, std::vector<sema::VptrStore> &)> vptrStores_;
     std::vector<sema::VptrStore> vptrs_;        // what a constructor or destructor of a class with a vptr stores
+    std::function<int(const std::string &, const std::string &)> baseVtt_;
+    std::function<long long(TypeId, TypeId)> vbaseSlot_;
+    std::function<bool(const std::string &)> msVbaseCtor_;
+    std::function<bool(const std::string &, std::vector<sema::VptrStore> &, std::vector<std::string> &)> msVbaseInit_;
+    ValueId msFlag_;                            // a Microsoft constructor's most-derived flag; none otherwise
+    std::string key_;                           // FunctionFacts::recordKey: the memberBuilt_ and vptrStores_ records' key
+    ValueId vtt_;                               // Itanium's C2 or D2 handed a VTT: it, the second parameter; none otherwise
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &, bool &)> localBuilt_;
     std::vector<Live> live_;                    // innermost last
     ValueId sret_;                              // the caller's result pointer, where a copied class is returned
@@ -304,6 +347,7 @@ private:
     std::size_t liveFloor_;                     // a constructor's built bases and members: below it, kept by a return
     bool landingPads_;                          // the parser gave the function landing pads: the prologue names an LSDA
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> temporaryBuilt_;
+    std::function<bool(syntax::NodeId, std::string &, TypeId &)> convertedBuilt_;
     std::function<bool(syntax::NodeId, sema::ClosureFacts &)> closure_;
     std::vector<Pad> pads_;                     // innermost last
     std::vector<std::string> typeTable_;        // the function's selector indices: one per type, first occurrence, 1-based

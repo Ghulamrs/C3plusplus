@@ -528,8 +528,12 @@ void Parser::noteClosure(const MadeLambda &made, const std::string &name, int of
         }
         const Local *l = lookup_.findLocal(made.names[i]);
         const Type *held = made.types[i]->isReference() ? made.types[i]->referent() : made.types[i];
-        if (l == nullptr || !l->staticName.empty() || l->isThreadLocal || l->constantOnly || l->type->isReference() ||
-            l->isRegister || !held->isScalar() || l->type->unqualified() != held->unqualified()) {
+        const Type *source = l != nullptr && l->type->isReference() ? l->type->referent() : l != nullptr ? l->type : nullptr;
+        // A class by reference, or by value where the copy above is an assignment of its bytes (M3b.2).
+        const bool classHeld = held->isStructOrUnion() && held->isComplete() &&
+                               (made.types[i]->isReference() || classes_.copyConstructorOf(held->unqualified()) == nullptr);
+        if (l == nullptr || !l->staticName.empty() || l->isThreadLocal || l->constantOnly || l->isRegister ||
+            !(held->isScalar() || classHeld) || source->unqualified() != held->unqualified()) {
             pendingLambda_.simple = false;
             break;
         }

@@ -1178,6 +1178,10 @@ std::vector<StmtPtr> Parser::buildStaticConstruction(const Declared &d,
                          "from braces, whose array would have to be static too - that is not "
                          "supported yet; give the list automatic storage");
     std::vector<StmtPtr> out;
+    StaticGuard &record = staticGuards_[symbol];
+    record.built = true;
+    record.list = !ci.ilSetup.empty();
+    record.copied = ci.trivialCopy;
     for (std::size_t z = 0; z < ci.ilSetup.size(); z++)
         out.push_back(std::move(ci.ilSetup[z]));
     if (ci.trivialCopy) {
@@ -1321,6 +1325,8 @@ void Parser::registerDestruction(const Declared &d, const std::string &symbol,
     const Signature *dtor = destructorOf(cls);
     if (dtor == nullptr) return;
     markUsed(dtor);
+    staticGuards_[symbol].registered = true;
+    staticGuards_[symbol].helper = helper;
     const Type *voidPtr = types_.pointerTo(types_.get(Kind::Void));
     const Type *clsPtr = types_.pointerTo(cls);
 
@@ -1562,6 +1568,8 @@ StmtPtr Parser::guardOnce(const std::string &symbol, std::vector<StmtPtr> body) 
             guard = "_ZGV" + symbol.substr(2);
         }
     }
+    staticGuards_[symbol].guard = guard;
+    staticGuards_[symbol].aborts = !ms || !inHandlerBody_;
     const Type *guardType = types_.get(ms ? Kind::Int : Kind::LongLong);
     current_->globals.push_back(Global{ guard, guard, guardType,
                                         std::vector<GlobalPiece>(), false,

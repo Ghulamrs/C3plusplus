@@ -464,6 +464,10 @@ TypeId Typer::declaredReturn(syntax::NodeId fn) const {
 
 bool Typer::wrappedBody(const std::string &symbol) const { return p_.wrappedBodies_.count(symbol) != 0; }
 bool Typer::plainFunctionTry(const std::string &symbol) const { return p_.plainFunctionTries_.count(symbol) != 0; }
+bool Typer::ctorTry(const std::string &symbol) const { return p_.ctorTries_.count(symbol) != 0; }
+
+bool Typer::noexceptWrap(const std::string &symbol) const { return p_.noexceptWraps_.count(symbol) != 0; }
+
 std::string Typer::specFilter(const std::string &symbol) const {
     const auto s = p_.specFilters_.find(symbol);
     return s == p_.specFilters_.end() ? std::string() : s->second;
@@ -520,6 +524,24 @@ bool Typer::constructed(TypeId cls) const { return p_.hasConstructors(p_.types_.
 
 bool Typer::guardedStatic(const std::string &symbol) const { return p_.guardedStatics_.count(symbol) != 0; }
 
+bool Typer::staticGuard(const std::string &symbol, StaticGuard &out) const {
+    const auto g = p_.staticGuards_.find(symbol);
+    if (g == p_.staticGuards_.end() || g->second.guard.empty()) return false;
+    const Parser::StaticGuard &r = g->second;
+    out.guard = r.guard;
+    out.ctor = r.ctor;
+    out.helper = r.helper;
+    out.ctorSig = TypeTable::id(r.ctorSig);
+    out.aborts = r.aborts;
+    out.built = r.built;
+    out.defaulted = r.defaulted;
+    out.zeroed = r.zeroed;
+    out.copied = r.copied;
+    out.list = r.list;
+    out.registered = r.registered;
+    return true;
+}
+
 bool Typer::defaultInit(TypeId cls, const std::string &member) const {
     return p_.memberInit_.count(p_.types_.type(cls)->unqualified()->tag() + "::" + member) != 0;
 }
@@ -564,6 +586,14 @@ bool Typer::temporaryBuilt(syntax::NodeId id, std::string &symbol, TypeId &signa
     symbol = i->second.symbol;
     signature = TypeTable::id(i->second.signature);
     zeroFirst = i->second.zeroFirst;
+    return true;
+}
+
+bool Typer::convertedBuilt(syntax::NodeId id, std::string &symbol, TypeId &signature) const {
+    const std::unordered_map<std::uint32_t, Parser::TemporaryBuilt>::const_iterator i = p_.convertedBuilt_.find(id.v);
+    if (i == p_.convertedBuilt_.end() || i->second.symbol.empty() || i->second.signature == nullptr) return false;
+    symbol = i->second.symbol;
+    signature = TypeTable::id(i->second.signature);
     return true;
 }
 
@@ -650,6 +680,31 @@ bool Typer::vptrStores(const std::string &fn, std::vector<VptrStore> &out) const
     if (i == p_.vptrStores_.end()) return false;
     out = i->second;
     return true;
+}
+
+std::string Typer::vttSplit(const std::string &symbol) const {
+    const std::map<std::string, std::string>::const_iterator i = p_.vttSplit_.find(symbol);
+    return i == p_.vttSplit_.end() ? std::string() : i->second;
+}
+
+int Typer::baseVtt(const std::string &fn, const std::string &baseTag) const {
+    const std::map<std::string, int>::const_iterator i = p_.baseVtt_.find(fn + "|" + baseTag);
+    return i == p_.baseVtt_.end() ? -1 : i->second;
+}
+
+bool Typer::msVbaseCtor(const std::string &symbol) const { return p_.msVbaseCtors_.count(symbol) != 0; }
+
+bool Typer::msVbaseInit(const std::string &fn, std::vector<VptrStore> &vbptrs, std::vector<std::string> &order) const {
+    const std::map<std::string, std::vector<VptrStore> >::const_iterator s = p_.msVbptrs_.find(fn);
+    const std::map<std::string, std::vector<std::string> >::const_iterator o = p_.msVbaseOrder_.find(fn);
+    if (s == p_.msVbptrs_.end() || o == p_.msVbaseOrder_.end()) return false;
+    vbptrs = s->second;
+    order = o->second;
+    return true;
+}
+
+long long Typer::vbaseOffsetSlot(TypeId cls, TypeId vbase) const {
+    return p_.classes_.itaniumVbaseOffsetSlot(p_.types_.type(cls), p_.types_.type(vbase));
 }
 
 bool Typer::localBuilt(syntax::NodeId var, std::string &symbol, TypeId &signature, bool &defaulted, bool &zeroed) const {

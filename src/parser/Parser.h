@@ -418,7 +418,7 @@ private:
         const Type *type, const std::string &cls, int thisSlot, int flagSlot,
         std::size_t pos, int srcSlot, bool moving,
         std::map<std::string, std::vector<ExprPtr> > *vbaseArgs,
-        std::vector<Alive> *vbs = nullptr);
+        std::vector<Alive> *vbs = nullptr, bool record = false);
 
     typedef sema::Rank Rank;
 
@@ -562,6 +562,7 @@ private:
     void noteCallee(syntax::NodeId callee, const Expr *call) {
         if (call == nullptr || !callee.valid()) return;
         Resolved r = call->resolved() != 0 ? resolvedTable_[call->resolved()] : temporaryOf(call);
+        if (r.what == Resolved::None) r = emptyTemporaryOf(call);
         if (r.what == Resolved::Call) r.what = Resolved::Callee;
         else if (r.what == Resolved::Temporary) r.what = Resolved::TypeName;
         else return;
@@ -599,6 +600,14 @@ private:
     }
     // The vptrs each written constructor and destructor of a class with one stores, by its symbol (M3b.2).
     std::map<std::string, std::vector<sema::VptrStore> > vptrStores_;
+    // Itanium's written C2 or D2 of a class with virtual bases, which takes a VTT: its symbol -> the C1 or D1 symbol the
+    // records above are keyed by; and each base it hands a sub-VTT, "function|base" -> that sub-VTT's entry (M3b.2).
+    std::map<std::string, std::string> vttSplit_;
+    std::map<std::string, int> baseVtt_;
+    // A written Microsoft constructor of a class with virtual bases: what its most-derived guard does - the vbtable
+    // pointers it stores, and the virtual bases it builds in order, each's constructor in memberBuilt_ as "^V" (M3b.2).
+    std::map<std::string, std::vector<sema::VptrStore> > msVbptrs_;
+    std::map<std::string, std::vector<std::string> > msVbaseOrder_;
     // **What the parser decides of layout as it reads, by node** (M2.11): a `var`'s frame slot, a block's or a `for`'s
     // scope, and the symbol a `function` node was defined as - what the adapter cannot derive from types.
     std::unordered_map<std::uint32_t, Local> declaredLocals_;
@@ -631,8 +640,17 @@ private:
     std::set<std::string> wrappedBodies_;
     std::set<std::string> plainFunctionTries_;   // of those, an ordinary function's try block alone (M3b.2)
     std::map<std::string, std::string> specFilters_;   // an ordinary function's throw(...) filter, `$spec,<types>`
+    std::set<std::string> ctorTries_;       // a constructor's function try block and nothing else around its body (M3b.2)
+    std::set<std::string> noexceptWraps_;   // a noexcept body with no pads of its own, wrapped in a catch-all that aborts (M3b.2)
     // The static locals guardOnce builds at run time; the adapter takes only those laid down as data.
     std::set<std::string> guardedStatics_;
+    // What guardOnce built for one, by its symbol (M3b.2): the guard it named; whether a throw out of the construction aborts
+    // it; the constructor that builds it, with its type and the [dcl.init]/8 facts; the destructor's registration.
+    struct StaticGuard {
+        std::string guard, ctor, helper; const Type *ctorSig = nullptr;
+        bool aborts = false, built = false, defaulted = false, zeroed = false, copied = false, list = false, registered = false;
+    };
+    std::map<std::string, StaticGuard> staticGuards_;
     TryFacts pendingTry_;
     // A `throw` of a scalar on the Itanium targets: the slot holding the exception's storage, and its type_info.
     struct ThrowFacts { std::string temp; int slot = 0; std::string info; };
@@ -757,6 +775,8 @@ private:
     // And the constructor that built it, by node: its symbol, its type with `T *` first, and whether `T()` zeroed first.
     struct TemporaryBuilt { std::string symbol; const Type *signature; bool zeroFirst; };
     std::unordered_map<std::uint32_t, TemporaryBuilt> temporaryBuilt_;
+    // The converting constructor userConversion called to make a temporary of a value, by the value's node (M3b.2).
+    std::unordered_map<std::uint32_t, TemporaryBuilt> convertedBuilt_;
     // A value a const or rvalue reference binds copied into a frame slot by bindReference: its name and slot, by node.
     std::unordered_map<std::uint32_t, std::pair<std::string, int> > bindTemps_;
     // A lambda whose captures are scalar locals: the closure's slot and each capture's member and source, by node.
@@ -780,14 +800,24 @@ private:
         const Comma *both = star != nullptr && star->op() == '*' ? dynamic_cast<const Comma *>(&star->operand()) : nullptr;
         const Unary *at = both != nullptr ? dynamic_cast<const Unary *>(&both->right()) : nullptr;
         const Var *tmp = at != nullptr && at->op() == '&' ? dynamic_cast<const Var *>(&at->operand()) : nullptr;
-        if (tmp == nullptr || tmp->name() != "$tmp") return Resolved();
+        // An aggregate's `T{...}` is the same shape over a slot of its own name (aggregateTemporary).
+        if (tmp == nullptr || (tmp->name() != "$tmp" && tmp->name().compare(0, 5, "$list") != 0)) return Resolved();
+        return resolvedAs(Resolved::Temporary, e->type());
+    }
+    // An empty class's `T()`, which zeroes nothing and is its slot alone (classTemporary): its class, Temporary.
+    Resolved emptyTemporaryOf(const Expr *e) const {
+        const Var *tmp = dynamic_cast<const Var *>(e);
+        if (tmp == nullptr || tmp->name() != "$tmp" || e->resolved() != 0 || e->type() == nullptr || !e->type()->isStructOrUnion())
+            return Resolved();
         return resolvedAs(Resolved::Temporary, e->type());
     }
     void noteTemporarySlot(const Expr *e) {
+        if (emptyTemporaryOf(e).what == Resolved::Temporary) { resolutions_[e->syntax().v] = emptyTemporaryOf(e); return; }
         const Unary *star = dynamic_cast<const Unary *>(e);
         const Comma *both = star != nullptr && star->op() == '*' ? dynamic_cast<const Comma *>(&star->operand()) : nullptr;
         const Unary *at = both != nullptr ? dynamic_cast<const Unary *>(&both->right()) : nullptr;
         const Var *tmp = at != nullptr && at->op() == '&' ? dynamic_cast<const Var *>(&at->operand()) : nullptr;
+        if (tmp != nullptr && tmp->name().compare(0, 5, "$list") == 0) resolutions_[e->syntax().v] = temporaryOf(e);
         if (tmp == nullptr || tmp->name() != "$tmp") return;
         temporarySlots_[e->syntax().v] = tmp->offset();
         // The temporary's class, and the constructor that built it where one did - behind the zeroing of `T()` for an
@@ -1047,7 +1077,8 @@ private:
                                           std::map<std::string,
                                               std::vector<ExprPtr> >
                                               *vbaseArgs = nullptr,
-                                          std::vector<int> *builtBase = nullptr);
+                                          std::vector<int> *builtBase = nullptr,
+                                          std::vector<std::string> *order = nullptr);
     static std::string destructorKey(const std::string &cls) {
         return cls + "::~" + localOf(cls);
     }
