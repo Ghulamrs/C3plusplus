@@ -567,6 +567,14 @@ bool Typer::temporaryBuilt(syntax::NodeId id, std::string &symbol, TypeId &signa
     return true;
 }
 
+bool Typer::convertedBuilt(syntax::NodeId id, std::string &symbol, TypeId &signature) const {
+    const std::unordered_map<std::uint32_t, Parser::TemporaryBuilt>::const_iterator i = p_.convertedBuilt_.find(id.v);
+    if (i == p_.convertedBuilt_.end() || i->second.symbol.empty() || i->second.signature == nullptr) return false;
+    symbol = i->second.symbol;
+    signature = TypeTable::id(i->second.signature);
+    return true;
+}
+
 bool Typer::returnBuilt(syntax::NodeId ret, int &form, std::string &symbol, TypeId &signature) const {
     const std::unordered_map<std::uint32_t, Parser::ReturnBuilt>::const_iterator i = p_.returnBuilt_.find(ret.v);
     if (i == p_.returnBuilt_.end() || i->second.form == 0) return false;

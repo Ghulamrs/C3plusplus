@@ -562,6 +562,7 @@ private:
     void noteCallee(syntax::NodeId callee, const Expr *call) {
         if (call == nullptr || !callee.valid()) return;
         Resolved r = call->resolved() != 0 ? resolvedTable_[call->resolved()] : temporaryOf(call);
+        if (r.what == Resolved::None) r = emptyTemporaryOf(call);
         if (r.what == Resolved::Call) r.what = Resolved::Callee;
         else if (r.what == Resolved::Temporary) r.what = Resolved::TypeName;
         else return;
@@ -757,6 +758,8 @@ private:
     // And the constructor that built it, by node: its symbol, its type with `T *` first, and whether `T()` zeroed first.
     struct TemporaryBuilt { std::string symbol; const Type *signature; bool zeroFirst; };
     std::unordered_map<std::uint32_t, TemporaryBuilt> temporaryBuilt_;
+    // The converting constructor userConversion called to make a temporary of a value, by the value's node (M3b.2).
+    std::unordered_map<std::uint32_t, TemporaryBuilt> convertedBuilt_;
     // A value a const or rvalue reference binds copied into a frame slot by bindReference: its name and slot, by node.
     std::unordered_map<std::uint32_t, std::pair<std::string, int> > bindTemps_;
     // A lambda whose captures are scalar locals: the closure's slot and each capture's member and source, by node.
@@ -780,14 +783,24 @@ private:
         const Comma *both = star != nullptr && star->op() == '*' ? dynamic_cast<const Comma *>(&star->operand()) : nullptr;
         const Unary *at = both != nullptr ? dynamic_cast<const Unary *>(&both->right()) : nullptr;
         const Var *tmp = at != nullptr && at->op() == '&' ? dynamic_cast<const Var *>(&at->operand()) : nullptr;
-        if (tmp == nullptr || tmp->name() != "$tmp") return Resolved();
+        // An aggregate's `T{...}` is the same shape over a slot of its own name (aggregateTemporary).
+        if (tmp == nullptr || (tmp->name() != "$tmp" && tmp->name().compare(0, 5, "$list") != 0)) return Resolved();
+        return resolvedAs(Resolved::Temporary, e->type());
+    }
+    // An empty class's `T()`, which zeroes nothing and is its slot alone (classTemporary): its class, Temporary.
+    Resolved emptyTemporaryOf(const Expr *e) const {
+        const Var *tmp = dynamic_cast<const Var *>(e);
+        if (tmp == nullptr || tmp->name() != "$tmp" || e->resolved() != 0 || e->type() == nullptr || !e->type()->isStructOrUnion())
+            return Resolved();
         return resolvedAs(Resolved::Temporary, e->type());
     }
     void noteTemporarySlot(const Expr *e) {
+        if (emptyTemporaryOf(e).what == Resolved::Temporary) { resolutions_[e->syntax().v] = emptyTemporaryOf(e); return; }
         const Unary *star = dynamic_cast<const Unary *>(e);
         const Comma *both = star != nullptr && star->op() == '*' ? dynamic_cast<const Comma *>(&star->operand()) : nullptr;
         const Unary *at = both != nullptr ? dynamic_cast<const Unary *>(&both->right()) : nullptr;
         const Var *tmp = at != nullptr && at->op() == '&' ? dynamic_cast<const Var *>(&at->operand()) : nullptr;
+        if (tmp != nullptr && tmp->name().compare(0, 5, "$list") == 0) resolutions_[e->syntax().v] = temporaryOf(e);
         if (tmp == nullptr || tmp->name() != "$tmp") return;
         temporarySlots_[e->syntax().v] = tmp->offset();
         // The temporary's class, and the constructor that built it where one did - behind the zeroing of `T()` for an

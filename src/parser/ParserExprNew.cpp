@@ -692,6 +692,15 @@ ExprPtr Parser::userConversion(const Type *param, ExprPtr &arg, std::size_t pos)
                               std::move(none));
     }
     markUsed(ctor);
+    // What built the temporary, for the SSA lowering; two different answers for one node leave neither (M3b.2).
+    if (arg->syntax().valid()) {
+        std::vector<const Type *> full(1, types_.pointerTo(plain));
+        full.insert(full.end(), ctor->params.begin(), ctor->params.end());
+        const TemporaryBuilt b = { ctor->symbol, types_.functionType(types_.get(Kind::Void), full, false), false };
+        const std::unordered_map<std::uint32_t, TemporaryBuilt>::iterator had = convertedBuilt_.find(arg->syntax().v);
+        if (had == convertedBuilt_.end()) convertedBuilt_[arg->syntax().v] = b;
+        else if (had->second.symbol != b.symbol || had->second.signature != b.signature) had->second.symbol.clear();
+    }
 
     std::vector<ExprPtr> one;
     one.push_back(std::move(arg));

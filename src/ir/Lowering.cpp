@@ -354,7 +354,10 @@ void Lowering::classLocal(sema::TypedId var, ValueId slot, const Type &t) {
     }
     case 1: {
         if (v.count != 1 || !objectNode(child(var, 0))) outside("a class local initialised by what is not an object");
-        const Val o = object(child(var, 0));
+        Val o = object(child(var, 0));
+        // [class.copy]/12 with [conv.ptr]/3: a derived object's base subobject is what is copied - its bytes.
+        if (T(o.type).isStructOrUnion() && T(o.type).unqualified() != t.unqualified())
+            o = baseSubobject(o, t, "a class local initialised from another type");
         if (T(o.type).unqualified() != t.unqualified()) outside("a class local initialised from another type");
         copyObject(slot, o.v, t);
         return;
@@ -423,9 +426,12 @@ void Lowering::builtLocal(sema::TypedId var, ValueId slot, const Type &t) {
             at(z).k = c.size(target_);
         }
         std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, slot))));
+        // [class.temporary]/4: the arguments' temporaries are destroyed at the declarator's end, before the local is alive.
+        const std::size_t was = openFull();
         if (v.count != 0) arguments(var, 0, ft, 1, false, ops);
         else if (ft.params().size() != 1) outside("a local's default constructor of parameters");
         directCall(symbol, sig, ops);
+        closeFull(was);
     } else if (elidedLocal(var)) {
         elidedCall(child(var, 0), slot);
     } else if (v.initForm == 1 && v.count == 1 && temporaryNode(child(var, 0)) && !plainTemporary(child(var, 0))) {
@@ -751,16 +757,21 @@ Lowering::Val Lowering::closure(sema::TypedId id) {
     }
     for (const sema::ClosureCapture &c : f.captures) {
         const std::map<std::uint32_t, std::pair<ValueId, TypeId> >::const_iterator l = locals_.find(c.source.v);
-        if (l == locals_.end() || T(l->second.second).isReference()) outside("a lambda capturing what is not a local of the body");
-        const Type &src = *T(l->second.second).unqualified(), &mt = T(c.type);
-        if (!scalar(src) || src.isX87(target_)) outside("a lambda capturing what is not a scalar");
+        if (l == locals_.end()) outside("a lambda capturing what is not a local of the body");
+        // A reference local captures what it refers to; a class is held by reference, or by value where its copy is bytes.
+        const Type &declared = T(l->second.second), &mt = T(c.type);
+        const Type &src = *(declared.isReference() ? declared.referent() : &declared)->unqualified();
         const bool byRef = mt.isReference();
+        if (!(scalar(src) && !src.isX87(target_)) && !(src.isStructOrUnion() && src.isComplete() && (byRef || plainClass(src))))
+            outside("a lambda capturing what is not a scalar or a class it holds");
         if ((byRef ? mt.referent() : &mt)->unqualified() != &src) outside("a lambda's capture of another type");
         const TypeId held = byRef ? tid(*types_.pointerTo(&src)) : tid(src);
         const InstId g = add(Op::Gep, tid(*types_.pointerTo(&T(held))), std::vector<ValueId>(1, slot));
         at(g).k = c.offset;
-        const ValueId at0 = result(add(Op::Bitcast, tid(*types_.pointerTo(&src)), std::vector<ValueId>(1, l->second.first)));
-        store(result(g), byRef ? at0 : load(at0, held));
+        const ValueId from = declared.isReference() ? load(l->second.first, tid(*types_.pointerTo(declared.referent()))) : l->second.first;
+        const ValueId at0 = result(add(Op::Bitcast, tid(*types_.pointerTo(&src)), std::vector<ValueId>(1, from)));
+        if (!byRef && !scalar(src)) copyObject(result(g), at0, src);
+        else store(result(g), byRef ? at0 : load(at0, held));
     }
     return Val(slot, tid(cls));
 }
@@ -1386,7 +1397,8 @@ void Lowering::returnStmt(sema::TypedId id) {
     if (rt.isStructOrUnion() && !plainClass(rt)) { returnConstructed(child(id, 0)); return; }
     if (rt.isStructOrUnion()) {
         if (!objectNode(child(id, 0))) outside("a class returned from what is not an object");
-        const Val a = object(child(id, 0));
+        Val a = object(child(id, 0));
+        if (T(a.type).isStructOrUnion() && T(a.type).unqualified() != &rt) a = baseSubobject(a, rt, "a class returned from another type");
         if (T(a.type).unqualified() != &rt) outside("a class returned from another type");
         if (!live_.empty()) outside("a class returned while a local with a destructor is alive");
         const InstId c = add(Op::Bitcast, tid(*types_.pointerTo(&rt)), std::vector<ValueId>(1, a.v));
@@ -2713,7 +2725,9 @@ Lowering::Val Lowering::assign(sema::TypedId id) {
     const Type &t = T(target.type);
     // [class.copy]/18: a plain class's implicit copy assignment copies its bytes; a written operator= is a call.
     if (op == "=" && plainClass(t) && !t.isConst() && !(assigned_ && assigned_(t.id())) && objectNode(child(id, 1))) {
-        const Val from = object(child(id, 1));
+        Val from = object(child(id, 1));
+        if (T(from.type).isStructOrUnion() && T(from.type).unqualified() != t.unqualified())
+            from = baseSubobject(from, t, "a class assigned from another type");    // [class.copy]/12: its base's bytes
         if (T(from.type).unqualified() != t.unqualified()) outside("a class assigned from another type");
         copyObject(target.v, from.v, t);
         return target;
@@ -2780,6 +2794,8 @@ Lowering::Val Lowering::classValue(sema::TypedId id, const Type &t) {
     } else {
         outside("a class assigned from what is not an object");
     }
+    if (T(v.type).isStructOrUnion() && T(v.type).unqualified() != t.unqualified())
+        v = baseSubobject(v, t, "a class assigned from another type");    // [class.copy]/12: the base subobject's bytes
     if (T(v.type).unqualified() != t.unqualified()) outside("a class assigned from another type");
     return v;
 }
@@ -3030,6 +3046,11 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
         if (plainClass(p) || bytesReturned(p)) {
             // A plain class by value: its address, which the selector hands the walker as the object to copy in; one with
             // constructors and no copy of its own goes the same way, a temporary of it built in a slot of this frame first.
+            ValueId made;
+            if (convertedTemporary(an, p, false, made)) {
+                ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(p.unqualified())), std::vector<ValueId>(1, made))));
+                continue;
+            }
             if (!objectNode(an) && !constructedTemporary(an)) outside("a class argument that is not an object");
             const Val a = constructedTemporary(an) ? temporary(an) : object(an);
             if (T(a.type).unqualified() != p.unqualified()) outside("a class argument of another type");
@@ -3040,6 +3061,11 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
             // [dcl.init.ref]/5: an object of the referent's type, its address passed; a scalar value bound to a const
             // or an rvalue reference is a temporary of the frame holding it, alive until the call is done.
             const Type &ref = *p.referent();
+            ValueId made;
+            if ((ref.isConst() || p.isRValueReference()) && convertedTemporary(an, ref, true, made)) {
+                ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(&ref)), std::vector<ValueId>(1, made))));
+                continue;
+            }
             if (!isLvalueNode(an) && scalar(ref) && !ref.isX87(target_) && (ref.isConst() || p.isRValueReference())) {
                 const ValueId temp = entryAlloca(tid(*ref.unqualified()), "$bound");
                 store(temp, exprTo(an, tid(*ref.unqualified())).v);
@@ -3069,6 +3095,10 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
                 continue;
             }
             Val a = lvalue(an);
+            if (arrayBinds(T(a.type), ref)) {
+                ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(&ref)), std::vector<ValueId>(1, a.v))));
+                continue;
+            }
             if (T(a.type).isStructOrUnion() && ref.isStructOrUnion() && T(a.type).unqualified() != ref.unqualified())
                 a = baseOfObject(a, p);
             if (T(a.type).unqualified() != p.referent()->unqualified()) outside("a reference parameter bound to another type");
@@ -3098,13 +3128,44 @@ ValueId Lowering::boundConverted(sema::TypedId an, const Type &p) {
     return result(add(Op::Bitcast, tid(*types_.pointerTo(&ref)), std::vector<ValueId>(1, temp)));
 }
 
-// [dcl.init.ref]/5: an lvalue of a class bound to a reference to its unambiguous non-virtual base - the base
-// subobject, at its offset; an object is never null, so there is nothing to test.
-Lowering::Val Lowering::baseOfObject(Val a, const Type &p) {
-    const Type &base = *p.referent();
+// [over.ics.user]: a value of another type made a temporary of class `c` in a slot of the frame by the converting
+// constructor the parser chose - with a destructor, alive to the full expression's end; `slot` its address. False
+// where the parser built none; `destroys`, whether a class with a destructor may be made.
+bool Lowering::convertedTemporary(sema::TypedId an, const Type &c, bool destroys, ValueId &slot) {
+    std::string symbol;
+    TypeId sig;
+    if (!c.isStructOrUnion() || !convertedBuilt_ || !convertedBuilt_(tree_.node(an).syntax, symbol, sig)) return false;
+    if (tree_.node(an).type == nullptr || tree_.node(an).type->unqualified() == c.unqualified()) outside("a converted value of its own class");
+    const bool destroyed = destroys && destroyedClass(c);
+    if (!destroyed && !constructedClass(c)) outside("a converted value of a class the lowering does not build");
+    const Type &ft = T(sig);
+    if (!ft.isFunction() || ft.params().size() != 2 || ft.params()[0]->pointee()->unqualified() != c.unqualified())
+        outside("a converted value built by a constructor of another shape");
+    const std::string dtor = destroyed ? temporaryDestructor(*c.unqualified()) : std::string();
+    slot = entryAlloca(tid(*c.unqualified()), "$tmp");
+    std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, slot))));
+    argumentList(ft, 1, false, std::vector<sema::TypedId>(1, an), false, ops);
+    directCall(symbol, sig, ops);
+    if (destroyed) guard(slot, *c.unqualified(), dtor);
+    return true;
+}
+
+// [dcl.init.ref]/5: an array lvalue bound to a reference to an array of its shape, the element gaining const at most.
+bool Lowering::arrayBinds(const Type &from, const Type &referent) {
+    return from.isArray() && referent.isArray() && from.sameArrayShape(&referent) &&
+           from.innermostElement()->unqualified() == referent.innermostElement()->unqualified() &&
+           (referent.innermostElement()->isConst() || !from.innermostElement()->isConst());
+}
+
+// [dcl.init.ref]/5: an lvalue of a class bound to a reference to its unambiguous non-virtual base - the base subobject.
+Lowering::Val Lowering::baseOfObject(Val a, const Type &p) { return baseSubobject(a, *p.referent(), "a reference parameter bound to another type"); }
+
+// The unambiguous non-virtual base `base` of the class object at `a`, at its offset, keeping a's const - an object is
+// never null, so there is nothing to test; refused as `why` where there is no one such base.
+Lowering::Val Lowering::baseSubobject(Val a, const Type &base, const std::string &why) {
     int found = 0, offset = 0;
     basePaths(*T(a.type).unqualified(), *base.unqualified(), 0, found, offset);
-    if (found != 1) outside("a reference parameter bound to another type");
+    if (found != 1) outside(why);
     const Type &bt = T(a.type).isConst() ? *types_.withConst(base.unqualified()) : *base.unqualified();
     const TypeId pt = tid(*types_.pointerTo(&bt));
     if (offset == 0) return Val(result(add(Op::Bitcast, pt, std::vector<ValueId>(1, a.v))), tid(bt));
