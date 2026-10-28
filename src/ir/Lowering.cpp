@@ -367,12 +367,13 @@ void Lowering::classLocal(sema::TypedId var, ValueId slot, const Type &t) {
 }
 
 // [dcl.init.aggr]/2 for a list a plain class takes member by member: no base, no more values than members, every
-// member a plain scalar - so no value reaches into an array or a nested class, which the flattened list cannot say.
+// member a plain scalar or a scoped enumeration - so no value reaches into an array or a nested class, which the
+// flattened list cannot say.
 bool Lowering::listFits(const Type &t, std::uint32_t values) const {
     const std::vector<Member> &ms = t.unqualified()->members();
     if (!t.unqualified()->bases().empty() || values > ms.size()) return false;
     for (std::size_t i = 0; i < ms.size(); i++)
-        if (!scalar(*ms[i].type) || ms[i].width != 0 || ms[i].anonUnion != nullptr || ms[i].type->isX87(target_)) return false;
+        if (!(scalar(*ms[i].type) || ms[i].type->isScopedEnumeration()) || ms[i].width != 0 || ms[i].anonUnion != nullptr || ms[i].type->isX87(target_)) return false;
     return true;
 }
 
@@ -1830,7 +1831,10 @@ void Lowering::localArray(sema::TypedId var, ValueId slot, TypeId type) {
         return;
     }
     if (items > length) outside("an array initialised with more values than it holds");
-    if (syn(child(var, first)).kind == syntax::Kind::StringLit) outside("an array initialised from a string");
+    if (items == 1 && syn(child(var, first)).kind == syntax::Kind::StringLit && !t.pointee()->isPointer()) {
+        stringArray(child(var, first), slot, t);
+        return;
+    }
     if (length - items > 64) outside("an array zeroed past 64 elements");
     const TypeId elem = tid(*t.pointee());
     const long long size = t.pointee()->size(target_);
@@ -1854,6 +1858,31 @@ void Lowering::localArray(sema::TypedId var, ValueId slot, TypeId type) {
         at(g).k = offset;
         store(result(g), value);
     }
+}
+
+// [dcl.init.string]: an array of characters from a string literal - the literal's code units with their terminating
+// zero, which the program holds as bytes under the literal's label, copied in, and the elements past them zeroed.
+void Lowering::stringArray(sema::TypedId lit, ValueId slot, const Type &t) {
+    const std::string &label = tree_.stringLabel(lit);
+    if (!tree_.node(lit).literal || label.empty()) outside("an array initialised from a string whose label was not recorded");
+    std::size_t found = program_.strings.size();
+    for (std::size_t k = 0; k < program_.strings.size(); k++)
+        if (program_.strings[k].label == label) found = k;
+    if (found == program_.strings.size()) outside("an array initialised from a string the program does not hold");
+    const StringLit &s = program_.strings[found];
+    const long long size = t.size(target_), copied = static_cast<long long>(s.bytes.size());
+    if (s.width != t.pointee()->size(target_) || copied > size) outside("an array initialised from a string of another width");
+    std::vector<ValueId> ops;
+    ops.push_back(slot);
+    ops.push_back(addrOf(label, tid(*types_.pointerTo(&t))));
+    const InstId c = add(Op::Memcpy, TypeId(), ops);
+    at(c).k = copied;
+    if (copied == size) return;
+    const TypeId elem = tid(*types_.pointerTo(t.pointee()));
+    const InstId g = add(Op::Gep, elem, std::vector<ValueId>(1, result(add(Op::Bitcast, elem, std::vector<ValueId>(1, slot)))));
+    at(g).k = copied;
+    const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, result(g)));
+    at(z).k = size - copied;
 }
 
 // ----- expressions
@@ -2181,7 +2210,8 @@ Lowering::Val Lowering::name(sema::TypedId id) {
     if (!n.decl.valid()) {
         const sema::Resolution &r = tree_.resolution(id);
         if (r.what == sema::Resolution::Enumerator) {
-            if (!r.type.valid() || !scalarArithmetic(T(r.type))) outside("an enumerator of no arithmetic type");
+            // A scoped enumeration's enumerator is a constant of its type too; what may be done with it is checked where it is used.
+            if (!r.type.valid() || !T(r.type).isArithmetic()) outside("an enumerator of no arithmetic type");
             return Val(iconst(r.type, r.value), r.type);
         }
         if (r.what == sema::Resolution::Function) {
