@@ -363,12 +363,15 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         if (usesFunclets()) {
             // Inside a handler's funclet the call stays in the handler's state, which chains to the enclosing pad: FH3
             // searches from a catch funclet only the tries whose handler states hold it, and terminates otherwise.
+            // A pad opened inside the handler (the invoke's `bits`) is a state of its own there, its rows after the funclet's.
             const bool inHandler = ssaFuncletState_ >= 0;
             defineStateLabel(begin);
             if (!inHandler) msAddIpRow(begin, ssaPadState_[i.succ[1].block.v]);
+            else if (i.bits != 0) msAddFuncletRow(begin, ssaPadState_[i.succ[1].block.v], false);
             selectCall(f, i, rt);
             defineStateLabel(end);
             if (!inHandler) msAddIpRow(end, -1);
+            else if (i.bits != 0) msAddFuncletRow(end, ssaFuncletState_, false);
             // A try's handlers hand back one of its exits: the flow is told the call may continue at each.
             const ir::Inst &pf = f.inst(f.block(i.succ[1].block).insts[0]);
             if (pf.op == ir::Op::CatchPad && pf.k == -1)
@@ -566,7 +569,10 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
                 MsTryBlock tb;
                 tb.tryLow = state;
                 tb.tryHigh = ssaPadState_[cs.succ[0].block.v] - 1;
+                // The handlers' states and those of the pads made inside them, up to the last block the handlers made (`cs.bits`).
                 tb.catchHigh = ssaPadState_[cs.succ.back().block.v];
+                for (std::size_t p = cs.succ.back().block.v; p <= cs.bits && p < ssaPadState_.size(); p++)
+                    tb.catchHigh = std::max(tb.catchHigh, ssaPadState_[p]);
                 ssaTries_[f.blocks[b].v] = tb;
             } else {
                 selectHandler(f, f.blocks[b]);

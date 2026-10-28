@@ -162,6 +162,7 @@ private:
     void leaveHandlers(std::size_t n, std::size_t mark, BlockId target, const std::vector<ValueId> &args = std::vector<ValueId>());
     void checkFuncletUses(BlockId hb);
     BlockId padBlock(Pad &p);
+    BlockId msEnclosingPad();
     void resumeFrom(const Pad &p, std::size_t enclosing);
     void endCatches(std::size_t n);
     void leaveCatches(std::size_t n, std::size_t mark);
@@ -322,6 +323,7 @@ private:
     std::function<bool(syntax::NodeId, std::string &, bool &, bool &)> msUnnamedCaught_;
     BlockId funclet_;                           // the Microsoft handler whose funclet the blocks made now belong to
     BlockId msTryPad_;                          // the try that handler is of: its pad's CatchPad lists the exits
+    std::size_t funcletPads_;                   // pads_ where that handler's body began: a pad above it was made inside the funclet
     std::function<bool(syntax::NodeId, sema::NewFacts &)> newFacts_;
     std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> memberBuilt_;
     std::function<std::string(TypeId)> destructor_;
@@ -365,8 +367,9 @@ private:
     std::map<std::string, BlockId> labels_;
     std::map<std::string, std::pair<std::size_t, std::size_t> > labelScope_;    // a placed label: live_ and handlers there
     // A goto ahead of its label: the block it branches to, and what was alive and which handlers were open there.
-    struct PendingGoto { std::string label; BlockId from; std::vector<Live> live; std::vector<std::size_t> handlerLive; };
+    struct PendingGoto { std::string label; BlockId from, msTryPad; std::vector<Live> live; std::vector<std::size_t> handlerLive; };
     std::vector<PendingGoto> pendingGotos_;
+    void msGotoExit(const PendingGoto &g, BlockId label, std::size_t keep, std::size_t depth);
     bool hasGoto_;
 };
 
