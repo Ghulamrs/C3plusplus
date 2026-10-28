@@ -494,6 +494,8 @@ int Typer::scopedBody(syntax::NodeId fn) const {
 bool Typer::isConstructor(syntax::NodeId fn) const { return p_.constructorNodes_.count(fn.v) != 0; }
 
 
+void Typer::emitInto(Program &program) { p_.current_ = &program; }
+
 std::string Typer::typeInfoSymbol(TypeId t) const {
     std::string why;
     return p_.classes_.typeInfoSymbolFor(p_.types_.type(t), 0, &why);

@@ -162,6 +162,8 @@ public:
     // A body read in a class's, a namespace's or a template's scope (Parser::scopedFunctions_), which the adapter left alone too.
     int scopedBody(syntax::NodeId fn) const;
     bool isConstructor(syntax::NodeId fn) const;   // a `function` node the parser read as a constructor
+    // What Sema emits after the parse - a class's type_info - goes into `program`: parse()'s own local is gone by then.
+    void emitInto(Program &program);
     std::string typeInfoSymbol(TypeId t) const;   // the type_info a catch of t names, Sema's; empty where none can be made
     std::string unnamedCaught(syntax::NodeId handler) const;   // what an Itanium `catch (T)` with no name named; empty otherwise
     // A Microsoft `catch (T)` with no name: the descriptor the parser named, whether by reference, HT_IsConst.
