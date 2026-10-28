@@ -530,9 +530,10 @@ void X86_64Linux::selectHandler(const ir::Function &f, ir::BlockId hb) {
         row.objectSlot = ssaAllocaSlot_[k];
         if (passesRun()) optimizer_->sharedSlot(-ssaAllocaSlot_[k], ssaTypes_->type(f.frame[k].type)->size(target_));
     }
-    MsTryBlock &tb = ssaTries_[tryPad.v];
-    tb.handlers.push_back(row);
-    if (hb.v == cs.succ.back().block.v) msAddTryBlock(tb);
+    ssaTries_[tryPad.v].handlers.push_back(row);
+    // The try's block goes into the map once every try's handlers are out, an inner try (made inside a handler, so its
+    // last block, `cs.bits`, comes first) before the one around it, as the walker pushes them (selectBody).
+    if (hb.v == cs.succ.back().block.v) ssaTryOrder_.push_back(std::make_pair(cs.bits, tryPad.v));
 }
 
 // The body: the parameters copied from the slots receiveParameters filled into their values' slots, then each block.
@@ -548,6 +549,7 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
     std::size_t lastPos = 0;
     ssaRegionAt_ = 0;
     ssaTries_.clear();
+    ssaTryOrder_.clear();
     // Microsoft (M3-IR 3.6): every pad is a cleanup funclet and a state of the FH3 tree, numbered before the invokes
     // that name it; the scratch word is set to -2 before the first call, as the walker's entry sets it.
     ssaPadState_.assign(f.blockArena.size(), -1);
@@ -582,16 +584,25 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
         if (blk.funclet != 0) continue;    // a handler's block: emitted inside its funclet by selectHandler
         if (blk.pad && usesFunclets()) {
             // The funclet destroys and returns to the runtime; its cleanupret names the pad it chains to, or none.
+            // Its blocks: the pad's, then the ones tagged with it (a counted destruction's), the cleanupret last of all.
             const std::string funclet = openFunclet(blk.insts.empty() ? 0 : f.inst(blk.insts[0]).pos, true);
             ssaInFunclet_ = true;
-            a_->defLabel(ssaBlockLabel(f.blocks[b]));
-            for (std::size_t k = 0; k < blk.insts.size(); k++) selectInst(f, f.inst(blk.insts[k]));
+            std::vector<ir::BlockId> blocks(1, f.blocks[b]);
+            for (std::size_t o = 0; o < f.blocks.size(); o++) if (f.block(f.blocks[o]).funclet == f.blocks[b].v) blocks.push_back(f.blocks[o]);
+            int toState = -1;
+            for (std::size_t o = 0; o < blocks.size(); o++) {
+                const ir::Block &in = f.block(blocks[o]);
+                a_->defLabel(ssaBlockLabel(blocks[o]));
+                for (std::size_t k = 0; k <= in.insts.size(); k++) {
+                    const ir::InstId id = k < in.insts.size() ? in.insts[k] : in.term;
+                    if (id.valid()) selectInst(f, f.inst(id));
+                }
+                if (in.term.valid() && f.inst(in.term).op == ir::Op::CleanupRet && !f.inst(in.term).succ.empty())
+                    toState = ssaPadState_[f.inst(in.term).succ[0].block.v];
+            }
             ssaInFunclet_ = false;
             endCleanupFunclet();
             leaveFunclet();
-            int toState = -1;
-            if (blk.term.valid() && f.inst(blk.term).op == ir::Op::CleanupRet && !f.inst(blk.term).succ.empty())
-                toState = ssaPadState_[f.inst(blk.term).succ[0].block.v];
             msSetState(ssaPadState_[f.blocks[b].v], toState, funclet);
             continue;
         }
@@ -612,6 +623,8 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
             selectInst(f, in);
         }
     }
+    std::sort(ssaTryOrder_.begin(), ssaTryOrder_.end());
+    for (std::size_t t = 0; t < ssaTryOrder_.size(); t++) msAddTryBlock(ssaTries_[ssaTryOrder_[t].second]);
     // A function the parser gave landing pads whose tries nothing can throw through registered no row: the prologue
     // named the LSDA already, so an empty row defines it, as the walker's empty try does.
     if (fn.hasLandingPads() && callSites().empty() && !usesFunclets()) {
