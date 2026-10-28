@@ -1229,6 +1229,7 @@ std::string Parser::unwindTarget(int *ptrSlot, int *selSlot) const {
     if (!handlerResumeLabel_.empty()) {
         *ptrSlot = handlerResumePtr_;
         *selSlot = handlerResumeSel_;
+        handlerResumeUsed_ = true;
         return handlerResumeLabel_;
     }
     if (!tryChainLabel_.empty()) {
@@ -1878,6 +1879,8 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
         handlerFrom_.push_back(peek().pos);
         // **Whether anything in this handler could throw**, as noexcept counts.
         const int throwsBefore = mayThrow_;
+        const bool wasResumeUsed = handlerResumeUsed_;
+        handlerResumeUsed_ = false;
         // **Named before the block is read**, because a region inside it hands
         // over to this pad and has to know where that is. The `$` keeps it out
         // of reach of any label a program can write, the way `$chain` does.
@@ -1913,7 +1916,9 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
         handlerResumeLabel_ = wasHandlerLabel2;
         handlerResumePtr_ = wasHandlerPtr2;
         handlerResumeSel_ = wasHandlerSel2;
-        const bool canThrow = mayThrow_ > throwsBefore;
+        // A try inside the handler that hands over to the pad needs it written even if nothing here throws.
+        const bool canThrow = mayThrow_ > throwsBefore || handlerResumeUsed_;
+        handlerResumeUsed_ = wasResumeUsed;
         handlerFrom_.pop_back();
         handlerSwitchDepth_.pop_back();
         handlerLoopDepth_.pop_back();

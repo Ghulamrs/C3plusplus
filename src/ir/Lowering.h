@@ -92,8 +92,8 @@ private:
     struct Outside { std::string why; explicit Outside(const std::string &w) : why(w) {} };
     struct Val { ValueId v; TypeId type; Val() {} Val(ValueId a, TypeId t) : v(a), type(t) {} };
     struct Loop { BlockId brk, cont; std::size_t handlers, live; };
-    // A local a destructor destroys, alive from its construction to the end of its scope; `pad` is its cleanup's index in pads_.
-    struct Live { ValueId slot; TypeId cls; std::string dtor; std::size_t pad; ValueId vtt; };   // vtt: a base D2's sub-VTT
+    // A local a destructor destroys, alive from its construction to the end of its scope; `pad` is its cleanup's index in pads_; `when`: a count its cleanup reads, destroying only where it is above `above` (a virtual base's).
+    struct Live { ValueId slot; TypeId cls; std::string dtor; std::size_t pad; ValueId vtt, when; long long above; Live() : pad(0), above(0) {} };
     // A landing pad a call inside its region unwinds to (M3-IR 3.6): a try's, or a handler's end-catch cleanup. Its block is
     // made on first use; `types` is the whole action chain, own handlers first, then the enclosing pads' - the walker's.
     struct Pad { BlockId block; ValueId ptr, sel; bool cleanup; std::vector<std::string> types; std::vector<int> indices; std::size_t own; };
@@ -162,6 +162,7 @@ private:
     void leaveHandlers(std::size_t n, std::size_t mark, BlockId target, const std::vector<ValueId> &args = std::vector<ValueId>());
     void checkFuncletUses(BlockId hb);
     BlockId padBlock(Pad &p);
+    BlockId msEnclosingPad();
     void resumeFrom(const Pad &p, std::size_t enclosing);
     void endCatches(std::size_t n);
     void leaveCatches(std::size_t n, std::size_t mark);
@@ -230,6 +231,8 @@ private:
     ValueId baseAddress(const Type::BaseSpec &b);
     void buildBase(const Type::BaseSpec &b, sema::TypedId entry);
     void msVirtualBases(const Type &cls, const std::map<std::string, sema::TypedId> &named);
+    Live msGuardedVirtualBase(const Type::BaseSpec &b, ValueId count);
+    void msCountedDestroy(const Live &l, BlockId pad);
     void destroyBases(const Type &cls);
     void arguments(sema::TypedId id, std::uint32_t from, const Type &ft, std::size_t skip, bool variadic, std::vector<ValueId> &ops);
     void argumentList(const Type &ft, std::size_t skip, bool variadic, const std::vector<sema::TypedId> &args, bool dummyInt,
@@ -322,6 +325,8 @@ private:
     std::function<bool(syntax::NodeId, std::string &, bool &, bool &)> msUnnamedCaught_;
     BlockId funclet_;                           // the Microsoft handler whose funclet the blocks made now belong to
     BlockId msTryPad_;                          // the try that handler is of: its pad's CatchPad lists the exits
+    BlockId msTryFunclet_;                      // the handler that try stands in, whose funclet its exits belong to; none in the body
+    std::size_t funcletPads_;                   // pads_ where that handler's body began: a pad above it was made inside the funclet
     std::function<bool(syntax::NodeId, sema::NewFacts &)> newFacts_;
     std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> memberBuilt_;
     std::function<std::string(TypeId)> destructor_;
@@ -365,8 +370,9 @@ private:
     std::map<std::string, BlockId> labels_;
     std::map<std::string, std::pair<std::size_t, std::size_t> > labelScope_;    // a placed label: live_ and handlers there
     // A goto ahead of its label: the block it branches to, and what was alive and which handlers were open there.
-    struct PendingGoto { std::string label; BlockId from; std::vector<Live> live; std::vector<std::size_t> handlerLive; };
+    struct PendingGoto { std::string label; BlockId from, msTryPad, msTryFunclet; std::vector<Live> live; std::vector<std::size_t> handlerLive; };
     std::vector<PendingGoto> pendingGotos_;
+    void msGotoExit(const PendingGoto &g, BlockId label, std::size_t keep, std::size_t depth);
     bool hasGoto_;
 };
 

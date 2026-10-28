@@ -231,9 +231,21 @@ void Lowering::msVirtualBases(const Type &cls, const std::map<std::string, sema:
     std::vector<sema::VptrStore> vbptrs;
     std::vector<std::string> order;
     if (!msVbaseInit_ || !msVbaseInit_(key_, vbptrs, order)) outside("a most-derived guard the parser recorded nothing of");
+    // The guarded bases' cleanups ([except.ctor]/3) read their addresses and the count outside the guard, which they are not under.
+    std::map<std::string, Live> guarded;
+    ValueId count;
+    for (std::size_t b = 0; b < cls.bases().size(); b++)
+        if (landingPads_ && cls.bases()[b].isVirtual && cls.bases()[b].type->unqualified()->hasDestructor()) {
+            if (!count.valid()) {
+                count = entryAlloca(types_.intType()->id(), "$vb");
+                store(count, iconst(types_.intType()->id(), 0));
+            }
+            guarded[cls.bases()[b].type->unqualified()->tag()] = msGuardedVirtualBase(cls.bases()[b], count);
+        }
     const BlockId then = newBlock(), join = newBlock();
     condbr(truth(Val(msFlag_, types_.intType()->id())).v, then, join);
     place(then);
+    long long built = 0;
     const TypeId word = types_.pointerTo(types_.voidType()->id());
     for (const sema::VptrStore &s : vbptrs) {
         const InstId g = add(Op::Gep, types_.pointerTo(word), std::vector<ValueId>(1, this_));
@@ -247,14 +259,35 @@ void Lowering::msVirtualBases(const Type &cls, const std::map<std::string, sema:
         for (std::size_t b = 0; b < cls.bases().size(); b++)
             if (cls.bases()[b].isVirtual && cls.bases()[b].type->unqualified()->tag() == tag) which = static_cast<int>(b);
         if (which < 0) outside("a virtual base the class does not lay out");
-        if (landingPads_ && cls.bases()[which].type->unqualified()->hasDestructor()) outside("a virtual base destroyed on unwinding on the Microsoft ABI");
         sema::TypedId entry;
         for (std::map<std::string, sema::TypedId>::const_iterator e = named.begin(); e != named.end(); ++e)
             if (cls.findMember(e->first) == nullptr && baseNamed(cls, e->first) == which) entry = e->second;
         buildBase(cls.bases()[which], entry);
+        const std::map<std::string, Live>::const_iterator g = guarded.find(tag);
+        if (g == guarded.end()) continue;
+        // Built: alive to the cleanups, which destroy it only where the count says so - the bases built so far, one more.
+        guard(g->second.slot, T(g->second.cls), g->second.dtor);
+        live_.back().when = count;
+        live_.back().above = built++;
+        store(count, iconst(types_.intType()->id(), built));
     }
     br(join);
     place(join);
+}
+
+// [except.ctor]/3 for a virtual base cl's flag guards: destroyed if a later part throws, only where this constructor
+// built it - the walker's `$vb` count, 0 before the guard and the bases built so far after each; its cleanup asks it.
+// The destructor is the base's own, as the walker's baseDestructorCall names it, on the address the layout gives it.
+Lowering::Live Lowering::msGuardedVirtualBase(const Type::BaseSpec &b, ValueId count) {
+    const Type &bt = *b.type->unqualified();
+    if (bt.hasVirtualBase()) outside("a virtual base with virtual bases destroyed on unwinding on the Microsoft ABI");
+    Live l;
+    l.dtor = destructor_ ? destructor_(bt.id()) : std::string();
+    if (l.dtor.empty()) outside("a virtual base destroyed on unwinding whose destructor the parser recorded none for");
+    l.cls = bt.id();
+    l.when = count;
+    l.slot = baseAddress(b);
+    return l;
 }
 
 // [2.6.2]: a base with virtual bases of its own is handed its sub-VTT, `vtt + n` in this C2's or D2's - the entry
@@ -778,16 +811,17 @@ void Lowering::closeScope(std::size_t mark, bool keep) {
         // Microsoft (M3-IR 3.6): the funclet destroys and returns to the runtime, which ends the program itself should the
         // destructor throw, as the walker's cleanup does; the cleanupret names the pad whose state this one chains to.
         if (target_.microsoftNames()) {
-            destroy(l);
+            if (l.when.valid()) msCountedDestroy(l, p.block); else destroy(l);
             const InstId r = add(Op::CleanupRet, TypeId(), std::vector<ValueId>());
-            if (!pads_.empty()) {
+            const BlockId to = msEnclosingPad();
+            if (to.valid()) {
+                // A handler's block takes no arguments; a pad's takes the pointer and the selector.
                 std::vector<ValueId> args;
-                args.push_back(p.ptr);
-                args.push_back(p.sel);
+                if (F().block(to).params.size() == 2) { args.push_back(p.ptr); args.push_back(p.sel); }
                 Succ s;
-                s.block = padBlock(pads_.back());
+                s.block = to;
                 s.first = static_cast<std::uint32_t>(F().operands.size());
-                s.count = 2;
+                s.count = static_cast<std::uint32_t>(args.size());
                 F().operands.insert(F().operands.end(), args.begin(), args.end());
                 at(r).succ.push_back(s);
             }
@@ -1194,6 +1228,8 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
     skippable_ = 0;
     funclet_ = BlockId();
     msTryPad_ = BlockId();
+    msTryFunclet_ = BlockId();
+    funcletPads_ = 0;
     sret_ = ValueId();
     elidedSlot_ = ValueId();
     intoSret_ = false;
@@ -1596,18 +1632,19 @@ void Lowering::stmt(sema::TypedId id) {
 // [stmt.jump]/2 for a goto: what it leaves destroyed and the catches it leaves ended, as a jump out of a scope does. A
 // label already passed says where it stands; a later one is reached through a block of the goto's own, filled there.
 void Lowering::gotoStmt(const std::string &name) {
-    if (target_.microsoftNames() && handlerDepth_ != 0) outside("a goto inside a handler on the Microsoft ABI");
     if (elidedSlot_.valid()) outside("a goto in a function with a named return value");
     hasGoto_ = true;
     const std::map<std::string, std::pair<std::size_t, std::size_t> >::const_iterator at = labelScope_.find(name);
     if (at != labelScope_.end()) {
         if (at->second.first > live_.size() || at->second.second > handlerDepth_) outside("a goto into a scope it is not in");
-        leaveCatches(handlerDepth_ - at->second.second, at->second.first);
-        br(labelBlock(name));
+        // On the Microsoft ABI a jump out of a handler leaves its funclet through an exit, as a return or a break does.
+        leaveHandlers(handlerDepth_ - at->second.second, at->second.first, labelBlock(name));
         return;
     }
     PendingGoto g;
     g.label = name;
+    g.msTryPad = msTryPad_;
+    g.msTryFunclet = msTryFunclet_;
     g.from = newBlock();
     g.live = live_;
     g.handlerLive = handlerLive_;
@@ -1628,6 +1665,7 @@ void Lowering::labelReached(const std::string &name, BlockId b) {
         for (std::size_t k = 0; k < keep; k++) if (g.live[k].slot.v != live_[k].slot.v) outside("a goto into a scope it is not in");
         for (std::size_t k = 0; k < depth; k++) if (g.handlerLive[k] != handlerLive_[k]) outside("a goto into a scope it is not in");
         place(g.from);
+        if (target_.microsoftNames() && depth < g.handlerLive.size()) { msGotoExit(g, b, keep, depth); continue; }
         std::size_t upper = g.live.size();
         for (std::size_t h = g.handlerLive.size(); h-- > depth; ) {
             for (std::size_t k = upper; k-- > g.handlerLive[h]; ) destroy(g.live[k]);
@@ -1637,6 +1675,26 @@ void Lowering::labelReached(const std::string &name, BlockId b) {
         for (std::size_t k = upper; k-- > keep; ) destroy(g.live[k]);
         br(b);
     }
+}
+
+// A goto that went ahead of its label out of a Microsoft handler, filled where the label is placed: the handler's own
+// objects destroyed in the funclet, a catchret to an exit the try's pad lists, and the exit destroys the rest and joins.
+void Lowering::msGotoExit(const PendingGoto &g, BlockId label, std::size_t keep, std::size_t depth) {
+    if (g.handlerLive.size() - depth != 1) outside("a goto out of nested Microsoft handlers");
+    const std::size_t own = g.handlerLive.back();
+    for (std::size_t k = g.live.size(); k-- > own; ) destroy(g.live[k]);
+    const BlockId was = funclet_;
+    funclet_ = g.msTryFunclet;
+    const BlockId exit = newBlock();
+    funclet_ = was;
+    Function &f = F();
+    at(f.block(g.msTryPad).insts[0]).cases.push_back(exit.v);
+    Succ s;
+    s.block = exit;
+    at(add(Op::CatchRet, TypeId(), std::vector<ValueId>())).succ.push_back(s);
+    place(exit);
+    for (std::size_t k = own; k-- > keep; ) destroy(g.live[k]);
+    br(label);
 }
 
 BlockId Lowering::labelBlock(const std::string &name) {
@@ -3734,6 +3792,9 @@ InstId Lowering::callOrInvoke(TypeId carries, const std::vector<ValueId> &ops) {
     const BlockId pad = padBlock(pads_.back());
     const BlockId normal = newBlock();
     const InstId c = add(Op::Invoke, carries, ops);
+    // Microsoft: a pad opened inside a handler's funclet is a state of its own there, which the selector's rows name;
+    // one enclosing the try is not - the call stays in the handler's state (M3-IR 3.6).
+    if (funclet_.valid() && pads_.size() > funcletPads_) at(c).bits = 1;
     Succ n, u;
     n.block = normal;
     u.block = pad;
@@ -3770,13 +3831,42 @@ int Lowering::typeIndexFor(const std::string &sym) {
 // A pad's block, made on first use: the runtime arrives with the exception pointer and the selector as its parameters.
 BlockId Lowering::padBlock(Pad &p) {
     if (p.block.valid()) return p.block;
-    // A handler's funclet has one state, its own: a pad of its own inside it would want a state FH3 cannot search.
-    if (target_.microsoftNames() && funclet_.valid()) outside("a cleanup inside a handler on the Microsoft ABI");
+    // Inside a Microsoft handler a pad is a cleanup funclet of its own, emitted apart from the handler's blocks.
+    const BlockId was = funclet_;
+    funclet_ = BlockId();
     p.block = newBlock();
+    funclet_ = was;
     F().blockArena[p.block.v].pad = true;
     p.ptr = param(p.block, tid(*types_.pointerTo(types_.voidType())));
     p.sel = param(p.block, tid(*types_.get(Kind::Int)));
     return p.block;
+}
+
+// A virtual base's cleanup destroys it only where its constructor's count says it was built (msGuardedVirtualBase): the
+// funclet's own blocks, tagged with its pad so the selector emits them inside it, and the cleanupret after them.
+void Lowering::msCountedDestroy(const Live &l, BlockId pad) {
+    const BlockId was = funclet_;
+    funclet_ = pad;
+    const BlockId yes = newBlock(), after = newBlock();
+    funclet_ = was;
+    const TypeId intT = types_.intType()->id();
+    std::vector<ValueId> cmp;
+    cmp.push_back(load(l.when, intT));
+    cmp.push_back(iconst(intT, l.above));
+    const InstId c = add(Op::ICmp, tid(*types_.get(Kind::Bool)), cmp);
+    at(c).cc = Cmp::Sgt;
+    condbr(result(c), yes, after);
+    place(yes);
+    destroy(l);
+    br(after);
+    place(after);
+}
+
+// The state a pad made inside a Microsoft handler chains to (the walker's toState): a pad opened inside the funclet,
+// else the handler's own, whose state goes on to the try's parent; outside a handler, the innermost pad or none.
+BlockId Lowering::msEnclosingPad() {
+    if (pads_.size() > funcletPads_) return padBlock(pads_.back());
+    return funclet_;
 }
 
 // An alloca in the entry block, whatever block the statement stands in; its value is the object's address. A frame
@@ -4225,11 +4315,13 @@ void Lowering::leaveHandlers(std::size_t n, std::size_t mark, BlockId target, co
     }
     if (terminated()) return;
     // The handler's own objects are destroyed in its funclet, before the runtime ends the catch; the exit destroys the rest.
-    if (n != 1 || handlerLive_.empty() || handlerLive_.back() < mark) outside("a jump out of Microsoft handlers the lowering did not open");
+    if (n != 1) outside("a jump out of nested Microsoft handlers");
+    if (handlerLive_.empty() || handlerLive_.back() < mark) outside("a jump out of Microsoft handlers the lowering did not open");
     const std::size_t own = handlerLive_.back();
     for (std::size_t k = live_.size(); k-- > own; ) if (live_[k].slot.v != elidedSlot_.v) destroy(live_[k]);
+    // The exit is a block of the funclet the try stands in: the body's, or an enclosing handler's.
     const BlockId was = funclet_;
-    funclet_ = BlockId();
+    funclet_ = msTryFunclet_;
     const BlockId exit = newBlock();
     funclet_ = was;
     Function &f = F();
@@ -4286,7 +4378,6 @@ void Lowering::checkFuncletUses(BlockId hb) {
 // list the exits, ended by a CatchSwitch over the handlers - and each handler is a pad of its own: a CatchPad naming the
 // descriptor, the flags in `bits` (1 by reference, 2 const), the object's alloca, the try's pad in `k`; a CatchRet exits.
 void Lowering::microsoftTry(sema::TypedId id) {
-    if (handlerDepth_ != 0) outside("a try inside a handler on the Microsoft ABI");
     const std::uint32_t n = count(id);
     if (n < 2) outside("a try with no handler");
     struct Handler { sema::TypedId node, var, body; TypeId caught; std::string descriptor; bool byRef, isConst; };
@@ -4321,8 +4412,8 @@ void Lowering::microsoftTry(sema::TypedId id) {
     }
     // The enclosing pad's block before the try's, so its state precedes tryLow; the try's before the body's, so the
     // states made inside the body are tryLow..tryHigh, and the handlers', made after it, follow (the walker's numbering).
-    const std::size_t encAt = pads_.size();
-    if (encAt != 0) padBlock(pads_[encAt - 1]);
+    // Inside a handler the enclosing state is a pad opened in its funclet, else the handler's own (M3-IR 3.6).
+    const BlockId enclosing = msEnclosingPad();
     Pad p;
     p.cleanup = false;
     p.own = n - 1;
@@ -4338,21 +4429,27 @@ void Lowering::microsoftTry(sema::TypedId id) {
     block(child(id, 0));
     pads_.pop_back();
     br(done);
+    // A handler's funclet is emitted apart from the one the try stands in, so its block belongs to no funclet.
+    const BlockId wasTry = msTryPad_, wasFunclet = funclet_, wasTryFunclet = msTryFunclet_;
+    const std::size_t wasPads = funcletPads_;
+    funclet_ = BlockId();
     std::vector<BlockId> handlerBlocks;
     for (std::size_t i = 0; i < hs.size(); i++) {
         handlerBlocks.push_back(newBlock());
         F().blockArena[handlerBlocks.back().v].pad = true;
     }
+    funclet_ = wasFunclet;
     place(p.block);
     const InstId cs = add(Op::CatchSwitch, TypeId(), std::vector<ValueId>());
-    at(cs).k = encAt != 0 ? static_cast<long long>(pads_[encAt - 1].block.v) : 0;
+    at(cs).k = enclosing.valid() ? static_cast<long long>(enclosing.v) : 0;
     for (std::size_t i = 0; i < hs.size(); i++) {
         Succ s;
         s.block = handlerBlocks[i];
         at(cs).succ.push_back(s);
     }
-    const BlockId wasTry = msTryPad_;
     msTryPad_ = p.block;
+    msTryFunclet_ = wasFunclet;
+    funcletPads_ = pads_.size();
     for (std::size_t i = 0; i < hs.size(); i++) {
         place(handlerBlocks[i]);
         funclet_ = handlerBlocks[i];
@@ -4379,10 +4476,14 @@ void Lowering::microsoftTry(sema::TypedId id) {
             s.block = done;
             at(add(Op::CatchRet, TypeId(), std::vector<ValueId>())).succ.push_back(s);
         }
-        funclet_ = BlockId();
+        funclet_ = wasFunclet;
         checkFuncletUses(handlerBlocks[i]);
     }
+    // The last block the handlers made: the states inside them end there (the selector's catchHigh).
+    at(cs).bits = F().blockArena.size() - 1;
     msTryPad_ = wasTry;
+    msTryFunclet_ = wasTryFunclet;
+    funcletPads_ = wasPads;
     place(done);
 }
 
