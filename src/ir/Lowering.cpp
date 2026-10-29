@@ -790,7 +790,8 @@ void Lowering::staticConstruction(sema::TypedId var, const std::string &symbol, 
         if (T(b.type).unqualified() != c.referent()->unqualified()) outside("a static reference bound to another type");
         if (T(b.type).isConst() && !c.referent()->isConst()) outside("a static reference that can write bound to a const");
         const TypeId slotType = tid(*types_.pointerTo(c.referent()));
-        store(addrOf(symbol, tid(*types_.pointerTo(&T(slotType)))), result(add(Op::Bitcast, slotType, std::vector<ValueId>(1, b.v))));
+        const ValueId slot = addrOf(symbol, tid(*types_.pointerTo(&T(slotType))));   // before the bitcast, whatever the host's compiler
+        store(slot, result(add(Op::Bitcast, slotType, std::vector<ValueId>(1, b.v))));
         closeFull(was);
         return;
     }
@@ -2393,7 +2394,8 @@ Lowering::Val Lowering::lvalue(sema::TypedId id) {
     case syntax::Kind::Member: return memberAddress(id);
     case syntax::Kind::Subscript: {
         if (count(id) != 2) outside("a subscript of " + std::to_string(count(id)) + " parts");
-        const Val sum = arithmetic("+", expr(child(id, 0)), expr(child(id, 1)));
+        const Val base = expr(child(id, 0));   // the operands lowered in order, not in the argument order of the host's compiler
+        const Val sum = arithmetic("+", base, expr(child(id, 1)));
         if (!T(sum.type).isPointer()) outside("a subscript of what is not a pointer");
         return Val(sum.v, tid(*T(sum.type).pointee()));
     }
