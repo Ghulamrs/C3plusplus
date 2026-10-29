@@ -491,10 +491,80 @@ void Lowering::classLocal(sema::TypedId var, ValueId slot, const Type &t) {
         return;
     }
     default:
-        if (!listFits(t, v.count)) outside("a braced list for a class with bases or more values than members");
-        listInit(slot, t, var, 0);
+        if (listFits(t, v.count)) { listInit(slot, t, var, 0); return; }
+        std::vector<sema::TypedId> parts;
+        for (std::uint32_t i = 0; i < v.count; i++) parts.push_back(child(var, i));
+        aggregateInit(slot, t, parts);
         return;
     }
+}
+
+// [dcl.init.aggr] for a plain class from a list the flat one does not fit: zeroed, then each value placed in order -
+// a `{}` node initialising the member it reaches whole, a value reaching into a member that is an aggregate (brace
+// elision, [dcl.init.aggr]/11) - as the parser's emitAggregate places them; a value past the last member is refused.
+void Lowering::aggregateInit(ValueId slot, const Type &t, const std::vector<sema::TypedId> &parts) {
+    const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, slot));
+    at(z).k = t.size(target_);
+    std::size_t next = 0;
+    aggregateFill(slot, *t.unqualified(), parts, next);
+    if (next != parts.size()) outside("a braced list with values past its aggregate");
+}
+
+// The members of a class, or the elements of an array, at `slot`, each from the cursor while values are left:
+// a scalar or a scoped enumeration stored, a plain class or a scalar array filled in turn. The forms the parser
+// binds or groups - a reference, a bit-field, an anonymous union, a union, a base - are refused by name.
+void Lowering::aggregateFill(ValueId slot, const Type &t, const std::vector<sema::TypedId> &parts, std::size_t &next) {
+    if (t.isArray()) {
+        if (!scalarArray(t) || t.length() <= 0) outside("a braced list reaching an array of '" + t.pointee()->describe() + "'");
+        const Type &et = *t.pointee()->unqualified();
+        const TypeId ep = tid(*types_.pointerTo(&et));
+        const ValueId base = result(add(Op::Bitcast, ep, std::vector<ValueId>(1, slot)));
+        for (long long i = 0; i < t.length() && next < parts.size(); i++) {
+            const InstId g = add(Op::Gep, ep, std::vector<ValueId>(1, base));
+            at(g).k = i * et.size(target_);
+            aggregateItem(result(g), et, parts, next);
+        }
+        return;
+    }
+    if (!plainClass(t) || t.kind() == Kind::Union || !t.bases().empty()) outside("a braced list reaching a '" + t.describe() + "'");
+    for (const Member &m : t.members()) {
+        if (next >= parts.size()) return;
+        if (m.name.empty() || m.width != 0 || m.anonUnion != nullptr || m.type->isReference() || m.type->isX87(target_))
+            outside("a braced list reaching a member the lowering does not place");
+        const Type &mt = *m.type->unqualified();
+        const InstId g = add(Op::Gep, tid(*types_.pointerTo(&mt)), std::vector<ValueId>(1, slot));
+        at(g).k = m.offset;
+        aggregateItem(result(g), mt, parts, next);
+    }
+}
+
+// One member or element from the cursor: `{}` takes the next value as a list of its own - empty, it leaves the zero;
+// a scalar's `{v}` is v ([dcl.init.list]/3) - and any other value is stored in a scalar or elided into an aggregate.
+void Lowering::aggregateItem(ValueId at0, const Type &mt, const std::vector<sema::TypedId> &parts, std::size_t &next) {
+    const sema::TypedId p = parts[next];
+    const bool leaf = scalar(mt) || mt.isScopedEnumeration();
+    if (syn(p).kind == syntax::Kind::Other && text(p) == "{}") {
+        next++;
+        std::vector<sema::TypedId> inner;
+        for (std::uint32_t i = 0; i < count(p); i++) inner.push_back(child(p, i));
+        if (inner.empty()) return;
+        if (leaf) {
+            if (inner.size() != 1) outside("a scalar's braces holding more than one value");
+            store(at0, exprTo(inner[0], tid(mt)).v);
+            return;
+        }
+        std::size_t k = 0;
+        aggregateFill(at0, mt, inner, k);
+        if (k != inner.size()) outside("a braced list with values past its aggregate");
+        return;
+    }
+    if (leaf) {
+        store(at0, exprTo(p, tid(mt)).v);
+        next++;
+        return;
+    }
+    if (syn(p).kind == syntax::Kind::StringLit) outside("a string inside a braced list");
+    aggregateFill(at0, mt, parts, next);     // brace elision: the value reaches into the member
 }
 
 // [dcl.init.aggr]/2 for a list a plain class takes member by member: no base, no more values than members, every
@@ -2125,7 +2195,11 @@ void Lowering::declaration(sema::TypedId id) {
         }
         if (t.isStructOrUnion()) { if (plainClass(t)) classLocal(var, slot, t); else builtLocal(var, slot, t); continue; }
         if (v.count > 1) outside("a var of " + std::to_string(v.count) + " parts");
-        if (v.count == 0) continue;
+        if (v.count == 0) {
+            // [dcl.init]/8: `int n = {}` and `int n{}` are value-initialised - zero; a scalar with no initialiser is left as it is.
+            if (v.initForm == 3) store(slot, zeroOf(slotType));
+            continue;
+        }
         const std::size_t was = openFull();
         store(slot, exprTo(child(var, 0), slotType).v);
         closeFull(was);
@@ -2235,6 +2309,15 @@ void Lowering::stringArray(sema::TypedId lit, ValueId slot, const Type &t) {
     at(g).k = copied;
     const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, result(g)));
     at(z).k = size - copied;
+}
+
+// A scalar's zero: a null pointer, 0.0, or 0 of the integer type.
+ValueId Lowering::zeroOf(TypeId type) {
+    if (T(type).isPointer() || T(type).isNullPtr()) return result(add(Op::Null, type, std::vector<ValueId>()));
+    if (!T(type).isFloating()) return iconst(type, 0);
+    const InstId z = add(Op::FConst, type, std::vector<ValueId>());
+    at(z).bits = 0;
+    return result(z);
 }
 
 // ----- expressions

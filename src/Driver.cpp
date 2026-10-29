@@ -1350,6 +1350,7 @@ bool Driver::parseArguments(int argc, char **argv) {
 // text is -check=ssa's: the verifier over the module, then `functions= lowered= outside= ok= failed=`.
 static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, const Target &target, ir::Module &into, bool report) {
     sema::Typer typer(parser);
+    typer.emitInto(program);
     const sema::Census c = sema::Typer::census(parser, program);
     ir::Lowering lowering(typer.tree(), parser.syntaxTree(), types, target, program, into);
     lowering.setConstructed([&typer](TypeId cls) { return typer.constructed(cls); });
