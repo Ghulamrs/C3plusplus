@@ -207,6 +207,8 @@ public:
     bool returnBuilt(syntax::NodeId ret, int &form, std::string &symbol, TypeId &signature) const;
     bool namedReturnLocal(syntax::NodeId var) const;   // the local nrvoCandidate chose: built in the caller's object
     bool elidedInto(syntax::NodeId var, syntax::NodeId call) const;   // the call's result built straight into the local
+    // The operator-> calls `->` on the class value at node `operand` made, in order ([over.ref]); false where it made none.
+    bool arrowCalls(syntax::NodeId operand, std::vector<Resolution> &out) const;
     bool assignCall(syntax::NodeId value, std::string &symbol, TypeId &signature) const;   // `a = value`'s operator=
     bool closureFacts(syntax::NodeId id, ClosureFacts &out) const;   // a lambda's, where the parser kept them and every source was found
     // Whether the function of this symbol is a template specialization (Signature::fromTemplate): its body is a replay.
@@ -218,6 +220,7 @@ private:
     TypedId node(syntax::NodeId id);
     // The parser's record, cast type, folded value and literal token for syntax node `id`, copied onto typed node `t`.
     void record(syntax::NodeId id, TypedId t);
+    template <class R> static Resolution copied(const R &r);   // a Parser::Resolved onto the typed tree's record
     // -check=typed's half for the copy: what on typed node `t` is not the parser's, or nothing.
     static std::string recordDiffers(const Parser &p, const TypedTree &tree, TypedId t);
     const Type *expression(syntax::NodeId id, const std::vector<const Type *> &parts);

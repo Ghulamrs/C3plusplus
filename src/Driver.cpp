@@ -1394,6 +1394,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     });
     lowering.setNamedReturn([&typer](syntax::NodeId id) { return typer.namedReturnLocal(id); });
     lowering.setElidedInto([&typer](syntax::NodeId v, syntax::NodeId c) { return typer.elidedInto(v, c); });
+    lowering.setArrowCalls([&typer](syntax::NodeId o, std::vector<sema::Resolution> &out) { return typer.arrowCalls(o, out); });
     lowering.setAssignCall([&typer](syntax::NodeId v, std::string &sym, TypeId &sig) { return typer.assignCall(v, sym, sig); });
     std::map<std::string, int> reasons;
     int lowered = 0;
