@@ -2970,6 +2970,8 @@ ExprPtr Parser::postfix() {
             at_++;
             // **[over.ref]: a class on the left of `->` is asked for a
             // pointer, and the answer is asked again.**
+            const syntax::NodeId asked = syn(n);
+            std::vector<std::uint32_t> hopCalls;
             for (int hops = 0; n->type()->unqualified()->isStructOrUnion(); hops++) {
                 const Type *held = n->type()->unqualified();
                 if (lookup_.findMemberOwner(held, "operator->") == nullptr)
@@ -2985,7 +2987,9 @@ ExprPtr Parser::postfix() {
                 const Type *objectType = n->type();
                 n = memberCallWith(std::move(n), objectType, "operator->", pos,
                                    std::move(args));
+                if (n->resolved() != 0) hopCalls.push_back(n->resolved());
             }
+            if (!hopCalls.empty() && asked.valid()) arrowCalls_[asked.v] = hopCalls;
             if (!n->type()->isPointer() || !n->type()->pointee()->isStructOrUnion())
                 src_.fail(pos, "'->' needs a pointer to a struct or union, not '" +
                                n->type()->describe() + "'");
@@ -3224,6 +3228,7 @@ ExprPtr Parser::noteKeywordForm(syntax::Kind kind, KeywordForm f) {
     if (kind == syntax::Kind::Sizeof)
         if (const Num *folded = dynamic_cast<const Num *>(f.e.get()))
             keywordValues_[f.e->syntax().v] = std::make_pair(folded->value(), folded->type());
+    if (kind == syntax::Kind::Cast) noteTemporarySlot(f.e.get());    // `static_cast<T>(v)` through T's converting constructor
     // A named cast to a scalar is the conversion it names; one to a reference is a glvalue, and is left unrecorded.
     if (kind == syntax::Kind::Cast && text.find('&') == std::string::npos && text.compare(0, 12, "dynamic_cast") != 0 &&
         f.e->type() != nullptr && (f.e->type()->isVoid() || f.e->type()->isScalar()))

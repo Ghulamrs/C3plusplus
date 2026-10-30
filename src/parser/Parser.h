@@ -755,6 +755,8 @@ private:
         if (kind == syntax::Kind::Call) {
             if (const Call *c = dynamic_cast<const Call *>(e.get())) noteCallSlots(*c);
             else noteTemporarySlot(e.get());
+        } else if (kind == syntax::Kind::Cast) {
+            noteTemporarySlot(e.get());     // `(T)v` through T's converting constructor is a temporary, as `T(v)` is (M3b.2)
         } else if (kind == syntax::Kind::Name && e && e->resolved() == 0) {
             const Resolved tmp = temporaryOf(e.get());
             if (tmp.what == Resolved::Temporary) resolutions_[e->syntax().v] = tmp;
@@ -772,6 +774,8 @@ private:
     std::string memberDefaultFor_;
     // A class temporary `T(a)` is `*(ctor(&$tmp, a), &$tmp)`, its slot the parser's: kept by node (M2.12i).
     std::unordered_map<std::uint32_t, int> temporarySlots_;
+    // The operator-> calls `->` on a class made, [over.ref]'s hops in order, by the node of the operand they were asked of (M3b.2).
+    std::unordered_map<std::uint32_t, std::vector<std::uint32_t> > arrowCalls_;
     // And the constructor that built it, by node: its symbol, its type with `T *` first, and whether `T()` zeroed first.
     struct TemporaryBuilt { std::string symbol; const Type *signature; bool zeroFirst; };
     std::unordered_map<std::uint32_t, TemporaryBuilt> temporaryBuilt_;

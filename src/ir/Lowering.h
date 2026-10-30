@@ -88,6 +88,8 @@ public:
     void setElidedInto(std::function<bool(syntax::NodeId, syntax::NodeId)> f) { elidedInto_ = f; }
     // The copy or move assignment the parser called for `a = b`, by b's node - Sema's record.
     void setAssignCall(std::function<bool(syntax::NodeId, std::string &, TypeId &)> f) { assignCall_ = f; }
+    // The operator-> calls `->` on a class value made, by the value's node - Sema's record ([over.ref]).
+    void setArrowCalls(std::function<bool(syntax::NodeId, std::vector<sema::Resolution> &)> f) { arrowCalls_ = f; }
 private:
     struct Outside { std::string why; explicit Outside(const std::string &w) : why(w) {} };
     struct Val { ValueId v; TypeId type; Val() {} Val(ValueId a, TypeId t) : v(a), type(t) {} };
@@ -286,10 +288,17 @@ private:
     bool destroyedReturned(const Type &t) const;
     bool copiedReturn(const Type &t) const;
     bool destroyedClass(const Type &t) const;
+    bool temporaryShape(sema::TypedId id, std::uint32_t &from) const;
     bool builtTemporary(sema::TypedId id, bool destroyed) const;
     bool constructedTemporary(sema::TypedId id) const { return builtTemporary(id, false); }
     bool destroyedTemporary(sema::TypedId id) const { return builtTemporary(id, true); }
-    bool temporaryNode(sema::TypedId id) const { return plainTemporary(id) || constructedTemporary(id) || destroyedTemporary(id); }
+    bool copiedTemporary(sema::TypedId id) const;
+    bool temporaryNode(sema::TypedId id) const {
+        return plainTemporary(id) || constructedTemporary(id) || destroyedTemporary(id) || copiedTemporary(id);
+    }
+    bool classObjectNode(sema::TypedId id) const;
+    Val classObject(sema::TypedId id);
+    Val arrowPointer(sema::TypedId member);
     std::string temporaryDestructor(const Type &c);
     bool destroyedResultClass(const Type &t) const;
     bool destroyedResult(sema::TypedId id) const;
@@ -352,6 +361,7 @@ private:
     std::function<bool(syntax::NodeId)> namedReturn_;
     std::function<bool(syntax::NodeId, syntax::NodeId)> elidedInto_;
     std::function<bool(syntax::NodeId, std::string &, TypeId &)> assignCall_;
+    std::function<bool(syntax::NodeId, std::vector<sema::Resolution> &)> arrowCalls_;
     sema::TypedId intoCall_;                    // the call elidedCall lowers, whose result goes into a local's alloca
     int intoAlloca_ = -1, intoNow_ = -1;        // that alloca; and callTail's, set only as that call's tail is entered
     std::size_t liveFloor_;                     // a constructor's built bases and members: below it, kept by a return
