@@ -115,6 +115,7 @@ private:
     ValueId param(BlockId b, TypeId type);
     ValueId iconst(TypeId type, long long k);
     ValueId fallOffValue(const Type &rt);   // the zero a body that falls off its end returns
+    ValueId zeroOf(TypeId type);
     ValueId addrOf(const std::string &sym, TypeId type);
     ValueId load(ValueId p, TypeId type);
     void store(ValueId p, ValueId v);
@@ -144,6 +145,9 @@ private:
     bool classAssign(sema::TypedId id, Val &out);
     bool listFits(const Type &t, std::uint32_t values) const;
     void listInit(ValueId slot, const Type &t, sema::TypedId list, std::uint32_t from);
+    void aggregateInit(ValueId slot, const Type &t, const std::vector<sema::TypedId> &parts);
+    void aggregateFill(ValueId slot, const Type &t, const std::vector<sema::TypedId> &parts, std::size_t &next);
+    void aggregateItem(ValueId at0, const Type &mt, const std::vector<sema::TypedId> &parts, std::size_t &next);
     Val classValue(sema::TypedId id, const Type &t);
     void forStmt(sema::TypedId id);
     void rangeForStmt(sema::TypedId id);

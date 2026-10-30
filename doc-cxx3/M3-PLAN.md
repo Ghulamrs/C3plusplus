@@ -1060,3 +1060,21 @@ and verified (92.0%)**, 0 failed, coff 0 differ, c90 447 / 0, exclusions 126 sit
 under its baseline; Windows **693 same, 0 differ, 340 refused as recorded** at -O0, `-front=ssa` and `-front=ssa -O2`.
 Also measured on 10-28: `-front=ssa` output is deterministic - 28,521 outputs over four targets at -O0 and -O2, 4,264 of
 them `-dump=ssa`, 0 differ.
+
+**M3b.2, round 17 of 2026-10-29: the self-host under `-front=ssa`, and nested braced lists** (lane-finish `m3b2-finish`,
+`d0c17da` Opus 5.5 and `43fe8f0` Fable 5.1, off `d05cc58`, merged over round 16 as `93f43c9`; `b2e438b` from the
+coordinator). Stage 1 built by stage 0 under `-front=ssa` crashed: `Parser::parse()` pointed `current_` at its own local
+`Program` and cxx3 copies a returned object, so what the lowering emitted after the parse - a class's type_info for a
+throw or a catch - went into a dead one (`Typer::emitInto`). With that, every source of `src/` emitted different
+assembly from stage 0 and stage 1: a subscript's two operands and a static reference's slot and bitcast were lowered as
+two arguments of one call, so their order was the host compiler's (g++ and cl right to left, clang left to right); each
+pair is sequenced now, the base first, clang's order, so the Mac's output is unchanged. And a catch of a class whose key
+function is another unit's (`std::exception`, `std::bad_alloc`) emitted its `_ZTI`/`_ZTS` where `parse()` had pruned
+them; Sema prunes them again. lane-finish: a plain class's local from a nested braced list and braces elided into its
+members ([dcl.init.aggr]/11), and `int n = {}` / `int n{}` - a value-initialised scalar left as the stack had it under
+`-front=ssa`, -104 where clang prints 0 - zeroed. **The merged tree, gated as one:** Linux `make test` exit 0, run.sh
+**1065 / 0** at -O0, -O2, `-front=ssa` and `-front=ssa -O2`, ssa.sh **8,254 bodies, 7,594 lowered and verified
+(92.0%)**, 0 failed, the golden 9 of 2,693 changed (round 16's end-catch pad files), coff 0 differ, c90 447 / 0,
+exclusions 126 sites 0 / 0, comment cap 0, the memory gate under its baseline; Windows **694 same, 0 differ, 340 refused
+as recorded** at -O0, `-front=ssa` and `-front=ssa -O2`, and the plain self-host 84 of 84. The self-host comparison
+under `-front=ssa` itself is still open.

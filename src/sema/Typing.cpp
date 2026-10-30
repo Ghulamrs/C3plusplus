@@ -494,9 +494,14 @@ int Typer::scopedBody(syntax::NodeId fn) const {
 bool Typer::isConstructor(syntax::NodeId fn) const { return p_.constructorNodes_.count(fn.v) != 0; }
 
 
+void Typer::emitInto(Program &program) { p_.current_ = &program; }
+
 std::string Typer::typeInfoSymbol(TypeId t) const {
     std::string why;
-    return p_.classes_.typeInfoSymbolFor(p_.types_.type(t), 0, &why);
+    const std::string sym = p_.classes_.typeInfoSymbolFor(p_.types_.type(t), 0, &why);
+    // A class whose key function is another unit's gets its type_info from there, as parse() leaves it.
+    if (p_.current_ != nullptr) p_.classes_.pruneExternalVtables(*p_.current_);
+    return sym;
 }
 std::string Typer::microsoftThrowInfo(TypeId t) const {
     const Type &thrown = *p_.types_.type(t)->unqualified();
