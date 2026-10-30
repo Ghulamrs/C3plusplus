@@ -201,6 +201,8 @@ public:
     bool temporaryBuilt(syntax::NodeId id, std::string &symbol, TypeId &signature, bool &zeroFirst) const;
     // The converting constructor that made a temporary of the value at node `id` (Parser::userConversion); false where none.
     bool convertedBuilt(syntax::NodeId id, std::string &symbol, TypeId &signature) const;
+    // The copy a by-value class argument at node `id` was made by (Parser::materialiseCopy), or `elided`; false where none.
+    bool argumentCopy(syntax::NodeId id, std::string &symbol, TypeId &signature, bool &elided) const;
     // What a `return` of a class with a copy of its own built (Parser::ReturnBuilt): false where the parser recorded none.
     bool returnBuilt(syntax::NodeId ret, int &form, std::string &symbol, TypeId &signature) const;
     bool namedReturnLocal(syntax::NodeId var) const;   // the local nrvoCandidate chose: built in the caller's object

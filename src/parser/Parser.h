@@ -777,6 +777,10 @@ private:
     std::unordered_map<std::uint32_t, TemporaryBuilt> temporaryBuilt_;
     // The converting constructor userConversion called to make a temporary of a value, by the value's node (M3b.2).
     std::unordered_map<std::uint32_t, TemporaryBuilt> convertedBuilt_;
+    // The copy materialiseCopy made of a by-value class argument, by the argument's node: the copy or move constructor's
+    // symbol and type with `T *` first - or `elided`, the call producing the argument built straight into it (M3b.2).
+    struct ArgumentCopy { std::string symbol; const Type *signature; bool elided; };
+    std::unordered_map<std::uint32_t, ArgumentCopy> argumentCopies_;
     // A value a const or rvalue reference binds copied into a frame slot by bindReference: its name and slot, by node.
     std::unordered_map<std::uint32_t, std::pair<std::string, int> > bindTemps_;
     // A lambda whose captures are scalar locals: the closure's slot and each capture's member and source, by node.
@@ -1893,7 +1897,8 @@ private:
                              const Type *ptr, ExprPtr body);
     ExprPtr materialiseCopy(const Type *type, ExprPtr arg, std::size_t pos,
                             const std::string &what,
-                            std::vector<Temporary> &destroy);
+                            std::vector<Temporary> &destroy, syntax::NodeId written);
+    void noteArgumentCopy(syntax::NodeId node, const std::string &symbol, const Type *signature, bool elided);
     std::vector<Temporary> pendingTemps_;
     // The temporaries each statement of the block being parsed made, so that the cleanup regions can name them.
     std::vector<Temporary> statementTemps_;

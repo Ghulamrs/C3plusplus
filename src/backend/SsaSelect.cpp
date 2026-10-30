@@ -24,6 +24,11 @@ const ir::Function *X86_64Linux::ssaFunction(const Function &fn) const {
     return id.valid() ? &ssa_->functions[id.v] : nullptr;
 }
 
+// Parser::passedByAddress: a class whose copy is a call goes by address on both ABIs, one whose destruction is on Itanium.
+bool X86_64Linux::ssaByAddress(const Type *t) const {
+    return t->nonTrivialCopy() || (!target_.microsoftNames() && t->hasDestructor());
+}
+
 // The frame above the parser's parameter slots - the one part of its layout the selector reads - each alloca at its
 // alignment, then one 8-byte slot per value. Returns the new size.
 int X86_64Linux::layoutSsa(const Function &fn, const ir::Function &f) {
@@ -52,7 +57,7 @@ int X86_64Linux::layoutSsa(const Function &fn, const ir::Function &f) {
             const std::size_t at = k - firstArg;
             const Type *want = at < sig->params().size() ? sig->params()[at] : nullptr;
             slots.push_back(0);
-            if (want == nullptr || !want->isStructOrUnion()) continue;
+            if (want == nullptr || !want->isStructOrUnion() || ssaByAddress(want)) continue;
             cur = roundUp(cur + want->size(target_), want->align(target_));
             slots.back() = static_cast<int>(cur);
         }
@@ -438,7 +443,9 @@ void X86_64Linux::selectCall(const ir::Function &f, const ir::Inst &i, const Typ
             }
             std::unique_ptr<Var> a(Var::local("$v" + std::to_string(v.v), static_cast<int>(ssaValueSlot_[v.v])));
             a->setType(typeOf(f, v));
-            // Where the signature takes a class by value the operand is its address: the walker copies `*p` in.
+            // Where the signature takes a class by value the operand is its address: the walker copies `*p` in - or, for
+            // one the parser passes by address, hands the caller's copy's address on as materialiseCopy's node does.
+            if (want != nullptr && want->isStructOrUnion() && typeOf(f, v)->isPointer() && ssaByAddress(want)) { args.push_back(std::move(a)); continue; }
             if (want != nullptr && want->isStructOrUnion() && typeOf(f, v)->isPointer()) {
                 std::unique_ptr<Unary> d = make_owned<Unary>('*', ExprPtr(a.release()));
                 d->setType(want);

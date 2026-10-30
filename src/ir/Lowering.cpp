@@ -599,6 +599,14 @@ bool Lowering::builtClass(const Type &t) const {
     return c.kind() != Kind::Union && (simpleLayout(c) || buildableLayout(c, false, true));
 }
 
+// A local of a class builtClass does not take - a vptr, a polymorphic base, a member of either - built and destroyed by
+// the calls the parser recorded as builtLocal's is: its layout is its constructors' business. A virtual base stays outside.
+bool Lowering::heldClass(const Type &t) const {
+    if (!t.isStructOrUnion() || !t.isComplete() || plainClass(t) || builtClass(t)) return false;
+    const Type &c = *t.unqualified();
+    return c.kind() != Kind::Union && !c.hasVirtualBase() && constructed_ && constructed_(c.id());
+}
+
 // [dcl.init]/17 and [class.dtor]/4 for such a local: the constructor the parser chose called on
 // its slot with the declarator's values - after a zeroing where [dcl.init]/8 asked one - or, where none built it, the
 // plain forms; then, with a destructor, alive to its scope's end and its region unwinding to a cleanup that destroys it.
@@ -1418,6 +1426,14 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
                 f.params.push_back(pv);
                 locals_[tree_.node(p).syntax.v] = std::make_pair(pv, tid(pt));
                 continue;
+            } else if (pt.isStructOrUnion()) {
+                // A class that is not its bytes: the caller's copy, by address, where copying or destroying it is a call on
+                // Itanium or copying it is one on Microsoft; else Microsoft's own copy in the slot - destroyed here (guardParameter).
+                const ValueId pv = param(f.entry, tid(*types_.pointerTo(&pt)));
+                f.params.push_back(pv);
+                locals_[tree_.node(p).syntax.v] = std::make_pair(pv, tid(pt));
+                guardParameter(pv, pt, isCtor);
+                continue;
             } else {
                 if ((!scalar(pt) && !pt.isNullPtr()) || pt.isX87(target_)) outside("a parameter of type '" + pt.describe() + "'");
                 slotType = tid(pt);
@@ -1474,10 +1490,12 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
             pads_.push_back(wrap);
         }
         const std::size_t wrapAt = pads_.size();
-        liveFloor_ = live_.size();
+        // A constructor's parts, below the floor, are kept by a return; a by-value parameter the callee destroys is above it.
+        liveFloor_ = isCtor ? live_.size() : 0;
         block(body);
         if (!pendingGotos_.empty()) outside("a goto to a label the body does not place");
         if (!terminated()) {
+            destroyLive(liveFloor_);
             if (rt.isVoid()) br(returnBlock_);
             else br(returnBlock_, std::vector<ValueId>(1, fallOffValue(rt)));
         }
@@ -2160,7 +2178,7 @@ void Lowering::declaration(sema::TypedId id) {
                 (!t.pointee()->isComplete() || !scalar(*t.pointee()) || t.pointee()->isX87(target_) || t.length() <= 0))
                 outside("an array of '" + t.pointee()->describe() + "'");
             slotType = tid(t);
-        } else if (plainClass(t) || builtClass(t)) {
+        } else if (plainClass(t) || builtClass(t) || heldClass(t)) {
             slotType = tid(*t.unqualified());
         } else {
             if ((!scalar(t) && !t.isNullPtr()) || t.isX87(target_)) outside("a local of type '" + t.describe() + "'");
@@ -3545,6 +3563,7 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
             continue;
         }
         const Type &p = *ft.params()[i + skip];
+        if (p.isStructOrUnion() && !plainClass(p) && !bytesReturned(p)) { ops.push_back(byValueArgument(an, p)); continue; }
         if (plainClass(p) || bytesReturned(p)) {
             // A plain class by value: its address, which the selector hands the walker as the object to copy in; one with
             // constructors and no copy of its own goes the same way, a temporary of it built in a slot of this frame first.
@@ -3619,6 +3638,84 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
         if (!scalar(p) || p.isX87(target_)) outside("a parameter of type '" + p.describe() + "'");
         ops.push_back(exprTo(an, tid(p)).v);
     }
+}
+
+// [dcl.init]/17 for a by-value parameter of a class that is not its bytes, as Parser::materialiseCopy makes it: the caller's
+// copy by address where copying or destroying it is a call (Itanium) or copying it is (Microsoft) - by the recorded constructor,
+// or built by the producing call ([class.copy]/31) - destroyed at the full expression's end on Itanium; else its bytes, the callee destroying.
+ValueId Lowering::byValueArgument(sema::TypedId an, const Type &p) {
+    const Type &c = *p.unqualified();
+    if (!c.isComplete() || c.kind() == Kind::Union || c.hasVirtualBase()) outside("a parameter of type '" + p.describe() + "'");
+    const bool ms = target_.microsoftNames();
+    if (!c.nonTrivialCopy()) {
+        const Val src = classArgumentSource(an, c);
+        if (ms) return result(add(Op::Bitcast, tid(*types_.pointerTo(&c)), std::vector<ValueId>(1, src.v)));
+        const std::string dtor = temporaryDestructor(c);
+        const ValueId copy = entryAlloca(tid(c), "$copy");
+        copyObject(copy, src.v, c);
+        guard(copy, c, dtor);
+        return copy;
+    }
+    std::string symbol;
+    TypeId sig;
+    bool elided = false;
+    if (!argumentCopy_ || !argumentCopy_(tree_.node(an).syntax, symbol, sig, elided)) outside("a by-value argument whose copy the parser recorded none for");
+    const std::string dtor = !ms && c.hasDestructor() ? temporaryDestructor(c) : std::string();
+    const ValueId copy = entryAlloca(tid(c), "$copy");
+    if (elided) {
+        // The producing call builds its result in the copy, as elidedCall's does in a local: no full expression destroys it.
+        sema::TypedId made = an;
+        while (syn(made).kind == syntax::Kind::Paren && count(made) == 1) made = child(made, 0);
+        if (syn(made).kind != syntax::Kind::Call && !operatorCalls(made)) outside("a by-value argument built in place from what is not a call");
+        const sema::TypedId wasCall = intoCall_;
+        const int wasAlloca = intoAlloca_, idx = static_cast<int>(F().inst(F().values[copy.v].def).k);
+        intoCall_ = made;
+        intoAlloca_ = idx;
+        const Val r = operatorCalls(made) ? operatorCall(made) : call(made);
+        intoCall_ = wasCall;
+        intoAlloca_ = wasAlloca;
+        if (!r.v.valid() || F().calls.empty() || F().calls.back().resultAlloca != idx) outside("a by-value argument's call that did not come back into its copy");
+    } else {
+        const Type &ft = T(sig);
+        if (!ft.isFunction() || ft.params().size() != 2 || ft.params()[0]->pointee()->unqualified() != &c) outside("a by-value argument copied by a constructor of another shape");
+        std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, copy))));
+        argumentList(ft, 1, false, std::vector<sema::TypedId>(1, an), false, ops);
+        directCall(symbol, sig, ops);
+    }
+    if (!dtor.empty()) guard(copy, c, dtor);
+    return copy;
+}
+
+// The object a by-value class argument of `c` is copied from, its address: an lvalue - a call's result in its slot of this
+// frame among them, destroyed at the full expression's end - or a temporary the parser's constructor built.
+Lowering::Val Lowering::classArgumentSource(sema::TypedId an, const Type &c) {
+    while (syn(an).kind == syntax::Kind::Paren && count(an) == 1) an = child(an, 0);
+    Val a;
+    if (isLvalueNode(an)) {
+        a = lvalue(an);
+    } else if (temporaryNode(an)) {
+        a = temporary(an);
+    } else if (destroyedResult(an)) {
+        const Val r = syn(an).kind == syntax::Kind::Call ? call(an) : operatorCall(an);
+        if (!r.type.valid() || !T(r.type).isPointer()) outside("a class argument from a call's result of another shape");
+        a = Val(r.v, tid(*T(r.type).pointee()));
+    } else {
+        outside("a class argument that is not an object");
+    }
+    if (T(a.type).unqualified() != &c) outside("a class argument of another type");
+    return a;
+}
+
+// Microsoft's rule for a by-value class parameter with a destructor: the callee destroys its own copy on every way out, a
+// cleanup funclet's when its body unwinds - a guard like a local's, below every other object; Itanium's caller destroys.
+void Lowering::guardParameter(ValueId pv, const Type &pt, bool isCtor) {
+    const Type &c = *pt.unqualified();
+    if (!c.isComplete() || c.kind() == Kind::Union || c.hasVirtualBase()) outside("a parameter of type '" + pt.describe() + "'");
+    if (!target_.microsoftNames() || !c.hasDestructor()) return;
+    if (isCtor) outside("a by-value parameter with a destructor of a constructor on the Microsoft ABI");
+    const std::string dtor = destructor_ ? destructor_(c.id()) : std::string();
+    if (dtor.empty()) outside("a parameter whose destructor the parser recorded none for");
+    guard(pv, c, dtor);
 }
 
 // [dcl.init.ref]/5: a scalar lvalue of another type bound to a const or an rvalue reference - converted into a

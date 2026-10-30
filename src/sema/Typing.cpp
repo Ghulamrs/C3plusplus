@@ -602,6 +602,15 @@ bool Typer::convertedBuilt(syntax::NodeId id, std::string &symbol, TypeId &signa
     return true;
 }
 
+bool Typer::argumentCopy(syntax::NodeId id, std::string &symbol, TypeId &signature, bool &elided) const {
+    const std::unordered_map<std::uint32_t, Parser::ArgumentCopy>::const_iterator i = p_.argumentCopies_.find(id.v);
+    if (i == p_.argumentCopies_.end() || (!i->second.elided && (i->second.symbol.empty() || i->second.signature == nullptr))) return false;
+    symbol = i->second.symbol;
+    signature = i->second.signature != nullptr ? TypeTable::id(i->second.signature) : TypeId();
+    elided = i->second.elided;
+    return true;
+}
+
 bool Typer::returnBuilt(syntax::NodeId ret, int &form, std::string &symbol, TypeId &signature) const {
     const std::unordered_map<std::uint32_t, Parser::ReturnBuilt>::const_iterator i = p_.returnBuilt_.find(ret.v);
     if (i == p_.returnBuilt_.end() || i->second.form == 0) return false;

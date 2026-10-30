@@ -80,6 +80,8 @@ public:
     void setTemporaryBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> f) { temporaryBuilt_ = f; }
     // The converting constructor that made a temporary of a value at a node - Sema's record, asked by the glue.
     void setConvertedBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &)> f) { convertedBuilt_ = f; }
+    // The copy the parser made of a by-value class argument, by the argument's node - Sema's record, asked by the glue.
+    void setArgumentCopy(std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> f) { argumentCopy_ = f; }
     // A lambda's closure and its captures' members and sources - Sema's record, asked by the glue.
     void setClosure(std::function<bool(syntax::NodeId, sema::ClosureFacts &)> f) { closure_ = f; }
     void setReturnBuilt(std::function<bool(syntax::NodeId, int &, std::string &, TypeId &)> f) { returnBuilt_ = f; }
@@ -247,6 +249,10 @@ private:
     Val toBase(Val v, TypeId to, bool cast = false);
     ValueId boundConverted(sema::TypedId an, const Type &p);
     bool convertedTemporary(sema::TypedId an, const Type &c, bool destroys, ValueId &slot);
+    ValueId byValueArgument(sema::TypedId an, const Type &p);
+    Val classArgumentSource(sema::TypedId an, const Type &c);
+    void guardParameter(ValueId pv, const Type &pt, bool isCtor);
+    bool heldClass(const Type &t) const;
     static bool arrayBinds(const Type &from, const Type &referent);
     Val baseOfObject(Val a, const Type &p);
     Val baseSubobject(Val a, const Type &base, const std::string &why);
@@ -358,6 +364,7 @@ private:
     bool landingPads_;                          // the parser gave the function landing pads: the prologue names an LSDA
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> temporaryBuilt_;
     std::function<bool(syntax::NodeId, std::string &, TypeId &)> convertedBuilt_;
+    std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> argumentCopy_;
     std::function<bool(syntax::NodeId, sema::ClosureFacts &)> closure_;
     std::vector<Pad> pads_;                     // innermost last
     std::vector<std::string> typeTable_;        // the function's selector indices: one per type, first occurrence, 1-based
