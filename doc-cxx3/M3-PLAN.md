@@ -1130,3 +1130,21 @@ and at `-front=ssa -O2`, GNU **706 same, 0 differ** and MASM **705 same, 0 diffe
 Windows-target lowering 8,748 bodies, 8,335 lowered, 0 failed. Largest refusals left (Linux): a reference parameter bound
 to what is not an object (9), a local's cleanup in a function the parser gave no landing pads (9), a cast to `long double`
 (9), a variadic function (8), a call with defaults or too many arguments (8), and a long tail - 438 bodies outside.
+
+**Round 20, 2026-10-31: the allocator demotes every value a round could not colour.** Fable 5.1's finding 6, measured
+at round 19 and taken before M3b.4 as the review allowed: `mir::Allocator::select` goes on past a node it cannot colour
+and `run` demotes every promoted local the failed nodes hold, then rebuilds once - the same values demoted, far fewer
+rebuilds. `X64Parse.cpp` under `-front=ssa -O2`: 2.3 s where it took 335 s, `X64Target::directive` **2 colouring rounds
+where it took 2,096**, the file 209 where it took 7,647; plain -O2 1.15 s, 197 rounds where it took 315. `CPP11_DECLINES`
+prints `alloc <function> nodes= homes= rounds= demoted= fellback=` per function. It changes -O1 and -O2 output only where
+a function demoted more than once. **The gates:** Linux `make test` exit 0; run.sh 1078 / 0 at -O1, -O2, `-front=ssa -O1`
+and `-front=ssa -O2`; Windows every case at `-front=ssa -O2`, GNU 706 same / 0 differ and MASM 705 / 0, 340 refused as
+recorded; the bench against round 19 (`bench.cmd`, 9 interleaved rounds) **.text 3,641 bytes both** - fib 12/12, sieve
+97/102, matmul 19/20, isort 34/35, hash 379/394, virtual 206/201, total 748/757 ms, cl /O2 701, checksums agree; **the
+self-host under `-front=ssa -O2` on Linux, stage 1 = stage 2 on all 84 sources** - M3b.6's -O2 row reached early.
+**Found and recorded: at -O2 stage 0 is not stage 1, and was not at round 19 either.** Every source differs between
+g++'s build and cxx3's (Lexer 1,636 lines at plain -O2 with round 19's stages; the -O0-built and -O2-built stage 1 emit
+the same), so the -O2 output depends on which library built the compiler - an ordering over ties or addresses in the
+optimizer that libstdc++ and `include/` break differently, not a miscompile (stage 1 = stage 2, and every program agrees
+with clang). `tools/self-host` asks s0 = s1 at every level; that holds at -O0 only. It is owed before M3b.8, whose close
+asks stage 2 = stage 3 and would not see it.
