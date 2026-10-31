@@ -220,9 +220,13 @@ const Type *Typer::resolvedType(syntax::NodeId id, syntax::Kind kind) const {
             return t;
         case Parser::Resolved::Value:
             return nullptr;     // the parser's own answer for a form: read only where the rule below has none
-        case Parser::Resolved::Local: case Parser::Resolved::Global: case Parser::Resolved::StaticMember:
+        case Parser::Resolved::Local: case Parser::Resolved::Global:
         case Parser::Resolved::Enumerator: case Parser::Resolved::This:
             if (kind != syntax::Kind::Name && kind != syntax::Kind::This) return nullptr;
+            break;
+        case Parser::Resolved::StaticMember:
+            // `C::s`, `o.s` and `p->s` name the one object alike ([class.static]/1).
+            if (kind != syntax::Kind::Name && kind != syntax::Kind::Member) return nullptr;
             break;
         case Parser::Resolved::Member:
             if (kind != syntax::Kind::Name && kind != syntax::Kind::Member) return nullptr;

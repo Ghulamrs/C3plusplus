@@ -700,6 +700,20 @@ void Lowering::guard(ValueId slot, const Type &c, const std::string &dtor, bool 
     l.slot = slot;
     l.cls = c.id();
     l.dtor = dtor;
+    // One built in an operand that may not be evaluated carries a flag: zeroed where its full expression began, set here.
+    if (skippable_ != 0 && fullFrom_ != kNoFull && !fullAt_.empty()) {
+        const TypeId boolT = tid(*types_.get(Kind::Bool));
+        l.built = entryAlloca(boolT, "$built");
+        store(l.built, iconst(boolT, 0));
+        std::vector<InstId> &here = F().blockArena[cur_.v].insts;
+        const InstId zero = here[here.size() - 2], put = here[here.size() - 1];
+        here.resize(here.size() - 2);
+        std::vector<InstId> &at0 = F().blockArena[fullAt_.back().first.v].insts;
+        at0.insert(at0.begin() + static_cast<std::ptrdiff_t>(fullAt_.back().second), put);
+        at0.insert(at0.begin() + static_cast<std::ptrdiff_t>(fullAt_.back().second), zero);
+        fullAt_.back().second += 2;
+        store(l.built, iconst(boolT, 1));
+    }
     if (!unwinds) {
         l.pad = kNoFull;
         live_.push_back(l);
@@ -869,10 +883,21 @@ void Lowering::destroy(const Live &l, bool invoke) {
     at(invoke ? callOrInvoke(TypeId(), ops) : add(Op::Call, TypeId(), ops)).call = callIndex;
 }
 
+// The destructor of one built in an operand that may not have run, only where its flag says it was.
+void Lowering::destroyWhen(const Live &l, bool invoke) {
+    if (!l.built.valid()) { destroy(l, invoke); return; }
+    const BlockId yes = newBlock(), done = newBlock();
+    condbr(load(l.built, tid(*types_.get(Kind::Bool))), yes, done);
+    place(yes);
+    destroy(l, invoke);
+    br(done);
+    place(done);
+}
+
 // A jump out of the scopes above `mark`: their objects destroyed, last built first; they stay alive on the path not taken.
 void Lowering::destroyLive(std::size_t mark) {
     for (std::size_t k = live_.size(); k-- > mark; )
-        if (live_[k].slot.v != elidedSlot_.v) destroy(live_[k]);     // the named return value a `return` hands back
+        if (live_[k].slot.v != elidedSlot_.v) destroyWhen(live_[k]);     // the named return value a `return` hands back
 }
 
 // A scope's end: each object it built destroyed on the way out, last built first, and its cleanup - made where a call in
@@ -882,11 +907,11 @@ void Lowering::closeScope(std::size_t mark, bool keep) {
     while (live_.size() > mark) {
         const Live l = live_.back();
         live_.pop_back();
-        if (l.pad == kNoFull) { if (!terminated() && !keep) destroy(l); continue; }
+        if (l.pad == kNoFull) { if (!terminated() && !keep) destroyWhen(l); continue; }
         if (l.pad + 1 != pads_.size()) outside("a scope's cleanup that is not the innermost pad");
         const Pad p = pads_.back();
         pads_.pop_back();
-        if (!terminated() && !keep) destroy(l);
+        if (!terminated() && !keep) destroyWhen(l);
         if (!p.block.valid()) continue;
         if (!landingPads_) outside("a local's cleanup in a function the parser gave no landing pads");
         const BlockId back = cur_;
@@ -898,7 +923,7 @@ void Lowering::closeScope(std::size_t mark, bool keep) {
         // Microsoft (M3-IR 3.6): the funclet destroys and returns to the runtime, which ends the program itself should the
         // destructor throw, as the walker's cleanup does; the cleanupret names the pad whose state this one chains to.
         if (target_.microsoftNames()) {
-            if (l.when.valid()) msCountedDestroy(l, p.block); else destroy(l);
+            if (l.when.valid()) msCountedDestroy(l, p.block); else destroyWhen(l);
             const InstId r = add(Op::CleanupRet, TypeId(), std::vector<ValueId>());
             const BlockId to = msEnclosingPad();
             if (to.valid()) {
@@ -922,7 +947,7 @@ void Lowering::closeScope(std::size_t mark, bool keep) {
         t.types.push_back(std::string());
         t.indices.push_back(typeIndexFor(std::string()));
         pads_.push_back(t);
-        destroy(l, true);
+        destroyWhen(l, true);
         t = pads_.back();
         pads_.pop_back();
         resumeFrom(p, pads_.size());
@@ -1411,6 +1436,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
     handlerDepth_ = 0;
     handlerLive_.clear();
     fullFrom_ = kNoFull;
+    fullAt_.clear();
     skippable_ = 0;
     funclet_ = BlockId();
     msTryPad_ = BlockId();
@@ -1670,7 +1696,6 @@ void Lowering::block(sema::TypedId id) {
 // The destructor of a temporary this full expression builds, which only an unconditional operand of one may hold.
 std::string Lowering::temporaryDestructor(const Type &c) {
     if (fullFrom_ == kNoFull) outside("a class temporary with a destructor outside a full expression the lowering ends");
-    if (skippable_ != 0) outside("a class temporary with a destructor in an operand that may not be evaluated");
     const std::string dtor = destructor_ ? destructor_(c.id()) : std::string();
     if (dtor.empty()) outside("a class temporary whose destructor the parser recorded none for");
     return dtor;
@@ -1699,12 +1724,14 @@ bool Lowering::classResult(sema::TypedId id) const {
 std::size_t Lowering::openFull() {
     const std::size_t was = fullFrom_;
     fullFrom_ = live_.size();
+    fullAt_.push_back(std::make_pair(cur_, F().block(cur_).insts.size()));
     return was;
 }
 
 void Lowering::closeFull(std::size_t was) {
     closeScope(fullFrom_);
     fullFrom_ = was;
+    fullAt_.pop_back();
 }
 
 void Lowering::scopedStmt(sema::TypedId id) {
@@ -2824,6 +2851,11 @@ Lowering::Val Lowering::nameAddress(sema::TypedId id) {
     if (r.what == sema::Resolution::Member) return memberOfThis(id);
     if (r.what == sema::Resolution::StaticMember && r.serial == 1) outside("a folded static member, which has no storage");
     if (r.what != sema::Resolution::Global && r.what != sema::Resolution::StaticMember) outside("the name '" + text(id) + "' is no object");
+    return globalAddress(r);
+}
+
+// A global's or a static member's object: its symbol's address, or a reference's referent.
+Lowering::Val Lowering::globalAddress(const sema::Resolution &r) {
     if (r.isThreadLocal) outside("a thread_local");
     if (!r.type.valid()) outside("a global not typed");
     const Type &t = T(r.type);
@@ -2843,6 +2875,11 @@ Lowering::Val Lowering::name(sema::TypedId id) {
             // A scoped enumeration's enumerator is a constant of its type too; what may be done with it is checked where it is used.
             if (!r.type.valid() || !T(r.type).isArithmetic()) outside("an enumerator of no arithmetic type");
             return Val(iconst(r.type, r.value), r.type);
+        }
+        // [expr.prim.lambda]/12: a const integral local of the enclosing function, read in a lambda's body, is its value.
+        if (r.what == sema::Resolution::Local && r.symbol.empty() && r.type.valid() && T(r.type).isInteger() && T(r.type).isConst()) {
+            const TypeId ut = tid(*T(r.type).unqualified());
+            return Val(iconst(ut, r.value), ut);
         }
         if (r.what == sema::Resolution::Function) {
             if (!r.type.valid() || !T(r.type).isFunction()) outside("a function named as a value whose type was not recorded");
@@ -2874,6 +2911,14 @@ Lowering::Val Lowering::memberAddress(sema::TypedId id) {
     if (count(id) != 1) outside("a member of " + std::to_string(count(id)) + " parts");
     const bool arrow = t.compare(0, 2, "->") == 0;
     const std::string mname = t.substr(arrow ? 2 : 1);
+    // [expr.ref]/4: `o.s` of a static member is the one object - the object expression read for nothing where it is a name.
+    const sema::Resolution &sr = tree_.resolution(id);
+    if (sr.what == sema::Resolution::StaticMember) {
+        const syntax::Kind ok = syn(child(id, 0)).kind;
+        if (ok != syntax::Kind::Name && ok != syntax::Kind::This) outside("a static member reached through what is not a name");
+        if (sr.serial == 1) outside("a folded static member, which has no storage");
+        return globalAddress(sr);
+    }
     if (mname.empty() || mname.find_first_of(":~<") != std::string::npos || mname.compare(0, 8, "template") == 0) outside("a member named '" + mname + "'");
     Val object;
     if (arrow) {
@@ -2888,8 +2933,8 @@ Lowering::Val Lowering::memberAddress(sema::TypedId id) {
     if (obj.unqualified()->findStaticMember(mname) != nullptr) outside("a static member");
     if (obj.unqualified()->findMember(mname) == nullptr) outside("a member '" + mname + "' that is not a data member");
     const Member &m = *obj.unqualified()->findMember(mname);
-    if (m.ambiguous || m.anonUnion != nullptr || m.type->isReference() || m.width != 0)
-        outside("a member '" + mname + "' the lowering does not reach");
+    if (m.ambiguous || m.width != 0) outside("a member '" + mname + "' the lowering does not reach");
+    if (m.type->isReference()) return referenceMember(object.v, *obj.unqualified(), m);
     const Type &mt = obj.isConst() && !m.isMutable ? *types_.withConst(m.type) : *m.type;
     if (!scalar(mt) && !mt.isArray() && !mt.isStructOrUnion()) outside("a member of type '" + mt.describe() + "'");
     if (m.inVirtualBase != nullptr) return Val(virtualBaseMember(object.v, *obj.unqualified(), m, tid(mt)), tid(mt));
@@ -2899,6 +2944,23 @@ Lowering::Val Lowering::memberAddress(sema::TypedId id) {
 }
 
 Lowering::Val Lowering::member(sema::TypedId id) { return memberAddress(id); }
+
+// [dcl.ref]: a reference member is a slot holding the address it was bound to - read, it names its referent, whose
+// const the object's does not reach.
+Lowering::Val Lowering::referenceMember(ValueId object, const Type &cls, const Member &m) {
+    const Type &ref = *m.type->referent();
+    if (!referable(ref)) outside("a reference member to '" + ref.describe() + "'");
+    const TypeId pt = tid(*types_.pointerTo(&ref)), slot = tid(*types_.pointerTo(&T(pt)));
+    ValueId where;
+    if (m.inVirtualBase != nullptr) {
+        where = virtualBaseMember(object, cls, m, pt);
+    } else {
+        const InstId g = add(Op::Gep, slot, std::vector<ValueId>(1, object));
+        at(g).k = m.offset;
+        where = result(g);
+    }
+    return Val(load(where, pt), tid(ref));
+}
 
 // [class.mfct.non-static]/3: a member's bare name in a member function is `(*this).m` - the record's offset from
 // `this`, its type the access's. One reached through another object - a lambda's captured `this` - is refused.
@@ -2915,8 +2977,8 @@ Lowering::Val Lowering::memberOfThis(sema::TypedId id) {
     if (cls.findMember(text(id)) == nullptr) outside("a member reached through another object's `this`");
     const Member &m = *cls.findMember(text(id));
     if (m.offset != r.serial || !r.type.valid()) outside("a member reached through another object's `this`");
-    if (m.ambiguous || m.anonUnion != nullptr || m.type->isReference() || m.width != 0)
-        outside("a member '" + text(id) + "' the lowering does not reach");
+    if (m.ambiguous || m.width != 0) outside("a member '" + text(id) + "' the lowering does not reach");
+    if (m.type->isReference()) return referenceMember(self.v, cls, m);
     const Type &mt = T(r.type);
     if (!scalar(mt) && !mt.isArray() && !mt.isStructOrUnion()) outside("a member of type '" + mt.describe() + "'");
     if (m.inVirtualBase != nullptr) return Val(virtualBaseMember(self.v, cls, m, r.type), r.type);
@@ -3898,7 +3960,23 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
                 ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(&ref)), std::vector<ValueId>(1, a.v))));
                 continue;
             }
-            if (!isLvalueNode(an)) outside("a reference parameter bound to what is not an object");
+            // A reference to a function binds the function itself: its address is what goes, as `&f` would.
+            if (ref.isFunction()) {
+                const Val a = expr(an);
+                if (!a.type.valid() || !T(a.type).isPointer() || T(a.type).pointee()->unqualified() != ref.unqualified())
+                    outside("a reference to a function bound to what is not that function");
+                ops.push_back(a.v);
+                continue;
+            }
+            // Any other class value the lowering can make an object of - [dcl.init.ref]/5's materialised prvalue -
+            // bound by its object's address, a base subobject's where the referent is a base.
+            if (!isLvalueNode(an) && ref.isStructOrUnion() && (ref.isConst() || p.isRValueReference()) && classObjectNode(an)) {
+                Val a = classObject(an);
+                if (T(a.type).unqualified() != ref.unqualified()) a = baseOfObject(a, p);
+                ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(&ref)), std::vector<ValueId>(1, a.v))));
+                continue;
+            }
+            if (!isLvalueNode(an)) outside(std::string("a reference parameter bound to a '") + syntax::kindName(syn(an).kind) + "' that is not an object" + (std::getenv("CXX1_SSA_WHY") ? " [" + text(an).substr(0, 60) + "]" : std::string()));
             if (scalar(ref) && !ref.isX87(target_) && (ref.isConst() || p.isRValueReference()) && tree_.node(an).type != nullptr &&
                 tree_.node(an).type->unqualified() != ref.unqualified()) {
                 ops.push_back(boundConverted(an, p));

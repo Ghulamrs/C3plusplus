@@ -3074,11 +3074,10 @@ ExprPtr Parser::postfix() {
                          !m->isMutable
                              ? types_.withConst(m->type) : m->type);
             const Type *accessType = acc->type();
-            acc = resolve(std::move(acc), resolvedAs(Resolved::Member, accessType, name, m->offset, 0, m->declaredIn));
             // A reference member holds an address, so reading one is a
             // dereference - the same `useReference` every mention of a
-            // reference local already goes through.
-            acc = useReference(std::move(acc));
+            // reference local already goes through; the record goes on what is read.
+            acc = resolve(useReference(std::move(acc)), resolvedAs(Resolved::Member, accessType, name, m->offset, 0, m->declaredIn));
             n = std::move(acc);
             continue;
         }
@@ -3169,12 +3168,11 @@ ExprPtr Parser::postfix() {
                          !m->isMutable
                              ? types_.withConst(m->type) : m->type);
             const Type *accessType = acc->type();
-            acc = resolve(std::move(acc), resolvedAs(Resolved::Member, accessType, name, m->offset, 0, m->declaredIn));
             if (objectIsRvalue && !m->type->isReference()) acc->setXvalue();
             // A reference member holds an address, so reading one is a
             // dereference - the same `useReference` every mention of a
-            // reference local already goes through.
-            acc = useReference(std::move(acc));
+            // reference local already goes through; the record goes on what is read.
+            acc = resolve(useReference(std::move(acc)), resolvedAs(Resolved::Member, accessType, name, m->offset, 0, m->declaredIn));
             n = std::move(acc);
             continue;
         }

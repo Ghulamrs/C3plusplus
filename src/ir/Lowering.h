@@ -99,7 +99,7 @@ private:
     struct Val { ValueId v; TypeId type; Val() {} Val(ValueId a, TypeId t) : v(a), type(t) {} };
     struct Loop { BlockId brk, cont; std::size_t handlers, live; };
     // A local a destructor destroys, alive from its construction to the end of its scope; `pad` is its cleanup's index in pads_; `when`: a count its cleanup reads, destroying only where it is above `above` (a virtual base's).
-    struct Live { ValueId slot; TypeId cls; std::string dtor; std::size_t pad; ValueId vtt, when; long long above; Live() : pad(0), above(0) {} };
+    struct Live { ValueId slot; TypeId cls; std::string dtor; std::size_t pad; ValueId vtt, when, built; long long above; Live() : pad(0), above(0) {} };
     // A landing pad a call inside its region unwinds to (M3-IR 3.6): a try's, or a handler's end-catch cleanup. Its block is
     // made on first use; `types` is the whole action chain, own handlers first, then the enclosing pads' - the walker's.
     struct Pad { BlockId block; ValueId ptr, sel; bool cleanup; std::vector<std::string> types; std::vector<int> indices; std::size_t own; };
@@ -192,6 +192,9 @@ private:
     Val name(sema::TypedId id);
     Val nameAddress(sema::TypedId id);
     Val member(sema::TypedId id);
+    Val referenceMember(ValueId object, const Type &cls, const Member &m);
+    Val globalAddress(const sema::Resolution &r);
+    void destroyWhen(const Live &l, bool invoke = false);
     Val memberAddress(sema::TypedId id);
     Val memberOfThis(sema::TypedId id);
     bool namesCalledFunction(const std::string &head, const std::string &symbol) const;
@@ -393,6 +396,7 @@ private:
     std::size_t handlerDepth_;                  // handlers the statement being lowered is inside
     std::vector<std::size_t> handlerLive_;      // live_ where each handler's body began, innermost last
     std::size_t fullFrom_;                      // live_ where the full expression being lowered began; kNoFull, none open
+    std::vector<std::pair<BlockId, std::size_t> > fullAt_;   // where each open full expression began: its flags zeroed there
     std::size_t skippable_;                     // operands being lowered that may not be evaluated: `&&`, `||`, `?:`, `new`
     static const std::size_t kNoFull = static_cast<std::size_t>(-1);
     BlockId returnBlock_;
