@@ -225,7 +225,24 @@ private:
     TypedId node(syntax::NodeId id);
     // The parser's record, cast type, folded value and literal token for syntax node `id`, copied onto typed node `t`.
     void record(syntax::NodeId id, TypedId t);
-    template <class R> static Resolution copied(const R &r);   // a Parser::Resolved onto the typed tree's record
+    // A Parser::Resolved onto the typed tree's record, field for field, its two types as the table's handles - defined in
+    // the class, which cxx3 needs of a member template, and a member because Parser::Resolved is the Typer's to see.
+    template <class R> static Resolution copied(const R &r) {
+        Resolution out;
+        out.what = r.what;
+        out.type = TypeTable::id(r.type);
+        out.owner = TypeTable::id(r.owner);
+        out.symbol = r.symbol;
+        out.serial = r.serial;
+        out.value = r.value;
+        out.isConst = r.isConst;
+        out.isThreadLocal = r.isThreadLocal;
+        out.hasThis = r.hasThis;
+        out.indirect = r.indirect;
+        out.vslot = r.vslot;
+        out.name = r.name;
+        return out;
+    }
     // -check=typed's half for the copy: what on typed node `t` is not the parser's, or nothing.
     static std::string recordDiffers(const Parser &p, const TypedTree &tree, TypedId t);
     const Type *expression(syntax::NodeId id, const std::vector<const Type *> &parts);

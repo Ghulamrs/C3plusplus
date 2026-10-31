@@ -107,24 +107,6 @@ TypedId Typer::node(syntax::NodeId id) {
     return made;
 }
 
-// The record field for field, its two types as the table's handles - a member, Parser::Resolved being the Typer's to see.
-template <class R> Resolution Typer::copied(const R &r) {
-    Resolution out;
-    out.what = r.what;
-    out.type = TypeTable::id(r.type);
-    out.owner = TypeTable::id(r.owner);
-    out.symbol = r.symbol;
-    out.serial = r.serial;
-    out.value = r.value;
-    out.isConst = r.isConst;
-    out.isThreadLocal = r.isThreadLocal;
-    out.hasThis = r.hasThis;
-    out.indirect = r.indirect;
-    out.vslot = r.vslot;
-    out.name = r.name;
-    return out;
-}
-
 // **The parser's facts move onto the typed node** (M3b.0, M3-IR 3.8): the record as the parser made it, a cast's type
 // (a reference cast's with its category), a sizeof's or a literal's folded value, and a literal's token - so the
 // lowering reads the typed tree and nothing of the parser. The layout maps stay the parser's: M3's layout is its own.
