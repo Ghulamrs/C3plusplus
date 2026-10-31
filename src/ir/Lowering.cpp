@@ -490,6 +490,17 @@ void Lowering::classLocal(sema::TypedId var, ValueId slot, const Type &t) {
     }
     case 1: {
         if (v.count != 1) outside("a class local initialised by " + std::to_string(v.count) + " values");
+        // A call's plain class result, in the slot it came back into: its bytes are the local's ([class.copy]/12).
+        if (!objectNode(child(var, 0)) && classResult(child(var, 0)) && !t.unqualified()->nonTrivialCopy()) {
+            const sema::TypedId c = child(var, 0);
+            const std::size_t was = openFull();     // the result, with a destructor, ends with the declarator's full expression
+            const Val r = syn(c).kind == syntax::Kind::Call ? call(c) : operatorCall(c);
+            if (!r.type.valid() || !T(r.type).isPointer() || T(r.type).pointee()->unqualified() != t.unqualified())
+                outside("a class local initialised by a call's result of another type");
+            copyObject(slot, r.v, t);
+            closeFull(was);
+            return;
+        }
         if (!objectNode(child(var, 0)))
             outside(std::string("a class local initialised by a '") + syntax::kindName(syn(child(var, 0)).kind) + "' that is not an object");
         Val o = object(child(var, 0));
