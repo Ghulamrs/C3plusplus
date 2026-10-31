@@ -1088,3 +1088,12 @@ gate under its baseline. The Windows box is down: on the Mac (gates v3) the `-ar
 (`temporary-unwind`, Wine 6.0's own) at `-front=ssa` and `-front=ssa -O2`. Owed to the Windows box: its cases, names
 against cl and the self-host. Largest refusals left: a class local initialised by what is not an object (14), a catch of
 `struct E` (11), a destructor called by name whose symbol is not recorded (10).
+
+**M3b.2, 2026-10-31: the self-host under `-front=ssa` at -O0 matches, on round 18's tree** (`e25a828`, the coordinator).
+Round 18 as landed (`c3458d1`) did not self-host: lane-cval's record copy was a member function template declared in
+`Typer` and defined in `Typing.cpp`, which clang and g++ take and cxx3 refuses by name, so stage 0 could not build stage
+1 - the round's gate ran no self-host and did not see it. The template is defined in its class now. **Linux, under
+`-front=ssa` at -O0: stage 1 built by stage 0 (3m41s), stage 2 by stage 1, and all 84 sources give the same assembly at
+stages 0, 1 and 2** - the comparison round 17 left open; `make test` exit 0 on the fixed tree (run.sh 1077 / 0, ssa.sh
+8,447 / 7,992 / 0). From here the self-host comparison is part of every round's gate before it lands. Owed: -O2 (running)
+and the Windows box's own comparison, the box being down.
