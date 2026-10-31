@@ -618,7 +618,7 @@ whether a body is a function-try - facts of the declaration that `Ast.h`'s `Func
 ### 3.13 As built at M3b.2: what the lowering reads, and the Itanium table (2026-10-31, after Fable 5.1's review)
 
 3.6 and 3.8 above are kept as written; this is what the code does instead, measured at round 19 (`m3b2-r19`), where
-Fable 5.1's review of M3b.2 (boxkit `M3B2-REVIEW-FABLE-2026-10-31.md`, findings 1 and 2) found them stated otherwise.
+Fable 5.1's review of M3b.2 (`M3B2-REVIEW-FABLE-2026-10-31.md`, findings 1 and 2) found them stated otherwise.
 
 **The Itanium call-site table (3.6).** The selector writes one row per `invoke`, in address order, each with its
 pad's whole action chain (`SsaSelect.cpp:389-398`), the gaps filled by `lsdaTable` as before - not regions split

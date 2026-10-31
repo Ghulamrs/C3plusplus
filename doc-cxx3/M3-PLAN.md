@@ -1103,8 +1103,8 @@ coordinator: `c06f55a`, `b3ec043`, `2427a2c`, `e1b2a53`, `99c34cc`; Opus 5.5). A
 enclosing closure's capture through the call operator's `this` (a scalar, or a class copied as bytes), and a closure
 marked only for a member's class with a constructor is copied as bytes; a Microsoft by-value catch of any class is
 lowered, the caught object guarded as a handler local; `p->~T()` of a class with no destructor does nothing; a call's
-class result binds a `const &` or `&&` parameter. **Fable 5.1 reviewed M3b.2 at this round** (boxkit
-`M3B2-REVIEW-FABLE-2026-10-31.md`): *on plan with conditions*, no blocking finding, no miscompile found in rounds 17-19.
+class result binds a `const &` or `&&` parameter. **Fable 5.1 reviewed M3b.2 at this round** (`doc-cxx3/
+M3B2-REVIEW-FABLE-2026-10-31.md`): *on plan with conditions*, no blocking finding, no miscompile found in rounds 17-19.
 Its conditions, as met: (1) the self-host is in this round's gate, below; (2) M3-IR 3.13 states the Itanium table and
 what the lowering reads as built - the hooks in three kinds, which size M3b.7; (3) `tools/mangled-names` takes
 `CXX1_FLAGS`, and the names row under `-front=ssa` ran - the symbol lists of every case for the three targets with the
