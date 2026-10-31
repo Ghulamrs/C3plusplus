@@ -1902,7 +1902,10 @@ ExprPtr Parser::newExpression(std::size_t pos) {
     // **`new T[n]` of a class runs the default constructor once per element**
     // - [expr.new]/17 - by the class's loop, given the array and the count.
     if (constructed && array) {
-        pendingNew_.why = "an array 'new' of a class with constructors";
+        const NewFacts facts = pendingNew_;      // the loop's defaults are parsed: a `new` in one would take these
+        const std::string loop = vectorConstructor(made, pos);
+        pendingNew_ = facts;
+        if (pendingNew_.why.empty()) pendingNew_.vectorLoop = loop;
         const int baseSlot = allocateFrameSlot(pointer);
         const std::string baseTemp = ".newb" + std::to_string(newTemps_++);
         ExprPtr held(Var::local(baseTemp, baseSlot));
@@ -1913,8 +1916,7 @@ ExprPtr Parser::newExpression(std::size_t pos) {
         again->setType(pointer);
         ExprPtr n(Var::local(countTemp, countSlot));
         n->setType(sizeT);
-        ExprPtr built = callVectorLoop(vectorConstructor(made, pos), made,
-                                       std::move(again), std::move(n), pos);
+        ExprPtr built = callVectorLoop(loop, made, std::move(again), std::move(n), pos);
         // [expr.new]/13: a null from the nothrow allocator initialises nothing.
         if (nothrow) built = guardAgainstNull(baseTemp, baseSlot, pointer, std::move(built));
         // [expr.new]/20: an element constructor that throws gives the storage back.
@@ -1993,7 +1995,7 @@ ExprPtr Parser::newExpression(std::size_t pos) {
         // `new (p) T(t)` a copy of the bytes, the store a declaration `T u(t);` already makes.
         if (ctorArgs.size() == 1 && classes_.copyConstructorOf(made) == nullptr && classes_.moveConstructorOf(made) == nullptr &&
             ctorArgs[0]->type()->unqualified() == made) {
-            pendingNew_.why = "a 'new' of a class with constructors copied from an object";
+            if (pendingNew_.why.empty()) pendingNew_.bytesCopied = true;
             ExprPtr base(Var::local(temp, slot));
             base->setType(pointer);
             ExprPtr target(new Unary('*', std::move(base)));

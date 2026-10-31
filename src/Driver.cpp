@@ -1367,6 +1367,8 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         return typer.microsoftUnnamedCaught(id, d, r, c);
     });
     lowering.setNewFacts([&typer](syntax::NodeId id, sema::NewFacts &out) { return typer.newFacts(id, out); });
+    lowering.setRangeCalls([&typer](syntax::NodeId id, sema::Resolution &b, sema::Resolution &e) { return typer.rangeCalls(id, b, e); });
+    lowering.setCaughtCopy([&typer](syntax::NodeId id, std::string &sym, TypeId &sig) { return typer.caughtCopy(id, sym, sig); });
     lowering.setMemberBuilt([&typer](const std::string &ctor, const std::string &m, std::uint32_t pos, std::string &sym, TypeId &sig, bool &dflt) {
         return typer.memberBuilt(ctor, m, pos, sym, sig, dflt);
     });

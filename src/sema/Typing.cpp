@@ -107,6 +107,26 @@ TypedId Typer::node(syntax::NodeId id) {
     return made;
 }
 
+namespace {
+// The parser's record field for field, its two types as the table's handles.
+template <class Recorded> Resolution copiedRecord(const Recorded &r) {
+    Resolution out;
+    out.what = r.what;
+    out.type = TypeTable::id(r.type);
+    out.owner = TypeTable::id(r.owner);
+    out.symbol = r.symbol;
+    out.serial = r.serial;
+    out.value = r.value;
+    out.isConst = r.isConst;
+    out.isThreadLocal = r.isThreadLocal;
+    out.hasThis = r.hasThis;
+    out.indirect = r.indirect;
+    out.vslot = r.vslot;
+    out.name = r.name;
+    return out;
+}
+}
+
 // **The parser's facts move onto the typed node** (M3b.0, M3-IR 3.8): the record as the parser made it, a cast's type
 // (a reference cast's with its category), a sizeof's or a literal's folded value, and a literal's token - so the
 // lowering reads the typed tree and nothing of the parser. The layout maps stay the parser's: M3's layout is its own.
@@ -121,23 +141,7 @@ void Typer::record(syntax::NodeId id, TypedId t) {
         tree_.setResolution(t, out);
     }
     std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
-    if (r != p_.resolutions_.end()) {
-        // The record field for field, its two types as the table's handles.
-        Resolution out;
-        out.what = r->second.what;
-        out.type = TypeTable::id(r->second.type);
-        out.owner = TypeTable::id(r->second.owner);
-        out.symbol = r->second.symbol;
-        out.serial = r->second.serial;
-        out.value = r->second.value;
-        out.isConst = r->second.isConst;
-        out.isThreadLocal = r->second.isThreadLocal;
-        out.hasThis = r->second.hasThis;
-        out.indirect = r->second.indirect;
-        out.vslot = r->second.vslot;
-        out.name = r->second.name;
-        tree_.setResolution(t, out);
-    }
+    if (r != p_.resolutions_.end()) tree_.setResolution(t, copiedRecord(r->second));
     const auto cast = p_.castTypes_.find(id.v);
     if (cast != p_.castTypes_.end()) tree_.setCast(t, TypeTable::id(cast->second), false);
     const auto form = p_.varForms_.find(id.v);
@@ -579,9 +583,28 @@ bool Typer::newFacts(syntax::NodeId id, NewFacts &out) const {
     if (f->second.ctorSig != nullptr) out.ctorSig = f->second.ctorSig->id();
     out.ctorZero = f->second.ctorZero;
     out.ctorDefaulted = f->second.ctorDefaulted;
+    out.bytesCopied = f->second.bytesCopied;
+    out.vectorLoop = f->second.vectorLoop;
     out.dtor = f->second.dtor;
     if (f->second.dtorSig != nullptr) out.dtorSig = f->second.dtorSig->id();
     out.dslot = f->second.dslot;
+    return true;
+}
+
+bool Typer::caughtCopy(syntax::NodeId handler, std::string &symbol, TypeId &signature) const {
+    const std::map<std::uint32_t, Parser::MemberBuilt>::const_iterator i = p_.caughtCopy_.find(handler.v);
+    if (i == p_.caughtCopy_.end() || i->second.symbol.empty() || i->second.signature == nullptr) return false;
+    symbol = i->second.symbol;
+    signature = TypeTable::id(i->second.signature);
+    return true;
+}
+
+bool Typer::rangeCalls(syntax::NodeId id, Resolution &begin, Resolution &end) const {
+    const std::unordered_map<std::uint32_t, Parser::RangeCalls>::const_iterator i = p_.rangeCalls_.find(id.v);
+    if (i == p_.rangeCalls_.end() || i->second.begin >= p_.resolvedTable_.size() || i->second.end >= p_.resolvedTable_.size())
+        return false;
+    begin = copiedRecord(p_.resolvedTable_[i->second.begin]);
+    end = copiedRecord(p_.resolvedTable_[i->second.end]);
     return true;
 }
 
