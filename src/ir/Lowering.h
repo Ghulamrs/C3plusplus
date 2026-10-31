@@ -58,6 +58,7 @@ public:
     void setTypeInfo(std::function<std::string(TypeId)> f) { typeInfo_ = f; }
     void setUnnamedCaught(std::function<std::string(syntax::NodeId)> f) { unnamedCaught_ = f; }
     void setCaseValue(std::function<bool(syntax::NodeId, long long &)> f) { caseValue_ = f; }
+    void setMemberZeroed(std::function<bool(const std::string &, const std::string &)> f) { memberZeroed_ = f; }
     void setMicrosoftThrowInfo(std::function<std::string(TypeId)> f) { msThrowInfo_ = f; }
     void setMicrosoftCatch(std::function<bool(TypeId, std::string &, bool &)> f) { msCatch_ = f; }
     void setMicrosoftUnnamedCaught(std::function<bool(syntax::NodeId, std::string &, bool &, bool &)> f) { msUnnamedCaught_ = f; }
@@ -354,6 +355,7 @@ private:
     std::function<std::string(TypeId)> typeInfo_;
     std::function<std::string(syntax::NodeId)> unnamedCaught_;
     std::function<bool(syntax::NodeId, long long &)> caseValue_;
+    std::function<bool(const std::string &, const std::string &)> memberZeroed_;
     std::function<std::string(TypeId)> msThrowInfo_;
     std::function<bool(TypeId, std::string &, bool &)> msCatch_;
     std::function<bool(syntax::NodeId, std::string &, bool &, bool &)> msUnnamedCaught_;

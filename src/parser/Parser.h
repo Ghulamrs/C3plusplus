@@ -600,6 +600,7 @@ private:
     // chose, keyed "constructor|member|pos" - the constructor's symbol, the entry's position, 0 for one left alone.
     struct MemberBuilt { std::string symbol; const Type *signature; bool defaulted; };
     std::map<std::string, MemberBuilt> memberBuilt_;
+    std::set<std::string> memberZeroed_;    // `: m()` of a class whose default constructor is implicit: zeroed first (M3b.2)
     // The copy constructor a throw chose for its exception object, keyed as a member is under "$throw" (M3b.2).
     void noteThrowCopy(const Signature *cc, const Type *thrownPtr, std::size_t pos) {
         const MemberBuilt b = { cc->symbol, types_.functionType(types_.get(Kind::Void), std::vector<const Type *>{ thrownPtr, cc->params[0] }, false), false };

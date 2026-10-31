@@ -408,9 +408,14 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
         const InstId g = add(Op::Gep, tid(*types_.pointerTo(&mt)), std::vector<ValueId>(1, this_));
         at(g).k = m.offset;
         if (builtMember(mt)) {
-            if (e != named.end() && count(e->second) == 0) outside("a member of class type value-initialised");
+            // `: m()` ([dcl.init]/8): zeroed first where the default constructor is implicit, then built as one not named is.
+            const bool valueInit = e != named.end() && count(e->second) == 0;
+            if (valueInit && memberZeroed_ && memberZeroed_(key_, m.name)) {
+                const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, result(g)));
+                at(z).k = mt.size(target_);
+            }
             const std::size_t was = openFull();
-            buildMember(result(g), m, e != named.end() ? e->second : sema::TypedId());
+            buildMember(result(g), m, e != named.end() && !valueInit ? e->second : sema::TypedId());
             closeFull(was);
             // [except.ctor]/3: a member with a destructor, built, is destroyed if a later part of the constructor throws.
             if (landingPads_ && mt.hasDestructor()) {

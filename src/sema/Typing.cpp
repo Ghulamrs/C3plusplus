@@ -461,6 +461,10 @@ std::string Typer::specFilter(const std::string &symbol) const {
     const auto s = p_.specFilters_.find(symbol);
     return s == p_.specFilters_.end() ? std::string() : s->second;
 }
+bool Typer::memberZeroed(const std::string &ctor, const std::string &member) const {
+    return p_.memberZeroed_.count(ctor + "|" + member + "|0") != 0;
+}
+
 bool Typer::caseValue(syntax::NodeId label, long long &value) const {
     const auto c = p_.caseFacts_.find(label.v);
     if (c == p_.caseFacts_.end() || c->second.isDefault) return false;

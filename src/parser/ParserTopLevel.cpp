@@ -1460,6 +1460,12 @@ void Parser::topLevel(Program &program) {
                         memberInits.push_back(StmtPtr(new ExprStmt(std::move(chain))));
                 if (hasCtor) {
                     const Type *ptr = types_.pointerTo(mt);
+                    // Recorded as an unnamed member's default construction is, the zeroing beside it (M3b.2).
+                    const std::string bkey = currentFunction_ + "|" + m->name + "|0";
+                    const MemberBuilt b = { lookup_.functions_[vi->second].symbol,
+                                            types_.functionType(types_.get(Kind::Void), std::vector<const Type *>(1, ptr), false), false };
+                    memberBuilt_[bkey] = b;
+                    if (lookup_.functions_[vi->second].implicit) memberZeroed_.insert(bkey);
                     ExprPtr addr(new Unary('&', std::move(field)));
                     addr->setType(ptr);
                     std::vector<ExprPtr> one;
