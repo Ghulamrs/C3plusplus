@@ -507,6 +507,25 @@ caller's pad then destroys it again.
 
 The shape is named in `temporary-unwind.cpp` and left out of it rather than
 skipped, so that the case says the same thing on all three targets.
+### And a temporary of a declaration's initialiser, or of a mem-initialiser
+
+The guards above are read only by the regions a block opens over its statements,
+and a block collects the temporaries of an *expression statement* for them. A
+declaration's initialiser - `int a = boom(T(k));`, `Slot *s = at(Key(i));`, the
+converted argument of `Holds h(k);` - and a mem-initialiser end their full
+expressions through `flushTemporaries`, which destroys on the normal path and
+leaves nothing for a region to read. So when an exception leaves such an
+initialiser, its temporaries are not destroyed, and a function with nothing
+else to unwind gets no landing pads at all.
+
+Measured 2026-10-31 by `tests/open/declaration-temporary-unwind.cpp`: the
+walker's ledger ends `live=4 over=3` where clang's ends `live=0`, on x86_64-windows and
+x86_64-linux. Under `-front=ssa` the lowering guards these temporaries like any
+other and gives the body pads of its own (`ir::Function::landingPads`), so the
+same program agrees with clang there - `tests/cases/ssa-own-landing-pads.cpp`.
+The walker is not mended for it: its regions are the old path's, which M3b.7
+deletes.
+
 ## An array of a class is not partly destroyed when one of its constructors throws
 
 `S a[3] = { S(1), S(2), S(3) };` - and `S a[3];` with the default constructor

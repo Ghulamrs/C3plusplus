@@ -762,7 +762,6 @@ void Lowering::guardedStatic(sema::TypedId var, const std::string &symbol) {
         pads_.pop_back();
     }
     if (g.aborts && p.block.valid()) {
-        if (!landingPads_) outside("a static local's abort in a function the parser gave no landing pads");
         const BlockId back = cur_;
         place(p.block);
         const InstId cl = add(Op::CleanupPad, TypeId(), std::vector<ValueId>());
@@ -888,7 +887,6 @@ void Lowering::closeScope(std::size_t mark, bool keep) {
         pads_.pop_back();
         if (!terminated() && !keep) destroy(l);
         if (!p.block.valid()) continue;
-        if (!landingPads_) outside("a local's cleanup in a function the parser gave no landing pads");
         const BlockId back = cur_;
         place(p.block);
         const InstId cl = add(Op::CleanupPad, TypeId(), std::vector<ValueId>());
@@ -1636,12 +1634,24 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
             const ValueId rv = param(returnBlock_, carried);
             add(Op::Ret, TypeId(), std::vector<ValueId>(1, rv));
         }
+        // The parser's pads, or the lowering's own where the parser left an unwinding object be (its leak, CONFORMANCE.md).
+        F().landingPads = facts.landingPads || madePads();
         return FuncId(static_cast<std::uint32_t>(index));
     } catch (const Outside &o) {
         why = o.why;
         module_.functions.pop_back();
         return FuncId();
     }
+}
+
+// Whether the body has a pad: an invoke, or a pad a region opened.
+bool Lowering::madePads() const {
+    const Function &f = F();
+    for (std::size_t i = 1; i < f.insts.size(); i++) {
+        const Op k = f.insts[i].op;
+        if (k == Op::Invoke || k == Op::CleanupPad || k == Op::CatchPad || k == Op::CatchSwitch) return true;
+    }
+    return false;
 }
 
 // [basic.start.main]/5 for main, and the walker's answer for any other body that falls off its end: a zero of the
@@ -4486,7 +4496,6 @@ bool Lowering::classThrow(sema::TypedId id, ValueId &object, TypeId &thrown) {
         fullFrom_ = argMark;
         construct(from, symbol, built, t, zero, operand, 1);
         fullFrom_ = wasFull;
-        if (live_.size() != argMark && !landingPads_) outside("a thrown temporary whose arguments make temporaries, with no landing pads");
         if (t.hasDestructor() && landingPads_) guard(from, t, dtor);
     }
     const bool dies = !isLvalueNode(operand) && t.hasDestructor();
@@ -4660,7 +4669,6 @@ void Lowering::caughtCopied(ValueId slot, ValueId from, const std::string &copy,
     t = pads_.back();
     pads_.pop_back();
     if (!t.block.valid()) return;
-    if (!landingPads_) outside("a catch's copy in a function the parser gave no landing pads");
     const BlockId back = cur_;
     place(t.block);
     const InstId tp = add(Op::CatchPad, TypeId(), std::vector<ValueId>());
@@ -4842,7 +4850,6 @@ void Lowering::tryClose(TryState &st, bool rethrows) {
 // anything else the list allowed, and the frame unwinds on.
 // The catch-all a noexcept body is wrapped in: the exception begun, as clang's __clang_call_terminate does, then abort().
 void Lowering::noexceptAbort(const Pad &p) {
-    if (!landingPads_) outside("a noexcept wrap in a function the parser gave no landing pads");
     const BlockId back = cur_;
     place(p.block);
     const InstId cp = add(Op::CatchPad, TypeId(), std::vector<ValueId>());
@@ -4856,7 +4863,6 @@ void Lowering::noexceptAbort(const Pad &p) {
 }
 
 void Lowering::specFilterChain(const Pad &p) {
-    if (!landingPads_) outside("a throw(...) filter in a function the parser gave no landing pads");
     const BlockId back = cur_;
     place(p.block);
     const InstId cp = add(Op::CatchPad, TypeId(), std::vector<ValueId>());
