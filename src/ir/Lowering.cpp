@@ -17,7 +17,8 @@ Lowering::Lowering(const sema::TypedTree &tree, const syntax::Tree &syntax, Type
 void Lowering::outside(const std::string &why) { throw Outside(why); }
 
 bool Lowering::scalarArithmetic(const Type &t) { return t.isArithmetic() && !t.isScopedEnumeration(); }
-bool Lowering::scalar(const Type &t) { return scalarArithmetic(t) || t.isPointer(); }
+// A pointer to a data member is an offset, an integer of its size to every backend (M3b.2).
+bool Lowering::scalar(const Type &t) { return scalarArithmetic(t) || t.isPointer() || t.isMemberPointer(); }
 // [class]/6 and [basic.types]/9 as far as the lowering needs them: a complete class with no vptr, no virtual base, no
 // destructor, no copy of its own and no constructor - an object of it is its bytes, made and copied as such.
 bool Lowering::plainClass(const Type &t) const {
@@ -2494,6 +2495,7 @@ void Lowering::stringArray(sema::TypedId lit, ValueId slot, const Type &t) {
 
 // A scalar's zero: a null pointer, 0.0, or 0 of the integer type.
 ValueId Lowering::zeroOf(TypeId type) {
+    if (T(type).isMemberPointer()) outside("a pointer to a data member value-initialised");
     if (T(type).isPointer() || T(type).isNullPtr()) return result(add(Op::Null, type, std::vector<ValueId>()));
     if (!T(type).isFloating()) return iconst(type, 0);
     const InstId z = add(Op::FConst, type, std::vector<ValueId>());
@@ -2527,6 +2529,7 @@ bool Lowering::isLvalueNode(sema::TypedId id) const {
         return count(id) == 2 && text(id) == "=" && assignCall_ && assignCall_(tree_.node(child(id, 1)).syntax, symbol, sig);
     }
     case syntax::Kind::Paren: return count(id) == 1 && isLvalueNode(child(id, 0));
+    case syntax::Kind::Binary: return dataMemberPointerNode(id);
     case syntax::Kind::Cast: return referenceCast(id) && isLvalueNode(child(id, 0));
     case syntax::Kind::Conditional:
         return count(id) == 3 && isLvalueNode(child(id, 1)) && isLvalueNode(child(id, 2)) &&
@@ -2573,6 +2576,9 @@ Lowering::Val Lowering::lvalue(sema::TypedId id) {
         return Val(addrOf(label, tid(*types_.pointerTo(tree_.node(id).type))), tid(*tree_.node(id).type));
     }
     case syntax::Kind::Member: return memberAddress(id);
+    case syntax::Kind::Binary:
+        if (!dataMemberPointerNode(id)) outside("an address of a '" + text(id) + "'");
+        return memberPointerLvalue(id);
     case syntax::Kind::Subscript: {
         if (count(id) != 2) outside("a subscript of " + std::to_string(count(id)) + " parts");
         const Val base = expr(child(id, 0));   // the operands lowered in order, not in the argument order of the host's compiler
@@ -2683,7 +2689,15 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
         break;
     case syntax::Kind::Binary:
         if (k != 2) outside("a binary of " + std::to_string(k) + " parts");
-        if (memberPointerNode(id)) outside("a pointer to a data member applied, or a member function's not called");
+        if (dataMemberPointerNode(id)) {
+            const Val a = lvalue(id);
+            e = decay(Val(a.v, a.type));
+            if (T(e.type).isPointer() && T(a.type).isArray()) break;
+            if (!scalar(T(a.type)) || T(a.type).isX87(target_)) outside("a read of an object of type '" + T(a.type).describe() + "'");
+            e = readOf(a.v, a.type);
+            break;
+        }
+        if (memberPointerNode(id)) outside("a member function's pointer applied and not called");
         e = binary(text(id), child(id, 0), child(id, 1));
         break;
     case syntax::Kind::Assign: e = assign(id); break;
@@ -2793,6 +2807,7 @@ Lowering::Val Lowering::valueInitialised(sema::TypedId id) {
     if (!tree_.node(id).folded.has) outside("a cast not recorded");
     if (!id0.valid() || !scalar(T(id0)) || T(id0).isX87(target_)) outside("a value-initialised cast to what is not a scalar");
     const TypeId ut = tid(*T(id0).unqualified());
+    if (T(ut).isMemberPointer()) outside("a pointer to a data member value-initialised");
     if (T(ut).isPointer()) return Val(result(add(Op::Null, ut, std::vector<ValueId>())), ut);
     if (!T(ut).isFloating()) return Val(iconst(ut, 0), ut);
     return Val(result(add(Op::FConst, ut, std::vector<ValueId>())), ut);
@@ -3002,6 +3017,8 @@ Lowering::Val Lowering::capturedThis() {
 
 Lowering::Val Lowering::unary(sema::TypedId id) {
     const std::string &op = text(id);
+    const sema::Resolution &mp = tree_.resolution(id);
+    if (op == "&" && mp.what == sema::Resolution::Value && mp.type.valid() && T(mp.type).isMemberPointer()) return dataMemberPointer(id);
     if (count(id) != 1) outside("a unary of " + std::to_string(count(id)) + " parts");
     const sema::TypedId o = child(id, 0);
     if (op == "&") {
@@ -3086,6 +3103,7 @@ Lowering::Val Lowering::truth(Val v) {
     const TypeId b = tid(*types_.get(Kind::Bool));
     const Type &t = T(v.type);
     if (t.isBool()) return v;
+    if (t.isMemberPointer()) outside("a pointer to a data member as a truth value");
     if (!scalar(t) && !t.isNullPtr()) outside("a condition that is not a scalar");
     std::vector<ValueId> ops;
     ops.push_back(v.v);
@@ -3111,6 +3129,8 @@ Lowering::Val Lowering::convert(Val v, TypeId to, bool cast) {
     if (t.isX87(target_) || from.isX87(target_)) outside("an x87 long double");
     if (from.unqualified() == t.unqualified()) return Val(result(add(Op::Bitcast, to, std::vector<ValueId>(1, v.v))), to);
     if (t.isBool()) return truth(v);
+    if (from.isNullPtr() && t.isMemberPointer()) return Val(nullMemberPointer(to), to);
+    if (from.isMemberPointer() || t.isMemberPointer()) return memberPointerConversion(v, to);
     if (from.isNullPtr()) {
         if (!t.isPointer()) outside("a nullptr converted to '" + t.describe() + "'");
         return Val(result(add(Op::Null, to, std::vector<ValueId>())), to);
@@ -3149,6 +3169,7 @@ Lowering::Val Lowering::convert(Val v, TypeId to, bool cast) {
 // A node's value converted to `to`: the literal 0 and `nullptr` are a null pointer where a pointer is wanted.
 Lowering::Val Lowering::exprTo(sema::TypedId id, TypeId to) {
     if (T(to).isPointer() && isNullConstant(id)) return Val(result(add(Op::Null, to, std::vector<ValueId>())), to);
+    if (T(to).isMemberPointer() && isNullConstant(id)) return Val(nullMemberPointer(to), to);
     return convert(decay(expr(id)), to);
 }
 
@@ -3233,6 +3254,7 @@ Lowering::Val Lowering::arithmetic(const std::string &op, Val a, Val b) {
     const Type &ta = T(a.type), &tb = T(b.type);
     const bool nullA = ta.isNullPtr(), nullB = tb.isNullPtr();
     if ((!scalar(ta) && !nullA) || (!scalar(tb) && !nullB)) outside("'" + op + "' of what is not a scalar");
+    if (ta.isMemberPointer() || tb.isMemberPointer()) outside("'" + op + "' of a pointer to a data member");
     const TypeId boolT = tid(*types_.get(Kind::Bool));
     if (found.compare && (ta.isPointer() || tb.isPointer() || nullA || nullB)) {
         if (!(ta.isPointer() || nullA) || !(tb.isPointer() || nullB)) outside("a pointer compared with a number");
@@ -3299,6 +3321,11 @@ Lowering::Val Lowering::binary(const std::string &op, sema::TypedId l, sema::Typ
     // A pointer against the literal 0: the null pointer constant takes the pointer's type ([expr.eq]/2).
     if (T(a.type).isPointer() && isNullConstant(r)) b = Val(result(add(Op::Null, a.type, std::vector<ValueId>())), a.type);
     else if (T(b.type).isPointer() && isNullConstant(l)) a = Val(result(add(Op::Null, b.type, std::vector<ValueId>())), b.type);
+    if (T(a.type).isMemberPointer() || T(b.type).isMemberPointer()) {
+        if (T(a.type).isMemberPointer() && isNullConstant(r)) b = Val(nullMemberPointer(a.type), a.type);
+        else if (T(b.type).isMemberPointer() && isNullConstant(l)) a = Val(nullMemberPointer(b.type), b.type);
+        return memberPointerCompare(op, a, b);
+    }
     return arithmetic(op, a, b);
 }
 
@@ -3776,6 +3803,116 @@ Lowering::Val Lowering::memberPointerCall(sema::TypedId id, sema::TypedId mp, Ca
     for (std::uint32_t i = 1; i < count(id); i++) args.push_back(child(id, i));
     intoNow_ = id.v == intoCall_.v ? intoAlloca_ : -1;
     return callTail(sig, info, ops, 1, args, false);
+}
+
+// `o.*p` or `q->*p` whose right operand is a pointer to a data member: an lvalue, the member it names (M3b.2).
+bool Lowering::dataMemberPointerNode(sema::TypedId id) const {
+    if (!memberPointerNode(id)) return false;
+    const sema::TypedNode &held = tree_.node(child(id, 1));
+    return held.type != nullptr && held.type->unqualified()->isMemberPointer();
+}
+
+// cl's virtual model holds a vbtable index beside the offset, which nothing here reads: refused by name.
+void Lowering::offsetModel(const Type &mp) {
+    if (target_.microsoftNames() && mp.size(target_) != 4) outside("a pointer to a data member in cl's virtual model");
+}
+
+// `&S::m`: the member's offset, recorded with the node where the parser built it ([expr.unary.op]/3).
+Lowering::Val Lowering::dataMemberPointer(sema::TypedId id) {
+    const sema::Resolution &r = tree_.resolution(id);
+    const TypeId t = tid(*T(r.type).unqualified());
+    offsetModel(T(t));
+    return Val(iconst(t, r.value), t);
+}
+
+// [conv.mem]/1: a null pointer to a data member is -1 on both ABIs, an offset of 0 being a member.
+ValueId Lowering::nullMemberPointer(TypeId mp) {
+    offsetModel(T(mp));
+    return iconst(tid(*T(mp).unqualified()), -1);
+}
+
+// [conv.mem]/2: a base's member pointer becomes a derived class's, the offset grown by the base's and a null kept null,
+// as the parser's convertMemberPointer builds it; anything else - another member type, a virtual base - is refused.
+Lowering::Val Lowering::memberPointerConversion(Val v, TypeId to) {
+    const Type &from = T(v.type), &t = T(to);
+    if (!from.isMemberPointer() || !t.isMemberPointer()) outside("a conversion of '" + from.describe() + "' to '" + t.describe() + "'");
+    offsetModel(from);
+    offsetModel(t);
+    if (from.enclosing() == nullptr || t.enclosing() == nullptr || from.pointee()->unqualified() != t.pointee()->unqualified())
+        outside("a conversion of '" + from.describe() + "' to '" + t.describe() + "'");
+    const Type &fc = *from.enclosing()->unqualified(), &tc = *t.enclosing()->unqualified();
+    const TypeId ut = tid(*t.unqualified());
+    if (&fc == &tc) return Val(result(add(Op::Bitcast, ut, std::vector<ValueId>(1, v.v))), ut);
+    int found = 0, offset = 0;
+    basePaths(tc, fc, 0, found, offset);
+    if (found != 1) outside("a conversion of a pointer to a data member to one of a class not derived from its own");
+    if (offset == 0) return Val(result(add(Op::Bitcast, ut, std::vector<ValueId>(1, v.v))), ut);
+    std::vector<ValueId> test(1, v.v);
+    test.push_back(nullMemberPointer(v.type));
+    const InstId isNull = add(Op::ICmp, tid(*types_.get(Kind::Bool)), test);
+    at(isNull).cc = Cmp::Eq;
+    const BlockId null = newBlock(), step = newBlock(), merge = newBlock();
+    condbr(result(isNull), null, step);
+    place(null);
+    br(merge, std::vector<ValueId>(1, nullMemberPointer(ut)));
+    place(step);
+    const TypeId lane = from.size(target_) == 4 ? tid(*types_.get(Kind::Int)) : ptrdiffType();
+    std::vector<ValueId> sum(1, result(add(Op::Bitcast, lane, std::vector<ValueId>(1, v.v))));
+    sum.push_back(iconst(lane, offset));
+    const ValueId moved = result(add(Op::Add, lane, sum));
+    br(merge, std::vector<ValueId>(1, result(add(Op::Bitcast, ut, std::vector<ValueId>(1, moved)))));
+    place(merge);
+    return Val(param(merge, ut), ut);
+}
+
+// [expr.eq]/2 for two pointers to data members, or one and a null: the offsets compared whole; one of another class or
+// a relational operator, which the parser refuses, stays outside.
+Lowering::Val Lowering::memberPointerCompare(const std::string &op, Val a, Val b) {
+    if (op != "==" && op != "!=") outside("'" + op + "' of a pointer to a data member");
+    if (T(a.type).isNullPtr() && T(b.type).isMemberPointer()) a = Val(nullMemberPointer(b.type), tid(*T(b.type).unqualified()));
+    if (T(b.type).isNullPtr() && T(a.type).isMemberPointer()) b = Val(nullMemberPointer(a.type), tid(*T(a.type).unqualified()));
+    if (!T(a.type).isMemberPointer() || !T(b.type).isMemberPointer() || T(a.type).unqualified() != T(b.type).unqualified())
+        outside("a pointer to a data member compared with another type");
+    offsetModel(T(a.type));
+    std::vector<ValueId> ops(1, a.v);
+    ops.push_back(result(add(Op::Bitcast, a.type, std::vector<ValueId>(1, b.v))));
+    const TypeId boolT = tid(*types_.get(Kind::Bool));
+    const InstId c = add(Op::ICmp, boolT, ops);
+    at(c).cc = op == "==" ? Cmp::Eq : Cmp::Ne;
+    return Val(result(c), boolT);
+}
+
+// [expr.mptr.oper] for a data member: the object converted to the pointer's class (/3), the member at its address and
+// the offset, const where the object is (/6) - as the parser's applyMemberPointer builds it, the object first.
+Lowering::Val Lowering::memberPointerLvalue(sema::TypedId id) {
+    const sema::TypedId l = child(id, 0), pr = child(id, 1);
+    const Type &mpt = *tree_.node(pr).type->unqualified();
+    offsetModel(mpt);
+    if (mpt.enclosing() == nullptr) outside("a pointer to a data member of no class");
+    Val obj;
+    if (text(id) == "->*") obj = decay(expr(l));
+    else {
+        if (!objectNode(l)) outside("a '.*' of what is not an object");
+        const Val o = object(l);
+        obj = Val(o.v, tid(*types_.pointerTo(&T(o.type))));
+    }
+    if (!T(obj.type).isPointer() || !T(obj.type).pointee()->isStructOrUnion()) outside("a '->*' of what is not a pointer to a class");
+    const bool constObject = T(obj.type).pointee()->isConst();
+    const Type &owner = *mpt.enclosing()->unqualified();
+    if (T(obj.type).pointee()->unqualified() != &owner)
+        obj = toBase(obj, tid(*types_.pointerTo(constObject ? types_.withConst(&owner) : &owner)));
+    const Val mp = decay(expr(pr));
+    if (!T(mp.type).isMemberPointer()) outside("a '.*' of what is not a pointer to a data member");
+    const TypeId pd = ptrdiffType();
+    ValueId off = mp.v;
+    if (T(mp.type).size(target_) == 4) off = result(add(Op::Bitcast, tid(*types_.get(Kind::Int)), std::vector<ValueId>(1, off)));
+    off = result(add(T(mp.type).size(target_) == 4 ? Op::SExt : Op::Bitcast, pd, std::vector<ValueId>(1, off)));
+    const TypeId chars = tid(*types_.pointerTo(types_.charType()));
+    std::vector<ValueId> g(1, result(add(Op::Bitcast, chars, std::vector<ValueId>(1, obj.v))));
+    g.push_back(off);
+    const TypeId mt = constObject && !mpt.pointee()->isReference() ? tid(*types_.withConst(mpt.pointee())) : tid(*mpt.pointee());
+    const ValueId at0 = result(add(Op::Gep, chars, g));
+    return Val(result(add(Op::Bitcast, tid(*types_.pointerTo(&T(mt))), std::vector<ValueId>(1, at0))), mt);
 }
 
 // [class.virtual]: a virtual call reads the vptr at the object's first word and the function at the slot the parser
@@ -4420,6 +4557,7 @@ Lowering::Val Lowering::thrownValue(sema::TypedId id, TypeId &thrown) {
             outside("a throw of a class that is not plain");
         v = decay(expr(operand));
         if (!v.type.valid() || !scalar(T(v.type)) || T(v.type).isX87(target_)) outside("a throw of what is not a scalar");
+        if (T(v.type).isMemberPointer()) outside("a throw of a pointer to a data member");
     }
     thrown = T(v.type).unqualified()->id();
     return v;
@@ -4633,7 +4771,7 @@ void Lowering::tryStatement(sema::TypedId id) {
 // What an Itanium handler takes by value: a scalar that is no pointer, or a class copied by the copy constructor the parser
 // recorded for the handler, or by its bytes ([class.copy]/12) - with its destructor known where it has one.
 bool Lowering::caughtByValue(sema::TypedId handler, const Type &c) {
-    if (!c.isStructOrUnion()) return scalar(c) && !c.isPointer() && !c.isX87(target_);
+    if (!c.isStructOrUnion()) return scalar(c) && !c.isPointer() && !c.isMemberPointer() && !c.isX87(target_);
     if (!c.isComplete() || c.kind() == Kind::Union || c.hasVirtualBase()) return false;
     std::string copy;
     TypeId sig;
@@ -4974,7 +5112,7 @@ void Lowering::microsoftTry(sema::TypedId id) {
             const Type &c = T(h.caught);
             // The runtime makes the object in the slot - a scalar's bytes, a class's by its copy constructor, or a pointer to
             // it - and the handler destroys a class caught by value on every way out, as cl's funclet does.
-            if (h.byRef ? !referable(c) : !(scalar(c) || (c.isStructOrUnion() && c.isComplete())) || c.isX87(target_))
+            if (h.byRef ? !referable(c) : !(scalar(c) || (c.isStructOrUnion() && c.isComplete())) || c.isX87(target_) || c.isMemberPointer())
                 outside("a catch of '" + t.describe() + "'");
             if (!h.byRef && c.isStructOrUnion() && c.unqualified()->hasDestructor()) {
                 h.dtor = destructor_ ? destructor_(c.unqualified()->id()) : std::string();

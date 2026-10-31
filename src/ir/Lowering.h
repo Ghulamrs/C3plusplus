@@ -270,6 +270,13 @@ private:
     bool memberAddressNode(sema::TypedId id) const;
     Val memberFunctionPair(sema::TypedId id);
     Val memberPointerCall(sema::TypedId id, sema::TypedId mp, CallInfo info);
+    bool dataMemberPointerNode(sema::TypedId id) const;
+    void offsetModel(const Type &mp);
+    Val dataMemberPointer(sema::TypedId id);
+    ValueId nullMemberPointer(TypeId mp);
+    Val memberPointerConversion(Val v, TypeId to);
+    Val memberPointerCompare(const std::string &op, Val a, Val b);
+    Val memberPointerLvalue(sema::TypedId id);
     Val callTail(TypeId sig, CallInfo info, std::vector<ValueId> ops, std::size_t skip, const std::vector<sema::TypedId> &args,
                  bool dummyInt);
     bool operatorCalls(sema::TypedId id) const;
