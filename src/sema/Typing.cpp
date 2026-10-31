@@ -660,6 +660,7 @@ void Typer::closureSources(syntax::NodeId id) {
     if (k == p_.lambdaFacts_.end() || !k->second.simple) return;
     std::vector<syntax::NodeId> sources;
     for (const Parser::LambdaCapture &c : k->second.captures) {
+        if (c.outerOffset >= 0) { sources.push_back(syntax::NodeId()); continue; }      // read through `this`
         syntax::NodeId decl;
         for (std::size_t i = scopes_.size(); !decl.valid() && i > 0; i--) {
             std::unordered_map<std::string, Declared>::const_iterator it = scopes_[i - 1].find(c.src);
@@ -685,6 +686,8 @@ bool Typer::closureFacts(syntax::NodeId id, ClosureFacts &out) const {
         c.offset = k->second.captures[i].offset;
         c.type = TypeTable::id(k->second.captures[i].type);
         c.source = s->second[i];
+        c.outer = k->second.captures[i].outerOffset;
+        if (c.outer >= 0) c.outerType = TypeTable::id(k->second.captures[i].srcType);
         out.captures.push_back(c);
     }
     return true;

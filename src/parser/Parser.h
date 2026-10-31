@@ -812,7 +812,8 @@ private:
     std::unordered_map<std::uint32_t, std::pair<std::string, int> > bindTemps_;
     // A lambda whose captures are scalar locals: the closure's slot and each capture's member and source, by node.
     struct LambdaCapture { std::string member; int offset = 0; const Type *type = nullptr;
-                           std::string src; int srcOffset = 0; const Type *srcType = nullptr; bool srcConst = false; };
+                           std::string src; int srcOffset = 0; const Type *srcType = nullptr; bool srcConst = false;
+                           int outerOffset = -1; };    // >= 0: the enclosing closure's member at that offset, srcType its type
     struct LambdaFacts { bool simple = false; std::string slotName; int slot = 0; const Type *type = nullptr;
                          std::vector<LambdaCapture> captures; int thisOffset = -1; const Type *thisType = nullptr; };
     std::unordered_map<std::uint32_t, LambdaFacts> lambdaFacts_;
@@ -1628,6 +1629,7 @@ private:
     bool memberReachable(const Type *n, const Type *decl, Access own) const;
     // A name that is a *capture of the lambda around this one*.
     ExprPtr outerCaptureAccess(const std::string &name);
+    const Member *outerCaptureMember(const std::string &name);
     const Type *referenceCaptureType(const Type *captured);
     // **One closure type per lambda written, however often it is read.** 7.1 reads an
     // `auto` initialiser twice, so a lambda reached here twice and made two classes, and

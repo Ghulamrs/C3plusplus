@@ -56,7 +56,8 @@ struct Resolution : ResolutionKind {
 
 // A lambda whose captures are scalar locals (M3b.2): its closure, and each capture's member - its offset and type, a
 // reference for one by reference - and the `var` of the local it copies or binds, found in the scopes at the lambda.
-struct ClosureCapture { int offset; TypeId type; syntax::NodeId source; ClosureCapture() : offset(0) {} };
+// `outer` >= 0: the source is the enclosing closure's member at that offset, of type `outerType`, not a local.
+struct ClosureCapture { int offset; TypeId type; syntax::NodeId source; int outer; TypeId outerType; ClosureCapture() : offset(0), outer(-1) {} };
 struct ClosureFacts { TypeId closure; std::vector<ClosureCapture> captures; int thisOffset; TypeId thisType; ClosureFacts() : thisOffset(-1) {} };
 
 // A static local built at run time as guardOnce built it (M3b.2): its guard, whether a throw out of the construction aborts

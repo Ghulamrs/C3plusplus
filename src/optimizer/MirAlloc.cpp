@@ -1,4 +1,5 @@
 #include "MirAlloc.h"
+#include "OptDeclines.h"
 #include "MirWebs.h"
 
 #include "OptPasses.h"
@@ -499,7 +500,9 @@ bool Allocator::run() {
     fellBack_ = false;
     if (n_ == 0) return Webs::dropSelfCopies(fn_);
     demoted_.assign(n_, false);
+    int rounds = 0, demotions = 0;
     for (;;) {
+        ++rounds;
         findUses();
         solveLiveness();
         buildInterference();
@@ -509,12 +512,16 @@ bool Allocator::run() {
         assert(valid(homes) && "the homes must colour the graph: they are how the stream ran");
         const int failed = colour();
         if (failed < 0) break;
-        if (demote(failed)) continue;
+        if (demote(failed)) { ++demotions; continue; }
         colour_ = homes;
         coalesced_ = 0;
         fellBack_ = true;
         break;
     }
+    // With CPP11_DECLINES, each function's graph and how many rebuilds its demotions cost (the -O2 self-host's 335 s).
+    if (opt::reportingDeclines())
+        std::fprintf(stderr, "alloc %s nodes=%d homes=%d rounds=%d demoted=%d fellback=%d\n", fn_.name.c_str(), n_, nHomes_,
+                     rounds, demotions, fellBack_ ? 1 : 0);
     bool moved = false;
     for (int p = 0; p < nHomes_; ++p) moved = moved || colour_[p] != homes_[p];
     for (int p = nHomes_; p < n_; ++p) moved = moved || colour_[p] >= 0;

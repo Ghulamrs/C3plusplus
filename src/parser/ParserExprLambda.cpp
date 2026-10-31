@@ -513,7 +513,7 @@ ExprPtr Parser::buildClosure(const MadeLambda &made, std::size_t pos) {
 }
 
 // What the adapter needs to build the closure again (M2.12n): kept only where every capture is a scalar local
-// of this function, by value or by reference, or `this`, and the closure has nothing to destroy.
+// of this function or of the lambda around it, by value or by reference, or `this`, and the closure has nothing to destroy.
 void Parser::noteClosure(const MadeLambda &made, const std::string &name, int off) {
     pendingLambda_ = LambdaFacts();
     pendingLambda_.simple = destructorOf(made.type) == nullptr;
@@ -532,7 +532,25 @@ void Parser::noteClosure(const MadeLambda &made, const std::string &name, int of
         // A class by reference, or by value where the copy above is an assignment of its bytes (M3b.2).
         const bool classHeld = held->isStructOrUnion() && held->isComplete() &&
                                (made.types[i]->isReference() || classes_.copyConstructorOf(held->unqualified()) == nullptr);
-        if (l == nullptr || !l->staticName.empty() || l->isThreadLocal || l->constantOnly || l->isRegister ||
+        // What the lambda around this one captured: its member, read through this call operator's `this` (M3b.2).
+        if (l == nullptr) {
+            const Member *om = outerCaptureMember(made.names[i]);
+            const Type *from = om == nullptr ? nullptr : om->type->isReference() ? om->type->referent() : om->type;
+            if (from == nullptr || !(held->isScalar() || classHeld) || from->unqualified() != held->unqualified()) {
+                pendingLambda_.simple = false;
+                break;
+            }
+            LambdaCapture c;
+            c.member = made.names[i];
+            c.offset = made.offsets[i];
+            c.type = made.types[i];
+            c.src = made.names[i];
+            c.srcType = om->type;
+            c.outerOffset = om->offset;
+            pendingLambda_.captures.push_back(c);
+            continue;
+        }
+        if (!l->staticName.empty() || l->isThreadLocal || l->constantOnly || l->isRegister ||
             !(held->isScalar() || classHeld) || source->unqualified() != held->unqualified()) {
             pendingLambda_.simple = false;
             break;
@@ -755,18 +773,21 @@ const Type *Parser::referenceCaptureType(const Type *captured) {
 // capture is a member of the outer closure, so `findLocal` answers nothing and the
 // capture machinery looks here. Null for every other name, which is most of them.
 ExprPtr Parser::outerCaptureAccess(const std::string &name) {
+    const Member *m = outerCaptureMember(name);
+    if (m == nullptr) return nullptr;
+    ExprPtr acc = thisMember(lookup_.findLocal("this")->offset, currentClass_->unqualified(), *m);
+    return useReference(std::move(acc));
+}
+
+// The member of the closure whose call operator is being read that holds capture `name`, where `this` is there to reach it.
+const Member *Parser::outerCaptureMember(const std::string &name) {
     if (currentClass_ == nullptr) return nullptr;
     const Type *closure = currentClass_->unqualified();
     if (closureOuter_.find(closure->tag()) == closureOuter_.end() &&
         localClassOwner_.find(closure->tag()) == localClassOwner_.end())
         return nullptr;
     const Member *m = closure->findMember(name);
-    if (m == nullptr) return nullptr;
-    const Local *self = lookup_.findLocal("this");
-    if (self == nullptr) return nullptr;
-
-    ExprPtr acc = thisMember(self->offset, closure, *m);
-    return useReference(std::move(acc));
+    return m == nullptr || lookup_.findLocal("this") == nullptr ? nullptr : m;
 }
 
 // The body of each is tokens over hidden typedefs, so any type is one identifier; `__invoke`
