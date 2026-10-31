@@ -1097,3 +1097,36 @@ Round 18 as landed (`c3458d1`) did not self-host: lane-cval's record copy was a 
 stages 0, 1 and 2** - the comparison round 17 left open; `make test` exit 0 on the fixed tree (run.sh 1077 / 0, ssa.sh
 8,447 / 7,992 / 0). From here the self-host comparison is part of every round's gate before it lands. Owed: -O2 (running)
 and the Windows box's own comparison, the box being down.
+
+**M3b.2, round 19 of 2026-10-31: outer captures, Microsoft catches of a class, and Fable 5.1's review answered** (the
+coordinator: `c06f55a`, `b3ec043`, `2427a2c`, `e1b2a53`, `99c34cc`; Opus 5.5). A lambda inside a lambda reads its
+enclosing closure's capture through the call operator's `this` (a scalar, or a class copied as bytes), and a closure
+marked only for a member's class with a constructor is copied as bytes; a Microsoft by-value catch of any class is
+lowered, the caught object guarded as a handler local; `p->~T()` of a class with no destructor does nothing; a call's
+class result binds a `const &` or `&&` parameter. **Fable 5.1 reviewed M3b.2 at this round** (boxkit
+`M3B2-REVIEW-FABLE-2026-10-31.md`): *on plan with conditions*, no blocking finding, no miscompile found in rounds 17-19.
+Its conditions, as met: (1) the self-host is in this round's gate, below; (2) M3-IR 3.13 states the Itanium table and
+what the lowering reads as built - the hooks in three kinds, which size M3b.7; (3) `tools/mangled-names` takes
+`CXX1_FLAGS`, and the names row under `-front=ssa` ran - the symbol lists of every case for the three targets with the
+flag against without it, 2,193 compared, 2,173 the same and 20 moved (all runtime calls: `operator delete` in 15 - the
+[expr.new]/20 cleanup the SSA path does not write, recorded here, found not fixed - `__chkstk` in 4, `_Unwind_Resume`
+in 2; the same 20 as round 16), and `names.sh` itself under the flag on those 18 cases on the Windows box (Visual
+Studio's Git `sh`, clang 22): 16 passed, 2 failed for the host's clang alone (`bzero` for `memset`; no Linux or Darwin
+`<new>`); (4) the structural refusals inside M3b.2's scope, with counts on Linux: a variadic function (8), x87 - a cast
+to `long double` (9) and an x87 long double (5) - a local with alignas (5, refused by the Driver), a thread_local (4);
+(5) **the -O2 allocator, measured**: under `-front=ssa -O2` `X64Parse.cpp`'s code generation takes 335 s (plain -O2: 1 s),
+and `mir::Allocator::run` reports (under `CPP11_DECLINES`) `X64Target::directive` at 5,736 nodes and **2,096 colouring
+rounds** where the walker's is 2,351 nodes and 11 - one value demoted per full rebuild; the file 28,126 nodes / 7,647
+rounds against 9,629 / 315. The rounds are the cost, so round 20 demotes every failed value of a round (changing -O2
+output on both paths), and the -O2 self-host waits for it. `tools/self-host` caps each compile (`SELFHOST_CAP`, 1200 s).
+**The gates, said as what they are:** Linux `make test` exit 0; run.sh 1078 / 0 at -O0, `-front=ssa` and `-front=ssa
+-O2` - 738 programs against clang's `.expected` and 340 refusals the parser makes before any lowering; ssa.sh **8,456
+bodies, 8,018 lowered (94.8%)** and verified - the IR verifier, well-formedness, not behaviour; the emit golden 9 of
+2,693 changed (round 16's files), coff 0 differ, c90 447 / 0, exclusions 126 sites 0 / 0, comment cap 0, the memory gate
+under its baseline; **the self-host under `-front=ssa` at -O0, all 84 sources the same at stages 0, 1 and 2** on the final
+tree. Windows (cl 19.44, a 5-core VM since 17:00, our jobs on 3 cores): every case against `.expected` at `-front=ssa`
+and at `-front=ssa -O2`, GNU **706 same, 0 differ** and MASM **705 same, 0 differ**, 340 refused as recorded, both levels
+(the MASM spelling needs `CXX1_MASM_SRC`/`CXX1_LINK_SRC`; a pass is four jobs through `tools/windows/par.cmd`'s shard range).
+Windows-target lowering 8,748 bodies, 8,335 lowered, 0 failed. Largest refusals left (Linux): a reference parameter bound
+to what is not an object (9), a local's cleanup in a function the parser gave no landing pads (9), a cast to `long double`
+(9), a variadic function (8), a call with defaults or too many arguments (8), and a long tail - 438 bodies outside.
