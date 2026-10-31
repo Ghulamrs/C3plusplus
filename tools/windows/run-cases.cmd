@@ -51,10 +51,13 @@ if "%CXX1_CASES_COMPILER%"=="" (
 )
 
 if not exist %ROOT%\winout mkdir %ROOT%\winout
+rem  CXX1_CASES_KEEP=1: the second job of a pass split in two keeps what the first wrote.
+if "%CXX1_CASES_KEEP%"=="1" goto :kept
 del /q %ROOT%\winout\* 2>nul
 if exist %ROOT%\winout\masm rmdir /s /q %ROOT%\winout\masm
 if exist %ROOT%\winout\default rmdir /s /q %ROOT%\winout\default
 if exist %ROOT%\winout\ml64 rmdir /s /q %ROOT%\winout\ml64
+:kept
 
 rem  Six shards at once, each taking every sixth case - see par.cmd.
 set CXX1_PASS_FLAGS=-masm=gnu
