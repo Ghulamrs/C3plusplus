@@ -1,0 +1,20 @@
+useOnly 6
+useOnly temporary 8
+useOnly result 10
+earlyOut -3 0 10
+---
+useCopied 6
+useCopied temporary 7
+useCopied result 8
+useCopied converted 9
+useBoth 7
+---
+areas 3 16 16
+useShape 3 4
+sumShapes 7
+copied shape 3
+---
+caught 5
+no throw
+end
+LEDGER balanced=1 live=0 double=0 phantom=0 over=0 lost=0

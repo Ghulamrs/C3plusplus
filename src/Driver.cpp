@@ -1367,6 +1367,8 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         return typer.microsoftUnnamedCaught(id, d, r, c);
     });
     lowering.setNewFacts([&typer](syntax::NodeId id, sema::NewFacts &out) { return typer.newFacts(id, out); });
+    lowering.setRangeCalls([&typer](syntax::NodeId id, sema::Resolution &b, sema::Resolution &e) { return typer.rangeCalls(id, b, e); });
+    lowering.setCaughtCopy([&typer](syntax::NodeId id, std::string &sym, TypeId &sig) { return typer.caughtCopy(id, sym, sig); });
     lowering.setMemberBuilt([&typer](const std::string &ctor, const std::string &m, std::uint32_t pos, std::string &sym, TypeId &sig, bool &dflt) {
         return typer.memberBuilt(ctor, m, pos, sym, sig, dflt);
     });
@@ -1385,12 +1387,16 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         return typer.temporaryBuilt(id, sym, sig, zero);
     });
     lowering.setConvertedBuilt([&typer](syntax::NodeId id, std::string &sym, TypeId &sig) { return typer.convertedBuilt(id, sym, sig); });
+    lowering.setArgumentCopy([&typer](syntax::NodeId id, std::string &sym, TypeId &sig, bool &elided) {
+        return typer.argumentCopy(id, sym, sig, elided);
+    });
     lowering.setClosure([&typer](syntax::NodeId id, sema::ClosureFacts &out) { return typer.closureFacts(id, out); });
     lowering.setReturnBuilt([&typer](syntax::NodeId id, int &form, std::string &sym, TypeId &sig) {
         return typer.returnBuilt(id, form, sym, sig);
     });
     lowering.setNamedReturn([&typer](syntax::NodeId id) { return typer.namedReturnLocal(id); });
     lowering.setElidedInto([&typer](syntax::NodeId v, syntax::NodeId c) { return typer.elidedInto(v, c); });
+    lowering.setArrowCalls([&typer](syntax::NodeId o, std::vector<sema::Resolution> &out) { return typer.arrowCalls(o, out); });
     lowering.setAssignCall([&typer](syntax::NodeId v, std::string &sym, TypeId &sig) { return typer.assignCall(v, sym, sig); });
     std::map<std::string, int> reasons;
     int lowered = 0;

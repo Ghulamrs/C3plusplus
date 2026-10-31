@@ -502,23 +502,33 @@ private:
     std::vector<syntax::NodeId> callArgs_;
     // Counts the argument lists parseArguments has read, so a postfix step can tell whether it read one.
     unsigned argGen_ = 0;
+    // A read between a call's arguments and its node - a signature, a default - keeps the call's callArgs_ (M3b.2).
+    struct KeepCallArgs {
+        Parser *p;
+        std::vector<syntax::NodeId> was;
+        explicit KeepCallArgs(Parser *parser) : p(parser), was(parser->callArgs_) {}
+        ~KeepCallArgs() { p->callArgs_.swap(was); }
+    };
     struct PostfixStep {
-        bool active, callFollows;
+        bool active;
         syntax::Kind kind;
         std::string text;
-        std::size_t pos, callPos;
+        std::size_t pos, nameAt;
         syntax::NodeId operand, index;
         unsigned argGen;
-        PostfixStep() : active(false), callFollows(false), kind(syntax::Kind::Other), pos(0), callPos(0), argGen(0) {}
+        PostfixStep() : active(false), kind(syntax::Kind::Other), pos(0), nameAt(0), argGen(0) {}
     };
     PostfixStep beginPostfix(const ExprPtr &n) const;
     ExprPtr notePostfix(ExprPtr n, PostfixStep &st);
     syntax::Tree syntaxTree_;
     // A node over the parts parsed since node `mark` whose locations lie from `lo` to the last token read: a statement's
     // or a declaration's, each part having taken its own (Tree::adopt). noteStmt puts it on the Ast.h statement too.
-    syntax::NodeId noteParts(syntax::Kind kind, const std::string &text, std::size_t pos, std::size_t mark, std::size_t lo) {
+    syntax::NodeId noteParts(syntax::Kind kind, const std::string &text, std::size_t pos, std::size_t mark, std::size_t lo,
+                             const std::vector<syntax::NodeId> &after = std::vector<syntax::NodeId>()) {
         const std::size_t hi = at_ > 0 && tokens_[at_ - 1].pos > lo ? tokens_[at_ - 1].pos : lo;
-        return syntaxTree_.add(kind, text, pos, syntaxTree_.adopt(mark, lo, hi));
+        std::vector<syntax::NodeId> parts = syntaxTree_.adopt(mark, lo, hi);
+        parts.insert(parts.end(), after.begin(), after.end());
+        return syntaxTree_.add(kind, text, pos, parts);
     }
     StmtPtr noteStmt(StmtPtr s, syntax::Kind kind, const std::string &text, std::size_t pos, std::size_t mark,
                      std::size_t lo) {
@@ -656,11 +666,12 @@ private:
     struct ThrowFacts { std::string temp; int slot = 0; std::string info; };
     std::unordered_map<std::uint32_t, ThrowFacts> throwFacts_;
     ThrowFacts pendingThrow_;
-    // A `new` or `delete` as the SSA lowering may take it (M3b.2): the allocation function called, the type, the initialiser
-    // (0 none, 1 value-initialised, 2 one value), `why` where it may not; for a class with constructors the one chosen,
-    // its type with `T *` first, whether the object is zeroed first and whether defaults filled the arguments out.
-    struct NewFacts { std::string symbol, why, ctor, dtor; const Type *made = nullptr, *ctorSig = nullptr, *dtorSig = nullptr;
-                      bool array = false, placed = false, ctorZero = false, ctorDefaulted = false; int init = 0, dslot = -1; };
+    // A `new` or `delete` as the SSA lowering may take it (M3b.2): allocation function, type, initialiser (0 none, 1 value-
+    // initialised, 2 one value), `why` where it may not; a class's chosen constructor, its type with `T *` first, zeroed first,
+    // defaults added; bytesCopied, `new T(t)` storing t's bytes ([class.copy]/12); vectorLoop, `new T[n]`'s element builder.
+    struct NewFacts { std::string symbol, why, ctor, dtor, vectorLoop; const Type *made = nullptr, *ctorSig = nullptr, *dtorSig = nullptr;
+                      bool array = false, placed = false, ctorZero = false, ctorDefaulted = false, bytesCopied = false;
+                      int init = 0, dslot = -1; };
     std::unordered_map<std::uint32_t, NewFacts> newFacts_;
     NewFacts pendingNew_;
     void noteCallSlots(const Call &c) {
@@ -677,7 +688,9 @@ private:
     // nothing either way. 0 none, 1 `= e` or `(e)`, 2 a braced list, 3 empty braces - value-initialisation.
     std::unordered_map<std::uint32_t, int> varForms_;
     std::unordered_map<std::uint32_t, int> forParts_;   // a `for`'s parts present: 1 init, 2 condition, 4 step (M3b.2)
+    int hoistedForParts_ = 0;   // a `for` whose init has a destructor, its init hoisted in front: its parts, for noteStmt
     std::unordered_map<std::uint32_t, std::string> unnamedCaught_;   // `catch (T)` with no name: T's type_info, by `catch` node
+    std::map<std::uint32_t, MemberBuilt> caughtCopy_;    // a class caught by value: the copy constructor that copied it, by `catch` node
     struct MsUnnamed { std::string descriptor; bool byRef, isConst; };
     std::unordered_map<std::uint32_t, MsUnnamed> msUnnamedCaught_;   // the same on Microsoft: T's descriptor, by `catch` node
     void noteMsCatch(bool typed, bool unnamed, const MsHandler &mh, std::size_t pos, std::size_t mark) {
@@ -707,8 +720,18 @@ private:
     }
     // The constructor a declaration called, by the declared local's serial, until its `var` node is made (M2.16): its
     // signature with `this`, whether defaults were added to the written arguments, whether [dcl.init]/8 zeroed first.
-    struct LocalBuilt { std::string symbol; const Type *signature; bool defaulted, zeroed; };
+    struct LocalBuilt { std::string symbol; const Type *signature; bool defaulted, zeroed; std::vector<syntax::NodeId> defaults; };
     std::map<int, LocalBuilt> ctorBySerial_;
+    // The defaults a local's constructor was completed by, for its `var` node to take as its last parts, read in the
+    // declaration's scope as a call's are (M3b.2); none where one has no syntax.
+    std::vector<syntax::NodeId> localDefaults(const std::string &name) {
+        const Local *l = lookup_.findLocal(name);
+        std::map<int, LocalBuilt>::const_iterator c = l != nullptr ? ctorBySerial_.find(l->serial) : ctorBySerial_.end();
+        if (c == ctorBySerial_.end() || !c->second.defaulted) return std::vector<syntax::NodeId>();
+        for (std::size_t i = 0; i < c->second.defaults.size(); i++) defaultArgNodes_.insert(c->second.defaults[i].v);
+        if (!c->second.defaults.empty()) defaultGroups_.erase(c->second.defaults.back().v);
+        return c->second.defaults;
+    }
     std::unordered_map<std::uint32_t, LocalBuilt> localBuilt_;      // the same, by `var` node (M3b.2)
     // The copy or move assignment `a = b` called for a class with one of its own, by b's node: its symbol and type (M3b.2).
     std::unordered_map<std::uint32_t, LocalBuilt> assignCalls_;
@@ -731,7 +754,7 @@ private:
             if (d == nullptr) return;
             const syntax::NodeId id = function
                 ? p.noteParts(syntax::Kind::Function, d->name, d->pos, mark, lo)
-                : p.noteParts(syntax::Kind::Var, varText(), d->pos, mark, lo);
+                : p.noteParts(syntax::Kind::Var, varText(), d->pos, mark, lo, p.localDefaults(d->name));
             if (!function && d->type != nullptr) p.declaredTypes_[id.v] = d->type;
             if (!function && form != 0) p.varForms_[id.v] = form;
             if (!function) p.noteDeclaredLocal(id, d->name);
@@ -755,6 +778,8 @@ private:
         if (kind == syntax::Kind::Call) {
             if (const Call *c = dynamic_cast<const Call *>(e.get())) noteCallSlots(*c);
             else noteTemporarySlot(e.get());
+        } else if (kind == syntax::Kind::Cast) {
+            noteTemporarySlot(e.get());     // `(T)v` through T's converting constructor is a temporary, as `T(v)` is (M3b.2)
         } else if (kind == syntax::Kind::Name && e && e->resolved() == 0) {
             const Resolved tmp = temporaryOf(e.get());
             if (tmp.what == Resolved::Temporary) resolutions_[e->syntax().v] = tmp;
@@ -772,11 +797,17 @@ private:
     std::string memberDefaultFor_;
     // A class temporary `T(a)` is `*(ctor(&$tmp, a), &$tmp)`, its slot the parser's: kept by node (M2.12i).
     std::unordered_map<std::uint32_t, int> temporarySlots_;
+    // The operator-> calls `->` on a class made, [over.ref]'s hops in order, by the node of the operand they were asked of (M3b.2).
+    std::unordered_map<std::uint32_t, std::vector<std::uint32_t> > arrowCalls_;
     // And the constructor that built it, by node: its symbol, its type with `T *` first, and whether `T()` zeroed first.
     struct TemporaryBuilt { std::string symbol; const Type *signature; bool zeroFirst; };
     std::unordered_map<std::uint32_t, TemporaryBuilt> temporaryBuilt_;
     // The converting constructor userConversion called to make a temporary of a value, by the value's node (M3b.2).
     std::unordered_map<std::uint32_t, TemporaryBuilt> convertedBuilt_;
+    // The copy materialiseCopy made of a by-value class argument, by the argument's node: the copy or move constructor's
+    // symbol and type with `T *` first - or `elided`, the call producing the argument built straight into it (M3b.2).
+    struct ArgumentCopy { std::string symbol; const Type *signature; bool elided; };
+    std::unordered_map<std::uint32_t, ArgumentCopy> argumentCopies_;
     // A value a const or rvalue reference binds copied into a frame slot by bindReference: its name and slot, by node.
     std::unordered_map<std::uint32_t, std::pair<std::string, int> > bindTemps_;
     // A lambda whose captures are scalar locals: the closure's slot and each capture's member and source, by node.
@@ -793,6 +824,10 @@ private:
     struct RangeFacts { std::string bName, eName; int bSlot, eSlot, scope, inner; };
     std::unordered_map<std::uint32_t, RangeFacts> rangeFacts_;
     RangeFacts pendingRange_ = RangeFacts();
+    // A range-based for over a class object, its iterators pointers and nothing alive: its begin and end calls' records (M3b.2).
+    struct RangeCalls { std::uint32_t begin = 0, end = 0; bool object = false; };
+    std::unordered_map<std::uint32_t, RangeCalls> rangeCalls_;
+    RangeCalls pendingRangeCalls_;
     LambdaFacts pendingLambda_;
     // A class temporary's shape, `*(ctor(&$tmp, ...), &$tmp)`, read for its class; None where the Expr is not one.
     Resolved temporaryOf(const Expr *e) const {
@@ -1893,7 +1928,8 @@ private:
                              const Type *ptr, ExprPtr body);
     ExprPtr materialiseCopy(const Type *type, ExprPtr arg, std::size_t pos,
                             const std::string &what,
-                            std::vector<Temporary> &destroy);
+                            std::vector<Temporary> &destroy, syntax::NodeId written);
+    void noteArgumentCopy(syntax::NodeId node, const std::string &symbol, const Type *signature, bool elided);
     std::vector<Temporary> pendingTemps_;
     // The temporaries each statement of the block being parsed made, so that the cleanup regions can name them.
     std::vector<Temporary> statementTemps_;
@@ -2311,6 +2347,7 @@ private:
     ExprPtr memberPointerExpr();
     ExprPtr applyMemberPointer(ExprPtr addr, ExprPtr mp, std::size_t pos,
                                bool constObject);
+    ExprPtr noteMemberPointer(ExprPtr e, const char *op, std::size_t pos, syntax::NodeId l, syntax::NodeId r);
     // `&S::f` - the ABI's pair, built into a slot of this frame.
     // `vtableCode` is Itanium's 1 + slot offset for a virtual function, 0 for
     // a plain one; `code` names the function - or cl's vcall thunk - to hold.

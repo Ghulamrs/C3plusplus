@@ -658,6 +658,8 @@ const Type *Parser::classRangeEnds(ExprPtr range, std::size_t rpos,
 
     // A temporary range is what `auto &&__range` binds and keeps alive to the loop's end,
     // [class.temporary]/5: here it is built into a slot of its own, destroyed after the loop.
+    pendingRangeCalls_ = RangeCalls();
+    pendingRangeCalls_.object = isGlvalue(*range);
     if (isGlvalue(*range)) {
         extendTemporary(*range, ".rt" + std::to_string(refTemps_++));
     } else {
@@ -715,6 +717,7 @@ const Type *Parser::classRangeEnds(ExprPtr range, std::size_t rpos,
     };
 
     ExprPtr first = end("begin");
+    pendingRangeCalls_.begin = first->resolved();
     const Type *iter = first->type()->unqualified();
     if (!iter->isPointer() && !iter->isStructOrUnion())
         src_.fail(rpos, "'begin' of '" + cls->describe() + "' returns '" +
@@ -726,6 +729,7 @@ const Type *Parser::classRangeEnds(ExprPtr range, std::size_t rpos,
     rangeBuilt_.push_back(std::make_pair(setup.size(), alive_.size()));
 
     ExprPtr last = end("end");
+    pendingRangeCalls_.end = last->resolved();
     if (last->type()->unqualified() != iter)
         src_.fail(rpos, "'begin' and 'end' of '" + cls->describe() + "' return "
                         "different types, '" + iter->describe() + "' and '" +
@@ -782,7 +786,9 @@ StmtPtr Parser::rangeForStatement(int scope) {
     const std::size_t aliveBefore = alive_.size();
     std::vector<StmtPtr> listSetup;
     ExprPtr range;
-    if (peek().is("{")) {
+    const bool braced = peek().is("{");
+    pendingRangeCalls_ = RangeCalls();
+    if (braced) {
         const std::size_t braces = at_;
         const Type *il = deduceBracedAuto("the range", rpos);
         at_ = braces;
@@ -851,6 +857,7 @@ StmtPtr Parser::rangeForStatement(int scope) {
     }
 
     const std::vector<std::pair<std::size_t, std::size_t> > ownBuilt = rangeBuilt_;
+    const RangeCalls calls = pendingRangeCalls_;     // the body's own range-fors record theirs before this one's
     // A class iterator is walked by its own `!=`, `++` and `*`, [stmt.ranged]/1;
     // a pointer by the built-in ones.
     const bool classIter = elemPtr->isStructOrUnion();
@@ -941,6 +948,8 @@ StmtPtr Parser::rangeForStatement(int scope) {
     setup.push_back(StmtPtr(f));
     if (!classIter && alive_.size() == aliveMark && rt->isArray())
         pendingRange_ = RangeFacts{ bName, eName, bSlot, eSlot, scope, inner };
+    const bool classCalls = !classIter && alive_.size() == aliveMark && !rt->isArray() && !braced;
+    pendingRangeCalls_ = classCalls ? calls : RangeCalls();
     // The range temporary and the iterators die after the loop, in the reverse order,
     // and on the way out of an exception too - a cleanup region from where each was built.
     if (alive_.size() != aliveMark) {
@@ -1083,6 +1092,7 @@ StmtPtr Parser::forStatement() {
     // at its '}' - and on the way out of an exception, so the init stands in front of the loop, in
     // the statement's scope, and the loop is a cleanup region from there, as an `if`'s condition is.
     std::vector<StmtPtr> steps;
+    const int partsAfterInit = (cond != nullptr ? 2 : 0) | (step != nullptr ? 4 : 0);
     steps.push_back(std::move(init));
     steps.push_back(StmtPtr(new For(StmtPtr(), std::move(cond), std::move(step), std::move(body))));
     const std::vector<std::pair<std::size_t, std::size_t> > built(1, std::make_pair(std::size_t(1), alive_.size()));
@@ -1090,6 +1100,7 @@ StmtPtr Parser::forStatement() {
     steps = target_.microsoftNames() ? wrapMsCleanups(std::move(steps), built, aliveAtEntry, pos)
                                      : wrapCleanups(std::move(steps), built, aliveAtEntry, pos);
     alive_.resize(aliveAtEntry);
+    hoistedForParts_ = 1 | partsAfterInit;
     Block *b = new Block(std::move(steps));
     b->setScope(scope);
     return StmtPtr(b);
@@ -1500,8 +1511,14 @@ StmtPtr Parser::statement() {
         if (pendingRange_.bName.empty())
             forParts_[noted->syntax().v] = (f->init() != nullptr ? 1 : 0) | (f->cond() != nullptr ? 2 : 0) | (f->step() != nullptr ? 4 : 0);
     }
+    // The init hoisted in front of the loop, which is no longer the statement the parser returned: its parts as written.
+    if (kind == syntax::Kind::For && hoistedForParts_ != 0) forParts_[noted->syntax().v] = hoistedForParts_;
+    hoistedForParts_ = 0;
     if (kind == syntax::Kind::For && !pendingRange_.bName.empty()) rangeFacts_[noted->syntax().v] = pendingRange_;
     pendingRange_ = RangeFacts();
+    if (kind == syntax::Kind::For && pendingRangeCalls_.object && pendingRangeCalls_.begin != 0 && pendingRangeCalls_.end != 0)
+        rangeCalls_[noted->syntax().v] = pendingRangeCalls_;
+    pendingRangeCalls_ = RangeCalls();
     if (const Case *c = dynamic_cast<const Case *>(noted.get()))
         caseFacts_[noted->syntax().v] = CaseFacts{ c->value(), c->isDefault(), c->id() };
     if (kind == syntax::Kind::Return && !pendingReturnTemp_.name.empty()) returnTemps_[noted->syntax().v] = pendingReturnTemp_;
@@ -1757,6 +1774,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
         ExprPtr began = runtimeCall("__cxa_begin_catch", voidPtr,
                                     std::move(beginArgs));
 
+        const Signature *caughtCopy = nullptr;     // a class caught by value, copied by its copy constructor
         if (caught != nullptr && !caughtName.empty()) {
             const int slot = declare(caughtName, declaredType, cpos);
             noteDeclaredVar(caughtName, declaredType, cpos);
@@ -1801,6 +1819,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
 
                 if (cc != nullptr) {
                     markUsed(cc);
+                    caughtCopy = cc;
                     ExprPtr self(Var::local(caughtName, slot));
                     self->setType(caught);
                     ExprPtr at(new Unary('&', std::move(self)));
@@ -1976,6 +1995,9 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
         leaveScope();
         const syntax::NodeId catchNode = noteParts(syntax::Kind::Catch, caught == nullptr ? "..." : "", cpos, handlerMark, cpos);
         if (caught != nullptr && caughtName.empty()) unnamedCaught_[catchNode.v] = h.type;
+        if (caughtCopy != nullptr)
+            caughtCopy_[catchNode.v] = MemberBuilt{ caughtCopy->symbol, types_.functionType(types_.get(Kind::Void),
+                std::vector<const Type *>{ types_.pointerTo(caught->unqualified()), caughtCopy->params[0] }, false), false };
         TryHandlerFacts hf;
         hf.scope = scope;
         hf.endLabel = endCatchLabel;

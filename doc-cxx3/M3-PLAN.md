@@ -1078,3 +1078,22 @@ members ([dcl.init.aggr]/11), and `int n = {}` / `int n{}` - a value-initialised
 exclusions 126 sites 0 / 0, comment cap 0, the memory gate under its baseline; Windows **694 same, 0 differ, 340 refused
 as recorded** at -O0, `-front=ssa` and `-front=ssa -O2`, and the plain self-host 84 of 84. The self-host comparison
 under `-front=ssa` itself is still open.
+
+**M3b.2, round 18 of 2026-10-30/31: class values that are not plain, member-pointer calls, defaults, range-for over a
+class, class throws and catches** (lane-cval `ea461bd` and lane-cobj `a9eddb5` Fable 5.1, lane-parts `8b5d273` and
+lane-misc `50d256d` Opus 5.5 finished by the coordinator, all off `5bfebe3`, merged as `9678cb0`). cval: a by-value
+parameter, argument and local of a class with a destructor, a copy of its own, a vptr or a base, each ABI its own way.
+cobj: class prvalues materialised - a cast through a converting constructor, `->` hop by hop, copied temporaries,
+reference casts to a base. parts: `(o.*p)(...)` and `(q->*p)(...)`, a member call named past an operator's spelling or a
+template-id, a base or a local built with defaults typed in the declaration's scope. misc: a range-based `for` over a
+class's begin and end, an array `new` of a class through the vector constructor, a throw copied by its constructor and a
+class caught by value. **Found finishing lane-parts**: a member pointer converted to a derived class's at one width is
+retyped in place, and its new `&` record kept the old type - `typed.sh` 1 differ on `member-pointer-models`; the record
+moves with the type now. **The merged tree, gated as one:** Linux `make test` exit 0, run.sh **1077 / 0** at -O0, -O2,
+`-front=ssa` and `-front=ssa -O2`, ssa.sh **8,447 bodies, 7,992 lowered and verified (94.6%)**, 0 failed, the golden 9 of
+2,693 changed (the same 9 as round 17), coff 0 differ, c90 447 / 0, exclusions 126 sites 0 / 0, comment cap 0, the memory
+gate under its baseline. The Windows box is down: on the Mac (gates v3) the `-arch x86_64-windows` hist **8,739 / 8,296 /
+0** (round 17: 8,546 / 7,923 / 0), and the Wine stand-in over the round's 165 cases 157 passed, 1 failed
+(`temporary-unwind`, Wine 6.0's own) at `-front=ssa` and `-front=ssa -O2`. Owed to the Windows box: its cases, names
+against cl and the self-host. Largest refusals left: a class local initialised by what is not an object (14), a catch of
+`struct E` (11), a destructor called by name whose symbol is not recorded (10).

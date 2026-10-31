@@ -469,10 +469,24 @@ ExprPtr Parser::endFullExpression(ExprPtr e) {
     return e;
 }
 
+// What copied a by-value class argument, for the SSA lowering; two different answers for one node leave neither (M3b.2).
+void Parser::noteArgumentCopy(syntax::NodeId node, const std::string &symbol, const Type *signature, bool elided) {
+    if (!node.valid()) return;
+    const ArgumentCopy b = { symbol, signature, elided };
+    const std::unordered_map<std::uint32_t, ArgumentCopy>::iterator had = argumentCopies_.find(node.v);
+    if (had == argumentCopies_.end()) argumentCopies_[node.v] = b;
+    else if (had->second.symbol != b.symbol || had->second.signature != b.signature || had->second.elided != b.elided) {
+        had->second.symbol.clear();
+        had->second.elided = false;
+    }
+}
+
 ExprPtr Parser::materialiseCopy(const Type *type, ExprPtr arg, std::size_t pos,
                                 const std::string &what,
-                                std::vector<Temporary> &destroy) {
+                                std::vector<Temporary> &destroy, syntax::NodeId written) {
     const Type *cls = type->unqualified();
+    // The record goes by the argument as written: a converting constructor's temporary stands in for it here.
+    const syntax::NodeId argNode = written.valid() ? written : arg->syntax();
     // **A by-value parameter is initialised from the argument, so anything that is
     // not an lvalue moves into it.** This path predates rvalue references and
     // reaches for the copy by name, so the choice is made here instead.
@@ -562,6 +576,7 @@ ExprPtr Parser::materialiseCopy(const Type *type, ExprPtr arg, std::size_t pos,
     // argument needs, so no copy constructor runs - as clang does at -O0.
     if (Call *made = producingCall(arg.get())) {
         if (made->type() == cls && returnsIndirectly(cls, made->hasThis())) {
+            noteArgumentCopy(argNode, std::string(), nullptr, true);
             claimCallResult(*made, tmp);
             ExprPtr built(Var::local("$copy", tmp));
             built->setType(cls);
@@ -579,6 +594,11 @@ ExprPtr Parser::materialiseCopy(const Type *type, ExprPtr arg, std::size_t pos,
     }
 
     markUsed(cc);
+    {
+        std::vector<const Type *> full(1, ptr);
+        full.push_back(cc->params[0]);
+        noteArgumentCopy(argNode, cc->symbol, types_.functionType(types_.get(Kind::Void), full, false), false);
+    }
 
     ExprPtr slot(Var::local("$copy", tmp));
     slot->setType(cls);
@@ -651,6 +671,7 @@ ExprPtr Parser::completeCall(const std::string &name, const std::string &symbol,
             continue;
         }
         std::string what = "argument " + std::to_string(i + 1) + " of '" + name + "'";
+        const syntax::NodeId written = args[i]->syntax();
         // **[over.ics.user]: a converting constructor may be called to make an
         // argument.**
         if (ExprPtr made = userConversion(params[i], args[i], pos))
@@ -664,7 +685,7 @@ ExprPtr Parser::completeCall(const std::string &name, const std::string &symbol,
         // Measured on all three targets: clang and cl copy at the call site.
         if (passedByAddress(params[i])) {
             args[i] = materialiseCopy(params[i], std::move(args[i]), pos, what,
-                                      destroy);
+                                      destroy, written);
             continue;
         }
         args[i] = decay(std::move(args[i]));

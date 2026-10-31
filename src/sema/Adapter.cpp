@@ -397,6 +397,8 @@ void Adapter::ownedLocal(TypedId var, const Local &l, std::vector<StmtPtr> &body
         if (chosen == nullptr) outside("a constructor the parser did not record");
         const Signature ctor = *chosen;
         if (ctor.deleted || args.size() != ctor.params.size()) outside("a constructor with defaults, or deleted");
+        const std::unordered_map<std::uint32_t, Parser::LocalBuilt>::const_iterator b = p_.localBuilt_.find(tree.node(var).syntax.v);
+        if (b != p_.localBuilt_.end() && b->second.defaulted) outside("a constructor with defaults, or deleted");
         const Type *thisType = p_.types_.pointerTo(cls);
         ExprPtr object = typed(std::unique_ptr<Var>(Var::local(l.name, l.offset)), l.type);
         std::vector<ExprPtr> all;
@@ -1389,6 +1391,7 @@ ExprPtr Adapter::arithmetic(const std::string &op, ExprPtr a, ExprPtr b) {
 }
 
 ExprPtr Adapter::binary(TypedId, const std::string &op, TypedId l, TypedId r) {
+    if (op == ".*" || op == "->*") outside("a pointer to a member applied");
     ExprPtr a = expr(l);
     const std::size_t mark = pending_.size();
     ExprPtr b = expr(r);

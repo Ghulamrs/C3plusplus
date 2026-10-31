@@ -61,6 +61,8 @@ public:
     void setMicrosoftCatch(std::function<bool(TypeId, std::string &, bool &)> f) { msCatch_ = f; }
     void setMicrosoftUnnamedCaught(std::function<bool(syntax::NodeId, std::string &, bool &, bool &)> f) { msUnnamedCaught_ = f; }
     void setNewFacts(std::function<bool(syntax::NodeId, sema::NewFacts &)> f) { newFacts_ = f; }
+    void setRangeCalls(std::function<bool(syntax::NodeId, sema::Resolution &, sema::Resolution &)> f) { rangeCalls_ = f; }
+    void setCaughtCopy(std::function<bool(syntax::NodeId, std::string &, TypeId &)> f) { caughtCopy_ = f; }
     // The constructor the parser chose for a member, and a class's destructor - Sema's records, asked by the glue.
     void setMemberBuilt(std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> f) { memberBuilt_ = f; }
     void setDestructor(std::function<std::string(TypeId)> f) { destructor_ = f; }
@@ -80,6 +82,8 @@ public:
     void setTemporaryBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> f) { temporaryBuilt_ = f; }
     // The converting constructor that made a temporary of a value at a node - Sema's record, asked by the glue.
     void setConvertedBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &)> f) { convertedBuilt_ = f; }
+    // The copy the parser made of a by-value class argument, by the argument's node - Sema's record, asked by the glue.
+    void setArgumentCopy(std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> f) { argumentCopy_ = f; }
     // A lambda's closure and its captures' members and sources - Sema's record, asked by the glue.
     void setClosure(std::function<bool(syntax::NodeId, sema::ClosureFacts &)> f) { closure_ = f; }
     void setReturnBuilt(std::function<bool(syntax::NodeId, int &, std::string &, TypeId &)> f) { returnBuilt_ = f; }
@@ -88,6 +92,8 @@ public:
     void setElidedInto(std::function<bool(syntax::NodeId, syntax::NodeId)> f) { elidedInto_ = f; }
     // The copy or move assignment the parser called for `a = b`, by b's node - Sema's record.
     void setAssignCall(std::function<bool(syntax::NodeId, std::string &, TypeId &)> f) { assignCall_ = f; }
+    // The operator-> calls `->` on a class value made, by the value's node - Sema's record ([over.ref]).
+    void setArrowCalls(std::function<bool(syntax::NodeId, std::vector<sema::Resolution> &)> f) { arrowCalls_ = f; }
 private:
     struct Outside { std::string why; explicit Outside(const std::string &w) : why(w) {} };
     struct Val { ValueId v; TypeId type; Val() {} Val(ValueId a, TypeId t) : v(a), type(t) {} };
@@ -151,6 +157,7 @@ private:
     Val classValue(sema::TypedId id, const Type &t);
     void forStmt(sema::TypedId id);
     void rangeForStmt(sema::TypedId id);
+    ValueId rangeEnd(const sema::Resolution &r, Val range, TypeId &iter);
     void switchStmt(sema::TypedId id);
     BlockId labelBlock(const std::string &name);
     void gotoStmt(const std::string &name);
@@ -161,6 +168,8 @@ private:
     struct TryHandler { sema::TypedId node, var, body; TypeId caught; std::string sym; int index; };
     struct TryState { std::vector<TryHandler> hs; BlockId done; };
     void tryOpen(const std::vector<sema::TypedId> &handlers, TryState &st);
+    bool caughtByValue(sema::TypedId handler, const Type &c);
+    void caughtCopied(ValueId slot, ValueId from, const std::string &copy, TypeId sig);
     void tryClose(TryState &st, bool rethrows);
     void microsoftTry(sema::TypedId id);
     void leaveHandlers(std::size_t n, std::size_t mark, BlockId target, const std::vector<ValueId> &args = std::vector<ValueId>());
@@ -247,12 +256,20 @@ private:
     Val toBase(Val v, TypeId to, bool cast = false);
     ValueId boundConverted(sema::TypedId an, const Type &p);
     bool convertedTemporary(sema::TypedId an, const Type &c, bool destroys, ValueId &slot);
+    ValueId byValueArgument(sema::TypedId an, const Type &p);
+    Val classArgumentSource(sema::TypedId an, const Type &c);
+    void guardParameter(ValueId pv, const Type &pt, bool isCtor);
+    bool heldClass(const Type &t) const;
     static bool arrayBinds(const Type &from, const Type &referent);
     Val baseOfObject(Val a, const Type &p);
     Val baseSubobject(Val a, const Type &base, const std::string &why);
     Val valueInitialised(sema::TypedId id);
     Val deleteDestroying(sema::TypedId id, const sema::NewFacts &f);
     ValueId virtualCallee(ValueId self, TypeId fnType, int slot);
+    bool memberPointerNode(sema::TypedId id) const;
+    bool memberAddressNode(sema::TypedId id) const;
+    Val memberFunctionPair(sema::TypedId id);
+    Val memberPointerCall(sema::TypedId id, sema::TypedId mp, CallInfo info);
     Val callTail(TypeId sig, CallInfo info, std::vector<ValueId> ops, std::size_t skip, const std::vector<sema::TypedId> &args,
                  bool dummyInt);
     bool operatorCalls(sema::TypedId id) const;
@@ -281,15 +298,22 @@ private:
     void copyObject(ValueId to, ValueId from, const Type &t);
     bool plainTemporary(sema::TypedId id) const;
     bool constructedClass(const Type &t) const;
-    bool placedClass(const Type &t) const;
+    bool newBuilt(const Type &t) const;
     bool bytesReturned(const Type &t) const;
     bool destroyedReturned(const Type &t) const;
     bool copiedReturn(const Type &t) const;
     bool destroyedClass(const Type &t) const;
+    bool temporaryShape(sema::TypedId id, std::uint32_t &from) const;
     bool builtTemporary(sema::TypedId id, bool destroyed) const;
     bool constructedTemporary(sema::TypedId id) const { return builtTemporary(id, false); }
     bool destroyedTemporary(sema::TypedId id) const { return builtTemporary(id, true); }
-    bool temporaryNode(sema::TypedId id) const { return plainTemporary(id) || constructedTemporary(id) || destroyedTemporary(id); }
+    bool copiedTemporary(sema::TypedId id) const;
+    bool temporaryNode(sema::TypedId id) const {
+        return plainTemporary(id) || constructedTemporary(id) || destroyedTemporary(id) || copiedTemporary(id);
+    }
+    bool classObjectNode(sema::TypedId id) const;
+    Val classObject(sema::TypedId id);
+    Val arrowPointer(sema::TypedId member);
     std::string temporaryDestructor(const Type &c);
     bool destroyedResultClass(const Type &t) const;
     bool destroyedResult(sema::TypedId id) const;
@@ -332,6 +356,8 @@ private:
     BlockId msTryFunclet_;                      // the handler that try stands in, whose funclet its exits belong to; none in the body
     std::size_t funcletPads_;                   // pads_ where that handler's body began: a pad above it was made inside the funclet
     std::function<bool(syntax::NodeId, sema::NewFacts &)> newFacts_;
+    std::function<bool(syntax::NodeId, sema::Resolution &, sema::Resolution &)> rangeCalls_;
+    std::function<bool(syntax::NodeId, std::string &, TypeId &)> caughtCopy_;
     std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> memberBuilt_;
     std::function<std::string(TypeId)> destructor_;
     std::function<bool(const std::string &, std::vector<sema::VptrStore> &)> vptrStores_;
@@ -352,12 +378,14 @@ private:
     std::function<bool(syntax::NodeId)> namedReturn_;
     std::function<bool(syntax::NodeId, syntax::NodeId)> elidedInto_;
     std::function<bool(syntax::NodeId, std::string &, TypeId &)> assignCall_;
+    std::function<bool(syntax::NodeId, std::vector<sema::Resolution> &)> arrowCalls_;
     sema::TypedId intoCall_;                    // the call elidedCall lowers, whose result goes into a local's alloca
     int intoAlloca_ = -1, intoNow_ = -1;        // that alloca; and callTail's, set only as that call's tail is entered
     std::size_t liveFloor_;                     // a constructor's built bases and members: below it, kept by a return
     bool landingPads_;                          // the parser gave the function landing pads: the prologue names an LSDA
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> temporaryBuilt_;
     std::function<bool(syntax::NodeId, std::string &, TypeId &)> convertedBuilt_;
+    std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> argumentCopy_;
     std::function<bool(syntax::NodeId, sema::ClosureFacts &)> closure_;
     std::vector<Pad> pads_;                     // innermost last
     std::vector<std::string> typeTable_;        // the function's selector indices: one per type, first occurrence, 1-based

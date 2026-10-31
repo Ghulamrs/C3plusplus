@@ -70,14 +70,16 @@ struct StaticGuard {
 // the initialiser - 0 none, 1 value-initialised, 2 one value - and `why` where the SSA lowering may not take it.
 struct NewFacts {
     std::string symbol, why, ctor;   // ctor: the constructor `new T(...)` calls on the storage, its type with `T *` first
+    std::string vectorLoop;          // `new T[n]` of a class: the function building each element, given the array and n
     TypeId made, ctorSig;
     std::string dtor;       // a `delete`'s: the destructor it runs first, or none where `dslot` names the deleting slot
     TypeId dtorSig;
     int dslot;
     bool array, placed;     // placed: the reserved placement form, `new (p) T` - no allocation, the address given
     bool ctorZero, ctorDefaulted;    // the object zeroed before the constructor; defaults filled the written arguments out
+    bool bytesCopied;       // `new T(t)` of a class with constructors and a trivial copy: t's bytes stored, no constructor
     int init;
-    NewFacts() : dslot(-1), array(false), placed(false), ctorZero(false), ctorDefaulted(false), init(0) {}
+    NewFacts() : dslot(-1), array(false), placed(false), ctorZero(false), ctorDefaulted(false), bytesCopied(false), init(0) {}
 };
 
 // What a sizeof, alignof or noexcept folded to, or an integer or character literal's value, with its type.
@@ -175,6 +177,9 @@ public:
     bool constructed(TypeId cls) const;          // a class some constructor builds, written or implicit
     bool assigned(TypeId cls) const;             // a class with an operator= of its own, written or implicit
     bool newFacts(syntax::NodeId id, NewFacts &out) const;  // a `new` or `delete` node's facts; false where none were recorded
+    // A range-based for over a class object with pointer iterators: the records of its begin and end calls; false otherwise.
+    bool rangeCalls(syntax::NodeId id, Resolution &begin, Resolution &end) const;
+    bool caughtCopy(syntax::NodeId handler, std::string &symbol, TypeId &signature) const;   // a by-value catch's copy constructor
     bool defaultInit(TypeId cls, const std::string &member) const;   // the member has an initialiser of its own
     // The member initialisers the parser replayed into written constructor `ctor`, typed; then each by "class::member".
     void typeMemberDefaults(const std::string &ctor);
@@ -201,10 +206,14 @@ public:
     bool temporaryBuilt(syntax::NodeId id, std::string &symbol, TypeId &signature, bool &zeroFirst) const;
     // The converting constructor that made a temporary of the value at node `id` (Parser::userConversion); false where none.
     bool convertedBuilt(syntax::NodeId id, std::string &symbol, TypeId &signature) const;
+    // The copy a by-value class argument at node `id` was made by (Parser::materialiseCopy), or `elided`; false where none.
+    bool argumentCopy(syntax::NodeId id, std::string &symbol, TypeId &signature, bool &elided) const;
     // What a `return` of a class with a copy of its own built (Parser::ReturnBuilt): false where the parser recorded none.
     bool returnBuilt(syntax::NodeId ret, int &form, std::string &symbol, TypeId &signature) const;
     bool namedReturnLocal(syntax::NodeId var) const;   // the local nrvoCandidate chose: built in the caller's object
     bool elidedInto(syntax::NodeId var, syntax::NodeId call) const;   // the call's result built straight into the local
+    // The operator-> calls `->` on the class value at node `operand` made, in order ([over.ref]); false where it made none.
+    bool arrowCalls(syntax::NodeId operand, std::vector<Resolution> &out) const;
     bool assignCall(syntax::NodeId value, std::string &symbol, TypeId &signature) const;   // `a = value`'s operator=
     bool closureFacts(syntax::NodeId id, ClosureFacts &out) const;   // a lambda's, where the parser kept them and every source was found
     // Whether the function of this symbol is a template specialization (Signature::fromTemplate): its body is a replay.
@@ -216,6 +225,7 @@ private:
     TypedId node(syntax::NodeId id);
     // The parser's record, cast type, folded value and literal token for syntax node `id`, copied onto typed node `t`.
     void record(syntax::NodeId id, TypedId t);
+    template <class R> static Resolution copied(const R &r);   // a Parser::Resolved onto the typed tree's record
     // -check=typed's half for the copy: what on typed node `t` is not the parser's, or nothing.
     static std::string recordDiffers(const Parser &p, const TypedTree &tree, TypedId t);
     const Type *expression(syntax::NodeId id, const std::vector<const Type *> &parts);

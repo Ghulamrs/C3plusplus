@@ -1082,6 +1082,7 @@ ExprPtr Parser::primary(Program *program) {
     if (first.is("true") || first.is("false") || first.is("nullptr"))
         return note(std::move(r), syntax::Kind::WordLit, first.text, pos);
     std::size_t k = start;
+    if (tokens_[k].is("typename")) k++;      // `typename X<T>::type(t)`: the hint dropped, as primaryNode drops it (M3b.2)
     std::string name;
     while (k < at_) {
         const Token &w = tokens_[k];
@@ -2821,8 +2822,7 @@ Parser::PostfixStep Parser::beginPostfix(const ExprPtr &n) const {
         st.text = peek().text;
         if (peekAt(k).is("~")) { st.text += "~"; k++; }
         st.text += peekAt(k).text;
-        st.callFollows = peekAt(k + 1).is("(");
-        st.callPos = peekAt(k + 1).pos;
+        st.nameAt = at_ + k;
     }
     return st;
 }
@@ -2839,12 +2839,19 @@ ExprPtr Parser::notePostfix(ExprPtr n, PostfixStep &st) {
             kids.push_back(st.index);
             return note(std::move(n), syntax::Kind::Subscript, "", st.pos, kids);
         case syntax::Kind::Member:
-            // `o.f(x)` is read in one turn, so a member that read arguments is the callee of a call.
-            if (st.callFollows && argGen_ != st.argGen) {
-                std::vector<syntax::NodeId> call(1, syntaxTree_.add(syntax::Kind::Member, st.text, st.pos, kids));
-                noteCallee(call[0], n.get());
-                call.insert(call.end(), callArgs_.begin(), callArgs_.end());
-                return note(std::move(n), syntax::Kind::Call, "", st.callPos, call);
+            // `o.f(x)` is read in one turn, so a member that read arguments is the callee of a call - its name past an
+            // operator's spelling or a template-id's arguments, `o.operator+(1)` and `p->template pick<2>(1)` (M3b.2).
+            if (argGen_ != st.argGen) {
+                std::size_t j = st.nameAt + 1;
+                std::string spelled;
+                if (st.nameAt < at_ && tokens_[st.nameAt].is("operator")) j = operatorSpelled(j, spelled);
+                else if (j < at_ && tokens_[j].is("<")) j = templateArgsEnd(j);
+                if (j != 0 && j < at_ && tokens_[j].is("(")) {
+                    std::vector<syntax::NodeId> call(1, syntaxTree_.add(syntax::Kind::Member, st.text, st.pos, kids));
+                    noteCallee(call[0], n.get());
+                    call.insert(call.end(), callArgs_.begin(), callArgs_.end());
+                    return note(std::move(n), syntax::Kind::Call, "", tokens_[j].pos, call);
+                }
             }
             return note(std::move(n), syntax::Kind::Member, st.text, st.pos, kids);
         default:
@@ -2970,6 +2977,8 @@ ExprPtr Parser::postfix() {
             at_++;
             // **[over.ref]: a class on the left of `->` is asked for a
             // pointer, and the answer is asked again.**
+            const syntax::NodeId asked = syn(n);
+            std::vector<std::uint32_t> hopCalls;
             for (int hops = 0; n->type()->unqualified()->isStructOrUnion(); hops++) {
                 const Type *held = n->type()->unqualified();
                 if (lookup_.findMemberOwner(held, "operator->") == nullptr)
@@ -2985,7 +2994,9 @@ ExprPtr Parser::postfix() {
                 const Type *objectType = n->type();
                 n = memberCallWith(std::move(n), objectType, "operator->", pos,
                                    std::move(args));
+                if (n->resolved() != 0) hopCalls.push_back(n->resolved());
             }
+            if (!hopCalls.empty() && asked.valid()) arrowCalls_[asked.v] = hopCalls;
             if (!n->type()->isPointer() || !n->type()->pointee()->isStructOrUnion())
                 src_.fail(pos, "'->' needs a pointer to a struct or union, not '" +
                                n->type()->describe() + "'");
@@ -3224,6 +3235,7 @@ ExprPtr Parser::noteKeywordForm(syntax::Kind kind, KeywordForm f) {
     if (kind == syntax::Kind::Sizeof)
         if (const Num *folded = dynamic_cast<const Num *>(f.e.get()))
             keywordValues_[f.e->syntax().v] = std::make_pair(folded->value(), folded->type());
+    if (kind == syntax::Kind::Cast) noteTemporarySlot(f.e.get());    // `static_cast<T>(v)` through T's converting constructor
     // A named cast to a scalar is the conversion it names; one to a reference is a glvalue, and is left unrecorded.
     if (kind == syntax::Kind::Cast && text.find('&') == std::string::npos && text.compare(0, 12, "dynamic_cast") != 0 &&
         f.e->type() != nullptr && (f.e->type()->isVoid() || f.e->type()->isScalar()))

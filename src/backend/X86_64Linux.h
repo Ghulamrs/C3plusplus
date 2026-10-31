@@ -224,6 +224,7 @@ private:
     std::vector<std::vector<int> > ssaArgSlots_;      // per call, each argument's copy slot (0 where it has none)
     const ir::Function *ssaFunction(const Function &fn) const;
     int layoutSsa(const Function &fn, const ir::Function &f);
+    bool ssaByAddress(const Type *t) const;    // Parser::passedByAddress, for a call's class argument
     void ssaScalars(const ir::Function &f, std::vector<opt::Local> &into) const;
     Op vslot(ir::ValueId v) const;
     const Type *typeOf(const ir::Function &f, ir::ValueId v) const;

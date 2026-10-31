@@ -257,6 +257,7 @@ const Type *Parser::readTemplateDeclaration(const TemplateDecl &decl,
                                             const Packs *packs,
                                             bool *construction) {
     const std::size_t resume = at_;
+    const KeepCallArgs keepArgs(this);
     // **Put back even if this throws.** Forming a signature is what a trial runs,
     // and a failed one must leave the parameter names unbound for the next
     // candidate - all that stands between a failure and a table still saying int.
