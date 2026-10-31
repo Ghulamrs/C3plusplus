@@ -4716,7 +4716,7 @@ void Lowering::tryStatement(sema::TypedId id) {
 // What an Itanium handler takes by value: a scalar that is no pointer, or a class copied by the copy constructor the parser
 // recorded for the handler, or by its bytes ([class.copy]/12) - with its destructor known where it has one.
 bool Lowering::caughtByValue(sema::TypedId handler, const Type &c) {
-    if (!c.isStructOrUnion()) return scalar(c) && !c.isPointer() && !c.isX87(target_);
+    if (!c.isStructOrUnion()) return scalar(c) && !c.isX87(target_);
     if (!c.isComplete() || c.kind() == Kind::Union || c.hasVirtualBase()) return false;
     std::string copy;
     TypeId sig;
@@ -4873,6 +4873,10 @@ void Lowering::tryClose(TryState &st, bool rethrows) {
                 if (!copyFirst) slot = entryAlloca(tid(t), text(hv));
                 if (copies && !copyFirst) caughtCopied(slot, obj.v, copy, copySig);
                 else if (!copies) copyObject(slot, asT, T(hs[i].caught));      // a copy that is its bytes, [class.copy]/12
+            } else if (T(hs[i].caught).isPointer() && !target_.beginCatchReturnsObject()) {
+                // A pointer caught is the value __cxa_begin_catch hands back, adjusted to the base the handler names.
+                slot = entryAlloca(tid(t), text(hv));
+                store(slot, result(add(Op::Bitcast, hs[i].caught, std::vector<ValueId>(1, obj.v))));
             } else {
                 slot = entryAlloca(tid(t), text(hv));
                 store(slot, load(asT, hs[i].caught));
