@@ -17,7 +17,8 @@ Lowering::Lowering(const sema::TypedTree &tree, const syntax::Tree &syntax, Type
 void Lowering::outside(const std::string &why) { throw Outside(why); }
 
 bool Lowering::scalarArithmetic(const Type &t) { return t.isArithmetic() && !t.isScopedEnumeration(); }
-bool Lowering::scalar(const Type &t) { return scalarArithmetic(t) || t.isPointer(); }
+// A scoped enumeration is a scalar - stored, passed, compared and cast as its underlying integer - with no arithmetic.
+bool Lowering::scalar(const Type &t) { return t.isArithmetic() || t.isPointer(); }
 // [class]/6 and [basic.types]/9 as far as the lowering needs them: a complete class with no vptr, no virtual base, no
 // destructor, no copy of its own and no constructor - an object of it is its bytes, made and copied as such.
 bool Lowering::plainClass(const Type &t) const {
@@ -1259,7 +1260,9 @@ Lowering::Val Lowering::closure(sema::TypedId id) {
 }
 
 // What a reference may refer to here: a scalar, or a complete class, which a reference only ever names by its address.
-bool Lowering::referable(const Type &t) { return scalar(t) || (t.isStructOrUnion() && t.isComplete()); }
+bool Lowering::referable(const Type &t) {
+    return scalar(t) || (t.isStructOrUnion() && t.isComplete()) || (t.isArray() && t.isComplete() && referable(*t.pointee()));
+}
 
 // A constant as the walker keeps every value in a register: sign- or zero-extended to 64 bits by its type.
 long long Lowering::normalise(long long v, const Type &t, const Target &target) {
@@ -3321,7 +3324,9 @@ Lowering::Val Lowering::arithmetic(const std::string &op, Val a, Val b) {
         return pointerAdd(a, Val(result(add(Op::Neg, p.type, std::vector<ValueId>(1, p.v))), p.type));
     }
     if (op == "-" && ta.isPointer() && tb.isPointer()) return pointerSub(a, b);
-    if (!scalarArithmetic(ta) || !scalarArithmetic(tb)) outside("'" + op + "' of a pointer");
+    // [expr.rel]/5, [expr.eq]/4: two of one scoped enumeration compare as its integers; nothing else of one is arithmetic.
+    const bool scoped = found.compare && ta.isScopedEnumeration() && ta.unqualified() == tb.unqualified();
+    if (!scoped && (!scalarArithmetic(ta) || !scalarArithmetic(tb))) outside("'" + op + "' of a pointer");
     if ((op == "%" || op == "<<" || op == ">>" || op == "&" || op == "|" || op == "^") && (!ta.isInteger() || !tb.isInteger()))
         outside("'" + op + "' of what is not an integer");
     if (op == "<<" || op == ">>") {
