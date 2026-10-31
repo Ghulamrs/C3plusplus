@@ -675,6 +675,11 @@ private:
                       int init = 0, dslot = -1; };
     std::unordered_map<std::uint32_t, NewFacts> newFacts_;
     NewFacts pendingNew_;
+    // A dynamic_cast to a pointer, for the SSA lowering (M3b.2): 1 the runtime's walk between the two type_infos, 2 an upcast,
+    // 3 to `void *`, the most derived object.
+    struct DynCastFacts { std::string src, dst; int kind; };
+    std::unordered_map<std::uint32_t, DynCastFacts> dynCastFacts_;
+    DynCastFacts pendingDynCast_ = DynCastFacts();
     void noteCallSlots(const Call &c) {
         if (!c.syntax().valid()) return;
         CallSlots &k = callSlots_[c.syntax().v];

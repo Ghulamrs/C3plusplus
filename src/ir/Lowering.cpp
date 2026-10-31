@@ -2757,6 +2757,7 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
     }
     case syntax::Kind::Cast: {
         if (k == 0) { e = valueInitialised(id); break; }
+        if (k == 1 && text(id).compare(0, 12, "dynamic_cast") == 0) { e = dynamicCastPointer(id); break; }
         if (k != 1 || !n.castType.valid()) outside("a cast not recorded");
         const Type &to = T(n.castType);
         const Type &named = to.isReference() ? *to.referent() : to;
@@ -4407,6 +4408,66 @@ InstId Lowering::callOrInvoke(TypeId carries, const std::vector<ValueId> &ops) {
 }
 
 // A call of the runtime's own: never an invoke, the way the parser's runtimeCall is written.
+// [expr.dynamic.cast]: a pointer to a base converted as any is; otherwise the runtime walks from the operand's class to the
+// target's - __dynamic_cast with no hint on Itanium, __RTDynamicCast on Microsoft - and a null operand stays null.
+Lowering::Val Lowering::dynamicCastPointer(sema::TypedId id) {
+    const sema::TypedNode &n = tree_.node(id);
+    std::string src, dst;
+    const int kind = dynamicCast_ ? dynamicCast_(n.syntax, src, dst) : 0;
+    if (kind == 0 || n.type == nullptr || !n.type->isPointer()) outside("a dynamic_cast the parser recorded no walk for");
+    const TypeId to = tid(*n.type);
+    const Val v = decay(expr(child(id, 0)));
+    if (!T(v.type).isPointer()) outside("a dynamic_cast of what is not a pointer");
+    if (kind == 2) return convert(v, to, true);
+    const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType()));
+    const TypeId boolT = tid(*types_.get(Kind::Bool));
+    const BlockId walk = newBlock(), merge = newBlock();
+    std::vector<ValueId> ops;
+    ops.push_back(v.v);
+    ops.push_back(result(add(Op::Null, v.type, std::vector<ValueId>())));
+    const InstId some = add(Op::ICmp, boolT, ops);
+    at(some).cc = Cmp::Ne;
+    const ValueId none = result(add(Op::Null, to, std::vector<ValueId>()));
+    const BlockId from = cur_;
+    condbr(result(some), walk, merge);
+    place(walk);
+    const bool ms = target_.microsoftNames();
+    if (kind == 3) {
+        // [expr.dynamic.cast]/7: the most derived object - offset-to-top, two words before the vptr's address point, on
+        // Itanium; __RTCastToVoid, which reads the locator, on Microsoft.
+        ValueId whole;
+        if (ms) {
+            whole = runtimeCall("__RTCastToVoid", voidPtr, std::vector<ValueId>(1, result(add(Op::Bitcast, voidPtr, std::vector<ValueId>(1, v.v))))).v;
+        } else {
+            const TypeId chars = tid(*types_.pointerTo(types_.charType())), pd = ptrdiffType();
+            const ValueId p = result(add(Op::Bitcast, chars, std::vector<ValueId>(1, v.v)));
+            const ValueId vptr = load(result(add(Op::Bitcast, tid(*types_.pointerTo(&T(chars))), std::vector<ValueId>(1, p))), chars);
+            const InstId top = add(Op::Gep, tid(*types_.pointerTo(&T(pd))), std::vector<ValueId>(1, vptr));
+            at(top).k = -2 * static_cast<long long>(T(chars).size(target_));
+            std::vector<ValueId> moved(1, p);
+            moved.push_back(load(result(top), pd));
+            whole = result(add(Op::Gep, chars, moved));
+        }
+        br(merge, std::vector<ValueId>(1, result(add(Op::Bitcast, to, std::vector<ValueId>(1, whole)))));
+    } else {
+        std::vector<ValueId> args(1, result(add(Op::Bitcast, voidPtr, std::vector<ValueId>(1, v.v))));
+        if (ms) args.push_back(iconst(tid(*types_.get(Kind::Int)), 0));
+        args.push_back(addrOf(src, voidPtr));
+        args.push_back(addrOf(dst, voidPtr));
+        args.push_back(ms ? iconst(tid(*types_.get(Kind::Int)), 0) : iconst(tid(*types_.get(Kind::LongLong)), -1));
+        const Val found = runtimeCall(ms ? "__RTDynamicCast" : "__dynamic_cast", voidPtr, args);
+        br(merge, std::vector<ValueId>(1, result(add(Op::Bitcast, to, std::vector<ValueId>(1, found.v)))));
+    }
+    // The null operand's edge carries a null of the target type.
+    Function &f = F();
+    Inst &cb = f.insts[f.block(from).term.v];
+    cb.succ[1].first = static_cast<std::uint32_t>(f.operands.size());
+    cb.succ[1].count = 1;
+    f.operands.push_back(none);
+    place(merge);
+    return Val(param(merge, to), to);
+}
+
 Lowering::Val Lowering::runtimeCall(const std::string &symbol, TypeId returns, const std::vector<ValueId> &args) {
     std::vector<TypeId> params;
     for (std::size_t i = 0; i < args.size(); i++) params.push_back(F().value(args[i]).type);

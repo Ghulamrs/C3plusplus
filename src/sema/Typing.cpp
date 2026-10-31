@@ -461,6 +461,14 @@ std::string Typer::specFilter(const std::string &symbol) const {
     const auto s = p_.specFilters_.find(symbol);
     return s == p_.specFilters_.end() ? std::string() : s->second;
 }
+int Typer::dynamicCast(syntax::NodeId cast, std::string &src, std::string &dst) const {
+    const auto d = p_.dynCastFacts_.find(cast.v);
+    if (d == p_.dynCastFacts_.end()) return 0;
+    src = d->second.src;
+    dst = d->second.dst;
+    return d->second.kind;
+}
+
 bool Typer::memberZeroed(const std::string &ctor, const std::string &member) const {
     return p_.memberZeroed_.count(ctor + "|" + member + "|0") != 0;
 }

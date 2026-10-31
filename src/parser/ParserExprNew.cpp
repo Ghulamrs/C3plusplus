@@ -1020,6 +1020,7 @@ ExprPtr Parser::constructTemporary(const Type *plain, const Signature &ctor,
 // ---------------------------------------------------------------- new and delete
 // **The four operator functions are called by name**, measured at -O0.
 ExprPtr Parser::dynamicCastToVoid(ExprPtr v, const Type *to) {
+    pendingDynCast_ = DynCastFacts{ std::string(), std::string(), 3 };
     // **The Microsoft ABI keeps no offset-to-top, and does not do this
     // inline.**
     if (target_.microsoftNames()) {
@@ -1197,8 +1198,10 @@ ExprPtr Parser::dynamicCastFrom(ExprPtr v, const Type *to, std::size_t pos) {
 
     const Type *target = to->pointee()->unqualified();
     // **[expr.dynamic.cast]/5: an upcast is not a question.**
-    if (publicBaseOffset(source, target) >= 0)
+    if (publicBaseOffset(source, target) >= 0) {
+        pendingDynCast_ = DynCastFacts{ std::string(), std::string(), 2 };
         return convert(std::move(v), to);
+    }
 
     const Type *voidPtr = types_.pointerTo(types_.get(Kind::Void));
 
@@ -1247,6 +1250,7 @@ ExprPtr Parser::dynamicCastFrom(ExprPtr v, const Type *to, std::size_t pos) {
 
     const std::string sourceName = describe(source);
     const std::string targetName = describe(target);
+    pendingDynCast_ = DynCastFacts{ sourceName, targetName, 1 };
 
     std::vector<ExprPtr> args;
     ExprPtr object(Var::local(temp, slot));
