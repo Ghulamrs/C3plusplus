@@ -303,6 +303,8 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
             return a != nullptr && (a->isArithmetic() || a->isPointer()) ? a->unqualified() : nullptr;
         case syntax::Kind::Binary:
             if (a == nullptr || b == nullptr || isClass(a) || isClass(b)) return nullptr;
+            // [expr.eq]/2: a pointer to a data member compares for equality alone, with one or with a null.
+            if ((op == "==" || op == "!=") && (a->isMemberPointer() || b->isMemberPointer())) return p_.rules().truthType();
             if (op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=" ||
                 op == "&&" || op == "||")
                 return (scalarOrArray(a) || a->isNullPtr()) && (scalarOrArray(b) || b->isNullPtr()) ? p_.rules().truthType() : nullptr;
@@ -314,7 +316,7 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
             return nullptr;
         case syntax::Kind::Assign:
             // A class assigned with no operator= of its own is copied by its bytes, and the result is the object.
-            return a != nullptr && (a->isArithmetic() || a->isPointer() || (isClass(a) && op == "=")) ? a : nullptr;
+            return a != nullptr && (a->isArithmetic() || a->isPointer() || ((isClass(a) || a->isMemberPointer()) && op == "=")) ? a : nullptr;
         case syntax::Kind::Comma:
             return b;
         case syntax::Kind::Conditional: {

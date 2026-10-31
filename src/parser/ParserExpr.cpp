@@ -3361,7 +3361,9 @@ ExprPtr Parser::unaryNode() {
                         at_ += q + 1;
                         ExprPtr off(new Num(static_cast<long long>(m->offset)));
                         off->setType(types_.memberPointerTo(cls, m->type));
-                        return resolve(std::move(off), resolvedAs(Resolved::Value, types_.memberPointerTo(cls, m->type)));
+                        // The record carries the offset, which the SSA lowering reads as the value (M3b.2).
+                        return resolve(std::move(off), resolvedAs(Resolved::Value, types_.memberPointerTo(cls, m->type), std::string(),
+                                                                  -1, static_cast<long long>(m->offset)));
                     }
                     // `&S::f` for a member function: the ABI's pair, built in
                     // a slot of this frame the way a class temporary is.
