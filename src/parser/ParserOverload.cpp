@@ -219,6 +219,14 @@ ExprPtr Parser::convertNode(ExprPtr e, const Type *to, bool allowExplicit) const
             if (shift > 0 || ft->size(target_) != to->unqualified()->size(target_))
                 return convertMemberPointer(std::move(e), to->unqualified(), shift);
             e->setType(to);
+            // The `&` node's record takes the type with it, as the retyped expression does (M3b.2).
+            if (e->resolved() != 0 && resolvedTable_[e->resolved()].what == Resolved::Value) {
+                Parser *self = const_cast<Parser *>(this);
+                Resolved r = resolvedTable_[e->resolved()];
+                r.type = to;
+                if (e->syntax().valid() && self->resolutions_.count(e->syntax().v) != 0) self->resolutions_[e->syntax().v] = r;
+                e = self->resolve(std::move(e), r);
+            }
             return e;
         }
     }
@@ -636,6 +644,7 @@ void Parser::applyDefaults(Signature f, std::vector<ExprPtr> &args,
     if (it == defaultArgs_.end()) return;
 
     const std::size_t resume = at_;
+    const KeepCallArgs keepArgs(this);
     std::vector<Local> hidden;
     hidden.swap(locals_);
     std::vector<std::size_t> starts;

@@ -266,6 +266,10 @@ private:
     Val valueInitialised(sema::TypedId id);
     Val deleteDestroying(sema::TypedId id, const sema::NewFacts &f);
     ValueId virtualCallee(ValueId self, TypeId fnType, int slot);
+    bool memberPointerNode(sema::TypedId id) const;
+    bool memberAddressNode(sema::TypedId id) const;
+    Val memberFunctionPair(sema::TypedId id);
+    Val memberPointerCall(sema::TypedId id, sema::TypedId mp, CallInfo info);
     Val callTail(TypeId sig, CallInfo info, std::vector<ValueId> ops, std::size_t skip, const std::vector<sema::TypedId> &args,
                  bool dummyInt);
     bool operatorCalls(sema::TypedId id) const;
