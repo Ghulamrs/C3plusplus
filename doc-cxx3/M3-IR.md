@@ -615,6 +615,34 @@ and the MIR passes already handle; `select` stays in the instruction set for M3b
 carries the Local record its names carry. And two accessors on the Typer give the driver the declared return type and
 whether a body is a function-try - facts of the declaration that `Ast.h`'s `Function` has lost.
 
+### 3.13 As built at M3b.2: what the lowering reads, and the Itanium table (2026-10-31, after Fable 5.1's review)
+
+3.6 and 3.8 above are kept as written; this is what the code does instead, measured at round 19 (`m3b2-r19`), where
+Fable 5.1's review of M3b.2 (boxkit `M3B2-REVIEW-FABLE-2026-10-31.md`, findings 1 and 2) found them stated otherwise.
+
+**The Itanium call-site table (3.6).** The selector writes one row per `invoke`, in address order, each with its
+pad's whole action chain (`SsaSelect.cpp:389-398`), the gaps filled by `lsdaTable` as before - not regions split
+the walker's way (`openRegion`). Rows are disjoint by construction and never sorted, which is what 3.6's sentence
+and the must-not-change row of M3-PLAN were for. The chain is copied from the enclosing pad when a guard is made
+(`Lowering.cpp:698-716`): bit 1 a filter-0 row where the chain has types, bit 2 a pad that hands on, and a terminate
+catch-all around each destructor run while unwinding. Microsoft's try map stays inner-first (`ssaTryOrder_`), FH3's rule.
+
+**What the lowering reads (3.8).** `Lowering.h` includes nothing of `src/parser/`, so "no `Parser` in reach" holds
+for the header. It does not hold for the data: thirty-one `set*` hooks (`Lowering.h:48-98`), filled in `Driver.cpp`
+from the `Typer`, which reads fifty-seven of the parser's maps, and `FunctionFacts` taken from `Ast.h`'s `Function`.
+Three kinds, and M3b.7's deletion is sized by the second and the third:
+
+| kind | the hooks and facts | after M3b.7 |
+| --- | --- | --- |
+| (a) resolutions: which entity the parser chose, recorded where it chose it (12.1 point 3 asks for these) | `setConstructed`, `setAssigned`, `setDestructor`, `setTypeInfo`, `setUnnamedCaught`, `setMicrosoftCatch`, `setMicrosoftUnnamedCaught`, `setMemberBuilt`, `setLocalBuilt`, `setTemporaryBuilt`, `setConvertedBuilt`, `setCaughtCopy`, `setAssignCall`, `setArrowCalls`, `setRangeCalls`, `setDefaultInit`, `setMemberDefault`, `setVbaseSlot`, `setMsVbase` (which constructors take cl's flag) | stay: they are Sema's records, kept when the parser's `Ast.h` half goes |
+| (b) the old lowering's decisions, read by the new one | `setReturnBuilt` and `setNamedReturn` (NRVO: `buildReturned`, `nrvoCandidate`); `setElidedInto` (copy elision - `Typing.cpp:650-654` compares `callSlots_`' result slot with the local's frame offset); `setArgumentCopy`'s `elided` bit (`materialiseCopy`); `setGuarded`, `setStaticGuard` (what `guardOnce` built); `setVptrStores`, `setBaseVtt`, `setMsVbase`'s init list (the stores the parser's constructor made); `setNewFacts` (the cookie and the vector loop); `setClosure` (`lambdaFacts_`, the closure's slot and captures) | each is re-derived by the lowering from the typed tree before M3b.7, or its recording code is kept past M3b.7 - decided per row when M3b.7 is planned |
+| (c) facts of `Ast.h`'s `Function` (`Driver.cpp:1403-1427`) | `hasLandingPads` (`Lowering.cpp:890` refuses a cleanup where the parser made none: whether a function has an LSDA is the walker's decision), `sretSlot`, `frameAlign`, the parameter slots (`SsaSelect.cpp:548-552`), and `Program::msThrows` - `Typer::microsoftThrowInfo` answers a `_TI` name only where the parser's body for the same function made the chain | M3b.7 must replace each: the lowering decides its own pads, the selector its own parameter homes, and the throw records are emitted from the typed tree |
+
+So the lowering makes its own allocas, scopes' destruction order and pads (3.8's second paragraph, as said), and takes
+from the parser *which* object is built where and by what. That is a workable design - every record is made in the
+scope the parser had, the typed tree's rule - but it is not 3.8's; the fifteen layout maps 3.8 names are mostly not
+read, while `callSlots_` (through `elidedInto`) and `lambdaFacts_` (through `setClosure`) are.
+
 ## 4. Kept, changed, retired - the one table
 
 | | kept | changed | retired |
