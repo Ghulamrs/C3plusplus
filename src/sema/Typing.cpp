@@ -461,6 +461,13 @@ std::string Typer::specFilter(const std::string &symbol) const {
     const auto s = p_.specFilters_.find(symbol);
     return s == p_.specFilters_.end() ? std::string() : s->second;
 }
+bool Typer::caseValue(syntax::NodeId label, long long &value) const {
+    const auto c = p_.caseFacts_.find(label.v);
+    if (c == p_.caseFacts_.end() || c->second.isDefault) return false;
+    value = c->second.value;
+    return true;
+}
+
 std::string Typer::unnamedCaught(syntax::NodeId handler) const {
     const auto c = p_.unnamedCaught_.find(handler.v);
     return c == p_.unnamedCaught_.end() ? std::string() : c->second;

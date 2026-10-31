@@ -169,7 +169,8 @@ public:
     // What Sema emits after the parse - a class's type_info - goes into `program`: parse()'s own local is gone by then.
     void emitInto(Program &program);
     std::string typeInfoSymbol(TypeId t) const;   // the type_info a catch of t names, Sema's; empty where none can be made
-    std::string unnamedCaught(syntax::NodeId handler) const;   // what an Itanium `catch (T)` with no name named; empty otherwise
+    std::string unnamedCaught(syntax::NodeId handler) const;
+    bool caseValue(syntax::NodeId label, long long &value) const;   // a case label's value as the parser folded it   // what an Itanium `catch (T)` with no name named; empty otherwise
     // A Microsoft `catch (T)` with no name: the descriptor the parser named, whether by reference, HT_IsConst.
     bool microsoftUnnamedCaught(syntax::NodeId handler, std::string &descriptor, bool &byRef, bool &isConst) const;
     // The Microsoft ThrowInfo a throw of t names (`_TI1H`), where the parser finished the chain for a throw; empty otherwise.

@@ -1840,7 +1840,9 @@ void Lowering::stmt(sema::TypedId id) {
         } else {
             if (n != 2) outside("a case of " + std::to_string(n) + " parts");
             long long v = 0;
-            if (!foldConstant(child(id, 0), v)) outside("a case label that is not a constant the lowering folds");
+            // The value the parser folded the label to ([stmt.switch]/2), where the lowering's own folding has no answer.
+            if (!foldConstant(child(id, 0), v) && !(caseValue_ && caseValue_(tree_.node(id).syntax, v)))
+                outside("a case label that is not a constant the lowering folds");
             for (long long k : sw.values) if (k == v) outside("two case labels of one value");
             sw.values.push_back(v);
             sw.targets.push_back(here);
@@ -2467,6 +2469,8 @@ void Lowering::localArray(sema::TypedId var, ValueId slot, TypeId type) {
         if (v.initForm >= 2) { const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, slot)); at(z).k = T(type).size(target_); }
         return;
     }
+    // With no initialiser every part is a written bound, folded or not (`int a[p.sum()]` of a constexpr p): nothing to store.
+    if (v.initForm == 0) return;
     const Type &t = T(type);
     const long long length = t.length();
     long long bound = 0;
