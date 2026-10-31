@@ -19,6 +19,8 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 # absolute here because the calls below happen after a cd.
 CXX1="${CXX1:-$ROOT/cxx3.exe}"
 case "$CXX1" in /*) ;; *) CXX1="$(pwd)/$CXX1" ;; esac
+# CXX1_FLAGS rides with every compile of the compiler under test - `-front=ssa`, the M3b.2 gate row.
+CXX1_FLAGS="${CXX1_FLAGS:-}"
 SRC=$1
 OUT=$(mktemp -d)
 trap 'rm -rf "$OUT"' EXIT
@@ -146,7 +148,7 @@ for pair in "x86_64-linux:x86_64-linux-gnu" \
     spell=
     n=${SRC%.cpp}
     [ "$mine" = x86_64-windows ] && [ -f "${n%.part}.nomasm" ] && spell=-masm=gnu
-    ( "$CXX1" -S -arch "$mine" $spell "$SRC" -o "$OUT/mine.s" 2>"$OUT/mine.err"; echo $? > "$OUT/mine.rc" ) &
+    ( "$CXX1" -S -arch "$mine" $spell $CXX1_FLAGS "$SRC" -o "$OUT/mine.s" 2>"$OUT/mine.err"; echo $? > "$OUT/mine.rc" ) &
     EH=-fexceptions
     RTTI=-frtti
     ( clang++ -x c++ -std=c++11 $EH $RTTI -w -target "$theirs" -S "$SRC" -o "$OUT/theirs.s" 2>"$OUT/theirs.err"; echo $? > "$OUT/theirs.rc" ) &
