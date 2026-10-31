@@ -82,17 +82,17 @@ private:
     void buildInterference();
     void collectCosts();
     bool valid(const std::vector<int> &colour) const;
-    int colour();
+    std::vector<int> colour();
     void coalesce();
     void simplify(std::vector<int> &stack);
-    int select(const std::vector<int> &stack);
+    std::vector<int> select(const std::vector<int> &stack);
     int find(int p);
     void merge(int u, int v);
     int significant(int u, int v) const;
     long bestPreference(const std::vector<Copy> &prefs, opt::RegSet forbid) const;
     int pick(int p);
     void reserveFresh();
-    bool demote(int failed);
+    int demote(const std::vector<int> &failed);
     void addSaves();
 
     bool isSlot(int p) const { return p >= nHomes_; }

@@ -419,22 +419,25 @@ void Allocator::reserveFresh() {
     for (std::size_t i = 0; i < needy.size() && static_cast<int>(i) < fn_.costs().registers(); ++i) freshFor_[needy[i]] = true;
 }
 
-// The node select could not colour, or -1.
-int Allocator::select(const std::vector<int> &stack) {
+// Every node select could not colour, none where the whole stack coloured: a node left without a register takes no
+// colour and select goes on, so one round names all the failures and not the first (round 20, 2026-10-31).
+std::vector<int> Allocator::select(const std::vector<int> &stack) {
     colour_.assign(n_, -1);
+    std::vector<int> failed;
     for (int i = static_cast<int>(stack.size()) - 1; i >= 0; --i) {
         const int p = stack[i];
         const int reg = pick(p);
-        if (reg < 0) return p;
+        if (reg < 0) { failed.push_back(p); continue; }
         colour_[p] = reg;
     }
+    if (!failed.empty()) return failed;
     for (int p = 0; p < n_; ++p)
         if (!demoted_[p]) colour_[p] = colour_[find(p)];
-    return -1;
+    return failed;
 }
 
-// Chaitin-Briggs over the graph; the node left without a register, or -1.
-int Allocator::colour() {
+// Chaitin-Briggs over the graph; the nodes left without a register, none where it coloured.
+std::vector<int> Allocator::colour() {
     taken_ = 0;
     for (int c = 0; c < 3; ++c) {
         palette_[c] = 0;
@@ -464,21 +467,23 @@ int Allocator::colour() {
     }
     std::vector<int> stack;
     simplify(stack);
-    const int failed = select(stack);
-    assert((failed >= 0 || valid(colour_)) && "a colouring select made must honour the graph");
+    const std::vector<int> failed = select(stack);
+    assert((!failed.empty() || valid(colour_)) && "a colouring select made must honour the graph");
     return failed;
 }
 
-// **The promoted locals the failed node holds go back to their slots**, in
-// the stream, so the graph is built again without them; false where it
-// holds none, which only the homes can answer.
-bool Allocator::demote(int failed) {
+// **The promoted locals the failed nodes hold go back to their slots**, in
+// the stream, so the graph is built again without them; the count demoted,
+// none where they hold none, which only the homes can answer.
+int Allocator::demote(const std::vector<int> &failed) {
+    std::vector<bool> isFailed(n_, false);
+    for (int f : failed) isFailed[f] = true;
     std::vector<int> back(n_, Webs::kAsIs);
-    bool any = false;
+    int count = 0;
     for (int q = nHomes_; q < n_; ++q)
-        if (!demoted_[q] && find(q) == failed) { demoted_[q] = true; back[q] = Webs::kToSlot; any = true; }
-    if (any) Webs::assign(fn_, back);
-    return any;
+        if (!demoted_[q] && isFailed[find(q)]) { demoted_[q] = true; back[q] = Webs::kToSlot; ++count; }
+    if (count != 0) Webs::assign(fn_, back);
+    return count;
 }
 
 // **A preserved register taken is saved by the prologue and restored before
@@ -510,9 +515,9 @@ bool Allocator::run() {
         std::vector<int> homes(n_, Webs::kToSlot);
         for (int p = 0; p < nHomes_; ++p) homes[p] = homes_[p];
         assert(valid(homes) && "the homes must colour the graph: they are how the stream ran");
-        const int failed = colour();
-        if (failed < 0) break;
-        if (demote(failed)) { ++demotions; continue; }
+        const std::vector<int> failed = colour();
+        if (failed.empty()) break;
+        if (const int d = demote(failed)) { demotions += d; continue; }
         colour_ = homes;
         coalesced_ = 0;
         fellBack_ = true;
