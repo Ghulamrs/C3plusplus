@@ -87,7 +87,7 @@ TypedId Typer::node(syntax::NodeId id) {
         const syntax::NodeId c = st.child(id, i);
         // A default argument is read in its declaration's scope, where no local of the calling function is seen.
         std::vector<std::unordered_map<std::string, Declared> > outer;
-        const bool dflt = n.kind == syntax::Kind::Call && p_.defaultArgNodes_.count(c.v) != 0;
+        const bool dflt = (n.kind == syntax::Kind::Call || n.kind == syntax::Kind::Var) && p_.defaultArgNodes_.count(c.v) != 0;
         if (dflt) outer.swap(scopes_);
         const TypedId k = node(c);
         if (dflt) scopes_.swap(outer);

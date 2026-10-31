@@ -1741,6 +1741,20 @@ void Parser::topLevel(Program &program) {
                 // **The defaults the entry left out are read here, as every other call reads them.**
                 const std::size_t baseWritten = chosenArgs.size();
                 if (building && !copyBytes) applyDefaults(chosen, chosenArgs, d.pos);
+                // The defaults' syntax under a mem-initialiser of their own, by constructor and "^base", typed as a
+                // member's own initialiser is (M3b.2); none where one has no syntax.
+                if (building && chosenArgs.size() != baseWritten && !memberTemplateInst_) {
+                    std::vector<syntax::NodeId> made;
+                    for (std::size_t i = baseWritten; i < chosenArgs.size(); i++) made.push_back(syn(chosenArgs[i]));
+                    bool whole = true;
+                    for (std::size_t i = 0; i < made.size(); i++) whole = whole && made[i].valid();
+                    // Placed where the defaults were written, so the constructor's own node does not adopt it.
+                    if (whole) {
+                        defaultGroups_.erase(made.back().v);
+                        memberDefaults_[currentFunction_ + "|^" + base->tag()] =
+                            syntaxTree_.add(syntax::Kind::MemInit, base->tag(), syntaxTree_.node(made[0]).loc, made);
+                    }
+                }
 
                 std::string symbol = chosen.symbol;
                 if (!target_.microsoftNames() && !copyBytes) {

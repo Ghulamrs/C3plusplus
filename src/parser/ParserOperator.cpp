@@ -173,7 +173,9 @@ ExprPtr Parser::boundMemberPointer(const Type *cls, const Signature &f,
     ExprPtr made(new Unary('*', std::move(seq)));
     made->setType(mp);
     (void)pos;
-    return made;
+    // What the pair holds, for the `&` node's record (M3b.2): the code word's symbol, or Itanium's 1 + slot offset.
+    return resolve(std::move(made), resolvedAs(Resolved::Value, mp, vtableCode != 0 ? std::string() : code.empty() ? f.symbol : code,
+                                               -1, vtableCode));
 }
 
 // **The null pointer to a member function**: the same pair, every word zero - which both ABIs read
@@ -366,6 +368,15 @@ ExprPtr Parser::applyMemberPointer(ExprPtr addr, ExprPtr mp, std::size_t pos,
     return read;
 }
 
+// `o.*p` and `q->*p` as syntax: a binary node over the two operands, the type the parser gave it kept for typing to
+// fall back on - a data member's lvalue, or the code pointer a member function's call takes (M3b.2).
+ExprPtr Parser::noteMemberPointer(ExprPtr e, const char *op, std::size_t pos, syntax::NodeId l, syntax::NodeId r) {
+    if (!l.valid() || !r.valid()) return e;
+    e = note(std::move(e), syntax::Kind::Binary, op, pos, {l, r});
+    noteValue(e.get());
+    return e;
+}
+
 // [expr.mptr.oper]: `.*` and `->*` bind tighter than a multiplication and
 // looser than a cast, which is the level this sits at.
 ExprPtr Parser::memberPointerExpr() {
@@ -379,11 +390,13 @@ ExprPtr Parser::memberPointerExpr() {
                                "type, and this is '" + of->describe() + "'");
             const bool constObject = of->isConst();
             const bool lvalue = objectIsLvalue(*n);
+            const syntax::NodeId l = syn(n);
             ExprPtr addr(new Unary('&', std::move(n)));
             addr->setType(types_.pointerTo(of->unqualified()));
             ExprPtr mp = memberPointerExpr();
+            const syntax::NodeId rs = syn(mp);
             refuseMemberPointerCategory(*mp, lvalue, pos);
-            n = applyMemberPointer(std::move(addr), std::move(mp), pos, constObject);
+            n = noteMemberPointer(applyMemberPointer(std::move(addr), std::move(mp), pos, constObject), ".*", pos, l, rs);
             continue;
         }
         if (consume("->*")) {
@@ -393,8 +406,10 @@ ExprPtr Parser::memberPointerExpr() {
                 src_.fail(pos, "the left of '->*' has to be a pointer to a "
                                "class, and this is '" + of->describe() + "'");
             const bool constPointee = of->pointee()->isConst();
-            n = applyMemberPointer(decay(std::move(n)), memberPointerExpr(), pos,
-                                   constPointee);
+            const syntax::NodeId l = syn(n);
+            ExprPtr mp = memberPointerExpr();
+            const syntax::NodeId rs = syn(mp);
+            n = noteMemberPointer(applyMemberPointer(decay(std::move(n)), std::move(mp), pos, constPointee), "->*", pos, l, rs);
             continue;
         }
         return n;
@@ -1217,7 +1232,8 @@ ExprPtr Parser::assignValue(ExprPtr n, ExprPtr value, std::size_t pos) {
         ps.push_back(selfPtr);
         ps.push_back(op->params[0]);
         if (args[1]->syntax().valid())
-            assignCalls_[args[1]->syntax().v] = LocalBuilt{ op->symbol, types_.functionType(selfPtr, ps, false), false, false };
+            assignCalls_[args[1]->syntax().v] = LocalBuilt{ op->symbol, types_.functionType(selfPtr, ps, false), false, false,
+                                                                  std::vector<syntax::NodeId>() };
         ExprPtr call = completeCall(to->unqualified()->tag() + "::operator=",
                                     op->symbol, nullptr, selfPtr, ps, false, pos,
                                     std::move(args));

@@ -206,12 +206,19 @@ void Lowering::buildBase(const Type::BaseSpec &b, sema::TypedId entry) {
         if (!entry.valid() && !(constructed_ && constructed_(bt.id()))) return;
         outside("a base built by no constructor the parser recorded");
     }
-    if (defaulted) outside("a base built with default arguments");
     const Type &ft = T(sig);
     if (ft.params().empty() || ft.params()[0]->pointee()->unqualified() != &bt) outside("a base's constructor of another class");
     std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, baseAddress(b)))));
     const std::size_t skip = baseVttArgument(bt, ft, ops);
-    if (entry.valid()) arguments(entry, 0, ft, skip, false, ops);
+    // [dcl.fct.default]/9: the defaults the parser completed the entry with, evaluated here after the ones written.
+    std::vector<sema::TypedId> args;
+    for (std::uint32_t i = 0; entry.valid() && i < count(entry); i++) args.push_back(child(entry, i));
+    if (defaulted) {
+        const sema::TypedId d = memberDefault_ ? memberDefault_(key_, "^" + bt.tag()) : sema::TypedId();
+        if (!d.valid()) outside("a base built with default arguments");
+        for (std::uint32_t i = 0; i < count(d); i++) args.push_back(child(d, i));
+    }
+    if (entry.valid() || defaulted) argumentList(ft, skip, false, args, false, ops);
     else if (ft.params().size() != skip) outside("a base's default constructor of parameters");
     // cl's most-derived flag, last, where the base's constructor takes one: 0, a subobject's ([class.base.init]/7).
     if (target_.microsoftNames() && msVbaseCtor_ && msVbaseCtor_(symbol)) {
@@ -610,8 +617,9 @@ void Lowering::builtLocal(sema::TypedId var, ValueId slot, const Type &t) {
         TypeId sig;
         bool defaulted = false, zeroed = false;
         if (!localBuilt_ || !localBuilt_(v.syntax, symbol, sig, defaulted, zeroed)) outside("a local built by no constructor the parser recorded");
-        if (defaulted) outside("a local built with default arguments");
         const Type &ft = T(sig);
+        // [dcl.fct.default]/9: a default is evaluated here, in the caller's frame - the `var` node's last parts.
+        if (defaulted && v.count + 1 != ft.params().size()) outside("a local built with default arguments");
         // [dcl.init.list]/3: braces reach a constructor as parentheses do, one value per parameter, unless a parameter
         // is the initializer_list the parser built a backing array for.
         if (v.initForm == 2)
@@ -1038,7 +1046,7 @@ Lowering::Val Lowering::temporary(sema::TypedId id) {
 // What a plain class's value can be copied from: an lvalue, a call's result, a temporary, an assignment, or a
 // conditional of two such.
 bool Lowering::objectNode(sema::TypedId id) const {
-    if (isLvalueNode(id) || plainTemporary(id)) return true;
+    if (isLvalueNode(id) || plainTemporary(id) || memberAddressNode(id)) return true;
     const syntax::Kind k = syn(id).kind;
     if (k == syntax::Kind::Paren) return count(id) == 1 && objectNode(child(id, 0));
     if (k == syntax::Kind::Lambda) return closureNode(id);
@@ -1053,6 +1061,7 @@ bool Lowering::objectNode(sema::TypedId id) const {
 // Such a value's address: a conditional's is the chosen arm's, each built in its own branch, as a conditional lvalue's.
 Lowering::Val Lowering::object(sema::TypedId id) {
     if (isLvalueNode(id)) return lvalue(id);
+    if (memberAddressNode(id)) return memberFunctionPair(id);
     if (plainTemporary(id)) return temporary(id);
     if (syn(id).kind == syntax::Kind::Paren && count(id) == 1) return object(child(id, 0));
     if (syn(id).kind == syntax::Kind::Assign && objectNode(id)) return assign(id);
@@ -2496,6 +2505,7 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
         break;
     case syntax::Kind::Binary:
         if (k != 2) outside("a binary of " + std::to_string(k) + " parts");
+        if (memberPointerNode(id)) outside("a pointer to a data member applied, or a member function's not called");
         e = binary(text(id), child(id, 0), child(id, 1));
         break;
     case syntax::Kind::Assign: e = assign(id); break;
@@ -3399,6 +3409,10 @@ Lowering::Val Lowering::call(sema::TypedId id) {
     const bool direct = r.what == sema::Resolution::Call && !r.symbol.empty() && !r.hasThis && !r.indirect && syn(head).kind == syntax::Kind::Name &&
                         !tree_.node(head).decl.valid() && r.symbol.find_first_of(" ()*&[") == std::string::npos;
     // A member function called by name, its object's address the first argument: `o.f()`, `p->f()`, `f()` for `this->f()`.
+    sema::TypedId through = head;
+    while (syn(through).kind == syntax::Kind::Paren && count(through) == 1) through = child(through, 0);
+    if (r.what == sema::Resolution::Call && r.hasThis && r.indirect && r.vslot < 0 && memberPointerNode(through))
+        return memberPointerCall(id, through, info);
     if (r.what == sema::Resolution::Call && r.hasThis && r.indirect && r.vslot < 0) outside("a call through a member pointer");
     const bool member = r.what == sema::Resolution::Call && !r.symbol.empty() && r.hasThis &&
                         r.symbol.find_first_of(" ()*&[") == std::string::npos;
@@ -3431,6 +3445,10 @@ Lowering::Val Lowering::call(sema::TypedId id) {
             // [over.call.object] on `*p`: the class object p points at is the object, p its address.
             object = decay(expr(child(head, 0)));
             if (!T(object.type).isPointer() || !T(object.type).pointee()->isStructOrUnion()) outside("a member call through '*' of what is not a pointer to a class");
+        } else if (syn(head).kind == syntax::Kind::Call && temporaryNode(head)) {
+            // [over.call.object] on a class temporary, `F()(x)`: built in a slot of this frame, its operator() called on it.
+            const Val o = temporary(head);
+            object = Val(o.v, tid(*types_.pointerTo(&T(o.type))));
         } else {
             outside("a member call through '" + text(head) + "'");
         }
@@ -3470,6 +3488,124 @@ Lowering::Val Lowering::call(sema::TypedId id) {
     for (std::uint32_t i = 1; i < n; i++) args.push_back(child(id, i));
     intoNow_ = id.v == intoCall_.v ? intoAlloca_ : -1;
     return callTail(sig, info, ops, member ? 1 : 0, args, false);
+}
+
+// `&S::f` of a non-static member function: the parser's record names the pair's type and its code word (M3b.2).
+bool Lowering::memberAddressNode(sema::TypedId id) const {
+    if (syn(id).kind != syntax::Kind::Unary || text(id) != "&") return false;
+    const sema::Resolution &r = tree_.resolution(id);
+    return r.what == sema::Resolution::Value && r.type.valid() && T(r.type).isMemberFunctionPointer() &&
+           (!r.symbol.empty() || r.value != 0);
+}
+
+// Its pair in a slot of this frame, as the parser builds it: the function's address - on Microsoft a vcall thunk's
+// for a virtual one - or Itanium's 1 + the slot's byte offset, and every other word zero.
+Lowering::Val Lowering::memberFunctionPair(sema::TypedId id) {
+    const sema::Resolution &r = tree_.resolution(id);
+    const Type &mp = T(r.type);
+    const ValueId slot = entryAlloca(r.type, "$mfp");
+    const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, slot));
+    at(z).k = mp.size(target_);
+    const Member code = *mp.findMember("$fn");
+    const TypeId word = tid(*code.type);
+    ValueId value;
+    if (!r.symbol.empty()) value = addrOf(r.symbol, word);
+    else value = result(add(Op::IntToPtr, word, std::vector<ValueId>(1, iconst(ptrdiffType(), r.value))));
+    const InstId g = add(Op::Gep, tid(*types_.pointerTo(code.type)), std::vector<ValueId>(1, slot));
+    at(g).k = code.offset;
+    store(result(g), value);
+    return Val(slot, r.type);
+}
+
+// `o.*p` or `q->*p`, the binary node the parser records for a pointer to a member applied (M3b.2).
+bool Lowering::memberPointerNode(sema::TypedId id) const {
+    return syn(id).kind == syntax::Kind::Binary && count(id) == 2 && (text(id) == ".*" || text(id) == "->*");
+}
+
+// [expr.mptr.oper] called: the object converted to the pointer's class ([expr.mptr.oper]/3), moved by the pair's `this`
+// adjustment, and the code read as the parser reads it - on Itanium a set low bit is 1 + a vtable offset, read
+// through the vptr; on Microsoft cl's single and multiple forms, a vcall thunk standing in for a virtual one.
+Lowering::Val Lowering::memberPointerCall(sema::TypedId id, sema::TypedId mp, CallInfo info) {
+    const sema::Resolution &r = tree_.resolution(id);
+    const sema::TypedId l = child(mp, 0), pr = child(mp, 1);
+    const TypeId held = TypeTable::id(tree_.node(pr).type);
+    if (!held.valid() || !T(held).unqualified()->isMemberFunctionPointer() || T(held).enclosing() == nullptr)
+        outside("a call through what is not a pointer to a member function");
+    const Type &mpt = *T(held).unqualified();
+    if (!r.type.valid() || !T(r.type).isFunction() || T(r.type).params().empty() || !T(r.type).params()[0]->isPointer())
+        outside("a call through a member pointer whose function type was not recorded");
+    if (!objectNode(pr)) outside("a pointer to a member function that is not an object");
+    if (mpt.findMember("$fn") == nullptr || mpt.findMember("$vbi") != nullptr || (!target_.microsoftNames() && mpt.findMember("$adj") == nullptr))
+        outside("a pointer to a member function of a class with virtual bases");
+    const Member code = *mpt.findMember("$fn");
+    const bool adjusts = mpt.findMember("$adj") != nullptr;
+    const Member adj = adjusts ? *mpt.findMember("$adj") : code;
+    // The object's address, then the pair: [expr.mptr.oper]/1 evaluates the object first.
+    Val obj;
+    if (text(mp) == "->*") obj = decay(expr(l));
+    else {
+        if (!objectNode(l)) outside("a '.*' of what is not an object");
+        const Val o = object(l);
+        obj = Val(o.v, tid(*types_.pointerTo(&T(o.type))));
+    }
+    if (!T(obj.type).isPointer() || !T(obj.type).pointee()->isStructOrUnion()) outside("a '->*' of what is not a pointer to a class");
+    const Type &owner = *mpt.enclosing()->unqualified();
+    if (T(obj.type).pointee()->unqualified() != &owner) {
+        const TypeId to = tid(*types_.pointerTo(T(obj.type).pointee()->isConst() ? types_.withConst(&owner) : &owner));
+        obj = toBase(obj, to);
+    }
+    const Val pair = object(pr);
+    const TypeId sig = r.type;
+    const TypeId fnPtr = tid(*types_.pointerTo(&T(sig)));
+    const TypeId chars = tid(*types_.pointerTo(types_.charType()));
+    const TypeId pd = ptrdiffType();
+    const auto field = [&](const Member &m) {
+        const InstId g = add(Op::Gep, tid(*types_.pointerTo(m.type)), std::vector<ValueId>(1, pair.v));
+        at(g).k = m.offset;
+        return load(result(g), tid(*m.type));
+    };
+    const ValueId word = field(code);
+    ValueId self = result(add(Op::Bitcast, chars, std::vector<ValueId>(1, obj.v)));
+    if (adjusts) {
+        std::vector<ValueId> g(1, self);
+        g.push_back(convert(Val(field(adj), tid(*adj.type)), pd).v);
+        self = result(add(Op::Gep, chars, g));
+    }
+    ValueId callee;
+    if (target_.microsoftNames()) {
+        callee = result(add(Op::Bitcast, fnPtr, std::vector<ValueId>(1, word)));
+    } else {
+        const ValueId bits = result(add(Op::PtrToInt, pd, std::vector<ValueId>(1, word)));
+        std::vector<ValueId> lowOps(1, bits);
+        lowOps.push_back(iconst(pd, 1));
+        const ValueId low = result(add(Op::And, pd, lowOps));
+        std::vector<ValueId> testOps(1, low);
+        testOps.push_back(iconst(pd, 0));
+        const InstId test = add(Op::ICmp, tid(*types_.get(Kind::Bool)), testOps);
+        at(test).cc = Cmp::Ne;
+        const BlockId table = newBlock(), plain = newBlock(), merge = newBlock();
+        condbr(result(test), table, plain);
+        place(table);
+        const ValueId vptr = load(result(add(Op::Bitcast, tid(*types_.pointerTo(&T(chars))), std::vector<ValueId>(1, self))), chars);
+        std::vector<ValueId> offOps(1, bits);
+        offOps.push_back(iconst(pd, -1));
+        std::vector<ValueId> entryOps(1, vptr);
+        entryOps.push_back(result(add(Op::Add, pd, offOps)));
+        const ValueId entry = result(add(Op::Gep, chars, entryOps));
+        br(merge, std::vector<ValueId>(1, load(result(add(Op::Bitcast, tid(*types_.pointerTo(&T(fnPtr))), std::vector<ValueId>(1, entry))), fnPtr)));
+        place(plain);
+        br(merge, std::vector<ValueId>(1, result(add(Op::Bitcast, fnPtr, std::vector<ValueId>(1, word)))));
+        place(merge);
+        callee = param(merge, fnPtr);
+    }
+    info.hasThis = true;
+    info.symbol.clear();
+    std::vector<ValueId> ops(1, callee);
+    ops.push_back(result(add(Op::Bitcast, tid(*T(sig).params()[0]), std::vector<ValueId>(1, self))));
+    std::vector<sema::TypedId> args;
+    for (std::uint32_t i = 1; i < count(id); i++) args.push_back(child(id, i));
+    intoNow_ = id.v == intoCall_.v ? intoAlloca_ : -1;
+    return callTail(sig, info, ops, 1, args, false);
 }
 
 // [class.virtual]: a virtual call reads the vptr at the object's first word and the function at the slot the parser

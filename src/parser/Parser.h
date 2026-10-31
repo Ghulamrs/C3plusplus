@@ -502,23 +502,33 @@ private:
     std::vector<syntax::NodeId> callArgs_;
     // Counts the argument lists parseArguments has read, so a postfix step can tell whether it read one.
     unsigned argGen_ = 0;
+    // A read between a call's arguments and its node - a signature, a default - keeps the call's callArgs_ (M3b.2).
+    struct KeepCallArgs {
+        Parser *p;
+        std::vector<syntax::NodeId> was;
+        explicit KeepCallArgs(Parser *parser) : p(parser), was(parser->callArgs_) {}
+        ~KeepCallArgs() { p->callArgs_.swap(was); }
+    };
     struct PostfixStep {
-        bool active, callFollows;
+        bool active;
         syntax::Kind kind;
         std::string text;
-        std::size_t pos, callPos;
+        std::size_t pos, nameAt;
         syntax::NodeId operand, index;
         unsigned argGen;
-        PostfixStep() : active(false), callFollows(false), kind(syntax::Kind::Other), pos(0), callPos(0), argGen(0) {}
+        PostfixStep() : active(false), kind(syntax::Kind::Other), pos(0), nameAt(0), argGen(0) {}
     };
     PostfixStep beginPostfix(const ExprPtr &n) const;
     ExprPtr notePostfix(ExprPtr n, PostfixStep &st);
     syntax::Tree syntaxTree_;
     // A node over the parts parsed since node `mark` whose locations lie from `lo` to the last token read: a statement's
     // or a declaration's, each part having taken its own (Tree::adopt). noteStmt puts it on the Ast.h statement too.
-    syntax::NodeId noteParts(syntax::Kind kind, const std::string &text, std::size_t pos, std::size_t mark, std::size_t lo) {
+    syntax::NodeId noteParts(syntax::Kind kind, const std::string &text, std::size_t pos, std::size_t mark, std::size_t lo,
+                             const std::vector<syntax::NodeId> &after = std::vector<syntax::NodeId>()) {
         const std::size_t hi = at_ > 0 && tokens_[at_ - 1].pos > lo ? tokens_[at_ - 1].pos : lo;
-        return syntaxTree_.add(kind, text, pos, syntaxTree_.adopt(mark, lo, hi));
+        std::vector<syntax::NodeId> parts = syntaxTree_.adopt(mark, lo, hi);
+        parts.insert(parts.end(), after.begin(), after.end());
+        return syntaxTree_.add(kind, text, pos, parts);
     }
     StmtPtr noteStmt(StmtPtr s, syntax::Kind kind, const std::string &text, std::size_t pos, std::size_t mark,
                      std::size_t lo) {
@@ -707,8 +717,18 @@ private:
     }
     // The constructor a declaration called, by the declared local's serial, until its `var` node is made (M2.16): its
     // signature with `this`, whether defaults were added to the written arguments, whether [dcl.init]/8 zeroed first.
-    struct LocalBuilt { std::string symbol; const Type *signature; bool defaulted, zeroed; };
+    struct LocalBuilt { std::string symbol; const Type *signature; bool defaulted, zeroed; std::vector<syntax::NodeId> defaults; };
     std::map<int, LocalBuilt> ctorBySerial_;
+    // The defaults a local's constructor was completed by, for its `var` node to take as its last parts, read in the
+    // declaration's scope as a call's are (M3b.2); none where one has no syntax.
+    std::vector<syntax::NodeId> localDefaults(const std::string &name) {
+        const Local *l = lookup_.findLocal(name);
+        std::map<int, LocalBuilt>::const_iterator c = l != nullptr ? ctorBySerial_.find(l->serial) : ctorBySerial_.end();
+        if (c == ctorBySerial_.end() || !c->second.defaulted) return std::vector<syntax::NodeId>();
+        for (std::size_t i = 0; i < c->second.defaults.size(); i++) defaultArgNodes_.insert(c->second.defaults[i].v);
+        if (!c->second.defaults.empty()) defaultGroups_.erase(c->second.defaults.back().v);
+        return c->second.defaults;
+    }
     std::unordered_map<std::uint32_t, LocalBuilt> localBuilt_;      // the same, by `var` node (M3b.2)
     // The copy or move assignment `a = b` called for a class with one of its own, by b's node: its symbol and type (M3b.2).
     std::unordered_map<std::uint32_t, LocalBuilt> assignCalls_;
@@ -731,7 +751,7 @@ private:
             if (d == nullptr) return;
             const syntax::NodeId id = function
                 ? p.noteParts(syntax::Kind::Function, d->name, d->pos, mark, lo)
-                : p.noteParts(syntax::Kind::Var, varText(), d->pos, mark, lo);
+                : p.noteParts(syntax::Kind::Var, varText(), d->pos, mark, lo, p.localDefaults(d->name));
             if (!function && d->type != nullptr) p.declaredTypes_[id.v] = d->type;
             if (!function && form != 0) p.varForms_[id.v] = form;
             if (!function) p.noteDeclaredLocal(id, d->name);
@@ -2311,6 +2331,7 @@ private:
     ExprPtr memberPointerExpr();
     ExprPtr applyMemberPointer(ExprPtr addr, ExprPtr mp, std::size_t pos,
                                bool constObject);
+    ExprPtr noteMemberPointer(ExprPtr e, const char *op, std::size_t pos, syntax::NodeId l, syntax::NodeId r);
     // `&S::f` - the ABI's pair, built into a slot of this frame.
     // `vtableCode` is Itanium's 1 + slot offset for a virtual function, 0 for
     // a plain one; `code` names the function - or cl's vcall thunk - to hold.
