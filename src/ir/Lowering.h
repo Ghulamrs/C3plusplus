@@ -300,6 +300,7 @@ private:
     bool constructedClass(const Type &t) const;
     bool newBuilt(const Type &t) const;
     bool bytesReturned(const Type &t) const;
+    bool classResult(sema::TypedId id) const;
     bool destroyedReturned(const Type &t) const;
     bool copiedReturn(const Type &t) const;
     bool destroyedClass(const Type &t) const;

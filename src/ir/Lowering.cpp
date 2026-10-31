@@ -1688,6 +1688,13 @@ bool Lowering::destroyedResult(sema::TypedId id) const {
     return r.what == sema::Resolution::Call && r.type.valid() && T(r.type).isFunction() && destroyedResultClass(*T(r.type).returns());
 }
 
+// A call, or an operator the parser resolved to one, returning a class by value.
+bool Lowering::classResult(sema::TypedId id) const {
+    if (syn(id).kind != syntax::Kind::Call && !operatorCalls(id)) return false;
+    const sema::Resolution &r = tree_.resolution(id);
+    return r.what == sema::Resolution::Call && r.type.valid() && T(r.type).isFunction() && T(r.type).returns()->isStructOrUnion();
+}
+
 // A full expression opened: the temporaries it builds are alive from live_'s size now; closeFull destroys them at its end.
 std::size_t Lowering::openFull() {
     const std::size_t was = fullFrom_;
@@ -3533,6 +3540,8 @@ bool Lowering::pseudoDestructor(sema::TypedId member) {
     if (arrow && !T(o.type).isPointer()) outside("a destructor called through what is not a pointer");
     const Type &ot = arrow ? *T(o.type).pointee() : T(o.type);
     if (scalar(ot) || plainClass(*ot.unqualified())) return true;
+    // A class with no destructor of its own, a constructor or a vptr notwithstanding: the call does nothing.
+    if (ot.unqualified()->isStructOrUnion() && ot.unqualified()->isComplete() && !ot.unqualified()->hasDestructor()) return true;
     // [class.dtor]/14: a class's own destructor, called on the object; a virtual one would dispatch and stays outside.
     const Type &cls = *ot.unqualified();
     if (!cls.isStructOrUnion() || cls.hasVptr() || cls.hasVirtualBase()) outside("a destructor called by name");
@@ -3880,8 +3889,9 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
                 ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(&ref)), std::vector<ValueId>(1, a.v))));
                 continue;
             }
-            // A call's result with a destructor, the caller's temporary to its full expression's end, bound the same way.
-            if (!isLvalueNode(an) && (ref.isConst() || p.isRValueReference()) && destroyedResult(an)) {
+            // A call's class result, in a slot of this frame to its full expression's end - destroyed there where it has
+            // a destructor - bound the same way.
+            if (!isLvalueNode(an) && (ref.isConst() || p.isRValueReference()) && (destroyedResult(an) || classResult(an))) {
                 const Val a = syn(an).kind == syntax::Kind::Call ? call(an) : operatorCall(an);
                 if (!a.type.valid() || !T(a.type).isPointer() || T(a.type).pointee()->unqualified() != ref.unqualified())
                     outside("a reference parameter bound to a call's result of another type");
@@ -4944,7 +4954,7 @@ void Lowering::checkFuncletUses(BlockId hb) {
 void Lowering::microsoftTry(sema::TypedId id) {
     const std::uint32_t n = count(id);
     if (n < 2) outside("a try with no handler");
-    struct Handler { sema::TypedId node, var, body; TypeId caught; std::string descriptor; bool byRef, isConst; };
+    struct Handler { sema::TypedId node, var, body; TypeId caught; std::string descriptor, dtor; bool byRef, isConst; };
     std::vector<Handler> hs;
     for (std::uint32_t i = 1; i < n; i++) {
         Handler h;
@@ -4962,8 +4972,14 @@ void Lowering::microsoftTry(sema::TypedId id) {
             h.byRef = t.isReference();
             h.caught = (h.byRef ? t.referent()->unqualified() : t.unqualified())->id();
             const Type &c = T(h.caught);
-            // The runtime makes the object in the slot: a scalar's or a plain class's bytes, or a pointer to it.
-            if (h.byRef ? !referable(c) : !(scalar(c) || plainClass(c)) || c.isX87(target_)) outside("a catch of '" + t.describe() + "'");
+            // The runtime makes the object in the slot - a scalar's bytes, a class's by its copy constructor, or a pointer to
+            // it - and the handler destroys a class caught by value on every way out, as cl's funclet does.
+            if (h.byRef ? !referable(c) : !(scalar(c) || (c.isStructOrUnion() && c.isComplete())) || c.isX87(target_))
+                outside("a catch of '" + t.describe() + "'");
+            if (!h.byRef && c.isStructOrUnion() && c.unqualified()->hasDestructor()) {
+                h.dtor = destructor_ ? destructor_(c.unqualified()->id()) : std::string();
+                if (h.dtor.empty()) outside("a catch of a class whose destructor the parser recorded none for");
+            }
             if (!msCatch_ || !msCatch_(h.caught, h.descriptor, h.isConst)) outside("a catch of a type whose descriptor the parser did not finish");
         } else if (parts == 1 && text(h.node).empty() && msUnnamedCaught_ &&
                    msUnnamedCaught_(tree_.node(h.node).syntax, h.descriptor, h.byRef, h.isConst)) {
@@ -5032,7 +5048,10 @@ void Lowering::microsoftTry(sema::TypedId id) {
         at(cp).pos = syn(hs[i].node).loc;
         handlerDepth_++;
         handlerLive_.push_back(live_.size());
+        const std::size_t caughtMark = live_.size();
+        if (!hs[i].dtor.empty()) guard(ops[0], T(hs[i].caught), hs[i].dtor);
         block(hs[i].body);
+        closeScope(caughtMark);
         handlerLive_.pop_back();
         handlerDepth_--;
         if (!terminated()) {
