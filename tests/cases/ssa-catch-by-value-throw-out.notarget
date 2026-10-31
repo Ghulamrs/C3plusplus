@@ -1,0 +1,1 @@
+x86_64-windows  the walker destroys the object caught by value twice when a new exception leaves its handler there (double=1 over=1 under Wine 6.0, the Windows box being down when measured): found writing this case, not mended in M3b.2's lane-misc

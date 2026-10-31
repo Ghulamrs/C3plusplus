@@ -656,11 +656,12 @@ private:
     struct ThrowFacts { std::string temp; int slot = 0; std::string info; };
     std::unordered_map<std::uint32_t, ThrowFacts> throwFacts_;
     ThrowFacts pendingThrow_;
-    // A `new` or `delete` as the SSA lowering may take it (M3b.2): the allocation function called, the type, the initialiser
-    // (0 none, 1 value-initialised, 2 one value), `why` where it may not; for a class with constructors the one chosen,
-    // its type with `T *` first, whether the object is zeroed first and whether defaults filled the arguments out.
-    struct NewFacts { std::string symbol, why, ctor, dtor; const Type *made = nullptr, *ctorSig = nullptr, *dtorSig = nullptr;
-                      bool array = false, placed = false, ctorZero = false, ctorDefaulted = false; int init = 0, dslot = -1; };
+    // A `new` or `delete` as the SSA lowering may take it (M3b.2): allocation function, type, initialiser (0 none, 1 value-
+    // initialised, 2 one value), `why` where it may not; a class's chosen constructor, its type with `T *` first, zeroed first,
+    // defaults added; bytesCopied, `new T(t)` storing t's bytes ([class.copy]/12); vectorLoop, `new T[n]`'s element builder.
+    struct NewFacts { std::string symbol, why, ctor, dtor, vectorLoop; const Type *made = nullptr, *ctorSig = nullptr, *dtorSig = nullptr;
+                      bool array = false, placed = false, ctorZero = false, ctorDefaulted = false, bytesCopied = false;
+                      int init = 0, dslot = -1; };
     std::unordered_map<std::uint32_t, NewFacts> newFacts_;
     NewFacts pendingNew_;
     void noteCallSlots(const Call &c) {
@@ -677,7 +678,9 @@ private:
     // nothing either way. 0 none, 1 `= e` or `(e)`, 2 a braced list, 3 empty braces - value-initialisation.
     std::unordered_map<std::uint32_t, int> varForms_;
     std::unordered_map<std::uint32_t, int> forParts_;   // a `for`'s parts present: 1 init, 2 condition, 4 step (M3b.2)
+    int hoistedForParts_ = 0;   // a `for` whose init has a destructor, its init hoisted in front: its parts, for noteStmt
     std::unordered_map<std::uint32_t, std::string> unnamedCaught_;   // `catch (T)` with no name: T's type_info, by `catch` node
+    std::map<std::uint32_t, MemberBuilt> caughtCopy_;    // a class caught by value: the copy constructor that copied it, by `catch` node
     struct MsUnnamed { std::string descriptor; bool byRef, isConst; };
     std::unordered_map<std::uint32_t, MsUnnamed> msUnnamedCaught_;   // the same on Microsoft: T's descriptor, by `catch` node
     void noteMsCatch(bool typed, bool unnamed, const MsHandler &mh, std::size_t pos, std::size_t mark) {
@@ -801,6 +804,10 @@ private:
     struct RangeFacts { std::string bName, eName; int bSlot, eSlot, scope, inner; };
     std::unordered_map<std::uint32_t, RangeFacts> rangeFacts_;
     RangeFacts pendingRange_ = RangeFacts();
+    // A range-based for over a class object, its iterators pointers and nothing alive: its begin and end calls' records (M3b.2).
+    struct RangeCalls { std::uint32_t begin = 0, end = 0; bool object = false; };
+    std::unordered_map<std::uint32_t, RangeCalls> rangeCalls_;
+    RangeCalls pendingRangeCalls_;
     LambdaFacts pendingLambda_;
     // A class temporary's shape, `*(ctor(&$tmp, ...), &$tmp)`, read for its class; None where the Expr is not one.
     Resolved temporaryOf(const Expr *e) const {

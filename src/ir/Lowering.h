@@ -61,6 +61,8 @@ public:
     void setMicrosoftCatch(std::function<bool(TypeId, std::string &, bool &)> f) { msCatch_ = f; }
     void setMicrosoftUnnamedCaught(std::function<bool(syntax::NodeId, std::string &, bool &, bool &)> f) { msUnnamedCaught_ = f; }
     void setNewFacts(std::function<bool(syntax::NodeId, sema::NewFacts &)> f) { newFacts_ = f; }
+    void setRangeCalls(std::function<bool(syntax::NodeId, sema::Resolution &, sema::Resolution &)> f) { rangeCalls_ = f; }
+    void setCaughtCopy(std::function<bool(syntax::NodeId, std::string &, TypeId &)> f) { caughtCopy_ = f; }
     // The constructor the parser chose for a member, and a class's destructor - Sema's records, asked by the glue.
     void setMemberBuilt(std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> f) { memberBuilt_ = f; }
     void setDestructor(std::function<std::string(TypeId)> f) { destructor_ = f; }
@@ -155,6 +157,7 @@ private:
     Val classValue(sema::TypedId id, const Type &t);
     void forStmt(sema::TypedId id);
     void rangeForStmt(sema::TypedId id);
+    ValueId rangeEnd(const sema::Resolution &r, Val range, TypeId &iter);
     void switchStmt(sema::TypedId id);
     BlockId labelBlock(const std::string &name);
     void gotoStmt(const std::string &name);
@@ -165,6 +168,8 @@ private:
     struct TryHandler { sema::TypedId node, var, body; TypeId caught; std::string sym; int index; };
     struct TryState { std::vector<TryHandler> hs; BlockId done; };
     void tryOpen(const std::vector<sema::TypedId> &handlers, TryState &st);
+    bool caughtByValue(sema::TypedId handler, const Type &c);
+    void caughtCopied(ValueId slot, ValueId from, const std::string &copy, TypeId sig);
     void tryClose(TryState &st, bool rethrows);
     void microsoftTry(sema::TypedId id);
     void leaveHandlers(std::size_t n, std::size_t mark, BlockId target, const std::vector<ValueId> &args = std::vector<ValueId>());
@@ -289,7 +294,7 @@ private:
     void copyObject(ValueId to, ValueId from, const Type &t);
     bool plainTemporary(sema::TypedId id) const;
     bool constructedClass(const Type &t) const;
-    bool placedClass(const Type &t) const;
+    bool newBuilt(const Type &t) const;
     bool bytesReturned(const Type &t) const;
     bool destroyedReturned(const Type &t) const;
     bool copiedReturn(const Type &t) const;
@@ -347,6 +352,8 @@ private:
     BlockId msTryFunclet_;                      // the handler that try stands in, whose funclet its exits belong to; none in the body
     std::size_t funcletPads_;                   // pads_ where that handler's body began: a pad above it was made inside the funclet
     std::function<bool(syntax::NodeId, sema::NewFacts &)> newFacts_;
+    std::function<bool(syntax::NodeId, sema::Resolution &, sema::Resolution &)> rangeCalls_;
+    std::function<bool(syntax::NodeId, std::string &, TypeId &)> caughtCopy_;
     std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> memberBuilt_;
     std::function<std::string(TypeId)> destructor_;
     std::function<bool(const std::string &, std::vector<sema::VptrStore> &)> vptrStores_;

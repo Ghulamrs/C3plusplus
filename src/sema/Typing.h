@@ -70,14 +70,16 @@ struct StaticGuard {
 // the initialiser - 0 none, 1 value-initialised, 2 one value - and `why` where the SSA lowering may not take it.
 struct NewFacts {
     std::string symbol, why, ctor;   // ctor: the constructor `new T(...)` calls on the storage, its type with `T *` first
+    std::string vectorLoop;          // `new T[n]` of a class: the function building each element, given the array and n
     TypeId made, ctorSig;
     std::string dtor;       // a `delete`'s: the destructor it runs first, or none where `dslot` names the deleting slot
     TypeId dtorSig;
     int dslot;
     bool array, placed;     // placed: the reserved placement form, `new (p) T` - no allocation, the address given
     bool ctorZero, ctorDefaulted;    // the object zeroed before the constructor; defaults filled the written arguments out
+    bool bytesCopied;       // `new T(t)` of a class with constructors and a trivial copy: t's bytes stored, no constructor
     int init;
-    NewFacts() : dslot(-1), array(false), placed(false), ctorZero(false), ctorDefaulted(false), init(0) {}
+    NewFacts() : dslot(-1), array(false), placed(false), ctorZero(false), ctorDefaulted(false), bytesCopied(false), init(0) {}
 };
 
 // What a sizeof, alignof or noexcept folded to, or an integer or character literal's value, with its type.
@@ -175,6 +177,9 @@ public:
     bool constructed(TypeId cls) const;          // a class some constructor builds, written or implicit
     bool assigned(TypeId cls) const;             // a class with an operator= of its own, written or implicit
     bool newFacts(syntax::NodeId id, NewFacts &out) const;  // a `new` or `delete` node's facts; false where none were recorded
+    // A range-based for over a class object with pointer iterators: the records of its begin and end calls; false otherwise.
+    bool rangeCalls(syntax::NodeId id, Resolution &begin, Resolution &end) const;
+    bool caughtCopy(syntax::NodeId handler, std::string &symbol, TypeId &signature) const;   // a by-value catch's copy constructor
     bool defaultInit(TypeId cls, const std::string &member) const;   // the member has an initialiser of its own
     // The member initialisers the parser replayed into written constructor `ctor`, typed; then each by "class::member".
     void typeMemberDefaults(const std::string &ctor);

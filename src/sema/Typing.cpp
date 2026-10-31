@@ -582,9 +582,28 @@ bool Typer::newFacts(syntax::NodeId id, NewFacts &out) const {
     if (f->second.ctorSig != nullptr) out.ctorSig = f->second.ctorSig->id();
     out.ctorZero = f->second.ctorZero;
     out.ctorDefaulted = f->second.ctorDefaulted;
+    out.bytesCopied = f->second.bytesCopied;
+    out.vectorLoop = f->second.vectorLoop;
     out.dtor = f->second.dtor;
     if (f->second.dtorSig != nullptr) out.dtorSig = f->second.dtorSig->id();
     out.dslot = f->second.dslot;
+    return true;
+}
+
+bool Typer::caughtCopy(syntax::NodeId handler, std::string &symbol, TypeId &signature) const {
+    const std::map<std::uint32_t, Parser::MemberBuilt>::const_iterator i = p_.caughtCopy_.find(handler.v);
+    if (i == p_.caughtCopy_.end() || i->second.symbol.empty() || i->second.signature == nullptr) return false;
+    symbol = i->second.symbol;
+    signature = TypeTable::id(i->second.signature);
+    return true;
+}
+
+bool Typer::rangeCalls(syntax::NodeId id, Resolution &begin, Resolution &end) const {
+    const std::unordered_map<std::uint32_t, Parser::RangeCalls>::const_iterator i = p_.rangeCalls_.find(id.v);
+    if (i == p_.rangeCalls_.end() || i->second.begin >= p_.resolvedTable_.size() || i->second.end >= p_.resolvedTable_.size())
+        return false;
+    begin = copied(p_.resolvedTable_[i->second.begin]);
+    end = copied(p_.resolvedTable_[i->second.end]);
     return true;
 }
 
