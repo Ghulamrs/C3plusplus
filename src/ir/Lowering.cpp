@@ -1174,10 +1174,12 @@ Lowering::Val Lowering::object(sema::TypedId id) {
     return Val(param(merge, pt), tid(cls));
 }
 
-// A lambda whose closure is a plain class, its captures the parser recorded: scalar locals, each copied or bound.
+// A lambda whose closure is copied as bytes, its captures the parser recorded: locals, or the enclosing lambda's captures.
 bool Lowering::closureNode(sema::TypedId id) const {
     sema::ClosureFacts f;
-    return closure_ && closure_(tree_.node(id).syntax, f) && f.closure.valid() && plainClass(T(f.closure));
+    // A closure is never built by a constructor, so one marked only for a member's class is copied as bytes all the same.
+    return closure_ && closure_(tree_.node(id).syntax, f) && f.closure.valid() &&
+           (plainClass(T(f.closure)) || bytesReturned(T(f.closure)));
 }
 
 // [expr.prim.lambda]/2: the closure a temporary of this frame - each by-copy member the local's value, each by-reference
@@ -1196,19 +1198,34 @@ Lowering::Val Lowering::closure(sema::TypedId id) {
         store(result(g), result(add(Op::Bitcast, f.thisType, std::vector<ValueId>(1, this_))));
     }
     for (const sema::ClosureCapture &c : f.captures) {
-        const std::map<std::uint32_t, std::pair<ValueId, TypeId> >::const_iterator l = locals_.find(c.source.v);
-        if (l == locals_.end()) outside("a lambda capturing what is not a local of the body");
+        // The source's slot and declared type: a local of the body, or the enclosing closure's member through `this`.
+        ValueId holder;
+        TypeId declaredId;
+        if (c.outer >= 0) {
+            if (!this_.valid() || !c.outerType.valid()) outside("a lambda capturing a capture with no closure to read it from");
+            declaredId = c.outerType;
+            const Type &d = T(declaredId);
+            const InstId m = add(Op::Gep, tid(*types_.pointerTo(d.isReference() ? types_.pointerTo(d.referent()) : &d)),
+                                 std::vector<ValueId>(1, this_));
+            at(m).k = c.outer;
+            holder = result(m);
+        } else {
+            const std::map<std::uint32_t, std::pair<ValueId, TypeId> >::const_iterator l = locals_.find(c.source.v);
+            if (l == locals_.end()) outside("a lambda capturing what is not a local of the body");
+            holder = l->second.first;
+            declaredId = l->second.second;
+        }
         // A reference local captures what it refers to; a class is held by reference, or by value where its copy is bytes.
-        const Type &declared = T(l->second.second), &mt = T(c.type);
+        const Type &declared = T(declaredId), &mt = T(c.type);
         const Type &src = *(declared.isReference() ? declared.referent() : &declared)->unqualified();
         const bool byRef = mt.isReference();
-        if (!(scalar(src) && !src.isX87(target_)) && !(src.isStructOrUnion() && src.isComplete() && (byRef || plainClass(src))))
+        if (!(scalar(src) && !src.isX87(target_)) && !(src.isStructOrUnion() && src.isComplete() && (byRef || plainClass(src) || bytesReturned(src))))
             outside("a lambda capturing what is not a scalar or a class it holds");
         if ((byRef ? mt.referent() : &mt)->unqualified() != &src) outside("a lambda's capture of another type");
         const TypeId held = byRef ? tid(*types_.pointerTo(&src)) : tid(src);
         const InstId g = add(Op::Gep, tid(*types_.pointerTo(&T(held))), std::vector<ValueId>(1, slot));
         at(g).k = c.offset;
-        const ValueId from = declared.isReference() ? load(l->second.first, tid(*types_.pointerTo(declared.referent()))) : l->second.first;
+        const ValueId from = declared.isReference() ? load(holder, tid(*types_.pointerTo(declared.referent()))) : holder;
         const ValueId at0 = result(add(Op::Bitcast, tid(*types_.pointerTo(&src)), std::vector<ValueId>(1, from)));
         if (!byRef && !scalar(src)) copyObject(result(g), at0, src);
         else store(result(g), byRef ? at0 : load(at0, held));
