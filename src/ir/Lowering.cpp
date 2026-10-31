@@ -489,7 +489,9 @@ void Lowering::classLocal(sema::TypedId var, ValueId slot, const Type &t) {
         return;
     }
     case 1: {
-        if (v.count != 1 || !objectNode(child(var, 0))) outside("a class local initialised by what is not an object");
+        if (v.count != 1) outside("a class local initialised by " + std::to_string(v.count) + " values");
+        if (!objectNode(child(var, 0)))
+            outside(std::string("a class local initialised by a '") + syntax::kindName(syn(child(var, 0)).kind) + "' that is not an object");
         Val o = object(child(var, 0));
         // [class.copy]/12 with [conv.ptr]/3: a derived object's base subobject is what is copied - its bytes.
         if (T(o.type).isStructOrUnion() && T(o.type).unqualified() != t.unqualified())
@@ -4258,7 +4260,7 @@ Lowering::Val Lowering::newExpression(sema::TypedId id) {
     if (loop) {
         // [expr.new]/17 and /20: the elements built by the loop, the storage given back by operator delete[] if one throws.
         const std::size_t mark = live_.size();
-        if (frees) guard(p, made, target_.microsoftNames() ? "??_V@YAXPEAX@Z" : "_ZdaPv");
+        if (frees) guard(p, made, !f.release.empty() ? f.release : target_.microsoftNames() ? "??_V@YAXPEAX@Z" : "_ZdaPv");
         std::vector<TypeId> params;
         params.push_back(pt);
         params.push_back(sizeT);
@@ -4269,7 +4271,7 @@ Lowering::Val Lowering::newExpression(sema::TypedId id) {
         if (frees) closeScope(mark, true);
     } else if (built) {
         const std::size_t mark = live_.size();
-        if (frees) guard(p, made, target_.microsoftNames() ? "??3@YAXPEAX@Z" : "_ZdlPv");
+        if (frees) guard(p, made, !f.release.empty() ? f.release : target_.microsoftNames() ? "??3@YAXPEAX@Z" : "_ZdlPv");
         construct(p, f.ctor, f.ctorSig, made, f.ctorZero, id, lead);
         if (frees && live_.size() != mark + 1) outside("a 'new' whose constructor's arguments outlive it");
         if (frees) closeScope(mark, true);      // the object made: the storage's guard ends without a free

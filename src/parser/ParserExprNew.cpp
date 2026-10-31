@@ -1753,7 +1753,17 @@ ExprPtr Parser::newExpression(std::size_t pos) {
     if (nothrow) pendingNew_.why = "a nothrow 'new'";
     else if (userAlloc) pendingNew_.why = "a placement 'new' of an allocation function of the program's";
     else if (bracedList) pendingNew_.why = "a 'new' with a braced list";
-    else if (classAllocator(made, array ? "operatornew[]" : "operatornew") != nullptr) pendingNew_.why = "a class's own operator new";
+    else if (const Signature *own = classAllocator(made, array ? "operatornew[]" : "operatornew")) {
+        // [class.free]/2: the class's own, called as the platform's is where it takes the size alone.
+        // [expr.new]/20: a constructor that throws gives the storage back by the class's own deallocation function.
+        const Signature *back = classAllocator(made, array ? "operatordelete[]" : "operatordelete");
+        if (own->params.size() == 1 && (back == nullptr || back->params.size() == 1)) {
+            pendingNew_.symbol = own->symbol;
+            if (back != nullptr) pendingNew_.release = back->symbol;
+        } else {
+            pendingNew_.why = "a class's own operator new";
+        }
+    }
     else if (array && arrayCookie(made) != 0) pendingNew_.why = "an array 'new' with a cookie";
     else if (placement != nullptr) { pendingNew_.placed = true; pendingNew_.symbol = "$placed"; }   // [new.delete.placement]
     else if (target_.microsoftNames()) pendingNew_.symbol = array ? "??_U@YAPEAX_K@Z" : "??2@YAPEAX_K@Z";
@@ -2154,7 +2164,9 @@ ExprPtr Parser::deleteExpression(std::size_t pos) {
     pendingNew_.made = t->pointee();
     pendingNew_.array = array;
     if (dtor != nullptr) pendingNew_.why = "a 'delete' of a class with a destructor";
-    else if (classAllocator(t->pointee(), array ? "operatordelete[]" : "operatordelete") != nullptr) pendingNew_.why = "a class's own operator delete";
+    else if (const Signature *own = classAllocator(t->pointee(), array ? "operatordelete[]" : "operatordelete")) {
+        if (own->params.size() == 1) pendingNew_.symbol = own->symbol; else pendingNew_.why = "a class's own operator delete";
+    }
     else if (target_.microsoftNames()) pendingNew_.symbol = array ? "??_V@YAXPEAX@Z" : "??3@YAXPEAX@Z";
     else pendingNew_.symbol = array ? "_ZdaPv" : "_ZdlPv";
 

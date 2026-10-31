@@ -570,6 +570,7 @@ bool Typer::newFacts(syntax::NodeId id, NewFacts &out) const {
     out.ctorDefaulted = f->second.ctorDefaulted;
     out.bytesCopied = f->second.bytesCopied;
     out.vectorLoop = f->second.vectorLoop;
+    out.release = f->second.release;
     out.dtor = f->second.dtor;
     if (f->second.dtorSig != nullptr) out.dtorSig = f->second.dtorSig->id();
     out.dslot = f->second.dslot;

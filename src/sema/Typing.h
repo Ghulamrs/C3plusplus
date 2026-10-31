@@ -72,6 +72,7 @@ struct StaticGuard {
 struct NewFacts {
     std::string symbol, why, ctor;   // ctor: the constructor `new T(...)` calls on the storage, its type with `T *` first
     std::string vectorLoop;          // `new T[n]` of a class: the function building each element, given the array and n
+    std::string release;             // the class's own deallocation function a `new` gives its storage back by, else none
     TypeId made, ctorSig;
     std::string dtor;       // a `delete`'s: the destructor it runs first, or none where `dslot` names the deleting slot
     TypeId dtorSig;

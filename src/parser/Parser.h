@@ -669,7 +669,7 @@ private:
     // A `new` or `delete` as the SSA lowering may take it (M3b.2): allocation function, type, initialiser (0 none, 1 value-
     // initialised, 2 one value), `why` where it may not; a class's chosen constructor, its type with `T *` first, zeroed first,
     // defaults added; bytesCopied, `new T(t)` storing t's bytes ([class.copy]/12); vectorLoop, `new T[n]`'s element builder.
-    struct NewFacts { std::string symbol, why, ctor, dtor, vectorLoop; const Type *made = nullptr, *ctorSig = nullptr, *dtorSig = nullptr;
+    struct NewFacts { std::string symbol, why, ctor, dtor, vectorLoop, release; const Type *made = nullptr, *ctorSig = nullptr, *dtorSig = nullptr;
                       bool array = false, placed = false, ctorZero = false, ctorDefaulted = false, bytesCopied = false;
                       int init = 0, dslot = -1; };
     std::unordered_map<std::uint32_t, NewFacts> newFacts_;
