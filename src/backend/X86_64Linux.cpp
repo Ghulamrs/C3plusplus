@@ -1591,6 +1591,10 @@ void X86_64Linux::emit(const Function &fn) {
     labelPrefix_ = ".L." + fn.symbol() + ".";
     returnLabel_ = ".L.return." + fn.symbol();
 
+    // The selected body's pads: the parser's, or the SSA lowering's own where it took a body the parser gave none.
+    const ir::Function *ssaFn = ssaFunction(fn);
+    landingPads_ = ssaFn != nullptr ? ssaFn->landingPads : fn.hasLandingPads();
+
     // **A frame realigned for an over-aligned local** (Function::frameAlign, or a named local's own) is
     // written past the optimizer, whose passes address the frame from rbp and take rbx, and walks no
     // callee in place; a Windows funclet reaches the frame through the establisher, so that shape is refused.
@@ -1600,7 +1604,7 @@ void X86_64Linux::emit(const Function &fn) {
             const int a = l.align > objectAlign(l.type, target_) ? l.align : objectAlign(l.type, target_);
             if (a > 16 && a > realign_) realign_ = a;
         }
-    if (realign_ > 0 && fn.hasLandingPads() && usesFunclets())
+    if (realign_ > 0 && landingPads_ && usesFunclets())
         unsupported("an over-aligned local in a function with a try or a local with a destructor");
     // At -O0 the holder holds it too, `realign` on its prologue; the passes would address it from rbp and take rbx.
     if (realign_ > 0 && passesRun()) {
@@ -1651,7 +1655,7 @@ void X86_64Linux::emit(const Function &fn) {
         dwarfFns_.push_back(d);
         resetBlocks(fn.blocks());
         a_->defLabel(d.begin);
-    } else if (fn.hasLandingPads() && !usesFunclets()) {
+    } else if (landingPads_ && !usesFunclets()) {
         // The call-site table measures from here, whether or not there is
         // debug information. A funclet target has no call-site table and no
         // use for the label - and MASM will not take one shaped like this.
@@ -1663,8 +1667,7 @@ void X86_64Linux::emit(const Function &fn) {
     // **A frame cut into funclets cannot grow once its first funclet is out**,
     // so it reserves room for any callee it may walk in place from the start.
     current_ = &fn;
-    inlineReserve_ = fn.hasLandingPads() && usesFunclets() && inlining() ? inliner_->largestFrame() : 0;
-    const ir::Function *ssaFn = ssaFunction(fn);
+    inlineReserve_ = landingPads_ && usesFunclets() && inlining() ? inliner_->largestFrame() : 0;
     frameSize_ = (ssaFn != nullptr ? layoutSsa(fn, *ssaFn) : fn.frameSize()) + inlineReserve_;
     fnSymbol_ = fn.symbol();
     fnMergeable_ = fn.isInline();
@@ -1688,13 +1691,13 @@ void X86_64Linux::emit(const Function &fn) {
         if (!calls.empty() || tlsGuarded) outgoing_ = (abi_.shadowBytes + 8 * words + 15) & ~15;
     }
     floorDepth_ = 0;
-    tempsAllowed_ = passesRun() && !(fn.hasLandingPads() && usesFunclets());
+    tempsAllowed_ = passesRun() && !(landingPads_ && usesFunclets());
     tempDepth_ = tempHigh_ = 0;
     // The frame's top, rounded to the alignment, is what a realigned prologue allocates.
     top_ = frameSize_ + outgoing_;
     if (realign_ > 0) top_ = (top_ + realign_ - 1) / realign_ * realign_;
     a_->prologue(realign_ > 0 ? top_ - outgoing_ : frameSize_,
-                 fn.hasLandingPads() ? ".Lexception." + fn.symbol()
+                 landingPads_ ? ".Lexception." + fn.symbol()
                                      : std::string(),
                  outgoing_, realign_);
 
@@ -1960,7 +1963,7 @@ const Function *X86_64Linux::inlineTarget(const Call &n, int stackSlots) const {
     if (lineSource()) { opt::noteDecline("inline-site-debug-info", site); return nullptr; }
     if (inPlace_) { opt::noteDecline("inline-site-inside-inlined-body", site); return nullptr; }
     if (stackSlots != 0) { opt::noteDecline("inline-site-stack-arguments", site); return nullptr; }
-    const bool reserved = current_->hasLandingPads() && usesFunclets();
+    const bool reserved = landingPads_ && usesFunclets();
     if (reserved && ((callee.frameSize() + 15) & ~15) > inlineReserve_) {
         opt::noteDecline("inline-site-frame-past-funclet-reserve", site);
         return nullptr;

@@ -82,6 +82,7 @@ struct AllocaInfo { TypeId type; int align; std::string name; AllocaInfo() : ali
 struct Function {
     std::string symbol, displayName;
     bool isStatic, isInline, variadic, hasThis, noexcept_;
+    bool landingPads;                   // the selected body names an LSDA or FH3 tables: the parser's pads, or pads of its own
     TypeId returns;
     std::vector<ValueId> params;
     ValueId sret;
@@ -98,7 +99,7 @@ struct Function {
     std::vector<Block> blockArena;
     std::vector<ValueId> operands;
     std::vector<CallInfo> calls;
-    Function() : isStatic(false), isInline(false), variadic(false), hasThis(false), noexcept_(false), frameAlign(16), pos(0) {
+    Function() : isStatic(false), isInline(false), variadic(false), hasThis(false), noexcept_(false), landingPads(false), frameAlign(16), pos(0) {
         values.push_back(Value()); insts.push_back(Inst()); blockArena.push_back(Block()); calls.push_back(CallInfo());
     }
     const Value &value(ValueId id) const { return values[id.v]; }

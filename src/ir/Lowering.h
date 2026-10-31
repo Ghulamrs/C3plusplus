@@ -117,6 +117,7 @@ private:
     BlockId newBlock();
     void place(BlockId b);
     bool terminated() const;
+    bool madePads() const;
     void specFilterChain(const Pad &p);
     void noexceptAbort(const Pad &p);
     void br(BlockId to, const std::vector<ValueId> &args = std::vector<ValueId>());
@@ -393,7 +394,7 @@ private:
     sema::TypedId intoCall_;                    // the call elidedCall lowers, whose result goes into a local's alloca
     int intoAlloca_ = -1, intoNow_ = -1;        // that alloca; and callTail's, set only as that call's tail is entered
     std::size_t liveFloor_;                     // a constructor's built bases and members: below it, kept by a return
-    bool landingPads_;                          // the parser gave the function landing pads: the prologue names an LSDA
+    bool landingPads_;                          // the parser gave the function landing pads; ir::Function::landingPads adds the lowering's own
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> temporaryBuilt_;
     std::function<bool(syntax::NodeId, std::string &, TypeId &)> convertedBuilt_;
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> argumentCopy_;
