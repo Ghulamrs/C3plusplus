@@ -1185,4 +1185,4 @@ round 22**: fold `fullFrom_` into the `fullAt_` stack; one decision for a braced
 recomputes what `bracedInitArguments` decides); one idiom for a null edge (`memberPointerConversion`'s block or
 `dynamicCastPointer`'s operand poke, not both); a case value read from `TypedNode::folded`, not a fourth hook; the nine
 sites where the parser's pads still gate a guard (CONFORMANCE says so now); a probe of `dynamic_cast` upcast through a base
-at an offset on a null. Round 21 added 510 lines to `src/` for 219 bodies; `src/` is 86,8xx lines at its close.
+at an offset on a null. `src/` went from 85882 to 86405 lines in round 21 (+523) for 219 bodies.
