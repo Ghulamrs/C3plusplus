@@ -82,6 +82,9 @@ public:
     }
     // The constructor the parser chose for a local's `var` node - Sema's record, asked by the glue.
     void setLocalBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &, bool &)> f) { localBuilt_ = f; }
+    // The initializer_list parameter a local's braces were made into, and their count - Sema's record, asked by the glue.
+    void setLocalList(std::function<bool(syntax::NodeId, TypeId &, std::uint32_t &)> f) { localList_ = f; }
+    void setMemberList(std::function<bool(const std::string &, const std::string &, std::uint32_t, TypeId &, std::uint32_t &)> f) { memberList_ = f; }
     void setTemporaryBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> f) { temporaryBuilt_ = f; }
     // The converting constructor that made a temporary of a value at a node - Sema's record, asked by the glue.
     void setConvertedBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &)> f) { convertedBuilt_ = f; }
@@ -304,6 +307,7 @@ private:
     void staticConstruction(sema::TypedId var, const std::string &symbol, const sema::StaticGuard &g);
     bool builtClass(const Type &t) const;
     void builtLocal(sema::TypedId var, ValueId slot, const Type &t);
+    ValueId initializerList(sema::TypedId parent, const Type &param, std::uint32_t n);
     void guard(ValueId slot, const Type &c, const std::string &dtor, bool unwinds = true);
     void destroy(const Live &l, bool invoke = false);
     void destroyLive(std::size_t mark);
@@ -389,6 +393,8 @@ private:
     std::string key_;                           // FunctionFacts::recordKey: the memberBuilt_ and vptrStores_ records' key
     ValueId vtt_;                               // Itanium's C2 or D2 handed a VTT: it, the second parameter; none otherwise
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &, bool &)> localBuilt_;
+    std::function<bool(syntax::NodeId, TypeId &, std::uint32_t &)> localList_;
+    std::function<bool(const std::string &, const std::string &, std::uint32_t, TypeId &, std::uint32_t &)> memberList_;
     std::vector<Live> live_;                    // innermost last
     ValueId sret_;                              // the caller's result pointer, where a copied class is returned
     ValueId elidedSlot_;                        // the named return value, not destroyed by the `return` naming it

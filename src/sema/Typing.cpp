@@ -772,6 +772,23 @@ bool Typer::localBuilt(syntax::NodeId var, std::string &symbol, TypeId &signatur
     return true;
 }
 
+bool Typer::localList(syntax::NodeId var, TypeId &param, std::uint32_t &count) const {
+    const std::unordered_map<std::uint32_t, Parser::LocalBuilt>::const_iterator i = p_.localBuilt_.find(var.v);
+    if (i == p_.localBuilt_.end() || i->second.listOf == nullptr) return false;
+    param = TypeTable::id(i->second.listOf);
+    count = static_cast<std::uint32_t>(i->second.listCount);
+    return true;
+}
+
+bool Typer::memberList(const std::string &ctor, const std::string &member, std::uint32_t pos, TypeId &param,
+                       std::uint32_t &count) const {
+    const auto i = p_.memberLists_.find(ctor + "|" + member + "|" + std::to_string(pos));
+    if (i == p_.memberLists_.end()) return false;
+    param = TypeTable::id(i->second.first);
+    count = static_cast<std::uint32_t>(i->second.second);
+    return true;
+}
+
 std::string Typer::destructorSymbol(TypeId cls) const {
     const Type &c = *p_.types_.type(cls)->unqualified();
     return p_.destructorOf(&c) != nullptr ? p_.destructorOf(&c)->symbol : std::string();

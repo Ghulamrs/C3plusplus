@@ -601,6 +601,8 @@ private:
     struct MemberBuilt { std::string symbol; const Type *signature; bool defaulted; };
     std::map<std::string, MemberBuilt> memberBuilt_;
     std::set<std::string> memberZeroed_;    // `: m()` of a class whose default constructor is implicit: zeroed first (M3b.2)
+    // A member's braced entry of flat elements made into its constructor's initializer_list, keyed as memberBuilt_ (M3b.2).
+    std::map<std::string, std::pair<const Type *, std::size_t> > memberLists_;
     // The copy constructor a throw chose for its exception object, keyed as a member is under "$throw" (M3b.2).
     void noteThrowCopy(const Signature *cc, const Type *thrownPtr, std::size_t pos) {
         const MemberBuilt b = { cc->symbol, types_.functionType(types_.get(Kind::Void), std::vector<const Type *>{ thrownPtr, cc->params[0] }, false), false };
@@ -725,8 +727,10 @@ private:
         localBuilt_[id.v] = c->second;
     }
     // The constructor a declaration called, by the declared local's serial, until its `var` node is made (M2.16): its
-    // signature with `this`, whether defaults were added to the written arguments, whether [dcl.init]/8 zeroed first.
-    struct LocalBuilt { std::string symbol; const Type *signature; bool defaulted, zeroed; std::vector<syntax::NodeId> defaults; };
+    // signature with `this`, whether defaults were added to the written arguments, whether [dcl.init]/8 zeroed first;
+    // `listOf`, the initializer_list a braced list of `listCount` flat elements - the `var` node's parts - was made into.
+    struct LocalBuilt { std::string symbol; const Type *signature; bool defaulted, zeroed; std::vector<syntax::NodeId> defaults;
+                        const Type *listOf; std::size_t listCount; };
     std::map<int, LocalBuilt> ctorBySerial_;
     // The defaults a local's constructor was completed by, for its `var` node to take as its last parts, read in the
     // declaration's scope as a call's are (M3b.2); none where one has no syntax.
@@ -1389,6 +1393,9 @@ private:
         bool listInit = false;
         // A same-class source and no copy constructor: the bytes are asked for.
         bool trivialCopy = false;
+        // An initializer_list constructor's list, made from `ilCount` braces' elements none of which is braced (M3b.2).
+        const Type *ilType = nullptr;
+        std::size_t ilCount = 0;
     };
     CtorInit readConstructorInitialiser(const Declared &d);
 

@@ -895,6 +895,9 @@ Parser::CtorInit Parser::readConstructorInitialiser(const Declared &d) {
         } else if (ilCtor != nullptr) {
             consume("=");
             Init in = parseInitialiser();
+            bool flat = !in.items.empty();
+            for (std::size_t i = 0; i < in.items.size(); i++) flat = flat && !in.items[i].isList;
+            if (flat) { ci.ilType = ilType; ci.ilCount = in.items.size(); }
             args.push_back(buildInitializerList(ilType, in, d.pos, ci.ilSetup));
             ci.copyInit = true;
             ci.listInit = true;

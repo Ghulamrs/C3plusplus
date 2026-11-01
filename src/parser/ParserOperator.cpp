@@ -1233,7 +1233,7 @@ ExprPtr Parser::assignValue(ExprPtr n, ExprPtr value, std::size_t pos) {
         ps.push_back(op->params[0]);
         if (args[1]->syntax().valid())
             assignCalls_[args[1]->syntax().v] = LocalBuilt{ op->symbol, types_.functionType(selfPtr, ps, false), false, false,
-                                                                  std::vector<syntax::NodeId>() };
+                                                                  std::vector<syntax::NodeId>(), nullptr, 0 };
         ExprPtr call = completeCall(to->unqualified()->tag() + "::operator=",
                                     op->symbol, nullptr, selfPtr, ps, false, pos,
                                     std::move(args));
