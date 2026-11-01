@@ -1,6 +1,6 @@
-// **Selection of the SSA IR into the x86 walker's stream** (M3b.1, doc-cxx3/M3-IR.md 3.9). Every SSA value has a frame
-// slot of 8 bytes holding the walker's canonical form (sign- or zero-extended to 64 bits, a float in its 4); an instruction
-// loads its operands into rax/xmm0 and the scratch register, computes, stores. The ABI code is the walker's own.
+// **Selection of the SSA IR into the x86 walker's stream** (M3b.1, doc-cxx3/M3-IR.md 3.9). Every SSA value has a frame slot
+// of 8 bytes holding the walker's canonical form (sign- or zero-extended to 64 bits, a float in its 4), an x87 value's of 16;
+// an instruction loads its operands into rax/xmm0/st0 and the scratch register, computes, stores. The ABI code is the walker's.
 
 #include "X86_64Linux.h"
 #include "../ir/Ir.h"
@@ -30,7 +30,7 @@ bool X86_64Linux::ssaByAddress(const Type *t) const {
 }
 
 // The frame above the parser's parameter slots - the one part of its layout the selector reads - each alloca at its
-// alignment, then one 8-byte slot per value. Returns the new size.
+// alignment, then one 8-byte slot per value, an x87 value's 16. Returns the new size.
 int X86_64Linux::layoutSsa(const Function &fn, const ir::Function &f) {
     long long cur = 0;
     for (const Param &p : fn.params()) cur = std::max(cur, static_cast<long long>(p.offset));
@@ -65,7 +65,7 @@ int X86_64Linux::layoutSsa(const Function &fn, const ir::Function &f) {
     ssaValueSlot_.assign(f.values.size(), 0);
     for (std::size_t i = 1; i < f.values.size(); i++) {
         if (!f.values[i].type.valid() || ssaTypes_->type(f.values[i].type)->isVoid()) continue;
-        cur += 8;
+        cur = isX87(ssaTypes_->type(f.values[i].type)) ? roundUp(cur + 16, 16) : cur + 8;
         ssaValueSlot_[i] = cur;
     }
     // The word the Microsoft runtime scribbles its state in, where the function has a pad (M3-IR 3.6).
@@ -91,18 +91,20 @@ void X86_64Linux::ssaScalars(const ir::Function &f, std::vector<opt::Local> &int
 Op X86_64Linux::vslot(ir::ValueId v) const { return local(ssaValueSlot_[v.v]); }
 const Type *X86_64Linux::typeOf(const ir::Function &f, ir::ValueId v) const { return ssaTypes_->type(f.value(v).type); }
 
-// A value into the accumulator: rax, or xmm0 for a float or double.
+// A value into the accumulator: rax, xmm0 for a float or double, st0 for an x87 value.
 void X86_64Linux::ssaLoad(const ir::Function &f, ir::ValueId v) {
     const Type *t = typeOf(f, v);
-    if (t->isFloating()) a_->ins(genKind(t) == Kind::Float ? "movss" : "movsd", vslot(v), reg("%xmm0"));
+    if (isX87(t)) a_->ins("fldt", vslot(v));
+    else if (t->isFloating()) a_->ins(genKind(t) == Kind::Float ? "movss" : "movsd", vslot(v), reg("%xmm0"));
     else a_->ins("mov", vslot(v), reg("%rax"));
 }
 
-// The accumulator into a value's slot.
+// The accumulator into a value's slot; st0 is popped into it.
 void X86_64Linux::ssaStore(const ir::Function &f, ir::ValueId v) {
     if (!v.valid() || ssaValueSlot_[v.v] == 0) return;
     const Type *t = typeOf(f, v);
-    if (t->isFloating()) a_->ins(genKind(t) == Kind::Float ? "movss" : "movsd", reg("%xmm0"), vslot(v));
+    if (isX87(t)) a_->ins("fstpt", vslot(v));
+    else if (t->isFloating()) a_->ins(genKind(t) == Kind::Float ? "movss" : "movsd", reg("%xmm0"), vslot(v));
     else a_->ins("mov", reg("%rax"), vslot(v));
 }
 
@@ -115,14 +117,16 @@ void X86_64Linux::ssaBranchArgs(const ir::Function &f, const ir::Succ &s) {
     const ir::Block &to = f.block(s.block);
     for (std::uint32_t i = 0; i < s.count; i++) {
         const ir::ValueId v = f.arg(s, i);
-        if (typeOf(f, v)->isFloating()) { ssaLoad(f, v); a_->ins("movq", reg("%xmm0"), reg("%rax")); }
-        else ssaLoad(f, v);
+        ssaLoad(f, v);
+        if (isX87(typeOf(f, v))) { pushX87(); continue; }
+        if (typeOf(f, v)->isFloating()) a_->ins("movq", reg("%xmm0"), reg("%rax"));
         pushArg();
     }
     for (std::uint32_t i = s.count; i-- > 0; ) {
+        const ir::ValueId p = to.params[i];
+        if (isX87(typeOf(f, p))) { popX87(); ssaStore(f, p); continue; }
         a_->ins("pop", reg("%rax"));
         depth_--;
-        const ir::ValueId p = to.params[i];
         if (typeOf(f, p)->isFloating()) a_->ins("movq", reg("%rax"), reg("%xmm0"));
         ssaStore(f, p);
     }
@@ -154,6 +158,13 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         ssaStore(f, i.result);
         return;
     case ir::Op::FConst:
+        if (isX87(rt)) {
+            // Written straight into the slot: the significand, the sign and exponent in the word above it.
+            a_->ins("movabs", imm(i.bits), reg("%rax"));
+            a_->ins("mov", reg("%rax"), vslot(i.result));
+            a_->ins("movw", imm(i.k), local(ssaValueSlot_[i.result.v] - 8));
+            return;
+        }
         if (genKind(rt) == Kind::Float) {
             a_->ins("mov", imm(static_cast<unsigned int>(i.bits)), reg("%eax"));
             a_->ins("movd", reg("%eax"), reg("%xmm0"));
@@ -266,6 +277,15 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         return;
     }
     case ir::Op::FAdd: case ir::Op::FSub: case ir::Op::FMul: case ir::Op::FDiv: {
+        if (isX87(rt)) {
+            // genX87Binary's stack: the left operand over the right, the result popped into the slot.
+            ssaLoad(f, f.operand(i, 1));
+            ssaLoad(f, f.operand(i, 0));
+            a_->ins(i.op == ir::Op::FAdd ? "faddp" : i.op == ir::Op::FSub ? "fsubp" : i.op == ir::Op::FMul ? "fmulp" : "fdivp",
+                    reg("%st"), reg("%st(1)"));
+            ssaStore(f, i.result);
+            return;
+        }
         const bool dbl = genKind(rt) == Kind::Double;
         const char *sfx = dbl ? "sd" : "ss";
         ssaLoad(f, f.operand(i, 0));
@@ -277,7 +297,9 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
     }
     case ir::Op::FNeg:
         ssaLoad(f, f.operand(i, 0));
-        if (genKind(rt) == Kind::Double) {
+        if (isX87(rt)) {
+            a_->ins("fchs");
+        } else if (genKind(rt) == Kind::Double) {
             a_->ins("movabs", imm(0x8000000000000000ULL), reg("%rax"));
             a_->ins("movq", reg("%rax"), reg("%xmm1"));
             a_->ins("xorpd", reg("%xmm1"), reg("%xmm0"));
@@ -292,12 +314,20 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         const Type *t = typeOf(f, f.operand(i, 0));
         const bool dbl = genKind(t) == Kind::Double;
         const std::string ucomi = dbl ? "ucomisd" : "ucomiss";
-        ssaLoad(f, f.operand(i, 0));
-        a_->ins(dbl ? "movsd" : "movss", vslot(f.operand(i, 1)), reg("%xmm1"));
-        // As genFloatBinary orders them: `<` and `<=` compare the other way round and test above.
+        // As genFloatBinary and genX87Binary order them: `<` and `<=` compare the other way round and test above.
         const bool swapped = i.cc == ir::Cmp::Olt || i.cc == ir::Cmp::Ole;
-        if (swapped) a_->ins(ucomi, reg("%xmm0"), reg("%xmm1"));
-        else         a_->ins(ucomi, reg("%xmm1"), reg("%xmm0"));
+        if (isX87(t)) {
+            ssaLoad(f, f.operand(i, 1));
+            ssaLoad(f, f.operand(i, 0));
+            if (swapped) a_->ins("fxch", reg("%st(1)"));
+            a_->ins("fucomip", reg("%st(1)"), reg("%st"));
+            a_->ins("fstp", reg("%st(0)"));
+        } else {
+            ssaLoad(f, f.operand(i, 0));
+            a_->ins(dbl ? "movsd" : "movss", vslot(f.operand(i, 1)), reg("%xmm1"));
+            if (swapped) a_->ins(ucomi, reg("%xmm0"), reg("%xmm1"));
+            else         a_->ins(ucomi, reg("%xmm1"), reg("%xmm0"));
+        }
         switch (i.cc) {
         case ir::Cmp::Oeq: a_->ins("sete", reg("%al")); a_->ins("setnp", reg("%cl")); a_->ins("and", reg("%cl"), reg("%al")); break;
         case ir::Cmp::Une: a_->ins("setne", reg("%al")); a_->ins("setp", reg("%cl")); a_->ins("or", reg("%cl"), reg("%al")); break;
