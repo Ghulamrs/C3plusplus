@@ -769,7 +769,8 @@ void Lowering::guard(ValueId slot, const Type &c, const std::string &dtor, bool 
     l.cls = c.id();
     l.dtor = dtor;
     // One built in an operand that may not be evaluated carries a flag: zeroed where its full expression began, set here.
-    if (skippable_ != 0 && fullFrom_ != kNoFull && !fullAt_.empty()) {
+    // Itanium only: on Microsoft the flag's test would branch inside a cleanup funclet, which the selector does not take.
+    if (skippable_ != 0 && fullFrom_ != kNoFull && !fullAt_.empty() && !target_.microsoftNames()) {
         const TypeId boolT = tid(*types_.get(Kind::Bool));
         l.built = entryAlloca(boolT, "$built");
         store(l.built, iconst(boolT, 0));
@@ -1776,6 +1777,7 @@ void Lowering::block(sema::TypedId id) {
 // The destructor of a temporary this full expression builds, which only an unconditional operand of one may hold.
 std::string Lowering::temporaryDestructor(const Type &c) {
     if (fullFrom_ == kNoFull) outside("a class temporary with a destructor outside a full expression the lowering ends");
+    if (skippable_ != 0 && target_.microsoftNames()) outside("a class temporary with a destructor in an operand that may not be evaluated");
     const std::string dtor = destructor_ ? destructor_(c.id()) : std::string();
     if (dtor.empty()) outside("a class temporary whose destructor the parser recorded none for");
     return dtor;
