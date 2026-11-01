@@ -1177,3 +1177,12 @@ funclet (new-class-array-placement, ssa-new-built-class, ssa-new-class-array), m
 answers**: the real `-front=ssa` and `-front=ssa -O2` passes, both spellings; and `tests/cases/ssa-data-member-pointer.expected`,
 recorded from g++ while no clang was reachable, re-recorded from clang. Found and left: the parser refuses `f(nullptr)` for a
 member-pointer parameter, and `const std::initializer_list<T> &` as an initializer_list constructor's parameter.
+**Fable 5.1 reviewed round 21 before it landed** (2026-11-01, at the owner's request): *land, with four named fixes*. Taken
+in the round: one predicate for the built flag and its refusal (`canFlag`), so the two cannot drift; a lambda's const local
+recorded by the parser as a constant rather than inferred from its type; and the bulk it named - `: m()`'s zeroing a field of
+MemberBuilt, no flag on a `new`'s storage guard, no debugging aid in a refusal, one comment per declaration. **Carried to
+round 22**: fold `fullFrom_` into the `fullAt_` stack; one decision for a braced initializer_list (ParserTopLevel
+recomputes what `bracedInitArguments` decides); one idiom for a null edge (`memberPointerConversion`'s block or
+`dynamicCastPointer`'s operand poke, not both); a case value read from `TypedNode::folded`, not a fourth hook; the nine
+sites where the parser's pads still gate a guard (CONFORMANCE says so now); a probe of `dynamic_cast` upcast through a base
+at an offset on a null. Round 21 added 510 lines to `src/` for 219 bodies; `src/` is 86,8xx lines at its close.
