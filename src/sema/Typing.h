@@ -170,7 +170,6 @@ public:
     void emitInto(Program &program);
     std::string typeInfoSymbol(TypeId t) const;   // the type_info a catch of t names, Sema's; empty where none can be made
     std::string unnamedCaught(syntax::NodeId handler) const;   // what an Itanium `catch (T)` with no name named; empty otherwise
-    bool caseValue(syntax::NodeId label, long long &value) const;   // a case label's value as the parser folded it
     bool memberZeroed(const std::string &ctor, const std::string &member) const;   // `: m()` zeroes before its constructor
     int dynamicCast(syntax::NodeId cast, std::string &src, std::string &dst) const;   // 1 a runtime walk, 2 an upcast, 3 to void *, 0 none
     // A Microsoft `catch (T)` with no name: the descriptor the parser named, whether by reference, HT_IsConst.

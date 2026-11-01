@@ -133,6 +133,9 @@ void Typer::record(syntax::NodeId id, TypedId t) {
     if (ref != p_.refCastTypes_.end()) tree_.setCast(t, TypeTable::id(ref->second.first), ref->second.second);
     const auto k = p_.keywordValues_.find(id.v);
     if (k != p_.keywordValues_.end()) tree_.setFolded(t, k->second.first, TypeTable::id(k->second.second));
+    // A case label's value as the parser folded it ([stmt.switch]/2), on the `case` node.
+    const auto cs = p_.caseFacts_.find(id.v);
+    if (cs != p_.caseFacts_.end() && !cs->second.isDefault) tree_.setFolded(t, cs->second.value, TypeId());
     std::unordered_map<std::uint32_t, std::size_t>::const_iterator lit = p_.literalTokens_.find(id.v);
     if (lit != p_.literalTokens_.end()) {
         const Token &token = p_.tokens_[lit->second];
@@ -474,13 +477,6 @@ int Typer::dynamicCast(syntax::NodeId cast, std::string &src, std::string &dst) 
 bool Typer::memberZeroed(const std::string &ctor, const std::string &member) const {
     const std::map<std::string, Parser::MemberBuilt>::const_iterator i = p_.memberBuilt_.find(ctor + "|" + member + "|0");
     return i != p_.memberBuilt_.end() && i->second.zeroed;
-}
-
-bool Typer::caseValue(syntax::NodeId label, long long &value) const {
-    const auto c = p_.caseFacts_.find(label.v);
-    if (c == p_.caseFacts_.end() || c->second.isDefault) return false;
-    value = c->second.value;
-    return true;
 }
 
 std::string Typer::unnamedCaught(syntax::NodeId handler) const {

@@ -57,7 +57,6 @@ public:
     void setStaticGuard(std::function<bool(const std::string &, sema::StaticGuard &)> f) { staticGuard_ = f; }
     void setTypeInfo(std::function<std::string(TypeId)> f) { typeInfo_ = f; }
     void setUnnamedCaught(std::function<std::string(syntax::NodeId)> f) { unnamedCaught_ = f; }
-    void setCaseValue(std::function<bool(syntax::NodeId, long long &)> f) { caseValue_ = f; }
     void setMemberZeroed(std::function<bool(const std::string &, const std::string &)> f) { memberZeroed_ = f; }
     void setDynamicCast(std::function<int(syntax::NodeId, std::string &, std::string &)> f) { dynamicCast_ = f; }
     void setMicrosoftThrowInfo(std::function<std::string(TypeId)> f) { msThrowInfo_ = f; }
@@ -124,7 +123,8 @@ private:
     void specFilterChain(const Pad &p);
     void noexceptAbort(const Pad &p);
     void br(BlockId to, const std::vector<ValueId> &args = std::vector<ValueId>());
-    void condbr(ValueId c, BlockId t, BlockId f);
+    void condbr(ValueId c, BlockId t, BlockId f, const std::vector<ValueId> &tArgs = std::vector<ValueId>(),
+                const std::vector<ValueId> &fArgs = std::vector<ValueId>());
     ValueId param(BlockId b, TypeId type);
     ValueId iconst(TypeId type, long long k);
     ValueId fallOffValue(const Type &rt);   // the zero a body that falls off its end returns
@@ -310,7 +310,7 @@ private:
     bool builtClass(const Type &t) const;
     void builtLocal(sema::TypedId var, ValueId slot, const Type &t);
     ValueId initializerList(sema::TypedId parent, const Type &param, std::uint32_t n);
-    void guard(ValueId slot, const Type &c, const std::string &dtor, bool unwinds = true);
+    void guard(ValueId slot, const Type &c, const std::string &dtor);
     void destroy(const Live &l, bool invoke = false);
     void destroyLive(std::size_t mark);
     void closeScope(std::size_t mark, bool keep = false);
@@ -338,8 +338,10 @@ private:
     std::string temporaryDestructor(const Type &c);
     bool destroyedResultClass(const Type &t) const;
     bool destroyedResult(sema::TypedId id) const;
-    std::size_t openFull();
-    void closeFull(std::size_t was);
+    void openFull() { openFull(live_.size()); }
+    void openFull(std::size_t from);
+    void closeFull();
+    std::size_t fullFrom() const;
     Val temporary(sema::TypedId id);
     void construct(ValueId where, const std::string &symbol, TypeId sig, const Type &cls, bool zeroFirst, sema::TypedId args, std::uint32_t from);
     bool objectNode(sema::TypedId id) const;
@@ -369,7 +371,6 @@ private:
     std::function<bool(const std::string &, sema::StaticGuard &)> staticGuard_;
     std::function<std::string(TypeId)> typeInfo_;
     std::function<std::string(syntax::NodeId)> unnamedCaught_;
-    std::function<bool(syntax::NodeId, long long &)> caseValue_;
     std::function<bool(const std::string &, const std::string &)> memberZeroed_;
     std::function<int(syntax::NodeId, std::string &, std::string &)> dynamicCast_;
     Val dynamicCastPointer(sema::TypedId id);
@@ -409,7 +410,6 @@ private:
     sema::TypedId intoCall_;                    // the call elidedCall lowers, whose result goes into a local's alloca
     int intoAlloca_ = -1, intoNow_ = -1;        // that alloca; and callTail's, set only as that call's tail is entered
     std::size_t liveFloor_;                     // a constructor's built bases and members: below it, kept by a return
-    bool landingPads_;                          // the parser gave the function landing pads; ir::Function::landingPads adds the lowering's own
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> temporaryBuilt_;
     std::function<bool(syntax::NodeId, std::string &, TypeId &)> convertedBuilt_;
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> argumentCopy_;
@@ -418,8 +418,11 @@ private:
     std::vector<std::string> typeTable_;        // the function's selector indices: one per type, first occurrence, 1-based
     std::size_t handlerDepth_;                  // handlers the statement being lowered is inside
     std::vector<std::size_t> handlerLive_;      // live_ where each handler's body began, innermost last
-    std::size_t fullFrom_;                      // live_ where the full expression being lowered began; kNoFull, none open
-    std::vector<std::pair<BlockId, std::size_t> > fullAt_;   // where each open full expression began: its flags zeroed there
+    struct Full {                               // a full expression open: its temporaries from live_[from]; flags zeroed at block, at
+        std::size_t from; BlockId block; std::size_t at;
+        Full(std::size_t f, BlockId b, std::size_t a) : from(f), block(b), at(a) {}
+    };
+    std::vector<Full> full_;                    // innermost last; from is kNoFull where none may be built (a throw's operand)
     std::size_t skippable_;                     // operands being lowered that may not be evaluated: `&&`, `||`, `?:`, `new`
     static const std::size_t kNoFull = static_cast<std::size_t>(-1);
     BlockId returnBlock_;

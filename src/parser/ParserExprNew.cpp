@@ -510,17 +510,20 @@ ExprPtr Parser::listTemporaryFrom(const Type *to, Init &in, bool copyList, std::
 }
 
 // A braced initialiser as the arguments a constructor, or a scalar's or aggregate's initialisation,
-// takes - what direct-list-initialisation of a member or base in a mem-initialiser hands on.
-std::vector<ExprPtr> Parser::bracedInitArguments(const Type *to, Init &in, std::size_t pos) {
+// takes - what direct-list-initialisation of a member or base in a mem-initialiser hands on. `chosen` takes the
+// std::initializer_list type where the list went to an initializer_list constructor.
+std::vector<ExprPtr> Parser::bracedInitArguments(const Type *to, Init &in, std::size_t pos, const Type **chosen) {
     std::vector<ExprPtr> args;
     const Type *plain = to->unqualified();
     if (plain->isStructOrUnion() && !plain->tag().empty() && hasConstructors(plain->tag()) &&
         !(isAggregateClass(plain) && !in.items.empty())) {
         const Type *ilType = nullptr;
-        if (!in.items.empty() && initializerListConstructor(plain, &ilType) != nullptr)
+        if (!in.items.empty() && initializerListConstructor(plain, &ilType) != nullptr) {
+            if (chosen != nullptr) *chosen = ilType;
             args.push_back(initializerListExpr(ilType, in, pos));
-        else
+        } else {
             listConstructor(plain, in, args, false, pos);
+        }
         return args;
     }
     if (!plain->isStructOrUnion() && in.items.empty()) return args;      // value-initialised, `: m()`
@@ -1187,7 +1190,12 @@ ExprPtr Parser::dynamicCastFrom(ExprPtr v, const Type *to, std::size_t pos) {
                        "and this is '" + from->describe() + "'");
 
     const Type *source = from->pointee()->unqualified();
-    // [expr.dynamic.cast]/6: the operand's class must be polymorphic, because
+    // **[expr.dynamic.cast]/5: an upcast is not a question**, and asks no polymorphism.
+    if (!toVoid && publicBaseOffset(source, to->pointee()->unqualified()) >= 0) {
+        pendingDynCast_ = DynCastFacts{ std::string(), std::string(), 2 };
+        return convert(std::move(v), to);
+    }
+    // [expr.dynamic.cast]/6: otherwise the operand's class must be polymorphic, because
     // the answer is read out of the vtable and a class without one has nothing
     // to read.
     if (!source->polymorphic())
@@ -1197,11 +1205,6 @@ ExprPtr Parser::dynamicCastFrom(ExprPtr v, const Type *to, std::size_t pos) {
     if (toVoid) return dynamicCastToVoid(std::move(v), to);
 
     const Type *target = to->pointee()->unqualified();
-    // **[expr.dynamic.cast]/5: an upcast is not a question.**
-    if (publicBaseOffset(source, target) >= 0) {
-        pendingDynCast_ = DynCastFacts{ std::string(), std::string(), 2 };
-        return convert(std::move(v), to);
-    }
 
     const Type *voidPtr = types_.pointerTo(types_.get(Kind::Void));
 

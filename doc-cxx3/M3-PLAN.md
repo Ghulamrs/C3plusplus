@@ -1195,3 +1195,24 @@ recomputes what `bracedInitArguments` decides); one idiom for a null edge (`memb
 `dynamicCastPointer`'s operand poke, not both); a case value read from `TypedNode::folded`, not a fourth hook; the nine
 sites where the parser's pads still gate a guard (CONFORMANCE says so now); a probe of `dynamic_cast` upcast through a base
 at an offset on a null. `src/` went from 85882 to 86405 lines in round 21 (+523) for 219 bodies.
+
+**Round 22, 2026-11-01: Fable's carried items, and the over-refusal the last of them found.** Every item round 21
+carried is taken. A `CondBr` carries its edges' arguments, so `logical()`, `dynamicCastPointer` and
+`memberPointerConversion` share one idiom for a null edge and the extra block goes; a case label's value is the case
+node's `folded`, which `Typer::record` sets from the parser's case facts, and the `caseValue` hook goes; `fullFrom_` and
+`fullAt_` are one stack of open full expressions (`Full`: where its temporaries begin in `live_` and where its built flags
+are zeroed). The nine sites that guarded a call's result, a built member or base, a `new`'s storage and a thrown object's
+operand only where the parser gave the body landing pads now guard always: `madePads()` decides the body's pads, and
+`landingPads_`, `guard()`'s `unwinds` flag and the no-pads destroy path go (CONFORMANCE's SSA-pads paragraph says so).
+`bracedInitArguments` reports the initializer_list it chose, so a mem-initialiser's member list is recorded from that
+choice and not decided twice. The probe, `dynamic-cast-upcast-null`, found a parser over-refusal: [expr.dynamic.cast]/5's
+upcast was asked /6's polymorphism first, so `dynamic_cast<B *>` on plain classes was refused where clang takes it; the
+upcast is taken first now, and the case uses plain classes so it runs on every target. `ssa-data-member-pointer.expected`,
+re-asked of clang on the Windows box, is byte-identical to the g++ recording it had. **Gated**: Linux `make test` green
+(run.sh 1082/0, emit.sh 2930/0, coff 0 differ, c90 447/0, exclusions 0/0, comment-lines 0) and run.sh 1082/0 at `-O2`,
+`-front=ssa` and `-front=ssa -O2`; **ssa.sh 8241 of 8539 lowered, 0 failed**; Windows (the box back at 7 cores, its passes
+now 7 wide) `-front=ssa` and `-front=ssa -O2` 0 differ in both spellings (GNU 710 same, MASM 709); Wine at both levels
+only its two known failures; the `-front=ssa` self-host at -O0 on Linux, stages 0, 1 and 2 the same on all 84 sources.
+`src/` went from 86405 to 86378 lines (-27). The varargs and x87 lanes, started from round 21's tree, join round 23
+with four lanes by family of the 298 bodies left: a class value where the lowering wants an object (~40), arrays of a
+class (~15), temporaries and returns (~15), and statements (~10).
