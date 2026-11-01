@@ -1148,3 +1148,32 @@ the same), so the -O2 output depends on which library built the compiler - an or
 optimizer that libstdc++ and `include/` break differently, not a miscompile (stage 1 = stage 2, and every program agrees
 with clang). `tools/self-host` asks s0 = s1 at every level; that holds at -O0 only. It is owed before M3b.8, whose close
 asks stage 2 = stage 3 and would not see it.
+
+**Round 21, 2026-11-01: the largest groups after the allocator, in three lanes and a coordinator's run.** **Linux ssa.sh
+8,535 bodies, 8,237 lowered (96.5%), 0 failed** - round 20's 8,456 / 8,018 (94.8%), the new cases adding 79 bodies, all
+lowered. What lowers now: a reference member, read through its slot (a by-reference capture's among them); an anonymous
+union's member at its offset; a const integral local of the enclosing function read in a lambda, as the value the parser
+stood in; `o.s` and `p->s` of a static member; a function bound to a reference to a function; a class temporary built in
+a `?:` arm or a `&&`/`||` operand, by a flag zeroed where its full expression begins - on Itanium only, the Microsoft
+funclet having no branch for it; a scoped enumeration as a scalar with no arithmetic; a reference to an array; an Itanium
+pointer catch; a class's own operator new and delete, the `new` cleanup freeing by the class's own; a class local copied
+from a call's result; a case label the parser folded; `: m()` of a class member, zeroed where its constructor is implicit;
+`dynamic_cast` to a pointer and to `void *` on both ABIs. Lane **pads**: a body the parser gave no landing pads takes its
+own (the walker leaks a declaration's temporaries on unwind - `tests/open/declaration-temporary-unwind.cpp`,
+docs/CONFORMANCE.md), the backend following `ir::Function::landingPads`. Lane **mptr**: pointers to data members. Lane
+**defaults**: an initializer_list constructor called from braces of flat elements, for a local and a member (7 of its 8
+bodies were that, not defaults). New records the parser makes for the lowering, at parse time: a case's value, `: m()`'s
+zeroing, a dynamic_cast's walk, a `new`'s class deallocation function, a local's or member's braced list, `&S::m`'s offset.
+**A gate fault of this round, owned**: its first run.sh lines under `-front=ssa` named `CXX1_FLAGS`, which run.sh does not
+read - plain -O0; every run.sh line here is with the flags inside `CXX1`, and a miscompile the false gate passed (a class
+with a copy constructor copied as bytes) was caught by running the cases directly and mended before any commit landed.
+**The gates on the final tree**: Linux `make test` exit 0; run.sh 1081 / 0 with CXX1 "-O2", "-front=ssa" and "-front=ssa
+-O2"; the self-host under `-front=ssa` at -O0 (below). The Windows box was in fault from 01:30 to about 08:50 and again from
+09:12, so **the Windows rows are the Wine stand-in on the Linux box** (`boxkit/wine-lx.sh`: every case for x86_64-windows
+by the final tree's own `-c`, the project's LINK, Wine 6.0.3): `-front=ssa` and `-front=ssa -O2` each 706 passed, 2 failed -
+`noexcept-terminates` and `temporary-unwind`, which Wine fails from any cxx3 - 31 skipped by `.notarget`, `ucn-identifier`
+not built (its `.nomasm`). The stand-in found the one fault of the merge: the operand flag inside a Microsoft cleanup
+funclet (new-class-array-placement, ssa-new-built-class, ssa-new-class-array), mended above. **Owed when the Windows box
+answers**: the real `-front=ssa` and `-front=ssa -O2` passes, both spellings; and `tests/cases/ssa-data-member-pointer.expected`,
+recorded from g++ while no clang was reachable, re-recorded from clang. Found and left: the parser refuses `f(nullptr)` for a
+member-pointer parameter, and `const std::initializer_list<T> &` as an initializer_list constructor's parameter.
