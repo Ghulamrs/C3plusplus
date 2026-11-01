@@ -338,8 +338,10 @@ private:
     std::string temporaryDestructor(const Type &c);
     bool destroyedResultClass(const Type &t) const;
     bool destroyedResult(sema::TypedId id) const;
-    std::size_t openFull();
-    void closeFull(std::size_t was);
+    void openFull() { openFull(live_.size()); }
+    void openFull(std::size_t from);
+    void closeFull();
+    std::size_t fullFrom() const;
     Val temporary(sema::TypedId id);
     void construct(ValueId where, const std::string &symbol, TypeId sig, const Type &cls, bool zeroFirst, sema::TypedId args, std::uint32_t from);
     bool objectNode(sema::TypedId id) const;
@@ -417,8 +419,11 @@ private:
     std::vector<std::string> typeTable_;        // the function's selector indices: one per type, first occurrence, 1-based
     std::size_t handlerDepth_;                  // handlers the statement being lowered is inside
     std::vector<std::size_t> handlerLive_;      // live_ where each handler's body began, innermost last
-    std::size_t fullFrom_;                      // live_ where the full expression being lowered began; kNoFull, none open
-    std::vector<std::pair<BlockId, std::size_t> > fullAt_;   // where each open full expression began: its flags zeroed there
+    struct Full {                               // a full expression open: its temporaries from live_[from]; flags zeroed at block, at
+        std::size_t from; BlockId block; std::size_t at;
+        Full(std::size_t f, BlockId b, std::size_t a) : from(f), block(b), at(a) {}
+    };
+    std::vector<Full> full_;                    // innermost last; from is kNoFull where none may be built (a throw's operand)
     std::size_t skippable_;                     // operands being lowered that may not be evaluated: `&&`, `||`, `?:`, `new`
     static const std::size_t kNoFull = static_cast<std::size_t>(-1);
     BlockId returnBlock_;
