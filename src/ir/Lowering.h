@@ -310,7 +310,7 @@ private:
     bool builtClass(const Type &t) const;
     void builtLocal(sema::TypedId var, ValueId slot, const Type &t);
     ValueId initializerList(sema::TypedId parent, const Type &param, std::uint32_t n);
-    void guard(ValueId slot, const Type &c, const std::string &dtor, bool unwinds = true);
+    void guard(ValueId slot, const Type &c, const std::string &dtor);
     void destroy(const Live &l, bool invoke = false);
     void destroyLive(std::size_t mark);
     void closeScope(std::size_t mark, bool keep = false);
@@ -410,7 +410,6 @@ private:
     sema::TypedId intoCall_;                    // the call elidedCall lowers, whose result goes into a local's alloca
     int intoAlloca_ = -1, intoNow_ = -1;        // that alloca; and callTail's, set only as that call's tail is entered
     std::size_t liveFloor_;                     // a constructor's built bases and members: below it, kept by a return
-    bool landingPads_;                          // the parser gave the function landing pads; ir::Function::landingPads adds the lowering's own
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> temporaryBuilt_;
     std::function<bool(syntax::NodeId, std::string &, TypeId &)> convertedBuilt_;
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> argumentCopy_;

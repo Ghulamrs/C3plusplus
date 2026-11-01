@@ -12,7 +12,7 @@ namespace ir {
 
 Lowering::Lowering(const sema::TypedTree &tree, const syntax::Tree &syntax, TypeTable &types, const Target &target,
                    Program &program, Module &into)
-    : tree_(tree), syntax_(syntax), types_(types), target_(target), program_(program), module_(into), fnIndex_(0), landingPads_(false), handlerDepth_(0), skippable_(0), hasGoto_(false) {}
+    : tree_(tree), syntax_(syntax), types_(types), target_(target), program_(program), module_(into), fnIndex_(0), handlerDepth_(0), skippable_(0), hasGoto_(false) {}
 
 void Lowering::outside(const std::string &why) { throw Outside(why); }
 
@@ -93,7 +93,7 @@ TypeId Lowering::builtArray(const Type &t, long long &count, bool local) const {
 // [class.base.init]/8 for an array member: each element, first to last, by the default constructor the parser chose;
 // [except.ctor]/3, each element built is destroyed - the last built first - if a later element or part throws.
 void Lowering::buildElements(const Member &m, const Type &et, long long elems) {
-    const bool guarded = landingPads_ && et.hasDestructor();
+    const bool guarded = et.hasDestructor();
     if (elems > (guarded ? 16 : 64)) outside("an array member of more elements than the lowering builds one by one");
     std::string symbol;
     TypeId sig;
@@ -251,7 +251,7 @@ void Lowering::msVirtualBases(const Type &cls, const std::map<std::string, sema:
     std::map<std::string, Live> guarded;
     ValueId count;
     for (std::size_t b = 0; b < cls.bases().size(); b++)
-        if (landingPads_ && cls.bases()[b].isVirtual && cls.bases()[b].type->unqualified()->hasDestructor()) {
+        if (cls.bases()[b].isVirtual && cls.bases()[b].type->unqualified()->hasDestructor()) {
             if (!count.valid()) {
                 count = entryAlloca(types_.intType()->id(), "$vb");
                 store(count, iconst(types_.intType()->id(), 0));
@@ -368,7 +368,7 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
         closeFull();
         // [except.ctor]/3: a base with a destructor, built, is destroyed - by its D2 - if a later part throws.
         const Type &bt = *cls.bases()[b].type->unqualified();
-        if (landingPads_ && bt.hasDestructor()) {
+        if (bt.hasDestructor()) {
             std::string symbol;
             TypeId sig;
             bool defaulted = false;
@@ -426,7 +426,7 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
             buildMember(result(g), m, e != named.end() && !valueInit ? e->second : sema::TypedId());
             closeFull();
             // [except.ctor]/3: a member with a destructor, built, is destroyed if a later part of the constructor throws.
-            if (landingPads_ && mt.hasDestructor()) {
+            if (mt.hasDestructor()) {
                 const std::string dtor = destructor_ ? destructor_(mt.id()) : std::string();
                 if (dtor.empty()) outside("a member destroyed on unwinding by no destructor the parser recorded");
                 guard(result(g), mt, dtor);
@@ -776,9 +776,8 @@ bool Lowering::canFlag() const {
     return skippable_ != 0 && fullFrom() != kNoFull && !target_.microsoftNames();
 }
 
-// An object alive from here: destroyed by `dtor` at its scope's end, and by a cleanup where a call in its region unwinds -
-// unless `unwinds` is false: a call's result in a function the parser gave no landing pads, which its unwinding leaves be.
-void Lowering::guard(ValueId slot, const Type &c, const std::string &dtor, bool unwinds) {
+// An object alive from here: destroyed by `dtor` at its scope's end, and by a cleanup where a call in its region unwinds.
+void Lowering::guard(ValueId slot, const Type &c, const std::string &dtor) {
     Live l;
     l.slot = slot;
     l.cls = c.id();
@@ -798,11 +797,6 @@ void Lowering::guard(ValueId slot, const Type &c, const std::string &dtor, bool 
         at0.insert(at0.begin() + static_cast<std::ptrdiff_t>(f.at), zero);
         f.at += 2;
         store(l.built, iconst(boolT, 1));
-    }
-    if (!unwinds) {
-        l.pad = kNoFull;
-        live_.push_back(l);
-        return;
     }
     Pad p;
     p.cleanup = true;
@@ -1537,7 +1531,6 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
     sret_ = ValueId();
     elidedSlot_ = ValueId();
     intoSret_ = false;
-    landingPads_ = facts.landingPads;
     vptrs_.clear();
     key_ = facts.recordKey.empty() ? facts.symbol : facts.recordKey;
     vtt_ = ValueId();
@@ -4120,7 +4113,7 @@ Lowering::Val Lowering::callTail(TypeId sig, CallInfo info, std::vector<ValueId>
     const InstId c = callOrInvoke(carries, ops);
     at(c).call = callIndex;
     // [class.temporary]/3: a result with a destructor is the caller's, alive once the call has returned it.
-    if (destroyed && into < 0) guard(resultSlot, *gives.unqualified(), dtor, landingPads_);
+    if (destroyed && into < 0) guard(resultSlot, *gives.unqualified(), dtor);
     return Val(result(c), carries.valid() ? carries : tid(gives));
 }
 
@@ -4453,9 +4446,8 @@ Lowering::Val Lowering::newExpression(sema::TypedId id) {
     if (built && f.ctor.empty()) outside("a 'new' of a class with constructors");
     if (built && f.array) outside("an array 'new' of a class with constructors");
     if (built && f.ctorDefaulted) outside("a 'new' with default arguments");
-    // [expr.new]/20: a constructor that throws has the storage freed, by a pad where the parser made pads; a placement frees nothing.
-    const bool frees = (built || loop) && !f.placed && landingPads_;
-    if ((built || loop) && !pads_.empty() && !f.placed && !landingPads_) outside("a 'new' of a class with constructors inside a try");
+    // [expr.new]/20: a constructor that throws has the storage freed; a placement frees nothing.
+    const bool frees = (built || loop) && !f.placed;
     const std::uint32_t lead = f.placed ? 1u : 0u;        // the placement's address is the first part
     const std::uint32_t argc = built ? static_cast<std::uint32_t>(T(f.ctorSig).params().size()) - 1u : (f.init == 2 || copied ? 1u : 0u);
     const std::uint32_t parts = lead + (f.array ? 1u : 0u) + argc;
@@ -4822,7 +4814,7 @@ bool Lowering::classThrow(sema::TypedId id, ValueId &object, TypeId &thrown) {
     thrown = t.id();
     const std::size_t mark = live_.size();
     // The storage is the parser's temporary only where the copy is a constructor's call that may throw.
-    const bool storageGuard = !bytes && !target_.microsoftNames() && landingPads_;
+    const bool storageGuard = !bytes && !target_.microsoftNames();
     if (target_.microsoftNames()) {
         object = entryAlloca(thrown, ".ex");
     } else {
@@ -4851,9 +4843,8 @@ bool Lowering::classThrow(sema::TypedId id, ValueId &object, TypeId &thrown) {
         openFull();
         construct(from, symbol, built, t, zero, operand, 1);
         full_.pop_back();
-        if (t.hasDestructor() && landingPads_) guard(from, t, dtor);
+        if (t.hasDestructor()) guard(from, t, dtor);
     }
-    const bool dies = !isLvalueNode(operand) && t.hasDestructor();
     if (bytes) {
         copyObject(object, from, t);
     } else {
@@ -4866,10 +4857,6 @@ bool Lowering::classThrow(sema::TypedId id, ValueId &object, TypeId &thrown) {
     // [except.throw]/3: the object made, the operand's temporaries destroyed, last made first; the storage's guard ends without a free.
     closeScope(mark + (storageGuard ? 1 : 0));
     closeScope(mark, true);
-    if (dies && !landingPads_) {
-        const TypeId self = types_.pointerTo(t.id());
-        directCall(dtor, types_.functionType(types_.voidType()->id(), std::vector<TypeId>(1, self)), std::vector<ValueId>(1, from));
-    }
     return true;
 }
 

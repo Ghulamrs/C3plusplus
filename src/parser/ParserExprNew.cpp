@@ -510,17 +510,20 @@ ExprPtr Parser::listTemporaryFrom(const Type *to, Init &in, bool copyList, std::
 }
 
 // A braced initialiser as the arguments a constructor, or a scalar's or aggregate's initialisation,
-// takes - what direct-list-initialisation of a member or base in a mem-initialiser hands on.
-std::vector<ExprPtr> Parser::bracedInitArguments(const Type *to, Init &in, std::size_t pos) {
+// takes - what direct-list-initialisation of a member or base in a mem-initialiser hands on. `chosen` takes the
+// std::initializer_list type where the list went to an initializer_list constructor.
+std::vector<ExprPtr> Parser::bracedInitArguments(const Type *to, Init &in, std::size_t pos, const Type **chosen) {
     std::vector<ExprPtr> args;
     const Type *plain = to->unqualified();
     if (plain->isStructOrUnion() && !plain->tag().empty() && hasConstructors(plain->tag()) &&
         !(isAggregateClass(plain) && !in.items.empty())) {
         const Type *ilType = nullptr;
-        if (!in.items.empty() && initializerListConstructor(plain, &ilType) != nullptr)
+        if (!in.items.empty() && initializerListConstructor(plain, &ilType) != nullptr) {
+            if (chosen != nullptr) *chosen = ilType;
             args.push_back(initializerListExpr(ilType, in, pos));
-        else
+        } else {
             listConstructor(plain, in, args, false, pos);
+        }
         return args;
     }
     if (!plain->isStructOrUnion() && in.items.empty()) return args;      // value-initialised, `: m()`

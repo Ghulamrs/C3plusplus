@@ -1221,16 +1221,13 @@ void Parser::topLevel(Program &program) {
                                     "' nor a direct base of it");
                 Init in = parseInitialiser();
                 // [dcl.init.list]/5 for a member: the entry's elements, the mem-initialiser's parts, are its list's (M3b.2).
-                const Type *plain = target->unqualified();
-                const Type *ilType = nullptr;
-                bool flat = !in.items.empty() && plain->isStructOrUnion() && !plain->tag().empty() &&
-                            memberOf->findMember(entry) != nullptr && hasConstructors(plain->tag()) &&
-                            !isAggregateClass(plain) && initializerListConstructor(plain, &ilType) != nullptr;
+                bool flat = memberOf->findMember(entry) != nullptr;
                 for (std::size_t i = 0; flat && i < in.items.size(); i++) flat = !in.items[i].isList;
-                if (flat)
+                const Type *ilType = nullptr;
+                args = bracedInitArguments(target, in, epos, &ilType);
+                if (flat && ilType != nullptr)
                     memberLists_[currentFunction_ + "|" + entry + "|" + std::to_string(static_cast<std::uint32_t>(epos))] =
                         std::make_pair(ilType, in.items.size());
-                args = bracedInitArguments(target, in, epos);
             } else {
                 expect("(");
                 parseArguments(args);

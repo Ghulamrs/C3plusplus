@@ -2474,7 +2474,7 @@ private:
     ExprPtr listTemporary(const Type *to, std::size_t pos);
     // A list-initialised temporary of `to` from an already-read list, as an xvalue.
     ExprPtr listTemporaryFrom(const Type *to, Init &in, bool copyList, std::size_t pos);
-    std::vector<ExprPtr> bracedInitArguments(const Type *to, Init &in, std::size_t pos);
+    std::vector<ExprPtr> bracedInitArguments(const Type *to, Init &in, std::size_t pos, const Type **chosen = nullptr);
     // An aggregate built in a hidden local of this frame from its braced list.
     ExprPtr aggregateTemporary(const Type *plain, Init &in, std::size_t pos);
     // A scalar from its one braced element, [dcl.init.list]/3 - narrowing refused.

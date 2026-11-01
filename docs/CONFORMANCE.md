@@ -523,9 +523,9 @@ walker's ledger ends `live=4 over=3` where clang's ends `live=0`, on x86_64-wind
 x86_64-linux. Under `-front=ssa` the lowering guards a declaration's and a
 mem-initialiser's temporaries and gives the body pads of its own
 (`ir::Function::landingPads`), so the same program agrees with clang there -
-`tests/cases/ssa-own-landing-pads.cpp`. Not yet the rest: in a body the parser
-gave no pads, a call's result with a destructor, a built member or base, and a
-`new`'s storage are still guarded only as the parser's pads allow.
+`tests/cases/ssa-own-landing-pads.cpp`. A call's result with a destructor, a
+built member or base, a thrown object's operand and a `new`'s storage are guarded
+there whether or not the parser gave the body pads.
 The walker is not mended for it: its regions are the old path's, which M3b.7
 deletes.
 
