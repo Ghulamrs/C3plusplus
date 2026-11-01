@@ -17,8 +17,7 @@ Lowering::Lowering(const sema::TypedTree &tree, const syntax::Tree &syntax, Type
 void Lowering::outside(const std::string &why) { throw Outside(why); }
 
 bool Lowering::scalarArithmetic(const Type &t) { return t.isArithmetic() && !t.isScopedEnumeration(); }
-// A scoped enumeration is a scalar - stored, passed, compared and cast as its underlying integer - with no arithmetic;
-// a pointer to a data member is an offset, an integer of its size to every backend (M3b.2).
+// A scoped enumeration and a pointer to a data member are scalars: an integer stored, passed and compared (M3b.2).
 bool Lowering::scalar(const Type &t) { return t.isArithmetic() || t.isPointer() || t.isMemberPointer(); }
 // [class]/6 and [basic.types]/9 as far as the lowering needs them: a complete class with no vptr, no virtual base, no
 // destructor, no copy of its own and no constructor - an object of it is its bytes, made and copied as such.
