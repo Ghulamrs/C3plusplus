@@ -220,9 +220,13 @@ const Type *Typer::resolvedType(syntax::NodeId id, syntax::Kind kind) const {
             return t;
         case Parser::Resolved::Value:
             return nullptr;     // the parser's own answer for a form: read only where the rule below has none
-        case Parser::Resolved::Local: case Parser::Resolved::Global: case Parser::Resolved::StaticMember:
+        case Parser::Resolved::Local: case Parser::Resolved::Global:
         case Parser::Resolved::Enumerator: case Parser::Resolved::This:
             if (kind != syntax::Kind::Name && kind != syntax::Kind::This) return nullptr;
+            break;
+        case Parser::Resolved::StaticMember:
+            // `C::s`, `o.s` and `p->s` name the one object alike ([class.static]/1).
+            if (kind != syntax::Kind::Name && kind != syntax::Kind::Member) return nullptr;
             break;
         case Parser::Resolved::Member:
             if (kind != syntax::Kind::Name && kind != syntax::Kind::Member) return nullptr;
@@ -299,6 +303,8 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
             return a != nullptr && (a->isArithmetic() || a->isPointer()) ? a->unqualified() : nullptr;
         case syntax::Kind::Binary:
             if (a == nullptr || b == nullptr || isClass(a) || isClass(b)) return nullptr;
+            // [expr.eq]/2: a pointer to a data member compares for equality alone, with one or with a null.
+            if ((op == "==" || op == "!=") && (a->isMemberPointer() || b->isMemberPointer())) return p_.rules().truthType();
             if (op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=" ||
                 op == "&&" || op == "||")
                 return (scalarOrArray(a) || a->isNullPtr()) && (scalarOrArray(b) || b->isNullPtr()) ? p_.rules().truthType() : nullptr;
@@ -310,7 +316,7 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
             return nullptr;
         case syntax::Kind::Assign:
             // A class assigned with no operator= of its own is copied by its bytes, and the result is the object.
-            return a != nullptr && (a->isArithmetic() || a->isPointer() || (isClass(a) && op == "=")) ? a : nullptr;
+            return a != nullptr && (a->isArithmetic() || a->isPointer() || ((isClass(a) || a->isMemberPointer()) && op == "=")) ? a : nullptr;
         case syntax::Kind::Comma:
             return b;
         case syntax::Kind::Conditional: {
@@ -457,6 +463,26 @@ std::string Typer::specFilter(const std::string &symbol) const {
     const auto s = p_.specFilters_.find(symbol);
     return s == p_.specFilters_.end() ? std::string() : s->second;
 }
+int Typer::dynamicCast(syntax::NodeId cast, std::string &src, std::string &dst) const {
+    const auto d = p_.dynCastFacts_.find(cast.v);
+    if (d == p_.dynCastFacts_.end()) return 0;
+    src = d->second.src;
+    dst = d->second.dst;
+    return d->second.kind;
+}
+
+bool Typer::memberZeroed(const std::string &ctor, const std::string &member) const {
+    const std::map<std::string, Parser::MemberBuilt>::const_iterator i = p_.memberBuilt_.find(ctor + "|" + member + "|0");
+    return i != p_.memberBuilt_.end() && i->second.zeroed;
+}
+
+bool Typer::caseValue(syntax::NodeId label, long long &value) const {
+    const auto c = p_.caseFacts_.find(label.v);
+    if (c == p_.caseFacts_.end() || c->second.isDefault) return false;
+    value = c->second.value;
+    return true;
+}
+
 std::string Typer::unnamedCaught(syntax::NodeId handler) const {
     const auto c = p_.unnamedCaught_.find(handler.v);
     return c == p_.unnamedCaught_.end() ? std::string() : c->second;
@@ -566,6 +592,7 @@ bool Typer::newFacts(syntax::NodeId id, NewFacts &out) const {
     out.ctorDefaulted = f->second.ctorDefaulted;
     out.bytesCopied = f->second.bytesCopied;
     out.vectorLoop = f->second.vectorLoop;
+    out.release = f->second.release;
     out.dtor = f->second.dtor;
     if (f->second.dtorSig != nullptr) out.dtorSig = f->second.dtorSig->id();
     out.dslot = f->second.dslot;
@@ -743,6 +770,23 @@ bool Typer::localBuilt(syntax::NodeId var, std::string &symbol, TypeId &signatur
     signature = TypeTable::id(i->second.signature);
     defaulted = i->second.defaulted;
     zeroed = i->second.zeroed;
+    return true;
+}
+
+bool Typer::localList(syntax::NodeId var, TypeId &param, std::uint32_t &count) const {
+    const std::unordered_map<std::uint32_t, Parser::LocalBuilt>::const_iterator i = p_.localBuilt_.find(var.v);
+    if (i == p_.localBuilt_.end() || i->second.listOf == nullptr) return false;
+    param = TypeTable::id(i->second.listOf);
+    count = static_cast<std::uint32_t>(i->second.listCount);
+    return true;
+}
+
+bool Typer::memberList(const std::string &ctor, const std::string &member, std::uint32_t pos, TypeId &param,
+                       std::uint32_t &count) const {
+    const auto i = p_.memberLists_.find(ctor + "|" + member + "|" + std::to_string(pos));
+    if (i == p_.memberLists_.end()) return false;
+    param = TypeTable::id(i->second.first);
+    count = static_cast<std::uint32_t>(i->second.second);
     return true;
 }
 

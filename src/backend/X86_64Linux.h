@@ -166,6 +166,8 @@ protected:
     int floorDepth_ = 0;
     // Inside a funclet, whose own frame holds 32 bytes and no more.
     bool inFunclet_ = false;
+    // The function being written has an LSDA or FH3 tables: its selected body's pads (ir::Function::landingPads, or the parser's).
+    bool landingPads_ = false;
 
     // Whatever this target writes after a function to describe its handlers.
     virtual void emitExceptionTables(const Function &fn) {

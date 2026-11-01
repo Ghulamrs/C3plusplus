@@ -1220,6 +1220,16 @@ void Parser::topLevel(Program &program) {
                     src_.fail(epos, "'" + entry + "' is neither a member of '" + d.qualifier +
                                     "' nor a direct base of it");
                 Init in = parseInitialiser();
+                // [dcl.init.list]/5 for a member: the entry's elements, the mem-initialiser's parts, are its list's (M3b.2).
+                const Type *plain = target->unqualified();
+                const Type *ilType = nullptr;
+                bool flat = !in.items.empty() && plain->isStructOrUnion() && !plain->tag().empty() &&
+                            memberOf->findMember(entry) != nullptr && hasConstructors(plain->tag()) &&
+                            !isAggregateClass(plain) && initializerListConstructor(plain, &ilType) != nullptr;
+                for (std::size_t i = 0; flat && i < in.items.size(); i++) flat = !in.items[i].isList;
+                if (flat)
+                    memberLists_[currentFunction_ + "|" + entry + "|" + std::to_string(static_cast<std::uint32_t>(epos))] =
+                        std::make_pair(ilType, in.items.size());
                 args = bracedInitArguments(target, in, epos);
             } else {
                 expect("(");
@@ -1460,6 +1470,12 @@ void Parser::topLevel(Program &program) {
                         memberInits.push_back(StmtPtr(new ExprStmt(std::move(chain))));
                 if (hasCtor) {
                     const Type *ptr = types_.pointerTo(mt);
+                    // Recorded as an unnamed member's default construction is, the zeroing beside it (M3b.2).
+                    const std::string bkey = currentFunction_ + "|" + m->name + "|0";
+                    const MemberBuilt b = { lookup_.functions_[vi->second].symbol,
+                                            types_.functionType(types_.get(Kind::Void), std::vector<const Type *>(1, ptr), false), false,
+                                            lookup_.functions_[vi->second].implicit };
+                    memberBuilt_[bkey] = b;
                     ExprPtr addr(new Unary('&', std::move(field)));
                     addr->setType(ptr);
                     std::vector<ExprPtr> one;
@@ -1829,7 +1845,7 @@ void Parser::topLevel(Program &program) {
                 // What builds or destroys this base, for the SSA lowering (M3b.2): keyed as a member is, "^B" or "~B".
                 if (!memberTemplateInst_) {
                     const MemberBuilt b = { symbol, types_.functionType(types_.get(Kind::Void), params2, false),
-                                            building && chosenArgs.size() != baseWritten };
+                                            building && chosenArgs.size() != baseWritten, false };
                     memberBuilt_[currentFunction_ + "|" + (building ? "^" : "~") + base->tag() + "|0"] = b;
                     // A base handed a VTT: its sub-VTT's entry in this function's, which vttForBase just found.
                     if (takesVtt(base)) baseVtt_[currentFunction_ + "|" + base->tag()] = vtts_.find(memberOf->tag())->second.subVtt.find(base)->second;
@@ -1839,7 +1855,7 @@ void Parser::topLevel(Program &program) {
                         if (!target_.microsoftNames()) itaniumDestructorName(base->tag(), base, false, &dtor);
                         std::vector<const Type *> self(1, basePtr);
                         if (takesVtt(base)) self.push_back(vttType());
-                        const MemberBuilt u = { dtor, types_.functionType(types_.get(Kind::Void), self, false), false };
+                        const MemberBuilt u = { dtor, types_.functionType(types_.get(Kind::Void), self, false), false, false };
                         memberBuilt_[currentFunction_ + "|~" + base->tag() + "|0"] = u;
                     }
                 }

@@ -70,7 +70,7 @@ int X86_64Linux::layoutSsa(const Function &fn, const ir::Function &f) {
     }
     // The word the Microsoft runtime scribbles its state in, where the function has a pad (M3-IR 3.6).
     ssaUnwindHelpSlot_ = 0;
-    if (usesFunclets() && fn.hasLandingPads()) { cur = roundUp(cur, 8) + 8; ssaUnwindHelpSlot_ = static_cast<int>(cur); }
+    if (usesFunclets() && landingPads_) { cur = roundUp(cur, 8) + 8; ssaUnwindHelpSlot_ = static_cast<int>(cur); }
     return static_cast<int>(roundUp(cur, 16));
 }
 
@@ -632,9 +632,9 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
     }
     std::sort(ssaTryOrder_.begin(), ssaTryOrder_.end());
     for (std::size_t t = 0; t < ssaTryOrder_.size(); t++) msAddTryBlock(ssaTries_[ssaTryOrder_[t].second]);
-    // A function the parser gave landing pads whose tries nothing can throw through registered no row: the prologue
+    // A function with landing pads whose tries nothing can throw through registered no row: the prologue
     // named the LSDA already, so an empty row defines it, as the walker's empty try does.
-    if (fn.hasLandingPads() && callSites().empty() && !usesFunclets()) {
+    if (landingPads_ && callSites().empty() && !usesFunclets()) {
         const std::string none = label("ssatry", nextLabel());
         a_->defLabel(none);
         callSite(none, none, none, std::vector<std::string>(), std::vector<int>(), false, ++ssaRegionAt_, false);

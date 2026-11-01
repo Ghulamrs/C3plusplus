@@ -1,0 +1,2 @@
+arm64-darwin  the case runs under -front=ssa (its .flags), which selects from SSA on x86 alone; the walker leaks a declaration's temporaries on unwind - tests/open/declaration-temporary-unwind.cpp.
+tms6747  the case runs under -front=ssa (its .flags), which selects from SSA on x86 alone; the walker leaks a declaration's temporaries on unwind, so the clang .expected cannot hold there.

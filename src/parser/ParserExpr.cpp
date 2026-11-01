@@ -2578,7 +2578,8 @@ ExprPtr Parser::localRef(const std::string &name) {
         if (l->constantOnly) {
             ExprPtr n(new Num(l->constantValue));
             n->setType(l->type);
-            return resolve(std::move(n), resolvedAs(Resolved::Local, l->type, l->staticName, l->serial, l->constantValue));
+            // Recorded as a constant, as an enumerator is: the lowering reads the value the parser stood in (M3b.2).
+            return resolve(std::move(n), resolvedAs(Resolved::Enumerator, l->type, std::string(), -1, l->constantValue));
         }
         Var *v = l->staticName.empty() ? Var::local(name, l->offset)
                                        : Var::global(l->staticName);
@@ -3074,11 +3075,10 @@ ExprPtr Parser::postfix() {
                          !m->isMutable
                              ? types_.withConst(m->type) : m->type);
             const Type *accessType = acc->type();
-            acc = resolve(std::move(acc), resolvedAs(Resolved::Member, accessType, name, m->offset, 0, m->declaredIn));
             // A reference member holds an address, so reading one is a
             // dereference - the same `useReference` every mention of a
-            // reference local already goes through.
-            acc = useReference(std::move(acc));
+            // reference local already goes through; the record goes on what is read.
+            acc = resolve(useReference(std::move(acc)), resolvedAs(Resolved::Member, accessType, name, m->offset, 0, m->declaredIn));
             n = std::move(acc);
             continue;
         }
@@ -3169,12 +3169,11 @@ ExprPtr Parser::postfix() {
                          !m->isMutable
                              ? types_.withConst(m->type) : m->type);
             const Type *accessType = acc->type();
-            acc = resolve(std::move(acc), resolvedAs(Resolved::Member, accessType, name, m->offset, 0, m->declaredIn));
             if (objectIsRvalue && !m->type->isReference()) acc->setXvalue();
             // A reference member holds an address, so reading one is a
             // dereference - the same `useReference` every mention of a
-            // reference local already goes through.
-            acc = useReference(std::move(acc));
+            // reference local already goes through; the record goes on what is read.
+            acc = resolve(useReference(std::move(acc)), resolvedAs(Resolved::Member, accessType, name, m->offset, 0, m->declaredIn));
             n = std::move(acc);
             continue;
         }
@@ -3226,6 +3225,10 @@ ExprPtr Parser::noteKeywordForm(syntax::Kind kind, KeywordForm f) {
         noteValue(f.e.get());
     if (kind == syntax::Kind::Throw && !pendingThrow_.temp.empty()) throwFacts_[f.e->syntax().v] = pendingThrow_;
     if (kind == syntax::Kind::Throw) pendingThrow_ = ThrowFacts();
+    if (kind == syntax::Kind::Cast && text.compare(0, 12, "dynamic_cast") == 0) {
+        if (pendingDynCast_.kind != 0) dynCastFacts_[f.e->syntax().v] = pendingDynCast_;
+        pendingDynCast_ = DynCastFacts{ std::string(), std::string(), 0 };
+    }
     if (kind == syntax::Kind::New || kind == syntax::Kind::Delete) {
         newFacts_[f.e->syntax().v] = pendingNew_;
         pendingNew_ = NewFacts();
@@ -3359,7 +3362,9 @@ ExprPtr Parser::unaryNode() {
                         at_ += q + 1;
                         ExprPtr off(new Num(static_cast<long long>(m->offset)));
                         off->setType(types_.memberPointerTo(cls, m->type));
-                        return resolve(std::move(off), resolvedAs(Resolved::Value, types_.memberPointerTo(cls, m->type)));
+                        // The record carries the offset, which the SSA lowering reads as the value (M3b.2).
+                        return resolve(std::move(off), resolvedAs(Resolved::Value, types_.memberPointerTo(cls, m->type), std::string(),
+                                                                  -1, static_cast<long long>(m->offset)));
                     }
                     // `&S::f` for a member function: the ABI's pair, built in
                     // a slot of this frame the way a class temporary is.

@@ -72,6 +72,7 @@ struct StaticGuard {
 struct NewFacts {
     std::string symbol, why, ctor;   // ctor: the constructor `new T(...)` calls on the storage, its type with `T *` first
     std::string vectorLoop;          // `new T[n]` of a class: the function building each element, given the array and n
+    std::string release;             // the class's own deallocation function a `new` gives its storage back by, else none
     TypeId made, ctorSig;
     std::string dtor;       // a `delete`'s: the destructor it runs first, or none where `dslot` names the deleting slot
     TypeId dtorSig;
@@ -169,6 +170,9 @@ public:
     void emitInto(Program &program);
     std::string typeInfoSymbol(TypeId t) const;   // the type_info a catch of t names, Sema's; empty where none can be made
     std::string unnamedCaught(syntax::NodeId handler) const;   // what an Itanium `catch (T)` with no name named; empty otherwise
+    bool caseValue(syntax::NodeId label, long long &value) const;   // a case label's value as the parser folded it
+    bool memberZeroed(const std::string &ctor, const std::string &member) const;   // `: m()` zeroes before its constructor
+    int dynamicCast(syntax::NodeId cast, std::string &src, std::string &dst) const;   // 1 a runtime walk, 2 an upcast, 3 to void *, 0 none
     // A Microsoft `catch (T)` with no name: the descriptor the parser named, whether by reference, HT_IsConst.
     bool microsoftUnnamedCaught(syntax::NodeId handler, std::string &descriptor, bool &byRef, bool &isConst) const;
     // The Microsoft ThrowInfo a throw of t names (`_TI1H`), where the parser finished the chain for a throw; empty otherwise.
@@ -203,6 +207,9 @@ public:
     bool msVbaseInit(const std::string &fn, std::vector<VptrStore> &vbptrs, std::vector<std::string> &order) const;
     // A local's constructor, its signature with `this`, defaults added, zeroed first ([dcl.init]/8); false where none built it.
     bool localBuilt(syntax::NodeId var, std::string &symbol, TypeId &signature, bool &defaulted, bool &zeroed) const;
+    // The initializer_list parameter a local's braces of `count` flat elements - its `var` node's parts - were made into.
+    bool localList(syntax::NodeId var, TypeId &param, std::uint32_t &count) const;
+    bool memberList(const std::string &ctor, const std::string &member, std::uint32_t pos, TypeId &param, std::uint32_t &count) const;
     // The constructor a class temporary `T(...)` at node `id` was built by, and whether `T()` zeroed the object first.
     bool temporaryBuilt(syntax::NodeId id, std::string &symbol, TypeId &signature, bool &zeroFirst) const;
     // The converting constructor that made a temporary of the value at node `id` (Parser::userConversion); false where none.

@@ -598,11 +598,13 @@ private:
     std::set<std::uint32_t> constructorNodes_;    // the `function` nodes that are constructors, as topLevel decided (M3b.2)
     // **What builds each member a written constructor names or leaves** (M3b.2): the constructor overload resolution
     // chose, keyed "constructor|member|pos" - the constructor's symbol, the entry's position, 0 for one left alone.
-    struct MemberBuilt { std::string symbol; const Type *signature; bool defaulted; };
+    struct MemberBuilt { std::string symbol; const Type *signature; bool defaulted; bool zeroed; };   // zeroed: `: m()`, [dcl.init]/8
     std::map<std::string, MemberBuilt> memberBuilt_;
+    // A member's braced entry of flat elements made into its constructor's initializer_list, keyed as memberBuilt_ (M3b.2).
+    std::map<std::string, std::pair<const Type *, std::size_t> > memberLists_;
     // The copy constructor a throw chose for its exception object, keyed as a member is under "$throw" (M3b.2).
     void noteThrowCopy(const Signature *cc, const Type *thrownPtr, std::size_t pos) {
-        const MemberBuilt b = { cc->symbol, types_.functionType(types_.get(Kind::Void), std::vector<const Type *>{ thrownPtr, cc->params[0] }, false), false };
+        const MemberBuilt b = { cc->symbol, types_.functionType(types_.get(Kind::Void), std::vector<const Type *>{ thrownPtr, cc->params[0] }, false), false, false };
         const std::string key = currentFunction_ + "|$throw|" + std::to_string(static_cast<std::uint32_t>(pos));
         const std::map<std::string, MemberBuilt>::iterator had = memberBuilt_.find(key);
         if (had == memberBuilt_.end()) memberBuilt_[key] = b;
@@ -669,11 +671,16 @@ private:
     // A `new` or `delete` as the SSA lowering may take it (M3b.2): allocation function, type, initialiser (0 none, 1 value-
     // initialised, 2 one value), `why` where it may not; a class's chosen constructor, its type with `T *` first, zeroed first,
     // defaults added; bytesCopied, `new T(t)` storing t's bytes ([class.copy]/12); vectorLoop, `new T[n]`'s element builder.
-    struct NewFacts { std::string symbol, why, ctor, dtor, vectorLoop; const Type *made = nullptr, *ctorSig = nullptr, *dtorSig = nullptr;
+    struct NewFacts { std::string symbol, why, ctor, dtor, vectorLoop, release; const Type *made = nullptr, *ctorSig = nullptr, *dtorSig = nullptr;
                       bool array = false, placed = false, ctorZero = false, ctorDefaulted = false, bytesCopied = false;
                       int init = 0, dslot = -1; };
     std::unordered_map<std::uint32_t, NewFacts> newFacts_;
     NewFacts pendingNew_;
+    // A dynamic_cast to a pointer, for the SSA lowering (M3b.2): 1 the runtime's walk between the two type_infos, 2 an upcast,
+    // 3 to `void *`, the most derived object.
+    struct DynCastFacts { std::string src, dst; int kind; };
+    std::unordered_map<std::uint32_t, DynCastFacts> dynCastFacts_;
+    DynCastFacts pendingDynCast_ = DynCastFacts();
     void noteCallSlots(const Call &c) {
         if (!c.syntax().valid()) return;
         CallSlots &k = callSlots_[c.syntax().v];
@@ -719,8 +726,10 @@ private:
         localBuilt_[id.v] = c->second;
     }
     // The constructor a declaration called, by the declared local's serial, until its `var` node is made (M2.16): its
-    // signature with `this`, whether defaults were added to the written arguments, whether [dcl.init]/8 zeroed first.
-    struct LocalBuilt { std::string symbol; const Type *signature; bool defaulted, zeroed; std::vector<syntax::NodeId> defaults; };
+    // signature with `this`, whether defaults were added to the written arguments, whether [dcl.init]/8 zeroed first;
+    // `listOf`, the initializer_list a braced list of `listCount` flat elements - the `var` node's parts - was made into.
+    struct LocalBuilt { std::string symbol; const Type *signature; bool defaulted, zeroed; std::vector<syntax::NodeId> defaults;
+                        const Type *listOf; std::size_t listCount; };
     std::map<int, LocalBuilt> ctorBySerial_;
     // The defaults a local's constructor was completed by, for its `var` node to take as its last parts, read in the
     // declaration's scope as a call's are (M3b.2); none where one has no syntax.
@@ -1383,6 +1392,9 @@ private:
         bool listInit = false;
         // A same-class source and no copy constructor: the bytes are asked for.
         bool trivialCopy = false;
+        // An initializer_list constructor's list, made from `ilCount` braces' elements none of which is braced (M3b.2).
+        const Type *ilType = nullptr;
+        std::size_t ilCount = 0;
     };
     CtorInit readConstructorInitialiser(const Declared &d);
 

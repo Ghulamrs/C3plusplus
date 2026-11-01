@@ -1361,6 +1361,9 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     lowering.setStaticGuard([&typer](const std::string &symbol, sema::StaticGuard &out) { return typer.staticGuard(symbol, out); });
     lowering.setTypeInfo([&typer](TypeId t) { return typer.typeInfoSymbol(t); });
     lowering.setUnnamedCaught([&typer](syntax::NodeId id) { return typer.unnamedCaught(id); });
+    lowering.setCaseValue([&typer](syntax::NodeId id, long long &v) { return typer.caseValue(id, v); });
+    lowering.setMemberZeroed([&typer](const std::string &ctor, const std::string &m) { return typer.memberZeroed(ctor, m); });
+    lowering.setDynamicCast([&typer](syntax::NodeId id, std::string &s, std::string &d) { return typer.dynamicCast(id, s, d); });
     lowering.setMicrosoftThrowInfo([&typer](TypeId t) { return typer.microsoftThrowInfo(t); });
     lowering.setMicrosoftCatch([&typer](TypeId t, std::string &d, bool &c) { return typer.microsoftCatchDescriptor(t, d, c); });
     lowering.setMicrosoftUnnamedCaught([&typer](syntax::NodeId id, std::string &d, bool &r, bool &c) {
@@ -1382,6 +1385,10 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
                         });
     lowering.setLocalBuilt([&typer](syntax::NodeId v, std::string &sym, TypeId &sig, bool &dflt, bool &zeroed) {
         return typer.localBuilt(v, sym, sig, dflt, zeroed);
+    });
+    lowering.setLocalList([&typer](syntax::NodeId v, TypeId &param, std::uint32_t &n) { return typer.localList(v, param, n); });
+    lowering.setMemberList([&typer](const std::string &ctor, const std::string &m, std::uint32_t pos, TypeId &param, std::uint32_t &n) {
+        return typer.memberList(ctor, m, pos, param, n);
     });
     lowering.setTemporaryBuilt([&typer](syntax::NodeId id, std::string &sym, TypeId &sig, bool &zero) {
         return typer.temporaryBuilt(id, sym, sig, zero);

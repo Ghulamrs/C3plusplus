@@ -57,6 +57,9 @@ public:
     void setStaticGuard(std::function<bool(const std::string &, sema::StaticGuard &)> f) { staticGuard_ = f; }
     void setTypeInfo(std::function<std::string(TypeId)> f) { typeInfo_ = f; }
     void setUnnamedCaught(std::function<std::string(syntax::NodeId)> f) { unnamedCaught_ = f; }
+    void setCaseValue(std::function<bool(syntax::NodeId, long long &)> f) { caseValue_ = f; }
+    void setMemberZeroed(std::function<bool(const std::string &, const std::string &)> f) { memberZeroed_ = f; }
+    void setDynamicCast(std::function<int(syntax::NodeId, std::string &, std::string &)> f) { dynamicCast_ = f; }
     void setMicrosoftThrowInfo(std::function<std::string(TypeId)> f) { msThrowInfo_ = f; }
     void setMicrosoftCatch(std::function<bool(TypeId, std::string &, bool &)> f) { msCatch_ = f; }
     void setMicrosoftUnnamedCaught(std::function<bool(syntax::NodeId, std::string &, bool &, bool &)> f) { msUnnamedCaught_ = f; }
@@ -79,6 +82,9 @@ public:
     }
     // The constructor the parser chose for a local's `var` node - Sema's record, asked by the glue.
     void setLocalBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &, bool &)> f) { localBuilt_ = f; }
+    // The initializer_list parameter a local's braces were made into, and their count - Sema's record, asked by the glue.
+    void setLocalList(std::function<bool(syntax::NodeId, TypeId &, std::uint32_t &)> f) { localList_ = f; }
+    void setMemberList(std::function<bool(const std::string &, const std::string &, std::uint32_t, TypeId &, std::uint32_t &)> f) { memberList_ = f; }
     void setTemporaryBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> f) { temporaryBuilt_ = f; }
     // The converting constructor that made a temporary of a value at a node - Sema's record, asked by the glue.
     void setConvertedBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &)> f) { convertedBuilt_ = f; }
@@ -99,7 +105,7 @@ private:
     struct Val { ValueId v; TypeId type; Val() {} Val(ValueId a, TypeId t) : v(a), type(t) {} };
     struct Loop { BlockId brk, cont; std::size_t handlers, live; };
     // A local a destructor destroys, alive from its construction to the end of its scope; `pad` is its cleanup's index in pads_; `when`: a count its cleanup reads, destroying only where it is above `above` (a virtual base's).
-    struct Live { ValueId slot; TypeId cls; std::string dtor; std::size_t pad; ValueId vtt, when; long long above; Live() : pad(0), above(0) {} };
+    struct Live { ValueId slot; TypeId cls; std::string dtor; std::size_t pad; ValueId vtt, when, built; long long above; Live() : pad(0), above(0) {} };
     // A landing pad a call inside its region unwinds to (M3-IR 3.6): a try's, or a handler's end-catch cleanup. Its block is
     // made on first use; `types` is the whole action chain, own handlers first, then the enclosing pads' - the walker's.
     struct Pad { BlockId block; ValueId ptr, sel; bool cleanup; std::vector<std::string> types; std::vector<int> indices; std::size_t own; };
@@ -114,6 +120,7 @@ private:
     BlockId newBlock();
     void place(BlockId b);
     bool terminated() const;
+    bool madePads() const;
     void specFilterChain(const Pad &p);
     void noexceptAbort(const Pad &p);
     void br(BlockId to, const std::vector<ValueId> &args = std::vector<ValueId>());
@@ -192,6 +199,11 @@ private:
     Val name(sema::TypedId id);
     Val nameAddress(sema::TypedId id);
     Val member(sema::TypedId id);
+    Val referenceMember(ValueId object, const Type &cls, const Member &m);
+    Val globalAddress(const sema::Resolution &r);
+    void destroyWhen(const Live &l, bool invoke = false);
+    bool canFlag() const;
+    void storageGuard(ValueId p, const Type &made, const std::string &release);
     Val memberAddress(sema::TypedId id);
     Val memberOfThis(sema::TypedId id);
     bool namesCalledFunction(const std::string &head, const std::string &symbol) const;
@@ -270,6 +282,13 @@ private:
     bool memberAddressNode(sema::TypedId id) const;
     Val memberFunctionPair(sema::TypedId id);
     Val memberPointerCall(sema::TypedId id, sema::TypedId mp, CallInfo info);
+    bool dataMemberPointerNode(sema::TypedId id) const;
+    void offsetModel(const Type &mp);
+    Val dataMemberPointer(sema::TypedId id);
+    ValueId nullMemberPointer(TypeId mp);
+    Val memberPointerConversion(Val v, TypeId to);
+    Val memberPointerCompare(const std::string &op, Val a, Val b);
+    Val memberPointerLvalue(sema::TypedId id);
     Val callTail(TypeId sig, CallInfo info, std::vector<ValueId> ops, std::size_t skip, const std::vector<sema::TypedId> &args,
                  bool dummyInt);
     bool operatorCalls(sema::TypedId id) const;
@@ -290,6 +309,7 @@ private:
     void staticConstruction(sema::TypedId var, const std::string &symbol, const sema::StaticGuard &g);
     bool builtClass(const Type &t) const;
     void builtLocal(sema::TypedId var, ValueId slot, const Type &t);
+    ValueId initializerList(sema::TypedId parent, const Type &param, std::uint32_t n);
     void guard(ValueId slot, const Type &c, const std::string &dtor, bool unwinds = true);
     void destroy(const Live &l, bool invoke = false);
     void destroyLive(std::size_t mark);
@@ -349,6 +369,10 @@ private:
     std::function<bool(const std::string &, sema::StaticGuard &)> staticGuard_;
     std::function<std::string(TypeId)> typeInfo_;
     std::function<std::string(syntax::NodeId)> unnamedCaught_;
+    std::function<bool(syntax::NodeId, long long &)> caseValue_;
+    std::function<bool(const std::string &, const std::string &)> memberZeroed_;
+    std::function<int(syntax::NodeId, std::string &, std::string &)> dynamicCast_;
+    Val dynamicCastPointer(sema::TypedId id);
     std::function<std::string(TypeId)> msThrowInfo_;
     std::function<bool(TypeId, std::string &, bool &)> msCatch_;
     std::function<bool(syntax::NodeId, std::string &, bool &, bool &)> msUnnamedCaught_;
@@ -371,6 +395,8 @@ private:
     std::string key_;                           // FunctionFacts::recordKey: the memberBuilt_ and vptrStores_ records' key
     ValueId vtt_;                               // Itanium's C2 or D2 handed a VTT: it, the second parameter; none otherwise
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &, bool &)> localBuilt_;
+    std::function<bool(syntax::NodeId, TypeId &, std::uint32_t &)> localList_;
+    std::function<bool(const std::string &, const std::string &, std::uint32_t, TypeId &, std::uint32_t &)> memberList_;
     std::vector<Live> live_;                    // innermost last
     ValueId sret_;                              // the caller's result pointer, where a copied class is returned
     ValueId elidedSlot_;                        // the named return value, not destroyed by the `return` naming it
@@ -383,7 +409,7 @@ private:
     sema::TypedId intoCall_;                    // the call elidedCall lowers, whose result goes into a local's alloca
     int intoAlloca_ = -1, intoNow_ = -1;        // that alloca; and callTail's, set only as that call's tail is entered
     std::size_t liveFloor_;                     // a constructor's built bases and members: below it, kept by a return
-    bool landingPads_;                          // the parser gave the function landing pads: the prologue names an LSDA
+    bool landingPads_;                          // the parser gave the function landing pads; ir::Function::landingPads adds the lowering's own
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> temporaryBuilt_;
     std::function<bool(syntax::NodeId, std::string &, TypeId &)> convertedBuilt_;
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> argumentCopy_;
@@ -393,6 +419,7 @@ private:
     std::size_t handlerDepth_;                  // handlers the statement being lowered is inside
     std::vector<std::size_t> handlerLive_;      // live_ where each handler's body began, innermost last
     std::size_t fullFrom_;                      // live_ where the full expression being lowered began; kNoFull, none open
+    std::vector<std::pair<BlockId, std::size_t> > fullAt_;   // where each open full expression began: its flags zeroed there
     std::size_t skippable_;                     // operands being lowered that may not be evaluated: `&&`, `||`, `?:`, `new`
     static const std::size_t kNoFull = static_cast<std::size_t>(-1);
     BlockId returnBlock_;

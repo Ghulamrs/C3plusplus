@@ -1020,6 +1020,7 @@ ExprPtr Parser::constructTemporary(const Type *plain, const Signature &ctor,
 // ---------------------------------------------------------------- new and delete
 // **The four operator functions are called by name**, measured at -O0.
 ExprPtr Parser::dynamicCastToVoid(ExprPtr v, const Type *to) {
+    pendingDynCast_ = DynCastFacts{ std::string(), std::string(), 3 };
     // **The Microsoft ABI keeps no offset-to-top, and does not do this
     // inline.**
     if (target_.microsoftNames()) {
@@ -1197,8 +1198,10 @@ ExprPtr Parser::dynamicCastFrom(ExprPtr v, const Type *to, std::size_t pos) {
 
     const Type *target = to->pointee()->unqualified();
     // **[expr.dynamic.cast]/5: an upcast is not a question.**
-    if (publicBaseOffset(source, target) >= 0)
+    if (publicBaseOffset(source, target) >= 0) {
+        pendingDynCast_ = DynCastFacts{ std::string(), std::string(), 2 };
         return convert(std::move(v), to);
+    }
 
     const Type *voidPtr = types_.pointerTo(types_.get(Kind::Void));
 
@@ -1247,6 +1250,7 @@ ExprPtr Parser::dynamicCastFrom(ExprPtr v, const Type *to, std::size_t pos) {
 
     const std::string sourceName = describe(source);
     const std::string targetName = describe(target);
+    pendingDynCast_ = DynCastFacts{ sourceName, targetName, 1 };
 
     std::vector<ExprPtr> args;
     ExprPtr object(Var::local(temp, slot));
@@ -1753,7 +1757,17 @@ ExprPtr Parser::newExpression(std::size_t pos) {
     if (nothrow) pendingNew_.why = "a nothrow 'new'";
     else if (userAlloc) pendingNew_.why = "a placement 'new' of an allocation function of the program's";
     else if (bracedList) pendingNew_.why = "a 'new' with a braced list";
-    else if (classAllocator(made, array ? "operatornew[]" : "operatornew") != nullptr) pendingNew_.why = "a class's own operator new";
+    else if (const Signature *own = classAllocator(made, array ? "operatornew[]" : "operatornew")) {
+        // [class.free]/2: the class's own, called as the platform's is where it takes the size alone.
+        // [expr.new]/20: a constructor that throws gives the storage back by the class's own deallocation function.
+        const Signature *back = classAllocator(made, array ? "operatordelete[]" : "operatordelete");
+        if (own->params.size() == 1 && (back == nullptr || back->params.size() == 1)) {
+            pendingNew_.symbol = own->symbol;
+            if (back != nullptr) pendingNew_.release = back->symbol;
+        } else {
+            pendingNew_.why = "a class's own operator new";
+        }
+    }
     else if (array && arrayCookie(made) != 0) pendingNew_.why = "an array 'new' with a cookie";
     else if (placement != nullptr) { pendingNew_.placed = true; pendingNew_.symbol = "$placed"; }   // [new.delete.placement]
     else if (target_.microsoftNames()) pendingNew_.symbol = array ? "??_U@YAPEAX_K@Z" : "??2@YAPEAX_K@Z";
@@ -2154,7 +2168,9 @@ ExprPtr Parser::deleteExpression(std::size_t pos) {
     pendingNew_.made = t->pointee();
     pendingNew_.array = array;
     if (dtor != nullptr) pendingNew_.why = "a 'delete' of a class with a destructor";
-    else if (classAllocator(t->pointee(), array ? "operatordelete[]" : "operatordelete") != nullptr) pendingNew_.why = "a class's own operator delete";
+    else if (const Signature *own = classAllocator(t->pointee(), array ? "operatordelete[]" : "operatordelete")) {
+        if (own->params.size() == 1) pendingNew_.symbol = own->symbol; else pendingNew_.why = "a class's own operator delete";
+    }
     else if (target_.microsoftNames()) pendingNew_.symbol = array ? "??_V@YAXPEAX@Z" : "??3@YAXPEAX@Z";
     else pendingNew_.symbol = array ? "_ZdaPv" : "_ZdlPv";
 
