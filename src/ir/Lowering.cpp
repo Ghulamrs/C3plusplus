@@ -152,8 +152,16 @@ void Lowering::buildMember(ValueId at, const Member &m, sema::TypedId entry) {
     const Type &ft = T(sig);
     if (ft.params().empty() || ft.params()[0]->pointee()->unqualified() != &mt) outside("a member's constructor of another class");
     std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, at))));
-    if (entry.valid()) arguments(entry, 0, ft, 1, false, ops);
-    else if (ft.params().size() != 1) outside("a member's default constructor of parameters");
+    TypeId listParam;
+    std::uint32_t listed = 0;
+    if (entry.valid() && memberList_ && memberList_(key_, m.name, pos, listParam, listed)) {
+        if (ft.params().size() != 2 || ft.params()[1] != &T(listParam)) outside("a member's initializer_list of another parameter");
+        ops.push_back(initializerList(entry, T(listParam), listed));
+    } else if (entry.valid()) {
+        arguments(entry, 0, ft, 1, false, ops);
+    } else if (ft.params().size() != 1) {
+        outside("a member's default constructor of parameters");
+    }
     directCall(symbol, sig, ops);
 }
 
@@ -628,12 +636,16 @@ void Lowering::builtLocal(sema::TypedId var, ValueId slot, const Type &t) {
         const Type &ft = T(sig);
         // [dcl.fct.default]/9: a default is evaluated here, in the caller's frame - the `var` node's last parts.
         if (defaulted && v.count + 1 != ft.params().size()) outside("a local built with default arguments");
+        TypeId listParam;
+        std::uint32_t listed = 0;
+        const bool list = localList_ && localList_(v.syntax, listParam, listed);
         // [dcl.init.list]/3: braces reach a constructor as parentheses do, one value per parameter, unless a parameter
         // is the initializer_list the parser built a backing array for.
-        if (v.initForm == 2)
+        if (v.initForm == 2 && !list)
             for (std::size_t i = 1; i < ft.params().size(); i++) {
                 const Type &p = ft.params()[i]->isReference() ? *ft.params()[i]->referent()->unqualified() : *ft.params()[i]->unqualified();
-                if (p.isStructOrUnion() && p.tag().compare(0, 22, "std::initializer_list<") == 0) outside("a local built from a braced list");
+                if (p.isStructOrUnion() && p.isSpecialization() && p.templateName() == "initializer_list")
+                    outside("a local's initializer_list of braced elements");
             }
         if (ft.params().empty() || ft.params()[0]->pointee()->unqualified() != &c) outside("a local's constructor of another class");
         if (zeroed) {
@@ -643,8 +655,14 @@ void Lowering::builtLocal(sema::TypedId var, ValueId slot, const Type &t) {
         std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, slot))));
         // [class.temporary]/4: the arguments' temporaries are destroyed at the declarator's end, before the local is alive.
         const std::size_t was = openFull();
-        if (v.count != 0) arguments(var, 0, ft, 1, false, ops);
-        else if (ft.params().size() != 1) outside("a local's default constructor of parameters");
+        if (list) {
+            if (ft.params().size() != 2 || ft.params()[1] != &T(listParam)) outside("a local's initializer_list of another parameter");
+            ops.push_back(initializerList(var, T(listParam), listed));
+        } else if (v.count != 0) {
+            arguments(var, 0, ft, 1, false, ops);
+        } else if (ft.params().size() != 1) {
+            outside("a local's default constructor of parameters");
+        }
         directCall(symbol, sig, ops);
         closeFull(was);
     } else if (elidedLocal(var)) {
@@ -666,6 +684,37 @@ void Lowering::builtLocal(sema::TypedId var, ValueId slot, const Type &t) {
     l.dtor = destructor_ ? destructor_(c.id()) : std::string();
     if (l.dtor.empty()) outside("a local whose destructor the parser recorded none for");
     guard(slot, c, l.dtor);
+}
+
+// [dcl.init.list]/5: `parent`'s `n` parts, each copy-initialising an element of a backing array of this frame, and an
+// initializer_list over it laid as <initializer_list> lays it - `first_`, `count_` - for parameter `param`: its address.
+ValueId Lowering::initializerList(sema::TypedId parent, const Type &param, std::uint32_t n) {
+    const Type &il = param.isReference() ? *param.referent()->unqualified() : *param.unqualified();
+    if (!param.isReference() && !bytesReturned(il)) outside("an initializer_list parameter passed as no other class is");
+    if (il.findMember("first_") == nullptr || il.findMember("count_") == nullptr || n == 0 || count(parent) != n)
+        outside("an initializer_list of no layout the lowering knows");
+    const Member &firstM = *il.findMember("first_");
+    const Member &countM = *il.findMember("count_");
+    if (!firstM.type->isPointer()) outside("an initializer_list of no layout the lowering knows");
+    const Type &e = *firstM.type->pointee()->unqualified();
+    if (!scalar(e) || e.isX87(target_)) outside("an initializer_list of '" + e.describe() + "' elements");
+    const ValueId backing = entryAlloca(tid(*types_.arrayOf(&e, n)), "$ilbacking");
+    const TypeId ptr = tid(*types_.pointerTo(&e));
+    const ValueId base = result(add(Op::Bitcast, ptr, std::vector<ValueId>(1, backing)));
+    for (std::uint32_t i = 0; i < n; i++) {
+        const InstId g = add(Op::Gep, ptr, std::vector<ValueId>(1, base));
+        at(g).k = static_cast<long long>(i) * e.size(target_);
+        store(result(g), exprTo(child(parent, i), tid(e)).v);
+    }
+    const ValueId object = entryAlloca(tid(il), "$il");
+    const ValueId self = result(add(Op::Bitcast, tid(*types_.pointerTo(&il)), std::vector<ValueId>(1, object)));
+    const InstId f = add(Op::Gep, tid(*types_.pointerTo(firstM.type)), std::vector<ValueId>(1, self));
+    at(f).k = firstM.offset;
+    store(result(f), result(add(Op::Bitcast, tid(*firstM.type), std::vector<ValueId>(1, base))));
+    const InstId c = add(Op::Gep, tid(*types_.pointerTo(countM.type)), std::vector<ValueId>(1, self));
+    at(c).k = countM.offset;
+    store(result(c), iconst(tid(*countM.type), n));
+    return result(add(Op::Bitcast, tid(*types_.pointerTo(param.isReference() ? param.referent() : &il)), std::vector<ValueId>(1, self)));
 }
 
 // `T x = f();` where the parser built f's result straight into x ([class.copy]/31): a call of f or an operator.
@@ -3836,7 +3885,9 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
                             bool dummyInt, std::vector<ValueId> &ops) {
     const std::size_t argc = args.size() + (dummyInt ? 1 : 0);
     const std::size_t paramCount = ft.params().size() - skip;
-    if (argc < paramCount || (argc > paramCount && !variadic)) outside("a call with defaults or too many arguments");
+    // [dcl.fct.default]/9: a default with no syntax - a braced one, `= {}` - has nothing here to evaluate.
+    if (argc < paramCount) outside("a call with a default the parser recorded no syntax for");
+    if (argc > paramCount && !variadic) outside("a call of more arguments than its parameters");
     for (std::size_t i = 0; i < args.size(); i++) {
         const sema::TypedId an = args[i];
         if (i >= paramCount) {

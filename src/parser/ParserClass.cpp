@@ -67,7 +67,7 @@ StmtPtr Parser::constructObject(const Declared &d, const std::string &symbol,
     if (symbol.empty())
         if (const Local *built = lookup_.findLocal(d.name)) {
             const LocalBuilt b = { ctor.symbol, types_.functionType(types_.get(Kind::Void), full, false), args.size() != written,
-                                   valueInit && ctor.implicit, defaults };
+                                   valueInit && ctor.implicit, defaults, nullptr, 0 };
             ctorBySerial_[built->serial] = b;
         }
     // The same for an object with a symbol, which a static local's guarded construction reads (M3b.2).
@@ -1203,7 +1203,7 @@ StmtPtr Parser::constructLocalArray(const Declared &d, int offset,
     // The constructor every element takes, by the local's serial, for its `var` node to carry (M3b.2).
     if (const Local *built = lookup_.findLocal(d.name)) {
         const LocalBuilt b = { chosen.symbol, types_.functionType(types_.get(Kind::Void), ps, false), !defaults.empty(), false,
-                               std::vector<syntax::NodeId>() };
+                               std::vector<syntax::NodeId>(), nullptr, 0 };
         ctorBySerial_[built->serial] = b;
     }
     StmtPtr one(new ExprStmt(completeCall(plain->tag(), chosen.symbol, nullptr,

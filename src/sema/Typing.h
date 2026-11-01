@@ -203,6 +203,9 @@ public:
     bool msVbaseInit(const std::string &fn, std::vector<VptrStore> &vbptrs, std::vector<std::string> &order) const;
     // A local's constructor, its signature with `this`, defaults added, zeroed first ([dcl.init]/8); false where none built it.
     bool localBuilt(syntax::NodeId var, std::string &symbol, TypeId &signature, bool &defaulted, bool &zeroed) const;
+    // The initializer_list parameter a local's braces of `count` flat elements - its `var` node's parts - were made into.
+    bool localList(syntax::NodeId var, TypeId &param, std::uint32_t &count) const;
+    bool memberList(const std::string &ctor, const std::string &member, std::uint32_t pos, TypeId &param, std::uint32_t &count) const;
     // The constructor a class temporary `T(...)` at node `id` was built by, and whether `T()` zeroed the object first.
     bool temporaryBuilt(syntax::NodeId id, std::string &symbol, TypeId &signature, bool &zeroFirst) const;
     // The converting constructor that made a temporary of the value at node `id` (Parser::userConversion); false where none.

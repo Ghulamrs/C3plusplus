@@ -345,6 +345,10 @@ StmtPtr Parser::declarationBody() {
             } else {
                 inits.push_back(constructLocal(d, off, std::move(ci.args),
                                                ci.copyInit, ci.valueInit));
+                // [dcl.init.list]/5: the braces' elements, the `var` node's parts, are the list's backing array (M3b.2).
+                const Local *built = ci.ilType != nullptr ? lookup_.findLocal(d.name) : nullptr;
+                std::map<int, LocalBuilt>::iterator c = built != nullptr ? ctorBySerial_.find(built->serial) : ctorBySerial_.end();
+                if (c != ctorBySerial_.end()) { c->second.listOf = ci.ilType; c->second.listCount = ci.ilCount; }
             }
             if (quals.isConstexpr) foldLocalObject(d, off, inits, builtFrom);
             flushTemporaries(inits);
