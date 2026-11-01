@@ -1473,9 +1473,9 @@ void Parser::topLevel(Program &program) {
                     // Recorded as an unnamed member's default construction is, the zeroing beside it (M3b.2).
                     const std::string bkey = currentFunction_ + "|" + m->name + "|0";
                     const MemberBuilt b = { lookup_.functions_[vi->second].symbol,
-                                            types_.functionType(types_.get(Kind::Void), std::vector<const Type *>(1, ptr), false), false };
+                                            types_.functionType(types_.get(Kind::Void), std::vector<const Type *>(1, ptr), false), false,
+                                            lookup_.functions_[vi->second].implicit };
                     memberBuilt_[bkey] = b;
-                    if (lookup_.functions_[vi->second].implicit) memberZeroed_.insert(bkey);
                     ExprPtr addr(new Unary('&', std::move(field)));
                     addr->setType(ptr);
                     std::vector<ExprPtr> one;
@@ -1845,7 +1845,7 @@ void Parser::topLevel(Program &program) {
                 // What builds or destroys this base, for the SSA lowering (M3b.2): keyed as a member is, "^B" or "~B".
                 if (!memberTemplateInst_) {
                     const MemberBuilt b = { symbol, types_.functionType(types_.get(Kind::Void), params2, false),
-                                            building && chosenArgs.size() != baseWritten };
+                                            building && chosenArgs.size() != baseWritten, false };
                     memberBuilt_[currentFunction_ + "|" + (building ? "^" : "~") + base->tag() + "|0"] = b;
                     // A base handed a VTT: its sub-VTT's entry in this function's, which vttForBase just found.
                     if (takesVtt(base)) baseVtt_[currentFunction_ + "|" + base->tag()] = vtts_.find(memberOf->tag())->second.subVtt.find(base)->second;
@@ -1855,7 +1855,7 @@ void Parser::topLevel(Program &program) {
                         if (!target_.microsoftNames()) itaniumDestructorName(base->tag(), base, false, &dtor);
                         std::vector<const Type *> self(1, basePtr);
                         if (takesVtt(base)) self.push_back(vttType());
-                        const MemberBuilt u = { dtor, types_.functionType(types_.get(Kind::Void), self, false), false };
+                        const MemberBuilt u = { dtor, types_.functionType(types_.get(Kind::Void), self, false), false, false };
                         memberBuilt_[currentFunction_ + "|~" + base->tag() + "|0"] = u;
                     }
                 }

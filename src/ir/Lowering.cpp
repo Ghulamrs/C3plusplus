@@ -761,6 +761,21 @@ void Lowering::elidedCall(sema::TypedId c, ValueId slot) {
     closeFull(was);
 }
 
+// A new-expression's storage, freed by its pad should the constructor throw: alive only while this `new` runs, so it never
+// needs the flag an operand that may not run gives a temporary.
+void Lowering::storageGuard(ValueId p, const Type &made, const std::string &release) {
+    const std::size_t skipped = skippable_;
+    skippable_ = 0;
+    guard(p, made, release);
+    skippable_ = skipped;
+}
+
+// Whether a temporary built in an operand that may not run can carry a built flag - one predicate for guard and its
+// refusal. Itanium only: on Microsoft the flag's test would branch inside a cleanup funclet, which the selector does not take.
+bool Lowering::canFlag() const {
+    return skippable_ != 0 && fullFrom_ != kNoFull && !fullAt_.empty() && !target_.microsoftNames();
+}
+
 // An object alive from here: destroyed by `dtor` at its scope's end, and by a cleanup where a call in its region unwinds -
 // unless `unwinds` is false: a call's result in a function the parser gave no landing pads, which its unwinding leaves be.
 void Lowering::guard(ValueId slot, const Type &c, const std::string &dtor, bool unwinds) {
@@ -769,13 +784,13 @@ void Lowering::guard(ValueId slot, const Type &c, const std::string &dtor, bool 
     l.cls = c.id();
     l.dtor = dtor;
     // One built in an operand that may not be evaluated carries a flag: zeroed where its full expression began, set here.
-    // Itanium only: on Microsoft the flag's test would branch inside a cleanup funclet, which the selector does not take.
-    if (skippable_ != 0 && fullFrom_ != kNoFull && !fullAt_.empty() && !target_.microsoftNames()) {
+    if (canFlag()) {
         const TypeId boolT = tid(*types_.get(Kind::Bool));
         l.built = entryAlloca(boolT, "$built");
         store(l.built, iconst(boolT, 0));
         std::vector<InstId> &here = F().blockArena[cur_.v].insts;
         const InstId zero = here[here.size() - 2], put = here[here.size() - 1];
+        if (at(put).op != Op::Store || at(zero).op != Op::IConst) outside("a built flag's zeroing not where it was made");
         here.resize(here.size() - 2);
         std::vector<InstId> &at0 = F().blockArena[fullAt_.back().first.v].insts;
         at0.insert(at0.begin() + static_cast<std::ptrdiff_t>(fullAt_.back().second), put);
@@ -1777,7 +1792,7 @@ void Lowering::block(sema::TypedId id) {
 // The destructor of a temporary this full expression builds, which only an unconditional operand of one may hold.
 std::string Lowering::temporaryDestructor(const Type &c) {
     if (fullFrom_ == kNoFull) outside("a class temporary with a destructor outside a full expression the lowering ends");
-    if (skippable_ != 0 && target_.microsoftNames()) outside("a class temporary with a destructor in an operand that may not be evaluated");
+    if (skippable_ != 0 && !canFlag()) outside("a class temporary with a destructor in an operand that may not be evaluated");
     const std::string dtor = destructor_ ? destructor_(c.id()) : std::string();
     if (dtor.empty()) outside("a class temporary whose destructor the parser recorded none for");
     return dtor;
@@ -2976,11 +2991,6 @@ Lowering::Val Lowering::name(sema::TypedId id) {
             // A scoped enumeration's enumerator is a constant of its type too; what may be done with it is checked where it is used.
             if (!r.type.valid() || !T(r.type).isArithmetic()) outside("an enumerator of no arithmetic type");
             return Val(iconst(r.type, r.value), r.type);
-        }
-        // [expr.prim.lambda]/12: a const integral local of the enclosing function, read in a lambda's body, is its value.
-        if (r.what == sema::Resolution::Local && r.symbol.empty() && r.type.valid() && T(r.type).isInteger() && T(r.type).isConst()) {
-            const TypeId ut = tid(*T(r.type).unqualified());
-            return Val(iconst(ut, r.value), ut);
         }
         if (r.what == sema::Resolution::Function) {
             if (!r.type.valid() || !T(r.type).isFunction()) outside("a function named as a value whose type was not recorded");
@@ -4203,7 +4213,7 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
                 ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(&ref)), std::vector<ValueId>(1, a.v))));
                 continue;
             }
-            if (!isLvalueNode(an)) outside(std::string("a reference parameter bound to a '") + syntax::kindName(syn(an).kind) + "' that is not an object" + (std::getenv("CXX1_SSA_WHY") ? " [" + text(an).substr(0, 60) + "]" : std::string()));
+            if (!isLvalueNode(an)) outside(std::string("a reference parameter bound to a '") + syntax::kindName(syn(an).kind) + "' that is not an object");
             if (scalar(ref) && !ref.isX87(target_) && (ref.isConst() || p.isRValueReference()) && tree_.node(an).type != nullptr &&
                 tree_.node(an).type->unqualified() != ref.unqualified()) {
                 ops.push_back(boundConverted(an, p));
@@ -4480,7 +4490,7 @@ Lowering::Val Lowering::newExpression(sema::TypedId id) {
     if (loop) {
         // [expr.new]/17 and /20: the elements built by the loop, the storage given back by operator delete[] if one throws.
         const std::size_t mark = live_.size();
-        if (frees) guard(p, made, !f.release.empty() ? f.release : target_.microsoftNames() ? "??_V@YAXPEAX@Z" : "_ZdaPv");
+        if (frees) storageGuard(p, made, !f.release.empty() ? f.release : target_.microsoftNames() ? "??_V@YAXPEAX@Z" : "_ZdaPv");
         std::vector<TypeId> params;
         params.push_back(pt);
         params.push_back(sizeT);
@@ -4491,7 +4501,7 @@ Lowering::Val Lowering::newExpression(sema::TypedId id) {
         if (frees) closeScope(mark, true);
     } else if (built) {
         const std::size_t mark = live_.size();
-        if (frees) guard(p, made, !f.release.empty() ? f.release : target_.microsoftNames() ? "??3@YAXPEAX@Z" : "_ZdlPv");
+        if (frees) storageGuard(p, made, !f.release.empty() ? f.release : target_.microsoftNames() ? "??3@YAXPEAX@Z" : "_ZdlPv");
         construct(p, f.ctor, f.ctorSig, made, f.ctorZero, id, lead);
         if (frees && live_.size() != mark + 1) outside("a 'new' whose constructor's arguments outlive it");
         if (frees) closeScope(mark, true);      // the object made: the storage's guard ends without a free

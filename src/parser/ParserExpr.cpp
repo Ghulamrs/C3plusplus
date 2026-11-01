@@ -2578,7 +2578,8 @@ ExprPtr Parser::localRef(const std::string &name) {
         if (l->constantOnly) {
             ExprPtr n(new Num(l->constantValue));
             n->setType(l->type);
-            return resolve(std::move(n), resolvedAs(Resolved::Local, l->type, l->staticName, l->serial, l->constantValue));
+            // Recorded as a constant, as an enumerator is: the lowering reads the value the parser stood in (M3b.2).
+            return resolve(std::move(n), resolvedAs(Resolved::Enumerator, l->type, std::string(), -1, l->constantValue));
         }
         Var *v = l->staticName.empty() ? Var::local(name, l->offset)
                                        : Var::global(l->staticName);

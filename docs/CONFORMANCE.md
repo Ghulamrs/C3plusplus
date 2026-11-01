@@ -520,9 +520,12 @@ else to unwind gets no landing pads at all.
 
 Measured 2026-10-31 by `tests/open/declaration-temporary-unwind.cpp`: the
 walker's ledger ends `live=4 over=3` where clang's ends `live=0`, on x86_64-windows and
-x86_64-linux. Under `-front=ssa` the lowering guards these temporaries like any
-other and gives the body pads of its own (`ir::Function::landingPads`), so the
-same program agrees with clang there - `tests/cases/ssa-own-landing-pads.cpp`.
+x86_64-linux. Under `-front=ssa` the lowering guards a declaration's and a
+mem-initialiser's temporaries and gives the body pads of its own
+(`ir::Function::landingPads`), so the same program agrees with clang there -
+`tests/cases/ssa-own-landing-pads.cpp`. Not yet the rest: in a body the parser
+gave no pads, a call's result with a destructor, a built member or base, and a
+`new`'s storage are still guarded only as the parser's pads allow.
 The walker is not mended for it: its regions are the old path's, which M3b.7
 deletes.
 

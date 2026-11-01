@@ -2001,7 +2001,7 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
         if (caught != nullptr && caughtName.empty()) unnamedCaught_[catchNode.v] = h.type;
         if (caughtCopy != nullptr)
             caughtCopy_[catchNode.v] = MemberBuilt{ caughtCopy->symbol, types_.functionType(types_.get(Kind::Void),
-                std::vector<const Type *>{ types_.pointerTo(caught->unqualified()), caughtCopy->params[0] }, false), false };
+                std::vector<const Type *>{ types_.pointerTo(caught->unqualified()), caughtCopy->params[0] }, false), false, false };
         TryHandlerFacts hf;
         hf.scope = scope;
         hf.endLabel = endCatchLabel;

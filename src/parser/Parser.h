@@ -598,14 +598,13 @@ private:
     std::set<std::uint32_t> constructorNodes_;    // the `function` nodes that are constructors, as topLevel decided (M3b.2)
     // **What builds each member a written constructor names or leaves** (M3b.2): the constructor overload resolution
     // chose, keyed "constructor|member|pos" - the constructor's symbol, the entry's position, 0 for one left alone.
-    struct MemberBuilt { std::string symbol; const Type *signature; bool defaulted; };
+    struct MemberBuilt { std::string symbol; const Type *signature; bool defaulted; bool zeroed; };   // zeroed: `: m()`, [dcl.init]/8
     std::map<std::string, MemberBuilt> memberBuilt_;
-    std::set<std::string> memberZeroed_;    // `: m()` of a class whose default constructor is implicit: zeroed first (M3b.2)
     // A member's braced entry of flat elements made into its constructor's initializer_list, keyed as memberBuilt_ (M3b.2).
     std::map<std::string, std::pair<const Type *, std::size_t> > memberLists_;
     // The copy constructor a throw chose for its exception object, keyed as a member is under "$throw" (M3b.2).
     void noteThrowCopy(const Signature *cc, const Type *thrownPtr, std::size_t pos) {
-        const MemberBuilt b = { cc->symbol, types_.functionType(types_.get(Kind::Void), std::vector<const Type *>{ thrownPtr, cc->params[0] }, false), false };
+        const MemberBuilt b = { cc->symbol, types_.functionType(types_.get(Kind::Void), std::vector<const Type *>{ thrownPtr, cc->params[0] }, false), false, false };
         const std::string key = currentFunction_ + "|$throw|" + std::to_string(static_cast<std::uint32_t>(pos));
         const std::map<std::string, MemberBuilt>::iterator had = memberBuilt_.find(key);
         if (had == memberBuilt_.end()) memberBuilt_[key] = b;

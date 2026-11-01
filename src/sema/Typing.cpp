@@ -472,7 +472,8 @@ int Typer::dynamicCast(syntax::NodeId cast, std::string &src, std::string &dst) 
 }
 
 bool Typer::memberZeroed(const std::string &ctor, const std::string &member) const {
-    return p_.memberZeroed_.count(ctor + "|" + member + "|0") != 0;
+    const std::map<std::string, Parser::MemberBuilt>::const_iterator i = p_.memberBuilt_.find(ctor + "|" + member + "|0");
+    return i != p_.memberBuilt_.end() && i->second.zeroed;
 }
 
 bool Typer::caseValue(syntax::NodeId label, long long &value) const {

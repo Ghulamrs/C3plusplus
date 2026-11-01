@@ -202,6 +202,8 @@ private:
     Val referenceMember(ValueId object, const Type &cls, const Member &m);
     Val globalAddress(const sema::Resolution &r);
     void destroyWhen(const Live &l, bool invoke = false);
+    bool canFlag() const;
+    void storageGuard(ValueId p, const Type &made, const std::string &release);
     Val memberAddress(sema::TypedId id);
     Val memberOfThis(sema::TypedId id);
     bool namesCalledFunction(const std::string &head, const std::string &symbol) const;

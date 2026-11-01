@@ -442,7 +442,7 @@ std::vector<StmtPtr> Parser::virtualBaseCalls(const Type *type, int thisSlot,
         // What builds this virtual base, for the SSA lowering (M3b.2): keyed as a base is, "^V", in the order built.
         if (order != nullptr && building && srcSlot < 0 && !memberTemplateInst_) {
             const MemberBuilt b = { symbol, types_.functionType(types_.get(Kind::Void), ps, false),
-                                    ctor == &namedCtor && ctorArgs.size() != namedWritten };
+                                    ctor == &namedCtor && ctorArgs.size() != namedWritten, false };
             memberBuilt_[currentFunction_ + "|^" + base->tag() + "|0"] = b;
             order->push_back(base->tag());
         }
@@ -2893,7 +2893,7 @@ StmtPtr Parser::constructMember(const std::string &cls, const Type *type,
         if (at != nullptr && memberClass(at) == mc) {
             // Recorded as `$bytes`, the member's type for its signature: the lowering copies the same way (M3b.2).
             if (!implicit) {
-                const MemberBuilt b = { "$bytes", m.type, false };
+                const MemberBuilt b = { "$bytes", m.type, false, false };
                 memberBuilt_[currentFunction_ + "|" + m.name + "|" + std::to_string(static_cast<std::uint32_t>(pos))] = b;
             }
             ExprPtr dst = thisMember(thisSlot, type, m);
@@ -2969,7 +2969,7 @@ StmtPtr Parser::constructMember(const std::string &cls, const Type *type,
     }
     // Keyed by the function being defined - a member template's specialization by its own symbol, which topLevel set.
     if (!implicit) {
-        const MemberBuilt b = { chosen.symbol, types_.functionType(types_.get(Kind::Void), ps, false), args.size() != written };
+        const MemberBuilt b = { chosen.symbol, types_.functionType(types_.get(Kind::Void), ps, false), args.size() != written, false };
         const std::string key = currentFunction_ + "|" + m.name + "|" + std::to_string(written == 0 ? 0 : static_cast<std::uint32_t>(pos));
         // Two choices under one key - a constructor template's specializations read under one name - are no record at all.
         const std::map<std::string, MemberBuilt>::iterator had = memberBuilt_.find(key);
