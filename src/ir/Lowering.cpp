@@ -1405,12 +1405,20 @@ void Lowering::br(BlockId to, const std::vector<ValueId> &args) {
     at(add(Op::Br, TypeId(), std::vector<ValueId>())).succ.push_back(s);
 }
 
-void Lowering::condbr(ValueId c, BlockId t, BlockId f) {
+// A conditional branch; an edge into a block with parameters carries its arguments, made before the branch.
+void Lowering::condbr(ValueId c, BlockId t, BlockId f, const std::vector<ValueId> &tArgs, const std::vector<ValueId> &fArgs) {
     if (terminated()) return;
-    const InstId id = add(Op::CondBr, TypeId(), std::vector<ValueId>(1, c));
+    Function &fn = F();
     Succ a, b;
     a.block = t;
+    a.first = static_cast<std::uint32_t>(fn.operands.size());
+    a.count = static_cast<std::uint32_t>(tArgs.size());
+    fn.operands.insert(fn.operands.end(), tArgs.begin(), tArgs.end());
     b.block = f;
+    b.first = static_cast<std::uint32_t>(fn.operands.size());
+    b.count = static_cast<std::uint32_t>(fArgs.size());
+    fn.operands.insert(fn.operands.end(), fArgs.begin(), fArgs.end());
+    const InstId id = add(Op::CondBr, TypeId(), std::vector<ValueId>(1, c));
     at(id).succ.push_back(a);
     at(id).succ.push_back(b);
 }
@@ -1922,8 +1930,10 @@ void Lowering::stmt(sema::TypedId id) {
             if (n != 2) outside("a case of " + std::to_string(n) + " parts");
             long long v = 0;
             // The value the parser folded the label to ([stmt.switch]/2), where the lowering's own folding has no answer.
-            if (!foldConstant(child(id, 0), v) && !(caseValue_ && caseValue_(tree_.node(id).syntax, v)))
-                outside("a case label that is not a constant the lowering folds");
+            if (!foldConstant(child(id, 0), v)) {
+                if (!tree_.node(id).folded.has) outside("a case label that is not a constant the lowering folds");
+                v = tree_.node(id).folded.value;
+            }
             for (long long k : sw.values) if (k == v) outside("two case labels of one value");
             sw.values.push_back(v);
             sw.targets.push_back(here);
@@ -3494,22 +3504,14 @@ Lowering::Val Lowering::logical(bool isAnd, sema::TypedId l, sema::TypedId r) {
     const TypeId boolT = tid(*types_.get(Kind::Bool));
     const Val a = truth(decay(expr(l)));
     const BlockId rhs = newBlock(), merge = newBlock();
-    const ValueId decided = iconst(boolT, isAnd ? 0 : 1);
-    if (isAnd) condbr(a.v, rhs, merge); else condbr(a.v, merge, rhs);
     // The merge's parameter: the short-circuit value from here, the second operand's truth from the other block.
-    const BlockId from = cur_;
+    const std::vector<ValueId> decided(1, iconst(boolT, isAnd ? 0 : 1));
+    if (isAnd) condbr(a.v, rhs, merge, std::vector<ValueId>(), decided); else condbr(a.v, merge, rhs, decided);
     place(rhs);
     skippable_++;
     const Val b = truth(decay(expr(r)));
     skippable_--;
     br(merge, std::vector<ValueId>(1, b.v));
-    // The first branch's argument, written now that the merge's parameter exists.
-    Function &f = F();
-    Inst &cb = f.insts[f.block(from).term.v];
-    const std::size_t which = isAnd ? 1 : 0;
-    cb.succ[which].first = static_cast<std::uint32_t>(f.operands.size());
-    cb.succ[which].count = 1;
-    f.operands.push_back(decided);
     place(merge);
     return Val(param(merge, boolT), boolT);
 }
@@ -4011,10 +4013,8 @@ Lowering::Val Lowering::memberPointerConversion(Val v, TypeId to) {
     test.push_back(nullMemberPointer(v.type));
     const InstId isNull = add(Op::ICmp, tid(*types_.get(Kind::Bool)), test);
     at(isNull).cc = Cmp::Eq;
-    const BlockId null = newBlock(), step = newBlock(), merge = newBlock();
-    condbr(result(isNull), null, step);
-    place(null);
-    br(merge, std::vector<ValueId>(1, nullMemberPointer(ut)));
+    const BlockId step = newBlock(), merge = newBlock();
+    condbr(result(isNull), merge, step, std::vector<ValueId>(1, nullMemberPointer(ut)));
     place(step);
     const TypeId lane = from.size(target_) == 4 ? tid(*types_.get(Kind::Int)) : ptrdiffType();
     std::vector<ValueId> sum(1, result(add(Op::Bitcast, lane, std::vector<ValueId>(1, v.v))));
@@ -4636,9 +4636,8 @@ Lowering::Val Lowering::dynamicCastPointer(sema::TypedId id) {
     ops.push_back(result(add(Op::Null, v.type, std::vector<ValueId>())));
     const InstId some = add(Op::ICmp, boolT, ops);
     at(some).cc = Cmp::Ne;
-    const ValueId none = result(add(Op::Null, to, std::vector<ValueId>()));
-    const BlockId from = cur_;
-    condbr(result(some), walk, merge);
+    // The null operand's edge carries a null of the target type.
+    condbr(result(some), walk, merge, std::vector<ValueId>(), std::vector<ValueId>(1, result(add(Op::Null, to, std::vector<ValueId>()))));
     place(walk);
     const bool ms = target_.microsoftNames();
     if (kind == 3) {
@@ -4667,12 +4666,6 @@ Lowering::Val Lowering::dynamicCastPointer(sema::TypedId id) {
         const Val found = runtimeCall(ms ? "__RTDynamicCast" : "__dynamic_cast", voidPtr, args);
         br(merge, std::vector<ValueId>(1, result(add(Op::Bitcast, to, std::vector<ValueId>(1, found.v)))));
     }
-    // The null operand's edge carries a null of the target type.
-    Function &f = F();
-    Inst &cb = f.insts[f.block(from).term.v];
-    cb.succ[1].first = static_cast<std::uint32_t>(f.operands.size());
-    cb.succ[1].count = 1;
-    f.operands.push_back(none);
     place(merge);
     return Val(param(merge, to), to);
 }

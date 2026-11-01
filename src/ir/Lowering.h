@@ -57,7 +57,6 @@ public:
     void setStaticGuard(std::function<bool(const std::string &, sema::StaticGuard &)> f) { staticGuard_ = f; }
     void setTypeInfo(std::function<std::string(TypeId)> f) { typeInfo_ = f; }
     void setUnnamedCaught(std::function<std::string(syntax::NodeId)> f) { unnamedCaught_ = f; }
-    void setCaseValue(std::function<bool(syntax::NodeId, long long &)> f) { caseValue_ = f; }
     void setMemberZeroed(std::function<bool(const std::string &, const std::string &)> f) { memberZeroed_ = f; }
     void setDynamicCast(std::function<int(syntax::NodeId, std::string &, std::string &)> f) { dynamicCast_ = f; }
     void setMicrosoftThrowInfo(std::function<std::string(TypeId)> f) { msThrowInfo_ = f; }
@@ -124,7 +123,8 @@ private:
     void specFilterChain(const Pad &p);
     void noexceptAbort(const Pad &p);
     void br(BlockId to, const std::vector<ValueId> &args = std::vector<ValueId>());
-    void condbr(ValueId c, BlockId t, BlockId f);
+    void condbr(ValueId c, BlockId t, BlockId f, const std::vector<ValueId> &tArgs = std::vector<ValueId>(),
+                const std::vector<ValueId> &fArgs = std::vector<ValueId>());
     ValueId param(BlockId b, TypeId type);
     ValueId iconst(TypeId type, long long k);
     ValueId fallOffValue(const Type &rt);   // the zero a body that falls off its end returns
@@ -369,7 +369,6 @@ private:
     std::function<bool(const std::string &, sema::StaticGuard &)> staticGuard_;
     std::function<std::string(TypeId)> typeInfo_;
     std::function<std::string(syntax::NodeId)> unnamedCaught_;
-    std::function<bool(syntax::NodeId, long long &)> caseValue_;
     std::function<bool(const std::string &, const std::string &)> memberZeroed_;
     std::function<int(syntax::NodeId, std::string &, std::string &)> dynamicCast_;
     Val dynamicCastPointer(sema::TypedId id);
