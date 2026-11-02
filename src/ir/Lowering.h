@@ -119,6 +119,7 @@ private:
     BlockId newBlock();
     void place(BlockId b);
     bool terminated() const;
+    bool unreached(BlockId b) const;
     bool madePads() const;
     void specFilterChain(const Pad &p);
     void noexceptAbort(const Pad &p);
@@ -209,11 +210,13 @@ private:
     bool namesCalledFunction(const std::string &head, const std::string &symbol) const;
     Val functorMember(sema::TypedId head, const Type &self);
     Val capturedThis();
+    Val ownThis(const Type &want);
     ValueId virtualBaseAddress(ValueId object, const Type &owner, const Type &vbase);
     ValueId virtualBaseMember(ValueId object, const Type &owner, const Member &m, TypeId type);
     Val readOf(ValueId p, TypeId type);
     Val unary(sema::TypedId id);
-    Val step(sema::TypedId id, bool increment, bool prefix);
+    Val step(sema::TypedId id, bool increment, bool prefix, ValueId &where);
+    bool boundLocal(sema::TypedId init, const Type &t, ValueId slot);
     Val binary(const std::string &op, sema::TypedId l, sema::TypedId r);
     Val arithmetic(const std::string &op, Val a, Val b);
     Val logical(bool isAnd, sema::TypedId l, sema::TypedId r);

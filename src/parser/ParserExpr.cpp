@@ -3078,7 +3078,7 @@ ExprPtr Parser::postfix() {
             // A reference member holds an address, so reading one is a
             // dereference - the same `useReference` every mention of a
             // reference local already goes through; the record goes on what is read.
-            acc = resolve(useReference(std::move(acc)), resolvedAs(Resolved::Member, accessType, name, m->offset, 0, m->declaredIn));
+            acc = resolve(useReference(std::move(acc)), resolvedAs(Resolved::Member, accessType, name, m->offset + adjust, 0, m->declaredIn));
             n = std::move(acc);
             continue;
         }
@@ -3173,7 +3173,7 @@ ExprPtr Parser::postfix() {
             // A reference member holds an address, so reading one is a
             // dereference - the same `useReference` every mention of a
             // reference local already goes through; the record goes on what is read.
-            acc = resolve(useReference(std::move(acc)), resolvedAs(Resolved::Member, accessType, name, m->offset, 0, m->declaredIn));
+            acc = resolve(useReference(std::move(acc)), resolvedAs(Resolved::Member, accessType, name, m->offset + adjust, 0, m->declaredIn));
             n = std::move(acc);
             continue;
         }

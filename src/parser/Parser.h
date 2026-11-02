@@ -753,9 +753,10 @@ private:
         bool function = false;      // a function's declaration with no definition: its node is over its parameters
         int form = 0;               // its initialiser's form, Parser::InitForm, read before the initialiser is
         VarNote(Parser &parser, std::size_t m, std::size_t l) : p(parser), mark(m), lo(l) {}
-        // The type and the name; an unnamed parameter's `$unnamed<n>` is the parser's, and no source spells it.
+        // The type and the name; an unnamed parameter's `$unnamed<n>` is the parser's, and no source spells it - but a
+        // lambda's `__invoke` names its `$a<n>` in its body.
         std::string varText() const {
-            const std::string name = d->name.empty() || d->name[0] == '$' ? std::string() : d->name;
+            const std::string name = d->name.empty() || (d->name[0] == '$' && (d->name.size() < 3 || d->name[1] != 'a' || d->name[2] < '0' || d->name[2] > '9')) ? std::string() : d->name;
             const std::string type = d->type != nullptr ? d->type->describe() : std::string();
             return type.empty() || name.empty() ? type + name : type + " " + name;
         }
