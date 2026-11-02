@@ -80,7 +80,7 @@ struct NewFacts {
     bool array, placed;     // placed: the reserved placement form, `new (p) T` - no allocation, the address given
     bool ctorZero, ctorDefaulted;    // the object zeroed before the constructor; defaults filled the written arguments out
     bool bytesCopied;       // `new T(t)` of a class with constructors and a trivial copy: t's bytes stored, no constructor
-    int init;
+    int init;               // 0 none, 1 `()` or `{}`, 2 one value, 3 a braced list of values
     NewFacts() : dslot(-1), array(false), placed(false), ctorZero(false), ctorDefaulted(false), bytesCopied(false), init(0) {}
 };
 

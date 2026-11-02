@@ -46,11 +46,26 @@ static long tail(int k) {
     return z[k] + z[1];
 }
 
+struct Deep { P p; int k[2]; };
+
+static int declarators() {
+    int arr[3] = { 3, 4, 5 };
+    int (*pa)[3] = &arr;
+    int (&ra)[3] = arr;
+    Deep *d = new Deep{ { 1, 2 }, { 3 } };
+    int *s = new int{ 9 };
+    const int r = (int)sizeof(*pa) + ra[1] * 10 + d->p.y * 100 + d->k[0] * 1000 + d->k[1] + *s * 10000;
+    delete d;
+    delete s;
+    return r;
+}
+
 int main() {
     printf("%d %d %d %d\n", one(), sole(), two(0), two(1));
     printf("%d\n", nested());
     printf("%d\n", strings());
     printf("%d\n", classes());
     printf("%ld %ld\n", tail(0), tail(99));
+    printf("%d\n", declarators());
     return 0;
 }

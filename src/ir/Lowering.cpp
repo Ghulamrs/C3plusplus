@@ -2514,9 +2514,11 @@ void Lowering::declaration(sema::TypedId id) {
         }
         const ValueId slot = entryAlloca(slotType, text(var));
         locals_[v.syntax.v] = std::make_pair(slot, tid(t));
+        // A pointer's or a reference's declarator may write a bound, `int (*p)[3]`: its value follows the bounds.
+        const std::uint32_t first = v.bounds;
         if (t.isReference()) {
-            if (v.count != 1) outside("a reference of " + std::to_string(v.count) + " parts");
-            Val b = lvalue(child(var, 0));
+            if (v.count != first + 1) outside("a reference of " + std::to_string(v.count) + " parts");
+            Val b = lvalue(child(var, first));
             // [dcl.init.ref]/5: a class lvalue bound to a reference to its base binds the base subobject.
             if (T(b.type).isStructOrUnion() && t.referent()->isStructOrUnion() && T(b.type).unqualified() != t.referent()->unqualified())
                 b = baseOfObject(b, t);
@@ -2533,14 +2535,14 @@ void Lowering::declaration(sema::TypedId id) {
             continue;
         }
         if (t.isStructOrUnion()) { if (plainClass(t)) classLocal(var, slot, t); else builtLocal(var, slot, t); continue; }
-        if (v.count > 1) outside("a var of " + std::to_string(v.count) + " parts");
-        if (v.count == 0) {
+        if (v.count > first + 1) outside("a var of " + std::to_string(v.count) + " parts");
+        if (v.count == first) {
             // [dcl.init]/8: `int n = {}` and `int n{}` are value-initialised - zero; a scalar with no initialiser is left as it is.
             if (v.initForm == 3) store(slot, zeroOf(slotType));
             continue;
         }
         openFull();
-        store(slot, exprTo(child(var, 0), slotType).v);
+        store(slot, exprTo(child(var, first), slotType).v);
         closeFull();
     }
 }
@@ -4475,7 +4477,16 @@ Lowering::Val Lowering::newExpression(sema::TypedId id) {
     // [expr.new]/20: a constructor that throws has the storage freed; a placement frees nothing.
     const bool frees = (built || loop) && !f.placed;
     const std::uint32_t lead = f.placed ? 1u : 0u;        // the placement's address is the first part
-    const std::uint32_t argc = built ? static_cast<std::uint32_t>(T(f.ctorSig).params().size()) - 1u : (f.init == 2 || copied ? 1u : 0u);
+    // [expr.new]/15 with [dcl.init.list]/3: a braced list reaches a constructor as its arguments, an aggregate as its
+    // members; an initializer_list constructor stays outside.
+    const bool listed = f.init == 3 && !built && made.isStructOrUnion();
+    if (f.init == 3 && built)
+        for (std::size_t k = 0; k < T(f.ctorSig).params().size(); k++) {
+            const Type &w = *T(f.ctorSig).params()[k], &q = w.isReference() ? *w.referent()->unqualified() : *w.unqualified();
+            if (q.isSpecialization() && q.templateName() == "initializer_list") outside("a 'new' of an initializer_list");
+        }
+    const std::uint32_t argc = built ? static_cast<std::uint32_t>(T(f.ctorSig).params().size()) - 1u
+                             : listed ? count(id) - lead - (f.array ? 1u : 0u) : (f.init >= 2 || copied ? 1u : 0u);
     const std::uint32_t parts = lead + (f.array ? 1u : 0u) + argc;
     if (count(id) != parts) outside("a 'new' of " + std::to_string(count(id)) + " parts");
     const TypeId sizeT = tid(*types_.get(target_.sizeType()));
@@ -4536,13 +4547,17 @@ Lowering::Val Lowering::newExpression(sema::TypedId id) {
     } else if (f.init == 1) {
         const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, p));      // [dcl.init]/8: zero
         at(z).k = made.size(target_);
+    } else if (listed) {
+        std::vector<sema::TypedId> values;
+        for (std::uint32_t i = lead; i < count(id); i++) values.push_back(child(id, i));
+        aggregateInit(p, made, values);
     } else if (f.init == 2 && made.isStructOrUnion()) {
         const sema::TypedId v = child(id, parts - 1);
         if (!isLvalueNode(v)) outside("a 'new' of a class copied from what is not an object");
         const Val o = lvalue(v);
         if (T(o.type).unqualified() != made.unqualified()) outside("a 'new' of a class copied from another type");
         copyObject(p, o.v, made);
-    } else if (f.init == 2) {
+    } else if (f.init >= 2) {
         store(p, exprTo(child(id, parts - 1), tid(*made.unqualified())).v);
     }
     return Val(p, pt);
