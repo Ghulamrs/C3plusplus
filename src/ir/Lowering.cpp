@@ -2478,8 +2478,11 @@ void Lowering::returnCopied(sema::TypedId id, sema::TypedId value) {
             directCall(symbol, called, ops);
         }
     } else if (form == 4) {
-        if (!classObjectNode(value)) outside("a class copied on return from what is not an object");
-        const Val a = classObject(value);
+        ValueId built;
+        Val a;
+        if (polymorphicTemporary(value, built)) a = Val(built, TypeTable::id(tree_.node(value).type->unqualified()));
+        else if (!classObjectNode(value)) outside("a class copied on return from what is not an object");
+        else a = classObject(value);
         if (T(a.type).unqualified() != rt.unqualified()) outside("a class copied on return from another type");
         const Type &ft = T(sig);
         if (!ft.isFunction() || ft.params().size() != 2 || !ft.params()[1]->isReference() ||
