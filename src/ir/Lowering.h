@@ -243,6 +243,7 @@ private:
     static bool scalar(const Type &t);
     static bool referable(const Type &t);
     bool plainClass(const Type &t) const;
+    bool bytesClass(const Type &t) const;
     bool simpleLayout(const Type &cls) const;
     bool builtMember(const Type &t) const;
     bool buildableLayout(const Type &cls, bool vptr = false, bool arrays = false, bool vbases = false) const;

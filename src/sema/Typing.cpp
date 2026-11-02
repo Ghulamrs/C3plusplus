@@ -22,6 +22,7 @@ TypedId TypedTree::add(syntax::NodeId syn, const Type *type, const std::vector<T
     n.literal = 0;
     n.initForm = 0;
     n.forParts = 0;
+    n.bounds = 0;
     children_.insert(children_.end(), children.begin(), children.end());
     nodes_.push_back(n);
     return TypedId(static_cast<std::uint32_t>(nodes_.size() - 1));
@@ -127,6 +128,8 @@ void Typer::record(syntax::NodeId id, TypedId t) {
     if (cast != p_.castTypes_.end()) tree_.setCast(t, TypeTable::id(cast->second), false);
     const auto form = p_.varForms_.find(id.v);
     if (form != p_.varForms_.end()) tree_.setInitForm(t, form->second);
+    const auto bounds = p_.varBounds_.find(id.v);
+    if (bounds != p_.varBounds_.end()) tree_.setBounds(t, bounds->second);
     const auto parts = p_.forParts_.find(id.v);
     if (parts != p_.forParts_.end()) tree_.setForParts(t, parts->second);
     const auto ref = p_.refCastTypes_.find(id.v);

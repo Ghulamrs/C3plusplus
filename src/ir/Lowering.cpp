@@ -28,6 +28,14 @@ bool Lowering::plainClass(const Type &t) const {
            !(constructed_ && constructed_(c.id()));
 }
 
+// A class no constructor builds, no vptr and no virtual base: its bytes are its initialisation - a `new` of it, a
+// braced list placing it - whether or not a destructor ends it.
+bool Lowering::bytesClass(const Type &t) const {
+    if (!t.isStructOrUnion() || !t.isComplete()) return false;
+    const Type &c = *t.unqualified();
+    return !c.polymorphic() && !c.hasVirtualBase() && !(constructed_ && constructed_(c.id()));
+}
+
 // [class.base.init] for a class with no base and no vptr whose members are scalars or plain classes: nothing is
 // built but what the list names, so every member's code is in the constructor's syntax but a default initialiser.
 bool Lowering::simpleLayout(const Type &cls) const {
@@ -545,11 +553,12 @@ void Lowering::aggregateInit(ValueId slot, const Type &t, const std::vector<sema
 }
 
 // The members of a class, or the elements of an array, at `slot`, each from the cursor while values are left:
-// a scalar or a scoped enumeration stored, a plain class or a scalar array filled in turn. The forms the parser
-// binds or groups - a reference, a bit-field, an anonymous union, a union, a base - are refused by name.
+// a scalar or a scoped enumeration stored, a reference bound, a class of bytes or an array filled in turn. The forms
+// the parser groups - a bit-field, an anonymous union, a base - are refused by name.
 void Lowering::aggregateFill(ValueId slot, const Type &t, const std::vector<sema::TypedId> &parts, std::size_t &next) {
     if (t.isArray()) {
-        if (!scalarArray(t) || t.length() <= 0) outside("a braced list reaching an array of '" + t.pointee()->describe() + "'");
+        if (t.length() <= 0 || !t.pointee()->isComplete() || t.pointee()->isX87(target_))
+            outside("a braced list reaching an array of '" + t.pointee()->describe() + "'");
         const Type &et = *t.pointee()->unqualified();
         const TypeId ep = tid(*types_.pointerTo(&et));
         const ValueId base = result(add(Op::Bitcast, ep, std::vector<ValueId>(1, slot)));
@@ -560,11 +569,25 @@ void Lowering::aggregateFill(ValueId slot, const Type &t, const std::vector<sema
         }
         return;
     }
-    if (!plainClass(t) || t.kind() == Kind::Union || !t.bases().empty()) outside("a braced list reaching a '" + t.describe() + "'");
+    if (!bytesClass(t) || !t.bases().empty()) outside("a braced list reaching a '" + t.describe() + "'");
     for (const Member &m : t.members()) {
-        if (next >= parts.size()) return;
-        if (m.name.empty() || m.width != 0 || m.anonUnion != nullptr || m.type->isReference() || m.type->isX87(target_))
+        // [dcl.init.aggr]/16: a union takes one value, for its first member.
+        if (next >= parts.size() || (t.kind() == Kind::Union && &m != &t.members().front())) return;
+        if (m.name.empty() || m.width != 0 || m.anonUnion != nullptr || m.type->isX87(target_))
             outside("a braced list reaching a member the lowering does not place");
+        if (m.type->isReference()) {
+            // [dcl.init.aggr]/2: a reference member is bound by its value - an object of its referent's type, its address.
+            const sema::TypedId p = parts[next++];
+            if (!isLvalueNode(p) || !referable(*m.type->referent())) outside("a braced list binding a reference member to what is not an object");
+            const Val b = lvalue(p);
+            if (T(b.type).unqualified() != m.type->referent()->unqualified() || (T(b.type).isConst() && !m.type->referent()->isConst()))
+                outside("a braced list binding a reference member to another type");
+            const TypeId pt = tid(*types_.pointerTo(m.type->referent()));
+            const InstId g = add(Op::Gep, tid(*types_.pointerTo(&T(pt))), std::vector<ValueId>(1, slot));
+            at(g).k = m.offset;
+            store(result(g), result(add(Op::Bitcast, pt, std::vector<ValueId>(1, b.v))));
+            continue;
+        }
         const Type &mt = *m.type->unqualified();
         const InstId g = add(Op::Gep, tid(*types_.pointerTo(&mt)), std::vector<ValueId>(1, slot));
         at(g).k = m.offset;
@@ -597,7 +620,13 @@ void Lowering::aggregateItem(ValueId at0, const Type &mt, const std::vector<sema
         next++;
         return;
     }
-    if (syn(p).kind == syntax::Kind::StringLit) outside("a string inside a braced list");
+    if (syn(p).kind == syntax::Kind::StringLit) {
+        // [dcl.init.string]: a character array's string, its own list.
+        if (!mt.isArray() || mt.pointee()->isPointer()) outside("a string inside a braced list");
+        stringArray(p, at0, mt);
+        next++;
+        return;
+    }
     aggregateFill(at0, mt, parts, next);     // brace elision: the value reaches into the member
 }
 
@@ -2463,8 +2492,10 @@ void Lowering::declaration(sema::TypedId id) {
             slotType = tid(*types_.pointerTo(t.referent()));
         } else if (t.isArray()) {
             long long elems = 0;
+            TypeId e = tid(*t.pointee());
+            while (T(e).isArray() && T(e).length() > 0) e = tid(*T(e).pointee());
             if (!builtArray(t, elems, true).valid() &&
-                (!t.pointee()->isComplete() || !scalar(*t.pointee()) || t.pointee()->isX87(target_) || t.length() <= 0))
+                (!T(e).isComplete() || !(scalar(T(e)) || plainClass(T(e))) || T(e).isArray() || T(e).isX87(target_) || t.length() <= 0))
                 outside("an array of '" + t.pointee()->describe() + "'");
             slotType = tid(t);
         } else if (plainClass(t) || builtClass(t) || heldClass(t)) {
@@ -2541,37 +2572,32 @@ void Lowering::builtArrayLocal(sema::TypedId var, ValueId slot, const Type &et, 
     }
 }
 
-// An array's `var` holds its written bound first and its values after, and the typed tree does not say where the
-// one ends: the bound is the first part when it folds to the array's length and the parts after it fit; a list of
-// exactly the length whose first value is the length is refused rather than guessed. The tail past the list is zeroed.
+// An array's `var` holds its written bounds first - the parser counts them - and its values after. A list of scalars
+// is stored and the tail past it zeroed; a list reaching into nested arrays or plain classes is placed as
+// aggregateInit places a class's.
 void Lowering::localArray(sema::TypedId var, ValueId slot, TypeId type) {
     const sema::TypedNode &v = tree_.node(var);
-    if (v.count == 0) {
-        // `T a[n] = {}` is value-initialised: zeroed (the form, not the parts, says so).
-        if (v.initForm >= 2) { const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, slot)); at(z).k = T(type).size(target_); }
-        return;
-    }
-    // With no initialiser every part is a written bound, folded or not (`int a[p.sum()]` of a constexpr p): nothing to store.
+    const std::uint32_t first = v.bounds;
+    // With no initialiser every part is a written bound: nothing to store; `T a[n] = {}` is value-initialised: zeroed.
     if (v.initForm == 0) return;
     const Type &t = T(type);
     const long long length = t.length();
-    long long bound = 0;
-    std::uint32_t first = 0;
-    if (foldConstant(child(var, 0), bound) && bound == length) {
-        if (static_cast<long long>(v.count) == length && length > 1) outside("an array whose bound cannot be told from its first value");
-        first = 1;
-    }
-    const long long items = static_cast<long long>(v.count - first);
-    if (items == 0) {
+    const long long items = static_cast<long long>(v.count) - first;
+    if (items <= 0) {
         if (v.initForm >= 2) { const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, slot)); at(z).k = t.size(target_); }
         return;
     }
-    if (items > length) outside("an array initialised with more values than it holds");
     if (items == 1 && syn(child(var, first)).kind == syntax::Kind::StringLit && !t.pointee()->isPointer()) {
         stringArray(child(var, first), slot, t);
         return;
     }
-    if (length - items > 64) outside("an array zeroed past 64 elements");
+    if (!scalar(*t.pointee()) || length - items > 64) {
+        std::vector<sema::TypedId> parts;
+        for (std::uint32_t i = first; i < v.count; i++) parts.push_back(child(var, i));
+        aggregateInit(slot, t, parts);
+        return;
+    }
+    if (items > length) outside("an array initialised with more values than it holds");
     const TypeId elem = tid(*t.pointee());
     const long long size = t.pointee()->size(target_);
     const ValueId base = result(add(Op::Bitcast, tid(*types_.pointerTo(&T(elem))), std::vector<ValueId>(1, slot)));
@@ -4429,7 +4455,7 @@ sema::NewFacts Lowering::newFacts(sema::TypedId id, const std::string &what) {
         outside(std::string("a '") + what + "' not recorded");
     if (!f.why.empty()) outside(f.why);
     const Type &t = T(f.made);
-    if (t.isX87(target_) || !(scalar(t) || plainClass(t) || constructedClass(t) || newBuilt(t)))
+    if (t.isX87(target_) || !(scalar(t) || bytesClass(t) || constructedClass(t) || newBuilt(t)))
         outside(std::string("a '") + what + "' of '" + t.describe() + "'");
     return f;
 }
