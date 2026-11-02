@@ -104,7 +104,7 @@ goes in the same commit.
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:621` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2254` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:263` |
-| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:3018`, `src/parser/ParserTopLevel.cpp:831` |
+| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:3022`, `src/parser/ParserTopLevel.cpp:831` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:759` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:452` |
 | `template <template <class> typename C>`, `typename` after a template template parameter's list | C++17 | `src/parser/ParserTemplate.cpp:52` |
@@ -332,11 +332,11 @@ many, or has no object of its own:
 ## `new` and `delete`
 
 - **more than one value in a new-expression** without a constructor -
-  `src/parser/ParserExprNew.cpp:1756`
+  `src/parser/ParserExprNew.cpp:1760`
 - **`new T[n][m]`** - only the first dimension may be given.
-  `src/parser/ParserExprNew.cpp:1699`
+  `src/parser/ParserExprNew.cpp:1703`
 - **`new T[n]{...}`** with values inside - the empty pair value-initialises
-  the elements; `new T{...}` works. `src/parser/ParserExprNew.cpp:1726`
+  the elements; `new T{...}` works. `src/parser/ParserExprNew.cpp:1730`
 
 Plain `new` and `delete`, a class's own `operator new`/`operator delete`, the
 placement forms and `<new>` all work; the entries that said otherwise were
@@ -353,10 +353,10 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 - **`dynamic_cast` to a reference on x86_64-windows** - a failure throws
   `std::bad_cast`, a class this target neither throws nor catches yet; the
   Itanium targets call `__cxa_bad_cast`. And **to an rvalue reference** on
-  every target. `src/parser/ParserExprNew.cpp:1145`, `src/parser/ParserExprNew.cpp:1142`
+  every target. `src/parser/ParserExprNew.cpp:1149`, `src/parser/ParserExprNew.cpp:1146`
 - **`dynamic_cast` through a class with more than one base, on
   x86_64-windows** - the Microsoft hierarchy is written one base deep; the
-  Itanium targets walk `__vmi_class_type_info`. `src/parser/ParserExprNew.cpp:1244`
+  Itanium targets walk `__vmi_class_type_info`. `src/parser/ParserExprNew.cpp:1248`
 - **catching a pointer by reference** - the runtime hands a handler the pointer
   itself, so catch it by value. `src/parser/ParserStmt.cpp:1673`
 - **throwing a pointer to a function** - it has no `type_info`; the message

@@ -920,6 +920,10 @@ ExprPtr Parser::buildReturned(ExprPtr value, std::size_t pos, bool *named) {
                         again->setType(ptr);
                         both->rightSlot() = std::move(again);
                         pendingReturnBuilt_.form = 3;
+                        if (ctor->resolved() != 0 && resolvedTable_[ctor->resolved()].what == Resolved::Call) {
+                            pendingReturnBuilt_.symbol = resolvedTable_[ctor->resolved()].symbol;
+                            pendingReturnBuilt_.signature = resolvedTable_[ctor->resolved()].type;
+                        }
                         return value;
                     }
                 }
