@@ -1207,3 +1207,26 @@ only its two known failures; the `-front=ssa` self-host at -O0 on Linux, stages 
 `src/` went from 86405 to 86378 lines (-27). The varargs and x87 lanes, started from round 21's tree, join round 23
 with four lanes by family of the 298 bodies left: a class value where the lowering wants an object (~40), arrays of a
 class (~15), temporaries and returns (~15), and statements (~10).
+
+**Round 23, 2026-11-01 to 11-02: six lanes, and a miscompile round 22 shipped.** Two lanes started from round 21's tree
+(x87, varargs) and four from round 22's by family of the 298 bodies left (objval, temps, arrays, stmts); the weekly
+limit stopped all of them at 19:00 on 11-01 and they finished the next morning. **lane-objval** (Fable): one door to a
+class prvalue materialised in a slot the lowering owns (`classObjectNode`/`classObject`), so a call's result, a `?:` of
+class arms, a member operator's object, `.*`, a lambda called where it is written and a class read as a scalar through
+its conversion function (the parser records the call, `conversionCalls_`, as `arrowCalls_` does) all take it; +36.
+**lane-x87**: a `long double` on x86_64-linux - a 16-byte slot, `fldt`/`fstpt`, the walker's own x87 sequences and
+conversions, a constant written as its 80-bit parts; +33. **lane-varargs** (Fable): `va_start`/`va_arg` as
+`Op::VaStart`/`Op::VaArg`, the frame laid above SysV's register save area, both ABIs through one mechanism; +21.
+**lane-temps**: a local of a class with a virtual base (C1 on Itanium, cl's most-derived flag on Microsoft through one
+`msFlagged`), a converting constructor on `return`, a temporary bound to a reference living to its scope's end, a base
+copied as bytes, a zeroed member default; +24. **lane-stmts**: references to functions, scalar temporaries bound to
+references, `++x` as an lvalue, a closure's `this`, a lambda's `__invoke`, `o.A::m`; +32. **lane-arrays**: the parser
+records an array's written bound count (`VarNote::ahead`, `TypedNode::bounds`), which **mends a miscompile round 22
+shipped** - `int a[] = {1}` printed 0 under `-front=ssa`, the lowering having taken the `1` for the bound - and with it
+nested arrays, plain classes and unions in braced lists, `new T{...}`; +28. The merge took five conflicts (each two
+lanes extending one line, both kept; every `isX87` refusal the x87 lane made unnecessary dropped) and one raw pointer
+the memory gate counted only once the lanes met (`va_arg`'s type, a `TypeId` now). **Gated**: Linux `make test` green,
+run.sh 1085/0 at `-O2`, `-front=ssa` and `-front=ssa -O2`; **ssa.sh 8413 of 8571 lowered (98.2%), 0 failed**; Windows
+`-front=ssa` and `-front=ssa -O2` 0 differ in both spellings (GNU 713 same, MASM 712). `src/` went from 86378 to 86757
+lines (+379) for 172 bodies. Two outages on the way, neither the compiler's: the Windows VM restarted on a new address
+(192.168.100.207, 7 cores, run at full load), and after a macOS update the app lost Local Network permission.
