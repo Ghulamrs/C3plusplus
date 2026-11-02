@@ -256,6 +256,7 @@ private:
     ValueId baseAddress(const Type::BaseSpec &b);
     TypeId msFlagged(const std::string &symbol, TypeId sig, std::vector<ValueId> &ops, int flag);
     void buildBase(const Type::BaseSpec &b, sema::TypedId entry);
+    void copiedBase(const Type::BaseSpec &b, sema::TypedId entry);
     void msVirtualBases(const Type &cls, const std::map<std::string, sema::TypedId> &named);
     Live msGuardedVirtualBase(const Type::BaseSpec &b, ValueId count);
     void msCountedDestroy(const Live &l, BlockId pad);
@@ -344,6 +345,7 @@ private:
     void closeFull();
     std::size_t fullFrom() const;
     Val temporary(sema::TypedId id);
+    Val extendedTemporary(sema::TypedId id);
     void construct(ValueId where, const std::string &symbol, TypeId sig, const Type &cls, bool zeroFirst, sema::TypedId args, std::uint32_t from);
     bool objectNode(sema::TypedId id) const;
     Val object(sema::TypedId id);

@@ -213,7 +213,9 @@ void Lowering::buildBase(const Type::BaseSpec &b, sema::TypedId entry) {
     bool defaulted = false;
     if (!memberBuilt_ || !memberBuilt_(key_, "^" + bt.tag(), 0, symbol, sig, defaulted)) {
         if (!entry.valid() && !(constructed_ && constructed_(bt.id()))) return;
-        outside("a base built by no constructor the parser recorded");
+        if (!entry.valid()) outside("a base built by no constructor the parser recorded");
+        copiedBase(b, entry);
+        return;
     }
     const Type &ft = T(sig);
     if (ft.params().empty() || ft.params()[0]->pointee()->unqualified() != &bt) outside("a base's constructor of another class");
@@ -231,6 +233,18 @@ void Lowering::buildBase(const Type::BaseSpec &b, sema::TypedId entry) {
     else if (ft.params().size() != skip) outside("a base's default constructor of parameters");
     const TypeId called = msFlagged(symbol, sig, ops, 0);
     directCall(symbol, called, ops);
+}
+
+// [class.copy]/12: `: B(b)` of a trivially copyable base, which the parser copies as `B c(b);` does - its bytes, from
+// the object named or its B part, there being no constructor to call.
+void Lowering::copiedBase(const Type::BaseSpec &b, sema::TypedId entry) {
+    const Type &bt = *b.type->unqualified();
+    if (b.isVirtual || bt.hasDestructor() || bt.nonTrivialCopy() || bt.polymorphic() || count(entry) != 1 || !isLvalueNode(child(entry, 0)))
+        outside("a base built by no constructor the parser recorded");
+    Val a = lvalue(child(entry, 0));
+    if (!T(a.type).isStructOrUnion()) outside("a base built by no constructor the parser recorded");
+    if (T(a.type).unqualified() != &bt) a = baseSubobject(a, bt, "a base copied from another type");
+    copyObject(baseAddress(b), a.v, bt);
 }
 
 // cl's most-derived flag, last, where the constructor `symbol` takes one ([class.base.init]/7): 1 for a complete object,
@@ -1134,6 +1148,26 @@ void Lowering::construct(ValueId where, const std::string &symbol, TypeId sig, c
     std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, where))));
     arguments(args, from, ft, 1, false, ops);
     directCall(symbol, sig, ops);
+}
+
+// [class.temporary]/5: a temporary bound to a reference lives as long as the reference - built under the declarator's
+// full expression, which destroys its arguments' temporaries, then alive to the scope's end as a local is.
+Lowering::Val Lowering::extendedTemporary(sema::TypedId id) {
+    const Type &t = *tree_.node(id).type->unqualified();
+    const std::string dtor = destructor_ ? destructor_(t.id()) : std::string();
+    if (dtor.empty()) outside("a class temporary whose destructor the parser recorded none for");
+    const ValueId slot = entryAlloca(tid(t), "$tmp");
+    std::string symbol;
+    TypeId sig;
+    bool zero = false;
+    std::uint32_t from = 1;
+    temporaryShape(id, from);
+    temporaryBuilt_(tree_.node(id).syntax, symbol, sig, zero);
+    openFull();
+    construct(slot, symbol, sig, t, zero, id, from);
+    closeFull();
+    guard(slot, t, dtor);
+    return Val(slot, tid(t));
 }
 
 // [expr.type.conv] into a slot of this frame: `P()` zeroed ([dcl.init]/8), `P(o)` o's bytes, a class with constructors built
@@ -2218,9 +2252,20 @@ void Lowering::returnCopied(sema::TypedId id, sema::TypedId value) {
         // Built in the caller's object and never destroyed here, so a destructor is no bar, as it is for a temporary of the frame.
         bool zero = false;
         std::uint32_t from = 1;
-        if (!temporaryShape(value, from) || !temporaryBuilt_(tree_.node(value).syntax, symbol, sig, zero))
-            outside("a return's temporary the parser recorded no constructor for");
-        construct(sret_, symbol, sig, rt, zero, value, from);
+        if (temporaryShape(value, from)) {
+            if (!temporaryBuilt_(tree_.node(value).syntax, symbol, sig, zero)) outside("a return's temporary the parser recorded no constructor for");
+            construct(sret_, symbol, sig, rt, zero, value, from);
+        } else {
+            // [stmt.return]/2 by [class.conv.ctor]: the converting constructor the return recorded, the value its one argument.
+            const Type &ft = sig.valid() ? T(sig) : rt;
+            if (!ft.isFunction() || ft.params().size() != 2 || ft.params()[0]->pointee()->unqualified() != rt.unqualified() ||
+                tree_.node(value).type == nullptr || tree_.node(value).type->unqualified() == rt.unqualified())
+                outside("a return's temporary the parser recorded no constructor for");
+            std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, sret_))));
+            argumentList(ft, 1, false, std::vector<sema::TypedId>(1, value), false, ops);
+            const TypeId called = msFlagged(symbol, sig, ops, 1);
+            directCall(symbol, called, ops);
+        }
     } else if (form == 4) {
         if (!isLvalueNode(value)) outside("a class copied on return from what is not an lvalue");
         const Val a = lvalue(value);
@@ -2491,7 +2536,7 @@ void Lowering::declaration(sema::TypedId id) {
         locals_[v.syntax.v] = std::make_pair(slot, tid(t));
         if (t.isReference()) {
             if (v.count != 1) outside("a reference of " + std::to_string(v.count) + " parts");
-            Val b = lvalue(child(var, 0));
+            Val b = destroyedTemporary(child(var, 0)) ? extendedTemporary(child(var, 0)) : lvalue(child(var, 0));
             // [dcl.init.ref]/5: a class lvalue bound to a reference to its base binds the base subobject.
             if (T(b.type).isStructOrUnion() && t.referent()->isStructOrUnion() && T(b.type).unqualified() != t.referent()->unqualified())
                 b = baseOfObject(b, t);

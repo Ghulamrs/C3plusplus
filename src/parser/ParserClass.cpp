@@ -2792,6 +2792,10 @@ StmtPtr Parser::memberInitialiser(const std::string &tag, const Type *type,
         fill->setSymbol("memset");
         ExprPtr filled(fill);
         filled->setType(voidPtr);
+        // In a written constructor, a mem-initialiser of no values, `: m()`'s zeroing, by constructor and member (M3b.2).
+        if (!forCtor.empty())
+            memberDefaults_[forCtor + "|" + tag + "::" + m.name] =
+                syntaxTree_.add(syntax::Kind::MemInit, m.name, pos, std::vector<syntax::NodeId>());
         locals_.swap(outer);
         at_ = resume;
         return StmtPtr(new ExprStmt(std::move(filled)));
