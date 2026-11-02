@@ -221,6 +221,8 @@ private:
     bool compositePointer(sema::TypedId id, const Type &tx, const Type &ty) const;
     Val assign(sema::TypedId id);
     Val call(sema::TypedId id);
+    bool vaBuiltinNode(sema::TypedId id) const;
+    Val vaBuiltin(sema::TypedId id);
     Val newExpression(sema::TypedId id);
     Val deleteExpression(sema::TypedId id);
     sema::NewFacts newFacts(sema::TypedId id, const std::string &what);

@@ -236,6 +236,7 @@ private:
     void ssaBranchArgs(const ir::Function &f, const ir::Succ &s);
     void ssaUnsupported(const ir::Inst &i);
     void selectCall(const ir::Function &f, const ir::Inst &i, const Type *rt);
+    void selectVa(const ir::Function &f, const ir::Inst &i, const Type *rt);
     std::string ssaLandLabel(ir::BlockId b) const;
     int ssaRegionAt_ = 0;
     int ssaSretSlot_ = 0;                           // the slot of the body's own result pointer, for a call built there
