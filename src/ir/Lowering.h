@@ -129,6 +129,7 @@ private:
                 const std::vector<ValueId> &fArgs = std::vector<ValueId>());
     ValueId param(BlockId b, TypeId type);
     ValueId iconst(TypeId type, long long k);
+    ValueId fconst(TypeId type, long double v);
     ValueId fallOffValue(const Type &rt);   // the zero a body that falls off its end returns
     ValueId zeroOf(TypeId type);
     ValueId addrOf(const std::string &sym, TypeId type);
