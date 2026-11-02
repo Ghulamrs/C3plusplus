@@ -153,7 +153,9 @@ void Lowering::buildMember(ValueId at, const Member &m, sema::TypedId entry) {
         if (!entry.valid() && !(constructed_ && constructed_(mt.id()))) return;
         outside("a member built by no constructor the parser recorded");
     }
-    if (defaulted) outside("a member built with default arguments");
+    // [dcl.fct.default]/9: the defaults the parser completed the entry with, evaluated here after the ones written.
+    const sema::TypedId defaults = defaulted && memberDefault_ ? memberDefault_(key_, "^." + m.name) : sema::TypedId();
+    if (defaulted && !defaults.valid()) outside("a member built with default arguments");
     // A member the parser copied as bytes - one object of its type, the class having no copy constructor of its own.
     if (symbol == "$bytes") {
         if (!entry.valid() || count(entry) != 1 || !objectNode(child(entry, 0))) outside("a member copied from what is not an object");
@@ -170,8 +172,11 @@ void Lowering::buildMember(ValueId at, const Member &m, sema::TypedId entry) {
     if (entry.valid() && memberList_ && memberList_(key_, m.name, pos, listParam, listed)) {
         if (ft.params().size() != 2 || ft.params()[1] != &T(listParam)) outside("a member's initializer_list of another parameter");
         ops.push_back(initializerList(entry, T(listParam), listed));
-    } else if (entry.valid()) {
-        arguments(entry, 0, ft, 1, false, ops);
+    } else if (entry.valid() || defaults.valid()) {
+        std::vector<sema::TypedId> args;
+        for (std::uint32_t i = 0; entry.valid() && i < count(entry); i++) args.push_back(child(entry, i));
+        for (std::uint32_t i = 0; defaults.valid() && i < count(defaults); i++) args.push_back(child(defaults, i));
+        argumentList(ft, 1, false, args, false, ops);
     } else if (ft.params().size() != 1) {
         outside("a member's default constructor of parameters");
     }
@@ -257,6 +262,26 @@ void Lowering::copiedBase(const Type::BaseSpec &b, sema::TypedId entry) {
     if (!T(a.type).isStructOrUnion()) outside("a base built by no constructor the parser recorded");
     if (T(a.type).unqualified() != &bt) a = baseSubobject(a, bt, "a base copied from another type");
     copyObject(baseAddress(b), a.v, bt);
+}
+
+// Whether this constructor delegates ([class.base.init]/6): the parser recorded its target as a base's is, "^C".
+bool Lowering::delegating(const Type &cls) {
+    std::string symbol;
+    TypeId sig;
+    bool defaulted = false;
+    return memberBuilt_ && memberBuilt_(key_, "^" + cls.tag(), 0, symbol, sig, defaulted);
+}
+
+// A delegating constructor's one entry: the target, called as a base at offset 0 is, builds the bases, members and vptrs;
+// once it returns the object is whole, so the body's exception destroys it ([except.ctor]/2) - the parser's "~C".
+void Lowering::delegateTo(const Type &cls, sema::TypedId entry) {
+    openFull();
+    buildBase(Type::BaseSpec(&cls), entry);
+    closeFull();
+    std::string symbol;
+    TypeId sig;
+    bool defaulted = false;
+    if (memberBuilt_(key_, "~" + cls.tag(), 0, symbol, sig, defaulted)) guard(this_, cls, symbol);
 }
 
 // cl's most-derived flag, last, where the constructor `symbol` takes one ([class.base.init]/7): 1 for a complete object,
@@ -378,6 +403,10 @@ void Lowering::destroyBases(const Type &cls) {
 // one value stored or a plain class copied - and one the list leaves alone default-initialised, which is nothing.
 void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32_t to) {
     const Type &cls = *T(thisType_).pointee()->unqualified();
+    if (to == from + 1 && delegating(cls)) {
+        delegateTo(cls, child(fnNode, from));
+        return;
+    }
     std::map<std::string, sema::TypedId> named;
     for (std::uint32_t i = from; i < to; i++) {
         const sema::TypedId mi = child(fnNode, i);
@@ -1735,6 +1764,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
     key_ = facts.recordKey.empty() ? facts.symbol : facts.recordKey;
     vtt_ = ValueId();
     msFlag_ = ValueId();
+    noexceptWrap_ = facts.noexceptWrap;
     try {
         if (facts.wrappedBody) outside("a function try block or an exception specification");
         // A noexcept body with pads of its own is not wrapped (wrappedBody says when it is): its pads are any function's.
@@ -1765,14 +1795,13 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
             const bool vbaseParts = (isCtor || isDtor) && cls.hasVirtualBase() && (msVbaseDtor || facts.takesVtt || (isCtor && facts.msFlag));
             if (isDtor && cls.hasVirtualBase() && !vbaseParts) outside("a destructor of a class with a virtual base, handed a VTT");
             if (msVbaseDtor && cls.polymorphic()) outside("a destructor of a polymorphic class with a virtual base");
-            if ((isCtor || isDtor) && !simpleLayout(cls)) {
+            if ((isCtor || isDtor) && !simpleLayout(cls) && !(isCtor && delegating(cls))) {
                 if (!buildableLayout(cls, true, true, vbaseParts)) outside(isCtor ? "a constructor of a class with bases, a vptr or members to build"
                                                                 : "a destructor of a class with bases, a vptr or members to destroy");
                 // The vptr stores are the parser's record, made where it stores them: one, out of the class's own table -
                 // or, in a C2 or D2, every vptr in the object, the VTT's where the complete object decides it.
                 if (cls.hasVptr() && !msVbaseDtor && !(target_.microsoftNames() && !cls.polymorphic())) {
                     if (!vptrStores_ || !vptrStores_(key_, vptrs_) || vptrs_.empty()) outside("a vptr the parser recorded no store for");
-                    if (vptrs_.size() != 1 && !facts.takesVtt) outside("a polymorphic base that is not primary");
                     if (!vptrs_[0].fromVtt && vptrs_[0].symbol.empty()) outside("a vptr out of a VTT");
                 }
                 // A constructor's guards are memberInits' own; a destructor's - what a throwing body still destroys - are not yet.
@@ -5226,11 +5255,24 @@ bool Lowering::classThrow(sema::TypedId id, ValueId &object, TypeId &thrown) {
     return true;
 }
 
+// [except.spec]/9 as the parser keeps it: `throw e` in a noexcept function outside every try and handler of its own is
+// e's value, then abort - no handler could take it. The noexcept wrap's catch-all is the one catching pad that is no try.
+bool Lowering::abortingThrow(sema::TypedId id) {
+    if (!F().noexcept_ || count(id) == 0 || handlerDepth_ != 0) return false;
+    if (!noexceptWrap_)
+        for (const Pad &p : pads_)
+            if (!p.cleanup) return false;
+    TypeId thrown;
+    thrownValue(id, thrown);
+    runtimeCall("abort", types_.voidType()->id(), std::vector<ValueId>());
+    return true;
+}
+
 // [except.throw] on the Itanium ABI, as the parser writes it: the exception object allocated by the runtime, the
 // operand stored into it - a scalar's value or a plain class's bytes - and __cxa_throw, an invoke inside a try;
-// `throw;` is __cxa_rethrow. A class with a copy of its own stays outside, so does a throw in a noexcept function - the parser's value-then-abort, [except.spec]/9, with no pad on the Microsoft ABI; that ABI's own shape is below.
+// `throw;` is __cxa_rethrow. A class with a copy of its own stays outside; that ABI's own shape is below.
 void Lowering::throwExpr(sema::TypedId id) {
-    if (F().noexcept_) outside("a throw in a noexcept function");
+    if (abortingThrow(id)) return;
     if (target_.microsoftNames()) { microsoftThrow(id); return; }
     const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType()));
     if (count(id) == 0) {

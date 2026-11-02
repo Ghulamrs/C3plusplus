@@ -104,7 +104,7 @@ goes in the same commit.
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:621` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2254` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:263` |
-| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:3022`, `src/parser/ParserTopLevel.cpp:831` |
+| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:3023`, `src/parser/ParserTopLevel.cpp:831` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:759` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:452` |
 | `template <template <class> typename C>`, `typename` after a template template parameter's list | C++17 | `src/parser/ParserTemplate.cpp:52` |
@@ -393,7 +393,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   `catch` handler, on x86_64-windows** - the cleanup would be a funclet inside
   the handler's funclet. `src/parser/ParserStmt.cpp:961`
 - **a trailing return type that is itself deduced**, `auto f() -> auto` -
-  C++14. `src/parser/ParserTopLevel.cpp:2381`
+  C++14. `src/parser/ParserTopLevel.cpp:2368`
 - **an expression form the Itanium name was not measured for, over a template's
   parameters in a function template's signature** - a postfix `++` or `--`, a
   lambda, `new`, `throw`, `typeid`, `noexcept`, a C-style cast to a reference

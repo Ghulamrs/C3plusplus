@@ -1754,20 +1754,7 @@ void Parser::topLevel(Program &program) {
                 // **The defaults the entry left out are read here, as every other call reads them.**
                 const std::size_t baseWritten = chosenArgs.size();
                 if (building && !copyBytes) applyDefaults(chosen, chosenArgs, d.pos);
-                // The defaults' syntax under a mem-initialiser of their own, by constructor and "^base", typed as a
-                // member's own initialiser is (M3b.2); none where one has no syntax.
-                if (building && chosenArgs.size() != baseWritten && !memberTemplateInst_) {
-                    std::vector<syntax::NodeId> made;
-                    for (std::size_t i = baseWritten; i < chosenArgs.size(); i++) made.push_back(syn(chosenArgs[i]));
-                    bool whole = true;
-                    for (std::size_t i = 0; i < made.size(); i++) whole = whole && made[i].valid();
-                    // Placed where the defaults were written, so the constructor's own node does not adopt it.
-                    if (whole) {
-                        defaultGroups_.erase(made.back().v);
-                        memberDefaults_[currentFunction_ + "|^" + base->tag()] =
-                            syntaxTree_.add(syntax::Kind::MemInit, base->tag(), syntaxTree_.node(made[0]).loc, made);
-                    }
-                }
+                if (building) noteEntryDefaults(base->tag(), chosenArgs, baseWritten);
 
                 std::string symbol = chosen.symbol;
                 if (!target_.microsoftNames() && !copyBytes) {
@@ -2436,6 +2423,19 @@ bool Parser::trailingArrowAhead() const {
     return false;
 }
 
+// The defaults applyDefaults appended to a base's, a delegation's or a member's (".m") entry past `written`, under a
+// mem-initialiser of their own keyed "constructor|^name" and typed as a member's own initialiser is (M3b.2); none where
+// one has no syntax.
+void Parser::noteEntryDefaults(const std::string &name, const std::vector<ExprPtr> &args, std::size_t written) {
+    if (args.size() == written || memberTemplateInst_) return;
+    std::vector<syntax::NodeId> made;
+    for (std::size_t i = written; i < args.size(); i++) made.push_back(syn(args[i]));
+    for (std::size_t i = 0; i < made.size(); i++) if (!made[i].valid()) return;
+    // Placed where the defaults were written, so the constructor's own node does not adopt it.
+    defaultGroups_.erase(made.back().v);
+    memberDefaults_[currentFunction_ + "|^" + name] = syntaxTree_.add(syntax::Kind::MemInit, name, syntaxTree_.node(made[0]).loc, made);
+}
+
 // The call a delegating constructor makes - [class.base.init]/6 - to the target chosen by
 // overload resolution, on `this`, before the body; its C1 on Itanium, as clang calls.
 StmtPtr Parser::delegatingCall(const Declared &d, const Type *cls, std::vector<ExprPtr> args,
@@ -2450,7 +2450,9 @@ StmtPtr Parser::delegatingCall(const Declared &d, const Type *cls, std::vector<E
                        "object is the most derived one");
     const std::string key = constructorKey(cls->tag());
     Signature chosen = overload_.resolveOverload(key, args, pos);
+    const std::size_t written = args.size();
     applyDefaults(chosen, args, pos);
+    noteEntryDefaults(cls->tag(), args, written);
     const Type *self = types_.pointerTo(cls);
     std::vector<ExprPtr> all;
     ExprPtr me(Var::local("this", thisOffset_));
@@ -2461,6 +2463,18 @@ StmtPtr Parser::delegatingCall(const Declared &d, const Type *cls, std::vector<E
     for (std::size_t i = 0; i < chosen.params.size(); i++) {
         all.push_back(std::move(args[i]));
         params.push_back(chosen.params[i]);
+    }
+    // For the SSA lowering (M3b.2), keyed as a base is: the target as "^C", and as "~C" what destroys the whole
+    // object if the body throws ([except.ctor]/2) - selfDestructorCall's.
+    if (!memberTemplateInst_) {
+        const MemberBuilt b = { chosen.symbol, types_.functionType(types_.get(Kind::Void), params, false), args.size() != written, false };
+        memberBuilt_[currentFunction_ + "|^" + cls->tag() + "|0"] = b;
+        if (const Signature *dtor = destructorOf(cls)) {
+            std::string symbol = dtor->symbol;
+            if (!target_.microsoftNames()) itaniumDestructorName(cls->tag(), cls, false, &symbol);
+            const MemberBuilt u = { symbol, types_.functionType(types_.get(Kind::Void), std::vector<const Type *>(1, self), false), false, false };
+            memberBuilt_[currentFunction_ + "|~" + cls->tag() + "|0"] = u;
+        }
     }
     return StmtPtr(new ExprStmt(completeCall(cls->tag(), chosen.symbol, nullptr,
                                              types_.get(Kind::Void), params, false, pos,

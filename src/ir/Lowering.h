@@ -269,6 +269,8 @@ private:
     TypeId msFlagged(const std::string &symbol, TypeId sig, std::vector<ValueId> &ops, int flag);
     void buildBase(const Type::BaseSpec &b, sema::TypedId entry);
     void copiedBase(const Type::BaseSpec &b, sema::TypedId entry);
+    bool delegating(const Type &cls);
+    void delegateTo(const Type &cls, sema::TypedId entry);
     void msVirtualBases(const Type &cls, const std::map<std::string, sema::TypedId> &named);
     Live msGuardedVirtualBase(const Type::BaseSpec &b, ValueId count);
     void msCountedDestroy(const Live &l, BlockId pad);
@@ -310,6 +312,7 @@ private:
     Val operatorCall(sema::TypedId id);
     Val condition(sema::TypedId id);
     void throwExpr(sema::TypedId id);
+    bool abortingThrow(sema::TypedId id);
     void microsoftThrow(sema::TypedId id);
     Val thrownValue(sema::TypedId id, TypeId &thrown);
     bool classThrow(sema::TypedId id, ValueId &object, TypeId &thrown);
@@ -439,6 +442,7 @@ private:
     std::vector<Pad> pads_;                     // innermost last
     std::vector<std::string> typeTable_;        // the function's selector indices: one per type, first occurrence, 1-based
     std::size_t handlerDepth_;                  // handlers the statement being lowered is inside
+    bool noexceptWrap_;                         // FunctionFacts::noexceptWrap: the body is under a catch-all that aborts
     std::vector<std::size_t> handlerLive_;      // live_ where each handler's body began, innermost last
     struct Full {                               // a full expression open: its temporaries from live_[from]; flags zeroed at block, at
         std::size_t from; BlockId block; std::size_t at;
