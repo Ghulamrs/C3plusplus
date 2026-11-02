@@ -200,6 +200,7 @@ private:
     Val lvalue(sema::TypedId id);
     bool isLvalueNode(sema::TypedId id) const;
     bool referenceCast(sema::TypedId id) const;
+    bool reinterpretsReference(sema::TypedId id) const;
     Val name(sema::TypedId id);
     Val nameAddress(sema::TypedId id);
     Val member(sema::TypedId id);
@@ -224,8 +225,10 @@ private:
     Val arithmetic(const std::string &op, Val a, Val b);
     Val logical(bool isAnd, sema::TypedId l, sema::TypedId r);
     Val conditional(sema::TypedId id);
+    Val voidConditional(sema::TypedId id, BlockId a, BlockId b, BlockId merge);
     bool compositePointer(sema::TypedId id, const Type &tx, const Type &ty) const;
     Val assign(sema::TypedId id);
+    Val assignScalar(sema::TypedId id, Val &target);
     Val call(sema::TypedId id);
     bool vaBuiltinNode(sema::TypedId id) const;
     Val vaBuiltin(sema::TypedId id);
@@ -279,6 +282,7 @@ private:
     Val toBase(Val v, TypeId to, bool cast = false);
     ValueId boundConverted(sema::TypedId an, const Type &p);
     bool convertedTemporary(sema::TypedId an, const Type &c, bool destroys, ValueId &slot);
+    bool bracedArgument(sema::TypedId an, const Type &p, ValueId &slot);
     ValueId byValueArgument(sema::TypedId an, const Type &p);
     Val classArgumentSource(sema::TypedId an, const Type &c);
     void guardParameter(ValueId pv, const Type &pt, bool isCtor);
@@ -321,6 +325,7 @@ private:
     bool builtClass(const Type &t) const;
     void builtLocal(sema::TypedId var, ValueId slot, const Type &t);
     ValueId initializerList(sema::TypedId parent, const Type &param, std::uint32_t n);
+    ValueId initializerListOf(const std::vector<sema::TypedId> &elems, const Type &param);
     void guard(ValueId slot, const Type &c, const std::string &dtor);
     void destroy(const Live &l, bool invoke = false);
     void destroyLive(std::size_t mark);
