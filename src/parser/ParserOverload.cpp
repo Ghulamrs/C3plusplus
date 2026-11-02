@@ -106,6 +106,7 @@ ExprPtr Parser::convert(ExprPtr e, const Type *to, bool allowExplicit) const {
 
 ExprPtr Parser::convertNode(ExprPtr e, const Type *to, bool allowExplicit) const {
     if (e->type() == to) return e;
+    const syntax::NodeId operand = e->syntax();
     // A scoped enumeration converts only by a cast, in either direction - [dcl.enum]/10, [expr.static.cast]/9.
     if (!allowExplicit && e->type() != nullptr && e->type()->unqualified() != to->unqualified() &&
         (e->type()->isScopedEnumeration() || to->isScopedEnumeration()) && !to->isReference())
@@ -121,6 +122,7 @@ ExprPtr Parser::convertNode(ExprPtr e, const Type *to, bool allowExplicit) const
             std::vector<ExprPtr> none;
             ExprPtr got = self->memberCallWith(std::move(e), object, how->name,
                                                0, std::move(none));
+            self->noteConversionCall(operand, *got);
             return got->type() == to ? std::move(got)
                                      : convert(std::move(got), to);
         }
@@ -137,8 +139,10 @@ ExprPtr Parser::convertNode(ExprPtr e, const Type *to, bool allowExplicit) const
         if (const Signature *how = self->conversionFunction(e->type(), to, allowExplicit)) {
             const Type *object = e->type();
             std::vector<ExprPtr> none;
-            return self->memberCallWith(std::move(e), object, how->name,
-                                        0, std::move(none));
+            ExprPtr got = self->memberCallWith(std::move(e), object, how->name,
+                                               0, std::move(none));
+            self->noteConversionCall(operand, *got);
+            return got;
         }
     }
 

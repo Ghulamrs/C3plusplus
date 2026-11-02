@@ -620,9 +620,11 @@ ExprPtr Parser::contextualScalar(ExprPtr e, std::size_t pos, const char *what) {
     if (e->type() != nullptr && e->type()->unqualified()->isStructOrUnion()) {
         if (const Signature *how = conversionFunction(e->type(), nullptr, true)) {
             const Type *object = e->type();
+            const syntax::NodeId operand = e->syntax();
             std::vector<ExprPtr> none;
             e = memberCallWith(std::move(e), object, how->name, pos,
                                std::move(none));
+            noteConversionCall(operand, *e);
         }
     }
     requireScalar(*e, pos, what);
@@ -690,9 +692,12 @@ ExprPtr Parser::userConversion(const Type *param, ExprPtr &arg, std::size_t pos)
         const Signature *how = conversionFunction(arg->type(), plain, false);
         if (how == nullptr) return nullptr;
         const Type *from = arg->type();
+        const syntax::NodeId operand = arg->syntax();
         std::vector<ExprPtr> none;
-        return memberCallWith(std::move(arg), from, how->name, pos,
-                              std::move(none));
+        ExprPtr got = memberCallWith(std::move(arg), from, how->name, pos,
+                                     std::move(none));
+        noteConversionCall(operand, *got);
+        return got;
     }
     markUsed(ctor);
     // What built the temporary, for the SSA lowering; two different answers for one node leave neither (M3b.2).
@@ -745,9 +750,11 @@ bool Parser::convertThroughConversionFunction(std::vector<ExprPtr> &args,
     if (constructorViable(plain, args, pos)) return false;
     const Signature *how = conversionFunction(from, plain, directInit);
     if (how == nullptr) return false;
+    const syntax::NodeId operand = args[0]->syntax();
     std::vector<ExprPtr> none;
     args[0] = memberCallWith(std::move(args[0]), from, how->name, pos,
                              std::move(none));
+    noteConversionCall(operand, *args[0]);
     return true;
 }
 

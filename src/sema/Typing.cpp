@@ -670,6 +670,13 @@ bool Typer::arrowCalls(syntax::NodeId operand, std::vector<Resolution> &out) con
     return true;
 }
 
+bool Typer::conversionCall(syntax::NodeId operand, Resolution &out) const {
+    const std::unordered_map<std::uint32_t, std::uint32_t>::const_iterator i = p_.conversionCalls_.find(operand.v);
+    if (i == p_.conversionCalls_.end()) return false;
+    out = copied(p_.resolvedTable_[i->second]);
+    return true;
+}
+
 bool Typer::elidedInto(syntax::NodeId var, syntax::NodeId call) const {
     const std::unordered_map<std::uint32_t, Local>::const_iterator l = p_.declaredLocals_.find(var.v);
     const std::unordered_map<std::uint32_t, Parser::CallSlots>::const_iterator c = p_.callSlots_.find(call.v);

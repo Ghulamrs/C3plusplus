@@ -99,6 +99,8 @@ public:
     void setAssignCall(std::function<bool(syntax::NodeId, std::string &, TypeId &)> f) { assignCall_ = f; }
     // The operator-> calls `->` on a class value made, by the value's node - Sema's record ([over.ref]).
     void setArrowCalls(std::function<bool(syntax::NodeId, std::vector<sema::Resolution> &)> f) { arrowCalls_ = f; }
+    // The conversion function `convert` called on a class value, by the value's node - Sema's record ([class.conv.fct]).
+    void setConversionCall(std::function<bool(syntax::NodeId, sema::Resolution &)> f) { conversionCall_ = f; }
 private:
     struct Outside { std::string why; explicit Outside(const std::string &w) : why(w) {} };
     struct Val { ValueId v; TypeId type; Val() {} Val(ValueId a, TypeId t) : v(a), type(t) {} };
@@ -335,6 +337,10 @@ private:
     bool classObjectNode(sema::TypedId id) const;
     Val classObject(sema::TypedId id);
     Val arrowPointer(sema::TypedId member);
+    bool convertedNode(sema::TypedId id, sema::Resolution &r) const;
+    Val converted(sema::TypedId id, const sema::Resolution &r);
+    bool classConditionalNode(sema::TypedId id) const;
+    Val conditionalObject(sema::TypedId id);
     std::string temporaryDestructor(const Type &c);
     bool destroyedResultClass(const Type &t) const;
     bool destroyedResult(sema::TypedId id) const;
@@ -407,6 +413,7 @@ private:
     std::function<bool(syntax::NodeId, syntax::NodeId)> elidedInto_;
     std::function<bool(syntax::NodeId, std::string &, TypeId &)> assignCall_;
     std::function<bool(syntax::NodeId, std::vector<sema::Resolution> &)> arrowCalls_;
+    std::function<bool(syntax::NodeId, sema::Resolution &)> conversionCall_;
     sema::TypedId intoCall_;                    // the call elidedCall lowers, whose result goes into a local's alloca
     int intoAlloca_ = -1, intoNow_ = -1;        // that alloca; and callTail's, set only as that call's tail is entered
     std::size_t liveFloor_;                     // a constructor's built bases and members: below it, kept by a return

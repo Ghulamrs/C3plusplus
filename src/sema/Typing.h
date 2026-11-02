@@ -221,6 +221,7 @@ public:
     bool elidedInto(syntax::NodeId var, syntax::NodeId call) const;   // the call's result built straight into the local
     // The operator-> calls `->` on the class value at node `operand` made, in order ([over.ref]); false where it made none.
     bool arrowCalls(syntax::NodeId operand, std::vector<Resolution> &out) const;
+    bool conversionCall(syntax::NodeId operand, Resolution &out) const;   // the conversion function the class value at `operand` was converted by
     bool assignCall(syntax::NodeId value, std::string &symbol, TypeId &signature) const;   // `a = value`'s operator=
     bool closureFacts(syntax::NodeId id, ClosureFacts &out) const;   // a lambda's, where the parser kept them and every source was found
     // Whether the function of this symbol is a template specialization (Signature::fromTemplate): its body is a replay.

@@ -808,6 +808,9 @@ private:
     std::unordered_map<std::uint32_t, int> temporarySlots_;
     // The operator-> calls `->` on a class made, [over.ref]'s hops in order, by the node of the operand they were asked of (M3b.2).
     std::unordered_map<std::uint32_t, std::vector<std::uint32_t> > arrowCalls_;
+    // The conversion function a class value was converted by, [class.conv.fct]: the call's record, by the value's node (M3b.2).
+    std::unordered_map<std::uint32_t, std::uint32_t> conversionCalls_;
+    void noteConversionCall(syntax::NodeId operand, const Expr &made) { if (operand.valid() && made.resolved() != 0) conversionCalls_[operand.v] = made.resolved(); }
     // And the constructor that built it, by node: its symbol, its type with `T *` first, and whether `T()` zeroed first.
     struct TemporaryBuilt { std::string symbol; const Type *signature; bool zeroFirst; };
     std::unordered_map<std::uint32_t, TemporaryBuilt> temporaryBuilt_;

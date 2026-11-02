@@ -1181,14 +1181,16 @@ bool Lowering::copiedTemporary(sema::TypedId id) const {
 // What a class value's object is - [class.temporary], a prvalue materialised: an lvalue's; a temporary's slot; a
 // call's result with a destructor, the full expression's to destroy; or any object objectNode copies from.
 bool Lowering::classObjectNode(sema::TypedId id) const {
-    return isLvalueNode(id) || temporaryNode(id) || destroyedResult(id) || objectNode(id);
+    return isLvalueNode(id) || temporaryNode(id) || destroyedResult(id) || objectNode(id) || classResult(id) || classConditionalNode(id);
 }
 
 // That object's address and its class, const kept on the type.
 Lowering::Val Lowering::classObject(sema::TypedId id) {
     if (isLvalueNode(id)) return lvalue(id);
     if (temporaryNode(id)) return temporary(id);
-    if (destroyedResult(id)) {
+    if (objectNode(id)) return object(id);
+    if (classConditionalNode(id)) return conditionalObject(id);
+    if (destroyedResult(id) || classResult(id)) {
         const Val r = syn(id).kind == syntax::Kind::Call ? call(id) : operatorCall(id);
         if (!r.type.valid() || !T(r.type).isPointer()) outside("a call's class result that is no object");
         return Val(r.v, tid(*T(r.type).pointee()));
@@ -1234,6 +1236,37 @@ Lowering::Val Lowering::arrowPointer(sema::TypedId member) {
     return Val();
 }
 
+// A class value the parser converted by its own conversion function ([class.conv.fct]), where a scalar was wanted: the
+// node's type is the class, and the record is the member call the parser made of it.
+bool Lowering::convertedNode(sema::TypedId id, sema::Resolution &r) const {
+    const sema::TypedNode &n = tree_.node(id);
+    if (n.type == nullptr || !n.type->isStructOrUnion() || !conversionCall_ || !conversionCall_(n.syntax, r)) return false;
+    return r.what == sema::Resolution::Call && !r.symbol.empty() && r.hasThis && !r.indirect && r.vslot < 0 && r.type.valid() &&
+           T(r.type).isFunction() && T(r.type).params().size() == 1 && T(r.type).params()[0]->isPointer() &&
+           T(r.type).params()[0]->pointee()->isStructOrUnion();
+}
+
+// That conversion: the object the value names - an lvalue, a temporary, a call's result slot - its address handed as
+// `this`, as arrowPointer hands one; a scalar comes back as the value, a reference to one is read.
+Lowering::Val Lowering::converted(sema::TypedId id, const sema::Resolution &r) {
+    const Type &ft = T(r.type);
+    const Type &self = *ft.params()[0];
+    const Type &gives = *ft.returns();
+    const bool byRef = gives.isReference() && scalar(*gives.referent()) && !gives.referent()->isX87(target_);
+    if (!byRef && (!scalar(gives) || gives.isX87(target_))) outside("a conversion function returning '" + gives.describe() + "'");
+    if (!classObjectNode(id)) outside("a conversion function of what is not an object");
+    const Val o = classObject(id);
+    if (T(o.type).isConst() && !self.pointee()->isConst()) outside("a conversion function that drops const");
+    Val at(o.v, tid(*types_.pointerTo(&T(o.type))));
+    if (T(o.type).unqualified() != self.pointee()->unqualified()) at = toBase(at, tid(self));
+    CallInfo info;
+    info.symbol = r.symbol;
+    info.hasThis = true;
+    std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(self), std::vector<ValueId>(1, at.v))));
+    const Val v = callTail(r.type, info, ops, 1, std::vector<sema::TypedId>(), false);
+    return byRef ? readOf(v.v, tid(*gives.referent())) : v;
+}
+
 // What a plain class's value can be copied from: an lvalue, a call's result, a temporary, an assignment, or a
 // conditional of two such.
 bool Lowering::objectNode(sema::TypedId id) const {
@@ -1258,17 +1291,30 @@ Lowering::Val Lowering::object(sema::TypedId id) {
     if (syn(id).kind == syntax::Kind::Assign && objectNode(id)) return assign(id);
     if (syn(id).kind == syntax::Kind::Lambda && closureNode(id)) return closure(id);
     if (syn(id).kind != syntax::Kind::Conditional || !objectNode(id)) outside("a class value that is not an object");
+    return conditionalObject(id);
+}
+
+// [expr.cond]/6: a conditional whose arms are class objects of one type - each made in its own branch, a temporary with
+// a destructor under the arm's flag (skippable_) - its object the arm taken; an lvalue conditional is lvalue's.
+bool Lowering::classConditionalNode(sema::TypedId id) const {
+    if (syn(id).kind != syntax::Kind::Conditional || count(id) != 3 || isLvalueNode(id)) return false;
+    const TypeId x = TypeTable::id(tree_.node(child(id, 1)).type), y = TypeTable::id(tree_.node(child(id, 2)).type);
+    return x.valid() && y.valid() && T(x).isStructOrUnion() && T(x).unqualified() == T(y).unqualified() &&
+           classObjectNode(child(id, 1)) && classObjectNode(child(id, 2));
+}
+
+Lowering::Val Lowering::conditionalObject(sema::TypedId id) {
     const Val c = truth(expr(child(id, 0)));
     const BlockId a = newBlock(), b = newBlock(), merge = newBlock();
     condbr(c.v, a, b);
     place(a);
     skippable_++;
-    const Val x = object(child(id, 1));
+    const Val x = classObject(child(id, 1));
     const Type &cls = *T(x.type).unqualified();
     const TypeId pt = tid(*types_.pointerTo(&cls));
     br(merge, std::vector<ValueId>(1, result(add(Op::Bitcast, pt, std::vector<ValueId>(1, x.v)))));
     place(b);
-    const Val y = object(child(id, 2));
+    const Val y = classObject(child(id, 2));
     skippable_--;
     if (T(y.type).unqualified() != &cls) outside("a conditional of two objects apart in type");
     br(merge, std::vector<ValueId>(1, result(add(Op::Bitcast, pt, std::vector<ValueId>(1, y.v)))));
@@ -2216,8 +2262,8 @@ void Lowering::returnCopied(sema::TypedId id, sema::TypedId value) {
             outside("a return's temporary the parser recorded no constructor for");
         construct(sret_, symbol, sig, rt, zero, value, from);
     } else if (form == 4) {
-        if (!isLvalueNode(value)) outside("a class copied on return from what is not an lvalue");
-        const Val a = lvalue(value);
+        if (!classObjectNode(value)) outside("a class copied on return from what is not an object");
+        const Val a = classObject(value);
         if (T(a.type).unqualified() != rt.unqualified()) outside("a class copied on return from another type");
         const Type &ft = T(sig);
         if (!ft.isFunction() || ft.params().size() != 2 || !ft.params()[1]->isReference() ||
@@ -2723,11 +2769,14 @@ Lowering::Val Lowering::lvalue(sema::TypedId id) {
     }
     case syntax::Kind::Cast: {
         if (temporaryNode(id)) return temporary(id);     // `(T)v` through T's converting constructor: its slot
-        // A cast to a reference names its operand's object: the same type, const or an rvalue's && aside.
-        if (!isLvalueNode(id)) outside("a cast to a reference of what is not an object");
+        // A cast to a reference names its operand's object: the same type, const or an rvalue's && aside - a class
+        // prvalue's the object it is materialised in ([class.temporary]).
+        const bool prvalue = !isLvalueNode(id) && referenceCast(id) && tree_.node(child(id, 0)).type != nullptr &&
+                             tree_.node(child(id, 0)).type->isStructOrUnion() && classObjectNode(child(id, 0));
+        if (!isLvalueNode(id) && !prvalue) outside("a cast to a reference of what is not an object");
         const Type &cast = T(tree_.node(id).castType);
         const Type &to = cast.isReference() ? *cast.referent() : cast;      // static_cast<T &&> is noted as T, an xvalue
-        const Val a = lvalue(child(id, 0));
+        const Val a = prvalue ? classObject(child(id, 0)) : lvalue(child(id, 0));
         if (T(a.type).isConst() && !to.isConst()) outside("a cast that takes a const away");
         // [expr.static.cast]/2 and /11: a reference to a base names the base subobject, one to a derived class steps back.
         if (T(a.type).unqualified() != to.unqualified() && T(a.type).isStructOrUnion() && to.isStructOrUnion()) {
@@ -2779,6 +2828,7 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
     if (s.kind == syntax::Kind::Other && text(id) == "{}") outside("a braced list as an argument");
     // What the typer left untyped - a pack's name in a list, a form past its subset - the lowering does not read either.
     if (n.type == nullptr) outside(std::string("a '") + syntax::kindName(s.kind) + "' the typer did not type");
+    { sema::Resolution r; if (convertedNode(id, r)) return converted(id, r); }     // a class read by its conversion function
     if (operatorCalls(id)) {
         const Val c = operatorCall(id);
         const Type &gives = *T(tree_.resolution(id).type).returns();
@@ -2857,6 +2907,13 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
             break;
         }
         if (to.isReference() || n.castXvalue) outside("a cast to a reference");
+        // [expr.static.cast]/6: a class value discarded is its object made and left - a temporary, a call's result.
+        if (to.isVoid() && tree_.node(child(id, 0)).type != nullptr && tree_.node(child(id, 0)).type->isStructOrUnion() &&
+            classObjectNode(child(id, 0))) {
+            classObject(child(id, 0));
+            e = Val(ValueId(), n.castType);
+            break;
+        }
         const Val v = decay(expr(child(id, 0)));
         if (to.isVoid()) { e = Val(ValueId(), n.castType); break; }
         if (!scalar(to) || to.isX87(target_)) outside("a cast to '" + to.describe() + "'");
@@ -3794,9 +3851,10 @@ Lowering::Val Lowering::call(sema::TypedId id) {
             // [over.call.object] on `*p`: the class object p points at is the object, p its address.
             object = decay(expr(child(head, 0)));
             if (!T(object.type).isPointer() || !T(object.type).pointee()->isStructOrUnion()) outside("a member call through '*' of what is not a pointer to a class");
-        } else if (syn(head).kind == syntax::Kind::Call && temporaryNode(head)) {
-            // [over.call.object] on a class temporary, `F()(x)`: built in a slot of this frame, its operator() called on it.
-            const Val o = temporary(head);
+        } else if ((syn(head).kind == syntax::Kind::Call && temporaryNode(head)) || (syn(head).kind == syntax::Kind::Lambda && closureNode(head))) {
+            // [over.call.object] on a class temporary, `F()(x)`, or a lambda called where it is written, `[](int a){...}(1)`:
+            // built in a slot of this frame, its operator() called on it.
+            const Val o = syn(head).kind == syntax::Kind::Lambda ? closure(head) : temporary(head);
             object = Val(o.v, tid(*types_.pointerTo(&T(o.type))));
         } else {
             outside("a member call through '" + text(head) + "'");
@@ -3893,8 +3951,8 @@ Lowering::Val Lowering::memberPointerCall(sema::TypedId id, sema::TypedId mp, Ca
     Val obj;
     if (text(mp) == "->*") obj = decay(expr(l));
     else {
-        if (!objectNode(l)) outside("a '.*' of what is not an object");
-        const Val o = object(l);
+        if (!classObjectNode(l)) outside("a '.*' of what is not an object");
+        const Val o = classObject(l);
         obj = Val(o.v, tid(*types_.pointerTo(&T(o.type))));
     }
     if (!T(obj.type).isPointer() || !T(obj.type).pointee()->isStructOrUnion()) outside("a '->*' of what is not a pointer to a class");
@@ -4042,8 +4100,8 @@ Lowering::Val Lowering::memberPointerLvalue(sema::TypedId id) {
     Val obj;
     if (text(id) == "->*") obj = decay(expr(l));
     else {
-        if (!objectNode(l)) outside("a '.*' of what is not an object");
-        const Val o = object(l);
+        if (!classObjectNode(l)) outside("a '.*' of what is not an object");
+        const Val o = classObject(l);
         obj = Val(o.v, tid(*types_.pointerTo(&T(o.type))));
     }
     if (!T(obj.type).isPointer() || !T(obj.type).pointee()->isStructOrUnion()) outside("a '->*' of what is not a pointer to a class");
@@ -4406,8 +4464,8 @@ Lowering::Val Lowering::operatorCall(sema::TypedId id) {
     if (r.hasThis) {
         if (ft.params().empty() || !ft.params()[0]->isPointer()) outside("a member operator whose `this` was not recorded");
         const Type &self = *ft.params()[0];
-        if (!isLvalueNode(operands[0])) outside("a member operator of what is not an object");
-        const Val o = lvalue(operands[0]);
+        if (!classObjectNode(operands[0])) outside("a member operator of what is not an object");
+        const Val o = classObject(operands[0]);
         if (T(o.type).isConst() && !self.pointee()->isConst()) outside("a member operator that drops const");
         Val object(o.v, tid(*types_.pointerTo(&T(o.type))));
         if (T(o.type).unqualified() != self.pointee()->unqualified()) object = toBase(object, tid(self));
