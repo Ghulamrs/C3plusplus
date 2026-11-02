@@ -302,7 +302,7 @@ many, or has no object of its own:
   destroyed element by element. `src/parser/ParserClass.cpp:2117`
 - **a static-duration reference bound to a temporary** - [class.temporary]/5
   gives the temporary the program's lifetime, so it would need static storage
-  of its own; a named object binds. `src/parser/ParserInit.cpp:1701`
+  of its own; a named object binds. `src/parser/ParserInit.cpp:1705`
 
 ## Expressions
 
@@ -332,11 +332,11 @@ many, or has no object of its own:
 ## `new` and `delete`
 
 - **more than one value in a new-expression** without a constructor -
-  `src/parser/ParserExprNew.cpp:1760`
+  `src/parser/ParserExprNew.cpp:1765`
 - **`new T[n][m]`** - only the first dimension may be given.
-  `src/parser/ParserExprNew.cpp:1703`
+  `src/parser/ParserExprNew.cpp:1708`
 - **`new T[n]{...}`** with values inside - the empty pair value-initialises
-  the elements; `new T{...}` works. `src/parser/ParserExprNew.cpp:1730`
+  the elements; `new T{...}` works. `src/parser/ParserExprNew.cpp:1735`
 
 Plain `new` and `delete`, a class's own `operator new`/`operator delete`, the
 placement forms and `<new>` all work; the entries that said otherwise were

@@ -1252,12 +1252,14 @@ std::vector<StmtPtr> Parser::buildStaticArrayConstruction(Declared &d,
         first->setType(ptr);
         return first;
     };
+    staticGuards_[symbol].array = !listed;     // for the SSA lowering (M3b.2)
     if (!listed && hasConstructors(plain->tag())) {
         ExprPtr base = arrayAddress();
         ExprPtr n(new Num(count));
         n->setType(sizeT);
-        out.push_back(StmtPtr(new ExprStmt(callVectorLoop(
-            vectorConstructor(plain, d.pos), plain, std::move(base), std::move(n), d.pos))));
+        const std::string loop = vectorConstructor(plain, d.pos);
+        staticGuards_[symbol].vectorLoop = loop;
+        out.push_back(StmtPtr(new ExprStmt(callVectorLoop(loop, plain, std::move(base), std::move(n), d.pos))));
     }
     if (destructorOf(plain) == nullptr) return out;
 
@@ -1294,6 +1296,8 @@ std::vector<StmtPtr> Parser::buildStaticArrayConstruction(Declared &d,
     current_->functions.back().setSynthesised("array destructor helper");
     current_->functions.back().setSymbol(fn);
     closeFrame(savedFrame);
+    staticGuards_[symbol].registered = true;
+    staticGuards_[symbol].helper = fn;
 
     std::vector<ExprPtr> args;
     if (ms) {

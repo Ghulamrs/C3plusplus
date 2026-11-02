@@ -1621,13 +1621,18 @@ ExprPtr Parser::callAllocator(const char *itanium, const char *microsoft,
 
 // `operator new(size_t, const std::nothrow_t &)` and its array twin, by the
 // names clang and cl agree on: _ZnwmRKSt9nothrow_t, ??2@YAPEAX_KAEBUnothrow_t@std@@@Z.
+// The library's nothrow allocation or deallocation function, [new.delete.single]/5 and /15 - measured on both ABIs.
+static std::string nothrowFunction(const Target &target, bool array, bool release) {
+    if (target.microsoftNames())
+        return release ? (array ? "??_V@YAXPEAXAEBUnothrow_t@std@@@Z" : "??3@YAXPEAXAEBUnothrow_t@std@@@Z")
+                       : (array ? "??_U@YAPEAX_KAEBUnothrow_t@std@@@Z" : "??2@YAPEAX_KAEBUnothrow_t@std@@@Z");
+    if (release) return array ? "_ZdaPvRKSt9nothrow_t" : "_ZdlPvRKSt9nothrow_t";
+    return std::string(array ? "_Zna" : "_Znw") + itaniumBuiltinCode(target.sizeType()) + "RKSt9nothrow_t";
+}
+
 ExprPtr Parser::callNothrowAllocator(bool array, ExprPtr bytes, ExprPtr tag,
                                      std::size_t pos) {
     (void)pos;
-    const std::string itanium = std::string(array ? "_Zna" : "_Znw") +
-                                itaniumBuiltinCode(target_.sizeType()) + "RKSt9nothrow_t";
-    const char *microsoft = array ? "??_U@YAPEAX_KAEBUnothrow_t@std@@@Z"
-                                  : "??2@YAPEAX_KAEBUnothrow_t@std@@@Z";
     const Type *tagType = tag->type();
     ExprPtr addr(new Unary('&', std::move(tag)));
     addr->setType(types_.pointerTo(tagType));
@@ -1635,7 +1640,7 @@ ExprPtr Parser::callNothrowAllocator(bool array, ExprPtr bytes, ExprPtr tag,
     args.push_back(std::move(bytes));
     args.push_back(std::move(addr));
     std::vector<int> argSlots(args.size(), 0);
-    const std::string name = target_.microsoftNames() ? microsoft : itanium;
+    const std::string name = nothrowFunction(target_, array, false);
     Call *call = new Call(name, nullptr, std::move(args), false, 0, 2, std::move(argSlots));
     call->setSymbol(name);
     ExprPtr n(call);
@@ -1768,7 +1773,11 @@ ExprPtr Parser::newExpression(std::size_t pos) {
     pendingNew_.made = made;
     pendingNew_.array = array;
     pendingNew_.init = bracedList ? 3 : !hasInit ? 0 : init ? 2 : 1;
-    if (nothrow) pendingNew_.why = "a nothrow 'new'";
+    if (nothrow) {      // the tag the first part, as a placement's address is
+        pendingNew_.nothrow = true;
+        pendingNew_.symbol = nothrowFunction(target_, array, false);
+        pendingNew_.release = nothrowFunction(target_, array, true);
+    }
     else if (userAlloc) pendingNew_.why = "a placement 'new' of an allocation function of the program's";
     else if (const Signature *own = classAllocator(made, array ? "operatornew[]" : "operatornew")) {
         // [class.free]/2: the class's own, called as the platform's is where it takes the size alone.
@@ -1781,7 +1790,6 @@ ExprPtr Parser::newExpression(std::size_t pos) {
             pendingNew_.why = "a class's own operator new";
         }
     }
-    else if (array && arrayCookie(made) != 0) pendingNew_.why = "an array 'new' with a cookie";
     else if (placement != nullptr) { pendingNew_.placed = true; pendingNew_.symbol = "$placed"; }   // [new.delete.placement]
     else if (target_.microsoftNames()) pendingNew_.symbol = array ? "??_U@YAPEAX_K@Z" : "??2@YAPEAX_K@Z";
     else pendingNew_.symbol = std::string(array ? "_Zna" : "_Znw") + itaniumBuiltinCode(target_.sizeType());
@@ -1793,6 +1801,7 @@ ExprPtr Parser::newExpression(std::size_t pos) {
     // the reserved placement form adds no cookie - measured on both ABIs.
     const int cookie = array && (placement == nullptr || nothrow)
                      ? arrayCookie(made) : 0;
+    pendingNew_.cookie = cookie;
     int countSlot = 0;
     std::string countTemp;
     if (array) {
@@ -2229,8 +2238,18 @@ ExprPtr Parser::deleteExpression(std::size_t pos) {
         countPtr->setType(types_.pointerTo(sizeT));
         ExprPtr n(new Unary('*', std::move(countPtr)));
         n->setType(sizeT);
-        ExprPtr run = callVectorLoop(vectorDestructor(t->pointee()->unqualified(), pos),
-                                     t->pointee()->unqualified(), held(), std::move(n), pos);
+        const NewFacts facts = pendingNew_;
+        const std::string loop = vectorDestructor(t->pointee()->unqualified(), pos);
+        pendingNew_ = facts;
+        ExprPtr run = callVectorLoop(loop, t->pointee()->unqualified(), held(), std::move(n), pos);
+        // For the SSA lowering: the count read from the cookie, the loop, and the deallocation function given its start.
+        const Signature *own = classAllocator(t->pointee(), "operatordelete[]");
+        if (own == nullptr || own->params.size() == 1) {
+            pendingNew_.why.clear();
+            pendingNew_.vectorLoop = loop;
+            pendingNew_.cookie = cookie;
+            pendingNew_.symbol = own != nullptr ? own->symbol : target_.microsoftNames() ? "??_V@YAXPEAX@Z" : "_ZdaPv";
+        }
 
         ExprPtr asChars2(new Cast(chars, held()));
         asChars2->setType(chars);
@@ -2262,8 +2281,9 @@ ExprPtr Parser::deleteExpression(std::size_t pos) {
         ExprPtr held(Var::local(temp, slot));
         held->setType(t);
         ExprPtr run = destructorCall(std::move(held), *dtor, pos);
-        if (classAllocator(t->pointee(), "operatordelete") == nullptr) {
-            pendingNew_.symbol = target_.microsoftNames() ? "??3@YAXPEAX@Z" : "_ZdlPv";
+        const Signature *own = classAllocator(t->pointee(), "operatordelete");
+        if (own == nullptr || own->params.size() == 1) {      // deallocate() calls the class's own with the pointer alone
+            pendingNew_.symbol = own != nullptr ? own->symbol : target_.microsoftNames() ? "??3@YAXPEAX@Z" : "_ZdlPv";
             noteDeleteDestroys(*run);
         }
 
@@ -2428,9 +2448,6 @@ ExprPtr Parser::userPlacementAllocation(const Type *made, bool array, ExprPtr by
 // `operator delete(void *, const std::nothrow_t &)` and its array twin, for the
 // storage a nothrow allocation made - [expr.new]/20 pairs it with the allocator.
 ExprPtr Parser::callNothrowDeallocator(bool array, ExprPtr raw) {
-    const char *itanium = array ? "_ZdaPvRKSt9nothrow_t" : "_ZdlPvRKSt9nothrow_t";
-    const char *microsoft = array ? "??_V@YAXPEAXAEBUnothrow_t@std@@@Z"
-                                  : "??3@YAXPEAXAEBUnothrow_t@std@@@Z";
     const char *tag = target_.microsoftNames() ? "?nothrow@std@@3Unothrow_t@1@B" : "_ZSt7nothrow";
     Var *tv = Var::global(tag);
     tv->setSymbol(tag);
@@ -2442,7 +2459,7 @@ ExprPtr Parser::callNothrowDeallocator(bool array, ExprPtr raw) {
     args.push_back(std::move(raw));
     args.push_back(std::move(taddr));
     std::vector<int> argSlots(args.size(), 0);
-    const std::string name = target_.microsoftNames() ? microsoft : itanium;
+    const std::string name = nothrowFunction(target_, array, true);
     Call *call = new Call(name, nullptr, std::move(args), false, 0, 2, std::move(argSlots));
     call->setSymbol(name);
     ExprPtr n(call);

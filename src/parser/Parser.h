@@ -659,8 +659,9 @@ private:
     // What guardOnce built for one, by its symbol (M3b.2): the guard it named; whether a throw out of the construction aborts
     // it; the constructor that builds it, with its type and the [dcl.init]/8 facts; the destructor's registration.
     struct StaticGuard {
-        std::string guard, ctor, helper; const Type *ctorSig = nullptr;
+        std::string guard, ctor, helper, vectorLoop; const Type *ctorSig = nullptr;
         bool aborts = false, built = false, defaulted = false, zeroed = false, copied = false, list = false, registered = false;
+        bool array = false;     // an array of a class built by its loop, vectorLoop, if any; `helper` destroys it at exit
     };
     std::map<std::string, StaticGuard> staticGuards_;
     TryFacts pendingTry_;
@@ -672,8 +673,8 @@ private:
     // initialised, 2 one value), `why` where it may not; a class's chosen constructor, its type with `T *` first, zeroed first,
     // defaults added; bytesCopied, `new T(t)` storing t's bytes ([class.copy]/12); vectorLoop, `new T[n]`'s element builder.
     struct NewFacts { std::string symbol, why, ctor, dtor, vectorLoop, release; const Type *made = nullptr, *ctorSig = nullptr, *dtorSig = nullptr;
-                      bool array = false, placed = false, ctorZero = false, ctorDefaulted = false, bytesCopied = false;
-                      int init = 0, dslot = -1; };
+                      bool array = false, placed = false, ctorZero = false, ctorDefaulted = false, bytesCopied = false, nothrow = false;
+                      int init = 0, dslot = -1, cookie = 0; };
     std::unordered_map<std::uint32_t, NewFacts> newFacts_;
     NewFacts pendingNew_;
     // A dynamic_cast to a pointer, for the SSA lowering (M3b.2): 1 the runtime's walk between the two type_infos, 2 an upcast,

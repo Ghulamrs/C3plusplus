@@ -554,6 +554,8 @@ bool Typer::staticGuard(const std::string &symbol, StaticGuard &out) const {
     out.copied = r.copied;
     out.list = r.list;
     out.registered = r.registered;
+    out.vectorLoop = r.vectorLoop;
+    out.array = r.array;
     return true;
 }
 
@@ -595,6 +597,8 @@ bool Typer::newFacts(syntax::NodeId id, NewFacts &out) const {
     out.dtor = f->second.dtor;
     if (f->second.dtorSig != nullptr) out.dtorSig = f->second.dtorSig->id();
     out.dslot = f->second.dslot;
+    out.nothrow = f->second.nothrow;
+    out.cookie = f->second.cookie;
     return true;
 }
 

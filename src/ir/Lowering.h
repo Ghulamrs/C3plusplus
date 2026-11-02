@@ -208,6 +208,7 @@ private:
     void destroyWhen(const Live &l, bool invoke = false);
     bool canFlag() const;
     void storageGuard(ValueId p, const Type &made, const std::string &release);
+    void staticArray(const std::string &symbol, const Type &array, const sema::StaticGuard &g);
     Val memberAddress(sema::TypedId id);
     Val memberOfThis(sema::TypedId id);
     bool namesCalledFunction(const std::string &head, const std::string &symbol) const;
@@ -230,6 +231,7 @@ private:
     bool vaBuiltinNode(sema::TypedId id) const;
     Val vaBuiltin(sema::TypedId id);
     Val newExpression(sema::TypedId id);
+    ValueId arrayCookie(ValueId raw, ValueId n, const Type &made, int cookie);
     Val deleteExpression(sema::TypedId id);
     sema::NewFacts newFacts(sema::TypedId id, const std::string &what);
     Val literal(sema::TypedId id);
@@ -288,6 +290,7 @@ private:
     Val baseSubobject(Val a, const Type &base, const std::string &why);
     Val valueInitialised(sema::TypedId id);
     Val deleteDestroying(sema::TypedId id, const sema::NewFacts &f);
+    Val deleteArray(sema::TypedId id, const sema::NewFacts &f);
     ValueId virtualCallee(ValueId self, TypeId fnType, int slot);
     bool memberPointerNode(sema::TypedId id) const;
     bool memberAddressNode(sema::TypedId id) const;

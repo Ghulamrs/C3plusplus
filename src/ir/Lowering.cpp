@@ -863,7 +863,7 @@ void Lowering::guardedStatic(sema::TypedId var, const std::string &symbol) {
     const sema::TypedNode &v = tree_.node(var);
     sema::StaticGuard g;
     if (!staticGuard_ || !staticGuard_(symbol, g)) outside("a static local built at run time with no guard recorded");
-    if (v.type->isArray()) outside("a static array built at run time");
+    if (v.type->isArray() && !g.array) outside("a static array built at run time");
     const bool ms = target_.microsoftNames();
     if (ms && handlerDepth_ != 0) outside("a static local built at run time inside a handler on the Microsoft ABI");
     staticLocals_[v.syntax.v] = std::make_pair(symbol, tid(*v.type));
@@ -952,6 +952,7 @@ void Lowering::staticConstruction(sema::TypedId var, const std::string &symbol, 
         closeFull();
         return;
     }
+    if (c.isArray()) { staticArray(symbol, c, g); return; }
     const ValueId obj = addrOf(symbol, tid(*types_.pointerTo(&c)));
     if (g.built && !g.copied) {
         if (g.list) outside("a static local built from a braced list");
@@ -993,6 +994,34 @@ void Lowering::staticConstruction(sema::TypedId var, const std::string &symbol, 
     args.push_back(result(add(Op::Bitcast, voidPtr, std::vector<ValueId>(1, obj))));
     args.push_back(addrOf("__dso_handle", voidPtr));
     runtimeCall("__cxa_atexit", intT, args);
+}
+
+// buildStaticArrayConstruction's array of a class: its elements built by the class's loop, then the helper that destroys
+// them last first registered - __cxa_atexit given the array on Itanium, atexit on Microsoft, where the helper names it.
+void Lowering::staticArray(const std::string &symbol, const Type &array, const sema::StaticGuard &g) {
+    TypeId elem = tid(array);
+    long long n = 1;
+    for (; T(elem).isArray(); elem = tid(*T(elem).pointee())) n *= T(elem).length();
+    const TypeId ep = tid(*types_.pointerTo(T(elem).unqualified())), sizeT = tid(*types_.get(target_.sizeType()));
+    const ValueId first = addrOf(symbol, ep);
+    if (!g.vectorLoop.empty()) {
+        std::vector<TypeId> params(1, ep);
+        params.push_back(sizeT);
+        std::vector<ValueId> ops(1, first);
+        ops.push_back(iconst(sizeT, n));
+        directCall(g.vectorLoop, types_.functionType(types_.voidType()->id(), params), ops);
+    }
+    closeFull();
+    if (!g.registered) return;
+    const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType())), intT = tid(*types_.get(Kind::Int));
+    const bool ms = target_.microsoftNames();
+    std::vector<ValueId> args(1, addrOf(g.helper, types_.pointerTo(types_.functionType(types_.voidType()->id(),
+                                                                                      ms ? std::vector<TypeId>() : std::vector<TypeId>(1, voidPtr)))));
+    if (!ms) {
+        args.push_back(result(add(Op::Bitcast, voidPtr, std::vector<ValueId>(1, first))));
+        args.push_back(addrOf("__dso_handle", voidPtr));
+    }
+    runtimeCall(ms ? "atexit" : "__cxa_atexit", intT, args);
 }
 
 // The destructor called on the object: a call on the normal path, as the walker's is; an invoke in a cleanup's terminate scope.
@@ -4695,7 +4724,8 @@ Lowering::Val Lowering::newExpression(sema::TypedId id) {
     if (built && f.ctorDefaulted) outside("a 'new' with default arguments");
     // [expr.new]/20: a constructor that throws has the storage freed; a placement frees nothing.
     const bool frees = (built || loop) && !f.placed;
-    const std::uint32_t lead = f.placed ? 1u : 0u;        // the placement's address is the first part
+    const std::uint32_t lead = f.placed || f.nothrow ? 1u : 0u;      // the placement's address, or the nothrow tag, first
+    if (f.nothrow && f.cookie != 0) outside("a nothrow array 'new' with a cookie");
     // [expr.new]/15 with [dcl.init.list]/3: a braced list reaches a constructor as its arguments, an aggregate as its
     // members; an initializer_list constructor stays outside.
     const bool listed = f.init == 3 && !built && made.isStructOrUnion();
@@ -4710,7 +4740,8 @@ Lowering::Val Lowering::newExpression(sema::TypedId id) {
     if (count(id) != parts) outside("a 'new' of " + std::to_string(count(id)) + " parts");
     const TypeId sizeT = tid(*types_.get(target_.sizeType()));
     const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType()));
-    ValueId at0 = f.placed ? exprTo(child(id, 0), voidPtr).v : ValueId();
+    ValueId at0 = f.placed ? exprTo(child(id, 0), voidPtr).v : ValueId(), tag;
+    if (f.nothrow) tag = result(add(Op::Bitcast, voidPtr, std::vector<ValueId>(1, lvalue(child(id, 0)).v)));
     ValueId bytes = iconst(sizeT, made.size(target_)), n;
     if (f.array) {
         std::vector<ValueId> ops;
@@ -4719,23 +4750,40 @@ Lowering::Val Lowering::newExpression(sema::TypedId id) {
         ops.push_back(bytes);
         bytes = result(add(Op::Mul, sizeT, ops));
     }
+    const ValueId elements = bytes;
+    if (f.cookie != 0) {
+        std::vector<ValueId> ops(1, bytes);
+        ops.push_back(iconst(sizeT, f.cookie));
+        bytes = result(add(Op::Add, sizeT, ops));
+    }
     if (!f.placed) {
         CallInfo info;
         info.symbol = f.symbol;
-        info.signature = types_.functionType(voidPtr, std::vector<TypeId>(1, sizeT));
-        info.namedArgs = 1;
+        std::vector<TypeId> params(1, sizeT);
+        std::vector<ValueId> ops(1, bytes);
+        if (f.nothrow) { params.push_back(voidPtr); ops.push_back(tag); }
+        info.signature = types_.functionType(voidPtr, params);
+        info.namedArgs = static_cast<int>(params.size());
         const std::uint32_t callIndex = static_cast<std::uint32_t>(F().calls.size());
         F().calls.push_back(info);
-        const InstId c = callOrInvoke(voidPtr, std::vector<ValueId>(1, bytes));      // bad_alloc may unwind
+        const InstId c = callOrInvoke(voidPtr, ops);      // bad_alloc may unwind
         at(c).call = callIndex;
         at0 = result(c);
     }
     const TypeId pt = tid(*types_.pointerTo(&made));
+    const ValueId raw = at0;
+    if (f.cookie != 0) at0 = arrayCookie(at0, n, made, f.cookie);
     const ValueId p = result(add(Op::Bitcast, pt, std::vector<ValueId>(1, at0)));
+    // [expr.new]/13: a null from the nothrow allocator initialises nothing.
+    const BlockId nonNull = f.nothrow ? newBlock() : BlockId(), done = f.nothrow ? newBlock() : BlockId();
+    if (f.nothrow) { condbr(truth(Val(p, pt)).v, nonNull, done); place(nonNull); }
+    // The storage a throw gives back is the allocation's start, in front of a cookie; the nothrow release takes the tag.
+    const ValueId freed = f.cookie != 0 ? result(add(Op::Bitcast, pt, std::vector<ValueId>(1, raw))) : p;
     if (loop) {
         // [expr.new]/17 and /20: the elements built by the loop, the storage given back by operator delete[] if one throws.
         const std::size_t mark = live_.size();
-        if (frees) storageGuard(p, made, !f.release.empty() ? f.release : target_.microsoftNames() ? "??_V@YAXPEAX@Z" : "_ZdaPv");
+        if (frees) storageGuard(freed, made, !f.release.empty() ? f.release : target_.microsoftNames() ? "??_V@YAXPEAX@Z" : "_ZdaPv");
+        if (frees && f.nothrow) live_.back().vtt = tag;      // the release's second operand, as a D2's VTT is
         std::vector<TypeId> params;
         params.push_back(pt);
         params.push_back(sizeT);
@@ -4747,6 +4795,7 @@ Lowering::Val Lowering::newExpression(sema::TypedId id) {
     } else if (built) {
         const std::size_t mark = live_.size();
         if (frees) storageGuard(p, made, !f.release.empty() ? f.release : target_.microsoftNames() ? "??3@YAXPEAX@Z" : "_ZdlPv");
+        if (frees && f.nothrow) live_.back().vtt = tag;
         construct(p, f.ctor, f.ctorSig, made, f.ctorZero, id, lead);
         if (frees && live_.size() != mark + 1) outside("a 'new' whose constructor's arguments outlive it");
         if (frees) closeScope(mark, true);      // the object made: the storage's guard ends without a free
@@ -4761,7 +4810,7 @@ Lowering::Val Lowering::newExpression(sema::TypedId id) {
         std::vector<ValueId> args;
         args.push_back(at0);
         args.push_back(iconst(tid(*types_.get(Kind::Int)), 0));
-        args.push_back(bytes);
+        args.push_back(elements);
         runtimeCall("memset", voidPtr, args);
     } else if (f.init == 1) {
         const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, p));      // [dcl.init]/8: zero
@@ -4779,7 +4828,26 @@ Lowering::Val Lowering::newExpression(sema::TypedId id) {
     } else if (f.init >= 2) {
         store(p, exprTo(child(id, parts - 1), tid(*made.unqualified())).v);
     }
+    if (f.nothrow) { if (!terminated()) br(done); place(done); }
     return Val(p, pt);
+}
+
+// An array's cookie, [expr.new]/12 as the ABI lays it: n in the last size_t in front of the array - on ARM the element
+// size in the word before it - and the array beginning `cookie` bytes into the allocation.
+ValueId Lowering::arrayCookie(ValueId raw, ValueId n, const Type &made, int cookie) {
+    const TypeId sizeT = tid(*types_.get(target_.sizeType())), cell = tid(*types_.pointerTo(&T(sizeT)));
+    const int word = T(sizeT).size(target_);
+    InstId g = add(Op::Gep, cell, std::vector<ValueId>(1, raw));
+    at(g).k = cookie - word;
+    store(result(g), n);
+    if (target_.armArrayCookie()) {
+        g = add(Op::Gep, cell, std::vector<ValueId>(1, raw));
+        at(g).k = cookie - 2 * word;
+        store(result(g), iconst(sizeT, made.size(target_)));
+    }
+    g = add(Op::Gep, F().value(raw).type, std::vector<ValueId>(1, raw));
+    at(g).k = cookie;
+    return result(g);
 }
 
 // [expr.delete] for a scalar or a plain class: nothing to destroy, the pointer handed to the global deallocation
@@ -4787,6 +4855,7 @@ Lowering::Val Lowering::newExpression(sema::TypedId id) {
 Lowering::Val Lowering::deleteExpression(sema::TypedId id) {
     sema::NewFacts d;
     if (newFacts_ && newFacts_(tree_.node(id).syntax, d) && d.why.empty() && (!d.dtor.empty() || d.dslot >= 0)) return deleteDestroying(id, d);
+    if (newFacts_ && newFacts_(tree_.node(id).syntax, d) && d.why.empty() && d.array && !d.vectorLoop.empty()) return deleteArray(id, d);
     const sema::NewFacts f = newFacts(id, "delete");
     if (count(id) != 1) outside("a 'delete' of " + std::to_string(count(id)) + " parts");
     const Val p = decay(expr(child(id, 0)));
@@ -4800,6 +4869,34 @@ Lowering::Val Lowering::deleteExpression(sema::TypedId id) {
     F().calls.push_back(info);
     const InstId c = add(Op::Call, TypeId(), std::vector<ValueId>(1, result(add(Op::Bitcast, voidPtr, std::vector<ValueId>(1, p.v)))));
     at(c).call = callIndex;
+    return Val(ValueId(), tid(*types_.voidType()));
+}
+
+// [expr.delete]/6 for `delete[]` of a class with a destructor, as the parser built it: a null pointer is not destroyed
+// (/2); the count read from the cookie, the elements destroyed last first by the class's loop, the allocation freed
+// from its start in front of the cookie.
+Lowering::Val Lowering::deleteArray(sema::TypedId id, const sema::NewFacts &f) {
+    if (count(id) != 1) outside("a 'delete' of " + std::to_string(count(id)) + " parts");
+    const Val p = decay(expr(child(id, 0)));
+    const Type &made = *T(f.made).unqualified();
+    if (!T(p.type).isPointer() || T(p.type).pointee()->unqualified() != &made) outside("a 'delete' of another type");
+    const TypeId sizeT = tid(*types_.get(target_.sizeType())), voidPtr = tid(*types_.pointerTo(types_.voidType()));
+    const TypeId pt = tid(*types_.pointerTo(&made));
+    const BlockId run = newBlock(), done = newBlock();
+    condbr(truth(p).v, run, done);
+    place(run);
+    const InstId c = add(Op::Gep, tid(*types_.pointerTo(&T(sizeT))), std::vector<ValueId>(1, p.v));
+    at(c).k = -T(sizeT).size(target_);
+    std::vector<TypeId> params(1, pt);
+    params.push_back(sizeT);
+    std::vector<ValueId> ops(1, result(add(Op::Bitcast, pt, std::vector<ValueId>(1, p.v))));
+    ops.push_back(load(result(c), sizeT));
+    directCall(f.vectorLoop, types_.functionType(types_.voidType()->id(), params), ops);
+    const InstId start = add(Op::Gep, voidPtr, std::vector<ValueId>(1, result(add(Op::Bitcast, voidPtr, std::vector<ValueId>(1, p.v)))));
+    at(start).k = -f.cookie;
+    directCall(f.symbol, types_.functionType(types_.voidType()->id(), std::vector<TypeId>(1, voidPtr)), std::vector<ValueId>(1, result(start)));
+    if (!terminated()) br(done);
+    place(done);
     return Val(ValueId(), tid(*types_.voidType()));
 }
 
