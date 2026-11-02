@@ -174,6 +174,7 @@ public:
     std::string unnamedCaught(syntax::NodeId handler) const;   // what an Itanium `catch (T)` with no name named; empty otherwise
     bool memberZeroed(const std::string &ctor, const std::string &member) const;   // `: m()` zeroes before its constructor
     int dynamicCast(syntax::NodeId cast, std::string &src, std::string &dst) const;   // 1 a runtime walk, 2 an upcast, 3 to void *, 0 none
+    bool typeidSymbol(syntax::NodeId id, std::string &symbol) const;   // a typeid's type_info; empty where read at run time
     // A Microsoft `catch (T)` with no name: the descriptor the parser named, whether by reference, HT_IsConst.
     bool microsoftUnnamedCaught(syntax::NodeId handler, std::string &descriptor, bool &byRef, bool &isConst) const;
     // The Microsoft ThrowInfo a throw of t names (`_TI1H`), where the parser finished the chain for a throw; empty otherwise.

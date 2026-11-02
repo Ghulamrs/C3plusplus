@@ -477,6 +477,13 @@ int Typer::dynamicCast(syntax::NodeId cast, std::string &src, std::string &dst) 
     return d->second.kind;
 }
 
+bool Typer::typeidSymbol(syntax::NodeId id, std::string &symbol) const {
+    const std::unordered_map<std::uint32_t, std::string>::const_iterator i = p_.typeidFacts_.find(id.v);
+    if (i == p_.typeidFacts_.end()) return false;
+    symbol = i->second;
+    return true;
+}
+
 bool Typer::memberZeroed(const std::string &ctor, const std::string &member) const {
     const std::map<std::string, Parser::MemberBuilt>::const_iterator i = p_.memberBuilt_.find(ctor + "|" + member + "|0");
     return i != p_.memberBuilt_.end() && i->second.zeroed;

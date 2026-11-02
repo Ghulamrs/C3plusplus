@@ -1363,6 +1363,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     lowering.setUnnamedCaught([&typer](syntax::NodeId id) { return typer.unnamedCaught(id); });
     lowering.setMemberZeroed([&typer](const std::string &ctor, const std::string &m) { return typer.memberZeroed(ctor, m); });
     lowering.setDynamicCast([&typer](syntax::NodeId id, std::string &s, std::string &d) { return typer.dynamicCast(id, s, d); });
+    lowering.setTypeid([&typer](syntax::NodeId id, std::string &s) { return typer.typeidSymbol(id, s); });
     lowering.setMicrosoftThrowInfo([&typer](TypeId t) { return typer.microsoftThrowInfo(t); });
     lowering.setMicrosoftCatch([&typer](TypeId t, std::string &d, bool &c) { return typer.microsoftCatchDescriptor(t, d, c); });
     lowering.setMicrosoftUnnamedCaught([&typer](syntax::NodeId id, std::string &d, bool &r, bool &c) {

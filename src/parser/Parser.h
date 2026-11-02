@@ -681,6 +681,10 @@ private:
     struct DynCastFacts { std::string src, dst; int kind; };
     std::unordered_map<std::uint32_t, DynCastFacts> dynCastFacts_;
     DynCastFacts pendingDynCast_ = DynCastFacts();
+    // A typeid, for the SSA lowering (M3b.2): the type_info's symbol, or none where a polymorphic glvalue's is read at run time.
+    std::unordered_map<std::uint32_t, std::string> typeidFacts_;
+    std::string pendingTypeid_;
+    bool pendingTypeidDynamic_ = false;
     void noteCallSlots(const Call &c) {
         if (!c.syntax().valid()) return;
         CallSlots &k = callSlots_[c.syntax().v];
@@ -1899,7 +1903,7 @@ private:
     const Signature *conversionFunction(const Type *from, const Type *to,
                                         bool allowExplicit = false);
     // A class where a number or a pointer is wanted, converted by its own.
-    ExprPtr contextualScalar(ExprPtr e, std::size_t pos, const char *what);
+    ExprPtr contextualScalar(ExprPtr e, std::size_t pos, const char *what, syntax::NodeId at = syntax::NodeId());
     // The single conversion to a scalar, or null where there are none or two.
     const Signature *soleNumericConversion(const Type *from);
     // The conversion itself, or null when none is needed or possible.
