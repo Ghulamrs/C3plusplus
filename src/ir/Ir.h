@@ -60,7 +60,7 @@ struct Inst {
     std::uint32_t first, count;     // operands in Function::operands
     ValueId result;
     long long k;                    // an integer constant, a gep's constant offset, an alloca's frame index, a switch's case count
-    unsigned long long bits;        // fconst's IEEE bits
+    unsigned long long bits;        // fconst's IEEE bits; an x87 value's significand, its sign and exponent in `k`
     std::string sym;                // addr's and tlsaddr's symbol
     std::vector<std::string> syms;  // a catchpad's or cleanuppad's type_info chain, "" for catch(...); `k` its own handlers' count
     Cmp cc;

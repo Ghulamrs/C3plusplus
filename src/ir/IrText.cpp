@@ -47,7 +47,13 @@ void dumpInst(const Function &f, const TypeTable &types, InstId id, std::string 
     if (i.type.valid() && i.op != Op::Store && !isTerminator(i.op) && i.op != Op::Call) out += " " + typeName(types, i.type) + ",";
     switch (i.op) {
     case Op::IConst: out += " " + std::to_string(i.k); break;
-    case Op::FConst: { char b[24]; std::snprintf(b, sizeof b, " 0x%llx", i.bits); out += b; break; }
+    case Op::FConst: {
+        char b[40];
+        if (i.k != 0) std::snprintf(b, sizeof b, " 0x%04llx%016llx", static_cast<unsigned long long>(i.k), i.bits);   // x87
+        else std::snprintf(b, sizeof b, " 0x%llx", i.bits);
+        out += b;
+        break;
+    }
     case Op::Addr: case Op::TlsAddr: out += " @" + i.sym; if (i.k != 0) out += " +" + std::to_string(i.k); break;
     case Op::Alloca: out += " align " + std::to_string(i.align) + " ; " + f.frame[static_cast<std::size_t>(i.k)].name; break;
     case Op::CatchPad: case Op::CleanupPad:

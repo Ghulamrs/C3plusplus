@@ -99,6 +99,8 @@ public:
     void setAssignCall(std::function<bool(syntax::NodeId, std::string &, TypeId &)> f) { assignCall_ = f; }
     // The operator-> calls `->` on a class value made, by the value's node - Sema's record ([over.ref]).
     void setArrowCalls(std::function<bool(syntax::NodeId, std::vector<sema::Resolution> &)> f) { arrowCalls_ = f; }
+    // The conversion function `convert` called on a class value, by the value's node - Sema's record ([class.conv.fct]).
+    void setConversionCall(std::function<bool(syntax::NodeId, sema::Resolution &)> f) { conversionCall_ = f; }
 private:
     struct Outside { std::string why; explicit Outside(const std::string &w) : why(w) {} };
     struct Val { ValueId v; TypeId type; Val() {} Val(ValueId a, TypeId t) : v(a), type(t) {} };
@@ -119,6 +121,7 @@ private:
     BlockId newBlock();
     void place(BlockId b);
     bool terminated() const;
+    bool unreached(BlockId b) const;
     bool madePads() const;
     void specFilterChain(const Pad &p);
     void noexceptAbort(const Pad &p);
@@ -127,6 +130,7 @@ private:
                 const std::vector<ValueId> &fArgs = std::vector<ValueId>());
     ValueId param(BlockId b, TypeId type);
     ValueId iconst(TypeId type, long long k);
+    ValueId fconst(TypeId type, long double v);
     ValueId fallOffValue(const Type &rt);   // the zero a body that falls off its end returns
     ValueId zeroOf(TypeId type);
     ValueId addrOf(const std::string &sym, TypeId type);
@@ -209,11 +213,13 @@ private:
     bool namesCalledFunction(const std::string &head, const std::string &symbol) const;
     Val functorMember(sema::TypedId head, const Type &self);
     Val capturedThis();
+    Val ownThis(const Type &want);
     ValueId virtualBaseAddress(ValueId object, const Type &owner, const Type &vbase);
     ValueId virtualBaseMember(ValueId object, const Type &owner, const Member &m, TypeId type);
     Val readOf(ValueId p, TypeId type);
     Val unary(sema::TypedId id);
-    Val step(sema::TypedId id, bool increment, bool prefix);
+    Val step(sema::TypedId id, bool increment, bool prefix, ValueId &where);
+    bool boundLocal(sema::TypedId init, const Type &t, ValueId slot);
     Val binary(const std::string &op, sema::TypedId l, sema::TypedId r);
     Val arithmetic(const std::string &op, Val a, Val b);
     Val logical(bool isAnd, sema::TypedId l, sema::TypedId r);
@@ -221,6 +227,8 @@ private:
     bool compositePointer(sema::TypedId id, const Type &tx, const Type &ty) const;
     Val assign(sema::TypedId id);
     Val call(sema::TypedId id);
+    bool vaBuiltinNode(sema::TypedId id) const;
+    Val vaBuiltin(sema::TypedId id);
     Val newExpression(sema::TypedId id);
     Val deleteExpression(sema::TypedId id);
     sema::NewFacts newFacts(sema::TypedId id, const std::string &what);
@@ -243,6 +251,7 @@ private:
     static bool scalar(const Type &t);
     static bool referable(const Type &t);
     bool plainClass(const Type &t) const;
+    bool bytesClass(const Type &t) const;
     bool simpleLayout(const Type &cls) const;
     bool builtMember(const Type &t) const;
     bool buildableLayout(const Type &cls, bool vptr = false, bool arrays = false, bool vbases = false) const;
@@ -254,7 +263,9 @@ private:
     void destroyMembers(const Type &cls);
     int baseNamed(const Type &cls, const std::string &name) const;
     ValueId baseAddress(const Type::BaseSpec &b);
+    TypeId msFlagged(const std::string &symbol, TypeId sig, std::vector<ValueId> &ops, int flag);
     void buildBase(const Type::BaseSpec &b, sema::TypedId entry);
+    void copiedBase(const Type::BaseSpec &b, sema::TypedId entry);
     void msVirtualBases(const Type &cls, const std::map<std::string, sema::TypedId> &named);
     Live msGuardedVirtualBase(const Type::BaseSpec &b, ValueId count);
     void msCountedDestroy(const Live &l, BlockId pad);
@@ -335,6 +346,10 @@ private:
     bool classObjectNode(sema::TypedId id) const;
     Val classObject(sema::TypedId id);
     Val arrowPointer(sema::TypedId member);
+    bool convertedNode(sema::TypedId id, sema::Resolution &r) const;
+    Val converted(sema::TypedId id, const sema::Resolution &r);
+    bool classConditionalNode(sema::TypedId id) const;
+    Val conditionalObject(sema::TypedId id);
     std::string temporaryDestructor(const Type &c);
     bool destroyedResultClass(const Type &t) const;
     bool destroyedResult(sema::TypedId id) const;
@@ -343,6 +358,7 @@ private:
     void closeFull();
     std::size_t fullFrom() const;
     Val temporary(sema::TypedId id);
+    Val extendedTemporary(sema::TypedId id);
     void construct(ValueId where, const std::string &symbol, TypeId sig, const Type &cls, bool zeroFirst, sema::TypedId args, std::uint32_t from);
     bool objectNode(sema::TypedId id) const;
     Val object(sema::TypedId id);
@@ -407,6 +423,7 @@ private:
     std::function<bool(syntax::NodeId, syntax::NodeId)> elidedInto_;
     std::function<bool(syntax::NodeId, std::string &, TypeId &)> assignCall_;
     std::function<bool(syntax::NodeId, std::vector<sema::Resolution> &)> arrowCalls_;
+    std::function<bool(syntax::NodeId, sema::Resolution &)> conversionCall_;
     sema::TypedId intoCall_;                    // the call elidedCall lowers, whose result goes into a local's alloca
     int intoAlloca_ = -1, intoNow_ = -1;        // that alloca; and callTail's, set only as that call's tail is entered
     std::size_t liveFloor_;                     // a constructor's built bases and members: below it, kept by a return

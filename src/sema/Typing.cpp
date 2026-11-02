@@ -22,6 +22,7 @@ TypedId TypedTree::add(syntax::NodeId syn, const Type *type, const std::vector<T
     n.literal = 0;
     n.initForm = 0;
     n.forParts = 0;
+    n.bounds = 0;
     children_.insert(children_.end(), children.begin(), children.end());
     nodes_.push_back(n);
     return TypedId(static_cast<std::uint32_t>(nodes_.size() - 1));
@@ -127,6 +128,8 @@ void Typer::record(syntax::NodeId id, TypedId t) {
     if (cast != p_.castTypes_.end()) tree_.setCast(t, TypeTable::id(cast->second), false);
     const auto form = p_.varForms_.find(id.v);
     if (form != p_.varForms_.end()) tree_.setInitForm(t, form->second);
+    const auto bounds = p_.varBounds_.find(id.v);
+    if (bounds != p_.varBounds_.end()) tree_.setBounds(t, bounds->second);
     const auto parts = p_.forParts_.find(id.v);
     if (parts != p_.forParts_.end()) tree_.setForParts(t, parts->second);
     const auto ref = p_.refCastTypes_.find(id.v);
@@ -670,6 +673,13 @@ bool Typer::arrowCalls(syntax::NodeId operand, std::vector<Resolution> &out) con
     return true;
 }
 
+bool Typer::conversionCall(syntax::NodeId operand, Resolution &out) const {
+    const std::unordered_map<std::uint32_t, std::uint32_t>::const_iterator i = p_.conversionCalls_.find(operand.v);
+    if (i == p_.conversionCalls_.end()) return false;
+    out = copied(p_.resolvedTable_[i->second]);
+    return true;
+}
+
 bool Typer::elidedInto(syntax::NodeId var, syntax::NodeId call) const {
     const std::unordered_map<std::uint32_t, Local>::const_iterator l = p_.declaredLocals_.find(var.v);
     const std::unordered_map<std::uint32_t, Parser::CallSlots>::const_iterator c = p_.callSlots_.find(call.v);
@@ -786,9 +796,12 @@ bool Typer::memberList(const std::string &ctor, const std::string &member, std::
     return true;
 }
 
+// The destructor of a complete object, as Parser::destructorCall names it: cl's `??_D` for a class with a virtual base.
 std::string Typer::destructorSymbol(TypeId cls) const {
     const Type &c = *p_.types_.type(cls)->unqualified();
-    return p_.destructorOf(&c) != nullptr ? p_.destructorOf(&c)->symbol : std::string();
+    if (p_.destructorOf(&c) == nullptr) return std::string();
+    if (p_.target_.microsoftNames() && p_.msVbaseClasses_.count(c.tag()) != 0) return vbaseDestructorSymbol(c.tag());
+    return p_.destructorOf(&c)->symbol;
 }
 
 bool Typer::assigned(TypeId cls) const {

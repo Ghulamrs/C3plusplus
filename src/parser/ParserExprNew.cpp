@@ -620,9 +620,11 @@ ExprPtr Parser::contextualScalar(ExprPtr e, std::size_t pos, const char *what) {
     if (e->type() != nullptr && e->type()->unqualified()->isStructOrUnion()) {
         if (const Signature *how = conversionFunction(e->type(), nullptr, true)) {
             const Type *object = e->type();
+            const syntax::NodeId operand = e->syntax();
             std::vector<ExprPtr> none;
             e = memberCallWith(std::move(e), object, how->name, pos,
                                std::move(none));
+            noteConversionCall(operand, *e);
         }
     }
     requireScalar(*e, pos, what);
@@ -690,9 +692,12 @@ ExprPtr Parser::userConversion(const Type *param, ExprPtr &arg, std::size_t pos)
         const Signature *how = conversionFunction(arg->type(), plain, false);
         if (how == nullptr) return nullptr;
         const Type *from = arg->type();
+        const syntax::NodeId operand = arg->syntax();
         std::vector<ExprPtr> none;
-        return memberCallWith(std::move(arg), from, how->name, pos,
-                              std::move(none));
+        ExprPtr got = memberCallWith(std::move(arg), from, how->name, pos,
+                                     std::move(none));
+        noteConversionCall(operand, *got);
+        return got;
     }
     markUsed(ctor);
     // What built the temporary, for the SSA lowering; two different answers for one node leave neither (M3b.2).
@@ -745,9 +750,11 @@ bool Parser::convertThroughConversionFunction(std::vector<ExprPtr> &args,
     if (constructorViable(plain, args, pos)) return false;
     const Signature *how = conversionFunction(from, plain, directInit);
     if (how == nullptr) return false;
+    const syntax::NodeId operand = args[0]->syntax();
     std::vector<ExprPtr> none;
     args[0] = memberCallWith(std::move(args[0]), from, how->name, pos,
                              std::move(none));
+    noteConversionCall(operand, *args[0]);
     return true;
 }
 
@@ -913,6 +920,10 @@ ExprPtr Parser::buildReturned(ExprPtr value, std::size_t pos, bool *named) {
                         again->setType(ptr);
                         both->rightSlot() = std::move(again);
                         pendingReturnBuilt_.form = 3;
+                        if (ctor->resolved() != 0 && resolvedTable_[ctor->resolved()].what == Resolved::Call) {
+                            pendingReturnBuilt_.symbol = resolvedTable_[ctor->resolved()].symbol;
+                            pendingReturnBuilt_.signature = resolvedTable_[ctor->resolved()].type;
+                        }
                         return value;
                     }
                 }
@@ -1756,10 +1767,9 @@ ExprPtr Parser::newExpression(std::size_t pos) {
     pendingNew_ = NewFacts();
     pendingNew_.made = made;
     pendingNew_.array = array;
-    pendingNew_.init = !hasInit ? 0 : init ? 2 : 1;
+    pendingNew_.init = bracedList ? 3 : !hasInit ? 0 : init ? 2 : 1;
     if (nothrow) pendingNew_.why = "a nothrow 'new'";
     else if (userAlloc) pendingNew_.why = "a placement 'new' of an allocation function of the program's";
-    else if (bracedList) pendingNew_.why = "a 'new' with a braced list";
     else if (const Signature *own = classAllocator(made, array ? "operatornew[]" : "operatornew")) {
         // [class.free]/2: the class's own, called as the platform's is where it takes the size alone.
         // [expr.new]/20: a constructor that throws gives the storage back by the class's own deallocation function.
