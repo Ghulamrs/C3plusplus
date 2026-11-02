@@ -1286,6 +1286,25 @@ Lowering::Val Lowering::temporary(sema::TypedId id) {
     return Val(slot, tid(t));
 }
 
+// `V()` or `V(a)` of a polymorphic class with no destructor, bound to a reference: built in a slot of this frame by the
+// constructor the parser chose, which stores the vptr ([class.temporary]/5) - `slot` its address. False for any other.
+bool Lowering::polymorphicTemporary(sema::TypedId id, ValueId &slot) {
+    std::uint32_t from = 0;
+    const TypeId t = TypeTable::id(tree_.node(id).type);
+    if (!temporaryShape(id, from) || !t.valid() || text(id) == "{}") return false;
+    const Type &c = *T(t).unqualified();
+    if (!c.isStructOrUnion() || !c.isComplete() || !c.polymorphic() || !constructed_ || !constructed_(c.id()) ||
+        c.hasDestructor() || c.hasVirtualBase() || !buildableLayout(c, true))
+        return false;
+    std::string symbol;
+    TypeId sig;
+    bool zero = false;
+    if (!temporaryBuilt_(tree_.node(id).syntax, symbol, sig, zero)) return false;
+    slot = entryAlloca(tid(c), "$tmp");
+    construct(slot, symbol, sig, c, zero, id, from);
+    return true;
+}
+
 // `T(o)` of a class with constructors whose copy is its bytes and that has no destructor: a temporary record no
 // constructor built, its one value a class object - of T, or of a class derived from it.
 bool Lowering::copiedTemporary(sema::TypedId id) const {
@@ -4543,6 +4562,13 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
                 if (!a.type.valid() || !T(a.type).isPointer() || T(a.type).pointee()->unqualified() != ref.unqualified())
                     outside("a reference to a function bound to what is not that function");
                 ops.push_back(a.v);
+                continue;
+            }
+            ValueId built;
+            if (!isLvalueNode(an) && ref.isStructOrUnion() && (ref.isConst() || p.isRValueReference()) && polymorphicTemporary(an, built)) {
+                Val a(built, TypeTable::id(tree_.node(an).type->unqualified()));
+                if (T(a.type).unqualified() != ref.unqualified()) a = baseOfObject(a, p);
+                ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(&ref)), std::vector<ValueId>(1, a.v))));
                 continue;
             }
             // Any other class value the lowering can make an object of - [dcl.init.ref]/5's materialised prvalue -

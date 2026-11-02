@@ -4,7 +4,7 @@
 // initializer_list argument - three, one and no elements; a scalar assignment named by an `int &` ([expr.ass]/1); a
 // conditional of two void arms, each making a temporary; `reinterpret_cast<T &>` of an lvalue; a namespace-scope
 // functor and a reference member functor called by their names; a union of scalars with a member initialiser passed
-// and returned by value. Live objects are counted, never constructions: elision is the compiler's to choose.
+// and returned by value; a polymorphic temporary bound to a reference and copied by value. Live objects are counted, never constructions: elision is the compiler's to choose.
 #include <initializer_list>
 #include "lifetime.h"
 extern "C" int printf(const char *, ...);
@@ -55,6 +55,13 @@ struct Holder {
 
 struct Ld { long double v; operator long double() const { return v * 2; } };
 
+struct Poly { int a; Poly(int x) : a(x) {} virtual int f() const { return a + 1; } };
+struct PolyD : Poly { PolyD(int x) : Poly(x) {} int f() const { return a + 2; } };
+struct Vz { int a; virtual int f() const { return a; } };
+static int viaRef(const Poly &p) { return p.f(); }
+static int viaVal(Poly p) { return p.f(); }
+static int viaVz(Vz v) { return v.f() + 9; }
+
 union U { int i = 3; double d; };
 static U pass(U x) { return x; }
 
@@ -86,6 +93,7 @@ int main() {
     Ld ld = { 1.25L };
     long double got = ld;
     printf("%d\n", (int)(got * 4));
+    printf("%d %d %d %d\n", viaRef(Poly(3)), viaVal(Poly(4)), viaRef(PolyD(5)), viaVz(Vz()));
     U u;
     U back = pass(u);
     printf("%d\n", back.i);

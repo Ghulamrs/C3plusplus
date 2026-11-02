@@ -336,6 +336,7 @@ private:
     void scopedStmt(sema::TypedId id);
     void copyObject(ValueId to, ValueId from, const Type &t);
     bool plainTemporary(sema::TypedId id) const;
+    bool polymorphicTemporary(sema::TypedId id, ValueId &slot);
     bool constructedClass(const Type &t) const;
     bool newBuilt(const Type &t) const;
     bool bytesReturned(const Type &t) const;
