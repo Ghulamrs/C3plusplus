@@ -694,6 +694,7 @@ private:
     // **A declarator's initialiser form** (M3b.2), what its `var` node's parts cannot say: `S a;` and `S a = {};` hold
     // nothing either way. 0 none, 1 `= e` or `(e)`, 2 a braced list, 3 empty braces - value-initialisation.
     std::unordered_map<std::uint32_t, int> varForms_;
+    std::unordered_map<std::uint32_t, int> varBounds_;  // an array declarator's written bounds: its `var` node's first parts (M3b.2)
     std::unordered_map<std::uint32_t, int> forParts_;   // a `for`'s parts present: 1 init, 2 condition, 4 step (M3b.2)
     int hoistedForParts_ = 0;   // a `for` whose init has a destructor, its init hoisted in front: its parts, for noteStmt
     std::unordered_map<std::uint32_t, std::string> unnamedCaught_;   // `catch (T)` with no name: T's type_info, by `catch` node
@@ -752,7 +753,9 @@ private:
         const Declared *d = nullptr;
         bool function = false;      // a function's declaration with no definition: its node is over its parameters
         int form = 0;               // its initialiser's form, Parser::InitForm, read before the initialiser is
+        std::size_t values = 0;     // the first node the initialiser made: the parts before it are the bounds
         VarNote(Parser &parser, std::size_t m, std::size_t l) : p(parser), mark(m), lo(l) {}
+        void ahead() { form = p.initFormAhead(); values = p.syntaxTree_.size(); }
         // The type and the name; an unnamed parameter's `$unnamed<n>` is the parser's, and no source spells it - but a
         // lambda's `__invoke` names its `$a<n>` in its body.
         std::string varText() const {
@@ -767,6 +770,9 @@ private:
                 : p.noteParts(syntax::Kind::Var, varText(), d->pos, mark, lo, p.localDefaults(d->name));
             if (!function && d->type != nullptr) p.declaredTypes_[id.v] = d->type;
             if (!function && form != 0) p.varForms_[id.v] = form;
+            std::uint32_t bounds = 0;
+            while (!function && bounds < p.syntaxTree_.node(id).count && p.syntaxTree_.child(id, bounds).v <= values) bounds++;
+            if (bounds != 0) p.varBounds_[id.v] = static_cast<int>(bounds);
             if (!function) p.noteDeclaredLocal(id, d->name);
         }
     };

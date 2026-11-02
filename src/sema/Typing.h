@@ -80,7 +80,7 @@ struct NewFacts {
     bool array, placed;     // placed: the reserved placement form, `new (p) T` - no allocation, the address given
     bool ctorZero, ctorDefaulted;    // the object zeroed before the constructor; defaults filled the written arguments out
     bool bytesCopied;       // `new T(t)` of a class with constructors and a trivial copy: t's bytes stored, no constructor
-    int init;
+    int init;               // 0 none, 1 `()` or `{}`, 2 one value, 3 a braced list of values
     NewFacts() : dslot(-1), array(false), placed(false), ctorZero(false), ctorDefaulted(false), bytesCopied(false), init(0) {}
 };
 
@@ -106,6 +106,7 @@ struct TypedNode {
     std::uint32_t literal;
     std::uint8_t initForm;      // a `var`'s initialiser form: 0 none, 1 `= e` or `(e)`, 2 a braced list, 3 empty braces
     std::uint8_t forParts;      // a `for`'s parts present: 1 init, 2 condition, 4 step, 8 recorded at all
+    std::uint8_t bounds;        // an array `var`'s written bounds, its first parts; its values follow them
 };
 
 class TypedTree {
@@ -122,6 +123,7 @@ public:
     void setFolded(TypedId id, long long value, TypeId type);
     void setInitForm(TypedId id, int form) { nodes_[id.v].initForm = static_cast<std::uint8_t>(form); }
     void setForParts(TypedId id, int parts) { nodes_[id.v].forParts = static_cast<std::uint8_t>(parts | 8); }
+    void setBounds(TypedId id, int n) { nodes_[id.v].bounds = static_cast<std::uint8_t>(n); }
     // A string literal's token comes with the label the program's data holds its bytes under (M3b.1: the lowering's `addr`).
     void setLiteral(TypedId id, const Token &token, const std::string &label = std::string());
     const Resolution &resolution(TypedId id) const { return resolutions_[nodes_[id.v].resolved]; }

@@ -1767,10 +1767,9 @@ ExprPtr Parser::newExpression(std::size_t pos) {
     pendingNew_ = NewFacts();
     pendingNew_.made = made;
     pendingNew_.array = array;
-    pendingNew_.init = !hasInit ? 0 : init ? 2 : 1;
+    pendingNew_.init = bracedList ? 3 : !hasInit ? 0 : init ? 2 : 1;
     if (nothrow) pendingNew_.why = "a nothrow 'new'";
     else if (userAlloc) pendingNew_.why = "a placement 'new' of an allocation function of the program's";
-    else if (bracedList) pendingNew_.why = "a 'new' with a braced list";
     else if (const Signature *own = classAllocator(made, array ? "operatornew[]" : "operatornew")) {
         // [class.free]/2: the class's own, called as the platform's is where it takes the size alone.
         // [expr.new]/20: a constructor that throws gives the storage back by the class's own deallocation function.
