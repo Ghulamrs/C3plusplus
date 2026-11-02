@@ -229,16 +229,19 @@ void Lowering::buildBase(const Type::BaseSpec &b, sema::TypedId entry) {
     }
     if (entry.valid() || defaulted) argumentList(ft, skip, false, args, false, ops);
     else if (ft.params().size() != skip) outside("a base's default constructor of parameters");
-    // cl's most-derived flag, last, where the base's constructor takes one: 0, a subobject's ([class.base.init]/7).
-    if (target_.microsoftNames() && msVbaseCtor_ && msVbaseCtor_(symbol)) {
-        std::vector<TypeId> ps;
-        for (const Type *p : ft.params()) ps.push_back(p->id());
-        ps.push_back(types_.intType()->id());
-        ops.push_back(iconst(types_.intType()->id(), 0));
-        directCall(symbol, types_.functionType(types_.voidType()->id(), ps), ops);
-        return;
-    }
-    directCall(symbol, sig, ops);
+    const TypeId called = msFlagged(symbol, sig, ops, 0);
+    directCall(symbol, called, ops);
+}
+
+// cl's most-derived flag, last, where the constructor `symbol` takes one ([class.base.init]/7): 1 for a complete object,
+// 0 for a subobject, pushed on `ops`; the signature to call it by, the flag's int among its parameters.
+TypeId Lowering::msFlagged(const std::string &symbol, TypeId sig, std::vector<ValueId> &ops, int flag) {
+    if (!target_.microsoftNames() || !msVbaseCtor_ || !msVbaseCtor_(symbol)) return sig;
+    std::vector<TypeId> ps;
+    for (const Type *p : T(sig).params()) ps.push_back(p->id());
+    ps.push_back(types_.intType()->id());
+    ops.push_back(iconst(types_.intType()->id(), flag));
+    return types_.functionType(types_.voidType()->id(), ps);
 }
 
 // cl's `if (mostDerived)` in front of a constructor of a class with virtual bases: the vbtable pointers the parser
@@ -633,12 +636,12 @@ bool Lowering::builtClass(const Type &t) const {
     return c.kind() != Kind::Union && (simpleLayout(c) || buildableLayout(c, false, true));
 }
 
-// A local of a class builtClass does not take - a vptr, a polymorphic base, a member of either - built and destroyed by
-// the calls the parser recorded as builtLocal's is: its layout is its constructors' business. A virtual base stays outside.
+// A local of a class builtClass does not take - a vptr, a polymorphic base, a virtual base, a member of any - built and
+// destroyed by the calls the parser recorded as builtLocal's is: its layout is its constructors' business.
 bool Lowering::heldClass(const Type &t) const {
     if (!t.isStructOrUnion() || !t.isComplete() || plainClass(t) || builtClass(t)) return false;
     const Type &c = *t.unqualified();
-    return c.kind() != Kind::Union && !c.hasVirtualBase() && constructed_ && constructed_(c.id());
+    return c.kind() != Kind::Union && constructed_ && constructed_(c.id());
 }
 
 // [dcl.init]/17 and [class.dtor]/4 for such a local: the constructor the parser chose called on
@@ -682,8 +685,11 @@ void Lowering::builtLocal(sema::TypedId var, ValueId slot, const Type &t) {
         } else if (ft.params().size() != 1) {
             outside("a local's default constructor of parameters");
         }
-        directCall(symbol, sig, ops);
+        const TypeId called = msFlagged(symbol, sig, ops, 1);
+        directCall(symbol, called, ops);
         closeFull();
+    } else if (c.hasVirtualBase()) {
+        outside("a local of a class with a virtual base built by no constructor");
     } else if (elidedLocal(var)) {
         elidedCall(child(var, 0), slot);
     } else if (v.initForm == 1 && v.count == 1 && temporaryNode(child(var, 0)) && !plainTemporary(child(var, 0))) {

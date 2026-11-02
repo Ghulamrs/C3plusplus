@@ -786,9 +786,12 @@ bool Typer::memberList(const std::string &ctor, const std::string &member, std::
     return true;
 }
 
+// The destructor of a complete object, as Parser::destructorCall names it: cl's `??_D` for a class with a virtual base.
 std::string Typer::destructorSymbol(TypeId cls) const {
     const Type &c = *p_.types_.type(cls)->unqualified();
-    return p_.destructorOf(&c) != nullptr ? p_.destructorOf(&c)->symbol : std::string();
+    if (p_.destructorOf(&c) == nullptr) return std::string();
+    if (p_.target_.microsoftNames() && p_.msVbaseClasses_.count(c.tag()) != 0) return vbaseDestructorSymbol(c.tag());
+    return p_.destructorOf(&c)->symbol;
 }
 
 bool Typer::assigned(TypeId cls) const {

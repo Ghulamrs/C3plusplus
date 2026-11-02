@@ -254,6 +254,7 @@ private:
     void destroyMembers(const Type &cls);
     int baseNamed(const Type &cls, const std::string &name) const;
     ValueId baseAddress(const Type::BaseSpec &b);
+    TypeId msFlagged(const std::string &symbol, TypeId sig, std::vector<ValueId> &ops, int flag);
     void buildBase(const Type::BaseSpec &b, sema::TypedId entry);
     void msVirtualBases(const Type &cls, const std::map<std::string, sema::TypedId> &named);
     Live msGuardedVirtualBase(const Type::BaseSpec &b, ValueId count);
