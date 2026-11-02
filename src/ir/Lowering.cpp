@@ -1601,7 +1601,6 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
     vtt_ = ValueId();
     msFlag_ = ValueId();
     try {
-        if (facts.variadic) outside("a variadic function");
         if (facts.wrappedBody) outside("a function try block or an exception specification");
         // A noexcept body with pads of its own is not wrapped (wrappedBody says when it is): its pads are any function's.
         Function &f = F();
@@ -1610,6 +1609,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         f.isStatic = facts.isStatic;
         f.isInline = facts.isInline;
         f.noexcept_ = facts.noexcept_;
+        f.variadic = facts.variadic;
         f.pos = facts.pos;
         returns_ = T(facts.returns).isReference() ? facts.returns : tid(*T(facts.returns).unqualified());
         f.returns = returns_;
@@ -2527,8 +2527,9 @@ void Lowering::declaration(sema::TypedId id) {
             slotType = tid(*types_.pointerTo(t.referent()));
         } else if (t.isArray()) {
             long long elems = 0;
+            // Scalars, or plain classes left as they are or zeroed (a va_list is one): either is its bytes.
             if (!builtArray(t, elems, true).valid() &&
-                (!t.pointee()->isComplete() || !scalar(*t.pointee()) || t.length() <= 0))
+                (!t.pointee()->isComplete() || !(scalar(*t.pointee()) || plainClass(*t.pointee())) || t.length() <= 0))
                 outside("an array of '" + t.pointee()->describe() + "'");
             slotType = tid(t);
         } else if (plainClass(t) || builtClass(t) || heldClass(t)) {
@@ -2631,6 +2632,7 @@ void Lowering::localArray(sema::TypedId var, ValueId slot, TypeId type) {
         return;
     }
     if (items > length) outside("an array initialised with more values than it holds");
+    if (!scalar(*t.pointee())) outside("an array of a class initialised from a list");
     if (items == 1 && syn(child(var, first)).kind == syntax::Kind::StringLit && !t.pointee()->isPointer()) {
         stringArray(child(var, first), slot, t);
         return;
@@ -2904,6 +2906,7 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
         break;
     case syntax::Kind::Conditional: e = conditional(id); break;
     case syntax::Kind::Call: {
+        if (vaBuiltinNode(id)) { e = vaBuiltin(id); break; }
         if (temporaryNode(id)) { temporary(id); e = Val(); break; }      // a class value as a statement: built, unread
         e = call(id);
         const sema::Resolution &r = tree_.resolution(id);
@@ -3255,6 +3258,7 @@ Lowering::Val Lowering::unary(sema::TypedId id) {
     if (op == "*") {
         if (!t.isPointer() || t.pointee()->isVoid() || t.pointee()->isFunction()) outside("a '*' of what is not an object pointer");
         const Type &e = *t.pointee();
+        if (e.isArray()) return decay(Val(a.v, tid(e)));     // [expr.unary.op]/1: an lvalue array, which decays here
         if (!scalar(e)) outside("a read through a pointer to '" + e.describe() + "'");
         return readOf(a.v, tid(e));
     }
@@ -3795,6 +3799,24 @@ bool Lowering::pseudoDestructor(sema::TypedId member) {
     const InstId c = callOrInvoke(TypeId(), std::vector<ValueId>(1, result(add(Op::Bitcast, self, std::vector<ValueId>(1, o.v)))));
     at(c).call = callIndex;
     return true;
+}
+
+// `__builtin_va_start(p)` and `__builtin_va_arg(p, T)`, the forms <stdarg.h> spells the macros by, recorded as a call of
+// no function over the list's address: va_start the op alone, va_arg the T the typer took from the parser (whose rules
+// promote and refuse an aggregate). The selector reads both with the walker's own code over the save area its prologue lays.
+bool Lowering::vaBuiltinNode(sema::TypedId id) const {
+    return syn(id).kind == syntax::Kind::Call && text(id).compare(0, 13, "__builtin_va_") == 0;
+}
+
+Lowering::Val Lowering::vaBuiltin(sema::TypedId id) {
+    if (count(id) != 1) outside("a va builtin of another shape");
+    const Val list = decay(expr(child(id, 0)));
+    if (!list.type.valid() || !T(list.type).isPointer()) outside("a va_list that is not a pointer");
+    if (text(id) == "__builtin_va_start") { add(Op::VaStart, TypeId(), std::vector<ValueId>(1, list.v)); return Val(); }
+    const Type *want = tree_.node(id).type;
+    if (want == nullptr || !scalar(*want) || want->isX87(target_)) outside("a va_arg of type '" + (want != nullptr ? want->describe() : std::string("?")) + "'");
+    const TypeId t = tid(*want->unqualified());
+    return Val(result(add(Op::VaArg, t, std::vector<ValueId>(1, list.v))), t);
 }
 
 Lowering::Val Lowering::call(sema::TypedId id) {

@@ -35,6 +35,7 @@ int X86_64Linux::layoutSsa(const Function &fn, const ir::Function &f) {
     long long cur = 0;
     for (const Param &p : fn.params()) cur = std::max(cur, static_cast<long long>(p.offset));
     cur = std::max(cur, static_cast<long long>(fn.sretSlot()));   // where the prologue keeps the caller's result pointer
+    cur = std::max(cur, static_cast<long long>(fn.regSaveSlot()));   // and a variadic function's register save area
     cur = roundUp(cur, 16);
     ssaAllocaSlot_.assign(f.frame.size(), 0);
     for (std::size_t i = 0; i < f.frame.size(); i++) {
@@ -445,9 +446,27 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
     case ir::Op::CleanupPad:
     case ir::Op::CleanupRet:
         return;     // the row facts the invokes read; the landing stores are the block's own, and a funclet's return its end (selectBody)
+    case ir::Op::VaStart: case ir::Op::VaArg:
+        selectVa(f, i, rt);
+        return;
+    case ir::Op::VaEnd:
+        return;
     default:
         ssaUnsupported(i);
     }
+}
+
+// The walker's own va_start and va_arg over a Var naming the list pointer's slot: SysV's four-field record over the save
+// area receiveParameters filled, Microsoft's char pointer stepped by 8 through the home area - one code for both fronts.
+void X86_64Linux::selectVa(const ir::Function &f, const ir::Inst &i, const Type *rt) {
+    const ir::ValueId v = f.operand(i, 0);
+    std::unique_ptr<Var> p(Var::local("$v" + std::to_string(v.v), static_cast<int>(ssaValueSlot_[v.v])));
+    p->setType(typeOf(f, v));
+    if (i.op == ir::Op::VaStart) { VaStart n(ExprPtr(p.release())); n.accept(*this); return; }
+    VaArg n(ExprPtr(p.release()));
+    n.setType(rt);
+    n.accept(*this);
+    ssaStore(f, i.result);
 }
 
 // The walker's own call, over Var nodes naming the slots: placeArguments and every ABI rule stay where they are.

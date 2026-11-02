@@ -1040,11 +1040,12 @@ ExprPtr Parser::primary(Program *program) {
     const std::size_t start = at_, pos = t.pos;
     const unsigned gen = argGen_;
     const std::size_t mark = syntaxTree_.size();
-    // A named cast, typeid or a lambda is a form over what it read, as sizeof is.
+    // A named cast, typeid or a lambda is a form over what it read, as sizeof is; a va builtin a call of no function over the list.
     static const struct { const char *word; syntax::Kind kind; } kForms[] = {
         { "static_cast", syntax::Kind::Cast }, { "dynamic_cast", syntax::Kind::Cast },
         { "const_cast", syntax::Kind::Cast }, { "reinterpret_cast", syntax::Kind::Cast },
         { "typeid", syntax::Kind::Sizeof }, { "[", syntax::Kind::Lambda },
+        { "__builtin_va_start", syntax::Kind::Call }, { "__builtin_va_arg", syntax::Kind::Call },
     };
     for (const auto &w : kForms)
         if (t.is(w.word)) {
@@ -3220,7 +3221,7 @@ ExprPtr Parser::noteKeywordForm(syntax::Kind kind, KeywordForm f) {
     if (!f.e) { syntaxTree_.add(kind, text, pos, parts); return std::move(f.e); }
     f.e->setSyntax(syntaxTree_.add(kind, text, pos, parts));
     if (kind == syntax::Kind::Sizeof && text.compare(0, 6, "typeid") == 0) noteValue(f.e.get());
-    if (kind == syntax::Kind::New || kind == syntax::Kind::Delete || kind == syntax::Kind::Throw || kind == syntax::Kind::Lambda ||
+    if (kind == syntax::Kind::New || kind == syntax::Kind::Delete || kind == syntax::Kind::Throw || kind == syntax::Kind::Lambda || kind == syntax::Kind::Call ||
         (kind == syntax::Kind::Cast && (text.find('&') != std::string::npos || text.compare(0, 12, "dynamic_cast") == 0)))
         noteValue(f.e.get());
     if (kind == syntax::Kind::Throw && !pendingThrow_.temp.empty()) throwFacts_[f.e->syntax().v] = pendingThrow_;
