@@ -3981,9 +3981,9 @@ Lowering::Val Lowering::vaBuiltin(sema::TypedId id) {
     const Val list = decay(expr(child(id, 0)));
     if (!list.type.valid() || !T(list.type).isPointer()) outside("a va_list that is not a pointer");
     if (text(id) == "__builtin_va_start") { add(Op::VaStart, TypeId(), std::vector<ValueId>(1, list.v)); return Val(); }
-    const Type *want = tree_.node(id).type;
-    if (want == nullptr || !scalar(*want) || want->isX87(target_)) outside("a va_arg of type '" + (want != nullptr ? want->describe() : std::string("?")) + "'");
-    const TypeId t = tid(*want->unqualified());
+    const TypeId want = TypeTable::id(tree_.node(id).type);
+    if (!want.valid() || !scalar(T(want)) || T(want).isX87(target_)) outside("a va_arg of type '" + (want.valid() ? T(want).describe() : std::string("?")) + "'");
+    const TypeId t = tid(*T(want).unqualified());
     return Val(result(add(Op::VaArg, t, std::vector<ValueId>(1, list.v))), t);
 }
 
