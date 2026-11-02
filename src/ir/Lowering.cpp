@@ -1337,6 +1337,12 @@ Lowering::Val Lowering::closure(sema::TypedId id) {
 }
 
 // What a reference may refer to here: a scalar, or a complete class, which a reference only ever names by its address.
+// Whether two types are one but for cv at each level of pointer.
+static bool sameBelowCv(const Type &a, const Type &b) {
+    if (a.isPointer() && b.isPointer()) return sameBelowCv(*a.pointee(), *b.pointee());
+    return a.unqualified() == b.unqualified();
+}
+
 // Whether `d` has `b` as a base, direct or not ([class.derived]).
 static bool derivesFrom(const Type &d, const Type &b) {
     for (const Type::BaseSpec &s : d.unqualified()->bases()) if (s.type->unqualified() == b.unqualified()) return true;
@@ -2290,11 +2296,14 @@ Lowering::Val Lowering::condition(sema::TypedId id) {
     if (count(id) != 1 || syn(child(id, 0)).kind != syntax::Kind::Var) outside("a condition declaring more than one name");
     const sema::TypedId var = child(id, 0);
     const TypeId t = TypeTable::id(tree_.node(var).type);
-    if (!t.valid() || !scalar(T(t)) || T(t).isX87(target_)) outside("a condition declaring what is not a scalar");
+    // A reference's value is its referent's: `if (auto &&e = i)` tests i.
+    const TypeId v = t.valid() && T(t).isReference() ? tid(*T(t).referent()) : t;
+    if (!v.valid() || !scalar(T(v)) || T(v).isX87(target_)) outside("a condition declaring what is not a scalar");
     declaration(id);
     const std::map<std::uint32_t, std::pair<ValueId, TypeId> >::const_iterator l = locals_.find(tree_.node(var).syntax.v);
     if (l == locals_.end()) outside("a condition's variable the lowering did not declare");
-    return truth(readOf(l->second.first, l->second.second));
+    const ValueId where = v.v == t.v ? l->second.first : load(l->second.first, tid(*types_.pointerTo(&T(v))));
+    return truth(readOf(where, v));
 }
 
 // A `for` keeps its parts in order and leaves an empty one out; which ones it has the parser records on the node
@@ -2524,9 +2533,11 @@ void Lowering::declaration(sema::TypedId id) {
         const ValueId slot = entryAlloca(slotType, text(var));
         locals_[v.syntax.v] = std::make_pair(slot, tid(t));
         if (t.isReference()) {
-            if (v.count != 1) outside("a reference of " + std::to_string(v.count) + " parts");
-            if (boundLocal(child(var, 0), t, slot)) continue;
-            Val b = lvalue(child(var, 0));
+            // A reference to an array keeps its bound as a first part: `int (&a)[3] = arr`.
+            const std::uint32_t bound = t.referent()->isArray() && v.count == 2 ? 1 : 0;
+            if (v.count != bound + 1) outside("a reference of " + std::to_string(v.count) + " parts");
+            if (boundLocal(child(var, bound), t, slot)) continue;
+            Val b = lvalue(child(var, bound));
             // [dcl.init.ref]/5: a class lvalue bound to a reference to its base binds the base subobject.
             if (T(b.type).isStructOrUnion() && t.referent()->isStructOrUnion() && T(b.type).unqualified() != t.referent()->unqualified())
                 b = baseOfObject(b, t);
@@ -3644,6 +3655,8 @@ bool Lowering::compositePointer(sema::TypedId id, const Type &tx, const Type &ty
         const Type &ap = *a.pointee();
         if (ap.isConst() && !c.pointee()->isConst()) return false;
         if (ap.unqualified() == &cp || (cp.isVoid() && !ap.isFunction())) return true;
+        // [conv.qual]: pointers a level or more down, one type but for cv - the typer's composite is the wider.
+        if (ap.isPointer() && cp.isPointer()) return sameBelowCv(ap, cp);
         return ap.unqualified()->isStructOrUnion() && cp.isStructOrUnion();
     };
     return fits(tx) && fits(ty);
