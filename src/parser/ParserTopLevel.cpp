@@ -2423,16 +2423,23 @@ bool Parser::trailingArrowAhead() const {
     return false;
 }
 
-// The defaults applyDefaults appended to a base's, a delegation's or a member's (".m") entry past `written`, under a
-// mem-initialiser of their own keyed "constructor|^name" and typed as a member's own initialiser is (M3b.2); none where
-// one has no syntax.
-void Parser::noteEntryDefaults(const std::string &name, const std::vector<ExprPtr> &args, std::size_t written) {
-    if (args.size() == written || memberTemplateInst_) return;
+// The defaults applyDefaults appended past `written`, as nodes, their group taken; none where one has no syntax (M3b.2).
+std::vector<syntax::NodeId> Parser::defaultNodes(const std::vector<ExprPtr> &args, std::size_t written) {
     std::vector<syntax::NodeId> made;
     for (std::size_t i = written; i < args.size(); i++) made.push_back(syn(args[i]));
-    for (std::size_t i = 0; i < made.size(); i++) if (!made[i].valid()) return;
+    for (std::size_t i = 0; i < made.size(); i++) if (!made[i].valid()) return std::vector<syntax::NodeId>();
+    if (!made.empty()) defaultGroups_.erase(made.back().v);
+    return made;
+}
+
+// The defaults applyDefaults appended to a base's, a delegation's or a member's (".m") entry past `written` - or to a
+// hand-built call's, named "$list:", "$elem:", "$new:" and its position - under a mem-initialiser of their own keyed
+// "function|^name" and typed as a member's own initialiser is (M3b.2); none where one has no syntax.
+void Parser::noteEntryDefaults(const std::string &name, const std::vector<ExprPtr> &args, std::size_t written) {
+    if (args.size() == written || memberTemplateInst_) return;
+    const std::vector<syntax::NodeId> made = defaultNodes(args, written);
+    if (made.empty()) return;
     // Placed where the defaults were written, so the constructor's own node does not adopt it.
-    defaultGroups_.erase(made.back().v);
     memberDefaults_[currentFunction_ + "|^" + name] = syntaxTree_.add(syntax::Kind::MemInit, name, syntaxTree_.node(made[0]).loc, made);
 }
 

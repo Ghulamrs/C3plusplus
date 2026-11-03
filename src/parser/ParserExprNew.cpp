@@ -670,6 +670,17 @@ const Parser::Signature *Parser::convertingConstructor(const Type *to,
     return ambiguous ? nullptr : found;
 }
 
+// What built a converted temporary of `plain` from node `at`, for the SSA lowering; two answers for one node leave neither (M3b.2).
+void Parser::noteConvertedBuilt(syntax::NodeId at, const Type *plain, const Signature &ctor) {
+    if (!at.valid()) return;
+    std::vector<const Type *> full(1, types_.pointerTo(plain));
+    full.insert(full.end(), ctor.params.begin(), ctor.params.end());
+    const TemporaryBuilt b = { ctor.symbol, types_.functionType(types_.get(Kind::Void), full, false), false };
+    const std::unordered_map<std::uint32_t, TemporaryBuilt>::iterator had = convertedBuilt_.find(at.v);
+    if (had == convertedBuilt_.end()) convertedBuilt_[at.v] = b;
+    else if (had->second.symbol != b.symbol || had->second.signature != b.signature) had->second.symbol.clear();
+}
+
 // **The conversion an argument needs to become the parameter's class**, or
 // null where none is needed or possible.
 ExprPtr Parser::userConversion(const Type *param, ExprPtr &arg, std::size_t pos) {
@@ -702,15 +713,7 @@ ExprPtr Parser::userConversion(const Type *param, ExprPtr &arg, std::size_t pos)
         return got;
     }
     markUsed(ctor);
-    // What built the temporary, for the SSA lowering; two different answers for one node leave neither (M3b.2).
-    if (arg->syntax().valid()) {
-        std::vector<const Type *> full(1, types_.pointerTo(plain));
-        full.insert(full.end(), ctor->params.begin(), ctor->params.end());
-        const TemporaryBuilt b = { ctor->symbol, types_.functionType(types_.get(Kind::Void), full, false), false };
-        const std::unordered_map<std::uint32_t, TemporaryBuilt>::iterator had = convertedBuilt_.find(arg->syntax().v);
-        if (had == convertedBuilt_.end()) convertedBuilt_[arg->syntax().v] = b;
-        else if (had->second.symbol != b.symbol || had->second.signature != b.signature) had->second.symbol.clear();
-    }
+    noteConvertedBuilt(arg->syntax(), plain, *ctor);
 
     std::vector<ExprPtr> one;
     one.push_back(std::move(arg));
@@ -2068,6 +2071,7 @@ ExprPtr Parser::newExpression(std::size_t pos) {
         const NewFacts facts = pendingNew_;      // a `new` in a default argument would take these as its own
         applyDefaults(ctor, ctorArgs, pos);
         pendingNew_ = facts;
+        noteEntryDefaults("$new:" + std::to_string(pos), ctorArgs, written);     // the `new` node's position, for the lowering
         std::vector<ExprPtr> all;
         ExprPtr self(Var::local(temp, slot));
         self->setType(pointer);

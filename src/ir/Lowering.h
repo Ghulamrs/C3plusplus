@@ -170,9 +170,14 @@ private:
     void aggregateInit(ValueId slot, const Type &t, const std::vector<sema::TypedId> &parts);
     void aggregateFill(ValueId slot, const Type &t, const std::vector<sema::TypedId> &parts, std::size_t &next);
     void aggregateItem(ValueId at0, const Type &mt, const std::vector<sema::TypedId> &parts, std::size_t &next);
+    bool recordedAggregate(sema::TypedId var, ValueId slot, const Type &t);
+    bool recordedMember(const Type &mt) const;
+    void aggregateMember(ValueId at0, const Type &mt, const std::vector<sema::TypedId> &parts, std::size_t &next);
+    void aggregateTail(ValueId at0, const Type &t);
     Val classValue(sema::TypedId id, const Type &t);
     void forStmt(sema::TypedId id);
     void rangeForStmt(sema::TypedId id);
+    Val bracedRange(sema::TypedId range, const Type &e, TypeId iter, std::size_t scope);
     ValueId rangeEnd(const sema::Resolution &r, Val range, TypeId &iter);
     void switchStmt(sema::TypedId id);
     BlockId labelBlock(const std::string &name);
@@ -239,6 +244,7 @@ private:
     bool compositePointer(sema::TypedId id, const Type &tx, const Type &ty) const;
     Val assign(sema::TypedId id);
     Val assignScalar(sema::TypedId id, Val &target);
+    Val bracedAssign(sema::TypedId id, Val &target);
     bool scalarAssignNode(sema::TypedId id) const;
     bool globalFunctor(sema::TypedId head, const std::string &symbol, const Type &self, Val &object);
     Val qualifiedMemberOfThis(sema::TypedId id);
@@ -326,6 +332,7 @@ private:
     Val dataMemberPointer(sema::TypedId id);
     ValueId nullMemberPointer(TypeId mp);
     Val memberPointerConversion(Val v, TypeId to);
+    void memberFunctionPointerInto(ValueId slot, Val from, const Type &to);
     Val memberPointerCompare(const std::string &op, Val a, Val b);
     Val memberPointerLvalue(sema::TypedId id);
     Val callTail(TypeId sig, CallInfo info, std::vector<ValueId> ops, std::size_t skip, const std::vector<sema::TypedId> &args,
@@ -352,6 +359,7 @@ private:
     void builtLocal(sema::TypedId var, ValueId slot, const Type &t);
     ValueId initializerList(sema::TypedId parent, const Type &param, std::uint32_t n);
     ValueId initializerListOf(const std::vector<sema::TypedId> &elems, const Type &param, const sema::ListBuilt &lb = sema::ListBuilt());
+    ValueId backingArray(const std::vector<sema::TypedId> &elems, const Type &e, const sema::ListBuilt &lb);
     void listElement(ValueId at, const Type &et, sema::TypedId part, const sema::ListElement &e);
     void guard(ValueId slot, const Type &c, const std::string &dtor);
     void destroy(const Live &l, bool invoke = false);
@@ -387,6 +395,7 @@ private:
     bool convertedNode(sema::TypedId id, sema::Resolution &r) const;
     Val converted(sema::TypedId id, const sema::Resolution &r);
     Val convertedObject(Val o, const sema::Resolution &r, bool object = false);
+    bool convertedCast(sema::TypedId id, sema::Resolution &r) const;
     Val iteratorCall(const sema::Resolution &r, const std::vector<Val> &objects, TypeId cls);
     bool typeidNode(sema::TypedId id) const;
     Val typeidAddress(sema::TypedId id);
@@ -403,8 +412,10 @@ private:
     Val extendedTemporary(sema::TypedId id);
     Val extendedResult(sema::TypedId id);
     bool heldTemporaryInto(sema::TypedId id, ValueId slot, const Type &c);
-    void construct(ValueId where, const std::string &symbol, TypeId sig, const Type &cls, bool zeroFirst, sema::TypedId args, std::uint32_t from);
+    void construct(ValueId where, const std::string &symbol, TypeId sig, const Type &cls, bool zeroFirst, sema::TypedId args, std::uint32_t from,
+                   sema::TypedId defaults = sema::TypedId());
     bool objectNode(sema::TypedId id) const;
+    bool bracedNode(sema::TypedId id) const { return syn(id).kind == syntax::Kind::Other && text(id) == "{}"; }   // a `{}` over its values
     Val object(sema::TypedId id);
     bool closureNode(sema::TypedId id) const;
     bool closureBuiltNode(sema::TypedId id) const;
@@ -476,6 +487,8 @@ private:
     std::function<bool(syntax::NodeId, sema::Resolution &)> conversionCall_;
     sema::TypedId intoCall_;                    // the call elidedCall lowers, whose result goes into a local's alloca
     int intoAlloca_ = -1, intoNow_ = -1;        // that alloca; and callTail's, set only as that call's tail is entered
+    std::vector<sema::ListElement> aggCtors_;     // recordedAggregate's: each member a constructor builds, the next at aggNext_
+    std::size_t aggNext_ = 0;
     std::size_t liveFloor_;                     // a constructor's built bases and members: below it, kept by a return
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> temporaryBuilt_;
     std::function<bool(syntax::NodeId, std::string &, TypeId &)> convertedBuilt_;

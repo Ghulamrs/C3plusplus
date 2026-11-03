@@ -607,7 +607,21 @@ StmtPtr Parser::declarationBody() {
         if (hasInit) {
             std::vector<InitStep> path;
             const std::size_t built = inits.size();
+            // An aggregate whose members' classes have constructors: what built each, for the SSA lowering (M3b.2).
+            const Type *leaf = d.type;
+            while (leaf->isArray()) leaf = leaf->pointee();
+            const ListBuilt outerRecord = aggregateRecord_;
+            const bool outerRecording = aggregateRecording_;
+            aggregateRecord_ = ListBuilt();
+            aggregateRecording_ = leaf->isStructOrUnion() && !constructedClass(leaf) && needsConstruction(leaf);
             emitInit(d.name, path, d.type, in, inits);
+            const Local *rl = lookup_.findLocal(d.name);
+            if (aggregateRecording_ && !aggregateRecord_.elems.empty() && rl != nullptr && listBySerial_.count(rl->serial) == 0) {
+                aggregateRecord_.members = true;
+                listBySerial_[rl->serial] = aggregateRecord_;
+            }
+            aggregateRecord_ = outerRecord;
+            aggregateRecording_ = outerRecording;
             if (quals.isConstexpr && d.type->unqualified()->isStructOrUnion()) foldLocalObject(d, off, inits, built);
         }
         flushTemporaries(inits);
@@ -794,9 +808,14 @@ StmtPtr Parser::rangeForStatement(int scope) {
     pendingRangeCalls_ = RangeCalls();
     if (braced) {
         const std::size_t braces = at_;
+        const std::size_t deduced = syntaxTree_.size();
         const Type *il = deduceBracedAuto("the range", rpos);
         at_ = braces;
+        syntaxTree_.kill(deduced);      // the deduction's reading of the braces, read again below - a body it defined kept
+        reviveDefinedBodies(deduced);
+        const std::size_t mark = syntaxTree_.size(), lo = peek().pos;
         Init in = parseInitialiser();
+        noteParts(syntax::Kind::Other, "{}", lo, mark, lo);     // the range one part, `{}` over its values
         range = buildInitializerList(il, in, rpos, listSetup);
     } else {
         range = expr();
@@ -929,6 +948,10 @@ StmtPtr Parser::rangeForStatement(int scope) {
         take->setType(slotType);
     } else {
         ExprPtr at = std::move(deref);
+        // A class variable made from another class's element by a converting constructor: which, under the `var` (M3b.2).
+        if (d.type->unqualified()->isStructOrUnion() && elem->unqualified() != d.type->unqualified())
+            if (const Signature *ctor = convertingConstructor(d.type, *at, d.pos))
+                noteConvertedBuilt(loopVar, d.type->unqualified(), *ctor);
         ExprPtr var(Var::local(d.name, vSlot));
         var->setType(d.type);
         take.reset(new Assign(std::move(var), convert(std::move(at), d.type)));
@@ -955,7 +978,7 @@ StmtPtr Parser::rangeForStatement(int scope) {
     setup.push_back(StmtPtr(f));
     if (!classIter && alive_.size() == aliveMark && rt->isArray())
         pendingRange_ = RangeFacts{ bName, eName, bSlot, eSlot, scope, inner };
-    const bool classCalls = (!classIter || (calls.ne != 0 && calls.deref != 0 && calls.inc != 0)) && !rt->isArray() && !braced;
+    const bool classCalls = (!classIter || (calls.ne != 0 && calls.deref != 0 && calls.inc != 0)) && !rt->isArray();
     pendingRangeCalls_ = classCalls ? calls : RangeCalls();
     // The range temporary and the iterators die after the loop, in the reverse order,
     // and on the way out of an exception too - a cleanup region from where each was built.

@@ -1917,8 +1917,10 @@ ExprPtr Parser::memberTemplateCall(ExprPtr object, const Type *obj,
                                     chosen.variadic, pos, std::move(callArgs), false);
         if (object == nullptr || clonePure(*object) != nullptr) return call;
         const Type *rt = call->type();
+        const std::uint32_t reached = call->resolved();
         ExprPtr both(new Comma(std::move(object), std::move(call)));
         both->setType(rt);
+        both->setResolved(reached);    // the call's record on the node the syntax takes, as memberCallWith's
         return both;
     }
     if (object == nullptr)

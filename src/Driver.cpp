@@ -1427,7 +1427,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         facts.recordKey = split.empty() ? fn.symbol() : split;
         facts.takesVtt = !split.empty();
         facts.msFlag = facts.isConstructor && typer.msVbaseCtor(fn.symbol());
-        if (facts.isConstructor) typer.typeMemberDefaults(facts.recordKey);
+        typer.typeMemberDefaults(facts.recordKey);      // a constructor's member entries, any function's hand-built calls' defaults
         facts.sret = fn.sretSlot() != 0;
         facts.landingPads = fn.hasLandingPads();
         // A plain function's try block is a `try` in its body to the lowering, its throw(...) list a filter it

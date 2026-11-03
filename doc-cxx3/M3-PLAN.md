@@ -1283,3 +1283,35 @@ left is 23 bodies, each its own shape: default arguments in an array's or an `in
 default initialiser, an expression statement of four parts, two binaries and a call the typer leaves untyped, a
 range-for over a `pair`, a conversion to a class that is not a base, a lambda as a class local's initialiser. Then the
 M3b.2 closing entry, and M3b.3.
+
+**Round 26, 2026-11-03: four lanes, every source body lowered.** From round 25's tree (`de35f7be`), the 23 bodies left
+in four groups; the lanes stopped at the usage limit at 16:35 and were resumed at 20:02. **lane-dflt** (Fable): the
+defaults `applyDefaults` completes a hand-built call with recorded where the parser builds the call - a braced default
+wears the `{}` node a braced argument gets, an array's and a list tail's defaults become the `var` node's last parts,
+a list element's, an array element's and a `new`'s go under `noteEntryDefaults` - on round 25's `ListBuilt`, no second
+fact; a member's own braced initialiser recorded as a written entry is; +6. **lane-brc**: an anonymous union's members
+placed in an aggregate's list as one slot of the union's type, `x = {...}` as a two-part assignment (`bracedAssign`),
+a braced range-for (`bracedRange` over `backingArray`, split from `initializerListOf`), `T({...})` as the `{}` call
+node `T{...}` is, and a user-defined literal's operator spelled so its call has a node; +5. **lane-typ**: a static
+member template reached through an object, a class operand's conversion call noted (which mended a parser fault: `k ==
+42` through a conversion was typed `int`, now `bool`), a member array of a constructed class, a named cast to a class
+(`convertedCast`), and a call through a data member with `operator()`; +6. **lane-obj**: a constant local captured by a
+nested lambda (`LambdaCapture::constant`), a reference cast naming its operand's temporary, a subscript as a call's head,
+[conv.mem]/2 for a pointer to a member function (`memberFunctionPointerInto`), a converted range-for variable
+(`noteConvertedBuilt`, which `userConversion` now shares), and an aggregate whose members have constructors
+(`ListBuilt::members`, `recordedAggregate`); +6. The merge kept brc's anonymous union and obj's members past a list's end
+in `aggregateFill` together and refuses, by name, an anonymous union past the list's end, which neither lane measured.
+**Round 25's tree failed its memory gate** - five raw `Type *` in the lowering, 49 over a baseline of 44 - which its
+merge gate never reached, `make test` having stopped at the comment cap one line before; the five are `TypeId`s now.
+**Gated**: Linux `make test` green - **ssa.sh 8678 of 8678 lowered, 0 outside, 0 failed** - run.sh 1093/0 at `-O2`,
+`-front=ssa` and `-front=ssa -O2`; Windows `winpass.sh` at `-front=ssa` and `-front=ssa -O2`, 0 differ in both
+spellings (GNU 721 same, MASM 720). `src/` went from 88143 to 88595 lines (+452).
+
+**M3b.2 closed, 2026-11-03.** Every source body of the suite is lowered through the SSA path and verified: ssa.sh
+8678 of 8678, from 74% on 2026-10-26 and 98.2% after round 23; what each needed is recorded above, and
+the shape that recurs is a fact the parser knew and did not record - a braced list's structure, the defaults it
+supplied, a conversion it chose - recorded once where the parser decides and read by the typer and the lowering, never
+re-derived. `-front=ssa` is not yet the default and the parser's `Ast.h` path is still the oracle; making SSA the path
+and deleting the old one is later M3 work. **Next: M3b.3**, the 807 compiler-written functions - implicit special
+members, thunks, the init function, deleting destructors - which have no source body and so were outside
+M3b.2's count.
