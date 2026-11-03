@@ -158,7 +158,18 @@ void Lowering::buildMember(ValueId at, const Member &m, sema::TypedId entry) {
     if (defaulted && !defaults.valid()) outside("a member built with default arguments");
     // A member the parser copied as bytes - one object of its type, the class having no copy constructor of its own.
     if (symbol == "$bytes") {
-        if (!entry.valid() || count(entry) != 1 || !objectNode(child(entry, 0))) outside("a member copied from what is not an object");
+        if (!entry.valid() || count(entry) != 1) outside("a member copied from what is not an object");
+        // `m = {...}` on such a class, [dcl.init.list]/3: the parser's temporary copied in - built here in place, its bytes.
+        if (bracedNode(child(entry, 0)) && T(sig).unqualified() == &mt) {
+            std::string ctor;
+            TypeId ctorSig;
+            bool zero = false;
+            if (!temporaryBuilt_ || !temporaryBuilt_(tree_.node(child(entry, 0)).syntax, ctor, ctorSig, zero))
+                outside("a member copied from a braced list the parser recorded no constructor for");
+            constructFromList(at, ctor, ctorSig, mt, zero, child(entry, 0), 0);
+            return;
+        }
+        if (!objectNode(child(entry, 0))) outside("a member copied from what is not an object");
         const Val src = object(child(entry, 0));
         if (T(src.type).unqualified() != &mt || T(sig).unqualified() != &mt) outside("a member copied from another type");
         copyObject(at, src.v, mt);
@@ -454,7 +465,7 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
         if (e == named.end() && defaultInit_ && defaultInit_(cls.id(), m.name)) {
             // [class.base.init]/9: the member's own initialiser, which the parser replayed as this constructor's entry.
             const sema::TypedId d = memberDefault_ ? memberDefault_(key_, cls.tag() + "::" + m.name) : sema::TypedId();
-            if (!d.valid() || m.type->isReference() || builtMember(mt)) outside("a member's default initialiser");
+            if (!d.valid() || m.type->isReference()) outside("a member's default initialiser");
             e = named.insert(std::make_pair(m.name, d)).first;
         } else if (e == named.end() && !builtMember(mt)) {
             continue;
@@ -503,6 +514,13 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
             const Val src = object(child(e->second, 0));
             if (T(src.type).unqualified() != &mt) outside("a member built from another type");
             copyObject(result(g), src.v, mt);
+        } else if (mt.isArray() || plainClass(mt)) {
+            // A member's own `= {...}` or `{...}` on an aggregate or an array of scalars, [dcl.init.aggr]: placed leaf by leaf.
+            std::vector<sema::TypedId> parts;
+            for (std::uint32_t i = 0; i < k; i++) parts.push_back(child(e->second, i));
+            openFull();
+            aggregateInit(result(g), mt, parts);
+            closeFull();
         } else {
             outside("a mem-initialiser of " + std::to_string(k) + " values for '" + m.name + "'");
         }
@@ -870,13 +888,18 @@ ValueId Lowering::initializerListOf(const std::vector<sema::TypedId> &elems, con
 // initializer_list the constructor takes (the record of that inner list by the node), or the part itself, copied in.
 void Lowering::listElement(ValueId at0, const Type &et, sema::TypedId part, const sema::ListElement &e) {
     if (e.bytes) {
+        // [over.ics.user]: a value of another type reaches it through the converting constructor the parser chose.
+        ValueId made;
+        if (convertedTemporary(part, et, true, made)) { copyObject(at0, made, et); return; }
         if (!objectNode(part)) outside("an initializer_list element copied from what is not an object");
         const Val o = object(part);
         if (T(o.type).unqualified() != et.unqualified()) outside("an initializer_list element copied from another type");
         copyObject(at0, o.v, et);
         return;
     }
-    if (e.defaulted) outside("an initializer_list element built with default arguments");
+    // [dcl.fct.default]/9: the defaults the parser completed the element's constructor with, keyed by its braces.
+    const sema::TypedId defaults = e.defaulted && memberDefault_ ? memberDefault_(key_, "^$list:" + std::to_string(syn(part).loc)) : sema::TypedId();
+    if (e.defaulted && !defaults.valid()) outside("an initializer_list element built with default arguments");
     if (e.symbol.empty() || !e.signature.valid()) outside("an initializer_list element built by no constructor the parser recorded");
     const Type &ft = T(e.signature);
     if (!ft.isFunction() || ft.params().empty() || ft.params()[0]->pointee()->unqualified() != et.unqualified())
@@ -895,6 +918,7 @@ void Lowering::listElement(ValueId at0, const Type &et, sema::TypedId part, cons
         std::vector<sema::TypedId> args;
         if (bracedPart) for (std::uint32_t i = 0; i < count(part); i++) args.push_back(child(part, i));
         else args.push_back(part);
+        for (std::uint32_t i = 0; defaults.valid() && i < count(defaults); i++) args.push_back(child(defaults, i));
         if (ft.params().size() != args.size() + 1) outside("an initializer_list element's constructor of another arity");
         argumentList(ft, 1, false, args, false, ops);
     }
@@ -1342,19 +1366,22 @@ bool Lowering::builtTemporary(sema::TypedId id, bool destroyed) const {
 }
 
 // The recorded constructor called on `at`: zeroed first where `T()` of an implicit one is ([dcl.init]/8), then the
-// arguments from child `from` of `args` on against the constructor's type - one written per parameter, no default.
+// arguments from child `from` of `args` on against the constructor's type, then `defaults`' parts where the parser completed it.
 void Lowering::construct(ValueId where, const std::string &symbol, TypeId sig, const Type &cls, bool zeroFirst, sema::TypedId args,
-                         std::uint32_t from) {
+                         std::uint32_t from, sema::TypedId defaults) {
     const Type &ft = T(sig);
     if (!ft.isFunction() || ft.params().empty() || ft.params()[0]->pointee()->unqualified() != cls.unqualified())
         outside("a constructor of another class");
-    if (ft.params().size() != static_cast<std::size_t>(count(args) - from) + 1) outside("a constructor called with default arguments");
+    std::vector<sema::TypedId> parts;
+    for (std::uint32_t i = from; i < count(args); i++) parts.push_back(child(args, i));
+    for (std::uint32_t i = 0; defaults.valid() && i < count(defaults); i++) parts.push_back(child(defaults, i));   // [dcl.fct.default]/9
+    if (ft.params().size() != parts.size() + 1) outside("a constructor called with arguments its parameters do not match");
     if (zeroFirst) {
         const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, where));
         at(z).k = cls.size(target_);
     }
     std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, where))));
-    arguments(args, from, ft, 1, false, ops);
+    argumentList(ft, 1, false, parts, false, ops);
     directCall(symbol, msFlagged(symbol, sig, ops, 1), ops);     // a complete object: cl's most-derived flag set
 }
 
@@ -3159,14 +3186,24 @@ void Lowering::builtArrayLocal(sema::TypedId var, ValueId slot, const Type &et, 
     bool defaulted = false, zeroed = false;
     const bool built = localBuilt_ && localBuilt_(v.syntax, symbol, sig, defaulted, zeroed);
     if (!built && constructed_ && constructed_(et.id())) outside("an array built by no constructor the parser recorded");
-    if (defaulted || zeroed) outside("an array built with default arguments or zeroed");
-    if (built && (T(sig).params().size() != 1 || T(sig).params()[0]->pointee()->unqualified() != &et))
+    if (zeroed) outside("an array zeroed before its elements are built");
+    // [dcl.fct.default]/9: the defaults, the `var` node's parts past its bounds, evaluated once per element.
+    std::vector<sema::TypedId> defaults;
+    for (std::uint32_t i = v.bounds; defaulted && i < v.count; i++) defaults.push_back(child(var, i));
+    if (built && (T(sig).params().size() != defaults.size() + 1 || T(sig).params()[0]->pointee()->unqualified() != &et))
         outside("an array's constructor of another class");
     const TypeId self = types_.pointerTo(et.id());
     for (long long k = 0; k < elems; k++) {
         const InstId g = add(Op::Gep, self, std::vector<ValueId>(1, slot));
         at(g).k = k * et.size(target_);
-        if (built) directCall(symbol, sig, std::vector<ValueId>(1, result(g)));
+        if (built && defaults.empty()) directCall(symbol, sig, std::vector<ValueId>(1, result(g)));
+        if (built && !defaults.empty()) {
+            openFull();     // each element's defaults a full expression of their own, their temporaries gone before the next
+            std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*T(sig).params()[0]), std::vector<ValueId>(1, result(g)))));
+            argumentList(T(sig), 1, false, defaults, false, ops);
+            directCall(symbol, sig, ops);
+            closeFull();
+        }
         if (dies) guard(result(g), et, dtor);
     }
 }
@@ -3179,10 +3216,15 @@ void Lowering::listArray(sema::TypedId var, ValueId base, const Type &et, long l
     const sema::TypedNode &v = tree_.node(var);
     const TypeId self = types_.pointerTo(et.id());
     std::uint32_t used = v.bounds;
+    // [dcl.fct.default]/9 for the tail: its defaults are the `var` node's last parts, evaluated once per element.
+    const bool tailBuilt = lb.tailSig.valid() && T(lb.tailSig).isFunction() && !T(lb.tailSig).params().empty();
+    const std::uint32_t tailDefaults = lb.tailDefaulted && tailBuilt ? static_cast<std::uint32_t>(T(lb.tailSig).params().size()) - 1u : 0u;
+    if (lb.tailDefaulted && (tailDefaults == 0 || v.bounds + tailDefaults > v.count)) outside("an array's tail built with default arguments the record does not place");
+    const std::uint32_t values = v.count - tailDefaults;
     if (static_cast<long long>(lb.elems.size()) > elems) outside("an array's list of more elements than the array holds");
     for (std::size_t k = 0; k < lb.elems.size(); k++) {
         const sema::ListElement &e = lb.elems[k];
-        if ((e.count != 0 && v.bounds + e.first != used) || used + e.count > v.count) outside("an array's list whose parts the record does not match");
+        if ((e.count != 0 && v.bounds + e.first != used) || used + e.count > values) outside("an array's list whose parts the record does not match");
         const InstId g = add(Op::Gep, self, std::vector<ValueId>(1, base));
         at(g).k = static_cast<long long>(k) * et.size(target_);
         openFull();
@@ -3192,12 +3234,14 @@ void Lowering::listArray(sema::TypedId var, ValueId base, const Type &et, long l
             if (T(o.type).unqualified() != et.unqualified()) outside("an array element copied from another type");
             copyObject(result(g), o.v, et);
         } else {
-            if (e.defaulted) outside("an array element built with default arguments");
+            // Its defaults, keyed by its first value's position, after the values written.
+            const sema::TypedId defaults = e.defaulted && e.count != 0 && memberDefault_
+                ? memberDefault_(key_, "^$elem:" + std::to_string(syn(child(var, used)).loc)) : sema::TypedId();
+            if (e.defaulted && !defaults.valid()) outside("an array element built with default arguments");
             if (e.symbol.empty() || !e.signature.valid()) outside("an array element built by no constructor the parser recorded");
             const Type &ft = T(e.signature);
             if (!ft.isFunction() || ft.params().empty() || ft.params()[0]->pointee()->unqualified() != et.unqualified())
                 outside("an array element's constructor of another class");
-            if (ft.params().size() != e.count + 1) outside("an array element's constructor of another arity");
             if (e.zeroed) {
                 const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, result(g)));
                 at(z).k = et.size(target_);
@@ -3205,6 +3249,8 @@ void Lowering::listArray(sema::TypedId var, ValueId base, const Type &et, long l
             std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, result(g)))));
             std::vector<sema::TypedId> args;
             for (std::uint32_t i = 0; i < e.count; i++) args.push_back(child(var, used + i));
+            for (std::uint32_t i = 0; defaults.valid() && i < count(defaults); i++) args.push_back(child(defaults, i));
+            if (ft.params().size() != args.size() + 1) outside("an array element's constructor of another arity");
             argumentList(ft, 1, false, args, false, ops);
             directCall(e.symbol, e.signature, ops);
         }
@@ -3212,14 +3258,15 @@ void Lowering::listArray(sema::TypedId var, ValueId base, const Type &et, long l
         used += e.count;
         if (!dtor.empty()) guard(result(g), et, dtor);
     }
-    if (used != v.count) outside("an array's list with parts its record does not place");
+    if (used != values) outside("an array's list with parts its record does not place");
     if (static_cast<long long>(lb.elems.size()) == elems) return;
     // The tail: [dcl.init.aggr]/7, each element value-initialised - the default constructor, zeroed first where it is implicit.
-    if (lb.tail.empty() || !lb.tailSig.valid()) outside("an array's tail built by no constructor the parser recorded");
-    if (lb.tailDefaulted) outside("an array's tail built with default arguments");
+    if (lb.tail.empty() || !tailBuilt) outside("an array's tail built by no constructor the parser recorded");
     const Type &ft = T(lb.tailSig);
-    if (!ft.isFunction() || ft.params().size() != 1 || ft.params()[0]->pointee()->unqualified() != et.unqualified())
+    if (ft.params().size() != tailDefaults + 1 || ft.params()[0]->pointee()->unqualified() != et.unqualified())
         outside("an array's tail constructor of another class");
+    std::vector<sema::TypedId> defaults;
+    for (std::uint32_t i = values; i < v.count; i++) defaults.push_back(child(var, i));
     for (long long k = static_cast<long long>(lb.elems.size()); k < elems; k++) {
         const InstId g = add(Op::Gep, self, std::vector<ValueId>(1, base));
         at(g).k = k * et.size(target_);
@@ -3227,7 +3274,15 @@ void Lowering::listArray(sema::TypedId var, ValueId base, const Type &et, long l
             const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, result(g)));
             at(z).k = et.size(target_);
         }
-        directCall(lb.tail, lb.tailSig, std::vector<ValueId>(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, result(g))))));
+        std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, result(g)))));
+        if (defaults.empty()) {
+            directCall(lb.tail, lb.tailSig, ops);
+        } else {
+            openFull();
+            argumentList(ft, 1, false, defaults, false, ops);
+            directCall(lb.tail, lb.tailSig, ops);
+            closeFull();
+        }
         if (!dtor.empty()) guard(result(g), et, dtor);
     }
 }
@@ -5352,6 +5407,10 @@ Lowering::Val Lowering::classArgumentSource(sema::TypedId an, const Type &c) {
         const Val r = syn(an).kind == syntax::Kind::Call ? call(an) : operatorCall(an);
         if (!r.type.valid() || !T(r.type).isPointer()) outside("a class argument from a call's result of another shape");
         a = Val(r.v, tid(*T(r.type).pointee()));
+    } else if (bracedNode(an)) {
+        ValueId made;     // [dcl.init.list]/3: the temporary the parser made of the braces, in a slot of this frame
+        if (!bracedArgument(an, c, made)) outside("a class argument from a braced list the lowering does not build");
+        a = Val(made, tid(c));
     } else {
         outside("a class argument that is not an object");
     }
@@ -5421,7 +5480,7 @@ bool Lowering::bracedArgument(sema::TypedId an, const Type &p, ValueId &slot) {
         slot = initializerListOf(elems, p, lb);
         return true;
     }
-    if (!braced || count(an) == 0) return false;
+    if (!braced) return false;     // `{}` too: value-initialisation, the constructor the parser chose or the zeroes
     std::string symbol;
     TypeId sig;
     bool zero = false;
@@ -5545,7 +5604,10 @@ Lowering::Val Lowering::newExpression(sema::TypedId id) {
     const bool built = !copied && !loop && (constructedClass(made) || newBuilt(made));
     if (built && f.ctor.empty()) outside("a 'new' of a class with constructors");
     if (built && f.array) outside("an array 'new' of a class with constructors");
-    if (built && f.ctorDefaulted) outside("a 'new' with default arguments");
+    // [dcl.fct.default]/9: the defaults the parser completed the constructor with, keyed by the `new`'s position.
+    const sema::TypedId defaults = built && f.ctorDefaulted && memberDefault_ ? memberDefault_(key_, "^$new:" + std::to_string(syn(id).loc)) : sema::TypedId();
+    if (built && f.ctorDefaulted && !defaults.valid()) outside("a 'new' with default arguments the parser recorded no syntax for");
+    const std::uint32_t defaulted = defaults.valid() ? count(defaults) : 0u;
     // [expr.new]/20: a constructor that throws has the storage freed; no placement form frees (no placement delete is matched).
     const bool frees = (built || loop) && !f.placed && f.userArgs == 0;
     // The placement's address, the nothrow tag, or the program's allocation function's placement arguments, first.
@@ -5559,7 +5621,7 @@ Lowering::Val Lowering::newExpression(sema::TypedId id) {
             const Type &w = *T(f.ctorSig).params()[k], &q = w.isReference() ? *w.referent()->unqualified() : *w.unqualified();
             if (q.isSpecialization() && q.templateName() == "initializer_list") outside("a 'new' of an initializer_list");
         }
-    const std::uint32_t argc = built ? static_cast<std::uint32_t>(T(f.ctorSig).params().size()) - 1u
+    const std::uint32_t argc = built ? static_cast<std::uint32_t>(T(f.ctorSig).params().size()) - 1u - defaulted
                              : listed ? count(id) - lead - (f.array ? 1u : 0u) : (f.init >= 2 || copied ? 1u : 0u);
     const std::uint32_t parts = lead + (f.array ? 1u : 0u) + argc;
     if (count(id) != parts) outside("a 'new' of " + std::to_string(count(id)) + " parts");
@@ -5629,7 +5691,7 @@ Lowering::Val Lowering::newExpression(sema::TypedId id) {
         const std::size_t mark = live_.size();
         if (frees) storageGuard(p, made, !f.release.empty() ? f.release : target_.microsoftNames() ? "??3@YAXPEAX@Z" : "_ZdlPv");
         if (frees && f.nothrow) live_.back().vtt = tag;
-        construct(p, f.ctor, f.ctorSig, made, f.ctorZero, id, lead);
+        construct(p, f.ctor, f.ctorSig, made, f.ctorZero, id, lead, defaults);
         if (frees && live_.size() != mark + 1) outside("a 'new' whose constructor's arguments outlive it");
         if (frees) closeScope(mark, true);      // the object made: the storage's guard ends without a free
     } else if (copied) {

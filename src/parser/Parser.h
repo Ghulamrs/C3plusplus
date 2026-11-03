@@ -2051,6 +2051,7 @@ private:
     bool autoBeforeQualifiedName() const;
     bool trailingArrowAhead() const;
     void noteEntryDefaults(const std::string &name, const std::vector<ExprPtr> &args, std::size_t written);
+    std::vector<syntax::NodeId> defaultNodes(const std::vector<ExprPtr> &args, std::size_t written);
     StmtPtr delegatingCall(const Declared &d, const Type *cls, std::vector<ExprPtr> args,
                            std::size_t pos, std::size_t entries);
     std::string resolveNamespaceName(const std::string &written) const;

@@ -682,8 +682,12 @@ void Parser::applyDefaults(Signature f, std::vector<ExprPtr> &args,
         // the parameter - a reference's referent through a temporary (M1 L3).
         if (peek().is("{")) {
             const Type *p = f.params[i]->isReference() ? f.params[i]->referent() : f.params[i];
+            // Its syntax is the `{}` an argument written in braces gets, so the call takes it as a part (M3b.2).
+            const std::size_t mark = syntaxTree_.size(), lo = peek().pos;
             Init in = parseInitialiser();
+            const syntax::NodeId braces = noteParts(syntax::Kind::Other, "{}", lo, mark, lo);
             args.push_back(listTemporaryFrom(p->unqualified(), in, true, pos));
+            args.back()->setSyntax(braces);
             made.push_back(args.back()->syntax());
             continue;
         }
