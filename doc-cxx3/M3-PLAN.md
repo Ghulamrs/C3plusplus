@@ -1253,3 +1253,24 @@ and `thread_local`, constructor exception specifications, and `typeid` of an exp
 work is in `boxkit/r24-{addr,flow,rest}-late.patch`. One front-end fault found and registered:
 `tests/open/by-value-polymorphic-base-temporary.cpp`. The session lost five hours to a scheduled resume that stopped at
 its first permission prompt.
+
+**Round 25, 2026-11-03: four lanes, 23 bodies left.** From round 24's tree (`b7ed0b50`), run unattended by a scheduled
+session that stopped at 95% of its usage window and merged by hand after it. **lane-lists** (Fable): a braced list's
+structure recorded once, `Parser::ListBuilt` - each element and how the parser built it (bytes, a constructor by symbol,
+zeroed first, an `initializer_list`, the tail by the default constructor) - read by the lowering for an array of a class,
+local and static, an `initializer_list`'s backing array and a braced argument's temporary; +10. **lane-backend**:
+`alignas` locals (an alloca at the declared alignment), `thread_local`, a constructor's exception specification and a
+function try block, `typeid` of an expression, `dynamic_cast` to a reference, a zeroed temporary; the registered
+`by-value-polymorphic-base-temporary` moved from `tests/open` to the suite. **lane-lambda**: a lambda capture's copy
+constructor, and a class iterator's `!=`/`++`/`*` in a range-for. **lane-lvals**: bit-fields read and written in SSA,
+a member of an anonymous union in a block, a class prvalue through `static_cast<T &&>`; its bit-field was kept as
+`const Member *` and is a copy now (the memory gate: 44 -> 49 raw pointers, back to 44). **Gated**: Linux `make test`
+green - **ssa.sh 8655 of 8678 lowered (99.7%), 0 failed**, 23 outside, from 96 - run.sh 1093/0 at `-O2`, `-front=ssa`
+and `-front=ssa -O2`; Windows `-front=ssa` and `-front=ssa -O2` through `winpass.sh`, 0 differ in both spellings (GNU 721 same, MASM 720).
+`src/` went from 87254 to 88143 lines (+889). **A gate that checked half**: the lanes used `winssa.sh`, which runs the
+GNU spelling only - `run-cases.cmd` finds no masm under a work directory's name and says so in its log, not its summary -
+so every lane's Windows result was GNU-only; `winpass.sh`, which names the project's masm and LINK, is the gate. What is
+left is 23 bodies, each its own shape: default arguments in an array's or an `initializer_list`'s elements, a member's
+default initialiser, an expression statement of four parts, two binaries and a call the typer leaves untyped, a
+range-for over a `pair`, a conversion to a class that is not a base, a lambda as a class local's initialiser. Then the
+M3b.2 closing entry, and M3b.3.
