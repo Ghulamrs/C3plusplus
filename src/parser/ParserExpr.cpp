@@ -132,23 +132,30 @@ ExprPtr Parser::overloadedBinary(BinOp op, ExprPtr &lhs, ExprPtr &rhs,
         bool moved = false;
         if (leftIsClass && soleNumericConversion(lt) != nullptr) {
             const Type *object = l->type();
+            const syntax::NodeId operand = l->syntax();
             std::vector<ExprPtr> none;
             l = memberCallWith(std::move(l), object,
                                soleNumericConversion(lt)->name, pos,
                                std::move(none));
+            noteConversionCall(operand, *l);
             moved = true;
         }
         if (rightIsClass && soleNumericConversion(rt) != nullptr) {
             const Type *object = r->type();
+            const syntax::NodeId operand = r->syntax();
             std::vector<ExprPtr> none;
             r = memberCallWith(std::move(r), object,
                                soleNumericConversion(rt)->name, pos,
                                std::move(none));
+            noteConversionCall(operand, *r);
             moved = true;
         }
+        // The built-in operator of that kind: a comparison is bool ([expr.rel]/1), a shift its left operand's type.
         if (moved && !l->type()->unqualified()->isStructOrUnion() &&
             !r->type()->unqualified()->isStructOrUnion())
-            return arithmetic(op, std::move(l), std::move(r), pos);
+            return op >= BinOp::Eq && op <= BinOp::Ge ? comparison(op, std::move(l), std::move(r), pos)
+                 : op == BinOp::Shl || op == BinOp::Shr ? shiftOf(op, std::move(l), std::move(r), pos)
+                 : arithmetic(op, std::move(l), std::move(r), pos);
         lhs = std::move(l);
         rhs = std::move(r);
     }
@@ -3296,9 +3303,9 @@ ExprPtr Parser::noteKeywordForm(syntax::Kind kind, KeywordForm f) {
         if (const Num *folded = dynamic_cast<const Num *>(f.e.get()))
             keywordValues_[f.e->syntax().v] = std::make_pair(folded->value(), folded->type());
     if (kind == syntax::Kind::Cast) noteTemporarySlot(f.e.get());    // `static_cast<T>(v)` through T's converting constructor
-    // A named cast to a scalar is the conversion it names; one to a reference is a glvalue, and is left unrecorded.
+    // A named cast to a scalar or a class is the conversion it names; one to a reference is a glvalue, left unrecorded.
     if (kind == syntax::Kind::Cast && text.find('&') == std::string::npos && text.compare(0, 12, "dynamic_cast") != 0 &&
-        f.e->type() != nullptr && (f.e->type()->isVoid() || f.e->type()->isScalar()))
+        f.e->type() != nullptr && (f.e->type()->isVoid() || f.e->type()->isScalar() || f.e->type()->isStructOrUnion()))
         castTypes_[f.e->syntax().v] = f.e->type();
     // A static_cast, const_cast or reinterpret_cast to a reference names its operand, typed as the cast leaves it (M2.12o).
     if (kind == syntax::Kind::Cast && text.find("&>") != std::string::npos && f.e->type() != nullptr &&

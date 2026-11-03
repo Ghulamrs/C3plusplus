@@ -390,6 +390,7 @@ private:
     bool convertedNode(sema::TypedId id, sema::Resolution &r) const;
     Val converted(sema::TypedId id, const sema::Resolution &r);
     Val convertedObject(Val o, const sema::Resolution &r, bool object = false);
+    bool convertedCast(sema::TypedId id, sema::Resolution &r) const;
     Val iteratorCall(const sema::Resolution &r, const std::vector<Val> &objects, TypeId cls);
     bool typeidNode(sema::TypedId id) const;
     Val typeidAddress(sema::TypedId id);
