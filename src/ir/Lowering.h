@@ -275,7 +275,7 @@ private:
     void argumentList(const Type &ft, std::size_t skip, bool variadic, const std::vector<sema::TypedId> &args, bool dummyInt,
                       std::vector<ValueId> &ops);
     void directCall(const std::string &symbol, TypeId signature, const std::vector<ValueId> &ops);
-    bool pseudoDestructor(sema::TypedId member);
+    bool pseudoDestructor(sema::TypedId member, const sema::Resolution &called);
     bool threadLocalGlobal(const std::string &symbol) const;
     Val toBase(Val v, TypeId to, bool cast = false);
     ValueId boundConverted(sema::TypedId an, const Type &p);

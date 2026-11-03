@@ -3031,7 +3031,7 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
         e = literal(id);
         break;
     case syntax::Kind::StringLit: case syntax::Kind::Member: case syntax::Kind::Subscript: {
-        if (s.kind == syntax::Kind::Member && pseudoDestructor(id)) { e = Val(ValueId(), tid(*types_.get(Kind::Void))); break; }
+        if (s.kind == syntax::Kind::Member && pseudoDestructor(id, tree_.resolution(id))) { e = Val(ValueId(), tid(*types_.get(Kind::Void))); break; }
         const Val a = lvalue(id);
         e = decay(Val(a.v, a.type));
         if (T(e.type).isPointer() && (T(a.type).isArray() || T(a.type).isFunction())) break;
@@ -3975,7 +3975,7 @@ bool Lowering::threadLocalGlobal(const std::string &symbol) const {
 
 // [expr.pseudo]: `p->~T()` of a scalar or a class with nothing to destroy ends no one's life but by name - the
 // object is evaluated and nothing more is done. The syntax notes the call as the member alone, or inside a call.
-bool Lowering::pseudoDestructor(sema::TypedId member) {
+bool Lowering::pseudoDestructor(sema::TypedId member, const sema::Resolution &called) {
     const std::string &t = text(member);
     const bool arrow = t.compare(0, 2, "->") == 0;
     const std::string name = t.size() > (arrow ? 2u : 1u) ? t.substr(arrow ? 2 : 1) : std::string();
@@ -3998,6 +3998,9 @@ bool Lowering::pseudoDestructor(sema::TypedId member) {
     if (!cls.isStructOrUnion() || cls.hasVptr() || cls.hasVirtualBase()) outside("a destructor called by name");
     const std::string sym = destructor_ ? destructor_(cls.id()) : std::string();
     if (sym.empty() || sym.find_first_of(" ()*&[") != std::string::npos) outside("a destructor called by name whose symbol is not recorded");
+    // `p->~Base()`, a typedef naming a base, destroys that base alone: taken where the parser's call is this one, or the name is.
+    if (!(called.what == sema::Resolution::Call && called.symbol == sym) && name.substr(q == std::string::npos ? 1 : q + 3) != cls.localName())
+        outside("a destructor named through another class");
     const TypeId self = tid(*types_.pointerTo(&cls));
     CallInfo info;
     info.symbol = sym;
@@ -4070,7 +4073,7 @@ Lowering::Val Lowering::call(sema::TypedId id) {
     const sema::Resolution &r = tree_.resolution(id);
     if (r.what == sema::Resolution::Temporary && !r.symbol.empty()) outside("a class temporary a constructor builds");
     if (r.what == sema::Resolution::Temporary || r.what == sema::Resolution::TypeName) outside("a class temporary");
-    if (n == 1 && syn(head).kind == syntax::Kind::Member && pseudoDestructor(head)) return Val(ValueId(), tid(*types_.get(Kind::Void)));
+    if (n == 1 && syn(head).kind == syntax::Kind::Member && pseudoDestructor(head, r)) return Val(ValueId(), tid(*types_.get(Kind::Void)));
     CallInfo info;
     info.sret = sret;
     std::vector<ValueId> ops;
