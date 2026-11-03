@@ -108,7 +108,7 @@ goes in the same commit.
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:759` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:452` |
 | `template <template <class> typename C>`, `typename` after a template template parameter's list | C++17 | `src/parser/ParserTemplate.cpp:52` |
-| `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:670`, `src/parser/ParserInit.cpp:906`, `src/parser/ParserTopLevel.cpp:482`, `src/parser/ParserExprNew.cpp:508` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:207` |
+| `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:691`, `src/parser/ParserInit.cpp:927`, `src/parser/ParserTopLevel.cpp:482`, `src/parser/ParserExprNew.cpp:508` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:207` |
 | `namespace N::M { }` | C++17 | `src/parser/ParserTopLevel.cpp:88` |
 | an inline variable | C++17 | `src/parser/ParserTopLevel.cpp:288` |
 
@@ -225,7 +225,7 @@ is left:
   `src/parser/ParserTopLevel.cpp:1278`
 - **a braced list among the arguments of an aggregate member's constructor**,
   `B b = { 1, { 2, { 3 } } }` where the member's class has a constructor - each
-  argument is taken as a value. `src/parser/ParserInit.cpp:339`
+  argument is taken as a value. `src/parser/ParserInit.cpp:360`
 - **a `constexpr` object the object fold cannot build** - an array of class
   objects, a pointer or reference member (an address), a bit-field; the fold
   holds an object as its scalar leaves. `src/sema/Constexpr.cpp:732`,
@@ -281,14 +281,14 @@ is left:
 - **`auto &` or `auto *` from a braced list** - only `auto` and `const auto`
   deduce `std::initializer_list` here. `src/parser/ParserTemplate.cpp:1302`
 - **a `std::initializer_list` with static storage made from braces** - its
-  backing array would need static storage too. `src/parser/ParserInit.cpp:1189`
+  backing array would need static storage too. `src/parser/ParserInit.cpp:1210`
 - **a braced member initialiser with values on a reference or an array of a
   class** - a scalar member takes `{v}`, a class or an array of scalars a list
   (M1 L4), and `= {}` and `= {0}` zero an array. `src/parser/ParserType.cpp:1353`
 - **a braced list for an array of a class with a destructor and no
-  constructor** - `src/parser/ParserInit.cpp:1237`,
+  constructor** - `src/parser/ParserInit.cpp:1258`,
   `src/parser/ParserStmt.cpp:247`
-- **a bit-field initialised at file scope** - `src/parser/ParserInit.cpp:636`
+- **a bit-field initialised at file scope** - `src/parser/ParserInit.cpp:657`
 ## Objects that would run code before `main`
 
 Dynamic initialisation runs - a file-scope object with a constructor, a static
@@ -302,7 +302,7 @@ many, or has no object of its own:
   destroyed element by element. `src/parser/ParserClass.cpp:2180`
 - **a static-duration reference bound to a temporary** - [class.temporary]/5
   gives the temporary the program's lifetime, so it would need static storage
-  of its own; a named object binds. `src/parser/ParserInit.cpp:1710`
+  of its own; a named object binds. `src/parser/ParserInit.cpp:1731`
 
 ## Expressions
 
@@ -332,11 +332,11 @@ many, or has no object of its own:
 ## `new` and `delete`
 
 - **more than one value in a new-expression** without a constructor -
-  `src/parser/ParserExprNew.cpp:1767`
+  `src/parser/ParserExprNew.cpp:1770`
 - **`new T[n][m]`** - only the first dimension may be given.
-  `src/parser/ParserExprNew.cpp:1710`
+  `src/parser/ParserExprNew.cpp:1713`
 - **`new T[n]{...}`** with values inside - the empty pair value-initialises
-  the elements; `new T{...}` works. `src/parser/ParserExprNew.cpp:1737`
+  the elements; `new T{...}` works. `src/parser/ParserExprNew.cpp:1740`
 
 Plain `new` and `delete`, a class's own `operator new`/`operator delete`, the
 placement forms and `<new>` all work; the entries that said otherwise were
@@ -353,12 +353,12 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 - **`dynamic_cast` to a reference on x86_64-windows** - a failure throws
   `std::bad_cast`, a class this target neither throws nor catches yet; the
   Itanium targets call `__cxa_bad_cast`. And **to an rvalue reference** on
-  every target. `src/parser/ParserExprNew.cpp:1151`, `src/parser/ParserExprNew.cpp:1148`
+  every target. `src/parser/ParserExprNew.cpp:1154`, `src/parser/ParserExprNew.cpp:1151`
 - **`dynamic_cast` through a class with more than one base, on
   x86_64-windows** - the Microsoft hierarchy is written one base deep; the
-  Itanium targets walk `__vmi_class_type_info`. `src/parser/ParserExprNew.cpp:1250`
+  Itanium targets walk `__vmi_class_type_info`. `src/parser/ParserExprNew.cpp:1253`
 - **catching a pointer by reference** - the runtime hands a handler the pointer
-  itself, so catch it by value. `src/parser/ParserStmt.cpp:1682`
+  itself, so catch it by value. `src/parser/ParserStmt.cpp:1700`
 - **throwing a pointer to a function** - it has no `type_info`; the message
   splices its reason in at run time, so this entry is hand-written.
   `tests/cases/throw-refused.cpp`
@@ -388,10 +388,10 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   a function try block's handlers would. `src/parser/ParserTopLevel.cpp:1164`
 - **a class declared in the condition of a loop** - [stmt.iter]/2 builds it
   afresh on every turn, and only a scalar can be written where the test is; a
-  class in the condition of an `if` works. `src/parser/ParserStmt.cpp:1039`
+  class in the condition of an `if` works. `src/parser/ParserStmt.cpp:1057`
 - **a range-based `for` whose range or iterator has a destructor, inside a
   `catch` handler, on x86_64-windows** - the cleanup would be a funclet inside
-  the handler's funclet. `src/parser/ParserStmt.cpp:964`
+  the handler's funclet. `src/parser/ParserStmt.cpp:982`
 - **a trailing return type that is itself deduced**, `auto f() -> auto` -
   C++14. `src/parser/ParserTopLevel.cpp:2368`
 - **an expression form the Itanium name was not measured for, over a template's
@@ -404,7 +404,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 
 - **a namespace alias inside a block** - the alias is a rewrite to the end of
   the enclosing namespace; at namespace scope it works.
-  `src/parser/ParserStmt.cpp:2203`
+  `src/parser/ParserStmt.cpp:2221`
 - **a using-declaration inside a class of a data member, or one that changes
   an access** - `using B::f;` of a base's member functions in the access they
   already have joins them to the class's set (M1 L2).
@@ -419,7 +419,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   - **a constructor taking a class by value whose copy is not trivial** - the
     copy would have to be passed on rather than made twice.
     `src/sema/Classes.cpp:1752`
-- **a using-declaration inside a block** - `src/parser/ParserStmt.cpp:2211`.
+- **a using-declaration inside a block** - `src/parser/ParserStmt.cpp:2229`.
   The one at namespace scope works, and so does `using namespace N;`.
 
 ## Lambdas

@@ -562,6 +562,19 @@ void Parser::noteClosure(const MadeLambda &made, const std::string &name, int of
             pendingLambda_.captures.push_back(c);
             continue;
         }
+        // An enclosing function's constant, read for its value ([expr.prim.lambda]/12) yet captured: its value (M3b.2).
+        if (l->constantOnly && held->isInteger() && source->unqualified() == held->unqualified()) {
+            LambdaCapture c;
+            c.member = made.names[i];
+            c.offset = made.offsets[i];
+            c.type = made.types[i];
+            c.src = l->name;
+            c.srcType = l->type;
+            c.constant = true;
+            c.value = l->constantValue;
+            pendingLambda_.captures.push_back(c);
+            continue;
+        }
         if (!l->staticName.empty() || l->isThreadLocal || l->constantOnly || l->isRegister ||
             !(held->isScalar() || classHeld) || source->unqualified() != held->unqualified()) {
             pendingLambda_.simple = false;

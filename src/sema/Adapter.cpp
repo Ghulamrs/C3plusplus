@@ -1586,6 +1586,7 @@ ExprPtr Adapter::lambda(TypedId id) {
         for (std::size_t i = 0; i < f.captures.size(); i++) {
             const Parser::LambdaCapture &c = f.captures[i];
             if (c.outerOffset >= 0) outside("a lambda capturing the capture of the lambda around it");
+            if (c.constant) outside("a lambda capturing a constant it reads for its value");
             if (c.srcType->isReference() || !c.srcType->isScalar()) outside("a lambda capturing a reference or a class");
             Var *v = Var::local(c.src, c.srcOffset);
             v->setReadOnly(c.srcConst);
