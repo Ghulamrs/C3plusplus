@@ -572,16 +572,6 @@ void Lowering::classLocal(sema::TypedId var, ValueId slot, const Type &t) {
             closeFull();
             return;
         }
-        // [class.conv.fct]: `(C)o`, o's conversion function the parser called - its plain result's bytes the local's.
-        const sema::TypedId cast = child(var, 0);
-        sema::Resolution conv;
-        if (syn(cast).kind == syntax::Kind::Cast && count(cast) != 0 && convertedNode(child(cast, count(cast) - 1), conv) &&
-            T(conv.type).returns()->unqualified() == t.unqualified() && classObjectNode(child(cast, count(cast) - 1))) {
-            openFull();
-            copyObject(slot, convertedObject(classObject(child(cast, count(cast) - 1)), conv, true).v, t);
-            closeFull();
-            return;
-        }
         if (!objectNode(child(var, 0)))
             outside(std::string("a class local initialised by a '") + syntax::kindName(syn(child(var, 0)).kind) + "' that is not an object");
         openFull();     // a call's arguments' temporaries die after the copy, at the declarator's end
@@ -1278,11 +1268,12 @@ bool Lowering::plainTemporary(sema::TypedId id) const {
 }
 
 // A class with constructors the lowering can build on storage it has: buildableLayout's, with no destructor to run
-// at a temporary's end and no virtual base - the constructor the parser chose called on the address, nothing else.
+// at a temporary's end and no virtual base - the constructor the parser chose called on the address, nothing else; a
+// member array of a class is that constructor's to build, as any member is.
 bool Lowering::constructedClass(const Type &t) const {
     if (!t.isStructOrUnion() || !t.isComplete()) return false;
     const Type &c = *t.unqualified();
-    return constructed_ && constructed_(c.id()) && !c.hasDestructor() && !c.hasVirtualBase() && buildableLayout(c);
+    return constructed_ && constructed_(c.id()) && !c.hasDestructor() && !c.hasVirtualBase() && buildableLayout(c, false, true);
 }
 
 // [expr.new] of a class a constructor builds: the one the parser chose called on the storage, which the class's layout - a
@@ -1617,11 +1608,20 @@ Lowering::Val Lowering::convertedObject(Val o, const sema::Resolution &r, bool o
     return byRef ? readOf(v.v, tid(*gives.referent())) : v;
 }
 
-// What a plain class's value can be copied from: an lvalue, a call's result, a temporary, an assignment, or a
-// conditional of two such.
+// [class.conv.fct]: `(C)o` or `static_cast<C>(o)` through o's conversion function the parser called, its plain result C.
+bool Lowering::convertedCast(sema::TypedId id, sema::Resolution &r) const {
+    if (syn(id).kind != syntax::Kind::Cast || count(id) == 0 || tree_.node(id).type == nullptr) return false;
+    const sema::TypedId o = child(id, count(id) - 1);
+    return convertedNode(o, r) && T(r.type).returns()->unqualified() == tree_.node(id).type->unqualified() && classObjectNode(o);
+}
+
+// What a plain class's value can be copied from: an lvalue, a call's result, a temporary, an assignment, a class's
+// conversion to it, or a conditional of two such.
 bool Lowering::objectNode(sema::TypedId id) const {
     if (isLvalueNode(id) || plainTemporary(id) || memberAddressNode(id)) return true;
     const syntax::Kind k = syn(id).kind;
+    sema::Resolution conv;
+    if (k == syntax::Kind::Cast) return convertedCast(id, conv);
     if (k == syntax::Kind::Paren) return count(id) == 1 && objectNode(child(id, 0));
     if (k == syntax::Kind::Lambda) return closureNode(id);
     // [expr.ass]/1: an assignment's value is its left object, which a plain class's copy assignment hands back.
@@ -1640,6 +1640,11 @@ Lowering::Val Lowering::object(sema::TypedId id) {
     if (syn(id).kind == syntax::Kind::Paren && count(id) == 1) return object(child(id, 0));
     if (syn(id).kind == syntax::Kind::Assign && objectNode(id)) return assign(id);
     if (syn(id).kind == syntax::Kind::Lambda && closureNode(id)) return closure(id);
+    sema::Resolution conv;
+    if (convertedCast(id, conv)) {
+        const Val v = convertedObject(classObject(child(id, count(id) - 1)), conv, true);
+        return Val(v.v, tid(*T(conv.type).returns()->unqualified()));
+    }
     if (syn(id).kind != syntax::Kind::Conditional || !objectNode(id)) outside("a class value that is not an object");
     return conditionalObject(id);
 }
@@ -4806,6 +4811,11 @@ Lowering::Val Lowering::call(sema::TypedId id) {
             }
             // `m(x)` for a member object m: its operator(), on the member - never `this` ([over.call.object]).
             if (!namesCalledFunction(text(head), r.symbol)) object = functorMember(head, self);
+        } else if (syn(head).kind == syntax::Kind::Member && count(head) == 1 && tree_.node(head).type != nullptr &&
+                   tree_.node(head).type->unqualified()->isStructOrUnion() && isLvalueNode(head)) {
+            // `o.m(x)` for a member object m: its operator(), on the member - never on o ([over.call.object]).
+            const Val o = lvalue(head);
+            object = Val(o.v, tid(*types_.pointerTo(&T(o.type))));
         } else if (syn(head).kind == syntax::Kind::Member && count(head) == 1) {
             const bool arrow = text(head).compare(0, 2, "->") == 0;
             if (arrow) object = arrowPointer(head);
