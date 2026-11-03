@@ -227,7 +227,12 @@ private:
     Val logical(bool isAnd, sema::TypedId l, sema::TypedId r);
     Val conditional(sema::TypedId id);
     bool compositePointer(sema::TypedId id, const Type &tx, const Type &ty) const;
-    Val assign(sema::TypedId id);
+    Val assign(sema::TypedId id) { Val where; return assign(id, where); }
+    Val assign(sema::TypedId id, Val &where);
+    bool scalarAssignNode(sema::TypedId id) const;
+    Val reinterpretedObject(const Val &a, const Type &to);
+    Val voidConditional(sema::TypedId id, BlockId a, BlockId b, BlockId merge);
+    bool globalFunctor(sema::TypedId head, const std::string &symbol, const Type &self, Val &object);
     Val call(sema::TypedId id);
     bool vaBuiltinNode(sema::TypedId id) const;
     Val vaBuiltin(sema::TypedId id);

@@ -2909,7 +2909,8 @@ bool Lowering::isLvalueNode(sema::TypedId id) const {
         // A class's operator= the parser called: what it returns, `X &`, names an object (`(b = a).v`, `c = b = a`).
         std::string symbol;
         TypeId sig;
-        return count(id) == 2 && text(id) == "=" && assignCall_ && assignCall_(tree_.node(child(id, 1)).syntax, symbol, sig);
+        return count(id) == 2 && ((text(id) == "=" && assignCall_ && assignCall_(tree_.node(child(id, 1)).syntax, symbol, sig)) ||
+                                  scalarAssignNode(id));
     }
     case syntax::Kind::Paren: return count(id) == 1 && isLvalueNode(child(id, 0));
     case syntax::Kind::Binary: return dataMemberPointerNode(id);
@@ -2934,6 +2935,7 @@ bool Lowering::referenceCast(sema::TypedId id) const {
     if (T(n.castType).isReference() || n.castXvalue) return true;
     const std::string &w = text(id);
     const TypeId from = TypeTable::id(tree_.node(child(id, 0)).type);
+    if (w.find("&>") != std::string::npos && w.compare(0, 17, "reinterpret_cast<") == 0) return true;   // [expr.reinterpret.cast]/11
     return w.find("&>") != std::string::npos && (w.compare(0, 12, "static_cast<") == 0 || w.compare(0, 11, "const_cast<") == 0) &&
            from.valid() && (T(from).unqualified() == T(n.castType).unqualified() ||
                             (T(from).isStructOrUnion() && T(n.castType).isStructOrUnion()));
@@ -2996,6 +2998,7 @@ Lowering::Val Lowering::lvalue(sema::TypedId id) {
         const Type &to = cast.isReference() ? *cast.referent() : cast;      // static_cast<T &&> is noted as T, an xvalue
         const Val a = prvalue ? classObject(child(id, 0)) : lvalue(child(id, 0));
         if (T(a.type).isConst() && !to.isConst() && text(id).compare(0, 10, "const_cast") != 0) outside("a cast that takes a const away");
+        if (text(id).compare(0, 17, "reinterpret_cast<") == 0) return reinterpretedObject(a, to);
         // [expr.static.cast]/2 and /11: a reference to a base names the base subobject, one to a derived class steps back.
         if (T(a.type).unqualified() != to.unqualified() && T(a.type).isStructOrUnion() && to.isStructOrUnion()) {
             const Val p = toBase(Val(a.v, tid(*types_.pointerTo(&T(a.type)))), tid(*types_.pointerTo(&to)), true);
@@ -3024,7 +3027,9 @@ Lowering::Val Lowering::lvalue(sema::TypedId id) {
     }
     case syntax::Kind::Assign: {
         Val o;
-        if (!isLvalueNode(id) || !classAssign(id, o) || !o.v.valid()) outside("an assignment that is no lvalue");
+        if (classAssign(id, o)) { if (!o.v.valid()) outside("an assignment that is no lvalue"); return o; }
+        if (!scalarAssignNode(id)) outside("an assignment that is no lvalue");
+        assign(id, o);     // [expr.ass]/1: a built-in assignment is its left operand, stored
         return o;
     }
     case syntax::Kind::Call: {
@@ -3434,6 +3439,43 @@ Lowering::Val Lowering::functorMember(sema::TypedId head, const Type &self) {
     return Val(result(g), tid(*types_.pointerTo(&mt)));
 }
 
+// [over.call.object] on a namespace-scope class object called by its name, `g(5)`: its operator(), on that object.
+bool Lowering::globalFunctor(sema::TypedId head, const std::string &symbol, const Type &self, Val &object) {
+    const sema::Resolution &h = tree_.resolution(head);
+    if (tree_.node(head).decl.valid() || namesCalledFunction(text(head), symbol) || !h.type.valid() || !self.isPointer()) return false;
+    if (h.what != sema::Resolution::Global && !(h.what == sema::Resolution::StaticMember && h.serial != 1)) return false;
+    const Type &g = T(h.type).isReference() ? *T(h.type).referent() : T(h.type);
+    if (g.unqualified() != self.pointee()->unqualified()) return false;
+    const Val o = globalAddress(h);
+    object = Val(o.v, tid(*types_.pointerTo(&T(o.type))));
+    return true;
+}
+
+// [expr.reinterpret.cast]/11: `reinterpret_cast<T &>(o)` names o's object as a T - its address, nothing moved.
+Lowering::Val Lowering::reinterpretedObject(const Val &a, const Type &to) {
+    if (to.isFunction() || T(a.type).isFunction()) outside("a function reinterpreted as an object");
+    return Val(result(add(Op::Bitcast, tid(*types_.pointerTo(&to)), std::vector<ValueId>(1, a.v))), tid(to));
+}
+
+// [expr.cond]/2: two arms of type void - each run in its own branch, the conditional no value.
+Lowering::Val Lowering::voidConditional(sema::TypedId id, BlockId a, BlockId b, BlockId merge) {
+    for (std::uint32_t arm = 1; arm <= 2; arm++) {
+        sema::TypedId x = child(id, arm);
+        while ((syn(x).kind == syntax::Kind::Paren || syn(x).kind == syntax::Kind::Cast) && count(x) == 1) x = child(x, 0);
+        if (syn(x).kind == syntax::Kind::Throw) outside("a conditional whose arm throws");
+    }
+    place(a);
+    skippable_++;
+    expr(child(id, 1));
+    br(merge);
+    place(b);
+    expr(child(id, 2));
+    skippable_--;
+    br(merge);
+    place(merge);
+    return Val();
+}
+
 // The enclosing object's address in a closure that captured `this`: its `$this` member, the parser's name for it;
 // none (an invalid value) in any other function.
 // `this` as the class `want` sees it: the member function's own, or in a closure's body the one the closure captured.
@@ -3815,6 +3857,7 @@ Lowering::Val Lowering::conditional(sema::TypedId id) {
     const TypeId txid = xn.type->isArray() ? tid(*types_.pointerTo(xn.type->pointee())) : tid(*xn.type);
     const TypeId tyid = yn.type->isArray() ? tid(*types_.pointerTo(yn.type->pointee())) : tid(*yn.type);
     const Type &tx = T(txid), &ty = T(tyid);
+    if (tx.isVoid() && ty.isVoid()) return voidConditional(id, a, b, merge);
     if (!(scalar(tx) || tx.isNullPtr()) || !(scalar(ty) || ty.isNullPtr())) outside("a conditional of what is not a scalar");
     TypeId t;
     if (scalarArithmetic(tx) && scalarArithmetic(ty)) {
@@ -3864,7 +3907,7 @@ bool Lowering::compositePointer(sema::TypedId id, const Type &tx, const Type &ty
 }
 
 // `a = b` converts b to a's type; `a op= b` is `a = a op b` with a read once.
-Lowering::Val Lowering::assign(sema::TypedId id) {
+Lowering::Val Lowering::assign(sema::TypedId id, Val &where) {
     const std::string &op = text(id);
     if (count(id) != 2) outside("an assignment of " + std::to_string(count(id)) + " parts");
     { Val c; if (classAssign(id, c)) return Val(); }     // a class's value is no value: the statement is the assignment
@@ -3892,7 +3935,15 @@ Lowering::Val Lowering::assign(sema::TypedId id) {
     }
     value = convert(value, target.type);
     store(target.v, value.v);
+    where = target;
     return value;
+}
+
+// [expr.ass]/1: `a = b` or `a op= b` on a scalar object the lowering assigns - an lvalue naming a.
+bool Lowering::scalarAssignNode(sema::TypedId id) const {
+    if (count(id) != 2 || tree_.node(child(id, 0)).type == nullptr) return false;
+    const Type &t = *tree_.node(child(id, 0)).type;
+    return scalar(t) && !t.isConst() && isLvalueNode(child(id, 0));
 }
 
 // [class.copy]/18 and /25 for a class that is not plain: the copy or move assignment the parser called, by its record,
@@ -3901,12 +3952,12 @@ Lowering::Val Lowering::assign(sema::TypedId id) {
 bool Lowering::classAssign(sema::TypedId id, Val &out) {
     const sema::TypedId tn = child(id, 0), vn = child(id, 1);
     const TypeId lt = TypeTable::id(tree_.node(tn).type);
-    if (text(id) != "=" || !lt.valid() || !T(lt).isStructOrUnion() || !T(lt).isComplete() || plainClass(T(lt))) return false;
+    if (text(id) != "=" || !lt.valid() || !T(lt).isStructOrUnion() || !T(lt).isComplete()) return false;
     const Type &t = *T(lt).unqualified();
     std::string symbol;
     TypeId sig;
     const bool called = assignCall_ && assignCall_(tree_.node(vn).syntax, symbol, sig);
-    if (!called && assigned_ && assigned_(t.id())) return false;
+    if (!called && (plainClass(t) || (assigned_ && assigned_(t.id())))) return false;     // a plain class's copy assignment written by hand is called
     if (!isLvalueNode(tn)) outside("a class assigned to what is not an object");
     const Val target = lvalue(tn);
     if (T(target.type).isConst() || T(target.type).unqualified() != &t) outside("a class assigned to a const or another object");
@@ -4129,6 +4180,7 @@ Lowering::Val Lowering::call(sema::TypedId id) {
             // [over.call.object]: a local or a parameter of class type called - its operator(), on that object.
             const Val o = lvalue(head);
             object = Val(o.v, tid(*types_.pointerTo(&T(o.type))));
+        } else if (syn(head).kind == syntax::Kind::Name && globalFunctor(head, r.symbol, self, object)) {
         } else if (syn(head).kind == syntax::Kind::Name) {
             if (!this_.valid()) outside("a member call where there is no `this`");
             object = Val(this_, thisType_);
@@ -4526,7 +4578,10 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
             // A class prvalue bound to one - a temporary or a closure in a slot of the frame, alive to the call's end;
             // neither has a destructor for the full expression's end to run.
             if (!isLvalueNode(an) && (ref.isConst() || p.isRValueReference()) && (temporaryNode(an) || closureNode(an))) {
-                const Val a = closureNode(an) ? closure(an) : temporary(an);
+                Val a = closureNode(an) ? closure(an) : temporary(an);
+                // [dcl.init.ref]/5: a temporary of a class derived from the referent binds its base subobject.
+                if (T(a.type).isStructOrUnion() && ref.isStructOrUnion() && T(a.type).unqualified() != ref.unqualified())
+                    a = baseOfObject(a, p);
                 if (T(a.type).unqualified() != ref.unqualified()) outside("a reference parameter bound to a temporary of another type");
                 ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(&ref)), std::vector<ValueId>(1, a.v))));
                 continue;
@@ -4534,8 +4589,11 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
             // A call's class result, in a slot of this frame to its full expression's end - destroyed there where it has
             // a destructor - bound the same way.
             if (!isLvalueNode(an) && (ref.isConst() || p.isRValueReference()) && (destroyedResult(an) || classResult(an))) {
-                const Val a = syn(an).kind == syntax::Kind::Call ? call(an) : operatorCall(an);
-                if (!a.type.valid() || !T(a.type).isPointer() || T(a.type).pointee()->unqualified() != ref.unqualified())
+                Val a = syn(an).kind == syntax::Kind::Call ? call(an) : operatorCall(an);
+                if (!a.type.valid() || !T(a.type).isPointer()) outside("a reference parameter bound to a call's result of another type");
+                if (T(a.type).pointee()->isStructOrUnion() && ref.isStructOrUnion() && T(a.type).pointee()->unqualified() != ref.unqualified())
+                    a = baseOfObject(Val(a.v, tid(*T(a.type).pointee())), p);    // its base subobject, as a temporary's
+                else if (T(a.type).pointee()->unqualified() != ref.unqualified())
                     outside("a reference parameter bound to a call's result of another type");
                 ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(&ref)), std::vector<ValueId>(1, a.v))));
                 continue;
