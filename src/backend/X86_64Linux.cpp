@@ -308,7 +308,7 @@ void X86_64Linux::canonicalise(const Type *t) {
 void X86_64Linux::genAddr(const Expr &e) {
     if (const Var *v = dynamic_cast<const Var *>(&e)) {
         if (v->isLocal()) a_->ins("lea", local(v->offset()), reg("%rax"));
-        else if (v->isThreadLocal()) tlsAddress(*v);
+        else if (v->isThreadLocal()) tlsAddress(v->symbol(), v->viaWrapper());
         else if (target_.microsoftNames() || definedHere_.count(v->symbol()) != 0)
             a_->ins("lea", rip(v->symbol()), reg("%rax"));
         else {
@@ -434,15 +434,15 @@ void X86_64Linux::visit(const Var &n) {
 // **Measured from clang and cl.** ELF: the thread pointer at %fs:0 plus the object's offset, local-exec,
 // for an object defined here with a constant initialiser, else its `_ZTW` wrapper. COFF: cl's walk,
 // `_tls_index` into the array at gs:88, after the CRT's `__tls_guard` where the object may want initialising.
-void X86_64Linux::tlsAddress(const Var &v) {
+void X86_64Linux::tlsAddress(const std::string &symbol, bool viaWrapper) {
     if (!target_.microsoftNames()) {
-        if (v.viaWrapper()) { a_->ins("call", lbl(tlsWrapperName(v.symbol()))); return; }
+        if (viaWrapper) { a_->ins("call", lbl(tlsWrapperName(symbol))); return; }
         a_->ins("mov", seg("%fs", 0), reg("%rax"));
-        a_->ins("lea", tls(v.symbol(), "%rax"), reg("%rax"));
+        a_->ins("lea", tls(symbol, "%rax"), reg("%rax"));
         return;
     }
     msTlsBlock();
-    if (v.viaWrapper()) {
+    if (viaWrapper) {
         const std::string ready = label("tlsready", nextLabel());
         a_->ins("cmpb", imm(0), tls("__tls_guard", "%rax"));
         a_->ins("jne", lbl(ready));
@@ -450,7 +450,7 @@ void X86_64Linux::tlsAddress(const Var &v) {
         msTlsBlock();
         a_->defLabel(ready);
     }
-    a_->ins("lea", tls(v.symbol(), "%rax"), reg("%rax"));
+    a_->ins("lea", tls(symbol, "%rax"), reg("%rax"));
 }
 
 // Shifted and added rather than cl's `[rdx+rcx*8]`: the walker writes no indexed operand, the

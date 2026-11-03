@@ -28,10 +28,11 @@ struct FunctionFacts {
     std::size_t pos, paramCount;
     std::string specFilter;     // an ordinary function's throw(...) list as the parser's filter row names it: `$spec,<types>`
     bool noexceptWrap;          // [except.spec]/9 as the parser kept it: the body under a catch-all that aborts
-    bool ctorTry;               // [except.pre]/4: a constructor's try block, over its mem-initialisers and its body
+    bool ctorTry;               // [except.pre]/4: a constructor's try block over its mem-initialisers and body, or a destructor's
     std::string recordKey;      // the symbol the parser keyed this function's records by: Itanium's C1 or D1 for a split C2 or D2
     bool takesVtt;              // Itanium's C2 or D2 of a class with virtual bases: a VTT is its second parameter
     bool msFlag;                // a Microsoft constructor of a class with virtual bases: cl's most-derived flag, last
+    std::map<int, int> localAligns;     // a local aligned past its type (alignas), by the parser's serial: the alignment its slot keeps
     FunctionFacts() : isStatic(false), isInline(false), variadic(false), hasThis(false), sret(false), landingPads(false),
                       wrappedBody(false), noexcept_(false), isConstructor(false), pos(0), paramCount(0), noexceptWrap(false),
                       ctorTry(false), takesVtt(false), msFlag(false) {}
@@ -286,6 +287,8 @@ private:
     void directCall(const std::string &symbol, TypeId signature, const std::vector<ValueId> &ops);
     bool pseudoDestructor(sema::TypedId member, const sema::Resolution &called);
     bool threadLocalGlobal(const std::string &symbol) const;
+    static bool blockExtern(const sema::Resolution &r);
+    ValueId objectAddr(const std::string &sym, TypeId type, const sema::Resolution &r);
     Val toBase(Val v, TypeId to, bool cast = false);
     ValueId boundConverted(sema::TypedId an, const Type &p);
     bool convertedTemporary(sema::TypedId an, const Type &c, bool destroys, ValueId &slot);
@@ -319,6 +322,7 @@ private:
     Val condition(sema::TypedId id);
     void throwExpr(sema::TypedId id);
     bool abortingThrow(sema::TypedId id);
+    ValueId localAlloca(sema::TypedId var, TypeId slotType);
     void microsoftThrow(sema::TypedId id);
     Val thrownValue(sema::TypedId id, TypeId &thrown);
     bool classThrow(sema::TypedId id, ValueId &object, TypeId &thrown);
@@ -355,8 +359,9 @@ private:
     bool constructedTemporary(sema::TypedId id) const { return builtTemporary(id, false); }
     bool destroyedTemporary(sema::TypedId id) const { return builtTemporary(id, true); }
     bool copiedTemporary(sema::TypedId id) const;
+    bool zeroedTemporary(sema::TypedId id) const;
     bool temporaryNode(sema::TypedId id) const {
-        return plainTemporary(id) || constructedTemporary(id) || destroyedTemporary(id) || copiedTemporary(id);
+        return plainTemporary(id) || constructedTemporary(id) || destroyedTemporary(id) || copiedTemporary(id) || zeroedTemporary(id);
     }
     bool classObjectNode(sema::TypedId id) const;
     Val classObject(sema::TypedId id);
@@ -409,6 +414,9 @@ private:
     std::function<int(syntax::NodeId, std::string &, std::string &)> dynamicCast_;
     std::function<bool(syntax::NodeId, std::string &)> typeid_;
     Val dynamicCastPointer(sema::TypedId id);
+    bool dynamicReference(sema::TypedId id) const;
+    Val dynamicCastReference(sema::TypedId id);
+    Val dynamicWalk(sema::TypedId id, const Val &v, TypeId to);
     std::function<std::string(TypeId)> msThrowInfo_;
     std::function<bool(TypeId, std::string &, bool &)> msCatch_;
     std::function<bool(syntax::NodeId, std::string &, bool &, bool &)> msUnnamedCaught_;
@@ -454,6 +462,7 @@ private:
     std::vector<std::string> typeTable_;        // the function's selector indices: one per type, first occurrence, 1-based
     std::size_t handlerDepth_;                  // handlers the statement being lowered is inside
     bool noexceptWrap_;                         // FunctionFacts::noexceptWrap: the body is under a catch-all that aborts
+    std::map<int, int> localAligns_;            // FunctionFacts::localAligns of the function being lowered
     std::vector<std::size_t> handlerLive_;      // live_ where each handler's body began, innermost last
     struct Full {                               // a full expression open: its temporaries from live_[from]; flags zeroed at block, at
         std::size_t from; BlockId block; std::size_t at;

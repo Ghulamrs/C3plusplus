@@ -47,11 +47,12 @@ struct Resolution : ResolutionKind {
     int serial;             // a local's serial; a member's offset; 1 for a folded static member
     long long value;        // an enumerator's, a folded static member's
     bool isConst, isThreadLocal;    // a global's
+    bool viaWrapper;        // a thread_local's: a use goes through the ABI's wrapper
     bool hasThis;           // a call's: its function type's first parameter is the object's address
     bool indirect;          // a call's: through a value - a pointer or a vtable slot
     int vslot;              // a virtual call's: the vtable slot it reads, -1 for none
     std::string name;       // a global's or a function's lookup name, which its Var is named by
-    Resolution() : what(None), serial(-1), value(0), isConst(false), isThreadLocal(false), hasThis(false), indirect(false), vslot(-1) {}
+    Resolution() : what(None), serial(-1), value(0), isConst(false), isThreadLocal(false), viaWrapper(false), hasThis(false), indirect(false), vslot(-1) {}
 };
 
 // A lambda whose captures are scalar locals (M3b.2): its closure, and each capture's member - its offset and type, a
@@ -253,6 +254,7 @@ private:
         out.value = r.value;
         out.isConst = r.isConst;
         out.isThreadLocal = r.isThreadLocal;
+        out.viaWrapper = r.viaWrapper;
         out.hasThis = r.hasThis;
         out.indirect = r.indirect;
         out.vslot = r.vslot;

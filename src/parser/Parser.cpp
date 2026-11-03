@@ -857,6 +857,7 @@ int Parser::declare(const std::string &name, const Type *type, std::size_t pos,
     fnVars_.push_back(::Local{ name, stored, offset, inParams_, std::string(),
                               currentBlock() });
     fnVars_.back().align = alignAtLeast > objectAlign(stored, target_) ? alignAtLeast : objectAlign(stored, target_);
+    fnVars_.back().serial = localSerial_;
     return offset;
 }
 

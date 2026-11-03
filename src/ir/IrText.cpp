@@ -54,7 +54,8 @@ void dumpInst(const Function &f, const TypeTable &types, InstId id, std::string 
         out += b;
         break;
     }
-    case Op::Addr: case Op::TlsAddr: out += " @" + i.sym; if (i.k != 0) out += " +" + std::to_string(i.k); break;
+    case Op::Addr: out += " @" + i.sym; if (i.k != 0) out += " +" + std::to_string(i.k); break;
+    case Op::TlsAddr: out += " @" + i.sym; if (i.k != 0) out += " wrapper"; break;
     case Op::Alloca: out += " align " + std::to_string(i.align) + " ; " + f.frame[static_cast<std::size_t>(i.k)].name; break;
     case Op::CatchPad: case Op::CleanupPad:
         for (std::size_t n = 0; n < i.syms.size(); n++) out += (n ? ", " : " [") + (i.syms[n].empty() ? std::string("...") : "@" + i.syms[n]) + (n + 1 == i.syms.size() ? "]" : "");

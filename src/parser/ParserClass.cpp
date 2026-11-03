@@ -2273,6 +2273,7 @@ ExprPtr Parser::staticMemberRef(const Type *owner, const Type::StaticMember &s,
     n->setType(s.type);
     Resolved r = resolvedAs(Resolved::StaticMember, s.type, s.symbol, -1, 0, owner);
     r.isThreadLocal = s.isThreadLocal;
+    r.viaWrapper = v->viaWrapper();
     return resolve(useReference(std::move(n)), r);
 }
 

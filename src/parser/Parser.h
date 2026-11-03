@@ -548,6 +548,7 @@ private:
         int serial = -1;                 // a local's serial; a member's offset; 1 for a folded static member
         long long value = 0;             // an enumerator's, a folded static member's
         bool isConst = false, isThreadLocal = false;    // a global's
+        bool viaWrapper = false;                         // a thread_local's: a use goes through the ABI's wrapper (Var::viaWrapper)
         bool hasThis = false;                            // a call's: its function type's first parameter is the object's address
         bool indirect = false;                           // a call's: through a value - a pointer or a vtable slot
         int vslot = -1;                                  // a virtual call's: the vtable slot it reads, -1 for none
@@ -651,8 +652,8 @@ private:
     std::unordered_map<std::uint32_t, TryFacts> tryFacts_;
     std::set<std::string> wrappedBodies_;
     std::set<std::string> plainFunctionTries_;   // of those, an ordinary function's try block alone (M3b.2)
-    std::map<std::string, std::string> specFilters_;   // an ordinary function's throw(...) filter, `$spec,<types>`
-    std::set<std::string> ctorTries_;       // a constructor's function try block and nothing else around its body (M3b.2)
+    std::map<std::string, std::string> specFilters_;   // an ordinary function's or a constructor's throw(...) filter, `$spec,<types>`
+    std::set<std::string> ctorTries_;       // a constructor's or destructor's function try block, a constructor's filter beside it (M3b.2)
     std::set<std::string> noexceptWraps_;   // a noexcept body with no pads of its own, wrapped in a catch-all that aborts (M3b.2)
     // The static locals guardOnce builds at run time; the adapter takes only those laid down as data.
     std::set<std::string> guardedStatics_;
@@ -728,7 +729,7 @@ private:
         declaredLocals_[id.v] = *l;
         std::map<int, LocalBuilt>::const_iterator c = ctorBySerial_.find(l->serial);
         if (c == ctorBySerial_.end()) return;
-        resolutions_[id.v] = resolvedAs(Resolved::Call, nullptr, c->second.symbol);
+        resolutions_[id.v] = resolvedAs(Resolved::Call, nullptr, c->second.symbol, l->serial);   // the local's serial kept
         localBuilt_[id.v] = c->second;
     }
     // The constructor a declaration called, by the declared local's serial, until its `var` node is made (M2.16): its

@@ -113,12 +113,13 @@ TypedId Typer::node(syntax::NodeId id) {
 // lowering reads the typed tree and nothing of the parser. The layout maps stay the parser's: M3's layout is its own.
 
 void Typer::record(syntax::NodeId id, TypedId t) {
-    if (p_.syntaxTree_.node(id).kind == syntax::Kind::Var && p_.declaredLocals_.count(id.v) != 0 &&
-        !p_.declaredLocals_.at(id.v).staticName.empty()) {
-        // A static local's `var` carries the record its names carry - kind Local, its static name - so the lowering can tell it.
+    if (p_.syntaxTree_.node(id).kind == syntax::Kind::Var && p_.declaredLocals_.count(id.v) != 0) {
+        // A local's `var` carries the record its names carry - kind Local, the parser's serial, a static one's name - so
+        // the lowering can tell a static, and lay an alignas local's slot by its serial (FunctionFacts::localAligns).
         Resolution out;
         out.what = Resolution::Local;
         out.symbol = p_.declaredLocals_.at(id.v).staticName;
+        out.serial = p_.declaredLocals_.at(id.v).serial;
         out.type = TypeTable::id(p_.declaredLocals_.at(id.v).type);
         tree_.setResolution(t, out);
     }
@@ -446,6 +447,7 @@ std::string Typer::recordDiffers(const Parser &p, const TypedTree &tree, TypedId
         if (r.what != pr->second.what || p.types_.type(r.type) != pr->second.type ||
             p.types_.type(r.owner) != pr->second.owner || r.symbol != pr->second.symbol || r.serial != pr->second.serial ||
             r.value != pr->second.value || r.isConst != pr->second.isConst || r.isThreadLocal != pr->second.isThreadLocal ||
+            r.viaWrapper != pr->second.viaWrapper ||
             r.hasThis != pr->second.hasThis || r.indirect != pr->second.indirect || r.vslot != pr->second.vslot || r.name != pr->second.name)
             return "the record's fields";
     }

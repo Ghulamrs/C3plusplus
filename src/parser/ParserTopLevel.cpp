@@ -1922,10 +1922,10 @@ void Parser::topLevel(Program &program) {
     if (specFilter || ctorTry || functionTry || noexceptWrapped) wrappedBodies_.insert(definedSymbol);
     // An ordinary function's try block and nothing else: its body is that `try`, as the syntax tree holds it (M3b.2).
     if (functionTry && !specFilter && !noexceptWrapped) plainFunctionTries_.insert(definedSymbol);
-    // A throw(...) list's filter over an ordinary function's body: the list as its row names it (M3b.2).
-    if (specFilter && !specialHandsOver && !noexceptWrapped) specFilters_[definedSymbol] = spec;
+    // A throw(...) list's filter over an ordinary function's or a constructor's body, as its row names it (M3b.2).
+    if (specFilter && (!specialHandsOver || isCtor) && !noexceptWrapped) specFilters_[definedSymbol] = spec;
     if (noexceptWrapped) noexceptWraps_.insert(definedSymbol);
-    if (ctorTry && isCtor && !specFilter && !noexceptWrapped) ctorTries_.insert(definedSymbol);
+    if (ctorTry && (isCtor || !specFilter) && !noexceptWrapped) ctorTries_.insert(definedSymbol);
     if (!entryGuards.empty()) functionGuards_[definedSymbol] = entryGuards;
 
     // Recorded before `body` is moved into the Function, where what the pointer names lives on; a
