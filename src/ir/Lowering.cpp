@@ -4032,7 +4032,6 @@ Lowering::Val Lowering::assignScalar(sema::TypedId id, Val &target) {
     }
     value = convert(value, target.type);
     store(target.v, value.v);
-    where = target;
     return value;
 }
 
