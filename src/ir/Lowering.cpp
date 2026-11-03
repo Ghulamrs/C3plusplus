@@ -616,7 +616,7 @@ void Lowering::aggregateInit(ValueId slot, const Type &t, const std::vector<sema
 
 // The members of a class, or the elements of an array, at `slot`, each from the cursor while values are left:
 // a scalar or a scoped enumeration stored, a reference bound, a class of bytes or an array filled in turn. The forms
-// the parser groups - a bit-field, an anonymous union, a base - are refused by name.
+// the parser groups - a bit-field, a base - are refused by name; an anonymous union is one slot of its own type.
 void Lowering::aggregateFill(ValueId slot, const Type &t, const std::vector<sema::TypedId> &parts, std::size_t &next) {
     if (t.isArray()) {
         if (t.length() <= 0 || !t.pointee()->isComplete())
@@ -635,8 +635,15 @@ void Lowering::aggregateFill(ValueId slot, const Type &t, const std::vector<sema
     for (const Member &m : t.members()) {
         // [dcl.init.aggr]/16: a union takes one value, for its first member.
         if (next >= parts.size() || (t.kind() == Kind::Union && &m != &t.members().front())) return;
-        if (m.name.empty() || m.width != 0 || m.anonUnion != nullptr)
-            outside("a braced list reaching a member the lowering does not place");
+        // [class.union]/5: an anonymous union's run of members is one slot of the union's type, filled as a member of it.
+        if (m.anonUnion != nullptr) {
+            if (&m != &t.members().front() && m.continuesUnion(&m - 1)) continue;
+            const InstId u = add(Op::Gep, tid(*types_.pointerTo(m.anonUnion)), std::vector<ValueId>(1, slot));
+            at(u).k = m.offset;
+            aggregateItem(result(u), *m.anonUnion, parts, next);
+            continue;
+        }
+        if (m.name.empty() || m.width != 0) outside("a braced list reaching a member the lowering does not place");
         if (m.type->isReference()) {
             // [dcl.init.aggr]/2: a reference member is bound by its value - an object of its referent's type, its address.
             const sema::TypedId p = parts[next++];
@@ -833,6 +840,22 @@ ValueId Lowering::initializerListOf(const std::vector<sema::TypedId> &elems, con
     const Member &countM = *il.findMember("count_");
     if (!firstM.type->isPointer()) outside("an initializer_list of no layout the lowering knows");
     const Type &e = *firstM.type->pointee()->unqualified();
+    const ValueId base = backingArray(elems, e, lb);
+    const ValueId object = entryAlloca(tid(il), "$il");
+    const ValueId self = result(add(Op::Bitcast, tid(*types_.pointerTo(&il)), std::vector<ValueId>(1, object)));
+    const InstId f = add(Op::Gep, tid(*types_.pointerTo(firstM.type)), std::vector<ValueId>(1, self));
+    at(f).k = firstM.offset;
+    store(result(f), result(add(Op::Bitcast, tid(*firstM.type), std::vector<ValueId>(1, base))));
+    const InstId c = add(Op::Gep, tid(*types_.pointerTo(countM.type)), std::vector<ValueId>(1, self));
+    at(c).k = countM.offset;
+    store(result(c), iconst(tid(*countM.type), n));
+    return result(add(Op::Bitcast, tid(*types_.pointerTo(param.isReference() ? param.referent() : &il)), std::vector<ValueId>(1, self)));
+}
+
+// An initializer_list's backing array of `e` over its parts: a scalar each converted, a class's element built as the
+// parser's record `lb` says, alive to the full expression's end where it has a destructor; the first's address, or null.
+ValueId Lowering::backingArray(const std::vector<sema::TypedId> &elems, const Type &e, const sema::ListBuilt &lb) {
+    const std::uint32_t n = static_cast<std::uint32_t>(elems.size());
     const bool built = !scalar(e);
     if (built && (!e.isStructOrUnion() || !e.isComplete() || lb.elems.size() != n))
         outside("an initializer_list of '" + e.describe() + "' elements");
@@ -854,15 +877,7 @@ ValueId Lowering::initializerListOf(const std::vector<sema::TypedId> &elems, con
         listElement(result(g), e, elems[i], lb.elems[i]);
         if (!dtor.empty()) guard(result(g), e, dtor);
     }
-    const ValueId object = entryAlloca(tid(il), "$il");
-    const ValueId self = result(add(Op::Bitcast, tid(*types_.pointerTo(&il)), std::vector<ValueId>(1, object)));
-    const InstId f = add(Op::Gep, tid(*types_.pointerTo(firstM.type)), std::vector<ValueId>(1, self));
-    at(f).k = firstM.offset;
-    store(result(f), result(add(Op::Bitcast, tid(*firstM.type), std::vector<ValueId>(1, base))));
-    const InstId c = add(Op::Gep, tid(*types_.pointerTo(countM.type)), std::vector<ValueId>(1, self));
-    at(c).k = countM.offset;
-    store(result(c), iconst(tid(*countM.type), n));
-    return result(add(Op::Bitcast, tid(*types_.pointerTo(param.isReference() ? param.referent() : &il)), std::vector<ValueId>(1, self)));
+    return base;
 }
 
 // One element of an initializer_list's backing array at `at0` from its part, as the parser built it: a trivially copyable
@@ -2869,21 +2884,22 @@ ValueId Lowering::rangeEnd(const sema::Resolution &r, Val range, TypeId &iter) {
     return result(c);
 }
 
-// [stmt.ranged]/1, the parser's rewrite: `__b` walks from the first element to one past the last - an array's, or what a
-// class range's `begin` and `end` hand back as pointers - the range read once, and the variable takes `*__b` - or binds
-// it - each turn. A class's range with class iterators, or a range not an object, stays outside.
+// [stmt.ranged]/1, the parser's rewrite: `__b` walks from the first element to one past the last - an array's, a braced
+// range's backing array's, or what a class range's `begin` and `end` hand back - the range read once, and the variable
+// takes `*__b` - or binds it - each turn. A class range with class iterators, or a range not an object, stays outside.
 void Lowering::rangeForStmt(sema::TypedId id) {
     if (count(id) != 3 || syn(child(id, 1)).kind != syntax::Kind::Var) outside("a range-based for of other parts");
     const sema::TypedId range = child(id, 0), var = child(id, 1);
     const TypeId rid = TypeTable::id(tree_.node(range).type), vid = TypeTable::id(tree_.node(var).type);
     sema::Resolution rb, re;
     std::vector<sema::Resolution> ops3;      // a class iterator's `!=`, `*` and `++`
-    const bool calls = rid.valid() && T(rid).unqualified()->isStructOrUnion() && rangeCalls_ &&
+    const bool braced = syn(range).kind == syntax::Kind::Other && text(range) == "{}";     // an initializer_list's braces
+    const bool calls = (braced || (rid.valid() && T(rid).unqualified()->isStructOrUnion())) && rangeCalls_ &&
                        rangeCalls_(tree_.node(id).syntax, rb, re, ops3);
     if (!calls && (!rid.valid() || !T(rid).isArray() || T(rid).length() <= 0)) outside("a range-based for over what is not an array");
     // A class range that is a temporary - a call's result, `T(...)` - lives to the loop's end, [class.temporary]/5.
-    const bool temporary = calls && !isLvalueNode(range) && classObjectNode(range);
-    if (!isLvalueNode(range) && !temporary) outside("a range-based for over what is not an object");
+    const bool temporary = calls && !braced && !isLvalueNode(range) && classObjectNode(range);
+    if (!braced && !isLvalueNode(range) && !temporary) outside("a range-based for over what is not an object");
     TypeId iter;
     // [stmt.ranged]/1 with a class iterator: copied by its bytes, walked by its own `!=`, `*` and `++` the parser recorded.
     const bool classIter = calls && rb.type.valid() && T(rb.type).isFunction() && T(rb.type).returns()->isStructOrUnion() && ops3.size() == 3;
@@ -2896,7 +2912,7 @@ void Lowering::rangeForStmt(sema::TypedId id) {
     if (classIter && (!gives.valid() || !(T(gives).isReference() || scalar(T(gives)))))
         outside("a range-based for whose iterator's '*' gives no reference or scalar");
     const bool byValue = classIter && !T(gives).isReference();      // `*__b` a scalar value rather than an element
-    const Type &rt = T(rid), &elem = classIter ? (byValue ? T(gives) : *T(gives).referent()) : calls ? *T(iter).pointee() : *rt.pointee();
+    const Type &elem = classIter ? (byValue ? T(gives) : *T(gives).referent()) : calls ? *T(iter).pointee() : *T(rid).pointee();
     if (!vid.valid() || !elem.isComplete() || (!calls && !scalar(elem) && !plainClass(elem) && !(elem.isArray() && T(vid).isReference())))
         outside("a range-based for over an array of '" + elem.describe() + "'");
     const Type &vt = T(vid);
@@ -2917,7 +2933,12 @@ void Lowering::rangeForStmt(sema::TypedId id) {
     const std::size_t scope = live_.size();
     Val first;
     ValueId past;
-    if (calls) {
+    if (braced) {
+        first = bracedRange(range, *elem.unqualified(), iter, scope);
+        const InstId e = add(Op::Gep, iter, std::vector<ValueId>(1, first.v));
+        at(e).k = static_cast<long long>(count(range)) * elem.size(target_);
+        past = result(e);
+    } else if (calls) {
         // The temporary's full expression is left open into the loop's scope, whose end destroys what it built.
         if (temporary) openFull();
         const Val object = temporary ? classObject(range) : lvalue(range);
@@ -2938,7 +2959,7 @@ void Lowering::rangeForStmt(sema::TypedId id) {
     } else {
         first = decay(lvalue(range));
         const InstId e = add(Op::Gep, first.type, std::vector<ValueId>(1, first.v));
-        at(e).k = rt.length() * elem.size(target_);
+        at(e).k = T(rid).length() * elem.size(target_);
         past = result(e);
     }
     const ValueId cursor = classIter ? ValueId() : entryAlloca(first.type, "$range");
@@ -2982,6 +3003,22 @@ void Lowering::rangeForStmt(sema::TypedId id) {
     br(cond);
     place(exit);
     closeScope(scope);
+}
+
+// A braced range, the initializer_list [stmt.ranged]/1 binds: its backing array of `e` under a full expression left open
+// into the loop's scope (live_ from `scope`), whose end destroys the elements - refused where it builds anything else.
+Lowering::Val Lowering::bracedRange(sema::TypedId range, const Type &e, TypeId iter, std::size_t scope) {
+    std::vector<sema::TypedId> elems;
+    for (std::uint32_t i = 0; i < count(range); i++) elems.push_back(child(range, i));
+    sema::ListBuilt lb;
+    if (listBuilt_) listBuilt_(tree_.node(range).syntax, lb);
+    openFull();
+    const ValueId base = backingArray(elems, e, lb);
+    for (std::size_t i = scope; i < live_.size(); i++)
+        if (T(live_[i].cls).unqualified() != &e || live_[i].built.valid() || live_[i].when.valid())
+            outside("a range-based for whose braced range builds more than its elements");
+    full_.pop_back();
+    return Val(result(add(Op::Bitcast, iter, std::vector<ValueId>(1, base))), iter);
 }
 
 // One of a class-iterator range-for's calls the parser recorded - begin or end on the range, or the iterator's `!=`, `*`,
@@ -4494,6 +4531,7 @@ Lowering::Val Lowering::assign(sema::TypedId id) {
 Lowering::Val Lowering::assignScalar(sema::TypedId id, Val &target) {
     const std::string &op = text(id);
     if (count(id) != 2) outside("an assignment of " + std::to_string(count(id)) + " parts");
+    if (syn(child(id, 1)).kind == syntax::Kind::Other && text(child(id, 1)) == "{}") return bracedAssign(id, target);
     { Val c; if (classAssign(id, c)) return Val(); }     // a class's value is no value: the statement is the assignment
     const sema::TypedId tn = child(id, 0);
     if (!isLvalueNode(tn)) outside("an assignment to what is not an object");
@@ -4524,6 +4562,28 @@ Lowering::Val Lowering::assignScalar(sema::TypedId id, Val &target) {
     return value;
 }
 
+// [expr.ass]/9: `x = {...}` - a scalar takes the one value, or its zero for `{}`; a class whose assignment is its bytes
+// takes the temporary the braces make, as bracedArgument makes one for a parameter. `target` the left object.
+Lowering::Val Lowering::bracedAssign(sema::TypedId id, Val &target) {
+    const sema::TypedId tn = child(id, 0), vn = child(id, 1);
+    if (text(id) != "=" || !isLvalueNode(tn)) outside("a braced list assigned to what is not an object");
+    Member bf;
+    target = fieldAddress(tn, bf);
+    const Type &t = T(target.type);
+    if (bf.isBitField() || t.isConst()) outside("a braced list assigned to a bit-field or a const");
+    if (scalar(t)) {
+        if (count(vn) > 1) outside("a scalar assigned a braced list of " + std::to_string(count(vn)) + " values");
+        const Val v = count(vn) == 0 ? Val(zeroOf(target.type), target.type) : convert(exprTo(child(vn, 0), target.type), target.type);
+        store(target.v, v.v);
+        return v;
+    }
+    ValueId made;
+    if (!t.isStructOrUnion() || (assigned_ && assigned_(t.id())) || !bracedArgument(vn, t, made))
+        outside("a braced list assigned to a '" + t.describe() + "'");
+    copyObject(target.v, made, t);
+    return target;
+}
+
 // [expr.ass]/1: `a = b` or `a op= b` on a scalar object the lowering assigns - an lvalue naming a.
 bool Lowering::scalarAssignNode(sema::TypedId id) const {
     if (count(id) != 2 || tree_.node(child(id, 0)).type == nullptr) return false;
@@ -4538,6 +4598,7 @@ bool Lowering::classAssign(sema::TypedId id, Val &out) {
     const sema::TypedId tn = child(id, 0), vn = child(id, 1);
     const TypeId lt = TypeTable::id(tree_.node(tn).type);
     if (text(id) != "=" || !lt.valid() || !T(lt).isStructOrUnion() || !T(lt).isComplete()) return false;
+    if (syn(vn).kind == syntax::Kind::Other && text(vn) == "{}") return false;     // bracedAssign's
     const Type &t = *T(lt).unqualified();
     std::string symbol;
     TypeId sig;
