@@ -663,7 +663,6 @@ const Type *Parser::classRangeEnds(ExprPtr range, std::size_t rpos,
     // A temporary range is what `auto &&__range` binds and keeps alive to the loop's end,
     // [class.temporary]/5: here it is built into a slot of its own, destroyed after the loop.
     pendingRangeCalls_ = RangeCalls();
-    pendingRangeCalls_.object = isGlvalue(*range);
     if (isGlvalue(*range)) {
         extendTemporary(*range, ".rt" + std::to_string(refTemps_++));
     } else {
@@ -952,7 +951,7 @@ StmtPtr Parser::rangeForStatement(int scope) {
     setup.push_back(StmtPtr(f));
     if (!classIter && alive_.size() == aliveMark && rt->isArray())
         pendingRange_ = RangeFacts{ bName, eName, bSlot, eSlot, scope, inner };
-    const bool classCalls = !classIter && alive_.size() == aliveMark && !rt->isArray() && !braced;
+    const bool classCalls = !classIter && !rt->isArray() && !braced;
     pendingRangeCalls_ = classCalls ? calls : RangeCalls();
     // The range temporary and the iterators die after the loop, in the reverse order,
     // and on the way out of an exception too - a cleanup region from where each was built.
@@ -1526,7 +1525,7 @@ StmtPtr Parser::statement() {
     hoistedForParts_ = 0;
     if (kind == syntax::Kind::For && !pendingRange_.bName.empty()) rangeFacts_[noted->syntax().v] = pendingRange_;
     pendingRange_ = RangeFacts();
-    if (kind == syntax::Kind::For && pendingRangeCalls_.object && pendingRangeCalls_.begin != 0 && pendingRangeCalls_.end != 0)
+    if (kind == syntax::Kind::For && pendingRangeCalls_.begin != 0 && pendingRangeCalls_.end != 0)
         rangeCalls_[noted->syntax().v] = pendingRangeCalls_;
     pendingRangeCalls_ = RangeCalls();
     if (const Case *c = dynamic_cast<const Case *>(noted.get()))

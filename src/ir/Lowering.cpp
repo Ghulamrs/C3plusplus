@@ -2546,14 +2546,16 @@ void Lowering::rangeForStmt(sema::TypedId id) {
     const bool calls = rid.valid() && T(rid).unqualified()->isStructOrUnion() && rangeCalls_ &&
                        rangeCalls_(tree_.node(id).syntax, rb, re);
     if (!calls && (!rid.valid() || !T(rid).isArray() || T(rid).length() <= 0)) outside("a range-based for over what is not an array");
-    if (!isLvalueNode(range)) outside("a range-based for over what is not an object");
+    // A class range that is a temporary - a call's result, `T(...)` - lives to the loop's end, [class.temporary]/5.
+    const bool temporary = calls && !isLvalueNode(range) && classObjectNode(range);
+    if (!isLvalueNode(range) && !temporary) outside("a range-based for over what is not an object");
     TypeId iter;
     if (calls) {
         if (rb.type.valid() && T(rb.type).isFunction() && T(rb.type).returns()->isPointer()) iter = tid(*T(rb.type).returns()->unqualified());
         if (!iter.valid()) outside("a range-based for whose begin is not a pointer");
     }
     const Type &rt = T(rid), &elem = calls ? *T(iter).pointee() : *rt.pointee();
-    if (!vid.valid() || !elem.isComplete() || (!calls && !scalar(elem) && !plainClass(elem)))
+    if (!vid.valid() || !elem.isComplete() || (!calls && !scalar(elem) && !plainClass(elem) && !(elem.isArray() && T(vid).isReference())))
         outside("a range-based for over an array of '" + elem.describe() + "'");
     const Type &vt = T(vid);
     // The variable: a reference to the element, a scalar converted from it, or a plain class copied from it by its bytes.
@@ -2574,7 +2576,15 @@ void Lowering::rangeForStmt(sema::TypedId id) {
     Val first;
     ValueId past;
     if (calls) {
-        const Val object = lvalue(range);
+        // The temporary's full expression is left open into the loop's scope, whose end destroys what it built.
+        if (temporary) openFull();
+        const Val object = temporary ? classObject(range) : lvalue(range);
+        // What it built to destroy is the range alone - one object of its class, which has a destructor - or nothing.
+        const Type &rc = *T(object.type).unqualified();
+        if (temporary && !(live_.size() == scope ? !rc.hasDestructor() :
+                           live_.size() == scope + 1 && T(live_.back().cls).unqualified() == &rc && !live_.back().built.valid() && !live_.back().when.valid()))
+            outside("a range-based for whose range's full expression builds more than its range");
+        if (temporary) full_.pop_back();
         TypeId same = iter;
         first = Val(rangeEnd(rb, object, same), iter);
         past = rangeEnd(re, object, same);

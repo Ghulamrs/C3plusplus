@@ -848,8 +848,8 @@ private:
     struct RangeFacts { std::string bName, eName; int bSlot, eSlot, scope, inner; };
     std::unordered_map<std::uint32_t, RangeFacts> rangeFacts_;
     RangeFacts pendingRange_ = RangeFacts();
-    // A range-based for over a class object, its iterators pointers and nothing alive: its begin and end calls' records (M3b.2).
-    struct RangeCalls { std::uint32_t begin = 0, end = 0; bool object = false; };
+    // A range-based for over a class range, an object or a temporary: its begin and end calls' records (M3b.2).
+    struct RangeCalls { std::uint32_t begin = 0, end = 0; };
     std::unordered_map<std::uint32_t, RangeCalls> rangeCalls_;
     RangeCalls pendingRangeCalls_;
     LambdaFacts pendingLambda_;
