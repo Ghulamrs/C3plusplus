@@ -139,6 +139,7 @@ private:
     ValueId zeroOf(TypeId type);
     ValueId addrOf(const std::string &sym, TypeId type);
     ValueId load(ValueId p, TypeId type);
+    ValueId op2(Op o, TypeId type, ValueId a, ValueId b);     // a two-operand instruction
     void store(ValueId p, ValueId v);
 
     // The typed tree, read.
@@ -216,6 +217,10 @@ private:
     void staticArray(sema::TypedId var, const std::string &symbol, const Type &array, const sema::StaticGuard &g);
     Val memberAddress(sema::TypedId id);
     Val memberOfThis(sema::TypedId id);
+    Val fieldAddress(sema::TypedId id, Member &bf);
+    Val bitUnit(ValueId object, const Member &m, bool constant);
+    Val bitRead(const Val &unit, const Member &m);
+    Val bitAssign(sema::TypedId id, const Val &unit, const Member &m);
     bool namesCalledFunction(const std::string &head, const std::string &symbol) const;
     Val functorMember(sema::TypedId head, const Type &self);
     Val capturedThis();
@@ -236,6 +241,11 @@ private:
     Val assignScalar(sema::TypedId id, Val &target);
     bool scalarAssignNode(sema::TypedId id) const;
     bool globalFunctor(sema::TypedId head, const std::string &symbol, const Type &self, Val &object);
+    Val qualifiedMemberOfThis(sema::TypedId id);
+    bool baseAssignNode(sema::TypedId id) const;
+    Val baseAssigned(sema::TypedId id);
+    bool anonymousUnionMember(sema::TypedId id) const;
+    Val unionMemberAddress(sema::TypedId id);
     Val call(sema::TypedId id);
     bool vaBuiltinNode(sema::TypedId id) const;
     Val vaBuiltin(sema::TypedId id);
@@ -486,6 +496,9 @@ private:
     static const std::size_t kNoFull = static_cast<std::size_t>(-1);
     BlockId returnBlock_;
     std::map<std::uint32_t, std::pair<ValueId, TypeId> > locals_;    // a `var` node -> its alloca and declared type
+    std::map<std::uint32_t, ValueId> unionSlots_;    // an anonymous union in a block, by its type -> its alloca
+    bool bitWanted_ = false;           // fieldAddress asks memberAddress or memberOfThis for a bit-field's unit
+    Member bitField_;                 // and a copy of the bit-field it found (width 0: none)
     std::map<std::uint32_t, std::pair<std::string, TypeId> > staticLocals_;   // a static `var` -> its symbol and type
     std::vector<Loop> loops_;
     std::vector<SwitchCtx> switches_;

@@ -26,6 +26,12 @@ struct V {
     V &operator=(const double *p) { a[0] = p[0]; a[1] = p[1]; return *this; }
 };
 
+// [class.mfct.non-static]/3: `Q0::fp` in a member is the base's, past the class's own; `T{x}` of a scalar is its cast.
+struct P0 { double pad; };
+struct Q0 { int fp; };
+struct R0 : P0, Q0 { int fp; int get() { Q0::fp = 3; fp = 4; return Q0::fp * 10 + fp; } };
+template <class T> T braced(T x) { return T{x} + T{}; }
+
 static int hits;
 static void hit(int n) { hits += n; }
 
@@ -62,5 +68,8 @@ int main() {
     q = two;
     p = q;
     printf("%g %g\n", p.a[0], p.a[1]);
+
+    R0 r0;
+    printf("%d %d %g\n", r0.get(), braced(5), braced(1.5));
     return 0;
 }

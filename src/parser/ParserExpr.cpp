@@ -636,7 +636,17 @@ const Type *Parser::simpleTypeKeyword() const {
 
 // `T{...}` for any T, the '{' still ahead - [expr.type.conv]/2, list-initialisation.
 ExprPtr Parser::bracedValueInit(const Type *to, std::size_t pos) {
-    return listTemporary(to, pos);
+    if (!to->isScalar()) return listTemporary(to, pos);
+    // A scalar's `T{}` or `T{x}` is noted as the cast `T()` or `T(x)` is: a zero, or its one value converted.
+    Init in = parseInitialiser();
+    const bool one = in.items.size() == 1 && !in.items[0].isList && in.items[0].value;
+    const syntax::NodeId operand = one ? syn(in.items[0].value) : syntax::NodeId();
+    ExprPtr r = listTemporaryFrom(to, in, false, pos);
+    r->setDeclCategory(Expr::Category::Prvalue);
+    if (!in.items.empty() && !operand.valid()) return r;
+    ExprPtr made = noteCast(std::move(r), types_.withoutConst(to->unqualified()), to->describe(), pos, operand);
+    if (in.items.empty() && made && made->syntax().valid()) keywordValues_[made->syntax().v] = std::make_pair(0LL, types_.withoutConst(to->unqualified()));
+    return made;
 }
 
 ExprPtr Parser::functionalCast(const Type *to, std::size_t pos) {
@@ -1029,7 +1039,10 @@ ExprPtr Parser::qualifiedMemberThroughThis(const Type *cls, const Member &m,
     ExprPtr acc(new MemberAccess(std::move(obj), member, m.offset, m.width, m.bitOffset));
     acc->setType(objType->isConst() && !m.type->isReference() && !m.isMutable
                      ? types_.withConst(m.type) : m.type);
-    return useReference(std::move(acc));
+    // Its record: the member at its offset in `this`'s class, the base's added, as an unqualified member's is.
+    const int at = (mine->unqualified() == cls ? 0 : accessibleBaseOffset(mine, cls)) + m.offset;
+    const Type *access = acc->type();
+    return resolve(useReference(std::move(acc)), resolvedAs(Resolved::Member, access, member, at, 0, cls));
 }
 
 // **The syntax of a primary expression** (M2 step 2): a literal, `this`, or a name - qualified, a destructor's
@@ -1806,7 +1819,8 @@ ExprPtr Parser::primaryNode(Program *program) {
                     ExprPtr whole = thisObject();
                     if (whole->type()->unqualified() != cls->unqualified())
                         whole = baseSubobject(std::move(whole), cls->unqualified());
-                    return namedAfter(std::move(done), std::move(whole));
+                    // Recorded as a value of the base's type: the call's node names no function (M3b.2).
+                    return resolve(namedAfter(std::move(done), std::move(whole)), resolvedAs(Resolved::Value, cls->unqualified()));
                 }
                 return memberCallWith(std::move(obj), selfType->pointee(), op, qpos,
                                       std::move(args), cls);
@@ -2590,7 +2604,11 @@ ExprPtr Parser::localRef(const std::string &name) {
         if (l->isThreadLocal) tlsVar(v, l->tlsViaWrapper, l->tlsViaWrapper);
         ExprPtr n(v);
         n->setType(l->type);
-        Resolved r = resolvedAs(Resolved::Local, l->type, l->staticName, l->serial);
+        // A member of an anonymous union in a block: the union's type its record's owner, the slot they share (M3b.2).
+        const Type *shared = nullptr;
+        for (std::size_t k = 0; l->sharesSlot && k < locals_.size(); k++)
+            if (!locals_[k].sharesSlot && locals_[k].offset == l->offset && locals_[k].type->isStructOrUnion()) shared = locals_[k].type;
+        Resolved r = resolvedAs(Resolved::Local, l->type, l->staticName, l->serial, 0, shared);
         r.isThreadLocal = l->isThreadLocal;
         r.viaWrapper = v->viaWrapper();
         return resolve(useReference(std::move(n)), r);
@@ -2831,6 +2849,12 @@ Parser::PostfixStep Parser::beginPostfix(const ExprPtr &n) const {
         if (q != k && peekAt(q).is("~")) {      // `p->S::~S()`: the qualifier and the destructor's name, all of it
             for (std::size_t i = k; i <= q + 1; i++) st.text += peekAt(i).text;
             st.nameAt = at_ + k;
+            return st;
+        }
+        // `b->B::get()`: a qualified member function called, its whole name the callee's (M3b.2).
+        if (q != k && peekAt(q).kind == TokenKind::Ident && (peekAt(q + 1).is("(") || peekAt(q + 1).is("<"))) {
+            for (std::size_t i = k; i <= q; i++) st.text += peekAt(i).text;
+            st.nameAt = at_ + q;
             return st;
         }
         if (peekAt(k).is("~")) { st.text += "~"; k++; }
