@@ -72,7 +72,7 @@ bool Lowering::buildableLayout(const Type &cls, bool vptr, bool arrays, bool vba
     for (const Member &m : cls.members()) {
         const Type &t = *m.type->unqualified();
         if (m.width != 0) return false;
-        if (m.type->isReference() ? !referable(*m.type->referent())
+        if (m.type->isReference() ? !referable(*m.type->referent()) && !m.type->referent()->isFunction()
                                   : !scalar(t) && !plainClass(t) && !builtMember(t) && !scalarArray(t) && !(arrays && builtArray(t, elems).valid()))
             return false;
     }
@@ -775,6 +775,11 @@ void Lowering::builtLocal(sema::TypedId var, ValueId slot, const Type &t) {
         if (T(o.type).unqualified() != &c) outside("a class local initialised from a temporary of another type");
         copyObject(slot, o.v, c);
         closeFull();
+    } else if (v.initForm == 2 && c.isSpecialization() && c.templateName() == "initializer_list") {
+        // [dcl.init.list]/5-6: `auto a = {1, 2}` - a backing array of this frame, alive as long as the local, and its bytes.
+        std::vector<sema::TypedId> elems;
+        for (std::uint32_t i = 0; i < v.count; i++) elems.push_back(child(var, i));
+        copyObject(slot, initializerListOf(elems, c), c);
     } else {
         // No constructor ran: a copy of bytes, which a class whose copy is a constructor would have recorded as a call.
         if (constructed_ && constructed_(c.id()) && v.initForm != 1) outside("a local of a constructed class built by no constructor");
