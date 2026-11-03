@@ -1476,9 +1476,9 @@ void Lowering::listTemporary(sema::TypedId id, ValueId slot) {
 void Lowering::constructFromList(ValueId where, const std::string &symbol, TypeId sig, const Type &cls, bool zeroFirst,
                                  sema::TypedId args, std::uint32_t from) {
     const Type &ft = T(sig);
-    const Type *p = ft.isFunction() && ft.params().size() == 2 ? ft.params()[1] : nullptr;
-    const Type *il = p != nullptr ? (p->isReference() ? p->referent()->unqualified() : p->unqualified()) : nullptr;
-    if (il == nullptr || !il->isStructOrUnion() || !il->isSpecialization() || il->templateName() != "initializer_list") {
+    const TypeId p = ft.isFunction() && ft.params().size() == 2 ? tid(*ft.params()[1]) : TypeId();
+    const TypeId il = p.valid() ? tid(T(p).isReference() ? *T(p).referent()->unqualified() : *T(p).unqualified()) : TypeId();
+    if (!il.valid() || !T(il).isStructOrUnion() || !T(il).isSpecialization() || T(il).templateName() != "initializer_list") {
         construct(where, symbol, sig, cls, zeroFirst, args, from);
         return;
     }
@@ -1488,7 +1488,7 @@ void Lowering::constructFromList(ValueId where, const std::string &symbol, TypeI
     sema::ListBuilt lb;
     if (listBuilt_) listBuilt_(tree_.node(args).syntax, lb);
     std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, where))));
-    ops.push_back(initializerListOf(elems, *p, lb));
+    ops.push_back(initializerListOf(elems, T(p), lb));
     directCall(symbol, sig, ops);
 }
 
@@ -1725,9 +1725,9 @@ Lowering::Val Lowering::closure(sema::TypedId id, ValueId into) {
         const Type &declared = T(declaredId), &mt = T(c.type);
         const Type &src = *(declared.isReference() ? declared.referent() : &declared)->unqualified();
         const bool byRef = mt.isReference();
-        const Type *leaf = &src;
-        while (leaf->isArray() && leaf->length() > 0) leaf = leaf->pointee()->unqualified();
-        if (!scalar(src) && !(src.isArray() && !byRef && scalar(*leaf)) &&
+        TypeId leaf = tid(src);
+        while (T(leaf).isArray() && T(leaf).length() > 0) leaf = tid(*T(leaf).pointee()->unqualified());
+        if (!scalar(src) && !(src.isArray() && !byRef && scalar(T(leaf))) &&
             !(src.isStructOrUnion() && src.isComplete() && (byRef || plainClass(src) || bytesReturned(src) || !c.copy.empty())))
             outside("a lambda capturing what is not a scalar or a class it holds");
         if ((byRef ? mt.referent() : &mt)->unqualified() != &src) outside("a lambda's capture of another type");
@@ -2892,11 +2892,11 @@ void Lowering::rangeForStmt(sema::TypedId id) {
             iter = tid(*T(rb.type).returns()->unqualified());
         if (!iter.valid()) outside("a range-based for whose begin is neither a pointer nor a plain class with its operators recorded");
     }
-    const Type *gives = classIter && ops3[1].type.valid() && T(ops3[1].type).isFunction() ? T(ops3[1].type).returns() : nullptr;
-    if (classIter && (gives == nullptr || !(gives->isReference() || scalar(*gives))))
+    const TypeId gives = classIter && ops3[1].type.valid() && T(ops3[1].type).isFunction() ? tid(*T(ops3[1].type).returns()) : TypeId();
+    if (classIter && (!gives.valid() || !(T(gives).isReference() || scalar(T(gives)))))
         outside("a range-based for whose iterator's '*' gives no reference or scalar");
-    const bool byValue = classIter && !gives->isReference();      // `*__b` a scalar value rather than an element
-    const Type &rt = T(rid), &elem = classIter ? (byValue ? *gives : *gives->referent()) : calls ? *T(iter).pointee() : *rt.pointee();
+    const bool byValue = classIter && !T(gives).isReference();      // `*__b` a scalar value rather than an element
+    const Type &rt = T(rid), &elem = classIter ? (byValue ? T(gives) : *T(gives).referent()) : calls ? *T(iter).pointee() : *rt.pointee();
     if (!vid.valid() || !elem.isComplete() || (!calls && !scalar(elem) && !plainClass(elem) && !(elem.isArray() && T(vid).isReference())))
         outside("a range-based for over an array of '" + elem.describe() + "'");
     const Type &vt = T(vid);
@@ -2996,10 +2996,10 @@ Lowering::Val Lowering::iteratorCall(const sema::Resolution &r, const std::vecto
     std::vector<ValueId> ops;
     for (std::size_t k = 0; k < objects.size(); k++) {
         const Type &p = *ft.params()[k], &o = T(objects[k].type);
-        const Type *to = p.isPointer() && (k == 0 && r.hasThis) ? p.pointee() : p.isReference() ? p.referent() : nullptr;
-        if (to == nullptr || to->unqualified() != o.unqualified() || (o.isConst() && !to->isConst()))
+        const TypeId to = p.isPointer() && (k == 0 && r.hasThis) ? tid(*p.pointee()) : p.isReference() ? tid(*p.referent()) : TypeId();
+        if (!to.valid() || T(to).unqualified() != o.unqualified() || (o.isConst() && !T(to).isConst()))
             outside("a range-based for's iterator call on another class");
-        ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(to)), std::vector<ValueId>(1, objects[k].v))));
+        ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(&T(to))), std::vector<ValueId>(1, objects[k].v))));
     }
     CallInfo info;
     info.symbol = r.symbol;
