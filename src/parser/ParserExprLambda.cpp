@@ -512,11 +512,19 @@ ExprPtr Parser::buildClosure(const MadeLambda &made, std::size_t pos) {
     return e;
 }
 
+// The type a copy constructor is called with on a member's address, as buildClosureObject calls it.
+const Type *Parser::copySignature(const Type *cls, const Signature &cc) {
+    std::vector<const Type *> params(1, types_.pointerTo(cls));
+    params.push_back(cc.params[0]);
+    return types_.functionType(types_.get(Kind::Void), params, false);
+}
+
 // What the adapter needs to build the closure again (M2.12n): kept only where every capture is a scalar local
-// of this function or of the lambda around it, by value or by reference, or `this`, and the closure has nothing to destroy.
+// of this function or of the lambda around it, by value or by reference, or `this` - or a class, by reference, by its
+// bytes, or by its copy constructor, whose symbol is kept beside it (M3b.2; the adapter refuses a class capture).
 void Parser::noteClosure(const MadeLambda &made, const std::string &name, int off) {
     pendingLambda_ = LambdaFacts();
-    pendingLambda_.simple = destructorOf(made.type) == nullptr;
+    pendingLambda_.simple = true;
     pendingLambda_.slotName = name;
     pendingLambda_.slot = off;
     pendingLambda_.type = made.type;
@@ -529,9 +537,12 @@ void Parser::noteClosure(const MadeLambda &made, const std::string &name, int of
         const Local *l = lookup_.findLocal(made.names[i]);
         const Type *held = made.types[i]->isReference() ? made.types[i]->referent() : made.types[i];
         const Type *source = l != nullptr && l->type->isReference() ? l->type->referent() : l != nullptr ? l->type : nullptr;
-        // A class by reference, or by value where the copy above is an assignment of its bytes (M3b.2).
-        const bool classHeld = held->isStructOrUnion() && held->isComplete() &&
-                               (made.types[i]->isReference() || classes_.copyConstructorOf(held->unqualified()) == nullptr);
+        // A class by reference, or by value: by its bytes, or by the copy constructor buildClosureObject calls (M3b.2).
+        const Type *leaf = held;
+        while (leaf->isArray() && leaf->length() > 0) leaf = leaf->pointee();
+        // An array of scalars by value is copied element by element above, which is its bytes.
+        const bool classHeld = (held->isStructOrUnion() && held->isComplete()) || (held->isArray() && leaf->isScalar());
+        const Signature *cc = held->isStructOrUnion() && classHeld && !made.types[i]->isReference() ? classes_.copyConstructorOf(held->unqualified()) : nullptr;
         // What the lambda around this one captured: its member, read through this call operator's `this` (M3b.2).
         if (l == nullptr) {
             const Member *om = outerCaptureMember(made.names[i]);
@@ -547,6 +558,7 @@ void Parser::noteClosure(const MadeLambda &made, const std::string &name, int of
             c.src = made.names[i];
             c.srcType = om->type;
             c.outerOffset = om->offset;
+            if (cc != nullptr) { c.copy = cc->symbol; c.copySig = copySignature(held->unqualified(), *cc); }
             pendingLambda_.captures.push_back(c);
             continue;
         }
@@ -563,6 +575,7 @@ void Parser::noteClosure(const MadeLambda &made, const std::string &name, int of
         c.srcOffset = l->offset;
         c.srcType = l->type;
         c.srcConst = l->isConst;
+        if (cc != nullptr) { c.copy = cc->symbol; c.copySig = copySignature(held->unqualified(), *cc); }
         pendingLambda_.captures.push_back(c);
     }
 }
@@ -684,9 +697,7 @@ ExprPtr Parser::buildClosureObject(const MadeLambda &made, std::size_t pos) {
                 std::vector<ExprPtr> args;
                 args.push_back(std::move(at));
                 args.push_back(std::move(src));
-                std::vector<const Type *> params;
-                params.push_back(ptr);
-                params.push_back(cc->params[0]);
+                const std::vector<const Type *> params = copySignature(cls, *cc)->params();
                 ExprPtr built = completeCall(cls->tag(), cc->symbol, nullptr, types_.get(Kind::Void), params,
                                              false, pos, std::move(args));
                 if (chain == nullptr) { chain = std::move(built); continue; }

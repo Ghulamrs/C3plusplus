@@ -674,7 +674,8 @@ private:
     // defaults added; bytesCopied, `new T(t)` storing t's bytes ([class.copy]/12); vectorLoop, `new T[n]`'s element builder.
     struct NewFacts { std::string symbol, why, ctor, dtor, vectorLoop, release; const Type *made = nullptr, *ctorSig = nullptr, *dtorSig = nullptr;
                       bool array = false, placed = false, ctorZero = false, ctorDefaulted = false, bytesCopied = false, nothrow = false;
-                      int init = 0, dslot = -1, cookie = 0; };
+                      int init = 0, dslot = -1, cookie = 0;
+                      const Type *allocSig = nullptr; int userArgs = 0; };   // a placement `new` of the program's operator new
     std::unordered_map<std::uint32_t, NewFacts> newFacts_;
     NewFacts pendingNew_;
     // A dynamic_cast to a pointer, for the SSA lowering (M3b.2): 1 the runtime's walk between the two type_infos, 2 an upcast,
@@ -837,7 +838,8 @@ private:
     // A lambda whose captures are scalar locals: the closure's slot and each capture's member and source, by node.
     struct LambdaCapture { std::string member; int offset = 0; const Type *type = nullptr;
                            std::string src; int srcOffset = 0; const Type *srcType = nullptr; bool srcConst = false;
-                           int outerOffset = -1; };    // >= 0: the enclosing closure's member at that offset, srcType its type
+                           int outerOffset = -1;       // >= 0: the enclosing closure's member at that offset, srcType its type
+                           std::string copy; const Type *copySig = nullptr; };   // a class by value: its copy constructor
     struct LambdaFacts { bool simple = false; std::string slotName; int slot = 0; const Type *type = nullptr;
                          std::vector<LambdaCapture> captures; int thisOffset = -1; const Type *thisType = nullptr; };
     std::unordered_map<std::uint32_t, LambdaFacts> lambdaFacts_;
@@ -849,8 +851,9 @@ private:
     struct RangeFacts { std::string bName, eName; int bSlot, eSlot, scope, inner; };
     std::unordered_map<std::uint32_t, RangeFacts> rangeFacts_;
     RangeFacts pendingRange_ = RangeFacts();
-    // A range-based for over a class range, an object or a temporary: its begin and end calls' records (M3b.2).
-    struct RangeCalls { std::uint32_t begin = 0, end = 0; };
+    // A range-based for over a class range, an object or a temporary: its begin and end calls' records, and a class
+    // iterator's `!=`, `*` and `++` (M3b.2).
+    struct RangeCalls { std::uint32_t begin = 0, end = 0, ne = 0, deref = 0, inc = 0; };
     std::unordered_map<std::uint32_t, RangeCalls> rangeCalls_;
     RangeCalls pendingRangeCalls_;
     LambdaFacts pendingLambda_;
@@ -1684,6 +1687,7 @@ private:
     // One closure object: a frame slot, and each capture copied into it.
     ExprPtr buildClosure(const MadeLambda &made, std::size_t pos);
     ExprPtr buildClosureObject(const MadeLambda &made, std::size_t pos);
+    const Type *copySignature(const Type *cls, const Signature &cc);
     void noteClosure(const MadeLambda &made, const std::string &name, int off);
     // The slot a closure object is built in, where `e` is one as buildClosureObject made it; -1 otherwise.
     static int closureSlotOf(const Expr *e);

@@ -64,7 +64,7 @@ public:
     void setMicrosoftCatch(std::function<bool(TypeId, std::string &, bool &)> f) { msCatch_ = f; }
     void setMicrosoftUnnamedCaught(std::function<bool(syntax::NodeId, std::string &, bool &, bool &)> f) { msUnnamedCaught_ = f; }
     void setNewFacts(std::function<bool(syntax::NodeId, sema::NewFacts &)> f) { newFacts_ = f; }
-    void setRangeCalls(std::function<bool(syntax::NodeId, sema::Resolution &, sema::Resolution &)> f) { rangeCalls_ = f; }
+    void setRangeCalls(std::function<bool(syntax::NodeId, sema::Resolution &, sema::Resolution &, std::vector<sema::Resolution> &)> f) { rangeCalls_ = f; }
     void setCaughtCopy(std::function<bool(syntax::NodeId, std::string &, TypeId &)> f) { caughtCopy_ = f; }
     // The constructor the parser chose for a member, and a class's destructor - Sema's records, asked by the glue.
     void setMemberBuilt(std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> f) { memberBuilt_ = f; }
@@ -363,7 +363,8 @@ private:
     Val arrowPointer(sema::TypedId member);
     bool convertedNode(sema::TypedId id, sema::Resolution &r) const;
     Val converted(sema::TypedId id, const sema::Resolution &r);
-    Val convertedObject(Val o, const sema::Resolution &r);
+    Val convertedObject(Val o, const sema::Resolution &r, bool object = false);
+    Val iteratorCall(const sema::Resolution &r, const std::vector<Val> &objects, TypeId cls);
     bool typeidNode(sema::TypedId id) const;
     Val typeidAddress(sema::TypedId id);
     bool classConditionalNode(sema::TypedId id) const;
@@ -377,11 +378,14 @@ private:
     std::size_t fullFrom() const;
     Val temporary(sema::TypedId id);
     Val extendedTemporary(sema::TypedId id);
+    Val extendedResult(sema::TypedId id);
+    bool heldTemporaryInto(sema::TypedId id, ValueId slot, const Type &c);
     void construct(ValueId where, const std::string &symbol, TypeId sig, const Type &cls, bool zeroFirst, sema::TypedId args, std::uint32_t from);
     bool objectNode(sema::TypedId id) const;
     Val object(sema::TypedId id);
     bool closureNode(sema::TypedId id) const;
-    Val closure(sema::TypedId id);
+    bool closureBuiltNode(sema::TypedId id) const;
+    Val closure(sema::TypedId id, ValueId into = ValueId());
     static bool scalarArithmetic(const Type &t);
     static long long normalise(long long v, const Type &t, const Target &target);
 
@@ -417,7 +421,7 @@ private:
     BlockId msTryFunclet_;                      // the handler that try stands in, whose funclet its exits belong to; none in the body
     std::size_t funcletPads_;                   // pads_ where that handler's body began: a pad above it was made inside the funclet
     std::function<bool(syntax::NodeId, sema::NewFacts &)> newFacts_;
-    std::function<bool(syntax::NodeId, sema::Resolution &, sema::Resolution &)> rangeCalls_;
+    std::function<bool(syntax::NodeId, sema::Resolution &, sema::Resolution &, std::vector<sema::Resolution> &)> rangeCalls_;
     std::function<bool(syntax::NodeId, std::string &, TypeId &)> caughtCopy_;
     std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> memberBuilt_;
     std::function<std::string(TypeId)> destructor_;

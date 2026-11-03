@@ -199,6 +199,7 @@ StmtPtr Parser::declarationBody() {
             pendingNoexcept_ = exceptionSpecification();
             const Type *returns = readTrailingReturn(open);
             declareFunction(d.name, returns, params, variadic, false, d.pos);
+            var.function = true;
             continue;
         }
         if (tmpl_.mentionsDeduced(d.type)) {
@@ -860,7 +861,7 @@ StmtPtr Parser::rangeForStatement(int scope) {
     }
 
     const std::vector<std::pair<std::size_t, std::size_t> > ownBuilt = rangeBuilt_;
-    const RangeCalls calls = pendingRangeCalls_;     // the body's own range-fors record theirs before this one's
+    RangeCalls calls = pendingRangeCalls_;     // the body's own range-fors record theirs before this one's
     // A class iterator is walked by its own `!=`, `++` and `*`, [stmt.ranged]/1;
     // a pointer by the built-in ones.
     const bool classIter = elemPtr->isStructOrUnion();
@@ -876,6 +877,7 @@ StmtPtr Parser::rangeForStatement(int scope) {
         if (deref == nullptr)
             src_.fail(rpos, "the iterator '" + elemPtr->describe() + "' has no "
                             "'operator*', which a range-based 'for' reads each element with");
+        calls.deref = deref->resolved();
     } else {
         deref.reset(new Unary('*', iterVar(bName, bSlot)));
         deref->setType(elemPtr->pointee());
@@ -886,6 +888,7 @@ StmtPtr Parser::rangeForStatement(int scope) {
 
     // `__b != __e`
     ExprPtr cond = comparison(BinOp::Ne, iterVar(bName, bSlot), iterVar(eName, eSlot), rpos);
+    if (classIter) calls.ne = cond->resolved();
 
     // `++__b`, or `__b = __b + 1` for a pointer
     ExprPtr step;
@@ -895,6 +898,7 @@ StmtPtr Parser::rangeForStatement(int scope) {
         if (step == nullptr)
             src_.fail(rpos, "the iterator '" + elemPtr->describe() + "' has no "
                             "prefix 'operator++', which a range-based 'for' steps with");
+        calls.inc = step->resolved();
     } else {
         ExprPtr one(new Num(1LL));
         one->setType(types_.get(target_.sizeType()));
@@ -951,7 +955,7 @@ StmtPtr Parser::rangeForStatement(int scope) {
     setup.push_back(StmtPtr(f));
     if (!classIter && alive_.size() == aliveMark && rt->isArray())
         pendingRange_ = RangeFacts{ bName, eName, bSlot, eSlot, scope, inner };
-    const bool classCalls = !classIter && !rt->isArray() && !braced;
+    const bool classCalls = (!classIter || (calls.ne != 0 && calls.deref != 0 && calls.inc != 0)) && !rt->isArray() && !braced;
     pendingRangeCalls_ = classCalls ? calls : RangeCalls();
     // The range temporary and the iterators die after the loop, in the reverse order,
     // and on the way out of an exception too - a cleanup region from where each was built.

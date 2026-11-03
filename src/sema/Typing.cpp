@@ -615,6 +615,8 @@ bool Typer::newFacts(syntax::NodeId id, NewFacts &out) const {
     out.dslot = f->second.dslot;
     out.nothrow = f->second.nothrow;
     out.cookie = f->second.cookie;
+    out.allocSig = TypeTable::id(f->second.allocSig);
+    out.userArgs = f->second.userArgs;
     return true;
 }
 
@@ -626,12 +628,16 @@ bool Typer::caughtCopy(syntax::NodeId handler, std::string &symbol, TypeId &sign
     return true;
 }
 
-bool Typer::rangeCalls(syntax::NodeId id, Resolution &begin, Resolution &end) const {
+bool Typer::rangeCalls(syntax::NodeId id, Resolution &begin, Resolution &end, std::vector<Resolution> &iter) const {
     const std::unordered_map<std::uint32_t, Parser::RangeCalls>::const_iterator i = p_.rangeCalls_.find(id.v);
     if (i == p_.rangeCalls_.end() || i->second.begin >= p_.resolvedTable_.size() || i->second.end >= p_.resolvedTable_.size())
         return false;
     begin = copied(p_.resolvedTable_[i->second.begin]);
     end = copied(p_.resolvedTable_[i->second.end]);
+    iter.clear();
+    const std::uint32_t ops[3] = { i->second.ne, i->second.deref, i->second.inc };     // a class iterator's, in that order
+    if (ops[0] != 0 && ops[1] != 0 && ops[2] != 0)
+        for (std::uint32_t k : ops) iter.push_back(k < p_.resolvedTable_.size() ? copied(p_.resolvedTable_[k]) : Resolution());
     return true;
 }
 
@@ -741,6 +747,8 @@ bool Typer::closureFacts(syntax::NodeId id, ClosureFacts &out) const {
         c.source = s->second[i];
         c.outer = k->second.captures[i].outerOffset;
         if (c.outer >= 0) c.outerType = TypeTable::id(k->second.captures[i].srcType);
+        c.copy = k->second.captures[i].copy;
+        c.copySig = TypeTable::id(k->second.captures[i].copySig);
         out.captures.push_back(c);
     }
     return true;
