@@ -58,7 +58,8 @@ struct Resolution : ResolutionKind {
 // A lambda whose captures are scalar locals (M3b.2): its closure, and each capture's member - its offset and type, a
 // reference for one by reference - and the `var` of the local it copies or binds, found in the scopes at the lambda.
 // `outer` >= 0: the source is the enclosing closure's member at that offset, of type `outerType`, not a local.
-struct ClosureCapture { int offset; TypeId type; syntax::NodeId source; int outer; TypeId outerType; ClosureCapture() : offset(0), outer(-1) {} };
+struct ClosureCapture { int offset; TypeId type; syntax::NodeId source; int outer; TypeId outerType; std::string copy; TypeId copySig;
+                        ClosureCapture() : offset(0), outer(-1) {} };
 struct ClosureFacts { TypeId closure; std::vector<ClosureCapture> captures; int thisOffset; TypeId thisType; ClosureFacts() : thisOffset(-1) {} };
 
 // Each element of a braced list an array of a class is built from (M3b.2), Parser::ListBuilt: the `var` node's value
@@ -102,8 +103,10 @@ struct NewFacts {
     int init;               // 0 none, 1 `()` or `{}`, 2 one value, 3 a braced list of values
     bool nothrow;           // `new (std::nothrow) T`: the tag the first part, the result null-checked before anything is built
     int cookie;             // an array's cookie: the bytes in front of it holding its count; a `delete[]`'s, read back
+    TypeId allocSig;        // a placement `new` of the program's allocation function `symbol`: its type, the size first
+    int userArgs;           // and how many placement arguments, the new-expression's first parts
     NewFacts() : dslot(-1), array(false), placed(false), ctorZero(false), ctorDefaulted(false), bytesCopied(false), init(0),
-                 nothrow(false), cookie(0) {}
+                 nothrow(false), cookie(0), userArgs(0) {}
 };
 
 // What a sizeof, alignof or noexcept folded to, or an integer or character literal's value, with its type.
@@ -207,7 +210,7 @@ public:
     bool assigned(TypeId cls) const;             // a class with an operator= of its own, written or implicit
     bool newFacts(syntax::NodeId id, NewFacts &out) const;  // a `new` or `delete` node's facts; false where none were recorded
     // A range-based for over a class object with pointer iterators: the records of its begin and end calls; false otherwise.
-    bool rangeCalls(syntax::NodeId id, Resolution &begin, Resolution &end) const;
+    bool rangeCalls(syntax::NodeId id, Resolution &begin, Resolution &end, std::vector<Resolution> &iter) const;
     bool caughtCopy(syntax::NodeId handler, std::string &symbol, TypeId &signature) const;   // a by-value catch's copy constructor
     bool defaultInit(TypeId cls, const std::string &member) const;   // the member has an initialiser of its own
     // The member initialisers the parser replayed into written constructor `ctor`, typed; then each by "class::member".
