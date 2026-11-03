@@ -1122,6 +1122,15 @@ ExprPtr Parser::primary(Program *program) {
         call.insert(call.end(), values.begin(), values.end());
         return note(std::move(r), syntax::Kind::Call, "{}", tokens_[k].pos, call);
     }
+    // `T({a, b})`, the braces the initializer_list constructor's (classTemporary): the call `{}` that `T{a, b}` is.
+    if (k + 1 < at_ && tokens_[k].is("(") && tokens_[k + 1].is("{") && tokens_[at_ - 1].is(")") &&
+        temporaryOf(r.get()).what == Resolved::Temporary) {
+        std::vector<syntax::NodeId> call(1, syntaxTree_.add(syntax::Kind::Name, name, pos));
+        noteCallee(call[0], r.get());
+        const std::vector<syntax::NodeId> values = syntaxTree_.adopt(mark, tokens_[k + 1].pos, tokens_[at_ - 2].pos);
+        call.insert(call.end(), values.begin(), values.end());
+        return note(std::move(r), syntax::Kind::Call, "{}", tokens_[k + 1].pos, call);
+    }
     return note(std::move(r), syntax::Kind::Name, name, pos);
 }
 
@@ -1130,6 +1139,13 @@ std::size_t Parser::operatorSpelled(std::size_t k, std::string &name) const {
     if (k + 1 < at_ && ((tokens_[k].is("(") && tokens_[k + 1].is(")")) || (tokens_[k].is("[") && tokens_[k + 1].is("]")))) {
         name += tokens_[k].text + tokens_[k + 1].text;
         return k + 2;
+    }
+    // [over.literal]/1: a literal operator, `"" _km` or `""_km`, named as operatorName names it.
+    if (k < at_ && tokens_[k].kind == TokenKind::Str) {
+        const std::string &suffix = tokens_[k++].udSuffix;
+        if (!suffix.empty()) name += "\"\" " + suffix;
+        else if (k < at_ && tokens_[k].kind == TokenKind::Ident) name += "\"\" " + tokens_[k++].text;
+        return k;
     }
     if (k < at_ && tokens_[k].kind == TokenKind::Punct && !tokens_[k].is("(")) name += tokens_[k++].text;
     return k;

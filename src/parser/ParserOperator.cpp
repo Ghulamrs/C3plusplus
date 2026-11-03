@@ -1162,7 +1162,9 @@ ExprPtr Parser::assign() {
     // [expr.ass]/9: `x = {...}` - a scalar takes the one value, narrowing checked; a class its
     // `operator=` taking an initializer_list, or else a `T{...}` made by copy-list rules (M1 L18).
     if (peek().is("{")) {
+        const std::size_t mark = syntaxTree_.size(), lo = peek().pos;
         Init in = parseInitialiser();
+        const syntax::NodeId list = noteParts(syntax::Kind::Other, "{}", lo, mark, lo);     // the right, `{}` over its values
         const Type *plain = to->unqualified();
         if (plain->isStructOrUnion()) {
             if (const std::vector<std::size_t> *set = lookup_.overloadsOf(assignmentKey(plain->tag())))
@@ -1172,11 +1174,11 @@ ExprPtr Parser::assign() {
                     std::vector<ExprPtr> args;
                     args.push_back(initializerListExpr(f.params[0]->unqualified(), in, pos));
                     return note(memberCallWith(std::move(n), to, "operator=", pos, std::move(args)),
-                                syntax::Kind::Assign, "=", pos, {l});
+                                syntax::Kind::Assign, "=", pos, {l, list});
                 }
         }
         return note(assignValue(std::move(n), listTemporaryFrom(plain, in, true, pos), pos),
-                    syntax::Kind::Assign, "=", pos, {l});
+                    syntax::Kind::Assign, "=", pos, {l, list});
     }
     { OverloadTarget hold(*this, to); value = decay(assign()); }
     const syntax::NodeId vs = syn(value);

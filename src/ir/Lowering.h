@@ -173,6 +173,7 @@ private:
     Val classValue(sema::TypedId id, const Type &t);
     void forStmt(sema::TypedId id);
     void rangeForStmt(sema::TypedId id);
+    Val bracedRange(sema::TypedId range, const Type &e, TypeId iter, std::size_t scope);
     ValueId rangeEnd(const sema::Resolution &r, Val range, TypeId &iter);
     void switchStmt(sema::TypedId id);
     BlockId labelBlock(const std::string &name);
@@ -239,6 +240,7 @@ private:
     bool compositePointer(sema::TypedId id, const Type &tx, const Type &ty) const;
     Val assign(sema::TypedId id);
     Val assignScalar(sema::TypedId id, Val &target);
+    Val bracedAssign(sema::TypedId id, Val &target);
     bool scalarAssignNode(sema::TypedId id) const;
     bool globalFunctor(sema::TypedId head, const std::string &symbol, const Type &self, Val &object);
     Val qualifiedMemberOfThis(sema::TypedId id);
@@ -352,6 +354,7 @@ private:
     void builtLocal(sema::TypedId var, ValueId slot, const Type &t);
     ValueId initializerList(sema::TypedId parent, const Type &param, std::uint32_t n);
     ValueId initializerListOf(const std::vector<sema::TypedId> &elems, const Type &param, const sema::ListBuilt &lb = sema::ListBuilt());
+    ValueId backingArray(const std::vector<sema::TypedId> &elems, const Type &e, const sema::ListBuilt &lb);
     void listElement(ValueId at, const Type &et, sema::TypedId part, const sema::ListElement &e);
     void guard(ValueId slot, const Type &c, const std::string &dtor);
     void destroy(const Live &l, bool invoke = false);

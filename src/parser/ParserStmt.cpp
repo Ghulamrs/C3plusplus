@@ -794,9 +794,14 @@ StmtPtr Parser::rangeForStatement(int scope) {
     pendingRangeCalls_ = RangeCalls();
     if (braced) {
         const std::size_t braces = at_;
+        const std::size_t deduced = syntaxTree_.size();
         const Type *il = deduceBracedAuto("the range", rpos);
         at_ = braces;
+        syntaxTree_.kill(deduced);      // the deduction's reading of the braces, read again below - a body it defined kept
+        reviveDefinedBodies(deduced);
+        const std::size_t mark = syntaxTree_.size(), lo = peek().pos;
         Init in = parseInitialiser();
+        noteParts(syntax::Kind::Other, "{}", lo, mark, lo);     // the range one part, `{}` over its values
         range = buildInitializerList(il, in, rpos, listSetup);
     } else {
         range = expr();
@@ -955,7 +960,7 @@ StmtPtr Parser::rangeForStatement(int scope) {
     setup.push_back(StmtPtr(f));
     if (!classIter && alive_.size() == aliveMark && rt->isArray())
         pendingRange_ = RangeFacts{ bName, eName, bSlot, eSlot, scope, inner };
-    const bool classCalls = (!classIter || (calls.ne != 0 && calls.deref != 0 && calls.inc != 0)) && !rt->isArray() && !braced;
+    const bool classCalls = (!classIter || (calls.ne != 0 && calls.deref != 0 && calls.inc != 0)) && !rt->isArray();
     pendingRangeCalls_ = classCalls ? calls : RangeCalls();
     // The range temporary and the iterators die after the loop, in the reverse order,
     // and on the way out of an exception too - a cleanup region from where each was built.
