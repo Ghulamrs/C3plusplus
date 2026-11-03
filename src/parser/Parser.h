@@ -2016,6 +2016,7 @@ private:
     std::size_t skipFunctionQualifiers(std::size_t i) const;
     bool autoBeforeQualifiedName() const;
     bool trailingArrowAhead() const;
+    void noteEntryDefaults(const std::string &name, const std::vector<ExprPtr> &args, std::size_t written);
     StmtPtr delegatingCall(const Declared &d, const Type *cls, std::vector<ExprPtr> args,
                            std::size_t pos, std::size_t entries);
     std::string resolveNamespaceName(const std::string &written) const;

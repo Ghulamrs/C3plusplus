@@ -201,6 +201,7 @@ private:
     Val lvalue(sema::TypedId id);
     bool isLvalueNode(sema::TypedId id) const;
     bool referenceCast(sema::TypedId id) const;
+    bool reinterpretsReference(sema::TypedId id) const;
     Val name(sema::TypedId id);
     Val nameAddress(sema::TypedId id);
     Val member(sema::TypedId id);
@@ -226,12 +227,11 @@ private:
     Val arithmetic(const std::string &op, Val a, Val b);
     Val logical(bool isAnd, sema::TypedId l, sema::TypedId r);
     Val conditional(sema::TypedId id);
-    bool compositePointer(sema::TypedId id, const Type &tx, const Type &ty) const;
-    Val assign(sema::TypedId id) { Val where; return assign(id, where); }
-    Val assign(sema::TypedId id, Val &where);
-    bool scalarAssignNode(sema::TypedId id) const;
-    Val reinterpretedObject(const Val &a, const Type &to);
     Val voidConditional(sema::TypedId id, BlockId a, BlockId b, BlockId merge);
+    bool compositePointer(sema::TypedId id, const Type &tx, const Type &ty) const;
+    Val assign(sema::TypedId id);
+    Val assignScalar(sema::TypedId id, Val &target);
+    bool scalarAssignNode(sema::TypedId id) const;
     bool globalFunctor(sema::TypedId head, const std::string &symbol, const Type &self, Val &object);
     Val call(sema::TypedId id);
     bool vaBuiltinNode(sema::TypedId id) const;
@@ -274,6 +274,8 @@ private:
     TypeId msFlagged(const std::string &symbol, TypeId sig, std::vector<ValueId> &ops, int flag);
     void buildBase(const Type::BaseSpec &b, sema::TypedId entry);
     void copiedBase(const Type::BaseSpec &b, sema::TypedId entry);
+    bool delegating(const Type &cls);
+    void delegateTo(const Type &cls, sema::TypedId entry);
     void msVirtualBases(const Type &cls, const std::map<std::string, sema::TypedId> &named);
     Live msGuardedVirtualBase(const Type::BaseSpec &b, ValueId count);
     void msCountedDestroy(const Live &l, BlockId pad);
@@ -287,6 +289,7 @@ private:
     Val toBase(Val v, TypeId to, bool cast = false);
     ValueId boundConverted(sema::TypedId an, const Type &p);
     bool convertedTemporary(sema::TypedId an, const Type &c, bool destroys, ValueId &slot);
+    bool bracedArgument(sema::TypedId an, const Type &p, ValueId &slot);
     ValueId byValueArgument(sema::TypedId an, const Type &p);
     Val classArgumentSource(sema::TypedId an, const Type &c);
     void guardParameter(ValueId pv, const Type &pt, bool isCtor);
@@ -315,6 +318,7 @@ private:
     Val operatorCall(sema::TypedId id);
     Val condition(sema::TypedId id);
     void throwExpr(sema::TypedId id);
+    bool abortingThrow(sema::TypedId id);
     void microsoftThrow(sema::TypedId id);
     Val thrownValue(sema::TypedId id, TypeId &thrown);
     bool classThrow(sema::TypedId id, ValueId &object, TypeId &thrown);
@@ -330,6 +334,7 @@ private:
     bool builtClass(const Type &t) const;
     void builtLocal(sema::TypedId var, ValueId slot, const Type &t);
     ValueId initializerList(sema::TypedId parent, const Type &param, std::uint32_t n);
+    ValueId initializerListOf(const std::vector<sema::TypedId> &elems, const Type &param);
     void guard(ValueId slot, const Type &c, const std::string &dtor);
     void destroy(const Live &l, bool invoke = false);
     void destroyLive(std::size_t mark);
@@ -337,6 +342,7 @@ private:
     void scopedStmt(sema::TypedId id);
     void copyObject(ValueId to, ValueId from, const Type &t);
     bool plainTemporary(sema::TypedId id) const;
+    bool polymorphicTemporary(sema::TypedId id, ValueId &slot);
     bool constructedClass(const Type &t) const;
     bool newBuilt(const Type &t) const;
     bool bytesReturned(const Type &t) const;
@@ -447,6 +453,7 @@ private:
     std::vector<Pad> pads_;                     // innermost last
     std::vector<std::string> typeTable_;        // the function's selector indices: one per type, first occurrence, 1-based
     std::size_t handlerDepth_;                  // handlers the statement being lowered is inside
+    bool noexceptWrap_;                         // FunctionFacts::noexceptWrap: the body is under a catch-all that aborts
     std::vector<std::size_t> handlerLive_;      // live_ where each handler's body began, innermost last
     struct Full {                               // a full expression open: its temporaries from live_[from]; flags zeroed at block, at
         std::size_t from; BlockId block; std::size_t at;
