@@ -607,7 +607,21 @@ StmtPtr Parser::declarationBody() {
         if (hasInit) {
             std::vector<InitStep> path;
             const std::size_t built = inits.size();
+            // An aggregate whose members' classes have constructors: what built each, for the SSA lowering (M3b.2).
+            const Type *leaf = d.type;
+            while (leaf->isArray()) leaf = leaf->pointee();
+            const ListBuilt outerRecord = aggregateRecord_;
+            const bool outerRecording = aggregateRecording_;
+            aggregateRecord_ = ListBuilt();
+            aggregateRecording_ = leaf->isStructOrUnion() && !constructedClass(leaf) && needsConstruction(leaf);
             emitInit(d.name, path, d.type, in, inits);
+            const Local *rl = lookup_.findLocal(d.name);
+            if (aggregateRecording_ && !aggregateRecord_.elems.empty() && rl != nullptr && listBySerial_.count(rl->serial) == 0) {
+                aggregateRecord_.members = true;
+                listBySerial_[rl->serial] = aggregateRecord_;
+            }
+            aggregateRecord_ = outerRecord;
+            aggregateRecording_ = outerRecording;
             if (quals.isConstexpr && d.type->unqualified()->isStructOrUnion()) foldLocalObject(d, off, inits, built);
         }
         flushTemporaries(inits);
@@ -934,6 +948,10 @@ StmtPtr Parser::rangeForStatement(int scope) {
         take->setType(slotType);
     } else {
         ExprPtr at = std::move(deref);
+        // A class variable made from another class's element by a converting constructor: which, under the `var` (M3b.2).
+        if (d.type->unqualified()->isStructOrUnion() && elem->unqualified() != d.type->unqualified())
+            if (const Signature *ctor = convertingConstructor(d.type, *at, d.pos))
+                noteConvertedBuilt(loopVar, d.type->unqualified(), *ctor);
         ExprPtr var(Var::local(d.name, vSlot));
         var->setType(d.type);
         take.reset(new Assign(std::move(var), convert(std::move(at), d.type)));

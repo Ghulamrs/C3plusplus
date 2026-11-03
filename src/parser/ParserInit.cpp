@@ -226,11 +226,13 @@ void Parser::initConstruct(const std::string &name, std::vector<InitStep> &path,
     const Type *cls = type->unqualified();
     if (args.size() == 1 && args[0]->type() != nullptr && args[0]->type()->unqualified() == cls &&
         !cls->nonTrivialCopy()) {
+        noteAggregateMember(cls, nullptr, 1, false);
         initStore(name, path, std::move(args[0]), pos, out);
         return;
     }
     checkNotAbstract(cls, pos, "'" + name + "'");
     const Signature &ctor = overload_.resolveOverload(constructorKey(cls->tag()), args, pos);
+    const std::size_t written = args.size();
     applyDefaults(ctor, args, pos);
     if (ctor.isExplicit && !valueInit)
         src_.fail(pos, "'" + cls->describe() + "' has a constructor taking these arguments and it is "
@@ -246,6 +248,7 @@ void Parser::initConstruct(const std::string &name, std::vector<InitStep> &path,
     for (ExprPtr &a : args) all.push_back(std::move(a));
     std::vector<const Type *> full(1, thisType);
     for (const Type *p : ctor.params) full.push_back(p);
+    noteAggregateMember(cls, &ctor, written, valueInit && ctor.implicit);
     ExprPtr call = completeCall(cls->tag(), ctor.symbol, nullptr, types_.get(Kind::Void), full, false, pos,
                                 std::move(all));
     if (valueInit && ctor.implicit)
@@ -255,6 +258,24 @@ void Parser::initConstruct(const std::string &name, std::vector<InitStep> &path,
             call = std::move(seq);
         }
     out.push_back(StmtPtr(new ExprStmt(std::move(call))));
+}
+
+// While an aggregate local's list is read, each member initConstruct builds, for the SSA lowering (M3b.2): its bytes from a
+// value of its class (`ctor` null), or the constructor with `written` arguments, defaults added after them.
+void Parser::noteAggregateMember(const Type *cls, const Signature *ctor, std::size_t written, bool zeroed) {
+    if (!aggregateRecording_) return;
+    ListElement e;
+    e.count = static_cast<std::uint32_t>(written);
+    e.bytes = ctor == nullptr;
+    std::vector<const Type *> full(1, types_.pointerTo(cls));
+    if (ctor != nullptr) {
+        e.symbol = ctor->symbol;
+        full.insert(full.end(), ctor->params.begin(), ctor->params.end());
+        e.defaulted = ctor->params.size() != written;
+    }
+    e.signature = types_.functionType(types_.get(Kind::Void), full, false);
+    e.zeroed = zeroed;
+    aggregateRecord_.elems.push_back(e);
 }
 
 void Parser::initStore(const std::string &name, std::vector<InitStep> &path,

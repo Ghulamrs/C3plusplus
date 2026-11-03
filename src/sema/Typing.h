@@ -59,7 +59,8 @@ struct Resolution : ResolutionKind {
 // reference for one by reference - and the `var` of the local it copies or binds, found in the scopes at the lambda.
 // `outer` >= 0: the source is the enclosing closure's member at that offset, of type `outerType`, not a local.
 struct ClosureCapture { int offset; TypeId type; syntax::NodeId source; int outer; TypeId outerType; std::string copy; TypeId copySig;
-                        ClosureCapture() : offset(0), outer(-1) {} };
+                        bool constant; long long value;      // a constant local, no source: its value
+                        ClosureCapture() : offset(0), outer(-1), constant(false), value(0) {} };
 struct ClosureFacts { TypeId closure; std::vector<ClosureCapture> captures; int thisOffset; TypeId thisType; ClosureFacts() : thisOffset(-1) {} };
 
 // Each element of a braced list an array of a class is built from (M3b.2), Parser::ListBuilt: the `var` node's value
@@ -72,7 +73,8 @@ struct ListElement {
 };
 struct ListBuilt {
     std::vector<ListElement> elems; std::string tail; TypeId tailSig; bool tailZeroed, tailDefaulted;
-    ListBuilt() : tailZeroed(false), tailDefaulted(false) {}
+    bool members;     // an aggregate local's members of a class with constructors, in the order the parser built them
+    ListBuilt() : tailZeroed(false), tailDefaulted(false), members(false) {}
     bool recorded() const { return !elems.empty() || !tail.empty(); }
 };
 

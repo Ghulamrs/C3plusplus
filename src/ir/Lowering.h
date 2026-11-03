@@ -170,6 +170,10 @@ private:
     void aggregateInit(ValueId slot, const Type &t, const std::vector<sema::TypedId> &parts);
     void aggregateFill(ValueId slot, const Type &t, const std::vector<sema::TypedId> &parts, std::size_t &next);
     void aggregateItem(ValueId at0, const Type &mt, const std::vector<sema::TypedId> &parts, std::size_t &next);
+    bool recordedAggregate(sema::TypedId var, ValueId slot, const Type &t);
+    bool recordedMember(const Type &mt) const;
+    void aggregateMember(ValueId at0, const Type &mt, const std::vector<sema::TypedId> &parts, std::size_t &next);
+    void aggregateTail(ValueId at0, const Type &t);
     Val classValue(sema::TypedId id, const Type &t);
     void forStmt(sema::TypedId id);
     void rangeForStmt(sema::TypedId id);
@@ -328,6 +332,7 @@ private:
     Val dataMemberPointer(sema::TypedId id);
     ValueId nullMemberPointer(TypeId mp);
     Val memberPointerConversion(Val v, TypeId to);
+    void memberFunctionPointerInto(ValueId slot, Val from, const Type &to);
     Val memberPointerCompare(const std::string &op, Val a, Val b);
     Val memberPointerLvalue(sema::TypedId id);
     Val callTail(TypeId sig, CallInfo info, std::vector<ValueId> ops, std::size_t skip, const std::vector<sema::TypedId> &args,
@@ -482,6 +487,8 @@ private:
     std::function<bool(syntax::NodeId, sema::Resolution &)> conversionCall_;
     sema::TypedId intoCall_;                    // the call elidedCall lowers, whose result goes into a local's alloca
     int intoAlloca_ = -1, intoNow_ = -1;        // that alloca; and callTail's, set only as that call's tail is entered
+    std::vector<sema::ListElement> aggCtors_;     // recordedAggregate's: each member a constructor builds, the next at aggNext_
+    std::size_t aggNext_ = 0;
     std::size_t liveFloor_;                     // a constructor's built bases and members: below it, kept by a return
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> temporaryBuilt_;
     std::function<bool(syntax::NodeId, std::string &, TypeId &)> convertedBuilt_;

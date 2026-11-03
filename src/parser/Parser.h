@@ -664,9 +664,12 @@ private:
                          bool bytes = false, zeroed = false, defaulted = false;
                          bool braced = false, list = false; };     // the part is a `{}` node: its values the arguments, or one initializer_list
     struct ListBuilt { std::vector<ListElement> elems; std::string tail; const Type *tailSig = nullptr;
-                       bool tailZeroed = false, tailDefaulted = false; };
+                       bool tailZeroed = false, tailDefaulted = false;
+                       bool members = false; };     // an aggregate local's members of a class with constructors, in emitInit's order
     // The same for an initializer_list's backing array (buildInitializerList), by its braces' position - the `{}` node's.
     std::map<std::uint32_t, ListBuilt> listsAt_;
+    ListBuilt aggregateRecord_;     // the one being made, while aggregateRecording_
+    bool aggregateRecording_ = false;
     // What guardOnce built for one, by its symbol (M3b.2): the guard it named; whether a throw out of the construction aborts
     // it; the constructor that builds it, with its type and the [dcl.init]/8 facts; the destructor's registration.
     struct StaticGuard {
@@ -867,7 +870,8 @@ private:
     struct LambdaCapture { std::string member; int offset = 0; const Type *type = nullptr;
                            std::string src; int srcOffset = 0; const Type *srcType = nullptr; bool srcConst = false;
                            int outerOffset = -1;       // >= 0: the enclosing closure's member at that offset, srcType its type
-                           std::string copy; const Type *copySig = nullptr; };   // a class by value: its copy constructor
+                           std::string copy; const Type *copySig = nullptr;     // a class by value: its copy constructor
+                           bool constant = false; long long value = 0; };       // a constant local: its value, no source
     struct LambdaFacts { bool simple = false; std::string slotName; int slot = 0; const Type *type = nullptr;
                          std::vector<LambdaCapture> captures; int thisOffset = -1; const Type *thisType = nullptr; };
     std::unordered_map<std::uint32_t, LambdaFacts> lambdaFacts_;
@@ -1943,6 +1947,7 @@ private:
     const Signature *soleNumericConversion(const Type *from);
     // The conversion itself, or null when none is needed or possible.
     ExprPtr userConversion(const Type *param, ExprPtr &arg, std::size_t pos);
+    void noteConvertedBuilt(syntax::NodeId at, const Type *plain, const Signature &ctor);
     // **[over.ics.user] through a conversion *function***: one argument of
     // another class that converts to `cls`. An explicit one counts only in
     // direct-initialisation, [over.match.copy]/1.
@@ -2186,6 +2191,7 @@ private:
     bool bracedInitialiserAhead() const;
     bool constructedClass(const Type *t) const;
     bool needsConstruction(const Type *t) const;
+    void noteAggregateMember(const Type *cls, const Signature *ctor, std::size_t written, bool zeroed);
     void initConstruct(const std::string &name, std::vector<InitStep> &path, const Type *type,
                        std::vector<ExprPtr> args, bool valueInit, std::size_t pos, std::vector<StmtPtr> &out);
 

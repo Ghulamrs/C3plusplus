@@ -574,6 +574,7 @@ template <class Record> void Typer::copyListBuilt(const Record &r, ListBuilt &ou
         out.elems.push_back(e);
     }
     out.tail = r.tail;
+    out.members = r.members;
     out.tailSig = TypeTable::id(r.tailSig);
     out.tailZeroed = r.tailZeroed;
     out.tailDefaulted = r.tailDefaulted;
@@ -762,7 +763,7 @@ void Typer::closureSources(syntax::NodeId id) {
     if (k == p_.lambdaFacts_.end() || !k->second.simple) return;
     std::vector<syntax::NodeId> sources;
     for (const Parser::LambdaCapture &c : k->second.captures) {
-        if (c.outerOffset >= 0) { sources.push_back(syntax::NodeId()); continue; }      // read through `this`
+        if (c.outerOffset >= 0 || c.constant) { sources.push_back(syntax::NodeId()); continue; }      // through `this`, or a value
         syntax::NodeId decl;
         for (std::size_t i = scopes_.size(); !decl.valid() && i > 0; i--) {
             std::unordered_map<std::string, Declared>::const_iterator it = scopes_[i - 1].find(c.src);
@@ -792,6 +793,8 @@ bool Typer::closureFacts(syntax::NodeId id, ClosureFacts &out) const {
         if (c.outer >= 0) c.outerType = TypeTable::id(k->second.captures[i].srcType);
         c.copy = k->second.captures[i].copy;
         c.copySig = TypeTable::id(k->second.captures[i].copySig);
+        c.constant = k->second.captures[i].constant;
+        c.value = k->second.captures[i].value;
         out.captures.push_back(c);
     }
     return true;
