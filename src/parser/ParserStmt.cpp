@@ -663,7 +663,6 @@ const Type *Parser::classRangeEnds(ExprPtr range, std::size_t rpos,
     // A temporary range is what `auto &&__range` binds and keeps alive to the loop's end,
     // [class.temporary]/5: here it is built into a slot of its own, destroyed after the loop.
     pendingRangeCalls_ = RangeCalls();
-    pendingRangeCalls_.object = isGlvalue(*range);
     if (isGlvalue(*range)) {
         extendTemporary(*range, ".rt" + std::to_string(refTemps_++));
     } else {
@@ -952,7 +951,7 @@ StmtPtr Parser::rangeForStatement(int scope) {
     setup.push_back(StmtPtr(f));
     if (!classIter && alive_.size() == aliveMark && rt->isArray())
         pendingRange_ = RangeFacts{ bName, eName, bSlot, eSlot, scope, inner };
-    const bool classCalls = !classIter && alive_.size() == aliveMark && !rt->isArray() && !braced;
+    const bool classCalls = !classIter && !rt->isArray() && !braced;
     pendingRangeCalls_ = classCalls ? calls : RangeCalls();
     // The range temporary and the iterators die after the loop, in the reverse order,
     // and on the way out of an exception too - a cleanup region from where each was built.
@@ -1025,6 +1024,7 @@ ExprPtr Parser::whileConditionDeclaration() {
         src_.fail(peek().pos, "'" + d.name + "' is declared in a condition and "
                               "has no initialiser - there would be nothing "
                               "to test");
+    const std::size_t mark = syntaxTree_.size();
     ExprPtr init = decay(assign());
     if (tmpl_.mentionsDeduced(d.type))
         d.type = tmpl_.deduceAutoFrom(d.type, tmpl_.deductionArgType(*init), d.name, d.pos);
@@ -1038,6 +1038,11 @@ ExprPtr Parser::whileConditionDeclaration() {
                          "a scalar can be written where the test is");
     const int slot = declare(d.name, d.type, d.pos, quals.alignAs);
     locals_.back().isConst = d.type->isConst();
+    // The condition's `decl` over its `var` over the initialiser, as an `if`'s declaration is noted (M3b.2).
+    const syntax::NodeId var = noteParts(syntax::Kind::Var, d.type->describe() + " " + d.name, d.pos, mark, d.pos);
+    declaredTypes_[var.v] = d.type;
+    noteDeclaredLocal(var, d.name);
+    noteParts(syntax::Kind::DeclStmt, "", d.pos, mark, d.pos);
     ExprPtr x(Var::local(d.name, slot));
     x->setType(d.type);
     ExprPtr set(new Assign(std::move(x), convert(std::move(init), d.type)));
@@ -1520,7 +1525,7 @@ StmtPtr Parser::statement() {
     hoistedForParts_ = 0;
     if (kind == syntax::Kind::For && !pendingRange_.bName.empty()) rangeFacts_[noted->syntax().v] = pendingRange_;
     pendingRange_ = RangeFacts();
-    if (kind == syntax::Kind::For && pendingRangeCalls_.object && pendingRangeCalls_.begin != 0 && pendingRangeCalls_.end != 0)
+    if (kind == syntax::Kind::For && pendingRangeCalls_.begin != 0 && pendingRangeCalls_.end != 0)
         rangeCalls_[noted->syntax().v] = pendingRangeCalls_;
     pendingRangeCalls_ = RangeCalls();
     if (const Case *c = dynamic_cast<const Case *>(noted.get()))
@@ -2502,11 +2507,13 @@ StmtPtr Parser::statementBody() {
             scope = enterBlock();
             aliveAtEntry = alive_.size();
         }
-        ExprPtr cond = declares
-            ? contextualScalar(ifConditionDeclaration(setup), peek().pos,
-                               "this condition")
-            : contextualScalar(endFullExpression(decay(expr())), peek().pos,
-                               "this condition");
+        ExprPtr cond;
+        if (declares) {
+            ExprPtr declared = ifConditionDeclaration(setup);     // read first: its `decl` node keys the conversion
+            cond = contextualScalar(std::move(declared), peek().pos, "this condition", setup.back()->syntax());
+        } else {
+            cond = contextualScalar(endFullExpression(decay(expr())), peek().pos, "this condition");
+        }
         // **Where the condition's object became alive**, in the shape a
         // cleanup region wants: a statement index and how many were alive
         // after it.

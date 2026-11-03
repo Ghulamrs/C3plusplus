@@ -1,0 +1,13 @@
+then 5
+~Flag 105
+after if
+5
+else 1
+~Flag 101
+after if
+-1
+sum 10
+pts 44 1
+get 70
+typeid 1 1 0
+LEDGER balanced=1 live=0 double=0 phantom=0 over=0 lost=0

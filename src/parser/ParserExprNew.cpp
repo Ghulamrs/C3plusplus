@@ -616,11 +616,11 @@ const Parser::Signature *Parser::soleNumericConversion(const Type *from) {
 
 // **A class where a number or a pointer is wanted**, converted by its own
 // conversion function - a condition, `!`, `&&`, `||`, `?:`.
-ExprPtr Parser::contextualScalar(ExprPtr e, std::size_t pos, const char *what) {
+ExprPtr Parser::contextualScalar(ExprPtr e, std::size_t pos, const char *what, syntax::NodeId at) {
     if (e->type() != nullptr && e->type()->unqualified()->isStructOrUnion()) {
         if (const Signature *how = conversionFunction(e->type(), nullptr, true)) {
             const Type *object = e->type();
-            const syntax::NodeId operand = e->syntax();
+            const syntax::NodeId operand = at.valid() ? at : e->syntax();     // a condition's declaration: its `decl` node
             std::vector<ExprPtr> none;
             e = memberCallWith(std::move(e), object, how->name, pos,
                                std::move(none));
@@ -2534,6 +2534,8 @@ ExprPtr Parser::typeidExpression(std::size_t pos) {
         pendingTemps_ = savedTemps;
         alive_ = savedAlive;
     }
+    pendingTypeid_.clear();
+    pendingTypeidDynamic_ = glvalue && subject->isStructOrUnion() && subject->polymorphic();
     if (glvalue && subject->isStructOrUnion() && subject->polymorphic() && microsoft) {
         // **The Microsoft runtime reads it**: `__RTtypeid(p)` walks the vftable's
         // locator to the descriptor, and throws bad_typeid for a null - measured from
@@ -2554,6 +2556,7 @@ ExprPtr Parser::typeidExpression(std::size_t pos) {
         if (!microsoftTypeidNames(subject, &names, &why))
             src_.fail(pos, "'typeid' cannot name the type of this: " + why);
         finishMicrosoftThrow(names, false);
+        pendingTypeid_ = names.descriptor;
         Var *ti = Var::global(names.descriptor);
         ti->setSymbol(names.descriptor);
         ExprPtr ref(ti);
@@ -2585,6 +2588,7 @@ ExprPtr Parser::typeidExpression(std::size_t pos) {
         const std::string sym = classes_.typeInfoSymbolFor(subject, pos, &why);
         if (sym.empty())
             src_.fail(pos, "'typeid' cannot name the type of this: " + why);
+        pendingTypeid_ = sym;
         Var *ti = Var::global(sym);
         ti->setSymbol(sym);
         ExprPtr ref(ti);

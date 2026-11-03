@@ -682,6 +682,10 @@ private:
     struct DynCastFacts { std::string src, dst; int kind; };
     std::unordered_map<std::uint32_t, DynCastFacts> dynCastFacts_;
     DynCastFacts pendingDynCast_ = DynCastFacts();
+    // A typeid, for the SSA lowering (M3b.2): the type_info's symbol, or none where a polymorphic glvalue's is read at run time.
+    std::unordered_map<std::uint32_t, std::string> typeidFacts_;
+    std::string pendingTypeid_;
+    bool pendingTypeidDynamic_ = false;
     void noteCallSlots(const Call &c) {
         if (!c.syntax().valid()) return;
         CallSlots &k = callSlots_[c.syntax().v];
@@ -845,8 +849,8 @@ private:
     struct RangeFacts { std::string bName, eName; int bSlot, eSlot, scope, inner; };
     std::unordered_map<std::uint32_t, RangeFacts> rangeFacts_;
     RangeFacts pendingRange_ = RangeFacts();
-    // A range-based for over a class object, its iterators pointers and nothing alive: its begin and end calls' records (M3b.2).
-    struct RangeCalls { std::uint32_t begin = 0, end = 0; bool object = false; };
+    // A range-based for over a class range, an object or a temporary: its begin and end calls' records (M3b.2).
+    struct RangeCalls { std::uint32_t begin = 0, end = 0; };
     std::unordered_map<std::uint32_t, RangeCalls> rangeCalls_;
     RangeCalls pendingRangeCalls_;
     LambdaFacts pendingLambda_;
@@ -1900,7 +1904,7 @@ private:
     const Signature *conversionFunction(const Type *from, const Type *to,
                                         bool allowExplicit = false);
     // A class where a number or a pointer is wanted, converted by its own.
-    ExprPtr contextualScalar(ExprPtr e, std::size_t pos, const char *what);
+    ExprPtr contextualScalar(ExprPtr e, std::size_t pos, const char *what, syntax::NodeId at = syntax::NodeId());
     // The single conversion to a scalar, or null where there are none or two.
     const Signature *soleNumericConversion(const Type *from);
     // The conversion itself, or null when none is needed or possible.

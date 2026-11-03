@@ -59,6 +59,7 @@ public:
     void setUnnamedCaught(std::function<std::string(syntax::NodeId)> f) { unnamedCaught_ = f; }
     void setMemberZeroed(std::function<bool(const std::string &, const std::string &)> f) { memberZeroed_ = f; }
     void setDynamicCast(std::function<int(syntax::NodeId, std::string &, std::string &)> f) { dynamicCast_ = f; }
+    void setTypeid(std::function<bool(syntax::NodeId, std::string &)> f) { typeid_ = f; }
     void setMicrosoftThrowInfo(std::function<std::string(TypeId)> f) { msThrowInfo_ = f; }
     void setMicrosoftCatch(std::function<bool(TypeId, std::string &, bool &)> f) { msCatch_ = f; }
     void setMicrosoftUnnamedCaught(std::function<bool(syntax::NodeId, std::string &, bool &, bool &)> f) { msUnnamedCaught_ = f; }
@@ -276,7 +277,7 @@ private:
     void argumentList(const Type &ft, std::size_t skip, bool variadic, const std::vector<sema::TypedId> &args, bool dummyInt,
                       std::vector<ValueId> &ops);
     void directCall(const std::string &symbol, TypeId signature, const std::vector<ValueId> &ops);
-    bool pseudoDestructor(sema::TypedId member);
+    bool pseudoDestructor(sema::TypedId member, const sema::Resolution &called);
     bool threadLocalGlobal(const std::string &symbol) const;
     Val toBase(Val v, TypeId to, bool cast = false);
     ValueId boundConverted(sema::TypedId an, const Type &p);
@@ -351,6 +352,9 @@ private:
     Val arrowPointer(sema::TypedId member);
     bool convertedNode(sema::TypedId id, sema::Resolution &r) const;
     Val converted(sema::TypedId id, const sema::Resolution &r);
+    Val convertedObject(Val o, const sema::Resolution &r);
+    bool typeidNode(sema::TypedId id) const;
+    Val typeidAddress(sema::TypedId id);
     bool classConditionalNode(sema::TypedId id) const;
     Val conditionalObject(sema::TypedId id);
     std::string temporaryDestructor(const Type &c);
@@ -392,6 +396,7 @@ private:
     std::function<std::string(syntax::NodeId)> unnamedCaught_;
     std::function<bool(const std::string &, const std::string &)> memberZeroed_;
     std::function<int(syntax::NodeId, std::string &, std::string &)> dynamicCast_;
+    std::function<bool(syntax::NodeId, std::string &)> typeid_;
     Val dynamicCastPointer(sema::TypedId id);
     std::function<std::string(TypeId)> msThrowInfo_;
     std::function<bool(TypeId, std::string &, bool &)> msCatch_;
