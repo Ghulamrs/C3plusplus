@@ -1012,6 +1012,7 @@ ExprPtr Parser::ifConditionDeclaration(std::vector<StmtPtr> &setup) {
 // the whole difference from the `if` form: hoisting the initialiser out would
 // evaluate it once and then loop for ever on the value it got.
 ExprPtr Parser::whileConditionDeclaration() {
+    const std::size_t pos = peek().pos, mark = syntaxTree_.size();
     StorageClass sc;
     Qualifiers quals;
     const Type *base = specifiers(&sc, &quals);
@@ -1038,6 +1039,11 @@ ExprPtr Parser::whileConditionDeclaration() {
                          "a scalar can be written where the test is");
     const int slot = declare(d.name, d.type, d.pos, quals.alignAs);
     locals_.back().isConst = d.type->isConst();
+    // Its `decl` and `var` nodes over the initialiser, as an `if`'s condition has them: what the body's names are bound to.
+    const syntax::NodeId var = noteParts(syntax::Kind::Var, d.type->describe() + " " + d.name, d.pos, mark, pos);
+    declaredTypes_[var.v] = d.type;
+    noteDeclaredLocal(var, d.name);
+    noteParts(syntax::Kind::DeclStmt, "", pos, mark, pos);
     ExprPtr x(Var::local(d.name, slot));
     x->setType(d.type);
     ExprPtr set(new Assign(std::move(x), convert(std::move(init), d.type)));
