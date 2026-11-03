@@ -729,8 +729,10 @@ ExprPtr Parser::compound(BinOp op, ExprPtr target, ExprPtr value, std::size_t po
                            "the built-in one would need the class to convert to "
                            "a number, which it does not");
         std::vector<ExprPtr> none;
+        const syntax::NodeId operand = value->syntax();
         value = memberCallWith(std::move(value), rt, conv->name, pos,
                                std::move(none));
+        noteConversionCall(operand, *value);
     }
 
     if (ExprPtr readBack = clonePure(*target)) {
