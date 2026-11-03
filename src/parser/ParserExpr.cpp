@@ -2822,6 +2822,13 @@ Parser::PostfixStep Parser::beginPostfix(const ExprPtr &n) const {
         std::size_t k = 1;
         if (peekAt(k).is("template")) k++;
         st.text = peek().text;
+        std::size_t q = k;
+        while (peekAt(q).kind == TokenKind::Ident && peekAt(q + 1).is("::")) q += 2;
+        if (q != k && peekAt(q).is("~")) {      // `p->S::~S()`: the qualifier and the destructor's name, all of it
+            for (std::size_t i = k; i <= q + 1; i++) st.text += peekAt(i).text;
+            st.nameAt = at_ + k;
+            return st;
+        }
         if (peekAt(k).is("~")) { st.text += "~"; k++; }
         st.text += peekAt(k).text;
         st.nameAt = at_ + k;
@@ -3220,7 +3227,12 @@ ExprPtr Parser::noteKeywordForm(syntax::Kind kind, KeywordForm f) {
     }
     if (!f.e) { syntaxTree_.add(kind, text, pos, parts); return std::move(f.e); }
     f.e->setSyntax(syntaxTree_.add(kind, text, pos, parts));
-    if (kind == syntax::Kind::Sizeof && text.compare(0, 6, "typeid") == 0) noteValue(f.e.get());
+    if (kind == syntax::Kind::Sizeof && text.compare(0, 6, "typeid") == 0) {
+        noteValue(f.e.get());
+        if (pendingTypeidDynamic_ || !pendingTypeid_.empty()) typeidFacts_[f.e->syntax().v] = pendingTypeid_;
+        pendingTypeid_.clear();
+        pendingTypeidDynamic_ = false;
+    }
     if (kind == syntax::Kind::New || kind == syntax::Kind::Delete || kind == syntax::Kind::Throw || kind == syntax::Kind::Lambda || kind == syntax::Kind::Call ||
         (kind == syntax::Kind::Cast && (text.find('&') != std::string::npos || text.compare(0, 12, "dynamic_cast") == 0)))
         noteValue(f.e.get());
@@ -3244,9 +3256,10 @@ ExprPtr Parser::noteKeywordForm(syntax::Kind kind, KeywordForm f) {
     if (kind == syntax::Kind::Cast && text.find('&') == std::string::npos && text.compare(0, 12, "dynamic_cast") != 0 &&
         f.e->type() != nullptr && (f.e->type()->isVoid() || f.e->type()->isScalar()))
         castTypes_[f.e->syntax().v] = f.e->type();
-    // A static_cast or const_cast to a reference names its operand, typed as the cast leaves it (M2.12o).
+    // A static_cast, const_cast or reinterpret_cast to a reference names its operand, typed as the cast leaves it (M2.12o).
     if (kind == syntax::Kind::Cast && text.find("&>") != std::string::npos && f.e->type() != nullptr &&
-        (text.compare(0, 12, "static_cast<") == 0 || text.compare(0, 11, "const_cast<") == 0))
+        (text.compare(0, 12, "static_cast<") == 0 || text.compare(0, 11, "const_cast<") == 0 ||
+         text.compare(0, 17, "reinterpret_cast<") == 0))
         refCastTypes_[f.e->syntax().v] = std::make_pair(f.e->type(), f.e->isXvalue());
     return std::move(f.e);
 }

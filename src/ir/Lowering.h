@@ -59,6 +59,7 @@ public:
     void setUnnamedCaught(std::function<std::string(syntax::NodeId)> f) { unnamedCaught_ = f; }
     void setMemberZeroed(std::function<bool(const std::string &, const std::string &)> f) { memberZeroed_ = f; }
     void setDynamicCast(std::function<int(syntax::NodeId, std::string &, std::string &)> f) { dynamicCast_ = f; }
+    void setTypeid(std::function<bool(syntax::NodeId, std::string &)> f) { typeid_ = f; }
     void setMicrosoftThrowInfo(std::function<std::string(TypeId)> f) { msThrowInfo_ = f; }
     void setMicrosoftCatch(std::function<bool(TypeId, std::string &, bool &)> f) { msCatch_ = f; }
     void setMicrosoftUnnamedCaught(std::function<bool(syntax::NodeId, std::string &, bool &, bool &)> f) { msUnnamedCaught_ = f; }
@@ -200,6 +201,7 @@ private:
     Val lvalue(sema::TypedId id);
     bool isLvalueNode(sema::TypedId id) const;
     bool referenceCast(sema::TypedId id) const;
+    bool reinterpretsReference(sema::TypedId id) const;
     Val name(sema::TypedId id);
     Val nameAddress(sema::TypedId id);
     Val member(sema::TypedId id);
@@ -208,6 +210,7 @@ private:
     void destroyWhen(const Live &l, bool invoke = false);
     bool canFlag() const;
     void storageGuard(ValueId p, const Type &made, const std::string &release);
+    void staticArray(const std::string &symbol, const Type &array, const sema::StaticGuard &g);
     Val memberAddress(sema::TypedId id);
     Val memberOfThis(sema::TypedId id);
     bool namesCalledFunction(const std::string &head, const std::string &symbol) const;
@@ -224,12 +227,17 @@ private:
     Val arithmetic(const std::string &op, Val a, Val b);
     Val logical(bool isAnd, sema::TypedId l, sema::TypedId r);
     Val conditional(sema::TypedId id);
+    Val voidConditional(sema::TypedId id, BlockId a, BlockId b, BlockId merge);
     bool compositePointer(sema::TypedId id, const Type &tx, const Type &ty) const;
     Val assign(sema::TypedId id);
+    Val assignScalar(sema::TypedId id, Val &target);
+    bool scalarAssignNode(sema::TypedId id) const;
+    bool globalFunctor(sema::TypedId head, const std::string &symbol, const Type &self, Val &object);
     Val call(sema::TypedId id);
     bool vaBuiltinNode(sema::TypedId id) const;
     Val vaBuiltin(sema::TypedId id);
     Val newExpression(sema::TypedId id);
+    ValueId arrayCookie(ValueId raw, ValueId n, const Type &made, int cookie);
     Val deleteExpression(sema::TypedId id);
     sema::NewFacts newFacts(sema::TypedId id, const std::string &what);
     Val literal(sema::TypedId id);
@@ -266,6 +274,8 @@ private:
     TypeId msFlagged(const std::string &symbol, TypeId sig, std::vector<ValueId> &ops, int flag);
     void buildBase(const Type::BaseSpec &b, sema::TypedId entry);
     void copiedBase(const Type::BaseSpec &b, sema::TypedId entry);
+    bool delegating(const Type &cls);
+    void delegateTo(const Type &cls, sema::TypedId entry);
     void msVirtualBases(const Type &cls, const std::map<std::string, sema::TypedId> &named);
     Live msGuardedVirtualBase(const Type::BaseSpec &b, ValueId count);
     void msCountedDestroy(const Live &l, BlockId pad);
@@ -274,11 +284,12 @@ private:
     void argumentList(const Type &ft, std::size_t skip, bool variadic, const std::vector<sema::TypedId> &args, bool dummyInt,
                       std::vector<ValueId> &ops);
     void directCall(const std::string &symbol, TypeId signature, const std::vector<ValueId> &ops);
-    bool pseudoDestructor(sema::TypedId member);
+    bool pseudoDestructor(sema::TypedId member, const sema::Resolution &called);
     bool threadLocalGlobal(const std::string &symbol) const;
     Val toBase(Val v, TypeId to, bool cast = false);
     ValueId boundConverted(sema::TypedId an, const Type &p);
     bool convertedTemporary(sema::TypedId an, const Type &c, bool destroys, ValueId &slot);
+    bool bracedArgument(sema::TypedId an, const Type &p, ValueId &slot);
     ValueId byValueArgument(sema::TypedId an, const Type &p);
     Val classArgumentSource(sema::TypedId an, const Type &c);
     void guardParameter(ValueId pv, const Type &pt, bool isCtor);
@@ -288,6 +299,7 @@ private:
     Val baseSubobject(Val a, const Type &base, const std::string &why);
     Val valueInitialised(sema::TypedId id);
     Val deleteDestroying(sema::TypedId id, const sema::NewFacts &f);
+    Val deleteArray(sema::TypedId id, const sema::NewFacts &f);
     ValueId virtualCallee(ValueId self, TypeId fnType, int slot);
     bool memberPointerNode(sema::TypedId id) const;
     bool memberAddressNode(sema::TypedId id) const;
@@ -306,6 +318,7 @@ private:
     Val operatorCall(sema::TypedId id);
     Val condition(sema::TypedId id);
     void throwExpr(sema::TypedId id);
+    bool abortingThrow(sema::TypedId id);
     void microsoftThrow(sema::TypedId id);
     Val thrownValue(sema::TypedId id, TypeId &thrown);
     bool classThrow(sema::TypedId id, ValueId &object, TypeId &thrown);
@@ -321,6 +334,7 @@ private:
     bool builtClass(const Type &t) const;
     void builtLocal(sema::TypedId var, ValueId slot, const Type &t);
     ValueId initializerList(sema::TypedId parent, const Type &param, std::uint32_t n);
+    ValueId initializerListOf(const std::vector<sema::TypedId> &elems, const Type &param);
     void guard(ValueId slot, const Type &c, const std::string &dtor);
     void destroy(const Live &l, bool invoke = false);
     void destroyLive(std::size_t mark);
@@ -328,6 +342,7 @@ private:
     void scopedStmt(sema::TypedId id);
     void copyObject(ValueId to, ValueId from, const Type &t);
     bool plainTemporary(sema::TypedId id) const;
+    bool polymorphicTemporary(sema::TypedId id, ValueId &slot);
     bool constructedClass(const Type &t) const;
     bool newBuilt(const Type &t) const;
     bool bytesReturned(const Type &t) const;
@@ -348,6 +363,9 @@ private:
     Val arrowPointer(sema::TypedId member);
     bool convertedNode(sema::TypedId id, sema::Resolution &r) const;
     Val converted(sema::TypedId id, const sema::Resolution &r);
+    Val convertedObject(Val o, const sema::Resolution &r);
+    bool typeidNode(sema::TypedId id) const;
+    Val typeidAddress(sema::TypedId id);
     bool classConditionalNode(sema::TypedId id) const;
     Val conditionalObject(sema::TypedId id);
     std::string temporaryDestructor(const Type &c);
@@ -389,6 +407,7 @@ private:
     std::function<std::string(syntax::NodeId)> unnamedCaught_;
     std::function<bool(const std::string &, const std::string &)> memberZeroed_;
     std::function<int(syntax::NodeId, std::string &, std::string &)> dynamicCast_;
+    std::function<bool(syntax::NodeId, std::string &)> typeid_;
     Val dynamicCastPointer(sema::TypedId id);
     std::function<std::string(TypeId)> msThrowInfo_;
     std::function<bool(TypeId, std::string &, bool &)> msCatch_;
@@ -434,6 +453,7 @@ private:
     std::vector<Pad> pads_;                     // innermost last
     std::vector<std::string> typeTable_;        // the function's selector indices: one per type, first occurrence, 1-based
     std::size_t handlerDepth_;                  // handlers the statement being lowered is inside
+    bool noexceptWrap_;                         // FunctionFacts::noexceptWrap: the body is under a catch-all that aborts
     std::vector<std::size_t> handlerLive_;      // live_ where each handler's body began, innermost last
     struct Full {                               // a full expression open: its temporaries from live_[from]; flags zeroed at block, at
         std::size_t from; BlockId block; std::size_t at;

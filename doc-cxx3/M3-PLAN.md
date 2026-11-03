@@ -1239,3 +1239,26 @@ run.sh 1085/0 at `-O2`, `-front=ssa` and `-front=ssa -O2`; **ssa.sh 8413 of 8571
 `-front=ssa` and `-front=ssa -O2` 0 differ in both spellings (GNU 713 same, MASM 712). `src/` went from 86378 to 86757
 lines (+379) for 172 bodies. Two outages on the way, neither the compiler's: the Windows VM restarted on a new address
 (192.168.100.207, 7 cores, run at full load), and after a macOS update the app lost Local Network permission.
+
+**Round 24, 2026-11-02 to 11-03: five lanes, two miscompiles mended, 96 bodies left.** From round 23's tree
+(`d0e52502`). **lane-storage**: array cookies, `delete[]`, nothrow `new`, static arrays of a class built by their
+loop; +8. **lane-cls** (with the stopped ctors lane's patch): class values where the lowering wanted an object,
+delegating constructors and defaults on members, bases and delegation, a polymorphic temporary bound to a reference
+or copied on return (`polymorphicTemporary`), `abortingThrow` for a throw in a `noexcept` function, an
+`initializer_list` local, a reference-to-function member; +47. **lane-flow**: a class read through its conversion in
+an `if` condition, `typeid`, `p->S::~S()`, a range-for over a temporary or an array of arrays, and **two miscompiles
+mended** - the stopped run's work read `b->B::get()` as a destructor call, and round 23 shipped `p->~Base()` through a
+typedef calling the object's own destructor; +27. **lane-addr**: an assignment as an lvalue, a class whose only
+`operator=` is not a copy, a cast to a reference, a functor at namespace scope, a while-condition's declaration noted,
+a class operand converted by its conversion function typed; +28. **lane-rest** (Fable): its own groups had been taken
+by cls; it left a case for a throw in a `noexcept` function. The merge kept one of each mechanism two lanes wrote
+(cls's `reinterpretsReference`, `assignScalar` and `voidConditional` - which took addr's refusal of a throwing arm -
+and addr's `globalFunctor` and stricter derived-temporary binding). **Gated**: Linux `make test` green; **ssa.sh 8570
+of 8666 lowered (98.9%), 0 failed** - 96 bodies outside, from 158; run.sh 1091/0 at `-O2`, `-front=ssa` and `-front=ssa -O2`; Windows `-front=ssa` 0 differ (GNU
+719 same, MASM 718) and `-front=ssa -O2` 0 differ (the same counts). `src/` went from 86757 to 87254 lines (+497). What is left is a few
+families each needing a fact the parser does not yet record (a braced list's structure, for aggregates and member
+defaults; a lambda capture's copy constructor; `!=`/`++`/`*` of a class iterator), the backend pieces `alignas` locals
+and `thread_local`, constructor exception specifications, and `typeid` of an expression; the stopped lanes' unverified
+work is in `boxkit/r24-{addr,flow,rest}-late.patch`. One front-end fault found and registered:
+`tests/open/by-value-polymorphic-base-temporary.cpp`. The session lost five hours to a scheduled resume that stopped at
+its first permission prompt.

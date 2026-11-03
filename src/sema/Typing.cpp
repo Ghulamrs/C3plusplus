@@ -282,6 +282,15 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
     TypeTable &types = p_.types_;
     const Type *a = parts.size() > 0 ? parts[0] : nullptr;
     const Type *b = parts.size() > 1 ? parts[1] : nullptr;
+    // [class.conv.fct]: an operator's class operand as the conversion function the parser called on it made it.
+    for (std::size_t i = 0; (kind == syntax::Kind::Unary || kind == syntax::Kind::Binary) && i < parts.size() && i < 2; i++) {
+        const std::unordered_map<std::uint32_t, std::uint32_t>::const_iterator c = p_.conversionCalls_.find(st.child(id, i).v);
+        if (parts[i] == nullptr || !isClass(parts[i]) || c == p_.conversionCalls_.end() || p_.resolvedTable_[c->second].type == nullptr ||
+            !p_.resolvedTable_[c->second].type->isFunction())
+            continue;
+        const Type &r = *p_.resolvedTable_[c->second].type->returns();
+        (i == 0 ? a : b) = r.isReference() ? r.referent() : &r;
+    }
     // A call, an overloaded operator, a member access, `this` or a class temporary: what the parser recorded.
     if (const Type *r = resolvedType(id, kind)) { source_[id.v] = 'e'; return r; }
     // An array operand of arithmetic is its first element's address.
@@ -477,6 +486,13 @@ int Typer::dynamicCast(syntax::NodeId cast, std::string &src, std::string &dst) 
     return d->second.kind;
 }
 
+bool Typer::typeidSymbol(syntax::NodeId id, std::string &symbol) const {
+    const std::unordered_map<std::uint32_t, std::string>::const_iterator i = p_.typeidFacts_.find(id.v);
+    if (i == p_.typeidFacts_.end()) return false;
+    symbol = i->second;
+    return true;
+}
+
 bool Typer::memberZeroed(const std::string &ctor, const std::string &member) const {
     const std::map<std::string, Parser::MemberBuilt>::const_iterator i = p_.memberBuilt_.find(ctor + "|" + member + "|0");
     return i != p_.memberBuilt_.end() && i->second.zeroed;
@@ -554,6 +570,8 @@ bool Typer::staticGuard(const std::string &symbol, StaticGuard &out) const {
     out.copied = r.copied;
     out.list = r.list;
     out.registered = r.registered;
+    out.vectorLoop = r.vectorLoop;
+    out.array = r.array;
     return true;
 }
 
@@ -595,6 +613,8 @@ bool Typer::newFacts(syntax::NodeId id, NewFacts &out) const {
     out.dtor = f->second.dtor;
     if (f->second.dtorSig != nullptr) out.dtorSig = f->second.dtorSig->id();
     out.dslot = f->second.dslot;
+    out.nothrow = f->second.nothrow;
+    out.cookie = f->second.cookie;
     return true;
 }
 
@@ -804,8 +824,9 @@ std::string Typer::destructorSymbol(TypeId cls) const {
     return p_.destructorOf(&c)->symbol;
 }
 
+// A class whose copy or move assignment the parser calls: an `operator=(const double *)` beside it is no copy, [class.copy]/17.
 bool Typer::assigned(TypeId cls) const {
-    return p_.lookup_.overloadsOf(p_.types_.type(cls)->unqualified()->tag() + "::operator=") != nullptr;
+    return p_.classes_.copyAssignOf(p_.types_.type(cls)->unqualified()) != nullptr;
 }
 
 bool Typer::fromTemplate(const std::string &symbol) const {
