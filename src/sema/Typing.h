@@ -63,8 +63,10 @@ struct ClosureFacts { TypeId closure; std::vector<ClosureCapture> captures; int 
 // A static local built at run time as guardOnce built it (M3b.2): its guard, whether a throw out of the construction aborts
 // it, the constructor that builds it (empty: an initialiser stored), and the destructor's registration - Microsoft's helper.
 struct StaticGuard {
-    std::string guard, ctor, helper; TypeId ctorSig; bool aborts, built, defaulted, zeroed, copied, list, registered;
-    StaticGuard() : aborts(false), built(false), defaulted(false), zeroed(false), copied(false), list(false), registered(false) {}
+    std::string guard, ctor, helper, vectorLoop; TypeId ctorSig; bool aborts, built, defaulted, zeroed, copied, list, registered;
+    bool array;     // an array of a class built by its loop, vectorLoop, if any; `helper` destroys it at exit
+    StaticGuard() : aborts(false), built(false), defaulted(false), zeroed(false), copied(false), list(false), registered(false),
+                    array(false) {}
 };
 
 // A `new` or `delete` as the parser built it (M3b.2): the global allocation function it called, the type made or freed,
@@ -81,7 +83,10 @@ struct NewFacts {
     bool ctorZero, ctorDefaulted;    // the object zeroed before the constructor; defaults filled the written arguments out
     bool bytesCopied;       // `new T(t)` of a class with constructors and a trivial copy: t's bytes stored, no constructor
     int init;               // 0 none, 1 `()` or `{}`, 2 one value, 3 a braced list of values
-    NewFacts() : dslot(-1), array(false), placed(false), ctorZero(false), ctorDefaulted(false), bytesCopied(false), init(0) {}
+    bool nothrow;           // `new (std::nothrow) T`: the tag the first part, the result null-checked before anything is built
+    int cookie;             // an array's cookie: the bytes in front of it holding its count; a `delete[]`'s, read back
+    NewFacts() : dslot(-1), array(false), placed(false), ctorZero(false), ctorDefaulted(false), bytesCopied(false), init(0),
+                 nothrow(false), cookie(0) {}
 };
 
 // What a sizeof, alignof or noexcept folded to, or an integer or character literal's value, with its type.
