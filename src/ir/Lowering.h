@@ -407,8 +407,10 @@ private:
     Val extendedTemporary(sema::TypedId id);
     Val extendedResult(sema::TypedId id);
     bool heldTemporaryInto(sema::TypedId id, ValueId slot, const Type &c);
-    void construct(ValueId where, const std::string &symbol, TypeId sig, const Type &cls, bool zeroFirst, sema::TypedId args, std::uint32_t from);
+    void construct(ValueId where, const std::string &symbol, TypeId sig, const Type &cls, bool zeroFirst, sema::TypedId args, std::uint32_t from,
+                   sema::TypedId defaults = sema::TypedId());
     bool objectNode(sema::TypedId id) const;
+    bool bracedNode(sema::TypedId id) const { return syn(id).kind == syntax::Kind::Other && text(id) == "{}"; }   // a `{}` over its values
     Val object(sema::TypedId id);
     bool closureNode(sema::TypedId id) const;
     bool closureBuiltNode(sema::TypedId id) const;

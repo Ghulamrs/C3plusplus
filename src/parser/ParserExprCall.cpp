@@ -141,7 +141,9 @@ void Parser::buildBracedArguments(const std::vector<const Type *> &params,
             if (bracedArgs_[k].placeholder == args[i].get()) {
                 Init in = std::move(bracedArgs_[k].init);
                 bracedArgs_.erase(bracedArgs_.begin() + static_cast<long>(k));
+                const syntax::NodeId braces = args[i]->syntax();     // the placeholder's `{}`, which the copy's record goes by
                 args[i] = bracedArgumentFor(params[i], in, pos);
+                args[i]->setSyntax(braces);
                 break;
             }
     }
@@ -678,19 +680,18 @@ ExprPtr Parser::completeCall(const std::string &name, const std::string &symbol,
             args[i] = std::move(made);
         if (params[i]->isReference()) {
             args[i] = bindReference(params[i], std::move(args[i]), pos, what);
-            continue;
-        }
-        // **A class whose copy is a constructor call is copied by the caller**,
-        // into a temporary the caller owns, and the callee receives its address.
-        // Measured on all three targets: clang and cl copy at the call site.
-        if (passedByAddress(params[i])) {
+        } else if (passedByAddress(params[i])) {
+            // **A class whose copy is a constructor call is copied by the caller**, into a temporary the caller owns,
+            // and the callee receives its address. Measured on all three targets: clang and cl copy at the call site.
             args[i] = materialiseCopy(params[i], std::move(args[i]), pos, what,
                                       destroy, written);
-            continue;
+        } else {
+            args[i] = decay(std::move(args[i]));
+            checkAssignable(*args[i], params[i], pos, what);
+            args[i] = convert(std::move(args[i]), params[i]);
         }
-        args[i] = decay(std::move(args[i]));
-        checkAssignable(*args[i], params[i], pos, what);
-        args[i] = convert(std::move(args[i]), params[i]);
+        // The converted argument keeps the written syntax, which a default completing the call is matched by (M3b.2).
+        if (!args[i]->syntax().valid()) args[i]->setSyntax(written);
     }
 
     int slot = returns->isStructOrUnion() ? allocateFrameSlot(returns) : 0;

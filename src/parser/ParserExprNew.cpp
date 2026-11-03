@@ -2068,6 +2068,7 @@ ExprPtr Parser::newExpression(std::size_t pos) {
         const NewFacts facts = pendingNew_;      // a `new` in a default argument would take these as its own
         applyDefaults(ctor, ctorArgs, pos);
         pendingNew_ = facts;
+        noteEntryDefaults("$new:" + std::to_string(pos), ctorArgs, written);     // the `new` node's position, for the lowering
         std::vector<ExprPtr> all;
         ExprPtr self(Var::local(temp, slot));
         self->setType(pointer);

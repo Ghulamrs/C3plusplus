@@ -213,7 +213,8 @@ public:
     bool rangeCalls(syntax::NodeId id, Resolution &begin, Resolution &end, std::vector<Resolution> &iter) const;
     bool caughtCopy(syntax::NodeId handler, std::string &symbol, TypeId &signature) const;   // a by-value catch's copy constructor
     bool defaultInit(TypeId cls, const std::string &member) const;   // the member has an initialiser of its own
-    // The member initialisers the parser replayed into written constructor `ctor`, typed; then each by "class::member".
+    // The member initialisers the parser replayed into written constructor `ctor`, and the defaults its hand-built calls were
+    // completed by, typed; then each by "class::member" or "^name".
     void typeMemberDefaults(const std::string &ctor);
     TypedId memberDefault(const std::string &ctor, const std::string &member) const;
     bool staticGuard(const std::string &symbol, StaticGuard &out) const;   // false where guardOnce built none

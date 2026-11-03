@@ -63,13 +63,16 @@ StmtPtr Parser::constructObject(const Declared &d, const std::string &symbol,
     ExprPtr call = completeCall(d.type->tag(), ctor.symbol, nullptr,
                                 types_.get(Kind::Void), full, false, d.pos,
                                 std::move(all));
-    // The constructor this declaration chose, by the local's serial, for its `var` node to carry (M2.16).
-    if (symbol.empty())
+    // The constructor this declaration chose, by the local's serial, for its `var` node to carry (M2.16); an array's
+    // element has the list's record instead, its defaults under "$elem:" and its first value's position.
+    if (symbol.empty() && chosen == nullptr)
         if (const Local *built = lookup_.findLocal(d.name)) {
             const LocalBuilt b = { ctor.symbol, types_.functionType(types_.get(Kind::Void), full, false), args.size() != written,
                                    valueInit && ctor.implicit, defaults, nullptr, 0, 0 };
             ctorBySerial_[built->serial] = b;
         }
+    if (chosen != nullptr && written != 0 && !defaults.empty() && syn(all[1]).valid())
+        noteEntryDefaults("$elem:" + std::to_string(syntaxTree_.node(syn(all[1])).loc), all, 1 + written);
     // An array's element: what built it, for the list's record (M3b.2).
     if (chosen != nullptr) {
         chosen->symbol = ctor.symbol;
@@ -1091,6 +1094,7 @@ ExprPtr Parser::buildInitializerList(const Type *ilType, Init &in,
                 Signature ctor = listConstructor(plainElem, in.items[i], args, true, in.items[i].pos);
                 const std::size_t written = args.size();
                 applyDefaults(ctor, args, in.items[i].pos);
+                noteEntryDefaults("$list:" + std::to_string(in.items[i].pos), args, written);   // by the `{}` node's position
                 made.braced = true;
                 made.defaulted = args.size() != written;
                 if (ctor.access != Access::Public && !insideAccessOf(plainElem, ctor.access) &&
@@ -1237,6 +1241,7 @@ StmtPtr Parser::constructLocalArray(const Declared &d, int offset,
     args.push_back(std::move(at));
     std::vector<const Type *> ps;
     ps.push_back(ptr);
+    const std::vector<syntax::NodeId> made = defaultNodes(defaults, 0);     // the `var` node's last parts, each element's
     for (std::size_t i = 0; i < defaults.size(); i++) {
         args.push_back(std::move(defaults[i]));
         ps.push_back(chosen.params[i]);
@@ -1245,7 +1250,7 @@ StmtPtr Parser::constructLocalArray(const Declared &d, int offset,
     // The constructor every element takes, by the local's serial, for its `var` node to carry (M3b.2).
     if (const Local *built = lookup_.findLocal(d.name)) {
         const LocalBuilt b = { chosen.symbol, types_.functionType(types_.get(Kind::Void), ps, false), !defaults.empty(), false,
-                               std::vector<syntax::NodeId>(), nullptr, 0, 0 };
+                               made, nullptr, 0, 0 };
         ctorBySerial_[built->serial] = b;
     }
     StmtPtr one(new ExprStmt(completeCall(plain->tag(), chosen.symbol, nullptr,
@@ -1444,6 +1449,7 @@ StmtPtr Parser::constructLocalArrayFromList(Declared &d, int offset,
             const Signature chosen = *ctor;
             std::vector<ExprPtr> defaults;
             applyDefaults(chosen, defaults, d.pos);
+            const std::vector<syntax::NodeId> tailDefaults = defaultNodes(defaults, 0);     // the `var` node's last parts
             record.tail = chosen.symbol;
             record.tailDefaulted = !defaults.empty();
             const int indexSlot = allocateFrameSlot(types_.intType());
@@ -1461,6 +1467,11 @@ StmtPtr Parser::constructLocalArrayFromList(Declared &d, int offset,
                 ps.push_back(chosen.params[k]);
             }
             record.tailSig = types_.functionType(types_.get(Kind::Void), ps, false);
+            // The tail's defaults by the local's serial, for its `var` node to carry as its last parts (M3b.2).
+            if (const Local *built = !tailDefaults.empty() ? lookup_.findLocal(d.name) : nullptr) {
+                const LocalBuilt b = { chosen.symbol, record.tailSig, true, false, tailDefaults, nullptr, 0, 0 };
+                ctorBySerial_[built->serial] = b;
+            }
             StmtPtr call(new ExprStmt(completeCall(plain->tag(), chosen.symbol, nullptr,
                                                    types_.get(Kind::Void), ps, false, d.pos,
                                                    std::move(args))));
@@ -2867,15 +2878,26 @@ StmtPtr Parser::memberInitialiser(const std::string &tag, const Type *type,
     // **A list on a class or an array** (M1 L4): a class with constructors is built from it, direct- or
     // copy-list as `{` or `= {` was written; an aggregate or an array of scalars is laid down leaf by leaf.
     if (braced && (m.type->isArray() || m.type->unqualified()->isStructOrUnion())) {
+        const std::size_t mark = syntaxTree_.size(), lo = peek().pos;
         Init in = parseInitialiser();
         std::vector<StmtPtr> all;
         const Type *cls = m.type->unqualified();
-        if (cls->isStructOrUnion() && !cls->tag().empty() && hasConstructors(cls->tag()) &&
-            !(isAggregateClass(cls) && !in.items.empty())) {
+        const bool copyList = memberInitCopy_.count(tag + "::" + m.name) != 0;
+        const bool built = cls->isStructOrUnion() && !cls->tag().empty() && hasConstructors(cls->tag()) &&
+                           !(isAggregateClass(cls) && !in.items.empty());
+        // In a written constructor, a mem-initialiser over the list's values at the braces, as a written entry's is;
+        // a copy-list's temporary wears the `{}` a braced argument does, built in place by the lowering (M3b.2).
+        if (!forCtor.empty()) {
+            const syntax::NodeId parts = built && copyList ? noteParts(syntax::Kind::Other, "{}", lo, mark, lo) : syntax::NodeId();
+            memberDefaults_[forCtor + "|" + tag + "::" + m.name] = parts.valid()
+                ? syntaxTree_.add(syntax::Kind::MemInit, m.name, lo, std::vector<syntax::NodeId>(1, parts))
+                : noteParts(syntax::Kind::MemInit, m.name, lo, mark, lo);
+        }
+        if (built) {
             std::vector<ExprPtr> args;
-            if (memberInitCopy_.count(tag + "::" + m.name)) args.push_back(listTemporaryFrom(cls, in, true, pos));
+            if (copyList) args.push_back(listTemporaryFrom(cls, in, true, pos));
             else args = bracedInitArguments(cls, in, pos);
-            all.push_back(constructMember(tag, type, m, thisSlot, args, pos, false));
+            all.push_back(constructMember(tag, type, m, thisSlot, args, lo, false));     // keyed by the braces, as its entry is
         } else {
             const MemberRoot root = { thisSlot, type, &m };
             const MemberRoot *was = memberRoot_;
