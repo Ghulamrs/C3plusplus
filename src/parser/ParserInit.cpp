@@ -895,9 +895,9 @@ Parser::CtorInit Parser::readConstructorInitialiser(const Declared &d) {
         } else if (ilCtor != nullptr) {
             consume("=");
             Init in = parseInitialiser();
-            bool flat = !in.items.empty();
-            for (std::size_t i = 0; i < in.items.size(); i++) flat = flat && !in.items[i].isList;
-            if (flat) { ci.ilType = ilType; ci.ilCount = in.items.size(); }
+            ci.ilType = ilType;
+            ci.ilCount = in.items.size();
+            ci.ilPos = static_cast<std::uint32_t>(in.pos);
             args.push_back(buildInitializerList(ilType, in, d.pos, ci.ilSetup));
             ci.copyInit = true;
             ci.listInit = true;
@@ -927,6 +927,9 @@ Parser::CtorInit Parser::readConstructorInitialiser(const Declared &d) {
                 != nullptr) {
             at_++;                       // the '('
             Init in = parseInitialiser();
+            ci.ilType = ilType;
+            ci.ilCount = in.items.size();
+            ci.ilPos = static_cast<std::uint32_t>(in.pos);
             args.push_back(buildInitializerList(ilType, in, d.pos,
                                                 ci.ilSetup));
             expect(")");
@@ -1190,6 +1193,8 @@ std::vector<StmtPtr> Parser::buildStaticConstruction(const Declared &d,
     StaticGuard &record = staticGuards_[symbol];
     record.built = true;
     record.list = !ci.ilSetup.empty();
+    record.listOf = ci.ilType;
+    if (ci.ilType != nullptr) record.elements = listsAt_[ci.ilPos];     // empty for a list of scalars
     record.copied = ci.trivialCopy;
     for (std::size_t z = 0; z < ci.ilSetup.size(); z++)
         out.push_back(std::move(ci.ilSetup[z]));

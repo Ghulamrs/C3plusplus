@@ -47,24 +47,42 @@ struct Resolution : ResolutionKind {
     int serial;             // a local's serial; a member's offset; 1 for a folded static member
     long long value;        // an enumerator's, a folded static member's
     bool isConst, isThreadLocal;    // a global's
+    bool viaWrapper;        // a thread_local's: a use goes through the ABI's wrapper
     bool hasThis;           // a call's: its function type's first parameter is the object's address
     bool indirect;          // a call's: through a value - a pointer or a vtable slot
     int vslot;              // a virtual call's: the vtable slot it reads, -1 for none
     std::string name;       // a global's or a function's lookup name, which its Var is named by
-    Resolution() : what(None), serial(-1), value(0), isConst(false), isThreadLocal(false), hasThis(false), indirect(false), vslot(-1) {}
+    Resolution() : what(None), serial(-1), value(0), isConst(false), isThreadLocal(false), viaWrapper(false), hasThis(false), indirect(false), vslot(-1) {}
 };
 
 // A lambda whose captures are scalar locals (M3b.2): its closure, and each capture's member - its offset and type, a
 // reference for one by reference - and the `var` of the local it copies or binds, found in the scopes at the lambda.
 // `outer` >= 0: the source is the enclosing closure's member at that offset, of type `outerType`, not a local.
-struct ClosureCapture { int offset; TypeId type; syntax::NodeId source; int outer; TypeId outerType; ClosureCapture() : offset(0), outer(-1) {} };
+struct ClosureCapture { int offset; TypeId type; syntax::NodeId source; int outer; TypeId outerType; std::string copy; TypeId copySig;
+                        ClosureCapture() : offset(0), outer(-1) {} };
 struct ClosureFacts { TypeId closure; std::vector<ClosureCapture> captures; int thisOffset; TypeId thisType; ClosureFacts() : thisOffset(-1) {} };
+
+// Each element of a braced list an array of a class is built from (M3b.2), Parser::ListBuilt: the `var` node's value
+// parts it took (`first` after the written bounds, `count` of them) and how - a trivially copyable object's `bytes`, or
+// the constructor by `symbol`, its type with `T *` first, `zeroed` first; the elements past them by `tail`, the default.
+struct ListElement {
+    std::uint32_t first, count; std::string symbol; TypeId signature; bool bytes, zeroed, defaulted;
+    bool braced, list;     // the part is a `{}` node: its values the arguments, or one initializer_list for the constructor's
+    ListElement() : first(0), count(0), bytes(false), zeroed(false), defaulted(false), braced(false), list(false) {}
+};
+struct ListBuilt {
+    std::vector<ListElement> elems; std::string tail; TypeId tailSig; bool tailZeroed, tailDefaulted;
+    ListBuilt() : tailZeroed(false), tailDefaulted(false) {}
+    bool recorded() const { return !elems.empty() || !tail.empty(); }
+};
 
 // A static local built at run time as guardOnce built it (M3b.2): its guard, whether a throw out of the construction aborts
 // it, the constructor that builds it (empty: an initialiser stored), and the destructor's registration - Microsoft's helper.
 struct StaticGuard {
     std::string guard, ctor, helper, vectorLoop; TypeId ctorSig; bool aborts, built, defaulted, zeroed, copied, list, registered;
     bool array;     // an array of a class built by its loop, vectorLoop, if any; `helper` destroys it at exit
+    ListBuilt elements;     // an array of a class built from a braced list, or an initializer_list's backing array: each element
+    TypeId listOf;          // the initializer_list the braces were made into, where a constructor took one
     StaticGuard() : aborts(false), built(false), defaulted(false), zeroed(false), copied(false), list(false), registered(false),
                     array(false) {}
 };
@@ -85,8 +103,10 @@ struct NewFacts {
     int init;               // 0 none, 1 `()` or `{}`, 2 one value, 3 a braced list of values
     bool nothrow;           // `new (std::nothrow) T`: the tag the first part, the result null-checked before anything is built
     int cookie;             // an array's cookie: the bytes in front of it holding its count; a `delete[]`'s, read back
+    TypeId allocSig;        // a placement `new` of the program's allocation function `symbol`: its type, the size first
+    int userArgs;           // and how many placement arguments, the new-expression's first parts
     NewFacts() : dslot(-1), array(false), placed(false), ctorZero(false), ctorDefaulted(false), bytesCopied(false), init(0),
-                 nothrow(false), cookie(0) {}
+                 nothrow(false), cookie(0), userArgs(0) {}
 };
 
 // What a sizeof, alignof or noexcept folded to, or an integer or character literal's value, with its type.
@@ -190,7 +210,7 @@ public:
     bool assigned(TypeId cls) const;             // a class with an operator= of its own, written or implicit
     bool newFacts(syntax::NodeId id, NewFacts &out) const;  // a `new` or `delete` node's facts; false where none were recorded
     // A range-based for over a class object with pointer iterators: the records of its begin and end calls; false otherwise.
-    bool rangeCalls(syntax::NodeId id, Resolution &begin, Resolution &end) const;
+    bool rangeCalls(syntax::NodeId id, Resolution &begin, Resolution &end, std::vector<Resolution> &iter) const;
     bool caughtCopy(syntax::NodeId handler, std::string &symbol, TypeId &signature) const;   // a by-value catch's copy constructor
     bool defaultInit(TypeId cls, const std::string &member) const;   // the member has an initialiser of its own
     // The member initialisers the parser replayed into written constructor `ctor`, typed; then each by "class::member".
@@ -216,6 +236,10 @@ public:
     bool localBuilt(syntax::NodeId var, std::string &symbol, TypeId &signature, bool &defaulted, bool &zeroed) const;
     // The initializer_list parameter a local's braces of `count` flat elements - its `var` node's parts - were made into.
     bool localList(syntax::NodeId var, TypeId &param, std::uint32_t &count) const;
+    // A braced list's elements, each with its construction: an array local's by its `var`, a local's initializer_list's
+    // by its `var`, a braced argument's by its `{}` node; false where the parser recorded none (a list of scalars).
+    bool listBuilt(syntax::NodeId node, ListBuilt &out) const;
+    template <class Record> static void copyListBuilt(const Record &r, ListBuilt &out);
     bool memberList(const std::string &ctor, const std::string &member, std::uint32_t pos, TypeId &param, std::uint32_t &count) const;
     // The constructor a class temporary `T(...)` at node `id` was built by, and whether `T()` zeroed the object first.
     bool temporaryBuilt(syntax::NodeId id, std::string &symbol, TypeId &signature, bool &zeroFirst) const;
@@ -253,6 +277,7 @@ private:
         out.value = r.value;
         out.isConst = r.isConst;
         out.isThreadLocal = r.isThreadLocal;
+        out.viaWrapper = r.viaWrapper;
         out.hasThis = r.hasThis;
         out.indirect = r.indirect;
         out.vslot = r.vslot;

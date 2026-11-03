@@ -729,8 +729,10 @@ ExprPtr Parser::compound(BinOp op, ExprPtr target, ExprPtr value, std::size_t po
                            "the built-in one would need the class to convert to "
                            "a number, which it does not");
         std::vector<ExprPtr> none;
+        const syntax::NodeId operand = value->syntax();
         value = memberCallWith(std::move(value), rt, conv->name, pos,
                                std::move(none));
+        noteConversionCall(operand, *value);
     }
 
     if (ExprPtr readBack = clonePure(*target)) {
@@ -1233,7 +1235,7 @@ ExprPtr Parser::assignValue(ExprPtr n, ExprPtr value, std::size_t pos) {
         ps.push_back(op->params[0]);
         if (args[1]->syntax().valid())
             assignCalls_[args[1]->syntax().v] = LocalBuilt{ op->symbol, types_.functionType(selfPtr, ps, false), false, false,
-                                                                  std::vector<syntax::NodeId>(), nullptr, 0 };
+                                                                  std::vector<syntax::NodeId>(), nullptr, 0, 0 };
         ExprPtr call = completeCall(to->unqualified()->tag() + "::operator=",
                                     op->symbol, nullptr, selfPtr, ps, false, pos,
                                     std::move(args));

@@ -1370,7 +1370,9 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         return typer.microsoftUnnamedCaught(id, d, r, c);
     });
     lowering.setNewFacts([&typer](syntax::NodeId id, sema::NewFacts &out) { return typer.newFacts(id, out); });
-    lowering.setRangeCalls([&typer](syntax::NodeId id, sema::Resolution &b, sema::Resolution &e) { return typer.rangeCalls(id, b, e); });
+    lowering.setRangeCalls([&typer](syntax::NodeId id, sema::Resolution &b, sema::Resolution &e, std::vector<sema::Resolution> &i) {
+        return typer.rangeCalls(id, b, e, i);
+    });
     lowering.setCaughtCopy([&typer](syntax::NodeId id, std::string &sym, TypeId &sig) { return typer.caughtCopy(id, sym, sig); });
     lowering.setMemberBuilt([&typer](const std::string &ctor, const std::string &m, std::uint32_t pos, std::string &sym, TypeId &sig, bool &dflt) {
         return typer.memberBuilt(ctor, m, pos, sym, sig, dflt);
@@ -1387,6 +1389,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         return typer.localBuilt(v, sym, sig, dflt, zeroed);
     });
     lowering.setLocalList([&typer](syntax::NodeId v, TypeId &param, std::uint32_t &n) { return typer.localList(v, param, n); });
+    lowering.setListBuilt([&typer](syntax::NodeId v, sema::ListBuilt &out) { return typer.listBuilt(v, out); });
     lowering.setMemberList([&typer](const std::string &ctor, const std::string &m, std::uint32_t pos, TypeId &param, std::uint32_t &n) {
         return typer.memberList(ctor, m, pos, param, n);
     });
@@ -1441,18 +1444,15 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         const TypeId declared = typer.declaredReturn(c.bodies[r].first);
         facts.returns = declared.valid() ? declared : TypeTable::id(fn.returns());
         std::string why;
-        // A local aligned past its type (alignas) or past the frame: the selector lays a slot out at its type's alignment.
-        bool aligned = fn.frameAlign() > 16;
+        // A local aligned past its type (alignas): its alignment by serial, for the lowering's alloca of it.
         for (const Local &l : fn.locals()) {
-            if (l.align > 16) aligned = true;
-            if (l.isParam || l.type == nullptr || l.type->isReference()) continue;
+            if (l.isParam || l.type == nullptr || l.type->isReference() || l.serial < 0) continue;
             int natural = l.type->align(target);
             const bool aggregate = l.type->isArray() || l.type->isStructOrUnion();      // Microsoft lays one of 16 at 16
             if (aggregate && l.type->size(target) >= 16 && natural < 16) natural = 16;   // not std::max: windows.h's macro
-            if (l.align > natural) aligned = true;
+            if (l.align > natural) facts.localAligns[l.serial] = l.align;
         }
-        if (aligned) why = "a local with alignas";
-        else if (!lowering.lower(t, facts, why).valid() && why.empty()) why = "the lowering gave no reason";
+        if (!lowering.lower(t, facts, why).valid() && why.empty()) why = "the lowering gave no reason";
         if (why.empty()) { lowered++; continue; }
         reasons[why]++;
         if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "outside %s: %s\n", fn.symbol().c_str(), why.c_str());

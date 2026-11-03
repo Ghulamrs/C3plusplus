@@ -487,6 +487,7 @@ ExprPtr Parser::listTemporaryFrom(const Type *to, Init &in, bool copyList, std::
             std::vector<ExprPtr> args;
             args.push_back(initializerListExpr(ilType, in, pos));
             const Signature ctor = overload_.resolveOverload(constructorKey(plain->tag()), args, pos);
+            noteBracedBuilt(in.pos, plain, ctor, false);
             return constructTemporary(plain, ctor, std::move(args), false, pos);
         }
         if (in.items.empty() || !onlyImplicitConstructors(plain->tag()) ||
@@ -499,6 +500,7 @@ ExprPtr Parser::listTemporaryFrom(const Type *to, Init &in, bool copyList, std::
                 src_.fail(pos, "'" + plain->describe() + "' has no public constructor taking "
                                "these arguments - the one that matches is " +
                                (ctor.access == Access::Private ? "private" : "protected"));
+            noteBracedBuilt(in.pos, plain, ctor, in.items.empty() && ctor.implicit);
             return constructTemporary(plain, ctor, std::move(args), in.items.empty() && ctor.implicit, pos);
         }
     }
@@ -2441,6 +2443,13 @@ ExprPtr Parser::userPlacementAllocation(const Type *made, bool array, ExprPtr by
     const Signature sig = overload_.resolveOverload(key, args, pos);
     for (std::size_t i = 1; i < args.size() && i < sig.params.size(); i++)
         if (!sig.params[i]->isReference()) args[i] = convert(std::move(args[i]), sig.params[i]);
+    // What the SSA lowering calls: this allocation function, the placement arguments the new-expression's first parts.
+    if (!sig.variadic && sig.params.size() == args.size()) {
+        pendingNew_.why.clear();
+        pendingNew_.symbol = sig.symbol;
+        pendingNew_.allocSig = types_.functionType(sig.returns, sig.params, false);
+        pendingNew_.userArgs = static_cast<int>(extra.size());
+    }
     return completeCall(sig.name, sig.symbol, nullptr, sig.returns, sig.params,
                         false, pos, std::move(args));
 }

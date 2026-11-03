@@ -88,11 +88,13 @@ void Parser::refuseScopedOperand(const Type *a, const Type *b, const char *op, s
 ExprPtr Parser::baseSubobject(ExprPtr e, const Type *base) const {
     const Type *from = e->type();
     const Type *want = from->isConst() ? types_.withConst(base->unqualified()) : base->unqualified();
+    const bool xvalue = e->isXvalue();      // [basic.lval]/1: a subobject of an xvalue is one - a temporary's base moves
     ExprPtr at(new Unary('&', std::move(e)));
     at->setType(types_.pointerTo(from));
     at = convert(std::move(at), types_.pointerTo(want), true);
     ExprPtr sub(new Unary('*', std::move(at)));
     sub->setType(want);
+    if (xvalue) sub->setXvalue();
     return sub;
 }
 

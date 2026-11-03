@@ -572,14 +572,26 @@ void Lowering::classLocal(sema::TypedId var, ValueId slot, const Type &t) {
             closeFull();
             return;
         }
+        // [class.conv.fct]: `(C)o`, o's conversion function the parser called - its plain result's bytes the local's.
+        const sema::TypedId cast = child(var, 0);
+        sema::Resolution conv;
+        if (syn(cast).kind == syntax::Kind::Cast && count(cast) != 0 && convertedNode(child(cast, count(cast) - 1), conv) &&
+            T(conv.type).returns()->unqualified() == t.unqualified() && classObjectNode(child(cast, count(cast) - 1))) {
+            openFull();
+            copyObject(slot, convertedObject(classObject(child(cast, count(cast) - 1)), conv, true).v, t);
+            closeFull();
+            return;
+        }
         if (!objectNode(child(var, 0)))
             outside(std::string("a class local initialised by a '") + syntax::kindName(syn(child(var, 0)).kind) + "' that is not an object");
+        openFull();     // a call's arguments' temporaries die after the copy, at the declarator's end
         Val o = object(child(var, 0));
         // [class.copy]/12 with [conv.ptr]/3: a derived object's base subobject is what is copied - its bytes.
         if (T(o.type).isStructOrUnion() && T(o.type).unqualified() != t.unqualified())
             o = baseSubobject(o, t, "a class local initialised from another type");
         if (T(o.type).unqualified() != t.unqualified()) outside("a class local initialised from another type");
         copyObject(slot, o.v, t);
+        closeFull();
         return;
     }
     default:
@@ -766,6 +778,10 @@ void Lowering::builtLocal(sema::TypedId var, ValueId slot, const Type &t) {
         closeFull();
     } else if (c.hasVirtualBase()) {
         outside("a local of a class with a virtual base built by no constructor");
+    } else if (v.initForm == 1 && v.count == 1 && closureBuiltNode(child(var, 0))) {
+        // `auto f = [h]...`: the closure is the local itself, built in its slot ([expr.prim.lambda]/2, the parser's choice).
+        if (T(TypeTable::id(tree_.node(child(var, 0)).type)).unqualified() != &c) outside("a class local initialised by a lambda of another type");
+        closure(child(var, 0), slot);
     } else if (elidedLocal(var)) {
         elidedCall(child(var, 0), slot);
     } else if (v.initForm == 1 && v.count == 1 && temporaryNode(child(var, 0)) && !plainTemporary(child(var, 0))) {
@@ -775,6 +791,8 @@ void Lowering::builtLocal(sema::TypedId var, ValueId slot, const Type &t) {
         if (T(o.type).unqualified() != &c) outside("a class local initialised from a temporary of another type");
         copyObject(slot, o.v, c);
         closeFull();
+    } else if (v.initForm == 1 && v.count == 1 && heldTemporaryInto(child(var, 0), slot, c)) {
+        // built in place: the copy it would have been is the bytes of a class nothing destroys ([class.copy]/31)
     } else if (v.initForm == 2 && c.isSpecialization() && c.templateName() == "initializer_list") {
         // [dcl.init.list]/5-6: `auto a = {1, 2}` - a backing array of this frame, alive as long as the local, and its bytes.
         std::vector<sema::TypedId> elems;
@@ -798,12 +816,15 @@ ValueId Lowering::initializerList(sema::TypedId parent, const Type &param, std::
     if (n == 0 || count(parent) != n) outside("an initializer_list of no layout the lowering knows");
     std::vector<sema::TypedId> elems;
     for (std::uint32_t i = 0; i < n; i++) elems.push_back(child(parent, i));
-    return initializerListOf(elems, param);
+    sema::ListBuilt lb;
+    if (listBuilt_) listBuilt_(tree_.node(parent).syntax, lb);
+    return initializerListOf(elems, param, lb);
 }
 
 // The same over the elements themselves - a braced argument's, which may be one scalar (the list of one the syntax tree
-// flattens) or none: `{}` is a null `first_` and a `count_` of 0.
-ValueId Lowering::initializerListOf(const std::vector<sema::TypedId> &elems, const Type &param) {
+// flattens) or none: `{}` is a null `first_` and a `count_` of 0. Elements of a class are built as the parser's record
+// `lb` says, each alive to the full expression's end where the class has a destructor ([dcl.init.list]/6).
+ValueId Lowering::initializerListOf(const std::vector<sema::TypedId> &elems, const Type &param, const sema::ListBuilt &lb) {
     const std::uint32_t n = static_cast<std::uint32_t>(elems.size());
     const Type &il = param.isReference() ? *param.referent()->unqualified() : *param.unqualified();
     if (!param.isReference() && !bytesReturned(il)) outside("an initializer_list parameter passed as no other class is");
@@ -812,7 +833,11 @@ ValueId Lowering::initializerListOf(const std::vector<sema::TypedId> &elems, con
     const Member &countM = *il.findMember("count_");
     if (!firstM.type->isPointer()) outside("an initializer_list of no layout the lowering knows");
     const Type &e = *firstM.type->pointee()->unqualified();
-    if (!scalar(e)) outside("an initializer_list of '" + e.describe() + "' elements");
+    const bool built = !scalar(e);
+    if (built && (!e.isStructOrUnion() || !e.isComplete() || lb.elems.size() != n))
+        outside("an initializer_list of '" + e.describe() + "' elements");
+    const std::string dtor = built && e.hasDestructor() && destructor_ ? destructor_(e.id()) : std::string();
+    if (built && e.hasDestructor() && (dtor.empty() || fullFrom() == kNoFull)) outside("an initializer_list of elements with a destructor outside a full expression");
     const TypeId ptr = tid(*types_.pointerTo(&e));
     ValueId base;
     if (n == 0) {
@@ -824,7 +849,10 @@ ValueId Lowering::initializerListOf(const std::vector<sema::TypedId> &elems, con
     for (std::uint32_t i = 0; i < n; i++) {
         const InstId g = add(Op::Gep, ptr, std::vector<ValueId>(1, base));
         at(g).k = static_cast<long long>(i) * e.size(target_);
-        store(result(g), exprTo(elems[i], tid(e)).v);
+        if (!built) { store(result(g), exprTo(elems[i], tid(e)).v); continue; }
+        if (lb.elems[i].first != i || lb.elems[i].count != 1) outside("an initializer_list element the record does not place");
+        listElement(result(g), e, elems[i], lb.elems[i]);
+        if (!dtor.empty()) guard(result(g), e, dtor);
     }
     const ValueId object = entryAlloca(tid(il), "$il");
     const ValueId self = result(add(Op::Bitcast, tid(*types_.pointerTo(&il)), std::vector<ValueId>(1, object)));
@@ -837,11 +865,48 @@ ValueId Lowering::initializerListOf(const std::vector<sema::TypedId> &elems, con
     return result(add(Op::Bitcast, tid(*types_.pointerTo(param.isReference() ? param.referent() : &il)), std::vector<ValueId>(1, self)));
 }
 
+// One element of an initializer_list's backing array at `at0` from its part, as the parser built it: a trivially copyable
+// object's bytes; the constructor it chose over the part - a `{}` node's values as the arguments, or made into the one
+// initializer_list the constructor takes (the record of that inner list by the node), or the part itself, copied in.
+void Lowering::listElement(ValueId at0, const Type &et, sema::TypedId part, const sema::ListElement &e) {
+    if (e.bytes) {
+        if (!objectNode(part)) outside("an initializer_list element copied from what is not an object");
+        const Val o = object(part);
+        if (T(o.type).unqualified() != et.unqualified()) outside("an initializer_list element copied from another type");
+        copyObject(at0, o.v, et);
+        return;
+    }
+    if (e.defaulted) outside("an initializer_list element built with default arguments");
+    if (e.symbol.empty() || !e.signature.valid()) outside("an initializer_list element built by no constructor the parser recorded");
+    const Type &ft = T(e.signature);
+    if (!ft.isFunction() || ft.params().empty() || ft.params()[0]->pointee()->unqualified() != et.unqualified())
+        outside("an initializer_list element's constructor of another class");
+    std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, at0))));
+    const bool bracedPart = syn(part).kind == syntax::Kind::Other && text(part) == "{}";
+    if (e.braced != bracedPart) outside("an initializer_list element the record does not place");
+    if (e.list) {
+        if (ft.params().size() != 2) outside("an initializer_list element's constructor of another arity");
+        std::vector<sema::TypedId> inner;
+        for (std::uint32_t i = 0; i < count(part); i++) inner.push_back(child(part, i));
+        sema::ListBuilt lb;
+        if (listBuilt_) listBuilt_(tree_.node(part).syntax, lb);
+        ops.push_back(initializerListOf(inner, *ft.params()[1], lb));
+    } else {
+        std::vector<sema::TypedId> args;
+        if (bracedPart) for (std::uint32_t i = 0; i < count(part); i++) args.push_back(child(part, i));
+        else args.push_back(part);
+        if (ft.params().size() != args.size() + 1) outside("an initializer_list element's constructor of another arity");
+        argumentList(ft, 1, false, args, false, ops);
+    }
+    directCall(e.symbol, e.signature, ops);
+}
+
 // `T x = f();` where the parser built f's result straight into x ([class.copy]/31): a call of f or an operator.
 bool Lowering::elidedLocal(sema::TypedId var) const {
     const sema::TypedNode &v = tree_.node(var);
     if (v.initForm != 1 || v.count != 1 || !elidedInto_) return false;
-    const sema::TypedId c = child(var, 0);
+    sema::TypedId c = child(var, 0);
+    while (syn(c).kind == syntax::Kind::Comma && count(c) == 2) c = child(c, 1);      // [expr.comma]/1: its right operand
     if (syn(c).kind != syntax::Kind::Call && !operatorCalls(c)) return false;
     const sema::Resolution &r = tree_.resolution(c);
     if (!(r.what == sema::Resolution::Call && r.type.valid() && T(r.type).isFunction() && T(r.type).returns()->unqualified() == v.type->unqualified()))
@@ -856,6 +921,7 @@ bool Lowering::elidedLocal(sema::TypedId var) const {
 // the arguments' temporaries are destroyed at the full expression's end, before the local is alive.
 void Lowering::elidedCall(sema::TypedId c, ValueId slot) {
     openFull();
+    while (syn(c).kind == syntax::Kind::Comma && count(c) == 2) { expr(child(c, 0)); c = child(c, 1); }
     intoCall_ = c;
     intoAlloca_ = static_cast<int>(F().inst(F().values[slot.v].def).k);
     const Val r = operatorCalls(c) ? operatorCall(c) : call(c);
@@ -919,7 +985,7 @@ void Lowering::guardedStatic(sema::TypedId var, const std::string &symbol) {
     const sema::TypedNode &v = tree_.node(var);
     sema::StaticGuard g;
     if (!staticGuard_ || !staticGuard_(symbol, g)) outside("a static local built at run time with no guard recorded");
-    if (v.type->isArray() && !g.array) outside("a static array built at run time");
+    if (v.type->isArray() && !g.array && !g.elements.recorded()) outside("a static array built at run time");
     const bool ms = target_.microsoftNames();
     if (ms && handlerDepth_ != 0) outside("a static local built at run time inside a handler on the Microsoft ABI");
     staticLocals_[v.syntax.v] = std::make_pair(symbol, tid(*v.type));
@@ -1008,10 +1074,10 @@ void Lowering::staticConstruction(sema::TypedId var, const std::string &symbol, 
         closeFull();
         return;
     }
-    if (c.isArray()) { staticArray(symbol, c, g); return; }
+    if (c.isArray()) { staticArray(var, symbol, c, g); return; }
     const ValueId obj = addrOf(symbol, tid(*types_.pointerTo(&c)));
     if (g.built && !g.copied) {
-        if (g.list) outside("a static local built from a braced list");
+        if (g.list && !g.listOf.valid()) outside("a static local built from a braced list of no initializer_list");
         if (g.ctor.empty() || !g.ctorSig.valid()) outside("a static local built by no constructor the parser recorded");
         if (g.defaulted) outside("a static local built with default arguments");
         const Type &ft = T(g.ctorSig);
@@ -1021,8 +1087,17 @@ void Lowering::staticConstruction(sema::TypedId var, const std::string &symbol, 
             at(z).k = c.size(target_);
         }
         std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, obj))));
-        if (v.count != 0) arguments(var, 0, ft, 1, false, ops);
-        else if (ft.params().size() != 1) outside("a static local's default constructor of parameters");
+        if (g.list) {
+            // [dcl.init.list]/3: the braces' elements, the `var` node's parts, made into the constructor's initializer_list.
+            if (ft.params().size() != 2 || ft.params()[1] != &T(g.listOf)) outside("a static local's initializer_list of another parameter");
+            std::vector<sema::TypedId> elems;
+            for (std::uint32_t i = 0; i < v.count; i++) elems.push_back(child(var, i));
+            ops.push_back(initializerListOf(elems, T(g.listOf), g.elements));
+        } else if (v.count != 0) {
+            arguments(var, 0, ft, 1, false, ops);
+        } else if (ft.params().size() != 1) {
+            outside("a static local's default constructor of parameters");
+        }
         directCall(g.ctor, g.ctorSig, ops);
     } else if (c.isStructOrUnion()) {
         if (v.count != 1) outside("a static class of " + std::to_string(v.count) + " parts");
@@ -1052,22 +1127,29 @@ void Lowering::staticConstruction(sema::TypedId var, const std::string &symbol, 
     runtimeCall("__cxa_atexit", intT, args);
 }
 
-// buildStaticArrayConstruction's array of a class: its elements built by the class's loop, then the helper that destroys
-// them last first registered - __cxa_atexit given the array on Itanium, atexit on Microsoft, where the helper names it.
-void Lowering::staticArray(const std::string &symbol, const Type &array, const sema::StaticGuard &g) {
+// buildStaticArrayConstruction's array of a class: its elements built by the class's loop, or each from its braced list
+// as a local's are, then the helper that destroys them last first registered - __cxa_atexit given the array on Itanium,
+// atexit on Microsoft, where the helper names it.
+void Lowering::staticArray(sema::TypedId var, const std::string &symbol, const Type &array, const sema::StaticGuard &g) {
     TypeId elem = tid(array);
     long long n = 1;
     for (; T(elem).isArray(); elem = tid(*T(elem).pointee())) n *= T(elem).length();
     const TypeId ep = tid(*types_.pointerTo(T(elem).unqualified())), sizeT = tid(*types_.get(target_.sizeType()));
     const ValueId first = addrOf(symbol, ep);
-    if (!g.vectorLoop.empty()) {
-        std::vector<TypeId> params(1, ep);
-        params.push_back(sizeT);
-        std::vector<ValueId> ops(1, first);
-        ops.push_back(iconst(sizeT, n));
-        directCall(g.vectorLoop, types_.functionType(types_.voidType()->id(), params), ops);
+    if (g.elements.recorded()) {
+        closeFull();     // each element is a full expression of its own; nothing destroys one built, the guard aborting instead
+        if (n > 64) outside("a static array of more elements than the lowering builds one by one");
+        listArray(var, first, *T(elem).unqualified(), n, g.elements, std::string());
+    } else {
+        if (!g.vectorLoop.empty()) {
+            std::vector<TypeId> params(1, ep);
+            params.push_back(sizeT);
+            std::vector<ValueId> ops(1, first);
+            ops.push_back(iconst(sizeT, n));
+            directCall(g.vectorLoop, types_.functionType(types_.voidType()->id(), params), ops);
+        }
+        closeFull();
     }
-    closeFull();
     if (!g.registered) return;
     const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType())), intT = tid(*types_.get(Kind::Int));
     const bool ms = target_.microsoftNames();
@@ -1204,11 +1286,11 @@ bool Lowering::constructedClass(const Type &t) const {
 }
 
 // [expr.new] of a class a constructor builds: the one the parser chose called on the storage, which the class's layout - a
-// vptr, a destructor the `new` never runs - does not enter into; a virtual base's most-derived flag stays outside.
+// vptr, a virtual base, a destructor the `new` never runs - does not enter into; cl's most-derived flag is construct's.
 bool Lowering::newBuilt(const Type &t) const {
     if (!t.isStructOrUnion() || !t.isComplete()) return false;
     const Type &c = *t.unqualified();
-    return constructed_ && constructed_(c.id()) && !c.hasVirtualBase() && c.kind() != Kind::Union;
+    return constructed_ && constructed_(c.id()) && c.kind() != Kind::Union;
 }
 
 // constructedClass's layout with a destructor besides, which the end of the temporary's full expression runs.
@@ -1217,6 +1299,18 @@ bool Lowering::destroyedClass(const Type &t) const {
     const Type &c = *t.unqualified();
     return constructed_ && constructed_(c.id()) && c.hasDestructor() && !c.hasVirtualBase() && c.kind() != Kind::Union &&
            buildableLayout(c);
+}
+
+// [dcl.init]/8: `T()` of a class with a destructor and no constructor at all - zeroed, no constructor to call, and
+// destroyed at its full expression's end as any temporary with a destructor is.
+bool Lowering::zeroedTemporary(sema::TypedId id) const {
+    if (syn(id).kind != syntax::Kind::Call || count(id) != 1 || tree_.resolution(child(id, 0)).what != sema::Resolution::TypeName) return false;
+    const sema::Resolution &r = tree_.resolution(id);
+    const TypeId t = TypeTable::id(tree_.node(id).type);
+    if (r.what != sema::Resolution::Temporary || !r.symbol.empty() || !t.valid() || !T(t).isStructOrUnion() || !T(t).isComplete()) return false;
+    const Type &c = *T(t).unqualified();
+    return constructed_ && !constructed_(c.id()) && c.hasDestructor() && !c.polymorphic() && !c.hasVirtualBase() &&
+           c.kind() != Kind::Union && buildableLayout(c);
 }
 
 // A class temporary a constructor built, `*(ctor(&$tmp, ...), &$tmp)`: `T(...)`, a call whose head names the type, its
@@ -1261,7 +1355,7 @@ void Lowering::construct(ValueId where, const std::string &symbol, TypeId sig, c
     }
     std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, where))));
     arguments(args, from, ft, 1, false, ops);
-    directCall(symbol, sig, ops);
+    directCall(symbol, msFlagged(symbol, sig, ops, 1), ops);     // a complete object: cl's most-derived flag set
 }
 
 // [class.temporary]/5: a temporary bound to a reference lives as long as the reference - built under the declarator's
@@ -1280,6 +1374,34 @@ Lowering::Val Lowering::extendedTemporary(sema::TypedId id) {
     openFull();
     construct(slot, symbol, sig, t, zero, id, from);
     closeFull();
+    guard(slot, t, dtor);
+    return Val(slot, tid(t));
+}
+
+// `T x = T(...)` or `(T)v` of a class whose layout is its constructors' business, as a held local's is, its copy its
+// bytes and nothing to destroy: the temporary's constructor, the parser's record, run on the local's slot.
+bool Lowering::heldTemporaryInto(sema::TypedId id, ValueId slot, const Type &c) {
+    std::uint32_t from = 0;
+    std::string symbol;
+    TypeId sig;
+    bool zero = false;
+    const sema::TypedNode &n = tree_.node(id);
+    if (!temporaryShape(id, from) || n.type == nullptr || n.type->unqualified() != c.unqualified() || c.hasDestructor() ||
+        c.nonTrivialCopy() || !temporaryBuilt_(n.syntax, symbol, sig, zero))
+        return false;
+    openFull();
+    construct(slot, symbol, sig, c, zero, id, from);
+    closeFull();
+    return true;
+}
+
+// The same for a call's result with a destructor, `const T &r = f();`: built in its slot as an elided call builds a local.
+Lowering::Val Lowering::extendedResult(sema::TypedId id) {
+    const Type &t = *T(tree_.resolution(id).type).returns()->unqualified();
+    const std::string dtor = destructor_ ? destructor_(t.id()) : std::string();
+    if (dtor.empty()) outside("a call's result whose destructor the parser recorded none for");
+    const ValueId slot = entryAlloca(tid(t), "$tmp");
+    elidedCall(id, slot);
     guard(slot, t, dtor);
     return Val(slot, tid(t));
 }
@@ -1303,12 +1425,15 @@ Lowering::Val Lowering::temporary(sema::TypedId id) {
         if (destroyed) guard(slot, t, dtor);
         return Val(slot, tid(t));
     }
-    if (text(id) == "{}") {
+    if (listTemporaryNode(id)) {
+        listTemporary(id, slot);
+    } else if (text(id) == "{}") {
         if (!plainTemporary(id)) outside("a class temporary from a braced list");
         listInit(slot, t, id, 1);      // `P{a, b}`, an aggregate's list ([dcl.init.list]/3)
     } else if (count(id) == 1) {
         const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, slot));
         at(z).k = t.size(target_);
+        if (zeroedTemporary(id)) guard(slot, t, temporaryDestructor(t));
     } else {
         if (!classObjectNode(child(id, 1))) outside("a class temporary from what is not an object");
         Val o = classObject(child(id, 1));
@@ -1318,6 +1443,53 @@ Lowering::Val Lowering::temporary(sema::TypedId id) {
         copyObject(slot, o.v, t);
     }
     return Val(slot, tid(t));
+}
+
+// `T{...}` whose constructor, the one the parser chose, takes the braces as an initializer_list ([dcl.init.list]/3):
+// a call `{}` of a class the lowering builds, with or without a destructor.
+bool Lowering::listTemporaryNode(sema::TypedId id) const {
+    std::uint32_t from = 0;
+    const TypeId t = TypeTable::id(tree_.node(id).type);
+    if (text(id) != "{}" || !temporaryShape(id, from) || !t.valid() || !(constructedClass(T(t)) || destroyedClass(T(t)))) return false;
+    std::string symbol;
+    TypeId sig;
+    bool zero = false;
+    if (!temporaryBuilt_(tree_.node(id).syntax, symbol, sig, zero) || zero || T(sig).params().size() != 2) return false;
+    const Type &p = T(sig).params()[1]->isReference() ? *T(sig).params()[1]->referent()->unqualified() : *T(sig).params()[1]->unqualified();
+    return p.isStructOrUnion() && p.isSpecialization() && p.templateName() == "initializer_list";
+}
+
+// Such a temporary into `slot`: the list's backing array from the parser's record of the braces - the call's parts past
+// the name - and the constructor called with it; with a destructor, alive to the full expression's end ([class.temporary]/3).
+void Lowering::listTemporary(sema::TypedId id, ValueId slot) {
+    const Type &t = *tree_.node(id).type->unqualified();
+    std::string symbol;
+    TypeId sig;
+    bool zero = false;
+    temporaryBuilt_(tree_.node(id).syntax, symbol, sig, zero);
+    constructFromList(slot, symbol, sig, t, false, id, 1);
+    if (t.hasDestructor()) guard(slot, t, temporaryDestructor(t));
+}
+
+// The recorded constructor called on `where` over the braces' values, `args`'s parts from `from`: one per parameter as
+// construct calls it, or - the constructor's one parameter an initializer_list - all of them its backing array.
+void Lowering::constructFromList(ValueId where, const std::string &symbol, TypeId sig, const Type &cls, bool zeroFirst,
+                                 sema::TypedId args, std::uint32_t from) {
+    const Type &ft = T(sig);
+    const Type *p = ft.isFunction() && ft.params().size() == 2 ? ft.params()[1] : nullptr;
+    const Type *il = p != nullptr ? (p->isReference() ? p->referent()->unqualified() : p->unqualified()) : nullptr;
+    if (il == nullptr || !il->isStructOrUnion() || !il->isSpecialization() || il->templateName() != "initializer_list") {
+        construct(where, symbol, sig, cls, zeroFirst, args, from);
+        return;
+    }
+    if (ft.params()[0]->pointee()->unqualified() != cls.unqualified()) outside("a class temporary's constructor of another class");
+    std::vector<sema::TypedId> elems;
+    for (std::uint32_t i = from; i < count(args); i++) elems.push_back(child(args, i));
+    sema::ListBuilt lb;
+    if (listBuilt_) listBuilt_(tree_.node(args).syntax, lb);
+    std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, where))));
+    ops.push_back(initializerListOf(elems, *p, lb));
+    directCall(symbol, sig, ops);
 }
 
 // `V()` or `V(a)` of a polymorphic class with no destructor, bound to a reference: built in a slot of this frame by the
@@ -1426,13 +1598,14 @@ Lowering::Val Lowering::converted(sema::TypedId id, const sema::Resolution &r) {
     return convertedObject(classObject(id), r);
 }
 
-// The conversion function called on the object at `o` - what `converted` does once it has the object's address.
-Lowering::Val Lowering::convertedObject(Val o, const sema::Resolution &r) {
+// The conversion function called on the object at `o` - what `converted` does once it has the object's address; with
+// `object`, a plain class's result comes back as the address of its slot.
+Lowering::Val Lowering::convertedObject(Val o, const sema::Resolution &r, bool object) {
     const Type &ft = T(r.type);
     const Type &self = *ft.params()[0];
     const Type &gives = *ft.returns();
     const bool byRef = gives.isReference() && scalar(*gives.referent());
-    if (!byRef && !scalar(gives)) outside("a conversion function returning '" + gives.describe() + "'");
+    if (!byRef && !scalar(gives) && !(object && plainClass(gives))) outside("a conversion function returning '" + gives.describe() + "'");
     if (T(o.type).isConst() && !self.pointee()->isConst()) outside("a conversion function that drops const");
     Val at(o.v, tid(*types_.pointerTo(&T(o.type))));
     if (T(o.type).unqualified() != self.pointee()->unqualified()) at = toBase(at, tid(self));
@@ -1507,13 +1680,20 @@ bool Lowering::closureNode(sema::TypedId id) const {
            (plainClass(T(f.closure)) || bytesReturned(T(f.closure)));
 }
 
+// One a local is: built in the local's slot by the copy constructors the parser recorded, and destroyed as the local is.
+bool Lowering::closureBuiltNode(sema::TypedId id) const {
+    sema::ClosureFacts f;
+    return syn(id).kind == syntax::Kind::Lambda && closure_ && closure_(tree_.node(id).syntax, f) && f.closure.valid();
+}
+
 // [expr.prim.lambda]/2: the closure a temporary of this frame - each by-copy member the local's value, each by-reference
-// one its address ([expr.prim.lambda]/21) - and the slot's address the lambda's value, as a plain temporary's is.
-Lowering::Val Lowering::closure(sema::TypedId id) {
+// one its address ([expr.prim.lambda]/21) - and the slot's address the lambda's value, as a plain temporary's is; or
+// built `into` a local's slot, a by-copy class member by its copy constructor where the parser recorded one.
+Lowering::Val Lowering::closure(sema::TypedId id, ValueId into) {
     sema::ClosureFacts f;
     closure_(tree_.node(id).syntax, f);
     const Type &cls = *T(f.closure).unqualified();
-    const ValueId slot = entryAlloca(tid(cls), "$closure");
+    const ValueId slot = into.valid() ? into : entryAlloca(tid(cls), "$closure");
     // [expr.prim.lambda]/18: `this` captured is the enclosing member function's own, copied in; a closure's is not.
     if (f.thisOffset >= 0) {
         if (!this_.valid() || !f.thisType.valid()) outside("a lambda capturing a `this` that is not the member function's");
@@ -1545,7 +1725,10 @@ Lowering::Val Lowering::closure(sema::TypedId id) {
         const Type &declared = T(declaredId), &mt = T(c.type);
         const Type &src = *(declared.isReference() ? declared.referent() : &declared)->unqualified();
         const bool byRef = mt.isReference();
-        if (!scalar(src) && !(src.isStructOrUnion() && src.isComplete() && (byRef || plainClass(src) || bytesReturned(src))))
+        const Type *leaf = &src;
+        while (leaf->isArray() && leaf->length() > 0) leaf = leaf->pointee()->unqualified();
+        if (!scalar(src) && !(src.isArray() && !byRef && scalar(*leaf)) &&
+            !(src.isStructOrUnion() && src.isComplete() && (byRef || plainClass(src) || bytesReturned(src) || !c.copy.empty())))
             outside("a lambda capturing what is not a scalar or a class it holds");
         if ((byRef ? mt.referent() : &mt)->unqualified() != &src) outside("a lambda's capture of another type");
         const TypeId held = byRef ? tid(*types_.pointerTo(&src)) : tid(src);
@@ -1553,8 +1736,16 @@ Lowering::Val Lowering::closure(sema::TypedId id) {
         at(g).k = c.offset;
         const ValueId from = declared.isReference() ? load(holder, tid(*types_.pointerTo(declared.referent()))) : holder;
         const ValueId at0 = result(add(Op::Bitcast, tid(*types_.pointerTo(&src)), std::vector<ValueId>(1, from)));
-        if (!byRef && !scalar(src)) copyObject(result(g), at0, src);
-        else store(result(g), byRef ? at0 : load(at0, held));
+        if (!byRef && !c.copy.empty()) {
+            if (!c.copySig.valid() || T(c.copySig).params().size() != 2 || !T(c.copySig).params()[1]->isReference()) outside("a lambda's capture copied by no constructor of the record's shape");
+            std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*T(c.copySig).params()[0]), std::vector<ValueId>(1, result(g)))));
+            ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(T(c.copySig).params()[1]->referent())), std::vector<ValueId>(1, at0))));
+            directCall(c.copy, msFlagged(c.copy, c.copySig, ops, 1), ops);
+        } else if (!byRef && !scalar(src)) {
+            copyObject(result(g), at0, src);
+        } else {
+            store(result(g), byRef ? at0 : load(at0, held));
+        }
     }
     return Val(slot, tid(cls));
 }
@@ -1728,7 +1919,23 @@ ValueId Lowering::addrOf(const std::string &sym, TypeId type) {
     return result(id);
 }
 
+// An object's address by its symbol: a thread_local's the thread's own (Op::TlsAddr), through the ABI's wrapper where the
+// parser's use went through it.
+ValueId Lowering::objectAddr(const std::string &sym, TypeId type, const sema::Resolution &r) {
+    if (!r.isThreadLocal) return addrOf(sym, type);
+    const InstId id = add(Op::TlsAddr, type, std::vector<ValueId>());
+    at(id).sym = sym;
+    at(id).k = r.viaWrapper ? 1 : 0;
+    return result(id);
+}
+
 ValueId Lowering::load(ValueId p, TypeId type) { return result(add(Op::Load, type, std::vector<ValueId>(1, p))); }
+
+ValueId Lowering::op2(Op o, TypeId type, ValueId a, ValueId b) {
+    std::vector<ValueId> ops(1, a);
+    ops.push_back(b);
+    return result(add(o, type, ops));
+}
 
 // [expr]/6: what is read from an object is a value, and a value of a scalar type carries no cv-qualifier.
 Lowering::Val Lowering::readOf(ValueId p, TypeId type) {
@@ -1795,6 +2002,9 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
     module_.functions.push_back(Function());
     fnIndex_ = index;
     locals_.clear();
+    unionSlots_.clear();
+    bitWanted_ = false;
+    bitField_ = Member();
     staticLocals_.clear();
     loops_.clear();
     switches_.clear();
@@ -1819,6 +2029,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
     intoSret_ = false;
     vptrs_.clear();
     key_ = facts.recordKey.empty() ? facts.symbol : facts.recordKey;
+    localAligns_ = facts.localAligns;
     vtt_ = ValueId();
     msFlag_ = ValueId();
     noexceptWrap_ = facts.noexceptWrap;
@@ -1841,11 +2052,11 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
             outside("a return type of '" + rt.describe() + "'");
         // A constructor and a destructor of a class with a base, a vptr or a member that needs building or
         // destroying are M3b.3's: what they do beyond their syntax comes from the class's layout.
-        bool isCtor = false, destroys = false;
+        bool isCtor = false, isDtor = false, destroys = false;
         if (facts.hasThis && facts.thisType.valid() && T(facts.thisType).isPointer()) {
             const Type &cls = *T(facts.thisType).pointee()->unqualified();
             isCtor = facts.isConstructor;
-            const bool isDtor = !text(fnNode).empty() && text(fnNode)[0] == '~';
+            isDtor = !text(fnNode).empty() && text(fnNode)[0] == '~';
             // A destructor of a class with a virtual base destroys its own part: cl's ??1, the virtual bases left to ??_D;
             // Itanium's C2 and D2, handed a VTT, build and destroy theirs, the virtual bases left to C1 and D1.
             const bool msVbaseDtor = isDtor && cls.hasVirtualBase() && target_.microsoftNames();
@@ -1861,8 +2072,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
                     if (!vptrStores_ || !vptrStores_(key_, vptrs_) || vptrs_.empty()) outside("a vptr the parser recorded no store for");
                     if (!vptrs_[0].fromVtt && vptrs_[0].symbol.empty()) outside("a vptr out of a VTT");
                 }
-                // A constructor's guards are memberInits' own; a destructor's - what a throwing body still destroys - are not yet.
-                if (facts.landingPads && !isCtor) outside("a destructor with landing pads that destroys members");
+                // A destructor's members are destroyed after its body and not on its unwinding, as the parser's are.
                 destroys = isDtor;
             }
         }
@@ -1871,7 +2081,8 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         // A constructor's function try block: its handlers follow the body, which is then the last block.
         std::vector<sema::TypedId> ctorHandlers;
         while (facts.ctorTry && n > 1 && syn(child(fnNode, n - 1)).kind == syntax::Kind::Catch) ctorHandlers.insert(ctorHandlers.begin(), child(fnNode, --n));
-        if (facts.ctorTry && (ctorHandlers.empty() || !isCtor || target_.microsoftNames())) outside("a function try block or an exception specification");
+        if (facts.ctorTry && (ctorHandlers.empty() || !(isCtor || isDtor) || target_.microsoftNames()))
+            outside("a function try block or an exception specification");
         const sema::TypedId body = child(fnNode, n - 1);
         if (syn(body).kind != syntax::Kind::Block) outside("a body that is not a block");
         // The parameters, then a constructor's mem-initialisers, then the body. A declarator's array bounds and a
@@ -1967,12 +2178,8 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         const BlockId first = newBlock();
         br(first);
         place(first);
-        // A constructor's function try block: one region over its mem-initialisers and its body, the parts' cleanups in it.
-        TryState ctorTry;
-        if (facts.ctorTry) tryOpen(ctorHandlers, ctorTry);
-        if (isCtor) memberInits(fnNode, inits, n - 1);
-        else if (destroys) storeVptrs();
-        // [except.unexpected]: a throw(...) list is one filter row over the body, under every pad the body makes.
+        // [except.unexpected]: a throw(...) list is one filter row over the body - a constructor's mem-initialisers and its
+        // function try block included - under every pad the body makes.
         if (!facts.specFilter.empty()) {
             if (target_.microsoftNames()) outside("a throw(...) list on the Microsoft ABI");
             Pad spec;
@@ -1982,6 +2189,11 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
             spec.indices.push_back(-1);
             pads_.push_back(spec);
         }
+        // A constructor's function try block: one region over its mem-initialisers and its body, the parts' cleanups in it.
+        TryState ctorTry;
+        if (facts.ctorTry) tryOpen(ctorHandlers, ctorTry);
+        if (isCtor) memberInits(fnNode, inits, n - 1);
+        else if (destroys) storeVptrs();
         // [except.spec]/9: a noexcept body the parser wrapped is under a catch-all, inside the constructor's own parts.
         if (facts.noexceptWrap) {
             if (target_.microsoftNames() || !facts.specFilter.empty()) outside("a noexcept wrap beside another");
@@ -2011,6 +2223,15 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
             if (wrap.block.valid()) noexceptAbort(wrap);
         }
         closeScope(0, true);
+        // A destructor's function try block covers the members and bases it destroys after its body.
+        if (destroys && facts.ctorTry) {
+            place(returnBlock_);
+            destroyMembers(*T(thisType_).pointee()->unqualified());
+            destroyBases(*T(thisType_).pointee()->unqualified());
+            br(ret);
+            returnBlock_ = ret;
+            destroys = false;
+        }
         if (facts.ctorTry) tryClose(ctorTry, true);
         if (!facts.specFilter.empty()) {
             const Pad spec = pads_.back();
@@ -2467,9 +2688,11 @@ void Lowering::namedReturnLocal(sema::TypedId var, ValueId slot, const Type &t) 
     const Type &ft = T(sig);
     if (ft.params().empty() || ft.params()[0]->pointee()->unqualified() != &c) outside("a named return value's constructor of another class");
     std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, slot))));
+    openFull();     // [class.temporary]/4: the arguments' temporaries die at the declarator's end, before it is alive
     if (v.count != 0) arguments(var, 0, ft, 1, false, ops);
     else if (ft.params().size() != 1) outside("a named return value's default constructor of parameters");
     directCall(symbol, sig, ops);
+    closeFull();
     if (!c.hasDestructor()) return;
     if (handlerDepth_ != 0) outside("a named return value inside a handler");
     const std::string dtor = destructor_ ? destructor_(c.id()) : std::string();
@@ -2516,6 +2739,7 @@ void Lowering::returnCopied(sema::TypedId id, sema::TypedId value) {
     } else if (form == 4) {
         ValueId built;
         Val a;
+        openFull();     // [stmt.return]/2: the copy's operand's temporaries die after it, before the locals do
         if (polymorphicTemporary(value, built)) a = Val(built, TypeTable::id(tree_.node(value).type->unqualified()));
         else if (!classObjectNode(value)) outside("a class copied on return from what is not an object");
         else a = classObject(value);
@@ -2528,6 +2752,7 @@ void Lowering::returnCopied(sema::TypedId id, sema::TypedId value) {
         ops.push_back(result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, sret_))));
         ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(ft.params()[1]->referent())), std::vector<ValueId>(1, a.v))));
         directCall(symbol, sig, ops);
+        closeFull();
     } else if (form == 2) {
         // `return f();`: the callee builds the caller's object through this function's own result pointer.
         if (syn(value).kind != syntax::Kind::Call && !operatorCalls(value)) outside("a return built in place by what is not a call");
@@ -2652,18 +2877,26 @@ void Lowering::rangeForStmt(sema::TypedId id) {
     const sema::TypedId range = child(id, 0), var = child(id, 1);
     const TypeId rid = TypeTable::id(tree_.node(range).type), vid = TypeTable::id(tree_.node(var).type);
     sema::Resolution rb, re;
+    std::vector<sema::Resolution> ops3;      // a class iterator's `!=`, `*` and `++`
     const bool calls = rid.valid() && T(rid).unqualified()->isStructOrUnion() && rangeCalls_ &&
-                       rangeCalls_(tree_.node(id).syntax, rb, re);
+                       rangeCalls_(tree_.node(id).syntax, rb, re, ops3);
     if (!calls && (!rid.valid() || !T(rid).isArray() || T(rid).length() <= 0)) outside("a range-based for over what is not an array");
     // A class range that is a temporary - a call's result, `T(...)` - lives to the loop's end, [class.temporary]/5.
     const bool temporary = calls && !isLvalueNode(range) && classObjectNode(range);
     if (!isLvalueNode(range) && !temporary) outside("a range-based for over what is not an object");
     TypeId iter;
+    // [stmt.ranged]/1 with a class iterator: copied by its bytes, walked by its own `!=`, `*` and `++` the parser recorded.
+    const bool classIter = calls && rb.type.valid() && T(rb.type).isFunction() && T(rb.type).returns()->isStructOrUnion() && ops3.size() == 3;
     if (calls) {
-        if (rb.type.valid() && T(rb.type).isFunction() && T(rb.type).returns()->isPointer()) iter = tid(*T(rb.type).returns()->unqualified());
-        if (!iter.valid()) outside("a range-based for whose begin is not a pointer");
+        if (rb.type.valid() && T(rb.type).isFunction() && (T(rb.type).returns()->isPointer() || classIter))
+            iter = tid(*T(rb.type).returns()->unqualified());
+        if (!iter.valid()) outside("a range-based for whose begin is neither a pointer nor a plain class with its operators recorded");
     }
-    const Type &rt = T(rid), &elem = calls ? *T(iter).pointee() : *rt.pointee();
+    const Type *gives = classIter && ops3[1].type.valid() && T(ops3[1].type).isFunction() ? T(ops3[1].type).returns() : nullptr;
+    if (classIter && (gives == nullptr || !(gives->isReference() || scalar(*gives))))
+        outside("a range-based for whose iterator's '*' gives no reference or scalar");
+    const bool byValue = classIter && !gives->isReference();      // `*__b` a scalar value rather than an element
+    const Type &rt = T(rid), &elem = classIter ? (byValue ? *gives : *gives->referent()) : calls ? *T(iter).pointee() : *rt.pointee();
     if (!vid.valid() || !elem.isComplete() || (!calls && !scalar(elem) && !plainClass(elem) && !(elem.isArray() && T(vid).isReference())))
         outside("a range-based for over an array of '" + elem.describe() + "'");
     const Type &vt = T(vid);
@@ -2671,7 +2904,7 @@ void Lowering::rangeForStmt(sema::TypedId id) {
     const bool copied = plainClass(vt) && vt.unqualified() == elem.unqualified();
     TypeId slotType;
     if (vt.isReference()) {
-        if (vt.referent()->unqualified() != elem.unqualified() || (elem.isConst() && !vt.referent()->isConst()))
+        if (byValue || vt.referent()->unqualified() != elem.unqualified() || (elem.isConst() && !vt.referent()->isConst()))
             outside("a range-based for's reference of another type");
         slotType = tid(*types_.pointerTo(vt.referent()));
     } else if (copied) {
@@ -2694,44 +2927,94 @@ void Lowering::rangeForStmt(sema::TypedId id) {
                            live_.size() == scope + 1 && T(live_.back().cls).unqualified() == &rc && !live_.back().built.valid() && !live_.back().when.valid()))
             outside("a range-based for whose range's full expression builds more than its range");
         if (temporary) full_.pop_back();
-        TypeId same = iter;
-        first = Val(rangeEnd(rb, object, same), iter);
-        past = rangeEnd(re, object, same);
+        if (classIter) {
+            first = iteratorCall(rb, std::vector<Val>(1, object), iter);
+            past = iteratorCall(re, std::vector<Val>(1, object), iter).v;
+        } else {
+            TypeId same = iter;
+            first = Val(rangeEnd(rb, object, same), iter);
+            past = rangeEnd(re, object, same);
+        }
     } else {
         first = decay(lvalue(range));
         const InstId e = add(Op::Gep, first.type, std::vector<ValueId>(1, first.v));
         at(e).k = rt.length() * elem.size(target_);
         past = result(e);
     }
-    const ValueId cursor = entryAlloca(first.type, "$range");
-    store(cursor, first.v);
+    const ValueId cursor = classIter ? ValueId() : entryAlloca(first.type, "$range");
+    if (!classIter) store(cursor, first.v);
     const ValueId slot = entryAlloca(slotType, text(var));
     locals_[tree_.node(var).syntax.v] = std::make_pair(slot, vid);
     const BlockId cond = newBlock(), body = newBlock(), step = newBlock(), exit = newBlock();
     br(cond);
     place(cond);
-    std::vector<ValueId> ops;
-    ops.push_back(load(cursor, first.type));
-    ops.push_back(past);
-    const InstId c = add(Op::ICmp, tid(*types_.get(Kind::Bool)), ops);
-    at(c).cc = Cmp::Ne;
-    condbr(result(c), body, exit);
+    const Val bIt(first.v, iter), eIt(past, iter);
+    if (classIter) {
+        std::vector<Val> both(1, bIt);
+        both.push_back(eIt);
+        condbr(truth(iteratorCall(ops3[0], both, TypeId())).v, body, exit);
+    } else {
+        std::vector<ValueId> ops;
+        ops.push_back(load(cursor, first.type));
+        ops.push_back(past);
+        const InstId c = add(Op::ICmp, tid(*types_.get(Kind::Bool)), ops);
+        at(c).cc = Cmp::Ne;
+        condbr(result(c), body, exit);
+    }
     place(body);
-    const ValueId here = load(cursor, first.type);
+    const Val got = classIter ? iteratorCall(ops3[1], std::vector<Val>(1, bIt), TypeId()) : Val(load(cursor, first.type), first.type);
+    const ValueId here = got.v;
     if (vt.isReference()) store(slot, result(add(Op::Bitcast, slotType, std::vector<ValueId>(1, here))));
     else if (copied) copyObject(slot, here, T(slotType));
-    else store(slot, convert(readOf(here, tid(elem)), slotType).v);
+    else store(slot, convert(byValue ? got : readOf(here, tid(elem)), slotType).v);
     loops_.push_back(Loop{ exit, step, handlerDepth_, live_.size() });
     scopedStmt(child(id, 2));
     loops_.pop_back();
     br(step);
     place(step);
-    const InstId next = add(Op::Gep, first.type, std::vector<ValueId>(1, load(cursor, first.type)));
-    at(next).k = elem.size(target_);
-    store(cursor, result(next));
+    if (classIter) {
+        iteratorCall(ops3[2], std::vector<Val>(1, bIt), TypeId());
+    } else {
+        const InstId next = add(Op::Gep, first.type, std::vector<ValueId>(1, load(cursor, first.type)));
+        at(next).k = elem.size(target_);
+        store(cursor, result(next));
+    }
     br(cond);
     place(exit);
     closeScope(scope);
+}
+
+// One of a class-iterator range-for's calls the parser recorded - begin or end on the range, or the iterator's `!=`, `*`,
+// `++` - each object given by its address, as `this` or a reference parameter of exactly its class; `cls` a class result,
+// built in a slot of the loop's scope that destroys it, with a destructor, at the loop's end and on unwinding.
+Lowering::Val Lowering::iteratorCall(const sema::Resolution &r, const std::vector<Val> &objects, TypeId cls) {
+    if (r.what != sema::Resolution::Call || r.indirect || r.symbol.empty() || r.vslot >= 0 || !r.type.valid() || !T(r.type).isFunction())
+        outside("a range-based for's iterator call that is not a direct call");
+    const Type &ft = T(r.type);
+    if (ft.isVariadicFn() || ft.params().size() != objects.size()) outside("a range-based for's iterator call of another shape");
+    if (cls.valid() && ft.returns()->unqualified() != T(cls).unqualified()) outside("a range-based for whose begin and end differ in type");
+    std::vector<ValueId> ops;
+    for (std::size_t k = 0; k < objects.size(); k++) {
+        const Type &p = *ft.params()[k], &o = T(objects[k].type);
+        const Type *to = p.isPointer() && (k == 0 && r.hasThis) ? p.pointee() : p.isReference() ? p.referent() : nullptr;
+        if (to == nullptr || to->unqualified() != o.unqualified() || (o.isConst() && !to->isConst()))
+            outside("a range-based for's iterator call on another class");
+        ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(to)), std::vector<ValueId>(1, objects[k].v))));
+    }
+    CallInfo info;
+    info.symbol = r.symbol;
+    info.hasThis = r.hasThis;
+    if (!cls.valid()) return callTail(r.type, info, ops, ops.size(), std::vector<sema::TypedId>(), false);
+    const Type &c = *T(cls).unqualified();
+    const ValueId slot = entryAlloca(tid(c), "$iterator");
+    intoNow_ = static_cast<int>(F().frame.size() - 1);
+    callTail(r.type, info, ops, ops.size(), std::vector<sema::TypedId>(), false);
+    if (c.hasDestructor()) {
+        const std::string dtor = destructor_ ? destructor_(c.id()) : std::string();
+        if (dtor.empty()) outside("a range-based for's iterator whose destructor the parser recorded none for");
+        guard(slot, c, dtor);
+    }
+    return Val(slot, tid(c));
 }
 
 void Lowering::switchStmt(sema::TypedId id) {
@@ -2781,9 +3064,11 @@ void Lowering::declaration(sema::TypedId id) {
         if (r.what == sema::Resolution::Local && !r.symbol.empty()) {
             // [stmt.dcl]/4: a static local is the global the parser laid down, its address taken where it is named;
             // one built at run time under a guard, a thread_local and a reference stay outside.
-            if (r.isThreadLocal || threadLocalGlobal(r.symbol)) outside("a thread_local");
+            const bool tls = r.isThreadLocal || threadLocalGlobal(r.symbol);
+            if (tls && v.type->isReference()) outside("a thread_local reference");
             if (v.type->isReference() && !referable(*v.type->referent())) outside("a static reference to '" + v.type->referent()->describe() + "'");
             if (!guarded_) outside("a static local built at run time");
+            if (guarded_(r.symbol) && tls) outside("a thread_local built at run time");   // its guard is a thread's, not __cxa_guard
             if (guarded_(r.symbol)) { guardedStatic(var, r.symbol); continue; }
             if (v.type->isStructOrUnion() && v.type->unqualified()->hasDestructor()) outside("a static local with a destructor");
             staticLocals_[v.syntax.v] = std::make_pair(r.symbol, tid(*v.type));
@@ -2817,14 +3102,15 @@ void Lowering::declaration(sema::TypedId id) {
             namedReturnLocal(var, sret_, t);
             continue;
         }
-        const ValueId slot = entryAlloca(slotType, text(var));
+        const ValueId slot = localAlloca(var, slotType);
         locals_[v.syntax.v] = std::make_pair(slot, tid(t));
         // A pointer's or a reference's declarator may write a bound, `int (*p)[3]`: its value follows the bounds.
         const std::uint32_t first = v.bounds;
         if (t.isReference()) {
             if (v.count != first + 1) outside("a reference of " + std::to_string(v.count) + " parts");
             if (boundLocal(child(var, first), t, slot)) continue;
-            Val b = destroyedTemporary(child(var, first)) ? extendedTemporary(child(var, first)) : lvalue(child(var, first));
+            const sema::TypedId init = child(var, first);
+            Val b = destroyedTemporary(init) ? extendedTemporary(init) : destroyedResult(init) ? extendedResult(init) : lvalue(init);
             // [dcl.init.ref]/5: a class lvalue bound to a reference to its base binds the base subobject.
             if (T(b.type).isStructOrUnion() && t.referent()->isStructOrUnion() && T(b.type).unqualified() != t.referent()->unqualified())
                 b = baseOfObject(b, t);
@@ -2857,12 +3143,17 @@ void Lowering::declaration(sema::TypedId id) {
 // default constructor the parser chose - where it chose one - and alive to the scope's end, the last built destroyed first.
 void Lowering::builtArrayLocal(sema::TypedId var, ValueId slot, const Type &et, long long elems) {
     const sema::TypedNode &v = tree_.node(var);
-    if (v.initForm != 0) outside("an array of a class initialised from a list");
     const bool dies = et.hasDestructor();
     if (elems > (dies ? 16 : 64)) outside("an array of more elements than the lowering builds one by one");
     if (dies && handlerDepth_ != 0) outside("a local with a destructor inside a handler");
     const std::string dtor = dies && destructor_ ? destructor_(et.id()) : std::string();
     if (dies && dtor.empty()) outside("an array whose elements' destructor the parser recorded none for");
+    if (v.initForm != 0) {
+        sema::ListBuilt lb;
+        if (!listBuilt_ || !listBuilt_(v.syntax, lb)) outside("an array of a class initialised from a list the parser recorded none for");
+        listArray(var, slot, et, elems, lb, dtor);
+        return;
+    }
     std::string symbol;
     TypeId sig;
     bool defaulted = false, zeroed = false;
@@ -2877,6 +3168,67 @@ void Lowering::builtArrayLocal(sema::TypedId var, ValueId slot, const Type &et, 
         at(g).k = k * et.size(target_);
         if (built) directCall(symbol, sig, std::vector<ValueId>(1, result(g)));
         if (dies) guard(result(g), et, dtor);
+    }
+}
+
+// [dcl.init.aggr]/2 for an array of a class from a braced list, as constructLocalArrayFromList built it: each element from
+// the `var` node's parts the record gives it - a trivially copyable object's bytes, or the constructor the parser chose,
+// zeroed first for `{}` - then the tail by the default constructor; each a full expression, alive once built where `dtor` is.
+void Lowering::listArray(sema::TypedId var, ValueId base, const Type &et, long long elems, const sema::ListBuilt &lb,
+                         const std::string &dtor) {
+    const sema::TypedNode &v = tree_.node(var);
+    const TypeId self = types_.pointerTo(et.id());
+    std::uint32_t used = v.bounds;
+    if (static_cast<long long>(lb.elems.size()) > elems) outside("an array's list of more elements than the array holds");
+    for (std::size_t k = 0; k < lb.elems.size(); k++) {
+        const sema::ListElement &e = lb.elems[k];
+        if ((e.count != 0 && v.bounds + e.first != used) || used + e.count > v.count) outside("an array's list whose parts the record does not match");
+        const InstId g = add(Op::Gep, self, std::vector<ValueId>(1, base));
+        at(g).k = static_cast<long long>(k) * et.size(target_);
+        openFull();
+        if (e.bytes) {
+            if (e.count != 1 || !objectNode(child(var, used))) outside("an array element copied from what is not an object");
+            const Val o = object(child(var, used));
+            if (T(o.type).unqualified() != et.unqualified()) outside("an array element copied from another type");
+            copyObject(result(g), o.v, et);
+        } else {
+            if (e.defaulted) outside("an array element built with default arguments");
+            if (e.symbol.empty() || !e.signature.valid()) outside("an array element built by no constructor the parser recorded");
+            const Type &ft = T(e.signature);
+            if (!ft.isFunction() || ft.params().empty() || ft.params()[0]->pointee()->unqualified() != et.unqualified())
+                outside("an array element's constructor of another class");
+            if (ft.params().size() != e.count + 1) outside("an array element's constructor of another arity");
+            if (e.zeroed) {
+                const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, result(g)));
+                at(z).k = et.size(target_);
+            }
+            std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, result(g)))));
+            std::vector<sema::TypedId> args;
+            for (std::uint32_t i = 0; i < e.count; i++) args.push_back(child(var, used + i));
+            argumentList(ft, 1, false, args, false, ops);
+            directCall(e.symbol, e.signature, ops);
+        }
+        closeFull();
+        used += e.count;
+        if (!dtor.empty()) guard(result(g), et, dtor);
+    }
+    if (used != v.count) outside("an array's list with parts its record does not place");
+    if (static_cast<long long>(lb.elems.size()) == elems) return;
+    // The tail: [dcl.init.aggr]/7, each element value-initialised - the default constructor, zeroed first where it is implicit.
+    if (lb.tail.empty() || !lb.tailSig.valid()) outside("an array's tail built by no constructor the parser recorded");
+    if (lb.tailDefaulted) outside("an array's tail built with default arguments");
+    const Type &ft = T(lb.tailSig);
+    if (!ft.isFunction() || ft.params().size() != 1 || ft.params()[0]->pointee()->unqualified() != et.unqualified())
+        outside("an array's tail constructor of another class");
+    for (long long k = static_cast<long long>(lb.elems.size()); k < elems; k++) {
+        const InstId g = add(Op::Gep, self, std::vector<ValueId>(1, base));
+        at(g).k = k * et.size(target_);
+        if (lb.tailZeroed) {
+            const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, result(g)));
+            at(z).k = et.size(target_);
+        }
+        directCall(lb.tail, lb.tailSig, std::vector<ValueId>(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, result(g))))));
+        if (!dtor.empty()) guard(result(g), et, dtor);
     }
 }
 
@@ -2979,8 +3331,8 @@ bool Lowering::isLvalueNode(sema::TypedId id) const {
         if (tree_.node(id).decl.valid()) return true;
         const sema::Resolution &r = tree_.resolution(id);
         // A static data member with storage is an object as a global is; a folded one has none.
-        return r.what == sema::Resolution::Global || r.what == sema::Resolution::Member ||
-               (r.what == sema::Resolution::StaticMember && r.serial != 1);
+        return r.what == sema::Resolution::Global || r.what == sema::Resolution::Member || blockExtern(r) ||
+               (r.what == sema::Resolution::StaticMember && r.serial != 1) || anonymousUnionMember(id);
     }
     case syntax::Kind::StringLit: case syntax::Kind::Member: case syntax::Kind::Subscript: return true;
     case syntax::Kind::Sizeof: return typeidNode(id);
@@ -2994,11 +3346,16 @@ bool Lowering::isLvalueNode(sema::TypedId id) const {
     }
     case syntax::Kind::Paren: return count(id) == 1 && isLvalueNode(child(id, 0));
     case syntax::Kind::Binary: return dataMemberPointerNode(id);
-    case syntax::Kind::Cast: return referenceCast(id) && isLvalueNode(child(id, 0));
+    // An xvalue too: `static_cast<M &&>(M(6))` names the object its class prvalue is materialised in.
+    case syntax::Kind::Cast:
+        if (dynamicReference(id)) return isLvalueNode(child(id, 0));
+        return referenceCast(id) && (isLvalueNode(child(id, 0)) || (tree_.node(child(id, 0)).type != nullptr &&
+                                     tree_.node(child(id, 0)).type->isStructOrUnion() && classObjectNode(child(id, 0))));
     case syntax::Kind::Conditional:
         return count(id) == 3 && isLvalueNode(child(id, 1)) && isLvalueNode(child(id, 2)) &&
                tree_.node(child(id, 1)).type != nullptr && tree_.node(child(id, 1)).type == tree_.node(child(id, 2)).type;
     case syntax::Kind::Call: {
+        if (baseAssignNode(id)) return true;
         const sema::Resolution &r = tree_.resolution(id);
         return r.what == sema::Resolution::Call && r.type.valid() && T(r.type).isFunction() &&
                (T(r.type).returns()->isReference() || plainClass(*T(r.type).returns()) || bytesReturned(*T(r.type).returns()));
@@ -3077,9 +3434,10 @@ Lowering::Val Lowering::lvalue(sema::TypedId id) {
     }
     case syntax::Kind::Cast: {
         if (temporaryNode(id)) return temporary(id);     // `(T)v` through T's converting constructor: its slot
+        if (dynamicReference(id)) return dynamicCastReference(id);
         // A cast to a reference names its operand's object: the same type, const or an rvalue's && aside - a class
         // prvalue's the object it is materialised in ([class.temporary]).
-        const bool prvalue = !isLvalueNode(id) && referenceCast(id) && tree_.node(child(id, 0)).type != nullptr &&
+        const bool prvalue = !isLvalueNode(child(id, 0)) && referenceCast(id) && tree_.node(child(id, 0)).type != nullptr &&
                              tree_.node(child(id, 0)).type->isStructOrUnion() && classObjectNode(child(id, 0));
         if (!isLvalueNode(id) && !prvalue) outside("a cast to a reference of what is not an object");
         // static_cast<T &&> is noted as T, an xvalue; a reinterpret_cast to a reference is unrecorded, its node typed T.
@@ -3116,8 +3474,8 @@ Lowering::Val Lowering::lvalue(sema::TypedId id) {
     }
     case syntax::Kind::Assign: {
         Val o;
-        if (isLvalueNode(id)) {
-            if (!classAssign(id, o) || !o.v.valid()) outside("an assignment that is no lvalue");
+        if (classAssign(id, o)) {
+            if (!o.v.valid()) outside("an assignment that is no lvalue");
             return o;
         }
         // [expr.ass]/1: a scalar assignment is an lvalue naming its left operand, `return a = b;` into an `int &`.
@@ -3128,6 +3486,7 @@ Lowering::Val Lowering::lvalue(sema::TypedId id) {
     }
     case syntax::Kind::Call: {
         if (temporaryNode(id)) return temporary(id);
+        if (baseAssignNode(id)) return baseAssigned(id);
         const Val r = call(id);
         if (!T(r.type).isPointer()) outside("a call that is no lvalue");
         return Val(r.v, tid(*T(r.type).pointee()));
@@ -3160,7 +3519,9 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
         break;
     case syntax::Kind::StringLit: case syntax::Kind::Member: case syntax::Kind::Subscript: {
         if (s.kind == syntax::Kind::Member && pseudoDestructor(id, tree_.resolution(id))) { e = Val(ValueId(), tid(*types_.get(Kind::Void))); break; }
-        const Val a = lvalue(id);
+        Member bf;
+        const Val a = fieldAddress(id, bf);
+        if (bf.isBitField()) { e = bitRead(a, bf); break; }
         e = decay(Val(a.v, a.type));
         if (T(e.type).isPointer() && (T(a.type).isArray() || T(a.type).isFunction())) break;
         if (!scalar(T(a.type))) outside("a read of an object of type '" + T(a.type).describe() + "'");
@@ -3208,6 +3569,7 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
     case syntax::Kind::Conditional: e = conditional(id); break;
     case syntax::Kind::Call: {
         if (vaBuiltinNode(id)) { e = vaBuiltin(id); break; }
+        if (baseAssignNode(id)) { baseAssigned(id); e = Val(); break; }
         if (temporaryNode(id)) { temporary(id); e = Val(); break; }      // a class value as a statement: built, unread
         e = call(id);
         const sema::Resolution &r = tree_.resolution(id);
@@ -3317,7 +3679,8 @@ Lowering::Val Lowering::nameAddress(sema::TypedId id) {
             const TypeId pt = tid(*types_.pointerTo(T(s->second.second).referent()));
             return Val(load(addrOf(s->second.first, tid(*types_.pointerTo(&T(pt)))), pt), tid(*T(s->second.second).referent()));
         }
-        if (s != staticLocals_.end()) return Val(addrOf(s->second.first, tid(*types_.pointerTo(&T(s->second.second)))), s->second.second);
+        if (s != staticLocals_.end())   // a thread_local's address by the name's record, which says whether through its wrapper
+            return Val(objectAddr(s->second.first, tid(*types_.pointerTo(&T(s->second.second))), tree_.resolution(id)), s->second.second);
         std::map<std::uint32_t, std::pair<ValueId, TypeId> >::const_iterator l = locals_.find(n.decl.v);
         if (l == locals_.end()) outside("a name whose local the lowering did not declare");
         const sema::Resolution &r = tree_.resolution(id);
@@ -3330,23 +3693,24 @@ Lowering::Val Lowering::nameAddress(sema::TypedId id) {
         return Val(l->second.first, l->second.second);
     }
     const sema::Resolution &r = tree_.resolution(id);
+    if (anonymousUnionMember(id)) return unionMemberAddress(id);
     if (r.what == sema::Resolution::Member) return memberOfThis(id);
     if (r.what == sema::Resolution::StaticMember && r.serial == 1) outside("a folded static member, which has no storage");
-    if (r.what != sema::Resolution::Global && r.what != sema::Resolution::StaticMember) outside("the name '" + text(id) + "' is no object");
+    if (r.what != sema::Resolution::Global && r.what != sema::Resolution::StaticMember && !blockExtern(r)) outside("the name '" + text(id) + "' is no object");
     return globalAddress(r);
 }
 
 // A global's or a static member's object: its symbol's address, or a reference's referent.
 Lowering::Val Lowering::globalAddress(const sema::Resolution &r) {
-    if (r.isThreadLocal) outside("a thread_local");
     if (!r.type.valid()) outside("a global not typed");
     const Type &t = T(r.type);
+    if (t.isReference() && r.isThreadLocal) outside("a thread_local reference");
     if (t.isReference()) {
         const TypeId pt = tid(*types_.pointerTo(t.referent()));
         if (!referable(*t.referent())) outside("a reference to '" + t.referent()->describe() + "'");
         return Val(load(addrOf(r.symbol, tid(*types_.pointerTo(&T(pt)))), pt), tid(*t.referent()));
     }
-    return Val(addrOf(r.symbol, tid(*types_.pointerTo(&t))), r.type);
+    return Val(objectAddr(r.symbol, tid(*types_.pointerTo(&t)), r), r.type);
 }
 
 Lowering::Val Lowering::name(sema::TypedId id) {
@@ -3369,11 +3733,14 @@ Lowering::Val Lowering::name(sema::TypedId id) {
             const TypeId ut = tid(*T(r.type).unqualified());
             return Val(iconst(ut, r.value), ut);
         }
-        if (r.what != sema::Resolution::Global && r.what != sema::Resolution::Member && r.what != sema::Resolution::StaticMember)
+        if (r.what != sema::Resolution::Global && r.what != sema::Resolution::Member && r.what != sema::Resolution::StaticMember &&
+            !blockExtern(r) && !anonymousUnionMember(id))
             outside("the name '" + text(id) + "', " + (r.what == sema::Resolution::StaticMember ? "a static member"
                                                         : r.what == sema::Resolution::This ? "this" : "of another kind"));
     }
-    const Val a = nameAddress(id);
+    Member bf;
+    const Val a = fieldAddress(id, bf);
+    if (bf.isBitField()) return bitRead(a, bf);
     const Type &t = T(a.type);
     if (t.isArray() || t.isFunction()) return decay(Val(a.v, a.type));
     // [conv.lval]/2: a std::nullptr_t object read is a null pointer constant - no value is fetched.
@@ -3396,6 +3763,8 @@ Lowering::Val Lowering::memberAddress(sema::TypedId id) {
         if (sr.serial == 1) outside("a folded static member, which has no storage");
         return globalAddress(sr);
     }
+    const bool wantBits = bitWanted_;
+    bitWanted_ = false;
     if (mname.empty() || mname.find_first_of(":~<") != std::string::npos || mname.compare(0, 8, "template") == 0) outside("a member named '" + mname + "'");
     Val object;
     if (arrow) {
@@ -3416,6 +3785,7 @@ Lowering::Val Lowering::memberAddress(sema::TypedId id) {
         if (ms[i].name == sr.symbol && ms[i].offset == sr.serial && ++matches == 1) qualified = i;
     if (!named && matches != 1) outside("a member '" + mname + "' that is not a data member");
     const Member &m = named ? *obj.unqualified()->findMember(mname) : ms[qualified];
+    if (wantBits && m.width != 0 && !(m.ambiguous && named) && m.inVirtualBase == nullptr) return bitUnit(object.v, m, obj.isConst() && !m.isMutable);
     if ((m.ambiguous && named) || m.width != 0) outside("a member '" + mname + "' the lowering does not reach");     // a qualifier settles it
     if (m.type->isReference()) return referenceMember(object.v, *obj.unqualified(), m);
     const Type &mt = obj.isConst() && !m.isMutable ? *types_.withConst(m.type) : *m.type;
@@ -3449,7 +3819,10 @@ Lowering::Val Lowering::referenceMember(ValueId object, const Type &cls, const M
 // `this`, its type the access's. One reached through another object - a lambda's captured `this` - is refused.
 Lowering::Val Lowering::memberOfThis(sema::TypedId id) {
     const sema::Resolution &r = tree_.resolution(id);
+    const bool wantBits = bitWanted_;
+    bitWanted_ = false;
     if (!this_.valid()) outside("a member named where there is no `this`");
+    if (text(id).find("::") != std::string::npos) return qualifiedMemberOfThis(id);
     Val self(this_, thisType_);
     // [expr.prim.lambda]/7: in a closure's body a name of the enclosing class is reached through the `this` it captured.
     if (T(thisType_).pointee()->unqualified()->findMember(text(id)) == nullptr) {
@@ -3460,6 +3833,8 @@ Lowering::Val Lowering::memberOfThis(sema::TypedId id) {
     if (cls.findMember(text(id)) == nullptr) outside("a member reached through another object's `this`");
     const Member &m = *cls.findMember(text(id));
     if (m.offset != r.serial || !r.type.valid()) outside("a member reached through another object's `this`");
+    if (wantBits && m.width != 0 && !m.ambiguous && m.inVirtualBase == nullptr)
+        return bitUnit(self.v, m, T(self.type).pointee()->isConst() && !m.isMutable);
     if (m.ambiguous || m.width != 0) outside("a member '" + text(id) + "' the lowering does not reach");
     if (m.type->isReference()) return referenceMember(self.v, cls, m);
     const Type &mt = T(r.type);
@@ -3468,6 +3843,55 @@ Lowering::Val Lowering::memberOfThis(sema::TypedId id) {
     const InstId g = add(Op::Gep, tid(*types_.pointerTo(&mt)), std::vector<ValueId>(1, self.v));
     at(g).k = m.offset;
     return Val(result(g), r.type);
+}
+
+// [class.bit]: a bit-field is `width` bits from `bitOffset` up in the unit of its declared type at its offset, read and
+// written in 64 bits as the walker's bitFieldExtract and bitFieldInsert are. `bf` is the bit-field the access named, if any.
+Lowering::Val Lowering::fieldAddress(sema::TypedId id, Member &bf) {
+    const syntax::Kind k = syn(id).kind;
+    bitWanted_ = k == syntax::Kind::Member || k == syntax::Kind::Name;
+    bitField_ = Member();
+    const Val a = lvalue(id);
+    bf = bitField_;
+    bitWanted_ = false;
+    bitField_ = Member();
+    return a;
+}
+
+// The unit as an unsigned integer of its size, so that a bool's or an enumeration's bits are kept as they lie.
+Lowering::Val Lowering::bitUnit(ValueId object, const Member &m, bool constant) {
+    const int size = m.type->size(target_);
+    const Kind raw = size == 1 ? Kind::UChar : size == 2 ? Kind::UShort : size == 4 ? Kind::UInt : Kind::ULongLong;
+    const TypeId u = tid(constant ? *types_.withConst(types_.get(raw)) : *types_.get(raw));
+    const InstId g = add(Op::Gep, tid(*types_.pointerTo(&T(u))), std::vector<ValueId>(1, object));
+    at(g).k = m.offset;
+    bitField_ = m;
+    return Val(result(g), u);
+}
+
+Lowering::Val Lowering::bitRead(const Val &unit, const Member &m) {
+    const bool sign = m.type->isSigned(target_);
+    const TypeId w = tid(*types_.get(sign ? Kind::LongLong : Kind::ULongLong));
+    ValueId v = convert(readOf(unit.v, unit.type), w).v;
+    if (64 - m.bitOffset - m.width > 0) v = op2(Op::Shl, w, v, iconst(w, 64 - m.bitOffset - m.width));
+    if (64 - m.width > 0) v = op2(sign ? Op::AShr : Op::LShr, w, v, iconst(w, 64 - m.width));
+    return convert(Val(v, w), tid(*m.type->unqualified()), true);
+}
+
+// `o.b = v` or `o.b op= v`: the unit's other bits kept, the value's low `width` bits put in; yields what the field holds.
+Lowering::Val Lowering::bitAssign(sema::TypedId id, const Val &unit, const Member &m) {
+    if (T(unit.type).isConst()) outside("an assignment to a const bit-field");
+    const std::string &op = text(id);
+    const TypeId decl = tid(*m.type->unqualified()), w = tid(*types_.get(Kind::ULongLong));
+    const Val value = convert(op == "=" ? exprTo(child(id, 1), decl)
+                                        : arithmetic(op.substr(0, op.size() - 1), bitRead(unit, m), expr(child(id, 1))), decl);
+    const unsigned long long ones = m.width == 64 ? ~0ULL : (1ULL << m.width) - 1;
+    ValueId put = op2(Op::And, w, convert(value, w, true).v, iconst(w, static_cast<long long>(ones)));
+    if (m.bitOffset != 0) put = op2(Op::Shl, w, put, iconst(w, m.bitOffset));
+    const ValueId kept = op2(Op::And, w, convert(readOf(unit.v, unit.type), w).v,
+                             iconst(w, static_cast<long long>(~(ones << m.bitOffset))));
+    store(unit.v, convert(Val(op2(Op::Or, w, kept, put), w), tid(*T(unit.type).unqualified()), true).v);
+    return bitRead(unit, m);
 }
 
 // The address of a virtual base of the object at `object`, of class `owner`, on Itanium: moved by the vbase_offset
@@ -3533,6 +3957,69 @@ Lowering::Val Lowering::functorMember(sema::TypedId head, const Type &self) {
     const InstId g = add(Op::Gep, m.type->isReference() ? tid(*types_.pointerTo(&T(pt))) : pt, std::vector<ValueId>(1, this_));
     at(g).k = m.offset;
     return Val(m.type->isReference() ? load(result(g), pt) : result(g), pt);
+}
+
+// [class.union.anon]/1: a member of an anonymous union in a block names the union's object - a static one the global
+// the parser laid down under its symbol, any other a slot of its own made where a member is first named.
+bool Lowering::anonymousUnionMember(sema::TypedId id) const {
+    const sema::Resolution &r = tree_.resolution(id);
+    if (syn(id).kind != syntax::Kind::Name || tree_.node(id).decl.valid() || r.what != sema::Resolution::Local || r.isThreadLocal ||
+        !r.type.valid() || T(r.type).isReference())
+        return false;
+    if (r.symbol.empty()) return r.owner.valid() && T(r.owner).kind() == Kind::Union && T(r.owner).findMember(text(id)) != nullptr;
+    for (const ::Global &g : program_.globals)
+        if (g.symbol == r.symbol) return !g.isThreadLocal && g.type->kind() == Kind::Union && g.type->findMember(text(id)) != nullptr;
+    return false;
+}
+
+Lowering::Val Lowering::unionMemberAddress(sema::TypedId id) {
+    const sema::Resolution &r = tree_.resolution(id);
+    const TypeId pt = tid(*types_.pointerTo(&T(r.type)));
+    if (!r.symbol.empty()) return Val(addrOf(r.symbol, pt), r.type);
+    if (unionSlots_.count(r.owner.v) == 0) unionSlots_[r.owner.v] = entryAlloca(r.owner, "$union");
+    return Val(result(add(Op::Bitcast, pt, std::vector<ValueId>(1, unionSlots_[r.owner.v]))), r.type);
+}
+
+// [class.mfct.non-static]/3: `B::m` in a member function is `(*this).B::m` - the parser's record its offset in `this`'s
+// class, which the base's path is held to; a virtual base, a reference or a bit-field stays outside.
+Lowering::Val Lowering::qualifiedMemberOfThis(sema::TypedId id) {
+    const sema::Resolution &r = tree_.resolution(id);
+    const std::string name = text(id).substr(text(id).rfind(':') + 1);
+    if (!r.owner.valid() || !r.type.valid() || T(r.owner).unqualified()->findMember(name) == nullptr)
+        outside("a qualified member the parser recorded no class for");
+    const Type &cls = *T(thisType_).pointee()->unqualified(), &q = *T(r.owner).unqualified();
+    const Member &m = *q.findMember(name);
+    int found = &cls == &q ? 1 : 0, offset = 0;
+    if (found == 0) basePaths(cls, q, 0, found, offset);
+    if (found != 1 || m.offset + offset != r.serial || m.ambiguous || m.width != 0 || m.inVirtualBase != nullptr ||
+        m.anonUnion != nullptr || m.type->isReference())
+        outside("a qualified member the lowering does not reach");
+    const Type &mt = T(r.type);
+    if (!scalar(mt) && !mt.isArray() && !mt.isStructOrUnion()) outside("a member of type '" + mt.describe() + "'");
+    const InstId g = add(Op::Gep, tid(*types_.pointerTo(&mt)), std::vector<ValueId>(1, this_));
+    at(g).k = r.serial;
+    return Val(result(g), r.type);
+}
+
+// [expr.call]/1: `B::operator=(o)` in a member of a class derived from B whose copy assignment is trivial - the
+// parser's record a value of B, naming no function: the base subobject of `this` assigned by its bytes.
+bool Lowering::baseAssignNode(sema::TypedId id) const {
+    const sema::Resolution &r = tree_.resolution(id);
+    if (syn(id).kind != syntax::Kind::Call || count(id) != 2 || r.what != sema::Resolution::Value || !r.type.valid()) return false;
+    const std::string &h = text(child(id, 0));
+    return h.size() > 11 && h.compare(h.size() - 11, 11, "::operator=") == 0 && T(r.type).isStructOrUnion() &&
+           !(assigned_ && assigned_(r.type));
+}
+
+Lowering::Val Lowering::baseAssigned(sema::TypedId id) {
+    const Type &b = *T(tree_.resolution(id).type).unqualified();
+    if (!this_.valid()) outside("a base's operator= where there is no `this`");
+    const Val self(this_, tid(*T(thisType_).pointee()));
+    const Val target = T(self.type).unqualified() == &b ? self : baseSubobject(self, b, "a base's operator= of no one base");
+    if (T(target.type).isConst()) outside("a base's operator= on a const object");
+    const Val from = classValue(child(id, 1), b);
+    copyObject(target.v, from.v, b);
+    return target;
 }
 
 // [over.call.object] on a namespace-scope class object called by its name, `g(5)`: its operator(), on that object.
@@ -4010,7 +4497,9 @@ Lowering::Val Lowering::assignScalar(sema::TypedId id, Val &target) {
     { Val c; if (classAssign(id, c)) return Val(); }     // a class's value is no value: the statement is the assignment
     const sema::TypedId tn = child(id, 0);
     if (!isLvalueNode(tn)) outside("an assignment to what is not an object");
-    target = lvalue(tn);
+    Member bf;
+    target = fieldAddress(tn, bf);
+    if (bf.isBitField()) { const Val v = bitAssign(id, target, bf); target = Val(); return v; }
     const Type &t = T(target.type);
     // [class.copy]/18: a plain class's implicit copy assignment copies its bytes; a written operator= is a call.
     if (op == "=" && plainClass(t) && !t.isConst() && !(assigned_ && assigned_(t.id())) && objectNode(child(id, 1))) {
@@ -4144,6 +4633,9 @@ void Lowering::basePaths(const Type &cls, const Type &base, int at, int &found, 
     }
 }
 
+// [basic.link]/6: a name a block's `extern` declared - a local's record with a symbol and no `var` - is that global.
+bool Lowering::blockExtern(const sema::Resolution &r) { return r.what == sema::Resolution::Local && !r.symbol.empty(); }
+
 // Whether the program's global of this symbol is a thread_local: a block-scope one's record is made before its mark.
 bool Lowering::threadLocalGlobal(const std::string &symbol) const {
     for (const ::Global &g : program_.globals)
@@ -4162,7 +4654,15 @@ bool Lowering::pseudoDestructor(sema::TypedId member, const sema::Resolution &ca
     if (count(member) != 1 || name.empty() || (name[0] != '~' && q == std::string::npos)) return false;
     const Val o = arrow ? decay(expr(child(member, 0))) : lvalue(child(member, 0));
     if (arrow && !T(o.type).isPointer()) outside("a destructor called through what is not a pointer");
-    const Type &ot = arrow ? *T(o.type).pointee() : T(o.type);
+    Val obj = arrow ? Val(o.v, tid(*T(o.type).pointee())) : o;
+    // `p->~Base()` through a typedef or `q->B::~B()`, the parser's call a base's destructor: that base subobject's life ended alone.
+    if (T(obj.type).isStructOrUnion() && called.what == sema::Resolution::Call && destructor_)
+        for (const Type::BaseSpec &b : T(obj.type).unqualified()->bases())
+            if (b.type->hasDestructor() && destructor_(b.type->id()) == called.symbol) {
+                obj = baseSubobject(obj, *b.type, "a destructor named through a base reached twice");
+                break;
+            }
+    const Type &ot = T(obj.type);
     if (q != std::string::npos) {
         const std::string qual = name.substr(0, q), own = ot.unqualified()->isStructOrUnion() ? ot.unqualified()->localName() : std::string();
         if (own.empty() || name.substr(q + 3) != own || qual.substr(qual.rfind(':') == std::string::npos ? 0 : qual.rfind(':') + 1) != own)
@@ -4171,11 +4671,28 @@ bool Lowering::pseudoDestructor(sema::TypedId member, const sema::Resolution &ca
     if (scalar(ot) || plainClass(*ot.unqualified())) return true;
     // A class with no destructor of its own, a constructor or a vptr notwithstanding: the call does nothing.
     if (ot.unqualified()->isStructOrUnion() && ot.unqualified()->isComplete() && !ot.unqualified()->hasDestructor()) return true;
-    // [class.dtor]/14: a class's own destructor, called on the object; a virtual one would dispatch and stays outside.
+    // [class.dtor]/14: a class's own destructor, called on the object; a virtual one, unqualified, through the slot the
+    // parser read - Itanium's D1, Microsoft's ??_G given 0, as deleteDestroying reads D0 and ??_G given 1.
     const Type &cls = *ot.unqualified();
-    if (!cls.isStructOrUnion() || cls.hasVptr() || cls.hasVirtualBase()) outside("a destructor called by name");
+    if (!cls.isStructOrUnion() || cls.hasVirtualBase()) outside("a destructor called by name");
+    if (called.what == sema::Resolution::Call && called.indirect && called.vslot >= 0 && q == std::string::npos && called.type.valid()) {
+        const Type &ft = T(called.type);
+        if (!ft.isFunction() || ft.params().empty() || !ft.params()[0]->isPointer()) outside("a destructor whose type was not recorded");
+        std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, obj.v))));
+        if (ft.params().size() > 1) ops.push_back(iconst(tid(*ft.params()[1]), 0));
+        ops.insert(ops.begin(), virtualCallee(ops[0], called.type, called.vslot));
+        CallInfo info;
+        info.signature = called.type;
+        info.namedArgs = static_cast<int>(ft.params().size());
+        const std::uint32_t callIndex = static_cast<std::uint32_t>(F().calls.size());
+        F().calls.push_back(info);
+        at(callOrInvoke(ft.returns()->isVoid() ? TypeId() : tid(*ft.returns()), ops)).call = callIndex;
+        return true;
+    }
     const std::string sym = destructor_ ? destructor_(cls.id()) : std::string();
     if (sym.empty() || sym.find_first_of(" ()*&[") != std::string::npos) outside("a destructor called by name whose symbol is not recorded");
+    if (cls.hasVptr() && !(called.what == sema::Resolution::Call && called.symbol == sym && !called.indirect))
+        outside("a destructor called by name");
     // `p->~Base()`, a typedef naming a base, destroys that base alone: taken where the parser's call is this one, or the name is.
     if (!(called.what == sema::Resolution::Call && called.symbol == sym) && name.substr(q == std::string::npos ? 1 : q + 3) != cls.localName())
         outside("a destructor named through another class");
@@ -4188,7 +4705,7 @@ bool Lowering::pseudoDestructor(sema::TypedId member, const sema::Resolution &ca
     Function &f = F();
     const std::uint32_t callIndex = static_cast<std::uint32_t>(f.calls.size());
     f.calls.push_back(info);
-    const InstId c = callOrInvoke(TypeId(), std::vector<ValueId>(1, result(add(Op::Bitcast, self, std::vector<ValueId>(1, o.v)))));
+    const InstId c = callOrInvoke(TypeId(), std::vector<ValueId>(1, result(add(Op::Bitcast, self, std::vector<ValueId>(1, obj.v)))));
     at(c).call = callIndex;
     return true;
 }
@@ -4301,6 +4818,10 @@ Lowering::Val Lowering::call(sema::TypedId id) {
             // [over.call.object] on a class temporary, `F()(x)`, or a lambda called where it is written, `[](int a){...}(1)`:
             // built in a slot of this frame, its operator() called on it.
             const Val o = syn(head).kind == syntax::Kind::Lambda ? closure(head) : temporary(head);
+            object = Val(o.v, tid(*types_.pointerTo(&T(o.type))));
+        } else if (syn(head).kind == syntax::Kind::Call && classObjectNode(head)) {
+            // [over.call.object] on a call's class result, `outer(10)(100)`: its operator(), on the object it came back in.
+            const Val o = classObject(head);
             object = Val(o.v, tid(*types_.pointerTo(&T(o.type))));
         } else {
             outside("a member call through '" + text(head) + "'");
@@ -4674,6 +5195,12 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
                 ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(&ref)), std::vector<ValueId>(1, temp))));
                 continue;
             }
+            // [over.ics.list]: a braced list bound to one is the temporary the parser made of it, in a slot of the frame.
+            if (ref.isStructOrUnion() && (ref.isConst() || p.isRValueReference()) && syn(an).kind == syntax::Kind::Other && text(an) == "{}") {
+                if (!bracedArgument(an, ref, made)) outside("a braced list bound to a reference to '" + ref.describe() + "'");
+                ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(&ref)), std::vector<ValueId>(1, made))));
+                continue;
+            }
             // A class prvalue bound to one - a temporary or a closure in a slot of the frame, alive to the call's end;
             // neither has a destructor for the full expression's end to run.
             if (!isLvalueNode(an) && (ref.isConst() || p.isRValueReference()) && (temporaryNode(an) || closureNode(an))) {
@@ -4747,6 +5274,12 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
             continue;
         }
         if (!scalar(p)) outside("a parameter of type '" + p.describe() + "'");
+        if (syn(an).kind == syntax::Kind::Other && text(an) == "{}") {
+            // [dcl.init.list]/3: a scalar's `{v}` is v, never narrowed - the parser checked - and `{}` its zero.
+            if (count(an) > 1) outside("a scalar parameter given a braced list of " + std::to_string(count(an)) + " values");
+            ops.push_back(count(an) == 0 ? zeroOf(tid(p)) : exprTo(child(an, 0), tid(p)).v);
+            continue;
+        }
         ops.push_back(exprTo(an, tid(p)).v);
     }
 }
@@ -4770,10 +5303,19 @@ ValueId Lowering::byValueArgument(sema::TypedId an, const Type &p) {
     std::string symbol;
     TypeId sig;
     bool elided = false;
-    if (!argumentCopy_ || !argumentCopy_(tree_.node(an).syntax, symbol, sig, elided)) outside("a by-value argument whose copy the parser recorded none for");
+    // [expr.prim.lambda]/2: a lambda is a prvalue, its closure built in the parameter's copy itself.
+    const bool lambda = closureBuiltNode(an) && T(TypeTable::id(tree_.node(an).type)).unqualified() == &c;
+    if (!lambda && (!argumentCopy_ || !argumentCopy_(tree_.node(an).syntax, symbol, sig, elided))) {
+        // [over.ics.user]: the converting constructor the parser chose builds the copy, the caller destroying it.
+        ValueId made;
+        if (!ms && convertedTemporary(an, c, true, made)) return made;
+        outside("a by-value argument whose copy the parser recorded none for");
+    }
     const std::string dtor = !ms && c.hasDestructor() ? temporaryDestructor(c) : std::string();
     const ValueId copy = entryAlloca(tid(c), "$copy");
-    if (elided) {
+    if (lambda) {
+        closure(an, copy);
+    } else if (elided) {
         // The producing call builds its result in the copy, as elidedCall's does in a local: no full expression destroys it.
         sema::TypedId made = an;
         while (syn(made).kind == syntax::Kind::Paren && count(made) == 1) made = child(made, 0);
@@ -4874,16 +5416,20 @@ bool Lowering::bracedArgument(sema::TypedId an, const Type &p, ValueId &slot) {
         if (braced) for (std::uint32_t i = 0; i < count(an); i++) elems.push_back(child(an, i));
         else if (tree_.node(an).type != nullptr && scalar(*tree_.node(an).type)) elems.push_back(an);
         else return false;
-        slot = initializerListOf(elems, p);
+        sema::ListBuilt lb;
+        if (braced && listBuilt_) listBuilt_(tree_.node(an).syntax, lb);
+        slot = initializerListOf(elems, p, lb);
         return true;
     }
     if (!braced || count(an) == 0) return false;
     std::string symbol;
     TypeId sig;
     bool zero = false;
-    if (temporaryBuilt_ && temporaryBuilt_(tree_.node(an).syntax, symbol, sig, zero) && constructedClass(c)) {
+    const bool destroyed = destroyedClass(c);
+    if (temporaryBuilt_ && temporaryBuilt_(tree_.node(an).syntax, symbol, sig, zero) && (destroyed || constructedClass(c))) {
         slot = entryAlloca(tid(c), "$tmp");       // [dcl.init.list]/3: braces reaching a constructor, the one the parser chose
-        construct(slot, symbol, sig, c, zero, an, 0);
+        constructFromList(slot, symbol, sig, c, zero, an, 0);
+        if (destroyed) guard(slot, c, temporaryDestructor(c));
         return true;
     }
     if (!plainClass(c) || !listFits(c, count(an))) outside("a braced list as an argument of '" + p.describe() + "'");
@@ -4902,14 +5448,19 @@ bool Lowering::arrayBinds(const Type &from, const Type &referent) {
 // [dcl.init.ref]/5: an lvalue of a class bound to a reference to its unambiguous non-virtual base - the base subobject.
 Lowering::Val Lowering::baseOfObject(Val a, const Type &p) { return baseSubobject(a, *p.referent(), "a reference parameter bound to another type"); }
 
-// The unambiguous non-virtual base `base` of the class object at `a`, at its offset, keeping a's const - an object is
+// The unambiguous base `base` of the class object at `a`, at its offset, keeping a's const - an object is
 // never null, so there is nothing to test; refused as `why` where there is no one such base.
 Lowering::Val Lowering::baseSubobject(Val a, const Type &base, const std::string &why) {
+    const Type &bt = T(a.type).isConst() ? *types_.withConst(base.unqualified()) : *base.unqualified();
+    const TypeId pt = tid(*types_.pointerTo(&bt));
+    // A virtual base, [class.mi]/4's one subobject, wherever its vbase_offset puts it.
+    for (const Type::BaseSpec &b : T(a.type).unqualified()->bases())
+        if (b.isVirtual && b.type->unqualified() == base.unqualified())
+            return Val(result(add(Op::Bitcast, pt, std::vector<ValueId>(
+                1, virtualBaseAddress(a.v, *T(a.type).unqualified(), *base.unqualified())))), tid(bt));
     int found = 0, offset = 0;
     basePaths(*T(a.type).unqualified(), *base.unqualified(), 0, found, offset);
     if (found != 1) outside(why);
-    const Type &bt = T(a.type).isConst() ? *types_.withConst(base.unqualified()) : *base.unqualified();
-    const TypeId pt = tid(*types_.pointerTo(&bt));
     if (offset == 0) return Val(result(add(Op::Bitcast, pt, std::vector<ValueId>(1, a.v))), tid(bt));
     const InstId g = add(Op::Gep, pt, std::vector<ValueId>(1, a.v));
     at(g).k = offset;
@@ -4995,9 +5546,10 @@ Lowering::Val Lowering::newExpression(sema::TypedId id) {
     if (built && f.ctor.empty()) outside("a 'new' of a class with constructors");
     if (built && f.array) outside("an array 'new' of a class with constructors");
     if (built && f.ctorDefaulted) outside("a 'new' with default arguments");
-    // [expr.new]/20: a constructor that throws has the storage freed; a placement frees nothing.
-    const bool frees = (built || loop) && !f.placed;
-    const std::uint32_t lead = f.placed || f.nothrow ? 1u : 0u;      // the placement's address, or the nothrow tag, first
+    // [expr.new]/20: a constructor that throws has the storage freed; no placement form frees (no placement delete is matched).
+    const bool frees = (built || loop) && !f.placed && f.userArgs == 0;
+    // The placement's address, the nothrow tag, or the program's allocation function's placement arguments, first.
+    const std::uint32_t lead = f.placed || f.nothrow ? 1u : static_cast<std::uint32_t>(f.userArgs);
     if (f.nothrow && f.cookie != 0) outside("a nothrow array 'new' with a cookie");
     // [expr.new]/15 with [dcl.init.list]/3: a braced list reaches a constructor as its arguments, an aggregate as its
     // members; an initializer_list constructor stays outside.
@@ -5036,7 +5588,15 @@ Lowering::Val Lowering::newExpression(sema::TypedId id) {
         std::vector<ValueId> ops(1, bytes);
         if (f.nothrow) { params.push_back(voidPtr); ops.push_back(tag); }
         info.signature = types_.functionType(voidPtr, params);
-        info.namedArgs = static_cast<int>(params.size());
+        if (f.userArgs != 0) {
+            const Type &at = T(f.allocSig);
+            if (!at.isFunction() || at.params().size() != lead + 1u || !at.returns()->isPointer()) outside("a placement 'new' of another allocation function");
+            std::vector<sema::TypedId> placement;
+            for (std::uint32_t i = 0; i < lead; i++) placement.push_back(child(id, i));
+            argumentList(at, 1, false, placement, false, ops);
+            info.signature = f.allocSig;
+        }
+        info.namedArgs = static_cast<int>(T(info.signature).params().size());
         const std::uint32_t callIndex = static_cast<std::uint32_t>(F().calls.size());
         F().calls.push_back(info);
         const InstId c = callOrInvoke(voidPtr, ops);      // bad_alloc may unwind
@@ -5240,11 +5800,42 @@ InstId Lowering::callOrInvoke(TypeId carries, const std::vector<ValueId> &ops) {
 // target's - __dynamic_cast with no hint on Itanium, __RTDynamicCast on Microsoft - and a null operand stays null.
 Lowering::Val Lowering::dynamicCastPointer(sema::TypedId id) {
     const sema::TypedNode &n = tree_.node(id);
+    if (n.type == nullptr || !n.type->isPointer()) outside("a dynamic_cast the parser recorded no walk for");
+    return dynamicWalk(id, decay(expr(child(id, 0))), tid(*n.type));
+}
+
+// [expr.dynamic.cast]/9: `dynamic_cast<T &>(o)` is the pointer form on o's address, a null answer __cxa_bad_cast's throw
+// - the parser's lowering; the object it names is the answer's.
+bool Lowering::dynamicReference(sema::TypedId id) const {
+    const std::string &w = text(id);
+    return syn(id).kind == syntax::Kind::Cast && count(id) == 1 && w.compare(0, 13, "dynamic_cast<") == 0 &&
+           w.find("&>") != std::string::npos && tree_.node(id).type != nullptr;
+}
+
+Lowering::Val Lowering::dynamicCastReference(sema::TypedId id) {
+    const Type &named = *tree_.node(id).type;
+    const Type &to = named.isReference() ? *named.referent() : named;
+    if (!to.isStructOrUnion() || !isLvalueNode(child(id, 0))) outside("a dynamic_cast to a reference of what is not an object");
+    const Val a = lvalue(child(id, 0));
+    const TypeId pt = tid(*types_.pointerTo(&to));
+    const Val p = dynamicWalk(id, Val(a.v, tid(*types_.pointerTo(&T(a.type)))), pt);
+    std::vector<ValueId> ops(1, p.v);
+    ops.push_back(result(add(Op::Null, pt, std::vector<ValueId>())));
+    const InstId found = add(Op::ICmp, tid(*types_.get(Kind::Bool)), ops);
+    at(found).cc = Cmp::Ne;
+    const BlockId ok = newBlock(), bad = newBlock();
+    condbr(result(found), ok, bad);
+    place(bad);
+    throwCall("__cxa_bad_cast", std::vector<ValueId>());
+    place(ok);
+    return Val(p.v, tid(to));
+}
+
+// The walk itself, of a pointer `v` to the target pointer type `to`.
+Lowering::Val Lowering::dynamicWalk(sema::TypedId id, const Val &v, TypeId to) {
     std::string src, dst;
-    const int kind = dynamicCast_ ? dynamicCast_(n.syntax, src, dst) : 0;
-    if (kind == 0 || n.type == nullptr || !n.type->isPointer()) outside("a dynamic_cast the parser recorded no walk for");
-    const TypeId to = tid(*n.type);
-    const Val v = decay(expr(child(id, 0)));
+    const int kind = dynamicCast_ ? dynamicCast_(tree_.node(id).syntax, src, dst) : 0;
+    if (kind == 0) outside("a dynamic_cast the parser recorded no walk for");
     if (!T(v.type).isPointer()) outside("a dynamic_cast of what is not a pointer");
     if (kind == 2) return convert(v, to, true);
     const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType()));
@@ -5351,6 +5942,23 @@ void Lowering::msCountedDestroy(const Live &l, BlockId pad) {
 BlockId Lowering::msEnclosingPad() {
     if (pads_.size() > funcletPads_) return padBlock(pads_.back());
     return funclet_;
+}
+
+// A local's alloca: entryAlloca's, raised to the alignment `alignas` asked of it (FunctionFacts::localAligns, by the
+// parser's serial on its record - a constructed class's is its constructor's call) - the walker's prologue realigns
+// the frame to it, as for its own slots. A local with no serial, where the function has such a local, is refused.
+ValueId Lowering::localAlloca(sema::TypedId var, TypeId slotType) {
+    const ValueId slot = entryAlloca(slotType, text(var));
+    if (localAligns_.empty()) return slot;
+    const sema::Resolution &r = tree_.resolution(var);
+    if (r.serial < 0) outside("a local with alignas beside one the parser gave no serial");
+    const std::map<int, int>::const_iterator a = localAligns_.find(r.serial);
+    if (a == localAligns_.end()) return slot;
+    Function &f = F();
+    AllocaInfo &info = f.frame.back();
+    if (a->second > info.align) { info.align = a->second; f.insts.back().align = a->second; }
+    if (a->second > f.frameAlign) f.frameAlign = a->second;
+    return slot;
 }
 
 // An alloca in the entry block, whatever block the statement stands in; its value is the object's address. A frame

@@ -28,10 +28,11 @@ struct FunctionFacts {
     std::size_t pos, paramCount;
     std::string specFilter;     // an ordinary function's throw(...) list as the parser's filter row names it: `$spec,<types>`
     bool noexceptWrap;          // [except.spec]/9 as the parser kept it: the body under a catch-all that aborts
-    bool ctorTry;               // [except.pre]/4: a constructor's try block, over its mem-initialisers and its body
+    bool ctorTry;               // [except.pre]/4: a constructor's try block over its mem-initialisers and body, or a destructor's
     std::string recordKey;      // the symbol the parser keyed this function's records by: Itanium's C1 or D1 for a split C2 or D2
     bool takesVtt;              // Itanium's C2 or D2 of a class with virtual bases: a VTT is its second parameter
     bool msFlag;                // a Microsoft constructor of a class with virtual bases: cl's most-derived flag, last
+    std::map<int, int> localAligns;     // a local aligned past its type (alignas), by the parser's serial: the alignment its slot keeps
     FunctionFacts() : isStatic(false), isInline(false), variadic(false), hasThis(false), sret(false), landingPads(false),
                       wrappedBody(false), noexcept_(false), isConstructor(false), pos(0), paramCount(0), noexceptWrap(false),
                       ctorTry(false), takesVtt(false), msFlag(false) {}
@@ -64,7 +65,7 @@ public:
     void setMicrosoftCatch(std::function<bool(TypeId, std::string &, bool &)> f) { msCatch_ = f; }
     void setMicrosoftUnnamedCaught(std::function<bool(syntax::NodeId, std::string &, bool &, bool &)> f) { msUnnamedCaught_ = f; }
     void setNewFacts(std::function<bool(syntax::NodeId, sema::NewFacts &)> f) { newFacts_ = f; }
-    void setRangeCalls(std::function<bool(syntax::NodeId, sema::Resolution &, sema::Resolution &)> f) { rangeCalls_ = f; }
+    void setRangeCalls(std::function<bool(syntax::NodeId, sema::Resolution &, sema::Resolution &, std::vector<sema::Resolution> &)> f) { rangeCalls_ = f; }
     void setCaughtCopy(std::function<bool(syntax::NodeId, std::string &, TypeId &)> f) { caughtCopy_ = f; }
     // The constructor the parser chose for a member, and a class's destructor - Sema's records, asked by the glue.
     void setMemberBuilt(std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> f) { memberBuilt_ = f; }
@@ -84,6 +85,8 @@ public:
     void setLocalBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &, bool &)> f) { localBuilt_ = f; }
     // The initializer_list parameter a local's braces were made into, and their count - Sema's record, asked by the glue.
     void setLocalList(std::function<bool(syntax::NodeId, TypeId &, std::uint32_t &)> f) { localList_ = f; }
+    // Each element of the braced list an array local of a class was built from - Sema's record, asked by the glue.
+    void setListBuilt(std::function<bool(syntax::NodeId, sema::ListBuilt &)> f) { listBuilt_ = f; }
     void setMemberList(std::function<bool(const std::string &, const std::string &, std::uint32_t, TypeId &, std::uint32_t &)> f) { memberList_ = f; }
     void setTemporaryBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> f) { temporaryBuilt_ = f; }
     // The converting constructor that made a temporary of a value at a node - Sema's record, asked by the glue.
@@ -136,6 +139,7 @@ private:
     ValueId zeroOf(TypeId type);
     ValueId addrOf(const std::string &sym, TypeId type);
     ValueId load(ValueId p, TypeId type);
+    ValueId op2(Op o, TypeId type, ValueId a, ValueId b);     // a two-operand instruction
     void store(ValueId p, ValueId v);
 
     // The typed tree, read.
@@ -210,9 +214,13 @@ private:
     void destroyWhen(const Live &l, bool invoke = false);
     bool canFlag() const;
     void storageGuard(ValueId p, const Type &made, const std::string &release);
-    void staticArray(const std::string &symbol, const Type &array, const sema::StaticGuard &g);
+    void staticArray(sema::TypedId var, const std::string &symbol, const Type &array, const sema::StaticGuard &g);
     Val memberAddress(sema::TypedId id);
     Val memberOfThis(sema::TypedId id);
+    Val fieldAddress(sema::TypedId id, Member &bf);
+    Val bitUnit(ValueId object, const Member &m, bool constant);
+    Val bitRead(const Val &unit, const Member &m);
+    Val bitAssign(sema::TypedId id, const Val &unit, const Member &m);
     bool namesCalledFunction(const std::string &head, const std::string &symbol) const;
     Val functorMember(sema::TypedId head, const Type &self);
     Val capturedThis();
@@ -233,6 +241,11 @@ private:
     Val assignScalar(sema::TypedId id, Val &target);
     bool scalarAssignNode(sema::TypedId id) const;
     bool globalFunctor(sema::TypedId head, const std::string &symbol, const Type &self, Val &object);
+    Val qualifiedMemberOfThis(sema::TypedId id);
+    bool baseAssignNode(sema::TypedId id) const;
+    Val baseAssigned(sema::TypedId id);
+    bool anonymousUnionMember(sema::TypedId id) const;
+    Val unionMemberAddress(sema::TypedId id);
     Val call(sema::TypedId id);
     bool vaBuiltinNode(sema::TypedId id) const;
     Val vaBuiltin(sema::TypedId id);
@@ -266,6 +279,7 @@ private:
     TypeId builtArray(const Type &t, long long &count, bool local = false) const;
     void buildElements(const Member &m, const Type &et, long long elems);
     void builtArrayLocal(sema::TypedId var, ValueId slot, const Type &et, long long elems);
+    void listArray(sema::TypedId var, ValueId base, const Type &et, long long elems, const sema::ListBuilt &lb, const std::string &dtor);
     static bool scalarArray(const Type &t);
     void buildMember(ValueId at, const Member &m, sema::TypedId entry);
     void destroyMembers(const Type &cls);
@@ -286,6 +300,8 @@ private:
     void directCall(const std::string &symbol, TypeId signature, const std::vector<ValueId> &ops);
     bool pseudoDestructor(sema::TypedId member, const sema::Resolution &called);
     bool threadLocalGlobal(const std::string &symbol) const;
+    static bool blockExtern(const sema::Resolution &r);
+    ValueId objectAddr(const std::string &sym, TypeId type, const sema::Resolution &r);
     Val toBase(Val v, TypeId to, bool cast = false);
     ValueId boundConverted(sema::TypedId an, const Type &p);
     bool convertedTemporary(sema::TypedId an, const Type &c, bool destroys, ValueId &slot);
@@ -319,6 +335,7 @@ private:
     Val condition(sema::TypedId id);
     void throwExpr(sema::TypedId id);
     bool abortingThrow(sema::TypedId id);
+    ValueId localAlloca(sema::TypedId var, TypeId slotType);
     void microsoftThrow(sema::TypedId id);
     Val thrownValue(sema::TypedId id, TypeId &thrown);
     bool classThrow(sema::TypedId id, ValueId &object, TypeId &thrown);
@@ -334,7 +351,8 @@ private:
     bool builtClass(const Type &t) const;
     void builtLocal(sema::TypedId var, ValueId slot, const Type &t);
     ValueId initializerList(sema::TypedId parent, const Type &param, std::uint32_t n);
-    ValueId initializerListOf(const std::vector<sema::TypedId> &elems, const Type &param);
+    ValueId initializerListOf(const std::vector<sema::TypedId> &elems, const Type &param, const sema::ListBuilt &lb = sema::ListBuilt());
+    void listElement(ValueId at, const Type &et, sema::TypedId part, const sema::ListElement &e);
     void guard(ValueId slot, const Type &c, const std::string &dtor);
     void destroy(const Live &l, bool invoke = false);
     void destroyLive(std::size_t mark);
@@ -355,15 +373,21 @@ private:
     bool constructedTemporary(sema::TypedId id) const { return builtTemporary(id, false); }
     bool destroyedTemporary(sema::TypedId id) const { return builtTemporary(id, true); }
     bool copiedTemporary(sema::TypedId id) const;
+    bool zeroedTemporary(sema::TypedId id) const;
     bool temporaryNode(sema::TypedId id) const {
-        return plainTemporary(id) || constructedTemporary(id) || destroyedTemporary(id) || copiedTemporary(id);
+        return plainTemporary(id) || constructedTemporary(id) || destroyedTemporary(id) || copiedTemporary(id)
+            || listTemporaryNode(id) || zeroedTemporary(id);
     }
+    bool listTemporaryNode(sema::TypedId id) const;
+    void listTemporary(sema::TypedId id, ValueId slot);
+    void constructFromList(ValueId where, const std::string &symbol, TypeId sig, const Type &cls, bool zeroFirst, sema::TypedId args, std::uint32_t from);
     bool classObjectNode(sema::TypedId id) const;
     Val classObject(sema::TypedId id);
     Val arrowPointer(sema::TypedId member);
     bool convertedNode(sema::TypedId id, sema::Resolution &r) const;
     Val converted(sema::TypedId id, const sema::Resolution &r);
-    Val convertedObject(Val o, const sema::Resolution &r);
+    Val convertedObject(Val o, const sema::Resolution &r, bool object = false);
+    Val iteratorCall(const sema::Resolution &r, const std::vector<Val> &objects, TypeId cls);
     bool typeidNode(sema::TypedId id) const;
     Val typeidAddress(sema::TypedId id);
     bool classConditionalNode(sema::TypedId id) const;
@@ -377,11 +401,14 @@ private:
     std::size_t fullFrom() const;
     Val temporary(sema::TypedId id);
     Val extendedTemporary(sema::TypedId id);
+    Val extendedResult(sema::TypedId id);
+    bool heldTemporaryInto(sema::TypedId id, ValueId slot, const Type &c);
     void construct(ValueId where, const std::string &symbol, TypeId sig, const Type &cls, bool zeroFirst, sema::TypedId args, std::uint32_t from);
     bool objectNode(sema::TypedId id) const;
     Val object(sema::TypedId id);
     bool closureNode(sema::TypedId id) const;
-    Val closure(sema::TypedId id);
+    bool closureBuiltNode(sema::TypedId id) const;
+    Val closure(sema::TypedId id, ValueId into = ValueId());
     static bool scalarArithmetic(const Type &t);
     static long long normalise(long long v, const Type &t, const Target &target);
 
@@ -409,6 +436,9 @@ private:
     std::function<int(syntax::NodeId, std::string &, std::string &)> dynamicCast_;
     std::function<bool(syntax::NodeId, std::string &)> typeid_;
     Val dynamicCastPointer(sema::TypedId id);
+    bool dynamicReference(sema::TypedId id) const;
+    Val dynamicCastReference(sema::TypedId id);
+    Val dynamicWalk(sema::TypedId id, const Val &v, TypeId to);
     std::function<std::string(TypeId)> msThrowInfo_;
     std::function<bool(TypeId, std::string &, bool &)> msCatch_;
     std::function<bool(syntax::NodeId, std::string &, bool &, bool &)> msUnnamedCaught_;
@@ -417,7 +447,7 @@ private:
     BlockId msTryFunclet_;                      // the handler that try stands in, whose funclet its exits belong to; none in the body
     std::size_t funcletPads_;                   // pads_ where that handler's body began: a pad above it was made inside the funclet
     std::function<bool(syntax::NodeId, sema::NewFacts &)> newFacts_;
-    std::function<bool(syntax::NodeId, sema::Resolution &, sema::Resolution &)> rangeCalls_;
+    std::function<bool(syntax::NodeId, sema::Resolution &, sema::Resolution &, std::vector<sema::Resolution> &)> rangeCalls_;
     std::function<bool(syntax::NodeId, std::string &, TypeId &)> caughtCopy_;
     std::function<bool(const std::string &, const std::string &, std::uint32_t, std::string &, TypeId &, bool &)> memberBuilt_;
     std::function<std::string(TypeId)> destructor_;
@@ -432,6 +462,7 @@ private:
     ValueId vtt_;                               // Itanium's C2 or D2 handed a VTT: it, the second parameter; none otherwise
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &, bool &)> localBuilt_;
     std::function<bool(syntax::NodeId, TypeId &, std::uint32_t &)> localList_;
+    std::function<bool(syntax::NodeId, sema::ListBuilt &)> listBuilt_;
     std::function<bool(const std::string &, const std::string &, std::uint32_t, TypeId &, std::uint32_t &)> memberList_;
     std::vector<Live> live_;                    // innermost last
     ValueId sret_;                              // the caller's result pointer, where a copied class is returned
@@ -454,6 +485,7 @@ private:
     std::vector<std::string> typeTable_;        // the function's selector indices: one per type, first occurrence, 1-based
     std::size_t handlerDepth_;                  // handlers the statement being lowered is inside
     bool noexceptWrap_;                         // FunctionFacts::noexceptWrap: the body is under a catch-all that aborts
+    std::map<int, int> localAligns_;            // FunctionFacts::localAligns of the function being lowered
     std::vector<std::size_t> handlerLive_;      // live_ where each handler's body began, innermost last
     struct Full {                               // a full expression open: its temporaries from live_[from]; flags zeroed at block, at
         std::size_t from; BlockId block; std::size_t at;
@@ -464,6 +496,9 @@ private:
     static const std::size_t kNoFull = static_cast<std::size_t>(-1);
     BlockId returnBlock_;
     std::map<std::uint32_t, std::pair<ValueId, TypeId> > locals_;    // a `var` node -> its alloca and declared type
+    std::map<std::uint32_t, ValueId> unionSlots_;    // an anonymous union in a block, by its type -> its alloca
+    bool bitWanted_ = false;           // fieldAddress asks memberAddress or memberOfThis for a bit-field's unit
+    Member bitField_;                 // and a copy of the bit-field it found (width 0: none)
     std::map<std::uint32_t, std::pair<std::string, TypeId> > staticLocals_;   // a static `var` -> its symbol and type
     std::vector<Loop> loops_;
     std::vector<SwitchCtx> switches_;

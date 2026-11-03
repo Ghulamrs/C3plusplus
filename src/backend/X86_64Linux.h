@@ -268,7 +268,7 @@ private:
     void emitGlobal(const Global &g, Segment seg);
     // A thread_local's address into rax: local-exec or its wrapper on ELF, cl's `_tls_index` walk on
     // COFF with the CRT's guard asked first where the object may still want initialising.
-    void tlsAddress(const Var &v);
+    void tlsAddress(const std::string &symbol, bool viaWrapper);
     void msTlsBlock();
     // The `_ZTW` wrappers and `_ZTH` aliases this unit defines - ELF only, as raw text after the functions.
     void emitTlsWrappers(const Program &program);
