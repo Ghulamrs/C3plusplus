@@ -2590,7 +2590,10 @@ ExprPtr Parser::localRef(const std::string &name) {
         if (l->isThreadLocal) tlsVar(v, l->tlsViaWrapper, l->tlsViaWrapper);
         ExprPtr n(v);
         n->setType(l->type);
-        return resolve(useReference(std::move(n)), resolvedAs(Resolved::Local, l->type, l->staticName, l->serial));
+        Resolved r = resolvedAs(Resolved::Local, l->type, l->staticName, l->serial);
+        r.isThreadLocal = l->isThreadLocal;
+        r.viaWrapper = v->viaWrapper();
+        return resolve(useReference(std::move(n)), r);
     }
     return nullptr;
 }
@@ -2640,6 +2643,7 @@ ExprPtr Parser::globalRef(const std::string &name) {
         Resolved r = resolvedAs(Resolved::Global, g->type, g->symbol);
         r.isConst = g->isConst;
         r.isThreadLocal = g->isThreadLocal;
+        r.viaWrapper = v->viaWrapper();
         r.name = name;
         return resolve(useReference(std::move(n)), r);
     }

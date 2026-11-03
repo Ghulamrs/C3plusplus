@@ -181,6 +181,10 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         if (i.k != 0) a_->ins("add", imm(i.k), reg("%rax"));
         ssaStore(f, i.result);
         return;
+    case ir::Op::TlsAddr:   // the walker's thread_local address, `k` set where a use goes through the ABI's wrapper
+        tlsAddress(i.sym, i.k != 0);
+        ssaStore(f, i.result);
+        return;
     case ir::Op::Load:
         ssaLoad(f, f.operand(i, 0));
         load(rt);
