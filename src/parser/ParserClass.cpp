@@ -22,7 +22,7 @@ StmtPtr Parser::constructLocal(const Declared &d, int offset,
 // named by `symbol` - a static local, a file-scope object, a static member.
 StmtPtr Parser::constructObject(const Declared &d, const std::string &symbol,
                                 int offset, std::vector<ExprPtr> args,
-                                bool copyInit, bool valueInit) {
+                                bool copyInit, bool valueInit, ListElement *chosen) {
     checkNotAbstract(d.type, d.pos, "'" + d.name + "'");
     const std::string key = constructorKey(d.type->tag());
     const Signature &ctor = overload_.resolveOverload(key, args, d.pos);
@@ -67,9 +67,16 @@ StmtPtr Parser::constructObject(const Declared &d, const std::string &symbol,
     if (symbol.empty())
         if (const Local *built = lookup_.findLocal(d.name)) {
             const LocalBuilt b = { ctor.symbol, types_.functionType(types_.get(Kind::Void), full, false), args.size() != written,
-                                   valueInit && ctor.implicit, defaults, nullptr, 0 };
+                                   valueInit && ctor.implicit, defaults, nullptr, 0, 0 };
             ctorBySerial_[built->serial] = b;
         }
+    // An array's element: what built it, for the list's record (M3b.2).
+    if (chosen != nullptr) {
+        chosen->symbol = ctor.symbol;
+        chosen->signature = types_.functionType(types_.get(Kind::Void), full, false);
+        chosen->defaulted = args.size() != written;
+        chosen->zeroed = valueInit && ctor.implicit;
+    }
     // The same for an object with a symbol, which a static local's guarded construction reads (M3b.2).
     if (!symbol.empty() && offset == 0) {
         StaticGuard &g = staticGuards_[symbol];
@@ -1037,6 +1044,7 @@ ExprPtr Parser::buildInitializerList(const Type *ilType, Init &in,
     const Type *innerIl = nullptr;
     const Signature *innerCtor = plainElem->isStructOrUnion()
         ? initializerListConstructor(plainElem, &innerIl) : nullptr;
+    ListBuilt record;     // each element's construction, for the SSA lowering (M3b.2)
     if (innerCtor != nullptr) {
         markUsed(innerCtor);
         const std::string sym = innerCtor->symbol;
@@ -1046,6 +1054,13 @@ ExprPtr Parser::buildInitializerList(const Type *ilType, Init &in,
             if (!in.items[i].isList)
                 src_.fail(in.items[i].pos, "this element is built from a braced "
                           "list and this initialiser is not braced");
+            ListElement made;
+            made.first = static_cast<std::uint32_t>(i);
+            made.count = 1;
+            made.braced = made.list = true;
+            made.symbol = sym;
+            made.signature = types_.functionType(types_.get(Kind::Void), std::vector<const Type *>{ elemPtr, innerParam }, false);
+            record.elems.push_back(made);
             ExprPtr list = buildInitializerList(innerIl, in.items[i], pos, into, flush);
             ExprPtr arr(Var::local(bk, bkOff)); arr->setType(arrType);
             ExprPtr idx(new Num(static_cast<long long>(i)));
@@ -1067,11 +1082,17 @@ ExprPtr Parser::buildInitializerList(const Type *ilType, Init &in,
         for (std::size_t i = 0; i < in.items.size(); i++) {
             // A braced element is copy-list-initialised, [over.match.list]: built in its slot by the
             // constructor its items choose, never an explicit one - no temporary and no copy.
+            ListElement made;
+            made.first = static_cast<std::uint32_t>(i);
+            made.count = 1;
             if (in.items[i].isList) {
                 checkNotAbstract(plainElem, in.items[i].pos, "an element of this initializer_list would make");
                 std::vector<ExprPtr> args;
                 Signature ctor = listConstructor(plainElem, in.items[i], args, true, in.items[i].pos);
+                const std::size_t written = args.size();
                 applyDefaults(ctor, args, in.items[i].pos);
+                made.braced = true;
+                made.defaulted = args.size() != written;
                 if (ctor.access != Access::Public && !insideAccessOf(plainElem, ctor.access) &&
                     !isFriendOf(plainElem))
                     src_.fail(in.items[i].pos, "'" + plainElem->describe() + "' has no public constructor "
@@ -1085,6 +1106,9 @@ ExprPtr Parser::buildInitializerList(const Type *ilType, Init &in,
                 for (ExprPtr &a : args) all.push_back(std::move(a));
                 std::vector<const Type *> ps{ elemPtr };
                 ps.insert(ps.end(), ctor.params.begin(), ctor.params.end());
+                made.symbol = ctor.symbol;
+                made.signature = types_.functionType(types_.get(Kind::Void), ps, ctor.variadic);
+                record.elems.push_back(made);
                 into.push_back(StmtPtr(new ExprStmt(
                     completeCall(plainElem->tag(), ctor.symbol, nullptr, types_.get(Kind::Void), ps,
                                  ctor.variadic, pos, std::move(all)))));
@@ -1103,6 +1127,8 @@ ExprPtr Parser::buildInitializerList(const Type *ilType, Init &in,
                 ExprPtr slot(new Unary('*', std::move(addr))); slot->setType(plainElem);
                 ExprPtr store(new Assign(std::move(slot), std::move(value))); store->setType(plainElem);
                 into.push_back(StmtPtr(new ExprStmt(std::move(store))));
+                made.bytes = true;
+                record.elems.push_back(made);
                 continue;
             }
             markUsed(use);
@@ -1110,6 +1136,9 @@ ExprPtr Parser::buildInitializerList(const Type *ilType, Init &in,
             all.push_back(std::move(addr));
             all.push_back(std::move(value));
             std::vector<const Type *> ps{ elemPtr, use->params[0] };
+            made.symbol = use->symbol;
+            made.signature = types_.functionType(types_.get(Kind::Void), ps, false);
+            record.elems.push_back(made);
             into.push_back(StmtPtr(new ExprStmt(
                 completeCall(plainElem->tag(), use->symbol, nullptr,
                              types_.get(Kind::Void), ps, false, pos, std::move(all)))));
@@ -1124,6 +1153,19 @@ ExprPtr Parser::buildInitializerList(const Type *ilType, Init &in,
     } else {
         std::vector<InitStep> path;
         emitInit(bk, path, arrType, in, into);
+    }
+    // One record per braces: a body replayed with other bindings that built them otherwise leaves none, so the lowering refuses.
+    if (!record.elems.empty()) {
+        const std::uint32_t key = static_cast<std::uint32_t>(in.pos);
+        const std::map<std::uint32_t, ListBuilt>::iterator had = listsAt_.find(key);
+        bool same = had != listsAt_.end() && had->second.elems.size() == record.elems.size();
+        for (std::size_t i = 0; same && i < record.elems.size(); i++) {
+            const ListElement &x = had->second.elems[i], &y = record.elems[i];
+            same = x.symbol == y.symbol && x.signature == y.signature && x.bytes == y.bytes && x.braced == y.braced &&
+                   x.list == y.list && x.defaulted == y.defaulted;
+        }
+        if (had == listsAt_.end()) listsAt_[key] = record;
+        else if (!same) had->second = ListBuilt();
     }
 
     const std::string ilName = ".ilobject" + std::to_string(k);
@@ -1203,7 +1245,7 @@ StmtPtr Parser::constructLocalArray(const Declared &d, int offset,
     // The constructor every element takes, by the local's serial, for its `var` node to carry (M3b.2).
     if (const Local *built = lookup_.findLocal(d.name)) {
         const LocalBuilt b = { chosen.symbol, types_.functionType(types_.get(Kind::Void), ps, false), !defaults.empty(), false,
-                               std::vector<syntax::NodeId>(), nullptr, 0 };
+                               std::vector<syntax::NodeId>(), nullptr, 0, 0 };
         ctorBySerial_[built->serial] = b;
     }
     StmtPtr one(new ExprStmt(completeCall(plain->tag(), chosen.symbol, nullptr,
@@ -1228,8 +1270,10 @@ StmtPtr Parser::constructLocalArrayFromList(Declared &d, int offset,
     const int size = plain->size(target_);
 
     // One initialiser per element, read from the list: `given` says whether it had one.
-    struct Init { std::vector<ExprPtr> args; std::vector<Temporary> temps; bool braced = false; bool direct = false; bool given = false; };
+    struct Init { std::vector<ExprPtr> args; std::vector<Temporary> temps; bool braced = false; bool direct = false; bool given = false;
+                  std::uint32_t first = 0; };     // first: the `var` node's value parts read before this element's
     std::vector<Init> inits(static_cast<std::size_t>(total));
+    std::uint32_t partsRead = 0;
     // `S(args)` is the whole initialiser when a ',' or '}' follows its closing parenthesis.
     auto closesElement = [&]() {
         std::size_t k = 1;
@@ -1269,6 +1313,7 @@ StmtPtr Parser::constructLocalArrayFromList(Declared &d, int offset,
                     inits.resize(static_cast<std::size_t>(base + at + 1));
                 Init &one = inits[static_cast<std::size_t>(base + at)];
                 one.given = true;
+                one.first = partsRead;
                 std::vector<Temporary> before;
                 before.swap(pendingTemps_);
                 if (consume("{")) {
@@ -1296,6 +1341,7 @@ StmtPtr Parser::constructLocalArrayFromList(Declared &d, int offset,
                 // temporaries go with it and die before the next element is built.
                 one.temps.swap(pendingTemps_);
                 pendingTemps_.swap(before);
+                partsRead += static_cast<std::uint32_t>(one.args.size());     // one part per value read
                 at++;
             }
             if (!consume(",")) break;
@@ -1336,11 +1382,15 @@ StmtPtr Parser::constructLocalArrayFromList(Declared &d, int offset,
         return StmtPtr(new ExprStmt(std::move(set)));
     };
     if (counted) all.push_back(builtNow(ExprPtr(new Num(0LL))));
+    ListBuilt record;     // each element's construction, for the SSA lowering (M3b.2)
     for (long long i = 0; i < firstDefault; i++) {
         Init &e = inits[static_cast<std::size_t>(i)];
         const int at = symbol.empty() ? offset - static_cast<int>(i * size)
                                       : static_cast<int>(i * size);
         const bool empty = e.args.empty();
+        ListElement made;
+        made.first = e.given ? e.first : partsRead;
+        made.count = static_cast<std::uint32_t>(e.args.size());
         pendingTemps_.insert(pendingTemps_.end(), e.temps.begin(), e.temps.end());
         // **A trivially copyable class is copied, not constructed** - there is no copy
         // constructor to resolve to, as `S s = t;` finds for one object.
@@ -1351,6 +1401,7 @@ StmtPtr Parser::constructLocalArrayFromList(Declared &d, int offset,
             ExprPtr store(new Assign(std::move(dst), std::move(e.args[0])));
             store->setType(plain);
             all.push_back(StmtPtr(new ExprStmt(std::move(store))));
+            made.bytes = true;
         } else {
             const bool copyInit = !e.direct && (!e.braced || !empty);
             if (copyInit) {
@@ -1361,8 +1412,9 @@ StmtPtr Parser::constructLocalArrayFromList(Declared &d, int offset,
                                      plain->describe() + "' taking it is 'explicit' - write '" +
                                      plain->localName() + "(...)' in the list, which asks for it by name");
             }
-            all.push_back(constructObject(one, symbol, at, std::move(e.args), copyInit, empty));
+            all.push_back(constructObject(one, symbol, at, std::move(e.args), copyInit, empty, &made));
         }
+        record.elems.push_back(made);
         flushTemporaries(all);
         if (counted) all.push_back(builtNow(ExprPtr(new Num(i + 1))));
     }
@@ -1376,10 +1428,15 @@ StmtPtr Parser::constructLocalArrayFromList(Declared &d, int offset,
         if (ctor->implicit) {
             // value-initialisation zeroes first where nobody wrote the constructor: one by one
             for (long long i = firstDefault; i < total; i++) {
+                ListElement made;
                 all.push_back(constructObject(one, symbol, symbol.empty()
                                                   ? offset - static_cast<int>(i * size)
                                                   : static_cast<int>(i * size),
-                                              std::vector<ExprPtr>(), true, true));
+                                              std::vector<ExprPtr>(), true, true, &made));
+                record.tail = made.symbol;
+                record.tailSig = made.signature;
+                record.tailZeroed = made.zeroed;
+                record.tailDefaulted = made.defaulted;
                 if (counted) all.push_back(builtNow(ExprPtr(new Num(i + 1))));
             }
         } else {
@@ -1387,6 +1444,8 @@ StmtPtr Parser::constructLocalArrayFromList(Declared &d, int offset,
             const Signature chosen = *ctor;
             std::vector<ExprPtr> defaults;
             applyDefaults(chosen, defaults, d.pos);
+            record.tail = chosen.symbol;
+            record.tailDefaulted = !defaults.empty();
             const int indexSlot = allocateFrameSlot(types_.intType());
             ExprPtr first = objectAt(one, symbol, symbol.empty()
                 ? offset - static_cast<int>(firstDefault * size)
@@ -1401,6 +1460,7 @@ StmtPtr Parser::constructLocalArrayFromList(Declared &d, int offset,
                 args.push_back(std::move(defaults[k]));
                 ps.push_back(chosen.params[k]);
             }
+            record.tailSig = types_.functionType(types_.get(Kind::Void), ps, false);
             StmtPtr call(new ExprStmt(completeCall(plain->tag(), chosen.symbol, nullptr,
                                                    types_.get(Kind::Void), ps, false, d.pos,
                                                    std::move(args))));
@@ -1417,6 +1477,9 @@ StmtPtr Parser::constructLocalArrayFromList(Declared &d, int offset,
             all.push_back(eachElement(indexSlot, total - firstDefault, std::move(call)));
         }
     }
+    // The record, by the local's serial until its `var` node is made, or in the static's guard (M3b.2).
+    if (symbol.empty()) { if (const Local *l = lookup_.findLocal(d.name)) listBySerial_[l->serial] = record; }
+    else staticGuards_[symbol].elements = record;
     if (!counted) return StmtPtr(new Block(std::move(all)));
     Alive built{ d.name, offset, plain };
     built.builtSlot = builtSlot;

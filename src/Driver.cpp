@@ -1387,6 +1387,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         return typer.localBuilt(v, sym, sig, dflt, zeroed);
     });
     lowering.setLocalList([&typer](syntax::NodeId v, TypeId &param, std::uint32_t &n) { return typer.localList(v, param, n); });
+    lowering.setListBuilt([&typer](syntax::NodeId v, sema::ListBuilt &out) { return typer.listBuilt(v, out); });
     lowering.setMemberList([&typer](const std::string &ctor, const std::string &m, std::uint32_t pos, TypeId &param, std::uint32_t &n) {
         return typer.memberList(ctor, m, pos, param, n);
     });

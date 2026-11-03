@@ -487,6 +487,7 @@ ExprPtr Parser::listTemporaryFrom(const Type *to, Init &in, bool copyList, std::
             std::vector<ExprPtr> args;
             args.push_back(initializerListExpr(ilType, in, pos));
             const Signature ctor = overload_.resolveOverload(constructorKey(plain->tag()), args, pos);
+            noteBracedBuilt(in.pos, plain, ctor, false);
             return constructTemporary(plain, ctor, std::move(args), false, pos);
         }
         if (in.items.empty() || !onlyImplicitConstructors(plain->tag()) ||
@@ -499,6 +500,7 @@ ExprPtr Parser::listTemporaryFrom(const Type *to, Init &in, bool copyList, std::
                 src_.fail(pos, "'" + plain->describe() + "' has no public constructor taking "
                                "these arguments - the one that matches is " +
                                (ctor.access == Access::Private ? "private" : "protected"));
+            noteBracedBuilt(in.pos, plain, ctor, in.items.empty() && ctor.implicit);
             return constructTemporary(plain, ctor, std::move(args), in.items.empty() && ctor.implicit, pos);
         }
     }

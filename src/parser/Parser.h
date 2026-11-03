@@ -656,12 +656,24 @@ private:
     std::set<std::string> noexceptWraps_;   // a noexcept body with no pads of its own, wrapped in a catch-all that aborts (M3b.2)
     // The static locals guardOnce builds at run time; the adapter takes only those laid down as data.
     std::set<std::string> guardedStatics_;
+    // **Each element of a braced list an array of a class is built from** (M3b.2): the `var` node's value parts it took
+    // (`first` after the written bounds, `count` of them) and how - a trivially copyable object's `bytes`, else the
+    // constructor by `symbol`, its type with `T *` first, `zeroed` first for an implicit one's `{}`; the rest by `tail`.
+    struct ListElement { std::uint32_t first = 0, count = 0; std::string symbol; const Type *signature = nullptr;
+                         bool bytes = false, zeroed = false, defaulted = false;
+                         bool braced = false, list = false; };     // the part is a `{}` node: its values the arguments, or one initializer_list
+    struct ListBuilt { std::vector<ListElement> elems; std::string tail; const Type *tailSig = nullptr;
+                       bool tailZeroed = false, tailDefaulted = false; };
+    // The same for an initializer_list's backing array (buildInitializerList), by its braces' position - the `{}` node's.
+    std::map<std::uint32_t, ListBuilt> listsAt_;
     // What guardOnce built for one, by its symbol (M3b.2): the guard it named; whether a throw out of the construction aborts
     // it; the constructor that builds it, with its type and the [dcl.init]/8 facts; the destructor's registration.
     struct StaticGuard {
         std::string guard, ctor, helper, vectorLoop; const Type *ctorSig = nullptr;
         bool aborts = false, built = false, defaulted = false, zeroed = false, copied = false, list = false, registered = false;
         bool array = false;     // an array of a class built by its loop, vectorLoop, if any; `helper` destroys it at exit
+        ListBuilt elements;     // an array of a class built from a braced list, or an initializer_list's backing array: each element
+        const Type *listOf = nullptr;   // the initializer_list the braces were made into, where a constructor took one
     };
     std::map<std::string, StaticGuard> staticGuards_;
     TryFacts pendingTry_;
@@ -726,6 +738,8 @@ private:
         const Local *l = lookup_.findLocal(name);
         if (l == nullptr) return;
         declaredLocals_[id.v] = *l;
+        const std::map<int, ListBuilt>::const_iterator lb = listBySerial_.find(l->serial);
+        if (lb != listBySerial_.end()) listBuilt_[id.v] = lb->second;
         std::map<int, LocalBuilt>::const_iterator c = ctorBySerial_.find(l->serial);
         if (c == ctorBySerial_.end()) return;
         resolutions_[id.v] = resolvedAs(Resolved::Call, nullptr, c->second.symbol);
@@ -735,8 +749,9 @@ private:
     // signature with `this`, whether defaults were added to the written arguments, whether [dcl.init]/8 zeroed first;
     // `listOf`, the initializer_list a braced list of `listCount` flat elements - the `var` node's parts - was made into.
     struct LocalBuilt { std::string symbol; const Type *signature; bool defaulted, zeroed; std::vector<syntax::NodeId> defaults;
-                        const Type *listOf; std::size_t listCount; };
+                        const Type *listOf; std::size_t listCount; std::uint32_t listPos; };    // listPos: the braces', listsAt_'s key
     std::map<int, LocalBuilt> ctorBySerial_;
+    std::map<int, ListBuilt> listBySerial_;     // an array local's list, by its serial, until its `var` node is made
     // The defaults a local's constructor was completed by, for its `var` node to take as its last parts, read in the
     // declaration's scope as a call's are (M3b.2); none where one has no syntax.
     std::vector<syntax::NodeId> localDefaults(const std::string &name) {
@@ -748,6 +763,7 @@ private:
         return c->second.defaults;
     }
     std::unordered_map<std::uint32_t, LocalBuilt> localBuilt_;      // the same, by `var` node (M3b.2)
+    std::unordered_map<std::uint32_t, ListBuilt> listBuilt_;        // an array local's list, by `var` node (M3b.2)
     // The copy or move assignment `a = b` called for a class with one of its own, by b's node: its symbol and type (M3b.2).
     std::unordered_map<std::uint32_t, LocalBuilt> assignCalls_;
     // **One declarator's `var` node**, made when the declarator's scope closes - which a loop body that leaves by
@@ -826,6 +842,17 @@ private:
     // And the constructor that built it, by node: its symbol, its type with `T *` first, and whether `T()` zeroed first.
     struct TemporaryBuilt { std::string symbol; const Type *signature; bool zeroFirst; };
     std::unordered_map<std::uint32_t, TemporaryBuilt> temporaryBuilt_;
+    // The constructor a braced list made a temporary through (listTemporaryFrom), by its braces' position - the `{}`
+    // node's, which the typer reads where a node has no record of its own; empty where a replay built it otherwise.
+    std::map<std::uint32_t, TemporaryBuilt> bracedBuilt_;
+    void noteBracedBuilt(std::size_t pos, const Type *plain, const Signature &ctor, bool zeroFirst) {
+        std::vector<const Type *> full(1, types_.pointerTo(plain));
+        full.insert(full.end(), ctor.params.begin(), ctor.params.end());
+        const TemporaryBuilt b = { ctor.symbol, types_.functionType(types_.get(Kind::Void), full, false), zeroFirst };
+        const std::map<std::uint32_t, TemporaryBuilt>::iterator had = bracedBuilt_.find(static_cast<std::uint32_t>(pos));
+        if (had == bracedBuilt_.end()) bracedBuilt_[static_cast<std::uint32_t>(pos)] = b;
+        else if (had->second.symbol != b.symbol || had->second.signature != b.signature) had->second.symbol.clear();
+    }
     // The converting constructor userConversion called to make a temporary of a value, by the value's node (M3b.2).
     std::unordered_map<std::uint32_t, TemporaryBuilt> convertedBuilt_;
     // The copy materialiseCopy made of a by-value class argument, by the argument's node: the copy or move constructor's
@@ -1288,6 +1315,7 @@ private:
         LambdaFacts pendingLambda;
         std::vector<syntax::NodeId> lambdaBodies;
         std::map<int, LocalBuilt> ctorBySerial;
+        std::map<int, ListBuilt> listBySerial;
     };
     // **A parse whose result is discarded must put back what it accumulated.**
     struct Discarded {
@@ -1393,7 +1421,7 @@ private:
     // object and a static data member are the first kind.
     StmtPtr constructObject(const Declared &d, const std::string &symbol,
                             int offset, std::vector<ExprPtr> args,
-                            bool copyInit, bool valueInit);
+                            bool copyInit, bool valueInit, ListElement *chosen = nullptr);
     ExprPtr objectAt(const Declared &d, const std::string &symbol, int offset);
 
     // **What a class with constructors is initialised from** - `(args)`,
@@ -1407,9 +1435,10 @@ private:
         bool listInit = false;
         // A same-class source and no copy constructor: the bytes are asked for.
         bool trivialCopy = false;
-        // An initializer_list constructor's list, made from `ilCount` braces' elements none of which is braced (M3b.2).
+        // An initializer_list constructor's list, made from `ilCount` braces' elements, the braces at `ilPos` (M3b.2).
         const Type *ilType = nullptr;
         std::size_t ilCount = 0;
+        std::uint32_t ilPos = 0;
     };
     CtorInit readConstructorInitialiser(const Declared &d);
 

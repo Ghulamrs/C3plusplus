@@ -60,11 +60,27 @@ struct Resolution : ResolutionKind {
 struct ClosureCapture { int offset; TypeId type; syntax::NodeId source; int outer; TypeId outerType; ClosureCapture() : offset(0), outer(-1) {} };
 struct ClosureFacts { TypeId closure; std::vector<ClosureCapture> captures; int thisOffset; TypeId thisType; ClosureFacts() : thisOffset(-1) {} };
 
+// Each element of a braced list an array of a class is built from (M3b.2), Parser::ListBuilt: the `var` node's value
+// parts it took (`first` after the written bounds, `count` of them) and how - a trivially copyable object's `bytes`, or
+// the constructor by `symbol`, its type with `T *` first, `zeroed` first; the elements past them by `tail`, the default.
+struct ListElement {
+    std::uint32_t first, count; std::string symbol; TypeId signature; bool bytes, zeroed, defaulted;
+    bool braced, list;     // the part is a `{}` node: its values the arguments, or one initializer_list for the constructor's
+    ListElement() : first(0), count(0), bytes(false), zeroed(false), defaulted(false), braced(false), list(false) {}
+};
+struct ListBuilt {
+    std::vector<ListElement> elems; std::string tail; TypeId tailSig; bool tailZeroed, tailDefaulted;
+    ListBuilt() : tailZeroed(false), tailDefaulted(false) {}
+    bool recorded() const { return !elems.empty() || !tail.empty(); }
+};
+
 // A static local built at run time as guardOnce built it (M3b.2): its guard, whether a throw out of the construction aborts
 // it, the constructor that builds it (empty: an initialiser stored), and the destructor's registration - Microsoft's helper.
 struct StaticGuard {
     std::string guard, ctor, helper, vectorLoop; TypeId ctorSig; bool aborts, built, defaulted, zeroed, copied, list, registered;
     bool array;     // an array of a class built by its loop, vectorLoop, if any; `helper` destroys it at exit
+    ListBuilt elements;     // an array of a class built from a braced list, or an initializer_list's backing array: each element
+    TypeId listOf;          // the initializer_list the braces were made into, where a constructor took one
     StaticGuard() : aborts(false), built(false), defaulted(false), zeroed(false), copied(false), list(false), registered(false),
                     array(false) {}
 };
@@ -216,6 +232,10 @@ public:
     bool localBuilt(syntax::NodeId var, std::string &symbol, TypeId &signature, bool &defaulted, bool &zeroed) const;
     // The initializer_list parameter a local's braces of `count` flat elements - its `var` node's parts - were made into.
     bool localList(syntax::NodeId var, TypeId &param, std::uint32_t &count) const;
+    // A braced list's elements, each with its construction: an array local's by its `var`, a local's initializer_list's
+    // by its `var`, a braced argument's by its `{}` node; false where the parser recorded none (a list of scalars).
+    bool listBuilt(syntax::NodeId node, ListBuilt &out) const;
+    template <class Record> static void copyListBuilt(const Record &r, ListBuilt &out);
     bool memberList(const std::string &ctor, const std::string &member, std::uint32_t pos, TypeId &param, std::uint32_t &count) const;
     // The constructor a class temporary `T(...)` at node `id` was built by, and whether `T()` zeroed the object first.
     bool temporaryBuilt(syntax::NodeId id, std::string &symbol, TypeId &signature, bool &zeroFirst) const;

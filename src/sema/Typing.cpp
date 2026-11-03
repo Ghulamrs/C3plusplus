@@ -555,10 +555,45 @@ bool Typer::constructed(TypeId cls) const { return p_.hasConstructors(p_.types_.
 
 bool Typer::guardedStatic(const std::string &symbol) const { return p_.guardedStatics_.count(symbol) != 0; }
 
+// Parser::ListBuilt's elements with their types as handles - the record's type a parameter, Parser's being private.
+template <class Record> void Typer::copyListBuilt(const Record &r, ListBuilt &out) {
+    out.elems.clear();
+    for (std::size_t i = 0; i < r.elems.size(); i++) {
+        ListElement e;
+        e.first = r.elems[i].first;
+        e.count = r.elems[i].count;
+        e.symbol = r.elems[i].symbol;
+        e.signature = TypeTable::id(r.elems[i].signature);
+        e.bytes = r.elems[i].bytes;
+        e.zeroed = r.elems[i].zeroed;
+        e.defaulted = r.elems[i].defaulted;
+        e.braced = r.elems[i].braced;
+        e.list = r.elems[i].list;
+        out.elems.push_back(e);
+    }
+    out.tail = r.tail;
+    out.tailSig = TypeTable::id(r.tailSig);
+    out.tailZeroed = r.tailZeroed;
+    out.tailDefaulted = r.tailDefaulted;
+}
+
+bool Typer::listBuilt(syntax::NodeId node, ListBuilt &out) const {
+    const std::unordered_map<std::uint32_t, Parser::ListBuilt>::const_iterator i = p_.listBuilt_.find(node.v);
+    if (i != p_.listBuilt_.end()) { copyListBuilt(i->second, out); return true; }
+    const std::unordered_map<std::uint32_t, Parser::LocalBuilt>::const_iterator l = p_.localBuilt_.find(node.v);
+    const std::uint32_t at = l != p_.localBuilt_.end() && l->second.listOf != nullptr ? l->second.listPos : p_.syntaxTree_.node(node).loc;
+    const std::map<std::uint32_t, Parser::ListBuilt>::const_iterator b = p_.listsAt_.find(at);
+    if (b == p_.listsAt_.end()) return false;
+    copyListBuilt(b->second, out);
+    return true;
+}
+
 bool Typer::staticGuard(const std::string &symbol, StaticGuard &out) const {
     const auto g = p_.staticGuards_.find(symbol);
     if (g == p_.staticGuards_.end() || g->second.guard.empty()) return false;
     const Parser::StaticGuard &r = g->second;
+    copyListBuilt(r.elements, out.elements);
+    out.listOf = TypeTable::id(r.listOf);
     out.guard = r.guard;
     out.ctor = r.ctor;
     out.helper = r.helper;
@@ -637,10 +672,16 @@ bool Typer::rangeCalls(syntax::NodeId id, Resolution &begin, Resolution &end) co
 
 bool Typer::temporaryBuilt(syntax::NodeId id, std::string &symbol, TypeId &signature, bool &zeroFirst) const {
     const std::unordered_map<std::uint32_t, Parser::TemporaryBuilt>::const_iterator i = p_.temporaryBuilt_.find(id.v);
-    if (i == p_.temporaryBuilt_.end() || i->second.symbol.empty() || i->second.signature == nullptr) return false;
-    symbol = i->second.symbol;
-    signature = TypeTable::id(i->second.signature);
-    zeroFirst = i->second.zeroFirst;
+    // A braced argument's `{}` node has no temporary of its own: the braces' record, by their position.
+    const std::map<std::uint32_t, Parser::TemporaryBuilt>::const_iterator b =
+        i == p_.temporaryBuilt_.end() && p_.syntaxTree_.node(id).kind == syntax::Kind::Other
+            ? p_.bracedBuilt_.find(p_.syntaxTree_.node(id).loc) : p_.bracedBuilt_.end();
+    if (i == p_.temporaryBuilt_.end() && b == p_.bracedBuilt_.end()) return false;
+    const Parser::TemporaryBuilt &r = i != p_.temporaryBuilt_.end() ? i->second : b->second;
+    if (r.symbol.empty() || r.signature == nullptr) return false;
+    symbol = r.symbol;
+    signature = TypeTable::id(r.signature);
+    zeroFirst = r.zeroFirst;
     return true;
 }
 

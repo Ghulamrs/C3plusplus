@@ -84,6 +84,8 @@ public:
     void setLocalBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &, bool &)> f) { localBuilt_ = f; }
     // The initializer_list parameter a local's braces were made into, and their count - Sema's record, asked by the glue.
     void setLocalList(std::function<bool(syntax::NodeId, TypeId &, std::uint32_t &)> f) { localList_ = f; }
+    // Each element of the braced list an array local of a class was built from - Sema's record, asked by the glue.
+    void setListBuilt(std::function<bool(syntax::NodeId, sema::ListBuilt &)> f) { listBuilt_ = f; }
     void setMemberList(std::function<bool(const std::string &, const std::string &, std::uint32_t, TypeId &, std::uint32_t &)> f) { memberList_ = f; }
     void setTemporaryBuilt(std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> f) { temporaryBuilt_ = f; }
     // The converting constructor that made a temporary of a value at a node - Sema's record, asked by the glue.
@@ -210,7 +212,7 @@ private:
     void destroyWhen(const Live &l, bool invoke = false);
     bool canFlag() const;
     void storageGuard(ValueId p, const Type &made, const std::string &release);
-    void staticArray(const std::string &symbol, const Type &array, const sema::StaticGuard &g);
+    void staticArray(sema::TypedId var, const std::string &symbol, const Type &array, const sema::StaticGuard &g);
     Val memberAddress(sema::TypedId id);
     Val memberOfThis(sema::TypedId id);
     bool namesCalledFunction(const std::string &head, const std::string &symbol) const;
@@ -266,6 +268,7 @@ private:
     TypeId builtArray(const Type &t, long long &count, bool local = false) const;
     void buildElements(const Member &m, const Type &et, long long elems);
     void builtArrayLocal(sema::TypedId var, ValueId slot, const Type &et, long long elems);
+    void listArray(sema::TypedId var, ValueId base, const Type &et, long long elems, const sema::ListBuilt &lb, const std::string &dtor);
     static bool scalarArray(const Type &t);
     void buildMember(ValueId at, const Member &m, sema::TypedId entry);
     void destroyMembers(const Type &cls);
@@ -334,7 +337,8 @@ private:
     bool builtClass(const Type &t) const;
     void builtLocal(sema::TypedId var, ValueId slot, const Type &t);
     ValueId initializerList(sema::TypedId parent, const Type &param, std::uint32_t n);
-    ValueId initializerListOf(const std::vector<sema::TypedId> &elems, const Type &param);
+    ValueId initializerListOf(const std::vector<sema::TypedId> &elems, const Type &param, const sema::ListBuilt &lb = sema::ListBuilt());
+    void listElement(ValueId at, const Type &et, sema::TypedId part, const sema::ListElement &e);
     void guard(ValueId slot, const Type &c, const std::string &dtor);
     void destroy(const Live &l, bool invoke = false);
     void destroyLive(std::size_t mark);
@@ -356,8 +360,11 @@ private:
     bool destroyedTemporary(sema::TypedId id) const { return builtTemporary(id, true); }
     bool copiedTemporary(sema::TypedId id) const;
     bool temporaryNode(sema::TypedId id) const {
-        return plainTemporary(id) || constructedTemporary(id) || destroyedTemporary(id) || copiedTemporary(id);
+        return plainTemporary(id) || constructedTemporary(id) || destroyedTemporary(id) || copiedTemporary(id) || listTemporaryNode(id);
     }
+    bool listTemporaryNode(sema::TypedId id) const;
+    void listTemporary(sema::TypedId id, ValueId slot);
+    void constructFromList(ValueId where, const std::string &symbol, TypeId sig, const Type &cls, bool zeroFirst, sema::TypedId args, std::uint32_t from);
     bool classObjectNode(sema::TypedId id) const;
     Val classObject(sema::TypedId id);
     Val arrowPointer(sema::TypedId member);
@@ -432,6 +439,7 @@ private:
     ValueId vtt_;                               // Itanium's C2 or D2 handed a VTT: it, the second parameter; none otherwise
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &, bool &)> localBuilt_;
     std::function<bool(syntax::NodeId, TypeId &, std::uint32_t &)> localList_;
+    std::function<bool(syntax::NodeId, sema::ListBuilt &)> listBuilt_;
     std::function<bool(const std::string &, const std::string &, std::uint32_t, TypeId &, std::uint32_t &)> memberList_;
     std::vector<Live> live_;                    // innermost last
     ValueId sret_;                              // the caller's result pointer, where a copied class is returned

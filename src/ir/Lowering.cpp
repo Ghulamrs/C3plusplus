@@ -798,12 +798,15 @@ ValueId Lowering::initializerList(sema::TypedId parent, const Type &param, std::
     if (n == 0 || count(parent) != n) outside("an initializer_list of no layout the lowering knows");
     std::vector<sema::TypedId> elems;
     for (std::uint32_t i = 0; i < n; i++) elems.push_back(child(parent, i));
-    return initializerListOf(elems, param);
+    sema::ListBuilt lb;
+    if (listBuilt_) listBuilt_(tree_.node(parent).syntax, lb);
+    return initializerListOf(elems, param, lb);
 }
 
 // The same over the elements themselves - a braced argument's, which may be one scalar (the list of one the syntax tree
-// flattens) or none: `{}` is a null `first_` and a `count_` of 0.
-ValueId Lowering::initializerListOf(const std::vector<sema::TypedId> &elems, const Type &param) {
+// flattens) or none: `{}` is a null `first_` and a `count_` of 0. Elements of a class are built as the parser's record
+// `lb` says, each alive to the full expression's end where the class has a destructor ([dcl.init.list]/6).
+ValueId Lowering::initializerListOf(const std::vector<sema::TypedId> &elems, const Type &param, const sema::ListBuilt &lb) {
     const std::uint32_t n = static_cast<std::uint32_t>(elems.size());
     const Type &il = param.isReference() ? *param.referent()->unqualified() : *param.unqualified();
     if (!param.isReference() && !bytesReturned(il)) outside("an initializer_list parameter passed as no other class is");
@@ -812,7 +815,11 @@ ValueId Lowering::initializerListOf(const std::vector<sema::TypedId> &elems, con
     const Member &countM = *il.findMember("count_");
     if (!firstM.type->isPointer()) outside("an initializer_list of no layout the lowering knows");
     const Type &e = *firstM.type->pointee()->unqualified();
-    if (!scalar(e)) outside("an initializer_list of '" + e.describe() + "' elements");
+    const bool built = !scalar(e);
+    if (built && (!e.isStructOrUnion() || !e.isComplete() || lb.elems.size() != n))
+        outside("an initializer_list of '" + e.describe() + "' elements");
+    const std::string dtor = built && e.hasDestructor() && destructor_ ? destructor_(e.id()) : std::string();
+    if (built && e.hasDestructor() && (dtor.empty() || fullFrom() == kNoFull)) outside("an initializer_list of elements with a destructor outside a full expression");
     const TypeId ptr = tid(*types_.pointerTo(&e));
     ValueId base;
     if (n == 0) {
@@ -824,7 +831,10 @@ ValueId Lowering::initializerListOf(const std::vector<sema::TypedId> &elems, con
     for (std::uint32_t i = 0; i < n; i++) {
         const InstId g = add(Op::Gep, ptr, std::vector<ValueId>(1, base));
         at(g).k = static_cast<long long>(i) * e.size(target_);
-        store(result(g), exprTo(elems[i], tid(e)).v);
+        if (!built) { store(result(g), exprTo(elems[i], tid(e)).v); continue; }
+        if (lb.elems[i].first != i || lb.elems[i].count != 1) outside("an initializer_list element the record does not place");
+        listElement(result(g), e, elems[i], lb.elems[i]);
+        if (!dtor.empty()) guard(result(g), e, dtor);
     }
     const ValueId object = entryAlloca(tid(il), "$il");
     const ValueId self = result(add(Op::Bitcast, tid(*types_.pointerTo(&il)), std::vector<ValueId>(1, object)));
@@ -835,6 +845,42 @@ ValueId Lowering::initializerListOf(const std::vector<sema::TypedId> &elems, con
     at(c).k = countM.offset;
     store(result(c), iconst(tid(*countM.type), n));
     return result(add(Op::Bitcast, tid(*types_.pointerTo(param.isReference() ? param.referent() : &il)), std::vector<ValueId>(1, self)));
+}
+
+// One element of an initializer_list's backing array at `at0` from its part, as the parser built it: a trivially copyable
+// object's bytes; the constructor it chose over the part - a `{}` node's values as the arguments, or made into the one
+// initializer_list the constructor takes (the record of that inner list by the node), or the part itself, copied in.
+void Lowering::listElement(ValueId at0, const Type &et, sema::TypedId part, const sema::ListElement &e) {
+    if (e.bytes) {
+        if (!objectNode(part)) outside("an initializer_list element copied from what is not an object");
+        const Val o = object(part);
+        if (T(o.type).unqualified() != et.unqualified()) outside("an initializer_list element copied from another type");
+        copyObject(at0, o.v, et);
+        return;
+    }
+    if (e.defaulted) outside("an initializer_list element built with default arguments");
+    if (e.symbol.empty() || !e.signature.valid()) outside("an initializer_list element built by no constructor the parser recorded");
+    const Type &ft = T(e.signature);
+    if (!ft.isFunction() || ft.params().empty() || ft.params()[0]->pointee()->unqualified() != et.unqualified())
+        outside("an initializer_list element's constructor of another class");
+    std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, at0))));
+    const bool bracedPart = syn(part).kind == syntax::Kind::Other && text(part) == "{}";
+    if (e.braced != bracedPart) outside("an initializer_list element the record does not place");
+    if (e.list) {
+        if (ft.params().size() != 2) outside("an initializer_list element's constructor of another arity");
+        std::vector<sema::TypedId> inner;
+        for (std::uint32_t i = 0; i < count(part); i++) inner.push_back(child(part, i));
+        sema::ListBuilt lb;
+        if (listBuilt_) listBuilt_(tree_.node(part).syntax, lb);
+        ops.push_back(initializerListOf(inner, *ft.params()[1], lb));
+    } else {
+        std::vector<sema::TypedId> args;
+        if (bracedPart) for (std::uint32_t i = 0; i < count(part); i++) args.push_back(child(part, i));
+        else args.push_back(part);
+        if (ft.params().size() != args.size() + 1) outside("an initializer_list element's constructor of another arity");
+        argumentList(ft, 1, false, args, false, ops);
+    }
+    directCall(e.symbol, e.signature, ops);
 }
 
 // `T x = f();` where the parser built f's result straight into x ([class.copy]/31): a call of f or an operator.
@@ -919,7 +965,7 @@ void Lowering::guardedStatic(sema::TypedId var, const std::string &symbol) {
     const sema::TypedNode &v = tree_.node(var);
     sema::StaticGuard g;
     if (!staticGuard_ || !staticGuard_(symbol, g)) outside("a static local built at run time with no guard recorded");
-    if (v.type->isArray() && !g.array) outside("a static array built at run time");
+    if (v.type->isArray() && !g.array && !g.elements.recorded()) outside("a static array built at run time");
     const bool ms = target_.microsoftNames();
     if (ms && handlerDepth_ != 0) outside("a static local built at run time inside a handler on the Microsoft ABI");
     staticLocals_[v.syntax.v] = std::make_pair(symbol, tid(*v.type));
@@ -1008,10 +1054,10 @@ void Lowering::staticConstruction(sema::TypedId var, const std::string &symbol, 
         closeFull();
         return;
     }
-    if (c.isArray()) { staticArray(symbol, c, g); return; }
+    if (c.isArray()) { staticArray(var, symbol, c, g); return; }
     const ValueId obj = addrOf(symbol, tid(*types_.pointerTo(&c)));
     if (g.built && !g.copied) {
-        if (g.list) outside("a static local built from a braced list");
+        if (g.list && !g.listOf.valid()) outside("a static local built from a braced list of no initializer_list");
         if (g.ctor.empty() || !g.ctorSig.valid()) outside("a static local built by no constructor the parser recorded");
         if (g.defaulted) outside("a static local built with default arguments");
         const Type &ft = T(g.ctorSig);
@@ -1021,8 +1067,17 @@ void Lowering::staticConstruction(sema::TypedId var, const std::string &symbol, 
             at(z).k = c.size(target_);
         }
         std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, obj))));
-        if (v.count != 0) arguments(var, 0, ft, 1, false, ops);
-        else if (ft.params().size() != 1) outside("a static local's default constructor of parameters");
+        if (g.list) {
+            // [dcl.init.list]/3: the braces' elements, the `var` node's parts, made into the constructor's initializer_list.
+            if (ft.params().size() != 2 || ft.params()[1] != &T(g.listOf)) outside("a static local's initializer_list of another parameter");
+            std::vector<sema::TypedId> elems;
+            for (std::uint32_t i = 0; i < v.count; i++) elems.push_back(child(var, i));
+            ops.push_back(initializerListOf(elems, T(g.listOf), g.elements));
+        } else if (v.count != 0) {
+            arguments(var, 0, ft, 1, false, ops);
+        } else if (ft.params().size() != 1) {
+            outside("a static local's default constructor of parameters");
+        }
         directCall(g.ctor, g.ctorSig, ops);
     } else if (c.isStructOrUnion()) {
         if (v.count != 1) outside("a static class of " + std::to_string(v.count) + " parts");
@@ -1052,22 +1107,29 @@ void Lowering::staticConstruction(sema::TypedId var, const std::string &symbol, 
     runtimeCall("__cxa_atexit", intT, args);
 }
 
-// buildStaticArrayConstruction's array of a class: its elements built by the class's loop, then the helper that destroys
-// them last first registered - __cxa_atexit given the array on Itanium, atexit on Microsoft, where the helper names it.
-void Lowering::staticArray(const std::string &symbol, const Type &array, const sema::StaticGuard &g) {
+// buildStaticArrayConstruction's array of a class: its elements built by the class's loop, or each from its braced list
+// as a local's are, then the helper that destroys them last first registered - __cxa_atexit given the array on Itanium,
+// atexit on Microsoft, where the helper names it.
+void Lowering::staticArray(sema::TypedId var, const std::string &symbol, const Type &array, const sema::StaticGuard &g) {
     TypeId elem = tid(array);
     long long n = 1;
     for (; T(elem).isArray(); elem = tid(*T(elem).pointee())) n *= T(elem).length();
     const TypeId ep = tid(*types_.pointerTo(T(elem).unqualified())), sizeT = tid(*types_.get(target_.sizeType()));
     const ValueId first = addrOf(symbol, ep);
-    if (!g.vectorLoop.empty()) {
-        std::vector<TypeId> params(1, ep);
-        params.push_back(sizeT);
-        std::vector<ValueId> ops(1, first);
-        ops.push_back(iconst(sizeT, n));
-        directCall(g.vectorLoop, types_.functionType(types_.voidType()->id(), params), ops);
+    if (g.elements.recorded()) {
+        closeFull();     // each element is a full expression of its own; nothing destroys one built, the guard aborting instead
+        if (n > 64) outside("a static array of more elements than the lowering builds one by one");
+        listArray(var, first, *T(elem).unqualified(), n, g.elements, std::string());
+    } else {
+        if (!g.vectorLoop.empty()) {
+            std::vector<TypeId> params(1, ep);
+            params.push_back(sizeT);
+            std::vector<ValueId> ops(1, first);
+            ops.push_back(iconst(sizeT, n));
+            directCall(g.vectorLoop, types_.functionType(types_.voidType()->id(), params), ops);
+        }
+        closeFull();
     }
-    closeFull();
     if (!g.registered) return;
     const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType())), intT = tid(*types_.get(Kind::Int));
     const bool ms = target_.microsoftNames();
@@ -1303,7 +1365,9 @@ Lowering::Val Lowering::temporary(sema::TypedId id) {
         if (destroyed) guard(slot, t, dtor);
         return Val(slot, tid(t));
     }
-    if (text(id) == "{}") {
+    if (listTemporaryNode(id)) {
+        listTemporary(id, slot);
+    } else if (text(id) == "{}") {
         if (!plainTemporary(id)) outside("a class temporary from a braced list");
         listInit(slot, t, id, 1);      // `P{a, b}`, an aggregate's list ([dcl.init.list]/3)
     } else if (count(id) == 1) {
@@ -1318,6 +1382,53 @@ Lowering::Val Lowering::temporary(sema::TypedId id) {
         copyObject(slot, o.v, t);
     }
     return Val(slot, tid(t));
+}
+
+// `T{...}` whose constructor, the one the parser chose, takes the braces as an initializer_list ([dcl.init.list]/3):
+// a call `{}` of a class the lowering builds, with or without a destructor.
+bool Lowering::listTemporaryNode(sema::TypedId id) const {
+    std::uint32_t from = 0;
+    const TypeId t = TypeTable::id(tree_.node(id).type);
+    if (text(id) != "{}" || !temporaryShape(id, from) || !t.valid() || !(constructedClass(T(t)) || destroyedClass(T(t)))) return false;
+    std::string symbol;
+    TypeId sig;
+    bool zero = false;
+    if (!temporaryBuilt_(tree_.node(id).syntax, symbol, sig, zero) || zero || T(sig).params().size() != 2) return false;
+    const Type &p = T(sig).params()[1]->isReference() ? *T(sig).params()[1]->referent()->unqualified() : *T(sig).params()[1]->unqualified();
+    return p.isStructOrUnion() && p.isSpecialization() && p.templateName() == "initializer_list";
+}
+
+// Such a temporary into `slot`: the list's backing array from the parser's record of the braces - the call's parts past
+// the name - and the constructor called with it; with a destructor, alive to the full expression's end ([class.temporary]/3).
+void Lowering::listTemporary(sema::TypedId id, ValueId slot) {
+    const Type &t = *tree_.node(id).type->unqualified();
+    std::string symbol;
+    TypeId sig;
+    bool zero = false;
+    temporaryBuilt_(tree_.node(id).syntax, symbol, sig, zero);
+    constructFromList(slot, symbol, sig, t, false, id, 1);
+    if (t.hasDestructor()) guard(slot, t, temporaryDestructor(t));
+}
+
+// The recorded constructor called on `where` over the braces' values, `args`'s parts from `from`: one per parameter as
+// construct calls it, or - the constructor's one parameter an initializer_list - all of them its backing array.
+void Lowering::constructFromList(ValueId where, const std::string &symbol, TypeId sig, const Type &cls, bool zeroFirst,
+                                 sema::TypedId args, std::uint32_t from) {
+    const Type &ft = T(sig);
+    const Type *p = ft.isFunction() && ft.params().size() == 2 ? ft.params()[1] : nullptr;
+    const Type *il = p != nullptr ? (p->isReference() ? p->referent()->unqualified() : p->unqualified()) : nullptr;
+    if (il == nullptr || !il->isStructOrUnion() || !il->isSpecialization() || il->templateName() != "initializer_list") {
+        construct(where, symbol, sig, cls, zeroFirst, args, from);
+        return;
+    }
+    if (ft.params()[0]->pointee()->unqualified() != cls.unqualified()) outside("a class temporary's constructor of another class");
+    std::vector<sema::TypedId> elems;
+    for (std::uint32_t i = from; i < count(args); i++) elems.push_back(child(args, i));
+    sema::ListBuilt lb;
+    if (listBuilt_) listBuilt_(tree_.node(args).syntax, lb);
+    std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, where))));
+    ops.push_back(initializerListOf(elems, *p, lb));
+    directCall(symbol, sig, ops);
 }
 
 // `V()` or `V(a)` of a polymorphic class with no destructor, bound to a reference: built in a slot of this frame by the
@@ -2857,12 +2968,17 @@ void Lowering::declaration(sema::TypedId id) {
 // default constructor the parser chose - where it chose one - and alive to the scope's end, the last built destroyed first.
 void Lowering::builtArrayLocal(sema::TypedId var, ValueId slot, const Type &et, long long elems) {
     const sema::TypedNode &v = tree_.node(var);
-    if (v.initForm != 0) outside("an array of a class initialised from a list");
     const bool dies = et.hasDestructor();
     if (elems > (dies ? 16 : 64)) outside("an array of more elements than the lowering builds one by one");
     if (dies && handlerDepth_ != 0) outside("a local with a destructor inside a handler");
     const std::string dtor = dies && destructor_ ? destructor_(et.id()) : std::string();
     if (dies && dtor.empty()) outside("an array whose elements' destructor the parser recorded none for");
+    if (v.initForm != 0) {
+        sema::ListBuilt lb;
+        if (!listBuilt_ || !listBuilt_(v.syntax, lb)) outside("an array of a class initialised from a list the parser recorded none for");
+        listArray(var, slot, et, elems, lb, dtor);
+        return;
+    }
     std::string symbol;
     TypeId sig;
     bool defaulted = false, zeroed = false;
@@ -2877,6 +2993,67 @@ void Lowering::builtArrayLocal(sema::TypedId var, ValueId slot, const Type &et, 
         at(g).k = k * et.size(target_);
         if (built) directCall(symbol, sig, std::vector<ValueId>(1, result(g)));
         if (dies) guard(result(g), et, dtor);
+    }
+}
+
+// [dcl.init.aggr]/2 for an array of a class from a braced list, as constructLocalArrayFromList built it: each element from
+// the `var` node's parts the record gives it - a trivially copyable object's bytes, or the constructor the parser chose,
+// zeroed first for `{}` - then the tail by the default constructor; each a full expression, alive once built where `dtor` is.
+void Lowering::listArray(sema::TypedId var, ValueId base, const Type &et, long long elems, const sema::ListBuilt &lb,
+                         const std::string &dtor) {
+    const sema::TypedNode &v = tree_.node(var);
+    const TypeId self = types_.pointerTo(et.id());
+    std::uint32_t used = v.bounds;
+    if (static_cast<long long>(lb.elems.size()) > elems) outside("an array's list of more elements than the array holds");
+    for (std::size_t k = 0; k < lb.elems.size(); k++) {
+        const sema::ListElement &e = lb.elems[k];
+        if ((e.count != 0 && v.bounds + e.first != used) || used + e.count > v.count) outside("an array's list whose parts the record does not match");
+        const InstId g = add(Op::Gep, self, std::vector<ValueId>(1, base));
+        at(g).k = static_cast<long long>(k) * et.size(target_);
+        openFull();
+        if (e.bytes) {
+            if (e.count != 1 || !objectNode(child(var, used))) outside("an array element copied from what is not an object");
+            const Val o = object(child(var, used));
+            if (T(o.type).unqualified() != et.unqualified()) outside("an array element copied from another type");
+            copyObject(result(g), o.v, et);
+        } else {
+            if (e.defaulted) outside("an array element built with default arguments");
+            if (e.symbol.empty() || !e.signature.valid()) outside("an array element built by no constructor the parser recorded");
+            const Type &ft = T(e.signature);
+            if (!ft.isFunction() || ft.params().empty() || ft.params()[0]->pointee()->unqualified() != et.unqualified())
+                outside("an array element's constructor of another class");
+            if (ft.params().size() != e.count + 1) outside("an array element's constructor of another arity");
+            if (e.zeroed) {
+                const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, result(g)));
+                at(z).k = et.size(target_);
+            }
+            std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, result(g)))));
+            std::vector<sema::TypedId> args;
+            for (std::uint32_t i = 0; i < e.count; i++) args.push_back(child(var, used + i));
+            argumentList(ft, 1, false, args, false, ops);
+            directCall(e.symbol, e.signature, ops);
+        }
+        closeFull();
+        used += e.count;
+        if (!dtor.empty()) guard(result(g), et, dtor);
+    }
+    if (used != v.count) outside("an array's list with parts its record does not place");
+    if (static_cast<long long>(lb.elems.size()) == elems) return;
+    // The tail: [dcl.init.aggr]/7, each element value-initialised - the default constructor, zeroed first where it is implicit.
+    if (lb.tail.empty() || !lb.tailSig.valid()) outside("an array's tail built by no constructor the parser recorded");
+    if (lb.tailDefaulted) outside("an array's tail built with default arguments");
+    const Type &ft = T(lb.tailSig);
+    if (!ft.isFunction() || ft.params().size() != 1 || ft.params()[0]->pointee()->unqualified() != et.unqualified())
+        outside("an array's tail constructor of another class");
+    for (long long k = static_cast<long long>(lb.elems.size()); k < elems; k++) {
+        const InstId g = add(Op::Gep, self, std::vector<ValueId>(1, base));
+        at(g).k = k * et.size(target_);
+        if (lb.tailZeroed) {
+            const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, result(g)));
+            at(z).k = et.size(target_);
+        }
+        directCall(lb.tail, lb.tailSig, std::vector<ValueId>(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, result(g))))));
+        if (!dtor.empty()) guard(result(g), et, dtor);
     }
 }
 
@@ -4674,6 +4851,12 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
                 ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(&ref)), std::vector<ValueId>(1, temp))));
                 continue;
             }
+            // [over.ics.list]: a braced list bound to one is the temporary the parser made of it, in a slot of the frame.
+            if (ref.isStructOrUnion() && (ref.isConst() || p.isRValueReference()) && syn(an).kind == syntax::Kind::Other && text(an) == "{}") {
+                if (!bracedArgument(an, ref, made)) outside("a braced list bound to a reference to '" + ref.describe() + "'");
+                ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(&ref)), std::vector<ValueId>(1, made))));
+                continue;
+            }
             // A class prvalue bound to one - a temporary or a closure in a slot of the frame, alive to the call's end;
             // neither has a destructor for the full expression's end to run.
             if (!isLvalueNode(an) && (ref.isConst() || p.isRValueReference()) && (temporaryNode(an) || closureNode(an))) {
@@ -4747,6 +4930,12 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
             continue;
         }
         if (!scalar(p)) outside("a parameter of type '" + p.describe() + "'");
+        if (syn(an).kind == syntax::Kind::Other && text(an) == "{}") {
+            // [dcl.init.list]/3: a scalar's `{v}` is v, never narrowed - the parser checked - and `{}` its zero.
+            if (count(an) > 1) outside("a scalar parameter given a braced list of " + std::to_string(count(an)) + " values");
+            ops.push_back(count(an) == 0 ? zeroOf(tid(p)) : exprTo(child(an, 0), tid(p)).v);
+            continue;
+        }
         ops.push_back(exprTo(an, tid(p)).v);
     }
 }
@@ -4874,16 +5063,20 @@ bool Lowering::bracedArgument(sema::TypedId an, const Type &p, ValueId &slot) {
         if (braced) for (std::uint32_t i = 0; i < count(an); i++) elems.push_back(child(an, i));
         else if (tree_.node(an).type != nullptr && scalar(*tree_.node(an).type)) elems.push_back(an);
         else return false;
-        slot = initializerListOf(elems, p);
+        sema::ListBuilt lb;
+        if (braced && listBuilt_) listBuilt_(tree_.node(an).syntax, lb);
+        slot = initializerListOf(elems, p, lb);
         return true;
     }
     if (!braced || count(an) == 0) return false;
     std::string symbol;
     TypeId sig;
     bool zero = false;
-    if (temporaryBuilt_ && temporaryBuilt_(tree_.node(an).syntax, symbol, sig, zero) && constructedClass(c)) {
+    const bool destroyed = destroyedClass(c);
+    if (temporaryBuilt_ && temporaryBuilt_(tree_.node(an).syntax, symbol, sig, zero) && (destroyed || constructedClass(c))) {
         slot = entryAlloca(tid(c), "$tmp");       // [dcl.init.list]/3: braces reaching a constructor, the one the parser chose
-        construct(slot, symbol, sig, c, zero, an, 0);
+        constructFromList(slot, symbol, sig, c, zero, an, 0);
+        if (destroyed) guard(slot, c, temporaryDestructor(c));
         return true;
     }
     if (!plainClass(c) || !listFits(c, count(an))) outside("a braced list as an argument of '" + p.describe() + "'");
