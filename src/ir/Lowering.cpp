@@ -5546,8 +5546,7 @@ Lowering::Val Lowering::newExpression(sema::TypedId id) {
     if (built && f.ctor.empty()) outside("a 'new' of a class with constructors");
     if (built && f.array) outside("an array 'new' of a class with constructors");
     if (built && f.ctorDefaulted) outside("a 'new' with default arguments");
-    // [expr.new]/20: a constructor that throws has the storage freed; a placement frees nothing.
-    // A placement of the program's allocation function frees nothing either: no placement delete is matched (the parser's).
+    // [expr.new]/20: a constructor that throws has the storage freed; no placement form frees (no placement delete is matched).
     const bool frees = (built || loop) && !f.placed && f.userArgs == 0;
     // The placement's address, the nothrow tag, or the program's allocation function's placement arguments, first.
     const std::uint32_t lead = f.placed || f.nothrow ? 1u : static_cast<std::uint32_t>(f.userArgs);
