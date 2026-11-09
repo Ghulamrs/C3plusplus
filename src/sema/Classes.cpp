@@ -1464,6 +1464,9 @@ void Classes::synthesizeDestructor(std::size_t which) {
             args.push_back(vttForBase(type, base));
             ps.push_back(p_.vttType());
         }
+        // What destroys this base, for the SSA builder (M3b.3): keyed as a written destructor's record is, "~B".
+        const Parser::MemberBuilt u = { sym, p_.types_.functionType(p_.types_.get(Kind::Void), ps, false), false, false };
+        p_.memberBuilt_[symbol + "|~" + base->tag() + "|0"] = u;
         body.push_back(StmtPtr(new ExprStmt(
             p_.completeCall("~" + base->tag(), sym, nullptr, p_.types_.get(Kind::Void),
                          ps, false, pos, std::move(args)))));
@@ -1792,6 +1795,9 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
 
     const Parser::FrameSave savedFrame = p_.openFrame();
     Parser::OwnPads own(p_);
+    // The members' records (constructMember's, memberInitialiser's) are keyed by this symbol, for the SSA builder (M3b.3).
+    struct Keyed { std::string &ref, saved; Keyed(std::string &r, const std::string &v) : ref(r), saved(r) { ref = v; } ~Keyed() { ref = saved; } }
+        keyed(p_.currentFunction_, symbol);
     const Type *self = p_.types_.pointerTo(type);
     std::vector<Param> params;
     const int thisSlot = p_.allocateFrameSlot(self);
@@ -1872,6 +1878,7 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
             }
         } else {
             p_.applyDefaults(chosen, defaults, pos);
+            p_.noteEntryDefaults(base->tag(), defaults, 0);     // for the SSA builder (M3b.3), as a written entry's are
         }
         const std::string sym = p_.linkage_.baseConstructorSymbol(chosen, base);
 
@@ -1895,6 +1902,15 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
             args.push_back(std::move(defaults[k]));
             ps.push_back(chosen.params[k]);
         }
+        // What builds this base, and what destroys it if a later part throws, for the SSA builder (M3b.3): "^B" and "~B".
+        const Parser::MemberBuilt b = { sym, p_.types_.functionType(p_.types_.get(Kind::Void), ps, false), !inherited && !defaults.empty(), false };
+        p_.memberBuilt_[symbol + "|^" + base->tag() + "|0"] = b;
+        if (const Signature *dtor = p_.destructorOf(base)) {
+            std::string d2 = dtor->symbol;
+            if (!p_.target_.microsoftNames()) itaniumDestructorName(base->tag(), base, false, &d2);
+            const Parser::MemberBuilt u = { d2, p_.types_.functionType(p_.types_.get(Kind::Void), std::vector<const Type *>(1, basePtr), false), false, false };
+            p_.memberBuilt_[symbol + "|~" + base->tag() + "|0"] = u;
+        }
         // A base subobject, so cl's flag is 0: its virtual bases are this
         // class's to build, and it built them above.
         body.push_back(StmtPtr(new ExprStmt(
@@ -1910,7 +1926,9 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
 
     // The vptr is written for either reason it exists.
     if (type->hasVptr()) {
-        std::vector<StmtPtr> vp = storeVptrs(cls, type, thisSlot);
+        std::vector<sema::VptrStore> &stores = p_.vptrStores_[symbol];     // recorded for the SSA builder (M3b.3)
+        stores.clear();
+        std::vector<StmtPtr> vp = storeVptrs(cls, type, thisSlot, &stores);
         for (std::size_t i = 0; i < vp.size(); i++)
             body.push_back(std::move(vp[i]));
     }
@@ -1924,6 +1942,7 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
         // copied them down - and the base's own constructor has already built
         // them by the time this body runs.
         if (memberFromBase(type, ms[i])) continue;
+        p_.memberDefaultFor_ = symbol;      // the initialiser's syntax recorded under this constructor (M3b.3)
         StmtPtr one = p_.memberInitialiser(cls, type, ms[i], thisSlot, pos);
         std::vector<ExprPtr> none;
         if (one == nullptr && type->kind() != Kind::Union && ms[i].anonUnion == nullptr)

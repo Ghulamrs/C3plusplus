@@ -10,7 +10,7 @@
 #include "parser/Parser.h"
 #include "sema/Typing.h"
 #include "sema/Adapter.h"
-#include "ir/Lowering.h"
+#include "ir/Builder.h"
 #include "AstDump.h"
 #include "Preprocessor.h"
 #include "Source.h"
@@ -1409,27 +1409,36 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     lowering.setArrowCalls([&typer](syntax::NodeId o, std::vector<sema::Resolution> &out) { return typer.arrowCalls(o, out); });
     lowering.setConversionCall([&typer](syntax::NodeId o, sema::Resolution &out) { return typer.conversionCall(o, out); });
     lowering.setAssignCall([&typer](syntax::NodeId v, std::string &sym, TypeId &sig) { return typer.assignCall(v, sym, sig); });
-    std::map<std::string, int> reasons;
-    int lowered = 0;
-    for (std::size_t r = 0; r < c.bodies.size(); r++) {
-        const Function &fn = program.functions[c.bodies[r].second];
-        const sema::TypedId t = typer.typeFunction(c.bodies[r].first);
-        ir::FunctionFacts facts;
+    // The facts Ast.h's Function carries, of any function; a body's typed-tree facts are added below.
+    auto factsOf = [&typer](const Function &fn, ir::FunctionFacts &facts) {
         facts.symbol = fn.symbol();
         facts.displayName = fn.displayName();
         facts.isStatic = fn.isStatic();
         facts.isInline = fn.isInline();
         facts.variadic = fn.isVariadic();
         facts.hasThis = fn.hasThis();
-        facts.isConstructor = typer.isConstructor(c.bodies[r].first);
         // Itanium's C2 or D2 handed a VTT was renamed from the C1 or D1 its records are keyed by.
         const std::string split = typer.vttSplit(fn.symbol());
         facts.recordKey = split.empty() ? fn.symbol() : split;
         facts.takesVtt = !split.empty();
-        facts.msFlag = facts.isConstructor && typer.msVbaseCtor(fn.symbol());
         typer.typeMemberDefaults(facts.recordKey);      // a constructor's member entries, any function's hand-built calls' defaults
         facts.sret = fn.sretSlot() != 0;
         facts.landingPads = fn.hasLandingPads();
+        facts.noexcept_ = fn.isNoexcept();
+        facts.pos = fn.pos();
+        facts.paramCount = fn.params().size();
+        if (fn.hasThis() && !fn.params().empty()) facts.thisType = TypeTable::id(fn.params()[0].type);
+        facts.returns = TypeTable::id(fn.returns());
+    };
+    std::map<std::string, int> reasons;
+    int lowered = 0;
+    for (std::size_t r = 0; r < c.bodies.size(); r++) {
+        const Function &fn = program.functions[c.bodies[r].second];
+        const sema::TypedId t = typer.typeFunction(c.bodies[r].first);
+        ir::FunctionFacts facts;
+        factsOf(fn, facts);
+        facts.isConstructor = typer.isConstructor(c.bodies[r].first);
+        facts.msFlag = facts.isConstructor && typer.msVbaseCtor(fn.symbol());
         // A plain function's try block is a `try` in its body to the lowering, its throw(...) list a filter it
         // makes; any other wrap stays the parser's.
         facts.specFilter = typer.specFilter(facts.recordKey);
@@ -1437,12 +1446,8 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         facts.ctorTry = typer.ctorTry(facts.recordKey);
         facts.wrappedBody = facts.specFilter.empty() && ((typer.wrappedBody(facts.recordKey) && !typer.plainFunctionTry(facts.recordKey) &&
                                                           !facts.noexceptWrap && !facts.ctorTry) || !fn.exceptionSpec().empty());
-        facts.noexcept_ = fn.isNoexcept();
-        facts.pos = fn.pos();
-        facts.paramCount = fn.params().size();
-        if (fn.hasThis() && !fn.params().empty()) facts.thisType = TypeTable::id(fn.params()[0].type);
         const TypeId declared = typer.declaredReturn(c.bodies[r].first);
-        facts.returns = declared.valid() ? declared : TypeTable::id(fn.returns());
+        if (declared.valid()) facts.returns = declared;
         std::string why;
         // A local aligned past its type (alignas): its alignment by serial, for the lowering's alloca of it.
         for (const Local &l : fn.locals()) {
@@ -1457,15 +1462,44 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         reasons[why]++;
         if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "outside %s: %s\n", fn.symbol().c_str(), why.c_str());
     }
+    // **The compiler-written functions** (M3b.3): each built from its class's layout by the Builder, or left on the
+    // parser's path with its reason, counted by kind.
+    ir::Builder builder(lowering);
+    std::map<std::string, int> built, left;
+    int synthesised = 0, builtCount = 0;
+    for (std::size_t i = 0; i < program.functions.size(); i++) {
+        const Function &fn = program.functions[i];
+        if (fn.synthesised().empty()) continue;
+        synthesised++;
+        ir::FunctionFacts facts;
+        factsOf(fn, facts);
+        facts.isConstructor = fn.synthesised().find("constructor") != std::string::npos;
+        facts.msFlag = facts.isConstructor && typer.msVbaseCtor(fn.symbol());
+        // A special member or a thunk takes `this` first; the synthesiser set no hasThis, which is the sret-order bit alone.
+        const bool special = facts.isConstructor || fn.synthesised().find("destructor") != std::string::npos ||
+                             fn.synthesised().find("thunk") != std::string::npos;
+        facts.hasThis = fn.hasThis() || (special && !fn.params().empty());
+        if (facts.hasThis && !fn.params().empty()) facts.thisType = TypeTable::id(fn.params()[0].type);
+        std::string why;
+        if (builder.build(facts, fn.synthesised(), why).valid()) { built[fn.synthesised()]++; builtCount++; continue; }
+        left[fn.synthesised() + " - " + why]++;
+        if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "outside %s: %s\n", fn.symbol().c_str(), why.c_str());
+    }
     if (!report) return std::string();
     std::string out;
     const int failed = ir::verify(into, types, out);
     for (std::map<std::string, int>::const_iterator i = reasons.begin(); i != reasons.end(); ++i)
         out += "  outside (" + std::to_string(i->second) + "): " + i->first + "\n";
-    char line[200];
+    for (std::map<std::string, int>::const_iterator i = built.begin(); i != built.end(); ++i)
+        out += "  synthesised lowered (" + std::to_string(i->second) + "): " + i->first + "\n";
+    for (std::map<std::string, int>::const_iterator i = left.begin(); i != left.end(); ++i)
+        out += "  synthesised outside (" + std::to_string(i->second) + "): " + i->first + "\n";
+    char line[200], synth[120];
     std::snprintf(line, sizeof line, "-check=ssa: functions=%zu lowered=%d outside=%zu ok=%d failed=%d\n", c.bodies.size(), lowered,
                   c.bodies.size() - lowered, lowered - failed, failed);
-    return out + line;
+    std::snprintf(synth, sizeof synth, "-check=ssa synthesised: functions=%d lowered=%d outside=%d\n", synthesised, builtCount,
+                  synthesised - builtCount);
+    return out + line + synth;
 }
 
 bool Driver::compile(const Job &job) {

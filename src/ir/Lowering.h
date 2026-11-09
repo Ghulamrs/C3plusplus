@@ -106,6 +106,7 @@ public:
     // The conversion function `convert` called on a class value, by the value's node - Sema's record ([class.conv.fct]).
     void setConversionCall(std::function<bool(syntax::NodeId, sema::Resolution &)> f) { conversionCall_ = f; }
 private:
+    friend class Builder;       // M3b.3: a compiler-written function, built from the class's layout with these same pieces
     struct Outside { std::string why; explicit Outside(const std::string &w) : why(w) {} };
     struct Val { ValueId v; TypeId type; Val() {} Val(ValueId a, TypeId t) : v(a), type(t) {} };
     struct Loop { BlockId brk, cont; std::size_t handlers, live; };
@@ -350,6 +351,10 @@ private:
     void basePaths(const Type &cls, const Type &base, int at, int &found, int &offset);
     void memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32_t to);
     void storeVptrs();
+    // A function's opening and close, shared with the Builder: the module's new Function reset and named, its return type
+    // checked, its entry block with `this` and a VTT; and the return block with its one `ret`.
+    void beginFunction(const FunctionFacts &facts);
+    void finishFunction(bool landingPads);
     ValueId vttAt(int entry);
     std::size_t baseVttArgument(const Type &base, const Type &ft, std::vector<ValueId> &ops);
     void classLocal(sema::TypedId var, ValueId slot, const Type &t);

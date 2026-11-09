@@ -3027,7 +3027,7 @@ StmtPtr Parser::constructMember(const std::string &cls, const Type *type,
         if (lookup_.functions_[k].symbol == chosen.symbol) noteUsed(k);
     const std::size_t written = args.size();
     applyDefaults(chosen, args, pos);
-    if (!implicit && !m.type->isArray()) noteEntryDefaults("." + m.name, args, written);
+    if (!m.type->isArray()) noteEntryDefaults("." + m.name, args, written);
 
     int indexSlot = 0;
     long long count = 0;
@@ -3058,8 +3058,8 @@ StmtPtr Parser::constructMember(const std::string &cls, const Type *type,
         all.push_back(std::move(args[k]));
         ps.push_back(chosen.params[k]);
     }
-    // Keyed by the function being defined - a member template's specialization by its own symbol, which topLevel set.
-    if (!implicit) {
+    // Keyed by the function being defined, or synthesised (M3b.3) - a member template's specialization by its own symbol.
+    {
         const MemberBuilt b = { chosen.symbol, types_.functionType(types_.get(Kind::Void), ps, false), args.size() != written, false };
         const std::string key = currentFunction_ + "|" + m.name + "|" + std::to_string(written == 0 ? 0 : static_cast<std::uint32_t>(pos));
         // Two choices under one key - a constructor template's specializations read under one name - are no record at all.

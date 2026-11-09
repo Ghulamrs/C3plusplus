@@ -2151,10 +2151,9 @@ TypeId Lowering::ptrdiffType() const {
 
 // ----- the function
 
-FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::string &why) {
-    const std::size_t index = module_.functions.size();
+void Lowering::beginFunction(const FunctionFacts &facts) {
+    fnIndex_ = module_.functions.size();
     module_.functions.push_back(Function());
-    fnIndex_ = index;
     locals_.clear();
     aggCtors_.clear();
     unionSlots_.clear();
@@ -2188,23 +2187,63 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
     vtt_ = ValueId();
     msFlag_ = ValueId();
     noexceptWrap_ = facts.noexceptWrap;
+    Function &f = F();
+    f.symbol = facts.symbol;
+    f.displayName = facts.displayName;
+    f.isStatic = facts.isStatic;
+    f.isInline = facts.isInline;
+    f.noexcept_ = facts.noexcept_;
+    f.variadic = facts.variadic;
+    f.pos = facts.pos;
+    returns_ = T(facts.returns).isReference() ? facts.returns : tid(*T(facts.returns).unqualified());
+    f.returns = returns_;
+    const Type &rt = T(returns_);
+    if (!(rt.isVoid() || scalar(rt) || plainClass(rt) || bytesReturned(rt) || destroyedReturned(rt) || copiedReturn(rt) ||
+          (rt.isReference() && referable(*rt.referent()))))
+        outside("a return type of '" + rt.describe() + "'");
+    f.entry = newBlock();
+    place(f.entry);
+    // [class.this]: `this` is the first parameter, a value never stored to - nothing can assign to it.
+    this_ = ValueId();
+    thisType_ = TypeId();
+    f.hasThis = facts.hasThis;
+    if (!facts.hasThis) return;
+    if (!facts.thisType.valid() || !T(facts.thisType).isPointer() || !T(facts.thisType).pointee()->isStructOrUnion()) outside("a `this` not recorded");
+    thisType_ = facts.thisType;
+    this_ = param(f.entry, thisType_);
+    f.params.push_back(this_);
+    // [2.6.2]: Itanium's C2 or D2 of a class with virtual bases is handed its VTT second.
+    if (facts.takesVtt) {
+        vtt_ = param(f.entry, types_.pointerTo(types_.pointerTo(types_.voidType()->id())));
+        f.params.push_back(vtt_);
+    }
+}
+
+// The return block, reached by a branch carrying the value: one `ret`, of the address a reference or a class is returned as.
+void Lowering::finishFunction(bool landingPads) {
+    const Type &rt = T(returns_);
+    place(returnBlock_);
+    if (rt.isVoid()) {
+        add(Op::Ret, TypeId(), std::vector<ValueId>());
+    } else {
+        // A reference and a class are returned as an address: the selector copies a class out by the ABI's rule.
+        const TypeId carried = rt.isReference() ? tid(*types_.pointerTo(rt.referent()))
+                             : rt.isStructOrUnion() ? tid(*types_.pointerTo(&rt)) : returns_;
+        const ValueId rv = param(returnBlock_, carried);
+        add(Op::Ret, TypeId(), std::vector<ValueId>(1, rv));
+    }
+    // The parser's pads, or the lowering's own where the parser left an unwinding object be (its leak, CONFORMANCE.md).
+    F().landingPads = landingPads || madePads();
+}
+
+FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::string &why) {
+    const std::size_t index = module_.functions.size();
     try {
+        beginFunction(facts);
         if (facts.wrappedBody) outside("a function try block or an exception specification");
         // A noexcept body with pads of its own is not wrapped (wrappedBody says when it is): its pads are any function's.
         Function &f = F();
-        f.symbol = facts.symbol;
-        f.displayName = facts.displayName;
-        f.isStatic = facts.isStatic;
-        f.isInline = facts.isInline;
-        f.noexcept_ = facts.noexcept_;
-        f.variadic = facts.variadic;
-        f.pos = facts.pos;
-        returns_ = T(facts.returns).isReference() ? facts.returns : tid(*T(facts.returns).unqualified());
-        f.returns = returns_;
         const Type &rt = T(returns_);
-        if (!(rt.isVoid() || scalar(rt) || plainClass(rt) || bytesReturned(rt) || destroyedReturned(rt) || copiedReturn(rt) ||
-              (rt.isReference() && referable(*rt.referent()))))
-            outside("a return type of '" + rt.describe() + "'");
         // A constructor and a destructor of a class with a base, a vptr or a member that needs building or
         // destroying are M3b.3's: what they do beyond their syntax comes from the class's layout.
         bool isCtor = false, isDtor = false, destroys = false;
@@ -2253,23 +2292,6 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         const std::uint32_t params = static_cast<std::uint32_t>(paramNodes.size());
         if (params + (facts.hasThis ? 1 : 0) + (facts.takesVtt ? 1 : 0) + (facts.msFlag ? 1 : 0) != facts.paramCount)
             outside("a parameter list the typed tree and the function disagree about");
-        f.entry = newBlock();
-        place(f.entry);
-        // [class.this]: `this` is the first parameter, a value never stored to - nothing can assign to it.
-        this_ = ValueId();
-        thisType_ = TypeId();
-        f.hasThis = facts.hasThis;
-        if (facts.hasThis) {
-            if (!facts.thisType.valid() || !T(facts.thisType).isPointer() || !T(facts.thisType).pointee()->isStructOrUnion()) outside("a `this` not recorded");
-            thisType_ = facts.thisType;
-            this_ = param(f.entry, thisType_);
-            f.params.push_back(this_);
-            // [2.6.2]: Itanium's C2 or D2 of a class with virtual bases is handed its VTT second.
-            if (facts.takesVtt) {
-                vtt_ = param(f.entry, types_.pointerTo(types_.pointerTo(types_.voidType()->id())));
-                f.params.push_back(vtt_);
-            }
-        }
         // The caller's result pointer, which the parser's prologue keeps in its slot: every `return` of such a class
         // builds there and hands it back (buildReturned). Not among params: the selector copies it from that slot.
         if (copiedReturn(rt)) {
@@ -2400,18 +2422,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
             br(ret);
             returnBlock_ = ret;
         }
-        place(returnBlock_);
-        if (rt.isVoid()) {
-            add(Op::Ret, TypeId(), std::vector<ValueId>());
-        } else {
-            // A reference and a class are returned as an address: the selector copies a class out by the ABI's rule.
-            const TypeId carried = rt.isReference() ? tid(*types_.pointerTo(rt.referent()))
-                                 : rt.isStructOrUnion() ? tid(*types_.pointerTo(&rt)) : returns_;
-            const ValueId rv = param(returnBlock_, carried);
-            add(Op::Ret, TypeId(), std::vector<ValueId>(1, rv));
-        }
-        // The parser's pads, or the lowering's own where the parser left an unwinding object be (its leak, CONFORMANCE.md).
-        F().landingPads = facts.landingPads || madePads();
+        finishFunction(facts.landingPads);
         return FuncId(static_cast<std::uint32_t>(index));
     } catch (const Outside &o) {
         why = o.why;

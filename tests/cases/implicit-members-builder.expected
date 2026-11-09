@@ -1,0 +1,5 @@
++B +C +M1 +M2 +M3 +M9 | 5 40 2.5 0 9
+-M9 -M3 -M2 -M1 -C -B 
++M4 +M3 +M5 | 2 1
+-M5 -M3 -M4 
+LEDGER built=9 gone=9 live=0 double=0 phantom=0 over=0 lost=0
