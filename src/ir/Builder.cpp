@@ -15,11 +15,14 @@ FuncId Builder::build(const FunctionFacts &facts, const std::string &kind, std::
         l.beginFunction(facts);
         if (!l.this_.valid() || !l.T(l.returns_).isVoid()) l.outside("a compiler-written " + kind + " with no `this`");
         const Type &cls = *l.T(l.thisType_).pointee()->unqualified();
-        // The parts a virtual base adds - cl's flag and guard, Itanium's C1/C2 and D1/D2 split and their VTT - are not built.
-        if (cls.hasVirtualBase() || facts.takesVtt || facts.msFlag) l.outside("a compiler-written " + kind + " of a class with a virtual base");
+        // Itanium's C2 or D2 handed its VTT builds or destroys its own part, the virtual bases left to C1 or D1 (lower's rule);
+        // cl's flag and its guard are not built here yet - no box verified the Microsoft ABI the day this was written.
+        const bool vbaseParts = cls.hasVirtualBase() && facts.takesVtt && !l.target_.microsoftNames();
+        if (cls.hasVirtualBase() && !vbaseParts)
+            l.outside("a compiler-written " + kind + " of a class with a virtual base" + (l.target_.microsoftNames() ? " on the Microsoft ABI" : ""));
         // An inheriting constructor forwards parameters of its own ([class.inhctor]).
-        if (facts.paramCount != 1) l.outside("a compiler-written " + kind + " with parameters of its own");
-        if (!l.simpleLayout(cls) && !l.buildableLayout(cls, true, true, false))
+        if (facts.paramCount != 1 + (facts.takesVtt ? 1 : 0)) l.outside("a compiler-written " + kind + " with parameters of its own");
+        if (!l.simpleLayout(cls) && !l.buildableLayout(cls, true, true, vbaseParts))
             l.outside("a compiler-written " + kind + " of a class with a member the lowering does not build");
         if (ctor && cls.hasVptr() && !(l.target_.microsoftNames() && !cls.polymorphic()) &&
             (!l.vptrStores_ || !l.vptrStores_(l.key_, l.vptrs_) || l.vptrs_.empty() || (!l.vptrs_[0].fromVtt && l.vptrs_[0].symbol.empty())))

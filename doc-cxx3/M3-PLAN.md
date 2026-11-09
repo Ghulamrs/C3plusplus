@@ -1324,21 +1324,22 @@ pieces - `beginFunction` and `finishFunction`, factored out of `lower()` so a bo
 making the [except.ctor]/3 cleanups. What those read is the parser's record, and the synthesiser now leaves one as a
 written constructor's does, keyed by the synthesised symbol: `synthesizeDefaultCtor` sets `currentFunction_` for its
 duration (so `constructMember`'s and `memberInitialiser`'s records land under it - `constructMember`'s `!implicit` guards
-are gone), records each base's `^B` and `~B` and its defaults (`noteEntryDefaults`), and its vptr stores;
-`synthesizeDestructor` records each base's `~B`. No second copy of any choice: the parser decides, the builder reads.
-The driver's `lowerSsa` sends every `synthesised()` function through the Builder after the bodies (`factsOf` shared), and
+are gone), records each base's `^B` and `~B`, its defaults (`noteEntryDefaults`), its sub-VTT entry (`baseVtt_`) and its
+vptr stores, and the C2 a virtual base splits off as `vttSplit_`; `synthesizeDestructor` records each base's `~B` and
+`baseVtt_`, and its D2 as `vttSplit_`. No second copy of any choice: the parser decides, the builder reads. The driver's
+`lowerSsa` sends every `synthesised()` function through the Builder after the bodies (`factsOf` shared), and
 `-check=ssa` reports `-check=ssa synthesised: functions= lowered= outside=` with `  synthesised lowered (n): kind` and
-`  synthesised outside (n): kind - why`; `ssa.sh` sums them below the bodies. **Lowered**: implicit destructor 208 of 225,
-implicit default constructor 171 of 194 - 379 of 876 compiler-written functions (the suite's count; the plan's 807 was
-2026-11-03's). **Left, by kind**: a class with a virtual base (17 destructors, 16 constructors: Itanium's C1/C2 and D1/D2
-split with its VTT, cl's flag and guard, and the `vttSplit_`, `baseVtt_` and `msVbptrs_` records the synthesiser does not
-leave yet); an inheriting constructor's forwarded parameters (6); an array member built with default arguments (1,
-`buildElements` refuses it for written constructors too); and every other kind by its name - deleting destructor 161,
-copy or move 101, complete constructor 37 and destructor 28, virtual thunk 29, vector destructor 29 and constructor 14,
-init function 29, thunk 20, array destructor helper 8, tls init 1. `tests/cases/implicit-members-builder.cpp` holds both
-kinds under the ledger - two bases, a vptr at two levels, an array member, a member's `= 40`, `= { 1, 2.5 }`, `{}` and
-`{ 9 }` - its `.expected` g++'s and the Ast.h path's (clang was on no box this lane reached). **Gated on Linux**: ssa.sh
-8695 of 8695 bodies lowered, 0 failed, and the 379 above; run.sh 1094/0 at `-O2`, `-front=ssa` and `-front=ssa -O2`;
-`make test` green; three `Classes.cpp` citations re-pointed in `docs/EXCLUSIONS.md`. **The Windows box was down** all
-day (192.168.100.207 timed out): `winpass.sh` at `-front=ssa` and `-front=ssa -O2` is owed before landing. `src/` went
-from 88595 to 88736 lines (+141).
+`  synthesised outside (n): kind - why`; `ssa.sh` sums them below the bodies. **Lowered**: implicit destructor 225 of 225,
+implicit default constructor 183 of 194 - 408 of 876 compiler-written functions (the suite's count; the plan's 807 was
+2026-11-03's), Itanium's C2 and D2 of a class with virtual bases among them. **Left, by kind**: an inheriting
+constructor's forwarded parameters (10); an array member built with default arguments (1, which `buildElements` refuses
+for a written constructor too); a class with a virtual base **on the Microsoft ABI** - cl's flag and guard, which the
+parser records only under `guardedVirtualBaseInit(..., record)` and no box could verify today; and every other kind by its
+name - deleting destructor 161, copy or move 101, complete constructor 37 and destructor 28, virtual thunk 29, vector
+destructor 29 and constructor 14, init function 29, thunk 20, array destructor helper 8, tls init 1.
+`tests/cases/implicit-members-builder.cpp` holds both kinds under the ledger - two bases, a vptr at two levels, an array
+member, a member's `= 40`, `= { 1, 2.5 }`, `{}` and `{ 9 }` - its `.expected` g++'s and the Ast.h path's (clang was on
+no box this lane reached). **Gated on Linux**: ssa.sh 8695 of 8695 bodies lowered, 0 failed, and the 408 above; run.sh
+1094/0 at `-O2`, `-front=ssa` and `-front=ssa -O2`; `make test` green; three `Classes.cpp` citations re-pointed in
+`docs/EXCLUSIONS.md`. **The Windows box was down** all day (192.168.100.207 timed out): `winpass.sh` at `-front=ssa` and
+`-front=ssa -O2` is owed before landing. `src/` went from 88595 to 88743 lines (+148).

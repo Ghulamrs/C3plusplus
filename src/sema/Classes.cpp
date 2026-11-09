@@ -1463,6 +1463,7 @@ void Classes::synthesizeDestructor(std::size_t which) {
         if (p_.takesVtt(base)) {
             args.push_back(vttForBase(type, base));
             ps.push_back(p_.vttType());
+            p_.baseVtt_[symbol + "|" + base->tag()] = p_.vtts_.find(type->tag())->second.subVtt.find(base)->second;
         }
         // What destroys this base, for the SSA builder (M3b.3): keyed as a written destructor's record is, "~B".
         const Parser::MemberBuilt u = { sym, p_.types_.functionType(p_.types_.get(Kind::Void), ps, false), false, false };
@@ -1495,6 +1496,7 @@ void Classes::synthesizeDestructor(std::size_t which) {
         itaniumDestructorName(cls, type, false, &d2);
         if (type->hasVirtualBase()) {
             p_.current_->functions.back().setSymbol(d2);
+            p_.vttSplit_[d2] = symbol;      // the records above are keyed by the D1 name (M3b.3)
             p_.closeFrame(savedFrame);
             synthesizeCompleteDtor(type, symbol, d2, true, pos);
         } else {
@@ -1897,6 +1899,7 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
         if (p_.takesVtt(base)) {
             args.push_back(vttForBase(type, base));
             ps.push_back(p_.vttType());
+            p_.baseVtt_[symbol + "|" + base->tag()] = p_.vtts_.find(type->tag())->second.subVtt.find(base)->second;
         }
         for (std::size_t k = 0; k < defaults.size(); k++) {
             args.push_back(std::move(defaults[k]));
@@ -1908,7 +1911,9 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
         if (const Signature *dtor = p_.destructorOf(base)) {
             std::string d2 = dtor->symbol;
             if (!p_.target_.microsoftNames()) itaniumDestructorName(base->tag(), base, false, &d2);
-            const Parser::MemberBuilt u = { d2, p_.types_.functionType(p_.types_.get(Kind::Void), std::vector<const Type *>(1, basePtr), false), false, false };
+            std::vector<const Type *> self(1, basePtr);
+            if (p_.takesVtt(base)) self.push_back(p_.vttType());     // its D2, handed the same sub-VTT
+            const Parser::MemberBuilt u = { d2, p_.types_.functionType(p_.types_.get(Kind::Void), self, false), false, false };
             p_.memberBuilt_[symbol + "|~" + base->tag() + "|0"] = u;
         }
         // A base subobject, so cl's flag is 0: its virtual bases are this
@@ -1982,6 +1987,7 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
             // A virtual base of the class splits it as it splits any constructor: this body is CI2.
             if (type->hasVirtualBase()) {
                 p_.current_->functions.back().setSymbol(c2);
+                p_.vttSplit_[c2] = symbol;      // the records above are keyed by the C1 name (M3b.3)
                 p_.closeFrame(savedFrame);
                 p_.vttSlot_ = savedVtt;
                 synthesizeCompleteCtor(type, forwarded, symbol, c2, true, pos);
@@ -1999,6 +2005,7 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
             // C1 builds them and calls it.
             if (type->hasVirtualBase()) {
                 p_.current_->functions.back().setSymbol(c2);
+                p_.vttSplit_[c2] = symbol;      // the records above are keyed by the C1 name (M3b.3)
                 p_.closeFrame(savedFrame);
                 p_.vttSlot_ = savedVtt;
                 synthesizeCompleteCtor(type, std::vector<const Type *>(),

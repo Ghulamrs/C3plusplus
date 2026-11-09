@@ -413,12 +413,12 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   - **of a virtual base** - the most-derived class would have to be told which
     of them builds it. `src/parser/ParserType.cpp:624`
   - **a constructor template** - its specializations would have to be made
-    for the derived class as calls asked for them. `src/sema/Classes.cpp:1711`
+    for the derived class as calls asked for them. `src/sema/Classes.cpp:1713`
   - **a constructor with `...`** - its arguments would have to be forwarded as
-    they came. `src/sema/Classes.cpp:1751`
+    they came. `src/sema/Classes.cpp:1753`
   - **a constructor taking a class by value whose copy is not trivial** - the
     copy would have to be passed on rather than made twice.
-    `src/sema/Classes.cpp:1755`
+    `src/sema/Classes.cpp:1757`
 - **a using-declaration inside a block** - `src/parser/ParserStmt.cpp:2234`.
   The one at namespace scope works, and so does `using namespace N;`.
 
