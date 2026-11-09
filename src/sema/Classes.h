@@ -199,6 +199,9 @@ public:
     void synthesizeCompleteDtor(const Type *type, const std::string &d1,
                                 const std::string &d2, bool isInline,
                                 std::size_t pos);
+    // The C2 or D2 a complete constructor or destructor `c1` calls, keyed `key`, and the VTT it hands it, "$vtt" (M3b.3).
+    void recordPart(const Type *type, const std::string &c1, const std::string &part, const char *key,
+                    const std::vector<const Type *> &params);
     // A constructor of this class taking nothing, written or implicit.
     const Signature *defaultConstructorOf(const Type *cls) const;
     // What the class did not write, the compiler declares. Called once the

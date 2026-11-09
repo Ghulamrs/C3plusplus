@@ -233,7 +233,7 @@ public:
     int baseVtt(const std::string &fn, const std::string &baseTag) const;   // the sub-VTT entry `fn` hands a base; -1, none
     long long vbaseOffsetSlot(TypeId cls, TypeId vbase) const;   // Itanium's vbase_offset slot of vbase in cls; 0, none
     bool msVbaseCtor(const std::string &symbol) const;   // a Microsoft constructor handed cl's most-derived flag, last
-    // What written Microsoft constructor `fn`'s most-derived guard stores and builds, in order; false where none recorded.
+    // What `fn`'s most-derived guard stores and builds in order - or the virtual bases Itanium's C1 builds or D1 destroys, storing none.
     bool msVbaseInit(const std::string &fn, std::vector<VptrStore> &vbptrs, std::vector<std::string> &order) const;
     // A local's constructor, its signature with `this`, defaults added, zeroed first ([dcl.init]/8); false where none built it.
     bool localBuilt(syntax::NodeId var, std::string &symbol, TypeId &signature, bool &defaulted, bool &zeroed) const;
