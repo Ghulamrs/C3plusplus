@@ -1399,3 +1399,40 @@ syntax green; exclusions 126 sites 0/0 (seven citations re-pointed); comment cap
 tms6747.sh at -O0 and -O2: 723 passed, 2 failed - `long-double-literal-exact-digits` (sim6747) and `ssa-eh-tail`, which
 09513e40's compiler fails the same way on the same run - and every pass also on sim6747. names.sh and overload.sh skip
 there (no clang++); the Windows gate is the coordinator's at merge, `thunk-forwarding.notarget` naming x86_64-windows.
+**M3b.3, lane B, 2026-11-09: the complete object's functions.** From lane 1's tip (`f817dce2`). **The design**: the
+deleting destructor, the complete constructor and the complete destructor are built in `src/ir/CompleteObject.cpp`
+(`Builder::completeObject`, one line of dispatch in `build()`) from the records their synthesisers now leave, the way lane
+1's two kinds read the implicit constructor's: `synthesizeDeleting` records what frees the object (`$delete`: the class's
+own `operator delete` or the platform's, read off the `Call` `deallocate` chose); `synthesizeCompleteCtor` and
+`synthesizeCompleteDtor` set `currentFunction_` to their C1 or D1 (`Keyed`, hoisted) and record the part they call
+(`$C2`, `$D2`, with its signature), the VTT they hand it (`$vtt`, the `_ZTT` symbol - the Builder holds its address as
+`vtt_`, so `vttAt` and `baseVttArgument` serve a C1 as they serve a C2), and through `virtualBaseCalls`, now recording
+whenever it is handed an order, each virtual base's constructor or destructor (`^V`, `~V` - a copy's source parameter in
+the signature, which is how the Builder tells the copy constructor's C1 from the default's), its VTT entry (`baseVtt_`)
+and the order built or destroyed (`msVbaseOrder_`, which `Typer::msVbaseInit` answers without a vbptr record). The deleting
+destructor calls `destructor_` - D1, or cl's `??_D` - then the deallocation, cl's `??_G` under its flag's low bit and
+handing `this` back; D1 calls D2 and the virtual bases' D2s last built first; C1 builds each virtual base - by default, or
+out of the source's own at the same offset - guarded by its D2 for the parts after it ([except.ctor]/3), then C2 with the
+VTT and the forwarded parameters. **cl's most-derived flag and guard**, lane 1's one left shape, land with it: the
+synthesiser records its guard (`guardedVirtualBaseInit(..., true)`), the Builder's `ownParameters` takes the flag last, and
+`memberInits` already built the guard for a written constructor.
+**Lowered** (`tests/ssa.sh`, 0 verifier failures on both): on x86_64-linux deleting destructor 166 of 166, complete
+destructor 39 of 39, complete constructor 46 of 55 - 251 of 260; on x86_64-windows deleting destructor 302 of 302,
+complete destructor (`??_D`) 24 of 24, and the implicit default constructor's Microsoft virtual-base guard 163 of 164
+(the one left lane 1's array member). **Left, by name**: a complete constructor building a virtual base from a written
+mem-initialiser's arguments (9 - the entry is the written constructor's node, which the C1's facts do not reach), and
+the other kinds as before. `tests/cases/complete-object-builder.cpp` holds the deleting destructor through a base pointer
+(the platform's and a class's own `operator delete`), a diamond's C1 and D1, an implicit pair split by a virtual base, a
+virtual base built then a member throwing, and a polymorphic class with a virtual base deleted. **Two faults the case met
+are the Ast.h path's and older than this lane** - on both ABIs, at every level, and lane 1's tip and the Linux box's
+earlier compiler reproduce them - so they are `tests/open/`'s now, with clang's answer beside each: the copy constructor
+the compiler writes for a class with a virtual base skips the class's own member (`virtual-base-copy-own-member.cpp`,
+the copy or move kind's), and a virtual base with a virtual base of its own dies when built
+(`virtual-base-of-virtual-base.cpp`, the layout's or the VTT's). The complete constructor's copy branch is gated by the
+suite's own diamond copies. The `.expected` and the two `.clang`s are clang-cl's on the box; the case prints
+it under `-O0`, `-O2`, `-front=ssa` and `-front=ssa -O2` there. **Gated on Windows**: `winpass.sh` at `-front=ssa`
+and at `-front=ssa -O2`, gnu 723 same / 0 differ and masm 722 same / 0 differ, 340 refused as recorded, 0 not, cl /W4
+/WX clean. **On Linux**: ssa.sh 8758 of 8758 bodies, 0 failed; `tools/exclusions --check` 126 sites 0/0 (eight citations
+re-pointed); memory gate 44, unchanged; comment cap 0.
+`tests/run.sh` on Linux 1095 / 0 at `-front=ssa` and at `-front=ssa -O2`, and `tests/open.sh` names the two new entries
+as open. `src/` went from 88759 to 88981 lines (+222, 177 of them `CompleteObject.cpp`).

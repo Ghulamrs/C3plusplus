@@ -1,0 +1,7 @@
++Base +M +Derived | 2 -Derived -M1 -Base +Base +M4 +Owned -Owned -M4 -Base own-delete +Base -Base | freed 1
++V +A +M3 +B +M5 +Dia | 7 8 3 5
++V +A | 7 8
+-A -V -Dia -M5 -B -M3 -A -V +V !M200 -V | caught 200 live 0
++V +M11 +Late | 7 11
+-Late -M11 -V +V +M8 +Poly | 7 8 -Poly -M8 -V |
+LEDGER built=21 gone=21 live=0 double=0 phantom=0 over=0 lost=0

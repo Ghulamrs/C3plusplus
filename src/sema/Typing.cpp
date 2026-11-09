@@ -854,8 +854,8 @@ bool Typer::msVbaseCtor(const std::string &symbol) const { return p_.msVbaseCtor
 bool Typer::msVbaseInit(const std::string &fn, std::vector<VptrStore> &vbptrs, std::vector<std::string> &order) const {
     const std::map<std::string, std::vector<VptrStore> >::const_iterator s = p_.msVbptrs_.find(fn);
     const std::map<std::string, std::vector<std::string> >::const_iterator o = p_.msVbaseOrder_.find(fn);
-    if (s == p_.msVbptrs_.end() || o == p_.msVbaseOrder_.end()) return false;
-    vbptrs = s->second;
+    if (o == p_.msVbaseOrder_.end()) return false;
+    if (s != p_.msVbptrs_.end()) vbptrs = s->second;     // Itanium's C1 and D1 store none and record their order alone (M3b.3)
     order = o->second;
     return true;
 }

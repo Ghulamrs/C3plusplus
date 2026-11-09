@@ -15,6 +15,9 @@ static void showMemberAs(Function &f, const Type *cls, const std::string &member
     f.setDisplayName(Type::displaySpelling(cls->displayTag() + "::" + member));
 }
 
+// A synthesiser's records are keyed by the function it writes, for the SSA builder (M3b.3): currentFunction_ for its duration.
+namespace { struct Keyed { std::string &ref, saved; Keyed(std::string &r, const std::string &v) : ref(r), saved(r) { ref = v; } ~Keyed() { ref = saved; } }; }
+
 // The deleting destructor's name. Built through the manglers rather than by
 // concatenation, because a nested class's is a whole nested-name -
 // ??_GInner@Outer@@UEAAPEAXI@Z, not ??_GOuter::Inner@@...
@@ -188,7 +191,13 @@ void Classes::synthesizeDeleting(const std::string &cls, const Type *type,
     const Type *vp = p_.types_.pointerTo(p_.types_.get(Kind::Void));
     ExprPtr raw(new Cast(vp, std::move(again)));
     raw->setType(vp);
-    StmtPtr freeIt(new ExprStmt(p_.deallocate(type, std::move(raw), pos)));
+    ExprPtr freed = p_.deallocate(type, std::move(raw), pos);
+    // What frees it - the class's own operator delete or the platform's - for the SSA builder (M3b.3), keyed "$delete".
+    if (const Call *c = dynamic_cast<const Call *>(freed.get())) {
+        const Parser::MemberBuilt u = { c->symbol(), p_.types_.functionType(p_.types_.get(Kind::Void), std::vector<const Type *>(1, vp), false), false, false };
+        p_.memberBuilt_[symbol + "|$delete|0"] = u;
+    }
+    StmtPtr freeIt(new ExprStmt(std::move(freed)));
 
     if (ms) {
         // if (flags & 1) operator delete(this);
@@ -227,6 +236,19 @@ void Classes::synthesizeDeleting(const std::string &cls, const Type *type,
     p_.closeFrame(savedFrame);
 }
 
+void Classes::recordPart(const Type *type, const std::string &c1, const std::string &part, const char *key,
+                         const std::vector<const Type *> &params) {
+    std::vector<const Type *> ps(1, p_.types_.pointerTo(type));
+    if (p_.takesVtt(type)) {
+        ps.push_back(p_.vttType());
+        const Parser::MemberBuilt v = { "_ZTT" + itaniumClassEncoding(type), p_.vttType(), false, false };
+        p_.memberBuilt_[c1 + "|$vtt|0"] = v;
+    }
+    ps.insert(ps.end(), params.begin(), params.end());
+    const Parser::MemberBuilt b = { part, p_.types_.functionType(p_.types_.get(Kind::Void), ps, false), false, false };
+    p_.memberBuilt_[c1 + "|" + key + "|0"] = b;
+}
+
 void Classes::synthesizeCompleteCtor(const Type *type,
                                     const std::vector<const Type *> &ctorParams,
                                     const std::string &c1, const std::string &c2,
@@ -259,8 +281,11 @@ void Classes::synthesizeCompleteCtor(const Type *type,
                          static_cast<std::size_t>(copyArg) < argSlots.size())
                       ? argSlots[copyArg] : -1;
     std::vector<int> builtBase;
+    // The virtual bases it builds, "^V" each in its order, and the C2 and VTT it hands them - records for the SSA builder (M3b.3).
+    const Keyed keyed(p_.currentFunction_, c1);
     std::vector<StmtPtr> body = p_.virtualBaseCalls(type, thisSlot, true, pos,
-                                                 srcSlot, moving, vbaseArgs, &builtBase);
+                                                 srcSlot, moving, vbaseArgs, &builtBase, &p_.msVbaseOrder_[c1]);
+    recordPart(type, c1, c2, "$C2", ctorParams);
 
     // Then C2, which builds everything else - the non-virtual bases, the
     // members, and the body the user wrote.
@@ -349,7 +374,10 @@ void Classes::synthesizeCompleteDtor(const Type *type, const std::string &d1,
         p_.completeCall(cls, d2, nullptr, p_.types_.get(Kind::Void), ps, false, pos,
                      std::move(args)))));
 
-    std::vector<StmtPtr> after = p_.virtualBaseCalls(type, thisSlot, false, pos);
+    // The D2 it calls and the virtual bases it destroys, "~V" each in its order - records for the SSA builder (M3b.3).
+    const Keyed keyed(p_.currentFunction_, d1);
+    recordPart(type, d1, d2, "$D2", std::vector<const Type *>());
+    std::vector<StmtPtr> after = p_.virtualBaseCalls(type, thisSlot, false, pos, -1, false, nullptr, nullptr, &p_.msVbaseOrder_[d1]);
     for (std::size_t i = 0; i < after.size(); i++)
         body.push_back(std::move(after[i]));
 
@@ -1809,8 +1837,7 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
     const Parser::FrameSave savedFrame = p_.openFrame();
     Parser::OwnPads own(p_);
     // The members' records (constructMember's, memberInitialiser's) are keyed by this symbol, for the SSA builder (M3b.3).
-    struct Keyed { std::string &ref, saved; Keyed(std::string &r, const std::string &v) : ref(r), saved(r) { ref = v; } ~Keyed() { ref = saved; } }
-        keyed(p_.currentFunction_, symbol);
+    const Keyed keyed(p_.currentFunction_, symbol);
     const Type *self = p_.types_.pointerTo(type);
     std::vector<Param> params;
     const int thisSlot = p_.allocateFrameSlot(self);
@@ -1845,7 +1872,7 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
     // cl's virtual bases, built under the most-derived flag and guarded around the rest, [except.ctor]/3.
     std::vector<Parser::Alive> vbs;
     std::vector<StmtPtr> vbInit =
-        p_.guardedVirtualBaseInit(type, cls, thisSlot, flagSlot, pos, -1, false, nullptr, &vbs);
+        p_.guardedVirtualBaseInit(type, cls, thisSlot, flagSlot, pos, -1, false, nullptr, &vbs, true);
 
     const std::vector<Type::BaseSpec> &bs = type->bases();
     for (std::size_t i = 0; i < bs.size(); i++) {

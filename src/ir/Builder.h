@@ -25,6 +25,17 @@ private:
     bool recorded(const std::string &name, const Type &cls, std::size_t at, std::string &symbol, TypeId &sig);
     FuncId thunk(const FunctionFacts &facts, bool virt);     // Wrappers.cpp: a thunk or a virtual thunk
     FuncId initFunction(const FunctionFacts &facts);      // Wrappers.cpp: _GLOBAL__sub_I_<file>
+    // M3b.3 lane B (CompleteObject.cpp): the deleting destructor, and the complete constructor and destructor of a class with
+    // virtual bases - Itanium's C1 and D1 around a C2 or D2, cl's ??_D - each from the records its synthesiser leaves.
+    static bool completeKind(const std::string &kind);
+    FuncId completeObject(const FunctionFacts &facts, const std::string &kind, std::size_t index);
+    // The function's own parameters after `this` and a VTT, and cl's most-derived flag last; each kind's body.
+    void ownParameters(const FunctionFacts &facts, const std::string &kind);
+    bool recorded(const std::string &what, std::string &symbol, TypeId &sig) const;
+    void vttHeld();
+    ValueId deleting(const Type &cls);
+    void completeDtor(const Type &cls);
+    void completeCtor(const Type &cls);
     Lowering &l_;
 };
 

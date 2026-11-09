@@ -249,7 +249,7 @@ is left:
 - **a covariant return that moves the result** - an override may return a
   pointer or reference to a class derived from the base's, and does when that
   base sits at offset 0; where it sits at an offset the result would need a
-  thunk at every call through the base. `src/sema/Classes.cpp:44`
+  thunk at every call through the base. `src/sema/Classes.cpp:47`
 - **a virtual function of a base after the first with no slot in the class's
   own vtable**, reached through the derived class -
   `src/parser/ParserExpr.cpp:765`

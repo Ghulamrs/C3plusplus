@@ -449,11 +449,21 @@ std::vector<StmtPtr> Parser::virtualBaseCalls(const Type *type, int thisSlot,
             args.push_back(convert(std::move(one), want));
             ps.push_back(want);
         }
-        // What builds this virtual base, for the SSA lowering (M3b.2): keyed as a base is, "^V", in the order built.
-        if (order != nullptr && building && srcSlot < 0 && !memberTemplateInst_) {
+        // What builds or destroys this virtual base, for the SSA lowering (M3b.2, M3b.3): "^V" or "~V" in the order emitted, the
+        // VTT entry it is handed, and in a constructor the D2 that unwinds it ([except.ctor]/3), as a written constructor records them.
+        if (order != nullptr && !memberTemplateInst_) {
             const MemberBuilt b = { symbol, types_.functionType(types_.get(Kind::Void), ps, false),
                                     ctor == &namedCtor && ctorArgs.size() != namedWritten, false };
-            memberBuilt_[currentFunction_ + "|^" + base->tag() + "|0"] = b;
+            memberBuilt_[currentFunction_ + "|" + (building ? "^" : "~") + base->tag() + "|0"] = b;
+            if (takesVtt(base)) baseVtt_[currentFunction_ + "|" + base->tag()] = vtts_[type->tag()].virtualVtt.find(base)->second;
+            if (building && destructorOf(base) != nullptr) {
+                std::string d = destructorOf(base)->symbol;
+                if (!target_.microsoftNames()) itaniumDestructorName(base->tag(), base, false, &d);
+                std::vector<const Type *> self(1, basePtr);
+                if (takesVtt(base)) self.push_back(vttType());
+                const MemberBuilt u = { d, types_.functionType(types_.get(Kind::Void), self, false), false, false };
+                memberBuilt_[currentFunction_ + "|~" + base->tag() + "|0"] = u;
+            }
             order->push_back(base->tag());
         }
         // **A virtual base is a subobject and not the complete object**, so

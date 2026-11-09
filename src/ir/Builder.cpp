@@ -12,6 +12,7 @@ FuncId Builder::build(const FunctionFacts &facts, const std::string &kind, std::
     try {
         if (kind == "thunk" || kind == "virtual thunk") return thunk(facts, kind == "virtual thunk");
         if (kind == "init function") return initFunction(facts);
+        if (completeKind(kind)) return completeObject(facts, kind, index);
         const bool dtor = kind == "implicit destructor", ctor = kind == "implicit default constructor";
         if (kind == "implicit copy or move") { copyOrMove(facts); return FuncId(static_cast<std::uint32_t>(index)); }
         if (kind == "vector constructor" || kind == "vector destructor") { vectorLoop(facts, kind == "vector constructor"); return FuncId(static_cast<std::uint32_t>(index)); }
@@ -21,20 +22,13 @@ FuncId Builder::build(const FunctionFacts &facts, const std::string &kind, std::
         if (!l.this_.valid() || !l.T(l.returns_).isVoid()) l.outside("a compiler-written " + kind + " with no `this`");
         const Type &cls = *l.T(l.thisType_).pointee()->unqualified();
         // Itanium's C2 or D2 handed its VTT builds or destroys its own part, the virtual bases left to C1 or D1 (lower's rule);
-        // cl's flag and its guard are not built here yet - no box verified the Microsoft ABI the day this was written.
-        const bool vbaseParts = cls.hasVirtualBase() && facts.takesVtt && !l.target_.microsoftNames();
+        // cl's ??1 destroys its own part too, the virtual bases left to ??_D, and cl's constructor builds them under its flag.
+        const bool ms = l.target_.microsoftNames();
+        const bool vbaseParts = cls.hasVirtualBase() && (facts.takesVtt || (ctor && facts.msFlag) || (dtor && ms && !cls.polymorphic()));
         if (cls.hasVirtualBase() && !vbaseParts)
-            l.outside("a compiler-written " + kind + " of a class with a virtual base" + (l.target_.microsoftNames() ? " on the Microsoft ABI" : ""));
-        // An inheriting constructor's own parameters ([class.inhctor]/8), B's: a reference arrives as its address, a scalar as
-        // itself; the base it inherits from takes them whole (buildBase), and a class by value is not forwarded here.
-        if (facts.paramCount != 1 + (facts.takesVtt ? 1 : 0) + facts.paramTypes.size() || (dtor && !facts.paramTypes.empty()))
-            l.outside("a compiler-written " + kind + " with parameters of its own");
-        for (TypeId pt : facts.paramTypes) {
-            const Type &t = l.T(pt);
-            if (t.isReference() ? !Lowering::referable(*t.referent()) : !Lowering::scalar(t)) l.outside("a compiler-written " + kind + " forwarding a '" + t.describe() + "'");
-            l.forwarded_.push_back(l.param(l.F().entry, t.isReference() ? l.tid(*l.types_.pointerTo(t.referent())) : pt));
-            l.F().params.push_back(l.forwarded_.back());
-        }
+            l.outside("a compiler-written " + kind + " of a class with a virtual base" + (ms ? " on the Microsoft ABI" : ""));
+        if (dtor && !facts.paramTypes.empty()) l.outside("a compiler-written " + kind + " with parameters of its own");
+        ownParameters(facts, kind);
         if (!l.simpleLayout(cls) && !l.buildableLayout(cls, true, true, vbaseParts))
             l.outside("a compiler-written " + kind + " of a class with a member the lowering does not build");
         if (ctor && cls.hasVptr() && !(l.target_.microsoftNames() && !cls.polymorphic()) &&
