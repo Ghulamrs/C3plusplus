@@ -23,6 +23,8 @@ private:
     ValueId into(ValueId p, long long at, TypeId to);
     void openBody();
     bool recorded(const std::string &name, const Type &cls, std::size_t at, std::string &symbol, TypeId &sig);
+    FuncId thunk(const FunctionFacts &facts, bool virt);     // Wrappers.cpp: a thunk or a virtual thunk
+    FuncId initFunction(const FunctionFacts &facts);      // Wrappers.cpp: _GLOBAL__sub_I_<file>
     Lowering &l_;
 };
 

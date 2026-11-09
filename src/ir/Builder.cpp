@@ -10,6 +10,8 @@ FuncId Builder::build(const FunctionFacts &facts, const std::string &kind, std::
     Lowering &l = l_;
     const std::size_t index = l.module_.functions.size();
     try {
+        if (kind == "thunk" || kind == "virtual thunk") return thunk(facts, kind == "virtual thunk");
+        if (kind == "init function") return initFunction(facts);
         const bool dtor = kind == "implicit destructor", ctor = kind == "implicit default constructor";
         if (kind == "implicit copy or move") { copyOrMove(facts); return FuncId(static_cast<std::uint32_t>(index)); }
         if (kind == "vector constructor" || kind == "vector destructor") { vectorLoop(facts, kind == "vector constructor"); return FuncId(static_cast<std::uint32_t>(index)); }

@@ -594,7 +594,29 @@ bool Typer::listBuilt(syntax::NodeId node, ListBuilt &out) const {
 bool Typer::staticGuard(const std::string &symbol, StaticGuard &out) const {
     const auto g = p_.staticGuards_.find(symbol);
     if (g == p_.staticGuards_.end() || g->second.guard.empty()) return false;
-    const Parser::StaticGuard &r = g->second;
+    copyStaticGuard(g->second, out);
+    return true;
+}
+
+// The init function's objects as the parser pushed their statements; a namespace-scope `var` is typed as a root of its own.
+bool Typer::dynamicInits(std::vector<DynamicInit> &out) {
+    std::size_t statements = 0;
+    for (const Parser::DynamicInit &d : p_.dynInits_) {
+        if (!d.var.valid() || d.symbol.empty()) return false;
+        DynamicInit e;
+        e.var = typeFunction(d.var);
+        e.symbol = d.symbol;
+        const auto once = p_.dynInitOnce_.find(d.symbol);
+        if (once != p_.dynInitOnce_.end()) e.once = once->second;
+        const auto g = p_.staticGuards_.find(d.symbol);
+        if (g != p_.staticGuards_.end()) copyStaticGuard(g->second, e.built);
+        out.push_back(e);
+        statements += d.statements;
+    }
+    return statements == p_.dynInitStatements_;
+}
+
+template <class Record> void Typer::copyStaticGuard(const Record &r, StaticGuard &out) {
     copyListBuilt(r.elements, out.elements);
     out.listOf = TypeTable::id(r.listOf);
     out.guard = r.guard;
@@ -610,7 +632,6 @@ bool Typer::staticGuard(const std::string &symbol, StaticGuard &out) const {
     out.registered = r.registered;
     out.vectorLoop = r.vectorLoop;
     out.array = r.array;
-    return true;
 }
 
 bool Typer::defaultInit(TypeId cls, const std::string &member) const {

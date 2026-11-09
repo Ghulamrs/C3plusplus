@@ -432,7 +432,7 @@ void Parser::topLevel(Program &program) {
                         src_.fail(d.pos, "'" + d.name + "' is defined twice");
                     const FunctionState outer = enterInitFunction();
                     bindStaticReference(d, symbol, pieces, hasInit, &initSink());
-                    leaveInitFunction(outer);
+                    leaveInitFunction(outer, symbol);
                 }
                 if (prev != nullptr) {
                     if (defines) { prev->emitted = true; prev->hasInit = true; }
@@ -679,7 +679,7 @@ void Parser::topLevel(Program &program) {
                 if (hasInit || (dynamicScalar.value != nullptr || dynamicScalar.isList)) prev->hasInit = true;
                 const ThreadLocalObject tlo(this, quals.isThreadLocal);
                 if ((dynamicScalar.value != nullptr || dynamicScalar.isList))
-                    dynamicInitialiseScalar(gname, d.type, dynamicScalar);
+                    dynamicInitialiseScalar(gname, prev->symbol, d.type, dynamicScalar);
                 noteThreadLocal(*prev, true, quals.isThreadLocal, d.name, (dynamicScalar.value != nullptr || dynamicScalar.isList) || !defines,
                                 !internalLinkage(sc), defines, d.pos);
 
@@ -732,7 +732,7 @@ void Parser::topLevel(Program &program) {
             noteThreadLocal(registered ? lookup_.globals_[early] : lookup_.globals_.back(), false, quals.isThreadLocal, d.name,
                             dynamic || !definesHere, !internal, definesHere, d.pos);
             const ThreadLocalObject tlo(this, quals.isThreadLocal);
-            if (dynamic) dynamicInitialiseScalar(gname, d.type, dynamicScalar);
+            if (dynamic) dynamicInitialiseScalar(gname, symbol, d.type, dynamicScalar);
             if (definesHere) {
                 program.globals.push_back(Global{ gname, symbol, d.type,
                                                   std::move(pieces), hasInit,

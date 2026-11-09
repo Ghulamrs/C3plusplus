@@ -1058,13 +1058,15 @@ Parser::FunctionState Parser::enterInitFunction() {
     currentFunction_ = functionName_;
     atFunctionBody_ = true;
     initGuardMark_ = guardSlots_.size();
+    dynInitMark_ = dynInit_.size();
     return outer;
 }
 
 // The frame comes back out, and so do the guards made inside - they are not
 // part of the state struct, so they are moved by hand. The token index is put
 // back to where the initialiser ended, since the restore rewinds it.
-void Parser::leaveInitFunction(const FunctionState &outer) {
+void Parser::leaveInitFunction(const FunctionState &outer, const std::string &symbol) {
+    if (!tlsObject_ && dynInit_.size() > dynInitMark_) dynInits_.push_back(DynamicInit{ symbol, syntax::NodeId(), dynInit_.size() - dynInitMark_ });
     (tlsObject_ ? tlsInitFrame_ : dynInitFrame_) = frameSize_;
     for (std::size_t i = initGuardMark_; i < guardSlots_.size(); i++)
         (tlsObject_ ? tlsInitGuards_ : dynInitGuards_).push_back(guardSlots_[i]);
@@ -1078,6 +1080,7 @@ void Parser::leaveInitFunction(const FunctionState &outer) {
 // function's are. The backends register it; nothing here calls it.
 void Parser::finishDynamicInit(Program &program) {
     if (dynInit_.empty()) return;
+    dynInitStatements_ = dynInit_.size();
     std::vector<StmtPtr> body;
     for (std::size_t i = 0; i < dynInitGuards_.size(); i++)
         body.push_back(StmtPtr(new ExprStmt(setGuard(dynInitGuards_[i], 0))));
@@ -1467,7 +1470,7 @@ void Parser::dynamicInitialise(Declared &d, const std::string &symbol,
     }
     for (std::size_t i = 0; i < built.size(); i++)
         initSink().push_back(std::move(built[i]));
-    leaveInitFunction(outer);
+    leaveInitFunction(outer, symbol);
 }
 
 // The shapes flattenInit lays down as bytes. A class object here has no
@@ -1491,13 +1494,12 @@ bool Parser::staticallyInitialisable(const Type *t, Init &in) {
     return constant_.fold(*in.value, &v, in.pos);
 }
 
-void Parser::dynamicInitialiseScalar(const std::string &name, const Type *type,
-                                     Init &in) {
+void Parser::dynamicInitialiseScalar(const std::string &name, const std::string &symbol, const Type *type, Init &in) {
     const FunctionState outer = enterInitFunction();
     std::vector<InitStep> path;
     emitInit(name, path, type, in, initSink());
     flushTemporaries(initSink());
-    leaveInitFunction(outer);
+    leaveInitFunction(outer, symbol);
 }
 
 StmtPtr Parser::guardTemplateMember(const std::string &symbol,
@@ -1505,6 +1507,7 @@ StmtPtr Parser::guardTemplateMember(const std::string &symbol,
     const bool ms = target_.microsoftNames();
     const std::string guard = ms ? symbol + "$guard"
                                  : "_ZGV" + symbol.substr(symbol.compare(0, 2, "_Z") == 0 ? 2 : 0);
+    dynInitOnce_[symbol] = guard;
     const Type *guardType = types_.get(ms ? Kind::Int : Kind::LongLong);
     current_->globals.push_back(Global{ guard, guard, guardType,
                                         std::vector<GlobalPiece>(), false,
@@ -1560,7 +1563,7 @@ void Parser::dynamicInitialiseStaticMember(const std::string &name,
     }
     for (std::size_t i = 0; i < built.size(); i++)
         initSink().push_back(std::move(built[i]));
-    leaveInitFunction(outer);
+    leaveInitFunction(outer, symbol);
 }
 
 // **A block-scope thread_local built once per thread** - [stmt.dcl]/4 - needs no lock: the

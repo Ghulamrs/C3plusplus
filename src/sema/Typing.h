@@ -89,6 +89,9 @@ struct StaticGuard {
                     array(false) {}
 };
 
+// One object of the init function (M3b.3): its `var` typed, its symbol, how it was built, and a template static's guard.
+struct DynamicInit { TypedId var; std::string symbol, once; StaticGuard built; };
+
 // A `new` or `delete` as the parser built it (M3b.2): the global allocation function it called, the type made or freed,
 // the initialiser - 0 none, 1 value-initialised, 2 one value - and `why` where the SSA lowering may not take it.
 struct NewFacts {
@@ -220,6 +223,7 @@ public:
     void typeMemberDefaults(const std::string &ctor);
     TypedId memberDefault(const std::string &ctor, const std::string &member) const;
     bool staticGuard(const std::string &symbol, StaticGuard &out) const;   // false where guardOnce built none
+    bool dynamicInits(std::vector<DynamicInit> &out);    // the init function's, in order; false where one was not recorded whole
     bool guardedStatic(const std::string &symbol) const;  // a static local built at run time, under its guard   // a pack was expanded in the body: one node stands for its members   // Parser::scopedFunctions_'s bits, 0 for a body at file scope
     // The constructor the parser chose, in constructor `ctor`, for a member an entry at `pos` names (0: one the list leaves alone), and
     // whether default arguments were added to the written ones; false where it built none. A class's destructor's symbol.
@@ -243,6 +247,7 @@ public:
     // by its `var`, a braced argument's by its `{}` node; false where the parser recorded none (a list of scalars).
     bool listBuilt(syntax::NodeId node, ListBuilt &out) const;
     template <class Record> static void copyListBuilt(const Record &r, ListBuilt &out);
+    template <class Record> static void copyStaticGuard(const Record &r, StaticGuard &out);
     bool memberList(const std::string &ctor, const std::string &member, std::uint32_t pos, TypeId &param, std::uint32_t &count) const;
     // The constructor a class temporary `T(...)` at node `id` was built by, and whether `T()` zeroed the object first.
     bool temporaryBuilt(syntax::NodeId id, std::string &symbol, TypeId &signature, bool &zeroFirst) const;

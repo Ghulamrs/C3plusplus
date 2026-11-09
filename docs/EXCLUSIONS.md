@@ -281,12 +281,12 @@ is left:
 - **`auto &` or `auto *` from a braced list** - only `auto` and `const auto`
   deduce `std::initializer_list` here. `src/parser/ParserTemplate.cpp:1302`
 - **a `std::initializer_list` with static storage made from braces** - its
-  backing array would need static storage too. `src/parser/ParserInit.cpp:1210`
+  backing array would need static storage too. `src/parser/ParserInit.cpp:1213`
 - **a braced member initialiser with values on a reference or an array of a
   class** - a scalar member takes `{v}`, a class or an array of scalars a list
   (M1 L4), and `= {}` and `= {0}` zero an array. `src/parser/ParserType.cpp:1353`
 - **a braced list for an array of a class with a destructor and no
-  constructor** - `src/parser/ParserInit.cpp:1258`,
+  constructor** - `src/parser/ParserInit.cpp:1261`,
   `src/parser/ParserStmt.cpp:247`
 - **a bit-field initialised at file scope** - `src/parser/ParserInit.cpp:657`
 ## Objects that would run code before `main`
@@ -413,12 +413,12 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   - **of a virtual base** - the most-derived class would have to be told which
     of them builds it. `src/parser/ParserType.cpp:624`
   - **a constructor template** - its specializations would have to be made
-    for the derived class as calls asked for them. `src/sema/Classes.cpp:1713`
+    for the derived class as calls asked for them. `src/sema/Classes.cpp:1724`
   - **a constructor with `...`** - its arguments would have to be forwarded as
-    they came. `src/sema/Classes.cpp:1753`
+    they came. `src/sema/Classes.cpp:1764`
   - **a constructor taking a class by value whose copy is not trivial** - the
     copy would have to be passed on rather than made twice.
-    `src/sema/Classes.cpp:1757`
+    `src/sema/Classes.cpp:1768`
 - **a using-declaration inside a block** - `src/parser/ParserStmt.cpp:2234`.
   The one at namespace scope works, and so does `using namespace N;`.
 
@@ -469,7 +469,7 @@ between the two lists.**
 - **a polymorphic base that is not the first, on the Microsoft ABI** - cl lays
   the base with the vfptr first wherever it was written and compiles an
   override against a biased `this` where Itanium puts a thunk in front.
-  `src/sema/Classes.cpp:1097`, `src/parser/ParserType.cpp:328`
+  `src/sema/Classes.cpp:1108`, `src/parser/ParserType.cpp:328`
 - **a virtual base with virtual functions, on x86_64-windows** - cl dispatches
   through one with vtordisp fields and thunks of its own, measured in CLAUDE.md
   "The Microsoft virtual-base layout" and not built. `src/parser/ParserType.cpp:470`

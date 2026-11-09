@@ -106,6 +106,7 @@ public:
     void setArrowCalls(std::function<bool(syntax::NodeId, std::vector<sema::Resolution> &)> f) { arrowCalls_ = f; }
     // The conversion function `convert` called on a class value, by the value's node - Sema's record ([class.conv.fct]).
     void setConversionCall(std::function<bool(syntax::NodeId, sema::Resolution &)> f) { conversionCall_ = f; }
+    void setDynamicInits(std::function<bool(std::vector<sema::DynamicInit> &)> f) { dynamicInits_ = f; }
 private:
     friend class Builder;       // M3b.3: a compiler-written function, built from the class's layout with these same pieces
     struct Outside { std::string why; explicit Outside(const std::string &w) : why(w) {} };
@@ -492,6 +493,7 @@ private:
     std::function<bool(syntax::NodeId, std::string &, TypeId &)> assignCall_;
     std::function<bool(syntax::NodeId, std::vector<sema::Resolution> &)> arrowCalls_;
     std::function<bool(syntax::NodeId, sema::Resolution &)> conversionCall_;
+    std::function<bool(std::vector<sema::DynamicInit> &)> dynamicInits_;    // the init function's objects, for the Builder
     sema::TypedId intoCall_;                    // the call elidedCall lowers, whose result goes into a local's alloca
     int intoAlloca_ = -1, intoNow_ = -1;        // that alloca; and callTail's, set only as that call's tail is entered
     std::vector<sema::ListElement> aggCtors_;     // recordedAggregate's: each member a constructor builds, the next at aggNext_

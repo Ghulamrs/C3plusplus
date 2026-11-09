@@ -1,0 +1,1 @@
+x86_64-windows  'C' has virtual functions in a base that is not the first, which the Microsoft ABI lays out with that base first and this compiler has measured for Itanium only - refused by name, as thunk.cpp is
