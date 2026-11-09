@@ -1330,16 +1330,17 @@ vptr stores, and the C2 a virtual base splits off as `vttSplit_`; `synthesizeDes
 `lowerSsa` sends every `synthesised()` function through the Builder after the bodies (`factsOf` shared), and
 `-check=ssa` reports `-check=ssa synthesised: functions= lowered= outside=` with `  synthesised lowered (n): kind` and
 `  synthesised outside (n): kind - why`; `ssa.sh` sums them below the bodies. **Lowered**: implicit destructor 225 of 225,
-implicit default constructor 183 of 194 - 408 of 876 compiler-written functions (the suite's count; the plan's 807 was
-2026-11-03's), Itanium's C2 and D2 of a class with virtual bases among them. **Left, by kind**: an inheriting
-constructor's forwarded parameters (10); an array member built with default arguments (1, which `buildElements` refuses
-for a written constructor too); a class with a virtual base **on the Microsoft ABI** - cl's flag and guard, which the
+implicit default constructor 193 of 194 - 418 of 876 compiler-written functions (the suite's count; the plan's 807 was
+2026-11-03's), Itanium's C2 and D2 of a class with virtual bases among them, and the inheriting constructors, whose own
+parameters the Builder takes as `this` is taken and `buildBase` hands whole to the base inherited from (`forwarded_`).
+**Left, by kind**: an array member built with default arguments (1, which `buildElements` refuses for a written
+constructor too); a class with a virtual base **on the Microsoft ABI** - cl's flag and guard, which the
 parser records only under `guardedVirtualBaseInit(..., record)` and no box could verify today; and every other kind by its
 name - deleting destructor 161, copy or move 101, complete constructor 37 and destructor 28, virtual thunk 29, vector
 destructor 29 and constructor 14, init function 29, thunk 20, array destructor helper 8, tls init 1.
 `tests/cases/implicit-members-builder.cpp` holds both kinds under the ledger - two bases, a vptr at two levels, an array
 member, a member's `= 40`, `= { 1, 2.5 }`, `{}` and `{ 9 }` - its `.expected` g++'s and the Ast.h path's (clang was on
-no box this lane reached). **Gated on Linux**: ssa.sh 8695 of 8695 bodies lowered, 0 failed, and the 408 above; run.sh
+no box this lane reached). **Gated on Linux**: ssa.sh 8695 of 8695 bodies lowered, 0 failed, and the 418 above; run.sh
 1094/0 at `-O2`, `-front=ssa` and `-front=ssa -O2`; `make test` green; three `Classes.cpp` citations re-pointed in
 `docs/EXCLUSIONS.md`. **The Windows box was down** all day (192.168.100.207 timed out): `winpass.sh` at `-front=ssa` and
-`-front=ssa -O2` is owed before landing. `src/` went from 88595 to 88743 lines (+148).
+`-front=ssa -O2` is owed before landing. `src/` went from 88595 to 88759 lines (+164).

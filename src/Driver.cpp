@@ -1480,6 +1480,9 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
                              fn.synthesised().find("thunk") != std::string::npos;
         facts.hasThis = fn.hasThis() || (special && !fn.params().empty());
         if (facts.hasThis && !fn.params().empty()) facts.thisType = TypeTable::id(fn.params()[0].type);
+        // Its own parameters, after `this` and a VTT and before cl's flag: an inheriting constructor's.
+        for (std::size_t p = (facts.hasThis ? 1 : 0) + (facts.takesVtt ? 1 : 0); p + (facts.msFlag ? 1 : 0) < fn.params().size(); p++)
+            facts.paramTypes.push_back(TypeTable::id(fn.params()[p].type));
         std::string why;
         if (builder.build(facts, fn.synthesised(), why).valid()) { built[fn.synthesised()]++; builtCount++; continue; }
         left[fn.synthesised() + " - " + why]++;

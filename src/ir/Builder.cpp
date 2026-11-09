@@ -20,8 +20,16 @@ FuncId Builder::build(const FunctionFacts &facts, const std::string &kind, std::
         const bool vbaseParts = cls.hasVirtualBase() && facts.takesVtt && !l.target_.microsoftNames();
         if (cls.hasVirtualBase() && !vbaseParts)
             l.outside("a compiler-written " + kind + " of a class with a virtual base" + (l.target_.microsoftNames() ? " on the Microsoft ABI" : ""));
-        // An inheriting constructor forwards parameters of its own ([class.inhctor]).
-        if (facts.paramCount != 1 + (facts.takesVtt ? 1 : 0)) l.outside("a compiler-written " + kind + " with parameters of its own");
+        // An inheriting constructor's own parameters ([class.inhctor]/8), B's: a reference arrives as its address, a scalar as
+        // itself; the base it inherits from takes them whole (buildBase), and a class by value is not forwarded here.
+        if (facts.paramCount != 1 + (facts.takesVtt ? 1 : 0) + facts.paramTypes.size() || (dtor && !facts.paramTypes.empty()))
+            l.outside("a compiler-written " + kind + " with parameters of its own");
+        for (TypeId pt : facts.paramTypes) {
+            const Type &t = l.T(pt);
+            if (t.isReference() ? !Lowering::referable(*t.referent()) : !Lowering::scalar(t)) l.outside("a compiler-written " + kind + " forwarding a '" + t.describe() + "'");
+            l.forwarded_.push_back(l.param(l.F().entry, t.isReference() ? l.tid(*l.types_.pointerTo(t.referent())) : pt));
+            l.F().params.push_back(l.forwarded_.back());
+        }
         if (!l.simpleLayout(cls) && !l.buildableLayout(cls, true, true, vbaseParts))
             l.outside("a compiler-written " + kind + " of a class with a member the lowering does not build");
         if (ctor && cls.hasVptr() && !(l.target_.microsoftNames() && !cls.polymorphic()) &&

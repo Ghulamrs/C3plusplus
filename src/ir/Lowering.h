@@ -33,6 +33,7 @@ struct FunctionFacts {
     bool takesVtt;              // Itanium's C2 or D2 of a class with virtual bases: a VTT is its second parameter
     bool msFlag;                // a Microsoft constructor of a class with virtual bases: cl's most-derived flag, last
     std::map<int, int> localAligns;     // a local aligned past its type (alignas), by the parser's serial: the alignment its slot keeps
+    std::vector<TypeId> paramTypes;     // a compiler-written function's own parameters after `this` and a VTT: an inheriting constructor's (M3b.3)
     FunctionFacts() : isStatic(false), isInline(false), variadic(false), hasThis(false), sret(false), landingPads(false),
                       wrappedBody(false), noexcept_(false), isConstructor(false), pos(0), paramCount(0), noexceptWrap(false),
                       ctorTry(false), takesVtt(false), msFlag(false) {}
@@ -476,6 +477,7 @@ private:
     ValueId msFlag_;                            // a Microsoft constructor's most-derived flag; none otherwise
     std::string key_;                           // FunctionFacts::recordKey: the memberBuilt_ and vptrStores_ records' key
     ValueId vtt_;                               // Itanium's C2 or D2 handed a VTT: it, the second parameter; none otherwise
+    std::vector<ValueId> forwarded_;            // an inheriting constructor's own parameters, handed on to the base it inherits from
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &, bool &)> localBuilt_;
     std::function<bool(syntax::NodeId, TypeId &, std::uint32_t &)> localList_;
     std::function<bool(syntax::NodeId, sema::ListBuilt &)> listBuilt_;

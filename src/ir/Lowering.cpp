@@ -258,6 +258,8 @@ void Lowering::buildBase(const Type::BaseSpec &b, sema::TypedId entry) {
         for (std::uint32_t i = 0; i < count(d); i++) args.push_back(child(d, i));
     }
     if (entry.valid() || defaulted) argumentList(ft, skip, false, args, false, ops);
+    // [class.inhctor]/8: an inheriting constructor hands its own parameters, as they came, to the base it inherits from.
+    else if (!forwarded_.empty() && ft.params().size() == skip + forwarded_.size()) ops.insert(ops.end(), forwarded_.begin(), forwarded_.end());
     else if (ft.params().size() != skip) outside("a base's default constructor of parameters");
     const TypeId called = msFlagged(symbol, sig, ops, 0);
     directCall(symbol, called, ops);
@@ -2185,6 +2187,7 @@ void Lowering::beginFunction(const FunctionFacts &facts) {
     key_ = facts.recordKey.empty() ? facts.symbol : facts.recordKey;
     localAligns_ = facts.localAligns;
     vtt_ = ValueId();
+    forwarded_.clear();
     msFlag_ = ValueId();
     noexceptWrap_ = facts.noexceptWrap;
     Function &f = F();
