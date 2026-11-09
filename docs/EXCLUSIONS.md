@@ -104,7 +104,7 @@ goes in the same commit.
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:621` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2291` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:263` |
-| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:3116`, `src/parser/ParserTopLevel.cpp:831` |
+| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:3126`, `src/parser/ParserTopLevel.cpp:831` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:759` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:452` |
 | `template <template <class> typename C>`, `typename` after a template template parameter's list | C++17 | `src/parser/ParserTemplate.cpp:52` |
@@ -243,7 +243,7 @@ is left:
 - **a bit-field of an anonymous union at namespace or block scope** - the
   members are names of the scope, and a bit-field would be a name with no
   object to be a field of. `src/parser/ParserType.cpp:2253`
-- **a member function of a union** - `src/parser/ParserClass.cpp:2385`
+- **a member function of a union** - `src/parser/ParserClass.cpp:2395`
 - **one name holding both a static and a non-static member**, where overload
   resolution picks the non-static one - `src/parser/ParserExpr.cpp:2028`
 - **a covariant return that moves the result** - an override may return a
@@ -299,10 +299,10 @@ many, or has no object of its own:
 - **a static data member that is an array of a class with a constructor** -
   each element would need its constructor before main and its destructor at
   exit; a file-scope array and a static local of the same shape are built and
-  destroyed element by element. `src/parser/ParserClass.cpp:2198`
+  destroyed element by element. `src/parser/ParserClass.cpp:2208`
 - **a static-duration reference bound to a temporary** - [class.temporary]/5
   gives the temporary the program's lifetime, so it would need static storage
-  of its own; a named object binds. `src/parser/ParserInit.cpp:1736`
+  of its own; a named object binds. `src/parser/ParserInit.cpp:1739`
 
 ## Expressions
 
@@ -413,12 +413,12 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   - **of a virtual base** - the most-derived class would have to be told which
     of them builds it. `src/parser/ParserType.cpp:624`
   - **a constructor template** - its specializations would have to be made
-    for the derived class as calls asked for them. `src/sema/Classes.cpp:1724`
+    for the derived class as calls asked for them. `src/sema/Classes.cpp:1752`
   - **a constructor with `...`** - its arguments would have to be forwarded as
-    they came. `src/sema/Classes.cpp:1764`
+    they came. `src/sema/Classes.cpp:1792`
   - **a constructor taking a class by value whose copy is not trivial** - the
     copy would have to be passed on rather than made twice.
-    `src/sema/Classes.cpp:1768`
+    `src/sema/Classes.cpp:1796`
 - **a using-declaration inside a block** - `src/parser/ParserStmt.cpp:2234`.
   The one at namespace scope works, and so does `using namespace N;`.
 
@@ -469,7 +469,7 @@ between the two lists.**
 - **a polymorphic base that is not the first, on the Microsoft ABI** - cl lays
   the base with the vfptr first wherever it was written and compiles an
   override against a biased `this` where Itanium puts a thunk in front.
-  `src/sema/Classes.cpp:1108`, `src/parser/ParserType.cpp:328`
+  `src/sema/Classes.cpp:1136`, `src/parser/ParserType.cpp:328`
 - **a virtual base with virtual functions, on x86_64-windows** - cl dispatches
   through one with vtordisp fields and thunks of its own, measured in CLAUDE.md
   "The Microsoft virtual-base layout" and not built. `src/parser/ParserType.cpp:470`
