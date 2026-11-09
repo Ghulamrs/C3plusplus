@@ -1344,3 +1344,33 @@ no box this lane reached). **Gated on Linux**: ssa.sh 8695 of 8695 bodies lowere
 1094/0 at `-O2`, `-front=ssa` and `-front=ssa -O2`; `make test` green; three `Classes.cpp` citations re-pointed in
 `docs/EXCLUSIONS.md`. **The Windows box was down** all day (192.168.100.207 timed out): `winpass.sh` at `-front=ssa` and
 `-front=ssa -O2` is owed before landing. `src/` went from 88595 to 88759 lines (+164).
+
+**M3b.3, lane A, 2026-11-09: the copies, the array loops and the exit helper.** From lane 1's `f817dce2`. **The design**
+is lane 1's, applied to four more kinds in a file of their own, `src/ir/BuilderCopy.cpp`, with three dispatch lines in
+`Builder::build`: the synthesiser records what it chose under the synthesised symbol and the Builder reads, deriving nothing.
+`Classes::synthesizeCopy` records each base's copy or move (`^B`, the parser's choice between `moveConstructorOf` and
+`copyConstructorOf`, or the assignments), its `~B` through `recordBaseDestructor` - the `~B` record lane 1 wrote inline in
+`synthesizeDefaultCtor`, shared now - each member's copy (`m`, the element's for an array) and its vptr stores; a member or
+base with no record is trivially copyable and is copied as its bytes, which is what the synthesiser's `Assign` does, and a
+base with a record covers its members (`taken`). `Parser::vectorConstructor` records the element constructor (`^element`)
+and, where the class has a destructor, the loop its guard destroys the built elements by (`~elements`, the `_del_` name);
+`buildStaticArrayConstruction` records the helper's loop and the array's symbol and type (`$array`). What the lowering
+gained is one field: `Live::count`, the slot counting an array's elements built so far, which `destroy` hands the class's
+destructor loop as the second argument - the parser's `builtSlot` cleanup, calling `vectorDestructor` with `$i`. The
+loops are blocks: `cond`, `body`, `done`, the index an alloca so the guard can read it; the copy constructor's bases and
+array elements are guarded as a written constructor's are ([except.ctor]/3), and the Driver's `special` test gives a copy
+or move `this` and the array loops none. **Lowered**: implicit copy or move 195 of 195 on the Windows host, 106 of 110 on Linux; vector destructor 32 of 32; vector
+constructor 15 of 17; array destructor helper 9 of 9 - 713 of 1097 compiler-written functions on Windows, 585 of 898 on
+Linux, with lane 1's. **Left, by kind**: two vector constructors built with default arguments (the element constructor's defaults
+are syntax the record does not carry; lane 1's `buildElements` refuses the same), and a copy or move of a class with a
+virtual base - the C1 split (`synthesizeCompleteCtor`, "complete constructor", lane C's) and cl's flag. **Refused by
+name, never reached here**: a bit-field or reference member in a copied class, an array member past 16 guarded or 64
+elements, a thread_local static array's helper on Microsoft. `tests/cases/implicit-copy-move-builder.cpp` holds every
+kind under the ledger: a base copied by its own copy beside one copied as bytes, a polymorphic copy and assignment, an
+array member element by element, a move beside a copy, `new M[3]` and `delete[]`, a static array destroyed at exit, and
+an element constructor throwing mid-array; its `.expected` is cl 19.44's, and the Ast.h path at `-O0` and `-O2` and
+`-front=ssa` at both print it. **Gated on Windows**: cl `/W4 /WX` clean; `ssa.sh` 9001 of 9001 bodies, 0 failed, 736 cases passed; `winpass.sh` at
+`-front=ssa` GNU 723 same / MASM 722, at `-front=ssa -O2` GNU 723 / MASM 722, 0 differ in all four. **On Linux**: g++
+`-Werror` clean, `make test` green (run.sh 1095/0, emit.sh 2982/0, ssa.sh 8723 of 8723 bodies, typed.sh and adapted.sh
+753/0, exclusions 126 sites 0/0, comment cap 0), run.sh 1095/0 at `-front=ssa` and 1095/0 at `-front=ssa -O2`. `src/` went from 88759
+to 89008 lines (+249).

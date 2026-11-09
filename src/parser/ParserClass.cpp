@@ -1539,6 +1539,11 @@ std::string Parser::vectorConstructor(const Type *cls, std::size_t pos) {
 
     const Type *ptr = types_.pointerTo(cls);
     const Type *sizeT = types_.get(target_.sizeType());
+    // For the SSA builder (M3b.3): the loop the guard destroys the elements built by, "~elements", and what builds each, "^element".
+    if (destructorOf(cls) != nullptr) {
+        const MemberBuilt u = { vectorLoopName("del", cls, pos), types_.functionType(types_.get(Kind::Void), std::vector<const Type *>{ ptr, sizeT }, false), false, false };
+        memberBuilt_[name + "|~elements|0"] = u;
+    }
     const FrameSave savedFrame = openFrame();
     OwnPads own(*this);
     const int baseSlot = allocateFrameSlot(ptr);
@@ -1561,6 +1566,8 @@ std::string Parser::vectorConstructor(const Type *cls, std::size_t pos) {
         args.push_back(std::move(defaults[i]));
         ps.push_back(chosen.params[i]);
     }
+    const MemberBuilt e = { chosen.symbol, types_.functionType(types_.get(Kind::Void), ps, false), !defaults.empty(), false };
+    memberBuilt_[name + "|^element|0"] = e;
     StmtPtr one(new ExprStmt(completeCall(cls->tag(), chosen.symbol, nullptr,
                                           types_.get(Kind::Void), ps, false,
                                           pos, std::move(args))));

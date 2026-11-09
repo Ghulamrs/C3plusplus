@@ -15,6 +15,14 @@ public:
     FuncId build(const FunctionFacts &facts, const std::string &kind, std::string &why);
 
 private:
+    // Lane A's kinds (BuilderCopy.cpp): the implicit copy and move members, the array loops and the static array's exit helper.
+    void copyOrMove(const FunctionFacts &facts);
+    void vectorLoop(const FunctionFacts &facts, bool constructs);
+    void arrayHelper(const FunctionFacts &facts);
+    ValueId elementAt(ValueId base, ValueId i, const Type &et);
+    ValueId into(ValueId p, long long at, TypeId to);
+    void openBody();
+    bool recorded(const std::string &name, const Type &cls, std::size_t at, std::string &symbol, TypeId &sig);
     Lowering &l_;
 };
 

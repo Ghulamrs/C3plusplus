@@ -222,6 +222,7 @@ public:
     // which member function to call, whether the vptr is stored, and whether
     // there is a value to return - and in nothing else.
     void synthesizeCopy(std::size_t which, bool assigning);
+    void recordBaseDestructor(const std::string &ctor, const Type *base);
     const Signature *copyAssignOf(const Type *cls) const;
     void declareImplicitCopyAssign(const std::string &tag, const Type *type,
                                    std::size_t pos);

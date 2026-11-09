@@ -1476,8 +1476,10 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         facts.isConstructor = fn.synthesised().find("constructor") != std::string::npos;
         facts.msFlag = facts.isConstructor && typer.msVbaseCtor(fn.symbol());
         // A special member or a thunk takes `this` first; the synthesiser set no hasThis, which is the sret-order bit alone.
-        const bool special = facts.isConstructor || fn.synthesised().find("destructor") != std::string::npos ||
-                             fn.synthesised().find("thunk") != std::string::npos;
+        // The array loops (`vector ...`) take a base and a count, the exit helper a `void *` or nothing: no `this`.
+        const bool special = fn.synthesised().find("vector") == std::string::npos && fn.synthesised().find("helper") == std::string::npos &&
+                             (facts.isConstructor || fn.synthesised().find("destructor") != std::string::npos ||
+                              fn.synthesised().find("thunk") != std::string::npos || fn.synthesised().find("copy or move") != std::string::npos);
         facts.hasThis = fn.hasThis() || (special && !fn.params().empty());
         if (facts.hasThis && !fn.params().empty()) facts.thisType = TypeTable::id(fn.params()[0].type);
         // Its own parameters, after `this` and a VTT and before cl's flag: an inheriting constructor's.

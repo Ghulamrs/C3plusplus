@@ -1311,8 +1311,13 @@ std::vector<StmtPtr> Parser::buildStaticArrayConstruction(Declared &d,
     ExprPtr n2(new Num(count));
     n2->setType(sizeT);
     std::vector<StmtPtr> body;
-    body.push_back(StmtPtr(new ExprStmt(callVectorLoop(
-        vectorDestructor(plain, d.pos), plain, std::move(first), std::move(n2), d.pos))));
+    const std::string loop = vectorDestructor(plain, d.pos);
+    // For the SSA builder (M3b.3): the loop the helper calls, "~elements", and the array it destroys, "$array", by its type.
+    const MemberBuilt u = { loop, types_.functionType(types_.get(Kind::Void), std::vector<const Type *>{ ptr, sizeT }, false), false, false };
+    memberBuilt_[fn + "|~elements|0"] = u;
+    const MemberBuilt a = { symbol, d.type, false, false };
+    memberBuilt_[fn + "|$array|0"] = a;
+    body.push_back(StmtPtr(new ExprStmt(callVectorLoop(loop, plain, std::move(first), std::move(n2), d.pos))));
     body.push_back(StmtPtr(new Return(nullptr)));
     current_->functions.push_back(Function(fn, types_.get(Kind::Void),
                                            std::move(params),

@@ -1289,6 +1289,10 @@ void Lowering::destroy(const Live &l, bool invoke) {
     std::vector<TypeId> params(1, types_.pointerTo(l.cls));
     std::vector<ValueId> ops(1, l.slot);
     if (l.vtt.valid()) { params.push_back(F().value(l.vtt).type); ops.push_back(l.vtt); }     // a base's D2, handed its sub-VTT
+    if (l.count.valid()) {     // the elements built so far, as the loop's size_t
+        params.push_back(tid(*types_.get(target_.sizeType())));
+        ops.push_back(convert(Val(load(l.count, types_.intType()->id()), types_.intType()->id()), params.back()).v);
+    }
     CallInfo info;
     info.symbol = l.dtor;
     info.signature = types_.functionType(types_.voidType()->id(), params);

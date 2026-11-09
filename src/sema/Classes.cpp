@@ -1908,14 +1908,7 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
         // What builds this base, and what destroys it if a later part throws, for the SSA builder (M3b.3): "^B" and "~B".
         const Parser::MemberBuilt b = { sym, p_.types_.functionType(p_.types_.get(Kind::Void), ps, false), !inherited && !defaults.empty(), false };
         p_.memberBuilt_[symbol + "|^" + base->tag() + "|0"] = b;
-        if (const Signature *dtor = p_.destructorOf(base)) {
-            std::string d2 = dtor->symbol;
-            if (!p_.target_.microsoftNames()) itaniumDestructorName(base->tag(), base, false, &d2);
-            std::vector<const Type *> self(1, basePtr);
-            if (p_.takesVtt(base)) self.push_back(p_.vttType());     // its D2, handed the same sub-VTT
-            const Parser::MemberBuilt u = { d2, p_.types_.functionType(p_.types_.get(Kind::Void), self, false), false, false };
-            p_.memberBuilt_[symbol + "|~" + base->tag() + "|0"] = u;
-        }
+        recordBaseDestructor(symbol, base);
         // A base subobject, so cl's flag is 0: its virtual bases are this
         // class's to build, and it built them above.
         body.push_back(StmtPtr(new ExprStmt(
@@ -2017,6 +2010,19 @@ void Classes::synthesizeDefaultCtor(std::size_t which) {
     }
     p_.closeFrame(savedFrame);
     p_.vttSlot_ = savedVtt;
+}
+
+// What destroys a base a compiler-written constructor built if a later part throws, for the SSA builder (M3b.3): its D2,
+// handed the same sub-VTT, keyed "~B" under the constructor's symbol as a written constructor's record is.
+void Classes::recordBaseDestructor(const std::string &ctor, const Type *base) {
+    const Signature *dtor = p_.destructorOf(base);
+    if (dtor == nullptr) return;
+    std::string d2 = dtor->symbol;
+    if (!p_.target_.microsoftNames()) itaniumDestructorName(base->tag(), base, false, &d2);
+    std::vector<const Type *> self(1, p_.types_.pointerTo(base));
+    if (p_.takesVtt(base)) self.push_back(p_.vttType());
+    const Parser::MemberBuilt u = { d2, p_.types_.functionType(p_.types_.get(Kind::Void), self, false), false, false };
+    p_.memberBuilt_[ctor + "|~" + base->tag() + "|0"] = u;
 }
 
 // The body of a copy constructor nobody wrote: the bases with one of their own, then
@@ -2127,6 +2133,10 @@ void Classes::synthesizeCopy(std::size_t which, bool assigning) {
         }
         args.push_back(std::move(fromObj));
         ps.push_back(cc->params[0]);
+        // What copies this base, and what destroys it if a later part throws, for the SSA builder (M3b.3): "^B" and "~B".
+        const Parser::MemberBuilt b = { sym, p_.types_.functionType(cc->returns, ps, false), false, false };
+        p_.memberBuilt_[symbol + "|^" + base->tag() + "|0"] = b;
+        if (!assigning) recordBaseDestructor(symbol, base);
         body.push_back(StmtPtr(new ExprStmt(
             p_.completeCall(base->tag(), sym, nullptr, cc->returns, ps,
                          false, pos, std::move(args), false,
@@ -2145,7 +2155,9 @@ void Classes::synthesizeCopy(std::size_t which, bool assigning) {
     // the whole difference between the two bodies, measured in cl's own listing:
     // assignment writes into an object that already exists and is already this class.
     if (!assigning && type->polymorphic()) {
-        std::vector<StmtPtr> vp = storeVptrs(cls, type, thisSlot);
+        std::vector<sema::VptrStore> &stores = p_.vptrStores_[symbol];     // recorded for the SSA builder (M3b.3)
+        stores.clear();
+        std::vector<StmtPtr> vp = storeVptrs(cls, type, thisSlot, &stores);
         for (std::size_t i = 0; i < vp.size(); i++)
             body.push_back(std::move(vp[i]));
     }
@@ -2227,6 +2239,9 @@ void Classes::synthesizeCopy(std::size_t which, bool assigning) {
             std::vector<const Type *> ps;
             ps.push_back(p_.types_.pointerTo(elem->unqualified()));
             ps.push_back(cc->params[0]);
+            // What copies this member, each element of an array, for the SSA builder (M3b.3): keyed as a written entry's record.
+            const Parser::MemberBuilt b = { cc->symbol, p_.types_.functionType(cc->returns, ps, false), false, false };
+            p_.memberBuilt_[symbol + "|" + ms[i].name + "|0"] = b;
             one = StmtPtr(new ExprStmt(
                 p_.completeCall(elem->unqualified()->tag(), cc->symbol, nullptr,
                              cc->returns, ps, false, pos, std::move(args))));
