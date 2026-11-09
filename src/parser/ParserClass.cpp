@@ -2220,7 +2220,7 @@ void Parser::defineStaticMember(Declared &d, Program &program, bool threadLocal)
         m.type = s->type;
         const FunctionState outer = enterInitFunction();
         bindStaticReference(m, s->symbol, pieces, hasInit, &initSink());
-        leaveInitFunction(outer);
+        leaveInitFunction(outer, s->symbol);
         expect(";");
         program.globals.push_back(Global{ m.name, s->symbol,
                                           types_.pointerTo(s->type->referent()),

@@ -11,6 +11,7 @@ FuncId Builder::build(const FunctionFacts &facts, const std::string &kind, std::
     const std::size_t index = l.module_.functions.size();
     try {
         if (kind == "thunk" || kind == "virtual thunk") return thunk(facts, kind == "virtual thunk");
+        if (kind == "init function") return initFunction(facts);
         const bool dtor = kind == "implicit destructor", ctor = kind == "implicit default constructor";
         if (!dtor && !ctor) l.outside("a compiler-written " + kind);
         l.beginFunction(facts);

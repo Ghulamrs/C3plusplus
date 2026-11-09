@@ -1344,3 +1344,29 @@ no box this lane reached). **Gated on Linux**: ssa.sh 8695 of 8695 bodies lowere
 1094/0 at `-O2`, `-front=ssa` and `-front=ssa -O2`; `make test` green; three `Classes.cpp` citations re-pointed in
 `docs/EXCLUSIONS.md`. **The Windows box was down** all day (192.168.100.207 timed out): `winpass.sh` at `-front=ssa` and
 `-front=ssa -O2` is owed before landing. `src/` went from 88595 to 88759 lines (+164).
+
+**M3b.3, lane C, 2026-11-09: the thunks and the init function.** From lane 1's tip (`f817dce2`). **The design**: the
+kinds are built in `src/ir/Wrappers.cpp`, two lines of dispatch in `Builder::build`. A thunk's adjustment is what the
+ABI states in its name - `_ZThn<n>_<f>` moves `this` back by n, `_ZTv<f>_n<v>_<f>` by f and then by the vcall offset
+at -v from the vptr found there, Microsoft's `<f>$adj<n>` back by n - so the name is read and nothing re-derived; the
+parameters go on as they arrived and the callee is called through `callTail`. The init function is each namespace-scope
+object in the order the parser met it, built and registered by `staticConstruction` - a static local's own path - and a
+template static under its weak guard: the parser records each `leaveInitFunction` that pushed statements (symbol, count)
+and the global `VarNote` gives it its `var` node (`Parser::dynInits_`), which the Typer types as a root of its own
+(`Typer::dynamicInits`), the count checked against what `finishDynamicInit` made. An array member built with default
+arguments evaluates them again per element (`buildElements`; `constructMember` records an array's defaults too).
+**Found on the way, on the Ast.h path**: a thunk could not forward a reference parameter - refused, and once let
+through it held the address as an int and returned a reference by value; the three thunk synthesisers hold it as its
+address and bind a reference result, as the complete constructor did (`tests/cases/thunk-forwarding.cpp`, the ledger).
+**Lowered**: thunk 27 of 27, virtual thunk 36 of 36, init function 28 of 29, the default constructor lane 1 left - 510
+of 903 compiler-written functions. **Left, by kind**: an init function holding an array built at run time with no
+record of how (`aggregate-member-constructor`), tls init 1 (`__tls_init`: thread-local addresses and its guard are
+not built), and Microsoft's vcall thunk (`??_9`), which no Linux case reaches and no box here could run. **-front=ssa
+does not reach the C6000**: `Tms6747Backend` takes no SSA module (`setSsa` is X86_64Linux's alone), so `-arch tms6747
+-front=ssa` emits what the Ast.h path does - byte for byte on the cases measured. `src/` went from 88759 to 88946 (+187).
+**Gated on Linux** (`~/m3b3c-b`): ssa.sh 8726 of 8726 bodies lowered, 0 failed, and the 510 above; run.sh 1095/0 at
+-O0, -O2, `-front=ssa` and `-front=ssa -O2`; emit 2981/0, typed, adapted (1652 the same), coff 0 differ, c90 447/0,
+syntax green; exclusions 126 sites 0/0 (seven citations re-pointed); comment cap 0; memory gate `new` 1056 (from 1057).
+tms6747.sh at -O0 and -O2: 723 passed, 2 failed - `long-double-literal-exact-digits` (sim6747) and `ssa-eh-tail`, which
+09513e40's compiler fails the same way on the same run - and every pass also on sim6747. names.sh and overload.sh skip
+there (no clang++); the Windows gate is the coordinator's at merge, `thunk-forwarding.notarget` naming x86_64-windows.

@@ -780,7 +780,8 @@ private:
         bool function = false;      // a function's declaration with no definition: its node is over its parameters
         int form = 0;               // its initialiser's form, Parser::InitForm, read before the initialiser is
         std::size_t values = 0;     // the first node the initialiser made: the parts before it are the bounds
-        VarNote(Parser &parser, std::size_t m, std::size_t l) : p(parser), mark(m), lo(l) {}
+        std::size_t inits;          // dynInits_ when it was made: one pushed since is this declarator's, its `var` this node
+        VarNote(Parser &parser, std::size_t m, std::size_t l) : p(parser), mark(m), lo(l), inits(parser.dynInits_.size()) {}
         void ahead() { form = p.initFormAhead(); values = p.syntaxTree_.size(); }
         // The type and the name; an unnamed parameter's `$unnamed<n>` is the parser's, and no source spells it - but a
         // lambda's `__invoke` names its `$a<n>` in its body.
@@ -800,6 +801,7 @@ private:
             while (!function && bounds < p.syntaxTree_.node(id).count && p.syntaxTree_.child(id, bounds).v <= values) bounds++;
             if (bounds != 0) p.varBounds_[id.v] = static_cast<int>(bounds);
             if (!function) p.noteDeclaredLocal(id, d->name);
+            if (!function && p.dynInits_.size() == inits + 1) p.dynInits_.back().var = id;
         }
     };
     struct KeywordForm { std::size_t start, mark; ExprPtr e; };
@@ -1456,6 +1458,12 @@ private:
     std::vector<StmtPtr> dynInit_;
     int dynInitFrame_ = 0;
     std::vector<int> dynInitGuards_;
+    // The same statements as the SSA builder reads them (M3b.3): each object's, by its symbol, `var` node and count, in order;
+    // a template static's weak guard by symbol; and the count finishDynamicInit made one function of.
+    struct DynamicInit { std::string symbol; syntax::NodeId var; std::size_t statements; };
+    std::vector<DynamicInit> dynInits_;
+    std::map<std::string, std::string> dynInitOnce_;
+    std::size_t dynInitStatements_ = 0, dynInitMark_ = 0;
     // **The same for thread storage** - [basic.stc.thread]: `__tls_init`, its frame and its guards,
     // built while tlsObject_ says the object being declared is a thread_local; the init functions
     // below write to initSink(), and registerDestruction asks the target's threadAtexit().
@@ -1487,7 +1495,7 @@ private:
     // Everything below runs inside the init function's frame. The state
     // struct is what every other re-entry door saves, and this is one more.
     FunctionState enterInitFunction();
-    void leaveInitFunction(const FunctionState &outer);
+    void leaveInitFunction(const FunctionState &outer, const std::string &symbol = std::string());
     void finishDynamicInit(Program &program);
     // The construction of a class object with static storage duration and its
     // destructor's registration, in the frame in force: [basic.start.term]
@@ -2230,8 +2238,7 @@ private:
     // A12/A13: whether a file-scope initialiser folds to bytes; one that does
     // not is stored by the init function instead, once the object is declared.
     bool staticallyInitialisable(const Type *t, Init &in);
-    void dynamicInitialiseScalar(const std::string &name, const Type *type,
-                                 Init &in);
+    void dynamicInitialiseScalar(const std::string &name, const std::string &symbol, const Type *type, Init &in);
     void dynamicInitialiseStaticMember(const std::string &name,
                                        const std::string &symbol, const Type *type,
                                        Init &in, bool once);

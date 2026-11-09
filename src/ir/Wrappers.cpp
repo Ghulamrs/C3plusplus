@@ -1,6 +1,6 @@
-// **The thunks** (M3b.3, lane C): a slot of a secondary vtable holds one, which moves `this` from the subobject the
-// call arrived through to the object the override was compiled against and calls it (Classes::synthesizeThunk,
-// synthesizeVirtualThunk). What it moves by is the ABI's own statement in the thunk's name, so the name is read here.
+// **The thunks and the init function** (M3b.3, lane C): a thunk moves `this` from the subobject a call arrived through to
+// the object its override was compiled against, by what the ABI states in its name (Classes::synthesizeThunk and
+// synthesizeVirtualThunk); the init function builds each namespace-scope object as the parser recorded it (ParserInit.cpp).
 
 #include "Builder.h"
 
@@ -79,6 +79,46 @@ FuncId Builder::thunk(const FunctionFacts &facts, bool virt) {
                                       std::vector<sema::TypedId>(), false);
     if (rt.isVoid()) l.br(l.returnBlock_);
     else l.br(l.returnBlock_, std::vector<ValueId>(1, r.v));
+    l.finishFunction(facts.landingPads);
+    return FuncId(static_cast<std::uint32_t>(l.fnIndex_));
+}
+
+// _GLOBAL__sub_I_<file>, [basic.start.init]/2: each object in the order the parser met it, built and its destructor registered
+// as a static local's are (staticConstruction) - a template's static member under its weak guard, the first unit to run building it.
+FuncId Builder::initFunction(const FunctionFacts &facts) {
+    Lowering &l = l_;
+    std::vector<sema::DynamicInit> inits;
+    if (!l.dynamicInits_ || !l.dynamicInits_(inits) || inits.empty()) l.outside("an init function whose objects the parser recorded no `var` for");
+    l.beginFunction(facts);
+    if (l.this_.valid() || facts.paramCount != 0 || !l.T(l.returns_).isVoid()) l.outside("an init function with parameters");
+    l.returnBlock_ = l.newBlock();
+    const BlockId first = l.newBlock();
+    l.br(first);
+    l.place(first);
+    const bool ms = l.target_.microsoftNames();
+    const TypeId intT = l.tid(*l.types_.intType()), boolT = l.tid(*l.types_.get(Kind::Bool));
+    for (const sema::DynamicInit &e : inits) {
+        BlockId done;
+        if (!e.once.empty()) {
+            // guardTemplateMember's test: the guard's first byte on Itanium, its int on Microsoft, set before the object is built.
+            const TypeId gt = l.tid(*l.types_.get(ms ? Kind::Int : Kind::UChar));
+            const ValueId guard = l.addrOf(e.once, l.types_.pointerTo(gt));
+            std::vector<ValueId> ops(1, l.promote(Lowering::Val(l.load(guard, gt), gt)).v);
+            ops.push_back(l.iconst(intT, 0));
+            const InstId fresh = l.add(Op::ICmp, boolT, ops);
+            l.at(fresh).cc = Cmp::Eq;
+            const BlockId build = l.newBlock();
+            done = l.newBlock();
+            l.condbr(l.result(fresh), build, done);
+            l.place(build);
+            l.store(guard, l.iconst(gt, 1));
+        }
+        if (l.tree_.node(e.var).type == nullptr) l.outside("an init function's object not typed");
+        if (l.tree_.node(e.var).type->isArray() && !e.built.array && !e.built.elements.recorded()) l.outside("an array built at run time before main");
+        l.staticConstruction(e.var, e.symbol, e.built);
+        if (done.valid()) { l.br(done); l.place(done); }
+    }
+    l.br(l.returnBlock_);
     l.finishFunction(facts.landingPads);
     return FuncId(static_cast<std::uint32_t>(l.fnIndex_));
 }
