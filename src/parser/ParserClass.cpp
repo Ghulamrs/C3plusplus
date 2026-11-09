@@ -3027,7 +3027,7 @@ StmtPtr Parser::constructMember(const std::string &cls, const Type *type,
         if (lookup_.functions_[k].symbol == chosen.symbol) noteUsed(k);
     const std::size_t written = args.size();
     applyDefaults(chosen, args, pos);
-    if (!m.type->isArray()) noteEntryDefaults("." + m.name, args, written);
+    noteEntryDefaults("." + m.name, args, written);     // an array's too, evaluated again for each element
 
     int indexSlot = 0;
     long long count = 0;

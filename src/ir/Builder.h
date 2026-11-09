@@ -15,6 +15,7 @@ public:
     FuncId build(const FunctionFacts &facts, const std::string &kind, std::string &why);
 
 private:
+    FuncId thunk(const FunctionFacts &facts, bool virt);     // Thunks.cpp: a thunk or a virtual thunk
     Lowering &l_;
 };
 

@@ -114,13 +114,21 @@ void Lowering::buildElements(const Member &m, const Type &et, long long elems) {
         if (constructed_ && constructed_(et.id())) outside("an array member built by no constructor the parser recorded");
         return;
     }
-    if (defaulted) outside("an array member built with default arguments");
+    // [dcl.fct.default]/9: the defaults the parser completed the call with, evaluated again for every element.
+    const sema::TypedId defaults = defaulted && memberDefault_ ? memberDefault_(key_, "^." + m.name) : sema::TypedId();
+    if (defaulted && !defaults.valid()) outside("an array member built with default arguments the parser recorded none of");
     const Type &ft = T(sig);
-    if (ft.params().size() != 1 || ft.params()[0]->pointee()->unqualified() != &et) outside("an array member's constructor of another class");
+    if ((ft.params().size() != 1 && !defaulted) || ft.params()[0]->pointee()->unqualified() != &et) outside("an array member's constructor of another class");
+    std::vector<sema::TypedId> args;
+    for (std::uint32_t i = 0; defaults.valid() && i < count(defaults); i++) args.push_back(child(defaults, i));
     for (long long k = 0; k < elems; k++) {
         const InstId g = add(Op::Gep, tid(*ft.params()[0]), std::vector<ValueId>(1, this_));
         at(g).k = m.offset + k * et.size(target_);
-        directCall(symbol, sig, std::vector<ValueId>(1, result(g)));
+        std::vector<ValueId> ops(1, result(g));
+        openFull();
+        argumentList(ft, 1, false, args, false, ops);
+        directCall(symbol, sig, ops);
+        closeFull();
         if (!guarded) continue;
         const std::string dtor = destructor_ ? destructor_(et.id()) : std::string();
         if (dtor.empty()) outside("an array member destroyed on unwinding by no destructor the parser recorded");

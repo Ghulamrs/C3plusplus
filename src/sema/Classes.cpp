@@ -280,7 +280,7 @@ void Classes::synthesizeCompleteCtor(const Type *type,
             // The slot holds the address; the callee wants the object, bound
             // to its reference parameter the way every other call binds one.
             a->setType(p_.types_.pointerTo(ctorParams[i]->referent()));
-            ExprPtr obj(new Unary('*', std::move(a)));
+            ExprPtr obj = make_owned<Unary>('*', std::move(a));
             obj->setType(ctorParams[i]->referent());
             if (moving) obj->setXvalue();
             a = std::move(obj);
@@ -367,6 +367,19 @@ void Classes::synthesizeCompleteDtor(const Type *type, const std::string &d1,
     p_.closeFrame(savedFrame);
 }
 
+// A thunk's parameter as it arrives and is handed on: a reference's slot holds the address, so the callee is given the
+// object - an xvalue for an rvalue reference - bound as every call binds one (the complete constructor's, above).
+static const Type *heldParam(TypeTable &types, const Type *t) { return t->isReference() ? types.pointerTo(t->referent()) : t; }
+static ExprPtr forwardedParam(TypeTable &types, const Type *t, int slot) {
+    ExprPtr a(Var::local("a", slot));
+    a->setType(heldParam(types, t));
+    if (!t->isReference()) return a;
+    ExprPtr obj = make_owned<Unary>('*', std::move(a));
+    obj->setType(t->referent());
+    if (t->isRValueReference()) obj->setXvalue();
+    return obj;
+}
+
 // The vtable: one pointer per virtual function, in the order the base declared them,
 // an override replacing an entry. **The two ABIs differ in the header** - Itanium 16
 // bytes with a zero typeinfo, Microsoft none - and a thunk walks `this` back.
@@ -390,9 +403,9 @@ std::string Classes::synthesizeThunk(const std::string &cls, const Type *type,
     params.push_back(Param{ self, thisSlot });
     std::vector<int> argSlots;
     for (std::size_t i = 0; i < slot.params.size(); i++)
-        argSlots.push_back(p_.allocateFrameSlot(slot.params[i]));
+        argSlots.push_back(p_.allocateFrameSlot(heldParam(p_.types_, slot.params[i])));
     for (std::size_t i = 0; i < slot.params.size(); i++)
-        params.push_back(Param{ slot.params[i], argSlots[i] });
+        params.push_back(Param{ heldParam(p_.types_, slot.params[i]), argSlots[i] });
 
     // (C *)((char *)this - offset)
     ExprPtr me(Var::local("this", thisSlot));
@@ -412,9 +425,7 @@ std::string Classes::synthesizeThunk(const std::string &cls, const Type *type,
     std::vector<const Type *> full;
     full.push_back(self);
     for (std::size_t i = 0; i < slot.params.size(); i++) {
-        ExprPtr a(Var::local("a" + std::to_string(i), argSlots[i]));
-        a->setType(slot.params[i]);
-        args.push_back(std::move(a));
+        args.push_back(forwardedParam(p_.types_, slot.params[i], argSlots[i]));
         full.push_back(slot.params[i]);
     }
 
@@ -428,6 +439,7 @@ std::string Classes::synthesizeThunk(const std::string &cls, const Type *type,
     // what decides where the Microsoft ABI puts a hidden return pointer.
     ExprPtr call = p_.completeCall(slot.name, slot.symbol, nullptr, returns, full,
                                 false, pos, std::move(args), true);
+    if (returns->isReference()) call = p_.bindReference(returns, std::move(call), pos, "a thunk's return type");   // the address, as `return` binds
     std::vector<StmtPtr> body;
     body.push_back(StmtPtr(new Return(returns->isVoid() ? nullptr : std::move(call))));
     if (returns->isVoid()) body.insert(body.begin(), StmtPtr(new ExprStmt(std::move(call))));
@@ -460,9 +472,9 @@ std::string Classes::synthesizeVcallThunk(const Type *cls, const Signature &f,
     params.push_back(Param{ self, thisSlot });
     std::vector<int> argSlots;
     for (std::size_t i = 0; i < f.params.size(); i++)
-        argSlots.push_back(p_.allocateFrameSlot(f.params[i]));
+        argSlots.push_back(p_.allocateFrameSlot(heldParam(p_.types_, f.params[i])));
     for (std::size_t i = 0; i < f.params.size(); i++)
-        params.push_back(Param{ f.params[i], argSlots[i] });
+        params.push_back(Param{ heldParam(p_.types_, f.params[i]), argSlots[i] });
 
     std::vector<const Type *> full;
     full.push_back(self);
@@ -492,12 +504,11 @@ std::string Classes::synthesizeVcallThunk(const Type *cls, const Signature &f,
     again->setType(self);
     args.push_back(std::move(again));
     for (std::size_t i = 0; i < f.params.size(); i++) {
-        ExprPtr a(Var::local("a" + std::to_string(i), argSlots[i]));
-        a->setType(f.params[i]);
-        args.push_back(std::move(a));
+        args.push_back(forwardedParam(p_.types_, f.params[i], argSlots[i]));
     }
     ExprPtr call = p_.completeCall(f.name, f.symbol, std::move(entry), f.returns,
                                 full, f.variadic, pos, std::move(args), true);
+    if (f.returns->isReference()) call = p_.bindReference(f.returns, std::move(call), pos, "a thunk's return type");   // the address, as `return` binds
     std::vector<StmtPtr> body;
     if (f.returns->isVoid()) {
         body.push_back(StmtPtr(new ExprStmt(std::move(call))));
@@ -2571,9 +2582,9 @@ std::string Classes::synthesizeVirtualThunk(const Type *type, const VSlot &slot,
     params.push_back(Param{ self, thisSlot });
     std::vector<int> argSlots;
     for (std::size_t i = 0; i < slot.params.size(); i++)
-        argSlots.push_back(p_.allocateFrameSlot(slot.params[i]));
+        argSlots.push_back(p_.allocateFrameSlot(heldParam(p_.types_, slot.params[i])));
     for (std::size_t i = 0; i < slot.params.size(); i++)
-        params.push_back(Param{ slot.params[i], argSlots[i] });
+        params.push_back(Param{ heldParam(p_.types_, slot.params[i]), argSlots[i] });
 
     // this = (char *)this + fixed, held in its own slot for the two reads
     const int held = p_.allocateFrameSlot(chars);
@@ -2619,9 +2630,7 @@ std::string Classes::synthesizeVirtualThunk(const Type *type, const VSlot &slot,
     std::vector<const Type *> full;
     full.push_back(self);
     for (std::size_t i = 0; i < slot.params.size(); i++) {
-        ExprPtr a(Var::local("a" + std::to_string(i), argSlots[i]));
-        a->setType(slot.params[i]);
-        args.push_back(std::move(a));
+        args.push_back(forwardedParam(p_.types_, slot.params[i], argSlots[i]));
         full.push_back(slot.params[i]);
     }
 
@@ -2634,6 +2643,7 @@ std::string Classes::synthesizeVirtualThunk(const Type *type, const VSlot &slot,
                     returns = p_.lookup_.functions_[(*set)[k]].returns;
     ExprPtr call = p_.completeCall(slot.name, slot.symbol, nullptr, returns, full,
                                 false, pos, std::move(args), true);
+    if (returns->isReference()) call = p_.bindReference(returns, std::move(call), pos, "a thunk's return type");   // the address, as `return` binds
     if (returns->isVoid()) {
         body.push_back(StmtPtr(new ExprStmt(std::move(call))));
         body.push_back(StmtPtr(new Return(nullptr)));
