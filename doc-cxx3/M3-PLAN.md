@@ -1631,3 +1631,8 @@ after this one and selection are to close; recorded, not yet a gate. `src/` went
 `src/ir/opt/`, the verifier -53, the Driver +18, the selector +14). **Left**: the guard flags of 3.8 are live into the pads
 that test them and so stay in the frame until pads take block arguments; `tools/compilerpp-bench` not yet run against
 main's (owed at M3b.4's close); names.sh under the flag not re-run (no symbol moves: the pass changes no name).
+**Round 1 re-gated by the coordinator, 2026-11-10**: `winpass.sh` on a clean ship and cl build of `02b00d80` itself, gnu
+729 / masm 728 same, 0 differ, at `-front=ssa -O1` and `-front=ssa -O2`. **A seventh round, added**: round 1's .text table
+shows the SSA path 82% over main's `-O1` because the selector gives every value a frame slot - a cost no IR pass removes.
+**7. Selection** (`SsaSelect.cpp`): an SSA value used only inside its block, or carried as a block argument, is handed to
+the MIR allocator as a virtual register rather than a frame slot; M3b.4's .text gate is measured after it.
