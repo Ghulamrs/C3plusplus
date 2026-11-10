@@ -1553,3 +1553,37 @@ names.sh ran on Windows for each lane's new cases only, not the whole suite unde
 run after lane F (`-front=ssa` does not reach the C6000: lane C). `src/` went from 88595 to 89718 lines (+1123).
 **Review point 4** (this plan's table: the compiler-written functions from the typed tree) is a stop before M3b.4's
 commits; Fable reads only on the user's word (2026-11-10), so the review is owed and M3b.4 is planned, not begun.
+
+**M3b.4, planned, 2026-11-10: -O1 on SSA.** From M3b.3's close (`674e0520`). **Where it stands**: `ir::Function` has
+block arguments, `Inst::isVolatile` (printed by `-dump=ssa`, set by nothing) and every local an `alloca`; the -O passes
+are MIR's (`src/optimizer/`), run on the selector's output, so `-front=ssa -O2` already works and is gated. **The design**
+(section 4): new passes on `ir::Function` in a directory of their own, `src/ir/opt/`, each file `Ssa*.cpp` (no basename
+may repeat `src/optimizer/`'s `Opt*`), one driver `ssaOptimize(Function &, level)` called in `lowerSsa` after `verify` and
+re-verified after every pass under `-check=ssa`; the MIR pipeline still runs after selection at the same level, so a
+round's measure is what SSA adds over today. `-dump=ssa=<pass>` writes the IR after that pass - the probe each pass is
+held to. **The rounds**, one lane each, in this order because each needs the one before:
+1. **mem2reg** (`SsaPromote.cpp`): dominators and frontiers (Cooper-Harvey-Kennedy), an `alloca` promoted when every use
+   is a `load` or `store` of its whole type and none is volatile; the renaming writes the incoming value as an argument
+   of each jump into the merge block - no phi. **Not promoted**: a slot live into a Microsoft funclet (the frame is the
+   only way in, design 4.1's decision), a slot an `invoke`'s unwind edge reads on Itanium until the pads take block
+   arguments, a class object, and an array. The guard flags of 3.8 are promoted here.
+2. **Folding, copy propagation, algebraic simplification** (`SsaFold.cpp`): one worklist over the def-use chains;
+   folding is the constant evaluator's arithmetic (one implementation), and a block argument every predecessor passes
+   the same value for is that value.
+3. **Dead code, dead stores, CFG simplification** (`SsaDead.cpp`, `SsaCfg.cpp`): an instruction with no use and no
+   effect; a store to a non-escaping `alloca` no load can see; a block with one predecessor merged, a branch on a constant
+   folded, an empty block forwarded. A pad, an `invoke`'s unwind edge and a volatile access are never removed.
+4. **GVN** (`SsaValues.cpp`): dominator-tree value numbering of pure instructions; loads only within a block with no
+   intervening store or call.
+5. **Jump threading and division by a constant** (`SsaJumps.cpp`, `SsaDivide.cpp`): `DivMagic.h` shared with
+   `OptDivide.cpp`; the threading of `OptJumps.cpp`'s shape (a block that only tests a value its predecessor set).
+6. **`volatile`** (3.7's open item): the typed tree records the qualifier on the `var`'s declared type, the lowering sets
+   `isVolatile`, every pass refuses to move or merge such an access, and `Program::usesVolatile`'s -O-off rule
+   (`Driver.cpp:1578`) is lifted under `-front=ssa` only - 11 cases write `volatile`, each held to its `.expected` at -O1/-O2.
+**Gate of each round**: `-check=ssa` 0 failed after every pass over the suite on both boxes; run.sh 0 failed at
+`-front=ssa -O1` and `-front=ssa -O2` on Linux and Windows (both spellings, `winpass.sh`); its probe case's
+`-dump=ssa=<pass>` recorded beside it in `tests/`; `make test` green. **Gate of M3b.4**: the row's - .text of the cases at
+`-front=ssa -O1` not larger than main's `-O1` (`tools/windows/bench.ps1` sums it), and the benchmark numbers of
+`tools/compilerpp-bench` recorded against main's. **Not in M3b.4**: the C6000 and arm64 (no SSA selector: lane C), the
+inliner, LICM, widening and unrolling (M3b.5). **Before its first commit**: review point 4 is a stop; Fable reads only on
+the user's word, so round 1 begins when the user asks for the review or waives it.
