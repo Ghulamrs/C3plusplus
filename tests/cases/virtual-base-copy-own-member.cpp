@@ -1,8 +1,8 @@
 // The copy constructor the compiler writes for a class with a virtual base copies the bases out of the source and then
-// skips the class's own member: `Dia e(d)` leaves `e.m` unbuilt (its value the stack's) and `~Dia` destroys it - the ledger's
-// phantom=1 where clang's is 0. Both ABIs, at every level, on the Ast.h path and under -front=ssa, which calls the same
-// implicit copy (the "copy or move" kind, M3b.3). Found by lane B's complete-object-builder case, 2026-11-09; older than it.
-#include "../cases/lifetime.h"
+// its own member: `Dia e(d)` builds `e.m`. It skipped it until 2026-11-10 - the range a base's copy covered was its whole
+// size, virtual part included, where the class's own members lie - the ledger's phantom=1 where clang's is 0, on both
+// ABIs and under -front=ssa, whose implicit copy (M3b.3's "copy or move" kind, Itanium's C2) is this one's twin.
+#include "lifetime.h"
 extern "C" int printf(const char *, ...);
 struct M { int v; M(); explicit M(int x); M(const M &o); ~M(); };
 M::M() : v(1) { lfBuilt(this, "M"); printf("+M "); }

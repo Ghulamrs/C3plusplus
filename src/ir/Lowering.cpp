@@ -318,7 +318,7 @@ TypeId Lowering::msFlagged(const std::string &symbol, TypeId sig, std::vector<Va
 
 // cl's `if (mostDerived)` in front of a constructor of a class with virtual bases: the vbtable pointers the parser
 // stored, then each virtual base it built, in its order, by the constructor it chose ([class.base.init]/10).
-void Lowering::msVirtualBases(const Type &cls, const std::map<std::string, sema::TypedId> &named) {
+void Lowering::msVirtualBases(const Type &cls, const std::map<std::string, sema::TypedId> &named, ValueId from) {
     std::vector<sema::VptrStore> vbptrs;
     std::vector<std::string> order;
     if (!msVbaseInit_ || !msVbaseInit_(key_, vbptrs, order)) outside("a most-derived guard the parser recorded nothing of");
@@ -353,7 +353,22 @@ void Lowering::msVirtualBases(const Type &cls, const std::map<std::string, sema:
         sema::TypedId entry;
         for (std::map<std::string, sema::TypedId>::const_iterator e = named.begin(); e != named.end(); ++e)
             if (cls.findMember(e->first) == nullptr && baseNamed(cls, e->first) == which) entry = e->second;
-        buildBase(cls.bases()[which], entry);
+        std::string symbol;
+        TypeId sig;
+        bool defaulted = false;
+        if (!from.valid()) buildBase(cls.bases()[which], entry);
+        else if (!memberBuilt_ || !memberBuilt_(key_, "^" + tag, 0, symbol, sig, defaulted) || T(sig).params().size() != 2 ||
+                 !T(sig).params()[1]->isReference())
+            outside("a virtual base copied by no constructor the parser recorded");
+        else {     // a copy's: out of the source's own, at the same offset (virtualBaseCalls), handed flag 0
+            const Type::BaseSpec &b = cls.bases()[which];
+            const TypeId chars = types_.pointerTo(types_.charType()->id());
+            std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*T(sig).params()[0]), std::vector<ValueId>(1, baseAddress(b)))));
+            const InstId g = add(Op::Gep, chars, std::vector<ValueId>(1, result(add(Op::Bitcast, chars, std::vector<ValueId>(1, from)))));
+            at(g).k = b.offset;
+            ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(T(sig).params()[1]->referent())), std::vector<ValueId>(1, result(g)))));
+            directCall(symbol, msFlagged(symbol, sig, ops, 0), ops);
+        }
         const std::map<std::string, Live>::const_iterator g = guarded.find(tag);
         if (g == guarded.end()) continue;
         // Built: alive to the cleanups, which destroy it only where the count says so - the bases built so far, one more.
@@ -371,9 +386,14 @@ void Lowering::msVirtualBases(const Type &cls, const std::map<std::string, sema:
 // The destructor is the base's own, as the walker's baseDestructorCall names it, on the address the layout gives it.
 Lowering::Live Lowering::msGuardedVirtualBase(const Type::BaseSpec &b, ValueId count) {
     const Type &bt = *b.type->unqualified();
-    if (bt.hasVirtualBase()) outside("a virtual base with virtual bases destroyed on unwinding on the Microsoft ABI");
     Live l;
-    l.dtor = destructor_ ? destructor_(bt.id()) : std::string();
+    std::string own;
+    TypeId sig;
+    bool defaulted = false;
+    // One with virtual bases of its own by its ??1, its own part alone (the guard's "~V"), where destructor_ names its ??_D.
+    if (bt.hasVirtualBase() && (!memberBuilt_ || !memberBuilt_(key_, "~" + bt.tag(), 0, own, sig, defaulted)))
+        outside("a virtual base with virtual bases destroyed on unwinding by no destructor the parser recorded");
+    l.dtor = bt.hasVirtualBase() ? own : destructor_ ? destructor_(bt.id()) : std::string();
     if (l.dtor.empty()) outside("a virtual base destroyed on unwinding whose destructor the parser recorded none for");
     l.cls = bt.id();
     l.when = count;
@@ -2255,6 +2275,28 @@ void Lowering::beginFunction(const FunctionFacts &facts) {
     }
 }
 
+// A scalar or reference parameter `p`, arrived as `pv`: copied into an alloca so that every local is one (no mem2reg at M3b.1);
+// past the entry block - a C1 binding its C2's parameters (M3b.3) - the alloca is the entry's still.
+void Lowering::bindParameter(sema::TypedId p, ValueId pv, TypeId slotType) {
+    Function &f = F();
+    ValueId slot;
+    if (cur_.v != f.entry.v) slot = entryAlloca(slotType, text(p));
+    else {
+        AllocaInfo a;
+        a.type = slotType;
+        a.align = T(slotType).align(target_);
+        a.name = text(p);
+        const InstId al = add(Op::Alloca, tid(*types_.pointerTo(&T(slotType))), std::vector<ValueId>());
+        at(al).k = static_cast<long long>(f.frame.size());
+        at(al).align = a.align;
+        f.frame.push_back(a);
+        slot = result(al);
+    }
+    store(slot, pv);
+    const Type &pt = *tree_.node(p).type;
+    locals_[tree_.node(p).syntax.v] = std::make_pair(slot, pt.isReference() ? tid(pt) : slotType);
+}
+
 // The return block, reached by a branch carrying the value: one `ret`, of the address a reference or a class is returned as.
 void Lowering::finishFunction(bool landingPads) {
     const Type &rt = T(returns_);
@@ -2366,16 +2408,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
             }
             const ValueId pv = param(f.entry, slotType);
             f.params.push_back(pv);
-            AllocaInfo a;
-            a.type = slotType;
-            a.align = T(slotType).align(target_);
-            a.name = text(p);
-            const InstId al = add(Op::Alloca, tid(*types_.pointerTo(&T(slotType))), std::vector<ValueId>());
-            at(al).k = static_cast<long long>(f.frame.size());
-            at(al).align = a.align;
-            f.frame.push_back(a);
-            store(result(al), pv);
-            locals_[tree_.node(p).syntax.v] = std::make_pair(result(al), pt.isReference() ? tid(pt) : slotType);
+            bindParameter(p, pv, slotType);
         }
         // cl's most-derived flag, after every written parameter.
         if (facts.msFlag) {

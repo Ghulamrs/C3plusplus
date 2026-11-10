@@ -1492,3 +1492,43 @@ same, 340 refused as recorded); names.sh for the new case passes. **On Linux** (
 `-front=ssa` and `-front=ssa -O2`; emit 2997/0, the golden recorded from `33e62b9d` 0 of 2989 changed (8 added); typed,
 adapted (1681 the same), coff 0 differ, c90 447/0, syntax green; exclusions 126 sites 0/0 (one citation re-pointed);
 comment cap 0; memory gate 44. names.sh and overload.sh skip there. `src/` went from 89495 to 89604 lines (+109).
+
+**M3b.3, lane D, 2026-11-10: the virtual bases, finished (lane D2).** From `702d10d6` (lanes 1, A-C, E, F landed), lane D's
+saved work (`m3b3d-wip.patch`, cut from `33e62b9d`) applied and finished. **The design** is the other lanes': the synthesiser
+records what it chose, the Builder reads. A complete constructor whose written constructor names a virtual base in its list
+builds it from that entry: the C1 reaches its C2's typed body by the key their records share (`setSplitBody`, the Driver's
+map of each body handed a VTT by its C1), binds that body's parameters to the ones forwarded to it (`bindParameter`,
+factored out of `lower()`; past the entry block its alloca is the entry's), and `buildBase` lowers the entry's arguments
+and the defaults the parser completed them with (`Builder::writtenEntries`). An implicit copy or move of a class with a
+virtual base is Itanium's C2 handed its VTT - `synthesizeCopy` now records the split (`vttSplit_`) and each base's sub-VTT
+(`baseVtt_`), the virtual bases C1's - or cl's copy constructor, which copies them under its most-derived flag: the
+synthesiser records the guard under the copy's own key (`guardedVirtualBaseInit(..., record)`), the Driver gives the copy
+its flag fact, and `msVirtualBases` takes the source and copies each virtual base out of the source's own at the same
+offset, handed flag 0, as `virtualBaseCalls` writes it; each base's copy is handed flag 0 too (`msFlagged`). A virtual base
+with virtual bases of its own is destroyed on unwinding on Microsoft by its `??1`, the guard's `~V` record, where
+`destructor_` names its `??_D`. Lane D's vbtable walk (`msVbaseSlot`) duplicated lane E's `virtualBaseAddress` and is
+dropped: one implementation, E's. **The two open faults, mended on both paths and moved to `tests/cases`**: the implicit
+copy took a base's range as its whole size, virtual part included, where the class's own members lie (`nvDataSize` now, in
+`synthesizeCopy` and the Builder; a member of a virtual base copied whole by C1 or under the flag is not copied again) -
+`virtual-base-copy-own-member`; and a virtual base of a virtual base (`virtual-base-of-virtual-base-ledger`, the old name
+taken): on Itanium the implicit copy stored no vptr for a class that has one for its virtual base alone (measured: main's
+compiler builds a Deep and dies copying it), and on Microsoft the flag stored the class's own vbptr and not the one inside
+its virtual base W, which W's constructor reads `v` through - the layout now lists a virtual base's vbptr among the class's
+(`ParserType.cpp`), so the guard stores it and `??_8Deep@@7BW@@@` is emitted, and the class's own table among several is `??_8Deep@@7B0@@`,
+a back-reference (`vbtableSymbol`) - cl's names and entries, by dumpbin. Both `.expected` are
+clang's on the Windows box (Build Tools clang 19.1.5, the `.clang` lane B recorded), and every run of each - both spellings
+at `-O0`, `-O2`, `-front=ssa`, `-front=ssa -O2` there, the four levels on Linux - prints it. **Lowered**: Linux 8878 of 8878
+bodies and 973 of 973 compiler-written (complete constructor 59 of 59, implicit copy or move 112 of 112); Windows 9149 of
+9153 bodies and 1130 of 1130 compiler-written (implicit copy or move 197). **Left by name** (Windows bodies, as before): a
+function try block on a constructor or destructor (3) and a pointer to a data member in cl's virtual model (1). **Refused
+by name, reached by no case**: cl's implicit copy assignment of a class with a virtual base, and a virtual base holding two
+vbptrs on Microsoft (`ParserType.cpp:1485`; the second vbptr's table and cl's name for it are unmeasured). **The golden**
+(lane E's, from `33e62b9d`): 3 of 2989 changed, `virtual-base-construction-vtable` on its three targets - its implicit
+copies now copy D's own `d` and `pad`, which the whole-size range skipped, and leave W's `w` to W's own copy: the first
+fault, in a case that printed neither. **Gated on Windows** (`m3b3d2-1`): `winpass.sh` gnu 728 same / masm 727, 0 differ,
+340 refused as recorded, at `-front=ssa`, `-front=ssa -O2` and the Ast.h path at -O0; cl `/W4 /WX` clean. **On Linux**
+(`~/m3b3d2`): `make test`'s parts - run.sh 1101/0 at -O0, -O2, `-front=ssa` and `-front=ssa -O2`; emit 3005/0; ssa.sh
+above, 0 failed; typed 759/0, adapted (1695 the same), coff 0 differ, c90 447/0, syntax green; exclusions 127 sites 0/0
+(twelve `ParserType.cpp` and four `Classes.cpp` citations re-pointed, one added); comment cap 0; memory gate 44. names.sh and overload.sh skip
+there; on Windows names.sh passes both new cases, their `.nonames` the C2 and `??_D` forms cxx1 emits beside the ones used.
+`src/` went from 89604 to 89718 lines (+114).

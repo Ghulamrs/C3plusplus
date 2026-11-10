@@ -38,6 +38,7 @@ private:
     void completeDtor(const Type &cls);
     void completeCtor(const Type &cls);
     FuncId atexitHelper(const FunctionFacts &facts, std::size_t index);   // MsShapes.cpp: cl's ??__F
+    void writtenEntries(std::map<std::string, sema::TypedId> &named);
     Lowering &l_;
 };
 

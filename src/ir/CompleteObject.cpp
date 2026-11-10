@@ -126,8 +126,28 @@ void Builder::completeDtor(const Type &cls) {
     }
 }
 
-// C1: each virtual base in [class.base.init]/10's order by the constructor recorded for it - its default one, or a copy or move
-// out of the source's own ([class.copy]/15, the one own parameter) - guarded for the parts after it; then C2, handed the VTT.
+// The written constructor whose C1 this is - the C2's node, whose records the C1 shares: its parameters bound to the ones
+// forwarded here and its mem-initialisers by name, so a virtual base's entry is built as the C2 builds a base's.
+void Builder::writtenEntries(std::map<std::string, sema::TypedId> &named) {
+    Lowering &l = l_;
+    const sema::TypedId fn = l.splitBody_ ? l.splitBody_(l.key_) : sema::TypedId();
+    if (!fn.valid()) return;
+    std::size_t p = 0;
+    for (std::uint32_t i = 0; i + 1 < l.count(fn); i++) {
+        const sema::TypedId c = l.child(fn, i);
+        if (l.syn(c).kind == syntax::Kind::MemInit) { named[l.text(c)] = c; continue; }
+        if (l.syn(c).kind != syntax::Kind::Var) continue;
+        if (p >= l.forwarded_.size() || l.tree_.node(c).type == nullptr) l.outside("a complete constructor whose parameters the written constructor's do not match");
+        const Type &pt = *l.tree_.node(c).type;
+        const TypeId slot = pt.isReference() ? l.tid(*l.types_.pointerTo(pt.referent())) : l.tid(pt);
+        if (l.F().value(l.forwarded_[p]).type != slot) l.outside("a complete constructor whose parameters the written constructor's do not match");
+        l.bindParameter(c, l.forwarded_[p++], slot);
+    }
+}
+
+// C1: each virtual base in [class.base.init]/10's order by the constructor recorded for it - its default one, a copy or move
+// out of the source's own ([class.copy]/15, the one own parameter), or the written entry's arguments - guarded for the parts
+// after it; then C2, handed the VTT.
 void Builder::completeCtor(const Type &cls) {
     Lowering &l = l_;
     vttHeld();
@@ -135,6 +155,8 @@ void Builder::completeCtor(const Type &cls) {
     std::vector<std::string> order;
     if (!l.msVbaseInit_ || !l.msVbaseInit_(l.key_, none, order)) l.outside("a complete constructor whose virtual bases the parser recorded no order for");
     const TypeId chars = l.types_.pointerTo(l.types_.charType()->id());
+    std::map<std::string, sema::TypedId> named;
+    writtenEntries(named);
     for (const std::string &tag : order) {
         const int which = virtualBaseNamed(cls, tag);
         if (which < 0) l.outside("a virtual base the class does not lay out");
@@ -146,16 +168,23 @@ void Builder::completeCtor(const Type &cls) {
         const Type &ft = l.T(sig);
         std::vector<ValueId> ops(1, l.result(l.add(Op::Bitcast, l.tid(*ft.params()[0]), std::vector<ValueId>(1, l.baseAddress(b)))));
         const std::size_t skip = l.baseVttArgument(bt, ft, ops);
-        if (ft.params().size() == skip + 1 && l.forwarded_.size() == 1 && ft.params()[skip]->isReference() &&
+        if (ft.params().size() == skip + 1 && l.forwarded_.size() == 1 && named.empty() && ft.params()[skip]->isReference() &&
             ft.params()[skip]->referent()->unqualified() == &bt && l.T(l.F().value(l.forwarded_[0]).type).pointee()->unqualified() == &cls) {
             // The source's own V, at the same offset: `*(V *)((char *)that + offset)`.
             const InstId g = l.add(Op::Gep, chars, std::vector<ValueId>(1, l.result(l.add(Op::Bitcast, chars, std::vector<ValueId>(1, l.forwarded_[0])))));
             l.at(g).k = b.offset;
             ops.push_back(l.result(l.add(Op::Bitcast, l.tid(*l.types_.pointerTo(ft.params()[skip]->referent())), std::vector<ValueId>(1, l.result(g)))));
-        } else if (ft.params().size() != skip) {
-            l.outside("a complete constructor building a virtual base from a mem-initialiser's arguments");
+            l.directCall(symbol, sig, ops);
+        } else {
+            // The written entry naming it, or none: buildBase lowers its arguments (and the defaults the parser completed them with).
+            sema::TypedId entry;
+            for (std::map<std::string, sema::TypedId>::const_iterator e = named.begin(); e != named.end(); ++e)
+                if (cls.findMember(e->first) == nullptr && l.baseNamed(cls, e->first) == which) entry = e->second;
+            if (!entry.valid() && ft.params().size() != skip) l.outside("a complete constructor building a virtual base from a mem-initialiser's arguments");
+            l.openFull();
+            l.buildBase(b, entry);
+            l.closeFull();
         }
-        l.directCall(symbol, sig, ops);
         if (!bt.hasDestructor()) continue;
         // [except.ctor]/3: built, it is destroyed by its D2 - handed the same virtual VTT - if a later part throws.
         if (!recorded("~" + tag, symbol, sig)) l.outside("a virtual base destroyed on unwinding by no destructor the parser recorded");

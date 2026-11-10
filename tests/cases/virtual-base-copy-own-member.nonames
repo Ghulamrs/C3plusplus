@@ -1,0 +1,3 @@
+x86_64-linux  One name cxx1 emits and clang does not: `_ZN3DiaC2ERKS_`, Dia's base-subobject copy where nothing derives from Dia. cxx1 splits every constructor of a class with a virtual base into C1 and C2; clang emits the form it uses. Every other name agrees.
+arm64-darwin  The same one with Mach-O's leading underscore.
+x86_64-windows  Two names cxx1 emits and clang does not: `??_DA@@QEAAXXZ` and `??_DB@@QEAAXXZ`, the vbase destructors of the two middle classes, which this case never destroys as complete objects. cxx1 emits one beside every destructor of a class with a virtual base (virtual-base-diamond.nonames says the same).

@@ -1,8 +1,7 @@
-// A virtual base with a virtual base of its own: `Deep : virtual W`, `W : virtual V`. Building a Deep dies (SIGSEGV on
-// x86_64-linux, 0xC0000005 on x86_64-windows) at every level, on the Ast.h path and under -front=ssa, where clang builds
-// V, then W from the virtual VTT, then Deep's part, and copies and destroys all three. Found by lane B's
-// complete-object-builder case, 2026-11-09; older than it (lane 1's tip and the Linux box's earlier compiler both die).
-#include "../cases/lifetime.h"
+// A virtual base with a virtual base of its own: `Deep : virtual W`, `W : virtual V`, built, copied and destroyed under
+// the ledger. It died until 2026-11-10: on Microsoft Deep's flag stored its own vbptr and not W's (`??_8Deep@@7BW@@@`),
+// which W's constructor reads `v` through; on Itanium the implicit copy stored no vptr, which Deep has for its virtual base alone.
+#include "lifetime.h"
 extern "C" int printf(const char *, ...);
 struct M { int v; M(); explicit M(int x); M(const M &o); ~M(); };
 M::M() : v(1) { lfBuilt(this, "M"); printf("+M "); }

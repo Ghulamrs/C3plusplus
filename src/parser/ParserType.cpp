@@ -1477,6 +1477,14 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             members.push_back(m);
         }
         type->setBaseOffset(nonVirtualBases + bi, at);
+        // cl: a virtual base's own vbptr is this class's to store, under the flag, from a table named for it (`??_8D@@7BW@@@`).
+        if (target_.microsoftNames() && b->vbptrOffset() >= 0 && !type->vbptrs().empty()) {
+            int held = 0;
+            for (const Type::VbPtr &q : b->vbptrs()) held += q.offset < b->nvDataSize() ? 1 : 0;
+            if (held > 1)
+                src_.fail(pos, "a virtual base '" + b->tag() + "' holding two vbptrs is not supported yet for the Microsoft ABI");
+            type->addVbptr(at + b->vbptrOffset(), b->vbptrOwner(), b);
+        }
         totalBits = static_cast<long long>(at + b->nvDataSize()) * 8;
         if (balign > widest) widest = balign;
     }

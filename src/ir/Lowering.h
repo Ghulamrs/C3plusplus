@@ -76,6 +76,8 @@ public:
     void setBaseVtt(std::function<int(const std::string &, const std::string &)> f) { baseVtt_ = f; }
     // Itanium's vbase_offset slot, bytes before the vptr, for a virtual base of a class - Sema's record, asked by the glue.
     void setVbaseSlot(std::function<long long(TypeId, TypeId)> f) { vbaseSlot_ = f; }
+    // The typed body of the written constructor whose C1 `key` names, for the Builder (M3b.3): its entries build C1's virtual bases.
+    void setSplitBody(std::function<sema::TypedId(const std::string &)> f) { splitBody_ = f; }
     // Microsoft: which constructors take cl's most-derived flag, and what a written one's guard stores and builds.
     void setMsVbase(std::function<bool(const std::string &)> takes,
                     std::function<bool(const std::string &, std::vector<sema::VptrStore> &, std::vector<std::string> &)> init) {
@@ -295,13 +297,14 @@ private:
     void buildMember(ValueId at, const Member &m, sema::TypedId entry);
     void destroyMembers(const Type &cls);
     int baseNamed(const Type &cls, const std::string &name) const;
+    void bindParameter(sema::TypedId p, ValueId pv, TypeId slotType);
     ValueId baseAddress(const Type::BaseSpec &b);
     TypeId msFlagged(const std::string &symbol, TypeId sig, std::vector<ValueId> &ops, int flag);
     void buildBase(const Type::BaseSpec &b, sema::TypedId entry);
     void copiedBase(const Type::BaseSpec &b, sema::TypedId entry);
     bool delegating(const Type &cls);
     void delegateTo(const Type &cls, sema::TypedId entry);
-    void msVirtualBases(const Type &cls, const std::map<std::string, sema::TypedId> &named);
+    void msVirtualBases(const Type &cls, const std::map<std::string, sema::TypedId> &named, ValueId from = ValueId());
     Live msGuardedVirtualBase(const Type::BaseSpec &b, ValueId count);
     void msCountedDestroy(const Live &l, BlockId pad);
     void destroyBases(const Type &cls);
@@ -500,6 +503,7 @@ private:
     std::function<bool(syntax::NodeId, std::vector<sema::Resolution> &)> arrowCalls_;
     std::function<bool(syntax::NodeId, sema::Resolution &)> conversionCall_;
     std::function<bool(std::vector<sema::DynamicInit> &, bool)> dynamicInits_;    // the init function's or __tls_init's objects, for the Builder
+    std::function<sema::TypedId(const std::string &)> splitBody_;
     sema::TypedId intoCall_;                    // the call elidedCall lowers, whose result goes into a local's alloca
     int intoAlloca_ = -1, intoNow_ = -1;        // that alloca; and callTail's, set only as that call's tail is entered
     std::vector<sema::ListElement> aggCtors_;     // recordedAggregate's: each member a constructor builds, the next at aggNext_

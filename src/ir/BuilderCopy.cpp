@@ -59,39 +59,60 @@ void Builder::copyOrMove(const FunctionFacts &facts) {
     const std::string what = assigning ? "an implicit copy or move assignment" : "an implicit copy or move constructor";
     if (!l.this_.valid()) l.outside(what + " with no `this`");
     const Type &cls = *l.T(l.thisType_).pointee()->unqualified();
-    if (cls.hasVirtualBase()) l.outside(what + " of a class with a virtual base");
-    if (facts.paramTypes.size() != 1 || !l.T(facts.paramTypes[0]).isPointer() || facts.paramCount != 2) l.outside(what + " with parameters it does not take");
+    // A constructor of a class with virtual bases is Itanium's C2 handed its VTT, the virtual bases C1's (synthesizeCopy's split),
+    // or cl's, copying them under its flag; cl's assignment, which reaches them through the vbtable, no case here has met.
+    const bool ms = l.target_.microsoftNames();
+    if (cls.hasVirtualBase() && !(ms ? !assigning && facts.msFlag : assigning || facts.takesVtt)) l.outside(what + " of a class with a virtual base" + (ms ? " on the Microsoft ABI" : ""));
+    if (facts.paramTypes.size() != 1 || !l.T(facts.paramTypes[0]).isPointer() || facts.paramCount != 2u + (facts.takesVtt ? 1 : 0) + (facts.msFlag ? 1 : 0)) l.outside(what + " with parameters it does not take");
     if (assigning && (!l.T(l.returns_).isPointer() || l.T(l.returns_).pointee()->unqualified() != &cls)) l.outside(what + " returning another type");
     if (l.T(facts.paramTypes[0]).pointee()->unqualified() != &cls) l.outside(what + " from another class");
     const ValueId that = l.param(l.F().entry, facts.paramTypes[0]);
     l.F().params.push_back(that);
+    if (facts.msFlag) {
+        l.msFlag_ = l.param(l.F().entry, l.types_.intType()->id());
+        l.F().params.push_back(l.msFlag_);
+    }
     openBody();
+    if (facts.msFlag) l.msVirtualBases(cls, std::map<std::string, sema::TypedId>(), that);
     std::string symbol;
     TypeId sig;
     // What a base's own copy or move has dealt with: its members are not copied again below.
     std::vector<std::pair<int, int> > taken;
     for (const Type::BaseSpec &b : cls.bases()) {
         const Type &bt = *b.type->unqualified();
+        if (b.isVirtual && !assigning) continue;     // C1's, out of the source's own ([class.base.init]/10)
         if (!recorded("^" + bt.tag(), bt, 0, symbol, sig)) continue;
         const Type &ft = l.T(sig);
-        if (ft.params().size() != 2 || !ft.params()[1]->isReference() || ft.params()[1]->referent()->unqualified() != &bt)
+        // [class.copy]/28 assigns a virtual base where its vbase_offset puts it, in this object and in the source alike.
+        std::vector<ValueId> ops(1, l.result(l.add(Op::Bitcast, l.tid(*ft.params()[0]), std::vector<ValueId>(
+            1, b.isVirtual ? l.virtualBaseAddress(l.this_, cls, bt) : l.baseAddress(b)))));
+        const std::size_t skip = l.baseVttArgument(bt, ft, ops);
+        if (ft.params().size() != skip + 1 || !ft.params()[skip]->isReference() || ft.params()[skip]->referent()->unqualified() != &bt)
             l.outside(what + " whose base's copy takes other parameters");
-        std::vector<ValueId> ops(1, l.result(l.add(Op::Bitcast, l.tid(*ft.params()[0]), std::vector<ValueId>(1, l.baseAddress(b)))));
-        ops.push_back(into(that, b.offset, l.tid(*l.types_.pointerTo(ft.params()[1]->referent()))));
-        l.directCall(symbol, sig, ops);
+        const TypeId from = l.tid(*l.types_.pointerTo(ft.params()[skip]->referent()));
+        ops.push_back(b.isVirtual ? l.result(l.add(Op::Bitcast, from, std::vector<ValueId>(1, l.virtualBaseAddress(that, cls, bt)))) : into(that, b.offset, from));
+        l.directCall(symbol, l.msFlagged(symbol, sig, ops, 0), ops);     // cl's flag 0: a subobject
         if (!assigning && bt.hasDestructor()) {
             if (!recorded("~" + bt.tag(), bt, 0, symbol, sig)) l.outside(what + " whose base is destroyed on unwinding by no destructor the parser recorded");
-            l.guard(ops[0], bt, symbol);
+            std::vector<ValueId> at(1, ops[0]);
+            if (l.T(sig).params().size() != l.baseVttArgument(bt, l.T(sig), at)) l.outside(what + " whose base's destructor is of another shape");
+            l.guard(at[0], bt, symbol);
+            if (at.size() == 2) l.live_.back().vtt = at[1];     // its D2, handed the same sub-VTT
         }
-        taken.push_back(std::make_pair(b.offset, b.offset + bt.dataSize()));
+        // Its non-virtual part: a base's own virtual bases sit past it, where this class's own members may lie.
+        taken.push_back(std::make_pair(b.offset, b.offset + bt.nvDataSize()));
     }
-    if (!assigning && cls.polymorphic()) {
-        if (!l.vptrStores_ || !l.vptrStores_(l.key_, l.vptrs_) || l.vptrs_.empty() || l.vptrs_[0].symbol.empty()) l.outside(what + " with a vptr the parser recorded no store for");
+    // The vptrs, for either reason the class has one - cl's for a virtual base alone is the vbptr, under its flag.
+    if (!assigning && cls.hasVptr() && !(l.target_.microsoftNames() && !cls.polymorphic())) {
+        if (!l.vptrStores_ || !l.vptrStores_(l.key_, l.vptrs_) || l.vptrs_.empty() || (!l.vptrs_[0].fromVtt && l.vptrs_[0].symbol.empty()))
+            l.outside(what + " with a vptr the parser recorded no store for");
         l.storeVptrs();
     }
     for (const Member &m : cls.members()) {
         bool done = false;
         for (std::size_t k = 0; k < taken.size(); k++) done = done || (m.offset >= taken[k].first && m.offset < taken[k].second);
+        // A virtual base with a copy or move of its own was copied whole by C1: the "^V" record under this C2's shared key.
+        if (!assigning && m.inVirtualBase != nullptr && recorded("^" + m.inVirtualBase->unqualified()->tag(), *m.inVirtualBase->unqualified(), 0, symbol, sig)) done = true;
         if (done) continue;
         if (m.width != 0 || m.type->isReference()) l.outside(what + " of a class with a bit-field or reference member");
         long long elems = 1;

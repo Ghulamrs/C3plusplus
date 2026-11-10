@@ -70,9 +70,8 @@ void Classes::storeVbptr(const std::string &cls, const Type *memberOf,
     for (std::size_t p = 0; p < ptrs.size(); p++) {
         const int vbp = ptrs[p].offset;
         const std::string symbol =
-            ptrs.size() == 1 || ptrs[p].base == nullptr
-                ? vbtableSymbol(cls)
-                : vbtableSymbol(cls, ptrs[p].base->tag());
+            ptrs.size() == 1 ? vbtableSymbol(cls)
+                : vbtableSymbol(cls, ptrs[p].base == nullptr ? cls : ptrs[p].base->tag());
 
         // The table's address, the same way the vftable's is taken: a global
         // with an array type, decayed, so what is stored is where it is and
@@ -1032,9 +1031,8 @@ void Classes::emitVbtable(const Type *cls, const std::string &tag,
     for (std::size_t p = 0; p < ptrs.size(); p++) {
         const int vbp = ptrs[p].offset;
         const std::string symbol =
-            ptrs.size() == 1 || ptrs[p].base == nullptr
-                ? vbtableSymbol(tag)
-                : vbtableSymbol(tag, ptrs[p].base->tag());
+            ptrs.size() == 1 ? vbtableSymbol(tag)
+                : vbtableSymbol(tag, ptrs[p].base == nullptr ? tag : ptrs[p].base->tag());
         bool already = false;
         for (std::size_t i = 0; i < p_.current_->globals.size(); i++)
             if (p_.current_->globals[i].symbol == symbol) already = true;
@@ -2112,9 +2110,10 @@ void Classes::synthesizeCopy(std::size_t which, bool assigning) {
     std::vector<StmtPtr> vbInit;
     {
         // **Copied out of the source's own virtual base**, which is what the
-        // Itanium C1 does with the argument forwarded to it.
+        // Itanium C1 does with the argument forwarded to it. cl's guard is recorded under this constructor for the Builder (M3b.3).
+        const Keyed keyed(p_.currentFunction_, symbol);
         vbInit = p_.guardedVirtualBaseInit(type, cls, thisSlot, flagSlot, pos,
-                                        thatSlot, moving, nullptr, assigning ? nullptr : &vbs);
+                                        thatSlot, moving, nullptr, assigning ? nullptr : &vbs, !assigning);
     }
 
     // What a base's own copy constructor has already dealt with.
@@ -2168,6 +2167,7 @@ void Classes::synthesizeCopy(std::size_t which, bool assigning) {
         if (!assigning && p_.takesVtt(base)) {
             args.push_back(vttForBase(type, base));
             ps.push_back(p_.vttType());
+            p_.baseVtt_[symbol + "|" + base->tag()] = p_.vtts_.find(type->tag())->second.subVtt.find(base)->second;
         }
         args.push_back(std::move(fromObj));
         ps.push_back(cc->params[0]);
@@ -2185,14 +2185,15 @@ void Classes::synthesizeCopy(std::size_t which, bool assigning) {
             finished.back().owner = type;
             finished.back().base = static_cast<int>(i);
         }
+        // Its non-virtual part: a base's own virtual bases sit past it, where this class's own members may lie.
         taken.push_back(std::make_pair(bs[i].offset,
-                                       bs[i].offset + base->dataSize()));
+                                       bs[i].offset + base->nvDataSize()));
     }
 
     // **A copy constructor sets the vptr; a copy assignment leaves it alone.** That is
     // the whole difference between the two bodies, measured in cl's own listing:
     // assignment writes into an object that already exists and is already this class.
-    if (!assigning && type->polymorphic()) {
+    if (!assigning && (type->polymorphic() || (type->hasVirtualBase() && !p_.target_.microsoftNames()))) {
         std::vector<sema::VptrStore> &stores = p_.vptrStores_[symbol];     // recorded for the SSA builder (M3b.3)
         stores.clear();
         std::vector<StmtPtr> vp = storeVptrs(cls, type, thisSlot, &stores);
@@ -2206,6 +2207,10 @@ void Classes::synthesizeCopy(std::size_t which, bool assigning) {
         for (std::size_t k = 0; k < taken.size() && !done; k++)
             if (ms[i].offset >= taken[k].first && ms[i].offset < taken[k].second)
                 done = true;
+        // A virtual base with a copy or move of its own was copied whole by C1 or under cl's flag (virtualBaseCalls).
+        const Type *vb = ms[i].inVirtualBase;
+        if (!assigning && vb != nullptr && ((moving && moveConstructorOf(vb) != nullptr) || copyConstructorOf(vb) != nullptr))
+            done = true;
         if (done) continue;
 
         const Type *mt = ms[i].type;
@@ -2342,6 +2347,7 @@ void Classes::synthesizeCopy(std::size_t which, bool assigning) {
             // virtual base out of `that` and then calls C2 for the rest.
             if (type->hasVirtualBase()) {
                 p_.current_->functions.back().setSymbol(c2);
+                p_.vttSplit_[c2] = symbol;      // the records above are keyed by the C1 name (M3b.3)
                 p_.closeFrame(savedFrame);
                 p_.vttSlot_ = savedVtt;
                 synthesizeCompleteCtor(type, ps, symbol, c2, true, pos, 0,

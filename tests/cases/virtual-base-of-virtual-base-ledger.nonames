@@ -1,0 +1,3 @@
+x86_64-linux  One name cxx1 emits and clang does not: `_ZN4DeepC2ERKS_`, Deep's base-subobject copy where nothing derives from Deep. cxx1 splits every constructor of a class with a virtual base into C1 and C2; clang emits the form it uses. Every other name agrees, `_ZTT4Deep` among them.
+arm64-darwin  The same one with Mach-O's leading underscore.
+x86_64-windows  One name cxx1 emits and clang does not: `??_DW@@QEAAXXZ`, W's vbase destructor, where no complete W is destroyed; cxx1 emits one beside every destructor of a class with a virtual base. The vbtables agree with clang and with cl (dumpbin, 2026-11-10): `??_8W@@7B@`, `??_8Deep@@7B0@@` and `??_8Deep@@7BW@@@`.

@@ -1551,6 +1551,11 @@ std::string vbtableSymbol(const std::string &tag, const std::string &base) {
     std::string out = "??_8";
     for (std::size_t i = parts.size(); i-- > 0; ) { out += parts[i]; out += '@'; }
     out += "@7B";
+    // The class's own among several, by back-references to its own name: `??_8Deep@@7B0@@`, cl's (dumpbin, 2026-11-10).
+    if (base == tag && parts.size() <= 10) {
+        for (std::size_t i = 0; i < parts.size(); i++) out += static_cast<char>('0' + i);
+        return out + "@@";
+    }
     const std::vector<std::string> bp = scopeComponents(base);
     for (std::size_t i = bp.size(); i-- > 0; ) { out += bp[i]; out += '@'; }
     return out + "@@";

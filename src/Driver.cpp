@@ -1435,11 +1435,18 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     };
     std::map<std::string, int> reasons;
     int lowered = 0;
+    // Itanium's C2 of a class with virtual bases, by the C1 its records are keyed by: the Builder's C1 reads its entries (M3b.3).
+    std::map<std::string, sema::TypedId> splitBodies;
+    lowering.setSplitBody([&splitBodies](const std::string &key) {
+        const std::map<std::string, sema::TypedId>::const_iterator i = splitBodies.find(key);
+        return i == splitBodies.end() ? sema::TypedId() : i->second;
+    });
     for (std::size_t r = 0; r < c.bodies.size(); r++) {
         const Function &fn = program.functions[c.bodies[r].second];
         const sema::TypedId t = typer.typeFunction(c.bodies[r].first);
         ir::FunctionFacts facts;
         factsOf(fn, facts);
+        if (facts.takesVtt) splitBodies[facts.recordKey] = t;
         facts.isConstructor = typer.isConstructor(c.bodies[r].first);
         facts.msFlag = facts.isConstructor && typer.msVbaseCtor(fn.symbol());
         // A plain function's try block is a `try` in its body to the lowering, its throw(...) list a filter it
@@ -1477,7 +1484,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         ir::FunctionFacts facts;
         factsOf(fn, facts);
         facts.isConstructor = fn.synthesised().find("constructor") != std::string::npos;
-        facts.msFlag = facts.isConstructor && typer.msVbaseCtor(fn.symbol());
+        facts.msFlag = (facts.isConstructor || fn.synthesised() == "implicit copy or move") && typer.msVbaseCtor(fn.symbol());
         // A special member or a thunk takes `this` first; the synthesiser set no hasThis, which is the sret-order bit alone.
         // The array loops (`vector ...`) take a base and a count, the exit helper a `void *` or nothing: no `this`.
         const bool special = fn.synthesised().find("vector") == std::string::npos && fn.synthesised().find("helper") == std::string::npos &&
