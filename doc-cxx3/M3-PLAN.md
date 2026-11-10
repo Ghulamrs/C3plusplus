@@ -1532,3 +1532,24 @@ above, 0 failed; typed 759/0, adapted (1695 the same), coff 0 differ, c90 447/0,
 (twelve `ParserType.cpp` and four `Classes.cpp` citations re-pointed, one added); comment cap 0; memory gate 44. names.sh and overload.sh skip
 there; on Windows names.sh passes both new cases, their `.nonames` the C2 and `??_D` forms cxx1 emits beside the ones used.
 `src/` went from 89604 to 89718 lines (+114).
+
+**M3b.3 closed, 2026-11-10.** Every compiler-written function the suite makes is built as SSA through `ir::Builder`
+and verified: **Linux 973 of 973** compiler-written and 8878 of 8878 source bodies; **Windows 1130 of 1130**
+compiler-written and 9149 of 9153 bodies, the 4 refused by name - a function try block on a Microsoft constructor or
+destructor (3) and a pointer to a data member in cl's virtual model (1). From 418 of 876 after lane 1 (2026-11-09), in
+seven lanes: 1 (the Builder, implicit default constructor and destructor), A (copies, array loops, the exit helper), B
+(deleting destructor, C1 and D1, cl's most-derived guard), C (thunks, the init function), F (vector constructor defaults,
+`__tls_init`, an aggregate before main), E (cl's `??__F`, nested Microsoft handlers, `??_9`, the vbtable walk) and D (a
+virtual base built from a mem-initialiser, copies of a class with a virtual base). The design held in every lane: the
+synthesiser records what it chose under the synthesised symbol, and the Builder reads it, deriving nothing. **Faults of
+the Ast.h path found and mended on both paths**: a thunk forwarding a reference (C), the implicit copy of a class with a
+virtual base skipping its own member (`nvDataSize`, D), and a virtual base of a virtual base (Itanium's vptr in the copy,
+cl's inner vbptr, D). **Refused by name, reached by no case**: a vector constructor's default making a temporary with a
+destructor (`tests/open/vector-default-temporary.cpp`), a thread_local reference in `__tls_init`, cl's implicit copy
+assignment of a class with a virtual base, and a virtual base holding two vbptrs on Microsoft. **Gated at `674e0520`**:
+Windows `winpass.sh` gnu 728 / masm 727 same, 0 differ, at `-front=ssa`, `-front=ssa -O2` and the Ast.h path; Linux
+run.sh 1101/0 at -O0, -O2, `-front=ssa` and `-front=ssa -O2`, `make test`'s parts green, exclusions 127 sites 0/0.
+names.sh ran on Windows for each lane's new cases only, not the whole suite under `-front=ssa`; tms6747.sh was not
+run after lane F (`-front=ssa` does not reach the C6000: lane C). `src/` went from 88595 to 89718 lines (+1123).
+**Review point 4** (this plan's table: the compiler-written functions from the typed tree) is a stop before M3b.4's
+commits; Fable reads only on the user's word (2026-11-10), so the review is owed and M3b.4 is planned, not begun.
