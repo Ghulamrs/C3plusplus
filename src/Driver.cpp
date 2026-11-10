@@ -1535,7 +1535,11 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     std::snprintf(cfgs, sizeof cfgs, "-check=ssa cfg: constant=%d same=%d unreachable=%d merged=%d forwarded=%d\n"
                   "-check=ssa dead: insts=%d params=%d stores=%d allocas=%d\n", log.constBranches, log.sameBranches,
                   log.unreachable, log.merged, log.forwarded, log.deadInsts, log.deadParams, log.deadStores, log.deadAllocas);
-    return out + line + synth + passes + folds + cfgs;
+    char gvns[200];
+    std::snprintf(gvns, sizeof gvns, "-check=ssa gvn: constants=%d arith=%d compares=%d casts=%d geps=%d selects=%d loads=%d "
+                  "stored=%d\n", log.gvnConstants, log.gvnArith, log.gvnCompares, log.gvnCasts, log.gvnGeps, log.gvnSelects,
+                  log.gvnLoads, log.gvnStored);
+    return out + line + synth + passes + folds + cfgs + gvns;
 }
 
 bool Driver::compile(const Job &job) {

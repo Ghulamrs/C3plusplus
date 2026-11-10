@@ -1,0 +1,212 @@
+function @_ZL4bumpv() -> int static {
+^1:
+  %1 = addr int *, @g
+  %2 = load int, %1
+  %3 = iconst int, 1
+  %4 = add int, %2, %3
+  store %1, %4
+  ret %4
+}
+function @_ZL8mayThrowi(%1: int) -> int static {
+^1(%1: int):
+  %4 = iconst int, 0
+  %5 = icmp slt, bool, %1, %4
+  condbr %5, ^4, ^5
+^4:
+  %7 = iconst unsigned long, 4
+  %8 = call @__cxa_allocate_exception(%7) : void *
+  %9 = bitcast int *, %8
+  store %9, %1
+  %10 = addr void *, @_ZTIi
+  %11 = null void *,
+  call @__cxa_throw(%8, %10, %11) : none
+  unreachable
+^5:
+  ret %1
+}
+function @_ZL4pureiii(%1: int, %3: int, %5: int) -> int static {
+^1(%1: int, %3: int, %5: int):
+  %10 = mul int, %1, %3
+  %12 = add int, %10, %5
+  %15 = icmp sgt, bool, %1, %3
+  condbr %15, ^4, ^5(%12)
+^4:
+  %22 = add int, %12, %12
+  br ^5(%22)
+^5(%45: int):
+  condbr %15, ^6, ^7(%45)
+^6:
+  %30 = zext int, %15
+  %31 = add int, %45, %30
+  br ^7(%31)
+^7(%46: int):
+  %34 = sitofp double, %1
+  %41 = fmul double, %34, %34
+  %42 = fptosi int, %41
+  %43 = add int, %46, %42
+  ret %43
+}
+function @_ZL6memoryi(%1: int) -> int static {
+^1(%1: int):
+  %4 = addr int *, @g
+  %5 = load int, %4
+  %8 = add int, %5, %5
+  store %4, %1
+  %14 = add int, %8, %1
+  %16 = call @_ZL4bumpv() : int
+  %17 = add int, %14, %16
+  %20 = load int, %4
+  %21 = add int, %17, %20
+  %22 = addr int *, @h
+  %23 = iconst int, 9
+  store %22, %23
+  %26 = load int, %4
+  %27 = add int, %21, %26
+  ret %27
+}
+function @_ZL8elementsiP4Pair(%1: int, %3: struct Pair *) -> int static {
+^1(%1: int, %3: struct Pair *):
+  %5 = alloca int [4] *, align 16 ; int [4] arr
+  %6 = bitcast int *, %5
+  %7 = iconst int, 1
+  %8 = gep int *, %6, 0
+  store %8, %7
+  %9 = iconst int, 2
+  %10 = gep int *, %6, 4
+  store %10, %9
+  %11 = iconst int, 3
+  %12 = gep int *, %6, 8
+  store %12, %11
+  %13 = iconst int, 4
+  %14 = gep int *, %6, 12
+  store %14, %13
+  %18 = sext long, %1
+  %19 = iconst long, 4
+  %20 = mul long, %18, %19
+  %21 = gep int *, %6, %20
+  %22 = load int, %21
+  %30 = add int, %22, %22
+  %33 = gep int *, %3, 0
+  %34 = load int, %33
+  %38 = mul int, %34, %34
+  %39 = add int, %30, %38
+  %41 = gep int *, %3, 4
+  %42 = load int, %41
+  %43 = add int, %39, %42
+  ret %43
+}
+function @_ZL8constanti(%1: int) -> int static {
+^1(%1: int):
+  %5 = iconst int, 2
+  %6 = mul int, %1, %5
+  %7 = bitcast const int, %6
+  %11 = iconst int, 0
+  br ^4(%6, %11)
+^4(%25: int, %26: int):
+  %13 = iconst int, 3
+  %14 = icmp slt, bool, %26, %13
+  condbr %14, ^5, ^7
+^5:
+  %18 = add int, %6, %26
+  %19 = add int, %25, %18
+  %21 = iconst int, 1
+  %22 = add int, %26, %21
+  br ^4(%19, %22)
+^7:
+  ret %25
+}
+function @_ZL7handleri(%1: int) -> int static {
+^1(%1: int):
+  %2 = alloca int *, align 4 ; int x
+  store %2, %1
+  %3 = alloca int *, align 4 ; int before
+  %4 = load int, %2
+  %5 = iconst int, 7
+  %6 = mul int, %4, %5
+  store %3, %6
+  %8 = iconst int, 0
+  %10 = load int, %2
+  %13 = invoke @_ZL8mayThrowi(%10) : int, ^6, ^5
+^4(%37: int):
+  %28 = icmp ne, bool, %37, %8
+  condbr %28, ^11(%37), ^10
+^5(%11: void *, %12: int):
+  catchpad [@_ZTIi] own 1
+  %15 = iconst int, 1
+  %16 = icmp eq, bool, %12, %15
+  condbr %16, ^7, ^8
+^6:
+  %14 = add int, %6, %13
+  store %3, %14
+  br ^4(%8)
+^7:
+  %17 = call @__cxa_begin_catch(%11) : void *
+  %18 = bitcast int *, %17
+  %20 = load int, %18
+  %22 = load int, %2
+  %24 = mul int, %22, %5
+  %25 = add int, %20, %24
+  call @__cxa_end_catch() : none
+  br ^4(%25)
+^8:
+  call @_Unwind_Resume(%11) : none
+  unreachable
+^10:
+  %30 = load int, %3
+  %31 = load int, %2
+  %33 = mul int, %31, %5
+  %34 = add int, %30, %33
+  br ^11(%34)
+^11(%35: int):
+  ret %35
+}
+function @main() -> int {
+^1:
+  %24 = alloca struct Pair *, align 4 ; struct Pair p
+  %1 = addr const char [7] *, @.L.str.0
+  %2 = bitcast const char *, %1
+  %3 = iconst int, 5
+  %4 = iconst int, 2
+  %5 = iconst int, 1
+  %6 = call @_ZL4pureiii(%3, %4, %5) : int
+  %8 = iconst int, 4
+  %9 = iconst int, 3
+  %10 = call @_ZL4pureiii(%5, %8, %9) : int
+  %11 = call @printf(%2, %6, %10) : int variadic
+  %13 = iconst int, 10
+  %14 = call @_ZL6memoryi(%13) : int
+  %15 = bitcast const int, %14
+  %16 = addr const char [10] *, @.L.str.1
+  %17 = bitcast const char *, %16
+  %19 = addr int *, @g
+  %20 = load int, %19
+  %21 = addr int *, @h
+  %22 = load int, %21
+  %23 = call @printf(%17, %14, %20, %22) : int variadic
+  memset %24
+  %25 = gep int *, %24, 0
+  %26 = iconst int, 6
+  store %25, %26
+  %27 = gep int *, %24, 4
+  %28 = iconst int, 7
+  store %27, %28
+  %29 = addr const char [7] *, @.L.str.2
+  %30 = bitcast const char *, %29
+  %32 = call @_ZL8elementsiP4Pair(%4, %24) : int
+  %33 = iconst int, 0
+  %34 = call @_ZL8elementsiP4Pair(%33, %24) : int
+  %35 = call @printf(%30, %32, %34) : int variadic
+  %36 = addr const char [7] *, @.L.str.3
+  %37 = bitcast const char *, %36
+  %39 = call @_ZL8constanti(%9) : int
+  %41 = iconst int, -1
+  %42 = call @_ZL8constanti(%41) : int
+  %43 = call @printf(%37, %39, %42) : int variadic
+  %44 = addr const char [7] *, @.L.str.4
+  %45 = bitcast const char *, %44
+  %47 = call @_ZL7handleri(%4) : int
+  %49 = iconst int, -3
+  %50 = call @_ZL7handleri(%49) : int
+  %51 = call @printf(%45, %47, %50) : int variadic
+  ret %33
+}

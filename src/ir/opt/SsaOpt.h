@@ -35,9 +35,13 @@ struct PassLog {
     int constants, compares, casts, floating, identities, copies, arguments, kept;
     int constBranches, sameBranches, unreachable, merged, forwarded;   // cfg's: jumps made, blocks removed, merged, forwarded
     int deadInsts, deadParams, deadStores, deadAllocas;                // dead's: instructions, parameters, stores, frame objects
+    // gvn's, by kind: constants and addresses, arithmetic, comparisons, conversions, geps, selects replaced; loads
+    // given an earlier load's value, and a store's.
+    int gvnConstants, gvnArith, gvnCompares, gvnCasts, gvnGeps, gvnSelects, gvnLoads, gvnStored;
     PassLog(bool c, const std::string &after) : check(c), dumpAfter(after), failed(0), allocas(0), scalars(0), promoted(0),
         constants(0), compares(0), casts(0), floating(0), identities(0), copies(0), arguments(0), kept(0), constBranches(0),
-        sameBranches(0), unreachable(0), merged(0), forwarded(0), deadInsts(0), deadParams(0), deadStores(0), deadAllocas(0) {}
+        sameBranches(0), unreachable(0), merged(0), forwarded(0), deadInsts(0), deadParams(0), deadStores(0), deadAllocas(0),
+        gvnConstants(0), gvnArith(0), gvnCompares(0), gvnCasts(0), gvnGeps(0), gvnSelects(0), gvnLoads(0), gvnStored(0) {}
 };
 
 // The pass names -dump=ssa= takes, in the order they run.
@@ -59,5 +63,7 @@ void fold(Function &f, const TypeTable &types, const Target &target, PassLog &lo
 bool cfg(Function &f, PassLog &log);
 // **Dead code and dead stores** (SsaDead.cpp): stores no load sees, then what nothing live reads. True on a change.
 bool dead(Function &f, PassLog &log);
+// **Value numbering** (SsaValues.cpp): a pure instruction a dominating twin computes, a load its block holds. True on a change.
+bool values(Function &f, PassLog &log);
 
 }   // namespace ir

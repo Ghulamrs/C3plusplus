@@ -166,6 +166,7 @@
     <ClCompile Include="..\src\ir\opt\SsaFold.cpp" />
     <ClCompile Include="..\src\ir\opt\SsaOptimize.cpp" />
     <ClCompile Include="..\src\ir\opt\SsaPromote.cpp" />
+    <ClCompile Include="..\src\ir\opt\SsaValues.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\src\Abi.h" />

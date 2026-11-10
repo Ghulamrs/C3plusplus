@@ -101,6 +101,7 @@
 		4C27669FCF042F8DF0259CF8 /* SsaFold.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 605A55319723F1F12959C765 /* SsaFold.cpp */; };
 		169A79BB74CFCA4C8769D222 /* SsaOptimize.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6C4F997C57358B2FEF81A5CD /* SsaOptimize.cpp */; };
 		B75326BCFA3A5298BC803765 /* SsaPromote.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 34BAE0E52F33E4B25B325395 /* SsaPromote.cpp */; };
+		5C5C022CD7EA5FB362651F3D /* SsaValues.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F4D517239873D2638605F30A /* SsaValues.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -199,6 +200,7 @@
 		605A55319723F1F12959C765 /* SsaFold.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaFold.cpp; path = "../src/ir/opt/SsaFold.cpp"; sourceTree = "<group>"; };
 		6C4F997C57358B2FEF81A5CD /* SsaOptimize.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaOptimize.cpp; path = "../src/ir/opt/SsaOptimize.cpp"; sourceTree = "<group>"; };
 		34BAE0E52F33E4B25B325395 /* SsaPromote.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaPromote.cpp; path = "../src/ir/opt/SsaPromote.cpp"; sourceTree = "<group>"; };
+		F4D517239873D2638605F30A /* SsaValues.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaValues.cpp; path = "../src/ir/opt/SsaValues.cpp"; sourceTree = "<group>"; };
 		E6EAF1D1441F03E9A41B4855 /* Abi.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Abi.h; path = "../src/Abi.h"; sourceTree = "<group>"; };
 		14EC8B53EDE3CAB952E236AA /* Ast.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Ast.h; path = "../src/Ast.h"; sourceTree = "<group>"; };
 		60930305A132CB4B774D1FA3 /* AstDump.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = AstDump.h; path = "../src/AstDump.h"; sourceTree = "<group>"; };
@@ -405,6 +407,7 @@
 				9BC6EF54A82E7277D85CA5A3 /* SsaOpt.h */,
 				6C4F997C57358B2FEF81A5CD /* SsaOptimize.cpp */,
 				34BAE0E52F33E4B25B325395 /* SsaPromote.cpp */,
+				F4D517239873D2638605F30A /* SsaValues.cpp */,
 			);
 			name = "src/ir/opt";
 			sourceTree = "<group>";
@@ -666,6 +669,7 @@
 				4C27669FCF042F8DF0259CF8 /* SsaFold.cpp in Sources */,
 				169A79BB74CFCA4C8769D222 /* SsaOptimize.cpp in Sources */,
 				B75326BCFA3A5298BC803765 /* SsaPromote.cpp in Sources */,
+				5C5C022CD7EA5FB362651F3D /* SsaValues.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

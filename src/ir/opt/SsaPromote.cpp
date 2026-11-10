@@ -17,9 +17,10 @@ struct Slot {
     TypeId type;
     std::uint32_t funclet;
     bool bad, seen;
+    bool asObject, asValue;                             // every access in the object's type; or in it without const
     std::vector<std::uint32_t> loadsFirst, stores;      // blocks where a load comes before any store; blocks that store
     std::vector<std::uint32_t> params;                  // blocks given a parameter for it
-    Slot() : funclet(0), bad(false), seen(false) {}
+    Slot() : funclet(0), bad(false), seen(false), asObject(true), asValue(true) {}
 };
 
 struct Promoter {
@@ -37,6 +38,13 @@ struct Promoter {
     bool scalar(TypeId t) const {
         const Type &ty = *types.type(t);
         return !ty.isArray() && !ty.isStructOrUnion() && (ty.isInteger() || ty.isPointer() || ty.isFloating());
+    }
+    TypeId unqualified(TypeId t) const { return TypeTable::id(types.type(t)->unqualified()); }
+    // What a store writes, read without const: a const local's initialiser is a bitcast to the const type.
+    ValueId unqualifiedStored(ValueId v, TypeId want) const {
+        const InstId d = f.value(v).def;
+        if (f.value(v).type == want || !d.valid() || f.inst(d).op != Op::Bitcast || f.inst(d).count != 1) return v;
+        return f.value(f.operand(f.inst(d), 0)).type == want ? f.operand(f.inst(d), 0) : v;
     }
     int slotAt(ValueId v) const { return v.valid() && v.v < slotOf.size() ? slotOf[v.v] : -1; }
     ValueId resolve(ValueId v) const {
@@ -71,9 +79,11 @@ struct Promoter {
                     const int c = slotAt(f.operand(i, n));
                     if (c < 0) continue;
                     Slot &s = slots[static_cast<std::size_t>(c)];
-                    const bool load = i.op == Op::Load && n == 0 && i.type == s.type;
-                    const bool store = i.op == Op::Store && n == 0 && i.count == 2 && f.value(f.operand(i, 1)).type == s.type;
+                    const bool load = i.op == Op::Load && n == 0, store = i.op == Op::Store && n == 0 && i.count == 2;
                     if ((!load && !store) || i.isVolatile) { s.bad = true; continue; }
+                    const TypeId plain = unqualified(s.type);
+                    s.asObject = s.asObject && (load ? i.type : f.value(f.operand(i, 1)).type) == s.type;
+                    s.asValue = s.asValue && (load ? i.type : f.value(unqualifiedStored(f.operand(i, 1), plain)).type) == plain;
                     if (!s.seen) { s.seen = true; s.funclet = blk.funclet; }
                     else if (s.funclet != blk.funclet) s.bad = true;
                     if (store) { if (s.stores.empty() || s.stores.back() != b.v) s.stores.push_back(b.v); }
@@ -86,6 +96,10 @@ struct Promoter {
                         if (c >= 0) slots[static_cast<std::size_t>(c)].bad = true;
                     }
             }
+        }
+        for (Slot &s : slots) {
+            if (!s.asObject && !s.asValue) s.bad = true;
+            else if (!s.asObject) s.type = unqualified(s.type);
         }
     }
 
@@ -202,7 +216,8 @@ struct Promoter {
             if (c < 0) continue;
             if (i.op == Op::Store) {
                 undo.push_back(std::make_pair(c, cur[static_cast<std::size_t>(c)]));
-                cur[static_cast<std::size_t>(c)] = resolve(f.operand(i, 1));
+                const TypeId t = slots[static_cast<std::size_t>(c)].type;
+                cur[static_cast<std::size_t>(c)] = resolve(unqualifiedStored(f.operand(i, 1), t));
                 dead[id.v] = 1;
             } else if (cur[static_cast<std::size_t>(c)].valid()) {
                 repl[i.result.v] = cur[static_cast<std::size_t>(c)];
