@@ -559,6 +559,7 @@ void Parser::topLevel(Program &program) {
                                                       quals.isConstexpr, internal, quals.isConstexpr });
                     program.globals.back().align = quals.alignAs;
                     program.globals.back().isThreadLocal = quals.isThreadLocal;
+                    if (quals.isVolatile) lookup_.globals_[lookup_.globalIndex_[gname]].isVolatile = true;
                     if (!consume(",")) break;
                     inNamespace.leave();   // a second declarator is read where the first was written
                 d = declarator(base);
@@ -702,6 +703,7 @@ void Parser::topLevel(Program &program) {
                             }
                     }
                 }
+                if (quals.isVolatile) prev->isVolatile = true;
                 if (!consume(",")) break;
                 inNamespace.leave();   // a second declarator is read where the first was written
                 d = declarator(base);
@@ -726,6 +728,7 @@ void Parser::topLevel(Program &program) {
                             hasInit || dynamic, constantKnown, constantValue };
             made.isConstantDouble = constantDoubleKnown;
             made.constantDouble = constantDoubleValue;
+            made.isVolatile = quals.isVolatile;
             if (registered) lookup_.globals_[early] = made;
             else lookup_.globals_.push_back(made);
             const bool definesHere = sc != StorageExtern || hasInit || dynamic;
@@ -837,6 +840,7 @@ void Parser::topLevel(Program &program) {
                 if (pd.type->isFunction()) pd.type = types_.pointerTo(pd.type);   // [dcl.fct]/5
                 VarNote param(*this, syntaxTree_.size(), pd.pos);   // a parameter, as the body's names will want it
                 param.d = &pd;
+                param.isVolatile = pquals.isVolatile;
 
                 // **A class whose copy is a constructor call arrives by address**, on
                 // both ABIs and whatever its size. The parameter is lowered to a

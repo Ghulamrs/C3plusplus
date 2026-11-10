@@ -143,6 +143,8 @@ struct Member {
     bool ambiguous = false;
     // **[class.union]/5: the anonymous union this member came out of**, null for an ordinary one; the run sharing it is one slot.
     const Type *anonUnion = nullptr;
+    // Written `volatile`: every access to it a volatile load or store (M3b.4 round 6); not in its type, which has none.
+    bool isVolatile = false;
 
     // C++11 has no aggregate with a member initialiser, so the braces call this.
     Member(std::string name = std::string(), const Type *type = nullptr, int offset = 0,
@@ -520,6 +522,7 @@ public:
         bool folded = false;
         long long value = 0;
         bool isThreadLocal = false;   // `static thread_local`: one object per thread
+        bool isVolatile = false;      // `static volatile`, as Member's
     };
     const std::vector<StaticMember> &staticMembers() const {
         return cls().statics_;

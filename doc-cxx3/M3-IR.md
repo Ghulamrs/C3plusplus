@@ -499,11 +499,13 @@ code calls `__cxa_call_unexpected`, with the filter types on the function (`Func
 
 ### 3.7 Memory, volatile, TLS
 
-`load`/`store` carry a `volatile` bit that no pass moves or merges across (design section 4) - **open for RP3**:
-the type system drops `volatile` (the volatile sweep, CLAUDE.md) and the typed tree has no record of it; today
-`Program::usesVolatile` turns -O off for the unit (`Driver.cpp`). The lowering needs the qualifier on the `var`'s
-declared type or a bit on the syntax node; which, and whether M3b.4 can lift the -O-off rule, is decided at RP3
-with a measurement of the four corpus cases that write `volatile`. `tlsaddr` is the one TLS instruction;
+`load`/`store` carry a `volatile` bit that no pass moves or merges across (design section 4). **Decided at M3b.4
+round 6**: the type system still drops `volatile` (the volatile sweep; a type-system change would move mangled names),
+so the parser records it on the object - `Local`, `GlobalSym`, `Member`, `StaticMember` - and the record carries it
+(`Resolution::isVolatile` on a name and a local's `var`; a data member's is its `Member`'s). The lowering marks such an
+object's address and every address a gep or bitcast makes from it, and `add` sets the bit on each load and store through
+one. No pointer to volatile is accepted, so no pointee is recorded. `Program::usesVolatile` now keeps -O off only for the
+code generator (MIR's passes and the Ast.h path); the SSA passes run at -O. `tlsaddr` is the one TLS instruction;
 selection writes local-exec, the `_ZTW` wrapper call, or cl's `_tls_index` walk as `X86_64Linux::tlsAddress`
 does. A global, a string literal, a vtable and the RTTI records stay `Program`'s data (`Global`, `StringLit`,
 `rtti`, `msThrows`) and are not IR.

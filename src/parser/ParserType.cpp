@@ -1151,6 +1151,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                                           static_cast<int>(w),
                                           static_cast<int>(bitOff), access,
                                           isMutable });
+                members.back().isVolatile = mquals.isVolatile;
                 if (!consume(",")) break;
                 continue;
             }
@@ -1331,6 +1332,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             }
             members.push_back(Member{ d.name, d.type, static_cast<int>(at), 0, 0,
                                       access, isMutable });
+            members.back().isVolatile = mquals.isVolatile;
             // `int x = 5;` - C++11's initialiser on the member itself. The tokens stay
             // where they are and their place is recorded; every constructor that does
             // not name this member in its own list reads them again.

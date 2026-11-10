@@ -39,6 +39,13 @@ bool run(std::size_t pass, Function &f, const TypeTable &types, const Target &ta
     }
 }
 
+int volatileAccesses(const Function &f) {
+    int n = 0;
+    for (BlockId b : f.blocks)
+        for (InstId i : f.block(b).insts) n += f.inst(i).isVolatile ? 1 : 0;
+    return n;
+}
+
 }   // namespace
 
 bool isSsaPass(const std::string &name) {
@@ -48,6 +55,8 @@ bool isSsaPass(const std::string &name) {
 
 void ssaOptimize(Function &f, int level, const TypeTable &types, const Target &target, PassLog &log) {
     bool changed = false;
+    int volatiles = volatileAccesses(f);
+    log.volatiles += volatiles;
     for (std::size_t k = 0; k < sizeof kPasses / sizeof kPasses[0]; k++) {
         const Pass &p = kPasses[k];
         if (level >= p.level && (!p.again || changed)) {
@@ -58,8 +67,17 @@ void ssaOptimize(Function &f, int level, const TypeTable &types, const Target &t
             std::string faults;
             if (verify(f, types, faults) != 0) { log.failed++; log.faults += "  after " + std::string(p.name) + ":\n" + faults; }
         }
+        // A volatile access leaves the body only with a block cfg found unreachable.
+        const int now = volatileAccesses(f);
+        if (log.check && now != volatiles && (now > volatiles || (k != 3 && k != 9))) {
+            log.failed++;
+            log.faults += "  after " + std::string(p.name) + ": " + f.symbol + ": volatile accesses " + std::to_string(volatiles) +
+                          " became " + std::to_string(now) + "\n";
+        }
+        volatiles = now;
         if (log.dumpAfter == p.name) log.dumped += dump(f, types);
     }
+    log.volatilesKept += volatiles;
 }
 
 }   // namespace ir

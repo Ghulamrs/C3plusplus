@@ -1539,10 +1539,10 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     std::snprintf(gvns, sizeof gvns, "-check=ssa gvn: constants=%d arith=%d compares=%d casts=%d geps=%d selects=%d loads=%d "
                   "stored=%d\n", log.gvnConstants, log.gvnArith, log.gvnCompares, log.gvnCasts, log.gvnGeps, log.gvnSelects,
                   log.gvnLoads, log.gvnStored);
-    char jumps[200];
+    char jumps[240];
     std::snprintf(jumps, sizeof jumps, "-check=ssa jumps: condbr=%d switch=%d\n-check=ssa divide: shifts=%d signed=%d "
-                  "unsigned=%d wide=%d left=%d\n", log.threaded, log.threadedSwitch, log.divShifts, log.divSigned,
-                  log.divUnsigned, log.divWide, log.divLeft);
+                  "unsigned=%d wide=%d left=%d\n-check=ssa volatile: lowered=%d kept=%d\n", log.threaded, log.threadedSwitch,
+                  log.divShifts, log.divSigned, log.divUnsigned, log.divWide, log.divLeft, log.volatiles, log.volatilesKept);
     return out + line + synth + passes + folds + cfgs + gvns + jumps;
 }
 
@@ -1592,24 +1592,24 @@ bool Driver::compile(const Job &job) {
         std::fwrite(report.data(), 1, report.size(), stdout);
         if (differ != 0) return false;
     }
-    // **A file that writes `volatile` is compiled without -O**: the type system drops the qualifier, so an
-    // optimizer would keep a volatile read in a register or delete it. **Said as a warning at the first
-    // `volatile`** (1.10, 2026-10-20) as `file:line:col: warning:`; `cpp11: ...` stopped GRIDE 2.0's build.
+    // **A file that writes `volatile` is compiled without the code generator's -O** (MIR's and the Ast.h path's passes
+    // would keep a volatile read in a register); the SSA passes, which see each access marked, run at -O (M3b.4 round 6).
+    // **Said as a warning at the first `volatile`** (1.10) as `file:line:col: warning:`; `cpp11: ...` stopped GRIDE 2.0.
     const int level = program.usesVolatile ? 0 : optimize_;
     if (optimize_ > 0 && program.usesVolatile) {
         volatileDowngrades_++;
         std::fprintf(stderr, "%s: warning: 'volatile' is something this compiler cannot keep apart "
-                     "from plain memory, so %s is compiled without -O%d\n",
+                     "from plain memory, so %s is compiled without %s-O%d\n",
                      program.volatileAt.empty() ? job.input.c_str() : program.volatileAt.c_str(),
-                     job.input.c_str(), optimize_);
+                     job.input.c_str(), frontSsa_ ? "the code generator's " : "", optimize_);
     }
     // **The SSA IR** (M3b.1): every source body the lowering reaches, lowered; dumped, verified, or handed to the selector.
     ir::Module ssa;
     if (frontSsa_ || dumpSsa_ || checkSsa_) {
         std::string dumped;
         int failures = 0;
-        const std::string report = lowerSsa(parser, program, types, target, ssa, checkSsa_, level, dumpSsa_, dumpSsaAfter_, dumped,
-                                            failures);
+        const std::string report = lowerSsa(parser, program, types, target, ssa, checkSsa_, optimize_, dumpSsa_, dumpSsaAfter_,
+                                            dumped, failures);
         if (checkSsa_) std::fwrite(report.data(), 1, report.size(), stdout);
         if (checkSsa_ && failures != 0) return false;
         if (dumpSsa_) std::fwrite(dumped.data(), 1, dumped.size(), stdout);

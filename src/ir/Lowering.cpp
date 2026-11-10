@@ -2021,10 +2021,21 @@ InstId Lowering::add(Op op, TypeId type, const std::vector<ValueId> &ops) {
         i.result = ValueId(static_cast<std::uint32_t>(f.values.size()));
         f.values.push_back(v);
     }
+    // Through a volatile object's address: the access marked, an address made from it volatile in turn.
+    const bool through = !ops.empty() && volatileAt(ops[0]);
+    i.isVolatile = through && (op == Op::Load || op == Op::Store);
+    if (through && (op == Op::Gep || op == Op::Bitcast) && i.result.valid() && T(type).isPointer())markVolatile(Val(i.result, type), true);
     f.insts.push_back(i);
     Block &b = f.blockArena[cur_.v];
     if (isTerminator(op)) b.term = id; else b.insts.push_back(id);
     return id;
+}
+
+Lowering::Val Lowering::markVolatile(Val p, bool written) {
+    if (!written || !p.v.valid()) return p;
+    if (volatile_.size() <= p.v.v) volatile_.resize(p.v.v + 1, 0);
+    volatile_[p.v.v] = 1;
+    return p;
 }
 
 BlockId Lowering::newBlock() {
@@ -2203,6 +2214,7 @@ void Lowering::beginFunction(const FunctionFacts &facts) {
     fnIndex_ = module_.functions.size();
     module_.functions.push_back(Function());
     locals_.clear();
+    volatile_.clear();
     aggCtors_.clear();
     unionSlots_.clear();
     bitWanted_ = false;
@@ -2287,6 +2299,7 @@ void Lowering::bindParameter(sema::TypedId p, ValueId pv, TypeId slotType) {
         f.frame.push_back(a);
         slot = result(al);
     }
+    markVolatile(Val(slot, slotType), tree_.resolution(p).isVolatile);
     store(slot, pv);
     const Type &pt = *tree_.node(p).type;
     locals_[tree_.node(p).syntax.v] = std::make_pair(slot, pt.isReference() ? tid(pt) : slotType);
@@ -3361,7 +3374,7 @@ void Lowering::declaration(sema::TypedId id) {
             namedReturnLocal(var, sret_, t);
             continue;
         }
-        const ValueId slot = localAlloca(var, slotType);
+        const ValueId slot = markVolatile(Val(localAlloca(var, slotType), slotType), tree_.resolution(var).isVolatile).v;
         locals_[v.syntax.v] = std::make_pair(slot, tid(t));
         // A pointer's or a reference's declarator may write a bound, `int (*p)[3]`: its value follows the bounds.
         const std::uint32_t first = v.bounds;
@@ -3974,7 +3987,8 @@ Lowering::Val Lowering::nameAddress(sema::TypedId id) {
             return Val(load(addrOf(s->second.first, tid(*types_.pointerTo(&T(pt)))), pt), tid(*T(s->second.second).referent()));
         }
         if (s != staticLocals_.end())   // a thread_local's address by the name's record, which says whether through its wrapper
-            return Val(objectAddr(s->second.first, tid(*types_.pointerTo(&T(s->second.second))), tree_.resolution(id)), s->second.second);
+            return markVolatile(Val(objectAddr(s->second.first, tid(*types_.pointerTo(&T(s->second.second))), tree_.resolution(id)),
+                                    s->second.second), tree_.resolution(id).isVolatile);
         std::map<std::uint32_t, std::pair<ValueId, TypeId> >::const_iterator l = locals_.find(n.decl.v);
         if (l == locals_.end()) outside("a name whose local the lowering did not declare");
         const sema::Resolution &r = tree_.resolution(id);
@@ -3984,7 +3998,7 @@ Lowering::Val Lowering::nameAddress(sema::TypedId id) {
             const TypeId pt = tid(*types_.pointerTo(t.referent()));
             return Val(load(l->second.first, pt), tid(*t.referent()));
         }
-        return Val(l->second.first, l->second.second);
+        return markVolatile(Val(l->second.first, l->second.second), r.isVolatile);
     }
     const sema::Resolution &r = tree_.resolution(id);
     if (anonymousUnionMember(id)) return unionMemberAddress(id);
@@ -4004,7 +4018,7 @@ Lowering::Val Lowering::globalAddress(const sema::Resolution &r) {
         if (!referable(*t.referent())) outside("a reference to '" + t.referent()->describe() + "'");
         return Val(load(addrOf(r.symbol, tid(*types_.pointerTo(&T(pt)))), pt), tid(*t.referent()));
     }
-    return Val(objectAddr(r.symbol, tid(*types_.pointerTo(&t)), r), r.type);
+    return markVolatile(Val(objectAddr(r.symbol, tid(*types_.pointerTo(&t)), r), r.type), r.isVolatile);
 }
 
 Lowering::Val Lowering::name(sema::TypedId id) {
@@ -4084,10 +4098,10 @@ Lowering::Val Lowering::memberAddress(sema::TypedId id) {
     if (m.type->isReference()) return referenceMember(object.v, *obj.unqualified(), m);
     const Type &mt = obj.isConst() && !m.isMutable ? *types_.withConst(m.type) : *m.type;
     if (!scalar(mt) && !mt.isArray() && !mt.isStructOrUnion()) outside("a member of type '" + mt.describe() + "'");
-    if (m.inVirtualBase != nullptr) return Val(virtualBaseMember(object.v, *obj.unqualified(), m, tid(mt)), tid(mt));
+    if (m.inVirtualBase != nullptr) return markVolatile(Val(virtualBaseMember(object.v, *obj.unqualified(), m, tid(mt)), tid(mt)), m.isVolatile);
     const InstId g = add(Op::Gep, tid(*types_.pointerTo(&mt)), std::vector<ValueId>(1, object.v));
     at(g).k = m.offset;
-    return Val(result(g), tid(mt));
+    return markVolatile(Val(result(g), tid(mt)), m.isVolatile);
 }
 
 Lowering::Val Lowering::member(sema::TypedId id) { return memberAddress(id); }
@@ -4133,10 +4147,10 @@ Lowering::Val Lowering::memberOfThis(sema::TypedId id) {
     if (m.type->isReference()) return referenceMember(self.v, cls, m);
     const Type &mt = T(r.type);
     if (!scalar(mt) && !mt.isArray() && !mt.isStructOrUnion()) outside("a member of type '" + mt.describe() + "'");
-    if (m.inVirtualBase != nullptr) return Val(virtualBaseMember(self.v, cls, m, r.type), r.type);
+    if (m.inVirtualBase != nullptr) return markVolatile(Val(virtualBaseMember(self.v, cls, m, r.type), r.type), m.isVolatile);
     const InstId g = add(Op::Gep, tid(*types_.pointerTo(&mt)), std::vector<ValueId>(1, self.v));
     at(g).k = m.offset;
-    return Val(result(g), r.type);
+    return markVolatile(Val(result(g), r.type), m.isVolatile);
 }
 
 // [class.bit]: a bit-field is `width` bits from `bitOffset` up in the unit of its declared type at its offset, read and
@@ -4160,7 +4174,7 @@ Lowering::Val Lowering::bitUnit(ValueId object, const Member &m, bool constant) 
     const InstId g = add(Op::Gep, tid(*types_.pointerTo(&T(u))), std::vector<ValueId>(1, object));
     at(g).k = m.offset;
     bitField_ = m;
-    return Val(result(g), u);
+    return markVolatile(Val(result(g), u), m.isVolatile);
 }
 
 Lowering::Val Lowering::bitRead(const Val &unit, const Member &m) {

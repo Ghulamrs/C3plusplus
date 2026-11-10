@@ -47,6 +47,7 @@ struct Local {
     // A static or extern thread_local in a block, and whether a use goes through its wrapper.
     bool isThreadLocal = false;
     bool tlsViaWrapper = false;
+    bool isVolatile = false;     // written `volatile`: every access a volatile load or store (M3b.4 round 6)
 
     // C++11 has no aggregate with a member initialiser, so the braces call this.
     Local(std::string name = std::string(), int offset = 0, const Type *type = nullptr,
@@ -71,6 +72,7 @@ struct GlobalSym {
     bool isThreadLocal = false;
     bool tlsViaWrapper = false;
     bool tlsExternal = false;
+    bool isVolatile = false;     // as for Local, above
 
     // C++11 has no aggregate with a member initialiser, so the braces call this.
     GlobalSym(std::string name = std::string(), std::string symbol = std::string(),

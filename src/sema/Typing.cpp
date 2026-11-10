@@ -121,6 +121,7 @@ void Typer::record(syntax::NodeId id, TypedId t) {
         out.symbol = p_.declaredLocals_.at(id.v).staticName;
         out.serial = p_.declaredLocals_.at(id.v).serial;
         out.type = TypeTable::id(p_.declaredLocals_.at(id.v).type);
+        out.isVolatile = p_.declaredLocals_.at(id.v).isVolatile;
         tree_.setResolution(t, out);
     }
     std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(id.v);
@@ -447,7 +448,7 @@ std::string Typer::recordDiffers(const Parser &p, const TypedTree &tree, TypedId
         if (r.what != pr->second.what || p.types_.type(r.type) != pr->second.type ||
             p.types_.type(r.owner) != pr->second.owner || r.symbol != pr->second.symbol || r.serial != pr->second.serial ||
             r.value != pr->second.value || r.isConst != pr->second.isConst || r.isThreadLocal != pr->second.isThreadLocal ||
-            r.viaWrapper != pr->second.viaWrapper ||
+            r.viaWrapper != pr->second.viaWrapper || r.isVolatile != pr->second.isVolatile ||
             r.hasThis != pr->second.hasThis || r.indirect != pr->second.indirect || r.vslot != pr->second.vslot || r.name != pr->second.name)
             return "the record's fields";
     }

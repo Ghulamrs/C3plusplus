@@ -5,7 +5,8 @@
 # The summary counts what was lowered and what was left outside, by reason, which is the measure of the subset; then
 # the compiler-written functions the Builder lowered (M3b.3), by kind, and what it left, by kind and reason. At SSA_LEVEL
 # (default 1) the SSA passes run and are verified after each (M3b.4): the allocas promoted, the folds, the CFG
-# simplifications, the edges threaded, the values numbered, the divisions rewritten and the dead code removed are summed.
+# simplifications, the edges threaded, the values numbered, the divisions rewritten and the dead code removed are summed,
+# with the volatile accesses lowered and kept (a pass but cfg removing one fails the case).
 CXX1="${CXX1:-./cxx3.exe}"
 SSA_LEVEL="${SSA_LEVEL:-1}"
 out=tests/out-ssa
@@ -47,6 +48,8 @@ cat "$out"/*.ssa | grep -- '^-check=ssa jumps:' | tr ' ' '\n' | grep = | tr '=' 
     awk '{s[$1]+=$2} END {printf "ssa.sh: jumps threaded %d edges past a condbr, %d past a switch\n", s["condbr"], s["switch"]}'
 cat "$out"/*.ssa | grep -- '^-check=ssa divide:' | tr ' ' '\n' | grep = | tr '=' ' ' |
     awk '{s[$1]+=$2} END {printf "ssa.sh: divide made %d divisions shifts, %d a signed and %d an unsigned multiply-high (%d of them 64-bit), left %d by a constant\n", s["shifts"], s["signed"], s["unsigned"], s["wide"], s["left"]}'
+cat "$out"/*.ssa | grep -- '^-check=ssa volatile:' | tr ' ' '\n' | grep = | tr '=' ' ' |
+    awk '{s[$1]+=$2} END {printf "ssa.sh: %d volatile loads and stores lowered, %d kept after the passes\n", s["lowered"], s["kept"]}'
 # The probes of the passes: <case>.<pass> is the case's -dump=ssa=<pass> on x86_64-linux, compared byte for byte, at -O1
 # (-O2 for divide, which runs at that level alone).
 if [ "$(uname -s)" = Linux ]; then

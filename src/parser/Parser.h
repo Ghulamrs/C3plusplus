@@ -548,6 +548,7 @@ private:
         int serial = -1;                 // a local's serial; a member's offset; 1 for a folded static member
         long long value = 0;             // an enumerator's, a folded static member's
         bool isConst = false, isThreadLocal = false;    // a global's
+        bool isVolatile = false;                         // a local's, a global's, a static member's: written `volatile`
         bool viaWrapper = false;                         // a thread_local's: a use goes through the ABI's wrapper (Var::viaWrapper)
         bool hasThis = false;                            // a call's: its function type's first parameter is the object's address
         bool indirect = false;                           // a call's: through a value - a pointer or a vtable slot
@@ -739,7 +740,9 @@ private:
         declaredTypes_[id.v] = type;
         noteDeclaredLocal(id, name);
     }
-    void noteDeclaredLocal(syntax::NodeId id, const std::string &name) {
+    void noteDeclaredLocal(syntax::NodeId id, const std::string &name, bool isVolatile = false) {
+        for (std::size_t i = locals_.size(); isVolatile && i-- > 0; )
+            if (locals_[i].name == name) { locals_[i].isVolatile = true; break; }     // the one findLocal finds
         const Local *l = lookup_.findLocal(name);
         if (l == nullptr) return;
         declaredLocals_[id.v] = *l;
@@ -778,7 +781,8 @@ private:
         std::size_t mark, lo;
         const Declared *d = nullptr;
         bool function = false;      // a function's declaration with no definition: its node is over its parameters
-        int form = 0;               // its initialiser's form, Parser::InitForm, read before the initialiser is
+        bool isVolatile = false;    // its specifiers wrote `volatile`: the local it declared is marked so
+        int form = 0;              // its initialiser's form, Parser::InitForm, read before the initialiser is
         std::size_t values = 0;     // the first node the initialiser made: the parts before it are the bounds
         std::size_t inits;          // dynInits_ when it was made: one pushed since is this declarator's, its `var` this node
         VarNote(Parser &parser, std::size_t m, std::size_t l) : p(parser), mark(m), lo(l), inits(parser.dynInits_.size()) {}
@@ -800,7 +804,7 @@ private:
             std::uint32_t bounds = 0;
             while (!function && bounds < p.syntaxTree_.node(id).count && p.syntaxTree_.child(id, bounds).v <= values) bounds++;
             if (bounds != 0) p.varBounds_[id.v] = static_cast<int>(bounds);
-            if (!function) p.noteDeclaredLocal(id, d->name);
+            if (!function) p.noteDeclaredLocal(id, d->name, isVolatile);
             if (!function && p.dynInits_.size() == inits + 1) p.dynInits_.back().var = id;
         }
     };

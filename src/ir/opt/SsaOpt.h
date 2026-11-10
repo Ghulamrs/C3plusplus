@@ -41,11 +41,14 @@ struct PassLog {
     int threaded, threadedSwitch;       // jumps': edges sent past a condbr's test, and past a switch's
     // divide's: by a power of two, by a multiply-high signed and unsigned, of those at 64 bits; a constant divisor left.
     int divShifts, divSigned, divUnsigned, divWide, divLeft;
+    // The volatile loads and stores in the body before the passes and after them: fewer only where cfg removed a block.
+    int volatiles, volatilesKept;
     PassLog(bool c, const std::string &after) : check(c), dumpAfter(after), failed(0), allocas(0), scalars(0), promoted(0),
         constants(0), compares(0), casts(0), floating(0), identities(0), copies(0), arguments(0), kept(0), constBranches(0),
         sameBranches(0), unreachable(0), merged(0), forwarded(0), deadInsts(0), deadParams(0), deadStores(0), deadAllocas(0),
         gvnConstants(0), gvnArith(0), gvnCompares(0), gvnCasts(0), gvnGeps(0), gvnSelects(0), gvnLoads(0), gvnStored(0),
-        threaded(0), threadedSwitch(0), divShifts(0), divSigned(0), divUnsigned(0), divWide(0), divLeft(0) {}
+        threaded(0), threadedSwitch(0), divShifts(0), divSigned(0), divUnsigned(0), divWide(0), divLeft(0), volatiles(0),
+        volatilesKept(0) {}
 };
 
 // The pass names -dump=ssa= takes, in the order they run.

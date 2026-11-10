@@ -2633,6 +2633,7 @@ ExprPtr Parser::localRef(const std::string &name) {
             if (!locals_[k].sharesSlot && locals_[k].offset == l->offset && locals_[k].type->isStructOrUnion()) shared = locals_[k].type;
         Resolved r = resolvedAs(Resolved::Local, l->type, l->staticName, l->serial, 0, shared);
         r.isThreadLocal = l->isThreadLocal;
+        r.isVolatile = l->isVolatile;
         r.viaWrapper = v->viaWrapper();
         return resolve(useReference(std::move(n)), r);
     }
@@ -2684,6 +2685,7 @@ ExprPtr Parser::globalRef(const std::string &name) {
         Resolved r = resolvedAs(Resolved::Global, g->type, g->symbol);
         r.isConst = g->isConst;
         r.isThreadLocal = g->isThreadLocal;
+        r.isVolatile = g->isVolatile;
         r.viaWrapper = v->viaWrapper();
         r.name = name;
         return resolve(useReference(std::move(n)), r);

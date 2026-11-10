@@ -2057,6 +2057,7 @@ void Parser::declareStaticMember(const std::string &cls, Type *owner,
     s.type = isConstexpr ? constexprObject(d.type) : d.type;
     s.access = access;
     s.isThreadLocal = threadLocal;
+    s.isVolatile = volatileWritten;
 
     // **[class.static.data]/3: a `static constexpr` member of any literal type is initialised here.**
     if (isConstexpr && !d.type->isInteger() && (peek().is("=") || peek().is("{"))) {
@@ -2371,6 +2372,7 @@ ExprPtr Parser::staticMemberRef(const Type *owner, const Type::StaticMember &s,
     n->setType(s.type);
     Resolved r = resolvedAs(Resolved::StaticMember, s.type, s.symbol, -1, 0, owner);
     r.isThreadLocal = s.isThreadLocal;
+    r.isVolatile = s.isVolatile;
     r.viaWrapper = v->viaWrapper();
     return resolve(useReference(std::move(n)), r);
 }

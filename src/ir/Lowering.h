@@ -146,6 +146,10 @@ private:
     ValueId load(ValueId p, TypeId type);
     ValueId op2(Op o, TypeId type, ValueId a, ValueId b);     // a two-operand instruction
     void store(ValueId p, ValueId v);
+    // `volatile` (M3b.4 round 6): `p` made the address of an object written volatile where `written`; a load or store
+    // through it, or through a gep or bitcast of it, is marked.
+    Val markVolatile(Val p, bool written);
+    bool volatileAt(ValueId p) const { return p.v < volatile_.size() && volatile_[p.v] != 0; }
 
     // The typed tree, read.
     const syntax::Node &syn(sema::TypedId id) const { return syntax_.node(tree_.node(id).syntax); }
@@ -529,7 +533,8 @@ private:
     static const std::size_t kNoFull = static_cast<std::size_t>(-1);
     BlockId returnBlock_;
     std::map<std::uint32_t, std::pair<ValueId, TypeId> > locals_;    // a `var` node -> its alloca and declared type
-    std::map<std::uint32_t, ValueId> unionSlots_;    // an anonymous union in a block, by its type -> its alloca
+    std::vector<char> volatile_;       // by value: 1 for the address of a volatile object (markVolatile)
+    std::map<std::uint32_t, ValueId> unionSlots_;   // an anonymous union in a block, by its type -> its alloca
     bool bitWanted_ = false;           // fieldAddress asks memberAddress or memberOfThis for a bit-field's unit
     Member bitField_;                 // and a copy of the bit-field it found (width 0: none)
     std::map<std::uint32_t, std::pair<std::string, TypeId> > staticLocals_;   // a static `var` -> its symbol and type
