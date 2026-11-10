@@ -1,6 +1,7 @@
 // The SSA IR as text (-dump=ssa) and the verifier (-check=ssa) - M3-IR 3.3, 3.4, 3.10.
 
 #include "Ir.h"
+#include "opt/SsaOpt.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -102,33 +103,34 @@ FuncId Module::find(const std::string &symbol) const {
     return FuncId();
 }
 
+std::string dump(const Function &f, const TypeTable &types) {
+    std::string out = "function @" + f.symbol + "(";
+    for (std::size_t p = 0; p < f.params.size(); p++)
+        out += (p ? ", " : "") + valueName(f.params[p]) + ": " + typeName(types, f.value(f.params[p]).type);
+    if (f.sret.valid()) out += std::string(f.params.empty() ? "" : ", ") + valueName(f.sret) + " sret: " + typeName(types, f.value(f.sret).type);
+    out += ") -> " + typeName(types, f.returns);
+    if (f.isStatic) out += " static";
+    if (f.isInline) out += " inline";
+    out += " {\n";
+    for (std::size_t bi = 0; bi < f.blocks.size(); bi++) {
+        const Block &b = f.block(f.blocks[bi]);
+        out += blockName(f.blocks[bi]);
+        if (!b.params.empty()) {
+            out += "(";
+            for (std::size_t p = 0; p < b.params.size(); p++)
+                out += (p ? ", " : "") + valueName(b.params[p]) + ": " + typeName(types, f.value(b.params[p]).type);
+            out += ")";
+        }
+        out += ":\n";
+        for (std::size_t k = 0; k < b.insts.size(); k++) dumpInst(f, types, b.insts[k], out);
+        if (b.term.valid()) dumpInst(f, types, b.term, out);
+    }
+    return out + "}\n";
+}
+
 std::string dump(const Module &m, const TypeTable &types) {
     std::string out;
-    for (std::size_t fi = 1; fi < m.functions.size(); fi++) {
-        const Function &f = m.functions[fi];
-        out += "function @" + f.symbol + "(";
-        for (std::size_t p = 0; p < f.params.size(); p++)
-            out += (p ? ", " : "") + valueName(f.params[p]) + ": " + typeName(types, f.value(f.params[p]).type);
-        if (f.sret.valid()) out += std::string(f.params.empty() ? "" : ", ") + valueName(f.sret) + " sret: " + typeName(types, f.value(f.sret).type);
-        out += ") -> " + typeName(types, f.returns);
-        if (f.isStatic) out += " static";
-        if (f.isInline) out += " inline";
-        out += " {\n";
-        for (std::size_t bi = 0; bi < f.blocks.size(); bi++) {
-            const Block &b = f.block(f.blocks[bi]);
-            out += blockName(f.blocks[bi]);
-            if (!b.params.empty()) {
-                out += "(";
-                for (std::size_t p = 0; p < b.params.size(); p++)
-                    out += (p ? ", " : "") + valueName(b.params[p]) + ": " + typeName(types, f.value(b.params[p]).type);
-                out += ")";
-            }
-            out += ":\n";
-            for (std::size_t k = 0; k < b.insts.size(); k++) dumpInst(f, types, b.insts[k], out);
-            if (b.term.valid()) dumpInst(f, types, b.term, out);
-        }
-        out += "}\n";
-    }
+    for (std::size_t fi = 1; fi < m.functions.size(); fi++) out += dump(m.functions[fi], types);
     return out;
 }
 
@@ -141,69 +143,13 @@ struct Verifier {
     int faults;
     // Which block defines each value, and the dominator tree over the blocks reachable from the entry.
     std::vector<std::uint32_t> defBlock;
-    std::vector<std::uint32_t> idom, order;
-    std::vector<std::vector<std::uint32_t> > preds;
+    Dominators dom;
 
-    Verifier(const Function &fn, const TypeTable &t, std::string &o) : f(fn), types(t), out(o), faults(0) {}
+    Verifier(const Function &fn, const TypeTable &t, std::string &o) : f(fn), types(t), out(o), faults(0), dom(fn) {}
 
     void fault(BlockId b, const std::string &what) {
         out += "  " + f.symbol + " " + blockName(b) + ": " + what + "\n";
         faults++;
-    }
-
-    void dominators() {
-        const std::size_t n = f.blockArena.size();
-        preds.assign(n, std::vector<std::uint32_t>());
-        std::vector<std::uint32_t> rpo;
-        std::vector<char> seen(n, 0);
-        // Reverse postorder by an explicit stack: the entry first, every reachable block once.
-        std::vector<std::pair<std::uint32_t, std::size_t> > stack;
-        stack.push_back(std::make_pair(f.entry.v, std::size_t(0)));
-        seen[f.entry.v] = 1;
-        while (!stack.empty()) {
-            const std::uint32_t b = stack.back().first;
-            std::vector<std::uint32_t> succs;
-            const Block &blk = f.blockArena[b];
-            if (blk.term.valid()) for (const Succ &s : f.inst(blk.term).succ) succs.push_back(s.block.v);
-            if (stack.back().second < succs.size()) {
-                const std::uint32_t s = succs[stack.back().second++];
-                preds[s].push_back(b);
-                if (!seen[s]) { seen[s] = 1; stack.push_back(std::make_pair(s, std::size_t(0))); }
-            } else {
-                rpo.push_back(b);
-                stack.pop_back();
-            }
-        }
-        std::reverse(rpo.begin(), rpo.end());
-        order.assign(n, 0);
-        for (std::size_t i = 0; i < rpo.size(); i++) order[rpo[i]] = static_cast<std::uint32_t>(i + 1);
-        idom.assign(n, 0);
-        idom[f.entry.v] = f.entry.v;
-        // Cooper, Harvey and Kennedy's iteration, over reachable blocks in reverse postorder.
-        bool changed = true;
-        while (changed) {
-            changed = false;
-            for (std::size_t i = 1; i < rpo.size(); i++) {
-                const std::uint32_t b = rpo[i];
-                std::uint32_t best = 0;
-                for (std::uint32_t p : preds[b]) {
-                    if (idom[p] == 0) continue;
-                    best = best == 0 ? p : intersect(best, p);
-                }
-                if (best != 0 && idom[b] != best) { idom[b] = best; changed = true; }
-            }
-        }
-    }
-    std::uint32_t intersect(std::uint32_t a, std::uint32_t b) {
-        while (a != b) {
-            while (order[a] > order[b]) a = idom[a];
-            while (order[b] > order[a]) b = idom[b];
-        }
-        return a;
-    }
-    bool dominates(std::uint32_t a, std::uint32_t b) {
-        while (b != a && b != f.entry.v && idom[b] != 0) b = idom[b];
-        return a == b;
     }
 
     void run() {
@@ -218,7 +164,6 @@ struct Verifier {
         for (ValueId p : f.params) defBlock[p.v] = f.entry.v;
         if (f.sret.valid()) defBlock[f.sret.v] = f.entry.v;
         if (!f.entry.valid()) { fault(BlockId(), "no entry block"); return; }
-        dominators();
         for (std::uint32_t bi = 1; bi < n; bi++) {
             const Block &b = f.blockArena[bi];
             const BlockId bid(bi);
@@ -238,7 +183,7 @@ struct Verifier {
 
     void uses(BlockId bid, const Inst &i, bool term) {
         const std::uint32_t here = bid.v;
-        if (order[here] == 0) return;   // unreachable: nothing dominates anything there, and nothing is read
+        if (!dom.reachable(here)) return;   // unreachable: nothing dominates anything there, and nothing is read
         for (std::uint32_t n = 0; n < i.count; n++) {
             const ValueId v = f.operand(i, n);
             if (!v.valid() || v.v >= f.values.size()) { fault(bid, "an operand that is no value"); continue; }
@@ -247,7 +192,7 @@ struct Verifier {
             if (db == here) {
                 // Within one block, the definition must come first; a block parameter counts as first.
                 if (f.value(v).def.valid() && !before(bid, f.value(v).def, i)) fault(bid, valueName(v) + " is used before its definition");
-            } else if (!dominates(db, here)) {
+            } else if (!dom.dominates(db, here)) {
                 fault(bid, valueName(v) + " is used where its definition does not dominate");
             }
         }
@@ -265,7 +210,7 @@ struct Verifier {
                     fault(bid, "argument " + std::to_string(a) + " to " + blockName(sc.block) + " is '" + typeName(types, f.value(v).type) +
                                "' for a parameter '" + typeName(types, f.value(to.params[a]).type) + "'");
                 const std::uint32_t db = defBlock[v.v];
-                if (db != 0 && db != here && !dominates(db, here)) fault(bid, valueName(v) + " is passed where its definition does not dominate");
+                if (db != 0 && db != here && !dom.dominates(db, here)) fault(bid, valueName(v) + " is passed where its definition does not dominate");
             }
         }
         (void)term;
@@ -282,13 +227,15 @@ struct Verifier {
 
 }   // namespace
 
+int verify(const Function &f, const TypeTable &types, std::string &out) {
+    Verifier v(f, types, out);
+    v.run();
+    return v.faults;
+}
+
 int verify(const Module &m, const TypeTable &types, std::string &out) {
     int failed = 0;
-    for (std::size_t fi = 1; fi < m.functions.size(); fi++) {
-        Verifier v(m.functions[fi], types, out);
-        v.run();
-        if (v.faults != 0) failed++;
-    }
+    for (std::size_t fi = 1; fi < m.functions.size(); fi++) if (verify(m.functions[fi], types, out) != 0) failed++;
     return failed;
 }
 

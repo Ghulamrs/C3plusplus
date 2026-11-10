@@ -4,6 +4,8 @@
     <Filter Include="Header Files"><UniqueIdentifier>{B1043908-38C6-799F-9FFA-F085E08CBA37}</UniqueIdentifier></Filter>
     <Filter Include="Header Files\backend"><UniqueIdentifier>{DA402ED2-5280-A303-1883-541A88579ED4}</UniqueIdentifier></Filter>
     <Filter Include="Header Files\encoder"><UniqueIdentifier>{49524441-B2AD-7335-EB3F-C22026F96277}</UniqueIdentifier></Filter>
+    <Filter Include="Header Files\ir"><UniqueIdentifier>{93185064-46BE-4F39-AF4C-F61653B0EAEC}</UniqueIdentifier></Filter>
+    <Filter Include="Header Files\ir\opt"><UniqueIdentifier>{8AB5F64B-B639-0CA6-0328-BB38CD1AB76E}</UniqueIdentifier></Filter>
     <Filter Include="Header Files\optimizer"><UniqueIdentifier>{968B60CF-71CB-C68D-AE8F-0E31CA89BC24}</UniqueIdentifier></Filter>
     <Filter Include="Header Files\parser"><UniqueIdentifier>{4EF6DBE6-71E9-9BB6-D7FF-6A93564BBB34}</UniqueIdentifier></Filter>
     <Filter Include="Header Files\sema"><UniqueIdentifier>{4F6DE602-BD68-F887-2729-01B78B8DE7E1}</UniqueIdentifier></Filter>
@@ -11,6 +13,8 @@
     <Filter Include="Source Files"><UniqueIdentifier>{17D24EA4-A08E-901F-6B67-41767BC0C46F}</UniqueIdentifier></Filter>
     <Filter Include="Source Files\backend"><UniqueIdentifier>{BAC44DA1-1890-263F-43B6-2DBBD19F7288}</UniqueIdentifier></Filter>
     <Filter Include="Source Files\encoder"><UniqueIdentifier>{4F5CBEE8-FAF3-96D7-D86B-579E160D4847}</UniqueIdentifier></Filter>
+    <Filter Include="Source Files\ir"><UniqueIdentifier>{15C7871A-8E00-2AB9-3A8C-50CB147788A9}</UniqueIdentifier></Filter>
+    <Filter Include="Source Files\ir\opt"><UniqueIdentifier>{30D106DB-D403-BAA2-06AB-BC5FBB6E8D80}</UniqueIdentifier></Filter>
     <Filter Include="Source Files\optimizer"><UniqueIdentifier>{ED5EE651-2AB1-29E2-BCB5-10A86AC974CB}</UniqueIdentifier></Filter>
     <Filter Include="Source Files\parser"><UniqueIdentifier>{F7683C0D-65EA-CABF-2CF9-EF5D0C23C3DF}</UniqueIdentifier></Filter>
     <Filter Include="Source Files\sema"><UniqueIdentifier>{A1C27191-77EF-2363-9D80-BC36B1B0CE23}</UniqueIdentifier></Filter>
@@ -99,6 +103,16 @@
     <ClCompile Include="..\src\encoder\Coff.cpp"><Filter>Source Files\encoder</Filter></ClCompile>
     <ClCompile Include="..\src\encoder\X64Encode.cpp"><Filter>Source Files\encoder</Filter></ClCompile>
     <ClCompile Include="..\src\encoder\X64Parse.cpp"><Filter>Source Files\encoder</Filter></ClCompile>
+    <ClCompile Include="..\src\ir\Builder.cpp"><Filter>Source Files\ir</Filter></ClCompile>
+    <ClCompile Include="..\src\ir\BuilderCopy.cpp"><Filter>Source Files\ir</Filter></ClCompile>
+    <ClCompile Include="..\src\ir\CompleteObject.cpp"><Filter>Source Files\ir</Filter></ClCompile>
+    <ClCompile Include="..\src\ir\IrText.cpp"><Filter>Source Files\ir</Filter></ClCompile>
+    <ClCompile Include="..\src\ir\Lowering.cpp"><Filter>Source Files\ir</Filter></ClCompile>
+    <ClCompile Include="..\src\ir\MsShapes.cpp"><Filter>Source Files\ir</Filter></ClCompile>
+    <ClCompile Include="..\src\ir\Wrappers.cpp"><Filter>Source Files\ir</Filter></ClCompile>
+    <ClCompile Include="..\src\ir\opt\SsaDominators.cpp"><Filter>Source Files\ir\opt</Filter></ClCompile>
+    <ClCompile Include="..\src\ir\opt\SsaOptimize.cpp"><Filter>Source Files\ir\opt</Filter></ClCompile>
+    <ClCompile Include="..\src\ir\opt\SsaPromote.cpp"><Filter>Source Files\ir\opt</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\src\Abi.h"><Filter>Header Files</Filter></ClInclude>
@@ -167,5 +181,9 @@
     <ClInclude Include="..\src\encoder\Assembler.h"><Filter>Header Files\encoder</Filter></ClInclude>
     <ClInclude Include="..\src\encoder\Coff.h"><Filter>Header Files\encoder</Filter></ClInclude>
     <ClInclude Include="..\src\encoder\X64.h"><Filter>Header Files\encoder</Filter></ClInclude>
+    <ClInclude Include="..\src\ir\Builder.h"><Filter>Header Files\ir</Filter></ClInclude>
+    <ClInclude Include="..\src\ir\Ir.h"><Filter>Header Files\ir</Filter></ClInclude>
+    <ClInclude Include="..\src\ir\Lowering.h"><Filter>Header Files\ir</Filter></ClInclude>
+    <ClInclude Include="..\src\ir\opt\SsaOpt.h"><Filter>Header Files\ir\opt</Filter></ClInclude>
   </ItemGroup>
 </Project>

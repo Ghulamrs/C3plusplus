@@ -88,6 +88,16 @@
 		E8BD3810695A81A87B8B3090 /* Coff.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DA5AE8449C9B8A4963AD4DFC /* Coff.cpp */; };
 		92AE8737F922ECBD5DF31922 /* X64Encode.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D759BDE6165A615697F15C1D /* X64Encode.cpp */; };
 		B5A805E0EE72A06BED5389E4 /* X64Parse.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 09FE3C03C21982E062D916AC /* X64Parse.cpp */; };
+		2A0DDDE4B2E50E9A6E018167 /* Builder.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 46B5F54E4D73FE42A04088FE /* Builder.cpp */; };
+		1ECFAC07BC8803A1F849710F /* BuilderCopy.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 30D0F487F8C73ECFFF0CF92C /* BuilderCopy.cpp */; };
+		43A29F0D6B00D51D222ADEE0 /* CompleteObject.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4287B716616D27798F6593E2 /* CompleteObject.cpp */; };
+		CFF8B0950D9BD89AE988FD8B /* IrText.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FA082D28EC0451D6C567C6FE /* IrText.cpp */; };
+		961A53D2E0F1326671FC0E4D /* Lowering.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F30A2D9F602A679F671E4C84 /* Lowering.cpp */; };
+		E9A07F79389C184FD7113B58 /* MsShapes.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B43907DAC2B080BF4BCE9741 /* MsShapes.cpp */; };
+		A1961D65A4572E1DF05EC56A /* Wrappers.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 626E53A1F87F55A8921C6273 /* Wrappers.cpp */; };
+		C092DF43A4C4AB15906920CC /* SsaDominators.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 74B5F18801AA2F0623590A74 /* SsaDominators.cpp */; };
+		169A79BB74CFCA4C8769D222 /* SsaOptimize.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6C4F997C57358B2FEF81A5CD /* SsaOptimize.cpp */; };
+		B75326BCFA3A5298BC803765 /* SsaPromote.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 34BAE0E52F33E4B25B325395 /* SsaPromote.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -173,6 +183,16 @@
 		DA5AE8449C9B8A4963AD4DFC /* Coff.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Coff.cpp; path = "../src/encoder/Coff.cpp"; sourceTree = "<group>"; };
 		D759BDE6165A615697F15C1D /* X64Encode.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = X64Encode.cpp; path = "../src/encoder/X64Encode.cpp"; sourceTree = "<group>"; };
 		09FE3C03C21982E062D916AC /* X64Parse.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = X64Parse.cpp; path = "../src/encoder/X64Parse.cpp"; sourceTree = "<group>"; };
+		46B5F54E4D73FE42A04088FE /* Builder.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Builder.cpp; path = "../src/ir/Builder.cpp"; sourceTree = "<group>"; };
+		30D0F487F8C73ECFFF0CF92C /* BuilderCopy.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = BuilderCopy.cpp; path = "../src/ir/BuilderCopy.cpp"; sourceTree = "<group>"; };
+		4287B716616D27798F6593E2 /* CompleteObject.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = CompleteObject.cpp; path = "../src/ir/CompleteObject.cpp"; sourceTree = "<group>"; };
+		FA082D28EC0451D6C567C6FE /* IrText.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = IrText.cpp; path = "../src/ir/IrText.cpp"; sourceTree = "<group>"; };
+		F30A2D9F602A679F671E4C84 /* Lowering.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Lowering.cpp; path = "../src/ir/Lowering.cpp"; sourceTree = "<group>"; };
+		B43907DAC2B080BF4BCE9741 /* MsShapes.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MsShapes.cpp; path = "../src/ir/MsShapes.cpp"; sourceTree = "<group>"; };
+		626E53A1F87F55A8921C6273 /* Wrappers.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Wrappers.cpp; path = "../src/ir/Wrappers.cpp"; sourceTree = "<group>"; };
+		74B5F18801AA2F0623590A74 /* SsaDominators.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaDominators.cpp; path = "../src/ir/opt/SsaDominators.cpp"; sourceTree = "<group>"; };
+		6C4F997C57358B2FEF81A5CD /* SsaOptimize.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaOptimize.cpp; path = "../src/ir/opt/SsaOptimize.cpp"; sourceTree = "<group>"; };
+		34BAE0E52F33E4B25B325395 /* SsaPromote.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaPromote.cpp; path = "../src/ir/opt/SsaPromote.cpp"; sourceTree = "<group>"; };
 		E6EAF1D1441F03E9A41B4855 /* Abi.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Abi.h; path = "../src/Abi.h"; sourceTree = "<group>"; };
 		14EC8B53EDE3CAB952E236AA /* Ast.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Ast.h; path = "../src/Ast.h"; sourceTree = "<group>"; };
 		60930305A132CB4B774D1FA3 /* AstDump.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = AstDump.h; path = "../src/AstDump.h"; sourceTree = "<group>"; };
@@ -239,6 +259,10 @@
 		060D8446D6A25372F037790C /* Assembler.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Assembler.h; path = "../src/encoder/Assembler.h"; sourceTree = "<group>"; };
 		54B3404B750C06B7097737A6 /* Coff.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Coff.h; path = "../src/encoder/Coff.h"; sourceTree = "<group>"; };
 		C0959C7E56146AFDC17CBF45 /* X64.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = X64.h; path = "../src/encoder/X64.h"; sourceTree = "<group>"; };
+		3DF9D19A8CEB1BCC0AD7B84E /* Builder.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Builder.h; path = "../src/ir/Builder.h"; sourceTree = "<group>"; };
+		578AEE8F49895FA9CFEE5E61 /* Ir.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Ir.h; path = "../src/ir/Ir.h"; sourceTree = "<group>"; };
+		F9234525B666FD645DBB7F11 /* Lowering.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Lowering.h; path = "../src/ir/Lowering.h"; sourceTree = "<group>"; };
+		9BC6EF54A82E7277D85CA5A3 /* SsaOpt.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = SsaOpt.h; path = "../src/ir/opt/SsaOpt.h"; sourceTree = "<group>"; };
 		2DC24FDB4CCDA14233AB5364 /* cpp11.exe */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = cpp11.exe; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -249,6 +273,8 @@
 				A173A0AB96D262E59683CFDF /* src */,
 				21FE160B6DD0E7600646E69C /* src/backend */,
 				7F3406EF39216894261D9F1E /* src/encoder */,
+				4452E36C273DC63A3F95F50D /* src/ir */,
+				6D8B1E60921AC618C831C31A /* src/ir/opt */,
 				868F39DBAA20F1B314EED2BA /* src/optimizer */,
 				CD3B9A0BE8B5918E27DD7C48 /* src/parser */,
 				0D9DA0EE8F7094DFB665A5B3 /* src/sema */,
@@ -343,6 +369,34 @@
 				09FE3C03C21982E062D916AC /* X64Parse.cpp */,
 			);
 			name = "src/encoder";
+			sourceTree = "<group>";
+		};
+		4452E36C273DC63A3F95F50D /* src/ir */ = {
+			isa = PBXGroup;
+			children = (
+				46B5F54E4D73FE42A04088FE /* Builder.cpp */,
+				3DF9D19A8CEB1BCC0AD7B84E /* Builder.h */,
+				30D0F487F8C73ECFFF0CF92C /* BuilderCopy.cpp */,
+				4287B716616D27798F6593E2 /* CompleteObject.cpp */,
+				578AEE8F49895FA9CFEE5E61 /* Ir.h */,
+				FA082D28EC0451D6C567C6FE /* IrText.cpp */,
+				F30A2D9F602A679F671E4C84 /* Lowering.cpp */,
+				F9234525B666FD645DBB7F11 /* Lowering.h */,
+				B43907DAC2B080BF4BCE9741 /* MsShapes.cpp */,
+				626E53A1F87F55A8921C6273 /* Wrappers.cpp */,
+			);
+			name = "src/ir";
+			sourceTree = "<group>";
+		};
+		6D8B1E60921AC618C831C31A /* src/ir/opt */ = {
+			isa = PBXGroup;
+			children = (
+				74B5F18801AA2F0623590A74 /* SsaDominators.cpp */,
+				9BC6EF54A82E7277D85CA5A3 /* SsaOpt.h */,
+				6C4F997C57358B2FEF81A5CD /* SsaOptimize.cpp */,
+				34BAE0E52F33E4B25B325395 /* SsaPromote.cpp */,
+			);
+			name = "src/ir/opt";
 			sourceTree = "<group>";
 		};
 		868F39DBAA20F1B314EED2BA /* src/optimizer */ = {
@@ -588,6 +642,16 @@
 				E8BD3810695A81A87B8B3090 /* Coff.cpp in Sources */,
 				92AE8737F922ECBD5DF31922 /* X64Encode.cpp in Sources */,
 				B5A805E0EE72A06BED5389E4 /* X64Parse.cpp in Sources */,
+				2A0DDDE4B2E50E9A6E018167 /* Builder.cpp in Sources */,
+				1ECFAC07BC8803A1F849710F /* BuilderCopy.cpp in Sources */,
+				43A29F0D6B00D51D222ADEE0 /* CompleteObject.cpp in Sources */,
+				CFF8B0950D9BD89AE988FD8B /* IrText.cpp in Sources */,
+				961A53D2E0F1326671FC0E4D /* Lowering.cpp in Sources */,
+				E9A07F79389C184FD7113B58 /* MsShapes.cpp in Sources */,
+				A1961D65A4572E1DF05EC56A /* Wrappers.cpp in Sources */,
+				C092DF43A4C4AB15906920CC /* SsaDominators.cpp in Sources */,
+				169A79BB74CFCA4C8769D222 /* SsaOptimize.cpp in Sources */,
+				B75326BCFA3A5298BC803765 /* SsaPromote.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

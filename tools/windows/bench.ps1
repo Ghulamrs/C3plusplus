@@ -4,13 +4,18 @@
 #   -Cppi   a Compiler-Cppi cxx1 with the C6000 target, for the cl6x comparison (optional)
 #   -CppiArch  that target's -arch name (default tms6747)
 #   -Rounds interleaved rounds per x86 build (default 9); -Out the work directory
+#   -Cases  a directory of cases: only the .text of each that -New compiles under -CaseFlags, one line a case into
+#           -Out\cases-<-Tag>.txt, and their sum (M3b.4's measure: -front=ssa -O1 against -O1)
 param(
     [string]$New = (Join-Path $PSScriptRoot '..\..\cxx3-msvc.exe'),
     [string]$Base = '',
     [string]$Cppi = '',
     [string]$CppiArch = 'tms6747',
     [int]$Rounds = 9,
-    [string]$Out = 'C:\cxxopt\bench'
+    [string]$Out = 'C:\cxxopt\bench',
+    [string]$Cases = '',
+    [string]$CaseFlags = '-O1',
+    [string]$Tag = 'O1'
 )
 $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
@@ -35,6 +40,22 @@ function TextBytes([string]$obj) {
         }
     }
     return $total
+}
+
+if ($Cases) {
+    $ErrorActionPreference = 'Continue'
+    $lines = @(); $sum = 0
+    foreach ($f in Get-ChildItem (Join-Path $Cases '*.cpp') | Sort-Object Name) {
+        if ($f.Name -like '*.part.cpp' -or (Test-Path ($f.FullName -replace '\.cpp$', '.error'))) { continue }
+        if (Test-Path 'case.obj') { Remove-Item 'case.obj' }
+        cmd /c "`"$New`" $CaseFlags -c `"$($f.FullName)`" -o case.obj >nul 2>&1"
+        if ($LASTEXITCODE -or -not (Test-Path 'case.obj')) { continue }
+        $n = TextBytes 'case.obj'
+        $lines += "$($f.BaseName) $n"; $sum += $n
+    }
+    $lines | Set-Content (Join-Path $Out "cases-$Tag.txt")
+    Write-Host ("cases at {0}: {1} compiled, {2} bytes of .text" -f $CaseFlags, $lines.Count, $sum)
+    exit 0
 }
 
 # ---- x86_64-windows: build each, then time them round by round

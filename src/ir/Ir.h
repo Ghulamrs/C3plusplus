@@ -118,7 +118,9 @@ struct Module {
 
 // **-dump=ssa**: every function of the module in the format of M3-IR 3.3, one instruction a line.
 std::string dump(const Module &m, const TypeTable &types);
+std::string dump(const Function &f, const TypeTable &types);
 // **-check=ssa**: the verifier of M3-IR 3.4. Faults are appended to `out`, one a line, naming function and block.
 int verify(const Module &m, const TypeTable &types, std::string &out);
+int verify(const Function &f, const TypeTable &types, std::string &out);   // the faults found in one function
 
 }   // namespace ir

@@ -81,7 +81,7 @@ SRCS     = $(filter src/%.cpp,$(wildcard src/*.cpp) $(wildcard src/parser/*.cpp)
                               $(wildcard src/backend/*.cpp) $(wildcard src/optimizer/*.cpp) \
                               $(wildcard src/sema/*.cpp) $(wildcard src/syntax/*.cpp) \
                               $(wildcard src/encoder/*.cpp) \
-                              $(wildcard src/ir/*.cpp))
+                              $(wildcard src/ir/*.cpp) $(wildcard src/ir/opt/*.cpp))
 # Objects and their dependency files go under obj/ rather than beside the
 # sources they came from, so that a listing of src/ is the code and nothing
 # else. The tree under obj/ mirrors src/ - src/backend/X86_64.cpp becomes

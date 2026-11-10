@@ -11,6 +11,7 @@
 #include "sema/Typing.h"
 #include "sema/Adapter.h"
 #include "ir/Builder.h"
+#include "ir/opt/SsaOpt.h"
 #include "AstDump.h"
 #include "Preprocessor.h"
 #include "Source.h"
@@ -216,7 +217,8 @@ void Driver::usage(char *file) {
         "         after the pipeline, -dump=mir=<pass> after that pass\n"
         "       -front=ssa lowers each function the SSA lowering reaches to the SSA IR\n"
         "         and selects it from there (x86 only); -dump=ssa writes the IR, -check=ssa\n"
-        "         verifies it and reports on stdout\n"
+        "         verifies it and reports on stdout; at -O1 and above the SSA passes run,\n"
+        "         -dump=ssa=<pass> writes the IR after that pass (promote)\n"
         "       -front=typed builds each function the adapter reaches from Sema's typed\n"
         "         tree; -check=adapted holds that against the parser's, on stdout\n"
         "       -check=typed types the syntax tree in Sema and holds each type against\n"
@@ -1153,6 +1155,7 @@ bool Driver::parseArguments(int argc, char **argv) {
             else if (std::strcmp(what, "mir") == 0) dumpMir_ = true;
             else if (std::strncmp(what, "mir=", 4) == 0) { dumpMir_ = true; dumpMirAfter_ = what + 4; }
             else if (std::strcmp(what, "ssa") == 0) dumpSsa_ = true;
+            else if (std::strncmp(what, "ssa=", 4) == 0 && ir::isSsaPass(what + 4)) { dumpSsa_ = true; dumpSsaAfter_ = what + 4; }
             else {
                 std::fprintf(stderr, "%s: -dump= takes 'syntax', 'ast', 'mir' or 'ssa', the boundaries written so far - not '%s'\n",
                              argv[0], what);
@@ -1347,10 +1350,11 @@ bool Driver::parseArguments(int argc, char **argv) {
     return !objectOnly_ || distinctOutputs(argv[0], inputs, objects_);
 }
 
-// **The SSA lowering over every source body** (M3b.1): the typed tree of each function the census found is lowered;
-// a function the subset does not reach is counted with its reason and keeps the parser's Ast.h path. With `report` the
-// text is -check=ssa's: the verifier over the module, then `functions= lowered= outside= ok= failed=`.
-static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, const Target &target, ir::Module &into, bool report) {
+// **The SSA lowering over every body** (M3b.1), a function outside counted with its reason; then at `level` 1 and up
+// the SSA passes (M3b.4). `report` is -check=ssa's text, `failures` the verifier's count after lowering and each pass,
+// `dumped` the IR as lowered or after the pass `dumpAfter` names.
+static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, const Target &target, ir::Module &into, bool report,
+                            int level, bool dump, const std::string &dumpAfter, std::string &dumped, int &failures) {
     sema::Typer typer(parser);
     typer.emitInto(program);
     const sema::Census c = sema::Typer::census(parser, program);
@@ -1500,9 +1504,16 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         left[fn.synthesised() + " - " + why]++;
         if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "outside %s: %s\n", fn.symbol().c_str(), why.c_str());
     }
-    if (!report) return std::string();
     std::string out;
-    const int failed = ir::verify(into, types, out);
+    const int failed = report ? ir::verify(into, types, out) : 0;
+    ir::PassLog log(report, dumpAfter);
+    if (dump && dumpAfter.empty()) dumped = ir::dump(into, types);
+    if (level >= 1 || !dumpAfter.empty())
+        for (std::size_t fi = 1; fi < into.functions.size(); fi++) ir::ssaOptimize(into.functions[fi], level, types, log);
+    if (!dumpAfter.empty()) dumped = log.dumped;
+    failures = failed + log.failed;
+    if (!report) return std::string();
+    out += log.faults;
     for (std::map<std::string, int>::const_iterator i = reasons.begin(); i != reasons.end(); ++i)
         out += "  outside (" + std::to_string(i->second) + "): " + i->first + "\n";
     for (std::map<std::string, int>::const_iterator i = built.begin(); i != built.end(); ++i)
@@ -1514,7 +1525,10 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
                   c.bodies.size() - lowered, lowered - failed, failed);
     std::snprintf(synth, sizeof synth, "-check=ssa synthesised: functions=%d lowered=%d outside=%d\n", synthesised, builtCount,
                   synthesised - builtCount);
-    return out + line + synth;
+    char passes[160];
+    std::snprintf(passes, sizeof passes, "-check=ssa passes: level=%d allocas=%d scalars=%d promoted=%d failed=%d\n", level, log.allocas,
+                  log.scalars, log.promoted, log.failed);
+    return out + line + synth + passes;
 }
 
 bool Driver::compile(const Job &job) {
@@ -1563,15 +1577,6 @@ bool Driver::compile(const Job &job) {
         std::fwrite(report.data(), 1, report.size(), stdout);
         if (differ != 0) return false;
     }
-    // **The SSA IR** (M3b.1): every source body the lowering reaches, lowered; dumped, verified, or handed to the selector.
-    ir::Module ssa;
-    if (frontSsa_ || dumpSsa_ || checkSsa_) {
-        const std::string report = lowerSsa(parser, program, types, target, ssa, checkSsa_);
-        if (checkSsa_) std::fwrite(report.data(), 1, report.size(), stdout);
-        if (checkSsa_ && report.find(" failed=0") == std::string::npos) return false;
-        if (dumpSsa_) { const std::string text = ir::dump(ssa, types); std::fwrite(text.data(), 1, text.size(), stdout); }
-    }
-
     // **A file that writes `volatile` is compiled without -O**: the type system drops the qualifier, so an
     // optimizer would keep a volatile read in a register or delete it. **Said as a warning at the first
     // `volatile`** (1.10, 2026-10-20) as `file:line:col: warning:`; `cpp11: ...` stopped GRIDE 2.0's build.
@@ -1582,6 +1587,17 @@ bool Driver::compile(const Job &job) {
                      "from plain memory, so %s is compiled without -O%d\n",
                      program.volatileAt.empty() ? job.input.c_str() : program.volatileAt.c_str(),
                      job.input.c_str(), optimize_);
+    }
+    // **The SSA IR** (M3b.1): every source body the lowering reaches, lowered; dumped, verified, or handed to the selector.
+    ir::Module ssa;
+    if (frontSsa_ || dumpSsa_ || checkSsa_) {
+        std::string dumped;
+        int failures = 0;
+        const std::string report = lowerSsa(parser, program, types, target, ssa, checkSsa_, level, dumpSsa_, dumpSsaAfter_, dumped,
+                                            failures);
+        if (checkSsa_) std::fwrite(report.data(), 1, report.size(), stdout);
+        if (checkSsa_ && failures != 0) return false;
+        if (dumpSsa_) std::fwrite(dumped.data(), 1, dumped.size(), stdout);
     }
 
     bool ok = true;

@@ -1,0 +1,286 @@
+function @_ZL4picki(%1: int) -> int static {
+^1(%1: int):
+  br ^3
+^2(%14: int):
+  ret %14
+^3:
+  %5 = iconst int, 3
+  %6 = icmp sgt, bool, %1, %5
+  condbr %6, ^4, ^6
+^4:
+  %8 = iconst int, 2
+  %9 = mul int, %1, %8
+  br ^5(%9)
+^5(%15: int):
+  br ^2(%15)
+^6:
+  %11 = iconst int, 1
+  %12 = sub int, %1, %11
+  br ^5(%12)
+}
+function @_ZL3sumi(%1: int) -> double static {
+^1(%1: int):
+  br ^3
+^2(%20: double):
+  ret %20
+^3:
+  %4 = fconst double, 0x0
+  %6 = iconst int, 0
+  br ^4(%4, %6)
+^4(%21: double, %22: int):
+  %9 = icmp slt, bool, %22, %1
+  condbr %9, ^5, ^7
+^5:
+  %12 = fconst double, 0x3fe0000000000000
+  %13 = sitofp double, %22
+  %14 = fmul double, %13, %12
+  %15 = fadd double, %21, %14
+  br ^6
+^6:
+  %17 = iconst int, 1
+  %18 = add int, %22, %17
+  br ^4(%15, %18)
+^7:
+  br ^2(%21)
+}
+function @_ZL8classifyi(%1: int) -> int static {
+^1(%1: int):
+  br ^3
+^2(%13: int):
+  ret %13
+^3:
+  %4 = iconst int, 0
+  switch %1, default ^9(%4), 1 -> ^6, 2 -> ^7, 3 -> ^8
+^4(%14: int):
+  br ^2(%14)
+^5:
+  br ^6
+^6:
+  %6 = iconst int, 10
+  br ^4(%6)
+^7:
+  %7 = iconst int, 20
+  br ^4(%7)
+^8:
+  %8 = iconst int, 30
+  br ^9(%8)
+^9(%15: int):
+  %10 = iconst int, 1
+  %11 = add int, %15, %10
+  br ^4(%11)
+}
+function @_ZL4bumpPi(%1: int *) -> void static {
+^1(%1: int *):
+  br ^3
+^2:
+  ret
+^3:
+  %4 = load int, %1
+  %5 = iconst int, 1
+  %6 = add int, %4, %5
+  store %1, %6
+  br ^2
+}
+function @_ZL7escapedi(%1: int) -> int static {
+^1(%1: int):
+  %3 = alloca int *, align 4 ; int y
+  br ^3
+^2(%6: int):
+  ret %6
+^3:
+  store %3, %1
+  call @_ZL4bumpPi(%3) : none
+  %5 = load int, %3
+  br ^2(%5)
+}
+function @_ZL8mayThrowi(%1: int) -> int static {
+^1(%1: int):
+  br ^3
+^2(%15: int):
+  ret %15
+^3:
+  %4 = iconst int, 0
+  %5 = icmp slt, bool, %1, %4
+  condbr %5, ^4, ^5
+^4:
+  %7 = iconst unsigned long, 4
+  %8 = call @__cxa_allocate_exception(%7) : void *
+  %9 = bitcast int *, %8
+  store %9, %1
+  %10 = addr void *, @_ZTIi
+  %11 = null void *,
+  call @__cxa_throw(%8, %10, %11) : none
+  unreachable
+^5:
+  %13 = iconst int, 1
+  %14 = add int, %1, %13
+  br ^2(%14)
+}
+function @_ZL7guardedi(%1: int) -> int static {
+^1(%1: int):
+  %3 = alloca int *, align 4 ; int before
+  br ^3
+^2(%27: int):
+  ret %27
+^3:
+  %5 = iconst int, 3
+  %6 = mul int, %1, %5
+  store %3, %6
+  %8 = iconst int, 0
+  %12 = invoke @_ZL8mayThrowi(%1) : int, ^6, ^5
+^4(%28: int):
+  br ^2(%28)
+^5(%10: void *, %11: int):
+  catchpad [@_ZTIi] own 1
+  %17 = iconst int, 1
+  %18 = icmp eq, bool, %11, %17
+  condbr %18, ^8, ^9
+^6:
+  %15 = invoke @_ZL8mayThrowi(%12) : int, ^7, ^5
+^7:
+  %16 = add int, %12, %15
+  br ^4(%16)
+^8:
+  %19 = call @__cxa_begin_catch(%10) : void *
+  %20 = bitcast int *, %19
+  %22 = load int, %20
+  %23 = load int, %3
+  %25 = add int, %23, %22
+  call @__cxa_end_catch() : none
+  br ^4(%25)
+^9:
+  call @_Unwind_Resume(%10) : none
+  unreachable
+}
+function @_ZL6arraysi(%1: int) -> int static {
+^1(%1: int):
+  %3 = alloca int [4] *, align 16 ; int [4] a
+  %13 = alloca struct Pair *, align 4 ; struct Pair p
+  br ^3
+^2(%46: int):
+  ret %46
+^3:
+  %4 = bitcast int *, %3
+  %5 = iconst int, 1
+  %6 = gep int *, %4, 0
+  store %6, %5
+  %7 = iconst int, 2
+  %8 = gep int *, %4, 4
+  store %8, %7
+  %9 = iconst int, 3
+  %10 = gep int *, %4, 8
+  store %10, %9
+  %11 = iconst int, 4
+  %12 = gep int *, %4, 12
+  store %12, %11
+  memset %13
+  %14 = gep int *, %13, 0
+  store %14, %1
+  %16 = gep int *, %13, 4
+  %18 = iconst int, 1
+  %19 = add int, %1, %18
+  store %16, %19
+  %21 = iconst int, 0
+  %23 = iconst int, 0
+  br ^4(%21, %23)
+^4(%47: int, %48: int):
+  %25 = iconst int, 4
+  %26 = icmp slt, bool, %48, %25
+  condbr %26, ^5, ^7
+^5:
+  %28 = bitcast int *, %3
+  %30 = sext long, %48
+  %31 = iconst long, 4
+  %32 = mul long, %30, %31
+  %33 = gep int *, %28, %32
+  %34 = load int, %33
+  %35 = add int, %47, %34
+  br ^6
+^6:
+  %37 = iconst int, 1
+  %38 = add int, %48, %37
+  br ^4(%35, %38)
+^7:
+  %40 = gep int *, %13, 0
+  %41 = load int, %40
+  %42 = add int, %47, %41
+  %43 = gep int *, %13, 4
+  %44 = load int, %43
+  %45 = add int, %42, %44
+  br ^2(%45)
+}
+function @_ZL4nameb(%1: bool) -> const char * static {
+^1(%1: bool):
+  br ^3
+^2(%11: const char *):
+  ret %11
+^3:
+  condbr %1, ^4, ^5
+^4:
+  %5 = addr const char [4] *, @.L.str.0
+  %6 = bitcast const char *, %5
+  br ^6(%6)
+^5:
+  %7 = addr const char [3] *, @.L.str.1
+  %8 = bitcast const char *, %7
+  br ^6(%8)
+^6(%9: const char *):
+  br ^2(%9)
+}
+function @main() -> int {
+^1:
+  br ^3
+^2(%50: int):
+  ret %50
+^3:
+  %1 = addr const char [7] *, @.L.str.2
+  %2 = bitcast const char *, %1
+  %3 = iconst int, 2
+  %4 = call @_ZL4picki(%3) : int
+  %5 = iconst int, 5
+  %6 = call @_ZL4picki(%5) : int
+  %7 = call @printf(%2, %4, %6) : int variadic
+  %8 = addr const char [6] *, @.L.str.3
+  %9 = bitcast const char *, %8
+  %10 = iconst int, 5
+  %11 = call @_ZL3sumi(%10) : double
+  %12 = call @printf(%9, %11) : int variadic
+  %13 = addr const char [13] *, @.L.str.4
+  %14 = bitcast const char *, %13
+  %15 = iconst int, 1
+  %16 = call @_ZL8classifyi(%15) : int
+  %17 = iconst int, 2
+  %18 = call @_ZL8classifyi(%17) : int
+  %19 = iconst int, 3
+  %20 = call @_ZL8classifyi(%19) : int
+  %21 = iconst int, 9
+  %22 = call @_ZL8classifyi(%21) : int
+  %23 = call @printf(%14, %16, %18, %20, %22) : int variadic
+  %24 = addr const char [4] *, @.L.str.5
+  %25 = bitcast const char *, %24
+  %26 = iconst int, 41
+  %27 = call @_ZL7escapedi(%26) : int
+  %28 = call @printf(%25, %27) : int variadic
+  %29 = addr const char [7] *, @.L.str.6
+  %30 = bitcast const char *, %29
+  %31 = iconst int, 4
+  %32 = call @_ZL7guardedi(%31) : int
+  %33 = iconst int, 2
+  %34 = neg int, %33
+  %35 = call @_ZL7guardedi(%34) : int
+  %36 = call @printf(%30, %32, %35) : int variadic
+  %37 = addr const char [4] *, @.L.str.7
+  %38 = bitcast const char *, %37
+  %39 = iconst int, 5
+  %40 = call @_ZL6arraysi(%39) : int
+  %41 = call @printf(%38, %40) : int variadic
+  %42 = addr const char [7] *, @.L.str.8
+  %43 = bitcast const char *, %42
+  %44 = iconst bool, 1
+  %45 = call @_ZL4nameb(%44) : const char *
+  %46 = iconst bool, 0
+  %47 = call @_ZL4nameb(%46) : const char *
+  %48 = call @printf(%43, %45, %47) : int variadic
+  %49 = iconst int, 0
+  br ^2(%49)
+}

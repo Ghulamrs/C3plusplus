@@ -371,12 +371,24 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         a_->ins("jmp", lbl(ssaBlockLabel(i.succ[1].block)));
         return;
     }
-    case ir::Op::Switch:
-        for (std::size_t s = 0; s < i.succ.size(); s++) if (i.succ[s].count != 0) { ssaUnsupported(i); return; }
+    case ir::Op::Switch: {
+        // A case edge with arguments goes through a stub of its own that writes them, after the ladder.
         ssaLoad(f, f.operand(i, 0));
-        for (std::size_t s = 1; s < i.succ.size(); s++) caseBranch(i.cases[s - 1], ssaBlockLabel(i.succ[s].block));
+        std::vector<std::string> stubs(i.succ.size());
+        for (std::size_t s = 1; s < i.succ.size(); s++) {
+            stubs[s] = i.succ[s].count == 0 ? ssaBlockLabel(i.succ[s].block) : label("ssacase", nextLabel());
+            caseBranch(i.cases[s - 1], stubs[s]);
+        }
+        ssaBranchArgs(f, i.succ[0]);
         a_->ins("jmp", lbl(ssaBlockLabel(i.succ[0].block)));
+        for (std::size_t s = 1; s < i.succ.size(); s++) {
+            if (i.succ[s].count == 0) continue;
+            a_->defLabel(stubs[s]);
+            ssaBranchArgs(f, i.succ[s]);
+            a_->ins("jmp", lbl(ssaBlockLabel(i.succ[s].block)));
+        }
         return;
+    }
     case ir::Op::Ret:
         if (i.count == 1 && ssaTypes_->type(f.returns)->isStructOrUnion()) {
             // A class's address: the walker's own return copies it out - through the result pointer or into registers.
@@ -417,6 +429,7 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
             if (pf.op == ir::Op::CatchPad && pf.k == -1)
                 for (std::size_t c = 0; c < pf.cases.size(); c++) exceptionRegion(begin, end, ssaBlockLabel(ir::BlockId(static_cast<std::uint32_t>(pf.cases[c]))));
             ssaStore(f, i.result);
+            ssaBranchArgs(f, i.succ[0]);
             a_->ins("jmp", lbl(ssaBlockLabel(i.succ[0].block)));
             return;
         }
@@ -433,6 +446,7 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         callSite(begin, end, land, pad.syms, indices, (pad.bits & 1) != 0, ++ssaRegionAt_, (pad.bits & 2) != 0);
         exceptionRegion(begin, end, land);
         ssaStore(f, i.result);
+        ssaBranchArgs(f, i.succ[0]);
         a_->ins("jmp", lbl(ssaBlockLabel(i.succ[0].block)));
         return;
     }

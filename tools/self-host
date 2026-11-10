@@ -21,7 +21,7 @@ capped() { perl -e 'alarm shift; exec @ARGV' "$@"; }      # perl, not timeout(1)
 cd "$ROOT" || exit 2
 make cxx3.exe > /dev/null || { echo "self-host: stage 0 did not build"; exit 1; }
 rm -rf "$OUT"; mkdir -p "$OUT/s0" "$OUT/s1" "$OUT/s2"
-SRCS=$(ls src/*.cpp src/parser/*.cpp src/backend/*.cpp src/optimizer/*.cpp src/sema/*.cpp src/syntax/*.cpp src/ir/*.cpp src/encoder/*.cpp)
+SRCS=$(ls src/*.cpp src/parser/*.cpp src/backend/*.cpp src/optimizer/*.cpp src/sema/*.cpp src/syntax/*.cpp src/ir/*.cpp src/ir/opt/*.cpp src/encoder/*.cpp)
 
 build() {   # $1 compiler, $2 output
     capped $((CAP * 4)) "$1" -nologo $FLAGS -I src -DCXX1_INCLUDE_DIR="\"$ROOT/lib\"" -DCXX1_CXX_INCLUDE_DIR="\"$ROOT/include\"" \

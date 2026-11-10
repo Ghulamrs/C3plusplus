@@ -153,6 +153,16 @@
     <ClCompile Include="..\src\encoder\Coff.cpp" />
     <ClCompile Include="..\src\encoder\X64Encode.cpp" />
     <ClCompile Include="..\src\encoder\X64Parse.cpp" />
+    <ClCompile Include="..\src\ir\Builder.cpp" />
+    <ClCompile Include="..\src\ir\BuilderCopy.cpp" />
+    <ClCompile Include="..\src\ir\CompleteObject.cpp" />
+    <ClCompile Include="..\src\ir\IrText.cpp" />
+    <ClCompile Include="..\src\ir\Lowering.cpp" />
+    <ClCompile Include="..\src\ir\MsShapes.cpp" />
+    <ClCompile Include="..\src\ir\Wrappers.cpp" />
+    <ClCompile Include="..\src\ir\opt\SsaDominators.cpp" />
+    <ClCompile Include="..\src\ir\opt\SsaOptimize.cpp" />
+    <ClCompile Include="..\src\ir\opt\SsaPromote.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\src\Abi.h" />
@@ -221,6 +231,10 @@
     <ClInclude Include="..\src\encoder\Assembler.h" />
     <ClInclude Include="..\src\encoder\Coff.h" />
     <ClInclude Include="..\src\encoder\X64.h" />
+    <ClInclude Include="..\src\ir\Builder.h" />
+    <ClInclude Include="..\src\ir\Ir.h" />
+    <ClInclude Include="..\src\ir\Lowering.h" />
+    <ClInclude Include="..\src\ir\opt\SsaOpt.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

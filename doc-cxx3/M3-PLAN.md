@@ -1588,3 +1588,46 @@ held to. **The rounds**, one lane each, in this order because each needs the one
 inliner, LICM, widening and unrolling (M3b.5). **Before its first commit**: review point 4 is a stop; Fable reads only on
 the user's word, so round 1 begins when the user asks for the review or waives it. **Waived 2026-11-10** - the
 user: "Waive, start round 1".
+
+**M3b.4, round 1, 2026-11-10: mem2reg on SSA.** From main `5ff21fc3` (M3b.3 closed, review point 4 waived), branch
+`m3b4-promote`. **The infrastructure**: `src/ir/opt/` (`SsaOpt.h`; every file `Ssa*.cpp`, no basename repeated under
+`src/`), named in the Makefile, `msvc/build.cmd`, `tools/self-host`, `tools/windows/self-host.cmd` and `ide/generate.py` -
+whose projects had never listed `src/ir` and now list it and `src/ir/opt` (regenerated on the Linux box). `ssaOptimize`
+runs each pass at its level on every function after `lowerSsa`'s lowering and its `verify`; under `-check=ssa` each pass
+is re-verified (`ir::verify(const Function &)`), the report gains `-check=ssa passes: level= allocas= scalars= promoted=
+failed=`, and a failure after a pass fails the compile; `-dump=ssa=<pass>` writes the IR after that pass, `-dump=ssa` still
+the lowered IR. The level is the Driver's after the volatile rule, so a file that writes `volatile` runs no SSA pass
+(round 6). The dominators are one implementation (`SsaDominators.cpp`, Cooper-Harvey-Kennedy, with frontiers): the
+verifier's copy was deleted and the verifier re-pointed at it. **mem2reg** (`SsaPromote.cpp`): an alloca in the entry of a
+scalar type (integer, pointer, floating; never a class or an array, never a call's `resultAlloca`) is promoted when every
+use is operand 0 of a `load` or `store` of exactly its type, none volatile, all in one funclet. Liveness per slot is
+computed backwards from its upward-exposed loads; **a slot live into a pad, or into any block an edge other than br,
+condbr, switch or an invoke's normal return reaches** (unwind, catchswitch, cleanupret, catchret) is not promoted - which
+is the plan's two exclusions at once: a slot live into a Microsoft funclet, and one an Itanium unwind edge reads. Parameters
+go on the iterated frontier of the stores, pruned by liveness, after the lowering's own; a block that would need one and is
+the entry or reached by such an edge refuses the slot. The renaming walks the dominator tree by an explicit stack and
+appends each incoming value to the jump's arguments - no phi; a path that never stored passes an `undef` made at its end,
+a load before any store becomes that `undef` in place, the blocks the entry does not reach have their loads made undefined
+and their stores dropped. The dead loads, stores and allocas leave their blocks, their values lose their type (so the
+selector gives them no slot), and the frame is compacted, `k` and `resultAlloca` renumbered. **The selector**
+(`SsaSelect.cpp`) took block arguments on br, condbr and catchret only: an invoke's normal edge now writes them (both
+ABIs), and a switch case with arguments goes through a stub after the ladder. **The probe**: `tests/cases/ssa-promote.cpp`
+(a merge, a loop, a switch with a fall-through, an invoke, an escaped address, an array, a class, a slot live into a
+handler; `.expected` is clang's, the Windows box's, and g++ agrees) and `ssa-promote.promote`, its
+`-O1 -dump=ssa=promote` on x86_64-linux, which `tests/ssa.sh` compares byte for byte there; `ssa.sh` now runs at
+`SSA_LEVEL` (default 1) and sums the counts. **Promoted**: Linux 9962 of 10984 scalar allocas (15475 frame objects);
+Windows 9731 of 11257 (15740) - the difference is the funclet rule. **Gated on Linux** (`~/m3b4r1`): ssa.sh at -O1 and -O2
+8888/8888 bodies and 973/973 compiler-written lowered, 0 failed after the lowering and 0 after promote, 761 passed (the
+probe's dump among them); run.sh 1102/0 at `-front=ssa -O1`, `-front=ssa -O2`, `-front=ssa`, -O2 and -O0; emit 3009/0 (no
+golden on that tree); typed 760/0, adapted 760/0 (1705 the same), coff 1492 objects 0 differ, c90 447/0, syntax 3/0;
+exclusions 127 sites 0/0 (no citation moved); comment cap 0; memory gate 44 raw pointers, `new` 1056 (unchanged);
+`ide/generate.py --check` clean. names.sh, overload.sh and win-structure.sh skip there (no clang). **On Windows**
+(`m3b4r1`, cl /W4 /WX clean): ssa.sh 9159 of 9163 bodies (the 4 left are M3b.3's, by name), 1130/1130 compiler-written,
+0 failed after promote; `winpass.sh` at `-front=ssa -O1` and `-front=ssa -O2` 0 differ in both spellings (729 gnu, 728
+masm the same, 340 refused as recorded). **The .text** (`bench.ps1 -Cases`, new: each case compiled with `-c`, dumpbin's
+.text summed; 740 cases): `-O1` 1,131,924 bytes; main's `-front=ssa -O1` 2,472,003; this round's 2,062,483 (-16.6% on
+main's, 655 cases smaller, 0 larger) - still 82% over `-O1`, the accumulator selector's slot per value, which the rounds
+after this one and selection are to close; recorded, not yet a gate. `src/` went from 89718 to 90188 lines (+470: +490 in
+`src/ir/opt/`, the verifier -53, the Driver +18, the selector +14). **Left**: the guard flags of 3.8 are live into the pads
+that test them and so stay in the frame until pads take block arguments; `tools/compilerpp-bench` not yet run against
+main's (owed at M3b.4's close); names.sh under the flag not re-run (no symbol moves: the pass changes no name).
