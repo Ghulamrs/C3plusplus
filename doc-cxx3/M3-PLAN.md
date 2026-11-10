@@ -1831,3 +1831,48 @@ condition known on an edge because the edge's own branch tested it (no edge fact
 results read below it refuse it (only parameters move); an unsigned divisor with no exact multiplier (the 33-bit `add`
 form Tms6747 uses is 32-bit only and not taken); divisions of 1- and 2-byte types; names.sh under the flag not re-run (no
 name moves).
+
+**M3b.4, round 6, 2026-11-11: `volatile` on SSA.** From main `67134e78`, branch `m3b4-volatile`. **What is recorded**
+(the record pattern of M3b.0, decided where the parser decides; no type change, so no name moves): the parser sets
+`isVolatile` on the object it accepted the word on - `Local` (a block's declarator through `VarNote`, a parameter),
+`GlobalSym` (the three object paths at file scope), `Member` (both data-member paths, bit-fields too) and
+`Type::StaticMember` - and `Resolved::isVolatile` on a name's record; the Typer copies it into `Resolution::isVolatile` on
+the name and on a local's `var` (`-check=typed` compares it). A data member's is read from its `Member`, which the lowering
+already holds. **No pointee is recorded**: every pointer or reference to a volatile type is still refused by name (the
+four `*-refused` cases), so none reaches the lowering. **The lowering** (`markVolatile`): the address of such an object -
+a local's or parameter's alloca, a global's or static member's `addr`, a member's gep - is marked, and `add` marks each gep
+and bitcast made from a marked address and sets `Inst::isVolatile` on every load and store through one (one place for
+every access, `load`, `store` and direct `add` alike). **The passes**: each already refused a volatile access; the driver
+now counts them before the passes and after each one, and under `-check=ssa` a pass other than cfg that changes the count
+fails the case (`-check=ssa volatile: lowered= kept=`, summed by `ssa.sh`). **Counts over the suite**: Linux 55 lowered, 55
+kept, at -O1 and -O2 (ssa-volatile 34, volatile-object 14, chrono-clocks 3, the four value-init and mem-init cases one
+each, array-parameter-name 0 - its `volatile` is in a comment); Windows 41, 41 (volatile-object does not compile there,
+its `.notarget`). **The selector** writes each as a memory access (`ssa-volatile.cpp -front=ssa -O1 -S` read on Linux:
+three stores of `w` and `never`, four accesses to `ticks` in `twice`). **The rule**: `Program::usesVolatile` keeps -O off
+only for the code generator - MIR's passes promote frame words to registers (`Locals::promote`) and forward loads
+(`foldLoads`, `forwardValues`) with no volatile bit, and a body the lowering leaves takes the Ast.h path - so in a unit that
+writes `volatile` the SSA passes run at the -O asked and the MIR passes at 0, under `-front=ssa`; on the Ast.h path nothing
+changed. The warning says "without the code generator's -O" under the flag. **The probe**: `tests/cases/ssa-volatile.cpp`
+(a local read three times, stores no load sees and one never read, an internal global read twice in a block, a member, a
+whole volatile object, an array, a volatile loop counter, a parameter, a const volatile; `.expected` the Windows box's
+clang, g++ agreeing) and `ssa-volatile.dead`, its `-O1 -dump=ssa=dead` on x86_64-linux: 34 volatile accesses as lowered,
+34 after dead. Every case that writes `volatile` prints its `.expected` at `-front=ssa -O1` and `-O2` (the seven that
+compile, and the probe). **Gated on `637d36d0`** (the code commit; this entry is the only change after it), each box from a
+clean ship and build. **Linux** (`~/m3b4r6`, built from nothing): ssa.sh at -O1 and -O2 8930/8930 bodies and 973/973
+compiler-written lowered, 0 failed after any pass, 774 passed (the probes' eight dumps among them, the seven older ones
+unchanged); run.sh 1108/0 at `-front=ssa -O1`, `-front=ssa -O2`, `-front=ssa`, -O2 and -O0; `make test`'s suites and
+gates one job each: emit 3033/0, typed 766/0, adapted 766/0 (1747 the same), coff 1504 objects 0 differ, c90 447/0, syntax
+3/0, names, overload and win-structure skip (no clang); exclusions 127 sites 0/0 (34 citations re-pointed - the parser
+lines moved); comment cap 0; memory gate 44 raw pointers, `new` 1056 (unchanged); `ide/generate.py --check` clean (no
+file added). The box's disk is full (40G, 235M free): the tree was shipped without `obj/` and test output, and each gate's
+output removed after it. **Windows** (cl /W4 /WX clean): ssa.sh at -O1 and -O2 9201 of 9205 bodies (M3b.3's four),
+1130/1130 compiler-written, 0 failed after any pass, 748 passed; `winpass.sh` at `-front=ssa -O1` and `-front=ssa -O2` gnu
+735 / masm 734 same, 0 differ, 340 refused as recorded. **The .text** (`bench.ps1 -Cases`): `-front=ssa -O1` over the 745
+cases round 5's table holds, 1,805,542 against 1,812,358 (-0.38%, 0 larger, 5 smaller: the five that write `volatile` and
+now take the SSA passes); over 740, 1,784,216 against main's `-O1` 1,131,924 (+57.6%, the selector's slot per value: round
+7); `-front=ssa -O2` 1,817,139 against round 5's 1,823,738 (-0.36%, the same five). `src/` went from 91900 to 91963 lines
+(+63: the lowering +16, the driver's count +18, the parser +14, the headers and the Typer +15). **Left**: a volatile local
+in a range-based `for`'s declaration or a handler is not marked (only a block's declarators - a condition's too - and a function's
+parameters go through `VarNote` with the word); `&v` still gives a plain `int *`, so an access through a pointer taken
+from a volatile object is not volatile (the sweep's first leftover: no pointee without the type system); MIR's passes stay
+off in such a unit until MIR carries the bit; names.sh under the flag not re-run (no name moves).
