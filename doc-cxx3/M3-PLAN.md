@@ -1681,3 +1681,48 @@ the constants made at a block's head and the folded `iconst`s whose dead operand
 +480, ConstArith.h +81, Constexpr -46, Lowering -6, the driver, header and pass table +34). **Left**: a `condbr` or
 `switch` on a constant and the dead operands of a fold (round 3); a constant passed with `undef` on another edge is not
 merged; no floating identity at all (each changes a NaN or a signed zero); names.sh under the flag not re-run (no name moves).
+
+**M3b.4, round 3, 2026-11-10: dead code, dead stores and CFG simplification on SSA.** From main `2ddc44e3`, branch
+`m3b4-dead`. **What may not move** (`fixedBlocks`, `SsaCfg.cpp`, one implementation both passes read): a pad, a Microsoft
+funclet's block, the target of any edge that is no jump (`isJumpEdge`: br, condbr, switch, an invoke's normal return -
+promote's test, now shared), and on the Microsoft try shape (a function with a catchswitch) every block a pad names by
+index (the dispatch catchpad's exits, a handler's try pad, the catchswitch's enclosing pad and last handler block). Such a
+block is never removed, merged or forwarded, its parameters never dropped. **cfg** (`SsaCfg.cpp`, rounds to a fixed point,
+each removing a block or a successor): a condbr or switch on an `iconst` becomes a br, as does a condbr whose two edges
+carry the same arguments to one block; the blocks neither the entry nor a fixed block reaches leave the body (so a pad
+no invoke reaches any more stays, with what it branches to); a block whose one edge in is a br from a block of its
+funclet merges into it, its parameters replaced by the br's arguments, its instructions keeping their source positions
+(the br's goes to the first that has none); an empty block that only jumps is forwarded - each edge in re-pointed, its
+parameters substituted - unless a parameter is read but by that jump. **dead** (`SsaDead.cpp`): first the stores to a
+frame object whose address only whole loads and stores of its type reach (none volatile, none a call's result object)
+that no load sees, by a backward liveness over every edge, unwind, catchswitch and catchret ones too; then liveness from
+the effects (stores, calls, invokes, pads, terminators, volatile accesses, traps, va_*, and a division whose divisor is
+not a constant other than 0 and -1) back through operands, and through an edge's argument to a live parameter; what is not
+live leaves its block, its value given no type, a block parameter dropped from the block and every edge into it, an
+alloca with it - the frame compacted by `dropFrameObjects`, promote's renumbering moved out of `SsaPromote.cpp` and shared.
+**The driver**: promote, fold, cfg, dead, then `refold`, `recfg`, `redead` once, only where cfg or dead changed the
+function (the limit: one repeat; each has its `-dump=ssa=` name). **The verifier** walks `f.blocks`, not the arena (a block
+merged or removed stays there), and refuses a branch to a block not in the body. **The probe**: `tests/cases/ssa-dead.cpp`
+(a branch and a switch on a folded constant, the arms and an unreached try they leave, a chain of gotos, empty arms, a
+loop-carried value nothing reads, a handler's slot stored twice before an invoke and after its last read; `.expected` is
+the Windows box's clang) with `ssa-dead.cfg` and `ssa-dead.dead`, its `-O1 -dump=ssa=cfg` and `=dead` on x86_64-linux,
+which `ssa.sh` compares (it sums `-check=ssa cfg:` and `dead:` now). **Counts over the suite** (both rounds summed),
+Linux: 69 constant branches and 4 two-way branches to one place made jumps, 213 blocks no root reaches removed, 20517
+merged, 2161 forwarded; 22525 instructions, 1 block parameter, 51 stores and 46 frame objects removed. Windows: 69, 4,
+139, 21086, 1025; 22654, 1, 79, 46. (Fold's own parameter rule leaves dead parameters little to do.)
+**Gated on `72aee10f`** (the code commit; this entry is the only change after it), each box from a clean ship and build.
+**Linux** (`~/m3b4r3`): ssa.sh at -O1 and -O2 8899/8899 bodies and 973/973 compiler-written lowered, 0 failed after any
+pass, 766 passed (the three probes among them); run.sh 1104/0 at `-front=ssa -O1`, `-front=ssa -O2`, `-front=ssa`, -O2 and
+-O0; `make test` to its end, rc 0; emit 3017/0 (no golden on that tree); typed 762/0, adapted 762/0 (1716 the same); coff
+1496 objects 0 differ; c90 447/0; syntax 3/0; exclusions 127 sites 0/0 (no citation moved); comment cap 0; memory gate 44
+raw pointers, `new` 1056 (unchanged); `ide/generate.py --check` clean after its regeneration there. **Windows** (cl /W4
+/WX clean): ssa.sh at -O1 and -O2 9170 of 9174 bodies (M3b.3's four), 1130/1130 compiler-written, 0 failed after any
+pass, 744 passed; `winpass.sh` at `-front=ssa -O1` and `-front=ssa -O2` gnu 731 / masm 730 same, 0 differ, 340 refused as
+recorded. **The .text** (`bench.ps1 -Cases`, 742 cases at `-front=ssa -O1`): 1,837,565 bytes; over the 741 both tables
+hold, 1,836,240 against round 2's 1,950,975 (-5.88%, 730 smaller, 4 larger) and over 740, 1,835,046 against main's `-O1`
+1,131,924 (+62.1%, the selector's slot per value: round 7). `src/` went from 90731 to 91267 lines (+536: SsaCfg +277,
+SsaDead +221, the verifier +5, the driver +12, the header +14, promote +3, the Driver's report +4). **Left**: a slot of a
+`const` scalar is not promoted (its loads read the unqualified type, so round 1's whole-type test refuses it; the probe
+writes `int mode`); a pad no invoke reaches is kept with its blocks (the rule above) though nothing can enter it; dead
+stores are found only in frame objects whose address goes nowhere else, at the block level; names.sh under the flag not
+re-run (no name moves).
