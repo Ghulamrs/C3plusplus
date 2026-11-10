@@ -1636,3 +1636,48 @@ main's (owed at M3b.4's close); names.sh under the flag not re-run (no symbol mo
 shows the SSA path 82% over main's `-O1` because the selector gives every value a frame slot - a cost no IR pass removes.
 **7. Selection** (`SsaSelect.cpp`): an SSA value used only inside its block, or carried as a block argument, is handed to
 the MIR allocator as a virtual register rather than a frame slot; M3b.4's .text gate is measured after it.
+
+**M3b.4, round 2, 2026-11-10: folding, copy propagation and algebraic simplification on SSA.** From main `50233ba5`,
+branch `m3b4-fold`. **The arithmetic is the constant evaluator's**: `Constexpr::fold`'s and `foldDouble`'s operator
+switches moved whole into `src/sema/ConstArith.h` (`integerArith` - 64 bits, wrapping, the division-by-zero and
+shift-range faults returned for the evaluator to refuse by its old messages; `floatingArith<F>` in F itself, a division
+by zero refused; `floatingCompare<F>`), and `Lowering::normalise`'s canonical form with them (`sema::canonical`); the
+evaluator calls them, so there is one copy. Where its types do not fit the IR: it reads operands as C values in 64 bits,
+the selector's register reads a value of up to four bytes as 32 - so the pass widens each operand from the low 32 bits
+by the operator's signedness before the call and canonicalises the result by its type; and the evaluator folds the least
+value divided by -1 (a wrap) where `idiv` traps, so the pass refuses that itself. **The pass** (`SsaFold.cpp`, after
+`promote` at -O1): def-use chains and a worklist of instructions and of blocks with parameters, over the blocks the entry
+reaches. A folded instruction becomes an `iconst` or `fconst` in place (its operands are left for round 3's dead code); a
+simplified one is replaced by its operand and leaves its block, its value given no type. Folded: integer arithmetic,
+`neg`, `not`, `icmp`, the conversions by their two types (as `genConversion` reads them, whatever the operator: integer to
+integer canonicalised, never to a `bool` that would hold other than 0 or 1; integer to float or double; float and double
+either way; floating to integer only for a value the destination holds); `fadd`..`fdiv`, `fneg`, `fcmp` on float and
+double, never x87. **Identities**: x+0, x-0, x|0, x^0, shifts by 0, x*1, x*0, x-x, x^x, x&x, x|x, `neg`/`not`/`fneg` twice,
+an integer or pointer compared with itself; a replacement only where the operand has the result's exact type (the
+verifier holds a branch argument to its parameter's type). **Copies**: a conversion of a type to itself. **Block
+arguments**: a parameter every edge passes one value for, or itself, is that value when its definition strictly
+dominates the block, or one `iconst` made at the block's head when the edges pass one constant; the parameter leaves the
+block and every edge's arguments. Not touched: a pad, a block an invoke's unwind edge reaches, the entry, a volatile
+access, a `condbr` on a constant (round 3; its condition is folded). **Left to run** ("kept"): division by zero, the least
+value by -1, a shift past the type's width, a floating operation with a NaN in or out (the target's NaN, not the host's).
+**Counts over the suite** (`-check=ssa fold:`, summed by `ssa.sh`), Linux: 7473 constants, 69 comparisons, 4923
+conversions, 16 floating, 650 identities, 10913 copies, 5350 block arguments one value, 6 left to run; Windows: 7423,
+69, 5093, 18, 758, 10768, 5787, 6. **The probe**: `tests/cases/ssa-fold.cpp` (constants through promoted locals, wraps,
+compares signed and unsigned, conversions, floating, the identities, the three edge shapes, and the three refused
+divisions and the NaN on a path never taken; `.expected` is the Windows box's clang) and `ssa-fold.fold`, its `-O1
+-dump=ssa=fold` on x86_64-linux; `ssa.sh` now compares every `<case>.<pass>` probe.
+**Gated on `de1b74a5`** (the code commit; this entry is the only change after it), each box from a clean ship and build.
+**Linux** (`~/m3b4r2`): ssa.sh at -O1 and -O2 8893/8893 bodies and 973/973 compiler-written lowered, 0 failed after any
+pass, 763 passed (both probes among them); run.sh 1103/0 at `-front=ssa -O1`, `-front=ssa -O2`, `-front=ssa`, -O2 and
+-O0; `make test` to its end, rc 0; emit 3013/0 (no golden on that tree); typed 761/0, adapted 761/0 (1710 the same); coff
+1494 objects 0 differ; c90 447/0; syntax 3/0; exclusions 127 sites 0/0 (one citation re-pointed, `Constexpr.cpp:732` to
+`:718`); comment cap 0; memory gate 44 raw pointers, `new` 1056 (unchanged); `ide/generate.py --check` clean after its
+regeneration there. **Windows** (cl /W4 /WX clean): ssa.sh at -O1 and -O2 9164 of 9168 bodies (M3b.3's four), 1130/1130
+compiler-written, 0 failed after any pass, 743 passed; `winpass.sh` at `-front=ssa -O1` and `-front=ssa -O2` gnu 730 /
+masm 729 same, 0 differ, 340 refused as recorded. **The .text** (`bench.ps1 -Cases`, 741 cases at `-front=ssa -O1`):
+1,950,975 bytes; over the 740 both tables hold, 1,949,469 against round 1's 2,062,483 (-5.48%, 677 smaller, 12 larger -
+the constants made at a block's head and the folded `iconst`s whose dead operands round 3 removes) and against main's
+`-O1` 1,131,924 (+72.2%, the selector's slot per value: round 7). `src/` went from 90188 to 90731 lines (+543: SsaFold
++480, ConstArith.h +81, Constexpr -46, Lowering -6, the driver, header and pass table +34). **Left**: a `condbr` or
+`switch` on a constant and the dead operands of a fold (round 3); a constant passed with `undef` on another edge is not
+merged; no floating identity at all (each changes a NaN or a signed zero); names.sh under the flag not re-run (no name moves).
