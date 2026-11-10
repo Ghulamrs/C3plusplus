@@ -160,6 +160,8 @@
     <ClCompile Include="..\src\ir\Lowering.cpp" />
     <ClCompile Include="..\src\ir\MsShapes.cpp" />
     <ClCompile Include="..\src\ir\Wrappers.cpp" />
+    <ClCompile Include="..\src\ir\opt\SsaCfg.cpp" />
+    <ClCompile Include="..\src\ir\opt\SsaDead.cpp" />
     <ClCompile Include="..\src\ir\opt\SsaDominators.cpp" />
     <ClCompile Include="..\src\ir\opt\SsaFold.cpp" />
     <ClCompile Include="..\src\ir\opt\SsaOptimize.cpp" />

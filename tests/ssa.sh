@@ -4,7 +4,8 @@
 # case that does not compile for this host - a .error case, or one written for another target - has nothing to hold.
 # The summary counts what was lowered and what was left outside, by reason, which is the measure of the subset; then
 # the compiler-written functions the Builder lowered (M3b.3), by kind, and what it left, by kind and reason. At SSA_LEVEL
-# (default 1) the SSA passes run and are verified after each (M3b.4): the allocas promoted and the folds are summed.
+# (default 1) the SSA passes run and are verified after each (M3b.4): the allocas promoted, the folds, the CFG
+# simplifications and the dead code removed are summed.
 CXX1="${CXX1:-./cxx3.exe}"
 SSA_LEVEL="${SSA_LEVEL:-1}"
 out=tests/out-ssa
@@ -36,9 +37,13 @@ cat "$out"/*.ssa | grep -- '^-check=ssa passes:' | tr ' ' '\n' | grep = | tr '='
     awk '{s[$1]+=$2} END {printf "ssa.sh: at -O%d, %d frame objects, %d of a scalar type, %d promoted, %d failed after a pass\n", ENVIRON["SSA_LEVEL"], s["allocas"], s["scalars"], s["promoted"], s["failed"]}'
 cat "$out"/*.ssa | grep -- '^-check=ssa fold:' | tr ' ' '\n' | grep = | tr '=' ' ' |
     awk '{s[$1]+=$2} END {printf "ssa.sh: fold made %d constants, %d comparisons, %d conversions, %d floating, %d identities, %d copies, %d block arguments one value, %d left to run\n", s["constants"], s["compares"], s["casts"], s["floating"], s["identities"], s["copies"], s["arguments"], s["kept"]}'
+cat "$out"/*.ssa | grep -- '^-check=ssa cfg:' | tr ' ' '\n' | grep = | tr '=' ' ' |
+    awk '{s[$1]+=$2} END {printf "ssa.sh: cfg made %d constant branches and %d two-way branches to one place jumps, removed %d blocks no root reaches, merged %d, forwarded %d\n", s["constant"], s["same"], s["unreachable"], s["merged"], s["forwarded"]}'
+cat "$out"/*.ssa | grep -- '^-check=ssa dead:' | tr ' ' '\n' | grep = | tr '=' ' ' |
+    awk '{s[$1]+=$2} END {printf "ssa.sh: dead removed %d instructions, %d block parameters, %d stores no load sees, %d frame objects\n", s["insts"], s["params"], s["stores"], s["allocas"]}'
 # The probes of the passes: <case>.<pass> is the case's -O1 -dump=ssa=<pass> on x86_64-linux, compared byte for byte.
 if [ "$(uname -s)" = Linux ]; then
-    for d in tests/cases/*.promote tests/cases/*.fold; do
+    for d in tests/cases/*.promote tests/cases/*.fold tests/cases/*.cfg tests/cases/*.dead; do
         [ -f "$d" ] || continue
         p=${d##*.}
         if "$CXX1" -nologo -O1 -dump=ssa=$p -S "${d%.*}.cpp" -o /dev/null 2>/dev/null | cmp -s - "$d"; then pass=$((pass + 1))

@@ -95,6 +95,8 @@
 		961A53D2E0F1326671FC0E4D /* Lowering.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F30A2D9F602A679F671E4C84 /* Lowering.cpp */; };
 		E9A07F79389C184FD7113B58 /* MsShapes.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B43907DAC2B080BF4BCE9741 /* MsShapes.cpp */; };
 		A1961D65A4572E1DF05EC56A /* Wrappers.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 626E53A1F87F55A8921C6273 /* Wrappers.cpp */; };
+		E8237E0E2452714EFA0E8193 /* SsaCfg.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 80B617ABDCFC48359272B259 /* SsaCfg.cpp */; };
+		89CC4663CC33F2CC26D10D3D /* SsaDead.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7164C00DBFC9404A5E76C28F /* SsaDead.cpp */; };
 		C092DF43A4C4AB15906920CC /* SsaDominators.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 74B5F18801AA2F0623590A74 /* SsaDominators.cpp */; };
 		4C27669FCF042F8DF0259CF8 /* SsaFold.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 605A55319723F1F12959C765 /* SsaFold.cpp */; };
 		169A79BB74CFCA4C8769D222 /* SsaOptimize.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6C4F997C57358B2FEF81A5CD /* SsaOptimize.cpp */; };
@@ -191,6 +193,8 @@
 		F30A2D9F602A679F671E4C84 /* Lowering.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Lowering.cpp; path = "../src/ir/Lowering.cpp"; sourceTree = "<group>"; };
 		B43907DAC2B080BF4BCE9741 /* MsShapes.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MsShapes.cpp; path = "../src/ir/MsShapes.cpp"; sourceTree = "<group>"; };
 		626E53A1F87F55A8921C6273 /* Wrappers.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Wrappers.cpp; path = "../src/ir/Wrappers.cpp"; sourceTree = "<group>"; };
+		80B617ABDCFC48359272B259 /* SsaCfg.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaCfg.cpp; path = "../src/ir/opt/SsaCfg.cpp"; sourceTree = "<group>"; };
+		7164C00DBFC9404A5E76C28F /* SsaDead.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaDead.cpp; path = "../src/ir/opt/SsaDead.cpp"; sourceTree = "<group>"; };
 		74B5F18801AA2F0623590A74 /* SsaDominators.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaDominators.cpp; path = "../src/ir/opt/SsaDominators.cpp"; sourceTree = "<group>"; };
 		605A55319723F1F12959C765 /* SsaFold.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaFold.cpp; path = "../src/ir/opt/SsaFold.cpp"; sourceTree = "<group>"; };
 		6C4F997C57358B2FEF81A5CD /* SsaOptimize.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaOptimize.cpp; path = "../src/ir/opt/SsaOptimize.cpp"; sourceTree = "<group>"; };
@@ -394,6 +398,8 @@
 		6D8B1E60921AC618C831C31A /* src/ir/opt */ = {
 			isa = PBXGroup;
 			children = (
+				80B617ABDCFC48359272B259 /* SsaCfg.cpp */,
+				7164C00DBFC9404A5E76C28F /* SsaDead.cpp */,
 				74B5F18801AA2F0623590A74 /* SsaDominators.cpp */,
 				605A55319723F1F12959C765 /* SsaFold.cpp */,
 				9BC6EF54A82E7277D85CA5A3 /* SsaOpt.h */,
@@ -654,6 +660,8 @@
 				961A53D2E0F1326671FC0E4D /* Lowering.cpp in Sources */,
 				E9A07F79389C184FD7113B58 /* MsShapes.cpp in Sources */,
 				A1961D65A4572E1DF05EC56A /* Wrappers.cpp in Sources */,
+				E8237E0E2452714EFA0E8193 /* SsaCfg.cpp in Sources */,
+				89CC4663CC33F2CC26D10D3D /* SsaDead.cpp in Sources */,
 				C092DF43A4C4AB15906920CC /* SsaDominators.cpp in Sources */,
 				4C27669FCF042F8DF0259CF8 /* SsaFold.cpp in Sources */,
 				169A79BB74CFCA4C8769D222 /* SsaOptimize.cpp in Sources */,

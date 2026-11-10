@@ -6,19 +6,27 @@ namespace ir {
 
 namespace {
 
-struct Pass { char name[16]; int level; };
+struct Pass { char name[16]; int level; bool again; };
 
-// In the order they run; `run` below dispatches by the index here.
+// In the order they run; `run` below dispatches by the index here. The passes marked `again` run a second time, once,
+// only where cfg or dead changed the function the first time: what a removed edge or value leaves to fold.
 const Pass kPasses[] = {
-    { "promote", 1 },
-    { "fold", 1 },
+    { "promote", 1, false },
+    { "fold", 1, false },
+    { "cfg", 1, false },
+    { "dead", 1, false },
+    { "refold", 1, true },
+    { "recfg", 1, true },
+    { "redead", 1, true },
 };
 
-void run(std::size_t pass, Function &f, const TypeTable &types, const Target &target, PassLog &log) {
+bool run(std::size_t pass, Function &f, const TypeTable &types, const Target &target, PassLog &log) {
     switch (pass) {
-    case 0: promote(f, types, log); break;
-    case 1: fold(f, types, target, log); break;
-    default: break;
+    case 0: promote(f, types, log); return false;
+    case 1: case 4: fold(f, types, target, log); return false;
+    case 2: case 5: return cfg(f, log);
+    case 3: case 6: return dead(f, log);
+    default: return false;
     }
 }
 
@@ -30,9 +38,13 @@ bool isSsaPass(const std::string &name) {
 }
 
 void ssaOptimize(Function &f, int level, const TypeTable &types, const Target &target, PassLog &log) {
+    bool changed = false;
     for (std::size_t k = 0; k < sizeof kPasses / sizeof kPasses[0]; k++) {
         const Pass &p = kPasses[k];
-        if (level >= p.level) run(k, f, types, target, log);
+        if (level >= p.level && (!p.again || changed)) {
+            const bool c = run(k, f, types, target, log);
+            if (!p.again) changed = changed || c;
+        }
         if (log.check) {
             std::string faults;
             if (verify(f, types, faults) != 0) { log.failed++; log.faults += "  after " + std::string(p.name) + ":\n" + faults; }

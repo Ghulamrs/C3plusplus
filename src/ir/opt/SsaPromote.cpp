@@ -104,8 +104,7 @@ struct Promoter {
             for (std::size_t s = 0; s < i.succ.size(); s++) {
                 const std::uint32_t to = i.succ[s].block.v;
                 if (to == 0 || to >= f.blockArena.size()) continue;
-                const bool jump = i.op == Op::Br || i.op == Op::CondBr || i.op == Op::Switch || (i.op == Op::Invoke && s == 0);
-                if (!jump) { noParam[to] = 1; padIn[to] = 1; }
+                if (!isJumpEdge(i, s)) { noParam[to] = 1; padIn[to] = 1; }
             }
         }
     }
@@ -286,24 +285,28 @@ struct Promoter {
             }
             list.swap(kept);
         }
-        std::vector<long long> renumber(f.frame.size(), -1);
         std::vector<char> gone(f.frame.size(), 0);
         for (const Slot &s : slots) if (!s.bad) gone[static_cast<std::size_t>(f.inst(f.value(s.addr).def).k)] = 1;
-        std::vector<AllocaInfo> frame;
-        for (std::size_t k = 0; k < f.frame.size(); k++) {
-            if (gone[k]) continue;
-            renumber[k] = static_cast<long long>(frame.size());
-            frame.push_back(f.frame[k]);
-        }
-        f.frame.swap(frame);
-        for (std::size_t i = 1; i < f.insts.size(); i++)
-            if (f.insts[i].op == Op::Alloca && !dead[i]) f.insts[i].k = renumber[static_cast<std::size_t>(f.insts[i].k)];
-        for (std::size_t c = 1; c < f.calls.size(); c++)
-            if (f.calls[c].resultAlloca >= 0) f.calls[c].resultAlloca = static_cast<int>(renumber[static_cast<std::size_t>(f.calls[c].resultAlloca)]);
+        dropFrameObjects(f, gone);
     }
 };
 
 }   // namespace
+
+void dropFrameObjects(Function &f, const std::vector<char> &gone) {
+    std::vector<long long> renumber(f.frame.size(), -1);
+    std::vector<AllocaInfo> frame;
+    for (std::size_t k = 0; k < f.frame.size(); k++) {
+        if (gone[k]) continue;
+        renumber[k] = static_cast<long long>(frame.size());
+        frame.push_back(f.frame[k]);
+    }
+    f.frame.swap(frame);
+    for (InstId id : f.block(f.entry).insts)
+        if (f.insts[id.v].op == Op::Alloca) f.insts[id.v].k = renumber[static_cast<std::size_t>(f.insts[id.v].k)];
+    for (std::size_t c = 1; c < f.calls.size(); c++)
+        if (f.calls[c].resultAlloca >= 0) f.calls[c].resultAlloca = static_cast<int>(renumber[static_cast<std::size_t>(f.calls[c].resultAlloca)]);
+}
 
 void promote(Function &f, const TypeTable &types, PassLog &log) {
     if (!f.entry.valid()) return;

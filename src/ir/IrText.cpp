@@ -153,9 +153,12 @@ struct Verifier {
     }
 
     void run() {
-        const std::size_t n = f.blockArena.size();
+        // The blocks of the body: one a pass removed or merged away stays in the arena, out of `blocks`.
         defBlock.assign(f.values.size(), 0);
-        for (std::uint32_t bi = 1; bi < n; bi++) {
+        std::vector<char> inBody(f.blockArena.size(), 0);
+        for (BlockId blk : f.blocks) {
+            const std::uint32_t bi = blk.v;
+            inBody[bi] = 1;
             const Block &b = f.blockArena[bi];
             for (ValueId p : b.params) defBlock[p.v] = bi;
             for (InstId id : b.insts) if (f.inst(id).result.valid()) defBlock[f.inst(id).result.v] = bi;
@@ -164,11 +167,13 @@ struct Verifier {
         for (ValueId p : f.params) defBlock[p.v] = f.entry.v;
         if (f.sret.valid()) defBlock[f.sret.v] = f.entry.v;
         if (!f.entry.valid()) { fault(BlockId(), "no entry block"); return; }
-        for (std::uint32_t bi = 1; bi < n; bi++) {
+        for (BlockId bid : f.blocks) {
+            const std::uint32_t bi = bid.v;
             const Block &b = f.blockArena[bi];
-            const BlockId bid(bi);
             if (!b.term.valid()) { fault(bid, "no terminator"); continue; }
             if (!isTerminator(f.inst(b.term).op)) fault(bid, "ends in a '" + opName(f.inst(b.term).op) + "', which is no terminator");
+            for (const Succ &s : f.inst(b.term).succ)
+                if (s.block.v < inBody.size() && !inBody[s.block.v]) fault(bid, "a branch to " + blockName(s.block) + ", which is not in the body");
             for (InstId id : b.insts) {
                 const Inst &i = f.inst(id);
                 if (isTerminator(i.op)) fault(bid, "a '" + opName(i.op) + "' inside the block");

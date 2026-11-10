@@ -1,0 +1,168 @@
+function @_ZL8mayThrowi(%1: int) -> int static {
+^1(%1: int):
+  %4 = iconst int, 0
+  %5 = icmp slt, bool, %1, %4
+  condbr %5, ^4, ^5
+^4:
+  %7 = iconst unsigned long, 4
+  %8 = call @__cxa_allocate_exception(%7) : void *
+  %9 = bitcast int *, %8
+  store %9, %1
+  %10 = addr void *, @_ZTIi
+  %11 = null void *,
+  call @__cxa_throw(%8, %10, %11) : none
+  unreachable
+^5:
+  %13 = iconst int, 1
+  %14 = add int, %1, %13
+  ret %14
+}
+function @_ZL8constanti(%1: int) -> int static {
+^1(%1: int):
+  %5 = alloca int *, align 4 ; int r
+  %11 = iconst int, 3
+  %12 = mul int, %1, %11
+  store %5, %12
+  %22 = load int, %5
+  %23 = iconst int, 30
+  %24 = add int, %22, %23
+  store %5, %24
+  br ^13
+^13:
+  %47 = load int, %5
+  ret %47
+^15(%32: void *, %33: int):
+  catchpad [@_ZTIi] own 1
+  %35 = iconst int, 1
+  %36 = icmp eq, bool, %33, %35
+  condbr %36, ^17, ^18
+^17:
+  %37 = call @__cxa_begin_catch(%32) : void *
+  %38 = bitcast int *, %37
+  %40 = load int, %38
+  %41 = addr const char [10] *, @.L.str.0
+  %42 = bitcast const char *, %41
+  %46 = invoke @printf(%42, %40) : int variadic, ^20, ^19
+^18:
+  call @_Unwind_Resume(%32) : none
+  unreachable
+^19(%44: void *, %45: int):
+  cleanuppad own 0
+  call @__cxa_end_catch() : none
+  call @_Unwind_Resume(%44) : none
+  unreachable
+^20:
+  call @__cxa_end_catch() : none
+  br ^13
+}
+function @_ZL6unusedii(%1: int, %3: int) -> int static {
+^1(%1: int, %3: int):
+  %14 = iconst int, 0
+  %16 = iconst int, 0
+  br ^4(%14, %16)
+^4(%39: int, %40: int):
+  %19 = icmp slt, bool, %40, %3
+  condbr %19, ^5, ^7
+^5:
+  %27 = add int, %39, %40
+  %29 = iconst int, 1
+  %30 = add int, %40, %29
+  br ^4(%27, %30)
+^7:
+  %36 = add int, %39, %1
+  ret %36
+}
+function @_ZL7handleri(%1: int) -> int static {
+^1(%1: int):
+  %2 = alloca int *, align 4 ; int x
+  store %2, %1
+  %3 = alloca int *, align 4 ; int seen
+  %5 = iconst int, 2
+  store %3, %5
+  %6 = load int, %2
+  %9 = invoke @_ZL8mayThrowi(%6) : int, ^6, ^5
+^4:
+  %28 = load int, %2
+  %29 = iconst int, 5
+  %30 = add int, %28, %29
+  ret %30
+^5(%7: void *, %8: int):
+  catchpad [@_ZTIi] own 1
+  %14 = iconst int, 1
+  %15 = icmp eq, bool, %8, %14
+  condbr %15, ^8, ^9
+^6:
+  store %3, %9
+  %10 = load int, %3
+  %11 = invoke @_ZL8mayThrowi(%10) : int, ^7, ^5
+^7:
+  br ^4
+^8:
+  %16 = call @__cxa_begin_catch(%7) : void *
+  %17 = bitcast int *, %16
+  %19 = load int, %17
+  %20 = addr const char [20] *, @.L.str.1
+  %21 = bitcast const char *, %20
+  %23 = load int, %3
+  %26 = invoke @printf(%21, %19, %23) : int variadic, ^11, ^10
+^9:
+  call @_Unwind_Resume(%7) : none
+  unreachable
+^10(%24: void *, %25: int):
+  cleanuppad own 0
+  call @__cxa_end_catch() : none
+  call @_Unwind_Resume(%24) : none
+  unreachable
+^11:
+  call @__cxa_end_catch() : none
+  br ^4
+}
+function @_ZL5chaini(%1: int) -> int static {
+^1(%1: int):
+  %6 = iconst int, 100
+  %7 = icmp sgt, bool, %1, %6
+  condbr %7, ^7(%1), ^5
+^5:
+  %9 = iconst int, 1
+  %10 = add int, %1, %9
+  br ^7(%10)
+^7(%16: int):
+  %12 = iconst int, 2
+  %13 = mul int, %16, %12
+  ret %13
+}
+function @main() -> int {
+^1:
+  %1 = addr const char [7] *, @.L.str.2
+  %2 = bitcast const char *, %1
+  %3 = iconst int, 4
+  %4 = call @_ZL8constanti(%3) : int
+  %6 = iconst int, -2
+  %7 = call @_ZL8constanti(%6) : int
+  %8 = call @printf(%2, %4, %7) : int variadic
+  %9 = addr const char [7] *, @.L.str.3
+  %10 = bitcast const char *, %9
+  %11 = iconst int, 3
+  %12 = iconst int, 4
+  %13 = call @_ZL6unusedii(%11, %12) : int
+  %15 = iconst int, -1
+  %16 = iconst int, 0
+  %17 = call @_ZL6unusedii(%15, %16) : int
+  %18 = call @printf(%10, %13, %17) : int variadic
+  %19 = addr const char [7] *, @.L.str.4
+  %20 = bitcast const char *, %19
+  %21 = iconst int, 2
+  %22 = call @_ZL7handleri(%21) : int
+  %24 = iconst int, -7
+  %25 = call @_ZL7handleri(%24) : int
+  %26 = call @printf(%20, %22, %25) : int variadic
+  %27 = addr const char [7] *, @.L.str.5
+  %28 = bitcast const char *, %27
+  %29 = iconst int, 5
+  %30 = call @_ZL5chaini(%29) : int
+  %31 = iconst int, 200
+  %32 = call @_ZL5chaini(%31) : int
+  %33 = call @printf(%28, %30, %32) : int variadic
+  %34 = iconst int, 0
+  ret %34
+}
