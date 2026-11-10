@@ -228,7 +228,7 @@ is left:
   argument is taken as a value. `src/parser/ParserInit.cpp:377`
 - **a `constexpr` object the object fold cannot build** - an array of class
   objects, a pointer or reference member (an address), a bit-field; the fold
-  holds an object as its scalar leaves. `src/sema/Constexpr.cpp:732`,
+  holds an object as its scalar leaves. `src/sema/Constexpr.cpp:718`,
   `tests/cases/constexpr-object-array-refused.cpp`; **statements in a `constexpr`
   constructor's body** are C++14. `src/parser/ParserConst.cpp:121`
 - **befriending one member function of another class** - `src/parser/ParserType.cpp:813`

@@ -1,6 +1,7 @@
 // sema::Constexpr - see Constexpr.h.
 
 #include "Constexpr.h"
+#include "ConstArith.h"
 #include "../parser/Parser.h"
 #include "../parser/ParserInternal.h"
 #include "../Mangle.h"
@@ -13,6 +14,30 @@
 #include <cstring>
 
 namespace sema {
+
+// The arithmetic of a binary operator (ConstArith.h); `&&` and `||` are the fold's own, and come back as Add, unused.
+static Arith arithOf(BinOp op) {
+    switch (op) {
+    case BinOp::Add: return Arith::Add;
+    case BinOp::Sub: return Arith::Sub;
+    case BinOp::Mul: return Arith::Mul;
+    case BinOp::Div: return Arith::Div;
+    case BinOp::Mod: return Arith::Mod;
+    case BinOp::Shl: return Arith::Shl;
+    case BinOp::Shr: return Arith::Shr;
+    case BinOp::BitAnd: return Arith::And;
+    case BinOp::BitOr: return Arith::Or;
+    case BinOp::BitXor: return Arith::Xor;
+    case BinOp::Eq: return Arith::Eq;
+    case BinOp::Ne: return Arith::Ne;
+    case BinOp::Lt: return Arith::Lt;
+    case BinOp::Le: return Arith::Le;
+    case BinOp::Gt: return Arith::Gt;
+    case BinOp::Ge: return Arith::Ge;
+    case BinOp::LAnd: case BinOp::LOr: break;
+    }
+    return Arith::Add;
+}
 
 // The frame an object fold outside any call stands in, so a temporary it builds has a slot to live in.
 static const int kScratchFrame = INT_MIN;
@@ -185,10 +210,10 @@ bool Constexpr::fold(const Expr &e, long long *out, std::size_t pos) const {
         }
         if (!fold(u->operand(), &v, pos)) return false;
         switch (u->op()) {
-        case '-': *out = static_cast<long long>(0ULL - static_cast<unsigned long long>(v)); return true;
+        case '-': return integerArith(Arith::Neg, v, 0, false, out) == ArithFault::None;
         case '+': *out = v; return true;
         case '!': *out = !v; return true;
-        case '~': *out = ~v; return true;
+        case '~': return integerArith(Arith::Not, v, 0, false, out) == ArithFault::None;
         default: return false;
         }
     }
@@ -208,60 +233,21 @@ bool Constexpr::fold(const Expr &e, long long *out, std::size_t pos) const {
             long double dl = 0, dr = 0;
             if (!foldFloating(b->lhs(), &dl) || !foldFloating(b->rhs(), &dr))
                 return false;
-            switch (b->op()) {
-            case BinOp::Eq: *out = (dl == dr); return true;
-            case BinOp::Ne: *out = (dl != dr); return true;
-            case BinOp::Lt: *out = (dl <  dr); return true;
-            case BinOp::Le: *out = (dl <= dr); return true;
-            case BinOp::Gt: *out = (dl >  dr); return true;
-            case BinOp::Ge: *out = (dl >= dr); return true;
-            case BinOp::LAnd: *out = (dl != 0 && dr != 0); return true;
-            case BinOp::LOr:  *out = (dl != 0 || dr != 0); return true;
-            default: return false;
-            }
+            if (b->op() == BinOp::LAnd) { *out = (dl != 0 && dr != 0); return true; }
+            if (b->op() == BinOp::LOr) { *out = (dl != 0 || dr != 0); return true; }
+            return floatingCompare(arithOf(b->op()), dl, dr, out);
         }
         if (!fold(b->lhs(), &l, pos) || !fold(b->rhs(), &r, pos)) return false;
 
         const Type *t = b->lhs().type();
-        bool uns = t->isInteger() && !t->isSigned(p_.target_);
-        unsigned long long ul = static_cast<unsigned long long>(l);
-        unsigned long long ur = static_cast<unsigned long long>(r);
-
-        switch (b->op()) {
-        case BinOp::Add: *out = static_cast<long long>(ul + ur); return true;
-        case BinOp::Sub: *out = static_cast<long long>(ul - ur); return true;
-        case BinOp::Mul: *out = static_cast<long long>(ul * ur); return true;
-        case BinOp::Div:
-        case BinOp::Mod:
-            if (r == 0)
-                p_.src_.fail(pos, "division by zero in a constant expression");
-            if (!uns && ul == (1ULL << 63) && r == -1) {
-                *out = (b->op() == BinOp::Div) ? l : 0;
-                return true;
-            }
-            if (b->op() == BinOp::Div)
-                *out = uns ? static_cast<long long>(ul / ur) : l / r;
-            else
-                *out = uns ? static_cast<long long>(ul % ur) : l % r;
-            return true;
-        case BinOp::Shl:
-        case BinOp::Shr:
-            if (r < 0 || r >= 64)
-                p_.src_.fail(pos, "shift count out of range in a constant expression");
-            if (b->op() == BinOp::Shl) *out = static_cast<long long>(ul << r);
-            else *out = uns ? static_cast<long long>(ul >> r) : (l >> r);
-            return true;
-        case BinOp::BitAnd: *out = l & r; return true;
-        case BinOp::BitOr:  *out = l | r; return true;
-        case BinOp::BitXor: *out = l ^ r; return true;
-        case BinOp::Eq: *out = (l == r); return true;
-        case BinOp::Ne: *out = (l != r); return true;
-        case BinOp::Lt: *out = uns ? (ul <  ur) : (l <  r); return true;
-        case BinOp::Le: *out = uns ? (ul <= ur) : (l <= r); return true;
-        case BinOp::Gt: *out = uns ? (ul >  ur) : (l >  r); return true;
-        case BinOp::Ge: *out = uns ? (ul >= ur) : (l >= r); return true;
-        case BinOp::LAnd: *out = (l && r); return true;
-        case BinOp::LOr:  *out = (l || r); return true;
+        const bool uns = t->isInteger() && !t->isSigned(p_.target_);
+        if (b->op() == BinOp::LAnd) { *out = (l && r); return true; }
+        if (b->op() == BinOp::LOr) { *out = (l || r); return true; }
+        switch (integerArith(arithOf(b->op()), l, r, uns, out)) {
+        case ArithFault::None: return true;
+        case ArithFault::DivZero: p_.src_.fail(pos, "division by zero in a constant expression");
+        case ArithFault::Shift: p_.src_.fail(pos, "shift count out of range in a constant expression");
+        case ArithFault::NotArith: break;
         }
         return false;
     }
@@ -840,26 +826,16 @@ bool Constexpr::foldDouble(const Expr &e, const Target &target, long double *out
         bool asDouble = bk == Kind::Double ||
                         (bk == Kind::LongDouble && !b->type()->isX87(target));
         if (bk == Kind::Float) {
-            float fl = static_cast<float>(l), fr = static_cast<float>(r);
-            switch (b->op()) {
-            case BinOp::Add: *out = fl + fr; return true;
-            case BinOp::Sub: *out = fl - fr; return true;
-            case BinOp::Mul: *out = fl * fr; return true;
-            case BinOp::Div: if (fr == 0) return false;
-                             *out = fl / fr; return true;
-            default: return false;
-            }
+            float v = 0;
+            if (!floatingArith(arithOf(b->op()), static_cast<float>(l), static_cast<float>(r), &v)) return false;
+            *out = v;
+            return true;
         }
         if (asDouble) {
-            double dl = static_cast<double>(l), dr = static_cast<double>(r);
-            switch (b->op()) {
-            case BinOp::Add: *out = dl + dr; return true;
-            case BinOp::Sub: *out = dl - dr; return true;
-            case BinOp::Mul: *out = dl * dr; return true;
-            case BinOp::Div: if (dr == 0) return false;
-                             *out = dl / dr; return true;
-            default: return false;
-            }
+            double v = 0;
+            if (!floatingArith(arithOf(b->op()), static_cast<double>(l), static_cast<double>(r), &v)) return false;
+            *out = v;
+            return true;
         }
         // The x87 lane. The operands are exact doubles by construction, so the
         // one question is whether this result still fits one - unless an integer

@@ -96,6 +96,7 @@
 		E9A07F79389C184FD7113B58 /* MsShapes.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B43907DAC2B080BF4BCE9741 /* MsShapes.cpp */; };
 		A1961D65A4572E1DF05EC56A /* Wrappers.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 626E53A1F87F55A8921C6273 /* Wrappers.cpp */; };
 		C092DF43A4C4AB15906920CC /* SsaDominators.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 74B5F18801AA2F0623590A74 /* SsaDominators.cpp */; };
+		4C27669FCF042F8DF0259CF8 /* SsaFold.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 605A55319723F1F12959C765 /* SsaFold.cpp */; };
 		169A79BB74CFCA4C8769D222 /* SsaOptimize.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6C4F997C57358B2FEF81A5CD /* SsaOptimize.cpp */; };
 		B75326BCFA3A5298BC803765 /* SsaPromote.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 34BAE0E52F33E4B25B325395 /* SsaPromote.cpp */; };
 /* End PBXBuildFile section */
@@ -191,6 +192,7 @@
 		B43907DAC2B080BF4BCE9741 /* MsShapes.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MsShapes.cpp; path = "../src/ir/MsShapes.cpp"; sourceTree = "<group>"; };
 		626E53A1F87F55A8921C6273 /* Wrappers.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Wrappers.cpp; path = "../src/ir/Wrappers.cpp"; sourceTree = "<group>"; };
 		74B5F18801AA2F0623590A74 /* SsaDominators.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaDominators.cpp; path = "../src/ir/opt/SsaDominators.cpp"; sourceTree = "<group>"; };
+		605A55319723F1F12959C765 /* SsaFold.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaFold.cpp; path = "../src/ir/opt/SsaFold.cpp"; sourceTree = "<group>"; };
 		6C4F997C57358B2FEF81A5CD /* SsaOptimize.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaOptimize.cpp; path = "../src/ir/opt/SsaOptimize.cpp"; sourceTree = "<group>"; };
 		34BAE0E52F33E4B25B325395 /* SsaPromote.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaPromote.cpp; path = "../src/ir/opt/SsaPromote.cpp"; sourceTree = "<group>"; };
 		E6EAF1D1441F03E9A41B4855 /* Abi.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Abi.h; path = "../src/Abi.h"; sourceTree = "<group>"; };
@@ -245,6 +247,7 @@
 		DDAAA6CE03164FFC62F4FCCC /* Optimizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Optimizer.h; path = "../src/optimizer/Optimizer.h"; sourceTree = "<group>"; };
 		06BC7E6BAAD9A8B1B6D2B733 /* Adapter.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Adapter.h; path = "../src/sema/Adapter.h"; sourceTree = "<group>"; };
 		441F6A9FA35B9873361F0EE1 /* Classes.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Classes.h; path = "../src/sema/Classes.h"; sourceTree = "<group>"; };
+		849BE61692447D4B9BD79E5D /* ConstArith.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ConstArith.h; path = "../src/sema/ConstArith.h"; sourceTree = "<group>"; };
 		4127EF3A60BCE6796E2E6FDE /* Constexpr.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Constexpr.h; path = "../src/sema/Constexpr.h"; sourceTree = "<group>"; };
 		050824B9DD66E3ED9DA6151B /* Entities.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Entities.h; path = "../src/sema/Entities.h"; sourceTree = "<group>"; };
 		28ADC71E06631963B61B2286 /* Linkage.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Linkage.h; path = "../src/sema/Linkage.h"; sourceTree = "<group>"; };
@@ -392,6 +395,7 @@
 			isa = PBXGroup;
 			children = (
 				74B5F18801AA2F0623590A74 /* SsaDominators.cpp */,
+				605A55319723F1F12959C765 /* SsaFold.cpp */,
 				9BC6EF54A82E7277D85CA5A3 /* SsaOpt.h */,
 				6C4F997C57358B2FEF81A5CD /* SsaOptimize.cpp */,
 				34BAE0E52F33E4B25B325395 /* SsaPromote.cpp */,
@@ -487,6 +491,7 @@
 				06BC7E6BAAD9A8B1B6D2B733 /* Adapter.h */,
 				8338456DF5FB4056E77ED590 /* Classes.cpp */,
 				441F6A9FA35B9873361F0EE1 /* Classes.h */,
+				849BE61692447D4B9BD79E5D /* ConstArith.h */,
 				A054868FB80953B28380DCA0 /* Constexpr.cpp */,
 				4127EF3A60BCE6796E2E6FDE /* Constexpr.h */,
 				050824B9DD66E3ED9DA6151B /* Entities.h */,
@@ -650,6 +655,7 @@
 				E9A07F79389C184FD7113B58 /* MsShapes.cpp in Sources */,
 				A1961D65A4572E1DF05EC56A /* Wrappers.cpp in Sources */,
 				C092DF43A4C4AB15906920CC /* SsaDominators.cpp in Sources */,
+				4C27669FCF042F8DF0259CF8 /* SsaFold.cpp in Sources */,
 				169A79BB74CFCA4C8769D222 /* SsaOptimize.cpp in Sources */,
 				B75326BCFA3A5298BC803765 /* SsaPromote.cpp in Sources */,
 			);

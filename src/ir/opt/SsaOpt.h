@@ -30,14 +30,20 @@ struct PassLog {
     bool check;
     std::string dumpAfter, dumped, faults;
     int failed, allocas, scalars, promoted;     // frame objects; those of a scalar type; those promoted
-    PassLog(bool c, const std::string &after) : check(c), dumpAfter(after), failed(0), allocas(0), scalars(0), promoted(0) {}
+    // fold's, by kind: instructions made constants, comparisons, conversions, floating; identities, copies, block
+    // parameters given their one value; and constant operands left to run (a trap, a shift past the width, a NaN).
+    int constants, compares, casts, floating, identities, copies, arguments, kept;
+    PassLog(bool c, const std::string &after) : check(c), dumpAfter(after), failed(0), allocas(0), scalars(0), promoted(0),
+        constants(0), compares(0), casts(0), floating(0), identities(0), copies(0), arguments(0), kept(0) {}
 };
 
 // The pass names -dump=ssa= takes, in the order they run.
 bool isSsaPass(const std::string &name);
-void ssaOptimize(Function &f, int level, const TypeTable &types, PassLog &log);
+void ssaOptimize(Function &f, int level, const TypeTable &types, const Target &target, PassLog &log);
 
 // **mem2reg** (SsaPromote.cpp): a scalar alloca whose every use is a whole load or store becomes values.
 void promote(Function &f, const TypeTable &types, PassLog &log);
+// **Folding, copy propagation, algebraic simplification** (SsaFold.cpp), one worklist over the def-use chains.
+void fold(Function &f, const TypeTable &types, const Target &target, PassLog &log);
 
 }   // namespace ir

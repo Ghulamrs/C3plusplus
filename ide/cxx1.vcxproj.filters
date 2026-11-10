@@ -111,6 +111,7 @@
     <ClCompile Include="..\src\ir\MsShapes.cpp"><Filter>Source Files\ir</Filter></ClCompile>
     <ClCompile Include="..\src\ir\Wrappers.cpp"><Filter>Source Files\ir</Filter></ClCompile>
     <ClCompile Include="..\src\ir\opt\SsaDominators.cpp"><Filter>Source Files\ir\opt</Filter></ClCompile>
+    <ClCompile Include="..\src\ir\opt\SsaFold.cpp"><Filter>Source Files\ir\opt</Filter></ClCompile>
     <ClCompile Include="..\src\ir\opt\SsaOptimize.cpp"><Filter>Source Files\ir\opt</Filter></ClCompile>
     <ClCompile Include="..\src\ir\opt\SsaPromote.cpp"><Filter>Source Files\ir\opt</Filter></ClCompile>
   </ItemGroup>
@@ -167,6 +168,7 @@
     <ClInclude Include="..\src\optimizer\Optimizer.h"><Filter>Header Files\optimizer</Filter></ClInclude>
     <ClInclude Include="..\src\sema\Adapter.h"><Filter>Header Files\sema</Filter></ClInclude>
     <ClInclude Include="..\src\sema\Classes.h"><Filter>Header Files\sema</Filter></ClInclude>
+    <ClInclude Include="..\src\sema\ConstArith.h"><Filter>Header Files\sema</Filter></ClInclude>
     <ClInclude Include="..\src\sema\Constexpr.h"><Filter>Header Files\sema</Filter></ClInclude>
     <ClInclude Include="..\src\sema\Entities.h"><Filter>Header Files\sema</Filter></ClInclude>
     <ClInclude Include="..\src\sema\Linkage.h"><Filter>Header Files\sema</Filter></ClInclude>

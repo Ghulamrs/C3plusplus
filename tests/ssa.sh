@@ -4,7 +4,7 @@
 # case that does not compile for this host - a .error case, or one written for another target - has nothing to hold.
 # The summary counts what was lowered and what was left outside, by reason, which is the measure of the subset; then
 # the compiler-written functions the Builder lowered (M3b.3), by kind, and what it left, by kind and reason. At SSA_LEVEL
-# (default 1) the SSA passes run and are verified after each (M3b.4): the allocas promoted are summed.
+# (default 1) the SSA passes run and are verified after each (M3b.4): the allocas promoted and the folds are summed.
 CXX1="${CXX1:-./cxx3.exe}"
 SSA_LEVEL="${SSA_LEVEL:-1}"
 out=tests/out-ssa
@@ -34,12 +34,15 @@ cat "$out"/*.ssa | grep -- '^  synthesised outside (' | sed 's/^  synthesised ou
     awk -F'\t' '{s[$2]+=$1} END {for (k in s) printf "    %6d  outside: %s\n", s[k], k}' | sort -rn | head -40
 cat "$out"/*.ssa | grep -- '^-check=ssa passes:' | tr ' ' '\n' | grep = | tr '=' ' ' |
     awk '{s[$1]+=$2} END {printf "ssa.sh: at -O%d, %d frame objects, %d of a scalar type, %d promoted, %d failed after a pass\n", ENVIRON["SSA_LEVEL"], s["allocas"], s["scalars"], s["promoted"], s["failed"]}'
+cat "$out"/*.ssa | grep -- '^-check=ssa fold:' | tr ' ' '\n' | grep = | tr '=' ' ' |
+    awk '{s[$1]+=$2} END {printf "ssa.sh: fold made %d constants, %d comparisons, %d conversions, %d floating, %d identities, %d copies, %d block arguments one value, %d left to run\n", s["constants"], s["compares"], s["casts"], s["floating"], s["identities"], s["copies"], s["arguments"], s["kept"]}'
 # The probes of the passes: <case>.<pass> is the case's -O1 -dump=ssa=<pass> on x86_64-linux, compared byte for byte.
 if [ "$(uname -s)" = Linux ]; then
-    for d in tests/cases/*.promote; do
+    for d in tests/cases/*.promote tests/cases/*.fold; do
         [ -f "$d" ] || continue
-        if "$CXX1" -nologo -O1 -dump=ssa=promote -S "${d%.promote}.cpp" -o /dev/null 2>/dev/null | cmp -s - "$d"; then pass=$((pass + 1))
-        else echo "FAIL $(basename "$d"): the IR after promote differs from the recorded probe"; fail=$((fail + 1)); fi
+        p=${d##*.}
+        if "$CXX1" -nologo -O1 -dump=ssa=$p -S "${d%.*}.cpp" -o /dev/null 2>/dev/null | cmp -s - "$d"; then pass=$((pass + 1))
+        else echo "FAIL $(basename "$d"): the IR after $p differs from the recorded probe"; fail=$((fail + 1)); fi
     done
 fi
 echo "ssa.sh: $pass passed, $fail failed, $skipped did not compile for this host"

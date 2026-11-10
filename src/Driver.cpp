@@ -1509,7 +1509,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     ir::PassLog log(report, dumpAfter);
     if (dump && dumpAfter.empty()) dumped = ir::dump(into, types);
     if (level >= 1 || !dumpAfter.empty())
-        for (std::size_t fi = 1; fi < into.functions.size(); fi++) ir::ssaOptimize(into.functions[fi], level, types, log);
+        for (std::size_t fi = 1; fi < into.functions.size(); fi++) ir::ssaOptimize(into.functions[fi], level, types, target, log);
     if (!dumpAfter.empty()) dumped = log.dumped;
     failures = failed + log.failed;
     if (!report) return std::string();
@@ -1528,7 +1528,10 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     char passes[160];
     std::snprintf(passes, sizeof passes, "-check=ssa passes: level=%d allocas=%d scalars=%d promoted=%d failed=%d\n", level, log.allocas,
                   log.scalars, log.promoted, log.failed);
-    return out + line + synth + passes;
+    char folds[200];
+    std::snprintf(folds, sizeof folds, "-check=ssa fold: constants=%d compares=%d casts=%d floating=%d identities=%d copies=%d arguments=%d "
+                  "kept=%d\n", log.constants, log.compares, log.casts, log.floating, log.identities, log.copies, log.arguments, log.kept);
+    return out + line + synth + passes + folds;
 }
 
 bool Driver::compile(const Job &job) {

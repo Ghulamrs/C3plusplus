@@ -4,6 +4,7 @@
 
 #include "Lowering.h"
 #include "../Ast.h"
+#include "../sema/ConstArith.h"
 
 #include <cctype>
 #include <cstring>
@@ -1998,13 +1999,7 @@ bool Lowering::referable(const Type &t) {
 
 // A constant as the walker keeps every value in a register: sign- or zero-extended to 64 bits by its type.
 long long Lowering::normalise(long long v, const Type &t, const Target &target) {
-    const int size = t.size(target);
-    if (t.isBool()) return v != 0 ? 1 : 0;
-    if (size >= 8) return v;
-    const unsigned long long mask = (1ULL << (size * 8)) - 1;
-    unsigned long long u = static_cast<unsigned long long>(v) & mask;
-    if (t.isSigned(target) && (u >> (size * 8 - 1)) != 0) u |= ~mask;
-    return static_cast<long long>(u);
+    return sema::canonical(v, t.size(target), t.isSigned(target), t.isBool());
 }
 
 // ----- the builder
