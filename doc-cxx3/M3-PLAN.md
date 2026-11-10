@@ -1771,3 +1771,63 @@ the likeliest cause is the MIR allocator holding a value live across blocks that
 report +4). **Left**: loads across blocks (the plan's rule: within a block); a store to one address forgets every other
 (no alias analysis); a floating commutative operator is not canonicalised; a pad's block and `tlsaddr` are not numbered;
 names.sh under the flag not re-run (no name moves).
+
+**M3b.4, round 5, 2026-11-10: jump threading and division by a constant on SSA.** From main `88abdde5`, branch
+`m3b4-jumps`. **jumps** (`SsaJumps.cpp`, OptJumps.cpp's shape): a block T that ends in a condbr or switch, has parameters,
+and holds only constants, icmps and integer conversions read nowhere else, entered by a jump edge (`isJumpEdge`) whose
+arguments decide the test, has that edge re-pointed to the successor S the test picks, with S's arguments (T's parameters
+replaced by the edge's). The evaluation is fold's: `foldCompare` and `foldIntConversion` moved out of `Folder` into free
+functions (`SsaOpt.h`), the folder calling them - one implementation. T, S and the edge's block are never fixed
+(`fixedBlocks`, one fact: no pad, no funclet boundary, no unwind edge) and S is in the edge's funclet. **A parameter of T
+read below it** (the loop variable a flag's test guards): where S dominates every such read, S - whose one edge in must be
+T's - takes it as a new parameter, T passing it and the threaded edge passing its own value, the reads S dominates
+re-pointed; a read elsewhere that S reaches refuses the edge, as does one in a fixed block. One edge a step, the uses and
+`SsaDominators` made again after each, at most a body's block count of steps. **divide** (`SsaDivide.cpp`, **-O2 only**:
+OptDivide's own gate, "ten instructions for three" is a speed level's, -O1 being size): sdiv, udiv, srem, urem of a 4- or
+8-byte integer whose divisor is an iconst with 2 <= |d| < 2^(bits-1) - a negative signed divisor as |d| with the quotient
+negated (the remainder takes |d|), more than OptDivide (positive 32-bit only) - becomes shifts for a power of two (signed:
+the rounding bias `(n >>s w-1) >>u (w-k)` added, a remainder by the cleared low bits), else Hacker's Delight 10-1: signed
+`smulh(n, M)`, plus n where M reads negative, `>>s s`, plus `n >>u (w-1)`; unsigned `umulh(n, M) >>u s` where an exact
+multiplier exists (as OptDivide), else left. The division becomes the last step in place, so its value is read where it
+was. **The IR gains `smulh` and `umulh`** (`Ir.h`, `IrText.cpp`, M3-IR 3.2's table; gvn numbers them, commutative):
+the selector's one-operand `imul`/`mul` with rdx as the result, 32 and 64 bits; MIR's table gains `mul` (kind Div,
+rdx:rax) so no spelling meets an unknown mnemonic - a one-operand `imul` was already opaque there. A widened 64-bit mul and
+shift was the other way for 32 bits and was not taken: no 64-bit form exists, and one op serves both widths. **DivMagic.h**
+is the one implementation, now of `bits` 32 or 64: `signedMagic` the same loop over a width (q1, q2 wrapping at 64 as the
+book's words do), `unsignedMagic` by an incremental quotient and remainder of 2^(bits+s) (no 128-bit product); OptDivide and
+Tms6747 call it unchanged at 32 - `emit.sh` with a golden recorded by round 4's compiler (`be79faa1`) on this tree: 0 of
+3029 files changed. **The driver**: promote, fold, **jumps**, cfg, gvn, **divide** (-O2), dead, then refold, **rejumps**,
+recfg, regvn, redead where a pass changed the function - jumps before cfg (which removes the blocks threading leaves
+unreached and merges a T left one edge), divide after gvn (a division found twice is made once; the repeat gvn numbers its
+constants). **Counts over the suite** (`-check=ssa jumps:`, `divide:`, summed by `ssa.sh`), Linux: 713 edges threaded past
+a condbr, 0 past a switch (the state machine's switch block holds the loop's own work); at -O2 200 divisions made shifts,
+319 a signed and 106 an unsigned multiply-high (167 of the 625 at 64 bits), 182 by a constant left (an unsigned divisor
+with no exact multiplier - 7, 641 - one past the signed range, |d| = 1). Windows: 698, 0; 199, 316, 106 (142), 178.
+**OptDivide under -front=ssa -O2** (its `imul %rdx, R` counted in every case's `-S`, Linux): round 4's compiler 44 places
+in 14 cases, this round's 1 place in 1 case (a division SSA leaves; which, not traced); `-O2` on the Ast.h path,
+which keeps it, 198 in 31. **The probes**: `tests/cases/ssa-jumps.cpp` (a flag tested after a loop's exit, `&&` and `||`
+tested again, a state machine, a loop entered with its test known, a value read at a join, refused) with `ssa-jumps.jumps`,
+its `-O1 -dump=ssa=jumps`; `tests/cases/ssa-divide.cpp` (/ and % of the four types by powers of two, multipliers, negative
+divisors, divisors left, over each range's ends; a divisor a const local) with `ssa-divide.divide`, its **-O2**
+`-dump=ssa=divide` (`ssa.sh` now compares a `.divide` at -O2); `.expected` the Windows box's clang, g++ agreeing; both run
+right at -O0, -O1, -O2 and `-front=ssa` at each. `ssa-gvn.gvn` re-recorded: jumps runs before gvn (an edge passing the
+compared value itself threaded, T merged). **Gated on `f2b2cddd`** (the code commit; this entry is the only change after
+it), each box from a clean ship and build. **Linux** (`~/m3b4r5`): ssa.sh at -O1 and -O2 8921/8921 bodies and 973/973
+compiler-written lowered, 0 failed after any pass, 772 passed (the six probes' seven dumps among them); run.sh 1107/0 at
+`-front=ssa -O1`, `-front=ssa -O2`, `-front=ssa`, -O2 and -O0; emit 3029/0 (and 0 changed against round 4's golden);
+typed 765/0, adapted 765/0 (1738 the same); coff 1502 objects 0 differ; c90 447/0; syntax 3/0; exclusions 127 sites 0/0
+(no citation moved); comment cap 0; memory gate 44 raw pointers, `new` 1056 (unchanged); `ide/generate.py --check` clean
+after its regeneration there. **Windows** (cl /W4 /WX clean): ssa.sh at -O1 and -O2 9192 of 9196 bodies (M3b.3's four),
+1130/1130 compiler-written, 0 failed after any pass, 747 passed; `winpass.sh` at `-front=ssa -O1` and `-front=ssa -O2` gnu
+734 / masm 733 same, 0 differ, 340 refused as recorded. **The .text** (`bench.ps1 -Cases`, 745 cases): `-front=ssa -O1`
+(threading alone) 1,812,358 bytes; over the 743 both tables hold, 1,795,341 against round 4's 1,811,449 (-0.89%, 95
+smaller, 68 larger) and over 740, 1,791,032 against main's `-O1` 1,131,924 (+58.2%, the selector's slot per value: round
+7). `-front=ssa -O2` (threading and division together; round 4's compiler measured the same way): 1,823,738 against
+1,816,471 (+0.40%, 92 smaller, 97 larger) - division adds about 1.3% where threading takes 0.9%: a multiply sequence is
+longer than `idiv`, and each of its constants takes a slot until round 7. `src/` went from 91482 to 91900 lines (+418:
+SsaJumps +226, SsaDivide +148, fold's two functions out +9, the header +13, the driver +5, the selector +9, the Driver's
+report +4, DivMagic and OptDivide +3, MIR's table +1). **Left**: a switch block that does work before its test, and a
+condition known on an edge because the edge's own branch tested it (no edge facts), are not threaded; T's instruction
+results read below it refuse it (only parameters move); an unsigned divisor with no exact multiplier (the 33-bit `add`
+form Tms6747 uses is 32-bit only and not taken); divisions of 1- and 2-byte types; names.sh under the flag not re-run (no
+name moves).
