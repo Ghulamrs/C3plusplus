@@ -223,7 +223,7 @@ public:
     void typeMemberDefaults(const std::string &ctor);
     TypedId memberDefault(const std::string &ctor, const std::string &member) const;
     bool staticGuard(const std::string &symbol, StaticGuard &out) const;   // false where guardOnce built none
-    bool dynamicInits(std::vector<DynamicInit> &out);    // the init function's, in order; false where one was not recorded whole
+    bool dynamicInits(std::vector<DynamicInit> &out, bool tls);    // the init function's or __tls_init's, in order; false where one was not recorded whole
     bool guardedStatic(const std::string &symbol) const;  // a static local built at run time, under its guard   // a pack was expanded in the body: one node stands for its members   // Parser::scopedFunctions_'s bits, 0 for a body at file scope
     // The constructor the parser chose, in constructor `ctor`, for a member an entry at `pos` names (0: one the list leaves alone), and
     // whether default arguments were added to the written ones; false where it built none. A class's destructor's symbol.

@@ -1436,3 +1436,34 @@ and at `-front=ssa -O2`, gnu 723 same / 0 differ and masm 722 same / 0 differ, 3
 re-pointed); memory gate 44, unchanged; comment cap 0.
 `tests/run.sh` on Linux 1095 / 0 at `-front=ssa` and at `-front=ssa -O2`, and `tests/open.sh` names the two new entries
 as open. `src/` went from 88759 to 88981 lines (+222, 177 of them `CompleteObject.cpp`).
+**M3b.3, lane F, 2026-11-10: the vector constructor's defaults, `__tls_init`, an aggregate before main.** From `33e62b9d`.
+**The design** is the other lanes', three kinds more in the files they already use: `vectorConstructor` records the defaults
+it completes the element's call with under the loop's own key (`noteEntryDefaults("element", ...)`, `currentFunction_` the
+loop's name for the call), and `Builder::vectorLoop` evaluates them again for each element, in a full expression of its
+own, as `buildElements` does for an array member. `__tls_init` is the init function's per-thread twin: `leaveInitFunction`
+records each object's statements whichever sink took them (`DynamicInit::tls`; `tlsInitStatements_` the count
+`finishTlsInit` made one function of), `Typer::dynamicInits(out, tls)` hands either list, and `Builder::initFunction` builds
+it under the thread_local byte `__tls_guard` on Itanium (none on Microsoft, whose CRT keeps the guard); `staticConstruction`
+reaches a namespace-scope object through `staticAddr` - a thread_local's the thread's own (`Op::TlsAddr`, direct, as
+`__tls_init` reaches it) - and registers its destruction through `atexitFor` (`__cxa_thread_atexit`, `_tlv_atexit`,
+`__tlregdtor` for a thread_local). An aggregate at namespace scope whose members' classes have constructors -
+`A g[2] = { { V(1), 2 }, { 3, 4 } };` - is built from the record a local's already left: `emitRecordedInit` (the six lines
+the declaration path held, shared) puts it in the object's guard (`StaticGuard::elements`, `members`), and
+`recordedAggregate` takes it as `given`; a member copied from a temporary of its class (`V(1)`) is its bytes through
+`classValue`. **Lowered** (Linux): vector constructor 18 of 18, tls init 1 of 1, init function 31 of 31 (the new case adds one of each) - 938 of 951
+compiler-written functions; **left by name**: a complete constructor building a virtual base from a mem-initialiser's
+arguments (9) and a copy or move of a class with a virtual base (4), lanes B's and A's. **Refused by name, not reached by
+the suite**: a vector constructor whose default argument makes a temporary with a destructor - the Ast.h path leaves that
+temporary on the caller's pending list in a slot of the loop's frame (built=6 gone=3 over=2 where g++ balances), so it is
+`tests/open/vector-default-temporary.cpp`, its `.clang` g++'s (no clang on the Linux box); and a thread_local reference in
+`__tls_init`. **Also**: `Driver::hostGnuAssembler` tries `%ProgramFiles(x86)%` beside `%ProgramFiles%`, where Build Tools
+installs, so the Windows box needs no `CPP11_AS`. `tests/cases/builder-tail.cpp` holds the kinds under the ledger - defaults
+evaluated per element, an element throwing mid-array, a namespace-scope array of aggregates, a const one and a static one
+from values, temporaries, lists and value-initialisation; its `.expected` is g++'s, the Ast.h path and `-front=ssa` at
+`-O0` and `-O2` print it. **Gated on Linux** (`~/m3b3f`): ssa.sh 8803 of 8803 bodies lowered, 0 failed, and the 938 above; run.sh 1098/0 at -O0, -O2,
+`-front=ssa` and `-front=ssa -O2`; emit 2993/0, the golden recorded from `33e62b9d` 0 of 2989 changed (4 added, the new case);
+typed, adapted (1674 the same), coff 0 differ, c90 447/0, syntax green; exclusions 126 sites 0/0 (fifteen citations
+re-pointed); comment cap 0; memory gate 44, unchanged. tms6747.sh 726 passed at -O0 and 725 at -O2, every pass also on
+sim6747; its 2 failures at -O0 and 3 at -O2 (`long-double-literal-exact-digits`, `ssa-eh-tail`, and at -O2
+`ssa-data-member-pointer`) are lane C's tree's too. names.sh and overload.sh skip there (no clang++); the Windows gate is
+the coordinator's at merge. `src/` went from 89417 to 89495 lines (+78).

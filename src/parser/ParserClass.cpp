@@ -1565,6 +1565,13 @@ std::string Parser::vectorConstructor(const Type *cls, std::size_t pos) {
 
     std::vector<ExprPtr> defaults;
     applyDefaults(chosen, defaults, pos);
+    // The defaults under the loop's own key, for the SSA builder (M3b.3), which evaluates them again for each element.
+    {
+        const std::string outer = currentFunction_;
+        currentFunction_ = name;
+        noteEntryDefaults("element", defaults, 0);
+        currentFunction_ = outer;
+    }
     ExprPtr base(Var::local("base", baseSlot));
     base->setType(ptr);
     ExprPtr at = indexBytes(types_, std::move(base), cls, indexSlot, target_);

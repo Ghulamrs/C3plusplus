@@ -466,8 +466,10 @@ const char *Driver::hostGnuAssembler() {
         tries.push_back(std::string(vc) + "Tools\\Llvm\\x64\\bin\\clang.exe");
     const std::string vs = askVswhere();
     if (!vs.empty()) tries.push_back(vs + llvm);
-    const char *pf = std::getenv("ProgramFiles");
-    if (pf != nullptr && pf[0] != '\0') {
+    // Build Tools installs under %ProgramFiles(x86)%, the editions under %ProgramFiles%; either may hold any.
+    for (const char *root : { "ProgramFiles", "ProgramFiles(x86)" }) {
+        const char *pf = std::getenv(root);
+        if (pf == nullptr || pf[0] == '\0') continue;
         static const char *const editions[] = {
             "Community", "Professional", "Enterprise", "BuildTools"
         };
@@ -1408,7 +1410,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     lowering.setElidedInto([&typer](syntax::NodeId v, syntax::NodeId c) { return typer.elidedInto(v, c); });
     lowering.setArrowCalls([&typer](syntax::NodeId o, std::vector<sema::Resolution> &out) { return typer.arrowCalls(o, out); });
     lowering.setConversionCall([&typer](syntax::NodeId o, sema::Resolution &out) { return typer.conversionCall(o, out); });
-    lowering.setDynamicInits([&typer](std::vector<sema::DynamicInit> &out) { return typer.dynamicInits(out); });
+    lowering.setDynamicInits([&typer](std::vector<sema::DynamicInit> &out, bool tls) { return typer.dynamicInits(out, tls); });
     lowering.setAssignCall([&typer](syntax::NodeId v, std::string &sym, TypeId &sig) { return typer.assignCall(v, sym, sig); });
     // The facts Ast.h's Function carries, of any function; a body's typed-tree facts are added below.
     auto factsOf = [&typer](const Function &fn, ir::FunctionFacts &facts) {

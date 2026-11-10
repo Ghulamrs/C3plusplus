@@ -260,6 +260,23 @@ void Parser::initConstruct(const std::string &name, std::vector<InitStep> &path,
     out.push_back(StmtPtr(new ExprStmt(std::move(call))));
 }
 
+// emitInit, and - for an aggregate whose members' classes have constructors - what built each, as noteAggregateMember records it.
+Parser::ListBuilt Parser::emitRecordedInit(const std::string &name, std::vector<InitStep> &path, const Type *type, Init &in,
+                                           std::vector<StmtPtr> &out) {
+    const Type *leaf = type;
+    while (leaf->isArray()) leaf = leaf->pointee();
+    const ListBuilt outerRecord = aggregateRecord_;
+    const bool outerRecording = aggregateRecording_;
+    aggregateRecord_ = ListBuilt();
+    aggregateRecording_ = leaf->isStructOrUnion() && !constructedClass(leaf) && needsConstruction(leaf);
+    emitInit(name, path, type, in, out);
+    ListBuilt made;
+    if (aggregateRecording_ && !aggregateRecord_.elems.empty()) { made = aggregateRecord_; made.members = true; }
+    aggregateRecord_ = outerRecord;
+    aggregateRecording_ = outerRecording;
+    return made;
+}
+
 // While an aggregate local's list is read, each member initConstruct builds, for the SSA lowering (M3b.2): its bytes from a
 // value of its class (`ctor` null), or the constructor with `written` arguments, defaults added after them.
 void Parser::noteAggregateMember(const Type *cls, const Signature *ctor, std::size_t written, bool zeroed) {
@@ -1058,7 +1075,7 @@ Parser::FunctionState Parser::enterInitFunction() {
     currentFunction_ = functionName_;
     atFunctionBody_ = true;
     initGuardMark_ = guardSlots_.size();
-    dynInitMark_ = dynInit_.size();
+    dynInitMark_ = initSink().size();
     return outer;
 }
 
@@ -1066,7 +1083,7 @@ Parser::FunctionState Parser::enterInitFunction() {
 // part of the state struct, so they are moved by hand. The token index is put
 // back to where the initialiser ended, since the restore rewinds it.
 void Parser::leaveInitFunction(const FunctionState &outer, const std::string &symbol) {
-    if (!tlsObject_ && dynInit_.size() > dynInitMark_) dynInits_.push_back(DynamicInit{ symbol, syntax::NodeId(), dynInit_.size() - dynInitMark_ });
+    if (initSink().size() > dynInitMark_) dynInits_.push_back(DynamicInit{ symbol, syntax::NodeId(), initSink().size() - dynInitMark_, tlsObject_ });
     (tlsObject_ ? tlsInitFrame_ : dynInitFrame_) = frameSize_;
     for (std::size_t i = initGuardMark_; i < guardSlots_.size(); i++)
         (tlsObject_ ? tlsInitGuards_ : dynInitGuards_).push_back(guardSlots_[i]);
@@ -1110,6 +1127,7 @@ void Parser::finishTlsInit(Program &program) {
     for (const std::string &s : tlsInternalDynamic_)
         program.tlsWrappers.push_back(TlsWrapper{ s, true, true, true });
     if (tlsInit_.empty()) return;
+    tlsInitStatements_ = tlsInit_.size();
     std::vector<StmtPtr> body;
     for (std::size_t i = 0; i < tlsInitGuards_.size(); i++)
         body.push_back(StmtPtr(new ExprStmt(setGuard(tlsInitGuards_[i], 0))));
@@ -1497,7 +1515,8 @@ bool Parser::staticallyInitialisable(const Type *t, Init &in) {
 void Parser::dynamicInitialiseScalar(const std::string &name, const std::string &symbol, const Type *type, Init &in) {
     const FunctionState outer = enterInitFunction();
     std::vector<InitStep> path;
-    emitInit(name, path, type, in, initSink());
+    const ListBuilt made = emitRecordedInit(name, path, type, in, initSink());
+    if (made.members) staticGuards_[symbol].elements = made;     // for the SSA builder (M3b.3)
     flushTemporaries(initSink());
     leaveInitFunction(outer, symbol);
 }

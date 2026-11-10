@@ -32,12 +32,19 @@ void Builder::openBody() {
     l_.liveFloor_ = 0;
 }
 
-// The record `name` the synthesiser left under this function's key, its signature's parameter `at` a pointer to `cls`.
-bool Builder::recorded(const std::string &name, const Type &cls, std::size_t at, std::string &symbol, TypeId &sig) {
-    bool defaulted = false;
+// The record `name` the synthesiser left under this function's key, its signature's parameter `at` a pointer to `cls`;
+// `defaulted` whether the parser completed the call with default arguments.
+bool Builder::recorded(const std::string &name, const Type &cls, std::size_t at, std::string &symbol, TypeId &sig, bool &defaulted) {
+    defaulted = false;
     if (!l_.memberBuilt_ || !l_.memberBuilt_(l_.key_, name, 0, symbol, sig, defaulted)) return false;
     const Type &ft = l_.T(sig);
     if (ft.params().size() <= at || ft.params()[at]->pointee()->unqualified() != &cls) l_.outside("a compiler-written function's record of another class");
+    return true;
+}
+
+bool Builder::recorded(const std::string &name, const Type &cls, std::size_t at, std::string &symbol, TypeId &sig) {
+    bool defaulted = false;
+    if (!recorded(name, cls, at, symbol, sig, defaulted)) return false;
     if (defaulted) l_.outside("a compiler-written function's call with default arguments");
     return true;
 }
@@ -134,9 +141,15 @@ void Builder::vectorLoop(const FunctionFacts &facts, bool constructs) {
     std::string symbol, loop;
     TypeId sig, loopSig;
     const ValueId count = l.convert(Lowering::Val(n, facts.paramTypes[1]), intT).v;
+    // [dcl.fct.default]/9: the defaults the parser completed the element's call with, evaluated again for each element.
+    bool defaulted = false;
+    std::vector<sema::TypedId> args;
     if (constructs) {
-        if (!recorded("^element", cls, 0, symbol, sig)) l.outside(what + " built by no constructor the parser recorded");
-        if (l.T(sig).params().size() != 1) l.outside(what + " whose constructor takes parameters");
+        if (!recorded("^element", cls, 0, symbol, sig, defaulted)) l.outside(what + " built by no constructor the parser recorded");
+        const sema::TypedId defaults = defaulted && l.memberDefault_ ? l.memberDefault_(l.key_, "^element") : sema::TypedId();
+        if (defaulted && !defaults.valid()) l.outside(what + " built with default arguments the parser recorded none of");
+        for (std::uint32_t k = 0; defaults.valid() && k < l.count(defaults); k++) args.push_back(l.child(defaults, k));
+        if (l.T(sig).params().size() != 1 + args.size()) l.outside(what + " whose constructor takes parameters");
         l.store(i, l.iconst(intT, 0));
         if (recorded("~elements", cls, 0, loop, loopSig)) { l.guard(base, cls, loop); l.live_.back().count = i; }
     } else {
@@ -157,7 +170,13 @@ void Builder::vectorLoop(const FunctionFacts &facts, bool constructs) {
     l.place(body);
     const ValueId index = constructs ? now : l.op2(Op::Sub, intT, now, l.iconst(intT, 1));
     if (!constructs) l.store(i, index);
-    l.directCall(symbol, sig, std::vector<ValueId>(1, l.result(l.add(Op::Bitcast, l.tid(*l.T(sig).params()[0]), std::vector<ValueId>(1, elementAt(base, index, cls))))));
+    std::vector<ValueId> ops(1, l.result(l.add(Op::Bitcast, l.tid(*l.T(sig).params()[0]), std::vector<ValueId>(1, elementAt(base, index, cls)))));
+    const std::size_t alive = l.live_.size();
+    if (defaulted) { l.openFull(); l.argumentList(l.T(sig), 1, false, args, false, ops); }
+    // The Ast.h path leaves such a temporary to the caller's full expression, in this frame's slot: tests/open/vector-default-temporary.
+    if (l.live_.size() != alive) l.outside(what + " whose default argument makes a temporary with a destructor");
+    l.directCall(symbol, sig, ops);
+    if (defaulted) l.closeFull();
     if (constructs) l.store(i, l.op2(Op::Add, intT, now, l.iconst(intT, 1)));
     l.br(cond);
     l.place(done);

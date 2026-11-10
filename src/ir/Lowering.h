@@ -106,7 +106,7 @@ public:
     void setArrowCalls(std::function<bool(syntax::NodeId, std::vector<sema::Resolution> &)> f) { arrowCalls_ = f; }
     // The conversion function `convert` called on a class value, by the value's node - Sema's record ([class.conv.fct]).
     void setConversionCall(std::function<bool(syntax::NodeId, sema::Resolution &)> f) { conversionCall_ = f; }
-    void setDynamicInits(std::function<bool(std::vector<sema::DynamicInit> &)> f) { dynamicInits_ = f; }
+    void setDynamicInits(std::function<bool(std::vector<sema::DynamicInit> &, bool)> f) { dynamicInits_ = f; }
 private:
     friend class Builder;       // M3b.3: a compiler-written function, built from the class's layout with these same pieces
     struct Outside { std::string why; explicit Outside(const std::string &w) : why(w) {} };
@@ -174,6 +174,7 @@ private:
     void aggregateFill(ValueId slot, const Type &t, const std::vector<sema::TypedId> &parts, std::size_t &next);
     void aggregateItem(ValueId at0, const Type &mt, const std::vector<sema::TypedId> &parts, std::size_t &next);
     bool recordedAggregate(sema::TypedId var, ValueId slot, const Type &t);
+    bool recordedAggregate(sema::TypedId var, ValueId slot, const Type &t, const sema::ListBuilt &lb);
     bool recordedMember(const Type &mt) const;
     void aggregateMember(ValueId at0, const Type &mt, const std::vector<sema::TypedId> &parts, std::size_t &next);
     void aggregateTail(ValueId at0, const Type &t);
@@ -362,6 +363,8 @@ private:
     void classLocal(sema::TypedId var, ValueId slot, const Type &t);
     void guardedStatic(sema::TypedId var, const std::string &symbol);
     void staticConstruction(sema::TypedId var, const std::string &symbol, const sema::StaticGuard &g);
+    ValueId staticAddr(const std::string &symbol, TypeId type);
+    std::string atexitFor(const std::string &symbol) const;
     bool builtClass(const Type &t) const;
     void builtLocal(sema::TypedId var, ValueId slot, const Type &t);
     ValueId initializerList(sema::TypedId parent, const Type &param, std::uint32_t n);
@@ -493,7 +496,7 @@ private:
     std::function<bool(syntax::NodeId, std::string &, TypeId &)> assignCall_;
     std::function<bool(syntax::NodeId, std::vector<sema::Resolution> &)> arrowCalls_;
     std::function<bool(syntax::NodeId, sema::Resolution &)> conversionCall_;
-    std::function<bool(std::vector<sema::DynamicInit> &)> dynamicInits_;    // the init function's objects, for the Builder
+    std::function<bool(std::vector<sema::DynamicInit> &, bool)> dynamicInits_;    // the init function's or __tls_init's objects, for the Builder
     sema::TypedId intoCall_;                    // the call elidedCall lowers, whose result goes into a local's alloca
     int intoAlloca_ = -1, intoNow_ = -1;        // that alloca; and callTail's, set only as that call's tail is entered
     std::vector<sema::ListElement> aggCtors_;     // recordedAggregate's: each member a constructor builds, the next at aggNext_

@@ -23,8 +23,9 @@ private:
     ValueId into(ValueId p, long long at, TypeId to);
     void openBody();
     bool recorded(const std::string &name, const Type &cls, std::size_t at, std::string &symbol, TypeId &sig);
+    bool recorded(const std::string &name, const Type &cls, std::size_t at, std::string &symbol, TypeId &sig, bool &defaulted);
     FuncId thunk(const FunctionFacts &facts, bool virt);     // Wrappers.cpp: a thunk or a virtual thunk
-    FuncId initFunction(const FunctionFacts &facts);      // Wrappers.cpp: _GLOBAL__sub_I_<file>
+    FuncId initFunction(const FunctionFacts &facts, bool tls);     // Wrappers.cpp: _GLOBAL__sub_I_<file>, or __tls_init
     // M3b.3 lane B (CompleteObject.cpp): the deleting destructor, and the complete constructor and destructor of a class with
     // virtual bases - Itanium's C1 and D1 around a C2 or D2, cl's ??_D - each from the records its synthesiser leaves.
     static bool completeKind(const std::string &kind);

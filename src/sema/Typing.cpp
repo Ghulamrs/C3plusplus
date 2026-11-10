@@ -598,10 +598,11 @@ bool Typer::staticGuard(const std::string &symbol, StaticGuard &out) const {
     return true;
 }
 
-// The init function's objects as the parser pushed their statements; a namespace-scope `var` is typed as a root of its own.
-bool Typer::dynamicInits(std::vector<DynamicInit> &out) {
+// The init function's objects, or __tls_init's, as the parser pushed their statements; a namespace-scope `var` is typed as a root of its own.
+bool Typer::dynamicInits(std::vector<DynamicInit> &out, bool tls) {
     std::size_t statements = 0;
     for (const Parser::DynamicInit &d : p_.dynInits_) {
+        if (d.tls != tls) continue;
         if (!d.var.valid() || d.symbol.empty()) return false;
         DynamicInit e;
         e.var = typeFunction(d.var);
@@ -613,7 +614,7 @@ bool Typer::dynamicInits(std::vector<DynamicInit> &out) {
         out.push_back(e);
         statements += d.statements;
     }
-    return statements == p_.dynInitStatements_;
+    return statements == (tls ? p_.tlsInitStatements_ : p_.dynInitStatements_);
 }
 
 template <class Record> void Typer::copyStaticGuard(const Record &r, StaticGuard &out) {

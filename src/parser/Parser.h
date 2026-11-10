@@ -1460,10 +1460,10 @@ private:
     std::vector<int> dynInitGuards_;
     // The same statements as the SSA builder reads them (M3b.3): each object's, by its symbol, `var` node and count, in order;
     // a template static's weak guard by symbol; and the count finishDynamicInit made one function of.
-    struct DynamicInit { std::string symbol; syntax::NodeId var; std::size_t statements; };
+    struct DynamicInit { std::string symbol; syntax::NodeId var; std::size_t statements; bool tls; };
     std::vector<DynamicInit> dynInits_;
     std::map<std::string, std::string> dynInitOnce_;
-    std::size_t dynInitStatements_ = 0, dynInitMark_ = 0;
+    std::size_t dynInitStatements_ = 0, tlsInitStatements_ = 0, dynInitMark_ = 0;
     // **The same for thread storage** - [basic.stc.thread]: `__tls_init`, its frame and its guards,
     // built while tlsObject_ says the object being declared is a thread_local; the init functions
     // below write to initSink(), and registerDestruction asks the target's threadAtexit().
@@ -2200,6 +2200,7 @@ private:
     bool constructedClass(const Type *t) const;
     bool needsConstruction(const Type *t) const;
     void noteAggregateMember(const Type *cls, const Signature *ctor, std::size_t written, bool zeroed);
+    ListBuilt emitRecordedInit(const std::string &name, std::vector<InitStep> &path, const Type *type, Init &in, std::vector<StmtPtr> &out);
     void initConstruct(const std::string &name, std::vector<InitStep> &path, const Type *type,
                        std::vector<ExprPtr> args, bool valueInit, std::size_t pos, std::vector<StmtPtr> &out);
 

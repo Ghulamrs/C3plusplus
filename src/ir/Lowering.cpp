@@ -731,10 +731,15 @@ void Lowering::aggregateItem(ValueId at0, const Type &mt, const std::vector<sema
 }
 
 // [dcl.init.aggr]/2 for an aggregate whose members' classes have constructors, as the parser recorded building each
-// (Parser::noteAggregateMember): the list placed as aggregateInit places it, those members built as recorded. False: no record.
+// (Parser::noteAggregateMember): the list placed as aggregateInit places it, those members built as recorded - by the var, or
+// by the record a namespace-scope object's guard holds (Parser::emitRecordedInit). False: no record.
 bool Lowering::recordedAggregate(sema::TypedId var, ValueId slot, const Type &t) {
     sema::ListBuilt lb;
-    if (!listBuilt_ || !listBuilt_(tree_.node(var).syntax, lb) || !lb.members) return false;
+    return listBuilt_ && listBuilt_(tree_.node(var).syntax, lb) && recordedAggregate(var, slot, t, lb);
+}
+
+bool Lowering::recordedAggregate(sema::TypedId var, ValueId slot, const Type &t, const sema::ListBuilt &lb) {
+    if (!lb.members) return false;
     std::vector<sema::TypedId> parts;
     for (std::uint32_t i = tree_.node(var).bounds; i < tree_.node(var).count; i++) parts.push_back(child(var, i));
     TypeId leaf = tid(t);
@@ -767,11 +772,8 @@ void Lowering::aggregateMember(ValueId at0, const Type &mt, const std::vector<se
         else args.push_back(p);
     }
     if (e.defaulted || args.size() != e.count) outside("an aggregate's member built from values the parser counted otherwise");
-    if (e.bytes) {
-        if (!objectNode(args[0])) outside("an aggregate's member copied from what is not an object");
-        const Val o = object(args[0]);
-        if (T(o.type).unqualified() != mt.unqualified()) outside("an aggregate's member copied from another type");
-        copyObject(at0, o.v, mt);
+    if (e.bytes) {     // an object of its class, or a temporary of it (`{ V(1), 2 }`): its bytes
+        copyObject(at0, classValue(args[0], mt).v, mt);
         return;
     }
     const Type &ft = T(e.signature);
@@ -1189,6 +1191,11 @@ void Lowering::guardedStatic(sema::TypedId var, const std::string &symbol) {
 void Lowering::staticConstruction(sema::TypedId var, const std::string &symbol, const sema::StaticGuard &g) {
     const sema::TypedNode &v = tree_.node(var);
     const Type &c = *v.type->unqualified();
+    // An aggregate whose members' classes have constructors: each member as emitRecordedInit recorded building it.
+    if (g.elements.members) {
+        if (!recordedAggregate(var, staticAddr(symbol, tid(*types_.pointerTo(&c))), c, g.elements)) outside("a static aggregate built otherwise");
+        return;
+    }
     openFull();
     // bindStaticReference's binding: the global holds the address of the lvalue, as a local reference's alloca would.
     if (c.isReference()) {
@@ -1199,13 +1206,13 @@ void Lowering::staticConstruction(sema::TypedId var, const std::string &symbol, 
         if (T(b.type).unqualified() != c.referent()->unqualified()) outside("a static reference bound to another type");
         if (T(b.type).isConst() && !c.referent()->isConst()) outside("a static reference that can write bound to a const");
         const TypeId slotType = tid(*types_.pointerTo(c.referent()));
-        const ValueId slot = addrOf(symbol, tid(*types_.pointerTo(&T(slotType))));   // before the bitcast, whatever the host's compiler
+        const ValueId slot = staticAddr(symbol, tid(*types_.pointerTo(&T(slotType))));   // before the bitcast, whatever the host's compiler
         store(slot, result(add(Op::Bitcast, slotType, std::vector<ValueId>(1, b.v))));
         closeFull();
         return;
     }
     if (c.isArray()) { staticArray(var, symbol, c, g); return; }
-    const ValueId obj = addrOf(symbol, tid(*types_.pointerTo(&c)));
+    const ValueId obj = staticAddr(symbol, tid(*types_.pointerTo(&c)));
     if (g.built && !g.copied) {
         if (g.list && !g.listOf.valid()) outside("a static local built from a braced list of no initializer_list");
         if (g.ctor.empty() || !g.ctorSig.valid()) outside("a static local built by no constructor the parser recorded");
@@ -1246,7 +1253,7 @@ void Lowering::staticConstruction(sema::TypedId var, const std::string &symbol, 
     if (target_.microsoftNames()) {
         if (g.helper.empty()) outside("a static local with no atexit helper recorded");
         args.push_back(addrOf(g.helper, types_.pointerTo(types_.functionType(types_.voidType()->id(), std::vector<TypeId>()))));
-        runtimeCall("atexit", intT, args);
+        runtimeCall(atexitFor(symbol), intT, args);
         return;
     }
     const std::string dtor = destructor_ ? destructor_(c.id()) : std::string();
@@ -1254,7 +1261,7 @@ void Lowering::staticConstruction(sema::TypedId var, const std::string &symbol, 
     args.push_back(addrOf(dtor, types_.pointerTo(types_.functionType(types_.voidType()->id(), std::vector<TypeId>(1, types_.pointerTo(c.id()))))));
     args.push_back(result(add(Op::Bitcast, voidPtr, std::vector<ValueId>(1, obj))));
     args.push_back(addrOf("__dso_handle", voidPtr));
-    runtimeCall("__cxa_atexit", intT, args);
+    runtimeCall(atexitFor(symbol), intT, args);
 }
 
 // buildStaticArrayConstruction's array of a class: its elements built by the class's loop, or each from its braced list
@@ -1265,7 +1272,7 @@ void Lowering::staticArray(sema::TypedId var, const std::string &symbol, const T
     long long n = 1;
     for (; T(elem).isArray(); elem = tid(*T(elem).pointee())) n *= T(elem).length();
     const TypeId ep = tid(*types_.pointerTo(T(elem).unqualified())), sizeT = tid(*types_.get(target_.sizeType()));
-    const ValueId first = addrOf(symbol, ep);
+    const ValueId first = staticAddr(symbol, ep);
     if (g.elements.recorded()) {
         closeFull();     // each element is a full expression of its own; nothing destroys one built, the guard aborting instead
         if (n > 64) outside("a static array of more elements than the lowering builds one by one");
@@ -1289,7 +1296,19 @@ void Lowering::staticArray(sema::TypedId var, const std::string &symbol, const T
         args.push_back(result(add(Op::Bitcast, voidPtr, std::vector<ValueId>(1, first))));
         args.push_back(addrOf("__dso_handle", voidPtr));
     }
-    runtimeCall(ms ? "atexit" : "__cxa_atexit", intT, args);
+    runtimeCall(atexitFor(symbol), intT, args);
+}
+
+// A namespace-scope object's address: a thread_local's the thread's own, reached directly as __tls_init reaches it.
+ValueId Lowering::staticAddr(const std::string &symbol, TypeId type) {
+    sema::Resolution r;
+    r.isThreadLocal = threadLocalGlobal(symbol);
+    return objectAddr(symbol, type, r);
+}
+
+// What registers its destruction: [basic.stc.thread]'s per-thread call for a thread_local, the exit's otherwise.
+std::string Lowering::atexitFor(const std::string &symbol) const {
+    return threadLocalGlobal(symbol) ? target_.threadAtexit() : target_.microsoftNames() ? "atexit" : "__cxa_atexit";
 }
 
 // The destructor called on the object: a call on the normal path, as the walker's is; an invoke in a cleanup's terminate scope.

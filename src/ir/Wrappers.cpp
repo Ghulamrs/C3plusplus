@@ -85,10 +85,11 @@ FuncId Builder::thunk(const FunctionFacts &facts, bool virt) {
 
 // _GLOBAL__sub_I_<file>, [basic.start.init]/2: each object in the order the parser met it, built and its destructor registered
 // as a static local's are (staticConstruction) - a template's static member under its weak guard, the first unit to run building it.
-FuncId Builder::initFunction(const FunctionFacts &facts) {
+// __tls_init is its per-thread twin ([basic.stc.thread]), under the thread_local byte __tls_guard on Itanium (finishTlsInit).
+FuncId Builder::initFunction(const FunctionFacts &facts, bool tls) {
     Lowering &l = l_;
     std::vector<sema::DynamicInit> inits;
-    if (!l.dynamicInits_ || !l.dynamicInits_(inits) || inits.empty()) l.outside("an init function whose objects the parser recorded no `var` for");
+    if (!l.dynamicInits_ || !l.dynamicInits_(inits, tls) || inits.empty()) l.outside("an init function whose objects the parser recorded no `var` for");
     l.beginFunction(facts);
     if (l.this_.valid() || facts.paramCount != 0 || !l.T(l.returns_).isVoid()) l.outside("an init function with parameters");
     l.returnBlock_ = l.newBlock();
@@ -97,6 +98,20 @@ FuncId Builder::initFunction(const FunctionFacts &facts) {
     l.place(first);
     const bool ms = l.target_.microsoftNames();
     const TypeId intT = l.tid(*l.types_.intType()), boolT = l.tid(*l.types_.get(Kind::Bool));
+    BlockId once;
+    if (tls && !ms) {
+        const TypeId byte = l.tid(*l.types_.get(Kind::UChar));
+        const ValueId guard = l.staticAddr("__tls_guard", l.types_.pointerTo(byte));
+        std::vector<ValueId> ops(1, l.promote(Lowering::Val(l.load(guard, byte), byte)).v);
+        ops.push_back(l.iconst(intT, 0));
+        const InstId fresh = l.add(Op::ICmp, boolT, ops);
+        l.at(fresh).cc = Cmp::Eq;
+        const BlockId build = l.newBlock();
+        once = l.newBlock();
+        l.condbr(l.result(fresh), build, once);
+        l.place(build);
+        l.store(guard, l.iconst(byte, 1));
+    }
     for (const sema::DynamicInit &e : inits) {
         BlockId done;
         if (!e.once.empty()) {
@@ -114,10 +129,12 @@ FuncId Builder::initFunction(const FunctionFacts &facts) {
             l.store(guard, l.iconst(gt, 1));
         }
         if (l.tree_.node(e.var).type == nullptr) l.outside("an init function's object not typed");
+        if (tls && (l.tree_.node(e.var).type->isReference() || !l.threadLocalGlobal(e.symbol))) l.outside("a thread_local reference, or no thread_local, in __tls_init");
         if (l.tree_.node(e.var).type->isArray() && !e.built.array && !e.built.elements.recorded()) l.outside("an array built at run time before main");
         l.staticConstruction(e.var, e.symbol, e.built);
         if (done.valid()) { l.br(done); l.place(done); }
     }
+    if (once.valid()) { l.br(once); l.place(once); }
     l.br(l.returnBlock_);
     l.finishFunction(facts.landingPads);
     return FuncId(static_cast<std::uint32_t>(l.fnIndex_));

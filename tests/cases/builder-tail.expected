@@ -1,0 +1,8 @@
+e0 1 10
+e1 1 20
+e2 1 30
+caught 60 after 6
+table 1 2 | 3 4 | -1 0
+single 5 67 -1
+pairs 8 -1 -1 | 9 1 23
+LEDGER built=5 gone=5 live=0 double=0 phantom=0 over=0 lost=0

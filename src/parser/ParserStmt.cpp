@@ -608,20 +608,9 @@ StmtPtr Parser::declarationBody() {
             std::vector<InitStep> path;
             const std::size_t built = inits.size();
             // An aggregate whose members' classes have constructors: what built each, for the SSA lowering (M3b.2).
-            const Type *leaf = d.type;
-            while (leaf->isArray()) leaf = leaf->pointee();
-            const ListBuilt outerRecord = aggregateRecord_;
-            const bool outerRecording = aggregateRecording_;
-            aggregateRecord_ = ListBuilt();
-            aggregateRecording_ = leaf->isStructOrUnion() && !constructedClass(leaf) && needsConstruction(leaf);
-            emitInit(d.name, path, d.type, in, inits);
+            const ListBuilt made = emitRecordedInit(d.name, path, d.type, in, inits);
             const Local *rl = lookup_.findLocal(d.name);
-            if (aggregateRecording_ && !aggregateRecord_.elems.empty() && rl != nullptr && listBySerial_.count(rl->serial) == 0) {
-                aggregateRecord_.members = true;
-                listBySerial_[rl->serial] = aggregateRecord_;
-            }
-            aggregateRecord_ = outerRecord;
-            aggregateRecording_ = outerRecording;
+            if (made.members && rl != nullptr && listBySerial_.count(rl->serial) == 0) listBySerial_[rl->serial] = made;
             if (quals.isConstexpr && d.type->unqualified()->isStructOrUnion()) foldLocalObject(d, off, inits, built);
         }
         flushTemporaries(inits);
