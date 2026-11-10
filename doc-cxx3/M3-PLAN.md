@@ -1726,3 +1726,48 @@ SsaDead +221, the verifier +5, the driver +12, the header +14, promote +3, the D
 writes `int mode`); a pad no invoke reaches is kept with its blocks (the rule above) though nothing can enter it; dead
 stores are found only in frame objects whose address goes nowhere else, at the block level; names.sh under the flag not
 re-run (no name moves).
+
+**M3b.4, round 4, 2026-11-10: value numbering on SSA, and a const scalar local promoted.** From main `b668abb5`, branch
+`m3b4-gvn`. **gvn** (`SsaValues.cpp`, after cfg at -O1): a walk of the dominator tree (`SsaDominators.cpp`'s, one
+implementation) by an explicit stack, with a table of the pure instructions scoped by an undo log - iconst, fconst, null,
+addr, integer and floating arithmetic, icmp, fcmp, the conversions, gep and select - keyed by op, type, the operands as
+already replaced (add, mul, and, or, xor and an equality icmp with the two sorted; a floating operator keeps its order,
+which NaN comes out), cmp, the constant (`k`, x87 `bits`) and the symbol. One found again in a block its first dominates
+and in the same funclet is replaced by the first; one in another funclet shadows it for its own subtree. **Loads**, within
+a block only: a load is the value of an earlier load of the same address and type, or of the store to that address whose
+value has its type, with only pure instructions and loads between - any other instruction (a store elsewhere, memcpy,
+memset, a call, va_*, a trap) or a volatile access forgets everything. **Not touched**: a pad's block, a volatile access,
+`tlsaddr` (it may call its wrapper), `undef` and `alloca`. The replaced leave their blocks, their values given no type.
+**The driver**: promote, fold, cfg, **gvn**, dead, then refold, recfg, **regvn**, redead once, where cfg, gvn or dead
+changed the function; gvn sits after cfg so merged blocks give it longer runs of loads, and before dead, which takes the
+stores its forwarded loads leave unseen. **Round 3's leftover**: a `const` local's initialiser is stored as a bitcast to
+`const int` and loaded as `int`, so promote's exact-type test refused it; a slot now promotes when every access is in
+its object's type (as before) or every access is in that type without const (`unqualified`, one function), a store's
+value then read through the bitcast to its operand (`unqualifiedStored`). The bitcast is left for dead. **Counts over
+the suite** (`-check=ssa gvn:`, summed by `ssa.sh`), Linux: 23439 constants and addresses, 665 arithmetic, 51
+comparisons, 2552 conversions, 4043 geps, 0 selects; 98 loads given a load's value, 579 a store's. Windows: 23281, 655,
+39, 2469, 4280, 0; 100, 1707. **Promoted**: Linux 10248 of 11047 scalar allocas against 10018 by round 3's compiler over
+the same cases (+230, the const locals); Windows 10007 of 11322 (round 3: 9768 of 11300, one case fewer). Dead now
+removes 5988 instructions on Linux (round 3 22525: the constants gvn takes first) and on Windows 1219 stores no load sees
+(79: the stores whose loads gvn forwarded). **The probe**: `tests/cases/ssa-gvn.cpp` (an expression again under its
+first, commuted, a comparison and a conversion again, an element address twice, a global loaded twice, after its store,
+after a call and after a store elsewhere, a const local in a loop, a handler's twin of the body's value; `.expected` is
+the Windows box's clang) with `ssa-gvn.gvn`, its `-O1 -dump=ssa=gvn` on x86_64-linux; `ssa-dead.dead` re-recorded (gvn
+runs before dead). **Gated on `be79faa1`** (the code commit; this entry is the only change after it), each box from a
+clean ship and build. **Linux** (`~/m3b4r4`): ssa.sh at -O1 and -O2 8907/8907 bodies and 973/973 compiler-written
+lowered, 0 failed after any pass, 768 passed (the four probes' five dumps among them); run.sh 1105/0 at `-front=ssa
+-O1`, `-front=ssa -O2`, `-front=ssa`, -O2 and -O0; `make test` to its end, rc 0; emit 3021/0 (no golden on that tree);
+typed 763/0, adapted 763/0 (1724 the same); coff 1498 objects 0 differ; c90 447/0; syntax 3/0; exclusions 127 sites 0/0
+(no citation moved); comment cap 0; memory gate 44 raw pointers, `new` 1056 (unchanged); `ide/generate.py --check`
+clean after its regeneration there. **Windows** (cl /W4 /WX clean): ssa.sh at -O1 and -O2 9178 of 9182 bodies (M3b.3's
+four), 1130/1130 compiler-written, 0 failed after any pass, 745 passed; `winpass.sh` at `-front=ssa -O1` and
+`-front=ssa -O2` gnu 732 / masm 731 same, 0 differ, 340 refused as recorded. **The .text** (`bench.ps1 -Cases`, 743
+cases at `-front=ssa -O1`): 1,811,449 bytes; over the 742 both tables hold, 1,809,523 against round 3's 1,837,565
+(-1.53%, 363 smaller, 272 larger) and over 740, 1,807,147 against main's `-O1` 1,131,924 (+59.7%, the selector's slot
+per value: round 7). **Measured and dropped**: constants numbered within their block only - +0.40% over numbering them
+across blocks, so they stay global; the 272 larger (most the library cases: deque, unordered_map, map) are not traced -
+the likeliest cause is the MIR allocator holding a value live across blocks that each block used to make again.
+`src/` went from 91267 to 91482 lines (+215: SsaValues +186, promote +15, the driver +4, the header +6, the Driver's
+report +4). **Left**: loads across blocks (the plan's rule: within a block); a store to one address forgets every other
+(no alias analysis); a floating commutative operator is not canonicalised; a pad's block and `tlsaddr` are not numbered;
+names.sh under the flag not re-run (no name moves).
