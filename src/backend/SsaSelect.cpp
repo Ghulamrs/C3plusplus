@@ -251,6 +251,15 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         ssaStore(f, i.result);
         return;
     }
+    case ir::Op::SMulH: case ir::Op::UMulH:
+        // The one-operand multiply: rdx:rax, of which rdx is the result.
+        a_->ins("mov", vslot(f.operand(i, 1)), reg(abi_.scratch));
+        ssaLoad(f, f.operand(i, 0));
+        a_->ins(i.op == ir::Op::SMulH ? "imul" : "mul", reg(rhs(rt)));
+        a_->ins("mov", reg(rt->size(target_) == 8 ? "%rdx" : "%edx"), reg(acc(rt)));
+        canonicalise(rt);
+        ssaStore(f, i.result);
+        return;
     case ir::Op::Neg: case ir::Op::Not:
         ssaLoad(f, f.operand(i, 0));
         a_->ins(i.op == ir::Op::Neg ? "neg" : "not", reg(acc(rt)));

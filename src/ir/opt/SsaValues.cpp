@@ -35,8 +35,8 @@ struct Key {
 int kindOf(const Inst &i) {
     switch (i.op) {
     case Op::IConst: case Op::FConst: case Op::Null: case Op::Addr: return 1;
-    case Op::Add: case Op::Sub: case Op::Mul: case Op::SDiv: case Op::UDiv: case Op::SRem: case Op::URem: case Op::And:
-    case Op::Or: case Op::Xor: case Op::Shl: case Op::LShr: case Op::AShr: case Op::Neg: case Op::Not:
+    case Op::Add: case Op::Sub: case Op::Mul: case Op::SDiv: case Op::UDiv: case Op::SRem: case Op::URem: case Op::SMulH:
+    case Op::UMulH: case Op::And: case Op::Or: case Op::Xor: case Op::Shl: case Op::LShr: case Op::AShr: case Op::Neg: case Op::Not:
     case Op::FAdd: case Op::FSub: case Op::FMul: case Op::FDiv: case Op::FNeg: return 2;
     case Op::ICmp: case Op::FCmp: return 3;
     case Op::Trunc: case Op::SExt: case Op::ZExt: case Op::FpToSi: case Op::FpToUi: case Op::SiToFp: case Op::UiToFp:
@@ -49,8 +49,8 @@ int kindOf(const Inst &i) {
 
 // Integer operators whose operands may be read in either order; a floating one keeps its order (which NaN comes out).
 bool commutes(const Inst &i) {
-    return i.op == Op::Add || i.op == Op::Mul || i.op == Op::And || i.op == Op::Or || i.op == Op::Xor ||
-           (i.op == Op::ICmp && (i.cc == Cmp::Eq || i.cc == Cmp::Ne));
+    return i.op == Op::Add || i.op == Op::Mul || i.op == Op::SMulH || i.op == Op::UMulH || i.op == Op::And || i.op == Op::Or ||
+           i.op == Op::Xor || (i.op == Op::ICmp && (i.cc == Cmp::Eq || i.cc == Cmp::Ne));
 }
 
 struct Numberer {

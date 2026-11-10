@@ -1,0 +1,58 @@
+int 2: 4ceb738e01adacd8
+int 4: 12c1308eee244a1e
+int 8: 4618f2a2e0098852
+int 1024: c0ae426e6c9a6302
+int 1073741824: 4f309519b638e4a8
+int 3: 7b351eda154e5faa
+int 5: 6f921f74ff2986a2
+int 6: 8129f6747d4ca3ee
+int 7: 784ee8a873469ef2
+int 10: 2ef1c4c2a837effe
+int 25: 97d47776d9093a2e
+int 100: 44e2d1e544f93021
+int 641: dde1bb23bf47ade
+int 1000: 1cc64b4efa056771
+int 65537: c00e860b178efcc0
+int 2147483647: ca6e128b05e75cfe
+int -2: 775cae475f090ee0
+int -8: acc5f21c47304cee
+int -3: e566a912daed5b82
+int -7: e864d643e568613e
+int -1000: ed92afb1b6fccf0f
+int 1: d1887e5388a150f6
+unsigned 2: a86e371e3980ba89
+unsigned 16: 5ccc015bcbf0393c
+unsigned 2147483648: fc22e9485a7a6d18
+unsigned 3: bb0c9d9cb7ed2943
+unsigned 5: d5cbc2df89a49be9
+unsigned 7: 76bbf0285f3b1e7d
+unsigned 10: 302a26001ae39573
+unsigned 25: bc03cb73a3f1ab5b
+unsigned 100: f6ed6c46e1305e8f
+unsigned 641: 4460ac7e593a8999
+unsigned 1000: 95ecd04e25430ccd
+unsigned 2147483647: 2614559cad313243
+unsigned 2147483649: 6fa69f0ae8cb9cab
+unsigned 1: 148c3ce378563ebd
+long long 2: 653331d3e32a72f6
+long long 1099511627776: fdca4d647a2beb44
+long long 3: 5fc0b5c02ba5073f
+long long 7: 9b254aff02017061
+long long 10: acab287a5e49a826
+long long 1000: e731f7931b1e9ea8
+long long 1000000007: 723463e502cd8653
+long long 9223372036854775807: 259a13e7409641d5
+long long -3: 9877e9673c0e4ab7
+long long -16: c1d7b431c3cd166f
+long long -1000000007: e18495a018c27cff
+unsigned long long 2: c8c968ab2ddfae0d
+unsigned long long 1099511627776: 9d57d526f8da8813
+unsigned long long 9223372036854775808: b0b67241d3bbb24
+unsigned long long 3: 8a3c639c5e1f97b5
+unsigned long long 5: 6d975bd3a3d1eb2b
+unsigned long long 7: 78b1060307aa213f
+unsigned long long 10: ee1e62c5bd1a34be
+unsigned long long 1000: fe158132831d8653
+unsigned long long 1000000007: 7349651c66cdc525
+unsigned long long 4611686018427387905: 4066bc011434fb95
+12304 -12304 7

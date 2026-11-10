@@ -8,16 +8,19 @@ namespace {
 
 struct Pass { char name[16]; int level; bool again; };
 
-// In the order they run, `run` dispatching by index; gvn after cfg (merged blocks: longer runs of loads), before dead (which
-// takes what it leaves). Those marked `again` run once more, only where cfg, gvn or dead changed the function the first
-// time: what a removed edge or value leaves to fold.
+// In the order they run, `run` dispatching by index: jumps before cfg (which removes what threading leaves unreached),
+// gvn after cfg (longer runs of loads), divide after gvn (a division found twice made once; -O2's alone, as OptDivide's),
+// dead last. Those marked `again` run once more only where an earlier pass changed the function: what it left to fold.
 const Pass kPasses[] = {
     { "promote", 1, false },
     { "fold", 1, false },
+    { "jumps", 1, false },
     { "cfg", 1, false },
     { "gvn", 1, false },
+    { "divide", 2, false },
     { "dead", 1, false },
     { "refold", 1, true },
+    { "rejumps", 1, true },
     { "recfg", 1, true },
     { "regvn", 1, true },
     { "redead", 1, true },
@@ -26,10 +29,12 @@ const Pass kPasses[] = {
 bool run(std::size_t pass, Function &f, const TypeTable &types, const Target &target, PassLog &log) {
     switch (pass) {
     case 0: promote(f, types, log); return false;
-    case 1: case 5: fold(f, types, target, log); return false;
-    case 2: case 6: return cfg(f, log);
-    case 3: case 7: return values(f, log);
-    case 4: case 8: return dead(f, log);
+    case 1: case 7: fold(f, types, target, log); return false;
+    case 2: case 8: return jumps(f, types, target, log);
+    case 3: case 9: return cfg(f, log);
+    case 4: case 10: return values(f, log);
+    case 5: return divide(f, types, target, log);
+    case 6: case 11: return dead(f, log);
     default: return false;
     }
 }

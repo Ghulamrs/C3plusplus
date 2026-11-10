@@ -127,9 +127,6 @@ function @_ZL7handleri(%1: int) -> int static {
   %8 = iconst int, 0
   %10 = load int, %2
   %13 = invoke @_ZL8mayThrowi(%10) : int, ^6, ^5
-^4(%37: int):
-  %28 = icmp ne, bool, %37, %8
-  condbr %28, ^11(%37), ^10
 ^5(%11: void *, %12: int):
   catchpad [@_ZTIi] own 1
   %15 = iconst int, 1
@@ -138,7 +135,7 @@ function @_ZL7handleri(%1: int) -> int static {
 ^6:
   %14 = add int, %6, %13
   store %3, %14
-  br ^4(%8)
+  br ^10
 ^7:
   %17 = call @__cxa_begin_catch(%11) : void *
   %18 = bitcast int *, %17
@@ -147,7 +144,8 @@ function @_ZL7handleri(%1: int) -> int static {
   %24 = mul int, %22, %5
   %25 = add int, %20, %24
   call @__cxa_end_catch() : none
-  br ^4(%25)
+  %28 = icmp ne, bool, %25, %8
+  condbr %28, ^11(%25), ^10
 ^8:
   call @_Unwind_Resume(%11) : none
   unreachable

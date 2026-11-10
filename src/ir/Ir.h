@@ -23,7 +23,7 @@ struct FuncId  { std::uint32_t v; FuncId()  : v(0) {} explicit FuncId(std::uint3
 enum class Op : std::uint8_t {
     IConst, FConst, Null, Addr, TlsAddr, Undef,
     Alloca, Load, Store, Memcpy, Memset, Gep,
-    Add, Sub, Mul, SDiv, UDiv, SRem, URem, And, Or, Xor, Shl, LShr, AShr, Neg, Not, ICmp,
+    Add, Sub, Mul, SDiv, UDiv, SRem, URem, SMulH, UMulH, And, Or, Xor, Shl, LShr, AShr, Neg, Not, ICmp,
     FAdd, FSub, FMul, FDiv, FNeg, FCmp,
     Trunc, SExt, ZExt, FpToSi, FpToUi, SiToFp, UiToFp, FpExt, FpTrunc, Bitcast, PtrToInt, IntToPtr,
     Br, CondBr, Switch, Ret, Unreachable,

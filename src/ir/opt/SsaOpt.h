@@ -38,10 +38,14 @@ struct PassLog {
     // gvn's, by kind: constants and addresses, arithmetic, comparisons, conversions, geps, selects replaced; loads
     // given an earlier load's value, and a store's.
     int gvnConstants, gvnArith, gvnCompares, gvnCasts, gvnGeps, gvnSelects, gvnLoads, gvnStored;
+    int threaded, threadedSwitch;       // jumps': edges sent past a condbr's test, and past a switch's
+    // divide's: by a power of two, by a multiply-high signed and unsigned, of those at 64 bits; a constant divisor left.
+    int divShifts, divSigned, divUnsigned, divWide, divLeft;
     PassLog(bool c, const std::string &after) : check(c), dumpAfter(after), failed(0), allocas(0), scalars(0), promoted(0),
         constants(0), compares(0), casts(0), floating(0), identities(0), copies(0), arguments(0), kept(0), constBranches(0),
         sameBranches(0), unreachable(0), merged(0), forwarded(0), deadInsts(0), deadParams(0), deadStores(0), deadAllocas(0),
-        gvnConstants(0), gvnArith(0), gvnCompares(0), gvnCasts(0), gvnGeps(0), gvnSelects(0), gvnLoads(0), gvnStored(0) {}
+        gvnConstants(0), gvnArith(0), gvnCompares(0), gvnCasts(0), gvnGeps(0), gvnSelects(0), gvnLoads(0), gvnStored(0),
+        threaded(0), threadedSwitch(0), divShifts(0), divSigned(0), divUnsigned(0), divWide(0), divLeft(0) {}
 };
 
 // The pass names -dump=ssa= takes, in the order they run.
@@ -65,5 +69,14 @@ bool cfg(Function &f, PassLog &log);
 bool dead(Function &f, PassLog &log);
 // **Value numbering** (SsaValues.cpp): a pure instruction a dominating twin computes, a load its block holds. True on a change.
 bool values(Function &f, PassLog &log);
+// **Jump threading** (SsaJumps.cpp): an edge passing a constant to a block that only tests it goes where the test goes.
+bool jumps(Function &f, const TypeTable &types, const Target &target, PassLog &log);
+// **Division by a constant** (SsaDivide.cpp): shifts, or a multiply-high by DivMagic.h's number. True on a change.
+bool divide(Function &f, const TypeTable &types, const Target &target, PassLog &log);
+
+// fold's constant arithmetic, for the passes that evaluate (SsaFold.cpp): `cc` over two integer constants of type t
+// read at the selector's width, and an integer constant converted to integer type `to`; false where fold leaves it.
+bool foldCompare(Cmp cc, long long x, long long y, const Type &t, const Target &target, long long &out);
+bool foldIntConversion(long long x, const Type &to, const Target &target, long long &out);
 
 }   // namespace ir

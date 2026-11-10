@@ -5,7 +5,7 @@
 # The summary counts what was lowered and what was left outside, by reason, which is the measure of the subset; then
 # the compiler-written functions the Builder lowered (M3b.3), by kind, and what it left, by kind and reason. At SSA_LEVEL
 # (default 1) the SSA passes run and are verified after each (M3b.4): the allocas promoted, the folds, the CFG
-# simplifications, the values numbered and the dead code removed are summed.
+# simplifications, the edges threaded, the values numbered, the divisions rewritten and the dead code removed are summed.
 CXX1="${CXX1:-./cxx3.exe}"
 SSA_LEVEL="${SSA_LEVEL:-1}"
 out=tests/out-ssa
@@ -43,12 +43,18 @@ cat "$out"/*.ssa | grep -- '^-check=ssa dead:' | tr ' ' '\n' | grep = | tr '=' '
     awk '{s[$1]+=$2} END {printf "ssa.sh: dead removed %d instructions, %d block parameters, %d stores no load sees, %d frame objects\n", s["insts"], s["params"], s["stores"], s["allocas"]}'
 cat "$out"/*.ssa | grep -- '^-check=ssa gvn:' | tr ' ' '\n' | grep = | tr '=' ' ' |
     awk '{s[$1]+=$2} END {printf "ssa.sh: gvn replaced %d constants and addresses, %d arithmetic, %d comparisons, %d conversions, %d geps, %d selects; %d loads by a load, %d by a store\n", s["constants"], s["arith"], s["compares"], s["casts"], s["geps"], s["selects"], s["loads"], s["stored"]}'
-# The probes of the passes: <case>.<pass> is the case's -O1 -dump=ssa=<pass> on x86_64-linux, compared byte for byte.
+cat "$out"/*.ssa | grep -- '^-check=ssa jumps:' | tr ' ' '\n' | grep = | tr '=' ' ' |
+    awk '{s[$1]+=$2} END {printf "ssa.sh: jumps threaded %d edges past a condbr, %d past a switch\n", s["condbr"], s["switch"]}'
+cat "$out"/*.ssa | grep -- '^-check=ssa divide:' | tr ' ' '\n' | grep = | tr '=' ' ' |
+    awk '{s[$1]+=$2} END {printf "ssa.sh: divide made %d divisions shifts, %d a signed and %d an unsigned multiply-high (%d of them 64-bit), left %d by a constant\n", s["shifts"], s["signed"], s["unsigned"], s["wide"], s["left"]}'
+# The probes of the passes: <case>.<pass> is the case's -dump=ssa=<pass> on x86_64-linux, compared byte for byte, at -O1
+# (-O2 for divide, which runs at that level alone).
 if [ "$(uname -s)" = Linux ]; then
-    for d in tests/cases/*.promote tests/cases/*.fold tests/cases/*.cfg tests/cases/*.gvn tests/cases/*.dead; do
+    for d in tests/cases/*.promote tests/cases/*.fold tests/cases/*.jumps tests/cases/*.cfg tests/cases/*.gvn tests/cases/*.divide tests/cases/*.dead; do
         [ -f "$d" ] || continue
         p=${d##*.}
-        if "$CXX1" -nologo -O1 -dump=ssa=$p -S "${d%.*}.cpp" -o /dev/null 2>/dev/null | cmp -s - "$d"; then pass=$((pass + 1))
+        lv=1; [ "$p" = divide ] && lv=2
+        if "$CXX1" -nologo -O$lv -dump=ssa=$p -S "${d%.*}.cpp" -o /dev/null 2>/dev/null | cmp -s - "$d"; then pass=$((pass + 1))
         else echo "FAIL $(basename "$d"): the IR after $p differs from the recorded probe"; fail=$((fail + 1)); fi
     done
 fi

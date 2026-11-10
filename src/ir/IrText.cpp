@@ -14,7 +14,7 @@ namespace {
 const char kOpNames[][12] = {
     "iconst", "fconst", "null", "addr", "tlsaddr", "undef",
     "alloca", "load", "store", "memcpy", "memset", "gep",
-    "add", "sub", "mul", "sdiv", "udiv", "srem", "urem", "and", "or", "xor", "shl", "lshr", "ashr", "neg", "not", "icmp",
+    "add", "sub", "mul", "sdiv", "udiv", "srem", "urem", "smulh", "umulh", "and", "or", "xor", "shl", "lshr", "ashr", "neg", "not", "icmp",
     "fadd", "fsub", "fmul", "fdiv", "fneg", "fcmp",
     "trunc", "sext", "zext", "fptosi", "fptoui", "sitofp", "uitofp", "fpext", "fptrunc", "bitcast", "ptrtoint", "inttoptr",
     "br", "condbr", "switch", "ret", "unreachable",

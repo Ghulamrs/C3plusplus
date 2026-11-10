@@ -26,7 +26,7 @@ struct Opcode {
         SignExtendAx,   // cqo, cdq: rax into rdx:rax
         ExtendAx,       // cltq, cdqe: eax into rax
         StringMove,     // rep movsq
-        Div,            // idiv, div: rdx:rax
+        Div,            // idiv, div, mul: rdx:rax
         Compare,        // cmp, test, ucomis: reads both, writes the flags
         Unary,          // neg, not, inc, dec: reads and writes its operand
         Move,           // a copy, an extension, lea, an SSE move
@@ -88,6 +88,7 @@ struct Opcode {
     _(Divl, "divl", Div, 0, 0, kNoCond, nullptr, 0)                                           \
     _(Idivq, "idivq", Div, 0, 0, kNoCond, nullptr, 0)                                         \
     _(Divq, "divq", Div, 0, 0, kNoCond, nullptr, 0)                                           \
+    _(Mul, "mul", Div, 0, 0, kNoCond, "mul", 0)                                               \
     /* Compares: the flags are their only result. */                                          \
     _(Cmp, "cmp", Compare, E | I | R, 0, kNoCond, "cmp", 0)                                   \
     _(Cmpl, "cmpl", Compare, E | I | R, 4, kNoCond, "cmp", 4)                                 \

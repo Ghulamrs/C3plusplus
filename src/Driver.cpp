@@ -1539,7 +1539,11 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     std::snprintf(gvns, sizeof gvns, "-check=ssa gvn: constants=%d arith=%d compares=%d casts=%d geps=%d selects=%d loads=%d "
                   "stored=%d\n", log.gvnConstants, log.gvnArith, log.gvnCompares, log.gvnCasts, log.gvnGeps, log.gvnSelects,
                   log.gvnLoads, log.gvnStored);
-    return out + line + synth + passes + folds + cfgs + gvns;
+    char jumps[200];
+    std::snprintf(jumps, sizeof jumps, "-check=ssa jumps: condbr=%d switch=%d\n-check=ssa divide: shifts=%d signed=%d "
+                  "unsigned=%d wide=%d left=%d\n", log.threaded, log.threadedSwitch, log.divShifts, log.divSigned,
+                  log.divUnsigned, log.divWide, log.divLeft);
+    return out + line + synth + passes + folds + cfgs + gvns + jumps;
 }
 
 bool Driver::compile(const Job &job) {

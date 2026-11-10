@@ -1,0 +1,287 @@
+function @_ZL4findPKiii(%1: const int *, %3: int, %5: int) -> int static {
+^1(%1: const int *, %3: int, %5: int):
+  br ^3
+^2(%31: int):
+  ret %31
+^3:
+  %8 = iconst bool, 0
+  %10 = iconst int, 0
+  br ^4(%10)
+^4(%33: int):
+  %13 = icmp slt, bool, %33, %3
+  condbr %13, ^5, ^11
+^5:
+  %16 = sext long, %33
+  %17 = iconst long, 4
+  %18 = mul long, %16, %17
+  %19 = gep const int *, %1, %18
+  %20 = load int, %19
+  %22 = icmp eq, bool, %20, %5
+  condbr %22, ^8, ^9
+^6:
+  %25 = iconst int, 1
+  %26 = add int, %33, %25
+  br ^4(%26)
+^7(%32: bool):
+  condbr %32, ^10, ^11
+^8:
+  %23 = iconst bool, 1
+  br ^10
+^9:
+  br ^6
+^10:
+  br ^2(%33)
+^11:
+  %29 = iconst int, 1
+  %30 = iconst int, -1
+  br ^2(%30)
+}
+function @_ZL4bothii(%1: int, %3: int) -> int static {
+^1(%1: int, %3: int):
+  br ^3
+^2(%28: int):
+  ret %28
+^3:
+  %6 = iconst int, 0
+  %7 = icmp sgt, bool, %1, %6
+  %8 = iconst bool, 0
+  condbr %7, ^4, ^7
+^4:
+  %10 = iconst int, 0
+  %11 = icmp sgt, bool, %3, %10
+  br ^5(%11)
+^5(%12: bool):
+  condbr %12, ^6, ^7
+^6:
+  %15 = add int, %1, %3
+  br ^2(%15)
+^7:
+  %17 = iconst int, 0
+  %18 = icmp slt, bool, %1, %17
+  %19 = iconst bool, 1
+  condbr %18, ^10, ^8
+^8:
+  %21 = iconst int, 0
+  %22 = icmp slt, bool, %3, %21
+  br ^9(%22)
+^9(%23: bool):
+  condbr %23, ^10, ^11
+^10:
+  %26 = sub int, %1, %3
+  br ^2(%26)
+^11:
+  %27 = iconst int, 0
+  br ^2(%27)
+}
+function @_ZL7machinePKc(%1: const char *) -> int static {
+^1(%1: const char *):
+  br ^3
+^2:
+  ret %35
+^3:
+  %4 = iconst int, 0
+  %6 = iconst int, 0
+  br ^4(%1, %4, %6)
+^4(%37: const char *, %38: int, %42: int):
+  %8 = load char, %37
+  %9 = iconst char, 0
+  %10 = icmp ne, bool, %8, %9
+  condbr %10, ^5, ^7
+^5:
+  switch %38, default ^8(%38, %42), 0 -> ^10, 1 -> ^13
+^6:
+  %30 = gep const char *, %37, 1
+  br ^4(%30, %39, %43)
+^7:
+  %32 = iconst int, 10
+  %33 = mul int, %42, %32
+  %35 = add int, %33, %38
+  br ^2
+^8(%39: int, %43: int):
+  br ^6
+^9:
+  br ^10
+^10:
+  %13 = load char, %37
+  %14 = iconst char, 32
+  %15 = sext int, %13
+  %16 = iconst int, 32
+  %17 = icmp ne, bool, %15, %16
+  condbr %17, ^11, ^12(%38, %42)
+^11:
+  %18 = iconst int, 1
+  %20 = iconst int, 1
+  %21 = add int, %42, %20
+  br ^12(%18, %21)
+^12(%40: int, %44: int):
+  br ^8(%40, %44)
+^13:
+  %23 = load char, %37
+  %24 = iconst char, 32
+  %25 = sext int, %23
+  %26 = iconst int, 32
+  %27 = icmp eq, bool, %25, %26
+  condbr %27, ^14, ^15(%38)
+^14:
+  %28 = iconst int, 0
+  br ^15(%28)
+^15(%41: int):
+  br ^8(%41, %42)
+}
+function @_ZL9countdowni(%1: int) -> int static {
+^1(%1: int):
+  br ^3
+^2:
+  ret %21
+^3:
+  %4 = iconst bool, 1
+  %6 = iconst int, 0
+  br ^4(%1, %4, %6)
+^4(%19: int, %20: bool, %21: int):
+  condbr %20, ^5, ^6
+^5:
+  %9 = iconst int, 1
+  %10 = add int, %21, %9
+  %12 = iconst int, 3
+  %13 = sub int, %19, %12
+  %15 = iconst int, 0
+  %16 = icmp sgt, bool, %13, %15
+  br ^4(%13, %16, %10)
+^6:
+  br ^2
+}
+function @_ZL6reporti(%1: int) -> void static {
+^1(%1: int):
+  br ^3
+^2:
+  ret
+^3:
+  %3 = addr const char [11] *, @.L.str.0
+  %4 = bitcast const char *, %3
+  %6 = call @printf(%4, %1) : int variadic
+  br ^2
+}
+function @_ZL6joinedi(%1: int) -> int static {
+^1(%1: int):
+  br ^3
+^2:
+  ret %9
+^3:
+  %5 = iconst int, 5
+  %6 = icmp sgt, bool, %1, %5
+  condbr %6, ^4, ^5
+^4:
+  %7 = iconst int, 1
+  br ^6(%7)
+^5:
+  %8 = iconst int, 2
+  br ^6(%8)
+^6(%9: int):
+  %11 = iconst int, 1
+  %12 = icmp eq, bool, %9, %11
+  condbr %12, ^7, ^8
+^7:
+  call @_ZL6reporti(%1) : none
+  br ^8
+^8:
+  call @_ZL6reporti(%9) : none
+  br ^2
+}
+function @main() -> int {
+^1:
+  %1 = alloca const int [6] *, align 16 ; const int [6] a
+  br ^3
+^2:
+  ret %88
+^3:
+  %2 = bitcast const int *, %1
+  %3 = iconst int, 4
+  %4 = iconst const int, 4
+  %5 = gep const int *, %2, 0
+  store %5, %4
+  %6 = iconst int, 8
+  %7 = iconst const int, 8
+  %8 = gep const int *, %2, 4
+  store %8, %7
+  %9 = iconst int, 15
+  %10 = iconst const int, 15
+  %11 = gep const int *, %2, 8
+  store %11, %10
+  %12 = iconst int, 16
+  %13 = iconst const int, 16
+  %14 = gep const int *, %2, 12
+  store %14, %13
+  %15 = iconst int, 23
+  %16 = iconst const int, 23
+  %17 = gep const int *, %2, 16
+  store %17, %16
+  %18 = iconst int, 42
+  %19 = iconst const int, 42
+  %20 = gep const int *, %2, 20
+  store %20, %19
+  %21 = addr const char [10] *, @.L.str.1
+  %22 = bitcast const char *, %21
+  %23 = bitcast const int *, %1
+  %24 = iconst int, 6
+  %25 = iconst int, 15
+  %26 = call @_ZL4findPKiii(%23, %24, %25) : int
+  %27 = bitcast const int *, %1
+  %28 = iconst int, 6
+  %29 = iconst int, 7
+  %30 = call @_ZL4findPKiii(%27, %28, %29) : int
+  %31 = bitcast const int *, %1
+  %32 = iconst int, 0
+  %33 = iconst int, 4
+  %34 = call @_ZL4findPKiii(%31, %32, %33) : int
+  %35 = call @printf(%22, %26, %30, %34) : int variadic
+  %36 = addr const char [13] *, @.L.str.2
+  %37 = bitcast const char *, %36
+  %38 = iconst int, 2
+  %39 = iconst int, 3
+  %40 = call @_ZL4bothii(%38, %39) : int
+  %41 = iconst int, 2
+  %42 = iconst int, -2
+  %43 = iconst int, 3
+  %44 = call @_ZL4bothii(%42, %43) : int
+  %45 = iconst int, 2
+  %46 = iconst int, 3
+  %47 = iconst int, -3
+  %48 = call @_ZL4bothii(%45, %47) : int
+  %49 = iconst int, 0
+  %50 = iconst int, 0
+  %51 = call @_ZL4bothii(%49, %50) : int
+  %52 = call @printf(%37, %40, %44, %48, %51) : int variadic
+  %53 = addr const char [10] *, @.L.str.3
+  %54 = bitcast const char *, %53
+  %55 = addr const char [21] *, @.L.str.4
+  %56 = bitcast const char *, %55
+  %57 = call @_ZL7machinePKc(%56) : int
+  %58 = addr const char [1] *, @.L.str.5
+  %59 = bitcast const char *, %58
+  %60 = call @_ZL7machinePKc(%59) : int
+  %61 = addr const char [7] *, @.L.str.6
+  %62 = bitcast const char *, %61
+  %63 = call @_ZL7machinePKc(%62) : int
+  %64 = call @printf(%54, %57, %60, %63) : int variadic
+  %65 = addr const char [10] *, @.L.str.7
+  %66 = bitcast const char *, %65
+  %67 = iconst int, 10
+  %68 = call @_ZL9countdowni(%67) : int
+  %69 = iconst int, 1
+  %70 = call @_ZL9countdowni(%69) : int
+  %71 = iconst int, 4
+  %72 = iconst int, -4
+  %73 = call @_ZL9countdowni(%72) : int
+  %74 = call @printf(%66, %68, %70, %73) : int variadic
+  %76 = iconst int, 9
+  %77 = call @_ZL6joinedi(%76) : int
+  %78 = bitcast const int, %77
+  %80 = iconst int, 1
+  %81 = call @_ZL6joinedi(%80) : int
+  %82 = bitcast const int, %81
+  %83 = addr const char [7] *, @.L.str.8
+  %84 = bitcast const char *, %83
+  %87 = call @printf(%84, %77, %81) : int variadic
+  %88 = iconst int, 0
+  br ^2
+}

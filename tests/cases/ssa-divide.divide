@@ -1,0 +1,2271 @@
+function @_ZL3mixyy(%1: unsigned long long, %3: unsigned long long) -> unsigned long long static {
+^1(%1: unsigned long long, %3: unsigned long long):
+  %7 = xor unsigned long long, %1, %3
+  %8 = iconst unsigned long long, 1099511628211
+  %9 = mul unsigned long long, %7, %8
+  ret %9
+}
+function @_ZL6ints32v() -> void static {
+^1:
+  %2 = iconst unsigned long long, -3750763034362895579
+  %4 = iconst int, 0
+  br ^4(%2, %4)
+^4(%924: unsigned long long, %925: int):
+  %6 = iconst unsigned long, 80
+  %7 = iconst unsigned long, 4
+  %8 = iconst unsigned long, 20
+  %9 = iconst int, 20
+  %10 = icmp slt, bool, %925, %9
+  condbr %10, ^5, ^7
+^5:
+  %12 = addr const int [20] *, @_ZL4ints
+  %13 = bitcast const int *, %12
+  %15 = sext long, %925
+  %16 = iconst long, 4
+  %17 = mul long, %15, %16
+  %18 = gep const int *, %13, %17
+  %19 = load int, %18
+  %20 = bitcast const int, %19
+  %23 = iconst int, 2
+  %968 = iconst int, 31
+  %969 = lshr int, %19, %968
+  %970 = add int, %19, %969
+  %971 = iconst int, 1
+  %24 = ashr int, %970, %971
+  %25 = bitcast unsigned int, %24
+  %26 = zext unsigned long long, %25
+  %27 = call @_ZL3mixyy(%924, %26) : unsigned long long
+  %972 = iconst int, 31
+  %973 = lshr int, %19, %972
+  %974 = add int, %19, %973
+  %975 = iconst int, -2
+  %976 = and int, %974, %975
+  %30 = sub int, %19, %976
+  %31 = bitcast unsigned int, %30
+  %32 = zext unsigned long long, %31
+  %33 = call @_ZL3mixyy(%27, %32) : unsigned long long
+  %35 = iconst int, 1
+  %36 = add int, %925, %35
+  br ^4(%33, %36)
+^7:
+  %37 = addr const char [14] *, @.L.str.0
+  %38 = bitcast const char *, %37
+  %39 = iconst int, 2
+  %41 = call @printf(%38, %39, %924) : int variadic
+  br ^8(%2, %4)
+^8(%926: unsigned long long, %927: int):
+  %51 = icmp slt, bool, %927, %9
+  condbr %51, ^9, ^11
+^9:
+  %53 = addr const int [20] *, @_ZL4ints
+  %54 = bitcast const int *, %53
+  %56 = sext long, %927
+  %57 = iconst long, 4
+  %58 = mul long, %56, %57
+  %59 = gep const int *, %54, %58
+  %60 = load int, %59
+  %61 = bitcast const int, %60
+  %64 = iconst int, 4
+  %977 = iconst int, 31
+  %978 = ashr int, %60, %977
+  %979 = iconst int, 30
+  %980 = lshr int, %978, %979
+  %981 = add int, %60, %980
+  %982 = iconst int, 2
+  %65 = ashr int, %981, %982
+  %66 = bitcast unsigned int, %65
+  %67 = zext unsigned long long, %66
+  %68 = call @_ZL3mixyy(%926, %67) : unsigned long long
+  %983 = iconst int, 31
+  %984 = ashr int, %60, %983
+  %985 = iconst int, 30
+  %986 = lshr int, %984, %985
+  %987 = add int, %60, %986
+  %988 = iconst int, -4
+  %989 = and int, %987, %988
+  %71 = sub int, %60, %989
+  %72 = bitcast unsigned int, %71
+  %73 = zext unsigned long long, %72
+  %74 = call @_ZL3mixyy(%68, %73) : unsigned long long
+  %76 = iconst int, 1
+  %77 = add int, %927, %76
+  br ^8(%74, %77)
+^11:
+  %78 = addr const char [14] *, @.L.str.1
+  %79 = bitcast const char *, %78
+  %80 = iconst int, 4
+  %82 = call @printf(%79, %80, %926) : int variadic
+  br ^12(%2, %4)
+^12(%928: unsigned long long, %929: int):
+  %92 = icmp slt, bool, %929, %9
+  condbr %92, ^13, ^15
+^13:
+  %94 = addr const int [20] *, @_ZL4ints
+  %95 = bitcast const int *, %94
+  %97 = sext long, %929
+  %98 = iconst long, 4
+  %99 = mul long, %97, %98
+  %100 = gep const int *, %95, %99
+  %101 = load int, %100
+  %102 = bitcast const int, %101
+  %105 = iconst int, 8
+  %990 = iconst int, 31
+  %991 = ashr int, %101, %990
+  %992 = iconst int, 29
+  %993 = lshr int, %991, %992
+  %994 = add int, %101, %993
+  %995 = iconst int, 3
+  %106 = ashr int, %994, %995
+  %107 = bitcast unsigned int, %106
+  %108 = zext unsigned long long, %107
+  %109 = call @_ZL3mixyy(%928, %108) : unsigned long long
+  %996 = iconst int, 31
+  %997 = ashr int, %101, %996
+  %998 = iconst int, 29
+  %999 = lshr int, %997, %998
+  %1000 = add int, %101, %999
+  %1001 = iconst int, -8
+  %1002 = and int, %1000, %1001
+  %112 = sub int, %101, %1002
+  %113 = bitcast unsigned int, %112
+  %114 = zext unsigned long long, %113
+  %115 = call @_ZL3mixyy(%109, %114) : unsigned long long
+  %117 = iconst int, 1
+  %118 = add int, %929, %117
+  br ^12(%115, %118)
+^15:
+  %119 = addr const char [14] *, @.L.str.2
+  %120 = bitcast const char *, %119
+  %121 = iconst int, 8
+  %123 = call @printf(%120, %121, %928) : int variadic
+  br ^16(%2, %4)
+^16(%930: unsigned long long, %931: int):
+  %133 = icmp slt, bool, %931, %9
+  condbr %133, ^17, ^19
+^17:
+  %135 = addr const int [20] *, @_ZL4ints
+  %136 = bitcast const int *, %135
+  %138 = sext long, %931
+  %139 = iconst long, 4
+  %140 = mul long, %138, %139
+  %141 = gep const int *, %136, %140
+  %142 = load int, %141
+  %143 = bitcast const int, %142
+  %146 = iconst int, 1024
+  %1003 = iconst int, 31
+  %1004 = ashr int, %142, %1003
+  %1005 = iconst int, 22
+  %1006 = lshr int, %1004, %1005
+  %1007 = add int, %142, %1006
+  %1008 = iconst int, 10
+  %147 = ashr int, %1007, %1008
+  %148 = bitcast unsigned int, %147
+  %149 = zext unsigned long long, %148
+  %150 = call @_ZL3mixyy(%930, %149) : unsigned long long
+  %1009 = iconst int, 31
+  %1010 = ashr int, %142, %1009
+  %1011 = iconst int, 22
+  %1012 = lshr int, %1010, %1011
+  %1013 = add int, %142, %1012
+  %1014 = iconst int, -1024
+  %1015 = and int, %1013, %1014
+  %153 = sub int, %142, %1015
+  %154 = bitcast unsigned int, %153
+  %155 = zext unsigned long long, %154
+  %156 = call @_ZL3mixyy(%150, %155) : unsigned long long
+  %158 = iconst int, 1
+  %159 = add int, %931, %158
+  br ^16(%156, %159)
+^19:
+  %160 = addr const char [14] *, @.L.str.3
+  %161 = bitcast const char *, %160
+  %162 = iconst int, 1024
+  %164 = call @printf(%161, %162, %930) : int variadic
+  br ^20(%2, %4)
+^20(%932: unsigned long long, %933: int):
+  %174 = icmp slt, bool, %933, %9
+  condbr %174, ^21, ^23
+^21:
+  %176 = addr const int [20] *, @_ZL4ints
+  %177 = bitcast const int *, %176
+  %179 = sext long, %933
+  %180 = iconst long, 4
+  %181 = mul long, %179, %180
+  %182 = gep const int *, %177, %181
+  %183 = load int, %182
+  %184 = bitcast const int, %183
+  %187 = iconst int, 1
+  %188 = iconst int, 30
+  %189 = iconst int, 1073741824
+  %1016 = iconst int, 31
+  %1017 = ashr int, %183, %1016
+  %1018 = iconst int, 2
+  %1019 = lshr int, %1017, %1018
+  %1020 = add int, %183, %1019
+  %1021 = iconst int, 30
+  %190 = ashr int, %1020, %1021
+  %191 = bitcast unsigned int, %190
+  %192 = zext unsigned long long, %191
+  %193 = call @_ZL3mixyy(%932, %192) : unsigned long long
+  %1022 = iconst int, 31
+  %1023 = ashr int, %183, %1022
+  %1024 = iconst int, 2
+  %1025 = lshr int, %1023, %1024
+  %1026 = add int, %183, %1025
+  %1027 = iconst int, -1073741824
+  %1028 = and int, %1026, %1027
+  %198 = sub int, %183, %1028
+  %199 = bitcast unsigned int, %198
+  %200 = zext unsigned long long, %199
+  %201 = call @_ZL3mixyy(%193, %200) : unsigned long long
+  %204 = add int, %933, %187
+  br ^20(%201, %204)
+^23:
+  %205 = addr const char [14] *, @.L.str.4
+  %206 = bitcast const char *, %205
+  %207 = iconst int, 1
+  %208 = iconst int, 30
+  %209 = iconst int, 1073741824
+  %211 = call @printf(%206, %209, %932) : int variadic
+  br ^24(%2, %4)
+^24(%934: unsigned long long, %935: int):
+  %221 = icmp slt, bool, %935, %9
+  condbr %221, ^25, ^27
+^25:
+  %223 = addr const int [20] *, @_ZL4ints
+  %224 = bitcast const int *, %223
+  %226 = sext long, %935
+  %227 = iconst long, 4
+  %228 = mul long, %226, %227
+  %229 = gep const int *, %224, %228
+  %230 = load int, %229
+  %231 = bitcast const int, %230
+  %234 = iconst int, 3
+  %1029 = iconst int, 1431655766
+  %1030 = smulh int, %230, %1029
+  %1031 = iconst int, 31
+  %1032 = lshr int, %230, %1031
+  %235 = add int, %1030, %1032
+  %236 = bitcast unsigned int, %235
+  %237 = zext unsigned long long, %236
+  %238 = call @_ZL3mixyy(%934, %237) : unsigned long long
+  %1033 = iconst int, 1431655766
+  %1034 = smulh int, %230, %1033
+  %1035 = iconst int, 31
+  %1036 = lshr int, %230, %1035
+  %1037 = iconst int, 3
+  %1038 = add int, %1034, %1036
+  %1039 = mul int, %1038, %1037
+  %241 = sub int, %230, %1039
+  %242 = bitcast unsigned int, %241
+  %243 = zext unsigned long long, %242
+  %244 = call @_ZL3mixyy(%238, %243) : unsigned long long
+  %247 = add int, %935, %207
+  br ^24(%244, %247)
+^27:
+  %248 = addr const char [14] *, @.L.str.5
+  %249 = bitcast const char *, %248
+  %250 = iconst int, 3
+  %252 = call @printf(%249, %250, %934) : int variadic
+  br ^28(%2, %4)
+^28(%936: unsigned long long, %937: int):
+  %262 = icmp slt, bool, %937, %9
+  condbr %262, ^29, ^31
+^29:
+  %264 = addr const int [20] *, @_ZL4ints
+  %265 = bitcast const int *, %264
+  %267 = sext long, %937
+  %268 = iconst long, 4
+  %269 = mul long, %267, %268
+  %270 = gep const int *, %265, %269
+  %271 = load int, %270
+  %272 = bitcast const int, %271
+  %275 = iconst int, 5
+  %1040 = iconst int, 1717986919
+  %1041 = smulh int, %271, %1040
+  %1042 = iconst int, 1
+  %1043 = ashr int, %1041, %1042
+  %1044 = iconst int, 31
+  %1045 = lshr int, %271, %1044
+  %276 = add int, %1043, %1045
+  %277 = bitcast unsigned int, %276
+  %278 = zext unsigned long long, %277
+  %279 = call @_ZL3mixyy(%936, %278) : unsigned long long
+  %1046 = iconst int, 1717986919
+  %1047 = smulh int, %271, %1046
+  %1048 = iconst int, 1
+  %1049 = ashr int, %1047, %1048
+  %1050 = iconst int, 31
+  %1051 = lshr int, %271, %1050
+  %1052 = iconst int, 5
+  %1053 = add int, %1049, %1051
+  %1054 = mul int, %1053, %1052
+  %282 = sub int, %271, %1054
+  %283 = bitcast unsigned int, %282
+  %284 = zext unsigned long long, %283
+  %285 = call @_ZL3mixyy(%279, %284) : unsigned long long
+  %288 = add int, %937, %207
+  br ^28(%285, %288)
+^31:
+  %289 = addr const char [14] *, @.L.str.6
+  %290 = bitcast const char *, %289
+  %291 = iconst int, 5
+  %293 = call @printf(%290, %291, %936) : int variadic
+  br ^32(%2, %4)
+^32(%938: unsigned long long, %939: int):
+  %303 = icmp slt, bool, %939, %9
+  condbr %303, ^33, ^35
+^33:
+  %305 = addr const int [20] *, @_ZL4ints
+  %306 = bitcast const int *, %305
+  %308 = sext long, %939
+  %309 = iconst long, 4
+  %310 = mul long, %308, %309
+  %311 = gep const int *, %306, %310
+  %312 = load int, %311
+  %313 = bitcast const int, %312
+  %316 = iconst int, 6
+  %1055 = iconst int, 715827883
+  %1056 = smulh int, %312, %1055
+  %1057 = iconst int, 31
+  %1058 = lshr int, %312, %1057
+  %317 = add int, %1056, %1058
+  %318 = bitcast unsigned int, %317
+  %319 = zext unsigned long long, %318
+  %320 = call @_ZL3mixyy(%938, %319) : unsigned long long
+  %1059 = iconst int, 715827883
+  %1060 = smulh int, %312, %1059
+  %1061 = iconst int, 31
+  %1062 = lshr int, %312, %1061
+  %1063 = iconst int, 6
+  %1064 = add int, %1060, %1062
+  %1065 = mul int, %1064, %1063
+  %323 = sub int, %312, %1065
+  %324 = bitcast unsigned int, %323
+  %325 = zext unsigned long long, %324
+  %326 = call @_ZL3mixyy(%320, %325) : unsigned long long
+  %329 = add int, %939, %207
+  br ^32(%326, %329)
+^35:
+  %330 = addr const char [14] *, @.L.str.7
+  %331 = bitcast const char *, %330
+  %332 = iconst int, 6
+  %334 = call @printf(%331, %332, %938) : int variadic
+  br ^36(%2, %4)
+^36(%940: unsigned long long, %941: int):
+  %344 = icmp slt, bool, %941, %9
+  condbr %344, ^37, ^39
+^37:
+  %346 = addr const int [20] *, @_ZL4ints
+  %347 = bitcast const int *, %346
+  %349 = sext long, %941
+  %350 = iconst long, 4
+  %351 = mul long, %349, %350
+  %352 = gep const int *, %347, %351
+  %353 = load int, %352
+  %354 = bitcast const int, %353
+  %357 = iconst int, 7
+  %1066 = iconst int, -1840700269
+  %1067 = smulh int, %353, %1066
+  %1068 = add int, %1067, %353
+  %1069 = iconst int, 2
+  %1070 = ashr int, %1068, %1069
+  %1071 = iconst int, 31
+  %1072 = lshr int, %353, %1071
+  %358 = add int, %1070, %1072
+  %359 = bitcast unsigned int, %358
+  %360 = zext unsigned long long, %359
+  %361 = call @_ZL3mixyy(%940, %360) : unsigned long long
+  %1073 = iconst int, -1840700269
+  %1074 = smulh int, %353, %1073
+  %1075 = add int, %1074, %353
+  %1076 = iconst int, 2
+  %1077 = ashr int, %1075, %1076
+  %1078 = iconst int, 31
+  %1079 = lshr int, %353, %1078
+  %1080 = iconst int, 7
+  %1081 = add int, %1077, %1079
+  %1082 = mul int, %1081, %1080
+  %364 = sub int, %353, %1082
+  %365 = bitcast unsigned int, %364
+  %366 = zext unsigned long long, %365
+  %367 = call @_ZL3mixyy(%361, %366) : unsigned long long
+  %370 = add int, %941, %207
+  br ^36(%367, %370)
+^39:
+  %371 = addr const char [14] *, @.L.str.8
+  %372 = bitcast const char *, %371
+  %373 = iconst int, 7
+  %375 = call @printf(%372, %373, %940) : int variadic
+  br ^40(%2, %4)
+^40(%942: unsigned long long, %943: int):
+  %385 = icmp slt, bool, %943, %9
+  condbr %385, ^41, ^43
+^41:
+  %387 = addr const int [20] *, @_ZL4ints
+  %388 = bitcast const int *, %387
+  %390 = sext long, %943
+  %391 = iconst long, 4
+  %392 = mul long, %390, %391
+  %393 = gep const int *, %388, %392
+  %394 = load int, %393
+  %395 = bitcast const int, %394
+  %398 = iconst int, 10
+  %1083 = iconst int, 1717986919
+  %1084 = smulh int, %394, %1083
+  %1085 = iconst int, 2
+  %1086 = ashr int, %1084, %1085
+  %1087 = iconst int, 31
+  %1088 = lshr int, %394, %1087
+  %399 = add int, %1086, %1088
+  %400 = bitcast unsigned int, %399
+  %401 = zext unsigned long long, %400
+  %402 = call @_ZL3mixyy(%942, %401) : unsigned long long
+  %1089 = iconst int, 1717986919
+  %1090 = smulh int, %394, %1089
+  %1091 = iconst int, 2
+  %1092 = ashr int, %1090, %1091
+  %1093 = iconst int, 31
+  %1094 = lshr int, %394, %1093
+  %1095 = iconst int, 10
+  %1096 = add int, %1092, %1094
+  %1097 = mul int, %1096, %1095
+  %405 = sub int, %394, %1097
+  %406 = bitcast unsigned int, %405
+  %407 = zext unsigned long long, %406
+  %408 = call @_ZL3mixyy(%402, %407) : unsigned long long
+  %411 = add int, %943, %207
+  br ^40(%408, %411)
+^43:
+  %412 = addr const char [14] *, @.L.str.9
+  %413 = bitcast const char *, %412
+  %414 = iconst int, 10
+  %416 = call @printf(%413, %414, %942) : int variadic
+  br ^44(%2, %4)
+^44(%944: unsigned long long, %945: int):
+  %426 = icmp slt, bool, %945, %9
+  condbr %426, ^45, ^47
+^45:
+  %428 = addr const int [20] *, @_ZL4ints
+  %429 = bitcast const int *, %428
+  %431 = sext long, %945
+  %432 = iconst long, 4
+  %433 = mul long, %431, %432
+  %434 = gep const int *, %429, %433
+  %435 = load int, %434
+  %436 = bitcast const int, %435
+  %439 = iconst int, 25
+  %1098 = iconst int, 1374389535
+  %1099 = smulh int, %435, %1098
+  %1100 = iconst int, 3
+  %1101 = ashr int, %1099, %1100
+  %1102 = iconst int, 31
+  %1103 = lshr int, %435, %1102
+  %440 = add int, %1101, %1103
+  %441 = bitcast unsigned int, %440
+  %442 = zext unsigned long long, %441
+  %443 = call @_ZL3mixyy(%944, %442) : unsigned long long
+  %1104 = iconst int, 1374389535
+  %1105 = smulh int, %435, %1104
+  %1106 = iconst int, 3
+  %1107 = ashr int, %1105, %1106
+  %1108 = iconst int, 31
+  %1109 = lshr int, %435, %1108
+  %1110 = iconst int, 25
+  %1111 = add int, %1107, %1109
+  %1112 = mul int, %1111, %1110
+  %446 = sub int, %435, %1112
+  %447 = bitcast unsigned int, %446
+  %448 = zext unsigned long long, %447
+  %449 = call @_ZL3mixyy(%443, %448) : unsigned long long
+  %452 = add int, %945, %207
+  br ^44(%449, %452)
+^47:
+  %453 = addr const char [14] *, @.L.str.10
+  %454 = bitcast const char *, %453
+  %455 = iconst int, 25
+  %457 = call @printf(%454, %455, %944) : int variadic
+  br ^48(%2, %4)
+^48(%946: unsigned long long, %947: int):
+  %467 = icmp slt, bool, %947, %9
+  condbr %467, ^49, ^51
+^49:
+  %469 = addr const int [20] *, @_ZL4ints
+  %470 = bitcast const int *, %469
+  %472 = sext long, %947
+  %473 = iconst long, 4
+  %474 = mul long, %472, %473
+  %475 = gep const int *, %470, %474
+  %476 = load int, %475
+  %477 = bitcast const int, %476
+  %480 = iconst int, 100
+  %1113 = iconst int, 1374389535
+  %1114 = smulh int, %476, %1113
+  %1115 = iconst int, 5
+  %1116 = ashr int, %1114, %1115
+  %1117 = iconst int, 31
+  %1118 = lshr int, %476, %1117
+  %481 = add int, %1116, %1118
+  %482 = bitcast unsigned int, %481
+  %483 = zext unsigned long long, %482
+  %484 = call @_ZL3mixyy(%946, %483) : unsigned long long
+  %1119 = iconst int, 1374389535
+  %1120 = smulh int, %476, %1119
+  %1121 = iconst int, 5
+  %1122 = ashr int, %1120, %1121
+  %1123 = iconst int, 31
+  %1124 = lshr int, %476, %1123
+  %1125 = iconst int, 100
+  %1126 = add int, %1122, %1124
+  %1127 = mul int, %1126, %1125
+  %487 = sub int, %476, %1127
+  %488 = bitcast unsigned int, %487
+  %489 = zext unsigned long long, %488
+  %490 = call @_ZL3mixyy(%484, %489) : unsigned long long
+  %493 = add int, %947, %207
+  br ^48(%490, %493)
+^51:
+  %494 = addr const char [14] *, @.L.str.11
+  %495 = bitcast const char *, %494
+  %496 = iconst int, 100
+  %498 = call @printf(%495, %496, %946) : int variadic
+  br ^52(%2, %4)
+^52(%948: unsigned long long, %949: int):
+  %508 = icmp slt, bool, %949, %9
+  condbr %508, ^53, ^55
+^53:
+  %510 = addr const int [20] *, @_ZL4ints
+  %511 = bitcast const int *, %510
+  %513 = sext long, %949
+  %514 = iconst long, 4
+  %515 = mul long, %513, %514
+  %516 = gep const int *, %511, %515
+  %517 = load int, %516
+  %518 = bitcast const int, %517
+  %521 = iconst int, 641
+  %1128 = iconst int, 6700417
+  %1129 = smulh int, %517, %1128
+  %1130 = iconst int, 31
+  %1131 = lshr int, %517, %1130
+  %522 = add int, %1129, %1131
+  %523 = bitcast unsigned int, %522
+  %524 = zext unsigned long long, %523
+  %525 = call @_ZL3mixyy(%948, %524) : unsigned long long
+  %1132 = iconst int, 6700417
+  %1133 = smulh int, %517, %1132
+  %1134 = iconst int, 31
+  %1135 = lshr int, %517, %1134
+  %1136 = iconst int, 641
+  %1137 = add int, %1133, %1135
+  %1138 = mul int, %1137, %1136
+  %528 = sub int, %517, %1138
+  %529 = bitcast unsigned int, %528
+  %530 = zext unsigned long long, %529
+  %531 = call @_ZL3mixyy(%525, %530) : unsigned long long
+  %534 = add int, %949, %207
+  br ^52(%531, %534)
+^55:
+  %535 = addr const char [14] *, @.L.str.12
+  %536 = bitcast const char *, %535
+  %537 = iconst int, 641
+  %539 = call @printf(%536, %537, %948) : int variadic
+  br ^56(%2, %4)
+^56(%950: unsigned long long, %951: int):
+  %549 = icmp slt, bool, %951, %9
+  condbr %549, ^57, ^59
+^57:
+  %551 = addr const int [20] *, @_ZL4ints
+  %552 = bitcast const int *, %551
+  %554 = sext long, %951
+  %555 = iconst long, 4
+  %556 = mul long, %554, %555
+  %557 = gep const int *, %552, %556
+  %558 = load int, %557
+  %559 = bitcast const int, %558
+  %562 = iconst int, 1000
+  %1139 = iconst int, 274877907
+  %1140 = smulh int, %558, %1139
+  %1141 = iconst int, 6
+  %1142 = ashr int, %1140, %1141
+  %1143 = iconst int, 31
+  %1144 = lshr int, %558, %1143
+  %563 = add int, %1142, %1144
+  %564 = bitcast unsigned int, %563
+  %565 = zext unsigned long long, %564
+  %566 = call @_ZL3mixyy(%950, %565) : unsigned long long
+  %1145 = iconst int, 274877907
+  %1146 = smulh int, %558, %1145
+  %1147 = iconst int, 6
+  %1148 = ashr int, %1146, %1147
+  %1149 = iconst int, 31
+  %1150 = lshr int, %558, %1149
+  %1151 = iconst int, 1000
+  %1152 = add int, %1148, %1150
+  %1153 = mul int, %1152, %1151
+  %569 = sub int, %558, %1153
+  %570 = bitcast unsigned int, %569
+  %571 = zext unsigned long long, %570
+  %572 = call @_ZL3mixyy(%566, %571) : unsigned long long
+  %575 = add int, %951, %207
+  br ^56(%572, %575)
+^59:
+  %576 = addr const char [14] *, @.L.str.13
+  %577 = bitcast const char *, %576
+  %578 = iconst int, 1000
+  %580 = call @printf(%577, %578, %950) : int variadic
+  br ^60(%2, %4)
+^60(%952: unsigned long long, %953: int):
+  %590 = icmp slt, bool, %953, %9
+  condbr %590, ^61, ^63
+^61:
+  %592 = addr const int [20] *, @_ZL4ints
+  %593 = bitcast const int *, %592
+  %595 = sext long, %953
+  %596 = iconst long, 4
+  %597 = mul long, %595, %596
+  %598 = gep const int *, %593, %597
+  %599 = load int, %598
+  %600 = bitcast const int, %599
+  %603 = iconst int, 65537
+  %1154 = iconst int, 2147450881
+  %1155 = smulh int, %599, %1154
+  %1156 = iconst int, 15
+  %1157 = ashr int, %1155, %1156
+  %1158 = iconst int, 31
+  %1159 = lshr int, %599, %1158
+  %604 = add int, %1157, %1159
+  %605 = bitcast unsigned int, %604
+  %606 = zext unsigned long long, %605
+  %607 = call @_ZL3mixyy(%952, %606) : unsigned long long
+  %1160 = iconst int, 2147450881
+  %1161 = smulh int, %599, %1160
+  %1162 = iconst int, 15
+  %1163 = ashr int, %1161, %1162
+  %1164 = iconst int, 31
+  %1165 = lshr int, %599, %1164
+  %1166 = iconst int, 65537
+  %1167 = add int, %1163, %1165
+  %1168 = mul int, %1167, %1166
+  %610 = sub int, %599, %1168
+  %611 = bitcast unsigned int, %610
+  %612 = zext unsigned long long, %611
+  %613 = call @_ZL3mixyy(%607, %612) : unsigned long long
+  %616 = add int, %953, %207
+  br ^60(%613, %616)
+^63:
+  %617 = addr const char [14] *, @.L.str.14
+  %618 = bitcast const char *, %617
+  %619 = iconst int, 65537
+  %621 = call @printf(%618, %619, %952) : int variadic
+  br ^64(%2, %4)
+^64(%954: unsigned long long, %955: int):
+  %631 = icmp slt, bool, %955, %9
+  condbr %631, ^65, ^67
+^65:
+  %633 = addr const int [20] *, @_ZL4ints
+  %634 = bitcast const int *, %633
+  %636 = sext long, %955
+  %637 = iconst long, 4
+  %638 = mul long, %636, %637
+  %639 = gep const int *, %634, %638
+  %640 = load int, %639
+  %641 = bitcast const int, %640
+  %644 = iconst int, 2147483647
+  %1169 = iconst int, 1073741825
+  %1170 = smulh int, %640, %1169
+  %1171 = iconst int, 29
+  %1172 = ashr int, %1170, %1171
+  %1173 = iconst int, 31
+  %1174 = lshr int, %640, %1173
+  %645 = add int, %1172, %1174
+  %646 = bitcast unsigned int, %645
+  %647 = zext unsigned long long, %646
+  %648 = call @_ZL3mixyy(%954, %647) : unsigned long long
+  %1175 = iconst int, 1073741825
+  %1176 = smulh int, %640, %1175
+  %1177 = iconst int, 29
+  %1178 = ashr int, %1176, %1177
+  %1179 = iconst int, 31
+  %1180 = lshr int, %640, %1179
+  %1181 = iconst int, 2147483647
+  %1182 = add int, %1178, %1180
+  %1183 = mul int, %1182, %1181
+  %651 = sub int, %640, %1183
+  %652 = bitcast unsigned int, %651
+  %653 = zext unsigned long long, %652
+  %654 = call @_ZL3mixyy(%648, %653) : unsigned long long
+  %657 = add int, %955, %207
+  br ^64(%654, %657)
+^67:
+  %658 = addr const char [14] *, @.L.str.15
+  %659 = bitcast const char *, %658
+  %660 = iconst int, 2147483647
+  %662 = call @printf(%659, %660, %954) : int variadic
+  br ^68(%2, %4)
+^68(%956: unsigned long long, %957: int):
+  %672 = icmp slt, bool, %957, %9
+  condbr %672, ^69, ^71
+^69:
+  %674 = addr const int [20] *, @_ZL4ints
+  %675 = bitcast const int *, %674
+  %677 = sext long, %957
+  %678 = iconst long, 4
+  %679 = mul long, %677, %678
+  %680 = gep const int *, %675, %679
+  %681 = load int, %680
+  %682 = bitcast const int, %681
+  %686 = iconst int, -2
+  %1184 = iconst int, 31
+  %1185 = lshr int, %681, %1184
+  %1186 = add int, %681, %1185
+  %1187 = iconst int, 1
+  %1188 = ashr int, %1186, %1187
+  %687 = neg int, %1188
+  %688 = bitcast unsigned int, %687
+  %689 = zext unsigned long long, %688
+  %690 = call @_ZL3mixyy(%956, %689) : unsigned long long
+  %1189 = iconst int, 31
+  %1190 = lshr int, %681, %1189
+  %1191 = add int, %681, %1190
+  %1192 = iconst int, -2
+  %1193 = and int, %1191, %1192
+  %694 = sub int, %681, %1193
+  %695 = bitcast unsigned int, %694
+  %696 = zext unsigned long long, %695
+  %697 = call @_ZL3mixyy(%690, %696) : unsigned long long
+  %700 = add int, %957, %207
+  br ^68(%697, %700)
+^71:
+  %701 = addr const char [14] *, @.L.str.16
+  %702 = bitcast const char *, %701
+  %704 = iconst int, -2
+  %706 = call @printf(%702, %704, %956) : int variadic
+  br ^72(%2, %4)
+^72(%958: unsigned long long, %959: int):
+  %716 = icmp slt, bool, %959, %9
+  condbr %716, ^73, ^75
+^73:
+  %718 = addr const int [20] *, @_ZL4ints
+  %719 = bitcast const int *, %718
+  %721 = sext long, %959
+  %722 = iconst long, 4
+  %723 = mul long, %721, %722
+  %724 = gep const int *, %719, %723
+  %725 = load int, %724
+  %726 = bitcast const int, %725
+  %730 = iconst int, -8
+  %1194 = iconst int, 31
+  %1195 = ashr int, %725, %1194
+  %1196 = iconst int, 29
+  %1197 = lshr int, %1195, %1196
+  %1198 = add int, %725, %1197
+  %1199 = iconst int, 3
+  %1200 = ashr int, %1198, %1199
+  %731 = neg int, %1200
+  %732 = bitcast unsigned int, %731
+  %733 = zext unsigned long long, %732
+  %734 = call @_ZL3mixyy(%958, %733) : unsigned long long
+  %1201 = iconst int, 31
+  %1202 = ashr int, %725, %1201
+  %1203 = iconst int, 29
+  %1204 = lshr int, %1202, %1203
+  %1205 = add int, %725, %1204
+  %1206 = iconst int, -8
+  %1207 = and int, %1205, %1206
+  %738 = sub int, %725, %1207
+  %739 = bitcast unsigned int, %738
+  %740 = zext unsigned long long, %739
+  %741 = call @_ZL3mixyy(%734, %740) : unsigned long long
+  %744 = add int, %959, %207
+  br ^72(%741, %744)
+^75:
+  %745 = addr const char [14] *, @.L.str.17
+  %746 = bitcast const char *, %745
+  %748 = iconst int, -8
+  %750 = call @printf(%746, %748, %958) : int variadic
+  br ^76(%2, %4)
+^76(%960: unsigned long long, %961: int):
+  %760 = icmp slt, bool, %961, %9
+  condbr %760, ^77, ^79
+^77:
+  %762 = addr const int [20] *, @_ZL4ints
+  %763 = bitcast const int *, %762
+  %765 = sext long, %961
+  %766 = iconst long, 4
+  %767 = mul long, %765, %766
+  %768 = gep const int *, %763, %767
+  %769 = load int, %768
+  %770 = bitcast const int, %769
+  %774 = iconst int, -3
+  %1208 = iconst int, 1431655766
+  %1209 = smulh int, %769, %1208
+  %1210 = iconst int, 31
+  %1211 = lshr int, %769, %1210
+  %1212 = add int, %1209, %1211
+  %775 = neg int, %1212
+  %776 = bitcast unsigned int, %775
+  %777 = zext unsigned long long, %776
+  %778 = call @_ZL3mixyy(%960, %777) : unsigned long long
+  %1213 = iconst int, 1431655766
+  %1214 = smulh int, %769, %1213
+  %1215 = iconst int, 31
+  %1216 = lshr int, %769, %1215
+  %1217 = iconst int, 3
+  %1218 = add int, %1214, %1216
+  %1219 = mul int, %1218, %1217
+  %782 = sub int, %769, %1219
+  %783 = bitcast unsigned int, %782
+  %784 = zext unsigned long long, %783
+  %785 = call @_ZL3mixyy(%778, %784) : unsigned long long
+  %788 = add int, %961, %207
+  br ^76(%785, %788)
+^79:
+  %789 = addr const char [14] *, @.L.str.18
+  %790 = bitcast const char *, %789
+  %792 = iconst int, -3
+  %794 = call @printf(%790, %792, %960) : int variadic
+  br ^80(%2, %4)
+^80(%962: unsigned long long, %963: int):
+  %804 = icmp slt, bool, %963, %9
+  condbr %804, ^81, ^83
+^81:
+  %806 = addr const int [20] *, @_ZL4ints
+  %807 = bitcast const int *, %806
+  %809 = sext long, %963
+  %810 = iconst long, 4
+  %811 = mul long, %809, %810
+  %812 = gep const int *, %807, %811
+  %813 = load int, %812
+  %814 = bitcast const int, %813
+  %818 = iconst int, -7
+  %1220 = iconst int, -1840700269
+  %1221 = smulh int, %813, %1220
+  %1222 = add int, %1221, %813
+  %1223 = iconst int, 2
+  %1224 = ashr int, %1222, %1223
+  %1225 = iconst int, 31
+  %1226 = lshr int, %813, %1225
+  %1227 = add int, %1224, %1226
+  %819 = neg int, %1227
+  %820 = bitcast unsigned int, %819
+  %821 = zext unsigned long long, %820
+  %822 = call @_ZL3mixyy(%962, %821) : unsigned long long
+  %1228 = iconst int, -1840700269
+  %1229 = smulh int, %813, %1228
+  %1230 = add int, %1229, %813
+  %1231 = iconst int, 2
+  %1232 = ashr int, %1230, %1231
+  %1233 = iconst int, 31
+  %1234 = lshr int, %813, %1233
+  %1235 = iconst int, 7
+  %1236 = add int, %1232, %1234
+  %1237 = mul int, %1236, %1235
+  %826 = sub int, %813, %1237
+  %827 = bitcast unsigned int, %826
+  %828 = zext unsigned long long, %827
+  %829 = call @_ZL3mixyy(%822, %828) : unsigned long long
+  %832 = add int, %963, %207
+  br ^80(%829, %832)
+^83:
+  %833 = addr const char [14] *, @.L.str.19
+  %834 = bitcast const char *, %833
+  %836 = iconst int, -7
+  %838 = call @printf(%834, %836, %962) : int variadic
+  br ^84(%2, %4)
+^84(%964: unsigned long long, %965: int):
+  %848 = icmp slt, bool, %965, %9
+  condbr %848, ^85, ^87
+^85:
+  %850 = addr const int [20] *, @_ZL4ints
+  %851 = bitcast const int *, %850
+  %853 = sext long, %965
+  %854 = iconst long, 4
+  %855 = mul long, %853, %854
+  %856 = gep const int *, %851, %855
+  %857 = load int, %856
+  %858 = bitcast const int, %857
+  %862 = iconst int, -1000
+  %1238 = iconst int, 274877907
+  %1239 = smulh int, %857, %1238
+  %1240 = iconst int, 6
+  %1241 = ashr int, %1239, %1240
+  %1242 = iconst int, 31
+  %1243 = lshr int, %857, %1242
+  %1244 = add int, %1241, %1243
+  %863 = neg int, %1244
+  %864 = bitcast unsigned int, %863
+  %865 = zext unsigned long long, %864
+  %866 = call @_ZL3mixyy(%964, %865) : unsigned long long
+  %1245 = iconst int, 274877907
+  %1246 = smulh int, %857, %1245
+  %1247 = iconst int, 6
+  %1248 = ashr int, %1246, %1247
+  %1249 = iconst int, 31
+  %1250 = lshr int, %857, %1249
+  %1251 = iconst int, 1000
+  %1252 = add int, %1248, %1250
+  %1253 = mul int, %1252, %1251
+  %870 = sub int, %857, %1253
+  %871 = bitcast unsigned int, %870
+  %872 = zext unsigned long long, %871
+  %873 = call @_ZL3mixyy(%866, %872) : unsigned long long
+  %876 = add int, %965, %207
+  br ^84(%873, %876)
+^87:
+  %877 = addr const char [14] *, @.L.str.20
+  %878 = bitcast const char *, %877
+  %880 = iconst int, -1000
+  %882 = call @printf(%878, %880, %964) : int variadic
+  br ^88(%2, %4)
+^88(%966: unsigned long long, %967: int):
+  %892 = icmp slt, bool, %967, %9
+  condbr %892, ^89, ^91
+^89:
+  %894 = addr const int [20] *, @_ZL4ints
+  %895 = bitcast const int *, %894
+  %897 = sext long, %967
+  %898 = iconst long, 4
+  %899 = mul long, %897, %898
+  %900 = gep const int *, %895, %899
+  %901 = load int, %900
+  %902 = bitcast const int, %901
+  %906 = sdiv int, %901, %207
+  %907 = bitcast unsigned int, %906
+  %908 = zext unsigned long long, %907
+  %909 = call @_ZL3mixyy(%966, %908) : unsigned long long
+  %912 = srem int, %901, %207
+  %913 = bitcast unsigned int, %912
+  %914 = zext unsigned long long, %913
+  %915 = call @_ZL3mixyy(%909, %914) : unsigned long long
+  %918 = add int, %967, %207
+  br ^88(%915, %918)
+^91:
+  %919 = addr const char [14] *, @.L.str.21
+  %920 = bitcast const char *, %919
+  %923 = call @printf(%920, %207, %966) : int variadic
+  ret
+}
+function @_ZL7uints32v() -> void static {
+^1:
+  %2 = iconst unsigned long long, -3750763034362895579
+  %4 = iconst int, 0
+  br ^4(%2, %4)
+^4(%556: unsigned long long, %557: int):
+  %6 = iconst unsigned long, 52
+  %7 = iconst unsigned long, 4
+  %8 = iconst unsigned long, 13
+  %9 = iconst int, 13
+  %10 = icmp slt, bool, %557, %9
+  condbr %10, ^5, ^7
+^5:
+  %12 = addr const unsigned int [13] *, @_ZL5uints
+  %13 = bitcast const unsigned int *, %12
+  %15 = sext long, %557
+  %16 = iconst long, 4
+  %17 = mul long, %15, %16
+  %18 = gep const unsigned int *, %13, %17
+  %19 = load unsigned int, %18
+  %20 = bitcast const unsigned int, %19
+  %23 = iconst unsigned int, 2
+  %584 = iconst unsigned int, 1
+  %24 = lshr unsigned int, %19, %584
+  %25 = zext unsigned long long, %24
+  %26 = call @_ZL3mixyy(%556, %25) : unsigned long long
+  %585 = iconst unsigned int, 1
+  %29 = and unsigned int, %19, %585
+  %30 = zext unsigned long long, %29
+  %31 = call @_ZL3mixyy(%26, %30) : unsigned long long
+  %33 = iconst int, 1
+  %34 = add int, %557, %33
+  br ^4(%31, %34)
+^7:
+  %35 = addr const char [19] *, @.L.str.22
+  %36 = bitcast const char *, %35
+  %37 = iconst unsigned int, 2
+  %39 = call @printf(%36, %37, %556) : int variadic
+  br ^8(%2, %4)
+^8(%558: unsigned long long, %559: int):
+  %49 = icmp slt, bool, %559, %9
+  condbr %49, ^9, ^11
+^9:
+  %51 = addr const unsigned int [13] *, @_ZL5uints
+  %52 = bitcast const unsigned int *, %51
+  %54 = sext long, %559
+  %55 = iconst long, 4
+  %56 = mul long, %54, %55
+  %57 = gep const unsigned int *, %52, %56
+  %58 = load unsigned int, %57
+  %59 = bitcast const unsigned int, %58
+  %62 = iconst unsigned int, 16
+  %586 = iconst unsigned int, 4
+  %63 = lshr unsigned int, %58, %586
+  %64 = zext unsigned long long, %63
+  %65 = call @_ZL3mixyy(%558, %64) : unsigned long long
+  %587 = iconst unsigned int, 15
+  %68 = and unsigned int, %58, %587
+  %69 = zext unsigned long long, %68
+  %70 = call @_ZL3mixyy(%65, %69) : unsigned long long
+  %72 = iconst int, 1
+  %73 = add int, %559, %72
+  br ^8(%70, %73)
+^11:
+  %74 = addr const char [19] *, @.L.str.23
+  %75 = bitcast const char *, %74
+  %76 = iconst unsigned int, 16
+  %78 = call @printf(%75, %76, %558) : int variadic
+  br ^12(%2, %4)
+^12(%560: unsigned long long, %561: int):
+  %88 = icmp slt, bool, %561, %9
+  condbr %88, ^13, ^15
+^13:
+  %90 = addr const unsigned int [13] *, @_ZL5uints
+  %91 = bitcast const unsigned int *, %90
+  %93 = sext long, %561
+  %94 = iconst long, 4
+  %95 = mul long, %93, %94
+  %96 = gep const unsigned int *, %91, %95
+  %97 = load unsigned int, %96
+  %98 = bitcast const unsigned int, %97
+  %101 = iconst unsigned int, 1
+  %102 = iconst int, 31
+  %103 = iconst unsigned int, 31
+  %104 = iconst unsigned int, 2147483648
+  %105 = udiv unsigned int, %97, %104
+  %106 = zext unsigned long long, %105
+  %107 = call @_ZL3mixyy(%560, %106) : unsigned long long
+  %113 = urem unsigned int, %97, %104
+  %114 = zext unsigned long long, %113
+  %115 = call @_ZL3mixyy(%107, %114) : unsigned long long
+  %117 = iconst int, 1
+  %118 = add int, %561, %117
+  br ^12(%115, %118)
+^15:
+  %119 = addr const char [19] *, @.L.str.24
+  %120 = bitcast const char *, %119
+  %121 = iconst unsigned int, 1
+  %122 = iconst int, 31
+  %123 = iconst unsigned int, 31
+  %124 = iconst unsigned int, 2147483648
+  %126 = call @printf(%120, %124, %560) : int variadic
+  br ^16(%2, %4)
+^16(%562: unsigned long long, %563: int):
+  %136 = icmp slt, bool, %563, %9
+  condbr %136, ^17, ^19
+^17:
+  %138 = addr const unsigned int [13] *, @_ZL5uints
+  %139 = bitcast const unsigned int *, %138
+  %141 = sext long, %563
+  %142 = iconst long, 4
+  %143 = mul long, %141, %142
+  %144 = gep const unsigned int *, %139, %143
+  %145 = load unsigned int, %144
+  %146 = bitcast const unsigned int, %145
+  %149 = iconst unsigned int, 3
+  %588 = iconst unsigned int, 2863311531
+  %589 = umulh unsigned int, %145, %588
+  %590 = iconst unsigned int, 1
+  %150 = lshr unsigned int, %589, %590
+  %151 = zext unsigned long long, %150
+  %152 = call @_ZL3mixyy(%562, %151) : unsigned long long
+  %591 = iconst unsigned int, 2863311531
+  %592 = umulh unsigned int, %145, %591
+  %593 = iconst unsigned int, 1
+  %594 = lshr unsigned int, %592, %593
+  %595 = iconst unsigned int, 3
+  %596 = mul unsigned int, %594, %595
+  %155 = sub unsigned int, %145, %596
+  %156 = zext unsigned long long, %155
+  %157 = call @_ZL3mixyy(%152, %156) : unsigned long long
+  %159 = iconst int, 1
+  %160 = add int, %563, %159
+  br ^16(%157, %160)
+^19:
+  %161 = addr const char [19] *, @.L.str.25
+  %162 = bitcast const char *, %161
+  %163 = iconst unsigned int, 3
+  %165 = call @printf(%162, %163, %562) : int variadic
+  br ^20(%2, %4)
+^20(%564: unsigned long long, %565: int):
+  %175 = icmp slt, bool, %565, %9
+  condbr %175, ^21, ^23
+^21:
+  %177 = addr const unsigned int [13] *, @_ZL5uints
+  %178 = bitcast const unsigned int *, %177
+  %180 = sext long, %565
+  %181 = iconst long, 4
+  %182 = mul long, %180, %181
+  %183 = gep const unsigned int *, %178, %182
+  %184 = load unsigned int, %183
+  %185 = bitcast const unsigned int, %184
+  %188 = iconst unsigned int, 5
+  %597 = iconst unsigned int, 3435973837
+  %598 = umulh unsigned int, %184, %597
+  %599 = iconst unsigned int, 2
+  %189 = lshr unsigned int, %598, %599
+  %190 = zext unsigned long long, %189
+  %191 = call @_ZL3mixyy(%564, %190) : unsigned long long
+  %600 = iconst unsigned int, 3435973837
+  %601 = umulh unsigned int, %184, %600
+  %602 = iconst unsigned int, 2
+  %603 = lshr unsigned int, %601, %602
+  %604 = iconst unsigned int, 5
+  %605 = mul unsigned int, %603, %604
+  %194 = sub unsigned int, %184, %605
+  %195 = zext unsigned long long, %194
+  %196 = call @_ZL3mixyy(%191, %195) : unsigned long long
+  %198 = iconst int, 1
+  %199 = add int, %565, %198
+  br ^20(%196, %199)
+^23:
+  %200 = addr const char [19] *, @.L.str.26
+  %201 = bitcast const char *, %200
+  %202 = iconst unsigned int, 5
+  %204 = call @printf(%201, %202, %564) : int variadic
+  br ^24(%2, %4)
+^24(%566: unsigned long long, %567: int):
+  %214 = icmp slt, bool, %567, %9
+  condbr %214, ^25, ^27
+^25:
+  %216 = addr const unsigned int [13] *, @_ZL5uints
+  %217 = bitcast const unsigned int *, %216
+  %219 = sext long, %567
+  %220 = iconst long, 4
+  %221 = mul long, %219, %220
+  %222 = gep const unsigned int *, %217, %221
+  %223 = load unsigned int, %222
+  %224 = bitcast const unsigned int, %223
+  %227 = iconst unsigned int, 7
+  %228 = udiv unsigned int, %223, %227
+  %229 = zext unsigned long long, %228
+  %230 = call @_ZL3mixyy(%566, %229) : unsigned long long
+  %233 = urem unsigned int, %223, %227
+  %234 = zext unsigned long long, %233
+  %235 = call @_ZL3mixyy(%230, %234) : unsigned long long
+  %237 = iconst int, 1
+  %238 = add int, %567, %237
+  br ^24(%235, %238)
+^27:
+  %239 = addr const char [19] *, @.L.str.27
+  %240 = bitcast const char *, %239
+  %241 = iconst unsigned int, 7
+  %243 = call @printf(%240, %241, %566) : int variadic
+  br ^28(%2, %4)
+^28(%568: unsigned long long, %569: int):
+  %253 = icmp slt, bool, %569, %9
+  condbr %253, ^29, ^31
+^29:
+  %255 = addr const unsigned int [13] *, @_ZL5uints
+  %256 = bitcast const unsigned int *, %255
+  %258 = sext long, %569
+  %259 = iconst long, 4
+  %260 = mul long, %258, %259
+  %261 = gep const unsigned int *, %256, %260
+  %262 = load unsigned int, %261
+  %263 = bitcast const unsigned int, %262
+  %266 = iconst unsigned int, 10
+  %606 = iconst unsigned int, 3435973837
+  %607 = umulh unsigned int, %262, %606
+  %608 = iconst unsigned int, 3
+  %267 = lshr unsigned int, %607, %608
+  %268 = zext unsigned long long, %267
+  %269 = call @_ZL3mixyy(%568, %268) : unsigned long long
+  %609 = iconst unsigned int, 3435973837
+  %610 = umulh unsigned int, %262, %609
+  %611 = iconst unsigned int, 3
+  %612 = lshr unsigned int, %610, %611
+  %613 = iconst unsigned int, 10
+  %614 = mul unsigned int, %612, %613
+  %272 = sub unsigned int, %262, %614
+  %273 = zext unsigned long long, %272
+  %274 = call @_ZL3mixyy(%269, %273) : unsigned long long
+  %276 = iconst int, 1
+  %277 = add int, %569, %276
+  br ^28(%274, %277)
+^31:
+  %278 = addr const char [19] *, @.L.str.28
+  %279 = bitcast const char *, %278
+  %280 = iconst unsigned int, 10
+  %282 = call @printf(%279, %280, %568) : int variadic
+  br ^32(%2, %4)
+^32(%570: unsigned long long, %571: int):
+  %292 = icmp slt, bool, %571, %9
+  condbr %292, ^33, ^35
+^33:
+  %294 = addr const unsigned int [13] *, @_ZL5uints
+  %295 = bitcast const unsigned int *, %294
+  %297 = sext long, %571
+  %298 = iconst long, 4
+  %299 = mul long, %297, %298
+  %300 = gep const unsigned int *, %295, %299
+  %301 = load unsigned int, %300
+  %302 = bitcast const unsigned int, %301
+  %305 = iconst unsigned int, 25
+  %615 = iconst unsigned int, 1374389535
+  %616 = umulh unsigned int, %301, %615
+  %617 = iconst unsigned int, 3
+  %306 = lshr unsigned int, %616, %617
+  %307 = zext unsigned long long, %306
+  %308 = call @_ZL3mixyy(%570, %307) : unsigned long long
+  %618 = iconst unsigned int, 1374389535
+  %619 = umulh unsigned int, %301, %618
+  %620 = iconst unsigned int, 3
+  %621 = lshr unsigned int, %619, %620
+  %622 = iconst unsigned int, 25
+  %623 = mul unsigned int, %621, %622
+  %311 = sub unsigned int, %301, %623
+  %312 = zext unsigned long long, %311
+  %313 = call @_ZL3mixyy(%308, %312) : unsigned long long
+  %315 = iconst int, 1
+  %316 = add int, %571, %315
+  br ^32(%313, %316)
+^35:
+  %317 = addr const char [19] *, @.L.str.29
+  %318 = bitcast const char *, %317
+  %319 = iconst unsigned int, 25
+  %321 = call @printf(%318, %319, %570) : int variadic
+  br ^36(%2, %4)
+^36(%572: unsigned long long, %573: int):
+  %331 = icmp slt, bool, %573, %9
+  condbr %331, ^37, ^39
+^37:
+  %333 = addr const unsigned int [13] *, @_ZL5uints
+  %334 = bitcast const unsigned int *, %333
+  %336 = sext long, %573
+  %337 = iconst long, 4
+  %338 = mul long, %336, %337
+  %339 = gep const unsigned int *, %334, %338
+  %340 = load unsigned int, %339
+  %341 = bitcast const unsigned int, %340
+  %344 = iconst unsigned int, 100
+  %624 = iconst unsigned int, 1374389535
+  %625 = umulh unsigned int, %340, %624
+  %626 = iconst unsigned int, 5
+  %345 = lshr unsigned int, %625, %626
+  %346 = zext unsigned long long, %345
+  %347 = call @_ZL3mixyy(%572, %346) : unsigned long long
+  %627 = iconst unsigned int, 1374389535
+  %628 = umulh unsigned int, %340, %627
+  %629 = iconst unsigned int, 5
+  %630 = lshr unsigned int, %628, %629
+  %631 = iconst unsigned int, 100
+  %632 = mul unsigned int, %630, %631
+  %350 = sub unsigned int, %340, %632
+  %351 = zext unsigned long long, %350
+  %352 = call @_ZL3mixyy(%347, %351) : unsigned long long
+  %354 = iconst int, 1
+  %355 = add int, %573, %354
+  br ^36(%352, %355)
+^39:
+  %356 = addr const char [19] *, @.L.str.30
+  %357 = bitcast const char *, %356
+  %358 = iconst unsigned int, 100
+  %360 = call @printf(%357, %358, %572) : int variadic
+  br ^40(%2, %4)
+^40(%574: unsigned long long, %575: int):
+  %370 = icmp slt, bool, %575, %9
+  condbr %370, ^41, ^43
+^41:
+  %372 = addr const unsigned int [13] *, @_ZL5uints
+  %373 = bitcast const unsigned int *, %372
+  %375 = sext long, %575
+  %376 = iconst long, 4
+  %377 = mul long, %375, %376
+  %378 = gep const unsigned int *, %373, %377
+  %379 = load unsigned int, %378
+  %380 = bitcast const unsigned int, %379
+  %383 = iconst unsigned int, 641
+  %384 = udiv unsigned int, %379, %383
+  %385 = zext unsigned long long, %384
+  %386 = call @_ZL3mixyy(%574, %385) : unsigned long long
+  %389 = urem unsigned int, %379, %383
+  %390 = zext unsigned long long, %389
+  %391 = call @_ZL3mixyy(%386, %390) : unsigned long long
+  %393 = iconst int, 1
+  %394 = add int, %575, %393
+  br ^40(%391, %394)
+^43:
+  %395 = addr const char [19] *, @.L.str.31
+  %396 = bitcast const char *, %395
+  %397 = iconst unsigned int, 641
+  %399 = call @printf(%396, %397, %574) : int variadic
+  br ^44(%2, %4)
+^44(%576: unsigned long long, %577: int):
+  %409 = icmp slt, bool, %577, %9
+  condbr %409, ^45, ^47
+^45:
+  %411 = addr const unsigned int [13] *, @_ZL5uints
+  %412 = bitcast const unsigned int *, %411
+  %414 = sext long, %577
+  %415 = iconst long, 4
+  %416 = mul long, %414, %415
+  %417 = gep const unsigned int *, %412, %416
+  %418 = load unsigned int, %417
+  %419 = bitcast const unsigned int, %418
+  %422 = iconst unsigned int, 1000
+  %633 = iconst unsigned int, 274877907
+  %634 = umulh unsigned int, %418, %633
+  %635 = iconst unsigned int, 6
+  %423 = lshr unsigned int, %634, %635
+  %424 = zext unsigned long long, %423
+  %425 = call @_ZL3mixyy(%576, %424) : unsigned long long
+  %636 = iconst unsigned int, 274877907
+  %637 = umulh unsigned int, %418, %636
+  %638 = iconst unsigned int, 6
+  %639 = lshr unsigned int, %637, %638
+  %640 = iconst unsigned int, 1000
+  %641 = mul unsigned int, %639, %640
+  %428 = sub unsigned int, %418, %641
+  %429 = zext unsigned long long, %428
+  %430 = call @_ZL3mixyy(%425, %429) : unsigned long long
+  %432 = iconst int, 1
+  %433 = add int, %577, %432
+  br ^44(%430, %433)
+^47:
+  %434 = addr const char [19] *, @.L.str.32
+  %435 = bitcast const char *, %434
+  %436 = iconst unsigned int, 1000
+  %438 = call @printf(%435, %436, %576) : int variadic
+  br ^48(%2, %4)
+^48(%578: unsigned long long, %579: int):
+  %448 = icmp slt, bool, %579, %9
+  condbr %448, ^49, ^51
+^49:
+  %450 = addr const unsigned int [13] *, @_ZL5uints
+  %451 = bitcast const unsigned int *, %450
+  %453 = sext long, %579
+  %454 = iconst long, 4
+  %455 = mul long, %453, %454
+  %456 = gep const unsigned int *, %451, %455
+  %457 = load unsigned int, %456
+  %458 = bitcast const unsigned int, %457
+  %461 = iconst unsigned int, 2147483647
+  %462 = udiv unsigned int, %457, %461
+  %463 = zext unsigned long long, %462
+  %464 = call @_ZL3mixyy(%578, %463) : unsigned long long
+  %467 = urem unsigned int, %457, %461
+  %468 = zext unsigned long long, %467
+  %469 = call @_ZL3mixyy(%464, %468) : unsigned long long
+  %471 = iconst int, 1
+  %472 = add int, %579, %471
+  br ^48(%469, %472)
+^51:
+  %473 = addr const char [19] *, @.L.str.33
+  %474 = bitcast const char *, %473
+  %475 = iconst unsigned int, 2147483647
+  %477 = call @printf(%474, %475, %578) : int variadic
+  br ^52(%2, %4)
+^52(%580: unsigned long long, %581: int):
+  %487 = icmp slt, bool, %581, %9
+  condbr %487, ^53, ^55
+^53:
+  %489 = addr const unsigned int [13] *, @_ZL5uints
+  %490 = bitcast const unsigned int *, %489
+  %492 = sext long, %581
+  %493 = iconst long, 4
+  %494 = mul long, %492, %493
+  %495 = gep const unsigned int *, %490, %494
+  %496 = load unsigned int, %495
+  %497 = bitcast const unsigned int, %496
+  %500 = iconst unsigned int, 2147483649
+  %501 = udiv unsigned int, %496, %500
+  %502 = zext unsigned long long, %501
+  %503 = call @_ZL3mixyy(%580, %502) : unsigned long long
+  %506 = urem unsigned int, %496, %500
+  %507 = zext unsigned long long, %506
+  %508 = call @_ZL3mixyy(%503, %507) : unsigned long long
+  %510 = iconst int, 1
+  %511 = add int, %581, %510
+  br ^52(%508, %511)
+^55:
+  %512 = addr const char [19] *, @.L.str.34
+  %513 = bitcast const char *, %512
+  %514 = iconst unsigned int, 2147483649
+  %516 = call @printf(%513, %514, %580) : int variadic
+  br ^56(%2, %4)
+^56(%582: unsigned long long, %583: int):
+  %526 = icmp slt, bool, %583, %9
+  condbr %526, ^57, ^59
+^57:
+  %528 = addr const unsigned int [13] *, @_ZL5uints
+  %529 = bitcast const unsigned int *, %528
+  %531 = sext long, %583
+  %532 = iconst long, 4
+  %533 = mul long, %531, %532
+  %534 = gep const unsigned int *, %529, %533
+  %535 = load unsigned int, %534
+  %536 = bitcast const unsigned int, %535
+  %540 = udiv unsigned int, %535, %121
+  %541 = zext unsigned long long, %540
+  %542 = call @_ZL3mixyy(%582, %541) : unsigned long long
+  %545 = urem unsigned int, %535, %121
+  %546 = zext unsigned long long, %545
+  %547 = call @_ZL3mixyy(%542, %546) : unsigned long long
+  %549 = iconst int, 1
+  %550 = add int, %583, %549
+  br ^56(%547, %550)
+^59:
+  %551 = addr const char [19] *, @.L.str.35
+  %552 = bitcast const char *, %551
+  %555 = call @printf(%552, %121, %582) : int variadic
+  ret
+}
+function @_ZL7wides64v() -> void static {
+^1:
+  %2 = iconst unsigned long long, -3750763034362895579
+  %4 = iconst int, 0
+  br ^4(%2, %4)
+^4(%448: unsigned long long, %449: int):
+  %6 = iconst unsigned long, 104
+  %7 = iconst unsigned long, 8
+  %8 = iconst unsigned long, 13
+  %9 = iconst int, 13
+  %10 = icmp slt, bool, %449, %9
+  condbr %10, ^5, ^7
+^5:
+  %12 = addr const long long [13] *, @_ZL5wides
+  %13 = bitcast const long long *, %12
+  %15 = sext long, %449
+  %16 = iconst long, 8
+  %17 = mul long, %15, %16
+  %18 = gep const long long *, %13, %17
+  %19 = load long long, %18
+  %20 = bitcast const long long, %19
+  %23 = iconst long long, 2
+  %470 = iconst long long, 63
+  %471 = lshr long long, %19, %470
+  %472 = add long long, %19, %471
+  %473 = iconst long long, 1
+  %24 = ashr long long, %472, %473
+  %25 = bitcast unsigned long long, %24
+  %26 = call @_ZL3mixyy(%448, %25) : unsigned long long
+  %474 = iconst long long, 63
+  %475 = lshr long long, %19, %474
+  %476 = add long long, %19, %475
+  %477 = iconst long long, -2
+  %478 = and long long, %476, %477
+  %29 = sub long long, %19, %478
+  %30 = bitcast unsigned long long, %29
+  %31 = call @_ZL3mixyy(%26, %30) : unsigned long long
+  %33 = iconst int, 1
+  %34 = add int, %449, %33
+  br ^4(%31, %34)
+^7:
+  %35 = addr const char [22] *, @.L.str.36
+  %36 = bitcast const char *, %35
+  %37 = iconst long long, 2
+  %39 = call @printf(%36, %37, %448) : int variadic
+  br ^8(%2, %4)
+^8(%450: unsigned long long, %451: int):
+  %49 = icmp slt, bool, %451, %9
+  condbr %49, ^9, ^11
+^9:
+  %51 = addr const long long [13] *, @_ZL5wides
+  %52 = bitcast const long long *, %51
+  %54 = sext long, %451
+  %55 = iconst long, 8
+  %56 = mul long, %54, %55
+  %57 = gep const long long *, %52, %56
+  %58 = load long long, %57
+  %59 = bitcast const long long, %58
+  %62 = iconst long long, 1
+  %63 = iconst int, 40
+  %64 = iconst long long, 40
+  %65 = iconst long long, 1099511627776
+  %479 = iconst long long, 63
+  %480 = ashr long long, %58, %479
+  %481 = iconst long long, 24
+  %482 = lshr long long, %480, %481
+  %483 = add long long, %58, %482
+  %484 = iconst long long, 40
+  %66 = ashr long long, %483, %484
+  %67 = bitcast unsigned long long, %66
+  %68 = call @_ZL3mixyy(%450, %67) : unsigned long long
+  %485 = iconst long long, 63
+  %486 = ashr long long, %58, %485
+  %487 = iconst long long, 24
+  %488 = lshr long long, %486, %487
+  %489 = add long long, %58, %488
+  %490 = iconst long long, -1099511627776
+  %491 = and long long, %489, %490
+  %74 = sub long long, %58, %491
+  %75 = bitcast unsigned long long, %74
+  %76 = call @_ZL3mixyy(%68, %75) : unsigned long long
+  %78 = iconst int, 1
+  %79 = add int, %451, %78
+  br ^8(%76, %79)
+^11:
+  %80 = addr const char [22] *, @.L.str.37
+  %81 = bitcast const char *, %80
+  %82 = iconst long long, 1
+  %83 = iconst int, 40
+  %84 = iconst long long, 40
+  %85 = iconst long long, 1099511627776
+  %87 = call @printf(%81, %85, %450) : int variadic
+  br ^12(%2, %4)
+^12(%452: unsigned long long, %453: int):
+  %97 = icmp slt, bool, %453, %9
+  condbr %97, ^13, ^15
+^13:
+  %99 = addr const long long [13] *, @_ZL5wides
+  %100 = bitcast const long long *, %99
+  %102 = sext long, %453
+  %103 = iconst long, 8
+  %104 = mul long, %102, %103
+  %105 = gep const long long *, %100, %104
+  %106 = load long long, %105
+  %107 = bitcast const long long, %106
+  %110 = iconst long long, 3
+  %492 = iconst long long, 6148914691236517206
+  %493 = smulh long long, %106, %492
+  %494 = iconst long long, 63
+  %495 = lshr long long, %106, %494
+  %111 = add long long, %493, %495
+  %112 = bitcast unsigned long long, %111
+  %113 = call @_ZL3mixyy(%452, %112) : unsigned long long
+  %496 = iconst long long, 6148914691236517206
+  %497 = smulh long long, %106, %496
+  %498 = iconst long long, 63
+  %499 = lshr long long, %106, %498
+  %500 = iconst long long, 3
+  %501 = add long long, %497, %499
+  %502 = mul long long, %501, %500
+  %116 = sub long long, %106, %502
+  %117 = bitcast unsigned long long, %116
+  %118 = call @_ZL3mixyy(%113, %117) : unsigned long long
+  %120 = iconst int, 1
+  %121 = add int, %453, %120
+  br ^12(%118, %121)
+^15:
+  %122 = addr const char [22] *, @.L.str.38
+  %123 = bitcast const char *, %122
+  %124 = iconst long long, 3
+  %126 = call @printf(%123, %124, %452) : int variadic
+  br ^16(%2, %4)
+^16(%454: unsigned long long, %455: int):
+  %136 = icmp slt, bool, %455, %9
+  condbr %136, ^17, ^19
+^17:
+  %138 = addr const long long [13] *, @_ZL5wides
+  %139 = bitcast const long long *, %138
+  %141 = sext long, %455
+  %142 = iconst long, 8
+  %143 = mul long, %141, %142
+  %144 = gep const long long *, %139, %143
+  %145 = load long long, %144
+  %146 = bitcast const long long, %145
+  %149 = iconst long long, 7
+  %503 = iconst long long, 5270498306774157605
+  %504 = smulh long long, %145, %503
+  %505 = iconst long long, 1
+  %506 = ashr long long, %504, %505
+  %507 = iconst long long, 63
+  %508 = lshr long long, %145, %507
+  %150 = add long long, %506, %508
+  %151 = bitcast unsigned long long, %150
+  %152 = call @_ZL3mixyy(%454, %151) : unsigned long long
+  %509 = iconst long long, 5270498306774157605
+  %510 = smulh long long, %145, %509
+  %511 = iconst long long, 1
+  %512 = ashr long long, %510, %511
+  %513 = iconst long long, 63
+  %514 = lshr long long, %145, %513
+  %515 = iconst long long, 7
+  %516 = add long long, %512, %514
+  %517 = mul long long, %516, %515
+  %155 = sub long long, %145, %517
+  %156 = bitcast unsigned long long, %155
+  %157 = call @_ZL3mixyy(%152, %156) : unsigned long long
+  %159 = iconst int, 1
+  %160 = add int, %455, %159
+  br ^16(%157, %160)
+^19:
+  %161 = addr const char [22] *, @.L.str.39
+  %162 = bitcast const char *, %161
+  %163 = iconst long long, 7
+  %165 = call @printf(%162, %163, %454) : int variadic
+  br ^20(%2, %4)
+^20(%456: unsigned long long, %457: int):
+  %175 = icmp slt, bool, %457, %9
+  condbr %175, ^21, ^23
+^21:
+  %177 = addr const long long [13] *, @_ZL5wides
+  %178 = bitcast const long long *, %177
+  %180 = sext long, %457
+  %181 = iconst long, 8
+  %182 = mul long, %180, %181
+  %183 = gep const long long *, %178, %182
+  %184 = load long long, %183
+  %185 = bitcast const long long, %184
+  %188 = iconst long long, 10
+  %518 = iconst long long, 7378697629483820647
+  %519 = smulh long long, %184, %518
+  %520 = iconst long long, 2
+  %521 = ashr long long, %519, %520
+  %522 = iconst long long, 63
+  %523 = lshr long long, %184, %522
+  %189 = add long long, %521, %523
+  %190 = bitcast unsigned long long, %189
+  %191 = call @_ZL3mixyy(%456, %190) : unsigned long long
+  %524 = iconst long long, 7378697629483820647
+  %525 = smulh long long, %184, %524
+  %526 = iconst long long, 2
+  %527 = ashr long long, %525, %526
+  %528 = iconst long long, 63
+  %529 = lshr long long, %184, %528
+  %530 = iconst long long, 10
+  %531 = add long long, %527, %529
+  %532 = mul long long, %531, %530
+  %194 = sub long long, %184, %532
+  %195 = bitcast unsigned long long, %194
+  %196 = call @_ZL3mixyy(%191, %195) : unsigned long long
+  %198 = iconst int, 1
+  %199 = add int, %457, %198
+  br ^20(%196, %199)
+^23:
+  %200 = addr const char [22] *, @.L.str.40
+  %201 = bitcast const char *, %200
+  %202 = iconst long long, 10
+  %204 = call @printf(%201, %202, %456) : int variadic
+  br ^24(%2, %4)
+^24(%458: unsigned long long, %459: int):
+  %214 = icmp slt, bool, %459, %9
+  condbr %214, ^25, ^27
+^25:
+  %216 = addr const long long [13] *, @_ZL5wides
+  %217 = bitcast const long long *, %216
+  %219 = sext long, %459
+  %220 = iconst long, 8
+  %221 = mul long, %219, %220
+  %222 = gep const long long *, %217, %221
+  %223 = load long long, %222
+  %224 = bitcast const long long, %223
+  %227 = iconst long long, 1000
+  %533 = iconst long long, 2361183241434822607
+  %534 = smulh long long, %223, %533
+  %535 = iconst long long, 7
+  %536 = ashr long long, %534, %535
+  %537 = iconst long long, 63
+  %538 = lshr long long, %223, %537
+  %228 = add long long, %536, %538
+  %229 = bitcast unsigned long long, %228
+  %230 = call @_ZL3mixyy(%458, %229) : unsigned long long
+  %539 = iconst long long, 2361183241434822607
+  %540 = smulh long long, %223, %539
+  %541 = iconst long long, 7
+  %542 = ashr long long, %540, %541
+  %543 = iconst long long, 63
+  %544 = lshr long long, %223, %543
+  %545 = iconst long long, 1000
+  %546 = add long long, %542, %544
+  %547 = mul long long, %546, %545
+  %233 = sub long long, %223, %547
+  %234 = bitcast unsigned long long, %233
+  %235 = call @_ZL3mixyy(%230, %234) : unsigned long long
+  %237 = iconst int, 1
+  %238 = add int, %459, %237
+  br ^24(%235, %238)
+^27:
+  %239 = addr const char [22] *, @.L.str.41
+  %240 = bitcast const char *, %239
+  %241 = iconst long long, 1000
+  %243 = call @printf(%240, %241, %458) : int variadic
+  br ^28(%2, %4)
+^28(%460: unsigned long long, %461: int):
+  %253 = icmp slt, bool, %461, %9
+  condbr %253, ^29, ^31
+^29:
+  %255 = addr const long long [13] *, @_ZL5wides
+  %256 = bitcast const long long *, %255
+  %258 = sext long, %461
+  %259 = iconst long, 8
+  %260 = mul long, %258, %259
+  %261 = gep const long long *, %256, %260
+  %262 = load long long, %261
+  %263 = bitcast const long long, %262
+  %266 = iconst long long, 1000000007
+  %548 = iconst long long, -8543223828751151131
+  %549 = smulh long long, %262, %548
+  %550 = add long long, %549, %262
+  %551 = iconst long long, 29
+  %552 = ashr long long, %550, %551
+  %553 = iconst long long, 63
+  %554 = lshr long long, %262, %553
+  %267 = add long long, %552, %554
+  %268 = bitcast unsigned long long, %267
+  %269 = call @_ZL3mixyy(%460, %268) : unsigned long long
+  %555 = iconst long long, -8543223828751151131
+  %556 = smulh long long, %262, %555
+  %557 = add long long, %556, %262
+  %558 = iconst long long, 29
+  %559 = ashr long long, %557, %558
+  %560 = iconst long long, 63
+  %561 = lshr long long, %262, %560
+  %562 = iconst long long, 1000000007
+  %563 = add long long, %559, %561
+  %564 = mul long long, %563, %562
+  %272 = sub long long, %262, %564
+  %273 = bitcast unsigned long long, %272
+  %274 = call @_ZL3mixyy(%269, %273) : unsigned long long
+  %276 = iconst int, 1
+  %277 = add int, %461, %276
+  br ^28(%274, %277)
+^31:
+  %278 = addr const char [22] *, @.L.str.42
+  %279 = bitcast const char *, %278
+  %280 = iconst long long, 1000000007
+  %282 = call @printf(%279, %280, %460) : int variadic
+  br ^32(%2, %4)
+^32(%462: unsigned long long, %463: int):
+  %292 = icmp slt, bool, %463, %9
+  condbr %292, ^33, ^35
+^33:
+  %294 = addr const long long [13] *, @_ZL5wides
+  %295 = bitcast const long long *, %294
+  %297 = sext long, %463
+  %298 = iconst long, 8
+  %299 = mul long, %297, %298
+  %300 = gep const long long *, %295, %299
+  %301 = load long long, %300
+  %302 = bitcast const long long, %301
+  %305 = iconst long long, 9223372036854775807
+  %565 = iconst long long, 4611686018427387905
+  %566 = smulh long long, %301, %565
+  %567 = iconst long long, 61
+  %568 = ashr long long, %566, %567
+  %569 = iconst long long, 63
+  %570 = lshr long long, %301, %569
+  %306 = add long long, %568, %570
+  %307 = bitcast unsigned long long, %306
+  %308 = call @_ZL3mixyy(%462, %307) : unsigned long long
+  %571 = iconst long long, 4611686018427387905
+  %572 = smulh long long, %301, %571
+  %573 = iconst long long, 61
+  %574 = ashr long long, %572, %573
+  %575 = iconst long long, 63
+  %576 = lshr long long, %301, %575
+  %577 = iconst long long, 9223372036854775807
+  %578 = add long long, %574, %576
+  %579 = mul long long, %578, %577
+  %311 = sub long long, %301, %579
+  %312 = bitcast unsigned long long, %311
+  %313 = call @_ZL3mixyy(%308, %312) : unsigned long long
+  %315 = iconst int, 1
+  %316 = add int, %463, %315
+  br ^32(%313, %316)
+^35:
+  %317 = addr const char [22] *, @.L.str.43
+  %318 = bitcast const char *, %317
+  %319 = iconst long long, 9223372036854775807
+  %321 = call @printf(%318, %319, %462) : int variadic
+  br ^36(%2, %4)
+^36(%464: unsigned long long, %465: int):
+  %331 = icmp slt, bool, %465, %9
+  condbr %331, ^37, ^39
+^37:
+  %333 = addr const long long [13] *, @_ZL5wides
+  %334 = bitcast const long long *, %333
+  %336 = sext long, %465
+  %337 = iconst long, 8
+  %338 = mul long, %336, %337
+  %339 = gep const long long *, %334, %338
+  %340 = load long long, %339
+  %341 = bitcast const long long, %340
+  %345 = iconst long long, -3
+  %580 = iconst long long, 6148914691236517206
+  %581 = smulh long long, %340, %580
+  %582 = iconst long long, 63
+  %583 = lshr long long, %340, %582
+  %584 = add long long, %581, %583
+  %346 = neg long long, %584
+  %347 = bitcast unsigned long long, %346
+  %348 = call @_ZL3mixyy(%464, %347) : unsigned long long
+  %585 = iconst long long, 6148914691236517206
+  %586 = smulh long long, %340, %585
+  %587 = iconst long long, 63
+  %588 = lshr long long, %340, %587
+  %589 = iconst long long, 3
+  %590 = add long long, %586, %588
+  %591 = mul long long, %590, %589
+  %352 = sub long long, %340, %591
+  %353 = bitcast unsigned long long, %352
+  %354 = call @_ZL3mixyy(%348, %353) : unsigned long long
+  %356 = iconst int, 1
+  %357 = add int, %465, %356
+  br ^36(%354, %357)
+^39:
+  %358 = addr const char [22] *, @.L.str.44
+  %359 = bitcast const char *, %358
+  %361 = iconst long long, -3
+  %363 = call @printf(%359, %361, %464) : int variadic
+  br ^40(%2, %4)
+^40(%466: unsigned long long, %467: int):
+  %373 = icmp slt, bool, %467, %9
+  condbr %373, ^41, ^43
+^41:
+  %375 = addr const long long [13] *, @_ZL5wides
+  %376 = bitcast const long long *, %375
+  %378 = sext long, %467
+  %379 = iconst long, 8
+  %380 = mul long, %378, %379
+  %381 = gep const long long *, %376, %380
+  %382 = load long long, %381
+  %383 = bitcast const long long, %382
+  %386 = iconst long long, 16
+  %387 = iconst long long, -16
+  %592 = iconst long long, 63
+  %593 = ashr long long, %382, %592
+  %594 = iconst long long, 60
+  %595 = lshr long long, %593, %594
+  %596 = add long long, %382, %595
+  %597 = iconst long long, 4
+  %598 = ashr long long, %596, %597
+  %388 = neg long long, %598
+  %389 = bitcast unsigned long long, %388
+  %390 = call @_ZL3mixyy(%466, %389) : unsigned long long
+  %599 = iconst long long, 63
+  %600 = ashr long long, %382, %599
+  %601 = iconst long long, 60
+  %602 = lshr long long, %600, %601
+  %603 = add long long, %382, %602
+  %604 = iconst long long, -16
+  %605 = and long long, %603, %604
+  %394 = sub long long, %382, %605
+  %395 = bitcast unsigned long long, %394
+  %396 = call @_ZL3mixyy(%390, %395) : unsigned long long
+  %398 = iconst int, 1
+  %399 = add int, %467, %398
+  br ^40(%396, %399)
+^43:
+  %400 = addr const char [22] *, @.L.str.45
+  %401 = bitcast const char *, %400
+  %402 = iconst long long, 16
+  %403 = iconst long long, -16
+  %405 = call @printf(%401, %403, %466) : int variadic
+  br ^44(%2, %4)
+^44(%468: unsigned long long, %469: int):
+  %415 = icmp slt, bool, %469, %9
+  condbr %415, ^45, ^47
+^45:
+  %417 = addr const long long [13] *, @_ZL5wides
+  %418 = bitcast const long long *, %417
+  %420 = sext long, %469
+  %421 = iconst long, 8
+  %422 = mul long, %420, %421
+  %423 = gep const long long *, %418, %422
+  %424 = load long long, %423
+  %425 = bitcast const long long, %424
+  %429 = iconst long long, -1000000007
+  %606 = iconst long long, -8543223828751151131
+  %607 = smulh long long, %424, %606
+  %608 = add long long, %607, %424
+  %609 = iconst long long, 29
+  %610 = ashr long long, %608, %609
+  %611 = iconst long long, 63
+  %612 = lshr long long, %424, %611
+  %613 = add long long, %610, %612
+  %430 = neg long long, %613
+  %431 = bitcast unsigned long long, %430
+  %432 = call @_ZL3mixyy(%468, %431) : unsigned long long
+  %614 = iconst long long, -8543223828751151131
+  %615 = smulh long long, %424, %614
+  %616 = add long long, %615, %424
+  %617 = iconst long long, 29
+  %618 = ashr long long, %616, %617
+  %619 = iconst long long, 63
+  %620 = lshr long long, %424, %619
+  %621 = iconst long long, 1000000007
+  %622 = add long long, %618, %620
+  %623 = mul long long, %622, %621
+  %436 = sub long long, %424, %623
+  %437 = bitcast unsigned long long, %436
+  %438 = call @_ZL3mixyy(%432, %437) : unsigned long long
+  %440 = iconst int, 1
+  %441 = add int, %469, %440
+  br ^44(%438, %441)
+^47:
+  %442 = addr const char [22] *, @.L.str.46
+  %443 = bitcast const char *, %442
+  %445 = iconst long long, -1000000007
+  %447 = call @printf(%443, %445, %468) : int variadic
+  ret
+}
+function @_ZL8uwides64v() -> void static {
+^1:
+  %2 = iconst unsigned long long, -3750763034362895579
+  %4 = iconst int, 0
+  br ^4(%2, %4)
+^4(%407: unsigned long long, %408: int):
+  %6 = iconst unsigned long, 72
+  %7 = iconst unsigned long, 8
+  %8 = iconst unsigned long, 9
+  %9 = iconst int, 9
+  %10 = icmp slt, bool, %408, %9
+  condbr %10, ^5, ^7
+^5:
+  %12 = addr const unsigned long long [9] *, @_ZL6uwides
+  %13 = bitcast const unsigned long long *, %12
+  %15 = sext long, %408
+  %16 = iconst long, 8
+  %17 = mul long, %15, %16
+  %18 = gep const unsigned long long *, %13, %17
+  %19 = load unsigned long long, %18
+  %20 = bitcast const unsigned long long, %19
+  %23 = iconst unsigned long long, 2
+  %427 = iconst unsigned long long, 1
+  %24 = lshr unsigned long long, %19, %427
+  %25 = call @_ZL3mixyy(%407, %24) : unsigned long long
+  %428 = iconst unsigned long long, 1
+  %28 = and unsigned long long, %19, %428
+  %29 = call @_ZL3mixyy(%25, %28) : unsigned long long
+  %31 = iconst int, 1
+  %32 = add int, %408, %31
+  br ^4(%29, %32)
+^7:
+  %33 = addr const char [31] *, @.L.str.47
+  %34 = bitcast const char *, %33
+  %35 = iconst unsigned long long, 2
+  %37 = call @printf(%34, %35, %407) : int variadic
+  br ^8(%2, %4)
+^8(%409: unsigned long long, %410: int):
+  %47 = icmp slt, bool, %410, %9
+  condbr %47, ^9, ^11
+^9:
+  %49 = addr const unsigned long long [9] *, @_ZL6uwides
+  %50 = bitcast const unsigned long long *, %49
+  %52 = sext long, %410
+  %53 = iconst long, 8
+  %54 = mul long, %52, %53
+  %55 = gep const unsigned long long *, %50, %54
+  %56 = load unsigned long long, %55
+  %57 = bitcast const unsigned long long, %56
+  %60 = iconst unsigned long long, 1
+  %61 = iconst int, 40
+  %62 = iconst unsigned long long, 40
+  %63 = iconst unsigned long long, 1099511627776
+  %429 = iconst unsigned long long, 40
+  %64 = lshr unsigned long long, %56, %429
+  %65 = call @_ZL3mixyy(%409, %64) : unsigned long long
+  %430 = iconst unsigned long long, 1099511627775
+  %71 = and unsigned long long, %56, %430
+  %72 = call @_ZL3mixyy(%65, %71) : unsigned long long
+  %74 = iconst int, 1
+  %75 = add int, %410, %74
+  br ^8(%72, %75)
+^11:
+  %76 = addr const char [31] *, @.L.str.48
+  %77 = bitcast const char *, %76
+  %78 = iconst unsigned long long, 1
+  %79 = iconst int, 40
+  %80 = iconst unsigned long long, 40
+  %81 = iconst unsigned long long, 1099511627776
+  %83 = call @printf(%77, %81, %409) : int variadic
+  br ^12(%2, %4)
+^12(%411: unsigned long long, %412: int):
+  %93 = icmp slt, bool, %412, %9
+  condbr %93, ^13, ^15
+^13:
+  %95 = addr const unsigned long long [9] *, @_ZL6uwides
+  %96 = bitcast const unsigned long long *, %95
+  %98 = sext long, %412
+  %99 = iconst long, 8
+  %100 = mul long, %98, %99
+  %101 = gep const unsigned long long *, %96, %100
+  %102 = load unsigned long long, %101
+  %103 = bitcast const unsigned long long, %102
+  %107 = iconst int, 63
+  %108 = iconst unsigned long long, 63
+  %109 = iconst unsigned long long, -9223372036854775808
+  %110 = udiv unsigned long long, %102, %109
+  %111 = call @_ZL3mixyy(%411, %110) : unsigned long long
+  %117 = urem unsigned long long, %102, %109
+  %118 = call @_ZL3mixyy(%111, %117) : unsigned long long
+  %120 = iconst int, 1
+  %121 = add int, %412, %120
+  br ^12(%118, %121)
+^15:
+  %122 = addr const char [31] *, @.L.str.49
+  %123 = bitcast const char *, %122
+  %125 = iconst int, 63
+  %126 = iconst unsigned long long, 63
+  %127 = iconst unsigned long long, -9223372036854775808
+  %129 = call @printf(%123, %127, %411) : int variadic
+  br ^16(%2, %4)
+^16(%413: unsigned long long, %414: int):
+  %139 = icmp slt, bool, %414, %9
+  condbr %139, ^17, ^19
+^17:
+  %141 = addr const unsigned long long [9] *, @_ZL6uwides
+  %142 = bitcast const unsigned long long *, %141
+  %144 = sext long, %414
+  %145 = iconst long, 8
+  %146 = mul long, %144, %145
+  %147 = gep const unsigned long long *, %142, %146
+  %148 = load unsigned long long, %147
+  %149 = bitcast const unsigned long long, %148
+  %152 = iconst unsigned long long, 3
+  %431 = iconst unsigned long long, -6148914691236517205
+  %432 = umulh unsigned long long, %148, %431
+  %433 = iconst unsigned long long, 1
+  %153 = lshr unsigned long long, %432, %433
+  %154 = call @_ZL3mixyy(%413, %153) : unsigned long long
+  %434 = iconst unsigned long long, -6148914691236517205
+  %435 = umulh unsigned long long, %148, %434
+  %436 = iconst unsigned long long, 1
+  %437 = lshr unsigned long long, %435, %436
+  %438 = iconst unsigned long long, 3
+  %439 = mul unsigned long long, %437, %438
+  %157 = sub unsigned long long, %148, %439
+  %158 = call @_ZL3mixyy(%154, %157) : unsigned long long
+  %160 = iconst int, 1
+  %161 = add int, %414, %160
+  br ^16(%158, %161)
+^19:
+  %162 = addr const char [31] *, @.L.str.50
+  %163 = bitcast const char *, %162
+  %164 = iconst unsigned long long, 3
+  %166 = call @printf(%163, %164, %413) : int variadic
+  br ^20(%2, %4)
+^20(%415: unsigned long long, %416: int):
+  %176 = icmp slt, bool, %416, %9
+  condbr %176, ^21, ^23
+^21:
+  %178 = addr const unsigned long long [9] *, @_ZL6uwides
+  %179 = bitcast const unsigned long long *, %178
+  %181 = sext long, %416
+  %182 = iconst long, 8
+  %183 = mul long, %181, %182
+  %184 = gep const unsigned long long *, %179, %183
+  %185 = load unsigned long long, %184
+  %186 = bitcast const unsigned long long, %185
+  %189 = iconst unsigned long long, 5
+  %440 = iconst unsigned long long, -3689348814741910323
+  %441 = umulh unsigned long long, %185, %440
+  %442 = iconst unsigned long long, 2
+  %190 = lshr unsigned long long, %441, %442
+  %191 = call @_ZL3mixyy(%415, %190) : unsigned long long
+  %443 = iconst unsigned long long, -3689348814741910323
+  %444 = umulh unsigned long long, %185, %443
+  %445 = iconst unsigned long long, 2
+  %446 = lshr unsigned long long, %444, %445
+  %447 = iconst unsigned long long, 5
+  %448 = mul unsigned long long, %446, %447
+  %194 = sub unsigned long long, %185, %448
+  %195 = call @_ZL3mixyy(%191, %194) : unsigned long long
+  %197 = iconst int, 1
+  %198 = add int, %416, %197
+  br ^20(%195, %198)
+^23:
+  %199 = addr const char [31] *, @.L.str.51
+  %200 = bitcast const char *, %199
+  %201 = iconst unsigned long long, 5
+  %203 = call @printf(%200, %201, %415) : int variadic
+  br ^24(%2, %4)
+^24(%417: unsigned long long, %418: int):
+  %213 = icmp slt, bool, %418, %9
+  condbr %213, ^25, ^27
+^25:
+  %215 = addr const unsigned long long [9] *, @_ZL6uwides
+  %216 = bitcast const unsigned long long *, %215
+  %218 = sext long, %418
+  %219 = iconst long, 8
+  %220 = mul long, %218, %219
+  %221 = gep const unsigned long long *, %216, %220
+  %222 = load unsigned long long, %221
+  %223 = bitcast const unsigned long long, %222
+  %226 = iconst unsigned long long, 7
+  %227 = udiv unsigned long long, %222, %226
+  %228 = call @_ZL3mixyy(%417, %227) : unsigned long long
+  %231 = urem unsigned long long, %222, %226
+  %232 = call @_ZL3mixyy(%228, %231) : unsigned long long
+  %234 = iconst int, 1
+  %235 = add int, %418, %234
+  br ^24(%232, %235)
+^27:
+  %236 = addr const char [31] *, @.L.str.52
+  %237 = bitcast const char *, %236
+  %238 = iconst unsigned long long, 7
+  %240 = call @printf(%237, %238, %417) : int variadic
+  br ^28(%2, %4)
+^28(%419: unsigned long long, %420: int):
+  %250 = icmp slt, bool, %420, %9
+  condbr %250, ^29, ^31
+^29:
+  %252 = addr const unsigned long long [9] *, @_ZL6uwides
+  %253 = bitcast const unsigned long long *, %252
+  %255 = sext long, %420
+  %256 = iconst long, 8
+  %257 = mul long, %255, %256
+  %258 = gep const unsigned long long *, %253, %257
+  %259 = load unsigned long long, %258
+  %260 = bitcast const unsigned long long, %259
+  %263 = iconst unsigned long long, 10
+  %449 = iconst unsigned long long, -3689348814741910323
+  %450 = umulh unsigned long long, %259, %449
+  %451 = iconst unsigned long long, 3
+  %264 = lshr unsigned long long, %450, %451
+  %265 = call @_ZL3mixyy(%419, %264) : unsigned long long
+  %452 = iconst unsigned long long, -3689348814741910323
+  %453 = umulh unsigned long long, %259, %452
+  %454 = iconst unsigned long long, 3
+  %455 = lshr unsigned long long, %453, %454
+  %456 = iconst unsigned long long, 10
+  %457 = mul unsigned long long, %455, %456
+  %268 = sub unsigned long long, %259, %457
+  %269 = call @_ZL3mixyy(%265, %268) : unsigned long long
+  %271 = iconst int, 1
+  %272 = add int, %420, %271
+  br ^28(%269, %272)
+^31:
+  %273 = addr const char [31] *, @.L.str.53
+  %274 = bitcast const char *, %273
+  %275 = iconst unsigned long long, 10
+  %277 = call @printf(%274, %275, %419) : int variadic
+  br ^32(%2, %4)
+^32(%421: unsigned long long, %422: int):
+  %287 = icmp slt, bool, %422, %9
+  condbr %287, ^33, ^35
+^33:
+  %289 = addr const unsigned long long [9] *, @_ZL6uwides
+  %290 = bitcast const unsigned long long *, %289
+  %292 = sext long, %422
+  %293 = iconst long, 8
+  %294 = mul long, %292, %293
+  %295 = gep const unsigned long long *, %290, %294
+  %296 = load unsigned long long, %295
+  %297 = bitcast const unsigned long long, %296
+  %300 = iconst unsigned long long, 1000
+  %301 = udiv unsigned long long, %296, %300
+  %302 = call @_ZL3mixyy(%421, %301) : unsigned long long
+  %305 = urem unsigned long long, %296, %300
+  %306 = call @_ZL3mixyy(%302, %305) : unsigned long long
+  %308 = iconst int, 1
+  %309 = add int, %422, %308
+  br ^32(%306, %309)
+^35:
+  %310 = addr const char [31] *, @.L.str.54
+  %311 = bitcast const char *, %310
+  %312 = iconst unsigned long long, 1000
+  %314 = call @printf(%311, %312, %421) : int variadic
+  br ^36(%2, %4)
+^36(%423: unsigned long long, %424: int):
+  %324 = icmp slt, bool, %424, %9
+  condbr %324, ^37, ^39
+^37:
+  %326 = addr const unsigned long long [9] *, @_ZL6uwides
+  %327 = bitcast const unsigned long long *, %326
+  %329 = sext long, %424
+  %330 = iconst long, 8
+  %331 = mul long, %329, %330
+  %332 = gep const unsigned long long *, %327, %331
+  %333 = load unsigned long long, %332
+  %334 = bitcast const unsigned long long, %333
+  %337 = iconst unsigned long long, 1000000007
+  %458 = iconst unsigned long long, -8543223828751151131
+  %459 = umulh unsigned long long, %333, %458
+  %460 = iconst unsigned long long, 29
+  %338 = lshr unsigned long long, %459, %460
+  %339 = call @_ZL3mixyy(%423, %338) : unsigned long long
+  %461 = iconst unsigned long long, -8543223828751151131
+  %462 = umulh unsigned long long, %333, %461
+  %463 = iconst unsigned long long, 29
+  %464 = lshr unsigned long long, %462, %463
+  %465 = iconst unsigned long long, 1000000007
+  %466 = mul unsigned long long, %464, %465
+  %342 = sub unsigned long long, %333, %466
+  %343 = call @_ZL3mixyy(%339, %342) : unsigned long long
+  %345 = iconst int, 1
+  %346 = add int, %424, %345
+  br ^36(%343, %346)
+^39:
+  %347 = addr const char [31] *, @.L.str.55
+  %348 = bitcast const char *, %347
+  %349 = iconst unsigned long long, 1000000007
+  %351 = call @printf(%348, %349, %423) : int variadic
+  br ^40(%2, %4)
+^40(%425: unsigned long long, %426: int):
+  %361 = icmp slt, bool, %426, %9
+  condbr %361, ^41, ^43
+^41:
+  %363 = addr const unsigned long long [9] *, @_ZL6uwides
+  %364 = bitcast const unsigned long long *, %363
+  %366 = sext long, %426
+  %367 = iconst long, 8
+  %368 = mul long, %366, %367
+  %369 = gep const unsigned long long *, %364, %368
+  %370 = load unsigned long long, %369
+  %371 = bitcast const unsigned long long, %370
+  %375 = iconst int, 62
+  %376 = iconst unsigned long long, 62
+  %377 = iconst unsigned long long, 4611686018427387904
+  %378 = iconst int, 1
+  %380 = iconst unsigned long long, 4611686018427387905
+  %467 = iconst unsigned long long, -3
+  %468 = umulh unsigned long long, %370, %467
+  %469 = iconst unsigned long long, 62
+  %381 = lshr unsigned long long, %468, %469
+  %382 = call @_ZL3mixyy(%425, %381) : unsigned long long
+  %470 = iconst unsigned long long, -3
+  %471 = umulh unsigned long long, %370, %470
+  %472 = iconst unsigned long long, 62
+  %473 = lshr unsigned long long, %471, %472
+  %474 = iconst unsigned long long, 4611686018427387905
+  %475 = mul unsigned long long, %473, %474
+  %391 = sub unsigned long long, %370, %475
+  %392 = call @_ZL3mixyy(%382, %391) : unsigned long long
+  %395 = add int, %426, %378
+  br ^40(%392, %395)
+^43:
+  %396 = addr const char [31] *, @.L.str.56
+  %397 = bitcast const char *, %396
+  %399 = iconst int, 62
+  %400 = iconst unsigned long long, 62
+  %401 = iconst unsigned long long, 4611686018427387904
+  %402 = iconst int, 1
+  %404 = iconst unsigned long long, 4611686018427387905
+  %406 = call @printf(%397, %404, %425) : int variadic
+  ret
+}
+function @_ZL5locali(%1: int) -> int static {
+^1(%1: int):
+  %4 = iconst int, 10
+  %5 = iconst const int, 10
+  %20 = iconst int, 1717986919
+  %21 = smulh int, %1, %20
+  %22 = iconst int, 2
+  %23 = ashr int, %21, %22
+  %24 = iconst int, 31
+  %25 = lshr int, %1, %24
+  %9 = add int, %23, %25
+  %26 = iconst int, 1717986919
+  %27 = smulh int, %1, %26
+  %28 = iconst int, 2
+  %29 = ashr int, %27, %28
+  %30 = iconst int, 31
+  %31 = lshr int, %1, %30
+  %32 = iconst int, 10
+  %33 = add int, %29, %31
+  %34 = mul int, %33, %32
+  %13 = sub int, %1, %34
+  %15 = iconst int, 100
+  %16 = mul int, %9, %15
+  %18 = add int, %16, %13
+  ret %18
+}
+function @main() -> int {
+^1:
+  call @_ZL6ints32v() : none
+  call @_ZL7uints32v() : none
+  call @_ZL7wides64v() : none
+  call @_ZL8uwides64v() : none
+  %1 = addr const char [10] *, @.L.str.57
+  %2 = bitcast const char *, %1
+  %3 = iconst int, 1234
+  %4 = call @_ZL5locali(%3) : int
+  %6 = iconst int, -1234
+  %7 = call @_ZL5locali(%6) : int
+  %8 = iconst int, 7
+  %9 = call @_ZL5locali(%8) : int
+  %10 = call @printf(%2, %4, %7, %9) : int variadic
+  %11 = iconst int, 0
+  ret %11
+}

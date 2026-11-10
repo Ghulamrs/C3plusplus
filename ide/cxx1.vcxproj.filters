@@ -112,8 +112,10 @@
     <ClCompile Include="..\src\ir\Wrappers.cpp"><Filter>Source Files\ir</Filter></ClCompile>
     <ClCompile Include="..\src\ir\opt\SsaCfg.cpp"><Filter>Source Files\ir\opt</Filter></ClCompile>
     <ClCompile Include="..\src\ir\opt\SsaDead.cpp"><Filter>Source Files\ir\opt</Filter></ClCompile>
+    <ClCompile Include="..\src\ir\opt\SsaDivide.cpp"><Filter>Source Files\ir\opt</Filter></ClCompile>
     <ClCompile Include="..\src\ir\opt\SsaDominators.cpp"><Filter>Source Files\ir\opt</Filter></ClCompile>
     <ClCompile Include="..\src\ir\opt\SsaFold.cpp"><Filter>Source Files\ir\opt</Filter></ClCompile>
+    <ClCompile Include="..\src\ir\opt\SsaJumps.cpp"><Filter>Source Files\ir\opt</Filter></ClCompile>
     <ClCompile Include="..\src\ir\opt\SsaOptimize.cpp"><Filter>Source Files\ir\opt</Filter></ClCompile>
     <ClCompile Include="..\src\ir\opt\SsaPromote.cpp"><Filter>Source Files\ir\opt</Filter></ClCompile>
     <ClCompile Include="..\src\ir\opt\SsaValues.cpp"><Filter>Source Files\ir\opt</Filter></ClCompile>

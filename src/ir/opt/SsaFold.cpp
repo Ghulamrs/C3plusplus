@@ -15,6 +15,13 @@ namespace {
 
 using sema::Arith;
 
+// The selector's register reads a value of up to four bytes as 32 bits, extended by the operator's reading.
+long long widenAt(long long k, const Type &t, const Target &target, bool sign) {
+    if (t.size(target) == 8) return k;
+    const std::uint32_t low = static_cast<std::uint32_t>(k);
+    return sign ? static_cast<long long>(static_cast<std::int32_t>(low)) : static_cast<long long>(low);
+}
+
 struct Folder {
     Function &f;
     const TypeTable &types;
@@ -59,12 +66,7 @@ struct Folder {
         else if (kind == 2) std::memcpy(&d, &bits, 8);
         return kind != 0;
     }
-    // The selector's register reads a value of up to four bytes as 32 bits, extended by the operator's reading.
-    long long widen(long long k, TypeId t, bool sign) const {
-        if (T(t).size(target) == 8) return k;
-        const std::uint32_t low = static_cast<std::uint32_t>(k);
-        return sign ? static_cast<long long>(static_cast<std::int32_t>(low)) : static_cast<long long>(low);
-    }
+    long long widen(long long k, TypeId t, bool sign) const { return widenAt(k, T(t), target, sign); }
 
     void pushInst(InstId id) {
         if (id.v >= queued.size() || queued[id.v] || gone[id.v]) return;
@@ -228,31 +230,14 @@ struct Folder {
     void compare(InstId id) {
         const Inst &i = f.inst(id);
         const ValueId a = op(i, 0), b = op(i, 1);
-        const TypeId t = f.value(a).type;
-        Arith ar = Arith::Eq;
-        bool uns = false;
-        switch (i.cc) {
-        case Cmp::Eq: ar = Arith::Eq; uns = true; break;
-        case Cmp::Ne: ar = Arith::Ne; uns = true; break;
-        case Cmp::Slt: ar = Arith::Lt; break;
-        case Cmp::Sle: ar = Arith::Le; break;
-        case Cmp::Sgt: ar = Arith::Gt; break;
-        case Cmp::Sge: ar = Arith::Ge; break;
-        case Cmp::Ult: ar = Arith::Lt; uns = true; break;
-        case Cmp::Ule: ar = Arith::Le; uns = true; break;
-        case Cmp::Ugt: ar = Arith::Gt; uns = true; break;
-        case Cmp::Uge: ar = Arith::Ge; uns = true; break;
-        default: return;
-        }
+        long long x = 0, y = 0, out = 0;
         if (a.v == b.v) {
-            toConst(id, ar == Arith::Eq || ar == Arith::Le || ar == Arith::Ge, log.identities);
+            // An operand compared with itself answers as 0 with 0 does.
+            if (foldCompare(i.cc, 0, 0, T(f.value(a).type), target, out)) toConst(id, out, log.identities);
             return;
         }
-        long long x = 0, y = 0;
-        if (!intConst(a, x) || !intConst(b, y)) return;
-        long long out = 0;
-        sema::integerArith(ar, widen(x, t, !uns), widen(y, t, !uns), uns, &out);
-        toConst(id, out, log.compares);
+        if (intConst(a, x) && intConst(b, y) && foldCompare(i.cc, x, y, T(f.value(a).type), target, out))
+            toConst(id, out, log.compares);
     }
 
     void floating(InstId id) {
@@ -305,10 +290,9 @@ struct Folder {
         long long x = 0;
         double d = 0;
         if (integer(from) && integer(to) && intConst(a, x)) {
-            const Type &t = T(to);
-            const long long v = sema::canonical(x, t.size(target), t.isSigned(target), false);
-            if (t.isBool() && v != 0 && v != 1) { log.kept++; return; }     // the selector's movzbq, not a test
-            toConst(id, v, log.casts);
+            long long v = 0;
+            if (foldIntConversion(x, T(to), target, v)) toConst(id, v, log.casts);
+            else log.kept++;
             return;
         }
         if (integer(from) && fp(to) != 0 && intConst(a, x)) {
@@ -468,6 +452,31 @@ struct Folder {
 };
 
 }   // namespace
+
+bool foldCompare(Cmp cc, long long x, long long y, const Type &t, const Target &target, long long &out) {
+    Arith ar = Arith::Eq;
+    bool uns = false;
+    switch (cc) {
+    case Cmp::Eq: ar = Arith::Eq; uns = true; break;
+    case Cmp::Ne: ar = Arith::Ne; uns = true; break;
+    case Cmp::Slt: ar = Arith::Lt; break;
+    case Cmp::Sle: ar = Arith::Le; break;
+    case Cmp::Sgt: ar = Arith::Gt; break;
+    case Cmp::Sge: ar = Arith::Ge; break;
+    case Cmp::Ult: ar = Arith::Lt; uns = true; break;
+    case Cmp::Ule: ar = Arith::Le; uns = true; break;
+    case Cmp::Ugt: ar = Arith::Gt; uns = true; break;
+    case Cmp::Uge: ar = Arith::Ge; uns = true; break;
+    default: return false;
+    }
+    sema::integerArith(ar, widenAt(x, t, target, !uns), widenAt(y, t, target, !uns), uns, &out);
+    return true;
+}
+
+bool foldIntConversion(long long x, const Type &to, const Target &target, long long &out) {
+    out = sema::canonical(x, to.size(target), to.isSigned(target), false);
+    return !(to.isBool() && out != 0 && out != 1);      // the selector's movzbq, not a test
+}
 
 void fold(Function &f, const TypeTable &types, const Target &target, PassLog &log) {
     if (!f.entry.valid()) return;

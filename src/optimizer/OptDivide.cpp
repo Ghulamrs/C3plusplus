@@ -81,15 +81,14 @@ bool divideByConstant(MStream &s, Flow &f) {
     return true;
 }
 
-// **Hacker's Delight's magic number for a signed 32-bit divisor** d >= 2:
-// q = (n * M) >> (32 + s), M taken unsigned in a 64-bit product, plus one
-// where n is negative.
-void signedMagic(unsigned d, unsigned long long &M, int &s) {
-    const unsigned long long two31 = 1ULL << 31;
-    const unsigned long long anc = two31 - 1 - two31 % d;
-    int p = 31;
-    unsigned long long q1 = two31 / anc, r1 = two31 - q1 * anc;
-    unsigned long long q2 = two31 / d, r2 = two31 - q2 * d;
+// **Hacker's Delight's magic number for a signed divisor** d >= 2: q = (n * M) >> (bits + s), M taken unsigned in a
+// product twice as wide, plus one where n is negative. At 64 bits q1 and q2 wrap as the book's own words do.
+void signedMagic(unsigned long long d, unsigned long long &M, int &s, int bits) {
+    const unsigned long long two = 1ULL << (bits - 1);
+    const unsigned long long anc = two - 1 - two % d;
+    int p = bits - 1;
+    unsigned long long q1 = two / anc, r1 = two - q1 * anc;
+    unsigned long long q2 = two / d, r2 = two - q2 * d;
     unsigned long long delta;
     do {
         ++p;
@@ -99,18 +98,22 @@ void signedMagic(unsigned d, unsigned long long &M, int &s) {
         if (r2 >= d) { ++q2; r2 -= d; }
         delta = d - r2;
     } while (q1 < delta || (q1 == delta && r1 == 0));
-    M = (q2 + 1) & 0xffffffffULL;
-    s = p - 32;
+    M = bits == 64 ? q2 + 1 : (q2 + 1) & ((1ULL << bits) - 1);
+    s = p - bits;
 }
 
-// An unsigned 32-bit divisor's multiplier where one below 2^32 is exact:
-// M = ceil(2^(32+s) / d) with M*d - 2^(32+s) < 2^s; false where none is.
-bool unsignedMagic(unsigned d, unsigned long long &M, int &s) {
-    for (s = 0; s < 32; ++s) {
-        const unsigned long long p = 1ULL << (32 + s);
-        M = (p + d - 1) / d;
-        if (M >= (1ULL << 32)) return false;
-        if (M * d - p < (1ULL << s)) return true;
+// An unsigned divisor's multiplier where one below 2^bits is exact: M = ceil(2^(bits+s) / d) with
+// M*d - 2^(bits+s) < 2^s; false where none is. q and r are 2^(bits+s)'s quotient and remainder by d.
+bool unsignedMagic(unsigned long long d, unsigned long long &M, int &s, int bits) {
+    const unsigned long long top = 1ULL << (bits - 1), all = bits == 64 ? ~0ULL : (1ULL << bits) - 1;
+    unsigned long long q = top / d, r = top % d;
+    for (s = 0; s < bits; ++s) {
+        if (q >= top) return false;
+        q *= 2; r *= 2;
+        if (r >= d) { ++q; r -= d; }
+        if (r != 0 && q == all) return false;
+        M = q + (r != 0 ? 1 : 0);
+        if ((r != 0 ? d - r : 0) < (1ULL << s)) return true;
     }
     return false;
 }

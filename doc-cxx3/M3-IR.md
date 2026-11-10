@@ -394,6 +394,7 @@ Three-address, typed by the result; `T` is the result type unless said.
 | | `memcpy dst, src, n` / `memset dst, byte, n` | | n a constant |
 | | `gep p, off` | → pointer | a byte offset, constant or value: the typed tree's `pointerAdd` already scaled by the element (`Adapter.cpp`'s shape), so the IR does not scale |
 | integer | `add sub mul sdiv udiv srem urem and or xor shl lshr ashr` | T, T → T | two's-complement wrap; a shift count `& (bits-1)` is the target's |
+| | `smulh umulh` | T, T → T | the high half of the product twice T's width, signed or unsigned (M3b.4 round 5: division by a constant); T of 4 or 8 bytes |
 | | `neg not` | T → T | |
 | | `icmp cc, a, b` | T, T → bool | `eq ne slt sle sgt sge ult ule ugt uge` |
 | floating | `fadd fsub fmul fdiv fneg` | | `float`, `double`, `long double` (x87 on linux: selection's) |
