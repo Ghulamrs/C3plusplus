@@ -1074,9 +1074,9 @@ void Lowering::storageGuard(ValueId p, const Type &made, const std::string &rele
 }
 
 // Whether a temporary built in an operand that may not run can carry a built flag - one predicate for guard and its
-// refusal. Itanium only: on Microsoft the flag's test would branch inside a cleanup funclet, which the selector does not take.
+// refusal. On Microsoft the cleanup funclet tests it in blocks tagged with its pad (msCountedDestroy's way).
 bool Lowering::canFlag() const {
-    return skippable_ != 0 && fullFrom() != kNoFull && !target_.microsoftNames();
+    return skippable_ != 0 && fullFrom() != kNoFull;
 }
 
 // An object alive from here: destroyed by `dtor` at its scope's end, and by a cleanup where a call in its region unwinds.
@@ -1369,7 +1369,7 @@ void Lowering::closeScope(std::size_t mark, bool keep) {
         // Microsoft (M3-IR 3.6): the funclet destroys and returns to the runtime, which ends the program itself should the
         // destructor throw, as the walker's cleanup does; the cleanupret names the pad whose state this one chains to.
         if (target_.microsoftNames()) {
-            if (l.when.valid()) msCountedDestroy(l, p.block); else destroyWhen(l);
+            if (l.when.valid() || l.built.valid()) msCountedDestroy(l, p.block); else destroyWhen(l);
             const InstId r = add(Op::CleanupRet, TypeId(), std::vector<ValueId>());
             const BlockId to = msEnclosingPad();
             if (to.valid()) {
@@ -2205,6 +2205,7 @@ void Lowering::beginFunction(const FunctionFacts &facts) {
     typeTable_.clear();
     handlerDepth_ = 0;
     handlerLive_.clear();
+    msHandlers_.clear();
     full_.clear();
     skippable_ = 0;
     funclet_ = BlockId();
@@ -2212,6 +2213,7 @@ void Lowering::beginFunction(const FunctionFacts &facts) {
     msTryFunclet_ = BlockId();
     funcletPads_ = 0;
     sret_ = ValueId();
+    sretSlot_ = ValueId();
     elidedSlot_ = ValueId();
     intoSret_ = false;
     vptrs_.clear();
@@ -2290,13 +2292,12 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
             const bool msVbaseDtor = isDtor && cls.hasVirtualBase() && target_.microsoftNames();
             const bool vbaseParts = (isCtor || isDtor) && cls.hasVirtualBase() && (msVbaseDtor || facts.takesVtt || (isCtor && facts.msFlag));
             if (isDtor && cls.hasVirtualBase() && !vbaseParts) outside("a destructor of a class with a virtual base, handed a VTT");
-            if (msVbaseDtor && cls.polymorphic()) outside("a destructor of a polymorphic class with a virtual base");
             if ((isCtor || isDtor) && !simpleLayout(cls) && !(isCtor && delegating(cls))) {
                 if (!buildableLayout(cls, true, true, vbaseParts)) outside(isCtor ? "a constructor of a class with bases, a vptr or members to build"
                                                                 : "a destructor of a class with bases, a vptr or members to destroy");
                 // The vptr stores are the parser's record, made where it stores them: one, out of the class's own table -
                 // or, in a C2 or D2, every vptr in the object, the VTT's where the complete object decides it.
-                if (cls.hasVptr() && !msVbaseDtor && !(target_.microsoftNames() && !cls.polymorphic())) {
+                if (cls.hasVptr() && !(target_.microsoftNames() && !cls.polymorphic())) {
                     if (!vptrStores_ || !vptrStores_(key_, vptrs_) || vptrs_.empty()) outside("a vptr the parser recorded no store for");
                     if (!vptrs_[0].fromVtt && vptrs_[0].symbol.empty()) outside("a vptr out of a VTT");
                 }
@@ -2357,7 +2358,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
                 const ValueId pv = param(f.entry, tid(*types_.pointerTo(&pt)));
                 f.params.push_back(pv);
                 locals_[tree_.node(p).syntax.v] = std::make_pair(pv, tid(pt));
-                guardParameter(pv, pt, isCtor);
+                guardParameter(pv, pt);
                 continue;
             } else {
                 if (!scalar(pt) && !pt.isNullPtr()) outside("a parameter of type '" + pt.describe() + "'");
@@ -2384,8 +2385,10 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         // The return block: one `ret`, reached by a branch carrying the value.
         returnBlock_ = newBlock();
         const BlockId ret = returnBlock_;
-        // A destructor's every way out of its body goes through the members' destruction first.
-        if (destroys) returnBlock_ = newBlock();
+        // A destructor's every way out of its body goes through the members' destruction first; a Microsoft constructor's
+        // through its by-value parameters', which it destroys and its parts below them it keeps (guardParameter).
+        const std::vector<Live> ctorParams = isCtor ? live_ : std::vector<Live>();
+        if (destroys || !ctorParams.empty()) returnBlock_ = newBlock();
         const BlockId first = newBlock();
         br(first);
         place(first);
@@ -2416,7 +2419,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
             pads_.push_back(wrap);
         }
         const std::size_t wrapAt = pads_.size();
-        // A constructor's parts, below the floor, are kept by a return; a by-value parameter the callee destroys is above it.
+        // A constructor's parts, below the floor, are kept by a return; its by-value parameters below them go in the return block.
         liveFloor_ = isCtor ? live_.size() : 0;
         block(body);
         if (!pendingGotos_.empty()) outside("a goto to a label the body does not place");
@@ -2449,10 +2452,11 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
             pads_.pop_back();
             if (spec.block.valid()) specFilterChain(spec);
         }
-        if (destroys) {
+        if (destroys || !ctorParams.empty()) {
             place(returnBlock_);
-            destroyMembers(*T(thisType_).pointee()->unqualified());
-            destroyBases(*T(thisType_).pointee()->unqualified());
+            for (std::size_t k = ctorParams.size(); k-- > 0; ) destroyWhen(ctorParams[k]);
+            if (destroys) destroyMembers(*T(thisType_).pointee()->unqualified());
+            if (destroys) destroyBases(*T(thisType_).pointee()->unqualified());
             br(ret);
             returnBlock_ = ret;
         }
@@ -2679,8 +2683,7 @@ void Lowering::gotoStmt(const std::string &name) {
     }
     PendingGoto g;
     g.label = name;
-    g.msTryPad = msTryPad_;
-    g.msTryFunclet = msTryFunclet_;
+    g.msHandlers = msHandlers_;
     g.from = newBlock();
     g.live = live_;
     g.handlerLive = handlerLive_;
@@ -2713,24 +2716,19 @@ void Lowering::labelReached(const std::string &name, BlockId b) {
     }
 }
 
-// A goto that went ahead of its label out of a Microsoft handler, filled where the label is placed: the handler's own
-// objects destroyed in the funclet, a catchret to an exit the try's pad lists, and the exit destroys the rest and joins.
+// A goto that went ahead of its label out of Microsoft handlers, filled where the label is placed: msLeave from the goto's
+// objects and handlers, the last exit destroying down to the label's objects and joining it.
 void Lowering::msGotoExit(const PendingGoto &g, BlockId label, std::size_t keep, std::size_t depth) {
-    if (g.handlerLive.size() - depth != 1) outside("a goto out of nested Microsoft handlers");
-    const std::size_t own = g.handlerLive.back();
-    for (std::size_t k = g.live.size(); k-- > own; ) destroy(g.live[k]);
-    const BlockId was = funclet_;
-    funclet_ = g.msTryFunclet;
-    const BlockId exit = newBlock();
-    funclet_ = was;
-    Function &f = F();
-    at(f.block(g.msTryPad).insts[0]).cases.push_back(exit.v);
-    Succ s;
-    s.block = exit;
-    at(add(Op::CatchRet, TypeId(), std::vector<ValueId>())).succ.push_back(s);
-    place(exit);
-    for (std::size_t k = own; k-- > keep; ) destroy(g.live[k]);
-    br(label);
+    std::vector<Live> live = g.live;
+    std::vector<std::size_t> handlers = g.handlerLive;
+    std::vector<std::pair<BlockId, BlockId> > tries = g.msHandlers;
+    live_.swap(live);
+    handlerLive_.swap(handlers);
+    msHandlers_.swap(tries);
+    msLeave(handlerLive_.size() - depth, keep, label, std::vector<ValueId>(), live_.size());
+    live_.swap(live);
+    handlerLive_.swap(handlers);
+    msHandlers_.swap(tries);
 }
 
 BlockId Lowering::labelBlock(const std::string &name) {
@@ -2915,7 +2913,7 @@ void Lowering::returnCopied(sema::TypedId id, sema::TypedId value) {
             locals_.find(n.decl.v)->second.first.v != sret_.v)
             outside("a named return value that is not the recorded local");
         elidedSlot_ = sret_;
-        leaveHandlers(handlerDepth_, liveFloor_, returnBlock_, std::vector<ValueId>(1, sret_));
+        leaveHandlers(handlerDepth_, liveFloor_, returnBlock_, std::vector<ValueId>(1, resultPtr()));
         elidedSlot_ = ValueId();
         return;
     } else if (form == 3) {
@@ -2924,14 +2922,14 @@ void Lowering::returnCopied(sema::TypedId id, sema::TypedId value) {
         std::uint32_t from = 1;
         if (temporaryShape(value, from)) {
             if (!temporaryBuilt_(tree_.node(value).syntax, symbol, sig, zero)) outside("a return's temporary the parser recorded no constructor for");
-            construct(sret_, symbol, sig, rt, zero, value, from);
+            construct(resultPtr(), symbol, sig, rt, zero, value, from);
         } else {
             // [stmt.return]/2 by [class.conv.ctor]: the converting constructor the return recorded, the value its one argument.
             const Type &ft = sig.valid() ? T(sig) : rt;
             if (!ft.isFunction() || ft.params().size() != 2 || ft.params()[0]->pointee()->unqualified() != rt.unqualified() ||
                 tree_.node(value).type == nullptr || tree_.node(value).type->unqualified() == rt.unqualified())
                 outside("a return's temporary the parser recorded no constructor for");
-            std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, sret_))));
+            std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, resultPtr()))));
             argumentList(ft, 1, false, std::vector<sema::TypedId>(1, value), false, ops);
             const TypeId called = msFlagged(symbol, sig, ops, 1);
             directCall(symbol, called, ops);
@@ -2949,7 +2947,7 @@ void Lowering::returnCopied(sema::TypedId id, sema::TypedId value) {
             ft.params()[0]->pointee()->unqualified() != rt.unqualified())
             outside("a return's copy constructor of another shape");
         std::vector<ValueId> ops;
-        ops.push_back(result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, sret_))));
+        ops.push_back(result(add(Op::Bitcast, tid(*ft.params()[0]), std::vector<ValueId>(1, resultPtr()))));
         ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(ft.params()[1]->referent())), std::vector<ValueId>(1, a.v))));
         directCall(symbol, sig, ops);
         closeFull();
@@ -2966,7 +2964,7 @@ void Lowering::returnCopied(sema::TypedId id, sema::TypedId value) {
     } else {
         outside("a class with a copy of its own returned by a form not recorded");
     }
-    leaveHandlers(handlerDepth_, liveFloor_, returnBlock_, std::vector<ValueId>(1, sret_));
+    leaveHandlers(handlerDepth_, liveFloor_, returnBlock_, std::vector<ValueId>(1, resultPtr()));
 }
 
 // [stmt.select]/2: a condition, or a declaration whose variable's value is the condition - declared where the test
@@ -3781,7 +3779,12 @@ Lowering::Val Lowering::expr(sema::TypedId id) {
         e = literal(id);
         break;
     case syntax::Kind::StringLit: case syntax::Kind::Member: case syntax::Kind::Subscript: {
-        if (s.kind == syntax::Kind::Member && pseudoDestructor(id, tree_.resolution(id))) { e = Val(ValueId(), tid(*types_.get(Kind::Void))); break; }
+        if (s.kind == syntax::Kind::Member && pseudoDestructor(id, tree_.resolution(id))) {
+            // cl's ??_G, called through the slot, hands `this` back; the typer gives the call that type, and its value goes unused.
+            const bool msThis = target_.microsoftNames() && n.type != nullptr && n.type->isPointer() && n.type->pointee()->isVoid();
+            e = Val(ValueId(), msThis ? TypeId() : tid(*types_.get(Kind::Void)));
+            break;
+        }
         Member bf;
         const Val a = fieldAddress(id, bf);
         if (bf.isBitField()) { e = bitRead(a, bf); break; }
@@ -4157,13 +4160,28 @@ Lowering::Val Lowering::bitAssign(sema::TypedId id, const Val &unit, const Membe
     return bitRead(unit, m);
 }
 
-// The address of a virtual base of the object at `object`, of class `owner`, on Itanium: moved by the vbase_offset
-// behind its vptr, the slot the parser's record names - the walk the parser's virtualBaseMember makes.
+// The address of a virtual base of the object at `object`, of class `owner`: on Itanium moved by the vbase_offset behind
+// its vptr, the slot the parser's record names; on Microsoft by vbptr + the int at its vbtable's entry for the base, the
+// n-th virtual base in `owner`'s list (Classes::microsoftVirtualBaseStep) - the walks the parser's virtualBaseMember makes.
 ValueId Lowering::virtualBaseAddress(ValueId object, const Type &owner, const Type &vbase) {
-    if (target_.microsoftNames()) outside("a virtual base reached through its vbtable");
+    const TypeId chars = types_.pointerTo(types_.charType()->id());
+    if (target_.microsoftNames()) {
+        int slot = 0, seen = 0;
+        for (const Type::BaseSpec &b : owner.bases())
+            if (b.isVirtual && ++seen && b.type->unqualified() == vbase.unqualified()) { slot = seen; break; }
+        if (owner.vbptrOffset() < 0 || slot == 0) outside("a virtual base the class lays out no vbtable entry for");
+        const InstId vb = add(Op::Gep, chars, std::vector<ValueId>(1, result(add(Op::Bitcast, chars, std::vector<ValueId>(1, object)))));
+        at(vb).k = owner.vbptrOffset();
+        const ValueId table = load(result(add(Op::Bitcast, types_.pointerTo(chars), std::vector<ValueId>(1, result(vb)))), chars);
+        const TypeId intT = tid(*types_.get(Kind::Int));
+        const InstId entry = add(Op::Gep, types_.pointerTo(intT), std::vector<ValueId>(1, table));
+        at(entry).k = 4LL * slot;
+        std::vector<ValueId> moved(1, result(vb));
+        moved.push_back(convert(Val(load(result(entry), intT), intT), ptrdiffType()).v);
+        return result(add(Op::Gep, chars, moved));
+    }
     const long long slot = vbaseSlot_ ? vbaseSlot_(owner.id(), vbase.id()) : 0;
     if (slot == 0) outside("a virtual base the parser recorded no vbase_offset for");
-    const TypeId chars = types_.pointerTo(types_.charType()->id());
     const ValueId vptr = load(result(add(Op::Bitcast, types_.pointerTo(chars), std::vector<ValueId>(1, object))), chars);
     const InstId back = add(Op::Gep, types_.pointerTo(ptrdiffType()), std::vector<ValueId>(1, vptr));
     at(back).k = slot;
@@ -5648,9 +5666,10 @@ ValueId Lowering::byValueArgument(sema::TypedId an, const Type &p) {
     // [expr.prim.lambda]/2: a lambda is a prvalue, its closure built in the parameter's copy itself.
     const bool lambda = closureBuiltNode(an) && T(TypeTable::id(tree_.node(an).type)).unqualified() == &c;
     if (!lambda && (!argumentCopy_ || !argumentCopy_(tree_.node(an).syntax, symbol, sig, elided))) {
-        // [over.ics.user]: the converting constructor the parser chose builds the copy, the caller destroying it.
+        // [over.ics.user]: the converting constructor the parser chose builds the copy, the caller destroying it - on
+        // Microsoft the callee does, so it is built unguarded.
         ValueId made;
-        if (!ms && convertedTemporary(an, c, true, made)) return made;
+        if (convertedTemporary(an, c, !ms, made)) return made;
         outside("a by-value argument whose copy the parser recorded none for");
     }
     const std::string dtor = !ms && c.hasDestructor() ? temporaryDestructor(c) : std::string();
@@ -5707,11 +5726,10 @@ Lowering::Val Lowering::classArgumentSource(sema::TypedId an, const Type &c) {
 
 // Microsoft's rule for a by-value class parameter with a destructor: the callee destroys its own copy on every way out, a
 // cleanup funclet's when its body unwinds - a guard like a local's, below every other object; Itanium's caller destroys.
-void Lowering::guardParameter(ValueId pv, const Type &pt, bool isCtor) {
+void Lowering::guardParameter(ValueId pv, const Type &pt) {
     const Type &c = *pt.unqualified();
     if (!c.isComplete() || c.kind() == Kind::Union || c.hasVirtualBase()) outside("a parameter of type '" + pt.describe() + "'");
     if (!target_.microsoftNames() || !c.hasDestructor()) return;
-    if (isCtor) outside("a by-value parameter with a destructor of a constructor on the Microsoft ABI");
     const std::string dtor = destructor_ ? destructor_(c.id()) : std::string();
     if (dtor.empty()) outside("a parameter whose destructor the parser recorded none for");
     guard(pv, c, dtor);
@@ -5737,7 +5755,7 @@ bool Lowering::convertedTemporary(sema::TypedId an, const Type &c, bool destroys
     // the value's type - `Far(const Near &)` given a Near - is no conversion, and reads as the object it is.
     if (tree_.node(an).type == nullptr || tree_.node(an).type->unqualified() == c.unqualified()) return false;
     const bool destroyed = destroys && destroyedClass(c);
-    if (!destroyed && !constructedClass(c)) outside("a converted value of a class the lowering does not build");
+    if (!destroyedClass(c) && !constructedClass(c)) outside("a converted value of a class the lowering does not build");
     const Type &ft = T(sig);
     if (!ft.isFunction() || ft.params().size() != 2 || ft.params()[0]->pointee()->unqualified() != c.unqualified())
         outside("a converted value built by a constructor of another shape");
@@ -6266,8 +6284,9 @@ BlockId Lowering::padBlock(Pad &p) {
     return p.block;
 }
 
-// A virtual base's cleanup destroys it only where its constructor's count says it was built (msGuardedVirtualBase): the
-// funclet's own blocks, tagged with its pad so the selector emits them inside it, and the cleanupret after them.
+// A virtual base's cleanup destroys it only where its constructor's count says it was built (msGuardedVirtualBase), a
+// temporary only where its built flag is set: the funclet's own blocks, tagged with its pad so the selector emits them
+// inside it, and the cleanupret after them.
 void Lowering::msCountedDestroy(const Live &l, BlockId pad) {
     const BlockId was = funclet_;
     funclet_ = pad;
@@ -6275,11 +6294,15 @@ void Lowering::msCountedDestroy(const Live &l, BlockId pad) {
     funclet_ = was;
     const TypeId intT = types_.intType()->id();
     std::vector<ValueId> cmp;
-    cmp.push_back(load(l.when, intT));
-    cmp.push_back(iconst(intT, l.above));
-    const InstId c = add(Op::ICmp, tid(*types_.get(Kind::Bool)), cmp);
-    at(c).cc = Cmp::Sgt;
-    condbr(result(c), yes, after);
+    if (l.built.valid()) {
+        condbr(load(l.built, tid(*types_.get(Kind::Bool))), yes, after);
+    } else {
+        cmp.push_back(load(l.when, intT));
+        cmp.push_back(iconst(intT, l.above));
+        const InstId c = add(Op::ICmp, tid(*types_.get(Kind::Bool)), cmp);
+        at(c).cc = Cmp::Sgt;
+        condbr(result(c), yes, after);
+    }
     place(yes);
     destroy(l);
     br(after);
@@ -6840,31 +6863,8 @@ void Lowering::leaveHandlers(std::size_t n, std::size_t mark, BlockId target, co
         return;
     }
     if (terminated()) return;
-    // The handler's own objects are destroyed in its funclet, before the runtime ends the catch; the exit destroys the rest.
-    if (n != 1) outside("a jump out of nested Microsoft handlers");
-    if (handlerLive_.empty() || handlerLive_.back() < mark) outside("a jump out of Microsoft handlers the lowering did not open");
-    const std::size_t own = handlerLive_.back();
-    for (std::size_t k = live_.size(); k-- > own; ) if (live_[k].slot.v != elidedSlot_.v) destroy(live_[k]);
-    // The exit is a block of the funclet the try stands in: the body's, or an enclosing handler's.
-    const BlockId was = funclet_;
-    funclet_ = msTryFunclet_;
-    const BlockId exit = newBlock();
-    funclet_ = was;
-    Function &f = F();
-    std::vector<ValueId> params;
-    for (std::size_t i = 0; i < args.size(); i++) params.push_back(param(exit, f.value(args[i]).type));
-    at(f.block(msTryPad_).insts[0]).cases.push_back(exit.v);
-    Succ s;
-    s.block = exit;
-    s.first = static_cast<std::uint32_t>(f.operands.size());
-    s.count = static_cast<std::uint32_t>(args.size());
-    f.operands.insert(f.operands.end(), args.begin(), args.end());
-    at(add(Op::CatchRet, TypeId(), std::vector<ValueId>())).succ.push_back(s);
-    const BlockId back = cur_;
-    place(exit);
-    for (std::size_t k = own; k-- > mark; ) if (live_[k].slot.v != elidedSlot_.v) destroy(live_[k]);
-    br(target, params);
-    place(back);
+    if (n > handlerLive_.size() || handlerLive_[handlerLive_.size() - n] < mark) outside("a jump out of Microsoft handlers the lowering did not open");
+    msLeave(n, mark, target, args, live_.size());
 }
 
 // A funclet runs on the parent's frame with none of its registers: a handler may read an alloca, made afresh there,
@@ -7000,11 +7000,13 @@ void Lowering::microsoftTry(sema::TypedId id) {
         at(cp).pos = syn(hs[i].node).loc;
         handlerDepth_++;
         handlerLive_.push_back(live_.size());
+        msHandlers_.push_back(std::make_pair(msTryPad_, msTryFunclet_));
         const std::size_t caughtMark = live_.size();
         if (!hs[i].dtor.empty()) guard(ops[0], T(hs[i].caught), hs[i].dtor);
         block(hs[i].body);
         closeScope(caughtMark);
         handlerLive_.pop_back();
+        msHandlers_.pop_back();
         handlerDepth_--;
         if (!terminated()) {
             Succ s;

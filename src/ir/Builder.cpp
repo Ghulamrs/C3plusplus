@@ -10,8 +10,9 @@ FuncId Builder::build(const FunctionFacts &facts, const std::string &kind, std::
     Lowering &l = l_;
     const std::size_t index = l.module_.functions.size();
     try {
-        if (kind == "thunk" || kind == "virtual thunk") return thunk(facts, kind == "virtual thunk");
+        if (kind == "thunk" || kind == "virtual thunk" || kind == "vcall thunk") return thunk(facts, kind != "thunk");
         if (kind == "init function" || kind == "tls init") return initFunction(facts, kind == "tls init");
+        if (kind == "atexit helper") return atexitHelper(facts, index);
         if (completeKind(kind)) return completeObject(facts, kind, index);
         const bool dtor = kind == "implicit destructor", ctor = kind == "implicit default constructor";
         if (kind == "implicit copy or move") { copyOrMove(facts); return FuncId(static_cast<std::uint32_t>(index)); }

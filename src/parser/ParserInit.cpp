@@ -1429,8 +1429,14 @@ void Parser::registerDestruction(const Declared &d, const std::string &symbol,
     std::vector<StmtPtr> body;
     ExprPtr addr(new Unary('&', objectAt(d, symbol, 0)));
     addr->setType(clsPtr);
-    body.push_back(StmtPtr(new ExprStmt(destructorCall(std::move(addr), *dtor,
-                                                       d.pos))));
+    ExprPtr call = destructorCall(std::move(addr), *dtor, d.pos);
+    // For the SSA builder (M3b.3): the object the helper destroys, "$object", and the destructor it calls, "~object".
+    if (const Call *c = dynamic_cast<const Call *>(call.get())) {
+        const MemberBuilt o = { symbol, d.type, false, false }, k = { c->symbol(), types_.functionType(types_.get(Kind::Void), std::vector<const Type *>{ clsPtr }, false), false, false };
+        memberBuilt_[helper + "|$object|0"] = o;
+        memberBuilt_[helper + "|~object|0"] = k;
+    }
+    body.push_back(StmtPtr(new ExprStmt(std::move(call))));
     current_->functions.push_back(Function(helper, types_.get(Kind::Void),
                                            std::vector<Param>(),
                                            StmtPtr(new Block(std::move(body))),

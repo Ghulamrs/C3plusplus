@@ -1467,3 +1467,28 @@ re-pointed); comment cap 0; memory gate 44, unchanged. tms6747.sh 726 passed at 
 sim6747; its 2 failures at -O0 and 3 at -O2 (`long-double-literal-exact-digits`, `ssa-eh-tail`, and at -O2
 `ssa-data-member-pointer`) are lane C's tree's too. names.sh and overload.sh skip there (no clang++); the Windows gate is
 the coordinator's at merge. `src/` went from 89417 to 89495 lines (+78).
+
+**M3b.3, lane E, 2026-11-10: the Microsoft shapes.** From `a723a3eb` (lanes 1, A-C, F landed), lane E's saved work
+finished. **The design**: what cl does that Itanium has no twin of, in `src/ir/MsShapes.cpp` and the lowering's own
+paths. The atexit helper `??__F<object>` calls the destructor the parser chose on the object it recorded
+(`registerDestruction` keeps `$object` and `~object` under the helper's key), a thread_local's reached as `__tls_init`
+reaches it. A jump out of nested handlers, each a funclet there, is `msLeave`: the innermost handler's objects destroyed,
+a catchret to an exit its try's pad lists, and in that funclet the next handler left the same way (`msHandlers_` the
+stack, a pending goto carrying it to `msGotoExit`). A handler that builds the function's result reads the caller's
+pointer from a slot the entry fills (`resultPtr`); a flagged temporary is tested in a cleanup funclet's own blocks
+(`canFlag` on both ABIs). The vcall thunk `??_9S@@$B7AA` is the thunk path with its slot read from the name (cl's
+number: byte 8, slot 1) and the call made through the vptr (`virtualCallee`). A virtual base on Microsoft is
+`vbptr + int(vbtable[n])`, n its place among the class's virtual bases (`virtualBaseAddress`, as the parser's
+`microsoftVirtualBaseStep`). A constructor's by-value parameter with a destructor is destroyed in its return block, below
+the parts it keeps, and by its guard's cleanup on the way out (it had been kept, a leak `closure-temporary-lifetime`
+showed); a polymorphic class's `??1` with a virtual base takes the parser's vptr store like any. **Lowered** (Windows):
+compiler-written 1123 of 1123 (atexit helper 25, vcall thunk 7, the new case adding two of each); source bodies 9106 of 9110. **Left by name**: a function
+try block on a constructor or destructor on Microsoft (3), and a pointer to a data member in cl's virtual model (1).
+`tests/cases/microsoft-shapes-builder.cpp` holds the shapes under the ledger on every target; its `.expected` is clang's
+(the Windows box's); its `.nonames` the in-class C1/C2 and static-local names recorded elsewhere. **Gated on Windows**
+(`m3b3e2-1`): the cases 0 differ in both spellings at `-front=ssa`, `-front=ssa -O2` and the Ast.h path (726 and 725 the
+same, 340 refused as recorded); names.sh for the new case passes. **On Linux** (`~/m3b3e2`): ssa.sh 8835 of 8835 bodies,
+0 failed, 943 of 956 compiler-written (the 13 left are lanes A's and B's, Itanium); run.sh 1099/0 at -O0, -O2,
+`-front=ssa` and `-front=ssa -O2`; emit 2997/0, the golden recorded from `33e62b9d` 0 of 2989 changed (8 added); typed,
+adapted (1681 the same), coff 0 differ, c90 447/0, syntax green; exclusions 126 sites 0/0 (one citation re-pointed);
+comment cap 0; memory gate 44. names.sh and overload.sh skip there. `src/` went from 89495 to 89604 lines (+109).

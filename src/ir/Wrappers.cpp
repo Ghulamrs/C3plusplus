@@ -9,7 +9,8 @@
 namespace ir {
 
 // _ZThn16_N1C1gEv: back 16, to _ZN1C1gEv; _ZTv0_n24_N1D1fEv: by 0, then by the vcall offset 24 bytes before that
-// vptr's address point; Microsoft's ?g@C@@UEAAHXZ$adj16: back 16. False for a name of none of the three shapes.
+// vptr's address point; Microsoft's ?g@C@@UEAAHXZ$adj16: back 16; its vcall thunk ??_9S@@$B7AA: the vftable's slot at byte
+// 8 (cl's number: A@ 0, a digit d d+1, else hex in A-P and @), `callee` empty. False for a name of none of the four shapes.
 static bool readThunkName(const std::string &s, bool virt, long long &fixed, long long &vcall, std::string &callee) {
     auto number = [&s](std::size_t &i, long long &out) {
         const bool neg = i < s.size() && s[i] == 'n';
@@ -22,6 +23,15 @@ static bool readThunkName(const std::string &s, bool virt, long long &fixed, lon
         return true;
     };
     vcall = 0;
+    const std::size_t b = s.rfind("$B");
+    if (s.compare(0, 4, "??_9") == 0 && b != std::string::npos && b + 4 < s.size()) {
+        std::size_t i = b + 2;
+        if (s[i] >= '0' && s[i] <= '9') vcall = s[i++] - '0' + 1;
+        else for (; i < s.size() && s[i] >= 'A' && s[i] <= 'P'; i++) vcall = vcall * 16 + (s[i] - 'A');
+        if (s[b + 2] > '9' && (i >= s.size() || s[i++] != '@')) return false;
+        fixed = 0;
+        return s.compare(i, std::string::npos, "AA") == 0;
+    }
     const std::size_t adj = s.rfind("$adj");
     if (!virt && adj != std::string::npos && s[0] == '?') {
         fixed = -std::strtoll(s.c_str() + adj + 4, nullptr, 10);
@@ -60,10 +70,13 @@ FuncId Builder::thunk(const FunctionFacts &facts, bool virt) {
     l.place(first);
     // this + fixed; for a virtual thunk, + the ptrdiff_t at -vcall from the vptr found there (the vcall offset).
     const TypeId chars = l.types_.pointerTo(l.types_.charType()->id());
-    const InstId moved = l.add(Op::Gep, chars, std::vector<ValueId>(1, l.this_));
-    l.at(moved).k = fixed;
-    ValueId self = l.result(moved);
-    if (virt) {
+    ValueId self = l.this_;
+    if (!callee.empty()) {
+        const InstId moved = l.add(Op::Gep, chars, std::vector<ValueId>(1, l.this_));
+        l.at(moved).k = fixed;
+        self = l.result(moved);
+    }
+    if (virt && !callee.empty()) {
         const ValueId vptr = l.load(l.result(l.add(Op::Bitcast, l.types_.pointerTo(chars), std::vector<ValueId>(1, self))), chars);
         const InstId slot = l.add(Op::Gep, l.types_.pointerTo(l.ptrdiffType()), std::vector<ValueId>(1, vptr));
         l.at(slot).k = vcall;
@@ -75,7 +88,10 @@ FuncId Builder::thunk(const FunctionFacts &facts, bool virt) {
     CallInfo info;
     info.symbol = callee;
     info.hasThis = true;
-    const Lowering::Val r = l.callTail(l.types_.functionType(l.returns_, params), info, ops, params.size(),
+    const TypeId sig = l.types_.functionType(l.returns_, params);
+    // A vcall thunk calls through the vptr's slot, as memberCall's dispatch does (virtualCallee).
+    if (callee.empty()) ops.insert(ops.begin(), l.virtualCallee(ops[0], sig, static_cast<int>(vcall / l.T(l.thisType_).size(l.target_))));
+    const Lowering::Val r = l.callTail(sig, info, ops, params.size(),
                                       std::vector<sema::TypedId>(), false);
     if (rt.isVoid()) l.br(l.returnBlock_);
     else l.br(l.returnBlock_, std::vector<ValueId>(1, r.v));

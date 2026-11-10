@@ -302,7 +302,7 @@ many, or has no object of its own:
   destroyed element by element. `src/parser/ParserClass.cpp:2215`
 - **a static-duration reference bound to a temporary** - [class.temporary]/5
   gives the temporary the program's lifetime, so it would need static storage
-  of its own; a named object binds. `src/parser/ParserInit.cpp:1758`
+  of its own; a named object binds. `src/parser/ParserInit.cpp:1764`
 
 ## Expressions
 

@@ -199,6 +199,7 @@ private:
     void microsoftTry(sema::TypedId id);
     void leaveHandlers(std::size_t n, std::size_t mark, BlockId target, const std::vector<ValueId> &args = std::vector<ValueId>());
     void checkFuncletUses(BlockId hb);
+    void msLeave(std::size_t n, std::size_t mark, BlockId target, const std::vector<ValueId> &args, std::size_t upper);   // MsShapes.cpp
     BlockId padBlock(Pad &p);
     BlockId msEnclosingPad();
     void resumeFrom(const Pad &p, std::size_t enclosing);
@@ -318,7 +319,7 @@ private:
     bool bracedArgument(sema::TypedId an, const Type &p, ValueId &slot);
     ValueId byValueArgument(sema::TypedId an, const Type &p);
     Val classArgumentSource(sema::TypedId an, const Type &c);
-    void guardParameter(ValueId pv, const Type &pt, bool isCtor);
+    void guardParameter(ValueId pv, const Type &pt);
     bool heldClass(const Type &t) const;
     static bool arrayBinds(const Type &from, const Type &referent);
     Val baseOfObject(Val a, const Type &p);
@@ -488,6 +489,8 @@ private:
     std::function<bool(const std::string &, const std::string &, std::uint32_t, TypeId &, std::uint32_t &)> memberList_;
     std::vector<Live> live_;                    // innermost last
     ValueId sret_;                              // the caller's result pointer, where a copied class is returned
+    ValueId sretSlot_;                          // where a Microsoft funclet reads it (resultPtr, MsShapes.cpp)
+    ValueId resultPtr();
     ValueId elidedSlot_;                        // the named return value, not destroyed by the `return` naming it
     bool intoSret_ = false;                     // the next call builds its class result in the caller's object
     std::function<bool(syntax::NodeId, int &, std::string &, TypeId &)> returnBuilt_;
@@ -512,6 +515,7 @@ private:
     bool noexceptWrap_;                         // FunctionFacts::noexceptWrap: the body is under a catch-all that aborts
     std::map<int, int> localAligns_;            // FunctionFacts::localAligns of the function being lowered
     std::vector<std::size_t> handlerLive_;      // live_ where each handler's body began, innermost last
+    std::vector<std::pair<BlockId, BlockId> > msHandlers_;   // beside it on Microsoft: the handler's msTryPad_ and msTryFunclet_
     struct Full {                               // a full expression open: its temporaries from live_[from]; flags zeroed at block, at
         std::size_t from; BlockId block; std::size_t at;
         Full(std::size_t f, BlockId b, std::size_t a) : from(f), block(b), at(a) {}
@@ -530,7 +534,7 @@ private:
     std::map<std::string, BlockId> labels_;
     std::map<std::string, std::pair<std::size_t, std::size_t> > labelScope_;    // a placed label: live_ and handlers there
     // A goto ahead of its label: the block it branches to, and what was alive and which handlers were open there.
-    struct PendingGoto { std::string label; BlockId from, msTryPad, msTryFunclet; std::vector<Live> live; std::vector<std::size_t> handlerLive; };
+    struct PendingGoto { std::string label; BlockId from; std::vector<Live> live; std::vector<std::size_t> handlerLive; std::vector<std::pair<BlockId, BlockId> > msHandlers; };
     std::vector<PendingGoto> pendingGotos_;
     void msGotoExit(const PendingGoto &g, BlockId label, std::size_t keep, std::size_t depth);
     bool hasGoto_;
