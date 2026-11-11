@@ -1972,8 +1972,10 @@ and -O2 alike, plus `divide` at -O2; the MIR passes run after selection at the l
 decides over `Ast.h` and the walker inlines while it walks, so **under `-front=ssa` nothing is inlined** - the likely
 part of Compiler++ at `-front=ssa -O2` being ~25% slower than main's `-O2` (M3b.4's close). **The rounds**, one Opus lane
 each, in order:
-1. **Measure first** (no pass): Compiler++'s hottest functions at main's `-O2` and `-front=ssa -O2` (perf on the Linux
-   box), each gap given its cause - inlining, LICM, widening, or selection; the table recorded in the plan.
+1. **Measure first** (no pass), on the two workloads the plan holds speed to - `bench-kernels` on the Windows box and
+   cxx3 itself (a stage 1 built by `tools/self-host` at `-O2` and at `-front=ssa -O2`, timed compiling the suite); each
+   gap given its cause - inlining, LICM, widening, or selection. Compiler++ is a correctness check only (2026-11-11: the
+   user asked what timing it measures; nothing the plan gates).
 2. **The inliner on `ir::Function`** (`src/ir/opt/SsaInline.cpp`): `Inliner` re-pointed - its measures and budgets
    (`OptCosts.h`) kept as the one implementation, `measures_` a vector by `FuncId` (the determinism lint), `decided_` by
    call instruction; a callee's blocks cloned into the caller, its parameters the call's operands, its `ret` a branch with
