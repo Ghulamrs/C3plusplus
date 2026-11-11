@@ -2197,3 +2197,36 @@ where none is free); `-front=ssa -O1` unchanged (1,145,737), `loops` being `-O2`
 loads hoisted (no store, memcpy, memset, call, invoke or volatile in the loop, from a block always run); widening a
 counter whose start is not a constant, or one compared with `!=`; the .text growth read case by case; `widen-counters`
 off under `-front=ssa` (round 5).
+
+**M3b.5, round 4, 2026-11-12: unrolling on SSA.** From main `5f6a94d1`, branch `m3b5-unroll`, code commit `a634e58f`.
+**The pass**, `unroll` (`src/ir/opt/SsaUnroll.cpp`), at `-O2` after `loops` (so the invariants are already out and the
+counter already widened) and before `dead`: SsaLoops.cpp's natural-loop finder, exposed as `naturalLoops` (the `Loop`
+struct moved to `SsaOpt.h`, a five-line wrapper - one implementation). An innermost loop is **counted** when it has one
+latch, a preheader entering by a `br`, one exit - a `condbr` in a block that dominates the latch, testing a head
+parameter, its next value, or either truncated, against a constant - and that parameter entering as a constant and
+coming round as itself plus or minus a constant; its turns are found by running fold's `foldCompare` over the counter's
+values (at most 65,536, none wrapping its type), and a value of the loop read outside it must dominate the exit. Never
+a loop with a fixed block (a pad, a funclet's block, the runtime's way in), an invoke, a call, a trap, a va_* or a
+volatile access. **The budget** is `OptCosts.h`'s new `unrollBudget()` (0 at `-O1`, 160 SSA instructions at `-O2`,
+cppparse's eight turns of 40): copied whole where (turns + 1) x body fits, else 4 times (2 where 4 do not fit), a body
+over half the budget not at all. **The copies**: copy 0 is the loop; copy k's counter is the first's plus k steps (so the
+back edge passes the first's plus 4 steps and stays widenable); each back edge enters the next copy, the last's the
+first (whole: itself, never reached); the exit's test is kept only in the copy the count leaves by (turns mod 4) and is a
+jump in the others - no remainder loop is needed, the trip count being a constant; a value of the loop read outside it
+is the leaving copy's. fold, cfg and gvn's second round clean up. `-dump=ssa=unroll`, `-check=ssa unroll: whole=
+partial=`, summed by `ssa.sh`. **What it did** (Windows ssa.sh at `-O2`): 187 loops copied whole, 225 four or two times.
+**Probe**: `tests/cases/ssa-unroll.cpp` (an array filled and summed, a counter read after its loop, an unsigned count
+down to 0 by `!=`, 102 turns by 4 leaving from copy 2, a rotated `do`/`while`, a constant inner loop in a variable
+outer one, a loop with a call and one to a variable kept), clang's `.expected` (the Windows box's clang), right at
+`-O0`, `-O2`, `-front=ssa -O1`, `-front=ssa -O2` on Windows and at `-O2` on Linux; `ssa-unroll.unroll` its Linux
+`-O2 -dump=ssa=unroll`, compared by ssa.sh.
+**Gates on `a634e58f`** (the lane stopped at the user's one-hour rule, 00:45): Windows (clean ship and cl build)
+`winpass.sh` at `-front=ssa -O2` (WINLANES=3) 739 same / 0 differ (GNU), 738 / 0 (MASM), 340 refused as recorded;
+ssa.sh 752/0 at level 2. Linux (clean build) ssa.sh 782/0 at levels 1 and 2 (level 2: 188 whole, 233 by 4 or 2); run.sh
+1112/0 at `-front=ssa -O1`, `-front=ssa -O2` and `-front=ssa`; Windows winpass `-front=ssa -O1` GNU 739 / 0 (MASM cut at the stop). No step reached the 9-minute compile or 3-minute run cap (watchdogs
+`boxkit/m3b5r4-watch.{sh,ps1}`). **Not run on it**: winpass `-front=ssa -O1` MASM and `-O2`, Windows ssa.sh level 1; Linux
+run.sh `-O2` (cut at the stop), `-O0`, emit (its golden's base build was stopped for time), syntax, typed, adapted, coff, c90,
+the three `make test` gates; the kernels' bench and the cases' .text. `src/` went from 92755 to 93100 lines (+345:
+SsaUnroll.cpp 332, SsaOpt.h +6, the pass table +2, the report +1, OptCosts.h +5, SsaLoops.cpp -1). **Left**: the gates
+above (the coordinator's combined gate); the bench against main's `-O2`; unrolling a loop whose count is not a constant
+(a remainder loop); a loop with more than one exit or latch.
