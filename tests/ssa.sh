@@ -55,7 +55,7 @@ cat "$out"/*.ssa | grep -- '^-check=ssa inline:' | tr ' ' '\n' | grep = | tr '='
 cat "$out"/*.ssa | grep -- '^  inline refused (' | sed 's/^  inline refused (\([0-9]*\)): /\1\t/' |
     awk -F'\t' '{s[$2]+=$1} END {for (k in s) printf "    %6d  refused: %s\n", s[k], k}' | sort -rn
 cat "$out"/*.ssa | grep -- '^-check=ssa loops:' | tr ' ' '\n' | grep = | tr '=' ' ' |
-    awk '{s[$1]+=$2} END {printf "ssa.sh: loops found %d loops, made %d preheaders, hoisted %d instructions (%d divisions), widened %d counters\n", s["found"], s["preheaders"], s["hoisted"], s["divisions"], s["widened"]}'
+    awk '{s[$1]+=$2} END {printf "ssa.sh: loops found %d loops, made %d preheaders, hoisted %d instructions (%d divisions, %d loads), widened %d counters\n", s["found"], s["preheaders"], s["hoisted"], s["divisions"], s["loads"], s["widened"]}'
 # The probes of the passes: <case>.<pass> is the case's -dump=ssa=<pass> on x86_64-linux, compared byte for byte, at -O1
 # (-O2 for divide and loops, which run at that level alone).
 if [ "$(uname -s)" = Linux ]; then
