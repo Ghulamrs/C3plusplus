@@ -1967,6 +1967,26 @@ uninitialised read on the Ast.h path at `-O2` on x86_64-windows only, older than
 `-front=ssa -O2`. It is open, not a gate this milestone held: no Windows gate since M3b.2 ran the Ast.h path at `-O2`.
 `src/` went from 89718 to 91989 lines (+2271). **Next: M3b.5** (-O2 on SSA); its review point is RP5, after M3b.7.
 
+**M3b.4, a fault after the close, 2026-11-11: a Microsoft throw walked in place.** `ssa-handler-exits` at `-O2` on the
+Ast.h path, x86_64-windows only, printed `~E<n> fallOff <n>0` for `~E4 fallOff 40`. **The root**: on the Microsoft ABI
+the thrown object lives in the frame that threw until its handler ends; the inliner walked `raise` (whose `throw proto`
+builds the copy in its own frame) in place, so the copy sat in the caller's inline area - and the catch funclet walked
+its own callees (`Noisy`'s constructor and destructor) over that same area from the same base, their `this` slots
+writing a stack address's high half over `code`: hence a small value that changed with each run's stack. Not an MIR
+pass and not the funclet rule; no SSA pass is involved (why `-front=ssa -O2` answered right is not measured here; its frame
+is laid out by the selector). Itanium copies the object to `__cxa_allocate_exception`'s heap, so Linux never had it. It is older
+than every tree on the Windows box: m3b3a through m3b4r7v2 all answer wrong at `-O2`. **The mend**, one fact in the
+inliner's eligibility (`Inliner.cpp`, `Measurer::throws`): a callee calling `_CxxThrowException` is not walked in place
+(`inline-callee-throws-in-its-frame`). `ssa-handler-exits` already pins the shape, so no case was added. **Gates on
+`24aec232`, after a clean ship and build on both boxes**: Windows `winpass.sh` 736 / 735 same, 0 differ, at `-O2`,
+`-O1`, `-front=ssa -O1` and `-front=ssa -O2` (both spellings; 340 refused as recorded); Linux run.sh 1109/0 at
+`-front=ssa -O1`, `-front=ssa -O2`, `-front=ssa`, `-O1`, `-O2`, `-O0`; ssa.sh 776/0 at levels 1 and 2; emit 3037/0,
+typed 767/0, adapted 767/0, coff 0 differ, c90 447/0; comment cap 0 over, memory gate 44, exclusions 0/0. **.text**
+(Windows, bench.ps1 -Cases): `-O2` 1,311,260 against main's 1,338,275 (-2.0%: 33 smaller, 5 larger - the inline
+reserve a funclet-cut frame takes shrinks with the callees it no longer holds); `-front=ssa -O1` unchanged against
+round 7 (1,145,737; 1,131,154 against main's `-O1` 1,131,924 on the 740 shared cases); `-front=ssa -O2` 1,154,426
+against 1,154,552. `src/` went from 91989 to 91991 lines (+2).
+
 **M3b.5, planned, 2026-11-11: -O2 on SSA.** From `33e715d8`. **Where it stands**: the SSA passes of M3b.4 run at -O1
 and -O2 alike, plus `divide` at -O2; the MIR passes run after selection at the level asked. The inliner (`Inliner.h`)
 decides over `Ast.h` and the walker inlines while it walks, so **under `-front=ssa` nothing is inlined** - the likely
