@@ -2333,3 +2333,35 @@ zb-l2 1.12 / killed 40 / 2.23 s -> 0.02 / 0.02 / 0.02 s. Case local-zero-init-la
 `src/` 92755 -> 92798 lines (+43). **Left**: a list that names many elements is still a store per element (a constant
 copied from data, as clang does past its threshold, is the next step); a static local's dynamic list and a `new`'s list
 do not take `zeroRun` (`blockZero_` is the local declarator's alone).
+
+### M3b.5, lane sh-B: the lowering's fault in Templates.cpp is a class conditional's lvalue arm, 2026-11-12
+
+Round 1's fact (b): a stage 1 whose `Templates.o` is built at `-front=ssa` crashes in `sema::Templates::deduceOne` on 34
+template cases. **The miscompiled function is `sema::Templates::deduceFromArgument`**, found on the Windows box by
+bisecting the file's 644 source bodies: a stage 1 of 101 objects at `-O2` (40 s, `boxkit/m3b5sb-s1.py`), `Templates.obj`
+rebuilt with only the bodies `[lo,hi)` on the SSA path (a `CXX1_BIS_LO`/`HI` hook in `Driver.cpp`, on the box only, never
+committed) and relinked, 13 steps (`boxkit/m3b5sb-bis.py`, `m3b5sb-bis.out`); the compiler-written functions alone crash
+nothing. Its line `const std::vector<long long> beforeValues = values ? *values : std::vector<long long>();` is the
+fault: `Lowering::conditionalObject` gave the conditional's result as the chosen arm's own object, so for the lvalue arm
+the local's recorded move constructor was run on `*values` itself and the caller's vector was emptied (`-dump=ssa`:
+`invoke ??0?$vector@_J@std@@QEAA@$$QEAV01@@Z(%4, %17)` with `%17` the block argument that is `values`). The parser
+copies each arm into a slot of the result's (`buildInto`, ParserOperator.cpp) and records no constructor for it on the
+typed tree. **The fix refuses by name**: `conditionalObject` leaves a conditional with an lvalue arm of a class with a
+non-trivial copy to the parser's path ("a conditional's lvalue arm of a class with a copy constructor"; 3 bodies over
+the suite). **Case** `tests/cases/ssa-conditional-lvalue-arm.cpp` (the function's shape: three `p ? *p : T()` locals, a
+call with a default argument, the copies restored), wrong before under `-front=ssa` at `-O0`, `-O1` and `-O2` (the
+caller's `values` and `packs` read 0 for 1), right at all five flag sets after; its `.expected` is the Windows box's
+clang's at `-std=c++14` (its STL does not compile at `-std=c++11`; the Linux box has no clang).
+**Gates on `8799ad39`**: Windows (clean ship and cl build, WINLANES=3) `winpass.sh` at `-front=ssa -O2`
+743 same / 0 differ (GNU), 742 / 0 (MASM), and at `-front=ssa -O1` 743 / 0 and 742 / 0, 340 refused as recorded; ssa.sh
+756 passed / 0 failed at levels 1 and 2 (9346 bodies, 9339 lowered). Linux (clean g++ build) ssa.sh 787 / 0 at levels 1
+and 2; run.sh 1116 / 0 at `-front=ssa -O2` and at `-front=ssa`; the gates: 127 sites 0 uncited 0 stale, 0 comment groups
+over the cap, memory gate new 1056 raw-pointers 44 (unchanged), `ide/generate.py --check`. The stage 1 with
+`Templates.obj` at `-front=ssa -O2` and the rest at `-O2` compiles the 34 cases, 0 crash (Windows, on the same
+Lowering.cpp before the commit, with the bisect hook in). No step reached a cap. **Not run**: Linux run.sh at
+`-front=ssa -O1`, `-O2`, `-O0`, emit, names and the other suites; the .text table (no pass changed).
+`src/` 93416 -> 93420 lines (+4, Lowering.cpp). **Left**: (1) the proper lowering - each arm copied or moved into a
+temporary of the result's by the constructor the parser chose, which needs that constructor as a fact on the typed tree
+(parser and Typing, lane sh-A's files), then the refusal goes; (2) the same aliasing for a class copied as bytes is
+still taken (`(c ? a : P()).set(5)` would write `a`): a case and a byte copy of the lvalue arm; (3) the self-host itself
+under `-front=ssa -O2` (stages 1 and 2 the same), which needs main's two self-host refusals mended first (round 1, (b)).
