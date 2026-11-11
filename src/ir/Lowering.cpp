@@ -1854,6 +1854,10 @@ bool Lowering::classConditionalNode(sema::TypedId id) const {
 }
 
 Lowering::Val Lowering::conditionalObject(sema::TypedId id) {
+    // The parser copies an lvalue arm into the result (buildInto); taken as it is, the result's move would empty the arm.
+    for (std::uint32_t k = 1; k <= 2; k++)
+        if (isLvalueNode(child(id, k)) && tree_.node(child(id, k)).type->unqualified()->nonTrivialCopy())
+            outside("a conditional's lvalue arm of a class with a copy constructor");
     const Val c = truth(expr(child(id, 0)));
     const BlockId a = newBlock(), b = newBlock(), merge = newBlock();
     condbr(c.v, a, b);

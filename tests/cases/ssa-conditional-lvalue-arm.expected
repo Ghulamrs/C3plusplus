@@ -1,0 +1,11 @@
+one: pattern 3 arg 3 binding 2 values -1 packs -1 nested 0
+round 0: 1 why '' binding 3 values 1 packs 1 last 'first'
+one: pattern 3 arg 4 binding 2 values -1 packs -1 nested 0
+one: pattern 4 arg 4 binding 2 values -1 packs -1 nested 0
+round 1: 1 why 'they differ' binding 4 values 1 packs 1 last 'first'
+one: pattern 3 arg 3 binding 2 values 1 packs 1 nested 0
+round 2: 1 why '' binding 3 values 2 packs 2 last 'added'
+one: pattern 3 arg 4 binding 2 values 1 packs 1 nested 0
+one: pattern 4 arg 4 binding 2 values 1 packs 1 nested 0
+round 3: 1 why 'they differ' binding 4 values 2 packs 2 last 'added'
+calls 4
