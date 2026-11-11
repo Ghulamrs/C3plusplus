@@ -49,6 +49,7 @@ struct PassLog {
     int loopsFound, preheaders, hoisted, hoistedTraps, widened;    // loops': found, preheaders made, hoisted (divisions), widened
     int hoistedLoads = 0;                                          // of those hoisted, loads
     int unrolledFull = 0, unrolledPartial = 0;                     // unroll's: loops copied whole, and 4 or 2 times
+    int rotated = 0;                                               // rotate's: loops whose head's test went to the latch
     PassLog(bool c, const std::string &after) : check(c), dumpAfter(after), failed(0), allocas(0), scalars(0), promoted(0),
         constants(0), compares(0), casts(0), floating(0), identities(0), copies(0), arguments(0), kept(0), constBranches(0),
         sameBranches(0), unreachable(0), merged(0), forwarded(0), deadInsts(0), deadParams(0), deadStores(0), deadAllocas(0),
@@ -91,6 +92,8 @@ struct Loop { std::uint32_t head, pre; std::vector<std::uint32_t> blocks; std::v
 std::vector<Loop> naturalLoops(Function &f, const Dominators &dom, const TypeTable &types, const Target &target, PassLog &log);
 // **Unrolling** (SsaUnroll.cpp): a loop counted by constants copied whole, or 4 or 2 times, within OptCosts.h's budget.
 bool unroll(Function &f, const TypeTable &types, const Target &target, PassLog &log);
+// **Rotation** (SsaLoops.cpp), after unroll: a small head's test repeated in the preheader and the latch. True on a change.
+bool rotate(Function &f, const TypeTable &types, const Target &target, PassLog &log);
 // gvn's kind of a pure instruction (SsaValues.cpp): 1 constant, 2 arithmetic, 3 compare, 4 cast, 5 gep, 6 select, else 0.
 int pureKind(const Inst &i);
 

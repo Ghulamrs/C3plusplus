@@ -240,6 +240,23 @@ void X86_64Linux::ssaFoldGeps(const ir::Function &f) {
         const ir::Inst &d = f.inst(val.def);
         ssaFold_[v] = d.op == ir::Op::Gep && d.count == 2;
     }
+    // A signed 32-bit multiply-high by a constant whose one reader is a constant shift of its block is made there, one shift.
+    for (std::size_t b = 0; b < f.blocks.size(); b++) {
+        const ir::Block &blk = f.block(f.blocks[b]);
+        for (std::size_t k = 0; k < blk.insts.size() && !blk.pad && blk.funclet == 0; k++) {
+            const ir::Inst &i = f.inst(blk.insts[k]);
+            if (i.op != ir::Op::AShr || i.count != 2 || ssaTypes_->type(i.type)->size(target_) != 4) continue;
+            const ir::ValueId m = f.operand(i, 0);
+            const ir::Value &by = f.value(f.operand(i, 1));
+            if (!by.def.valid() || f.inst(by.def).op != ir::Op::IConst || f.inst(by.def).k < 1 || f.inst(by.def).k > 31) continue;
+            const ir::InstId def = f.value(m).def;
+            if (all[m.v] != 1 || !def.valid() || f.inst(def).op != ir::Op::SMulH || f.inst(def).type != i.type) continue;
+            const ir::Value &c = f.value(f.operand(f.inst(def), 1));
+            bool here = false;
+            for (std::size_t j = 0; j < k; j++) here = here || blk.insts[j].v == def.v;
+            if (here && c.def.valid() && f.inst(c.def).op == ir::Op::IConst) ssaFold_[m.v] = 1;
+        }
+    }
 }
 
 // The register a folded gep's offset is read from: its shift or multiply by 1, 2, 4 or 8 taken as the scale, an added
@@ -385,6 +402,19 @@ void X86_64Linux::ssaUnsupported(const ir::Inst &i) {
 void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
     const Type *rt = i.type.valid() ? ssaTypes_->type(i.type) : nullptr;
     if (i.result.valid() && (ssaAddr_[i.result.v] || ssaFold_[i.result.v])) return;   // made at each use
+    // Of 32 bits by a constant, under the passes: one 64-bit multiply of the two extended, its high half shifted down.
+    const auto high = [&](const ir::Inst &m, long long shift) {
+        const bool sign = m.op == ir::Op::SMulH;
+        const long long c = f.inst(f.value(f.operand(m, 1)).def).k;
+        ssaLoad(f, f.operand(m, 0));
+        if (sign) a_->ins("movslq", reg("%eax"), reg("%rax"));
+        else      a_->ins("mov", reg("%eax"), reg("%eax"));
+        a_->ins("mov", imm(sign ? static_cast<long long>(static_cast<std::int32_t>(c)) : static_cast<long long>(static_cast<std::uint32_t>(c))), reg(abi_.scratch));
+        a_->ins("imul", reg(abi_.scratch), reg("%rax"));
+        a_->ins(sign ? "sar" : "shr", imm(shift), reg("%rax"));
+        if (sign != rt->isSigned(target_)) canonicalise(rt);    // the shift already extended it the result's way
+        ssaStore(f, i.result);
+    };
     switch (i.op) {
     case ir::Op::Alloca:
     case ir::Op::IConst:
@@ -461,6 +491,8 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
             const ir::Value &by = f.value(f.operand(i, 1));
             const bool fixed = passesRun() && by.def.valid() && f.inst(by.def).op == ir::Op::IConst && f.inst(by.def).k >= 0 &&
                                f.inst(by.def).k < (wide ? 64 : 32);
+            const ir::ValueId of = f.operand(i, 0);
+            if (fixed && ssaFold_[of.v] && f.inst(f.value(of).def).op == ir::Op::SMulH) { high(f.inst(f.value(of).def), 32 + f.inst(by.def).k); return; }
             if (!fixed) ssaLoadReg(f, f.operand(i, 1), "%rcx");
             ssaLoad(f, f.operand(i, 0));
             a_->ins(i.op == ir::Op::Shl ? "shl" : i.op == ir::Op::AShr ? "sar" : "shr", fixed ? imm(f.inst(by.def).k) : reg("%cl"), reg(acc_));
@@ -491,21 +523,8 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         return;
     }
     case ir::Op::SMulH: case ir::Op::UMulH: {
-        // Of 32 bits by a constant, under the passes: one 64-bit multiply of the two extended, its high half shifted down.
         const ir::Value &by = f.value(f.operand(i, 1));
-        if (passesRun() && rt->size(target_) == 4 && by.def.valid() && f.inst(by.def).op == ir::Op::IConst) {
-            const bool sign = i.op == ir::Op::SMulH;
-            const long long m = f.inst(by.def).k;
-            ssaLoad(f, f.operand(i, 0));
-            if (sign) a_->ins("movslq", reg("%eax"), reg("%rax"));
-            else      a_->ins("mov", reg("%eax"), reg("%eax"));
-            a_->ins("mov", imm(sign ? static_cast<long long>(static_cast<std::int32_t>(m)) : static_cast<long long>(static_cast<std::uint32_t>(m))), reg(abi_.scratch));
-            a_->ins("imul", reg(abi_.scratch), reg("%rax"));
-            a_->ins(sign ? "sar" : "shr", imm(32), reg("%rax"));
-            canonicalise(rt);
-            ssaStore(f, i.result);
-            return;
-        }
+        if (passesRun() && rt->size(target_) == 4 && by.def.valid() && f.inst(by.def).op == ir::Op::IConst) { high(i, 32); return; }
         // The one-operand multiply: rdx:rax, of which rdx is the result.
         ssaLoadReg(f, f.operand(i, 1), abi_.scratch);
         ssaLoad(f, f.operand(i, 0));

@@ -2470,3 +2470,62 @@ under `-front=ssa`. `src/` 93591 -> 93625 lines (+34: Lowering.cpp/.h, ParserExp
 **Left**: an xvalue arm (`c ? std::move(a) : T()`) and an arm of another class converted by a constructor stay on the
 paths they had (the second refused by name, "a conditional of two objects apart in type"); a class conditional bound to
 a reference or assigned to still asks `lvalue()` and is refused by name; sh-B's (3), the self-host under `-front=ssa -O2`.
+
+### M3b.5, lane rot: a loop's test goes to its latch, and a multiply-high takes its shift, 2026-11-12
+
+Wave 4, from main `fac07cb6`; code commits `d35cd057` and `e60c5902` (the gates ran on `e60c5902`'s tree).
+**(1) `rotate`**, a pass of its own after `unroll` at `-O2` (`SsaLoops.cpp`, `Looper::rotate`; `-dump=ssa=rotate`): a
+loop with a preheader, one latch ending in a `br`, left by a jump only from its head's `condbr`, the head at most 8
+instructions, each pure or a non-volatile load. The head's instructions are repeated at the end of the preheader and of
+the latch, each reading that edge's arguments, and the test goes with them: `condbr` on to the head or out. What the
+head defined and the loop reads comes to the head as new parameters; what is read past the loop comes through the
+parameters of a block made on the way out (refused where such a reader is not dominated by the exit, or the exit has
+another way in); the head keeps its constants and ends in a `br`, which `recfg` merges into the body. An invoke's
+unwind edge out of the loop is no exit (nothing is moved or removed on it). It runs after `unroll` so the counted
+loops are found as before: Windows `-O2` unroll 193 whole / 243 partial (main 192 / 243, the one more is the probe's),
+Linux 194 / 251 (main 193 / 251). Over the suite it turns 1064 loops on Windows, 1082 on Linux; `-check=ssa` 0 failed.
+**(2) The multiply-high** (`SsaSelect.cpp`): a signed 32-bit `SMulH` by a constant whose one reader is a constant
+`AShr` of its block is made at the shift - `imul; sar $35` for a division by 26, where it was `imul; sar $32; movslq;
+sar $3` - and no multiply-high is extended after its shift (the shift already extends the result's way).
+**Probe** `tests/cases/ssa-rotate.cpp`: a head that loads, values read past the loop, a virtual call that may unwind, a
+loop never entered, a nest, and two ways out (left alone); clang's `.expected` (the Windows box's clang), right at
+`-O0`, `-O2`, `-front=ssa -O1`, `-front=ssa -O2` on Windows; `ssa-rotate.rotate` is its `-O2 -dump=ssa=rotate` (Linux),
+compared by ssa.sh (13 of its loops turned). No recorded probe changed: the dumps after `loops` and `unroll` are taken
+before `rotate`, and the `.allocate` probes are `-O1`, where neither change runs.
+**Kernels** (Windows, `bench.cmd`, `-front=ssa -O2` against `-O2` of the same build, median of 9, once, at the end):
+
+| kernel | ssa -O2 | -O2 | cl /O2 | wave 3's gate ssa -O2 / -O2 |
+|---|---|---|---|---|
+| fib | 6 | 7 | 7 | 7 / 8 |
+| sieve | 46 | 52 | 42 | 53 / 57 |
+| matmul | 21 | 26 | 3 | 10 / 29 |
+| isort | 8 | 17 | 6 | 8 / 19 |
+| hash | 182 | 174 | 120 | 219 / 194 |
+| virtual | 114 | 82 | 96 | 113 / 93 |
+| total | 376 | 358 | 274 | 410 / 401 |
+| .text | 4000 | 3443 | 3831 | 3599 / 3443 |
+
+**Not level, and one kernel worse.** hash is 1.05x of `-O2` (1.13x at wave 3): its byte loop runs one `jne` a turn and
+its fill loop `sar $35`. virtual is 114 against 82 (113 against 93 at wave 3): its loop is rotated (`cmp; jl` at its
+foot) and its time did not move, so rotation was not what it lacked. **matmul went from 10 to 21** (still under
+`-O2`'s 26): after rotation its three nested loops keep their counters and bound in frame slots (`cmp 696(%rbp), %eax`,
+slot-to-slot copies on each back edge), and a guard's comparison is kept as a value (`setl; movzbl; mov %rax,
+56(%rbp)`, read again by a later loop's guard as `cmpq $0, 48(%rbp)`) - `regvn` shares the guards' equal comparisons
+across the function and the allocator runs short. The bench was run once, as the wave's rule says. Checksums agree.
+
+**The cases' .text** (`bench.ps1 -Cases`, `-front=ssa -O2`, Windows, 758 cases): main `fac07cb6` 1,223,620 bytes, this
+1,230,274 (+6,654, +0.54%; 60 smaller, 131 larger - divide-by-constant -811, ssa-divide -416; hoist-invariants +496,
+regex-ecmascript +427: a rotated head is written twice).
+**Gates on `e60c5902`**: Windows (tree `work\m3b5ro2`, a clean ship and build of it, WINLANES=3) `winpass.sh` at
+`-front=ssa -O2` gnu 747 / masm 746 same, 0 differ, 340 refused as recorded; at `-front=ssa -O1` gnu 747 / masm 746 same, 0 differ, 340 refused; Windows ssa.sh 760/0 at levels 1
+and 2. Linux: Linux (the tree of the `d35cd057` gate with the files `e60c5902` changed and the recorded probe shipped, md5 checked, an incremental build): ssa.sh 793/0 at levels 1 and 2 (level 2 on `d35cd057`: 2052 loops, 194 whole, 251 by 4 or 2, 1082 rotated); run.sh 1120/0 at `-front=ssa -O1`, `-front=ssa -O2`, `-front=ssa`, `-O2`, `-O0`; the gates: exclusions, comment cap 0 over, memory gate new 1056 (unchanged) raw-pointers 44, ide/generate.py --check, GATES-OK. The full Linux gate ran before that on `d35cd057` too (rotation alone): ssa.sh rc 0 at levels 1
+and 2, run.sh 1120/0 at the five flag sets, GATES-OK. `src/` went from 93591 to 93783 lines (+192).
+**Left**, in pieces of about 45 minutes: (1) matmul's spill after rotation: a
+guard's comparison not shared across blocks by `regvn` (or re-made at its branch), then the allocator's choice in the
+three-deep nest, measured on bench-kernels - until then `rotate` could be held to loops with no loop inside; (2) hash's
+last 5%: the extension after each `add` in the fill loop (the widening rule), and the byte the rotated head read is
+loaded again by the body (the head's value comes as a parameter; gvn does not see it as the load); (3) virtual on a
+quiet box: 114 against 82 with the loop already rotated, the indirect call's sequence is what is left to compare with
+`-O2`'s; (4) the pass's guard in the preheader is not folded where the start is a parameter (`xor; cmp; jge`) - fine,
+but a counted loop whose bound is known positive could drop it; (5) emit, names, overload, syntax, typed, adapted,
+coff, c90, win-structure not run by this lane (the coordinator's merged gate).

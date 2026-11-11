@@ -405,6 +405,168 @@ struct Looper {
         return true;
     }
 
+    // What a repeated instruction reads: the map's value for one the head defines, else the value itself.
+    static ValueId mapped(const std::vector<ValueId> &m, ValueId v) { return v.v < m.size() && m[v.v].valid() ? m[v.v] : v; }
+    void replaceIn(std::uint32_t b, const std::vector<ValueId> &m) {
+        const Block &blk = f.blockArena[b];
+        for (std::size_t k = 0; k <= blk.insts.size(); k++) {
+            const Inst &i = f.inst(k < blk.insts.size() ? blk.insts[k] : blk.term);
+            for (std::uint32_t n = 0; n < i.count; n++) f.operands[i.first + n] = mapped(m, f.operands[i.first + n]);
+            for (const Succ &s : i.succ)
+                for (std::uint32_t n = 0; n < s.count; n++) f.operands[s.first + n] = mapped(m, f.operands[s.first + n]);
+        }
+    }
+    ValueId parameter(std::uint32_t b, TypeId type) {
+        Value v;
+        v.type = type;
+        v.param = BlockId(b);
+        v.index = static_cast<std::uint16_t>(f.blockArena[b].params.size());
+        const ValueId id(static_cast<std::uint32_t>(f.values.size()));
+        f.values.push_back(v);
+        f.blockArena[b].params.push_back(id);
+        return id;
+    }
+    // The head's instructions repeated at the end of `from`, which jumped to it: its test there, on to the head with the
+    // values `ins` the loop reads, or out to `x` with the values `outs` read past the loop.
+    void repeat(std::uint32_t from, const Loop &l, const std::vector<InstId> &body, const Inst &test, std::size_t out,
+                std::uint32_t x, const std::vector<ValueId> &ins, const std::vector<ValueId> &outs) {
+        std::vector<ValueId> m(f.values.size());
+        const InstId term = f.blockArena[from].term;
+        const Succ in = f.inst(term).succ[0];
+        for (std::uint32_t k = 0; k < in.count; k++) m[f.blockArena[l.head].params[k].v] = f.operands[in.first + k];
+        for (InstId id : body) {
+            Inst c = f.inst(id);
+            const std::uint32_t first = static_cast<std::uint32_t>(f.operands.size());
+            for (std::uint32_t n = 0; n < c.count; n++) { const ValueId v = mapped(m, f.operands[c.first + n]); f.operands.push_back(v); }
+            c.first = first;
+            Value v;
+            v.type = f.value(c.result).type;
+            v.def = InstId(static_cast<std::uint32_t>(f.insts.size()));
+            m[c.result.v] = ValueId(static_cast<std::uint32_t>(f.values.size()));
+            c.result = m[c.result.v];
+            f.values.push_back(v);
+            f.insts.push_back(c);
+            f.blockArena[from].insts.push_back(v.def);
+        }
+        Inst t = test;
+        Succ on, off;
+        const ValueId cond = mapped(m, f.operands[test.first]);
+        t.first = static_cast<std::uint32_t>(f.operands.size());
+        f.operands.push_back(cond);
+        on.block = BlockId(l.head);
+        on.first = static_cast<std::uint32_t>(f.operands.size());
+        on.count = in.count + static_cast<std::uint32_t>(ins.size());
+        for (std::uint32_t k = 0; k < in.count; k++) { const ValueId v = f.operands[in.first + k]; f.operands.push_back(v); }
+        for (ValueId v : ins) f.operands.push_back(mapped(m, v));
+        off.block = BlockId(x);
+        off.first = static_cast<std::uint32_t>(f.operands.size());
+        off.count = static_cast<std::uint32_t>(outs.size());
+        for (ValueId v : outs) f.operands.push_back(mapped(m, v));
+        t.succ[1 - out] = on;
+        t.succ[out] = off;
+        f.insts[term.v] = t;
+    }
+
+    // **Rotation**: a loop left only by its head's test, the head a few pure instructions and loads, has them repeated in
+    // the preheader and the latch - one conditional jump a turn. What the head defined comes to it as parameters, and to
+    // what follows the loop as the parameters of a block made on the way out. False where the loop is another shape.
+    bool rotate(const Loop &l, const Dominators &dom) {
+        if (l.pre == 0 || l.latches.size() != 1 || l.latches[0] == l.head) return false;
+        const std::uint32_t latch = l.latches[0];
+        const Inst test = f.inst(f.blockArena[l.head].term);
+        const std::vector<InstId> body = f.blockArena[l.head].insts;
+        if (test.op != Op::CondBr || f.inst(f.blockArena[latch].term).op != Op::Br || body.size() > 8) return false;
+        if (l.in[test.succ[0].block.v] == l.in[test.succ[1].block.v]) return false;
+        const std::size_t out = l.in[test.succ[0].block.v] ? 1 : 0;
+        const std::uint32_t after = test.succ[out].block.v;
+        if (fixed[after] || f.blockArena[after].funclet != 0 || f.blockArena[l.head].funclet != 0 || f.blockArena[latch].funclet != 0)
+            return false;
+        for (std::uint32_t b : l.blocks) {
+            const Inst &t = f.inst(f.blockArena[b].term);
+            for (std::size_t s = 0; s < t.succ.size(); s++)
+                if (b != l.head && !l.in[t.succ[s].block.v] && isJumpEdge(t, s)) return false;
+        }
+        // What the head defines: 1 a parameter, 2 an instruction's value, 3 a constant, which stays where it is read.
+        std::vector<char> kind(f.values.size(), 0), inside(f.values.size(), 0), past(f.values.size(), 0);
+        for (ValueId p : f.blockArena[l.head].params) kind[p.v] = 1;
+        for (InstId id : body) {
+            const Inst &i = f.inst(id);
+            if (!i.result.valid() || i.isVolatile || (pureKind(i) < 1 && (i.op != Op::Load || i.count != 1))) return false;
+            kind[i.result.v] = pureKind(i) == 1 ? 3 : 2;
+        }
+        // Its readers: in the loop past the head's own instructions and test, and outside, which the way out must dominate.
+        const bool sole = dom.preds[after].size() == 1;
+        for (BlockId bid : f.blocks) {
+            const std::uint32_t b = bid.v;
+            const Block &blk = f.blockArena[b];
+            for (std::size_t k = b == l.head ? blk.insts.size() : 0; k <= blk.insts.size(); k++) {
+                const Inst &i = f.inst(k < blk.insts.size() ? blk.insts[k] : blk.term);
+                for (std::uint32_t n = b == l.head ? i.count : 0; n < i.count; n++) {
+                    const ValueId v = f.operand(i, n);
+                    if (kind[v.v] == 0) continue;
+                    if (l.in[b]) inside[v.v] = 1;
+                    else if (!sole || !dom.reachable(b) || !dom.dominates(after, b)) return false;
+                    else past[v.v] = 1;
+                }
+                for (std::size_t s = 0; s < i.succ.size(); s++)
+                    for (std::uint32_t n = 0; n < i.succ[s].count; n++) {
+                        const ValueId v = f.arg(i.succ[s], n);
+                        if (kind[v.v] == 0) continue;
+                        if (l.in[b] && !(b == l.head && s == out)) inside[v.v] = 1;
+                        else if (!l.in[b] && (!sole || !dom.reachable(b) || !dom.dominates(after, b))) return false;
+                        else past[v.v] = 1;
+                    }
+            }
+        }
+        // The way out: a block of the values read past the loop, jumping on with the head's own arguments.
+        const std::uint32_t x = static_cast<std::uint32_t>(f.blockArena.size());
+        f.blockArena.push_back(Block());
+        fixed.push_back(0);
+        std::vector<ValueId> ins, outs, toX(f.values.size()), toHead(f.values.size());
+        for (std::uint32_t v = 0; v < kind.size(); v++) {
+            if (kind[v] != 0 && past[v]) outs.push_back(ValueId(v));
+            if (kind[v] == 2 && inside[v]) ins.push_back(ValueId(v));
+        }
+        for (ValueId v : outs) toX[v.v] = parameter(x, f.value(v).type);
+        Inst br;
+        br.op = Op::Br;
+        br.at = test.at;
+        br.pos = test.pos;
+        br.succ.push_back(test.succ[out]);
+        f.blockArena[x].term = InstId(static_cast<std::uint32_t>(f.insts.size()));
+        f.insts.push_back(br);
+        f.blocks.insert(place(f.blocks, BlockId(after)), BlockId(x));
+        repeat(l.pre, l, body, test, out, x, ins, outs);
+        repeat(latch, l, body, test, out, x, ins, outs);
+        for (BlockId b : f.blocks) if (b.v >= l.in.size() || !l.in[b.v]) replaceIn(b.v, toX);
+        // The head: its values the loop reads are parameters, its constants stay, its test is a jump on.
+        for (ValueId v : ins) toHead[v.v] = parameter(l.head, f.value(v).type);
+        std::vector<InstId> kept;
+        for (InstId id : body) {
+            if (kind[f.inst(id).result.v] == 3) kept.push_back(id);
+            else f.values[f.inst(id).result.v].type = TypeId();
+        }
+        f.blockArena[l.head].insts.swap(kept);
+        br.succ[0] = test.succ[1 - out];
+        f.insts[f.blockArena[l.head].term.v] = br;
+        for (std::uint32_t b : l.blocks) replaceIn(b, toHead);
+        log.rotated++;
+        return true;
+    }
+    // One loop at a time, the dominators and the loops found again after each.
+    bool rotateAll() {
+        bool any = false;
+        for (bool again = true; again;) {
+            again = false;
+            fixed = fixedBlocks(f);
+            const Dominators dom(f);
+            const std::vector<Loop> loops = find(dom);
+            for (std::size_t k = 0; k < loops.size() && !again; k++) again = rotate(loops[k], dom);
+            any = any || again;
+        }
+        return any;
+    }
+
     bool run() {
         fixed = fixedBlocks(f);
         bool made = false;
@@ -446,6 +608,12 @@ bool loops(Function &f, const TypeTable &types, const Target &target, PassLog &l
     if (!f.entry.valid()) return false;
     Looper p(f, types, target, log);
     return p.run();
+}
+
+bool rotate(Function &f, const TypeTable &types, const Target &target, PassLog &log) {
+    if (!f.entry.valid()) return false;
+    Looper p(f, types, target, log);
+    return p.rotateAll();
 }
 
 }   // namespace ir
