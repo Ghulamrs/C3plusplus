@@ -105,7 +105,7 @@ struct Divider {
             if ((M >> (bits - 1)) & 1) q = make(Op::Add, q, n);
             if (s > 0) q = by(Op::AShr, q, s);
             const ValueId up = by(Op::LShr, n, bits - 1);
-            if (rem) last(Op::Sub, n, make(Op::Mul, make(Op::Add, q, up), konst(static_cast<long long>(d))));
+            if (rem) { const ValueId qu = make(Op::Add, q, up); last(Op::Sub, n, make(Op::Mul, qu, konst(static_cast<long long>(d)))); }
             else if (negative) last(Op::Neg, make(Op::Add, q, up), ValueId());
             else last(Op::Add, q, up);
             log.divSigned++;

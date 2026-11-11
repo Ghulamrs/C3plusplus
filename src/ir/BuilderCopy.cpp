@@ -12,7 +12,8 @@ ValueId Builder::elementAt(ValueId base, ValueId i, const Type &et) {
     const TypeId chars = l.tid(*l.types_.pointerTo(l.types_.charType()));
     const TypeId diff = l.ptrdiffType();
     std::vector<ValueId> ops(1, l.result(l.add(Op::Bitcast, chars, std::vector<ValueId>(1, base))));
-    ops.push_back(l.op2(Op::Mul, diff, l.convert(Lowering::Val(i, l.types_.intType()->id()), diff).v, l.iconst(diff, et.size(l.target_))));
+    const ValueId at = l.convert(Lowering::Val(i, l.types_.intType()->id()), diff).v;  // named first: argument order is unspecified
+    ops.push_back(l.op2(Op::Mul, diff, at, l.iconst(diff, et.size(l.target_))));
     return l.result(l.add(Op::Bitcast, l.types_.pointerTo(et.id()), std::vector<ValueId>(1, l.result(l.add(Op::Gep, chars, ops)))));
 }
 
