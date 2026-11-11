@@ -1947,3 +1947,22 @@ every value is a slot. `-front=ssa -O2` is smaller and slower than main's `-O2`;
 and LICM are M3b.5's). `src/` went from 91963 to 91989 lines (+26: the selector -6 with the funclet prelude gone, the value reads +18 -
 OptFrame +14, OptPasses.h +3, MirLocals +1 -, the allocator +10, X86_64Linux.h +4). **Left**: the gap case by case above;
 the Linux `-O1` of the Ast.h path moved (the allocator mends), so emit.sh's goldens, where kept, change with it.
+
+**M3b.4 closed, 2026-11-11: -O1 on SSA.** Seven rounds from `674e0520`, each one lane and each gated on its own code
+commit after a clean build on both boxes: 1 mem2reg and the `src/ir/opt/` driver (`02b00d80`), 2 folding, copy
+propagation and algebra (`de1b74a5`, the evaluator's arithmetic shared as `ConstArith.h`), 3 dead code, dead stores and
+the CFG (`72aee10f`), 4 value numbering and a `const` local promoted (`be79faa1`), 5 jump threading and division by a
+constant at -O2 (`f2b2cddd`, `smulh`/`umulh`, `DivMagic.h` still the one implementation), 6 `volatile` recorded on the
+object and kept by every SSA pass (`637d36d0`; MIR's passes stay off in such a unit), and 7 - added after round 1's
+measure - SSA values handed to MIR's one allocator as registers (`9a9398d6`). **The row's gate is met**: the cases'
+.text at `-front=ssa -O1` is 1,131,154 bytes against main's `-O1` 1,131,924 (Windows, 740 cases; 2,472,003 before
+round 1), and on Linux 698,004 against 716,574; `tools/compilerpp-bench`'s table is round 7's above. **Not met
+elsewhere, recorded**: Compiler++ itself is 5.6% larger at `-front=ssa -O1` than main's `-O1`, and at `-front=ssa -O2`
+15.4% smaller but about 25% slower than main's `-O2` - both M3b.5's to answer (the inliner, LICM, widening). **The
+coordinator's check before landing round 7**, whose allocator mends move the Ast.h path: Linux run.sh 1109/0 at `-O1`
+and `-O2`; Windows `winpass.sh` at `-O1` 736 / 735 same, 0 differ, and at `-O2` 735 / 734 same, **1 differ in both
+spellings: `ssa-handler-exits`**, whose handlers print a destroyed exception's value wrong (`~E111` for `~E4`). Round 6's
+compiler - main before round 7 - answers it wrong too, with a different value each build (`~E11`, `~E46`): an
+uninitialised read on the Ast.h path at `-O2` on x86_64-windows only, older than round 7, right at `-O1` and under
+`-front=ssa -O2`. It is open, not a gate this milestone held: no Windows gate since M3b.2 ran the Ast.h path at `-O2`.
+`src/` went from 89718 to 91989 lines (+2271). **Next: M3b.5** (-O2 on SSA); its review point is RP5, after M3b.7.
