@@ -162,6 +162,7 @@ int X86_64Linux::layoutSsa(const Function &fn, const ir::Function &f) {
                 }
             }
         }
+    ssaFoldGeps(f);
     ssaValueSlot_.assign(f.values.size(), 0);
     for (std::size_t i = 1; i < f.values.size(); i++) {
         if (!f.values[i].type.valid() || ssaTypes_->type(f.values[i].type)->isVoid()) continue;
@@ -195,7 +196,7 @@ const Type *X86_64Linux::typeOf(const ir::Function &f, ir::ValueId v) const { re
 bool X86_64Linux::ssaRemat(const ir::Function &f, ir::ValueId v) const {
     if (!f.value(v).def.valid()) return false;
     const ir::Op op = f.inst(f.value(v).def).op;
-    return op == ir::Op::Alloca || op == ir::Op::IConst || op == ir::Op::Null || ssaAddr_[v.v] != 0;
+    return op == ir::Op::Alloca || op == ir::Op::IConst || op == ir::Op::Null || ssaAddr_[v.v] != 0 || ssaFold_[v.v] != 0;
 }
 
 // Whether `v` is a frame object's address or one derived from it by pointer casts and constant geps: the object, the distance.
@@ -211,6 +212,77 @@ bool X86_64Linux::ssaFrameAddress(const ir::Function &f, ir::ValueId v, std::siz
         off += f.inst(by.def).k;
     }
     return false;
+}
+
+// Under the passes, a gep of a variable byte offset whose every use is the address of a scalar's load or store, none in
+// a pad or a funclet (which read the body's values from their slots).
+void X86_64Linux::ssaFoldGeps(const ir::Function &f) {
+    ssaFold_.assign(f.values.size(), 0);
+    if (!passesRun()) return;
+    std::vector<int> good(f.values.size(), 0), all(f.values.size(), 0);
+    for (std::size_t b = 0; b < f.blocks.size(); b++) {
+        const ir::Block &blk = f.block(f.blocks[b]);
+        for (std::size_t k = 0; k <= blk.insts.size(); k++) {
+            const ir::InstId id = k < blk.insts.size() ? blk.insts[k] : blk.term;
+            if (!id.valid()) continue;
+            const ir::Inst &i = f.inst(id);
+            for (std::uint32_t n = 0; n < i.count; n++) all[f.operand(i, n).v]++;
+            for (std::size_t s = 0; s < i.succ.size(); s++)
+                for (std::uint32_t n = 0; n < i.succ[s].count; n++) all[f.arg(i.succ[s], n).v]++;
+            const Type *t = i.op == ir::Op::Load ? ssaTypes_->type(i.type) : i.op == ir::Op::Store ? typeOf(f, f.operand(i, 1)) : nullptr;
+            if (t != nullptr && !blk.pad && blk.funclet == 0 && (t->isInteger() || t->isPointer() || t->isFloating()) && f.operand(i, 0).v != (i.count > 1 ? f.operand(i, 1).v : 0))
+                good[f.operand(i, 0).v]++;
+        }
+    }
+    for (std::size_t v = 1; v < f.values.size(); v++) {
+        const ir::Value &val = f.values[v];
+        if (!val.def.valid() || ssaAddr_[v] || all[v] == 0 || good[v] != all[v]) continue;
+        const ir::Inst &d = f.inst(val.def);
+        ssaFold_[v] = d.op == ir::Op::Gep && d.count == 2;
+    }
+}
+
+// The register a folded gep's offset is read from: its shift or multiply by 1, 2, 4 or 8 taken as the scale, an added
+// constant as the displacement - at 64 bits, where both are exact. None where the offset is a constant.
+ir::ValueId X86_64Linux::ssaIndex(const ir::Function &f, ir::ValueId v, int &scale, long long &disp) const {
+    scale = 1;
+    disp = 0;
+    for (int step = 0; step < 2 && f.value(v).def.valid(); step++) {
+        const ir::Inst &d = f.inst(f.value(v).def);
+        if (d.op == ir::Op::IConst) { disp += d.k * scale; return ir::ValueId(); }
+        if (d.count != 2 || typeOf(f, v)->size(target_) != 8) break;
+        const ir::Value &by = f.value(f.operand(d, 1));
+        if (!by.def.valid() || f.inst(by.def).op != ir::Op::IConst) break;
+        const long long c = f.inst(by.def).k;
+        if (step == 0 && d.op == ir::Op::Shl && c >= 0 && c <= 3) { scale = 1 << c; v = f.operand(d, 0); continue; }
+        if (step == 0 && d.op == ir::Op::Mul && (c == 1 || c == 2 || c == 4 || c == 8)) { scale = static_cast<int>(c); v = f.operand(d, 0); continue; }
+        if ((d.op == ir::Op::Add || d.op == ir::Op::Sub) && c > -(1LL << 24) && c < (1LL << 24)) {
+            disp += (d.op == ir::Op::Add ? c : -c) * scale;
+            v = f.operand(d, 0);
+            step = 1;
+            continue;
+        }
+        break;
+    }
+    return v;
+}
+
+// The address `p` into `base`: a folded gep made again at each access, its index in `index` - displaced, shifted, added,
+// the shape fold-index turns into the access's own operand once registers are allocated.
+void X86_64Linux::ssaAddress(const ir::Function &f, ir::ValueId p, const char *base, const char *index) {
+    if (!ssaFold_[p.v]) { ssaLoadReg(f, p, base); return; }
+    const ir::Inst &d = f.inst(f.value(p).def);
+    int scale = 1;
+    long long disp = 0;
+    const ir::ValueId at = ssaIndex(f, f.operand(d, 1), scale, disp);
+    if (at.valid()) {
+        ssaLoadReg(f, at, index);
+        if (disp != 0) a_->ins("add", imm(disp / scale), reg(index));
+        if (scale > 1) a_->ins("shl", imm(scale == 2 ? 1 : scale == 4 ? 2 : 3), reg(index));
+    }
+    ssaLoadReg(f, f.operand(d, 0), base);
+    if (at.valid()) a_->ins("add", reg(index), reg(base));
+    else if (disp != 0) a_->ins("add", imm(disp), reg(base));
 }
 
 // A general value into the register named: one made afresh where it has no slot.
@@ -312,7 +384,7 @@ void X86_64Linux::ssaUnsupported(const ir::Inst &i) {
 // One instruction. The operands are read from their slots; the result goes to its own.
 void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
     const Type *rt = i.type.valid() ? ssaTypes_->type(i.type) : nullptr;
-    if (i.result.valid() && ssaAddr_[i.result.v]) return;       // a frame address made at each use
+    if (i.result.valid() && (ssaAddr_[i.result.v] || ssaFold_[i.result.v])) return;   // made at each use
     switch (i.op) {
     case ir::Op::Alloca:
     case ir::Op::IConst:
@@ -348,14 +420,14 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         ssaStore(f, i.result);
         return;
     case ir::Op::Load:
-        ssaLoad(f, f.operand(i, 0));
+        ssaAddress(f, f.operand(i, 0), "%rax", abi_.scratch);
         load(rt);
         ssaStore(f, i.result);
         return;
     case ir::Op::Store: {
         const ir::ValueId p = f.operand(i, 0), v = f.operand(i, 1);
         ssaLoad(f, v);
-        ssaLoadReg(f, p, abi_.scratch);
+        ssaAddress(f, p, abi_.scratch, "%rcx");
         store(typeOf(f, v));
         return;
     }
@@ -418,7 +490,22 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         ssaStore(f, i.result);
         return;
     }
-    case ir::Op::SMulH: case ir::Op::UMulH:
+    case ir::Op::SMulH: case ir::Op::UMulH: {
+        // Of 32 bits by a constant, under the passes: one 64-bit multiply of the two extended, its high half shifted down.
+        const ir::Value &by = f.value(f.operand(i, 1));
+        if (passesRun() && rt->size(target_) == 4 && by.def.valid() && f.inst(by.def).op == ir::Op::IConst) {
+            const bool sign = i.op == ir::Op::SMulH;
+            const long long m = f.inst(by.def).k;
+            ssaLoad(f, f.operand(i, 0));
+            if (sign) a_->ins("movslq", reg("%eax"), reg("%rax"));
+            else      a_->ins("mov", reg("%eax"), reg("%eax"));
+            a_->ins("mov", imm(sign ? static_cast<long long>(static_cast<std::int32_t>(m)) : static_cast<long long>(static_cast<std::uint32_t>(m))), reg(abi_.scratch));
+            a_->ins("imul", reg(abi_.scratch), reg("%rax"));
+            a_->ins(sign ? "sar" : "shr", imm(32), reg("%rax"));
+            canonicalise(rt);
+            ssaStore(f, i.result);
+            return;
+        }
         // The one-operand multiply: rdx:rax, of which rdx is the result.
         ssaLoadReg(f, f.operand(i, 1), abi_.scratch);
         ssaLoad(f, f.operand(i, 0));
@@ -427,6 +514,7 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         canonicalise(rt);
         ssaStore(f, i.result);
         return;
+    }
     case ir::Op::Neg: case ir::Op::Not:
         ssaLoad(f, f.operand(i, 0));
         a_->ins(i.op == ir::Op::Neg ? "neg" : "not", reg(acc(rt)));

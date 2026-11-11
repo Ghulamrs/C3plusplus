@@ -235,6 +235,11 @@ private:
     // Where the passes run: a pointer cast or constant gep of a frame object made afresh too (`lea`, `add`), by value.
     std::vector<char> ssaAddr_;
     bool ssaFrameAddress(const ir::Function &f, ir::ValueId v, std::size_t &frame, long long &off) const;
+    // A gep only loads and stores read: no slot, folded into each access as base + index * scale + displacement.
+    std::vector<char> ssaFold_;
+    void ssaFoldGeps(const ir::Function &f);
+    ir::ValueId ssaIndex(const ir::Function &f, ir::ValueId v, int &scale, long long &disp) const;
+    void ssaAddress(const ir::Function &f, ir::ValueId p, const char *base, const char *index);
     std::uint32_t ssaNext_ = 0;                     // the block written after the one being selected, 0 where a funclet is
     void ssaLoadReg(const ir::Function &f, ir::ValueId v, const char *r);
     ExprPtr ssaExpr(const ir::Function &f, ir::ValueId v) const;
