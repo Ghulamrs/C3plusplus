@@ -149,16 +149,56 @@ struct Looper {
         return true;
     }
 
+    // The object an address is into: the alloca or the symbol a chain of geps and bitcasts starts from, else none.
+    InstId root(ValueId v) const {
+        while (v.valid() && f.value(v).def.valid()) {
+            const Inst &i = f.inst(f.value(v).def);
+            if (i.op == Op::Alloca || i.op == Op::Addr) return f.value(v).def;
+            if ((i.op != Op::Gep && i.op != Op::Bitcast) || i.count == 0) break;
+            v = f.operand(i, 0);
+        }
+        return InstId();
+    }
+    // A named object itself, an alloca or a symbol, through bitcasts alone: a load of it cannot trap, run or not.
+    bool named(ValueId v) const {
+        while (v.valid() && f.value(v).def.valid() && f.inst(f.value(v).def).op == Op::Bitcast)
+            v = f.operand(f.inst(f.value(v).def), 0);
+        if (!v.valid() || !f.value(v).def.valid()) return false;
+        return f.inst(f.value(v).def).op == Op::Alloca || f.inst(f.value(v).def).op == Op::Addr;
+    }
+    // No store of the loop writes what `address` reads: each stores into another named object than the load reads.
+    bool unwritten(const std::vector<InstId> &stores, ValueId address) const {
+        const InstId r = root(address);
+        if (!r.valid()) return stores.empty();
+        const Inst &o = f.inst(r);
+        for (InstId id : stores) {
+            const InstId w = root(f.operand(f.inst(id), 0));
+            if (!w.valid()) return false;
+            const Inst &x = f.inst(w);
+            if (x.op == o.op && (o.op == Op::Alloca ? x.k == o.k : x.sym == o.sym)) return false;
+        }
+        return true;
+    }
+
     // **The invariants hoisted**: a pure instruction whose operands are all defined outside the loop, in block order so
-    // what one hoisted defines lets the next go. A division traps: only from a block always run, in a loop with no call.
+    // what one hoisted defines lets the next go. A division traps, a load may: only from a block always run (a load of a
+    // named object from any), in a loop with no call; a load besides where stores write only other named objects.
     void hoist(const Loop &l, const Dominators &dom) {
-        bool calls = false;
+        bool calls = false, clobbers = false;
+        std::vector<InstId> stores;
         for (std::uint32_t b : l.blocks) {
             const Block &blk = f.blockArena[b];
-            for (InstId id : blk.insts) calls = calls || f.inst(id).op == Op::Call || f.inst(id).op == Op::Trap;
+            for (InstId id : blk.insts) {
+                const Inst &i = f.inst(id);
+                calls = calls || i.op == Op::Call || i.op == Op::Trap;
+                if (i.op == Op::Store && !i.isVolatile) stores.push_back(id);
+                else clobbers = clobbers || i.isVolatile || i.op == Op::Memcpy || i.op == Op::Memset || i.op == Op::Call ||
+                                i.op == Op::VaStart || i.op == Op::VaArg || i.op == Op::VaEnd;
+            }
             const Op t = f.inst(blk.term).op;
             calls = calls || t == Op::Invoke || t == Op::Call;
         }
+        clobbers = clobbers || calls;
         Block &pre = f.blockArena[l.pre];
         for (std::uint32_t b : l.blocks) {
             const bool runs = !calls && always(l, dom, b);
@@ -167,13 +207,17 @@ struct Looper {
                 const Inst &i = f.inst(id);
                 const int kind = pureKind(i);
                 const bool traps = i.op == Op::SDiv || i.op == Op::UDiv || i.op == Op::SRem || i.op == Op::URem;
-                bool move = kind >= 1 && !i.isVolatile && i.result.valid() && (!traps || runs);
+                const bool load = i.op == Op::Load && i.count == 1 && !i.isVolatile && i.result.valid() && !clobbers &&
+                                  (runs || named(f.operand(i, 0)));
+                bool move = (kind >= 1 || (load && unwritten(stores, f.operand(i, 0)))) && !i.isVolatile && i.result.valid() &&
+                            (!traps || runs);
                 for (std::uint32_t n = 0; move && n < i.count; n++) move = outside(l, f.operand(i, n));
                 if (!move) { kept.push_back(id); continue; }
                 pre.insts.push_back(id);
                 blockOf[i.result.v] = l.pre;
                 if (kind == 1) continue;        // a constant goes with what reads it, as gvn already shares one
                 log.hoisted++;
+                if (kind == 0) log.hoistedLoads++;
                 if (traps) log.hoistedTraps++;
             }
             f.blockArena[b].insts.swap(kept);
@@ -236,15 +280,28 @@ struct Looper {
         list.insert(place(list, at) + 1, id);
     }
 
-    // **Counter widening**: a head parameter of type int entering as a constant in [0, INT_MAX), coming round as itself
-    // plus a positive constant, tested `<` or `<=` against a bound the loop does not define, and sign-extended to 64 bits:
-    // a 64-bit twin carried beside it replaces each extension, and every read of the int reads the twin truncated.
+    // An int `x + k` or `x - k`, k a constant: its x and +-k, false for anything else.
+    bool offsetOf(ValueId v, ValueId &x, long long &k) const {
+        if (!v.valid() || !f.value(v).def.valid()) return false;
+        const Inst &i = f.inst(f.value(v).def);
+        if ((i.op != Op::Add && i.op != Op::Sub) || i.count != 2 || !int32(i.type)) return false;
+        const int c = constantOf(f.operand(i, 1), k) ? 1 : i.op == Op::Add && constantOf(f.operand(i, 0), k) ? 0 : -1;
+        if (c < 0 || k <= -0x7fffffff || k >= 0x7fffffff) return false;
+        x = f.operand(i, static_cast<std::uint32_t>(1 - c));
+        if (i.op == Op::Sub) k = -k;
+        return true;
+    }
+
+    // **Counter widening**: a head parameter of type int coming round as itself plus or minus a constant, tested against a
+    // bound the loop does not define, and sign-extended to 64 bits, itself or plus a constant: a 64-bit twin carried beside
+    // it replaces each extension, and every read of the int reads the twin truncated. A signed int never wraps.
     bool widen(const Loop &l, std::size_t j) {
         Block &head = f.blockArena[l.head];
         const ValueId p = head.params[j];
         if (!int32(f.value(p).type)) return false;
         long long start = 0;
-        if (!startOf(l, f.arg(f.inst(f.blockArena[l.pre].term).succ[0], static_cast<std::uint32_t>(j)), start)) return false;
+        const ValueId in = f.arg(f.inst(f.blockArena[l.pre].term).succ[0], static_cast<std::uint32_t>(j));
+        const bool constant = startOf(l, in, start);
         ValueId a;
         for (std::uint32_t x : l.latches) {
             const Inst &t = f.inst(f.blockArena[x].term);
@@ -257,27 +314,31 @@ struct Looper {
         }
         if (!a.valid() || !f.value(a).def.valid()) return false;
         const InstId addId = f.value(a).def;
-        const Inst &add = f.inst(addId);
-        if (add.op != Op::Add || add.count != 2 || add.type != f.value(p).type) return false;
-        const int which = f.operand(add, 0).v == p.v ? 1 : f.operand(add, 1).v == p.v ? 0 : -1;
+        ValueId stepped;
         long long by = 0;
-        if (which < 0 || !constantOf(f.operand(add, static_cast<std::uint32_t>(which)), by) || by <= 0 || by >= 0x7fffffff)
-            return false;
+        if (!offsetOf(a, stepped, by) || stepped.v != p.v || by == 0 || f.inst(addId).type != f.value(p).type) return false;
         // The bound and the extensions, in the loop.
         bool bounded = false;
         TypeId wide;
         std::vector<InstId> sexts;
-        for (std::uint32_t b : l.blocks) {
+        std::vector<long long> offsets;     // by extension: 0 for the counter's own, else the constant added first
+        for (BlockId bid : f.blocks) {      // an extension past the loop too: what it reads dominates it, and so the twin
+            const std::uint32_t b = bid.v;
             const Block &blk = f.blockArena[b];
             for (std::size_t k = 0; k <= blk.insts.size(); k++) {
                 const InstId id = k < blk.insts.size() ? blk.insts[k] : blk.term;
                 const Inst &i = f.inst(id);
                 const ValueId o0 = i.count > 0 ? f.operand(i, 0) : ValueId();
                 const bool counter = o0.v == p.v || o0.v == a.v;
-                if (i.op == Op::ICmp && (i.cc == Cmp::Slt || i.cc == Cmp::Sle) && counter && outside(l, f.operand(i, 1))) bounded = true;
-                if (i.op == Op::SExt && counter && types.type(i.type)->size(target) == 8 && (!wide.valid() || wide == i.type)) {
+                if (i.op == Op::ICmp && i.cc <= Cmp::Sge && i.count == 2 && (counter || f.operand(i, 1).v == p.v ||
+                    f.operand(i, 1).v == a.v) && outside(l, f.operand(i, counter ? 1 : 0)) && l.in[b]) bounded = true;
+                ValueId x;
+                long long plus = 0;
+                const bool offset = !counter && offsetOf(o0, x, plus) && plus != 0 && (x.v == p.v || x.v == a.v);
+                if (i.op == Op::SExt && (counter || offset) && types.type(i.type)->size(target) == 8 && (!wide.valid() || wide == i.type)) {
                     wide = i.type;
                     sexts.push_back(id);
+                    offsets.push_back(offset ? plus : 0);
                 }
             }
         }
@@ -293,7 +354,8 @@ struct Looper {
         blockOf.push_back(l.head);
         f.blockArena[l.head].params.push_back(P);
         const InstId preTerm = f.blockArena[l.pre].term;
-        const ValueId c64 = make(Op::IConst, wide, ValueId(), ValueId(), start, preTerm);
+        const ValueId c64 = constant ? make(Op::IConst, wide, ValueId(), ValueId(), start, preTerm)
+                                     : make(Op::SExt, wide, in, ValueId(), 0, preTerm);
         const ValueId k64 = make(Op::IConst, wide, ValueId(), ValueId(), by, preTerm);
         f.blockArena[l.pre].insts.push_back(f.value(c64).def);
         f.blockArena[l.pre].insts.push_back(f.value(k64).def);
@@ -311,15 +373,32 @@ struct Looper {
         // Every use re-pointed - an extension to the twin, the int to the twin truncated - before the new edges' arguments;
         // the new instructions read only P, the step and the twin's next value, none of them replaced.
         std::vector<ValueId> repl(f.values.size());
-        for (InstId id : sexts) {
-            const Inst &i = f.inst(id);
-            repl[i.result.v] = f.operand(i, 0).v == p.v ? P : a64;
+        for (std::size_t n = 0; n < sexts.size(); n++) {
+            const Inst &i = f.inst(sexts[n]);
+            if (offsets[n] == 0) repl[i.result.v] = f.operand(i, 0).v == p.v ? P : a64;
         }
         repl[p.v] = pt;
         repl[a.v] = at;
         for (std::size_t k = 0; k < f.operands.size(); k++)
             if (f.operands[k].v < repl.size() && repl[f.operands[k].v].valid()) f.operands[k] = repl[f.operands[k].v];
-        for (InstId id : sexts) {
+        // An extension of the counter plus k becomes the twin plus k, where it stands.
+        for (std::size_t n = 0; n < sexts.size(); n++) {
+            const InstId id = sexts[n];
+            if (offsets[n] != 0) {
+                ValueId x;
+                long long k = 0;
+                offsetOf(f.operand(f.inst(id), 0), x, k);
+                const ValueId kk = make(Op::IConst, wide, ValueId(), ValueId(), k, preTerm);
+                f.blockArena[l.pre].insts.push_back(f.value(kk).def);
+                blockOf[kk.v] = l.pre;
+                Inst &i = f.insts[id.v];
+                i.op = Op::Add;
+                i.first = static_cast<std::uint32_t>(f.operands.size());
+                i.count = 2;
+                f.operands.push_back(x.v == pt.v ? P : a64);
+                f.operands.push_back(kk);
+                continue;
+            }
             std::vector<InstId> &list = f.blockArena[blockOf[f.inst(id).result.v]].insts;
             list.erase(place(list, id));
             f.values[f.inst(id).result.v].type = TypeId();

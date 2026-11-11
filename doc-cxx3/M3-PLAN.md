@@ -2230,3 +2230,56 @@ moves in the fill loop, the byte loop's test not rotated to its foot); `virt`'s 
 (its head was not `cmp; jcc` alone when the pass ran); isort; matmul's 25 demotions in 7 allocator rounds and what the
 extra rounds cost on a large function; the loop sets in `blockOrder` are a second finder beside SsaLoops's `Looper::find`
 (one to keep once the lanes merge); `ask`'s effect on `.text` (a preserved register is a save and a restore).
+
+**M3b.5, the loads lane, 2026-11-12: loads hoisted, counters widened from any start.** From main `5f6a94d1`, branch
+`m3b5-loads`, code commit `9e59b7a8`, all in `loops` (`src/ir/opt/SsaLoops.cpp`). **Loads**: a load leaves a loop that
+has no call, invoke, trap, memcpy, memset, va_* or volatile access and whose stores each write a named object (an
+alloca, or a symbol, through geps and bitcasts) other than the one the load reads - distinct objects never overlap;
+from a block every iteration and every exit passes, or from any block when the load reads a named object itself (it
+cannot fault). **Widening**, round 3's twin generalised: the start any int (a constant as before, else its sign
+extension made in the preheader), the step plus or minus a constant, the test any signed or equality comparison with a
+bound the loop does not define, and an extension of the counter plus a constant - in the loop or past it, since what
+it reads dominates it - becomes the twin plus that constant. Beyond OptLoops's rule (constant start, step 1, `jl`): it
+rests on a signed `int` add never wrapping, which C++ makes undefined, as round 3's `<=` and step over 1 already did.
+**Counts** (ssa.sh at `-O2`, with the probe): Linux 1953 loops, 86 preheaders, 2709 hoisted (1 division, 94 loads),
+714 widened (round 3: 1943, 86, 2577, 607); Windows 1945, 85, 2661 (1, 94), 709 (round 3: 1935, 85, 2529, 598).
+**isort**: its inner loop's `j` (start `i - 1`, counting down, tested `>= 0`, read as `sv[j]` and `sv[j + 1]`) is
+carried at 64 bits, and the spill of `j` to the frame that round 3's code had in that loop is gone - the outer `i`
+spills instead, once per outer turn. Nothing in isort is a hoistable load (its loops store into `sv` and `seed`).
+**Probe**: `tests/cases/ssa-loads.cpp` (a bound read through a pointer, a global read while a local array is written,
+one read and written, one beside a call; a down-counter from a run-time start, a `!=` counter, an index plus one),
+clang's `.expected` (the Windows box's), right at `-O0`, `-O2`, `-front=ssa -O1`, `-front=ssa -O2` there; its `-O2
+-dump=ssa=loops` is `ssa-loads.loops` (Linux). `ssa-loops.loops` re-recorded unchanged.
+**Kernels** (Windows, `bench.cmd`, `-front=ssa -O2` against `-O2` of the same build - main's `-O2` - median of 9, ms; a
+quiet run on the build before the last edit - the named-object rule, which leaves the kernels' code as it was, .text
+3746 both - and the final run on `9e59b7a8`, the box loaded by the other lanes):
+
+| kernel | ssa -O2 | -O2 (main) | cl /O2 | loaded: ssa -O2 / -O2 / cl | main at start: ssa -O2 / -O2 |
+|---|---|---|---|---|---|
+| fib | 8 | 8 | 7 | 12 / 12 / 11 | 8 / 7 |
+| sieve | 62 | 58 | 46 | 82 / 91 / 69 | 54 / 55 |
+| matmul | 9 | 28 | 3 | 16 / 42 / 6 | 9 / 27 |
+| isort | 19 | 18 | 6 | 33 / 32 / 12 | 22 / 18 |
+| hash | 337 | 189 | 131 | 578 / 312 / 208 | 321 / 183 |
+| virtual | 203 | 88 | 105 | 340 / 169 / 155 | 199 / 87 |
+| .text | 3746 | 3443 | 3831 | | 3762 / 3443 |
+
+isort is within one millisecond of main's `-O2` (round 3: 21 / 17). What is left of its gap is not loop code: the
+SSA path's allocator gives the leaf only the seven volatile registers (the address of `sv`, which gvn shares, holds
+one for the whole function where the Ast.h path rematerialises the `lea`); `sv[j]`'s address is made by `shl`, `mov`,
+`add` where the Ast.h path folds it into the access; and the head's test is a `jge` then a `jmp`, two jumps an
+iteration a rotated loop would not take. The first two are selection and MIR (the hash and virtual lane's files),
+the third is loop rotation, not attempted here.
+**src/**: 92755 to 92835 lines (+80: SsaLoops.cpp 373 to 452, the report +0, SsaOpt.h +1); tests/ssa.sh 1 line.
+**Gates on `9e59b7a8`** (the lane stopped at the user's one-hour rule, 00:37): Windows `winpass.sh` at `-front=ssa -O2`,
+after a clean ship and build: gnu 739 same, masm 738 same, 0 differ (340 refused as recorded); Windows ssa.sh 752/0 at
+levels 1 and 2; Linux, clean build: ssa.sh 782/0 at levels 1 and 2, run.sh 1112/0 at `-front=ssa -O1` and `-front=ssa
+-O2`; emit's golden recorded from `5f6a94d1`. **Not run**: Windows winpass at `-front=ssa -O1` and `-O2` (the first was
+stopped after 13 minutes on its first quarter, the box loaded); Linux run.sh at `-front=ssa`, `-O2`, `-O0` (stopped
+waiting on the box lock), emit against the golden, names, overload, syntax, typed, adapted, coff, c90, win-structure,
+the three gates (comment cap, memory gate, exclusions), the MIR `hoist-invariants` count against round 3's 327, and the
+cases' .text under `-front=ssa -O2`. No step reached the 9-minute or 3-minute caps (the watchdogs recorded none).
+**Left**, in pieces of about 45 minutes: (1) the gates not run, on `9e59b7a8` or the merged tree; (2) the MIR
+`hoist-invariants` count and the .text table; (3) loop rotation in `loops` (the head's test copied to the latch), the
+one loop-shaped piece of isort's gap; (4) for the hash and virtual lane: callee-saved registers in a leaf under
+`-front=ssa`, rematerialised symbol addresses, a gep folded into the access.

@@ -47,6 +47,7 @@ struct PassLog {
     // inline's: the direct calls of a function of the unit, those cloned in place, and the rest by reason.
     int inlineSites = 0, inlined = 0; std::map<std::string, int> inlineRefused;
     int loopsFound, preheaders, hoisted, hoistedTraps, widened;    // loops': found, preheaders made, hoisted (divisions), widened
+    int hoistedLoads = 0;                                          // of those hoisted, loads
     PassLog(bool c, const std::string &after) : check(c), dumpAfter(after), failed(0), allocas(0), scalars(0), promoted(0),
         constants(0), compares(0), casts(0), floating(0), identities(0), copies(0), arguments(0), kept(0), constBranches(0),
         sameBranches(0), unreachable(0), merged(0), forwarded(0), deadInsts(0), deadParams(0), deadStores(0), deadAllocas(0),
