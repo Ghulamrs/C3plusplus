@@ -502,7 +502,7 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
             a_->ins("mov", imm(sign ? static_cast<long long>(static_cast<std::int32_t>(m)) : static_cast<long long>(static_cast<std::uint32_t>(m))), reg(abi_.scratch));
             a_->ins("imul", reg(abi_.scratch), reg("%rax"));
             a_->ins(sign ? "sar" : "shr", imm(32), reg("%rax"));
-            canonicalise(rt);
+            if (sign != rt->isSigned(target_)) canonicalise(rt);    // the shift already extended it the result's way
             ssaStore(f, i.result);
             return;
         }

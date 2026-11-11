@@ -1551,8 +1551,8 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
                   log.inlineSites - log.inlined);
     char loops[240];
     std::snprintf(loops, sizeof loops, "-check=ssa loops: found=%d preheaders=%d hoisted=%d divisions=%d loads=%d widened=%d\n"
-                  "-check=ssa unroll: whole=%d partial=%d\n", log.loopsFound, log.preheaders, log.hoisted, log.hoistedTraps,
-                  log.hoistedLoads, log.widened, log.unrolledFull, log.unrolledPartial);
+                  "-check=ssa unroll: whole=%d partial=%d rotated=%d\n", log.loopsFound, log.preheaders, log.hoisted, log.hoistedTraps,
+                  log.hoistedLoads, log.widened, log.unrolledFull, log.unrolledPartial, log.rotated);
     return out + line + synth + passes + folds + cfgs + gvns + jumps + inlines + loops;
 }
 
