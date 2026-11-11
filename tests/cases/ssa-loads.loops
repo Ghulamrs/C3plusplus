@@ -1,0 +1,315 @@
+function @_ZL7boundedPK3Box(%1: const struct Box *) -> int static {
+^1(%1: const struct Box *):
+  %4 = iconst int, 0
+  %9 = gep const int *, %1, 0
+  %10 = load int, %9
+  %14 = gep const int [16] *, %1, 4
+  %15 = bitcast const int *, %14
+  %18 = iconst long, 4
+  %24 = iconst int, 1
+  %31 = iconst long, 0
+  %32 = iconst long, 1
+  br ^4(%4, %4, %31)
+^4(%28: int, %29: int, %30: long):
+  %34 = trunc int, %30
+  %11 = icmp slt, bool, %34, %10
+  condbr %11, ^5, ^7
+^5:
+  %19 = mul long, %30, %18
+  %20 = gep const int *, %15, %19
+  %21 = load int, %20
+  %22 = add int, %28, %21
+  %25 = add int, %34, %24
+  %33 = add long, %30, %32
+  %35 = trunc int, %33
+  br ^4(%22, %35, %33)
+^7:
+  ret %28
+}
+function @_ZL6scaledi(%1: int) -> int static {
+^1(%1: int):
+  %3 = alloca int [16] *, align 16 ; int [16] out
+  %5 = iconst int, 0
+  %9 = bitcast int *, %3
+  %12 = iconst long, 4
+  %16 = addr int *, @_ZL5scale
+  %17 = load int, %16
+  %20 = iconst int, 1
+  %53 = iconst long, 0
+  %54 = iconst long, 1
+  br ^4(%5, %53)
+^4(%43: int, %52: long):
+  %56 = trunc int, %52
+  %8 = icmp slt, bool, %56, %1
+  condbr %8, ^5, ^7
+^5:
+  %13 = mul long, %52, %12
+  %14 = gep int *, %9, %13
+  %18 = mul int, %56, %17
+  store %14, %18
+  %21 = add int, %56, %20
+  %55 = add long, %52, %54
+  %57 = trunc int, %55
+  br ^4(%57, %55)
+^7:
+  %30 = bitcast int *, %3
+  %33 = iconst long, 4
+  %39 = iconst int, 1
+  %47 = iconst long, 0
+  %48 = iconst long, 1
+  br ^8(%5, %5, %47)
+^8(%44: int, %45: int, %46: long):
+  %50 = trunc int, %46
+  %28 = icmp slt, bool, %50, %1
+  condbr %28, ^9, ^11
+^9:
+  %34 = mul long, %46, %33
+  %35 = gep int *, %30, %34
+  %36 = load int, %35
+  %37 = add int, %44, %36
+  %40 = add int, %50, %39
+  %49 = add long, %46, %48
+  %51 = trunc int, %49
+  br ^8(%37, %51, %49)
+^11:
+  ret %44
+}
+function @_ZL7writteni(%1: int) -> int static {
+^1(%1: int):
+  %4 = iconst int, 0
+  %8 = addr int [16] *, @_ZL5table
+  %9 = bitcast int *, %8
+  %12 = iconst long, 4
+  %15 = addr int *, @_ZL5scale
+  %20 = iconst int, 1
+  %41 = iconst long, 0
+  %42 = iconst long, 1
+  br ^4(%4, %41)
+^4(%39: int, %40: long):
+  %44 = trunc int, %40
+  %7 = icmp slt, bool, %44, %1
+  condbr %7, ^5, ^7
+^5:
+  %13 = mul long, %40, %12
+  %14 = gep int *, %9, %13
+  %16 = load int, %15
+  store %14, %16
+  %19 = load int, %15
+  %21 = add int, %19, %20
+  store %15, %21
+  %24 = add int, %44, %20
+  %43 = add long, %40, %42
+  %45 = trunc int, %43
+  br ^4(%45, %43)
+^7:
+  %25 = addr int [16] *, @_ZL5table
+  %26 = bitcast int *, %25
+  %28 = iconst int, 1
+  %29 = sub int, %1, %28
+  %30 = sext long, %29
+  %31 = iconst long, 4
+  %32 = mul long, %30, %31
+  %33 = gep int *, %26, %32
+  %34 = load int, %33
+  %35 = addr int *, @_ZL5scale
+  %36 = load int, %35
+  %37 = add int, %34, %36
+  ret %37
+}
+function @_ZL6calledi(%1: int) -> int static {
+^1(%1: int):
+  %4 = iconst int, 0
+  %11 = addr int *, @_ZL5scale
+  %13 = addr const char [3] *, @.L.str.0
+  %14 = bitcast const char *, %13
+  %15 = addr const char [1] *, @.L.str.1
+  %16 = bitcast const char *, %15
+  %21 = iconst int, 1
+  br ^4(%4, %4)
+^4(%25: int, %26: int):
+  %9 = icmp slt, bool, %26, %1
+  condbr %9, ^5, ^7
+^5:
+  %12 = load int, %11
+  %17 = call @printf(%14, %16) : int variadic
+  %18 = add int, %12, %17
+  %19 = add int, %25, %18
+  %22 = add int, %26, %21
+  br ^4(%19, %22)
+^7:
+  ret %25
+}
+function @_ZL5shiftPii(%1: int *, %3: int) -> int static {
+^1(%1: int *, %3: int):
+  %8 = iconst int, 0
+  %10 = iconst bool, 0
+  %13 = iconst int, 1
+  %16 = iconst long, 4
+  %68 = sext long, %3
+  %69 = iconst long, -1
+  br ^4(%3, %68)
+^4(%66: int, %67: long):
+  %71 = trunc int, %67
+  %9 = icmp sgt, bool, %71, %8
+  condbr %9, ^7, ^6
+^5:
+  %36 = load int, %25
+  %51 = load int, %18
+  store %25, %51
+  store %18, %36
+  br ^4(%72, %70)
+^6:
+  ret %71
+^7:
+  %14 = sub int, %71, %13
+  %70 = add long, %67, %69
+  %72 = trunc int, %70
+  %17 = mul long, %70, %16
+  %18 = gep int *, %1, %17
+  %19 = load int, %18
+  %24 = mul long, %67, %16
+  %25 = gep int *, %1, %24
+  %26 = load int, %25
+  %27 = icmp sgt, bool, %19, %26
+  condbr %27, ^5, ^6
+}
+function @_ZL5untilPKiii(%1: const int *, %3: int, %5: int) -> long long static {
+^1(%1: const int *, %3: int, %5: int):
+  %8 = iconst int, 0
+  %9 = iconst long long, 0
+  %19 = iconst long, 4
+  %25 = iconst int, 1
+  %36 = iconst int, 2
+  %43 = sext long, %3
+  %44 = iconst long, 2
+  %48 = iconst long, 1
+  br ^4(%9, %3, %43)
+^4(%40: long long, %41: int, %42: long):
+  %46 = trunc int, %42
+  %14 = icmp ne, bool, %46, %5
+  condbr %14, ^5, ^7
+^5:
+  %20 = mul long, %42, %19
+  %21 = gep const int *, %1, %20
+  %22 = load int, %21
+  %26 = add int, %46, %25
+  %27 = add long, %42, %48
+  %29 = mul long, %27, %19
+  %30 = gep const int *, %1, %29
+  %31 = load int, %30
+  %32 = add int, %22, %31
+  %33 = sext long long, %32
+  %34 = add long long, %40, %33
+  %37 = add int, %46, %36
+  %45 = add long, %42, %44
+  %47 = trunc int, %45
+  br ^4(%34, %47, %45)
+^7:
+  ret %40
+}
+function @_Z4bumpi(%1: int) -> int {
+^1(%1: int):
+  %4 = addr int *, @_ZL5scale
+  %5 = load int, %4
+  %6 = add int, %1, %5
+  ret %6
+}
+function @main() -> int {
+^1:
+  %1 = alloca struct Box *, align 16 ; struct Box b
+  %2 = gep int *, %1, 0
+  %3 = iconst int, 12
+  store %2, %3
+  %5 = iconst int, 0
+  %9 = gep int [16] *, %1, 4
+  %10 = bitcast int *, %9
+  %13 = iconst long, 4
+  %16 = iconst int, 20
+  %18 = iconst int, 3
+  %22 = iconst int, 1
+  %7 = iconst int, 16
+  %132 = iconst long, 0
+  %133 = iconst long, 1
+  br ^5(%5, %132)
+^5(%130: int, %131: long):
+  %135 = trunc int, %131
+  %14 = mul long, %131, %13
+  %15 = gep int *, %10, %14
+  %19 = mul int, %135, %18
+  %20 = sub int, %16, %19
+  store %15, %20
+  %23 = add int, %135, %22
+  %134 = add long, %131, %133
+  %136 = trunc int, %134
+  %8 = icmp slt, bool, %136, %7
+  condbr %8, ^5(%136, %134), ^7
+^7:
+  %24 = addr const char [7] *, @.L.str.2
+  %25 = bitcast const char *, %24
+  %26 = bitcast const struct Box *, %1
+  %84 = gep const int *, %26, 0
+  %85 = load int, %84
+  %89 = gep const int [16] *, %26, 4
+  %90 = bitcast const int *, %89
+  %138 = iconst long, 0
+  %139 = iconst long, 1
+  br ^11(%5, %5, %138)
+^11(%127: int, %128: int, %137: long):
+  %141 = trunc int, %137
+  %86 = icmp slt, bool, %141, %85
+  condbr %86, ^12, ^14
+^12:
+  %94 = mul long, %137, %13
+  %95 = gep const int *, %90, %94
+  %96 = load int, %95
+  %97 = add int, %127, %96
+  %100 = add int, %141, %22
+  %140 = add long, %137, %139
+  %142 = trunc int, %140
+  br ^11(%97, %142, %140)
+^14:
+  %28 = iconst int, 10
+  %29 = call @_ZL6scaledi(%28) : int
+  %30 = call @printf(%25, %127, %29) : int variadic
+  %32 = iconst int, 5
+  %33 = call @_ZL7writteni(%32) : int
+  %34 = bitcast const int, %33
+  %35 = addr const char [7] *, @.L.str.3
+  %36 = bitcast const char *, %35
+  %38 = iconst int, 4
+  %112 = addr int *, @_ZL5scale
+  %114 = addr const char [3] *, @.L.str.0
+  %115 = bitcast const char *, %114
+  %116 = addr const char [1] *, @.L.str.1
+  %117 = bitcast const char *, %116
+  br ^19(%5, %5)
+^19(%125: int, %126: int):
+  %110 = icmp slt, bool, %126, %38
+  condbr %110, ^20, ^22
+^20:
+  %113 = load int, %112
+  %118 = call @printf(%115, %117) : int variadic
+  %119 = add int, %113, %118
+  %120 = add int, %125, %119
+  %123 = add int, %126, %22
+  br ^19(%120, %123)
+^22:
+  %40 = call @printf(%36, %33, %125) : int variadic
+  %45 = call @_ZL5shiftPii(%10, %3) : int
+  %46 = bitcast const int, %45
+  %47 = addr const char [7] *, @.L.str.4
+  %48 = bitcast const char *, %47
+  %53 = iconst long, 0
+  %56 = gep int *, %10, %53
+  %57 = load int, %56
+  %58 = call @printf(%48, %45, %57) : int variadic
+  %59 = addr const char [11] *, @.L.str.5
+  %60 = bitcast const char *, %59
+  %63 = bitcast const int *, %10
+  %64 = iconst int, 2
+  %65 = iconst int, 14
+  %66 = call @_ZL5untilPKiii(%63, %64, %65) : long long
+  %72 = call @_ZL5untilPKiii(%63, %38, %38) : long long
+  %73 = call @printf(%60, %66, %72) : int variadic
+  ret %5
+}
