@@ -2333,3 +2333,22 @@ zb-l2 1.12 / killed 40 / 2.23 s -> 0.02 / 0.02 / 0.02 s. Case local-zero-init-la
 `src/` 92755 -> 92798 lines (+43). **Left**: a list that names many elements is still a store per element (a constant
 copied from data, as clang does past its threshold, is the next step); a static local's dynamic list and a `new`'s list
 do not take `zeroRun` (`blockZero_` is the local declarator's alone).
+
+### M3b.5, lane sh-A: the two source facts that stopped cxx3 compiling itself, 2026-11-12
+
+Round 1 (part (b)) built stage 1 only with `boxkit/m3b5r1-selfhost.patch`, which moved `Typer::copyListBuilt` and
+`copyStaticGuard` into the class; the brief forbids that. **(1) A wrong refusal**: `Classes.cpp:19`'s `std::string &ref,
+saved;` was refused as a reference member with no constructor - the test in ParserType.cpp let a reference through only
+when `;` followed it, so `,` (another declarator) refused it; each declarator is now asked alone (`;` or `,`).
+**(2) Out-of-line member templates of a class that is no template** ([temp.mem]/1): the class body keeps a declared-only
+member template (`declaredAt`, and its `static` - which the definition may not repeat - as `staticMember`); the
+namespace-scope `template <class R> void C::f(...) {...}` fills it in (ParserTemplate.cpp, `outOfLineBody`), and the
+instantiation replays the definition as written through `topLevel`'s qualified path in the namespace it was written in
+(Templates.cpp, `memberTemplateStatic_`); the signature is read in C's scope past the qualifier (`Row` in
+`C::f(const R &, Row &)`). A call made before the definition (Typing.cpp calls `copyStaticGuard` above it) declares the
+specialization from the declaration (`memberTemplateDeclOnly_`) and the definition replays each owed body
+(`Templates::definedOutOfLine`). Still refused by name: a member template of a class template, and a constructor template,
+defined out of line (ParserType.cpp:590). Cases `reference-member-declarators` and `member-template-out-of-line` (a static
+template called before its definition, a const one, a two-parameter one, in a namespace), clang's `.expected` (the Windows
+box's clang, `-std=c++11 -pedantic-errors`), right at `-O0`, `-O2`, `-front=ssa -O1`, `-front=ssa -O2` on Linux, `-check=ssa`
+0 failed.
