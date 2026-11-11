@@ -1,0 +1,1363 @@
+function @_ZL6filledv() -> int static {
+^1:
+  %1 = alloca int [8] *, align 16 ; int [8] a
+  %3 = iconst int, 0
+  %7 = bitcast int *, %1
+  %10 = iconst long, 4
+  %14 = iconst int, 3
+  %16 = iconst int, 5
+  %19 = iconst int, 1
+  %5 = iconst int, 8
+  %55 = iconst long, 0
+  %56 = iconst long, 1
+  br ^5(%3, %55)
+^5(%53: int, %54: long):
+  %58 = trunc int, %54
+  %11 = mul long, %54, %10
+  %12 = gep int *, %7, %11
+  %15 = mul int, %58, %14
+  %17 = sub int, %15, %16
+  store %12, %17
+  %20 = add int, %58, %19
+  %57 = add long, %54, %56
+  %59 = trunc int, %57
+  %6 = icmp slt, bool, %59, %5
+  br ^12(%59, %57)
+^12(%66: int, %67: long):
+  %68 = iconst long, 1
+  %69 = add long, %54, %68
+  %70 = iconst long, 2
+  %71 = trunc int, %69
+  %72 = mul long, %69, %10
+  %73 = gep int *, %7, %72
+  %74 = mul int, %71, %14
+  %75 = sub int, %74, %16
+  store %73, %75
+  %76 = add int, %71, %19
+  %77 = add long, %54, %70
+  %78 = trunc int, %77
+  %79 = icmp slt, bool, %78, %5
+  br ^13(%78, %77)
+^13(%80: int, %81: long):
+  %82 = iconst long, 2
+  %83 = add long, %54, %82
+  %84 = iconst long, 3
+  %85 = trunc int, %83
+  %86 = mul long, %83, %10
+  %87 = gep int *, %7, %86
+  %88 = mul int, %85, %14
+  %89 = sub int, %88, %16
+  store %87, %89
+  %90 = add int, %85, %19
+  %91 = add long, %54, %84
+  %92 = trunc int, %91
+  %93 = icmp slt, bool, %92, %5
+  br ^14(%92, %91)
+^14(%94: int, %95: long):
+  %96 = iconst long, 3
+  %97 = add long, %54, %96
+  %98 = iconst long, 4
+  %99 = trunc int, %97
+  %100 = mul long, %97, %10
+  %101 = gep int *, %7, %100
+  %102 = mul int, %99, %14
+  %103 = sub int, %102, %16
+  store %101, %103
+  %104 = add int, %99, %19
+  %105 = add long, %54, %98
+  %106 = trunc int, %105
+  %107 = icmp slt, bool, %106, %5
+  br ^15(%106, %105)
+^15(%108: int, %109: long):
+  %110 = iconst long, 4
+  %111 = add long, %54, %110
+  %112 = iconst long, 5
+  %113 = trunc int, %111
+  %114 = mul long, %111, %10
+  %115 = gep int *, %7, %114
+  %116 = mul int, %113, %14
+  %117 = sub int, %116, %16
+  store %115, %117
+  %118 = add int, %113, %19
+  %119 = add long, %54, %112
+  %120 = trunc int, %119
+  %121 = icmp slt, bool, %120, %5
+  br ^16(%120, %119)
+^16(%122: int, %123: long):
+  %124 = iconst long, 5
+  %125 = add long, %54, %124
+  %126 = iconst long, 6
+  %127 = trunc int, %125
+  %128 = mul long, %125, %10
+  %129 = gep int *, %7, %128
+  %130 = mul int, %127, %14
+  %131 = sub int, %130, %16
+  store %129, %131
+  %132 = add int, %127, %19
+  %133 = add long, %54, %126
+  %134 = trunc int, %133
+  %135 = icmp slt, bool, %134, %5
+  br ^17(%134, %133)
+^17(%136: int, %137: long):
+  %138 = iconst long, 6
+  %139 = add long, %54, %138
+  %140 = iconst long, 7
+  %141 = trunc int, %139
+  %142 = mul long, %139, %10
+  %143 = gep int *, %7, %142
+  %144 = mul int, %141, %14
+  %145 = sub int, %144, %16
+  store %143, %145
+  %146 = add int, %141, %19
+  %147 = add long, %54, %140
+  %148 = trunc int, %147
+  %149 = icmp slt, bool, %148, %5
+  br ^18(%148, %147)
+^18(%150: int, %151: long):
+  %152 = iconst long, 7
+  %153 = add long, %54, %152
+  %154 = iconst long, 8
+  %155 = trunc int, %153
+  %156 = mul long, %153, %10
+  %157 = gep int *, %7, %156
+  %158 = mul int, %155, %14
+  %159 = sub int, %158, %16
+  store %157, %159
+  %160 = add int, %155, %19
+  %161 = add long, %54, %154
+  %162 = trunc int, %161
+  %163 = icmp slt, bool, %162, %5
+  br ^7
+^7:
+  %61 = iconst long, 0
+  %62 = iconst long, 1
+  br ^8(%3, %3, %61)
+^8(%51: int, %52: int, %60: long):
+  %64 = trunc int, %60
+  %27 = icmp slt, bool, %64, %5
+  br ^9
+^9:
+  %33 = mul long, %60, %10
+  %34 = gep int *, %7, %33
+  %35 = load int, %34
+  %43 = mul int, %35, %35
+  %44 = add int, %51, %43
+  %47 = add int, %64, %19
+  %63 = add long, %60, %62
+  %65 = trunc int, %63
+  br ^19(%44, %65, %63)
+^19(%164: int, %165: int, %166: long):
+  %167 = iconst long, 1
+  %168 = add long, %60, %167
+  %169 = iconst long, 2
+  %170 = trunc int, %168
+  %171 = icmp slt, bool, %170, %5
+  br ^20
+^20:
+  %172 = mul long, %168, %10
+  %173 = gep int *, %7, %172
+  %174 = load int, %173
+  %175 = mul int, %174, %174
+  %176 = add int, %164, %175
+  %177 = add int, %170, %19
+  %178 = add long, %60, %169
+  %179 = trunc int, %178
+  br ^21(%176, %179, %178)
+^21(%180: int, %181: int, %182: long):
+  %183 = iconst long, 2
+  %184 = add long, %60, %183
+  %185 = iconst long, 3
+  %186 = trunc int, %184
+  %187 = icmp slt, bool, %186, %5
+  br ^22
+^22:
+  %188 = mul long, %184, %10
+  %189 = gep int *, %7, %188
+  %190 = load int, %189
+  %191 = mul int, %190, %190
+  %192 = add int, %180, %191
+  %193 = add int, %186, %19
+  %194 = add long, %60, %185
+  %195 = trunc int, %194
+  br ^23(%192, %195, %194)
+^23(%196: int, %197: int, %198: long):
+  %199 = iconst long, 3
+  %200 = add long, %60, %199
+  %201 = iconst long, 4
+  %202 = trunc int, %200
+  %203 = icmp slt, bool, %202, %5
+  br ^24
+^24:
+  %204 = mul long, %200, %10
+  %205 = gep int *, %7, %204
+  %206 = load int, %205
+  %207 = mul int, %206, %206
+  %208 = add int, %196, %207
+  %209 = add int, %202, %19
+  %210 = add long, %60, %201
+  %211 = trunc int, %210
+  br ^25(%208, %211, %210)
+^25(%212: int, %213: int, %214: long):
+  %215 = iconst long, 4
+  %216 = add long, %60, %215
+  %217 = iconst long, 5
+  %218 = trunc int, %216
+  %219 = icmp slt, bool, %218, %5
+  br ^26
+^26:
+  %220 = mul long, %216, %10
+  %221 = gep int *, %7, %220
+  %222 = load int, %221
+  %223 = mul int, %222, %222
+  %224 = add int, %212, %223
+  %225 = add int, %218, %19
+  %226 = add long, %60, %217
+  %227 = trunc int, %226
+  br ^27(%224, %227, %226)
+^27(%228: int, %229: int, %230: long):
+  %231 = iconst long, 5
+  %232 = add long, %60, %231
+  %233 = iconst long, 6
+  %234 = trunc int, %232
+  %235 = icmp slt, bool, %234, %5
+  br ^28
+^28:
+  %236 = mul long, %232, %10
+  %237 = gep int *, %7, %236
+  %238 = load int, %237
+  %239 = mul int, %238, %238
+  %240 = add int, %228, %239
+  %241 = add int, %234, %19
+  %242 = add long, %60, %233
+  %243 = trunc int, %242
+  br ^29(%240, %243, %242)
+^29(%244: int, %245: int, %246: long):
+  %247 = iconst long, 6
+  %248 = add long, %60, %247
+  %249 = iconst long, 7
+  %250 = trunc int, %248
+  %251 = icmp slt, bool, %250, %5
+  br ^30
+^30:
+  %252 = mul long, %248, %10
+  %253 = gep int *, %7, %252
+  %254 = load int, %253
+  %255 = mul int, %254, %254
+  %256 = add int, %244, %255
+  %257 = add int, %250, %19
+  %258 = add long, %60, %249
+  %259 = trunc int, %258
+  br ^31(%256, %259, %258)
+^31(%260: int, %261: int, %262: long):
+  %263 = iconst long, 7
+  %264 = add long, %60, %263
+  %265 = iconst long, 8
+  %266 = trunc int, %264
+  %267 = icmp slt, bool, %266, %5
+  br ^32
+^32:
+  %268 = mul long, %264, %10
+  %269 = gep int *, %7, %268
+  %270 = load int, %269
+  %271 = mul int, %270, %270
+  %272 = add int, %260, %271
+  %273 = add int, %266, %19
+  %274 = add long, %60, %265
+  %275 = trunc int, %274
+  br ^33(%272, %275, %274)
+^33(%276: int, %277: int, %278: long):
+  %279 = iconst long, 8
+  %280 = add long, %60, %279
+  %281 = iconst long, 9
+  %282 = trunc int, %280
+  %283 = icmp slt, bool, %282, %5
+  br ^11
+^34:
+  %284 = mul long, %280, %10
+  %285 = gep int *, %7, %284
+  %286 = load int, %285
+  %287 = mul int, %286, %286
+  %288 = add int, %276, %287
+  %289 = add int, %282, %19
+  %290 = add long, %60, %281
+  %291 = trunc int, %290
+  br ^33(%288, %291, %290)
+^11:
+  ret %276
+}
+function @_ZL5afterv() -> int static {
+^1:
+  %2 = iconst int, 0
+  %6 = iconst int, 37
+  %12 = iconst int, 3
+  br ^4(%2, %2)
+^4(%20: int, %21: int):
+  %7 = icmp slt, bool, %21, %6
+  br ^5
+^5:
+  %10 = add int, %20, %21
+  %13 = add int, %21, %12
+  br ^8(%10, %13)
+^8(%22: int, %23: int):
+  %24 = iconst int, 3
+  %25 = add int, %21, %24
+  %26 = iconst int, 6
+  %27 = icmp slt, bool, %25, %6
+  br ^9
+^9:
+  %28 = add int, %22, %25
+  %29 = add int, %21, %26
+  br ^10(%28, %29)
+^10(%30: int, %31: int):
+  %32 = iconst int, 6
+  %33 = add int, %21, %32
+  %34 = iconst int, 9
+  %35 = icmp slt, bool, %33, %6
+  br ^11
+^11:
+  %36 = add int, %30, %33
+  %37 = add int, %21, %34
+  br ^12(%36, %37)
+^12(%38: int, %39: int):
+  %40 = iconst int, 9
+  %41 = add int, %21, %40
+  %42 = iconst int, 12
+  %43 = icmp slt, bool, %41, %6
+  br ^13
+^13:
+  %44 = add int, %38, %41
+  %45 = add int, %21, %42
+  br ^14(%44, %45)
+^14(%46: int, %47: int):
+  %48 = iconst int, 12
+  %49 = add int, %21, %48
+  %50 = iconst int, 15
+  %51 = icmp slt, bool, %49, %6
+  br ^15
+^15:
+  %52 = add int, %46, %49
+  %53 = add int, %21, %50
+  br ^16(%52, %53)
+^16(%54: int, %55: int):
+  %56 = iconst int, 15
+  %57 = add int, %21, %56
+  %58 = iconst int, 18
+  %59 = icmp slt, bool, %57, %6
+  br ^17
+^17:
+  %60 = add int, %54, %57
+  %61 = add int, %21, %58
+  br ^18(%60, %61)
+^18(%62: int, %63: int):
+  %64 = iconst int, 18
+  %65 = add int, %21, %64
+  %66 = iconst int, 21
+  %67 = icmp slt, bool, %65, %6
+  br ^19
+^19:
+  %68 = add int, %62, %65
+  %69 = add int, %21, %66
+  br ^20(%68, %69)
+^20(%70: int, %71: int):
+  %72 = iconst int, 21
+  %73 = add int, %21, %72
+  %74 = iconst int, 24
+  %75 = icmp slt, bool, %73, %6
+  br ^21
+^21:
+  %76 = add int, %70, %73
+  %77 = add int, %21, %74
+  br ^22(%76, %77)
+^22(%78: int, %79: int):
+  %80 = iconst int, 24
+  %81 = add int, %21, %80
+  %82 = iconst int, 27
+  %83 = icmp slt, bool, %81, %6
+  br ^23
+^23:
+  %84 = add int, %78, %81
+  %85 = add int, %21, %82
+  br ^24(%84, %85)
+^24(%86: int, %87: int):
+  %88 = iconst int, 27
+  %89 = add int, %21, %88
+  %90 = iconst int, 30
+  %91 = icmp slt, bool, %89, %6
+  br ^25
+^25:
+  %92 = add int, %86, %89
+  %93 = add int, %21, %90
+  br ^26(%92, %93)
+^26(%94: int, %95: int):
+  %96 = iconst int, 30
+  %97 = add int, %21, %96
+  %98 = iconst int, 33
+  %99 = icmp slt, bool, %97, %6
+  br ^27
+^27:
+  %100 = add int, %94, %97
+  %101 = add int, %21, %98
+  br ^28(%100, %101)
+^28(%102: int, %103: int):
+  %104 = iconst int, 33
+  %105 = add int, %21, %104
+  %106 = iconst int, 36
+  %107 = icmp slt, bool, %105, %6
+  br ^29
+^29:
+  %108 = add int, %102, %105
+  %109 = add int, %21, %106
+  br ^30(%108, %109)
+^30(%110: int, %111: int):
+  %112 = iconst int, 36
+  %113 = add int, %21, %112
+  %114 = iconst int, 39
+  %115 = icmp slt, bool, %113, %6
+  br ^31
+^31:
+  %116 = add int, %110, %113
+  %117 = add int, %21, %114
+  br ^32(%116, %117)
+^32(%118: int, %119: int):
+  %120 = iconst int, 39
+  %121 = add int, %21, %120
+  %122 = iconst int, 42
+  %123 = icmp slt, bool, %121, %6
+  br ^7
+^33:
+  %124 = add int, %118, %121
+  %125 = add int, %21, %122
+  br ^32(%124, %125)
+^7:
+  %15 = iconst int, 100
+  %16 = mul int, %118, %15
+  %18 = add int, %16, %121
+  ret %18
+}
+function @_ZL4downj(%1: unsigned int) -> unsigned int static {
+^1(%1: unsigned int):
+  %4 = iconst int, 10
+  %5 = iconst unsigned int, 10
+  %7 = iconst int, 0
+  %8 = iconst unsigned int, 0
+  %11 = iconst int, 3
+  %12 = iconst unsigned int, 3
+  %17 = iconst unsigned int, 1
+  br ^4(%1, %5)
+^4(%21: unsigned int, %22: unsigned int):
+  %9 = icmp ne, bool, %22, %8
+  br ^5
+^5:
+  %13 = mul unsigned int, %21, %12
+  %15 = add unsigned int, %13, %22
+  %18 = sub unsigned int, %22, %17
+  br ^8(%15, %18)
+^8(%23: unsigned int, %24: unsigned int):
+  %25 = iconst unsigned int, 1
+  %26 = sub unsigned int, %22, %25
+  %27 = iconst unsigned int, 2
+  %28 = icmp ne, bool, %26, %8
+  br ^9
+^9:
+  %29 = mul unsigned int, %23, %12
+  %30 = add unsigned int, %29, %26
+  %31 = sub unsigned int, %22, %27
+  br ^10(%30, %31)
+^10(%32: unsigned int, %33: unsigned int):
+  %34 = iconst unsigned int, 2
+  %35 = sub unsigned int, %22, %34
+  %36 = iconst unsigned int, 3
+  %37 = icmp ne, bool, %35, %8
+  br ^11
+^11:
+  %38 = mul unsigned int, %32, %12
+  %39 = add unsigned int, %38, %35
+  %40 = sub unsigned int, %22, %36
+  br ^12(%39, %40)
+^12(%41: unsigned int, %42: unsigned int):
+  %43 = iconst unsigned int, 3
+  %44 = sub unsigned int, %22, %43
+  %45 = iconst unsigned int, 4
+  %46 = icmp ne, bool, %44, %8
+  br ^13
+^13:
+  %47 = mul unsigned int, %41, %12
+  %48 = add unsigned int, %47, %44
+  %49 = sub unsigned int, %22, %45
+  br ^14(%48, %49)
+^14(%50: unsigned int, %51: unsigned int):
+  %52 = iconst unsigned int, 4
+  %53 = sub unsigned int, %22, %52
+  %54 = iconst unsigned int, 5
+  %55 = icmp ne, bool, %53, %8
+  br ^15
+^15:
+  %56 = mul unsigned int, %50, %12
+  %57 = add unsigned int, %56, %53
+  %58 = sub unsigned int, %22, %54
+  br ^16(%57, %58)
+^16(%59: unsigned int, %60: unsigned int):
+  %61 = iconst unsigned int, 5
+  %62 = sub unsigned int, %22, %61
+  %63 = iconst unsigned int, 6
+  %64 = icmp ne, bool, %62, %8
+  br ^17
+^17:
+  %65 = mul unsigned int, %59, %12
+  %66 = add unsigned int, %65, %62
+  %67 = sub unsigned int, %22, %63
+  br ^18(%66, %67)
+^18(%68: unsigned int, %69: unsigned int):
+  %70 = iconst unsigned int, 6
+  %71 = sub unsigned int, %22, %70
+  %72 = iconst unsigned int, 7
+  %73 = icmp ne, bool, %71, %8
+  br ^19
+^19:
+  %74 = mul unsigned int, %68, %12
+  %75 = add unsigned int, %74, %71
+  %76 = sub unsigned int, %22, %72
+  br ^20(%75, %76)
+^20(%77: unsigned int, %78: unsigned int):
+  %79 = iconst unsigned int, 7
+  %80 = sub unsigned int, %22, %79
+  %81 = iconst unsigned int, 8
+  %82 = icmp ne, bool, %80, %8
+  br ^21
+^21:
+  %83 = mul unsigned int, %77, %12
+  %84 = add unsigned int, %83, %80
+  %85 = sub unsigned int, %22, %81
+  br ^22(%84, %85)
+^22(%86: unsigned int, %87: unsigned int):
+  %88 = iconst unsigned int, 8
+  %89 = sub unsigned int, %22, %88
+  %90 = iconst unsigned int, 9
+  %91 = icmp ne, bool, %89, %8
+  br ^23
+^23:
+  %92 = mul unsigned int, %86, %12
+  %93 = add unsigned int, %92, %89
+  %94 = sub unsigned int, %22, %90
+  br ^24(%93, %94)
+^24(%95: unsigned int, %96: unsigned int):
+  %97 = iconst unsigned int, 9
+  %98 = sub unsigned int, %22, %97
+  %99 = iconst unsigned int, 10
+  %100 = icmp ne, bool, %98, %8
+  br ^25
+^25:
+  %101 = mul unsigned int, %95, %12
+  %102 = add unsigned int, %101, %98
+  %103 = sub unsigned int, %22, %99
+  br ^26(%102, %103)
+^26(%104: unsigned int, %105: unsigned int):
+  %106 = iconst unsigned int, 10
+  %107 = sub unsigned int, %22, %106
+  %108 = iconst unsigned int, 11
+  %109 = icmp ne, bool, %107, %8
+  br ^7
+^27:
+  %110 = mul unsigned int, %104, %12
+  %111 = add unsigned int, %110, %107
+  %112 = sub unsigned int, %22, %108
+  br ^26(%111, %112)
+^7:
+  ret %104
+}
+function @_ZL6longerPKi(%1: const int *) -> unsigned long long static {
+^1(%1: const int *):
+  %4 = iconst int, 7
+  %5 = iconst unsigned long long, 7
+  %7 = iconst int, 0
+  %9 = iconst int, 102
+  %12 = iconst int, 31
+  %13 = iconst unsigned long long, 31
+  %20 = iconst long, 4
+  %30 = iconst int, 1
+  br ^4(%5, %7)
+^4(%34: unsigned long long, %35: int):
+  %10 = icmp slt, bool, %35, %9
+  br ^5
+^5:
+  %14 = mul unsigned long long, %34, %13
+  %18 = and int, %35, %4
+  %19 = sext long, %18
+  %21 = mul long, %19, %20
+  %22 = gep const int *, %1, %21
+  %23 = load int, %22
+  %25 = add int, %23, %35
+  %26 = bitcast unsigned int, %25
+  %27 = zext unsigned long long, %26
+  %28 = add unsigned long long, %14, %27
+  %31 = add int, %35, %30
+  br ^8(%28, %31)
+^8(%36: unsigned long long, %37: int):
+  %38 = iconst int, 1
+  %39 = add int, %35, %38
+  %40 = iconst int, 2
+  %41 = icmp slt, bool, %39, %9
+  br ^9
+^9:
+  %42 = mul unsigned long long, %36, %13
+  %43 = and int, %39, %4
+  %44 = sext long, %43
+  %45 = mul long, %44, %20
+  %46 = gep const int *, %1, %45
+  %47 = load int, %46
+  %48 = add int, %47, %39
+  %49 = bitcast unsigned int, %48
+  %50 = zext unsigned long long, %49
+  %51 = add unsigned long long, %42, %50
+  %52 = add int, %35, %40
+  br ^10(%51, %52)
+^10(%53: unsigned long long, %54: int):
+  %55 = iconst int, 2
+  %56 = add int, %35, %55
+  %57 = iconst int, 3
+  %58 = icmp slt, bool, %56, %9
+  condbr %58, ^11, ^7
+^11:
+  %59 = mul unsigned long long, %53, %13
+  %60 = and int, %56, %4
+  %61 = sext long, %60
+  %62 = mul long, %61, %20
+  %63 = gep const int *, %1, %62
+  %64 = load int, %63
+  %65 = add int, %64, %56
+  %66 = bitcast unsigned int, %65
+  %67 = zext unsigned long long, %66
+  %68 = add unsigned long long, %59, %67
+  %69 = add int, %35, %57
+  br ^12(%68, %69)
+^12(%70: unsigned long long, %71: int):
+  %72 = iconst int, 3
+  %73 = add int, %35, %72
+  %74 = iconst int, 4
+  %75 = icmp slt, bool, %73, %9
+  br ^13
+^13:
+  %76 = mul unsigned long long, %70, %13
+  %77 = and int, %73, %4
+  %78 = sext long, %77
+  %79 = mul long, %78, %20
+  %80 = gep const int *, %1, %79
+  %81 = load int, %80
+  %82 = add int, %81, %73
+  %83 = bitcast unsigned int, %82
+  %84 = zext unsigned long long, %83
+  %85 = add unsigned long long, %76, %84
+  %86 = add int, %35, %74
+  br ^4(%85, %86)
+^7:
+  ret %53
+}
+function @_ZL7rotatedi(%1: int) -> int static {
+^1(%1: int):
+  %4 = iconst int, 0
+  %6 = iconst int, 5
+  %8 = iconst int, 1009
+  %22 = iconst int, -2115558717
+  %25 = iconst int, 9
+  %27 = iconst int, 31
+  %29 = iconst int, 1009
+  %13 = iconst int, 2
+  %16 = iconst int, 250
+  br ^4(%1, %4)
+^4(%20: int, %21: int):
+  %7 = mul int, %20, %6
+  %23 = smulh int, %7, %22
+  %24 = add int, %23, %7
+  %26 = ashr int, %24, %25
+  %28 = lshr int, %7, %27
+  %30 = add int, %26, %28
+  %31 = mul int, %30, %29
+  %9 = sub int, %7, %31
+  %11 = add int, %9, %21
+  %14 = add int, %21, %13
+  %17 = icmp slt, bool, %14, %16
+  condbr %17, ^7(%11, %14), ^6
+^7(%32: int, %33: int):
+  %34 = iconst int, 2
+  %35 = add int, %21, %34
+  %36 = iconst int, 4
+  %37 = mul int, %32, %6
+  %38 = smulh int, %37, %22
+  %39 = add int, %38, %37
+  %40 = ashr int, %39, %25
+  %41 = lshr int, %37, %27
+  %42 = add int, %40, %41
+  %43 = mul int, %42, %29
+  %44 = sub int, %37, %43
+  %45 = add int, %44, %35
+  %46 = add int, %21, %36
+  %47 = icmp slt, bool, %46, %16
+  br ^8(%45, %46)
+^8(%48: int, %49: int):
+  %50 = iconst int, 4
+  %51 = add int, %21, %50
+  %52 = iconst int, 6
+  %53 = mul int, %48, %6
+  %54 = smulh int, %53, %22
+  %55 = add int, %54, %53
+  %56 = ashr int, %55, %25
+  %57 = lshr int, %53, %27
+  %58 = add int, %56, %57
+  %59 = mul int, %58, %29
+  %60 = sub int, %53, %59
+  %61 = add int, %60, %51
+  %62 = add int, %21, %52
+  %63 = icmp slt, bool, %62, %16
+  br ^9(%61, %62)
+^9(%64: int, %65: int):
+  %66 = iconst int, 6
+  %67 = add int, %21, %66
+  %68 = iconst int, 8
+  %69 = mul int, %64, %6
+  %70 = smulh int, %69, %22
+  %71 = add int, %70, %69
+  %72 = ashr int, %71, %25
+  %73 = lshr int, %69, %27
+  %74 = add int, %72, %73
+  %75 = mul int, %74, %29
+  %76 = sub int, %69, %75
+  %77 = add int, %76, %67
+  %78 = add int, %21, %68
+  %79 = icmp slt, bool, %78, %16
+  br ^4(%77, %78)
+^6:
+  ret %11
+}
+function @_ZL6nestedi(%1: int) -> int static {
+^1(%1: int):
+  %4 = iconst int, 0
+  %13 = iconst int, 4
+  %19 = iconst int, 1
+  %26 = iconst int, 1
+  br ^4(%4, %4)
+^4(%30: int, %32: int):
+  %9 = icmp slt, bool, %32, %1
+  condbr %9, ^5, ^7
+^5:
+  br ^8(%30, %4)
+^7:
+  ret %30
+^8(%31: int, %33: int):
+  %14 = icmp slt, bool, %33, %13
+  br ^9
+^9:
+  %18 = mul int, %32, %33
+  %20 = add int, %18, %19
+  %21 = add int, %31, %20
+  %24 = add int, %33, %19
+  br ^12(%21, %24)
+^12(%34: int, %35: int):
+  %36 = iconst int, 1
+  %37 = add int, %33, %36
+  %38 = iconst int, 2
+  %39 = icmp slt, bool, %37, %13
+  br ^13
+^13:
+  %40 = mul int, %32, %37
+  %41 = add int, %40, %19
+  %42 = add int, %34, %41
+  %43 = add int, %33, %38
+  br ^14(%42, %43)
+^14(%44: int, %45: int):
+  %46 = iconst int, 2
+  %47 = add int, %33, %46
+  %48 = iconst int, 3
+  %49 = icmp slt, bool, %47, %13
+  br ^15
+^15:
+  %50 = mul int, %32, %47
+  %51 = add int, %50, %19
+  %52 = add int, %44, %51
+  %53 = add int, %33, %48
+  br ^16(%52, %53)
+^16(%54: int, %55: int):
+  %56 = iconst int, 3
+  %57 = add int, %33, %56
+  %58 = iconst int, 4
+  %59 = icmp slt, bool, %57, %13
+  br ^17
+^17:
+  %60 = mul int, %32, %57
+  %61 = add int, %60, %19
+  %62 = add int, %54, %61
+  %63 = add int, %33, %58
+  br ^18(%62, %63)
+^18(%64: int, %65: int):
+  %66 = iconst int, 4
+  %67 = add int, %33, %66
+  %68 = iconst int, 5
+  %69 = icmp slt, bool, %67, %13
+  br ^11
+^19:
+  %70 = mul int, %32, %67
+  %71 = add int, %70, %19
+  %72 = add int, %64, %71
+  %73 = add int, %33, %68
+  br ^18(%72, %73)
+^11:
+  %27 = add int, %32, %26
+  br ^4(%64, %27)
+}
+function @_ZL6calledv() -> int static {
+^1:
+  %2 = iconst int, 0
+  %6 = iconst int, 3
+  %9 = addr const char [4] *, @.L.str.0
+  %10 = bitcast const char *, %9
+  %15 = iconst int, 1
+  br ^4(%2, %2)
+^4(%22: int, %23: int):
+  %7 = icmp slt, bool, %23, %6
+  condbr %7, ^5, ^7
+^5:
+  %12 = call @printf(%10, %23) : int variadic
+  %13 = add int, %22, %12
+  %16 = add int, %23, %15
+  br ^4(%13, %16)
+^7:
+  %17 = addr const char [2] *, @.L.str.1
+  %18 = bitcast const char *, %17
+  %19 = call @printf(%18) : int variadic
+  ret %22
+}
+function @_ZL7unknowni(%1: int) -> int static {
+^1(%1: int):
+  %4 = iconst int, 0
+  %11 = iconst int, 7
+  %16 = iconst int, 1
+  br ^4(%4, %4)
+^4(%20: int, %21: int):
+  %9 = icmp slt, bool, %21, %1
+  condbr %9, ^5, ^7
+^5:
+  %12 = mul int, %20, %11
+  %14 = add int, %12, %21
+  %17 = add int, %21, %16
+  br ^4(%14, %17)
+^7:
+  ret %20
+}
+function @main() -> int {
+^1:
+  %1 = alloca int [8] *, align 16 ; int [8] a
+  %3 = iconst int, 0
+  %7 = bitcast int *, %1
+  %10 = iconst long, 4
+  %16 = iconst int, 9
+  %19 = iconst int, 1
+  %5 = iconst int, 8
+  %173 = iconst long, 0
+  %174 = iconst long, 1
+  br ^5(%3, %173)
+^5(%161: int, %172: long):
+  %176 = trunc int, %172
+  %11 = mul long, %172, %10
+  %12 = gep int *, %7, %11
+  %15 = mul int, %176, %176
+  %17 = sub int, %15, %16
+  store %12, %17
+  %20 = add int, %176, %19
+  %175 = add long, %172, %174
+  %177 = trunc int, %175
+  %6 = icmp slt, bool, %177, %5
+  br ^47(%177, %175)
+^47(%178: int, %179: long):
+  %180 = iconst long, 1
+  %181 = add long, %172, %180
+  %182 = iconst long, 2
+  %183 = trunc int, %181
+  %184 = mul long, %181, %10
+  %185 = gep int *, %7, %184
+  %186 = mul int, %183, %183
+  %187 = sub int, %186, %16
+  store %185, %187
+  %188 = add int, %183, %19
+  %189 = add long, %172, %182
+  %190 = trunc int, %189
+  %191 = icmp slt, bool, %190, %5
+  br ^48(%190, %189)
+^48(%192: int, %193: long):
+  %194 = iconst long, 2
+  %195 = add long, %172, %194
+  %196 = iconst long, 3
+  %197 = trunc int, %195
+  %198 = mul long, %195, %10
+  %199 = gep int *, %7, %198
+  %200 = mul int, %197, %197
+  %201 = sub int, %200, %16
+  store %199, %201
+  %202 = add int, %197, %19
+  %203 = add long, %172, %196
+  %204 = trunc int, %203
+  %205 = icmp slt, bool, %204, %5
+  br ^49(%204, %203)
+^49(%206: int, %207: long):
+  %208 = iconst long, 3
+  %209 = add long, %172, %208
+  %210 = iconst long, 4
+  %211 = trunc int, %209
+  %212 = mul long, %209, %10
+  %213 = gep int *, %7, %212
+  %214 = mul int, %211, %211
+  %215 = sub int, %214, %16
+  store %213, %215
+  %216 = add int, %211, %19
+  %217 = add long, %172, %210
+  %218 = trunc int, %217
+  %219 = icmp slt, bool, %218, %5
+  br ^50(%218, %217)
+^50(%220: int, %221: long):
+  %222 = iconst long, 4
+  %223 = add long, %172, %222
+  %224 = iconst long, 5
+  %225 = trunc int, %223
+  %226 = mul long, %223, %10
+  %227 = gep int *, %7, %226
+  %228 = mul int, %225, %225
+  %229 = sub int, %228, %16
+  store %227, %229
+  %230 = add int, %225, %19
+  %231 = add long, %172, %224
+  %232 = trunc int, %231
+  %233 = icmp slt, bool, %232, %5
+  br ^51(%232, %231)
+^51(%234: int, %235: long):
+  %236 = iconst long, 5
+  %237 = add long, %172, %236
+  %238 = iconst long, 6
+  %239 = trunc int, %237
+  %240 = mul long, %237, %10
+  %241 = gep int *, %7, %240
+  %242 = mul int, %239, %239
+  %243 = sub int, %242, %16
+  store %241, %243
+  %244 = add int, %239, %19
+  %245 = add long, %172, %238
+  %246 = trunc int, %245
+  %247 = icmp slt, bool, %246, %5
+  br ^52(%246, %245)
+^52(%248: int, %249: long):
+  %250 = iconst long, 6
+  %251 = add long, %172, %250
+  %252 = iconst long, 7
+  %253 = trunc int, %251
+  %254 = mul long, %251, %10
+  %255 = gep int *, %7, %254
+  %256 = mul int, %253, %253
+  %257 = sub int, %256, %16
+  store %255, %257
+  %258 = add int, %253, %19
+  %259 = add long, %172, %252
+  %260 = trunc int, %259
+  %261 = icmp slt, bool, %260, %5
+  br ^53(%260, %259)
+^53(%262: int, %263: long):
+  %264 = iconst long, 7
+  %265 = add long, %172, %264
+  %266 = iconst long, 8
+  %267 = trunc int, %265
+  %268 = mul long, %265, %10
+  %269 = gep int *, %7, %268
+  %270 = mul int, %267, %267
+  %271 = sub int, %270, %16
+  store %269, %271
+  %272 = add int, %267, %19
+  %273 = add long, %172, %266
+  %274 = trunc int, %273
+  %275 = icmp slt, bool, %274, %5
+  br ^7
+^7:
+  %21 = addr const char [10] *, @.L.str.2
+  %22 = bitcast const char *, %21
+  %23 = call @_ZL6filledv() : int
+  %61 = iconst int, 37
+  %67 = iconst int, 3
+  br ^11(%3, %3)
+^11(%158: int, %159: int):
+  %62 = icmp slt, bool, %159, %61
+  br ^12
+^12:
+  %65 = add int, %158, %159
+  %68 = add int, %159, %67
+  br ^77(%65, %68)
+^77(%414: int, %415: int):
+  %416 = iconst int, 3
+  %417 = add int, %159, %416
+  %418 = iconst int, 6
+  %419 = icmp slt, bool, %417, %61
+  br ^78
+^78:
+  %420 = add int, %414, %417
+  %421 = add int, %159, %418
+  br ^79(%420, %421)
+^79(%422: int, %423: int):
+  %424 = iconst int, 6
+  %425 = add int, %159, %424
+  %426 = iconst int, 9
+  %427 = icmp slt, bool, %425, %61
+  br ^80
+^80:
+  %428 = add int, %422, %425
+  %429 = add int, %159, %426
+  br ^81(%428, %429)
+^81(%430: int, %431: int):
+  %432 = iconst int, 9
+  %433 = add int, %159, %432
+  %434 = iconst int, 12
+  %435 = icmp slt, bool, %433, %61
+  br ^82
+^82:
+  %436 = add int, %430, %433
+  %437 = add int, %159, %434
+  br ^83(%436, %437)
+^83(%438: int, %439: int):
+  %440 = iconst int, 12
+  %441 = add int, %159, %440
+  %442 = iconst int, 15
+  %443 = icmp slt, bool, %441, %61
+  br ^84
+^84:
+  %444 = add int, %438, %441
+  %445 = add int, %159, %442
+  br ^85(%444, %445)
+^85(%446: int, %447: int):
+  %448 = iconst int, 15
+  %449 = add int, %159, %448
+  %450 = iconst int, 18
+  %451 = icmp slt, bool, %449, %61
+  br ^86
+^86:
+  %452 = add int, %446, %449
+  %453 = add int, %159, %450
+  br ^87(%452, %453)
+^87(%454: int, %455: int):
+  %456 = iconst int, 18
+  %457 = add int, %159, %456
+  %458 = iconst int, 21
+  %459 = icmp slt, bool, %457, %61
+  br ^88
+^88:
+  %460 = add int, %454, %457
+  %461 = add int, %159, %458
+  br ^89(%460, %461)
+^89(%462: int, %463: int):
+  %464 = iconst int, 21
+  %465 = add int, %159, %464
+  %466 = iconst int, 24
+  %467 = icmp slt, bool, %465, %61
+  br ^90
+^90:
+  %468 = add int, %462, %465
+  %469 = add int, %159, %466
+  br ^91(%468, %469)
+^91(%470: int, %471: int):
+  %472 = iconst int, 24
+  %473 = add int, %159, %472
+  %474 = iconst int, 27
+  %475 = icmp slt, bool, %473, %61
+  br ^92
+^92:
+  %476 = add int, %470, %473
+  %477 = add int, %159, %474
+  br ^93(%476, %477)
+^93(%478: int, %479: int):
+  %480 = iconst int, 27
+  %481 = add int, %159, %480
+  %482 = iconst int, 30
+  %483 = icmp slt, bool, %481, %61
+  br ^94
+^94:
+  %484 = add int, %478, %481
+  %485 = add int, %159, %482
+  br ^95(%484, %485)
+^95(%486: int, %487: int):
+  %488 = iconst int, 30
+  %489 = add int, %159, %488
+  %490 = iconst int, 33
+  %491 = icmp slt, bool, %489, %61
+  br ^96
+^96:
+  %492 = add int, %486, %489
+  %493 = add int, %159, %490
+  br ^97(%492, %493)
+^97(%494: int, %495: int):
+  %496 = iconst int, 33
+  %497 = add int, %159, %496
+  %498 = iconst int, 36
+  %499 = icmp slt, bool, %497, %61
+  br ^98
+^98:
+  %500 = add int, %494, %497
+  %501 = add int, %159, %498
+  br ^99(%500, %501)
+^99(%502: int, %503: int):
+  %504 = iconst int, 36
+  %505 = add int, %159, %504
+  %506 = iconst int, 39
+  %507 = icmp slt, bool, %505, %61
+  br ^100
+^100:
+  %508 = add int, %502, %505
+  %509 = add int, %159, %506
+  br ^101(%508, %509)
+^101(%510: int, %511: int):
+  %512 = iconst int, 39
+  %513 = add int, %159, %512
+  %514 = iconst int, 42
+  %515 = icmp slt, bool, %513, %61
+  br ^14
+^102:
+  %516 = add int, %510, %513
+  %517 = add int, %159, %514
+  br ^101(%516, %517)
+^14:
+  %70 = iconst int, 100
+  %71 = mul int, %510, %70
+  %73 = add int, %71, %513
+  %26 = iconst unsigned int, 1
+  %77 = iconst int, 10
+  %78 = iconst unsigned int, 10
+  %81 = iconst unsigned int, 0
+  %84 = iconst int, 3
+  %85 = iconst unsigned int, 3
+  br ^19(%26, %78)
+^19(%156: unsigned int, %157: unsigned int):
+  %82 = icmp ne, bool, %157, %81
+  br ^20
+^20:
+  %86 = mul unsigned int, %156, %85
+  %88 = add unsigned int, %86, %157
+  %91 = sub unsigned int, %157, %26
+  br ^57(%88, %91)
+^57(%324: unsigned int, %325: unsigned int):
+  %326 = iconst unsigned int, 1
+  %327 = sub unsigned int, %157, %326
+  %328 = iconst unsigned int, 2
+  %329 = icmp ne, bool, %327, %81
+  br ^58
+^58:
+  %330 = mul unsigned int, %324, %85
+  %331 = add unsigned int, %330, %327
+  %332 = sub unsigned int, %157, %328
+  br ^59(%331, %332)
+^59(%333: unsigned int, %334: unsigned int):
+  %335 = iconst unsigned int, 2
+  %336 = sub unsigned int, %157, %335
+  %337 = iconst unsigned int, 3
+  %338 = icmp ne, bool, %336, %81
+  br ^60
+^60:
+  %339 = mul unsigned int, %333, %85
+  %340 = add unsigned int, %339, %336
+  %341 = sub unsigned int, %157, %337
+  br ^61(%340, %341)
+^61(%342: unsigned int, %343: unsigned int):
+  %344 = iconst unsigned int, 3
+  %345 = sub unsigned int, %157, %344
+  %346 = iconst unsigned int, 4
+  %347 = icmp ne, bool, %345, %81
+  br ^62
+^62:
+  %348 = mul unsigned int, %342, %85
+  %349 = add unsigned int, %348, %345
+  %350 = sub unsigned int, %157, %346
+  br ^63(%349, %350)
+^63(%351: unsigned int, %352: unsigned int):
+  %353 = iconst unsigned int, 4
+  %354 = sub unsigned int, %157, %353
+  %355 = iconst unsigned int, 5
+  %356 = icmp ne, bool, %354, %81
+  br ^64
+^64:
+  %357 = mul unsigned int, %351, %85
+  %358 = add unsigned int, %357, %354
+  %359 = sub unsigned int, %157, %355
+  br ^65(%358, %359)
+^65(%360: unsigned int, %361: unsigned int):
+  %362 = iconst unsigned int, 5
+  %363 = sub unsigned int, %157, %362
+  %364 = iconst unsigned int, 6
+  %365 = icmp ne, bool, %363, %81
+  br ^66
+^66:
+  %366 = mul unsigned int, %360, %85
+  %367 = add unsigned int, %366, %363
+  %368 = sub unsigned int, %157, %364
+  br ^67(%367, %368)
+^67(%369: unsigned int, %370: unsigned int):
+  %371 = iconst unsigned int, 6
+  %372 = sub unsigned int, %157, %371
+  %373 = iconst unsigned int, 7
+  %374 = icmp ne, bool, %372, %81
+  br ^68
+^68:
+  %375 = mul unsigned int, %369, %85
+  %376 = add unsigned int, %375, %372
+  %377 = sub unsigned int, %157, %373
+  br ^69(%376, %377)
+^69(%378: unsigned int, %379: unsigned int):
+  %380 = iconst unsigned int, 7
+  %381 = sub unsigned int, %157, %380
+  %382 = iconst unsigned int, 8
+  %383 = icmp ne, bool, %381, %81
+  br ^70
+^70:
+  %384 = mul unsigned int, %378, %85
+  %385 = add unsigned int, %384, %381
+  %386 = sub unsigned int, %157, %382
+  br ^71(%385, %386)
+^71(%387: unsigned int, %388: unsigned int):
+  %389 = iconst unsigned int, 8
+  %390 = sub unsigned int, %157, %389
+  %391 = iconst unsigned int, 9
+  %392 = icmp ne, bool, %390, %81
+  br ^72
+^72:
+  %393 = mul unsigned int, %387, %85
+  %394 = add unsigned int, %393, %390
+  %395 = sub unsigned int, %157, %391
+  br ^73(%394, %395)
+^73(%396: unsigned int, %397: unsigned int):
+  %398 = iconst unsigned int, 9
+  %399 = sub unsigned int, %157, %398
+  %400 = iconst unsigned int, 10
+  %401 = icmp ne, bool, %399, %81
+  br ^74
+^74:
+  %402 = mul unsigned int, %396, %85
+  %403 = add unsigned int, %402, %399
+  %404 = sub unsigned int, %157, %400
+  br ^75(%403, %404)
+^75(%405: unsigned int, %406: unsigned int):
+  %407 = iconst unsigned int, 10
+  %408 = sub unsigned int, %157, %407
+  %409 = iconst unsigned int, 11
+  %410 = icmp ne, bool, %408, %81
+  br ^22
+^76:
+  %411 = mul unsigned int, %405, %85
+  %412 = add unsigned int, %411, %408
+  %413 = sub unsigned int, %157, %409
+  br ^75(%412, %413)
+^22:
+  %28 = call @printf(%22, %23, %73, %405) : int variadic
+  %29 = addr const char [12] *, @.L.str.3
+  %30 = bitcast const char *, %29
+  %32 = bitcast const int *, %7
+  %33 = call @_ZL6longerPKi(%32) : unsigned long long
+  %34 = iconst int, 3
+  %98 = iconst int, 5
+  %100 = iconst int, 1009
+  %162 = iconst int, -2115558717
+  %165 = iconst int, 9
+  %167 = iconst int, 31
+  %169 = iconst int, 1009
+  %105 = iconst int, 2
+  %108 = iconst int, 250
+  br ^27(%34, %3)
+^27(%154: int, %155: int):
+  %99 = mul int, %154, %98
+  %163 = smulh int, %99, %162
+  %164 = add int, %163, %99
+  %166 = ashr int, %164, %165
+  %168 = lshr int, %99, %167
+  %170 = add int, %166, %168
+  %171 = mul int, %170, %169
+  %101 = sub int, %99, %171
+  %103 = add int, %101, %155
+  %106 = add int, %155, %105
+  %109 = icmp slt, bool, %106, %108
+  condbr %109, ^54(%103, %106), ^29
+^54(%276: int, %277: int):
+  %278 = iconst int, 2
+  %279 = add int, %155, %278
+  %280 = iconst int, 4
+  %281 = mul int, %276, %98
+  %282 = smulh int, %281, %162
+  %283 = add int, %282, %281
+  %284 = ashr int, %283, %165
+  %285 = lshr int, %281, %167
+  %286 = add int, %284, %285
+  %287 = mul int, %286, %169
+  %288 = sub int, %281, %287
+  %289 = add int, %288, %279
+  %290 = add int, %155, %280
+  %291 = icmp slt, bool, %290, %108
+  br ^55(%289, %290)
+^55(%292: int, %293: int):
+  %294 = iconst int, 4
+  %295 = add int, %155, %294
+  %296 = iconst int, 6
+  %297 = mul int, %292, %98
+  %298 = smulh int, %297, %162
+  %299 = add int, %298, %297
+  %300 = ashr int, %299, %165
+  %301 = lshr int, %297, %167
+  %302 = add int, %300, %301
+  %303 = mul int, %302, %169
+  %304 = sub int, %297, %303
+  %305 = add int, %304, %295
+  %306 = add int, %155, %296
+  %307 = icmp slt, bool, %306, %108
+  br ^56(%305, %306)
+^56(%308: int, %309: int):
+  %310 = iconst int, 6
+  %311 = add int, %155, %310
+  %312 = iconst int, 8
+  %313 = mul int, %308, %98
+  %314 = smulh int, %313, %162
+  %315 = add int, %314, %313
+  %316 = ashr int, %315, %165
+  %317 = lshr int, %313, %167
+  %318 = add int, %316, %317
+  %319 = mul int, %318, %169
+  %320 = sub int, %313, %319
+  %321 = add int, %320, %311
+  %322 = add int, %155, %312
+  %323 = icmp slt, bool, %322, %108
+  br ^27(%321, %322)
+^29:
+  %36 = iconst int, 6
+  %37 = call @_ZL6nestedi(%36) : int
+  %38 = call @printf(%30, %33, %103, %37) : int variadic
+  %39 = addr const char [7] *, @.L.str.4
+  %40 = bitcast const char *, %39
+  %120 = addr const char [4] *, @.L.str.0
+  %121 = bitcast const char *, %120
+  br ^34(%3, %3)
+^34(%152: int, %153: int):
+  %118 = icmp slt, bool, %153, %34
+  condbr %118, ^35, ^37
+^35:
+  %123 = call @printf(%121, %153) : int variadic
+  %124 = add int, %152, %123
+  %127 = add int, %153, %19
+  br ^34(%124, %127)
+^37:
+  %128 = addr const char [2] *, @.L.str.1
+  %129 = bitcast const char *, %128
+  %130 = call @printf(%129) : int variadic
+  %44 = iconst long, 3
+  %46 = iconst long, 12
+  %47 = gep int *, %7, %46
+  %48 = load int, %47
+  %50 = add int, %48, %98
+  %142 = iconst int, 7
+  br ^42(%3, %3)
+^42(%150: int, %151: int):
+  %140 = icmp slt, bool, %151, %50
+  condbr %140, ^43, ^45
+^43:
+  %143 = mul int, %150, %142
+  %145 = add int, %143, %151
+  %148 = add int, %151, %19
+  br ^42(%145, %148)
+^45:
+  %52 = call @printf(%40, %152, %150) : int variadic
+  ret %3
+}
