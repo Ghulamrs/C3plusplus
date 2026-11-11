@@ -1,0 +1,581 @@
+function @_ZNK5Shape4areaEi(%1: const struct Shape *, %2: int) -> int {
+^1(%1: const struct Shape *, %2: int):
+  %5 = iconst int, 3
+  %6 = mul int, %2, %5
+  %7 = iconst int, 1
+  %8 = add int, %6, %7
+  ret %8
+}
+function @_ZN5ShapeD1Ev(%1: struct Shape *) -> void {
+^1(%1: struct Shape *):
+  %2 = gep void * *, %1, 0
+  %3 = addr void *, @_ZTV5Shape +16
+  store %2, %3
+  ret
+}
+function @_ZN5GuardC1Ev(%1: struct Guard *) -> void {
+^1(%1: struct Guard *):
+  %2 = gep int *, %1, 0
+  %3 = iconst int, 0
+  store %2, %3
+  ret
+}
+function @_ZN5GuardD1Ev(%1: struct Guard *) -> void {
+^1(%1: struct Guard *):
+  %2 = addr const char [10] *, @.L.str.0
+  %3 = bitcast const char *, %2
+  %4 = gep int *, %1, 0
+  %5 = load int, %4
+  %6 = call @printf(%3, %5) : int variadic
+  ret
+}
+function @_Z6lengthPKc(%1: const char *) -> int {
+^1(%1: const char *):
+  %4 = iconst int, 0
+  %8 = iconst long, 1
+  %12 = iconst char, 0
+  %15 = iconst int, 1
+  %21 = sext long, %4
+  %22 = gep const char *, %1, %21
+  %23 = load char, %22
+  %24 = icmp ne, bool, %23, %12
+  condbr %24, ^4(%4), ^7(%4)
+^4(%19: int):
+  br ^5
+^5:
+  %16 = add int, %19, %15
+  %25 = sext long, %16
+  %26 = gep const char *, %1, %25
+  %27 = load char, %26
+  %28 = icmp ne, bool, %27, %12
+  condbr %28, ^4(%16), ^7(%16)
+^7(%20: int):
+  br ^6
+^6:
+  ret %20
+}
+function @_Z3fnvPKc(%1: const char *) -> unsigned int {
+^1(%1: const char *):
+  %4 = iconst unsigned int, 2166136261
+  %7 = iconst char, 0
+  %15 = iconst unsigned int, 16777619
+  %24 = load char, %1
+  %25 = icmp ne, bool, %24, %7
+  condbr %25, ^4(%1, %4), ^8(%4)
+^4(%21: const char *, %22: unsigned int):
+  br ^5
+^5:
+  %11 = load char, %21
+  %12 = bitcast unsigned char, %11
+  %13 = zext unsigned int, %12
+  %14 = xor unsigned int, %22, %13
+  %16 = mul unsigned int, %14, %15
+  %18 = gep const char *, %21, 1
+  %26 = load char, %18
+  %27 = icmp ne, bool, %26, %7
+  condbr %27, ^4(%18, %16), ^8(%16)
+^8(%23: unsigned int):
+  br ^7
+^7:
+  ret %23
+}
+function @_Z3sumPKii(%1: const int *, %3: int) -> int {
+^1(%1: const int *, %3: int):
+  %6 = iconst int, 0
+  %16 = iconst long, 4
+  %22 = iconst int, 1
+  %29 = iconst long, 0
+  %30 = iconst long, 1
+  %35 = trunc int, %29
+  %36 = icmp slt, bool, %35, %3
+  condbr %36, ^4(%6, %6, %29, %35), ^8(%6)
+^4(%26: int, %27: int, %28: long, %39: int):
+  br ^5
+^5:
+  %17 = mul long, %28, %16
+  %18 = gep const int *, %1, %17
+  %19 = load int, %18
+  %20 = add int, %26, %19
+  %23 = add int, %39, %22
+  %31 = add long, %28, %30
+  %33 = trunc int, %31
+  %37 = trunc int, %31
+  %38 = icmp slt, bool, %37, %3
+  condbr %38, ^4(%20, %33, %31, %37), ^8(%20)
+^8(%34: int):
+  br ^7
+^7:
+  ret %34
+}
+function @_Z4pasti(%1: int) -> int {
+^1(%1: int):
+  %4 = iconst int, 0
+  %16 = iconst int, 1
+  %28 = mul int, %4, %4
+  %29 = icmp slt, bool, %28, %1
+  condbr %29, ^4(%4, %4), ^7(%4, %4)
+^4(%24: int, %25: int):
+  br ^5
+^5:
+  %14 = add int, %25, %24
+  %17 = add int, %24, %16
+  %30 = mul int, %17, %17
+  %31 = icmp slt, bool, %30, %1
+  condbr %31, ^4(%17, %14), ^7(%17, %14)
+^7(%26: int, %27: int):
+  br ^6
+^6:
+  %19 = iconst int, 100
+  %20 = mul int, %27, %19
+  %22 = add int, %20, %26
+  ret %22
+}
+function @_Z4findPKiii(%1: const int *, %3: int, %5: int) -> int {
+^1(%1: const int *, %3: int, %5: int):
+  %8 = iconst int, 0
+  %12 = iconst bool, 0
+  %16 = iconst long, 4
+  %24 = iconst int, 1
+  %30 = iconst long, 0
+  %31 = iconst long, 1
+  br ^4(%8, %30)
+^4(%28: int, %29: long):
+  %33 = trunc int, %29
+  %11 = icmp slt, bool, %33, %3
+  condbr %11, ^7, ^6
+^5:
+  %25 = add int, %33, %24
+  %32 = add long, %29, %31
+  %34 = trunc int, %32
+  br ^4(%34, %32)
+^6:
+  ret %33
+^7:
+  %17 = mul long, %29, %16
+  %18 = gep const int *, %1, %17
+  %19 = load int, %18
+  %21 = icmp ne, bool, %19, %5
+  condbr %21, ^5, ^6
+}
+function @_Z5callsRK5Shapei(%1: const struct Shape *, %3: int) -> int {
+^1(%1: const struct Shape *, %3: int):
+  %6 = iconst int, 0
+  %15 = bitcast int (*)(const struct Shape *, int) * *, %1
+  %18 = iconst long, 0
+  %19 = iconst long, 8
+  %27 = iconst int, 1
+  %34 = icmp slt, bool, %6, %3
+  condbr %34, ^4(%6, %6), ^8(%6)
+^4(%31: int, %32: int):
+  br ^5
+^5:
+  %16 = load int (*)(const struct Shape *, int) *, %15
+  %21 = gep int (*)(const struct Shape *, int) *, %16, %18
+  %22 = load int (*)(const struct Shape *, int), %21
+  %24 = call *(%1, %32) : int this
+  %25 = add int, %31, %24
+  %28 = add int, %32, %27
+  %35 = icmp slt, bool, %28, %3
+  condbr %35, ^4(%25, %28), ^8(%25)
+^8(%33: int):
+  br ^7
+^7:
+  ret %33
+}
+function @_Z7guardedRK5Shapei(%1: const struct Shape *, %3: int) -> int {
+^1(%1: const struct Shape *, %3: int):
+  %5 = alloca struct Guard *, align 4 ; struct Guard g
+  %40 = gep int *, %5, 0
+  %41 = iconst int, 0
+  store %40, %41
+  %16 = bitcast int (*)(const struct Shape *, int) * *, %1
+  %19 = iconst long, 0
+  %20 = iconst long, 8
+  %25 = iconst int, 1
+  %48 = icmp slt, bool, %41, %3
+  condbr %48, ^4(%41), ^20
+^4(%47: int):
+  br ^5
+^5:
+  %13 = load int, %40
+  %17 = load int (*)(const struct Shape *, int) *, %16
+  %22 = gep int (*)(const struct Shape *, int) *, %17, %19
+  %23 = load int (*)(const struct Shape *, int), %22
+  %26 = and int, %47, %25
+  %29 = invoke *(%1, %26) : int this, ^9, ^8
+^20:
+  br ^7
+^7:
+  %35 = load int, %40
+  %42 = addr const char [10] *, @.L.str.0
+  %43 = bitcast const char *, %42
+  %46 = call @printf(%43, %35) : int variadic
+  ret %35
+^8(%27: void *, %28: int):
+  cleanuppad own 0
+  invoke @_ZN5GuardD1Ev(%5) : none, ^11, ^10
+^9:
+  %30 = add int, %13, %29
+  store %40, %30
+  %33 = add int, %47, %25
+  %49 = icmp slt, bool, %33, %3
+  condbr %49, ^4(%33), ^20
+^10(%36: void *, %37: int):
+  catchpad [...] own 1
+  %38 = call @__cxa_begin_catch(%36) : void *
+  call @_ZSt9terminatev() : none
+  unreachable
+^11:
+  call @_Unwind_Resume(%27) : none
+  unreachable
+}
+function @_Z6nestedi(%1: int) -> int {
+^1(%1: int):
+  %4 = iconst int, 0
+  %18 = iconst int, 1
+  %32 = iconst int, 1
+  %44 = icmp slt, bool, %4, %1
+  condbr %44, ^4(%4, %4), ^16(%4)
+^4(%36: int, %39: int):
+  br ^15(%36, %39)
+^16(%43: int):
+  br ^7
+^7:
+  ret %43
+^15(%41: int, %42: int):
+  %47 = icmp slt, bool, %42, %1
+  condbr %47, ^8(%41, %42), ^17(%41)
+^8(%37: int, %40: int):
+  br ^9
+^9:
+  %17 = xor int, %39, %40
+  %19 = and int, %17, %18
+  %21 = icmp ne, bool, %19, %4
+  condbr %21, ^12, ^14
+^17(%46: int):
+  br ^11
+^11:
+  %33 = add int, %39, %32
+  %45 = icmp slt, bool, %33, %1
+  condbr %45, ^4(%46, %33), ^16(%46)
+^12:
+  %24 = add int, %37, %40
+  br ^13(%24)
+^13(%38: int):
+  %30 = add int, %40, %18
+  %48 = icmp slt, bool, %30, %1
+  condbr %48, ^8(%38, %30), ^17(%38)
+^14:
+  %27 = sub int, %37, %39
+  br ^13(%27)
+}
+function @_Z5skipsi(%1: int) -> int {
+^1(%1: int):
+  %4 = iconst int, 7
+  %8 = iconst int, 0
+  %14 = iconst int, 1
+  %21 = icmp slt, bool, %1, %8
+  condbr %21, ^4(%4, %1), ^8(%4)
+^4(%18: int, %19: int):
+  br ^5
+^5:
+  %12 = add int, %18, %19
+  %15 = add int, %19, %14
+  %22 = icmp slt, bool, %15, %8
+  condbr %22, ^4(%12, %15), ^8(%12)
+^8(%20: int):
+  br ^7
+^7:
+  ret %20
+}
+function @main() -> int {
+^1:
+  %1 = alloca int [9] *, align 16 ; int [9] a
+  %21 = alloca struct Shape *, align 8 ; struct Shape v
+  %2 = bitcast int *, %1
+  %3 = iconst int, 4
+  %4 = gep int *, %2, 0
+  store %4, %3
+  %5 = iconst int, 8
+  %6 = gep int *, %2, 4
+  store %6, %5
+  %7 = iconst int, 15
+  %8 = gep int *, %2, 8
+  store %8, %7
+  %9 = iconst int, 16
+  %10 = gep int *, %2, 12
+  store %10, %9
+  %11 = iconst int, 23
+  %12 = gep int *, %2, 16
+  store %12, %11
+  %13 = iconst int, 42
+  %14 = gep int *, %2, 20
+  store %14, %13
+  %15 = iconst int, 7
+  %16 = gep int *, %2, 24
+  store %16, %15
+  %17 = iconst int, 1
+  %18 = gep int *, %2, 28
+  store %18, %17
+  %19 = iconst int, 9
+  %20 = gep int *, %2, 32
+  store %20, %19
+  %112 = gep void * *, %21, 0
+  %113 = addr void *, @_ZTV5Shape +16
+  store %112, %113
+  %23 = addr const char [13] *, @.L.str.1
+  %24 = bitcast const char *, %23
+  %25 = addr const char [1] *, @.L.str.2
+  %26 = bitcast const char *, %25
+  %117 = iconst int, 0
+  %121 = iconst long, 1
+  %125 = iconst char, 0
+  %345 = sext long, %117
+  %346 = gep const char *, %26, %345
+  %347 = load char, %346
+  %348 = icmp ne, bool, %347, %125
+  condbr %348, ^38(%117), ^115(%117)
+^38(%279: int):
+  br ^39
+^39:
+  %129 = add int, %279, %17
+  %349 = sext long, %129
+  %350 = gep const char *, %26, %349
+  %351 = load char, %350
+  %352 = icmp ne, bool, %351, %125
+  condbr %352, ^38(%129), ^115(%129)
+^115(%344: int):
+  br ^40
+^40:
+  %30 = addr const char [9] *, @.L.str.3
+  %31 = bitcast const char *, %30
+  %336 = sext long, %117
+  %337 = gep const char *, %31, %336
+  %338 = load char, %337
+  %339 = icmp ne, bool, %338, %125
+  condbr %339, ^45(%117), ^114(%117)
+^4(%27: void *, %28: int):
+  cleanuppad own 0
+  invoke @_ZN5ShapeD1Ev(%21) : none, ^30, ^29
+^45(%278: int):
+  br ^46
+^46:
+  %146 = add int, %278, %17
+  %340 = sext long, %146
+  %341 = gep const char *, %31, %340
+  %342 = load char, %341
+  %343 = icmp ne, bool, %342, %125
+  condbr %343, ^45(%146), ^114(%146)
+^114(%335: int):
+  br ^47
+^47:
+  %33 = addr const char [1] *, @.L.str.4
+  %34 = bitcast const char *, %33
+  %151 = iconst unsigned int, 2166136261
+  %162 = iconst unsigned int, 16777619
+  %331 = load char, %34
+  %332 = icmp ne, bool, %331, %125
+  condbr %332, ^52(%34, %151), ^113(%151)
+^52(%276: const char *, %277: unsigned int):
+  br ^53
+^53:
+  %158 = load char, %276
+  %159 = bitcast unsigned char, %158
+  %160 = zext unsigned int, %159
+  %161 = xor unsigned int, %277, %160
+  %163 = mul unsigned int, %161, %162
+  %165 = gep const char *, %276, 1
+  %333 = load char, %165
+  %334 = icmp ne, bool, %333, %125
+  condbr %334, ^52(%165, %163), ^113(%163)
+^113(%330: unsigned int):
+  br ^55
+^55:
+  %36 = addr const char [16] *, @.L.str.5
+  %37 = bitcast const char *, %36
+  %181 = iconst unsigned int, 16777619
+  %326 = load char, %37
+  %327 = icmp ne, bool, %326, %125
+  condbr %327, ^60(%37, %151), ^112(%151)
+^60(%274: const char *, %275: unsigned int):
+  br ^61
+^61:
+  %177 = load char, %274
+  %178 = bitcast unsigned char, %177
+  %179 = zext unsigned int, %178
+  %180 = xor unsigned int, %275, %179
+  %182 = mul unsigned int, %180, %181
+  %184 = gep const char *, %274, 1
+  %328 = load char, %184
+  %329 = icmp ne, bool, %328, %125
+  condbr %329, ^60(%184, %182), ^112(%182)
+^112(%325: unsigned int):
+  br ^63
+^63:
+  %39 = invoke @printf(%24, %344, %335, %330, %325) : int variadic, ^9, ^4
+^9:
+  %40 = addr const char [13] *, @.L.str.6
+  %41 = bitcast const char *, %40
+  %43 = bitcast const int *, %2
+  %45 = invoke @_Z3sumPKii(%43, %117) : int, ^10, ^4
+^10:
+  %49 = invoke @_Z3sumPKii(%43, %19) : int, ^11, ^4
+^11:
+  %51 = invoke @_Z4pasti(%117) : int, ^12, ^4
+^12:
+  %52 = iconst int, 50
+  %53 = invoke @_Z4pasti(%52) : int, ^13, ^4
+^13:
+  %54 = invoke @printf(%41, %45, %49, %51, %53) : int variadic, ^14, ^4
+^14:
+  %55 = addr const char [10] *, @.L.str.7
+  %56 = bitcast const char *, %55
+  %196 = iconst bool, 0
+  %204 = iconst long, 4
+  %288 = iconst long, 0
+  %289 = iconst long, 1
+  br ^68(%117, %288)
+^68(%273: int, %287: long):
+  %291 = trunc int, %287
+  %195 = icmp slt, bool, %291, %19
+  condbr %195, ^71, ^70
+^69:
+  %199 = add int, %291, %17
+  %290 = add long, %287, %289
+  %292 = trunc int, %290
+  br ^68(%292, %290)
+^70:
+  %65 = iconst int, 5
+  %228 = iconst long, 4
+  %282 = iconst long, 0
+  %283 = iconst long, 1
+  br ^77(%117, %282)
+^71:
+  %205 = mul long, %287, %204
+  %206 = gep const int *, %43, %205
+  %207 = load int, %206
+  %209 = icmp ne, bool, %207, %13
+  condbr %209, ^69, ^70
+^77(%272: int, %281: long):
+  %285 = trunc int, %281
+  %219 = icmp slt, bool, %285, %19
+  condbr %219, ^80, ^79
+^78:
+  %223 = add int, %285, %17
+  %284 = add long, %281, %283
+  %286 = trunc int, %284
+  br ^77(%286, %284)
+^79:
+  %71 = invoke @_Z4findPKiii(%43, %117, %3) : int, ^17, ^4
+^80:
+  %229 = mul long, %281, %228
+  %230 = gep const int *, %43, %229
+  %231 = load int, %230
+  %233 = icmp ne, bool, %231, %65
+  condbr %233, ^78, ^79
+^17:
+  %72 = invoke @printf(%56, %291, %285, %71) : int variadic, ^18, ^4
+^18:
+  %73 = addr const char [7] *, @.L.str.8
+  %74 = bitcast const char *, %73
+  %75 = bitcast const struct Shape *, %21
+  %77 = invoke @_Z5callsRK5Shapei(%75, %117) : int, ^19, ^4
+^19:
+  %79 = iconst int, 10
+  %80 = invoke @_Z5callsRK5Shapei(%75, %79) : int, ^20, ^4
+^20:
+  %81 = invoke @printf(%74, %77, %80) : int variadic, ^21, ^4
+^21:
+  %85 = invoke @_Z7guardedRK5Shapei(%75, %117) : int, ^22, ^4
+^22:
+  %86 = bitcast const int, %85
+  %90 = invoke @_Z7guardedRK5Shapei(%75, %65) : int, ^23, ^4
+^23:
+  %91 = bitcast const int, %90
+  %92 = addr const char [16] *, @.L.str.9
+  %93 = bitcast const char *, %92
+  %97 = invoke @_Z6nestedi(%117) : int, ^24, ^4
+^24:
+  %99 = invoke @_Z6nestedi(%15) : int, ^25, ^4
+^25:
+  %100 = iconst int, 3
+  %103 = iconst int, -4
+  br ^94(%15, %103)
+^94(%268: int, %269: int):
+  %258 = icmp slt, bool, %269, %117
+  br ^95
+^95:
+  %261 = add int, %268, %269
+  %264 = add int, %269, %17
+  br ^104(%261, %264)
+^104(%293: int, %294: int):
+  %295 = iconst int, 1
+  %296 = add int, %269, %295
+  %297 = iconst int, 2
+  %298 = icmp slt, bool, %296, %117
+  br ^105
+^105:
+  %299 = add int, %293, %296
+  %300 = add int, %269, %297
+  br ^106(%299, %300)
+^106(%301: int, %302: int):
+  %303 = iconst int, 2
+  %304 = add int, %269, %303
+  %305 = iconst int, 3
+  %306 = icmp slt, bool, %304, %117
+  br ^107
+^107:
+  %307 = add int, %301, %304
+  %308 = add int, %269, %305
+  br ^108(%307, %308)
+^108(%309: int, %310: int):
+  %311 = iconst int, 3
+  %312 = add int, %269, %311
+  %313 = iconst int, 4
+  %314 = icmp slt, bool, %312, %117
+  br ^109
+^109:
+  %315 = add int, %309, %312
+  %316 = add int, %269, %313
+  br ^110(%315, %316)
+^110(%317: int, %318: int):
+  %319 = iconst int, 4
+  %320 = add int, %269, %319
+  %321 = iconst int, 5
+  %322 = icmp slt, bool, %320, %117
+  br ^97
+^111:
+  %323 = add int, %317, %320
+  %324 = add int, %269, %321
+  br ^110(%323, %324)
+^97:
+  %105 = add int, %15, %317
+  %106 = invoke @printf(%93, %85, %90, %97, %99, %105) : int variadic, ^28, ^4
+^28:
+  store %112, %113
+  ret %117
+^29(%108: void *, %109: int):
+  catchpad [...] own 1
+  %110 = call @__cxa_begin_catch(%108) : void *
+  call @_ZSt9terminatev() : none
+  unreachable
+^30:
+  call @_Unwind_Resume(%27) : none
+  unreachable
+}
+function @_ZN5ShapeD0Ev(%1: struct Shape *) -> void inline {
+^1(%1: struct Shape *):
+  %3 = gep void * *, %1, 0
+  %4 = addr void *, @_ZTV5Shape +16
+  store %3, %4
+  %2 = bitcast void *, %1
+  call @_ZdlPv(%2) : none
+  ret
+}
+function @_ZN5ShapeC1Ev(%1: struct Shape *) -> void inline {
+^1(%1: struct Shape *):
+  %2 = gep void * *, %1, 0
+  %3 = addr void *, @_ZTV5Shape +16
+  store %2, %3
+  ret
+}
