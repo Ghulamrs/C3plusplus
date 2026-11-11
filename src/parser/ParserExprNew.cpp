@@ -815,9 +815,9 @@ ExprPtr Parser::markSkippableTemporaries(ExprPtr operand, std::size_t from,
 // type int - the copy constructor where there is one, the bytes where the copy
 // is trivial, which are the two answers a declaration gives.
 ExprPtr Parser::buildInto(const Type *cls, int slot, ExprPtr value, int guard,
-                          std::size_t pos) {
+                          std::size_t pos, syntax::NodeId arm) {
     const Type *ptr = types_.pointerTo(cls);
-    if (ExprPtr made = userConversion(cls, value, pos)) value = std::move(made);
+    if (ExprPtr made = userConversion(cls, value, pos)) { value = std::move(made); arm = syntax::NodeId(); }
 
     ExprPtr built;
     const Signature *cc = classes_.copyConstructorOf(cls);
@@ -825,6 +825,10 @@ ExprPtr Parser::buildInto(const Type *cls, int slot, ExprPtr value, int guard,
     const Signature *use = (!isLvalue(*value) && mv != nullptr) ? mv : cc;
     if (use != nullptr) {
         markUsed(use);
+        // The arm's copy into the result, for the SSA lowering: the record a by-value argument's copy has (M3b.5).
+        std::vector<const Type *> full(1, ptr);
+        full.push_back(use->params[0]);
+        noteArgumentCopy(arm, use->symbol, types_.functionType(types_.get(Kind::Void), full, false), false);
         ExprPtr where(Var::local("$cond", slot));
         where->setType(cls);
         ExprPtr at(new Unary('&', std::move(where)));

@@ -1064,9 +1064,9 @@ ExprPtr Parser::conditionalNode() {
             guard = guardFlag();
             pendingTemps_.push_back(Temporary{ slot, want, guard });
         }
-        ExprPtr armA = buildInto(want, slot, std::move(a), guard, pos);
+        ExprPtr armA = buildInto(want, slot, std::move(a), guard, pos, condParts_.parts[1]);
         armA = markArmTemporaries(std::move(armA), tempsBeforeA, tempsAfterA);
-        ExprPtr armB = buildInto(want, slot, std::move(b), guard, pos);
+        ExprPtr armB = buildInto(want, slot, std::move(b), guard, pos, condParts_.parts[2]);
         armB = markArmTemporaries(std::move(armB), tempsAfterA, tempsAfterB);
         ExprPtr chosen(new Conditional(std::move(cond), std::move(armA),
                                        std::move(armB)));

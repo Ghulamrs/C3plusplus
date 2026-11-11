@@ -1853,22 +1853,43 @@ bool Lowering::classConditionalNode(sema::TypedId id) const {
            classObjectNode(child(id, 1)) && classObjectNode(child(id, 2));
 }
 
+// The result is a prvalue: an lvalue arm is copied into a temporary of the frame by the constructor the parser chose
+// (buildInto), or as its bytes, destroyed with the full expression; any other arm's object is the result's.
+Lowering::Val Lowering::conditionalArm(sema::TypedId arm) {
+    const Val o = classObject(arm);
+    if (!isLvalueNode(arm)) return o;
+    const Type &c = *T(o.type).unqualified();
+    const std::string dtor = c.hasDestructor() ? temporaryDestructor(c) : std::string();
+    const ValueId copy = entryAlloca(tid(c), "$cond");
+    std::string symbol;
+    TypeId sig;
+    bool elided = false;
+    if (!c.nonTrivialCopy()) {
+        copyObject(copy, o.v, c);
+    } else if (!argumentCopy_ || !argumentCopy_(tree_.node(arm).syntax, symbol, sig, elided) || elided || T(sig).params().size() != 2 ||
+               !T(sig).params()[1]->isReference() || T(sig).params()[0]->pointee()->unqualified() != &c) {
+        outside("a conditional's lvalue arm whose copy the parser recorded none for");
+    } else {
+        std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*T(sig).params()[0]), std::vector<ValueId>(1, copy))));
+        ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(T(sig).params()[1]->referent())), std::vector<ValueId>(1, o.v))));
+        directCall(symbol, msFlagged(symbol, sig, ops, 1), ops);
+    }
+    if (!dtor.empty()) guard(copy, c, dtor);
+    return Val(copy, tid(c));
+}
+
 Lowering::Val Lowering::conditionalObject(sema::TypedId id) {
-    // The parser copies an lvalue arm into the result (buildInto); taken as it is, the result's move would empty the arm.
-    for (std::uint32_t k = 1; k <= 2; k++)
-        if (isLvalueNode(child(id, k)) && tree_.node(child(id, k)).type->unqualified()->nonTrivialCopy())
-            outside("a conditional's lvalue arm of a class with a copy constructor");
     const Val c = truth(expr(child(id, 0)));
     const BlockId a = newBlock(), b = newBlock(), merge = newBlock();
     condbr(c.v, a, b);
     place(a);
     skippable_++;
-    const Val x = classObject(child(id, 1));
+    const Val x = conditionalArm(child(id, 1));
     const Type &cls = *T(x.type).unqualified();
     const TypeId pt = tid(*types_.pointerTo(&cls));
     br(merge, std::vector<ValueId>(1, result(add(Op::Bitcast, pt, std::vector<ValueId>(1, x.v)))));
     place(b);
-    const Val y = classObject(child(id, 2));
+    const Val y = conditionalArm(child(id, 2));
     skippable_--;
     if (T(y.type).unqualified() != &cls) outside("a conditional of two objects apart in type");
     br(merge, std::vector<ValueId>(1, result(add(Op::Bitcast, pt, std::vector<ValueId>(1, y.v)))));
