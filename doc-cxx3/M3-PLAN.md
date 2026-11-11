@@ -2333,3 +2333,49 @@ zb-l2 1.12 / killed 40 / 2.23 s -> 0.02 / 0.02 / 0.02 s. Case local-zero-init-la
 `src/` 92755 -> 92798 lines (+43). **Left**: a list that names many elements is still a store per element (a constant
 copied from data, as clang does past its threshold, is the next step); a static local's dynamic list and a `new`'s list
 do not take `zeroRun` (`blockZero_` is the local declarator's alone).
+
+**M3b.5, lane sel, 2026-11-12: a gep folded into its access, and the multiply-high as one 64-bit multiply.** From main
+`5abccecb`, branch `m3b5-sel`, code commit `f042a48e`, all in `SsaSelect.cpp` (+ five declarations in `X86_64Linux.h`).
+**The gep** (`ssaFoldGeps`, `ssaIndex`, `ssaAddress`): under the passes, a gep of a variable byte offset whose every use
+is the address of a scalar's load or store, none in a pad or a funclet, has no slot; each access makes it again into
+its own temporaries - the offset's `shl` by 1-3 or `mul` by 1, 2, 4, 8 (at 64 bits) taken as the scale and an added
+constant as the index's displacement, then `add index, base` - the shape MIR's `fold-index` already folds into the
+access once registers are allocated, so no indexed operand reaches webs or the allocator (`MirWebs.cpp` asserts it).
+isort's inner loop was `mov; shl; mov; add` and a register holding `&sv[j]` across two blocks; it is now
+`movl (%r8,%rdx,4)`, `movl %eax, (%r8,%rcx,4)` with `j + 1` an `add` on the index. **The multiply-high**: a 32-bit
+`SMulH`/`UMulH` by a constant (SsaDivide's) is the operand extended, one two-operand `imul` by the extended constant and
+`sar`/`shr $32`, where it was `mov $M, %ecx; imul %ecx` and the `edx` copied back - hash's fill loop, as the Ast.h path's
+`-O2` writes it. Not done: the `sar $32` merged with SsaDivide's following `AShr` (`sar $35`), and the `movslq` after it.
+**Not done of the brief**: item 2 (a leaf's preserved registers: the hash/virtual lane's `Allocator::ask` already gives
+`hashes` rsi and rdi), item 3 (`lea sym(%rip)` at each use: with the gep folded, isort is no longer short of registers,
+and a `lea` in the loop would be an instruction a turn the Ast.h path pays). **Probe**: `tests/cases/ssa-fold-access`
+(int, short, char, double, long long and struct arrays at i, i + 1, i - 1, through a pointer and globals; signed and
+unsigned 32-bit divisions by constants, a negative divisor, INT_MIN), clang's `.expected` (the Windows box's clang),
+right at `-O0`, `-O2`, `-front=ssa -O1`, `-front=ssa -O2` on Windows; its `-front=ssa -O1 -dump=mir=allocate` is
+`ssa-fold-access.allocate` (Linux), compared by ssa.sh. `ssa-select.allocate` re-made on Linux: 0 lines differ.
+**Kernels** (Windows, `bench.cmd`, `-front=ssa -O2` against `-O2` of the same build, median of 9, the box shared - cl's
+total 465, a quiet box reads about 300):
+
+| kernel | ssa -O2 | -O2 | cl /O2 | brief (main) ssa -O2 / -O2 |
+|---|---|---|---|---|
+| fib | 11 | 12 | 10 | |
+| sieve | 76 | 83 | 65 | |
+| matmul | 17 | 42 | 6 | |
+| isort | 17 | 30 | 12 | 22 / 21 |
+| hash | 371 | 310 | 219 | 308 / 222 |
+| virtual | 179 | 162 | 153 | |
+| .text | 3599 | 3443 | 3831 | |
+
+isort is faster than `-O2` (0.57x; 1.05x at main); hash is 1.20x of `-O2` (1.39x at main) - not yet level; virtual 1.10x
+under this load (level in the hash/virtual lane's run). Checksums agree. **The cases' .text** (`bench.ps1 -Cases`,
+`-front=ssa -O2`, Windows): main 1,209,653 bytes, this 1,207,285 (-2,368; 118 smaller, 52 larger - divide-by-constant
+-934, library-self-compile-pieces +320: a gep read twice is made twice). **Gates on `f042a48e`'s `src/`** (the Windows
+tree built clean before the probe files were added; its `src/` checked equal by diff): Windows `winpass.sh` at
+`-front=ssa -O2` gnu 742 / masm 741 same, 0 differ, 340 refused as recorded; at `-front=ssa -O1` the same counts;
+Windows ssa.sh 755/0 at levels 1 and 2. Linux (clean build of `f042a48e`): ssa.sh 788/0 at levels 1 and 2 (level 2: 2002 loops, 192 whole, 251 by 4 or 2); run.sh 1116/0 at `-front=ssa -O1`, `-front=ssa -O2`, `-front=ssa`, `-O2`, `-O0`; the gates: exclusions 0 uncited 0 stale, comment cap 0 over, memory gate new 1056 (unchanged) raw-pointers 44, ide/generate.py --check, GATES-OK.
+No step reached the 9-minute or 3-minute caps; the Linux script's first build capped the whole `make` at 9 minutes (a
+defect of the script, the cap is per compile) and was resumed. `src/` went from 93416 to 93509 lines (+93).
+**Left**, in pieces of about 45 minutes: (1) hash's last 20%: the multiply-high merged with its shift, the fill loop's
+extensions (`movslq` after each `add`), the byte loop's test not rotated to its foot (`je` out, `jmp` back); (2) virtual
+re-measured on a quiet box against the hash/virtual lane's level; (3) a gep read twice: share its address when both
+reads are in one block (the cases that grew); (4) emit, names, overload, syntax, typed, adapted, coff, c90, win-structure not run by this lane (the coordinator's merged gate).

@@ -1,0 +1,1157 @@
+;; _Z5shiftPii after allocate (changed)
+   0	.prologue frame=176 outgoing=0 realign=0
+  -1	mov %rdi, %rax
+   2	movq %rdi, %rdi
+  -3	mov %rsi, %rax
+   4	movl %esi, %eax
+  -5	lea -8(%rbp), %rax
+  -6	mov %rdi, %rax
+  -7	mov %rdi, %rdi
+  -8	lea -12(%rbp), %rax
+   9	movslq %eax, %rax
+  -10	mov %rax, %rax
+   11	.L._Z5shiftPii.ssa.1:
+  -12	mov $2, %rdi
+  -13	mov %rax, %rax
+   14	sub $2, %eax
+   15	movslq %eax, %rdx
+  -16	mov %rdx, %rdx
+   17	mov $0, %rsi
+  -18	mov %rsi, %rsi
+  -19	mov %rdx, %rdx
+  -20	mov %rdx, %rdx
+  -21	jmp .L._Z5shiftPii.ssa.4
+   22	.L._Z5shiftPii.ssa.4:
+  -23	mov $0, %rdi
+   24	mov %rdx, %rax
+   25	cmp $0, %eax
+   26	setge %al
+   27	movzbq %al, %rax
+  -28	mov %rax, %rax
+  -29	mov -48(%rbp), %rax
+  -30	cmp $0, %rax
+   31	jl .L._Z5shiftPii.ssa.7
+  -32	jmp .L._Z5shiftPii.ssa.5
+   33	.L._Z5shiftPii.ssa.5:
+   34	mov %rdx, %rcx
+   35	mov %rcx, %rax
+  -36	mov $4, %rdi
+  -37	mov -56(%rbp), %rax
+   38	imul $4, %rcx
+  -39	mov %rcx, %rcx
+   40	mov %rax, %r8
+   41	shl $2, %r8
+   42	mov %rdi, %rcx
+   43	add %r8, %rcx
+   44	movslq (%rcx), %r10
+  -45	mov %r10, %r10
+  -46	mov $1, %rdi
+   47	mov %rdx, %rcx
+   48	add $1, %ecx
+   49	movslq %ecx, %r8
+  -50	mov %r8, %r8
+  -51	mov -80(%rbp), %rax
+   52	mov %r8, %rcx
+  -53	mov $4, %rdi
+  -54	mov -88(%rbp), %rax
+   55	imul $4, %r8
+  -56	mov %r8, %r8
+   57	mov %rcx, %r9
+   58	shl $2, %r9
+   59	mov %rdi, %r8
+   60	add %r9, %r8
+   61	movslq (%r8), %r8
+  -62	mov %r8, %r8
+  -63	mov %r8, %r8
+  -64	mov %r10, %r10
+   65	cmp %r8d, %r10d
+   66	setg %r10b
+   67	movzbq %r10b, %r8
+  -68	mov %r8, %r8
+  -69	mov -112(%rbp), %rax
+  -70	cmp $0, %rax
+   71	jg .L._Z5shiftPii.ssa.8
+  -72	mov %rsi, %rsi
+  -73	mov %rsi, %rsi
+   74	jmp .L._Z5shiftPii.ssa.9
+   75	.L._Z5shiftPii.ssa.8:
+   76	mov %rax, %r9
+   77	shl $2, %r9
+   78	mov %rdi, %r8
+   79	add %r9, %r8
+   80	movslq (%r8), %r10
+  -81	mov %r10, %r10
+   82	mov %rcx, %r9
+   83	shl $2, %r9
+   84	mov %rdi, %r8
+   85	add %r9, %r8
+   86	movslq (%r8), %r9
+  -87	mov %r9, %r9
+  -88	mov -128(%rbp), %rax
+  -89	mov %rax, %rax
+   90	shl $2, %rax
+   91	mov %rdi, %r8
+   92	add %rax, %r8
+   93	movl %r9d, (%r8)
+  -94	mov %r10, %r10
+  -95	mov %rcx, %rcx
+   96	shl $2, %rcx
+   97	mov %rdi, %rax
+   98	add %rcx, %rax
+   99	movl %r10d, (%rax)
+  -100	mov $1, %rdi
+  -101	mov %rsi, %rsi
+   102	add $1, %esi
+   103	movslq %esi, %rsi
+  -104	mov %rsi, %rsi
+  -105	mov -136(%rbp), %rax
+  -106	mov %rsi, %rsi
+  -107	jmp .L._Z5shiftPii.ssa.9
+   108	.L._Z5shiftPii.ssa.9:
+  -109	mov $1, %rdi
+  -110	mov %rdx, %rdx
+   111	sub $1, %edx
+   112	movslq %edx, %rdx
+  -113	mov %rdx, %rdx
+  -114	mov %rsi, %rsi
+  -115	mov %rsi, %rsi
+  -116	mov %rdx, %rdx
+  -117	mov %rdx, %rdx
+   118	jmp .L._Z5shiftPii.ssa.4
+   119	.L._Z5shiftPii.ssa.7:
+   120	mov %rsi, %rax
+  -121	jmp .L.return._Z5shiftPii
+  -122	mov $0, %rax
+   123	.L.return._Z5shiftPii:
+   124	mov %rbp, %rsp
+   125	pop %rbp
+   126	ret
+;; _Z4filli after allocate (changed)
+   0	.prologue frame=656 outgoing=0 realign=0
+  -1	mov %rdi, %rax
+   2	movl %edi, %eax
+  -3	lea -4(%rbp), %rax
+   4	movslq %eax, %r8
+  -5	mov %r8, %r8
+   6	.L._Z4filli.ssa.1:
+   7	mov $0, %rsi
+  -8	mov %rsi, %rsi
+  -9	jmp .L._Z4filli.ssa.4
+   10	.L._Z4filli.ssa.4:
+  -11	mov %r8, %r8
+   12	mov %rsi, %rax
+   13	cmp %r8d, %eax
+   14	setl %al
+   15	movzbq %al, %rax
+  -16	mov %rax, %rax
+  -17	mov -32(%rbp), %rax
+  -18	cmp $0, %rax
+   19	jl .L._Z4filli.ssa.5
+   20	mov $0, %rsi
+  -21	mov %rsi, %rsi
+   22	jmp .L._Z4filli.ssa.8
+   23	.L._Z4filli.ssa.5:
+   24	lea g(%rip), %r9
+  -25	mov %r9, %r9
+  -26	mov -40(%rbp), %rax
+  -27	mov %r9, %r9
+   28	mov %rsi, %rax
+   29	mov %rax, %rcx
+  -30	mov $4, %rdi
+  -31	mov -56(%rbp), %rax
+   32	imul $4, %rax
+  -33	mov %rax, %rax
+  -34	mov $37, %rdi
+   35	mov %rsi, %rax
+   36	imul $37, %eax
+   37	movslq %eax, %rax
+  -38	mov %rax, %rax
+   39	mov $64, %rdi
+  -40	mov -72(%rbp), %rax
+  -41	mov %rax, %rax
+   42	cdq
+  -43	mov %rdx, %rdx
+  -44	mov %rax, %rax
+  -45	mov %rdx, %rdx
+   46	idiv %edi
+  -47	mov %rdx, %rdx
+  -48	mov %edx, %eax
+   49	movslq %edx, %rax
+  -50	mov %rax, %rax
+  -51	mov $20, %rdi
+  -52	mov -80(%rbp), %rax
+   53	sub $20, %eax
+   54	movslq %eax, %rdx
+  -55	mov %rdx, %rdx
+  -56	mov -88(%rbp), %rax
+   57	mov %rcx, %rax
+   58	shl $2, %rax
+  -59	mov %r9, %r9
+   60	add %rax, %r9
+   61	movl %edx, (%r9)
+   62	lea h(%rip), %r10
+  -63	mov %r10, %r10
+  -64	mov -96(%rbp), %rax
+  -65	mov %r10, %r10
+  -66	mov $2, %rdi
+   67	mov %rcx, %rax
+   68	imul $2, %rax
+  -69	mov %rax, %rax
+   70	mov $7, %rdi
+  -71	mov %rsi, %rsi
+   72	mov %rsi, %rax
+   73	cdq
+  -74	mov %rdx, %rdx
+  -75	mov %rax, %rax
+  -76	mov %rdx, %rdx
+   77	idiv %edi
+  -78	mov %rax, %rax
+   79	movslq %eax, %r9
+  -80	mov %r9, %r9
+   81	mov $5, %rdi
+  -82	mov %rsi, %rsi
+   83	mov %rsi, %rax
+   84	cdq
+  -85	mov %rdx, %rdx
+  -86	mov %rax, %rax
+  -87	mov %rdx, %rdx
+   88	idiv %edi
+  -89	mov %rdx, %rdx
+  -90	mov %edx, %eax
+   91	movslq %edx, %rax
+  -92	mov %rax, %rax
+  -93	mov %rax, %rax
+  -94	mov %r9, %r9
+   95	sub %eax, %r9d
+   96	movslq %r9d, %rax
+  -97	mov %rax, %rax
+  -98	mov -136(%rbp), %rax
+   99	movswq %ax, %rax
+  -100	mov %rax, %rax
+  -101	mov -144(%rbp), %rax
+  -102	mov %rcx, %rcx
+   103	shl $1, %rcx
+  -104	mov %r10, %r10
+   105	add %rcx, %r10
+   106	movw %ax, (%r10)
+   107	lea c(%rip), %r9
+  -108	mov %r9, %r9
+  -109	mov -152(%rbp), %rax
+  -110	mov %r9, %r9
+  -111	mov $2, %rdi
+   112	mov %rsi, %rax
+   113	imul $2, %eax
+   114	movslq %eax, %r10
+  -115	mov %r10, %r10
+  -116	mov -168(%rbp), %rax
+   117	mov %r10, %rcx
+   118	mov $26, %rdi
+  -119	mov %rsi, %rsi
+   120	mov %rsi, %rax
+   121	cdq
+  -122	mov %rdx, %rdx
+  -123	mov %rax, %rax
+  -124	mov %rdx, %rdx
+   125	idiv %edi
+  -126	mov %rdx, %rdx
+  -127	mov %edx, %eax
+   128	movslq %edx, %rax
+  -129	mov %rax, %rax
+  -130	mov %rax, %rdi
+  -131	mov $97, %rax
+   132	lea 97(%rdx), %eax
+   133	movslq %eax, %rax
+  -134	mov %rax, %rax
+  -135	mov -192(%rbp), %rax
+   136	movzbq %al, %rax
+  -137	mov %rax, %rax
+  -138	mov -200(%rbp), %rax
+  -139	mov -176(%rbp), %rcx
+   140	mov %r9, %rdi
+   141	add %rcx, %rdi
+   142	movb %al, (%rdi)
+  -143	mov $1, %rdi
+  -144	mov %r10, %r10
+   145	add $1, %r10d
+   146	movslq %r10d, %rcx
+  -147	mov %rcx, %rcx
+  -148	mov -208(%rbp), %rax
+  -149	mov %rcx, %rcx
+   150	mov $-3, %rdi
+  -151	mov %rsi, %rsi
+   152	mov %rsi, %rax
+   153	cdq
+  -154	mov %rdx, %rdx
+  -155	mov %rax, %rax
+  -156	mov %rdx, %rdx
+   157	idiv %edi
+  -158	mov %rax, %rax
+   159	movslq %eax, %rax
+  -160	mov %rax, %rax
+  -161	mov $100, %rdi
+  -162	mov -224(%rbp), %rax
+   163	add $100, %eax
+   164	movslq %eax, %rax
+  -165	mov %rax, %rax
+  -166	mov -232(%rbp), %rax
+   167	movzbq %al, %rax
+  -168	mov %rax, %rax
+  -169	mov -240(%rbp), %rax
+  -170	mov -216(%rbp), %rcx
+  -171	mov %r9, %r9
+   172	add %rcx, %r9
+   173	movb %al, (%r9)
+  -174	mov $1, %rdi
+  -175	mov %rsi, %rsi
+   176	add $1, %esi
+   177	movslq %esi, %rsi
+  -178	mov %rsi, %rsi
+  -179	mov -248(%rbp), %rax
+  -180	mov %rsi, %rsi
+   181	jmp .L._Z4filli.ssa.4
+   182	.L._Z4filli.ssa.8:
+   183	mov $2, %rdi
+  -184	mov %r8, %r8
+   185	mov %r8, %rax
+   186	cdq
+  -187	mov %rdx, %rdx
+  -188	mov %rax, %rax
+  -189	mov %rdx, %rdx
+   190	idiv %edi
+  -191	mov %rax, %rax
+   192	movslq %eax, %rcx
+  -193	mov %rcx, %rcx
+  -194	mov %rcx, %rcx
+   195	mov %rsi, %rax
+   196	cmp %ecx, %eax
+   197	setl %al
+   198	movzbq %al, %rax
+  -199	mov %rax, %rax
+  -200	mov -264(%rbp), %rax
+  -201	cmp $0, %rax
+   202	jge .L._Z4filli.ssa.11
+  -203	jmp .L._Z4filli.ssa.9
+   204	.L._Z4filli.ssa.9:
+   205	lea d(%rip), %rdx
+  -206	mov %rdx, %rdx
+  -207	mov -272(%rbp), %rax
+  -208	mov %rdx, %rdx
+   209	mov %rsi, %rax
+   210	mov %rax, %rcx
+  -211	mov $8, %rdi
+  -212	mov -288(%rbp), %rax
+   213	imul $8, %rax
+  -214	mov %rax, %rax
+   215	movabs $4602678819172646912, %rax
+   216	movq %rax, %xmm2
+   217	movapd %xmm2, %xmm1
+  -218	mov %rsi, %rsi
+   219	cvtsi2sdq %rsi, %xmm2
+  -220	movapd %xmm2, %xmm2
+  -221	movapd %xmm2, %xmm2
+  -222	movapd %xmm1, %xmm1
+   223	mulsd %xmm1, %xmm2
+  -224	movapd %xmm2, %xmm2
+  -225	mov $0, %rdi
+   226	mov %rsi, %rax
+   227	cmp $0, %eax
+   228	setne %al
+   229	movzbq %al, %rax
+  -230	mov %rax, %rax
+  -231	mov -328(%rbp), %rax
+  -232	cmp $0, %rax
+   233	jne .L._Z4filli.ssa.12
+   234	mov $0, %rax
+  -235	mov %rax, %rax
+   236	jmp .L._Z4filli.ssa.14
+   237	.L._Z4filli.ssa.12:
+  -238	mov $1, %rdi
+   239	mov %rsi, %rax
+   240	sub $1, %eax
+   241	movslq %eax, %rax
+  -242	mov %rax, %rax
+  -243	mov -336(%rbp), %rax
+  -244	mov %rax, %rax
+  -245	jmp .L._Z4filli.ssa.14
+   246	.L._Z4filli.ssa.14:
+  -247	mov %rax, %rax
+   248	mov %rax, %rdi
+  -249	mov $8, %rdi
+  -250	mov -352(%rbp), %rax
+   251	imul $8, %rax
+  -252	mov %rax, %rax
+  -253	mov %rdi, %rdi
+   254	shl $3, %rdi
+   255	mov %rdx, %rax
+   256	add %rdi, %rax
+   257	movsd (%rax), %xmm0
+  -258	movapd %xmm0, %xmm0
+  -259	movapd %xmm2, %xmm2
+  -260	movapd %xmm0, %xmm0
+   261	addsd %xmm0, %xmm2
+  -262	movapd %xmm2, %xmm2
+   263	movapd %xmm2, %xmm0
+  -264	mov %rcx, %rcx
+   265	shl $3, %rcx
+  -266	mov %rdx, %rdx
+   267	add %rcx, %rdx
+   268	movsd %xmm0, (%rdx)
+  -269	mov $1, %rdi
+  -270	mov %rsi, %rsi
+   271	add $1, %esi
+   272	movslq %esi, %rsi
+  -273	mov %rsi, %rsi
+  -274	mov -384(%rbp), %rax
+  -275	mov %rsi, %rsi
+   276	jmp .L._Z4filli.ssa.8
+   277	.L._Z4filli.ssa.11:
+   278	mov $1, %rax
+  -279	mov %rax, %rax
+  -280	jmp .L._Z4filli.ssa.16
+   281	.L._Z4filli.ssa.16:
+   282	lea w(%rip), %r8
+  -283	mov %r8, %r8
+  -284	mov -400(%rbp), %rax
+  -285	mov %r8, %r8
+   286	mov %rax, %rcx
+   287	mov %rcx, %rdx
+  -288	mov $8, %rdi
+  -289	mov -416(%rbp), %rax
+   290	imul $8, %rcx
+  -291	mov %rcx, %rcx
+  -292	mov $1, %rdi
+   293	mov %rax, %rcx
+   294	sub $1, %ecx
+   295	movslq %ecx, %rcx
+  -296	mov %rcx, %rcx
+  -297	mov -432(%rbp), %rax
+   298	mov %rcx, %rdi
+  -299	mov $8, %rdi
+  -300	mov -440(%rbp), %rax
+   301	imul $8, %rcx
+  -302	mov %rcx, %rcx
+  -303	mov %rdi, %rdi
+   304	shl $3, %rdi
+   305	mov %r8, %rcx
+   306	add %rdi, %rcx
+   307	movq (%rcx), %rsi
+  -308	mov %rsi, %rsi
+  -309	mov $3, %rdi
+  -310	mov -456(%rbp), %rax
+   311	imul $3, %rsi
+  -312	mov %rsi, %rsi
+  -313	mov %rax, %rax
+   314	mov %rax, %rcx
+   315	mov %rax, %rdi
+  -316	mov %rsi, %rsi
+   317	add %rdi, %rsi
+  -318	mov %rsi, %rsi
+  -319	mov -480(%rbp), %rax
+  -320	mov %rdx, %rdx
+   321	shl $3, %rdx
+  -322	mov %r8, %r8
+   323	add %rdx, %r8
+   324	movq %rsi, (%r8)
+  -325	mov $1, %rdi
+  -326	mov %rax, %rax
+   327	add $1, %eax
+   328	movslq %eax, %rcx
+   329	mov %rcx, %rax
+  -330	mov $16, %rdi
+  -331	mov -488(%rbp), %rax
+   332	cmp $16, %ecx
+   333	setl %cl
+   334	movzbq %cl, %rcx
+  -335	mov %rcx, %rcx
+  -336	mov -392(%rbp), %rax
+  -337	cmp $0, %rax
+   338	jge .L._Z4filli.ssaelse.0
+  -339	mov %rax, %rax
+  -340	mov %rax, %rax
+   341	jmp .L._Z4filli.ssa.16
+   342	.L._Z4filli.ssaelse.0:
+   343	mov $0, %rcx
+  -344	mov %rcx, %rcx
+  -345	jmp .L._Z4filli.ssa.20
+   346	.L._Z4filli.ssa.20:
+   347	lea ps(%rip), %r8
+  -348	mov %r8, %r8
+  -349	mov -504(%rbp), %rax
+  -350	mov %r8, %r8
+   351	mov %rcx, %rax
+  -352	mov %rax, %rax
+  -353	mov $8, %rdi
+  -354	mov -520(%rbp), %rax
+   355	imul $8, %rax
+  -356	mov %rax, %rax
+  -357	mov %rax, %rax
+  -358	mov %r8, %r8
+   359	add %rax, %r8
+  -360	mov %r8, %r8
+  -361	mov -536(%rbp), %rax
+   362	mov %r8, %rdi
+  -363	mov %rcx, %rcx
+  -364	mov %rdi, %rdi
+   365	movl %ecx, (%rdi)
+  -366	mov %r8, %r8
+   367	add $4, %r8
+  -368	mov %r8, %r8
+  -369	mov %rcx, %rcx
+   370	mov %rcx, %rax
+   371	imul %ecx, %eax
+   372	movslq %eax, %rsi
+  -373	mov %rsi, %rsi
+   374	lea g(%rip), %rdx
+  -375	mov %rdx, %rdx
+  -376	mov -568(%rbp), %rax
+  -377	mov %rdx, %rdx
+  -378	mov $3, %rdi
+   379	mov %rcx, %rax
+   380	add $3, %eax
+   381	movslq %eax, %rax
+  -382	mov %rax, %rax
+  -383	mov -584(%rbp), %rax
+   384	mov %rax, %rdi
+  -385	mov $4, %rdi
+  -386	mov -592(%rbp), %rax
+   387	imul $4, %rax
+  -388	mov %rax, %rax
+  -389	mov %rdi, %rdi
+   390	shl $2, %rdi
+  -391	mov %rdx, %rdx
+   392	add %rdi, %rdx
+   393	movslq (%rdx), %rax
+  -394	mov %rax, %rax
+  -395	mov %rax, %rax
+  -396	mov %rsi, %rsi
+   397	sub %eax, %esi
+   398	movslq %esi, %rax
+  -399	mov %rax, %rax
+  -400	mov -616(%rbp), %rax
+  -401	mov %r8, %r8
+   402	movl %eax, (%r8)
+  -403	mov $1, %rdi
+  -404	mov %rcx, %rcx
+   405	add $1, %ecx
+   406	movslq %ecx, %rax
+   407	mov %rax, %rcx
+  -408	mov $8, %rdi
+  -409	mov -624(%rbp), %rax
+   410	cmp $8, %eax
+   411	setl %al
+   412	movzbq %al, %rax
+  -413	mov %rax, %rax
+  -414	mov -496(%rbp), %rax
+  -415	cmp $0, %rax
+   416	jge .L.return._Z4filli
+  -417	mov %rcx, %rcx
+  -418	mov %rcx, %rcx
+   419	jmp .L._Z4filli.ssa.20
+   420	.L._Z4filli.ssa.22:
+  -421	jmp .L.return._Z4filli
+  -422	mov $0, %rax
+   423	.L.return._Z4filli:
+   424	mov %rbp, %rsp
+   425	pop %rbp
+   426	ret
+;; _Z4divsji after allocate (changed)
+   0	.prologue frame=144 outgoing=0 realign=0
+  -1	mov %rdi, %rax
+   2	movl %edi, %ecx
+  -3	mov %rsi, %rax
+   4	movl %esi, %eax
+  -5	lea -4(%rbp), %rax
+   6	movl %ecx, %esi
+  -7	mov %rsi, %rsi
+  -8	lea -8(%rbp), %rax
+   9	movslq %eax, %r8
+  -10	mov %r8, %r8
+   11	.L._Z4divsji.ssa.1:
+   12	mov $10, %rdi
+  -13	mov %rsi, %rsi
+   14	xor %edx, %edx
+   15	mov %rsi, %rax
+  -16	mov %rdx, %rdx
+   17	div %edi
+  -18	mov %rax, %rax
+   19	mov %eax, %ecx
+  -20	mov %rcx, %rcx
+   21	mov $7, %rdi
+  -22	mov %rsi, %rsi
+   23	xor %edx, %edx
+   24	mov %rsi, %rax
+  -25	mov %rdx, %rdx
+   26	div %edi
+  -27	mov %rdx, %rdx
+  -28	mov %edx, %eax
+   29	mov %edx, %eax
+  -30	mov %rax, %rax
+  -31	mov %rax, %rax
+  -32	mov %rcx, %rcx
+   33	add %eax, %ecx
+   34	mov %ecx, %ecx
+  -35	mov %rcx, %rcx
+   36	mov $9, %rdi
+  -37	mov %r8, %r8
+   38	mov %r8, %rax
+   39	cdq
+  -40	mov %rdx, %rdx
+  -41	mov %rax, %rax
+  -42	mov %rdx, %rdx
+   43	idiv %edi
+  -44	mov %rax, %rax
+   45	movslq %eax, %rax
+  -46	mov %rax, %rax
+  -47	mov -64(%rbp), %rax
+   48	mov %eax, %eax
+  -49	mov %rax, %rax
+  -50	mov %rax, %rax
+  -51	mov %rcx, %rcx
+   52	add %eax, %ecx
+   53	mov %ecx, %ecx
+  -54	mov %rcx, %rcx
+   55	mov $11, %rdi
+  -56	mov %r8, %r8
+   57	mov %r8, %rax
+   58	cdq
+  -59	mov %rdx, %rdx
+  -60	mov %rax, %rax
+  -61	mov %rdx, %rdx
+   62	idiv %edi
+  -63	mov %rdx, %rdx
+  -64	mov %edx, %eax
+   65	movslq %edx, %rax
+  -66	mov %rax, %rax
+  -67	mov -88(%rbp), %rax
+   68	mov %edx, %eax
+  -69	mov %rax, %rax
+  -70	mov %rax, %rax
+  -71	mov %rcx, %rcx
+   72	add %eax, %ecx
+   73	mov %ecx, %ecx
+  -74	mov %rcx, %rcx
+   75	mov $-6, %rdi
+  -76	mov %r8, %r8
+   77	mov %r8, %rax
+   78	cdq
+  -79	mov %rdx, %rdx
+  -80	mov %rax, %rax
+  -81	mov %rdx, %rdx
+   82	idiv %edi
+  -83	mov %rax, %rax
+   84	movslq %eax, %rax
+  -85	mov %rax, %rax
+  -86	mov -112(%rbp), %rax
+   87	mov %eax, %eax
+  -88	mov %rax, %rax
+  -89	mov %rax, %rax
+  -90	mov %rcx, %rcx
+   91	add %eax, %ecx
+   92	mov %ecx, %ecx
+  -93	mov %rcx, %rcx
+   94	mov $1000000, %rdi
+  -95	mov %rsi, %rsi
+   96	xor %edx, %edx
+   97	mov %rsi, %rax
+  -98	mov %rdx, %rdx
+   99	div %edi
+  -100	mov %rax, %rax
+   101	mov %eax, %eax
+  -102	mov %rax, %rax
+  -103	mov %rax, %rax
+  -104	mov %rcx, %rcx
+   105	add %eax, %ecx
+   106	mov %ecx, %eax
+  -107	mov %rax, %rax
+  -108	mov -144(%rbp), %rax
+  -109	jmp .L.return._Z4divsji
+  -110	mov $0, %rax
+   111	.L.return._Z4divsji:
+   112	mov %rbp, %rsp
+   113	pop %rbp
+   114	ret
+;; main after allocate (changed)
+   0	.prologue frame=720 outgoing=0 realign=0
+   1	.L.main.ssa.1:
+  -2	mov $64, %rax
+  -3	mov %rax, -728(%rbp)
+   4	mov $64, %rdi
+  -5	mov $0, %rax
+  -6	mov %rdi, %rdi
+   7	call _Z4filli
+   8	mov $0, %rbx
+  -9	mov %rbx, %rbx
+   10	mov $0, %r8
+  -11	mov %r8, %r8
+  -12	jmp .L.main.ssa.4
+   13	.L.main.ssa.4:
+  -14	mov $64, %rdi
+   15	mov %r8, %rax
+   16	cmp $64, %eax
+   17	setl %al
+   18	movzbq %al, %rax
+  -19	mov %rax, %rax
+  -20	mov -8(%rbp), %rax
+  -21	cmp $0, %rax
+   22	jl .L.main.ssa.5
+  -23	mov %rbx, %rbx
+  -24	mov %rbx, %rbx
+   25	mov $0, %rax
+  -26	mov %rax, %rax
+   27	jmp .L.main.ssa.8
+   28	.L.main.ssa.5:
+   29	lea g(%rip), %rdx
+  -30	mov %rdx, %rdx
+  -31	mov -16(%rbp), %rax
+  -32	mov %rdx, %rdx
+   33	mov %r8, %rax
+   34	mov %rax, %rcx
+  -35	mov $4, %rdi
+  -36	mov -32(%rbp), %rax
+   37	imul $4, %rax
+  -38	mov %rax, %rax
+   39	mov %rcx, %rdi
+   40	shl $2, %rdi
+  -41	mov %rdx, %rdx
+   42	add %rdi, %rdx
+   43	movslq (%rdx), %rdx
+  -44	mov %rdx, %rdx
+  -45	mov $1, %rdi
+   46	mov %r8, %rax
+   47	add $1, %eax
+   48	movslq %eax, %rdi
+  -49	mov %rdi, %rdi
+   50	mov %rdi, %rax
+  -51	mov %rdx, %rdx
+   52	imul %eax, %edx
+   53	movslq %edx, %rsi
+  -54	mov %rsi, %rsi
+   55	lea h(%rip), %rdx
+  -56	mov %rdx, %rdx
+  -57	mov -72(%rbp), %rax
+  -58	mov %rdx, %rdx
+  -59	mov $2, %rdi
+   60	mov %rcx, %rax
+   61	imul $2, %rax
+  -62	mov %rax, %rax
+   63	mov %rcx, %rax
+   64	shl $1, %rax
+  -65	mov %rdx, %rdx
+   66	add %rax, %rdx
+   67	movswq (%rdx), %rax
+  -68	mov %rax, %rax
+  -69	mov -96(%rbp), %rax
+   70	movslq %eax, %rax
+  -71	mov %rax, %rax
+  -72	mov %rax, %rax
+  -73	mov %rsi, %rsi
+   74	add %eax, %esi
+   75	movslq %esi, %rsi
+  -76	mov %rsi, %rsi
+   77	lea c(%rip), %rdx
+  -78	mov %rdx, %rdx
+  -79	mov -120(%rbp), %rax
+   80	mov %rdx, %rax
+  -81	mov -32(%rbp), %rdi
+  -82	mov -128(%rbp), %rax
+   83	add %rcx, %rdx
+   84	movzbq (%rdx), %rcx
+  -85	mov %rcx, %rcx
+  -86	mov -136(%rbp), %rax
+   87	movslq %ecx, %rcx
+  -88	mov %rcx, %rcx
+  -89	mov %rcx, %rcx
+  -90	mov %rsi, %rsi
+   91	sub %ecx, %esi
+   92	movslq %esi, %rdx
+  -93	mov %rdx, %rdx
+  -94	mov %r8, %r8
+   95	mov $127, %rcx
+   96	sub %r8d, %ecx
+   97	movslq %ecx, %rcx
+  -98	mov %rcx, %rcx
+  -99	mov -160(%rbp), %rax
+  -100	mov %rcx, %rcx
+  -101	mov %rcx, %rcx
+  -102	mov %rax, %rax
+   103	add %rcx, %rax
+   104	movzbq (%rax), %rax
+  -105	mov %rax, %rax
+  -106	mov -176(%rbp), %rax
+   107	movslq %eax, %rax
+  -108	mov %rax, %rax
+  -109	mov %rax, %rax
+  -110	mov %rdx, %rdx
+   111	add %eax, %edx
+   112	movslq %edx, %rax
+  -113	mov %rax, %rax
+  -114	mov -192(%rbp), %rax
+  -115	mov %rax, %rax
+  -116	mov %rax, %rax
+  -117	mov %rbx, %rbx
+   118	add %rax, %rbx
+  -119	mov %rbx, %rbx
+  -120	mov -208(%rbp), %rax
+  -121	mov %rbx, %rbx
+  -122	mov %rdi, %rdi
+   123	mov %rdi, %r8
+   124	jmp .L.main.ssa.4
+   125	.L.main.ssa.8:
+  -126	mov $32, %rdi
+   127	mov %rax, %rcx
+   128	cmp $32, %ecx
+   129	setl %cl
+   130	movzbq %cl, %rcx
+  -131	mov %rcx, %rcx
+  -132	mov -216(%rbp), %rax
+  -133	cmp $0, %rax
+   134	jl .L.main.ssa.9
+  -135	mov %rbx, %rbx
+  -136	mov %rbx, %rbx
+   137	mov $0, %rax
+  -138	mov %rax, %rax
+   139	jmp .L.main.ssa.12
+   140	.L.main.ssa.9:
+   141	lea d(%rip), %rdx
+  -142	mov %rdx, %rdx
+  -143	mov -224(%rbp), %rax
+  -144	mov %rdx, %rdx
+   145	mov %rax, %rcx
+   146	mov %rcx, %rdi
+  -147	mov $8, %rdi
+  -148	mov -240(%rbp), %rax
+   149	imul $8, %rcx
+  -150	mov %rcx, %rcx
+  -151	mov %rdi, %rdi
+   152	shl $3, %rdi
+  -153	mov %rdx, %rdx
+   154	add %rdi, %rdx
+   155	movsd (%rdx), %xmm1
+  -156	movapd %xmm1, %xmm1
+   157	movabs $4616189618054758400, %rcx
+   158	movq %rcx, %xmm0
+  -159	movapd %xmm0, %xmm0
+  -160	movapd %xmm1, %xmm1
+  -161	movapd %xmm0, %xmm0
+   162	mulsd %xmm0, %xmm1
+  -163	movapd %xmm1, %xmm1
+  -164	movapd %xmm1, %xmm1
+   165	cvttsd2si %xmm1, %rcx
+  -166	mov %rcx, %rcx
+  -167	mov %rcx, %rcx
+  -168	mov %rbx, %rbx
+   169	add %rcx, %rbx
+  -170	mov %rbx, %rbx
+  -171	mov $1, %rdi
+  -172	mov %rax, %rax
+   173	add $1, %eax
+   174	movslq %eax, %rax
+  -175	mov %rax, %rax
+  -176	mov %rbx, %rbx
+  -177	mov %rbx, %rbx
+  -178	mov %rax, %rax
+  -179	mov %rax, %rax
+   180	jmp .L.main.ssa.8
+   181	.L.main.ssa.12:
+  -182	mov $16, %rdi
+   183	mov %rax, %rcx
+   184	cmp $16, %ecx
+   185	setl %cl
+   186	movzbq %cl, %rcx
+  -187	mov %rcx, %rcx
+  -188	mov -304(%rbp), %rax
+  -189	cmp $0, %rax
+   190	jl .L.main.ssa.13
+  -191	mov %rbx, %rbx
+  -192	mov %rbx, %rbx
+   193	mov $0, %rax
+  -194	mov %rax, %rax
+   195	jmp .L.main.ssa.16
+   196	.L.main.ssa.13:
+   197	lea w(%rip), %rdx
+  -198	mov %rdx, %rdx
+  -199	mov -312(%rbp), %rax
+  -200	mov %rdx, %rdx
+   201	mov %rax, %rcx
+   202	mov %rcx, %rdi
+  -203	mov $8, %rdi
+  -204	mov -328(%rbp), %rax
+   205	imul $8, %rcx
+  -206	mov %rcx, %rcx
+  -207	mov %rdi, %rdi
+   208	shl $3, %rdi
+  -209	mov %rdx, %rdx
+   210	add %rdi, %rdx
+   211	movq (%rdx), %rcx
+  -212	mov %rcx, %rcx
+  -213	mov %rcx, %rcx
+  -214	mov %rbx, %rbx
+   215	xor %rcx, %rbx
+  -216	mov %rbx, %rbx
+  -217	mov $1, %rdi
+  -218	mov %rax, %rax
+   219	add $1, %eax
+   220	movslq %eax, %rax
+  -221	mov %rax, %rax
+  -222	mov %rbx, %rbx
+  -223	mov %rbx, %rbx
+  -224	mov %rax, %rax
+  -225	mov %rax, %rax
+   226	jmp .L.main.ssa.12
+   227	.L.main.ssa.16:
+  -228	mov $8, %rdi
+   229	mov %rax, %rcx
+   230	cmp $8, %ecx
+   231	setl %cl
+   232	movzbq %cl, %rcx
+  -233	mov %rcx, %rcx
+  -234	mov -368(%rbp), %rax
+  -235	cmp $0, %rax
+   236	jl .L.main.ssa.17
+   237	mov $0, %rax
+   238	mov %rax, -712(%rbp)
+   239	mov $0, %r12
+  -240	mov %r12, %r12
+   241	jmp .L.main.ssa.20
+   242	.L.main.ssa.17:
+   243	lea ps(%rip), %rdx
+  -244	mov %rdx, %rdx
+  -245	mov -376(%rbp), %rax
+  -246	mov %rdx, %rdx
+   247	mov %rax, %rcx
+  -248	mov %rcx, %rcx
+  -249	mov $8, %rdi
+  -250	mov -392(%rbp), %rax
+   251	imul $8, %rcx
+  -252	mov %rcx, %rcx
+  -253	mov %rcx, %rcx
+  -254	mov %rdx, %rdx
+   255	add %rcx, %rdx
+  -256	mov %rdx, %rdx
+  -257	mov -408(%rbp), %rax
+   258	add $4, %rdx
+  -259	mov %rdx, %rdx
+  -260	mov -416(%rbp), %rax
+   261	movslq (%rdx), %rcx
+  -262	mov %rcx, %rcx
+  -263	mov -424(%rbp), %rax
+  -264	mov %rcx, %rcx
+  -265	mov %rcx, %rcx
+  -266	mov %rbx, %rbx
+   267	add %rcx, %rbx
+  -268	mov %rbx, %rbx
+  -269	mov $1, %rdi
+  -270	mov %rax, %rax
+   271	add $1, %eax
+   272	movslq %eax, %rax
+  -273	mov %rax, %rax
+  -274	mov %rbx, %rbx
+  -275	mov %rbx, %rbx
+  -276	mov %rax, %rax
+  -277	mov %rax, %rax
+   278	jmp .L.main.ssa.16
+   279	.L.main.ssa.20:
+  -280	mov $64, %rdi
+   281	mov %r12, %rax
+   282	cmp $64, %eax
+   283	setl %al
+   284	movzbq %al, %rax
+  -285	mov %rax, %rax
+  -286	mov -456(%rbp), %rax
+  -287	cmp $0, %rax
+   288	jge .L.main.ssa.23
+  -289	jmp .L.main.ssa.21
+   290	.L.main.ssa.21:
+   291	lea g(%rip), %rdi
+  -292	mov %rdi, %rdi
+  -293	mov -464(%rbp), %rax
+  -294	mov %rdi, %rdi
+  -295	lea -472(%rbp), %rax
+  -296	mov %rdi, %rdi
+  -297	mov %rax, %rdi
+  -298	mov $64, %rax
+  -299	mov %rax, -736(%rbp)
+   300	mov $64, %rsi
+  -301	mov -728(%rbp), %rdi
+  -302	mov $0, %rax
+  -303	mov %rsi, %rsi
+  -304	mov %rdi, %rdi
+   305	call _Z5shiftPii
+  -306	mov %rax, %rax
+   307	movslq %eax, %rcx
+  -308	mov %rcx, %rcx
+  -309	mov %rcx, %rcx
+   310	mov -712(%rbp), %rax
+   311	add %ecx, %eax
+   312	movslq %eax, %rax
+  -313	mov %rax, %rax
+  -314	mov $1, %rdi
+  -315	mov %r12, %r12
+   316	add $1, %r12d
+   317	movslq %r12d, %r12
+  -318	mov %r12, %r12
+  -319	mov %rax, %rax
+   320	mov %rax, -712(%rbp)
+  -321	mov %r12, %r12
+  -322	mov %r12, %r12
+   323	jmp .L.main.ssa.20
+   324	.L.main.ssa.23:
+   325	lea .L.str.0(%rip), %rdi
+  -326	mov %rdi, %rdi
+  -327	mov -504(%rbp), %rax
+  -328	mov %rdi, %rdi
+   329	lea g(%rip), %rax
+  -330	mov %rax, %rax
+  -331	mov -520(%rbp), %rax
+  -332	mov %rax, %rax
+  -333	mov -528(%rbp), %rax
+   334	movslq (%rax), %rcx
+  -335	mov %rcx, %rcx
+  -336	mov %rax, %rax
+  -337	add $252, %rax
+   338	movslq 252(%rax), %rsi
+  -339	mov %rsi, %rsi
+   340	lea h(%rip), %rax
+  -341	mov %rax, %rax
+  -342	mov -552(%rbp), %rax
+  -343	mov %rax, %rax
+  -344	mov -560(%rbp), %rax
+  -345	add $10, %rax
+   346	movswq 10(%rax), %rax
+  -347	mov %rax, %rax
+  -348	mov -568(%rbp), %rax
+   349	movslq %eax, %rax
+  -350	mov %rax, %rax
+  -351	lea -512(%rbp), %rax
+   352	movq %rdi, %rdi
+  -353	mov %rax, %rdi
+  -354	lea -672(%rbp), %rax
+   355	movq %rbx, %rbx
+  -356	mov %rax, %rsi
+  -357	lea -712(%rbp), %rax
+   358	movslq -712(%rbp), %rdx
+  -359	mov %rax, %rdx
+  -360	lea -536(%rbp), %rax
+   361	movslq %ecx, %rcx
+  -362	mov %rax, %rcx
+  -363	lea -544(%rbp), %rax
+   364	movslq %esi, %r8
+  -365	mov %rax, %r8
+  -366	lea -576(%rbp), %rax
+   367	movslq %eax, %r9
+  -368	mov %rax, -768(%rbp)
+  -369	mov %rax, %r9
+  -370	mov -760(%rbp), %r8
+  -371	mov -752(%rbp), %rcx
+  -372	mov -744(%rbp), %rdx
+  -373	mov -736(%rbp), %rsi
+  -374	mov -728(%rbp), %rdi
+   375	mov $0, %rax
+  -376	mov %rax, %rax
+  -377	mov %rcx, %rcx
+  -378	mov %rdx, %rdx
+   379	mov %rbx, %rsi
+  -380	mov %rdi, %rdi
+  -381	mov %r8, %r8
+  -382	mov %r9, %r9
+   383	call printf
+  -384	mov %rax, %rax
+   385	movslq %eax, %rax
+  -386	mov %rax, %rax
+   387	lea .L.str.1(%rip), %rbx
+  -388	mov %rbx, %rbx
+  -389	mov -592(%rbp), %rax
+  -390	mov %rbx, %rbx
+  -391	mov $123456789, %rax
+  -392	mov %rax, -728(%rbp)
+  -393	mov $-98765, %rax
+  -394	mov %rax, -736(%rbp)
+   395	mov $-98765, %rsi
+   396	mov $123456789, %rdi
+  -397	mov $0, %rax
+  -398	mov %rsi, %rsi
+  -399	mov %rdi, %rdi
+   400	call _Z4divsji
+  -401	mov %rax, %rax
+   402	mov %eax, %eax
+   403	mov %rax, -608(%rbp)
+   404	mov $4294967295, %rdi
+  -405	mov %rax, %rdi
+  -406	mov $2147483647, %rax
+  -407	mov %rax, -736(%rbp)
+   408	mov $2147483647, %rsi
+  -409	mov -728(%rbp), %rdi
+  -410	mov $0, %rax
+  -411	mov %rsi, %rsi
+  -412	mov %rdi, %rdi
+   413	call _Z4divsji
+  -414	mov %rax, %rax
+   415	mov %eax, %eax
+   416	mov %rax, -616(%rbp)
+  -417	mov $7, %rax
+  -418	mov %rax, -728(%rbp)
+  -419	mov $-2147483648, %rax
+  -420	mov %rax, -736(%rbp)
+   421	mov $-2147483648, %rsi
+   422	mov $7, %rdi
+  -423	mov $0, %rax
+  -424	mov %rsi, %rsi
+  -425	mov %rdi, %rdi
+   426	call _Z4divsji
+  -427	mov %rax, %rax
+   428	mov %eax, %eax
+   429	mov %rax, -624(%rbp)
+  -430	mov $0, %rax
+  -431	mov %rax, -728(%rbp)
+  -432	mov $5, %rax
+  -433	mov %rax, -736(%rbp)
+   434	mov $5, %rsi
+   435	mov $0, %rdi
+  -436	mov $0, %rax
+  -437	mov %rsi, %rsi
+  -438	mov %rdi, %rdi
+   439	call _Z4divsji
+  -440	mov %rax, %rax
+   441	mov %eax, %eax
+  -442	mov %rax, %rax
+  -443	lea -600(%rbp), %rax
+   444	movq %rbx, %rbx
+  -445	mov %rax, %rdi
+  -446	lea -608(%rbp), %rax
+   447	movl -608(%rbp), %esi
+  -448	mov %rax, %rsi
+  -449	lea -616(%rbp), %rax
+   450	movl -616(%rbp), %edx
+  -451	mov %rax, %rdx
+  -452	lea -624(%rbp), %rax
+   453	movl -624(%rbp), %ecx
+  -454	mov %rax, %rcx
+  -455	lea -632(%rbp), %rax
+   456	movl %eax, %r8d
+  -457	mov %rax, -760(%rbp)
+  -458	mov %rax, %r8
+  -459	mov -752(%rbp), %rcx
+  -460	mov -744(%rbp), %rdx
+  -461	mov -736(%rbp), %rsi
+  -462	mov -728(%rbp), %rdi
+   463	mov $0, %rax
+  -464	mov %rax, %rax
+  -465	mov %rcx, %rcx
+  -466	mov %rdx, %rdx
+  -467	mov %rsi, %rsi
+   468	mov %rbx, %rdi
+  -469	mov %r8, %r8
+   470	call printf
+  -471	mov %rax, %rax
+  -472	movapd %xmm0, %xmm0
+   473	movslq %eax, %rax
+  -474	mov %rax, %rax
+   475	mov $0, %rax
+  -476	jmp .L.return.main
+  -477	mov $0, %rax
+   478	.L.return.main:
+   479	mov -776(%rbp), %rbx
+   480	mov -784(%rbp), %r12
+   481	mov %rbp, %rsp
+   482	pop %rbp
+   483	ret
