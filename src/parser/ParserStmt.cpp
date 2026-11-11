@@ -609,7 +609,10 @@ StmtPtr Parser::declarationBody() {
             std::vector<InitStep> path;
             const std::size_t built = inits.size();
             // An aggregate whose members' classes have constructors: what built each, for the SSA lowering (M3b.2).
+            const bool outerZero = blockZero_;
+            blockZero_ = !quals.isConstexpr;
             const ListBuilt made = emitRecordedInit(d.name, path, d.type, in, inits);
+            blockZero_ = outerZero;
             const Local *rl = lookup_.findLocal(d.name);
             if (made.members && rl != nullptr && listBySerial_.count(rl->serial) == 0) listBySerial_[rl->serial] = made;
             if (quals.isConstexpr && d.type->unqualified()->isStructOrUnion()) foldLocalObject(d, off, inits, built);

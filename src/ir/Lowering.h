@@ -177,6 +177,7 @@ private:
     bool listFits(const Type &t, std::uint32_t values) const;
     void listInit(ValueId slot, const Type &t, sema::TypedId list, std::uint32_t from);
     void aggregateInit(ValueId slot, const Type &t, const std::vector<sema::TypedId> &parts);
+    void zeroBlock(ValueId slot, long long bytes);
     void aggregateFill(ValueId slot, const Type &t, const std::vector<sema::TypedId> &parts, std::size_t &next);
     void aggregateItem(ValueId at0, const Type &mt, const std::vector<sema::TypedId> &parts, std::size_t &next);
     bool recordedAggregate(sema::TypedId var, ValueId slot, const Type &t);

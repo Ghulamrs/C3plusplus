@@ -671,6 +671,7 @@ private:
     std::map<std::uint32_t, ListBuilt> listsAt_;
     ListBuilt aggregateRecord_;     // the one being made, while aggregateRecording_
     bool aggregateRecording_ = false;
+    bool blockZero_ = false;        // a local's list being read: its zeroed runs past 64 bytes are one memset (zeroRun)
     // What guardOnce built for one, by its symbol (M3b.2): the guard it named; whether a throw out of the construction aborts
     // it; the constructor that builds it, with its type and the [dcl.init]/8 facts; the destructor's registration.
     struct StaticGuard {
@@ -2276,6 +2277,7 @@ private:
                    ExprPtr value, std::size_t pos, std::vector<StmtPtr> &out);
     void initZero(const std::string &name, std::vector<InitStep> &path,
                   const Type *type, std::size_t pos, std::vector<StmtPtr> &out);
+    bool zeroRun(const std::string &name, std::vector<InitStep> &path, const Type *type, long long n, std::vector<StmtPtr> &out);
     void emitString(const std::string &name, std::vector<InitStep> &path,
                     const Type *type, const StrLit *s, std::size_t pos,
                     std::vector<StmtPtr> &out);

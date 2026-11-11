@@ -603,11 +603,9 @@ void Lowering::classLocal(sema::TypedId var, ValueId slot, const Type &t) {
     case 0:
         if (v.count != 0) outside("a class local's initialiser of no form");
         return;
-    case 3: {
-        const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, slot));
-        at(z).k = size;
+    case 3:
+        zeroBlock(slot, size);
         return;
-    }
     case 1: {
         if (v.count != 1) outside("a class local initialised by " + std::to_string(v.count) + " values");
         // A call's plain class result, in the slot it came back into: its bytes are the local's ([class.copy]/12).
@@ -647,12 +645,21 @@ void Lowering::classLocal(sema::TypedId var, ValueId slot, const Type &t) {
     }
 }
 
+// An object's bytes zeroed: past 64 of them by the platform's memset, as `new T[n]()`'s are, never one store a word.
+void Lowering::zeroBlock(ValueId slot, long long bytes) {
+    if (bytes <= 64) { const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, slot)); at(z).k = bytes; return; }
+    const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType()));
+    std::vector<ValueId> args(1, result(add(Op::Bitcast, voidPtr, std::vector<ValueId>(1, slot))));
+    args.push_back(iconst(tid(*types_.get(Kind::Int)), 0));
+    args.push_back(iconst(tid(*types_.get(target_.sizeType())), bytes));
+    runtimeCall("memset", voidPtr, args);
+}
+
 // [dcl.init.aggr] for a plain class from a list the flat one does not fit: zeroed, then each value placed in order -
 // a `{}` node initialising the member it reaches whole, a value reaching into a member that is an aggregate (brace
 // elision, [dcl.init.aggr]/11) - as the parser's emitAggregate places them; a value past the last member is refused.
 void Lowering::aggregateInit(ValueId slot, const Type &t, const std::vector<sema::TypedId> &parts) {
-    const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, slot));
-    at(z).k = t.size(target_);
+    zeroBlock(slot, t.size(target_));
     std::size_t next = 0;
     aggregateFill(slot, *t.unqualified(), parts, next);
     if (next != parts.size()) outside("a braced list with values past its aggregate");
@@ -3546,7 +3553,7 @@ void Lowering::localArray(sema::TypedId var, ValueId slot, TypeId type) {
     const long long length = t.length();
     const long long items = static_cast<long long>(v.count) - first;
     if (items <= 0) {
-        if (v.initForm >= 2) { const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, slot)); at(z).k = t.size(target_); }
+        if (v.initForm >= 2) zeroBlock(slot, t.size(target_));
         return;
     }
     if (items == 1 && syn(child(var, first)).kind == syntax::Kind::StringLit && !t.pointee()->isPointer()) {
