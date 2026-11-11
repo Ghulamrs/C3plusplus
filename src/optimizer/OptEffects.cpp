@@ -161,7 +161,14 @@ Roles classify(const MInst &i, const Convention &conv, Effects &e) {
         break;
     }
     case Opcode::Rmw:
-        if (i.operands != 2) { e.opaque = true; break; }   // imul's rdx:rax, a shift by one
+        // The one-operand multiply is `mul`'s: rdx:rax, nothing else - opaque, it kept every local beside it in its slot.
+        if (i.m == mn::Imul && i.operands == 1) {
+            r.a = kRead;
+            e.reads = e.writes = bit(RAX) | bit(RDX);
+            e.flagsWritten = true;
+            break;
+        }
+        if (i.operands != 2) { e.opaque = true; break; }   // a shift by one
         {
             const bool zeroing = op.has(Opcode::kZeroIdiom) &&
                                  i.a.kind == MOperand::Register && i.b.kind == MOperand::Register &&

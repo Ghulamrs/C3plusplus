@@ -85,6 +85,26 @@ bool decides(const MInst &cmp, Cond cc, long long r64, bool &taken) {
 bool threadJumps(MFunction &fn) {
     MStream &s = fn.stream;
     Flow &f = fn.flow;
+    // **A jump over a jump**: `jcc A; jmp B; A:` is `j!cc B` falling into A; the rest waits for the next round.
+    bool inverted = false;
+    for (std::size_t k = 0; k < s.size(); ++k) {
+        if (s[k].kind != MEntry::Inst || s[k].dead || s[k].ins.a.kind != MOperand::Label) continue;
+        const Cond cc = conditionOf(s[k].ins.m);
+        std::size_t j = k + 1;
+        while (j < s.size() && s[j].dead) ++j;
+        if (cc == kNoCond || j >= s.size() || s[j].kind != MEntry::Inst || s[j].ins.m != mn::Jmp || s[j].ins.a.kind != MOperand::Label) continue;
+        bool next = false;
+        for (std::size_t l = j + 1; l < s.size() && !next; ++l) {
+            if (s[l].dead) continue;
+            if (s[l].kind != MEntry::Label) break;
+            next = s[l].label == s[k].ins.a.text.str();
+        }
+        if (!next) continue;
+        s[k].ins.m = opt::jcc(inverse(cc));
+        s[k].ins.a = s[j].ins.a;
+        s[j].dead = inverted = true;
+    }
+    if (inverted) { f.touch(); return true; }
     f.live(s);
     const std::map<std::string, int> heads = labelBlocks(s, f);
     bool changed = false;

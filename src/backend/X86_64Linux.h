@@ -232,6 +232,10 @@ private:
     const Type *typeOf(const ir::Function &f, ir::ValueId v) const;
     // A frame object's address, a constant or null has no slot: each use makes it afresh (ssaRemat).
     bool ssaRemat(const ir::Function &f, ir::ValueId v) const;
+    // Where the passes run: a pointer cast or constant gep of a frame object made afresh too (`lea`, `add`), by value.
+    std::vector<char> ssaAddr_;
+    bool ssaFrameAddress(const ir::Function &f, ir::ValueId v, std::size_t &frame, long long &off) const;
+    std::uint32_t ssaNext_ = 0;                     // the block written after the one being selected, 0 where a funclet is
     void ssaLoadReg(const ir::Function &f, ir::ValueId v, const char *r);
     ExprPtr ssaExpr(const ir::Function &f, ir::ValueId v) const;
     void ssaLoad(const ir::Function &f, ir::ValueId v);

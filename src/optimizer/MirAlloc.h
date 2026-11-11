@@ -61,6 +61,7 @@ private:
     std::vector<Copy> copies_;
     std::vector<int> colour_;
     std::vector<bool> demoted_;             // a promoted local given its slot back
+    std::vector<bool> asked_;               // a promoted local that found no register: offered a preserved one
     int coalesced_ = 0;
     bool fellBack_ = false;
     // The colouring's state: the registers on offer - the caller-saved
@@ -92,6 +93,7 @@ private:
     long bestPreference(const std::vector<Copy> &prefs, opt::RegSet forbid) const;
     int pick(int p);
     void reserveFresh();
+    bool ask(const std::vector<int> &failed);
     int demote(const std::vector<int> &failed);
     void addSaves();
 

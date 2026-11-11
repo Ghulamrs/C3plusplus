@@ -2197,3 +2197,35 @@ where none is free); `-front=ssa -O1` unchanged (1,145,737), `loops` being `-O2`
 loads hoisted (no store, memcpy, memset, call, invoke or volatile in the loop, from a block always run); widening a
 counter whose start is not a constant, or one compared with `!=`; the .text growth read case by case; `widen-counters`
 off under `-front=ssa` (round 5).
+
+**M3b.5, lane hash/virtual, 2026-11-12: selection and the allocator under `-front=ssa -O2` (stopped at the one-hour rule; gates owed).**
+From main `5f6a94d1`, branch `m3b5-hv`. **What `hashes` was**: every local in its slot, because the one-operand `imul`
+divide leaves (`smulh`) was opaque to `effectsOf` - read and write of every register - so each local live across it was
+forbidden all of them; the walker never writes that form. `OptEffects.cpp` gives it `mul`'s effects (rdx:rax).
+**Selection, where the passes run** (`SsaSelect.cpp`; `-O0` writes what it wrote): `blockOrder` - reverse postorder
+over the jumps from the entry, a loop's way out walked before its way on (natural loops from `Dominators`), so a loop's
+blocks stay together, its exit follows its latch and an invoke's return sits under its call; pads and funclet blocks
+keep their places, so states, ip rows and call-site rows are registered as before. A `condbr` jumps on the side with no
+arguments (the false side where the true one is written next), with no stub. A shift by a constant inside the width is
+`sar $k`, rcx left free. A frame address derived by pointer casts and constant geps has no slot and is made at each use
+(`lea`, `add`, as the stream had it) - but one a call, a `va_` or a return reads past the object's start keeps its slot.
+**MIR**: `thread-jumps` turns `jcc A; jmp B; A:` into `j!cc B` (the Ast.h path's `-O2` sees it too); `Allocator::ask` -
+a local that found no register asks for a preserved one (reserveFresh's count and weight decide) before it is demoted.
+**Probe** (`boxkit/m3b5hv-probe.sh`, kernels at `-front=ssa -O2`): `hashes` demoted 12 of its locals before, 0 now, its
+store `movb %al, 272(%rbp,%rcx,1)`, its first loop one `jl` a turn; `virt`'s call in line, one taken jump a turn (three
+before); `isort` demoted 4, now 0; `matmul` 20, now 25 in 7 rounds (not examined).
+**Measured on the uncommitted tree this commit holds** (Windows, `work\m3b5hv`, the box shared and loaded - cl's own
+total read 498 where round 3 read 276): `bench.cmd`, median of 9, `-front=ssa -O2` / `-O2` of the same build / cl:
+fib 11 / 12 / 11, sieve 78 / 89 / 72, matmul 17 / 43 / 6, isort 39 / 31 / 13, hash 379 / 329 / 233, virtual 201 / 204 /
+168, total 719 / 670 / 498; kernels' .text 3423 against 3443 (round 3: 3762); checksums agree. hash went from 1.65x of
+`-O2` to 1.15x, virtual from 2.1x to level; isort is as it was (1.25x). **Gates: none complete.** One `winpass` at
+`-front=ssa -O2` was started on that tree: its first job ran past its 9-minute window under the load (no case slow - the
+oldest compiler process seen was 3 s old), the comparison read part-way said 628 same, 0 differ in the GNU spelling,
+the MASM half unfinished. Not run: winpass at `-front=ssa -O1` and `-O2`, ssa.sh on either box, every Linux gate, the
+.text table over the cases, `make comments`, the memory gate. `tests/cases/ssa-layout` (clang's `.expected` from the
+Windows box) has not been compiled by cxx3. `src/` went from 92755 to 92946 lines (+191: SsaSelect.cpp +159, MirAlloc
++20, OptJumps +20, OptEffects +7, X86_64Linux.h +4). **Left**: the gates above; hash's last 15% (the multiply-high's
+moves in the fill loop, the byte loop's test not rotated to its foot); `virt`'s loop not rotated by `thread-jumps`
+(its head was not `cmp; jcc` alone when the pass ran); isort; matmul's 25 demotions in 7 allocator rounds and what the
+extra rounds cost on a large function; the loop sets in `blockOrder` are a second finder beside SsaLoops's `Looper::find`
+(one to keep once the lanes merge); `ask`'s effect on `.text` (a preserved register is a save and a restore).

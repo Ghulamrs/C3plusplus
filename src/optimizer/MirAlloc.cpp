@@ -413,10 +413,12 @@ int Allocator::pick(int p) {
 // the heaviest first up to the level's count.
 void Allocator::reserveFresh() {
     freshFor_.assign(n_, false);
+    std::vector<bool> asked(n_, false);
+    for (int q = nHomes_; q < n_; ++q) if (asked_[q] && !demoted_[q]) asked[find(q)] = true;
     std::vector<int> needy;
     for (int p = 0; p < n_; ++p)
-        if (alive(p) && nodes_[p].slot && nodes_[p].cls == RegClass::Gpr && (palette(p) & ~offered_ & ~nodes_[p].forbid) == 0 &&
-            nodes_[p].slotWeight >= fn_.costs().minWeight())
+        if (alive(p) && nodes_[p].slot && nodes_[p].cls == RegClass::Gpr && nodes_[p].slotWeight >= fn_.costs().minWeight() &&
+            (asked[p] || (palette(p) & ~offered_ & ~nodes_[p].forbid) == 0))
             needy.push_back(p);
     std::stable_sort(needy.begin(), needy.end(),
                      [&](int x, int y) { return nodes_[x].slotWeight > nodes_[y].slotWeight; });
@@ -496,6 +498,18 @@ int Allocator::demote(const std::vector<int> &failed) {
     return count;
 }
 
+// **A local that found no register asks for a preserved one** - reserveFresh's count and weight still decide - and the
+// graph is coloured again before any goes back to its slot. False where nobody new asks.
+bool Allocator::ask(const std::vector<int> &failed) {
+    bool any = false;
+    for (int f : failed) {
+        if (!nodes_[f].slot || nodes_[f].cls != RegClass::Gpr || nodes_[f].slotWeight < fn_.costs().minWeight()) continue;
+        for (int q = nHomes_; q < n_; ++q)
+            if (!demoted_[q] && !asked_[q] && find(q) == f) { asked_[q] = true; any = true; }
+    }
+    return any;
+}
+
 // **A preserved register taken is saved by the prologue and restored before
 // each return**, its slot below the frame after the saves already made.
 void Allocator::addSaves() {
@@ -515,6 +529,7 @@ bool Allocator::run() {
     fellBack_ = false;
     if (n_ == 0) return Webs::dropSelfCopies(fn_);
     demoted_.assign(n_, false);
+    asked_.assign(n_, false);
     int rounds = 0, demotions = 0;
     for (;;) {
         ++rounds;
@@ -527,6 +542,7 @@ bool Allocator::run() {
         assert(valid(homes) && "the homes must colour the graph: they are how the stream ran");
         const std::vector<int> failed = colour();
         if (failed.empty()) break;
+        if (ask(failed)) continue;
         if (const int d = demote(failed)) { demotions += d; continue; }
         colour_ = homes;
         coalesced_ = 0;

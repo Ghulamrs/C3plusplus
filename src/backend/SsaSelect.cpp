@@ -3,7 +3,7 @@
 // frame, a constant and null have none, made at each use. Operands go through rax/xmm0/st0 and scratch; the ABI is the walker's.
 
 #include "X86_64Linux.h"
-#include "../ir/Ir.h"
+#include "../ir/opt/SsaOpt.h"
 #include "../Source.h"
 
 #include <algorithm>
@@ -14,6 +14,84 @@ namespace {
 
 
 long long roundUp(long long n, long long a) { return (n + a - 1) / a * a; }
+
+typedef std::pair<int, std::uint32_t> Stay;     // how many loops an edge stays in, and its target
+bool staysLess(const Stay &x, const Stay &y) { return x.first < y.first; }
+
+// **The order the body's own blocks are written in where the passes run**: reverse postorder over the jumps, a loop's
+// way out walked before its way on - its blocks stay together, what follows it after its latch (thread-jumps rotates
+// that), an invoke's return under its call. A pad and a funclet's blocks keep their places; the rest fill the others.
+std::vector<ir::BlockId> blockOrder(const ir::Function &f) {
+    if (f.blocks.empty() || f.blocks[0].v != f.entry.v) return f.blocks;
+    const ir::Dominators dom(f);
+    const std::size_t n = f.blockArena.size();
+    // The natural loops, one per head a jump goes back to: the blocks of each.
+    std::vector<std::vector<char> > loops;
+    std::vector<int> loopOf(n, -1);
+    for (std::uint32_t b : dom.rpo) {
+        if (!f.blockArena[b].term.valid()) continue;
+        const ir::Inst &t = f.inst(f.blockArena[b].term);
+        for (std::size_t s = 0; s < t.succ.size(); s++) {
+            const std::uint32_t h = t.succ[s].block.v;
+            if (!ir::isJumpEdge(t, s) || !dom.reachable(h) || !dom.dominates(h, b)) continue;
+            if (loopOf[h] < 0) {
+                loopOf[h] = static_cast<int>(loops.size());
+                loops.push_back(std::vector<char>(n, 0));
+                loops.back()[h] = 1;
+            }
+            std::vector<char> &in = loops[static_cast<std::size_t>(loopOf[h])];
+            std::vector<std::uint32_t> work(1, b);
+            while (!work.empty()) {
+                const std::uint32_t x = work.back();
+                work.pop_back();
+                if (in[x]) continue;
+                in[x] = 1;
+                work.insert(work.end(), dom.preds[x].begin(), dom.preds[x].end());
+            }
+        }
+    }
+    std::vector<char> plain(n, 0), seen(n, 0);
+    for (ir::BlockId b : f.blocks) plain[b.v] = !f.block(b).pad && f.block(b).funclet == 0;
+    std::vector<ir::BlockId> walk;
+    for (std::size_t r = 0; r < f.blocks.size(); r++) {
+        if (!plain[f.blocks[r].v] || seen[f.blocks[r].v]) continue;
+        // One tree, by an explicit stack: each block's jumps sorted so that the one staying deepest is walked last.
+        std::vector<std::uint32_t> post;
+        std::vector<std::pair<std::uint32_t, std::vector<Stay> > > stack;
+        std::uint32_t enter = f.blocks[r].v;
+        while (enter != 0 || !stack.empty()) {
+            if (enter != 0) {
+                seen[enter] = 1;
+                std::vector<Stay> to;
+                if (f.blockArena[enter].term.valid()) {
+                    const ir::Inst &t = f.inst(f.blockArena[enter].term);
+                    for (std::size_t s = t.succ.size(); s-- > 0; ) {
+                        const std::uint32_t d = t.succ[s].block.v;
+                        if (!ir::isJumpEdge(t, s) || d >= n || !plain[d]) continue;
+                        int stays = 0;
+                        for (const std::vector<char> &in : loops) stays += in[enter] && in[d] ? 1 : 0;
+                        to.push_back(Stay(stays, d));
+                    }
+                }
+                // Popped from the back, the way out first; among equals the true side, or the default, is walked last.
+                std::stable_sort(to.begin(), to.end(), staysLess);
+                std::reverse(to.begin(), to.end());
+                stack.push_back(std::make_pair(enter, to));
+                enter = 0;
+            }
+            std::vector<Stay> &to = stack.back().second;
+            if (to.empty()) { post.push_back(stack.back().first); stack.pop_back(); continue; }
+            const std::uint32_t d = to.back().second;
+            to.pop_back();
+            if (!seen[d]) enter = d;
+        }
+        for (std::size_t k = post.size(); k-- > 0; ) walk.push_back(ir::BlockId(post[k]));
+    }
+    std::vector<ir::BlockId> out = f.blocks;
+    std::size_t w = 0;
+    for (std::size_t k = 0; k < out.size(); k++) if (plain[out[k].v]) out[k] = walk[w++];
+    return out;
+}
 
 }   // namespace
 
@@ -63,6 +141,27 @@ int X86_64Linux::layoutSsa(const Function &fn, const ir::Function &f) {
             slots.back() = static_cast<int>(cur);
         }
     }
+    // Under the passes a frame address derived has no slot either - but one a call, a va_ or a return reads past the
+    // object's start keeps its own: the walker's node there is `&` of a slot, and its `lea` would hide the object's start.
+    ssaAddr_.assign(f.values.size(), 0);
+    std::size_t frame = 0;
+    long long off = 0;
+    for (int pass = 0; passesRun() && pass < 2; pass++)
+        for (std::size_t b = 0; b < f.blocks.size(); b++) {
+            const ir::Block &blk = f.block(f.blocks[b]);
+            for (std::size_t k = 0; k <= blk.insts.size(); k++) {
+                const ir::InstId id = k < blk.insts.size() ? blk.insts[k] : blk.term;
+                if (!id.valid()) continue;
+                const ir::Inst &i = f.inst(id);
+                const bool reads = i.op == ir::Op::Call || i.op == ir::Op::Invoke || i.op == ir::Op::VaStart || i.op == ir::Op::VaArg || i.op == ir::Op::Ret;
+                if (pass == 0 && i.result.valid() && (i.op == ir::Op::Bitcast || i.op == ir::Op::Gep))
+                    ssaAddr_[i.result.v] = ssaFrameAddress(f, i.result, frame, off);
+                for (std::uint32_t n = 0; pass == 1 && reads && n < i.count; n++) {
+                    const ir::ValueId v = f.operand(i, n);
+                    if (ssaAddr_[v.v] && ssaFrameAddress(f, v, frame, off) && off != 0) ssaAddr_[v.v] = 0;
+                }
+            }
+        }
     ssaValueSlot_.assign(f.values.size(), 0);
     for (std::size_t i = 1; i < f.values.size(); i++) {
         if (!f.values[i].type.valid() || ssaTypes_->type(f.values[i].type)->isVoid()) continue;
@@ -96,15 +195,36 @@ const Type *X86_64Linux::typeOf(const ir::Function &f, ir::ValueId v) const { re
 bool X86_64Linux::ssaRemat(const ir::Function &f, ir::ValueId v) const {
     if (!f.value(v).def.valid()) return false;
     const ir::Op op = f.inst(f.value(v).def).op;
-    return op == ir::Op::Alloca || op == ir::Op::IConst || op == ir::Op::Null;
+    return op == ir::Op::Alloca || op == ir::Op::IConst || op == ir::Op::Null || ssaAddr_[v.v] != 0;
+}
+
+// Whether `v` is a frame object's address or one derived from it by pointer casts and constant geps: the object, the distance.
+bool X86_64Linux::ssaFrameAddress(const ir::Function &f, ir::ValueId v, std::size_t &frame, long long &off) const {
+    for (off = 0; f.value(v).def.valid(); v = f.operand(f.inst(f.value(v).def), 0)) {
+        const ir::Inst &d = f.inst(f.value(v).def);
+        if (d.op == ir::Op::Alloca) { frame = static_cast<std::size_t>(d.k); return true; }
+        if (d.op == ir::Op::Bitcast && typeOf(f, v)->isPointer() && typeOf(f, f.operand(d, 0))->isPointer()) continue;
+        if (d.op != ir::Op::Gep) return false;
+        if (d.count == 1) { off += d.k; continue; }
+        const ir::Value &by = f.value(f.operand(d, 1));
+        if (!by.def.valid() || f.inst(by.def).op != ir::Op::IConst) return false;
+        off += f.inst(by.def).k;
+    }
+    return false;
 }
 
 // A general value into the register named: one made afresh where it has no slot.
 void X86_64Linux::ssaLoadReg(const ir::Function &f, ir::ValueId v, const char *r) {
     if (!ssaRemat(f, v)) { a_->ins("mov", vslot(v), reg(r)); return; }
     const ir::Inst &d = f.inst(f.value(v).def);
-    if (d.op == ir::Op::Alloca) a_->ins("lea", local(ssaAllocaSlot_[static_cast<std::size_t>(d.k)]), reg(r));
-    else a_->ins("mov", d.op == ir::Op::IConst ? imm(d.k) : immText("0"), reg(r));
+    std::size_t frame = 0;
+    long long off = 0;
+    if (d.op != ir::Op::IConst && d.op != ir::Op::Null && ssaFrameAddress(f, v, frame, off)) {
+        a_->ins("lea", local(ssaAllocaSlot_[frame]), reg(r));
+        if (off != 0) a_->ins("add", imm(off), reg(r));
+    } else {
+        a_->ins("mov", d.op == ir::Op::IConst ? imm(d.k) : immText("0"), reg(r));
+    }
 }
 
 // The value as the walker's node: its slot's Var, or what makes it afresh - a frame object's `&`, a constant's number.
@@ -115,13 +235,17 @@ ExprPtr X86_64Linux::ssaExpr(const ir::Function &f, ir::ValueId v) const {
         return ExprPtr(p.release());
     }
     const ir::Inst &d = f.inst(f.value(v).def);
-    if (d.op != ir::Op::Alloca) {
+    if (d.op == ir::Op::IConst || d.op == ir::Op::Null) {
         std::unique_ptr<Num> n = make_owned<Num>(d.op == ir::Op::IConst ? static_cast<long long>(d.k) : 0LL);
         n->setType(typeOf(f, v));
         return ExprPtr(n.release());
     }
-    std::unique_ptr<Var> o(Var::local("$a" + std::to_string(d.k), static_cast<int>(ssaAllocaSlot_[static_cast<std::size_t>(d.k)])));
-    o->setType(ssaTypes_->type(f.frame[static_cast<std::size_t>(d.k)].type));
+    // The object itself, or a cast of its address (layoutSsa leaves no other here).
+    std::size_t k = 0;
+    long long off = 0;
+    ssaFrameAddress(f, v, k, off);
+    std::unique_ptr<Var> o(Var::local("$a" + std::to_string(k), static_cast<int>(ssaAllocaSlot_[k])));
+    o->setType(ssaTypes_->type(f.frame[k].type));
     std::unique_ptr<Unary> addr = make_owned<Unary>('&', ExprPtr(o.release()));
     addr->setType(typeOf(f, v));
     return ExprPtr(addr.release());
@@ -188,6 +312,7 @@ void X86_64Linux::ssaUnsupported(const ir::Inst &i) {
 // One instruction. The operands are read from their slots; the result goes to its own.
 void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
     const Type *rt = i.type.valid() ? ssaTypes_->type(i.type) : nullptr;
+    if (i.result.valid() && ssaAddr_[i.result.v]) return;       // a frame address made at each use
     switch (i.op) {
     case ir::Op::Alloca:
     case ir::Op::IConst:
@@ -260,9 +385,13 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         const bool wide = rt->size(target_) == 8;
         const char *acc_ = acc(rt), *d = rhs(rt);
         if (i.op == ir::Op::Shl || i.op == ir::Op::LShr || i.op == ir::Op::AShr) {
-            ssaLoadReg(f, f.operand(i, 1), "%rcx");
+            // Under the passes a constant count inside the width is the instruction's own, and rcx stays free.
+            const ir::Value &by = f.value(f.operand(i, 1));
+            const bool fixed = passesRun() && by.def.valid() && f.inst(by.def).op == ir::Op::IConst && f.inst(by.def).k >= 0 &&
+                               f.inst(by.def).k < (wide ? 64 : 32);
+            if (!fixed) ssaLoadReg(f, f.operand(i, 1), "%rcx");
             ssaLoad(f, f.operand(i, 0));
-            a_->ins(i.op == ir::Op::Shl ? "shl" : i.op == ir::Op::AShr ? "sar" : "shr", reg("%cl"), reg(acc_));
+            a_->ins(i.op == ir::Op::Shl ? "shl" : i.op == ir::Op::AShr ? "sar" : "shr", fixed ? imm(f.inst(by.def).k) : reg("%cl"), reg(acc_));
             canonicalise(rt);
             ssaStore(f, i.result);
             return;
@@ -404,8 +533,18 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
     case ir::Op::CondBr: {
         ssaLoad(f, f.operand(i, 0));
         a_->ins("cmp", immText("0"), reg("%rax"));
-        if (i.succ[0].count == 0 && i.succ[1].count == 0) {
+        // Under the passes a side with no arguments is the jump taken: the false side where the true one is written
+        // next or carries arguments, else the true side; the other side's arguments and its jump follow in line.
+        const bool args0 = i.succ[0].count != 0, args1 = i.succ[1].count != 0;
+        if (passesRun() && !args1 && (args0 || i.succ[0].block.v == ssaNext_)) {
+            a_->ins("je", lbl(ssaBlockLabel(i.succ[1].block)));
+            ssaBranchArgs(f, i.succ[0]);
+            a_->ins("jmp", lbl(ssaBlockLabel(i.succ[0].block)));
+            return;
+        }
+        if (!args0 && (!args1 || passesRun())) {
             a_->ins("jne", lbl(ssaBlockLabel(i.succ[0].block)));
+            ssaBranchArgs(f, i.succ[1]);
             a_->ins("jmp", lbl(ssaBlockLabel(i.succ[1].block)));
             return;
         }
@@ -638,14 +777,16 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
             if (f.block(f.blocks[b]).pad) { ssaPadState_[f.blocks[b].v] = msAddState(); any = true; }
         if (any) { msSetUnwindHelpSlot(ssaUnwindHelpSlot_); storeUnwindHelp(ssaUnwindHelpSlot_); }
     }
-    for (std::size_t b = 0; b < f.blocks.size(); b++) {
-        const ir::Block &blk = f.block(f.blocks[b]);
+    const std::vector<ir::BlockId> order = passesRun() ? blockOrder(f) : f.blocks;
+    for (std::size_t b = 0; b < order.size(); b++) {
+        const ir::Block &blk = f.block(order[b]);
+        ssaNext_ = 0;
         if (blk.pad && usesFunclets() && f.inst(blk.insts[0]).op == ir::Op::CatchPad) {
             // A try's dispatch pad: its state and its try block, the handlers' states following the body's (M3-IR 3.6).
             const ir::Inst &first = f.inst(blk.insts[0]);
             if (first.k == -1) {
                 const ir::Inst &cs = f.inst(blk.term);
-                const int state = ssaPadState_[f.blocks[b].v];
+                const int state = ssaPadState_[order[b].v];
                 msSetState(state, cs.k != 0 ? ssaPadState_[static_cast<std::size_t>(cs.k)] : -1, std::string());
                 MsTryBlock tb;
                 tb.tryLow = state;
@@ -654,9 +795,9 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
                 tb.catchHigh = ssaPadState_[cs.succ.back().block.v];
                 for (std::size_t p = cs.succ.back().block.v; p <= cs.bits && p < ssaPadState_.size(); p++)
                     tb.catchHigh = std::max(tb.catchHigh, ssaPadState_[p]);
-                ssaTries_[f.blocks[b].v] = tb;
+                ssaTries_[order[b].v] = tb;
             } else {
-                selectHandler(f, f.blocks[b]);
+                selectHandler(f, order[b]);
             }
             continue;
         }
@@ -665,8 +806,8 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
             // The funclet destroys and returns to the runtime; its cleanupret names the pad it chains to, or none.
             // Its blocks: the pad's, then the ones tagged with it (a counted destruction's), the cleanupret last of all.
             const std::string funclet = openFunclet(blk.insts.empty() ? 0 : f.inst(blk.insts[0]).pos, true);
-            std::vector<ir::BlockId> blocks(1, f.blocks[b]);
-            for (std::size_t o = 0; o < f.blocks.size(); o++) if (f.block(f.blocks[o]).funclet == f.blocks[b].v) blocks.push_back(f.blocks[o]);
+            std::vector<ir::BlockId> blocks(1, order[b]);
+            for (std::size_t o = 0; o < f.blocks.size(); o++) if (f.block(f.blocks[o]).funclet == order[b].v) blocks.push_back(f.blocks[o]);
             int toState = -1;
             for (std::size_t o = 0; o < blocks.size(); o++) {
                 const ir::Block &in = f.block(blocks[o]);
@@ -680,18 +821,19 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
             }
             endCleanupFunclet();
             leaveFunclet();
-            msSetState(ssaPadState_[f.blocks[b].v], toState, funclet);
+            msSetState(ssaPadState_[order[b].v], toState, funclet);
             continue;
         }
         // A pad: the runtime lands here with the pointer in rax and the selector in edx, stored into the block's two
         // parameters; a branch from another pad arrives past the stores, at the block's own label, carrying both.
         if (blk.pad && blk.params.size() == 2) {
-            a_->defLabel(ssaLandLabel(f.blocks[b]));
+            a_->defLabel(ssaLandLabel(order[b]));
             a_->ins("mov", reg("%rax"), vslot(blk.params[0]));
             a_->ins("movslq", reg("%edx"), reg("%rdx"));     // the selector in its canonical 8-byte form
             a_->ins("mov", reg("%rdx"), vslot(blk.params[1]));
         }
-        a_->defLabel(ssaBlockLabel(f.blocks[b]));
+        a_->defLabel(ssaBlockLabel(order[b]));
+        if (b + 1 < order.size() && !f.block(order[b + 1]).pad && f.block(order[b + 1]).funclet == 0) ssaNext_ = order[b + 1].v;
         for (std::size_t k = 0; k <= blk.insts.size(); k++) {
             const ir::InstId id = k < blk.insts.size() ? blk.insts[k] : blk.term;
             if (!id.valid()) continue;
