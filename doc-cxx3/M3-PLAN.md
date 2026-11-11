@@ -2316,3 +2316,18 @@ the three `make test` gates; the kernels' bench and the cases' .text. `src/` wen
 SsaUnroll.cpp 332, SsaOpt.h +6, the pass table +2, the report +1, OptCosts.h +5, SsaLoops.cpp -1). **Left**: the gates
 above (the coordinator's combined gate); the bench against main's `-O2`; unrolling a loop whose count is not a constant
 (a remainder loop); a loop with more than one exit or latch.
+
+### M3b.5, lane zinit: a local's zeroed run is one memset, 2026-11-12
+
+`int l[1 << 14] = {0}` and `Big l = {0}` (`struct Big { int a[4096]; char b[65536]; }`) were built one store per element:
+the parser's `initZero` wrote a statement per scalar the list left (3.5 MB and 17 MB of -O0 assembly), and the -O2 Ast.h
+path's optimizer is quadratic in them (2048 ints 1.5 s, 4096 ints 9.3 s, 16384 killed at 40 s); `-front=ssa` zeroed with
+one `Op::Memset`, but the selector writes that as a `movq` per word (1.3 s and 2.2 s). Now `Parser::zeroRun`
+(ParserInit.cpp, for a non-constexpr local's list: `blockZero_`, set in ParserStmt.cpp - a constexpr local is folded from
+its stores) zeroes a run past 64 bytes with nothing to construct by one `memset`, as a member's `= {}` already was; and
+`Lowering::zeroBlock` calls `memset` past 64 bytes where `aggregateInit`, a class local's `{}` and an array's `= {}` zeroed.
+Windows, cxx3-msvc, before -> after (-O0 / -O2 / -front=ssa -O2): zb-l1 0.31 / killed 40 / 1.27 s -> 0.19 / 0.01 / 0.03 s;
+zb-l2 1.12 / killed 40 / 2.23 s -> 0.02 / 0.02 / 0.02 s. Case local-zero-init-large (clang's .expected), 0.01-0.05 s.
+`src/` 92755 -> 92798 lines (+43). **Left**: a list that names many elements is still a store per element (a constant
+copied from data, as clang does past its threshold, is the next step); a static local's dynamic list and a `new`'s list
+do not take `zeroRun` (`blockZero_` is the local declarator's alone).

@@ -309,6 +309,7 @@ void Parser::initStore(const std::string &name, std::vector<InitStep> &path,
 void Parser::initZero(const std::string &name, std::vector<InitStep> &path,
                       const Type *type, std::size_t pos,
                       std::vector<StmtPtr> &out) {
+    if (zeroRun(name, path, type, 1, out)) return;
     if (type->isArray()) {
         const Type *elem = type->pointee();
         for (long long i = 0; i < type->length(); i++) {
@@ -341,6 +342,33 @@ void Parser::initZero(const std::string &name, std::vector<InitStep> &path,
     // Zero is a value of every enumeration; this store is not the program converting an int.
     if (type->unqualified()->isEnumeration()) z->setType(type->unqualified());
     initStore(name, path, std::move(z), pos, out);
+}
+
+// [dcl.init.aggr]/8 for n objects of `type` from the path's on, in a local's list: past 64 bytes with nothing to
+// construct, one memset of their bytes, as a member's `= {}` (ParserClass.cpp) and `new T[n]()` are; else false.
+bool Parser::zeroRun(const std::string &name, std::vector<InitStep> &path, const Type *type, long long n, std::vector<StmtPtr> &out) {
+    const long long bytes = n * type->size(target_);
+    if (!blockZero_ || bytes <= 64 || needsConstruction(type) || type->isReference()) return false;
+    const Type *voidPtr = types_.pointerTo(types_.get(Kind::Void));
+    ExprPtr addr(new Unary('&', targetFor(name, path)));
+    addr->setType(types_.pointerTo(type));
+    ExprPtr asVoid(new Cast(voidPtr, std::move(addr)));
+    asVoid->setType(voidPtr);
+    std::vector<ExprPtr> args;
+    args.push_back(std::move(asVoid));
+    ExprPtr zero(new Num(0LL));
+    zero->setType(types_.intType());
+    args.push_back(std::move(zero));
+    ExprPtr size(new Num(bytes));
+    size->setType(types_.get(target_.sizeType()));
+    args.push_back(std::move(size));
+    std::vector<int> argSlots(args.size(), 0);
+    Call *fill = new Call("memset", nullptr, std::move(args), false, 0, -1, std::move(argSlots));
+    fill->setSymbol("memset");
+    ExprPtr filled(fill);
+    filled->setType(voidPtr);
+    out.push_back(StmtPtr(new ExprStmt(std::move(filled))));
+    return true;
 }
 
 void Parser::emitString(const std::string &name, std::vector<InitStep> &path,
@@ -421,9 +449,11 @@ void Parser::emitAggregate(const std::string &name, std::vector<InitStep> &path,
         const Type *elem = type->pointee();
         for (long long i = 0; i < type->length(); i++) {
             path.push_back(InitStep{ nullptr, i });
-            if (c.done()) initZero(name, path, elem, pos, out);
-            else          emitFill(name, path, elem, c, out);
+            const bool run = c.done() && zeroRun(name, path, elem, type->length() - i, out);
+            if (c.done() && !run) initZero(name, path, elem, pos, out);
+            else if (!run)        emitFill(name, path, elem, c, out);
             path.pop_back();
+            if (run) return;
         }
         return;
     }
