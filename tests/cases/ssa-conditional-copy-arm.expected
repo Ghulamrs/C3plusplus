@@ -1,0 +1,14 @@
+P 1
+P read 2
+P 1
+P read 0
+Q 3
+Q read 3
+Q 3
+Q read 4
+~R 8
+R 7
+~R 7
+M 9 made 9
+M 9 made 10
+LEDGER balanced=1 live=0 double=0 phantom=0 over=0 lost=0

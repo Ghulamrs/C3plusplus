@@ -1980,7 +1980,7 @@ private:
     // expression. `constructTemporary` and `materialiseCopy` each allocate a
     // slot of their own, and both arms of a `?:` have to build into one.
     ExprPtr buildInto(const Type *cls, int slot, ExprPtr value, int guard,
-                      std::size_t pos);
+                      std::size_t pos, syntax::NodeId arm);
     // Every temporary an arm made gets a guard, set at the end of that arm.
     ExprPtr markArmTemporaries(ExprPtr arm, std::size_t from, std::size_t to);
     // The same, for an operand `&&` or `||` may skip; the operand's value is

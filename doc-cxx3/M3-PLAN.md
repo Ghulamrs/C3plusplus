@@ -2441,3 +2441,32 @@ defect of the script, the cap is per compile) and was resumed. `src/` went from 
 extensions (`movslq` after each `add`), the byte loop's test not rotated to its foot (`je` out, `jmp` back); (2) virtual
 re-measured on a quiet box against the hash/virtual lane's level; (3) a gep read twice: share its address when both
 reads are in one block (the cases that grew); (4) emit, names, overload, syntax, typed, adapted, coff, c90, win-structure not run by this lane (the coordinator's merged gate).
+
+### M3b.5, lane cond: a conditional's class arms, properly lowered, 2026-11-12
+
+From main `fac07cb6`, branch `m3b5-cond`, code commits `043885e4` and `1f643c63`. Lane sh-B's point (1) and (2).
+**The fact** ([expr.cond]/6, the result a prvalue): `Parser::buildInto` (ParserExprNew.cpp) records the constructor each
+arm's copy into the result slot took - copy for an lvalue, move for a prvalue where there is one - under the arm's
+node, in the record a by-value argument's copy already has (`noteArgumentCopy`, read by `Typer::argumentCopy`); an arm a
+converting constructor made records nothing. **The lowering** (`Lowering::conditionalArm`): an lvalue arm is copied into
+a frame temporary `$cond` by that constructor, or as its bytes for a class whose copy is trivial, and destroyed with the
+full expression under the arm's flag; a prvalue arm's object is still the result's (the move elided, as clang does).
+sh-B's refusal ("a conditional's lvalue arm of a class with a copy constructor") is gone: ssa.sh's census at levels 1
+and 2 is 9105 source bodies, 9105 lowered, 0 outside (main: 9082, 9079, 3 - the three are now lowered). **Point (2)**:
+`(c ? a : P()).set(5)` and `(c ? q : Q(4)).n` were refused ("a conditional that is no lvalue": `o.m` and `o.f()` asked
+`lvalue()` of their object); `Lowering::memberObject` gives a class conditional's materialised result there instead, so
+the copy is what `set` writes. **Case** `tests/cases/ssa-conditional-copy-arm.cpp` (a byte-copied class, one with a copy
+constructor, one with a destructor and a byte copy, one moved from; the ledger at `LF_BALANCE_ONLY`), clang's
+`.expected` (the Windows box's clang, `-x c++ -std=c++11 -pedantic-errors`); right with `ssa-conditional-lvalue-arm` at
+`-O0`, `-O2`, `-front=ssa`, `-front=ssa -O1`, `-front=ssa -O2` on Linux, every function of both on the SSA path.
+**Gates on `1f643c63`** (clean ship and build on each box): Windows (cl build, WINLANES=3) `winpass.sh -front=ssa -O2`
+747 same / 0 differ (GNU), 746 / 0 (MASM), 340 refused as recorded. Linux (clean g++ build) ssa.sh 792 passed / 0 failed
+at levels 1 and 2; run.sh 1120 / 0 at `-front=ssa -O1`, `-front=ssa -O2`, `-front=ssa`, `-O2` and `-O0`; typed.sh and
+adapted.sh 778 / 0 (1808 adapted, all the same as the parser's); `tools/exclusions --check` clean (six ParserExprNew.cpp
+citations re-pointed by 4), 0 comment groups over the cap, memory gate new 1056 raw-pointers 44 (unchanged),
+`ide/generate.py --check`. No step reached a cap. **Not run**: winpass at `-front=ssa -O1`, emit, names, overload, syntax,
+coff, c90, win-structure (the coordinator's merged gate); emit's golden will show the extra copy an lvalue arm now takes
+under `-front=ssa`. `src/` 93591 -> 93625 lines (+34: Lowering.cpp/.h, ParserExprNew.cpp, Parser.h).
+**Left**: an xvalue arm (`c ? std::move(a) : T()`) and an arm of another class converted by a constructor stay on the
+paths they had (the second refused by name, "a conditional of two objects apart in type"); a class conditional bound to
+a reference or assigned to still asks `lvalue()` and is refused by name; sh-B's (3), the self-host under `-front=ssa -O2`.

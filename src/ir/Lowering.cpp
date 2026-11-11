@@ -1853,22 +1853,50 @@ bool Lowering::classConditionalNode(sema::TypedId id) const {
            classObjectNode(child(id, 1)) && classObjectNode(child(id, 2));
 }
 
+// The result is a prvalue: an lvalue arm is copied into a temporary of the frame by the constructor the parser chose
+// (buildInto), or as its bytes, destroyed with the full expression; any other arm's object is the result's.
+Lowering::Val Lowering::conditionalArm(sema::TypedId arm) {
+    const Val o = classObject(arm);
+    if (!isLvalueNode(arm)) return o;
+    const Type &c = *T(o.type).unqualified();
+    const std::string dtor = c.hasDestructor() ? temporaryDestructor(c) : std::string();
+    const ValueId copy = entryAlloca(tid(c), "$cond");
+    std::string symbol;
+    TypeId sig;
+    bool elided = false;
+    if (!c.nonTrivialCopy()) {
+        copyObject(copy, o.v, c);
+    } else if (!argumentCopy_ || !argumentCopy_(tree_.node(arm).syntax, symbol, sig, elided) || elided || T(sig).params().size() != 2 ||
+               !T(sig).params()[1]->isReference() || T(sig).params()[0]->pointee()->unqualified() != &c) {
+        outside("a conditional's lvalue arm whose copy the parser recorded none for");
+    } else {
+        std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(*T(sig).params()[0]), std::vector<ValueId>(1, copy))));
+        ops.push_back(result(add(Op::Bitcast, tid(*types_.pointerTo(T(sig).params()[1]->referent())), std::vector<ValueId>(1, o.v))));
+        directCall(symbol, msFlagged(symbol, sig, ops, 1), ops);
+    }
+    if (!dtor.empty()) guard(copy, c, dtor);
+    return Val(copy, tid(c));
+}
+
+// The object `o.m` and `o.f()` name: an lvalue, or a class conditional's result materialised ([class.temporary]/2).
+Lowering::Val Lowering::memberObject(sema::TypedId o) {
+    sema::TypedId in = o;
+    while (syn(in).kind == syntax::Kind::Paren && count(in) == 1) in = child(in, 0);
+    return classConditionalNode(in) ? conditionalObject(in) : lvalue(o);
+}
+
 Lowering::Val Lowering::conditionalObject(sema::TypedId id) {
-    // The parser copies an lvalue arm into the result (buildInto); taken as it is, the result's move would empty the arm.
-    for (std::uint32_t k = 1; k <= 2; k++)
-        if (isLvalueNode(child(id, k)) && tree_.node(child(id, k)).type->unqualified()->nonTrivialCopy())
-            outside("a conditional's lvalue arm of a class with a copy constructor");
     const Val c = truth(expr(child(id, 0)));
     const BlockId a = newBlock(), b = newBlock(), merge = newBlock();
     condbr(c.v, a, b);
     place(a);
     skippable_++;
-    const Val x = classObject(child(id, 1));
+    const Val x = conditionalArm(child(id, 1));
     const Type &cls = *T(x.type).unqualified();
     const TypeId pt = tid(*types_.pointerTo(&cls));
     br(merge, std::vector<ValueId>(1, result(add(Op::Bitcast, pt, std::vector<ValueId>(1, x.v)))));
     place(b);
-    const Val y = classObject(child(id, 2));
+    const Val y = conditionalArm(child(id, 2));
     skippable_--;
     if (T(y.type).unqualified() != &cls) outside("a conditional of two objects apart in type");
     br(merge, std::vector<ValueId>(1, result(add(Op::Bitcast, pt, std::vector<ValueId>(1, y.v)))));
@@ -4091,7 +4119,7 @@ Lowering::Val Lowering::memberAddress(sema::TypedId id) {
         if (!T(p.type).isPointer() || !T(p.type).pointee()->isStructOrUnion()) outside("a '->' of what is not a pointer to a struct");
         object = Val(p.v, tid(*T(p.type).pointee()));
     } else {
-        object = lvalue(child(id, 0));
+        object = memberObject(child(id, 0));
     }
     const Type &obj = T(object.type);
     if (!obj.isStructOrUnion()) outside("a member of '" + obj.describe() + "'");
@@ -5176,7 +5204,7 @@ Lowering::Val Lowering::call(sema::TypedId id) {
         } else if (syn(head).kind == syntax::Kind::Member && count(head) == 1) {
             const bool arrow = text(head).compare(0, 2, "->") == 0;
             if (arrow) object = arrowPointer(head);
-            else { const Val o = lvalue(child(head, 0)); object = Val(o.v, tid(*types_.pointerTo(&T(o.type)))); }
+            else { const Val o = memberObject(child(head, 0)); object = Val(o.v, tid(*types_.pointerTo(&T(o.type)))); }
         } else if (syn(head).kind == syntax::Kind::Unary && text(head) == "*" && count(head) == 1) {
             // [over.call.object] on `*p`: the class object p points at is the object, p its address.
             object = decay(expr(child(head, 0)));
