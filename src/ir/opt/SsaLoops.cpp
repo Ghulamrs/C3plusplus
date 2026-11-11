@@ -17,13 +17,6 @@ template <class Id> typename std::vector<Id>::iterator place(std::vector<Id> &li
     return it;
 }
 
-struct Loop {
-    std::uint32_t head, pre;                // pre: the one block outside that enters it, 0 for none
-    std::vector<std::uint32_t> blocks;      // in reverse postorder
-    std::vector<char> in;
-    std::vector<std::uint32_t> latches;
-};
-
 struct Looper {
     Function &f;
     const TypeTable &types;
@@ -363,6 +356,12 @@ struct Looper {
 };
 
 }   // namespace
+
+std::vector<Loop> naturalLoops(Function &f, const Dominators &dom, const TypeTable &types, const Target &target, PassLog &log) {
+    Looper p(f, types, target, log);
+    p.fixed = fixedBlocks(f);
+    return p.find(dom);
+}
 
 bool loops(Function &f, const TypeTable &types, const Target &target, PassLog &log) {
     if (!f.entry.valid()) return false;

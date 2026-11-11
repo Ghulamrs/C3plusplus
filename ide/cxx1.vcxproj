@@ -170,6 +170,7 @@
     <ClCompile Include="..\src\ir\opt\SsaLoops.cpp" />
     <ClCompile Include="..\src\ir\opt\SsaOptimize.cpp" />
     <ClCompile Include="..\src\ir\opt\SsaPromote.cpp" />
+    <ClCompile Include="..\src\ir\opt\SsaUnroll.cpp" />
     <ClCompile Include="..\src\ir\opt\SsaValues.cpp" />
   </ItemGroup>
   <ItemGroup>

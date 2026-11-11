@@ -9,8 +9,8 @@ namespace {
 struct Pass { char name[16]; int level; bool again; };
 
 // In the order they run, `run` dispatching by index: jumps before cfg (which removes what threading leaves unreached),
-// gvn after cfg (longer runs of loads), divide after gvn (a division found twice made once; -O2's alone), loops after
-// divide (the divisions it may hoist are those left), dead last; `again`: once more only after a change, what it left.
+// gvn after cfg (longer runs of loads), divide after gvn (-O2's alone), loops after divide (what it may hoist is left),
+// unroll after loops (the counter widened, the invariants out), dead last; `again`: once more after a change.
 const Pass kPasses[] = {
     { "promote", 1, false },
     { "fold", 1, false },
@@ -19,6 +19,7 @@ const Pass kPasses[] = {
     { "gvn", 1, false },
     { "divide", 2, false },
     { "loops", 2, false },
+    { "unroll", 2, false },
     { "dead", 1, false },
     { "refold", 1, true },
     { "rejumps", 1, true },
@@ -30,13 +31,14 @@ const Pass kPasses[] = {
 bool run(std::size_t pass, Function &f, const TypeTable &types, const Target &target, PassLog &log) {
     switch (pass) {
     case 0: promote(f, types, log); return false;
-    case 1: case 8: fold(f, types, target, log); return false;
-    case 2: case 9: return jumps(f, types, target, log);
-    case 3: case 10: return cfg(f, log);
-    case 4: case 11: return values(f, log);
+    case 1: case 9: fold(f, types, target, log); return false;
+    case 2: case 10: return jumps(f, types, target, log);
+    case 3: case 11: return cfg(f, log);
+    case 4: case 12: return values(f, log);
     case 5: return divide(f, types, target, log);
     case 6: return loops(f, types, target, log);
-    case 7: case 12: return dead(f, log);
+    case 7: return unroll(f, types, target, log);
+    case 8: case 13: return dead(f, log);
     default: return false;
     }
 }
@@ -71,7 +73,7 @@ void ssaOptimize(Function &f, int level, const TypeTable &types, const Target &t
         }
         // A volatile access leaves the body only with a block cfg found unreachable.
         const int now = volatileAccesses(f);
-        if (log.check && now != volatiles && (now > volatiles || (k != 3 && k != 10))) {
+        if (log.check && now != volatiles && (now > volatiles || (k != 3 && k != 11))) {
             log.failed++;
             log.faults += "  after " + std::string(p.name) + ": " + f.symbol + ": volatile accesses " + std::to_string(volatiles) +
                           " became " + std::to_string(now) + "\n";

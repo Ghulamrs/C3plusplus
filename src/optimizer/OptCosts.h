@@ -42,6 +42,8 @@ public:
 
     // **The allocator's measure of a reference** at a loop depth - what a use is worth, what a coalesced copy saves: speed counts executions, eight times as many per loop; size counts the instruction, once.
     virtual long referenceWeight(int loopDepth) const = 0;
+    // **The unroller's budget**, in SSA instructions: a counted loop copied whole when its turns times its body fit, else 4 or 2 times.
+    virtual int unrollBudget() const = 0;
 
     // The costs of a level, 1 or 2.
     static std::unique_ptr<Costs> forLevel(int level);
@@ -72,6 +74,7 @@ public:
     int unitGrowthPercent() const override { return 0; }
     int largeFunction() const override { return 0; }
     long referenceWeight(int) const override { return 1; }
+    int unrollBudget() const override { return 0; }
 };
 
 // **-O2: speed.** Registers spent freely, and code grown where time is saved.
@@ -94,6 +97,8 @@ public:
     int unitGrowthPercent() const override { return 40; }
     int largeFunction() const override { return 2700; }
     long referenceWeight(int loopDepth) const override { return 1L << (3 * (loopDepth < 5 ? loopDepth : 5)); }
+    // cppparse's unroller: eight turns of a 40-instruction body, whole; here 4 copies of 40, or the whole of up to 160.
+    int unrollBudget() const override { return 160; }
 };
 
 inline std::unique_ptr<Costs> Costs::forLevel(int level) {

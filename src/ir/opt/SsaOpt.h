@@ -47,6 +47,7 @@ struct PassLog {
     // inline's: the direct calls of a function of the unit, those cloned in place, and the rest by reason.
     int inlineSites = 0, inlined = 0; std::map<std::string, int> inlineRefused;
     int loopsFound, preheaders, hoisted, hoistedTraps, widened;    // loops': found, preheaders made, hoisted (divisions), widened
+    int unrolledFull = 0, unrolledPartial = 0;                     // unroll's: loops copied whole, and 4 or 2 times
     PassLog(bool c, const std::string &after) : check(c), dumpAfter(after), failed(0), allocas(0), scalars(0), promoted(0),
         constants(0), compares(0), casts(0), floating(0), identities(0), copies(0), arguments(0), kept(0), constBranches(0),
         sameBranches(0), unreachable(0), merged(0), forwarded(0), deadInsts(0), deadParams(0), deadStores(0), deadAllocas(0),
@@ -84,6 +85,11 @@ bool jumps(Function &f, const TypeTable &types, const Target &target, PassLog &l
 bool divide(Function &f, const TypeTable &types, const Target &target, PassLog &log);
 // **LICM and counter widening** (SsaLoops.cpp): invariants to a preheader, an int index counter carried at 64 bits.
 bool loops(Function &f, const TypeTable &types, const Target &target, PassLog &log);
+// A natural loop (SsaLoops.cpp): pre is the one block outside, entering by a br, 0 for none or a loop holding a fixed block.
+struct Loop { std::uint32_t head, pre; std::vector<std::uint32_t> blocks; std::vector<char> in; std::vector<std::uint32_t> latches; };
+std::vector<Loop> naturalLoops(Function &f, const Dominators &dom, const TypeTable &types, const Target &target, PassLog &log);
+// **Unrolling** (SsaUnroll.cpp): a loop counted by constants copied whole, or 4 or 2 times, within OptCosts.h's budget.
+bool unroll(Function &f, const TypeTable &types, const Target &target, PassLog &log);
 // gvn's kind of a pure instruction (SsaValues.cpp): 1 constant, 2 arithmetic, 3 compare, 4 cast, 5 gep, 6 select, else 0.
 int pureKind(const Inst &i);
 
