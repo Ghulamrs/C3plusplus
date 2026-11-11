@@ -2230,6 +2230,8 @@ moves in the fill loop, the byte loop's test not rotated to its foot); `virt`'s 
 (its head was not `cmp; jcc` alone when the pass ran); isort; matmul's 25 demotions in 7 allocator rounds and what the
 extra rounds cost on a large function; the loop sets in `blockOrder` are a second finder beside SsaLoops's `Looper::find`
 (one to keep once the lanes merge); `ask`'s effect on `.text` (a preserved register is a save and a restore).
+**ssa-select.allocate re-recorded** (wave-2 finish, m3b5wf): every hunk of its 1222-line diff is this lane's - a build of
+`ed574c01` alone gives the new probe byte for byte, one without it the old (inverted `jcc`s, `blockOrder`, frame addresses).
 
 **M3b.5, the loads lane, 2026-11-12: loads hoisted, counters widened from any start.** From main `5f6a94d1`, branch
 `m3b5-loads`, code commit `9e59b7a8`, all in `loops` (`src/ir/opt/SsaLoops.cpp`). **Loads**: a load leaves a loop that

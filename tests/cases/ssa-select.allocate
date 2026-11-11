@@ -275,8 +275,8 @@
   -22	mov %rcx, %rcx
   -23	mov -32(%rbp), %rax
   -24	cmp $0, %rax
-   25	jl .L._Z5swapsi.ssa.5
-   26	jmp .L._Z5swapsi.ssa.7
+   25	jge .L._Z5swapsi.ssa.7
+  -26	jmp .L._Z5swapsi.ssa.5
    27	.L._Z5swapsi.ssa.5:
   -28	mov $3, %rdi
    29	mov %rsi, %rcx
@@ -449,74 +449,70 @@
    21	movslq %eax, %r8
   -22	mov %r8, %r8
    23	.L._Z4vsumiz.ssa.1:
-   24	lea -224(%rbp), %rdi
-  -25	mov %rdi, %rdi
-  -26	lea -240(%rbp), %rax
-  -27	movq -240(%rbp), %rax
-   28	movl $8, -224(%rbp)
-   29	movl $48, -220(%rbp)
-   30	lea 16(%rbp), %rcx
-   31	mov %rcx, -216(%rbp)
-   32	lea -192(%rbp), %rcx
-   33	mov %rcx, -208(%rbp)
-   34	mov $0, %rcx
-  -35	mov %rcx, %rcx
-   36	mov $0, %rax
-  -37	mov %rax, %rax
-  -38	jmp .L._Z4vsumiz.ssa.4
-   39	.L._Z4vsumiz.ssa.4:
-  -40	mov %r8, %r8
-   41	mov %rax, %rdx
-   42	cmp %r8d, %edx
-   43	setl %dl
-   44	movzbq %dl, %rdx
-  -45	mov %rdx, %rdx
-  -46	mov -248(%rbp), %rax
-  -47	cmp $0, %rax
-   48	jl .L._Z4vsumiz.ssa.5
-   49	jmp .L._Z4vsumiz.ssa.7
-   50	.L._Z4vsumiz.ssa.5:
-  -51	lea -240(%rbp), %rax
-   52	movq %rdi, %rdi
-   53	movl (%rdi), %edx
-   54	cmpl $48, %edx
-   55	jae .L._Z4vsumiz.va.stack.0
-   56	mov 16(%rdi), %rsi
-   57	add %rdx, %rsi
-   58	addl $8, %edx
-   59	movl %edx, (%rdi)
-   60	jmp .L._Z4vsumiz.va.done.0
-   61	.L._Z4vsumiz.va.stack.0:
-   62	mov 8(%rdi), %rsi
-   63	lea 8(%rsi), %rdx
-   64	mov %rdx, 8(%rdi)
-   65	.L._Z4vsumiz.va.done.0:
-  -66	mov %rdx, %rax
-   67	movslq (%rsi), %rdx
-  -68	mov %rdx, %rdx
-  -69	mov %rdx, %rdx
-  -70	mov %rcx, %rcx
-   71	add %edx, %ecx
-   72	movslq %ecx, %rcx
-  -73	mov %rcx, %rcx
-  -74	mov $1, %rdi
-  -75	mov %rax, %rax
-   76	add $1, %eax
-   77	movslq %eax, %rax
+  -24	lea -224(%rbp), %rax
+   25	movl $8, -224(%rbp)
+   26	movl $48, -220(%rbp)
+   27	lea 16(%rbp), %rcx
+   28	mov %rcx, -216(%rbp)
+   29	lea -192(%rbp), %rcx
+   30	mov %rcx, -208(%rbp)
+   31	mov $0, %rcx
+  -32	mov %rcx, %rcx
+   33	mov $0, %rax
+  -34	mov %rax, %rax
+  -35	jmp .L._Z4vsumiz.ssa.4
+   36	.L._Z4vsumiz.ssa.4:
+  -37	mov %r8, %r8
+   38	mov %rax, %rdx
+   39	cmp %r8d, %edx
+   40	setl %dl
+   41	movzbq %dl, %rdx
+  -42	mov %rdx, %rdx
+  -43	mov -240(%rbp), %rax
+  -44	cmp $0, %rax
+   45	jge .L._Z4vsumiz.ssa.7
+  -46	jmp .L._Z4vsumiz.ssa.5
+   47	.L._Z4vsumiz.ssa.5:
+   48	lea -224(%rbp), %rdi
+   49	movl -224(%rbp), %edx
+   50	cmpl $48, %edx
+   51	jae .L._Z4vsumiz.va.stack.0
+   52	mov 16(%rdi), %rsi
+   53	add %rdx, %rsi
+   54	addl $8, %edx
+   55	movl %edx, (%rdi)
+   56	jmp .L._Z4vsumiz.va.done.0
+   57	.L._Z4vsumiz.va.stack.0:
+   58	mov 8(%rdi), %rsi
+   59	lea 8(%rsi), %rdx
+   60	mov %rdx, 8(%rdi)
+   61	.L._Z4vsumiz.va.done.0:
+  -62	mov %rdx, %rax
+   63	movslq (%rsi), %rdx
+  -64	mov %rdx, %rdx
+  -65	mov %rdx, %rdx
+  -66	mov %rcx, %rcx
+   67	add %edx, %ecx
+   68	movslq %ecx, %rcx
+  -69	mov %rcx, %rcx
+  -70	mov $1, %rdi
+  -71	mov %rax, %rax
+   72	add $1, %eax
+   73	movslq %eax, %rax
+  -74	mov %rax, %rax
+  -75	mov %rcx, %rcx
+  -76	mov %rcx, %rcx
+  -77	mov %rax, %rax
   -78	mov %rax, %rax
-  -79	mov %rcx, %rcx
-  -80	mov %rcx, %rcx
-  -81	mov %rax, %rax
-  -82	mov %rax, %rax
-   83	jmp .L._Z4vsumiz.ssa.4
-   84	.L._Z4vsumiz.ssa.7:
-   85	mov %rcx, %rax
-  -86	jmp .L.return._Z4vsumiz
-  -87	mov $0, %rax
-   88	.L.return._Z4vsumiz:
-   89	mov %rbp, %rsp
-   90	pop %rbp
-   91	ret
+   79	jmp .L._Z4vsumiz.ssa.4
+   80	.L._Z4vsumiz.ssa.7:
+   81	mov %rcx, %rax
+  -82	jmp .L.return._Z4vsumiz
+  -83	mov $0, %rax
+   84	.L.return._Z4vsumiz:
+   85	mov %rbp, %rsp
+   86	pop %rbp
+   87	ret
 ;; _Z4picki after allocate (changed)
    0	.prologue frame=48 outgoing=0 realign=0
   -1	mov %rdi, %rax
@@ -533,8 +529,8 @@
   -12	mov %rax, %rax
   -13	mov -32(%rbp), %rax
   -14	cmp $0, %rax
-   15	jne .L._Z4picki.ssa.4
-   16	jmp .L._Z4picki.ssa.5
+   15	je .L._Z4picki.ssa.5
+  -16	jmp .L._Z4picki.ssa.4
    17	.L._Z4picki.ssa.4:
    18	lea _Z5twicei(%rip), %rax
   -19	mov %rax, %rax
@@ -583,545 +579,539 @@
   -26	mov %rdi, %rdi
    27	call _ZN5NoisyC1Ei
    28	.L._Z7guardedi.ssatryend.0:
-   29	jmp .L._Z7guardedi.ssa.6
-   30	.L._Z7guardedi.ssa.2:
-   31	mov %rbx, %rax
-   32	jmp .L.return._Z7guardedi
-   33	.L._Z7guardedi.ssaland.5:
-   34	mov %rax, -48(%rbp)
-   35	movslq %edx, %rbx
-  -36	mov %rbx, %rbx
-   37	.L._Z7guardedi.ssa.5:
-  -38	mov $1, %rdi
-  -39	mov %rbx, %rbx
-   40	cmp $1, %ebx
-   41	sete %bl
-   42	movzbq %bl, %rax
-  -43	mov %rax, %rax
-  -44	mov -152(%rbp), %rax
-  -45	cmp $0, %rax
-   46	je .L._Z7guardedi.ssa.13
-   47	jmp .L._Z7guardedi.ssa.14
-   48	.L._Z7guardedi.ssa.6:
-  -49	mov $2, %rdi
-   50	mov %rbx, %rax
-   51	cmp $2, %eax
-   52	setg %al
-   53	movzbq %al, %rax
-  -54	mov %rax, %rax
-  -55	mov -64(%rbp), %rax
-  -56	cmp $0, %rax
-   57	jg .L._Z7guardedi.ssa.7
-   58	jmp .L._Z7guardedi.ssa.8
-   59	.L._Z7guardedi.ssa.7:
-  -60	mov $3, %rdi
+  -29	jmp .L._Z7guardedi.ssa.6
+   30	.L._Z7guardedi.ssa.6:
+  -31	mov $2, %rdi
+   32	mov %rbx, %rax
+   33	cmp $2, %eax
+   34	setg %al
+   35	movzbq %al, %rax
+  -36	mov %rax, %rax
+  -37	mov -64(%rbp), %rax
+  -38	cmp $0, %rax
+   39	jg .L._Z7guardedi.ssa.7
+   40	jmp .L._Z7guardedi.ssa.8
+   41	.L._Z7guardedi.ssaland.5:
+   42	mov %rax, -48(%rbp)
+   43	movslq %edx, %rbx
+  -44	mov %rbx, %rbx
+   45	.L._Z7guardedi.ssa.5:
+  -46	mov $1, %rdi
+  -47	mov %rbx, %rbx
+   48	cmp $1, %ebx
+   49	sete %bl
+   50	movzbq %bl, %rax
+  -51	mov %rax, %rax
+  -52	mov -152(%rbp), %rax
+  -53	cmp $0, %rax
+   54	je .L._Z7guardedi.ssa.13
+   55	jmp .L._Z7guardedi.ssa.14
+   56	.L._Z7guardedi.ssa.7:
+  -57	mov $3, %rdi
+  -58	mov %rbx, %rbx
+   59	imul $3, %ebx
+   60	movslq %ebx, %rbx
   -61	mov %rbx, %rbx
-   62	imul $3, %ebx
-   63	movslq %ebx, %rbx
-  -64	mov %rbx, %rbx
-  -65	mov $4, %rax
-  -66	mov %rax, -216(%rbp)
-   67	mov $4, %rdi
-  -68	mov $0, %rax
-  -69	mov %rdi, %rdi
-   70	call __cxa_allocate_exception
-  -71	mov %rax, %rax
-  -72	mov %rax, %rax
-  -73	mov -80(%rbp), %rax
-   74	mov %rax, %rdi
-  -75	mov %rbx, %rbx
-  -76	mov %rdi, %rdi
-   77	movl %ebx, (%rdi)
-   78	mov _ZTIi@GOTPCREL(%rip), %rsi
-  -79	mov %rsi, %rsi
-   80	.L._Z7guardedi.ssatry.1:
-  -81	lea -80(%rbp), %rax
-   82	movq %rax, %rax
-  -83	mov %rax, %rdi
-  -84	lea -96(%rbp), %rax
-   85	movq %rsi, %rsi
-  -86	mov %rax, %rsi
-  -87	mov $0, %rax
-  -88	mov %rax, -232(%rbp)
-   89	mov $0, %rdx
-  -90	mov -224(%rbp), %rsi
-  -91	mov -216(%rbp), %rdi
-  -92	mov $0, %rax
-  -93	mov %rdx, %rdx
-  -94	mov %rsi, %rsi
-   95	mov %rax, %rdi
-   96	call __cxa_throw
-  -97	mov %rax, %rax
-  -98	mov %rdx, %rdx
-   99	.L._Z7guardedi.ssatryend.1:
-   100	jmp .L._Z7guardedi.ssa.10
-   101	.L._Z7guardedi.ssa.8:
-  -102	lea -20(%rbp), %rax
-   103	movslq -20(%rbp), %rbx
-  -104	mov %rbx, %rbx
-   105	lea -24(%rbp), %rdi
-  -106	mov %rax, -216(%rbp)
-  -107	mov %rax, %rdi
-  -108	mov $0, %rax
-  -109	mov %rdi, %rdi
-   110	call _ZN5NoisyD1Ev
-  -111	movapd %xmm0, %xmm0
-  -112	mov %rbx, %rbx
-  -113	mov %rbx, %rbx
-   114	jmp .L._Z7guardedi.ssa.2
-   115	.L._Z7guardedi.ssaland.9:
-   116	mov %rax, -104(%rbp)
-   117	movslq %edx, %rbx
-  -118	mov %rbx, %rbx
-   119	.L._Z7guardedi.ssa.9:
-   120	.L._Z7guardedi.ssatry.2:
-   121	lea -24(%rbp), %rdi
-  -122	mov %rax, -216(%rbp)
-  -123	mov %rax, %rdi
-  -124	mov $0, %rax
-  -125	mov %rdi, %rdi
-   126	call _ZN5NoisyD1Ev
-   127	.L._Z7guardedi.ssatryend.2:
-   128	mov -104(%rbp), %rax
-   129	mov %rax, -48(%rbp)
-  -130	mov %rbx, %rbx
-  -131	mov %rbx, %rbx
-   132	jmp .L._Z7guardedi.ssa.5
-   133	.L._Z7guardedi.ssa.10:
-   134	.L._Z7guardedi.ssaland.11:
-   135	mov %rax, %rdi
-   136	movslq %edx, %rdx
-  -137	mov %rdx, %rdx
-   138	.L._Z7guardedi.ssa.11:
-  -139	lea -128(%rbp), %rax
-   140	movq %rdi, %rdi
-  -141	mov %rax, -216(%rbp)
-  -142	mov %rax, %rdi
-  -143	mov $0, %rax
-  -144	mov %rdi, %rdi
-   145	call __cxa_begin_catch
-  -146	mov %rax, %rax
-  -147	mov %rax, %rax
-  -148	mov $0, %rax
-   149	call _ZSt9terminatev
-   150	.L._Z7guardedi.ssa.13:
-  -151	lea -48(%rbp), %rax
-   152	movq -48(%rbp), %rdi
-  -153	mov %rax, -216(%rbp)
-  -154	mov %rax, %rdi
-  -155	mov $0, %rax
-  -156	mov %rdi, %rdi
-   157	call __cxa_begin_catch
-  -158	mov %rax, %rax
+  -62	mov $4, %rax
+  -63	mov %rax, -216(%rbp)
+   64	mov $4, %rdi
+  -65	mov $0, %rax
+  -66	mov %rdi, %rdi
+   67	call __cxa_allocate_exception
+  -68	mov %rax, %rax
+  -69	mov %rax, %rax
+  -70	mov -80(%rbp), %rax
+   71	mov %rax, %rdi
+  -72	mov %rbx, %rbx
+  -73	mov %rdi, %rdi
+   74	movl %ebx, (%rdi)
+   75	mov _ZTIi@GOTPCREL(%rip), %rsi
+  -76	mov %rsi, %rsi
+   77	.L._Z7guardedi.ssatry.1:
+  -78	lea -80(%rbp), %rax
+   79	movq %rax, %rax
+  -80	mov %rax, %rdi
+  -81	lea -96(%rbp), %rax
+   82	movq %rsi, %rsi
+  -83	mov %rax, %rsi
+  -84	mov $0, %rax
+  -85	mov %rax, -232(%rbp)
+   86	mov $0, %rdx
+  -87	mov -224(%rbp), %rsi
+  -88	mov -216(%rbp), %rdi
+  -89	mov $0, %rax
+  -90	mov %rdx, %rdx
+  -91	mov %rsi, %rsi
+   92	mov %rax, %rdi
+   93	call __cxa_throw
+   94	.L._Z7guardedi.ssatryend.1:
+  -95	jmp .L._Z7guardedi.ssa.10
+   96	.L._Z7guardedi.ssa.10:
+   97	.L._Z7guardedi.ssa.8:
+  -98	lea -20(%rbp), %rax
+   99	movslq -20(%rbp), %rbx
+  -100	mov %rbx, %rbx
+   101	lea -24(%rbp), %rdi
+  -102	mov %rax, -216(%rbp)
+  -103	mov %rax, %rdi
+  -104	mov $0, %rax
+  -105	mov %rdi, %rdi
+   106	call _ZN5NoisyD1Ev
+  -107	movapd %xmm0, %xmm0
+  -108	mov %rbx, %rbx
+  -109	mov %rbx, %rbx
+   110	jmp .L._Z7guardedi.ssa.2
+   111	.L._Z7guardedi.ssaland.9:
+   112	mov %rax, -104(%rbp)
+   113	movslq %edx, %rbx
+  -114	mov %rbx, %rbx
+   115	.L._Z7guardedi.ssa.9:
+   116	.L._Z7guardedi.ssatry.2:
+   117	lea -24(%rbp), %rdi
+  -118	mov %rax, -216(%rbp)
+  -119	mov %rax, %rdi
+  -120	mov $0, %rax
+  -121	mov %rdi, %rdi
+   122	call _ZN5NoisyD1Ev
+   123	.L._Z7guardedi.ssatryend.2:
+   124	mov -104(%rbp), %rax
+   125	mov %rax, -48(%rbp)
+  -126	mov %rbx, %rbx
+  -127	mov %rbx, %rbx
+   128	jmp .L._Z7guardedi.ssa.5
+   129	.L._Z7guardedi.ssa.2:
+   130	mov %rbx, %rax
+   131	jmp .L.return._Z7guardedi
+   132	.L._Z7guardedi.ssaland.11:
+   133	mov %rax, %rdi
+   134	movslq %edx, %rdx
+  -135	mov %rdx, %rdx
+   136	.L._Z7guardedi.ssa.11:
+  -137	lea -128(%rbp), %rax
+   138	movq %rdi, %rdi
+  -139	mov %rax, -216(%rbp)
+  -140	mov %rax, %rdi
+  -141	mov $0, %rax
+  -142	mov %rdi, %rdi
+   143	call __cxa_begin_catch
+  -144	mov %rax, %rax
+  -145	mov %rax, %rax
+  -146	mov $0, %rax
+   147	call _ZSt9terminatev
+   148	.L._Z7guardedi.ssa.13:
+  -149	lea -48(%rbp), %rax
+   150	movq -48(%rbp), %rdi
+  -151	mov %rax, -216(%rbp)
+  -152	mov %rax, %rdi
+  -153	mov $0, %rax
+  -154	mov %rdi, %rdi
+   155	call __cxa_begin_catch
+  -156	mov %rax, %rax
+  -157	mov %rax, %rax
+  -158	mov -160(%rbp), %rax
   -159	mov %rax, %rax
-  -160	mov -160(%rbp), %rax
-  -161	mov %rax, %rax
-  -162	mov -168(%rbp), %rax
-   163	movslq (%rax), %rcx
-  -164	mov %rcx, %rcx
-  -165	lea -20(%rbp), %rax
-   166	movslq -20(%rbp), %rax
-  -167	mov %rax, %rax
-  -168	mov %rax, %rax
-  -169	mov %rcx, %rcx
-   170	add %eax, %ecx
-   171	movslq %ecx, %rbx
-  -172	mov %rbx, %rbx
-  -173	mov $0, %rax
-   174	call __cxa_end_catch
-  -175	movapd %xmm0, %xmm0
-  -176	mov %rbx, %rbx
-  -177	mov %rbx, %rbx
-   178	jmp .L._Z7guardedi.ssa.2
-   179	.L._Z7guardedi.ssa.14:
-  -180	lea -48(%rbp), %rax
-   181	movq -48(%rbp), %rdi
-  -182	mov %rax, -216(%rbp)
-  -183	mov %rax, %rdi
-  -184	mov $0, %rax
-  -185	mov %rdi, %rdi
-   186	call _Unwind_Resume
-  -187	movapd %xmm0, %xmm0
-   188	mov $0, %rax
-   189	.L.return._Z7guardedi:
-   190	mov -248(%rbp), %rbx
-   191	mov %rbp, %rsp
-   192	pop %rbp
-   193	ret
-   194	.Lfunc.end._Z7guardedi:
+  -160	mov -168(%rbp), %rax
+   161	movslq (%rax), %rcx
+  -162	mov %rcx, %rcx
+  -163	lea -20(%rbp), %rax
+   164	movslq -20(%rbp), %rax
+  -165	mov %rax, %rax
+  -166	mov %rax, %rax
+  -167	mov %rcx, %rcx
+   168	add %eax, %ecx
+   169	movslq %ecx, %rbx
+  -170	mov %rbx, %rbx
+  -171	mov $0, %rax
+   172	call __cxa_end_catch
+  -173	movapd %xmm0, %xmm0
+  -174	mov %rbx, %rbx
+  -175	mov %rbx, %rbx
+   176	jmp .L._Z7guardedi.ssa.2
+   177	.L._Z7guardedi.ssa.14:
+  -178	lea -48(%rbp), %rax
+   179	movq -48(%rbp), %rdi
+  -180	mov %rax, -216(%rbp)
+  -181	mov %rax, %rdi
+  -182	mov $0, %rax
+  -183	mov %rdi, %rdi
+   184	call _Unwind_Resume
+  -185	movapd %xmm0, %xmm0
+   186	mov $0, %rax
+   187	.L.return._Z7guardedi:
+   188	mov -248(%rbp), %rbx
+   189	mov %rbp, %rsp
+   190	pop %rbp
+   191	ret
+   192	.Lfunc.end._Z7guardedi:
 ;; main after allocate (changed)
-   0	.prologue frame=336 outgoing=0 realign=0
+   0	.prologue frame=320 outgoing=0 realign=0
    1	.L.main.ssa.1:
   -2	lea -8(%rbp), %rax
    3	movq $0, -8(%rbp)
-   4	lea -8(%rbp), %rax
-  -5	mov %rax, %rax
-  -6	mov $3, %rax
-  -7	mov %rax, %rdi
-   8	movl $3, -8(%rbp)
-   9	lea -8(%rbp), %rax
-   10	add $4, %rax
-  -11	mov %rax, %rax
-  -12	mov $4, %rax
-  -13	mov %rax, %rdi
-   14	movl $4, -4(%rbp)
-   15	lea .L.str.2(%rip), %rax
-   16	mov %rax, -40(%rbp)
-  -17	mov -40(%rbp), %rax
-   18	mov %rax, -48(%rbp)
-  -19	mov $-3, %rax
+  -4	mov $3, %rax
+  -5	lea -8(%rbp), %rdi
+   6	movl $3, -8(%rbp)
+  -7	mov $4, %rax
+  -8	lea -8(%rbp), %rdi
+  -9	add $4, %rdi
+   10	movl $4, -4(%rbp)
+   11	lea .L.str.2(%rip), %rax
+   12	mov %rax, -24(%rbp)
+  -13	mov -24(%rbp), %rax
+   14	mov %rax, -32(%rbp)
+  -15	mov $-3, %rax
+  -16	mov %rax, -328(%rbp)
+  -17	mov $7, %rax
+  -18	mov %rax, -336(%rbp)
+   19	mov $4000000000, %rdx
   -20	mov %rax, -344(%rbp)
-  -21	mov $7, %rax
-  -22	mov %rax, -352(%rbp)
-   23	mov $4000000000, %rdx
-  -24	mov %rax, -360(%rbp)
-  -25	mov %rax, %rdx
-   26	mov $7, %rsi
-   27	mov $-3, %rdi
-  -28	mov $0, %rax
-  -29	mov %rdx, %rdx
-  -30	mov %rsi, %rsi
-  -31	mov %rdi, %rdi
-   32	call _Z6narrowasj
-  -33	mov %rax, %rax
-   34	movslq %eax, %rax
-   35	mov %rax, -56(%rbp)
-  -36	mov $100, %rax
+  -21	mov %rax, %rdx
+   22	mov $7, %rsi
+   23	mov $-3, %rdi
+  -24	mov $0, %rax
+  -25	mov %rdx, %rdx
+  -26	mov %rsi, %rsi
+  -27	mov %rdi, %rdi
+   28	call _Z6narrowasj
+  -29	mov %rax, %rax
+   30	movslq %eax, %rax
+   31	mov %rax, -40(%rbp)
+  -32	mov $100, %rax
+  -33	mov %rax, -328(%rbp)
+  -34	mov $-2, %rax
+  -35	mov %rax, -336(%rbp)
+  -36	mov $9, %rax
   -37	mov %rax, -344(%rbp)
-  -38	mov $-2, %rax
-  -39	mov %rax, -352(%rbp)
-  -40	mov $9, %rax
-  -41	mov %rax, -360(%rbp)
-   42	mov $9, %rdx
-   43	mov $-2, %rsi
-   44	mov $100, %rdi
-  -45	mov $0, %rax
-  -46	mov %rdx, %rdx
-  -47	mov %rsi, %rsi
-  -48	mov %rdi, %rdi
-   49	call _Z6narrowasj
-  -50	mov %rax, %rax
-   51	movslq %eax, %rax
-   52	mov %rax, -64(%rbp)
-  -53	lea -8(%rbp), %rax
-  -54	mov %rax, -344(%rbp)
-  -55	mov -344(%rbp), %rax
-   56	mov -8(%rbp), %rdi
-  -57	mov $0, %rax
-  -58	mov %rdi, %rdi
-   59	call _Z7sumPair4Pair
-  -60	mov %rax, %rax
-   61	movslq %eax, %rax
-  -62	mov %rax, %rax
-  -63	lea -48(%rbp), %rax
-   64	movq -48(%rbp), %rdi
-  -65	mov %rax, %rdi
-  -66	lea -56(%rbp), %rax
-   67	movslq -56(%rbp), %rsi
-  -68	mov %rax, %rsi
-  -69	lea -64(%rbp), %rax
-   70	movslq -64(%rbp), %rdx
-  -71	mov %rax, %rdx
-  -72	lea -72(%rbp), %rax
-   73	movslq %eax, %rcx
-  -74	mov %rax, -368(%rbp)
-  -75	mov %rax, %rcx
-  -76	mov -360(%rbp), %rdx
-  -77	mov -352(%rbp), %rsi
-  -78	mov -344(%rbp), %rdi
-   79	mov $0, %rax
-  -80	mov %rax, %rax
-  -81	mov %rcx, %rcx
-  -82	mov %rdx, %rdx
-  -83	mov %rsi, %rsi
-  -84	mov %rdi, %rdi
-   85	call printf
-  -86	mov %rax, %rax
-   87	movslq %eax, %rax
-  -88	mov %rax, %rax
-   89	lea .L.str.3(%rip), %rax
-   90	mov %rax, -88(%rbp)
-  -91	mov -88(%rbp), %rax
-   92	mov %rax, -96(%rbp)
-  -93	mov $0, %rax
-  -94	mov %rax, -344(%rbp)
-   95	mov $0, %rdi
-  -96	mov $0, %rax
-  -97	mov %rdi, %rdi
-   98	call _Z5swapsi
-  -99	mov %rax, %rax
-   100	movslq %eax, %rax
-   101	mov %rax, -104(%rbp)
-  -102	mov $3, %rax
-  -103	mov %rax, -344(%rbp)
-   104	mov $3, %rdi
-  -105	mov $0, %rax
-  -106	mov %rdi, %rdi
-   107	call _Z5swapsi
-  -108	mov %rax, %rax
-   109	movslq %eax, %rax
-   110	mov %rax, -112(%rbp)
-  -111	mov $4, %rax
-  -112	mov %rax, -344(%rbp)
-   113	mov $4, %rdi
-  -114	mov $0, %rax
-  -115	mov %rdi, %rdi
-   116	call _Z5swapsi
-  -117	mov %rax, %rax
-   118	movslq %eax, %rax
-  -119	mov %rax, %rax
-  -120	lea -96(%rbp), %rax
-   121	movq -96(%rbp), %rdi
-  -122	mov %rax, %rdi
-  -123	lea -104(%rbp), %rax
-   124	movslq -104(%rbp), %rsi
-  -125	mov %rax, %rsi
-  -126	lea -112(%rbp), %rax
-   127	movslq -112(%rbp), %rdx
-  -128	mov %rax, %rdx
-  -129	lea -120(%rbp), %rax
-   130	movslq %eax, %rcx
-  -131	mov %rax, -368(%rbp)
-  -132	mov %rax, %rcx
-  -133	mov -360(%rbp), %rdx
-  -134	mov -352(%rbp), %rsi
-  -135	mov -344(%rbp), %rdi
-   136	mov $0, %rax
-  -137	mov %rax, %rax
-  -138	mov %rcx, %rcx
-  -139	mov %rdx, %rdx
-  -140	mov %rsi, %rsi
-  -141	mov %rdi, %rdi
-   142	call printf
-  -143	mov %rax, %rax
-   144	movslq %eax, %rax
-  -145	mov %rax, %rax
-   146	lea .L.str.4(%rip), %rax
-   147	mov %rax, -136(%rbp)
-  -148	mov -136(%rbp), %rax
-   149	mov %rax, -144(%rbp)
-  -150	mov $1, %rax
-  -151	mov %rax, -344(%rbp)
-   152	mov $1, %rdi
-  -153	mov $0, %rax
-  -154	mov %rdi, %rdi
-   155	call _Z6acrossi
-  -156	mov %rax, %rax
-   157	movslq %eax, %rax
-   158	mov %rax, -152(%rbp)
-  -159	mov $-4, %rax
-  -160	mov %rax, -344(%rbp)
-   161	mov $-4, %rdi
-  -162	mov $0, %rax
-  -163	mov %rdi, %rdi
-   164	call _Z6acrossi
-  -165	mov %rax, %rax
-   166	movslq %eax, %rax
-  -167	mov %rax, %rax
-  -168	lea -144(%rbp), %rax
-   169	movq -144(%rbp), %rdi
-  -170	mov %rax, %rdi
-  -171	lea -152(%rbp), %rax
-   172	movslq -152(%rbp), %rsi
-  -173	mov %rax, %rsi
-  -174	lea -160(%rbp), %rax
-   175	movslq %eax, %rdx
-  -176	mov %rax, -360(%rbp)
-  -177	mov %rax, %rdx
-  -178	mov -352(%rbp), %rsi
-  -179	mov -344(%rbp), %rdi
-   180	mov $0, %rax
-  -181	mov %rax, %rax
-  -182	mov %rdx, %rdx
-  -183	mov %rsi, %rsi
-  -184	mov %rdi, %rdi
-   185	call printf
-  -186	mov %rax, %rax
-   187	movslq %eax, %rax
-  -188	mov %rax, %rax
-   189	lea .L.str.5(%rip), %rax
-   190	mov %rax, -176(%rbp)
-  -191	mov -176(%rbp), %rax
-   192	mov %rax, -184(%rbp)
-  -193	mov $3, %rax
+   38	mov $9, %rdx
+   39	mov $-2, %rsi
+   40	mov $100, %rdi
+  -41	mov $0, %rax
+  -42	mov %rdx, %rdx
+  -43	mov %rsi, %rsi
+  -44	mov %rdi, %rdi
+   45	call _Z6narrowasj
+  -46	mov %rax, %rax
+   47	movslq %eax, %rax
+   48	mov %rax, -48(%rbp)
+  -49	lea -8(%rbp), %rax
+  -50	mov %rax, -328(%rbp)
+  -51	mov -328(%rbp), %rax
+   52	mov -8(%rbp), %rdi
+  -53	mov $0, %rax
+  -54	mov %rdi, %rdi
+   55	call _Z7sumPair4Pair
+  -56	mov %rax, %rax
+   57	movslq %eax, %rax
+  -58	mov %rax, %rax
+  -59	lea -32(%rbp), %rax
+   60	movq -32(%rbp), %rdi
+  -61	mov %rax, %rdi
+  -62	lea -40(%rbp), %rax
+   63	movslq -40(%rbp), %rsi
+  -64	mov %rax, %rsi
+  -65	lea -48(%rbp), %rax
+   66	movslq -48(%rbp), %rdx
+  -67	mov %rax, %rdx
+  -68	lea -56(%rbp), %rax
+   69	movslq %eax, %rcx
+  -70	mov %rax, -352(%rbp)
+  -71	mov %rax, %rcx
+  -72	mov -344(%rbp), %rdx
+  -73	mov -336(%rbp), %rsi
+  -74	mov -328(%rbp), %rdi
+   75	mov $0, %rax
+  -76	mov %rax, %rax
+  -77	mov %rcx, %rcx
+  -78	mov %rdx, %rdx
+  -79	mov %rsi, %rsi
+  -80	mov %rdi, %rdi
+   81	call printf
+  -82	mov %rax, %rax
+   83	movslq %eax, %rax
+  -84	mov %rax, %rax
+   85	lea .L.str.3(%rip), %rax
+   86	mov %rax, -72(%rbp)
+  -87	mov -72(%rbp), %rax
+   88	mov %rax, -80(%rbp)
+  -89	mov $0, %rax
+  -90	mov %rax, -328(%rbp)
+   91	mov $0, %rdi
+  -92	mov $0, %rax
+  -93	mov %rdi, %rdi
+   94	call _Z5swapsi
+  -95	mov %rax, %rax
+   96	movslq %eax, %rax
+   97	mov %rax, -88(%rbp)
+  -98	mov $3, %rax
+  -99	mov %rax, -328(%rbp)
+   100	mov $3, %rdi
+  -101	mov $0, %rax
+  -102	mov %rdi, %rdi
+   103	call _Z5swapsi
+  -104	mov %rax, %rax
+   105	movslq %eax, %rax
+   106	mov %rax, -96(%rbp)
+  -107	mov $4, %rax
+  -108	mov %rax, -328(%rbp)
+   109	mov $4, %rdi
+  -110	mov $0, %rax
+  -111	mov %rdi, %rdi
+   112	call _Z5swapsi
+  -113	mov %rax, %rax
+   114	movslq %eax, %rax
+  -115	mov %rax, %rax
+  -116	lea -80(%rbp), %rax
+   117	movq -80(%rbp), %rdi
+  -118	mov %rax, %rdi
+  -119	lea -88(%rbp), %rax
+   120	movslq -88(%rbp), %rsi
+  -121	mov %rax, %rsi
+  -122	lea -96(%rbp), %rax
+   123	movslq -96(%rbp), %rdx
+  -124	mov %rax, %rdx
+  -125	lea -104(%rbp), %rax
+   126	movslq %eax, %rcx
+  -127	mov %rax, -352(%rbp)
+  -128	mov %rax, %rcx
+  -129	mov -344(%rbp), %rdx
+  -130	mov -336(%rbp), %rsi
+  -131	mov -328(%rbp), %rdi
+   132	mov $0, %rax
+  -133	mov %rax, %rax
+  -134	mov %rcx, %rcx
+  -135	mov %rdx, %rdx
+  -136	mov %rsi, %rsi
+  -137	mov %rdi, %rdi
+   138	call printf
+  -139	mov %rax, %rax
+   140	movslq %eax, %rax
+  -141	mov %rax, %rax
+   142	lea .L.str.4(%rip), %rax
+   143	mov %rax, -120(%rbp)
+  -144	mov -120(%rbp), %rax
+   145	mov %rax, -128(%rbp)
+  -146	mov $1, %rax
+  -147	mov %rax, -328(%rbp)
+   148	mov $1, %rdi
+  -149	mov $0, %rax
+  -150	mov %rdi, %rdi
+   151	call _Z6acrossi
+  -152	mov %rax, %rax
+   153	movslq %eax, %rax
+   154	mov %rax, -136(%rbp)
+  -155	mov $-4, %rax
+  -156	mov %rax, -328(%rbp)
+   157	mov $-4, %rdi
+  -158	mov $0, %rax
+  -159	mov %rdi, %rdi
+   160	call _Z6acrossi
+  -161	mov %rax, %rax
+   162	movslq %eax, %rax
+  -163	mov %rax, %rax
+  -164	lea -128(%rbp), %rax
+   165	movq -128(%rbp), %rdi
+  -166	mov %rax, %rdi
+  -167	lea -136(%rbp), %rax
+   168	movslq -136(%rbp), %rsi
+  -169	mov %rax, %rsi
+  -170	lea -144(%rbp), %rax
+   171	movslq %eax, %rdx
+  -172	mov %rax, -344(%rbp)
+  -173	mov %rax, %rdx
+  -174	mov -336(%rbp), %rsi
+  -175	mov -328(%rbp), %rdi
+   176	mov $0, %rax
+  -177	mov %rax, %rax
+  -178	mov %rdx, %rdx
+  -179	mov %rsi, %rsi
+  -180	mov %rdi, %rdi
+   181	call printf
+  -182	mov %rax, %rax
+   183	movslq %eax, %rax
+  -184	mov %rax, %rax
+   185	lea .L.str.5(%rip), %rax
+   186	mov %rax, -160(%rbp)
+  -187	mov -160(%rbp), %rax
+   188	mov %rax, -168(%rbp)
+  -189	mov $3, %rax
+  -190	mov %rax, -328(%rbp)
+  -191	mov $1, %rax
+  -192	mov %rax, -336(%rbp)
+  -193	mov $2, %rax
   -194	mov %rax, -344(%rbp)
-  -195	mov $1, %rax
+  -195	mov $3, %rax
   -196	mov %rax, -352(%rbp)
-  -197	mov $2, %rax
-  -198	mov %rax, -360(%rbp)
-  -199	mov $3, %rax
-  -200	mov %rax, -368(%rbp)
-   201	mov $3, %rcx
-   202	mov $2, %rdx
-   203	mov $1, %rsi
-   204	mov $3, %rdi
-   205	mov $0, %rax
-  -206	mov %rax, %rax
-  -207	mov %rcx, %rcx
-  -208	mov %rdx, %rdx
-  -209	mov %rsi, %rsi
-  -210	mov %rdi, %rdi
-   211	call _Z4vsumiz
-  -212	mov %rax, %rax
-   213	movslq %eax, %rax
-   214	mov %rax, -192(%rbp)
-  -215	mov $0, %rax
-  -216	mov %rax, -344(%rbp)
-   217	mov $0, %rdi
-   218	mov $0, %rax
-  -219	mov %rax, %rax
-  -220	mov %rdi, %rdi
-   221	call _Z4vsumiz
-  -222	mov %rax, %rax
-   223	movslq %eax, %rax
-  -224	mov %rax, %rax
-  -225	lea -184(%rbp), %rax
-   226	movq -184(%rbp), %rdi
-  -227	mov %rax, %rdi
-  -228	lea -192(%rbp), %rax
-   229	movslq -192(%rbp), %rsi
-  -230	mov %rax, %rsi
-  -231	lea -200(%rbp), %rax
-   232	movslq %eax, %rdx
-  -233	mov %rax, -360(%rbp)
-  -234	mov %rax, %rdx
-  -235	mov -352(%rbp), %rsi
-  -236	mov -344(%rbp), %rdi
-   237	mov $0, %rax
-  -238	mov %rax, %rax
-  -239	mov %rdx, %rdx
-  -240	mov %rsi, %rsi
-  -241	mov %rdi, %rdi
-   242	call printf
-  -243	mov %rax, %rax
-   244	movslq %eax, %rax
-  -245	mov %rax, %rax
-  -246	mov $1, %rax
-  -247	mov %rax, -344(%rbp)
-   248	mov $1, %rdi
-  -249	mov $0, %rax
-  -250	mov %rdi, %rdi
-   251	call _Z4picki
-   252	mov %rax, %rcx
-  -253	mov %rcx, %rcx
-   254	lea .L.str.6(%rip), %rax
-   255	mov %rax, -224(%rbp)
-  -256	mov -224(%rbp), %rax
-   257	mov %rax, -232(%rbp)
-  -258	lea -216(%rbp), %rax
-   259	movq %rcx, %rcx
-  -260	mov %rax, %r11
-  -261	mov $21, %rax
-  -262	mov %rax, -352(%rbp)
-   263	mov $21, %rdi
-  -264	mov -344(%rbp), %r11
-  -265	mov $0, %rax
-  -266	mov %rdi, %rdi
-   267	call *%rcx
-  -268	mov %rax, %rax
-   269	movslq %eax, %rax
-   270	mov %rax, -240(%rbp)
-  -271	mov $0, %rax
-  -272	mov %rax, -344(%rbp)
-   273	mov $0, %rdi
-  -274	mov $0, %rax
-  -275	mov %rdi, %rdi
-   276	call _Z4picki
-  -277	mov %rax, %rax
-  -278	mov %rax, %rax
-  -279	mov $0, %rdi
-  -280	mov -248(%rbp), %rax
-   281	cmp $0, %rax
-   282	sete %al
-   283	movzbq %al, %rax
-  -284	mov %rax, %rax
-  -285	mov -256(%rbp), %rax
-  -286	movslq %eax, %rax
-  -287	mov %rax, %rax
-  -288	lea -232(%rbp), %rax
-   289	movq -232(%rbp), %rdi
-  -290	mov %rax, %rdi
-  -291	lea -240(%rbp), %rax
-   292	movslq -240(%rbp), %rsi
-  -293	mov %rax, %rsi
-  -294	lea -264(%rbp), %rax
-   295	movslq %eax, %rdx
-  -296	mov %rax, -360(%rbp)
-  -297	mov %rax, %rdx
-  -298	mov -352(%rbp), %rsi
-  -299	mov -344(%rbp), %rdi
-   300	mov $0, %rax
-  -301	mov %rax, %rax
-  -302	mov %rdx, %rdx
-  -303	mov %rsi, %rsi
-  -304	mov %rdi, %rdi
-   305	call printf
-  -306	mov %rax, %rax
-   307	movslq %eax, %rax
-  -308	mov %rax, %rax
-   309	lea .L.str.7(%rip), %rax
-   310	mov %rax, -280(%rbp)
-  -311	mov -280(%rbp), %rax
-   312	mov %rax, -288(%rbp)
-  -313	mov $1, %rax
-  -314	mov %rax, -344(%rbp)
-   315	mov $1, %rdi
-  -316	mov $0, %rax
-  -317	mov %rdi, %rdi
-   318	call _Z7guardedi
-  -319	mov %rax, %rax
-   320	movslq %eax, %rax
-  -321	mov %rax, %rax
-  -322	lea -288(%rbp), %rax
-   323	movq -288(%rbp), %rdi
-  -324	mov %rax, %rdi
-  -325	lea -296(%rbp), %rax
-   326	movslq %eax, %rsi
-  -327	mov %rax, -352(%rbp)
-  -328	mov %rax, %rsi
-  -329	mov -344(%rbp), %rdi
-   330	mov $0, %rax
+   197	mov $3, %rcx
+   198	mov $2, %rdx
+   199	mov $1, %rsi
+   200	mov $3, %rdi
+   201	mov $0, %rax
+  -202	mov %rax, %rax
+  -203	mov %rcx, %rcx
+  -204	mov %rdx, %rdx
+  -205	mov %rsi, %rsi
+  -206	mov %rdi, %rdi
+   207	call _Z4vsumiz
+  -208	mov %rax, %rax
+   209	movslq %eax, %rax
+   210	mov %rax, -176(%rbp)
+  -211	mov $0, %rax
+  -212	mov %rax, -328(%rbp)
+   213	mov $0, %rdi
+   214	mov $0, %rax
+  -215	mov %rax, %rax
+  -216	mov %rdi, %rdi
+   217	call _Z4vsumiz
+  -218	mov %rax, %rax
+   219	movslq %eax, %rax
+  -220	mov %rax, %rax
+  -221	lea -168(%rbp), %rax
+   222	movq -168(%rbp), %rdi
+  -223	mov %rax, %rdi
+  -224	lea -176(%rbp), %rax
+   225	movslq -176(%rbp), %rsi
+  -226	mov %rax, %rsi
+  -227	lea -184(%rbp), %rax
+   228	movslq %eax, %rdx
+  -229	mov %rax, -344(%rbp)
+  -230	mov %rax, %rdx
+  -231	mov -336(%rbp), %rsi
+  -232	mov -328(%rbp), %rdi
+   233	mov $0, %rax
+  -234	mov %rax, %rax
+  -235	mov %rdx, %rdx
+  -236	mov %rsi, %rsi
+  -237	mov %rdi, %rdi
+   238	call printf
+  -239	mov %rax, %rax
+   240	movslq %eax, %rax
+  -241	mov %rax, %rax
+  -242	mov $1, %rax
+  -243	mov %rax, -328(%rbp)
+   244	mov $1, %rdi
+  -245	mov $0, %rax
+  -246	mov %rdi, %rdi
+   247	call _Z4picki
+   248	mov %rax, %rcx
+  -249	mov %rcx, %rcx
+   250	lea .L.str.6(%rip), %rax
+   251	mov %rax, -208(%rbp)
+  -252	mov -208(%rbp), %rax
+   253	mov %rax, -216(%rbp)
+  -254	lea -200(%rbp), %rax
+   255	movq %rcx, %rcx
+  -256	mov %rax, %r11
+  -257	mov $21, %rax
+  -258	mov %rax, -336(%rbp)
+   259	mov $21, %rdi
+  -260	mov -328(%rbp), %r11
+  -261	mov $0, %rax
+  -262	mov %rdi, %rdi
+   263	call *%rcx
+  -264	mov %rax, %rax
+   265	movslq %eax, %rax
+   266	mov %rax, -224(%rbp)
+  -267	mov $0, %rax
+  -268	mov %rax, -328(%rbp)
+   269	mov $0, %rdi
+  -270	mov $0, %rax
+  -271	mov %rdi, %rdi
+   272	call _Z4picki
+  -273	mov %rax, %rax
+  -274	mov %rax, %rax
+  -275	mov $0, %rdi
+  -276	mov -232(%rbp), %rax
+   277	cmp $0, %rax
+   278	sete %al
+   279	movzbq %al, %rax
+  -280	mov %rax, %rax
+  -281	mov -240(%rbp), %rax
+  -282	movslq %eax, %rax
+  -283	mov %rax, %rax
+  -284	lea -216(%rbp), %rax
+   285	movq -216(%rbp), %rdi
+  -286	mov %rax, %rdi
+  -287	lea -224(%rbp), %rax
+   288	movslq -224(%rbp), %rsi
+  -289	mov %rax, %rsi
+  -290	lea -248(%rbp), %rax
+   291	movslq %eax, %rdx
+  -292	mov %rax, -344(%rbp)
+  -293	mov %rax, %rdx
+  -294	mov -336(%rbp), %rsi
+  -295	mov -328(%rbp), %rdi
+   296	mov $0, %rax
+  -297	mov %rax, %rax
+  -298	mov %rdx, %rdx
+  -299	mov %rsi, %rsi
+  -300	mov %rdi, %rdi
+   301	call printf
+  -302	mov %rax, %rax
+   303	movslq %eax, %rax
+  -304	mov %rax, %rax
+   305	lea .L.str.7(%rip), %rax
+   306	mov %rax, -264(%rbp)
+  -307	mov -264(%rbp), %rax
+   308	mov %rax, -272(%rbp)
+  -309	mov $1, %rax
+  -310	mov %rax, -328(%rbp)
+   311	mov $1, %rdi
+  -312	mov $0, %rax
+  -313	mov %rdi, %rdi
+   314	call _Z7guardedi
+  -315	mov %rax, %rax
+   316	movslq %eax, %rax
+  -317	mov %rax, %rax
+  -318	lea -272(%rbp), %rax
+   319	movq -272(%rbp), %rdi
+  -320	mov %rax, %rdi
+  -321	lea -280(%rbp), %rax
+   322	movslq %eax, %rsi
+  -323	mov %rax, -336(%rbp)
+  -324	mov %rax, %rsi
+  -325	mov -328(%rbp), %rdi
+   326	mov $0, %rax
+  -327	mov %rax, %rax
+  -328	mov %rsi, %rsi
+  -329	mov %rdi, %rdi
+   330	call printf
   -331	mov %rax, %rax
-  -332	mov %rsi, %rsi
-  -333	mov %rdi, %rdi
-   334	call printf
-  -335	mov %rax, %rax
-   336	movslq %eax, %rax
-  -337	mov %rax, %rax
-   338	lea .L.str.8(%rip), %rax
-   339	mov %rax, -312(%rbp)
-  -340	mov -312(%rbp), %rax
-   341	mov %rax, -320(%rbp)
-  -342	mov $5, %rax
-  -343	mov %rax, -344(%rbp)
-   344	mov $5, %rdi
-  -345	mov $0, %rax
-  -346	mov %rdi, %rdi
-   347	call _Z7guardedi
-  -348	mov %rax, %rax
-   349	movslq %eax, %rax
-  -350	mov %rax, %rax
-  -351	lea -320(%rbp), %rax
-   352	movq -320(%rbp), %rdi
-  -353	mov %rax, %rdi
-  -354	lea -328(%rbp), %rax
-   355	movslq %eax, %rsi
-  -356	mov %rax, -352(%rbp)
-  -357	mov %rax, %rsi
-  -358	mov -344(%rbp), %rdi
-   359	mov $0, %rax
+   332	movslq %eax, %rax
+  -333	mov %rax, %rax
+   334	lea .L.str.8(%rip), %rax
+   335	mov %rax, -296(%rbp)
+  -336	mov -296(%rbp), %rax
+   337	mov %rax, -304(%rbp)
+  -338	mov $5, %rax
+  -339	mov %rax, -328(%rbp)
+   340	mov $5, %rdi
+  -341	mov $0, %rax
+  -342	mov %rdi, %rdi
+   343	call _Z7guardedi
+  -344	mov %rax, %rax
+   345	movslq %eax, %rax
+  -346	mov %rax, %rax
+  -347	lea -304(%rbp), %rax
+   348	movq -304(%rbp), %rdi
+  -349	mov %rax, %rdi
+  -350	lea -312(%rbp), %rax
+   351	movslq %eax, %rsi
+  -352	mov %rax, -336(%rbp)
+  -353	mov %rax, %rsi
+  -354	mov -328(%rbp), %rdi
+   355	mov $0, %rax
+  -356	mov %rax, %rax
+  -357	mov %rsi, %rsi
+  -358	mov %rdi, %rdi
+   359	call printf
   -360	mov %rax, %rax
-  -361	mov %rsi, %rsi
-  -362	mov %rdi, %rdi
-   363	call printf
-  -364	mov %rax, %rax
-  -365	movapd %xmm0, %xmm0
-   366	movslq %eax, %rax
-  -367	mov %rax, %rax
-   368	mov $0, %rax
-  -369	jmp .L.return.main
-  -370	mov $0, %rax
-   371	.L.return.main:
-   372	mov %rbp, %rsp
-   373	pop %rbp
-   374	ret
+  -361	movapd %xmm0, %xmm0
+   362	movslq %eax, %rax
+  -363	mov %rax, %rax
+   364	mov $0, %rax
+  -365	jmp .L.return.main
+  -366	mov $0, %rax
+   367	.L.return.main:
+   368	mov %rbp, %rsp
+   369	pop %rbp
+   370	ret
