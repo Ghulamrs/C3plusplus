@@ -123,7 +123,11 @@ void Builder::copyOrMove(const FunctionFacts &facts) {
         }
         const Type &e = *l.T(et).unqualified();
         const TypeId whole = l.tid(*l.types_.pointerTo(m.type->unqualified()));
-        if (!recorded(m.name, e, 0, symbol, sig)) { l.copyObject(into(l.this_, m.offset, whole), into(that, m.offset, whole), *m.type); continue; }
+        if (!recorded(m.name, e, 0, symbol, sig)) {
+            const ValueId to = into(l.this_, m.offset, whole);  // named first: a call's argument order is unspecified
+            l.copyObject(to, into(that, m.offset, whole), *m.type);
+            continue;
+        }
         const Type &ft = l.T(sig);
         if (ft.params().size() != 2 || !ft.params()[1]->isReference() || ft.params()[1]->referent()->unqualified() != &e)
             l.outside(what + " whose member's copy takes other parameters");
