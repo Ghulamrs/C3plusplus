@@ -2012,3 +2012,91 @@ each, in order:
 `-O2` on the Ast.h path while it stays the oracle. **Gate of M3b.5** (the row): bench on the box - no kernel slower than
 main's `-O2`, the table recorded; Compiler++'s cases built under `-front=ssa -O2` print what clang's build prints; run.sh
 `-O2` on every box.
+
+**M3b.5, round 1, 2026-11-11: where `-front=ssa -O2` loses speed, measured (no pass).** On main `e5a2e776`, rebuilt from
+clean on both boxes (Linux `~/m3b5r1`, g++; Windows `work\m3b5r1`, cl); one compiler, so "main's `-O2`" and "`-front=ssa
+-O2`" are the same `cxx3` at two flags. Nothing in `src/` changes, so no suite gates and none were run. `bench.ps1` takes
+`-NewFlags` and `-BaseFlags` (default `-O2`), so one build is compared with itself at two levels. Scripts: `boxkit/m3b5r1-*`.
+
+**(a) `bench-kernels` on the Windows box** (`bench.cmd`, 9 interleaved rounds, medians in ms, checksums agree in both runs):
+
+| kernel | `-O2` | `-front=ssa -O2` | `-front=ssa -O1` | cl `/O2` | cause of the gap, from both builds' assembly |
+|---|---|---|---|---|---|
+| fib | 7 | 10 | 11 | 7 | a call the walker inlined: `fib` walks one level of itself in place |
+| sieve | 54 | 60 | 56 | 44 | loops not rotated (`cmp; jle body; jmp exit` and a `jmp` back); `count` a block argument copied through three slots; `movslq` of the counter every turn (not widened) |
+| matmul | 26 | 15 | 17 | 3 | SSA faster: the row address hoisted, the counter kept 64-bit |
+| isort | 18 | 17 | 18 | 6 | even |
+| hash | 177 | 306 | 254 | 123 | slots where registers were: the allocator demoted 10 values in 3 rounds (`alloc ?hashes nodes=95 homes=61 rounds=3 demoted=10`); `buf + i` made by `lea`/`add` into a slot and stored through, where the walker wrote `movb %r9b, 32(%rbp,%r10,1)`; the divide's shifts by a constant selected as `mov $3, %ecx; sar %cl` |
+| virtual | 85 | 201 | 174 | 98 | loop layout: the call is an `invoke` (Sq and Rc have destructors), its continuation block is placed after the loop's exit, so a turn takes three taken jumps; the walker's loop is rotated with the call in line |
+| total | 367 | 612 | 531 | 281 | |
+| .text | 3,443 | 3,327 | 2,819 | 3,831 | |
+
+**(b) cxx3 itself on the Linux box.** A stage 1 built by `tools/self-host`'s build line (one source a job, `-c`, linked
+by stage 0 - the 25-minute rule) at `-O2` and at `-front=ssa -O2`. **Main does not self-host at any level**, two source
+facts stage 0 refuses, both since 2026-11-03 (no gate since round 25 ran the self-host): `Typing.h:250-251` declares two
+member function templates defined out of line in `Typing.cpp` (`copyListBuilt`, `copyStaticGuard`, round 25's lane
+lists, "an out-of-line member template is not supported yet"), and `Classes.cpp:19` writes `std::string &ref, saved;`,
+which stage 0 refuses as a reference member without an initialiser (M3b.3 lane 1) - **a wrong refusal**: the
+declarator `saved` is not a reference and the constructor initialises `ref`. Measured with both written the accepted way
+on the box only (`boxkit/m3b5r1-selfhost.patch`, the `Keyed` line split; put back afterwards, md5 checked): 98 of 98
+sources compile and link at both levels. Stage 1 `.text`: `-O2` 8,293,794, `-front=ssa -O2` 7,446,290 (-10.2%).
+
+**The `-front=ssa -O2` stage 1 is wrong: it crashes on 34 cases** (SIGSEGV; the `-O2` stage 1 compiles them), and on the
+other 733 its `.s` is byte-identical to the `-O2` stage 1's. The 34, all templates: algorithm-sort-large, array-header,
+chrono-clocks, closure-temporary-lifetime, constructor-template, deduce-from-derived-temporary, forwarding-pack,
+integral-constant, std-function, template-variadic, thread-pool and 23 more (`m3b5r1-rest.log`). It crashes at every level
+the stage 1 is asked for (`-O0`, `-O2`, `-front=ssa -O2`), in the parse: `sema::Templates::deduceOne` from
+`deduceFromArgument` < `deduceTemplateArguments` < `instantiateViableTemplates` < `Parser::templateCall`.
+The first three (integral-constant, template-variadic, std-function) all fault there. **The object is `Templates.o`, and the fault is the lowering, not an `-O2` pass**: the `-front=ssa -O2` stage 1 relinked with only `Templates.o` rebuilt at `-O2` (the Ast.h path) crashes on none of the 34; with `Templates.o` at `-front=ssa` (-O0), `-front=ssa -O1` or `-front=ssa -O2`, 30 of the 34 still end in SIGSEGV (the count takes a signal only; the other 4 not examined) (`boxkit/m3b5r1-bisect.sh`). **This is M3b.6's first fact** (the self-host under `-front=ssa -O2` was last same-at-stages-1-and-2 at round 20,
+2026-10-31).
+
+**The workload**: each stage 1 compiling every `tests/cases/*.cpp` but `*.part.cpp` (1,108, sorted) with `-S -O2`, one
+process a case, one at a time, the builds interleaved, 3 rounds (ms; the second figure is the cases refused or crashed):
+
+| stage 1 built at | round 1 | round 2 | round 3 |
+|---|---|---|---|
+| `-O2` | 124,950 (341) | 130,874 (341) | 127,159 (341) |
+| `-front=ssa -O2` | 190,869 (375) | 198,193 (375) | 195,279 (375) |
+
+The wall-clock gap (+53%) overstates the code: the 34 crashes write core dumps - those 34 cases take 39,949 ms under the SSA-built stage 1 and 4,134 ms under the other, ~36 s of each SSA round. The honest measure is perf's (installed on the box from Amazon Linux's repository for this, `perf 6.1`;
+cpu-clock, user space, 1,999 Hz, one pass each): **238,828 samples in `cxx3-stage1` built at `-O2`, 297,813 at
+`-front=ssa -O2` (+24.7%, ~29.5 s)**. By kind: 1,043 functions with samples only in the SSA build (under 5% in the other
+- functions the walker inlined into every caller) +15,483; 592 slower in both +60,693; 1,495 faster or even -17,191.
+
+**The hottest 20, both builds** (samples `-O2` / `-front=ssa -O2`): `FlowOf<Entry>::solve` 79,078 / 81,352;
+`vector<Edge>::operator[]` 32,406 / 62,913; `FlowOf::joinPads` 24,580 / 38,909; `ReachingDefs::solve` 13,143 / 11,782;
+`Allocator::pick` 3,826 / 770; `Allocator::interferes` 20 / 3,033; `string::init` 2,401 / 1,501; `string::p` 2,337 /
+2,618; `FlowOf::build` 2,313 / 2,082; `wideOf` 2,245 / 1,954; `Forward::run` 2,101 / 1,851; `memcmp` 1,567 / 1,905;
+`memmove` 1,492 / 983; `string::substr` 1,382 / 1,525; `Allocator::merge` 1,367 / 234; `pthread_mutex_lock` 1,311 /
+1,606; `classify` 1,290 / 1,274; `pthread_mutex_init` 1,287 / 1,338; `_int_malloc` 0 / 1,272; `vector<int>::grow` 790 /
+1,204 (`boxkit/m3b5r1-perf-tables.txt`). The MIR dataflow (`solve`, `joinPads`, `operator[]`) is 57% of either build.
+
+**The ten largest gaps and their causes, ranked by time** (samples over; 1,999 a second):
+1. `vector<Edge>::operator[]` +30,507 (15.3 s) - **inlining**: `joinPads` calls it four times under SSA where the walker
+   walked it in place (`joinPads`: 0 calls at `-O2`, 9 under SSA - `vector<Edge>::operator[]` 4, `vector<Block>::operator[]`
+   2, `vector<int>::begin`/`end`); the callee's body is the same in both (`shl $4; add`), framed.
+2. `FlowOf::joinPads` +14,329 (7.2 s) - **inlining** (the nine calls), and with the calls five callee-saved registers
+   saved and restored; a comparison materialised by `setne`/`movzbl` and tested again (**selection**). Its one gain: the
+   walker reloaded `this->edges` into a slot at every use, SSA keeps it in `%r14`.
+3. `Allocator::interferes` +3,013 (1.5 s) - **inlining**: walked in place into its callers at `-O2` (20 samples of its
+   own), called under SSA, and itself calls `vector<unsigned long long>::operator[]` the walker inlined.
+4. `FlowOf::solve` +2,274 (1.1 s) - not its code: 1,746 bytes and the same ten calls in both builds (the walker declines
+   its sites too); the time of what it calls.
+5. `_int_malloc` +1,272 (0.6 s) - not measured (a libc entry; the allocation pattern of SSA-built code, presumed the
+   uninlined `vector` growth below).
+6. `vector<Entry>::operator[]` +913, 7. `Type::isConst` +814, 8. `std::string`'s constructor +672, 9. `opt::bit` +653,
+   10. `lock_guard`'s constructor and destructor +566 / +483 (0.3-0.5 s each) - **inlining**: each has under 5% of its
+   samples at `-O2`, a one-line accessor the walker walks in place.
+**Ranked by cause** (cxx3): inlining first by far (items 1-3 and 6-10, ~52,000 of the ~59,000 samples over, ~26 s); a
+slot where a register was and selection (setcc, callee-saved saves) inside item 2, not separated; LICM and widening do not
+show in cxx3's profile. (Kernels, by ms over `-O2`): slots and selection 129 (hash), loop layout 116 (virtual), loop shape,
+slots and widening 6 (sieve), inlining 3 (fib).
+
+**The Ast.h inliner's sites over the suite** (round 2's number to reach), counted by a measurement-only stage 0 with one
+`stderr` line where `X86_64Linux::inlineTarget` returns a callee (never committed; put back and rebuilt), every case
+`-S -O2`, distinct call nodes: **13,258 sites in 668 cases for x86_64-linux** (3,371 distinct callees; the most taken: `std::string`'s destructor 895, a test's `step(int)` 427, `S::~S` 208, `vector<int>::~vector` 191), **12,873 in 653 cases for x86_64-windows** (3,353 callees; `inline-callee-throws-in-its-frame` and the funclet reserve decline more there). Stage 0 rebuilt from the clean source after (md5 of the four touched files checked; the binary is not byte-equal to the first build: `Driver.cpp`, which prints `__TIME__`, was recompiled with the touched header - not examined further).
+
+`src/` unchanged at 91,991 lines; `tools/windows/bench.ps1` +5 -3. **Owed by M3b.5 round 2**: the inliner on
+`ir::Function` reaching the count above; then the kernels' loop layout (an `invoke`'s continuation in line, the loop
+rotated) and the demotions in `hashes`. **Owed before any self-host gate**: the two source facts above (the template's
+definition in its class; `Classes.cpp:19`'s refusal mended or the line split) and the 34-case crash.

@@ -3,12 +3,15 @@
 #   -Base   a cxx1 to compare it with, e.g. a build of the commit before (optional)
 #   -Cppi   a Compiler-Cppi cxx1 with the C6000 target, for the cl6x comparison (optional)
 #   -CppiArch  that target's -arch name (default tms6747)
+#   -NewFlags, -BaseFlags  the flags each builds the kernels with (default -O2: M3b.5 sets -front=ssa -O2 against -O2)
 #   -Rounds interleaved rounds per x86 build (default 9); -Out the work directory
 #   -Cases  a directory of cases: only the .text of each that -New compiles under -CaseFlags, one line a case into
 #           -Out\cases-<-Tag>.txt, and their sum (M3b.4's measure: -front=ssa -O1 against -O1)
 param(
     [string]$New = (Join-Path $PSScriptRoot '..\..\cxx3-msvc.exe'),
     [string]$Base = '',
+    [string]$NewFlags = '-O2',
+    [string]$BaseFlags = '-O2',
     [string]$Cppi = '',
     [string]$CppiArch = 'tms6747',
     [int]$Rounds = 9,
@@ -60,14 +63,15 @@ if ($Cases) {
 
 # ---- x86_64-windows: build each, then time them round by round
 $builds = [ordered]@{}
-function AddCxx1([string]$label, [string]$cxx) {
+function AddCxx1([string]$label, [string]$cxx, [string]$flags) {
+    $f = @($flags -split ' ' | Where-Object { $_ })
     if (-not (Test-Path $cxx)) { Write-Host "bench: no $cxx - '$label' skipped"; return }
-    & $cxx -O2 $src -o "$label.exe"; if ($LASTEXITCODE) { throw "bench: $label failed to build" }
-    & $cxx -O2 -c $src -o "$label.obj"; if ($LASTEXITCODE) { throw "bench: $label failed to compile" }
+    & $cxx @f $src -o "$label.exe"; if ($LASTEXITCODE) { throw "bench: $label failed to build" }
+    & $cxx @f -c $src -o "$label.obj"; if ($LASTEXITCODE) { throw "bench: $label failed to compile" }
     $builds[$label] = "$label.obj"
 }
-AddCxx1 'cxx1-new' $New
-if ($Base) { AddCxx1 'cxx1-base' $Base }
+AddCxx1 'cxx1-new' $New $NewFlags
+if ($Base) { AddCxx1 'cxx1-base' $Base $BaseFlags }
 cl /nologo /O2 /EHsc /GR /std:c++14 $src /Fe:cl-O2.exe /Fo:cl-O2.obj | Out-Null
 if ($LASTEXITCODE) { throw 'bench: cl /O2 failed' }
 $builds['cl-O2'] = 'cl-O2.obj'
