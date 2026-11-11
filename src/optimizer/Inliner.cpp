@@ -15,6 +15,7 @@ public:
     bool labels = false;                            // a goto's label or a case's: the parser names them once per function
     std::vector<std::pair<const Call *, int>> calls; // each call, and its loop depth
     bool loops = false;                             // a while, do or for anywhere in it
+    bool throws = false;                            // a Microsoft throw, whose object outlives its frame's walk in place
 
     void visit(const Num &) override { ++nodes; }
     void visit(const Var &) override { ++nodes; }
@@ -26,6 +27,7 @@ public:
     void visit(const Call &n) override {
         ++nodes;
         calls.push_back(std::make_pair(&n, depth_));
+        if (n.symbol() == "_CxxThrowException") throws = true;
         if (n.callee() != nullptr) n.callee()->accept(*this);
         for (const ExprPtr &a : n.args()) a->accept(*this);
     }
@@ -121,7 +123,7 @@ std::vector<Inliner::Site> Inliner::sitesOf(const Program &program) {
         measure.size = m.nodes;
         measure.why = fn.hasLandingPads() ? "inline-callee-landing-pad" : fn.isVariadic() ? "inline-callee-variadic"
                     : fn.regSaveSlot() != 0 ? "inline-callee-register-save-area" : m.cleanups ? "inline-callee-cleanup"
-                    : m.labels ? "inline-callee-label-or-switch" : "";
+                    : m.labels ? "inline-callee-label-or-switch" : m.throws ? "inline-callee-throws-in-its-frame" : "";
         measure.eligible = *measure.why == '\0';
         measure.leaf = m.calls.empty() && !m.loops;
         unitSize_ += m.nodes;

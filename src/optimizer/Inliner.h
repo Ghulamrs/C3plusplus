@@ -1,7 +1,7 @@
 #pragma once
 
 // **Which calls are walked in place of a call instruction.** GCC's ipa-inline reduced to what the walker can know before it walks: every function of the unit measured once, every call site judged in one pass over the unit - the best sites first, as GCC's badness queue orders them - against three budgets the level's costs set, per site, per caller and per unit; then the walker asks about each site as it reaches it and gets the decision already made.
-// What makes a callee safe to walk in place at all (no landing pad, no cleanup to run on unwind, no goto label and no switch - the parser names their labels once per function, and a body walked twice would name them twice - not variadic, no register save area) is decided here too; what makes a site safe (a direct call, no stack arguments, not inside another callee walked in place) only the walker knows, and it asks before this is asked.
+// What makes a callee safe to walk in place at all (no landing pad, no cleanup to run on unwind, no goto label and no switch - the parser names their labels once per function, and a body walked twice would name them twice - not variadic, no register save area, no Microsoft throw - its object stays in the frame that threw until its handler ends, and a funclet walks its own callees over that frame) is decided here too; what makes a site safe (a direct call, no stack arguments, not inside another callee walked in place) only the walker knows, and it asks before this is asked.
 // The long form is in CLAUDE.md, "The optimizer's design notes".
 
 #include "../Ast.h"
