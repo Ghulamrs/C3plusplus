@@ -2100,3 +2100,43 @@ slots and widening 6 (sieve), inlining 3 (fib).
 `ir::Function` reaching the count above; then the kernels' loop layout (an `invoke`'s continuation in line, the loop
 rotated) and the demotions in `hashes`. **Owed before any self-host gate**: the two source facts above (the template's
 definition in its class; `Classes.cpp:19`'s refusal mended or the line split) and the 34-case crash.
+
+**M3b.5, round 2, 2026-11-11: the inliner on SSA.** From main `e5a2e776`, branch `m3b5-inline`, code `43c89b19`. **One
+decision for both paths**: `Inliner::decide` takes measures (a vector by FuncId - the `std::map<const Function *, ...>`
+is gone) and sites in program order, sorts by badness and charges the three budgets of `OptCosts.h`; `summarize` feeds it
+the Ast.h path's node counts (its `Call` node is its call instruction, looked up and never walked), `ir::inlineCalls`
+(`src/ir/opt/SsaInline.cpp`) an `ir::Function`'s instructions - less what the tree has no node for: an alloca, a jump, a
+parameter's store - and a site's natural-loop depth from the dominators. **The clone**, at -O2 over the unit before any
+function's passes (so before promote), each caller rewritten in a copy so a callee is cloned as lowered (one level, as the
+walker's `inline-site-inside-inlined-body`): blocks, values, calls and frame objects renumbered, the allocas put in the
+caller's entry, parameters the call's operands (a bitcast between two pointer types), each `ret` a branch to the block
+holding what followed the call, whose parameter is the call's value; an invoke of a callee that calls nothing becomes a
+jump to its normal edge and its pad stays. No pad, unwind edge or volatile access is moved or removed. Not inlined under
+`-g` (the walker's `inline-site-debug-info`). `-dump=ssa=inline`, `-check=ssa inline: sites= taken= refused=` with each
+refusal by name, summed by `ssa.sh`. **Refused by name** (the simplest version that gates, the coordinator's cut):
+a callee with a pad, an invoke or a funclet (`inline-callee-landing-pad`), variadic, calling `_CxxThrowException` or
+rethrowing (`inline-callee-throws-in-its-frame`, M3b.4's rule), returning a class (`inline-callee-returns-a-class`), with
+a realigned frame; a site in a funclet or pad block (`inline-site-in-a-funclet`), an invoke of a callee that calls
+(`inline-site-invoke-of-a-callee-that-calls` - its calls would each need the unwind edge), a class argument by value, a
+class result. A callee with a switch or a label is taken, which the walker refuses. **Counts over the suite** (ssa.sh,
+level 2): Windows 20417 direct calls of a function of the unit, 10136 cloned, against the Ast.h path's 12873 (round 1's
+count): 79%, 2737 short - refused: throws 2400, in a funclet 1789, invoke of a callee that calls 1573, callee pad 1389,
+too large 1116, unit budget 1074, class result 580, class argument 325, variadic 22, result type 10, realigned 2,
+argument type 1. Linux 19546, 9584 cloned against 13258: 72%, 3674 short - invoke of a callee that calls 3979, funclet
+1547, pad 1361, too large 1113, unit budget 993, class result 583, class argument 351, variadic 22, others 13.
+**Gates on `43c89b19`, after a clean ship and build on both boxes**: Windows `winpass.sh` (WINLANES=4) 737 / 736 same,
+0 differ, at `-front=ssa -O1`, `-front=ssa -O2` and `-O2` (the Ast.h path, its inliner re-pointed); ssa.sh 750/0 at
+levels 1 and 2. Linux ssa.sh 778/0 at levels 1 and 2; run.sh 1110/0 at `-front=ssa -O1`, `-front=ssa -O2`, `-front=ssa`,
+`-O2`, `-O0`; emit 3041/0, syntax 3/0, typed 768/0, adapted 768/0, coff 0 differ, c90 447/0 (names, overload and
+win-structure skip: no clang++ on that box); comment cap 0 over, memory gate 44, exclusions 0/0, ide check. The probe
+`tests/cases/ssa-inline` (clang's `.expected` from the Windows box, g++ agrees; right at six flag sets on both boxes) with
+`ssa-inline.inline`; `ssa-divide.divide` re-recorded, its -O2 IR now inlined. **bench-kernels** (Windows, median of 9, ms;
+this tree's `-front=ssa -O2` / main's `-O2` / cl, the box shared with two lanes; round 1's main `-front=ssa -O2` in
+brackets, measured against its own `-O2` total 367): fib 8 / 8 / 7 [10], sieve 65 / 58 / 47 [60], matmul 16 / 29 / 3
+[15], isort 23 / 19 / 7 [17], hash 335 / 196 / 139 [306], virtual 180 / 92 / 107 [201]; total 627 / 402 (1.56x; round
+1's 612 / 367, 1.67x); kernels' .text 3778 against 3443 (main's `-front=ssa -O2` 3327). fib is level; hash and virtual
+stay slower, which is not inlining's (rounds 3 on). **.text** (bench.ps1 -Cases, 747 cases) at `-front=ssa -O2`:
+1,222,158 against main's `-front=ssa -O2` 1,154,426 (+5.87%: 330 larger, 314 smaller) and main's `-O2` 1,311,260
+(-6.80%). `src/` went from 91991 to 92369 lines (+378: SsaInline.cpp 362, the rest the re-pointing). **Left**: calls
+inside an inlined invoke made invokes to the same pad (the largest gap on both boxes), sites in funclets, a class
+result or argument, callees with pads (the pad merge); a callee no site still calls is still emitted.
