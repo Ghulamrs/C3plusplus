@@ -100,6 +100,7 @@
 		2A21C5D0D3245E29CC992B6A /* SsaDivide.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D52695CA6A975DD4C4FC0C81 /* SsaDivide.cpp */; };
 		C092DF43A4C4AB15906920CC /* SsaDominators.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 74B5F18801AA2F0623590A74 /* SsaDominators.cpp */; };
 		4C27669FCF042F8DF0259CF8 /* SsaFold.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 605A55319723F1F12959C765 /* SsaFold.cpp */; };
+		D20877B7417F78DAD96D75B2 /* SsaInline.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 49FF54E4A736F258045E4A80 /* SsaInline.cpp */; };
 		95316E36CA18670A0B613865 /* SsaJumps.cpp in Sources */ = {isa = PBXBuildFile; fileRef = B47802B999469D77C0677B77 /* SsaJumps.cpp */; };
 		169A79BB74CFCA4C8769D222 /* SsaOptimize.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6C4F997C57358B2FEF81A5CD /* SsaOptimize.cpp */; };
 		B75326BCFA3A5298BC803765 /* SsaPromote.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 34BAE0E52F33E4B25B325395 /* SsaPromote.cpp */; };
@@ -201,6 +202,7 @@
 		D52695CA6A975DD4C4FC0C81 /* SsaDivide.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaDivide.cpp; path = "../src/ir/opt/SsaDivide.cpp"; sourceTree = "<group>"; };
 		74B5F18801AA2F0623590A74 /* SsaDominators.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaDominators.cpp; path = "../src/ir/opt/SsaDominators.cpp"; sourceTree = "<group>"; };
 		605A55319723F1F12959C765 /* SsaFold.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaFold.cpp; path = "../src/ir/opt/SsaFold.cpp"; sourceTree = "<group>"; };
+		49FF54E4A736F258045E4A80 /* SsaInline.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaInline.cpp; path = "../src/ir/opt/SsaInline.cpp"; sourceTree = "<group>"; };
 		B47802B999469D77C0677B77 /* SsaJumps.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaJumps.cpp; path = "../src/ir/opt/SsaJumps.cpp"; sourceTree = "<group>"; };
 		6C4F997C57358B2FEF81A5CD /* SsaOptimize.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaOptimize.cpp; path = "../src/ir/opt/SsaOptimize.cpp"; sourceTree = "<group>"; };
 		34BAE0E52F33E4B25B325395 /* SsaPromote.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaPromote.cpp; path = "../src/ir/opt/SsaPromote.cpp"; sourceTree = "<group>"; };
@@ -409,6 +411,7 @@
 				D52695CA6A975DD4C4FC0C81 /* SsaDivide.cpp */,
 				74B5F18801AA2F0623590A74 /* SsaDominators.cpp */,
 				605A55319723F1F12959C765 /* SsaFold.cpp */,
+				49FF54E4A736F258045E4A80 /* SsaInline.cpp */,
 				B47802B999469D77C0677B77 /* SsaJumps.cpp */,
 				9BC6EF54A82E7277D85CA5A3 /* SsaOpt.h */,
 				6C4F997C57358B2FEF81A5CD /* SsaOptimize.cpp */,
@@ -674,6 +677,7 @@
 				2A21C5D0D3245E29CC992B6A /* SsaDivide.cpp in Sources */,
 				C092DF43A4C4AB15906920CC /* SsaDominators.cpp in Sources */,
 				4C27669FCF042F8DF0259CF8 /* SsaFold.cpp in Sources */,
+				D20877B7417F78DAD96D75B2 /* SsaInline.cpp in Sources */,
 				95316E36CA18670A0B613865 /* SsaJumps.cpp in Sources */,
 				169A79BB74CFCA4C8769D222 /* SsaOptimize.cpp in Sources */,
 				B75326BCFA3A5298BC803765 /* SsaPromote.cpp in Sources */,

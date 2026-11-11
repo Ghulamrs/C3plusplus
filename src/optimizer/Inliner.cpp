@@ -91,62 +91,75 @@ int roundedFrame(const Function &fn) { return (fn.frameSize() + 15) & ~15; }
 
 Inliner::Inliner(const opt::Costs &costs) : costs_(costs) {}
 
-// **Measure, then decide every site in one pass, the best first.** A site
-// the budgets admit is charged to its caller and to the unit at once, so a
-// worse site later finds what is left.
-void Inliner::summarize(const Program &program) {
-    std::vector<Site> sites = sitesOf(program);
-    sortByBadness(sites);
-    for (const Site &site : sites) {
-        const char *why = "";
-        const bool yes = withinBudgets(site, &why);
-        decided_[site.call] = yes;
-        if (!yes) {
-            opt::noteDecline(why, site.callee->symbol() + " in " + site.caller->symbol());
+// **Every site decided in one pass, the best first.** A site the budgets admit is charged to its caller and to the
+// unit at once, so a worse site later finds what is left. GCC's badness, reduced: growth over how often the site
+// runs, each loop level worth twice the one outside it; sorted stably, so equal sites keep program order.
+void Inliner::decide(std::vector<Measure> measures, std::vector<Site> &sites) {
+    measures_.swap(measures);
+    for (const Measure &m : measures_) unitSize_ += m.size;
+    std::vector<std::size_t> order;
+    for (std::size_t k = 0; k < sites.size(); k++) {
+        Site &s = sites[k];
+        const Measure &callee = measures_[s.callee];
+        s.taken = false;
+        s.why = callee.why;
+        if (!callee.eligible()) { opt::noteDecline(callee.why, callee.symbol + " in " + measures_[s.caller].symbol); continue; }
+        s.growth = callee.size - s.callCost;
+        order.push_back(k);
+    }
+    std::stable_sort(order.begin(), order.end(), [&sites](std::size_t a, std::size_t b) {
+        const Site &x = sites[a], &y = sites[b];
+        return static_cast<long>(x.growth) << y.loopDepth < static_cast<long>(y.growth) << x.loopDepth;
+    });
+    for (std::size_t k : order) {
+        Site &s = sites[k];
+        s.taken = withinBudgets(s, &s.why);
+        if (!s.taken) {
+            opt::noteDecline(s.why, measures_[s.callee].symbol + " in " + measures_[s.caller].symbol);
             continue;
         }
-        charge(site);
-        largestFrame_ = std::max(largestFrame_, roundedFrame(*site.callee));
+        charge(s);
+        largestFrame_ = std::max(largestFrame_, measures_[s.callee].frame);
     }
 }
 
-// Every function measured, and every call of one this unit defines, a
-// call of itself included, listed with its caller and its growth.
-std::vector<Inliner::Site> Inliner::sitesOf(const Program &program) {
-    std::map<std::string, const Function *> bySymbol;
-    std::vector<std::pair<const Function *, Measurer>> measured;
+// The Ast.h path's measures: every function's nodes, and every call of one this unit defines, a call of itself
+// included, listed with its caller.
+void Inliner::summarize(const Program &program) {
+    std::vector<Measure> measures(1);
+    std::vector<std::vector<std::pair<const Call *, int>>> calls(1);
     for (const Function &fn : program.functions) {
-        measured.emplace_back(&fn, Measurer());
-        Measurer &m = measured.back().second;
+        Measurer m;
         fn.body().accept(m);
-        Measure &measure = measures_[&fn];
+        Measure measure;
+        measure.symbol = fn.symbol();
         measure.size = m.nodes;
+        measure.frame = roundedFrame(fn);
         measure.why = fn.hasLandingPads() ? "inline-callee-landing-pad" : fn.isVariadic() ? "inline-callee-variadic"
                     : fn.regSaveSlot() != 0 ? "inline-callee-register-save-area" : m.cleanups ? "inline-callee-cleanup"
                     : m.labels ? "inline-callee-label-or-switch" : m.throws ? "inline-callee-throws-in-its-frame" : "";
-        measure.eligible = *measure.why == '\0';
         measure.leaf = m.calls.empty() && !m.loops;
-        unitSize_ += m.nodes;
-        bySymbol[fn.symbol()] = &fn;
+        bySymbol_[fn.symbol()] = static_cast<std::uint32_t>(measures.size());
+        measures.push_back(measure);
+        calls.push_back(m.calls);
     }
     std::vector<Site> sites;
-    for (const auto &fm : measured)
-        for (const auto &call : fm.second.calls) {
-            const auto callee = bySymbol.find(call.first->symbol());
-            if (callee == bySymbol.end()) continue;
-            if (!eligible(*callee->second)) {
-                opt::noteDecline(measures_[callee->second].why, call.first->symbol() + " in " + fm.first->symbol());
-                continue;
-            }
-            const int growth = measures_[callee->second].size - callCost(*call.first);
-            sites.push_back(Site{call.first, fm.first, callee->second, call.second, growth});
+    std::vector<const Call *> nodes;
+    for (std::size_t f = 1; f < calls.size(); f++)
+        for (const auto &call : calls[f]) {
+            const auto callee = bySymbol_.find(call.first->symbol());
+            if (callee == bySymbol_.end()) continue;
+            sites.push_back(Site{static_cast<std::uint32_t>(f), callee->second, call.second, callCost(*call.first), 0, false, ""});
+            nodes.push_back(call.first);
         }
-    return sites;
+    decide(measures, sites);
+    for (std::size_t k = 0; k < sites.size(); k++)
+        if (measures_[sites[k].callee].eligible()) decided_[nodes[k]] = sites[k].taken;
 }
 
-bool Inliner::eligible(const Function &callee) const {
-    const auto it = measures_.find(&callee);
-    return it != measures_.end() && it->second.eligible;
+const Inliner::Measure *Inliner::measureOf(const Function &fn) const {
+    const auto it = bySymbol_.find(fn.symbol());
+    return it != bySymbol_.end() ? &measures_[it->second] : nullptr;
 }
 
 bool Inliner::allows(const Call &site) const {
@@ -154,29 +167,19 @@ bool Inliner::allows(const Call &site) const {
     return it != decided_.end() && it->second;
 }
 
-// **GCC's badness, reduced**: growth over how often the site runs, with
-// each loop level worth twice the one outside it. Sorted stably, so equal
-// sites keep program order.
-void Inliner::sortByBadness(std::vector<Site> &sites) {
-    std::stable_sort(sites.begin(), sites.end(), [](const Site &x, const Site &y) {
-        return static_cast<long>(x.growth) << y.loopDepth < static_cast<long>(y.growth) << x.loopDepth;
-    });
-}
-
 // **Three budgets, all of which must hold**: the site's growth against what a site this deep
 // in loops may take; the caller's growth so far, with this one, against its own size; the
 // unit's likewise. A budget of zero percent still admits a site that grows nothing.
 bool Inliner::withinBudgets(const Site &site, const char **why) const {
-    const char *unused = "";
-    const char *&reason = why != nullptr ? *why : unused;
     const int growth = site.growth;
-    if (growth > costs_.inlineGrowth(site.loopDepth)) { reason = "inline-site-too-large"; return false; }
+    if (growth > costs_.inlineGrowth(site.loopDepth)) { *why = "inline-site-too-large"; return false; }
+    *why = "";
     if (growth <= 0) return true;
-    const Measure &c = measures_.at(site.caller);
+    const Measure &c = measures_[site.caller];
     const long callerRoom = static_cast<long>(std::max(c.size, costs_.largeFunction())) * costs_.callerGrowthPercent() / 100;
     const long unitRoom = static_cast<long>(unitSize_) * costs_.unitGrowthPercent() / 100;
-    if (c.taken + growth > callerRoom) { reason = "inline-caller-budget-spent"; return false; }
-    if (unitTaken_ + growth > unitRoom) { reason = "inline-unit-budget-spent"; return false; }
+    if (c.taken + growth > callerRoom) { *why = "inline-caller-budget-spent"; return false; }
+    if (unitTaken_ + growth > unitRoom) { *why = "inline-unit-budget-spent"; return false; }
     return true;
 }
 

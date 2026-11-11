@@ -165,6 +165,7 @@
     <ClCompile Include="..\src\ir\opt\SsaDivide.cpp" />
     <ClCompile Include="..\src\ir\opt\SsaDominators.cpp" />
     <ClCompile Include="..\src\ir\opt\SsaFold.cpp" />
+    <ClCompile Include="..\src\ir\opt\SsaInline.cpp" />
     <ClCompile Include="..\src\ir\opt\SsaJumps.cpp" />
     <ClCompile Include="..\src\ir\opt\SsaOptimize.cpp" />
     <ClCompile Include="..\src\ir\opt\SsaPromote.cpp" />

@@ -6,6 +6,7 @@
 #include "../Ir.h"
 
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -43,6 +44,8 @@ struct PassLog {
     int divShifts, divSigned, divUnsigned, divWide, divLeft;
     // The volatile loads and stores in the body before the passes and after them: fewer only where cfg removed a block.
     int volatiles, volatilesKept;
+    // inline's: the direct calls of a function of the unit, those cloned in place, and the rest by reason.
+    int inlineSites = 0, inlined = 0; std::map<std::string, int> inlineRefused;
     PassLog(bool c, const std::string &after) : check(c), dumpAfter(after), failed(0), allocas(0), scalars(0), promoted(0),
         constants(0), compares(0), casts(0), floating(0), identities(0), copies(0), arguments(0), kept(0), constBranches(0),
         sameBranches(0), unreachable(0), merged(0), forwarded(0), deadInsts(0), deadParams(0), deadStores(0), deadAllocas(0),
@@ -62,6 +65,8 @@ std::vector<char> fixedBlocks(const Function &f);
 // The frame objects marked `gone` removed, the others renumbered in the entry's allocas and the calls (SsaPromote.cpp).
 void dropFrameObjects(Function &f, const std::vector<char> &gone);
 
+// **Inlining** (SsaInline.cpp), over the unit before any function's passes: Inliner's budgets, the callee's blocks cloned.
+void inlineCalls(Module &m, int level, const TypeTable &types, PassLog &log);
 // **mem2reg** (SsaPromote.cpp): a scalar alloca whose every use is a whole load or store becomes values.
 void promote(Function &f, const TypeTable &types, PassLog &log);
 // **Folding, copy propagation, algebraic simplification** (SsaFold.cpp), one worklist over the def-use chains.

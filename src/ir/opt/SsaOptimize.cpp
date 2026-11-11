@@ -50,7 +50,7 @@ int volatileAccesses(const Function &f) {
 
 bool isSsaPass(const std::string &name) {
     for (const Pass &p : kPasses) if (name == p.name) return true;
-    return false;
+    return name == "inline";    // the unit's pass, run before these (inlineCalls)
 }
 
 void ssaOptimize(Function &f, int level, const TypeTable &types, const Target &target, PassLog &log) {

@@ -1354,7 +1354,7 @@ bool Driver::parseArguments(int argc, char **argv) {
 // the SSA passes (M3b.4). `report` is -check=ssa's text, `failures` the verifier's count after lowering and each pass,
 // `dumped` the IR as lowered or after the pass `dumpAfter` names.
 static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, const Target &target, ir::Module &into, bool report,
-                            int level, bool dump, const std::string &dumpAfter, std::string &dumped, int &failures) {
+                            int level, bool inlining, bool dump, const std::string &dumpAfter, std::string &dumped, int &failures) {
     sema::Typer typer(parser);
     typer.emitInto(program);
     const sema::Census c = sema::Typer::census(parser, program);
@@ -1508,6 +1508,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     const int failed = report ? ir::verify(into, types, out) : 0;
     ir::PassLog log(report, dumpAfter);
     if (dump && dumpAfter.empty()) dumped = ir::dump(into, types);
+    if (level >= 1 || !dumpAfter.empty()) ir::inlineCalls(into, inlining ? level : 0, types, log);
     if (level >= 1 || !dumpAfter.empty())
         for (std::size_t fi = 1; fi < into.functions.size(); fi++) ir::ssaOptimize(into.functions[fi], level, types, target, log);
     if (!dumpAfter.empty()) dumped = log.dumped;
@@ -1543,7 +1544,12 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     std::snprintf(jumps, sizeof jumps, "-check=ssa jumps: condbr=%d switch=%d\n-check=ssa divide: shifts=%d signed=%d "
                   "unsigned=%d wide=%d left=%d\n-check=ssa volatile: lowered=%d kept=%d\n", log.threaded, log.threadedSwitch,
                   log.divShifts, log.divSigned, log.divUnsigned, log.divWide, log.divLeft, log.volatiles, log.volatilesKept);
-    return out + line + synth + passes + folds + cfgs + gvns + jumps;
+    for (std::map<std::string, int>::const_iterator i = log.inlineRefused.begin(); i != log.inlineRefused.end(); ++i)
+        out += "  inline refused (" + std::to_string(i->second) + "): " + i->first + "\n";
+    char inlines[120];
+    std::snprintf(inlines, sizeof inlines, "-check=ssa inline: sites=%d taken=%d refused=%d\n", log.inlineSites, log.inlined,
+                  log.inlineSites - log.inlined);
+    return out + line + synth + passes + folds + cfgs + gvns + jumps + inlines;
 }
 
 bool Driver::compile(const Job &job) {
@@ -1608,7 +1614,7 @@ bool Driver::compile(const Job &job) {
     if (frontSsa_ || dumpSsa_ || checkSsa_) {
         std::string dumped;
         int failures = 0;
-        const std::string report = lowerSsa(parser, program, types, target, ssa, checkSsa_, optimize_, dumpSsa_, dumpSsaAfter_,
+        const std::string report = lowerSsa(parser, program, types, target, ssa, checkSsa_, optimize_, !debug_, dumpSsa_, dumpSsaAfter_,
                                             dumped, failures);
         if (checkSsa_) std::fwrite(report.data(), 1, report.size(), stdout);
         if (checkSsa_ && failures != 0) return false;

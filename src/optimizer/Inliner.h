@@ -7,62 +7,64 @@
 #include "../Ast.h"
 #include "OptCosts.h"
 
+#include <cstdint>
 #include <map>
+#include <string>
 #include <vector>
 
 class Inliner {
 public:
+    // What is known of one function, by FuncId - on the Ast.h path its place in Program::functions, from 1: its body's
+    // size (AST nodes, or SSA instructions), its frame, why it is ineligible, and the growth its own sites have taken.
+    struct Measure {
+        std::string symbol;
+        int size = 0, frame = 0, taken = 0;
+        bool leaf = false;
+        const char *why = "";
+        bool eligible() const { return *why == '\0'; }
+    };
+    // One call of a function this unit defines: the loops it sits in, what the call itself costs, and - decided -
+    // what walking the callee in its place adds to the caller, whether it is taken and, where not, why.
+    struct Site {
+        std::uint32_t caller, callee;
+        int loopDepth, callCost, growth;
+        bool taken;
+        const char *why;
+    };
+
     explicit Inliner(const opt::Costs &costs);
 
-    // Every function of the unit measured and every site decided, before any is walked.
+    // **The one decision both paths ask**: the functions measured by their front, the sites in program order.
+    void decide(std::vector<Measure> measures, std::vector<Site> &sites);
+
+    // The Ast.h path: every function of the unit measured and every site decided, before any is walked.
     void summarize(const Program &program);
 
     // Whether the callee may be walked in place anywhere.
-    bool eligible(const Function &callee) const;
+    bool eligible(const Function &callee) const { const Measure *m = measureOf(callee); return m != nullptr && m->eligible(); }
 
     // Whether this call is walked in place.
     bool allows(const Call &site) const;
 
     // The callee's body in AST nodes, for a target that takes only the smallest.
-    int size(const Function &fn) const { const auto it = measures_.find(&fn); return it != measures_.end() ? it->second.size : 0; }
+    int size(const Function &fn) const { const Measure *m = measureOf(fn); return m != nullptr ? m->size : 0; }
     // No call and no loop in it: straight-line code, which walked in place is shorter than a call.
-    bool leaf(const Function &fn) const { const auto it = measures_.find(&fn); return it != measures_.end() && it->second.leaf; }
+    bool leaf(const Function &fn) const { const Measure *m = measureOf(fn); return m != nullptr && m->leaf; }
 
     // The largest frame any site of the unit brings in, for a caller whose frame must be fixed before its body is walked.
     int largestFrame() const { return largestFrame_; }
 
 private:
-    // What is known of one function: its body's size in AST nodes, and the
-    // growth its own sites have taken so far.
-    struct Measure {
-        int size = 0;
-        bool eligible = false;
-        bool leaf = false;
-        const char *why = "";     // what makes it ineligible, for CPP11_DECLINES
-        int taken = 0;
-    };
-    // One call of a function this unit defines: the loops it sits in, and
-    // what walking the callee in its place adds to the caller, in nodes.
-    struct Site {
-        const Call *call;
-        const Function *caller;
-        const Function *callee;
-        int loopDepth;
-        int growth;
-    };
-
     const opt::Costs &costs_;
-    std::map<const Function *, Measure> measures_;
-    std::map<const Call *, bool> decided_;
+    std::vector<Measure> measures_;                 // by FuncId, 0 none
+    std::map<std::string, std::uint32_t> bySymbol_; // the Ast.h path's FuncId of a symbol
+    std::map<const Call *, bool> decided_;          // the Ast.h path's call instruction is its node: looked up, never walked
     int unitSize_ = 0;
     int unitTaken_ = 0;
     int largestFrame_ = 0;
 
-    // Every function measured, every site of one this unit defines listed.
-    std::vector<Site> sitesOf(const Program &program);
-    // Sites in the order they are worth taking: the least growth for the deepest loop first, ties in program order.
-    static void sortByBadness(std::vector<Site> &sites);
+    const Measure *measureOf(const Function &fn) const;
     // Whether the site's growth is within what a site this deep in loops may take, and the caller and the unit have the room.
-    bool withinBudgets(const Site &site, const char **why = nullptr) const;
+    bool withinBudgets(const Site &site, const char **why) const;
     void charge(const Site &site);
 };
