@@ -567,9 +567,6 @@ bool Parser::templateDeclaration() {
     bool sawInit = false, sawParen = false;
     const bool defined = skipTemplatedDefinition(&sawInit, &sawParen);
 
-    // **A member of a class template defined outside it belongs to the class**, not
-    // to a template of its own. The declarator already reads a qualified name; what
-    // is new is that the qualifier is a template-id, naming the pattern.
     // [temp.mem]/1: `template <class R> void C::f(R)` defines a member template C declared, C no template.
     const Type *plain = qualifier.empty() ? nullptr : lookup_.findTypedef(qualifier);
     if (plain != nullptr && plain->isStructOrUnion() && !plain->isSpecialization()) {
@@ -590,6 +587,9 @@ bool Parser::templateDeclaration() {
         tmpl_.definedOutOfLine(copy);
         return true;
     }
+    // **A member of a class template defined outside it belongs to the class**, not
+    // to a template of its own. The declarator already reads a qualified name; what
+    // is new is that the qualifier is a template-id, naming the pattern.
     if (!qualifier.empty()) {
         const Type *of = lookup_.findTypedef(qualifier);
         // A nested class of the pattern, `Tree<T>::It::Deep`: the member belongs to the template whose
