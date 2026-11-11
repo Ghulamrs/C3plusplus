@@ -2218,10 +2218,11 @@ before); `isort` demoted 4, now 0; `matmul` 20, now 25 in 7 rounds (not examined
 total read 498 where round 3 read 276): `bench.cmd`, median of 9, `-front=ssa -O2` / `-O2` of the same build / cl:
 fib 11 / 12 / 11, sieve 78 / 89 / 72, matmul 17 / 43 / 6, isort 39 / 31 / 13, hash 379 / 329 / 233, virtual 201 / 204 /
 168, total 719 / 670 / 498; kernels' .text 3423 against 3443 (round 3: 3762); checksums agree. hash went from 1.65x of
-`-O2` to 1.15x, virtual from 2.1x to level; isort is as it was (1.25x). **Gates: none complete.** One `winpass` at
-`-front=ssa -O2` was started on that tree: its first job ran past its 9-minute window under the load (no case slow - the
-oldest compiler process seen was 3 s old), the comparison read part-way said 628 same, 0 differ in the GNU spelling,
-the MASM half unfinished. Not run: winpass at `-front=ssa -O1` and `-O2`, ssa.sh on either box, every Linux gate, the
+`-O2` to 1.15x, virtual from 2.1x to level; isort is as it was (1.25x). **Gates: one, and not clean-room.** `winpass` at
+`-front=ssa -O2` on that tree (built before the commit, the same `src/`): 738 / 737 same, 0 differ, 340 refused as
+recorded, both spellings - round 3's counts. Its first job ran past its 9-minute window under the load (no case slow -
+the oldest compiler process seen was 3 s old) and the later jobs overlapped it, so it is owed again after a clean ship
+and build. Not run: winpass at `-front=ssa -O1` and `-O2`, ssa.sh on either box, every Linux gate, the
 .text table over the cases, `make comments`, the memory gate. `tests/cases/ssa-layout` (clang's `.expected` from the
 Windows box) has not been compiled by cxx3. `src/` went from 92755 to 92946 lines (+191: SsaSelect.cpp +159, MirAlloc
 +20, OptJumps +20, OptEffects +7, X86_64Linux.h +4). **Left**: the gates above; hash's last 15% (the multiply-high's
