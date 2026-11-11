@@ -308,6 +308,10 @@ const Type *Parser::readTemplateDeclaration(const TemplateDecl &decl,
     Qualifiers quals;
     const Type *base = specifiers(&sc, &quals);
     Declared d = declarator(base);
+    // `R C::f(Row)`: past the qualifier the parameters are read in C's scope ([basic.lookup.unqual]/8).
+    if (signatureClass_ == nullptr && !d.qualifier.empty())
+        if (const Type *c = lookup_.findTypedef(d.qualifier))
+            if (c->isStructOrUnion() && !c->isSpecialization()) signatureClass_ = c;
 
     // **The declarator records where the parameter list is, and does not read it.**
     bool constructs = false;
@@ -566,6 +570,26 @@ bool Parser::templateDeclaration() {
     // **A member of a class template defined outside it belongs to the class**, not
     // to a template of its own. The declarator already reads a qualified name; what
     // is new is that the qualifier is a template-id, naming the pattern.
+    // [temp.mem]/1: `template <class R> void C::f(R)` defines a member template C declared, C no template.
+    const Type *plain = qualifier.empty() ? nullptr : lookup_.findTypedef(qualifier);
+    if (plain != nullptr && plain->isStructOrUnion() && !plain->isSpecialization()) {
+        auto set = tmpl_.memberTemplates_.find(plain->unqualified()->tag() + "::" + decl.name);
+        TemplateDecl *mt = nullptr;
+        if (set != tmpl_.memberTemplates_.end())
+            for (TemplateDecl &e : set->second)
+                if (mt == nullptr && !e.defined && e.params.size() == decl.params.size()) mt = &e;
+        if (mt == nullptr || !defined)
+            src_.fail(decl.pos, "'" + qualifier + "::" + decl.name + "' is not a member template "
+                                "declared in '" + qualifier + "' and defined here");
+        mt->params = decl.params;
+        mt->afterParams = decl.afterParams;
+        mt->pos = decl.pos;
+        mt->ns = decl.ns;
+        mt->defined = mt->outOfLineBody = true;
+        const TemplateDecl copy = *mt;
+        tmpl_.definedOutOfLine(copy);
+        return true;
+    }
     if (!qualifier.empty()) {
         const Type *of = lookup_.findTypedef(qualifier);
         // A nested class of the pattern, `Tree<T>::It::Deep`: the member belongs to the template whose

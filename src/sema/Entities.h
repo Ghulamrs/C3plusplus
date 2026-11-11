@@ -309,6 +309,10 @@ struct TemplateDecl {
     bool isExplicit = false;    // `explicit` on a constructor template, read in the class and replayed past
     // The class's name as the source spells it - `CMatrix` for `CMatrix<3,3>` - which inlineOwnerName_ wants.
     std::string ownerLocal;
+    // Declared in its class, defined at namespace scope: replayed from there as written, `C::f` and all.
+    bool outOfLineBody = false;
+    bool staticMember = false;  // the declaration's `static`, which the definition may not repeat
+    std::size_t declaredAt = 0; // the declaration's afterParams, kept when the definition replaces it
 };
 
 // **A pack while a specialization is being read**: the types it was given and, once its function

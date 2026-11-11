@@ -56,6 +56,8 @@ public:
         const TemplateDecl &mt, const std::vector<const Type *> &binding,
         const std::vector<long long> &values,
         const std::vector<TemplateArg> &args, std::size_t pos);
+    // Its definition reached: the bodies owed by specializations a call made from the declaration alone.
+    void definedOutOfLine(const TemplateDecl &mt);
     // `Box<int, 3>` where a type was expected.
     const Type *instantiateClass(const TemplateDecl &decl, std::size_t pos);
     void instantiatePending();
@@ -159,6 +161,8 @@ private:
     Parser &p_;
     // An instantiation made, keyed by the template's own position and its arguments.
     std::map<std::string, std::size_t> memberTemplateMade_;
+    struct Owed { std::vector<const Type *> binding; std::vector<long long> values; std::vector<TemplateArg> args; std::size_t pos; };
+    std::map<std::string, std::vector<Owed> > owedBodies_;   // by the declaration's "<owner>::<name>@<declaredAt>"
 };
 
 }   // namespace sema

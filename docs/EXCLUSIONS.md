@@ -189,7 +189,9 @@ is left:
 - **a member function template named without being called** -
   `src/parser/ParserTemplate.cpp:1900`; **a member class template** -
   `src/parser/ParserType.cpp:530`; **an out-of-line member template
-  definition** - `src/parser/ParserType.cpp:590`
+  definition of a class template's member, or of a constructor template** (a
+  non-template class's other member templates are defined out of line) -
+  `src/parser/ParserType.cpp:590`
 - **`sizeof` of a template parameter in a signature outside a template argument
   or a `decltype`** - an array bound, `void f(T, int (*)[sizeof(T)])`, whose
   Itanium spelling was not measured. `src/parser/ParserExpr.cpp:3642`

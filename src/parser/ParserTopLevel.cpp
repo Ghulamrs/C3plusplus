@@ -951,7 +951,9 @@ void Parser::topLevel(Program &program) {
     const DynamicSpec declaredSpec = pendingSpec_;
     if (trailing) d.type = readTrailingReturn(0);
 
-    if (consume(";")) {
+    // A member template's specialization declared from its declaration alone goes on to be registered.
+    const bool declOnly = memberTemplateDeclOnly_ && memberTemplateInst_ && d.name == memberTemplateOf_;
+    if (!declOnly && consume(";")) {
         if (memberOf != nullptr)
             src_.fail(d.pos, "'" + d.qualifier + "::" + d.name + "' is declared "
                              "inside the class - this says it again outside, "
@@ -990,7 +992,7 @@ void Parser::topLevel(Program &program) {
                 const Type *patternFn = memberTemplatePattern_ != nullptr ? memberTemplatePattern_
                                                                            : fnType;
                 // `template <class T> static T f(T)`: no `this`, and cl spells it S, K or C.
-                const bool staticTemplate = sc == StorageStatic;
+                const bool staticTemplate = sc == StorageStatic || memberTemplateStatic_;
                 const char code = memberTemplateAccess_ == Access::Public ? (staticTemplate ? 'S' : 'Q')
                                 : memberTemplateAccess_ == Access::Protected ? (staticTemplate ? 'K' : 'I')
                                                                              : (staticTemplate ? 'C' : 'A');
@@ -1050,6 +1052,11 @@ void Parser::topLevel(Program &program) {
             src_.fail(d.pos, "'" + key + "' was declared to return '" +
                              member->returns->describe() + "' and this says '" +
                              d.type->describe() + "'");
+        if (declOnly) {    // its body is replayed when the definition is reached
+            expect(";");
+            alive_.resize(alive_.size() - aliveParams);
+            return;
+        }
         if (member->defined)
             src_.fail(d.pos, "'" + key + "' is defined twice");
         // **This used to write `member->pos` into the *first* overload's entry.**
