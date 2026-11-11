@@ -2140,3 +2140,60 @@ stay slower, which is not inlining's (rounds 3 on). **.text** (bench.ps1 -Cases,
 (-6.80%). `src/` went from 91991 to 92369 lines (+378: SsaInline.cpp 362, the rest the re-pointing). **Left**: calls
 inside an inlined invoke made invokes to the same pad (the largest gap on both boxes), sites in funclets, a class
 result or argument, callees with pads (the pad merge); a callee no site still calls is still emitted.
+
+**M3b.5, round 3, 2026-11-11: LICM and counter widening on SSA.** From main `e5a2e776`, rebased over round 2 at
+`7d8ba729`, branch `m3b5-loops`, code commit `93e05827`. **The pass**, `loops` (`src/ir/opt/SsaLoops.cpp`), at `-O2`
+after `divide` (the divisions it sees are those divide left) and before `dead`: natural loops from `Dominators` - a back
+edge is an edge to a block that dominates its source, one loop per head with its back edges' bodies joined; a loop
+holding a block `fixedBlocks` names (a pad, a funclet's block, the runtime's way in) is left alone, so nothing moves
+across a pad, a funclet or an unwind edge. **A preheader** is made where the head is entered from more than one block,
+or by a branch that goes elsewhere too (a guarded `do`/`while`): the head's parameters repeated, every jump in from
+outside sent there; a loop entered from a funclet or by an unwind edge gets none. **LICM**, innermost first, so what an
+inner loop hoists into its preheader inside the outer loop the outer may hoist again: a pure instruction (gvn's
+`pureKind`, made public - one fact) whose operands are all defined outside the loop moves to the end of the preheader;
+a constant goes with what reads it, as gvn already shares one across blocks. A division or remainder can trap: it moves
+only from a block that every iteration and every exit passes, in a loop with no call, invoke or trap - a zero-trip
+`for` keeps its division (`ssa-loops`'s `sum(a, 0, 1, zero)`), a guarded `do`/`while` hoists it. **Loads are not
+hoisted** (the coordinator's cut of 2026-11-11: the simplest version that gates). **Counter widening**, OptLoops's
+`widenCounterIn` ported: a head parameter of type `int` entering as a constant in [0, INT_MAX) (or a made preheader's
+parameter every way in passes one constant), coming round as itself plus a positive constant, tested `slt`/`sle`
+against a bound the loop does not define, and sign-extended to 64 bits, gets a 64-bit twin; each extension reads the
+twin and every read of the int reads the twin truncated, so the `int` and its add die in `dead`. **What it did**
+(ssa.sh at `-O2`, after round 2's inlining): Linux 1943 loops, 86 preheaders made, 2577 instructions hoisted (1 a
+division), 607 counters widened; Windows 1935, 85, 2529 (1), 598. **MIR's loop passes still firing under `-front=ssa
+-O2`** (Linux, every case, `-dump=mir=<pass>`'s changed functions; the Ast.h path's `-O2` beside): `widen-counters` 0
+(26 in 10 cases) - SSA's widening covers it, so it can go under `-front=ssa` in round 5; `hoist-invariants` 327
+functions in 157 cases (394 in 161) - the loads this round leaves and the addresses and constants selection
+materialises in the loop; `hoist-xmm-slots` 3 (2). **Probe**: `tests/cases/ssa-loops.cpp`, clang's `.expected` (the
+Windows box's clang) and its `-O2 -dump=ssa=loops` (`ssa-loops.loops`, recorded after round 2's inlining), which ssa.sh
+compares at `-O2` beside `divide`'s and `inline`'s.
+**Gates on the rebased tree, after a clean ship and build on both boxes**: Linux run.sh 1111/0 at `-front=ssa -O1`,
+`-front=ssa -O2`, `-front=ssa`, `-O2`, `-O0`; ssa.sh 780/0 at levels 1 and 2; emit 0 of 3045 changed against a golden
+recorded from `7d8ba729`; typed 769/0, adapted 769/0, coff 0 differ, c90 447/0; comment cap 0 over, memory gate 44,
+exclusions 0 uncited 0 stale, ide projects current. Windows `winpass.sh` 738 / 737 same, 0 differ, at `-front=ssa -O2`,
+`-front=ssa -O1` and `-O2` (both spellings; 340 refused as recorded); ssa.sh 751/0 at levels 1 and 2. (The Windows tree
+was shipped before `ssa-loops.loops` was re-recorded on Linux - a file only Linux reads.)
+**Kernels** (Windows, `bench.cmd`, `-front=ssa -O2` against `-O2` of the same build - main's `-O2`, the Ast.h path
+being untouched - median of 9 interleaved rounds, ms; round 2's run beside):
+
+| kernel | -front=ssa -O2 | -O2 (main) | cl /O2 | round 2: ssa -O2 / -O2 |
+|---|---|---|---|---|
+| fib | 7 | 7 | 7 | 8 / 8 |
+| sieve | 52 | 53 | 43 | 65 / 58 |
+| matmul | 8 | 26 | 3 | 16 / 29 |
+| isort | 21 | 17 | 6 | 23 / 19 |
+| hash | 287 | 174 | 121 | 335 / 196 |
+| virtual | 178 | 83 | 96 | 180 / 92 |
+| total | 553 | 359 | 276 | 627 / 402 |
+| .text | 3762 | 3443 | 3831 | 3778 / 3443 |
+
+matmul is three times faster than main's `-O2` and sieve now level; isort, hash and virtual stay slower - not loop
+code: hash and virtual call through a function pointer or a vtable per element, isort's inner loop moves a value
+through memory. The box was shared with two lanes (an `-O2` against `-O2` run read 534 and 561), so a ~10% swing is noise.
+**.text** (Windows, `bench.ps1 -Cases`): `-front=ssa -O2` 1,236,509 bytes on 748 cases against round 2's 1,223,515
+(+1.06%: 168 larger, 58 smaller - a hoisted value or a widened twin held across the loop takes a register, or a slot
+where none is free); `-front=ssa -O1` unchanged (1,145,737), `loops` being `-O2`'s alone. `src/` went from 92369 to
+92755 lines (+386: SsaLoops.cpp 373, the pass table +2, the report +3, SsaOpt.h +5, gvn's `pureKind` +3). **Left**:
+loads hoisted (no store, memcpy, memset, call, invoke or volatile in the loop, from a block always run); widening a
+counter whose start is not a constant, or one compared with `!=`; the .text growth read case by case; `widen-counters`
+off under `-front=ssa` (round 5).
