@@ -1512,12 +1512,17 @@ const Parser::Signature *Templates::instantiateMemberTemplate(
         specializationKey(mt.isConstructor ? mt.ownerLocal : mt.name, args);
     const std::string key = mt.ownerTag + "::" + display;
     // Two templates of one name may each be instantiated at K = 3: the cache is per template.
-    const std::string made = key + "@" + std::to_string(mt.afterParams);
+    const std::string made = key + "@" + std::to_string(mt.declaredAt != 0 ? mt.declaredAt : mt.afterParams);
     if (memberTemplateMade_.count(made) != 0) return &p_.lookup_.functions_[memberTemplateMade_[made]];
     const std::size_t before = p_.lookup_.functions_.size();
-    if (!mt.defined)
+    if (!mt.defined && mt.declaredAt == 0)
         p_.src_.fail(pos, "'" + mt.ownerTag + "::" + mt.name + "' is declared but "
                        "not defined, so there is nothing to instantiate");
+    // [temp.point]: a call before the definition declares the specialization; the definition replays its body.
+    const bool declOnly = !mt.defined;
+    if (declOnly)
+        owedBodies_[mt.ownerTag + "::" + mt.name + "@" + std::to_string(mt.declaredAt)].push_back(
+            Owed{ binding, values, args, pos });
 
     Parser::BoundParams bound(&p_);
     std::vector<Shadow> &undo = bound.undo;
@@ -1557,13 +1562,21 @@ const Parser::Signature *Templates::instantiateMemberTemplate(
     one[0].local = mt.ownerLocal.empty() ? mt.ownerTag : mt.ownerLocal;
     one[0].key = key;
     one[0].which = Parser::PendingBody::npos();
+    // Defined at namespace scope: replayed as written there, `C::f` read in the namespace it was written in.
+    if (mt.outOfLineBody) { one[0].freeFunction = true; one[0].tag.clear(); }
     struct Restore {
         Parser *p; bool inst; std::string of, name; std::vector<TemplateArg> args; const Type *pattern;
+        bool statik, declOnly; std::vector<std::string> ns;
         ~Restore() {
             p->memberTemplateInst_ = inst; p->memberTemplateOf_ = of; p->memberTemplateName_ = name;
             p->memberTemplateArgs_ = args; p->memberTemplatePattern_ = pattern;
+            p->memberTemplateStatic_ = statik; p->memberTemplateDeclOnly_ = declOnly; p->namespaceStack_ = ns;
         }
-    } restore{ &p_, wasInst, wasOf, wasName, wasArgs, wasPattern };
+    } restore{ &p_, wasInst, wasOf, wasName, wasArgs, wasPattern, p_.memberTemplateStatic_,
+               p_.memberTemplateDeclOnly_, p_.namespaceStack_ };
+    p_.memberTemplateStatic_ = mt.staticMember;
+    p_.memberTemplateDeclOnly_ = declOnly;
+    if (mt.outOfLineBody) p_.namespaceStack_ = p_.namespacePathStack(mt.ns);
     p_.replayInlineBodies(one);
     bound.unbindNow();
 
@@ -1577,6 +1590,27 @@ const Parser::Signature *Templates::instantiateMemberTemplate(
             return &p_.lookup_.functions_[(*had)[i]];
         }
     return &p_.lookup_.functions_[(*had)[0]];
+}
+
+// The specializations a call declared before this definition: each body replayed now, under the name it has.
+void Templates::definedOutOfLine(const TemplateDecl &mt) {
+    const std::map<std::string, std::vector<Owed> >::iterator o =
+        owedBodies_.find(mt.ownerTag + "::" + mt.name + "@" + std::to_string(mt.declaredAt));
+    if (o == owedBodies_.end()) return;
+    const std::vector<Owed> owed = o->second;
+    owedBodies_.erase(o);
+    const std::size_t resume = p_.at_;
+    for (const Owed &w : owed) {
+        const std::string made = mt.ownerTag + "::" +
+            specializationKey(mt.isConstructor ? mt.ownerLocal : mt.name, w.args) + "@" + std::to_string(mt.declaredAt);
+        const std::map<std::string, std::size_t>::iterator had = memberTemplateMade_.find(made);
+        const bool cached = had != memberTemplateMade_.end();
+        const std::size_t was = cached ? had->second : 0;
+        if (cached) memberTemplateMade_.erase(had);
+        instantiateMemberTemplate(mt, w.binding, w.values, w.args, w.pos);
+        if (cached) memberTemplateMade_[made] = was;
+    }
+    p_.at_ = resume;
 }
 
 // **Function templates as overload-resolution candidates.**

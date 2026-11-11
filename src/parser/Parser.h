@@ -133,6 +133,8 @@ private:
     Access memberTemplateAccess_ = Access::Public;
     // The pattern signature of the specialization being replayed, which the Itanium name is spelled from.
     const Type *memberTemplatePattern_ = nullptr;
+    bool memberTemplateStatic_ = false;   // declared `static` in its class and defined outside it
+    bool memberTemplateDeclOnly_ = false; // a specialization declared from the declaration alone, its body owed
     // Set once the specialization's body has begun: a failure after that is the body's, not a substitution's.
     bool memberTemplateBody_ = false;
     // A constructor template specialization's C2 by its C1: a pattern's C2 cannot be recomputed from the substituted parameters.

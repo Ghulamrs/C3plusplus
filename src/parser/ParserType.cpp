@@ -586,11 +586,14 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
                 }
             at_ = mt.afterParams;
             mt.defined = skipTemplatedDefinition();
-            if (!mt.defined)
-                src_.fail(mt.pos, "a member function template declared inside "
-                                  "its class must be defined there too - an "
-                                  "out-of-line member template is not supported "
-                                  "yet");
+            if (!mt.defined && (!mt.classParams.empty() || mt.isConstructor))
+                src_.fail(mt.pos, std::string("a ") + (mt.isConstructor ? "constructor template" :
+                                  "member function template of a class template") + " declared inside "
+                                  "its class must be defined there too - an out-of-line one is not supported yet");
+            // Declared only: the definition at namespace scope fills it in, and lacks this `static`.
+            for (std::size_t i = mt.afterParams; !mt.defined && !tokens_[i].is("(") && !tokens_[i].is(";"); i++)
+                if (tokens_[i].is("static")) mt.staticMember = true;
+            if (!mt.defined) mt.declaredAt = mt.afterParams;
             tmpl_.memberTemplates_[tag + "::" + mname].push_back(mt);
             continue;
         }
@@ -1077,7 +1080,7 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             // and no constructor could never be built. Said here rather than at the
             // first use, where the reader hears only that something is uninitialised.
             if (!memberIsFunction && d.type->isReference() &&
-                !hasConstructors(tag) && !peek().is(";"))
+                !hasConstructors(tag) && !peek().is(";") && !peek().is(","))   // each declarator alone
                 src_.fail(d.pos, "'" + d.name + "' is a reference member, and a "
                                  "reference is bound where it is made - so this "
                                  "class needs a constructor with '" + d.name +
