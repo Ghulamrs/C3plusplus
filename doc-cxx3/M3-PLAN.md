@@ -2352,3 +2352,14 @@ defined out of line (ParserType.cpp:590). Cases `reference-member-declarators` a
 template called before its definition, a const one, a two-parameter one, in a namespace), clang's `.expected` (the Windows
 box's clang, `-std=c++11 -pedantic-errors`), right at `-O0`, `-O2`, `-front=ssa -O1`, `-front=ssa -O2` on Linux, `-check=ssa`
 0 failed.
+**Gates on `07e54ee2`'s code** (`5819f563` moves one comment under the cap and nothing else; clean box trees from `git
+archive`): Windows `winpass.sh -front=ssa -O2` (WINLANES=3, cl build with no warning) 744 same / 0 differ (GNU), 743 / 0
+(MASM), 340 refused as recorded. Linux ssa.sh at level 2 788 passed / 0 failed; run.sh 1117 / 0 at `-front=ssa -O2`, `-O2`
+and `-O0`; `tools/exclusions --check` 0 uncited / 0 stale (44 citations re-pointed), the memory gate unchanged (new 1056,
+raw pointers 44), `ide/generate.py --check` clean, the comment cap 0 over. Stage 0 (g++'s build) compiles `src/sema/Typing.cpp`
+and `src/sema/Classes.cpp` at `-O2` with no patch. No step reached a cap. `src/` 93416 -> 93494 lines (+78, by `git ls-files
+src | xargs cat | wc -l`). **Not run**: ssa.sh level 1, run.sh `-front=ssa -O1` and `-front=ssa`, winpass `-front=ssa -O1`,
+emit/names/overload/syntax/typed/adapted/coff/c90 (the coordinator's merged gate), and tools/self-host's whole stage 1 (98
+sources, one job each). **Left**: a member template of a class template, and a constructor template, defined out of line;
+a call to a declared-only member template whose definition never comes is a link error, not a refusal by name; overloads of
+one name declared-only are matched to definitions by their parameter count alone.
