@@ -1878,6 +1878,13 @@ Lowering::Val Lowering::conditionalArm(sema::TypedId arm) {
     return Val(copy, tid(c));
 }
 
+// The object `o.m` and `o.f()` name: an lvalue, or a class conditional's result materialised ([class.temporary]/2).
+Lowering::Val Lowering::memberObject(sema::TypedId o) {
+    sema::TypedId in = o;
+    while (syn(in).kind == syntax::Kind::Paren && count(in) == 1) in = child(in, 0);
+    return classConditionalNode(in) ? conditionalObject(in) : lvalue(o);
+}
+
 Lowering::Val Lowering::conditionalObject(sema::TypedId id) {
     const Val c = truth(expr(child(id, 0)));
     const BlockId a = newBlock(), b = newBlock(), merge = newBlock();
@@ -4112,7 +4119,7 @@ Lowering::Val Lowering::memberAddress(sema::TypedId id) {
         if (!T(p.type).isPointer() || !T(p.type).pointee()->isStructOrUnion()) outside("a '->' of what is not a pointer to a struct");
         object = Val(p.v, tid(*T(p.type).pointee()));
     } else {
-        object = lvalue(child(id, 0));
+        object = memberObject(child(id, 0));
     }
     const Type &obj = T(object.type);
     if (!obj.isStructOrUnion()) outside("a member of '" + obj.describe() + "'");
@@ -5197,7 +5204,7 @@ Lowering::Val Lowering::call(sema::TypedId id) {
         } else if (syn(head).kind == syntax::Kind::Member && count(head) == 1) {
             const bool arrow = text(head).compare(0, 2, "->") == 0;
             if (arrow) object = arrowPointer(head);
-            else { const Val o = lvalue(child(head, 0)); object = Val(o.v, tid(*types_.pointerTo(&T(o.type)))); }
+            else { const Val o = memberObject(child(head, 0)); object = Val(o.v, tid(*types_.pointerTo(&T(o.type)))); }
         } else if (syn(head).kind == syntax::Kind::Unary && text(head) == "*" && count(head) == 1) {
             // [over.call.object] on `*p`: the class object p points at is the object, p its address.
             object = decay(expr(child(head, 0)));

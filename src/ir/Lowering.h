@@ -421,6 +421,7 @@ private:
     bool classConditionalNode(sema::TypedId id) const;
     Val conditionalObject(sema::TypedId id);
     Val conditionalArm(sema::TypedId arm);
+    Val memberObject(sema::TypedId o);
     std::string temporaryDestructor(const Type &c);
     bool destroyedResultClass(const Type &t) const;
     bool destroyedResult(sema::TypedId id) const;
