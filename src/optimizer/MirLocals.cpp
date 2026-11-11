@@ -29,7 +29,8 @@ int Locals::promote() {
             const auto p = pseudoOf.find(o->disp);
             if (p == pseudoOf.end()) continue;
             const Local &l = fn_.pseudos[p->second - kFirstPseudo].slot;
-            *o = MOperand::ofReg(p->second, l.floating ? 16 : l.size);
+            const int low = l.value ? valueReadWidth(e.ins, *o) : 0;
+            *o = MOperand::ofReg(p->second, l.floating ? 16 : low != 0 ? low : l.size);
             renamed = true;
             floating = floating || l.floating;
         }

@@ -230,6 +230,10 @@ private:
     void ssaScalars(const ir::Function &f, std::vector<opt::Local> &into) const;
     Op vslot(ir::ValueId v) const;
     const Type *typeOf(const ir::Function &f, ir::ValueId v) const;
+    // A frame object's address, a constant or null has no slot: each use makes it afresh (ssaRemat).
+    bool ssaRemat(const ir::Function &f, ir::ValueId v) const;
+    void ssaLoadReg(const ir::Function &f, ir::ValueId v, const char *r);
+    ExprPtr ssaExpr(const ir::Function &f, ir::ValueId v) const;
     void ssaLoad(const ir::Function &f, ir::ValueId v);
     void ssaStore(const ir::Function &f, ir::ValueId v);
     std::string ssaBlockLabel(ir::BlockId b) const;
@@ -243,14 +247,14 @@ private:
     // Microsoft: the FH3 state of each pad block (M3-IR 3.6), the frame's scratch word, and whether a funclet is being selected.
     std::vector<int> ssaPadState_;
     int ssaUnwindHelpSlot_ = 0;
-    bool ssaInFunclet_ = false;
     int ssaFuncletState_ = -1;                      // the handler state in force inside the funclet being selected
     std::map<std::uint32_t, MsTryBlock> ssaTries_;  // a try's block, filled as its handlers' funclets come out
     std::vector<std::pair<unsigned long long, std::uint32_t> > ssaTryOrder_;    // each finished try's last block and its pad: the map's order
     void selectHandler(const ir::Function &f, ir::BlockId hb);
     void selectInst(const ir::Function &f, const ir::Inst &i);
     void selectBody(const Function &fn, const ir::Function &f);
-    std::vector<opt::Local> scalarsOf(const Function &fn) const;
+    // The parser's scalar locals; under SSA only its parameters' slots, the rest of its frame being the selector's (layoutSsa).
+    std::vector<opt::Local> scalarsOf(const Function &fn, bool paramsOnly = false) const;
     // Inline expansion - see inlineTarget; the inliner decides, by the
     // level's costs, which sites are worth it.
     const Function *inlineTarget(const Call &n, int stackSlots) const;

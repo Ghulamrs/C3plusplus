@@ -50,10 +50,11 @@ struct Local {
     long long disp;
     int size;
     bool floating;      // a float or double: promoted to an xmm register, or held by hoist-xmm-slots
+    bool value;         // an SSA value's canonical 8-byte slot: a read of its low bytes reads the register's (valueReadWidth)
 
     // C++11 has no aggregate with a member initialiser, so the braces call this.
-    Local(long long disp = 0, int size = 0, bool floating = false)
-        : disp(disp), size(size), floating(floating) {}
+    Local(long long disp = 0, int size = 0, bool floating = false, bool value = false)
+        : disp(disp), size(size), floating(floating), value(value) {}
 };
 
 // **Frame slots something outside the stream reads or writes** - a funclet of the function, or the runtime - as if their address had escaped: no register takes one, and a store to one is never dead.
@@ -90,6 +91,8 @@ private:
 // `mentioned`: every register named; `xmmPseudo`: whether a pseudo stands for an xmm register.
 std::vector<Local> promotableLocals(const MStream &s, const std::vector<Local> &locals, const SharedSlots &shared,
                                     RegSet &mentioned, const std::function<bool(int)> &xmmPseudo);
+// The bytes a move into a general register reads at its source `at`, which a value slot's register's low part can be; else 0.
+int valueReadWidth(const MInst &i, const MOperand &at);
 
 // Each register goes back before rsp is taken from the frame for the return, ahead of the epilogue.
 void insertRestores(MStream &s, const std::vector<SavedReg> &saves);

@@ -214,6 +214,10 @@ void Allocator::buildInterference() {
             for (const Use &u : uses_[k]) if (u.write) clear(bits, u.pseudo);
             for (const Use &u : uses_[k]) if (u.read) set(bits, u.pseudo);
         }
+        // A label no instruction follows - `.Lfunc.end` after the return - holds nothing.
+        bool code = false;
+        for (int k = blk.begin; k < blk.end && !code; ++k) code = s[k].kind == MEntry::Inst && !s[k].dead;
+        if (b != 0 && !code) continue;
         // What is live into a block entered from nowhere this function shows
         // was placed by nobody here: those pseudos interfere with each other
         // and with every physical register live there.
@@ -473,8 +477,8 @@ std::vector<int> Allocator::colour() {
 }
 
 // **The promoted locals the failed nodes hold go back to their slots**, in
-// the stream, so the graph is built again without them; the count demoted,
-// none where they hold none, which only the homes can answer.
+// the stream, so the graph is built again without them; where they hold none,
+// the locals they interfere with; the count demoted, none where neither has one.
 int Allocator::demote(const std::vector<int> &failed) {
     std::vector<bool> isFailed(n_, false);
     for (int f : failed) isFailed[f] = true;
@@ -482,6 +486,12 @@ int Allocator::demote(const std::vector<int> &failed) {
     int count = 0;
     for (int q = nHomes_; q < n_; ++q)
         if (!demoted_[q] && isFailed[find(q)]) { demoted_[q] = true; back[q] = Webs::kToSlot; ++count; }
+    if (count == 0) {
+        std::vector<bool> beside(n_, false);
+        for (int f : failed) for (int q : nodes_[f].adj) beside[find(q)] = true;
+        for (int q = nHomes_; q < n_; ++q)
+            if (!demoted_[q] && beside[find(q)]) { demoted_[q] = true; back[q] = Webs::kToSlot; ++count; }
+    }
     if (count != 0) Webs::assign(fn_, back);
     return count;
 }

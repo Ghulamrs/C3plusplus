@@ -1674,7 +1674,7 @@ void X86_64Linux::emit(const Function &fn) {
     // On Windows the entry is named by the `{` line, as cl names it - see openingBrace.
     markLine(target_.microsoftNames() ? openingBrace(fn.pos()) : fn.pos());
     if (passesRun()) {
-        std::vector<opt::Local> scalars = scalarsOf(fn);
+        std::vector<opt::Local> scalars = scalarsOf(fn, ssaFn != nullptr);
         if (ssaFn != nullptr) ssaScalars(*ssaFn, scalars);
         optimizer_->frame(scalars);
     }
@@ -1867,10 +1867,10 @@ void X86_64Linux::receiveParameters(const Function &fn) {
                                    : stackBase + plan.stackWords * 8;
 }
 
-std::vector<opt::Local> X86_64Linux::scalarsOf(const Function &fn) const {
+std::vector<opt::Local> X86_64Linux::scalarsOf(const Function &fn, bool paramsOnly) const {
     std::vector<opt::Local> scalars;
     for (const Local &l : fn.locals())
-        if (l.staticName.empty() && (l.type->isInteger() || l.type->isPointer() || l.type->isFloating()))
+        if (l.staticName.empty() && (l.isParam || !paramsOnly) && (l.type->isInteger() || l.type->isPointer() || l.type->isFloating()))
             scalars.push_back(opt::Local{-static_cast<long long>(l.offset), l.type->size(target_), l.type->isFloating()});
     return scalars;
 }

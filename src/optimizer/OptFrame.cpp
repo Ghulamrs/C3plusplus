@@ -1,6 +1,7 @@
 #include "OptPasses.h"
 
 #include <algorithm>
+#include <set>
 
 namespace opt {
 
@@ -50,6 +51,14 @@ struct Candidate {
 
 }
 
+int valueReadWidth(const MInst &i, const MOperand &at) {
+    const Opcode &r = i.m.row();
+    if (&at != &i.a || r.kind != Opcode::Move || !r.has(Opcode::kWritesOnly) || r.has(Opcode::kAddress) || r.has(Opcode::kCvt) || !gpr(i.b)) return 0;
+    if (i.m == mn::Movabs) return 0;
+    const int w = r.width != 0 ? r.width : r.has(Opcode::kPlainMov) ? i.b.reg.width : r.masmWidth;
+    return w == 1 || w == 2 || w == 4 || w == 8 ? w : 0;
+}
+
 void SharedSlots::addAccessesOf(const MStream &s) {
     for (const MEntry &e : s) addAccessOf(e);
 }
@@ -66,8 +75,11 @@ void SharedSlots::addAccessOf(const MEntry &e) {
 std::vector<Local> promotableLocals(const MStream &s, const std::vector<Local> &locals, const SharedSlots &shared,
                                     RegSet &mentioned, const std::function<bool(int)> &xmmPseudo) {
     std::vector<Candidate> cands;
-    for (const Local &l : locals)
+    std::set<long long> values;
+    for (const Local &l : locals) {
         if ((l.size == 4 || l.size == 8) && !shared.overlaps(l.disp, l.size)) cands.push_back(Candidate{l});
+        if (l.value) values.insert(l.disp);
+    }
     const auto isXmm = [&](const MOperand &o) {
         return xmm(o) || (o.kind == MOperand::Register && o.reg.id >= kPhysical && xmmPseudo(o.reg.id));
     };
@@ -95,8 +107,10 @@ std::vector<Local> promotableLocals(const MStream &s, const std::vector<Local> &
                 continue;
             }
             const int fw = floatingAccessWidth(i, *o, isXmm);
-            const int w = fw ? fw : accessWidth(i, *o);
+            const int vw = values.count(o->disp) != 0 && !isXmm(i.b) ? valueReadWidth(i, *o) : 0;
+            const int w = fw ? fw : vw ? vw : accessWidth(i, *o);
             overlapping(o->disp, w, [&](Candidate &cd) {
+                if (vw != 0 && cd.local.disp == o->disp) return;
                 if (cd.local.disp != o->disp || cd.local.size != w) cd.ok = false;
                 else if (cd.local.floating ? fw == 0 : !renamable(i.m) || isXmm(i.a) || isXmm(i.b)) cd.ok = false;
             });

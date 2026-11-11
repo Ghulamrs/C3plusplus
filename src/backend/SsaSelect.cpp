@@ -1,6 +1,6 @@
-// **Selection of the SSA IR into the x86 walker's stream** (M3b.1, doc-cxx3/M3-IR.md 3.9). Every SSA value has a frame slot
-// of 8 bytes holding the walker's canonical form (sign- or zero-extended to 64 bits, a float in its 4), an x87 value's of 16;
-// an instruction loads its operands into rax/xmm0/st0 and the scratch register, computes, stores. The ABI code is the walker's.
+// **Selection of the SSA IR into the x86 walker's stream** (M3b.1, doc-cxx3/M3-IR.md 3.9). An SSA value has an 8-byte slot in
+// the walker's canonical form (an x87 value 16), a local MIR's allocator gives a register (Local::value); an address of the
+// frame, a constant and null have none, made at each use. Operands go through rax/xmm0/st0 and scratch; the ABI is the walker's.
 
 #include "X86_64Linux.h"
 #include "../ir/Ir.h"
@@ -66,6 +66,7 @@ int X86_64Linux::layoutSsa(const Function &fn, const ir::Function &f) {
     ssaValueSlot_.assign(f.values.size(), 0);
     for (std::size_t i = 1; i < f.values.size(); i++) {
         if (!f.values[i].type.valid() || ssaTypes_->type(f.values[i].type)->isVoid()) continue;
+        if (ssaRemat(f, ir::ValueId(static_cast<std::uint32_t>(i)))) continue;
         cur = isX87(ssaTypes_->type(f.values[i].type)) ? roundUp(cur + 16, 16) : cur + 8;
         ssaValueSlot_[i] = cur;
     }
@@ -85,19 +86,53 @@ void X86_64Linux::ssaScalars(const ir::Function &f, std::vector<opt::Local> &int
     for (std::size_t i = 1; i < f.values.size(); i++) {
         if (ssaValueSlot_[i] == 0) continue;
         const Type *t = ssaTypes_->type(f.values[i].type);
-        into.push_back(opt::Local{-ssaValueSlot_[i], t->isFloating() ? t->size(target_) : 8, t->isFloating()});
+        into.push_back(opt::Local{-ssaValueSlot_[i], t->isFloating() ? t->size(target_) : 8, t->isFloating(), !t->isFloating()});
     }
 }
 
 Op X86_64Linux::vslot(ir::ValueId v) const { return local(ssaValueSlot_[v.v]); }
 const Type *X86_64Linux::typeOf(const ir::Function &f, ir::ValueId v) const { return ssaTypes_->type(f.value(v).type); }
 
+bool X86_64Linux::ssaRemat(const ir::Function &f, ir::ValueId v) const {
+    if (!f.value(v).def.valid()) return false;
+    const ir::Op op = f.inst(f.value(v).def).op;
+    return op == ir::Op::Alloca || op == ir::Op::IConst || op == ir::Op::Null;
+}
+
+// A general value into the register named: one made afresh where it has no slot.
+void X86_64Linux::ssaLoadReg(const ir::Function &f, ir::ValueId v, const char *r) {
+    if (!ssaRemat(f, v)) { a_->ins("mov", vslot(v), reg(r)); return; }
+    const ir::Inst &d = f.inst(f.value(v).def);
+    if (d.op == ir::Op::Alloca) a_->ins("lea", local(ssaAllocaSlot_[static_cast<std::size_t>(d.k)]), reg(r));
+    else a_->ins("mov", d.op == ir::Op::IConst ? imm(d.k) : immText("0"), reg(r));
+}
+
+// The value as the walker's node: its slot's Var, or what makes it afresh - a frame object's `&`, a constant's number.
+ExprPtr X86_64Linux::ssaExpr(const ir::Function &f, ir::ValueId v) const {
+    if (!ssaRemat(f, v)) {
+        std::unique_ptr<Var> p(Var::local("$v" + std::to_string(v.v), static_cast<int>(ssaValueSlot_[v.v])));
+        p->setType(typeOf(f, v));
+        return ExprPtr(p.release());
+    }
+    const ir::Inst &d = f.inst(f.value(v).def);
+    if (d.op != ir::Op::Alloca) {
+        std::unique_ptr<Num> n = make_owned<Num>(d.op == ir::Op::IConst ? static_cast<long long>(d.k) : 0LL);
+        n->setType(typeOf(f, v));
+        return ExprPtr(n.release());
+    }
+    std::unique_ptr<Var> o(Var::local("$a" + std::to_string(d.k), static_cast<int>(ssaAllocaSlot_[static_cast<std::size_t>(d.k)])));
+    o->setType(ssaTypes_->type(f.frame[static_cast<std::size_t>(d.k)].type));
+    std::unique_ptr<Unary> addr = make_owned<Unary>('&', ExprPtr(o.release()));
+    addr->setType(typeOf(f, v));
+    return ExprPtr(addr.release());
+}
+
 // A value into the accumulator: rax, xmm0 for a float or double, st0 for an x87 value.
 void X86_64Linux::ssaLoad(const ir::Function &f, ir::ValueId v) {
     const Type *t = typeOf(f, v);
     if (isX87(t)) a_->ins("fldt", vslot(v));
     else if (t->isFloating()) a_->ins(genKind(t) == Kind::Float ? "movss" : "movsd", vslot(v), reg("%xmm0"));
-    else a_->ins("mov", vslot(v), reg("%rax"));
+    else ssaLoadReg(f, v, "%rax");
 }
 
 // The accumulator into a value's slot; st0 is popped into it.
@@ -111,20 +146,32 @@ void X86_64Linux::ssaStore(const ir::Function &f, ir::ValueId v) {
 
 std::string X86_64Linux::ssaBlockLabel(ir::BlockId b) const { return label("ssa", static_cast<int>(b.v)); }
 
-// A branch's arguments into the target's parameter slots, staged on the stack so that an argument that is itself a
-// parameter of the target is read before any is written.
+// A branch's arguments into the target's parameter slots as a parallel move: a copy whose parameter no copy left reads
+// goes first, through the accumulator, and the allocator coalesces it where both slots became registers. A cycle left
+// over is staged on the stack, so that each of its arguments is read before any is written.
 void X86_64Linux::ssaBranchArgs(const ir::Function &f, const ir::Succ &s) {
-    if (s.count == 0) return;
     const ir::Block &to = f.block(s.block);
-    for (std::uint32_t i = 0; i < s.count; i++) {
-        const ir::ValueId v = f.arg(s, i);
+    std::vector<std::pair<ir::ValueId, ir::ValueId>> moves;
+    for (std::uint32_t i = 0; i < s.count; i++)
+        if (f.arg(s, i).v != to.params[i].v && ssaValueSlot_[to.params[i].v] != 0) moves.push_back(std::make_pair(f.arg(s, i), to.params[i]));
+    for (std::size_t m = 0; m < moves.size(); ) {
+        bool read = false;
+        for (std::size_t o = 0; o < moves.size(); o++) read = read || (o != m && moves[o].first.v == moves[m].second.v);
+        if (read) { m++; continue; }
+        ssaLoad(f, moves[m].first);
+        ssaStore(f, moves[m].second);
+        moves.erase(moves.begin() + static_cast<std::ptrdiff_t>(m));
+        m = 0;
+    }
+    for (std::size_t i = 0; i < moves.size(); i++) {
+        const ir::ValueId v = moves[i].first;
         ssaLoad(f, v);
         if (isX87(typeOf(f, v))) { pushX87(); continue; }
         if (typeOf(f, v)->isFloating()) a_->ins("movq", reg("%xmm0"), reg("%rax"));
         pushArg();
     }
-    for (std::uint32_t i = s.count; i-- > 0; ) {
-        const ir::ValueId p = to.params[i];
+    for (std::size_t i = moves.size(); i-- > 0; ) {
+        const ir::ValueId p = moves[i].second;
         if (isX87(typeOf(f, p))) { popX87(); ssaStore(f, p); continue; }
         a_->ins("pop", reg("%rax"));
         depth_--;
@@ -143,20 +190,10 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
     const Type *rt = i.type.valid() ? ssaTypes_->type(i.type) : nullptr;
     switch (i.op) {
     case ir::Op::Alloca:
-        // The frame object's address is the alloca's value: taken once, here, into its slot.
-        a_->ins("lea", local(ssaAllocaSlot_[static_cast<std::size_t>(i.k)]), reg("%rax"));
-        ssaStore(f, i.result);
-        return;
+    case ir::Op::IConst:
+    case ir::Op::Null:   // made afresh at each use (ssaRemat)
     case ir::Op::Unreachable:
     case ir::Op::Undef:
-        return;
-    case ir::Op::IConst:
-        a_->ins("mov", imm(i.k), reg("%rax"));
-        ssaStore(f, i.result);
-        return;
-    case ir::Op::Null:
-        a_->ins("mov", immText("0"), reg("%rax"));
-        ssaStore(f, i.result);
         return;
     case ir::Op::FConst:
         if (isX87(rt)) {
@@ -193,14 +230,14 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
     case ir::Op::Store: {
         const ir::ValueId p = f.operand(i, 0), v = f.operand(i, 1);
         ssaLoad(f, v);
-        a_->ins("mov", vslot(p), reg(abi_.scratch));
+        ssaLoadReg(f, p, abi_.scratch);
         store(typeOf(f, v));
         return;
     }
     case ir::Op::Memcpy:
         // The walker's block copy: from (%rax) to (scratch).
         ssaLoad(f, f.operand(i, 1));
-        a_->ins("mov", vslot(f.operand(i, 0)), reg(abi_.scratch));
+        ssaLoadReg(f, f.operand(i, 0), abi_.scratch);
         copyBlock(static_cast<int>(i.k));
         return;
     case ir::Op::Memset: {
@@ -212,8 +249,9 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         return;
     }
     case ir::Op::Gep:
+        if (i.count == 2) ssaLoadReg(f, f.operand(i, 1), abi_.scratch);
         ssaLoad(f, f.operand(i, 0));
-        if (i.count == 2) a_->ins("add", vslot(f.operand(i, 1)), reg("%rax"));
+        if (i.count == 2) a_->ins("add", reg(abi_.scratch), reg("%rax"));
         else if (i.k != 0) a_->ins("add", imm(i.k), reg("%rax"));
         ssaStore(f, i.result);
         return;
@@ -222,14 +260,14 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         const bool wide = rt->size(target_) == 8;
         const char *acc_ = acc(rt), *d = rhs(rt);
         if (i.op == ir::Op::Shl || i.op == ir::Op::LShr || i.op == ir::Op::AShr) {
-            a_->ins("mov", vslot(f.operand(i, 1)), reg("%rcx"));
+            ssaLoadReg(f, f.operand(i, 1), "%rcx");
             ssaLoad(f, f.operand(i, 0));
             a_->ins(i.op == ir::Op::Shl ? "shl" : i.op == ir::Op::AShr ? "sar" : "shr", reg("%cl"), reg(acc_));
             canonicalise(rt);
             ssaStore(f, i.result);
             return;
         }
-        a_->ins("mov", vslot(f.operand(i, 1)), reg(abi_.scratch));
+        ssaLoadReg(f, f.operand(i, 1), abi_.scratch);
         ssaLoad(f, f.operand(i, 0));
         switch (i.op) {
         case ir::Op::Add: a_->ins("add", reg(d), reg(acc_)); break;
@@ -253,7 +291,7 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
     }
     case ir::Op::SMulH: case ir::Op::UMulH:
         // The one-operand multiply: rdx:rax, of which rdx is the result.
-        a_->ins("mov", vslot(f.operand(i, 1)), reg(abi_.scratch));
+        ssaLoadReg(f, f.operand(i, 1), abi_.scratch);
         ssaLoad(f, f.operand(i, 0));
         a_->ins(i.op == ir::Op::SMulH ? "imul" : "mul", reg(rhs(rt)));
         a_->ins("mov", reg(rt->size(target_) == 8 ? "%rdx" : "%edx"), reg(acc(rt)));
@@ -268,7 +306,7 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         return;
     case ir::Op::ICmp: {
         const Type *t = typeOf(f, f.operand(i, 0));
-        a_->ins("mov", vslot(f.operand(i, 1)), reg(abi_.scratch));
+        ssaLoadReg(f, f.operand(i, 1), abi_.scratch);
         ssaLoad(f, f.operand(i, 0));
         a_->ins("cmp", reg(rhs(t)), reg(acc(t)));
         const char *set = "sete";
@@ -401,10 +439,7 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
     case ir::Op::Ret:
         if (i.count == 1 && ssaTypes_->type(f.returns)->isStructOrUnion()) {
             // A class's address: the walker's own return copies it out - through the result pointer or into registers.
-            std::unique_ptr<Var> p(Var::local("$v" + std::to_string(f.operand(i, 0).v),
-                                              static_cast<int>(ssaValueSlot_[f.operand(i, 0).v])));
-            p->setType(typeOf(f, f.operand(i, 0)));
-            std::unique_ptr<Unary> d = make_owned<Unary>('*', ExprPtr(p.release()));
+            std::unique_ptr<Unary> d = make_owned<Unary>('*', ssaExpr(f, f.operand(i, 0)));
             d->setType(ssaTypes_->type(f.returns));
             Return r{ExprPtr(d.release())};
             r.accept(*this);
@@ -487,10 +522,9 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
 // area receiveParameters filled, Microsoft's char pointer stepped by 8 through the home area - one code for both fronts.
 void X86_64Linux::selectVa(const ir::Function &f, const ir::Inst &i, const Type *rt) {
     const ir::ValueId v = f.operand(i, 0);
-    std::unique_ptr<Var> p(Var::local("$v" + std::to_string(v.v), static_cast<int>(ssaValueSlot_[v.v])));
-    p->setType(typeOf(f, v));
-    if (i.op == ir::Op::VaStart) { VaStart n(ExprPtr(p.release())); n.accept(*this); return; }
-    VaArg n(ExprPtr(p.release()));
+    ExprPtr p = ssaExpr(f, v);
+    if (i.op == ir::Op::VaStart) { VaStart n(std::move(p)); n.accept(*this); return; }
+    VaArg n(std::move(p));
     n.setType(rt);
     n.accept(*this);
     ssaStore(f, i.result);
@@ -507,23 +541,12 @@ void X86_64Linux::selectCall(const ir::Function &f, const ir::Inst &i, const Typ
             const ir::ValueId v = f.operand(i, n);
             const std::size_t at = n - firstArg;
             const Type *want = at < sig->params().size() ? sig->params()[at] : nullptr;
-            const ir::Inst &def = f.inst(f.value(v).def);
-            // In a funclet an alloca's address is taken afresh: the body's slot for it may have been promoted to a register.
-            if (ssaInFunclet_ && def.op == ir::Op::Alloca && (want == nullptr || !want->isStructOrUnion())) {
-                std::unique_ptr<Var> o(Var::local("$a" + std::to_string(def.k), static_cast<int>(ssaAllocaSlot_[static_cast<std::size_t>(def.k)])));
-                o->setType(ssaTypes_->type(f.frame[static_cast<std::size_t>(def.k)].type));
-                std::unique_ptr<Unary> addr = make_owned<Unary>('&', ExprPtr(o.release()));
-                addr->setType(typeOf(f, v));
-                args.push_back(std::move(addr));
-                continue;
-            }
-            std::unique_ptr<Var> a(Var::local("$v" + std::to_string(v.v), static_cast<int>(ssaValueSlot_[v.v])));
-            a->setType(typeOf(f, v));
+            ExprPtr a = ssaExpr(f, v);
             // Where the signature takes a class by value the operand is its address: the walker copies `*p` in - or, for
             // one the parser passes by address, hands the caller's copy's address on as materialiseCopy's node does.
             if (want != nullptr && want->isStructOrUnion() && typeOf(f, v)->isPointer() && ssaByAddress(want)) { args.push_back(std::move(a)); continue; }
             if (want != nullptr && want->isStructOrUnion() && typeOf(f, v)->isPointer()) {
-                std::unique_ptr<Unary> d = make_owned<Unary>('*', ExprPtr(a.release()));
+                std::unique_ptr<Unary> d = make_owned<Unary>('*', std::move(a));
                 d->setType(want);
                 args.push_back(std::move(d));
                 continue;
@@ -531,12 +554,7 @@ void X86_64Linux::selectCall(const ir::Function &f, const ir::Inst &i, const Typ
             args.push_back(std::move(a));
         }
         ExprPtr callee;
-        if (c.symbol.empty()) {
-            const ir::ValueId v = f.operand(i, 0);
-            std::unique_ptr<Var> p(Var::local("$v" + std::to_string(v.v), static_cast<int>(ssaValueSlot_[v.v])));
-            p->setType(typeOf(f, v));
-            callee = std::move(p);
-        }
+        if (c.symbol.empty()) callee = ssaExpr(f, f.operand(i, 0));
         // A class result comes back into its alloca's slot and the walker leaves its address in rax: the call's value.
         // One built in the caller's object (c.sret) goes through this function's own result pointer, as `return f();` does.
         const int resultSlot = c.sret ? ssaSretSlot_ : c.resultAlloca >= 0 ? static_cast<int>(ssaAllocaSlot_[static_cast<std::size_t>(c.resultAlloca)]) : 0;
@@ -553,7 +571,7 @@ void X86_64Linux::selectCall(const ir::Function &f, const ir::Inst &i, const Typ
 std::string X86_64Linux::ssaLandLabel(ir::BlockId b) const { return label("ssaland", static_cast<int>(b.v)); }
 
 // **A handler as a funclet** (M3-IR 3.6, the Microsoft half): its pad block and every block tagged with it emitted whole
-// inside openFunclet/endFunclet, each alloca it reads taken afresh by lea first (the body's slot for the address may be a
+// inside openFunclet/endFunclet, an alloca it reads taken afresh where it is read (ssaRemat, the body may hold it in a
 // register); its state beside the try's under the same parent; its handler-map row, the try block registered at the last.
 void X86_64Linux::selectHandler(const ir::Function &f, ir::BlockId hb) {
     const ir::Block &blk = f.block(hb);
@@ -564,31 +582,10 @@ void X86_64Linux::selectHandler(const ir::Function &f, ir::BlockId hb) {
     const int state = ssaPadState_[hb.v], parent = cs.k != 0 ? ssaPadState_[static_cast<std::size_t>(cs.k)] : -1;
     const std::string funclet = openFunclet(cp.pos, false);
     msAddFuncletRow(funclet, state, true);
-    ssaInFunclet_ = true;
     ssaFuncletState_ = state;
     std::vector<ir::BlockId> blocks(1, hb);
     for (std::size_t b = 0; b < f.blocks.size(); b++) if (f.block(f.blocks[b]).funclet == hb.v) blocks.push_back(f.blocks[b]);
     a_->defLabel(ssaBlockLabel(hb));
-    std::vector<char> made(f.frame.size(), 0);
-    for (std::size_t b = 0; b < blocks.size(); b++) {
-        const ir::Block &in = f.block(blocks[b]);
-        for (std::size_t k = 0; k <= in.insts.size(); k++) {
-            const ir::InstId id = k < in.insts.size() ? in.insts[k] : in.term;
-            if (!id.valid()) continue;
-            const ir::Inst &i = f.inst(id);
-            std::vector<ir::ValueId> used;
-            for (std::uint32_t n = 0; n < i.count; n++) used.push_back(f.operand(i, n));
-            for (std::size_t s = 0; s < i.succ.size(); s++)
-                for (std::uint32_t a = 0; a < i.succ[s].count; a++) used.push_back(f.arg(i.succ[s], a));
-            for (std::size_t u = 0; u < used.size(); u++) {
-                const ir::Inst &def = f.inst(f.value(used[u]).def);
-                if (!f.value(used[u]).def.valid() || def.op != ir::Op::Alloca || made[static_cast<std::size_t>(def.k)]) continue;
-                made[static_cast<std::size_t>(def.k)] = 1;
-                a_->ins("lea", local(ssaAllocaSlot_[static_cast<std::size_t>(def.k)]), reg("%rax"));
-                ssaStore(f, def.result);
-            }
-        }
-    }
     for (std::size_t b = 0; b < blocks.size(); b++) {
         const ir::Block &in = f.block(blocks[b]);
         if (b != 0) a_->defLabel(ssaBlockLabel(blocks[b]));
@@ -597,7 +594,6 @@ void X86_64Linux::selectHandler(const ir::Function &f, ir::BlockId hb) {
             if (id.valid()) selectInst(f, f.inst(id));
         }
     }
-    ssaInFunclet_ = false;
     ssaFuncletState_ = -1;
     endFunclet(ssaBlockLabel(ir::BlockId(static_cast<std::uint32_t>(dispatch.cases[0]))));
     leaveFunclet();
@@ -669,7 +665,6 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
             // The funclet destroys and returns to the runtime; its cleanupret names the pad it chains to, or none.
             // Its blocks: the pad's, then the ones tagged with it (a counted destruction's), the cleanupret last of all.
             const std::string funclet = openFunclet(blk.insts.empty() ? 0 : f.inst(blk.insts[0]).pos, true);
-            ssaInFunclet_ = true;
             std::vector<ir::BlockId> blocks(1, f.blocks[b]);
             for (std::size_t o = 0; o < f.blocks.size(); o++) if (f.block(f.blocks[o]).funclet == f.blocks[b].v) blocks.push_back(f.blocks[o]);
             int toState = -1;
@@ -683,7 +678,6 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
                 if (in.term.valid() && f.inst(in.term).op == ir::Op::CleanupRet && !f.inst(in.term).succ.empty())
                     toState = ssaPadState_[f.inst(in.term).succ[0].block.v];
             }
-            ssaInFunclet_ = false;
             endCleanupFunclet();
             leaveFunclet();
             msSetState(ssaPadState_[f.blocks[b].v], toState, funclet);
