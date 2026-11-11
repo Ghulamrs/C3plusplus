@@ -61,10 +61,10 @@ cat "$out"/*.ssa | grep -- '^-check=ssa unroll:' | tr ' ' '\n' | grep = | tr '='
 # The probes of the passes: <case>.<pass> is the case's -dump=ssa=<pass> on x86_64-linux, compared byte for byte, at -O1
 # (-O2 for divide, loops and unroll, which run at that level alone).
 if [ "$(uname -s)" = Linux ]; then
-    for d in tests/cases/*.promote tests/cases/*.fold tests/cases/*.jumps tests/cases/*.cfg tests/cases/*.gvn tests/cases/*.divide tests/cases/*.loops tests/cases/*.unroll tests/cases/*.rotate tests/cases/*.dead tests/cases/*.inline; do
+    for d in tests/cases/*.promote tests/cases/*.fold tests/cases/*.jumps tests/cases/*.cfg tests/cases/*.gvn tests/cases/*.regvn tests/cases/*.divide tests/cases/*.loops tests/cases/*.unroll tests/cases/*.rotate tests/cases/*.dead tests/cases/*.inline; do
         [ -f "$d" ] || continue
         p=${d##*.}
-        lv=1; { [ "$p" = divide ] || [ "$p" = loops ] || [ "$p" = unroll ] || [ "$p" = rotate ] || [ "$p" = inline ]; } && lv=2
+        lv=1; { [ "$p" = divide ] || [ "$p" = loops ] || [ "$p" = unroll ] || [ "$p" = rotate ] || [ "$p" = regvn ] || [ "$p" = inline ]; } && lv=2
         if "$CXX1" -nologo -O$lv -dump=ssa=$p -S "${d%.*}.cpp" -o /dev/null 2>/dev/null | cmp -s - "$d"; then pass=$((pass + 1))
         else echo "FAIL $(basename "$d"): the IR after $p differs from the recorded probe"; fail=$((fail + 1)); fi
     done

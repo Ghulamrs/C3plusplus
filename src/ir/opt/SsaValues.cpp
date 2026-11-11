@@ -1,6 +1,6 @@
-// **Value numbering** (M3b.4 round 4, design section 4): a walk of the dominator tree with a scoped table of the pure
-// instructions; one found again in a block its first dominates, in the same funclet, is replaced by the first. A load
-// is an earlier load's or store's value only within its block, with nothing between that writes memory or calls.
+// **Value numbering** (M3b.4 round 4, design section 4): a dominator-tree walk with a scoped table of the pure instructions,
+// one found again where its first dominates (same funclet) replaced by it; a load by its block's earlier load or store,
+// nothing between that writes or calls; a condbr on a value a dominating condbr's edge decided (its loop's way in), a jump.
 
 #include "SsaOpt.h"
 
@@ -56,6 +56,8 @@ bool commutes(const Inst &i) {
            i.op == Op::Xor || (i.op == Op::ICmp && (i.cc == Cmp::Eq || i.cc == Cmp::Ne));
 }
 
+const std::uint32_t kNone = ~0u;
+
 struct Numberer {
     Function &f;
     PassLog &log;
@@ -65,9 +67,10 @@ struct Numberer {
     std::vector<char> gone;
     std::map<Key, ValueId> table;
     std::vector<std::pair<Key, ValueId> > undo;         // what each insertion displaced, none for a new key
-    bool changed;
+    std::vector<signed char> decided;                   // by value: the successor a dominating test took, -1 none
+    bool changed, jumped;
 
-    Numberer(Function &fn, PassLog &l) : f(fn), log(l), dom(fn), changed(false) {}
+    Numberer(Function &fn, PassLog &l) : f(fn), log(l), dom(fn), changed(false), jumped(false) {}
 
     ValueId resolve(ValueId v) const {
         while (v.valid() && v.v < repl.size() && repl[v.v].valid()) v = repl[v.v];
@@ -126,12 +129,34 @@ struct Numberer {
             const ValueId v = resolve(f.operand(i, 1));
             memory[std::make_pair(resolve(f.operand(i, 0)).v, f.value(v).type.v)] = std::make_pair(v, true);
         }
+        Inst &t = f.insts[blk.term.valid() ? blk.term.v : 0];
+        if (blk.term.valid() && t.op == Op::CondBr && decided[resolve(f.operand(t, 0)).v] >= 0) {
+            const Succ s = t.succ[static_cast<std::size_t>(decided[resolve(f.operand(t, 0)).v])];
+            t.op = Op::Br;
+            t.count = 0;
+            t.succ.assign(1, s);
+            log.gvnBranches++;
+            changed = jumped = true;
+        }
+    }
+
+    // The value b's condbr tests, decided in c's subtree where one of its edges is c's way in, the rest c's back edges.
+    std::uint32_t decide(std::uint32_t b, std::uint32_t c) {
+        const Block &blk = f.block(BlockId(b));
+        if (blk.pad || !blk.term.valid() || f.inst(blk.term).op != Op::CondBr) return kNone;
+        for (std::uint32_t p : dom.preds[c]) if (p != b && !dom.dominates(c, p)) return kNone;
+        const Inst &t = f.inst(blk.term);
+        const std::uint32_t v = resolve(f.operand(t, 0)).v;
+        if (t.succ[0].block.v == t.succ[1].block.v || decided[v] >= 0) return kNone;
+        for (std::size_t s = 0; s < 2; s++) if (t.succ[s].block.v == c) decided[v] = static_cast<signed char>(s);
+        return decided[v] >= 0 ? v : kNone;
     }
 
     void run() {
         blockOf.assign(f.values.size(), 0);
         repl.assign(f.values.size(), ValueId());
         gone.assign(f.insts.size(), 0);
+        decided.assign(f.values.size(), -1);
         for (ValueId p : f.params) blockOf[p.v] = f.entry.v;
         if (f.sret.valid()) blockOf[f.sret.v] = f.entry.v;
         for (BlockId b : f.blocks)
@@ -140,17 +165,22 @@ struct Numberer {
         std::vector<std::vector<std::uint32_t> > children(f.blockArena.size());
         for (std::size_t r = 1; r < dom.rpo.size(); r++) children[dom.idom[dom.rpo[r]]].push_back(dom.rpo[r]);
         std::vector<std::pair<std::uint32_t, std::size_t> > stack;      // (block, the undo log's size on entry)
+        std::vector<std::uint32_t> set;                                 // by depth: the value its edge decided, or kNone
         std::vector<std::size_t> next(f.blockArena.size(), 0);
         stack.push_back(std::make_pair(f.entry.v, undo.size()));
+        set.push_back(kNone);
         visit(f.entry.v);
         while (!stack.empty()) {
             const std::uint32_t b = stack.back().first;
             if (next[b] < children[b].size()) {
                 const std::uint32_t c = children[b][next[b]++];
                 stack.push_back(std::make_pair(c, undo.size()));
+                set.push_back(decide(b, c));
                 visit(c);
                 continue;
             }
+            if (set.back() != kNone) decided[set.back()] = -1;
+            set.pop_back();
             for (std::size_t u = undo.size(); u > stack.back().second; u--) {
                 const std::pair<Key, ValueId> &e = undo[u - 1];
                 if (e.second.valid()) table[e.first] = e.second;
@@ -183,6 +213,7 @@ bool values(Function &f, PassLog &log) {
     Numberer p(f, log);
     p.run();
     if (p.changed) p.finish();
+    if (p.jumped) cfg(f, log);      // what a decided test no longer reaches
     return p.changed;
 }
 

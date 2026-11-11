@@ -1538,8 +1538,8 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
                   log.unreachable, log.merged, log.forwarded, log.deadInsts, log.deadParams, log.deadStores, log.deadAllocas);
     char gvns[200];
     std::snprintf(gvns, sizeof gvns, "-check=ssa gvn: constants=%d arith=%d compares=%d casts=%d geps=%d selects=%d loads=%d "
-                  "stored=%d\n", log.gvnConstants, log.gvnArith, log.gvnCompares, log.gvnCasts, log.gvnGeps, log.gvnSelects,
-                  log.gvnLoads, log.gvnStored);
+                  "stored=%d decided=%d\n", log.gvnConstants, log.gvnArith, log.gvnCompares, log.gvnCasts, log.gvnGeps,
+                  log.gvnSelects, log.gvnLoads, log.gvnStored, log.gvnBranches);
     char jumps[240];
     std::snprintf(jumps, sizeof jumps, "-check=ssa jumps: condbr=%d switch=%d\n-check=ssa divide: shifts=%d signed=%d "
                   "unsigned=%d wide=%d left=%d\n-check=ssa volatile: lowered=%d kept=%d\n", log.threaded, log.threadedSwitch,

@@ -37,8 +37,8 @@ struct PassLog {
     int constBranches, sameBranches, unreachable, merged, forwarded;   // cfg's: jumps made, blocks removed, merged, forwarded
     int deadInsts, deadParams, deadStores, deadAllocas;                // dead's: instructions, parameters, stores, frame objects
     // gvn's, by kind: constants and addresses, arithmetic, comparisons, conversions, geps, selects replaced; loads
-    // given an earlier load's value, and a store's.
-    int gvnConstants, gvnArith, gvnCompares, gvnCasts, gvnGeps, gvnSelects, gvnLoads, gvnStored;
+    // given an earlier load's value, and a store's; condbrs a dominating test decided.
+    int gvnConstants, gvnArith, gvnCompares, gvnCasts, gvnGeps, gvnSelects, gvnLoads, gvnStored, gvnBranches = 0;
     int threaded, threadedSwitch;       // jumps': edges sent past a condbr's test, and past a switch's
     // divide's: by a power of two, by a multiply-high signed and unsigned, of those at 64 bits; a constant divisor left.
     int divShifts, divSigned, divUnsigned, divWide, divLeft;

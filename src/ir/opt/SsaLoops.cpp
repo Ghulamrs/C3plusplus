@@ -553,7 +553,7 @@ struct Looper {
         log.rotated++;
         return true;
     }
-    // One loop at a time, the dominators and the loops found again after each.
+    // One innermost loop at a time (an outer one's rotation spilled matmul's counters), the loops found again after each.
     bool rotateAll() {
         bool any = false;
         for (bool again = true; again;) {
@@ -561,7 +561,11 @@ struct Looper {
             fixed = fixedBlocks(f);
             const Dominators dom(f);
             const std::vector<Loop> loops = find(dom);
-            for (std::size_t k = 0; k < loops.size() && !again; k++) again = rotate(loops[k], dom);
+            for (std::size_t k = 0; k < loops.size() && !again; k++) {
+                bool inner = true;
+                for (const Loop &m : loops) inner = inner && (m.head == loops[k].head || !loops[k].in[m.head]);
+                again = inner && rotate(loops[k], dom);
+            }
             any = any || again;
         }
         return any;
