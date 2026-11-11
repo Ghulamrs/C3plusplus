@@ -1876,3 +1876,74 @@ in a range-based `for`'s declaration or a handler is not marked (only a block's 
 parameters go through `VarNote` with the word); `&v` still gives a plain `int *`, so an access through a pointer taken
 from a volatile object is not volatile (the sweep's first leftover: no pointee without the type system); MIR's passes stay
 off in such a unit until MIR carries the bit; names.sh under the flag not re-run (no name moves).
+
+**M3b.4, round 7, 2026-11-11: selection - SSA values in registers.** From main `6c281528`, branch `m3b4-select`. **What
+MIR receives** is the shape the Ast.h path's temporaries already had: a frame slot listed as a scalar local, which
+`mir::Locals` renames to a pseudo and the one allocator colours or gives back (`Optimizer::temporaries`, `ssaScalars`) -
+no second allocator, no pseudo written by the selector. Round 1's slots were listed but almost never promoted; four causes,
+each measured on the box before it was mended. (1) **A value's slot is read narrower than it is written**: the walker
+reads an `int` value with `movslq`, a char with `movsbq`, so the width check refused 1372 of the sampled slots. A value's
+slot is now `opt::Local::value` (canonical 8 bytes), and a move into a general register reading its low 1, 2, 4 or 8 bytes
+renames to the pseudo's low part (`valueReadWidth`, `OptFrame.cpp`, asked of value slots only - the Ast.h path's locals
+are untouched). (2) **A frame object's address, a constant and null took a slot each**, live from the entry to their last
+use and so across every call: they now take none (`ssaRemat`) and are made at each use - `lea` of the alloca's slot, the
+immediate - in a register (`ssaLoadReg`) or, for the walker's call, return and va nodes, as `&$a` or a `Num`
+(`ssaExpr`); the funclet's prelude of fresh `lea`s and `ssaInFunclet_` went with them. Making them at the use let
+fold-offsets turn `lea; mov (%rax)` into a frame access, which met the parser's own locals the selector had still listed
+at the same displacements (`movl $0, -4(%rbp)` renamed into a parser local's pseudo: seven wrong answers at
+`-front=ssa -O1`, `enum-conversions` among them): under SSA `scalarsOf` lists the parser's parameters only. (3) **Two
+allocator faults the SSA path exposed, shared with the Ast.h path**: the label `.Lfunc.end` after the return is a block
+nothing reaches whose leave edge made every local live there, so on Itanium every local of a function with a call-site
+table interfered with every other and lost its register (`passed` in exception-table-large: 25 of 25 demoted, now 7);
+and a colouring whose failed nodes were all webs fell back whole, every local to its slot (`topBits` on Windows) - it
+now demotes the locals those webs interfere with and colours again (`Allocator::demote`). (4) **A branch's arguments**
+went through the stack; they are a parallel move now, each copy whose parameter no copy left reads first, through the
+accumulator, and a cycle left over staged on the stack as before (`ssaBranchArgs`). **The pad rule** (design 4.1) holds
+as MIR has it: a value live into a Microsoft funclet keeps its slot (`SharedSlots`, `Optimizer::flush`), and one live
+across an Itanium unwind edge takes no caller-saved register (the pad's live-in joined at the call, `joinPads`); a
+preserved register survives the unwind there, so no slot is forced - recorded, the Ast.h path's rule already. **The
+probe**: `tests/cases/ssa-select.cpp` (narrow values, a swap carried round a loop - the parallel move's cycle -, values
+across calls, a local's address handed out, va_list, a function pointer, a cleanup that unwinds; `.expected` the
+Windows box's clang, g++ agreeing) and `ssa-select.allocate`, its `-front=ssa -O1 -dump=mir=allocate` on x86_64-linux,
+which `tests/ssa.sh` now compares as it compares the passes' probes. **Gated on `9a9398d6`** (the code commit; this entry
+is the only change after it), each box from a clean ship and build. **Linux** (`~/m3b4r7`, built from nothing): ssa.sh
+at -O1 and -O2 8942 bodies and 973 compiler-written, 0 failed after any pass, 776 passed (the probes' nine, the eight
+older unchanged); run.sh 1109/0 at `-front=ssa -O1`, `-front=ssa -O2`, `-front=ssa`, -O2 and -O0; emit 3037/0 (no golden
+on the tree), typed 767/0, adapted 767/0 (1756 the same), coff 1506 objects 0 differ, c90 447/0, syntax 3/0; names,
+overload and win-structure skip (no clang); exclusions 127 sites 0/0 (no citation moved); comment cap 0; memory gate 44
+raw pointers, `new` 1056 (unchanged); `ide/generate.py --check` clean. **Windows** (cl /W4 /WX clean): ssa.sh at -O1 and
+-O2 9213 of 9217 bodies (M3b.3's four), 1130/1130 compiler-written, 0 failed after any pass, 749 passed; `winpass.sh` at
+`-front=ssa -O1` and `-front=ssa -O2` gnu 736 / masm 735 same, 0 differ, 340 refused as recorded.
+**The M3b.4 gate: .text** (`bench.ps1 -Cases`, Windows):
+
+| table | cases | base | this round | change |
+|---|---|---|---|---|
+| `-front=ssa -O1` against main's `-O1` | 740 | 1,131,924 | 1,131,154 | -0.07% (432 larger, 296 smaller) - **met** |
+| `-front=ssa -O1` against round 6's | 746 | 1,807,529 | 1,144,335 | -36.69% (0 larger) |
+| `-front=ssa -O2` against round 6's | 746 | 1,819,126 | 1,153,212 | -36.61% (0 larger) |
+
+On Linux (`size -A`, 773 cases, the same binary for both paths): main's `-O1` 716,574; this round's `-O1` 713,118
+(-0.48%, 157 smaller, 0 larger - the two allocator mends on the Ast.h path); `-front=ssa -O1` 698,004 (-2.59% on main's
+`-O1`; main's `-front=ssa -O1` was 1,025,869). **The M3b.4 gate: `tools/compilerpp-bench`'s measure** (Linux, g++'s
+build of each cxx3; Compiler++ from RIDE-4.7's projects, 32 files, built by main's cxx3 at `-O1`/`-O2` and by this
+round's at `-front=ssa -O1`/`-O2`; inverse.cpp's bytecode and run identical from all four; 500 compiles a round, three
+rounds; `boxkit/m3b4r7-cpb.sh`):
+
+| build | .text | 500 compiles (ms, rounds 1-3) |
+|---|---|---|
+| main `-O1` | 362,456 | 5368, 5333, 5332 |
+| this round `-front=ssa -O1` | 382,830 (+5.6%) | 5490, 5417, 5481 (+1.9%) |
+| main `-O2` | 482,784 | 5547, 4217, 4176 |
+| this round `-front=ssa -O2` | 408,582 (-15.4%) | 5501, 5214, 5262 (+25% on rounds 2-3) |
+
+**The ten largest against main's `-O1`** (Windows, bytes over): deque-both-ends 1346, exception-table-large 1216,
+map-set-node-stability 1123, algorithm-sort-large 990, library-cppparse-pieces 965, ssa-ms-try 917, range-for-vector
+801, throw-out-of-handler 788, mem-init-two-rules 736, nested-handler-exits 726 - by cause: values live across calls
+still take a slot (the allocator offers two preserved registers at -O1, the Ast.h walker keeps such temporaries in the
+call's own registers; seen in `passed`, presumed and not measured for the five library cases); values live into a funclet keep theirs
+(ssa-ms-try, throw-out-of-handler, nested-handler-exits: the funclet rule); a comparison is materialised by `setcc` and
+tested again where the walker branched on the flags; mem-init-two-rules writes `volatile`, so MIR's passes are off and
+every value is a slot. `-front=ssa -O2` is smaller and slower than main's `-O2`; why is not measured here (the inliner
+and LICM are M3b.5's). `src/` went from 91963 to 91989 lines (+26: the selector -6 with the funclet prelude gone, the value reads +18 -
+OptFrame +14, OptPasses.h +3, MirLocals +1 -, the allocator +10, X86_64Linux.h +4). **Left**: the gap case by case above;
+the Linux `-O1` of the Ast.h path moved (the allocator mends), so emit.sh's goldens, where kept, change with it.
