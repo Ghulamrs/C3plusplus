@@ -1966,3 +1966,27 @@ compiler - main before round 7 - answers it wrong too, with a different value ea
 uninitialised read on the Ast.h path at `-O2` on x86_64-windows only, older than round 7, right at `-O1` and under
 `-front=ssa -O2`. It is open, not a gate this milestone held: no Windows gate since M3b.2 ran the Ast.h path at `-O2`.
 `src/` went from 89718 to 91989 lines (+2271). **Next: M3b.5** (-O2 on SSA); its review point is RP5, after M3b.7.
+
+**M3b.5, planned, 2026-11-11: -O2 on SSA.** From `33e715d8`. **Where it stands**: the SSA passes of M3b.4 run at -O1
+and -O2 alike, plus `divide` at -O2; the MIR passes run after selection at the level asked. The inliner (`Inliner.h`)
+decides over `Ast.h` and the walker inlines while it walks, so **under `-front=ssa` nothing is inlined** - the likely
+part of Compiler++ at `-front=ssa -O2` being ~25% slower than main's `-O2` (M3b.4's close). **The rounds**, one Opus lane
+each, in order:
+1. **Measure first** (no pass): Compiler++'s hottest functions at main's `-O2` and `-front=ssa -O2` (perf on the Linux
+   box), each gap given its cause - inlining, LICM, widening, or selection; the table recorded in the plan.
+2. **The inliner on `ir::Function`** (`src/ir/opt/SsaInline.cpp`): `Inliner` re-pointed - its measures and budgets
+   (`OptCosts.h`) kept as the one implementation, `measures_` a vector by `FuncId` (the determinism lint), `decided_` by
+   call instruction; a callee's blocks cloned into the caller, its parameters the call's operands, its `ret` a branch with
+   the value as a block argument; an `invoke` inlined with every call inside it made an invoke to the same pad - or refused
+   by name, as the old eligibility refuses a callee with a landing pad, if the pad merge is past the round. Inlined before
+   promote, so the callee's slots promote with the caller's.
+3. **LICM and counter widening** (`SsaLoops.cpp`): natural loops from the dominators; a pure instruction whose operands
+   are defined outside the loop moved to a preheader made for it; a load hoisted only with no store, call or volatile in
+   the loop; an int counter compared and indexed as 64-bit where it cannot go negative (`OptLoops`'s rule, ported).
+4. **Unrolling** of a counted loop with a constant trip count under the budget the old pass used (cppparse `:922`).
+5. **What stays on MIR**, said in the closing entry: fold-index, hoist-xmm-slots, align-loops, and each MIR pass that SSA
+   now duplicates either removed under `-front=ssa` or kept with its measured reason.
+**Gate of each round**: the common gates at `-front=ssa -O1` and `-O2` (both boxes, both spellings), plus Windows winpass at
+`-O2` on the Ast.h path while it stays the oracle. **Gate of M3b.5** (the row): bench on the box - no kernel slower than
+main's `-O2`, the table recorded; Compiler++'s cases built under `-front=ssa -O2` print what clang's build prints; run.sh
+`-O2` on every box.
