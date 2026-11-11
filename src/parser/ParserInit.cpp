@@ -350,24 +350,24 @@ bool Parser::zeroRun(const std::string &name, std::vector<InitStep> &path, const
     const long long bytes = n * type->size(target_);
     if (!blockZero_ || bytes <= 64 || needsConstruction(type) || type->isReference()) return false;
     const Type *voidPtr = types_.pointerTo(types_.get(Kind::Void));
-    ExprPtr addr(new Unary('&', targetFor(name, path)));
+    ExprPtr addr = make_owned<Unary>('&', targetFor(name, path));
     addr->setType(types_.pointerTo(type));
-    ExprPtr asVoid(new Cast(voidPtr, std::move(addr)));
+    ExprPtr asVoid = make_owned<Cast>(voidPtr, std::move(addr));
     asVoid->setType(voidPtr);
     std::vector<ExprPtr> args;
     args.push_back(std::move(asVoid));
-    ExprPtr zero(new Num(0LL));
+    ExprPtr zero = make_owned<Num>(0LL);
     zero->setType(types_.intType());
     args.push_back(std::move(zero));
-    ExprPtr size(new Num(bytes));
+    ExprPtr size = make_owned<Num>(bytes);
     size->setType(types_.get(target_.sizeType()));
     args.push_back(std::move(size));
     std::vector<int> argSlots(args.size(), 0);
-    Call *fill = new Call("memset", nullptr, std::move(args), false, 0, -1, std::move(argSlots));
+    std::unique_ptr<Call> fill = make_owned<Call>("memset", nullptr, std::move(args), false, 0, -1, std::move(argSlots));
     fill->setSymbol("memset");
-    ExprPtr filled(fill);
+    ExprPtr filled(std::move(fill));
     filled->setType(voidPtr);
-    out.push_back(StmtPtr(new ExprStmt(std::move(filled))));
+    out.push_back(make_owned<ExprStmt>(std::move(filled)));
     return true;
 }
 
