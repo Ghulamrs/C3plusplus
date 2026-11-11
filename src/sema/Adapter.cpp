@@ -778,6 +778,7 @@ void Adapter::arrayInitialiser(TypedId var, const Local &l, std::vector<StmtPtr>
         }
     } else {
         if (static_cast<long long>(items.size()) > leaves) outside("an array's list longer than it");
+        if ((leaves - static_cast<long long>(items.size())) * leaf->size(p_.target_) > 64) outside("an array's zeroed run (Parser::zeroRun)");
         for (std::size_t i = 0; i < items.size(); i++) {
             if (syn(items[i]).kind == syntax::Kind::StringLit && !leaf->isPointer()) outside("a string in an array's list");
             values.push_back(decay(expr(items[i])));
@@ -848,6 +849,7 @@ bool Adapter::aggregateList(TypedId var, const Local &l, std::vector<StmtPtr> &b
     walk(l.type);
     const TypedNode &v = tree.node(var);
     if (v.count > leaves.size()) outside("a struct's list longer than it");
+    if (v.count < leaves.size() && l.type->size(p_.target_) > 64) outside("a struct's zeroed run (Parser::zeroRun)");
     for (std::size_t i = 0; i < leaves.size(); i++) {
         ExprPtr to = localVar(l, p_.types_);
         for (const Step &s : leaves[i].path) {
