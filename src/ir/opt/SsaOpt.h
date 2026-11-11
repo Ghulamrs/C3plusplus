@@ -46,12 +46,13 @@ struct PassLog {
     int volatiles, volatilesKept;
     // inline's: the direct calls of a function of the unit, those cloned in place, and the rest by reason.
     int inlineSites = 0, inlined = 0; std::map<std::string, int> inlineRefused;
+    int loopsFound, preheaders, hoisted, hoistedTraps, widened;    // loops': found, preheaders made, hoisted (divisions), widened
     PassLog(bool c, const std::string &after) : check(c), dumpAfter(after), failed(0), allocas(0), scalars(0), promoted(0),
         constants(0), compares(0), casts(0), floating(0), identities(0), copies(0), arguments(0), kept(0), constBranches(0),
         sameBranches(0), unreachable(0), merged(0), forwarded(0), deadInsts(0), deadParams(0), deadStores(0), deadAllocas(0),
         gvnConstants(0), gvnArith(0), gvnCompares(0), gvnCasts(0), gvnGeps(0), gvnSelects(0), gvnLoads(0), gvnStored(0),
         threaded(0), threadedSwitch(0), divShifts(0), divSigned(0), divUnsigned(0), divWide(0), divLeft(0), volatiles(0),
-        volatilesKept(0) {}
+        volatilesKept(0), loopsFound(0), preheaders(0), hoisted(0), hoistedTraps(0), widened(0) {}
 };
 
 // The pass names -dump=ssa= takes, in the order they run.
@@ -81,6 +82,10 @@ bool values(Function &f, PassLog &log);
 bool jumps(Function &f, const TypeTable &types, const Target &target, PassLog &log);
 // **Division by a constant** (SsaDivide.cpp): shifts, or a multiply-high by DivMagic.h's number. True on a change.
 bool divide(Function &f, const TypeTable &types, const Target &target, PassLog &log);
+// **LICM and counter widening** (SsaLoops.cpp): invariants to a preheader, an int index counter carried at 64 bits.
+bool loops(Function &f, const TypeTable &types, const Target &target, PassLog &log);
+// gvn's kind of a pure instruction (SsaValues.cpp): 1 constant, 2 arithmetic, 3 compare, 4 cast, 5 gep, 6 select, else 0.
+int pureKind(const Inst &i);
 
 // fold's constant arithmetic, for the passes that evaluate (SsaFold.cpp): `cc` over two integer constants of type t
 // read at the selector's width, and an integer constant converted to integer type `to`; false where fold leaves it.

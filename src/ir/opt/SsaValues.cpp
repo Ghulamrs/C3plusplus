@@ -31,8 +31,9 @@ struct Key {
     }
 };
 
-// The kind a replacement is counted under, 0 an instruction that is not pure (TlsAddr may call its wrapper).
-int kindOf(const Inst &i) {
+}   // namespace
+
+int pureKind(const Inst &i) {
     switch (i.op) {
     case Op::IConst: case Op::FConst: case Op::Null: case Op::Addr: return 1;
     case Op::Add: case Op::Sub: case Op::Mul: case Op::SDiv: case Op::UDiv: case Op::SRem: case Op::URem: case Op::SMulH:
@@ -46,6 +47,8 @@ int kindOf(const Inst &i) {
     default: return 0;
     }
 }
+
+namespace {
 
 // Integer operators whose operands may be read in either order; a floating one keeps its order (which NaN comes out).
 bool commutes(const Inst &i) {
@@ -81,7 +84,7 @@ struct Numberer {
 
     void number(std::uint32_t b, InstId id) {
         const Inst &i = f.inst(id);
-        const int kind = kindOf(i);
+        const int kind = pureKind(i);
         Key key;
         key.op = i.op;
         key.cc = i.cc;
@@ -109,7 +112,7 @@ struct Numberer {
         std::map<std::pair<std::uint32_t, std::uint32_t>, std::pair<ValueId, bool> > memory;   // (address, type): value, stored
         for (InstId id : blk.insts) {
             const Inst &i = f.inst(id);
-            if (!i.isVolatile && i.result.valid() && i.type.valid() && kindOf(i) != 0) { number(b, id); continue; }
+            if (!i.isVolatile && i.result.valid() && i.type.valid() && pureKind(i) != 0) { number(b, id); continue; }
             const bool load = i.op == Op::Load && i.count == 1 && i.result.valid() && i.type.valid();
             if (i.isVolatile || (!load && (i.op != Op::Store || i.count != 2))) { memory.clear(); continue; }
             if (load) {

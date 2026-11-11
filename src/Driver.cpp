@@ -1549,7 +1549,10 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
     char inlines[120];
     std::snprintf(inlines, sizeof inlines, "-check=ssa inline: sites=%d taken=%d refused=%d\n", log.inlineSites, log.inlined,
                   log.inlineSites - log.inlined);
-    return out + line + synth + passes + folds + cfgs + gvns + jumps + inlines;
+    char loops[160];
+    std::snprintf(loops, sizeof loops, "-check=ssa loops: found=%d preheaders=%d hoisted=%d divisions=%d widened=%d\n",
+                  log.loopsFound, log.preheaders, log.hoisted, log.hoistedTraps, log.widened);
+    return out + line + synth + passes + folds + cfgs + gvns + jumps + inlines + loops;
 }
 
 bool Driver::compile(const Job &job) {

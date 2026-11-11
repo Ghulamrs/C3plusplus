@@ -1,0 +1,201 @@
+function @_ZL3sumPKiiii(%1: const int *, %3: int, %5: int, %7: int) -> int static {
+^1(%1: const int *, %3: int, %5: int, %7: int):
+  %10 = iconst int, 0
+  %20 = iconst long, 4
+  %26 = mul int, %5, %7
+  %34 = iconst int, 1
+  %41 = iconst long, 0
+  %42 = iconst long, 1
+  br ^4(%10, %10, %41)
+^4(%38: int, %39: int, %40: long):
+  %44 = trunc int, %40
+  %15 = icmp slt, bool, %44, %3
+  condbr %15, ^5, ^7
+^5:
+  %21 = mul long, %40, %20
+  %22 = gep const int *, %1, %21
+  %23 = load int, %22
+  %27 = mul int, %23, %26
+  %30 = sdiv int, %5, %7
+  %31 = add int, %27, %30
+  %32 = add int, %38, %31
+  %35 = add int, %44, %34
+  %43 = add long, %40, %42
+  %45 = trunc int, %43
+  br ^4(%32, %45, %43)
+^7:
+  ret %38
+}
+function @_ZL7guardedPKiii(%1: const int *, %3: int, %5: int) -> int static {
+^1(%1: const int *, %3: int, %5: int):
+  %8 = iconst int, 0
+  %13 = icmp sgt, bool, %3, %8
+  condbr %13, ^9(%8, %8), ^5(%8)
+^5(%39: int):
+  ret %39
+^9(%42: int, %43: int):
+  %18 = iconst long, 4
+  %23 = iconst int, 2
+  %24 = shl int, %5, %23
+  %28 = sdiv int, %5, %3
+  %32 = iconst int, 1
+  %45 = iconst long, 0
+  %46 = iconst long, 1
+  br ^6(%42, %43, %45)
+^6(%40: int, %41: int, %44: long):
+  %48 = trunc int, %44
+  %19 = mul long, %44, %18
+  %20 = gep const int *, %1, %19
+  %21 = load int, %20
+  %25 = add int, %21, %24
+  %29 = add int, %25, %28
+  %30 = add int, %40, %29
+  %33 = add int, %48, %32
+  %47 = add long, %44, %46
+  %49 = trunc int, %47
+  %36 = icmp slt, bool, %49, %3
+  condbr %36, ^6(%30, %49, %47), ^5(%30)
+}
+function @_ZL6nestedPKiiii(%1: const int *, %3: int, %5: int, %7: int) -> long long static {
+^1(%1: const int *, %3: int, %5: int, %7: int):
+  %10 = iconst int, 0
+  %11 = iconst long long, 0
+  %26 = iconst long, 4
+  %31 = iconst int, 7
+  %32 = mul int, %7, %31
+  %33 = iconst int, 1
+  %34 = add int, %32, %33
+  %53 = iconst long, 0
+  %54 = iconst long, 1
+  %44 = iconst int, 1
+  br ^4(%11, %10)
+^4(%48: long long, %50: int):
+  %16 = icmp slt, bool, %50, %3
+  condbr %16, ^5, ^7
+^5:
+  %36 = mul int, %34, %50
+  br ^8(%48, %10, %53)
+^7:
+  ret %48
+^8(%49: long long, %51: int, %52: long):
+  %56 = trunc int, %52
+  %21 = icmp slt, bool, %56, %5
+  condbr %21, ^9, ^11
+^9:
+  %27 = mul long, %52, %26
+  %28 = gep const int *, %1, %27
+  %29 = load int, %28
+  %37 = add int, %29, %36
+  %38 = sext long long, %37
+  %39 = add long long, %49, %38
+  %42 = add int, %56, %33
+  %55 = add long, %52, %54
+  %57 = trunc int, %55
+  br ^8(%39, %57, %55)
+^11:
+  %45 = add int, %50, %44
+  br ^4(%49, %45)
+}
+function @_ZL7skippedPKiii(%1: const int *, %3: int, %5: int) -> int static {
+^1(%1: const int *, %3: int, %5: int):
+  %8 = iconst int, 0
+  %17 = iconst long, 4
+  %21 = iconst int, 100
+  %35 = iconst int, 1
+  %43 = iconst long, 0
+  %44 = iconst long, 1
+  br ^4(%8, %8, %43)
+^4(%39: int, %41: int, %42: long):
+  %46 = trunc int, %42
+  %13 = icmp slt, bool, %46, %3
+  condbr %13, ^5, ^7
+^5:
+  %18 = mul long, %42, %17
+  %19 = gep const int *, %1, %18
+  %20 = load int, %19
+  %22 = icmp sgt, bool, %20, %21
+  condbr %22, ^8, ^9(%39)
+^7:
+  ret %39
+^8:
+  %30 = load int, %19
+  %32 = sdiv int, %30, %5
+  %33 = add int, %39, %32
+  br ^9(%33)
+^9(%40: int):
+  %36 = add int, %46, %35
+  %45 = add long, %42, %44
+  %47 = trunc int, %45
+  br ^4(%40, %47, %45)
+}
+function @main() -> int {
+^1:
+  %1 = alloca int [16] *, align 16 ; int [16] a
+  %3 = iconst int, 0
+  %7 = bitcast int *, %1
+  %10 = iconst long, 4
+  %14 = iconst int, 3
+  %16 = iconst int, 5
+  %19 = iconst int, 1
+  %5 = iconst int, 16
+  %153 = iconst long, 0
+  %154 = iconst long, 1
+  br ^5(%3, %153)
+^5(%150: int, %152: long):
+  %156 = trunc int, %152
+  %11 = mul long, %152, %10
+  %12 = gep int *, %7, %11
+  %15 = mul int, %156, %14
+  %17 = sub int, %15, %16
+  store %12, %17
+  %20 = add int, %156, %19
+  %155 = add long, %152, %154
+  %157 = trunc int, %155
+  %6 = icmp slt, bool, %157, %5
+  condbr %6, ^5(%157, %155), ^7
+^7:
+  %24 = iconst long, 0
+  %27 = gep int *, %7, %24
+  %28 = load int, %27
+  %30 = add int, %28, %16
+  %31 = bitcast const int, %30
+  %32 = addr const char [7] *, @.L.str.0
+  %33 = bitcast const char *, %32
+  %35 = bitcast const int *, %7
+  %38 = iconst int, 2
+  %101 = iconst int, 6
+  %159 = iconst long, 0
+  %160 = iconst long, 1
+  br ^11(%3, %3, %159)
+^11(%147: int, %148: int, %158: long):
+  %162 = trunc int, %158
+  %90 = icmp slt, bool, %162, %5
+  condbr %90, ^12, ^14
+^12:
+  %96 = mul long, %158, %10
+  %97 = gep const int *, %35, %96
+  %98 = load int, %97
+  %102 = mul int, %98, %101
+  %106 = add int, %102, %19
+  %107 = add int, %147, %106
+  %110 = add int, %162, %19
+  %161 = add long, %158, %160
+  %163 = trunc int, %161
+  br ^11(%107, %163, %161)
+^14:
+  %46 = call @printf(%33, %147, %3) : int variadic
+  %47 = addr const char [7] *, @.L.str.1
+  %48 = bitcast const char *, %47
+  %53 = call @_ZL7guardedPKiii(%35, %5, %16) : int
+  %58 = call @_ZL7guardedPKiii(%35, %3, %19) : int
+  %59 = call @printf(%48, %53, %58) : int variadic
+  %60 = addr const char [6] *, @.L.str.2
+  %61 = bitcast const char *, %60
+  %67 = call @_ZL6nestedPKiiii(%35, %16, %5, %38) : long long
+  %68 = call @printf(%61, %67) : int variadic
+  %69 = addr const char [4] *, @.L.str.3
+  %70 = bitcast const char *, %69
+  %75 = call @_ZL7skippedPKiii(%35, %5, %30) : int
+  %76 = call @printf(%70, %75) : int variadic
+  ret %3
+}

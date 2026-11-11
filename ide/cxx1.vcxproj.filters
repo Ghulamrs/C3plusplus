@@ -117,6 +117,7 @@
     <ClCompile Include="..\src\ir\opt\SsaFold.cpp"><Filter>Source Files\ir\opt</Filter></ClCompile>
     <ClCompile Include="..\src\ir\opt\SsaInline.cpp"><Filter>Source Files\ir\opt</Filter></ClCompile>
     <ClCompile Include="..\src\ir\opt\SsaJumps.cpp"><Filter>Source Files\ir\opt</Filter></ClCompile>
+    <ClCompile Include="..\src\ir\opt\SsaLoops.cpp"><Filter>Source Files\ir\opt</Filter></ClCompile>
     <ClCompile Include="..\src\ir\opt\SsaOptimize.cpp"><Filter>Source Files\ir\opt</Filter></ClCompile>
     <ClCompile Include="..\src\ir\opt\SsaPromote.cpp"><Filter>Source Files\ir\opt</Filter></ClCompile>
     <ClCompile Include="..\src\ir\opt\SsaValues.cpp"><Filter>Source Files\ir\opt</Filter></ClCompile>

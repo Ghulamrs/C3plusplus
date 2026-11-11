@@ -54,13 +54,15 @@ cat "$out"/*.ssa | grep -- '^-check=ssa inline:' | tr ' ' '\n' | grep = | tr '='
     awk '{s[$1]+=$2} END {printf "ssa.sh: inline found %d direct calls of a function of the unit, cloned %d in place, refused %d\n", s["sites"], s["taken"], s["refused"]}'
 cat "$out"/*.ssa | grep -- '^  inline refused (' | sed 's/^  inline refused (\([0-9]*\)): /\1\t/' |
     awk -F'\t' '{s[$2]+=$1} END {for (k in s) printf "    %6d  refused: %s\n", s[k], k}' | sort -rn
+cat "$out"/*.ssa | grep -- '^-check=ssa loops:' | tr ' ' '\n' | grep = | tr '=' ' ' |
+    awk '{s[$1]+=$2} END {printf "ssa.sh: loops found %d loops, made %d preheaders, hoisted %d instructions (%d divisions), widened %d counters\n", s["found"], s["preheaders"], s["hoisted"], s["divisions"], s["widened"]}'
 # The probes of the passes: <case>.<pass> is the case's -dump=ssa=<pass> on x86_64-linux, compared byte for byte, at -O1
-# (-O2 for divide, which runs at that level alone).
+# (-O2 for divide and loops, which run at that level alone).
 if [ "$(uname -s)" = Linux ]; then
-    for d in tests/cases/*.promote tests/cases/*.fold tests/cases/*.jumps tests/cases/*.cfg tests/cases/*.gvn tests/cases/*.divide tests/cases/*.dead tests/cases/*.inline; do
+    for d in tests/cases/*.promote tests/cases/*.fold tests/cases/*.jumps tests/cases/*.cfg tests/cases/*.gvn tests/cases/*.divide tests/cases/*.loops tests/cases/*.dead tests/cases/*.inline; do
         [ -f "$d" ] || continue
         p=${d##*.}
-        lv=1; [ "$p" = divide ] || [ "$p" = inline ] && lv=2
+        lv=1; { [ "$p" = divide ] || [ "$p" = loops ] || [ "$p" = inline ]; } && lv=2
         if "$CXX1" -nologo -O$lv -dump=ssa=$p -S "${d%.*}.cpp" -o /dev/null 2>/dev/null | cmp -s - "$d"; then pass=$((pass + 1))
         else echo "FAIL $(basename "$d"): the IR after $p differs from the recorded probe"; fail=$((fail + 1)); fi
     done
