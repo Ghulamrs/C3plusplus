@@ -88,10 +88,10 @@ struct Eliminator {
             again = false;
             for (std::size_t r = f.blocks.size(); r-- > 0; ) {
                 const std::uint32_t b = f.blocks[r].v;
-                const InstId t = f.block(f.blocks[r]).term;
+                const std::vector<std::uint32_t> to = successors(f, b);
                 for (std::size_t c = 0; c < n; c++) {
                     char out = 0;
-                    if (t.valid()) for (const Succ &s : f.inst(t).succ) out = static_cast<char>(out | liveIn[s.block.v * n + c]);
+                    for (std::uint32_t s : to) out = static_cast<char>(out | liveIn[s * n + c]);
                     const char in = first[b * n + c] == 1 ? 1 : first[b * n + c] == -1 ? 0 : out;
                     liveOut[b * n + c] = out;
                     if (in != liveIn[b * n + c]) { liveIn[b * n + c] = in; again = true; }
