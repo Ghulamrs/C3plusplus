@@ -2649,12 +2649,12 @@ or a change; not separated within the hour.
 **Gates on `4dc563b2`'s src** (`959009ba` adds probes and this entry): Windows, before the pads rule (`b8377eef`, tree
 `work\m3b5ha`, clean ship and build, WINLANES=3) winpass `-front=ssa -O2` gnu 749 / masm 748 same, 1 differ
 (`ssa-try-catch`, the finding above), 340 refused as recorded; on `4dc563b2` (`work\m3b5ha2`) that case and the probe are
-right at five flag sets, and the whole winpass was still running at the hour (boxkit/m3b5ha-wp2-o2.log). Linux (`~/m3b5ha`,
+right at five flag sets, and winpass `-front=ssa -O2` (a clean ship and build) gnu 750 / masm 749 same, 0 differ. Linux (`~/m3b5ha`,
 a clean build; the disk at 100%, this lane's objects removed after each build): ssa.sh 798/0 at levels 1 and 2 (rotate
 1047, unroll 195 whole / 253 partial); run.sh 1123/0 at `-front=ssa -O2` (and at -O0 on `b8377eef`); the gates: exclusions 0
 uncited / 0 stale, comment cap 0 over, memory gate new 1056 raw-pointers 44 (unchanged), ide/generate.py --check, GATES-OK.
 Not run: ssa.sh on Windows, winpass at `-front=ssa -O1`, the cases' .text. `src/` went from 93865 to 93877 lines (+12).
-**Left**: the two selector items (virt's file); hash on a quiet box; the winpass on `4dc563b2` to read; why a catch's
+**Left**: the two selector items (virt's file); hash on a quiet box; why a catch's
 way back is not a predecessor edge (if so, `Dominators` should say so, and the pads rule could go).
 **The coordinator's question** (wave 5's idle bench: hash 374 against -O2's 316, wave 4 288 against 300): in hash's IR at
 `0b07e3ad` after `rotate` (boxkit/m3b5ha-base0.ssa.txt) the byte loop is still rotated (its test in the preheader and at
