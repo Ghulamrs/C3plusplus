@@ -1,6 +1,6 @@
 // **Value numbering** (M3b.4 round 4, design section 4): a pure instruction found again where its first dominates (same
-// funclet) is replaced by it; a load by an earlier load or store of its block or its one predecessor's (br or condbr), with
-// nothing between that writes or calls; a condbr on a value a dominating condbr's edge decided (its loop's way in), a jump.
+// funclet) is its first; a load is an earlier load or store of its block or, with no pads, of its one predecessor (br or
+// condbr), nothing between that writes or calls; a condbr on a value a dominating condbr's edge decided, a jump.
 
 #include "SsaOpt.h"
 
@@ -70,9 +70,10 @@ struct Numberer {
     std::vector<signed char> decided;                   // by value: the successor a dominating test took, -1 none
     typedef std::map<std::pair<std::uint32_t, std::uint32_t>, std::pair<ValueId, bool> > Memory;   // (address, type): value, stored
     std::vector<Memory> left;                           // by block: what it had read or written at its end
+    bool handlers;                                      // a pad anywhere: a handler's store reaches edges no br shows
     bool changed, jumped;
 
-    Numberer(Function &fn, PassLog &l) : f(fn), log(l), dom(fn), changed(false), jumped(false) {}
+    Numberer(Function &fn, PassLog &l) : f(fn), log(l), dom(fn), handlers(false), changed(false), jumped(false) {}
 
     ValueId resolve(ValueId v) const {
         while (v.valid() && v.v < repl.size() && repl[v.v].valid()) v = repl[v.v];
@@ -115,7 +116,7 @@ struct Numberer {
         const Block &blk = f.block(BlockId(b));
         if (blk.pad) return;
         Memory memory;
-        if (dom.preds[b].size() == 1 && dom.preds[b][0] == dom.idom[b] && b != f.entry.v) {
+        if (!handlers && dom.preds[b].size() == 1 && dom.preds[b][0] == dom.idom[b] && b != f.entry.v) {
             const Block &p = f.block(BlockId(dom.preds[b][0]));
             const Op t = p.term.valid() ? f.inst(p.term).op : Op::Ret;
             if (!p.pad && p.funclet == blk.funclet && (t == Op::Br || t == Op::CondBr)) memory = left[dom.preds[b][0]];
@@ -166,6 +167,8 @@ struct Numberer {
         gone.assign(f.insts.size(), 0);
         decided.assign(f.values.size(), -1);
         left.assign(f.blockArena.size(), Memory());
+        handlers = false;
+        for (BlockId b : f.blocks) handlers = handlers || f.block(b).pad;
         for (ValueId p : f.params) blockOf[p.v] = f.entry.v;
         if (f.sret.valid()) blockOf[f.sret.v] = f.entry.v;
         for (BlockId b : f.blocks)
