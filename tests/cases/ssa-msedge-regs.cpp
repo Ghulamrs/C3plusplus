@@ -57,7 +57,7 @@ static int loopCatches(int n) {
     for (int i = 0; i < n; i++) {
         sum += i * k;
         try {
-            acc += thrower(i % 3 == 1 ? 1 : i);
+            acc += thrower(i % 3 == 1 ? 1 : i + 3);
         } catch (int) {
             caught++;
         }
@@ -67,8 +67,11 @@ static int loopCatches(int n) {
 }
 
 int main() {
-    printf("%d %d %d\n", rethrown(5, 1), rethrown(6, 2), rethrown(7, 4));
-    printf("%d %d %d\n", cleanupOut(5, 2), cleanupOut(9, 0), gone);
-    printf("%d %d\n", loopCatches(10), loopCatches(1));
+    const int r1 = rethrown(5, 1), r2 = rethrown(6, 2), r3 = rethrown(7, 4);
+    printf("%d %d %d\n", r1, r2, r3);
+    const int c1 = cleanupOut(5, 2), c2 = cleanupOut(9, 0);
+    printf("%d %d %d\n", c1, c2, gone);
+    const int l1 = loopCatches(10), l2 = loopCatches(1);
+    printf("%d %d\n", l1, l2);
     return 0;
 }
