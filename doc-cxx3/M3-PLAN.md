@@ -2855,8 +2855,8 @@ entry records; this entry is the measurement and the rule it gives. Method: `box
 `m3b5vl-chunk.pl`, which takes one function's text from the other path's assembly): the kernels at `-front=ssa -O2
 -masm=gnu` (a) and `-O2 -masm=gnu` (o2), hybrids and re-placed variants, assembled by clang, linked by cxx3, run
 interleaved, 21 to 50 rounds; the addresses read back from each executable's listing. The box (i7-12700; processors 0-9
-are P-core threads) was quiet for two runs and loaded by other lanes for the rest; figures are median (least) and a
-figure from a loaded run is marked. `boxkit/m3b5vl-exp{3..8}.out`.
+are P-core threads) was quiet for four runs and loaded by other lanes for the rest; figures are median (least) and a
+figure from a loaded run is marked. `boxkit/m3b5vl-exp{3..10}.out`.
 **1. It is not the caller.** a 108 (95), o2 88 (82); a with -O2's `virt` 99 (95); -O2 with a's `virt` 83 (82); a with
 -O2's two callees and two constructors 87 (82). So the frame (320 against 208), the store and the loop are cleared, and
 step 3 of the brief is not needed.
@@ -2879,9 +2879,12 @@ keeps an offset in the line); one kernel, one processor. cl's own build (96-107)
 is the Ast.h path's `imull` being one byte longer - luck, as lane place said of its placement.
 **3. The rule that reproduces it: a small COMDAT function ends at its line's end.** Each callee in a section aligned
 to 64 after `64 - size` bytes of NOP, so both `ret`s are byte 63 of a line (d = 0 whatever the sizes): **e64**, a's
-code otherwise untouched - loaded runs only, 40 and 25 rounds: 113 (91) beside -O2's 115 (88) and a's 131 (103); 104
-(94) beside 111 (98) and 125 (109). The same at 32 (`.p2align 5`, ends at byte 31 or 63 - d = 32 by luck) is a's class:
-130 (103). clang takes it with no size known to the compiler: `.p2align 6` then
+code otherwise untouched - **quiet box, 30 rounds: 83 (82) beside -O2's 83 (82), a's 99 (95) and 130 (123) for both
+callees at offset 0**; loaded runs before it agreed (113 (91) beside 115 (88) and 131 (103)). The same at 32
+(`.p2align 5`, ends at byte 31 or 63 - d = 32 by luck) is a's class: 130 (103) loaded beside a's 131. On every small
+COMDAT function of the kernels (eight; `kall`), all six kernels, 21 rounds, a / -O2 / kall: fib 6 / 8 / 6, sieve 52 / 58
+/ 52, matmul 7 / 28 / 8, isort 7 / 18 / 8, hash 176 / 192 / 175, **virtual 102 / 87 / 87** - virtual at -O2's figure
+and no kernel moved past the clock's 1 ms. clang takes it with no size known to the compiler: `.p2align 6` then
 `.skip (-("$LNend$f"-"$LNbeg$f")) & 63, 0x90` after the `.section` line (variant k: the same addresses as e64, 106 (100)).
 **Not built**, and why: the default spelling is masm, where the pad must come from the project's encoder (a segment at
 `ALIGN(64)` and a pad the encoder computes from the PROC's size - a new form in `X64Parse.cpp`, as `ALIGN n, most` was);
@@ -2893,5 +2896,5 @@ Cost: up to 47 bytes more padding per such function than now.
 **Bench**: not re-run - no code changed; lane malign's figures stand (virtual 108 / 94 / 107 in the default spelling).
 **Gates**: none run - the tree's code is `9035baa4`'s. `src/` stays at 94042 lines.
 **Left**: (1) build the rule in both spellings and show virtual at -O2's figure in the default spelling, fib, hash and
-matmul no worse, on a quiet box, twice; (2) e64 on a quiet box (its figures above are loaded ones); (3) whether a
+matmul no worse, on a quiet box, twice; (2) the same in the default spelling, where only the encoder can show it; (3) whether a
 function with several `ret`s, or one called directly, gains or loses; (4) malign's list, untouched.
