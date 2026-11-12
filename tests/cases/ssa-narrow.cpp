@@ -46,7 +46,7 @@ unsigned wrap(unsigned x, unsigned y, const unsigned char *t) {
 // A value carried round a loop and read only at 32 bits until the loop ends.
 int carried(int n) {
     int h = -1;
-    for (int i = 0; i < n; ++i) h = (h * 31) ^ (i - 5);
+    for (int i = 0; i < n; ++i) h = (int)((unsigned)h * 31u) ^ (i - 5);
     return h;
 }
 
@@ -57,7 +57,7 @@ int main() {
     for (int i = 0; i < 16; ++i) t[i] = (unsigned char)(i * 3);
     std::printf("virt %lld\n", virt(1001));
     std::printf("down %lld %lld\n", down(10, -20), down(-1, -2000000));
-    std::printf("mixed %lld %lld %lld\n", mixed(-3, 5), mixed(40000, 50000), mixed(-46341, 46341));
+    std::printf("mixed %lld %lld %lld\n", mixed(-3, 5), mixed(40000, 50000), mixed(-46340, 46341));
     std::printf("wrap %u %u\n", wrap(4000000000u, 500000000u, t), wrap(7u, 6u, t));
     std::printf("carried %d %lld\n", carried(1000), show(carried(77)));
     int neg = carried(3);

@@ -258,6 +258,13 @@ void X86_64Linux::ssaFoldGeps(const ir::Function &f) {
             if (here && c.def.valid() && f.inst(c.def).op == ir::Op::IConst) ssaFold_[m.v] = 1;
         }
     }
+    // An integer compare that ends its block, read by that block's conditional branch alone, is made there: `cmp`, `jcc`.
+    for (std::size_t b = 0; b < f.blocks.size(); b++) {
+        const ir::Block &blk = f.block(f.blocks[b]);
+        if (blk.pad || blk.funclet != 0 || blk.insts.empty() || !blk.term.valid() || f.inst(blk.term).op != ir::Op::CondBr) continue;
+        const ir::Inst &c = f.inst(blk.insts.back());
+        if (c.op == ir::Op::ICmp && c.cc <= ir::Cmp::Uge && c.result.v == f.operand(f.inst(blk.term), 0).v && all[c.result.v] == 1) ssaFold_[c.result.v] = 1;
+    }
 }
 
 // Under the passes, a 4-byte integer whose every reader takes its low four bytes alone - 32-bit arithmetic, a 32-bit
@@ -674,25 +681,39 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         a_->ins("jmp", lbl(ssaBlockLabel(i.succ[0].block)));
         return;
     case ir::Op::CondBr: {
-        ssaLoad(f, f.operand(i, 0));
-        a_->ins("cmp", immText("0"), reg("%rax"));
+        // The branch on true and on false: of the flags of a compare folded here (ssaFoldGeps), else of the value against 0.
+        static const char *const taken[] = {"je", "jne", "jl", "jle", "jg", "jge", "jb", "jbe", "ja", "jae"};
+        static const char *const fallen[] = {"jne", "je", "jge", "jg", "jle", "jl", "jae", "ja", "jbe", "jb"};
+        const char *yes = "jne", *no = "je";
+        if (ssaFold_[f.operand(i, 0).v]) {
+            const ir::Inst &c = f.inst(f.value(f.operand(i, 0)).def);
+            const Type *t = typeOf(f, f.operand(c, 0));
+            ssaLoadReg(f, f.operand(c, 1), abi_.scratch);
+            ssaLoad(f, f.operand(c, 0));
+            a_->ins("cmp", reg(rhs(t)), reg(acc(t)));
+            yes = taken[static_cast<int>(c.cc)];
+            no = fallen[static_cast<int>(c.cc)];
+        } else {
+            ssaLoad(f, f.operand(i, 0));
+            a_->ins("cmp", immText("0"), reg("%rax"));
+        }
         // Under the passes a side with no arguments is the jump taken: the false side where the true one is written
         // next or carries arguments, else the true side; the other side's arguments and its jump follow in line.
         const bool args0 = i.succ[0].count != 0, args1 = i.succ[1].count != 0;
         if (passesRun() && !args1 && (args0 || i.succ[0].block.v == ssaNext_)) {
-            a_->ins("je", lbl(ssaBlockLabel(i.succ[1].block)));
+            a_->ins(no, lbl(ssaBlockLabel(i.succ[1].block)));
             ssaBranchArgs(f, i.succ[0]);
             a_->ins("jmp", lbl(ssaBlockLabel(i.succ[0].block)));
             return;
         }
         if (!args0 && (!args1 || passesRun())) {
-            a_->ins("jne", lbl(ssaBlockLabel(i.succ[0].block)));
+            a_->ins(yes, lbl(ssaBlockLabel(i.succ[0].block)));
             ssaBranchArgs(f, i.succ[1]);
             a_->ins("jmp", lbl(ssaBlockLabel(i.succ[1].block)));
             return;
         }
         const int id = nextLabel();
-        a_->ins("je", lbl(label("ssaelse", id)));
+        a_->ins(no, lbl(label("ssaelse", id)));
         ssaBranchArgs(f, i.succ[0]);
         a_->ins("jmp", lbl(ssaBlockLabel(i.succ[0].block)));
         a_->defLabel(label("ssaelse", id));
