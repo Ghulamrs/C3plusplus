@@ -80,7 +80,8 @@ static int inHandler(int what) {
 }
 
 int main() {
-    printf("%d %d %d\n", loadAcross(0), loadAcross(1), loadAcross(2));
+    const int a = loadAcross(0), b = loadAcross(1), c = loadAcross(2);   // in order: each changes `seen`
+    printf("%d %d %d\n", a, b, c);
     seen = 1;
     printf("%d %d %d\n", localAcross(0), localAcross(1), localAcross(2));
     printf("%d %d %d\n", storeSeenOutside(0), storeSeenOutside(1), storeSeenOutside(2));
