@@ -478,9 +478,29 @@ std::vector<int> Allocator::colour() {
     return failed;
 }
 
+// **A failed node that holds no local is given one register**: the one whose holders beside it are locals alone and
+// weigh least, marked in `yield`. False where every register beside it is held by a web, which cannot give way.
+bool Allocator::cheapest(int f, std::vector<bool> &yield) {
+    std::vector<bool> web(n_, false);
+    for (int p = 0; p < nHomes_; ++p) web[find(p)] = true;
+    long cost[kWebRegs] = {0};
+    RegSet open = 0, fixed = nodes_[f].forbid | ~palette(f);
+    for (int q = 0; q < n_; ++q) {
+        if (!interferes(f, q) || colour_[q] < 0) continue;
+        if (web[q]) fixed |= bit(colour_[q]);
+        else { open |= bit(colour_[q]); cost[colour_[q]] += nodes_[q].weight; }
+    }
+    int best = -1;
+    for (int r = 0; r < kWebRegs; ++r)
+        if ((open & ~fixed & bit(r)) && (best < 0 || cost[r] < cost[best])) best = r;
+    for (int q = 0; best >= 0 && q < n_; ++q)
+        if (interferes(f, q) && colour_[q] == best) yield[q] = true;
+    return best >= 0;
+}
+
 // **The promoted locals the failed nodes hold go back to their slots**, in
-// the stream, so the graph is built again without them; where they hold none,
-// the locals they interfere with; the count demoted, none where neither has one.
+// the stream, so the graph is built again without them; where they hold none, the lightest holders of one register
+// beside each (cheapest), else every local beside it; the count demoted, none where neither has one.
 int Allocator::demote(const std::vector<int> &failed) {
     std::vector<bool> isFailed(n_, false);
     for (int f : failed) isFailed[f] = true;
@@ -489,10 +509,11 @@ int Allocator::demote(const std::vector<int> &failed) {
     for (int q = nHomes_; q < n_; ++q)
         if (!demoted_[q] && isFailed[find(q)]) { demoted_[q] = true; back[q] = Webs::kToSlot; ++count; }
     if (count == 0) {
-        std::vector<bool> beside(n_, false);
-        for (int f : failed) for (int q : nodes_[f].adj) beside[find(q)] = true;
+        std::vector<bool> yield(n_, false);
+        for (int f : failed)
+            if (!cheapest(f, yield)) for (int q : nodes_[f].adj) yield[find(q)] = true;
         for (int q = nHomes_; q < n_; ++q)
-            if (!demoted_[q] && beside[find(q)]) { demoted_[q] = true; back[q] = Webs::kToSlot; ++count; }
+            if (!demoted_[q] && yield[find(q)]) { demoted_[q] = true; back[q] = Webs::kToSlot; ++count; }
     }
     if (count != 0) Webs::assign(fn_, back);
     return count;

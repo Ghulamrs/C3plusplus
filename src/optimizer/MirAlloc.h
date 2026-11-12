@@ -94,6 +94,7 @@ private:
     int pick(int p);
     void reserveFresh();
     bool ask(const std::vector<int> &failed);
+    bool cheapest(int f, std::vector<bool> &yield);
     int demote(const std::vector<int> &failed);
     void addSaves();
 

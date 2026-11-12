@@ -235,9 +235,16 @@ void CoffSpelling::functionBegin(const std::string &name, bool exported,
     } else {
         textSection();
     }
+    alignAt_ = o_.size();
     if (exported) globl(name);
     defLabel(name);
     if (codeView_) { cvCurrent_ = cvFunctions_++; o_ += "  .cv_func_id "; appendNum(o_, cvCurrent_); o_ += '\n'; }
+    beganAt_ = o_.size();
+}
+
+void CoffSpelling::functionAlign(int n) {
+    if (!mergeable_ || o_.size() != beganAt_) return;
+    o_.insert(alignAt_, n == 32 ? "  .p2align 5\n" : "  .p2align 6\n");
 }
 
 // **A funclet's lines are a function's own** (1.29): the next id, declared where the funclet's text begins

@@ -95,6 +95,23 @@ int headLabel(const MStream &s, const Block &b) {
 
 }
 
+// **A function that fits one line is placed inside one**: the power of two its estimated bytes fit, past the
+// section's own 16 - 24 bytes at 16 cross a line from one start in four, at 32 from none. 0 where 16 serves.
+int functionAlign(const MFunction &fn) {
+    const int line = fn.costs().loopLine();
+    int bytes = 0;
+    for (const MEntry &e : fn.stream) {
+        if (e.dead) continue;
+        if (e.kind == MEntry::Inst) bytes += bytesOf(e.ins);
+        else if (e.kind == MEntry::Directive && e.dir.kind == MDirective::Prologue)
+            bytes += (e.dir.n[0] > 127 ? 11 : 8) + 5 * static_cast<int>(e.dir.saves.size());
+        if (bytes > line) return 0;
+    }
+    int align = 16;
+    while (align < bytes) align *= 2;
+    return align > 16 ? align : 0;
+}
+
 bool alignLoops(MFunction &fn) {
     const int line = fn.costs().loopLine();
     const Loops &loops = fn.loops();

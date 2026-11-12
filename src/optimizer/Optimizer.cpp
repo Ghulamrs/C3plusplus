@@ -200,6 +200,7 @@ void Optimizer::flush() {
         else if (depth > 0 && e.kind == MEntry::Inst) fn_.shared.addAccessOf(e);
     }
     improve(fn_);
+    if (const int align = inFunction_ && passes_ ? opt::functionAlign(fn_) : 0) under_.functionAlign(align);
     if (dump_ != nullptr) { *dump_ << ";; " << fn_.name << "\n"; opt::dumpStream(*dump_, fn_); }
     replay(fn_.stream);
     frameSize_ = fn_.size;
