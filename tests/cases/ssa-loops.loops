@@ -118,8 +118,7 @@ function @_ZL7skippedPKiii(%1: const int *, %3: int, %5: int) -> int static {
 ^7:
   ret %39
 ^8:
-  %30 = load int, %19
-  %32 = sdiv int, %30, %5
+  %32 = sdiv int, %20, %5
   %33 = add int, %39, %32
   br ^9(%33)
 ^9(%40: int):

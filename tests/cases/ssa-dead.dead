@@ -19,16 +19,13 @@ function @_ZL8mayThrowi(%1: int) -> int static {
 }
 function @_ZL8constanti(%1: int) -> int static {
 ^1(%1: int):
-  %5 = alloca int *, align 4 ; int r
   %11 = iconst int, 3
   %12 = mul int, %1, %11
   %23 = iconst int, 30
   %24 = add int, %12, %23
-  store %5, %24
   br ^13
 ^13:
-  %47 = load int, %5
-  ret %47
+  ret %24
 ^15(%32: void *, %33: int):
   catchpad [@_ZTIi] own 1
   %35 = iconst int, 1

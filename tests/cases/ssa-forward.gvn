@@ -1,0 +1,150 @@
+function @_ZL4hashPKc(%1: const char *) -> unsigned int static {
+^1(%1: const char *):
+  %4 = iconst unsigned int, 2166136261
+  br ^4(%4, %1)
+^4(%23: unsigned int, %24: const char *):
+  %8 = load char, %24
+  %9 = iconst char, 0
+  %10 = icmp ne, bool, %8, %9
+  condbr %10, ^5, ^7
+^5:
+  %14 = bitcast unsigned char, %8
+  %15 = zext unsigned int, %14
+  %16 = xor unsigned int, %23, %15
+  %17 = iconst unsigned int, 16777619
+  %18 = mul unsigned int, %16, %17
+  %20 = gep const char *, %24, 1
+  br ^4(%18, %20)
+^7:
+  ret %23
+}
+function @_ZL5underPKi(%1: const int *) -> int static {
+^1(%1: const int *):
+  %4 = load int, %1
+  %5 = iconst int, 2
+  %6 = icmp sgt, bool, %4, %5
+  condbr %6, ^4, ^5
+^2(%13: int):
+  ret %13
+^4:
+  %9 = iconst int, 10
+  %10 = mul int, %4, %9
+  br ^2(%10)
+^5:
+  br ^2(%4)
+}
+function @_ZL6storedPiS_(%1: int *, %3: int *) -> int static {
+^1(%1: int *, %3: int *):
+  %6 = load int, %1
+  %7 = iconst int, 0
+  %8 = icmp sgt, bool, %6, %7
+  condbr %8, ^4, ^5
+^2(%14: int):
+  ret %14
+^4:
+  %10 = iconst int, 9
+  store %3, %10
+  %12 = load int, %1
+  br ^2(%12)
+^5:
+  br ^2(%7)
+}
+function @_ZL4bumpv() -> int static {
+^1:
+  %1 = addr int *, @g
+  %2 = load int, %1
+  %3 = iconst int, 1
+  %4 = add int, %2, %3
+  store %1, %4
+  ret %4
+}
+function @_ZL6calledPKi(%1: const int *) -> int static {
+^1(%1: const int *):
+  %5 = load int, %1
+  %6 = call @_ZL4bumpv() : int
+  %8 = iconst int, 0
+  %9 = icmp sgt, bool, %5, %8
+  condbr %9, ^4, ^2(%5)
+^2(%15: int):
+  ret %15
+^4:
+  %11 = load int, %1
+  %13 = add int, %11, %5
+  br ^2(%13)
+}
+function @_ZL6joinedPKii(%1: const int *, %3: int) -> int static {
+^1(%1: const int *, %3: int):
+  %6 = iconst int, 0
+  %9 = icmp ne, bool, %3, %6
+  condbr %9, ^4, ^6
+^4:
+  %11 = load int, %1
+  br ^5(%11)
+^5(%20: int):
+  %17 = load int, %1
+  %18 = add int, %20, %17
+  ret %18
+^6:
+  %13 = load int, %1
+  %14 = neg int, %13
+  br ^5(%14)
+}
+function @main() -> int {
+^1:
+  %1 = alloca char [8] *, align 1 ; char [8] word
+  %3 = alloca int *, align 4 ; int one
+  %5 = alloca int *, align 4 ; int two
+  %7 = alloca int *, align 4 ; int three
+  %2 = addr char [8] *, @.L.str.0
+  memcpy %1, %2
+  %4 = iconst int, 3
+  store %3, %4
+  %6 = iconst int, 1
+  store %5, %6
+  %8 = iconst int, 4
+  store %7, %8
+  %9 = addr const char [4] *, @.L.str.1
+  %10 = bitcast const char *, %9
+  %11 = bitcast char *, %1
+  %12 = bitcast const char *, %11
+  %13 = call @_ZL4hashPKc(%12) : unsigned int
+  %14 = call @printf(%10, %13) : int variadic
+  %15 = addr const char [4] *, @.L.str.2
+  %16 = bitcast const char *, %15
+  %17 = addr const char [1] *, @.L.str.3
+  %18 = bitcast const char *, %17
+  %19 = call @_ZL4hashPKc(%18) : unsigned int
+  %20 = call @printf(%16, %19) : int variadic
+  %21 = addr const char [7] *, @.L.str.4
+  %22 = bitcast const char *, %21
+  %23 = bitcast const int *, %3
+  %24 = call @_ZL5underPKi(%23) : int
+  %25 = bitcast const int *, %5
+  %26 = call @_ZL5underPKi(%25) : int
+  %27 = call @printf(%22, %24, %26) : int variadic
+  %29 = call @_ZL6storedPiS_(%3, %7) : int
+  %30 = bitcast const int, %29
+  %31 = addr const char [7] *, @.L.str.5
+  %32 = bitcast const char *, %31
+  %34 = load int, %7
+  %35 = call @printf(%32, %29, %34) : int variadic
+  %36 = addr const char [4] *, @.L.str.6
+  %37 = bitcast const char *, %36
+  %38 = call @_ZL6storedPiS_(%7, %7) : int
+  %39 = call @printf(%37, %38) : int variadic
+  %41 = addr int *, @g
+  %42 = bitcast const int *, %41
+  %43 = call @_ZL6calledPKi(%42) : int
+  %44 = bitcast const int, %43
+  %45 = addr const char [7] *, @.L.str.7
+  %46 = bitcast const char *, %45
+  %49 = load int, %41
+  %50 = call @printf(%46, %43, %49) : int variadic
+  %51 = addr const char [7] *, @.L.str.8
+  %52 = bitcast const char *, %51
+  %55 = call @_ZL6joinedPKii(%23, %6) : int
+  %57 = iconst int, 0
+  %58 = call @_ZL6joinedPKii(%23, %57) : int
+  %59 = call @printf(%52, %55, %58) : int variadic
+  ret %57
+}
