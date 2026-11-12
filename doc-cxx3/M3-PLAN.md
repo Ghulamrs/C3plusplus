@@ -2662,3 +2662,40 @@ its foot), and the fill loop was never `rotate`'s (unrolled by 4, its test insid
 innermost rule took is the outer `r` loop's rotation: its head tests `r < rounds` and the latch jumps back, one `jmp` and
 one `cmp; jge` a turn for 2M turns. No guard of hash's is decided by gvn's rule (`decided=0` for this function). So the
 rule cost a jump per outer turn, not the inner loops; whether that is 58 ms was not measured here.
+
+### M3b.5, lane catch: a catchswitch's way on to the enclosing pad is an edge, 2026-11-12
+
+Wave 5, from `0b07e3ad`, branch `m3b5-catch` (merges `m3b5-hash`); code commits `acee1439` (the edge) and `2fba2576` (hash's
+pads restriction lifted). **The cause, proved** (boxkit/m3b5ca-b0.ssa.txt: `b8377eef`, `ssa-try-catch`, Windows,
+`-front=ssa -O2 -dump=ssa=gvn`): a Microsoft `catchswitch` names where an exception none of its handlers takes goes - the
+enclosing try's pad, or the handler the try stands in - only in its `k` (`Lowering::microsoftTry`), never in `succ`. In
+`nestedInBody` the outer dispatch `^4` has no predecessor in any succ list (only `^6`'s catchswitch `k`), so to
+`Dominators` `^4` and the outer handlers `^10`, `^11` are unreachable, the outer exit `^5` has one predecessor `^7`, its
+immediate dominator, and gvn's edge rule made the `ret` read `%15` (`r += 1`'s value), undefined on a handler's way in:
+`1 12 0 0`. It was not gvn's alone: on `b8377eef` the new probe was wrong at `-front=ssa -O1` too - mem2reg promoted `r` in
+`storeSeenOutside` (the outer handler's load, unreachable to its liveness, became `undef`: 36 for 5), and dead stores
+removed `r = 6` in `inHandler` (a try inside a handler, its catchswitch's `k` the handler: 34 for 36). Itanium's unwinding
+is an edge already (an invoke or a `br`), so Linux was right. **The fix** (`SsaDominators.cpp`, one implementation):
+`unwindsTo` resolves a catchswitch's `k` - past a handler to that handler's try's catchswitch, 0 the caller - and
+`successors(f, b)` is the terminator's succ list plus that block; `Dominators` walks `successors`, so its preds, order and
+idom hold the edge for every pass that asks it (gvn, mem2reg, loops, rotate, jumps), and dead stores' liveness (`SsaDead.cpp`,
+its own succ walk) asks `successors` too. No IR changed: the lowering (cond's file) and the selector read `k` as before.
+**Probe** `tests/cases/ssa-catch-edge` (+`.expected`, the Windows box's clang; `.gvn` its `-O1 -dump=ssa=gvn` on Linux): a
+global loaded before a nested try and written in the outer handler, a local the same, a store seen only by the outer
+handler, and a try inside a handler whose throw goes on to the outer try. On `b8377eef` wrong at `-front=ssa -O1` and
+`-O2`; on `2fba2576` it and `ssa-try-catch` are right at `-front=ssa -O2` (both spellings), `-front=ssa -O1`, `-O2`, `-O0`.
+**Re-recorded** (Linux): `ssa-rotate.rotate` and `ssa-dead.dead` - the pads restriction gone, `main` and the functions with a
+pad forward as `b8377eef` did.
+**Gates on `2fba2576`'s src** (`403a859e` adds the probes; this entry after): Windows (tree `work\m3b5ca3`, a clean ship and
+build of `8f94b6aa`, WINLANES=3) winpass `-front=ssa -O2` gnu 751 / masm 750 same, 0 differ, 340 refused as recorded;
+ssa.sh 764/0 at levels 1 and 2 (19 not for this host; level 1 gvn 1159 loads by a load, 1748 by a store; level 2 rotate
+1028). Linux (`~/m3b5ca`, a clean build, objects removed, `make clean` after): ssa.sh 800/0 at levels 1 and 2 (rotate 1047,
+unroll 195 whole / 253 partial), run.sh 1124/0 at `-front=ssa -O2`; exclusions, comment cap 0 over, memory gate new 1056
+raw-pointers 44 (unchanged), ide/generate.py --check: GATES-OK. Not run: winpass `-front=ssa -O1`, run.sh at the other
+flag sets, the bench and .text table. `src/` 93877 -> 93902 lines (+25; +37 over `0b07e3ad`).
+**Left**: the IR text does not print a catchswitch's `k` (`catchswitch ^9` hides where it goes on), so a dump shows the
+edge only by knowing it - IrText's, a re-record of every Microsoft dump; a `cleanupret` inside a handler with no pad of
+its own names the handler's block as its `succ` (`Lowering.cpp` 1402, the same `msEnclosingPad`) - an edge back to the
+handler's entry, not where control goes; the passes' other own succ walks (fold's block parameters, promote's arguments,
+jumps, unroll) carry block arguments, which the catchswitch edge has none of, and the MIR allocator's liveness was not
+looked at.
