@@ -2529,3 +2529,47 @@ quiet box: 114 against 82 with the loop already rotated, the indirect call's seq
 `-O2`'s; (4) the pass's guard in the preheader is not folded where the start is a parameter (`xor; cmp; jge`) - fine,
 but a counted loop whose bound is known positive could drop it; (5) emit, names, overload, syntax, typed, adapted,
 coff, c90, win-structure not run by this lane (the coordinator's merged gate).
+
+## M3b.5, lane mm (wave 4, 2026-11-12): matmul's spill after rotation
+
+**The reading, tested.** `-dump=ssa=regvn` of matmul's nest (boxkit/m3b5mm-k.cpp) at `641d75ac`: the three guards
+`rotate` wrote are one value, `%110 = icmp slt 0, %n` in the entry, which `regvn` shared and the guards of ^4 and ^8
+branch on again; the selector keeps it as a value (`setl; movzbl; mov %rax, 96(%rbp)`, `cmpq $0, 96(%rbp)` at each
+inner guard). True, and only half the cause: with those guards folded (below) the allocator still demoted 36 of 225
+nodes (`CPP11_DECLINES`: 8 rounds, no fallback) and the innermost loop kept its counter and row pointers in slots.
+What it lacked was the outer loops' rotation undone: their heads' values as block parameters, copied twice, are what
+the allocator ran short on (`demote`'s neighbours-of-the-failed rule took the hot loop's webs).
+**The fix, two rules.** (1) gvn (SsaValues.cpp): a condbr on a value that a dominating condbr's edge decided - that
+edge the block's one way in, every other predecessor a back edge it dominates - becomes a jump, cfg after it
+(`decided=` on the gvn line; the value is SSA, so it cannot change inside the loop). (2) `rotate` is held to innermost
+loops (a loop with no other loop's head inside it): after both, matmul allocates 229 nodes with 27 demoted and its
+innermost loop runs in registers (`movsd (%r11,%rdx,8)`, `add $1, %rdx; cmp; jl`). rotate turns 1022 loops over the
+Windows suite at level 2 (1064 before).
+**Probe** `tests/cases/ssa-guards` (+`.expected`, the Windows box's clang; `.regvn` its `-O2 -dump=ssa=regvn` on Linux;
+ssa.sh now compares `*.regvn` probes at -O2): a three-deep nest under one bound, two bounds, a test the rotated guard
+repeats (`checked`: decided=1), two loops in a row. Right at -O0, -O2, -front=ssa -O1 and -O2 on Windows.
+**Bench** (bench.cmd, `-front=ssa -O2` against `-O2` of the same cxx3, median of 9, once):
+
+| kernel | -front=ssa -O2 | -O2 | cl -O2 | rot lane |
+|---|---|---|---|---|
+| fib | 6 | 7 | 7 | 6 |
+| sieve | 51 | 58 | 48 | 46 / 52 |
+| matmul | 9 | 26 | 3 | 21 |
+| isort | 8 | 17 | 6 | 8 |
+| hash | 181 | 174 | 121 | 182 |
+| virtual | 103 | 82 | 96 | 114 |
+| total | 357 | 363 | 280 | 376 |
+| .text | 3760 | 3443 | 3831 | 4000 |
+
+sieve's 51 is the box (its `-O2` moved 52 -> 58 in the same run). Checksums agree.
+**Gates on `30fa8912`** (the code commit; the Windows tree `work\m3b5mm` a clean ship and build of its `src/`): Windows
+`winpass` at `-front=ssa -O2` (WINLANES=2) gnu 748 / masm 747 same, 0 differ, 340 refused as recorded; Windows ssa.sh
+761/0 at level 2 (19 not for this host). Linux: not run inside the hour - the box lock was held by another lane's
+census from 04:50; the lane's job (`~/m3b5mm`, build, the probe's `.regvn` recorded, ssa L1/L2, run.sh at
+`-front=ssa -O2` and `-O0`, the make-test gates) was left queued for the coordinator. Not run: winpass at
+`-front=ssa -O1` (neither rule's output differs at -O1 except gvn's fold, which ssa.sh L1 on Linux will cover), ssa.sh
+L1 on Windows, the cases' .text. `src/` went from 93821 to 93856 lines (+35).
+**Left**: (1) `tests/cases/ssa-guards.regvn` to record (Linux, `-O2 -dump=ssa=regvn`) and commit; (2) the Linux gates
+above; (3) the allocator's demotion: where `colour` fails and no local of the failed nodes can go back, `demote` sends
+every neighbour to its slot, a whole loop's webs at once - the outer loops' rotation can come back once that picks by
+weight; (4) hash's last 5% and virtual, as the rot lane left them.
