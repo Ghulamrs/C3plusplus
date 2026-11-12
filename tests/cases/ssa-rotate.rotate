@@ -61,19 +61,18 @@ function @_Z3fnvPKc(%1: const char *) -> unsigned int {
   %15 = iconst unsigned int, 16777619
   %24 = load char, %1
   %25 = icmp ne, bool, %24, %7
-  condbr %25, ^4(%1, %4), ^8(%4)
-^4(%21: const char *, %22: unsigned int):
+  condbr %25, ^4(%1, %4, %24), ^8(%4)
+^4(%21: const char *, %22: unsigned int, %28: char):
   br ^5
 ^5:
-  %11 = load char, %21
-  %12 = bitcast unsigned char, %11
+  %12 = bitcast unsigned char, %28
   %13 = zext unsigned int, %12
   %14 = xor unsigned int, %22, %13
   %16 = mul unsigned int, %14, %15
   %18 = gep const char *, %21, 1
   %26 = load char, %18
   %27 = icmp ne, bool, %26, %7
-  condbr %27, ^4(%18, %16), ^8(%16)
+  condbr %27, ^4(%18, %16, %26), ^8(%16)
 ^8(%23: unsigned int):
   br ^7
 ^7:

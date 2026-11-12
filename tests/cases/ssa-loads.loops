@@ -153,10 +153,8 @@ function @_ZL5shiftPii(%1: int *, %3: int) -> int static {
   %9 = icmp sgt, bool, %71, %8
   condbr %9, ^7, ^6
 ^5:
-  %36 = load int, %25
-  %51 = load int, %18
-  store %25, %51
-  store %18, %36
+  store %25, %19
+  store %18, %26
   br ^4(%72, %70)
 ^6:
   ret %71
