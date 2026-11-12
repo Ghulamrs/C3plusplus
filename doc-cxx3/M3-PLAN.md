@@ -2651,7 +2651,7 @@ or a change; not separated within the hour.
 (`ssa-try-catch`, the finding above), 340 refused as recorded; on `4dc563b2` (`work\m3b5ha2`) that case and the probe are
 right at five flag sets, and the whole winpass was still running at the hour (boxkit/m3b5ha-wp2-o2.log). Linux (`~/m3b5ha`,
 a clean build; the disk at 100%, this lane's objects removed after each build): ssa.sh 798/0 at levels 1 and 2 (rotate
-1047, unroll 195 whole / 253 partial); on `b8377eef` run.sh 1123/0 at `-front=ssa -O2` and at -O0; the gates: exclusions 0
+1047, unroll 195 whole / 253 partial); run.sh 1123/0 at `-front=ssa -O2` (and at -O0 on `b8377eef`); the gates: exclusions 0
 uncited / 0 stale, comment cap 0 over, memory gate new 1056 raw-pointers 44 (unchanged), ide/generate.py --check, GATES-OK.
 Not run: ssa.sh on Windows, winpass at `-front=ssa -O1`, the cases' .text. `src/` went from 93865 to 93877 lines (+12).
 **Left**: the two selector items (virt's file); hash on a quiet box; the winpass on `4dc563b2` to read; why a catch's
