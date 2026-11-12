@@ -2809,7 +2809,7 @@ COMDAT and on ELF.
 
 ### M3b.5, lane frame: the values' slots closed up, dse after the hoists, outer loops rotated again, 2026-11-12
 
-From main `f26798ae`, branch `m3b5-frame`; code commit `76660f19` (every gate below ran on its tree).
+From main `f26798ae`, branch `m3b5-frame`; code commit `41f381b0` (every gate below ran on its tree).
 **1. The frame trim.** `layoutSsa` now tells the optimizer where the values' 8-byte slots lie (`Optimizer::valueSlots`,
 bytes (from, to] above the parser's slots, the allocas and the argument copies), when nothing lies below them - no
 inline reserve, no unwind-help word, no realigned frame, no pad, no x87 value. `finish-frame` (`closeValues`, OptPipeline.cpp)
@@ -2821,7 +2821,29 @@ inlined callee below the frame (`inlineTop > frameSize`). The kernels' frames (b
 **2. The dead store.** `mov %rax, 48(%rbp)` was not dead to `remove-dead-stores` for two reasons: dse ran in the frame
 group, before `fold-index` and the hoists took the store's reads, and `cmpq $0, s` beside it counted as a 16-byte read
 (`accessWidth`'s unknown), covering the next slot. Now an immediate operand's access takes the suffix's width, and
-`dse-late` (remove-dead-stores, then rounds if it found one) runs after the hoists, before finish-frame. Its first form
-killed a callee-save's store (the restore is the epilogue's, not the stream's): `vector-push-back-conversions` crashed at
-`-front=ssa -O1` on Windows; `RemoveDeadStores` now counts the saves' slots as shared. With the store gone, `rotate` takes
-outer loops again (innermost first, SsaLoops.cpp `rotateAll`).
+`dse-late` (remove-dead-stores, then rounds if it found one) runs after the hoists, before finish-frame. With the store
+gone, `rotate` takes outer loops again (innermost first, SsaLoops.cpp `rotateAll`).
+**One wrong answer on the way** (`4b54ed39`, `76660f19`, `-front=ssa -O1` winpass 751 / 1 differ, `vector-push-back-conversions`
+crashed): in a deleting destructor the trim gave back exactly the 16 bytes the save of rsi added, so `finish-frame` saw the
+size unchanged, did not rewrite the prologue, and the save was never stored while the epilogue restored it. The prologue
+is now rewritten whenever there are saves (before, saves always meant a larger frame).
+**Bench** (Windows, median of 9, `-front=ssa -O2` of this lane / of main `f26798ae` (`work\m3b5w7`) / cl -O2, once, on
+`4b54ed39` while no other job of the lane ran, `boxkit/m3b5fr-bench-1.txt`): fib 5 / 5 / 7, sieve 48 / 47 / 44, matmul
+8 / 8 / 3, isort 7 / 7 / 6, hash 169 / 172 / 124, virtual 99 / 119 / 98, total 337 / 359 / 283; kernels' .text 3412
+against 3380 (+32, the outer rotations' copied tests). matmul is no worse with outer loops rotated; its allocator now
+takes no preserved register there (65 frame operands, the hot loop's only one its bound `cmp 152(%rbp)`): MirAlloc's
+side, lane msedge's file, not touched. The second bench run was not made (the box was busy with the gates at the hour).
+**.text over the cases** (bench.ps1 -Cases, `-front=ssa -O2`, 763 cases, `76660f19` against `f26798ae`): 1,187,424 ->
+1,145,749 bytes (-41,675, -3.5%); 584 smaller, 176 the same, 3 larger (`align-loops` +13, `ssa-range-for-array` +46,
+`ssa-rotate` +16: outer rotations). `41f381b0` differs from `76660f19` only where a trim cancels the saves' growth.
+**Gates on `41f381b0`** (Windows, clean ship and build, WINLANES=3, the two passes at once): winpass `-front=ssa -O2`
+(`work\m3b5fr`) gnu 752 same, 0 differ, 340 refused as recorded; winpass `-front=ssa -O1` (`work\m3b5fr2`) gnu 751 / 1
+differ, `fstream-string-name` - a race, not a wrong answer: the case writes `fstream-string-name.tmp` in the current
+directory and the two passes ran it at once; the same executable run alone prints the expected `written 42 0`. Not
+finished at the hour (left running, logs `boxkit/m3b5fr-wp-o{1,2}.log`, `m3b5fr-linux.out`): both passes' masm halves;
+the Linux run (`m3b5fr-linux2.sh`: probes, ssa.sh L1/L2, run.sh `-front=ssa -O2` and `-O0`, the gates), which was
+waiting on the box lock. **Probes**: the killed Linux run on `4b54ed39` found `ssa-rotate.rotate` (the outer loop
+rotated now) and `ssa-guards.regvn` (regvn after the new rotation) changed; the Linux run copies the re-recorded files to
+`boxkit/m3b5fr-probes/`, not yet committed. `src/` went from 94024 to 94082 lines (+58).
+**Left**: the gates above to finish; a second bench on a quiet box; matmul's allocation under outer rotation (no
+preserved register taken); the trim where an LSDA, a funclet, temporaries or an x87 value are present.
