@@ -25,6 +25,7 @@ int accessWidth(const MInst &i, const MOperand &at) {
     if (isPush(i.m) || i.m == mn::Movsd) return 8;
     if (renamable(i.m) && gpr(other)) return other.reg.width;
     if (renamable(i.m) && i.m.row().width != 0) return i.m.row().width;
+    if (other.kind == MOperand::Immediate && i.m.row().width != 0) return i.m.row().width;   // `cmpq $0, s`: the suffix's
     return 16;
 }
 
@@ -165,6 +166,31 @@ void dropUnusedSaves(MStream &s, std::vector<SavedReg> &saves, long long top) {
         kept[j].disp = want;
     }
     saves.swap(kept);
+}
+
+long long closeValueSlots(MStream &s, long long from, long long to, const SharedSlots &shared) {
+    // Slot k (1-based) is the 8 bytes at -(from + 8k); an address of one, an indexed or a shared one keeps them all.
+    const auto slotOf = [&](const MOperand &o) -> long long {
+        if (!o.isMem() || o.reg.id != RBP || o.disp >= -from || o.disp < -to) return 0;
+        return (-o.disp - from + 7) / 8;
+    };
+    std::vector<long long> renum((to - from) / 8 + 1, 0);
+    for (const MEntry &e : s) {
+        if (e.kind != MEntry::Inst || e.dead) continue;
+        for (const MOperand *o : {&e.ins.a, &e.ins.b})
+            if (const long long k = slotOf(*o)) {
+                if (o->indexed() || e.ins.m == mn::Lea || shared.mayReach(-(from + 8 * k), 8)) return to;
+                renum[k] = 1;
+            }
+    }
+    long long kept = 0;
+    for (std::size_t k = 1; k < renum.size(); ++k) if (renum[k]) renum[k] = ++kept;
+    for (MEntry &e : s) {
+        if (e.kind != MEntry::Inst || e.dead) continue;
+        for (MOperand *o : {&e.ins.a, &e.ins.b})
+            if (const long long k = slotOf(*o)) o->disp += 8 * (k - renum[k]);
+    }
+    return from + 8 * kept;
 }
 
 bool removeDeadStores(MStream &s, const SharedSlots &shared) {

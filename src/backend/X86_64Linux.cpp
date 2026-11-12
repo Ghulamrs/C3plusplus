@@ -1679,6 +1679,9 @@ void X86_64Linux::emit(const Function &fn) {
         std::vector<opt::Local> scalars = scalarsOf(fn, ssaFn != nullptr);
         if (ssaFn != nullptr) ssaScalars(*ssaFn, scalars);
         optimizer_->frame(scalars);
+        // Nothing below the values - no reserve, no unwind-help word, no realigned frame: finish-frame may close them up.
+        if (ssaFn != nullptr && inlineReserve_ == 0 && ssaUnwindHelpSlot_ == 0 && realign_ == 0 && !landingPads_)
+            optimizer_->valueSlots(ssaValuesFrom_, ssaValuesTo_);
     }
     // The shadow space and the widest stack arguments of a call not inside another's operands, in 16s.
     // A nested call is evaluated with the outer one's values pushed, so it never finds the area; counting it
