@@ -1,6 +1,7 @@
 // **Value numbering** (M3b.4 round 4, design section 4): a dominator-tree walk with a scoped table of the pure instructions,
-// one found again where its first dominates (same funclet) replaced by it; a load by its block's earlier load or store,
-// nothing between that writes or calls; a condbr on a value a dominating condbr's edge decided (its loop's way in), a jump.
+// one found again where its first dominates (same funclet) replaced by it; a load by an earlier load or store of its block,
+// or of its one predecessor's (by br or condbr), nothing between that writes or calls; a condbr on a value a dominating
+// condbr's edge decided (its loop's way in), a jump.
 
 #include "SsaOpt.h"
 
@@ -68,6 +69,8 @@ struct Numberer {
     std::map<Key, ValueId> table;
     std::vector<std::pair<Key, ValueId> > undo;         // what each insertion displaced, none for a new key
     std::vector<signed char> decided;                   // by value: the successor a dominating test took, -1 none
+    typedef std::map<std::pair<std::uint32_t, std::uint32_t>, std::pair<ValueId, bool> > Memory;   // (address, type): value, stored
+    std::vector<Memory> left;                           // by block: what it had read or written at its end
     bool changed, jumped;
 
     Numberer(Function &fn, PassLog &l) : f(fn), log(l), dom(fn), changed(false), jumped(false) {}
@@ -112,7 +115,12 @@ struct Numberer {
     void visit(std::uint32_t b) {
         const Block &blk = f.block(BlockId(b));
         if (blk.pad) return;
-        std::map<std::pair<std::uint32_t, std::uint32_t>, std::pair<ValueId, bool> > memory;   // (address, type): value, stored
+        Memory memory;
+        if (dom.preds[b].size() == 1 && dom.preds[b][0] == dom.idom[b] && b != f.entry.v) {
+            const Block &p = f.block(BlockId(dom.preds[b][0]));
+            const Op t = p.term.valid() ? f.inst(p.term).op : Op::Ret;
+            if (!p.pad && p.funclet == blk.funclet && (t == Op::Br || t == Op::CondBr)) memory = left[dom.preds[b][0]];
+        }
         for (InstId id : blk.insts) {
             const Inst &i = f.inst(id);
             if (!i.isVolatile && i.result.valid() && i.type.valid() && pureKind(i) != 0) { number(b, id); continue; }
@@ -120,7 +128,7 @@ struct Numberer {
             if (i.isVolatile || (!load && (i.op != Op::Store || i.count != 2))) { memory.clear(); continue; }
             if (load) {
                 const std::pair<std::uint32_t, std::uint32_t> where(resolve(f.operand(i, 0)).v, i.type.v);
-                std::map<std::pair<std::uint32_t, std::uint32_t>, std::pair<ValueId, bool> >::iterator at = memory.find(where);
+                Memory::iterator at = memory.find(where);
                 if (at != memory.end()) replace(id, at->second.first, at->second.second ? log.gvnStored : log.gvnLoads);
                 else memory[where] = std::make_pair(i.result, false);
                 continue;
@@ -129,6 +137,7 @@ struct Numberer {
             const ValueId v = resolve(f.operand(i, 1));
             memory[std::make_pair(resolve(f.operand(i, 0)).v, f.value(v).type.v)] = std::make_pair(v, true);
         }
+        left[b].swap(memory);
         Inst &t = f.insts[blk.term.valid() ? blk.term.v : 0];
         if (blk.term.valid() && t.op == Op::CondBr && decided[resolve(f.operand(t, 0)).v] >= 0) {
             const Succ s = t.succ[static_cast<std::size_t>(decided[resolve(f.operand(t, 0)).v])];
@@ -157,6 +166,7 @@ struct Numberer {
         repl.assign(f.values.size(), ValueId());
         gone.assign(f.insts.size(), 0);
         decided.assign(f.values.size(), -1);
+        left.assign(f.blockArena.size(), Memory());
         for (ValueId p : f.params) blockOf[p.v] = f.entry.v;
         if (f.sret.valid()) blockOf[f.sret.v] = f.entry.v;
         for (BlockId b : f.blocks)
