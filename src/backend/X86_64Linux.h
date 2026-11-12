@@ -238,6 +238,9 @@ private:
     // A gep only loads and stores read: no slot, folded into each access as base + index * scale + displacement.
     std::vector<char> ssaFold_;
     void ssaFoldGeps(const ir::Function &f);
+    // A 4-byte integer read only by its low four bytes: stored without its extension (ssaNarrowValues).
+    std::vector<char> ssaNarrow_;
+    void ssaNarrowValues(const ir::Function &f);
     ir::ValueId ssaIndex(const ir::Function &f, ir::ValueId v, int &scale, long long &disp) const;
     void ssaAddress(const ir::Function &f, ir::ValueId p, const char *base, const char *index);
     std::uint32_t ssaNext_ = 0;                     // the block written after the one being selected, 0 where a funclet is

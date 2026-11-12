@@ -163,6 +163,7 @@ int X86_64Linux::layoutSsa(const Function &fn, const ir::Function &f) {
             }
         }
     ssaFoldGeps(f);
+    ssaNarrowValues(f);
     ssaValueSlot_.assign(f.values.size(), 0);
     for (std::size_t i = 1; i < f.values.size(); i++) {
         if (!f.values[i].type.valid() || ssaTypes_->type(f.values[i].type)->isVoid()) continue;
@@ -255,6 +256,41 @@ void X86_64Linux::ssaFoldGeps(const ir::Function &f) {
             bool here = false;
             for (std::size_t j = 0; j < k; j++) here = here || blk.insts[j].v == def.v;
             if (here && c.def.valid() && f.inst(c.def).op == ir::Op::IConst) ssaFold_[m.v] = 1;
+        }
+    }
+}
+
+// Under the passes, a 4-byte integer whose every reader takes its low four bytes alone - 32-bit arithmetic, a 32-bit
+// compare, a block parameter read so - is stored as computed: no extension after the instruction that makes it.
+void X86_64Linux::ssaNarrowValues(const ir::Function &f) {
+    ssaNarrow_.assign(f.values.size(), 0);
+    if (!passesRun()) return;
+    for (std::size_t v = 1; v < f.values.size(); v++) {
+        const Type *t = f.values[v].type.valid() ? ssaTypes_->type(f.values[v].type) : nullptr;
+        ssaNarrow_[v] = t != nullptr && t->isInteger() && t->size(target_) == 4;
+    }
+    for (bool changed = true; changed; ) {
+        changed = false;
+        for (std::size_t b = 0; b < f.blocks.size(); b++) {
+            const ir::Block &blk = f.block(f.blocks[b]);
+            for (std::size_t k = 0; k <= blk.insts.size(); k++) {
+                const ir::InstId id = k < blk.insts.size() ? blk.insts[k] : blk.term;
+                if (!id.valid()) continue;
+                const ir::Inst &i = f.inst(id);
+                const bool arith = i.op == ir::Op::Add || i.op == ir::Op::Sub || i.op == ir::Op::Mul || i.op == ir::Op::And || i.op == ir::Op::Or ||
+                                   i.op == ir::Op::Xor || i.op == ir::Op::Neg || i.op == ir::Op::Not;
+                const Type *t = arith ? ssaTypes_->type(i.type) : i.op == ir::Op::ICmp ? typeOf(f, f.operand(i, 0)) : nullptr;
+                const bool low = t != nullptr && t->isInteger() && t->size(target_) == 4 && !blk.pad && blk.funclet == 0;
+                for (std::uint32_t n = 0; n < i.count; n++) {
+                    char &at = ssaNarrow_[f.operand(i, n).v];
+                    if (at && !low) { at = 0; changed = true; }
+                }
+                for (std::size_t s = 0; s < i.succ.size(); s++)
+                    for (std::uint32_t n = 0; n < i.succ[s].count; n++) {
+                        char &at = ssaNarrow_[f.arg(i.succ[s], n).v];
+                        if (at && !ssaNarrow_[f.block(i.succ[s].block).params[n].v]) { at = 0; changed = true; }
+                    }
+            }
         }
     }
 }
@@ -518,7 +554,7 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
             break;
         }
         }
-        canonicalise(rt);
+        if (!ssaNarrow_[i.result.v]) canonicalise(rt);
         ssaStore(f, i.result);
         return;
     }
@@ -537,7 +573,7 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
     case ir::Op::Neg: case ir::Op::Not:
         ssaLoad(f, f.operand(i, 0));
         a_->ins(i.op == ir::Op::Neg ? "neg" : "not", reg(acc(rt)));
-        canonicalise(rt);
+        if (!ssaNarrow_[i.result.v]) canonicalise(rt);
         ssaStore(f, i.result);
         return;
     case ir::Op::ICmp: {
