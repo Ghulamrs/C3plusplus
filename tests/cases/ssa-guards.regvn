@@ -1,0 +1,143 @@
+function @_Z4filli(%1: int) -> int {
+^1(%1: int):
+  %4 = iconst int, 0
+  %20 = addr int [6][6] *, @_ZL4grid
+  %21 = bitcast int [6] *, %20
+  %24 = iconst long, 24
+  %30 = iconst long, 4
+  %35 = iconst int, 1
+  %72 = iconst long, 0
+  %73 = iconst long, 1
+  br ^4(%4, %72)
+^4(%65: int, %77: long):
+  %81 = trunc int, %77
+  %9 = icmp slt, bool, %81, %1
+  condbr %9, ^5, ^7
+^5:
+  %25 = mul long, %77, %24
+  %26 = gep int [6] *, %21, %25
+  %27 = bitcast int *, %26
+  br ^8(%65, %4)
+^7:
+  ret %65
+^8(%66: int, %69: int):
+  %14 = icmp slt, bool, %69, %1
+  condbr %14, ^9, ^11
+^9:
+  %36 = add int, %69, %35
+  %85 = icmp slt, bool, %4, %1
+  condbr %85, ^12(%66, %72), ^16(%66)
+^11:
+  %80 = add long, %77, %73
+  br ^4(%66, %80)
+^12(%67: int, %71: long):
+  %31 = mul long, %71, %30
+  %32 = gep int *, %27, %31
+  %33 = load int, %32
+  %37 = add int, %33, %36
+  store %32, %37
+  %53 = add int, %67, %37
+  %74 = add long, %71, %73
+  %86 = trunc int, %74
+  %87 = icmp slt, bool, %86, %1
+  condbr %87, ^12(%53, %74), ^16(%53)
+^16(%83: int):
+  br ^8(%83, %36)
+}
+function @_Z3twoii(%1: int, %3: int) -> int {
+^1(%1: int, %3: int):
+  %6 = iconst int, 0
+  %21 = iconst int, 1
+  br ^4(%6, %6)
+^4(%32: int, %34: int):
+  %11 = icmp slt, bool, %34, %1
+  condbr %11, ^5, ^7
+^5:
+  %37 = icmp slt, bool, %6, %3
+  condbr %37, ^8(%32, %6), ^12(%32)
+^7:
+  ret %32
+^8(%33: int, %35: int):
+  %20 = mul int, %34, %35
+  %22 = add int, %20, %21
+  %23 = add int, %33, %22
+  %26 = add int, %35, %21
+  %38 = icmp slt, bool, %26, %3
+  condbr %38, ^8(%23, %26), ^12(%23)
+^12(%36: int):
+  %29 = add int, %34, %21
+  br ^4(%36, %29)
+}
+function @_Z7checkedi(%1: int) -> int {
+^1(%1: int):
+  %4 = iconst int, 3
+  %5 = iconst int, 0
+  %7 = icmp slt, bool, %5, %1
+  condbr %7, ^4, ^5(%4)
+^4:
+  %17 = iconst int, 1
+  br ^6(%4, %5)
+^5(%21: int):
+  ret %21
+^6(%22: int, %23: int):
+  %15 = add int, %22, %23
+  %18 = add int, %23, %17
+  %26 = icmp slt, bool, %18, %1
+  condbr %26, ^6(%15, %18), ^5(%15)
+}
+function @_Z5afteri(%1: int) -> int {
+^1(%1: int):
+  %4 = iconst int, 0
+  %14 = iconst int, 1
+  %39 = icmp slt, bool, %4, %1
+  condbr %39, ^4(%4, %4), ^13(%4)
+^4(%31: int, %33: int):
+  %12 = add int, %31, %33
+  %15 = add int, %33, %14
+  %40 = icmp slt, bool, %15, %1
+  condbr %40, ^4(%12, %15), ^13(%12)
+^13(%38: int):
+  %22 = iconst int, 2
+  condbr %39, ^8(%38, %4), ^12(%38)
+^8(%32: int, %34: int):
+  %24 = mul int, %22, %34
+  %25 = add int, %32, %24
+  %28 = add int, %34, %14
+  %37 = icmp slt, bool, %28, %1
+  condbr %37, ^8(%25, %28), ^12(%25)
+^12(%35: int):
+  ret %35
+}
+function @main() -> int {
+^1:
+  %2 = iconst int, 0
+  %3 = call @_Z4filli(%2) : int
+  %6 = iconst int, 1
+  %7 = call @_Z4filli(%6) : int
+  %10 = iconst int, 6
+  %11 = call @_Z4filli(%10) : int
+  %13 = addr const char [10] *, @.L.str.0
+  %14 = bitcast const char *, %13
+  %18 = call @printf(%14, %3, %7, %11) : int variadic
+  %19 = addr const char [13] *, @.L.str.1
+  %20 = bitcast const char *, %19
+  %22 = iconst int, 3
+  %26 = call @_Z3twoii(%22, %2) : int
+  %27 = iconst int, 4
+  %28 = iconst int, 5
+  %29 = call @_Z3twoii(%27, %28) : int
+  %31 = iconst int, -1
+  %34 = call @_Z3twoii(%31, %31) : int
+  %35 = call @printf(%20, %2, %26, %29, %34) : int variadic
+  %36 = addr const char [16] *, @.L.str.2
+  %37 = bitcast const char *, %36
+  %39 = call @_Z5afteri(%2) : int
+  %41 = iconst int, -3
+  %42 = call @_Z5afteri(%41) : int
+  %43 = iconst int, 9
+  %44 = call @_Z5afteri(%43) : int
+  %141 = iconst int, 2
+  %161 = iconst int, 13
+  %49 = call @printf(%37, %39, %42, %44, %22, %161) : int variadic
+  ret %2
+}

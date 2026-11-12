@@ -2573,3 +2573,8 @@ L1 on Windows, the cases' .text. `src/` went from 93821 to 93856 lines (+35).
 above; (3) the allocator's demotion: where `colour` fails and no local of the failed nodes can go back, `demote` sends
 every neighbour to its slot, a whole loop's webs at once - the outer loops' rotation can come back once that picks by
 weight; (4) hash's last 5% and virtual, as the rot lane left them.
+**Linux, after the hour** (the queued job on `30fa8912`, a clean build): run.sh 1122/0 at `-front=ssa -O2` and at -O0,
+GATES-OK (comment cap 0 over, memory new 1056 raw 44); ssa.sh 795/1 at levels 1 and 2, the one failure `ssa-rotate.rotate`,
+re-recorded here: in `nested` the outer loop is no longer rotated (its `i < n` stays in its head, `br` from the preheader
+and the latch, the way-out block ^16 gone), the inner loop rotated as before - rotate's innermost rule and nothing else.
+`ssa-guards.regvn` recorded with it.
