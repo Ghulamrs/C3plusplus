@@ -49,6 +49,7 @@ public:
     Program &program() const { return program_; }
     // One function's typed `function` node lowered into the module, or none with the reason the subset does not reach it.
     FuncId lower(sema::TypedId fn, const FunctionFacts &facts, std::string &why);
+    std::uint32_t outsideAt() const { return at_; }   // the source offset of the last statement begun
     // Which classes a constructor builds - the parser's to say, asked by the glue (M3b.2).
     void setConstructed(std::function<bool(TypeId)> f) { constructed_ = f; }
     void setAssigned(std::function<bool(TypeId)> f) { assigned_ = f; }
@@ -126,6 +127,11 @@ private:
     Function &F() { return module_.functions[fnIndex_]; }
     const Function &F() const { return module_.functions[fnIndex_]; }
     Inst &at(InstId id) { return F().insts[id.v]; }
+    // A statement begins here: its line record rides on the next instruction made, as the walker's markLine wrote it.
+    void mark(sema::TypedId id) { marks_.push_back(syn(id).loc); }
+    void markBlock(sema::TypedId id, std::uint32_t how) { marks_.push_back(syn(id).loc | how); }    // ir::kBlockOpens, kBlockCloses
+    std::vector<std::uint32_t> marks_;
+    std::uint32_t at_ = 0;
     ValueId result(InstId id) const { return F().inst(id).result; }
     BlockId newBlock();
     void place(BlockId b);
@@ -180,8 +186,9 @@ private:
     void zeroBlock(ValueId slot, long long bytes);
     void aggregateFill(ValueId slot, const Type &t, const std::vector<sema::TypedId> &parts, std::size_t &next);
     void aggregateItem(ValueId at0, const Type &mt, const std::vector<sema::TypedId> &parts, std::size_t &next);
-    bool recordedAggregate(sema::TypedId var, ValueId slot, const Type &t);
-    bool recordedAggregate(sema::TypedId var, ValueId slot, const Type &t, const sema::ListBuilt &lb);
+    bool recordedAggregate(sema::TypedId var, ValueId slot, const Type &t, bool guarded = false);
+    bool recordedAggregate(sema::TypedId var, ValueId slot, const Type &t, const sema::ListBuilt &lb, bool guarded = false);
+    void aggregateBuilt(ValueId slot, const Type &t, const std::vector<sema::TypedId> &parts, const sema::ListBuilt &lb);
     bool recordedMember(const Type &mt) const;
     void aggregateMember(ValueId at0, const Type &mt, const std::vector<sema::TypedId> &parts, std::size_t &next);
     void aggregateTail(ValueId at0, const Type &t);
@@ -204,8 +211,14 @@ private:
     void caughtCopied(ValueId slot, ValueId from, const std::string &copy, TypeId sig);
     void tryClose(TryState &st, bool rethrows);
     void microsoftTry(sema::TypedId id);
+    struct MsTryHandler { sema::TypedId node, var, body; TypeId caught; std::string descriptor, dtor; bool byRef, isConst; };
+    struct MsTryState { std::vector<MsTryHandler> hs; Pad pad; BlockId enclosing, done; };
+    void msTryOpen(const std::vector<sema::TypedId> &handlers, MsTryState &st);
+    void msTryClose(MsTryState &st, bool rethrows);
     void leaveHandlers(std::size_t n, std::size_t mark, BlockId target, const std::vector<ValueId> &args = std::vector<ValueId>());
-    void checkFuncletUses(BlockId hb);
+    InstId addInto(BlockId b, Op op, TypeId type, const std::vector<ValueId> &ops);
+    ValueId funcletSlot(ValueId v);
+    void spillFuncletUses(BlockId hb);
     void msLeave(std::size_t n, std::size_t mark, BlockId target, const std::vector<ValueId> &args, std::size_t upper);   // MsShapes.cpp
     BlockId padBlock(Pad &p);
     BlockId msEnclosingPad();
@@ -239,6 +252,7 @@ private:
     Val bitUnit(ValueId object, const Member &m, bool constant);
     Val bitRead(const Val &unit, const Member &m);
     Val bitAssign(sema::TypedId id, const Val &unit, const Member &m);
+    Val bitStore(const Val &unit, const Member &m, const Val &value);
     bool namesCalledFunction(const std::string &head, const std::string &symbol) const;
     Val functorMember(sema::TypedId head, const Type &self);
     Val capturedThis();
@@ -255,6 +269,7 @@ private:
     Val conditional(sema::TypedId id);
     Val voidConditional(sema::TypedId id, BlockId a, BlockId b, BlockId merge);
     bool compositePointer(sema::TypedId id, const Type &tx, const Type &ty) const;
+    bool literalPointers(sema::TypedId id, const Type &tx, const Type &ty) const;
     Val assign(sema::TypedId id);
     Val assignScalar(sema::TypedId id, Val &target);
     Val bracedAssign(sema::TypedId id, Val &target);
@@ -372,6 +387,8 @@ private:
     std::size_t baseVttArgument(const Type &base, const Type &ft, std::vector<ValueId> &ops);
     void classLocal(sema::TypedId var, ValueId slot, const Type &t);
     void guardedStatic(sema::TypedId var, const std::string &symbol);
+    void threadStatic(sema::TypedId var, const std::string &symbol);
+    bool blockFunction(sema::TypedId name) const;
     void staticConstruction(sema::TypedId var, const std::string &symbol, const sema::StaticGuard &g);
     ValueId staticAddr(const std::string &symbol, TypeId type);
     std::string atexitFor(const std::string &symbol) const;
@@ -404,8 +421,10 @@ private:
     bool zeroedTemporary(sema::TypedId id) const;
     bool temporaryNode(sema::TypedId id) const {
         return plainTemporary(id) || constructedTemporary(id) || destroyedTemporary(id) || copiedTemporary(id)
-            || listTemporaryNode(id) || zeroedTemporary(id);
+            || listTemporaryNode(id) || zeroedTemporary(id) || recordedTemporaryNode(id);
     }
+    bool recordedTemporaryNode(sema::TypedId id) const;
+    void constructHere(sema::TypedId id, ValueId at, const Type &t);
     bool listTemporaryNode(sema::TypedId id) const;
     void listTemporary(sema::TypedId id, ValueId slot);
     void constructFromList(ValueId where, const std::string &symbol, TypeId sig, const Type &cls, bool zeroFirst, sema::TypedId args, std::uint32_t from);
@@ -415,13 +434,20 @@ private:
     bool convertedNode(sema::TypedId id, sema::Resolution &r) const;
     Val converted(sema::TypedId id, const sema::Resolution &r);
     Val convertedObject(Val o, const sema::Resolution &r, bool object = false);
+    bool convertedLocal(sema::TypedId var, const Type &c, ValueId slot, bool sret);
     bool convertedCast(sema::TypedId id, sema::Resolution &r) const;
     Val iteratorCall(const sema::Resolution &r, const std::vector<Val> &objects, TypeId cls);
     bool typeidNode(sema::TypedId id) const;
     Val typeidAddress(sema::TypedId id);
     bool classConditionalNode(sema::TypedId id) const;
     Val conditionalObject(sema::TypedId id);
-    Val conditionalArm(sema::TypedId arm);
+    Val conditionalArm(sema::TypedId arm, const Type &cls);
+    bool convertedArm(sema::TypedId arm, const Type &c) const;
+    TypeId conditionalClass(sema::TypedId id) const;
+    bool constApartScalars(sema::TypedId id) const;
+    bool constApartClasses(sema::TypedId id) const;
+    bool memberFunctionAgainstNull(sema::TypedId p, sema::TypedId null) const;
+    Val codeWord(sema::TypedId p);
     Val memberObject(sema::TypedId o);
     std::string temporaryDestructor(const Type &c);
     bool destroyedResultClass(const Type &t) const;
@@ -500,8 +526,7 @@ private:
     std::function<bool(const std::string &, const std::string &, std::uint32_t, TypeId &, std::uint32_t &)> memberList_;
     std::vector<Live> live_;                    // innermost last
     ValueId sret_;                              // the caller's result pointer, where a copied class is returned
-    ValueId sretSlot_;                          // where a Microsoft funclet reads it (resultPtr, MsShapes.cpp)
-    ValueId resultPtr();
+    std::map<std::uint32_t, ValueId> funcletSlots_;     // a body value's slot, where a Microsoft funclet reads it (funcletSlot)
     ValueId elidedSlot_;                        // the named return value, not destroyed by the `return` naming it
     bool intoSret_ = false;                     // the next call builds its class result in the caller's object
     std::function<bool(syntax::NodeId, int &, std::string &, TypeId &)> returnBuilt_;
@@ -516,6 +541,12 @@ private:
     int intoAlloca_ = -1, intoNow_ = -1;        // that alloca; and callTail's, set only as that call's tail is entered
     std::vector<sema::ListElement> aggCtors_;     // recordedAggregate's: each member a constructor builds, the next at aggNext_
     std::size_t aggNext_ = 0;
+    bool aggGuards_ = false;                    // aggregateBuilt's: each member with a destructor guarded until the whole is made
+    std::size_t aggGuarded_ = 0;
+    struct AggLive { std::size_t live; BlockId block; ValueId made; };     // a member's guard in live_, and where its address was made
+    std::vector<AggLive> aggLive_;
+    bool flagUnder(std::size_t live, BlockId block, ValueId after);
+    ValueId elementAt(ValueId base, ValueId i, const Type &et);
     std::size_t liveFloor_;                     // a constructor's built bases and members: below it, kept by a return
     std::function<bool(syntax::NodeId, std::string &, TypeId &, bool &)> temporaryBuilt_;
     std::function<bool(syntax::NodeId, std::string &, TypeId &)> convertedBuilt_;

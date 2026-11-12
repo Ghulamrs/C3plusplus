@@ -6,7 +6,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		5FEE87CF01D36BBAE986C997 /* AstDump.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 643F79A42EA4B86A673B777F /* AstDump.cpp */; };
 		DBCA475D1E4FAFCC4CB67EBB /* Driver.cpp in Sources */ = {isa = PBXBuildFile; fileRef = F3DF4061005105B66B7C5431 /* Driver.cpp */; };
 		21FFED23CF93F6A22C422DE2 /* Lexer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = CB2D6E30A0DA359152CB1886 /* Lexer.cpp */; };
 		18E085F0299DB4213F6446F7 /* Mangle.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C8289C58B36F3A87AA5993AC /* Mangle.cpp */; };
@@ -38,6 +37,7 @@
 		1851EB7E8826F55DCF775FD5 /* CoffEmitter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 0D382533B5D200B412D00603 /* CoffEmitter.cpp */; };
 		9B580F5362355E1FE8EE1106 /* Dwarf.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 44939D11634EA517FF5020E4 /* Dwarf.cpp */; };
 		D3E14047F25C331F429FE184 /* Masm.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 26553B240B204AB828F1E28D /* Masm.cpp */; };
+		12113116EB8AF9A7776AF253 /* Regions.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 661D88506C2603709C7864F1 /* Regions.cpp */; };
 		E449C770B3AB69E828AA4C23 /* Spelling.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 67D0740B42D9A977D2929C12 /* Spelling.cpp */; };
 		509B883E630B683EBBE52339 /* SsaSelect.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 85978B2EF2E91CBA1F68A2DD /* SsaSelect.cpp */; };
 		4C3E931330523331CA3D79DD /* Tms6747.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 24D682BAD7A7437D87895552 /* Tms6747.cpp */; };
@@ -70,7 +70,6 @@
 		03B240F26ED19F82251EFD97 /* OptTable.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 22BDBC67E9D15E6A036F16CD /* OptTable.cpp */; };
 		DAADAA6DF773BF201DB8B5CF /* OptValues.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8ACB2B5625252545ECC02F5B /* OptValues.cpp */; };
 		CD768E1153CBE125A833A3CB /* Optimizer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7CF20FDF7FFDEBE6904EB30C /* Optimizer.cpp */; };
-		12847DB0C2D056652D26B743 /* Adapter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 03A290C37946411CFE0B3F89 /* Adapter.cpp */; };
 		D736252A11FBDE5075954A12 /* Classes.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8338456DF5FB4056E77ED590 /* Classes.cpp */; };
 		BF63A631D74BFCE907DCBADA /* Constexpr.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A054868FB80953B28380DCA0 /* Constexpr.cpp */; };
 		8D03F5F23BAD4ADD0D8535ED /* Linkage.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DBAE2C24402373FC3DF070FD /* Linkage.cpp */; };
@@ -110,7 +109,6 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		643F79A42EA4B86A673B777F /* AstDump.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = AstDump.cpp; path = "../src/AstDump.cpp"; sourceTree = "<group>"; };
 		F3DF4061005105B66B7C5431 /* Driver.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Driver.cpp; path = "../src/Driver.cpp"; sourceTree = "<group>"; };
 		CB2D6E30A0DA359152CB1886 /* Lexer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Lexer.cpp; path = "../src/Lexer.cpp"; sourceTree = "<group>"; };
 		C8289C58B36F3A87AA5993AC /* Mangle.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Mangle.cpp; path = "../src/Mangle.cpp"; sourceTree = "<group>"; };
@@ -142,6 +140,7 @@
 		0D382533B5D200B412D00603 /* CoffEmitter.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = CoffEmitter.cpp; path = "../src/backend/CoffEmitter.cpp"; sourceTree = "<group>"; };
 		44939D11634EA517FF5020E4 /* Dwarf.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Dwarf.cpp; path = "../src/backend/Dwarf.cpp"; sourceTree = "<group>"; };
 		26553B240B204AB828F1E28D /* Masm.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Masm.cpp; path = "../src/backend/Masm.cpp"; sourceTree = "<group>"; };
+		661D88506C2603709C7864F1 /* Regions.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Regions.cpp; path = "../src/backend/Regions.cpp"; sourceTree = "<group>"; };
 		67D0740B42D9A977D2929C12 /* Spelling.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Spelling.cpp; path = "../src/backend/Spelling.cpp"; sourceTree = "<group>"; };
 		85978B2EF2E91CBA1F68A2DD /* SsaSelect.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaSelect.cpp; path = "../src/backend/SsaSelect.cpp"; sourceTree = "<group>"; };
 		24D682BAD7A7437D87895552 /* Tms6747.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Tms6747.cpp; path = "../src/backend/Tms6747.cpp"; sourceTree = "<group>"; };
@@ -174,7 +173,6 @@
 		22BDBC67E9D15E6A036F16CD /* OptTable.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = OptTable.cpp; path = "../src/optimizer/OptTable.cpp"; sourceTree = "<group>"; };
 		8ACB2B5625252545ECC02F5B /* OptValues.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = OptValues.cpp; path = "../src/optimizer/OptValues.cpp"; sourceTree = "<group>"; };
 		7CF20FDF7FFDEBE6904EB30C /* Optimizer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Optimizer.cpp; path = "../src/optimizer/Optimizer.cpp"; sourceTree = "<group>"; };
-		03A290C37946411CFE0B3F89 /* Adapter.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Adapter.cpp; path = "../src/sema/Adapter.cpp"; sourceTree = "<group>"; };
 		8338456DF5FB4056E77ED590 /* Classes.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Classes.cpp; path = "../src/sema/Classes.cpp"; sourceTree = "<group>"; };
 		A054868FB80953B28380DCA0 /* Constexpr.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Constexpr.cpp; path = "../src/sema/Constexpr.cpp"; sourceTree = "<group>"; };
 		DBAE2C24402373FC3DF070FD /* Linkage.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Linkage.cpp; path = "../src/sema/Linkage.cpp"; sourceTree = "<group>"; };
@@ -213,7 +211,6 @@
 		F4D517239873D2638605F30A /* SsaValues.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = SsaValues.cpp; path = "../src/ir/opt/SsaValues.cpp"; sourceTree = "<group>"; };
 		E6EAF1D1441F03E9A41B4855 /* Abi.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Abi.h; path = "../src/Abi.h"; sourceTree = "<group>"; };
 		14EC8B53EDE3CAB952E236AA /* Ast.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Ast.h; path = "../src/Ast.h"; sourceTree = "<group>"; };
-		60930305A132CB4B774D1FA3 /* AstDump.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = AstDump.h; path = "../src/AstDump.h"; sourceTree = "<group>"; };
 		16C9671A9E9ACF650CAEAED8 /* Dialect.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Dialect.h; path = "../src/Dialect.h"; sourceTree = "<group>"; };
 		E25192F3CFDB944FC301A31E /* Driver.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Driver.h; path = "../src/Driver.h"; sourceTree = "<group>"; };
 		4C2F56CF1CF972F1F6562B1B /* Lexer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Lexer.h; path = "../src/Lexer.h"; sourceTree = "<group>"; };
@@ -233,6 +230,7 @@
 		308F7A97552CB25406EDD6E3 /* CoffEmitter.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = CoffEmitter.h; path = "../src/backend/CoffEmitter.h"; sourceTree = "<group>"; };
 		4385E0CD8761F0F11B0131BB /* Dwarf.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Dwarf.h; path = "../src/backend/Dwarf.h"; sourceTree = "<group>"; };
 		326B43087F9FF0969A1F8F79 /* Masm.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Masm.h; path = "../src/backend/Masm.h"; sourceTree = "<group>"; };
+		1817657F695977B6FC4D1086 /* Regions.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Regions.h; path = "../src/backend/Regions.h"; sourceTree = "<group>"; };
 		A9A1194FC9BA4491688B00EC /* Spelling.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Spelling.h; path = "../src/backend/Spelling.h"; sourceTree = "<group>"; };
 		1A090AFCE8174A1DE49C9C54 /* Tms6747.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Tms6747.h; path = "../src/backend/Tms6747.h"; sourceTree = "<group>"; };
 		C681B0D6A27FF7AEF4F8EF84 /* Walker.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Walker.h; path = "../src/backend/Walker.h"; sourceTree = "<group>"; };
@@ -261,7 +259,6 @@
 		1491EAD374C322E95A1B0387 /* OptStrings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OptStrings.h; path = "../src/optimizer/OptStrings.h"; sourceTree = "<group>"; };
 		D81302B456EA78F011062EF7 /* OptTable.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = OptTable.h; path = "../src/optimizer/OptTable.h"; sourceTree = "<group>"; };
 		DDAAA6CE03164FFC62F4FCCC /* Optimizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Optimizer.h; path = "../src/optimizer/Optimizer.h"; sourceTree = "<group>"; };
-		06BC7E6BAAD9A8B1B6D2B733 /* Adapter.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Adapter.h; path = "../src/sema/Adapter.h"; sourceTree = "<group>"; };
 		441F6A9FA35B9873361F0EE1 /* Classes.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Classes.h; path = "../src/sema/Classes.h"; sourceTree = "<group>"; };
 		849BE61692447D4B9BD79E5D /* ConstArith.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ConstArith.h; path = "../src/sema/ConstArith.h"; sourceTree = "<group>"; };
 		4127EF3A60BCE6796E2E6FDE /* Constexpr.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Constexpr.h; path = "../src/sema/Constexpr.h"; sourceTree = "<group>"; };
@@ -315,8 +312,6 @@
 			children = (
 				E6EAF1D1441F03E9A41B4855 /* Abi.h */,
 				14EC8B53EDE3CAB952E236AA /* Ast.h */,
-				643F79A42EA4B86A673B777F /* AstDump.cpp */,
-				60930305A132CB4B774D1FA3 /* AstDump.h */,
 				16C9671A9E9ACF650CAEAED8 /* Dialect.h */,
 				F3DF4061005105B66B7C5431 /* Driver.cpp */,
 				E25192F3CFDB944FC301A31E /* Driver.h */,
@@ -356,6 +351,8 @@
 				4385E0CD8761F0F11B0131BB /* Dwarf.h */,
 				26553B240B204AB828F1E28D /* Masm.cpp */,
 				326B43087F9FF0969A1F8F79 /* Masm.h */,
+				661D88506C2603709C7864F1 /* Regions.cpp */,
+				1817657F695977B6FC4D1086 /* Regions.h */,
 				67D0740B42D9A977D2929C12 /* Spelling.cpp */,
 				A9A1194FC9BA4491688B00EC /* Spelling.h */,
 				85978B2EF2E91CBA1F68A2DD /* SsaSelect.cpp */,
@@ -511,8 +508,6 @@
 		0D9DA0EE8F7094DFB665A5B3 /* src/sema */ = {
 			isa = PBXGroup;
 			children = (
-				03A290C37946411CFE0B3F89 /* Adapter.cpp */,
-				06BC7E6BAAD9A8B1B6D2B733 /* Adapter.h */,
 				8338456DF5FB4056E77ED590 /* Classes.cpp */,
 				441F6A9FA35B9873361F0EE1 /* Classes.h */,
 				849BE61692447D4B9BD79E5D /* ConstArith.h */,
@@ -589,7 +584,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				5FEE87CF01D36BBAE986C997 /* AstDump.cpp in Sources */,
 				DBCA475D1E4FAFCC4CB67EBB /* Driver.cpp in Sources */,
 				21FFED23CF93F6A22C422DE2 /* Lexer.cpp in Sources */,
 				18E085F0299DB4213F6446F7 /* Mangle.cpp in Sources */,
@@ -621,6 +615,7 @@
 				1851EB7E8826F55DCF775FD5 /* CoffEmitter.cpp in Sources */,
 				9B580F5362355E1FE8EE1106 /* Dwarf.cpp in Sources */,
 				D3E14047F25C331F429FE184 /* Masm.cpp in Sources */,
+				12113116EB8AF9A7776AF253 /* Regions.cpp in Sources */,
 				E449C770B3AB69E828AA4C23 /* Spelling.cpp in Sources */,
 				509B883E630B683EBBE52339 /* SsaSelect.cpp in Sources */,
 				4C3E931330523331CA3D79DD /* Tms6747.cpp in Sources */,
@@ -653,7 +648,6 @@
 				03B240F26ED19F82251EFD97 /* OptTable.cpp in Sources */,
 				DAADAA6DF773BF201DB8B5CF /* OptValues.cpp in Sources */,
 				CD768E1153CBE125A833A3CB /* Optimizer.cpp in Sources */,
-				12847DB0C2D056652D26B743 /* Adapter.cpp in Sources */,
 				D736252A11FBDE5075954A12 /* Classes.cpp in Sources */,
 				BF63A631D74BFCE907DCBADA /* Constexpr.cpp in Sources */,
 				8D03F5F23BAD4ADD0D8535ED /* Linkage.cpp in Sources */,

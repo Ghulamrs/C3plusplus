@@ -17,9 +17,10 @@ namespace masm { struct Instruction; }
 
 namespace ir { struct Module; }
 
-class CodeGen : public Visitor {
+// **The generator**, as the driver drives it; Regions and AstCodeGen (Walker.h) extend it in one chain (M3b.7 round 4 F).
+class CodeGen {
 public:
-    ~CodeGen() override = default;
+    virtual ~CodeGen() = default;
     virtual void run(const Program &program) = 0;
     // **-front=ssa** (M3b.1): a function the module holds is selected from its SSA; a generator with no selector ignores it.
     virtual void setSsa(const ir::Module *module, const TypeTable *types) { (void)module; (void)types; }

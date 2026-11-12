@@ -1,0 +1,14 @@
+first 'literal' 7
+second 'named' 5
+sum 7
+nested 'long' 4
+first 'named' 5
+second 'other' 5
+sum 9
+nested 'local' 5
+caught 18
+kept 5
+caught 19
+info 1 slot 7 8 0 1
+info 2 slot 3 0 0 1
+LEDGER balanced=1 live=0 double=0 phantom=0 over=0 lost=0

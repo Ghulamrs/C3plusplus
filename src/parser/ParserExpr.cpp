@@ -1158,11 +1158,18 @@ std::size_t Parser::operatorSpelled(std::size_t k, std::string &name) const {
     return k;
 }
 
-// Whether the braced list whose `{` is token k, read to at_, holds no `{` of its own: its values are one node each.
+// Whether the braced list whose `{` is token k, read to at_, holds no `{` of its own but an empty `{}`: a node a value.
 bool Parser::flatBraces(std::size_t k) const {
     if (!tokens_[at_ - 1].is("}")) return false;
-    for (std::size_t i = k + 1; i + 1 < at_; i++)
-        if (tokens_[i].is("{") || tokens_[i].is("...")) return false;
+    // A `{` inside a value's parentheses, or after the type name of a value `T{..}`, is that value's own; any other nests.
+    int depth = 0;
+    for (std::size_t i = k + 1; i + 1 < at_; i++) {
+        const Token &w = tokens_[i], &before = tokens_[i - 1];
+        if (w.is("...")) return false;
+        if (w.is("{") && depth == 0 && before.kind != TokenKind::Ident && !before.is(">") && !tokens_[i + 1].is("}")) return false;
+        if (w.is("(") || w.is("[") || w.is("{")) depth++;
+        else if (w.is(")") || w.is("]") || w.is("}")) depth--;
+    }
     return true;
 }
 
@@ -2571,7 +2578,6 @@ ExprPtr Parser::bindReference(const Type *ref, ExprPtr init, std::size_t pos,
     const Type *addrType = types_.pointerTo(referent);
     int slot = allocateFrameSlot(store);
     std::string temp = ".ref" + std::to_string(refTemps_++);
-    if (init->syntax().valid()) bindTemps_[init->syntax().v] = std::make_pair(temp, slot);
 
     ExprPtr target(Var::local(temp, slot));
     target->setType(store);
@@ -3289,8 +3295,6 @@ ExprPtr Parser::noteKeywordForm(syntax::Kind kind, KeywordForm f) {
     if (kind == syntax::Kind::New || kind == syntax::Kind::Delete || kind == syntax::Kind::Throw || kind == syntax::Kind::Lambda || kind == syntax::Kind::Call ||
         (kind == syntax::Kind::Cast && (text.find('&') != std::string::npos || text.compare(0, 12, "dynamic_cast") == 0)))
         noteValue(f.e.get());
-    if (kind == syntax::Kind::Throw && !pendingThrow_.temp.empty()) throwFacts_[f.e->syntax().v] = pendingThrow_;
-    if (kind == syntax::Kind::Throw) pendingThrow_ = ThrowFacts();
     if (kind == syntax::Kind::Cast && text.compare(0, 12, "dynamic_cast") == 0) {
         if (pendingDynCast_.kind != 0) dynCastFacts_[f.e->syntax().v] = pendingDynCast_;
         pendingDynCast_ = DynCastFacts{ std::string(), std::string(), 0 };

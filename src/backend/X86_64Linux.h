@@ -5,7 +5,7 @@
 #include "../optimizer/Inliner.h"
 #include "../optimizer/Optimizer.h"
 #include "Spelling.h"
-#include "Walker.h"
+#include "Regions.h"
 #include "../ir/Ir.h"
 
 #include <iosfwd>
@@ -40,7 +40,8 @@ private:
     LinuxX86_64Target target_;
 };
 
-class X86_64Linux : public Walker {
+// **Selected from SSA alone** (M3b.7): a Regions, no Visitor - the walkers left are arm64-darwin's and tms6747's.
+class X86_64Linux : public Regions {
 public:
     // **The COFF spelling where the names are Microsoft's.**
     X86_64Linux(std::ostream &sink, const Target &target, const Abi &abi)
@@ -49,25 +50,11 @@ public:
         plain_ = a_;
     }
 
-    using Walker::visit;
     void run(const Program &program) override;
+    void setLineSource(const Source *s, const std::string &dir) override { holdLineSource(s, dir); }
     void setOptimize(int level) override;
     void setMirDump(std::ostream *to, const std::string &afterPass) override { mirDump_ = to; mirDumpAfter_ = afterPass; }
     void setSsa(const ir::Module *module, const TypeTable *types) override { ssa_ = module; ssaTypes_ = types; }
-
-    void visit(const Num &) override;
-    void visit(const Var &) override;
-    void visit(const Assign &) override;
-    void visit(const Unary &) override;
-    void visit(const Binary &) override;
-    void visit(const Postfix &) override;
-    void visit(const Call &) override;
-    void visit(const Cast &) override;
-    void visit(const StrLit &) override;
-    void visit(const VaStart &) override;
-    void visit(const VaArg &) override;
-    void visit(const MemberAccess &) override;
-    void visit(const Return &) override;
 
 protected:
 
@@ -162,8 +149,6 @@ protected:
     int frameSize_ = 0;
     // **The shadow space, allocated once at the floor of the frame** rather than around each call; 0 where the ABI has none or the body calls nothing. A call finds it at rsp only when nothing is pushed above it.
     int outgoing_ = 0;
-    // How far below the floor rsp stood when a callee began to be walked in place; that walk counts depth_ from zero again.
-    int floorDepth_ = 0;
     // Inside a funclet, whose own frame holds 32 bytes and no more.
     bool inFunclet_ = false;
     // The function being written has an LSDA or FH3 tables: its selected body's pads (ir::Function::landingPads, or the parser's).
@@ -206,9 +191,6 @@ private:
     void emitLoc(int file, int line, int column) override { a_->location(file, line, column); }
     void defineLabel(const std::string &l) override;
     void defineStateLabel(const std::string &l) override;
-    void jump(const std::string &l) override;
-    void branchIfZero(const std::string &l) override;
-    void branchIfNotZero(const std::string &l) override;
     void caseBranch(long long v, const std::string &l) override;
     std::string labelPrefix_;
     int sretSlot_ = 0;
@@ -217,7 +199,6 @@ private:
 
     void emit(const Function &fn);
     void receiveParameters(const Function &fn);
-    void walkBody(const Function &fn);
     void returnThis(const Function &fn);
     // **The SSA selector** (M3b.1, SsaSelect.cpp): the module -front=ssa handed over, and the frame it lays above the parser's.
     const ir::Module *ssa_ = nullptr;
@@ -245,7 +226,10 @@ private:
     void ssaAddress(const ir::Function &f, ir::ValueId p, const char *base, const char *index);
     std::uint32_t ssaNext_ = 0;                     // the block written after the one being selected, 0 where a funclet is
     void ssaLoadReg(const ir::Function &f, ir::ValueId v, const char *r);
-    ExprPtr ssaExpr(const ir::Function &f, ir::ValueId v) const;
+    // **An operand of the selector's call, return or va code**: a slot, a constant or a frame object's address, typed.
+    struct SsaOperand { enum Kind { Slot, Const, Frame } kind; long long at; const Type *loaded, *type; };
+    SsaOperand ssaOperand(const ir::Function &f, ir::ValueId v) const;
+    void ssaEval(const SsaOperand &o);
     void ssaLoad(const ir::Function &f, ir::ValueId v);
     void ssaStore(const ir::Function &f, ir::ValueId v);
     std::string ssaBlockLabel(ir::BlockId b) const;
@@ -265,18 +249,18 @@ private:
     std::vector<std::pair<unsigned long long, std::uint32_t> > ssaTryOrder_;    // each finished try's last block and its pad: the map's order
     void selectHandler(const ir::Function &f, ir::BlockId hb);
     void selectInst(const ir::Function &f, const ir::Inst &i);
+    // -g: the statements that begin before `i` (ir::Inst::lines), then `i` - the body's blocks and a funclet's alike.
+    void selectMarked(const ir::Function &f, const ir::Inst &i) { for (std::size_t m = 0; m < i.lines.size(); m++) ssaMark(i.lines[m]); selectInst(f, i); }
+    void ssaMark(std::uint32_t m) {
+        const std::uint32_t block = ir::kBlockOpens | ir::kBlockCloses;
+        if (m & block) markBlock(ssaFn_->blockAt(m & ~block), (m & ir::kBlockCloses) != 0); else markLine(m);
+    }
+    const Function *ssaFn_ = nullptr;
     void selectBody(const Function &fn, const ir::Function &f);
-    // The parser's scalar locals; under SSA only its parameters' slots, the rest of its frame being the selector's (layoutSsa).
-    std::vector<opt::Local> scalarsOf(const Function &fn, bool paramsOnly = false) const;
-    // Inline expansion - see inlineTarget; the inliner decides, by the
-    // level's costs, which sites are worth it.
-    const Function *inlineTarget(const Call &n, int stackSlots) const;
-    void walkInPlace(const Function &fn);
+    // The parser's parameters' slots that hold a scalar; the rest of the frame is the selector's (layoutSsa).
+    std::vector<opt::Local> scalarsOf(const Function &fn) const;
+    // Read for largestFrame alone: the reserve a funclet-cut frame kept for a callee walked in place (see emit).
     std::unique_ptr<Inliner> inliner_;
-    std::map<std::string, const Function *> bodies_;
-    const Function *current_ = nullptr;
-    bool inPlace_ = false;
-    bool inlining() const;
     int inlineReserve_ = 0;
     void finishChunk();
     std::string label(const char *kind, int id) const override;
@@ -316,23 +300,15 @@ private:
     void loadX87Const(long double v);
     void x87ToInt(const Type *to);
     void intToX87(const Type *from);
-    void genX87Binary(const Binary &n);
-
-    void genAddr(const Expr &e);
 
     void load(const Type *t);
     void store(const Type *t);
     void storeAt(const Type *t, int offset);
-    void bitFieldUnitAddr(const MemberAccess &m);
-    void bitFieldExtract(const MemberAccess &m);
-    void bitFieldInsert(const MemberAccess &m);
 
     void copyBlock(int size);
 
     void canonicalise(const Type *t);
-    void genFloatBinary(const Binary &n);
     void genConversion(const Type *from, const Type *to);
-    void genTruth(const Expr &e) override;
 
     const char *acc(const Type *t) const;
     const char *rhs(const Type *t) const;
@@ -373,12 +349,30 @@ private:
     Placement placeArguments(const std::vector<const Type *> &types,
                              bool hasThis, bool sret) const;
     // Whether a call's result comes back through a hidden pointer, and the
-    // whole call placed - what visit(Call) and the outgoing area both ask.
+    // whole call placed - what the outgoing area asks of the parser's Call nodes (see emit).
     bool returnsThroughPointer(const Call &n) const;
+    bool returnsThroughPointer(const Type *t, bool hasThis) const;
     Placement placeCall(const Call &n) const;
-    // Whether evaluating `e` may make a call at the floor that writes the
-    // outgoing area above its shadow space - see visit(Call).
-    bool mayWriteArea(const Expr &e) const;
+    // **A call as the ABI code reads it**: the selector's operands (SsaCall, SsaSelect.cpp).
+    struct CallShape {
+        virtual ~CallShape() {}
+        virtual std::size_t args() const = 0;
+        virtual const Type *argType(std::size_t i) const = 0;
+        virtual void evalArg(std::size_t i) = 0;                   // into the accumulator
+        virtual void evalCallee() = 0;
+        const Type *type = nullptr;
+        std::string symbol;
+        bool indirect = false, variadic = false, hasThis = false, resultIndirect = false;
+        int namedArgs = 0, resultSlot = 0;
+        std::vector<int> argSlots;
+        int argSlot(std::size_t i) const { return i < argSlots.size() ? argSlots[i] : 0; }
+    };
+    void emitCall(CallShape &n);
+    // What follows a return value or a va list pointer in the accumulator, from Return, VaArg and VaStart and the selector.
+    void returnValue(const Type *t);
+    void vaArg(const Type *t);
+    void vaStart();
+    void loadConstant(const Type *t, long long v, long double d);
 };
 
 std::vector<bool> classifyEightbytes(const Type *t, const Target &target);

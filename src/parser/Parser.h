@@ -624,35 +624,19 @@ private:
     // pointers it stores, and the virtual bases it builds in order, each's constructor in memberBuilt_ as "^V" (M3b.2).
     std::map<std::string, std::vector<sema::VptrStore> > msVbptrs_;
     std::map<std::string, std::vector<std::string> > msVbaseOrder_;
-    // **What the parser decides of layout as it reads, by node** (M2.11): a `var`'s frame slot, a block's or a `for`'s
-    // scope, and the symbol a `function` node was defined as - what the adapter cannot derive from types.
+    // **What the parser decides of layout as it reads, by node** (M2.11): a `var`'s frame slot and the symbol a
+    // `function` node was defined as.
     std::unordered_map<std::uint32_t, Local> declaredLocals_;
-    std::unordered_map<std::uint32_t, int> syntaxScopes_;
     std::unordered_map<std::uint32_t, std::string> syntaxFunctions_;
     std::unordered_map<std::uint32_t, const Type *> declaredReturns_;   // a reference return as written (M2.12)
     // A call's frame slots - its result's, each argument's, and whether the result's holds a pointer - by node (M2.12).
     struct CallSlots { int result = 0; bool indirect = false; std::vector<int> args; std::string symbol; };
     std::unordered_map<std::uint32_t, CallSlots> callSlots_;
-    // A block's cleanup slots - the exception pointer's and the selector's - and the `.ret` a return saves its value
-    // in before destroying what is alive, by node (M2.12h). The last pair wrapCleanups chose is what block() records.
-    std::unordered_map<std::uint32_t, std::pair<int, int> > blockCleanups_;
-    std::pair<int, int> lastCleanupSlots_;
-    struct ReturnTemp { std::string name; int slot = 0; };
     // What buildReturned made of `return value;` (M3b.2): 1 the named return value, in the caller's object already;
     // 2 a call built into it; 3 a temporary built into it; 4 a copy by `symbol`, its type with `T *` first. By the `return` node.
     struct ReturnBuilt { int form = 0; std::string symbol; const Type *signature = nullptr; };
     std::unordered_map<std::uint32_t, ReturnBuilt> returnBuilt_;
     ReturnBuilt pendingReturnBuilt_;
-    std::unordered_map<std::uint32_t, ReturnTemp> returnTemps_;
-    ReturnTemp pendingReturnTemp_;
-    // A `try` the adapter can rebuild, by node: its slots, its chain's label, its types and each handler's facts.
-    struct TryHandlerFacts { int scope = 0; std::string endLabel; int padPtr = 0, padSel = 0; bool canThrow = false; };
-    struct TryFacts {
-        bool simple = false; int ptr = 0, sel = 0; std::string chain;
-        std::size_t aliveOutside = 0, owesFrom = 0; bool unwindsHere = false;
-        std::vector<std::string> types; std::vector<int> indices; std::vector<TryHandlerFacts> handlers;
-    };
-    std::unordered_map<std::uint32_t, TryFacts> tryFacts_;
     std::set<std::string> wrappedBodies_;
     std::set<std::string> plainFunctionTries_;   // of those, an ordinary function's try block alone (M3b.2)
     std::map<std::string, std::string> specFilters_;   // an ordinary function's or a constructor's throw(...) filter, `$spec,<types>`
@@ -684,11 +668,6 @@ private:
         const Type *listOf = nullptr;   // the initializer_list the braces were made into, where a constructor took one
     };
     std::map<std::string, StaticGuard> staticGuards_;
-    TryFacts pendingTry_;
-    // A `throw` of a scalar on the Itanium targets: the slot holding the exception's storage, and its type_info.
-    struct ThrowFacts { std::string temp; int slot = 0; std::string info; };
-    std::unordered_map<std::uint32_t, ThrowFacts> throwFacts_;
-    ThrowFacts pendingThrow_;
     // A `new` or `delete` as the SSA lowering may take it (M3b.2): allocation function, type, initialiser (0 none, 1 value-
     // initialised, 2 one value), `why` where it may not; a class's chosen constructor, its type with `T *` first, zeroed first,
     // defaults added; bytesCopied, `new T(t)` storing t's bytes ([class.copy]/12); vectorLoop, `new T[n]`'s element builder.
@@ -846,8 +825,6 @@ private:
     // by "constructor|class::member" (M3b.2); memberDefaultFor_ names the constructor while memberInitialiser runs for it.
     std::map<std::string, syntax::NodeId> memberDefaults_;
     std::string memberDefaultFor_;
-    // A class temporary `T(a)` is `*(ctor(&$tmp, a), &$tmp)`, its slot the parser's: kept by node (M2.12i).
-    std::unordered_map<std::uint32_t, int> temporarySlots_;
     // The operator-> calls `->` on a class made, [over.ref]'s hops in order, by the node of the operand they were asked of (M3b.2).
     std::unordered_map<std::uint32_t, std::vector<std::uint32_t> > arrowCalls_;
     // The conversion function a class value was converted by, [class.conv.fct]: the call's record, by the value's node (M3b.2).
@@ -856,6 +833,12 @@ private:
     // And the constructor that built it, by node: its symbol, its type with `T *` first, and whether `T()` zeroed first.
     struct TemporaryBuilt { std::string symbol; const Type *signature; bool zeroFirst; };
     std::unordered_map<std::uint32_t, TemporaryBuilt> temporaryBuilt_;
+    // A temporary's constructor's defaults, by its slot until its node is noted: then memberDefaults_' "function|^$tmp:<node>".
+    std::unordered_map<int, syntax::NodeId> temporaryDefaults_;
+    std::string defaultsOwner_;     // the function whose call applyDefaults is completing, while currentFunction_ is hidden
+    // The position of the braces `return { ... };` built its value from, for the return's node to take their record.
+    std::size_t pendingReturnBraces_ = 0;
+    std::string pendingReturnEmpty_;     // "$ret:" and the return's position while `return {}` is read (M3b.7)
     // The constructor a braced list made a temporary through (listTemporaryFrom), by its braces' position - the `{}`
     // node's, which the typer reads where a node has no record of its own; empty where a replay built it otherwise.
     std::map<std::uint32_t, TemporaryBuilt> bracedBuilt_;
@@ -873,8 +856,6 @@ private:
     // symbol and type with `T *` first - or `elided`, the call producing the argument built straight into it (M3b.2).
     struct ArgumentCopy { std::string symbol; const Type *signature; bool elided; };
     std::unordered_map<std::uint32_t, ArgumentCopy> argumentCopies_;
-    // A value a const or rvalue reference binds copied into a frame slot by bindReference: its name and slot, by node.
-    std::unordered_map<std::uint32_t, std::pair<std::string, int> > bindTemps_;
     // A lambda whose captures are scalar locals: the closure's slot and each capture's member and source, by node.
     struct LambdaCapture { std::string member; int offset = 0; const Type *type = nullptr;
                            std::string src; int srcOffset = 0; const Type *srcType = nullptr; bool srcConst = false;
@@ -888,10 +869,6 @@ private:
     struct CaseFacts { long long value; bool isDefault; int id; };
     std::unordered_map<std::uint32_t, CaseFacts> caseFacts_;
     std::unordered_map<std::uint32_t, std::pair<const Type *, bool> > refCastTypes_;
-    // A range-based for over an array with nothing alive: its two iterator slots and the scopes of the loop and body.
-    struct RangeFacts { std::string bName, eName; int bSlot, eSlot, scope, inner; };
-    std::unordered_map<std::uint32_t, RangeFacts> rangeFacts_;
-    RangeFacts pendingRange_ = RangeFacts();
     // A range-based for over a class range, an object or a temporary: its begin and end calls' records, and a class
     // iterator's `!=`, `*` and `++` (M3b.2).
     struct RangeCalls { std::uint32_t begin = 0, end = 0, ne = 0, deref = 0, inc = 0; };
@@ -923,7 +900,6 @@ private:
         const Var *tmp = at != nullptr && at->op() == '&' ? dynamic_cast<const Var *>(&at->operand()) : nullptr;
         if (tmp != nullptr && tmp->name().compare(0, 5, "$list") == 0) resolutions_[e->syntax().v] = temporaryOf(e);
         if (tmp == nullptr || tmp->name() != "$tmp") return;
-        temporarySlots_[e->syntax().v] = tmp->offset();
         // The temporary's class, and the constructor that built it where one did - behind the zeroing of `T()` for an
         // implicit one, which the SSA lowering's record says (M3b.2).
         const std::uint32_t ctor = both->left().resolved();
@@ -938,15 +914,11 @@ private:
         if (built != 0 && resolvedTable_[built].what == Resolved::Call) {
             const TemporaryBuilt b = { resolvedTable_[built].symbol, resolvedTable_[built].type, zeroed != nullptr };
             temporaryBuilt_[e->syntax().v] = b;
+            const std::unordered_map<int, syntax::NodeId>::const_iterator d = temporaryDefaults_.find(tmp->offset());
+            if (d != temporaryDefaults_.end() && d->second.valid())
+                memberDefaults_[(currentFunction_.empty() ? defaultsOwner_ : currentFunction_) + "|^$tmp:" + std::to_string(e->syntax().v)] = d->second;
         }
-        for (std::size_t i = 0; i < pendingTemps_.size(); i++)
-            if (pendingTemps_[i].slot == tmp->offset()) temporaryGuards_[e->syntax().v] = pendingTemps_[i].flag;
     }
-    // A temporary's guard flag, by node; the guards a function clears at its entry, by symbol; and the slot a
-    // full expression's value is kept in while its temporaries die, by the expression's node (M2.12p).
-    std::unordered_map<std::uint32_t, int> temporaryGuards_;
-    std::map<std::string, std::vector<int> > functionGuards_;
-    std::unordered_map<std::uint32_t, int> fullSlots_;
     // **How a class goes to a function, and the two ABIs part company here.** Itanium
     // passes one by address whenever copying or destroying it is a call, and the caller
     // destroys the copy; Microsoft passes by the size rules and the callee destroys.
@@ -987,6 +959,7 @@ private:
     std::vector<std::size_t> scopeStarts_;
     std::vector<int> blocks_;
     std::vector<int> blockStack_;
+    std::vector<std::size_t> blockAt_;     // where each block of blocks_ opens (its `{` or `for`), 0 unknown: -g under SSA
 
     bool atFunctionBody_ = false;
     int frameSize_ = 0;
@@ -1268,6 +1241,7 @@ private:
         std::vector<::Local> fnVars;
         std::vector<std::size_t> scopeStarts;
         std::vector<int> blocks, blockStack;
+        std::vector<std::size_t> blockAt;
         std::vector<LabelDef> labels, gotos;
         int frameSize = 0, thisOffset = 0, frameAlign = 16;
         std::vector<FreeSlot> freeSlots;
@@ -1323,12 +1297,7 @@ private:
         // Block-scope, and a lambda's body is its own block: a using-directive written in one reached the function's end.
         std::vector<std::string> usingNamespaces;
         // The facts a parse records for the syntax node that takes them (M2.13): set deep in a statement, read at its end.
-        std::pair<int, int> lastCleanupSlots;
-        ReturnTemp pendingReturnTemp;
-        TryFacts pendingTry;
-        ThrowFacts pendingThrow;
         NewFacts pendingNew;
-        RangeFacts pendingRange = RangeFacts();
         LambdaFacts pendingLambda;
         std::vector<syntax::NodeId> lambdaBodies;
         std::map<int, LocalBuilt> ctorBySerial;
@@ -1847,7 +1816,7 @@ private:
     void enterScope();
     void leaveScope();
 
-    int enterBlock();
+    int enterBlock(std::size_t pos = 0);
     void leaveBlock();
     int currentBlock() const { return blockStack_.empty() ? 0 : blockStack_.back(); }
 
@@ -1948,7 +1917,7 @@ private:
     // A temporary built by a named constructor from arguments already parsed.
     ExprPtr constructTemporary(const Type *plain, const Signature &ctor,
                                std::vector<ExprPtr> args, bool zeroFirst,
-                               std::size_t pos);
+                               std::size_t pos, std::size_t written = static_cast<std::size_t>(-1));
     // **[over.ics.user]**.
     const Signature *convertingConstructor(const Type *to, const Expr &from,
                                            std::size_t pos = 0, bool directInit = false);
@@ -2207,6 +2176,7 @@ private:
     bool constructedClass(const Type *t) const;
     bool needsConstruction(const Type *t) const;
     void noteAggregateMember(const Type *cls, const Signature *ctor, std::size_t written, bool zeroed);
+    void noteListBuilt(std::uint32_t key, const ListBuilt &record);
     ListBuilt emitRecordedInit(const std::string &name, std::vector<InitStep> &path, const Type *type, Init &in, std::vector<StmtPtr> &out);
     void initConstruct(const std::string &name, std::vector<InitStep> &path, const Type *type,
                        std::vector<ExprPtr> args, bool valueInit, std::size_t pos, std::vector<StmtPtr> &out);

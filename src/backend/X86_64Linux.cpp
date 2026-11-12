@@ -305,52 +305,6 @@ void X86_64Linux::canonicalise(const Type *t) {
     else if (sz == 4) { if (sign) a_->ins("movslq", reg("%eax"), reg("%rax")); else a_->ins("mov", reg("%eax"), reg("%eax")); }
 }
 
-void X86_64Linux::genAddr(const Expr &e) {
-    if (const Var *v = dynamic_cast<const Var *>(&e)) {
-        if (v->isLocal()) a_->ins("lea", local(v->offset()), reg("%rax"));
-        else if (v->isThreadLocal()) tlsAddress(v->symbol(), v->viaWrapper());
-        else if (target_.microsoftNames() || definedHere_.count(v->symbol()) != 0)
-            a_->ins("lea", rip(v->symbol()), reg("%rax"));
-        else {
-            // A symbol from another object may be in a shared library, and a PIE cannot reach it by PC32.
-            const std::string got = v->symbol() + "@GOTPCREL";
-            a_->ins("mov", rip(got), reg("%rax"));
-        }
-        return;
-    }
-    if (const Unary *u = dynamic_cast<const Unary *>(&e)) {
-        if (u->op() == '*') { u->operand().accept(*this); return; }
-    }
-    if (const MemberAccess *m = dynamic_cast<const MemberAccess *>(&e)) {
-        if (m->isBitField()) {
-            std::fprintf(stderr, "codegen: '%s' is a bit-field and has no address\n",
-                         m->name().c_str());
-            compileFailed();
-        }
-        genAddr(m->object());
-        if (m->offset() != 0) a_->ins("add", imm(m->offset()), reg("%rax"));
-        return;
-    }
-    if (const StrLit *s = dynamic_cast<const StrLit *>(&e)) {
-        a_->ins("lea", rip(s->label()), reg("%rax"));
-        return;
-    }
-    if (const Call *c = dynamic_cast<const Call *>(&e)) {
-        if (c->type()->isStructOrUnion()) { c->accept(*this); return; }
-    }
-    if (const Conditional *q = dynamic_cast<const Conditional *>(&e)) {
-        if (q->type()->isStructOrUnion()) { q->accept(*this); return; }
-    }
-    // **A constructed temporary is a Comma, and it has an address.**
-    if (const Comma *c = dynamic_cast<const Comma *>(&e)) {
-        c->left().accept(*this);
-        genAddr(c->right());
-        return;
-    }
-    std::fprintf(stderr, "codegen: this has no address\n");
-    compileFailed();
-}
-
 void X86_64Linux::load(const Type *t) {
     if (t->isArray() || t->isStructOrUnion()) return;
 
@@ -405,30 +359,25 @@ void X86_64Linux::loadX87Const(long double v) {
     a_->ins("add", immText("16"), reg("%rsp"));
 }
 
-void X86_64Linux::visit(const Num &n) {
-    if (!n.type()->isFloating()) {
-        a_->ins("mov", imm(n.value()), reg("%rax"));
+void X86_64Linux::loadConstant(const Type *t, long long v, long double dv) {
+    if (!t->isFloating()) {
+        a_->ins("mov", imm(v), reg("%rax"));
         return;
     }
-    if (isX87(n.type())) { loadX87Const(n.dvalue()); return; }
-    if (genKind(n.type()) == Kind::Float) {
-        float f = static_cast<float>(n.dvalue());
+    if (isX87(t)) { loadX87Const(dv); return; }
+    if (genKind(t) == Kind::Float) {
+        float f = static_cast<float>(dv);
         unsigned int bits;
         std::memcpy(&bits, &f, 4);
         a_->ins("mov", imm(bits), reg("%eax"));
         a_->ins("movd", reg("%eax"), reg("%xmm0"));
     } else {
-        double d = n.dvalue();
+        double d = static_cast<double>(dv);
         unsigned long long bits;
         std::memcpy(&bits, &d, 8);
         a_->ins("movabs", imm(bits), reg("%rax"));
         a_->ins("movq", reg("%rax"), reg("%xmm0"));
     }
-}
-
-void X86_64Linux::visit(const Var &n) {
-    genAddr(n);
-    load(n.type());
 }
 
 // **Measured from clang and cl.** ELF: the thread pointer at %fs:0 plus the object's offset, local-exec,
@@ -461,18 +410,6 @@ void X86_64Linux::msTlsBlock() {
     a_->ins("shl", imm(3), reg("%rax"));
     a_->ins("add", reg("%rcx"), reg("%rax"));
     a_->ins("mov", mem("%rax"), reg("%rax"));
-}
-
-void X86_64Linux::visit(const StrLit &n) { genAddr(n); }
-
-void X86_64Linux::visit(const MemberAccess &n) {
-    if (n.isBitField()) {
-        bitFieldUnitAddr(n);
-        bitFieldExtract(n);
-        return;
-    }
-    genAddr(n);
-    load(n.type());
 }
 
 // From (%rax) to (scratch), which is left as it was; %rax and %rcx are not.
@@ -518,173 +455,6 @@ void X86_64Linux::copyBlock(int size) {
     }
     if (save) { a_->ins("pop", reg("%rdi")); a_->ins("pop", reg("%rsi")); }
     else if (string && std::strcmp(abi_.scratch, "%rdi") == 0) a_->ins("sub", imm(8 * words), reg("%rdi"));
-}
-
-void X86_64Linux::bitFieldUnitAddr(const MemberAccess &m) {
-    genAddr(m.object());
-    if (m.offset() != 0) a_->ins("add", imm(m.offset()), reg("%rax"));
-}
-
-void X86_64Linux::bitFieldExtract(const MemberAccess &m) {
-    load(m.type());
-    int left = 64 - m.bitOffset() - m.width();
-    int right = 64 - m.width();
-    if (left > 0) a_->ins("shl", imm(left), reg("%rax"));
-    a_->ins(m.type()->isSigned(target_) ? "sar" : "shr", imm(right), reg("%rax"));
-}
-
-void X86_64Linux::bitFieldInsert(const MemberAccess &m) {
-    unsigned long long ones = (m.width() == 64) ? ~0ULL : ((1ULL << m.width()) - 1);
-    unsigned long long mask = ones << m.bitOffset();
-
-    a_->ins("mov", reg("%rax"), reg("%rdx"));
-    a_->ins("movabs", imm(ones), reg("%rcx"));
-    a_->ins("and", reg("%rcx"), reg("%rdx"));
-    if (m.bitOffset() != 0) a_->ins("shl", imm(m.bitOffset()), reg("%rdx"));
-
-    a_->ins("push", reg("%rax"));
-    a_->ins("mov", reg(abi_.scratch), reg("%rax"));
-    load(m.type());
-    a_->ins("movabs", imm(~mask), reg("%rcx"));
-    a_->ins("and", reg("%rcx"), reg("%rax"));
-    a_->ins("or", reg("%rdx"), reg("%rax"));
-    store(m.type());
-    a_->ins("pop", reg("%rax"));
-
-    int right = 64 - m.width();
-    a_->ins("shl", imm(right), reg("%rax"));
-    a_->ins(m.type()->isSigned(target_) ? "sar" : "shr", imm(right), reg("%rax"));
-}
-
-void X86_64Linux::visit(const Assign &n) {
-    const MemberAccess *bf = dynamic_cast<const MemberAccess *>(&n.target());
-    if (bf != nullptr && !bf->isBitField()) bf = nullptr;
-
-    n.value().accept(*this);
-    bool x87 = isX87(n.type());
-    bool inSse = !x87 && n.type()->isFloating();
-    if (x87)          pushX87();
-    else if (inSse)   pushF();
-    else              push();
-
-    if (bf) bitFieldUnitAddr(*bf);
-    else    genAddr(n.target());
-    a_->ins("mov", reg("%rax"), reg(abi_.scratch));
-
-    if (x87)        popX87();
-    else if (inSse) popF("%xmm0");
-    else            pop("%rax");
-
-    if (n.type()->isStructOrUnion()) {
-        copyBlock(n.type()->size(target_));
-        a_->ins("mov", reg(abi_.scratch), reg("%rax"));
-        return;
-    }
-    if (bf) { bitFieldInsert(*bf); return; }
-
-    store(n.type());
-    if (!n.type()->isFloating()) canonicalise(n.type());
-}
-
-void X86_64Linux::visit(const Postfix &n) {
-    genAddr(n.target());
-    push();
-    load(n.type());
-
-    if (isX87(n.type())) {
-        a_->ins("fld", reg("%st(0)"));
-        a_->ins("fld1");
-
-        a_->ins(n.increment() ? "faddp" : "fsubrp", reg("%st"), reg("%st(1)"));
-        pop(abi_.scratch);
-        store(n.type());
-        return;
-    }
-
-    if (n.type()->isFloating()) {
-        pushF();
-        bool single = genKind(n.type()) == Kind::Float;
-        if (single) {
-            float one = 1.0f;
-            unsigned int bits;
-            std::memcpy(&bits, &one, sizeof bits);
-            a_->ins("mov", imm(bits), reg("%eax"));
-            a_->ins("movd", reg("%eax"), reg("%xmm1"));
-            a_->ins(n.increment() ? "addss" : "subss", reg("%xmm1"), reg("%xmm0"));
-        } else {
-            double one = 1.0;
-            unsigned long long bits;
-            std::memcpy(&bits, &one, sizeof bits);
-            a_->ins("movabs", imm(bits), reg("%rax"));
-            a_->ins("movq", reg("%rax"), reg("%xmm1"));
-            a_->ins(n.increment() ? "addsd" : "subsd", reg("%xmm1"), reg("%xmm0"));
-        }
-        popF("%xmm1");
-        pop(abi_.scratch);
-        store(n.type());
-        a_->ins("movapd", reg("%xmm1"), reg("%xmm0"));
-        return;
-    }
-
-    push();
-    a_->ins(n.increment() ? "add" : "sub", imm(n.step()), reg("%rax"));
-    pop("%rdx");
-    pop(abi_.scratch);
-    store(n.type());
-    a_->ins("mov", reg("%rdx"), reg("%rax"));
-}
-
-void X86_64Linux::visit(const Unary &n) {
-    if (n.op() == '&') { genAddr(n.operand()); return; }
-    if (n.op() == '*') {
-        n.operand().accept(*this);
-        load(n.type());
-        return;
-    }
-
-    n.operand().accept(*this);
-    if (n.op() == '-' && isX87(n.type())) {
-        a_->ins("fchs");
-        return;
-    }
-    if (n.op() == '!' && isX87(n.operand().type())) {
-        a_->ins("fldz");
-        a_->ins("fucomip", reg("%st(1)"), reg("%st"));
-        a_->ins("fstp", reg("%st(0)"));
-        a_->ins("sete", reg("%al"));
-        a_->ins("setnp", reg("%cl"));
-        a_->ins("and", reg("%cl"), reg("%al"));
-        a_->ins("movzbq", reg("%al"), reg("%rax"));
-        return;
-    }
-    if (n.op() == '-' && n.type()->isFloating()) {
-
-        if (genKind(n.type()) == Kind::Double) {
-            a_->ins("movabs", imm(0x8000000000000000ULL), reg("%rax"));
-            a_->ins("movq", reg("%rax"), reg("%xmm1"));
-            a_->ins("xorpd", reg("%xmm1"), reg("%xmm0"));
-        } else {
-            a_->ins("mov", imm(0x80000000U), reg("%eax"));
-            a_->ins("movd", reg("%eax"), reg("%xmm1"));
-            a_->ins("xorps", reg("%xmm1"), reg("%xmm0"));
-        }
-    } else if (n.op() == '-') {
-        a_->ins("neg", reg(acc(n.type())));
-        canonicalise(n.type());
-    } else if (n.op() == '!' && n.operand().type()->isFloating()) {
-        bool isDouble = genKind(n.operand().type()) == Kind::Double;
-        a_->ins("pxor", reg("%xmm1"), reg("%xmm1"));
-        a_->ins(isDouble ? "ucomisd" : "ucomiss", reg("%xmm1"), reg("%xmm0"));
-
-        a_->ins("sete", reg("%al"));
-        a_->ins("setnp", reg("%cl"));
-        a_->ins("and", reg("%cl"), reg("%al"));
-        a_->ins("movzbq", reg("%al"), reg("%rax"));
-    } else if (n.op() == '!') {
-        a_->ins("cmp", immText("0"), reg("%rax"));
-        a_->ins("sete", reg("%al"));
-        a_->ins("movzbq", reg("%al"), reg("%rax"));
-    }
 }
 
 void X86_64Linux::x87ToInt(const Type *to) {
@@ -823,188 +593,6 @@ void X86_64Linux::genConversion(const Type *from, const Type *to) {
     canonicalise(to);
 }
 
-void X86_64Linux::visit(const Cast &n) {
-    n.value().accept(*this);
-    genConversion(n.value().type(), n.type());
-}
-
-void X86_64Linux::genX87Binary(const Binary &n) {
-    n.lhs().accept(*this);
-    pushX87();
-    n.rhs().accept(*this);
-    a_->ins("fldt", mem("%rsp"));
-    a_->ins("add", immText("16"), reg("%rsp"));
-    depth_ -= 2;
-
-    switch (n.op()) {
-    case BinOp::Add: a_->ins("faddp", reg("%st"), reg("%st(1)")); return;
-    case BinOp::Sub: a_->ins("fsubp", reg("%st"), reg("%st(1)")); return;
-    case BinOp::Mul: a_->ins("fmulp", reg("%st"), reg("%st(1)")); return;
-    case BinOp::Div: a_->ins("fdivp", reg("%st"), reg("%st(1)")); return;
-    default: break;
-    }
-
-    const char *set = nullptr;
-    bool swapped = false;
-    switch (n.op()) {
-    case BinOp::Eq: case BinOp::Ne: break;
-    case BinOp::Lt: set = "seta";  swapped = true; break;
-    case BinOp::Le: set = "setae"; swapped = true; break;
-    case BinOp::Gt: set = "seta";  break;
-    case BinOp::Ge: set = "setae"; break;
-    default:
-        std::fprintf(stderr, "codegen: that operator has no floating form\n");
-        compileFailed();
-    }
-
-    if (swapped) a_->ins("fxch", reg("%st(1)"));
-    a_->ins("fucomip", reg("%st(1)"), reg("%st"));
-    a_->ins("fstp", reg("%st(0)"));
-
-    if (n.op() == BinOp::Eq) {
-        a_->ins("sete", reg("%al"));
-        a_->ins("setnp", reg("%cl"));
-        a_->ins("and", reg("%cl"), reg("%al"));
-    } else if (n.op() == BinOp::Ne) {
-        a_->ins("setne", reg("%al"));
-        a_->ins("setp", reg("%cl"));
-        a_->ins("or", reg("%cl"), reg("%al"));
-    } else {
-        a_->ins(set, reg("%al"));
-    }
-    a_->ins("movzbq", reg("%al"), reg("%rax"));
-}
-
-void X86_64Linux::genFloatBinary(const Binary &n) {
-    const Type *t = n.lhs().type();
-    if (isX87(t)) { genX87Binary(n); return; }
-    bool isDouble = genKind(t) == Kind::Double;
-    const char *sfx = isDouble ? "sd" : "ss";
-
-    n.rhs().accept(*this);
-    pushF();
-    n.lhs().accept(*this);
-    popF("%xmm1");
-
-    switch (n.op()) {
-    case BinOp::Add: a_->ins(std::string("add") + sfx, reg("%xmm1"), reg("%xmm0")); return;
-    case BinOp::Sub: a_->ins(std::string("sub") + sfx, reg("%xmm1"), reg("%xmm0")); return;
-    case BinOp::Mul: a_->ins(std::string("mul") + sfx, reg("%xmm1"), reg("%xmm0")); return;
-    case BinOp::Div: a_->ins(std::string("div") + sfx, reg("%xmm1"), reg("%xmm0")); return;
-    default: break;
-    }
-
-    const char *set = nullptr;
-    bool swapped = false;
-    switch (n.op()) {
-    case BinOp::Eq: case BinOp::Ne: break;
-    case BinOp::Lt: set = "seta";  swapped = true; break;
-    case BinOp::Le: set = "setae"; swapped = true; break;
-    case BinOp::Gt: set = "seta";  break;
-    case BinOp::Ge: set = "setae"; break;
-    default:
-        std::fprintf(stderr, "codegen: that operator has no floating form\n");
-        compileFailed();
-    }
-
-    if (swapped) a_->ins(std::string("ucomi") + sfx, reg("%xmm0"), reg("%xmm1"));
-    else         a_->ins(std::string("ucomi") + sfx, reg("%xmm1"), reg("%xmm0"));
-
-    if (n.op() == BinOp::Eq) {
-        a_->ins("sete", reg("%al"));
-        a_->ins("setnp", reg("%cl"));
-        a_->ins("and", reg("%cl"), reg("%al"));
-    } else if (n.op() == BinOp::Ne) {
-        a_->ins("setne", reg("%al"));
-        a_->ins("setp", reg("%cl"));
-        a_->ins("or", reg("%cl"), reg("%al"));
-    } else {
-        a_->ins(set, reg("%al"));
-    }
-    a_->ins("movzbq", reg("%al"), reg("%rax"));
-}
-
-void X86_64Linux::visit(const Binary &n) {
-    if (n.op() == BinOp::LAnd || n.op() == BinOp::LOr) {
-        int id = nextLabel();
-        bool isAnd = n.op() == BinOp::LAnd;
-        const char *shortJump = isAnd ? "je" : "jne";
-
-        genTruth(n.lhs());
-        a_->ins("cmp", immText("0"), reg("%rax"));
-        a_->ins(shortJump, lbl(label("sc", id)));
-        genTruth(n.rhs());
-        a_->ins("cmp", immText("0"), reg("%rax"));
-        a_->ins(shortJump, lbl(label("sc", id)));
-        a_->ins("mov", imm((isAnd ? 1 : 0)), reg("%rax"));
-        a_->ins("jmp", lbl(label("scend", id)));
-        a_->defLabel(label("sc", id));
-        a_->ins("mov", imm((isAnd ? 0 : 1)), reg("%rax"));
-        a_->defLabel(label("scend", id));
-        // Named by these jumps and nothing else, so droppable once threaded past.
-        if (passesRun()) { optimizer_->jumpOnly(label("sc", id)); optimizer_->jumpOnly(label("scend", id)); }
-        return;
-    }
-
-    if (n.lhs().type()->isFloating()) { genFloatBinary(n); return; }
-
-    n.rhs().accept(*this);
-    push();
-    n.lhs().accept(*this);
-    pop(abi_.scratch);
-
-    const Type *t = n.lhs().type();
-    const char *a = acc(t);
-    const char *d = rhs(t);
-    bool sign = t->isSigned(target_);
-    bool wide = t->size(target_) == 8;
-
-    switch (n.op()) {
-    case BinOp::Add: a_->ins("add", reg(d), reg(a)); canonicalise(n.type()); return;
-    case BinOp::Sub: a_->ins("sub", reg(d), reg(a)); canonicalise(n.type()); return;
-    case BinOp::Mul: a_->ins("imul", reg(d), reg(a)); canonicalise(n.type()); return;
-    case BinOp::BitAnd: a_->ins("and", reg(d), reg(a)); canonicalise(n.type()); return;
-    case BinOp::BitOr:  a_->ins("or", reg(d), reg(a)); canonicalise(n.type()); return;
-    case BinOp::BitXor: a_->ins("xor", reg(d), reg(a)); canonicalise(n.type()); return;
-
-    case BinOp::Div:
-    case BinOp::Mod:
-        if (sign) { if (wide) a_->ins("cqo"); else a_->ins("cdq"); }
-        else      a_->ins("xor", reg("%edx"), reg("%edx"));
-        a_->ins(sign ? "idiv" : "div", reg(d));
-        if (n.op() == BinOp::Mod) { if (wide) a_->ins("mov", reg("%rdx"), reg("%rax")); else a_->ins("mov", reg("%edx"), reg("%eax")); }
-        canonicalise(n.type());
-        return;
-
-    case BinOp::Shl:
-    case BinOp::Shr:
-        a_->ins("mov", reg(abi_.scratch), reg("%rcx"));
-        if (n.op() == BinOp::Shl) a_->ins("shl", reg("%cl"), reg(a));
-        else                      a_->ins(sign ? "sar" : "shr", reg("%cl"), reg(a));
-        canonicalise(n.type());
-        return;
-
-    default:
-        break;
-    }
-
-    const char *set = nullptr;
-    switch (n.op()) {
-    case BinOp::Eq: set = "sete";  break;
-    case BinOp::Ne: set = "setne"; break;
-    case BinOp::Lt: set = sign ? "setl"  : "setb"; break;
-    case BinOp::Le: set = sign ? "setle" : "setbe"; break;
-    case BinOp::Gt: set = sign ? "setg"  : "seta"; break;
-    case BinOp::Ge: set = sign ? "setge" : "setae"; break;
-    default:
-        std::fprintf(stderr, "codegen: unhandled binary operator\n");
-        compileFailed();
-    }
-    a_->ins("cmp", reg(d), reg(a));
-    a_->ins(set, reg("%al"));
-    a_->ins("movzbq", reg("%al"), reg("%rax"));
-}
-
 // **One walk of the parameter list, for the caller and the callee alike.** Both
 // used to make this decision by hand, in two loops that had to stay in step; the
 // hidden-return-pointer bug A-01 was them agreeing wrongly on both sides at once.
@@ -1080,17 +668,19 @@ X86_64Linux::Placement X86_64Linux::placeArguments(
     return out;
 }
 
+bool X86_64Linux::returnsThroughPointer(const Call &n) const { return returnsThroughPointer(n.type(), n.hasThis()); }
+
 // The Microsoft size test serves free functions only: a class returned from a
 // member function travels through the hidden pointer whatever its size, so
 // `hasThis` decides first. The parser chose the same giving the sret slot.
-bool X86_64Linux::returnsThroughPointer(const Call &n) const {
+bool X86_64Linux::returnsThroughPointer(const Type *t, bool hasThis) const {
     const bool byRef = abi_.aggregatesByReference;
-    return n.type()->isStructOrUnion() &&
-           (n.type()->nonTrivialCopy() || n.type()->hasDestructor() ||
-            containsX87(n.type(), target_) ||
-            (byRef ? (n.hasThis() ||
-                      !msInRegister(n.type()->size(target_)))
-                   : n.type()->size(target_) > abi_.structReturnLimit));
+    return t->isStructOrUnion() &&
+           (t->nonTrivialCopy() || t->hasDestructor() ||
+            containsX87(t, target_) ||
+            (byRef ? (hasThis ||
+                      !msInRegister(t->size(target_)))
+                   : t->size(target_) > abi_.structReturnLimit));
 }
 
 X86_64Linux::Placement X86_64Linux::placeCall(const Call &n) const {
@@ -1100,12 +690,14 @@ X86_64Linux::Placement X86_64Linux::placeCall(const Call &n) const {
     return placeArguments(types, n.hasThis(), returnsThroughPointer(n));
 }
 
-void X86_64Linux::visit(const Call &n) {
+void X86_64Linux::emitCall(CallShape &n) {
     bool byRef = abi_.aggregatesByReference;
-    bool sret = returnsThroughPointer(n);
-    const bool msThisFirst = sret && abi_.positional && n.hasThis();
+    bool sret = returnsThroughPointer(n.type, n.hasThis);
+    const bool msThisFirst = sret && abi_.positional && n.hasThis;
 
-    const Placement plan = placeCall(n);
+    std::vector<const Type *> types;
+    for (std::size_t i = 0; i < n.args(); i++) types.push_back(n.argType(i));
+    const Placement plan = placeArguments(types, n.hasThis, sret);
     const std::vector<ArgPlace> &place = plan.args;
     const int sses = plan.ssesUsed;
     const int stackSlots = plan.stackWords;
@@ -1113,18 +705,9 @@ void X86_64Linux::visit(const Call &n) {
     // **At the floor, the call needs nothing of its own**: the prologue's outgoing area is at rsp and rsp is aligned, and a stack argument is stored into it where the callee will read it.
     // That last holds only if nothing evaluated after the store makes a call there that writes the same words - the arguments are evaluated from the last stack one down, then the callee, then the register ones, so only the first of those may.
     // Anywhere else - a value pushed above, a funclet's 32 bytes, a later argument that may call - it allocates as it always has.
-    bool atFloor = outgoing_ > 0 && floorDepth_ + depth_ == 0;
+    bool atFloor = outgoing_ > 0 && depth_ == 0;
     if (atFloor && stackSlots > 0) {
         atFloor = !inFunclet_ && outgoing_ >= abi_.shadowBytes + 8 * stackSlots;
-        bool first = true;
-        for (std::size_t i = n.args().size(); atFloor && i-- > 0; ) {
-            if (!place[i].inMemory) continue;
-            if (!first && mayWriteArea(*n.args()[i])) atFloor = false;
-            first = false;
-        }
-        if (atFloor && n.callee() != nullptr && mayWriteArea(*n.callee())) atFloor = false;
-        for (std::size_t i = 0; atFloor && i < n.args().size(); i++)
-            if (!place[i].inMemory && mayWriteArea(*n.args()[i])) atFloor = false;
     }
     int shadowSlots = atFloor ? 0 : abi_.shadowBytes / 8;
     const int pushedSlots = atFloor ? 0 : stackSlots;
@@ -1132,10 +715,10 @@ void X86_64Linux::visit(const Call &n) {
     int padSlots = ((depth_ + pushedSlots + shadowSlots) % 2 != 0) ? 1 : 0;
     if (padSlots) { a_->ins("sub", immText("8"), reg("%rsp")); depth_++; }
 
-    for (std::size_t i = n.args().size(); i-- > 0; ) {
+    for (std::size_t i = n.args(); i-- > 0; ) {
         if (!place[i].inMemory) continue;
-        const Type *t = n.args()[i]->type();
-        n.args()[i]->accept(*this);
+        const Type *t = n.argType(i);
+        n.evalArg(i);
         if (atFloor) {
             // Only a word reaches here: an aggregate travels by reference on
             // the one ABI with an outgoing area, and there is no x87 value.
@@ -1193,24 +776,24 @@ void X86_64Linux::visit(const Call &n) {
         if (place[i].padBelow) { a_->ins("sub", immText("8"), reg("%rsp")); depth_++; }
     }
 
-    if (n.callee() != nullptr) {
-        n.callee()->accept(*this);
+    if (n.indirect) {
+        n.evalCallee();
         push();
     }
 
-    for (const ExprPtr &arg : n.args()) {
-        if (place[static_cast<std::size_t>(&arg - &n.args()[0])].inMemory) continue;
-        arg->accept(*this);
-        if (arg->type()->isFloating()) pushF(); else push();
-    }
-    for (std::size_t i = n.args().size(); i-- > 0; ) {
+    for (std::size_t i = 0; i < n.args(); i++) {
         if (place[i].inMemory) continue;
-        const Type *t = n.args()[i]->type();
+        n.evalArg(i);
+        if (n.argType(i)->isFloating()) pushF(); else push();
+    }
+    for (std::size_t i = n.args(); i-- > 0; ) {
+        if (place[i].inMemory) continue;
+        const Type *t = n.argType(i);
         if (!t->isStructOrUnion()) {
             if (place[i].lanes[0]) {
 
-                if (abi_.positional && n.isVariadic() &&
-                    static_cast<int>(i) >= n.namedArgs())
+                if (abi_.positional && n.variadic &&
+                    static_cast<int>(i) >= n.namedArgs)
                     a_->ins("mov", tempsInSlots() ? tempSlot(tempDepth_ - 1) : mem("%rsp"),
                             reg(abi_.intRegs[place[i].regs[0]]));
                 popF(abi_.sseRegs[place[i].regs[0]]);
@@ -1244,52 +827,44 @@ void X86_64Linux::visit(const Call &n) {
         }
     }
 
-    if (n.callee() != nullptr) pop("%r11");
+    if (n.indirect) pop("%r11");
 
     if (sret)
-        a_->ins(n.resultIndirect() ? "mov" : "lea", local(n.resultSlot()),
+        a_->ins(n.resultIndirect ? "mov" : "lea", local(n.resultSlot),
                 reg(abi_.intRegs[msThisFirst ? 1 : 0]));
 
-    if (const Function *body = inlineTarget(n, stackSlots)) {
-        walkInPlace(*body);
-        if (padSlots > 0) {
-            a_->ins("add", imm(padSlots * 8), reg("%rsp"));
-            depth_ -= padSlots;
-        }
-    } else {
-        a_->ins("mov", imm(((n.isVariadic() && abi_.variadicSseCountInAl) ? sses : 0)), reg("%rax"));
+    a_->ins("mov", imm(((n.variadic && abi_.variadicSseCountInAl) ? sses : 0)), reg("%rax"));
 
-        if (shadowSlots > 0) {
-            a_->ins("sub", imm(abi_.shadowBytes), reg("%rsp"));
-            depth_ += shadowSlots;
-        }
+    if (shadowSlots > 0) {
+        a_->ins("sub", imm(abi_.shadowBytes), reg("%rsp"));
+        depth_ += shadowSlots;
+    }
 
-        // **The call reads the registers the plan filled and no other**: the
-        // optimizer need not keep the rest alive into it, nor copy into them.
-        if (passesRun()) {
-            opt::RegSet reads = (n.isVariadic() && abi_.variadicSseCountInAl) ? opt::bit(opt::RAX) : 0;
-            for (int k = 0; k < plan.intsUsed && k < abi_.intCount; ++k) reads |= opt::bit(opt::parseReg(abi_.intRegs[k]).id);
-            for (int k = 0; k < plan.ssesUsed && k < abi_.sseCount; ++k) reads |= opt::bit(opt::parseReg(abi_.sseRegs[k]).id);
-            optimizer_->callArguments(reads);
-        }
-        if (n.callee() != nullptr) a_->ins("call", ind("%r11"));
-        else                       a_->ins("call", lbl(n.symbol()));
+    // **The call reads the registers the plan filled and no other**: the
+    // optimizer need not keep the rest alive into it, nor copy into them.
+    if (passesRun()) {
+        opt::RegSet reads = (n.variadic && abi_.variadicSseCountInAl) ? opt::bit(opt::RAX) : 0;
+        for (int k = 0; k < plan.intsUsed && k < abi_.intCount; ++k) reads |= opt::bit(opt::parseReg(abi_.intRegs[k]).id);
+        for (int k = 0; k < plan.ssesUsed && k < abi_.sseCount; ++k) reads |= opt::bit(opt::parseReg(abi_.sseRegs[k]).id);
+        optimizer_->callArguments(reads);
+    }
+    if (n.indirect) a_->ins("call", ind("%r11"));
+    else            a_->ins("call", lbl(n.symbol));
 
-        int unwind = pushedSlots + padSlots + shadowSlots;
-        if (unwind > 0) {
-            a_->ins("add", imm(unwind * 8), reg("%rsp"));
-            depth_ -= unwind;
-        }
+    int unwind = pushedSlots + padSlots + shadowSlots;
+    if (unwind > 0) {
+        a_->ins("add", imm(unwind * 8), reg("%rsp"));
+        depth_ -= unwind;
     }
 
     if (sret) {
-        a_->ins(n.resultIndirect() ? "mov" : "lea", local(n.resultSlot()), reg("%rax"));
+        a_->ins(n.resultIndirect ? "mov" : "lea", local(n.resultSlot), reg("%rax"));
         return;
     }
 
-    if (byRef && n.type()->isStructOrUnion()) {
-        int size = n.type()->size(target_);
-        int to = -n.resultSlot();
+    if (byRef && n.type->isStructOrUnion()) {
+        int size = n.type->size(target_);
+        int to = -n.resultSlot;
         if (size == 8)      a_->ins("mov", reg("%rax"), frameSlot(to));
         else if (size == 4) a_->ins("movl", reg("%eax"), frameSlot(to));
         else if (size == 2) a_->ins("movw", reg("%ax"), frameSlot(to));
@@ -1298,10 +873,10 @@ void X86_64Linux::visit(const Call &n) {
         return;
     }
 
-    if (n.type()->isStructOrUnion()) {
-        std::vector<bool> lanes = classifyEightbytes(n.type(), target_);
-        int size = n.type()->size(target_);
-        int base = n.resultSlot();
+    if (n.type->isStructOrUnion()) {
+        std::vector<bool> lanes = classifyEightbytes(n.type, target_);
+        int size = n.type->size(target_);
+        int base = n.resultSlot;
         const char *ret[2] = { "%rax", "%rdx" };
         const char *sret[2] = { "%xmm0", "%xmm1" };
         int nextInt = 0, nextSse = 0;
@@ -1320,36 +895,10 @@ void X86_64Linux::visit(const Call &n) {
         return;
     }
 
-    if (!n.type()->isVoid() && !n.type()->isFloating()) canonicalise(n.type());
+    if (!n.type->isVoid() && !n.type->isFloating()) canonicalise(n.type);
 }
 
-void X86_64Linux::genTruth(const Expr &e) {
-    e.accept(*this);
-    if (isX87(e.type())) {
-        a_->ins("fldz");
-        a_->ins("fucomip", reg("%st(1)"), reg("%st"));
-        a_->ins("fstp", reg("%st(0)"));
-        a_->ins("setne", reg("%al"));
-        a_->ins("setp", reg("%cl"));
-        a_->ins("or", reg("%cl"), reg("%al"));
-        a_->ins("movzbq", reg("%al"), reg("%rax"));
-        return;
-    }
-    if (!e.type()->isFloating()) return;
-    bool isDouble = genKind(e.type()) == Kind::Double;
-    a_->ins("pxor", reg("%xmm1"), reg("%xmm1"));
-    a_->ins(isDouble ? "ucomisd" : "ucomiss", reg("%xmm1"), reg("%xmm0"));
-
-    a_->ins("setne", reg("%al"));
-    a_->ins("setp", reg("%cl"));
-    a_->ins("or", reg("%cl"), reg("%al"));
-    a_->ins("movzbq", reg("%al"), reg("%rax"));
-}
-
-void X86_64Linux::visit(const VaArg &n) {
-    n.list().accept(*this);
-    const Type *t = n.type();
-
+void X86_64Linux::vaArg(const Type *t) {
     if (abi_.positional) {
         a_->ins("mov", mem("%rax"), reg("%rcx"));
         a_->ins("lea", mem(8, "%rcx"), reg("%rdx"));
@@ -1395,8 +944,7 @@ void X86_64Linux::visit(const VaArg &n) {
     load(t);
 }
 
-void X86_64Linux::visit(const VaStart &n) {
-    n.list().accept(*this);
+void X86_64Linux::vaStart() {
     if (abi_.positional) {
         a_->ins("lea", mem(varOverflow_, "%rbp"), reg("%rcx"));
         a_->ins("mov", reg("%rcx"), mem("%rax"));
@@ -1412,15 +960,6 @@ void X86_64Linux::visit(const VaStart &n) {
 
 void X86_64Linux::defineLabel(const std::string &l) { a_->defLabel(l); }
 void X86_64Linux::defineStateLabel(const std::string &l) { a_->stateLabel(l); }
-void X86_64Linux::jump(const std::string &l) { a_->ins("jmp", lbl(l)); }
-void X86_64Linux::branchIfZero(const std::string &l) {
-    a_->ins("cmp", immText("0"), reg("%rax"));
-    a_->ins("je", lbl(l));
-}
-void X86_64Linux::branchIfNotZero(const std::string &l) {
-    a_->ins("cmp", immText("0"), reg("%rax"));
-    a_->ins("jne", lbl(l));
-}
 void X86_64Linux::caseBranch(long long v, const std::string &l) {
     if (v >= -2147483648L && v <= 2147483647L) {
         a_->ins("cmp", imm(v), reg("%rax"));
@@ -1431,24 +970,16 @@ void X86_64Linux::caseBranch(long long v, const std::string &l) {
     a_->ins("je", lbl(l));
 }
 
-void X86_64Linux::visit(const Return &n) {
-    markLine(n);
-    if (!n.hasValue()) {
-        a_->ins("jmp", lbl(returnLabel_));
-        return;
-    }
-    n.value().accept(*this);
-
+void X86_64Linux::returnValue(const Type *t) {
     if (sretSlot_ != 0) {
         a_->ins("mov", local(sretSlot_), reg(abi_.scratch));
-        copyBlock(n.value().type()->size(target_));
+        copyBlock(t->size(target_));
         a_->ins("mov", local(sretSlot_), reg("%rax"));
         a_->ins("jmp", lbl(returnLabel_));
         return;
     }
 
-    if (n.value().type()->isStructOrUnion()) {
-        const Type *t = n.value().type();
+    if (t->isStructOrUnion()) {
         int size = t->size(target_);
 
         if (abi_.aggregatesByReference) {
@@ -1508,14 +1039,14 @@ std::string X86_64Linux::terminatePad(int id) {
 // The same table the arm64 backend writes, in this assembler's spelling; the
 // layout and every encoding byte are documented there. What differs is the
 // section, the label prefix, and a type_info reached through a stub, not @GOT.
-static const Walker::LsdaSpelling kElfLsda = {
+static const Regions::LsdaSpelling kElfLsda = {
     ".L", ".section .gcc_except_table,\"a\",@progbits", false, ".L", ".DW.stub"
 };
 
 void X86_64Linux::emitLsda(const std::string &symbol, bool mergeable) {
     std::string &o = out_;
     // A mergeable function's table joins its group: gcc's `.gcc_except_table.<sym>`.
-    Walker::LsdaSpelling sp = kElfLsda;
+    Regions::LsdaSpelling sp = kElfLsda;
     const std::string grouped = ".section .gcc_except_table." + symbol +
                                 ",\"aG\",@progbits," + symbol + ",comdat";
     if (mergeable) sp.section = grouped.c_str();
@@ -1562,7 +1093,7 @@ void X86_64Linux::setOptimize(int level) {
     plain_ = a_;
     optimizer_ = make_owned<Optimizer>(*a_, abi_, level);
     if (mirDump_ != nullptr) optimizer_->dumpTo(mirDump_, mirDumpAfter_);
-    if (optimizer_->costs().inlines()) inliner_ = make_owned<Inliner>(optimizer_->costs());
+    if (optimizer_->costs().inlines()) inliner_ = make_owned<Inliner>(optimizer_->costs());   // for inlineReserve_ alone
     a_ = optimizer_.get();
 }
 
@@ -1573,16 +1104,6 @@ void X86_64Linux::finishChunk() {
 
 namespace { std::vector<const Call *> callsIn(const Node &n, std::vector<const Call *> *outer = nullptr, bool *tlsGuarded = nullptr); }
 
-// A call with stack arguments writes them above the shadow space, and a callee
-// walked in place may make any call at all.
-bool X86_64Linux::mayWriteArea(const Expr &e) const {
-    for (const Call *c : callsIn(e)) {
-        const int words = placeCall(*c).stackWords;
-        if (words > 0 || inlineTarget(*c, words) != nullptr) return true;
-    }
-    return false;
-}
-
 void X86_64Linux::emit(const Function &fn) {
     depth_ = 0;
     resetLabels();
@@ -1591,9 +1112,14 @@ void X86_64Linux::emit(const Function &fn) {
     labelPrefix_ = ".L." + fn.symbol() + ".";
     returnLabel_ = ".L.return." + fn.symbol();
 
-    // The selected body's pads: the parser's, or the SSA lowering's own where it took a body the parser gave none.
+    // Every function is selected from SSA (M3b.7): the driver refused the unit where the lowering left one outside.
     const ir::Function *ssaFn = ssaFunction(fn);
-    landingPads_ = ssaFn != nullptr ? ssaFn->landingPads : fn.hasLandingPads();
+    if (ssaFn == nullptr) {
+        std::fprintf(stderr, "codegen: '%s' has no SSA body to select\n", fn.symbol().c_str());
+        compileFailed();
+        return;
+    }
+    landingPads_ = ssaFn->landingPads;
 
     // **A frame realigned for an over-aligned local** (Function::frameAlign, or a named local's own) is
     // written past the optimizer, whose passes address the frame from rbp and take rbx, and walks no
@@ -1617,7 +1143,7 @@ void X86_64Linux::emit(const Function &fn) {
     if (passesRun()) {
         optimizer_->returnsPair(!abi_.aggregatesByReference && fn.returns()->isStructOrUnion() &&
                                 fn.returns()->size(target_) > 8);
-        optimizer_->fromSsa(ssaFn != nullptr);
+        optimizer_->fromSsa(true);
     }
     if (fn.isInline()) a_->weakDefinition(fn.symbol());
     // A second name for the same code - see Function::alias. Emitted as a
@@ -1666,21 +1192,20 @@ void X86_64Linux::emit(const Function &fn) {
     clearCallSites();
     clearMsTries();
 
-    // **A frame cut into funclets cannot grow once its first funclet is out**,
-    // so it reserves room for any callee it may walk in place from the start.
-    current_ = &fn;
-    inlineReserve_ = landingPads_ && usesFunclets() && inlining() ? inliner_->largestFrame() : 0;
-    frameSize_ = (ssaFn != nullptr ? layoutSsa(fn, *ssaFn) : fn.frameSize()) + inlineReserve_;
+    // **The walker's reserve for a callee walked in place**, kept so a funclet-cut frame at -O2 is the size it was:
+    // nothing is walked in place now, and taking it out moves every such frame (owed, with its goldens).
+    inlineReserve_ = landingPads_ && usesFunclets() && inliner_ && !lineSource() && realign_ == 0 ? inliner_->largestFrame() : 0;
+    frameSize_ = layoutSsa(fn, *ssaFn) + inlineReserve_;
     fnSymbol_ = fn.symbol();
     fnMergeable_ = fn.isInline();
     // On Windows the entry is named by the `{` line, as cl names it - see openingBrace.
     markLine(target_.microsoftNames() ? openingBrace(fn.pos()) : fn.pos());
     if (passesRun()) {
-        std::vector<opt::Local> scalars = scalarsOf(fn, ssaFn != nullptr);
-        if (ssaFn != nullptr) ssaScalars(*ssaFn, scalars);
+        std::vector<opt::Local> scalars = scalarsOf(fn);
+        ssaScalars(*ssaFn, scalars);
         optimizer_->frame(scalars);
         // Nothing below the values - no reserve, no unwind-help word, no realigned frame: finish-frame may close them up.
-        if (ssaFn != nullptr && inlineReserve_ == 0 && ssaUnwindHelpSlot_ == 0 && realign_ == 0 && !landingPads_)
+        if (inlineReserve_ == 0 && ssaUnwindHelpSlot_ == 0 && realign_ == 0 && !landingPads_)
             optimizer_->valueSlots(ssaValuesFrom_, ssaValuesTo_);
     }
     // The shadow space and the widest stack arguments of a call not inside another's operands, in 16s.
@@ -1695,7 +1220,6 @@ void X86_64Linux::emit(const Function &fn) {
         for (const Call *c : outer) words = std::max(words, placeCall(*c).stackWords);
         if (!calls.empty() || tlsGuarded) outgoing_ = (abi_.shadowBytes + 8 * words + 15) & ~15;
     }
-    floorDepth_ = 0;
     tempsAllowed_ = passesRun() && !(landingPads_ && usesFunclets());
     tempDepth_ = tempHigh_ = 0;
     // The frame's top, rounded to the alignment, is what a realigned prologue allocates.
@@ -1708,7 +1232,7 @@ void X86_64Linux::emit(const Function &fn) {
 
     receiveParameters(fn);
 
-    if (ssaFn != nullptr) selectBody(fn, *ssaFn); else walkBody(fn);
+    selectBody(fn, *ssaFn);
     if (passesRun()) optimizer_->temporaries(tempHigh_);
     // **rsp is restored *from rbp*, never by adding to itself.** Resuming after a catch it holds
     // whatever the runtime left, and adding the frame size landed on the unwind-help slot, so `ret`
@@ -1872,10 +1396,10 @@ void X86_64Linux::receiveParameters(const Function &fn) {
                                    : stackBase + plan.stackWords * 8;
 }
 
-std::vector<opt::Local> X86_64Linux::scalarsOf(const Function &fn, bool paramsOnly) const {
+std::vector<opt::Local> X86_64Linux::scalarsOf(const Function &fn) const {
     std::vector<opt::Local> scalars;
     for (const Local &l : fn.locals())
-        if (l.staticName.empty() && (l.isParam || !paramsOnly) && (l.type->isInteger() || l.type->isPointer() || l.type->isFloating()))
+        if (l.staticName.empty() && l.isParam && (l.type->isInteger() || l.type->isPointer() || l.type->isFloating()))
             scalars.push_back(opt::Local{-static_cast<long long>(l.offset), l.type->size(target_), l.type->isFloating()});
     return scalars;
 }
@@ -1954,70 +1478,6 @@ std::vector<const Call *> callsIn(const Node &n, std::vector<const Call *> *oute
     return scan.calls;
 }
 
-}
-
-// **A direct call to a function of this unit, walked in its place** where the site is safe -
-// not itself inside a callee walked in place, nothing on the stack, a frame that fits the room
-// a funclet-cut caller reserved - and the inliner's budgets say it is worth it.
-const Function *X86_64Linux::inlineTarget(const Call &n, int stackSlots) const {
-    if (!inliner_ || current_ == nullptr || n.callee() != nullptr) return nullptr;
-    const auto it = bodies_.find(n.symbol());
-    if (it == bodies_.end() || !inliner_->allows(n)) return nullptr;
-    const Function &callee = *it->second;
-    const std::string site = n.symbol() + " in " + current_->symbol();
-    if (lineSource()) { opt::noteDecline("inline-site-debug-info", site); return nullptr; }
-    if (inPlace_) { opt::noteDecline("inline-site-inside-inlined-body", site); return nullptr; }
-    if (stackSlots != 0) { opt::noteDecline("inline-site-stack-arguments", site); return nullptr; }
-    const bool reserved = landingPads_ && usesFunclets();
-    if (reserved && ((callee.frameSize() + 15) & ~15) > inlineReserve_) {
-        opt::noteDecline("inline-site-frame-past-funclet-reserve", site);
-        return nullptr;
-    }
-    return &callee;
-}
-
-bool X86_64Linux::inlining() const { return inliner_ && !lineSource() && realign_ == 0; }
-
-// The callee's walk borrows the caller's state for its own, and gives it
-// back; its frame the optimizer moves below the caller's.
-void X86_64Linux::walkInPlace(const Function &fn) {
-    const int depth = depth_, sret = sretSlot_, regSave = regSave_;
-    const int gp = varGp_, fp = varFp_, overflow = varOverflow_;
-    const std::string ret = returnLabel_;
-    floorDepth_ += depth;
-    depth_ = 0;
-    returnLabel_ = label("inline", nextLabel());
-    optimizer_->jumpOnly(returnLabel_);
-    inPlace_ = true;
-    // The callee's frame goes below the caller's whole frame: the parser's, or the selector's layout above it (M3b.1).
-    const int base = ssaFunction(*current_) != nullptr ? frameSize_ - inlineReserve_ : current_->frameSize();
-    optimizer_->inlineBegin(base, fn.frameSize(), scalarsOf(fn));
-    receiveParameters(fn);
-    walkBody(fn);
-    optimizer_->inlineEnd();
-    inPlace_ = false;
-    floorDepth_ -= depth;
-    depth_ = depth;
-    sretSlot_ = sret;
-    regSave_ = regSave;
-    varGp_ = gp;
-    varFp_ = fp;
-    varOverflow_ = overflow;
-    returnLabel_ = ret;
-}
-
-// The body, the value a function that falls off its end returns, and the
-// return label every `return` jumps to.
-void X86_64Linux::walkBody(const Function &fn) {
-    if (!inPlace_) storeUnwindHelpAtEntry(fn.body());   // a body walked in place is not an entry
-    fn.body().accept(*this);
-
-    if (sretSlot_ != 0)                     a_->ins("mov", local(sretSlot_), reg("%rax"));
-    else if (isX87(fn.returns()))           a_->ins("fldz");
-    else if (fn.returns()->isFloating())    a_->ins("pxor", reg("%xmm0"), reg("%xmm0"));
-    else                                    a_->ins("mov", immText("0"), reg("%rax"));
-    a_->defLabel(returnLabel_);
-    returnThis(fn);
 }
 
 // **A Microsoft constructor or deleting destructor returns `this` in RAX**, and cl's callers read it - `new V(4)`
@@ -2465,7 +1925,6 @@ void X86_64Linux::run(const Program &program) {
 
     emitData(program);
     finishChunk();
-    for (const Function &fn : program.functions) bodies_[fn.symbol()] = &fn;
     if (inliner_) inliner_->summarize(program);
     for (const Function &fn : program.functions) emit(fn);
     if (!program.initFunction.empty()) {

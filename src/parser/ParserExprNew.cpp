@@ -260,6 +260,7 @@ ExprPtr Parser::classTemporary(const Type *cls, std::size_t pos) {
     // class whose default constructor nobody wrote is zeroed *and then* built,
     // where a user-provided one gets no zeroing. The same paragraph says both.
     const bool valueInit = args.empty();
+    const std::size_t written = args.size();
     const Signature &ctor = overload_.resolveOverload(key, args, pos);
     applyDefaults(ctor, args, pos);
     if (ctor.access != Access::Public &&
@@ -268,7 +269,7 @@ ExprPtr Parser::classTemporary(const Type *cls, std::size_t pos) {
                        "taking these arguments - the one that matches is " +
                        (ctor.access == Access::Private ? "private" : "protected"));
     const bool zeroFirst = valueInit && ctor.implicit;
-    return constructTemporary(plain, ctor, std::move(args), zeroFirst, pos);
+    return constructTemporary(plain, ctor, std::move(args), zeroFirst, pos, written);
 }
 
 // The backing array and the list object are statements; an expression carries them
@@ -423,7 +424,8 @@ ExprPtr Parser::aggregateTemporary(const Type *plain, Init &in, std::size_t pos)
     const int off = declare(name, plain, pos);
     std::vector<StmtPtr> stmts;
     std::vector<InitStep> path;
-    emitInit(name, path, plain, in, stmts);
+    const ListBuilt built = emitRecordedInit(name, path, plain, in, stmts);
+    if (built.members || listsAt_.count(static_cast<std::uint32_t>(in.pos)) != 0) noteListBuilt(static_cast<std::uint32_t>(in.pos), built);
     ExprPtr chain;
     for (std::size_t i = 0; i < stmts.size(); i++) {
         ExprStmt *one = dynamic_cast<ExprStmt *>(stmts[i].get());
@@ -494,6 +496,7 @@ ExprPtr Parser::listTemporaryFrom(const Type *to, Init &in, bool copyList, std::
             !hasMemberInitialiser(plain->tag())) {
             std::vector<ExprPtr> args;
             Signature ctor = listConstructor(plain, in, args, copyList, pos);
+            const std::size_t written = args.size();
             applyDefaults(ctor, args, pos);
             if (ctor.access != Access::Public && !insideAccessOf(plain, ctor.access) &&
                 !isFriendOf(plain))
@@ -501,7 +504,7 @@ ExprPtr Parser::listTemporaryFrom(const Type *to, Init &in, bool copyList, std::
                                "these arguments - the one that matches is " +
                                (ctor.access == Access::Private ? "private" : "protected"));
             noteBracedBuilt(in.pos, plain, ctor, in.items.empty() && ctor.implicit);
-            return constructTemporary(plain, ctor, std::move(args), in.items.empty() && ctor.implicit, pos);
+            return constructTemporary(plain, ctor, std::move(args), in.items.empty() && ctor.implicit, pos, written);
         }
     }
     if (hasMemberInitialiser(plain->tag()))
@@ -929,6 +932,8 @@ ExprPtr Parser::buildReturned(ExprPtr value, std::size_t pos, bool *named) {
                         again->setType(ptr);
                         both->rightSlot() = std::move(again);
                         pendingReturnBuilt_.form = 3;
+                        // `return {}` by a constructor of defaults: they go under "$ret:" for the SSA lowering (M3b.7).
+                        if (!pendingReturnEmpty_.empty()) noteEntryDefaults(pendingReturnEmpty_, ctor->argsSlots(), 1);
                         if (ctor->resolved() != 0 && resolvedTable_[ctor->resolved()].what == Resolved::Call) {
                             pendingReturnBuilt_.symbol = resolvedTable_[ctor->resolved()].symbol;
                             pendingReturnBuilt_.signature = resolvedTable_[ctor->resolved()].type;
@@ -978,8 +983,14 @@ ExprPtr Parser::buildReturned(ExprPtr value, std::size_t pos, bool *named) {
 // **A temporary of `plain`, built by `ctor`, from arguments already parsed.**
 ExprPtr Parser::constructTemporary(const Type *plain, const Signature &ctor,
                                    std::vector<ExprPtr> args, bool zeroFirst,
-                                   std::size_t pos) {
+                                   std::size_t pos, std::size_t written) {
     const int slot = allocateFrameSlot(plain);
+    // [dcl.fct.default]/9: the arguments past `written` are defaults - their syntax kept for the temporary's node.
+    temporaryDefaults_[slot] = syntax::NodeId();
+    if (written < args.size() && !memberTemplateInst_) {
+        const std::vector<syntax::NodeId> made = defaultNodes(args, written);
+        if (!made.empty()) temporaryDefaults_[slot] = syntaxTree_.add(syntax::Kind::MemInit, "$tmp", syntaxTree_.node(made[0]).loc, made);
+    }
     int guard = 0;
     if (destructorOf(plain) != nullptr) {
         guard = guardFlag();
@@ -1600,12 +1611,6 @@ StmtPtr Parser::throwStatement(ExprPtr value, std::size_t pos) {
         steps.push_back(StmtPtr(new ExprStmt(setGuard(storageGuard, 0))));
     flushTemporaries(steps);
     steps.push_back(StmtPtr(new ExprStmt(std::move(thrower))));
-    // The adapter rebuilds a throw with nothing to construct or destroy, from these.
-    if (cc == nullptr && dtor == nullptr) {
-        pendingThrow_.temp = temp;
-        pendingThrow_.slot = slot;
-        pendingThrow_.info = info;
-    }
     Block *b = new Block(std::move(steps));
     b->setScope(-1);
     return StmtPtr(b);

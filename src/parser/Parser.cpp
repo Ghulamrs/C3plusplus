@@ -449,6 +449,7 @@ Parser::FunctionState Parser::captureFunctionState() const {
     s.scopeStarts = scopeStarts_;
     s.blocks = blocks_;
     s.blockStack = blockStack_;
+    s.blockAt = blockAt_;
     s.labels = labels_;
     s.gotos = gotos_;
     s.frameSize = frameSize_;
@@ -513,12 +514,7 @@ Parser::FunctionState Parser::captureFunctionState() const {
     s.conditionDecl = conditionDecl_;
     s.conditionName = conditionName_;
     s.usingNamespaces = lookup_.usingNamespaces_;
-    s.lastCleanupSlots = lastCleanupSlots_;
-    s.pendingReturnTemp = pendingReturnTemp_;
-    s.pendingTry = pendingTry_;
-    s.pendingThrow = pendingThrow_;
     s.pendingNew = pendingNew_;
-    s.pendingRange = pendingRange_;
     s.pendingLambda = pendingLambda_;
     s.lambdaBodies = lambdaBodies_;
     s.ctorBySerial = ctorBySerial_;
@@ -539,6 +535,7 @@ void Parser::restoreFunctionState(const FunctionState &s) {
     scopeStarts_ = s.scopeStarts;
     blocks_ = s.blocks;
     blockStack_ = s.blockStack;
+    blockAt_ = s.blockAt;
     labels_ = s.labels;
     gotos_ = s.gotos;
     frameSize_ = s.frameSize;
@@ -603,12 +600,7 @@ void Parser::restoreFunctionState(const FunctionState &s) {
     conditionDecl_ = s.conditionDecl;
     conditionName_ = s.conditionName;
     lookup_.usingNamespaces_ = s.usingNamespaces;
-    lastCleanupSlots_ = s.lastCleanupSlots;
-    pendingReturnTemp_ = s.pendingReturnTemp;
-    pendingTry_ = s.pendingTry;
-    pendingThrow_ = s.pendingThrow;
     pendingNew_ = s.pendingNew;
-    pendingRange_ = s.pendingRange;
     pendingLambda_ = s.pendingLambda;
     lambdaBodies_ = s.lambdaBodies;
     ctorBySerial_ = s.ctorBySerial;
@@ -630,6 +622,7 @@ void Parser::clearFunctionState() {
     scopeStarts_.clear();
     blocks_.clear();
     blockStack_.clear();
+    blockAt_.clear();
     labels_.clear();
     gotos_.clear();
     frameSize_ = 0;
@@ -691,12 +684,7 @@ void Parser::clearFunctionState() {
     mayThrow_ = 0;
     conditionDecl_ = false;
     conditionName_.clear();
-    lastCleanupSlots_ = std::pair<int, int>(0, 0);
-    pendingReturnTemp_ = ReturnTemp();
-    pendingTry_ = TryFacts();
-    pendingThrow_ = ThrowFacts();
     pendingNew_ = NewFacts();
-    pendingRange_ = RangeFacts();
     pendingLambda_ = LambdaFacts();
     lambdaBodies_.clear();
     ctorBySerial_.clear();
@@ -764,8 +752,10 @@ void Parser::enterScope() {
     localTypeUndoStarts_.push_back(localTypeUndo_.size());
 }
 
-int Parser::enterBlock() {
+int Parser::enterBlock(std::size_t pos) {
     blocks_.push_back(currentBlock());
+    blockAt_.resize(blocks_.size(), 0);
+    blockAt_.back() = pos;
     int id = static_cast<int>(blocks_.size()) - 1;
     blockStack_.push_back(id);
     return id;

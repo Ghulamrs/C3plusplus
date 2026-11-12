@@ -25,21 +25,6 @@ FuncId Builder::atexitHelper(const FunctionFacts &facts, std::size_t index) {
     return FuncId(static_cast<std::uint32_t>(index));
 }
 
-// The caller's result pointer where it is read: in a Microsoft funclet, which has none of the body's registers, from a
-// slot the entry fills, as a handler that builds the result reads it.
-ValueId Lowering::resultPtr() {
-    if (!funclet_.valid() || !target_.microsoftNames() || !sret_.valid()) return sret_;
-    const TypeId pt = F().value(sret_).type;
-    if (!sretSlot_.valid()) {
-        sretSlot_ = entryAlloca(pt, "$sret");
-        store(sretSlot_, sret_);
-        std::vector<InstId> &here = F().blockArena[cur_.v].insts, &entry = F().blockArena[F().entry.v].insts;
-        entry.push_back(here.back());
-        here.pop_back();
-    }
-    return load(sretSlot_, pt);
-}
-
 // Leaving the n innermost handlers (leaveHandlers, msGotoExit): the innermost one's objects past `upper`'s floor destroyed
 // in its funclet, a catchret to an exit its try's pad lists, in the funclet that try stands in; there the next handler is
 // left the same way, and the last exit destroys down to `mark` and branches on.

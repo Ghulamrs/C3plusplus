@@ -179,6 +179,7 @@ struct Cloner {
         Inst i;
         i.op = Op::Br;
         i.at = like.at;
+        i.lines = like.lines;       // the statement the call began
         i.pos = like.pos;
         i.succ.push_back(edge(to, args));
         return newInst(i);

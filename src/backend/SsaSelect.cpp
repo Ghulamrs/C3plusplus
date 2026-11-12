@@ -363,28 +363,28 @@ void X86_64Linux::ssaLoadReg(const ir::Function &f, ir::ValueId v, const char *r
     }
 }
 
-// The value as the walker's node: its slot's Var, or what makes it afresh - a frame object's `&`, a constant's number.
-ExprPtr X86_64Linux::ssaExpr(const ir::Function &f, ir::ValueId v) const {
-    if (!ssaRemat(f, v)) {
-        std::unique_ptr<Var> p(Var::local("$v" + std::to_string(v.v), static_cast<int>(ssaValueSlot_[v.v])));
-        p->setType(typeOf(f, v));
-        return ExprPtr(p.release());
-    }
+// The value as the ABI code's operand: its slot, or what makes it afresh - a frame object's address, a constant.
+X86_64Linux::SsaOperand X86_64Linux::ssaOperand(const ir::Function &f, ir::ValueId v) const {
+    const Type *t = typeOf(f, v);
+    if (!ssaRemat(f, v)) { SsaOperand o = {SsaOperand::Slot, ssaValueSlot_[v.v], t, t}; return o; }
     const ir::Inst &d = f.inst(f.value(v).def);
     if (d.op == ir::Op::IConst || d.op == ir::Op::Null) {
-        std::unique_ptr<Num> n = make_owned<Num>(d.op == ir::Op::IConst ? static_cast<long long>(d.k) : 0LL);
-        n->setType(typeOf(f, v));
-        return ExprPtr(n.release());
+        SsaOperand o = {SsaOperand::Const, d.op == ir::Op::IConst ? static_cast<long long>(d.k) : 0LL, t, t};
+        return o;
     }
     // The object itself, or a cast of its address (layoutSsa leaves no other here).
     std::size_t k = 0;
     long long off = 0;
     ssaFrameAddress(f, v, k, off);
-    std::unique_ptr<Var> o(Var::local("$a" + std::to_string(k), static_cast<int>(ssaAllocaSlot_[k])));
-    o->setType(ssaTypes_->type(f.frame[k].type));
-    std::unique_ptr<Unary> addr = make_owned<Unary>('&', ExprPtr(o.release()));
-    addr->setType(typeOf(f, v));
-    return ExprPtr(addr.release());
+    SsaOperand o = {SsaOperand::Frame, ssaAllocaSlot_[k], t, t};
+    return o;
+}
+
+// The operand into the accumulator, as its type is loaded; a class passed or returned from its address stays the address.
+void X86_64Linux::ssaEval(const SsaOperand &o) {
+    if (o.kind == SsaOperand::Const) { loadConstant(o.loaded, o.at, 0); return; }
+    a_->ins("lea", local(static_cast<int>(o.at)), reg("%rax"));
+    if (o.kind == SsaOperand::Slot) load(o.loaded);
 }
 
 // A value into the accumulator: rax, xmm0 for a float or double, st0 for an x87 value.
@@ -746,10 +746,8 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
     case ir::Op::Ret:
         if (i.count == 1 && ssaTypes_->type(f.returns)->isStructOrUnion()) {
             // A class's address: the walker's own return copies it out - through the result pointer or into registers.
-            std::unique_ptr<Unary> d = make_owned<Unary>('*', ssaExpr(f, f.operand(i, 0)));
-            d->setType(ssaTypes_->type(f.returns));
-            Return r{ExprPtr(d.release())};
-            r.accept(*this);
+            ssaEval(ssaOperand(f, f.operand(i, 0)));
+            returnValue(ssaTypes_->type(f.returns));
             return;
         }
         if (i.count == 1) ssaLoad(f, f.operand(i, 0));
@@ -825,54 +823,53 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
     }
 }
 
-// The walker's own va_start and va_arg over a Var naming the list pointer's slot: SysV's four-field record over the save
-// area receiveParameters filled, Microsoft's char pointer stepped by 8 through the home area - one code for both fronts.
+// The walker's own va_start and va_arg over the list pointer's slot: SysV's four-field record over the save area
+// receiveParameters filled, Microsoft's char pointer stepped by 8 through the home area - one code for both fronts.
 void X86_64Linux::selectVa(const ir::Function &f, const ir::Inst &i, const Type *rt) {
-    const ir::ValueId v = f.operand(i, 0);
-    ExprPtr p = ssaExpr(f, v);
-    if (i.op == ir::Op::VaStart) { VaStart n(std::move(p)); n.accept(*this); return; }
-    VaArg n(std::move(p));
-    n.setType(rt);
-    n.accept(*this);
+    ssaEval(ssaOperand(f, f.operand(i, 0)));
+    if (i.op == ir::Op::VaStart) { vaStart(); return; }
+    vaArg(rt);
     ssaStore(f, i.result);
 }
 
-// The walker's own call, over Var nodes naming the slots: placeArguments and every ABI rule stay where they are.
+// The walker's own call, over the operands naming the slots: placeArguments and every ABI rule stay where they are.
 void X86_64Linux::selectCall(const ir::Function &f, const ir::Inst &i, const Type *rt) {
-    {
-        const ir::CallInfo &c = f.calls[i.call];
-        const Type *sig = ssaTypes_->type(c.signature);
-        std::vector<ExprPtr> args;
-        const std::uint32_t firstArg = c.symbol.empty() ? 1 : 0;
-        for (std::uint32_t n = firstArg; n < i.count; n++) {
-            const ir::ValueId v = f.operand(i, n);
-            const std::size_t at = n - firstArg;
-            const Type *want = at < sig->params().size() ? sig->params()[at] : nullptr;
-            ExprPtr a = ssaExpr(f, v);
-            // Where the signature takes a class by value the operand is its address: the walker copies `*p` in - or, for
-            // one the parser passes by address, hands the caller's copy's address on as materialiseCopy's node does.
-            if (want != nullptr && want->isStructOrUnion() && typeOf(f, v)->isPointer() && ssaByAddress(want)) { args.push_back(std::move(a)); continue; }
-            if (want != nullptr && want->isStructOrUnion() && typeOf(f, v)->isPointer()) {
-                std::unique_ptr<Unary> d = make_owned<Unary>('*', std::move(a));
-                d->setType(want);
-                args.push_back(std::move(d));
-                continue;
-            }
-            args.push_back(std::move(a));
-        }
-        ExprPtr callee;
-        if (c.symbol.empty()) callee = ssaExpr(f, f.operand(i, 0));
-        // A class result comes back into its alloca's slot and the walker leaves its address in rax: the call's value.
-        // One built in the caller's object (c.sret) goes through this function's own result pointer, as `return f();` does.
-        const int resultSlot = c.sret ? ssaSretSlot_ : c.resultAlloca >= 0 ? static_cast<int>(ssaAllocaSlot_[static_cast<std::size_t>(c.resultAlloca)]) : 0;
-        std::unique_ptr<Call> call = make_owned<Call>(c.symbol, std::move(callee), std::move(args), c.variadic, resultSlot,
-                                                     c.namedArgs, ssaArgSlots_[i.call]);
-        call->setSymbol(c.symbol);
-        call->setHasThis(c.hasThis);
-        call->setResultIndirect(c.sret);
-        call->setType(c.resultAlloca >= 0 || c.sret ? sig->returns() : rt != nullptr ? rt : sig->returns());
-        call->accept(*this);
+    struct SsaCall : CallShape {
+        X86_64Linux *gen;
+        std::vector<SsaOperand> ops;
+        SsaOperand callee;
+        std::size_t args() const override { return ops.size(); }
+        const Type *argType(std::size_t n) const override { return ops[n].type; }
+        void evalArg(std::size_t n) override { gen->ssaEval(ops[n]); }
+        void evalCallee() override { gen->ssaEval(callee); }
+    } call;
+    call.gen = this;
+    const ir::CallInfo &c = f.calls[i.call];
+    const Type *sig = ssaTypes_->type(c.signature);
+    const std::uint32_t firstArg = c.symbol.empty() ? 1 : 0;
+    for (std::uint32_t n = firstArg; n < i.count; n++) {
+        const ir::ValueId v = f.operand(i, n);
+        const std::size_t at = n - firstArg;
+        const Type *want = at < sig->params().size() ? sig->params()[at] : nullptr;
+        SsaOperand a = ssaOperand(f, v);
+        // Where the signature takes a class by value the operand is its address: the walker copies `*p` in - or, for
+        // one the parser passes by address, hands the caller's copy's address on as materialiseCopy's node does.
+        if (want != nullptr && want->isStructOrUnion() && a.loaded->isPointer() && !ssaByAddress(want)) a.type = want;
+        call.ops.push_back(a);
     }
+    call.indirect = c.symbol.empty();
+    if (call.indirect) call.callee = ssaOperand(f, f.operand(i, 0));
+    // A class result comes back into its alloca's slot and the walker leaves its address in rax: the call's value.
+    // One built in the caller's object (c.sret) goes through this function's own result pointer, as `return f();` does.
+    call.resultSlot = c.sret ? ssaSretSlot_ : c.resultAlloca >= 0 ? static_cast<int>(ssaAllocaSlot_[static_cast<std::size_t>(c.resultAlloca)]) : 0;
+    call.symbol = c.symbol;
+    call.variadic = c.variadic;
+    call.namedArgs = c.namedArgs < 0 ? static_cast<int>(call.ops.size()) : c.namedArgs;
+    call.argSlots = ssaArgSlots_[i.call];
+    call.hasThis = c.hasThis;
+    call.resultIndirect = c.sret;
+    call.type = c.resultAlloca >= 0 || c.sret ? sig->returns() : rt != nullptr ? rt : sig->returns();
+    emitCall(call);
 }
 
 std::string X86_64Linux::ssaLandLabel(ir::BlockId b) const { return label("ssaland", static_cast<int>(b.v)); }
@@ -898,10 +895,11 @@ void X86_64Linux::selectHandler(const ir::Function &f, ir::BlockId hb) {
         if (b != 0) a_->defLabel(ssaBlockLabel(blocks[b]));
         for (std::size_t k = 0; k <= in.insts.size(); k++) {
             const ir::InstId id = k < in.insts.size() ? in.insts[k] : in.term;
-            if (id.valid()) selectInst(f, f.inst(id));
+            if (id.valid()) selectMarked(f, f.inst(id));
         }
     }
     ssaFuncletState_ = -1;
+    closeOpenBlocks();
     endFunclet(ssaBlockLabel(ir::BlockId(static_cast<std::uint32_t>(dispatch.cases[0]))));
     leaveFunclet();
     msSetState(state, parent, std::string());
@@ -933,6 +931,7 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
     ssaSretSlot_ = fn.sretSlot();
     if (f.sret.valid() && fn.sretSlot() != 0) { a_->ins("mov", local(fn.sretSlot()), reg("%rax")); ssaStore(f, f.sret); }
     std::size_t lastPos = 0;
+    ssaFn_ = &fn;
     ssaRegionAt_ = 0;
     ssaTries_.clear();
     ssaTryOrder_.clear();
@@ -982,13 +981,14 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
                 a_->defLabel(ssaBlockLabel(blocks[o]));
                 for (std::size_t k = 0; k <= in.insts.size(); k++) {
                     const ir::InstId id = k < in.insts.size() ? in.insts[k] : in.term;
-                    if (id.valid()) selectInst(f, f.inst(id));
+                    if (id.valid()) selectMarked(f, f.inst(id));
                 }
                 if (in.term.valid() && f.inst(in.term).op == ir::Op::CleanupRet) {
                     const ir::Inst &r = f.inst(in.term);
                     if (!r.succ.empty() || r.k > 0) toState = ssaPadState_[r.succ.empty() ? static_cast<std::size_t>(r.k) : r.succ[0].block.v];
                 }
             }
+            closeOpenBlocks();
             endCleanupFunclet();
             leaveFunclet();
             msSetState(ssaPadState_[order[b].v], toState, funclet);
@@ -1008,10 +1008,12 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
             const ir::InstId id = k < blk.insts.size() ? blk.insts[k] : blk.term;
             if (!id.valid()) continue;
             const ir::Inst &in = f.inst(id);
+            for (std::size_t m = 0; m < in.lines.size(); m++) ssaMark(in.lines[m]);
             if (in.pos != 0 && in.pos != lastPos) { markLine(in.pos); lastPos = in.pos; }
             selectInst(f, in);
         }
     }
+    closeOpenBlocks();
     std::sort(ssaTryOrder_.begin(), ssaTryOrder_.end());
     for (std::size_t t = 0; t < ssaTryOrder_.size(); t++) msAddTryBlock(ssaTries_[ssaTryOrder_[t].second]);
     // A function with landing pads whose tries nothing can throw through registered no row: the prologue
@@ -1021,7 +1023,7 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
         a_->defLabel(none);
         callSite(none, none, none, std::vector<std::string>(), std::vector<int>(), false, ++ssaRegionAt_, false);
     }
-    // What walkBody writes after the body: the default return and the return label.
+    // After the body: the value a function that falls off its end returns, and the return label.
     if (isX87(fn.returns()))              a_->ins("fldz");
     else if (fn.returns()->isFloating())  a_->ins("pxor", reg("%xmm0"), reg("%xmm0"));
     else                                  a_->ins("mov", immText("0"), reg("%rax"));

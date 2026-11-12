@@ -1,0 +1,50 @@
+#!/bin/sh
+# **The SSA census of cxx3's own sources and of C90's cases** (M3b.7): each compiled (an outside body is an error), and every
+# body outside the lowering named - file:line, function, why - then counted by why. tests/ssa.sh's census covers the
+# suite only; this is the one that covers the self-host, so its fixed point can never pass through the walker unseen.
+#
+#   tools/ssa-census [-arch <target>]... [cxx3.exe] [out-dir]   CENSUS_FLAGS (-O2 say) on every compile; CENSUS_JOBS (2) at once
+#
+# **Both x86 targets by default** (x86_64-linux and x86_64-windows), whatever the host: a wall only the Microsoft ABI has
+# - a handler's funclet, M3b.7 W1 - is otherwise seen only on the Windows box. `-arch` names the targets instead.
+# <out>/<target>/outside.txt holds each outside body, kinds.txt the count by why; each target ends with a line
+# "outside=N of S sources and C C90 cases" and the status is 1 when any N is not 0. Another failure is named too.
+set -u
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+cd "$ROOT" || exit 2
+if [ "${1:-}" = --one ]; then     # xargs's job: $2 the compiler, $3 the kind (src or c90), $4 the file
+    b=$(echo "$4" | tr / _)
+    if [ "$3" = src ]; then
+        perl -e 'alarm 180; exec @ARGV' "$2" -nologo -arch "$CENSUS_ARCH" -S ${CENSUS_FLAGS:-} -I src \
+            -DCXX1_INCLUDE_DIR="\"$ROOT/lib\"" -DCXX1_CXX_INCLUDE_DIR="\"$ROOT/include\"" "$4" -o /dev/null > "$OUT/log/$b" 2>&1
+    else
+        perl -e 'alarm 60; exec @ARGV' "$2" -nologo -arch "$CENSUS_ARCH" -std=c90 -S ${CENSUS_FLAGS:-} "$4" -o /dev/null \
+            > "$OUT/log/$b" 2>&1 < /dev/null
+    fi
+    r=$?
+    [ $r -eq 0 ] || grep -q 'is outside the SSA lowering' "$OUT/log/$b" || echo "$4: failed (rc $r) other than outside" >> "$OUT/log/$b.other"
+    exit 0
+fi
+ARCHS=
+while [ "${1:-}" = -arch ]; do ARCHS="$ARCHS $2"; shift 2; done
+[ -n "$ARCHS" ] || ARCHS="x86_64-linux x86_64-windows"
+CXX=${1:-$ROOT/cxx3.exe}; case $CXX in /*) ;; *) CXX=$ROOT/$CXX ;; esac
+BASE=${2:-$ROOT/tests/out-census}
+SRCS=$(ls src/*.cpp src/parser/*.cpp src/backend/*.cpp src/optimizer/*.cpp src/sema/*.cpp src/syntax/*.cpp src/ir/*.cpp src/ir/opt/*.cpp src/encoder/*.cpp)
+C90S=$(ls tests/c90/cases/*.c)
+bad=0
+for CENSUS_ARCH in $ARCHS; do
+    OUT=$BASE/$CENSUS_ARCH
+    rm -rf "$OUT"; mkdir -p "$OUT/log"
+    export OUT CENSUS_ARCH CENSUS_FLAGS="${CENSUS_FLAGS:-}"
+    { for f in $SRCS; do echo "$CXX src $f"; done; for f in $C90S; do echo "$CXX c90 $f"; done; } |
+        xargs -n 3 -P "${CENSUS_JOBS:-2}" sh "$ROOT/tools/ssa-census" --one
+    cat "$OUT"/log/* 2>/dev/null | grep 'is outside the SSA lowering' | sed 's/^[^:]*: [^:]*: //' | sort -u > "$OUT/outside.txt"
+    sed 's/.* is outside the SSA lowering: //' "$OUT/outside.txt" | sort | uniq -c | sort -rn > "$OUT/kinds.txt"
+    cat "$OUT"/log/*.other 2>/dev/null > "$OUT/other.txt"
+    n=$(wc -l < "$OUT/outside.txt" | tr -d ' ')
+    echo "ssa-census $CENSUS_ARCH: outside=$n of $(echo "$SRCS" | wc -l | tr -d ' ') sources and $(echo "$C90S" | wc -l | tr -d ' ') C90 cases; other failures $(wc -l < "$OUT/other.txt" | tr -d ' ')"
+    head -20 "$OUT/kinds.txt"
+    [ "$n" -eq 0 ] || bad=1
+done
+exit $bad

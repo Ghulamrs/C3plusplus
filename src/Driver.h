@@ -39,15 +39,11 @@ private:
     bool toStdout_ = false;
     bool timing_ = false;
     bool checkTyped_ = false;
-    bool checkAdapted_ = false;  // -check=adapted: the adapter's Ast.h held against the parser's, on stdout (M2.11)
-    bool frontSsa_ = false;      // -front=ssa: a function the lowering reaches is selected from its SSA (M3b.1)
     bool dumpSsa_ = false, checkSsa_ = false;   // -dump=ssa and -check=ssa, M3-IR 3.10
     std::string dumpSsaAfter_;                  // -dump=ssa=<pass>: the IR after that pass (M3b.4)
-    bool frontTyped_ = false;    // -front=typed: a function the adapter reaches takes its Ast.h (M2.11)    // -check=typed: the typed tree held against the parser's Ast.h, on stdout (M2.10)
     bool dumpSyntax_ = false;
     bool dumpMir_ = false;       // -dump=mir[=pass]: each function's MIR on stdout, after the pipeline or the pass (M3a.1)
     std::string dumpMirAfter_;
-    bool dumpAst_ = false;       // -dump=ast: each function's Ast.h body as text, on stdout (M2.11)    // -dump=syntax: the syntax tree the grammar recorded, on stdout (M2 step 2)
     int keepGoing_ = 0;          // -keep-going[=N]: report up to N errors a file, not the first alone
     bool assemblyOnly_ = false;
     bool preprocessOnly_ = false;

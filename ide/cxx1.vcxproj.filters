@@ -21,7 +21,6 @@
     <Filter Include="Source Files\syntax"><UniqueIdentifier>{8077FCDB-B247-EFB6-9FD4-2387FCE98BA5}</UniqueIdentifier></Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\src\AstDump.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="..\src\Driver.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="..\src\Lexer.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="..\src\Mangle.cpp"><Filter>Source Files</Filter></ClCompile>
@@ -53,6 +52,7 @@
     <ClCompile Include="..\src\backend\CoffEmitter.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\Dwarf.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\Masm.cpp"><Filter>Source Files\backend</Filter></ClCompile>
+    <ClCompile Include="..\src\backend\Regions.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\Spelling.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\SsaSelect.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\Tms6747.cpp"><Filter>Source Files\backend</Filter></ClCompile>
@@ -85,7 +85,6 @@
     <ClCompile Include="..\src\optimizer\OptTable.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\OptValues.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\Optimizer.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
-    <ClCompile Include="..\src\sema\Adapter.cpp"><Filter>Source Files\sema</Filter></ClCompile>
     <ClCompile Include="..\src\sema\Classes.cpp"><Filter>Source Files\sema</Filter></ClCompile>
     <ClCompile Include="..\src\sema\Constexpr.cpp"><Filter>Source Files\sema</Filter></ClCompile>
     <ClCompile Include="..\src\sema\Linkage.cpp"><Filter>Source Files\sema</Filter></ClCompile>
@@ -126,7 +125,6 @@
   <ItemGroup>
     <ClInclude Include="..\src\Abi.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Ast.h"><Filter>Header Files</Filter></ClInclude>
-    <ClInclude Include="..\src\AstDump.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Dialect.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Driver.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="..\src\Lexer.h"><Filter>Header Files</Filter></ClInclude>
@@ -146,6 +144,7 @@
     <ClInclude Include="..\src\backend\CoffEmitter.h"><Filter>Header Files\backend</Filter></ClInclude>
     <ClInclude Include="..\src\backend\Dwarf.h"><Filter>Header Files\backend</Filter></ClInclude>
     <ClInclude Include="..\src\backend\Masm.h"><Filter>Header Files\backend</Filter></ClInclude>
+    <ClInclude Include="..\src\backend\Regions.h"><Filter>Header Files\backend</Filter></ClInclude>
     <ClInclude Include="..\src\backend\Spelling.h"><Filter>Header Files\backend</Filter></ClInclude>
     <ClInclude Include="..\src\backend\Tms6747.h"><Filter>Header Files\backend</Filter></ClInclude>
     <ClInclude Include="..\src\backend\Walker.h"><Filter>Header Files\backend</Filter></ClInclude>
@@ -174,7 +173,6 @@
     <ClInclude Include="..\src\optimizer\OptStrings.h"><Filter>Header Files\optimizer</Filter></ClInclude>
     <ClInclude Include="..\src\optimizer\OptTable.h"><Filter>Header Files\optimizer</Filter></ClInclude>
     <ClInclude Include="..\src\optimizer\Optimizer.h"><Filter>Header Files\optimizer</Filter></ClInclude>
-    <ClInclude Include="..\src\sema\Adapter.h"><Filter>Header Files\sema</Filter></ClInclude>
     <ClInclude Include="..\src\sema\Classes.h"><Filter>Header Files\sema</Filter></ClInclude>
     <ClInclude Include="..\src\sema\ConstArith.h"><Filter>Header Files\sema</Filter></ClInclude>
     <ClInclude Include="..\src\sema\Constexpr.h"><Filter>Header Files\sema</Filter></ClInclude>

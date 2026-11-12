@@ -80,6 +80,9 @@ TypedId Typer::node(syntax::NodeId id) {
             scopes_.back()[text.substr(space + 1)] = d;
         }
     }
+    if (n.kind == syntax::Kind::Var && p_.declaredTypes_.count(id.v) != 0) expectBraces(id, TypeTable::id(p_.declaredTypes_.at(id.v)));
+    if (n.kind == syntax::Kind::Call) expectArguments(id);
+    if (n.kind == syntax::Kind::Other && braced_.count(id.v) != 0) expectBraces(id, braced_.at(id.v));
     std::vector<TypedId> kids;
     std::vector<const Type *> parts;
     for (std::uint32_t i = 0; i < n.count; i++) {
@@ -308,6 +311,8 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
             if (a == nullptr) return nullptr;
             if (op == "&" && !a->isFunction()) return types.pointerTo(a);
             if (op == "*" && da->isPointer() && !da->pointee()->isFunction()) return da->pointee();
+            // [conv.func]: `*f` of a pointer to a function designates it, and is that pointer again wherever it is read.
+            if (op == "*" && da->isPointer()) return da;
             if (isClass(a)) return nullptr;
             if (op == "!") return p_.rules().truthType();
             if ((op == "+" || op == "-") && a->isArithmetic()) return p_.promote(a);
@@ -319,7 +324,12 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
         case syntax::Kind::Postfix:
             return a != nullptr && (a->isArithmetic() || a->isPointer()) ? a->unqualified() : nullptr;
         case syntax::Kind::Binary:
-            if (a == nullptr || b == nullptr || isClass(a) || isClass(b)) return nullptr;
+            if (a == nullptr || b == nullptr) return nullptr;
+            // [expr.eq]/2: a pointer to a member function against nullptr is a truth value.
+            if ((op == "==" || op == "!=") && ((a->unqualified()->isMemberFunctionPointer() && b->isNullPtr()) ||
+                                               (b->unqualified()->isMemberFunctionPointer() && a->isNullPtr())))
+                return p_.rules().truthType();
+            if (isClass(a) || isClass(b)) return nullptr;
             // [expr.eq]/2: a pointer to a data member compares for equality alone, with one or with a null.
             if ((op == "==" || op == "!=") && (a->isMemberPointer() || b->isMemberPointer())) return p_.rules().truthType();
             if (op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=" ||
@@ -339,8 +349,13 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
         case syntax::Kind::Conditional: {
             const Type *x = parts.size() > 1 ? parts[1] : nullptr, *y = parts.size() > 2 ? parts[2] : nullptr;
             if (x == nullptr || y == nullptr) return nullptr;
+            // [expr.cond]/4: scalar arms one type but for const meet at the const one, as an lvalue conditional of them does.
+            if (x != y && x->unqualified() == y->unqualified() && (x->isArithmetic() || x->isPointer())) return x->isConst() ? x : y;
             if (x->unqualified() == y->unqualified()) return x->unqualified();     // [expr.cond]/6: one type
             if (x->isArithmetic() && y->isArithmetic()) return p_.usualArithmetic(x, y);
+            // [expr.cond]/3: an arm the parser converted to the other arm's class meets it there.
+            for (std::uint32_t arm = 1; arm <= 2; arm++)
+                if (isClass(parts[3 - arm]) && convertedTo(st.child(id, arm), *parts[3 - arm]->unqualified())) return parts[3 - arm]->unqualified();
             return nullptr;
         }
         case syntax::Kind::Subscript:
@@ -368,71 +383,58 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
                 return types.get(p_.target_.sizeType());
             if (op.compare(0, 8, "noexcept") == 0) return types.get(Kind::Bool);
             return nullptr;
+        case syntax::Kind::Other: {
+            // A braced element the parser built a class temporary of: the class its constructor builds.
+            std::string symbol;
+            TypeId sig;
+            bool zeroFirst = false;
+            if (op == "{}" && braced_.count(id.v) != 0 && !temporaryBuilt(id, symbol, sig, zeroFirst)) return types.type(braced_.at(id.v));
+            if (op != "{}" || !temporaryBuilt(id, symbol, sig, zeroFirst)) return nullptr;
+            const Type &f = *types.type(sig);
+            return f.isFunction() && !f.params().empty() && f.params()[0]->isPointer() ? f.params()[0]->pointee()->unqualified() : nullptr;
+        }
         default:
             return nullptr;
     }
 }
 
-namespace {
+// [dcl.init]/16: a braced argument is the parameter it copy-list-initialises, a reference's the object it binds.
+void Typer::expectArguments(syntax::NodeId call) {
+    const syntax::Tree &st = p_.syntaxTree_;
+    const std::unordered_map<std::uint32_t, Parser::Resolved>::const_iterator r = p_.resolutions_.find(call.v);
+    if (r == p_.resolutions_.end() || r->second.type == nullptr || !r->second.type->isFunction()) return;
+    const Type &fn = *r->second.type;
+    for (std::uint32_t i = 1; i < st.node(call).count; i++) {
+        const syntax::NodeId c = st.child(call, i);
+        const std::size_t at = i - 1 + (r->second.hasThis ? 1 : 0);
+        if (st.node(c).kind != syntax::Kind::Other || st.text(c) != "{}" || at >= fn.params().size()) continue;
+        const Type &t = *fn.params()[at];
+        braced_[c.v] = TypeTable::id((t.isReference() ? t.referent() : &t)->unqualified());
+    }
+}
 
-// The type the parser gave each syntax node: the innermost Ast.h expression carrying it, which a conversion that wrapped
-// it - and so carries it too - sits outside of.
-struct Collect final : Visitor {
-    std::unordered_map<std::uint32_t, const Type *> types;
-    void note(const Expr &e) { if (e.syntax().valid() && e.type() != nullptr) types[e.syntax().v] = e.type(); }
-    void visit(const Num &n) override { note(n); }
-    void visit(const Var &n) override { note(n); }
-    void visit(const Assign &n) override { note(n); n.target().accept(*this); n.value().accept(*this); }
-    void visit(const Unary &n) override { note(n); n.operand().accept(*this); }
-    void visit(const Binary &n) override { note(n); n.lhs().accept(*this); n.rhs().accept(*this); }
-    void visit(const Postfix &n) override { note(n); n.target().accept(*this); }
-    void visit(const Call &n) override {
-        note(n);
-        if (n.callee() != nullptr) n.callee()->accept(*this);
-        for (std::size_t i = 0; i < n.args().size(); i++) n.args()[i]->accept(*this);
+// [dcl.init.aggr]/2: the items of `list` initialise an aggregate `t`'s elements or members in order; a `{}` item is
+// the subobject it meets, until an item that is no `{}` meets an aggregate - brace elision, which ends the walk.
+void Typer::expectBraces(syntax::NodeId list, TypeId t) {
+    const syntax::Tree &st = p_.syntaxTree_;
+    if (!t.valid() || p_.types_.type(t)->isReference()) return;
+    const Type &a = *p_.types_.type(t)->unqualified();
+    const bool array = a.isArray() && a.pointee() != nullptr;
+    if (!array && !(a.isStructOrUnion() && !p_.hasConstructors(a.tag()) && !a.polymorphic() && a.bases().empty())) return;
+    std::size_t m = 0;
+    for (std::uint32_t i = 0; i < st.node(list).count; i++) {
+        TypeId sub = array ? TypeTable::id(a.pointee()) : TypeId();
+        if (!array) {
+            while (m < a.members().size() && a.members()[m].isBitField() && a.members()[m].name.empty()) m++;
+            if (m >= a.members().size() || a.members()[m].anonUnion != nullptr || (a.kind() == Kind::Union && i > 0)) return;
+            sub = TypeTable::id(a.members()[m++].type);
+        }
+        const syntax::NodeId c = st.child(list, i);
+        const bool braces = st.node(c).kind == syntax::Kind::Other && st.text(c) == "{}";
+        if (braces) braced_[c.v] = sub;
+        else if (p_.types_.type(sub)->unqualified()->isArray() || p_.types_.type(sub)->unqualified()->isStructOrUnion()) return;
     }
-    void visit(const Cast &n) override { note(n); n.value().accept(*this); }
-    void visit(const StrLit &n) override { note(n); }
-    void visit(const VaStart &n) override { note(n); n.list().accept(*this); }
-    void visit(const VaArg &n) override { note(n); n.list().accept(*this); }
-    void visit(const MemberAccess &n) override { note(n); n.object().accept(*this); }
-    void visit(const ExprStmt &n) override { n.expr().accept(*this); }
-    void visit(const Return &n) override { if (n.hasValue()) n.value().accept(*this); }
-    void visit(const Block &n) override { for (std::size_t i = 0; i < n.body().size(); i++) n.body()[i]->accept(*this); }
-    void visit(const If &n) override {
-        n.cond().accept(*this);
-        n.thenArm().accept(*this);
-        if (n.elseArm() != nullptr) n.elseArm()->accept(*this);
-    }
-    void visit(const While &n) override { n.cond().accept(*this); n.body().accept(*this); }
-    void visit(const For &n) override {
-        if (n.init() != nullptr) n.init()->accept(*this);
-        if (n.cond() != nullptr) n.cond()->accept(*this);
-        if (n.step() != nullptr) n.step()->accept(*this);
-        n.body().accept(*this);
-    }
-    void visit(const DoWhile &n) override { n.body().accept(*this); n.cond().accept(*this); }
-    void visit(const Switch &n) override { n.cond().accept(*this); n.body().accept(*this); }
-    void visit(const Case &n) override { n.body().accept(*this); }
-    void visit(const Goto &) override {}
-    void visit(const Label &n) override { n.body().accept(*this); }
-    void visit(const Conditional &n) override {
-        note(n);
-        n.cond().accept(*this);
-        n.thenArm().accept(*this);
-        n.elseArm().accept(*this);
-    }
-    void visit(const Comma &n) override { note(n); n.left().accept(*this); n.right().accept(*this); }
-    void visit(const Break &) override {}
-    void visit(const Continue &) override {}
-    void visit(const FuncletLeave &) override {}
-    void visit(const Try &n) override {
-        for (std::size_t i = 0; i < n.body().size(); i++) n.body()[i]->accept(*this);
-        if (n.hasPad()) n.pad().accept(*this);
-    }
-};
-
-}   // namespace
+}
 
 // **The copy held against its source** (M3b.0): the record, cast type, folded value and literal token the Typer put on
 // typed node `t` against the parser's maps for its syntax node - what is missing, or copied differently, by name.
@@ -725,6 +727,13 @@ bool Typer::convertedBuilt(syntax::NodeId id, std::string &symbol, TypeId &signa
     return true;
 }
 
+// A conditional's arm the parser converted to class `c`: the converting constructor it recorded by the arm builds a `c`.
+bool Typer::convertedTo(syntax::NodeId arm, const Type &c) const {
+    const std::unordered_map<std::uint32_t, Parser::TemporaryBuilt>::const_iterator i = p_.convertedBuilt_.find(arm.v);
+    if (i == p_.convertedBuilt_.end() || i->second.signature == nullptr || !i->second.signature->isFunction()) return false;
+    return i->second.signature->params().size() == 2 && i->second.signature->params()[0]->pointee()->unqualified() == &c;
+}
+
 bool Typer::argumentCopy(syntax::NodeId id, std::string &symbol, TypeId &signature, bool &elided) const {
     const std::unordered_map<std::uint32_t, Parser::ArgumentCopy>::const_iterator i = p_.argumentCopies_.find(id.v);
     if (i == p_.argumentCopies_.end() || (!i->second.elided && (i->second.symbol.empty() || i->second.signature == nullptr))) return false;
@@ -953,8 +962,6 @@ std::string Typer::censusKinds(const Census &c) {
 }
 
 std::string Typer::check(Parser &p, const Program &program, const Source &src, int *differ) {
-    Collect collect;
-    for (std::size_t i = 0; i < program.functions.size(); i++) program.functions[i].body().accept(collect);
     Typer typer(p);
     const syntax::Tree &st = p.syntaxTree_;
     const Census c = census(p, program);
@@ -967,16 +974,15 @@ std::string Typer::check(Parser &p, const Program &program, const Source &src, i
         nodes += static_cast<int>(typer.tree().size() - before);
     }
     std::string out;
-    int typed = 0, agree = 0, absent = 0, cv = 0, lowered = 0, entity = 0, agreeEntity = 0, agreeValue = 0;
-    *differ = 0;
+    int typed = 0, entity = 0, copy = 0;
     for (std::uint32_t i = 1; i <= typer.tree().size(); i++) {
         const TypedNode &n = typer.tree().node(TypedId(i));
         const syntax::Kind kind = st.node(n.syntax).kind;
-        const std::string copy = recordDiffers(p, typer.tree(), TypedId(i));
-        if (!copy.empty()) {
-            (*differ)++;
+        const std::string differs = recordDiffers(p, typer.tree(), TypedId(i));
+        if (!differs.empty()) {
+            copy++;
             out += src.where(st.node(n.syntax).loc) + ": " + syntax::kindName(kind) + " '" + st.text(n.syntax) +
-                   "': " + copy + " on the typed tree is not the parser's\n";
+                   "': " + differs + " on the typed tree is not the parser's\n";
         }
         if (n.type == nullptr) {
             if (kind < syntax::Kind::Block) untyped[syntax::kindName(kind)]++;      // an expression typed null
@@ -987,48 +993,23 @@ std::string Typer::check(Parser &p, const Program &program, const Source &src, i
         }
         typed++;
         std::unordered_map<std::uint32_t, char>::const_iterator from = typer.source_.find(n.syntax.v);
-        const char source = from == typer.source_.end() ? 'r' : from->second;
-        if (source == 'e') entity++;
-        std::unordered_map<std::uint32_t, const Type *>::const_iterator theirs = collect.types.find(n.syntax.v);
-        if (theirs == collect.types.end()) { absent++; continue; }
-        if (theirs->second == n.type) {
-            agree++;
-            if (source == 'e') agreeEntity++;
-            if (source == 'v') agreeValue++;
-            continue;
-        }
-        // Three lowerings the parser makes, named rather than counted as differences: top-level cv, which its Ast.h
-        // keeps on some prvalues and drops through a reference, a conditional's arms promoted or decayed, and a null
-        // constant made a member pointer's -1, which takes the literal's handle with it.
-        if (theirs->second->unqualified() == n.type->unqualified()) { cv++; continue; }
-        if (theirs->second->unqualified()->isMemberPointer() && (n.type->isNullPtr() || n.type->isInteger())) {
-            lowered++;
-            continue;
-        }
-        if (st.node(n.syntax).kind == syntax::Kind::Conditional &&
-            (theirs->second->unqualified() == (n.type->isArithmetic() ? p.promote(n.type)->unqualified() : nullptr) ||
-             (n.type->isArray() && theirs->second == p.types_.pointerTo(n.type->pointee())))) {
-            lowered++;
-            continue;
-        }
-        (*differ)++;
-        out += src.where(st.node(n.syntax).loc) + ": " + syntax::kindName(st.node(n.syntax).kind) + " '" +
-               st.text(n.syntax) + "' typed '" + n.type->describe() + "', the parser says '" +
-               theirs->second->describe() + "'\n";
+        if (from != typer.source_.end() && from->second == 'e') entity++;
     }
-    // The report, one fact a field: the census, then the nodes - every syntax node under a body counted, the expressions
-    // typed null named by kind - then the agreement with Ast.h, the two named lowerings apart.
+    // The census holds when every emitted function is a body or compiler-written; a copy differing fails it too (M3b.7).
+    int synth = 0;
+    for (std::size_t i = 0; i < c.synthesised.size(); i++) synth += c.synthesised[i].second;
+    const int outside = c.emitted - static_cast<int>(c.bodies.size()) - synth;
+    if (outside != 0) out += "-check=typed: " + std::to_string(outside) + " emitted functions are neither a body nor compiler-written\n";
+    *differ = copy + (outside != 0 ? 1 : 0);
     int unt = 0;
     std::string kinds;
     for (std::map<std::string, int>::const_iterator k = untyped.begin(); k != untyped.end(); ++k) {
         unt += k->second;
         kinds += (kinds.empty() ? "  untyped: " : ", ") + k->first + "=" + std::to_string(k->second);
     }
-    // An agreement whose type the typer read back from a record is the parser agreeing with itself, counted apart (C3).
-    char line[320];
-    std::snprintf(line, sizeof line, "-check=typed: %s nodes=%d typed=%d untyped=%d agree=%d differ=%d absent=%d cv=%d lowered=%d "
-                  "recorded=%d entity=%d agreeEntity=%d agreeValue=%d\n", censusLine(c).c_str(), nodes, typed, unt, agree,
-                  *differ, absent, cv, lowered, typer.recorded_, entity, agreeEntity, agreeValue);
+    char line[240];
+    std::snprintf(line, sizeof line, "-check=typed: %s nodes=%d typed=%d untyped=%d copy=%d recorded=%d entity=%d\n",
+                  censusLine(c).c_str(), nodes, typed, unt, copy, typer.recorded_, entity);
     return out + line + censusKinds(c) + (kinds.empty() ? std::string() : kinds + "\n");
 }
 

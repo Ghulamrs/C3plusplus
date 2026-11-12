@@ -30,14 +30,10 @@ bool foldOffsets(MStream &s, Flow &f, const Convention &c);
 // **A register added to one only used as an address** becomes its index, a shift of it the scale.
 bool foldIndex(MStream &s, Flow &f, const Convention &c);
 
-// **A division by a constant is a multiply by its magic number** - see OptDivide.cpp.
-bool divideByConstant(MStream &s, Flow &f);
-
 struct MFunction;
 // **A loop-invariant computation moves in front of the loop**, into a register dead there - see OptHoist.cpp.
 bool hoistInvariants(MFunction &fn);
 bool hoistXmmSlots(MFunction &fn);
-bool widenCounters(MFunction &fn);
 
 // **A loop that fits one line is padded in front so that it does not cross one** - see OptAlign.cpp.
 bool alignLoops(MFunction &fn);

@@ -516,7 +516,7 @@ std::string Tms6747::earlyExit(const Function &fn) {
     }
     genTruth(*cond);
     out_ << "\tMV\tA4, A1\n\t[!A1]\tB\t" << enter << "\n\tNOP\t5\n";
-    value->accept(*this);
+    value->accept(asVisitor());
     narrowInt(fn.returns());
     out_ << "\tB\tB3\n\tNOP\t5\n";
     defineLabel(enter);
@@ -662,7 +662,7 @@ void Tms6747::genAddr(const Expr &e) {
         return;
     }
     if (const Unary *u = dynamic_cast<const Unary *>(&e)) {
-        if (u->op() == '*') { u->operand().accept(*this); return; }
+        if (u->op() == '*') { u->operand().accept(asVisitor()); return; }
     }
     if (const MemberAccess *m = dynamic_cast<const MemberAccess *>(&e)) {
         if (m->isBitField()) {
@@ -676,15 +676,15 @@ void Tms6747::genAddr(const Expr &e) {
     }
     // A struct-valued call or conditional: its value already is an address.
     if (const Call *c = dynamic_cast<const Call *>(&e)) {
-        if (c->type()->isStructOrUnion()) { c->accept(*this); return; }
+        if (c->type()->isStructOrUnion()) { c->accept(asVisitor()); return; }
     }
     if (const Conditional *q = dynamic_cast<const Conditional *>(&e)) {
-        if (q->type()->isStructOrUnion()) { q->accept(*this); return; }
+        if (q->type()->isStructOrUnion()) { q->accept(asVisitor()); return; }
     }
     // **A constructed temporary is a Comma, and it has an address** - so is a
     // virtual call whose result is bound to a reference; the hosts had this.
     if (const Comma *c = dynamic_cast<const Comma *>(&e)) {
-        c->left().accept(*this);
+        c->left().accept(asVisitor());
         genAddr(c->right());
         return;
     }
@@ -903,7 +903,7 @@ void Tms6747::isZero(const Type *t) {
     }
 }
 void Tms6747::genTruth(const Expr &e) {
-    e.accept(*this);
+    e.accept(asVisitor());
     if (e.type()->kind() == Kind::Bool) return;   // a bool is already 0 or 1
     isZero(e.type());
     out_ << "\tXOR\t1, A4, A4\n";  // A4 = (value != 0) ? 1 : 0
@@ -1098,7 +1098,7 @@ void Tms6747::visit(const Assign &n) {
     const MemberAccess *bf = dynamic_cast<const MemberAccess *>(&n.target());
     if (bf != nullptr && !bf->isBitField()) bf = nullptr;
 
-    n.value().accept(*this);        // A4 = value (a struct's is its address), and stays it: the result
+    n.value().accept(asVisitor());        // A4 = value (a struct's is its address), and stays it: the result
     // A local in a register takes the value as a sub-word store and load would leave it: extended.
     const Var *target = bf == nullptr ? dynamic_cast<const Var *>(&n.target()) : nullptr;
     if (target != nullptr && regCandidate(*target))
@@ -1136,9 +1136,9 @@ void Tms6747::visit(const Assign &n) {
 
 void Tms6747::visit(const Unary &n) {
     switch (n.op()) {
-    case '+': n.operand().accept(*this); return;
+    case '+': n.operand().accept(asVisitor()); return;
     case '-':
-        n.operand().accept(*this);
+        n.operand().accept(asVisitor());
         if (n.type()->isFloating()) {
             // Flip the sign bit, which is right for -0.0 and NaN where 0 - x
             // would not be. The bit is in the high word of a double.
@@ -1155,16 +1155,16 @@ void Tms6747::visit(const Unary &n) {
         out_ << "\tNEG\tA4, A4\n";
         return;
     case '~':
-        n.operand().accept(*this);
+        n.operand().accept(asVisitor());
         out_ << "\tNOT\tA4, A4\n";
         if (isWide(n.type())) out_ << "\tNOT\tA5, A5\n";
         return;
     case '!':
-        n.operand().accept(*this);
+        n.operand().accept(asVisitor());
         isZero(n.operand().type());
         return;
     case '&': genAddr(n.operand()); return;
-    case '*': n.operand().accept(*this); load(n.type()); return;
+    case '*': n.operand().accept(asVisitor()); load(n.type()); return;
     default:  unsupported("this unary operator");
     }
 }
@@ -1201,14 +1201,14 @@ bool Tms6747::immediateBinary(const Binary &n) {
         const char *cmp = lt ? (sign ? "CMPGT" : "CMPGTU") : gt ? (sign ? "CMPLT" : "CMPLTU") : "CMPEQ";
         code = std::string("\t") + cmp + "\t" + std::to_string(k) + ", A4, A4\n";
         if (n.op() == BinOp::Ne || n.op() == BinOp::Le || n.op() == BinOp::Ge) code += "\tXOR\t1, A4, A4\n";
-        n.lhs().accept(*this);
+        n.lhs().accept(asVisitor());
         out_ << code;
         return true;
     }
     default: break;
     }
     if (code.empty()) return false;
-    n.lhs().accept(*this);
+    n.lhs().accept(asVisitor());
     out_ << code;
     narrowInt(n.type());
     return true;
@@ -1235,7 +1235,7 @@ void Tms6747::visit(const Binary &n) {
         const Num *k = dynamic_cast<const Num *>(&n.rhs());
         long long v = k ? k->value() : 0;
         if (k && v > 0 && (v & (v - 1)) == 0) {
-            n.lhs().accept(*this);
+            n.lhs().accept(asVisitor());
             int sh = 0;
             while ((1LL << sh) < v) sh++;
             if (sh) out_ << "\tSHL\tA4, " << sh << ", A4\n";
@@ -1245,7 +1245,7 @@ void Tms6747::visit(const Binary &n) {
     }
     long long divisor;
     if (constDivisor(n, divisor)) {
-        n.lhs().accept(*this);
+        n.lhs().accept(asVisitor());
         divideByConstant(n.op() == BinOp::Div, ot->isSigned(target_), divisor);
         narrowInt(n.type());
         return;
@@ -1254,14 +1254,14 @@ void Tms6747::visit(const Binary &n) {
     // A 64-bit shift by a constant is the pair moved or spliced in place, not wideBinary's branch on the count.
     unsigned count;
     if (optimize_ > 0 && isWide(ot) && (n.op() == BinOp::Shl || n.op() == BinOp::Shr) && low32(n.rhs(), target_, count)) {
-        n.lhs().accept(*this);      // A5:A4 = lhs
+        n.lhs().accept(asVisitor());      // A5:A4 = lhs
         if (n.op() == BinOp::Shl) shiftPairLeft(static_cast<int>(count & 63));
         else shiftPairRight(static_cast<int>(count & 63), ot->isSigned(target_));
         return;
     }
-    n.lhs().accept(*this);          // A4 = lhs
+    n.lhs().accept(asVisitor());          // A4 = lhs
     pushValue(ot);
-    n.rhs().accept(*this);          // A4 = rhs
+    n.rhs().accept(asVisitor());          // A4 = rhs
     moveValue(ot, "A6");             // A6 = rhs
     popValue(ot, "A4");              // A4 = lhs   (now A4=lhs, A6=rhs)
 
@@ -1625,7 +1625,7 @@ void Tms6747::storePair(int size, int align) {
 void Tms6747::visit(const Return &n) {
     markLine(n);
     if (n.hasValue()) {
-        n.value().accept(*this);    // result in A4
+        n.value().accept(asVisitor());    // result in A4
         if (inPair(n.value().type())) {
             loadPair(n.value().type()->size(target_), n.value().type()->align(target_));
         } else if (n.value().type()->isStructOrUnion()) {
@@ -1684,7 +1684,7 @@ void Tms6747::visit(const Call &n) {
     // stands in for the argument wherever it goes.
     for (std::size_t i = 0; i < args.size(); i++) {
         if (!args[i]->type()->isStructOrUnion()) continue;
-        args[i]->accept(*this);               // A4 = the struct's address
+        args[i]->accept(asVisitor());               // A4 = the struct's address
         localAddr(n.argSlot(i), "A6", args[i]->type()->size(target_), args[i]->type()->align(target_));
         copyBlock(args[i]->type()->size(target_), "A4", "A6", args[i]->type()->align(target_), args[i]->type()->align(target_) >= 8);
     }
@@ -1715,7 +1715,7 @@ void Tms6747::visit(const Call &n) {
     }
 
     if (n.callee() != nullptr) {
-        n.callee()->accept(*this);  // the function's address
+        n.callee()->accept(asVisitor());  // the function's address
         push();
     }
     for (std::size_t i = 0; i + 1 < inRegs; i++) {
@@ -1781,7 +1781,7 @@ void Tms6747::genArg(const Call &n, std::size_t i) {
     const Type *t = n.args()[i]->type();
     if (inPair(t)) { localAddr(n.argSlot(i), "A4", t->size(target_), t->align(target_)); loadPair(t->size(target_), t->align(target_)); }
     else if (t->isStructOrUnion()) localAddr(n.argSlot(i), "A4", t->size(target_), t->align(target_));
-    else n.args()[i]->accept(*this);
+    else n.args()[i]->accept(asVisitor());
 }
 
 void Tms6747::setOptimizeForSize(bool size) { forSize_ = size; }
@@ -1833,7 +1833,7 @@ void Tms6747::walkInPlace(const Function &fn) {
     if (planning_) planLocals(fn);
     emitParams(fn);
     std::vector<DwarfBlock> outer = takeBlocks();           // -g: the callee's blocks are not the caller's
-    fn.body().accept(*this);
+    fn.body().accept(asVisitor());
     putBlocks(std::move(outer));
     // A return as the body's last statement branches to the next line: dropped.
     const std::string tail = "\tB\t" + returnLabel_ + "\n\tNOP\t5\n";
@@ -1870,7 +1870,7 @@ void Tms6747::call(const std::string &target) {
 // holds every value extended to the word, so widening is nothing and an
 // array decays to the address it already is.
 void Tms6747::visit(const Cast &n) {
-    n.value().accept(*this);
+    n.value().accept(asVisitor());
     const Type *from = n.value().type(), *to = n.type();
     if (to->isVoid()) return;
     if (from->isArray() || from->isFunction()) return;   // decay: the address it is
@@ -1912,7 +1912,7 @@ void Tms6747::visit(const StrLit &n) { genAddr(n); }  // an array: its address
 // parameter, on the stack with everything after it; va_arg reads the value
 // there (8-byte ones 8-aligned, a struct through its pointer) and steps on.
 void Tms6747::visit(const VaStart &n) {
-    n.list().accept(*this);                 // A4 = &ap
+    n.list().accept(asVisitor());                 // A4 = &ap
     regAdd("A15", vaStart_, "A6");
     out_ << "\tSTW\tA6, *A4\n";
 }
@@ -1920,7 +1920,7 @@ void Tms6747::visit(const VaArg &n) {
     const Type *t = n.type();
     bool byRef = t->isStructOrUnion() && !inPair(t);
     int slot = isWide(t) || inPairWide(t) ? 8 : 4;
-    n.list().accept(*this);                 // A4 = &ap
+    n.list().accept(asVisitor());                 // A4 = &ap
     out_ << "\tLDW\t*A4, A6\n\tNOP\t4\n";  // A6 = ap
     if (slot == 8) out_ << "\tADD\tA6, 7, A6\n\tCLR\tA6, 0, 2, A6\n";   // round up to 8: AND puts no constant second
     out_ << "\tADD\tA6, " << slot << ", A3\n\tSTW\tA3, *A4\n";   // ap += slot
@@ -2165,7 +2165,7 @@ void Tms6747::walkBody(const Function &fn) {
     if (!relayout_ && inliner_ && fn.hasLandingPads()) frame_ += kInlineDepth * align8(inliner_->largestFrame());
     // -g: each block's begin and end label, so its variables can be tagged with the code they live in
     if (lineSource() != nullptr) resetBlocks(fn.blocks());
-    fn.body().accept(*this);
+    fn.body().accept(asVisitor());
     // Falling off the end returns 0 - main's C99 meaning, and what the other
     // backends do for every function - or the result pointer for a struct.
     if (sretSlot_ != 0) { localAddr(sretSlot_, "A4"); out_ << "\tLDW\t*A4, A4\n\tNOP\t4\n"; }

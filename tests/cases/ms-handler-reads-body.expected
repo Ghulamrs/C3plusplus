@@ -1,0 +1,9 @@
+note 6 hard at 1
+1 0 0
+at 0 fails 1 last 13
+sum 10 fails 10
+note 9 inner at 10
+nested 1 32
+twice 1129 19
+at 14 fails 11 last 9
+LEDGER built=4 gone=4 live=0 double=0 phantom=0 over=0 lost=0

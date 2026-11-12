@@ -74,10 +74,10 @@ if [ "$(uname -s)" = Linux ]; then
         if "$CXX1" -nologo -arch x86_64-windows -O1 -dump=ssa=${d##*.win-} -S "${d%.win-*}.cpp" -o /dev/null 2>/dev/null | cmp -s - "$d"; then pass=$((pass + 1))
         else echo "FAIL $(basename "$d"): the x86_64-windows IR after ${d##*.win-} differs from the recorded probe"; fail=$((fail + 1)); fi
     done
-    # Selection's probe (round 7): <case>.allocate is the case's -front=ssa -O1 -dump=mir=allocate, MIR as the allocator left it.
+    # Selection's probe (round 7): <case>.allocate is the case's -O1 -dump=mir=allocate, MIR as the allocator left it.
     for d in tests/cases/*.allocate; do
         [ -f "$d" ] || continue
-        if "$CXX1" -nologo -front=ssa -O1 -dump=mir=allocate -S "${d%.*}.cpp" -o /dev/null 2>/dev/null | cmp -s - "$d"; then pass=$((pass + 1))
+        if "$CXX1" -nologo -O1 -dump=mir=allocate -S "${d%.*}.cpp" -o /dev/null 2>/dev/null | cmp -s - "$d"; then pass=$((pass + 1))
         else echo "FAIL $(basename "$d"): MIR after allocate differs from the recorded probe"; fail=$((fail + 1)); fi
     done
 fi

@@ -13,9 +13,12 @@
 #   CPP  a Compiler++ tree (its units are CPP/Compiler++/*.cpp); default
 #        ~/cxxopt-build/cpp, skipped if it is not there
 #   OUT  a scratch directory; default ~/cxxopt-build/identical
+#   REF_FLAGS and NEW_FLAGS, in the environment, are put in front of each side's flags: REF_FLAGS=-front=ssa
+#   holds a NEW whose only path is the SSA lowering (M3b.7, which refuses the flag) against the M3b.6 binary under it.
 #   LEVELS, in the environment, names the levels compared ("0 1 2" unless
 #   set): a step that changes -O1 and -O2 on purpose is gated with LEVELS=0,
 #   -O0 being the reference the other two are diffed against.
+#   JOBS (2 unless set) compiles run at once: the Linux box has 2 cores; the Windows box may take 8.
 #
 # Prints the number of outputs compared and the number that differ, and names
 # each one that does; exits 1 if any does. Runs the compiles eight at a time,
@@ -28,10 +31,18 @@ if [ "${1:-}" = --one ]; then
     REF=$2 NEW=$3 OUT=$4 NAME=$5 SRC=$6; shift 6
     # A diagnostic names the compiler by its own path and a header by its tree's lib/, which differ between the
     # two sides by construction, and indents its caret by that path; all three are made the same before the diff.
-    ( ulimit -t 60; "$REF" "$@" "$SRC" -o "$OUT/$NAME.ref.s" < /dev/null 2>&1; echo "exit=$?" ) |
-        sed -e "s|$REF|cxx1|g" -e "s|$(dirname "$REF")/|<tree>/|g" -e "s/^ *^/^/" > "$OUT/$NAME.ref.err"
-    ( ulimit -t 60; "$NEW" "$@" "$SRC" -o "$OUT/$NAME.new.s" < /dev/null 2>&1; echo "exit=$?" ) |
-        sed -e "s|$NEW|cxx1|g" -e "s|$(dirname "$NEW")/|<tree>/|g" -e "s/^ *^/^/" > "$OUT/$NAME.new.err"
+    # Under Git's bash the tree is /c/... here and C:\... or C:/... in what a cl-built compiler prints: all three go.
+    tree() {
+        d=$(dirname "$1"); printf '%s\n' "s|$1|cxx1|g" "s|$d/|<tree>/|g"
+        command -v cygpath > /dev/null 2>&1 || return 0
+        printf '%s\n' "s|$(cygpath -w "$d" | sed 's/\\/\\\\/g')[\\/]|<tree>/|g" "s|$(cygpath -m "$d")/|<tree>/|g"
+    }
+    tree "$REF" > "$OUT/$NAME.ref.sed"; tree "$NEW" > "$OUT/$NAME.new.sed"
+    ( ulimit -t 60 2> /dev/null; "$REF" ${REF_FLAGS:-} "$@" "$SRC" -o "$OUT/$NAME.ref.s" < /dev/null 2>&1; echo "exit=$?" ) |
+        sed -f "$OUT/$NAME.ref.sed" -e "s/^ *^/^/" > "$OUT/$NAME.ref.err"
+    ( ulimit -t 60 2> /dev/null; "$NEW" ${NEW_FLAGS:-} "$@" "$SRC" -o "$OUT/$NAME.new.s" < /dev/null 2>&1; echo "exit=$?" ) |
+        sed -f "$OUT/$NAME.new.sed" -e "s/^ *^/^/" > "$OUT/$NAME.new.err"
+    rm -f "$OUT/$NAME.ref.sed" "$OUT/$NAME.new.sed"
     exit 0
 fi
 
@@ -64,7 +75,7 @@ for src in $(sources); do
     done
 done
 
-perl -e 'alarm 1800; exec @ARGV' xargs -P 8 -L 1 sh "$SELF" --one "$REF" "$NEW" "$OUT" < "$jobs"
+perl -e 'alarm 1800; exec @ARGV' xargs -P "${JOBS:-2}" -L 1 sh "$SELF" --one "$REF" "$NEW" "$OUT" < "$jobs"
 
 total=0; differ=0
 while read -r name src flags; do

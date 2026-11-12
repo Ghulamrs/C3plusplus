@@ -54,6 +54,9 @@ struct CallInfo {
 
 struct Value { TypeId type; InstId def; BlockId param; std::uint16_t index; Value() : index(0) {} };
 
+// In Inst::lines, no statement: a lexical block opens or closes before the instruction, named by where it opens (Function::blockAt).
+const std::uint32_t kBlockOpens = 0x40000000u, kBlockCloses = 0x80000000u;
+
 struct Inst {
     Op op;
     TypeId type;                    // the result's; none for an instruction with no result
@@ -71,6 +74,7 @@ struct Inst {
     int align;                      // an alloca's
     syntax::NodeId at;
     std::size_t pos;                // the source offset, for -g
+    std::vector<std::uint32_t> lines;   // the statements that begin before this instruction, by source offset: -g's line records
     Inst() : op(Op::Undef), first(0), count(0), k(0), bits(0), cc(Cmp::Eq), call(0), isVolatile(false), align(0), pos(0) {}
 };
 

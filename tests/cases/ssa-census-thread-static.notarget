@@ -1,0 +1,1 @@
+tms6747  thread_local is refused by name there: TI's cl6x has no thread-local storage, and a program for the C6000 is one thread.

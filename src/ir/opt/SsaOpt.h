@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace ir {
@@ -61,6 +62,16 @@ struct PassLog {
         gvnConstants(0), gvnArith(0), gvnCompares(0), gvnCasts(0), gvnGeps(0), gvnSelects(0), gvnLoads(0), gvnStored(0),
         threaded(0), threadedSwitch(0), divShifts(0), divSigned(0), divUnsigned(0), divWide(0), divLeft(0), volatiles(0),
         volatilesKept(0), loopsFound(0), preheaders(0), hoisted(0), hoistedTraps(0), widened(0) {}
+};
+
+// **-g's statement marks across a pass** (Inst::lines): taken before it; `settle` after it hands a removed or moved
+// instruction's marks to the next one left in its block, the terminator at the last - no pass keeps them itself.
+class LineMarks {
+public:
+    explicit LineMarks(const Function &f);
+    void settle(Function &f) const;
+private:
+    std::vector<std::pair<std::uint32_t, std::vector<InstId> > > rows_;    // a block, its instructions and terminator in order
 };
 
 // The pass names -dump=ssa= takes, in the order they run.

@@ -570,7 +570,6 @@ std::vector<StmtPtr> Parser::wrapCleanups(
     const int selectorSlot = intoTry ? targetSel
                                      : allocateFrameSlot(types_.intType());
     functionHasPads_ = true;
-    lastCleanupSlots_ = std::make_pair(pointerSlot, selectorSlot);
 
     std::vector<StmtPtr> out;
     for (std::size_t i = 0; i < built[0].first; i++)
@@ -1168,19 +1167,7 @@ ExprPtr Parser::buildInitializerList(const Type *ilType, Init &in,
         std::vector<InitStep> path;
         emitInit(bk, path, arrType, in, into);
     }
-    // One record per braces: a body replayed with other bindings that built them otherwise leaves none, so the lowering refuses.
-    if (!record.elems.empty()) {
-        const std::uint32_t key = static_cast<std::uint32_t>(in.pos);
-        const std::map<std::uint32_t, ListBuilt>::iterator had = listsAt_.find(key);
-        bool same = had != listsAt_.end() && had->second.elems.size() == record.elems.size();
-        for (std::size_t i = 0; same && i < record.elems.size(); i++) {
-            const ListElement &x = had->second.elems[i], &y = record.elems[i];
-            same = x.symbol == y.symbol && x.signature == y.signature && x.bytes == y.bytes && x.braced == y.braced &&
-                   x.list == y.list && x.defaulted == y.defaulted;
-        }
-        if (had == listsAt_.end()) listsAt_[key] = record;
-        else if (!same) had->second = ListBuilt();
-    }
+    if (!record.elems.empty()) noteListBuilt(static_cast<std::uint32_t>(in.pos), record);
 
     const std::string ilName = ".ilobject" + std::to_string(k);
     const int ilOff = declare(ilName, ilType, pos);
@@ -1754,6 +1741,12 @@ StmtPtr Parser::guardConstruction(std::vector<StmtPtr> steps, std::vector<Alive>
 StmtPtr Parser::guardElements(StmtPtr loop, Alive a, int indexSlot, std::size_t pos) {
     if (destructorOf(a.cls) == nullptr) return loop;
     a.builtSlot = indexSlot;
+    // For the SSA builder (M3b.7): the loop the guard destroys a member's elements built by, "~[]" and the member's name.
+    if (a.owner != nullptr && a.member >= 0) {
+        const std::vector<const Type *> ps{ types_.pointerTo(a.cls), types_.get(target_.sizeType()) };
+        const MemberBuilt u = { vectorLoopName("del", a.cls, pos), types_.functionType(types_.get(Kind::Void), ps, false), false, false };
+        memberBuilt_[currentFunction_ + "|~[]" + a.owner->members()[static_cast<std::size_t>(a.member)].name + "|0"] = u;
+    }
     return guardSubobject(std::move(loop), a, pos);
 }
 

@@ -231,7 +231,7 @@ void Arm64Darwin::genAddr(const Expr &e) {
         return;
     }
     if (const Unary *u = dynamic_cast<const Unary *>(&e)) {
-        if (u->op() == '*') { u->operand().accept(*this); return; }
+        if (u->op() == '*') { u->operand().accept(asVisitor()); return; }
     }
     if (const MemberAccess *m = dynamic_cast<const MemberAccess *>(&e)) {
         if (m->isBitField()) {
@@ -250,14 +250,14 @@ void Arm64Darwin::genAddr(const Expr &e) {
         return;
     }
     if (const Call *c = dynamic_cast<const Call *>(&e)) {
-        if (c->type()->isStructOrUnion()) { c->accept(*this); return; }
+        if (c->type()->isStructOrUnion()) { c->accept(asVisitor()); return; }
     }
     if (const Conditional *q = dynamic_cast<const Conditional *>(&e)) {
-        if (q->type()->isStructOrUnion()) { q->accept(*this); return; }
+        if (q->type()->isStructOrUnion()) { q->accept(asVisitor()); return; }
     }
     // **A constructed temporary is a Comma, and it has an address.**
     if (const Comma *c = dynamic_cast<const Comma *>(&e)) {
-        c->left().accept(*this);
+        c->left().accept(asVisitor());
         genAddr(c->right());
         return;
     }
@@ -440,13 +440,13 @@ void Arm64Darwin::visit(const Num &n) {
 void Arm64Darwin::visit(const Var &n) { genAddr(n); load(n.type()); }
 
 void Arm64Darwin::visit(const VaStart &n) {
-    n.list().accept(*this);
+    n.list().accept(asVisitor());
     out_ << "  add x1, x29, #" << (16 + namedStackBytes_) << "\n";
     out_ << "  str x1, [x0]\n";
 }
 
 void Arm64Darwin::visit(const VaArg &n) {
-    n.list().accept(*this);
+    n.list().accept(asVisitor());
     out_ << "  ldr x1, [x0]\n";
     out_ << "  add x2, x1, #8\n";
     out_ << "  str x2, [x0]\n";
@@ -470,7 +470,7 @@ void Arm64Darwin::visit(const Assign &n) {
     const MemberAccess *bf = dynamic_cast<const MemberAccess *>(&n.target());
     if (bf != nullptr && !bf->isBitField()) bf = nullptr;
 
-    n.value().accept(*this);
+    n.value().accept(asVisitor());
     bool inFp = n.type()->isFloating();
     if (inFp) pushD(); else push();
 
@@ -491,7 +491,7 @@ void Arm64Darwin::visit(const Assign &n) {
 }
 
 void Arm64Darwin::visit(const Cast &n) {
-    n.value().accept(*this);
+    n.value().accept(asVisitor());
     genConversion(n.value().type(), n.type());
 }
 
@@ -522,7 +522,7 @@ void Arm64Darwin::genConversion(const Type *from, const Type *to) {
 }
 
 void Arm64Darwin::genTruth(const Expr &e) {
-    e.accept(*this);
+    e.accept(asVisitor());
     if (e.type()->isFloating()) {
         out_ << "  fcmp " << fpReg(e.type(), 0) << ", #0.0\n";
         out_ << "  cset x0, ne\n";
@@ -535,7 +535,7 @@ void Arm64Darwin::genTruth(const Expr &e) {
 void Arm64Darwin::visit(const Unary &n) {
     switch (n.op()) {
     case '-':
-        n.operand().accept(*this);
+        n.operand().accept(asVisitor());
         if (n.type()->isFloating()) {
             std::string r = fpReg(n.type(), 0);
             out_ << "  fneg " << r << ", " << r << "\n";
@@ -544,11 +544,11 @@ void Arm64Darwin::visit(const Unary &n) {
         }
         return;
     case '~':
-        n.operand().accept(*this);
+        n.operand().accept(asVisitor());
         out_ << "  mvn x0, x0\n";
         return;
     case '!':
-        n.operand().accept(*this);
+        n.operand().accept(asVisitor());
 
         if (n.operand().type()->isFloating())
             out_ << "  fcmp " << fpReg(n.operand().type(), 0) << ", #0.0\n";
@@ -560,7 +560,7 @@ void Arm64Darwin::visit(const Unary &n) {
         genAddr(n.operand());
         return;
     case '*':
-        n.operand().accept(*this);
+        n.operand().accept(asVisitor());
         load(n.type());
         return;
     default:
@@ -584,9 +584,9 @@ void Arm64Darwin::visit(const Binary &n) {
         const Type *ft = n.lhs().type();
         std::string a = fpReg(ft, 0), b = fpReg(ft, 1);
 
-        n.lhs().accept(*this);
+        n.lhs().accept(asVisitor());
         pushD();
-        n.rhs().accept(*this);
+        n.rhs().accept(asVisitor());
         out_ << "  fmov d1, d0\n";
         popD("d0");
 
@@ -613,9 +613,9 @@ void Arm64Darwin::visit(const Binary &n) {
         return;
     }
 
-    n.lhs().accept(*this);
+    n.lhs().accept(asVisitor());
     push();
-    n.rhs().accept(*this);
+    n.rhs().accept(asVisitor());
     out_ << "  mov x1, x0\n";
     pop("x0");
 
@@ -779,7 +779,7 @@ void Arm64Darwin::visit(const Call &n) {
         if (plan.args[i].stackOffset < 0) continue;
 
         if (args[i]->type()->isStructOrUnion()) continue;
-        args[i]->accept(*this);
+        args[i]->accept(asVisitor());
         storeToStack(args[i]->type(), plan.args[i].stackOffset);
     }
     for (std::size_t k = 0; k < extra; k++) {
@@ -787,7 +787,7 @@ void Arm64Darwin::visit(const Call &n) {
 
         if (a->type()->isStructOrUnion())
             unsupported("a struct passed through '...'");
-        a->accept(*this);
+        a->accept(asVisitor());
         if (a->type()->isFloating())
             out_ << "  str d0, [sp, #" << (variadicBase + k * 8) << "]\n";
         else
@@ -795,20 +795,20 @@ void Arm64Darwin::visit(const Call &n) {
     }
 
     if (n.callee() != nullptr) {
-        n.callee()->accept(*this);
+        n.callee()->accept(asVisitor());
         push();
     }
 
     for (std::size_t i = 0; i < named; i++) {
         if (!args[i]->type()->isStructOrUnion()) continue;
-        args[i]->accept(*this);
+        args[i]->accept(asVisitor());
         localIn("x1", n.argSlot(i));
         copyBlock(args[i]->type()->size(target_), "x0", "x1");
     }
 
     for (std::size_t i = 0; i < named; i++) {
         if (dest[i].empty()) continue;
-        args[i]->accept(*this);
+        args[i]->accept(asVisitor());
         if (args[i]->type()->isFloating()) pushD(); else push();
     }
     for (std::size_t i = named; i-- > 0; ) {
@@ -909,7 +909,7 @@ void Arm64Darwin::caseBranch(long long v, const std::string &l) {
 void Arm64Darwin::visit(const Return &n) {
     markLine(n);
     if (!n.hasValue()) { out_ << "  b " << returnLabel_ << "\n"; return; }
-    n.value().accept(*this);
+    n.value().accept(asVisitor());
 
     const Type *t = n.value().type();
     if (t->isStructOrUnion()) {
@@ -1216,7 +1216,7 @@ void Arm64Darwin::emitFunction(const Function &fn) {
 
     namedStackBytes_ = alignTo(plan.stackBytes, 8);
 
-    fn.body().accept(*this);
+    fn.body().accept(asVisitor());
     std::vector<std::string> saved;
     const Type *ret = fn.returns();
     const bool resultInX = ret != nullptr && !ret->isVoid() && !ret->isFloating();

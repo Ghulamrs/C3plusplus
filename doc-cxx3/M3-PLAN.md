@@ -3038,3 +3038,919 @@ cmd, exercised by deleting one stage-3 object and resuming (101 of 101 again, `p
 emit 3109/0, typed and adapted 785/0, ssa 806/0 with 9161 of 9161 bodies verified, c90 447/0, comment cap 0) and at
 `-front=ssa -O2` 0 = 1 = 2 and 2 = 3 on 101 of 101 (each stage about 490 s). **M3b.6 is met on Linux and Windows; the
 Mac's part of the row stays owed** (the Mac runs no builds) and is not claimed from the two boxes.
+
+**M3b.7, planned and round 1, 2026-11-12** (lane b7, branch `m3b7-plan` from main `f9f1ff2d`; `boxkit/m3b7p-*`).
+
+**1. What the deletion rests on, measured at `f9f1ff2d`.** *Every function lowers*: Linux (`ssa.sh`
+in round 1's `make test`, whose lowering is `f9f1ff2d`'s): **9161 of 9161 source bodies and 991 of 991 compiler-written,
+0 outside**. Windows (`ssa.sh` at `SSA_LEVEL=2` over the oracle's tree, `boxkit/m3b7p-win-census.log`): 1155 of 1155
+compiler-written and **9436 of 9440 source bodies - 4 outside**, which take the `Ast.h` path under the flag today:
+`function-try-block-constructor` (`??0S@@QEAA@H@Z`, `??0T@@QEAA@H@Z`, `??1U@@QEAA@XZ`: "a function try block or an
+exception specification") and `member-pointer-models` (`main`: "a pointer to a data member in cl's virtual model").
+**The flip waits on those four** (round 2 A). The lowering runs before any pass, so the count is one count at every level.
+ `Driver.cpp`'s
+`lowerSsa` has no fallback after the lowering - `X86_64Linux::ssaFunction` (`SsaSelect.cpp:99`) takes a function the
+module holds and nothing refuses at selection - so "outside = 0" is the whole condition on the two x86 targets.
+*What is `Ast.h`-only*, in src/ lines at `f9f1ff2d` (94,098 in all):
+
+| what | where | lines | reached under `-front=ssa` on x86? |
+| --- | --- | --- | --- |
+| the adapter, `-front=typed`, `-check=adapted` | `sema/Adapter.h` 116, `sema/Adapter.cpp` 1964, `Driver.cpp:1142-1145,1583-1593` | 2,100 | no - **round 1** |
+| `-dump=ast` | `AstDump.h` 13, `AstDump.cpp` 194, `Driver.cpp:1154,1594-1598` | 215 | no - **round 1** |
+| eleven fact maps the adapter alone read | `Parser.h:630-949` (`syntaxScopes_`, `blockCleanups_`, `returnTemps_`, `tryFacts_`, `throwFacts_`, `temporarySlots_`, `temporaryGuards_`, `functionGuards_`, `fullSlots_`, `bindTemps_`, `rangeFacts_`) and their 13 writes (`ParserStmt.cpp:1493-1554`, `ParserExpr.cpp:2574,3292`, `ParserExprCall.cpp:432`, `ParserTopLevel.cpp:1940`) | about 90 | written, read by nothing once the adapter is gone |
+| `-check=typed`'s oracle | `Typing.cpp:380-435` (`Collect`, a `Visitor` over the parser's bodies) and `Typer::check` `955-1035` | about 140 | no |
+| the x86 expression visitors | `X86_64Linux.cpp:308-1560` less what the selector calls | about 900 | no |
+| the x86 call, return and va code | `X86_64Linux.cpp:1086-1326` (`placeCall`, `visit(Call)`), `1349-1433`, `1434-1484`, and `visit(Var/Num/Unary)`, `genAddr` under them | about 480 | **yes**: `SsaSelect.cpp:367-387` (`ssaExpr`), `751`, `833-836`, `845-874` build `Var`, `Num`, `Unary`, `Call`, `Return`, `VaStart`, `VaArg` nodes and `accept` them - the ABI code "re-pointed, not rewritten" |
+| the Ast.h inliner | `optimizer/Inliner.h` 70, `Inliner.cpp` 190; `X86_64Linux.cpp:1253,1565,1581,1962` | 260 | no on x86; `Tms6747.cpp:1709,1792,1804` uses it |
+| the Walker's statement visitors | `Walker.cpp:36-240` (16 `visit`s), `351-494` (`Try`, `msTryStatement`) | about 350 of 643 | no on x86 (regions and `lsdaTable`, `242-344`, `495-643`, are the selector's too) |
+| `Ast.h`'s nodes and `Visitor` | `Ast.h:14-639` | 626 of 839 | the seven kinds above; `Local`, `Function`, `Global`, `Program` (`640-839`) stay |
+| the constant evaluator | `sema/Constexpr.cpp` 882 (46 casts to node kinds) | 882 | **yes, in the parser**: every constant expression and `constexpr` body is evaluated over `Ast.h` |
+| compiler-written bodies | `sema/Classes.cpp` (257 `ExprPtr`/`StmtPtr` uses in 3,229 lines: `synthesize*`, `storeVptrs`, `memberDestructors`, the vbase and VTT expressions) | about 1,500 | built, then replaced by `ir::Builder`'s; the declarations and layout beside them are read |
+| the parser's building half | 2,169 lines naming `ExprPtr`/`StmtPtr` in `src/parser` (of 30,090), 161 casts to node kinds, `alive_` 95 uses (`Parser.h:1229`), `pendingTemps_` 72 | not separable by a count | built on every target; its *facts* (the maps the Typer reads) are filled by the same code |
+| arm64-darwin and tms6747 | `Arm64Darwin.cpp` 1331 (13 `visit`s), `Tms6747.cpp` 2457 (18) | 3,788 | **their only path**: `setSsa` is `X86_64Linux`'s alone (`Backend.h:25`) |
+
+**2. The oracle.** `f9f1ff2d` built clean on both boxes and kept: Windows `C:\Users\GRA\work\m3b6-ref\cxx3-msvc.exe`
+(cl, md5 `4f25b678543afd4f4eab2cf096e6f047`), Linux `~/m3b6-ref/cxx3.exe` (g++, md5 `5d3c5f0e2ffcc784e4f6b635c77b6a10`), each in a whole
+tree of its own because `Driver.cpp` holds its `lib/` and `include/` by path. `tools/identical.sh` gained
+`REF_FLAGS` and `NEW_FLAGS`: both `-front=ssa` holds the SSA path while the flag exists; after the flip `REF_FLAGS=-front=ssa`
+alone holds the new default against the M3b.6 binary under the flag.
+
+**3. The finding that shapes the plan: the row and section 12 disagree.** The row deletes `Ast.h`'s nodes, `Visitor`,
+the Walker's statement visitors and the parser's building half; exceptions 1 and 2 (`Compiler_Design_Final.md:371-372`,
+this plan's "What is not M3") keep arm64-darwin's and tms6747's walkers until M5 and M6, their output unmoved at every M3
+step - and those walkers are `Visitor`s over exactly those nodes. Both cannot hold. **Decided (the lane's choice, for RP5
+to confirm): nothing is cut and nothing excepted is broken** - M3b.7 deletes everything the two x86 targets and the
+harnesses alone used, and makes x86 unable to reach the rest; the rest (the node classes, `Visitor`, the statement
+visitors, the building half, `alive_` and the region machinery, `Classes`' bodies, `Inliner`) is **named here as owed
+with exception 1 and 2's ends** and goes in the commit that moves the last walker (M6c), with two things it waits on
+besides: the constant evaluator read from the typed tree (882 lines to re-point; no round here may delete a node it
+reads) and the parser's facts recorded without a node in hand. The alternative - an SSA selector for both targets
+inside M3b.7 - is M5 and M6a pulled forward and was not taken.
+
+**4. `Program` and `-check=typed`, decided.** `Program` keeps its data (globals, strings, rtti, throws) and **holds the
+`ir::Module` by value** (`Program::module`, today a local of `Driver::compile`, `Driver.cpp:1617`); `Program::functions`
+stays as the emission order and each function's header (symbol, linkage, parameters, locals for `-g`, `synthesised()`)
+- `factsOf` and the selector's loop read it - and loses `body_` when the nodes go. The x86 generator keeps walking
+`functions` in order and finds each in the module by symbol, so the order emitted cannot move. `-check=typed` prints
+the census line (`functions = bodies + synthesised`, which it fails on) and the typed fraction (`nodes`, `typed`,
+`untyped` by kind) and no `agree`/`differ`; `tests/typed.sh` sums `untyped=` and fails where it exceeds the number
+recorded in `tests/typed.untyped` (it says so when the sum is smaller, to be re-recorded).
+
+**5. The rounds** - each about 45 minutes, on `m3b7` and squashed into the row's one commit; after each the tree builds
+on both boxes, `make test` is green and `identical.sh` reads 0 differ (legs as named). A and B are two lanes; a round's
+files are its own.
+
+| round | lane | what | files owned | gate beyond `make test` |
+| --- | --- | --- | --- | --- |
+| 1 | - | **done here**: the adapter, `-front=typed`, `-check=adapted`, `tests/adapted.sh`, `AstDump.*`, `-dump=ast` | `sema/Adapter.*`, `AstDump.*`, `Driver.*`, `Makefile`, `ide/`, `tools/verify-three`, `tools/identical.sh` | identical 0 differ, both sides `-front=ssa` at -O0 and -O2, and plain at -O0 and -O2 |
+| 2 | A | the four Windows bodies of 1 lowered: a constructor's and a destructor's function try block on the Microsoft ABI, a pointer to a data member in cl's virtual model | `ir/*` (not `ir/opt`), a line or two of `sema/Typing.h` | Windows census 0 outside; winpass `-front=ssa` and `-front=ssa -O2` 0 differ; identical as round 1 |
+| 2 | B | `-check=typed` becomes the census and the fraction; `Collect` and the comparison go; `tests/typed.untyped` recorded | `sema/Typing.cpp:380-435` and `915-1035`, `tests/typed.sh` | the summed census unchanged field for field; identical as round 1 |
+| 3 | A | the eleven write-only maps and their `pending*` records deleted; **the flip's preconditions measured, nothing flipped**: `-g`, `-c` (coff.sh), names.sh, c90.sh and Compiler++ under `-front=ssa` on both boxes, each difference mended or named | `parser/Parser.h` (the map block), the 13 write sites | identical as round 1 |
+| 3 | B | the selector's call, return and va code takes an operand record (a slot, a constant or a frame address, with its type) in place of `Var`/`Num`/`Unary`/`Call`/`Return`/`VaStart`/`VaArg` nodes; `ssaExpr` goes | `backend/SsaSelect.cpp`, `X86_64Linux.cpp:1086-1484`, `X86_64Linux.h` | identical as round 1; winpass |
+| 4 | A | **the flip**: the lowering runs on every x86 compile, `-front=ssa` is refused by name as gone, a function outside the lowering is an error naming it; `Program::module`; the scripts lose the flag (`tests/ssa.sh`, `tools/self-host`, `verify-three`, `mangled-names`, `tools/windows/*`); the x86 `emit.sh` golden re-recorded, arm64 and tms6747 0 changed | `Driver.*`, `Ast.h` (`Program` only), `tests/*.sh`, `tools/` | identical with `REF_FLAGS=-front=ssa` alone, 0 differ at -O0, -O1, -O2 and under `-g`; winpass at -O0 and -O2; self-host 0 = 1 = 2 |
+| 4 | B | no deletion, a split: `CodeGen` (`Backend.h:20`) into the generator and an `AstCodeGen : Visitor`; `Walker` into regions and tables (`Walker.cpp:242-344`, `495-643`) and the statement visitors | `backend/Backend.h`, `backend/Walker.*`, the class heads in `Arm64Darwin.h`, `Tms6747.h` | identical as round 1; `emit.sh` 0 changed on all four targets |
+| 5 | B | x86 leaves `Visitor`: the x86 expression visitors, `genTruth`, the bit-field helpers and the x86 use of `Inliner` deleted | `backend/X86_64Linux.*`, `X86_64Windows.*` | identical against `m3b6-ref` 0 differ at every level; tms6747.sh; `emit.sh` arm64 and tms6747 0 changed |
+| 5 | A | the MIR passes only the Ast.h path fed (widen-counters and divide-by-constant are off under SSA; each other pass by its `-dump=mir=<pass>` count over the suite) | `optimizer/Opt*`, `optimizer/Mir*` | identical 0 differ; the bench table unchanged |
+| 6 | A | the close: `docs/EXCLUSIONS.md` re-cited, the memory gate's number, README and usage text, the history section, `verify-three` on all three boxes and the C6000, the squash; the owed list of 3 moved onto M5's and M6's rows | docs, `M3-PLAN.md` | the row's gate, whole: identical against `m3b6-ref` 0 differ at every level, self-host on every box |
+
+Rounds 2 to 5 run A beside B; 4 B starts from 3 B's tree, 5 B from 4 A's and 4 B's merged. Six rounds, about ten lane-hours.
+
+**6. Round 1, landed in this commit.** Deleted: `src/sema/Adapter.h`, `Adapter.cpp`, `src/AstDump.h`, `AstDump.cpp`,
+`tests/adapted.sh`; `Driver` loses `-front=typed`, `-check=adapted`, `-dump=ast` and their usage text; `make test`
+loses the adapted suite, `ide/` the four files, `verify-three` its `-front=typed` legs. **`src/` 94,098 to 91,783 lines
+(-2,315).** **Gated on the commit's tree**
+(Linux `~/m3b7p`, a clean build of `f9f1ff2d` with round 1 shipped over it): `identical.sh` against `~/m3b6-ref`
+over the cases for all three specs (Compiler++ is not on the Linux box) - both sides `-front=ssa` at -O0 and -O2
+**4752 compared, 0 differ**; plain at -O0 and -O2 **4752 compared, 0 differ** (`boxkit/m3b7p-r1c.out`). Give both
+compilers by absolute path: `./cxx3.exe` leaves a `/./` the tree normaliser misses and six diagnostics that name
+`lib/windows.h` and a POSIX header then read as differing, which the first two runs showed. `make test` rc 0: run.sh
+1127/0, emit 3109/0, typed 785/0 (10152 functions = 9161 + 991; 171 untyped of 229038 nodes - round 2 B's number to
+record), ssa 806/0, coff 0 differ of 1542, c90 447/0, exclusions 127 sites 0/0, comment cap 0, memory gate unchanged,
+`ide/generate.py --check` clean; names, overload and win-structure skip there for want of clang++. Windows: the tree
+builds with cl `/W4 /WX`, no warning (`work\m3b7p`), and winpass at `-front=ssa -O2` reads 754 same (GNU) and 753
+(MASM), 0 differ, 340 refused as recorded (`boxkit/m3b7p-winpass-ssaO2.log`); `identical.sh` was not run on Windows.
+
+
+**M3b.7, round 2 A, 2026-11-12** (lane r2a, branch `m3b7-r2a` from `81422239`; `boxkit/m3b7r2a-*`). **The four Windows
+bodies lower: the Windows census reads 9440 of 9440 source bodies and 1155 of 1155 compiler-written, 0 outside**
+(`ssa.sh` at `SSA_LEVEL=2`, 767 passed, 0 failed; `boxkit/m3b7r2a-win-census.log`). (1) *A constructor's and a
+destructor's function try block on the Microsoft ABI*: `microsoftTry` is split into `msTryOpen` (the handlers read, the
+dispatch pad made) and `msTryClose(st, rethrows)` (the handler funclets), as `tryOpen`/`tryClose` are for Itanium, and
+`Lowering::lower` opens the one for the target round the mem-initialisers and the body, a destructor's members inside
+it; a handler that falls off its end ends in `_CxxThrowException(0, 0)`, [except.handle]/15. (2) *cl's virtual
+member-pointer forms*: `&S::m` and `.*` read the offset of the 8-byte data form and the call reads `$fn` and `$adj` of
+the 16-byte function form, the vbtable index beside them unread - exactly what the parser's `applyMemberPointer` reads;
+a null, a comparison and a conversion of the 8-byte data form stay refused by name (`offsetModel`), no case having one.
+`Typing.h` was not touched. **Gates, on `96577f35`'s tree after a clean ship and build:** winpass `-front=ssa` 754
+same (GNU) and 753 (MASM), 0 differ, and `-front=ssa -O2` 754 and 753, 0 differ, 340 refused as recorded; both cases
+print their `.expected` at -O0 and -O2. Linux `make test` rc 0 (run.sh 1127/0, emit 3109/0, typed 785/0, ssa 806/0 with
+9161 + 991 and 0 outside, coff 0 differ of 1542, c90 447/0, comment cap 0). **`identical.sh`, both sides `-front=ssa`,
+-O0 and -O2, is not 0 and cannot be: 4752 compared, 8 differ on Linux** - the two cases, x86_64-windows, both
+spellings, both levels - because the oracle under the flag emits those four bodies by the `Ast.h` walker and this tree
+by the selector; every other output is the oracle's byte for byte. On the Windows box (first run of `identical.sh`
+there, against `work\m3b6-ref`) 14 differ: the same 8, and 6 that are the tree's own path in a `#error` diagnostic
+(`posix-headers`, `windows-h-layout`) - cl's binary prints `C:\...\lib/glob.h`, which the script's `dirname`
+normaliser, given `/c/...`, misses; `ulimit -t` is refused by Git's bash. Both are `tools/identical.sh`'s (round 1's
+file), named here for the lane that owns it. `src/` 91,783 to 91,810 lines (+27).
+
+**M3b.7, round 2 B, 2026-11-12** (lane r2b, branch `m3b7-r2b` from `81422239`; `boxkit/m3b7r2b-*`). **`-check=typed`
+is the census and the typed fraction.** `Collect` (the `Visitor` over the parser's `Ast.h` bodies) and the comparison
+against it are deleted, and with them the fields `agree`, `differ`, `absent`, `cv`, `lowered`, `agreeEntity` and
+`agreeValue`. The line is now `functions bodies synthesised nodes typed untyped copy recorded entity`; the check fails
+a file where `functions != bodies + synthesised` (said by name) or where `copy` - M3b.0's record copy held against the
+parser's maps by `recordDiffers`, which reads no `Ast.h` node and so stays - is not 0. `tests/typed.sh` holds both and
+fails where the summed `untyped=` exceeds this host's line in the new `tests/typed.untyped` (`Linux 171`, the number at
+`f9f1ff2d`; a host with no line is reported, not failed - the lane's choice, because a case written for another
+target is not compiled on every host); a smaller sum asks for a re-record. Two lines of `Driver.cpp`'s usage text and
+the two `Typing.h` comments that named the oracle were re-worded with it. **Gated on the commit's tree** (Linux
+`~/m3b7r2b`, a clean build): the summed census **unchanged field for field** against round 1's `make test` -
+10152 functions = 9161 + 991, 229038 nodes, 171356 typed, 171 untyped (other=163, name=8), 785 passed, 0 failed;
+`identical.sh` against `~/m3b6-ref` both sides `-front=ssa` at -O0 and -O2 **4752 compared, 0 differ**, plain at -O0
+and -O2 **4752, 0 differ**; `make test` rc 0 (run.sh 1127/0, emit 3109/0, ssa 806/0, coff 0 of 1542, c90 447/0,
+exclusions 127 sites 0/0, comment cap 0, memory gate below its baseline). **`src/` -106 lines** (21 added, 109 removed:
+`Typing.cpp` -89, `Typing.h` 0, `Driver.cpp` +1).
+
+**M3b.7, round 3 B, 2026-11-12** (lane r3b, branch `m3b7-r3b` from `e5092047`; `boxkit/m3b7r3b-*`). **The selector
+builds no `Ast.h` node: `ssaExpr` is gone**, and with it the `Var`, `Num`, `Unary`, `Call`, `Return`, `VaStart` and
+`VaArg` nodes `SsaSelect.cpp` made and `accept`ed. An operand is now `SsaOperand` (a slot, a constant or a frame
+object's address; the type it is loaded as and the type the ABI sees, a class passed or returned from its address
+being the one place they differ), put into the accumulator by `ssaEval`. The walker's call code is `emitCall` over a
+`CallShape`: `visit(Call)` hands it the node (`AstCall`), `selectCall` the operands (`SsaCall`, which never writes the
+outgoing area and inlines nothing - the `Ast.h` inliner had no decision for a node the selector made). `visit(Return)`,
+`visit(VaArg)`, `visit(VaStart)` and `visit(Num)` keep their node halves and call `returnValue`, `vaArg`, `vaStart` and
+`loadConstant`, which the selector calls directly. **Gates, on `b2886302`'s tree after a clean ship and build:** winpass
+`-front=ssa` 754 same (GNU) and 753 (MASM), 0 differ, and `-front=ssa -O2` 754 and 753, 0 differ, 340 refused as
+recorded; cl `/W4 /WX` no warning. Linux: `identical.sh`, both sides `-front=ssa`, -O0 and -O2, against `~/m3b6-ref`:
+**4752 compared, 8 differ - the known 8** (round 2 A's `function-try-block-constructor` and `member-pointer-models`,
+x86_64-windows, both spellings, both levels), none new. `make test`: run.sh 1127/0, emit 3109/0, typed 785/0, ssa 806/0
+(9161 + 991, 0 outside), coff 0 differ of 1542, c90 447/0, exclusions 127 sites 0/0; the comment cap found one group
+(the `returnsThroughPointer` comment left over the one-line overload) and the follow-up commit moves it onto the
+overload that holds the rule - comment-lines 0 and memory gate unchanged, rechecked on the box's tree. `src/` 91,810
+to 91,877 lines (+67): the shape costs lines now and pays when round 5 B deletes the node half.
+
+**M3b.7, round 3 A, 2026-11-12** (lane r3a, branch `m3b7-r3a` from `e5092047`; `boxkit/m3b7r3a-*`). **The eleven
+write-only maps are gone**: `syntaxScopes_`, `blockCleanups_`, `returnTemps_`, `tryFacts_`, `throwFacts_`,
+`temporarySlots_`, `temporaryGuards_`, `functionGuards_`, `fullSlots_`, `bindTemps_`, `rangeFacts_`, their 13 writes,
+and what existed only to fill them - `pendingReturnTemp_`, `pendingTry_`, `pendingThrow_`, `pendingRange_`,
+`lastCleanupSlots_` and their saved-state copies, `TryFacts`/`TryHandlerFacts`/`ThrowFacts`/`RangeFacts`/`ReturnTemp`,
+`tryStatement`'s `facts`, `entryGuards`. `forParts_` lost its `pendingRange_` test (a range-based `for` is noted as a
+block, never a `For`). **`src/` 91,810 to 91,688 lines (-122)**; `docs/EXCLUSIONS.md` re-cited (16 lines moved, 0/0).
+`tools/identical.sh`: the tree's path is normalised in all three forms a cl-built compiler under Git's bash prints
+(`/c/...`, `C:\...`, `C:/...`, by `cygpath`), and `ulimit -t`'s refusal there is silent. **Gate, on `288d67c3`'s tree
+on both boxes: `identical.sh`, both sides `-front=ssa`, -O0 and -O2, 4752 compared, 8 differ on Linux and 8 on Windows
+(14 before the mend)** - round 2 A's four Windows bodies, expected: `function-try-block-constructor` and
+`member-pointer-models`, x86_64-windows, both spellings, both levels; nothing else. Linux `make test`: run.sh 1127/0,
+emit 3109/0, typed 785/0, ssa 806/0 (9161 + 991, 0 outside), coff 0 differ of 1542, c90 447/0; it stopped at the
+exclusions gate on the 16 moved citations, which were then re-cited and the three gates run by hand on that tree:
+exclusions 127 sites 0/0, comment cap 0, memory gate rc 0 (the whole `make test` was not run again).
+**The flip's preconditions, measured under `-front=ssa`, nothing flipped:**
+(1) **`-c`**: `coff.sh` with `CXX1="./cxx3.exe -front=ssa"` on Linux, 1542 objects, 0 differ; not run on Windows (the
+script is serial there and the encoder is the same code on every host). (2) **names**: `names.sh` on the Windows box
+(clang 19.1.5), plain and with `CXX1_FLAGS=-front=ssa`: 691 passed, 101 failed both ways, **0 verdicts differ** (the
+101 are that box's host limits, as recorded in the script); Linux has no clang++. (3) **c90**: host leg on Linux 447/0
+and the x86_64-windows leg on the Windows box 411/0 (27 skipped for a 64-bit long), both under `-front=ssa`.
+(4) **`-g`: not ready, named.** Every case, three spellings, `-g -O0` against `-front=ssa -g -O0` of one compiler
+(`boxkit/m3b7r3a-g.sh`): 2376 compared, **0 differ in exit status, 2274 differ in the lines their records name**, the
+same on both boxes - the SSA path writes a function's entry records and no statement's (`access-through-base`: 29
+`.loc` plain, 10 under the flag; `algorithm-sort-large` 677 and 73), because an `ir::Instr` carries no position and
+the selector never calls `emitLoc`. **Owed before round 4 A's flip**: a position on the instruction, set by the
+lowering, kept by the passes, written by the selector; its gate is this script reading 0 lines differ at -O0 (and
+M10's cdb cases). (5) **Compiler++**: see the line below.
+Compiler++ built by this cxx3 plain, at `-front=ssa` and at `-front=ssa -O2` on Linux, its 129 cases' dumps and runs
+compared (`m3b7r3a-gate.sh cpp`): **not in by the lane's hour** - the plain build took four minutes under the box lock
+beside round 2 B, and the job was left running (`~/m3b7r3a-cpp`, `boxkit/m3b7r3a-linux.out`); M3b.5's close has
+129/129 at `-front=ssa -O2` on `d60009bd`. Not measured on Windows: no Compiler++ tree is on that box.
+**For round 4 A:** `-g` is the one precondition that fails; `-c`, names and c90 hold under the flag on the boxes named.
+
+**M3b.7, round 4 B, 2026-11-12** (lane r4b, branch `m3b7-r4b` from `9eadbdfc`; `boxkit/m3b7r4b-*`). **No deletion, a
+split.** `CodeGen` (`Backend.h`) is the generator alone - `run` and the `set*` doors, no `Visitor` - and `AstCodeGen :
+CodeGen, Visitor` is one that walks `Ast.h`. The new `backend/Regions.{h,cpp}` holds what the Walker wrote and read no
+node for: the call-site regions (`openRegion`, `closeRegion`, `callSite`, the new `addCallSite`), `lsdaTable`, the FH3
+state tree and its selector doors, funclet numbering, the -g blocks, `markLine(pos)`, `openingBrace`, the label counter
+and the hooks those write through (`defineLabel`, `label`, `userLabel`, `emittedSize`, `landingPad`, `caseBranch`,
+`exceptionRegion`, the funclet and unwind-help hooks) - `caseBranch` and `landingPad` because `SsaSelect.cpp` calls them.
+`Walker : AstCodeGen, Regions` keeps the sixteen statement visitors, `msTryStatement`, `markLine(const Stmt &)`,
+`storeUnwindHelpAtEntry` with `padJumps` and `firstUnwindHelp` (they walk `Stmt`s, so they stay although they sat in
+`242-344`), `jump`, `branchIfZero`, `branchIfNotZero`, `genTruth` and `jumps_`. The state the statement walk writes
+(`open_`, `msStates_`, `msTryBlocks_`, `msFuncletRows_`, `msRowsInto_`, `msCurState_`, `msUnwindHelpSlot_`) is
+`Regions`' protected now, where it was the Walker's private. **The three backends' class heads are unchanged** - all
+derive from `Walker`, whose name and members they reach are kept (`Walker::LsdaSpelling`, `Walker::visit`). **Owed to
+round 5 B:** x86 leaving `Visitor` derives from `CodeGen, Regions`; its `jump`, `branchIfZero`, `branchIfNotZero` and
+`genTruth` overrides then lose `override` or go, and `setLineSource` calls `holdLineSource` as `Walker`'s does.
+**Gated on `9dde50cb`'s tree** (Linux `~/m3b7r4b`: r2a's built tree with every file changed since `96577f35` shipped
+and rebuilt, g++ `-Werror`; the goldens recorded by r2a's binary first): `emit.sh` **0 of 3109 changed** on all four
+targets and `emit.sh --o2` (tms6747) **0 of 771**; `identical.sh` against `~/m3b6-ref` plain at -O0 and -O2 **4752, 0
+differ**, both sides `-front=ssa` at -O0 and -O2 **4752, 8 differ - round 2 A's eight known Windows outputs**
+(`function-try-block-constructor`, `member-pointer-models`); `make test` rc 0 (run.sh 1127/0, typed 785/0 with 171
+untyped, ssa 806/0, coff 0 of 1542, c90 447/0, comment cap 0, memory gate below baseline); `ide/generate.py --check`
+up to date (the box generated the three project files). cl was not built - the Windows box is round 3 B's now; the
+merge's Windows build is the first to see this under `/W4 /WX`. **`src/` +34 lines** (519 added, 485 removed:
+`Regions.h` 236 and `Regions.cpp` 271 new, `Walker.cpp` 643 to 374, `Walker.h` 260 to 53, `Backend.h` +5).
+**Follow-up, the Compiler++ job's end:** all three builds rc 0; against the plain build of the same cxx3, the 129
+cases' dumps (`-ast -layout -ir -q`) and runs (`-run -q`), exit codes with them: **`-front=ssa` same 129, differ 0,
+crash 0; `-front=ssa -O2` same 129, differ 0, crash 0** (Linux). The script's check of the plain build's dumps against
+`tests/expected` read 0 of 129 and is the script's comparison, not looked into: the reference here is cxx3's plain build only.
+**M3b.7, round 3 C, 2026-11-12** (lane r3c, branch `m3b7-r3c` from `d9a49733`; `boxkit/m3b7r3c-*`). **`-g` under
+`-front=ssa` writes statements' line records.** The smallest shape: `ir::Inst::lines`, the source offsets of the
+statements that begin before an instruction. `Lowering::mark` notes a statement where the walker's `markLine` stood
+(`stmt`, `block`, a `for`'s declaration, a declaration in a condition) and `add` hands the pending marks to the next
+instruction made; the selector calls `markLine` for each before it selects the instruction - `emitLoc` as it is, no
+backend file but `SsaSelect.cpp` touched. No new `Op`, so no pass, dump or verifier changes, and the IR without `-g` is
+the IR with it. `src/` +10 lines (11 added, 1 removed; four files). **Gates on `6a732afb`'s tree, both boxes after a
+clean ship and build.** (1) **`-g` at -O0** (`boxkit/m3b7r3c-g.sh`: r3a's script, each differing case's two sets kept,
+and a verdict for CodeView's function id alone): 2376 compared, 0 exit statuses differ, **2057 same (r3a: 102), 319
+differ, the same numbers on Linux and Windows; 115,945 records plain, 112,618 under the flag.** *Not 0, and what
+differs, by name:* (a) **91, x86_64-windows GNU, differ only in `.cv_loc`'s function id**: the walker cuts a cleanup
+funclet where nothing can throw and the lowering makes no pad, so the functions after it are numbered one lower -
+every line is there. (b) **8 on x86_64-linux**: five are a handler nothing reaches (`ssa-try-catch`, `handler-exit-ms`,
+`ssa-ms-try`, `ssa-try-in-handler`, `local-try-states`: 9 records the walker writes for code the lowering does not
+emit); three are **this round's fault, one line to move**: `mark` in `condition` also marks `while (T x = ...)`, which
+the walker does not (`condition-declaration`, `condition-declaration-ssa`, `ssa-flow-shapes`: 3 records more) - the
+mark belongs in `stmt`'s `If` case. (c) **103 MASM and 117 GNU on x86_64-windows** (MASM: 304 records only plain, 50
+only under the flag): both Windows spellings erase a record no instruction follows and never write a line twice in a
+function (`CoffSpelling::location`, `MasmSpelling::location`), so a statement keeps its line only where it owns an
+instruction, and the two paths differ in which do - `(void)d;`, `va_end`, a `try`, a `{` (the walker's block label
+stands between two records; the SSA path opens no lexical block), a `case` label (the lowering's `br` keeps it, the
+walker's label does not) - and (a)'s funclets and (b)'s dead handlers again. (2) **`-g` at -O2, measured**: 368 same,
+2007 differ, 115,532 records plain and 68,312 under the flag - a pass that removes an instruction (promote's loads and
+stores first) drops the marks riding on it; the passes copy `lines` with an instruction they copy and nothing moves a
+mark to a survivor. (3) `identical.sh`, both sides `-front=ssa`, -O0 and -O2, against the M3b.6 oracle: **4752
+compared, 8 differ on each box - round 2 A's eight**, nothing new. (4) winpass `-front=ssa`: 754 same (GNU) and 753
+(MASM), 0 differ, 340 refused as recorded. (5) Linux `make test` rc 0: run.sh 1127/0, emit 3109/0, typed 785/0, ssa
+806/0 (9161 + 991, 0 outside), coff 0 differ of 1542, c90 447/0, comment cap 0, memory gate below its baseline.
+**Owed, for round 4 A before the flip:** the `while` mark moved (b); a removed instruction's marks handed to the next
+one in its block, so -O2 keeps its statements; the lexical blocks (`openBlock`/`closeBlock`) the SSA path never opens,
+which the line gate does not see and cdb's Locals will; M10's cdb cases were not run.
+
+**M3b.7, round 4 A, 2026-11-12** (lane r4a, branch `m3b7-r4a` from `e34d02a6`; `boxkit/m3b7r4a-*`). **The flip, with
+one door left open.** The lowering runs on every x86 compile (`selects`, the backend's name); `-front=` in any spelling
+is refused by name as gone; the module is `Program::module` (by value, `Ast.h` includes `ir/Ir.h`); `tests/ssa.sh`,
+`verify-three` (passes `-O2;-O0`), `identical.sh`, `mangled-names` and `bench.ps1` lose the flag, and
+`ssa-own-landing-pads.flags` goes. **A function outside the lowering is not yet an error**: it is one under
+`CXX1_SSA_STRICT=1` (each named, `'f' (symbol) is outside the SSA lowering: why`), and otherwise takes the walker as
+`-front=ssa` always let it - the lane's choice, because the error, gated first, failed two things the suite's census
+(0 outside) cannot see: **c90.sh 218/229** (C bodies, `a 'binary' the typer and the lowering type apart: 'bool' against
+'int'` - C's comparisons are `int`) and **the Windows self-host, stage 0 compiling 21 of 100 sources** (cxx3's own
+sources have bodies outside: a reference bound to a converted value, a constructed class returned from a call, lambdas
+in `C6xPipe.cpp`, ...). M3b.5's fixed point at `-front=ssa -O2` was this fallback's. **Owed, by name:** the self-host's
+and C90's outside census to 0 (`CXX1_SSA_STRICT=1` over `src/` and `tests/c90`), then the switch becomes the rule; and
+**round 4 B's `AstCodeGen : CodeGen, Visitor` is refused by cxx3 itself on the Microsoft ABI** (`Backend.h:40`: "virtual
+functions in a base that is not the first"), so the Windows self-host fails on `Backend.cpp` and `Arm64Darwin.cpp` with
+or without this round - for the merge. **Gates (strict build, `c491fd03`'s tree):** `identical.sh` with
+`REF_FLAGS=-front=ssa` against `m3b6-ref`, Linux -O0/-O1/-O2 **7128 compared, 12 differ** - round 2 A's two cases on
+x86_64-windows, both spellings, now at three levels; Windows -O0/-O2 **4752, 8 differ** (the known 8); winpass -O0 and
+-O2 754 same (GNU) and 753 (MASM), 0 differ, 340 refused as recorded; `emit.sh` against the pre-flip golden 1548 of 3109
+changed, then `--record` (3109); `emit.sh --o2` (tms6747) 0 of 771 changed; `make test` run.sh 1127/0, emit 0 changed,
+typed 785/0, ssa 806/0 (9161 + 991, 0 outside), coff 0 of 1542, c90 218/229 (the fault above, mended by the open door,
+not re-run whole within the hour). `-g` not gated (round 3 C's). **`src/` +27 -15 lines** (`Driver.cpp`, `Driver.h`,
+`Ast.h`).
+**M3b.7, round 3 D, 2026-11-12** (lane r3d, branch `m3b7-r3d` from `b5f2429b`; `boxkit/m3b7r3d-*`). **`-g` under
+`-front=ssa`, continued: four mends, the rest named per case.** (1) `while (T x = ...)` is no longer marked: the mark
+left `condition` for `stmt`'s `If` case. (2) **-O2 keeps its statements by one helper**, `ir::LineMarks`
+(`SsaOptimize.cpp`): the driver takes each block's instructions before a pass and after it hands a removed or moved
+instruction's marks to the next one left in its block, the terminator at the last - no pass knows of marks; the
+inliner's jump keeps the call's. (3) A handler's and a cleanup funclet's statements wrote no record at all (the
+selector marked only the body's loop): `selectMarked` serves the three loops. (4) A label's and a `case`'s mark stands
+in its block, after the jump in, as the walker's stands at its label. `src/` +63 lines (67 added, 4 removed; six files).
+**Gates on `30fbb48d`'s tree, both boxes** (Windows a clean ship and build; Linux round 3 C's tree with the changed
+files shipped and rebuilt). **`-g` at -O0** (`m3b7r3d-g.sh`): 2376 compared, 0 statuses differ, **2080 same (2057
+before), 296 differ, the same on both boxes; 113,443 records under the flag of 115,945 (112,618 before)**. *The 296,
+named in `boxkit/m3b7r3d-named.txt` (every record, its source line, its class; `m3b7r3d-named.py` remakes it):* 92
+x86_64-windows GNU differ only in CodeView's function id (the walker's cleanup funclet where nothing throws); 5 on
+x86_64-linux are a handler nothing reaches (9 records; round 3 C's 3 over-marks gone); **88 MASM (147 records only
+plain, 18 only under the flag; 304 and 50 before) and 111 GNU**, of which 88 name a different line and 23 a column
+alone - by class, each spelling: 99 `try` (the walker stores the unwind help at a `try`, an instruction the line owns;
+the lowering stores it once at entry), 14 `va_end` and 3 `(void)x;` (an instruction in the walker, none in the
+lowering), 7 `{` (the walker's block label; no lexical block here), 35 in included headers, 5 statements the lowering
+emits elsewhere or not at all, 2 only the lowering writes. None mended further: each wants an instruction the lowering
+rightly does not make. **`-g` at -O2: 1195 same (368 before), 1181 differ, 108,806 records of 115,532 (68,312
+before)** - *not 0 and not named per case*: 6,726 records short, what the passes fold away whole (a statement whose
+every instruction went and whose block went with it, a merged block's leading marks) and the two optimizers' different
+survivors. `identical.sh`, both sides `-front=ssa`, -O0 and -O2: **4752, 8 differ on each box, the known eight**.
+winpass `-front=ssa`: 754 (GNU) and 753 (MASM) same, 0 differ, 340 refused as recorded. Linux `make test` rc 0: run.sh
+1127/0, emit 3109/0, typed 785/0, ssa 806/0 (9161 verified, 0 failed after a pass), coff 0 differ of 1542, c90 447/0,
+comment cap 0, memory gate below its baseline. `ide/generate.py --check` was not run apart (no file added).
+**Lexical blocks, what the SSA path lacks:** `Regions::openBlock`/`closeBlock` take the AST's `Block::scope()` number
+and `resetBlocks(fn.blocks())` the AST function's parents; the typed tree carries neither and the selector calls none,
+so a block's locals lose their `S_BLOCK32`/`DW_TAG_lexical_block` (tests/m10 `w2`, `w4`: 4 block labels plain, 0 under
+the flag). Not opened - it wants a scope number on the typed tree's Block and a begin/end mark through the IR, round
+4's size, not a line. **M10's cdb cases were not run in cdb**: the box has no `cdb.exe` under Windows Kits and
+`m10.py` is not in this tree or `work`. The static half (`m3b7r3d-m10.sh`, `.out`): `w1`, `w2`, `w4`, both spellings,
+write **the same line records under the flag as plain (15, 16, 22; 0 differ)** - cdb stops at the same lines; the
+locals' records differ in frame offsets and the missing blocks. **Owed:** the lexical blocks; cdb itself; -O2's per-case list.
+
+**M3b.7, round 4 F, 2026-11-12** (lane r4f, branch `m3b7-r4f` from `4b55c387`; `boxkit/m3b7r4f-*`). **One polymorphic
+base a class.** Round 4 B's `AstCodeGen : CodeGen, Visitor` and `Walker : AstCodeGen, Regions` are refused by cxx3 on
+the Microsoft ABI ("virtual functions in a base that is not the first"); the generators are now one chain, `CodeGen <-
+Regions <- AstCodeGen <- Walker`, and `AstCodeGen` holds Visitor's dispatch (a private `Dispatch : Visitor` forwarding the
+29 visits) instead of inheriting it: every `n.accept(*this)` in the four generator files is `n.accept(asVisitor())`
+(`X86_64Linux.cpp`'s `CallScan` is its own Visitor and keeps `*this`). Round 5 B's x86 can still derive from `Regions`
+(a CodeGen) without Visitor. **Gates at `06df3c22`:** cl /W4 /WX clean; `emit.sh` 0 of 3109 changed and `--o2` 0 of
+771 against goldens recorded by the base's binary (Linux); `identical.sh` (`REF_FLAGS=-front=ssa`) Linux -O0/-O1/-O2
+7128, 12 differ and Windows -O0/-O2 4752, 8 differ - the known ones; winpass -O0 and -O2 754 same (GNU) and 753 (MASM),
+0 differ, 340 refused as recorded. **The Windows self-host at -O2: stage 0 compiled 92 of 100** - the Microsoft-ABI
+refusal is gone, and the 8 that include `Walker.h` met the next wall, `using Regions::markLine;` naming a base that is no
+longer direct ("a using-declaration inside a class is not supported yet here"); a follow-up commit names it through
+the direct base (`using AstCodeGen::markLine;`, the same member for g++, clang and cl) - **ungated within the hour**, so
+stage 1 and 0=1=2 are owed to the merge's gate. Linux `make test` of `06df3c22` rc 0
+(run.sh 1127/0, emit 0 changed, typed 785/0, ssa 806/0, coff 0 of 1542, c90 447/0, comment cap 0, memory gate below). **`src/` +180 -104 lines** (`Backend.h`, `Regions.h`, `Walker.h`, the four generators).
+
+**M3b.7, round 4 E, 2026-11-12** (lane r4e, branch `m3b7-r4e` from `4b55c387`; `boxkit/m3b7r4e-*`). **The census of
+cxx3's own sources, and C's comparisons.** `tools/ssa-census [cxx3] [out]` compiles every `src/` source and every
+`tests/c90/cases` file with `CXX1_SSA_STRICT=1` and writes each outside body (`outside.txt`, now `file:line:col`: the
+lowering keeps the offset of the last statement it began, `Lowering::outsideAt`, and the strict message names it) and
+the count by why (`kinds.txt`); status 1 while any is outside. **Mended:** a comparison or logical operator the typer
+types `int` (C90 6.3.8-6.3.14) and the lowering made `bool` is converted to the typer's type - **c90.sh under strict
+218/229 -> 438 passed, 9 failed** (9 bodies: a `?:` of `char *` and `const char *` (3), a `var` of 3 parts (2), an
+expression statement of 2 parts, an untyped unary, a call through what is not a function pointer, a member not
+reached). **The census on Linux at `a923247a`: 643 bodies outside over 100 sources (0 in the C90 cases)**, most
+common: a `new` whose constructor's arguments outlive it 146, a reference parameter bound to a call that is not an
+object 76, a constructed class returned inside a handler or beside a destructor 56, a class temporary with a
+destructor outside a full expression 47, a named return value built by no constructor 36, a class object called by
+its name 36, a range-`for` variable of a class type (`ir::BlockId` 30, `InstId` 15, `ValueId` 8), a class local from
+a `?:` 28, a reference bound to a `?:` 22 - most in `include/`'s templates as instantiated. 8 backend sources fail for
+another reason (round 4 B's `AstCodeGen` refused on this ABI, round 4 F's files). **Left:** the fallback stays (step 3
+not reached); the before-census with round 4 A's binary, `identical.sh`, the self-host and `make test` were not run
+within the hour. `src/` +11 -3 lines (`Driver.cpp`, `Lowering.cpp`, `Lowering.h`).
+**M3b.7, round 3 E, 2026-11-12** (lane r3e, branch `m3b7-r3e` from `701ed093`; `boxkit/m3b7r3e-*`). **`-g` on the SSA
+path opens its lexical blocks; -O2's differences named.** (1) **Blocks.** The parser keeps where each numbered block
+opens (`blockAt_` beside `blocks_`; `Function::blockAt(pos)`, 0 where two share a place); the lowering marks a block's
+and a `for`'s open and close in `Inst::lines` (`ir::kBlockOpens`, `kBlockCloses` over the source offset - no scope
+number on the typed tree, and `LineMarks` hands them on at -O2 as it does a statement's); the selector's `ssaMark`
+calls `Regions::markBlock`, which opens a block once, closes it only in the funclet it opened in, and closes what a
+funclet's or the body's end finds open (`closeOpenBlocks`) - a mark out of order widens a range, never inverts it.
+Lowering edits: five lines in `block` and `forStmt`. **tests/m10 `w2`, `w4`, both spellings: 4 block labels from the
+walker (`m3b6-ref`), 4 here, the same names; line records 15, 16, 22, 0 differ** (`m3b7r3e-m10.sh`). Not opened, by
+name: a range-based `for`'s two blocks, a handler's, a `while`'s or `if`'s condition declaration's (`enterBlock` with
+no position: their locals sit in the enclosing scope). (2) **A `for`'s condition and step carry its line**, as the
+walker's `markLine` did (two `mark(id)`). (3) **Since the flip there is no flag to compare under**: the plain side
+is the M3b.6 oracle's walker (`REF=`, `m3b7r3e-g.sh`), this tree takes none; `before` is round 3 D's tree under
+`-front=ssa` by the same script. **`-g` at -O0: 2376 compared, 0 statuses differ, 2080 same before and after, both
+boxes** (204 lines, 92 function id alone; `boxkit/m3b7r3e-named.txt`, the classes and counts round 3 D's). **`-g` at
+-O2: 1224 same (1195 before), 1104 differ and 48 by function id alone, both boxes** - *not 0; named per case in
+`boxkit/m3b7r3e-named-O2.txt`* (`m3b7r3e-named2.py` remakes it; 470 cases x86_64-linux, 309 each Windows spelling).
+By class, MASM records (cases): 505 (224) a declaration the passes made a value - no instruction is its own, where
+the old optimizer keeps a store or a move; 256 (64) in included headers (inlined library code, different survivors);
+99 (51) `try`; 63 (38) an expression statement folded away whole; 17 (14) `return x;` that is the fall through; 16
+(12) a loop's line (45 (32) before the `for` marks); 14 only this path writes; 9 `{`; 7 `if`; 6 labels; 2 others.
+x86_64-linux, where no record is erased: 927 header, 443 declarations, 397 expressions, 140 loops (169), 63 `if`, 38
+`return`, 22 others. None is one rule to mend: each wants an instruction the passes rightly removed (cl drops the
+same lines); what would hold them is a value's location record (`S_DEFRANGE`, `DW_OP` lists), not a line.
+**Gates on `8357d6b0`'s tree** (Windows a clean ship and build; Linux round 3 D's tree with the changed files shipped
+and rebuilt): `identical.sh` (`REF_FLAGS=-front=ssa`, -O0 and -O2) **4752, 8 differ on each box, the known eight**;
+winpass -O0 754 (GNU) and 753 (MASM) same, 0 differ, 340 refused as recorded; Linux `make test`: run.sh 1127/0, emit
+3109/0, typed 785/0, ssa 806/0 (9161 verified, 0 failed after a pass), coff 0 of 1542, c90 447/0, then **rc 2 at the
+exclusions gate - 11 citations my added lines moved**; re-pointed in the next commit and `tools/exclusions --check`
+re-run alone: 127 sites, 0 uncited, 0 stale. `src/` +51 lines (60 added, 9 removed; twelve files).
+**Owed:** cdb itself - **the box has no `cdb.exe`** (nothing installed, by the brief), so Locals under a block are
+checked only statically; the four block kinds above; -O2's value locations.
+
+**M3b.7, round 4 G, 2026-11-12** (lane r4g, branch `m3b7-r4g` from `fcd322fb`; `boxkit/m3b7r4g-*`). **Temporaries that
+outlive the call they were built for.** In `Lowering::newExpression`: a `new` whose constructor's arguments leave
+temporaries alive keeps its storage's guard under them, with a built flag - zeroed where the full expression began, set
+where the guard began, cleared once the constructor returns - so a throw from the constructor frees the storage and a
+later one does not ([expr.new]/20). Full expressions opened where none was: `returnCopied`'s form 3 (a return built in
+the caller's object by a constructor), `returnConstructed` (the value's temporaries die before its bytes go out) and a
+reference local bound to a call's lvalue (`localVars`' reference branch; the extended forms untouched). Probe
+`tests/cases/ssa-new-arguments-outlive` (the ledger, clang's answer from the Windows box): right under
+`CXX1_SSA_STRICT=1` and plain at -O0 and -O2 on Linux. **Census on Linux at `72c04d03`: 595 outside** (round 4 E's 643
+at `a923247a`); *"a 'new' whose constructor's arguments outlive it" 146 -> 0, "a class temporary with a destructor
+outside a full expression" 47 -> 0*. **Left, not mended:** "a reference parameter bound to a 'call'" (87 now, bodies
+reaching further) is nearly all `v.push_back(Agg{ ... })` of an aggregate with string or vector members - it wants the
+parser to record each member's build for a `T{...}` temporary (as `noteAggregateMember` does for a local) and a
+member-by-member cleanup, the same wall as "an aggregate with a destructor built member by member" (25); not in the
+lowering's files alone. `tests/ssa.sh` levels 1 and 2: 807 passed, 0 failed. `identical.sh` (`REF_FLAGS=-front=ssa`, -O0/-O1/-O2, Linux): 7137, 21 differ - the probe's 9 (its bodies were outside, the oracle walks them) and 12 others, the tail showing the known `member-pointer-models` (not listed one by one within the hour). **Owed:** Linux `make test` (running at the hour, `~/m3b7r4g-maketest.log`), the base census (`before`, queued after it), Windows winpass; the base `fcd322fb` was not gated apart. `src/` +38 -2
+lines (`Lowering.cpp`).
+
+**M3b.7, round 4 H, 2026-11-12** (lane r4h, branch `m3b7-r4h` from `fcd322fb`; `boxkit/m3b7r4h-*`). **Four census
+kinds into the lowering**, each by its rule, in `Lowering.cpp` only. *A class object called by its name* (36):
+`namesCalledFunction` took any `clE` in the symbol for an operator() - `12TemplateDeclE` holds one, so every
+`grow(n)` in `vector<sema::TemplateDecl>` was taken for a member functor; the symbol is now read name by name (each
+`<length><name>` stepped over whole), `cl` and the head seen only where a name begins, which also finds a head after a
+class name ending in a digit (`7Tms67477genAddrE`, the 74 bodies of `Tms6747.cpp` round 4 F let the census reach). *A
+range-for variable of class type* (53, `ir::BlockId`/`InstId`/`ValueId`/`TypeId`): a class with constructors whose copy
+is the implicit trivial one is copied by its bytes, as a plain class is (`rangeForStmt`'s `copied`). *A constructed class
+returned beside a destructor or inside a handler* (56): `returnConstructed` saves its bytes in a `$ret` slot, then
+leaves the scopes and handlers by `leaveHandlers` ([stmt.return]: the value, then the destructors). *A named return
+value built by no constructor* (36): `namedReturnLocal` takes `T r = f();`, the parser's elided call, built through
+this function's result pointer (`intoSret_`, as `returnCopied`'s form 2). Also `arithmetic`'s local `at_` renamed - it
+hid round 4 E's member and cl /W4 /WX refused the tree at `fcd322fb` (C4458). Functions changed: `namesCalledFunction`,
+`returnConstructed`, `namedReturnLocal`, `rangeForStmt`'s variable rule, `arithmetic` (one name).
+**Census on Linux, `de61e137` (before the digit mend): 643 -> 603 outside**; the four kinds 56/36/53 -> 0, 1, 0 and
+called-by-name 36 -> 74, every one in `Tms6747.cpp` (newly reached; the digit mend `a203144c` is for them). ssa.sh
+levels 1 and 2: 806 passed, 0 failed. `identical.sh` (`REF_FLAGS=-front=ssa`, -O0/-O1/-O2) 7128, 12 differ - the known
+twelve (`function-try-block-constructor`, `member-pointer-models`, x86_64-windows). Windows, `946e8923`: cl clean;
+winpass -O2 and -O0, 754 (GNU) and 753 (MASM) same, 0 differ, 340 refused as recorded. Linux `make test` of `de61e137`: rc 2 by the comment cap alone (this round's two-line comment over one line, made one
+in `fc6a12c2`) - run.sh 1127/0, emit 3109/0, typed 785/0, ssa 806/0 (9161 verified), coff 0 of 1542, c90 447/0. **At the final tree (`fc6a12c2`'s code): census 532 outside** (643 at `a923247a`), the four kinds (handler, named return, called by name,
+range-for) 0, 1, 0, 0; Windows cl clean, winpass -O2 and -O0 754/753 same, 0 differ. ssa.sh 1/2, `identical.sh` and
+`make test` of it were running at the hour (`boxkit/m3b7r4h-linux2.out`) - owed to the merge's gate.
+**M3b.7, round 4 I, 2026-11-12** (lane r4i, branch `m3b7-r4i` from `77317c32`; `boxkit/m3b7r4i-*`). **Three census
+kinds into the lowering**, in `Lowering.cpp` only. *A member named `templates_`, `templateName_`, ...* (33): one rule -
+`memberAddress` refused any name beginning `template`, meant for `o.template f<T>()`; it now refuses `template` alone
+or followed by a space. *A class local initialised by a conditional* (28): `classLocal` takes a class conditional
+([expr.cond]/6, `classConditionalNode`) of a class with no destructor and no copy of its own - the chosen arm's bytes.
+*A constructed class returned from what is neither a local nor a temporary* (13): `returnConstructed` takes the same
+conditional (`TypeTable::id`'s `t == nullptr ? TypeId() : t->id()`). Probe `tests/cases/ssa-conditional-class-value`
+(**its `.expected` written by hand, not yet clang's - owed**). Round 4 H's `opAt` rename cherry-picked (cl C4458).
+**Census** (Linux, `feed8185`): 706 outside of 100 sources (the 8 backend sources reach it now; 643 of 92 at
+`a923247a`): member names 33 -> 0, the conditional local 28 -> 0, neither-local-nor-temporary 13 -> 1.
+**Gates on `feed8185`**: Windows winpass -O2 and -O0 755 (GNU) / 754 (MASM) same, 0 differ, 340 refused as recorded;
+Windows `identical.sh` 4758, 14 differ = the known 8 and the new probe's 6 (bodies the oracle sends to the walker);
+Linux `ssa.sh` levels 1 and 2 807/0. Linux `identical.sh` (levels 0, 1, 2) 7137, 21 differ = 12 of earlier cases and the probe's 9; Linux `make test` rc 0
+(run.sh 1128/0, emit 3113/0, typed 786/0, ssa 807/0, coff 0 of 1544, c90 447/0, comment cap 0, memory gate lower).
+`src/` +14 lines (91928 -> 91942).
+**Left of this lane's kinds:** a reference parameter bound to a conditional (31: std::string conditionals with a
+literal arm - wants the parser's record of the arm's conversion, [expr.cond]/3); a return of 9 parts (26:
+`Spelling.h`'s `return { Op::Reg, ... }`, a braced return reaching a constructor); a constructor's arguments not
+matching (14); a class assigned from a braced temporary (11). The aggregate kind went to round 4 J.
+
+**M3b.7, round 4 K, 2026-11-12** (lane r4k, branch `m3b7-r4k` from `43ecab15`; `boxkit/m3b7r4k-*`). **The merged
+census, and two kinds no lane owned.** Gate of `43ecab15` as it is: Windows cl /W4 /WX clean; winpass -O2 755 (GNU)
+and 754 (MASM) same, 0 differ, 340 refused as recorded. **Census on Linux: 345 outside** (532 at round 4 H's tree; 4 G's
+`new` arguments and temporaries outside a full expression, and 4 H's four kinds, all 0 - no regression, no new kind):
+90 reference parameter bound to a call, 36 and 30 the conditional pair, 26 aggregate built member by member, 26 a
+return of 9 parts, 16 `templates_`, 15 constructed class returned, 14 constructor arguments, 11 class assigned, 8
+`templateName_`, 7 a body falling off its end, 6 a reference returned to another type, then the 1-4 tail. The two
+largest kinds outside round 4 J's and 4 I's lists are this round's, in `Lowering.cpp` only. *A reference returned to
+another type* (6: each `Backend::target()`, `defaultBackend`, `AstCodeGen::asVisitor`): an lvalue of a class returned
+as a reference to its base is the base subobject ([dcl.init.ref]/5), by `baseSubobject` (offset 0, past a first
+base; a virtual base by its rule, unprobed - see below). *A body that falls off its end without a value* (7: every one ends in a call to a
+`[[noreturn]]` failure the parser reads and drops): a reference's fall-off value is a null address, the walker's zero;
+a class's end is `unreachable` ([stmt.return]/2, undefined). Probe `tests/cases/ssa-return-base-reference` (both
+returns, two base shapes, a reference and a class falling off after a `[[noreturn]]` throw): right on Windows at -O0
+and -O2, and inside the lowering under `CXX1_SSA_STRICT=1`. **Two faults found, not mended:** the parser refuses
+`V &virt() { return w; }` for `struct W : virtual V` ("returns a reference to a temporary of this function") -
+stricter than the standard, the virtual base dropped from the probe; and `tools/windows/compare-cases.py` counts a
+COMPILE-FAILED case as nothing (no `.out`, so not a differ) - the probe's first -O2 pass said "0 differ" without it.
+Lane tree on Windows: cl /W4 /WX clean; winpass -O2 755/754 and -O0 755/755 same, 0 differ (the probe reshipped
+during -O0). Functions changed:
+`returnStmt`'s reference rule, `fallOffValue`, the body's fall-off branch. `src/` +7 -4 lines.
+**Census of the lane, Linux: 345 -> 333 outside** - the two kinds 7 and 6 -> 0, and one body newly outside
+(`returnStmt` itself: the rule first chose the base by `?:`, a class local initialised by a conditional; rewritten as
+an assignment in `7bacabd0`, so the final tree's count is 332 by that one body, not re-measured). The 1-5 tail, this
+lane's after round 4 I ended, is left for the next round. **Owed at the hour:** ssa.sh levels 1 and 2, `identical.sh`
+and `make test` on Linux (`boxkit/m3b7r4k-linux2.out`; `make test` builds the final `Lowering.cpp`), and the Windows
+winpass of `7bacabd0` (cl /W4 /WX clean on it, the probe right at -O0 and -O2).
+**M3b.7, round 4 J, 2026-11-12** (lane r4j, branch `m3b7-r4j` from `66a34111`; `boxkit/m3b7r4j-*`). **An aggregate
+temporary built member by member.** (1) **The record.** `Parser::aggregateTemporary` reads a `T{...}` of an aggregate
+through `emitRecordedInit`, so each member a constructor builds is recorded as a local's list is, and keeps it in
+`listsAt_` by the braces' position - the `{}` call node's, which `Typer::listBuilt` already answers by; one record per
+braces (`noteListBuilt`, the check `buildInitializerList` had, now shared): a replay that builds them otherwise voids it.
+A temporary inside another aggregate's list no longer adds its members to the outer record. (2) **The build.**
+`Lowering::recordedTemporaryNode` (one of `temporaryNode`'s kinds, so a reference parameter, a by-value argument and
+`classObject` take it) and `aggregateBuilt`, shared with `recordedAggregate`: the list placed as recorded and, for an
+aggregate with a destructor, [except.ctor]/2 - each member a constructor built is guarded as it is made, so a later
+member's throw unwinds through the ones before it; once the whole is made their guards end with no destructor and the
+whole's begins (the temporary's to its full expression's end, a local's to its scope). A class local `A a = {...}` with
+a destructor takes the same path (its array form still refused). Refused by name instead of guessed: a member with a
+destructor no constructor builds, and members whose values leave temporaries alive under the guards. Probe
+`tests/cases/ssa-aggregate-temporary-members` (the ledger, clang's answer from the Windows box: 6 built, 6 gone, all
+zero), a `T{...}` bound to `const T &` and a local, each once with the second member's constructor throwing.
+**Gates** (Linux, the lane's tree rebuilt): the probe right under `CXX1_SSA_STRICT=1` and plain at -O0 and -O2.
+**Census 595 -> 563 outside** (before: round 4 G's 595 on its tree - the base `66a34111` was not censused apart, the box
+lock held by three other lanes): *"a reference parameter bound to a 'call'" 87 -> 48, "an aggregate with a destructor
+built member by member" 25 -> 0*; the next wall is the new name "an aggregate with a destructor whose members' values
+leave temporaries" (30 - a member copied from a temporary that outlives it, `Agg{std::string(..)}` and the like: its
+guards would have to sit under the full expression's, as round 4 G's flag does for `new`). `tests/ssa.sh` levels 1
+and 2: 808 passed, 0 failed. **Owed at the hour:** `identical.sh` and `make test` (running on the box, chain PID
+3056409, `~/m3b7r4j-chain.out`), Windows winpass. `src/` +81 -31 lines (six files).
+**M3b.7, round 4 L, 2026-11-12** (lane r4l, branch `m3b7-r4l` from `85a72e63`; `boxkit/m3b7r4l-*`). **Two of round 4
+I's three left kinds into the lowering, each by a record from the parser.** *A constructor called with arguments its
+parameters do not match* (14): every one a temporary whose constructor the parser completed with default arguments
+(`Reg{}`, `opt::Local{d, w}`, `PseudoInfo(c, h)`, `Member()`) - `constructTemporary` keeps the defaults' syntax as a
+mem-initialiser by the temporary's slot, `noteTemporarySlot` files it in `memberDefaults_` as `function|^$tmp:<node>`
+(as a `new`'s `$new:` is), and `Lowering::construct` reads it where the parts fall short ([dcl.fct.default]/9). *A
+return of 9 parts* (26, `Spelling.h`'s `return { Op::Reg, r, 0, ... }`): the braces' constructor record (`bracedBuilt_`)
+is filed under the return's own node, and `returnStmt` builds a `$ret` slot by `constructFromList` for a class returned
+by its bytes ([stmt.return]/2). Probe `tests/cases/ssa-temporary-defaults-return-braces`, **its `.expected` clang's**
+(the Windows box): right under `CXX1_SSA_STRICT=1` at -O0 and -O2 on Linux. **Census** (Linux, `c11ee36f`, the same
+`src/`): **236 outside** of 100 sources; both kinds 0 (26 and 14 at round 4 I's `feed8185`, whose 706 lacked rounds 4 G
+and H; `85a72e63` was not counted apart). **Left:** *a reference parameter bound to a conditional* (38 now) - not
+attempted: the arm's conversion to `std::string` is a temporary with a destructor built in one arm only, so it wants the
+parser's record of the arm's converting constructor *and* a flagged guard, more than the hour held. Also left, found by
+the probe: a default argument that is itself a temporary completed by defaults (`const Slot &s = Slot(7, 8)`) is noted
+while `applyDefaults` has `currentFunction_` on the constructor, so its key misses the calling function and the body
+stays outside by the old name (the Windows build compiled that line and the Linux one refused it - not explained).
+**Gates on `3bbf8c44`'s `src/`:** Linux `tools/exclusions --check` 127 sites, 0 uncited, 0 stale (nine citations
+re-pointed); comment cap 0 over; Windows cl clean, winpass -O2 757 (GNU) and 756 (MASM) same, 0 differ, 340 refused as recorded; -O0 GNU 757 same, 0 differ.
+**Owed at the hour** (running, `boxkit/m3b7r4l-win2.out`, `m3b7r4l-linux2.out`): winpass -O0 MASM, both
+`identical.sh`, `ssa.sh` levels 1 and 2, the memory gate (my step ran it with `sh`, it is Python) and Linux `make test` -
+the run in flight began with the first probe, which Linux refuses to compile, so its run.sh count is owed again.
+`src/` +41 lines (48 added, 7 removed; four files).
+
+**M3b.7, round 4 M, 2026-11-12** (lane r4m, branch `m3b7-r4m` from `6730f492`; `boxkit/m3b7r4m-*`). **The gate hole,
+and two refusals stricter than the standard.** *The hole*: `tools/windows/compare-cases.py` counted what the winout
+folder held, so a case with a `.expected` that failed to compile (a `.build`, no `.out`) was neither same nor differ.
+It now counts every case from `tests/cases` - same, differ, refused, not refused, **compile-failed, not run** (each
+named, each failing the pass), and skipped by `.notarget` / `.nomasm` - in `c0daa064`. **Base `6730f492` under both
+counters**, one pass each, the old counter run beside the new one on the same outputs: -O2 and -O0 alike, GNU 757 and
+MASM 756 same, 0 differ, 340 refused as recorded, **0 compile-failed, 0 not run** (32 / 33 skipped) - the old and the
+new agree, so no case had been passing silently; the hole round 4 K met was its probe's alone. *The refusals*
+(`e49c6baa`): (a) `using Regions::markLine;` naming a member of an indirect base ([namespace.udecl]/3 asks only for a
+base) - `ParserType.cpp`'s class using-declaration now walks every base, not the direct ones; (b) `V &f() { return w; }`
+for `W : virtual V` refused as "a reference to a temporary of this function" - the virtual base's step is a comma, and
+`returnStmt` (`ParserStmt.cpp`) took every comma for a temporary; it refuses now only when the operand was not a
+glvalue. Cases `using-declaration-indirect-base` and `return-virtual-base-reference`, their `.expected` clang's (the
+Windows box's clang++ -x c++ -std=c++11 -pedantic-errors), right on Windows at -O0 and -O2. **Lane gate on `e49c6baa`**:
+Windows cl /W4 /WX clean; winpass -O2 GNU 759 / MASM 758 same, 0 differ, 340 refused, 0 compile-failed, 0 not run;
+-O0 GNU 759 / MASM 758 same, 0 differ, 0 compile-failed, 0 not run. **Census** (Linux, lane): 262 outside of 100 sources (no census of `6730f492` itself was taken; round
+4 K's lane read 333 before the merges of 4 J and 4 L). Linux `ssa.sh` levels 1 and 2 811 / 0 each; `identical.sh` (`REF_FLAGS=-front=ssa`, -O0/-O1/-O2, oracle M3b.6) 7173 compared, 57 differ, every one a probe the oracle compiles otherwise or refuses: `function-try-block-constructor` 6, `member-pointer-models` 6 (the known twelve), `ssa-conditional-class-value`, `ssa-new-arguments-outlive`, `ssa-return-base-reference` 9 each (rounds 4 I, 4 G, 4 K), and this round's two, 9 each (the oracle refuses both). Windows `identical.sh` (-O0, -O2) 4782 compared, 38 differ - the known 8 and the five probes, 6 each. Linux `make test` of `e49c6baa`: rc 2 by the exclusions gate alone (19 `ParserType.cpp` citations past the seven new lines) - run.sh 1132/0, emit 3129/0, typed 790/0, ssa 811/0 (9214 verified), coff 0 of 1552, c90 447/0; then re-pointed (`001a6122`) and the new comment folded under the cap: exclusions 0 uncited / 0 stale, comment cap 0, memory gate rc 0 on the final tree. **Owed to the merge:** one whole `make test` of the final tree (its code differs from `e49c6baa` by one comment). The census tail (step 3) was not started:
+no room in the hour for a mend and its gate. `src/` +16 -7 lines (92002 -> 92011).
+
+**M3b.7, round 4 N, 2026-11-12** (lane r4n, branch `m3b7-r4n` from `f2a51733`; `boxkit/m3b7r4n-*`). *A reference parameter
+bound to a 'call'* (48 at 4 J): every one is `v.push_back(T{...})` of a class with a constructor of its own (`Sub`,
+`Local`, `Signature`, `LabelDef`, `Candidate`). `builtTemporary` took `T{a, b}` only where every parameter is a scalar;
+it now takes any where no value is a braced list for a class parameter and the constructor is not the initializer_list
+one - `T(a, b)`'s path. Box check: four of five shapes now lowered; `T{c}` reaching a default argument stays outside
+as "a constructor called with arguments its parameters do not match" (round 4 L's kind). *An aggregate's member from a
+temporary of its class* (the 30): a build-in-place branch (`constructHere`, now shared by `temporary` and
+`extendedTemporary`) was added to `aggregateMember` but **is not reached** - `Agg{.., std::string()}` still refused by
+the same name; the probe keeps only the first shape. Probe `tests/cases/ssa-braced-constructor-temporary` (ledger,
+`LF_BALANCE_ONLY`; `.expected` by hand, clang's owed). Probes of 4 G/4 I/4 J/4 K right at -O0/-O2, strict and plain, on
+the lane tree. Box: disk at 98%, 6 GB of finished lanes' `identical.sh` scratch removed; two diagnosis compiles ran
+outside the lock. **Owed:** census before/after, ssa.sh 1/2, identical.sh by name, make test, winpass.
+**M3b.7, round 4 O, 2026-11-12** (lane r4o, branch `m3b7-r4o` from `0bcfd8a5`; `boxkit/m3b7r4o-*`). **A reference bound to a
+conditional, and round 4 L's left case.** (1) *A reference parameter bound to a conditional* (38): every one a class
+conditional with one arm of another type - a literal beside a `std::string`. The parser's record was already there
+(`userConversion` files the arm's converting constructor in `convertedBuilt_` by the arm's node); the lowering never asked
+it. `Lowering::conditionalClass` is the class the arms meet at ([expr.cond]/3: both arms', or the one the other converts
+to), `convertedArm` the question of one arm, and `conditionalArm` builds a converted arm by `convertedTemporary` in its
+own branch - the result itself, one object, as clang makes it - under the arm's built flag (`canFlag`, the guard round 4
+G's `new` uses); `convertedTemporary` refuses by name where no flag can be carried. (2) *A default argument that is a
+temporary completed by defaults* (`const Slot &s = Slot(7, 8)`): `applyDefaults` hides `currentFunction_`, so the record
+was filed as `|^$tmp:<node>`; `defaultsOwner_` keeps the calling function for `noteTemporarySlot`'s key. **The hosts did
+not differ**: Linux's probe step set `CXX1_SSA_STRICT=0` for its "plain" run and `Driver` reads the variable's presence,
+so both Linux runs were strict, while both Windows strict steps of round 4 L failed before compiling (a stale flag, then a
+missing `ptmp`) and the only Windows compile was winpass's, not strict, where the body went to the walker. Probe
+`tests/cases/ssa-reference-conditional-converted` (the ledger; a throw while the arm's temporary is and is not built;
+`Info(1)`), **its `.expected` clang's** (the Windows box): strict rc 0 on Windows for both x86_64 targets at -O0 and
+-O2, right under strict on Linux at -O0 and -O2. **Census** (Linux, `ba7ce8d6`, the same `src/` but one comment line):
+**236 -> 144 outside**; *"bound to a 'conditional'" 38 -> 0*, and the bodies behind it lowered with it. **Gates on
+`4556140a`:** Windows cl clean; winpass -O2 760 (GNU) and 759 (MASM) same, 0 differ, -O0 760 and 759 same, 0 differ, 340
+refused as recorded, 0 COMPILE-FAILED; `tools/exclusions --check` 127 sites, 0 uncited, 0 stale (seven
+`ParserExprNew.cpp` citations re-pointed after the merge). Linux `make test` on `4556140a`: **rc 2** - run.sh 1133 passed, 0 failed; emit.sh 3133 passed, 0 failed; syntax.sh 3
+passed; **typed.sh 791 passed, 1 failed: 173 untyped nodes against the 171 recorded in `tests/typed.untyped`** - not
+mended: most likely the probe's conditionals of a class and a literal, which `Typer` types only where the arms are one
+type (it should take the converted arm's class from `convertedBuilt_`, as the lowering now does); the run stopped there,
+and its comment gate would have failed too (one group over the cap, mended in `c34bed13` by moving a comment line,
+`tools/comment-lines` 0 over). **Owed at the hour** (running: `boxkit/m3b7r4o-linux2.out`, `m3b7r4o-win2.out`; Linux
+logs `~/m3b7r4o-{ssa1,ssa2,ident}.log`): the typer's conditional and `make test` whole again; `ssa.sh` levels 1 and 2;
+both `identical.sh`; the memory gate's verdict.
+`src/` +34 lines (43 added, 9 removed; four files).
+
+**M3b.7, round 4 P, 2026-11-12** (lane r4p, branch `m3b7-r4p` from `81207a70`; `boxkit/m3b7r4p-*`). **Why round 4 N's
+build-in-place branch was never reached, and two of the census tail.** (1) *An aggregate with a destructor whose
+members' values leave temporaries* (34): for a member class with a copy constructor of its own (`std::string`,
+`nonTrivialCopy`), `Parser::initConstruct` records the copy constructor (`noteAggregateMember` with the signature,
+`bytes` false), so the branch round 4 N guarded by `e.bytes` never saw `Agg{.., std::string()}`; the copy constructor's
+argument, the temporary, stayed live under the member guards. `aggregateMember` now takes a recorded copy constructor
+(one argument, a reference to the member's class) of a destroyed temporary of that class as it takes bytes: the
+temporary's constructor run on the member ([dcl.init]/17, the copy elided as clang elides it, [class.copy]/31). (2) *A
+braced list as an argument of `Walker::JumpTargets`* (4): `bracedArgument` builds an aggregate the parser recorded member
+by member (`listBuilt_`, `lb.members`) by `aggregateBuilt`, guarded to its full expression where it has a destructor.
+(3) *A compound assignment to a bool* (3, all `b |= x`): `b = b op v` with `truth` ([expr.ass]/7); an enumeration's stays
+refused, as "a compound assignment to an enumeration". Not attempted: the class temporaries outside a full expression
+(3) and the class argument that is not an object (3). Probe `tests/cases/ssa-aggregate-member-temporary` (ledger,
+`LF_BALANCE_ONLY`; a string-like class stands for `std::string`, whose MSVC headers clang refuses at `-std=c++11`):
+**its `.expected` clang's** (the Windows box), right under `CXX1_SSA_STRICT=1` at -O0 and -O2 on Windows and Linux; the
+probes of 4 J and 4 N right too. **Windows** (`4ab369cf`, cl clean): winpass -O2 and -O0 each GNU 763 / MASM 762 same,
+0 differ, 340 refused as recorded, 0 compile-failed, 0 not run. `src/` +12 lines (14 added, 2 removed; `Lowering.cpp`).
+range-for) 0, 1, 0, 0; Windows cl clean, winpass -O2 and -O0 754/753 same, 0 differ. Linux, the final tree: ssa.sh
+levels 1 and 2 806/0; `identical.sh` 7128, 12 differ (the known twelve); `make test` rc 0 (run.sh 1127/0, emit 3109/0,
+typed 785/0, ssa 806/0, coff 0 of 1542, c90 447/0, comment cap 0, memory gate below its baseline).
+lane's after round 4 I ended, is left for the next round. Linux, after the hour: ssa.sh levels 1 and 2, 808 passed, 0
+failed; `identical.sh` (`REF_FLAGS=-front=ssa`, -O0/-O1/-O2) 7146, 30 differ - this probe's 9 (the oracle walks its
+bodies), round 4 G's `ssa-new-arguments-outlive` 9, and the known twelve (`function-try-block-constructor`,
+`member-pointer-models`); `make test` of the final `Lowering.cpp` rc 0 (run.sh 1129/0, emit 3117/0, ssa 9192 verified,
+coff 0 differ, c90 447/0, comment cap 0, memory gate lower). **Owed:** the Windows winpass of `7bacabd0` (cl /W4 /WX
+clean on it, the probe right at -O0 and -O2).
+
+**M3b.7, fix 1: the merge's regressions, 2026-11-12** (branch `m3b7-fx1` from `03109b85`). The merge gate of rounds 4
+G-Q found five faults; each traced to one lane. (1) *The verifier on `plain-class-values`* and (2) *five pre-existing
+cases' output* (`plain-class-values`, `lambda-capture-hides-template`, `library-cppparse-pieces`,
+`new-class-array-placement`, `regex-ecmascript`): round 4 Q's WIP `1327377d`, never gated on Linux, made a conditional
+of two lvalues apart in const an lvalue (`isLvalueNode`); a scalar read took the address merge instead of a read in each
+arm, and a class one (`constChoice`) branched a `P *` into a `const P *` block parameter. Reverted whole (`14ca78fc`):
+its goal, the const-apart lvalue conditional, is owed to the round that gives it a probe. (3) *typed.sh 175 > 171*: the
+four were the `{}` elements of round 4 L's and 4 P's probes; the typer now types a `{}` the parser built a class
+temporary of (`bracedBuilt_`) as that constructor's class - 157 untyped on Linux, re-recorded, no emitted output
+changed. (4) *Exclusions 1/1*: the union member function's citation re-pointed, `ParserClass.cpp:2403` -> `2391`.
+(5) *Memory gate 44 -> 47*: `conditionalClass` returns a `TypeId`, its callers and `convertedArm` hold handles - 42,
+recorded. **Linux** (final code `9e815c0a`): ssa.sh levels 1 and 2 816/0; `identical.sh` (`REF_FLAGS=-front=ssa`,
+-O0/-O1/-O2) 7218, 102 differ - the known two (`function-try-block-constructor`, `member-pointer-models`) and the
+lanes' probes only (4 G, I, J, K, L, M's two, N, O, P); `make test` rc 0 (run.sh 1137/0, emit 3149/0, typed 795/0,
+ssa 9294 verified, coff 0 of 1562, c90 447/0, exclusions 0/0, comment cap 0, memory gate 42). `src/` +7 lines (30
+added, 23 removed; `Lowering.cpp`, `Lowering.h`, `Typing.cpp`). **Windows** (the same code, cl clean): winpass -O2 and -O0 each GNU 764 / MASM 763 same, 0 differ, 340 refused as recorded, 0 compile-failed, 0 not run.
+**M3b.7, round 5 B, 2026-11-12** (lane r5b, branch `m3b7-r5b` from `03109b85`; `boxkit/m3b7r5b-*`). **The census tail,
+nine of it.** (1) *A return with no value* (2, both `return {};` of a `std::vector`): the braces hold no child, so
+`returnStmt` hands a class with a copy of its own to `returnCopied` with no value, and form 3 runs the default
+constructor `buildReturned` recorded on the caller's object ([dcl.init.list]/3). (2) *std::nullptr_t* through
+`make_owned`/`std::forward` (a reference parameter to it 2, a return type of `std::nullptr_t &&` 1, a `nullptr` literal
+bound to a reference 2): `referable` takes std::nullptr_t; a literal bound to `std::nullptr_t &&` is a slot holding the
+null; a glvalue of it given to a by-value std::nullptr_t parameter is evaluated, not read. (3) *A class temporary with a
+destructor outside a full expression* (2 of 3, `const Member &m = *t.findMember("x");`): a reference local's initialiser
+is a full expression whatever its shape; the third is a range-for's range. (4) *A class argument that is not an object*
+(2 of 3, `refuseInlineAmbiguity`'s `= nullptr` default): a null pointer constant given to a pointer to member function
+(no `$vbi`) is its zero bytes; a closure by value is taken too, though `giveRegisters`' lambda stays outside. (5) *A
+reference parameter to 'const struct Abi'* (1): a reference to a class incomplete here is its address. Not attempted:
+the const-bound conditionals (4 - the parser picks `push_back(T &&)` where the typer says const lvalue, a parser/typer
+question), the `std::string(Str)` conversion-function family (4), the C90 five, the `{...}` thrown and returned
+aggregates. Probe `tests/cases/ssa-return-braces-nullptr`, its `.expected` clang's (Windows, `-nostdinc++ -isystem
+include`), right under `CXX1_SSA_STRICT=1` on both targets. **Census** (Linux) 03109b85 -> 9de6aeac: outside 70 -> 58 (kinds in
+`boxkit/m3b7r5b-linux.out`). **Linux**: ssa.sh levels 1 and 2 816/1 (the 1
+is plain-class-values, fx1's); `identical.sh` 7227, 156 differ - the merge gate's names plus this probe's 9; `make test`
+rc 2 for typed 175 > 171 alone (fx1's); run.sh 1138/0, emit 3153/0. **Windows** winpass -O2 GNU 765 / MASM 764 same,
+0 differ, 0 compile-failed; -O0 stopped by the new rule (the coordinator gates the merged wave); cl /W4 /WX clean; exclusions 1/1 and memory gate 44->47 are the merge gate's, fx1's. `src/` +28 lines (38 added, 10 removed; `Lowering.cpp`).
+**M3b.7, round 5 a - landed on `m3b7-r5a`, 2026-11-12** (from m3b7 03109b85; lane on the Windows box). The census's
+aggregate, range-for and array-member kinds, 36 bodies, each to 0: the census of 03109b85 had 80 outside in 29 kinds
+(Linux), this tree 38 in 23 - none new. (1) *An aggregate with a destructor whose members' values leave temporaries*
+(27): the kind was never round 4 N's `constructHere` shape - it is a member already guarded while a later value (or the
+member's own constructor argument, `{ label(..), label(..) }`) leaves a temporary above the guard, `{ cc->symbol,
+functionType(.., std::vector<..>{..}), false, false }`. `aggregateBuilt` now keeps each member's guard under those
+temporaries with a flag ([class.temporary]/3, [except.ctor]/2): set where the member's address was made, cleared once
+the whole is made, so the full expression's end skips it and a later value's throw still destroys the members built.
+The flag is `flagUnder`, lifted out of the `new` whose arguments outlive it ([expr.new]/20), which now calls it - one
+implementation. (2) *Range-based for* (6): an array of any complete class bound by reference (the slot is its address,
+nothing copied); a range that is a conditional of two class ranges, each arm's one object under the arm's flag, alive to
+the loop's end. (3) *An array member past the one-by-one count* (2): `buildElements` and `destroyMembers` loop on `$i`
+as the parser's `eachElement` does; the built elements are guarded by the class's `__cxx1_vec_del_` loop, whose name
+`Parser::guardElements` records as `~[]member`; `elementAt` moved from the Builder to the Lowering, the Builder calling
+it. Probe `tests/cases/ssa-aggregate-value-temporaries` (ledger, `LF_BALANCE_ONLY`, no standard header): **its
+`.expected` clang's** (the Windows box), right under `CXX1_SSA_STRICT=1` at -O0 and -O2 on Windows, strict-clean for
+Linux. **Linux** (`477a163b`): ssa.sh levels 1 and 2 816 passed, 1 failed (`plain-class-values`, fx1's); `identical.sh`
+7227, 156 differ - the base's 147 by name and this probe's 9; `make test` rc 2 for fx1's items alone but one: run.sh
+1138/0, emit 3153/0, typed 177 untyped against the base's 175 (this probe's two nodes; fx1 holds the count), comment
+cap 0, memory gate 44->47 as at the base; exclusions 3/3 there, the two citations this round's six parser lines moved
+re-pointed after it (1/1, fx1's, left). `src/` +96 lines (134 added, 38 removed).
+**Windows** (`477a163b`, cl /W4 /WX clean): winpass -O2 and -O0 each GNU 765 / MASM 764 same, 0 differ, 340 refused as
+recorded, 0 compile-failed, 0 not run. Static gates on the final tree: exclusions 1/1 and memory gate 44->47 (both the
+base's, fx1's), comment cap 0. The Windows `identical.sh` was stopped unfinished at the coordinator's new rule.
+
+**M3b.7, round 5 C, 2026-11-12** (lane r5c, branch `m3b7-r5c` from `c1ddb2ec`; `boxkit/m3b7r5c-*`). **The conditional
+fix 1 owed, and the typer's braces.** (1) A conditional of two scalar lvalues one type but for const is an lvalue of the
+const type ([expr.cond]/4, `Lowering::constApartScalars`): `lvalue` converts each arm's address to the const pointer
+before the join, so the block parameter has one type (round 4 Q's `P *` into `const P *` cannot recur); a read of it
+keeps reading in each arm (`conditional`), so no scalar read moved; class arms keep their copy (`conditionalObject`),
+owed. The typer meets such arms at the const type too (arithmetic and pointer arms only). Probe `ssa-conditional-const-lvalue` (a `const int &` bound to
+it, its address, a read, a `int *const &`): clang's answer, cxx3 -O0/-O2 the same, -check=ssa strict 5/5 lowered on
+both targets. The five cases fix 1 named (`plain-class-values`, `lambda-capture-hides-template`,
+`library-cppparse-pieces`, `new-class-array-placement`, `regex-ecmascript`): 30 of 30 compiles (two targets, -O0/1/2)
+byte-identical to M3b.6's `-front=ssa`. (2) typed.sh untyped 157 -> 107: a nested `{}` of an aggregate's initialiser
+is typed as the element or member it initialises (`Typer::expectBraces`), up to the first brace elision, where the
+walk stops; what is left is 99 `{}` (elided, argument and range braces) and 8 names. `tests/typed.untyped` re-recorded.
+**Gate** (the lane gate the coordinator set: no winpass, ssa.sh, whole identical.sh or make test): the probe right on
+both boxes; the five 30/0; typed.sh 796 passed, untyped 107 (other=99, name=8); exclusions 0 uncited 0 stale, comment
+cap 0, memory gate 42 (handles, `TypeId`, where a first cut had raised it to 47). Census: no new kind - against
+`m3b7r5a`'s, +2 `a conditional that is no lvalue` (`Tms6747::planRegisters`, `Parser::unaryNode`) and -4 `a reference
+that can write bound to a const`, both fix 1's base: `c1ddb2ec`'s binary refuses the same functions the same way.
+**M3b.7, round 6 B (the census toward 0), 2026-11-12, lane m3b7-r6b from `e0617a41`.** `tools/ssa-census` at the base
+(Windows box, `-arch x86_64-linux`): **22 outside** - 12 this lane's, 8 round 6 A's (the `std::string(Str)` family, the
+braced throw and return, the two lambda kinds), 2 round 5 C's (*a conditional that is no lvalue*). **After: 17**; five
+kinds' bodies inside, each by its rule. (1) *A member 'b' the lowering does not reach* (`bf_compound.c`): `step` reads
+its target through `fieldAddress`, and a bit-field steps in its promoted type and goes back through `bitStore` - the
+half of `bitAssign` that puts a value in the unit, lifted out, `bitAssign` calling it (one implementation); `++f.b` as
+an object is refused by name. (2) *A 'unary' the typer did not type* (`fnptr_deref_call.c`): `*f` of a pointer to a
+function is that pointer again ([conv.func]) in the typer and in `unary`. (3) *A var of 3 parts* (2,
+`pd_malloc_block.c`, `pd_matrix_through_function.c`): a C-style cast's type-id left its bound, `(int (*)[4])p`, a loose
+node the declaration around it adopted; `castExpr` drops the type-id's notes as a template's folded arguments are
+dropped. (4) *An expression statement of 5 parts* (1 of 2, `Parser::tryStatement`): `flatBraces` counted any `{` as a
+nested list; it now counts depth, so a `{` inside a value's parentheses or after a value's type name is that value's
+own - `MemberBuilt{ s, f(std::vector<T>{ .. }), false, false }` is one `{}` call. **Left, by name** (12 of this lane's
+are 7 now): *a call of what is not a function pointer* (`decl_function_in_block.c` - a function declared in a block is
+a `var` the name binds to; calling it direct where the name's type is a function did not take and was reverted - the
+call's record is not `Call` there, the parser's to settle); *an expression statement of 5 parts*
+(`Parser::switchStatement`, `SwitchCtx{ {}, nullptr, .. }` - a value that is itself a braced list); *a thread_local
+built at run time* (2, `intern` in OptStrings and OptTable - a thread's guard and `__cxa_thread_atexit`, a feature, not
+a rule); *a class temporary* (`forwardValues`, `Forward(..).run()`); *a class temporary with a destructor outside a
+full expression* (`structOrUnionSpecifier`, a range-for's range); *a 'binary' the typer did not type*
+(`refuseInlineAmbiguity`, `(this->*same)(..)`). With round 6 A's and 5 C's kinds gone the census stands at 7, not 0:
+**the strict default is not next yet**. Found on the way, not this lane's: `Holder{ take(1), Pair{ take(2), 4 } }` is
+refused by the parser ("'$list1' is 'int' and this is 'struct Pair'") - a refusal stricter than the standard; and
+postfix `++` on a bit-field is refused by name. Probe `tests/cases/ssa-bitfield-step-deref-call` (no standard header):
+**its `.expected` clang's** (the Windows box), right under `CXX1_SSA_STRICT=1` at -O2 on Windows for both arches and at
+-O0 and -O2 on Linux. cl /W4 /WX clean. Static gates (Linux, final tree): comment cap 0; exclusions 1 uncited, 1 stale - the
+base's (`ParserClass.cpp:2391`, a file this lane did not touch), the eight citations this lane's parser lines moved
+re-pointed; memory gate rc 0. No winpass, ssa.sh, identical.sh or
+make test here - the coordinator's. `src/` +29 lines (36 added, 7 removed).
+
+**M3b.7, round 6 A, 2026-11-12** (lane r6a, branch `m3b7-r6a` from `f1b9104a`; `boxkit/m3b7r6a-*`). **Two of the
+census tail.** (1) *A reference that can write bound to a const* (3 of 4: `BuilderCopy.cpp`, `SsaCfg.cpp`,
+`SsaPromote.cpp`, each `push_back(c ? v : f())` with `v` a `const ValueId`): [expr.cond]/3.3 converts the plain arm to
+the const one and a class prvalue keeps its const, so the answer is a `const ValueId` prvalue and `push_back(const T &)`
+is chosen - clang says so (`which(c ? cv : make())` binds `const V &`). The typer was right; the parser's class branch
+of `?:` dropped the const, and now keeps it where an arm is a prvalue. Two const-apart *lvalue* arms stay as they were
+(round 5 C's), but **two bodies moved outside as "a conditional that is no lvalue"** (`Tms6747::planRegisters`,
+`Parser::unaryNode`: `p ? *p : v[i]`, both arms lvalues the parser's `isLvalue` does not see as such) - owed, with
+round 5 C's lvalue answer, before the merge. The fourth, `ParserTopLevel.cpp:178`, is gone too; its function stops next
+at an aggregate's temporaries (round 5 A's). (2) *A braced temporary thrown* (`throw T{...}`): through the constructor the parser
+recorded, or an aggregate built member by member (`listBuilt_`, `aggregateBuilt`) - `Source::fail`'s
+`SubstitutionFailure{...}` has a constructor and now takes the first path. Not attempted: the `std::string(Str)`
+explicit-conversion family (4) and `giveRegisters`/`emitWindow`'s lambdas. Probe `tests/cases/ssa-conditional-const-class`,
+its `.expected` clang's (Windows, `-nostdinc++ -isystem include`), right under `CXX1_SSA_STRICT=1` on Windows (both
+targets) and Linux (-O0, -O2). **Census** (Linux, the final parser, throw of the WIP): outside 58 -> 57 (ref-to-const
+-4, no-lvalue +2, aggregate +1); the final tree's census queued behind the wave gate's lock and was stopped by PID.
+Windows cl /W4 /WX clean; exclusions 0/0, comment cap 0; memory gate not printed (no `new` added). `src/` +13 lines (22 added, 9
+removed; `ParserOperator.cpp`, `Lowering.cpp`).
+**M3b.7, round 7 A (the census's last bodies), 2026-11-12, lane m3b7-r7a from `53b515da`.** `tools/ssa-census` (Windows
+box, `-arch x86_64-linux`): **17 -> 14 outside**; three bodies inside by two rules. (1) *A conditional that is no
+lvalue* (2, `Tms6747::planRegisters`, `Parser::unaryNode`): two class lvalues of one type but for const are an lvalue of
+the const type ([expr.cond]/3) where an lvalue is asked for - a `const Slot &` bound to `c ? narrow : slots[k]`
+(`Lowering::constApartClasses`, the scalar rule's twin: each arm's address converted to the const pointer before the
+join); `isLvalueNode` is unchanged, so a conditional read as a value keeps its copy and no function that lowered before
+changes. (2) *A 'binary' the typer did not type* (`Lookup::refuseInlineAmbiguity`): the untyped node was not
+`(this->*same)(..)` but `same != nullptr` beside it - a pointer to a member function against a null ([expr.eq]/2) is a
+truth value in the typer (against `nullptr`; against a literal `0` it stays refused by name) and its code word `$fn`
+against a null pointer in `binary` (`memberFunctionAgainstNull`, `codeWord`), on both ABIs. **Left, by name** (6 of the
+14 this lane's; 8 are round 6 A's - the two reference parameters, the thrown list, the return of 4 parts, the named
+return value, the class local from another type, the lambda local, the class argument): *a call of what is not a
+function pointer* (`decl_function_in_block.c`, the parser's record to settle); *an expression statement of 5 parts*
+(`Parser::switchStatement`, `SwitchCtx{ {}, .. }`); *a thread_local built at run time* (2, a feature: a thread's guard
+and `__cxa_thread_atexit`); *a class temporary* (`forwardValues`); *a class temporary with a destructor outside a full
+expression* (`structOrUnionSpecifier`). **The census is not 0, and not 0 but 6 A's either: the strict default is not
+next yet.** Three refusals stricter than the standard are in `tests/open` with clang's answer (the Windows box's), none
+mended: `braced-class-in-braced-aggregate` (`Holder{ take(1), Pair{ .. } }`), `bitfield-postfix-step` (`f.a++`), and
+one found here, `nullptr-to-const-member-function-pointer` (`t.count(nullptr)` for a `bool (T::*)(int) const`
+parameter: "no function called .. takes these 1 argument(s)"; a `pmf = nullptr` local is also outside the lowering).
+Probe `tests/cases/ssa-census-last-bodies` (no standard header): **its `.expected` clang's**, right under
+`CXX1_SSA_STRICT=1` at -O2 on Windows for both arches and at -O0 and -O2 on Linux. cl /W4 /WX clean. Static gates
+(Linux): comment cap 0; exclusions 1 uncited, 1 stale - the base's (`ParserClass.cpp:2391`, not this lane's file);
+memory gate 42 (a first cut's raw pointer, 43, written as a reference). A defect of this lane's: its first two Windows
+builds were started at once into one tree and both failed; rebuilt clean. No winpass, ssa.sh, identical.sh or make test
+here - the coordinator's. `src/` +34 lines (39 added, 5 removed).
+
+**M3b.7, round 7 B, 2026-11-12** (lane r7b, branch `m3b7-r7b` from `9ecdb5ba`; `boxkit/m3b7r7b-*`). **The `std::string(Str)`
+family, 4 of 5.** `Str`'s `explicit operator std::string()` makes a class with a destructor, which `convertedObject`
+refused; it now builds such a result where it is wanted: (1) `convertedLocal` - `C x(o)` with o's conversion function
+recorded, the result in x's slot (`structuredOperand`'s `const std::string t(x.text)`), or through the result pointer
+when x is the named return value (`upperReg`); (2) `temporary` - `T(o)` made by o's conversion function, its result in
+the temporary and destroyed as one (`ml64Tls`, `MOperand::from`, `structuredOperand`'s `std::string(...) == "rbp"`).
+Left: `MasmSpelling::render`'s `return { std::string(name), ... }` ("a return of 4 parts", a braced return of a class
+with such an element), and `giveRegisters`/`emitWindow`'s lambdas - not attempted. Probe
+`tests/cases/ssa-conversion-string-local`, its `.expected` clang's (Windows, `-nostdinc++ -isystem include`), right
+under `CXX1_SSA_STRICT=1` at -O2 on Windows for both arches. **Census** (Windows tree, `-arch x86_64-linux`): outside
+17 -> 13. cl /W4 /WX clean. `src/` +36 lines (39 added, 3 removed; `Lowering.cpp`, `Lowering.h`).
+**M3b.7, round 8 A (the last C++ and C bodies), 2026-11-13, lane m3b7-r8a from m3b7 3c353b07.** Four of round 7 A's six
+are inside; the Windows census (`-arch x86_64-linux`, 5 jobs) reads **14 -> 9**. (1) **A thread_local built at run time**
+(`intern` in OptStrings.cpp and OptTable.cpp): `Lowering::threadStatic` writes `guardOnceThread`'s guard - the thread's own
+byte read with no lock and set after the construction, so one that throws is tried again - around the one
+`staticConstruction`; the parser records the guard's name in `staticGuards_` so the facts reach the lowering. (2) **The
+call of a function declared in a block** (decl_function_in_block.c): the name has a declaration in the block and is still
+the function's - `blockFunction` (no pointer, reference or class to call). (3) **A range-based for over an lvalue whose
+expression builds a temporary** (`Parser::structOrUnionSpecifier`): the temporaries end with `auto &&__range = init;`,
+before the loop ([stmt.ranged]/1, [class.temporary]/4). (4) `Source::fail`'s thrown list-initialised temporary is no
+longer listed (not measured whether by this round's typing or the base's merge). **Typed:** a braced argument is typed
+as the parameter it copy-list-initialises (`Typer::expectArguments`) - the two `other '{}'` nodes of
+tests/cases/ssa-aggregate-value-temporaries (78:25, 83:29) that took typed.sh from 107 to 109; that case reads
+untyped=0 and still equals its `.expected` under strict at -O0 and -O2. **Left, this lane's, not done:** `forwardValues`
+(`return Forward(..).run()` - a constructor-built temporary of a class with an implicit destructor as a member call's
+object, "a class temporary"); `Parser::switchStatement` (`SwitchCtx{ {}, .. }`: `flatBraces` refuses a nested list, so
+the syntax tree keeps the values as 5 parts of the statement). **Found, not mended:** `Ctx{ {}, nullptr, k, mk() }` of
+plain aggregates is refused by the parser ("'$list0' is 'int' and this is 'struct G'") - the family of
+tests/open/braced-class-in-braced-aggregate. **Left, others':** Masm.cpp `render` (a return of 4 parts), `upperReg`,
+`structuredOperand`, `ml64Tls` and Mir.cpp `MOperand::from` (round 7 B's std::string(Str) conversions); C6xPipe.cpp
+`emitWindow` (7 B's lambda local) and `giveRegisters` (a class argument that is not an object - unowned). Probe
+`tests/cases/ssa-census-thread-static` (no standard header): **its `.expected` clang's**, right under
+`CXX1_SSA_STRICT=1` on Windows for both arches. cl /W4 /WX clean. docs/EXCLUSIONS.md takes m3b7 94d26739's line
+(ParserClass.cpp:2397). No winpass, ssa.sh, identical.sh or make test here - the coordinator's. `src/` +52 lines (54
+added, 2 removed).
+
+**M3b.7, round 8 B, 2026-11-13 (lane r8b, from m3b7 a3307c8d).** A braced return of a class with a copy of its own is
+built in the caller's object: an aggregate member by member (the parser now files the braces' `ListBuilt` under the
+return's node too; `aggregateBuilt` into `resultPtr()`), and a constructor's braces by `constructFromList` there - a
+destructor no bar, as for form 3. Probe `tests/cases/ssa-lambda-locals` (clang's .expected, strict -O2 both arches on
+Windows). Census on the Windows tree (-arch x86_64-linux): 10 -> 10 - `MasmSpelling::render`'s nine braced returns pass,
+its `return {};` (line 188) is now its first wall: *a return with no value* (no `temporaryBuilt_` nor form-3 record under
+an empty return; tried and reverted). Lambdas not reached: the probe's shapes of `emitWindow`'s local and
+`giveRegisters`' `std::function` argument lower, so the census walls come from something else in those bodies. Left
+(10): r8b's three (render's `return {}`, emitWindow, giveRegisters); r8a's thread_local x2, expression statement of 5,
+the two class temporaries, the two calls of what is not a function pointer. src/: +23 lines (Lowering.cpp +20, ParserStmt.cpp +3).
+**M3b.7, round 9 A (the last two bodies, and the census of everything), 2026-11-13, lane m3b7-r9a from m3b7 1de68101,
+with 9ab7ce9f merged.** **The census on 1de68101** (Windows box, `-arch x86_64-linux`, 100 sources and 431 C90 cases, 0
+other failures): **5 bodies outside** - `forwardValues` (OptValues.cpp:631, "a class temporary"),
+`Parser::switchStatement` (ParserStmt.cpp:1153, "an expression statement of 5 parts"), and round 8 B's three:
+`MasmSpelling::render` (Masm.cpp:140, "a return of 4 parts"), `giveRegisters` (C6xPipe.cpp:1424, "a class argument that
+is not an object"), `emitWindow` (C6xPipe.cpp:1738, "a class local initialised by a 'lambda' that is not an object").
+**After this round: 3, all three round 8 B's - the census is 0 apart from them.** (1) `destroyedClass` takes the layout
+`constructedClass` takes - array members of a built class (`Value regs_[kGprs]`, `Copy copies_[kGprs]`): the temporary's
+constructor and destructor are functions of their own, so `return Forward(..).run();` is built, called and destroyed at
+the return's full expression. (2) `flatBraces` lets an empty `{}` stand as a value of `T{ {}, .. }`: the syntax tree
+keeps the call `{}` and the lowering's recorded aggregate builds it as the parser did. **Memory gate:** round 8 A's three
+raw-pointer declarators (`blockFunction`, `Typer::expectArguments` twice) are a `TypeId` and references; 7 A's is
+72694182's. **Not mended, filed:** `Plain{ {}, nullptr, k, mk() }` over plain aggregates, refused by the parser
+("'$list0' is 'int' and this is 'struct G'" - brace elision taken where [dcl.init.aggr]/12 has a value of the member's
+class initialise it whole) is `tests/open/class-value-in-braced-aggregate` with clang's answer (`plain 0 1 4 5`), beside
+its family's braced-class-in-braced-aggregate. **Seen, not a fault:** a call's class result as such a member's value is
+copied into the member where clang elides the copy ([class.copy]/31), so the probe counts live objects there and
+prints none. Probe `tests/cases/ssa-census-temporary-object` (no standard header): **its `.expected` clang's**, right
+under `CXX1_SSA_STRICT=1` on Windows for both arches. cl /W4 /WX clean. No winpass, ssa.sh, identical.sh or make test
+here - the coordinator's. tests/typed.untyped re-recorded 107 -> 90 (Linux, typed.sh 804 passed, 0 failed). docs/EXCLUSIONS.md re-points round 8 A's moved line (ParserInit.cpp:1808). `src/` +0 lines (7 changed).
+
+**M3b.7, round 9 B, 2026-11-13** (branch m3b7-r9b from 6c684ed7). Round 8 B's three walls, gone on this tree.
+`MasmSpelling::render`'s `return {};`: the class's only constructor is one of four defaults, so the form-3 record's
+signature had four parameters and the lowering wanted one; the parser now files the defaults it completed the call with
+under "$ret:<the return's position>" (noteEntryDefaults, as "$new:" and "$list:" are), and the lowering passes them
+([dcl.fct.default]/9). `emitWindow` and `giveRegisters` had one root: a **local array of classes captured by reference**
+(`pool[2]`, `freeList[2]`) - the parser's closure record took an array only of scalars, the lowering only by value; both
+take one by reference now, held as its address. Probe ssa-lambda-locals (+`return {}`, +local arrays): strict -O2 rc 0 on
+x86_64-windows and x86_64-linux, run = clang's .expected; cl /W4 /WX clean. Census (Windows, -arch x86_64-linux): 10 -> 3,
+the three left round 9 A's (forwardValues, switchStatement's expression statement of 5 parts, a class temporary). The two
+"call of what is not a function pointer" (tests/c90 decl_function_in_block.c) did not appear on this base; strict -O2 of it
+passes. src/: +14 -3 (Lowering.cpp +9 -2, ParserExprLambda.cpp +3 -1, ParserExprNew.cpp +2, ParserStmt.cpp +2, Parser.h +1).
+
+**M3b.7, deletion 2, 2026-11-13** (branch m3b7-d2 from c4a2c8e8). Round 5 A: the MIR passes only the Ast.h path fed.
+Two x86 passes ran only when `!fn.fromSsa` (M3b.5 round 5 gated them: SSA's `divide` and `loops` do their work), and
+with every x86 function selected from its SSA (census 0) both were dead: **divide-by-constant** (`DivideByConstant`,
+`divideByConstant` in OptDivide.cpp, last in `rounds`) and **widen-counters** (`WidenCounters`, `widenCounterIn`,
+`widenCounters` and its one helper `liveIns` in OptHoist.cpp) are deleted. OptDivide.cpp keeps the Hacker's Delight
+magic numbers (DivMagic.h), which SsaDivide.cpp and Tms6747.cpp use; arm64-darwin and tms6747 never ran the x86
+pipeline, so nothing of theirs moves. No other pass in src/optimizer reads `fromSsa`. **Owed at the d1 merge:**
+`MFunction::fromSsa` and `Optimizer::fromSsa` are read by nothing now, but X86_64Linux.cpp:1660 (lane d1's file) still
+sets it - the field, the setter and that line go together in the merge (3 lines). **Checked:** cl /W4 /WX clean; -S of
+divide-by-constant, divide-after-rotated-loop, pipelined-loops, local-try-states and member-pointer-virtual for
+x86_64-windows and x86_64-linux at -O1 and -O2, base c4a2c8e8 against this tree: 20 same, 0 differ; census (Windows,
+-arch x86_64-linux) outside=0 of 100 sources and 431 C90 cases. src/: -191 lines (+2 -193; OptHoist.cpp -89,
+OptDivide.cpp -79, OptPipeline.cpp -19, OptPasses.h -4, OptFunction.h and DivMagic.h comments changed).
+**Static gates** (Linux): exclusions 0 uncited, 0 stale after re-pointing nine citations round 9 B moved in ParserExprNew.cpp
+and ParserStmt.cpp (stale on the base); comment cap 0 over; memory gate lower than the baseline (OptHoist and OptDivide are
+outside its scope), not re-recorded.
+**M3b.7, round W1 (a handler reading a body's value on the Microsoft ABI), 2026-11-13** (branch m3b7-w1 from c4a2c8e8).
+Deletion 1 found 9 bodies outside at x86_64-windows only, one kind, each a handler naming a member - **the value is
+`this`**, the entry's parameter, which no funclet holds (a funclet has the parent's frame and none of its registers).
+**The Itanium path's equivalent**: none in the lowering - a handler there is a block of the body and reads the value
+itself; what keeps it out of a register across the unwind edge is the passes' rule (SsaPromote lets no slot be live into
+a pad, MirAlloc lets no value cross a funclet's boundary). **The root, written once**: `spillFuncletUses`, where
+`checkFuncletUses` refused - every operand and branch argument of a handler's blocks that is neither an alloca nor the
+funclet's own is loaded from a frame slot (`funcletSlot`: an entry alloca `$held`, stored where the value is made - after
+its instruction, at the head of the block it is a parameter of, or at the entry's end), one load a block; the slot is
+read in two funclets, so SsaPromote leaves it in the frame (the M3a.4 rule). **`resultPtr` and `sretSlot_` are gone**: the
+caller's result pointer in a handler was the same fact with its own slot, and is `sret_` through the one path now.
+Refused by name still: a value that is no scalar, and an invoke's result read across its own unwind edge (neither met).
+**`tools/ssa-census` takes `-arch <target>`** (repeatable) and **runs x86_64-linux and x86_64-windows by default** on any
+host, each to `<out>/<target>/`, status 1 if either is not 0 - a Microsoft-only wall can no longer pass unseen.
+Census (Windows box, strict): **x86_64-windows 9 -> 0, x86_64-linux 0**, of 100 sources and 431 C90 cases; the one "other
+failure" at x86_64-windows is `tests/c90/cases/bf_types.c`, the base's and right (`unsigned long l : 40` where long is 32
+bits). Probe `tests/cases/ms-handler-reads-body` (ledger, no standard header; `this` in a handler, in a loop's, in a
+handler's handler, in three tries of one function): four bodies outside on the base, **its `.expected` clang's on the
+Windows box**, right at -O0 and -O2 strict, ledger all 0; handler-exit-ms (a class returned from a handler - the old
+`$sret` path), goto-out-of-handler-ms and nested-handler-exits right at both levels too. cl /W4 /WX clean; comment cap 0;
+memory gate 1056, unchanged; exclusions 9 uncited / 9 stale, the base's (src/parser, round 9 B's shifts). No winpass,
+ssa.sh, identical.sh or make test here - the coordinator's. **Owed**: cleanup funclets are not walked (they read live
+objects' allocas; a constructor's guard on `this` goes through the selector's own rule) - if deletion meets one, the same
+call serves. `src/` +88 -53, net +35 (Lowering.cpp +84 -35, Lowering.h +4 -3, MsShapes.cpp -15).
+**M3b.7, deletion 1 (the fallback and x86's walker), 2026-11-13** (lane d1, branch `m3b7-d1` from m3b7 `c4a2c8e8`; `boxkit/m3b7d1-*`).
+**Strict is x86's only behaviour**: `CXX1_SSA_STRICT` and the fallback to the walker are gone (`Driver.cpp`); a function outside
+the lowering fails the compile, named (`'f' (symbol) is outside the SSA lowering: why`), and `X86_64Linux::emit` refuses a
+function the module does not hold. **x86 left `Visitor`**: `X86_64Linux : Regions` (round 4 F's chain; `setLineSource` holds
+the source itself); deleted are its thirteen `visit`s, `genAddr`, `genTruth`, `genX87Binary`, `genFloatBinary`, the three
+bit-field helpers, `jump`/`branchIfZero`/`branchIfNotZero`, `walkBody`, `walkInPlace`, `inlineTarget`, `mayWriteArea`,
+`bodies_`, `current_`, `inPlace_`, `floorDepth_`, and `CallShape`'s `argMayWrite`/`calleeMayWrite`/`inlined` (always
+false and null from the selector). `Walker`, `AstCodeGen`, `Ast.h`'s nodes and `Inliner` stay, arm64-darwin's and tms6747's.
+**Two reads of the parser's tree are kept, because taking them out changes what x86_64-windows emits** - the round table's
+"no on x86" for the Inliner was wrong: (1) `inlineReserve_`, `Inliner::largestFrame()` added to every funclet-cut frame
+at -O2 for a callee walked in place, which nothing is any more; (2) `outgoing_`, the shadow area sized by `CallScan` over
+`fn.body()`'s outer `Call` nodes (`placeCall`). Each is owed its own round: the reserve dropped, the area sized from the IR's
+calls, the x86_64-windows goldens re-recorded and winpass run. **Finding - the census's 0 is x86_64-linux's.** `tools/ssa-census`
+(Windows box) on this tree: `-arch x86_64-linux` **outside=0 of 100 sources and 431 C90 cases**; at the box's own target,
+x86_64-windows, **9 bodies outside, one kind** - "a handler reading a value of the body on the Microsoft ABI"
+(`Lowering.cpp:2789`, `Parser.cpp:732`, `ParserOperator.cpp:49`, `ParserTemplate.cpp:749,1803`, `ParserTopLevel.cpp:2206`,
+`Templates.cpp:892,1688,1782`) - and the base `c4a2c8e8` under `CXX1_SSA_STRICT=1` reads the same 9. With the fallback gone
+those six sources no longer compile for x86_64-windows: **the Windows self-host waits on that kind being lowered** (owed
+before this lands on main). **Gates:** cl `/W4 /WX` clean (`work\\m3b7d1`); `-S` of inline-body, exception-table-large,
+lambda-capture-by-value, local-try-states and bitfield-layout for arm64-darwin, tms6747, x86_64-windows and x86_64-linux at
+-O0 and -O2 against the base's binary (`work\\m3b7d2b`): **40 same, 0 differ**; comment cap 0, memory gate rc 0;
+`tools/exclusions --check` 9 uncited and 9 stale, all in `src/parser` (`ParserExprNew.cpp`, `ParserStmt.cpp` - the base's,
+lines moved two to four by round 9; none in this lane's files), left for the merge. No winpass, identical, ssa.sh or make
+test (the coordinator's). **`src/` +54 -679 lines** (91927 after).
+
+**M3b.7 fix 2, 2026-11-13: a conditional lvalue's arm converted by its own IR type.** The wave gate (c4a2c8e8) failed
+tests/ssa.sh at levels 1 and 2 on one case, ssa-census-last-bodies (round 7 A's probe): `widest`, whose
+`const Slot &s = k < 0 ? narrow : ... slots[k]` passed `narrow`'s address, a `Slot *` (a const local's alloca is the
+unqualified pointer), straight to a `const Slot *` merge parameter, because the lvalue Conditional decided the bitcast by
+the arm's typed-tree type (`const Slot`, equal to the meeting type) rather than by the value's own IR type. Each arm is now
+converted when its IR type is not the parameter's (Lowering.cpp, the Conditional of `lvalue`; constApartClasses itself
+unchanged). Two const locals as both arms (`k ? a : b`) had the same fault and pass now. The case: -check=ssa 6 of 6 at
+-O1 and -O2, -O0 and -O2 output clang's .expected (Linux); cl /W4 /WX clean (Windows). Static gates (Linux): exclusions 0
+uncited 0 stale, comment cap 0, memory gate lower than the baseline. src/: +3 -2 lines.
+
+### M3b.7 closed, 2026-11-13: the deletion, one commit
+The rounds above (1 to 9 B, W1, deletions 1 and 2, fixes 1 and 2) squashed into one commit over main `f9f1ff2d`, from
+branch `m3b7-del` at `b036b943`. **The lowering is x86's only path**: the walker fallback and `CXX1_SSA_STRICT` are gone
+and a function outside the lowering is an error naming it; `-front=` is refused by name; x86 derives from `CodeGen` and
+`Regions`, its statement and expression visitors gone; the adapter, `-front=typed`, `-check=adapted`, `AstDump`, the
+parser's write-only maps and the x86 MIR passes only the `Ast.h` path fed (divide-by-constant, widen-counters) deleted.
+`src/` 94,098 lines at f9f1ff2d's census, 91,772 now (+1,972 -4,298 by `git diff --shortstat` over src/).
+**Scope as decided at round 1** (for RP5 to confirm): arm64-darwin and tms6747 keep their `Ast.h` walkers, owed to M5/M6
+with `Constexpr.cpp`'s reads; deletion 3 (`m3b7-d3`: x86 reads no `Ast.h` body node - the inline reserve and the outgoing
+area from the `ir::Function`) changes x86_64-windows frames (459 outputs, smaller, no more instructions) and lands as its
+own commit with re-recorded goldens, not in this one.
+**Gated at `b036b943`**: census of cxx3's own sources 0 outside on x86_64-linux and x86_64-windows (`tools/ssa-census`,
+both targets); Windows winpass -O2 and -O0, GNU 775 / MASM 774 same, 0 differ, 0 compile-failed; Linux ssa.sh 827/0 at
+levels 1 and 2 (9,524 bodies lowered and verified); `identical.sh` against the M3b.6 binary only the two known cases,
+the probes added by the rounds, and `microsoft-shapes-builder`, `return-self-referential`, `ms-handler-reads-body` on
+x86_64-windows - bodies the oracle sent to the walker that now take the lowering (W1's handler slots), each right in
+winpass; `make test` rc 0 (run.sh 1148/0, emit 3192/0, typed 806/0 with 90 untyped, coff 0 differ of 1584, c90 447/0,
+exclusions 0/0, comment cap 0, memory gate under its baseline). **Self-host at -O2, no fallback**: Linux stages
+0 = 1 = 2 and 2 = 3 on 100 of 100 sources; Windows (GNU spelling) the same, 100 of 100 each. The Mac's leg is owed.
+Open, named: cleanup funclets are not walked by W1's spill; class arms apart in const go through a copy
+(`conditionalObject`); `tests/open/` gained three refusals stricter than the standard (rounds 7 A, 9 A) with clang's
+answers; four src/ comments name removed passes or a stale table (docs lane, M3b.8).

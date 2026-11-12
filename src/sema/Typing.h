@@ -2,7 +2,7 @@
 
 // **Sema's typing of the syntax tree** - M2.10, doc-cxx3/M2-PLAN.md. The typed tree is an arena like the syntax tree's,
 // a node per syntax node with the type Sema gives it and, from M3b.0, the record the parser made where it resolved the
-// node (M3-IR 3.8); a node outside the subset is typed null with its parts still typed. -check=typed holds it to Ast.h.
+// node (M3-IR 3.8); a node outside the subset is typed null with its parts still typed. -check=typed counts them.
 
 #include "Entities.h"
 #include "../Lexer.h"
@@ -185,8 +185,8 @@ public:
     // One function's syntax, typed; its parameters and locals are its scopes.
     TypedId typeFunction(syntax::NodeId fn);
     const TypedTree &tree() const { return tree_; }
-    // **-check=typed**: every root function typed, each typed expression held against the type the parser gave the
-    // Ast.h node carrying the same syntax - the innermost such node, before any conversion wrapped it.
+    // **-check=typed**: the census (functions = bodies + compiler-written), every body typed, the expressions typed null
+    // counted by kind, and each node's copied record held against the parser's maps (M3b.7).
     static std::string check(Parser &p, const Program &program, const Source &src, int *differ);
     static Census census(const Parser &p, const Program &program);
     // Facts of a function's declaration the lowering is told (M3b.1): its return type as written, and whether its body is a try.
@@ -254,6 +254,7 @@ public:
     bool temporaryBuilt(syntax::NodeId id, std::string &symbol, TypeId &signature, bool &zeroFirst) const;
     // The converting constructor that made a temporary of the value at node `id` (Parser::userConversion); false where none.
     bool convertedBuilt(syntax::NodeId id, std::string &symbol, TypeId &signature) const;
+    bool convertedTo(syntax::NodeId arm, const Type &c) const;
     // The copy a by-value class argument at node `id` was made by (Parser::materialiseCopy), or `elided`; false where none.
     bool argumentCopy(syntax::NodeId id, std::string &symbol, TypeId &signature, bool &elided) const;
     // What a `return` of a class with a copy of its own built (Parser::ReturnBuilt): false where the parser recorded none.
@@ -311,6 +312,10 @@ private:
     std::vector<std::unordered_map<std::string, Declared> > scopes_;
     std::map<std::string, TypedId> memberDefaults_;    // typeMemberDefaults' nodes, by "constructor|class::member"
     std::unordered_map<std::uint32_t, std::vector<syntax::NodeId> > closureSources_;   // a lambda's capture sources, by node
+    // A nested `{}` of an aggregate's initialiser, by node: the subobject it initialises, where no brace was elided before it.
+    std::unordered_map<std::uint32_t, TypeId> braced_;
+    void expectBraces(syntax::NodeId list, TypeId t);
+    void expectArguments(syntax::NodeId call);
 };
 
 }   // namespace sema

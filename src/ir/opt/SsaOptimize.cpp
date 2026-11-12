@@ -54,6 +54,45 @@ int volatileAccesses(const Function &f) {
 
 }   // namespace
 
+LineMarks::LineMarks(const Function &f) {
+    bool any = false;
+    for (std::size_t i = 1; i < f.insts.size() && !any; i++) any = !f.insts[i].lines.empty();
+    if (!any) return;
+    for (BlockId b : f.blocks) {
+        rows_.push_back(std::make_pair(b.v, f.block(b).insts));
+        rows_.back().second.push_back(f.block(b).term);
+    }
+}
+
+void LineMarks::settle(Function &f) const {
+    if (rows_.empty()) return;
+    std::vector<std::uint32_t> home(f.insts.size(), 0);     // the block an instruction stands in now, 0 for one removed
+    for (BlockId b : f.blocks) {
+        for (InstId i : f.block(b).insts) home[i.v] = b.v;
+        if (f.block(b).term.valid()) home[f.block(b).term.v] = b.v;
+    }
+    std::vector<char> standing(f.blockArena.size(), 0);
+    for (BlockId b : f.blocks) standing[b.v] = 1;
+    for (std::size_t r = 0; r < rows_.size(); r++) {
+        const std::uint32_t b = rows_[r].first;
+        if (!standing[b]) continue;     // a block merged away: its instructions carry their marks where they went
+        std::vector<std::uint32_t> pending;
+        for (InstId id : rows_[r].second) {
+            if (!id.valid()) continue;
+            std::vector<std::uint32_t> &own = f.insts[id.v].lines;
+            if (home[id.v] == b) {
+                own.insert(own.begin(), pending.begin(), pending.end());
+                pending.clear();
+            } else {
+                pending.insert(pending.end(), own.begin(), own.end());
+                own.clear();
+            }
+        }
+        const InstId term = f.blockArena[b].term;
+        if (!pending.empty() && term.valid()) f.insts[term.v].lines.insert(f.insts[term.v].lines.begin(), pending.begin(), pending.end());
+    }
+}
+
 bool isSsaPass(const std::string &name) {
     for (const Pass &p : kPasses) if (name == p.name) return true;
     return name == "inline";    // the unit's pass, run before these (inlineCalls)
@@ -66,7 +105,9 @@ void ssaOptimize(Function &f, int level, const TypeTable &types, const Target &t
     for (std::size_t k = 0; k < sizeof kPasses / sizeof kPasses[0]; k++) {
         const Pass &p = kPasses[k];
         if (level >= p.level && (!p.again || changed)) {
+            const LineMarks marks(f);
             const bool c = run(k, f, types, target, log);
+            marks.settle(f);
             if (!p.again) changed = changed || c;
         }
         if (log.check) {

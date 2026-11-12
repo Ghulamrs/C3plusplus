@@ -660,6 +660,9 @@ void Parser::applyDefaults(Signature f, std::vector<ExprPtr> &args,
     // the expression declares belongs there - a lambda's closure type included.
     const std::string outerFunction = currentFunction_;
     const std::string outerFunctionName = currentFunctionName_;
+    // The function the call is in still owns what a default builds: a temporary's own defaults are filed under it.
+    const std::string outerOwner = defaultsOwner_;
+    if (!currentFunction_.empty()) defaultsOwner_ = currentFunction_;
     currentFunction_.clear();
     currentFunctionName_.clear();
     // **And the rest of the declaration's scope**, which the locals were only
@@ -702,6 +705,7 @@ void Parser::applyDefaults(Signature f, std::vector<ExprPtr> &args,
     locals_.swap(hidden);
     scopeStarts_.swap(starts);
     currentFunction_ = outerFunction;
+    defaultsOwner_ = outerOwner;
     currentFunctionName_ = outerFunctionName;
     namespaceStack_ = outerNs;
     currentClass_ = outerClass;

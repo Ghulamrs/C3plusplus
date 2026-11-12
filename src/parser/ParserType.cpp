@@ -637,13 +637,20 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
         // one whose access the declaration would change, is still refused (M1 L2).
         if (peek().is("using") && !tag.empty() && peekAt(1).kind == TokenKind::Ident && peekAt(2).is("::") &&
             peekAt(3).kind == TokenKind::Ident && peekAt(4).is(";")) {
-            // The base the declaration names, by the name as written or its injected class name.
+            // The base the declaration names, direct or indirect ([namespace.udecl]/3), by its name or injected name.
             const Type *named = nullptr;
-            for (const Type::BaseSpec &b : type->bases())
-                if (b.type->localName() == peekAt(1).text || b.type->tag() == peekAt(1).text ||
-                    b.type->unqualified() == (lookup_.findTypedef(peekAt(1).text) != nullptr
-                                                  ? lookup_.findTypedef(peekAt(1).text)->unqualified() : nullptr))
-                    named = b.type;
+            const Type *typed = lookup_.findTypedef(peekAt(1).text);
+            std::vector<const Type *> walk(1, type);
+            while (named == nullptr && !walk.empty()) {
+                const Type *step = walk.back();
+                walk.pop_back();
+                for (const Type::BaseSpec &b : step->bases()) {
+                    if (b.type->localName() == peekAt(1).text || b.type->tag() == peekAt(1).text ||
+                        (typed != nullptr && b.type->unqualified() == typed->unqualified()))
+                        named = b.type;
+                    walk.push_back(b.type);
+                }
+            }
             const Type *owner = named != nullptr ? lookup_.findMemberOwner(named, peekAt(3).text) : nullptr;
             bool sameAccess = owner != nullptr;
             if (sameAccess)

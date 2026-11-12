@@ -7,15 +7,7 @@
 namespace ir {
 
 // `base + i * size`: element `i` of an array of `et`, through char arithmetic as indexBytes writes it.
-ValueId Builder::elementAt(ValueId base, ValueId i, const Type &et) {
-    Lowering &l = l_;
-    const TypeId chars = l.tid(*l.types_.pointerTo(l.types_.charType()));
-    const TypeId diff = l.ptrdiffType();
-    std::vector<ValueId> ops(1, l.result(l.add(Op::Bitcast, chars, std::vector<ValueId>(1, base))));
-    const ValueId at = l.convert(Lowering::Val(i, l.types_.intType()->id()), diff).v;  // named first: argument order is unspecified
-    ops.push_back(l.op2(Op::Mul, diff, at, l.iconst(diff, et.size(l.target_))));
-    return l.result(l.add(Op::Bitcast, l.types_.pointerTo(et.id()), std::vector<ValueId>(1, l.result(l.add(Op::Gep, chars, ops)))));
-}
+ValueId Builder::elementAt(ValueId base, ValueId i, const Type &et) { return l_.elementAt(base, i, et); }
 
 // `at` bytes into the object `p` points at, as a pointer to `to`.
 ValueId Builder::into(ValueId p, long long at, TypeId to) {

@@ -154,7 +154,6 @@ test: $(TARGET)
 	@CXX1=$(TARGET) ./tests/overload.sh
 	@CXX1=$(TARGET) ./tests/syntax.sh
 	@CXX1=$(TARGET) ./tests/typed.sh
-	@CXX1=$(TARGET) ./tests/adapted.sh
 	@CXX1=$(TARGET) ./tests/ssa.sh
 	@CXX1=$(TARGET) ./tests/coff.sh
 	@CXX1=$(TARGET) ./tests/c90.sh
@@ -223,7 +222,7 @@ tsan: $(TSANDIR)/cxx3.exe
 
 clean:
 	rm -rf $(OBJDIR) $(TARGET) $(TSANDIR)
-	rm -rf tests/out-run tests/out-emit tests/out-emit-O2 tests/out-corpus tests/out-open tests/out-tsan tests/out-syntax tests/out-typed tests/out-adapted
+	rm -rf tests/out-run tests/out-emit tests/out-emit-O2 tests/out-corpus tests/out-open tests/out-tsan tests/out-syntax tests/out-typed
 # **tests/out-emit.golden is deliberately not on that line**, and this is the
 # exception the rule below is otherwise right about: a golden is recorded before
 # a change and read after one, with a rebuild in between, so a clean that took it

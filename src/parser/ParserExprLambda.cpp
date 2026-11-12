@@ -541,7 +541,9 @@ void Parser::noteClosure(const MadeLambda &made, const std::string &name, int of
         const Type *leaf = held;
         while (leaf->isArray() && leaf->length() > 0) leaf = leaf->pointee();
         // An array of scalars by value is copied element by element above, which is its bytes.
-        const bool classHeld = (held->isStructOrUnion() && held->isComplete()) || (held->isArray() && leaf->isScalar());
+        // An array of classes by reference is its address, as a class is (M3b.7).
+        const bool classHeld = (held->isStructOrUnion() && held->isComplete()) || (held->isArray() && leaf->isScalar()) ||
+                               (held->isArray() && made.types[i]->isReference() && leaf->isStructOrUnion() && leaf->isComplete());
         const Signature *cc = held->isStructOrUnion() && classHeld && !made.types[i]->isReference() ? classes_.copyConstructorOf(held->unqualified()) : nullptr;
         // What the lambda around this one captured: its member, read through this call operator's `this` (M3b.2).
         if (l == nullptr) {

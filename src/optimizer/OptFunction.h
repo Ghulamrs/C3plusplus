@@ -45,7 +45,7 @@ struct MFunction {
     // While the stream names pseudos: one record each, indexed by id - kPhysical; the webs' come first.
     std::vector<PseudoInfo> pseudos;
     bool promoted = false;          // whether any local left its slot for a register
-    bool fromSsa = false;           // selected from its SSA (-front=ssa): the passes SSA already does are off
+    bool fromSsa = false;           // read by no pass since M3b.7 d2; goes with X86_64Linux's call at the d1 merge
     // The walker's temporaries: every slot at this displacement or below is
     // one, written once per value and read once, by nothing else. 0: none.
     long long tempFrom = 0;

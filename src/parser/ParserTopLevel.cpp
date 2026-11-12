@@ -249,6 +249,7 @@ void Parser::topLevel(Program &program) {
     scopeStarts_.clear();
     blocks_.clear();
     blockStack_.clear();
+    blockAt_.clear();
     blocks_.push_back(0);
     blockStack_.push_back(0);
     enterScope();
@@ -1552,11 +1553,9 @@ void Parser::topLevel(Program &program) {
     const std::size_t guardsFrom = frameGuards;
     StmtPtr body;
     // What every function does once its body is read - in a constructor's function try block, after its handlers.
-    std::vector<int> entryGuards;
     auto wrapUp = [&]() {
         // **Every guard this function made is cleared at its entry.**
         if (guardSlots_.size() > guardsFrom) {
-            entryGuards.assign(guardSlots_.begin() + static_cast<long>(guardsFrom), guardSlots_.end());
             std::vector<StmtPtr> withClears;
             for (std::size_t i = guardsFrom; i < guardSlots_.size(); i++)
                 withClears.push_back(StmtPtr(new ExprStmt(
@@ -1937,7 +1936,6 @@ void Parser::topLevel(Program &program) {
     if (specFilter && (!specialHandsOver || isCtor) && !noexceptWrapped) specFilters_[definedSymbol] = spec;
     if (noexceptWrapped) noexceptWraps_.insert(definedSymbol);
     if (ctorTry && (isCtor || !specFilter) && !noexceptWrapped) ctorTries_.insert(definedSymbol);
-    if (!entryGuards.empty()) functionGuards_[definedSymbol] = entryGuards;
 
     // Recorded before `body` is moved into the Function, where what the pointer names lives on; a
     // constexpr constructor is kept whole, also under the C2 name a derived class calls it by.
@@ -2070,7 +2068,7 @@ void Parser::topLevel(Program &program) {
         member != nullptr &&
         member->isVirtual)
         classes_.synthesizeDeleting(d.qualifier, memberOf, member->access, d.pos);
-    program.functions.back().setBlocks(std::move(blocks_));
+    program.functions.back().setBlocks(std::move(blocks_), std::move(blockAt_));
     // C1 and D1 beside the C2 and D2 just emitted. Last of all, because each
     // pushes a function of its own and every line above wants
     // `functions.back()` to still be the one being defined.

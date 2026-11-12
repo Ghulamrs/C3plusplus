@@ -1,0 +1,12 @@
+slot 0 0 0 0
+slot 5 0 0 0
+slot -16 4 1 0
+slot 0 0 0 0
+slot 24 8 0 0
+info 3 4 slot 9 0 0 0
+op 1 '' 0 0 0 0 0 '' 0
+op 6 'six' 0 0 0 0 0 '' 0
+op 2 'rax' 0 0 0 0 0 '' 0
+op 3 'rbp' -8 1 0 0 0 '' 0
+op 4 'rbx' 16 1 0 0 0 'rcx' 8
+4

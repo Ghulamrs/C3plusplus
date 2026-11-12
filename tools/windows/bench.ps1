@@ -3,10 +3,10 @@
 #   -Base   a cxx1 to compare it with, e.g. a build of the commit before (optional)
 #   -Cppi   a Compiler-Cppi cxx1 with the C6000 target, for the cl6x comparison (optional)
 #   -CppiArch  that target's -arch name (default tms6747)
-#   -NewFlags, -BaseFlags  the flags each builds the kernels with (default -O2: M3b.5 sets -front=ssa -O2 against -O2)
+#   -NewFlags, -BaseFlags  the flags each builds the kernels with (default -O2; M3b.5 set -front=ssa -O2 against -O2)
 #   -Rounds interleaved rounds per x86 build (default 9); -Out the work directory
 #   -Cases  a directory of cases: only the .text of each that -New compiles under -CaseFlags, one line a case into
-#           -Out\cases-<-Tag>.txt, and their sum (M3b.4's measure: -front=ssa -O1 against -O1)
+#           -Out\cases-<-Tag>.txt, and their sum (M3b.4's measure was -front=ssa -O1 against -O1)
 param(
     [string]$New = (Join-Path $PSScriptRoot '..\..\cxx3-msvc.exe'),
     [string]$Base = '',

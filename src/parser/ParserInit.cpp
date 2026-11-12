@@ -277,6 +277,19 @@ Parser::ListBuilt Parser::emitRecordedInit(const std::string &name, std::vector<
     return made;
 }
 
+// One record per braces: a body replayed with other bindings that built them otherwise leaves none, so the lowering refuses.
+void Parser::noteListBuilt(std::uint32_t key, const ListBuilt &record) {
+    const std::map<std::uint32_t, ListBuilt>::iterator had = listsAt_.find(key);
+    bool same = had != listsAt_.end() && had->second.elems.size() == record.elems.size() && had->second.members == record.members;
+    for (std::size_t i = 0; same && i < record.elems.size(); i++) {
+        const ListElement &x = had->second.elems[i], &y = record.elems[i];
+        same = x.symbol == y.symbol && x.signature == y.signature && x.bytes == y.bytes && x.braced == y.braced &&
+               x.list == y.list && x.defaulted == y.defaulted;
+    }
+    if (had == listsAt_.end()) listsAt_[key] = record;
+    else if (!same) had->second = ListBuilt();
+}
+
 // While an aggregate local's list is read, each member initConstruct builds, for the SSA lowering (M3b.2): its bytes from a
 // value of its class (`ctor` null), or the constructor with `written` arguments, defaults added after them.
 void Parser::noteAggregateMember(const Type *cls, const Signature *ctor, std::size_t written, bool zeroed) {
@@ -1626,6 +1639,7 @@ void Parser::dynamicInitialiseStaticMember(const std::string &name,
 // is tried again. Measured from clang, which writes `_ZGV<name>` in .tbss and no __cxa_guard call.
 StmtPtr Parser::guardOnceThread(const std::string &symbol, std::vector<StmtPtr> body) {
     const std::string guard = symbol + (target_.microsoftNames() ? "$tguard" : ".tguard");
+    staticGuards_[symbol].guard = guard;
     const Type *byte = types_.get(Kind::UChar);
     current_->globals.push_back(Global{ guard, guard, byte, std::vector<GlobalPiece>(), false, true, false });
     current_->globals.back().isThreadLocal = true;

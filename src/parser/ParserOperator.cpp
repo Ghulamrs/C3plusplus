@@ -56,7 +56,7 @@ bool Parser::parenHoldsTypeId() {
 ExprPtr Parser::castExpr() {
     // **`(T(2.5) == ...)` is not a cast to a function type**, and `(S::m) + 1` no cast at all.
     if (peek().is("(") && parenHoldsTypeId()) {
-        const std::size_t openPos = peek().pos;
+        const std::size_t openPos = peek().pos, typeMark = syntaxTree_.size();
         at_++;
         StorageClass sc;
         const Type *to = specifiers(&sc);
@@ -65,6 +65,8 @@ ExprPtr Parser::castExpr() {
             src_.fail(openPos, "a cast to a function type is ill-formed - [expr.cast]/4 has "
                                "no conversion to one; cast to a pointer to function");
         expect(")");
+        // The type-id's bounds are folded constants, `(int (*)[4])p`: no part of the expression or declaration around it.
+        syntaxTree_.drop(typeMark, openPos, tokens_[at_ - 1].pos);
         ExprPtr v;
         { OverloadTarget hold(*this, to); v = decay(castExpr()); }
         const syntax::NodeId vs = syn(v);
@@ -1036,10 +1038,12 @@ ExprPtr Parser::conditionalNode() {
         const Type *pa = ta->unqualified();
         const Type *pb = tb->unqualified();
         const Type *want = nullptr;
+        bool constAnswer = false;
         if (pa == pb) {
-            // One class, two qualifications: the result is a prvalue, so
-            // neither arm's constness reaches it.
+            // One class, two qualifications, an arm a prvalue: [expr.cond]/3.3 converts the plain arm to the const
+            // one, and a class prvalue keeps its const - `c ? cv : make()` binds `const V &`, never `V &&`.
             want = pa;
+            constAnswer = (ta->isConst() || tb->isConst()) && !(isLvalue(*a) && isLvalue(*b));
         } else {
             const bool aToB = pb->isStructOrUnion() &&
                               convertingConstructor(pb, *a) != nullptr;
@@ -1079,7 +1083,7 @@ ExprPtr Parser::conditionalNode() {
         ExprPtr both(new Comma(std::move(chosen), std::move(at)));
         both->setType(types_.pointerTo(want));
         ExprPtr made(new Unary('*', std::move(both)));
-        made->setType(want);
+        made->setType(constAnswer ? types_.withConst(want) : want);
         // About to expire, like any other temporary: without the mark, passing
         // one by value would reach for the copy constructor.
         made->setXvalue();

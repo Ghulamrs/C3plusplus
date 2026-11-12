@@ -4,6 +4,7 @@
 #include "Type.h"
 #include "Mangle.h"
 #include "syntax/SyntaxId.h"
+#include "ir/Ir.h"
 
 #include <cstddef>
 #include <memory>
@@ -712,7 +713,13 @@ public:
     const std::vector<Local> &locals() const { return locals_; }
 
     const std::vector<int> &blocks() const { return blocks_; }
-    void setBlocks(std::vector<int> b) { blocks_ = std::move(b); }
+    void setBlocks(std::vector<int> b, std::vector<std::size_t> at) { blocks_ = std::move(b); blockAt_ = std::move(at); }
+    // The block that opens at `pos` (a `{` or a `for`), 0 for none or for two that share it.
+    int blockAt(std::size_t pos) const {
+        int found = 0;
+        for (std::size_t i = 1; i < blockAt_.size(); i++) if (blockAt_[i] == pos) found = found == 0 ? static_cast<int>(i) : -1;
+        return found > 0 && pos != 0 ? found : 0;
+    }
 
     // Whether this function has a landing pad in it, which the prologue has
     // to know before the body is walked: the personality routine and the LSDA
@@ -751,6 +758,7 @@ private:
     std::size_t pos_;
     std::vector<Local> locals_;
     std::vector<int> blocks_;
+    std::vector<std::size_t> blockAt_;
     bool landingPads_ = false;
 };
 
@@ -836,4 +844,6 @@ struct Program {
     std::string volatileAt;
     // The dialect the unit was read as (M7): the debug records' language byte is C's for C90.
     Dialect dialect = Dialect::Cxx11;
+    // **Every function lowered to the SSA IR** (M3b.7), which the x86 generator selects from, found by symbol.
+    ir::Module module;
 };

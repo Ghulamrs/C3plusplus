@@ -50,15 +50,6 @@ struct ThreadJumps : Pass {
     bool execute(MFunction &fn) override { return threadJumps(fn); }
 };
 
-// Ten instructions for three, so a speed level's alone; the flow is rebuilt before anything reads the entries this inserts,
-// and before this reads any: thread-jumps runs just ahead of it and inserts labels and jumps without rebuilding.
-// Off for a function selected from its SSA, whose `divide` did it (M3b.5 round 5: 0 changed there).
-struct DivideByConstant : Pass {
-    DivideByConstant() : Pass(PassInfo{"divide-by-constant", kFlow, 0, 0, kTodoBuildFlow}) {}
-    bool gate(const MFunction &fn) const override { return !fn.costs().forSize() && !fn.fromSsa; }
-    bool execute(MFunction &fn) override { return divideByConstant(fn.stream, fn.flow); }
-};
-
 // **Loop-invariant code motion**, after allocation, where a register the
 // loop never touches can be seen to be free; a speed level's alone.
 struct HoistInvariants : Pass {
@@ -72,14 +63,6 @@ struct HoistXmmSlots : Pass {
     HoistXmmSlots() : Pass(PassInfo{"hoist-xmm-slots", kFlow | kPropPhysical, 0, 0, kTodoBuildFlow}) {}
     bool gate(const MFunction &fn) const override { return !fn.costs().forSize(); }
     bool execute(MFunction &fn) override { return hoistXmmSlots(fn); }
-};
-
-// **A loop counter that never goes negative read as its own 64-bit register**, its `movslq` then dead.
-// Off for a function selected from its SSA, whose `loops` widened it (M3b.5 round 5).
-struct WidenCounters : Pass {
-    WidenCounters() : Pass(PassInfo{"widen-counters", kFlow | kPropPhysical, 0, 0, kTodoBuildFlow}) {}
-    bool gate(const MFunction &fn) const override { return !fn.costs().forSize() && !fn.fromSsa; }
-    bool execute(MFunction &fn) override { return widenCounters(fn); }
 };
 
 // **Scaled-index addressing**, after allocation so that webs and the
@@ -217,7 +200,6 @@ std::unique_ptr<Group> rounds() {
     g->add(std::unique_ptr<Pass>(new FoldLoads()));
     g->add(std::unique_ptr<Pass>(new FoldOffsets()));
     g->add(std::unique_ptr<Pass>(new ThreadJumps()));
-    g->add(std::unique_ptr<Pass>(new DivideByConstant()));
     return g;
 }
 
@@ -256,7 +238,6 @@ std::unique_ptr<Pass> pipelineFor() {
     top->add(std::unique_ptr<Pass>(new FoldIndex()));
     top->add(std::unique_ptr<Pass>(new HoistInvariants()));
     top->add(std::unique_ptr<Pass>(new HoistXmmSlots()));
-    top->add(std::unique_ptr<Pass>(new WidenCounters()));
     // fold-index and the hoists leave stores whose reads they took: dse once more, and its rounds.
     top->add(dseGroup("dse-late", 1));
     top->add(std::unique_ptr<Pass>(new FinishFrame()));

@@ -9,10 +9,8 @@
 #include "Lexer.h"
 #include "parser/Parser.h"
 #include "sema/Typing.h"
-#include "sema/Adapter.h"
 #include "ir/Builder.h"
 #include "ir/opt/SsaOpt.h"
-#include "AstDump.h"
 #include "Preprocessor.h"
 #include "Source.h"
 #include "Type.h"
@@ -212,17 +210,15 @@ void Driver::usage(char *file) {
         "         carries the CRC32 of the sources it was built from\n"
         "       -time reports how long each phase took\n"
         "       -dump=syntax writes the syntax tree the grammar recorded, a root a\n"
-        "         line, on stdout; one input at a time; -dump=ast each function's\n"
-        "         Ast.h body, a node a line; -dump=mir each x86 function's MIR\n"
+        "         line, on stdout; one input at a time; -dump=mir each x86 function's MIR\n"
         "         after the pipeline, -dump=mir=<pass> after that pass\n"
-        "       -front=ssa lowers each function the SSA lowering reaches to the SSA IR\n"
-        "         and selects it from there (x86 only); -dump=ssa writes the IR, -check=ssa\n"
-        "         verifies it and reports on stdout; at -O1 and above the SSA passes run,\n"
-        "         -dump=ssa=<pass> writes the IR after that pass (promote)\n"
-        "       -front=typed builds each function the adapter reaches from Sema's typed\n"
-        "         tree; -check=adapted holds that against the parser's, on stdout\n"
-        "       -check=typed types the syntax tree in Sema and holds each type against\n"
-        "         the parser's, on stdout; it fails where any differs\n"
+        "       -dump=ssa writes the SSA IR every function is lowered to (on x86 each is\n"
+        "         selected from it), -check=ssa verifies it and reports on stdout; at -O1\n"
+        "         and above the SSA passes run, -dump=ssa=<pass> writes the IR after that\n"
+        "         pass (promote)\n"
+        "       -check=typed types the syntax tree in Sema and reports the census and\n"
+        "         the nodes typed null, on stdout; it fails where the census or a\n"
+        "         copied record differs\n"
         "       -keep-going[=N] reports up to N errors a file (100 if no N) and goes\n"
         "         on from the next declaration after each; the file still fails\n", file);
 }
@@ -1139,25 +1135,21 @@ bool Driver::parseArguments(int argc, char **argv) {
             }
         } else if (std::strcmp(argv[i], "-check=typed") == 0 || std::strcmp(argv[i], "--check=typed") == 0) {
             checkTyped_ = true;
-        } else if (std::strcmp(argv[i], "-check=adapted") == 0 || std::strcmp(argv[i], "--check=adapted") == 0) {
-            checkAdapted_ = true;
-        } else if (std::strcmp(argv[i], "-front=typed") == 0 || std::strcmp(argv[i], "--front=typed") == 0) {
-            frontTyped_ = true;
-        } else if (std::strcmp(argv[i], "-front=ssa") == 0 || std::strcmp(argv[i], "--front=ssa") == 0) {
-            frontSsa_ = true;
+        } else if (std::strncmp(argv[i], "-front=", 7) == 0 || std::strncmp(argv[i], "--front=", 8) == 0) {
+            std::fprintf(stderr, "%s: %s is gone: the SSA lowering is the only path on x86 (M3b.7)\n", argv[0], argv[i]);
+            return false;
         } else if (std::strcmp(argv[i], "-check=ssa") == 0 || std::strcmp(argv[i], "--check=ssa") == 0) {
             checkSsa_ = true;
         } else if (std::strncmp(argv[i], "-dump=", 6) == 0 || std::strncmp(argv[i], "--dump=", 7) == 0) {
             // The boundaries a dump is written at (design section 1): the syntax tree only, so far.
             const char *what = std::strchr(argv[i], '=') + 1;
             if (std::strcmp(what, "syntax") == 0) dumpSyntax_ = true;
-            else if (std::strcmp(what, "ast") == 0) dumpAst_ = true;
             else if (std::strcmp(what, "mir") == 0) dumpMir_ = true;
             else if (std::strncmp(what, "mir=", 4) == 0) { dumpMir_ = true; dumpMirAfter_ = what + 4; }
             else if (std::strcmp(what, "ssa") == 0) dumpSsa_ = true;
             else if (std::strncmp(what, "ssa=", 4) == 0 && ir::isSsaPass(what + 4)) { dumpSsa_ = true; dumpSsaAfter_ = what + 4; }
             else {
-                std::fprintf(stderr, "%s: -dump= takes 'syntax', 'ast', 'mir' or 'ssa', the boundaries written so far - not '%s'\n",
+                std::fprintf(stderr, "%s: -dump= takes 'syntax', 'mir' or 'ssa', the boundaries written so far - not '%s'\n",
                              argv[0], what);
                 return false;
             }
@@ -1216,9 +1208,9 @@ bool Driver::parseArguments(int argc, char **argv) {
 
     if (inputs.empty()) { usage(argv[0]); return false; }
     // A dump is in the order its nodes were made; two files compiled at once would interleave.
-    if ((dumpSyntax_ || dumpAst_ || dumpMir_ || checkTyped_ || checkAdapted_) && inputs.size() > 1) {
+    if ((dumpSyntax_ || dumpMir_ || checkTyped_) && inputs.size() > 1) {
         std::fprintf(stderr, "%s: %s takes one input at a time\n", argv[0],
-                     dumpSyntax_ ? "-dump=syntax" : dumpAst_ ? "-dump=ast" : dumpMir_ ? "-dump=mir" : checkTyped_ ? "-check=typed" : "-check=adapted");
+                     dumpSyntax_ ? "-dump=syntax" : dumpMir_ ? "-dump=mir" : "-check=typed");
         return false;
     }
 
@@ -1353,8 +1345,10 @@ bool Driver::parseArguments(int argc, char **argv) {
 // **The SSA lowering over every body** (M3b.1), a function outside counted with its reason; then at `level` 1 and up
 // the SSA passes (M3b.4). `report` is -check=ssa's text, `failures` the verifier's count after lowering and each pass,
 // `dumped` the IR as lowered or after the pass `dumpAfter` names.
-static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, const Target &target, ir::Module &into, bool report,
-                            int level, bool inlining, bool dump, const std::string &dumpAfter, std::string &dumped, int &failures) {
+static std::string lowerSsa(const Source &src, Parser &parser, Program &program, TypeTable &types, const Target &target,
+                            ir::Module &into, bool report,
+                            int level, bool inlining, bool dump, const std::string &dumpAfter, std::string &dumped, int &failures,
+                            std::vector<std::string> &outside) {
     sema::Typer typer(parser);
     typer.emitInto(program);
     const sema::Census c = sema::Typer::census(parser, program);
@@ -1474,6 +1468,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         if (!lowering.lower(t, facts, why).valid() && why.empty()) why = "the lowering gave no reason";
         if (why.empty()) { lowered++; continue; }
         reasons[why]++;
+        outside.push_back(src.where(lowering.outsideAt()) + ": '" + fn.displayName() + "' (" + fn.symbol() + ") is outside the SSA lowering: " + why);
         if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "outside %s: %s\n", fn.symbol().c_str(), why.c_str());
     }
     // **The compiler-written functions** (M3b.3): each built from its class's layout by the Builder, or left on the
@@ -1502,6 +1497,7 @@ static std::string lowerSsa(Parser &parser, Program &program, TypeTable &types, 
         std::string why;
         if (builder.build(facts, fn.synthesised(), why).valid()) { built[fn.synthesised()]++; builtCount++; continue; }
         left[fn.synthesised() + " - " + why]++;
+        outside.push_back("the " + fn.synthesised() + " " + fn.symbol() + " is outside the SSA lowering: " + why);
         if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "outside %s: %s\n", fn.symbol().c_str(), why.c_str());
     }
     std::string out;
@@ -1581,21 +1577,6 @@ bool Driver::compile(const Job &job) {
         parser.syntaxTree().dump(dumped, src);
         std::fwrite(dumped.data(), 1, dumped.size(), stdout);
     }
-    if (checkAdapted_) {
-        int differ = 0;
-        const std::string report = sema::Adapter::run(parser, program, false, &differ);
-        std::fwrite(report.data(), 1, report.size(), stdout);
-        if (differ != 0) return false;
-    }
-    if (frontTyped_) {
-        int differ = 0;
-        sema::Adapter::run(parser, program, true, &differ);
-    }
-    if (dumpAst_) {
-        std::string dumped;
-        for (std::size_t i = 0; i < program.functions.size(); i++) dumpFunction(program.functions[i], dumped);
-        std::fwrite(dumped.data(), 1, dumped.size(), stdout);
-    }
     if (checkTyped_) {
         int differ = 0;
         const std::string report = sema::Typer::check(parser, program, src, &differ);
@@ -1606,23 +1587,28 @@ bool Driver::compile(const Job &job) {
     // would keep a volatile read in a register); the SSA passes, which see each access marked, run at -O (M3b.4 round 6).
     // **Said as a warning at the first `volatile`** (1.10) as `file:line:col: warning:`; `cpp11: ...` stopped GRIDE 2.0.
     const int level = program.usesVolatile ? 0 : optimize_;
+    const bool selects = std::strncmp(backend_->name(), "x86_64", 6) == 0;     // the generator selects from the SSA IR
     if (optimize_ > 0 && program.usesVolatile) {
         volatileDowngrades_++;
         std::fprintf(stderr, "%s: warning: 'volatile' is something this compiler cannot keep apart "
                      "from plain memory, so %s is compiled without %s-O%d\n",
                      program.volatileAt.empty() ? job.input.c_str() : program.volatileAt.c_str(),
-                     job.input.c_str(), frontSsa_ ? "the code generator's " : "", optimize_);
+                     job.input.c_str(), selects ? "the code generator's " : "", optimize_);
     }
-    // **The SSA IR** (M3b.1): every source body the lowering reaches, lowered; dumped, verified, or handed to the selector.
-    ir::Module ssa;
-    if (frontSsa_ || dumpSsa_ || checkSsa_) {
+    // **The SSA IR** (M3b.1): every body lowered; dumped, verified, and on x86 the only thing selected (M3b.7).
+    if (selects || dumpSsa_ || checkSsa_) {
         std::string dumped;
+        std::vector<std::string> outside;
         int failures = 0;
-        const std::string report = lowerSsa(parser, program, types, target, ssa, checkSsa_, optimize_, !debug_, dumpSsa_, dumpSsaAfter_,
-                                            dumped, failures);
+        const std::string report = lowerSsa(src, parser, program, types, target, program.module, checkSsa_, optimize_, !debug_, dumpSsa_,
+                                            dumpSsaAfter_, dumped, failures, outside);
         if (checkSsa_) std::fwrite(report.data(), 1, report.size(), stdout);
         if (checkSsa_ && failures != 0) return false;
         if (dumpSsa_) std::fwrite(dumped.data(), 1, dumped.size(), stdout);
+        // On x86 a function outside the lowering is an error naming it: there is no other path (M3b.7).
+        for (const std::string &o : selects ? outside : std::vector<std::string>())
+            std::fprintf(stderr, "%s: %s: %s\n", program_.c_str(), job.input.c_str(), o.c_str());
+        if (selects && !outside.empty()) return false;
     }
 
     bool ok = true;
@@ -1634,7 +1620,7 @@ bool Driver::compile(const Job &job) {
         if (!job.object.empty() && !coffText_) gen->setStructured(&structured);
         if (debug_) gen->setLineSource(&src, workingDirectory());
         if (dumpMir_) gen->setMirDump(&mir, dumpMirAfter_);
-        if (frontSsa_) gen->setSsa(&ssa, &types);
+        if (selects) gen->setSsa(&program.module, &types);
         gen->setOptimize(level);
         gen->setOptimizeForSize(forSize_ && level > 0);
         gen->run(program);

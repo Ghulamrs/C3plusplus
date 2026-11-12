@@ -969,8 +969,6 @@ StmtPtr Parser::rangeForStatement(int scope) {
                      StmtPtr(inside));
     f->setScope(scope);
     setup.push_back(StmtPtr(f));
-    if (!classIter && alive_.size() == aliveMark && rt->isArray())
-        pendingRange_ = RangeFacts{ bName, eName, bSlot, eSlot, scope, inner };
     const bool classCalls = (!classIter || (calls.ne != 0 && calls.deref != 0 && calls.inc != 0)) && !rt->isArray();
     pendingRangeCalls_ = classCalls ? calls : RangeCalls();
     // The range temporary and the iterators die after the loop, in the reverse order,
@@ -1075,7 +1073,7 @@ StmtPtr Parser::forStatement() {
     expect("for");
     expect("(");
     enterScope();
-    int scope = enterBlock();
+    int scope = enterBlock(pos);
     // What the init-statement builds lives to the end of the for statement and no further.
     const std::size_t aliveAtEntry = alive_.size();
 
@@ -1428,7 +1426,7 @@ StmtPtr Parser::block(bool functionTry) {
     // what was alive when it opened.
     const std::size_t regionFrom = isBody && bodyCleanupFrom_ < aliveAtEntry
                                  ? bodyCleanupFrom_ : aliveAtEntry;
-    int scope = isBody ? 0 : enterBlock();
+    int scope = isBody ? 0 : enterBlock(pos);
     // **Where each object became alive**, as a statement index and how many were alive
     // after it. A cleanup region runs from one of these to the next and destroys
     // exactly what was built by then, so an exception cannot destroy what is not.
@@ -1467,7 +1465,6 @@ StmtPtr Parser::block(bool functionTry) {
     // Everything this block constructed is destroyed here, last first.
     emitDestructors(body, aliveAtEntry, peek().pos);
 
-    std::pair<int, int> cleanup(0, 0);
     if (!built.empty()) {
         // **A `try` among these statements is split around, not refused.** It
         // is a row of its own and its pad destroys what it found alive.
@@ -1477,7 +1474,6 @@ StmtPtr Parser::block(bool functionTry) {
                                     temps)
                    : wrapCleanups(std::move(body), built, regionFrom, pos,
                                   temps, tryAt);
-        if (!target_.microsoftNames()) cleanup = lastCleanupSlots_;
     }
     alive_.resize(aliveAtEntry);
     lookup_.usingNamespaces_.resize(usingAtEntry);
@@ -1489,10 +1485,7 @@ StmtPtr Parser::block(bool functionTry) {
     b->setScope(scope);
 
     b->setPos(pos);
-    StmtPtr noted = noteStmt(StmtPtr(b), syntax::Kind::Block, "", pos, mark, pos);
-    syntaxScopes_[noted->syntax().v] = scope;
-    if (cleanup.first != 0) blockCleanups_[noted->syntax().v] = cleanup;
-    return noted;
+    return noteStmt(StmtPtr(b), syntax::Kind::Block, "", pos, mark, pos);
 }
 
 // **The syntax of a statement** (M2 step 2): its kind is what its first tokens say, its parts what its parse recorded.
@@ -1521,39 +1514,33 @@ StmtPtr Parser::statement() {
     std::string text;
     const syntax::Kind kind = statementKindAhead(&text);
     const bool throws = peek().is("throw");
-    const ReturnTemp heldReturn = pendingReturnTemp_;
-    pendingReturnTemp_ = ReturnTemp();
     StmtPtr s = statementBody();
     if (s) s->setPos(pos);
-    if (kind == syntax::Kind::Other) { pendingReturnTemp_ = heldReturn; return s; }
+    if (kind == syntax::Kind::Other) return s;
     // `throw e;` is an expression statement whose expression is the throw.
-    if (throws) {
-        const syntax::NodeId thrown = noteParts(syntax::Kind::Throw, "", pos, mark, pos);
-        if (!pendingThrow_.temp.empty()) throwFacts_[thrown.v] = pendingThrow_;
-    }
-    pendingThrow_ = ThrowFacts();
+    if (throws) noteParts(syntax::Kind::Throw, "", pos, mark, pos);
     StmtPtr noted = noteStmt(std::move(s), kind, text, pos, mark, pos);
     if (kind == syntax::Kind::Return && pendingReturnBuilt_.form != 0) returnBuilt_[noted->syntax().v] = pendingReturnBuilt_;
     pendingReturnBuilt_ = ReturnBuilt();
-    if (const For *f = dynamic_cast<const For *>(noted.get())) {
-        syntaxScopes_[noted->syntax().v] = f->scope();
-        if (pendingRange_.bName.empty())
-            forParts_[noted->syntax().v] = (f->init() != nullptr ? 1 : 0) | (f->cond() != nullptr ? 2 : 0) | (f->step() != nullptr ? 4 : 0);
-    }
+    // [stmt.return]/2: the constructor `return { ... };` reached, the braces' record, under the return's own node.
+    const std::map<std::uint32_t, TemporaryBuilt>::const_iterator braced =
+        kind == syntax::Kind::Return && pendingReturnBraces_ != 0 ? bracedBuilt_.find(static_cast<std::uint32_t>(pendingReturnBraces_)) : bracedBuilt_.end();
+    if (braced != bracedBuilt_.end()) temporaryBuilt_[noted->syntax().v] = braced->second;
+    // An aggregate's braces built member by member, its record under the return's node too, for the SSA lowering (M3b.7).
+    if (kind == syntax::Kind::Return && pendingReturnBraces_ != 0 && listsAt_.count(static_cast<std::uint32_t>(pendingReturnBraces_)))
+        listBuilt_[noted->syntax().v] = listsAt_[static_cast<std::uint32_t>(pendingReturnBraces_)];
+    pendingReturnBraces_ = 0;
+    pendingReturnEmpty_.clear();
+    if (const For *f = dynamic_cast<const For *>(noted.get()))
+        forParts_[noted->syntax().v] = (f->init() != nullptr ? 1 : 0) | (f->cond() != nullptr ? 2 : 0) | (f->step() != nullptr ? 4 : 0);
     // The init hoisted in front of the loop, which is no longer the statement the parser returned: its parts as written.
     if (kind == syntax::Kind::For && hoistedForParts_ != 0) forParts_[noted->syntax().v] = hoistedForParts_;
     hoistedForParts_ = 0;
-    if (kind == syntax::Kind::For && !pendingRange_.bName.empty()) rangeFacts_[noted->syntax().v] = pendingRange_;
-    pendingRange_ = RangeFacts();
     if (kind == syntax::Kind::For && pendingRangeCalls_.begin != 0 && pendingRangeCalls_.end != 0)
         rangeCalls_[noted->syntax().v] = pendingRangeCalls_;
     pendingRangeCalls_ = RangeCalls();
     if (const Case *c = dynamic_cast<const Case *>(noted.get()))
         caseFacts_[noted->syntax().v] = CaseFacts{ c->value(), c->isDefault(), c->id() };
-    if (kind == syntax::Kind::Return && !pendingReturnTemp_.name.empty()) returnTemps_[noted->syntax().v] = pendingReturnTemp_;
-    if (kind == syntax::Kind::Try && pendingTry_.simple) tryFacts_[noted->syntax().v] = pendingTry_;
-    pendingTry_ = TryFacts();
-    pendingReturnTemp_ = heldReturn;
     return noted;
 }
 
@@ -1642,12 +1629,6 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
     std::vector<int> indices;
     std::vector<std::string> types;
     bool sawCatchAll = false;
-    // What the adapter needs to rebuild this `try`, where it is one it can: nothing outside it alive, nothing round it.
-    TryFacts facts;
-    facts.simple = !microsoft && !bodyFn && spec.empty() && !rethrows && enclosingChain.empty() &&
-                   wasHandlerLabel.empty();
-    facts.aliveOutside = aliveOutside;
-    facts.owesFrom = owesFrom;
 
     // **A `throw(T...)` list is a handler of no type of its own**: the table's filter, the selector negative.
     if (!spec.empty()) {
@@ -1807,9 +1788,6 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
         if (caught != nullptr && !caughtName.empty()) {
             const int slot = declare(caughtName, declaredType, cpos);
             noteDeclaredVar(caughtName, declaredType, cpos);
-            if (!byRef && (classes_.copyConstructorOf(caught->unqualified()) != nullptr ||
-                           destructorOf(caught->unqualified()) != nullptr))
-                facts.simple = false;
             // **A reference holds what __cxa_begin_catch handed back.**
             const Type *slotType = byRef
                 ? types_.pointerTo(declaredType->referent())
@@ -2027,14 +2005,6 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
         if (caughtCopy != nullptr)
             caughtCopy_[catchNode.v] = MemberBuilt{ caughtCopy->symbol, types_.functionType(types_.get(Kind::Void),
                 std::vector<const Type *>{ types_.pointerTo(caught->unqualified()), caughtCopy->params[0] }, false), false, false };
-        TryHandlerFacts hf;
-        hf.scope = scope;
-        hf.endLabel = endCatchLabel;
-        hf.padPtr = padPtr;
-        hf.padSel = padSel;
-        hf.canThrow = canThrow;
-        facts.simple = facts.simple && beyond.empty();
-        facts.handlers.push_back(hf);
         Block *b = new Block(std::move(steps));
         b->setScope(scope);
         h.stmt = StmtPtr(b);
@@ -2170,15 +2140,6 @@ StmtPtr Parser::tryStatement(std::size_t pos, const std::function<StmtPtr()> &bo
     // The one chain, behind the label those segments jump to.
     StmtPtr labelled(new Label(chainLabel, std::move(chain)));
 
-    if (facts.simple) {
-        facts.unwindsHere = unwindsHere;
-        facts.ptr = pointerSlot;
-        facts.sel = selectorSlot;
-        facts.chain = chainLabel;
-        facts.types = types;
-        facts.indices = indices;
-        pendingTry_ = facts;
-    }
     std::vector<StmtPtr> guarded;
     guarded.push_back(std::move(body));
     Try *t = new Try(std::move(guarded), std::move(labelled), pointerSlot,
@@ -2321,9 +2282,12 @@ StmtPtr Parser::statementBody() {
             // [stmt.return]/2: `return {4, 5};` copy-list-initialises the returned object from the
             // braces, [dcl.init.list] (1.27, 2026-10-21, review of 1.25, item 3 - "expected an
             // expression").
-            if (peek().is("{") && !returnType_->isReference() && !returnType_->isVoid())
+            if (peek().is("{") && !returnType_->isReference() && !returnType_->isVoid()) {
+                const std::size_t braces = peek().pos;
+                if (peekAt(1).is("}")) pendingReturnEmpty_ = "$ret:" + std::to_string(tokens_[at_ - 1].pos);
                 returned = listTemporary(returnType_, pos);
-            else
+                pendingReturnBraces_ = braces;      // set after the list: a lambda's return inside it clears its own
+            } else
                 returned = returnType_->isReference() ? expr() : decay(expr());
         }
         // **The temporary that *is* the returned value must not be destroyed
@@ -2346,8 +2310,9 @@ StmtPtr Parser::statementBody() {
         // A reference is bound before the full expression ends: the address is what is kept past its
         // temporaries' destruction - kept as a value it named a copy in this frame (M1, unordered_map's []).
         if (returnType_->isReference()) {
+            const bool glvalue = isGlvalue(*returned);   // only a value takes a temporary; a glvalue binds in place
             returned = bindReference(returnType_, std::move(returned), pos, "this function's return type");
-            if (dynamic_cast<const Comma *>(returned.get()) != nullptr)
+            if (!glvalue && dynamic_cast<const Comma *>(returned.get()) != nullptr)
                 src_.fail(pos, "this returns a reference to a temporary of "
                                "this function, which is gone by the time the "
                                "caller could read it");
@@ -2483,8 +2448,6 @@ StmtPtr Parser::statementBody() {
             } else {
                 slot = allocateFrameSlot(returnType_);
                 temp = ".ret" + std::to_string(refTemps_++);
-                pendingReturnTemp_.name = temp;
-                pendingReturnTemp_.slot = slot;
             }
 
             ExprPtr keep(Var::local(temp, slot));
