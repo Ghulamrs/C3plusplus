@@ -1,5 +1,5 @@
 ;; _Z5shiftPii after allocate (changed)
-   0	.prologue frame=176 outgoing=0 realign=0
+   0	.prologue frame=160 outgoing=0 realign=0
   -1	mov %rdi, %rax
    2	movq %rdi, %rdi
   -3	mov %rsi, %rax
@@ -43,8 +43,8 @@
    41	shl $2, %r8
    42	mov %rdi, %rcx
    43	add %r8, %rcx
-   44	movslq (%rcx), %r10
-  -45	mov %r10, %r10
+   44	movslq (%rcx), %r11
+  -45	mov %r11, %r11
   -46	mov $1, %rdi
    47	mov %rdx, %rcx
    48	add $1, %ecx
@@ -60,13 +60,13 @@
    58	shl $2, %r9
    59	mov %rdi, %r8
    60	add %r9, %r8
-   61	movslq (%r8), %r8
-  -62	mov %r8, %r8
-  -63	mov %r8, %r8
-  -64	mov %r10, %r10
-   65	cmp %r8d, %r10d
-   66	setg %r10b
-   67	movzbq %r10b, %r8
+   61	movslq (%r8), %r10
+  -62	mov %r10, %r10
+   63	mov %r10, %r9
+   64	mov %r11, %r8
+   65	cmp %r9d, %r8d
+   66	setg %r8b
+   67	movzbq %r8b, %r8
   -68	mov %r8, %r8
   -69	mov -112(%rbp), %rax
   -70	cmp $0, %rax
@@ -75,57 +75,45 @@
   -73	mov %rsi, %rsi
    74	jmp .L._Z5shiftPii.ssa.9
    75	.L._Z5shiftPii.ssa.8:
-   76	mov %rax, %r9
-   77	shl $2, %r9
-   78	mov %rdi, %r8
-   79	add %r9, %r8
-   80	movslq (%r8), %r10
-  -81	mov %r10, %r10
-   82	mov %rcx, %r9
-   83	shl $2, %r9
-   84	mov %rdi, %r8
-   85	add %r9, %r8
-   86	movslq (%r8), %r9
-  -87	mov %r9, %r9
-  -88	mov -128(%rbp), %rax
-  -89	mov %rax, %rax
-   90	shl $2, %rax
-   91	mov %rdi, %r8
-   92	add %rax, %r8
-   93	movl %r9d, (%r8)
-  -94	mov %r10, %r10
-  -95	mov %rcx, %rcx
-   96	shl $2, %rcx
-   97	mov %rdi, %rax
-   98	add %rcx, %rax
-   99	movl %r10d, (%rax)
-  -100	mov $1, %rdi
-  -101	mov %rsi, %rsi
-   102	add $1, %esi
-   103	movslq %esi, %rsi
-  -104	mov %rsi, %rsi
-  -105	mov -136(%rbp), %rax
-  -106	mov %rsi, %rsi
-  -107	jmp .L._Z5shiftPii.ssa.9
-   108	.L._Z5shiftPii.ssa.9:
-  -109	mov $1, %rdi
-  -110	mov %rdx, %rdx
-   111	sub $1, %edx
-   112	movslq %edx, %rdx
-  -113	mov %rdx, %rdx
-  -114	mov %rsi, %rsi
-  -115	mov %rsi, %rsi
-  -116	mov %rdx, %rdx
-  -117	mov %rdx, %rdx
-   118	jmp .L._Z5shiftPii.ssa.4
-   119	.L._Z5shiftPii.ssa.7:
-   120	mov %rsi, %rax
-  -121	jmp .L.return._Z5shiftPii
-  -122	mov $0, %rax
-   123	.L.return._Z5shiftPii:
-   124	mov %rbp, %rsp
-   125	pop %rbp
-   126	ret
+  -76	mov %r10, %r10
+  -77	mov %rax, %rax
+   78	shl $2, %rax
+   79	mov %rdi, %r8
+   80	add %rax, %r8
+   81	movl %r10d, (%r8)
+  -82	mov %r11, %r11
+  -83	mov %rcx, %rcx
+   84	shl $2, %rcx
+   85	mov %rdi, %rax
+   86	add %rcx, %rax
+   87	movl %r11d, (%rax)
+  -88	mov $1, %rdi
+  -89	mov %rsi, %rsi
+   90	add $1, %esi
+   91	movslq %esi, %rsi
+  -92	mov %rsi, %rsi
+  -93	mov -120(%rbp), %rax
+  -94	mov %rsi, %rsi
+  -95	jmp .L._Z5shiftPii.ssa.9
+   96	.L._Z5shiftPii.ssa.9:
+  -97	mov $1, %rdi
+  -98	mov %rdx, %rdx
+   99	sub $1, %edx
+   100	movslq %edx, %rdx
+  -101	mov %rdx, %rdx
+  -102	mov %rsi, %rsi
+  -103	mov %rsi, %rsi
+  -104	mov %rdx, %rdx
+  -105	mov %rdx, %rdx
+   106	jmp .L._Z5shiftPii.ssa.4
+   107	.L._Z5shiftPii.ssa.7:
+   108	mov %rsi, %rax
+  -109	jmp .L.return._Z5shiftPii
+  -110	mov $0, %rax
+   111	.L.return._Z5shiftPii:
+   112	mov %rbp, %rsp
+   113	pop %rbp
+   114	ret
 ;; _Z4filli after allocate (changed)
    0	.prologue frame=656 outgoing=0 realign=0
   -1	mov %rdi, %rax

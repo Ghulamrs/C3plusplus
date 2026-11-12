@@ -2665,3 +2665,52 @@ comment cap, memory gate, exclusions, ide/generate.py --check - none of them mea
 `src/` went from 93865 to 93925 lines (+60). **Left**: the Linux gates; virtual's 20% - test the placement reading first
 (align a function that a 64-byte line would cut, as align-loops does for loops), then the callee's frame (`sub $48` where
 `-O2` has `sub $16`); the compare fold covers only a compare that ends its block.
+
+### M3b.5, lane hash: the byte the loop's test read is the byte its body reads, 2026-11-12
+
+Wave 5, from `0b07e3ad`, branch `m3b5-hash`; code commits `b8377eef` and `4dc563b2` (the pads rule below).
+**The change** (`SsaValues.cpp`, gvn): a block whose one predecessor is its immediate dominator, reached by a `br` or
+`condbr` in the same funclet, starts with what that block had loaded or stored at its end, in a function with no pad. So
+the loop test's `*p` and the body's `*p` are one load before `rotate`, and `rotate` carries the test's byte into the
+head as a parameter: hash's byte loop is `movzbl; xor; imul; add $1; movsbq (%r10); test; jne`, one load a turn (two
+before). Over the suite at -O1 (Linux ssa.sh, `4dc563b2`) gvn replaced 924 loads by a load, 607 by a store (the base's
+count was not taken).
+**The pads rule, found by the gate**: without it `ssa-try-catch` printed `1 12 0 0` for `1 12 22 33` on Windows at
+`-front=ssa -O2`, both spellings (`nestedInBody`: a handler's `r = 22` not seen by the load after the `try`; Linux
+right) - the reading, not proved: a catch's way back is an edge the dominators' predecessors do not show. A function
+with any pad keeps the block-local rule; at `4dc563b2` the case is right at -O0, -O2, -front=ssa -O1 and -O2 (both
+spellings).
+**Probe** `tests/cases/ssa-forward` (+`.expected`, the Windows box's clang; `.gvn` its `-O1 -dump=ssa=gvn` on Linux): a
+loop's test and body, a then- and an else-block, and three that load again - a store between, a call between, a join.
+Right at -O0, -O2, -front=ssa -O1 and -O2 on Windows. **Re-recorded** (Linux): `ssa-loads.loops` (`shift`'s swap
+reads its two elements from the test's loads), `ssa-loops.loops` (`skipped`'s division reads the test's load),
+`ssa-rotate.rotate` (`fnv`'s byte comes to the head as a parameter), `ssa-fold-access.allocate` (`shift`, frame 176 ->
+160, two loads fewer); `ssa-dead.dead` and `main` in `ssa-rotate.rotate` changed before the pads rule and are back as
+they were (each function has a pad).
+**Not done, and why** - both are selection's (`SsaSelect.cpp`, the virt lane's), written down for it: (1) the
+extension after each `add`: `canonicalise` writes `movslq` after every 32-bit result (`add $1, %edx; movslq %edx, %rdx`
+for the outer counter; `sub; movslq; lea 97; movslq` before the fill loop's byte store), and `high()` extends its
+operand again (`movslq %eax, %rax` before `imul`) where it is already canonical - an SSA rule cannot remove either;
+(3) the preheader guard: since lane mm `rotate` turns innermost loops only, so hash's outer loop is not rotated and its
+`xor; cmp; jge` is its own head's test, not a guard to fold.
+**Bench** (bench.cmd once, `-front=ssa -O2` against `-O2` of the same cxx3 at `4dc563b2`, median of 9, the box shared and
+loaded - cl's hash 147 where lane mm measured 121): fib 8 / 9, sieve 58 / 62, matmul 11 / 30, isort 11 / 20, **hash 216 /
+209** (1.033x; lane mm 181 / 174, 1.040x), virtual 165 / 99, total 479 / 438, .text 3728 / 3443; checksums agree. hash is
+not level: the two selector items above are what is left of it. virtual's ratio (1.67x, lane mm 1.26x) is the loaded box
+or a change; not separated within the hour.
+**Gates on `4dc563b2`'s src** (`959009ba` adds probes and this entry): Windows, before the pads rule (`b8377eef`, tree
+`work\m3b5ha`, clean ship and build, WINLANES=3) winpass `-front=ssa -O2` gnu 749 / masm 748 same, 1 differ
+(`ssa-try-catch`, the finding above), 340 refused as recorded; on `4dc563b2` (`work\m3b5ha2`) that case and the probe are
+right at five flag sets, and winpass `-front=ssa -O2` (a clean ship and build) gnu 750 / masm 749 same, 0 differ. Linux (`~/m3b5ha`,
+a clean build; the disk at 100%, this lane's objects removed after each build): ssa.sh 798/0 at levels 1 and 2 (rotate
+1047, unroll 195 whole / 253 partial); run.sh 1123/0 at `-front=ssa -O2` (and at -O0 on `b8377eef`); the gates: exclusions 0
+uncited / 0 stale, comment cap 0 over, memory gate new 1056 raw-pointers 44 (unchanged), ide/generate.py --check, GATES-OK.
+Not run: ssa.sh on Windows, winpass at `-front=ssa -O1`, the cases' .text. `src/` went from 93865 to 93877 lines (+12).
+**Left**: the two selector items (virt's file); hash on a quiet box; why a catch's
+way back is not a predecessor edge (if so, `Dominators` should say so, and the pads rule could go).
+**The coordinator's question** (wave 5's idle bench: hash 374 against -O2's 316, wave 4 288 against 300): in hash's IR at
+`0b07e3ad` after `rotate` (boxkit/m3b5ha-base0.ssa.txt) the byte loop is still rotated (its test in the preheader and at
+its foot), and the fill loop was never `rotate`'s (unrolled by 4, its test inside the third copy, a `br` back). What the
+innermost rule took is the outer `r` loop's rotation: its head tests `r < rounds` and the latch jumps back, one `jmp` and
+one `cmp; jge` a turn for 2M turns. No guard of hash's is decided by gvn's rule (`decided=0` for this function). So the
+rule cost a jump per outer turn, not the inner loops; whether that is 58 ms was not measured here.
