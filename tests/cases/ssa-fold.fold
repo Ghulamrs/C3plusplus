@@ -133,15 +133,15 @@ function @_ZL5mergei(%1: int) -> int static {
   condbr %7, ^4, ^6
 ^4:
   %8 = iconst int, 5
-  br ^5(%8)
-^5(%41: int):
+  br ^5
+^5:
   %45 = iconst int, 5
   %13 = iconst int, 1
   %14 = icmp sgt, bool, %1, %13
   condbr %14, ^7, ^8
 ^6:
   %9 = iconst int, 5
-  br ^5(%9)
+  br ^5
 ^7:
   br ^8
 ^8:
@@ -159,11 +159,11 @@ function @_ZL5mergei(%1: int) -> int static {
   br ^9(%26)
 ^12:
   %29 = iconst int, 295
-  %30 = add int, %41, %29
-  %31 = trunc unsigned char, %30
-  %34 = add int, %41, %1
+  %30 = iconst int, 300
+  %31 = iconst unsigned char, 44
+  %34 = add int, %45, %1
   %36 = add int, %34, %1
-  %38 = zext int, %31
+  %38 = iconst int, 44
   %39 = add int, %36, %38
   br ^2
 }

@@ -660,7 +660,7 @@ function @_ZL7rotatedi(%1: int) -> int static {
   %22 = iconst int, -2115558717
   %25 = iconst int, 9
   %27 = iconst int, 31
-  %29 = iconst int, 1009
+  %30 = iconst int, 1009
   %13 = iconst int, 2
   %16 = iconst int, 250
   br ^4(%1, %4)
@@ -670,8 +670,8 @@ function @_ZL7rotatedi(%1: int) -> int static {
   %24 = add int, %23, %7
   %26 = ashr int, %24, %25
   %28 = lshr int, %7, %27
-  %30 = add int, %26, %28
-  %31 = mul int, %30, %29
+  %29 = add int, %26, %28
+  %31 = mul int, %29, %30
   %9 = sub int, %7, %31
   %11 = add int, %9, %21
   %14 = add int, %21, %13
@@ -687,7 +687,7 @@ function @_ZL7rotatedi(%1: int) -> int static {
   %40 = ashr int, %39, %25
   %41 = lshr int, %37, %27
   %42 = add int, %40, %41
-  %43 = mul int, %42, %29
+  %43 = mul int, %42, %30
   %44 = sub int, %37, %43
   %45 = add int, %44, %35
   %46 = add int, %21, %36
@@ -703,7 +703,7 @@ function @_ZL7rotatedi(%1: int) -> int static {
   %56 = ashr int, %55, %25
   %57 = lshr int, %53, %27
   %58 = add int, %56, %57
-  %59 = mul int, %58, %29
+  %59 = mul int, %58, %30
   %60 = sub int, %53, %59
   %61 = add int, %60, %51
   %62 = add int, %21, %52
@@ -719,7 +719,7 @@ function @_ZL7rotatedi(%1: int) -> int static {
   %72 = ashr int, %71, %25
   %73 = lshr int, %69, %27
   %74 = add int, %72, %73
-  %75 = mul int, %74, %29
+  %75 = mul int, %74, %30
   %76 = sub int, %69, %75
   %77 = add int, %76, %67
   %78 = add int, %21, %68
@@ -1256,7 +1256,7 @@ function @main() -> int {
   %162 = iconst int, -2115558717
   %165 = iconst int, 9
   %167 = iconst int, 31
-  %169 = iconst int, 1009
+  %170 = iconst int, 1009
   %105 = iconst int, 2
   %108 = iconst int, 250
   br ^27(%34, %3)
@@ -1266,8 +1266,8 @@ function @main() -> int {
   %164 = add int, %163, %99
   %166 = ashr int, %164, %165
   %168 = lshr int, %99, %167
-  %170 = add int, %166, %168
-  %171 = mul int, %170, %169
+  %169 = add int, %166, %168
+  %171 = mul int, %169, %170
   %101 = sub int, %99, %171
   %103 = add int, %101, %155
   %106 = add int, %155, %105
@@ -1283,7 +1283,7 @@ function @main() -> int {
   %284 = ashr int, %283, %165
   %285 = lshr int, %281, %167
   %286 = add int, %284, %285
-  %287 = mul int, %286, %169
+  %287 = mul int, %286, %170
   %288 = sub int, %281, %287
   %289 = add int, %288, %279
   %290 = add int, %155, %280
@@ -1299,7 +1299,7 @@ function @main() -> int {
   %300 = ashr int, %299, %165
   %301 = lshr int, %297, %167
   %302 = add int, %300, %301
-  %303 = mul int, %302, %169
+  %303 = mul int, %302, %170
   %304 = sub int, %297, %303
   %305 = add int, %304, %295
   %306 = add int, %155, %296
@@ -1315,7 +1315,7 @@ function @main() -> int {
   %316 = ashr int, %315, %165
   %317 = lshr int, %313, %167
   %318 = add int, %316, %317
-  %319 = mul int, %318, %169
+  %319 = mul int, %318, %170
   %320 = sub int, %313, %319
   %321 = add int, %320, %311
   %322 = add int, %155, %312
