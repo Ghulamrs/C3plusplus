@@ -77,13 +77,17 @@ if "%S%"=="0" (
     copy /y "%ROOT%\cxx3-msvc.exe" "%OUT%\cxx3-stage0.exe" >nul
 )
 if not exist "%OUT%\cxx3-stage%S%.exe" (echo self-host.cmd: no stage %S% in %OUT% - run the stage before it first & exit /b 1)
-if exist "%OUT%\s%S%" rmdir /s /q "%OUT%\s%S%"
-mkdir "%OUT%\s%S%"
+rem  SELFHOST_RESUME=1 keeps the stage's objects from an earlier job and compiles only the rest.
+if not "%SELFHOST_RESUME%"=="1" if exist "%OUT%\s%S%" rmdir /s /q "%OUT%\s%S%"
+if not exist "%OUT%\s%S%\part" mkdir "%OUT%\s%S%\part"
 set GOT=0
-for %%d in (%DIRS%) do for %%f in ("%ROOT%\%%d\*.cpp") do (
-    "%OUT%\cxx3-stage%S%.exe" -nologo -c %FLAGS% %DEFS% %CLOCK% "%%f" -o "%OUT%\s%S%\%%~nf.obj" > "%OUT%\s%S%\%%~nf.log" 2>&1
+for %%d in (%DIRS%) do for %%f in ("%ROOT%\%%d\*.cpp") do if not exist "%OUT%\s%S%\%%~nf.obj" (
+    rem  Written under part\ and moved, so a job killed mid-compile leaves no object a resumed job would keep.
+    "%OUT%\cxx3-stage%S%.exe" -nologo -c %FLAGS% %DEFS% %CLOCK% "%%f" -o "%OUT%\s%S%\part\%%~nf.obj" > "%OUT%\s%S%\%%~nf.log" 2>&1
     rem  A crash's status is negative, which `if errorlevel 1` does not see - so the status.
-    if !errorlevel! neq 0 if exist "%OUT%\s%S%\%%~nf.obj" del /q "%OUT%\s%S%\%%~nf.obj"
+    if !errorlevel! neq 0 (if exist "%OUT%\s%S%\part\%%~nf.obj" del /q "%OUT%\s%S%\part\%%~nf.obj") else move /y "%OUT%\s%S%\part\%%~nf.obj" "%OUT%\s%S%\%%~nf.obj" >nul
+)
+for %%d in (%DIRS%) do for %%f in ("%ROOT%\%%d\*.cpp") do (
     if exist "%OUT%\s%S%\%%~nf.obj" set /a GOT+=1
 )
 echo self-host.cmd: stage %S% compiled !GOT! of %N% sources

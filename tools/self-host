@@ -13,6 +13,8 @@
 # stages present: <out>/differ.txt names each source whose objects differ and, from its assembly, the first function.
 # SELFHOST_CAP (seconds, 540 by default - the 9-minute cap) bounds each compile and each link; SELFHOST_JOBS (2)
 # compiles run at once. A compile that runs out its cap leaves <out>/s<k>/<source>.unfinished and no object.
+# SELFHOST_RESUME=1 keeps a stage's objects from an earlier job and compiles only the rest, so a slow stage (one an
+# -O0 stage 0 built) can be split across several box jobs, each under 25 minutes.
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 CAP=${SELFHOST_CAP:-540}
@@ -24,8 +26,11 @@ compile() {   # $1 stage, $2 source, $3 -c or -S, $4 output
 cd "$ROOT" || exit 2
 if [ "${1:-}" = --one ]; then      # the per-source job xargs runs: stage $2, source $3; OUT and FLAGS exported
     b=$(basename "$3" .cpp)
-    compile "$2" "$3" -c "$OUT/s$2/$b.o" > "$OUT/s$2/$b.log" 2>&1 ||
-        { r=$?; rm -f "$OUT/s$2/$b.o"; [ $r -eq 142 ] && : > "$OUT/s$2/$b.unfinished"; }
+    [ -s "$OUT/s$2/$b.o" ] && exit 0           # SELFHOST_RESUME=1 keeps what an earlier job compiled
+    rm -f "$OUT/s$2/$b.unfinished" "$OUT/s$2/part/$b.o"; mkdir -p "$OUT/s$2/part"
+    # written under part/ and moved, so a job killed mid-compile leaves no object a resumed job would keep
+    compile "$2" "$3" -c "$OUT/s$2/part/$b.o" > "$OUT/s$2/$b.log" 2>&1 && mv "$OUT/s$2/part/$b.o" "$OUT/s$2/$b.o" ||
+        { r=$?; rm -f "$OUT/s$2/part/$b.o"; [ $r -eq 142 ] && : > "$OUT/s$2/$b.unfinished"; }
     exit 0
 fi
 OUT=${1:-$ROOT/selfhost}
@@ -41,7 +46,7 @@ for s in $STAGES; do
         rm -rf "$OUT"; mkdir -p "$OUT"; cp ./cxx3.exe "$OUT/cxx3-stage0"
     fi
     [ -x "$OUT/cxx3-stage$s" ] || { echo "self-host: no stage $s in $OUT - run the stage before it first"; exit 1; }
-    rm -rf "$OUT/s$s"; mkdir -p "$OUT/s$s"
+    [ "${SELFHOST_RESUME:-}" = 1 ] || rm -rf "$OUT/s$s"; mkdir -p "$OUT/s$s"
     t=$(date +%s)
     echo "$SRCS" | xargs -n 1 -P "${SELFHOST_JOBS:-2}" sh "$ROOT/tools/self-host" --one "$s"
     for f in "$OUT/s$s"/*.unfinished; do [ -f "$f" ] && echo "self-host: $(basename "$f" .unfinished) did not finish in $CAP s under stage $s"; done

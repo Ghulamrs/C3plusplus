@@ -2819,3 +2819,11 @@ on Linux/macOS, the first function whose assembly differs. The cmd has no cap of
 `-front=ssa` and `-O2` (`boxkit/m3b6s3-chain.sh`, queued behind two other lanes' builds on the box lock at the
 lane's hand-back), the make test gates, and the cmd on Windows. **The Mac's part of the row is owed** to a later
 box-equivalent run (the Mac runs no builds); it is not claimed from Linux and Windows.
+
+**Measured at `2c410267`** (the lane's base `f26798ae` and the tool), each level as stages "0 1", "2", "3":
+Windows (`boxkit/m3b6w-chain.sh`, GNU spelling) and Linux (`boxkit/m3b6s3-chain.sh`), at `-front=ssa`,
+`-front=ssa -O2` and `-O2`: **stage 0 = 1 = 2 on 101 of 101 sources and stage 2 = 3 on 101 of 101, at every level on
+both boxes**; every `differ.txt` empty. On Linux a `-front=ssa` (-O0) stage takes past 25 minutes to compile its 101
+sources (rc 124 twice), so **`SELFHOST_RESUME=1`** keeps a stage's objects from an earlier job and compiles only the
+rest - each object written under `part/` and moved, so a killed job leaves no half an object to keep; the same in the
+cmd, exercised by deleting one stage-3 object and resuming (101 of 101 again, `part\` empty).
