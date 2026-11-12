@@ -2529,3 +2529,38 @@ quiet box: 114 against 82 with the loop already rotated, the indirect call's seq
 `-O2`'s; (4) the pass's guard in the preheader is not folded where the start is a parameter (`xor; cmp; jge`) - fine,
 but a counted loop whose bound is known positive could drop it; (5) emit, names, overload, syntax, typed, adapted,
 coff, c90, win-structure not run by this lane (the coordinator's merged gate).
+
+**M3b.5, round 5, 2026-11-12: what stays on MIR, measured and said.** From main `641d75ac`, branch `m3b5-r5`, code commit
+`7d62e289`. **The census** (Linux, every case that compiles - 780, `-front=ssa -O2 -dump=mir=all`, a function counted once
+per pass that said "changed"; `boxkit/m3b5r5-census.sh`), on main:
+
+| MIR pass | functions changed (cases) | under `-front=ssa` |
+|---|---|---|
+| forward-values, remove-unreachable, remove-dead, coalesce-copies | 9834 (772), 9480 (772), 9829 (772), 4988 (770) | stay: selection's own copies and slots, which SSA never sees |
+| fold-loads, fold-offsets, thread-jumps | 2475 (402), 2073 (352), 1704 (293) | stay: memory operands and the jumps selection writes |
+| webs, locals, allocate, remove-dead-stores, finish-frame, shrink | 5046 (771), 9851 (772), 9855 (772), 1544 (394), 3308 (600), 7245 (772) | stay: the allocator and the frame are MIR's by design |
+| fold-index | 928 (222) | stays: scaled addressing is an x86 operand |
+| hoist-invariants | 271 (122) | stays: the addresses and constants selection materialises inside a loop (327 before the loads lane, 394 in 161 on the Ast.h path at round 3) |
+| hoist-xmm-slots | 1 (1, `pipelined-pointers`' `main`) | stays: a free xmm register is known only after allocation |
+| align-loops | 1053 (230) | stays: a placement fact, last of all |
+| widen-counters | 1 (1, `handler-exit-ms`' `loopContinue`) | **off**: SSA's `loops` widens; switching it off changed no case's .text |
+| divide-by-constant | 0 | **off**: SSA's `divide` (-O2) did every one |
+
+**The change**: `MFunction::fromSsa`, set by `X86_64Linux::emit` (through `Optimizer::fromSsa`) where the function was
+selected from its SSA; `widen-counters` and `divide-by-constant` gate on it. Both passes are -O2's alone (`!forSize()`),
+so `-front=ssa -O1` and the Ast.h path, and a function `-front=ssa` leaves on the Ast.h path, are unchanged by
+construction. No probe was re-recorded: the probes record SSA dumps, which this does not touch.
+**.text** (Linux, each case `-S` then `as` and `size -A`, 779 of 780 - `windows-h-layout` is Windows-only): main 753,530
+bytes, this 753,530, 0 cases differ. After the change the census shows neither pass changing anything; every other row is
+the same number.
+**Gates on `7d62e289`**: Windows (`work\m3b5r5`, a clean ship and build, WINLANES=3) `winpass.sh` at `-front=ssa -O2`: gnu
+748 / masm 747 same, 0 differ, 340 refused as recorded. Linux (`~/m3b5r5`, a clean build): run.sh 1121/0 at `-front=ssa -O2` and
+`-front=ssa -O1`; ssa.sh 794/0 at levels 1 and 2; exclusions 0 uncited / 0 stale, comment cap 0 over, memory gate new 1056
+raw-pointers 44 (unchanged), ide/generate.py --check, GATES-OK. **Not run**: run.sh at `-front=ssa`, `-O2`, `-O0`, emit,
+names, overload, syntax, typed, adapted, coff, c90, win-structure, winpass at `-front=ssa -O1` (the coordinator's merged gate).
+`src/` went from 93821 to 93828 lines (+7).
+**Item 5, closed**: under `-front=ssa` MIR keeps fold-index, hoist-invariants, hoist-xmm-slots, align-loops, and the
+scalar rounds, allocator and frame passes - each still changing code SSA cannot reach (the table's counts); widen-counters
+and divide-by-constant are off, SSA covering both. **Left**: hoist-invariants' 271 is what a later round could move to
+SSA (rematerialised addresses hoisted at selection); the Ast.h `-O2` census was not re-taken this round (the Linux box was
+shared by three lanes), round 3's numbers stand for it.
