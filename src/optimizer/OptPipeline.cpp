@@ -228,6 +228,14 @@ struct Rounds : Group {
     Rounds() : Group(PassInfo{"rounds", 0, 0, 0, kTodoDropLabels | kTodoBuildFlow}, 0, WhenNoneChanged) {}
 };
 
+// remove-dead-stores then its rounds, as one group: `dse-loop` inside the frame, `dse-late` after the hoists.
+std::unique_ptr<Group> dseGroup(const char *name, int times) {
+    std::unique_ptr<Group> g(new Group(PassInfo{name, 0, 0, 0, 0}, times, Group::WhenFirstUnchanged));
+    g->add(std::unique_ptr<Pass>(new RemoveDeadStores()));
+    g->add(rounds<Rounds>());
+    return g;
+}
+
 }
 
 // **The pipeline**, cxx1's passes.def, in the order the code below declares it: rounds; frame (webs, locals, allocate, rounds, dse-loop); fold-index; the hoists; dse-late; finish-frame; shrink-loop; align-loops (-O2).
@@ -242,10 +250,7 @@ std::unique_ptr<Pass> pipelineFor() {
     frame->add(std::unique_ptr<Pass>(new LocalsPass()));
     frame->add(std::unique_ptr<Pass>(new Allocate()));
     frame->add(rounds<RoundsIfPromoted>());
-    std::unique_ptr<Group> dse(new Group(PassInfo{"dse-loop", 0, 0, 0, 0}, 3, Group::WhenFirstUnchanged));
-    dse->add(std::unique_ptr<Pass>(new RemoveDeadStores()));
-    dse->add(rounds<Rounds>());
-    frame->add(std::move(dse));
+    frame->add(dseGroup("dse-loop", 3));
     top->add(std::move(frame));
 
     top->add(std::unique_ptr<Pass>(new FoldIndex()));
@@ -253,10 +258,7 @@ std::unique_ptr<Pass> pipelineFor() {
     top->add(std::unique_ptr<Pass>(new HoistXmmSlots()));
     top->add(std::unique_ptr<Pass>(new WidenCounters()));
     // fold-index and the hoists leave stores whose reads they took: dse once more, and its rounds.
-    std::unique_ptr<Group> dseLate(new Group(PassInfo{"dse-late", 0, 0, 0, 0}, 1, Group::WhenFirstUnchanged));
-    dseLate->add(std::unique_ptr<Pass>(new RemoveDeadStores()));
-    dseLate->add(rounds<Rounds>());
-    top->add(std::move(dseLate));
+    top->add(dseGroup("dse-late", 1));
     top->add(std::unique_ptr<Pass>(new FinishFrame()));
 
     std::unique_ptr<Group> shrinkLoop(new Group(PassInfo{"shrink-loop", 0, 0, 0, kTodoBuildFlow}, 3, Group::WhenFirstUnchanged));

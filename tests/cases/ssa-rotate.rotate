@@ -233,12 +233,14 @@ function @_Z6nestedi(%1: int) -> int {
   %4 = iconst int, 0
   %18 = iconst int, 1
   %32 = iconst int, 1
-  br ^4(%4, %4)
+  %47 = icmp slt, bool, %4, %1
+  condbr %47, ^4(%4, %4), ^17(%4)
 ^4(%36: int, %39: int):
-  %9 = icmp slt, bool, %39, %1
-  condbr %9, ^15(%36, %39), ^7
+  br ^15(%36, %39)
+^17(%46: int):
+  br ^7
 ^7:
-  ret %36
+  ret %46
 ^15(%41: int, %42: int):
   %44 = icmp slt, bool, %42, %1
   condbr %44, ^8(%41, %42), ^16(%41)
@@ -253,7 +255,8 @@ function @_Z6nestedi(%1: int) -> int {
   br ^11
 ^11:
   %33 = add int, %39, %32
-  br ^4(%43, %33)
+  %48 = icmp slt, bool, %33, %1
+  condbr %48, ^4(%43, %33), ^17(%43)
 ^12:
   %24 = add int, %37, %40
   br ^13(%24)
