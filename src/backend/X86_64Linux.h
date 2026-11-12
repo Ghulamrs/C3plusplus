@@ -259,6 +259,7 @@ private:
     // Microsoft: the FH3 state of each pad block (M3-IR 3.6), the frame's scratch word, and whether a funclet is being selected.
     std::vector<int> ssaPadState_;
     int ssaUnwindHelpSlot_ = 0;
+    long long ssaValuesFrom_ = 0, ssaValuesTo_ = 0;   // the values' slots layoutSsa laid, (from, to]; to 0: not 8 bytes each
     int ssaFuncletState_ = -1;                      // the handler state in force inside the funclet being selected
     std::map<std::uint32_t, MsTryBlock> ssaTries_;  // a try's block, filled as its handlers' funclets come out
     std::vector<std::pair<unsigned long long, std::uint32_t> > ssaTryOrder_;    // each finished try's last block and its pad: the map's order

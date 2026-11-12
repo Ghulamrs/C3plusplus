@@ -104,6 +104,8 @@ bool removeDeadStores(MStream &s, const SharedSlots &shared);
 
 // A register saved for a local that no longer names it, and its restores, go.
 void dropUnusedSaves(MStream &s, std::vector<SavedReg> &saves, long long top);
+// **The SSA values' slots (from, to] closed up** from `from`, unnamed ones dropped; returns where they now end.
+long long closeValueSlots(MStream &s, long long from, long long to, const SharedSlots &shared);
 
 // **What each register holds, followed forward through a block** - see OptValues.cpp.
 bool forwardValues(MStream &s, Flow &f, const Convention &c, long long tempFrom = 0);

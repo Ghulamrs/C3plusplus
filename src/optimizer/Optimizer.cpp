@@ -92,6 +92,7 @@ void Optimizer::functionBegin(const std::string &name, bool exported, bool merge
     fn_.promoted = false;
     fn_.tempFrom = 0;
     fn_.tempBase = fn_.tempCount = 0;
+    fn_.valueFrom = fn_.valueTo = 0;
     fn_.shared = opt::SharedSlots();
     inlining_ = false;
     opaque_.clear();

@@ -146,16 +146,28 @@ static void shrinkTemporaries(MFunction &fn) {
     fn.inlineTop = static_cast<int>((fn.tempBase + 8 * used + 15) & ~15);
 }
 
+// **The values' slots close up** where nothing lies below them: no temporary or callee, no funclet, no LSDA.
+static void closeValues(MFunction &fn) {
+    if (fn.valueTo == 0 || fn.prologueAt < 0 || !fn.lsda.empty() || fn.inlineTop > fn.frameSize) return;
+    if (fn.frameSize != ((fn.valueTo + 15) & ~15LL)) return;
+    for (const MEntry &e : fn.stream) if (e.kind == MEntry::Directive && e.dir.beginsFunclet()) return;
+    const long long end = closeValueSlots(fn.stream, fn.valueFrom, fn.valueTo, fn.shared);
+    fn.frameSize = static_cast<int>((end + 15) & ~15LL);
+    if (fn.inlineTop > fn.frameSize) fn.inlineTop = fn.frameSize;
+}
+
 // **The frame as the passes leave it**: the saves nothing needs any more
 // dropped, and the prologue rewritten with the rest and the final size.
 struct FinishFrame : Pass {
     FinishFrame() : Pass(PassInfo{"finish-frame", 0, 0, 0, 0}) {}
     bool execute(MFunction &fn) override {
         const bool had = !fn.saves.empty();
+        const int walked = fn.frameSize;
         shrinkTemporaries(fn);
+        closeValues(fn);
         dropUnusedSaves(fn.stream, fn.saves, fn.frameBase());
         fn.size = fn.frameBase() + ((8 * static_cast<int>(fn.saves.size()) + 15) & ~15);
-        if (fn.size != fn.frameSize) {
+        if (fn.size != walked || !fn.saves.empty()) {   // a trim can cancel the saves' growth exactly
             assert(fn.prologueAt >= 0 && "a frame can grow only while its prologue is held");
             opt::MDirective &p = fn.stream[fn.prologueAt].dir;
             assert(p.kind == opt::MDirective::Prologue && "the prologue's entry holds the prologue");
@@ -218,7 +230,7 @@ struct Rounds : Group {
 
 }
 
-// **The pipeline**, cxx1's passes.def, in the order the code below declares it: rounds; frame (webs, locals, allocate, rounds, dse-loop); fold-index; finish-frame; shrink-loop; align-loops (-O2).
+// **The pipeline**, cxx1's passes.def, in the order the code below declares it: rounds; frame (webs, locals, allocate, rounds, dse-loop); fold-index; the hoists; dse-late; finish-frame; shrink-loop; align-loops (-O2).
 // What each pass does, in one line apiece, is the table in CLAUDE.md, "The optimizer's design notes".
 // The two loops rebuild the flow without dropping labels, where rounds does both: that is how the driver did it before the manager, and a label dropped there could change what is emitted - kept, and noted.
 std::unique_ptr<Pass> pipelineFor() {
@@ -240,6 +252,11 @@ std::unique_ptr<Pass> pipelineFor() {
     top->add(std::unique_ptr<Pass>(new HoistInvariants()));
     top->add(std::unique_ptr<Pass>(new HoistXmmSlots()));
     top->add(std::unique_ptr<Pass>(new WidenCounters()));
+    // fold-index and the hoists leave stores whose reads they took: dse once more, and its rounds.
+    std::unique_ptr<Group> dseLate(new Group(PassInfo{"dse-late", 0, 0, 0, 0}, 1, Group::WhenFirstUnchanged));
+    dseLate->add(std::unique_ptr<Pass>(new RemoveDeadStores()));
+    dseLate->add(rounds<Rounds>());
+    top->add(std::move(dseLate));
     top->add(std::unique_ptr<Pass>(new FinishFrame()));
 
     std::unique_ptr<Group> shrinkLoop(new Group(PassInfo{"shrink-loop", 0, 0, 0, kTodoBuildFlow}, 3, Group::WhenFirstUnchanged));

@@ -165,12 +165,16 @@ int X86_64Linux::layoutSsa(const Function &fn, const ir::Function &f) {
     ssaFoldGeps(f);
     ssaNarrowValues(f);
     ssaValueSlot_.assign(f.values.size(), 0);
+    ssaValuesFrom_ = cur;
+    bool x87 = false;
     for (std::size_t i = 1; i < f.values.size(); i++) {
         if (!f.values[i].type.valid() || ssaTypes_->type(f.values[i].type)->isVoid()) continue;
         if (ssaRemat(f, ir::ValueId(static_cast<std::uint32_t>(i)))) continue;
+        x87 = x87 || isX87(ssaTypes_->type(f.values[i].type));
         cur = isX87(ssaTypes_->type(f.values[i].type)) ? roundUp(cur + 16, 16) : cur + 8;
         ssaValueSlot_[i] = cur;
     }
+    ssaValuesTo_ = x87 ? 0 : cur;   // finish-frame closes up only 8-byte slots
     // The word the Microsoft runtime scribbles its state in, where the function has a pad (M3-IR 3.6).
     ssaUnwindHelpSlot_ = 0;
     if (usesFunclets() && landingPads_) { cur = roundUp(cur, 8) + 8; ssaUnwindHelpSlot_ = static_cast<int>(cur); }
