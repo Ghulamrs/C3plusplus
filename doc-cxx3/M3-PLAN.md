@@ -2739,3 +2739,33 @@ Windows box's clang: `5 24 4`); the Ast.h path goes in M3b.7. The case's `.expec
 **Left**: the passes' own succ walks besides dead stores' (fold, promote, jumps, unroll) still see neither way on - none
 carries block arguments on it, so none was found wrong; the MIR allocator's liveness was not looked at; a Microsoft probe
 (ssa.sh's probes are x86_64-linux only) would hold these dumps against change.
+
+### M3b.5, lane msedge: every pass's own succ walk sorted, the allocator across a funclet, Microsoft probes, 2026-11-12
+
+Wave 6, from `0d05c4e6` (lane cret), branch `m3b5-msedge`; code commit `58d68953`. **No wrong answer found.** **The passes'
+own succ walks** (src/ir/opt), each one line: `SsaJumps::reachableFrom` (may a parameter's read elsewhere be reached from
+the threaded edge's target) and `SsaLoops::find` (back edges) and `always` (a loop's ways out) ask reachability, so they walk
+`successors()` now - none was wrong in practice (a loop holding a pad is `fixed` and skipped; a catchswitch's way on is to an
+enclosing pad, never a head), they now hold the one fact; `SsaCfg`'s unreachable sweep is rooted at every pad and funclet
+block (`fixed`), so a block only a `k` names is kept - left; fold's `pushBlock`/`into`, promote's `edges`/`arguments`,
+dead stores' argument marks, jumps' `edgesIn`, unroll's exits (a loop with a pad or funclet block is refused first),
+loops' preheader and counter walks and inline (refuses a callee or site with pads) carry block arguments, which an unwind
+edge has none of - left. **The MIR allocator** (MirAlloc, OptCore's `Flow`): a pseudo never crosses a funclet's boundary
+(asserted; a value live into a funclet stays in its shared slot), and on Microsoft a region's target is where the function
+resumes after the handler, so every call a try covers - the inner handler's too, inside the outer try's labels - has an
+`Eh` edge to the continuation and what it reads is live at the call, in a callee-saved register (a funclet takes none).
+**The case** `tests/cases/ssa-msedge-regs` (+`.expected`, the Windows box's clang): values computed before a nested try
+and read after the outer continuation, a rethrow and a cleanup's throw from an inner handler to the outer one, and a loop
+catching on some turns (its `i`, `k`, `sum`, `acc` in esi, r12d, edi, ebx across the try at `-front=ssa -O2`); right at
+`-front=ssa -O2` (both spellings), `-front=ssa -O1`, `-O2`, `-O0` on `work\m3b5me` and on `work\m3b5cr2` (`3f5076cb`,
+the code before this lane): not wrong before. **Probes**: tests/ssa.sh compares `<case>.win-<pass>`, `-arch x86_64-windows
+-O1 -dump=ssa=<pass>`, on Linux; `ssa-catch-edge.win-dead` and `ssa-cleanup-edge.win-dead` recorded (`catchswitch ^9,
+unwind ^4`, `cleanupret unwind ^9`, `unwind caller` held). No other probe changed. `src/` 93903 -> 93898 lines (-5).
+**Gates on `ed313fff`'s src and cases** (`18a206f7` adds the probes; this entry after): Windows (`work\m3b5me2`,
+`work\m3b5me3`, clean ships and builds, WINLANES=3) winpass `-front=ssa -O2` and `-front=ssa -O1` each gnu 753 / masm 752
+same, 0 differ, 340 refused as recorded; ssa.sh 766/0 at levels 1 and 2 (19 not for this host). Linux (`~/m3b5me`, a clean
+build): ssa.sh 805/0 at levels 1 and 2 (rotate 1047, unroll 195 whole / 253 partial; the only probes changed the two new
+ones); run.sh `-front=ssa -O2` 1126/0 and at `-O0` 1126/0; exclusions, comment cap 0 over, memory gate new 1056
+raw-pointers 44 (unchanged), ide/generate.py --check: GATES-OK. Not run: the bench and .text table. **Left**: the
+`.win-` probes are `-O1` only (no `-front=ssa` MIR probe for x86_64-windows); `tests/open/handler-guards-nested` (lane cret's
+Ast.h fault) stands for M3b.7.
