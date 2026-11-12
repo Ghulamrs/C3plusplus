@@ -2613,3 +2613,55 @@ scalar rounds, allocator and frame passes - each still changing code SSA cannot 
 and divide-by-constant are off, SSA covering both. **Left**: hoist-invariants' 271 is what a later round could move to
 SSA (rematerialised addresses hoisted at selection); the Ast.h `-O2` census was not re-taken this round (the Linux box was
 shared by three lanes), round 3's numbers stand for it.
+
+### M3b.5, lane virt: the virtual kernel's loop, a 32-bit value kept unextended and a compare made at its branch, 2026-11-12
+
+From wave 5's `0b07e3ad`. **The difference, instruction by instruction** (`virt` of `tools/windows/bench-kernels.cpp`,
+x86_64-windows, the two listings in `boxkit/m3b5ro-k-O2.s` and `boxkit/m3b5vi-k0.out`): the vptr load, the slot load, the
+call and the sum were the same on both paths, and there is no this-adjustment. What differed was the counter. `-O2` (Ast.h)
+ends its loop `add $1, %esi; cmp %ebx, %esi; jl`; `-front=ssa -O2` ended it
+`add $1, %edi; movslq %edi, %rax; mov %rax, %rdi; cmp %ebx, %eax; jl` - an extension and a copy on the loop-carried value.
+The selector canonicalises every 4-byte result and reads every value's slot whole, so the 64-bit read at the loop's top
+kept the upper half live and `remove-dead` could not drop the `movslq` (the Ast.h path reads an `int` local at 4 bytes).
+
+**Two rules, both in selection** (`src/backend/SsaSelect.cpp`, under the passes only, so `-front=ssa` at -O0 is unchanged):
+1. `ssaNarrowValues`: a 4-byte integer whose every reader takes its low four bytes alone - an operand of a 4-byte `add`,
+   `sub`, `mul`, `and`, `or`, `xor`, `neg`, `not`, of a 4-byte `icmp`, or an argument to a block parameter that is itself
+   read so (a fixed point, downwards) - is stored as computed: no `canonicalise` after the instruction that makes it. Any
+   other reader (a `sext`, a store, a call, a `ret`, a gep, a shift, a division, anything in a pad or funclet) keeps the
+   extension, so a slot read at 64 bits is still canonical.
+2. An integer `icmp` that ends its block and is read by that block's `condbr` alone is made at the branch (`ssaFold_`, the
+   table of values made at their use): `cmp`, `jcc`, with no `setcc`, `movzbq` or slot. Rule 1 alone was not enough: the
+   compare's `setl %al` wrote into the web that held the incremented counter, so the counter and its next value interfered
+   and the allocator left `mov %rbx, %rax ... jge; mov %rax, %rbx; jmp` - the dead `setcc` goes only after allocation,
+   with its slot (remove-dead-stores).
+
+`virt`'s loop is now `mov %rdi, %rax; and $1, %eax; movslq %eax, %rax; movq 256(%rbp,%rax,8), %rcx; movq (%rcx), %rax;
+movq 8(%rax), %rax; call *%rax; movslq %eax, %rax; add %rax, %rsi; add $1, %edi; cmp %ebx, %edi; jl` - 12 instructions
+where `-O2` has 13 (it stores the object pointer to a slot). **Probe** `tests/cases/ssa-narrow` (clang's answer from the
+Windows box): counters that go negative, a wrapping unsigned sum, a carried hash, each ending in a 64-bit reader; right at
+-O0, -O2, `-front=ssa -O1` and `-front=ssa -O2`. No recorded probe changed: they record IR, and this is selection.
+
+**Bench** (Windows box, median of 9, `-front=ssa -O2` against `-O2` of the same cxx3, cl -O2 third; the box was shared, so
+every number is above the idle ones; run twice after the lane's other jobs ended, `boxkit/m3b5vi-bench-end{1,2}.txt`):
+fib 6 / 9 / 8, sieve 55 / 65 / 52, matmul 9 / 32 / 3, isort 10 / 21 / 7, hash 208 / 214 / 155, **virtual 126 / 104 / 120**
+(second run 125 / 104 / 119), total 422 / 452 / 346; kernels' .text 3556 against `-O2`'s 3443 (4000 at lane rot). A run
+while both passes were going gave virtual 171 / 175 (`m3b5vi-bench-busy.txt`). **So virtual is NOT closed**: no kernel is
+worse and five of six now beat `-O2`, but virtual stays about 20% behind though its loop is one instruction shorter than
+`-O2`'s. The loop is still rotated at `0b07e3ad` and here (one `jl` at the latch), so wave 5's rotate rule is not it.
+**What the disassembly of the two bench executables shows** (`boxkit/m3b5vi-dis-{new,base}.txt`): both loops lie inside one
+64-byte line; under `-O2` both callees do too (`Sq::area` at 0x1bc0, `Rc::area` at 0x1c40), but under `-front=ssa -O2`
+`Rc::area` sits at 0x1cf0-0x1d07, across the line at 0x1d00, and is called every second turn. That is placement (history:
+"A hot loop that straddles a 64-byte line"), not selection - a hypothesis this lane had no time to test.
+**.text over the cases** (bench.ps1 -Cases, `-front=ssa -O2`, 761 cases): wave 5 (`work\m3b5w5`) 1,234,139 bytes, this
+1,193,441 (-40,698, -3.3%); 281 cases smaller, 82 larger, 398 the same; `exception-table-large` alone -37,252, the largest
+growth `string-rfind` +426.
+**Gates on `29a65db4`** (Windows, clean ship and build, WINLANES=3): winpass `-front=ssa -O2` (`work\m3b5vi`) gnu 750 / masm
+749 same, 0 differ, 340 refused as recorded; winpass `-front=ssa -O1` (`work\m3b5vi2`, the same commit) gnu 750 / masm 749
+same, 0 differ, 340 refused; ssa.sh 763 passed, 0 failed at levels 1 and 2. **Linux: NOT RUN.** The box's disk was full:
+the lane's clean build stopped at "No space left on device", the lane removed its own tree and did not retry while two
+other gates ran there. Owed: `sh boxkit/m3b5vi-linux.sh` (run.sh at the five flag sets, ssa.sh, the make test gates -
+comment cap, memory gate, exclusions, ide/generate.py --check - none of them measured for this commit).
+`src/` went from 93865 to 93925 lines (+60). **Left**: the Linux gates; virtual's 20% - test the placement reading first
+(align a function that a 64-byte line would cut, as align-loops does for loops), then the callee's frame (`sub $48` where
+`-O2` has `sub $16`); the compare fold covers only a compare that ends its block.
