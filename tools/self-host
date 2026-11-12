@@ -1,56 +1,83 @@
 #!/bin/sh
-# **M1's stages 1 and 2 on Linux and macOS**, as tools/windows/self-host.cmd is on Windows. Stage 0 is
-# ./cxx3.exe, built by make with clang++ or g++; it compiles and links every source in src/ into
-# stage 1, and stage 1 does the same into stage 2. Each source's assembly from the two, for this host's
-# target and the clock pinned, must be the same byte for byte - and from stage 0 too (C7, 2026-10-26):
-# a stage-0-against-stage-1 difference is one the stage-1-against-stage-2 fixed point cannot see, so
-# the stronger claim is the tool's and not a reviewer's hand run.
+# **M1's stages, and M3b.6's stage 3, on Linux and macOS**, as tools/windows/self-host.cmd is on Windows. Stage 0
+# is ./cxx3.exe, built by make with clang++ or g++. Stage k compiles every source in src/ to an object, one source a
+# job, into <out>/s<k>; those objects, linked by stage k, are stage k+1. So each stage is built from exactly the
+# objects compared, and the claims are two: stage 0 = stage 1 = stage 2 (C7, 2026-10-26: a stage-0-against-stage-1
+# difference is one the 1-against-2 fixed point cannot see) and stage 2 = stage 3 (M3b.6), byte for byte.
 #
-#   tools/self-host [out-dir] [flags for every compile, -O2 say]
+#   tools/self-host [out-dir] [flags for every compile, -O2 say] [stages, "0 1 2 3" by default]
 #
-# Writes <out>/cxx3-stage1 and cxx3-stage2, each source's assembly from stage 0, 1 and 2 in <out>/s0,
-# <out>/s1 and <out>/s2, and <out>/differ.txt naming the sources whose three are not the same.
-# SELFHOST_CAP (seconds, 1200 by default) bounds each compile, and four times it each stage's build, so a compile that
-# runs away - X64Parse.cpp under -front=ssa -O2, 2026-10-31 - is reported as not finished rather than holding a box.
+# The clock is pinned in every compile (Driver.cpp's -version names __DATE__ and __TIME__), so a stage built here
+# says it was built on 01-01-2000. Stage 0 starts afresh (it empties <out>); a later stage needs the one before it in
+# <out>, so "0 1", then "2", then "3" are three box jobs where one would pass 25 minutes. The comparison is over the
+# stages present: <out>/differ.txt names each source whose objects differ and, from its assembly, the first function.
+# SELFHOST_CAP (seconds, 540 by default - the 9-minute cap) bounds each compile and each link; SELFHOST_JOBS (2)
+# compiles run at once. A compile that runs out its cap leaves <out>/s<k>/<source>.unfinished and no object.
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+CAP=${SELFHOST_CAP:-540}
+capped() { perl -e 'alarm shift; exec @ARGV' "$@"; }      # perl, not timeout(1): macOS has no timeout
+compile() {   # $1 stage, $2 source, $3 -c or -S, $4 output
+    capped "$CAP" "$OUT/cxx3-stage$1" -nologo "$3" $FLAGS -I src -DCXX1_INCLUDE_DIR="\"$ROOT/lib\"" \
+        -DCXX1_CXX_INCLUDE_DIR="\"$ROOT/include\"" '-D__DATE__="Jan 01 2000"' '-D__TIME__="00:00:00"' "$2" -o "$4"
+}
+cd "$ROOT" || exit 2
+if [ "${1:-}" = --one ]; then      # the per-source job xargs runs: stage $2, source $3; OUT and FLAGS exported
+    b=$(basename "$3" .cpp)
+    compile "$2" "$3" -c "$OUT/s$2/$b.o" > "$OUT/s$2/$b.log" 2>&1 ||
+        { r=$?; rm -f "$OUT/s$2/$b.o"; [ $r -eq 142 ] && : > "$OUT/s$2/$b.unfinished"; }
+    exit 0
+fi
 OUT=${1:-$ROOT/selfhost}
 FLAGS=${2:-}
-CAP=${SELFHOST_CAP:-1200}
-capped() { perl -e 'alarm shift; exec @ARGV' "$@"; }      # perl, not timeout(1): macOS has no timeout
-cd "$ROOT" || exit 2
-make cxx3.exe > /dev/null || { echo "self-host: stage 0 did not build"; exit 1; }
-rm -rf "$OUT"; mkdir -p "$OUT/s0" "$OUT/s1" "$OUT/s2"
+STAGES=${3:-0 1 2 3}
+export OUT FLAGS SELFHOST_CAP="$CAP"
 SRCS=$(ls src/*.cpp src/parser/*.cpp src/backend/*.cpp src/optimizer/*.cpp src/sema/*.cpp src/syntax/*.cpp src/ir/*.cpp src/ir/opt/*.cpp src/encoder/*.cpp)
+n=$(echo "$SRCS" | wc -l | tr -d ' ')
 
-build() {   # $1 compiler, $2 output
-    capped $((CAP * 4)) "$1" -nologo $FLAGS -I src -DCXX1_INCLUDE_DIR="\"$ROOT/lib\"" -DCXX1_CXX_INCLUDE_DIR="\"$ROOT/include\"" \
-        $SRCS -o "$2"
-}
-build ./cxx3.exe "$OUT/cxx3-stage1" > "$OUT/stage1.log" 2>&1 && [ -x "$OUT/cxx3-stage1" ] ||
-    { echo "self-host: stage 0 did not build stage 1 - see $OUT/stage1.log"; exit 1; }
-echo "self-host: stage 1 built"
-build "$OUT/cxx3-stage1" "$OUT/cxx3-stage2" > "$OUT/stage2.log" 2>&1 && [ -x "$OUT/cxx3-stage2" ] ||
-    { echo "self-host: stage 1 did not build stage 2 - see $OUT/stage2.log"; exit 1; }
-echo "self-host: stage 2 built"
-
-# The fixed point, the clock pinned: Driver.cpp's -version names the build's __DATE__ and __TIME__.
-n=0; same=0; same0=0; : > "$OUT/differ.txt"
-cp ./cxx3.exe "$OUT/cxx3-stage0"
-for f in $SRCS; do
-    b=$(basename "$f" .cpp); n=$((n + 1))
-    # The three stages compile at once: one at a time left a two-core box's second core idle for an hour.
-    for s in 0 1 2; do
-        capped "$CAP" "$OUT/cxx3-stage$s" -nologo -S $FLAGS -I src -DCXX1_INCLUDE_DIR="\"$ROOT/lib\"" \
-            -DCXX1_CXX_INCLUDE_DIR="\"$ROOT/include\"" '-D__DATE__="Jan 01 2000"' '-D__TIME__="00:00:00"' \
-            "$f" -o "$OUT/s$s/$b.s" > "$OUT/s$s/$b.log" 2>&1 || { [ $? -eq 142 ] && : > "$OUT/s$s/$b.unfinished"; } &
-    done
-    wait
-    ok=1
-    if cmp -s "$OUT/s1/$b.s" "$OUT/s2/$b.s" && [ -s "$OUT/s1/$b.s" ]; then same=$((same + 1)); else ok=0; fi
-    if cmp -s "$OUT/s0/$b.s" "$OUT/s1/$b.s" && [ -s "$OUT/s0/$b.s" ]; then same0=$((same0 + 1)); else ok=0; fi
-    [ $ok = 1 ] || echo "$f" >> "$OUT/differ.txt"
-    for s in 0 1 2; do [ -f "$OUT/s$s/$b.unfinished" ] && echo "self-host: $f did not finish in ${CAP} s under stage $s" && rm -f "$OUT/s$s/$b.s"; done
+for s in $STAGES; do
+    if [ "$s" = 0 ]; then
+        make cxx3.exe > /dev/null || { echo "self-host: stage 0 did not build"; exit 1; }
+        rm -rf "$OUT"; mkdir -p "$OUT"; cp ./cxx3.exe "$OUT/cxx3-stage0"
+    fi
+    [ -x "$OUT/cxx3-stage$s" ] || { echo "self-host: no stage $s in $OUT - run the stage before it first"; exit 1; }
+    rm -rf "$OUT/s$s"; mkdir -p "$OUT/s$s"
+    t=$(date +%s)
+    echo "$SRCS" | xargs -n 1 -P "${SELFHOST_JOBS:-2}" sh "$ROOT/tools/self-host" --one "$s"
+    for f in "$OUT/s$s"/*.unfinished; do [ -f "$f" ] && echo "self-host: $(basename "$f" .unfinished) did not finish in $CAP s under stage $s"; done
+    got=$(ls "$OUT/s$s" | grep -c '\.o$')
+    echo "self-host: stage $s compiled $got of $n sources in $(( $(date +%s) - t )) s"
+    [ "$s" -lt 3 ] && [ "$got" -eq "$n" ] || continue
+    capped "$CAP" "$OUT/cxx3-stage$s" -nologo $FLAGS "$OUT/s$s"/*.o -o "$OUT/cxx3-stage$((s + 1))" > "$OUT/link$((s + 1)).log" 2>&1 &&
+        [ -x "$OUT/cxx3-stage$((s + 1))" ] && echo "self-host: stage $((s + 1)) built" ||
+        echo "self-host: stage $s did not link stage $((s + 1)) - see $OUT/link$((s + 1)).log"
 done
-echo "self-host: $same of $n sources emit the same assembly from stage 1 and stage 2, $same0 of $n from stage 0 and stage 1"
-[ "$same" -eq "$n" ] && [ "$same0" -eq "$n" ]
+
+# The comparison, over the stages present. A difference is named down to the first function whose assembly differs.
+firstfn() {   # $1 $2 assembly: the last label before their first differing line
+    l=$(cmp "$1" "$2" 2>/dev/null | sed -n 's/.* line \([0-9]*\)$/\1/p')
+    [ -n "$l" ] && head -n "$l" "$1" | grep -E '^[A-Za-z_?$][^ 	]*:' | grep -v '^\.L' | tail -1 | tr -d ':'
+}
+same() {   # $1 $2 stages, $3 base name, $4 source: the same object, or the difference named in differ.txt
+    cmp -s "$OUT/s$1/$3.o" "$OUT/s$2/$3.o" && [ -s "$OUT/s$1/$3.o" ] && return 0
+    fn=
+    if [ -s "$OUT/s$1/$3.o" ] && [ -s "$OUT/s$2/$3.o" ]; then
+        compile "$1" "$4" -S "$OUT/s$1/$3.s" > /dev/null 2>&1; compile "$2" "$4" -S "$OUT/s$2/$3.s" > /dev/null 2>&1
+        fn=$(firstfn "$OUT/s$1/$3.s" "$OUT/s$2/$3.s")
+    fi
+    echo "$4: stage $1 against stage $2${fn:+, first in $fn}" >> "$OUT/differ.txt"; return 1
+}
+: > "$OUT/differ.txt"; a=0; c=0; have012=1; have23=1
+for s in 0 1 2; do [ -d "$OUT/s$s" ] || have012=0; done
+for s in 2 3; do [ -d "$OUT/s$s" ] || have23=0; done
+for f in $SRCS; do
+    b=$(basename "$f" .cpp)
+    if [ $have012 = 1 ]; then ok=1; same 0 1 "$b" "$f" || ok=0; same 1 2 "$b" "$f" || ok=0; [ $ok = 1 ] && a=$((a + 1)); fi
+    if [ $have23 = 1 ]; then same 2 3 "$b" "$f" && c=$((c + 1)); fi
+done
+status=0
+if [ $have012 = 1 ]; then echo "self-host: $a of $n sources the same object from stages 0, 1 and 2"; [ "$a" -eq "$n" ] || status=1; fi
+if [ $have23 = 1 ]; then echo "self-host: $c of $n sources the same object from stages 2 and 3"; [ "$c" -eq "$n" ] || status=1; fi
+[ $have012 = 1 ] || [ $have23 = 1 ] || echo "self-host: neither stages 0-2 nor 2-3 are all in $OUT yet - nothing compared"
+cat "$OUT/differ.txt"
+exit $status

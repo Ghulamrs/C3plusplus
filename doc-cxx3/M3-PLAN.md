@@ -2806,3 +2806,16 @@ pad-if-crossing the project's encoder would have to offer), then find the 14 ms 
 frame trim of item 2; (3) the dead `mov %rax, 48(%rbp)` an outer rotation leaves in matmul's hot loop - with it gone
 `rotate` could take outer loops again, `cheapest` already holding the allocator's side; (4) function alignment outside a
 COMDAT and on ELF.
+
+### M3b.6, lane s3: stage 3 in the self-host tool, 2026-11-12
+From main `f26798ae`, branch `m3b6-stage3`. `tools/self-host` and `tools/windows/self-host.cmd` now build four stages:
+stage k compiles every source to an object, one source a job (Linux/macOS: `SELFHOST_JOBS`, 2, through xargs, each
+compile and link capped by `SELFHOST_CAP`, now 540 s), into `s<k>`, and those objects linked by stage k are stage k+1 -
+so each stage is built from exactly the objects compared. The clock is pinned in every compile (a stage says 01-01-2000).
+The claims are two, stage 0 = 1 = 2 and stage 2 = 3, by object, over the stages present; a third argument names the
+stages to run ("0 1", "2", "3" are three box jobs under 25 minutes), and `differ.txt` names each differing source and,
+on Linux/macOS, the first function whose assembly differs. The cmd has no cap of its own and names no function.
+`sh -n` passes on Linux; stage 0 built there. **Not measured at this commit**: the Linux runs at `-front=ssa -O2`,
+`-front=ssa` and `-O2` (`boxkit/m3b6s3-chain.sh`, queued behind two other lanes' builds on the box lock at the
+lane's hand-back), the make test gates, and the cmd on Windows. **The Mac's part of the row is owed** to a later
+box-equivalent run (the Mac runs no builds); it is not claimed from Linux and Windows.

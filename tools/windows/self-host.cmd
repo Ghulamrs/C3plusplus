@@ -1,58 +1,109 @@
 @echo off
-rem  **M1's stages 1 and 2, on the target they are for (R5.2).** Stage 0 is cxx3-msvc.exe, built by cl
-rem  through msvc\build.cmd; it compiles and links every source in src\ into cxx3-stage1.exe, and
-rem  stage 1 does the same into cxx3-stage2.exe. Two compilers built by two different ones, given one
-rem  input: each source's assembly from stage 1 and from stage 2 must be the same, byte for byte.
+rem  **M1's stages, and M3b.6's stage 3, on the target they are for (R5.2)**, as tools/self-host is on Linux and
+rem  macOS. Stage 0 is cxx3-msvc.exe, built by cl through msvc\build.cmd. Stage k compiles every source in src\
+rem  to an object, one source a job, into selfhost\s<k>\; those objects, linked by stage k, are stage k+1. The
+rem  claims are two: stage 0 = stage 1 = stage 2, and stage 2 = stage 3, each source's object byte for byte.
 rem
-rem  Usage:  self-host.cmd <root> [flags for every compile, -O2 say]
-rem  Writes  <root>\selfhost\cxx3-stage1.exe and cxx3-stage2.exe, the assembly of every source from
-rem          each in <root>\selfhost\s1\ and s2\, and <root>\selfhost\differ.txt naming the sources
-rem          whose two are not the same. Only cxx3's own include\ and lib\ are on the path.
+rem  Usage:  self-host.cmd <root> [flags for every compile, -O2 say] [stages, "0 1 2 3" by default]
+rem  Writes  <root>\selfhost\cxx3-stage<k>.exe, the objects in s<k>\, and differ.txt naming each source whose
+rem          objects differ, with the two stages. The clock is pinned in every compile, so a stage built here says
+rem          01-01-2000. Stage 0 starts afresh; a later stage needs the one before it, so "0 1", "2", "3" can be
+rem          three box jobs. Only cxx3's own include\ and lib\ are on the path. Unlike tools/self-host it has no
+rem          cap of its own (cmd has none): the caller caps it, and it names no function in a difference.
 setlocal enabledelayedexpansion
 if "%~1"=="" (echo self-host.cmd: needs the tree root & exit /b 2)
 set ROOT=%~1
 set FLAGS=%~2
+set STAGES=%~3
+if "!STAGES!"=="" set STAGES=0 1 2 3
 rem  The default spelling: the project's masm and LINK (6bcb5d2 and 959dac2 or later, for thread_local),
 rem  named by CPP11_AS and CPP11_LD or taken from beside stage 0 - stage 1 runs from elsewhere, so it is told.
 if not defined CPP11_AS if exist "%ROOT%\masm.exe" set "CPP11_AS=%ROOT%\masm.exe"
 if not defined CPP11_LD if exist "%ROOT%\link.exe" set "CPP11_LD=%ROOT%\link.exe"
 if not defined CPP11_AS (echo self-host.cmd: no masm.exe beside cxx3-msvc.exe and no CPP11_AS - ml64 cannot link it & exit /b 2)
 set OUT=%ROOT%\selfhost
-call "%ROOT%\msvc\build.cmd" >nul
-if errorlevel 1 (echo self-host.cmd: stage 0 did not build & exit /b 1)
-if exist "%OUT%" rmdir /s /q "%OUT%"
-mkdir "%OUT%\s1"
-mkdir "%OUT%\s2"
 
 rem  The include directories are compiled in as string literals, so with forward slashes - see build.cmd.
 set "ROOTFWD=%ROOT:\=/%"
 set DEFS=-I "%ROOT%\src" -DCXX1_INCLUDE_DIR=\"%ROOTFWD%/lib\" -DCXX1_CXX_INCLUDE_DIR=\"%ROOTFWD%/include\"
-set SRCS=
-for %%d in (src src\parser src\backend src\optimizer src\sema src\syntax src\ir src\ir\opt src\encoder) do for %%f in ("%ROOT%\%%d\*.cpp") do set SRCS=!SRCS! "%%f"
-
-"%ROOT%\cxx3-msvc.exe" -nologo %FLAGS% %DEFS% !SRCS! -o "%OUT%\cxx3-stage1.exe" > "%OUT%\stage1.log" 2>&1
-rem  A crash's status is negative, which `if errorlevel 1` does not see - so the status, and the file.
-if !errorlevel! neq 0 (echo self-host.cmd: stage 0 did not build stage 1 - see %OUT%\stage1.log & exit /b 1)
-if not exist "%OUT%\cxx3-stage1.exe" (echo self-host.cmd: stage 0 wrote no stage 1 & exit /b 1)
-echo self-host.cmd: stage 1 built
-"%OUT%\cxx3-stage1.exe" -nologo %FLAGS% %DEFS% !SRCS! -o "%OUT%\cxx3-stage2.exe" > "%OUT%\stage2.log" 2>&1
-if !errorlevel! neq 0 (echo self-host.cmd: stage 1 did not build stage 2, status !errorlevel! - see %OUT%\stage2.log & exit /b 1)
-if not exist "%OUT%\cxx3-stage2.exe" (echo self-host.cmd: stage 1 wrote no stage 2 & exit /b 1)
-echo self-host.cmd: stage 2 built
-
-rem  The fixed point: each source's assembly from the two stages, the clock pinned - Driver.cpp's -version
-rem  names the build's __DATE__ and __TIME__, and the two stages are built at two moments.
+rem  The clock pinned: Driver.cpp's -version names the build's __DATE__ and __TIME__.
 set CLOCK="-D__DATE__=\"Jan 01 2000\"" -D__TIME__=\"00:00:00\"
+set DIRS=src src\parser src\backend src\optimizer src\sema src\syntax src\ir src\ir\opt src\encoder
 set N=0
-set SAME=0
-type nul > "%OUT%\differ.txt"
-for %%d in (src src\parser src\backend src\optimizer src\sema src\syntax src\ir src\ir\opt src\encoder) do for %%f in ("%ROOT%\%%d\*.cpp") do (
-    set /a N+=1
-    "%OUT%\cxx3-stage1.exe" -nologo -S %FLAGS% %DEFS% %CLOCK% "%%f" -o "%OUT%\s1\%%~nf.s" > nul 2>&1
-    "%OUT%\cxx3-stage2.exe" -nologo -S %FLAGS% %DEFS% %CLOCK% "%%f" -o "%OUT%\s2\%%~nf.s" > nul 2>&1
-    fc /b "%OUT%\s1\%%~nf.s" "%OUT%\s2\%%~nf.s" > nul 2>&1
-    if errorlevel 1 (echo %%~nxf>> "%OUT%\differ.txt") else (set /a SAME+=1)
+for %%d in (%DIRS%) do for %%f in ("%ROOT%\%%d\*.cpp") do set /a N+=1
+for %%s in (%STAGES%) do (
+    call :stage %%s
+    if errorlevel 1 (endlocal & exit /b 1)
 )
-echo self-host.cmd: %SAME% of %N% sources emit the same assembly from stage 1 and stage 2
-if not "%SAME%"=="%N%" (endlocal & exit /b 1)
-endlocal
+
+rem  The comparison, over the stages present.
+set A=0
+set C=0
+set H012=1
+set H23=1
+for %%s in (0 1 2) do if not exist "%OUT%\s%%s" set H012=0
+for %%s in (2 3) do if not exist "%OUT%\s%%s" set H23=0
+type nul > "%OUT%\differ.txt"
+for %%d in (%DIRS%) do for %%f in ("%ROOT%\%%d\*.cpp") do (
+    if !H012!==1 (
+        set OK=1
+        call :same 0 1 %%~nf
+        if errorlevel 1 set OK=0
+        call :same 1 2 %%~nf
+        if errorlevel 1 set OK=0
+        if !OK!==1 set /a A+=1
+    )
+    if !H23!==1 (
+        call :same 2 3 %%~nf
+        if not errorlevel 1 set /a C+=1
+    )
+)
+set STATUS=0
+if !H012!==1 echo self-host.cmd: !A! of %N% sources the same object from stages 0, 1 and 2
+if !H012!==1 if not "!A!"=="%N%" set STATUS=1
+if !H23!==1 echo self-host.cmd: !C! of %N% sources the same object from stages 2 and 3
+if !H23!==1 if not "!C!"=="%N%" set STATUS=1
+if !H012!==0 if !H23!==0 echo self-host.cmd: neither stages 0-2 nor 2-3 are all in %OUT% yet - nothing compared
+type "%OUT%\differ.txt"
+endlocal & exit /b %STATUS%
+
+:stage
+set S=%1
+if "%S%"=="0" (
+    call "%ROOT%\msvc\build.cmd" >nul
+    if errorlevel 1 (echo self-host.cmd: stage 0 did not build & exit /b 1)
+    if exist "%OUT%" rmdir /s /q "%OUT%"
+    mkdir "%OUT%"
+    copy /y "%ROOT%\cxx3-msvc.exe" "%OUT%\cxx3-stage0.exe" >nul
+)
+if not exist "%OUT%\cxx3-stage%S%.exe" (echo self-host.cmd: no stage %S% in %OUT% - run the stage before it first & exit /b 1)
+if exist "%OUT%\s%S%" rmdir /s /q "%OUT%\s%S%"
+mkdir "%OUT%\s%S%"
+set GOT=0
+for %%d in (%DIRS%) do for %%f in ("%ROOT%\%%d\*.cpp") do (
+    "%OUT%\cxx3-stage%S%.exe" -nologo -c %FLAGS% %DEFS% %CLOCK% "%%f" -o "%OUT%\s%S%\%%~nf.obj" > "%OUT%\s%S%\%%~nf.log" 2>&1
+    rem  A crash's status is negative, which `if errorlevel 1` does not see - so the status.
+    if !errorlevel! neq 0 if exist "%OUT%\s%S%\%%~nf.obj" del /q "%OUT%\s%S%\%%~nf.obj"
+    if exist "%OUT%\s%S%\%%~nf.obj" set /a GOT+=1
+)
+echo self-host.cmd: stage %S% compiled !GOT! of %N% sources
+if %S% geq 3 exit /b 0
+if not "!GOT!"=="%N%" exit /b 0
+set /a NEXT=S+1
+set OBJS=
+for %%o in ("%OUT%\s%S%\*.obj") do set OBJS=!OBJS! "%%o"
+"%OUT%\cxx3-stage%S%.exe" -nologo %FLAGS% !OBJS! -o "%OUT%\cxx3-stage!NEXT!.exe" > "%OUT%\link!NEXT!.log" 2>&1
+if !errorlevel! neq 0 (echo self-host.cmd: stage %S% did not link stage !NEXT!, status !errorlevel! - see %OUT%\link!NEXT!.log & exit /b 0)
+if not exist "%OUT%\cxx3-stage!NEXT!.exe" (echo self-host.cmd: stage %S% wrote no stage !NEXT! & exit /b 0)
+echo self-host.cmd: stage !NEXT! built
+exit /b 0
+
+:same
+if not exist "%OUT%\s%1\%3.obj" goto :differs
+if not exist "%OUT%\s%2\%3.obj" goto :differs
+fc /b "%OUT%\s%1\%3.obj" "%OUT%\s%2\%3.obj" > nul 2>&1
+if errorlevel 1 goto :differs
+exit /b 0
+:differs
+echo %3.cpp: stage %1 against stage %2>> "%OUT%\differ.txt"
+exit /b 1
