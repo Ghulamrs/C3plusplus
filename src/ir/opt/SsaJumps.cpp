@@ -112,8 +112,8 @@ struct Threader {
             const std::uint32_t x = work.back();
             work.pop_back();
             if (!f.block(BlockId(x)).term.valid()) continue;
-            for (const Succ &s : f.inst(f.block(BlockId(x)).term).succ)
-                if (!seen[s.block.v]) { seen[s.block.v] = 1; work.push_back(s.block.v); }
+            for (std::uint32_t y : successors(f, x))
+                if (!seen[y]) { seen[y] = 1; work.push_back(y); }
         }
         return seen;
     }

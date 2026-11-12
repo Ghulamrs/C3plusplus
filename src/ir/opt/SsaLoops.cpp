@@ -32,10 +32,7 @@ struct Looper {
         std::vector<Loop> out;
         std::vector<int> byHead(f.blockArena.size(), -1);
         for (std::uint32_t b : dom.rpo) {
-            if (!f.blockArena[b].term.valid()) continue;
-            const Inst &t = f.inst(f.blockArena[b].term);
-            for (std::size_t s = 0; s < t.succ.size(); s++) {
-                const std::uint32_t h = t.succ[s].block.v;
+            for (std::uint32_t h : successors(f, b)) {
                 if (!dom.reachable(h) || !dom.dominates(h, b)) continue;
                 if (byHead[h] < 0) {
                     byHead[h] = static_cast<int>(out.size());
@@ -135,10 +132,8 @@ struct Looper {
     // A block every way round the loop and every way out of it passes: what it computes runs before the loop is left.
     bool always(const Loop &l, const Dominators &dom, std::uint32_t b) const {
         for (std::uint32_t x : l.latches) if (!dom.dominates(b, x)) return false;
-        for (std::uint32_t x : l.blocks) {
-            const Inst &t = f.inst(f.blockArena[x].term);
-            for (const Succ &s : t.succ) if (!l.in[s.block.v] && !dom.dominates(b, x)) return false;
-        }
+        for (std::uint32_t x : l.blocks)
+            for (std::uint32_t y : successors(f, x)) if (!l.in[y] && !dom.dominates(b, x)) return false;
         return true;
     }
 
