@@ -1,7 +1,6 @@
-// **Value numbering** (M3b.4 round 4, design section 4): a dominator-tree walk with a scoped table of the pure instructions,
-// one found again where its first dominates (same funclet) replaced by it; a load by an earlier load or store of its block,
-// or of its one predecessor's (by br or condbr), nothing between that writes or calls; a condbr on a value a dominating
-// condbr's edge decided (its loop's way in), a jump.
+// **Value numbering** (M3b.4 round 4, design section 4): a pure instruction found again where its first dominates (same
+// funclet) is replaced by it; a load by an earlier load or store of its block or its one predecessor's (br or condbr), with
+// nothing between that writes or calls; a condbr on a value a dominating condbr's edge decided (its loop's way in), a jump.
 
 #include "SsaOpt.h"
 
