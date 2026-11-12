@@ -2806,3 +2806,44 @@ pad-if-crossing the project's encoder would have to offer), then find the 14 ms 
 frame trim of item 2; (3) the dead `mov %rax, 48(%rbp)` an outer rotation leaves in matmul's hot loop - with it gone
 `rotate` could take outer loops again, `cheapest` already holding the allocator's side; (4) function alignment outside a
 COMDAT and on ELF.
+
+### M3b.5, lane malign: the masm spelling keeps a hot loop inside one line, and what the last 14 ms is not, 2026-11-12
+
+From wave 7's `cd3bcc73`, branch `m3b5-malign`; code commit `9035baa4` (every gate below ran on its tree).
+**1. `ALIGN n, most`.** The encoder (`X64Parse.cpp`) reads a second operand on `ALIGN` as gas reads `.p2align p,,most`:
+no padding at all where it would pass `most` bytes, and the section takes the alignment `n` (as gas's does - `_TEXT` is 16
+and has no segment line to rewrite). A gap past 15 bytes is now several NOPs, since one instruction ends at 15 (the old
+loop wrote one NOP of any length; no `ALIGN` past 16 reached code before). It settles: a jump only grows, and for one set
+of jump widths the pads follow from the text before them. `MasmSpelling::loopAlign` writes `ALIGN 64, L-1`, the GNU
+spelling's `.p2align 6,,L-1` word for word; the ml64 spelling (`comdat_` false) keeps `ALIGN 16` - ml64 has neither the
+form nor a segment past 16 there. It is not ml64's syntax, as `COMDAT(sym)` is not; the standalone masm in
+`verify-tools\MASM` does not read it until it is rebuilt from `src/encoder` (`tools/coff-equal.sh`, the release gate,
+was not run). The kernels' 15 loop heads carry it; virt's loop moved from 0x16a0-0x16c6 (across 0x16c0) to 0x16c0-0x16e6
+(`boxkit/m3b5ma-{base,new}.dis`). -O1 writes no `LoopAlign` (`SizeCosts::loopLine()` is 0), so only -O2 text changes.
+**2. The 14 ms, measured and not found** (`boxkit/m3b5ma-exp.sh`: the kernels' `-front=ssa -O2 -masm=gnu` assembly
+edited by hand, assembled by clang, nine interleaved runs each, `m3b5ma-exp2.out`; median, least). The loop is -O2's
+instruction for instruction less one store -O2 keeps (`movq %rcx, 120(%rbp)`), and the callees are -O2's but for the
+frame. As written 98 (95); the callees' frames at 16: 99 (96); -O2's store added: 98 (96); `mov %edi, %eax` for
+`mov %rdi, %rax`: 98 (96); the loop at offset 0, 8, 16, 24 of its line: 99, 98, 98, 99; no alignment (the loop crosses):
+119; **the two callees at `.p2align 6` instead of 5: 131**; -O2 itself 89 (82), 87 (82) without its alignment or its
+store. So it is not the frame, the store, the move or the loop's offset; the callees' addresses move the figure more
+than anything in the loop, which says where to look next - the placement of the indirect call's two targets against
+each other and the loop - and that the Ast.h path's 82 is its layout, not its code (cl's own build is at new's figure).
+Not tried: the caller's frame (320 against 208), `Sq::area`'s `imul %eax, %eax` against -O2's second load.
+**Bench** (Windows, median of 9, `-front=ssa -O2` / `-O2` of the same cxx3 / cl -O2, default spelling; twice after the
+lane's jobs ended, the box at about 27% from another session - `boxkit/m3b5ma-bench-end{1,2}.txt`): fib 6 / 8 / 8,
+sieve 51 / 61 / 49, matmul 8 / 30 / 3 (9 / 30), isort 8 / 19 / 6, hash 186 / 198 / 137 (193 / 206 / 144),
+**virtual 108 / 94 / 107** (114 / 95 / 112), total 366 / 410 / 314 (381 / 421 / 325); .text 3428 against 3461. virtual
+is 1.15x and 1.20x of -O2 where lane place had 1.44x and 1.40x, and level with cl: the `-masm=gnu` figure (96 / 82,
+1.17x) in ratio. **Not shown on a quiet box** - the absolute 96 is owed. A first run beside the lane's own builds: 165 / 169.
+**Gates on `9035baa4`** (Windows, clean ship and build, WINLANES=3): winpass `-front=ssa -O2` (`work\m3b5ma2`),
+`-front=ssa -O1` (`work\m3b5ma`) and `-O2` (`work\m3b5ma3`), each gnu 752 / masm 751 same, 0 differ, 340 refused as
+recorded; ssa.sh 765 passed, 0 failed at levels 1 and 2. Linux (`~/m3b5ma`, a clean build, removed after): coff.sh 1580
+pairs, 1538 objects compared, 0 differ; exclusions, comment cap 0 over, memory gate new 1056 raw-pointers 44
+(unchanged), ide/generate.py --check, GATES-OK; ssa.sh level 2 801 / 0; run.sh `-front=ssa -O2` 1125 / 0. Not run:
+run.sh at the other levels, ssa.sh level 1 on Linux, emit, names and the other suites (the coordinator's merged gate).
+No probe: the pad shows in no dump, only in the listing. `src/` went from 94024 to 94042 lines (+18).
+**Left**: (1) virtual's 14 ms: place the two callees as -O2's layout has them and measure (the `.p2align 6` variant
+says their addresses matter), the caller's frame; (2) the bench on a quiet box; (3) `verify-tools\MASM` rebuilt from
+`src/encoder` so `tools/coff-equal.sh` reads `ALIGN n, most`; (4) `jmp` to the next label left after virt's loop
+(`ssaelse_3: jmp ssa_20; ssa_20:`), cold; (5) lane place's frame trim and matmul's dead store, untouched.
