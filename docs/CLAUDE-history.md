@@ -15267,3 +15267,10 @@ set by the parser, read by the two debug writers); nothing in c90's suite measur
 diagnostics naming `lib/` by path; the emit golden 0 changed; `make test` green; `tools/exclusions --check` 0/0; the
 memory gate; the comment cap. The emit golden and `identical.sh` compile `.cpp` files only, so a C-mode change cannot
 show there - which is why `tests/c90.sh` runs beside them and is in `make test`.
+
+## The design's basis numbered: cppparse 1.0 and compilerpp 1.0, 2026-11-12
+
+At the user's request, `doc-cxx3/Compiler_Design_Final.md` section 0 now numbers the two source compilers it had cited
+without a version: **cppparse 1.0** is `examples/projects/cppparse` at GRIDE `cf1e607` (2026-10-22), and **compilerpp
+1.0** is `examples/projects/compilerpp` at GRIDE `7f0cdce` (2026-10-21); the cpp11 line names GRIDE `cf1e607` too. These
+are the frozen copies the design cites. Later GRIDE versions of either project are not the basis.
