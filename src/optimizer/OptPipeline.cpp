@@ -126,12 +126,7 @@ struct Allocate : Pass {
 
 struct RemoveDeadStores : Pass {
     RemoveDeadStores() : Pass(PassInfo{"remove-dead-stores", 0, 0, 0, 0}) {}
-    // A save's store is read by the epilogue, which is not in the stream: dse-late runs after the saves are taken.
-    bool execute(MFunction &fn) override {
-        SharedSlots shared = fn.shared;
-        for (const SavedReg &sv : fn.saves) shared.add(sv.disp, 16);
-        return removeDeadStores(fn.stream, shared);
-    }
+    bool execute(MFunction &fn) override { return removeDeadStores(fn.stream, fn.shared); }
 };
 
 // **The temporaries' region shrinks to the slots still named**: the passes
@@ -172,7 +167,7 @@ struct FinishFrame : Pass {
         closeValues(fn);
         dropUnusedSaves(fn.stream, fn.saves, fn.frameBase());
         fn.size = fn.frameBase() + ((8 * static_cast<int>(fn.saves.size()) + 15) & ~15);
-        if (fn.size != walked) {
+        if (fn.size != walked || !fn.saves.empty()) {   // a trim can cancel the saves' growth exactly
             assert(fn.prologueAt >= 0 && "a frame can grow only while its prologue is held");
             opt::MDirective &p = fn.stream[fn.prologueAt].dir;
             assert(p.kind == opt::MDirective::Prologue && "the prologue's entry holds the prologue");

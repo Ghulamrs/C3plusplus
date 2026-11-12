@@ -2806,3 +2806,22 @@ pad-if-crossing the project's encoder would have to offer), then find the 14 ms 
 frame trim of item 2; (3) the dead `mov %rax, 48(%rbp)` an outer rotation leaves in matmul's hot loop - with it gone
 `rotate` could take outer loops again, `cheapest` already holding the allocator's side; (4) function alignment outside a
 COMDAT and on ELF.
+
+### M3b.5, lane frame: the values' slots closed up, dse after the hoists, outer loops rotated again, 2026-11-12
+
+From main `f26798ae`, branch `m3b5-frame`; code commit `76660f19` (every gate below ran on its tree).
+**1. The frame trim.** `layoutSsa` now tells the optimizer where the values' 8-byte slots lie (`Optimizer::valueSlots`,
+bytes (from, to] above the parser's slots, the allocas and the argument copies), when nothing lies below them - no
+inline reserve, no unwind-help word, no realigned frame, no pad, no x87 value. `finish-frame` (`closeValues`, OptPipeline.cpp)
+then calls `closeValueSlots` (OptFrame.cpp): a slot no live instruction names is dropped, the rest renumbered from `from`
+in order, the frame made `from + 8 * kept` rounded to 16, and the saves laid below it as before; any `lea`, indexed or
+shared access into the region keeps it whole. Also refused: a function with an LSDA, a funclet, or temporaries or an
+inlined callee below the frame (`inlineTop > frameSize`). The kernels' frames (bench-kernels.cpp, `-front=ssa -O2`):
+23 functions' `sub` sum 4544 -> 2400 bytes; `Rc::area` 64 -> 16 (the Ast.h path's); matmul 672 -> 176.
+**2. The dead store.** `mov %rax, 48(%rbp)` was not dead to `remove-dead-stores` for two reasons: dse ran in the frame
+group, before `fold-index` and the hoists took the store's reads, and `cmpq $0, s` beside it counted as a 16-byte read
+(`accessWidth`'s unknown), covering the next slot. Now an immediate operand's access takes the suffix's width, and
+`dse-late` (remove-dead-stores, then rounds if it found one) runs after the hoists, before finish-frame. Its first form
+killed a callee-save's store (the restore is the epilogue's, not the stream's): `vector-push-back-conversions` crashed at
+`-front=ssa -O1` on Windows; `RemoveDeadStores` now counts the saves' slots as shared. With the store gone, `rotate` takes
+outer loops again (innermost first, SsaLoops.cpp `rotateAll`).
