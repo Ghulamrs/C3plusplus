@@ -126,7 +126,12 @@ struct Allocate : Pass {
 
 struct RemoveDeadStores : Pass {
     RemoveDeadStores() : Pass(PassInfo{"remove-dead-stores", 0, 0, 0, 0}) {}
-    bool execute(MFunction &fn) override { return removeDeadStores(fn.stream, fn.shared); }
+    // A save's store is read by the epilogue, which is not in the stream: dse-late runs after the saves are taken.
+    bool execute(MFunction &fn) override {
+        SharedSlots shared = fn.shared;
+        for (const SavedReg &sv : fn.saves) shared.add(sv.disp, 16);
+        return removeDeadStores(fn.stream, shared);
+    }
 };
 
 // **The temporaries' region shrinks to the slots still named**: the passes
