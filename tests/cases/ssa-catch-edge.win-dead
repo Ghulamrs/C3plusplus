@@ -1,0 +1,217 @@
+function @?thrower@@YAHH@Z(%1: int) -> int static {
+^1(%1: int):
+  %7 = alloca int *, align 4 ; .ex
+  %14 = alloca double *, align 8 ; .ex
+  %4 = iconst int, 1
+  %5 = icmp eq, bool, %1, %4
+  condbr %5, ^4, ^5
+^4:
+  %6 = iconst int, 7
+  store %7, %6
+  %8 = bitcast void *, %7
+  %9 = addr void *, @_TI1H
+  call @_CxxThrowException(%8, %9) : none
+  unreachable
+^5:
+  %11 = iconst int, 2
+  %12 = icmp eq, bool, %1, %11
+  condbr %12, ^6, ^7
+^6:
+  %13 = fconst double, 0x4004000000000000
+  store %14, %13
+  %15 = bitcast void *, %14
+  %16 = addr void *, @_TI1N
+  call @_CxxThrowException(%15, %16) : none
+  unreachable
+^7:
+  %18 = iconst int, 10
+  %19 = mul int, %1, %18
+  ret %19
+}
+function @?loadAcross@@YAHH@Z(%1: int) -> int static {
+^1(%1: int):
+  %3 = alloca int *, align 4 ; int before
+  %4 = addr int *, @seen
+  %5 = load int, %4
+  store %3, %5
+  %11 = invoke @?thrower@@YAHH@Z(%1) : int, ^7, ^6
+^2:
+  ret %25
+^4(%6: void *, %7: int):
+  catchpad own -1
+  catchswitch ^10, unwind caller
+^5:
+  %20 = load int, %3
+  %21 = iconst int, 100
+  %22 = mul int, %20, %21
+  %24 = load int, %4
+  %25 = add int, %22, %24
+  br ^2
+^6(%8: void *, %9: int):
+  catchpad own -1
+  catchswitch ^9, unwind ^4
+^7:
+  %14 = load int, %3
+  %16 = load int, %4
+  %17 = add int, %14, %16
+  store %3, %17
+  br ^5
+^9:
+  catchpad [@??_R0H@8] own 6
+  %12 = addr int *, @seen
+  %13 = iconst int, 11
+  store %12, %13
+  catchret ^7
+^10:
+  catchpad [@??_R0N@8] own 4
+  %18 = addr int *, @seen
+  %19 = iconst int, 22
+  store %18, %19
+  catchret ^5
+}
+function @?localAcross@@YAHH@Z(%1: int) -> int static {
+^1(%1: int):
+  %3 = alloca int *, align 4 ; int r
+  %11 = invoke @?thrower@@YAHH@Z(%1) : int, ^8, ^6
+^2:
+  ret %17
+^4(%6: void *, %7: int):
+  catchpad own -1
+  catchswitch ^10, unwind caller
+^5:
+  %17 = load int, %3
+  br ^2
+^6(%8: void *, %9: int):
+  catchpad own -1
+  catchswitch ^9, unwind ^4
+^7:
+  %13 = load int, %3
+  %14 = iconst int, 1
+  %15 = add int, %13, %14
+  store %3, %15
+  br ^5
+^8:
+  store %3, %11
+  br ^7
+^9:
+  catchpad [@??_R0H@8] own 6
+  %12 = iconst int, 11
+  store %3, %12
+  catchret ^7
+^10:
+  catchpad [@??_R0N@8] own 4
+  %16 = iconst int, 22
+  store %3, %16
+  catchret ^5
+}
+function @?storeSeenOutside@@YAHH@Z(%1: int) -> int static {
+^1(%1: int):
+  %3 = alloca int *, align 4 ; int r
+  %7 = iconst int, 5
+  store %3, %7
+  %11 = invoke @?thrower@@YAHH@Z(%1) : int, ^8, ^6
+^2(%18: int):
+  ret %18
+^4(%5: void *, %6: int):
+  catchpad own -1
+  catchswitch ^10, unwind caller
+^5:
+  br ^2(%14)
+^6(%8: void *, %9: int):
+  catchpad own -1
+  catchswitch ^9, unwind ^4
+^7:
+  %14 = iconst int, 3
+  br ^5
+^8:
+  br ^7
+^9:
+  catchpad [@??_R0H@8] own 6
+  catchret ^7
+^10:
+  catchpad [@??_R0N@8] own 4
+  %15 = load int, %3
+  catchret ^11
+^11:
+  br ^2(%15)
+}
+function @?inHandler@@YAHH@Z(%1: int) -> int static {
+^1(%1: int):
+  %2 = alloca int *, align 4 ; int what
+  store %2, %1
+  %3 = alloca int *, align 4 ; int r
+  %4 = iconst int, 4
+  store %3, %4
+  %9 = iconst int, 1
+  %10 = invoke @?thrower@@YAHH@Z(%9) : int, ^7, ^6
+^2:
+  ret %22
+^4(%5: void *, %6: int):
+  catchpad own -1
+  catchswitch ^14, unwind caller
+^5:
+  %22 = load int, %3
+  br ^2
+^6(%7: void *, %8: int):
+  catchpad own -1
+  catchswitch ^9, unwind ^4
+^7:
+  br ^5
+^9:
+  catchpad [@??_R0H@8] own 6
+  %11 = iconst int, 6
+  store %3, %11
+  %14 = load int, %2
+  %15 = invoke @?thrower@@YAHH@Z(%14) : int, ^12, ^10
+^10(%12: void *, %13: int):
+  catchpad own -1
+  catchswitch ^13, unwind ^9
+^11:
+  %18 = iconst int, 9
+  store %3, %18
+  catchret ^7
+^12:
+  br ^11
+^13:
+  catchpad [@??_R0H@8] own 10
+  catchret ^11
+^14:
+  catchpad [@??_R0N@8] own 4
+  %19 = load int, %3
+  %20 = iconst int, 30
+  %21 = add int, %19, %20
+  store %3, %21
+  catchret ^5
+}
+function @main() -> int {
+^1:
+  %2 = iconst int, 0
+  %3 = call @?loadAcross@@YAHH@Z(%2) : int
+  %6 = iconst int, 1
+  %7 = call @?loadAcross@@YAHH@Z(%6) : int
+  %10 = iconst int, 2
+  %11 = call @?loadAcross@@YAHH@Z(%10) : int
+  %13 = addr const char [10] *, @.L.str.0
+  %14 = bitcast const char *, %13
+  %18 = call @printf(%14, %3, %7, %11) : int variadic
+  %19 = addr int *, @seen
+  store %19, %6
+  %21 = addr const char [10] *, @.L.str.1
+  %22 = bitcast const char *, %21
+  %24 = call @?localAcross@@YAHH@Z(%2) : int
+  %26 = call @?localAcross@@YAHH@Z(%6) : int
+  %28 = call @?localAcross@@YAHH@Z(%10) : int
+  %29 = call @printf(%22, %24, %26, %28) : int variadic
+  %30 = addr const char [10] *, @.L.str.2
+  %31 = bitcast const char *, %30
+  %33 = call @?storeSeenOutside@@YAHH@Z(%2) : int
+  %35 = call @?storeSeenOutside@@YAHH@Z(%6) : int
+  %37 = call @?storeSeenOutside@@YAHH@Z(%10) : int
+  %38 = call @printf(%31, %33, %35, %37) : int variadic
+  %39 = addr const char [7] *, @.L.str.3
+  %40 = bitcast const char *, %39
+  %42 = call @?inHandler@@YAHH@Z(%2) : int
+  %44 = call @?inHandler@@YAHH@Z(%10) : int
+  %45 = call @printf(%40, %42, %44) : int variadic
+  ret %2
+}

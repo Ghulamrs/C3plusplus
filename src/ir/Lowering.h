@@ -209,6 +209,7 @@ private:
     void msLeave(std::size_t n, std::size_t mark, BlockId target, const std::vector<ValueId> &args, std::size_t upper);   // MsShapes.cpp
     BlockId padBlock(Pad &p);
     BlockId msEnclosingPad();
+    void msCleanupRet(const Pad &p);
     void resumeFrom(const Pad &p, std::size_t enclosing);
     void endCatches(std::size_t n);
     void leaveCatches(std::size_t n, std::size_t mark);

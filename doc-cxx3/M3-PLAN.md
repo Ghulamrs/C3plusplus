@@ -2806,3 +2806,73 @@ pad-if-crossing the project's encoder would have to offer), then find the 14 ms 
 frame trim of item 2; (3) the dead `mov %rax, 48(%rbp)` an outer rotation leaves in matmul's hot loop - with it gone
 `rotate` could take outer loops again, `cheapest` already holding the allocator's side; (4) function alignment outside a
 COMDAT and on ELF.
+
+### M3b.5, lane cret: a cleanupret inside a handler goes where the handler unwinds, 2026-11-12
+
+Wave 6, from `584e1b78` (lane catch), branch `m3b5-cret`; code commit `3f5076cb`. **The case**
+`tests/cases/ssa-cleanup-edge` (+`.expected`, the Windows box's clang; `.dead` its `-O1 -dump=ssa=dead` on Linux): a class
+with only an out-of-line destructor in a handler, a throw out of the handler, a local and a global changed before it and
+read in the outer handler, and a handler with no try around it. **Wrong on `584e1b78`** at `-front=ssa -O1` and `-O2`, both
+spellings (`localThrough(2)` 101 for 105, and a third function of two chained guards 22 for 24; right at `-O2`, `-O0`). **The cause,
+proved** (boxkit/m3b5cr-b1.ssa.txt, -b1d: `localThrough`, `-dump=ssa=gvn`, `dead`): the guard's cleanup `^10` ended
+`cleanupret ^9`, `^9` the handler's own entry (`msEnclosingPad` returns the funclet when the handler opened no pad), so to
+`successors` the cleanup looped back into the handler, which stores `r = 5` again before any read; dead stores removed
+`r = 5`, and the outer handler `^12` read 1. Control goes where the handler unwinds - the outer try's catchswitch `^4`. (A
+user-declared constructor hid it: its invoke unwinds to `^4` from the handler, a real edge past the store.) **The fix**:
+the lowering's two Microsoft cleanuprets (a scope's, a static local's abort) are one, `Lowering::msCleanupRet`: an edge with
+the pointer and the selector to a pad the funclet opened, else, inside a handler, no succ and `k` naming the handler (the
+static local's chained to an outer pad from inside a funclet before - `pads_.back()`, not `msEnclosingPad`); `unwindsTo`
+takes a cleanupret's `k` as a catchswitch's - past the handler to its try's catchswitch's way on, 0 the caller - so
+`successors` (and `Dominators`, dead stores) hold the real edge; the selector reads the chained state from `k` where there
+is no succ (the same state: emitted code unchanged). **IrText** prints `, unwind ^N` / `, unwind caller` on every
+catchswitch and ` unwind ^N` on a cleanupret naming a handler (boxkit/m3b5cr-a1.ssa.txt). **No probe re-recorded for it**:
+the probes are `-dump=ssa` on x86_64-linux (ssa.sh), Itanium, with no catchswitch or cleanupret - there are no Microsoft
+dumps among them. `src/` 93902 -> 93903 lines (+1).
+**Gates on `3f5076cb`'s src** (the probe's record and this entry after): Windows (`work\m3b5cr`, `work\m3b5cr2`, clean ships
+and builds of `3f5076cb`, WINLANES=3) the case and `ssa-catch-edge` right at `-front=ssa -O2` (both spellings),
+`-front=ssa -O1`, `-O2`, `-O0`; winpass `-front=ssa -O2` and `-front=ssa -O1` each gnu 752 / masm 751 same, 0 differ, 340
+refused as recorded; ssa.sh 765/0 at levels 1 and 2 (19 not for this host; level 1 gvn 1159 loads by a load, 1748 by a
+store; level 2 rotate 1028) - those runs held the case with the third function; the case as committed is right at the five
+flag sets on `work\m3b5cr` and matches clang. Linux (`~/m3b5cr`, a clean build, objects removed): the one probe changed is the new
+`ssa-cleanup-edge.dead`; ssa.sh 802/0 at levels 1 and 2 (rotate 1047, unroll 195 whole / 253 partial); run.sh `-front=ssa -O2`
+1125/0; run.sh at `-O0` 1124/1 with the third function, 1125/0 without it (the same build); the gates: exclusions 0/0, memory
+gate new 1056 raw-pointers 44 (unchanged), ide/generate.py --check, comment cap 1 over on `3f5076cb` (SsaOpt.h's two lines
+over a declaration) and 0 after it became one: GATES-OK. Not run: the bench and .text table, ssa.sh after the split (the
+case's `.dead` recorded from that build).
+**Found beside it, and registered**: that third function, two guards in a handler with a throw out of the inner one's
+block, loses a destructor on the Ast.h path for x86_64-linux (`gone 3` for 4 at `-O0` and `-O2`; `-front=ssa` and Windows
+right) - run.sh at `-O0` on Linux failed on it, so it left the case for `tests/open/handler-guards-nested` (+`.clang`, the
+Windows box's clang: `5 24 4`); the Ast.h path goes in M3b.7. The case's `.expected` and `.dead` are of the case without it.
+**Left**: the passes' own succ walks besides dead stores' (fold, promote, jumps, unroll) still see neither way on - none
+carries block arguments on it, so none was found wrong; the MIR allocator's liveness was not looked at; a Microsoft probe
+(ssa.sh's probes are x86_64-linux only) would hold these dumps against change.
+
+### M3b.5, lane msedge: every pass's own succ walk sorted, the allocator across a funclet, Microsoft probes, 2026-11-12
+
+Wave 6, from `0d05c4e6` (lane cret), branch `m3b5-msedge`; code commit `58d68953`. **No wrong answer found.** **The passes'
+own succ walks** (src/ir/opt), each one line: `SsaJumps::reachableFrom` (may a parameter's read elsewhere be reached from
+the threaded edge's target) and `SsaLoops::find` (back edges) and `always` (a loop's ways out) ask reachability, so they walk
+`successors()` now - none was wrong in practice (a loop holding a pad is `fixed` and skipped; a catchswitch's way on is to an
+enclosing pad, never a head), they now hold the one fact; `SsaCfg`'s unreachable sweep is rooted at every pad and funclet
+block (`fixed`), so a block only a `k` names is kept - left; fold's `pushBlock`/`into`, promote's `edges`/`arguments`,
+dead stores' argument marks, jumps' `edgesIn`, unroll's exits (a loop with a pad or funclet block is refused first),
+loops' preheader and counter walks and inline (refuses a callee or site with pads) carry block arguments, which an unwind
+edge has none of - left. **The MIR allocator** (MirAlloc, OptCore's `Flow`): a pseudo never crosses a funclet's boundary
+(asserted; a value live into a funclet stays in its shared slot), and on Microsoft a region's target is where the function
+resumes after the handler, so every call a try covers - the inner handler's too, inside the outer try's labels - has an
+`Eh` edge to the continuation and what it reads is live at the call, in a callee-saved register (a funclet takes none).
+**The case** `tests/cases/ssa-msedge-regs` (+`.expected`, the Windows box's clang): values computed before a nested try
+and read after the outer continuation, a rethrow and a cleanup's throw from an inner handler to the outer one, and a loop
+catching on some turns (its `i`, `k`, `sum`, `acc` in esi, r12d, edi, ebx across the try at `-front=ssa -O2`); right at
+`-front=ssa -O2` (both spellings), `-front=ssa -O1`, `-O2`, `-O0` on `work\m3b5me` and on `work\m3b5cr2` (`3f5076cb`,
+the code before this lane): not wrong before. **Probes**: tests/ssa.sh compares `<case>.win-<pass>`, `-arch x86_64-windows
+-O1 -dump=ssa=<pass>`, on Linux; `ssa-catch-edge.win-dead` and `ssa-cleanup-edge.win-dead` recorded (`catchswitch ^9,
+unwind ^4`, `cleanupret unwind ^9`, `unwind caller` held). No other probe changed. `src/` 93903 -> 93898 lines (-5).
+**Gates on `ed313fff`'s src and cases** (`18a206f7` adds the probes; this entry after): Windows (`work\m3b5me2`,
+`work\m3b5me3`, clean ships and builds, WINLANES=3) winpass `-front=ssa -O2` and `-front=ssa -O1` each gnu 753 / masm 752
+same, 0 differ, 340 refused as recorded; ssa.sh 766/0 at levels 1 and 2 (19 not for this host). Linux (`~/m3b5me`, a clean
+build): ssa.sh 805/0 at levels 1 and 2 (rotate 1047, unroll 195 whole / 253 partial; the only probes changed the two new
+ones); run.sh `-front=ssa -O2` 1126/0 and at `-O0` 1126/0; exclusions, comment cap 0 over, memory gate new 1056
+raw-pointers 44 (unchanged), ide/generate.py --check: GATES-OK. Not run: the bench and .text table. **Left**: the
+`.win-` probes are `-O1` only (no `-front=ssa` MIR probe for x86_64-windows); `tests/open/handler-guards-nested` (lane cret's
+Ast.h fault) stands for M3b.7.

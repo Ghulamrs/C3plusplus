@@ -1,0 +1,263 @@
+function @_ZN5GuardD1Ev(%1: struct Guard *) -> void {
+^1(%1: struct Guard *):
+  %2 = addr int *, @_ZL4gone
+  %3 = load int, %2
+  %4 = iconst int, 1
+  %5 = add int, %3, %4
+  store %2, %5
+  ret
+}
+function @_ZL7throweri(%1: int) -> int static {
+^1(%1: int):
+  %4 = iconst int, 1
+  %5 = icmp eq, bool, %1, %4
+  condbr %5, ^4, ^5
+^4:
+  %6 = iconst int, 7
+  %7 = iconst unsigned long, 4
+  %8 = call @__cxa_allocate_exception(%7) : void *
+  %9 = bitcast int *, %8
+  store %9, %6
+  %10 = addr void *, @_ZTIi
+  %11 = null void *,
+  call @__cxa_throw(%8, %10, %11) : none
+  unreachable
+^5:
+  %13 = iconst int, 2
+  %14 = icmp eq, bool, %1, %13
+  condbr %14, ^6, ^7
+^6:
+  %15 = fconst double, 0x4004000000000000
+  %16 = iconst unsigned long, 8
+  %17 = call @__cxa_allocate_exception(%16) : void *
+  %18 = bitcast double *, %17
+  store %18, %15
+  %19 = addr void *, @_ZTId
+  %20 = null void *,
+  call @__cxa_throw(%17, %19, %20) : none
+  unreachable
+^7:
+  %22 = iconst int, 10
+  %23 = mul int, %1, %22
+  ret %23
+}
+function @_ZL12localThroughi(%1: int) -> int static {
+^1(%1: int):
+  %2 = alloca int *, align 4 ; int what
+  store %2, %1
+  %3 = alloca int *, align 4 ; int r
+  %14 = alloca struct Guard *, align 1 ; struct Guard g
+  %4 = iconst int, 1
+  store %3, %4
+  %8 = invoke @_ZL7throweri(%4) : int, ^5, ^6
+^4:
+  %35 = load int, %3
+  ret %35
+^5:
+  %26 = load int, %3
+  %27 = iconst int, 10
+  %28 = add int, %26, %27
+  store %3, %28
+  br ^4
+^6(%6: void *, %7: int):
+  catchpad [@_ZTIi, @_ZTId] own 1
+  %9 = iconst int, 2
+  %10 = icmp eq, bool, %7, %9
+  condbr %10, ^8, ^10(%6, %7)
+^8:
+  %13 = call @__cxa_begin_catch(%6) : void *
+  %15 = iconst int, 5
+  store %3, %15
+  %16 = load int, %2
+  %19 = invoke @_ZL7throweri(%16) : int, ^12, ^11
+^10(%11: void *, %12: int):
+  catchpad [@_ZTId] own 1
+  %29 = iconst int, 1
+  %30 = icmp eq, bool, %12, %29
+  condbr %30, ^16, ^17
+^11(%17: void *, %18: int):
+  cleanuppad [@_ZTId] own 0
+  invoke @_ZN5GuardD1Ev(%14) : none, ^15(%17, %18), ^13
+^12:
+  %20 = iconst int, 6
+  store %3, %20
+  call @_ZN5GuardD1Ev(%14) : none
+  call @__cxa_end_catch() : none
+  br ^5
+^13(%21: void *, %22: int):
+  catchpad [...] own 1
+  %25 = call @__cxa_begin_catch(%21) : void *
+  call @_ZSt9terminatev() : none
+  unreachable
+^15(%23: void *, %24: int):
+  cleanuppad [@_ZTId] own 0
+  call @__cxa_end_catch() : none
+  br ^10(%23, %24)
+^16:
+  %31 = call @__cxa_begin_catch(%11) : void *
+  %32 = load int, %3
+  %33 = iconst int, 100
+  %34 = add int, %32, %33
+  store %3, %34
+  call @__cxa_end_catch() : none
+  br ^4
+^17:
+  call @_Unwind_Resume(%11) : none
+  unreachable
+}
+function @_ZL13globalThroughi(%1: int) -> int static {
+^1(%1: int):
+  %2 = alloca int *, align 4 ; int what
+  store %2, %1
+  %3 = alloca int *, align 4 ; int before
+  %15 = alloca struct Guard *, align 1 ; struct Guard g
+  %4 = addr int *, @_ZL4seen
+  %5 = load int, %4
+  store %3, %5
+  %6 = iconst int, 1
+  %9 = invoke @_ZL7throweri(%6) : int, ^4, ^6
+^4:
+  %38 = load int, %3
+  ret %38
+^6(%7: void *, %8: int):
+  catchpad [@_ZTIi, @_ZTId] own 1
+  %10 = iconst int, 2
+  %11 = icmp eq, bool, %8, %10
+  condbr %11, ^8, ^10(%7, %8)
+^8:
+  %14 = call @__cxa_begin_catch(%7) : void *
+  %17 = iconst int, 9
+  store %4, %17
+  %18 = load int, %2
+  %21 = invoke @_ZL7throweri(%18) : int, ^12, ^11
+^10(%12: void *, %13: int):
+  catchpad [@_ZTId] own 1
+  %29 = iconst int, 1
+  %30 = icmp eq, bool, %13, %29
+  condbr %30, ^16, ^17
+^11(%19: void *, %20: int):
+  cleanuppad [@_ZTId] own 0
+  invoke @_ZN5GuardD1Ev(%15) : none, ^15(%19, %20), ^13
+^12:
+  %23 = iconst int, 4
+  store %4, %23
+  call @_ZN5GuardD1Ev(%15) : none
+  call @__cxa_end_catch() : none
+  br ^4
+^13(%24: void *, %25: int):
+  catchpad [...] own 1
+  %28 = call @__cxa_begin_catch(%24) : void *
+  call @_ZSt9terminatev() : none
+  unreachable
+^15(%26: void *, %27: int):
+  cleanuppad [@_ZTId] own 0
+  call @__cxa_end_catch() : none
+  br ^10(%26, %27)
+^16:
+  %31 = call @__cxa_begin_catch(%12) : void *
+  %32 = load int, %3
+  %34 = load int, %4
+  %35 = iconst int, 10
+  %36 = mul int, %34, %35
+  %37 = add int, %32, %36
+  store %3, %37
+  call @__cxa_end_catch() : none
+  br ^4
+^17:
+  call @_Unwind_Resume(%12) : none
+  unreachable
+}
+function @_ZL8toCalleri(%1: int) -> void static {
+^1(%1: int):
+  %2 = alloca int *, align 4 ; int what
+  store %2, %1
+  %10 = alloca struct Guard *, align 1 ; struct Guard g
+  %3 = iconst int, 1
+  %6 = invoke @_ZL7throweri(%3) : int, ^4, ^5
+^4:
+  ret
+^5(%4: void *, %5: int):
+  catchpad [@_ZTIi] own 1
+  %7 = iconst int, 1
+  %8 = icmp eq, bool, %5, %7
+  condbr %8, ^7, ^8
+^7:
+  %9 = call @__cxa_begin_catch(%4) : void *
+  %11 = addr int *, @_ZL4seen
+  %12 = iconst int, 30
+  store %11, %12
+  %13 = load int, %2
+  %16 = invoke @_ZL7throweri(%13) : int, ^10, ^9
+^8:
+  call @_Unwind_Resume(%4) : none
+  unreachable
+^9(%14: void *, %15: int):
+  cleanuppad own 0
+  invoke @_ZN5GuardD1Ev(%10) : none, ^13(%14, %15), ^11
+^10:
+  %18 = iconst int, 40
+  store %11, %18
+  call @_ZN5GuardD1Ev(%10) : none
+  call @__cxa_end_catch() : none
+  br ^4
+^11(%19: void *, %20: int):
+  catchpad [...] own 1
+  %23 = call @__cxa_begin_catch(%19) : void *
+  call @_ZSt9terminatev() : none
+  unreachable
+^13(%21: void *, %22: int):
+  cleanuppad own 0
+  call @__cxa_end_catch() : none
+  call @_Unwind_Resume(%21) : none
+  unreachable
+}
+function @main() -> int {
+^1:
+  %1 = addr const char [7] *, @.L.str.0
+  %2 = bitcast const char *, %1
+  %3 = iconst int, 0
+  %4 = call @_ZL12localThroughi(%3) : int
+  %5 = iconst int, 2
+  %6 = call @_ZL12localThroughi(%5) : int
+  %7 = call @printf(%2, %4, %6) : int variadic
+  %8 = addr int *, @_ZL4seen
+  %9 = iconst int, 1
+  store %8, %9
+  %12 = call @_ZL13globalThroughi(%3) : int
+  store %8, %9
+  %18 = call @_ZL13globalThroughi(%5) : int
+  %20 = addr const char [10] *, @.L.str.1
+  %21 = bitcast const char *, %20
+  %25 = load int, %8
+  %26 = call @printf(%21, %12, %18, %25) : int variadic
+  invoke @_ZL8toCalleri(%5) : none, ^4, ^5
+^4:
+  %40 = addr const char [9] *, @.L.str.3
+  %41 = bitcast const char *, %40
+  %42 = addr int *, @_ZL4gone
+  %43 = load int, %42
+  %44 = call @printf(%41, %43) : int variadic
+  ret %3
+^5(%28: void *, %29: int):
+  catchpad [@_ZTId] own 1
+  %30 = iconst int, 1
+  %31 = icmp eq, bool, %29, %30
+  condbr %31, ^7, ^8
+^7:
+  %32 = call @__cxa_begin_catch(%28) : void *
+  %33 = addr const char [11] *, @.L.str.2
+  %34 = bitcast const char *, %33
+  %36 = load int, %8
+  %39 = invoke @printf(%34, %36) : int variadic, ^10, ^9
+^8:
+  call @_Unwind_Resume(%28) : none
+  unreachable
+^9(%37: void *, %38: int):
+  cleanuppad own 0
+  call @__cxa_end_catch() : none
+  call @_Unwind_Resume(%37) : none
+  unreachable
+^10:
+  call @__cxa_end_catch() : none
+  br ^4
+}

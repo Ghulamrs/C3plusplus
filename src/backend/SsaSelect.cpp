@@ -980,8 +980,10 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
                     const ir::InstId id = k < in.insts.size() ? in.insts[k] : in.term;
                     if (id.valid()) selectInst(f, f.inst(id));
                 }
-                if (in.term.valid() && f.inst(in.term).op == ir::Op::CleanupRet && !f.inst(in.term).succ.empty())
-                    toState = ssaPadState_[f.inst(in.term).succ[0].block.v];
+                if (in.term.valid() && f.inst(in.term).op == ir::Op::CleanupRet) {
+                    const ir::Inst &r = f.inst(in.term);
+                    if (!r.succ.empty() || r.k > 0) toState = ssaPadState_[r.succ.empty() ? static_cast<std::size_t>(r.k) : r.succ[0].block.v];
+                }
             }
             endCleanupFunclet();
             leaveFunclet();
