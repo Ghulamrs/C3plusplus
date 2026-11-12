@@ -1,0 +1,257 @@
+function @_ZL7throweri(%1: int) -> int static {
+^1(%1: int):
+  %4 = iconst int, 1
+  %5 = icmp eq, bool, %1, %4
+  condbr %5, ^4, ^5
+^4:
+  %6 = iconst int, 7
+  %7 = iconst unsigned long, 4
+  %8 = call @__cxa_allocate_exception(%7) : void *
+  %9 = bitcast int *, %8
+  store %9, %6
+  %10 = addr void *, @_ZTIi
+  %11 = null void *,
+  call @__cxa_throw(%8, %10, %11) : none
+  unreachable
+^5:
+  %13 = iconst int, 2
+  %14 = icmp eq, bool, %1, %13
+  condbr %14, ^6, ^7
+^6:
+  %15 = fconst double, 0x4004000000000000
+  %16 = iconst unsigned long, 8
+  %17 = call @__cxa_allocate_exception(%16) : void *
+  %18 = bitcast double *, %17
+  store %18, %15
+  %19 = addr void *, @_ZTId
+  %20 = null void *,
+  call @__cxa_throw(%17, %19, %20) : none
+  unreachable
+^7:
+  %22 = iconst int, 10
+  %23 = mul int, %1, %22
+  ret %23
+}
+function @_ZL10loadAcrossi(%1: int) -> int static {
+^1(%1: int):
+  %3 = alloca int *, align 4 ; int before
+  %4 = addr int *, @_ZL4seen
+  %5 = load int, %4
+  store %3, %5
+  %9 = invoke @_ZL7throweri(%1) : int, ^5, ^6
+^4:
+  %26 = load int, %3
+  %27 = iconst int, 100
+  %28 = mul int, %26, %27
+  %30 = load int, %4
+  %31 = add int, %28, %30
+  ret %31
+^5:
+  %17 = load int, %3
+  %19 = load int, %4
+  %20 = add int, %17, %19
+  store %3, %20
+  br ^4
+^6(%7: void *, %8: int):
+  catchpad [@_ZTIi, @_ZTId] own 1
+  %10 = iconst int, 2
+  %11 = icmp eq, bool, %8, %10
+  condbr %11, ^8, ^10(%7, %8)
+^8:
+  %14 = call @__cxa_begin_catch(%7) : void *
+  %16 = iconst int, 11
+  store %4, %16
+  call @__cxa_end_catch() : none
+  br ^5
+^10(%12: void *, %13: int):
+  catchpad [@_ZTId] own 1
+  %21 = iconst int, 1
+  %22 = icmp eq, bool, %13, %21
+  condbr %22, ^11, ^12
+^11:
+  %23 = call @__cxa_begin_catch(%12) : void *
+  %25 = iconst int, 22
+  store %4, %25
+  call @__cxa_end_catch() : none
+  br ^4
+^12:
+  call @_Unwind_Resume(%12) : none
+  unreachable
+}
+function @_ZL11localAcrossi(%1: int) -> int static {
+^1(%1: int):
+  %4 = addr int *, @_ZL4seen
+  %5 = load int, %4
+  %9 = invoke @_ZL7throweri(%1) : int, ^5(%9), ^6
+^4(%25: int):
+  ret %25
+^5(%26: int):
+  %17 = iconst int, 1
+  %18 = add int, %26, %17
+  br ^4(%18)
+^6(%7: void *, %8: int):
+  catchpad [@_ZTIi, @_ZTId] own 1
+  %10 = iconst int, 2
+  %11 = icmp eq, bool, %8, %10
+  condbr %11, ^8, ^10(%7, %8)
+^8:
+  %14 = call @__cxa_begin_catch(%7) : void *
+  %15 = iconst int, 11
+  call @__cxa_end_catch() : none
+  br ^5(%15)
+^10(%12: void *, %13: int):
+  catchpad [@_ZTId] own 1
+  %19 = iconst int, 1
+  %20 = icmp eq, bool, %13, %19
+  condbr %20, ^11, ^12
+^11:
+  %21 = call @__cxa_begin_catch(%12) : void *
+  %22 = iconst int, 22
+  call @__cxa_end_catch() : none
+  br ^4(%22)
+^12:
+  call @_Unwind_Resume(%12) : none
+  unreachable
+}
+function @_ZL16storeSeenOutsidei(%1: int) -> int static {
+^1(%1: int):
+  %3 = alloca int *, align 4 ; int r
+  %4 = iconst int, 0
+  store %3, %4
+  %5 = iconst int, 5
+  store %3, %5
+  %9 = invoke @_ZL7throweri(%1) : int, ^7, ^6
+^2(%23: int):
+  ret %23
+^5:
+  %17 = iconst int, 3
+  store %3, %17
+  br ^2(%17)
+^6(%7: void *, %8: int):
+  catchpad [@_ZTIi, @_ZTId] own 1
+  %11 = iconst int, 2
+  %12 = icmp eq, bool, %8, %11
+  condbr %12, ^8, ^10(%7, %8)
+^7:
+  %10 = iconst int, 1
+  store %3, %10
+  br ^5
+^8:
+  %15 = call @__cxa_begin_catch(%7) : void *
+  %16 = iconst int, 2
+  store %3, %16
+  call @__cxa_end_catch() : none
+  br ^5
+^10(%13: void *, %14: int):
+  catchpad [@_ZTId] own 1
+  %18 = iconst int, 1
+  %19 = icmp eq, bool, %14, %18
+  condbr %19, ^11, ^12
+^11:
+  %20 = call @__cxa_begin_catch(%13) : void *
+  %21 = load int, %3
+  call @__cxa_end_catch() : none
+  br ^2(%21)
+^12:
+  call @_Unwind_Resume(%13) : none
+  unreachable
+}
+function @_ZL9inHandleri(%1: int) -> int static {
+^1(%1: int):
+  %2 = alloca int *, align 4 ; int what
+  store %2, %1
+  %3 = alloca int *, align 4 ; int r
+  %4 = iconst int, 4
+  store %3, %4
+  %5 = iconst int, 1
+  %8 = invoke @_ZL7throweri(%5) : int, ^4, ^6
+^4:
+  %33 = load int, %3
+  ret %33
+^6(%6: void *, %7: int):
+  catchpad [@_ZTIi, @_ZTId] own 1
+  %9 = iconst int, 2
+  %10 = icmp eq, bool, %7, %9
+  condbr %10, ^8, ^10(%6, %7)
+^8:
+  %13 = call @__cxa_begin_catch(%6) : void *
+  %14 = iconst int, 6
+  store %3, %14
+  %15 = load int, %2
+  %18 = invoke @_ZL7throweri(%15) : int, ^13, ^12
+^10(%11: void *, %12: int):
+  catchpad [@_ZTId] own 1
+  %27 = iconst int, 1
+  %28 = icmp eq, bool, %12, %27
+  condbr %28, ^17, ^18
+^11:
+  %26 = iconst int, 9
+  store %3, %26
+  call @__cxa_end_catch() : none
+  br ^4
+^12(%16: void *, %17: int):
+  catchpad [@_ZTIi, @_ZTId] own 1
+  %20 = iconst int, 2
+  %21 = icmp eq, bool, %17, %20
+  condbr %21, ^14, ^16(%16, %17)
+^13:
+  %19 = iconst int, 7
+  store %3, %19
+  br ^11
+^14:
+  %24 = call @__cxa_begin_catch(%16) : void *
+  %25 = iconst int, 8
+  store %3, %25
+  call @__cxa_end_catch() : none
+  br ^11
+^16(%22: void *, %23: int):
+  cleanuppad [@_ZTId] own 0
+  call @__cxa_end_catch() : none
+  br ^10(%22, %23)
+^17:
+  %29 = call @__cxa_begin_catch(%11) : void *
+  %30 = load int, %3
+  %31 = iconst int, 30
+  %32 = add int, %30, %31
+  store %3, %32
+  call @__cxa_end_catch() : none
+  br ^4
+^18:
+  call @_Unwind_Resume(%11) : none
+  unreachable
+}
+function @main() -> int {
+^1:
+  %2 = iconst int, 0
+  %3 = call @_ZL10loadAcrossi(%2) : int
+  %4 = bitcast const int, %3
+  %6 = iconst int, 1
+  %7 = call @_ZL10loadAcrossi(%6) : int
+  %8 = bitcast const int, %7
+  %10 = iconst int, 2
+  %11 = call @_ZL10loadAcrossi(%10) : int
+  %12 = bitcast const int, %11
+  %13 = addr const char [10] *, @.L.str.0
+  %14 = bitcast const char *, %13
+  %18 = call @printf(%14, %3, %7, %11) : int variadic
+  %19 = addr int *, @_ZL4seen
+  store %19, %6
+  %21 = addr const char [10] *, @.L.str.1
+  %22 = bitcast const char *, %21
+  %24 = call @_ZL11localAcrossi(%2) : int
+  %26 = call @_ZL11localAcrossi(%6) : int
+  %28 = call @_ZL11localAcrossi(%10) : int
+  %29 = call @printf(%22, %24, %26, %28) : int variadic
+  %30 = addr const char [10] *, @.L.str.2
+  %31 = bitcast const char *, %30
+  %33 = call @_ZL16storeSeenOutsidei(%2) : int
+  %35 = call @_ZL16storeSeenOutsidei(%6) : int
+  %37 = call @_ZL16storeSeenOutsidei(%10) : int
+  %38 = call @printf(%31, %33, %35, %37) : int variadic
+  %39 = addr const char [7] *, @.L.str.3
+  %40 = bitcast const char *, %39
+  %42 = call @_ZL9inHandleri(%2) : int
+  %44 = call @_ZL9inHandleri(%10) : int
+  %45 = call @printf(%40, %42, %44) : int variadic
+  ret %2
+}
