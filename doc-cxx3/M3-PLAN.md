@@ -2613,3 +2613,30 @@ scalar rounds, allocator and frame passes - each still changing code SSA cannot 
 and divide-by-constant are off, SSA covering both. **Left**: hoist-invariants' 271 is what a later round could move to
 SSA (rematerialised addresses hoisted at selection); the Ast.h `-O2` census was not re-taken this round (the Linux box was
 shared by three lanes), round 3's numbers stand for it.
+
+### M3b.5, lane hash: the byte the loop's test read is the byte its body reads, 2026-11-12
+
+Wave 5, from `0b07e3ad`, branch `m3b5-hash`; code commits `b8377eef` and `4dc563b2` (the pads rule below).
+**The change** (`SsaValues.cpp`, gvn): a block whose one predecessor is its immediate dominator, reached by a `br` or
+`condbr` in the same funclet, starts with what that block had loaded or stored at its end, in a function with no pad. So
+the loop test's `*p` and the body's `*p` are one load before `rotate`, and `rotate` carries the test's byte into the
+head as a parameter: hash's byte loop is `movzbl; xor; imul; add $1; movsbq (%r10); test; jne`, one load a turn (two
+before). Over the suite at -O1 (Linux ssa.sh, before the pads rule) gvn replaced 427 loads by a load, 285 by a store.
+**The pads rule, found by the gate**: without it `ssa-try-catch` printed `1 12 0 0` for `1 12 22 33` on Windows at
+`-front=ssa -O2`, both spellings (`nestedInBody`: a handler's `r = 22` not seen by the load after the `try`; Linux
+right) - the reading, not proved: a catch's way back is an edge the dominators' predecessors do not show. A function
+with any pad keeps the block-local rule; at `4dc563b2` the case is right at -O0, -O2, -front=ssa -O1 and -O2 (both
+spellings).
+**Probe** `tests/cases/ssa-forward` (+`.expected`, the Windows box's clang; `.gvn` its `-O1 -dump=ssa=gvn` on Linux): a
+loop's test and body, a then- and an else-block, and three that load again - a store between, a call between, a join.
+Right at -O0, -O2, -front=ssa -O1 and -O2 on Windows. **Re-recorded** (Linux): `ssa-loads.loops` (`shift`'s swap
+reads its two elements from the test's loads), `ssa-loops.loops` (`skipped`'s division reads the test's load),
+`ssa-rotate.rotate` (`fnv`'s byte comes to the head as a parameter), `ssa-fold-access.allocate` (`shift`, frame 176 ->
+160, two loads fewer); `ssa-dead.dead` and `main` in `ssa-rotate.rotate` changed before the pads rule and are back as
+they were (each function has a pad).
+**Not done, and why** - both are selection's (`SsaSelect.cpp`, the virt lane's), written down for it: (1) the
+extension after each `add`: `canonicalise` writes `movslq` after every 32-bit result (`add $1, %edx; movslq %edx, %rdx`
+for the outer counter; `sub; movslq; lea 97; movslq` before the fill loop's byte store), and `high()` extends its
+operand again (`movslq %eax, %rax` before `imul`) where it is already canonical - an SSA rule cannot remove either;
+(3) the preheader guard: since lane mm `rotate` turns innermost loops only, so hash's outer loop is not rotated and its
+`xor; cmp; jge` is its own head's test, not a guard to fold.

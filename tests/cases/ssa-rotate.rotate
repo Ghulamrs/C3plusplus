@@ -326,30 +326,30 @@ function @main() -> int {
   %117 = iconst int, 0
   %121 = iconst long, 1
   %125 = iconst char, 0
-  %347 = sext long, %117
-  %348 = gep const char *, %26, %347
-  %349 = load char, %348
-  %350 = icmp ne, bool, %349, %125
-  condbr %350, ^38(%117), ^115(%117)
+  %345 = sext long, %117
+  %346 = gep const char *, %26, %345
+  %347 = load char, %346
+  %348 = icmp ne, bool, %347, %125
+  condbr %348, ^38(%117), ^115(%117)
 ^38(%279: int):
   br ^39
 ^39:
   %129 = add int, %279, %17
-  %351 = sext long, %129
-  %352 = gep const char *, %26, %351
-  %353 = load char, %352
-  %354 = icmp ne, bool, %353, %125
-  condbr %354, ^38(%129), ^115(%129)
-^115(%346: int):
+  %349 = sext long, %129
+  %350 = gep const char *, %26, %349
+  %351 = load char, %350
+  %352 = icmp ne, bool, %351, %125
+  condbr %352, ^38(%129), ^115(%129)
+^115(%344: int):
   br ^40
 ^40:
   %30 = addr const char [9] *, @.L.str.3
   %31 = bitcast const char *, %30
-  %338 = sext long, %117
-  %339 = gep const char *, %31, %338
-  %340 = load char, %339
-  %341 = icmp ne, bool, %340, %125
-  condbr %341, ^45(%117), ^114(%117)
+  %336 = sext long, %117
+  %337 = gep const char *, %31, %336
+  %338 = load char, %337
+  %339 = icmp ne, bool, %338, %125
+  condbr %339, ^45(%117), ^114(%117)
 ^4(%27: void *, %28: int):
   cleanuppad own 0
   invoke @_ZN5ShapeD1Ev(%21) : none, ^30, ^29
@@ -357,33 +357,34 @@ function @main() -> int {
   br ^46
 ^46:
   %146 = add int, %278, %17
-  %342 = sext long, %146
-  %343 = gep const char *, %31, %342
-  %344 = load char, %343
-  %345 = icmp ne, bool, %344, %125
-  condbr %345, ^45(%146), ^114(%146)
-^114(%337: int):
+  %340 = sext long, %146
+  %341 = gep const char *, %31, %340
+  %342 = load char, %341
+  %343 = icmp ne, bool, %342, %125
+  condbr %343, ^45(%146), ^114(%146)
+^114(%335: int):
   br ^47
 ^47:
   %33 = addr const char [1] *, @.L.str.4
   %34 = bitcast const char *, %33
   %151 = iconst unsigned int, 2166136261
   %162 = iconst unsigned int, 16777619
-  %332 = load char, %34
-  %333 = icmp ne, bool, %332, %125
-  condbr %333, ^52(%34, %151, %332), ^113(%151)
-^52(%276: const char *, %277: unsigned int, %336: char):
+  %331 = load char, %34
+  %332 = icmp ne, bool, %331, %125
+  condbr %332, ^52(%34, %151), ^113(%151)
+^52(%276: const char *, %277: unsigned int):
   br ^53
 ^53:
-  %159 = bitcast unsigned char, %336
+  %158 = load char, %276
+  %159 = bitcast unsigned char, %158
   %160 = zext unsigned int, %159
   %161 = xor unsigned int, %277, %160
   %163 = mul unsigned int, %161, %162
   %165 = gep const char *, %276, 1
-  %334 = load char, %165
-  %335 = icmp ne, bool, %334, %125
-  condbr %335, ^52(%165, %163, %334), ^113(%163)
-^113(%331: unsigned int):
+  %333 = load char, %165
+  %334 = icmp ne, bool, %333, %125
+  condbr %334, ^52(%165, %163), ^113(%163)
+^113(%330: unsigned int):
   br ^55
 ^55:
   %36 = addr const char [16] *, @.L.str.5
@@ -391,22 +392,23 @@ function @main() -> int {
   %181 = iconst unsigned int, 16777619
   %326 = load char, %37
   %327 = icmp ne, bool, %326, %125
-  condbr %327, ^60(%37, %151, %326), ^112(%151)
-^60(%274: const char *, %275: unsigned int, %330: char):
+  condbr %327, ^60(%37, %151), ^112(%151)
+^60(%274: const char *, %275: unsigned int):
   br ^61
 ^61:
-  %178 = bitcast unsigned char, %330
+  %177 = load char, %274
+  %178 = bitcast unsigned char, %177
   %179 = zext unsigned int, %178
   %180 = xor unsigned int, %275, %179
   %182 = mul unsigned int, %180, %181
   %184 = gep const char *, %274, 1
   %328 = load char, %184
   %329 = icmp ne, bool, %328, %125
-  condbr %329, ^60(%184, %182, %328), ^112(%182)
+  condbr %329, ^60(%184, %182), ^112(%182)
 ^112(%325: unsigned int):
   br ^63
 ^63:
-  %39 = invoke @printf(%24, %346, %337, %331, %325) : int variadic, ^9, ^4
+  %39 = invoke @printf(%24, %344, %335, %330, %325) : int variadic, ^9, ^4
 ^9:
   %40 = addr const char [13] *, @.L.str.6
   %41 = bitcast const char *, %40
