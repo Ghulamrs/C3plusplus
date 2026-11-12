@@ -68,6 +68,12 @@ if [ "$(uname -s)" = Linux ]; then
         if "$CXX1" -nologo -O$lv -dump=ssa=$p -S "${d%.*}.cpp" -o /dev/null 2>/dev/null | cmp -s - "$d"; then pass=$((pass + 1))
         else echo "FAIL $(basename "$d"): the IR after $p differs from the recorded probe"; fail=$((fail + 1)); fi
     done
+    # The Microsoft probes: <case>.win-<pass> is -arch x86_64-windows -O1 -dump=ssa=<pass>, a catchswitch's and a cleanupret's unwind held.
+    for d in tests/cases/*.win-*; do
+        [ -f "$d" ] || continue
+        if "$CXX1" -nologo -arch x86_64-windows -O1 -dump=ssa=${d##*.win-} -S "${d%.win-*}.cpp" -o /dev/null 2>/dev/null | cmp -s - "$d"; then pass=$((pass + 1))
+        else echo "FAIL $(basename "$d"): the x86_64-windows IR after ${d##*.win-} differs from the recorded probe"; fail=$((fail + 1)); fi
+    done
     # Selection's probe (round 7): <case>.allocate is the case's -front=ssa -O1 -dump=mir=allocate, MIR as the allocator left it.
     for d in tests/cases/*.allocate; do
         [ -f "$d" ] || continue
