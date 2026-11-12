@@ -84,6 +84,9 @@ void dumpInst(const Function &f, const TypeTable &types, InstId id, std::string 
         else out += s ? "," : i.count ? "," : "";
         out += " " + succText(f, i.succ[s]);
     }
+    // Where an exception goes on (a `k`, no succ): a catchswitch's enclosing pad or handler, a cleanupret's handler.
+    if (i.op == Op::CatchSwitch || (i.op == Op::CleanupRet && i.k > 0))
+        out += std::string(i.succ.empty() ? "" : ",") + " unwind " + (i.k > 0 ? blockName(BlockId(static_cast<std::uint32_t>(i.k))) : "caller");
     out += "\n";
 }
 
