@@ -52,9 +52,10 @@ struct ThreadJumps : Pass {
 
 // Ten instructions for three, so a speed level's alone; the flow is rebuilt before anything reads the entries this inserts,
 // and before this reads any: thread-jumps runs just ahead of it and inserts labels and jumps without rebuilding.
+// Off for a function selected from its SSA, whose `divide` did it (M3b.5 round 5: 0 changed there).
 struct DivideByConstant : Pass {
     DivideByConstant() : Pass(PassInfo{"divide-by-constant", kFlow, 0, 0, kTodoBuildFlow}) {}
-    bool gate(const MFunction &fn) const override { return !fn.costs().forSize(); }
+    bool gate(const MFunction &fn) const override { return !fn.costs().forSize() && !fn.fromSsa; }
     bool execute(MFunction &fn) override { return divideByConstant(fn.stream, fn.flow); }
 };
 
@@ -74,9 +75,10 @@ struct HoistXmmSlots : Pass {
 };
 
 // **A loop counter that never goes negative read as its own 64-bit register**, its `movslq` then dead.
+// Off for a function selected from its SSA, whose `loops` widened it (M3b.5 round 5).
 struct WidenCounters : Pass {
     WidenCounters() : Pass(PassInfo{"widen-counters", kFlow | kPropPhysical, 0, 0, kTodoBuildFlow}) {}
-    bool gate(const MFunction &fn) const override { return !fn.costs().forSize(); }
+    bool gate(const MFunction &fn) const override { return !fn.costs().forSize() && !fn.fromSsa; }
     bool execute(MFunction &fn) override { return widenCounters(fn); }
 };
 
