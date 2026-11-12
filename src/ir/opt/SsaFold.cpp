@@ -367,7 +367,7 @@ struct Folder {
             }
             if (!one.valid()) continue;
             if (single && available(one, b)) { repl[param.v] = one; }
-            else if (constant) repl[param.v] = constantAt(b, f.value(param).type, k);
+            else if (constant) { const ValueId c = constantAt(b, f.value(param).type, k); repl[param.v] = c; }  // grows repl first
             else continue;
             users[repl[param.v].v].insert(users[repl[param.v].v].end(), users[param.v].begin(), users[param.v].end());
             log.arguments++;

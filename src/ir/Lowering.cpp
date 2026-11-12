@@ -4230,13 +4230,14 @@ Lowering::Val Lowering::bitAssign(sema::TypedId id, const Val &unit, const Membe
     if (T(unit.type).isConst()) outside("an assignment to a const bit-field");
     const std::string &op = text(id);
     const TypeId decl = tid(*m.type->unqualified()), w = tid(*types_.get(Kind::ULongLong));
-    const Val value = convert(op == "=" ? exprTo(child(id, 1), decl)
-                                        : arithmetic(op.substr(0, op.size() - 1), bitRead(unit, m), expr(child(id, 1))), decl);
+    const Val old = op == "=" ? Val() : bitRead(unit, m);  // read before the operand: argument order is unspecified
+    const Val value = convert(op == "=" ? exprTo(child(id, 1), decl) : arithmetic(op.substr(0, op.size() - 1), old, expr(child(id, 1))), decl);
     const unsigned long long ones = m.width == 64 ? ~0ULL : (1ULL << m.width) - 1;
-    ValueId put = op2(Op::And, w, convert(value, w, true).v, iconst(w, static_cast<long long>(ones)));
+    const ValueId wide = convert(value, w, true).v;
+    ValueId put = op2(Op::And, w, wide, iconst(w, static_cast<long long>(ones)));
     if (m.bitOffset != 0) put = op2(Op::Shl, w, put, iconst(w, m.bitOffset));
-    const ValueId kept = op2(Op::And, w, convert(readOf(unit.v, unit.type), w).v,
-                             iconst(w, static_cast<long long>(~(ones << m.bitOffset))));
+    const ValueId whole = convert(readOf(unit.v, unit.type), w).v;
+    const ValueId kept = op2(Op::And, w, whole, iconst(w, static_cast<long long>(~(ones << m.bitOffset))));
     store(unit.v, convert(Val(op2(Op::Or, w, kept, put), w), tid(*T(unit.type).unqualified()), true).v);
     return bitRead(unit, m);
 }
