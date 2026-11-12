@@ -2847,3 +2847,51 @@ No probe: the pad shows in no dump, only in the listing. `src/` went from 94024 
 says their addresses matter), the caller's frame; (2) the bench on a quiet box; (3) `verify-tools\MASM` rebuilt from
 `src/encoder` so `tools/coff-equal.sh` reads `ALIGN n, most`; (4) `jmp` to the next label left after virt's loop
 (`ssaelse_3: jmp ssa_20; ssa_20:`), cold; (5) lane place's frame trim and matmul's dead store, untouched.
+
+### M3b.5, lane vlay: virtual's last gap is where the two callees' `ret`s sit in their lines, 2026-11-12
+
+From lane malign's `96055858`, branch `m3b5-vlay`. **No code changed**: the tree is `9035baa4`'s, whose gates lane malign's
+entry records; this entry is the measurement and the rule it gives. Method: `boxkit/m3b5vl-exp.sh` (malign's script, with
+`m3b5vl-chunk.pl`, which takes one function's text from the other path's assembly): the kernels at `-front=ssa -O2
+-masm=gnu` (a) and `-O2 -masm=gnu` (o2), hybrids and re-placed variants, assembled by clang, linked by cxx3, run
+interleaved, 21 to 50 rounds; the addresses read back from each executable's listing. The box (i7-12700; processors 0-9
+are P-core threads) was quiet for two runs and loaded by other lanes for the rest; figures are median (least) and a
+figure from a loaded run is marked. `boxkit/m3b5vl-exp{3..8}.out`.
+**1. It is not the caller.** a 108 (95), o2 88 (82); a with -O2's `virt` 99 (95); -O2 with a's `virt` 83 (82); a with
+-O2's two callees and two constructors 87 (82). So the frame (320 against 208), the store and the loop are cleared, and
+step 3 of the brief is not needed.
+**2. It is not the callees' instructions or their frames either, but one byte of length.** `Sq::area` is 23 bytes on the
+SSA path (`imul %eax, %eax`, 3 bytes) and 24 on the Ast.h path (`imull 8(%rcx), %eax`, 4); `Rc::area` is 24 on both. So
+-O2's two `ret`s are both at +0x17 of their function, the SSA path's at +0x16 and +0x17. What decides the figure is
+**the two `ret`s' offsets in their 64-byte lines** (d = their difference modulo 64):
+- d = 0: **82**. -O2 as built (callees at 0x1be0 / 0x1c60); -O2's callees at offsets 0, 16, 32 of a line, 0x80 or 0xc0
+  apart; a's callees at one offset with a `nop` before `Sq::area`'s `ret` (loaded: least 88 beside -O2's 88); a with
+  `imull 8(%rcx), %eax` in `Sq::area` (loaded: 103 beside 98).
+- d = 32 or 33: **96**. a as built (0x1c40 / 0x1ca0); -O2's callee text at a's two places (103 (96)); -O2's callees at
+  offsets 0 and 32.
+- d = 1: **124**. a's callees both at offset 0, 16 or 32 of a line (133, 130, 129 (124)) - this is malign's 131 for
+  `.p2align 6`; the same with frames of 16 (loaded: least 143 beside q0's 150 - the frame is not it); with `Rc::area` a
+  whole page away (loaded: 189 beside 187 - distance is not it, only the low bits). d = 8, -O2's callees: loaded, 134
+  least beside 98.
+- a callee across a line end (offset 48): 103 on both paths, lane place's finding again.
+The mechanism was not identified (it reads like the two returns of one indirect call sharing a predictor entry that
+keeps an offset in the line); one kernel, one processor. cl's own build (96-107) is in the middle class, and -O2's 82
+is the Ast.h path's `imull` being one byte longer - luck, as lane place said of its placement.
+**3. The rule that reproduces it: a small COMDAT function ends at its line's end.** Each callee in a section aligned
+to 64 after `64 - size` bytes of NOP, so both `ret`s are byte 63 of a line (d = 0 whatever the sizes): **e64**, a's
+code otherwise untouched - loaded runs only, 40 and 25 rounds: 113 (91) beside -O2's 115 (88) and a's 131 (103); 104
+(94) beside 111 (98) and 125 (109). The same at 32 (`.p2align 5`, ends at byte 31 or 63 - d = 32 by luck) is a's class:
+130 (103). clang takes it with no size known to the compiler: `.p2align 6` then
+`.skip (-("$LNend$f"-"$LNbeg$f")) & 63, 0x90` after the `.section` line (variant k: the same addresses as e64, 106 (100)).
+**Not built**, and why: the default spelling is masm, where the pad must come from the project's encoder (a segment at
+`ALIGN(64)` and a pad the encoder computes from the PROC's size - a new form in `X64Parse.cpp`, as `ALIGN n, most` was);
+`bytesOf` is an estimate and an estimate one byte out is the worst class, so the size may not come from the optimizer;
+and the gates the change owes (three winpasses in both spellings, ssa.sh, Linux) do not fit the hour beside other
+lanes' load. The change is: `opt::functionAlign` answers 64 for every function of 17..64 bytes; `CoffSpelling::
+functionAlign` writes the two lines above; `MasmSpelling::functionAlign` the encoder's form; ml64's spelling keeps 32/64.
+Cost: up to 47 bytes more padding per such function than now.
+**Bench**: not re-run - no code changed; lane malign's figures stand (virtual 108 / 94 / 107 in the default spelling).
+**Gates**: none run - the tree's code is `9035baa4`'s. `src/` stays at 94042 lines.
+**Left**: (1) build the rule in both spellings and show virtual at -O2's figure in the default spelling, fib, hash and
+matmul no worse, on a quiet box, twice; (2) e64 on a quiet box (its figures above are loaded ones); (3) whether a
+function with several `ret`s, or one called directly, gains or loses; (4) malign's list, untouched.
