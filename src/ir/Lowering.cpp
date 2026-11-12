@@ -1194,16 +1194,7 @@ void Lowering::guardedStatic(sema::TypedId var, const std::string &symbol) {
         at(cl).bits = (p.types.empty() ? 0u : 1u) | (!pads_.empty() ? 2u : 0u);
         runtimeCall(ms ? "_Init_thread_abort" : "__cxa_guard_abort", voidT, std::vector<ValueId>(1, addrOf(g.guard, gp)));
         if (ms) {
-            const InstId r = add(Op::CleanupRet, TypeId(), std::vector<ValueId>());
-            if (!pads_.empty()) {
-                Succ s;
-                s.block = padBlock(pads_.back());
-                s.first = static_cast<std::uint32_t>(F().operands.size());
-                s.count = 2;
-                F().operands.push_back(p.ptr);
-                F().operands.push_back(p.sel);
-                at(r).succ.push_back(s);
-            }
+            msCleanupRet(p);
         } else {
             resumeFrom(p, pads_.size());
         }
@@ -1398,19 +1389,7 @@ void Lowering::closeScope(std::size_t mark, bool keep) {
         // destructor throw, as the walker's cleanup does; the cleanupret names the pad whose state this one chains to.
         if (target_.microsoftNames()) {
             if (l.when.valid() || l.built.valid()) msCountedDestroy(l, p.block); else destroyWhen(l);
-            const InstId r = add(Op::CleanupRet, TypeId(), std::vector<ValueId>());
-            const BlockId to = msEnclosingPad();
-            if (to.valid()) {
-                // A handler's block takes no arguments; a pad's takes the pointer and the selector.
-                std::vector<ValueId> args;
-                if (F().block(to).params.size() == 2) { args.push_back(p.ptr); args.push_back(p.sel); }
-                Succ s;
-                s.block = to;
-                s.first = static_cast<std::uint32_t>(F().operands.size());
-                s.count = static_cast<std::uint32_t>(args.size());
-                F().operands.insert(F().operands.end(), args.begin(), args.end());
-                at(r).succ.push_back(s);
-            }
+            msCleanupRet(p);
             place(back);
             continue;
         }
@@ -6396,6 +6375,22 @@ void Lowering::msCountedDestroy(const Live &l, BlockId pad) {
 BlockId Lowering::msEnclosingPad() {
     if (pads_.size() > funcletPads_) return padBlock(pads_.back());
     return funclet_;
+}
+
+// A cleanup funclet's cleanupret: an edge to the pad it chains to, with the pointer and the selector; inside a handler
+// with no pad of its own, `k` names the handler, whose state it chains to, and control goes where the handler unwinds.
+void Lowering::msCleanupRet(const Pad &p) {
+    const InstId r = add(Op::CleanupRet, TypeId(), std::vector<ValueId>());
+    const BlockId to = msEnclosingPad();
+    if (!to.valid()) return;
+    if (to.v == funclet_.v) { at(r).k = static_cast<long long>(to.v); return; }
+    Succ s;
+    s.block = to;
+    s.first = static_cast<std::uint32_t>(F().operands.size());
+    s.count = 2;
+    F().operands.push_back(p.ptr);
+    F().operands.push_back(p.sel);
+    at(r).succ.push_back(s);
 }
 
 // A local's alloca: entryAlloca's, raised to the alignment `alignas` asked of it (FunctionFacts::localAligns, by the

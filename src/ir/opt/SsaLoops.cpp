@@ -32,10 +32,7 @@ struct Looper {
         std::vector<Loop> out;
         std::vector<int> byHead(f.blockArena.size(), -1);
         for (std::uint32_t b : dom.rpo) {
-            if (!f.blockArena[b].term.valid()) continue;
-            const Inst &t = f.inst(f.blockArena[b].term);
-            for (std::size_t s = 0; s < t.succ.size(); s++) {
-                const std::uint32_t h = t.succ[s].block.v;
+            for (std::uint32_t h : successors(f, b)) {
                 if (!dom.reachable(h) || !dom.dominates(h, b)) continue;
                 if (byHead[h] < 0) {
                     byHead[h] = static_cast<int>(out.size());
@@ -135,10 +132,8 @@ struct Looper {
     // A block every way round the loop and every way out of it passes: what it computes runs before the loop is left.
     bool always(const Loop &l, const Dominators &dom, std::uint32_t b) const {
         for (std::uint32_t x : l.latches) if (!dom.dominates(b, x)) return false;
-        for (std::uint32_t x : l.blocks) {
-            const Inst &t = f.inst(f.blockArena[x].term);
-            for (const Succ &s : t.succ) if (!l.in[s.block.v] && !dom.dominates(b, x)) return false;
-        }
+        for (std::uint32_t x : l.blocks)
+            for (std::uint32_t y : successors(f, x)) if (!l.in[y] && !dom.dominates(b, x)) return false;
         return true;
     }
 
@@ -553,7 +548,7 @@ struct Looper {
         log.rotated++;
         return true;
     }
-    // One innermost loop at a time (an outer one's rotation spilled matmul's counters), the loops found again after each.
+    // One loop at a time, innermost ones first, the loops found again after each.
     bool rotateAll() {
         bool any = false;
         for (bool again = true; again;) {
@@ -561,11 +556,12 @@ struct Looper {
             fixed = fixedBlocks(f);
             const Dominators dom(f);
             const std::vector<Loop> loops = find(dom);
-            for (std::size_t k = 0; k < loops.size() && !again; k++) {
-                bool inner = true;
-                for (const Loop &m : loops) inner = inner && (m.head == loops[k].head || !loops[k].in[m.head]);
-                again = inner && rotate(loops[k], dom);
-            }
+            for (int outer = 0; outer < 2 && !again; outer++)
+                for (std::size_t k = 0; k < loops.size() && !again; k++) {
+                    bool inner = true;
+                    for (const Loop &m : loops) inner = inner && (m.head == loops[k].head || !loops[k].in[m.head]);
+                    again = inner != (outer == 1) && rotate(loops[k], dom);
+                }
             any = any || again;
         }
         return any;

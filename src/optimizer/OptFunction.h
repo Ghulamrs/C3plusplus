@@ -51,6 +51,7 @@ struct MFunction {
     long long tempFrom = 0;
     long long tempBase = 0;         // the frame bytes the temporaries were placed below
     int tempCount = 0;
+    long long valueFrom = 0, valueTo = 0;   // the SSA values' slots, as Optimizer::valueSlots said; 0: none
 
     // The level's answers: what a pass asks instead of the level.
     const Costs &costs() const { return *costs_; }

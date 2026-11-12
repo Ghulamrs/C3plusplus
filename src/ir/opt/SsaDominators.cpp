@@ -7,8 +7,8 @@
 
 namespace ir {
 
-std::uint32_t unwindsTo(const Function &f, const Inst &catchSwitch) {
-    long long k = catchSwitch.k;
+std::uint32_t unwindsTo(const Function &f, const Inst &from) {
+    long long k = from.k;
     for (std::size_t steps = 0; k > 0 && static_cast<std::size_t>(k) < f.blockArena.size() && steps < f.blockArena.size(); steps++) {
         const Block &to = f.blockArena[static_cast<std::size_t>(k)];
         if (to.insts.empty() || f.inst(to.insts[0]).op != Op::CatchPad || f.inst(to.insts[0]).k <= 0) return static_cast<std::uint32_t>(k);
@@ -26,7 +26,7 @@ std::vector<std::uint32_t> successors(const Function &f, std::uint32_t b) {
     if (!blk.term.valid()) return out;
     const Inst &t = f.inst(blk.term);
     for (const Succ &s : t.succ) out.push_back(s.block.v);
-    if (t.op == Op::CatchSwitch && unwindsTo(f, t) != 0) out.push_back(unwindsTo(f, t));
+    if ((t.op == Op::CatchSwitch || t.op == Op::CleanupRet) && unwindsTo(f, t) != 0) out.push_back(unwindsTo(f, t));
     return out;
 }
 

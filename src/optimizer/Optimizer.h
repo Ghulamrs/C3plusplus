@@ -31,6 +31,8 @@ public:
     void fromSsa(bool ssa) { fn_.fromSsa = ssa; }
     // The function's scalar locals, candidates for registers.
     void frame(std::vector<opt::Local> locals);
+    // The SSA values' 8-byte slots, the frame bytes (from, to] with nothing below them; finish-frame closes them up.
+    void valueSlots(long long from, long long to) { fn_.valueFrom = from; fn_.valueTo = to; }
     // **The walker's temporaries are slots at -(kTempBase + 8(t + 1)) while it
     // walks**; told how many, this puts them below every frame, as more locals.
     static constexpr long long kTempBase = 1LL << 40;

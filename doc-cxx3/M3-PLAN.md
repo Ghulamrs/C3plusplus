@@ -2807,6 +2807,211 @@ frame trim of item 2; (3) the dead `mov %rax, 48(%rbp)` an outer rotation leaves
 `rotate` could take outer loops again, `cheapest` already holding the allocator's side; (4) function alignment outside a
 COMDAT and on ELF.
 
+### M3b.5, lane cret: a cleanupret inside a handler goes where the handler unwinds, 2026-11-12
+
+Wave 6, from `584e1b78` (lane catch), branch `m3b5-cret`; code commit `3f5076cb`. **The case**
+`tests/cases/ssa-cleanup-edge` (+`.expected`, the Windows box's clang; `.dead` its `-O1 -dump=ssa=dead` on Linux): a class
+with only an out-of-line destructor in a handler, a throw out of the handler, a local and a global changed before it and
+read in the outer handler, and a handler with no try around it. **Wrong on `584e1b78`** at `-front=ssa -O1` and `-O2`, both
+spellings (`localThrough(2)` 101 for 105, and a third function of two chained guards 22 for 24; right at `-O2`, `-O0`). **The cause,
+proved** (boxkit/m3b5cr-b1.ssa.txt, -b1d: `localThrough`, `-dump=ssa=gvn`, `dead`): the guard's cleanup `^10` ended
+`cleanupret ^9`, `^9` the handler's own entry (`msEnclosingPad` returns the funclet when the handler opened no pad), so to
+`successors` the cleanup looped back into the handler, which stores `r = 5` again before any read; dead stores removed
+`r = 5`, and the outer handler `^12` read 1. Control goes where the handler unwinds - the outer try's catchswitch `^4`. (A
+user-declared constructor hid it: its invoke unwinds to `^4` from the handler, a real edge past the store.) **The fix**:
+the lowering's two Microsoft cleanuprets (a scope's, a static local's abort) are one, `Lowering::msCleanupRet`: an edge with
+the pointer and the selector to a pad the funclet opened, else, inside a handler, no succ and `k` naming the handler (the
+static local's chained to an outer pad from inside a funclet before - `pads_.back()`, not `msEnclosingPad`); `unwindsTo`
+takes a cleanupret's `k` as a catchswitch's - past the handler to its try's catchswitch's way on, 0 the caller - so
+`successors` (and `Dominators`, dead stores) hold the real edge; the selector reads the chained state from `k` where there
+is no succ (the same state: emitted code unchanged). **IrText** prints `, unwind ^N` / `, unwind caller` on every
+catchswitch and ` unwind ^N` on a cleanupret naming a handler (boxkit/m3b5cr-a1.ssa.txt). **No probe re-recorded for it**:
+the probes are `-dump=ssa` on x86_64-linux (ssa.sh), Itanium, with no catchswitch or cleanupret - there are no Microsoft
+dumps among them. `src/` 93902 -> 93903 lines (+1).
+**Gates on `3f5076cb`'s src** (the probe's record and this entry after): Windows (`work\m3b5cr`, `work\m3b5cr2`, clean ships
+and builds of `3f5076cb`, WINLANES=3) the case and `ssa-catch-edge` right at `-front=ssa -O2` (both spellings),
+`-front=ssa -O1`, `-O2`, `-O0`; winpass `-front=ssa -O2` and `-front=ssa -O1` each gnu 752 / masm 751 same, 0 differ, 340
+refused as recorded; ssa.sh 765/0 at levels 1 and 2 (19 not for this host; level 1 gvn 1159 loads by a load, 1748 by a
+store; level 2 rotate 1028) - those runs held the case with the third function; the case as committed is right at the five
+flag sets on `work\m3b5cr` and matches clang. Linux (`~/m3b5cr`, a clean build, objects removed): the one probe changed is the new
+`ssa-cleanup-edge.dead`; ssa.sh 802/0 at levels 1 and 2 (rotate 1047, unroll 195 whole / 253 partial); run.sh `-front=ssa -O2`
+1125/0; run.sh at `-O0` 1124/1 with the third function, 1125/0 without it (the same build); the gates: exclusions 0/0, memory
+gate new 1056 raw-pointers 44 (unchanged), ide/generate.py --check, comment cap 1 over on `3f5076cb` (SsaOpt.h's two lines
+over a declaration) and 0 after it became one: GATES-OK. Not run: the bench and .text table, ssa.sh after the split (the
+case's `.dead` recorded from that build).
+**Found beside it, and registered**: that third function, two guards in a handler with a throw out of the inner one's
+block, loses a destructor on the Ast.h path for x86_64-linux (`gone 3` for 4 at `-O0` and `-O2`; `-front=ssa` and Windows
+right) - run.sh at `-O0` on Linux failed on it, so it left the case for `tests/open/handler-guards-nested` (+`.clang`, the
+Windows box's clang: `5 24 4`); the Ast.h path goes in M3b.7. The case's `.expected` and `.dead` are of the case without it.
+**Left**: the passes' own succ walks besides dead stores' (fold, promote, jumps, unroll) still see neither way on - none
+carries block arguments on it, so none was found wrong; the MIR allocator's liveness was not looked at; a Microsoft probe
+(ssa.sh's probes are x86_64-linux only) would hold these dumps against change.
+
+### M3b.5, lane msedge: every pass's own succ walk sorted, the allocator across a funclet, Microsoft probes, 2026-11-12
+
+Wave 6, from `0d05c4e6` (lane cret), branch `m3b5-msedge`; code commit `58d68953`. **No wrong answer found.** **The passes'
+own succ walks** (src/ir/opt), each one line: `SsaJumps::reachableFrom` (may a parameter's read elsewhere be reached from
+the threaded edge's target) and `SsaLoops::find` (back edges) and `always` (a loop's ways out) ask reachability, so they walk
+`successors()` now - none was wrong in practice (a loop holding a pad is `fixed` and skipped; a catchswitch's way on is to an
+enclosing pad, never a head), they now hold the one fact; `SsaCfg`'s unreachable sweep is rooted at every pad and funclet
+block (`fixed`), so a block only a `k` names is kept - left; fold's `pushBlock`/`into`, promote's `edges`/`arguments`,
+dead stores' argument marks, jumps' `edgesIn`, unroll's exits (a loop with a pad or funclet block is refused first),
+loops' preheader and counter walks and inline (refuses a callee or site with pads) carry block arguments, which an unwind
+edge has none of - left. **The MIR allocator** (MirAlloc, OptCore's `Flow`): a pseudo never crosses a funclet's boundary
+(asserted; a value live into a funclet stays in its shared slot), and on Microsoft a region's target is where the function
+resumes after the handler, so every call a try covers - the inner handler's too, inside the outer try's labels - has an
+`Eh` edge to the continuation and what it reads is live at the call, in a callee-saved register (a funclet takes none).
+**The case** `tests/cases/ssa-msedge-regs` (+`.expected`, the Windows box's clang): values computed before a nested try
+and read after the outer continuation, a rethrow and a cleanup's throw from an inner handler to the outer one, and a loop
+catching on some turns (its `i`, `k`, `sum`, `acc` in esi, r12d, edi, ebx across the try at `-front=ssa -O2`); right at
+`-front=ssa -O2` (both spellings), `-front=ssa -O1`, `-O2`, `-O0` on `work\m3b5me` and on `work\m3b5cr2` (`3f5076cb`,
+the code before this lane): not wrong before. **Probes**: tests/ssa.sh compares `<case>.win-<pass>`, `-arch x86_64-windows
+-O1 -dump=ssa=<pass>`, on Linux; `ssa-catch-edge.win-dead` and `ssa-cleanup-edge.win-dead` recorded (`catchswitch ^9,
+unwind ^4`, `cleanupret unwind ^9`, `unwind caller` held). No other probe changed. `src/` 93903 -> 93898 lines (-5).
+**Gates on `ed313fff`'s src and cases** (`18a206f7` adds the probes; this entry after): Windows (`work\m3b5me2`,
+`work\m3b5me3`, clean ships and builds, WINLANES=3) winpass `-front=ssa -O2` and `-front=ssa -O1` each gnu 753 / masm 752
+same, 0 differ, 340 refused as recorded; ssa.sh 766/0 at levels 1 and 2 (19 not for this host). Linux (`~/m3b5me`, a clean
+build): ssa.sh 805/0 at levels 1 and 2 (rotate 1047, unroll 195 whole / 253 partial; the only probes changed the two new
+ones); run.sh `-front=ssa -O2` 1126/0 and at `-O0` 1126/0; exclusions, comment cap 0 over, memory gate new 1056
+raw-pointers 44 (unchanged), ide/generate.py --check: GATES-OK. Not run: the bench and .text table. **Left**: the
+`.win-` probes are `-O1` only (no `-front=ssa` MIR probe for x86_64-windows); `tests/open/handler-guards-nested` (lane cret's
+Ast.h fault) stands for M3b.7.
+
+### M3b.5, lane malign: the masm spelling keeps a hot loop inside one line, and what the last 14 ms is not, 2026-11-12
+
+From wave 7's `cd3bcc73`, branch `m3b5-malign`; code commit `9035baa4` (every gate below ran on its tree).
+**1. `ALIGN n, most`.** The encoder (`X64Parse.cpp`) reads a second operand on `ALIGN` as gas reads `.p2align p,,most`:
+no padding at all where it would pass `most` bytes, and the section takes the alignment `n` (as gas's does - `_TEXT` is 16
+and has no segment line to rewrite). A gap past 15 bytes is now several NOPs, since one instruction ends at 15 (the old
+loop wrote one NOP of any length; no `ALIGN` past 16 reached code before). It settles: a jump only grows, and for one set
+of jump widths the pads follow from the text before them. `MasmSpelling::loopAlign` writes `ALIGN 64, L-1`, the GNU
+spelling's `.p2align 6,,L-1` word for word; the ml64 spelling (`comdat_` false) keeps `ALIGN 16` - ml64 has neither the
+form nor a segment past 16 there. It is not ml64's syntax, as `COMDAT(sym)` is not; the standalone masm in
+`verify-tools\MASM` does not read it until it is rebuilt from `src/encoder` (`tools/coff-equal.sh`, the release gate,
+was not run). The kernels' 15 loop heads carry it; virt's loop moved from 0x16a0-0x16c6 (across 0x16c0) to 0x16c0-0x16e6
+(`boxkit/m3b5ma-{base,new}.dis`). -O1 writes no `LoopAlign` (`SizeCosts::loopLine()` is 0), so only -O2 text changes.
+**2. The 14 ms, measured and not found** (`boxkit/m3b5ma-exp.sh`: the kernels' `-front=ssa -O2 -masm=gnu` assembly
+edited by hand, assembled by clang, nine interleaved runs each, `m3b5ma-exp2.out`; median, least). The loop is -O2's
+instruction for instruction less one store -O2 keeps (`movq %rcx, 120(%rbp)`), and the callees are -O2's but for the
+frame. As written 98 (95); the callees' frames at 16: 99 (96); -O2's store added: 98 (96); `mov %edi, %eax` for
+`mov %rdi, %rax`: 98 (96); the loop at offset 0, 8, 16, 24 of its line: 99, 98, 98, 99; no alignment (the loop crosses):
+119; **the two callees at `.p2align 6` instead of 5: 131**; -O2 itself 89 (82), 87 (82) without its alignment or its
+store. So it is not the frame, the store, the move or the loop's offset; the callees' addresses move the figure more
+than anything in the loop, which says where to look next - the placement of the indirect call's two targets against
+each other and the loop - and that the Ast.h path's 82 is its layout, not its code (cl's own build is at new's figure).
+Not tried: the caller's frame (320 against 208), `Sq::area`'s `imul %eax, %eax` against -O2's second load.
+**Bench** (Windows, median of 9, `-front=ssa -O2` / `-O2` of the same cxx3 / cl -O2, default spelling; twice after the
+lane's jobs ended, the box at about 27% from another session - `boxkit/m3b5ma-bench-end{1,2}.txt`): fib 6 / 8 / 8,
+sieve 51 / 61 / 49, matmul 8 / 30 / 3 (9 / 30), isort 8 / 19 / 6, hash 186 / 198 / 137 (193 / 206 / 144),
+**virtual 108 / 94 / 107** (114 / 95 / 112), total 366 / 410 / 314 (381 / 421 / 325); .text 3428 against 3461. virtual
+is 1.15x and 1.20x of -O2 where lane place had 1.44x and 1.40x, and level with cl: the `-masm=gnu` figure (96 / 82,
+1.17x) in ratio. **Not shown on a quiet box** - the absolute 96 is owed. A first run beside the lane's own builds: 165 / 169.
+**Gates on `9035baa4`** (Windows, clean ship and build, WINLANES=3): winpass `-front=ssa -O2` (`work\m3b5ma2`),
+`-front=ssa -O1` (`work\m3b5ma`) and `-O2` (`work\m3b5ma3`), each gnu 752 / masm 751 same, 0 differ, 340 refused as
+recorded; ssa.sh 765 passed, 0 failed at levels 1 and 2. Linux (`~/m3b5ma`, a clean build, removed after): coff.sh 1580
+pairs, 1538 objects compared, 0 differ; exclusions, comment cap 0 over, memory gate new 1056 raw-pointers 44
+(unchanged), ide/generate.py --check, GATES-OK; ssa.sh level 2 801 / 0; run.sh `-front=ssa -O2` 1125 / 0. Not run:
+run.sh at the other levels, ssa.sh level 1 on Linux, emit, names and the other suites (the coordinator's merged gate).
+No probe: the pad shows in no dump, only in the listing. `src/` went from 94024 to 94042 lines (+18).
+**Left**: (1) virtual's 14 ms: place the two callees as -O2's layout has them and measure (the `.p2align 6` variant
+says their addresses matter), the caller's frame; (2) the bench on a quiet box; (3) `verify-tools\MASM` rebuilt from
+`src/encoder` so `tools/coff-equal.sh` reads `ALIGN n, most`; (4) `jmp` to the next label left after virt's loop
+(`ssaelse_3: jmp ssa_20; ssa_20:`), cold; (5) lane place's frame trim and matmul's dead store, untouched.
+
+### M3b.5, lane vlay: virtual's last gap is where the two callees' `ret`s sit in their lines, 2026-11-12
+
+From lane malign's `96055858`, branch `m3b5-vlay`. **No code changed**: the tree is `9035baa4`'s, whose gates lane malign's
+entry records; this entry is the measurement and the rule it gives. Method: `boxkit/m3b5vl-exp.sh` (malign's script, with
+`m3b5vl-chunk.pl`, which takes one function's text from the other path's assembly): the kernels at `-front=ssa -O2
+-masm=gnu` (a) and `-O2 -masm=gnu` (o2), hybrids and re-placed variants, assembled by clang, linked by cxx3, run
+interleaved, 21 to 50 rounds; the addresses read back from each executable's listing. The box (i7-12700; processors 0-9
+are P-core threads) was quiet for four runs and loaded by other lanes for the rest; figures are median (least) and a
+figure from a loaded run is marked. `boxkit/m3b5vl-exp{3..10}.out`.
+**1. It is not the caller.** a 108 (95), o2 88 (82); a with -O2's `virt` 99 (95); -O2 with a's `virt` 83 (82); a with
+-O2's two callees and two constructors 87 (82). So the frame (320 against 208), the store and the loop are cleared, and
+step 3 of the brief is not needed.
+**2. It is not the callees' instructions or their frames either, but one byte of length.** `Sq::area` is 23 bytes on the
+SSA path (`imul %eax, %eax`, 3 bytes) and 24 on the Ast.h path (`imull 8(%rcx), %eax`, 4); `Rc::area` is 24 on both. So
+-O2's two `ret`s are both at +0x17 of their function, the SSA path's at +0x16 and +0x17. What decides the figure is
+**the two `ret`s' offsets in their 64-byte lines** (d = their difference modulo 64):
+- d = 0: **82**. -O2 as built (callees at 0x1be0 / 0x1c60); -O2's callees at offsets 0, 16, 32 of a line, 0x80 or 0xc0
+  apart; a's callees at one offset with a `nop` before `Sq::area`'s `ret` (loaded: least 88 beside -O2's 88); a with
+  `imull 8(%rcx), %eax` in `Sq::area` (loaded: 103 beside 98).
+- d = 32 or 33: **96**. a as built (0x1c40 / 0x1ca0); -O2's callee text at a's two places (103 (96)); -O2's callees at
+  offsets 0 and 32.
+- d = 1: **124**. a's callees both at offset 0, 16 or 32 of a line (133, 130, 129 (124)) - this is malign's 131 for
+  `.p2align 6`; the same with frames of 16 (loaded: least 143 beside q0's 150 - the frame is not it); with `Rc::area` a
+  whole page away (loaded: 189 beside 187 - distance is not it, only the low bits). d = 8, -O2's callees: loaded, 134
+  least beside 98.
+- a callee across a line end (offset 48): 103 on both paths, lane place's finding again.
+The mechanism was not identified (it reads like the two returns of one indirect call sharing a predictor entry that
+keeps an offset in the line); one kernel, one processor. cl's own build (96-107) is in the middle class, and -O2's 82
+is the Ast.h path's `imull` being one byte longer - luck, as lane place said of its placement.
+**3. The rule that reproduces it: a small COMDAT function ends at its line's end.** Each callee in a section aligned
+to 64 after `64 - size` bytes of NOP, so both `ret`s are byte 63 of a line (d = 0 whatever the sizes): **e64**, a's
+code otherwise untouched - **quiet box, 30 rounds: 83 (82) beside -O2's 83 (82), a's 99 (95) and 130 (123) for both
+callees at offset 0**; loaded runs before it agreed (113 (91) beside 115 (88) and 131 (103)). The same at 32
+(`.p2align 5`, ends at byte 31 or 63 - d = 32 by luck) is a's class: 130 (103) loaded beside a's 131. On every small
+COMDAT function of the kernels (eight; `kall`), all six kernels, 21 rounds, a / -O2 / kall: fib 6 / 8 / 6, sieve 52 / 58
+/ 52, matmul 7 / 28 / 8, isort 7 / 18 / 8, hash 176 / 192 / 175, **virtual 102 / 87 / 87** - virtual at -O2's figure
+and no kernel moved past the clock's 1 ms. clang takes it with no size known to the compiler: `.p2align 6` then
+`.skip (-("$LNend$f"-"$LNbeg$f")) & 63, 0x90` after the `.section` line (variant k: the same addresses as e64, 106 (100)).
+**Not built**, and why: the default spelling is masm, where the pad must come from the project's encoder (a segment at
+`ALIGN(64)` and a pad the encoder computes from the PROC's size - a new form in `X64Parse.cpp`, as `ALIGN n, most` was);
+`bytesOf` is an estimate and an estimate one byte out is the worst class, so the size may not come from the optimizer;
+and the gates the change owes (three winpasses in both spellings, ssa.sh, Linux) do not fit the hour beside other
+lanes' load. The change is: `opt::functionAlign` answers 64 for every function of 17..64 bytes; `CoffSpelling::
+functionAlign` writes the two lines above; `MasmSpelling::functionAlign` the encoder's form; ml64's spelling keeps 32/64.
+Cost: up to 47 bytes more padding per such function than now.
+**Bench**: not re-run - no code changed; lane malign's figures stand (virtual 108 / 94 / 107 in the default spelling).
+**Gates**: none run - the tree's code is `9035baa4`'s. `src/` stays at 94042 lines.
+**Left**: (1) build the rule in both spellings and show virtual at -O2's figure in the default spelling, fib, hash and
+matmul no worse, on a quiet box, twice; (2) the same in the default spelling, where only the encoder can show it; (3) whether a
+function with several `ret`s, or one called directly, gains or loses; (4) malign's list, untouched.
+
+### M3b.5, lane frame: the values' slots closed up, dse after the hoists, outer loops rotated again, 2026-11-12
+
+From main `f26798ae`, branch `m3b5-frame`; code commit `41f381b0` (every gate below ran on its tree).
+**1. The frame trim.** `layoutSsa` now tells the optimizer where the values' 8-byte slots lie (`Optimizer::valueSlots`,
+bytes (from, to] above the parser's slots, the allocas and the argument copies), when nothing lies below them - no
+inline reserve, no unwind-help word, no realigned frame, no pad, no x87 value. `finish-frame` (`closeValues`, OptPipeline.cpp)
+then calls `closeValueSlots` (OptFrame.cpp): a slot no live instruction names is dropped, the rest renumbered from `from`
+in order, the frame made `from + 8 * kept` rounded to 16, and the saves laid below it as before; any `lea`, indexed or
+shared access into the region keeps it whole. Also refused: a function with an LSDA, a funclet, or temporaries or an
+inlined callee below the frame (`inlineTop > frameSize`). The kernels' frames (bench-kernels.cpp, `-front=ssa -O2`):
+23 functions' `sub` sum 4544 -> 2400 bytes; `Rc::area` 64 -> 16 (the Ast.h path's); matmul 672 -> 176.
+**2. The dead store.** `mov %rax, 48(%rbp)` was not dead to `remove-dead-stores` for two reasons: dse ran in the frame
+group, before `fold-index` and the hoists took the store's reads, and `cmpq $0, s` beside it counted as a 16-byte read
+(`accessWidth`'s unknown), covering the next slot. Now an immediate operand's access takes the suffix's width, and
+`dse-late` (remove-dead-stores, then rounds if it found one) runs after the hoists, before finish-frame. With the store
+gone, `rotate` takes outer loops again (innermost first, SsaLoops.cpp `rotateAll`).
+**One wrong answer on the way** (`4b54ed39`, `76660f19`, `-front=ssa -O1` winpass 751 / 1 differ, `vector-push-back-conversions`
+crashed): in a deleting destructor the trim gave back exactly the 16 bytes the save of rsi added, so `finish-frame` saw the
+size unchanged, did not rewrite the prologue, and the save was never stored while the epilogue restored it. The prologue
+is now rewritten whenever there are saves (before, saves always meant a larger frame).
+**Bench** (Windows, median of 9, `-front=ssa -O2` of this lane / of main `f26798ae` (`work\m3b5w7`) / cl -O2, once, on
+`4b54ed39` while no other job of the lane ran, `boxkit/m3b5fr-bench-1.txt`): fib 5 / 5 / 7, sieve 48 / 47 / 44, matmul
+8 / 8 / 3, isort 7 / 7 / 6, hash 169 / 172 / 124, virtual 99 / 119 / 98, total 337 / 359 / 283; kernels' .text 3412
+against 3380 (+32, the outer rotations' copied tests). matmul is no worse with outer loops rotated; its allocator now
+takes no preserved register there (65 frame operands, the hot loop's only one its bound `cmp 152(%rbp)`): MirAlloc's
+side, lane msedge's file, not touched. The second bench run was not made (the box was busy with the gates at the hour).
+**.text over the cases** (bench.ps1 -Cases, `-front=ssa -O2`, 763 cases, `76660f19` against `f26798ae`): 1,187,424 ->
+1,145,749 bytes (-41,675, -3.5%); 584 smaller, 176 the same, 3 larger (`align-loops` +13, `ssa-range-for-array` +46,
+`ssa-rotate` +16: outer rotations). `41f381b0` differs from `76660f19` only where a trim cancels the saves' growth.
+**Gates on `41f381b0`** (Windows, clean ship and build, WINLANES=3, the two passes at once): winpass `-front=ssa -O2`
+(`work\m3b5fr`) gnu 752 same, 0 differ, 340 refused as recorded; winpass `-front=ssa -O1` (`work\m3b5fr2`) gnu 751 / 1
+differ, `fstream-string-name` - a race, not a wrong answer: the case writes `fstream-string-name.tmp` in the current
+directory and the two passes ran it at once; the same executable run alone prints the expected `written 42 0`. Not
+finished at the hour (left running, logs `boxkit/m3b5fr-wp-o{1,2}.log`, `m3b5fr-linux.out`): both passes' masm halves;
+the Linux run (`m3b5fr-linux2.sh`: probes, ssa.sh L1/L2, run.sh `-front=ssa -O2` and `-O0`, the gates), which was
+waiting on the box lock. **Probes**: the killed Linux run on `4b54ed39` found `ssa-rotate.rotate` (the outer loop
+rotated now) and `ssa-guards.regvn` (regvn after the new rotation) changed; the Linux run copies the re-recorded files to
+`boxkit/m3b5fr-probes/`, not yet committed. `src/` went from 94024 to 94082 lines (+58).
+**Left**: the gates above to finish; a second bench on a quiet box; matmul's allocation under outer rotation (no
+preserved register taken); the trim where an LSDA, a funclet, temporaries or an x87 value are present.
+
+**M3b.5 closed, 2026-11-12: -O2 on SSA.** Eight waves from `33e715d8` (rounds 1-5 and the lanes after them), each gated once on its merged tree; closed on `m3b5-wave8` (main `f26798ae` + cret, msedge, malign, vlay, frame + `91853c35`). **The row, measured:** (1) **bench** (Windows bench-kernels, `-front=ssa -O2` against `-O2` of the same cxx3, median of 9, box at about 1% load, `boxkit/m3b5w8-bench-*.txt`): fib 5/7, sieve 46/54, matmul 7/26, isort 7/17, hash 164/174, virtual 96/82, total 324/360 (cl 276); a second run 340/375. Five of six kernels are faster than `-O2`; **virtual is the one exception, measured and recorded, not closed**: its loop and callees are `-O2`'s instruction for instruction (lanes malign and vlay), and the gap is the two virtual callees' `ret` offsets in their 64-byte lines - `Sq::area` is one byte shorter on the SSA path (`imul %eax,%eax`) - giving 96 where `-O2`'s layout happens to give 82 (vlay's table: d=0 82, d=32 96, d=1 124). cl's own build is 96. An end-of-line alignment rule reproduces 82 by hand but pads every small function for one processor's quirk, and was not built. (2) **Compiler++** (`boxkit/m3b5cp-handover.md`): its 129 cases built by cxx3 at `-O2` and at `-front=ssa -O2` print exactly what the reference build prints - dumps, run output, exit codes and bytecode, 129/129, 0 crash; the reference is g++ 11.5, not clang, because the Linux box has no clang++. (3) **run.sh `-O2` on every box**: Linux 1127/0 at all five flag sets; Windows winpass 754/753 same, 0 differ at `-front=ssa -O2`, `-front=ssa -O1` and `-O2`. **And beyond the row:** the self-host is a fixed point at `-front=ssa -O2` and `-O2` on Windows, 101/101 (F1 and F2 were evaluation-order faults in cxx3's own source, one a use-after-free); four Microsoft unwind edges the dominators could not see are now one fact (`successors()`), with cases that were wrong before. **What stays on MIR** (round 5): fold-index, hoist-invariants (271 functions, the addresses selection puts in loops), hoist-xmm-slots, align-loops, and the scalar, allocator and frame passes; widen-counters and divide-by-constant are off under `-front=ssa`. **Left for later, by name:** virtual's layout; matmul's allocation under outer rotation; the frame trim where an LSDA, funclet or x87 value sits; `tests/open/handler-guards-nested` (Ast.h path, for M3b.7); `verify-tools\MASM` rebuilt from `src/encoder` for `ALIGN n, most`. Next: **M3b.6**, whose stage-3 tool is on `m3b6-stage3`.
+
 ### M3b.6, lane s3: stage 3 in the self-host tool, 2026-11-12
 From main `f26798ae`, branch `m3b6-stage3`. `tools/self-host` and `tools/windows/self-host.cmd` now build four stages:
 stage k compiles every source to an object, one source a job (Linux/macOS: `SELFHOST_JOBS`, 2, through xargs, each
