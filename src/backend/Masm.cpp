@@ -820,8 +820,13 @@ void MasmSpelling::tlsInitialiserEntry(const std::string &fn) {
 void MasmSpelling::objectType(const std::string &) {}
 void MasmSpelling::objectSize(const std::string &, int) {}
 
-// ALIGN 16, the code segment's own: MASM has no "pad only if it would cross" form.
-void MasmSpelling::loopAlign(int) { flushPending(); o_ += "  ALIGN 16\n"; }
+// The project's assembler reads `ALIGN 64, L-1` as gas reads `.p2align 6,,L-1` (GnuSpelling::loopAlign);
+// ml64 has no such form and no segment past 16 here, so it keeps the code segment's own.
+void MasmSpelling::loopAlign(int bytes) {
+    flushPending();
+    if (!comdat_) { o_ += "  ALIGN 16\n"; return; }
+    o_ += "  ALIGN 64, "; appendNum(o_, bytes - 1); o_ += '\n';
+}
 
 void MasmSpelling::align(int n) {
     flushPending();

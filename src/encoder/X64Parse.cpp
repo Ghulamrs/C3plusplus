@@ -468,13 +468,22 @@ bool X64Target::directive(Unit &u, std::vector<Token> &t)
     if (w == "ALIGN") {
         // a power of two no larger than the section's own alignment, or the padding would not be honoured once the
         // linker places the section (ml64's A2189)
-        long long n;
+        long long n, most = -1;
         std::string err;
         char buf[32];
-        if (!eval_const(u, t, 1, t.size(), n, err)) { u.error(err); return true; }
+        size_t comma = 1;
+        while (comma < t.size() && !is_punct(t, comma, ',')) comma++;
+        if (!eval_const(u, t, 1, comma, n, err)) { u.error(err); return true; }
         if (n <= 0 || (n & (n - 1))) { u.error("ALIGN needs a power of two"); return true; }
+        // `ALIGN n, most` (not ml64's; gas's `.p2align p,,most`): no padding at all where it would pass `most`
+        // bytes, and the section takes the alignment as gas's does
+        if (comma < t.size() && (!eval_const(u, t, comma + 1, t.size(), most, err) || most < 0)) {
+            u.error(err.empty() ? "ALIGN's limit is negative" : err);
+            return true;
+        }
         Section *s = u.cur();
         if (!s) return true;
+        if (most >= 0 && n > s->align && n <= 8192) s->align = (int)n;
         if (n > s->align) {
             snprintf(buf, sizeof buf, "%lld", n);
             u.error(std::string("invalid combination with segment alignment : ") + buf);
@@ -482,9 +491,9 @@ bool X64Target::directive(Unit &u, std::vector<Token> &t)
         }
         {
             // ml64 pads code with one long NOP: 0F 1F /0 with the widest ModRM the count allows, 66 prefixes making
-            // up the rest, measured up to 15
+            // up the rest, measured up to 15; a longer gap is several, since an instruction ends at 15 bytes
             unsigned long gap = (unsigned long)n - u.here() % (unsigned long)n;
-            if (gap == (unsigned long)n) gap = 0;
+            if (gap == (unsigned long)n || (most >= 0 && gap > (unsigned long)most)) gap = 0;
             if (!s->code) { while (gap--) u.emit8(0); return true; }
             static const unsigned char body[9][9] = {
                 {}, {0x90}, {0x66, 0x90}, {0x0F, 0x1F, 0x00}, {0x0F, 0x1F, 0x40, 0x00},
@@ -492,9 +501,13 @@ bool X64Target::directive(Unit &u, std::vector<Token> &t)
                 {0x0F, 0x1F, 0x80, 0x00, 0x00, 0x00, 0x00},
                 {0x0F, 0x1F, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00}
             };
-            if (gap <= 8) { for (unsigned long i = 0; i < gap; i++) u.emit8(body[gap][i]); return true; }
-            for (unsigned long i = 8; i < gap; i++) u.emit8(0x66);
-            for (int i = 0; i < 8; i++) u.emit8(body[8][i]);
+            while (gap > 0) {
+                const unsigned long one = gap > 15 ? 15 : gap;
+                for (unsigned long i = 8; i < one; i++) u.emit8(0x66);
+                const unsigned long b = one > 8 ? 8 : one;
+                for (unsigned long i = 0; i < b; i++) u.emit8(body[b][i]);
+                gap -= one;
+            }
         }
         return true;
     }
