@@ -41,6 +41,8 @@ bool widenCounters(MFunction &fn);
 
 // **A loop that fits one line is padded in front so that it does not cross one** - see OptAlign.cpp.
 bool alignLoops(MFunction &fn);
+// The alignment past 16 that keeps a function of at most one line inside one, or 0 - see OptAlign.cpp.
+int functionAlign(const MFunction &fn);
 
 // **A jump that only jumps on, and a constant that decides the compare-and-branch it reaches** - see OptJumps.cpp.
 bool threadJumps(MFunction &fn);

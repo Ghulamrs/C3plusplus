@@ -81,6 +81,7 @@ public:
     void objectSize(const std::string &name, int size) override;
     void align(int n) override;
     void loopAlign(int bytes) override;
+    void functionAlign(int n) override;
     void zero(int n) override;
     void dataInt(int size, long long v) override;
     void dataSym(const std::string &sym, long long off) override;
@@ -106,6 +107,7 @@ private:
     // a global's is opened at its ALIGN, where its alignment is known, and closed by the next
     // object's ALIGN, a section change, a function or the end of the file.
     bool mergeable_ = false;          // the open function is in a COMDAT
+    std::size_t alignAt_ = 0, beganAt_ = 0;   // its SEGMENT's ALIGN(16); where functionBegin stopped writing
     std::string pendingComdat_;       // weakDefinition named the next object
     std::string dataBlock_;           // the segment an ENDS is owed to
     bool dataBlockUsed_ = false;      // its object has begun: the next ALIGN closes it

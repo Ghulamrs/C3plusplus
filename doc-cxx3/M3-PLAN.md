@@ -2751,3 +2751,58 @@ its own names the handler's block as its `succ` (`Lowering.cpp` 1402, the same `
 handler's entry, not where control goes; the passes' other own succ walks (fold's block parameters, promote's arguments,
 jumps, unroll) carry block arguments, which the catchswitch edge has none of, and the MIR allocator's liveness was not
 looked at.
+
+### M3b.5, lane place: a small COMDAT function inside one line, and a failed web's cheapest register, 2026-11-12
+
+From wave 6's `93baef97`, branch `m3b5-place`; code commit `7b173f5c` (every gate below ran on its tree).
+**1. The placement reading, tested - half true.** Neither path aligns a function: a COMDAT's section is the linker's 16,
+and `-O2`'s callees lay inside a line by luck. `opt::functionAlign` (OptAlign.cpp, bytesOf's estimate with the prologue's)
+gives a function of 17..32 bytes 32 and of 33..64 bytes 64, at -O2 (`loopLine`), on both paths; `Optimizer::flush` tells the
+spelling (`Spelling::functionAlign`), which acts only for a COMDAT with nothing written since `functionBegin`: CoffSpelling
+inserts `.p2align 5|6` after its `.section` line, MasmSpelling rewrites its segment's `ALIGN(16)` in place. `Rc::area` now
+sits at 0x1c60-0x1c77 in the bench executable (0x1cf0-0x1d07 before). **virtual did not close**: on a quiet box, twice,
+118 / 82 and 115 / 82 (below). What the new disassembly shows (`boxkit/m3b5pl-dis-new2.txt`): the loop itself, 39 bytes at
+0x16a0-0x16c6, now crosses the line at 0x16c0 - `MasmSpelling::loopAlign` writes `ALIGN 16` (MASM has no pad-if-crossing
+form) and the default spelling is masm. The same bench under `-masm=gnu`, whose `.p2align 6,,L-1` keeps the loop in a line:
+virtual **96 / 82** (cl 96). So placement is worth about 20 ms of the gap, and 14 ms (1.17x) is something else, not found.
+Not done: a function outside a COMDAT (masm's `_TEXT` is ALIGN(16), so nothing past 16 may be asked there), ELF (GnuSpelling
+takes the default no-op; not measurable here).
+**2. The callee's frame.** `layoutSsa` (SsaSelect.cpp) lays one 8-byte slot for every value above the parser's parameter
+slots before any pass runs; the allocator then takes the values to registers and `finish-frame` only ever grows the frame
+(saves) - it never gives the dead value slots back. `Rc::area`: 16 for `this`, five values, `sub $64`; the Ast.h path has
+only the parser's 16. It costs no time (`sub imm8` either way) but stack and, past 127 bytes, disp32 operands. Not coded:
+the trim is `max(the fixed part layoutSsa knows, the deepest slot a live operand names)`, safe only with no saves, no
+inlined temporaries, no pad (the unwind-help word is named by a table, not the stream) and no realign - a round of its own.
+**3. `demote` by weight** (`Allocator::cheapest`, MirAlloc.cpp): a failed node that holds no local used to send every
+local beside it to its slot; now each such node frees one register - the one whose holders beside it are locals alone
+(a web cannot give way) and weigh least - and only where no register can be freed does the old rule apply. matmul under
+it (`boxkit/m3b5pl-k{1,2}-ssaO2.s`, without and with): the bound `n` in `%r9d` (`cmp %r9d, %edx` where the hot loop had
+`cmp 616(%rbp), %edx`), frame operands 58 -> 30, four preserved registers taken. **`rotate` stays held to innermost
+loops**, measured, not assumed: with outer loops rotated again the allocator no longer spills the hot loop's webs, but
+matmul's inner loop keeps `movslq %edx, %rax; mov %rax, 48(%rbp)` every turn (a slot nothing reads - selection's, not the
+allocator's), and hash gains nothing: its listing at `93baef97` already ends the outer loop `cmp; jl rot_0` (MIR's
+back-edge pass rotates it), so the hash lane's "one `jmp` and `cmp; jge` a turn" was the IR's shape, not the code's.
+**Bench** (Windows, median of 9, `-front=ssa -O2` / `-O2` of the same cxx3 / cl -O2; twice, after the lane's jobs ended,
+`boxkit/m3b5pl-bench-end{1,2}.txt`): fib 5 / 7 / 7, sieve 46 / 53 / 43 (second 51 / 54), matmul 8 / 26 / 3 (7 / 26),
+isort 7 / 17 / 6, **hash 166 / 174 / 120** (both runs), **virtual 118 / 82 / 96** (115 / 82), total 351 / 359 / 274
+(350 / 361); kernels' .text 3380 against 3443. hash and matmul are no slower than `-O2`; virtual is 1.4x.
+**.text over the cases** (bench.ps1 -Cases, `-front=ssa -O2`, 762 cases, base `93baef97`): 1,189,079 -> 1,188,792 bytes;
+one case differs (`pipelined-reduction`, -287; which of the two changes was not separated), 761 the same - the table sums sections, so alignment padding
+between them is not in it.
+**Probes re-recorded** (Linux, `-front=ssa -O1 -dump=mir=allocate`): `ssa-fold-access.allocate` and `ssa-select.allocate`.
+Their differences are the virt lane's two selection rules (no `setge; movzbq` before a branch, no `movslq` after a 32-bit
+`imul`; `shift`'s frame 160 -> 144), which that lane could not record on Linux (disk full); whether any line is this
+lane's was not separated - functionAlign is -O2's alone and these functions are too small to fail a colouring.
+No new probe: the alignment shows in no dump, only in the listing.
+**Gates on `7b173f5c`** (Windows, clean ship and build, WINLANES=3): winpass `-front=ssa -O2` (`work\m3b5pl2`) gnu 751 /
+masm 750 same, 0 differ, 340 refused as recorded; winpass `-front=ssa -O1` (`work\m3b5pl`) gnu 751 / masm 750 same,
+0 differ, 340 refused; ssa.sh 764 passed, 0 failed at levels 1 and 2. Linux (`~/m3b5pl`, a clean build, removed after):
+ssa.sh 799 / 0 at levels 1 and 2 (with the two probes above), run.sh 1124 / 0 at `-front=ssa -O1` and `-front=ssa -O2`;
+the gates - exclusions 0 uncited / 0 stale, comment cap 0 over, memory gate new 1056 raw-pointers 44 (unchanged),
+ide/generate.py --check, GATES-OK. Not run: run.sh at `-front=ssa`, `-O2`, `-O0`; emit, names and the other suites (the coordinator's merged gate).
+`src/` went from 93937 to 93999 lines (+62).
+**Left**: (1) virtual: make the masm spelling's `loopAlign` keep a loop in a line (it needs the segment at 64 and a
+pad-if-crossing the project's encoder would have to offer), then find the 14 ms that remain under `-masm=gnu`; (2) the
+frame trim of item 2; (3) the dead `mov %rax, 48(%rbp)` an outer rotation leaves in matmul's hot loop - with it gone
+`rotate` could take outer loops again, `cheapest` already holding the allocator's side; (4) function alignment outside a
+COMDAT and on ELF.

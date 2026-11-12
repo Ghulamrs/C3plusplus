@@ -416,6 +416,7 @@ void MasmSpelling::functionBegin(const std::string &name, bool exported,
     closeDataBlock();
     if (seg_ != Code) { o_ += "\n.CODE\n"; seg_ = Code; }
     mergeable_ = comdat_ && mergeable;
+    alignAt_ = o_.size() + 23;
     if (mergeable_) o_ += ".text$mn SEGMENT ALIGN(16) 'CODE' COMDAT(" + mangle(name) + ")\n";
 
     // **`PROC`, not `PROC FRAME`, and the unwind data written by hand.** No MASM
@@ -424,6 +425,12 @@ void MasmSpelling::functionBegin(const std::string &name, bool exported,
     fnName_ = name;
     o_ += mangle(name); o_ += " PROC\n";
     o_ += "$LNbeg$"; o_ += mangle(name); o_ += ":\n";
+    beganAt_ = o_.size();
+}
+
+// The COMDAT's segment takes the alignment: ALIGN(16) rewritten in place, both two digits.
+void MasmSpelling::functionAlign(int n) {
+    if (mergeable_ && o_.size() == beganAt_) o_.replace(alignAt_, 2, n == 32 ? "32" : "64");
 }
 
 // See Spelling::stateLabel; cl writes `npad 1` here.

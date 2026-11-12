@@ -177,6 +177,8 @@ public:
     virtual void align(int n) = 0;
     // A loop head, with the loop's estimated bytes: the pad that keeps it inside one line (OptAlign.cpp).
     virtual void loopAlign(int bytes) { (void)bytes; }
+    // The function just begun, nothing written since, wants `n` (32 or 64) for its start: a COMDAT's section takes it.
+    virtual void functionAlign(int n) { (void)n; }
     virtual void zero(int n) = 0;
     virtual void dataInt(int size, long long v) = 0;
 
@@ -275,6 +277,7 @@ public:
     void bssSection() override;
     void tlsDataSection() override;
     void tlsBssSection() override { tlsDataSection(); }
+    void functionAlign(int n) override;
     void align(int n) override;
     void objectType(const std::string &name) override;
     void objectSize(const std::string &name, int size) override;
@@ -316,6 +319,7 @@ private:
     int frameSize_ = 0;
     // Whether this definition went into a COMDAT, which decides where its unwind data goes.
     bool mergeable_ = false;
+    std::size_t alignAt_ = 0, beganAt_ = 0;   // after the COMDAT's .section line; where functionBegin stopped writing
     // **A data COMDAT is one object's section, and the next object must not
     // inherit it.** weakDefinition opens `.section .rdata,"dr",discard,"X"`
     // and nothing closed it, so the global emitted after X.
