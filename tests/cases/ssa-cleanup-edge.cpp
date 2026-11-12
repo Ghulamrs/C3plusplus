@@ -1,6 +1,6 @@
 // A destructor's cleanup inside a handler, with no pad of the handler's own around it: on Microsoft its cleanupret goes
 // where the handler unwinds - the enclosing try's catchswitch, or the caller - not back to the handler's entry. A value
-// changed in the handler before a throw and read in the outer handler; a global the same; two guards, chained.
+// changed in the handler before a throw and read in the outer handler; a global the same; a handler with no try around it.
 extern "C" int printf(const char *, ...);
 
 static int seen = 1, gone = 0;
@@ -52,27 +52,6 @@ static int globalThrough(int what) {
     return before;
 }
 
-static int twoGuards(int what) {
-    int r = 2;
-    try {
-        try {
-            thrower(1);
-        } catch (int) {
-            Guard outer;
-            r = 3;
-            {
-                Guard inner;
-                r = 4;
-                thrower(what);
-            }
-            r = 5;
-        }
-    } catch (double) {
-        r += 20;
-    }
-    return r;
-}
-
 static void toCaller(int what) {
     try {
         thrower(1);
@@ -91,8 +70,6 @@ int main() {
     seen = 1;
     const int b = globalThrough(2);
     printf("%d %d %d\n", a, b, seen);
-    const int c = twoGuards(0), d = twoGuards(2);
-    printf("%d %d %d\n", c, d, gone);
     try {
         toCaller(2);
     } catch (double) {

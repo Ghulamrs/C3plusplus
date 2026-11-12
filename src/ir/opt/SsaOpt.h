@@ -12,8 +12,7 @@
 
 namespace ir {
 
-// Where an exception goes on from a catchswitch none of whose handlers takes it, or from a cleanupret naming a handler
-// (`k`): that block, past a handler to that handler's try's catchswitch's; 0 the caller.
+// Where a catchswitch's or a cleanupret's `k` goes on: past a handler to its try's catchswitch's; 0 the caller.
 std::uint32_t unwindsTo(const Function &f, const Inst &from);
 // Block b's successors: its terminator's, and a catchswitch's or cleanupret's unwindsTo (an edge no succ list holds).
 std::vector<std::uint32_t> successors(const Function &f, std::uint32_t b);
