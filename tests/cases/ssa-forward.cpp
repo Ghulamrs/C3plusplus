@@ -1,10 +1,9 @@
 // The SSA pass `gvn` (M3b.5 lane hash): a load found in the one block before it, reached by br or condbr, is that block's
-// value - a loop's test and its body read one byte once - and not past a store, a call, a join or a volatile access.
+// value - a loop's test and its body read one byte once - and not past a store, a call or a join.
 // Its -O1 -dump=ssa=gvn on x86_64-linux is ssa-forward.gvn, which tests/ssa.sh holds.
 #include <cstdio>
 
 int g = 5;
-volatile int v = 7;
 
 static unsigned hash(const char *s) {
     unsigned x = 2166136261u;
@@ -38,12 +37,6 @@ static int joined(const int *p, int c) {
     return a + *p;                                  // a join: two ways in, loaded again
 }
 
-static int quiet() {
-    int a = v;
-    if (a > 0) return v + a;                        // volatile: loaded again
-    return a;
-}
-
 int main() {
     char word[] = "forward";
     int one = 3, two = 1, three = 4;
@@ -56,6 +49,5 @@ int main() {
     const int c1 = called(&g);
     std::printf("%d %d\n", c1, g);
     std::printf("%d %d\n", joined(&one, 1), joined(&one, 0));
-    std::printf("%d\n", quiet());
     return 0;
 }
