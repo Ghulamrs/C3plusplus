@@ -12,6 +12,11 @@
 
 namespace ir {
 
+// Where an exception no handler of a catchswitch takes goes: its `k`, past a handler to that handler's try's; 0 the caller.
+std::uint32_t unwindsTo(const Function &f, const Inst &catchSwitch);
+// Block b's successors: its terminator's, and a catchswitch's unwindsTo (an edge the succ list does not hold).
+std::vector<std::uint32_t> successors(const Function &f, std::uint32_t b);
+
 // Cooper, Harvey and Kennedy's dominators over the blocks the entry reaches, every vector by block arena index.
 struct Dominators {
     std::vector<std::vector<std::uint32_t> > preds;     // the reachable predecessors, one per edge

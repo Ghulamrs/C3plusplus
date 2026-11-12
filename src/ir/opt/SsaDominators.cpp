@@ -7,6 +7,29 @@
 
 namespace ir {
 
+std::uint32_t unwindsTo(const Function &f, const Inst &catchSwitch) {
+    long long k = catchSwitch.k;
+    for (std::size_t steps = 0; k > 0 && static_cast<std::size_t>(k) < f.blockArena.size() && steps < f.blockArena.size(); steps++) {
+        const Block &to = f.blockArena[static_cast<std::size_t>(k)];
+        if (to.insts.empty() || f.inst(to.insts[0]).op != Op::CatchPad || f.inst(to.insts[0]).k <= 0) return static_cast<std::uint32_t>(k);
+        // A handler's block: what leaves it goes where its try's catchswitch sends what that try does not take.
+        const Block &dispatch = f.blockArena[static_cast<std::size_t>(f.inst(to.insts[0]).k)];
+        if (!dispatch.term.valid() || f.inst(dispatch.term).op != Op::CatchSwitch) return 0;
+        k = f.inst(dispatch.term).k;
+    }
+    return 0;
+}
+
+std::vector<std::uint32_t> successors(const Function &f, std::uint32_t b) {
+    std::vector<std::uint32_t> out;
+    const Block &blk = f.blockArena[b];
+    if (!blk.term.valid()) return out;
+    const Inst &t = f.inst(blk.term);
+    for (const Succ &s : t.succ) out.push_back(s.block.v);
+    if (t.op == Op::CatchSwitch && unwindsTo(f, t) != 0) out.push_back(unwindsTo(f, t));
+    return out;
+}
+
 Dominators::Dominators(const Function &f) : entry_(f.entry.v) {
     const std::size_t n = f.blockArena.size();
     preds.assign(n, std::vector<std::uint32_t>());
@@ -15,18 +38,18 @@ Dominators::Dominators(const Function &f) : entry_(f.entry.v) {
     if (!f.entry.valid()) return;
     std::vector<char> seen(n, 0);
     // Reverse postorder by an explicit stack: the entry first, every reachable block once.
+    std::vector<std::vector<std::uint32_t> > succs(n);
     std::vector<std::pair<std::uint32_t, std::size_t> > stack;
     stack.push_back(std::make_pair(f.entry.v, std::size_t(0)));
     seen[f.entry.v] = 1;
+    succs[f.entry.v] = successors(f, f.entry.v);
     while (!stack.empty()) {
         const std::uint32_t b = stack.back().first;
-        const Block &blk = f.blockArena[b];
-        const std::size_t succs = blk.term.valid() ? f.inst(blk.term).succ.size() : 0;
-        if (stack.back().second < succs) {
-            const std::uint32_t s = f.inst(blk.term).succ[stack.back().second++].block.v;
+        if (stack.back().second < succs[b].size()) {
+            const std::uint32_t s = succs[b][stack.back().second++];
             if (s == 0 || s >= n) continue;
             preds[s].push_back(b);
-            if (!seen[s]) { seen[s] = 1; stack.push_back(std::make_pair(s, std::size_t(0))); }
+            if (!seen[s]) { seen[s] = 1; succs[s] = successors(f, s); stack.push_back(std::make_pair(s, std::size_t(0))); }
         } else {
             rpo.push_back(b);
             stack.pop_back();
