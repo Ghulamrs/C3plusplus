@@ -1545,6 +1545,8 @@ void Parser::dynamicInitialise(Declared &d, const std::string &symbol,
 // are trivial copies made at run time; a braced list stays with flattenInit.
 bool Parser::staticallyInitialisable(const Type *t, Init &in) {
     if (needsConstruction(t)) return false;
+    const Type *elem = t->isArray() ? t->innermostElement()->unqualified() : nullptr;
+    if (in.isList && elem != nullptr && !elem->isStructOrUnion() && !elem->isMemberPointer()) return leavesFold(elem, in);
     if (in.value == nullptr) return true;
     if (in.isList)
         return in.items.size() != 1 || in.items[0].isList || t->isArray() ||
@@ -1559,6 +1561,18 @@ bool Parser::staticallyInitialisable(const Type *t, Init &in) {
         if (foldAddress(*in.value, &sym, &v)) return true;
     }
     return constant_.fold(*in.value, &v, in.pos);
+}
+
+// An array of scalars' braced list is data only where every value folds; a string literal is its own array's data.
+bool Parser::leavesFold(const Type *elem, Init &in) {
+    for (std::size_t i = 0; i < in.items.size(); i++) {
+        Init &item = in.items[i];
+        if (item.isList ? !leavesFold(elem, item)
+                        : item.value != nullptr && !(item.value->type() != nullptr && item.value->type()->isArray()) &&
+                              !staticallyInitialisable(elem, item))
+            return false;
+    }
+    return true;
 }
 
 void Parser::dynamicInitialiseScalar(const std::string &name, const std::string &symbol, const Type *type, Init &in) {

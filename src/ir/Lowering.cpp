@@ -215,7 +215,8 @@ void Lowering::buildMember(ValueId at, const Member &m, sema::TypedId entry) {
             return;
         }
         if (!objectNode(child(entry, 0))) outside("a member copied from what is not an object");
-        const Val src = object(child(entry, 0));
+        Val src = object(child(entry, 0));
+        if (T(src.type).isStructOrUnion() && T(src.type).unqualified() != &mt) src = baseSubobject(src, mt, "a member copied from another type");
         if (T(src.type).unqualified() != &mt || T(sig).unqualified() != &mt) outside("a member copied from another type");
         copyObject(at, src.v, mt);
         return;
@@ -555,7 +556,7 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
         if (e == named.end() && defaultInit_ && defaultInit_(cls.id(), m.name)) {
             // [class.base.init]/9: the member's own initialiser, which the parser replayed as this constructor's entry.
             const sema::TypedId d = memberDefault_ ? memberDefault_(key_, cls.tag() + "::" + m.name) : sema::TypedId();
-            if (!d.valid() || m.type->isReference()) outside("a member's default initialiser");
+            if (!d.valid()) outside("a member's default initialiser");
             e = named.insert(std::make_pair(m.name, d)).first;
         } else if (e == named.end() && !builtMember(mt)) {
             continue;
@@ -1296,7 +1297,8 @@ void Lowering::guardedStatic(sema::TypedId var, const std::string &symbol) {
     const sema::TypedNode &v = tree_.node(var);
     sema::StaticGuard g;
     if (!staticGuard_ || !staticGuard_(symbol, g)) broken("a static local built at run time with no guard recorded");
-    if (v.type->isArray() && !g.array && !g.elements.recorded()) outside("a static array built at run time");
+    if (v.type->isArray() && !g.array && !g.elements.recorded() && !scalar(*v.type->innermostElement()->unqualified()))
+        outside("a static array built at run time");
     const bool ms = target_.microsoftNames();
     if (ms && handlerDepth_ != 0) outside("a static local built at run time inside a handler on the Microsoft ABI");
     staticLocals_[v.syntax.v] = std::make_pair(symbol, tid(*v.type));
@@ -1361,7 +1363,8 @@ void Lowering::threadStatic(sema::TypedId var, const std::string &symbol) {
     const sema::TypedNode &v = tree_.node(var);
     sema::StaticGuard g;
     if (!staticGuard_ || !staticGuard_(symbol, g) || !threadLocalGlobal(g.guard)) broken("a thread_local built at run time with no guard recorded");
-    if (v.type->isArray() && !g.array && !g.elements.recorded()) outside("a thread_local array built at run time");
+    if (v.type->isArray() && !g.array && !g.elements.recorded() && !scalar(*v.type->innermostElement()->unqualified()))
+        outside("a thread_local array built at run time");
     staticLocals_[v.syntax.v] = std::make_pair(symbol, tid(*v.type));
     const TypeId byte = tid(*types_.get(Kind::UChar)), bp = tid(*types_.pointerTo(&T(byte)));
     const BlockId build = newBlock(), done = newBlock();
@@ -1469,6 +1472,13 @@ void Lowering::staticArray(sema::TypedId var, const std::string &symbol, const T
     if (g.elements.recorded()) {
         closeFull();     // each element is a full expression of its own; nothing destroys one built, the guard aborting instead
         listArray(var, first, *T(elem).unqualified(), n, g.elements, std::string());
+    } else if (g.vectorLoop.empty() && scalar(*T(elem).unqualified())) {
+        // [stmt.dcl]/4: an array of scalars whose list is not constant - its values after the written bounds, placed leaf by leaf.
+        const sema::TypedNode &v = tree_.node(var);
+        std::vector<sema::TypedId> parts;
+        for (std::uint32_t i = v.bounds; i < v.count; i++) parts.push_back(child(var, i));
+        aggregateInit(staticAddr(symbol, tid(*types_.pointerTo(&array))), array, parts);
+        closeFull();
     } else {
         if (!g.vectorLoop.empty()) {
             std::vector<TypeId> params(1, ep);

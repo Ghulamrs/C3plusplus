@@ -530,11 +530,11 @@ StmtPtr Parser::declarationBody() {
                                                 std::move(pieces), hasInit,
                                                 !sharedStaticLocal(symbol),
                                                 locals_[at].isConst &&
-                                                    dynamic.value == nullptr });
+                                                    dynamic.value == nullptr && !dynamic.isList });
             current_->globals.back().isInline = sharedStaticLocal(symbol);
             current_->globals.back().align = quals.alignAs;
             current_->globals.back().isThreadLocal = quals.isThreadLocal;
-            if (dynamic.value != nullptr) {
+            if (dynamic.value != nullptr || dynamic.isList) {
                 std::vector<StmtPtr> body;
                 std::vector<InitStep> path;
                 emitInit(d.name, path, d.type, dynamic, body);
