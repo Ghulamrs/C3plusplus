@@ -1418,16 +1418,18 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             if (widest < 8) widest = 8;
         }
         if (msVbptrAt >= 0) {
-            type->addVbptr(msVbptrAt, type, nullptr);
+            type->addVbptr(msVbptrAt, type, nullptr, std::string(), type);
         } else if (writesVirtualBase) {
-            // **Inherited, and there can be more than one.**
+            // **Inherited, every one a base holds in its non-virtual part** (`D : C`, C : A, B has two), each keeping
+            // the name it had there - cl's `??_8D@@7BA@@@` and `??_8D@@7BB@@@`.
             const std::vector<Type::BaseSpec> &laid = type->bases();
             for (std::size_t bi = 0; bi < laid.size(); bi++) {
                 if (laid[bi].isVirtual) continue;
-                if (laid[bi].type->vbptrOffset() < 0) continue;
-                type->addVbptr(laid[bi].offset +
-                                   laid[bi].type->vbptrOffset(),
-                               laid[bi].type->vbptrOwner(), laid[bi].type);
+                const Type *x = laid[bi].type;
+                for (const Type::VbPtr &q : x->vbptrs())
+                    if (q.offset < x->nvDataSize())
+                        type->addVbptr(laid[bi].offset + q.offset, q.owner, x, q.name,
+                                       q.name == x->tag() ? nullptr : x);
             }
         }
     } else if ((anyVirtual || writesVirtualBase) && !inheritsVptr &&
@@ -1495,10 +1497,39 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             for (const Type::VbPtr &q : b->vbptrs()) held += q.offset < b->nvDataSize() ? 1 : 0;
             if (held > 1)
                 src_.fail(pos, "a virtual base '" + b->tag() + "' holding two vbptrs is not supported yet for the Microsoft ABI");
-            type->addVbptr(at + b->vbptrOffset(), b->vbptrOwner(), b);
+            // Named as the direct base that holds it names it, else as b names its own.
+            std::string name = b->vbptrs().front().name;
+            const Type *from = b;
+            for (std::size_t bi2 = 0; bi2 < nonVirtualBases; bi2++) {
+                const Type *x = type->bases()[bi2].type;
+                for (const Type::VbPtr &q : x->vbptrs())
+                    if (q.offset >= x->nvDataSize() && q.owner == b->vbptrOwner()) { name = q.name; from = x; }
+            }
+            type->addVbptr(at + b->vbptrOffset(), b->vbptrOwner(), b, name,
+                           name == from->tag() ? nullptr : from);
         }
         totalBits = static_cast<long long>(at + b->nvDataSize()) * 8;
         if (balign > widest) widest = balign;
+    }
+
+    // **Two vbtables of one name are told apart by the class each is named for**, clang's rebucketPaths: only a
+    // plain name grows, by one class; a second growth would be a two-class name, refused.
+    for (bool grew = true; grew && target_.microsoftNames(); ) {
+        grew = false;
+        const std::vector<Type::VbPtr> &ptrs = type->vbptrs();
+        std::vector<std::size_t> same;
+        for (std::size_t i = 0; i < ptrs.size() && same.empty(); i++)
+            for (std::size_t j = i + 1; j < ptrs.size(); j++)
+                if (ptrs[j].name == ptrs[i].name) { if (same.empty()) same.push_back(i); same.push_back(j); }
+        for (std::size_t k = 0; k < same.size(); k++) {
+            const Type::VbPtr &q = ptrs[same[k]];
+            if (!q.name.empty() || q.next == nullptr)
+                src_.fail(pos, "two vbtables of '" + tag + "' would both be named for '" +
+                               (q.name.empty() ? tag : q.name) + "': a name of two classes is not supported "
+                               "yet for the Microsoft ABI");
+            type->nameVbptr(same[k], q.next->tag());
+            grew = true;
+        }
     }
 
     // **An empty class is legal in C++ and has size 1**, so that two objects of it

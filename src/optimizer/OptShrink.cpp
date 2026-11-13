@@ -15,7 +15,7 @@ bool scaleByOne(const MInst &i) {
 // four bytes zeroes the upper half, so where nobody reads that half, or the
 // value is a small non-negative constant, the REX prefix goes.
 bool shorter(MInst &i, RegSet wide, bool flagsLive) {
-    if (gpr(i.b) && frameReg(i.b.reg.id)) return false;
+    if (i.vol || (gpr(i.b) && frameReg(i.b.reg.id))) return false;   // a volatile read keeps its width
     // `cmp $0, %r` is `test %r, %r`, a byte shorter, flags and all: both clear CF and OF and set ZF, SF and PF from %r.
     if (i.m.is({mn::Cmp, mn::Cmpl, mn::Cmpq}) && i.operands == 2 && i.a.kind == MOperand::Immediate && i.a.numeric &&
         i.a.value == 0 && gpr(i.b)) {

@@ -170,8 +170,9 @@ private:
         bool edited = foldAddress(i.a);
         edited = foldAddress(i.b) || edited;
         edited = immediateSource(i) || edited;
-        Pop pop = pairTemp(i, k);
-        if (pop == Pop::Kept) edited = reloadFromRegister(i) || edited;
+        // A volatile access keeps its memory operand: its address may fold, its value comes from nowhere else.
+        Pop pop = i.vol ? Pop::Kept : pairTemp(i, k);
+        if (pop == Pop::Kept && !i.vol) edited = reloadFromRegister(i) || edited;
         edited = readOriginal(i) || edited;
         edited = addressOfSum(i, k) || edited;
         edited = extensionHeld(i) || edited;
@@ -572,7 +573,7 @@ private:
             const bool overlaps = it->first < i.b.disp + w && i.b.disp < it->first + it->second.width;
             it = overlaps ? slots_.erase(it) : std::next(it);
         }
-        if (!isMovQL(i.m) || (w != 8 && w != 4)) return;
+        if (i.vol || !isMovQL(i.m) || (w != 8 && w != 4)) return;   // what a volatile store wrote is not known to be there
         Value v = fresh();
         if (i.a.kind == MOperand::Immediate && i.a.numeric) v = Value::constant(atWidth(i.a.value, w));
         else if (gpr(i.a)) v = regs_[i.a.reg.id];

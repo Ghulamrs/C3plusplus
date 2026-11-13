@@ -97,5 +97,7 @@ set NAME=%~1
 if exist %ROOT%\winnames\%NAME%.skip (del /q %ROOT%\winnames\%NAME%.clskip 2>nul& exit /b 0)
 if exist %ROOT%\winnames\%NAME%.clskip (move /y %ROOT%\winnames\%NAME%.clskip %ROOT%\winnames\%NAME%.skip >nul& exit /b 0)
 dumpbin /nologo /symbols %ROOT%\winnames\%NAME%.obj > %ROOT%\winnames\%NAME%.mine.txt 2>&1
-dumpbin /nologo /symbols %ROOT%\winnames\%NAME%.cl.obj > %ROOT%\winnames\%NAME%.cl.txt 2>&1
+rem  cl's own CRT inlines leave its listing here: printf and its options from stdio.h, the placement
+rem  news of vcruntime_new.h, the AVX2 flag of xutility - functions of cl's headers, which cxx1's do not inline.
+dumpbin /nologo /symbols %ROOT%\winnames\%NAME%.cl.obj 2>&1 | findstr /v /l /c:"| printf" /c:"| _vfprintf_l" /c:"| vsnprintf" /c:"| _vsnprintf_l" /c:"| __local_stdio_printf_options" /c:"| ?_OptionsStorage@?1??__local_stdio_printf_options@@9@4_KA" /c:"| ??2@YAPEAX_KPEAX@Z" /c:"| ??_U@YAPEAX_KPEAX@Z" /c:"| _Avx2WmemEnabledWeakValue" > %ROOT%\winnames\%NAME%.cl.txt
 exit /b 0

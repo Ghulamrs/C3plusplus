@@ -73,6 +73,8 @@ struct MInst {
     // them; without the word, the convention's whole set is read.
     RegSet args = 0;
     bool exactArgs = false;
+    // A volatile object's load or store, said by the selector (R8): no pass removes, forwards, folds, narrows or moves it.
+    bool vol = false;
 
     // C++11 has no aggregate with a member initialiser, so the braces call this.
     MInst(OpId m = OpId(), MOperand a = MOperand(), MOperand b = MOperand(), int operands = 0)

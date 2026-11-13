@@ -42,6 +42,7 @@ private:
     bool dumpSsa_ = false, checkSsa_ = false;   // -dump=ssa and -check=ssa, M3-IR 3.10
     std::string dumpSsaAfter_;                  // -dump=ssa=<pass>: the IR after that pass (M3b.4)
     bool dumpSyntax_ = false;
+    bool dumpTyped_ = false;    // -dump=typed: the typed tree, a node a line (R12)
     bool dumpMir_ = false;       // -dump=mir[=pass]: each function's MIR on stdout, after the pipeline or the pass (M3a.1)
     std::string dumpMirAfter_;
     int keepGoing_ = 0;          // -keep-going[=N]: report up to N errors a file, not the first alone

@@ -212,6 +212,8 @@ void Driver::usage(char *file) {
         "       -dump=syntax writes the syntax tree the grammar recorded, a root a\n"
         "         line, on stdout; one input at a time; -dump=mir each x86 function's MIR\n"
         "         after the pipeline, -dump=mir=<pass> after that pass\n"
+        "       -dump=typed writes the typed tree Sema made of every body, a node a\n"
+        "         line, on stdout; one input at a time\n"
         "       -dump=ssa writes the SSA IR every function is lowered to (on x86 each is\n"
         "         selected from it), -check=ssa verifies it and reports on stdout; at -O1\n"
         "         and above the SSA passes run, -dump=ssa=<pass> writes the IR after that\n"
@@ -1141,15 +1143,16 @@ bool Driver::parseArguments(int argc, char **argv) {
         } else if (std::strcmp(argv[i], "-check=ssa") == 0 || std::strcmp(argv[i], "--check=ssa") == 0) {
             checkSsa_ = true;
         } else if (std::strncmp(argv[i], "-dump=", 6) == 0 || std::strncmp(argv[i], "--dump=", 7) == 0) {
-            // The boundaries a dump is written at (design section 1): the syntax tree only, so far.
+            // The boundaries a dump is written at (design section 1).
             const char *what = std::strchr(argv[i], '=') + 1;
             if (std::strcmp(what, "syntax") == 0) dumpSyntax_ = true;
+            else if (std::strcmp(what, "typed") == 0) dumpTyped_ = true;
             else if (std::strcmp(what, "mir") == 0) dumpMir_ = true;
             else if (std::strncmp(what, "mir=", 4) == 0) { dumpMir_ = true; dumpMirAfter_ = what + 4; }
             else if (std::strcmp(what, "ssa") == 0) dumpSsa_ = true;
             else if (std::strncmp(what, "ssa=", 4) == 0 && ir::isSsaPass(what + 4)) { dumpSsa_ = true; dumpSsaAfter_ = what + 4; }
             else {
-                std::fprintf(stderr, "%s: -dump= takes 'syntax', 'mir' or 'ssa', the boundaries written so far - not '%s'\n",
+                std::fprintf(stderr, "%s: -dump= takes 'syntax', 'typed', 'mir' or 'ssa', the boundaries written so far - not '%s'\n",
                              argv[0], what);
                 return false;
             }
@@ -1208,9 +1211,9 @@ bool Driver::parseArguments(int argc, char **argv) {
 
     if (inputs.empty()) { usage(argv[0]); return false; }
     // A dump is in the order its nodes were made; two files compiled at once would interleave.
-    if ((dumpSyntax_ || dumpMir_ || checkTyped_) && inputs.size() > 1) {
-        std::fprintf(stderr, "%s: %s takes one input at a time\n", argv[0],
-                     dumpSyntax_ ? "-dump=syntax" : dumpMir_ ? "-dump=mir" : "-check=typed");
+    if ((dumpSyntax_ || dumpTyped_ || dumpMir_ || checkTyped_) && inputs.size() > 1) {
+        std::fprintf(stderr, "%s: %s takes one input at a time\n", argv[0], dumpSyntax_ ? "-dump=syntax" :
+                     dumpTyped_ ? "-dump=typed" : dumpMir_ ? "-dump=mir" : "-check=typed");
         return false;
     }
 
@@ -1468,7 +1471,7 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
         if (!lowering.lower(t, facts, why).valid() && why.empty()) why = "the lowering gave no reason";
         if (why.empty()) { lowered++; continue; }
         reasons[why]++;
-        outside.push_back(src.where(lowering.outsideAt()) + ": '" + fn.displayName() + "' (" + fn.symbol() + ") is outside the SSA lowering: " + why);
+        outside.push_back(src.where(lowering.outsideAt()) + ": '" + fn.displayName() + "' (" + fn.symbol() + ") is outside the SSA lowering: " + why + " (docs/EXCLUSIONS.md)");
         if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "outside %s: %s\n", fn.symbol().c_str(), why.c_str());
     }
     // **The compiler-written functions** (M3b.3): each built from its class's layout by the Builder, or left on the
@@ -1497,7 +1500,7 @@ static std::string lowerSsa(const Source &src, Parser &parser, Program &program,
         std::string why;
         if (builder.build(facts, fn.synthesised(), why).valid()) { built[fn.synthesised()]++; builtCount++; continue; }
         left[fn.synthesised() + " - " + why]++;
-        outside.push_back("the " + fn.synthesised() + " " + fn.symbol() + " is outside the SSA lowering: " + why);
+        outside.push_back("the " + fn.synthesised() + " " + fn.symbol() + " is outside the SSA lowering: " + why + " (docs/EXCLUSIONS.md)");
         if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "outside %s: %s\n", fn.symbol().c_str(), why.c_str());
     }
     std::string out;
@@ -1577,23 +1580,27 @@ bool Driver::compile(const Job &job) {
         parser.syntaxTree().dump(dumped, src);
         std::fwrite(dumped.data(), 1, dumped.size(), stdout);
     }
+    if (dumpTyped_) {
+        const std::string dumped = sema::Typer::dump(parser, program);
+        std::fwrite(dumped.data(), 1, dumped.size(), stdout);
+    }
     if (checkTyped_) {
         int differ = 0;
         const std::string report = sema::Typer::check(parser, program, src, &differ);
         std::fwrite(report.data(), 1, report.size(), stdout);
         if (differ != 0) return false;
     }
-    // **A file that writes `volatile` is compiled without the code generator's -O** (MIR's and the Ast.h path's passes
-    // would keep a volatile read in a register); the SSA passes, which see each access marked, run at -O (M3b.4 round 6).
-    // **Said as a warning at the first `volatile`** (1.10) as `file:line:col: warning:`; `cpp11: ...` stopped GRIDE 2.0.
-    const int level = program.usesVolatile ? 0 : optimize_;
+    // **On x86 a `volatile` access is marked in MIR and every pass keeps it** (R8); arm64's and the C6000's generators have
+    // no mark, so there a file that writes `volatile` is compiled without -O, said as a warning at the first `volatile`.
     const bool selects = std::strncmp(backend_->name(), "x86_64", 6) == 0;     // the generator selects from the SSA IR
-    if (optimize_ > 0 && program.usesVolatile) {
+    const bool downgrade = program.usesVolatile && !selects;
+    const int level = downgrade ? 0 : optimize_;
+    if (optimize_ > 0 && downgrade) {
         volatileDowngrades_++;
         std::fprintf(stderr, "%s: warning: 'volatile' is something this compiler cannot keep apart "
-                     "from plain memory, so %s is compiled without %s-O%d\n",
+                     "from plain memory, so %s is compiled without -O%d\n",
                      program.volatileAt.empty() ? job.input.c_str() : program.volatileAt.c_str(),
-                     job.input.c_str(), selects ? "the code generator's " : "", optimize_);
+                     job.input.c_str(), optimize_);
     }
     // **The SSA IR** (M3b.1): every body lowered; dumped, verified, and on x86 the only thing selected (M3b.7).
     if (selects || dumpSsa_ || checkSsa_) {

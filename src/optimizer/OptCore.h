@@ -30,6 +30,7 @@ struct Effects {
     bool control = false;    // a jump, a call or a return
     bool stack = false;      // moves the stack pointer
     bool opaque = false;
+    bool keep = false;       // a volatile access: stays where it is, as it is, whoever reads its result
 };
 
 // How an instruction moves control: whether its block ends after it, whether
@@ -365,7 +366,7 @@ bool removeDeadIn(std::vector<Entry> &s, FlowOf<Entry> &f, RegSet frame, IdleFn 
             if (en.kind != Entry::Inst || en.dead) continue;
             f.joinPads(b, k, live);
             const Effects &e = f.effects[k];
-            const bool removable = !e.control && !e.memoryWritten && !e.stack && !e.opaque &&
+            const bool removable = !e.control && !e.memoryWritten && !e.stack && !e.opaque && !e.keep &&
                                    ((e.writes | e.partial) & frame) == 0;
             const bool used = ((e.writes | e.partial) & live.regs) != 0 || (e.flagsWritten && live.flags);
             if ((removable && !used) || idle(en.ins, live.wide)) {

@@ -40,17 +40,19 @@ run() {
         esac
         # **And the SSA dump** (M3b.1): the IR the lowering made, before any selection, the same bytes twice.
         case $l in -O0)
-            ( ulimit -t 120; "'"$CXX1"'" -dump=ssa -S -arch $t "tests/cases/$base.cpp" -o "$o.ssa.s" < /dev/null > "$o.ssa" 2>/dev/null ) ;;
+            ( ulimit -t 120; "'"$CXX1"'" -dump=ssa -S -arch $t "tests/cases/$base.cpp" -o "$o.ssa.s" < /dev/null > "$o.ssa" 2>/dev/null )
+            # **And the typed tree** (R12): the lowering's only input, the same bytes twice.
+            ( ulimit -t 120; "'"$CXX1"'" -dump=typed -S -arch $t "tests/cases/$base.cpp" -o "$o.typed.s" < /dev/null > "$o.typed" 2>/dev/null ) ;;
         esac'
 }
 run a
 run b
 n=$(ls "$OUT/a" | wc -l | tr -d ' ')
-m=$(ls "$OUT/a" | grep -c '\.mir$'); k=$(ls "$OUT/a" | grep -c '\.ssa$')
+m=$(ls "$OUT/a" | grep -c '\.mir$'); k=$(ls "$OUT/a" | grep -c '\.ssa$'); y=$(ls "$OUT/a" | grep -c '\.typed$')
 diffs=$(diff -rq "$OUT/a" "$OUT/b" | sed -E 's|.*/a/([^ ]*) and .*|\1|')
 if [ -n "$diffs" ]; then
     echo "$diffs" | sed 's/^/  differs /'
     echo "determinism: $n outputs compared ($m of them -dump=mir), $(echo "$diffs" | wc -l | tr -d ' ') differ"
     exit 1
 fi
-echo "determinism: $n outputs compared ($m of them -dump=mir, $k -dump=ssa), 0 differ"
+echo "determinism: $n outputs compared ($m of them -dump=mir, $k -dump=ssa, $y -dump=typed), 0 differ"

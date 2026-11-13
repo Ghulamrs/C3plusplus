@@ -4213,3 +4213,169 @@ other failure is `bf_types.c`'s 40-bit `unsigned long` on Windows, the base's); 
 targets, 0 outside, 0 of R9's refusals; exclusions 0 uncited 0 stale, comment cap 0 over. **Owed**: the Linux box's
 run of the four cases and `tools/memory-gate` (no `new`, no pointer declarator added) - the g++ build is done, the job
 waited on the box lock past this lane's hour (`~/rvB-probe.out`); the wave gate is the coordinator's.
+### M3 review, lane G, round 1, 2026-11-13: R8 - a volatile access is marked in MIR, and the passes leave it alone
+From `rv-w1` `9601202e`, branch `rv-G`. **R8 confirmed** on the Windows box at the base (cl build): `ssa-volatile.cpp` at
+-O2 prints the warning and `-dump=mir=all` shows no pass ran. **The mark**: the selector says `volatileAccess` around
+the `load`/`store` of an `ir::Inst` whose `isVolatile` is set (`SsaSelect.cpp`, the two cases), and the holder marks
+each instruction it then holds that names memory (`MInst::vol`; `Effects::keep` from `effectsOf`); `-dump=mir` prints
+`; volatile` on the line. **The passes**: remove-dead keeps an instruction with `keep`; forward-values folds a marked
+access's address and nothing else (no reload from a register, no pairing, and a marked store teaches no slot value);
+fold-loads and coalesce-copies' xmm fold do not move a marked load into its use; `locals` promotes no slot a marked
+access names; remove-dead-stores takes a marked store for a read; hoist-xmm-slots counts a marked read as a write of
+its slot; shrink leaves a marked read its width. hoist-invariants needed no edit (it refuses every memory read by its
+effects), fold-offsets and fold-index change an address only, and no pass builds a fresh instruction from a marked one.
+**The downgrade stays** (`Driver.cpp`): `CPP11_VOLATILE_MIR=1` - temporary, named - runs MIR at the level asked.
+**Probe** `tests/cases/mir-volatile` (clang's `.expected` from the Windows box): a read nobody uses, a store read back,
+a read fed to an add, stores nothing reads, a double read in a loop, an 8-byte read used at 4.
+**Round 2 must**: remove the downgrade and its warning for the two x86 targets only (arm64 and the C6000 have their
+own optimizers and no mark: there it stays, or their walkers learn the mark), with `CPP11_VOLATILE_MIR`, the paragraph
+in `docs/OPTIMIZER-IR.md` "The levels" and a history entry; hold `mir-marked == kept` in a suite (`ssa.sh`, or a
+`-check=ssa` line the driver prints from the holder's count) instead of by hand; re-record `emit.sh`'s golden (a
+volatile file's -O text changes, nothing else may) and run bench, winpass in both spellings and `make test`; audit
+what round 1 did not: a volatile object of class type loaded whole (`load` emits nothing, so kept counts one more than
+the marks), a volatile bit-field, a `Memcpy` over a volatile object (the SSA bit is on Load and Store alone), the webs
+and the allocator (read for fresh instructions only, not for spill placement), and `-Os`.
+**Measured** on the Windows box (cl build of the final tree, /W4 /WX clean), `CPP11_VOLATILE_MIR=1`: `mir-volatile`,
+`ssa-volatile` and the five other cases that write `volatile` and compile for the target, at -O0, -O1 and -O2, are
+clang's `.expected` (21 of 21, `-masm=masm`; the two probes also `-masm=gnu`), and in every row the lines `-dump=mir`
+marks equal `-check=ssa volatile: kept=` (`ssa-volatile` 34 at -O1, 53 at -O2; `mir-volatile` 17 and 28). Static
+gates on the Linux box: comment cap 0 over, memory gate passes, `tools/exclusions` 127 sites 0 uncited 0 stale (the
+lowering's "3 uncited, 4 stale" is the base's, `~/rvw1` prints the same). `src/` 91,824 to 91,841 lines.
+**Owed**: the Linux run of the same cases (g++ build done, `BUILD-OK`; the job waited on the box lock past this lane's
+half hour - its output is `boxkit/rvG-lv.out`, `volatile-object` runs only there); bench and winpass are the wave's.
+
+**M3 review, lane R (R16: one ABI rule written three times), 2026-11-13, from a5506956.** Confirmed first, by
+reading: `Parser::passedByAddress` and `X86_64Linux::ssaByAddress` were one formula (a class goes by address where
+its copy is a call, or on Itanium its destruction; the selector's callers test `isStructOrUnion` first), so they agreed
+on every class shape on both ABIs. The lowering's tests at the lines R16 named are not that rule: the lowering always
+hands the selector an address and the selector decides; its ABI test is the other half of the rule, who destroys a
+by-value class (`guardParameter`, `byValueArgument`), which `ParserTopLevel`'s parameter wrote a third time. Now
+`Abi::passedByAddress`, `Abi::calleeDestroys` (static, they need only the `Target`) and `Abi::returnsIndirectly` (the
+size rules are the `Abi`'s) in `src/Abi.h`, defined in `src/Type.cpp` beside `containsX87` (Abi has no .cpp of its own);
+the parser's two members and `ssaByAddress` are gone, eleven call sites ask `Abi`. Kept: `byValueArgument`'s `if (ms)`
+bitcast - `!passedByAddress` there differs for a polymorphic class with no destructor on Itanium, so it is not the
+same test. Gates: cl /W4 /WX 0 warnings; `sret-check` 17 20 7 19; `winlink-check` no failure; Linux build, static gates
+and `tools/identical.sh` (REF a5506956, both x86 targets, every level) in `boxkit/rvR-lx.out`. `src/` 91,841 to 91,839.
+### M3 review, lane G round 2, 2026-11-13: R8 finished - the volatile downgrade goes on x86
+From `rv-G` `a5506956`, branch `rv-G2`. **The downgrade is gone for x86_64-linux and x86_64-windows** (`Driver.cpp`:
+`downgrade = program.usesVolatile && !selects`, with `CPP11_VOLATILE_MIR` removed): a file that writes `volatile` gets
+MIR's passes at the level asked; arm64-darwin and tms6747 keep the downgrade and its warning (no mark in their
+generators). `docs/OPTIMIZER-IR.md` "The levels" says so; history entry "R8 closed on x86". **Standing check**:
+`tests/ssa.sh` fails a case on an x86 host whose `-check=ssa volatile: kept=N` (N > 0) is not N `; volatile` lines in
+`-dump=mir` at `SSA_LEVEL` (run of the check alone on Windows, -O2, five volatile cases: 5 passed). **Audit**: a
+volatile bit-field (written and read in a loop, read twice in a callee) and a volatile object copied member by member
+are the new case `mir-volatile-shapes` (clang's `6 34 3 3 3`, Windows box); a volatile class object copied whole
+(`load` emits nothing, `Memcpy` unmarked) is named, not cased - ill-formed in C++11, and a reference to volatile is
+refused by name; the allocator's spills are placed around marked accesses, never built from them; `-Os` added to every
+row below. **Measured** on the Windows box (cl build of the tree, /W4 /WX clean, no C4xxx): `mir-volatile`,
+`mir-volatile-shapes`, `ssa-volatile`, `chrono-clocks`, `mem-init-value-init`, `mem-init-two-rules`,
+`value-init-implicit-ctor`, `value-init-empty-braces` and `array-parameter-name` at -O0/-O1/-O2/-Os same as clang in
+both spellings (36 of 36 each), no warning, and marked == kept in every -O1/-O2/-Os row (`ssa-volatile` 34/53/34,
+`mir-volatile` 17/28/17, `mir-volatile-shapes` 19/21/19); `ssa-volatile` -O2 is 497 lines where the downgrade wrote
+813, byte for byte round 1's text under the switch. **bench-kernels**: no `volatile` in it, and its -O2 text is
+byte-identical to round 1's build in both spellings (2068 masm, 2038 gnu lines), so its times cannot move - no timed
+runs made. **The emit golden**: `emit.sh` is -O0, where nothing changes; the lane's Linux chain records round 1's build
+at -O2 as the golden and diffs this build against it (`boxkit/rvG2-lv.out`; only files that write `volatile` may
+differ, on the two x86 targets). `src/` 91,841 to 91,840 lines. **Owed**: the Linux chain (vol, static gates, the -O2
+emit diff) - queued behind the box lock past the lane's half hour; the wave's winpass, ssa.sh 1/2 and make test.
+
+**M3 review, lane H (R11, R12), 2026-11-13, from rv-w1 `9601202e`, branch rv-H.** **R11**, confirmed on the Windows
+box at the base: a `throw` out of a noexcept function called `abort`, so a `std::set_terminate` handler never ran (the
+callee half was already right on Windows, where the FH tables' noexcept reaches the runtime's terminate). `abortingThrow`
+and `noexceptAbort` now call the target's terminate - `_ZSt9terminatev`, the UCRT's C-linkage `terminate` on Windows -
+by one `terminateName` in `Lowering.cpp`. Cases `noexcept-set-terminate` (a written throw) and
+`noexcept-set-terminate-callee` (from a callee), the handler printing and leaving by `_Exit(0)`; `.expected` from the
+Windows box's clang with `-nostdinc++ -isystem include`. **R12**: `-dump=typed` (`Typer::dump`): every body the census
+finds, typed, a node a line - kind, parts, text, type, the record's kind, symbol and type, a cast's type, the folded value -
+numbered within its body so one function's change moves no other's lines. `tools/determinism.sh` diffs it at -O0 for
+every target; `tools/identical.sh` takes it as the optional leg `TYPED=1`. `src/` 91,824 to 91,875 lines.
+**Measured** at `2c4e3b8a` on the Windows box (cl build, /W4 /WX clean): the two cases and `noexcept-terminates`,
+`noexcept-terminates-callee`, `ssa-noexcept-throw` the same as their `.expected` at -O0 and -O2 in both spellings (20 of
+20; the base failed the written-throw case in all four); `-dump=typed` twice over the 1159 cases for x86_64-windows:
+0 differ (9,934 functions, 254,409 lines). **Decided, no question asked**: the three older cases now reach std::terminate,
+whose default handler on libstdc++ writes to stderr, which `run.sh` captures; each installs a handler that calls
+`abort()`, so their output and exit status are what they were (same on Windows, and clang agrees). **Owed**: the Linux
+box's g++ build, the five cases at -O0/-O2, the static gates and the x86_64-linux `-dump=typed` pair - queued on the box
+lock behind four other lanes' jobs (`~/rvH-probe.out`, `~/rvH-probe2.out`); the wave gate is the coordinator's.
+
+**M3 review, lane I (R15, R18), 2026-11-13, from rv-w1 `9601202e`.** Both findings confirmed before the edit. **R18**:
+`src/ir/opt/SsaOptimize.cpp`'s pass row carries its function (`Run`, five two-line adapters where a pass's signature is
+not the table's) and `dropsVolatile` (cfg and recfg alone); `run`'s `case 0 ... 14` and the `k != 3 && k != 12` check are
+gone, so a row added cannot run another row's pass or exempt another's volatiles. No pointer declarator the memory gate
+reads, no `new`. **R15**: at `748edd4e` names against cl read 519 agreed, 75 differed (f8b counted 72 on its
+narrower list). `tools/windows/names-vs-cl.cmd` drops cl's own CRT inlines from cl's listing (printf,
+`_vfprintf_l`, `vsnprintf`, the `__local_stdio_printf_options` pair, the placement news `??2`/`??_U`,
+`_Avx2WmemEnabledWeakValue`): 26 cases agree by that alone. The 47 left each have a `.nocl` with its reason, by family:
+cl's STL against `include/` (19, among them `ssa-conditional-const-class`, whose `_CT` size 48 against 40 is
+`std::string`'s), the vector iterators `??_H`/`??_F`/`??__G`/`??_E` (9), the scalar deleting destructor on `delete` (12),
+closure names (7), implicit or local members and `??_D` cl inlined (11), a template static's `$guard` (1), and **one
+defect**: `ssa-virtual-base-parts`, where cl writes a vbtable per vbptr (`??_8D@@7BA@@@`, `??_8D@@7BB@@@`) and cxx1 one
+(`??_8D@@7B@`); `Mangle.cpp`'s two-argument `vbtableSymbol` already spells cl's names, so the mend is the Microsoft
+layout's count of D's vbptrs (`src/parser/ParserType.cpp` near :1492), owed to a lane that may edit src.
+**Measured** on the Windows box: cl build /W4 /WX clean; names-vs-cl over the tree, compared by `verify-three`'s
+`clsyms`: **547 agreed, 0 differed, 264 skipped** (252 recorded or not for this target, 12 cl-refused). **Owed**:
+`tests/ssa.sh` at levels 1 and 2 and the static gates on the Linux box - queued behind the wave gate on the box lock
+(`boxkit/rvI-linux.sh`, log `boxkit/rvI-linux.log`); `verify-three windows` itself is the coordinator's. `src/`: one
+file, 30 lines added and 37 removed.
+
+**M3 review, lane J (2026-11-13, branch rv-J from rv-w1 `9601202e`): a class inheriting two vbptrs holds both.**
+`tests/cases/ssa-virtual-base-parts`' `D : C` (C : A, B, each `virtual V`) got one vbptr from cxx3 and two from cl:
+the Microsoft layout took one vbptr per non-virtual base (`ParserType.cpp`, `vbptrOffset()`), where a base holds one
+per subobject that brought one. **Measured** (cl `/d1reportSingleClassLayoutD`): D's `$vbtable@A@` (-8, 48) and
+`$vbtable@B@` (0, 32); and `F : C, Y` gets `7BA@`, `7BB@` and the *plain* `??_8F@@7B@` for Y - the name is clang's
+`rebucketPaths` rule, not "the direct base": a vbptr keeps the name its base gave it, and only two of one name grow, by
+one class. **Mended**: `Type::VbPtr` carries `name` and `next`; the parser inherits every vbptr in a base's
+non-virtual part with its name, names a virtual base's as the direct base holding it named it, and grows duplicates
+once - a second growth (a two-class name) is refused by name and cited; `Classes.cpp`'s two symbol sites read the
+name. Until now D's B slot kept C's table, right in value by luck and wrong in name. **New case**
+`virtual-base-vbtable-inherited` (D, E : D, F : C, Y; clang's `.expected`, cl prints the same). **Gate** at the lane's
+tree on the Windows box: cl build `/W4 /WX` clean; the virtual-base family (16 cases, 5 refused for the target as
+recorded) 11 same 0 differ in both spellings at -O0 and -O2; every `??_8` of five cases (parts, the new one,
+diamond, vbtable, second-base) agrees with cl by name, and D's and F's tables by value; exclusions 0 uncited 0 stale (the
+SSA lowering's 3 and 4 are the base's, no file of this lane), comment cap 0 over, memory gate held. Owed to
+the coordinator: rv-I's `ssa-virtual-base-parts.nocl` (not in this base) goes at the merge. `src/` 91,824 to 91,856 lines.
+### M3 review, lane K, 2026-11-13: what wave 1 left - a cut self-host stage, the hosts' sums in verify-three, R1(d)
+
+From rv-w1 `9601202e`, branch rv-K (Opus 5.5). **(1)** `tools/windows/self-host-stages.sh`: a stage the cap cuts
+(`SELFHOST_CAP`, 1500 s unless set) now waits, never killing, until no process on the box whose command line names
+the tree (`<work>\<name>\`, the query itself left out) is left, up to 25 minutes, and only then resumes; still busy
+then, it stops rather than race. Shown on the Windows box at `SELFHOST_CAP=120`: stages "0 1" cut at 120 s with 3
+processes of `work\rvK` running, the box's stage ended 1070 s after the cut, the resume found stage 1's 100 of 100
+objects and linked stage 2 ("stage 2 built") - the link the old script lost. **(2)** `tools/verify-three` runs lane
+E's `tools/crosshost-sums`: the Linux leg sums after its build, the Windows leg after `winlink-check` (Git's bash,
+`CXX1_WINDOWS_BASH`), and the Windows list goes to the Linux box, where `compare` prints the row (the Mac runs no
+check); `all` without both lists fails. **(3)** R1(d): `src/Driver.cpp`'s two "is outside the SSA lowering" messages
+end "(docs/EXCLUSIONS.md)" (`tools/ssa-census` strips it from `kinds.txt`); a refused case on the Windows box:
+"'main' (main) is outside the SSA lowering: a local of a class with a virtual base built by no constructor
+(docs/EXCLUSIONS.md)". Three of `tests/open/lowering-*` are no longer refused at rv-w1 (lane B). **Gates** (Windows
+tree): cl /W4 /WX clean; exclusions 127 sites, 0 uncited, 0 stale; the lowering 3 uncited, 4 stale - rv-w1's merge
+(lane B's renamed reasons; nothing under src/ir changed here), the coordinator's re-paste; comment cap 0 over;
+memory gate passed. **Owed**: item 2's row from the two boxes' lists - the Linux list (rvE's chain, `3628bd4a`) was
+queued on the lock at hand-back; a box job (pid 2807019) writes `~/rvK-cross.txt` when it lands.
+**M3 review, lane S, 2026-11-13 (from 3628bd4a, branch rv-S): `D d[1] = { 5 };` with `D(int a = 3, int b = 4)` crashed the
+compiler.** Root: `Parser::constructObject` (src/parser/ParserClass.cpp) recorded an array element's defaults under
+"$elem:" from `all[1]` after `std::move(all)` had handed the vector to `completeCall` - an index into a moved-from vector,
+reached by any braced-list element completed by default arguments, at any array length, with or without a destructor.
+Mended there: the note is taken before the call (the same two lines, moved; src/ lines unchanged, +1 comment). Case
+tests/cases/array-list-default-args (the ledger; locals with and without a destructor, a tail built by the defaulted
+default constructor, static arrays with every element written), clang's .expected from the Windows box (`-nostdinc++
+-isystem include`): same at -O0 and -O2, masm and gnu, cl /W4 /WX clean. Left, by name: a *static* array whose tail is
+built by a constructor completed with defaults (`E sd[2] = { 9 };`) is refused - "an array's tail built with default
+arguments the record does not place": the tail's defaults reach a `var` node only by a local's serial. In the register as
+tests/open/array-static-tail-defaults with clang's answer.
+### M3 review, lane V, 2026-11-13: virtual after deletion 3 is the callees' `ret` lines, not deletion 3's code
+From main `3628bd4a`, branch `rv-V`; no src/ line changed (src/ lines before and after the same). **Confirmed** on the
+Windows box (bench-kernels -O2, median of 9 interleaved, checksums agree, `boxkit/rvV-bench-a.out`): `3628bd4a` virtual
+131 against `e85fab25`'s 101, the other kernels within 1 ms (total 375/344, cl 299). **virt's own code is the same**:
+its -O2 `-S` differs from `e85fab25`'s only in frame displacements, and the loop's bytes sit at the same address in both
+executables (`1700`-`1727`). **What moved**: deletion 3's smaller frames shrink `Rc::Rc`'s prologue from `sub rsp, 160`
+(imm32) to `112` (imm8); the function now fits a 64-byte line, so OptAlign's `functionAlign` gives its COMDAT
+`ALIGN(64)` and `Rc::area`, placed after it, moves 32 bytes (`1CE0` to `1D00`). The two virtual callees' `ret`s then sit
+at line offsets 22 and 23 (d=1) where `e85fab25` had 22 and 55 (d=33): M3b.5 vlay's table (d=0 82, d=32 96, d=1 124)
+row for row. A variant with `functionAlign` off (not kept) puts them at 22/55 again (`1C56`/`1CB7`, d=33); its bench ran with the shared box at 99% load (virtual 202 against `3628bd4a`'s 216, every
+kernel doubled) and is not taken - an idle-box run of `work\rvVx` against `work\rvD` is owed.
+**Not mended, named**: no rule in SsaSelect.cpp or X86_64Linux.cpp is wrong - the smaller frame is right, and the align
+rule is right for the function it pads; the cure is M3b.5's left item, a placement rule for the callees' `ret`s (or for
+indirect-call targets), which pads every small function for one processor's predictor and stays unbuilt. Gate: no src/
+change, so the cases' -S and every other kernel are `3628bd4a`'s. The R5 row's "no kernel slower than main" stays owed by
+this name.

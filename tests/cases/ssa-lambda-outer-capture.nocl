@@ -1,0 +1,1 @@
+cl names a closure by a hash of the file, <lambda_...>, and inlines its call operator away, where cxx1 writes ??R$_N@... - the shape anonymous-union.nocl records; nothing links against a closure. Measured by names-vs-cl at rv-I, 2026-11-13.

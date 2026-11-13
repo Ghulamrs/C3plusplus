@@ -107,6 +107,7 @@ std::vector<Local> promotableLocals(const MStream &s, const std::vector<Local> &
                 if (!i.b.isReg(RSP)) overlapping(o->disp, 1, [](Candidate &cd) { cd.ok = false; });
                 continue;
             }
+            if (i.vol) { overlapping(o->disp, 16, [](Candidate &cd) { cd.ok = false; }); continue; }   // a volatile's slot stays memory
             const int fw = floatingAccessWidth(i, *o, isXmm);
             const int vw = values.count(o->disp) != 0 && !isXmm(i.b) ? valueReadWidth(i, *o) : 0;
             const int w = fw ? fw : vw ? vw : accessWidth(i, *o);
@@ -200,7 +201,7 @@ bool removeDeadStores(MStream &s, const SharedSlots &shared) {
     struct Access { long long disp; int width; };
     std::vector<Access> reads;
     auto isStore = [](const MInst &i) {
-        return frameSlot(i.b) && i.b.disp < 0 && i.operands == 2 &&
+        return frameSlot(i.b) && i.b.disp < 0 && i.operands == 2 && !i.vol &&
                isMovAny(i.m) && (gpr(i.a) || i.a.kind == MOperand::Immediate);
     };
     for (const MEntry &e : s) {

@@ -333,7 +333,7 @@ StmtPtr Parser::declarationBody() {
                 off = lam;
                 inits.push_back(StmtPtr(make_owned<ExprStmt>(std::move(ci.args[0]))));
             } else if (made != nullptr && made->type()->unqualified() == d.type->unqualified() &&
-                returnsIndirectly(d.type, made->hasThis())) {
+                abi_.returnsIndirectly(*d.type, target_, made->hasThis())) {
                 claimCallResult(*made, off);
                 if (nrvo) made->setResultIndirect(true);
                 noteCallSlots(*made);
@@ -763,7 +763,7 @@ StmtPtr Parser::initRangeLocal(const std::string &name, const Type *t, int off,
     const bool owns = t->isStructOrUnion() &&
                       (t->nonTrivialCopy() || destructorOf(t) != nullptr);
     if (made != nullptr && owns && made->type()->unqualified() == t &&
-        returnsIndirectly(t, made->hasThis())) {
+        abi_.returnsIndirectly(*t, target_, made->hasThis())) {
         claimCallResult(*made, off);
         out.push_back(StmtPtr(make_owned<ExprStmt>(std::move(init))));
     } else if (owns && hasConstructors(t->tag())) {

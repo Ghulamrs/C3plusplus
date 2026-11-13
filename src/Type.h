@@ -473,12 +473,16 @@ public:
                                // minus that class's own vbptr offset
         const Type *base;      // the direct base holding it, null where this
                                // class introduced the pointer itself
+        std::string name;      // the class its vbtable's name carries, "" for the plain `7B@`
+        const Type *next;      // the class it is named for if `name` must grow, null if it cannot
     };
     const std::vector<VbPtr> &vbptrs() const { return cls().vbptrs_; }
-    void addVbptr(int offset, const Type *owner, const Type *base) {
+    void addVbptr(int offset, const Type *owner, const Type *base,
+                  const std::string &name = std::string(), const Type *next = nullptr) {
         if (vbptrs_.empty()) { vbptrOffset_ = offset; vbptrOwner_ = owner; }
-        vbptrs_.push_back(VbPtr{ offset, owner, base });
+        vbptrs_.push_back(VbPtr{ offset, owner, base, name, next });
     }
+    void nameVbptr(std::size_t i, const std::string &name) { vbptrs_[i].name = name; vbptrs_[i].next = nullptr; }
 
     // **The Itanium ABI's primary base**: the first non-virtual base written
     // that carries a vptr, laid at offset 0 whatever its place in the

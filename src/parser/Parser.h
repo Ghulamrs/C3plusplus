@@ -919,35 +919,6 @@ private:
                 memberDefaults_[(currentFunction_.empty() ? defaultsOwner_ : currentFunction_) + "|^$tmp:" + std::to_string(e->syntax().v)] = d->second;
         }
     }
-    // **How a class goes to a function, and the two ABIs part company here.** Itanium
-    // passes one by address whenever copying or destroying it is a call, and the caller
-    // destroys the copy; Microsoft passes by the size rules and the callee destroys.
-    bool passedByAddress(const Type *t) const {
-        if (!t->isStructOrUnion()) return false;
-        if (t->nonTrivialCopy()) return true;
-        return !target_.microsoftNames() && t->hasDestructor();
-    }
-    bool returnsIndirectly(const Type *t, bool memberFn = false) const {
-        int size = t->size(target_);
-
-        // A class whose copy or destruction is a call is returned through a
-        // hidden pointer whatever its size - the caller owns the storage and
-        // the callee builds into it. Both ABIs agree here, measured.
-        if (t->nonTrivialCopy() || t->hasDestructor()) return true;
-        if (containsX87(t, target_)) return true;
-        if (abi_.aggregatesByReference) {
-            // **The Microsoft size rule is for free functions only.** A class returned
-            // by value from a non-static member goes through the hidden pointer whatever
-            // its size - measured with clang for this ABI, %rdx against %eax.
-            if (memberFn) return true;
-            return !(size == 1 || size == 2 || size == 4 || size == 8);
-        }
-        if (abi_.homogeneousFloatAggregates) {
-            Kind elem;
-            if (homogeneousFloatCount(t, &elem) > 0) return false;
-        }
-        return size > abi_.structReturnLimit;
-    }
     bool variadicBody_ = false;
 
     std::size_t at_ = 0;

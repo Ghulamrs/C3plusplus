@@ -219,6 +219,7 @@ Effects effectsOf(const MInst &i, const Convention &conv) {
     }
     e.reads |= e.partial;
     e.wide = wideOf(i, e);
+    e.keep = i.vol;
     return e;
 }
 

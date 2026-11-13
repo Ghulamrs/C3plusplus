@@ -37,8 +37,8 @@ not.
 
 x86 (x86_64-linux and x86_64-windows) has GCC's two levels. Every function is
 lowered to the SSA IR and selected from it, and there is no other path: a function
-the lowering leaves outside fails the compile, named (`Driver.cpp:1590`,
-`Driver.cpp:1608-1611`, `X86_64Linux.cpp:1115-1118`).
+the lowering leaves outside fails the compile, named (`Driver.cpp:1588`,
+`Driver.cpp:1609-1611`, `X86_64Linux.cpp:1115-1118`).
 
 1. **Lower.** The typed tree becomes the SSA IR (`src/ir/`: `Lowering.cpp`, and
    `Builder.cpp` for the compiler-written functions; `lowerSsa`,
@@ -133,9 +133,14 @@ the level's `Costs`, never the level (`OptCosts.h:3-5`).
 | MIR: hoist-invariants, hoist-xmm-slots, align-loops | no | yes |
 | PRE | no | no |
 
-**A file that writes `volatile` runs the SSA passes at its level and MIR's at
--O0**, and says so in a warning (`Driver.cpp:1586-1597`): the SSA passes see each
-access marked, MIR does not.
+**A `volatile` access is kept at every level on x86** (R8, 2026-11-13): the SSA passes see
+each access marked (`Inst::isVolatile`), and the selector marks the MIR instruction of each
+volatile load and store (`MInst::vol`, `-dump=mir` prints `; volatile`); forward-values,
+remove-dead, coalesce-copies, fold-loads, locals, remove-dead-stores, hoist-xmm-slots and
+shrink leave a marked access as it is, and `tests/ssa.sh` holds, case by case, that the
+accesses `-check=ssa` kept are the lines MIR marked. **arm64 and the C6000 have no mark**:
+there a file that writes `volatile` is compiled without -O, said in a warning
+(`Driver.cpp:1586-1597`).
 
 ## What M3b removed, said once
 

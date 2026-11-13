@@ -1543,9 +1543,8 @@ std::string vbtableSymbol(const std::string &tag) {
     return out + "@7B@";
 }
 
-// **The one a class with more than one vbptr gets**, named for the base whose
-// subobject holds that pointer: `??_8Dia@@7BD1@@@`. cl names it after the
-// *direct* base and not after the class that introduced the pointer.
+// **The one a class with more than one vbptr gets**, named for one class: `??_8Dia@@7BD1@@@`. Which class is
+// the parser's (Type::VbPtr::name): the direct base where two names met, else the name the base gave it.
 std::string vbtableSymbol(const std::string &tag, const std::string &base) {
     const std::vector<std::string> parts = scopeComponents(tag);
     std::string out = "??_8";

@@ -905,7 +905,7 @@ ExprPtr Parser::buildReturned(ExprPtr value, std::size_t pos, bool *named) {
     // **The object made only to be returned is made where it goes** - [class.copy]/31's elision, as clang takes it.
     // `return f();` hands f this function's own hidden pointer; `return T(...);` points T's constructor at it.
     if (Call *c = producingCall(value.get()))
-        if (c->resultSlot() != 0 && c->type()->unqualified() == cls && returnsIndirectly(cls, c->hasThis()) &&
+        if (c->resultSlot() != 0 && c->type()->unqualified() == cls && abi_.returnsIndirectly(*cls, target_, c->hasThis()) &&
             pendingTemporaryAt(c->resultSlot())) {
             claimCallResult(*c, sretSlot_);
             c->setResultIndirect(true);

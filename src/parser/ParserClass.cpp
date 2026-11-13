@@ -60,19 +60,20 @@ StmtPtr Parser::constructObject(const Declared &d, const std::string &symbol,
     full.push_back(thisType);
     for (std::size_t i = 0; i < ctor.params.size(); i++) full.push_back(ctor.params[i]);
 
+    // An array element's defaults under "$elem:" and its first value's position, read before the call takes `all`.
+    if (chosen != nullptr && written != 0 && !defaults.empty() && syn(all[1]).valid())
+        noteEntryDefaults("$elem:" + std::to_string(syntaxTree_.node(syn(all[1])).loc), all, 1 + written);
     ExprPtr call = completeCall(d.type->tag(), ctor.symbol, nullptr,
                                 types_.get(Kind::Void), full, false, d.pos,
                                 std::move(all));
     // The constructor this declaration chose, by the local's serial, for its `var` node to carry (M2.16); an array's
-    // element has the list's record instead, its defaults under "$elem:" and its first value's position.
+    // element has the list's record instead.
     if (symbol.empty() && chosen == nullptr)
         if (const Local *built = lookup_.findLocal(d.name)) {
             const LocalBuilt b = { ctor.symbol, types_.functionType(types_.get(Kind::Void), full, false), args.size() != written,
                                    valueInit && ctor.implicit, defaults, nullptr, 0, 0 };
             ctorBySerial_[built->serial] = b;
         }
-    if (chosen != nullptr && written != 0 && !defaults.empty() && syn(all[1]).valid())
-        noteEntryDefaults("$elem:" + std::to_string(syntaxTree_.node(syn(all[1])).loc), all, 1 + written);
     // An array's element: what built it, for the list's record (M3b.2).
     if (chosen != nullptr) {
         chosen->symbol = ctor.symbol;

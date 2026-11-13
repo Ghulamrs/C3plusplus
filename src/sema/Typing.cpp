@@ -1013,4 +1013,42 @@ std::string Typer::check(Parser &p, const Program &program, const Source &src, i
     return out + line + censusKinds(c) + (kinds.empty() ? std::string() : kinds + "\n");
 }
 
+
+// One body's nodes numbered from 1 within it, so a change in one function moves no other's lines.
+std::string Typer::dump(Parser &p, const Program &program) {
+    static const char *const whats[] = { "none", "local", "global", "function", "call", "callee", "member", "enumerator",
+                                         "static-member", "this", "temporary", "type-name", "value" };
+    Typer typer(p);
+    const syntax::Tree &st = p.syntaxTree_;
+    const Census c = census(p, program);
+    std::string out;
+    for (std::size_t b = 0; b < c.bodies.size(); b++) {
+        const std::uint32_t base = static_cast<std::uint32_t>(typer.tree().size());
+        typer.typeFunction(c.bodies[b].first);
+        out += "function " + program.functions[c.bodies[b].second].symbol() + "\n";
+        for (std::uint32_t i = base + 1; i <= typer.tree().size(); i++) {
+            const TypedNode &n = typer.tree().node(TypedId(i));
+            out += "  " + std::to_string(i - base) + " " + syntax::kindName(st.node(n.syntax).kind) + " [";
+            for (std::uint32_t k = 0; k < n.count; k++) {
+                const std::uint32_t part = typer.tree().child(TypedId(i), k).v;
+                out += (k == 0 ? "" : " ") + (part > base ? std::to_string(part - base) : std::string("-"));
+            }
+            std::string text = st.text(n.syntax);
+            if (text.size() > 32) text = text.substr(0, 29) + "...";
+            for (std::size_t k = 0; k < text.size(); k++)
+                if (text[k] == '\n' || text[k] == '\r' || text[k] == '\t') text[k] = ' ';
+            out += "] '" + text + "' : " + (n.type != nullptr ? n.type->describe() : std::string("null"));
+            if (n.resolved != 0) {
+                const Resolution &r = typer.tree().resolution(TypedId(i));
+                out += std::string(" rec=") + whats[r.what];
+                if (!r.symbol.empty()) out += " " + r.symbol;
+                if (r.type.valid()) out += " (" + p.types_.type(r.type)->describe() + ")";
+            }
+            if (n.castType.valid()) out += " cast=" + p.types_.type(n.castType)->describe();
+            if (n.folded.has) out += " fold=" + std::to_string(n.folded.value);
+            out += "\n";
+        }
+    }
+    return out;
+}
 }   // namespace sema

@@ -1,0 +1,1 @@
+cxx1 guards a class template's static data member with ?..A$guard where cl initialises it under its own TSS scheme - the shape dynamic-init-scalar.nocl records. Measured by names-vs-cl at rv-I, 2026-11-13.

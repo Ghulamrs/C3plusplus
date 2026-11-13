@@ -20,6 +20,10 @@
 // terminated before propagates now.
 extern "C" int printf(const char *, ...);
 extern "C" int fflush(void *);
+extern "C" void abort();
+#include <exception>
+// std::terminate's default handler may write to stderr (libstdc++'s does): a quiet one, abort() as before (R11).
+void quietly() { abort(); }
 
 void thrower() { throw 2; }
 void quiet() noexcept { printf("q "); }
@@ -45,6 +49,7 @@ int withLocal() noexcept { R r(1); return r.n + five(); }
 int ordinary() { thrower(); return 0; }
 
 int main() {
+    std::set_terminate(quietly);
     printf("%d ", withLocal());
     printf("%d ", catches());
     printf("%d ", leaf());

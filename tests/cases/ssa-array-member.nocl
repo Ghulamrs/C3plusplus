@@ -1,0 +1,1 @@
+cl builds or destroys an array of a class through its vector iterators ??_H, ??_F, ??__G or ??_E, which it emits, where cxx1 loops the constructor or destructor inline - the shape array-of-class.nocl records. Measured by names-vs-cl at rv-I, 2026-11-13.

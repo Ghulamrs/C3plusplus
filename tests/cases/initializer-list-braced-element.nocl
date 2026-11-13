@@ -1,0 +1,1 @@
+cl compiles this case against its own STL and cxx1 against include/, so each defines the other library's members (cl's std::_Allocate, bad_array_new_length, its <lambda_...> helpers; cxx1's basic_string, logic_error) - two libraries, not two manglings. Measured by names-vs-cl at rv-I, 2026-11-13.

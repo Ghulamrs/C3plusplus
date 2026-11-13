@@ -1,0 +1,1 @@
+cl deletes through the scalar deleting destructor ??_G, which it emits, where cxx1 calls the destructor and operator delete in the open - the shape array-destructor-only.nocl records. Measured by names-vs-cl at rv-I, 2026-11-13.

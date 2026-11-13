@@ -3,6 +3,7 @@
 // `try`; a class object, a temporary, a member call, `this`, a static local or a throw leaves the function outside.
 
 #include "Lowering.h"
+#include "../Abi.h"
 #include "../Ast.h"
 #include "../sema/ConstArith.h"
 
@@ -6296,7 +6297,7 @@ ValueId Lowering::byValueArgument(sema::TypedId an, const Type &p) {
         if (convertedTemporary(an, c, !ms, made)) return made;
         broken("a by-value argument whose copy the parser recorded none for");
     }
-    const std::string dtor = !ms && c.hasDestructor() ? temporaryDestructor(c) : std::string();
+    const std::string dtor = c.hasDestructor() && !Abi::calleeDestroys(c, target_) ? temporaryDestructor(c) : std::string();
     const ValueId copy = entryAlloca(tid(c), "$copy");
     if (lambda) {
         closure(an, copy);
@@ -6353,7 +6354,7 @@ Lowering::Val Lowering::classArgumentSource(sema::TypedId an, const Type &c) {
 void Lowering::guardParameter(ValueId pv, const Type &pt) {
     const Type &c = *pt.unqualified();
     if (!c.isComplete() || c.kind() == Kind::Union || c.hasVirtualBase()) outside("a parameter of type '" + pt.describe() + "'");
-    if (!target_.microsoftNames() || !c.hasDestructor()) return;
+    if (!Abi::calleeDestroys(c, target_)) return;
     const std::string dtor = destructor_ ? destructor_(c.id()) : std::string();
     if (dtor.empty()) broken("a parameter whose destructor the parser recorded none for");
     guard(pv, c, dtor);
@@ -7139,8 +7140,11 @@ bool Lowering::classThrow(sema::TypedId id, ValueId &object, TypeId &thrown) {
     return true;
 }
 
-// [except.spec]/9 as the parser keeps it: `throw e` in a noexcept function outside every try and handler of its own is
-// e's value, then abort - no handler could take it. The noexcept wrap's catch-all is the one catching pad that is no try.
+// The target's std::terminate ([except.terminate]): the UCRT's, of C linkage, on Windows; a set_terminate handler runs.
+static std::string terminateName(const Target &t) { return t.microsoftNames() ? "terminate" : "_ZSt9terminatev"; }
+
+// [except.spec]/9: `throw e` in a noexcept function outside every try and handler of its own is e's value, then
+// std::terminate - no handler could take it. The noexcept wrap's catch-all is the one catching pad that is no try.
 bool Lowering::abortingThrow(sema::TypedId id) {
     if (!F().noexcept_ || count(id) == 0 || handlerDepth_ != 0) return false;
     if (!noexceptWrap_)
@@ -7148,7 +7152,7 @@ bool Lowering::abortingThrow(sema::TypedId id) {
             if (!p.cleanup) return false;
     TypeId thrown;
     thrownValue(id, thrown);
-    runtimeCall("abort", types_.voidType()->id(), std::vector<ValueId>());
+    runtimeCall(terminateName(target_), types_.voidType()->id(), std::vector<ValueId>());
     return true;
 }
 
@@ -7486,7 +7490,7 @@ void Lowering::tryClose(TryState &st, bool rethrows) {
 
 // The filter's chain: a selector below 0 is an exception the list does not allow, handed to __cxa_call_unexpected;
 // anything else the list allowed, and the frame unwinds on.
-// The catch-all a noexcept body is wrapped in: the exception begun, as clang's __clang_call_terminate does, then abort().
+// The catch-all a noexcept body is wrapped in: the exception begun, then std::terminate, as clang's __clang_call_terminate.
 void Lowering::noexceptAbort(const Pad &p) {
     const BlockId back = cur_;
     place(p.block);
@@ -7495,7 +7499,7 @@ void Lowering::noexceptAbort(const Pad &p) {
     at(cp).cases.push_back(p.indices[0]);
     at(cp).k = 1;
     runtimeCall("__cxa_begin_catch", tid(*types_.pointerTo(types_.voidType())), std::vector<ValueId>(1, p.ptr));
-    runtimeCall("abort", tid(*types_.voidType()), std::vector<ValueId>());
+    runtimeCall(terminateName(target_), tid(*types_.voidType()), std::vector<ValueId>());
     add(Op::Unreachable, TypeId(), std::vector<ValueId>());
     place(back);
 }

@@ -1,0 +1,18 @@
+d 5 4
+e 1 4
+e 2 4
+e 3 4
+~D 3 4
+~D 2 4
+~D 1 4
+~D 5 4
+p 6 8
+p 7 8
+sd 9 4
+sd 8 4
+sp 1 8
+sp 2 8
+sp 5 8
+LEDGER built=4 gone=4 live=0 double=0 phantom=0 over=0 lost=0
+~E 8 4
+~E 9 4

@@ -5,6 +5,10 @@
 // the output ends at "before"; stdout is flushed first.
 extern "C" int printf(const char *, ...);
 extern "C" int fflush(void *);
+extern "C" void abort();
+#include <exception>
+// std::terminate's default handler may write to stderr (libstdc++'s does): a quiet one, abort() as before (R11).
+void quietly() { abort(); }
 
 static int counter = 0;
 static int bump() { return ++counter; }
@@ -23,6 +27,7 @@ int inHandler() noexcept {
 void escapes() noexcept { throw bump(); }
 
 int main() {
+    std::set_terminate(quietly);
     keepsIt();
     printf("handler%d ", inHandler());
     printf("before\n");

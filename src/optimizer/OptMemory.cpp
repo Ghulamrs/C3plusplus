@@ -59,7 +59,7 @@ bool foldLoads(MStream &s, Flow &f, const Convention &c) {
                                   (w == 4 && slot->reg.width == 4));
                 const int base = fits ? s[l].ins.a.reg.id : -1;
                 const int index = fits && s[l].ins.a.indexed() ? s[l].ins.a.index.id : -1;
-                if (clear && fits && s[l].kind == MEntry::Inst && !s[l].dead &&
+                if (clear && fits && s[l].kind == MEntry::Inst && !s[l].dead && !s[l].ins.vol &&
                     (base < 0 || !(written & bit(base))) && (index < 0 || !(written & bit(index)))) {
                     const int width = slot->reg.width;
                     *slot = s[l].ins.a;

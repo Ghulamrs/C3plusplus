@@ -58,6 +58,15 @@ cat "$out"/*.ssa | grep -- '^-check=ssa loops:' | tr ' ' '\n' | grep = | tr '=' 
     awk '{s[$1]+=$2} END {printf "ssa.sh: loops found %d loops, made %d preheaders, hoisted %d instructions (%d divisions, %d loads), widened %d counters\n", s["found"], s["preheaders"], s["hoisted"], s["divisions"], s["loads"], s["widened"]}'
 cat "$out"/*.ssa | grep -- '^-check=ssa unroll:' | tr ' ' '\n' | grep = | tr '=' ' ' |
     awk '{s[$1]+=$2} END {printf "ssa.sh: unroll copied %d loops whole, %d four or two times; rotate turned %d\n", s["whole"], s["partial"], s["rotated"]}'
+# R8: on x86 every volatile access the passes kept is one MIR line marked `; volatile` after MIR's passes, case by case.
+if [ "$(uname -m)" = x86_64 ]; then
+    for r in "$out"/*.ssa; do
+        kept=$(grep -- '^-check=ssa volatile:' "$r" | sed 's/.* kept=\([0-9]*\).*/\1/'); [ -n "$kept" ] && [ "$kept" -gt 0 ] || continue
+        c=tests/cases/$(basename "$r" .ssa).cpp
+        mk=$("$CXX1" -nologo -O"$SSA_LEVEL" -dump=mir -S "$c" -o /dev/null 2>/dev/null | grep -v '^  -' | grep -c '; volatile')
+        if [ "$mk" = "$kept" ]; then pass=$((pass + 1)); else echo "FAIL $(basename "$c"): $kept volatile accesses kept, $mk marked in MIR"; fail=$((fail + 1)); fi
+    done
+fi
 # The probes of the passes: <case>.<pass> is the case's -dump=ssa=<pass> on x86_64-linux, compared byte for byte, at -O1
 # (-O2 for divide, loops and unroll, which run at that level alone).
 if [ "$(uname -s)" = Linux ]; then

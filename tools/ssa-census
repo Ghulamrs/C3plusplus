@@ -40,7 +40,7 @@ for CENSUS_ARCH in $ARCHS; do
     { for f in $SRCS; do echo "$CXX src $f"; done; for f in $C90S; do echo "$CXX c90 $f"; done; } |
         xargs -n 3 -P "${CENSUS_JOBS:-2}" sh "$ROOT/tools/ssa-census" --one
     cat "$OUT"/log/* 2>/dev/null | grep 'is outside the SSA lowering' | sed 's/^[^:]*: [^:]*: //' | sort -u > "$OUT/outside.txt"
-    sed 's/.* is outside the SSA lowering: //' "$OUT/outside.txt" | sort | uniq -c | sort -rn > "$OUT/kinds.txt"
+    sed -e 's/.* is outside the SSA lowering: //' -e "s/ (docs\/EXCLUSIONS.md)\$//" "$OUT/outside.txt" | sort | uniq -c | sort -rn > "$OUT/kinds.txt"
     cat "$OUT"/log/*.other 2>/dev/null > "$OUT/other.txt"
     n=$(wc -l < "$OUT/outside.txt" | tr -d ' ')
     echo "ssa-census $CENSUS_ARCH: outside=$n of $(echo "$SRCS" | wc -l | tr -d ' ') sources and $(echo "$C90S" | wc -l | tr -d ' ') C90 cases; other failures $(wc -l < "$OUT/other.txt" | tr -d ' ')"

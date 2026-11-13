@@ -15302,3 +15302,18 @@ edit it (this one may not). Mended by lane int (branch m3b8-int): each now names
 **Recorded, not changed**: -O1 inlines nothing (`OptCosts.h:68-71`), where the 2026-09 levels table said "only where the
 body is smaller than the call"; PRE is not built; arm64-darwin was to be the plan's stage 5 on the IRs and still
 optimizes its own text (`A64Peep.h:12`), as tms6747 does (`C6xSched.h:10`).
+
+## R8 closed on x86: a volatile file is compiled at the level asked, 2026-11-13
+
+Round 1 of the review's lane G marked each volatile load and store in MIR (`MInst::vol`) and taught eight passes to
+leave a marked access alone, behind `CPP11_VOLATILE_MIR=1`. Round 2 removed the switch and, for x86_64-linux and
+x86_64-windows, the downgrade with its warning: a file that writes `volatile` now takes MIR's passes at -O1, -O2 and
+-Os. arm64-darwin and tms6747 optimize their own text and have no mark, so there the downgrade and its warning stay
+(`Driver.cpp`, `downgrade = usesVolatile && !selects`). `tests/ssa.sh` holds the mark per case: on an x86 host every
+case whose `-check=ssa volatile:` says `kept=N`, N > 0, must show N lines `; volatile` in `-dump=mir` at the same
+level - a pass dropping or splitting a marked access fails the suite. **What is still not marked**: a `Memcpy` over a
+volatile object (the SSA bit is on `Load` and `Store` alone) - in C++11 a volatile class object cannot be copied whole
+by the implicit copy constructor (`const T &`), and a reference to volatile is refused by name, so no accepted case
+reaches it; a volatile bit-field is a marked load and store of its unit (`mir-volatile-shapes`); the allocator places
+spills around a marked access but never builds one from it. What must not change: a marked load is never folded into
+its use (fold-loads), so a volatile read is always its own instruction.

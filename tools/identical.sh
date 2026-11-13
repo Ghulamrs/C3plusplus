@@ -21,6 +21,8 @@
 #   ARCHS, in the environment, names the targets ("x86_64-windows x86_64-linux" unless set; x86_64-windows is both
 #   spellings): ARCHS="arm64-darwin tms6747" holds the targets the deletion excepted against the M3b.6 binary.
 #   JOBS (2 unless set) compiles run at once: the Linux box has 2 cores; the Windows box may take 8.
+#   TYPED=1, in the environment, adds the optional leg (R12): `-dump=typed` of every source once per target, the
+#   typed tree compared beside the assembly - 0 differ for a commit that claims no front-end change.
 #
 # Prints the number of outputs compared and the number that differ, and names
 # each one that does; exits 1 if any does. Runs the compiles eight at a time,
@@ -79,6 +81,9 @@ for src in $(sources); do
         *) echo "$n.$A.O$L $src -nologo -arch $A -O$L -S" >> "$jobs" ;;
         esac
     done; done
+    [ "${TYPED:-}" = 1 ] && for A in ${ARCHS:-x86_64-windows x86_64-linux}; do
+        echo "$n.$A.typed $src -nologo -arch $A -dump=typed -S" >> "$jobs"
+    done
 done
 
 perl -e 'alarm 1800; exec @ARGV' xargs -P "${JOBS:-2}" -L 1 sh "$SELF" --one "$REF" "$NEW" "$OUT" < "$jobs"

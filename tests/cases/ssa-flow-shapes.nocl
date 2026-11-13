@@ -1,0 +1,1 @@
+cxx1 emits an implicit or local member, or a vbase destructor ??_D, that cl inlines at its one use and so does not emit - the shape virtual-base-diamond.nocl records. Measured by names-vs-cl at rv-I, 2026-11-13.

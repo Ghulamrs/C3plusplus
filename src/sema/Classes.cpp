@@ -70,8 +70,7 @@ void Classes::storeVbptr(const std::string &cls, const Type *memberOf,
     for (std::size_t p = 0; p < ptrs.size(); p++) {
         const int vbp = ptrs[p].offset;
         const std::string symbol =
-            ptrs.size() == 1 ? vbtableSymbol(cls)
-                : vbtableSymbol(cls, ptrs[p].base == nullptr ? cls : ptrs[p].base->tag());
+            ptrs[p].name.empty() ? vbtableSymbol(cls) : vbtableSymbol(cls, ptrs[p].name);
 
         // The table's address, the same way the vftable's is taken: a global
         // with an array type, decayed, so what is stored is where it is and
@@ -1031,8 +1030,7 @@ void Classes::emitVbtable(const Type *cls, const std::string &tag,
     for (std::size_t p = 0; p < ptrs.size(); p++) {
         const int vbp = ptrs[p].offset;
         const std::string symbol =
-            ptrs.size() == 1 ? vbtableSymbol(tag)
-                : vbtableSymbol(tag, ptrs[p].base == nullptr ? tag : ptrs[p].base->tag());
+            ptrs[p].name.empty() ? vbtableSymbol(tag) : vbtableSymbol(tag, ptrs[p].name);
         bool already = false;
         for (std::size_t i = 0; i < p_.current_->globals.size(); i++)
             if (p_.current_->globals[i].symbol == symbol) already = true;
@@ -1790,7 +1788,7 @@ void Classes::declareInheritingCtors(const std::string &tag, const Type *type, s
                 p_.src_.fail(pos, "inheriting '" + base->tag() + "''s constructor with '...' is not "
                                "supported yet - its arguments would have to be forwarded as they came");
             for (const Type *p : b.params)
-                if (!p->isReference() && p_.passedByAddress(p))
+                if (!p->isReference() && Abi::passedByAddress(*p, p_.target_))
                     p_.src_.fail(pos, "inheriting '" + base->tag() + "''s constructor that takes '" +
                                    p->describe() + "' by value is not supported yet - the copy "
                                    "would have to be passed on rather than made twice");

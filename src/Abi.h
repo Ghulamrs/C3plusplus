@@ -1,5 +1,8 @@
 #pragma once
 
+class Target;
+class Type;
+
 // **The table of measured facts about how this target passes and returns things.**
 struct Abi {
     // The registers arguments travel in, and how many there are of each.
@@ -35,7 +38,11 @@ struct Abi {
     // **AAPCS64 returns one to four floats or doubles in the float registers.**
     bool homogeneousFloatAggregates = false;
 
-    // `.type` and `.size` beside a symbol: ELF has them, Mach-O and COFF
-    // do not.
+    // `.type` and `.size` beside a symbol: ELF has them, Mach-O and COFF do not.
     bool elfSymbolAttributes = false;
+
+    // **How a class goes to a function and comes back: one rule, asked by the parser, the lowering and the selector.**
+    static bool passedByAddress(const Type &t, const Target &target);
+    static bool calleeDestroys(const Type &t, const Target &target);
+    bool returnsIndirectly(const Type &t, const Target &target, bool memberFn = false) const;
 };

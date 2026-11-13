@@ -846,7 +846,7 @@ void Parser::topLevel(Program &program) {
                 // **A class whose copy is a constructor call arrives by address**, on
                 // both ABIs and whatever its size. The parameter is lowered to a
                 // reference; the declared type is untouched, and the caller owns it.
-                const bool byAddress = passedByAddress(pd.type);
+                const bool byAddress = Abi::passedByAddress(*pd.type, target_);
                 const Type *held = byAddress ? types_.referenceTo(pd.type)
                                              : pd.type;
                 int off;
@@ -870,8 +870,7 @@ void Parser::topLevel(Program &program) {
                     // **On Microsoft the callee destroys its by-value class
                     // parameter**, in a register or by address alike - measured with
                     // cl. Itanium puts it on the caller, where the temporary is made.
-                    if (target_.microsoftNames() && pd.type->isStructOrUnion() &&
-                        pd.type->hasDestructor()) {
+                    if (Abi::calleeDestroys(*pd.type, target_)) {
                         alive_.push_back(Alive{ pd.name, off,
                                                 pd.type->unqualified(),
                                                 byAddress });
@@ -1518,7 +1517,7 @@ void Parser::topLevel(Program &program) {
     // whatever its size.
     const bool returnsAsMember = memberOf != nullptr && !inStaticMember_;
     int sretSlot = 0;
-    if (d.type->isStructOrUnion() && returnsIndirectly(d.type, returnsAsMember)) {
+    if (d.type->isStructOrUnion() && abi_.returnsIndirectly(*d.type, target_, returnsAsMember)) {
         frameSize_ += 8;
         frameSize_ = alignTo(frameSize_, 8);
         sretSlot = frameSize_;

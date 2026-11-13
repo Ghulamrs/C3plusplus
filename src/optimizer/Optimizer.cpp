@@ -43,6 +43,8 @@ void Optimizer::instruction(const std::string &m, int operands, const Op *a, con
     if (retPending_ && e.ins.m == opt::mn::Ret) { e.ins.args = rets_; e.ins.exactArgs = true; }
     argsPending_ = false;
     retPending_ = false;
+    for (const opt::MOperand *o : {&e.ins.a, &e.ins.b})
+        if (volatile_ && e.ins.m != opt::mn::Lea && (o->basedOnReg() || o->kind == opt::MOperand::RipSymbol || o->kind == opt::MOperand::SegMemory)) e.ins.vol = true;
     if (inlining_)
         for (opt::MOperand *o : {&e.ins.a, &e.ins.b})
             if (o->isMem() && o->reg.id == opt::RBP && o->disp > -kTempBase) {

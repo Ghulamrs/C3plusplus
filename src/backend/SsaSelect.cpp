@@ -102,11 +102,6 @@ const ir::Function *X86_64Linux::ssaFunction(const Function &fn) const {
     return id.valid() ? &ssa_->functions[id.v] : nullptr;
 }
 
-// Parser::passedByAddress: a class whose copy is a call goes by address on both ABIs, one whose destruction is on Itanium.
-bool X86_64Linux::ssaByAddress(const Type *t) const {
-    return t->nonTrivialCopy() || (!target_.microsoftNames() && t->hasDestructor());
-}
-
 // The frame above the parser's parameter slots - the one part of its layout the selector reads - each alloca at its
 // alignment, then one 8-byte slot per value, an x87 value's 16. Returns the new size.
 int X86_64Linux::layoutSsa(const Function &fn, const ir::Function &f) {
@@ -136,7 +131,7 @@ int X86_64Linux::layoutSsa(const Function &fn, const ir::Function &f) {
             const std::size_t at = k - firstArg;
             const Type *want = at < sig->params().size() ? sig->params()[at] : nullptr;
             slots.push_back(0);
-            if (want == nullptr || !want->isStructOrUnion() || ssaByAddress(want)) continue;
+            if (want == nullptr || !want->isStructOrUnion() || Abi::passedByAddress(*want, target_)) continue;
             cur = roundUp(cur + want->size(target_), want->align(target_));
             slots.back() = static_cast<int>(cur);
         }
@@ -498,14 +493,18 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         return;
     case ir::Op::Load:
         ssaAddress(f, f.operand(i, 0), "%rax", abi_.scratch);
+        if (holding()) optimizer_->volatileAccess(i.isVolatile);
         load(rt);
+        if (holding()) optimizer_->volatileAccess(false);
         ssaStore(f, i.result);
         return;
     case ir::Op::Store: {
         const ir::ValueId p = f.operand(i, 0), v = f.operand(i, 1);
         ssaLoad(f, v);
         ssaAddress(f, p, abi_.scratch, "%rcx");
+        if (holding()) optimizer_->volatileAccess(i.isVolatile);
         store(typeOf(f, v));
+        if (holding()) optimizer_->volatileAccess(false);
         return;
     }
     case ir::Op::Memcpy:
@@ -874,7 +873,7 @@ const Type *X86_64Linux::ssaArgType(const ir::Function &f, const ir::Inst &i, st
     const std::size_t at = n - (c.symbol.empty() ? 1 : 0);
     const Type *want = at < sig->params().size() ? sig->params()[at] : nullptr;
     const Type *t = typeOf(f, f.operand(i, n));
-    return want != nullptr && want->isStructOrUnion() && t->isPointer() && !ssaByAddress(want) ? want : t;
+    return want != nullptr && want->isStructOrUnion() && t->isPointer() && !Abi::passedByAddress(*want, target_) ? want : t;
 }
 
 const Type *X86_64Linux::ssaResultType(const ir::Function &f, const ir::Inst &i) const {

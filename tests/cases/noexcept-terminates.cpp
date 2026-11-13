@@ -13,6 +13,10 @@
 // process that aborts does not flush it.
 extern "C" int printf(const char *, ...);
 extern "C" int fflush(void *);
+extern "C" void abort();
+#include <exception>
+// std::terminate's default handler may write to stderr (libstdc++'s does): a quiet one, abort() as before (R11).
+void quietly() { abort(); }
 
 void escapes() noexcept { throw 1; }
 
@@ -21,6 +25,7 @@ void escapes() noexcept { throw 1; }
 void keepsIt() noexcept { try { throw 2; } catch (int e) { printf("kept%d ", e); } }
 
 int main() {
+    std::set_terminate(quietly);
     keepsIt();
     printf("before\n");
     fflush(0);

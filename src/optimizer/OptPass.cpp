@@ -129,6 +129,7 @@ void dumpStream(std::ostream &o, MFunction &fn) {
             o << e.ins.m.name();
             if (e.ins.operands >= 1) o << " " << operandText(e.ins.a);
             if (e.ins.operands >= 2) o << ", " << operandText(e.ins.b);
+            if (e.ins.vol) o << "  ; volatile";
             break;
         case MEntry::Label: o << e.label << ":" << (e.state ? "  ; state" : ""); break;
         case MEntry::Directive: o << e.dir.describe(); break;

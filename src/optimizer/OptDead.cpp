@@ -101,7 +101,7 @@ bool coalesceXmm(MStream &s, Flow &f, const Convention &conv) {
             // `movapd %s,%d; movsd mem,%s; addsd %d,%s` with d dead: `addsd mem,%s`. A
             // frame slot is left alone, or the locals pass could not promote it.
             const int v = nextIns(s, u, blk.end);
-            if (v >= 0 && n.m == mn::Movsd && n.a.isMem() && xmm(n.b) && n.b.reg.id == src &&
+            if (v >= 0 && n.m == mn::Movsd && n.a.isMem() && !n.vol && xmm(n.b) && n.b.reg.id == src &&
                 !frameReg(n.a.reg.id) && s[v].ins.m.is({mn::Addsd, mn::Mulsd}) &&
                 xmm(s[v].ins.a) && s[v].ins.a.reg.id == dst && xmm(s[v].ins.b) && s[v].ins.b.reg.id == src &&
                 !(after[v].regs & bit(dst))) {

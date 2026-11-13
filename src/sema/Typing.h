@@ -185,9 +185,10 @@ public:
     // One function's syntax, typed; its parameters and locals are its scopes.
     TypedId typeFunction(syntax::NodeId fn);
     const TypedTree &tree() const { return tree_; }
-    // **-check=typed**: the census (functions = bodies + compiler-written), every body typed, the expressions typed null
-    // counted by kind, and each node's copied record held against the parser's maps (M3b.7).
+    // **-check=typed**: the census, untyped expressions by kind, and each node's record held against the parser's maps.
     static std::string check(Parser &p, const Program &program, const Source &src, int *differ);
+    // **-dump=typed** (R12): every body the census finds, typed; a node a line - kind, parts, text, type, record, folded value.
+    static std::string dump(Parser &p, const Program &program);
     static Census census(const Parser &p, const Program &program);
     // Facts of a function's declaration the lowering is told (M3b.1): its return type as written, and whether its body is a try.
     TypeId declaredReturn(syntax::NodeId fn) const;

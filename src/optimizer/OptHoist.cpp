@@ -440,10 +440,10 @@ bool hoistXmmSlotsIn(MFunction &fn, const Loops::Loop &loop) {
             if (e.opaque || (e.control && s[k].ins.m == mn::Call)) return false;
             touched |= e.reads | e.writes | e.partial;
             const MInst &i = s[k].ins;
-            if (i.operands == 2 && i.m == mn::Movsd && i.a.isMem() && i.a.reg.id == RBP && i.a.scale == 0 &&
+            if (i.operands == 2 && i.m == mn::Movsd && i.a.isMem() && i.a.reg.id == RBP && i.a.scale == 0 && !i.vol &&
                 i.b.kind == MOperand::Register && i.b.reg.id >= kXmm0)
                 reads[i.a.disp].push_back(k);
-            else if (e.memoryWritten)
+            else if (e.memoryWritten || i.vol)   // a volatile read holds its slot as a write would
                 for (const MOperand *o : {&i.a, &i.b})
                     if (o->isMem() && o->reg.id == RBP) written.insert(o->disp);
         }

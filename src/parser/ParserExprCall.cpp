@@ -575,7 +575,7 @@ ExprPtr Parser::materialiseCopy(const Type *type, ExprPtr arg, std::size_t pos,
     // hidden pointer.** The call builds its result straight into the temporary this
     // argument needs, so no copy constructor runs - as clang does at -O0.
     if (Call *made = producingCall(arg.get())) {
-        if (made->type() == cls && returnsIndirectly(cls, made->hasThis())) {
+        if (made->type() == cls && abi_.returnsIndirectly(*cls, target_, made->hasThis())) {
             noteArgumentCopy(argNode, std::string(), nullptr, true);
             claimCallResult(*made, tmp);
             ExprPtr built(Var::local("$copy", tmp));
@@ -678,7 +678,7 @@ ExprPtr Parser::completeCall(const std::string &name, const std::string &symbol,
             args[i] = std::move(made);
         if (params[i]->isReference()) {
             args[i] = bindReference(params[i], std::move(args[i]), pos, what);
-        } else if (passedByAddress(params[i])) {
+        } else if (Abi::passedByAddress(*params[i], target_)) {
             // **A class whose copy is a constructor call is copied by the caller**, into a temporary the caller owns,
             // and the callee receives its address. Measured on all three targets: clang and cl copy at the call site.
             args[i] = materialiseCopy(params[i], std::move(args[i]), pos, what,

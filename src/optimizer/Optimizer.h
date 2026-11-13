@@ -37,6 +37,8 @@ public:
     void temporaries(int count);
     // The registers the next call reads its arguments from, said just before it.
     void callArguments(opt::RegSet regs);
+    // Between the two calls, every instruction held that names memory is a volatile object's access (R8): marked.
+    void volatileAccess(bool on) { volatile_ = on; }
     // The registers the next `ret` returns a value in, where fewer than the convention's.
     void returnReads(opt::RegSet regs);
     // Around a callee walked in place of its call, at -O2.
@@ -126,6 +128,7 @@ private:
     std::vector<opt::Local> opaque_;
     bool argsPending_ = false;
     bool retPending_ = false;
+    bool volatile_ = false;
     opt::RegSet rets_ = 0;
     std::ostream *dump_ = nullptr;
     opt::RegSet args_ = 0;

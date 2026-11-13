@@ -1,4 +1,5 @@
 #include "Type.h"
+#include "Abi.h"
 
 #include <cmath>
 #include <cstdio>
@@ -627,4 +628,28 @@ int homogeneousFloatCount(const Type *t, Kind *elem) {
     if (!set || n < 1 || n > 4) return 0;
     *elem = k;
     return n;
+}
+
+// **How a class goes to a function, and the two ABIs part company here.** Itanium passes one by address whenever copying
+// or destroying it is a call, and the caller destroys the copy; Microsoft passes by the size rules and the callee destroys.
+bool Abi::passedByAddress(const Type &t, const Target &target) {
+    if (!t.isStructOrUnion()) return false;
+    return t.nonTrivialCopy() || (!target.microsoftNames() && t.hasDestructor());
+}
+
+// Microsoft's callee destroys its by-value class parameter, in a register or by address alike (measured with cl).
+bool Abi::calleeDestroys(const Type &t, const Target &target) {
+    return t.isStructOrUnion() && target.microsoftNames() && t.hasDestructor();
+}
+
+// A class whose copy or destruction is a call comes back through a hidden pointer whatever its size, on both ABIs, measured.
+bool Abi::returnsIndirectly(const Type &t, const Target &target, bool memberFn) const {
+    const int size = t.size(target);
+    if (t.nonTrivialCopy() || t.hasDestructor()) return true;
+    if (containsX87(&t, target)) return true;
+    // **Microsoft's size rule is for free functions only**: a member's class result is hidden-pointer (clang, %rdx not %eax).
+    if (aggregatesByReference) return memberFn || !(size == 1 || size == 2 || size == 4 || size == 8);
+    Kind elem;
+    if (homogeneousFloatAggregates && homogeneousFloatCount(&t, &elem) > 0) return false;
+    return size > structReturnLimit;
 }
