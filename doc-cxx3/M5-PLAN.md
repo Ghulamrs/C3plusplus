@@ -551,3 +551,33 @@ block's text; one is a broken() (array-static-tail-defaults, tests/open). The re
 | `an initializer_list of '<...>' elements` | reached by tests/cases/lowering-initializer-list-class-elements.cpp |
 
 Every other owed reason: not reached (469).
+
+### R1, round 7: reasons sorted by reading (lane r1l, 2026-11-13, from m5-wave2 366996ce)
+
+Each reason read for what must hold to reach it, then one probe on Windows (cxx3-msvc.exe, clang 19.1.5 the verdict).
+**36 reasons sorted: 10 U, 3 R, 23 ?** - short of the brief's 60-100; the probes are in boxkit/r1l-pr*.
+
+- **U, now `broken()`** (the parser refuses every program that would reach them, each probe shows its message first):
+  a mem-initialiser outside a constructor; an operator-> that drops const; a conversion function that drops const
+  (the parser's const-member check, also through a chained `->` and an operand); a case label outside a switch; two
+  default labels; two case labels of one value; a break outside a loop or switch; a continue outside a loop; a return
+  of a value from a void function; a goto to a label the body does not place. tools/exclusions.baseline 566/83 ->
+  556/93.
+- **R, taken**: `D() : BB(7)` with `typedef B BB` (and a member typedef) was "a mem-initialiser of the class itself or
+  of no base": the parser resolved the typedef but noted the entry under its spelling; it notes the base's tag now
+  (case `mem-init-typedef-base`). `return {};` of a scalar, a pointer, a double or a plain struct was "a return with
+  no value": value-initialised to its zero (case `lowering-return-empty-braces`); the reason stays owed for a class
+  with constructors returned by its bytes.
+- **R, left owed**: `static S s(f());` inside a handler is "a static local built at run time inside a handler on the
+  Microsoft ABI" (valid; clang accepts) - Windows only, so no case in tests/cases.
+- **?**: the "of another class" constructor checks (array member, member, base, local, static local, temporary,
+  `construct`), the two member-defaults reasons, "a member copied from what is not an object", a constructor part
+  that is not a mem-initialiser, `this` captured by a nested lambda, a virtual-base local by no constructor, arrays and
+  statics built at run time, "a static local of type", a conversion function's return type, the last `operator->`, a
+  case label the lowering does not fold, a switch on a class, a body that falls off its end: each probe compiled.
+- **Two wrong answers, to tests/open** (the parser's, not the lowering's): `int &r = s;` and `int i = s;` through a
+  conversion function returning a reference are refused, clang accepts (`conversion-to-lvalue-reference`,
+  `conversion-reference-to-value`).
+- **Count**: lowering-why over 1237 files: 479 owed reasons, **20 reached** (17 by tests/cases, 3 only by tests/open),
+  459 by none.
+- src/ lines: +25 -11 (Lowering.cpp, ParserTopLevel.cpp).

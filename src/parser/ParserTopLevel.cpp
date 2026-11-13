@@ -1243,7 +1243,11 @@ void Parser::topLevel(Program &program) {
                 expect("(");
                 parseArguments(args);
             }
-            noteParts(syntax::Kind::MemInit, entry, epos, initMark, epos);   // what the entry names, over its arguments (M3b.2)
+            std::string noted = entry;   // a base named by a typedef is noted by its tag, which the lowering asks for
+            if (const Type *nb = memberOf->findMember(entry) != nullptr ? nullptr : templateBase != nullptr ? templateBase : lookup_.findTypedef(entry))
+                for (const Type::BaseSpec &b : memberOf->bases())
+                    if (nb->unqualified() == b.type->unqualified()) noted = b.type->tag();
+            noteParts(syntax::Kind::MemInit, noted, epos, initMark, epos);   // what the entry names, over its arguments (M3b.2)
             entries++;
             {
                 const Type *named = templateBase != nullptr ? templateBase : lookup_.findTypedef(entry);

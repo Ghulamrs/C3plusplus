@@ -2015,7 +2015,7 @@ Lowering::Val Lowering::arrowPointer(sema::TypedId member) {
             outside("an operator-> of another shape");
         const Type &self = *ft.params()[0];
         if (!T(object.type).isStructOrUnion()) outside("an operator-> asked of what is not a class");
-        if (T(object.type).isConst() && !self.pointee()->isConst()) outside("an operator-> that drops const");
+        if (T(object.type).isConst() && !self.pointee()->isConst()) broken("an operator-> that drops const");   // the parser refuses a non-const one on a const object
         Val at(object.v, tid(*types_.pointerTo(&T(object.type))));
         if (T(object.type).unqualified() != self.pointee()->unqualified()) at = toBase(at, tid(self));
         CallInfo info;
@@ -2059,7 +2059,7 @@ Lowering::Val Lowering::convertedObject(Val o, const sema::Resolution &r, bool o
     intoSret_ = false;
     if (!byRef && !scalar(gives) && !(object && plainClass(gives)) && !((sret || into) && gives.isStructOrUnion()))
         outside("a conversion function returning '" + gives.describe() + "'");
-    if (T(o.type).isConst() && !self.pointee()->isConst()) outside("a conversion function that drops const");
+    if (T(o.type).isConst() && !self.pointee()->isConst()) broken("a conversion function that drops const");   // the parser refuses a non-const one on a const object
     Val at(o.v, tid(*types_.pointerTo(&T(o.type))));
     if (T(o.type).unqualified() != self.pointee()->unqualified()) at = toBase(at, tid(self));
     CallInfo info;
@@ -2728,7 +2728,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
             if (k == syntax::Kind::MemInit) { inits = i; break; }
             if (k == syntax::Kind::Var) paramNodes.push_back(child(fnNode, i));
         }
-        if (inits != n - 1 && !isCtor) outside("a mem-initialiser outside a constructor");
+        if (inits != n - 1 && !isCtor) broken("a mem-initialiser outside a constructor");   // the parser reads a list only after a constructor
         const std::uint32_t params = static_cast<std::uint32_t>(paramNodes.size());
         if (params + (facts.hasThis ? 1 : 0) + (facts.takesVtt ? 1 : 0) + (facts.msFlag ? 1 : 0) != facts.paramCount)
             broken("a parameter list the typed tree and the function disagree about");
@@ -2822,7 +2822,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         // A constructor's parts, below the floor, are kept by a return; its by-value parameters below them go in the return block.
         liveFloor_ = isCtor ? live_.size() : 0;
         block(body);
-        if (!pendingGotos_.empty()) outside("a goto to a label the body does not place");
+        if (!pendingGotos_.empty()) broken("a goto to a label the body does not place");
         if (!terminated() && !rt.isVoid() && unreached(cur_)) {
             add(Op::Unreachable, TypeId(), std::vector<ValueId>());    // every way through the body returned
         } else if (!terminated()) {
@@ -3029,14 +3029,14 @@ void Lowering::stmt(sema::TypedId id) {
     case syntax::Kind::For: forStmt(id); return;
     case syntax::Kind::Switch: switchStmt(id); return;
     case syntax::Kind::Case: case syntax::Kind::Default: {
-        if (switches_.empty() || n == 0) outside("a case label outside a switch");
+        if (switches_.empty() || n == 0) broken("a case label outside a switch");
         SwitchCtx &sw = switches_.back();
         const BlockId here = newBlock();
         br(here);
         place(here);
         mark(id);
         if (s.kind == syntax::Kind::Default) {
-            if (sw.deflt.valid()) outside("two default labels");
+            if (sw.deflt.valid()) broken("two default labels");
             sw.deflt = here;
         } else {
             if (n != 2) outside("a case of " + std::to_string(n) + " parts");
@@ -3046,7 +3046,7 @@ void Lowering::stmt(sema::TypedId id) {
                 if (!tree_.node(id).folded.has) outside("a case label that is not a constant the lowering folds");
                 v = tree_.node(id).folded.value;
             }
-            for (long long k : sw.values) if (k == v) outside("two case labels of one value");
+            for (long long k : sw.values) if (k == v) broken("two case labels of one value");
             sw.values.push_back(v);
             sw.targets.push_back(here);
         }
@@ -3054,13 +3054,13 @@ void Lowering::stmt(sema::TypedId id) {
         return;
     }
     case syntax::Kind::Break:
-        if (loops_.empty()) outside("a break outside a loop or switch");
+        if (loops_.empty()) broken("a break outside a loop or switch");
         leaveHandlers(handlerDepth_ - loops_.back().handlers, loops_.back().live, loops_.back().brk);
         return;
     case syntax::Kind::Continue: {
         for (std::size_t i = loops_.size(); i-- > 0; )
             if (loops_[i].cont.valid()) { leaveHandlers(handlerDepth_ - loops_[i].handlers, loops_[i].live, loops_[i].cont); return; }
-        outside("a continue outside a loop");
+        broken("a continue outside a loop");
         return;
     }
     case syntax::Kind::Label: {
@@ -3156,6 +3156,16 @@ void Lowering::returnStmt(sema::TypedId id) {
     const Type &rt = T(returns_);
     if (n == 0) {
         if (copiedReturn(rt)) { returnCopied(id, sema::TypedId()); return; }     // `return {};`: the braces hold no child
+        // [dcl.init.list]/3: `return {};` of a scalar or a plain class is its zero (a bare `return` the parser refuses).
+        if (scalar(rt) || rt.isNullPtr()) { leaveHandlers(handlerDepth_, liveFloor_, returnBlock_, std::vector<ValueId>(1, zeroOf(returns_))); return; }
+        if (plainClass(rt)) {
+            const ValueId slot = entryAlloca(tid(*rt.unqualified()), "$ret");
+            const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, slot));
+            at(z).k = rt.size(target_);
+            const InstId c = add(Op::Bitcast, tid(*types_.pointerTo(&rt)), std::vector<ValueId>(1, slot));
+            leaveHandlers(handlerDepth_, liveFloor_, returnBlock_, std::vector<ValueId>(1, result(c)));
+            return;
+        }
         if (!rt.isVoid()) outside("a return with no value");
         leaveHandlers(handlerDepth_, liveFloor_, returnBlock_);
         return;
@@ -3164,7 +3174,7 @@ void Lowering::returnStmt(sema::TypedId id) {
         openFull();
         const Val v = expr(child(id, 0));
         closeFull();
-        if (v.type.valid() && !T(v.type).isVoid()) outside("a return of a value from a void function");
+        if (v.type.valid() && !T(v.type).isVoid()) broken("a return of a value from a void function");
         leaveHandlers(handlerDepth_, liveFloor_, returnBlock_);
         return;
     }

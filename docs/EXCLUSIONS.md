@@ -218,13 +218,13 @@ is left:
   has no body. `src/parser/ParserType.cpp:1281`
 - **a delegating constructor of a class with a virtual base** - the target
   would have to be told whether the object is the most derived one.
-  `src/parser/ParserTopLevel.cpp:2466`
+  `src/parser/ParserTopLevel.cpp:2470`
 - **a mem-initialiser that would run a constructor once per element of an
-  array member** - `src/parser/ParserTopLevel.cpp:1322`
+  array member** - `src/parser/ParserTopLevel.cpp:1326`
 - **a virtual base initialised with an argument that needs a temporary** - the
   base is built by the most-derived constructor, in a frame the temporary is
   not in; an argument of parameters and constants works.
-  `src/parser/ParserTopLevel.cpp:1289`
+  `src/parser/ParserTopLevel.cpp:1293`
 - **a braced list among the arguments of an aggregate member's constructor**,
   `B b = { 1, { 2, { 3 } } }` where the member's class has a constructor - each
   argument is taken as a value. `src/parser/ParserInit.cpp:418`
@@ -398,7 +398,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   `catch` handler, on x86_64-windows** - the cleanup would be a funclet inside
   the handler's funclet. `src/parser/ParserStmt.cpp:979`
 - **a trailing return type that is itself deduced**, `auto f() -> auto` -
-  C++14. `src/parser/ParserTopLevel.cpp:2379`
+  C++14. `src/parser/ParserTopLevel.cpp:2383`
 - **an expression form the Itanium name was not measured for, over a template's
   parameters in a function template's signature** - a postfix `++` or `--`, a
   lambda, `new`, `throw`, `typeid`, `noexcept`, a C-style cast to a reference
@@ -647,7 +647,6 @@ a braced list reaching a '<...>'
 a braced list reaching a member the lowering does not place
 a braced list reaching an array of '<...>'
 a braced list with values past its aggregate
-a break outside a loop or switch
 a built flag's setting not where it was made
 a built flag's zeroing not where it was made
 a by-value argument built in place from what is not a call
@@ -663,7 +662,6 @@ a call that is no lvalue
 a call through a member pointer
 a call through what is not a pointer to a member function
 a call's class result that is no object
-a case label outside a switch
 a case label that is not a constant the lowering folds
 a case of <...> parts
 a cast of what is not a scalar
@@ -747,10 +745,8 @@ a constructed class returned from what is neither a local nor a temporary
 a constructor called with arguments its parameters do not match
 a constructor of another class
 a constructor part that is not a mem-initialiser
-a continue outside a loop
 a conversion function of what is not an object
 a conversion function returning '<...>'
-a conversion function that drops const
 a conversion of '<...>' to '<...>'
 a conversion of a number to a pointer
 a conversion of a pointer to a class to one that is not its base
@@ -777,7 +773,6 @@ a function with no body
 a global not typed
 a goto in a function with a named return value
 a goto into a scope it is not in
-a goto to a label the body does not place
 a handler reading a call's value across its unwind edge on the Microsoft ABI
 a handler reading a value of the body that is no scalar on the Microsoft ABI
 a jump out of Microsoft handlers the lowering did not open
@@ -802,7 +797,6 @@ a local's initializer_list of another parameter
 a local's initializer_list of braced elements
 a mem-initialiser of <...> values for '<...>'
 a mem-initialiser of the class itself or of no base
-a mem-initialiser outside a constructor
 a member '<...>' that is not a data member
 a member '<...>' the lowering does not reach
 a member built from another type
@@ -894,7 +888,6 @@ a reference to a function bound to what is not that function
 a return built in place by a call of another type
 a return built in place by what is not a call
 a return of <...> parts
-a return of a value from a void function
 a return type of '<...>'
 a return with no value
 a return's copy constructor of another shape
@@ -1048,7 +1041,6 @@ an operator that is no lvalue
 an operator-> answering with no pointer
 an operator-> asked of what is not a class
 an operator-> of another shape
-an operator-> that drops const
 an operator-> the lowering does not call
 an operator-> whose last answer is a class
 arithmetic on a nullptr
@@ -1056,14 +1048,22 @@ arithmetic on a pointer to an incomplete type
 the name '<...>' is no object
 the name '<...>', a static memberthisof another kind
 the operator '<...>'
-two case labels of one value
-two default labels
 two pointers to different types compared
 ```
 
 The internal errors, `broken(...)`, by their text (mend review N3, 2026-11-13):
 
 ```broken
+a goto to a label the body does not place
+a return of a value from a void function
+a continue outside a loop
+a break outside a loop or switch
+two case labels of one value
+two default labels
+a case label outside a switch
+a conversion function that drops const
+an operator-> that drops const
+a mem-initialiser outside a constructor
 <...>a '<...>' not recorded
 a '->' on a class with no operator-> recorded
 a 'new' with default arguments the parser recorded no syntax for
