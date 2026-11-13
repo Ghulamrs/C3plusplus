@@ -246,3 +246,15 @@ tools in `~/ti6x`), never on the Mac.
   register runs one unit, so it is named in its .notarget, not copied). Each case has a `tms6747` .notarget line naming it.
 - **Seen, not this lane's:** member-pointer-condition ran 22+ minutes on vm6747 in wave 2's -O2 shard 1 (a hang past the
   3-minute run cap); noexcept-terminates-callee is the walker's known set_terminate.
+
+## A member pointer's null on the C6000, 2026-11-14 (lane c6m, from m5-wave2 da250ac7)
+
+- **The fault was the test, not the store:** member-pointer-condition hung on vm6747 because the walker tested a data
+  member pointer against 0 - `c = 0` already stored -1 (the parser's conversion of a null constant), and SSA, which
+  selects x86, tests against nullMemberPointer. The Ast carried the member pointer bare into `if`, `while`, `?:`, `!`,
+  `&&`/`||` (contextualScalar) and into `(bool)` (a Cast the C6000 narrowed to a byte: -1 read 255).
+- **Mended in the shared front end:** convertNode's conversion to bool takes a data member pointer, comparing it with
+  its own null (`!= -1`, the null constant converted), and contextualScalar converts one to bool - one comparison,
+  every truth context; no backend changed. src/: +5 -2 (ParserOverload.cpp, ParserExprNew.cpp).
+- member-pointer-condition's `.notarget` (its only line was tms6747's) is gone; member-pointer-null-neighbours holds
+  nullptr and 0 assigned, returned, passed and compared, and a `for`/`do` ended by a null, with clang's output.
