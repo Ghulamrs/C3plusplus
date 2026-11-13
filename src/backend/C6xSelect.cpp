@@ -80,6 +80,8 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
                 if (c.variadic) return "variadic call";
                 if (c.sret || c.resultAlloca >= 0) return "class result of a call";
                 if (i.count > static_cast<std::uint32_t>(abi_.intCount)) return "stack arguments";
+                for (const Type *p : ssaTypes_->type(c.signature)->params())    // TI passes a small class in registers
+                    if (p->isStructOrUnion()) return "class argument";
                 break;
             }
             default:
