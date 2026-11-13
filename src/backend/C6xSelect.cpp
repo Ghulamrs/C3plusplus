@@ -415,10 +415,11 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
     ssaSides_ = sides;
     std::vector<int> arrives(nv, -1);
     for (std::size_t i = 0; i < f.params.size(); i++) arrives[f.params[i].v] = static_cast<int>(i);
-    // The file a value wants: a parameter its arriving register's, a load or a step its base's, else most of its operands'.
+    // The file a value wants: a pointer parameter its arriving register's, a load or a step its base's, else most of its operands'.
     const auto wants = [&](std::size_t v) -> unsigned {
         const auto file = [&](ir::ValueId o) { return !o.valid() || ssaHome_[o.v] == 0 ? -1 : static_cast<int>((kBside >> (ssaHome_[o.v] - 1)) & 1); };
-        if (arrives[v] >= 0) return arrives[v] < abi_.intCount && abi_.intRegs[arrives[v]][0] == 'B' ? kBside : ~kBside;
+        const bool base = ssaTypes_->type(f.values[v].type)->isPointer() || ssaTypes_->type(f.values[v].type)->isReference();
+        if (arrives[v] >= 0) return base && arrives[v] < abi_.intCount && abi_.intRegs[arrives[v]][0] == 'B' ? kBside : ~kBside;
         int a = 0, b = 0;
         const ir::Value &val = f.values[v];
         if (!val.def.valid()) {
