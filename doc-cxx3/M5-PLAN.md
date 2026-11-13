@@ -145,3 +145,55 @@ files, the walker's thread_local address, `va_start` and `va_arg` made three hel
   date (on the Windows box's copy); memory gate quiet on the Linux box (no file it reads changed).
 - **Owed.** The Linux leg (g++ build, the probes and the census there) and `identical.sh ARCHS=arm64-darwin` by name
   are the wave gate's; `.part.cpp` cases and the Mac's own `tests/run.sh`; `-g` and registers (M5.2's rest), then M5.3.
+
+### M5.2, round 3 (2026-11-13, lane m5e, from `9d18f117`)
+
+Registers for arm64's selected bodies at -O1 and -O2 (`A64Select.cpp` 564 -> 835 lines; src/ 92,558 -> 92,851, +397 -104
+over three files). -O0 is untouched: all 811 `.s` at -O0 are byte-identical to m5d's.
+
+- **The design: the selector allocates over the SSA values, not over text.** x86's `opt::Local` and `mir::Allocator`
+  read x86 assembly (`opt::MFunction`), so arm64 cannot share them; `Arm64Darwin::ssaAssign` is a linear scan over
+  `ir::Function` itself, before a line is written. Liveness is solved over the blocks (a value used outside its
+  defining block is live in), a value's range is the hull of where it is live in the order the blocks are written,
+  and two values share a register only where one's last read is the other's definition.
+- **Register classes.** x12-x15 and d16-d23 for a range that crosses no call; **x19-x28 and d8-d15 for one that
+  does** (a `call`, an `invoke` - so every value live into a pad - and `tlsaddr`), and for the others once scratch is
+  gone. x0-x2 and d0/d1 stay the travelling registers, x9-x11 and x17 the walker's helpers'; a realigned frame (x19
+  its floor) and `-g` keep slots. Out of registers, the lightest range in reach (uses weighted 8 to the loop depth, a
+  loop being an edge to a block written no later) gives its register up where the newcomer weighs more.
+- **The frame.** The walker's conventions stand: a value in a register has no slot; the registers the body took are
+  saved below the locals by the walker's own loop (`saved`, with its `.cfi_offset` rows - `stur`/`ldur` where the
+  offset reaches) and restored at the return label. A frame the saves could not reach (65535) keeps its slots.
+- **What else a register made possible.** Operands are read where they live (`ssaUse`) and results written where
+  they live (`ssaDef`): arithmetic, compares, loads, stores, geps, conversions between integers take no move. A
+  compare whose only reader is its block's `condbr` is flags and `b.cc`; an edge that moves nothing is branched to
+  directly and a branch to the next block falls through; a constant under 4096 is an immediate of `add`, `sub` and
+  `cmp`, any other constant without a register is written where it is read (no slot); a branch's arguments are a
+  parallel move of *places*, since a parameter may share its register with a dying argument.
+- **Bench** (the six kernels of `tools/windows/bench-kernels.cpp`, arm64-darwin `.s` written by the cl-built cxx3 at
+  -O2, linked and run on the Mac, seven rounds interleaved, median ms; every checksum equal):
+
+  | kernel | selected, registers (this round) | walker + `A64Peep` (`CXX1_A64_WALKER=1`) | selected, slots (m5d) | Apple clang -O2 |
+  | --- | --- | --- | --- | --- |
+  | fib | 3 | 7 | 10 | 0 |
+  | sieve | 33 | 66 | 140 | 31 |
+  | matmul | 7 | 27 | 78 | 2 |
+  | isort | 18 | 33 | 89 | 6 |
+  | hash | 178 | 318 | 1038 | 57 |
+  | virtual | 128 | 217 | 684 | 70 |
+  | total | **369** | 672 | 2052 | 169 |
+
+  The selected bodies are faster than the walker with its peephole on all six (0.55 of its total), which is what
+  M5.3 needs to delete `A64Peep`; against clang 2.2 times its total, `hash` and `virtual` most of the distance.
+
+- **A wrong answer the bench caught and the cases did not**: the fall-through form of `condbr` lacked its `return`
+  and branched twice (`hash`'s checksum); mended before the gate below. First tree's other fault (an operand read
+  written inside the line that used it, 76 `.s` that did not assemble) was the Mac run's.
+- **Gate** (on the final tree): cross-compiled on the Windows box (`boxkit/m5e-winprobe.sh`), 0 broken at -O0 and
+  -O2, census **10758 of 10758 (100.0%)** at both, 811 cases selected whole; the Mac, serially through `mac-run.sh`:
+  **811 of 811 at -O0 and 811 of 811 at -O2** linked, run and print their recorded output; cl /W4 /WX clean; exclusions 0 uncited, 0 stale; comment cap 0 over; `ide/generate.py --check` up to
+  date; the memory gate does not run on Windows (`SIGPIPE`) and no file it reads changed.
+- **Owed.** The Linux leg (g++ build, probes, memory gate) and `identical.sh ARCHS=arm64-darwin` by name are the wave
+  gate's; cxx3's own sources' census was not re-run (the subset did not change). What the table leaves to M5.3:
+  the entry sequence still stores each parameter to the parser's slot and reads it back; a signed 32-bit result is
+  re-extended (`sxtw`) after every operation; no addressing modes (`[x, x, lsl]`, offsets) and no `madd`; `-g`.

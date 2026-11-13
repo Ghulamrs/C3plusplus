@@ -78,6 +78,23 @@ private:
     std::vector<long long> ssaAllocaSlot_, ssaValueSlot_;
     long long ssaArgArea_ = 0;      // the frame's one area for the copies of classes a call passes by a copy's address
     int ssaRegionAt_ = 0;
+    // **Registers at -O1 and -O2** (M5.2 round 3): a value's register number, 0 for its slot - x12-x15 and d16-d23 where no
+    // call is crossed, x19-x28 and d8-d15 (saved by the prologue, `ssaSaved_`) where one is. A constant: bit 0 of
+    // `ssaImm_` where it is an immediate of add, sub and cmp, bit 1 where it has no place and is written at each use.
+    std::vector<int> ssaReg_;
+    std::vector<int> ssaImm_;
+    std::vector<long long> ssaImmK_;
+    std::vector<std::string> ssaSaved_;
+    std::vector<char> ssaFlags_;        // a compare whose only reader is its block's condbr: flags, no value
+    std::uint32_t ssaNext_ = 0;         // the block written next, which a branch to it falls into
+    void ssaJump(ir::BlockId b) { if (b.v != ssaNext_) out_ << "  b " << ssaBlockLabel(b) << "\n"; }
+    const char *ssaCond_ = nullptr, *ssaNot_ = nullptr;
+    void ssaAssign(const ir::Function &f);
+    int ssaUse(const ir::Function &f, ir::ValueId v, int n);
+    int ssaDef(ir::ValueId v) const { return v.valid() ? ssaReg_[v.v] : 0; }
+    void ssaKeep(const ir::Function &f, ir::ValueId v) { if (ssaDef(v) == 0) ssaStore(f, v); }
+    void ssaInto(const ir::Function &f, ir::ValueId v, const std::string &reg);
+    void ssaRaw(const ir::Function &f, ir::ValueId v, bool write);
     const Type *ssaArgType(const ir::Function &f, const ir::Inst &i, std::size_t n) const;
     std::string ssaLandLabel(ir::BlockId b) const { return label("ssaland", static_cast<int>(b.v)); }
     int ssaSelected_ = 0, ssaWalked_ = 0;
@@ -92,7 +109,7 @@ private:
     void ssaSlot(const char *op, const std::string &reg, long long off);
     void ssaLoad(const ir::Function &f, ir::ValueId v, int n);
     void ssaStore(const ir::Function &f, ir::ValueId v);
-    void ssaBranchArgs(const ir::Function &f, const ir::Succ &s);
+    bool ssaBranchArgs(const ir::Function &f, const ir::Succ &s, bool ask = false);
     std::string ssaBlockLabel(ir::BlockId b) const { return label("ssa", static_cast<int>(b.v)); }
 
     std::ostringstream out_;
@@ -192,5 +209,5 @@ private:
     void movImm(const char *reg, long long value);
     void loadFpConst(const std::string &reg, const Type *t, double v);
     void genConversion(const Type *from, const Type *to);
-    void narrowInt(const Type *to);
+    void narrowInt(const Type *to, int d = 0, int s = 0);
 };
