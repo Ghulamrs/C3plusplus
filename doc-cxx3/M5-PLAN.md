@@ -40,3 +40,18 @@ Everything else - x86 gates, the C6000, cl - stays on the boxes.
 
 ## Where it stands
 - **To undo at M5.3:** the five `arm64-darwin` lines m5b added to `.notarget` (walker defects, `tests/open/walker-*`) go when the walker goes; the selector must answer those cases as clang does.
+- **R1, the probes (2026-11-13, lane r1p, from dd978ae1).** 40 smallest programs aimed at the lowering's `outside()`
+  reasons in Lowering.cpp's file order (members, bases, locals, statics, initializer_list, returns, braced lists), each
+  accepted by clang -std=c++11 -pedantic-errors over the tree's include/. Outcomes: **(a) 8 refused by name as cited**,
+  now tests/cases/lowering-*.cpp with a .error: a static local built with default arguments; a reference member bound to
+  another type; a class local initialised from a temporary of another type; an initializer_list of 'struct A' elements;
+  a constructed class returned from another type; a class with a destructor returned from another type, and returned
+  inside a handler; a braced list reaching a member the lowering does not place (a bit-field). **(b) 0 changed**; 26
+  probes aimed at a reason compile and print clang's answer, so the shape a reason names is not the shape a program
+  meets there (not counted as probed). **(c) 0 shown unreachable** this round. **One miscompile found**:
+  `B() : a() {}` over `A(int = 7)` prints an uninitialised value at -O0 and -O2 (tests/open/
+  lowering-member-value-init-default-argument.cpp). Four front-end refusals stand in front of a lowering reason and
+  are in tests/open/ with clang's answer: a static and a thread_local array initialised at run time ("expected a
+  constant initialiser", not by name), a reference member's default member initialiser, a member copied from a
+  derived object (no `A::A` found). src/ lines: 0 changed. Owed: the miscompile first; the four front-end shapes; the
+  reasons past Lowering.cpp:1414 and Builder*.cpp.
