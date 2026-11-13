@@ -12,15 +12,29 @@ namespace {
 
 long long roundUp(long long n, long long a) { return (n + a - 1) / a * a; }
 
-// What a slot holds in round 1: an integer, a pointer or a float of 1, 2, 4 or 8 bytes.
+// What a slot holds as a value: an integer, a pointer, a pointer to data member or a float of 1, 2, 4 or 8 bytes.
 bool a64Scalar(const Type *t, const Target &target) {
     if (t == nullptr || t->isStructOrUnion() || t->isArray()) return false;
-    if (!(t->isInteger() || t->isPointer() || t->isFloating() || t->isNullPtr())) return false;
+    if (!(t->isInteger() || t->isPointer() || t->isFloating() || t->isNullPtr() || t->isMemberPointer())) return false;
     const int s = t->size(target);
     return s == 1 || s == 2 || s == 4 || s == 8;
 }
 
+// A class or an array as a value is its address in the slot, as the walker's load leaves it (x86's selector's rule).
+bool a64Whole(const Type *t) { return t != nullptr && (t->isStructOrUnion() || t->isArray()); }
+
 std::string a64Fp(const Type *t, int n) { return std::string(t->kind() == Kind::Float ? "s" : "d") + std::to_string(n); }
+
+// The instructions a class value may be the result or an operand of: its address read, stored, passed or moved.
+bool a64Keeps(ir::Op op) {
+    return op == ir::Op::Load || op == ir::Op::Store || op == ir::Op::Call || op == ir::Op::Invoke || op == ir::Op::Ret ||
+           op == ir::Op::Br || op == ir::Op::CondBr || op == ir::Op::Switch || op == ir::Op::Undef || op == ir::Op::VaArg;
+}
+
+// A bitcast between a class or an array and an address - an array's decay - moves the address it is.
+bool a64Moves(const Type *to, const Type *from) {
+    return (a64Whole(to) || a64Whole(from)) && (a64Whole(to) || to->isPointer()) && (a64Whole(from) || from->isPointer());
+}
 
 bool a64Selects(ir::Op op) {
     switch (op) {
@@ -33,7 +47,8 @@ bool a64Selects(ir::Op op) {
     case ir::Op::Trunc: case ir::Op::SExt: case ir::Op::ZExt: case ir::Op::FpToSi: case ir::Op::FpToUi: case ir::Op::SiToFp:
     case ir::Op::UiToFp: case ir::Op::FpExt: case ir::Op::FpTrunc: case ir::Op::Bitcast: case ir::Op::PtrToInt: case ir::Op::IntToPtr:
     case ir::Op::Br: case ir::Op::CondBr: case ir::Op::Switch: case ir::Op::Ret: case ir::Op::Unreachable: case ir::Op::Call:
-    case ir::Op::Invoke: case ir::Op::CatchPad: case ir::Op::CleanupPad:
+    case ir::Op::Invoke: case ir::Op::CatchPad: case ir::Op::CleanupPad: case ir::Op::TlsAddr: case ir::Op::VaStart:
+    case ir::Op::VaArg: case ir::Op::VaEnd:
         return true;
     default:
         return false;
@@ -45,22 +60,19 @@ bool a64Selects(ir::Op op) {
 // **The fallback seam**: why `f` is not selected, empty where every part of it is inside the subset.
 std::string Arm64Darwin::ssaOutside(const Function &fn, const ir::Function &f) const {
     if (lineSource() != nullptr) return "-g";
-    if (f.variadic) return "a variadic function";
-    if (fn.frameAlign() > 16 || f.frameAlign > 16) return "an over-aligned frame";
     if (f.params.size() != fn.params().size()) return "parameters the parser counts differently";
     for (std::size_t i = 0; i < fn.params().size(); i++)
-        if (!a64Scalar(fn.params()[i].type, target_) && !fn.params()[i].type->isStructOrUnion()) return "a parameter that is no scalar and no class";
+        if (!a64Scalar(fn.params()[i].type, target_) && !fn.params()[i].type->isStructOrUnion() && !fn.params()[i].type->isReference())
+            return "a parameter that is no scalar, no class and no reference";
     const Type *ret = ssaTypes_->type(f.returns);
     // A reference comes back as the address it is: the operand of every `ret` is then a pointer (asked below).
     const bool address = ret != nullptr && (ret->isStructOrUnion() || ret->isReference());
     if (ret == nullptr || (!ret->isVoid() && !a64Scalar(ret, target_) && !address)) return "a result that is no scalar and no class";
     if (ret->isStructOrUnion() && planFor(ret).byRef && fn.sretSlot() == 0) return "a class result with no pointer slot";
-    for (std::size_t i = 0; i < f.frame.size(); i++)
-        if (f.frame[i].align > 16 || ssaTypes_->type(f.frame[i].type)->align(target_) > 16) return "an over-aligned local";
     for (std::size_t v = 1; v < f.values.size(); v++) {
         if (!f.values[v].type.valid()) continue;
         const Type *t = ssaTypes_->type(f.values[v].type);
-        if (!t->isVoid() && !a64Scalar(t, target_)) return "a value that is no scalar";
+        if (!t->isVoid() && !a64Scalar(t, target_) && !a64Whole(t)) return "a value that is no scalar, no class and no array";
     }
     for (std::size_t b = 0; b < f.blocks.size(); b++) {
         const ir::Block &blk = f.block(f.blocks[b]);
@@ -71,7 +83,14 @@ std::string Arm64Darwin::ssaOutside(const Function &fn, const ir::Function &f) c
             const ir::Inst &i = f.inst(id);
             if (!a64Selects(i.op)) return "the instruction '" + ir::opName(i.op) + "'";
             if ((i.op == ir::Op::Memcpy || i.op == ir::Op::Memset) && (i.k < 0 || i.k > 4096)) return "a block past 4096 bytes";
-            if (i.op == ir::Op::Ret && i.count == 1 && address && !typeOf(f, f.operand(i, 0))->isPointer()) return "a class or a reference returned as a value";
+            if (i.op == ir::Op::Ret && i.count == 1 && address && !typeOf(f, f.operand(i, 0))->isPointer() &&
+                !(ret->isStructOrUnion() && a64Whole(typeOf(f, f.operand(i, 0))))) return "a class or a reference returned as a value";
+            if (i.op == ir::Op::Bitcast && a64Moves(typeOf(f, i.result), typeOf(f, f.operand(i, 0)))) continue;
+            if (!a64Keeps(i.op)) {
+                if (i.result.valid() && a64Whole(typeOf(f, i.result))) return "a class value from '" + ir::opName(i.op) + "'";
+                for (std::uint32_t n = 0; n < i.count; n++)
+                    if (a64Whole(typeOf(f, f.operand(i, n)))) return "a class value into '" + ir::opName(i.op) + "'";
+            }
             if (i.op != ir::Op::Call && i.op != ir::Op::Invoke) continue;
             if (i.op == ir::Op::Invoke && !f.block(i.succ[1].block).pad) return "an invoke whose unwind edge is no pad";
             const ir::CallInfo &c = f.calls[i.call];
@@ -84,7 +103,11 @@ std::string Arm64Darwin::ssaOutside(const Function &fn, const ir::Function &f) c
             for (std::uint32_t n = first; n < i.count; n++) {
                 const std::size_t at = n - first;
                 const bool extra = c.namedArgs >= 0 && at >= static_cast<std::size_t>(c.namedArgs);
-                if (ssaArgType(f, i, at)->isStructOrUnion() && (extra || !typeOf(f, f.operand(i, n))->isPointer())) return "a class through '...'";
+                const Type *ot = typeOf(f, f.operand(i, n));
+                if (ssaArgType(f, i, at)->isStructOrUnion() && (extra || !(ot->isPointer() || a64Whole(ot)))) return "a class through '...'";
+                const Type *want = at < sig->params().size() ? sig->params()[at] : nullptr;
+                if (a64Whole(ot) && !(want != nullptr && want->isStructOrUnion() && !Abi::passedByAddress(*want, target_)))
+                    return "a class value the callee takes by address";
                 if (extra && typeOf(f, f.operand(i, n))->kind() == Kind::Float) return "a float through '...'";
             }
         }
@@ -140,6 +163,7 @@ int Arm64Darwin::layoutSsa(const Function &fn, const ir::Function &f) {
 
 // The address x29 - off into `dst`.
 void Arm64Darwin::ssaFrame(const char *dst, long long off) {
+    if (realign_ > 0) { localIn(dst, static_cast<int>(off)); return; }   // the floor in x19, as the walker's slots
     if (off < 4096) { out_ << "  sub " << dst << ", x29, #" << off << "\n"; return; }
     movImm("x9", off);
     out_ << "  sub " << dst << ", x29, x9\n";
@@ -147,7 +171,7 @@ void Arm64Darwin::ssaFrame(const char *dst, long long off) {
 
 // A slot read ("ld") or written ("st"): unscaled from x29 where the offset reaches, through x9 otherwise.
 void Arm64Darwin::ssaSlot(const char *op, const std::string &reg, long long off) {
-    if (off <= 255) { out_ << "  " << op << "ur " << reg << ", [x29, #-" << off << "]\n"; return; }
+    if (off <= 255 && realign_ == 0) { out_ << "  " << op << "ur " << reg << ", [x29, #-" << off << "]\n"; return; }
     ssaFrame("x9", off);
     out_ << "  " << op << "r " << reg << ", [x9]\n";
 }
@@ -308,6 +332,18 @@ void Arm64Darwin::selectInst(const ir::Function &f, const ir::Inst &i) {
         ssaStore(f, i.result);
         return;
     }
+    case ir::Op::TlsAddr:
+        tlsAddress(i.sym, i.k != 0);
+        ssaStore(f, i.result);
+        return;
+    case ir::Op::VaStart: case ir::Op::VaArg:
+        ssaLoad(f, f.operand(i, 0), 0);
+        if (i.op == ir::Op::VaStart) { vaStartAt(); return; }
+        vaArgAt(rt);
+        ssaStore(f, i.result);
+        return;
+    case ir::Op::VaEnd:
+        return;
     case ir::Op::Load:
         ssaLoad(f, f.operand(i, 0), 0);
         load(rt);
@@ -316,7 +352,8 @@ void Arm64Darwin::selectInst(const ir::Function &f, const ir::Inst &i) {
     case ir::Op::Store:
         ssaLoad(f, f.operand(i, 1), 0);
         ssaSlot("ld", "x1", ssaValueSlot_[f.operand(i, 0).v]);
-        storeThrough(typeOf(f, f.operand(i, 1)), "x1");
+        if (a64Whole(typeOf(f, f.operand(i, 1)))) copyBlock(typeOf(f, f.operand(i, 1))->size(target_), "x0", "x1");
+        else storeThrough(typeOf(f, f.operand(i, 1)), "x1");
         return;
     case ir::Op::Memcpy:
         ssaLoad(f, f.operand(i, 1), 0);
@@ -420,7 +457,7 @@ void Arm64Darwin::selectInst(const ir::Function &f, const ir::Inst &i) {
     case ir::Op::FpExt: case ir::Op::FpTrunc: case ir::Op::Bitcast: case ir::Op::PtrToInt: case ir::Op::IntToPtr:
         // The walker's conversion between the two types, as x86's selector takes it.
         ssaLoad(f, f.operand(i, 0), 0);
-        genConversion(typeOf(f, f.operand(i, 0)), rt);
+        if (!a64Moves(rt, typeOf(f, f.operand(i, 0)))) genConversion(typeOf(f, f.operand(i, 0)), rt);
         ssaStore(f, i.result);
         return;
     case ir::Op::Br:
@@ -496,7 +533,7 @@ void Arm64Darwin::selectBody(const Function &fn, const ir::Function &f) {
     const std::vector<Param> &ps = fn.params();
     for (std::size_t i = 0; i < ps.size() && i < f.params.size(); i++) {
         localIn("x0", ps[i].offset);
-        load(ps[i].type);
+        load(ps[i].type->isReference() ? typeOf(f, f.params[i]) : ps[i].type);
         ssaStore(f, f.params[i]);
     }
     if (f.sret.valid() && sretSlot_ != 0) { localIn("x0", sretSlot_); out_ << "  ldr x0, [x0]\n"; ssaStore(f, f.sret); }

@@ -116,3 +116,32 @@ files, the walker's class return, class argument and class result made three hel
   tree is `~/m5c`) and `identical.sh ARCHS=arm64-darwin` by name are the wave gate's; `.part.cpp` cases and the
   Mac's own `tests/run.sh` as before. M5.2 round 2: the values that are no scalar (a class loaded whole, 58), a
   reference or array parameter, variadic bodies and `va_arg`, `tlsaddr`, over-aligned frames, `-g`, registers.
+
+### M5.2, round 2 (2026-11-13, lane m5d, from `a8f60bb2`)
+
+m5c's last outside reasons taken into the arm64 selector (`A64Select.cpp` 527 -> 564 lines; src/ +90 -30 over three
+files, the walker's thread_local address, `va_start` and `va_arg` made three helpers both paths call).
+
+- **A class or an array as a value is its address** in its slot, as the walker's `load` leaves it (x86's rule): a
+  store of one is the walker's `copyBlock`, a `ret` of one goes out through `returnAgg`, a call passes it where the
+  signature takes the class by a copy, and a bitcast between it and a pointer (an array's decay) moves the address.
+  Any other instruction with a class value is refused by name ("a class value into/from '<op>'"), as is one the
+  callee takes by address.
+- **A reference parameter** is the pointer its slot holds; **a pointer to data member** is an 8-byte scalar (a pointer
+  to member function wears a struct's shape and is a class value).
+- **Variadic bodies**: Darwin's `va_list` is a char pointer; `va_start`/`va_arg` are the walker's (`vaStartAt`,
+  `vaArgAt`) over the list's address; `va_end` is nothing. **`tlsaddr`** is the walker's `tlsAddress` (the TLV getter,
+  or the `_ZTW` wrapper where `k` says). **An over-aligned frame**: `realign_` also reads the SSA frame's allocas, and
+  a slot in a realigned frame is addressed from x19's floor through `localIn`, as the walker's.
+- **Census**: the cases **10758 of 10758 functions (100.0%) at -O0 and at -O2** (99.0% and 99.4% before), 811 cases
+  selected whole, 0 broken by the selector path at either level; cxx3's own sources and the C90 cases **40626 of 40626
+  (100.0%)**, the walker 0 (99.8% before). Still outside by rule, none met: `-g`, a class through `...`, a float
+  through `...`, a pad that is no landing pad, a block past 4096 bytes; registers are not this round.
+- **Where it was measured.** The Linux lock was held by other lanes' gates; the cl build, both probes and the source
+  census ran on the Windows box with `cxx3-msvc.exe` (`boxkit/m5d-winprobe.sh`), the `.s` linked and run on the Mac.
+- **Run.** Each of the 811 `.s` linked and run on the Mac through `mac-run.sh`, two at a time: **811 of 811 at -O0
+  and 811 of 811 at -O2** print their recorded output.
+- **Gates.** cl /W4 /WX clean; exclusions 0 uncited, 0 stale; comment cap 0 over; `ide/generate.py --check` up to
+  date (on the Windows box's copy); memory gate quiet on the Linux box (no file it reads changed).
+- **Owed.** The Linux leg (g++ build, the probes and the census there) and `identical.sh ARCHS=arm64-darwin` by name
+  are the wave gate's; `.part.cpp` cases and the Mac's own `tests/run.sh`; `-g` and registers (M5.2's rest), then M5.3.

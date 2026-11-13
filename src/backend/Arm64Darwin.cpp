@@ -5,6 +5,7 @@
 
 #include "../Source.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -205,21 +206,25 @@ void Arm64Darwin::localIn(const char *dst, int slot) {
     }
 }
 
+// **The TLV descriptor's getter, measured from clang**: its address from the page, its first word called with the
+// descriptor in x0, the object's address answered in x0. The getter and this unit's wrappers keep every register but
+// x0, x9, x16 and x17 (dyld's rule). The walker's and the selector's thread_local address.
+void Arm64Darwin::tlsAddress(const std::string &symbol, bool viaWrapper) {
+    if (viaWrapper) {
+        out_ << "  bl _" << tlsWrapperName(symbol) << "\n";
+        return;
+    }
+    out_ << "  adrp x0, _" << symbol << "@TLVPPAGE\n";
+    out_ << "  ldr x0, [x0, _" << symbol << "@TLVPPAGEOFF]\n";
+    out_ << "  ldr x9, [x0]\n  blr x9\n";
+}
+
 void Arm64Darwin::genAddr(const Expr &e) {
     if (const Var *v = dynamic_cast<const Var *>(&e)) {
         if (v->isLocal()) {
             localIn("x0", v->offset());
         } else if (v->isThreadLocal()) {
-            // **The TLV descriptor's getter, measured from clang**: its address from the page, its
-            // first word called with the descriptor in x0, the object's address answered in x0. The
-            // getter and this unit's wrappers keep every register but x0, x9, x16 and x17 (dyld's rule).
-            if (v->viaWrapper()) {
-                out_ << "  bl _" << tlsWrapperName(v->symbol()) << "\n";
-            } else {
-                out_ << "  adrp x0, _" << v->symbol() << "@TLVPPAGE\n";
-                out_ << "  ldr x0, [x0, _" << v->symbol() << "@TLVPPAGEOFF]\n";
-                out_ << "  ldr x9, [x0]\n  blr x9\n";
-            }
+            tlsAddress(v->symbol(), v->viaWrapper());
         } else if (definedHere_.count(v->symbol()) != 0) {
             out_ << "  adrp x0, _" << v->symbol() << "@PAGE\n";
             out_ << "  add x0, x0, _" << v->symbol() << "@PAGEOFF\n";
@@ -439,19 +444,29 @@ void Arm64Darwin::visit(const Num &n) {
 
 void Arm64Darwin::visit(const Var &n) { genAddr(n); load(n.type()); }
 
-void Arm64Darwin::visit(const VaStart &n) {
-    n.list().accept(asVisitor());
+// Darwin's va_list is a char pointer, at x0's address: va_start points it past the named stack words, va_arg steps it
+// by 8 and loads the word it passed. The walker's and the selector's.
+void Arm64Darwin::vaStartAt() {
     out_ << "  add x1, x29, #" << (16 + namedStackBytes_) << "\n";
     out_ << "  str x1, [x0]\n";
 }
 
-void Arm64Darwin::visit(const VaArg &n) {
-    n.list().accept(asVisitor());
+void Arm64Darwin::vaArgAt(const Type *t) {
     out_ << "  ldr x1, [x0]\n";
     out_ << "  add x2, x1, #8\n";
     out_ << "  str x2, [x0]\n";
     out_ << "  mov x0, x1\n";
-    load(n.type());
+    load(t);
+}
+
+void Arm64Darwin::visit(const VaStart &n) {
+    n.list().accept(asVisitor());
+    vaStartAt();
+}
+
+void Arm64Darwin::visit(const VaArg &n) {
+    n.list().accept(asVisitor());
+    vaArgAt(n.type());
 }
 
 void Arm64Darwin::visit(const StrLit &n) { genAddr(n); }
@@ -1139,6 +1154,11 @@ void Arm64Darwin::emitFunction(const Function &fn) {
             const int a = l.align > objectAlign(l.type, target_) ? l.align : objectAlign(l.type, target_);
             if (a > 16 && a > realign_) realign_ = a;
         }
+    for (std::size_t i = 0; ssaFn != nullptr && i < ssaFn->frame.size(); i++) {
+        const int a = std::max(ssaFn->frame[i].align, ssaTypes_->type(ssaFn->frame[i].type)->align(target_));
+        if (a > 16 && a > realign_) realign_ = a;
+    }
+    if (ssaFn != nullptr && ssaFn->frameAlign > 16 && ssaFn->frameAlign > realign_) realign_ = ssaFn->frameAlign;
     if (realign_ > 0) {
         out_ << "  str x19, [sp, #-16]!\n";
         out_ << "  .cfi_offset w19, -32\n";

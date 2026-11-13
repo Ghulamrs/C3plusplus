@@ -174,6 +174,9 @@ private:
     int namedStackBytes_ = 0;
 
     void genAddr(const Expr &e);
+    void tlsAddress(const std::string &symbol, bool viaWrapper);
+    void vaStartAt();
+    void vaArgAt(const Type *t);
     // A slot's address into `dst`: below x29, or up from x19 in a frame realigned for an over-aligned local.
     void localIn(const char *dst, int slot);
     int realign_ = 0;
