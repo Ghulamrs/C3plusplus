@@ -18,7 +18,7 @@
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-CAP=300M
+CAP=${BUILD_CAP:-300M}   # BUILD_CAP overrides: the box has 1.9 GB now, where 300M was set for 419 MiB
 
 if systemd-run --user --scope -q -p MemoryMax=$CAP true 2>/dev/null; then
     exec systemd-run --user --scope -q -p MemoryMax=$CAP make "$@"

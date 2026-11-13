@@ -1,6 +1,6 @@
 // **Loops** (M3b.5 round 3, design section 4): the natural loops from the dominators, each given a preheader; a pure
 // instruction over values the loop never defines moved there, innermost first (OptHoist's, before allocation); an int
-// counter read as a 64-bit index carried at 64 bits (OptLoops's widenCounterIn, ported), its sign extension gone.
+// counter read as a 64-bit index carried at 64 bits (MIR's widen-counters once, gone at M3b.7), its sign extension gone.
 
 #include "SsaOpt.h"
 

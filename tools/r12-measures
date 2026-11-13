@@ -1,0 +1,69 @@
+#!/bin/sh
+# **R1.2's measures** (doc-cxx3/M3-PLAN.md, the table under the gate table), one line each in the table's units, so
+# M3's close re-takes them in one run. On Linux (or macOS): the conformance count and the self-host compile time; on
+# the Windows box, under Git's bash: the x86-64 run time. Every host prints the sim6747 and --health rows.
+#
+#   tools/r12-measures [conformance] [compile] [runtime] [c6000] [health]     (default: every row this host takes)
+#
+# R12_FLAGS goes in front of each level of the tree's compiler (none by default: M3b.7 left one path);
+# R12_BASE is main's cxx3-msvc.exe for the run-time row, built with R12_BASE_FLAGS (-O2); R12_OUT the work directory.
+# R12_C6X_REF: a 7d593d5 cxx3.exe whose sim6747 kernels the C6000 row (Linux, CCS 5.5) prints beside this tree's.
+# Caps: each compile 540 s (self-host's SELFHOST_CAP), the sweep 900 s, bench.cmd (6 builds, 27 runs) 540 s.
+set -u
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+cd "$ROOT" || exit 2
+FL=${R12_FLAGS:-}
+OUT=${R12_OUT:-$ROOT/r12}
+mkdir -p "$OUT"
+capped() { perl -e 'alarm shift; exec @ARGV' "$@"; }
+case $(uname -s) in MINGW*|MSYS*|CYGWIN*) HOST=windows; CXX=$ROOT/cxx3-msvc.exe ;; *) HOST=unix; CXX=$ROOT/cxx3.exe ;; esac
+ROWS=${*:-$( [ $HOST = windows ] && echo runtime c6000 health || echo conformance compile c6000 health )}
+
+conformance() {   # tools/feature-sweep's three bins, of its probes
+    CXX1=$CXX capped 900 python3 tools/feature-sweep > "$OUT/feature-sweep.txt" 2>&1
+    awk -v out="$OUT" '/^compiles /{c=$NF} /^refused by name /{r=$NF} /^refused naming nothing /{n=$NF} /^probes /{p=$NF}
+        END { if (p == "") { print "conformance: not measured - see " out "/feature-sweep.txt"; exit }
+              printf "conformance: %s compile, %s refused by name, %s naming nothing, of %s (tools/feature-sweep)\n", c, r, n, p }' \
+        "$OUT/feature-sweep.txt"
+}
+compile() {   # tools/self-host's stage 0 at -O0 and -O2: the corpus compiled one source a job, wall time
+    for lv in -O0 -O2; do
+        SELFHOST_CAP=540 sh tools/self-host "$OUT/selfhost$lv" "$FL $lv" 0 > "$OUT/selfhost$lv.txt" 2>&1
+        l=$(grep 'stage 0 compiled' "$OUT/selfhost$lv.txt")
+        [ -n "$l" ] || { echo "compile time $lv: not measured - see $OUT/selfhost$lv.txt"; continue; }
+        un=$(grep -c 'did not finish' "$OUT/selfhost$lv.txt")
+        echo "compile time $lv:${FL:+ ($FL)} $(echo "$l" | sed 's/.*compiled \([0-9]*\) of \([0-9]*\) sources in \([0-9]*\) s/\3 s wall, \1 of \2 sources/'), $un over the cap (tools/self-host stage 0, ${SELFHOST_JOBS:-2} jobs)"
+    done
+}
+runtime() {   # bench-kernels: this tree at -O2 against main's binary and cl /O2, median of 9 interleaved rounds
+    w=$(cygpath -w "$OUT")
+    printf '@echo off\r\ncall "%s" -New "%s" -NewFlags "%s" %s -Out "%s\\bench"\r\nexit /b %%errorlevel%%\r\n' \
+        "$(cygpath -w tools/windows/bench.cmd)" "$(cygpath -w "$CXX")" "$FL -O2" \
+        "${R12_BASE:+-Base \"$(cygpath -w "$R12_BASE")\" -BaseFlags \"${R12_BASE_FLAGS:--O2}\"}" "$w" > "$OUT/bench.cmd"
+    capped 540 cmd //c "$w\\bench.cmd" > "$OUT/bench.txt" 2>&1
+    tr -d '\r' < "$OUT/bench.txt" | awk -v fl="${FL:+$FL }-O2" -v out="$OUT" '
+        /^kernel / { for (i = 2; i <= NF; i++) col[$i] = i; on = 1; next }
+        on && /^(fib|sieve|matmul|isort|hash|virtual) / { n = $col["cxx1-new"]; b = col["cxx1-base"] ? $col["cxx1-base"] : ""
+            if (b != "" && n > b) slow = slow " " $1 " " n "/" b }
+        on && /^total / { t = $col["cxx1-new"]; tb = col["cxx1-base"] ? $col["cxx1-base"] : "-"; tc = $col["cl-O2"] }
+        /^checksums agree/ { ok = "checksums agree" } /^CHECKSUMS DIFFER/ { ok = "CHECKSUMS DIFFER" }
+        END { if (t == "") { print "x86-64 run time: not measured - bench.cmd failed, see " out "/bench.txt"; exit }
+              printf "x86-64 run time: %s ms total at %s, main %s, cl /O2 %s; slower than main:%s; %s (bench-kernels, median of 9)\n",
+              t, fl, tb, tc, (slow == "" ? " none" : slow), ok }'
+}
+c6000() {   # sim6747 cycles are unchanged by construction while no C6000 file changed since 7d593d5
+    git rev-parse -q --verify 7d593d5 > /dev/null 2>&1 || { echo "sim6747 cycles: not measured - no git history here to check the C6000 files against 7d593d5"; return; }
+    f=$(git diff --name-only 7d593d5 HEAD -- src/backend/Tms6747.cpp src/backend/Tms6747.h 'src/optimizer/C6x*' 2>/dev/null | tr '\n' ' ')
+    [ -z "$f" ] && { echo "sim6747 cycles: unchanged by construction - no C6000 file changed since 7d593d5"; return; }
+    [ $HOST = unix ] && [ -x "${CCS55:-$HOME/ti/ccsv5}/tools/compiler/c6000_7.4.4/bin/cl6x" ] || {
+        echo "sim6747 cycles: C6000 files changed since 7d593d5 ($f) - tools/c6747-levels owed"; return; }
+    # The Linux CCS 5.5 box: this tree's kernels, and R12_C6X_REF's (a 7d593d5 cxx3.exe) beside them when given.
+    capped 1400 sh tools/c6747/levels-linux.sh "$CXX" tree "$OUT/c6x-tree" > "$OUT/c6x-tree.txt" 2>&1
+    [ -n "${R12_C6X_REF:-}" ] && capped 1400 sh tools/c6747/levels-linux.sh "$R12_C6X_REF" ref "$OUT/c6x-ref" > "$OUT/c6x-ref.txt" 2>&1
+    cat "$OUT"/c6x-*.txt | awk '{ c = ""; for (i = 3; i <= NF; i++) if ($i ~ /^count=/) c = substr($i, 7)
+            if (c == "" || $NF != "expected") bad = bad " " $1 "/" $2; else { if (!($1 in cy)) o[++n] = $1; cy[$1] += c } }
+        END { s = ""; for (i = 1; i <= n; i++) s = s " " o[i] " " cy[o[i]]
+              printf "sim6747 cycles, kernels summed:%s;%s (tools/c6747/levels-linux.sh)\n", s, (bad == "" ? " every run as expected" : " not as expected:" bad) }'
+}
+health() { echo "--health findings: not M3's"; }
+for r in $ROWS; do $r; done

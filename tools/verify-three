@@ -138,23 +138,37 @@ if [ "$WHICH" = all ] || [ "$WHICH" = linux ]; then
         # The C6000 here, with the TI tools built on this box from source (~/ti6x, tools/ti6x-build.sh): the
         # corpus on VM6747 and SIM6747 against rts6x.lib at -O0 and -O2, and the driver's path through ASM6x.
         # And the self-host - stage 1 = stage 2, the box's g++ building stage 0 rather than clang.
-        ssh -i "$KEY" -o BatchMode=yes "$LINUX" '
-            rm -rf ~/cxx1-verify && mkdir -p ~/cxx1-verify/tmp &&
-            tar -C ~/cxx1-verify -xzf ~/cxx1src.tgz && rm ~/cxx1src.tgz &&
-            export TMPDIR=$HOME/cxx1-verify/tmp && T=$HOME/ti6x &&
-            cd ~/cxx1-verify && ./build -j1 >/dev/null && make test &&
-            CXX1="./cxx3.exe -O2" sh tests/run.sh &&
-            sh tools/self-host ~/cxx1-verify/selfhost &&
-            ASM6X=$T/ASM6x/build/asm6x.exe sh tests/asm6x.sh &&
-            for o in "" -O2; do
-                CXX1_FLAGS=$o VM=$T/VM6747/vm6747.exe SIM6747=$T/SIM6747/sim6747.exe ASM6X=$T/ASM6x/build/asm6x.exe \
-                    LNK6X=$T/LNK6x/build/lnk6x.exe TIRTS=$T/RTS6x/build sh tests/tms6747.sh | tail -1 || exit 1
-            done &&
-            if [ "'"$TIBOX"'" = linux ]; then
-                for o in "" -O2; do
-                    CXX1_TI_FLAGS=$o CPP11_AS=$T/ASM6x/build/asm6x.exe JOBS=2 sh tests/ti-link.sh | tail -6 || exit 1
+        # Each step is its own box job under the lock and a 25-minute cap; the self-host is one job a stage, and a
+        # stage the cap cut (rc 124) is resumed by the next job (SELFHOST_RESUME=1) up to three times.
+        lstep() {   # $1 the command, run in ~/cxx1-verify on the Linux box
+            ssh -i "$KEY" -o BatchMode=yes "$LINUX" "cd ~/cxx1-verify && export TMPDIR=\$HOME/cxx1-verify/tmp T=\$HOME/ti6x &&
+                flock ~/.boxleg.lock timeout 1500 sh -c '$1'"
+        }
+        selfhost() {
+            lstep 'sh tools/self-host $HOME/cxx1-verify/selfhost "" 0' || return 1
+            for s in 1 2 3; do
+                for try in 1 2 3; do
+                    lstep 'SELFHOST_RESUME=1 sh tools/self-host $HOME/cxx1-verify/selfhost "" '$s; r=$?
+                    [ $r -eq 124 ] || break
+                    echo "self-host: stage $s cut at 25 minutes, resumed ($try)"
                 done
-            fi' || rc=1
+                [ $r -eq 0 ] || return 1
+            done
+        }
+        ssh -i "$KEY" -o BatchMode=yes "$LINUX" 'rm -rf ~/cxx1-verify && mkdir -p ~/cxx1-verify/tmp &&
+            tar -C ~/cxx1-verify -xzf ~/cxx1src.tgz && rm ~/cxx1src.tgz' &&
+        lstep 'BUILD_CAP=1200M ./build -j2 >/dev/null' && lstep 'make test' &&
+        lstep 'CXX1="./cxx3.exe -O2" sh tests/run.sh' && selfhost &&
+        lstep 'ASM6X=$T/ASM6x/build/asm6x.exe C6XDIFF=$T/ASM6x/tests/c6xdiff.py sh tests/asm6x.sh' &&
+        for o in "" -O2; do
+            lstep 'CXX1_FLAGS='$o' VM=$T/VM6747/vm6747.exe SIM6747=$T/SIM6747/sim6747.exe ASM6X=$T/ASM6x/build/asm6x.exe \
+                LNK6X=$T/LNK6x/build/lnk6x.exe TIRTS=$T/RTS6x/build sh tests/tms6747.sh | tail -1' || rc=1
+        done &&
+        if [ "$TIBOX" = linux ]; then
+            for o in "" -O2; do
+                lstep 'CXX1_TI_FLAGS='$o' CPP11_AS=$T/ASM6x/build/asm6x.exe JOBS=2 sh tests/ti-link.sh | tail -6' || rc=1
+            done
+        fi || rc=1
         echo "linux leg: $(( $(date +%s) - t ))s, $([ $rc -eq 0 ] && echo passed || echo FAILED)"
         exit $rc
     ) > "$LEGS/linux.log" 2>&1 &

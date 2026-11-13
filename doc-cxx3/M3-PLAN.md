@@ -3954,3 +3954,138 @@ exclusions 0/0, comment cap 0, memory gate under its baseline). **Self-host at -
 Open, named: cleanup funclets are not walked by W1's spill; class arms apart in const go through a copy
 (`conditionalObject`); `tests/open/` gained three refusals stricter than the standard (rounds 7 A, 9 A) with clang's
 answers; four src/ comments name removed passes or a stale table (docs lane, M3b.8).
+
+**M3b.8, the R1.2 measures, first reading, 2026-11-13 (lane meas, branch m3b8-meas from m3b7 `6c684ed7`).** New
+`tools/r12-measures` (sh): one command, one line per row of the R1.2 table in its units, each step capped (a compile
+540 s through self-host's `SELFHOST_CAP`, the sweep 900 s, `bench.cmd` 540 s); on Linux it takes the conformance and
+compile-time rows, on the Windows box (Git's bash) the run-time row, everywhere the sim6747 and `--health` rows; a row
+it could not take says "not measured" and names its log. `R12_FLAGS` is empty by default - `6c684ed7` already refuses
+`-front=ssa` ("-front=ssa is gone ... (M3b.7)"), so `-O2` is the SSA path. **Measured at `6c684ed7`:**
+
+| measure | at `7d593d5` | at `6c684ed7` | target |
+| --- | --- | --- | --- |
+| conformance (Linux box) | 87 / 9 / 0 of 96 | **90 compile, 6 refused by name, 0 naming nothing, of 96** | moved +3: all three are library rows (only `lib-tuple-array` of the seven is still refused); `include/` has no change since `7d593d5`, and M1's `<functional>`/`<thread>` headers landed 10-23, so the table's 87 is the 1.22 reading of 10-21 copied, not one taken at `7d593d5` (not re-run there). Language rows unchanged: the four C++14 forms and `union-nontrivial-member` refused by name. Re-base the row at 90/6/0 |
+| compile time, self-host corpus (Linux box, g++ stage 0, `-arch` default x86_64-linux, 2 jobs, 100 sources) | 23.91 s / 44.67 s (arm64-darwin on the Mac - not this target) | **-O0 196 s wall, -O2 317 s wall**, 100 of 100 each, none over the cap | no comparable baseline exists: the recorded one is another target and another machine (the x86_64-linux one, 21.24 s / 409 s, was serial on the Mac). This reading is the x86_64-linux baseline on the box; the close compares with it |
+| x86-64 run time (Windows box, `bench.cmd`, median of 9, checksums agree) | 383 ms (cl 297), 2026-09-27 | **337 ms total at -O2, main `d60009bd` -O2 379, cl /O2 287**: fib 6/7, sieve 52/61, matmul 7/27, isort 7/17, hash 167/181, virtual **98/84** | total at or under main's: met. "No kernel slower than main": **virtual is**, the layout gap M3b.5's close measured and left by name (96/82 there) |
+| sim6747 cycles | untouched | **not measured**: C6000 files changed since `7d593d5` - `src/backend/Tms6747.cpp` (06df3c22, the generators' one polymorphic base, M3b.7 round 4 F; 50da3f23 its -O2 hoist fix) and `src/optimizer/C6xSched.cpp`; checked `src/backend/Tms6747.{cpp,h}`, `src/optimizer/C6x*` | "unchanged by construction" no longer holds; `tools/c6747-levels` (a Windows CCS job, up to 30 min a run) is owed at the close, or a `-arch tms6747 -S` comparison of its kernels against a `7d593d5` build |
+| `--health` | not M3's | not M3's | - |
+
+`.text` of the kernels' objects: 3,492 bytes against main's 3,461 and cl's 3,831. Main's binary was built fresh from
+`d60009bd` (`work\m3b8meas-main`, cl /W4 /WX clean), this tree in `work\m3b8meas`; the Linux tree `~/m3b8meas`.
+Nothing under `src/` changes. Scripts: `boxkit/m3b8meas-*`.
+
+**M3b.8, the R1.2 measures re-taken at main `e85fab25`, 2026-11-13 (lane int, branch m3b8-int).** The three M3b.8
+branches merged (meas, c6x, docs); their `src/` and `tests/` were m3b7 states (`6c684ed7`, `92d9949e`, `f231c040`)
+that main supersedes, so every conflict kept main's file and only the lanes' own files came across. The docs' file:line
+re-pointed where main moved them (`X86_64Linux.h:44`, `X86_64Linux.cpp:1115-1118`, `OptFunction.h:88`). The four stale
+comments mended (`OptPipeline.cpp:224`, `Inliner.h:5`, `SsaDivide.cpp:3`, `SsaLoops.cpp:3`). `tools/r12-measures`' conformance
+row tested the run-time row's variable in its END and printed "x86-64 run time: not measured" - fixed. **Measured on the
+Linux box at this branch's tree (main `e85fab25` + comments):** conformance **90 / 6 / 0 of 96** (unchanged from `6c684ed7`);
+compile time, self-host stage 0, 2 jobs, 100 of 100 sources, none over the cap: **-O0 200 s, -O2 312 s** (196 / 317 at
+`6c684ed7`: within noise). Run time not re-taken (a Windows row; nothing under `src/` changed but comments, so
+`6c684ed7`'s 337 ms stands only for that tree). **sim6747 not measured**: `~/m3b8c6x-bench` holds no results - the c6x
+lane's waiter loops on `pgrep -f "m3b8c6x-box.sh new old"`, which matches its own `sh -c` line, so the benches never
+start; owed. Static gates: exclusions 0 uncited / 0 stale, comment cap 0, memory gate under its baseline. `src/` +0
+lines (4 comment lines changed).
+**M3b.8, deletion 3, 2026-11-13** (branch m3b8-d3: m3b7-d3 2d275809 with main e85fab25 merged, c9d07a4c). Deletion 3 as
+m3b7-d3 wrote it (x86 reads no `Ast.h` body node: `inlineReserve_` and the `Inliner` gone from X86_64Linux, the outgoing area
+`ssaOutgoing` over the ir::Function's calls, `MFunction::fromSsa`/`Optimizer::fromSsa` gone), on top of the squashed M3b.7.
+**Merge:** the two sides touch disjoint files - d3's five (`SsaSelect.cpp`, `X86_64Linux.cpp/.h`, `OptFunction.h`,
+`Optimizer.h`) main carries unchanged from f26d2a80, so they are d3's whole; every other file is main's; no marker left.
+**Golden** (`tests/emit.sh`, -O0, Linux box, ~/m3b8d3): recorded at e85fab25 (3192 files), then this tree: **9 of 3192
+changed, all x86_64-windows** (cstdarg, default-argument-braced, member-brace-initialiser, runtime-shapes, small-class-args,
+small-class-return, ssa-reference-conditional-converted, ssa-temporary-defaults-return-braces, va-arg-in-callee - the -O0
+stack-argument calls the old area did not size); x86_64-linux, arm64-darwin, tms6747 0 changed; re-recorded at this tree.
+**Gates:** cl `/W4 /WX` clean (`work\m3b8d3`); exclusions 0 uncited 0 stale; comment cap 0 over; memory gate lower than the
+baseline. **Owed (coordinator):** winpass -O0/-O2 both spellings, ssa.sh 1/2, make test. **`src/` +59 -131 lines** over main.
+**M3b.8, `tools/verify-three` end to end at `e85fab25`** (2026-11-13, lane v3, Opus 5.5). The legs run as box jobs
+under 25 minutes each (boxkit/m3b8v3-{gate,win,wincmp,c6747}.sh): the Linux leg's eight commands one step each under
+the lock, the x86_64-windows leg as three case passes of four jobs (WINLANES=2, `/affinity 3FF`) and then its five
+checks, the c6747 leg after the Windows leg. The Mac leg is owed (the Mac rests), as M3b.6's Mac row is. **Tool rot
+from the deletion: none** - no command any leg runs names `-front=`, `-check=adapted`, `adapted.sh` or `-front=typed`
+(three comments mention `-front=ssa` as history). Mended in tools/ (`aa44dadb`): `tools/c6747/release-check` and
+`tools/c6747-three` ran their box jobs unpinned - Windows now under `/affinity 3FF`, the Linux simulator under the box
+lock and `timeout 1500`.
+
+| row | box | at `e85fab25` |
+| --- | --- | --- |
+| `make test` | Linux | rc 0, 5 min: run 1148/0 (804 printed, 340 refused as recorded); emit 3192/0 (no golden on this tree); syntax 3/0; typed 806/0, 90 untyped; ssa 827/0, 9524 of 9524 bodies and 1026 of 1026 compiler-written lowered and verified; coff 1584 objects 0 differ; c90 447/0; exclusions 127 sites 0 uncited 0 stale; comment cap 0; memory gate under its baseline. names, overload, win-structure skipped (no clang++ on the box) |
+| run.sh `-O2` | Linux | 1148/0 |
+| Windows cases, default level | Windows | GNU 775 same 0 differ, MASM 774 same 0 differ; 340 refused as recorded each; 0 compile-failed, 0 not run; 32 and 33 skipped |
+| Windows cases `-O2` | Windows | GNU 775 same 0 differ, 340 refused as recorded, 32 skipped; MASM running at the hand-back |
+| still running at the hand-back | both | Linux: `tools/self-host`, asm6x.sh, tms6747.sh at -O0/-O2, ti-link.sh at -O0/-O2 (`~/m3b8v3-chain.out`); Windows: MASM `-O2`, the `-O0` pass, winlink/throw/sret/catch, names vs cl (boxkit/m3b8v3-win.out); then the c6747 leg, release-check and c6747-three (boxkit/m3b8v3-c6747.out). Each row is added here with its number when read |
+
+No failure so far: every row read is green.
+
+### M3b.8, verify-three's tool rows mended (lane f8b), 2026-11-13
+
+From m3b8 `01d15c10`, files in `tools/` only; src/ lines unchanged. The four rows the v3 run found:
+
+1. **c6747-three, "0 passed, 4 failed".** TI's tools are not on this Windows box at all: no `C:\ti` (neither CCS 7.4
+   nor CCS 5.5) and no `work\ti6x` (no ASM6x). The script now asks the box for `ASM6X_WIN` before the cpp11 build and
+   reads each Windows script's "RESULT <box> - no ..." line: such a box's rows print "not on this box" and count neither
+   way, and the summary names them. "Parse error: bad token" was `bc` given an empty cpp11 count (the guard tested the two
+   numbers concatenated); `field` no longer opens a result file that is not there (line 112's message).
+   `release-check-box.py` says "not on this box - no asm6x" in place of a traceback. The Linux CCS 5.5 rows stand.
+2. **asm6x.sh "no c6xdiff.py".** It is `~/ti6x/ASM6x/tests/c6xdiff.py` on the Linux box; verify-three passes `C6XDIFF`.
+3. **names vs cl, 518 agreed, 72 differed, 217 skipped.** Every one of the 590 compared cases compiled again with the
+   M3b.6 binary (`work\m3b6-ref\cxx3-msvc.exe`) against the same cl listings: **0 new differences** - 70 differed at M3b.6
+   too, and 2 (`return-virtual-base-reference`, `using-declaration-indirect-base`, both added at `e85fab25`) M3b.6
+   refused; those two differ from cl only by cl's inline `printf` from its CRT headers. No case agrees now that differed.
+   Script: boxkit/f8b-names.sh, output boxkit/m3b8f8b-names.out.
+4. **self-host cut at 25 minutes (rc 124).** verify-three's Linux leg is now one box job a step, each under
+   `flock ~/.boxleg.lock timeout 1500`; the self-host is one job a stage (stage 0, then 1, 2, 3 under
+   `SELFHOST_RESUME=1`), and a stage the cap cuts is resumed by up to three jobs. v3's stage 1 had 88 of 100 sources
+   at the cut; stage 0 takes 200 s. `./build -j2` in place of `-j1`.
+
+Not run: verify-three itself after the mend (owed to the next gate). Still on the Mac: c6747-three's orchestration
+(ssh, scp, tar) and its two local computations, the code-bytes table (python3) and the ratios (`bc`) - owed to a box.
+**M3b.8, fix f8a, 2026-11-13: verify-three's tms6747 rows.** From m3b8 `01d15c10`, branch m3b8-f8a, Linux box (`~/m3b8f8a`).
+verify-three (`e85fab25`) had tms6747.sh 9 failed at -O0 and 10 at -O2, and ti-link.sh 1 at -O2 - every one a probe
+M3b.7 added for the x86 SSA path. tms6747 still compiles through the Ast.h walker (kept to M6), so each case was put
+in one of three classes, from the run's output against clang's `.expected`:
+
+| case | class | where it is recorded |
+| --- | --- | --- |
+| ssa-aggregate-member-temporary | (a) walker: ledger live=1 | `.notarget` tms6747, tests/open/walker-aggregate-member-temporary |
+| ssa-aggregate-temporary-members | (a) walker: gone=4 live=1 over=1 | `.notarget`, tests/open/walker-aggregate-temporary-members |
+| ssa-aggregate-value-temporaries | (a) walker: live=4 | `.notarget`, tests/open/walker-aggregate-value-temporaries |
+| ssa-new-arguments-outlive | (a) walker: gone=5 live=1 | `.notarget`, tests/open/walker-new-arguments-outlive |
+| ssa-census-last-bodies | (a) walker: a const and a plain lvalue of one class in `?:` bound to `const &` binds a copy (`&pick(..) == &rows[1]` 0, clang 1) | `.notarget`, tests/open/walker-conditional-lvalues-apart-in-const |
+| ssa-eh-tail | (c) vm6747: faults on `throw(int)` (VM6747 Runtime.cpp, as exception-spec); sim6747 agrees with clang | tests/tms6747-exceptions.txt |
+| ssa-conditional-const-class, ssa-conditional-copy-arm, ssa-reference-conditional-converted (sim6747 only) | (c) harness: the case reads `argc > 0`; `sim6747 --run` fills no `.args`, so RTS6x's boot gives argc 0 (TI's convention without `--args`), where vm6747 gives 1 | tests/tms6747-sim.txt, a reason beginning "any runtime:", which tms6747.sh now skips with rts6x.lib too |
+| ssa-data-member-pointer (-O2, both legs and ti-link) | (b) C6000 code fault, mended: `immediateBinary` let an unsigned `==`/`!=` take a constant in 0..31, but CMPEQ has only scst5 (-16..15) - `widen(&B::b0) != &D::d0` wrote `CMPEQ 16, A4, A4` | src/backend/Tms6747.cpp, one line (+1 src/) |
+
+The five (a) entries are each an `#include` of the case, as declaration-temporary-unwind is; open.sh runs on the host,
+whose SSA path answers clang, so it names them closed there - they are open for the walker's targets only. arm64-darwin
+(also the walker) was not measured: the Mac runs nothing; whether these five fail there too is owed.
+
+**Measured** on this tree (`~/m3b8f8a`, g++ build, the box lock): tms6747.sh at -O0 and at -O2 771 passed, 0 failed,
+3 skipped for exceptions, 7 for a 64-bit long, 26 not for this target, every pass also on sim6747 (rts6x.lib) but the
+3 in tests/tms6747-sim.txt; ti-link.sh at -O0 and -O2 781 linked by TI's lnk6x 7.4.4, 0 failed, 26 not for this target.
+ssa-data-member-pointer passes at -O2 on vm6747, sim6747 and TI's link. `src/` +1 line. Not run here (the coordinator's):
+make test, run.sh, winpass.
+
+### M3b.8 closed, 2026-11-13: M3's close
+The M3b.8 lanes (d3, meas, c6x, docs, int, v3, f8a, f8b) merged on branch `m3b8`, squashed into one commit over main
+`e85fab25`. **x86 reads no `Ast.h` node** (deletion 3: the inline reserve dropped, the outgoing area from the
+`ir::Function`; x86_64-windows frames smaller, 9 of 3192 emit files changed, all x86_64-windows, re-recorded).
+**The gate table**, measured on `m3b8` (01d15c10 for the compiler, 1f1965dc for the tools; nothing in src/ between but
+f8a's one C6000 line):
+- self-host `-O2` with stage 3: Linux stages 0 = 1 = 2 and 2 = 3 on 100 of 100 sources; Windows (GNU spelling) the same,
+  100 of 100 each - stage 2 = stage 3 on target 1, R9.1 and R5.2.
+- `tools/verify-three linux` passed (7109 s): run.sh 1148/0, -O2 1148/0, emit 3187/0, typed 806/0, ssa 827/0 with 9524
+  bodies verified, coff 0 differ of 1584, c90 447/0, asm6x 786/0, tms6747 at -O0 and -O2 0 failed (f8a), ti-link 781/0
+  at -O0 and -O2. Windows: winpass -O0 and -O2 GNU 775 / MASM 774 same, 0 differ, 0 compile-failed; winlink, throw, sret
+  and catch checks; names vs cl 518 agreed, 72 differed, 0 newly since M3b.6 (f8b: 70 at M3b.6, 2 new cases by cl's
+  inline printf). `c6747-three`: TI's tools are not on the Windows box - those rows "not on this box".
+- **The R1.2 measures**: conformance 90 compile, 6 refused by name, 0 naming nothing, of 96 (the row is re-based from
+  87/9/0, +3 library rows); compile time on the self-host corpus (Linux, stage 0) 200 s at -O0, 312 s at -O2 - the new
+  x86_64-linux baseline; x86-64 run time (Windows, bench-kernels -O2) 337 ms against main's 379 and cl's 287, the total
+  target met, `virtual` still slower than main (98/84, M3b.5's layout gap); **sim6747 cycles identical to 7d593d5 on all
+  18 runs** (six kernels at -O1, -O2, -Os; -O2: fib 4273094, hash 6115870, isort 5956804, matmul 980582, sieve 3117562,
+  virt 3631795; TI cl6x 7.4.4 -O2: 5568464, 6009087, 5312299, 1294024, 2999335, 3269953); `--health` not M3's.
+- `docs/OPTIMIZER-IR.md` and CLAUDE.md's optimizer lines brought to what is true (docs lane, every claim file:line).
+**Owed, named**: every Mac leg (the Mac runs no build or test: the self-host, verify-three's mac leg; verify-three's
+"mac (text checks)" and c6747-three's ssh/bc/python steps still run on the Mac and belong on a box); arm64-darwin is
+unmeasured since M3b.7 (its walker kept); five tms6747 walker gaps in tests/open/walker-*; the RP5 review of M3b.7's scope.

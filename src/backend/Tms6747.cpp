@@ -1195,7 +1195,8 @@ bool Tms6747::immediateBinary(const Binary &n) {
         if (ucst) code = std::string(n.op() == BinOp::Shl ? "\tSHL" : sign ? "\tSHR" : "\tSHRU") + "\tA4, " + std::to_string(k) + ", A4\n";
         break;
     case BinOp::Eq: case BinOp::Ne: case BinOp::Lt: case BinOp::Gt: case BinOp::Le: case BinOp::Ge: {
-        if (sign ? !small : !ucst) break;
+        const bool eq = n.op() == BinOp::Eq || n.op() == BinOp::Ne;     // CMPEQ has only scst5, whatever the sign
+        if ((sign || eq) ? !small : !ucst) break;
         // x < k is k > x, x > k is k < x; <= and >= are their opposites negated.
         const bool lt = n.op() == BinOp::Lt || n.op() == BinOp::Ge, gt = n.op() == BinOp::Gt || n.op() == BinOp::Le;
         const char *cmp = lt ? (sign ? "CMPGT" : "CMPGTU") : gt ? (sign ? "CMPLT" : "CMPLTU") : "CMPEQ";

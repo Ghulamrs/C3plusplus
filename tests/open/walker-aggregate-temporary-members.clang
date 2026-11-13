@@ -1,0 +1,6 @@
+ACCEPT
+6
+caught -5
+24
+caught -11
+LEDGER built=6 gone=6 live=0 double=0 phantom=0 over=0 lost=0

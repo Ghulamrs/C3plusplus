@@ -15274,3 +15274,31 @@ At the user's request, `doc-cxx3/Compiler_Design_Final.md` section 0 now numbers
 without a version: **cppparse 1.0** is `examples/projects/cppparse` at GRIDE `cf1e607` (2026-10-22), and **compilerpp
 1.0** is `examples/projects/compilerpp` at GRIDE `7f0cdce` (2026-10-21); the cpp11 line names GRIDE `cf1e607` too. These
 are the frozen copies the design cites. Later GRIDE versions of either project are not the basis.
+
+## M3b.8: the optimizer documents brought to what is true, 2026-11-13
+
+M3b.8's row asks for `docs/OPTIMIZER-IR.md` and this file's optimizer lines "brought to what is true". Checked
+against `src/` at `f231c040` (M3b.7 deletions 1, 2 and 3's first commit), its lines re-pointed to main `e85fab25`; every claim in the rewritten
+`docs/OPTIMIZER-IR.md` cites that commit's `file:line`. What changed in the short guide, and why:
+
+- **"Decisions already taken", M3**: the line said code generation moves to SSA "under `-front=ssa`" with `Ast.h` the
+  oracle "until M3b.7 deletes the old path". M3b.7 did: `-front=` is refused by name (`Driver.cpp:1138-1140`), x86
+  selects every function from SSA and fails a compile that leaves one outside (`Driver.cpp:1590,1608-1611`,
+  `X86_64Linux.cpp:1115-1118`). arm64-darwin and tms6747 are still `Walker`s over `Ast.h` (`Arm64Darwin.h:39`,
+  `Tms6747.h:53`) - the decision is x86's.
+- **"Reading this tree"**: the chain ended `backend/Walker.h -> a code generator`, true now only off x86; x86 is
+  typed tree -> `ir::Lowering` -> `ir/opt` -> `SsaSelect.cpp` -> MIR (`X86_64Linux : Regions`, `X86_64Linux.h:44`).
+- **"Shapes that look wrong"**: `Walker::lsdaTable` is `Regions::lsdaTable` (`Regions.h:131`) since round 4 B moved
+  it; the shape is unchanged.
+
+**This file's own optimizer sections are kept as written, and two of them are stale now** (the rule above: the history
+is not rewritten). "The optimizer's design notes" (under "Comments in src/ are at most three lines") gives the MIR
+pipeline with divide-by-constant in its rounds and without the two hoists and `dse-late`; the pipeline as it stands is
+`OptPipeline.cpp:226-250`, tabled in `docs/OPTIMIZER-IR.md`. Two comments in `src/` still point at that section as "the
+table in CLAUDE.md" (`OptPipeline.cpp:224`, `Inliner.h:5`), and two name what deletion 2 removed (`SsaDivide.cpp:3` "as
+OptDivide", `SsaLoops.cpp:3` "OptLoops's widenCounterIn, ported"): comment lines under `src/`, owed to a lane that may
+edit it (this one may not). Mended by lane int (branch m3b8-int): each now names docs/OPTIMIZER-IR.md or what is left.
+
+**Recorded, not changed**: -O1 inlines nothing (`OptCosts.h:68-71`), where the 2026-09 levels table said "only where the
+body is smaller than the call"; PRE is not built; arm64-darwin was to be the plan's stage 5 on the IRs and still
+optimizes its own text (`A64Peep.h:12`), as tms6747 does (`C6xSched.h:10`).

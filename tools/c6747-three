@@ -74,19 +74,26 @@ LPROGS=$(for f in $FILES; do printf '%s/c6747/programs/%s ' "$LREMOTE" "$f"; don
     scp -q -o BatchMode=yes "$WORK/c6747.tgz" "$WINDOWS:C:/Users/GRA/work/c6747.tgz" &&
     ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $WREMOTE 2>nul & mkdir $WREMOTE && tar -C $WREMOTE -xzf C:\\Users\\GRA\\work\\c6747.tgz" >/dev/null
 ) > "$WORK/wship.log" 2>&1 || { echo "c6747-three: cannot ship to $WINDOWS"; cat "$WORK/wship.log"; exit 1; }
-ssh -o BatchMode=yes "$WINDOWS" "set CXX3=$CXX3_WIN&& set ASM6X=$ASM6X_WIN&& set ASM6X_FLAGS=$ASM6X_FLAGS&& \
+# A box whose tools are not installed is "not on this box", never a failure: the cpp11 columns need ASM6x on
+# the Windows box, and each TI box its CCS (its .cmd says "RESULT <box> - no ..."; read after the runs).
+ABSENT=""
+case "$(ssh -o BatchMode=yes "$WINDOWS" "if exist $ASM6X_WIN (echo yes) else (echo no)" 2>/dev/null | tr -d '\r')" in
+yes) ;;
+*) ABSENT="windows-ccs55-cpp11 linux-ccs55-cpp11"; echo "c6747-three: no ASM6x at $ASM6X_WIN - the cpp11 columns are not on this box";;
+esac
+[ -n "$ABSENT" ] || ssh -o BatchMode=yes "$WINDOWS" "set CXX3=$CXX3_WIN&& set ASM6X=$ASM6X_WIN&& set ASM6X_FLAGS=$ASM6X_FLAGS&& \
     $WREMOTE\\c6747\\cpp11-build.cmd $WREMOTE\\c6747\\cpp11 $CPP11_FLAGS cpp11 $WPROGS & \
     $WREMOTE\\c6747\\cpp11-build.cmd $WREMOTE\\c6747\\o1 -O1 O1 $WPROGS & \
     copy /y $WREMOTE\\c6747\\cpp11\\*.cpp11.obj $WREMOTE\\c6747\\programs\\ >nul" > "$WORK/cpp11/build.log" 2>&1
-grep -i "did not" "$WORK/cpp11/build.log" | sed 's/^/c6747-three: /' | tr -d '\r'
+grep -i "did not" "$WORK/cpp11/build.log" 2>/dev/null | sed 's/^/c6747-three: /' | tr -d '\r'
 scp -q -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/c6747-run/c6747/cpp11/*.cpp11.obj" "$WORK/c6747/programs/" 2>/dev/null
 scp -q -o BatchMode=yes "$WINDOWS:C:/Users/GRA/work/c6747-run/c6747/o1/*.O1.obj" "$WORK/cpp11/" 2>/dev/null
 COPYFILE_DISABLE=1 tar -C "$WORK" --no-xattrs -czf "$WORK/c6747.tgz" c6747   # again, with the objects, for Linux
 
 # The Windows machine: unpacked and built above, its two boxes at once.
-ssh -o BatchMode=yes "$WINDOWS" "set TI_COMPRESS=$TI_COMPRESS&& $WREMOTE\\c6747\\vm-ccs74.cmd $WPROGS" > "$WORK/windows-ccs74-vm.log" 2>&1 &
+ssh -o BatchMode=yes "$WINDOWS" "set TI_COMPRESS=$TI_COMPRESS&& start \"\" /b /wait /affinity 3FF cmd /c $WREMOTE\\c6747\\vm-ccs74.cmd $WPROGS" > "$WORK/windows-ccs74-vm.log" 2>&1 &
 P1=$!
-ssh -o BatchMode=yes "$WINDOWS" "set TI_COMPRESS=$TI_COMPRESS&& $WREMOTE\\c6747\\sim-ccs55.cmd $WPROGS" > "$WORK/windows-ccs55.log" 2>&1 &
+ssh -o BatchMode=yes "$WINDOWS" "set TI_COMPRESS=$TI_COMPRESS&& start \"\" /b /wait /affinity 3FF cmd /c $WREMOTE\\c6747\\sim-ccs55.cmd $WPROGS" > "$WORK/windows-ccs55.log" 2>&1 &
 P2=$!
 
 # The Linux box, after anything it has been told to wait for.
@@ -95,7 +102,7 @@ P2=$!
         while kill -0 "$C6747_AFTER" 2>/dev/null; do sleep 5; done
     fi
     scp -q -i "$KEY" -o BatchMode=yes "$WORK/c6747.tgz" "$LINUX:c6747.tgz" &&
-    ssh -i "$KEY" -o BatchMode=yes "$LINUX" "rm -rf $LREMOTE && mkdir -p $LREMOTE && tar -C $LREMOTE -xzf c6747.tgz && rm c6747.tgz && TI_COMPRESS=$TI_COMPRESS sh $LREMOTE/c6747/sim-ccs55.sh $LPROGS"
+    ssh -i "$KEY" -o BatchMode=yes "$LINUX" "rm -rf $LREMOTE && mkdir -p $LREMOTE && tar -C $LREMOTE -xzf c6747.tgz && rm c6747.tgz && TI_COMPRESS=$TI_COMPRESS flock ~/.boxleg.lock timeout 1500 sh $LREMOTE/c6747/sim-ccs55.sh $LPROGS"
 ) > "$WORK/linux-ccs55.log" 2>&1 &
 P3=$!
 wait $P1; wait $P2; wait $P3
@@ -109,7 +116,14 @@ mkdir -p "$WORK/back/o2" "$WORK/back/ms3"
 scp -q -i "$KEY" -o BatchMode=yes "$LINUX:$LREMOTE/c6747/out/*.obj" "$WORK/back/o2/" 2>/dev/null
 scp -q -i "$KEY" -o BatchMode=yes "$LINUX:$LREMOTE/c6747/out/ms3/*.obj" "$WORK/back/ms3/" 2>/dev/null
 
-field() { tr -d '\r' < "$1" 2>/dev/null | tr ' ' '\n' | sed -n "s/^$2=//p" | head -1; }
+for b in windows-ccs74-vm windows-ccs55; do
+    m=$(tr -d '\r' < "$WORK/$b.log" 2>/dev/null | grep -m1 "^RESULT $b - no ")
+    [ -n "$m" ] || continue
+    echo "c6747-three: $b is not on this box -${m#RESULT $b -}"
+    ABSENT="$ABSENT $b"; [ $b = windows-ccs55 ] && ABSENT="$ABSENT windows-ccs55-cpp11"
+done
+absent() { case " $ABSENT " in *" $1 "*) return 0;; esac; return 1; }
+field() { [ -f "$1" ] || return 0; tr -d '\r' < "$1" | tr ' ' '\n' | sed -n "s/^$2=//p" | head -1; }
 pass=0; fail=0
 printf '%-10s %-18s %-8s %-4s %-10s %s\n' program box build rc cycles output
 for n in $NAMES; do
@@ -118,6 +132,7 @@ for n in $NAMES; do
     ok=1; ref=""; cyc_ti=""; cyc_cpp=""
     for b in $BOXES; do
         r=$WORK/back/$n.$b.result; o=$WORK/back/$n.$b.stdout
+        if absent "$b"; then printf '%-10s %-18s %-8s %-4s %-10s %s\n' "$n" "$b" - - - "not on this box"; continue; fi
         build=$(field "$r" build); rc=$(field "$r" rc); count=$(field "$r" count)
         pc=$(field "$r" pc); ex=$(field "$r" exit)
         if [ -f "$o" ]; then tr -d '\r' < "$o" > "$o.lf"; else : > "$o.lf"; fi
@@ -166,10 +181,10 @@ printf '%-10s %12s %12s %8s %10s %10s %10s %10s %8s\n' program "cl6x -O2" "cpp11
 for n in $NAMES; do
     ti=$(field "$WORK/back/$n.linux-ccs55.result" count)
     cp11=$(field "$WORK/back/$n.linux-ccs55-cpp11.result" count)
-    r=-; case "$ti$cp11" in ""|*[!0-9]*) ;; *) r=$(echo "scale=2; $cp11 / $ti" | bc);; esac
+    r=-; case "$ti,$cp11" in ,*|*,|*[!0-9,]*) ;; *) r=$(echo "scale=2; $cp11 / $ti" | bc);; esac
     a=$(codebytes "$WORK/back/o2/$n.obj"); b=$(codebytes "$WORK/back/ms3/$n.obj")
     c=$(codebytes "$WORK/c6747/programs/$n.cpp11.obj"); e=$(codebytes "$WORK/cpp11/$n.O1.obj")
-    q=-; case "$b$e" in ""|*[!0-9]*) ;; *) q=$(echo "scale=2; $e / $b" | bc);; esac
+    q=-; case "$b,$e" in ,*|*,|*[!0-9,]*) ;; *) q=$(echo "scale=2; $e / $b" | bc);; esac
     printf '%-10s %12s %12s %8s %10s %10s %10s %10s %8s\n' "$n" "${ti:--}" "${cp11:--}" "$r" "$a" "$b" "$c" "$e" "$q"
 done
 echo
@@ -177,5 +192,5 @@ echo
 if [ "$fail" -gt 0 ]; then
     for b in windows-ccs74-vm windows-ccs55 linux-ccs55; do echo "--- $b"; tr -d '\r' < "$WORK/$b.log" | grep -v '^BOX ' | tail -5; done
 fi
-echo "c6747 boxes: $pass passed, $fail failed, in $(( $(date +%s) - T0 ))s"
+echo "c6747 boxes: $pass passed, $fail failed${ABSENT:+, not on this box:$ABSENT}, in $(( $(date +%s) - T0 ))s"
 [ "$fail" -eq 0 ]

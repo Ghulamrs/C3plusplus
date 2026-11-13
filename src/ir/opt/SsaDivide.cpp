@@ -1,6 +1,6 @@
 // **Division by a constant** (M3b.4 round 5, design section 4): sdiv, udiv, srem and urem of a 4- or 8-byte integer by
 // a constant 2 <= |d| < 2^(bits-1) become shifts for a power of two, else a multiply-high by DivMagic.h's number, the
-// one OptDivide.cpp and the C6000 take; at -O2 only, as OptDivide. An unsigned divisor with no exact multiplier is left.
+// one the C6000 takes too (OptDivide.cpp keeps only the numbers); at -O2 only. An unsigned divisor with no exact multiplier is left.
 
 #include "SsaOpt.h"
 #include "../../optimizer/DivMagic.h"

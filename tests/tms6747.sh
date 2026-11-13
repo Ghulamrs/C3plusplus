@@ -98,7 +98,9 @@ one() {
         verdict=fail
     fi
     if [ "$SIM" = 1 ]; then
-        if [ "$RTSLIB" != rts6x.lib ] && grep -q "^$base[[:space:]]" tests/tms6747-sim.txt; then
+        # An entry whose reason begins "any runtime:" is skipped with rts6x.lib too.
+        if grep -Eq "^$base[[:space:]]+any runtime:" tests/tms6747-sim.txt ||
+           { [ "$RTSLIB" != rts6x.lib ] && grep -q "^$base[[:space:]]" tests/tms6747-sim.txt; }; then
             [ "$verdict" = pass ] && verdict=simskip
         elif ! { "$ASM6X" "$OUT/$base.s" -o "$OUT/$base.obj" &&
                  { [ -z "$parts" ] || "$ASM6X" "$parts" -o "$OUT/$base.part.obj"; } &&

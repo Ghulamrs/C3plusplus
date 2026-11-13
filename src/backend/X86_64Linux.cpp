@@ -668,8 +668,6 @@ X86_64Linux::Placement X86_64Linux::placeArguments(
     return out;
 }
 
-bool X86_64Linux::returnsThroughPointer(const Call &n) const { return returnsThroughPointer(n.type(), n.hasThis()); }
-
 // The Microsoft size test serves free functions only: a class returned from a
 // member function travels through the hidden pointer whatever its size, so
 // `hasThis` decides first. The parser chose the same giving the sret slot.
@@ -681,13 +679,6 @@ bool X86_64Linux::returnsThroughPointer(const Type *t, bool hasThis) const {
             (byRef ? (hasThis ||
                       !msInRegister(t->size(target_)))
                    : t->size(target_) > abi_.structReturnLimit));
-}
-
-X86_64Linux::Placement X86_64Linux::placeCall(const Call &n) const {
-    std::vector<const Type *> types;
-    types.reserve(n.args().size());
-    for (const ExprPtr &arg : n.args()) types.push_back(arg->type());
-    return placeArguments(types, n.hasThis(), returnsThroughPointer(n));
 }
 
 void X86_64Linux::emitCall(CallShape &n) {
@@ -1093,7 +1084,6 @@ void X86_64Linux::setOptimize(int level) {
     plain_ = a_;
     optimizer_ = make_owned<Optimizer>(*a_, abi_, level);
     if (mirDump_ != nullptr) optimizer_->dumpTo(mirDump_, mirDumpAfter_);
-    if (optimizer_->costs().inlines()) inliner_ = make_owned<Inliner>(optimizer_->costs());   // for inlineReserve_ alone
     a_ = optimizer_.get();
 }
 
@@ -1101,8 +1091,6 @@ void X86_64Linux::finishChunk() {
     chunks_.push_back(out_);
     out_.clear();
 }
-
-namespace { std::vector<const Call *> callsIn(const Node &n, std::vector<const Call *> *outer = nullptr, bool *tlsGuarded = nullptr); }
 
 void X86_64Linux::emit(const Function &fn) {
     depth_ = 0;
@@ -1143,7 +1131,6 @@ void X86_64Linux::emit(const Function &fn) {
     if (passesRun()) {
         optimizer_->returnsPair(!abi_.aggregatesByReference && fn.returns()->isStructOrUnion() &&
                                 fn.returns()->size(target_) > 8);
-        optimizer_->fromSsa(true);
     }
     if (fn.isInline()) a_->weakDefinition(fn.symbol());
     // A second name for the same code - see Function::alias. Emitted as a
@@ -1192,10 +1179,8 @@ void X86_64Linux::emit(const Function &fn) {
     clearCallSites();
     clearMsTries();
 
-    // **The walker's reserve for a callee walked in place**, kept so a funclet-cut frame at -O2 is the size it was:
-    // nothing is walked in place now, and taking it out moves every such frame (owed, with its goldens).
-    inlineReserve_ = landingPads_ && usesFunclets() && inliner_ && !lineSource() && realign_ == 0 ? inliner_->largestFrame() : 0;
-    frameSize_ = layoutSsa(fn, *ssaFn) + inlineReserve_;
+    // A callee the SSA inliner took is the caller's allocas already: layoutSsa's frame holds it, with no reserve beside.
+    frameSize_ = layoutSsa(fn, *ssaFn);
     fnSymbol_ = fn.symbol();
     fnMergeable_ = fn.isInline();
     // On Windows the entry is named by the `{` line, as cl names it - see openingBrace.
@@ -1205,21 +1190,10 @@ void X86_64Linux::emit(const Function &fn) {
         ssaScalars(*ssaFn, scalars);
         optimizer_->frame(scalars);
         // Nothing below the values - no reserve, no unwind-help word, no realigned frame: finish-frame may close them up.
-        if (inlineReserve_ == 0 && ssaUnwindHelpSlot_ == 0 && realign_ == 0 && !landingPads_)
+        if (ssaUnwindHelpSlot_ == 0 && realign_ == 0 && !landingPads_)
             optimizer_->valueSlots(ssaValuesFrom_, ssaValuesTo_);
     }
-    // The shadow space and the widest stack arguments of a call not inside another's operands, in 16s.
-    // A nested call is evaluated with the outer one's values pushed, so it never finds the area; counting it
-    // only made frames larger, and with them the displacements into the frame - 1.6 KB of .text at -O2, measured.
-    outgoing_ = 0;
-    if (abi_.shadowBytes > 0) {
-        std::vector<const Call *> outer;
-        bool tlsGuarded = false;
-        const std::vector<const Call *> calls = callsIn(fn.body(), &outer, &tlsGuarded);
-        int words = 0;
-        for (const Call *c : outer) words = std::max(words, placeCall(*c).stackWords);
-        if (!calls.empty() || tlsGuarded) outgoing_ = (abi_.shadowBytes + 8 * words + 15) & ~15;
-    }
+    outgoing_ = abi_.shadowBytes > 0 ? ssaOutgoing(*ssaFn) : 0;
     tempsAllowed_ = passesRun() && !(landingPads_ && usesFunclets());
     tempDepth_ = tempHigh_ = 0;
     // The frame's top, rounded to the alignment, is what a realigned prologue allocates.
@@ -1404,81 +1378,6 @@ std::vector<opt::Local> X86_64Linux::scalarsOf(const Function &fn) const {
     return scalars;
 }
 
-namespace {
-
-// **The calls a body or an expression makes**, which the outgoing area is sized by.
-// A call this misses keeps its own allocation, so an incomplete answer costs bytes and
-// never correctness; a handler's calls count, since a funclet is walked where its try is.
-class CallScan final : public Visitor {
-public:
-    std::vector<const Call *> calls;
-    std::vector<const Call *> outer;     // not inside another call's operands
-    int inCall = 0;
-    // A thread_local reached through the CRT's guard is a call to `__dyn_tls_on_demand_init` too.
-    bool tlsGuarded = false;
-    void visit(const Num &) override {}
-    void visit(const Var &n) override { if (n.isThreadLocal() && n.viaWrapper()) tlsGuarded = true; }
-    void visit(const StrLit &) override {}
-    void visit(const Goto &) override {}
-    void visit(const Break &) override {}
-    void visit(const Continue &) override {}
-    void visit(const FuncletLeave &) override {}
-    void visit(const Call &n) override {
-        calls.push_back(&n);
-        if (inCall == 0) outer.push_back(&n);
-        ++inCall;
-        if (n.callee() != nullptr) n.callee()->accept(*this);
-        for (const ExprPtr &a : n.args()) a->accept(*this);
-        --inCall;
-    }
-    void visit(const VaStart &n) override { n.list().accept(*this); }
-    void visit(const VaArg &n) override { n.list().accept(*this); }
-    void visit(const Assign &n) override { n.target().accept(*this); n.value().accept(*this); }
-    void visit(const Unary &n) override { n.operand().accept(*this); }
-    void visit(const Binary &n) override { n.lhs().accept(*this); n.rhs().accept(*this); }
-    void visit(const Postfix &n) override { n.target().accept(*this); }
-    void visit(const Cast &n) override { n.value().accept(*this); }
-    void visit(const Comma &n) override { n.left().accept(*this); n.right().accept(*this); }
-    void visit(const Conditional &n) override {
-        n.cond().accept(*this); n.thenArm().accept(*this); n.elseArm().accept(*this);
-    }
-    void visit(const MemberAccess &n) override { n.object().accept(*this); }
-    void visit(const ExprStmt &n) override { n.expr().accept(*this); }
-    void visit(const Return &n) override { if (n.hasValue()) n.value().accept(*this); }
-    void visit(const Block &n) override { for (const StmtPtr &s : n.body()) s->accept(*this); }
-    void visit(const If &n) override {
-        n.cond().accept(*this); n.thenArm().accept(*this);
-        if (n.elseArm() != nullptr) n.elseArm()->accept(*this);
-    }
-    void visit(const While &n) override { n.cond().accept(*this); n.body().accept(*this); }
-    void visit(const DoWhile &n) override { n.body().accept(*this); n.cond().accept(*this); }
-    void visit(const For &n) override {
-        if (n.init() != nullptr) n.init()->accept(*this);
-        if (n.cond() != nullptr) n.cond()->accept(*this);
-        if (n.step() != nullptr) n.step()->accept(*this);
-        n.body().accept(*this);
-    }
-    void visit(const Switch &n) override { n.cond().accept(*this); n.body().accept(*this); }
-    void visit(const Case &n) override { n.body().accept(*this); }
-    void visit(const Label &n) override { n.body().accept(*this); }
-    void visit(const Try &n) override {
-        for (const StmtPtr &s : n.body()) s->accept(*this);
-        if (n.hasPad()) n.pad().accept(*this);
-        if (n.cleanup() != nullptr) n.cleanup()->accept(*this);
-        for (const MsHandler &h : n.handlers())
-            if (h.body != nullptr) h.body->accept(*this);
-    }
-};
-
-std::vector<const Call *> callsIn(const Node &n, std::vector<const Call *> *outer, bool *tlsGuarded) {
-    CallScan scan;
-    n.accept(scan);
-    if (outer != nullptr) *outer = scan.outer;
-    if (tlsGuarded != nullptr) *tlsGuarded = scan.tlsGuarded;
-    return scan.calls;
-}
-
-}
 
 // **A Microsoft constructor or deleting destructor returns `this` in RAX**, and cl's callers read it - `new V(4)`
 // hands back the constructor's RAX as it stands. Measured 2026-09-17; after the return label, for every path.
@@ -1925,7 +1824,6 @@ void X86_64Linux::run(const Program &program) {
 
     emitData(program);
     finishChunk();
-    if (inliner_) inliner_->summarize(program);
     for (const Function &fn : program.functions) emit(fn);
     if (!program.initFunction.empty()) {
         a_->initialiserEntry(program.initFunction, program.usesDsoHandle);

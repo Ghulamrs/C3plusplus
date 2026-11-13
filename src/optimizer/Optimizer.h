@@ -27,8 +27,6 @@ public:
     std::size_t held() const { return held_; }
     // Whether the function being held returns in two registers, rax:rdx or xmm0:xmm1.
     void returnsPair(bool pair);
-    // Whether the function being held was selected from its SSA (-front=ssa).
-    void fromSsa(bool ssa) { fn_.fromSsa = ssa; }
     // The function's scalar locals, candidates for registers.
     void frame(std::vector<opt::Local> locals);
     // The SSA values' 8-byte slots, the frame bytes (from, to] with nothing below them; finish-frame closes them up.

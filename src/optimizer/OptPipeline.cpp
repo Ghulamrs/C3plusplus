@@ -221,7 +221,7 @@ std::unique_ptr<Group> dseGroup(const char *name, int times) {
 }
 
 // **The pipeline**, cxx1's passes.def, in the order the code below declares it: rounds; frame (webs, locals, allocate, rounds, dse-loop); fold-index; the hoists; dse-late; finish-frame; shrink-loop; align-loops (-O2).
-// What each pass does, in one line apiece, is the table in CLAUDE.md, "The optimizer's design notes".
+// What each pass does, in one line apiece, is the table in docs/OPTIMIZER-IR.md, "The MIR pipeline".
 // The two loops rebuild the flow without dropping labels, where rounds does both: that is how the driver did it before the manager, and a label dropped there could change what is emitted - kept, and noted.
 std::unique_ptr<Pass> pipelineFor() {
     std::unique_ptr<Group> top(new Group(PassInfo{"pipeline", 0, 0, 0, 0}, 1, Group::WhenNoneChanged));

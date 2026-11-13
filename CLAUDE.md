@@ -26,10 +26,12 @@ variables `CPP11_*`, the seal is `cxx1-N.dat`. **Self-hosting is the goal**: the
 
 `README.md`; this guide; then the pipeline by file: `main.cpp` -> `Driver.h`/`Driver::compile` -> `Lexer.h`
 -> `Preprocessor.h` -> `parser/Parser.h` (the front end's design document) -> `Ast.h` -> `Type.h` (`class
-Target` is the machine) -> `Abi.h`, `backend/Backend.h` -> `backend/Walker.h` -> a code generator. M2/M3
-added `src/syntax/` (the syntax tree), `src/sema/` (the typed tree, `Classes`, `SemaC`), `src/ir/` (the SSA
-IR: `Lowering`, `Builder`, the per-kind files), `src/encoder/` (the in-process COFF assembler) and
-`src/optimizer/` (passes, inliner, the `Mir*` allocator). The suites' headers (`tests/run.sh`, `emit.sh`,
+Target` is the machine) -> `Abi.h`, `backend/Backend.h` -> a code generator. M2/M3 added `src/syntax/`
+(the syntax tree), `src/sema/` (the typed tree, `Classes`, `SemaC`), `src/ir/` (the SSA IR: `Lowering`,
+`Builder`, the per-kind files; `ir/opt/` its passes), `src/encoder/` (the in-process COFF assembler) and
+`src/optimizer/` (MIR's passes, the inliner's budgets, the `Mir*` allocator). **x86 is typed tree -> SSA ->
+`backend/SsaSelect.cpp` -> MIR; arm64-darwin and tms6747 still walk `Ast.h`** (`backend/Walker.h`) -
+`docs/OPTIMIZER-IR.md` says which file does what. The suites' headers (`tests/run.sh`, `emit.sh`,
 `names.sh`, `overload.sh`, `ssa.sh`) say what each checks.
 
 **A basename may not repeat anywhere under `src/`** - `msvc/build.cmd` gives cl one flat `/Fo` directory.
@@ -43,9 +45,9 @@ IR: `Lowering`, `Builder`, the per-kind files), `src/encoder/` (the in-process C
 - **Build the constant evaluator early**; `constexpr` is that evaluator exposed.
 - **A keyword recognised but not implemented is refused by name** ("'x' is not supported yet"), never a
   parse error later. A refusal stricter than the standard is a defect too.
-- **M3**: code generation moves from `Ast.h` to SSA (`ir::Lowering`, `ir::Builder`) under `-front=ssa`;
-  `Ast.h` stays the oracle - a function takes the SSA path only where its output is identical - until
-  M3b.7 deletes the old path in one commit.
+- **M3**: x86 code generation is from SSA (`ir::Lowering`, `ir::Builder`) and nothing else; M3b.7 deleted
+  the `Ast.h` path, `-front=` and the adapter, and a function outside the lowering fails the compile, named.
+  arm64-darwin and tms6747 keep `Ast.h` and the walker (history: "M3b.8: the optimizer documents").
 - **The x86_64-windows default spelling is `-masm=masm`**, assembled in process by `src/encoder/` and linked
   by the project's LINK (history: "-masm=masm is x86_64-windows's default again").
 
@@ -83,7 +85,7 @@ accept quietly; a claim with no oracle is not believed; and what must not change
 (a replay re-reads by index); `resolveOverload` returning a `Signature` by value (C-01); a pointer to
 member function wearing a struct's shape; `unqualifiedSpecifiers` answering void for `Point::Point(`;
 call-site rows registered innermost-first and split, never sorted after the fact; a trivial special member
-being no function at all; the parser numbering selectors as `Walker::lsdaTable` places them.
+being no function at all; the parser numbering selectors as `Regions::lsdaTable` places them.
 
 ## Rules for code and cases
 
@@ -407,3 +409,5 @@ them too; read a section with `sed -n '<line>,<line+N>p'` or by searching its ti
 - The Windows object held to its own tables, with no Windows box, 2026-10-26 (line 15161)
 - C7 and M3b.0: a type's handle, and the record on the typed tree, 2026-10-26 (line 15207)
 - M7: C90 through the parser and `SemaC`, 2026-10-26 (line 15232)
+- The design's basis numbered: cppparse 1.0 and compilerpp 1.0, 2026-11-12 (line 15271)
+- M3b.8: the optimizer documents brought to what is true, 2026-11-13 (line 15278)

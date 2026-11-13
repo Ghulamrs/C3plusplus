@@ -1,3 +1,4 @@
 # (empty: exceptions are supported now - see TMS6747.md)
 exception-spec vm6747 faults on a throw(...) list with types (VM6747 src/Runtime.cpp); sim6747 runs it by name
 exception-spec-unexpected the same, and std::set_unexpected is not in vm6747 either
+ssa-eh-tail the same: specified(int) throw(int) - vm6747 faults on the list (VM6747 src/Runtime.cpp); sim6747 runs it and agrees (M3b.8 f8a)

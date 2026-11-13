@@ -754,7 +754,7 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         a_->ins("jmp", lbl(returnLabel_));
         return;
     case ir::Op::Call:
-        selectCall(f, i, rt);
+        selectCall(f, i);
         ssaStore(f, i.result);
         return;
     case ir::Op::Invoke: {
@@ -769,7 +769,7 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
             defineStateLabel(begin);
             if (!inHandler) msAddIpRow(begin, ssaPadState_[i.succ[1].block.v]);
             else if (i.bits != 0) msAddFuncletRow(begin, ssaPadState_[i.succ[1].block.v], false);
-            selectCall(f, i, rt);
+            selectCall(f, i);
             defineStateLabel(end);
             if (!inHandler) msAddIpRow(end, -1);
             else if (i.bits != 0) msAddFuncletRow(end, ssaFuncletState_, false);
@@ -785,7 +785,7 @@ void X86_64Linux::selectInst(const ir::Function &f, const ir::Inst &i) {
         // One call-site row per invoke, naming the pad's landing label and the chain its pad carries (M3-IR 3.6): the rows
         // are registered in address order and are disjoint, which is the order the walker's table wants and never sorts.
         a_->defLabel(begin);
-        selectCall(f, i, rt);
+        selectCall(f, i);
         a_->defLabel(end);
         const ir::Block &pb = f.block(i.succ[1].block);
         const ir::Inst &pad = f.inst(pb.insts[0]);
@@ -833,7 +833,7 @@ void X86_64Linux::selectVa(const ir::Function &f, const ir::Inst &i, const Type 
 }
 
 // The walker's own call, over the operands naming the slots: placeArguments and every ABI rule stay where they are.
-void X86_64Linux::selectCall(const ir::Function &f, const ir::Inst &i, const Type *rt) {
+void X86_64Linux::selectCall(const ir::Function &f, const ir::Inst &i) {
     struct SsaCall : CallShape {
         X86_64Linux *gen;
         std::vector<SsaOperand> ops;
@@ -845,16 +845,10 @@ void X86_64Linux::selectCall(const ir::Function &f, const ir::Inst &i, const Typ
     } call;
     call.gen = this;
     const ir::CallInfo &c = f.calls[i.call];
-    const Type *sig = ssaTypes_->type(c.signature);
     const std::uint32_t firstArg = c.symbol.empty() ? 1 : 0;
     for (std::uint32_t n = firstArg; n < i.count; n++) {
-        const ir::ValueId v = f.operand(i, n);
-        const std::size_t at = n - firstArg;
-        const Type *want = at < sig->params().size() ? sig->params()[at] : nullptr;
-        SsaOperand a = ssaOperand(f, v);
-        // Where the signature takes a class by value the operand is its address: the walker copies `*p` in - or, for
-        // one the parser passes by address, hands the caller's copy's address on as materialiseCopy's node does.
-        if (want != nullptr && want->isStructOrUnion() && a.loaded->isPointer() && !ssaByAddress(want)) a.type = want;
+        SsaOperand a = ssaOperand(f, f.operand(i, n));
+        a.type = ssaArgType(f, i, n);
         call.ops.push_back(a);
     }
     call.indirect = c.symbol.empty();
@@ -868,8 +862,49 @@ void X86_64Linux::selectCall(const ir::Function &f, const ir::Inst &i, const Typ
     call.argSlots = ssaArgSlots_[i.call];
     call.hasThis = c.hasThis;
     call.resultIndirect = c.sret;
-    call.type = c.resultAlloca >= 0 || c.sret ? sig->returns() : rt != nullptr ? rt : sig->returns();
+    call.type = ssaResultType(f, i);
     emitCall(call);
+}
+
+// Where the signature takes a class by value the operand is its address: the walker copies `*p` in - or, for
+// one the parser passes by address, hands the caller's copy's address on as materialiseCopy's node does.
+const Type *X86_64Linux::ssaArgType(const ir::Function &f, const ir::Inst &i, std::uint32_t n) const {
+    const ir::CallInfo &c = f.calls[i.call];
+    const Type *sig = ssaTypes_->type(c.signature);
+    const std::size_t at = n - (c.symbol.empty() ? 1 : 0);
+    const Type *want = at < sig->params().size() ? sig->params()[at] : nullptr;
+    const Type *t = typeOf(f, f.operand(i, n));
+    return want != nullptr && want->isStructOrUnion() && t->isPointer() && !ssaByAddress(want) ? want : t;
+}
+
+const Type *X86_64Linux::ssaResultType(const ir::Function &f, const ir::Inst &i) const {
+    const ir::CallInfo &c = f.calls[i.call];
+    const Type *sig = ssaTypes_->type(c.signature);
+    return c.resultAlloca >= 0 || c.sret || !i.type.valid() ? sig->returns() : ssaTypes_->type(i.type);
+}
+
+// Every call the body makes, a handler's included - a funclet is walked where its try is - and a thread_local reached
+// through the CRT's guard, which calls `__dyn_tls_on_demand_init`. A call the area misses allocates its own (emitCall).
+int X86_64Linux::ssaOutgoing(const ir::Function &f) const {
+    bool calls = false;
+    int words = 0;
+    for (std::size_t b = 0; b < f.blocks.size(); b++) {
+        const ir::Block &blk = f.block(f.blocks[b]);
+        for (std::size_t k = 0; k <= blk.insts.size(); k++) {
+            const ir::InstId id = k < blk.insts.size() ? blk.insts[k] : blk.term;
+            if (!id.valid()) continue;
+            const ir::Inst &i = f.inst(id);
+            if (i.op == ir::Op::TlsAddr && i.k != 0) calls = true;
+            if (i.op != ir::Op::Call && i.op != ir::Op::Invoke) continue;
+            calls = true;
+            const ir::CallInfo &c = f.calls[i.call];
+            std::vector<const Type *> types;
+            for (std::uint32_t n = c.symbol.empty() ? 1 : 0; n < i.count; n++) types.push_back(ssaArgType(f, i, n));
+            const Type *rt = ssaResultType(f, i);
+            words = std::max(words, placeArguments(types, c.hasThis, returnsThroughPointer(rt, c.hasThis)).stackWords);
+        }
+    }
+    return calls ? (abi_.shadowBytes + 8 * words + 15) & ~15 : 0;
 }
 
 std::string X86_64Linux::ssaLandLabel(ir::BlockId b) const { return label("ssaland", static_cast<int>(b.v)); }

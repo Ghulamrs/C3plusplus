@@ -2,7 +2,6 @@
 
 #include "Backend.h"
 #include "Dwarf.h"
-#include "../optimizer/Inliner.h"
 #include "../optimizer/Optimizer.h"
 #include "Spelling.h"
 #include "Regions.h"
@@ -235,7 +234,12 @@ private:
     std::string ssaBlockLabel(ir::BlockId b) const;
     void ssaBranchArgs(const ir::Function &f, const ir::Succ &s);
     void ssaUnsupported(const ir::Inst &i);
-    void selectCall(const ir::Function &f, const ir::Inst &i, const Type *rt);
+    void selectCall(const ir::Function &f, const ir::Inst &i);
+    // A call instruction's argument `n` as it travels, and the type its result comes back as (selectCall's).
+    const Type *ssaArgType(const ir::Function &f, const ir::Inst &i, std::uint32_t n) const;
+    const Type *ssaResultType(const ir::Function &f, const ir::Inst &i) const;
+    // The outgoing area: the shadow space and the widest stack arguments of any call, in 16s; 0 for a body with none.
+    int ssaOutgoing(const ir::Function &f) const;
     void selectVa(const ir::Function &f, const ir::Inst &i, const Type *rt);
     std::string ssaLandLabel(ir::BlockId b) const;
     int ssaRegionAt_ = 0;
@@ -259,9 +263,6 @@ private:
     void selectBody(const Function &fn, const ir::Function &f);
     // The parser's parameters' slots that hold a scalar; the rest of the frame is the selector's (layoutSsa).
     std::vector<opt::Local> scalarsOf(const Function &fn) const;
-    // Read for largestFrame alone: the reserve a funclet-cut frame kept for a callee walked in place (see emit).
-    std::unique_ptr<Inliner> inliner_;
-    int inlineReserve_ = 0;
     void finishChunk();
     std::string label(const char *kind, int id) const override;
     std::string userLabel(const std::string &name) const override;
@@ -348,11 +349,8 @@ private:
     };
     Placement placeArguments(const std::vector<const Type *> &types,
                              bool hasThis, bool sret) const;
-    // Whether a call's result comes back through a hidden pointer, and the
-    // whole call placed - what the outgoing area asks of the parser's Call nodes (see emit).
-    bool returnsThroughPointer(const Call &n) const;
+    // Whether a call's result comes back through a hidden pointer.
     bool returnsThroughPointer(const Type *t, bool hasThis) const;
-    Placement placeCall(const Call &n) const;
     // **A call as the ABI code reads it**: the selector's operands (SsaCall, SsaSelect.cpp).
     struct CallShape {
         virtual ~CallShape() {}

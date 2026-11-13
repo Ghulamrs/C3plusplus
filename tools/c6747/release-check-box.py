@@ -9,6 +9,8 @@ import os, re, shutil, subprocess, sys, time
 
 root, cxx, asm = sys.argv[1], sys.argv[2], sys.argv[3]
 vm = sys.argv[4] if len(sys.argv) > 4 else None
+if not os.path.exists(asm):
+    print('release-check-box: not on this box - no asm6x at %s' % asm); sys.exit(0)
 t0 = time.time()
 listing = open(os.path.join(root, 'tools', 'c6747', 'release-check-sample.txt'), encoding='utf-8').read()
 sample = [l.split('|') for l in listing.split('\n') if l.count('|') == 2 and not l.startswith('#')]

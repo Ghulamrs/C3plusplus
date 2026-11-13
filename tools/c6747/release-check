@@ -43,10 +43,10 @@ scp -q -o BatchMode=yes "$WORK/tree.tgz" "$WINDOWS:C:/Users/GRA/work/release-che
 ssh -o BatchMode=yes "$WINDOWS" "rmdir /s /q $WTREE 2>nul & mkdir $WTREE && tar -C $WTREE -xzf C:\\Users\\GRA\\work\\release-check-tree.tgz && del C:\\Users\\GRA\\work\\release-check-tree.tgz" > /dev/null ||
     { echo "release-check: cannot ship to $WINDOWS"; exit 1; }
 echo "release-check: building cxx3 there with cl"
-ssh -o BatchMode=yes "$WINDOWS" "$WTREE\\msvc\\build.cmd" > "$WORK/build.log" 2>&1 ||
+ssh -o BatchMode=yes "$WINDOWS" "set _CL_=/MP2&& start \"\" /b /wait /affinity 3FF cmd /c $WTREE\\msvc\\build.cmd" > "$WORK/build.log" 2>&1 ||
     { echo "release-check: cxx3 did not build on $WINDOWS"; tr -d '\r' < "$WORK/build.log" | tail -8; exit 1; }
 ssh -o BatchMode=yes -o ServerAliveInterval=30 "$WINDOWS" \
-    "python $WTREE\\tools\\c6747\\release-check-box.py $WTREE $WTREE\\cxx3-msvc.exe $ASM6X_WIN $VM6747_WIN" > "$WORK/box.log" 2>&1
+    "start \"\" /b /wait /affinity 3FF python $WTREE\\tools\\c6747\\release-check-box.py $WTREE $WTREE\\cxx3-msvc.exe $ASM6X_WIN $VM6747_WIN" > "$WORK/box.log" 2>&1
 rc=$?
 tr -d '\r' < "$WORK/box.log"
 echo "release-check: $(( $(date +%s) - T0 ))s from here"
