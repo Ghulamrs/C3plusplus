@@ -1166,6 +1166,7 @@ void Arm64Darwin::emitFunction(const Function &fn) {
     }
     // An optimized frame keeps room below its locals for the callee-saved registers a promoted local takes.
     const int locals = alignTo(ssaFn != nullptr ? layoutSsa(fn, *ssaFn) : fn.frameSize(), 16);
+    if (ssaFn != nullptr && lineSource()) dwarfFns_.back().locals = ssaLocals(fn, *ssaFn);
     const bool promote = ssaFn == nullptr && optimize_ > 0 && realign_ == 0 && locals + kCalleeArea <= 65535;
     if (ssaFn == nullptr && optimize_ > 0 && !promote) opt::noteDecline("arm64-frame-too-large-no-promotion", fn.symbol());
     int frame = locals + (promote ? kCalleeArea : ssaFn != nullptr ? alignTo(8 * static_cast<int>(ssaSaved_.size()), 16) : 0);
@@ -1340,8 +1341,12 @@ void Arm64Darwin::run(const Program &program) {
 
     if (const Source *src = lineSource()) {
         const std::vector<std::string> &names = src->files();
-        for (std::size_t i = 0; i < names.size(); i++)
-            out_ << "  .file " << (i + 1) << " \"" << names[i] << "\"\n";
+        // A name escaped as the string it is: a Windows host's include directory is `C:\\...`, which Apple's assembler refuses bare.
+        for (std::size_t i = 0; i < names.size(); i++) {
+            out_ << "  .file " << (i + 1) << " \"";
+            for (const char c : names[i]) { if (c == '"' || c == '\\') out_ << '\\'; out_ << c; }
+            out_ << "\"\n";
+        }
     }
 
     emitData(program);

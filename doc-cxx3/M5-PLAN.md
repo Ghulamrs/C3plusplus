@@ -197,3 +197,40 @@ over three files). -O0 is untouched: all 811 `.s` at -O0 are byte-identical to m
   gate's; cxx3's own sources' census was not re-run (the subset did not change). What the table leaves to M5.3:
   the entry sequence still stores each parameter to the parser's slot and reads it back; a signed 32-bit result is
   re-extended (`sxtw`) after every operation; no addressing modes (`[x, x, lsl]`, offsets) and no `madd`; `-g`.
+
+### M5.2, round 4 (2026-11-13, lane m5f, from `ac1c3337`)
+
+`-g` on arm64's selector: a function compiled with `-g` is selected, not walked - the `-g` fallback in `ssaOutside` is
+gone, the last thing keeping the walker for a body inside the subset (src/ 92,851 -> 92,909, +62 -4 over three files).
+
+- **Lines and lexical blocks** as x86's selector writes them: before each instruction, its `ir::Inst::lines` (a
+  statement's `markLine`, a block's `markBlock` by `Function::blockAt`) and its own `pos`; the body's end closes what
+  is open (`closeOpenBlocks`). `Dwarf.cpp`, the CFI and the prologue are the walker's, unchanged.
+- **Variables** (`Arm64Darwin::ssaLocals`): the parser's locals with their offsets moved to the selected frame - each at
+  the slot of the alloca the lowering made for it, matched by name in declaration order (an alloca's text is its
+  declaration, `const char * label`, so a whole word of it); the copies live in `ssaLocals_` for `writeDwarf`. A
+  parameter with no live alloca keeps the slot the walker's prologue fills; a local with none has no record (named under
+  `CXX1_SSA_WHY`, `a64 -g f: 'x' has no slot`). **At -O0, 726 have none: 694 the parser's own (`$list0`, `.lam0`,
+  `.ilobject0`), 32 named** - a result built in place (NRVO: `r` of `to_string`, its home is `*sret`), an anonymous
+  union's members (the union is the alloca), and locals of handlers nothing reaches. **At -O1 and -O2 a promoted local
+  has no record** (its values are SSA values; a location list is what would describe them); values keep the registers
+  round 3 gave them - nothing describes a value, so no slot is needed for one.
+- **A Windows host's `.file`** names its include directory `C:\Users\...`, which Apple's assembler refuses as an escape;
+  the name is escaped now (the walker had the same fault: no `-g` cross-compile from the cl host assembled).
+- **lldb, not run: the Mac's Developer Mode is off** (`DevToolsSecurity -status`), so `debugserver` waits for an
+  authorization no lane may give, and `run` hangs - for the walker's build as for this one; turning it on is the
+  user's. **What was checked instead, statically** (`tests/m10/w2.cpp`, `w4.cpp`, both builds linked with
+  `dsymutil`, `dwarfdump --debug-info`; `boxkit/m5f-maclldb.sh` is the lldb leg for when it can run): the `.loc` rows
+  of both functions' bodies are the walker's, line for line; every parameter and local of `work`, `total`,
+  `perimeter` and the constructors has a record of the walker's name and type, at `DW_OP_fbreg` of the slot the
+  selected body stores it to (`work`'s `c` at -57 where the walker's is -25: the selected frame's allocas sit above
+  its parameter slots, rounded to 16; `total`'s `pt` at -24, written by the body's `sub x0, x29, #24` store).
+- **Gate** (on the final tree, cross-compiled with the cl-built `cxx3-msvc.exe` on the Windows box, `boxkit/m5f-winprobe.sh`):
+  **-O0 -g and -O2 -g: 0 broken, census 10758 of 10758 (100.0%), 811 cases selected whole**; the Mac, through
+  `mac-run.sh` at -j2: **811 of 811 at -O0 -g** assemble, link, run and print their recorded output; cl /W4 /WX clean;
+  exclusions 0 uncited, 0 stale; comment cap 0 over; `ide/generate.py --check` up to date; memory gate: no file it reads
+  changed (it does not run on Windows).
+- **Owed.** lldb at a line on the Mac once Developer Mode is on (`m5f-maclldb.sh`: break, `frame variable`, `bt`); the
+  Linux leg and `identical.sh` are the wave gate's; NRVO results (`DW_OP_fbreg` of the sret slot, then `DW_OP_deref`),
+  anonymous-union members and location lists for promoted locals; x86's SSA path records the parser's offsets, not the
+  selected frame's - the same mapping wants to be shared (it lives in `A64Select.cpp` today).
