@@ -29,6 +29,7 @@ if [ -z "${VM:-}" ]; then
     for v in ../../TI/VM6747/vm6747.exe; do [ -x "$v" ] && { VM=$v; break; }; done
     VM=${VM:-../../TI/VM6747/vm6747.exe}
 fi
+# A run past the 3-minute cap is cut there and fails its case (a hang held the box lock, 2026-11-14).
 # CYCLES=1: each case's cycles from main, as TI's simulator counts cycle.CPU (vm6747 -c), taken
 # out of its output before the comparison and kept in <case>.cycles; the total is printed.
 CYCLES="${CYCLES:-}"
@@ -84,12 +85,12 @@ one() {
         parts="$OUT/$base.part.s"
     fi
     if [ -n "$CYCLES" ]; then
-        { "$VM" -c "$OUT/$base.s" $parts > "$OUT/$base.raw" 2>&1 < /dev/null; } 2>/dev/null || true
+        { timeout 180 "$VM" -c "$OUT/$base.s" $parts > "$OUT/$base.raw" 2>&1 < /dev/null; } 2>/dev/null || true
         # The program's last line may have no newline, so the count is cut out exactly as written.
         grep -o 'CYCLES count=[0-9]* packets=[0-9]* natives=[0-9]*' "$OUT/$base.raw" | sed 's/^CYCLES //' > "$OUT/$base.cycles"
         perl -0pe 's/CYCLES count=\d+ packets=\d+ natives=\d+\n//' "$OUT/$base.raw" > "$OUT/$base.out"
     else
-        { "$VM" "$OUT/$base.s" $parts > "$OUT/$base.out" 2>&1 < /dev/null; } 2>/dev/null || true
+        { timeout 180 "$VM" "$OUT/$base.s" $parts > "$OUT/$base.out" 2>&1 < /dev/null; } 2>/dev/null || true
     fi
     verdict=pass
     if ! diff -q "tests/cases/$base.expected" "$OUT/$base.out" >/dev/null; then
