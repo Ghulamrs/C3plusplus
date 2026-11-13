@@ -597,3 +597,22 @@ m5e's "left for M5.3" in `backend/A64Select.cpp`, at -O1 and -O2 only (A64Select
   free (under par4's 3 GB) when the static gates ran - this lane's tree there is removed. Left: the parser's parameter
   slots are still laid out (unused) under `ssaDirect_`; negative and unscaled offsets (`ldur`); `msub` re-measured
   with a different schedule; -g's parameters from registers.
+
+### Wave 2 landed, 2026-11-14 (the coordinator)
+
+M5.4 (m5h: target 4 self-hosts through the selector, -O0 and -O2, 0=1=2 and 2=3 100/100), arm64 code quality (m5i:
+bench 368 -> 287 ms, clang 168), M6a (the C6000 selector, m6a2-m6d, -g by m6g), R1 rounds 4-6 (r1i, r1j, r1k), and
+c6n's tms6747 leg of R1's cases. **Gate**, final tree:
+- **Windows** (c1100a58; da250ac7 changed only tms6747 files): winpass -O2/-O0 820/0 gnu, 819/0 masm, 355 refused.
+- **Mac** (c1100a58): run.sh -O0/-O2 1207/0.
+- **Linux** (da250ac7, fresh tree): ssa.sh 1/2 882/0; make test green - run 1209/0, emit 3368/0, typed 852/0, c90 447/0,
+  every gate; identical.sh against main 108 differ = 12 cases (10 new, `static-reference-to-temporary` r1i's ABI name,
+  `lambda-static-local` r1j's External exit helper on Windows); arm64 -O0 12 (the new cases), -O2 804 (m5i), tms6747
+  728/720 (M6a).
+- **tms6747.sh SIM=0, three shards a level** (vm6747 cycles): selector -O0 393.2 M vs walker 447.7 M, -O2 192.2 M vs
+  195.9 M - M6a's cycle gate met; failures the walker's three noexcept cases, plus two new cases registered;
+  asm6x.sh 826 objects 0 failed at both levels.
+
+**Owed:** lldb on the Mac (Developer Mode, the user's); target 3's self-host re-measured at M5's close; the M6a
+sim6747 leg (SIM=1); emit.sh's golden on Linux.
+
