@@ -76,6 +76,10 @@ private:
     const ir::Module *ssa_ = nullptr;
     const TypeTable *ssaTypes_ = nullptr;
     std::vector<long long> ssaAllocaSlot_, ssaValueSlot_;
+    long long ssaArgArea_ = 0;      // the frame's one area for the copies of classes a call passes by a copy's address
+    int ssaRegionAt_ = 0;
+    const Type *ssaArgType(const ir::Function &f, const ir::Inst &i, std::size_t n) const;
+    std::string ssaLandLabel(ir::BlockId b) const { return label("ssaland", static_cast<int>(b.v)); }
     int ssaSelected_ = 0, ssaWalked_ = 0;
     const ir::Function *ssaChoose(const Function &fn);
     std::string ssaOutside(const Function &fn, const ir::Function &f) const;
@@ -140,6 +144,9 @@ private:
     };
     AggPlan planFor(const Type *t) const;
     void storeWord(const char *xreg, const char *base, int k, int size);
+    void returnAgg(const Type *t);
+    void aggToRegisters(const AggPlan &p, int firstReg);
+    void aggResultInto(const Type *t);
     int sretSlot_ = 0;
 
     int stackArgSlot(const Type *t, int &at) const;

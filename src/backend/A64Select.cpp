@@ -1,6 +1,6 @@
-// **Selection of the SSA IR into the arm64 walker's stream** (M5.1, doc-cxx3/M5-PLAN.md). Every value has an 8-byte slot
-// below x29 in canonical form (an integer extended as its type says); operands travel in x0/x1 and d0/d1, x9 addresses.
-// The prologue, the epilogue and placeArguments are the walker's; a body outside the subset stays the walker's whole.
+// **Selection of the SSA IR into the arm64 walker's stream** (M5.1, M5.2; doc-cxx3/M5-PLAN.md). Every value has an 8-byte slot
+// below x29 in canonical form; operands travel in x0/x1 and d0/d1, x9 addresses. A class is its address, copied in and out
+// by the walker's own code; an invoke is one LSDA row. The prologue, the epilogue and placeArguments are the walker's.
 
 #include "Arm64Darwin.h"
 
@@ -33,6 +33,7 @@ bool a64Selects(ir::Op op) {
     case ir::Op::Trunc: case ir::Op::SExt: case ir::Op::ZExt: case ir::Op::FpToSi: case ir::Op::FpToUi: case ir::Op::SiToFp:
     case ir::Op::UiToFp: case ir::Op::FpExt: case ir::Op::FpTrunc: case ir::Op::Bitcast: case ir::Op::PtrToInt: case ir::Op::IntToPtr:
     case ir::Op::Br: case ir::Op::CondBr: case ir::Op::Switch: case ir::Op::Ret: case ir::Op::Unreachable: case ir::Op::Call:
+    case ir::Op::Invoke: case ir::Op::CatchPad: case ir::Op::CleanupPad:
         return true;
     default:
         return false;
@@ -44,15 +45,16 @@ bool a64Selects(ir::Op op) {
 // **The fallback seam**: why `f` is not selected, empty where every part of it is inside the subset.
 std::string Arm64Darwin::ssaOutside(const Function &fn, const ir::Function &f) const {
     if (lineSource() != nullptr) return "-g";
-    if (fn.hasLandingPads() || f.landingPads) return "landing pads";
     if (f.variadic) return "a variadic function";
-    if (f.sret.valid() || fn.sretSlot() != 0) return "a class result";
     if (fn.frameAlign() > 16 || f.frameAlign > 16) return "an over-aligned frame";
     if (f.params.size() != fn.params().size()) return "parameters the parser counts differently";
     for (std::size_t i = 0; i < fn.params().size(); i++)
-        if (!a64Scalar(fn.params()[i].type, target_)) return "a class parameter";
+        if (!a64Scalar(fn.params()[i].type, target_) && !fn.params()[i].type->isStructOrUnion()) return "a parameter that is no scalar and no class";
     const Type *ret = ssaTypes_->type(f.returns);
-    if (ret == nullptr || (!ret->isVoid() && !a64Scalar(ret, target_))) return "a class result";
+    // A reference comes back as the address it is: the operand of every `ret` is then a pointer (asked below).
+    const bool address = ret != nullptr && (ret->isStructOrUnion() || ret->isReference());
+    if (ret == nullptr || (!ret->isVoid() && !a64Scalar(ret, target_) && !address)) return "a result that is no scalar and no class";
+    if (ret->isStructOrUnion() && planFor(ret).byRef && fn.sretSlot() == 0) return "a class result with no pointer slot";
     for (std::size_t i = 0; i < f.frame.size(); i++)
         if (f.frame[i].align > 16 || ssaTypes_->type(f.frame[i].type)->align(target_) > 16) return "an over-aligned local";
     for (std::size_t v = 1; v < f.values.size(); v++) {
@@ -62,22 +64,27 @@ std::string Arm64Darwin::ssaOutside(const Function &fn, const ir::Function &f) c
     }
     for (std::size_t b = 0; b < f.blocks.size(); b++) {
         const ir::Block &blk = f.block(f.blocks[b]);
-        if (blk.pad || blk.funclet != 0) return "landing pads";
+        if (blk.funclet != 0 || (blk.pad && blk.params.size() != 2)) return "a pad that is no landing pad";
         for (std::size_t k = 0; k <= blk.insts.size(); k++) {
             const ir::InstId id = k < blk.insts.size() ? blk.insts[k] : blk.term;
             if (!id.valid()) continue;
             const ir::Inst &i = f.inst(id);
             if (!a64Selects(i.op)) return "the instruction '" + ir::opName(i.op) + "'";
             if ((i.op == ir::Op::Memcpy || i.op == ir::Op::Memset) && (i.k < 0 || i.k > 4096)) return "a block past 4096 bytes";
-            if (i.op != ir::Op::Call) continue;
+            if (i.op == ir::Op::Ret && i.count == 1 && address && !typeOf(f, f.operand(i, 0))->isPointer()) return "a class or a reference returned as a value";
+            if (i.op != ir::Op::Call && i.op != ir::Op::Invoke) continue;
+            if (i.op == ir::Op::Invoke && !f.block(i.succ[1].block).pad) return "an invoke whose unwind edge is no pad";
             const ir::CallInfo &c = f.calls[i.call];
-            if (c.sret || c.resultAlloca >= 0) return "a call with a class result";
             const Type *sig = ssaTypes_->type(c.signature);
+            if (sig == nullptr || !sig->isFunction()) return "a call with no signature";
+            const bool object = c.sret || c.resultAlloca >= 0;
+            if (object != sig->returns()->isStructOrUnion()) return "a call whose class result has no object";
+            if (c.sret && fn.sretSlot() == 0) return "a call into a result pointer the function lacks";
             const std::uint32_t first = c.symbol.empty() ? 1 : 0;
             for (std::uint32_t n = first; n < i.count; n++) {
                 const std::size_t at = n - first;
-                if (sig != nullptr && at < sig->params().size() && sig->params()[at]->isStructOrUnion()) return "a call with a class argument";
                 const bool extra = c.namedArgs >= 0 && at >= static_cast<std::size_t>(c.namedArgs);
+                if (ssaArgType(f, i, at)->isStructOrUnion() && (extra || !typeOf(f, f.operand(i, n))->isPointer())) return "a class through '...'";
                 if (extra && typeOf(f, f.operand(i, n))->kind() == Kind::Float) return "a float through '...'";
             }
         }
@@ -100,7 +107,7 @@ const ir::Function *Arm64Darwin::ssaChoose(const Function &fn) {
 int Arm64Darwin::layoutSsa(const Function &fn, const ir::Function &f) {
     long long cur = 0;
     for (const Param &p : fn.params()) cur = std::max(cur, static_cast<long long>(p.offset));
-    cur = roundUp(cur, 16);
+    cur = roundUp(std::max(cur, static_cast<long long>(fn.sretSlot())), 16);
     ssaAllocaSlot_.assign(f.frame.size(), 0);
     for (std::size_t i = 0; i < f.frame.size(); i++) {
         const Type *t = ssaTypes_->type(f.frame[i].type);
@@ -108,7 +115,20 @@ int Arm64Darwin::layoutSsa(const Function &fn, const ir::Function &f) {
         cur = roundUp(cur + size, align > 0 ? align : 1);
         ssaAllocaSlot_[i] = cur;
     }
-    cur = roundUp(cur, 8);
+    // One area for every call's copies of the classes it passes by a copy's address: a call's operands are values already.
+    long long area = 0;
+    for (std::size_t n = 1; n < f.insts.size(); n++) {
+        const ir::Inst &i = f.insts[n];
+        if (i.op != ir::Op::Call && i.op != ir::Op::Invoke) continue;
+        long long here = 0;
+        for (std::uint32_t k = f.calls[i.call].symbol.empty() ? 1 : 0; k < i.count; k++) {
+            const Type *t = ssaArgType(f, i, k - (f.calls[i.call].symbol.empty() ? 1 : 0));
+            if (t->isStructOrUnion() && planFor(t).byRef) here += roundUp(t->size(target_), 16);
+        }
+        area = std::max(area, here);
+    }
+    cur = roundUp(cur, 16) + area;
+    ssaArgArea_ = cur;
     ssaValueSlot_.assign(f.values.size(), 0);
     for (std::size_t i = 1; i < f.values.size(); i++) {
         if (!f.values[i].type.valid() || ssaTypes_->type(f.values[i].type)->isVoid()) continue;
@@ -165,25 +185,57 @@ void Arm64Darwin::ssaBranchArgs(const ir::Function &f, const ir::Succ &s) {
     for (std::size_t i = moves.size(); i-- > 0; ) { pop("x0"); ssaSlot("st", "x0", ssaValueSlot_[moves[i].second.v]); }
 }
 
-// A direct or indirect call of scalars under AAPCS64 as Darwin has it: placeArguments for the named arguments, the ones
-// through '...' in 8-byte stack words above them; the callee through x17, the result canonical in x0 or in d0.
+// The type argument `n` travels as: the signature's class where the operand is its address and the caller's to copy, as
+// x86's selector asks; a class the parser passes by address is the pointer it already is.
+const Type *Arm64Darwin::ssaArgType(const ir::Function &f, const ir::Inst &i, std::size_t n) const {
+    const ir::CallInfo &c = f.calls[i.call];
+    const Type *sig = ssaTypes_->type(c.signature);
+    const Type *want = sig != nullptr && sig->isFunction() && n < sig->params().size() ? sig->params()[n] : nullptr;
+    const Type *t = typeOf(f, f.operand(i, static_cast<std::uint32_t>(n) + (c.symbol.empty() ? 1 : 0)));
+    return want != nullptr && want->isStructOrUnion() && !Abi::passedByAddress(*want, target_) ? want : t;
+}
+
+// A direct or indirect call under AAPCS64 as Darwin has it: placeArguments for the named arguments, the ones through
+// '...' in 8-byte stack words above them; the callee through x17. A class result comes back into its object, whose
+// address is the call's value: x8 names it for one returned indirectly, the walker's aggResultInto stores the rest.
 void Arm64Darwin::selectCall(const ir::Function &f, const ir::Inst &i) {
     const ir::CallInfo &c = f.calls[i.call];
     const std::uint32_t first = c.symbol.empty() ? 1 : 0;
     const std::size_t total = i.count - first;
     const std::size_t named = c.namedArgs < 0 ? total : std::min(total, static_cast<std::size_t>(c.namedArgs));
     std::vector<const Type *> types;
-    for (std::size_t n = 0; n < named; n++) types.push_back(typeOf(f, f.operand(i, first + static_cast<std::uint32_t>(n))));
+    for (std::size_t n = 0; n < named; n++) types.push_back(ssaArgType(f, i, n));
     const Placement plan = placeArguments(types);
     const int variadicBase = static_cast<int>(roundUp(plan.stackBytes, 8));
     const int bytes = static_cast<int>(roundUp(variadicBase + static_cast<long long>(total - named) * 8, 16));
     if (bytes > 0) { movImm("x9", bytes); out_ << "  sub sp, sp, x9\n"; }
+    // A class passed by a copy's address: the copy is made in the frame's area, at `copyAt` below x29.
+    std::vector<long long> copyAt(named, 0);
+    long long used = 0;
+    for (std::size_t n = 0; n < named; n++) {
+        if (!types[n]->isStructOrUnion() || !plan.args[n].plan.byRef) continue;
+        copyAt[n] = ssaArgArea_ - used;
+        used += roundUp(types[n]->size(target_), 16);
+        ssaLoad(f, f.operand(i, first + static_cast<std::uint32_t>(n)), 0);
+        ssaFrame("x1", copyAt[n]);
+        copyBlock(types[n]->size(target_), "x0", "x1");
+    }
     for (std::size_t n = 0; n < total; n++) {
         const ir::ValueId v = f.operand(i, first + static_cast<std::uint32_t>(n));
-        const Type *t = typeOf(f, v);
+        const Type *t = n < named ? types[n] : typeOf(f, v);
         if (n < named && plan.args[n].inRegister) continue;
-        ssaLoad(f, v, 0);
         const int at = n < named ? plan.args[n].stackOffset : variadicBase + static_cast<int>(n - named) * 8;
+        if (t->isStructOrUnion() && copyAt[n] != 0) {
+            ssaFrame("x0", copyAt[n]);
+            out_ << "  str x0, [sp, #" << at << "]\n";
+            continue;
+        }
+        ssaLoad(f, v, 0);
+        if (t->isStructOrUnion()) {
+            out_ << "  add x11, sp, #" << at << "\n";
+            copyBlock(t->size(target_), "x0", "x11");
+            continue;
+        }
         const int size = n < named ? t->size(target_) : 8;
         if (t->isFloating()) out_ << "  str " << (n < named ? a64Fp(t, 0) : std::string("d0")) << ", [sp, #" << at << "]\n";
         else out_ << (size == 1 ? "  strb w0" : size == 2 ? "  strh w0" : size == 4 ? "  str w0" : "  str x0") << ", [sp, #" << at << "]\n";
@@ -192,8 +244,21 @@ void Arm64Darwin::selectCall(const ir::Function &f, const ir::Inst &i) {
         if (!plan.args[n].inRegister) continue;
         const ir::ValueId v = f.operand(i, first + static_cast<std::uint32_t>(n));
         const Type *t = types[n];
+        if (t->isStructOrUnion()) {
+            if (copyAt[n] != 0) ssaFrame("x9", copyAt[n]); else ssaSlot("ld", "x9", ssaValueSlot_[v.v]);
+            aggToRegisters(plan.args[n].plan, plan.args[n].firstReg);
+            continue;
+        }
         ssaSlot("ld", t->isFloating() ? a64Fp(t, plan.args[n].firstReg) : std::string(abi_.intRegs[plan.args[n].firstReg]), ssaValueSlot_[v.v]);
     }
+    // The object a class result comes back into: this function's own result pointer's, or a frame object.
+    const Type *sig = ssaTypes_->type(c.signature);
+    const bool object = c.sret || c.resultAlloca >= 0;
+    const auto objectIn = [&](const char *reg) {
+        if (c.sret) { localIn(reg, sretSlot_); out_ << "  ldr " << reg << ", [" << reg << "]\n"; }
+        else ssaFrame(reg, ssaAllocaSlot_[static_cast<std::size_t>(c.resultAlloca)]);
+    };
+    if (object && planFor(sig->returns()).byRef) objectIn("x8");
     if (c.symbol.empty()) {
         ssaSlot("ld", "x17", ssaValueSlot_[f.operand(i, 0).v]);
         out_ << "  blr x17\n";
@@ -201,6 +266,7 @@ void Arm64Darwin::selectCall(const ir::Function &f, const ir::Inst &i) {
         out_ << "  bl _" << c.symbol << "\n";
     }
     if (bytes > 0) { movImm("x9", bytes); out_ << "  add sp, sp, x9\n"; }
+    if (object) { objectIn("x9"); aggResultInto(sig->returns()); return; }
     const Type *rt = i.type.valid() ? ssaTypes_->type(i.type) : nullptr;
     if (rt != nullptr && !rt->isVoid() && !rt->isFloating()) narrowInt(rt);
 }
@@ -395,12 +461,31 @@ void Arm64Darwin::selectInst(const ir::Function &f, const ir::Inst &i) {
     }
     case ir::Op::Ret:
         if (i.count == 1) ssaLoad(f, f.operand(i, 0), 0);
+        if (i.count == 1 && ssaTypes_->type(f.returns)->isStructOrUnion()) returnAgg(ssaTypes_->type(f.returns));
         out_ << "  b " << returnLabel_ << "\n";
         return;
     case ir::Op::Call:
         selectCall(f, i);
         ssaStore(f, i.result);
         return;
+    case ir::Op::Invoke: {
+        // One call-site row per invoke, in address order and disjoint, with its pad's chain (M3-IR 3.13), as x86 writes it.
+        const int id = nextLabel();
+        const std::string begin = label("ssatry", id), end = label("ssatryend", id);
+        out_ << begin << ":\n";
+        selectCall(f, i);
+        out_ << end << ":\n";
+        const ir::Inst &pad = f.inst(f.block(i.succ[1].block).insts[0]);
+        std::vector<int> indices;
+        for (std::size_t k = 0; k < pad.cases.size(); k++) indices.push_back(static_cast<int>(pad.cases[k]));
+        callSite(begin, end, ssaLandLabel(i.succ[1].block), pad.syms, indices, (pad.bits & 1) != 0, ++ssaRegionAt_, (pad.bits & 2) != 0);
+        ssaStore(f, i.result);
+        ssaBranchArgs(f, i.succ[0]);
+        out_ << "  b " << ssaBlockLabel(i.succ[0].block) << "\n";
+        return;
+    }
+    case ir::Op::CatchPad: case ir::Op::CleanupPad:
+        return;     // the row facts the invokes read; the landing stores are the block's own (selectBody)
     default:
         unsupported("an SSA instruction the selector's census let through");
     }
@@ -414,13 +499,29 @@ void Arm64Darwin::selectBody(const Function &fn, const ir::Function &f) {
         load(ps[i].type);
         ssaStore(f, f.params[i]);
     }
+    if (f.sret.valid() && sretSlot_ != 0) { localIn("x0", sretSlot_); out_ << "  ldr x0, [x0]\n"; ssaStore(f, f.sret); }
+    ssaRegionAt_ = 0;
     if (!f.blocks.empty() && f.blocks[0].v != f.entry.v) out_ << "  b " << ssaBlockLabel(f.entry) << "\n";
     for (std::size_t b = 0; b < f.blocks.size(); b++) {
         const ir::Block &blk = f.block(f.blocks[b]);
+        // A pad: the runtime lands with the exception in x0 and the selector in w1, the block's two parameters; a
+        // branch from another pad arrives past the stores, at the block's own label, carrying both.
+        if (blk.pad) {
+            out_ << ssaLandLabel(f.blocks[b]) << ":\n";
+            ssaStore(f, blk.params[0]);
+            out_ << "  sxtw x0, w1\n";
+            ssaSlot("st", "x0", ssaValueSlot_[blk.params[1].v]);
+        }
         out_ << ssaBlockLabel(f.blocks[b]) << ":\n";
         for (std::size_t k = 0; k <= blk.insts.size(); k++) {
             const ir::InstId id = k < blk.insts.size() ? blk.insts[k] : blk.term;
             if (id.valid()) selectInst(f, f.inst(id));
         }
+    }
+    // Pads no invoke names: the prologue named the LSDA already, so an empty row defines it, as the walker's empty try does.
+    if (f.landingPads && callSites().empty()) {
+        const std::string none = label("ssatry", nextLabel());
+        out_ << none << ":\n";
+        callSite(none, none, none, std::vector<std::string>(), std::vector<int>(), false, ++ssaRegionAt_, false);
     }
 }

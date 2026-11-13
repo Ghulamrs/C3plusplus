@@ -112,12 +112,12 @@ void Arm64Darwin::loadFpConst(const std::string &reg, const Type *t, double v) {
         float f = static_cast<float>(v);
         unsigned int bits;
         std::memcpy(&bits, &f, sizeof bits);
-        movImm("x9", static_cast<long>(bits));
+        movImm("x9", static_cast<long long>(bits));
         out_ << "  fmov " << reg << ", w9\n";
     } else {
         unsigned long long bits;
         std::memcpy(&bits, &v, sizeof bits);
-        movImm("x9", static_cast<long>(bits));
+        movImm("x9", static_cast<long long>(bits));
         out_ << "  fmov " << reg << ", x9\n";
     }
 }
@@ -833,19 +833,7 @@ void Arm64Darwin::visit(const Call &n) {
             continue;
         }
 
-        if (p.byRef) {
-            out_ << "  mov " << abi_.intRegs[plan.args[i].firstReg] << ", x9\n";
-        } else if (p.hfa > 0) {
-            const char *w = (p.elem == Kind::Float) ? "s" : "d";
-            int step = (p.elem == Kind::Float) ? 4 : 8;
-            for (int k = 0; k < p.hfa; k++)
-                out_ << "  ldr " << w << (plan.args[i].firstReg + k)
-                     << ", [x9, #" << (k * step) << "]\n";
-        } else {
-            for (int k = 0; k < p.words; k++)
-                out_ << "  ldr " << abi_.intRegs[plan.args[i].firstReg + k]
-                     << ", [x9, #" << (k * 8) << "]\n";
-        }
+        aggToRegisters(p, plan.args[i].firstReg);
     }
 
     if (sret) localIn("x8", n.resultSlot());
@@ -865,19 +853,7 @@ void Arm64Darwin::visit(const Call &n) {
     if (n.type()->isStructOrUnion()) {
         localIn("x9", n.resultSlot());
         if (n.resultIndirect()) out_ << "  ldr x9, [x9]\n";
-        AggPlan p = planFor(n.type());
-        if (p.byRef) {
-        } else if (p.hfa > 0) {
-            const char *w = (p.elem == Kind::Float) ? "s" : "d";
-            int step = (p.elem == Kind::Float) ? 4 : 8;
-            for (int k = 0; k < p.hfa; k++)
-                out_ << "  str " << w << k << ", [x9, #" << (k * step) << "]\n";
-        } else {
-            static const char *const ret[2] = { "x0", "x1" };
-            for (int k = 0; k < p.words; k++)
-                storeWord(ret[k], "x9", k, n.type()->size(target_));
-        }
-        out_ << "  mov x0, x9\n";
+        aggResultInto(n.type());
         return;
     }
 
@@ -911,27 +887,63 @@ void Arm64Darwin::visit(const Return &n) {
     if (!n.hasValue()) { out_ << "  b " << returnLabel_ << "\n"; return; }
     n.value().accept(asVisitor());
 
-    const Type *t = n.value().type();
-    if (t->isStructOrUnion()) {
-        AggPlan p = planFor(t);
-        if (p.byRef) {
-            localIn("x9", sretSlot_);
-            out_ << "  ldr x1, [x9]\n";
-            copyBlock(t->size(target_), "x0", "x1");
-            out_ << "  mov x0, x1\n";
-        } else if (p.hfa > 0) {
-            const char *w = (p.elem == Kind::Float) ? "s" : "d";
-            int step = (p.elem == Kind::Float) ? 4 : 8;
-            for (int k = 0; k < p.hfa; k++)
-                out_ << "  ldr " << w << k << ", [x0, #" << (k * step) << "]\n";
-        } else {
-
-            static const char *const ret[2] = { "x0", "x1" };
-            for (int k = p.words; k-- > 0; )
-                out_ << "  ldr " << ret[k] << ", [x0, #" << (k * 8) << "]\n";
-        }
-    }
+    if (n.value().type()->isStructOrUnion()) returnAgg(n.value().type());
     out_ << "  b " << returnLabel_ << "\n";
+}
+
+// A class's address in x0 becomes the function's result: copied through the caller's pointer, or into d0-d3 or x0/x1.
+void Arm64Darwin::returnAgg(const Type *t) {
+    AggPlan p = planFor(t);
+    if (p.byRef) {
+        localIn("x9", sretSlot_);
+        out_ << "  ldr x1, [x9]\n";
+        copyBlock(t->size(target_), "x0", "x1");
+        out_ << "  mov x0, x1\n";
+    } else if (p.hfa > 0) {
+        const char *w = (p.elem == Kind::Float) ? "s" : "d";
+        int step = (p.elem == Kind::Float) ? 4 : 8;
+        for (int k = 0; k < p.hfa; k++)
+            out_ << "  ldr " << w << k << ", [x0, #" << (k * step) << "]\n";
+    } else {
+
+        static const char *const ret[2] = { "x0", "x1" };
+        for (int k = p.words; k-- > 0; )
+            out_ << "  ldr " << ret[k] << ", [x0, #" << (k * 8) << "]\n";
+    }
+}
+
+// A class at [x9] into the registers its place names: the address itself, an HFA's lanes, or its words.
+void Arm64Darwin::aggToRegisters(const AggPlan &p, int firstReg) {
+    if (p.byRef) {
+        out_ << "  mov " << abi_.intRegs[firstReg] << ", x9\n";
+    } else if (p.hfa > 0) {
+        const char *w = (p.elem == Kind::Float) ? "s" : "d";
+        int step = (p.elem == Kind::Float) ? 4 : 8;
+        for (int k = 0; k < p.hfa; k++)
+            out_ << "  ldr " << w << (firstReg + k)
+                 << ", [x9, #" << (k * step) << "]\n";
+    } else {
+        for (int k = 0; k < p.words; k++)
+            out_ << "  ldr " << abi_.intRegs[firstReg + k]
+                 << ", [x9, #" << (k * 8) << "]\n";
+    }
+}
+
+// A call's class result into the object at [x9], whose address is then the call's value in x0.
+void Arm64Darwin::aggResultInto(const Type *t) {
+    AggPlan p = planFor(t);
+    if (p.byRef) {
+    } else if (p.hfa > 0) {
+        const char *w = (p.elem == Kind::Float) ? "s" : "d";
+        int step = (p.elem == Kind::Float) ? 4 : 8;
+        for (int k = 0; k < p.hfa; k++)
+            out_ << "  str " << w << k << ", [x9, #" << (k * step) << "]\n";
+    } else {
+        static const char *const ret[2] = { "x0", "x1" };
+        for (int k = 0; k < p.words; k++)
+            storeWord(ret[k], "x9", k, t->size(target_));
+    }
+    out_ << "  mov x0, x9\n";
 }
 
 static int p2AlignOf(int bytes) {
@@ -1062,6 +1074,7 @@ void Arm64Darwin::emitFunction(const Function &fn) {
     returnLabel_ = "L.return." + fn.symbol();
     // Selected from SSA where the selector's subset holds the whole body (M5.1); null: the walker's, the reason named.
     const ir::Function *ssaFn = ssaChoose(fn);
+    const bool pads = ssaFn != nullptr ? ssaFn->landingPads : fn.hasLandingPads();
 
     out_ << "  .section __TEXT,__text,regular,pure_instructions\n";
     if (!fn.isStatic()) out_ << "  .globl _" << fn.symbol() << "\n";
@@ -1094,7 +1107,7 @@ void Arm64Darwin::emitFunction(const Function &fn) {
         dwarfFns_.push_back(d);
         resetBlocks(fn.blocks());
         out_ << d.begin << ":\n";
-    } else if (fn.hasLandingPads()) {
+    } else if (pads) {
         // The call-site table measures from here, so the label has to exist
         // whether or not there is debug information.
         out_ << "Lfunc.begin." << fn.symbol() << ":\n";
@@ -1107,7 +1120,7 @@ void Arm64Darwin::emitFunction(const Function &fn) {
     // **A function with a landing pad names its personality and its table here**,
     // before anything else: the unwinder finds both through the CFI, and the
     // table itself is written after the body, once its labels exist.
-    if (fn.hasLandingPads()) {
+    if (pads) {
         out_ << "  .cfi_personality 155, ___gxx_personality_v0\n";
         out_ << "  .cfi_lsda 16, Lexception." << fn.symbol() << "\n";
     }

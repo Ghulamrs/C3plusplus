@@ -76,3 +76,43 @@ subset; every other function is the walker's, **named by its reason** (`Arm64Dar
 - **Owed.** `identical.sh ARCHS=arm64-darwin` by name (every unit with a selected function changes: the reason
   is this round); cases with a second translation unit (`.part.cpp`) were not in the run; the Mac's own build
   and `tests/run.sh` there are the wave gate's. M5.2: class values, sret, pads, `-g`, variadic bodies, registers.
+
+### M5.2, round 1 (2026-11-13, lane m5c, from `4646883a`)
+
+Class values and landing pads in the arm64 selector (`A64Select.cpp` 426 -> 527 lines; src/ +190 -69 over four
+files, the walker's class return, class argument and class result made three helpers both paths call).
+
+- **A class is its address.** A class parameter is the slot the walker's prologue filled; a class result goes
+  out through `returnAgg` (the caller's pointer, an HFA's lanes, or x0/x1) and a reference result is the address
+  it is. At a call `ssaArgType` gives `placeArguments` the signature's class where the caller copies (x86's
+  rule): an HFA or 16 bytes at most in registers by `aggToRegisters`, a larger trivial class as the address of
+  a copy in **one area of the frame** all calls share (a call's operands are values already), one the parser
+  passes by address as the pointer it is. A class result comes back into its alloca, or through the function's
+  own result pointer (`CallInfo::sret`), x8 naming it where `planFor` says indirect; `aggResultInto` stores the rest.
+- **Landing pads.** An `invoke` is one call-site row between two labels, with its pad's chain, indices and bits
+  (M3-IR 3.13), registered in address order and never sorted; a pad block stores x0 and the sign-extended w1 into
+  its two parameters at its landing label; the personality and the LSDA are named where `ir::Function::landingPads`
+  says, and `lsdaTable` writes the table as for the walker. Pads no invoke names get the walker's empty row.
+- **Still outside, by reason** (the cases at -O0): a value that is no scalar 58 (15 at -O2), a variadic function
+  16, a parameter that is no scalar and no class 15, `tlsaddr` 4, an over-aligned frame 4, a result that is no
+  scalar and no class 4, `va_arg` 3; `-g`; a class through `...`; a pad that is no landing pad.
+- **Census**: the cases **10654 of 10758 functions (99.0%) at -O0, 10697 (99.4%) at -O2** (72.8% and 72.7%
+  before), 765 and 786 cases selected whole, 809 with a selected function, 0 broken by the selector path at
+  either level; cxx3's own sources and the C90 cases **40528 of 40616 (99.8%)** (59.7% before), the walker's 88
+  being a value that is no scalar 59, `tlsaddr` 21, a variadic function 8.
+- **Two faults of a cl-built cxx3 cross-compiling for arm64, found by the Mac run and mended** - both the
+  walker's, neither seen while only g++ built the compiler that wrote arm64: `loadFpConst` cast a double's bits
+  through `long` (32 bits on Windows: 3.5 became 0), and `Parser::runtimeCall` read `argSlots.size()` beside
+  `std::move(argSlots)` in one argument list (cl builds the last argument first, so `namedArgs` was 0 and
+  `_tlv_atexit`'s three arguments went to the stack as if through `...`).
+- **Where it was measured.** The Linux box's lock was held by other lanes' gates for the whole round, so the
+  build, the cross-compiles and both censuses ran on the Windows box with `cxx3-msvc.exe` (`boxkit/m5c-winprobe.sh`,
+  4 at once under `/affinity 3FF`); the `.s` were linked and run on the Mac through `mac-run.sh`, two at a time.
+- **Run.** Each of the 809 `.s` linked and run on the Mac: **809 of 809 at -O0 and 809 of 809 at -O2** print
+  their recorded output - M5.1's five baseline failures among them, their functions the selector's now.
+- **Gates.** cl /W4 /WX clean; exclusions 0 uncited, 0 stale; comment cap 0 over; memory gate holds;
+  `ide/generate.py --check` up to date (the four on the Windows box's copy of the tree).
+- **Owed.** The Linux leg (g++ build, the same cross-compiles and censuses there - `boxkit/m5c-probe.sh`, the
+  tree is `~/m5c`) and `identical.sh ARCHS=arm64-darwin` by name are the wave gate's; `.part.cpp` cases and the
+  Mac's own `tests/run.sh` as before. M5.2 round 2: the values that are no scalar (a class loaded whole, 58), a
+  reference or array parameter, variadic bodies and `va_arg`, `tlsaddr`, over-aligned frames, `-g`, registers.
