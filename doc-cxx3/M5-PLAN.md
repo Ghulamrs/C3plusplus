@@ -658,3 +658,36 @@ Each reason read for what must hold to reach it, then one probe on Windows (cxx3
   hand at 62a56072 and here alike (`MVKL 56` against 48: the frame), so not this lane's; the wave gate's run.sh decides.
 - **Owed**: `struct S { char tag[8] = "ab"; };` (a member initialiser from a string) is a parser refusal ("'tag' is
   'char [8]' and this is 'const char *'", memberInitialiser takes no string); not in the case.
+
+### R1, round 9: a char array member from a string, a static aggregate built at run time (lane x86i, 2026-11-14, from m5-x86h 8d7a5486)
+
+- **A member from a string** ([dcl.init.string]/1): `char tag[8] = "ab";`, `= { "cd" }`, `u[4]{ "ef" }` (default
+  member initialisers), `: tag("ghij")` and `: s{ "k" }` (mem-initialisers) were parser refusals ("'tag' is 'char [8]'
+  and this is 'const char *'", or "an array is not a type a temporary can have"). memberInitialiser reads a literal on
+  an array as it reads braces (emitInit, so emitString records the label for the prune); a mem-initialiser's literal,
+  parenthesised or braced, is laid down by emitString under the member's root; the lowering's memberInits sends one
+  StringLit part on an array member to `stringArray` (the tail zeroed). char, signed/unsigned char, char16_t; implicit
+  and written constructors. One parser and one lowering, so x86_64-linux, x86_64-windows and arm64 alike.
+- **A static local aggregate whose list is not constant** (`static P ps[2] = { { g(x), 1 }, ... };`, `static P one =
+  { g(x), g(x) };`, a union's, thread_local's) was refused by the parser as "expected a constant initialiser":
+  staticallyInitialisable took any class's list as data. classLeavesFold now asks each number or pointer leaf to fold
+  (integer, floating or an address), as leavesFold does for scalar arrays; the guarded build places a plain class or
+  an array of plain classes leaf by leaf (staticConstruction, staticArray, builtAtRunTime). A list that folds stays data.
+- **R1's undecided reasons, by reading and probing** (boxkit/x86i-pr, clang 19.1.5 on Windows the verdict): **U** -
+  "a case label that is not a constant the lowering folds" is `broken("a case label the parser did not fold")`: caseLabel
+  is reached only through statement(), which notes every Case's folded value (caseFacts_) and the Typer sets it on the
+  node. "a body that falls off its end without a value" is broken(): fallOffValue's caller ends a class's and void's
+  bodies itself, a `std::nullptr_t` return is refused before it ("a return type of 'std::nullptr_t'"), and every other
+  type that reaches it is scalar - whose zero is zeroOf's now, so a member function pointer's is the null member
+  pointer rather than an integer 0 (probe p9 agrees). Baseline 556/93 -> 554/95. **Probed, no reach** (each compiled and agreed at -O0/-O2 in both spellings):
+  inheriting constructors as a local, member, base, static, temporary, array element and returned value (the "of
+  another class" checks); a switch on a class with a conversion function and on a scoped enumeration; a body falling off
+  its end returning a struct, a member pointer and a scoped enumeration; ten case-label forms; `this` through nested
+  lambdas by `[this]`, `[=]` and `[&]`; static locals of a member pointer, a reference, a double, a pointer and a
+  scoped enumeration built at run time. They stay "?" (a probe that compiles is not a proof). No wrong answer found.
+- Cases `member-char-array-string`, `static-aggregate-runtime-list`, `.expected` from Windows clang (-nostdinc++
+  -isystem include). Exclusion citations re-pointed: 6 (ParserClass.cpp +2, ParserInit.cpp +19, ParserTopLevel.cpp +22).
+- src/ lines: +60 -14 (Lowering.cpp, Parser.h, ParserClass.cpp, ParserInit.cpp, ParserTopLevel.cpp).
+- **Gates, Windows** (cxx3-msvc.exe, cl /W4 /WX clean): both cases and char-array-short-string equal to clang at -O0
+  and -O2 in both spellings; exclusions 0 uncited, 0 stale (129; SSA 554/95); comments 0 over the cap; ide/generate.py
+  up to date.

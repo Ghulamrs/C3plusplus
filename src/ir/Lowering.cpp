@@ -2900,14 +2900,9 @@ bool Lowering::madePads() const {
 // return type in the return register; a reference's is a null address (a class's end is unreachable instead).
 ValueId Lowering::fallOffValue(const Type &rt) {
     if (rt.isReference()) return result(add(Op::Null, tid(*types_.pointerTo(rt.referent())), std::vector<ValueId>()));
-    if (rt.isStructOrUnion() || !scalar(rt)) outside("a body that falls off its end without a value");
-    if (rt.isFloating()) {
-        const InstId z = add(Op::FConst, returns_, std::vector<ValueId>());
-        at(z).bits = 0;
-        return result(z);
-    }
-    if (rt.isPointer()) return result(add(Op::Null, returns_, std::vector<ValueId>()));
-    return iconst(returns_, 0);
+    // A class's and void's ends are the caller's; arrays, functions and nullptr_t are never returned here.
+    if (!scalar(rt)) broken("a body that falls off its end without a value");
+    return zeroOf(returns_);
 }
 
 // ----- statements

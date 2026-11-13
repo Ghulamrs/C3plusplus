@@ -633,7 +633,6 @@ a base's destructor of another class
 a base's operator= on a const object
 a base's operator= where there is no `this`
 a binary of <...> parts
-a body that falls off its end without a value
 a body that is not a block
 a braced list as an argument
 a braced list as an argument of '<...>'
@@ -1061,6 +1060,7 @@ two case labels of one value
 two default labels
 a case label outside a switch
 a case label the parser did not fold
+a body that falls off its end without a value
 a conversion function that drops const
 an operator-> that drops const
 a mem-initialiser outside a constructor
