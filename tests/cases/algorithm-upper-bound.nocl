@@ -1,0 +1,1 @@
+cl compiles this case against its own STL and cxx1 against include/, so each defines the other library's members - two libraries, not two manglings (as algorithm-sort-large.nocl, measured there).

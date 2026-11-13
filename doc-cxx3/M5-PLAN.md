@@ -425,3 +425,18 @@ M3b.7 did for x86 (src/ 92,942 -> 91,683, +43 -1,302 over five files, two delete
   memory gate); the memory gate was not run (the Linux lock was held), and no file it reads changed.
 - **Owed.** The Linux leg (g++ build) and `identical.sh ARCHS=arm64-darwin` are the wave gate's; self-host on target 4
   (M5.4); the plan's design text (`Compiler_Design_Final.md` sections naming `A64Peep`) is history now.
+
+### M5.4, self-host on target 4 (2026-11-13, lane m5h, from `1f8ec47b`, every arm64 function from the selector)
+
+The Mac through `boxkit/mac-run.sh` at -j2 (`SELFHOST_JOBS=2`), stage 0 built by Apple clang++.
+- **First run, -O0: stage 0 compiled 99 of 100.** `src/backend/A64Select.cpp:323` (M5.2 round 3's linear scan) calls
+  `std::upper_bound`, which `include/algorithm` did not have: clang's libc++ compiles the tree, cxx1's library did not.
+  Not a selector wrong answer - a library gap the walker's sources never met. Mended: `upper_bound` in
+  `include/algorithm` ([upper.bound], halving, random-access as the rest of the header), and the case
+  `tests/cases/algorithm-upper-bound` (empty, one, repeated runs, both ends, a pointer range; `.expected` from the
+  Windows box's clang 19 with `-nostdinc++ -isystem include`, as par4 allows; `.nocl`, `.nonames` as
+  `algorithm-sort-large`'s).
+- **tools/self-host, -O0**: stages 0, 1, 2, 3 compiled 100 of 100 sources in 60, 492, 490, 491 s; **stages 0 = 1 = 2:
+  100 of 100 the same object; 2 = 3: 100 of 100**. At M5.0 (the walker, -j8) the stages took 15, 62, 64, 62 s: at
+  -j2 the cxx3-built stages are ~2x slower per job than the walker's were - the -O0 selector's code, measured, not
+  mended here.
