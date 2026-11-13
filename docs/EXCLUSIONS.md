@@ -108,7 +108,7 @@ goes in the same commit.
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:763` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:456` |
 | `template <template <class> typename C>`, `typename` after a template template parameter's list | C++17 | `src/parser/ParserTemplate.cpp:52` |
-| `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:751`, `src/parser/ParserInit.cpp:987`, `src/parser/ParserTopLevel.cpp:483`, `src/parser/ParserExprNew.cpp:511` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:207` |
+| `S s = {1, 2}` where S writes a member initialiser - not an aggregate in C++11 | C++14 changed the rule | `src/parser/ParserInit.cpp:753`, `src/parser/ParserInit.cpp:989`, `src/parser/ParserTopLevel.cpp:483`, `src/parser/ParserExprNew.cpp:511` || `static_assert` with no message | C++17 | `src/parser/ParserConst.cpp:207` |
 | `namespace N::M { }` | C++17 | `src/parser/ParserTopLevel.cpp:88` |
 | an inline variable | C++17 | `src/parser/ParserTopLevel.cpp:289` |
 
@@ -194,7 +194,7 @@ is left:
   `src/parser/ParserType.cpp:590`
 - **`sizeof` of a template parameter in a signature outside a template argument
   or a `decltype`** - an array bound, `void f(T, int (*)[sizeof(T)])`, whose
-  Itanium spelling was not measured. `src/parser/ParserExpr.cpp:3646`
+  Itanium spelling was not measured. `src/parser/ParserExpr.cpp:3650`
 - **two-phase name lookup is not done, and that is a decision rather than a
   gap.** A template is instantiated by replaying its tokens, so every name in
   its body is looked up at instantiation - MSVC's old model - and cxx1
@@ -283,14 +283,14 @@ is left:
 - **`auto &` or `auto *` from a braced list** - only `auto` and `const auto`
   deduce `std::initializer_list` here. `src/parser/ParserTemplate.cpp:1326`
 - **a `std::initializer_list` with static storage made from braces** - its
-  backing array would need static storage too. `src/parser/ParserInit.cpp:1274`
+  backing array would need static storage too. `src/parser/ParserInit.cpp:1276`
 - **a braced member initialiser with values on a reference or an array of a
   class** - a scalar member takes `{v}`, a class or an array of scalars a list
   (M1 L4), and `= {}` and `= {0}` zero an array. `src/parser/ParserType.cpp:1356`
 - **a braced list for an array of a class with a destructor and no
-  constructor** - `src/parser/ParserInit.cpp:1322`,
+  constructor** - `src/parser/ParserInit.cpp:1324`,
   `src/parser/ParserStmt.cpp:248`
-- **a bit-field initialised at file scope** - `src/parser/ParserInit.cpp:717`
+- **a bit-field initialised at file scope** - `src/parser/ParserInit.cpp:719`
 ## Objects that would run code before `main`
 
 Dynamic initialisation runs - a file-scope object with a constructor, a static
@@ -302,9 +302,9 @@ many, or has no object of its own:
   each element would need its constructor before main and its destructor at
   exit; a file-scope array and a static local of the same shape are built and
   destroyed element by element. `src/parser/ParserClass.cpp:2210`
-- **a static-duration reference bound to a temporary** - [class.temporary]/5
-  gives the temporary the program's lifetime, so it would need static storage
-  of its own; a named object binds. `src/parser/ParserInit.cpp:1822`
+- **a static-duration reference bound to a temporary of an incomplete class, an
+  array or void** - [class.temporary]/5's object of static storage is made for a
+  scalar or a complete class only. `src/parser/ParserInit.cpp:1815`
 
 ## Expressions
 
@@ -360,7 +360,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   x86_64-windows** - the Microsoft hierarchy is written one base deep; the
   Itanium targets walk `__vmi_class_type_info`. `src/parser/ParserExprNew.cpp:1268`
 - **catching a pointer by reference** - the runtime hands a handler the pointer
-  itself, so catch it by value. `src/parser/ParserStmt.cpp:1679`
+  itself, so catch it by value. `src/parser/ParserStmt.cpp:1702`
 - **throwing a pointer to a function** - it has no `type_info`; the message
   splices its reason in at run time, so this entry is hand-written.
   `tests/cases/throw-refused.cpp`
@@ -391,6 +391,9 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 - **a class declared in the condition of a loop** - [stmt.iter]/2 builds it
   afresh on every turn, and only a scalar can be written where the test is; a
   class in the condition of an `if` works. `src/parser/ParserStmt.cpp:1053`
+- **a switch's condition declaring an object of class type** - its value would be the
+  conversion function's, and its destructor would run at the switch's end; an integer or an
+  enumeration declared there works. `src/parser/ParserStmt.cpp:1157`
 - **a range-based `for` whose range or iterator has a destructor, inside a
   `catch` handler, on x86_64-windows** - the cleanup would be a funclet inside
   the handler's funclet. `src/parser/ParserStmt.cpp:978`
@@ -406,7 +409,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 
 - **a namespace alias inside a block** - the alias is a rewrite to the end of
   the enclosing namespace; at namespace scope it works.
-  `src/parser/ParserStmt.cpp:2180`
+  `src/parser/ParserStmt.cpp:2203`
 - **a using-declaration inside a class of a data member, or one that changes
   an access** - `using B::f;` of a base's member functions in the access they
   already have joins them to the class's set (M1 L2).
@@ -421,7 +424,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   - **a constructor taking a class by value whose copy is not trivial** - the
     copy would have to be passed on rather than made twice.
     `src/sema/Classes.cpp:1792`
-- **a using-declaration inside a block** - `src/parser/ParserStmt.cpp:2188`.
+- **a using-declaration inside a block** - `src/parser/ParserStmt.cpp:2211`.
   The one at namespace scope works, and so does `using namespace N;`.
 
 ## Lambdas
@@ -757,8 +760,6 @@ a conversion through a virtual base
 a converted local that did not come back into its slot
 a converted value built by a constructor of another shape
 a converted value of a class the lowering does not build
-a declaration in a for's condition
-a declaration in a switch's condition
 a deleting destructor with no flag on the Microsoft ABI
 a destructor called by name
 a destructor called through what is not a pointer
@@ -905,8 +906,9 @@ a scalar's braces holding more than one value
 a scope's cleanup that is not the innermost pad
 a scoped enumeration mixed with another type
 a sizeof not folded
+<...>array built at run time
 a static aggregate built otherwise
-a static array built at run time
+a static reference's temporary built otherwise
 a static class of <...> parts
 a static local
 a static local built at run time
@@ -928,6 +930,7 @@ a static reference bound to another type
 a static reference of <...> parts
 a static reference that can write bound to a const
 a static reference to '<...>'
+a static reference to a function bound to what is not that function
 a std::nullptr_t parameter given what is not a null pointer constant
 a step of a pointer to an incomplete type
 a step of what is not a scalar object
@@ -939,7 +942,6 @@ a subscript of <...> parts
 a subscript of what is not a pointer
 a switch of <...> parts
 a switch on what is not an integer
-a thread_local array built at run time
 a thread_local reference
 a thread_local reference, or no thread_local, in __tls_init
 a thread_local whose construction left a scope open

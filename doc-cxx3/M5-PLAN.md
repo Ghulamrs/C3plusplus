@@ -218,3 +218,36 @@ files, the walker's thread_local address, `va_start` and `va_arg` made three hel
   Owed: the miscompile first; the five front-end shapes; the reasons unprobed (Lowering.cpp 2290-2900 and past 3760,
   Builder.cpp).
 - **Also to undo at M5.3:** 13 `lowering-*` refusal cases (R1 lanes) carry an `arm64-darwin` `.notarget` line - the walker writes what the lowering refuses until it goes.
+
+- **R1's finds, round 2, mended (lane r1g, 2026-11-13, from m5-r1q 749b7d6d).** The six wrong answers r1q put in
+  tests/open leave it. **The miscompile:** a static reference bound to a class temporary passed bindStaticReference's
+  refusal because a class temporary is a dereference of its slot (a glvalue by shape, prvalue by mark); the mark is
+  asked now, so `static const A &r = A(3);` is refused by name (static-reference-to-temporary-refused) instead of
+  destroying the temporary at once. **Taken:** a declaration as a for's condition (made afresh each turn, as a while's;
+  Lowering's forStmt reads it by condition()); a declaration as a switch's condition of integer or enumeration type
+  (the switch in a block of its own, Lowering's new declaredCondition gives its value untested; a class there is
+  refused by name, ParserStmt.cpp:1157); a function reference bound to `k ? g : h`; a static reference to a function
+  (the guarded global holds its address). **arrow-chain-through-class-result's root was not operator->:** `P2 b = { a }`
+  elided braces into the member q and asked P1's first member to take a P1 - [dcl.init.aggr]/11 initialises a member
+  whole from an object of its own class, in the parser's emitFill and in Lowering's aggregateItem. Cases: the six
+  moved plus aggregate-member-from-own-class, for-condition-declaration-turns, switch-condition-declaration-enum.
+  Windows -O0/-O2 gnu+masm 36/36, cl /W4 /WX clean, exclusions 0 uncited 0 stale (outside 570 -> 569), comments 0,
+  memory gate new 1054 -> 1053. src/ lines: +61 -17. Owed: a temporary with static storage of its own
+  ([class.temporary]/5, `_ZGR...` on Itanium) so the refusal can go.
+
+- **R1's finds, round 3 (lane r1h, 2026-11-13, from m5-r1g 6ba086ef).** **A static reference's temporary has static
+  storage of its own** ([class.temporary]/5): r1g's refusal goes. The parser's staticTemporary declares the object
+  beside the reference under the ABI's name - Linkage::referenceTemporary, measured: clang `_ZGR1r_`, `_ZGRN2ns2nrE_`,
+  `_ZGRZ1fvE1r_`; cl `?$S<n>@@3UA@@A` at namespace scope (the scope dropped, n counting the unit's temporaries),
+  `?$S<n>@?1??f@@YAHXZ@4UA@@A` in a function (a built class without its const, `HB` for a scalar), its atexit helper `??__F$S<n>@@YAXXZ` made by registerDestruction - and
+  records it on the reference's guard; Lowering's staticTemporary builds it where the reference is bound (a class
+  temporary by its constructor, a scalar stored, a trivially copied class's bytes), binds the reference and registers
+  the destructor as a static object's is (destroyedAtExit, now the one registration staticConstruction uses too). A
+  call's result with a destructor is refused by name (elidedCall returns only into an alloca); an incomplete class, an
+  array or void by name in the parser (ParserInit.cpp:1815). Case static-reference-to-temporary (namespace, namespace
+  member, static member, static local, inline function's, scalar, call result) with the ledger at 0. **typed.sh 92 ->
+  90:** a declarator's written bounds are its `var`'s first parts, and expectBraces began at part 0, so the nested
+  braces of `int a[2][2] = {{..},{..}}` were never typed - it starts past varBounds_ now. **The open register's two
+  stale copies** were the Linux box's old tree (a tar over it keeps deleted files); git had moved them in r1f - the box
+  tree is made afresh now. One check for an array a guard builds (builtAtRunTime) where guardedStatic and threadStatic
+  each had one.
