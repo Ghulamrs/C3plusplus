@@ -334,6 +334,8 @@ M3b.7 did for x86 (src/ 92,942 -> 91,683, +43 -1,302 over five files, two delete
   0 refusals wrong, 10815 of 10815 functions selected, 821 cases compiled**; the Mac through `mac-run.sh` at -j2: **821
   of 821 at -O0 and 821 of 821 at -O2** link, run and print their recorded output. Bench (`m5e-macbench.sh`, five
   rounds, median ms): this tree 371 = m5f's selected 371 (the `.s` byte-identical), m5f's walker + `A64Peep` 675, Apple
-  clang 169; checksums equal. cl /W4 /WX clean; static gates below.
+  clang 169; checksums equal. cl /W4 /WX clean (final tree); exclusions 0 uncited, 0 stale; comment cap 0 over;
+  `ide/generate.py --check` up to date; `ast-residue --check` passes (it does not run on Windows: `SIGPIPE`, as the
+  memory gate); the memory gate was not run (the Linux lock was held), and no file it reads changed.
 - **Owed.** The Linux leg (g++ build) and `identical.sh ARCHS=arm64-darwin` are the wave gate's; self-host on target 4
   (M5.4); the plan's design text (`Compiler_Design_Final.md` sections naming `A64Peep`) is history now.
