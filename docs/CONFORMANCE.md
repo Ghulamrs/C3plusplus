@@ -518,7 +518,7 @@ leaves nothing for a region to read. So when an exception leaves such an
 initialiser, its temporaries are not destroyed, and a function with nothing
 else to unwind gets no landing pads at all.
 
-Measured 2026-10-31 by `tests/open/declaration-temporary-unwind.cpp`: the
+Measured 2026-10-31 by `tests/open/walker-declaration-temporary-unwind.cpp`: the
 walker's ledger ends `live=4 over=3` where clang's ends `live=0`, on x86_64-windows and
 x86_64-linux. Under `-front=ssa` the lowering guards a declaration's and a
 mem-initialiser's temporaries and gives the body pads of its own

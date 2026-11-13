@@ -1927,8 +1927,9 @@ void Parser::pruneUnusedInline(Program &program) {
     for (std::size_t i = 0; i < lookup_.functions_.size(); i++)
         if (lookup_.functions_[i].fromTemplate) fromTemplate.insert(lookup_.functions_[i].symbol);
     std::set<std::string> held = discardableInline_;
+    // A shared atexit helper is kept with its object, which is always kept: the lowering registers a temporary's helper.
     for (const Function &f : program.functions)
-        if (f.isInline() && fromTemplate.count(f.symbol()) == 0) held.insert(f.symbol());
+        if (f.isInline() && fromTemplate.count(f.symbol()) == 0 && f.synthesised() != "atexit helper") held.insert(f.symbol());
     // A class whose key function is defined here owns its group in this unit, built or not.
     std::vector<std::string> keyed;
     if (!target_.microsoftNames())
