@@ -414,7 +414,8 @@ M3b.7 did for x86 (src/ 92,942 -> 91,683, +43 -1,302 over five files, two delete
 - **`tools/ast-residue`** counted nothing in src/backend, so the deletion did not move it; it has a `visits` kind now
   (a generator's visit of a node kind, declared or defined, under src/backend): **150 -> 124** (-26: 13 declarations,
   13 definitions). The other counts are the merge's: ExprPtr 2009 -> 2012 and StmtPtr 634 -> 635 came with `m5-wave1`
-  (R1's parser finds) against a baseline it had not re-recorded; recorded here.
+  (R1's parser finds) against a baseline it had not re-recorded; recorded here. The coordinator accepts the +3/+1: they are the parser's
+  own fixes of a miscompile and refusals of valid code, and the parser builds `Ast.h` until M6d deletes its building half.
 - **Gate** (cl-built `cxx3-msvc.exe` on the Windows box, `boxkit/m5g-winprobe.sh`): -O0, -O2, -O0 -g, -O2 -g: **0 broken,
   0 refusals wrong, 10815 of 10815 functions selected, 821 cases compiled**; the Mac through `mac-run.sh` at -j2: **821
   of 821 at -O0 and 821 of 821 at -O2** link, run and print their recorded output. Bench (`m5e-macbench.sh`, five
