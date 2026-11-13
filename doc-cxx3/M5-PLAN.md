@@ -512,8 +512,8 @@ The Mac through `boxkit/mac-run.sh` at -j2 (`SELFHOST_JOBS=2`), stage 0 built by
   static reference's temporary, called from both units, under the ledger - built 3, gone 3, every fault column 0.
 - **Two stale refusals**: r1j made a static-duration reference to a temporary, so
   `static-reference-temporary-refused` and `static-reference-member-temporary-refused` compiled and failed their
-  `.error`; they are `static-reference-namespace-temporary` and `static-reference-member-temporary` now, with clang's
-  output.
+  `.error`; wave 1 had already replaced them with `static-reference-scalar-temporary` and
+  `static-reference-member-scalar-temporary`, so the wave 2 merge kept those and dropped this lane's renamed pair.
 - **Gate:** Windows cl /W4 /WX clean; the 39 member-pointer, static-local, static-reference and named-cast cases plus the
   two renamed at -O0 and -O2, gnu and masm: all ok (member-pointer-base-on-derived is .notarget there); exclusions
   0 uncited / 0 stale (one citation re-pointed, ParserExpr.cpp:3655), comment cap 0, memory gate holds. **Linux not
