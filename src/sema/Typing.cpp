@@ -320,6 +320,7 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
             if (isClass(a)) return nullptr;
             if (op == "!") return p_.rules().truthType();
             if ((op == "+" || op == "-") && a->isArithmetic()) return p_.promote(a);
+            if (op == "+" && da->isPointer()) return da;      // [expr.unary.op]/7
             if (op == "~" && a->isInteger()) return p_.promote(a);
             if (op == "*" && da->isPointer() && !da->pointee()->isFunction()) return da->pointee();
             if (op == "&" && !a->isFunction()) return types.pointerTo(a);

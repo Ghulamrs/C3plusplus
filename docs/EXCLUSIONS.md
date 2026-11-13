@@ -103,7 +103,7 @@ goes in the same commit.
 | `0b101`, a binary literal | C++14 | `src/Lexer.cpp:527` |
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:621` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2298` |
-| `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:263` |
+| `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:264` |
 | `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:3143`, `src/parser/ParserTopLevel.cpp:835` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:763` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:456` |
@@ -360,7 +360,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   x86_64-windows** - the Microsoft hierarchy is written one base deep; the
   Itanium targets walk `__vmi_class_type_info`. `src/parser/ParserExprNew.cpp:1268`
 - **catching a pointer by reference** - the runtime hands a handler the pointer
-  itself, so catch it by value. `src/parser/ParserStmt.cpp:1702`
+  itself, so catch it by value. `src/parser/ParserStmt.cpp:1703`
 - **throwing a pointer to a function** - it has no `type_info`; the message
   splices its reason in at run time, so this entry is hand-written.
   `tests/cases/throw-refused.cpp`
@@ -390,13 +390,13 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   a function try block's handlers would. `src/parser/ParserTopLevel.cpp:1175`
 - **a class declared in the condition of a loop** - [stmt.iter]/2 builds it
   afresh on every turn, and only a scalar can be written where the test is; a
-  class in the condition of an `if` works. `src/parser/ParserStmt.cpp:1053`
+  class in the condition of an `if` works. `src/parser/ParserStmt.cpp:1054`
 - **a switch's condition declaring an object of class type** - its value would be the
   conversion function's, and its destructor would run at the switch's end; an integer or an
-  enumeration declared there works. `src/parser/ParserStmt.cpp:1157`
+  enumeration declared there works. `src/parser/ParserStmt.cpp:1158`
 - **a range-based `for` whose range or iterator has a destructor, inside a
   `catch` handler, on x86_64-windows** - the cleanup would be a funclet inside
-  the handler's funclet. `src/parser/ParserStmt.cpp:978`
+  the handler's funclet. `src/parser/ParserStmt.cpp:979`
 - **a trailing return type that is itself deduced**, `auto f() -> auto` -
   C++14. `src/parser/ParserTopLevel.cpp:2379`
 - **an expression form the Itanium name was not measured for, over a template's
@@ -409,7 +409,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 
 - **a namespace alias inside a block** - the alias is a rewrite to the end of
   the enclosing namespace; at namespace scope it works.
-  `src/parser/ParserStmt.cpp:2203`
+  `src/parser/ParserStmt.cpp:2204`
 - **a using-declaration inside a class of a data member, or one that changes
   an access** - `using B::f;` of a base's member functions in the access they
   already have joins them to the class's set (M1 L2).
@@ -424,14 +424,14 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   - **a constructor taking a class by value whose copy is not trivial** - the
     copy would have to be passed on rather than made twice.
     `src/sema/Classes.cpp:1792`
-- **a using-declaration inside a block** - `src/parser/ParserStmt.cpp:2211`.
+- **a using-declaration inside a block** - `src/parser/ParserStmt.cpp:2212`.
   The one at namespace scope works, and so does `using namespace N;`.
 
 ## Lambdas
 
 - **naming a capture after a default one** — `[=]` and `[&]` on their own take
   everything the body reads, `this` included where the body names a member.
-  `src/parser/ParserExprLambda.cpp:230`
+  `src/parser/ParserExprLambda.cpp:231`
 
 ## `volatile`, which is read and dropped
 
@@ -851,10 +851,8 @@ a parameter that is not a var
 a parenthesis of <...> parts
 a placement 'new' of another allocation function
 a pointer compared with a number
-a pointer to a data member as a truth value
 a pointer to a data member compared with another type
 a pointer to a data member of no class
-a pointer to a data member value-initialised
 a pointer to a member function converted from one not of a base
 a pointer to a member function that is not an object
 a pointer to a member function with no code word or adjustment

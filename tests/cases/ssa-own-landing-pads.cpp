@@ -2,7 +2,7 @@
 // initialiser or of a mem-initialiser - which the parser's cleanup regions leave out, so it gives the function no
 // landing pads - get pads of their own, and the exception that leaves such a body destroys what it built; so does a
 // thrown temporary's argument when the temporary's constructor throws (M3b.2, round 21). The parser's own body leaks
-// them: tests/open/declaration-temporary-unwind.cpp.
+// them: tests/open/walker-declaration-temporary-unwind.cpp.
 #include "lifetime.h"
 
 struct T {

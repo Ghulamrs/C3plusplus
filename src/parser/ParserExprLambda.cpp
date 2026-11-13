@@ -150,11 +150,12 @@ const Type *Parser::deduceLambdaReturn(std::size_t paramsFrom,
 
 // The locals in scope that a lambda's body may read without capturing them: const objects of
 // integral type with a constant initialiser, [expr.prim.lambda]/12 with [basic.def.odr]/2 - kept
-// as the values they are, since the lambda's frame is not the one they live in (1.27).
+// as the values they are, since the lambda's frame is not the one they live in (1.27); and objects of static storage.
 std::vector<Parser::Local> Parser::constantLocals() const {
     std::vector<Local> out;
     for (std::size_t i = 0; i < locals_.size(); i++) {
         const Local &l = locals_[i];
+        if (!l.staticName.empty() && !l.name.empty()) { out.push_back(l); continue; }   // static storage: no capture either
         if (!l.isConstantValue || l.type->isReference() || l.sharesSlot || l.name.empty()) continue;
         Local c = l;
         c.constantOnly = true;

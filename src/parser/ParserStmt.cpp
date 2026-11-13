@@ -418,7 +418,7 @@ StmtPtr Parser::declarationBody() {
             // [stmt.dcl]/4 again: bound once, statically where the initialiser
             // is a global's address and under a guard otherwise.
             if (sc == StorageStatic) {
-                const std::string symbol = linkage_.uniqueStaticSymbol(d.name);
+                const std::string symbol = linkage_.uniqueStaticSymbol(d.name, quals.isThreadLocal ? nullptr : d.type);
                 std::vector<GlobalPiece> pieces;
                 bool hasInit = false;
                 std::vector<StmtPtr> body;
@@ -431,7 +431,8 @@ StmtPtr Parser::declarationBody() {
                 current_->globals.push_back(Global{ symbol, symbol,
                                                     types_.pointerTo(d.type->referent()),
                                                     std::move(pieces), hasInit,
-                                                    true, false });
+                                                    !sharedStaticLocal(symbol), false });
+                current_->globals.back().isInline = sharedStaticLocal(symbol);
                 current_->globals.back().isThreadLocal = quals.isThreadLocal;
                 if (!body.empty())
                     inits.push_back(guardOnce(symbol, std::move(body)));

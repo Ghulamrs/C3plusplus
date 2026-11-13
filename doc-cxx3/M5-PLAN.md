@@ -124,3 +124,23 @@ Everything else - x86 gates, the C6000, cl - stays on the boxes.
   stale copies** were the Linux box's old tree (a tar over it keeps deleted files); git had moved them in r1f - the box
   tree is made afresh now. One check for an array a guard builds (builtAtRunTime) where guardedStatic and threadStatic
   each had one.
+
+- **R1, round 4 (lane r1i, 2026-11-13, from m5-r1h 87f934d9).** **The open register's seven:** six are walker-* (arm64's,
+  left alone); the seventh, declaration-temporary-unwind, is an `#include` of tests/cases/ssa-own-landing-pads (the
+  same .expected, ok on Windows -O0/-O2 both spellings) and is the walker's defect too, so it is renamed
+  walker-declaration-temporary-unwind and the case's .notarget points there. **r1h's `_ZGR` names:** Windows clang
+  `-target x86_64-linux-gnu -S` writes the eleven r1h emits; it makes h's `_ZZ1hvE1q`, `_ZGVZ1hvE1q`, `_ZGRZ1hvE1q_`
+  weak in COMDATs, and cl makes `?q@?1??h@@YAHXZ@4AEBUA@@EB`, `?$TSS0@...`, `?$S10@...` External - **an inline function's
+  static reference was a per-unit `h.q`**: it takes the ABI's name now (uniqueStaticSymbol given its type, ParserStmt),
+  and with it its guard and temporary are shared (the atexit helpers stay file-local, as a static local's always were).
+  **48 probes** over Lowering.cpp 2290-2900, past 3760 and Builder*.cpp, each accepted by Windows clang -std=c++11
+  -pedantic-errors: 37 compile and print clang's answer. **(b) 6 taken**: unary `+` of a pointer, and so of a
+  captureless lambda (Typing and the lowering); `++` of a bool (deprecated, still C++11); a static member through `->`
+  of an expression (the pointer evaluated); a data member pointer value-initialised `P()` (was broken(), "a cast not
+  recorded") and as a truth value; a lambda reading its function's static local uncaptured ("'s' was not declared").
+  **(a) 4 refused by name as cited**, cases with a .error: a std::nullptr_t return, a thread_local reference in a block
+  and at namespace scope, a static member through `.` of a call. A virtual base with virtual functions on the Microsoft
+  ABI is refused by name in the parser (vtordisp), already cited. **(c) 0.** **Wrong answers, in tests/open:**
+  function-reference-through-dereference (`void (&r)() = *p` refused: the parser reads `*p` back as p) and
+  member-pointer-condition (requireScalar refuses a data member pointer as `?:`'s condition, `!`, a cast to bool).
+  src/ lines: +17 -7 (Lowering.cpp, Typing.cpp, ParserStmt.cpp, ParserExprLambda.cpp).
