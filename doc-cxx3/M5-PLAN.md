@@ -617,9 +617,10 @@ Each reason read for what must hold to reach it, then one probe on Windows (cxx3
 - src/ lines: +47 (SsaSelect.cpp +43, X86_64Linux.cpp +1, X86_64Linux.h +3).
 - **Gates**: Windows (cxx3-msvc.exe, cl /W4 /WX clean): w1 and w2 at -g -O0 and -g -O2 in both spellings build, link and
   print their output; exclusions 0 uncited, 0 stale (556/93); comments 0 over the cap; ide/generate.py up to date.
-- **Linux, owed to the wave gate**: the lane's rebuild waited on the box's lock past the hour, so gdb after, the -g
-  cases, `COFF_FLAGS=-g tests/coff.sh` and determinism ran only on 190aebc9 (58 -g cases at -O0/-O2 pass, host -g
-  pass, memory-gate rc 0 - src/backend is outside it).
+- **gdb after** (Linux, this commit, same break): `c = 104 'h'`, `big = 1`, `d = 6`, `k = 3`, `p = 0x404010 <counter>`,
+  `u = 7`, `w = 1234567890123` - the source's values; parameters and `bt` unchanged. g++ -Werror build clean; host -g
+  check pass; 58 -g cases at -O0 and -O2 build and print their output, 0 fail. `COFF_FLAGS=-g tests/coff.sh` and
+  determinism were still running at the hour (~/x86g-linux2.out): the wave gate's.
 - **Owed**: `x86Declares` is arm64's `a64Declares` again (A64Select.cpp was not this lane's): one helper for both;
   location lists for promoted values at -O1/-O2, and a parameter's slot after finish-frame moves it under the passes;
   `w4.cpp` does not reach the selector on x86 (`char name[6] = "cdb"`: "an array initialised from a string the
