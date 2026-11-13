@@ -320,9 +320,10 @@ by case against round 5 (`m6d-cmp.sh`), the text no longer identical by design.
   identical.sh was the real one. m6h-win.sh writes each text to its own file.
 - **-g:** tests/g-same.sh on the merged tree (Windows, cl build): 860 same, 0 differ, 0 broken, 355 not for tms6747.
 - **Gates (Windows, 6cdb4b65's tree):** cl /W4 /WX clean; exclusions 0 uncited 0 stale; comments 0 over;
-  ide/generate.py --check up to date; memory gate --check rc 0. Linux (~/m6h, same tree): g++ build done; the
-  legs (g-same, identical.sh against ~/m6g's cxx3.exe, static, tms6747.sh SIM=0 -O2 and -O0 in three shards each) were
-  queued on the lock at the hour - boxkit/m6h-handover.md's last lines carry what came back.
+  ide/generate.py --check up to date; memory gate --check rc 0. Linux (~/m6h, same tree): g++ build; tests/g-same.sh 860
+  same, 0 differ, 0 broken; `identical.sh ARCHS=tms6747 LEVELS="0 2"` against ~/m6g's cxx3.exe (2b4aca6e): 1,720
+  compared, 0 differ. Static and tms6747.sh SIM=0 -O2 and -O0 (three shards each) were queued on the lock at the hour:
+  ~/m6h-gate.out, and boxkit/m6h-handover.md's last lines.
 - **Schedule-aware allocation: not begun, by the rule that a claim with no oracle is not believed.** Its gate is
   vm6747 cycles case by case, vm6747 runs on the Linux box alone, and the lock there was held by other lanes' gates for
   the hour (this lane's build got it 22 minutes in); code that moves values between the A and B files cannot land
