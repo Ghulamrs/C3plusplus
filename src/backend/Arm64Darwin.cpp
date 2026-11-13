@@ -1060,6 +1060,8 @@ void Arm64Darwin::emitFunction(const Function &fn) {
     functionName_ = fn.symbol();
     labelPrefix_ = "L." + fn.symbol() + ".";
     returnLabel_ = "L.return." + fn.symbol();
+    // Selected from SSA where the selector's subset holds the whole body (M5.1); null: the walker's, the reason named.
+    const ir::Function *ssaFn = ssaChoose(fn);
 
     out_ << "  .section __TEXT,__text,regular,pure_instructions\n";
     if (!fn.isStatic()) out_ << "  .globl _" << fn.symbol() << "\n";
@@ -1130,9 +1132,9 @@ void Arm64Darwin::emitFunction(const Function &fn) {
         opt::noteDecline("realigned-frame-no-peephole", fn.symbol());
     }
     // An optimized frame keeps room below its locals for the callee-saved registers a promoted local takes.
-    const int locals = alignTo(fn.frameSize(), 16);
-    const bool promote = optimize_ > 0 && realign_ == 0 && locals + kCalleeArea <= 65535;
-    if (optimize_ > 0 && !promote) opt::noteDecline("arm64-frame-too-large-no-promotion", fn.symbol());
+    const int locals = alignTo(ssaFn != nullptr ? layoutSsa(fn, *ssaFn) : fn.frameSize(), 16);
+    const bool promote = ssaFn == nullptr && optimize_ > 0 && realign_ == 0 && locals + kCalleeArea <= 65535;
+    if (ssaFn == nullptr && optimize_ > 0 && !promote) opt::noteDecline("arm64-frame-too-large-no-promotion", fn.symbol());
     int frame = locals + (promote ? kCalleeArea : 0);
     if (realign_ > 0) frame = top_ = alignTo(locals, realign_);
     if (realign_ > 0) {
@@ -1216,11 +1218,12 @@ void Arm64Darwin::emitFunction(const Function &fn) {
 
     namedStackBytes_ = alignTo(plan.stackBytes, 8);
 
-    fn.body().accept(asVisitor());
+    if (ssaFn != nullptr) selectBody(fn, *ssaFn); else fn.body().accept(asVisitor());
     std::vector<std::string> saved;
     const Type *ret = fn.returns();
     const bool resultInX = ret != nullptr && !ret->isVoid() && !ret->isFloating();
-    const std::string body = a64Peephole(out_.str(), realign_ > 0 ? 0 : optimize_, promote ? &saved : nullptr, resultInX);
+    // A selected body keeps its slots: the text peephole reads the walker's shapes, and the allocator's registers are M5.2's.
+    const std::string body = ssaFn != nullptr ? out_.str() : a64Peephole(out_.str(), realign_ > 0 ? 0 : optimize_, promote ? &saved : nullptr, resultInX);
     out_.str(std::string());
     out_ << head;
     // Each register a promoted local took is saved below the locals, where the unwinder is told to find it.
@@ -1327,5 +1330,7 @@ void Arm64Darwin::run(const Program &program) {
         out_ << dwarf;
     }
     out_ << ".subsections_via_symbols\n";
+    if (ssa_ != nullptr && std::getenv("CXX1_SSA_WHY") != nullptr)
+        std::fprintf(stderr, "a64-select: selected=%d of %d\n", ssaSelected_, ssaSelected_ + ssaWalked_);
     sink_ << out_.str();
 }

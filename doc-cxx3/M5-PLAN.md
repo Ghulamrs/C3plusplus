@@ -39,3 +39,40 @@ Everything else - x86 gates, the C6000, cl - stays on the boxes.
 -O0 and -O2 on the Mac, and from M5.4 the target-4 self-host, each through `mac-run.sh`.
 
 ## Where it stands
+
+### M5.1, round 1 (2026-11-13, lane m5a, from `cd01e16b`)
+
+`backend/A64Select.cpp` (426 lines; src/ +463 -8 over four files): arm64-darwin takes the module through
+`Backend::setSsa` and writes a function from its `ir::Function` where the whole body is inside the selector's
+subset; every other function is the walker's, **named by its reason** (`Arm64Darwin::ssaOutside`, one predicate).
+
+- **The design.** The frame is laid above the parser's parameter slots (allocas at their alignment, then one
+  8-byte slot per value); the prologue, the epilogue and `placeArguments` are the walker's, unchanged. A value is
+  canonical in its slot (an integer extended as its type says, `narrowInt` after every definition); operands
+  travel in x0/x1 and d0/d1, x9 addresses, x17 is an indirect callee. A branch's arguments are a parallel move
+  of whole slots. A selected body gets no `a64Peephole` and no promoted locals: registers are M5.2's (the MIR
+  allocator), so a selected function at -O2 is slower than the walker's today - measured at M5.3, not here.
+- **The subset.** Integer, pointer and floating scalars; constants, `addr`, allocas, loads, stores, `memcpy` and
+  `memset` to 4096 bytes, geps; integer and floating arithmetic, `smulh`/`umulh`, compares, every cast; `br`,
+  `condbr`, `switch`, block arguments; direct and indirect calls of scalars, Darwin's `...` words included; `ret`.
+- **Outside, by reason** (the cases at -O0): landing pads 1306, a class result 1067, a class parameter 319, a
+  call with a class result 107, a call with a class argument 83, a value that is no scalar 19, a variadic
+  function 16, `tlsaddr` 4, `va_arg` 3, an over-aligned frame 2; and `-g` (a selected body has no line records
+  or locals yet) and "no SSA body". `Select` and `Trap` have no rule on x86 either.
+- **The seam in the driver.** arm64-darwin lowers every unit (a body outside the lowering is no error there)
+  and the passes run at the level the unit is compiled at (the `volatile` downgrade included).
+  `CXX1_A64_WALKER=1` hands the generator no module: the walker alone, the oracle for a differential.
+- **Census** (`CXX1_SSA_WHY`, the switch x86's uses: `a64 walker <symbol>: <why>` per function and
+  `a64-select: selected=N of M` per unit; `tools/ssa-census -arch arm64-darwin` sums them): the cases **7832 of
+  10758 functions (72.8%) at -O0, 7823 (72.7%) at -O2**, 334 cases selected whole, 790 with a selected function;
+  cxx3's own sources and the C90 cases **24217 of 40577 (59.7%)** at -O0.
+- **Run.** Cross-compiled on the Linux box (0 cases broken by the selector path at either level), each `.s`
+  linked and run on the Mac, serially, through `mac-run.sh`: **785 of 790 at -O0, 784 of 789 at -O2** print
+  their recorded output. The five that do not (`ssa-aggregate-member-temporary`, `ssa-aggregate-temporary-members`,
+  `ssa-aggregate-value-temporaries`, `ssa-census-last-bodies`, `ssa-new-arguments-outlive`) print the same wrong
+  answer from the walker alone at -O0: the baseline's, M5.0's to register in `tests/open/`.
+- **Gates.** cl /W4 /WX clean; exclusions 0 uncited, 0 stale; comment cap 0 over; memory gate holds;
+  `ide/generate.py --check` up to date.
+- **Owed.** `identical.sh ARCHS=arm64-darwin` by name (every unit with a selected function changes: the reason
+  is this round); cases with a second translation unit (`.part.cpp`) were not in the run; the Mac's own build
+  and `tests/run.sh` there are the wave gate's. M5.2: class values, sret, pads, `-g`, variadic bodies, registers.

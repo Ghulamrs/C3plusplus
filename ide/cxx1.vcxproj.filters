@@ -45,6 +45,7 @@
     <ClCompile Include="..\src\parser\ParserTopLevel.cpp"><Filter>Source Files\parser</Filter></ClCompile>
     <ClCompile Include="..\src\parser\ParserType.cpp"><Filter>Source Files\parser</Filter></ClCompile>
     <ClCompile Include="..\src\parser\ParserVtable.cpp"><Filter>Source Files\parser</Filter></ClCompile>
+    <ClCompile Include="..\src\backend\A64Select.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\Arm64Darwin.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\Backend.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\CodeView.cpp"><Filter>Source Files\backend</Filter></ClCompile>

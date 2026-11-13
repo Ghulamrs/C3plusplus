@@ -3,6 +3,7 @@
 #include "Backend.h"
 #include "Dwarf.h"
 #include "Walker.h"
+#include "../ir/Ir.h"
 
 #include <iosfwd>
 #include <sstream>
@@ -60,6 +61,7 @@ public:
 
     void landingPad(int pointerSlot, int selectorSlot) override;
     void setOptimize(int level) override { optimize_ = level; }
+    void setSsa(const ir::Module *module, const TypeTable *types) override { ssa_ = module; ssaTypes_ = types; }
     bool terminateScopes() const override { return true; }
     std::string terminatePad(int id) override;
 
@@ -68,6 +70,26 @@ private:
     // table, the actions, and the type_info pointers the actions index.
     void emitLsda(const std::string &symbol);
     std::vector<std::string> lsdaTypes_;
+
+    // **The SSA selector** (M5.1, A64Select.cpp): a function inside its subset is written from the module, the rest by the
+    // walker - ssaChoose names why. Every value has an 8-byte slot above the parser's parameters; x0/x1 and d0/d1 carry operands.
+    const ir::Module *ssa_ = nullptr;
+    const TypeTable *ssaTypes_ = nullptr;
+    std::vector<long long> ssaAllocaSlot_, ssaValueSlot_;
+    int ssaSelected_ = 0, ssaWalked_ = 0;
+    const ir::Function *ssaChoose(const Function &fn);
+    std::string ssaOutside(const Function &fn, const ir::Function &f) const;
+    const Type *typeOf(const ir::Function &f, ir::ValueId v) const { return ssaTypes_->type(f.value(v).type); }
+    int layoutSsa(const Function &fn, const ir::Function &f);
+    void selectBody(const Function &fn, const ir::Function &f);
+    void selectInst(const ir::Function &f, const ir::Inst &i);
+    void selectCall(const ir::Function &f, const ir::Inst &i);
+    void ssaFrame(const char *dst, long long off);
+    void ssaSlot(const char *op, const std::string &reg, long long off);
+    void ssaLoad(const ir::Function &f, ir::ValueId v, int n);
+    void ssaStore(const ir::Function &f, ir::ValueId v);
+    void ssaBranchArgs(const ir::Function &f, const ir::Succ &s);
+    std::string ssaBlockLabel(ir::BlockId b) const { return label("ssa", static_cast<int>(b.v)); }
 
     std::ostringstream out_;
     int optimize_ = 0;          // -O1 and -O2 run each body through a64Peephole
