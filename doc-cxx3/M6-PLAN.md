@@ -51,3 +51,18 @@ tools in `~/ti6x`), never on the Mac.
   rc 0, ide/generate.py --check up to date. **Owed:** the class-argument refusal, then tms6747.sh with sim6747 at -O0/-O2
   (each run under 25 minutes: the SIM=1 leg reached the cap twice), asm6x.sh (C6XDIFF set in boxkit/m6a-gate.sh),
   identical.sh ARCHS=tms6747 by name (2,122 of 2,490 differed - every file with a selected function), -O2 cycles.
+
+### M6a, round 2, 2026-11-13, lane m6a2
+
+- **Landed:** `backend/C6xSelect.cpp` +2 (343 -> 345 lines): a direct call whose signature takes a class by value stays
+  on the walker ("class argument") - TI passes a class of 8 bytes or less in registers, the IR a pointer to a copy. No
+  other src/ line changed.
+- **The five newly wrong answers of round 1 had this one root:** namespace, namespace-relative-sibling,
+  qualified-base-member-template (a closure passed by value), ssa-converted-arguments, using-declaration - each a
+  selected caller passing a small class to a walked callee. All five pass on vm6747 at -O0 after the refusal.
+- **Gates (Linux, 94903ffa's tree):** build; exclusions 0 uncited 0 stale, comments 0 over, memory gate --check rc 0,
+  ide/generate.py --check up to date; cl /W4 /WX clean on Windows. tms6747.sh SIM=0 (vm6747): -O0 783 passed /
+  3 failed, -O2 783 / 3 - the walker's three noexcept cases, no selector failure left. Cycles (vm6747): -O0 611.0 M
+  (unchanged, round 1's cost), -O2 311.7 M. Census (tools/ssa-census -arch tms6747):
+  24,930 of 34,716 functions selected (71.8%; round 1 25,335 of 34,712 before its last fix), 12 other failures as before.
+- **Owed (the coordinator's):** the sim6747 cycles leg, identical.sh ARCHS=tms6747, asm6x.sh; registers are M6b's.
