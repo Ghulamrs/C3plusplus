@@ -164,3 +164,44 @@ tools in `~/ti6x`), never on the Mac.
   (71.8%), 12 other failures - round 3's thirteen less `C6xSelect.cpp`.
 - **Owed:** why -O0 lost 0.5 M; the unrolled bodies (above); the bench kernels' cycles;
   sim6747, asm6x.sh and identical.sh ARCHS=tms6747 (the coordinator's).
+
+### M6a, round 5 (the register pick for unrolled loops), 2026-11-13, lane m6d
+
+- **Landed** (`bbedc0dd`): `backend/C6xSelect.cpp` 652 -> 675 lines, nothing else in src/. In `ssaAssign`, an edge's
+  argument and its parameter are partners: the second of the two to be placed takes the first's register where it is in
+  the pick, so the edge needs no move and the pipeliner still sees one counter. The rest rotate within a block at -O1 and
+  -O2 (a cursor past the last register given, reset at each block), so the four turns the SSA unroller writes no longer
+  share A20/A21; a saved register is still taken lowest first (a rotation over them only adds saves). At -O0, where
+  nothing schedules, the pick stays the lowest free register and a loop's constants are made at each use as in round 3.
+- **The walker's text is unchanged** by construction: `ssaAssign` runs on the selector's path only.
+- **Cycles, vm6747 (tests/tms6747.sh SIM=0 CYCLES=1, 780 cases):**
+
+  | level | walker | round 3 | round 4 | round 5 | cases better / equal / worse than the walker |
+  | --- | --- | --- | --- | --- | --- |
+  | -O0 | 447.7 M | 393.2 M | 393.7 M | 393.2 M | 380 / 117 / 283 (worse by 0.17 M; thread-pool 155 k of it) |
+  | -O2 | 195.9 M | 201.4 M | 193.6 M | 192.2 M | 416 / 321 / 43 (worse by 0.21 M) |
+
+  | the six, -O2 | walker | round 4 | round 5 |
+  | --- | --- | --- | --- |
+  | stack-probe | 801,623 | 534,481 | 534,479 |
+  | local-zero-init-large | 524,782 | 1,424,382 | 661,890 |
+  | pipelined-data-exit | 1,517,496 | 1,471,658 | 1,458,291 |
+  | fill-stores | 985,949 | 1,546,793 | 1,049,849 |
+  | array-loop-member-copy | 4,650,964 | 3,970,990 | 3,967,524 |
+  | array-loop-static | 2,082,301 | 2,009,121 | 2,008,094 |
+
+  Against round 4 case by case: -O2 210 better / 541 equal / 29 worse (by 4 k in all, map-set-node-stability +2 k);
+  -O0 against round 3 252 better / 528 equal / 0 worse. Probe c6x-select-scalars: -O0 2,750 (round 4 2,767), -O2 705
+  (round 4 711). The pipeliner still takes stack-probe's loop (II=2) and sumInts (II=5); the unrolled `sum()`/`dirty()`
+  stay refused ("the counter is not stepped by one before the test"), now scheduled as straight code.
+- **-O0's 0.5 M came back** with round 4's kept constants held at -O1/-O2 only (at -O0 nothing schedules, so a held
+  constant only costs its register to a value that needs one): -O0 is round 3's to the case, and round 4's stub places,
+  which stay at -O0, cost nothing there.
+- **The 43 left at -O2** are 0.21 M: local-zero-init-large +137 k and fill-stores +64 k (the unrolled bodies, whose
+  counter the pipeliner refuses), lambda-deduction-temporaries +6 k, then nothing over 2.7 k.
+- **Gates (bbedc0dd's tree):** Linux build; tms6747.sh SIM=0 -O0 783 passed / 3 failed, -O2 783 / 3 - the walker's three
+  noexcept cases; cl /W4 /WX clean on Windows; exclusions 0 uncited 0 stale,
+  comments 0 over, ide/generate.py --check up to date (Windows); memory gate: C6xSelect.cpp is outside its scope (its Linux leg queued behind the lock at the hour). Census (tools/ssa-census -arch
+  tms6747, Windows): outside 0, 25,023 of 34,847 functions selected (71.8%), 12 other failures - round 4's.
+- **Owed:** the pipeliner over a counter stepped by four (the unrolled bodies' last 0.2 M); the bench kernels' cycles;
+  sim6747, asm6x.sh and identical.sh ARCHS=tms6747 (the coordinator's).
