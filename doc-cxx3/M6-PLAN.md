@@ -256,5 +256,9 @@ tools in `~/ti6x`), never on the Mac.
 - **Mended in the shared front end:** convertNode's conversion to bool takes a data member pointer, comparing it with
   its own null (`!= -1`, the null constant converted), and contextualScalar converts one to bool - one comparison,
   every truth context; no backend changed. src/: +5 -2 (ParserOverload.cpp, ParserExprNew.cpp).
+- **A neighbour that failed on every target:** `f(0)` for an `int S::*` parameter was refused ("no function called
+  'f' takes these 1 argument(s)") - Overload ranked the literal 0 a pointer conversion only to a pointer; [conv.mem]/1
+  makes it one to a pointer to member too. src/: +2 -1 (sema/Overload.cpp).
+- tests/tms6747.sh: a run by case name stopped at `SHARD: unbound variable` (set -u) and ran nothing; SHARD defaults.
 - member-pointer-condition's `.notarget` (its only line was tms6747's) is gone; member-pointer-null-neighbours holds
   nullptr and 0 assigned, returned, passed and compared, and a `for`/`do` ended by a null, with clang's output.

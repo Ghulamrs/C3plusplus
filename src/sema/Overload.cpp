@@ -166,7 +166,8 @@ Rank Overload::rankArgument(const Expr &arg, const Type *param) {
         return Rank::None;
     }
 
-    if (to->isPointer() && from->isInteger())
+    // [conv.mem]/1: the literal 0 is a null pointer to member as well, a pointer conversion.
+    if ((to->isPointer() || to->isMemberPointer()) && from->isInteger())
         return isNullConstant(arg) ? Rank::Conversion : Rank::None;
 
     // **`nullptr` converts to any pointer and to any pointer to member**, both
