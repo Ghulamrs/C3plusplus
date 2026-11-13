@@ -160,3 +160,56 @@ Everything else - x86 gates, the C6000, cl - stays on the boxes.
   did not type" (the implicit conversion is typed). Windows 32/32 at -O0 and at -O2 over 16 cases (gnu and masm), cl /W4 /WX clean; Linux (fresh ~/r1j): 12/12 at
   -O0/-O2, open.sh 23 differ / 7 agree (the walker's), typed.sh 846/0, exclusions 0/0, comments 0, memory gate holds.
   src/ lines: +15 -5 (ParserOverload.cpp, ParserExpr.cpp, ParserInit.cpp, ParserClass.cpp, Typing.cpp).
+
+### R1, round 6, and the count (lane r1k, 2026-11-13, from m5-r1j 6fc992c7)
+
+- **`static_cast<int D::*>(&C::y)`** was "a 'cast' the typer did not type": noteKeywordForm recorded a named cast's
+  type only for a scalar or a class, and only where its text held no `&` - which an operand `&C::m` always does. A
+  member pointer's cast is recorded now, refused only for a reference type-id (`&>`). The lowering's
+  memberPointerConversion takes [expr.static.cast]/12's way back as well, a derived class's member pointer to a base's,
+  the offset shrunk and a null kept null (cxx1 types `&D::y` as `int D::*` where clang says `int C::*`, so
+  `static_cast<int C::*>(&D::y)` needed it). Case `member-pointer-static-cast` (a base at a nonzero offset, a null
+  through a function), clang's output.
+- **`inline-static-exit-helpers`** (+ `.part.cpp`) holds r1j's linkage: an inline function's static local and its
+  static reference's temporary, called from both units, under the ledger - built 3, gone 3, every fault column 0.
+- **Two stale refusals**: r1j made a static-duration reference to a temporary, so
+  `static-reference-temporary-refused` and `static-reference-member-temporary-refused` compiled and failed their
+  `.error`; they are `static-reference-namespace-temporary` and `static-reference-member-temporary` now, with clang's
+  output.
+- **Gate:** Windows cl /W4 /WX clean; the 39 member-pointer, static-local, static-reference and named-cast cases plus the
+  two renamed at -O0 and -O2, gnu and masm: all ok (member-pointer-base-on-derived is .notarget there); exclusions
+  0 uncited / 0 stale (one citation re-pointed, ParserExpr.cpp:3655), comment cap 0, memory gate holds. **Linux not
+  run**: 2.4 GB free on the box, below the 3 GB rule - the coordinator's wave gate owes it.
+- src/ lines: +8 -2 (ParserExpr.cpp, Lowering.cpp).
+
+**R1's count.** Every tests/cases and tests/open case compiled -S for x86_64-windows with CXX1_SSA_WHY set (1229
+files; tools/windows/lowering-why.py, matched by tools/windows/lowering-why-match.py, `<...>` as any text, a line given to its most specific
+reason): of the 489 reasons in the ```owed block, **17 are reached by a tests/cases case, 3 more only by tests/open,
+469 by none** (one target; a reason peculiar to Itanium or the C6000 is not asked). One reached reason is a Builder's
+("a constructor of a class with bases, a vptr or members to build", lowering-implicit-copy-bitfield) and is not in the
+block's text; one is a broken() (array-static-tail-defaults, tests/open). The reached ones:
+
+| reason | first case |
+|---|---|
+| `<...>a reference parameter bound to a '<...>' that is not an object` | reached by tests/open/class-value-in-braced-aggregate.cpp |
+| `<...>of a class with a bit-field or reference member` | reached by tests/cases/lowering-implicit-copy-bitfield.cpp |
+| `<...>whose default argument makes a temporary with a destructor` | reached by tests/open/vector-default-temporary.cpp |
+| `a braced list reaching a member the lowering does not place` | reached by tests/cases/lowering-braced-bitfield-reference.cpp |
+| `a call returning '<...>'` | reached by tests/cases/lowering-return-nullptr-t.cpp |
+| `a class argument that is not an object` | reached by tests/open/braced-class-in-braced-aggregate.cpp |
+| `a class local initialised from a temporary of another type` | reached by tests/cases/lowering-local-from-derived-temporary.cpp |
+| `a class local initialised from another type` | reached by tests/cases/lowering-local-from-conversion-function.cpp |
+| `a class returned while a local with a destructor is alive` | reached by tests/cases/lowering-return-beside-destroyed-local.cpp |
+| `a class with a destructor returned from another type` | reached by tests/cases/lowering-return-derived-temporary-destructor.cpp |
+| `a class with a destructor returned inside a handler` | reached by tests/cases/lowering-return-destructor-in-handler.cpp |
+| `a constructed class returned from another type` | reached by tests/cases/lowering-return-derived-local.cpp |
+| `a named return value built with defaults, zeroed or from a braced list` | reached by tests/cases/lowering-named-return-defaulted.cpp |
+| `a named return value inside a handler` | reached by tests/cases/lowering-named-return-in-handler.cpp |
+| `a reference member bound to another type` | reached by tests/cases/lowering-reference-member-derived.cpp |
+| `a return type of '<...>'` | reached by tests/cases/lowering-return-nullptr-t.cpp |
+| `a static local built with default arguments` | reached by tests/cases/lowering-static-local-default-arguments.cpp |
+| `a static member reached through what is not a name` | reached by tests/cases/lowering-static-member-through-object.cpp |
+| `a thread_local reference` | reached by tests/cases/lowering-thread-local-reference-global.cpp |
+| `an initializer_list of '<...>' elements` | reached by tests/cases/lowering-initializer-list-class-elements.cpp |
+
+Every other owed reason: not reached (469).

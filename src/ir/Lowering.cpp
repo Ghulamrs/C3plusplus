@@ -6012,6 +6012,10 @@ Lowering::Val Lowering::memberPointerConversion(Val v, TypeId to) {
     if (&fc == &tc) return Val(result(add(Op::Bitcast, ut, std::vector<ValueId>(1, v.v))), ut);
     int found = 0, offset = 0;
     basePaths(tc, fc, 0, found, offset);
+    if (found == 0) {           // [expr.static.cast]/12: back to a base's, the offset shrunk by the base's
+        basePaths(fc, tc, 0, found, offset);
+        offset = -offset;
+    }
     if (found != 1) outside("a conversion of a pointer to a data member to one of a class not derived from its own");
     if (offset == 0) return Val(result(add(Op::Bitcast, ut, std::vector<ValueId>(1, v.v))), ut);
     std::vector<ValueId> test(1, v.v);
