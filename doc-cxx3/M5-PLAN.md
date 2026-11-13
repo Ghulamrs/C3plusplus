@@ -445,3 +445,49 @@ The Mac through `boxkit/mac-run.sh` at -j2 (`SELFHOST_JOBS=2`), stage 0 built by
   against 491 s); the clang-built stage 0 is 1.5x faster than the -O2 one.
 - **No tools/ change was needed.** The Mac idle after (no cxx3 or self-host process of this lane). Owed: target 3
   re-measured at M5's close (the plan's row), the wave gate's run of the new case on every target.
+
+### M5.3, the code after the deletion (2026-11-13, lane m5i, from `ff1d1e77`)
+
+m5e's "left for M5.3" in `backend/A64Select.cpp`, at -O1 and -O2 only (A64Select 882 -> 1,033 lines; src/ 91,824 -> 91,987,
++176 -13 over three files). -O0 is untouched: all 833 `.s` at -O0 are byte-identical to m5-h's.
+
+- **Parameters from their incoming registers** (`ssaDirect_`): where every parameter is a scalar or a reference in a
+  register, the function is not variadic, the frame not realigned and there is no -g (which reads the parser's slots),
+  the prologue stores nothing and the body narrows each `xN`/`dN` straight into the value's place. Over the suite at
+  -O2, `mov x0, xN` (the old staging) 4,933 -> 379.
+- **No `sxtw` a reader does not need** (`ssaLow_`): a signed 32-bit result keeps the upper half its `w` operation left
+  where every reader reads only the word - word arithmetic, compares, stores of 4 bytes or fewer, narrowing conversions,
+  `ret`, `cbz`/`cbnz`, and block parameters whose own readers are such (to a fixed point over the edges). A call's
+  argument, a `switch`, a widening `sext` and an index stay canonical. `sxtw` 31,140 -> 23,926.
+- **Addressing modes** (`ssaFold_` 1): a gep whose every reader is a load or store of its block is no instruction:
+  `[xB, #k]` where the access scales `k`, `[xB, xI]`, and `[xB, xI, lsl #s]` where the index's `mul`/`shl` is by the
+  access's size and read nowhere else; base and index live to the access. 3,960 register-index and 13,245 (from 6,794)
+  immediate-offset accesses.
+- **`madd`** (`ssaFold_` 2) for a `mul` immediately before the add it alone feeds (252 in the suite). **Not `msub`**:
+  measured as a loss - `hash`'s remainder by a constant went 132 -> 136 ms with it (twice, 5 and 7 rounds) - and a first
+  form that fused across intervening instructions grew a range and cost `matmul`'s frame a slot.
+- **Bench** (`boxkit/m5i-bench.sh`: the kernels to arm64 `.s` at -O2 by the cl-built cxx3 of each step, linked and run on
+  the Mac through `mac-run.sh`, seven rounds interleaved, median ms; every checksum equal):
+
+  | kernel | m5-h | + parameters | + no `sxtw` | + addressing | + `madd` (this tree) | Apple clang -O2 |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | fib | 3 | 3 | 3 | 3 | 3 | 0 |
+  | sieve | 33 | 33 | 33 | 32 | 32 | 31 |
+  | matmul | 7 | 7 | 7 | 5 | 5 | 2 |
+  | isort | 18 | 18 | 18 | 18 | 18 | 6 |
+  | hash | 177 | 178 | 147 | 132 | 132 | 57 |
+  | virtual | 127 | 109 | 107 | 95 | 94 | 70 |
+  | total | 368 | 350 | 316 | 288 | **287** | 168 |
+
+  0.78 of m5-h's total and 1.7 times clang's (from 2.2); `hash` (a multiply-and-xor chain, `isort` (memory order) and
+  `virtual` (the call itself) are most of the distance left.
+- **Gate** (final tree, cl-built `cxx3-msvc.exe`, `boxkit/m5i-winprobe.sh`): -O0, -O2, -O2 -g: **0 broken, 0 refusals
+  wrong, 10869 of 10869 functions selected, 833 cases compiled**; the Mac at -j2 through `mac-run.sh`: **833 of 833 at
+  -O2** link, run and print their recorded output (-O0 is the base's bytes). cl /W4 /WX clean; exclusions 0 uncited,
+  0 stale; comment cap 0 over; `ide/generate.py --check` up to date; on Linux the memory gate passes;
+  `ast-residue --check` reports StmtPtr 635 -> 638, node-casts 164 -> 165, node-refs 409 -> 411, all under src/parser and
+  src/sema, which this lane did not touch: the base's against an unrecorded baseline, for the coordinator.
+- **Owed.** `identical.sh ARCHS=arm64-darwin` by name and the g++ build are the wave gate's; the Linux box had 2.4 GB
+  free (under par4's 3 GB) when the static gates ran - this lane's tree there is removed. Left: the parser's parameter
+  slots are still laid out (unused) under `ssaDirect_`; negative and unscaled offsets (`ldur`); `msub` re-measured
+  with a different schedule; -g's parameters from registers.

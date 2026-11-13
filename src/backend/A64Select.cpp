@@ -269,7 +269,7 @@ void Arm64Darwin::ssaAssign(const ir::Function &f) {
                 if (g.count == 2 && ssaFold_[f.operand(g, 1).v] == 1) use(f.operand(*def[f.operand(g, 1).v], 0), 0);
                 else if (g.count == 2) use(f.operand(g, 1), 0);
             }
-            for (std::uint32_t n = 0; (i.op == ir::Op::Add || i.op == ir::Op::Sub) && n < i.count; n++)
+            for (std::uint32_t n = 0; i.op == ir::Op::Add && n < i.count; n++)
                 if (ssaFold_[f.operand(i, n).v] == 2) { use(f.operand(*def[f.operand(i, n).v], 0), 0); use(f.operand(*def[f.operand(i, n).v], 1), 0); }
             // A branch's argument is read after an invoke's result is written.
             for (std::size_t s = 0; s < i.succ.size(); s++)
@@ -378,7 +378,7 @@ bool a64Scaled(const ir::Function &f, const ir::Inst *m, const std::vector<const
 }   // namespace
 
 // **What folds into its reader** (M5.3): a gep whose every reader is a load or store of its block at an offset the access
-// scales, with its index's multiply where that is the access's size; a multiply whose one reader is its block's add or sub.
+// scales, with its index's multiply where that is the access's size; a multiply whose one reader is the add after it.
 // `ssaLow_`: a signed 32-bit result read only as 32 bits (word operations, compares, stores, returns, the edges into such).
 void Arm64Darwin::ssaFolds(const ir::Function &f, const std::vector<const ir::Inst *> &def, const std::vector<int> &home) {
     const std::size_t nv = f.values.size();
@@ -433,17 +433,18 @@ void Arm64Darwin::ssaFolds(const ir::Function &f, const std::vector<const ir::In
         const ir::ValueId x = f.operand(g, 1);
         if (count[x.v] == 1 && home[x.v] == home[v] && size[v] > 0 && a64Scaled(f, def[x.v], def, size[v])) ssaFold_[x.v] = 1;
     }
-    // A multiply into an add or a sub (its right side only) of its block, at the add's width, read nowhere else.
+    // A multiply just before the add it alone feeds, at the add's width: no range grows past a value written between
+    // them. Not `msub`: the bench's hash ran 132 -> 136 ms with it (a remainder by a constant), so a sub keeps its mul.
     for (std::size_t b = 0; b < f.blocks.size(); b++) {
         const ir::Block &blk = f.block(f.blocks[b]);
         for (std::size_t k = 0; k < blk.insts.size(); k++) {
             const ir::Inst &i = f.inst(blk.insts[k]);
-            if ((i.op != ir::Op::Add && i.op != ir::Op::Sub) || i.count != 2 || (ssaImm_[f.operand(i, 1).v] & 1)) continue;
+            if (i.op != ir::Op::Add || i.count != 2 || (ssaImm_[f.operand(i, 1).v] & 1)) continue;
             const int width = ssaTypes_->type(i.type)->size(target_);
             if (width != 4 && width != 8) continue;
-            for (std::uint32_t n = i.op == ir::Op::Add ? 0 : 1; n < 2; n++) {
+            for (std::uint32_t n = 0; n < 2; n++) {
                 const ir::ValueId m = f.operand(i, n);
-                if (def[m.v] == nullptr || def[m.v]->op != ir::Op::Mul || count[m.v] != 1 || home[m.v] != static_cast<int>(f.blocks[b].v) ||
+                if (def[m.v] == nullptr || def[m.v]->op != ir::Op::Mul || count[m.v] != 1 || k == 0 || f.inst(blk.insts[k - 1]).result.v != m.v ||
                     ssaFold_[m.v] != 0 || ssaTypes_->type(def[m.v]->type)->size(target_) != width || f.operand(i, 0).v == f.operand(i, 1).v) continue;
                 ssaFold_[m.v] = 2;
                 break;
@@ -745,13 +746,13 @@ void Arm64Darwin::selectInst(const ir::Function &f, const ir::Inst &i) {
         // At the type's width - 32 bits for anything narrower, whose operands are canonical - then extended again.
         const char *r = rt->size(target_) == 8 ? "x" : "w";
         if (ssaFold_[i.result.v]) return;
-        // A multiply folded into this add or sub: `madd`/`msub` with the other side as the addend.
+        // A multiply folded into this add: `madd` with the other side as the addend.
         const int fused = ssaFold_[f.operand(i, 0).v] == 2 ? 0 : ssaFold_[f.operand(i, 1).v] == 2 ? 1 : -1;
-        if (fused >= 0 && (i.op == ir::Op::Add || i.op == ir::Op::Sub)) {
+        if (fused >= 0 && i.op == ir::Op::Add) {
             const ir::Inst &m = *ssaDefs_[f.operand(i, static_cast<std::uint32_t>(fused)).v];
             const int x = ssaUse(f, f.operand(m, 0), 0), y = ssaUse(f, f.operand(m, 1), 1);
             const int c = ssaUse(f, f.operand(i, static_cast<std::uint32_t>(1 - fused)), 2);
-            out_ << (i.op == ir::Op::Add ? "  madd " : "  msub ") << r << d << ", " << r << x << ", " << r << y << ", " << r << c << "\n";
+            out_ << "  madd " << r << d << ", " << r << x << ", " << r << y << ", " << r << c << "\n";
             if (rt->size(target_) != 4 || (rt->isSigned(target_) && !ssaLow_[i.result.v])) narrowInt(rt, d, d);
             ssaKeep(f, i.result);
             return;
