@@ -4417,15 +4417,14 @@ temporary from `x29-96` to `x29-216`, the callee-save offsets with it), no instr
 chosen where REF chose `push_back(V &&)`, the front end's change behind N1's fourth source (a `?:` of a const
 operand is a const prvalue; rv-mend's parser item), not the target's.
 
-**Two decisions lanes took, put to the user - both decided by the user, 2026-11-13 (the entry at the end):**
-1. **R6: is arm64-darwin accepted by byte identity until M5**, with a milestone's close needing no Mac leg (the Mac
-   runs no build, test or check; arm64 is exception 1, its walker untouched since M3b.7)? Lane E took "yes" so M3
-   could close; the alternative is a Mac leg in `verify-three` at each close, or arm64 on a box.
-2. **R17/`virtual`: is `virtual`'s 131 against 101 ms after deletion 3 accepted?** Lane V measured it as layout -
-   the callees' `ret` lines one byte-line apart after `functionAlign` moved `Rc::area` 32 bytes, `virt`'s own
-   code unchanged - and did not accept it; R5's "no kernel slower than main" is then unmet by this kernel. The
-   cure named is M3b.5's unbuilt placement rule for a callee's `ret`; an idle-box run of the `functionAlign`-off
-   variant (`work\rvVx`) is owed before the choice.
+**Two decisions lanes took, decided by the user, 2026-11-13** (the entry at the end has the 24 files' reasons):
+1. **R6: accepted.** arm64-darwin and tms6747 are held by byte identity against `identical.sh`'s REF until M5, and
+   a milestone's close needs no Mac leg until then. M5 has Mac runs (the user, 2026-11-13), so R6's Mac leg comes
+   due in M5 (`M5-PLAN.md`).
+2. **R17/`virtual`: accepted as a layout effect** - the callees' `ret` lines one byte-line apart after
+   `functionAlign` moved `Rc::area` 32 bytes, `virt`'s own code unchanged (lane V). R5's "no kernel slower than
+   main" is unmet by this kernel by the user's choice; it is re-measured in the optimizer milestone, where M3b.5's
+   placement rule for a callee's `ret` is the cure named.
 
 **Batch T, the tools.** **N5**: `tools/crosshost-sums` took the tree from `dirname ./cxx3.exe`, which ends in
 `/.` and matches nothing the compiler prints; it now resolves the directory, and both it and `tools/identical.sh`
