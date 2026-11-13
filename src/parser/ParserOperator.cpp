@@ -1219,7 +1219,7 @@ ExprPtr Parser::assignValue(ExprPtr n, ExprPtr value, std::size_t pos) {
     if (const Signature *op = classes_.copyAssignOf(to->unqualified())) {
         const std::vector<std::size_t> *set = lookup_.overloadsOf(assignmentKey(to->unqualified()->tag()));
         if (set != nullptr) {
-            const bool wantMove = !isLvalue(*value);
+            const bool wantMove = !isLvalue(*value) && !value->type()->isConst();     // a const prvalue is copied
             for (std::size_t i = 0; i < set->size(); i++) {
                 const Signature &cand = lookup_.functions_[(*set)[i]];
                 if (cand.params.empty()) continue;

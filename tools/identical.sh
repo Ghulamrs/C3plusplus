@@ -38,6 +38,8 @@ if [ "${1:-}" = --one ]; then
     # Under Git's bash the tree is /c/... here and C:\... or C:/... in what a cl-built compiler prints: all three go.
     tree() {
         d=$(dirname "$1"); printf '%s\n' "s|$1|cxx1|g" "s|$d/|<tree>/|g"
+        # a header's path is the lib/ or include/ the binary was built with, wherever it runs (crosshost-sums)
+        printf '%s\n' 's|[^ "]*[\\/]lib/|<tree>/lib/|g' 's|[^ "]*[\\/]include/|<tree>/include/|g'
         command -v cygpath > /dev/null 2>&1 || return 0
         printf '%s\n' "s|$(cygpath -w "$d" | sed 's/\\/\\\\/g')[\\/]|<tree>/|g" "s|$(cygpath -m "$d")/|<tree>/|g"
     }

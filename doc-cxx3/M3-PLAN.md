@@ -4379,3 +4379,69 @@ rule is right for the function it pads; the cure is M3b.5's left item, a placeme
 indirect-call targets), which pads every small function for one processor's predictor and stays unbuilt. Gate: no src/
 change, so the cases' -S and every other kernel are `3628bd4a`'s. The R5 row's "no kernel slower than main" stays owed by
 this name.
+### M3 review, closed: each R with its number, its commit and its box (lane QT, 2026-11-13)
+
+From main `a3b865a2`, branch `rv-QT` (Opus 5.5); the record the mend review (Fable 5.2, `fable-m3-mend-review.md`
+in the session notes) found missing (its N2), and its batch T. **The two wave landings**: wave 1 (lanes A-F) is
+`907fc329`, gated on rv-w1 `9601202e`: winpass -O2/-O0 GNU 779 / MASM 778 same, 0 differ; MASM self-host -O2 0=1=2
+and 2=3 100/100; Linux ssa 831/0, make test rc 0. Wave 2 (G, G2, H, I, J, K, R, S, V) is `a3b865a2`, gated on rv-w2:
+winpass -O2/-O0 GNU 785 / MASM 784 same, 0 differ and MASM self-host -O2 100/100 on the Windows box - **on
+`8e668eb0`'s source** (the review's N8: `4aa03f56` changes `terminateName`'s return type and two comments after it;
+the re-run on `a3b865a2` is lane P's); Linux at `4aa03f56` = `a3b865a2`: ssa 846/0, run 1158/0, emit 3227/0, typed
+816/0, c90 447/0, make test rc 0 after the static gates were mended (10 citations, 2 comment groups, raw-pointers 90
+to 89; `~/rvw2-maketest2.log`).
+
+| R | state | number, where measured |
+| --- | --- | --- |
+| R1 | partly | 569 `outside()` sites, 491 reasons, 0 uncited, 0 stale; 84 `broken()` sites, 75 reasons, now cited in a second block and both counts held by `tools/exclusions.baseline` (this lane, Linux `~/rvQTf`); one `broken()` is reached by a valid program (`7d593d5`'s `OptPipeline.cpp:162`, N1) - rv-mend's |
+| R2 | resolved for arrays | cases `array-loop-*`; Linux run.sh -O0/-O1/-O2 1158/0, winpass 785/784 (wave 2). Handler returns still refused - rv-mend's |
+| R3 | resolved | `tools/windows/*` ran both wave gates |
+| R4 | partly | MASM self-host at `3628bd4a`: -O2 0=1=2 and 2=3 100/100 (`boxkit/rvC-sh-O2.log`); **-O0** cut at 25 minutes at stage 1 (`boxkit/rvC-sh-O0.log`, 99 of 100) and not shown by a kept log. **Re-run at `a3b865a2`** (lane P, box tree `work\rvP`, `boxkit/rvP-*`): the numbers are in the wave-3 gate entry |
+| R5 | resolved | `3628bd4a` 384/366 ms against `d60009bd` 397/369, cl 300/285 (lane D's table) |
+| R6 | partly | `identical.sh` REF `f9f1ff2d`, -O1 and -O2, Linux: arm64-darwin 1626 compared, **10 differ**; tms6747 1626 compared, **14 differ** (`~/rvE-ident-arm.txt`, `~/rvE-ident-c6x.txt`; `boxkit/rvE-handover.md`). Below, case by case |
+| R7 | resolved | `tools/ast-residue` baseline now `ExprPtr 2009 StmtPtr 634 node-casts 165 node-refs 409 readers 14 ast-lines 849` (node-refs new, N13) |
+| R8, R9, R11, R12, R14, R16, R18 | resolved | as the review's table; R11's walker side (arm64, tms6747) answers the two new cases wrongly (N9, rv-mend's) |
+| R10 | resolved by this lane | `tools/crosshost-sums` at `3628bd4a` 4878 compared, 6 differ (`~/rvE-compare.txt`); at `a3b865a2` 4938, the same 6 (`~/mendrev-cross.txt`); all six one `#error` line's header path. With the path normalised (below): the row on both boxes in the gate line at the end |
+| R13 | resolved | Windows -O1 at `3628bd4a` 775/774 same, 0 differ (`boxkit/rvC-winpass-O1.log`); Linux run.sh -O1 1158/0 |
+| R15 | resolved at lane I's tree | names vs cl 547 agreed, 0 differed, 264 skipped; not re-taken on the merged tree |
+| R17 | partly | `tools/r12-measures` on Linux, `7d593d5`'s 70 sources, `-S`, 2 jobs (`~/rvD-chain.log`): **-O0** this tree 105 s for 66 of 70, `7d593d5` 92 s for 70 of 70; **-O2** this tree 206 s for 66 of 70, `7d593d5` 1078 s for 69 of 70 (one over the cap). -O2's proposed target is met; -O0 is 14% slower on four fewer files, the proposed target unread. Four sources refused (N1, rv-mend's) |
+
+**R6, the 24 differences read** (REF `f9f1ff2d` against `3628bd4a`): `windows-h-layout` (both targets) and
+`posix-headers` (tms6747) - the `#error` line's header path, 8 of the 24, gone with N5's normaliser below;
+`return-virtual-base-reference`, `using-declaration-indirect-base` - REF refused, the tree compiles them;
+`ssa-data-member-pointer` (tms6747) - f8a's `CMPEQ` immediate range; `ssa-aggregate-value-temporaries` - an arm64
+frame of 384 where REF wrote 368: in `sum(bool, const Bag &)` alone, 20 lines, each a displacement (the frame, a
+temporary from `x29-96` to `x29-216`, the callee-save offsets with it), no instruction added or removed - one more
+16-byte temporary slot from the parser's M3b.7 change, not the walker's (`~/rvE-id-arm64-darwin`, Linux);
+`ssa-conditional-const-class` - `push_back(const V &)`
+chosen where REF chose `push_back(V &&)`, the front end's change behind N1's fourth source (a `?:` of a const
+operand is a const prvalue; rv-mend's parser item), not the target's.
+
+**Two decisions lanes took, put to the user here as open questions - not settled:**
+1. **R6: is arm64-darwin accepted by byte identity until M5**, with a milestone's close needing no Mac leg (the Mac
+   runs no build, test or check; arm64 is exception 1, its walker untouched since M3b.7)? Lane E took "yes" so M3
+   could close; the alternative is a Mac leg in `verify-three` at each close, or arm64 on a box.
+2. **R17/`virtual`: is `virtual`'s 131 against 101 ms after deletion 3 accepted?** Lane V measured it as layout -
+   the callees' `ret` lines one byte-line apart after `functionAlign` moved `Rc::area` 32 bytes, `virt`'s own
+   code unchanged - and did not accept it; R5's "no kernel slower than main" is then unmet by this kernel. The
+   cure named is M3b.5's unbuilt placement rule for a callee's `ret`; an idle-box run of the `functionAlign`-off
+   variant (`work\rvVx`) is owed before the choice.
+
+**Batch T, the tools.** **N5**: `tools/crosshost-sums` took the tree from `dirname ./cxx3.exe`, which ends in
+`/.` and matches nothing the compiler prints; it now resolves the directory, and both it and `tools/identical.sh`
+send any path ending in `lib/` or `include/` to `<tree>/` - a header's path is the one the binary was built with,
+wherever it runs. **N6**: `tools/exclusions.baseline` holds `outside 569 broken 84`; `--check` fails a count above
+it and names one below it. **N3's second block**: docs/EXCLUSIONS.md lists the 75 `broken()` reasons in a
+` ```broken` block, `--check` holds it as it holds ` ```owed` (a reason a probe reaches going back to `outside()` is
+rv-mend's: src/ir). **N13**: `tools/ast-residue` counts `node-refs` (a node kind held as `T *`, `T &`,
+`unique_ptr<T>`, or an alias of `ExprPtr`/`StmtPtr`; 409) and a kind missing from the baseline fails. **N11**:
+`tools/verify-three`'s Linux leg runs `tests/run.sh` at -Os and `tools/determinism.sh` (with its `-dump=typed`
+leg); `identical.sh TYPED=1` stays a by-name wave gate (it needs a REF), and `tests/ssa.sh:66`'s `"$CXX1"` is
+rv-mend's file. Owed: determinism's time inside one 25-minute job is unmeasured. No src/ line changed.
+**Gate** (`95e523ef`'s tools over `a3b865a2`'s compilers: Linux `~/rvw2/cxx3.exe`, g++; Windows `work\rvP\cxx3-msvc.exe`,
+cl): crosshost 4938 compared - the six path lines gone; 5 differ, all `operator-enum-candidate` on the Windows list
+with no assembly (5 of its 6 jobs on that run, the shared box), and the six re-summed alone on the Windows box
+match the Linux list line for line (`boxkit/rvQT-redo.out`): **0 differ in fact, a transient failure on the
+shared box named, not read** (what it printed is not kept; `~/rvQT-compare.txt`). `tools/exclusions --check`: 128
+sites 0 uncited 0 stale; lowering 569/491 and 84/75, 0 uncited, 0 stale, at the baseline. `make test` on Linux
+(`~/rvQTf`, `~/rvQT-maketest.log`) rc 0: run 1158/0, emit 3227/0, typed 816/0, ssa 846/0, c90 447/0, every gate.

@@ -1018,6 +1018,7 @@ std::string Typer::check(Parser &p, const Program &program, const Source &src, i
 std::string Typer::dump(Parser &p, const Program &program) {
     static const char *const whats[] = { "none", "local", "global", "function", "call", "callee", "member", "enumerator",
                                          "static-member", "this", "temporary", "type-name", "value" };
+    static_assert(sizeof(whats) / sizeof(whats[0]) == Resolution::Value + 1, "one name for each Resolution::What");
     Typer typer(p);
     const syntax::Tree &st = p.syntaxTree_;
     const Census c = census(p, program);

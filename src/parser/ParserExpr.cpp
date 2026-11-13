@@ -3540,8 +3540,8 @@ ExprPtr Parser::unaryNode() {
     }
     if (peek().is("new")) {
         std::size_t pos = peek().pos;
-        at_++;
-        return newExpression(pos);
+        auto made = newExpression((at_++, pos));     // [expr.new]/1: a prvalue, whatever slot holds the pointer
+        made->setDeclCategory(Expr::Category::Prvalue); return made;
     }
     if (peek().is("delete")) {
         std::size_t pos = peek().pos;

@@ -14,13 +14,16 @@ md5() { if command -v md5sum > /dev/null 2>&1; then md5sum < "$1" | cut -c1-32; 
 if [ "${1:-}" = --one ]; then
     # --one CXX TMP NAME SRC FLAGS...: one job; prints its line
     CXX=$2 TMP=$3 NAME=$4 SRC=$5; shift 5
-    d=$(dirname "$CXX"); m=$d   # the tree as a cl-built compiler prints it, once its \ are /
+    d=$(cd "$(dirname "$CXX")" && pwd); m=$d   # ./cxx3.exe's dirname ends in /., which nothing prints
     command -v cygpath > /dev/null 2>&1 && m=$(cygpath -m "$d")
+    # A header's path is the lib/ or include/ the binary was built with, not where it runs: both go to <tree>/.
     ( ulimit -t 60 2> /dev/null; "$CXX" "$@" "$SRC" -o "$TMP/$NAME.s" < /dev/null 2>&1; echo "exit=$?" ) |
         sed -e 's/\r$//' -e 's|\\|/|g' -e "s|$d/|<tree>/|g" -e "s|$m/|<tree>/|g" \
+            -e 's|[^ "]*/lib/|<tree>/lib/|g' -e 's|[^ "]*/include/|<tree>/include/|g' \
             -e 's|<tree>/cxx3[^ :/]*\.exe|cxx1|g' -e "s/^ *^/^/" > "$TMP/$NAME.err"
     s=none; [ -f "$TMP/$NAME.s" ] && s=$(md5 "$TMP/$NAME.s")
     echo "$NAME $s $(md5 "$TMP/$NAME.err")"
+    [ $s = none ] && cp "$TMP/$NAME.err" "${TMP%.tmp}.none/$NAME.err"   # what a job with no assembly said, kept to be read
     rm -f "$TMP/$NAME.s" "$TMP/$NAME.err"
     exit 0
 fi
@@ -44,7 +47,7 @@ sums)
     case $OUT in /*) ;; *) OUT=$(pwd)/$OUT ;; esac
     SELF=$(cd "$(dirname "$0")" && pwd)/crosshost-sums
     cd "$(dirname "$0")/.."
-    TMP=$OUT.tmp; rm -rf "$TMP"; mkdir -p "$TMP"
+    TMP=$OUT.tmp; rm -rf "$TMP" "$OUT.none"; mkdir -p "$TMP" "$OUT.none"
     jobs=$TMP/jobs; : > "$jobs"
     for src in tests/cases/*.cpp; do
         base=$(basename "$src" .cpp)

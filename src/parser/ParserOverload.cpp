@@ -714,7 +714,7 @@ void Parser::applyDefaults(Signature f, std::vector<ExprPtr> &args,
 // A call's syntax parts with the defaults it was completed by after them, where its arguments end in exactly those and the
 // rest are the parts written; the parts as they were otherwise.
 std::vector<syntax::NodeId> Parser::withDefaults(const Expr &e, const std::vector<syntax::NodeId> &children) {
-    const Call *c = dynamic_cast<const Call *>(&e);
+    const Call *c = producingCall(&e);     // through a virtual call's comma: its object's address kept, then the call
     if (c == nullptr || c->args().empty() || children.empty()) return children;
     const std::unordered_map<std::uint32_t, std::vector<syntax::NodeId> >::iterator g =
         defaultGroups_.find(c->args().back()->syntax().v);

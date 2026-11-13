@@ -1,5 +1,5 @@
 // A goto into a nested block past no initialisation ([stmt.dcl]/3 allows it) where an object with a destructor
-// is live outside: the SSA lowering's "a goto into a scope it is not in" (outside; review R1, 2026-11-13).
+// is live outside (this was tests/open/lowering-goto-into-block, which the lowering no longer refuses).
 extern "C" int printf(const char *, ...);
 struct S { S(); ~S(); };
 S::S() {}

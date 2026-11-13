@@ -1888,22 +1888,24 @@ void Lowering::constructFromList(ValueId where, const std::string &symbol, TypeI
     directCall(symbol, sig, ops);
 }
 
-// `V()` or `V(a)` of a polymorphic class with no destructor, bound to a reference: built in a slot of this frame by the
-// constructor the parser chose, which stores the vptr ([class.temporary]/5) - `slot` its address. False for any other.
+// `V()` or `V(a)` of a polymorphic class bound to a reference: built in a slot of this frame by the constructor the parser
+// chose, which stores the vptr ([class.temporary]/5), destroyed at the full expression's end where it has a destructor.
 bool Lowering::polymorphicTemporary(sema::TypedId id, ValueId &slot) {
     std::uint32_t from = 0;
     const TypeId t = TypeTable::id(tree_.node(id).type);
     if (!temporaryShape(id, from) || !t.valid() || text(id) == "{}") return false;
     const Type &c = *T(t).unqualified();
     if (!c.isStructOrUnion() || !c.isComplete() || !c.polymorphic() || !constructed_ || !constructed_(c.id()) ||
-        c.hasDestructor() || c.hasVirtualBase() || !buildableLayout(c, true))
+        c.hasVirtualBase() || !buildableLayout(c, true))
         return false;
     std::string symbol;
     TypeId sig;
     bool zero = false;
     if (!temporaryBuilt_(tree_.node(id).syntax, symbol, sig, zero)) return false;
+    const std::string dtor = c.hasDestructor() ? temporaryDestructor(c) : std::string();
     slot = entryAlloca(tid(c), "$tmp");
     construct(slot, symbol, sig, c, zero, id, from);
+    if (!dtor.empty()) guard(slot, c, dtor);
     return true;
 }
 
@@ -6117,7 +6119,7 @@ void Lowering::argumentList(const Type &ft, std::size_t skip, bool variadic, con
     const std::size_t argc = args.size() + (dummyInt ? 1 : 0);
     const std::size_t paramCount = ft.params().size() - skip;
     // [dcl.fct.default]/9: a default with no syntax - a braced one, `= {}` - has nothing here to evaluate.
-    if (argc < paramCount) broken("a call with a default the parser recorded no syntax for");
+    if (argc < paramCount) outside("a call with a default the parser recorded no syntax for");
     if (argc > paramCount && !variadic) outside("a call of more arguments than its parameters");
     for (std::size_t i = 0; i < args.size(); i++) {
         const sema::TypedId an = args[i];

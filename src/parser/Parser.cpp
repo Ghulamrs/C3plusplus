@@ -58,8 +58,8 @@ bool isGlvalue(const Expr &e) {
     // **A comma has the value category of its right operand** - [expr.comma], and
     // it is C++'s rule rather than C's. It matters because `b.count` for a static
     // member is built as one: the object is dropped, the shared object is named.
-    if (const Comma *c = dynamic_cast<const Comma *>(&e))
-        return isGlvalue(c->right());
+    if (const Comma *c = dynamic_cast<const Comma *>(&e))     // one marked a prvalue, a `new`'s pointer, names no object
+        return !(c->declCategory() == Expr::Category::Prvalue && !c->type()->isStructOrUnion()) && isGlvalue(c->right());
     return false;
 }
 

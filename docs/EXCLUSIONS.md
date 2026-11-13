@@ -560,7 +560,9 @@ rather than its line, because the lowering's lines move every round; `tools/excl
 block and names a reason the source raises and the block omits, and a listed one the source no longer raises.
 `tools/exclusions --lowering` lists every site, file:line. A reason that cannot arise in a valid program (a
 record the parser always makes, disagreeing) is raised by `broken(...)` instead, prints "internal error: ",
-and is counted, not listed. The census's "0 outside" is a fact of the corpus only; the probes of these limits
+and is listed by its text in the second block below; a `broken()` a valid program is shown to reach goes back to
+`outside()` (mend review N3). The two site counts are held by `tools/exclusions.baseline`: they may only go down
+(N6), so a new site with a reason already listed is seen too. The census's "0 outside" is a fact of the corpus only; the probes of these limits
 are in `tests/open/` (`lowering-*.cpp`). `<...>` is a piece spliced in at run time; a message built from a
 ternary comes back with both arms joined.
 
@@ -653,6 +655,7 @@ a call of more arguments than its parameters
 a call of nothing
 a call of what is not a function pointer
 a call returning '<...>'
+a call with a default the parser recorded no syntax for
 a call that is no lvalue
 a call through a member pointer
 a call through what is not a pointer to a member function
@@ -1056,4 +1059,83 @@ the operator '<...>'
 two case labels of one value
 two default labels
 two pointers to different types compared
+```
+
+The internal errors, `broken(...)`, by their text (mend review N3, 2026-11-13):
+
+```broken
+<...>a '<...>' not recorded
+a '->' on a class with no operator-> recorded
+a 'new' with default arguments the parser recorded no syntax for
+a `this` not recorded
+a base built by no constructor the parser recorded
+a base destroyed by no destructor the parser recorded
+a base destroyed on unwinding by no destructor the parser recorded
+a base handed a VTT the parser recorded no entry for
+a by-value argument whose copy the parser recorded none for
+a call through a member pointer whose function type was not recorded
+a call whose function type was not recorded
+a call's result whose destructor the parser recorded none for
+a cast not recorded
+a catch of a class whose destructor the parser recorded none for
+a class temporary whose destructor the parser recorded none for
+a class with a copy of its own returned by a form not recorded
+a compiler-written <...> with a vptr the parser recorded no store for
+a complete constructor whose base-object constructor the parser recorded none of
+a complete constructor whose virtual bases the parser recorded no order for
+a complete destructor whose base-object destructor the parser recorded none of
+a complete destructor whose virtual bases the parser recorded no order for
+a conditional's lvalue arm whose copy the parser recorded none for
+a deleting destructor whose deallocation the parser recorded none of
+a destructor called by name whose symbol is not recorded
+a destructor whose type was not recorded
+a dynamic_cast the parser recorded no walk for
+a for whose parts the record and the syntax disagree about
+a function named as a value whose type was not recorded
+a lambda's capture copied by no constructor of the record's shape
+a literal whose token was not recorded
+a local built by no constructor the parser recorded
+a local whose destructor the parser recorded none for
+a member built by no constructor the parser recorded
+a member call whose function type was not recorded
+a member copied from a braced list the parser recorded no constructor for
+a member destroyed on unwinding by no destructor the parser recorded
+a member operator whose `this` was not recorded
+a most-derived guard the parser recorded nothing of
+a named return value that is not the recorded local
+a parameter list the typed tree and the function disagree about
+a parameter whose destructor the parser recorded none for
+a qualified member the parser recorded no class for
+a range-based for whose begin is neither a pointer nor a plain class with its operators recorded
+a range-based for's iterator whose destructor the parser recorded none for
+a return's temporary the parser recorded no constructor for
+a static local built at run time with no guard recorded
+a static local built by no constructor the parser recorded
+a static local whose destructor the parser recorded none for
+a static local with no atexit helper recorded
+a string whose label was not recorded
+a thread_local built at run time with no guard recorded
+a throw of a class whose destructor the parser recorded none for
+a thrown temporary built by no constructor the parser recorded
+a typeid not recorded
+a virtual base built by no constructor the parser recorded
+a virtual base copied by no constructor the parser recorded
+a virtual base destroyed by no destructor the parser recorded
+a virtual base destroyed on unwinding by no destructor the parser recorded
+a virtual base destroyed on unwinding whose destructor the parser recorded none for
+a virtual base the parser recorded no vbase_offset for
+a virtual base with virtual bases destroyed on unwinding by no destructor the parser recorded
+a vptr the parser recorded no store for
+an aggregate's member whose destructor the parser recorded none for
+an array element built by no constructor the parser recorded
+an array initialised from a string whose label was not recorded
+an array member destroyed on unwinding by no destructor the parser recorded
+an array's list whose parts the record does not match
+an array's tail built by no constructor the parser recorded
+an array's tail built with default arguments the record does not place
+an atexit helper the parser recorded no object or destructor for
+an init function whose objects the parser recorded no `var` for
+an initializer_list element built by no constructor the parser recorded
+an initializer_list element the record does not place
+an operator whose function type was not recorded
 ```

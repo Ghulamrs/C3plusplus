@@ -1,0 +1,1 @@
+x86_64-windows  two vbtables of F would each be named for two classes (cl: A then C1, A then C2), a name the Microsoft layout refuses by name - "a name of two classes is not supported yet" (lane J, review N12); cl compiles it, the two-class name is not measured yet. The Itanium targets have no vbtable and compile this case.

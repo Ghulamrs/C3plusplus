@@ -73,8 +73,9 @@ def message(text):
 
 
 # The SSA lowering refuses with `outside(...)` (valid C++11 not built yet, owed) or `broken(...)` (a record that
-# cannot disagree in a valid program: an internal error). An outside() message is cited by its text, in the
-# document's ```owed block, because the lowering's lines move every round; broken() is counted, not cited.
+# cannot disagree in a valid program: an internal error). Each is cited by its text, outside() in the document's
+# ```owed block and broken() in its ```broken block, because the lowering's lines move every round; the two site
+# counts are held by tools/exclusions.baseline, which they may only go down from (N6 of the mend review).
 LOWER = re.compile(r"\b(outside|broken)\s*\(")
 
 
@@ -96,9 +97,23 @@ def lowering(root="src/ir"):
     return rows
 
 
-def owed(doc):
-    block = re.search(r"^```owed\n(.*?)^```", doc, re.S | re.M)
+def owed(doc, name="owed"):
+    block = re.search(r"^```" + name + r"\n(.*?)^```", doc, re.S | re.M)
     return set(l.strip() for l in block.group(1).splitlines() if l.strip()) if block else set()
+
+
+BASELINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "exclusions.baseline")
+
+
+def baseline():
+    """The lowering's site counts the source may not rise above; a key the file lacks counts as 0."""
+    counts = {"outside": 0, "broken": 0}
+    if os.path.exists(BASELINE):
+        for line in open(BASELINE, encoding="utf-8"):
+            parts = line.split()
+            if len(parts) == 2 and parts[0] in counts:
+                counts[parts[0]] = int(parts[1])
+    return counts
 
 
 def inventory(root="src"):
@@ -132,6 +147,7 @@ def main():
     lout = [r for r in low if r[1] == "outside"]
     lbroken = [r for r in low if r[1] == "broken"]
     reasons = set(m for _, _, m in lout)
+    breasons = set(m for _, _, m in lbroken)
     if args and args[0] == "--count":
         print(f"{len(rows)} refusal sites, {len(set(m for _, m in rows))} distinct messages")
         print(f"the SSA lowering: {len(lout)} outside() sites, {len(reasons)} distinct reasons;"
@@ -167,11 +183,26 @@ def main():
             print(f"owed, not in the document: {m}  ({next(s for s, _, x in lout if x == m)})")
         for m in lstale:
             print(f"owed, listed and gone:     {m}")
+        blisted = owed(doc, "broken")
+        bmissing = sorted(breasons - blisted)
+        bstale = sorted(blisted - breasons)
+        for m in bmissing:
+            print(f"broken, not in the document: {m}  ({next(s for s, _, x in lbroken if x == m)})")
+        for m in bstale:
+            print(f"broken, listed and gone:     {m}")
+        base, rose = baseline(), []
+        for kind, n in (("outside", len(lout)), ("broken", len(lbroken))):
+            if n > base[kind]:
+                rose.append(kind)
+                print(f"{kind}() sites rose: {n} against tools/exclusions.baseline's {base[kind]}")
+            elif n < base[kind]:
+                print(f"{kind}() sites fell: {n} against {base[kind]} - lower tools/exclusions.baseline")
         print(f"\n{len(have)} sites, {len(missing)} uncited, {len(stale) + len(gone)} stale citations"
               f" ({len(cases)} hand-written entries name a test file, {len(gone)} missing)")
         print(f"the SSA lowering: {len(lout)} outside() sites, {len(reasons)} reasons, {len(lmissing)} uncited,"
-              f" {len(lstale)} stale; {len(lbroken)} broken() sites, internal errors, not cited")
-        return 1 if (missing or stale or gone or lmissing or lstale) else 0
+              f" {len(lstale)} stale; {len(lbroken)} broken() sites, {len(breasons)} reasons, {len(bmissing)} uncited,"
+              f" {len(bstale)} stale; baseline outside {base['outside']} broken {base['broken']}")
+        return 1 if (missing or stale or gone or lmissing or lstale or bmissing or bstale or rose) else 0
 
     for site, msg in rows:
         print(f"{site}\t{msg}")

@@ -162,7 +162,10 @@ if [ "$WHICH" = all ] || [ "$WHICH" = linux ]; then
         { lstep 'JOBS=2 sh tools/crosshost-sums sums ./cxx3.exe sums-linux.txt | tail -1' && : > "$LEGS/sums-linux.ok" || rc=1; } &&
         lstep 'make test' &&
         lstep 'CXX1="./cxx3.exe -O2" sh tests/run.sh' && lstep 'CXX1="./cxx3.exe -O1" sh tests/run.sh' &&
-        lstep 'SSA_LEVEL=2 CXX1=./cxx3.exe sh tests/ssa.sh' && selfhost &&
+        lstep 'SSA_LEVEL=2 CXX1=./cxx3.exe sh tests/ssa.sh' &&
+        # -Os and two runs' bytes (with -dump=typed) were in no standing gate (N11 of the mend review)
+        lstep 'CXX1="./cxx3.exe -Os" sh tests/run.sh' &&
+        lstep 'sh tools/determinism.sh ./cxx3.exe $HOME/cxx1-verify/det > det.log 2>&1; r=$?; tail -3 det.log; exit $r' && selfhost &&
         lstep 'ASM6X=$T/ASM6x/build/asm6x.exe C6XDIFF=$T/ASM6x/tests/c6xdiff.py sh tests/asm6x.sh' &&
         for o in "" -O2; do
             lstep 'CXX1_FLAGS='$o' VM=$T/VM6747/vm6747.exe SIM6747=$T/SIM6747/sim6747.exe ASM6X=$T/ASM6x/build/asm6x.exe \
