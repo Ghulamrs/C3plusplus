@@ -19,6 +19,12 @@ bool remade(const ir::Function &f, ir::ValueId v) {
     return op == ir::Op::Alloca || op == ir::Op::IConst || op == ir::Op::Null || op == ir::Op::Addr;
 }
 
+// A remade value worth a register over a loop: a constant or a symbol's address.
+bool hoists(const ir::Function &f, ir::ValueId v) {
+    const ir::Value &val = f.value(v);
+    return val.def.valid() && (f.inst(val.def).op == ir::Op::IConst || f.inst(val.def).op == ir::Op::Addr);
+}
+
 // The staging registers of a branch's block arguments: nobody's, as copyBlockBatched says.
 const char *const kStage[] = { "B16", "B17", "B18", "B19", "B20", "B21", "B22", "B23" };
 const std::uint32_t kStages = 8;
@@ -155,8 +161,9 @@ bool Tms6747::ssaFrameMem(const ir::Function &f, ir::ValueId p, int size, std::s
 }
 
 // v into reg: made afresh where it has no slot, else read from its word.
-void Tms6747::ssaLoad(const ir::Function &f, ir::ValueId v, const char *reg) {
-    if (const char *h = ssaHomeOf(v)) {
+void Tms6747::ssaLoad(const ir::Function &f, ir::ValueId v, const char *reg, bool fresh) {
+    const char *h = fresh ? nullptr : ssaHomeOf(v);
+    if (h != nullptr) {
         if (std::string(h) != reg) out_ << "\tMV\t" << h << ", " << reg << "\n";
         return;
     }
@@ -250,27 +257,32 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
     const int mode = knob != nullptr ? std::atoi(knob) : 2;
     std::vector<int> first(nb, 0), last(nb, 0), start(nv, -1), end(nv, -1), uses(nv, 0), home(nv, -1), calls;
     std::vector<long long> weight(nv, 0);
+    std::vector<char> hot(nv, 0);       // a constant or an address a loop reads where no instruction can hold it
     bool wideCall = fn.params().size() > 6;
     // A block's depth: an edge to a block written no later is a loop's, and every block between the two is inside it.
-    std::vector<std::size_t> index(nb, 0), reach(f.blocks.size(), 0);
-    std::vector<int> depth(f.blocks.size(), 0);
-    for (std::size_t b = 0; b < f.blocks.size(); b++) index[f.blocks[b].v] = b;
-    for (std::size_t b = 0; b < f.blocks.size(); b++) {
-        if (!f.block(f.blocks[b]).term.valid()) continue;
-        const ir::Inst &t = f.inst(f.block(f.blocks[b]).term);
+    std::vector<std::size_t> index(nb, 0), reach(ssaOrder_.size(), 0);
+    std::vector<int> depth(ssaOrder_.size(), 0);
+    for (std::size_t b = 0; b < ssaOrder_.size(); b++) index[ssaOrder_[b].v] = b;
+    for (std::size_t b = 0; b < ssaOrder_.size(); b++) {
+        if (!f.block(ssaOrder_[b]).term.valid()) continue;
+        const ir::Inst &t = f.inst(f.block(ssaOrder_[b]).term);
         for (std::size_t s = 0; s < t.succ.size(); s++)
             if (index[t.succ[s].block.v] <= b) reach[index[t.succ[s].block.v]] = std::max(reach[index[t.succ[s].block.v]], b + 1);
     }
-    for (std::size_t h = 0; h < f.blocks.size(); h++)
+    for (std::size_t h = 0; h < ssaOrder_.size(); h++)
         for (std::size_t b = h; b < reach[h]; b++) depth[b]++;
+    std::vector<char> latch(ssaOrder_.size(), 0);
+    for (std::size_t h = 0; h < ssaOrder_.size(); h++) if (reach[h] != 0) latch[reach[h] - 1] = 1;
+    ssaInner_.assign(nb, 0);
+    for (std::size_t b = 1; b < ssaOrder_.size(); b++) ssaInner_[ssaOrder_[b].v] = depth[b] > 0 && reach[b] == 0 && !latch[b - 1];
     const std::size_t words = (nv + 63) / 64;
     std::vector<unsigned long long> in(nb * words, 0), out(nb * words, 0);
     for (std::size_t i = 0; i < f.params.size(); i++) start[f.params[i].v] = 0;
     int at = 2;
     // Positions two apart: a block's parameters at its first, each instruction after; a use in another block is live in.
-    for (std::size_t b = 0; b < f.blocks.size(); b++) {
-        const std::uint32_t id = f.blocks[b].v;
-        const ir::Block &blk = f.block(f.blocks[b]);
+    for (std::size_t b = 0; b < ssaOrder_.size(); b++) {
+        const std::uint32_t id = ssaOrder_[b].v;
+        const ir::Block &blk = f.block(ssaOrder_[b]);
         first[id] = at;
         for (std::size_t p = 0; p < blk.params.size(); p++) { start[blk.params[p].v] = at; home[blk.params[p].v] = static_cast<int>(id); }
         for (std::size_t k = 0; k <= blk.insts.size(); k++) {
@@ -285,9 +297,9 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
         last[id] = at;
         at += 2;
     }
-    for (std::size_t b = 0; b < f.blocks.size(); b++) {
-        const std::uint32_t id = f.blocks[b].v;
-        const ir::Block &blk = f.block(f.blocks[b]);
+    for (std::size_t b = 0; b < ssaOrder_.size(); b++) {
+        const std::uint32_t id = ssaOrder_[b].v;
+        const ir::Block &blk = f.block(ssaOrder_[b]);
         int pos = first[id];
         const long long heat = 1ll << (3 * std::min(depth[b], 6));
         const auto use = [&](ir::ValueId v, int late) {
@@ -302,7 +314,12 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
             if (!iid.valid()) continue;
             const ir::Inst &i = f.inst(iid);
             pos += 2;
-            for (std::uint32_t n = 0; n < i.count; n++) use(f.operand(i, n), 0);
+            for (std::uint32_t n = 0; n < i.count; n++) {
+                use(f.operand(i, n), 0);
+                long long k = 0;
+                const bool held = i.op != ir::Op::Mul && smallConst(f, f.operand(i, n), -16, 15, k);
+                if (depth[b] > 0 && !callsOut(i.op) && !held && f.operand(i, n).valid()) hot[f.operand(i, n).v] = 1;
+            }
             for (std::size_t s = 0; s < i.succ.size(); s++)
                 for (std::uint32_t n = 0; n < i.succ[s].count; n++) use(f.arg(i.succ[s], n), 1);
             if (i.result.valid()) weight[i.result.v] += heat;
@@ -314,9 +331,9 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
     // Live in = used from another block, or live out and not defined here; to a fixed point, last block first.
     for (bool changed = true; changed; ) {
         changed = false;
-        for (std::size_t b = f.blocks.size(); b-- > 0; ) {
-            const std::uint32_t id = f.blocks[b].v;
-            const ir::Block &blk = f.block(f.blocks[b]);
+        for (std::size_t b = ssaOrder_.size(); b-- > 0; ) {
+            const std::uint32_t id = ssaOrder_[b].v;
+            const ir::Block &blk = f.block(ssaOrder_[b]);
             if (!blk.term.valid()) continue;
             const ir::Inst &t = f.inst(blk.term);
             for (std::size_t s = 0; s < t.succ.size(); s++)
@@ -331,8 +348,8 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
             }
         }
     }
-    for (std::size_t b = 0; b < f.blocks.size(); b++) {
-        const std::uint32_t id = f.blocks[b].v;
+    for (std::size_t b = 0; b < ssaOrder_.size(); b++) {
+        const std::uint32_t id = ssaOrder_[b].v;
         for (std::size_t v = 1; v < nv; v++) {
             const unsigned long long bit = 1ull << (v % 64);
             if (in[id * words + v / 64] & bit) { start[v] = start[v] < 0 ? first[id] : std::min(start[v], first[id]); end[v] = std::max(end[v], first[id]); }
@@ -342,7 +359,10 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
     std::vector<std::size_t> order;
     for (std::size_t v = 1; v < nv; v++) {
         if (!f.values[v].type.valid() || ssaTypes_->type(f.values[v].type)->isVoid() || start[v] < 0 || ssaFused_[v]) continue;
-        if (remade(f, ir::ValueId(static_cast<std::uint32_t>(v)))) continue;
+        // A remade value a loop reads keeps a register where one is free, and no weight: any other value takes it back.
+        hot[v] = hot[v] && hoists(f, ir::ValueId(static_cast<std::uint32_t>(v)));
+        if (remade(f, ir::ValueId(static_cast<std::uint32_t>(v))) && !hot[v]) continue;
+        if (hot[v]) weight[v] = 0;
         end[v] = std::max(end[v], start[v] + 1);
         order.push_back(v);
     }
@@ -361,7 +381,16 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
         bool crosses = false;
         for (std::size_t c = 0; c < calls.size() && !crosses; c++) crosses = calls[c] > start[v] && calls[c] < end[v];
         unsigned pick = crosses ? 0 : freeNow & scratch;
-        if (pick == 0) pick = freeNow & kept;
+        // A value no call crosses takes a remade one's register before it takes a saved one.
+        for (std::size_t a = 0; a < active.size() && pick == 0 && !hot[v] && !crosses; a++) {
+            const unsigned bit = 1u << (ssaHome_[active[a]] - 1);
+            if (!hot[active[a]] || (scratch & bit) == 0) continue;
+            pick = bit;
+            ssaHome_[active[a]] = 0;
+            active.erase(active.begin() + static_cast<std::ptrdiff_t>(a));
+        }
+        if (pick == 0 && (!hot[v] || crosses)) pick = freeNow & kept;
+        if (pick == 0 && hot[v]) continue;
         if (pick == 0) {
             std::size_t light = active.size();
             for (std::size_t a = 0; a < active.size(); a++) {
@@ -407,6 +436,7 @@ void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
     usesSavedArgRegs_ = false;
     usesSavedPairRegs_ = false;
     callCount_ = 0;
+    ssaOrder_ = optimize_ != 0 ? ssaBlockOrder(f) : f.blocks;       // a loop's blocks together, its latch last
     ssaAssign(fn, f);
     frame_ = layoutSsa(fn, f);
     // Each parameter into its home by emitParams (regOf_), or from the slot emitParams wrote it to into its value's word.
@@ -417,15 +447,21 @@ void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
         loadFrom(ps[i].type, m);
         ssaStore(f, f.params[i], "A4");
     }
-    for (std::size_t b = 0; b < f.blocks.size(); b++) {
-        const ir::Block &blk = f.block(f.blocks[b]);
-        defineLabel(ssaBlockLabel(f.blocks[b]));
-        const ir::BlockId next = b + 1 < f.blocks.size() ? f.blocks[b + 1] : ir::BlockId();
+    for (std::size_t b = 0; b < ssaOrder_.size(); b++) {
+        const ir::Block &blk = f.block(ssaOrder_[b]);
+        defineLabel(ssaBlockLabel(ssaOrder_[b]));
+        const ir::BlockId next = b + 1 < ssaOrder_.size() ? ssaOrder_[b + 1] : ir::BlockId();
         for (std::size_t k = 0; k <= blk.insts.size(); k++) {
             const ir::InstId id = k < blk.insts.size() ? blk.insts[k] : blk.term;
             if (id.valid()) selectInst(f, f.inst(id), next);
         }
     }
+    for (std::size_t k = 0; k < ssaLater_.size(); k++) {      // none is left unless the last block cannot be left
+        defineLabel(ssaLater_[k].first);
+        ssaMoves(f, *ssaLater_[k].second);
+        jump(ssaBlockLabel(ssaLater_[k].second->block));
+    }
+    ssaLater_.clear();
     out_ << "\tZERO\tA4\n";     // falling off the end returns 0, as the walker's body does
 }
 
@@ -466,8 +502,16 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
     const auto writeStubs = [&]() {
         for (std::size_t k = 0; k < stubs.size(); k++) { defineLabel(stubs[k].first); edge(*stubs[k].second, false); }
     };
+    // The stubs of branches that fell into their next block, written where the text has just jumped away.
+    const auto writeLater = [&]() {
+        for (std::size_t k = 0; k < ssaLater_.size(); k++) { defineLabel(ssaLater_[k].first); edge(*ssaLater_[k].second, false); }
+        ssaLater_.clear();
+    };
     switch (i.op) {
-    case ir::Op::IConst: case ir::Op::Null: case ir::Op::Addr: case ir::Op::Alloca: case ir::Op::Undef: case ir::Op::Unreachable:
+    case ir::Op::IConst: case ir::Op::Addr:
+        if (home != nullptr) ssaLoad(f, i.result, home, true);      // made once, where a loop reads it from a register
+        return;
+    case ir::Op::Null: case ir::Op::Alloca: case ir::Op::Undef: case ir::Op::Unreachable:
         return;
     case ir::Op::Load: {
         std::string mem;
@@ -575,15 +619,18 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
     case ir::Op::Ret:
         if (i.count == 1) ssaLoad(f, f.operand(i, 0), "A4");
         jump(returnLabel_);
+        writeLater();
         return;
     case ir::Op::Br:
         edge(i.succ[0], true);
+        if (i.succ[0].block.v != next.v) writeLater();
         return;
     case ir::Op::CondBr: {
         const ir::ValueId c = f.operand(i, 0);
         bool flip = false;
         if (ssaFused_[c.v]) flip = ssaCompare(f, f.inst(f.value(c).def), "A1"); else ssaLoad(f, c, "A1");
         out_ << (flip ? "\t[A1]\tB\t" : "\t[!A1]\tB\t") << target(i.succ[1]) << "\n\tNOP\t5\n";
+        if (i.succ[0].block.v == next.v) { ssaLater_.insert(ssaLater_.end(), stubs.begin(), stubs.end()); stubs.clear(); }
         edge(i.succ[0], stubs.empty());
         writeStubs();
         return;

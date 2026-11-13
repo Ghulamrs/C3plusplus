@@ -18,10 +18,12 @@ long long roundUp(long long n, long long a) { return (n + a - 1) / a * a; }
 typedef std::pair<int, std::uint32_t> Stay;     // how many loops an edge stays in, and its target
 bool staysLess(const Stay &x, const Stay &y) { return x.first < y.first; }
 
+}   // namespace
+
 // **The order the body's own blocks are written in where the passes run**: reverse postorder over the jumps, a loop's
 // way out walked before its way on - its blocks stay together, what follows it after its latch (thread-jumps rotates
 // that), an invoke's return under its call. A pad and a funclet's blocks keep their places; the rest fill the others.
-std::vector<ir::BlockId> blockOrder(const ir::Function &f) {
+std::vector<ir::BlockId> ssaBlockOrder(const ir::Function &f) {
     if (f.blocks.empty() || f.blocks[0].v != f.entry.v) return f.blocks;
     const ir::Dominators dom(f);
     const std::size_t n = f.blockArena.size();
@@ -92,8 +94,6 @@ std::vector<ir::BlockId> blockOrder(const ir::Function &f) {
     for (std::size_t k = 0; k < out.size(); k++) if (plain[out[k].v]) out[k] = walk[w++];
     return out;
 }
-
-}   // namespace
 
 // The function `fn` is selected from SSA when the module holds its symbol.
 const ir::Function *X86_64Linux::ssaFunction(const Function &fn) const {
@@ -978,7 +978,7 @@ void X86_64Linux::selectBody(const Function &fn, const ir::Function &f) {
             if (f.block(f.blocks[b]).pad) { ssaPadState_[f.blocks[b].v] = msAddState(); any = true; }
         if (any) { msSetUnwindHelpSlot(ssaUnwindHelpSlot_); storeUnwindHelp(ssaUnwindHelpSlot_); }
     }
-    const std::vector<ir::BlockId> order = passesRun() ? blockOrder(f) : f.blocks;
+    const std::vector<ir::BlockId> order = passesRun() ? ssaBlockOrder(f) : f.blocks;
     for (std::size_t b = 0; b < order.size(); b++) {
         const ir::Block &blk = f.block(order[b]);
         ssaNext_ = 0;

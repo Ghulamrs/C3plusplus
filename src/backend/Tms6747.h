@@ -51,6 +51,8 @@ private:
     Tms6747Target target_;
 };
 
+std::vector<ir::BlockId> ssaBlockOrder(const ir::Function &f);     // SsaSelect.cpp's, the one order of every selector
+
 class Tms6747 final : public Walker {
 public:
     Tms6747(std::ostream &sink, const Target &target, const Abi &abi)
@@ -267,7 +269,9 @@ private:
     const ir::Module *ssa_ = nullptr;
     const TypeTable *ssaTypes_ = nullptr;
     std::vector<int> ssaAllocaSlot_, ssaValueSlot_, ssaHome_;      // ssaHome_: 0, or one past the home's index
+    std::vector<ir::BlockId> ssaOrder_;                            // the order the blocks are written in
     std::vector<char> ssaFused_;                                   // a compare written by its block's branch
+    std::vector<std::pair<std::string, const ir::Succ *> > ssaLater_;   // edge stubs owed after the next jump: a guard falls into its loop
     int ssaSelected_ = 0, ssaWalked_ = 0;
     const ir::Function *ssaChoose(const Function &fn);
     std::string ssaOutside(const Function &fn, const ir::Function &f) const;
@@ -277,12 +281,14 @@ private:
     void selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId next);
     std::string ssaMem(int off, int size);                 // the frame word `off` above the saves, as an operand
     bool ssaFrameMem(const ir::Function &f, ir::ValueId p, int size, std::string &mem);   // *p where p is a frame address
-    void ssaLoad(const ir::Function &f, ir::ValueId v, const char *reg);
+    void ssaLoad(const ir::Function &f, ir::ValueId v, const char *reg, bool fresh = false);
     void ssaStore(const ir::Function &f, ir::ValueId v, const char *reg);
     void ssaMoves(const ir::Function &f, const ir::Succ &s);
     void ssaAssign(const Function &fn, const ir::Function &f);
     const char *ssaHomeOf(ir::ValueId v) const;
     std::string ssaUse(const ir::Function &f, ir::ValueId v, const char *scratch);
     bool ssaCompare(const ir::Function &f, const ir::Inst &c, const std::string &d);
-    std::string ssaBlockLabel(ir::BlockId b) const { return label("ssa", static_cast<int>(b.v)); }
+    // A block inside a loop that is neither its head nor what its latch falls into: C6xSched reads through the label.
+    std::vector<char> ssaInner_;
+    std::string ssaBlockLabel(ir::BlockId b) const { return label(b.v < ssaInner_.size() && ssaInner_[b.v] ? "ssain" : "ssa", static_cast<int>(b.v)); }
 };
