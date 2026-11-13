@@ -80,7 +80,11 @@ TypedId Typer::node(syntax::NodeId id) {
             scopes_.back()[text.substr(space + 1)] = d;
         }
     }
-    if (n.kind == syntax::Kind::Var && p_.declaredTypes_.count(id.v) != 0) expectBraces(id, TypeTable::id(p_.declaredTypes_.at(id.v)));
+    // A declarator's written bounds come first among its parts (varBounds_), the initialiser's items after them.
+    if (n.kind == syntax::Kind::Var && p_.declaredTypes_.count(id.v) != 0) {
+        const auto b = p_.varBounds_.find(id.v);
+        expectBraces(id, TypeTable::id(p_.declaredTypes_.at(id.v)), b == p_.varBounds_.end() ? 0u : static_cast<std::uint32_t>(b->second));
+    }
     if (n.kind == syntax::Kind::Call) expectArguments(id);
     if (n.kind == syntax::Kind::Other && braced_.count(id.v) != 0) expectBraces(id, braced_.at(id.v));
     std::vector<TypedId> kids;
@@ -415,18 +419,18 @@ void Typer::expectArguments(syntax::NodeId call) {
 
 // [dcl.init.aggr]/2: the items of `list` initialise an aggregate `t`'s elements or members in order; a `{}` item is
 // the subobject it meets, until an item that is no `{}` meets an aggregate - brace elision, which ends the walk.
-void Typer::expectBraces(syntax::NodeId list, TypeId t) {
+void Typer::expectBraces(syntax::NodeId list, TypeId t, std::uint32_t first) {
     const syntax::Tree &st = p_.syntaxTree_;
     if (!t.valid() || p_.types_.type(t)->isReference()) return;
     const Type &a = *p_.types_.type(t)->unqualified();
     const bool array = a.isArray() && a.pointee() != nullptr;
     if (!array && !(a.isStructOrUnion() && !p_.hasConstructors(a.tag()) && !a.polymorphic() && a.bases().empty())) return;
     std::size_t m = 0;
-    for (std::uint32_t i = 0; i < st.node(list).count; i++) {
+    for (std::uint32_t i = first; i < st.node(list).count; i++) {
         TypeId sub = array ? TypeTable::id(a.pointee()) : TypeId();
         if (!array) {
             while (m < a.members().size() && a.members()[m].isBitField() && a.members()[m].name.empty()) m++;
-            if (m >= a.members().size() || a.members()[m].anonUnion != nullptr || (a.kind() == Kind::Union && i > 0)) return;
+            if (m >= a.members().size() || a.members()[m].anonUnion != nullptr || (a.kind() == Kind::Union && i > first)) return;
             sub = TypeTable::id(a.members()[m++].type);
         }
         const syntax::NodeId c = st.child(list, i);
@@ -636,6 +640,8 @@ template <class Record> void Typer::copyStaticGuard(const Record &r, StaticGuard
     out.registered = r.registered;
     out.vectorLoop = r.vectorLoop;
     out.array = r.array;
+    out.temporary = r.temporary;
+    out.temporaryHelper = r.temporaryHelper;
 }
 
 bool Typer::defaultInit(TypeId cls, const std::string &member) const {

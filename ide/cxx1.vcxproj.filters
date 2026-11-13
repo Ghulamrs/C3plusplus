@@ -45,6 +45,7 @@
     <ClCompile Include="..\src\parser\ParserTopLevel.cpp"><Filter>Source Files\parser</Filter></ClCompile>
     <ClCompile Include="..\src\parser\ParserType.cpp"><Filter>Source Files\parser</Filter></ClCompile>
     <ClCompile Include="..\src\parser\ParserVtable.cpp"><Filter>Source Files\parser</Filter></ClCompile>
+    <ClCompile Include="..\src\backend\A64Select.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\Arm64Darwin.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\Backend.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\CodeView.cpp"><Filter>Source Files\backend</Filter></ClCompile>
@@ -59,7 +60,6 @@
     <ClCompile Include="..\src\backend\Walker.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\X86_64Linux.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\X86_64Windows.cpp"><Filter>Source Files\backend</Filter></ClCompile>
-    <ClCompile Include="..\src\optimizer\A64Peep.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\C6xPipe.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\C6xSched.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\Inliner.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
@@ -150,7 +150,6 @@
     <ClInclude Include="..\src\backend\Walker.h"><Filter>Header Files\backend</Filter></ClInclude>
     <ClInclude Include="..\src\backend\X86_64Linux.h"><Filter>Header Files\backend</Filter></ClInclude>
     <ClInclude Include="..\src\backend\X86_64Windows.h"><Filter>Header Files\backend</Filter></ClInclude>
-    <ClInclude Include="..\src\optimizer\A64Peep.h"><Filter>Header Files\optimizer</Filter></ClInclude>
     <ClInclude Include="..\src\optimizer\C6xModel.h"><Filter>Header Files\optimizer</Filter></ClInclude>
     <ClInclude Include="..\src\optimizer\C6xSched.h"><Filter>Header Files\optimizer</Filter></ClInclude>
     <ClInclude Include="..\src\optimizer\DivMagic.h"><Filter>Header Files\optimizer</Filter></ClInclude>

@@ -86,6 +86,7 @@ struct StaticGuard {
     bool array;     // an array of a class built by its loop, vectorLoop, if any; `helper` destroys it at exit
     ListBuilt elements;     // an array of a class built from a braced list, or an initializer_list's backing array: each element
     TypeId listOf;          // the initializer_list the braces were made into, where a constructor took one
+    std::string temporary, temporaryHelper;     // a reference's [class.temporary]/5 object, and cl's helper destroying it
     StaticGuard() : aborts(false), built(false), defaulted(false), zeroed(false), copied(false), list(false), registered(false),
                     array(false) {}
 };
@@ -315,7 +316,7 @@ private:
     std::unordered_map<std::uint32_t, std::vector<syntax::NodeId> > closureSources_;   // a lambda's capture sources, by node
     // A nested `{}` of an aggregate's initialiser, by node: the subobject it initialises, where no brace was elided before it.
     std::unordered_map<std::uint32_t, TypeId> braced_;
-    void expectBraces(syntax::NodeId list, TypeId t);
+    void expectBraces(syntax::NodeId list, TypeId t, std::uint32_t first = 0);
     void expectArguments(syntax::NodeId call);
 };
 

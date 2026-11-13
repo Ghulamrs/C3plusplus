@@ -1592,8 +1592,10 @@ bool Driver::compile(const Job &job) {
     }
     // **On x86 a `volatile` access is marked in MIR and every pass keeps it** (R8); arm64's and the C6000's generators have
     // no mark, so there a file that writes `volatile` is compiled without -O, said as a warning at the first `volatile`.
-    const bool selects = std::strncmp(backend_->name(), "x86_64", 6) == 0;     // the generator selects from the SSA IR
-    const bool downgrade = program.usesVolatile && !selects;
+    const bool marks = std::strncmp(backend_->name(), "x86_64", 6) == 0;
+    const bool downgrade = program.usesVolatile && !marks;
+    // The generator selects from the SSA IR: x86 (M3b.7) and arm64-darwin (M5.3); the C6000 walks `Ast.h`.
+    const bool selects = marks || std::strcmp(backend_->name(), "arm64-darwin") == 0;
     const int level = downgrade ? 0 : optimize_;
     if (optimize_ > 0 && downgrade) {
         volatileDowngrades_++;
@@ -1602,17 +1604,17 @@ bool Driver::compile(const Job &job) {
                      program.volatileAt.empty() ? job.input.c_str() : program.volatileAt.c_str(),
                      job.input.c_str(), optimize_);
     }
-    // **The SSA IR** (M3b.1): every body lowered; dumped, verified, and on x86 the only thing selected (M3b.7).
+    // **The SSA IR** (M3b.1): every body lowered; dumped, verified, and where a generator selects, the only thing selected.
     if (selects || dumpSsa_ || checkSsa_) {
         std::string dumped;
         std::vector<std::string> outside;
         int failures = 0;
-        const std::string report = lowerSsa(src, parser, program, types, target, program.module, checkSsa_, optimize_, !debug_, dumpSsa_,
+        const std::string report = lowerSsa(src, parser, program, types, target, program.module, checkSsa_, level, !debug_, dumpSsa_,
                                             dumpSsaAfter_, dumped, failures, outside);
         if (checkSsa_) std::fwrite(report.data(), 1, report.size(), stdout);
         if (checkSsa_ && failures != 0) return false;
         if (dumpSsa_) std::fwrite(dumped.data(), 1, dumped.size(), stdout);
-        // On x86 a function outside the lowering is an error naming it: there is no other path (M3b.7).
+        // Where the generator selects, a function outside the lowering is an error naming it: there is no other path.
         for (const std::string &o : selects ? outside : std::vector<std::string>())
             std::fprintf(stderr, "%s: %s: %s\n", program_.c_str(), job.input.c_str(), o.c_str());
         if (selects && !outside.empty()) return false;

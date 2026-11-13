@@ -2935,7 +2935,7 @@ StmtPtr Parser::memberInitialiser(const std::string &tag, const Type *type,
     const std::size_t valueAt = peek().pos;
     ExprPtr read = assign();
     const syntax::NodeId valueSyntax = read->syntax();
-    ExprPtr value = decay(std::move(read));
+    ExprPtr value = m.type->isReference() ? std::move(read) : decay(std::move(read));
     if (braced) {
         checkNarrowing(m.type, *value, valueAt, "'" + m.name + "'");
         expect("}");
@@ -2954,6 +2954,15 @@ StmtPtr Parser::memberInitialiser(const std::string &tag, const Type *type,
         one.push_back(std::move(value));
         made = constructMember(tag, type, m, thisSlot, one, pos, false);
         if (made == nullptr) value = std::move(one[0]);
+    }
+    if (made == nullptr && m.type->isReference()) {
+        // [class.base.init]/9: `T &r = v;` binds r as the mem-initialiser `r(v)` would - the address stored.
+        const Type *held = types_.pointerTo(m.type->referent());
+        ExprPtr field = thisMember(thisSlot, type, m);
+        field->setType(held);
+        ExprPtr bind(make_owned<Assign>(std::move(field), bindReference(m.type, std::move(value), valueAt, "'" + m.name + "'")));
+        bind->setType(held);
+        made = StmtPtr(make_owned<ExprStmt>(std::move(bind)));
     }
     if (made == nullptr) {
         checkAssignable(*value, m.type, pos, "'" + m.name + "'");
@@ -3000,6 +3009,11 @@ StmtPtr Parser::constructMember(const std::string &cls, const Type *type,
     if (args.size() == 1 && !m.type->isArray() &&
         classes_.copyConstructorOf(mc) == nullptr && classes_.moveConstructorOf(mc) == nullptr) {
         const Type *at = args[0]->type();
+        // [class.copy]/12: a derived object's base subobject is what is copied, its bytes.
+        if (at != nullptr && memberClass(at) != nullptr && memberClass(at) != mc && !at->isArray() && accessibleBaseOffset(memberClass(at), mc) >= 0) {
+            args[0] = convert(std::move(args[0]), mc);
+            at = args[0]->type();
+        }
         if (at != nullptr && memberClass(at) == mc) {
             // Recorded as `$bytes`, the member's type for its signature: the lowering copies the same way (M3b.2).
             if (!implicit) {

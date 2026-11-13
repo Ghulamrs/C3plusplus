@@ -425,7 +425,7 @@ StmtPtr Parser::declarationBody() {
                 const bool early = initialiserNames(d.name);
                 if (early) declareStaticLocal(d.name, d.type, d.pos, symbol);
                 const std::size_t mine = locals_.size() - 1;
-                bindStaticReference(d, symbol, pieces, hasInit, &body);
+                bindStaticReference(d, symbol, pieces, hasInit, &body, true);
                 if (!early) declareStaticLocal(d.name, d.type, d.pos, symbol);
                 markThreadLocal(early ? mine : locals_.size() - 1, quals.isThreadLocal);
                 current_->globals.push_back(Global{ symbol, symbol,
@@ -530,11 +530,11 @@ StmtPtr Parser::declarationBody() {
                                                 std::move(pieces), hasInit,
                                                 !sharedStaticLocal(symbol),
                                                 locals_[at].isConst &&
-                                                    dynamic.value == nullptr });
+                                                    dynamic.value == nullptr && !dynamic.isList });
             current_->globals.back().isInline = sharedStaticLocal(symbol);
             current_->globals.back().align = quals.alignAs;
             current_->globals.back().isThreadLocal = quals.isThreadLocal;
-            if (dynamic.value != nullptr) {
+            if (dynamic.value != nullptr || dynamic.isList) {
                 std::vector<StmtPtr> body;
                 std::vector<InitStep> path;
                 emitInit(d.name, path, d.type, dynamic, body);
@@ -1089,7 +1089,9 @@ StmtPtr Parser::forStatement() {
     ExprPtr cond;
     if (!peek().is(";")) {
         const std::size_t cpos = peek().pos;
-        cond = contextualScalar(endFullExpression(decay(expr())), cpos, "this condition");
+        // [stmt.for]/1 takes a condition's declaration as `while` does: made afresh each turn, in the for's scope.
+        ExprPtr c = atConditionDeclaration() ? whileConditionDeclaration() : decay(expr());
+        cond = contextualScalar(endFullExpression(std::move(c)), cpos, "this condition");
     }
     expect(";");
 
@@ -1141,8 +1143,22 @@ StmtPtr Parser::switchStatement() {
     std::size_t pos = peek().pos;
     expect("switch");
     expect("(");
-    ExprPtr cond = contextualScalar(endFullExpression(decay(expr())), pos,
-                                   "this condition");
+    // [stmt.select]/2: a declaration here is in scope to the switch's end, so the switch goes in a block of its own.
+    const bool declares = atConditionDeclaration();
+    std::vector<StmtPtr> setup;
+    int scope = -1;
+    ExprPtr cond;
+    if (declares) {
+        enterScope();
+        scope = enterBlock();
+        const std::size_t aliveAtEntry = alive_.size();
+        cond = ifConditionDeclaration(setup);
+        if (alive_.size() != aliveAtEntry || !cond->type()->isInteger())
+            src_.fail(pos, "a switch's condition declaring a '" + cond->type()->describe() +
+                           "' is not supported yet - only an integer or an enumeration is");
+    } else {
+        cond = contextualScalar(endFullExpression(decay(expr())), pos, "this condition");
+    }
     if (!cond->type()->isInteger())
         src_.fail(pos, "a switch needs an integer, not '" +
                        cond->type()->describe() + "'");
@@ -1159,8 +1175,15 @@ StmtPtr Parser::switchStatement() {
 
     SwitchCtx ctx = std::move(switches_.back());
     switches_.pop_back();
-    return StmtPtr(new Switch(std::move(cond), std::move(body),
-                              std::move(ctx.cases), ctx.deflt));
+    StmtPtr made(make_owned<Switch>(std::move(cond), std::move(body), std::move(ctx.cases), ctx.deflt));
+    if (!declares) return made;
+    leaveBlock();
+    leaveScope();
+    setup.push_back(std::move(made));
+    std::unique_ptr<Block> b = make_owned<Block>(std::move(setup));
+    b->setScope(scope);
+    b->setPos(pos);
+    return StmtPtr(std::move(b));
 }
 
 StmtPtr Parser::caseLabel() {

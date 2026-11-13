@@ -1,10 +1,8 @@
 #include "Arm64Darwin.h"
 
-#include "../optimizer/A64Peep.h"
-#include "../optimizer/OptDeclines.h"
-
 #include "../Source.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -88,11 +86,6 @@ void Arm64Darwin::pop(const char *reg) {
     out_ << "  ldr " << reg << ", [sp], #16\n";
 }
 
-void Arm64Darwin::pushD() { out_ << "  str d0, [sp, #-16]!\n"; }
-void Arm64Darwin::popD(const char *reg) {
-    out_ << "  ldr " << reg << ", [sp], #16\n";
-}
-
 static std::string fpReg(const Type *t, int n) {
     return std::string(t->kind() == Kind::Float ? "s" : "d") + std::to_string(n);
 }
@@ -107,27 +100,12 @@ void Arm64Darwin::movImm(const char *reg, long long value) {
     }
 }
 
-void Arm64Darwin::loadFpConst(const std::string &reg, const Type *t, double v) {
-    if (t->kind() == Kind::Float) {
-        float f = static_cast<float>(v);
-        unsigned int bits;
-        std::memcpy(&bits, &f, sizeof bits);
-        movImm("x9", static_cast<long>(bits));
-        out_ << "  fmov " << reg << ", w9\n";
-    } else {
-        unsigned long long bits;
-        std::memcpy(&bits, &v, sizeof bits);
-        movImm("x9", static_cast<long>(bits));
-        out_ << "  fmov " << reg << ", x9\n";
-    }
-}
-
-void Arm64Darwin::narrowInt(const Type *to) {
+void Arm64Darwin::narrowInt(const Type *to, int d, int s) {
     int sz = to->size(target_);
-    bool sign = to->isSigned(target_);
-    if (sz == 1)      out_ << (sign ? "  sxtb x0, w0\n" : "  uxtb w0, w0\n");
-    else if (sz == 2) out_ << (sign ? "  sxth x0, w0\n" : "  uxth w0, w0\n");
-    else if (sz == 4) out_ << (sign ? "  sxtw x0, w0\n" : "  mov w0, w0\n");
+    const char *op = to->isSigned(target_) ? (sz == 1 ? "  sxtb x" : sz == 2 ? "  sxth x" : "  sxtw x")
+                                           : (sz == 1 ? "  uxtb w" : sz == 2 ? "  uxth w" : "  mov w");
+    if (sz == 1 || sz == 2 || sz == 4) out_ << op << d << ", w" << s << "\n";
+    else if (d != s) out_ << "  mov x" << d << ", x" << s << "\n";
 }
 
 Arm64Darwin::AggPlan Arm64Darwin::planFor(const Type *t) const {
@@ -205,73 +183,17 @@ void Arm64Darwin::localIn(const char *dst, int slot) {
     }
 }
 
-void Arm64Darwin::genAddr(const Expr &e) {
-    if (const Var *v = dynamic_cast<const Var *>(&e)) {
-        if (v->isLocal()) {
-            localIn("x0", v->offset());
-        } else if (v->isThreadLocal()) {
-            // **The TLV descriptor's getter, measured from clang**: its address from the page, its
-            // first word called with the descriptor in x0, the object's address answered in x0. The
-            // getter and this unit's wrappers keep every register but x0, x9, x16 and x17 (dyld's rule).
-            if (v->viaWrapper()) {
-                out_ << "  bl _" << tlsWrapperName(v->symbol()) << "\n";
-            } else {
-                out_ << "  adrp x0, _" << v->symbol() << "@TLVPPAGE\n";
-                out_ << "  ldr x0, [x0, _" << v->symbol() << "@TLVPPAGEOFF]\n";
-                out_ << "  ldr x9, [x0]\n  blr x9\n";
-            }
-        } else if (definedHere_.count(v->symbol()) != 0) {
-            out_ << "  adrp x0, _" << v->symbol() << "@PAGE\n";
-            out_ << "  add x0, x0, _" << v->symbol() << "@PAGEOFF\n";
-        } else {
-
-            out_ << "  adrp x0, _" << v->symbol() << "@GOTPAGE\n";
-            out_ << "  ldr x0, [x0, _" << v->symbol() << "@GOTPAGEOFF]\n";
-        }
+// **The TLV descriptor's getter, measured from clang**: its address from the page, its first word called with the
+// descriptor in x0, the object's address answered in x0. The getter and this unit's wrappers keep every register but
+// x0, x9, x16 and x17 (dyld's rule). The walker's and the selector's thread_local address.
+void Arm64Darwin::tlsAddress(const std::string &symbol, bool viaWrapper) {
+    if (viaWrapper) {
+        out_ << "  bl _" << tlsWrapperName(symbol) << "\n";
         return;
     }
-    if (const Unary *u = dynamic_cast<const Unary *>(&e)) {
-        if (u->op() == '*') { u->operand().accept(asVisitor()); return; }
-    }
-    if (const MemberAccess *m = dynamic_cast<const MemberAccess *>(&e)) {
-        if (m->isBitField()) {
-            std::fprintf(stderr,
-                         "codegen: '%s' is a bit-field and has no address\n",
-                         m->name().c_str());
-            compileFailed();
-        }
-        genAddr(m->object());
-        addOffset(m->offset());
-        return;
-    }
-    if (const StrLit *s = dynamic_cast<const StrLit *>(&e)) {
-        out_ << "  adrp x0, " << s->label() << "@PAGE\n";
-        out_ << "  add x0, x0, " << s->label() << "@PAGEOFF\n";
-        return;
-    }
-    if (const Call *c = dynamic_cast<const Call *>(&e)) {
-        if (c->type()->isStructOrUnion()) { c->accept(asVisitor()); return; }
-    }
-    if (const Conditional *q = dynamic_cast<const Conditional *>(&e)) {
-        if (q->type()->isStructOrUnion()) { q->accept(asVisitor()); return; }
-    }
-    // **A constructed temporary is a Comma, and it has an address.**
-    if (const Comma *c = dynamic_cast<const Comma *>(&e)) {
-        c->left().accept(asVisitor());
-        genAddr(c->right());
-        return;
-    }
-    unsupported("the address of this expression");
-}
-
-void Arm64Darwin::addOffset(int bytes) {
-    if (bytes == 0) return;
-    if (bytes > 0 && bytes < 4096) {
-        out_ << "  add x0, x0, #" << bytes << "\n";
-        return;
-    }
-    movImm("x9", bytes);
-    out_ << "  add x0, x0, x9\n";
+    out_ << "  adrp x0, _" << symbol << "@TLVPPAGE\n";
+    out_ << "  ldr x0, [x0, _" << symbol << "@TLVPPAGEOFF]\n";
+    out_ << "  ldr x9, [x0]\n  blr x9\n";
 }
 
 void Arm64Darwin::copyBlock(int size, const char *from, const char *to) {
@@ -296,44 +218,6 @@ void Arm64Darwin::copyBlock(int size, const char *from, const char *to) {
         out_ << "  strb w10, [" << to << ", #" << off << "]\n";
         off += 1;
     }
-}
-
-void Arm64Darwin::bitFieldUnitAddr(const MemberAccess &m) {
-    genAddr(m.object());
-    addOffset(m.offset());
-}
-
-void Arm64Darwin::bitFieldExtract(const MemberAccess &m) {
-    load(m.type());
-    int left = 64 - m.bitOffset() - m.width();
-    int right = 64 - m.width();
-    if (left > 0) out_ << "  lsl x0, x0, #" << left << "\n";
-    out_ << (m.type()->isSigned(target_) ? "  asr x0, x0, #" : "  lsr x0, x0, #")
-         << right << "\n";
-}
-
-void Arm64Darwin::bitFieldInsert(const MemberAccess &m) {
-    unsigned long long ones = (m.width() == 64) ? ~0ULL : ((1ULL << m.width()) - 1);
-    unsigned long long mask = ones << m.bitOffset();
-
-    movImm("x10", static_cast<long>(ones));
-    out_ << "  and x10, x0, x10\n";
-    if (m.bitOffset() != 0)
-        out_ << "  lsl x10, x10, #" << m.bitOffset() << "\n";
-
-    out_ << "  mov x11, x0\n";
-    out_ << "  mov x0, x1\n";
-    load(m.type());
-    movImm("x9", static_cast<long>(~mask));
-    out_ << "  and x0, x0, x9\n";
-    out_ << "  orr x0, x0, x10\n";
-    storeThrough(m.type(), "x1");
-
-    out_ << "  mov x0, x11\n";
-    int right = 64 - m.width();
-    out_ << "  lsl x0, x0, #" << right << "\n";
-    out_ << (m.type()->isSigned(target_) ? "  asr x0, x0, #" : "  lsr x0, x0, #")
-         << right << "\n";
 }
 
 void Arm64Darwin::load(const Type *t) {
@@ -382,38 +266,16 @@ void Arm64Darwin::landingPad(int pointerSlot, int selectorSlot) {
     localIn("x9", selectorSlot);
     out_ << "  str w1, [x9]\n";
 }
-// Where a throw out of a cleanup pad lands: std::terminate, as clang's
-// __clang_call_terminate does, jumped over on the way through.
-std::string Arm64Darwin::terminatePad(int id) {
-    out_ << "  b " << label("terminateskip", id) << "\n";
-    out_ << label("terminate", id) << ":\n";
-    out_ << "  bl __ZSt9terminatev\n";
-    out_ << label("terminateskip", id) << ":\n";
-    return label("terminate", id);
-}
 
 // **The language-specific data area, laid out exactly as clang lays it out** -
 // every number read off clang's output, since the personality routine trusts
 // the header.
-static const Walker::LsdaSpelling kMachOLsda = {
+static const Regions::LsdaSpelling kMachOLsda = {
     "L", ".section __TEXT,__gcc_except_tab", true, "_", "@GOT"
 };
 
 void Arm64Darwin::emitLsda(const std::string &symbol) {
     out_ << lsdaTable(kMachOLsda, symbol, lsdaTypes_);
-}
-
-void Arm64Darwin::storeToStack(const Type *t, int off) {
-    if (t->isFloating()) {
-        out_ << "  str " << fpReg(t, 0) << ", [sp, #" << off << "]\n";
-        return;
-    }
-    switch (t->size(target_)) {
-    case 1:  out_ << "  strb w0, [sp, #" << off << "]\n"; return;
-    case 2:  out_ << "  strh w0, [sp, #" << off << "]\n"; return;
-    case 4:  out_ << "  str w0, [sp, #" << off << "]\n"; return;
-    default: out_ << "  str x0, [sp, #" << off << "]\n"; return;
-    }
 }
 
 void Arm64Darwin::storeThrough(const Type *t, const char *addrReg) {
@@ -429,70 +291,19 @@ void Arm64Darwin::storeThrough(const Type *t, const char *addrReg) {
     }
 }
 
-void Arm64Darwin::visit(const Num &n) {
-    if (n.type()->isFloating()) {
-        loadFpConst(fpReg(n.type(), 0), n.type(), n.dvalue());
-        return;
-    }
-    movImm("x0", n.value());
-}
-
-void Arm64Darwin::visit(const Var &n) { genAddr(n); load(n.type()); }
-
-void Arm64Darwin::visit(const VaStart &n) {
-    n.list().accept(asVisitor());
+// Darwin's va_list is a char pointer, at x0's address: va_start points it past the named stack words, va_arg steps it
+// by 8 and loads the word it passed. The walker's and the selector's.
+void Arm64Darwin::vaStartAt() {
     out_ << "  add x1, x29, #" << (16 + namedStackBytes_) << "\n";
     out_ << "  str x1, [x0]\n";
 }
 
-void Arm64Darwin::visit(const VaArg &n) {
-    n.list().accept(asVisitor());
+void Arm64Darwin::vaArgAt(const Type *t) {
     out_ << "  ldr x1, [x0]\n";
     out_ << "  add x2, x1, #8\n";
     out_ << "  str x2, [x0]\n";
     out_ << "  mov x0, x1\n";
-    load(n.type());
-}
-
-void Arm64Darwin::visit(const StrLit &n) { genAddr(n); }
-
-void Arm64Darwin::visit(const MemberAccess &n) {
-    if (n.isBitField()) {
-        bitFieldUnitAddr(n);
-        bitFieldExtract(n);
-        return;
-    }
-    genAddr(n);
-    load(n.type());
-}
-
-void Arm64Darwin::visit(const Assign &n) {
-    const MemberAccess *bf = dynamic_cast<const MemberAccess *>(&n.target());
-    if (bf != nullptr && !bf->isBitField()) bf = nullptr;
-
-    n.value().accept(asVisitor());
-    bool inFp = n.type()->isFloating();
-    if (inFp) pushD(); else push();
-
-    if (bf) bitFieldUnitAddr(*bf);
-    else    genAddr(n.target());
-    out_ << "  mov x1, x0\n";
-
-    if (inFp) popD("d0"); else pop("x0");
-
-    if (n.type()->isStructOrUnion()) {
-        copyBlock(n.type()->size(target_), "x0", "x1");
-        out_ << "  mov x0, x1\n";
-        return;
-    }
-    if (bf) { bitFieldInsert(*bf); return; }
-
-    storeThrough(n.type(), "x1");
-}
-
-void Arm64Darwin::visit(const Cast &n) {
-    n.value().accept(asVisitor());
-    genConversion(n.value().type(), n.type());
+    load(t);
 }
 
 void Arm64Darwin::genConversion(const Type *from, const Type *to) {
@@ -519,171 +330,6 @@ void Arm64Darwin::genConversion(const Type *from, const Type *to) {
         return;
     }
     narrowInt(to);
-}
-
-void Arm64Darwin::genTruth(const Expr &e) {
-    e.accept(asVisitor());
-    if (e.type()->isFloating()) {
-        out_ << "  fcmp " << fpReg(e.type(), 0) << ", #0.0\n";
-        out_ << "  cset x0, ne\n";
-        return;
-    }
-    out_ << "  cmp x0, #0\n";
-    out_ << "  cset x0, ne\n";
-}
-
-void Arm64Darwin::visit(const Unary &n) {
-    switch (n.op()) {
-    case '-':
-        n.operand().accept(asVisitor());
-        if (n.type()->isFloating()) {
-            std::string r = fpReg(n.type(), 0);
-            out_ << "  fneg " << r << ", " << r << "\n";
-        } else {
-            out_ << "  neg x0, x0\n";
-        }
-        return;
-    case '~':
-        n.operand().accept(asVisitor());
-        out_ << "  mvn x0, x0\n";
-        return;
-    case '!':
-        n.operand().accept(asVisitor());
-
-        if (n.operand().type()->isFloating())
-            out_ << "  fcmp " << fpReg(n.operand().type(), 0) << ", #0.0\n";
-        else
-            out_ << "  cmp x0, #0\n";
-        out_ << "  cset x0, eq\n";
-        return;
-    case '&':
-        genAddr(n.operand());
-        return;
-    case '*':
-        n.operand().accept(asVisitor());
-        load(n.type());
-        return;
-    default:
-        unsupported("this unary operator");
-    }
-}
-
-void Arm64Darwin::visit(const Binary &n) {
-    if (n.op() == BinOp::LAnd || n.op() == BinOp::LOr) {
-        int id = nextLabel();
-        bool isAnd = n.op() == BinOp::LAnd;
-        genTruth(n.lhs());
-        out_ << "  cmp x0, #0\n";
-        out_ << (isAnd ? "  beq " : "  bne ") << label("shortcut", id) << "\n";
-        genTruth(n.rhs());
-        out_ << label("shortcut", id) << ":\n";
-        return;
-    }
-
-    if (n.lhs().type()->isFloating() || n.rhs().type()->isFloating()) {
-        const Type *ft = n.lhs().type();
-        std::string a = fpReg(ft, 0), b = fpReg(ft, 1);
-
-        n.lhs().accept(asVisitor());
-        pushD();
-        n.rhs().accept(asVisitor());
-        out_ << "  fmov d1, d0\n";
-        popD("d0");
-
-        switch (n.op()) {
-        case BinOp::Add: out_ << "  fadd " << a << ", " << a << ", " << b << "\n"; return;
-        case BinOp::Sub: out_ << "  fsub " << a << ", " << a << ", " << b << "\n"; return;
-        case BinOp::Mul: out_ << "  fmul " << a << ", " << a << ", " << b << "\n"; return;
-        case BinOp::Div: out_ << "  fdiv " << a << ", " << a << ", " << b << "\n"; return;
-        default: break;
-        }
-
-        const char *cond = nullptr;
-        switch (n.op()) {
-        case BinOp::Eq: cond = "eq"; break;
-        case BinOp::Ne: cond = "ne"; break;
-        case BinOp::Lt: cond = "mi"; break;
-        case BinOp::Le: cond = "ls"; break;
-        case BinOp::Gt: cond = "gt"; break;
-        case BinOp::Ge: cond = "ge"; break;
-        default: unsupported("this operator on floating point");
-        }
-        out_ << "  fcmp " << a << ", " << b << "\n";
-        out_ << "  cset x0, " << cond << "\n";
-        return;
-    }
-
-    n.lhs().accept(asVisitor());
-    push();
-    n.rhs().accept(asVisitor());
-    out_ << "  mov x1, x0\n";
-    pop("x0");
-
-    bool sign = n.lhs().type()->isSigned(target_);
-
-    switch (n.op()) {
-    case BinOp::Add: out_ << "  add x0, x0, x1\n"; narrowInt(n.type()); return;
-    case BinOp::Sub: out_ << "  sub x0, x0, x1\n"; narrowInt(n.type()); return;
-    case BinOp::Mul: out_ << "  mul x0, x0, x1\n"; narrowInt(n.type()); return;
-    case BinOp::Div:
-        out_ << (sign ? "  sdiv x0, x0, x1\n" : "  udiv x0, x0, x1\n");
-        narrowInt(n.type());
-        return;
-    case BinOp::Mod:
-        out_ << (sign ? "  sdiv x2, x0, x1\n" : "  udiv x2, x0, x1\n");
-        out_ << "  msub x0, x2, x1, x0\n";
-        narrowInt(n.type());
-        return;
-    case BinOp::BitAnd: out_ << "  and x0, x0, x1\n"; narrowInt(n.type()); return;
-    case BinOp::BitOr:  out_ << "  orr x0, x0, x1\n"; narrowInt(n.type()); return;
-    case BinOp::BitXor: out_ << "  eor x0, x0, x1\n"; narrowInt(n.type()); return;
-    case BinOp::Shl:    out_ << "  lsl x0, x0, x1\n"; narrowInt(n.type()); return;
-    case BinOp::Shr:
-        out_ << (sign ? "  asr x0, x0, x1\n" : "  lsr x0, x0, x1\n");
-        narrowInt(n.type());
-        return;
-    default: break;
-    }
-
-    const char *cond = nullptr;
-    switch (n.op()) {
-    case BinOp::Eq: cond = "eq"; break;
-    case BinOp::Ne: cond = "ne"; break;
-    case BinOp::Lt: cond = sign ? "lt" : "lo"; break;
-    case BinOp::Le: cond = sign ? "le" : "ls"; break;
-    case BinOp::Gt: cond = sign ? "gt" : "hi"; break;
-    case BinOp::Ge: cond = sign ? "ge" : "hs"; break;
-    default: unsupported("this binary operator");
-    }
-    out_ << "  cmp x0, x1\n";
-    out_ << "  cset x0, " << cond << "\n";
-}
-
-void Arm64Darwin::visit(const Postfix &n) {
-    genAddr(n.target());
-    push();
-    load(n.type());
-
-    if (n.type()->isFloating()) {
-        std::string a = fpReg(n.type(), 0), b = fpReg(n.type(), 1);
-        pushD();
-        loadFpConst(b, n.type(), 1.0);
-        out_ << (n.increment() ? "  fadd " : "  fsub ")
-             << a << ", " << a << ", " << b << "\n";
-        popD("d1");
-        pop("x2");
-        storeThrough(n.type(), "x2");
-        out_ << "  fmov d0, d1\n";
-        return;
-    }
-
-    push();
-    movImm("x9", n.step());
-    out_ << (n.increment() ? "  add x0, x0, x9\n" : "  sub x0, x0, x9\n");
-    pop("x1");
-    pop("x2");
-    storeThrough(n.type(), "x2");
-    out_ << "  mov x0, x1\n";
 }
 
 // **One walk of the parameter list, for the call site and the prologue alike.**
@@ -742,159 +388,7 @@ Arm64Darwin::Placement Arm64Darwin::placeArguments(
     return out;
 }
 
-void Arm64Darwin::visit(const Call &n) {
-    const std::vector<ExprPtr> &args = n.args();
-    std::size_t named = static_cast<std::size_t>(n.namedArgs());
-    if (named > args.size()) named = args.size();
-    std::size_t extra = args.size() - named;
-
-    bool sret = n.type()->isStructOrUnion() &&
-                planFor(n.type()).byRef;
-
-    // The placement both ends of the call read. `dest` is only this side's
-    // spelling of it: the register a scalar is popped into, and empty for
-    // anything that travels on the stack or is a class.
-    std::vector<const Type *> types;
-    types.reserve(named);
-    for (std::size_t i = 0; i < named; i++) types.push_back(args[i]->type());
-    const Placement plan = placeArguments(types);
-
-    std::vector<std::string> dest;
-    dest.reserve(named);
-    for (std::size_t i = 0; i < named; i++) {
-        const Type *t = args[i]->type();
-        const ArgPlace &p = plan.args[i];
-        if (t->isStructOrUnion() || !p.inRegister) dest.push_back("");
-        else if (t->isFloating())                  dest.push_back(fpReg(t, p.firstReg));
-        else                                       dest.push_back(abi_.intRegs[p.firstReg]);
-    }
-
-    int variadicBase = alignTo(plan.stackBytes, 8);
-    int extraBytes = alignTo(variadicBase + static_cast<int>(extra) * 8, 16);
-    if (extraBytes > 0) {
-        movImm("x9", extraBytes);
-        out_ << "  sub sp, sp, x9\n";
-    }
-    for (std::size_t i = 0; i < named; i++) {
-        if (plan.args[i].stackOffset < 0) continue;
-
-        if (args[i]->type()->isStructOrUnion()) continue;
-        args[i]->accept(asVisitor());
-        storeToStack(args[i]->type(), plan.args[i].stackOffset);
-    }
-    for (std::size_t k = 0; k < extra; k++) {
-        const ExprPtr &a = args[named + k];
-
-        if (a->type()->isStructOrUnion())
-            unsupported("a struct passed through '...'");
-        a->accept(asVisitor());
-        if (a->type()->isFloating())
-            out_ << "  str d0, [sp, #" << (variadicBase + k * 8) << "]\n";
-        else
-            out_ << "  str x0, [sp, #" << (variadicBase + k * 8) << "]\n";
-    }
-
-    if (n.callee() != nullptr) {
-        n.callee()->accept(asVisitor());
-        push();
-    }
-
-    for (std::size_t i = 0; i < named; i++) {
-        if (!args[i]->type()->isStructOrUnion()) continue;
-        args[i]->accept(asVisitor());
-        localIn("x1", n.argSlot(i));
-        copyBlock(args[i]->type()->size(target_), "x0", "x1");
-    }
-
-    for (std::size_t i = 0; i < named; i++) {
-        if (dest[i].empty()) continue;
-        args[i]->accept(asVisitor());
-        if (args[i]->type()->isFloating()) pushD(); else push();
-    }
-    for (std::size_t i = named; i-- > 0; ) {
-        if (dest[i].empty()) continue;
-        if (args[i]->type()->isFloating()) popD(dest[i].c_str());
-        else                               pop(dest[i].c_str());
-    }
-
-    for (std::size_t i = 0; i < named; i++) {
-        const Type *t = args[i]->type();
-        if (!t->isStructOrUnion()) continue;
-        localIn("x9", n.argSlot(i));
-        const AggPlan &p = plan.args[i].plan;
-
-        if (plan.args[i].stackOffset >= 0) {
-            if (p.byRef) {
-                out_ << "  str x9, [sp, #" << plan.args[i].stackOffset << "]\n";
-            } else {
-                out_ << "  add x11, sp, #" << plan.args[i].stackOffset << "\n";
-                copyBlock(args[i]->type()->size(target_), "x9", "x11");
-            }
-            continue;
-        }
-
-        if (p.byRef) {
-            out_ << "  mov " << abi_.intRegs[plan.args[i].firstReg] << ", x9\n";
-        } else if (p.hfa > 0) {
-            const char *w = (p.elem == Kind::Float) ? "s" : "d";
-            int step = (p.elem == Kind::Float) ? 4 : 8;
-            for (int k = 0; k < p.hfa; k++)
-                out_ << "  ldr " << w << (plan.args[i].firstReg + k)
-                     << ", [x9, #" << (k * step) << "]\n";
-        } else {
-            for (int k = 0; k < p.words; k++)
-                out_ << "  ldr " << abi_.intRegs[plan.args[i].firstReg + k]
-                     << ", [x9, #" << (k * 8) << "]\n";
-        }
-    }
-
-    if (sret) localIn("x8", n.resultSlot());
-    if (sret && n.resultIndirect()) out_ << "  ldr x8, [x8]\n";
-
-    if (n.callee() != nullptr) {
-
-        pop("x16");
-        out_ << "  blr x16\n";
-    } else {
-        out_ << "  bl _" << n.symbol() << "\n";
-    }
-    if (extraBytes > 0) {
-        movImm("x9", extraBytes);
-        out_ << "  add sp, sp, x9\n";
-    }
-    if (n.type()->isStructOrUnion()) {
-        localIn("x9", n.resultSlot());
-        if (n.resultIndirect()) out_ << "  ldr x9, [x9]\n";
-        AggPlan p = planFor(n.type());
-        if (p.byRef) {
-        } else if (p.hfa > 0) {
-            const char *w = (p.elem == Kind::Float) ? "s" : "d";
-            int step = (p.elem == Kind::Float) ? 4 : 8;
-            for (int k = 0; k < p.hfa; k++)
-                out_ << "  str " << w << k << ", [x9, #" << (k * step) << "]\n";
-        } else {
-            static const char *const ret[2] = { "x0", "x1" };
-            for (int k = 0; k < p.words; k++)
-                storeWord(ret[k], "x9", k, n.type()->size(target_));
-        }
-        out_ << "  mov x0, x9\n";
-        return;
-    }
-
-    if (!n.type()->isVoid() && !n.type()->isFloating())
-        narrowInt(n.type());
-}
-
 void Arm64Darwin::defineLabel(const std::string &l) { out_ << l << ":\n"; }
-void Arm64Darwin::jump(const std::string &l) { out_ << "  b " << l << "\n"; }
-void Arm64Darwin::branchIfZero(const std::string &l) {
-    out_ << "  cmp x0, #0\n";
-    out_ << "  beq " << l << "\n";
-}
-void Arm64Darwin::branchIfNotZero(const std::string &l) {
-    out_ << "  cmp x0, #0\n";
-    out_ << "  bne " << l << "\n";
-}
 
 void Arm64Darwin::caseBranch(long long v, const std::string &l) {
     if (v >= 0 && v < 4096) {
@@ -906,32 +400,59 @@ void Arm64Darwin::caseBranch(long long v, const std::string &l) {
     out_ << "  beq " << l << "\n";
 }
 
-void Arm64Darwin::visit(const Return &n) {
-    markLine(n);
-    if (!n.hasValue()) { out_ << "  b " << returnLabel_ << "\n"; return; }
-    n.value().accept(asVisitor());
+// A class's address in x0 becomes the function's result: copied through the caller's pointer, or into d0-d3 or x0/x1.
+void Arm64Darwin::returnAgg(const Type *t) {
+    AggPlan p = planFor(t);
+    if (p.byRef) {
+        localIn("x9", sretSlot_);
+        out_ << "  ldr x1, [x9]\n";
+        copyBlock(t->size(target_), "x0", "x1");
+        out_ << "  mov x0, x1\n";
+    } else if (p.hfa > 0) {
+        const char *w = (p.elem == Kind::Float) ? "s" : "d";
+        int step = (p.elem == Kind::Float) ? 4 : 8;
+        for (int k = 0; k < p.hfa; k++)
+            out_ << "  ldr " << w << k << ", [x0, #" << (k * step) << "]\n";
+    } else {
 
-    const Type *t = n.value().type();
-    if (t->isStructOrUnion()) {
-        AggPlan p = planFor(t);
-        if (p.byRef) {
-            localIn("x9", sretSlot_);
-            out_ << "  ldr x1, [x9]\n";
-            copyBlock(t->size(target_), "x0", "x1");
-            out_ << "  mov x0, x1\n";
-        } else if (p.hfa > 0) {
-            const char *w = (p.elem == Kind::Float) ? "s" : "d";
-            int step = (p.elem == Kind::Float) ? 4 : 8;
-            for (int k = 0; k < p.hfa; k++)
-                out_ << "  ldr " << w << k << ", [x0, #" << (k * step) << "]\n";
-        } else {
-
-            static const char *const ret[2] = { "x0", "x1" };
-            for (int k = p.words; k-- > 0; )
-                out_ << "  ldr " << ret[k] << ", [x0, #" << (k * 8) << "]\n";
-        }
+        static const char *const ret[2] = { "x0", "x1" };
+        for (int k = p.words; k-- > 0; )
+            out_ << "  ldr " << ret[k] << ", [x0, #" << (k * 8) << "]\n";
     }
-    out_ << "  b " << returnLabel_ << "\n";
+}
+
+// A class at [x9] into the registers its place names: the address itself, an HFA's lanes, or its words.
+void Arm64Darwin::aggToRegisters(const AggPlan &p, int firstReg) {
+    if (p.byRef) {
+        out_ << "  mov " << abi_.intRegs[firstReg] << ", x9\n";
+    } else if (p.hfa > 0) {
+        const char *w = (p.elem == Kind::Float) ? "s" : "d";
+        int step = (p.elem == Kind::Float) ? 4 : 8;
+        for (int k = 0; k < p.hfa; k++)
+            out_ << "  ldr " << w << (firstReg + k)
+                 << ", [x9, #" << (k * step) << "]\n";
+    } else {
+        for (int k = 0; k < p.words; k++)
+            out_ << "  ldr " << abi_.intRegs[firstReg + k]
+                 << ", [x9, #" << (k * 8) << "]\n";
+    }
+}
+
+// A call's class result into the object at [x9], whose address is then the call's value in x0.
+void Arm64Darwin::aggResultInto(const Type *t) {
+    AggPlan p = planFor(t);
+    if (p.byRef) {
+    } else if (p.hfa > 0) {
+        const char *w = (p.elem == Kind::Float) ? "s" : "d";
+        int step = (p.elem == Kind::Float) ? 4 : 8;
+        for (int k = 0; k < p.hfa; k++)
+            out_ << "  str " << w << k << ", [x9, #" << (k * step) << "]\n";
+    } else {
+        static const char *const ret[2] = { "x0", "x1" };
+        for (int k = 0; k < p.words; k++)
+            storeWord(ret[k], "x9", k, t->size(target_));
+    }
+    out_ << "  mov x0, x9\n";
 }
 
 static int p2AlignOf(int bytes) {
@@ -1060,6 +581,9 @@ void Arm64Darwin::emitFunction(const Function &fn) {
     functionName_ = fn.symbol();
     labelPrefix_ = "L." + fn.symbol() + ".";
     returnLabel_ = "L.return." + fn.symbol();
+    // Selected from SSA, the only path (M5.3): a body outside the selector's subset is refused by name.
+    const ir::Function &sf = ssaChoose(fn);
+    const bool pads = sf.landingPads;
 
     out_ << "  .section __TEXT,__text,regular,pure_instructions\n";
     if (!fn.isStatic()) out_ << "  .globl _" << fn.symbol() << "\n";
@@ -1092,7 +616,7 @@ void Arm64Darwin::emitFunction(const Function &fn) {
         dwarfFns_.push_back(d);
         resetBlocks(fn.blocks());
         out_ << d.begin << ":\n";
-    } else if (fn.hasLandingPads()) {
+    } else if (pads) {
         // The call-site table measures from here, so the label has to exist
         // whether or not there is debug information.
         out_ << "Lfunc.begin." << fn.symbol() << ":\n";
@@ -1105,7 +629,7 @@ void Arm64Darwin::emitFunction(const Function &fn) {
     // **A function with a landing pad names its personality and its table here**,
     // before anything else: the unwinder finds both through the CFI, and the
     // table itself is written after the body, once its labels exist.
-    if (fn.hasLandingPads()) {
+    if (pads) {
         out_ << "  .cfi_personality 155, ___gxx_personality_v0\n";
         out_ << "  .cfi_lsda 16, Lexception." << fn.symbol() << "\n";
     }
@@ -1117,23 +641,26 @@ void Arm64Darwin::emitFunction(const Function &fn) {
 
     // **A frame realigned for an over-aligned local** (Function::frameAlign, or a named local's own)
     // saves x19 under the frame record, rounds sp down after the allocation - clang's `and sp, x9,
-    // #0xff..c0` - and keeps the floor in x19 for localIn; the peephole, which takes x19, stays out.
+    // #0xff..c0` - and keeps the floor in x19 for localIn; the selector gives x19 to no value then.
     realign_ = fn.frameAlign() > 16 ? fn.frameAlign() : 0;
     for (const Local &l : fn.locals())
         if (l.staticName.empty() && l.type != nullptr) {
             const int a = l.align > objectAlign(l.type, target_) ? l.align : objectAlign(l.type, target_);
             if (a > 16 && a > realign_) realign_ = a;
         }
+    for (std::size_t i = 0; i < sf.frame.size(); i++) {
+        const int a = std::max(sf.frame[i].align, ssaTypes_->type(sf.frame[i].type)->align(target_));
+        if (a > 16 && a > realign_) realign_ = a;
+    }
+    if (sf.frameAlign > 16 && sf.frameAlign > realign_) realign_ = sf.frameAlign;
     if (realign_ > 0) {
         out_ << "  str x19, [sp, #-16]!\n";
         out_ << "  .cfi_offset w19, -32\n";
-        opt::noteDecline("realigned-frame-no-peephole", fn.symbol());
     }
-    // An optimized frame keeps room below its locals for the callee-saved registers a promoted local takes.
-    const int locals = alignTo(fn.frameSize(), 16);
-    const bool promote = optimize_ > 0 && realign_ == 0 && locals + kCalleeArea <= 65535;
-    if (optimize_ > 0 && !promote) opt::noteDecline("arm64-frame-too-large-no-promotion", fn.symbol());
-    int frame = locals + (promote ? kCalleeArea : 0);
+    // Below the locals, room for the callee-saved registers the selector's values took (ssaSaved_).
+    const int locals = alignTo(layoutSsa(fn, sf), 16);
+    if (lineSource()) dwarfFns_.back().locals = ssaLocals(fn, sf);
+    int frame = locals + alignTo(8 * static_cast<int>(ssaSaved_.size()), 16);
     if (realign_ > 0) frame = top_ = alignTo(locals, realign_);
     if (realign_ > 0) {
         // `and` takes no sp as its source: the allocation is made in x9 and sp rounded from it, as clang writes it.
@@ -1145,7 +672,7 @@ void Arm64Darwin::emitFunction(const Function &fn) {
         movImm("x9", frame);
         out_ << "  sub sp, sp, x9\n";
     }
-    // The sret store, the parameters' and the body are rewritten together, so a promoted local starts right.
+    // The sret store, the parameters' and the body follow the saves of the registers the selector took.
     const std::string head = out_.str();
     out_.str(std::string());
 
@@ -1216,25 +743,27 @@ void Arm64Darwin::emitFunction(const Function &fn) {
 
     namedStackBytes_ = alignTo(plan.stackBytes, 8);
 
-    fn.body().accept(asVisitor());
-    std::vector<std::string> saved;
-    const Type *ret = fn.returns();
-    const bool resultInX = ret != nullptr && !ret->isVoid() && !ret->isFloating();
-    const std::string body = a64Peephole(out_.str(), realign_ > 0 ? 0 : optimize_, promote ? &saved : nullptr, resultInX);
+    selectBody(fn, sf);
+    const std::vector<std::string> saved = ssaSaved_;
+    const std::string body = out_.str();
     out_.str(std::string());
     out_ << head;
-    // Each register a promoted local took is saved below the locals, where the unwinder is told to find it.
+    // Each register a value took is saved below the locals, where the unwinder is told to find it.
     for (std::size_t i = 0; i < saved.size(); i++) {
         const int at = locals + 8 * static_cast<int>(i + 1);
-        out_ << "  mov x9, #" << at << "\n  sub x9, x29, x9\n  str " << saved[i] << ", [x9]\n";
+        if (at <= 255) out_ << "  stur " << saved[i] << ", [x29, #-" << at << "]\n";
+        else out_ << "  mov x9, #" << at << "\n  sub x9, x29, x9\n  str " << saved[i] << ", [x9]\n";
         out_ << "  .cfi_offset " << (saved[i][0] == 'x' ? "w" : "b") << saved[i].substr(1) << ", -" << (16 + at) << "\n";
     }
     out_ << body;
 
     out_ << "  mov x0, #0\n";
     out_ << returnLabel_ << ":\n";
-    for (std::size_t i = 0; i < saved.size(); i++)
-        out_ << "  mov x9, #" << (locals + 8 * static_cast<int>(i + 1)) << "\n  sub x9, x29, x9\n  ldr " << saved[i] << ", [x9]\n";
+    for (std::size_t i = 0; i < saved.size(); i++) {
+        const int at = locals + 8 * static_cast<int>(i + 1);
+        if (at <= 255) out_ << "  ldur " << saved[i] << ", [x29, #-" << at << "]\n";
+        else out_ << "  mov x9, #" << at << "\n  sub x9, x29, x9\n  ldr " << saved[i] << ", [x9]\n";
+    }
     if (realign_ > 0) out_ << "  ldur x19, [x29, #-16]\n";
     out_ << "  mov sp, x29\n";
     out_ << "  ldp x29, x30, [sp], #16\n";
@@ -1299,8 +828,12 @@ void Arm64Darwin::run(const Program &program) {
 
     if (const Source *src = lineSource()) {
         const std::vector<std::string> &names = src->files();
-        for (std::size_t i = 0; i < names.size(); i++)
-            out_ << "  .file " << (i + 1) << " \"" << names[i] << "\"\n";
+        // A name escaped as the string it is: a Windows host's include directory is `C:\\...`, which Apple's assembler refuses bare.
+        for (std::size_t i = 0; i < names.size(); i++) {
+            out_ << "  .file " << (i + 1) << " \"";
+            for (const char c : names[i]) { if (c == '"' || c == '\\') out_ << '\\'; out_ << c; }
+            out_ << "\"\n";
+        }
     }
 
     emitData(program);
@@ -1327,5 +860,7 @@ void Arm64Darwin::run(const Program &program) {
         out_ << dwarf;
     }
     out_ << ".subsections_via_symbols\n";
+    if (ssa_ != nullptr && std::getenv("CXX1_SSA_WHY") != nullptr)
+        std::fprintf(stderr, "a64-select: selected=%d of %d\n", ssaSelected_, ssaSelected_);
     sink_ << out_.str();
 }

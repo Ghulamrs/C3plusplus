@@ -1329,8 +1329,8 @@ ExprPtr Parser::dynamicCastFrom(ExprPtr v, const Type *to, std::size_t pos) {
 ExprPtr Parser::runtimeCall(const char *symbol, const Type *returns,
                             std::vector<ExprPtr> args) {
     std::vector<int> argSlots(args.size(), 0);
-    Call *call = new Call(symbol, nullptr, std::move(args), false, 0,
-                          static_cast<int>(argSlots.size()),
+    const int named = static_cast<int>(argSlots.size());    // read before the move: cl builds the last argument first
+    Call *call = new Call(symbol, nullptr, std::move(args), false, 0, named,
                           std::move(argSlots));
     call->setSymbol(symbol);
     ExprPtr n(call);

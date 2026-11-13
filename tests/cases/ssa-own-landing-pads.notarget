@@ -1,2 +1,1 @@
-arm64-darwin  the case is the SSA path's, which is x86's alone (M3b.7); the walker leaks a declaration's temporaries on unwind - tests/open/declaration-temporary-unwind.cpp.
 tms6747  the case is the SSA path's, which is x86's alone (M3b.7); the walker leaks a declaration's temporaries on unwind, so the clang .expected cannot hold there.
