@@ -1,1 +1,0 @@
-tms6747  static_cast to a base's member pointer keeps the derived offset on the C6000 (wave 2 gate, 2026-11-14); mended by lane c6m in wave 3, which removes this line
