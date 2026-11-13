@@ -1473,8 +1473,11 @@ void Lowering::staticArray(sema::TypedId var, const std::string &symbol, const T
         closeFull();     // each element is a full expression of its own; nothing destroys one built, the guard aborting instead
         listArray(var, first, *T(elem).unqualified(), n, g.elements, std::string());
     } else if (g.vectorLoop.empty() && scalar(*T(elem).unqualified())) {
-        // [stmt.dcl]/4: an array of scalars whose list is not constant - stored as a local's, the rest left zero.
-        localArray(var, staticAddr(symbol, tid(*types_.pointerTo(&array))), tid(array));
+        // [stmt.dcl]/4: an array of scalars whose list is not constant - its values after the written bounds, placed leaf by leaf.
+        const sema::TypedNode &v = tree_.node(var);
+        std::vector<sema::TypedId> parts;
+        for (std::uint32_t i = v.bounds; i < v.count; i++) parts.push_back(child(var, i));
+        aggregateInit(staticAddr(symbol, tid(*types_.pointerTo(&array))), array, parts);
         closeFull();
     } else {
         if (!g.vectorLoop.empty()) {

@@ -62,11 +62,11 @@ Everything else - x86 gates, the C6000, cl - stays on the boxes.
   reads (ParserTopLevel's value-initialised member) - now [dcl.fct.default]/4's defaults are applied and noted as a
   named entry's are (member-value-init-default-argument). **A static or thread_local array of scalars whose list does
   not fold** was laid down as data and refused "expected a constant initialiser": `leavesFold` sends it to the guarded
-  run-time path, and the lowering stores it as a local array's list (staticArray), the reason "a static/thread_local
+  run-time path (ParserStmt now emits a dynamic list, whose Init has no value of its own), and the lowering places its values leaf by leaf (staticArray, aggregateInit), the reason "a static/thread_local
   array built at run time" kept for arrays of classes (static- and thread-local-array-runtime-initialiser). **A
   reference member's default initialiser** was refused by a check that fired exactly when an initialiser followed the
   declarator; it is gone, memberInitialiser binds the reference as `r(v)` does, and the lowering's reference branch
   takes it (reference-member-default-initialiser). **A member copied from a derived object** (`: a(d)`, A trivially
   copyable) went to overload resolution and found no `A::A`: constructMember converts to the base subobject first, and
   the lowering's `$bytes` copy takes the subobject as classLocal does (member-copied-from-derived). src/ lines:
-  51 added, 21 removed over six files (ParserTopLevel, ParserInit, ParserClass, ParserType, Parser.h, ir/Lowering.cpp).
+  56 added, 23 removed over seven files (ParserTopLevel, ParserInit, ParserStmt, ParserClass, ParserType, Parser.h, ir/Lowering.cpp).
