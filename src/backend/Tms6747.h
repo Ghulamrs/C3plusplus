@@ -262,10 +262,12 @@ private:
     void emitFunction(const Function &fn);
 
     // **The SSA selector** (M6a, C6xSelect.cpp): a function inside its subset is written from the module, the rest by the
-    // walker - ssaChoose names why. Every value has a word above the parser's parameters; A4, A6, B4 and A1 carry operands.
+    // walker - ssaChoose names why. A value has a home register (ssaAssign, M6b) or a word above the parser's parameters;
+    // A4, A6, B4 and A1 carry the rest. `CXX1_C6X_HOMES` 0 gives no homes, 1 the saved registers alone.
     const ir::Module *ssa_ = nullptr;
     const TypeTable *ssaTypes_ = nullptr;
-    std::vector<int> ssaAllocaSlot_, ssaValueSlot_;
+    std::vector<int> ssaAllocaSlot_, ssaValueSlot_, ssaHome_;      // ssaHome_: 0, or one past the home's index
+    std::vector<char> ssaFused_;                                   // a compare written by its block's branch
     int ssaSelected_ = 0, ssaWalked_ = 0;
     const ir::Function *ssaChoose(const Function &fn);
     std::string ssaOutside(const Function &fn, const ir::Function &f) const;
@@ -278,5 +280,9 @@ private:
     void ssaLoad(const ir::Function &f, ir::ValueId v, const char *reg);
     void ssaStore(const ir::Function &f, ir::ValueId v, const char *reg);
     void ssaMoves(const ir::Function &f, const ir::Succ &s);
+    void ssaAssign(const Function &fn, const ir::Function &f);
+    const char *ssaHomeOf(ir::ValueId v) const;
+    std::string ssaUse(const ir::Function &f, ir::ValueId v, const char *scratch);
+    bool ssaCompare(const ir::Function &f, const ir::Inst &c, const std::string &d);
     std::string ssaBlockLabel(ir::BlockId b) const { return label("ssa", static_cast<int>(b.v)); }
 };
