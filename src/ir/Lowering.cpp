@@ -1298,9 +1298,9 @@ void Lowering::guard(ValueId slot, const Type &c, const std::string &dtor) {
 }
 
 // An array a guard builds: by its class's loop, from its braced list, or of scalars placed leaf by leaf.
-void Lowering::builtAtRunTime(const Type &t, const sema::StaticGuard &g, const char *what) {
+void Lowering::builtAtRunTime(const Type &t, const sema::StaticGuard &g, const std::string &what) {
     if (t.isArray() && !g.array && !g.elements.recorded() && !scalar(*t.innermostElement()->unqualified()))
-        outside(std::string(what) + " array built at run time");
+        outside(what + " array built at run time");
 }
 
 // [stmt.dcl]/4: a static local built the first time control passes, under the guard guardOnce named - a byte read, then

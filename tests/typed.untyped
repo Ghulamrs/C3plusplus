@@ -1,2 +1,2 @@
 # tests/typed.sh: the expressions typed null over the suite, a line per host (uname -s); may not grow (M3b.7)
-Linux 90
+Linux 46

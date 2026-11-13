@@ -906,8 +906,9 @@ a scalar's braces holding more than one value
 a scope's cleanup that is not the innermost pad
 a scoped enumeration mixed with another type
 a sizeof not folded
+<...>array built at run time
 a static aggregate built otherwise
-a static array built at run time
+a static reference's temporary built otherwise
 a static class of <...> parts
 a static local
 a static local built at run time
@@ -941,7 +942,6 @@ a subscript of <...> parts
 a subscript of what is not a pointer
 a switch of <...> parts
 a switch on what is not an integer
-a thread_local array built at run time
 a thread_local reference
 a thread_local reference, or no thread_local, in __tls_init
 a thread_local whose construction left a scope open
