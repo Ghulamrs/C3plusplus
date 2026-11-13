@@ -8,14 +8,23 @@
 # R12_FLAGS goes in front of each level of the tree's compiler (none by default: M3b.7 left one path);
 # R12_BASE is main's cxx3-msvc.exe for the run-time row, built with R12_BASE_FLAGS (-O2); R12_OUT the work directory.
 # R12_C6X_REF: a 7d593d5 cxx3.exe whose sim6747 kernels the C6000 row (Linux, CCS 5.5) prints beside this tree's.
+# R12_CORPUS=<tree> times the compile row over that tree's src/ instead (-S, one source a job, R12_JOBS 2) with this
+# tree's cxx3.exe and, interleaved per level, R12_REF's (another commit's cxx3.exe); R12_LEVELS, "-O0 -O2" by default.
 # Caps: each compile 540 s (self-host's SELFHOST_CAP), the sweep 900 s, bench.cmd (6 builds, 27 runs) 540 s.
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+capped() { perl -e 'alarm shift; exec @ARGV' "$@"; }
+if [ "${1:-}" = --one ]; then   # the corpus job xargs runs: $2 compiler, $3 level, $4 out dir, $5 source
+    cd "$R12_CORPUS" || exit 2; b=$(basename "$5" .cpp)
+    capped 540 "$2" -nologo -S ${R12_FLAGS:-} $3 -I src -DCXX1_INCLUDE_DIR="\"$R12_CORPUS/lib\"" \
+        -DCXX1_CXX_INCLUDE_DIR="\"$R12_CORPUS/include\"" '-D__DATE__="Jan 01 2000"' '-D__TIME__="00:00:00"' \
+        "$5" -o "$4/$b.s" > "$4/$b.log" 2>&1 || { [ $? -eq 142 ] && : > "$4/$b.unfinished"; rm -f "$4/$b.s"; }
+    exit 0
+fi
 cd "$ROOT" || exit 2
 FL=${R12_FLAGS:-}
 OUT=${R12_OUT:-$ROOT/r12}
 mkdir -p "$OUT"
-capped() { perl -e 'alarm shift; exec @ARGV' "$@"; }
 case $(uname -s) in MINGW*|MSYS*|CYGWIN*) HOST=windows; CXX=$ROOT/cxx3-msvc.exe ;; *) HOST=unix; CXX=$ROOT/cxx3.exe ;; esac
 ROWS=${*:-$( [ $HOST = windows ] && echo runtime c6000 health || echo conformance compile c6000 health )}
 
@@ -26,7 +35,16 @@ conformance() {   # tools/feature-sweep's three bins, of its probes
               printf "conformance: %s compile, %s refused by name, %s naming nothing, of %s (tools/feature-sweep)\n", c, r, n, p }' \
         "$OUT/feature-sweep.txt"
 }
+corpus() {   # $1 compiler, $2 level, $3 out dir: R12_CORPUS's sources, one a job; prints "<s> s, <ok> of <n>, <k> over the cap"
+    rm -rf "$3"; mkdir -p "$3"; t=$(date +%s)
+    (cd "$R12_CORPUS" && find src -name '*.cpp' | sort) | R12_CORPUS=$R12_CORPUS xargs -n 1 -P "${R12_JOBS:-2}" sh "$ROOT/tools/r12-measures" --one "$1" "$2" "$3"
+    echo "$(( $(date +%s) - t )) s, $(ls "$3" | grep -c '\.s$') of $(cd "$R12_CORPUS" && find src -name '*.cpp' | wc -l | tr -d ' '), $(ls "$3" | grep -c '\.unfinished$') over the cap"
+}
 compile() {   # tools/self-host's stage 0 at -O0 and -O2: the corpus compiled one source a job, wall time
+    [ -n "${R12_CORPUS:-}" ] && { for lv in ${R12_LEVELS:--O0 -O2}; do
+        r=; [ -n "${R12_REF:-}" ] && r="; R12_REF $(corpus "$R12_REF" $lv "$OUT/corpus-ref$lv")"
+        echo "compile time $lv on $R12_CORPUS:${FL:+ ($FL)} this tree $(corpus "$CXX" $lv "$OUT/corpus$lv")$r (-S, ${R12_JOBS:-2} jobs)"
+    done; return; }
     for lv in -O0 -O2; do
         SELFHOST_CAP=540 sh tools/self-host "$OUT/selfhost$lv" "$FL $lv" 0 > "$OUT/selfhost$lv.txt" 2>&1
         l=$(grep 'stage 0 compiled' "$OUT/selfhost$lv.txt")

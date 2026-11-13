@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""What is left of `Ast.h`, counted: R7 of the M3 review and section 12.2 of the design.
+
+    tools/ast-residue             every site, file:line and what it is
+    tools/ast-residue --count     the counts, one per kind
+    tools/ast-residue --check     fail if any count is above tools/ast-residue.baseline
+    tools/ast-residue --record    write today's counts as the baseline
+    tools/ast-residue --readers   every file under src/ that includes Ast.h, with its count of node-kind names
+
+M3b.7 deleted x86's walk of `Ast.h` and kept the rest (design 12.2): the parser's building half, `Classes`'
+synthesised bodies, the constant evaluator's reads, and the arm64 and tms6747 walkers (exceptions 1 and 2). Each
+moves with a later row; until then the residue may only go down, as the memory gate's counts do. The kinds:
+
+    ExprPtr, StmtPtr   the words, under src/parser and src/sema
+    node-casts         a cast to an Ast.h node kind (`dynamic_cast<const Unary *>`), under src/parser and src/sema
+    readers            files under src/ that include Ast.h
+    ast-lines          the lines of src/Ast.h itself
+
+The node kinds are read from src/Ast.h (every class deriving from Node, Expr or Stmt), never listed here.
+Comments, string and character literals are skipped.
+"""
+import os
+import re
+import signal
+import sys
+
+signal.signal(signal.SIGPIPE, signal.SIG_DFL)   # `| head` ends the listing quietly
+
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+SRC = os.path.join(ROOT, "src")
+AST = os.path.join(SRC, "Ast.h")
+BASELINE = os.path.join(ROOT, "tools", "ast-residue.baseline")
+SCOPED = ("src/parser", "src/sema")
+KINDS = ("ExprPtr", "StmtPtr", "node-casts", "readers", "ast-lines")
+INCLUDE = re.compile(r'^\s*#\s*include\s*"(?:\.\./)*Ast\.h"', re.M)
+
+
+def code_only(text):
+    """The text with comments and literals blanked, line breaks kept (the memory gate's reader)."""
+    out = []
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if text.startswith("//", i):
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+            out.append(" " * (j - i))
+            i = j
+        elif text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+            out.append(re.sub(r"[^\n]", " ", text[i:j]))
+            i = j
+        elif c in "\"'":
+            j = i + 1
+            while j < n and text[j] != c:
+                j += 2 if text[j] == "\\" else 1
+            out.append(" " * (min(j + 1, n) - i))
+            i = j + 1
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
+def node_kinds():
+    with open(AST, encoding="utf-8", errors="replace") as f:
+        code = code_only(f.read())
+    kinds = set(["Node", "Expr", "Stmt"])
+    while True:
+        more = set(m.group(1) for m in re.finditer(r"\b(?:class|struct)\s+(\w+)\s*(?:final\s*)?:\s*(?:public\s+)?(\w+)", code)
+                   if m.group(2) in kinds)
+        if more <= kinds:
+            return kinds
+        kinds |= more
+
+
+def sources():
+    for top, dirs, names in os.walk(SRC):
+        dirs.sort()
+        for name in sorted(names):
+            if name.endswith((".cpp", ".h")):
+                path = os.path.join(top, name)
+                with open(path, encoding="utf-8", errors="replace") as f:
+                    text = f.read()
+                yield os.path.relpath(path, ROOT), text
+
+
+def sites():
+    kinds = node_kinds()
+    cast = re.compile(r"\b(?:dynamic|static|reinterpret|const)_cast\s*<\s*(?:const\s+)?(\w+)\s*(?:const\s*)?[*&]")
+    found, readers = [], []
+    for rel, text in sources():
+        if INCLUDE.search(text):
+            readers.append(rel)
+        if not rel.startswith(SCOPED):
+            continue
+        for lineno, line in enumerate(code_only(text).split("\n"), 1):
+            for m in re.finditer(r"\b(ExprPtr|StmtPtr)\b", line):
+                found.append((rel, lineno, m.group(1)))
+            for m in cast.finditer(line):
+                if m.group(1) in kinds:
+                    found.append((rel, lineno, "node-casts " + m.group(1)))
+    return found, readers
+
+
+def main(argv):
+    found, readers = sites()
+    now = dict((k, 0) for k in KINDS)
+    for _, _, what in found:
+        now[what.split()[0]] += 1
+    now["readers"] = len(readers)
+    with open(AST, encoding="utf-8", errors="replace") as f:
+        now["ast-lines"] = sum(1 for _ in f)
+    if len(argv) == 1:
+        for path, lineno, what in found:
+            print("%s:%d: %s" % (path, lineno, what))
+        return 0
+    if argv[1] == "--readers":
+        kinds = node_kinds()
+        for rel in readers:
+            with open(os.path.join(ROOT, rel), encoding="utf-8", errors="replace") as f:
+                words = re.findall(r"\b\w+\b", code_only(f.read()))
+            print("%s: %d node-kind names" % (rel, sum(1 for w in words if w in kinds)))
+        return 0
+    if argv[1] == "--count":
+        print(" ".join("%s %d" % (k, now[k]) for k in KINDS))
+        return 0
+    if argv[1] == "--record":
+        with open(BASELINE, "w") as f:
+            for k in KINDS:
+                f.write("%s %d\n" % (k, now[k]))
+        print("ast-residue: baseline recorded: " + " ".join("%s %d" % (k, now[k]) for k in KINDS))
+        return 0
+    if argv[1] == "--check":
+        with open(BASELINE) as f:
+            was = dict((k, int(v)) for k, v in (l.split() for l in f if l.strip()))
+        risen = [k for k in KINDS if k in was and now[k] > was[k]]
+        for k in risen:
+            print("ast-residue: %s rose from %d to %d - design 12.2 lets the residue only go down" % (k, was[k], now[k]))
+        fallen = [k for k in KINDS if k in was and now[k] < was[k]]
+        if fallen and not risen:
+            print("ast-residue: lower than the baseline (" + ", ".join(fallen) + "); run --record to keep it")
+        return 1 if risen else 0
+    sys.stderr.write(__doc__)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

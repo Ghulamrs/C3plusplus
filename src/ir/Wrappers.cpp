@@ -105,7 +105,7 @@ FuncId Builder::thunk(const FunctionFacts &facts, bool virt) {
 FuncId Builder::initFunction(const FunctionFacts &facts, bool tls) {
     Lowering &l = l_;
     std::vector<sema::DynamicInit> inits;
-    if (!l.dynamicInits_ || !l.dynamicInits_(inits, tls) || inits.empty()) l.outside("an init function whose objects the parser recorded no `var` for");
+    if (!l.dynamicInits_ || !l.dynamicInits_(inits, tls) || inits.empty()) l.broken("an init function whose objects the parser recorded no `var` for");
     l.beginFunction(facts);
     if (l.this_.valid() || facts.paramCount != 0 || !l.T(l.returns_).isVoid()) l.outside("an init function with parameters");
     l.returnBlock_ = l.newBlock();

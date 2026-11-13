@@ -74,7 +74,12 @@ void Builder::copyOrMove(const FunctionFacts &facts) {
     for (const Type::BaseSpec &b : cls.bases()) {
         const Type &bt = *b.type->unqualified();
         if (b.isVirtual && !assigning) continue;     // C1's, out of the source's own ([class.base.init]/10)
-        if (!recorded("^" + bt.tag(), bt, 0, symbol, sig)) continue;
+        if (!recorded("^" + bt.tag(), bt, 0, symbol, sig)) {
+            // No record is its members one by one only where the base has no copy of its own to have been recorded.
+            if (assigning ? l.assigned_ && l.assigned_(bt.id()) : bt.nonTrivialCopy())
+                l.outside(what + " of a base whose own copy the parser recorded none of");
+            continue;
+        }
         const Type &ft = l.T(sig);
         // [class.copy]/28 assigns a virtual base where its vbase_offset puts it, in this object and in the source alike.
         std::vector<ValueId> ops(1, l.result(l.add(Op::Bitcast, l.tid(*ft.params()[0]), std::vector<ValueId>(
@@ -117,6 +122,9 @@ void Builder::copyOrMove(const FunctionFacts &facts) {
         const Type &e = *l.T(et).unqualified();
         const TypeId whole = l.tid(*l.types_.pointerTo(m.type->unqualified()));
         if (!recorded(m.name, e, 0, symbol, sig)) {
+            // No record is bytes only where the member's class has no copy of its own to have been recorded.
+            if (e.isStructOrUnion() && (assigning ? l.assigned_ && l.assigned_(e.id()) : e.nonTrivialCopy()))
+                l.outside(what + " of a member whose own copy the parser recorded none of");
             const ValueId to = into(l.this_, m.offset, whole);  // named first: a call's argument order is unspecified
             l.copyObject(to, into(that, m.offset, whole), *m.type);
             continue;
@@ -124,9 +132,35 @@ void Builder::copyOrMove(const FunctionFacts &facts) {
         const Type &ft = l.T(sig);
         if (ft.params().size() != 2 || !ft.params()[1]->isReference() || ft.params()[1]->referent()->unqualified() != &e)
             l.outside(what + " whose member's copy takes other parameters");
-        if (elems > (e.hasDestructor() ? 16 : 64)) l.outside(what + " of an array member of more elements than the lowering copies one by one");
         const std::string dtor = !assigning && e.hasDestructor() && l.destructor_ ? l.destructor_(e.id()) : std::string();
         if (!assigning && e.hasDestructor() && dtor.empty()) l.outside(what + " whose member is destroyed on unwinding by no destructor the parser recorded");
+        if (elems > (e.hasDestructor() ? 16 : 64)) {
+            // Past the count copied one by one, a loop: `$i` counts the elements copied, which Lowering::destroy takes
+            // down again, the last built first, if a later element or part throws.
+            const TypeId intT = l.types_.intType()->id();
+            const ValueId i = l.entryAlloca(intT, "$i");
+            const ValueId to = into(l.this_, m.offset, l.types_.pointerTo(e.id()));
+            const ValueId from = into(that, m.offset, l.types_.pointerTo(e.id()));
+            l.store(i, l.iconst(intT, 0));
+            if (!dtor.empty()) { l.guard(to, e, dtor); l.live_.back().count = i; }
+            const BlockId cond = l.newBlock(), body = l.newBlock(), done = l.newBlock();
+            l.br(cond);
+            l.place(cond);
+            const ValueId now = l.load(i, intT);
+            std::vector<ValueId> cmp(1, now);
+            cmp.push_back(l.iconst(intT, elems));
+            const InstId c = l.add(Op::ICmp, l.tid(*l.types_.get(Kind::Bool)), cmp);
+            l.at(c).cc = Cmp::Slt;
+            l.condbr(l.result(c), body, done);
+            l.place(body);
+            std::vector<ValueId> ops(1, l.result(l.add(Op::Bitcast, l.tid(*ft.params()[0]), std::vector<ValueId>(1, elementAt(to, now, e)))));
+            ops.push_back(l.result(l.add(Op::Bitcast, l.tid(*l.types_.pointerTo(ft.params()[1]->referent())), std::vector<ValueId>(1, elementAt(from, now, e)))));
+            l.directCall(symbol, sig, ops);
+            l.store(i, l.op2(Op::Add, intT, now, l.iconst(intT, 1)));
+            l.br(cond);
+            l.place(done);
+            continue;
+        }
         for (long long k = 0; k < elems; k++) {
             std::vector<ValueId> ops(1, into(l.this_, m.offset + k * e.size(l.target_), l.tid(*ft.params()[0])));
             ops.push_back(into(that, m.offset + k * e.size(l.target_), l.tid(*l.types_.pointerTo(ft.params()[1]->referent()))));

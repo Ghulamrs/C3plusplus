@@ -1,0 +1,6 @@
+built: a 136 b 3185 c 499500 n 455 m 630 tag 1
+copied: a 17136 b 68185 c 500500 n 520 m 720 tag 1
+assigned: a 85136 b 328185 c 501500 n 455 m 630 tag 1
+first and last: 1000 1016 1017 1081
+W assigned 82; C built 2000 copied 1000 assigned 1000 gone 3000; N copied 155
+LEDGER built=246 gone=246 live=0 double=0 phantom=0 over=0 lost=0

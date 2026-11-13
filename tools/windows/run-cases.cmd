@@ -35,6 +35,7 @@ rem  CXX1_CASES_COMPILER, if set, is the compiler every case is built by, and th
 rem  a self-hosted stage, say (self-host.cmd's stage 2).
 setlocal enabledelayedexpansion
 if "%~1"==":shard" goto :shard
+if "%~1"==":tools" goto :toolsonly
 if "%~1"=="" (echo run-cases.cmd: needs the tree root & exit /b 2)
 set ROOT=%~1
 set SPELLINGS=%CXX1_CASES_SPELLINGS%
@@ -118,6 +119,14 @@ if "%LINKEXE%"=="" call :build LINK link "%CXX1_LINK_SRC%"
 if "%MASMEXE%"=="" (echo run-cases.cmd: the MASM spelling was NOT run - no masm: set CXX1_MASM, or put the MASM tree at %ROOT%\..\..\Windows\MASM or CXX1_MASM_SRC& exit /b 1)
 if "%LINKEXE%"=="" (echo run-cases.cmd: the MASM spelling was NOT run - no LINK: set CXX1_LINK, or put the LINK tree at %ROOT%\..\..\Windows\LINK or CXX1_LINK_SRC& exit /b 1)
 exit /b 0
+
+rem  run-cases.cmd :tools <root>: the project's masm and LINK built and put beside cxx3-msvc.exe, for self-host.cmd.
+:toolsonly
+set ROOT=%~2
+call :tools
+if errorlevel 1 exit /b 1
+copy /y "!MASMEXE!" "%ROOT%\masm.exe" >nul && copy /y "!LINKEXE!" "%ROOT%\link.exe" >nul
+exit /b %errorlevel%
 
 rem  %1 the tree's name, %2 the program, %3 its source tree if named; sets MASMEXE or LINKEXE.
 :build

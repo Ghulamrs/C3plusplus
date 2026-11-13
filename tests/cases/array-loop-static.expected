@@ -1,0 +1,7 @@
+plain: 136
+listed: 1001 1002 1003 17 78
+shown: 1009 79 147
+bare: 999 2112 built 1100
+inner: 2805 2805
+built: 234
+LEDGER built=234 gone=234 live=0 double=0 phantom=0 over=0 lost=0

@@ -74,7 +74,7 @@ ValueId Builder::deleting(const Type &cls) {
         l.directCall(dtor, l.types_.functionType(l.types_.voidType()->id(), std::vector<TypeId>(1, l.thisType_)), std::vector<ValueId>(1, l.this_));
     std::string frees;
     TypeId sig;
-    if (!recorded("$delete", frees, sig)) l.outside("a deleting destructor whose deallocation the parser recorded none of");
+    if (!recorded("$delete", frees, sig)) l.broken("a deleting destructor whose deallocation the parser recorded none of");
     const TypeId voidPtr = l.types_.pointerTo(l.types_.voidType()->id());
     const ValueId raw = l.result(l.add(Op::Bitcast, voidPtr, std::vector<ValueId>(1, l.this_)));
     if (!l.target_.microsoftNames()) {
@@ -104,7 +104,7 @@ void Builder::completeDtor(const Type &cls) {
     Lowering &l = l_;
     std::string symbol;
     TypeId sig;
-    if (!recorded("$D2", symbol, sig)) l.outside("a complete destructor whose base-object destructor the parser recorded none of");
+    if (!recorded("$D2", symbol, sig)) l.broken("a complete destructor whose base-object destructor the parser recorded none of");
     vttHeld();
     std::vector<ValueId> ops(1, l.this_);
     if (l.T(sig).params().size() == 2) ops.push_back(l.vttAt(0));
@@ -112,13 +112,13 @@ void Builder::completeDtor(const Type &cls) {
     l.directCall(symbol, sig, ops);
     std::vector<sema::VptrStore> none;
     std::vector<std::string> order;
-    if (!l.msVbaseInit_ || !l.msVbaseInit_(l.key_, none, order)) l.outside("a complete destructor whose virtual bases the parser recorded no order for");
+    if (!l.msVbaseInit_ || !l.msVbaseInit_(l.key_, none, order)) l.broken("a complete destructor whose virtual bases the parser recorded no order for");
     for (const std::string &tag : order) {
         const int which = virtualBaseNamed(cls, tag);
         if (which < 0) l.outside("a virtual base the class does not lay out");
         const Type::BaseSpec &b = cls.bases()[static_cast<std::size_t>(which)];
         const Type &bt = *b.type->unqualified();
-        if (!recorded("~" + tag, symbol, sig)) l.outside("a virtual base destroyed by no destructor the parser recorded");
+        if (!recorded("~" + tag, symbol, sig)) l.broken("a virtual base destroyed by no destructor the parser recorded");
         const Type &ft = l.T(sig);
         std::vector<ValueId> at(1, l.result(l.add(Op::Bitcast, l.tid(*ft.params()[0]), std::vector<ValueId>(1, l.baseAddress(b)))));
         if (ft.params().size() != l.baseVttArgument(bt, ft, at)) l.outside("a virtual base's destructor of another shape");
@@ -153,7 +153,7 @@ void Builder::completeCtor(const Type &cls) {
     vttHeld();
     std::vector<sema::VptrStore> none;
     std::vector<std::string> order;
-    if (!l.msVbaseInit_ || !l.msVbaseInit_(l.key_, none, order)) l.outside("a complete constructor whose virtual bases the parser recorded no order for");
+    if (!l.msVbaseInit_ || !l.msVbaseInit_(l.key_, none, order)) l.broken("a complete constructor whose virtual bases the parser recorded no order for");
     const TypeId chars = l.types_.pointerTo(l.types_.charType()->id());
     std::map<std::string, sema::TypedId> named;
     writtenEntries(named);
@@ -164,7 +164,7 @@ void Builder::completeCtor(const Type &cls) {
         const Type &bt = *b.type->unqualified();
         std::string symbol;
         TypeId sig;
-        if (!recorded("^" + tag, symbol, sig)) l.outside("a virtual base built by no constructor the parser recorded");
+        if (!recorded("^" + tag, symbol, sig)) l.broken("a virtual base built by no constructor the parser recorded");
         const Type &ft = l.T(sig);
         std::vector<ValueId> ops(1, l.result(l.add(Op::Bitcast, l.tid(*ft.params()[0]), std::vector<ValueId>(1, l.baseAddress(b)))));
         const std::size_t skip = l.baseVttArgument(bt, ft, ops);
@@ -187,7 +187,7 @@ void Builder::completeCtor(const Type &cls) {
         }
         if (!bt.hasDestructor()) continue;
         // [except.ctor]/3: built, it is destroyed by its D2 - handed the same virtual VTT - if a later part throws.
-        if (!recorded("~" + tag, symbol, sig)) l.outside("a virtual base destroyed on unwinding by no destructor the parser recorded");
+        if (!recorded("~" + tag, symbol, sig)) l.broken("a virtual base destroyed on unwinding by no destructor the parser recorded");
         std::vector<ValueId> at(1, l.result(l.add(Op::Bitcast, l.tid(*l.T(sig).params()[0]), std::vector<ValueId>(1, l.baseAddress(b)))));
         if (l.T(sig).params().size() != l.baseVttArgument(bt, l.T(sig), at)) l.outside("a virtual base's destructor of another shape");
         l.guard(at[0], bt, symbol);
@@ -195,7 +195,7 @@ void Builder::completeCtor(const Type &cls) {
     }
     std::string symbol;
     TypeId sig;
-    if (!recorded("$C2", symbol, sig)) l.outside("a complete constructor whose base-object constructor the parser recorded none of");
+    if (!recorded("$C2", symbol, sig)) l.broken("a complete constructor whose base-object constructor the parser recorded none of");
     std::vector<ValueId> ops(1, l.this_);
     if (l.vtt_.valid()) ops.push_back(l.vttAt(0));
     ops.insert(ops.end(), l.forwarded_.begin(), l.forwarded_.end());

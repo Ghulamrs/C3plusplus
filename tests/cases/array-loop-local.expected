@@ -1,0 +1,11 @@
+17: 136
+65: 3185
+1000: 499500 built 1000 gone 1000 in order 1000
+plain: 3209 built 1065
+defaults: 240
+grid: 153
+list: 973
+list defaults: 378
+early: 16 16 16
+so far: built 309 gone 309
+LEDGER built=309 gone=309 live=0 double=0 phantom=0 over=0 lost=0

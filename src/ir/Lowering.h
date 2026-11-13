@@ -164,7 +164,9 @@ private:
     std::uint32_t count(sema::TypedId id) const { return tree_.node(id).count; }
     const Type &T(TypeId t) const { return *types_.type(t); }
     TypeId tid(const Type &t) const { return t.id(); }
+    // outside: valid C++11 the lowering does not build yet (docs/EXCLUSIONS.md); broken: a record that cannot disagree.
     static void outside(const std::string &why);
+    static void broken(const std::string &why);
 
     // Statements.
     void stmt(sema::TypedId id);

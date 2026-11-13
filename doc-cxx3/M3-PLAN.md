@@ -4089,3 +4089,127 @@ f8a's one C6000 line):
 **Owed, named**: every Mac leg (the Mac runs no build or test: the self-host, verify-three's mac leg; verify-three's
 "mac (text checks)" and c6747-three's ssh/bc/python steps still run on the Mac and belong on a box); arm64-darwin is
 unmeasured since M3b.7 (its walker kept); five tms6747 walker gaps in tests/open/walker-*; the RP5 review of M3b.7's scope.
+
+## M3 review, lane F (R7, R14), 2026-11-13
+
+From main `3628bd4a`, branch `rv-F`. **RP5 confirmed, 2026-11-13**: M3b.7's scope is right (the review's R7); what it left
+now has rows - design section 12.2 gives the arm64 walker to M5, the tms6747 walker's reads to M6a, and the constant
+evaluator's reads, the parser's building half and `Classes`' synthesised bodies to a new step **M6d**, which deletes
+`Ast.h`'s nodes in one commit; the M6 row and section 15 (item 9) name it. Both findings held when re-read: `Constexpr.cpp`
+882 lines with 46 `dynamic_cast`s to node kinds (48 casts with two `static_cast<const Unary &>`), 2,173 parser lines naming
+`ExprPtr`/`StmtPtr`; `pointer_sites` used `os.listdir`, so `src/ir/opt` was never read.
+- **`tools/ast-residue`** (new, in `make test` after the memory gate): `ExprPtr 2009 StmtPtr 634 node-casts 165 readers 14
+  ast-lines 849`, the first count, recorded in `tools/ast-residue.baseline`; `--readers` lists the 14 including files.
+- **`tools/memory-gate`**: the handle rule walks `src/ir` whole and names `src/backend/SsaSelect.*` and `Regions.*`;
+  raw-pointers 42 -> 89 by the wider scope, `new` 1056 -> 1054 (the baseline was loose by two); both re-recorded.
+- **Gate** (Linux, `~/rvF`, this tree): `make test` rc 0 - run.sh 1148 passed 0 failed, emit.sh 3187/0, typed.sh 806/0,
+  ssa.sh 827/0, coff.sh 0 differ, c90.sh 447/0; exclusions 0 uncited 0 stale, comments 0 over, memory gate and ast-residue at
+  their new baselines. win-structure.sh skipped (no clang++ on the box).
+- src/ lines: unchanged (tools, Makefile and documents only).
+### M3 review, lane C (R3, R4, R13), 2026-11-13
+From main `3628bd4a`, branch `rv-C`; nothing under src/. **R3 confirmed** (`git grep winpass -- tools tests Makefile
+docs` empty at 3628bd4a): the Windows gate of record is in the tree now - `tools/windows/winbuild.sh` (ship and cl,
+9-minute cap), `wincases.sh` (one quarter of a pass, 25-minute cap, the verdict after the last), `winpass.sh` (the four
+jobs), `self-host-stages.sh` (self-host.cmd's stages "0 1", "2", "3" as box jobs with SELFHOST_RESUME), and
+`run-cases.cmd :tools` puts the project's masm and LINK beside cxx3-msvc.exe. **Where the boxkit/ names live now:**
+`m3b7r5c-winbuild.sh` -> `tools/windows/winbuild.sh`; `m3b7r5c-wincases.sh` -> `wincases.sh`; `m3b7r5c-winpass.sh`
+-> `winpass.sh`; `m3b8gw-run.sh` and `m3b6m-chain.sh` -> `self-host-stages.sh` (`SELFHOST_GNU=1` is their clang
+spelling); `f8b-names.sh` stays in boxkit/ (R15 is lane I's). `tools/verify-three windows` runs its passes through
+`winpass.sh` over the shipped tree, under `/affinity 3FF` and `WINLANES` (default 2), at `-O2;-O1;-O0`. **R13
+confirmed** (no -O1 run on x86, no ssa level 2 in any script): verify-three's Linux leg adds `run.sh -O1` and
+`SSA_LEVEL=2 tests/ssa.sh`; the Windows passes add -O1. **R4 confirmed** (M3b.8's self-host ran with
+`CPP11_AS=clang.exe`, boxkit/m3b8gw-run.sh).
+**Owed at hand-back:** the MASM self-host counts (-O2 in `rvC`, -O0 in `rvC0`) and the -O1 winpass were running on
+the Windows box (boxkit/rvC-chain.sh, logs boxkit/rvC-sh-O2.log, rvC-sh-O0.log, rvC-winpass-O1.log); the
+coordinator records them, and runs `tools/verify-three windows` from a clean clone for the 775 / 774 row.
+### M3 review lane D, 2026-11-13: R5 and R17, the measures re-taken at `3628bd4a` (branch rv-D)
+**R5 holds and the number moved.** The close's 337 ms was lane meas's `6c684ed7`, before deletion 3. Re-taken at
+`3628bd4a` (`tools/r12-measures runtime`, Windows box, `R12_BASE` main `d60009bd`'s cxx3-msvc.exe, both built by cl
+here with no warning, box shared with lanes B and C, two runs, `boxkit/rvD-runtime-1.out` and `rvD-runtime.out`):
+
+| kernel | `3628bd4a` -O2 | `d60009bd` -O2 | cl /O2 |
+| --- | --- | --- | --- |
+| fib | 6 / 6 | 8 / 7 | 7 / 7 |
+| sieve | 50 / 49 | 59 / 56 | 47 / 44 |
+| matmul | 7 / 7 | 28 / 27 | 3 / 3 |
+| isort | 8 / 7 | 18 / 17 | 6 / 6 |
+| hash | 176 / 169 | 186 / 178 | 132 / 124 |
+| virtual | **137 / 127** | 87 / 84 | 102 / 101 |
+| total | **384 / 366** | 397 / 369 | 300 / 285 |
+| `.text` | 3480 | 3461 | 3831 |
+
+Checksums agree in both runs. The total is at or under main's (met, by 3 ms in the quieter run); **`virtual` is now 127-137
+against main's 84-87**, from 98/84 at `6c684ed7` - deletion 3's frames moved it, and it is no longer M3b.5's 14 ms
+`ret`-offset gap. `.text` 3480, not the close's 3492.
+
+**R17 holds.** `tools/r12-measures compile` takes `R12_CORPUS=<tree>` (its `src/`, `-S`, one source a job, `R12_JOBS`),
+`R12_REF=<cxx3.exe>` timed interleaved per level, and `R12_LEVELS`. The chain `boxkit/rvD-linux.sh` builds `7d593d5` and
+`3628bd4a` with g++ on the Linux box (`~/ref-7d593d5`, `~/rvD`) and times both compilers over `7d593d5`'s 70 sources at
+-O0 and -O2, each level one locked job (`~/rvD-chain.log`, `~/rvD-r12/`). **Queued behind three lanes on the box lock
+when this lane handed back: the two-column row is owed to the coordinator, read from `~/rvD-chain.log`.**
+
+**The missed target, named and decided**: "no kernel slower than main" is missed by `virtual`, at `3628bd4a` by 50%.
+Decision (the review's recommended option, taken without a question): **not accepted; owed to a lane** - the first
+step is `virtual`'s `.text` at `6c684ed7` against `3628bd4a` (deletion 3's frame for `Sq::area`/`Rc::area` and the loop's
+`invoke`), then the layout M3b.5 left by name. The compile-time target ("-O2 not slower than the baseline's -O2") is
+decided when the row above is read: met, or owed to the same review wave by name.
+**M3 review, lane E, 2026-11-13: R6 and R10, the targets and the hosts nothing compared.** From main `3628bd4a`, branch
+rv-E (Opus 5.5); nothing under src/. Both findings hold as written: `tools/identical.sh` built x86 jobs only, and no tool
+hashed the compiler's output on two hosts. **R6**: `identical.sh` takes `ARCHS` (default the two x86 targets as before;
+`ARCHS="arm64-darwin tms6747"` adds one job per target and level). Run on the Linux box at -O1 and -O2 (-O0 is the emit
+golden's) of `3628bd4a`'s g++ build against `~/m3b6-ref/cxx3.exe`, built from `f9f1ff2d` there (the box held none);
+expected differences: tms6747 at f8a's `CMPEQ` line only. **The decision R6 asks for**, taken as recommended (lanes do not
+stop on a question): byte identity against the M3b.6 binary is accepted for arm64-darwin until M5; a milestone close
+does not need a Mac leg, the Mac running nothing. **R10**: `tools/crosshost-sums sums CXX OUT` writes one line per job
+(case, target and spelling, -O0 and -O2): md5 of the `-S` output and of the diagnostics with the tree's path and the
+compiler's name made the same; `compare A B` names each line that differs. Windows, cl-built `cxx3-msvc.exe` at
+`3628bd4a` (cl /W4 /WX clean): 4878 of 4878 jobs summed, 84 refused by name (the `.notarget` cases). **Owed**: the
+`verify-three` call R10 asks for is lane C's file (`tools/verify-three`), left to the wave's merge.
+### M3 review, lane A (R1), 2026-11-13
+
+From main `3628bd4a`, branch rv-A. **R1 confirmed** on the Linux box: `tools/exclusions --check` read "127 sites,
+0 uncited, 0 stale" with the lowering's sites unseen. **Done:** (a) `tools/exclusions` reads the SSA lowering's
+`outside(...)` and `broken(...)` calls in `src/ir` (`--lowering` lists every site; `--count` and `--check` print the
+new numbers); an `outside` reason is cited by its message text in the ```owed block of `docs/EXCLUSIONS.md`'s new
+section "The SSA lowering's limits: C++11, owed", because the lowering's lines move every round; `--check` fails
+on a reason uncited or a listed one gone. (b) `Lowering::broken` (Lowering.h, .cpp) throws "internal error: why";
+84 sites whose message says a parser record is absent or disagrees ("recorded", "the record", "disagree") renamed
+to it, by that rule and no other. Not renamed, so lane B's edits merge: all of `BuilderCopy.cpp` and
+`Lowering.cpp`'s lines in 100-145, 240-262, 1455-1480, 3200-3300, 3780-3830 (7 sites), and calls written over two
+lines. (c) Four probes in `tests/open/lowering-*.cpp` with the Windows box's clang 19 answer: an array of 17
+destructible locals, a class returned inside a handler, a conditional of base and derived, a goto into a block
+over a live object. **Numbers** (Linux box, the edited tree): `tools/exclusions --check docs/EXCLUSIONS.md` 127 sites, 0 uncited,
+0 stale; the SSA lowering 570 `outside()` sites, 492 reasons, 0 uncited, 0 stale; 84 `broken()` sites (657 before:
+570 + 84 + 3 calls that forward a `why`). The probes' build on the box was queued behind another lane's `make test`
+at hand-back: `~/rvA-chain.log` holds the base and edited compiles of each probe, `make comments`, the memory gate
+and `tests/open.sh`; a probe the base does not refuse is dropped.
+**Owed, named:** a probe for each of the other reasons (one per reason was the review's ask; four landed);
+(d), the message naming `docs/EXCLUSIONS.md`, is `src/Driver.cpp:1471` and `:1500`, not this lane's file; a reason
+whose message has a ternary comes back with both arms joined (the tool's known limit); after the wave merges, the
+coordinator re-runs `tools/exclusions --check` and pastes any changed reason into the owed block.
+### M3 review, lane B, 2026-11-13: R2 and R9 - arrays of a class past the counts built one by one
+From main `3628bd4a`, branch `rv-B`. **R2 confirmed** on the Windows box at the base (cl build): `static W s[65] = { 4, 5 }`,
+an implicit copy of `W a[17]` and a local `S a[17]` each ended "outside the SSA lowering: ... more elements than the
+lowering builds one by one". **Mended in `Lowering.cpp` and `BuilderCopy.cpp` alone**: past 16 elements with a
+destructor, 64 without, a local array (`builtArrayLocal`), a list's tail (`listArray`, the local's and the static's) and an
+implicitly copied array member are a loop over `$i`, the count of elements built; one guard holds the array, its `dtor`
+the element's own destructor, and `Lowering::destroy` loops from `$i` down for such a guard - the scope's end and the
+unwinding by one piece. On Microsoft the loop's blocks carry the cleanup's funclet (`closeScope`). An array member with
+no `~[]` record takes the same guard and is no longer refused. At or under the counts nothing is built differently.
+**R9**: an implicit copy's member, or base, with no record is refused by name where its class has a copy of its own
+(`nonTrivialCopy()`; an assignment, `assigned_`) and is bytes, or member by member, otherwise.
+**Cases** (the ledger, clang's `.expected` from the Windows box): `array-loop-local` (17, 65, 1000, no destructor,
+defaults, two dimensions, a list's tail, return and continue), `array-loop-static` (namespace scope and a function's
+static, with and without a list), `array-loop-member-copy` (implicit constructor, copy, assignment, destructor over 17,
+65, 1000 and 3x30), `array-loop-throw` (a throw from element 0, 9 and the last: local, list tail, member built, member
+copied). **Left, named**: R2's two handler returns (`Lowering.cpp` "inside a handler") are not lowered - they are R1's
+to list; the loop is written out at each of its sites, a `countedLoop` in `Lowering.h` (not this lane's file) would
+make five one. **Found, not this lane's files**: `struct D { D(int a = 3, int b = 4); ~D(); }; D d[1] = { 5 };` - a
+list element converted by a constructor completed with a default argument - ends the compiler with a segmentation
+fault, at the base too and at any length. `src/` 91,701 to 91,821 lines.
+**Measured** at `1e6a1488` on the Windows box (cl build, /W4 /WX clean): the four cases the same as clang's `.expected`
+at -O0 and -O2 in both spellings (16 of 16); `tools/ssa-census` outside=0 for x86_64-windows and x86_64-linux (its one
+other failure is `bf_types.c`'s 40-bit `unsigned long` on Windows, the base's); all 1157 `tests/cases` compiled for both
+targets, 0 outside, 0 of R9's refusals; exclusions 0 uncited 0 stale, comment cap 0 over. **Owed**: the Linux box's
+run of the four cases and `tools/memory-gate` (no `new`, no pointer declarator added) - the g++ build is done, the job
+waited on the box lock past this lane's hour (`~/rvB-probe.out`); the wave gate is the coordinator's.

@@ -1,0 +1,62 @@
+#!/bin/sh
+# **One compiler's source, the same output on every host that builds it.** Two IR-emitting calls as arguments of
+# one call run in the host compiler's order (cl right to left, g++ and clang as they choose); this holds the
+# g++-built and the cl-built cxx3 to the same bytes over the cases (doc-cxx3/M3-PLAN.md, "M3 review, lane E").
+#
+# Usage: tools/crosshost-sums sums CXX OUT     on one box: -S of every case that compiles, for x86_64-linux and
+#                                               x86_64-windows in both spellings at each of LEVELS ("0 2" unless set),
+#                                               one line a job: name, md5 of the assembly, md5 of the diagnostics
+#        tools/crosshost-sums compare A B      the two boxes' lists: names each line that differs, exits 1 if any
+#   JOBS (2 unless set) compiles at once. Run from anywhere; the cases are read by a path relative to the tree's
+#   root, so a `.file` line or a diagnostic is spelled the same on both hosts.
+set -u
+md5() { if command -v md5sum > /dev/null 2>&1; then md5sum < "$1" | cut -c1-32; else md5 -q "$1"; fi; }
+if [ "${1:-}" = --one ]; then
+    # --one CXX TMP NAME SRC FLAGS...: one job; prints its line
+    CXX=$2 TMP=$3 NAME=$4 SRC=$5; shift 5
+    d=$(dirname "$CXX"); m=$d   # the tree as a cl-built compiler prints it, once its \ are /
+    command -v cygpath > /dev/null 2>&1 && m=$(cygpath -m "$d")
+    ( ulimit -t 60 2> /dev/null; "$CXX" "$@" "$SRC" -o "$TMP/$NAME.s" < /dev/null 2>&1; echo "exit=$?" ) |
+        sed -e 's/\r$//' -e 's|\\|/|g' -e "s|$d/|<tree>/|g" -e "s|$m/|<tree>/|g" \
+            -e 's|<tree>/cxx3[^ :/]*\.exe|cxx1|g' -e "s/^ *^/^/" > "$TMP/$NAME.err"
+    s=none; [ -f "$TMP/$NAME.s" ] && s=$(md5 "$TMP/$NAME.s")
+    echo "$NAME $s $(md5 "$TMP/$NAME.err")"
+    rm -f "$TMP/$NAME.s" "$TMP/$NAME.err"
+    exit 0
+fi
+case ${1:-} in
+compare)
+    A=$2 B=$3
+    total=$(wc -l < "$A" | tr -d ' '); differ=0
+    # join on the name: a line on one side only is a difference too
+    sort "$A" > "$A.sorted"; sort "$B" > "$B.sorted"
+    diff "$A.sorted" "$B.sorted" | sed -n 's/^[<>] \([^ ]*\) .*/\1/p' | sort -u > "$A.names"
+    while read -r n; do
+        differ=$((differ + 1))
+        echo "DIFFERS $n: $(grep "^$n " "$A.sorted" | cut -d' ' -f2-) | $(grep "^$n " "$B.sorted" | cut -d' ' -f2-)"
+    done < "$A.names"
+    rm -f "$A.sorted" "$B.sorted" "$A.names"
+    echo "crosshost: $total compared, $differ differ"
+    [ $differ = 0 ] ;;
+sums)
+    CXX=$2 OUT=$3
+    case $CXX in /*) ;; *) CXX=$(pwd)/$CXX ;; esac
+    case $OUT in /*) ;; *) OUT=$(pwd)/$OUT ;; esac
+    SELF=$(cd "$(dirname "$0")" && pwd)/crosshost-sums
+    cd "$(dirname "$0")/.."
+    TMP=$OUT.tmp; rm -rf "$TMP"; mkdir -p "$TMP"
+    jobs=$TMP/jobs; : > "$jobs"
+    for src in tests/cases/*.cpp; do
+        base=$(basename "$src" .cpp)
+        [ -f "tests/cases/$base.error" ] && continue
+        for L in ${LEVELS:-0 2}; do
+            echo "$base.win.gnu.O$L $src -nologo -arch x86_64-windows -masm=gnu -O$L -S" >> "$jobs"
+            echo "$base.win.masm.O$L $src -nologo -arch x86_64-windows -masm=masm -O$L -S" >> "$jobs"
+            echo "$base.linux.O$L $src -nologo -arch x86_64-linux -O$L -S" >> "$jobs"
+        done
+    done
+    xargs -P "${JOBS:-2}" -L 1 sh "$SELF" --one "$CXX" "$TMP" < "$jobs" | sort > "$OUT"
+    echo "crosshost: $(wc -l < "$OUT" | tr -d ' ') of $(wc -l < "$jobs" | tr -d ' ') jobs summed into $OUT"
+    rm -rf "$TMP" ;;
+*) echo "usage: tools/crosshost-sums sums CXX OUT | compare A B" >&2; exit 2 ;;
+esac

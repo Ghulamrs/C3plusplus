@@ -16,7 +16,8 @@ one left when the count reaches it.
 
 **The second count** (C7, 2026-10-26) is R6.3's: the new structures - the syntax tree, the
 typed tree, the IR, the MIR - use index handles, so a raw-pointer declarator in `src/syntax`,
-`src/sema/Typing*`, `src/ir` and `src/optimizer/Mir*` is counted, `T *name` wherever a
+`src/sema/Typing*`, `src/ir` and everything under it, `src/optimizer/Mir*`, `src/backend/SsaSelect.*` and
+`src/backend/Regions.*` is counted, `T *name` wherever a
 declaration can stand, with a function's `operator*` and an arithmetic `a * b` told apart by
 what stands on either side. Like the first it may only go down; it started at the value
 the baseline records. `const Type *` in the typed tree is most of it (M3-IR 3.1).
@@ -32,8 +33,10 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 SRC = os.path.join(ROOT, "src")
 BASELINE = os.path.join(ROOT, "tools", "memory-gate.baseline")
 KINDS = ("new", "delete", "malloc", "calloc", "realloc", "free", "alloca")
-# The files the handle rule (R6.3) covers: the new structures, by directory or file prefix.
-HANDLE_FILES = (("src/syntax", ""), ("src/sema", "Typing"), ("src/ir", ""), ("src/optimizer", "Mir"))
+# The files the handle rule (R6.3) covers: the new structures, by directory and file prefix; a directory is walked
+# whole (src/ir/opt with src/ir), and M3's SSA selection and region tables are named file by file (R14, 2026-11-13).
+HANDLE_FILES = (("src/syntax", ""), ("src/sema", "Typing"), ("src/ir", ""), ("src/optimizer", "Mir"),
+                ("src/backend", "SsaSelect."), ("src/backend", "Regions."))
 POINTERS = "raw-pointers"
 # A word before `*` that makes it a dereference or an arithmetic operator, never a declarator's type.
 NOT_A_TYPE = set("return sizeof case else do while if for switch new delete throw typedef".split())
@@ -112,12 +115,13 @@ def pointer_sites():
     found = []
     for base, prefix in HANDLE_FILES:
         folder = os.path.join(ROOT, base)
-        if not os.path.isdir(folder):
-            continue
-        for name in sorted(os.listdir(folder)):
-            if not name.endswith((".cpp", ".h")) or not name.startswith(prefix):
-                continue
-            path = os.path.join(folder, name)
+        paths = []
+        for top, dirs, names in os.walk(folder):
+            if prefix:
+                dirs[:] = []                # a prefix names files of that one directory
+            dirs.sort()
+            paths += [os.path.join(top, n) for n in sorted(names) if n.endswith((".cpp", ".h")) and n.startswith(prefix)]
+        for path in paths:
             with open(path, encoding="utf-8", errors="replace") as f:
                 code = code_only(f.read())
             for lineno, line in enumerate(code.split("\n"), 1):

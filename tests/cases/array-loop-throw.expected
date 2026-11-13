@@ -1,0 +1,17 @@
+local 0: 9 built 0 gone 0 in order 0
+local 9: 9 built 9 gone 9 in order 9
+local 16: 9 built 25 gone 25 in order 16
+local 17: 1 built 42 gone 42 in order 17
+many 9: 9 built 51 gone 51 in order 9
+many 64: 9 built 115 gone 115 in order 64
+many 74: 9 built 189 gone 189 in order 74
+listed 1: 9 built 190 gone 190 in order 0
+listed 9: 9 built 199 gone 199 in order 0
+listed 39: 9 built 238 gone 238 in order 0
+member 9: 9 built 247 gone 247 in order 0
+member 26: 9 built 273 gone 273 in order 9
+copied 9: 9 built 319 gone 282 in order 0
+copied 26: 9 built 382 gone 345 in order 28
+copied 36: 9 built 455 gone 418 in order 38
+copied 40: 1 built 529 gone 492 in order 39
+LEDGER built=529 gone=529 live=0 double=0 phantom=0 over=0 lost=0

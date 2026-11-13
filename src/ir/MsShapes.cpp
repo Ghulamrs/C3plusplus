@@ -14,7 +14,7 @@ FuncId Builder::atexitHelper(const FunctionFacts &facts, std::size_t index) {
     bool defaulted = false;
     if (l.this_.valid() || facts.paramCount != 0 || !l.T(l.returns_).isVoid() || !l.memberBuilt_ ||
         !l.memberBuilt_(l.key_, "$object", 0, object, objectType, defaulted) || !l.memberBuilt_(l.key_, "~object", 0, dtor, sig, defaulted))
-        l.outside("an atexit helper the parser recorded no object or destructor for");
+        l.broken("an atexit helper the parser recorded no object or destructor for");
     openBody();
     // A thread_local's is the thread's own object, reached directly as objectAt reaches it (the helper is __tlregdtor's).
     sema::Resolution r;

@@ -379,7 +379,7 @@ No single compiler is exactly ISO/IEC 14882:2011, so the bound is set in layers,
 | M3 | SSA IR, optimizer, MIR and graph-colouring allocator for **targets 1 and 3** together. The adapter and the old x86 text optimizer are selectable during M3 and deleted at its end; -O2 self-host; stage 2 = stage 3 at -O2 | R4.1, R4.2, R5.2 |
 | M4 | Encoder library, `CoffEmitter`, masm re-based, `-S` = `-c`. It starts once M3 has fixed the `MInst` definition and then runs in parallel with the rest of M3 | R4.4 |
 | M5 | arm64-darwin on the new middle end (ends exception 1); library threads over pthreads; self-hosting on targets 3 and 4 | R5.6 |
-| M6 | **Target 2** on the new middle end (ends exception 2), in three steps, each gated by sim6747 cycles: (a) C6000 selection reads the SSA IR and still emits today's text through the old post-passes; (b) selection emits MIR with schedule-aware allocation, still through the old post-passes; (c) packetiser and pipeliner ported onto MIR, and the text passes deleted once cycles are equal or better | R2.1, R4.2, R9.4 |
+| M6 | **Target 2** on the new middle end (ends exception 2), in three steps, each gated by sim6747 cycles: (a) C6000 selection reads the SSA IR and still emits today's text through the old post-passes; (b) selection emits MIR with schedule-aware allocation, still through the old post-passes; (c) packetiser and pipeliner ported onto MIR, and the text passes deleted once cycles are equal or better; (d) with no walker left on `Ast.h`, its nodes and the parser's building half deleted (section 12.2) | R2.1, R4.2, R9.4 |
 | M7 | C90 through the parser and `SemaC`; c90 retired | R3.2 |
 | M8 | Template substitution replaces token replay where the suite allows, and replay is deleted; VM `--run` and VM reference test; `--health` on the typed tree | R4.5, R4.6 |
 
@@ -431,6 +431,31 @@ tree's scopes, which is why the adapter's copies of them are not kept.
 **What this keeps from M2.8-M2.12p**: the syntax tree and its recording, the typed tree and `-check=typed`, the adapter and
 `-check=adapted` as the harness for its subset, and the fact maps the adapter needs - re-keyed into `FunctionState` where
 they were singletons. **What it stops**: growing the adapter's subset.
+
+### 12.2 What M3b.7 left of `Ast.h`, and the row each part goes with (the M3 review, 2026-11-13)
+
+The M3 row deletes the parser-to-`Ast.h` path at M3's end; exceptions 1 and 2 keep two walkers that are `Visitor`s over
+exactly those nodes. Both cannot hold. M3b.7 deleted x86's walk and the adapter and kept the nodes, and RP5 (the M3 review,
+`fable-m3-review.md` R7) confirms that scope: nothing the design keeps was deleted except `-dump=ast` (R12). What it left
+had no row; this gives each part one. Counts at `3628bd4a`, by `tools/ast-residue` and `wc -l`.
+
+| Part | Where, measured | Goes with |
+|---|---|---|
+| arm64-darwin's walker and `A64Peep` | `backend/Arm64Darwin.cpp` 1,331 lines over `backend/Walker.cpp` 374 | **M5** (exception 1's end) |
+| tms6747's walker and its text passes | `backend/Tms6747.cpp` 2,458 lines, 97 node-kind names | **M6a** stops its reads (selection reads the SSA IR); M6c deletes the text passes |
+| The constant evaluator's reads | `sema/Constexpr.cpp` 882 lines, 48 casts to node kinds | **M6d** (new): evaluated over the typed tree, with `-check=typed`'s cases as its oracle; it may move earlier, never later |
+| The parser's building half | 2,173 lines of `src/parser` naming `ExprPtr`/`StmtPtr`; `alive_`, `pendingTemps_` | **M6d** (new) |
+| `Classes`' synthesised bodies | about 1,500 lines of `sema/Classes.cpp` (the review's estimate; 257 of its lines name `ExprPtr`/`StmtPtr`) | **M6d** (new) |
+
+**M6d** (added 2026-11-13): once M5 and M6a leave no walker reading `Ast.h`, the parser stops building it, `Classes`
+writes the specials' bodies into the typed tree only, `Constexpr` reads the typed tree, and `src/Ast.h`'s node classes are
+deleted in one commit, as M3b.7 deleted x86's path. Until then x86 builds every body twice and reads one - the principle's
+"two live implementations", allowed here past one milestone because the walkers are exceptions 1 and 2.
+
+**The ratchet.** `tools/ast-residue --check` runs in `make test` beside the memory gate: `ExprPtr` 2,009, `StmtPtr` 634 and
+165 casts to node kinds under `src/parser` and `src/sema`, 14 files including `Ast.h`, `Ast.h` itself 849 lines - each may
+only go down. `--readers` names each including file with its count of node-kind names (a name the IR shares, such as `Call`,
+counts too; the number orders the readers, it does not measure them).
 
 ## 13. Requirement amendments
 
@@ -502,3 +527,4 @@ So, as of 1.28, the failure is *usually* explicit, with two known silent excepti
 6. A target value for each R1.2 measure.
 7. **R7.1 does not match the toolchain.** R7.1 says "Kept: Microsoft `link.exe` … Not built: own … Windows linker". GRIDE already ships its own `link`: it takes `link.exe`'s command line, writes the PE32+ image (`GRIDE1/docs/MASM_LINK_Reference.html`), and since `cf1e607` writes a PDB. Should R7.1 name GRIDE's `link` as the default, with Microsoft's `link.exe` kept as the reference oracle for R9.3? GRIDE Design draft 0.5 §9 still says "link writes no PDB", which `cf1e607` made out of date. **Decided 2026-10-25** (the user): yes - `-masm=masm` is x86_64-windows's default and links with the project's `LINK`; `link.exe` stays as R9.3's oracle and as the `ml64` fallback's linker. R7.1 is amended to say so.
 8. C90 is new work: cpp11 refuses `.c` today (`Driver.cpp:1124-1136`). M7 should be sized with that known.
+9. **What M3b.7 left of `Ast.h` has rows** (section 12.2, 2026-11-13): M5, M6a and a new step M6d; the residue is held by `tools/ast-residue` in `make test`, so it can only go down.

@@ -162,6 +162,7 @@ test: $(TARGET)
 	@./tools/comment-lines --count
 	@./tools/comment-lines >/dev/null || { echo "make test: comment groups over the cap - run make comments"; exit 1; }
 	@./tools/memory-gate --check || { echo "make test: new/delete/malloc rose - R6.6 lets the count only go down"; exit 1; }
+	@./tools/ast-residue --check || { echo "make test: the Ast.h residue rose - design 12.2 lets it only go down"; exit 1; }
 
 # The comment-line policy, on its own, because it is about the source and not
 # about the compiler: three lines to a group, one over a one-liner. Both this

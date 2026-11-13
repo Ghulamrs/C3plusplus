@@ -18,6 +18,8 @@
 #   LEVELS, in the environment, names the levels compared ("0 1 2" unless
 #   set): a step that changes -O1 and -O2 on purpose is gated with LEVELS=0,
 #   -O0 being the reference the other two are diffed against.
+#   ARCHS, in the environment, names the targets ("x86_64-windows x86_64-linux" unless set; x86_64-windows is both
+#   spellings): ARCHS="arm64-darwin tms6747" holds the targets the deletion excepted against the M3b.6 binary.
 #   JOBS (2 unless set) compiles run at once: the Linux box has 2 cores; the Windows box may take 8.
 #
 # Prints the number of outputs compared and the number that differ, and names
@@ -68,11 +70,15 @@ sources() {
 LEVELS=${LEVELS:-0 1 2}
 for src in $(sources); do
     n=$(echo "$src" | tr '/' '_' | sed 's/\.cpp$//')
-    for L in $LEVELS; do
-        echo "$n.win.gnu.O$L $src -nologo -arch x86_64-windows -masm=gnu -O$L -S" >> "$jobs"
-        echo "$n.win.masm.O$L $src -nologo -arch x86_64-windows -masm=masm -O$L -S" >> "$jobs"
-        echo "$n.linux.O$L $src -nologo -arch x86_64-linux -O$L -S" >> "$jobs"
-    done
+    for L in $LEVELS; do for A in ${ARCHS:-x86_64-windows x86_64-linux}; do
+        case $A in
+        x86_64-windows)
+            echo "$n.win.gnu.O$L $src -nologo -arch x86_64-windows -masm=gnu -O$L -S" >> "$jobs"
+            echo "$n.win.masm.O$L $src -nologo -arch x86_64-windows -masm=masm -O$L -S" >> "$jobs" ;;
+        x86_64-linux) echo "$n.linux.O$L $src -nologo -arch x86_64-linux -O$L -S" >> "$jobs" ;;
+        *) echo "$n.$A.O$L $src -nologo -arch $A -O$L -S" >> "$jobs" ;;
+        esac
+    done; done
 done
 
 perl -e 'alarm 1800; exec @ARGV' xargs -P "${JOBS:-2}" -L 1 sh "$SELF" --one "$REF" "$NEW" "$OUT" < "$jobs"

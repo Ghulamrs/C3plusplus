@@ -1,8 +1,8 @@
-new 1056
+new 1054
 delete 0
 malloc 0
 calloc 0
 realloc 0
 free 0
 alloca 0
-raw-pointers 42
+raw-pointers 89

@@ -546,3 +546,510 @@ commit; and `make test` fails until both are true.
 
 ## Found by the release's feature sweep (2026-10-13)
 
+
+## The SSA lowering's limits: C++11, owed (2026-11-13)
+
+Since M3b.7 deleted the walker, a function the SSA lowering (`src/ir/`) does not build is a compile error on
+both x86 targets: "is outside the SSA lowering: <reason>". Each reason a valid C++11 program can meet is raised
+by `outside(...)` and is **C++11, owed** - a defect, not a choice. Each is listed below by its message text
+rather than its line, because the lowering's lines move every round; `tools/exclusions --check` reads this
+block and names a reason the source raises and the block omits, and a listed one the source no longer raises.
+`tools/exclusions --lowering` lists every site, file:line. A reason that cannot arise in a valid program (a
+record the parser always makes, disagreeing) is raised by `broken(...)` instead, prints "internal error: ",
+and is counted, not listed. The census's "0 outside" is a fact of the corpus only; the probes of these limits
+are in `tests/open/` (`lowering-*.cpp`). `<...>` is a piece spliced in at run time; a message built from a
+ternary comes back with both arms joined.
+
+```owed
+'<...>' of a pointer
+'<...>' of a pointer to a data member
+'<...>' of what is not a scalar
+'<...>' of what is not an integer
+'~' of what is not an integer
+<...>a '<...>' expression
+<...>a '<...>' of '<...>'
+<...>a '<...>' statement
+<...>a '<...>' the typer and the lowering type apart: '<...>' against '<...>'
+<...>a '<...>' the typer did not type
+<...>a class local initialised by a '<...>' that is not an object
+<...>a constructor of a class with bases, a vptr or members to builda destructor of a class with bases, a vptr or members to destroy
+<...>a handler whose caught object the syntax tree does not holda handler of <...> parts
+<...>a reference parameter bound to a '<...>' that is not an object
+<...>an address of a '<...>'
+<...>built by no constructor the parser recorded
+<...>built with default arguments the parser recorded none of
+<...>from another class
+<...>of a base whose own copy the parser recorded none of
+<...>of a class whose destructor the parser recorded none for
+<...>of a class with a bit-field or reference member
+<...>of a class with a virtual base
+<...>of a class with a virtual base on the Microsoft ABI
+<...>of a class with an array member of no length
+<...>of a member whose own copy the parser recorded none of
+<...>of a thread_local array
+<...>returning another type
+<...>the parser recorded no loop or array for
+<...>whose base is destroyed on unwinding by no destructor the parser recorded
+<...>whose base's copy takes other parameters
+<...>whose base's destructor is of another shape
+<...>whose constructor takes parameters
+<...>whose default argument makes a temporary with a destructor
+<...>whose loop takes other parameters
+<...>whose member is destroyed on unwinding by no destructor the parser recorded
+<...>whose member's copy takes other parameters
+<...>with a vptr the parser recorded no store for
+<...>with no `this`
+<...>with parameters it does not take
+`this` where there is none
+a '!' of what is not a scalar
+a '*' of what is not an object pointer
+a '->' of what is not a pointer to a struct
+a '->' on a class value that is not an object
+a '->*' of what is not a pointer to a class
+a '.*' of what is not a pointer to a data member
+a '.*' of what is not an object
+a 'delete' of <...> parts
+a 'delete' of another type
+a 'new' of <...> parts
+a 'new' of a class copied from another type
+a 'new' of a class copied from what is not an object
+a 'new' of a class with constructors
+a 'new' of an initializer_list
+a 'new' whose constructor's arguments outlive it
+a base built with default arguments
+a base handed a VTT where this function has none
+a base's constructor of another class
+a base's default constructor of parameters
+a base's destructor of another class
+a base's operator= on a const object
+a base's operator= where there is no `this`
+a binary of <...> parts
+a body that falls off its end without a value
+a body that is not a block
+a braced list as an argument
+a braced list as an argument of '<...>'
+a braced list assigned to a '<...>'
+a braced list assigned to a bit-field or a const
+a braced list assigned to what is not an object
+a braced list binding a reference member to another type
+a braced list binding a reference member to what is not an object
+a braced list bound to a reference to '<...>'
+a braced list reaching a '<...>'
+a braced list reaching a member the lowering does not place
+a braced list reaching an array of '<...>'
+a braced list with values past its aggregate
+a break outside a loop or switch
+a built flag's setting not where it was made
+a built flag's zeroing not where it was made
+a by-value argument built in place from what is not a call
+a by-value argument copied by a constructor of another shape
+a by-value argument's call that did not come back into its copy
+a call built in place of what is not this function's result
+a call of more arguments than its parameters
+a call of nothing
+a call of what is not a function pointer
+a call returning '<...>'
+a call that is no lvalue
+a call through a member pointer
+a call through what is not a pointer to a member function
+a call's class result that is no object
+a case label outside a switch
+a case label that is not a constant the lowering folds
+a case of <...> parts
+a cast of what is not a scalar
+a cast that takes a const away
+a cast to '<...>'
+a cast to a reference
+a cast to a reference of what is not an object
+a cast to a reference to another type
+a catch copied by a constructor of another shape
+a catch of '<...>'
+a catch of a type whose descriptor the parser did not finish
+a catch of a type with no type_info
+a catch with no type_info to name
+a caught object not typed
+a class argument from a braced list the lowering does not build
+a class argument from a call's result of another shape
+a class argument that is not an object
+a class assigned from another type
+a class assigned from what is not an object
+a class assigned to a const or another object
+a class assigned to what is not an object
+a class copied on return from another type
+a class copied on return from what is not an object
+a class local initialised by <...> values
+a class local initialised by a call's result of another type
+a class local initialised by a conditional of another type
+a class local initialised by a lambda of another type
+a class local initialised from a temporary of another type
+a class local initialised from another type
+a class local's initialiser of no form
+a class object called by its name
+a class returned from another type
+a class returned from what is not an object
+a class returned while a local with a destructor is alive
+a class temporary
+a class temporary a constructor builds
+a class temporary from a braced list
+a class temporary from another type
+a class temporary from what is not an object
+a class temporary with a destructor in an operand that may not be evaluated
+a class temporary with a destructor outside a full expression the lowering ends
+a class temporary's constructor of another class
+a class value read where a value is wanted
+a class value that is not an object
+a class with a copy of its own returned with no record of how
+a class with a copy of its own returned with no result pointer
+a class with a destructor returned from a local no scope destroys
+a class with a destructor returned from a temporary no constructor built
+a class with a destructor returned from another type
+a class with a destructor returned from what is neither a local, a temporary nor an object
+a class with a destructor returned inside a handler
+a comma of <...> parts
+a compiler-written <...>
+a compiler-written <...> forwarding a '<...>'
+a compiler-written <...> of a class with a member the lowering does not build
+a compiler-written <...> of a class with a virtual base on the Microsoft ABI
+a compiler-written <...> with no `this`
+a compiler-written <...> with parameters of its own
+a compiler-written function's call with default arguments
+a compiler-written function's record of another class
+a complete constructor building a virtual base from a mem-initialiser's arguments
+a complete constructor of another shape
+a complete constructor whose parameters the written constructor's do not match
+a complete destructor of another shape
+a compound assignment to an enumeration
+a condition declaring more than one name
+a condition declaring what is not a scalar
+a condition that is not a scalar
+a condition's variable the lowering did not declare
+a conditional of '<...>' and '<...>'
+a conditional of <...> parts
+a conditional of lvalues of type '<...>'
+a conditional of two lvalues apart in type
+a conditional of two objects apart in type
+a conditional of what is not a scalar
+a conditional that is no lvalue
+a conditional whose arm throws
+a conditional's arm not typed
+a constructed class returned from another type
+a constructed class returned from what is neither a local nor a temporary
+a constructor called with arguments its parameters do not match
+a constructor of another class
+a constructor part that is not a mem-initialiser
+a continue outside a loop
+a conversion function of what is not an object
+a conversion function returning '<...>'
+a conversion function that drops const
+a conversion of '<...>' to '<...>'
+a conversion of a number to a pointer
+a conversion of a pointer to a class to one that is not its base
+a conversion of a pointer to a data member to one of a class not derived from its own
+a conversion of a pointer to a number
+a conversion through a virtual base
+a converted local that did not come back into its slot
+a converted value built by a constructor of another shape
+a converted value of a class the lowering does not build
+a declaration in a for's condition
+a declaration in a switch's condition
+a deleting destructor with no flag on the Microsoft ABI
+a destructor called by name
+a destructor called through what is not a pointer
+a destructor named through another class
+a destructor of a class with a virtual base, handed a VTT
+a destructor of another shape
+a difference of two pointers apart in type
+a do of <...> parts
+a dynamic_cast of what is not a pointer
+a dynamic_cast to a reference of what is not an object
+a folded static member of no integer type
+a folded static member, which has no storage
+a function try block or an exception specification
+a function with no body
+a global not typed
+a goto in a function with a named return value
+a goto into a scope it is not in
+a goto to a label the body does not place
+a handler reading a call's value across its unwind edge on the Microsoft ABI
+a handler reading a value of the body that is no scalar on the Microsoft ABI
+a jump out of Microsoft handlers the lowering did not open
+a jump out of handlers the lowering did not open
+a label of <...> parts
+a lambda capturing a `this` that is not the member function's
+a lambda capturing a capture with no closure to read it from
+a lambda capturing what is not a local of the body
+a lambda capturing what is not a scalar or a class it holds
+a lambda's capture of another type
+a literal not typed
+a local a constructor builds
+a local built with default arguments
+a local of a class with a virtual base built by no constructor
+a local of a constructed class built by no constructor
+a local of type '<...>'
+a local with a destructor inside a handler
+a local with alignas beside one the parser gave no serial
+a local's constructor of another class
+a local's default constructor of parameters
+a local's initializer_list of another parameter
+a local's initializer_list of braced elements
+a mem-initialiser of <...> values for '<...>'
+a mem-initialiser of the class itself or of no base
+a mem-initialiser outside a constructor
+a member '<...>' that is not a data member
+a member '<...>' the lowering does not reach
+a member built from another type
+a member built with default arguments
+a member call
+a member call that drops const
+a member call through '*' of what is not a pointer to a class
+a member call through '<...>'
+a member call where there is no `this`
+a member call whose object is not a class
+a member call whose object is not a pointer
+a member copied from another type
+a member copied from what is not an object
+a member function's pointer applied and not called
+a member named '<...>'
+a member named where there is no `this`
+a member of '<...>'
+a member of <...> parts
+a member of a virtual base the class does not lay out
+a member of type '<...>'
+a member operator of what is not an object
+a member operator that drops const
+a member reached through another object's `this`
+a member's constructor of another class
+a member's default constructor of parameters
+a member's default initialiser
+a member's initializer_list of another parameter
+a name whose local the lowering did not declare
+a named return value built by no constructor
+a named return value built by no constructor the parser recorded
+a named return value built in place by a call of another type
+a named return value built with defaults, zeroed or from a braced list
+a named return value inside a handler
+a named return value of another type
+a named return value whose destructor the parser recorded none for
+a named return value's constructor of another class
+a named return value's default constructor of parameters
+a noexcept body that left a pad open
+a noexcept wrap beside another
+a nothrow array 'new' with a cookie
+a null, comparison or conversion of a pointer to a data member in cl's virtual model
+a nullptr converted to '<...>'
+a parameter not typed
+a parameter of type '<...>'
+a parameter that is not a var
+a parenthesis of <...> parts
+a placement 'new' of another allocation function
+a pointer compared with a number
+a pointer to a data member as a truth value
+a pointer to a data member compared with another type
+a pointer to a data member of no class
+a pointer to a data member value-initialised
+a pointer to a member function converted from one not of a base
+a pointer to a member function that is not an object
+a pointer to a member function with no code word or adjustment
+a postfix '<...>'
+a postfix of <...> parts
+a qualified member the lowering does not reach
+a range-based for of other parts
+a range-based for over an array of '<...>'
+a range-based for over what is not an array
+a range-based for over what is not an object
+a range-based for whose begin and end differ in type
+a range-based for whose begin or end is not a direct call
+a range-based for whose braced range builds more than its elements
+a range-based for whose iterator's '*' gives no reference or scalar
+a range-based for whose range's full expression builds more than its range
+a range-based for's begin or end of another shape
+a range-based for's begin or end taking another type
+a range-based for's iterator call of another shape
+a range-based for's iterator call on another class
+a range-based for's iterator call that is not a direct call
+a range-based for's reference of another type
+a range-based for's variable of type '<...>'
+a read of an object of type '<...>'
+a read through a pointer to '<...>'
+a reference bound to another type
+a reference member bound to another type
+a reference member bound to what is not an object
+a reference member to '<...>'
+a reference of <...> parts
+a reference parameter bound to a call's result of another type
+a reference parameter bound to a temporary of another type
+a reference parameter bound to another type
+a reference parameter to '<...>'
+a reference returned to another type
+a reference that can write bound to a const
+a reference that can write returned from a const
+a reference to '<...>'
+a reference to a function bound to what is not that function
+a return built in place by a call of another type
+a return built in place by what is not a call
+a return of <...> parts
+a return of a value from a void function
+a return type of '<...>'
+a return with no value
+a return's copy constructor of another shape
+a scalar assigned a braced list of <...> values
+a scalar parameter given a braced list of <...> values
+a scalar's braces holding more than one value
+a scope's cleanup that is not the innermost pad
+a scoped enumeration mixed with another type
+a sizeof not folded
+a static aggregate built otherwise
+a static array built at run time
+a static class of <...> parts
+a static local
+a static local built at run time
+a static local built at run time inside a handler on the Microsoft ABI
+a static local built from a braced list of no initializer_list
+a static local built with default arguments
+a static local of <...> parts
+a static local of type '<...>'
+a static local whose construction left a scope open
+a static local whose destructor the parser registered none for
+a static local with a destructor
+a static local's constructor of another class
+a static local's default constructor of parameters
+a static local's initializer_list of another parameter
+a static member
+a static member function called through what is not an object
+a static member reached through what is not a name
+a static reference bound to another type
+a static reference of <...> parts
+a static reference that can write bound to a const
+a static reference to '<...>'
+a std::nullptr_t parameter given what is not a null pointer constant
+a step of a pointer to an incomplete type
+a step of what is not a scalar object
+a step of what is not an object
+a stepped bit-field as an object
+a string inside a braced list
+a string not typed
+a subscript of <...> parts
+a subscript of what is not a pointer
+a switch of <...> parts
+a switch on what is not an integer
+a thread_local array built at run time
+a thread_local reference
+a thread_local reference, or no thread_local, in __tls_init
+a thread_local whose construction left a scope open
+a throw copied by a constructor of another class
+a throw of <...> parts
+a throw of a class that is not plain
+a throw of a class value that is not an object or a temporary
+a throw of a class with a virtual base
+a throw of a pointer to a data member
+a throw of a temporary the lowering cannot build
+a throw of a type whose ThrowInfo the parser did not finish
+a throw of a type with no type_info
+a throw of an object of another class
+a throw of what is not a scalar
+a throw whose copy drops const
+a throw with no ThrowInfo to name
+a throw with no type_info to name
+a throw(...) list on the Microsoft ABI
+a thrown temporary list-initialised
+a thunk forwarding a '<...>'
+a thunk returning a '<...>'
+a thunk whose name states no adjustment
+a thunk with no `this`
+a try whose part is not a handler
+a try with no handler
+a typeid of a polymorphic value that is not an object
+a typeid read at run time of what is not polymorphic
+a unary '<...>'
+a unary '<...>' of what is not a number
+a unary of <...> parts
+a user-defined literal
+a va builtin of another shape
+a va_arg of type '?<...>'
+a va_list that is not a pointer
+a value-initialised cast to what is not a scalar
+a var not typed
+a var of <...> parts
+a variadic argument of type '<...>'
+a virtual base the class does not lay out
+a virtual base the class lays out no vbtable entry for
+a virtual base's destructor of another shape
+a virtual operator
+a vptr out of a VTT
+a vptr out of a VTT this function is not handed
+a vptr out of no table the parser named
+a while of <...> parts
+an address of a '<...>'
+an address of a 'sizeof'
+an address of what is not an object
+an aggregate whose members the parser built otherwise
+an aggregate with a destructor built member by member
+an aggregate with a destructor whose members' values leave temporaries
+an aggregate's member built from values the parser counted otherwise
+an aggregate's member guarded from no address of this block
+an aggregate's member with a destructor that no constructor builds
+an anonymous union past a braced list's end
+an array 'new' of a class with constructors
+an array built at run time before main
+an array built by no constructor the parser recorded
+an array element built with default arguments
+an array element copied from another type
+an array element copied from what is not an object
+an array element's constructor of another arity
+an array element's constructor of another class
+an array initialised from a string of another width
+an array initialised from a string the program does not hold
+an array initialised with more values than it holds
+an array member destroyed on unwinding by no destructor the parser recorded
+an array member built by no constructor the parser recorded
+an array member built with default arguments the parser recorded none of
+an array member given an initialiser
+an array member's constructor of another class
+an array of '<...>'
+an array of a class initialised from a list the parser recorded none for
+an array whose elements' destructor the parser recorded none for
+an array zeroed before its elements are built
+an array's constructor of another class
+an array's list of more elements than the array holds
+an array's list with parts its record does not place
+an array's tail constructor of another class
+an assignment of <...> parts
+an assignment that is no lvalue
+an assignment to a const bit-field
+an assignment to what is not a scalar object
+an assignment to what is not an object
+an assignment's operator= of another shape
+an elided call that did not come back into its local
+an enumerator of no arithmetic type
+an expression statement of <...> parts
+an if of <...> parts
+an init function with parameters
+an init function's object not typed
+an initializer_list element built with default arguments
+an initializer_list element copied from another type
+an initializer_list element copied from what is not an object
+an initializer_list element's constructor of another arity
+an initializer_list element's constructor of another class
+an initializer_list of '<...>' elements
+an initializer_list of elements with a destructor outside a full expression
+an initializer_list of no layout the lowering knows
+an initializer_list parameter passed as no other class is
+an integer literal not folded
+an operator of no operands
+an operator of no plain symbol
+an operator that is no lvalue
+an operator-> answering with no pointer
+an operator-> asked of what is not a class
+an operator-> of another shape
+an operator-> that drops const
+an operator-> the lowering does not call
+an operator-> whose last answer is a class
+arithmetic on a nullptr
+arithmetic on a pointer to an incomplete type
+the name '<...>' is no object
+the name '<...>', a static memberthisof another kind
+the operator '<...>'
+two case labels of one value
+two default labels
+two pointers to different types compared
+```

@@ -34,7 +34,7 @@ FuncId Builder::build(const FunctionFacts &facts, const std::string &kind, std::
             l.outside("a compiler-written " + kind + " of a class with a member the lowering does not build");
         if (ctor && cls.hasVptr() && !(l.target_.microsoftNames() && !cls.polymorphic()) &&
             (!l.vptrStores_ || !l.vptrStores_(l.key_, l.vptrs_) || l.vptrs_.empty() || (!l.vptrs_[0].fromVtt && l.vptrs_[0].symbol.empty())))
-            l.outside("a compiler-written " + kind + " with a vptr the parser recorded no store for");
+            l.broken("a compiler-written " + kind + " with a vptr the parser recorded no store for");
         l.returnBlock_ = l.newBlock();
         const BlockId first = l.newBlock();
         l.br(first);
