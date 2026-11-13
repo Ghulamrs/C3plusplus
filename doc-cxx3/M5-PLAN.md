@@ -691,3 +691,6 @@ Each reason read for what must hold to reach it, then one probe on Windows (cxx3
 - **Gates, Windows** (cxx3-msvc.exe, cl /W4 /WX clean): both cases and char-array-short-string equal to clang at -O0
   and -O2 in both spellings; exclusions 0 uncited, 0 stale (129; SSA 554/95); comments 0 over the cap; ide/generate.py
   up to date.
+- **Gates, Linux: owed.** The chain (boxkit/x86i-linux.sh in a fresh ~/x86i at 4e083584's tree: build, the three cases at
+  -O0/-O2, arm64-darwin -S of them, an -S census of tests/cases against ~/x86h, typed.sh, memory gate) was still queued
+  on the lock behind two tms6747 shards at the hour; it stays queued, its answer in ~/x86i-linux.out.
