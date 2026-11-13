@@ -63,7 +63,7 @@ oracle, and the sentence has to be read.
 *reachability* depends on where it sits. `template <>` at
 `src/parser/ParserTemplate.cpp:40` is refused where a template parameter list
 is expected, while `template <> struct Box<int> { ... };` compiles; the
-functional-cast temporary at `src/sema/Overload.cpp:583` is refused
+functional-cast temporary at `src/sema/Overload.cpp:584` is refused
 during overload ranking, while `take(P(4))` and `P q = P(3);` compile. Both were
 checked with a program before this sentence was written, and the same habit is
 the reason `pending[]` once had eight keywords in it that were implemented.

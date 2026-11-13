@@ -409,6 +409,15 @@ ExprPtr Parser::staticCast(std::size_t pos) {
                                "pointer only to or from 'void *' or along a base-derived line; "
                                "reinterpret_cast is the cast that reads the bytes as another type");
         }
+        // [expr.static.cast]/12: a derived class's data member pointer back to a base's - the offset shrunk, null kept.
+        const int back = to->unqualified()->isMemberPointer() && !to->unqualified()->isMemberFunctionPointer()
+                             ? memberPointerToDerived(to, v->type()) : -1;
+        if (back > 0) {
+            const syntax::NodeId written = v->syntax();
+            ExprPtr shrunk = convertMemberPointer(std::move(v), to->unqualified(), -back);
+            if (!shrunk->syntax().valid()) shrunk->setSyntax(written);
+            return shrunk;
+        }
         return convert(std::move(v), to, true);
     }();
     r->setDeclCategory(Expr::Category::Prvalue);

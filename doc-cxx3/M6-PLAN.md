@@ -259,6 +259,10 @@ tools in `~/ti6x`), never on the Mac.
 - **A neighbour that failed on every target:** `f(0)` for an `int S::*` parameter was refused ("no function called
   'f' takes these 1 argument(s)") - Overload ranked the literal 0 a pointer conversion only to a pointer; [conv.mem]/1
   makes it one to a pointer to member too. src/: +2 -1 (sema/Overload.cpp).
+- **Found on the way, mended:** member-pointer-static-cast printed `d.*s` as d.z on tms6747 (base tree too):
+  `static_cast<int C::*>(&D::y)` reached convert, which only retyped it, so the walker kept D's offset; staticCast
+  now shrinks it by the base's through convertMemberPointer, null kept (SSA already did, Lowering's /12).
+  src/: +9 (ParserExpr.cpp). docs/EXCLUSIONS.md: one citation re-pointed (Overload.cpp:584).
 - tests/tms6747.sh: a run by case name stopped at `SHARD: unbound variable` (set -u) and ran nothing; SHARD defaults.
 - member-pointer-condition's `.notarget` (its only line was tms6747's) is gone; member-pointer-null-neighbours holds
   nullptr and 0 assigned, returned, passed and compared, and a `for`/`do` ended by a null, with clang's output.
