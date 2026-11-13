@@ -292,6 +292,8 @@ private:
     void ssaAssign(const Function &fn, const ir::Function &f);
     const char *ssaHomeOf(ir::ValueId v) const;
     std::string ssaUse(const ir::Function &f, ir::ValueId v, const char *scratch);
+    std::string ssaRead(const ir::Function &f, ir::ValueId v, const char *scratch);
+    std::string ssaPut(c6x::MInst t);
     bool ssaCompare(const ir::Function &f, const ir::Inst &c, const std::string &d);
     // The body as MIR (M6b): the selector's instructions, a walker helper's text read in where it was written (ssaAbsorb).
     c6x::MStream ssaMir_;

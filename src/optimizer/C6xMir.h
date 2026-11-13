@@ -66,6 +66,10 @@ struct MInst {
 
 using MStream = std::vector<MInst>;
 
+// Whether the instruction stands as written: one source at most over a cross path, in a position with a crossed form,
+// and a unit that has the form - `crossings` and `unitsFor`, the scheduler's own reading (C6xSched.cpp).
+bool legal(const MInst &i);
+
 // The text of a walker's helper, line by line, onto the stream: an instruction where it spells back the same.
 void read(const std::string &text, MStream &to);
 void write(const MStream &s, std::ostream &out);
