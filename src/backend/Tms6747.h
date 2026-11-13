@@ -167,6 +167,7 @@ private:
     // it takes the *-A15(k) form; every slot the first walk reached has a place, and the saved
     // registers' band under A15 is only as wide as the function's own saves.
     std::map<int, int> place_;                 // key -> the slot's offset in the laid-out frame
+    std::vector<int> ssaPlace_;                // -g in a selected body: each of fn.locals()'s slot, -1 for none
     bool relayout_ = false;
     int placedTop_ = 0;
     int saveBytes_ = 40;

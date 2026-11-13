@@ -2191,11 +2191,15 @@ void Tms6747::emitVariables(const Function &fn) {
 // something: as a lexical block when it has code of its own, else folded into this one
 void Tms6747::emitScope(const Function &fn, int scope) {
     for (int pass = 0; pass < 2; pass++)
-        for (const Local &l : fn.locals()) {
+        for (std::size_t n = 0; n < fn.locals().size(); n++) {
+            const Local &l = fn.locals()[n];
             if (l.scope != scope || l.isParam != (pass == 0) || l.name.empty() || l.type == nullptr) continue;
             std::string where;
             if (!l.staticName.empty()) where = "DW_OP_addr " + l.staticName;
-            else {
+            else if (n < ssaPlace_.size() && (ssaPlace_[n] >= 0 || !l.isParam || regOf_.count(l.offset))) {
+                if (ssaPlace_[n] < 0) continue;                 // selected: promoted, or a parameter in its home register
+                where = "DW_OP_breg15 " + std::to_string(-(saveBytes_ + ssaPlace_[n]));
+            } else {
                 int key = localBase_ + l.offset;
                 if (regOf_.count(key)) continue;
                 std::map<int, int>::const_iterator it = place_.find(key);
@@ -2328,6 +2332,7 @@ void Tms6747::emitFunction(const Function &fn) {
     relayout_ = false;
     saveBytes_ = kSaveBytes;
     // Selected from SSA where the selector's subset holds the whole body (M6a); null: the walker's, the reason named.
+    ssaPlace_.clear();
     const ir::Function *ssaFn = ssaChoose(fn);
     if (optimize_ > 0 && ssaFn == nullptr) {
         planning_ = true;

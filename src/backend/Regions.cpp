@@ -1,8 +1,11 @@
 #include "Regions.h"
 
 #include <algorithm>
+#include <cctype>
+#include <map>
 
 #include "../Source.h"
+#include "../ir/Ir.h"
 
 void Regions::markLine(std::size_t pos) {
     if (lines_ == nullptr) return;
@@ -281,4 +284,38 @@ std::string Regions::lsdaTable(const LsdaSpelling &sp, const std::string &symbol
     }
     o += "  .p2align 2\n";
     return o;
+}
+
+namespace {
+
+// Whether an alloca's text (the lowering names it by its declaration, `const char * label`) declares `name`: a whole word of it.
+bool declaresName(const std::string &text, const std::string &name) {
+    for (std::size_t at = text.find(name); !name.empty() && at != std::string::npos; at = text.find(name, at + 1)) {
+        const std::size_t end = at + name.size();
+        const bool before = at > 0 && (std::isalnum(static_cast<unsigned char>(text[at - 1])) || text[at - 1] == '_');
+        const bool after = end < text.size() && (std::isalnum(static_cast<unsigned char>(text[end])) || text[end] == '_');
+        if (!before && !after) return true;
+    }
+    return false;
+}
+
+}   // namespace
+
+std::vector<int> ssaLocalAllocas(const Function &fn, const ir::Function &f) {
+    std::vector<char> live(f.frame.size(), 0);
+    for (std::size_t b = 0; b < f.blocks.size(); b++)
+        for (std::size_t k = 0; k < f.block(f.blocks[b]).insts.size(); k++) {
+            const ir::Inst &i = f.inst(f.block(f.blocks[b]).insts[k]);
+            if (i.op == ir::Op::Alloca && i.k >= 0 && static_cast<std::size_t>(i.k) < live.size()) live[i.k] = 1;
+        }
+    std::map<std::string, std::size_t> next;
+    std::vector<int> at;
+    for (const Local &l : fn.locals()) {
+        at.push_back(-1);
+        if (!l.staticName.empty()) continue;
+        std::size_t &j = next[l.name];
+        while (j < f.frame.size() && !declaresName(f.frame[j].name, l.name)) j++;
+        if (j < f.frame.size()) { if (live[j]) at.back() = static_cast<int>(j); j++; }
+    }
+    return at;
 }

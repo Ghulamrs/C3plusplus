@@ -62,7 +62,6 @@ const ir::Function *Tms6747::ssaChoose(const Function &fn) {
 
 // Why a body is outside the first subset (M6a): words only, no pad, no class by value, direct calls in registers.
 std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const {
-    if (lineSource() != nullptr) return "-g";
     if (fn.isVariadic() || f.variadic) return "variadic";
     if (fn.hasLandingPads() || f.landingPads) return "landing pads";
     if (fn.isNoexcept() || !fn.exceptionSpec().empty()) return "exception specification";
@@ -470,13 +469,29 @@ void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
         loadFrom(ps[i].type, m);
         ssaStore(f, f.params[i], "A4");
     }
+    // -g: each variable at its alloca's slot (ssaPlace_); a value in a register has no record, as the walker's regOf_.
+    ssaPlace_.assign(fn.locals().size(), -1);
+    if (lineSource() != nullptr) {
+        resetBlocks(fn.blocks());
+        const std::vector<int> at = ssaLocalAllocas(fn, f);
+        for (std::size_t n = 0; n < at.size(); n++) if (at[n] >= 0) ssaPlace_[n] = ssaAllocaSlot_[static_cast<std::size_t>(at[n])];
+    }
+    std::size_t lastPos = 0;
     for (std::size_t b = 0; b < ssaOrder_.size(); b++) {
         const ir::Block &blk = f.block(ssaOrder_[b]);
         defineLabel(ssaBlockLabel(ssaOrder_[b]));
         const ir::BlockId next = b + 1 < ssaOrder_.size() ? ssaOrder_[b + 1] : ir::BlockId();
         for (std::size_t k = 0; k <= blk.insts.size(); k++) {
             const ir::InstId id = k < blk.insts.size() ? blk.insts[k] : blk.term;
-            if (id.valid()) selectInst(f, f.inst(id), next);
+            if (!id.valid()) continue;
+            // -g: the statements and lexical blocks that begin before the instruction (ir::Inst::lines), as arm64's selector.
+            const ir::Inst &in = f.inst(id);
+            for (std::size_t m = 0; m < in.lines.size(); m++) {
+                const std::uint32_t block = ir::kBlockOpens | ir::kBlockCloses, at = in.lines[m];
+                if (at & block) markBlock(fn.blockAt(at & ~block), (at & ir::kBlockCloses) != 0); else markLine(at);
+            }
+            if (in.pos != 0 && in.pos != lastPos) { markLine(in.pos); lastPos = in.pos; }
+            selectInst(f, in, next);
         }
     }
     for (std::size_t k = 0; k < ssaLater_.size(); k++) {      // none is left unless the last block cannot be left
@@ -485,6 +500,7 @@ void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
         jump(ssaBlockLabel(ssaLater_[k].second->block));
     }
     ssaLater_.clear();
+    closeOpenBlocks();
     out_ << "\tZERO\tA4\n";     // falling off the end returns 0, as the walker's body does
 }
 
