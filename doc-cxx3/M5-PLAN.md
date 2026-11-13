@@ -760,7 +760,7 @@ Each reason read for what must hold to reach it, then one probe on Windows (cxx3
   equals c6m's, on x86 neither (x86g's slots and c6m's acceptance meet there).
   (b) tms6747 -O0 -g against da250ac7: 1,220 equal; 6 differ, each a file x86i changed (char-array-short-string,
   conversion-reference-to-value, conversion-to-lvalue-reference, lowering-return-empty-braces, mem-init-typedef-base,
-  w4). g-same: see below.
+  w4). tests/g-same.sh: 867 same, 0 differ, 0 broken, 356 not for tms6747.
   (c) without -g: x86_64-linux -O0/-O2, x86_64-windows -O0/-O2, arm64-darwin -O0 0 differ from the union of the parents;
   arm64-darwin -O2 8 and tms6747 -O0/-O2 2 each equal neither parent - x86i's seven new cases and w4 (char-array-short-string
   and w4 on tms6747), which only x86i compiles or lowers and whose backend wave 2 changed: both sides changed each.
