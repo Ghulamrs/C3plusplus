@@ -425,3 +425,22 @@ M3b.7 did for x86 (src/ 92,942 -> 91,683, +43 -1,302 over five files, two delete
   memory gate); the memory gate was not run (the Linux lock was held), and no file it reads changed.
 - **Owed.** The Linux leg (g++ build) and `identical.sh ARCHS=arm64-darwin` are the wave gate's; self-host on target 4
   (M5.4); the plan's design text (`Compiler_Design_Final.md` sections naming `A64Peep`) is history now.
+
+### Wave 1 landed, 2026-11-13 (the coordinator)
+
+`m5-wave1` = M5.0 (m5b), M5.1-M5.2 (m5a, m5c, m5d, m5e, m5f), M5.3 (m5g), R1 rounds 1-3 (r1p, r1f, r1q, r1g, r1h), one
+squashed commit. **Gate**, on the final tree:
+- **Windows:** winpass at -O2 and -O0: 808 same / 0 differ (gnu), 807 / 0 (masm), 351 refused as recorded, 0 not.
+- **Linux** (a fresh tree - a tar over the old one had kept `A64Peep.cpp`, and the wildcards built it):
+  - `ssa.sh` 1 and 2: 870 / 0.
+  - `make test`: run 1193 / 0, emit 3320 / 0, typed 840 / 0 at 46 untyped (record lowered from 90), ssa 870 / 0,
+    coff 1650 objects 0 differ, c90 447 / 0, exclusions 0 / 0, comments 0, memory gate and ast-residue pass.
+- **Mac:** `run.sh` at -O0 and -O2, 1191 / 0.
+- **`identical.sh` against M4's build:** 7623 compared, 144 differ - 16 cases x 9, each a case R1 mended or added
+  that M4 refused or miscompiled.
+- **ast-residue baseline re-recorded** at ExprPtr 2013, StmtPtr 638, node-casts 165, node-refs 411 (visits 124 from
+  150): the rises are R1's parser fixes, made in the half M6d deletes.
+
+**Owed:** emit.sh's golden on Linux (none recorded on that tree); lldb on the Mac (Developer Mode, the user's);
+target 3's self-host re-measured at M5's close; the C6000's M6a, not in this wave (its -O2 cycle gate is unmet).
+
