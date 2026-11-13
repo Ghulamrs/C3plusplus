@@ -4417,7 +4417,7 @@ temporary from `x29-96` to `x29-216`, the callee-save offsets with it), no instr
 chosen where REF chose `push_back(V &&)`, the front end's change behind N1's fourth source (a `?:` of a const
 operand is a const prvalue; rv-mend's parser item), not the target's.
 
-**Two decisions lanes took, put to the user here as open questions - not settled:**
+**Two decisions lanes took, put to the user - both decided by the user, 2026-11-13 (the entry at the end):**
 1. **R6: is arm64-darwin accepted by byte identity until M5**, with a milestone's close needing no Mac leg (the Mac
    runs no build, test or check; arm64 is exception 1, its walker untouched since M3b.7)? Lane E took "yes" so M3
    could close; the alternative is a Mac leg in `verify-three` at each close, or arm64 on a box.
@@ -4445,3 +4445,29 @@ match the Linux list line for line (`boxkit/rvQT-redo.out`): **0 differ in fact,
 shared box named, not read** (what it printed is not kept; `~/rvQT-compare.txt`). `tools/exclusions --check`: 128
 sites 0 uncited 0 stale; lowering 569/491 and 84/75, 0 uncited, 0 stale, at the baseline. `make test` on Linux
 (`~/rvQTf`, `~/rvQT-maketest.log`) rc 0: run 1158/0, emit 3227/0, typed 816/0, ssa 846/0, c90 447/0, every gate.
+
+### The user's two decisions on R6 and R17, 2026-11-13
+
+**R6: accepted.** arm64-darwin and tms6747 are accepted by byte identity against `identical.sh`'s REF until M5,
+and a milestone's close needs no Mac leg; the Mac leg stays owed until M5 takes arm64 onto the new middle end.
+Each of the 24 differing files (REF `f9f1ff2d` against `3628bd4a`, -O1 and -O2; `~/rvE-ident-arm.txt`,
+`~/rvE-ident-c6x.txt` on Linux), with its reason:
+
+| case | targets | reason |
+| --- | --- | --- |
+| `windows-h-layout` | arm64-darwin, tms6747 | the `#error` line's header path, the tree's directory; gone with N5's normaliser |
+| `posix-headers` | tms6747 | the same header path in an `#error` line; gone with N5's normaliser |
+| `return-virtual-base-reference` | arm64-darwin, tms6747 | REF refused it; this tree compiles it |
+| `using-declaration-indirect-base` | arm64-darwin, tms6747 | REF refused it; this tree compiles it |
+| `ssa-aggregate-value-temporaries` | arm64-darwin, tms6747 | one more 16-byte temporary slot from the parser's M3b.7 change: arm64 a frame of 384 for 368, displacements only; tms6747 frame offsets and register picks, no instruction of another kind (`~/rvE-id-tms6747`, read at -O1 by this entry) |
+| `ssa-conditional-const-class` | arm64-darwin, tms6747 | `push_back(const V &)` chosen where REF chose `push_back(V &&)`: a `?:` of a const operand is a const prvalue, the front end's change (N1's fourth source) |
+| `ssa-data-member-pointer` | tms6747 | f8a's `CMPEQ` immediate range |
+
+That is 10 arm64-darwin files (5 cases at two levels) and 14 tms6747 files (7 cases at two levels). None is the
+walker's own change.
+
+**R17 `virtual`: accepted as a layout effect.** The kernel runs 127-137 ms against `main`'s 84-87: the callees'
+`ret` lines sit one byte-line apart after `functionAlign` moved `Rc::area` 32 bytes, and `virt`'s own code is
+unchanged (lane V). R5's "no kernel slower than main" is unmet by this kernel by the user's choice. It is to be
+re-measured in the optimizer milestone, where M3b.5's placement rule for a callee's `ret` is the cure named. M4
+was not held for it.
