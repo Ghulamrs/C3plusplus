@@ -46,6 +46,7 @@
 		ECFF4ADB02FA0FDCA8E5E830 /* Walker.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 91CE00C0935BDE384E519CE8 /* Walker.cpp */; };
 		DEA45A10FA3892FD4AE58700 /* X86_64Linux.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 334CD99BDE8B6A591C8500E5 /* X86_64Linux.cpp */; };
 		AD991EF6B756D66904E0D106 /* X86_64Windows.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 80025E52DA32488A2EF7539F /* X86_64Windows.cpp */; };
+		0CDF1684785903BDD0B9C9FC /* C6xMir.cpp in Sources */ = {isa = PBXBuildFile; fileRef = AEBA88E970D006CFA93BAC41 /* C6xMir.cpp */; };
 		399E4BB5F93D70D7DEC56D50 /* C6xPipe.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4C545AD0A2E8762CE81AC088 /* C6xPipe.cpp */; };
 		927838A3415C47BEFF72D53C /* C6xSched.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 4F9178B9F267416156C0C111 /* C6xSched.cpp */; };
 		F88959C76FB177A1B06356A5 /* Inliner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A34D7BA64BC85EB6858B59E7 /* Inliner.cpp */; };
@@ -150,6 +151,7 @@
 		91CE00C0935BDE384E519CE8 /* Walker.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Walker.cpp; path = "../src/backend/Walker.cpp"; sourceTree = "<group>"; };
 		334CD99BDE8B6A591C8500E5 /* X86_64Linux.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = X86_64Linux.cpp; path = "../src/backend/X86_64Linux.cpp"; sourceTree = "<group>"; };
 		80025E52DA32488A2EF7539F /* X86_64Windows.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = X86_64Windows.cpp; path = "../src/backend/X86_64Windows.cpp"; sourceTree = "<group>"; };
+		AEBA88E970D006CFA93BAC41 /* C6xMir.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = C6xMir.cpp; path = "../src/optimizer/C6xMir.cpp"; sourceTree = "<group>"; };
 		4C545AD0A2E8762CE81AC088 /* C6xPipe.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = C6xPipe.cpp; path = "../src/optimizer/C6xPipe.cpp"; sourceTree = "<group>"; };
 		4F9178B9F267416156C0C111 /* C6xSched.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = C6xSched.cpp; path = "../src/optimizer/C6xSched.cpp"; sourceTree = "<group>"; };
 		A34D7BA64BC85EB6858B59E7 /* Inliner.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Inliner.cpp; path = "../src/optimizer/Inliner.cpp"; sourceTree = "<group>"; };
@@ -238,6 +240,7 @@
 		C681B0D6A27FF7AEF4F8EF84 /* Walker.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Walker.h; path = "../src/backend/Walker.h"; sourceTree = "<group>"; };
 		12A5F71977D26CEE2AF1E2A4 /* X86_64Linux.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = X86_64Linux.h; path = "../src/backend/X86_64Linux.h"; sourceTree = "<group>"; };
 		D9E2165876940A054181ABEA /* X86_64Windows.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = X86_64Windows.h; path = "../src/backend/X86_64Windows.h"; sourceTree = "<group>"; };
+		49664AC8889B2AC6C79A6A8F /* C6xMir.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = C6xMir.h; path = "../src/optimizer/C6xMir.h"; sourceTree = "<group>"; };
 		3AB28797CC2B36EA79777891 /* C6xModel.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = C6xModel.h; path = "../src/optimizer/C6xModel.h"; sourceTree = "<group>"; };
 		10CD4A81CEFE78E85B2FD368 /* C6xSched.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = C6xSched.h; path = "../src/optimizer/C6xSched.h"; sourceTree = "<group>"; };
 		B32EA0424FFF11FA6974916D /* DivMagic.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = DivMagic.h; path = "../src/optimizer/DivMagic.h"; sourceTree = "<group>"; };
@@ -430,6 +433,8 @@
 		868F39DBAA20F1B314EED2BA /* src/optimizer */ = {
 			isa = PBXGroup;
 			children = (
+				AEBA88E970D006CFA93BAC41 /* C6xMir.cpp */,
+				49664AC8889B2AC6C79A6A8F /* C6xMir.h */,
 				3AB28797CC2B36EA79777891 /* C6xModel.h */,
 				4C545AD0A2E8762CE81AC088 /* C6xPipe.cpp */,
 				4F9178B9F267416156C0C111 /* C6xSched.cpp */,
@@ -625,6 +630,7 @@
 				ECFF4ADB02FA0FDCA8E5E830 /* Walker.cpp in Sources */,
 				DEA45A10FA3892FD4AE58700 /* X86_64Linux.cpp in Sources */,
 				AD991EF6B756D66904E0D106 /* X86_64Windows.cpp in Sources */,
+				0CDF1684785903BDD0B9C9FC /* C6xMir.cpp in Sources */,
 				399E4BB5F93D70D7DEC56D50 /* C6xPipe.cpp in Sources */,
 				927838A3415C47BEFF72D53C /* C6xSched.cpp in Sources */,
 				F88959C76FB177A1B06356A5 /* Inliner.cpp in Sources */,
