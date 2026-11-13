@@ -1181,6 +1181,7 @@ void X86_64Linux::emit(const Function &fn) {
 
     // A callee the SSA inliner took is the caller's allocas already: layoutSsa's frame holds it, with no reserve beside.
     frameSize_ = layoutSsa(fn, *ssaFn);
+    if (lineSource()) dwarfFns_[dwarfFnAt_].locals = &ssaFrameLocals(fn, *ssaFn, ssaAllocaSlot_, "x86");
     fnSymbol_ = fn.symbol();
     fnMergeable_ = fn.isInline();
     // On Windows the entry is named by the `{` line, as cl names it - see openingBrace.

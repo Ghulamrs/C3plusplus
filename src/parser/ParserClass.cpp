@@ -2013,10 +2013,10 @@ void Parser::pruneUnusedInline(Program &program) {
     for (std::size_t i = 0; i < program.globals.size(); i++)
         if (reached[nf + i]) keptGlobals.push_back(std::move(program.globals[i]));
     program.globals.swap(keptGlobals);
-    // A literal only a pruned body used goes with it; what is kept names every literal it reads.
+    // A literal only a pruned body used goes with it; what is kept names every literal it reads, or copied into an array.
     std::vector<StringLit> keptStrings;
     for (StringLit &sl : program.strings)
-        if (everyName.count(sl.label) != 0) keptStrings.push_back(std::move(sl));
+        if (everyName.count(sl.label) != 0 || copiedStrings_.count(sl.label) != 0) keptStrings.push_back(std::move(sl));
     program.strings.swap(keptStrings);
     // A Microsoft class keeps its five records where its vftable stayed or something names one.
     std::vector<const Type *> rtti;
@@ -2898,7 +2898,9 @@ StmtPtr Parser::memberInitialiser(const std::string &tag, const Type *type,
     }
     // **A list on a class or an array** (M1 L4): a class with constructors is built from it, direct- or
     // copy-list as `{` or `= {` was written; an aggregate or an array of scalars is laid down leaf by leaf.
-    if (braced && (m.type->isArray() || m.type->unqualified()->isStructOrUnion())) {
+    // [dcl.init.string]/1: `char tag[8] = "ab";` - a character array's literal, laid down as a local's is.
+    const bool literal = m.type->isArray() && peek().kind == TokenKind::Str;
+    if ((braced || literal) && (m.type->isArray() || m.type->unqualified()->isStructOrUnion())) {
         const std::size_t mark = syntaxTree_.size(), lo = peek().pos;
         Init in = parseInitialiser();
         std::vector<StmtPtr> all;

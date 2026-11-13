@@ -597,3 +597,146 @@ m5e's "left for M5.3" in `backend/A64Select.cpp`, at -O1 and -O2 only (A64Select
   free (under par4's 3 GB) when the static gates ran - this lane's tree there is removed. Left: the parser's parameter
   slots are still laid out (unused) under `ssaDirect_`; negative and unscaled offsets (`ldur`); `msub` re-measured
   with a different schedule; -g's parameters from registers.
+
+### R1, round 7: reasons sorted by reading (lane r1l, 2026-11-13, from m5-wave2 366996ce)
+
+Each reason read for what must hold to reach it, then one probe on Windows (cxx3-msvc.exe, clang 19.1.5 the verdict).
+**36 reasons sorted: 10 U, 3 R, 23 ?** - short of the brief's 60-100; the probes are in boxkit/r1l-pr*.
+
+- **U, now `broken()`** (the parser refuses every program that would reach them, each probe shows its message first):
+  a mem-initialiser outside a constructor; an operator-> that drops const; a conversion function that drops const
+  (the parser's const-member check, also through a chained `->` and an operand); a case label outside a switch; two
+  default labels; two case labels of one value; a break outside a loop or switch; a continue outside a loop; a return
+  of a value from a void function; a goto to a label the body does not place. tools/exclusions.baseline 566/83 ->
+  556/93.
+- **R, taken**: `D() : BB(7)` with `typedef B BB` (and a member typedef) was "a mem-initialiser of the class itself or
+  of no base": the parser resolved the typedef but noted the entry under its spelling; it notes the base's tag now
+  (case `mem-init-typedef-base`). `return {};` of a scalar, a pointer, a double or a plain struct was "a return with
+  no value": value-initialised to its zero (case `lowering-return-empty-braces`); the reason stays owed for a class
+  with constructors returned by its bytes.
+- **R, left owed**: `static S s(f());` inside a handler is "a static local built at run time inside a handler on the
+  Microsoft ABI" (valid; clang accepts) - Windows only, so no case in tests/cases.
+- **?**: the "of another class" constructor checks (array member, member, base, local, static local, temporary,
+  `construct`), the two member-defaults reasons, "a member copied from what is not an object", a constructor part
+  that is not a mem-initialiser, `this` captured by a nested lambda, a virtual-base local by no constructor, arrays and
+  statics built at run time, "a static local of type", a conversion function's return type, the last `operator->`, a
+  case label the lowering does not fold, a switch on a class, a body that falls off its end: each probe compiled.
+- **Two wrong answers, to tests/open** (the parser's, not the lowering's): `int &r = s;` and `int i = s;` through a
+  conversion function returning a reference are refused, clang accepts (`conversion-to-lvalue-reference`,
+  `conversion-reference-to-value`).
+- **Count**: lowering-why over 1237 files: 479 owed reasons, **20 reached** (17 by tests/cases, 3 only by tests/open),
+  459 by none.
+- src/ lines: +25 -11 (Lowering.cpp, ParserTopLevel.cpp).
+
+### R1, round 8: r1l's two refusals taken, and the walker-* register after M5.3 (lane r1m, 2026-11-13, from m5-r1l 7fd31c69)
+
+- **Taken** ([dcl.init.ref]/5.1.2, [dcl.init]/17): `int &r = s;` and `const int &c = s;` through `operator int &()`
+  bind to the lvalue it answers (bindReference asks the conversion function before refusing; the lowering binds the
+  call's address, and boundLocal makes no temporary for it); `int i = s;` through `operator const int &() const`
+  reads its referent (conversionFunction compares a reference to a scalar by its referent). Both moved from
+  tests/open to tests/cases with clang's output (clang 19.1.5 on Windows: 4 1, and 3).
+- **walker-***: all seven describe the C6000's walker as well as arm64's (each twin's .notarget names tms6747 alone,
+  so arm64 already ran them in the wave gates); none was arm64-only, so none is deleted. Each has a
+  `<name>.target` (tms6747) now, and open.sh counts it open on that target without running it on the host - it
+  printed them as "now agree" on Linux before (r1l). README says so.
+- Exclusion citations re-pointed: 7 (ParserExpr.cpp +11, ParserExprNew.cpp +2).
+- src/ lines: +25 -3 (Lowering.cpp, ParserExpr.cpp, ParserExprNew.cpp).
+- **Gates at this commit**: Windows (cxx3-msvc.exe, cl /W4 /WX clean): both cases ok at -O0 and -O2 in both spellings.
+  Linux (fresh ~/r1m): build ok; both cases pass -O0/-O2; open.sh 30 differ, 0 agree (7 on tms6747 only); typed.sh
+  856 passed, 0 failed; memory-gate rc 0; exclusions 0 uncited, 0 stale (556/93); comments 0 over the cap.
+
+### x86's -g locals (lane x86g, 2026-11-13, from m5-r1m 190aebc9)
+
+- **The gap, measured** (`tests/m10/w1.cpp`, `w2.cpp`, -g -O0, x86_64-windows, the gnu spelling's S_REGREL32 against the
+  body's `N(%rbp)` stores; `boxkit/x86g-cvcheck.sh`): at 190aebc9 the records were the parser's offsets, which the SSA
+  frame (layoutSsa: allocas above the parameter slots, rounded to 16) does not keep - in `work`, `c`, `big`, `d`, `k`
+  and `u` named slots no instruction touches, and `p` (424 in the body) was recorded at 456, `scale`'s copy: a debugger
+  showed a wrong value for six of eleven. DWARF on x86_64-linux reads the same `Local::offset`, so the same fault.
+- **gdb before** (Linux, 190aebc9, w2 -g -O0, `break 23`, `info locals`; `boxkit/x86g-gdb.sh`): `c = 0 '\000'`,
+  `big = 0`, `d = 2.546e-313`, `k = 0`, `p = 0x3fe0000000000000` (scale's 0.5), `u = 1744896058` - the source has 'h',
+  1, 6.0, 3, &counter, 7; parameters and `bt` right (`work (n=12, label="hello", scale=0.5)`, `main () at w2.cpp:28`).
+- **Recorded from the SSA frame** (`X86_64Linux::ssaLocals`, SsaSelect.cpp, arm64's rule): each parser local at its
+  alloca's slot, matched by name in declaration order; a parameter with no live alloca keeps its prologue slot; a local
+  with none has no record (named under `CXX1_SSA_WHY`, `x86 -g f: 'x' has no slot`). The funclets inherit the list.
+  After: every record of w1 and w2 (both spellings, MASM's `DD` the same numbers) names a slot the body addresses.
+- **At -O2** the allocas are gone (values, not slots): parameters keep their prologue slot, locals have no record.
+- src/ lines: +47 (SsaSelect.cpp +43, X86_64Linux.cpp +1, X86_64Linux.h +3).
+- **Gates**: Windows (cxx3-msvc.exe, cl /W4 /WX clean): w1 and w2 at -g -O0 and -g -O2 in both spellings build, link and
+  print their output; exclusions 0 uncited, 0 stale (556/93); comments 0 over the cap; ide/generate.py up to date.
+- **gdb after** (Linux, this commit, same break): `c = 104 'h'`, `big = 1`, `d = 6`, `k = 3`, `p = 0x404010 <counter>`,
+  `u = 7`, `w = 1234567890123` - the source's values; parameters and `bt` unchanged. g++ -Werror build clean; host -g
+  check pass; 58 -g cases at -O0 and -O2 build and print their output, 0 fail. `COFF_FLAGS=-g tests/coff.sh` and
+  determinism were still running at the hour (~/x86g-linux2.out): the wave gate's.
+- **Owed**: `x86Declares` is arm64's `a64Declares` again (A64Select.cpp was not this lane's): one helper for both;
+  location lists for promoted values at -O1/-O2, and a parameter's slot after finish-frame moves it under the passes;
+  `w4.cpp` does not reach the selector on x86 (`char name[6] = "cdb"`: "an array initialised from a string the
+  program does not hold"), a Lowering refusal, so its records were not checked here.
+
+## x86's -g locals, round 2 (lane x86h, 2026-11-14, from m5-x86g 62a56072)
+
+- **w4 refused on x86** ("an array initialised from a string the program does not hold", Lowering::stringArray): the
+  lowering's shape was there (memcpy of the literal's label, memset of the tail); the label was not.
+  `Parser::pruneUnusedInline` keeps a literal only if a kept AST body names it, and `emitString` lays a char array's
+  literal down as byte stores, naming nothing - so any unit with an unused inline function (w4's `geo::Shape::area`)
+  lost every literal only a char array copied. Fix: `emitString` records the label (`Parser::copiedStrings_`) and the
+  prune keeps those. Same shape for x86_64-linux, x86_64-windows and arm64 (one lowering, one parser).
+- **Two neighbours a probe found**: `T a[n] = { "s" };` ([dcl.init.string]/1, the literal in braces) was a parser
+  refusal for locals and statics ("'uc' is 'unsigned char' and this is 'const char *'") - `emitInit` and `flattenInit`
+  take it now; inside an aggregate's braces (`P p = { { "kl" }, 4 };`) the lowering refused it ("a conversion of a
+  pointer to a number") - `aggregateFill` sends it to `stringArray`.
+- **One -g helper for two targets**: `x86Declares`/`a64Declares` and the two copies of `ssaLocals` around them are
+  `Regions::ssaFrameLocals` (Regions.cpp), with `ssaLocals_` moved into Regions; each target passes its alloca slots.
+- Case `tests/cases/char-array-short-string.cpp` (locals, a static local, globals, signed/unsigned/char16_t, braced,
+  aggregate members, an unused inline member to make the parser prune); `.expected` from Windows clang
+  (-nostdinc++ -isystem include).
+- src/ lines: +73 -87 (net -14).
+- **Gates, Windows** (cxx3-msvc.exe, cl /W4 /WX clean): the case at -O0 and -O2 in both spellings equal to clang;
+  tests/m10 w1, w2, w4 at -g -O0 build, link and run in both spellings (w4 prints `81 40 5 9 cdb`); exclusions 0
+  uncited, 0 stale (129; SSA 556/93 - seven ParserInit.cpp citations re-pointed); comments 0 over the cap;
+  ide/generate.py up to date. memory-gate does not run under Windows Python (no SIGPIPE): run on Linux.
+- **Gates, Linux** (fresh ~/x86h, g++ -Werror clean): the case at -O0/-O2 equal to clang; -g -O0 .s of m10 w1 and w2
+  on x86_64-linux, x86_64-windows and arm64-darwin against 62a56072: 0 differ of 6 (the tree's directory normalised);
+  w4 compiles on all three (refused on all three before). `-g -S` census of tests/cases on x86_64-linux: 1220, one
+  differs - the new case, refused before (compiler and tree paths normalised). host -g check pass; 60 -g cases at -O0
+  and -O2 pass; tms6747 `-g -O2` refused by name; `COFF_FLAGS=-g tests/coff.sh` 1730 pairs, 1610 objects, 0 differ;
+  memory gate holds at 89 (ssaFrameLocals returns a reference: a pointer return had raised it to 91).
+- run.sh's second tms6747 -g check (reference-to-function-member, -g code = code without -g) fails as replayed by
+  hand at 62a56072 and here alike (`MVKL 56` against 48: the frame), so not this lane's; the wave gate's run.sh decides.
+- **Owed**: `struct S { char tag[8] = "ab"; };` (a member initialiser from a string) is a parser refusal ("'tag' is
+  'char [8]' and this is 'const char *'", memberInitialiser takes no string); not in the case.
+
+### R1, round 9: a char array member from a string, a static aggregate built at run time (lane x86i, 2026-11-14, from m5-x86h 8d7a5486)
+
+- **A member from a string** ([dcl.init.string]/1): `char tag[8] = "ab";`, `= { "cd" }`, `u[4]{ "ef" }` (default
+  member initialisers), `: tag("ghij")` and `: s{ "k" }` (mem-initialisers) were parser refusals ("'tag' is 'char [8]'
+  and this is 'const char *'", or "an array is not a type a temporary can have"). memberInitialiser reads a literal on
+  an array as it reads braces (emitInit, so emitString records the label for the prune); a mem-initialiser's literal,
+  parenthesised or braced, is laid down by emitString under the member's root; the lowering's memberInits sends one
+  StringLit part on an array member to `stringArray` (the tail zeroed). char, signed/unsigned char, char16_t; implicit
+  and written constructors. One parser and one lowering, so x86_64-linux, x86_64-windows and arm64 alike.
+- **A static local aggregate whose list is not constant** (`static P ps[2] = { { g(x), 1 }, ... };`, `static P one =
+  { g(x), g(x) };`, a union's, thread_local's) was refused by the parser as "expected a constant initialiser":
+  staticallyInitialisable took any class's list as data. classLeavesFold now asks each number or pointer leaf to fold
+  (integer, floating or an address), as leavesFold does for scalar arrays; the guarded build places a plain class or
+  an array of plain classes leaf by leaf (staticConstruction, staticArray, builtAtRunTime). A list that folds stays data.
+- **R1's undecided reasons, by reading and probing** (boxkit/x86i-pr, clang 19.1.5 on Windows the verdict): **U** -
+  "a case label that is not a constant the lowering folds" is `broken("a case label the parser did not fold")`: caseLabel
+  is reached only through statement(), which notes every Case's folded value (caseFacts_) and the Typer sets it on the
+  node. "a body that falls off its end without a value" is broken(): fallOffValue's caller ends a class's and void's
+  bodies itself, a `std::nullptr_t` return is refused before it ("a return type of 'std::nullptr_t'"), and every other
+  type that reaches it is scalar - whose zero is zeroOf's now, so a member function pointer's is the null member
+  pointer rather than an integer 0 (probe p9 agrees). Baseline 556/93 -> 554/95. **Probed, no reach** (each compiled and agreed at -O0/-O2 in both spellings):
+  inheriting constructors as a local, member, base, static, temporary, array element and returned value (the "of
+  another class" checks); a switch on a class with a conversion function and on a scoped enumeration; a body falling off
+  its end returning a struct, a member pointer and a scoped enumeration; ten case-label forms; `this` through nested
+  lambdas by `[this]`, `[=]` and `[&]`; static locals of a member pointer, a reference, a double, a pointer and a
+  scoped enumeration built at run time. They stay "?" (a probe that compiles is not a proof). No wrong answer found.
+- Cases `member-char-array-string`, `static-aggregate-runtime-list`, `.expected` from Windows clang (-nostdinc++
+  -isystem include). Exclusion citations re-pointed: 6 (ParserClass.cpp +2, ParserInit.cpp +19, ParserTopLevel.cpp +22).
+- src/ lines: +60 -14 (Lowering.cpp, Parser.h, ParserClass.cpp, ParserInit.cpp, ParserTopLevel.cpp).
+- **Gates, Windows** (cxx3-msvc.exe, cl /W4 /WX clean): both cases and char-array-short-string equal to clang at -O0
+  and -O2 in both spellings; exclusions 0 uncited, 0 stale (129; SSA 554/95); comments 0 over the cap; ide/generate.py
+  up to date.
+- **Gates, Linux: owed.** The chain (boxkit/x86i-linux.sh in a fresh ~/x86i at 4e083584's tree: build, the three cases at
+  -O0/-O2, arm64-darwin -S of them, an -S census of tests/cases against ~/x86h, typed.sh, memory gate) was still queued
+  on the lock behind two tms6747 shards at the hour; it stays queued, its answer in ~/x86i-linux.out.

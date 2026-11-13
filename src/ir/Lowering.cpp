@@ -601,6 +601,8 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
             openFull();
             store(result(g), exprTo(child(e->second, 0), tid(mt)).v);
             closeFull();
+        } else if (k == 1 && mt.isArray() && syn(child(e->second, 0)).kind == syntax::Kind::StringLit) {
+            stringArray(child(e->second, 0), result(g), mt);     // [dcl.init.string]: `= "ab"`, `{"ab"}`, `: m("ab")`
         } else if (k == 1 && plainClass(mt) && objectNode(child(e->second, 0))) {
             const Val src = object(child(e->second, 0));
             if (T(src.type).unqualified() != &mt) outside("a member built from another type");
@@ -806,6 +808,10 @@ void Lowering::aggregateItem(ValueId at0, const Type &mt, const std::vector<sema
         if (leaf) {
             if (inner.size() != 1) outside("a scalar's braces holding more than one value");
             store(at0, exprTo(inner[0], tid(mt)).v);
+            return;
+        }
+        if (inner.size() == 1 && mt.isArray() && syn(inner[0]).kind == syntax::Kind::StringLit && !mt.pointee()->isPointer()) {
+            stringArray(inner[0], at0, mt);     // [dcl.init.string]/1: the literal in braces
             return;
         }
         std::size_t k = 0;
@@ -1299,7 +1305,8 @@ void Lowering::guard(ValueId slot, const Type &c, const std::string &dtor) {
 
 // An array a guard builds: by its class's loop, from its braced list, or of scalars placed leaf by leaf.
 void Lowering::builtAtRunTime(const Type &t, const sema::StaticGuard &g, const std::string &what) {
-    if (t.isArray() && !g.array && !g.elements.recorded() && !scalar(*t.innermostElement()->unqualified()))
+    const Type &e = *t.innermostElement()->unqualified();
+    if (t.isArray() && !g.array && !g.elements.recorded() && !scalar(e) && !plainClass(e))
         outside(what + " array built at run time");
 }
 
@@ -1449,6 +1456,10 @@ void Lowering::staticConstruction(sema::TypedId var, const std::string &symbol, 
             outside("a static local's default constructor of parameters");
         }
         directCall(g.ctor, g.ctorSig, ops);
+    } else if (plainClass(c) && !(v.count == 1 && objectNode(child(var, 0)))) {
+        std::vector<sema::TypedId> parts;     // [stmt.dcl]/4: `static P p = { g(x), 1 };`, placed leaf by leaf
+        for (std::uint32_t i = 0; i < v.count; i++) parts.push_back(child(var, i));
+        aggregateInit(obj, c, parts);
     } else if (c.isStructOrUnion()) {
         if (v.count != 1) outside("a static class of " + std::to_string(v.count) + " parts");
         const Val o = classValue(child(var, 0), c);
@@ -1515,8 +1526,8 @@ void Lowering::staticArray(sema::TypedId var, const std::string &symbol, const T
     if (g.elements.recorded()) {
         closeFull();     // each element is a full expression of its own; nothing destroys one built, the guard aborting instead
         listArray(var, first, *T(elem).unqualified(), n, g.elements, std::string());
-    } else if (g.vectorLoop.empty() && scalar(*T(elem).unqualified())) {
-        // [stmt.dcl]/4: an array of scalars whose list is not constant - its values after the written bounds, placed leaf by leaf.
+    } else if (g.vectorLoop.empty() && (scalar(*T(elem).unqualified()) || plainClass(*T(elem).unqualified()))) {
+        // [stmt.dcl]/4: an array of scalars or plain classes whose list is not constant - its values after the written bounds, placed leaf by leaf.
         const sema::TypedNode &v = tree_.node(var);
         std::vector<sema::TypedId> parts;
         for (std::uint32_t i = v.bounds; i < v.count; i++) parts.push_back(child(var, i));
@@ -2015,7 +2026,7 @@ Lowering::Val Lowering::arrowPointer(sema::TypedId member) {
             outside("an operator-> of another shape");
         const Type &self = *ft.params()[0];
         if (!T(object.type).isStructOrUnion()) outside("an operator-> asked of what is not a class");
-        if (T(object.type).isConst() && !self.pointee()->isConst()) outside("an operator-> that drops const");
+        if (T(object.type).isConst() && !self.pointee()->isConst()) broken("an operator-> that drops const");   // the parser refuses a non-const one on a const object
         Val at(object.v, tid(*types_.pointerTo(&T(object.type))));
         if (T(object.type).unqualified() != self.pointee()->unqualified()) at = toBase(at, tid(self));
         CallInfo info;
@@ -2059,7 +2070,7 @@ Lowering::Val Lowering::convertedObject(Val o, const sema::Resolution &r, bool o
     intoSret_ = false;
     if (!byRef && !scalar(gives) && !(object && plainClass(gives)) && !((sret || into) && gives.isStructOrUnion()))
         outside("a conversion function returning '" + gives.describe() + "'");
-    if (T(o.type).isConst() && !self.pointee()->isConst()) outside("a conversion function that drops const");
+    if (T(o.type).isConst() && !self.pointee()->isConst()) broken("a conversion function that drops const");   // the parser refuses a non-const one on a const object
     Val at(o.v, tid(*types_.pointerTo(&T(o.type))));
     if (T(o.type).unqualified() != self.pointee()->unqualified()) at = toBase(at, tid(self));
     CallInfo info;
@@ -2068,6 +2079,7 @@ Lowering::Val Lowering::convertedObject(Val o, const sema::Resolution &r, bool o
     info.sret = sret;
     std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(self), std::vector<ValueId>(1, at.v))));
     const Val v = callTail(r.type, info, ops, 1, std::vector<sema::TypedId>(), false);
+    if (byRef && object) return Val(v.v, tid(*gives.referent()));      // the lvalue it answers, as its address
     return byRef ? readOf(v.v, tid(*gives.referent())) : v;
 }
 
@@ -2335,8 +2347,11 @@ bool Lowering::boundLocal(sema::TypedId init, const Type &t, ValueId slot) {
         bound = f.v;
     } else {
         const TypeId it = TypeTable::id(tree_.node(init).type);
+        sema::Resolution conv;       // a conversion function answering an lvalue binds it, below
         if (!scalar(ref) || !(ref.isConst() || t.isRValueReference()) || !it.valid() ||
-            (isLvalueNode(init) && T(it).unqualified() == ref.unqualified()))
+            (isLvalueNode(init) && T(it).unqualified() == ref.unqualified()) ||
+            (!t.isRValueReference() && convertedNode(init, conv) && T(conv.type).returns()->isReference() &&
+             !T(conv.type).returns()->isRValueReference()))
             return false;
         bound = entryAlloca(tid(*ref.unqualified()), "$bound");
         store(bound, exprTo(init, tid(*ref.unqualified())).v);
@@ -2728,7 +2743,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
             if (k == syntax::Kind::MemInit) { inits = i; break; }
             if (k == syntax::Kind::Var) paramNodes.push_back(child(fnNode, i));
         }
-        if (inits != n - 1 && !isCtor) outside("a mem-initialiser outside a constructor");
+        if (inits != n - 1 && !isCtor) broken("a mem-initialiser outside a constructor");   // the parser reads a list only after a constructor
         const std::uint32_t params = static_cast<std::uint32_t>(paramNodes.size());
         if (params + (facts.hasThis ? 1 : 0) + (facts.takesVtt ? 1 : 0) + (facts.msFlag ? 1 : 0) != facts.paramCount)
             broken("a parameter list the typed tree and the function disagree about");
@@ -2822,7 +2837,7 @@ FuncId Lowering::lower(sema::TypedId fnNode, const FunctionFacts &facts, std::st
         // A constructor's parts, below the floor, are kept by a return; its by-value parameters below them go in the return block.
         liveFloor_ = isCtor ? live_.size() : 0;
         block(body);
-        if (!pendingGotos_.empty()) outside("a goto to a label the body does not place");
+        if (!pendingGotos_.empty()) broken("a goto to a label the body does not place");
         if (!terminated() && !rt.isVoid() && unreached(cur_)) {
             add(Op::Unreachable, TypeId(), std::vector<ValueId>());    // every way through the body returned
         } else if (!terminated()) {
@@ -2885,14 +2900,9 @@ bool Lowering::madePads() const {
 // return type in the return register; a reference's is a null address (a class's end is unreachable instead).
 ValueId Lowering::fallOffValue(const Type &rt) {
     if (rt.isReference()) return result(add(Op::Null, tid(*types_.pointerTo(rt.referent())), std::vector<ValueId>()));
-    if (rt.isStructOrUnion() || !scalar(rt)) outside("a body that falls off its end without a value");
-    if (rt.isFloating()) {
-        const InstId z = add(Op::FConst, returns_, std::vector<ValueId>());
-        at(z).bits = 0;
-        return result(z);
-    }
-    if (rt.isPointer()) return result(add(Op::Null, returns_, std::vector<ValueId>()));
-    return iconst(returns_, 0);
+    // A class's and void's ends are the caller's; arrays, functions and nullptr_t are never returned here.
+    if (!scalar(rt)) broken("a body that falls off its end without a value");
+    return zeroOf(returns_);
 }
 
 // ----- statements
@@ -3029,24 +3039,24 @@ void Lowering::stmt(sema::TypedId id) {
     case syntax::Kind::For: forStmt(id); return;
     case syntax::Kind::Switch: switchStmt(id); return;
     case syntax::Kind::Case: case syntax::Kind::Default: {
-        if (switches_.empty() || n == 0) outside("a case label outside a switch");
+        if (switches_.empty() || n == 0) broken("a case label outside a switch");
         SwitchCtx &sw = switches_.back();
         const BlockId here = newBlock();
         br(here);
         place(here);
         mark(id);
         if (s.kind == syntax::Kind::Default) {
-            if (sw.deflt.valid()) outside("two default labels");
+            if (sw.deflt.valid()) broken("two default labels");
             sw.deflt = here;
         } else {
             if (n != 2) outside("a case of " + std::to_string(n) + " parts");
             long long v = 0;
             // The value the parser folded the label to ([stmt.switch]/2), where the lowering's own folding has no answer.
             if (!foldConstant(child(id, 0), v)) {
-                if (!tree_.node(id).folded.has) outside("a case label that is not a constant the lowering folds");
+                if (!tree_.node(id).folded.has) broken("a case label the parser did not fold");     // caseLabel folds every one
                 v = tree_.node(id).folded.value;
             }
-            for (long long k : sw.values) if (k == v) outside("two case labels of one value");
+            for (long long k : sw.values) if (k == v) broken("two case labels of one value");
             sw.values.push_back(v);
             sw.targets.push_back(here);
         }
@@ -3054,13 +3064,13 @@ void Lowering::stmt(sema::TypedId id) {
         return;
     }
     case syntax::Kind::Break:
-        if (loops_.empty()) outside("a break outside a loop or switch");
+        if (loops_.empty()) broken("a break outside a loop or switch");
         leaveHandlers(handlerDepth_ - loops_.back().handlers, loops_.back().live, loops_.back().brk);
         return;
     case syntax::Kind::Continue: {
         for (std::size_t i = loops_.size(); i-- > 0; )
             if (loops_[i].cont.valid()) { leaveHandlers(handlerDepth_ - loops_[i].handlers, loops_[i].live, loops_[i].cont); return; }
-        outside("a continue outside a loop");
+        broken("a continue outside a loop");
         return;
     }
     case syntax::Kind::Label: {
@@ -3156,6 +3166,16 @@ void Lowering::returnStmt(sema::TypedId id) {
     const Type &rt = T(returns_);
     if (n == 0) {
         if (copiedReturn(rt)) { returnCopied(id, sema::TypedId()); return; }     // `return {};`: the braces hold no child
+        // [dcl.init.list]/3: `return {};` of a scalar or a plain class is its zero (a bare `return` the parser refuses).
+        if (scalar(rt) || rt.isNullPtr()) { leaveHandlers(handlerDepth_, liveFloor_, returnBlock_, std::vector<ValueId>(1, zeroOf(returns_))); return; }
+        if (plainClass(rt)) {
+            const ValueId slot = entryAlloca(tid(*rt.unqualified()), "$ret");
+            const InstId z = add(Op::Memset, TypeId(), std::vector<ValueId>(1, slot));
+            at(z).k = rt.size(target_);
+            const InstId c = add(Op::Bitcast, tid(*types_.pointerTo(&rt)), std::vector<ValueId>(1, slot));
+            leaveHandlers(handlerDepth_, liveFloor_, returnBlock_, std::vector<ValueId>(1, result(c)));
+            return;
+        }
         if (!rt.isVoid()) outside("a return with no value");
         leaveHandlers(handlerDepth_, liveFloor_, returnBlock_);
         return;
@@ -3164,7 +3184,7 @@ void Lowering::returnStmt(sema::TypedId id) {
         openFull();
         const Val v = expr(child(id, 0));
         closeFull();
-        if (v.type.valid() && !T(v.type).isVoid()) outside("a return of a value from a void function");
+        if (v.type.valid() && !T(v.type).isVoid()) broken("a return of a value from a void function");
         leaveHandlers(handlerDepth_, liveFloor_, returnBlock_);
         return;
     }
@@ -3849,7 +3869,11 @@ void Lowering::declaration(sema::TypedId id) {
             const sema::TypedId init = child(var, first);
             const bool called = !destroyedTemporary(init) && !destroyedResult(init);
             if (called) openFull();     // the initialiser's temporaries die at the declarator's end, `*f(std::string("x"))`'s too
-            Val b = destroyedTemporary(init) ? extendedTemporary(init) : destroyedResult(init) ? extendedResult(init) : lvalue(init);
+            sema::Resolution conv;     // [dcl.init.ref]/5.1.2: a class bound by its `operator int &()` names the lvalue that answers
+            const bool byConversion = convertedNode(init, conv) && T(conv.type).returns()->isReference() &&
+                                      !T(conv.type).returns()->isRValueReference() && classObjectNode(init);
+            Val b = byConversion ? convertedObject(classObject(init), conv, true) : destroyedTemporary(init) ? extendedTemporary(init)
+                  : destroyedResult(init) ? extendedResult(init) : lvalue(init);
             if (called) closeFull();
             // [dcl.init.ref]/5: a class lvalue bound to a reference to its base binds the base subobject.
             if (T(b.type).isStructOrUnion() && t.referent()->isStructOrUnion() && T(b.type).unqualified() != t.referent()->unqualified())

@@ -20,6 +20,10 @@ definition, an unspecified `()` parameter list, implicit int, an implicit
 function declaration, trigraphs - kept here so the refusal is counted, not hidden
 (doc-cxx3/M7-PLAN.md, the disagreement table).
 
+A `<name>.target` beside a program names the one target that still answers it
+wrongly (the walker-* entries: the C6000's walker, since M5.3 removed arm64's);
+open.sh counts it open on that target and does not run it on the host.
+
 A case is closed when cxx1 agrees with that file, and open.sh says so by name.
 **A closed case does not belong here.** Move it to tests/cases with its
 .expected or .error, where the suites will hold it from then on, and delete it

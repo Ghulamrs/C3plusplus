@@ -2448,6 +2448,18 @@ ExprPtr Parser::bindReference(const Type *ref, ExprPtr init, std::size_t pos,
                 init = namedAfter(std::move(init), std::move(again));
             }
 
+    // [dcl.init.ref]/5.1.2: a class whose `operator int &()` answers an lvalue of the referent's type binds to that lvalue.
+    if (it->unqualified()->isStructOrUnion() && !referent->unqualified()->isStructOrUnion() && !ref->isRValueReference())
+        if (const Signature *how = conversionFunction(it, referent, false))
+            if (how->returns->isReference() && !how->returns->isRValueReference() &&
+                (referent->isConst() || !how->returns->referent()->isConst())) {
+                const syntax::NodeId operand = init->syntax();
+                std::vector<ExprPtr> none;
+                ExprPtr got = memberCallWith(std::move(init), it, how->name, pos, std::move(none));
+                noteConversionCall(operand, *got);
+                return bindReference(ref, std::move(got), pos, what);
+            }
+
     // Binding takes an address, so the two things that have none cannot be bound to
     // directly. A const reference still may: it copies them into a temporary below,
     // which is what the standard says happens.
