@@ -606,6 +606,9 @@ Each reason read for what must hold to reach it, then one probe on Windows (cxx3
   frame (layoutSsa: allocas above the parameter slots, rounded to 16) does not keep - in `work`, `c`, `big`, `d`, `k`
   and `u` named slots no instruction touches, and `p` (424 in the body) was recorded at 456, `scale`'s copy: a debugger
   showed a wrong value for six of eleven. DWARF on x86_64-linux reads the same `Local::offset`, so the same fault.
+- **gdb before** (Linux, 190aebc9, w2 -g -O0, `break 23`, `info locals`; `boxkit/x86g-gdb.sh`): `c = 0 '\000'`,
+  `big = 0`, `d = 2.546e-313`, `k = 0`, `p = 0x3fe0000000000000` (scale's 0.5), `u = 1744896058` - the source has 'h',
+  1, 6.0, 3, &counter, 7; parameters and `bt` right (`work (n=12, label="hello", scale=0.5)`, `main () at w2.cpp:28`).
 - **Recorded from the SSA frame** (`X86_64Linux::ssaLocals`, SsaSelect.cpp, arm64's rule): each parser local at its
   alloca's slot, matched by name in declaration order; a parameter with no live alloca keeps its prologue slot; a local
   with none has no record (named under `CXX1_SSA_WHY`, `x86 -g f: 'x' has no slot`). The funclets inherit the list.
@@ -614,6 +617,9 @@ Each reason read for what must hold to reach it, then one probe on Windows (cxx3
 - src/ lines: +47 (SsaSelect.cpp +43, X86_64Linux.cpp +1, X86_64Linux.h +3).
 - **Gates**: Windows (cxx3-msvc.exe, cl /W4 /WX clean): w1 and w2 at -g -O0 and -g -O2 in both spellings build, link and
   print their output; exclusions 0 uncited, 0 stale (556/93); comments 0 over the cap; ide/generate.py up to date.
+- **Linux, owed to the wave gate**: the lane's rebuild waited on the box's lock past the hour, so gdb after, the -g
+  cases, `COFF_FLAGS=-g tests/coff.sh` and determinism ran only on 190aebc9 (58 -g cases at -O0/-O2 pass, host -g
+  pass, memory-gate rc 0 - src/backend is outside it).
 - **Owed**: `x86Declares` is arm64's `a64Declares` again (A64Select.cpp was not this lane's): one helper for both;
   location lists for promoted values at -O1/-O2, and a parameter's slot after finish-frame moves it under the passes;
   `w4.cpp` does not reach the selector on x86 (`char name[6] = "cdb"`: "an array initialised from a string the
