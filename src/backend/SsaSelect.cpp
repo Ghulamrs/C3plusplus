@@ -179,46 +179,6 @@ int X86_64Linux::layoutSsa(const Function &fn, const ir::Function &f) {
     return static_cast<int>(roundUp(cur, 16));
 }
 
-namespace {
-// Whether an alloca's text (the lowering names it by its declaration, `const char * label`) declares `name`: a whole word of it.
-bool x86Declares(const std::string &text, const std::string &name) {
-    for (std::size_t at = text.find(name); !name.empty() && at != std::string::npos; at = text.find(name, at + 1)) {
-        const std::size_t end = at + name.size();
-        const bool before = at > 0 && (std::isalnum(static_cast<unsigned char>(text[at - 1])) || text[at - 1] == '_');
-        const bool after = end < text.size() && (std::isalnum(static_cast<unsigned char>(text[end])) || text[end] == '_');
-        if (!before && !after) return true;
-    }
-    return false;
-}
-}
-
-// **-g's variables in a selected frame**, as arm64's (Arm64Darwin::ssaLocals): each parser local at its alloca's slot,
-// matched by name in declaration order; a parameter without a live alloca keeps its prologue slot, a local none.
-const std::vector<Local> *X86_64Linux::ssaLocals(const Function &fn, const ir::Function &f) {
-    std::vector<char> live(f.frame.size(), 0);
-    for (std::size_t b = 0; b < f.blocks.size(); b++)
-        for (std::size_t k = 0; k < f.block(f.blocks[b]).insts.size(); k++) {
-            const ir::Inst &i = f.inst(f.block(f.blocks[b]).insts[k]);
-            if (i.op == ir::Op::Alloca && i.k >= 0 && static_cast<std::size_t>(i.k) < live.size()) live[i.k] = 1;
-        }
-    std::map<std::string, std::size_t> next;
-    ssaLocals_.push_back(std::vector<Local>());
-    for (const Local &l : fn.locals()) {
-        std::size_t &j = next[l.name];
-        while (l.staticName.empty() && j < f.frame.size() && !x86Declares(f.frame[j].name, l.name)) j++;
-        Local d = l;
-        const bool slot = l.staticName.empty() && j < f.frame.size() && live[j];
-        if (slot) d.offset = static_cast<int>(ssaAllocaSlot_[j]);
-        if (l.staticName.empty() && j < f.frame.size()) j++;
-        if (!slot && l.staticName.empty() && !l.isParam) {
-            if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "x86 -g %s: '%s' has no slot\n", fn.symbol().c_str(), l.name.c_str());
-            continue;
-        }
-        ssaLocals_.back().push_back(d);
-    }
-    return &ssaLocals_.back();
-}
-
 // The slots the passes may promote: every value, and every alloca of a scalar.
 void X86_64Linux::ssaScalars(const ir::Function &f, std::vector<opt::Local> &into) const {
     for (std::size_t i = 0; i < f.frame.size(); i++) {

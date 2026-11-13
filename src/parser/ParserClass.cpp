@@ -2013,10 +2013,10 @@ void Parser::pruneUnusedInline(Program &program) {
     for (std::size_t i = 0; i < program.globals.size(); i++)
         if (reached[nf + i]) keptGlobals.push_back(std::move(program.globals[i]));
     program.globals.swap(keptGlobals);
-    // A literal only a pruned body used goes with it; what is kept names every literal it reads.
+    // A literal only a pruned body used goes with it; what is kept names every literal it reads, or copied into an array.
     std::vector<StringLit> keptStrings;
     for (StringLit &sl : program.strings)
-        if (everyName.count(sl.label) != 0) keptStrings.push_back(std::move(sl));
+        if (everyName.count(sl.label) != 0 || copiedStrings_.count(sl.label) != 0) keptStrings.push_back(std::move(sl));
     program.strings.swap(keptStrings);
     // A Microsoft class keeps its five records where its vftable stayed or something names one.
     std::vector<const Type *> rtti;

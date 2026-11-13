@@ -144,6 +144,8 @@ private:
     void pruneUnchosenCandidates(Program &program);
     // Inline functions the program wrote, emitted where defined and dropped at the end unless odr-used.
     std::set<std::string> discardableInline_;
+    // Literals a char array copies (emitString): the AST stores their bytes, the SSA lowering copies the label.
+    std::set<std::string> copiedStrings_;
     void pruneUnusedInline(Program &program);
     bool isMemberTemplate(const Type *obj, const std::string &name) const {
         return obj != nullptr &&

@@ -625,3 +625,28 @@ Each reason read for what must hold to reach it, then one probe on Windows (cxx3
   location lists for promoted values at -O1/-O2, and a parameter's slot after finish-frame moves it under the passes;
   `w4.cpp` does not reach the selector on x86 (`char name[6] = "cdb"`: "an array initialised from a string the
   program does not hold"), a Lowering refusal, so its records were not checked here.
+
+## x86's -g locals, round 2 (lane x86h, 2026-11-14, from m5-x86g 62a56072)
+
+- **w4 refused on x86** ("an array initialised from a string the program does not hold", Lowering::stringArray): the
+  lowering's shape was there (memcpy of the literal's label, memset of the tail); the label was not.
+  `Parser::pruneUnusedInline` keeps a literal only if a kept AST body names it, and `emitString` lays a char array's
+  literal down as byte stores, naming nothing - so any unit with an unused inline function (w4's `geo::Shape::area`)
+  lost every literal only a char array copied. Fix: `emitString` records the label (`Parser::copiedStrings_`) and the
+  prune keeps those. Same shape for x86_64-linux, x86_64-windows and arm64 (one lowering, one parser).
+- **Two neighbours a probe found**: `T a[n] = { "s" };` ([dcl.init.string]/1, the literal in braces) was a parser
+  refusal for locals and statics ("'uc' is 'unsigned char' and this is 'const char *'") - `emitInit` and `flattenInit`
+  take it now; inside an aggregate's braces (`P p = { { "kl" }, 4 };`) the lowering refused it ("a conversion of a
+  pointer to a number") - `aggregateFill` sends it to `stringArray`.
+- **One -g helper for two targets**: `x86Declares`/`a64Declares` and the two copies of `ssaLocals` around them are
+  `Regions::ssaFrameLocals` (Regions.cpp), with `ssaLocals_` moved into Regions; each target passes its alloca slots.
+- Case `tests/cases/char-array-short-string.cpp` (locals, a static local, globals, signed/unsigned/char16_t, braced,
+  aggregate members, an unused inline member to make the parser prune); `.expected` from Windows clang
+  (-nostdinc++ -isystem include).
+- src/ lines: +73 -87 (net -14).
+- **Gates, Windows** (cxx3-msvc.exe, cl /W4 /WX clean): the case at -O0 and -O2 in both spellings equal to clang;
+  tests/m10 w1, w2, w4 at -g -O0 build, link and run in both spellings (w4 prints `81 40 5 9 cdb`); exclusions 0
+  uncited, 0 stale (129; SSA 556/93 - seven ParserInit.cpp citations re-pointed); comments 0 over the cap;
+  ide/generate.py up to date. memory-gate does not run under Windows Python (no SIGPIPE): run on Linux.
+- **Owed**: `struct S { char tag[8] = "ab"; };` (a member initialiser from a string) is a parser refusal ("'tag' is
+  'char [8]' and this is 'const char *'", memberInitialiser takes no string); not in the case.

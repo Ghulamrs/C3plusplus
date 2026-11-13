@@ -89,8 +89,6 @@ private:
     const Type *typeOf(const ir::Function &f, ir::ValueId v) const { return ssaTypes_->type(f.value(v).type); }
     int layoutSsa(const Function &fn, const ir::Function &f);
     void selectBody(const Function &fn, const ir::Function &f);
-    std::deque<std::vector<Local> > ssaLocals_;     // -g's records of the selected functions, which dwarfFns_ points at
-    const std::vector<Local> *ssaLocals(const Function &fn, const ir::Function &f);
     void selectInst(const ir::Function &f, const ir::Inst &i);
     void selectCall(const ir::Function &f, const ir::Inst &i);
     void ssaFrame(const char *dst, long long off);

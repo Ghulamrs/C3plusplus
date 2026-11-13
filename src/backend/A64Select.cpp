@@ -38,17 +38,6 @@ bool a64Moves(const Type *to, const Type *from) {
     return (a64Whole(to) || a64Whole(from)) && (a64Whole(to) || to->isPointer()) && (a64Whole(from) || from->isPointer());
 }
 
-// Whether an alloca's text (the lowering names it by its declaration, `const char * label`) declares `name`: a whole word of it.
-bool a64Declares(const std::string &text, const std::string &name) {
-    for (std::size_t at = text.find(name); !name.empty() && at != std::string::npos; at = text.find(name, at + 1)) {
-        const std::size_t end = at + name.size();
-        const bool before = at > 0 && (std::isalnum(static_cast<unsigned char>(text[at - 1])) || text[at - 1] == '_');
-        const bool after = end < text.size() && (std::isalnum(static_cast<unsigned char>(text[end])) || text[end] == '_');
-        if (!before && !after) return true;
-    }
-    return false;
-}
-
 // A constant as its slot holds it: the type's bits, extended as the type says.
 long long a64Canonical(long long k, const Type *t, const Target &target) {
     const int bits = 8 * t->size(target);
@@ -851,32 +840,4 @@ void Arm64Darwin::selectBody(const Function &fn, const ir::Function &f) {
         out_ << none << ":\n";
         callSite(none, none, none, std::vector<std::string>(), std::vector<int>(), false, ++ssaRegionAt_, false);
     }
-}
-
-// **-g's variables in a selected frame** (M5.2 round 4): the parser's locals, each at the slot of the alloca the lowering
-// made for it - matched by name in declaration order, both lists being in it. A parameter without a live alloca keeps
-// the slot the walker's prologue filled; a local without one (promoted at -O1 and -O2) has no record.
-const std::vector<Local> *Arm64Darwin::ssaLocals(const Function &fn, const ir::Function &f) {
-    std::vector<char> live(f.frame.size(), 0);
-    for (std::size_t b = 0; b < f.blocks.size(); b++)
-        for (std::size_t k = 0; k < f.block(f.blocks[b]).insts.size(); k++) {
-            const ir::Inst &i = f.inst(f.block(f.blocks[b]).insts[k]);
-            if (i.op == ir::Op::Alloca && i.k >= 0 && static_cast<std::size_t>(i.k) < live.size()) live[i.k] = 1;
-        }
-    std::map<std::string, std::size_t> next;
-    ssaLocals_.push_back(std::vector<Local>());
-    for (const Local &l : fn.locals()) {
-        std::size_t &j = next[l.name];
-        while (l.staticName.empty() && j < f.frame.size() && !a64Declares(f.frame[j].name, l.name)) j++;
-        Local d = l;
-        const bool slot = l.staticName.empty() && j < f.frame.size() && live[j];
-        if (slot) d.offset = static_cast<int>(ssaAllocaSlot_[j]);
-        if (l.staticName.empty() && j < f.frame.size()) j++;
-        if (!slot && l.staticName.empty() && !l.isParam) {
-            if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "a64 -g %s: '%s' has no slot\n", fn.symbol().c_str(), l.name.c_str());
-            continue;
-        }
-        ssaLocals_.back().push_back(d);
-    }
-    return &ssaLocals_.back();
 }

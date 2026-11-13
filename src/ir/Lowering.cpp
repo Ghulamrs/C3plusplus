@@ -808,6 +808,10 @@ void Lowering::aggregateItem(ValueId at0, const Type &mt, const std::vector<sema
             store(at0, exprTo(inner[0], tid(mt)).v);
             return;
         }
+        if (inner.size() == 1 && mt.isArray() && syn(inner[0]).kind == syntax::Kind::StringLit && !mt.pointee()->isPointer()) {
+            stringArray(inner[0], at0, mt);     // [dcl.init.string]/1: the literal in braces
+            return;
+        }
         std::size_t k = 0;
         aggregateFill(at0, mt, inner, k);
         if (k != inner.size()) outside("a braced list with values past its aggregate");

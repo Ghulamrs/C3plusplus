@@ -1,8 +1,13 @@
 #include "Regions.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
+#include <map>
 
 #include "../Source.h"
+#include "../ir/Ir.h"
 
 void Regions::markLine(std::size_t pos) {
     if (lines_ == nullptr) return;
@@ -281,4 +286,45 @@ std::string Regions::lsdaTable(const LsdaSpelling &sp, const std::string &symbol
     }
     o += "  .p2align 2\n";
     return o;
+}
+
+namespace {
+// Whether an alloca's text (the lowering names it by its declaration, `const char * label`) declares `name`: a whole word of it.
+bool frameDeclares(const std::string &text, const std::string &name) {
+    for (std::size_t at = text.find(name); !name.empty() && at != std::string::npos; at = text.find(name, at + 1)) {
+        const std::size_t end = at + name.size();
+        const bool before = at > 0 && (std::isalnum(static_cast<unsigned char>(text[at - 1])) || text[at - 1] == '_');
+        const bool after = end < text.size() && (std::isalnum(static_cast<unsigned char>(text[end])) || text[end] == '_');
+        if (!before && !after) return true;
+    }
+    return false;
+}
+}
+
+// Matched by name in declaration order, both lists being in it; a parameter without a live alloca keeps the slot the
+// prologue filled, a local without one (promoted at -O1 and -O2) has no record.
+const std::vector<Local> *Regions::ssaFrameLocals(const Function &fn, const ir::Function &f, const std::vector<long long> &allocaSlot,
+                                                  const char *who) {
+    std::vector<char> live(f.frame.size(), 0);
+    for (std::size_t b = 0; b < f.blocks.size(); b++)
+        for (std::size_t k = 0; k < f.block(f.blocks[b]).insts.size(); k++) {
+            const ir::Inst &i = f.inst(f.block(f.blocks[b]).insts[k]);
+            if (i.op == ir::Op::Alloca && i.k >= 0 && static_cast<std::size_t>(i.k) < live.size()) live[i.k] = 1;
+        }
+    std::map<std::string, std::size_t> next;
+    ssaLocals_.push_back(std::vector<Local>());
+    for (const Local &l : fn.locals()) {
+        std::size_t &j = next[l.name];
+        while (l.staticName.empty() && j < f.frame.size() && !frameDeclares(f.frame[j].name, l.name)) j++;
+        Local d = l;
+        const bool slot = l.staticName.empty() && j < f.frame.size() && live[j];
+        if (slot) d.offset = static_cast<int>(allocaSlot[j]);
+        if (l.staticName.empty() && j < f.frame.size()) j++;
+        if (!slot && l.staticName.empty() && !l.isParam) {
+            if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "%s -g %s: '%s' has no slot\n", who, fn.symbol().c_str(), l.name.c_str());
+            continue;
+        }
+        ssaLocals_.back().push_back(d);
+    }
+    return &ssaLocals_.back();
 }

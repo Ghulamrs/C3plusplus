@@ -659,7 +659,7 @@ void Arm64Darwin::emitFunction(const Function &fn) {
     }
     // Below the locals, room for the callee-saved registers the selector's values took (ssaSaved_).
     const int locals = alignTo(layoutSsa(fn, sf), 16);
-    if (lineSource()) dwarfFns_.back().locals = ssaLocals(fn, sf);
+    if (lineSource()) dwarfFns_.back().locals = ssaFrameLocals(fn, sf, ssaAllocaSlot_, "a64");
     int frame = locals + alignTo(8 * static_cast<int>(ssaSaved_.size()), 16);
     if (realign_ > 0) frame = top_ = alignTo(locals, realign_);
     if (realign_ > 0) {
