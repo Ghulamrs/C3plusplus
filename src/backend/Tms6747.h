@@ -6,6 +6,7 @@
 
 #include "Backend.h"
 #include "Walker.h"
+#include "../ir/Ir.h"
 
 #include "../optimizer/Inliner.h"
 #include "../optimizer/OptCosts.h"
@@ -80,6 +81,7 @@ public:
     bool terminateScopes() const override { return true; }
     void setOptimize(int level) override;
     void setOptimizeForSize(bool size) override;
+    void setSsa(const ir::Module *module, const TypeTable *types) override { ssa_ = module; ssaTypes_ = types; }
 
 private:
     std::ostringstream out_;    // the piece being emitted (one function at a time)
@@ -258,4 +260,23 @@ private:
     void emitTypes();
     void emitExceptionTable(const Function &fn);
     void emitFunction(const Function &fn);
+
+    // **The SSA selector** (M6a, C6xSelect.cpp): a function inside its subset is written from the module, the rest by the
+    // walker - ssaChoose names why. Every value has a word above the parser's parameters; A4, A6, B4 and A1 carry operands.
+    const ir::Module *ssa_ = nullptr;
+    const TypeTable *ssaTypes_ = nullptr;
+    std::vector<int> ssaAllocaSlot_, ssaValueSlot_;
+    int ssaSelected_ = 0, ssaWalked_ = 0;
+    const ir::Function *ssaChoose(const Function &fn);
+    std::string ssaOutside(const Function &fn, const ir::Function &f) const;
+    const Type *ssaType(const ir::Function &f, ir::ValueId v) const { return ssaTypes_->type(f.value(v).type); }
+    int layoutSsa(const Function &fn, const ir::Function &f);
+    void selectBody(const Function &fn, const ir::Function &f);
+    void selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId next);
+    std::string ssaMem(int off, int size);                 // the frame word `off` above the saves, as an operand
+    bool ssaFrameMem(const ir::Function &f, ir::ValueId p, int size, std::string &mem);   // *p where p is a frame address
+    void ssaLoad(const ir::Function &f, ir::ValueId v, const char *reg);
+    void ssaStore(const ir::Function &f, ir::ValueId v, const char *reg);
+    void ssaMoves(const ir::Function &f, const ir::Succ &s);
+    std::string ssaBlockLabel(ir::BlockId b) const { return label("ssa", static_cast<int>(b.v)); }
 };
