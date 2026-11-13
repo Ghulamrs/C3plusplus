@@ -1593,9 +1593,9 @@ bool Driver::compile(const Job &job) {
     // **On x86 a `volatile` access is marked in MIR and every pass keeps it** (R8); arm64's and the C6000's generators have
     // no mark, so there a file that writes `volatile` is compiled without -O, said as a warning at the first `volatile`.
     const bool marks = std::strncmp(backend_->name(), "x86_64", 6) == 0;
+    const bool downgrade = program.usesVolatile && !marks;
     // The generator selects from the SSA IR: x86 (M3b.7) and arm64-darwin (M5.3); the C6000 walks `Ast.h`.
     const bool selects = marks || std::strcmp(backend_->name(), "arm64-darwin") == 0;
-    const bool downgrade = program.usesVolatile && !marks;
     const int level = downgrade ? 0 : optimize_;
     if (optimize_ > 0 && downgrade) {
         volatileDowngrades_++;
