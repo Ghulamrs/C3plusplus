@@ -7,6 +7,7 @@
 #include "Regions.h"
 #include "../ir/Ir.h"
 
+#include <deque>
 #include <iosfwd>
 #include <map>
 #include <memory>
@@ -206,6 +207,8 @@ private:
     std::vector<std::vector<int> > ssaArgSlots_;      // per call, each argument's copy slot (0 where it has none)
     const ir::Function *ssaFunction(const Function &fn) const;
     int layoutSsa(const Function &fn, const ir::Function &f);
+    std::deque<std::vector<Local> > ssaLocals_;     // -g's records of the selected functions, which dwarfFns_ points at
+    const std::vector<Local> *ssaLocals(const Function &fn, const ir::Function &f);
     void ssaScalars(const ir::Function &f, std::vector<opt::Local> &into) const;
     Op vslot(ir::ValueId v) const;
     const Type *typeOf(const ir::Function &f, ir::ValueId v) const;

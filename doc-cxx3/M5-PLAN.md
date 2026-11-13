@@ -598,3 +598,23 @@ Each reason read for what must hold to reach it, then one probe on Windows (cxx3
 - **Gates at this commit**: Windows (cxx3-msvc.exe, cl /W4 /WX clean): both cases ok at -O0 and -O2 in both spellings.
   Linux (fresh ~/r1m): build ok; both cases pass -O0/-O2; open.sh 30 differ, 0 agree (7 on tms6747 only); typed.sh
   856 passed, 0 failed; memory-gate rc 0; exclusions 0 uncited, 0 stale (556/93); comments 0 over the cap.
+
+### x86's -g locals (lane x86g, 2026-11-13, from m5-r1m 190aebc9)
+
+- **The gap, measured** (`tests/m10/w1.cpp`, `w2.cpp`, -g -O0, x86_64-windows, the gnu spelling's S_REGREL32 against the
+  body's `N(%rbp)` stores; `boxkit/x86g-cvcheck.sh`): at 190aebc9 the records were the parser's offsets, which the SSA
+  frame (layoutSsa: allocas above the parameter slots, rounded to 16) does not keep - in `work`, `c`, `big`, `d`, `k`
+  and `u` named slots no instruction touches, and `p` (424 in the body) was recorded at 456, `scale`'s copy: a debugger
+  showed a wrong value for six of eleven. DWARF on x86_64-linux reads the same `Local::offset`, so the same fault.
+- **Recorded from the SSA frame** (`X86_64Linux::ssaLocals`, SsaSelect.cpp, arm64's rule): each parser local at its
+  alloca's slot, matched by name in declaration order; a parameter with no live alloca keeps its prologue slot; a local
+  with none has no record (named under `CXX1_SSA_WHY`, `x86 -g f: 'x' has no slot`). The funclets inherit the list.
+  After: every record of w1 and w2 (both spellings, MASM's `DD` the same numbers) names a slot the body addresses.
+- **At -O2** the allocas are gone (values, not slots): parameters keep their prologue slot, locals have no record.
+- src/ lines: +47 (SsaSelect.cpp +43, X86_64Linux.cpp +1, X86_64Linux.h +3).
+- **Gates**: Windows (cxx3-msvc.exe, cl /W4 /WX clean): w1 and w2 at -g -O0 and -g -O2 in both spellings build, link and
+  print their output; exclusions 0 uncited, 0 stale (556/93); comments 0 over the cap; ide/generate.py up to date.
+- **Owed**: `x86Declares` is arm64's `a64Declares` again (A64Select.cpp was not this lane's): one helper for both;
+  location lists for promoted values at -O1/-O2, and a parameter's slot after finish-frame moves it under the passes;
+  `w4.cpp` does not reach the selector on x86 (`char name[6] = "cdb"`: "an array initialised from a string the
+  program does not hold"), a Lowering refusal, so its records were not checked here.
