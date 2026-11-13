@@ -425,7 +425,7 @@ StmtPtr Parser::declarationBody() {
                 const bool early = initialiserNames(d.name);
                 if (early) declareStaticLocal(d.name, d.type, d.pos, symbol);
                 const std::size_t mine = locals_.size() - 1;
-                bindStaticReference(d, symbol, pieces, hasInit, &body);
+                bindStaticReference(d, symbol, pieces, hasInit, &body, true);
                 if (!early) declareStaticLocal(d.name, d.type, d.pos, symbol);
                 markThreadLocal(early ? mine : locals_.size() - 1, quals.isThreadLocal);
                 current_->globals.push_back(Global{ symbol, symbol,

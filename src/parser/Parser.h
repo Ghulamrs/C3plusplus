@@ -666,6 +666,7 @@ private:
         bool array = false;     // an array of a class built by its loop, vectorLoop, if any; `helper` destroys it at exit
         ListBuilt elements;     // an array of a class built from a braced list, or an initializer_list's backing array: each element
         const Type *listOf = nullptr;   // the initializer_list the braces were made into, where a constructor took one
+        std::string temporary, temporaryHelper;     // a reference's [class.temporary]/5 object, and cl's helper destroying it
     };
     std::map<std::string, StaticGuard> staticGuards_;
     // A `new` or `delete` as the SSA lowering may take it (M3b.2): allocation function, type, initialiser (0 none, 1 value-
@@ -1473,7 +1474,8 @@ private:
     // initialiser is the address of a global, and before main otherwise.
     void bindStaticReference(const Declared &d, const std::string &symbol,
                              std::vector<GlobalPiece> &pieces, bool &hasInit,
-                             std::vector<StmtPtr> *into);
+                             std::vector<StmtPtr> *into, bool local = false);
+    void staticTemporary(const Declared &d, const std::string &symbol, bool local);
 
     // Whether a call to this function has to be given an object. A member's
     // `owner` used to answer it on its own, and a static member is exactly the

@@ -29,6 +29,9 @@ public:
     std::string baseConstructorSymbol(const Signature &ctor, const Type *base);
     std::string initFunctionSymbol() const;
     std::string atexitHelperName(const std::string &object) const;
+    // [class.temporary]/5's temporary of a static reference: its symbol, and on Microsoft its atexit helper's name.
+    std::string referenceTemporary(const std::string &name, const std::string &symbol, const Type *referent, bool local,
+                                   std::string &helper);
     // With its type, an inline function's static local takes the ABI's name (1.28).
     std::string uniqueStaticSymbol(const std::string &name, const Type *type = nullptr);
     // A static data member: declared inside the class, defined outside it,
@@ -53,6 +56,7 @@ public:
                            bool isStatic, std::size_t pos);
 
     std::vector<std::string> staticSymbols_;
+    int msTemporaries_ = 0;     // cl's `$S<n>`, numbered through the unit
 
 private:
     Parser &p_;

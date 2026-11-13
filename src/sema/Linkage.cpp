@@ -174,6 +174,32 @@ std::string Linkage::atexitHelperName(const std::string &scoped) const {
     return "??__F" + scoped + "@YAXXZ";
 }
 
+// Measured: clang's `_ZGR1r_`, `_ZGRN2ns2nrE_`, `_ZGRZ1fvE1r_`; cl's `?$S1@@3UA@@A`, `?$S6@?1??f@@YAHXZ@4UA@@A` and their
+// helpers `??__F$S1@@YAXXZ`, `??__F$S6@?1??f@@YAHXZ@YAXXZ` - the number counting the unit's temporaries, the scope dropped.
+std::string Linkage::referenceTemporary(const std::string &name, const std::string &symbol, const Type *referent, bool local,
+                                        std::string &helper) {
+    const std::string &owner = p_.currentFunction_.empty() ? p_.functionName_ : p_.currentFunction_;
+    if (!p_.target_.microsoftNames()) {
+        const std::string fn = owner.compare(0, 2, "_Z") == 0 ? owner.substr(2) : std::to_string(owner.size()) + owner;
+        if (local) return "_ZGRZ" + fn + "E" + std::to_string(name.size()) + name + "_";
+        return "_ZGR" + (symbol.compare(0, 2, "_Z") == 0 ? symbol.substr(2) : std::to_string(symbol.size()) + symbol) + "_";
+    }
+    const std::string s = "$S" + std::to_string(++msTemporaries_);
+    std::string data, why;
+    // cl writes the object without its const where a constructor or destructor runs on it: `UA@@A`, a scalar's `HB`.
+    const bool built = referent->isStructOrUnion() && (referent->hasDestructor() || p_.hasConstructors(referent->tag()));
+    if (!microsoftDataName(s, built ? referent->unqualified() : referent, &data, &why) || data.compare(0, s.size() + 4, "?" + s + "@@3") != 0)
+        p_.src_.fail(0, "the temporary of '" + name + "' has no Microsoft name: " + why);
+    if (!local) {
+        helper = atexitHelperName(s + "@");
+        return data;
+    }
+    const std::string scope = s + "@?" + std::to_string(p_.currentBlock() + 1) + "?" +
+                              (!owner.empty() && owner[0] == '?' ? owner : "?" + owner + "@@9");
+    helper = atexitHelperName(scope);
+    return "?" + scope + "@4" + data.substr(s.size() + 4);
+}
+
 // A static local's symbol: the *mangled* function plus the object's name, numbered where a name repeats (the bare
 // name made S::f, T::f, f(double) one `f.n`). **An inline function's static local is one object for the program**
 // ([basic.def.odr]/6): the ABI's name in a COMDAT (1.28, item 14) - cl `?a@?1??f@@YAHXZ@4HA`, Itanium `_ZZ1fvE1a`.

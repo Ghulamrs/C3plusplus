@@ -1807,12 +1807,39 @@ void Parser::staticLocalWithConstructor(Declared &d,
     inits.push_back(guardOnce(symbol, std::move(body)));
 }
 
+// [class.temporary]/5: a static reference's temporary lives as long as it does - an object of its own beside it, built
+// where the reference is bound and destroyed at exit as a static object is (the SSA lowering's staticConstruction).
+void Parser::staticTemporary(const Declared &d, const std::string &symbol, bool local) {
+    const Type *t = d.type->referent();
+    if (!(t->isStructOrUnion() && t->isComplete()) && (t->isArray() || t->isStructOrUnion() || t->isVoid()))
+        src_.fail(d.pos, "'" + d.name + "' is a reference with static storage duration, and binding it to a temporary of type '" +
+                         t->describe() + "' is not supported yet");
+    StaticGuard &g = staticGuards_[symbol];
+    std::string helper;
+    g.temporary = linkage_.referenceTemporary(d.name, symbol, t, local, helper);
+    const bool shared = local && sharedStaticLocal(symbol);
+    current_->globals.push_back(Global{ g.temporary, g.temporary, t->unqualified(), std::vector<GlobalPiece>(), false, !shared, false });
+    current_->globals.back().isInline = shared;
+    current_->globals.back().isThreadLocal = tlsObject_;
+    if (!t->isStructOrUnion() || destructorOf(t->unqualified()) == nullptr) return;
+    if (!target_.microsoftNames()) {
+        markUsed(destructorOf(t->unqualified()));
+        current_->usesDsoHandle = true;
+        return;
+    }
+    Declared o = d;
+    o.type = t->unqualified();
+    std::vector<StmtPtr> unused;    // the registration the lowering makes; only the helper is wanted here
+    registerDestruction(o, g.temporary, helper, unused);
+    staticGuards_[symbol].temporaryHelper = helper;
+}
+
 // A reference with static storage duration: `&global` goes into the image,
 // anything else is bound where `into` says - the init function, or a static
-// local's guarded statement. A temporary is refused by name.
+// local's guarded statement. A temporary gets static storage of its own (staticTemporary).
 void Parser::bindStaticReference(const Declared &d, const std::string &symbol,
                                  std::vector<GlobalPiece> &pieces, bool &hasInit,
-                                 std::vector<StmtPtr> *into) {
+                                 std::vector<StmtPtr> *into, bool local) {
     if (!peek().is("="))
         src_.fail(d.pos, "'" + d.name + "' is a reference and has to be "
                          "initialised here - there is no later assignment "
@@ -1822,10 +1849,7 @@ void Parser::bindStaticReference(const Declared &d, const std::string &symbol,
     { OverloadTarget hold(*this, d.type); init = assign(); }
     // A class temporary is a dereference of its slot marked prvalue; a function is bound by its address, no temporary.
     if (!d.type->referent()->isFunction() && (!isGlvalue(*init) || init->declCategory() == Expr::Category::Prvalue))
-        src_.fail(d.pos, "'" + d.name + "' is a reference with static storage "
-                         "duration, and binding it to a temporary is not "
-                         "supported yet - the temporary would need static "
-                         "storage of its own. Name the object and bind to that");
+        staticTemporary(d, symbol, local);
     ExprPtr addr = bindReference(d.type, std::move(init), d.pos,
                                  "'" + d.name + "'");
     const Type *slot = types_.pointerTo(d.type->referent());

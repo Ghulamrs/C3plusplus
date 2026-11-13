@@ -393,6 +393,9 @@ private:
     void threadStatic(sema::TypedId var, const std::string &symbol);
     bool blockFunction(sema::TypedId name) const;
     void staticConstruction(sema::TypedId var, const std::string &symbol, const sema::StaticGuard &g);
+    void staticTemporary(sema::TypedId init, const std::string &symbol, const Type &ref, const sema::StaticGuard &g);
+    void destroyedAtExit(ValueId obj, const Type &c, const std::string &helper, const std::string &symbol);
+    void builtAtRunTime(const Type &t, const sema::StaticGuard &g, const char *what);
     ValueId staticAddr(const std::string &symbol, TypeId type);
     std::string atexitFor(const std::string &symbol) const;
     bool builtClass(const Type &t) const;

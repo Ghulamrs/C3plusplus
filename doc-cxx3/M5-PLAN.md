@@ -107,3 +107,20 @@ Everything else - x86 gates, the C6000, cl - stays on the boxes.
   Windows -O0/-O2 gnu+masm 36/36, cl /W4 /WX clean, exclusions 0 uncited 0 stale (outside 570 -> 569), comments 0,
   memory gate new 1054 -> 1053. src/ lines: +61 -17. Owed: a temporary with static storage of its own
   ([class.temporary]/5, `_ZGR...` on Itanium) so the refusal can go.
+
+- **R1's finds, round 3 (lane r1h, 2026-11-13, from m5-r1g 6ba086ef).** **A static reference's temporary has static
+  storage of its own** ([class.temporary]/5): r1g's refusal goes. The parser's staticTemporary declares the object
+  beside the reference under the ABI's name - Linkage::referenceTemporary, measured: clang `_ZGR1r_`, `_ZGRN2ns2nrE_`,
+  `_ZGRZ1fvE1r_`; cl `?$S<n>@@3UA@@A` at namespace scope (the scope dropped, n counting the unit's temporaries),
+  `?$S<n>@?1??f@@YAHXZ@4UA@@A` in a function (a built class without its const, `HB` for a scalar), its atexit helper `??__F$S<n>@@YAXXZ` made by registerDestruction - and
+  records it on the reference's guard; Lowering's staticTemporary builds it where the reference is bound (a class
+  temporary by its constructor, a scalar stored, a trivially copied class's bytes), binds the reference and registers
+  the destructor as a static object's is (destroyedAtExit, now the one registration staticConstruction uses too). A
+  call's result with a destructor is refused by name (elidedCall returns only into an alloca); an incomplete class, an
+  array or void by name in the parser (ParserInit.cpp:1815). Case static-reference-to-temporary (namespace, namespace
+  member, static member, static local, inline function's, scalar, call result) with the ledger at 0. **typed.sh 92 ->
+  90:** a declarator's written bounds are its `var`'s first parts, and expectBraces began at part 0, so the nested
+  braces of `int a[2][2] = {{..},{..}}` were never typed - it starts past varBounds_ now. **The open register's two
+  stale copies** were the Linux box's old tree (a tar over it keeps deleted files); git had moved them in r1f - the box
+  tree is made afresh now. One check for an array a guard builds (builtAtRunTime) where guardedStatic and threadStatic
+  each had one.

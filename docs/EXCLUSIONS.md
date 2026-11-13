@@ -302,9 +302,9 @@ many, or has no object of its own:
   each element would need its constructor before main and its destructor at
   exit; a file-scope array and a static local of the same shape are built and
   destroyed element by element. `src/parser/ParserClass.cpp:2210`
-- **a static-duration reference bound to a temporary** - [class.temporary]/5
-  gives the temporary the program's lifetime, so it would need static storage
-  of its own; a named object binds. `src/parser/ParserInit.cpp:1825`
+- **a static-duration reference bound to a temporary of an incomplete class, an
+  array or void** - [class.temporary]/5's object of static storage is made for a
+  scalar or a complete class only. `src/parser/ParserInit.cpp:1815`
 
 ## Expressions
 

@@ -1297,6 +1297,12 @@ void Lowering::guard(ValueId slot, const Type &c, const std::string &dtor) {
     live_.push_back(l);
 }
 
+// An array a guard builds: by its class's loop, from its braced list, or of scalars placed leaf by leaf.
+void Lowering::builtAtRunTime(const Type &t, const sema::StaticGuard &g, const char *what) {
+    if (t.isArray() && !g.array && !g.elements.recorded() && !scalar(*t.innermostElement()->unqualified()))
+        outside(std::string(what) + " array built at run time");
+}
+
 // [stmt.dcl]/4: a static local built the first time control passes, under the guard guardOnce named - a byte read, then
 // __cxa_guard_acquire and _release on Itanium; _Init_thread_header and _footer with the guard at -1 on Microsoft. A throw
 // out of the construction aborts the guard, as the parser's cleanup does, so the next pass tries again.
@@ -1304,8 +1310,7 @@ void Lowering::guardedStatic(sema::TypedId var, const std::string &symbol) {
     const sema::TypedNode &v = tree_.node(var);
     sema::StaticGuard g;
     if (!staticGuard_ || !staticGuard_(symbol, g)) broken("a static local built at run time with no guard recorded");
-    if (v.type->isArray() && !g.array && !g.elements.recorded() && !scalar(*v.type->innermostElement()->unqualified()))
-        outside("a static array built at run time");
+    builtAtRunTime(*v.type, g, "a static");
     const bool ms = target_.microsoftNames();
     if (ms && handlerDepth_ != 0) outside("a static local built at run time inside a handler on the Microsoft ABI");
     staticLocals_[v.syntax.v] = std::make_pair(symbol, tid(*v.type));
@@ -1370,8 +1375,7 @@ void Lowering::threadStatic(sema::TypedId var, const std::string &symbol) {
     const sema::TypedNode &v = tree_.node(var);
     sema::StaticGuard g;
     if (!staticGuard_ || !staticGuard_(symbol, g) || !threadLocalGlobal(g.guard)) broken("a thread_local built at run time with no guard recorded");
-    if (v.type->isArray() && !g.array && !g.elements.recorded() && !scalar(*v.type->innermostElement()->unqualified()))
-        outside("a thread_local array built at run time");
+    builtAtRunTime(*v.type, g, "a thread_local");
     staticLocals_[v.syntax.v] = std::make_pair(symbol, tid(*v.type));
     const TypeId byte = tid(*types_.get(Kind::UChar)), bp = tid(*types_.pointerTo(&T(byte)));
     const BlockId build = newBlock(), done = newBlock();
@@ -1403,6 +1407,7 @@ void Lowering::staticConstruction(sema::TypedId var, const std::string &symbol, 
     // bindStaticReference's binding: the global holds the address of the lvalue, as a local reference's alloca would.
     if (c.isReference()) {
         if (v.count != 1) outside("a static reference of " + std::to_string(v.count) + " parts");
+        if (!g.temporary.empty()) { staticTemporary(child(var, 0), symbol, c, g); return; }
         // [dcl.init.ref]/5: a reference to a function holds the function's address, as boundLocal's does.
         Val b = c.referent()->isFunction() ? decay(expr(child(var, 0))) : lvalue(child(var, 0));
         if (c.referent()->isFunction()) {
@@ -1456,11 +1461,17 @@ void Lowering::staticConstruction(sema::TypedId var, const std::string &symbol, 
     closeFull();
     if (!c.isStructOrUnion() || !c.hasDestructor()) return;
     if (!g.registered) outside("a static local whose destructor the parser registered none for");
+    destroyedAtExit(obj, c, g.helper, symbol);
+}
+
+// The exit's registration of a static object: __cxa_atexit with D1, the object and __dso_handle on Itanium; atexit(helper)
+// on Microsoft, the helper the parser made destroying it.
+void Lowering::destroyedAtExit(ValueId obj, const Type &c, const std::string &helper, const std::string &symbol) {
     const TypeId voidPtr = tid(*types_.pointerTo(types_.voidType())), intT = tid(*types_.get(Kind::Int));
     std::vector<ValueId> args;
     if (target_.microsoftNames()) {
-        if (g.helper.empty()) broken("a static local with no atexit helper recorded");
-        args.push_back(addrOf(g.helper, types_.pointerTo(types_.functionType(types_.voidType()->id(), std::vector<TypeId>()))));
+        if (helper.empty()) broken("a static local with no atexit helper recorded");
+        args.push_back(addrOf(helper, types_.pointerTo(types_.functionType(types_.voidType()->id(), std::vector<TypeId>()))));
         runtimeCall(atexitFor(symbol), intT, args);
         return;
     }
@@ -1470,6 +1481,26 @@ void Lowering::staticConstruction(sema::TypedId var, const std::string &symbol, 
     args.push_back(result(add(Op::Bitcast, voidPtr, std::vector<ValueId>(1, obj))));
     args.push_back(addrOf("__dso_handle", voidPtr));
     runtimeCall(atexitFor(symbol), intT, args);
+}
+
+// [class.temporary]/5: the parser's static object for a static reference's temporary - a class built by its constructor, a
+// scalar stored - then the reference bound to it, and its destructor registered as a static object's is.
+void Lowering::staticTemporary(sema::TypedId init, const std::string &symbol, const Type &ref, const sema::StaticGuard &g) {
+    const Type &t = *ref.referent()->unqualified();
+    const ValueId obj = staticAddr(g.temporary, tid(*types_.pointerTo(&t)));
+    const sema::TypedNode &n = tree_.node(init);
+    const bool same = n.type != nullptr && n.type->unqualified() == &t;
+    const bool built = same && (destroyedTemporary(init) || constructedTemporary(init));
+    // A call's result with a destructor comes back only into an alloca (elidedCall): refused, not copied and destroyed twice.
+    if (t.isStructOrUnion() && !built && (!same || t.hasDestructor() || t.nonTrivialCopy()))
+        outside("a static reference's temporary built otherwise");
+    if (!t.isStructOrUnion()) store(obj, exprTo(init, tid(t)).v);
+    else if (built) constructHere(init, obj, t);
+    else copyObject(obj, classValue(init, t).v, t);
+    const TypeId slotType = tid(*types_.pointerTo(ref.referent()));
+    store(staticAddr(symbol, tid(*types_.pointerTo(&T(slotType)))), result(add(Op::Bitcast, slotType, std::vector<ValueId>(1, obj))));
+    closeFull();
+    if (t.isStructOrUnion() && t.hasDestructor()) destroyedAtExit(obj, t, g.temporaryHelper, symbol);
 }
 
 // buildStaticArrayConstruction's array of a class: its elements built by the class's loop, or each from its braced list
