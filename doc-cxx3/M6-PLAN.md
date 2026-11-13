@@ -201,7 +201,7 @@ tools in `~/ti6x`), never on the Mac.
   counter the pipeliner refuses), lambda-deduction-temporaries +6 k, then nothing over 2.7 k.
 - **Gates (bbedc0dd's tree):** Linux build; tms6747.sh SIM=0 -O0 783 passed / 3 failed, -O2 783 / 3 - the walker's three
   noexcept cases; cl /W4 /WX clean on Windows; exclusions 0 uncited 0 stale,
-  comments 0 over, ide/generate.py --check up to date (Windows); memory gate: C6xSelect.cpp is outside its scope (its Linux leg queued behind the lock at the hour). Census (tools/ssa-census -arch
+  comments 0 over, ide/generate.py --check up to date (Windows); the same static gates on Linux rc 0, memory gate included. Census (tools/ssa-census -arch
   tms6747, Windows): outside 0, 25,023 of 34,847 functions selected (71.8%), 12 other failures - round 4's.
 - **Owed:** the pipeliner over a counter stepped by four (the unrolled bodies' last 0.2 M); the bench kernels' cycles;
   sim6747, asm6x.sh and identical.sh ARCHS=tms6747 (the coordinator's).
