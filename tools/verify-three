@@ -161,6 +161,8 @@ if [ "$WHICH" = all ] || [ "$WHICH" = linux ]; then
         lstep 'BUILD_CAP=1200M ./build -j2 >/dev/null' &&
         { lstep 'JOBS=2 sh tools/crosshost-sums sums ./cxx3.exe sums-linux.txt | tail -1' && : > "$LEGS/sums-linux.ok" || rc=1; } &&
         lstep 'make test' &&
+        # The structural door under -g as well (make test runs it without): the funclet's head and tail are data (M4.7).
+        lstep 'COFF_FLAGS=-g sh tests/coff.sh | tail -1' &&
         lstep 'CXX1="./cxx3.exe -O2" sh tests/run.sh' && lstep 'CXX1="./cxx3.exe -O1" sh tests/run.sh' &&
         lstep 'SSA_LEVEL=2 CXX1=./cxx3.exe sh tests/ssa.sh' &&
         # -Os and two runs' bytes (with -dump=typed) were in no standing gate (N11 of the mend review)

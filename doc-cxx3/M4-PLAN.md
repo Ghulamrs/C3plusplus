@@ -184,6 +184,59 @@ comment cap 0; and **the objects are the same bytes on both hosts** - `class.cpp
 -O2 written on Linux carry the Mac's digests (`668406b0...`, `67efd529...`). The re-based masm, rebuilt against the final
 library, passes its `make test` and writes the same 48 objects as `6bcb5d2`.
 
+**M4.7, the funclet as data** (2026-11-13, Opus 5.5 lane m4b, branch `m4-b` from `434bdf8a`). The one text site M4.4
+counted - the seven head and tail lines `MasmSpelling::funcletEnd` wrote as strings - goes through `ins()` now: the
+head and tail are written at the end of `o_` and cut out round the body, so under the structural door each is a `\001k`
+line and under `-coff=text` (and `-masm=ml64`) the same text as before (`lea rax, X` via `lbl`, so the -S is unchanged);
+`afterCall_` is kept as the body left it. M3a.4's `FuncletBegin`/`FuncletEnd` were already in place: only the
+spelling's strings were left. The census (`-time`, x86_64-windows `-O2 -masm=masm -c`, Linux box): `src/Driver.cpp`
+**6,044 instruction lines as text before (863 funclets x 7, plus 3 `lea`), 0 after**, 55,758 + 6,044 = 61,802 as data,
+directives 49,779 both; `src/backend/Masm.cpp` 4,130 (590 x 7) before, 0 after (the file itself changed). **No text
+instruction site is left** in the masm spelling under the structural door; the ml64 spelling's TLS `push`/`pop` stay text,
+that door being ml64's. Gate: Linux `tests/coff.sh` 1,658 pairs, 1,614 objects, **0 differ**; `tools/verify-three`'s
+Linux leg gains a row, `COFF_FLAGS=-g tests/coff.sh` (`make test` runs the plain one): 1,544 objects, 2 differ, both
+`data-only-translation-unit.part` at -O0/-O2 - **not this change**: two runs of either door under `-g` on that file differ
+from each other at byte 361 (one byte, `61`/`62`), a nondeterminism in a no-function file's CodeView, open. Windows box:
+cl `/W4 /WX` clean; winpass `-O2` masm spelling **789 same, 0 differ**, 340 refused as recorded - the object bytes did
+not change, the funclet's encoding being the text path's. Static gates on Linux: exclusions 0 uncited 0 stale, comment cap
+0, memory gate held, ide `--check` ok. src/ +26 -19 (Masm.cpp).
+
+**M4.8, a -g object that differed between runs** (2026-11-13, Opus 5.5 lane m4c, branch `m4-c` from `bb6586ae`). It
+did not: five runs of `data-only-translation-unit.part.cpp` under `-g -c` with one `-o` are the same bytes. What
+differed was the `-o` path - byte 361 sits in `.debug$S`'s S_OBJNAME, and M4.7's two runs wrote into directories `a` and
+`b` (`61`/`62`), coff.sh's two doors into `.s.obj` and `.t.obj`. `writeCodeView` returned on a file with no function,
+so the compiler's `.FILE` alone reached the encoder, which then wrote masm's own S_OBJNAME - the absolute `-o` path - where
+a file with a function gets the compiler's `<source>.obj`. **The root**: `writeCodeView` no longer returns on no
+function, so such a file names itself as every other does and its globals get their S_GDATA32 records (the encoder's
+fallback stays, for hand-written MASM, as ml64 /Zi writes it). `tools/determinism.sh` compares a `-g -c` object per case
+on both x86 targets (written under the two sides' own directories, so an `-o` dependence shows), takes `DET_TARGETS` and
+`DET_CASES` to split a box job, and **was a syntax error since `a3b865a2`**: R12's comment held an apostrophe that closed
+the `sh -c` quote. Linux box: five runs under five `-o` names the same at -O0 and -O2; `COFF_FLAGS=-g tests/coff.sh`
+1,658 pairs, 1,544 objects, **0 differ** (2 before); every case's `-g -c` object on x86_64-linux and x86_64-windows at
+-O0/-O2 written twice into two directories, 3,200 objects, **0 differ**. Windows: cl `/W4 /WX` clean. src/ +1 -2
+(CodeView.cpp).
+**M4.6, the owed Windows rows** (2026-11-13, Opus 5.5, branch `m4-a`, from main `434bdf8a`; Windows box
+`DESKTOP-2U0TLGC`, cl 19.44 / VS 2022 Professional 14.44.35207, every job `/affinity 3FF`). Each of M4.5's five, measured
+or named. **(1) link.exe and the CRT** - `tools/windows/example-link.cmd <root> <flags>` (new): `examples/`'s three
+sources through `cxx3-msvc -c` (CoffEmitter, the default `-masm=masm`), linked by hand by Microsoft's `link.exe`
+(14.44.35207, Hostx64) with `libcmt libcpmt libucrt libvcruntime kernel32 legacy_stdio_definitions`, no warning, and
+run: exit 0, **the same output as cl's /O2 build of the same sources** (`fc /b`), at -O0 and at -O2, tree `work\m4a`
+= `434bdf8a`. **(2) `run-cases.cmd` through CoffEmitter**: winpass's MASM spelling already is this row - the driver
+assembles each case in process (`assemblesInProcess`, `-masm=masm`) and the project's LINK links it; the run is
+source-to-exe, not a separate `-c`, but the object is the same `CoffEmitter::assemble` writes for `-c`. Wave 3's gate
+(rv-w3 `0f362afa`, whose src/, include/, tools/ and tests/ are `434bdf8a`'s but for `tools/ast-residue.baseline`;
+`boxkit/rvw3-winpass-O{0,2}.log`): **-O0 and -O2 each 789 same, 0 differ, 340 refused as recorded, 34 skipped**
+(the GNU spelling 790/0/340/33). **(3) cdb: owed.** No `cdb.exe` on the box - `where cdb` finds none and
+`Windows Kits\10\Debuggers` holds no cdb; nothing installed, by the brief. The expectation stays "as M10 W1-W5": the
+`.debug$S` is byte-equal with masm's (M4.2, `-g` 626 objects, 0 differ). **(4) `self-host.cmd` through `-c`**: its
+stages compile with `-c` (line 86) in the default spelling, so every MASM self-host since M4.2 is this row. Recounted
+on the box (`boxkit/m4a-shcmp.py`, the md5 of each stage's 100 objects): `work\rvw3` (-O2, `434bdf8a`'s source)
+stages 0=1, 1=2, 2=3 **100 of 100 each**, `differ.txt` empty; `work\rvP` (-O0, `a3b865a2`) 100/100/100; `work\rvC`
+(-O2, `3628bd4a`, `boxkit/rvC-sh-O2.log`) 100/100/100. **(5) `msvc/build.cmd` with `src/encoder/`**: `434bdf8a`
+built by cl 19.44 `/W4 /WX` (`boxkit/m4a-winbuild.sh`), 100 sources, the nine of `src/encoder/` and `CoffEmitter.cpp`
+among them, **0 warnings, 0 errors**, 86 s with `/MP2`; every wave gate since M4 built it the same way. M4.5's "cl 19.51
+has not seen it" stays: vswhere's latest on the box is VS 2022's 14.44. **Left owed**: cdb (3), and cl 19.51.
+
 ## Notes the comment cap would not hold
 
 The library's three long comments, cut to three lines in `src/encoder/`; the full text is here, as CLAUDE.md keeps the

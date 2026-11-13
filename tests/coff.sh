@@ -5,12 +5,14 @@
 # masm's own code, so this holds the structural door to what `-S` + masm would write, with no masm.exe needed.
 #
 #   tests/coff.sh            every case at -O0 and -O2, on any machine cxx3 builds on
+#   COFF_FLAGS=-g tests/coff.sh   the same with more flags on both sides (verify-three's Linux row runs -g)
 #
 # A case refused for this target leaves no object on either side and counts as equal; the refusal is the run suite's
 # to judge. tools/coff-equal.sh is the wider gate, against an external masm, for a release.
 set -u
 cd "$(dirname "$0")/.."
 CXX1="${CXX1:-./cxx3.exe}"
+FLAGS="${COFF_FLAGS:-}"
 OUT=tests/out-coff
 rm -rf "$OUT"; mkdir -p "$OUT"
 pairs=0; objects=0; differ=0
@@ -20,8 +22,8 @@ for src in tests/cases/*.cpp; do
     for L in 0 2; do
         pairs=$((pairs + 1))
         s="$OUT/$base.O$L.s.obj"; t="$OUT/$base.O$L.t.obj"
-        ( ulimit -t 60; $CXX1 -nologo -arch x86_64-windows -masm=masm -O$L -c "$src" -o "$s" < /dev/null > /dev/null 2>&1 )
-        ( ulimit -t 60; $CXX1 -nologo -arch x86_64-windows -masm=masm -O$L -coff=text -c "$src" -o "$t" < /dev/null > /dev/null 2>&1 )
+        ( ulimit -t 60; $CXX1 -nologo -arch x86_64-windows -masm=masm -O$L $FLAGS -c "$src" -o "$s" < /dev/null > /dev/null 2>&1 )
+        ( ulimit -t 60; $CXX1 -nologo -arch x86_64-windows -masm=masm -O$L $FLAGS -coff=text -c "$src" -o "$t" < /dev/null > /dev/null 2>&1 )
         if [ -f "$s" ] && [ -f "$t" ]; then
             objects=$((objects + 1))
             cmp -s "$s" "$t" || { differ=$((differ + 1)); echo "DIFFERS $base -O$L"; }
@@ -30,5 +32,5 @@ for src in tests/cases/*.cpp; do
         fi
     done
 done
-echo "coff.sh: $pairs pairs, $objects objects compared, $differ differ"
+echo "coff.sh${FLAGS:+ $FLAGS}: $pairs pairs, $objects objects compared, $differ differ"
 [ $differ = 0 ]

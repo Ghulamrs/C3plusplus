@@ -314,8 +314,7 @@ void writeCodeView(std::string &out, const Target &target, CodeViewLanguage lang
                    const std::string &objectName,
                    const std::vector<DwarfFunction> &fns,
                    const std::vector<DwarfGlobal> &globals, const Spell &spell) {
-    if (fns.empty()) return;
-
+    // A file with no function still names itself here (M4.8): else the encoder wrote S_OBJNAME from the -o path.
     CodeViewTypes types(target);
     Records r(out, ".Lcv.");
     openDebugS(out, "");

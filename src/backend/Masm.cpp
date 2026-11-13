@@ -1284,27 +1284,37 @@ void MasmSpelling::funcletEnd(const std::string &resume) {
     // Written here as raw text, so said to be defined: an early exit's `jmp $LNleave$` made it an EXTERN otherwise.
     predefine({ sym, "$LNbeg$" + sym, "$LNpush$" + sym, "$LNprolog$" + sym, "$LNleave$" + sym, "$LNend$" + sym });
     // The text around the body: the head, then the body as written out, then the tail with the unwind data.
-    std::string head, f;
+    // The head and tail's instructions go through ins(), so the structural door takes them as data (M4.7): each is
+    // written at the end of o_ and cut out again, the body having been lifted first; afterCall_ is the body's still.
+    flushPending();
+    const bool afterCall = afterCall_;
+    const std::string body = o_.substr(open.mark);
+    o_.resize(open.mark);
     // **`.text$x`, and the dot is the whole of it** - the same trap as `.pdata`. A segment called `text` gets data
     // attributes, so the handler faults at its own first instruction; 'CODE' is what gives it execute permission.
-    head += "\n.text$x SEGMENT ALIGN(16) 'CODE'" + associative() + "\n";
-    head += sym + " PROC\n";
-    head += "$LNbeg$" + sym + ":\n";
+    o_ += "\n.text$x SEGMENT ALIGN(16) 'CODE'" + associative() + "\n";
+    o_ += sym + " PROC\n";
+    o_ += "$LNbeg$" + sym + ":\n";
     // -g: the prologue is on the `catch` line, as cl's funclet begins (1.29).
-    head += open.entryLoc;
-    head += "  mov QWORD PTR [rsp+16], rdx\n";
-    head += "  push rbp\n";
-    head += "$LNpush$" + sym + ":\n";
-    head += "  sub rsp, 32\n";
-    head += "$LNprolog$" + sym + ":\n";
+    o_ += open.entryLoc;
+    ins("movq", reg("%rdx"), mem(16, "%rsp"));
+    ins("push", reg("%rbp"));
+    o_ += "$LNpush$" + sym + ":\n";
+    ins("sub", imm(32), reg("%rsp"));
+    o_ += "$LNprolog$" + sym + ":\n";
     // **rdx is the establisher frame, and that is now exactly the parent's rbp** - the two became one thing when the
     // frame pointer moved to the bottom of the allocation, so the handler reaches the parent's locals as they are.
-    head += "  mov rbp, rdx\n";
-    if (!resume.empty()) f += "  lea rax, " + labelName(resume) + "\n";
-    f += "$LNleave$" + sym + ":\n";
-    f += "  add rsp, 32\n";
-    f += "  pop rbp\n";
-    f += "  ret 0\n";
+    ins("mov", reg("%rdx"), reg("%rbp"));
+    const std::string head = o_.substr(open.mark);
+    o_.resize(open.mark);
+    if (!resume.empty()) ins("lea", lbl(resume), reg("%rax"));
+    o_ += "$LNleave$" + sym + ":\n";
+    ins("add", imm(32), reg("%rsp"));
+    ins("pop", reg("%rbp"));
+    ins("ret", imm(0));
+    std::string f = o_.substr(open.mark);
+    o_.resize(open.mark);
+    afterCall_ = afterCall;
     f += "$LNend$" + sym + ":\n";
     f += sym + " ENDP\n";
     f += ".text$x ENDS\n";
@@ -1331,8 +1341,5 @@ void MasmSpelling::funcletEnd(const std::string &resume) {
     f += "  DD imagerel __CxxFrameHandler3\n";
     f += "  DD imagerel $cppxdata$" + mangledName() + "\n";
     f += ".xdata ENDS\n";
-    flushPending();
-    const std::string body = o_.substr(open.mark);
-    o_.resize(open.mark);
     funclets_ += head + body + f;
 }
