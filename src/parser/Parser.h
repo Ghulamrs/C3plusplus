@@ -2187,6 +2187,7 @@ private:
     // A12/A13: whether a file-scope initialiser folds to bytes; one that does
     // not is stored by the init function instead, once the object is declared.
     bool staticallyInitialisable(const Type *t, Init &in);
+    bool leavesFold(const Type *elem, Init &in);
     void dynamicInitialiseScalar(const std::string &name, const std::string &symbol, const Type *type, Init &in);
     void dynamicInitialiseStaticMember(const std::string &name,
                                        const std::string &symbol, const Type *type,

@@ -1083,15 +1083,6 @@ const Type *Parser::structOrUnionSpecifier(Kind kind, bool isClass) {
             // [class.union]/2: a union holds no reference, clang's words at the name.
             if (kind == Kind::Union && !memberIsFunction && d.type->isReference())
                 src_.fail(d.pos, "union member '" + d.name + "' has reference type '" + d.type->describe() + "'");
-            // **A reference member is bound, never assigned**, so a class with one
-            // and no constructor could never be built. Said here rather than at the
-            // first use, where the reader hears only that something is uninitialised.
-            if (!memberIsFunction && d.type->isReference() &&
-                !hasConstructors(tag) && !peek().is(";") && !peek().is(","))   // each declarator alone
-                src_.fail(d.pos, "'" + d.name + "' is a reference member, and a "
-                                 "reference is bound where it is made - so this "
-                                 "class needs a constructor with '" + d.name +
-                                 "' in its initialiser list");
 
             // **A static member is not part of the object**, so it leaves the
             // layout untouched and the cursor where it was.

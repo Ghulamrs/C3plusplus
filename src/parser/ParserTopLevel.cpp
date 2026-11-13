@@ -1478,21 +1478,24 @@ void Parser::topLevel(Program &program) {
                         memberInits.push_back(StmtPtr(new ExprStmt(std::move(chain))));
                 if (hasCtor) {
                     const Type *ptr = types_.pointerTo(mt);
+                    // [dcl.fct.default]/4: `A(int = 7)` is the default constructor, called with its defaults; held by value.
+                    const Signature ctor = lookup_.functions_[vi->second];
+                    std::vector<ExprPtr> defaults;
+                    applyDefaults(ctor, defaults, epos);
+                    noteEntryDefaults("." + m->name, defaults, 0);
+                    std::vector<const Type *> ps(1, ptr);
+                    for (std::size_t k = 0; k < defaults.size(); k++) ps.push_back(ctor.params[k]);
                     // Recorded as an unnamed member's default construction is, the zeroing beside it (M3b.2).
                     const std::string bkey = currentFunction_ + "|" + m->name + "|0";
-                    const MemberBuilt b = { lookup_.functions_[vi->second].symbol,
-                                            types_.functionType(types_.get(Kind::Void), std::vector<const Type *>(1, ptr), false), false,
-                                            lookup_.functions_[vi->second].implicit };
+                    const MemberBuilt b = { ctor.symbol, types_.functionType(types_.get(Kind::Void), ps, false), !defaults.empty(), ctor.implicit };
                     memberBuilt_[bkey] = b;
                     ExprPtr addr(new Unary('&', std::move(field)));
                     addr->setType(ptr);
                     std::vector<ExprPtr> one;
                     one.push_back(std::move(addr));
-                    std::vector<const Type *> ps;
-                    ps.push_back(ptr);
+                    for (std::size_t k = 0; k < defaults.size(); k++) one.push_back(std::move(defaults[k]));
                     memberInits.push_back(StmtPtr(new ExprStmt(
-                        completeCall(mt->tag(), lookup_.functions_[vi->second].symbol,
-                                     nullptr, types_.get(Kind::Void), ps, false,
+                        completeCall(mt->tag(), ctor.symbol, nullptr, types_.get(Kind::Void), ps, false,
                                      epos, std::move(one)))));
                 }
                 continue;

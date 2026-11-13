@@ -55,3 +55,18 @@ Everything else - x86 gates, the C6000, cl - stays on the boxes.
   constant initialiser", not by name), a reference member's default member initialiser, a member copied from a
   derived object (no `A::A` found). src/ lines: 0 changed. Owed: the miscompile first; the four front-end shapes; the
   reasons past Lowering.cpp:1414 and Builder*.cpp.
+- **R1's finds, mended (2026-11-13, lane r1f, from d7661b32).** The miscompile and the four front-end refusals R1's
+  probes put in tests/open/, each mended at its root and moved to tests/cases with clang's output (the Windows box's clang
+  over the tree's include/). **The miscompile** was the parser's: `: a()` value-initialising a member whose default
+  constructor is `A(int = 7)` called it with `this` alone, in both the walker's statement and the record the lowering
+  reads (ParserTopLevel's value-initialised member) - now [dcl.fct.default]/4's defaults are applied and noted as a
+  named entry's are (member-value-init-default-argument). **A static or thread_local array of scalars whose list does
+  not fold** was laid down as data and refused "expected a constant initialiser": `leavesFold` sends it to the guarded
+  run-time path, and the lowering stores it as a local array's list (staticArray), the reason "a static/thread_local
+  array built at run time" kept for arrays of classes (static- and thread-local-array-runtime-initialiser). **A
+  reference member's default initialiser** was refused by a check that fired exactly when an initialiser followed the
+  declarator; it is gone, memberInitialiser binds the reference as `r(v)` does, and the lowering's reference branch
+  takes it (reference-member-default-initialiser). **A member copied from a derived object** (`: a(d)`, A trivially
+  copyable) went to overload resolution and found no `A::A`: constructMember converts to the base subobject first, and
+  the lowering's `$bytes` copy takes the subobject as classLocal does (member-copied-from-derived). src/ lines:
+  51 added, 21 removed over six files (ParserTopLevel, ParserInit, ParserClass, ParserType, Parser.h, ir/Lowering.cpp).
