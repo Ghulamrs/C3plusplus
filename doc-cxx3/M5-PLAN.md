@@ -308,3 +308,32 @@ gone, the last thing keeping the walker for a body inside the subset (src/ 92,85
   Owed: the miscompile first; the five front-end shapes; the reasons unprobed (Lowering.cpp 2290-2900 and past 3760,
   Builder.cpp).
 - **Also to undo at M5.3:** 13 `lowering-*` refusal cases (R1 lanes) carry an `arm64-darwin` `.notarget` line - the walker writes what the lowering refuses until it goes.
+
+### M5.3, the deletion (2026-11-13, lane m5g, from `a353705c` with `m5-wave1` merged in for its `.notarget` lines)
+
+Every arm64-darwin function is written from the SSA IR; the walker's arm64 half and `A64Peep` are gone in one commit, as
+M3b.7 did for x86 (src/ 92,942 -> 91,683, +43 -1,302 over five files, two deleted).
+
+- **What went.** `Arm64Darwin` derives from `Regions`, not `Walker`: its 13 `Ast.h` visits (`Num` to `Return`) and what only
+  they used (`genAddr`, `addOffset`, the three bit-field helpers, `genTruth`, `jump`/`branchIfZero`/`branchIfNotZero`,
+  `loadFpConst`, `storeToStack`, `pushD`/`popD`, `terminatePad`); the promoted-locals frame and `a64Peephole`'s call in
+  `emitFunction`; `src/optimizer/A64Peep.{cpp,h}` (702 + 13 lines); `CXX1_A64_WALKER`. What the selector shares stays
+  (`placeArguments`, `planFor`, `copyBlock`, `load`, `genConversion`, the aggregate moves, `tlsAddress`, the va helpers).
+  `Walker.cpp` had nothing arm64's alone: tms6747 keeps it whole.
+- **What is refused now.** The driver treats arm64-darwin as x86: a function outside the lowering is an error naming it;
+  one the lowering took but the selector's `ssaOutside` does not is `codegen: 'f', <reason>, is not supported yet by the
+  arm64-darwin backend` (`ssaChoose`). No case reaches the second. The volatile downgrade stays arm64's (no MIR mark).
+- **`.notarget`**: the arm64-darwin line is gone from 21 files - the 13 `lowering-*` (refused by name, each `.error`
+  matched) and 8 citing the walker (`noexcept-set-terminate{,-callee}`, `ssa-own-landing-pads`, five `ssa-aggregate-*`/
+  `ssa-census-last-bodies`/`ssa-new-arguments-outlive`); their tms6747 lines stay.
+- **`tools/ast-residue`** counted nothing in src/backend, so the deletion did not move it; it has a `visits` kind now
+  (a generator's visit of a node kind, declared or defined, under src/backend): **150 -> 124** (-26: 13 declarations,
+  13 definitions). The other counts are the merge's: ExprPtr 2009 -> 2012 and StmtPtr 634 -> 635 came with `m5-wave1`
+  (R1's parser finds) against a baseline it had not re-recorded; recorded here.
+- **Gate** (cl-built `cxx3-msvc.exe` on the Windows box, `boxkit/m5g-winprobe.sh`): -O0, -O2, -O0 -g, -O2 -g: **0 broken,
+  0 refusals wrong, 10815 of 10815 functions selected, 821 cases compiled**; the Mac through `mac-run.sh` at -j2: **821
+  of 821 at -O0 and 821 of 821 at -O2** link, run and print their recorded output. Bench (`m5e-macbench.sh`, five
+  rounds, median ms): this tree 371 = m5f's selected 371 (the `.s` byte-identical), m5f's walker + `A64Peep` 675, Apple
+  clang 169; checksums equal. cl /W4 /WX clean; static gates below.
+- **Owed.** The Linux leg (g++ build) and `identical.sh ARCHS=arm64-darwin` are the wave gate's; self-host on target 4
+  (M5.4); the plan's design text (`Compiler_Design_Final.md` sections naming `A64Peep`) is history now.

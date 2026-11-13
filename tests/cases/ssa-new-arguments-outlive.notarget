@@ -1,2 +1,1 @@
 tms6747  the case is the SSA path's, which is x86's alone (M3b.7); the walker answers otherwise - tests/open/walker-new-arguments-outlive.cpp.
-arm64-darwin  the case is the SSA path's, which is x86's alone (M3b.7); the walker answers otherwise - tests/open/walker-new-arguments-outlive.cpp.

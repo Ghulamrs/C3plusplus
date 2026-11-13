@@ -1,2 +1,1 @@
 tms6747  the walker's noexcept escape calls abort, not std::terminate, so the handler this case installs never runs there; the SSA path, x86's alone, answers clang's - tests/open/walker-noexcept-terminate.cpp (review R11).
-arm64-darwin  the walker's noexcept escape calls abort, not std::terminate, so the handler this case installs never runs there; the SSA path, x86's alone, answers clang's - tests/open/walker-noexcept-terminate.cpp (review R11).
