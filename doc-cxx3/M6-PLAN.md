@@ -301,3 +301,37 @@ by case against round 5 (`m6d-cmp.sh`), the text no longer identical by design.
   operands broken down by kind; the helpers' text built as `MInst`s rather than read back; sim6747, asm6x.sh, -O0
   tms6747.sh and make test (the coordinator's). For the merge with lane m6g's `-g`: boxkit/m6e-handover.md names every
   function touched.
+
+### M6b, round 2 (the merge of -g into the MIR selector; allocation not begun), 2026-11-14, lane m6h
+
+- **The merge** (`6cdb4b65`, m6-e into m5-wave2 + m6g): one source conflict, the end of `selectBody`. Resolved as
+  `closeOpenBlocks(); ssaCounting_ = false;` and then m6e's `ssaEmit(ZERO)`, head, `c6x::write` - the block labels
+  `closeOpenBlocks` writes are text in `out_`, absorbed onto the stream by the `ZERO`'s `ssaEmit`, so they stand before
+  it as they did. m6e's rule holds: under -g `emittedSize` answers `ssaInsts_`, and nothing in `selectBody` reads `out_`
+  between its first and last lines. Project lists regenerated (`ide/generate.py`, on the box).
+- **The oracle for "the merge changed no text" is the first parent's compiler, not m6-e's.** m6-e stands 54 commits
+  behind m5-wave2 (`include/algorithm`'s `upper_bound`, R1's rounds): against it 757 outputs differ, none of them the
+  merge's. Against m6g's build (2b4aca6e, work\m6g), Windows, `-arch tms6747 -S` over the 1,215 files of tests/cases at
+  -O0 and -O2, each text written to a file and compared with its diagnostics (boxkit/m6h-win.sh `same`): **2,430
+  outputs, 1,720 texts the same, 710 refused alike, 0 differ.** With m6e's own gate (m6-e against m6-d, Linux
+  identical.sh 1,660 / 0) the MIR printer writes the walker stream's text on both bases.
+- **A check that checked less than it said:** on Windows `-o -` writes a file named `-`, not standard output, so
+  boxkit/m6e-winsame.sh's "byte for byte" (round 1's second bullet) compared diagnostics alone; round 1's Linux
+  identical.sh was the real one. m6h-win.sh writes each text to its own file.
+- **-g:** tests/g-same.sh on the merged tree (Windows, cl build): 860 same, 0 differ, 0 broken, 355 not for tms6747.
+- **Gates (Windows, 6cdb4b65's tree):** cl /W4 /WX clean; exclusions 0 uncited 0 stale; comments 0 over;
+  ide/generate.py --check up to date; memory gate --check rc 0. Linux (~/m6h, same tree): g++ build done; the
+  legs (g-same, identical.sh against ~/m6g's cxx3.exe, static, tms6747.sh SIM=0 -O2 and -O0 in three shards each) were
+  queued on the lock at the hour - boxkit/m6h-handover.md's last lines carry what came back.
+- **Schedule-aware allocation: not begun, by the rule that a claim with no oracle is not believed.** Its gate is
+  vm6747 cycles case by case, vm6747 runs on the Linux box alone, and the lock there was held by other lanes' gates for
+  the hour (this lane's build got it 22 minutes in); code that moves values between the A and B files cannot land
+  unrun. What was measured instead, to size the design's point (4) (a B home read through A4/A6): the -O2 text of
+  tests/cases, Windows, boxkit/m6h-win.sh `bside` - 371,257 instruction lines, 2,488 `MV Bn, A4|A6` and 8,724
+  `MV A4, Bn` (the walker's functions included; with `CXX1_C6X_WALKER=1` 389,273 / 3,410 / 10,974). So the copies are
+  at most 3.0% of the lines, a static count, not cycles: point (4) alone is small, and round 2 should begin at points
+  (1)-(3) - side by the readers' file, `.M`/`.D` pressure, the T path - on the unrolled bodies, where a packet is won.
+- **Owed:** round 2 itself (start: in `ssaAssign`, a value read only by B-homed readers prefers a B home, and
+  `ssaUse`/the destination rule take a B register where the instruction's other operand is B or one cross path
+  serves; measure with `SHARD=k/3 CYCLES=1` against 192.2 M and boxkit/m6d-cmp.sh); what of the Linux gate is not in
+  the line above; sim6747, asm6x.sh, make test (the coordinator's).
