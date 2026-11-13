@@ -106,3 +106,61 @@ tools in `~/ti6x`), never on the Mac.
   proof that it writes d3faa75b's text over every case (boxkit/m6b-same.sh) were queued behind the lock at the hour.
 - **Owed:** m6b-same.sh's verdict and the census re-run after that commit; the bench kernels' cycles; sim6747, asm6x.sh and identical.sh
   ARCHS=tms6747 (the coordinator's).
+
+### M6a, round 4 (the loops reach the pipeliner), 2026-11-13, lane m6c
+
+- **Traced** (CPP11_PIPE on the six, the selector's text against the walker's): three shapes, none of them the pipeliner's.
+  (1) *The guard branched to the head* - `[A1] B head` and its stub after it, so `recognise` counted the head named twice
+  ("the head is entered from elsewhere": stack-probe, the array-loop sums). (2) *A loop's blocks were not together* - the
+  IR's order put a `while`'s exit between its head and its latch ("no exit label after the branch", "an unconditional back
+  branch": pipelined-data-exit, lfSame of both array-loop cases). (3) *A block label inside the loop* - `ssaN` is not one
+  of `passThrough`'s kinds ("a label inside"). Behind those, a constant made at each use wrote a scratch register in the
+  body, the bound among them ("the counter is not stepped by one before the test", local-zero-init-large).
+- **Landed** (`83cfdeb2`): `backend/C6xSelect.cpp` 605 -> 652 lines, `Tms6747.h` +6, `SsaSelect.cpp` 0, `C6xSched.cpp` 0.
+  A conditional branch whose other way is the next block owes its edge stub until the text has jumped away (`ssaLater_`:
+  after a `Br`'s jump or a `Ret`, never between a latch and its own stub - what m6b's attempt did, two branches a turn),
+  so a guard falls into its loop. The blocks are written in `SsaSelect.cpp`'s order at -O1 and -O2 (`ssaBlockOrder`, the
+  one implementation, out of its unnamed namespace). A block inside a loop that is neither its head nor what its latch
+  falls into is labelled `ssain`, the one kind added to `passThrough` - not `ssa` itself: a guardless loop's exit label
+  is unnamed, and read through it is dropped and the loop refused. A constant or a symbol's address a loop reads where
+  the instruction cannot hold it keeps a free scratch register (a saved one only across a call), at no weight: a value
+  no call crosses takes it back before it takes a saved register, and it is then made at each use as before.
+- **The walker's text is unchanged**: `CXX1_C6X_WALKER=1` at -O1 and -O2 over the 1,170 files of tests/cases, m6b's
+  cxx3-msvc.exe against this one, 0 differ (boxkit/m6c-walk.out; the walker writes no `ssain` label).
+- **Cycles, vm6747 (tests/tms6747.sh SIM=0 CYCLES=1, 780 cases):**
+
+  | level | walker | selector, round 3 | selector, round 4 | cases better / equal / worse |
+  | --- | --- | --- | --- | --- |
+  | -O0 | 447.7 M | 393.2 M | 393.7 M | 376 / 115 / 289 (worse by 0.18 M in all; thread-pool 160 k of it) |
+  | -O2 | 195.9 M | 201.4 M | 193.6 M | 415 / 319 / 46 (worse by 1.49 M in all) |
+
+  | the six, -O2 | walker | round 3 | round 4 |
+  | --- | --- | --- | --- |
+  | stack-probe | 801,623 | 4,007,269 | 534,481 |
+  | local-zero-init-large | 524,782 | 1,544,790 | 1,424,382 |
+  | pipelined-data-exit | 1,517,496 | 2,087,235 | 1,471,658 |
+  | fill-stores | 985,949 | 1,710,695 | 1,546,793 |
+  | array-loop-member-copy | 4,650,964 | 5,144,262 | 3,970,990 |
+  | array-loop-static | 2,082,301 | 2,452,458 | 2,009,121 |
+
+  Probe c6x-select-scalars: -O0 2,767 (round 3 2,750; walker 3,523), -O2 711 (round 3 743; walker 746).
+- **The -O2 cycle gate is met in sum (-1.2%)**, and four of the six are under the walker. The 125 worse cases are 46, and
+  1.46 M of their 1.49 M is the other two: local-zero-init-large +0.90 M, fill-stores +0.56 M; the third is
+  lambda-deduction-temporaries +27 k, then nothing over 2.1 k.
+- **The next cause, named: a body the SSA unroller wrote four turns of.** `dirty()` and `sum()` reach the selector as
+  four turns and a counter stepped by four, which the pipeliner does not take ("no schedule under four fifths", "the
+  counter is not stepped by one before the test"), and the scan gives every short range the lowest free register, so
+  the four turns share A20/A21 and the scheduler cannot overlap them: 7 cycles a turn in `sum()` against the walker's 5.
+  **Tried, not committed:** a rotating pick writes `sum()` in 4.5 cycles a turn, but a block argument then leaves its
+  parameter's register, the latch needs a move, and the pipeliner takes none of the six loops (CPP11_PIPE: stack-probe
+  1 -> 0, array-loop-member-copy 4 -> 0). The pick must rotate *and* keep an argument in its parameter's register.
+- **-O0 lost 0.5 M to round 3** (393.2 -> 393.7 M; stack-probe +0.53 M, local-zero-init-large +0.18 M, 227 cases worse
+  by 0.85 M in all, 148 better): the kept constants and the new stub places apply at -O0 too, where nothing schedules
+  them. Not traced; the gate against the walker holds by 54 M.
+- **Gates (83cfdeb2's tree):** Linux build; tms6747.sh SIM=0 -O0 783 passed / 3 failed, -O2 783 / 3 - the walker's three
+  noexcept cases; the Linux compiler's -O2 text of the six is the Windows build's (md5); exclusions 0 uncited 0 stale,
+  comments 0 over, memory gate rc 0, ide/generate.py --check up to date; cl /W4 /WX clean on Windows. Census
+  (tools/ssa-census -arch tms6747, the same on Linux and on Windows): outside 0, 25,018 of 34,840 functions selected
+  (71.8%), 12 other failures - round 3's thirteen less `C6xSelect.cpp`.
+- **Owed:** why -O0 lost 0.5 M; the unrolled bodies (above); the bench kernels' cycles;
+  sim6747, asm6x.sh and identical.sh ARCHS=tms6747 (the coordinator's).
