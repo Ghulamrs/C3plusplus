@@ -635,6 +635,9 @@ ExprPtr Parser::contextualScalar(ExprPtr e, std::size_t pos, const char *what, s
         }
     }
     requireScalar(*e, pos, what);
+    // [conv.bool]: a data member pointer is tested against its null, -1, which only the conversion to bool knows.
+    const Type *u = e->type()->unqualified();
+    if (u->isMemberPointer() && !u->isMemberFunctionPointer()) return convert(std::move(e), types_.get(Kind::Bool));
     return e;
 }
 

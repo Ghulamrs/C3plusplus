@@ -351,8 +351,9 @@ ExprPtr Parser::convertNode(ExprPtr e, const Type *to, bool allowExplicit) const
 
     // A conversion to bool is not a narrowing: [conv.bool] makes every non-zero
     // value true, so (bool)256 is true where (char)256 is 0. Lowered here to a
-    // comparison against zero rather than taught to three backends as a cast.
-    if (to->isBool() && !e->type()->isBool() && e->type()->isScalar()) {
+    // comparison against zero rather than taught to three backends as a cast; a data member pointer's zero is its null.
+    const bool dataMember = e->type()->unqualified()->isMemberPointer() && !e->type()->unqualified()->isMemberFunctionPointer();
+    if (to->isBool() && !e->type()->isBool() && (e->type()->isScalar() || dataMember)) {
         const Type *from = e->type();
         ExprPtr zero;
         if (from->isFloating()) {

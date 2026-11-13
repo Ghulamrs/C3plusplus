@@ -147,7 +147,7 @@ else
 fi
 # SHARD=k/n takes every n-th case from the k-th, so a run fits the 25-minute job cap on a shared box.
 cases() {
-    i=0; k=${SHARD%/*}; n=${SHARD#*/}
+    i=0; k=${SHARD:-1/1}; k=${k%/*}; n=${SHARD:-1/1}; n=${n#*/}
     for src in tests/cases/*.cpp; do
         base=$(basename "$src" .cpp)
         [ -n "$only" ] && [ "$base" != "$only" ] && continue
