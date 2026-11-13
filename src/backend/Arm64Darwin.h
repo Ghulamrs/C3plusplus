@@ -3,6 +3,7 @@
 #include "Backend.h"
 #include "Dwarf.h"
 #include "Walker.h"
+#include "../ir/Ir.h"
 
 #include <iosfwd>
 #include <sstream>
@@ -60,6 +61,7 @@ public:
 
     void landingPad(int pointerSlot, int selectorSlot) override;
     void setOptimize(int level) override { optimize_ = level; }
+    void setSsa(const ir::Module *module, const TypeTable *types) override { ssa_ = module; ssaTypes_ = types; }
     bool terminateScopes() const override { return true; }
     std::string terminatePad(int id) override;
 
@@ -68,6 +70,30 @@ private:
     // table, the actions, and the type_info pointers the actions index.
     void emitLsda(const std::string &symbol);
     std::vector<std::string> lsdaTypes_;
+
+    // **The SSA selector** (M5.1, A64Select.cpp): a function inside its subset is written from the module, the rest by the
+    // walker - ssaChoose names why. Every value has an 8-byte slot above the parser's parameters; x0/x1 and d0/d1 carry operands.
+    const ir::Module *ssa_ = nullptr;
+    const TypeTable *ssaTypes_ = nullptr;
+    std::vector<long long> ssaAllocaSlot_, ssaValueSlot_;
+    long long ssaArgArea_ = 0;      // the frame's one area for the copies of classes a call passes by a copy's address
+    int ssaRegionAt_ = 0;
+    const Type *ssaArgType(const ir::Function &f, const ir::Inst &i, std::size_t n) const;
+    std::string ssaLandLabel(ir::BlockId b) const { return label("ssaland", static_cast<int>(b.v)); }
+    int ssaSelected_ = 0, ssaWalked_ = 0;
+    const ir::Function *ssaChoose(const Function &fn);
+    std::string ssaOutside(const Function &fn, const ir::Function &f) const;
+    const Type *typeOf(const ir::Function &f, ir::ValueId v) const { return ssaTypes_->type(f.value(v).type); }
+    int layoutSsa(const Function &fn, const ir::Function &f);
+    void selectBody(const Function &fn, const ir::Function &f);
+    void selectInst(const ir::Function &f, const ir::Inst &i);
+    void selectCall(const ir::Function &f, const ir::Inst &i);
+    void ssaFrame(const char *dst, long long off);
+    void ssaSlot(const char *op, const std::string &reg, long long off);
+    void ssaLoad(const ir::Function &f, ir::ValueId v, int n);
+    void ssaStore(const ir::Function &f, ir::ValueId v);
+    void ssaBranchArgs(const ir::Function &f, const ir::Succ &s);
+    std::string ssaBlockLabel(ir::BlockId b) const { return label("ssa", static_cast<int>(b.v)); }
 
     std::ostringstream out_;
     int optimize_ = 0;          // -O1 and -O2 run each body through a64Peephole
@@ -118,6 +144,9 @@ private:
     };
     AggPlan planFor(const Type *t) const;
     void storeWord(const char *xreg, const char *base, int k, int size);
+    void returnAgg(const Type *t);
+    void aggToRegisters(const AggPlan &p, int firstReg);
+    void aggResultInto(const Type *t);
     int sretSlot_ = 0;
 
     int stackArgSlot(const Type *t, int &at) const;
@@ -145,6 +174,9 @@ private:
     int namedStackBytes_ = 0;
 
     void genAddr(const Expr &e);
+    void tlsAddress(const std::string &symbol, bool viaWrapper);
+    void vaStartAt();
+    void vaArgAt(const Type *t);
     // A slot's address into `dst`: below x29, or up from x19 in a frame realigned for an over-aligned local.
     void localIn(const char *dst, int slot);
     int realign_ = 0;

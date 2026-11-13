@@ -3,6 +3,7 @@
 # body outside the lowering named - file:line, function, why - then counted by why. tests/ssa.sh's census covers the
 # suite only; this is the one that covers the self-host, so its fixed point can never pass through the walker unseen.
 #
+# `-arch arm64-darwin` (M5.1) counts instead what its selector took and why the walker has each other body.
 #   tools/ssa-census [-arch <target>]... [cxx3.exe] [out-dir]   CENSUS_FLAGS (-O2 say) on every compile; CENSUS_JOBS (2) at once
 #
 # **Both x86 targets by default** (x86_64-linux and x86_64-windows), whatever the host: a wall only the Microsoft ABI has
@@ -36,12 +37,17 @@ bad=0
 for CENSUS_ARCH in $ARCHS; do
     OUT=$BASE/$CENSUS_ARCH
     rm -rf "$OUT"; mkdir -p "$OUT/log"
-    export OUT CENSUS_ARCH CENSUS_FLAGS="${CENSUS_FLAGS:-}"
+    export OUT CENSUS_ARCH CENSUS_FLAGS="${CENSUS_FLAGS:-}" CXX1_SSA_WHY=1
     { for f in $SRCS; do echo "$CXX src $f"; done; for f in $C90S; do echo "$CXX c90 $f"; done; } |
         xargs -n 3 -P "${CENSUS_JOBS:-2}" sh "$ROOT/tools/ssa-census" --one
     cat "$OUT"/log/* 2>/dev/null | grep 'is outside the SSA lowering' | sed 's/^[^:]*: [^:]*: //' | sort -u > "$OUT/outside.txt"
     sed -e 's/.* is outside the SSA lowering: //' -e "s/ (docs\/EXCLUSIONS.md)\$//" "$OUT/outside.txt" | sort | uniq -c | sort -rn > "$OUT/kinds.txt"
     cat "$OUT"/log/*.other 2>/dev/null > "$OUT/other.txt"
+    if [ "$CENSUS_ARCH" = arm64-darwin ]; then    # M5.1: outside the lowering is the walker's there, as is a body outside the selector
+        cat "$OUT"/log/* | sed -n 's/^a64 walker [^:]*: //p' | sort | uniq -c | sort -rn > "$OUT/kinds.txt"
+        cat "$OUT"/log/* | awk '/^a64-select: /{split($2,a,"="); s+=a[2]; t+=$4} END{printf "ssa-census arm64-darwin: selected=%d of %d functions (%.1f%%), the walker %d\n", s, t, t ? 100*s/t : 0, t-s}'
+        head -20 "$OUT/kinds.txt"; continue
+    fi
     n=$(wc -l < "$OUT/outside.txt" | tr -d ' ')
     echo "ssa-census $CENSUS_ARCH: outside=$n of $(echo "$SRCS" | wc -l | tr -d ' ') sources and $(echo "$C90S" | wc -l | tr -d ' ') C90 cases; other failures $(wc -l < "$OUT/other.txt" | tr -d ' ')"
     head -20 "$OUT/kinds.txt"

@@ -1603,11 +1603,13 @@ bool Driver::compile(const Job &job) {
                      job.input.c_str(), optimize_);
     }
     // **The SSA IR** (M3b.1): every body lowered; dumped, verified, and on x86 the only thing selected (M3b.7).
-    if (selects || dumpSsa_ || checkSsa_) {
+    // arm64-darwin selects a function where its selector's subset holds it, the walker the rest (M5.1); CXX1_A64_WALKER: the walker all.
+    const bool partly = std::strcmp(backend_->name(), "arm64-darwin") == 0 && std::getenv("CXX1_A64_WALKER") == nullptr;
+    if (selects || partly || dumpSsa_ || checkSsa_) {
         std::string dumped;
         std::vector<std::string> outside;
         int failures = 0;
-        const std::string report = lowerSsa(src, parser, program, types, target, program.module, checkSsa_, optimize_, !debug_, dumpSsa_,
+        const std::string report = lowerSsa(src, parser, program, types, target, program.module, checkSsa_, level, !debug_, dumpSsa_,
                                             dumpSsaAfter_, dumped, failures, outside);
         if (checkSsa_) std::fwrite(report.data(), 1, report.size(), stdout);
         if (checkSsa_ && failures != 0) return false;
@@ -1627,7 +1629,7 @@ bool Driver::compile(const Job &job) {
         if (!job.object.empty() && !coffText_) gen->setStructured(&structured);
         if (debug_) gen->setLineSource(&src, workingDirectory());
         if (dumpMir_) gen->setMirDump(&mir, dumpMirAfter_);
-        if (selects) gen->setSsa(&program.module, &types);
+        if (selects || partly) gen->setSsa(&program.module, &types);
         gen->setOptimize(level);
         gen->setOptimizeForSize(forSize_ && level > 0);
         gen->run(program);

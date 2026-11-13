@@ -30,6 +30,7 @@
 		A2E5375FA8057ECCE5FA02F3 /* ParserTopLevel.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2C5EEEC5C7EFA172D6DB24DE /* ParserTopLevel.cpp */; };
 		9D58D51CCC8F52B75713AAD5 /* ParserType.cpp in Sources */ = {isa = PBXBuildFile; fileRef = BE1F463CA0C34065CAEF505B /* ParserType.cpp */; };
 		90B6BB9B00012DC9D38EB645 /* ParserVtable.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D1FE825515B0D0A5625B5827 /* ParserVtable.cpp */; };
+		E086600BF64CD03D25703DB2 /* A64Select.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1FD357B8231C4604B5B0C340 /* A64Select.cpp */; };
 		CEA9F161EB296A691B9FAD8F /* Arm64Darwin.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 201EE94DC01106B98E56A367 /* Arm64Darwin.cpp */; };
 		2B45FAC274DFDD7BB8B6D32A /* Backend.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 12856577CF3E39497DC00394 /* Backend.cpp */; };
 		3B9E54C39B30AE1A7AB99ABB /* CodeView.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 014B716F8D60978411FBC05E /* CodeView.cpp */; };
@@ -133,6 +134,7 @@
 		2C5EEEC5C7EFA172D6DB24DE /* ParserTopLevel.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = ParserTopLevel.cpp; path = "../src/parser/ParserTopLevel.cpp"; sourceTree = "<group>"; };
 		BE1F463CA0C34065CAEF505B /* ParserType.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = ParserType.cpp; path = "../src/parser/ParserType.cpp"; sourceTree = "<group>"; };
 		D1FE825515B0D0A5625B5827 /* ParserVtable.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = ParserVtable.cpp; path = "../src/parser/ParserVtable.cpp"; sourceTree = "<group>"; };
+		1FD357B8231C4604B5B0C340 /* A64Select.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = A64Select.cpp; path = "../src/backend/A64Select.cpp"; sourceTree = "<group>"; };
 		201EE94DC01106B98E56A367 /* Arm64Darwin.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Arm64Darwin.cpp; path = "../src/backend/Arm64Darwin.cpp"; sourceTree = "<group>"; };
 		12856577CF3E39497DC00394 /* Backend.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = Backend.cpp; path = "../src/backend/Backend.cpp"; sourceTree = "<group>"; };
 		014B716F8D60978411FBC05E /* CodeView.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = CodeView.cpp; path = "../src/backend/CodeView.cpp"; sourceTree = "<group>"; };
@@ -337,6 +339,7 @@
 		21FE160B6DD0E7600646E69C /* src/backend */ = {
 			isa = PBXGroup;
 			children = (
+				1FD357B8231C4604B5B0C340 /* A64Select.cpp */,
 				201EE94DC01106B98E56A367 /* Arm64Darwin.cpp */,
 				343C1B79389BBF31FEC696F5 /* Arm64Darwin.h */,
 				12856577CF3E39497DC00394 /* Backend.cpp */,
@@ -608,6 +611,7 @@
 				A2E5375FA8057ECCE5FA02F3 /* ParserTopLevel.cpp in Sources */,
 				9D58D51CCC8F52B75713AAD5 /* ParserType.cpp in Sources */,
 				90B6BB9B00012DC9D38EB645 /* ParserVtable.cpp in Sources */,
+				E086600BF64CD03D25703DB2 /* A64Select.cpp in Sources */,
 				CEA9F161EB296A691B9FAD8F /* Arm64Darwin.cpp in Sources */,
 				2B45FAC274DFDD7BB8B6D32A /* Backend.cpp in Sources */,
 				3B9E54C39B30AE1A7AB99ABB /* CodeView.cpp in Sources */,
