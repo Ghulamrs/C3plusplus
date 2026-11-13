@@ -157,5 +157,6 @@ Everything else - x86 gates, the C6000, cl - stays on the boxes.
   inline and not static), and pruneUnusedInline keeps it with its object, which is always kept (the lowering, not the
   parser, registers a temporary's helper, so nothing the parser sees names it). Two units both calling h and k link
   and destroy each object once, in both spellings. **Left:** `static_cast<int D::*>(&C::y)` is "a 'cast' the typer
-  did not type" (the implicit conversion is typed). Windows 32/32 at -O0 and at -O2 over 16 cases (gnu and masm).
+  did not type" (the implicit conversion is typed). Windows 32/32 at -O0 and at -O2 over 16 cases (gnu and masm), cl /W4 /WX clean; Linux (fresh ~/r1j): 12/12 at
+  -O0/-O2, open.sh 23 differ / 7 agree (the walker's), typed.sh 846/0, exclusions 0/0, comments 0, memory gate holds.
   src/ lines: +15 -5 (ParserOverload.cpp, ParserExpr.cpp, ParserInit.cpp, ParserClass.cpp, Typing.cpp).
