@@ -205,3 +205,23 @@ tools in `~/ti6x`), never on the Mac.
   tms6747, Windows): outside 0, 25,023 of 34,847 functions selected (71.8%), 12 other failures - round 4's.
 - **Owed:** the pipeliner over a counter stepped by four (the unrolled bodies' last 0.2 M); the bench kernels' cycles;
   sim6747, asm6x.sh and identical.sh ARCHS=tms6747 (the coordinator's).
+
+### M6a, round 6 (-g), 2026-11-14 (lane m6g)
+
+- **The fault:** run.sh's tms6747 -g check (`-g -O0` must equal the build without -g, minus `.dw` and `$blk$`) failed once
+  M6a sent a -g function to the walker and the same function without -g to the selector.
+- **What landed:** the selector's "-g" fallback is gone (C6xSelect.cpp ssaOutside). selectBody writes, before each
+  instruction, the `.dwpsn` rows and lexical blocks of `ir::Inst::lines` and a row at a new `Inst::pos`, as arm64's
+  selector (markLine/markBlock, closeOpenBlocks before the closing `ZERO`). Variables: each local and parameter at the slot
+  of the alloca the lowering made for it (`ssaPlace_`, read by Tms6747::emitScope); a parameter with no alloca keeps the
+  slot emitParams fills; **a value in a register gets no record** (a homed parameter, a promoted local - the walker's
+  regOf_ rule). The local-to-alloca match is one function now, `ssaLocalAllocas` (Regions.h/.cpp), which arm64's
+  ssaLocals uses too (its copy in A64Select.cpp removed).
+- **The check over the suite:** tests/g-same.sh - every case at -O0, -g against none: **860 same, 0 differ, 0 broken,
+  355 not for tms6747** (Windows, cl build). -g with -O stays refused by name for tms6747 (the scheduler carries no
+  source position through its packets), so -O2 has nothing to compare: all 860 refuse, as run.sh expects.
+- reference-to-function-member.cpp: 6 of 11 functions selected under -g (the 5 others: indirect calls).
+- src/: +74 -32 (A64Select.cpp, C6xSelect.cpp, Tms6747.cpp/.h, Regions.cpp/.h).
+- **For the merge with m6e:** Regions' markLine/openBlock/closeBlock read `emittedSize()` (out_'s position) to tell code
+  from directives; under m6e's MIR out_ holds only what follows the last ssaEmit, so a block's "has code" test and
+  notCode_ need m6e's ssaAbsorb to count Verbatim entries, or blocks fold into their parent (the records still assemble).

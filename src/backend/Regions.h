@@ -11,8 +11,7 @@
 class Source;
 namespace ir { struct Function; }
 
-// -g in a selected frame: for each of fn.locals(), the index in f.frame of the live alloca the lowering made for it (matched by
-// name in declaration order, both lists being in it), or -1 - a static, or a local promoted to a value.
+// -g in a selected frame: per fn.locals(), its live alloca's index in f.frame (by name, in order), or -1 (static or promoted).
 std::vector<int> ssaLocalAllocas(const Function &fn, const ir::Function &f);
 
 // **What a generator writes besides its code, and reads no `Ast.h` node** (M3b.7 round 4 B): the Itanium call-site
