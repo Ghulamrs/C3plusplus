@@ -648,5 +648,13 @@ Each reason read for what must hold to reach it, then one probe on Windows (cxx3
   tests/m10 w1, w2, w4 at -g -O0 build, link and run in both spellings (w4 prints `81 40 5 9 cdb`); exclusions 0
   uncited, 0 stale (129; SSA 556/93 - seven ParserInit.cpp citations re-pointed); comments 0 over the cap;
   ide/generate.py up to date. memory-gate does not run under Windows Python (no SIGPIPE): run on Linux.
+- **Gates, Linux** (fresh ~/x86h, g++ -Werror clean): the case at -O0/-O2 equal to clang; -g -O0 .s of m10 w1 and w2
+  on x86_64-linux, x86_64-windows and arm64-darwin against 62a56072: 0 differ of 6 (the tree's directory normalised);
+  w4 compiles on all three (refused on all three before). `-g -S` census of tests/cases on x86_64-linux: 1220, one
+  differs - the new case, refused before (compiler and tree paths normalised). host -g check pass; 60 -g cases at -O0
+  and -O2 pass; tms6747 `-g -O2` refused by name; `COFF_FLAGS=-g tests/coff.sh` 1730 pairs, 1610 objects, 0 differ;
+  memory gate holds at 89 (ssaFrameLocals returns a reference: a pointer return had raised it to 91).
+- run.sh's second tms6747 -g check (reference-to-function-member, -g code = code without -g) fails as replayed by
+  hand at 62a56072 and here alike (`MVKL 56` against 48: the frame), so not this lane's; the wave gate's run.sh decides.
 - **Owed**: `struct S { char tag[8] = "ab"; };` (a member initialiser from a string) is a parser refusal ("'tag' is
   'char [8]' and this is 'const char *'", memberInitialiser takes no string); not in the case.

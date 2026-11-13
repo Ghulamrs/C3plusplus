@@ -303,8 +303,8 @@ bool frameDeclares(const std::string &text, const std::string &name) {
 
 // Matched by name in declaration order, both lists being in it; a parameter without a live alloca keeps the slot the
 // prologue filled, a local without one (promoted at -O1 and -O2) has no record.
-const std::vector<Local> *Regions::ssaFrameLocals(const Function &fn, const ir::Function &f, const std::vector<long long> &allocaSlot,
-                                                  const char *who) {
+const std::vector<Local> &Regions::ssaFrameLocals(const Function &fn, const ir::Function &f, const std::vector<long long> &allocaSlot,
+                                                  const std::string &who) {
     std::vector<char> live(f.frame.size(), 0);
     for (std::size_t b = 0; b < f.blocks.size(); b++)
         for (std::size_t k = 0; k < f.block(f.blocks[b]).insts.size(); k++) {
@@ -321,10 +321,10 @@ const std::vector<Local> *Regions::ssaFrameLocals(const Function &fn, const ir::
         if (slot) d.offset = static_cast<int>(allocaSlot[j]);
         if (l.staticName.empty() && j < f.frame.size()) j++;
         if (!slot && l.staticName.empty() && !l.isParam) {
-            if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "%s -g %s: '%s' has no slot\n", who, fn.symbol().c_str(), l.name.c_str());
+            if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "%s -g %s: '%s' has no slot\n", who.c_str(), fn.symbol().c_str(), l.name.c_str());
             continue;
         }
         ssaLocals_.back().push_back(d);
     }
-    return &ssaLocals_.back();
+    return ssaLocals_.back();
 }

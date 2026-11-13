@@ -226,7 +226,7 @@ protected:
     int msUnwindHelpSlot_ = 0;
 
     // -g's variables in a selected frame, x86's and arm64's: each parser local at its alloca's slot (Regions.cpp).
-    const std::vector<Local> *ssaFrameLocals(const Function &fn, const ir::Function &f, const std::vector<long long> &allocaSlot, const char *who);
+    const std::vector<Local> &ssaFrameLocals(const Function &fn, const ir::Function &f, const std::vector<long long> &allocaSlot, const std::string &who);
     std::deque<std::vector<Local> > ssaLocals_;     // -g's records of the selected functions, which dwarfFns_ points at
 
 private:
