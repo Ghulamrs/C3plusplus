@@ -228,3 +228,21 @@ tools in `~/ti6x`), never on the Mac.
   C6xSelect.cpp: ssaOutside (the -g line), selectBody (the -g setup before the block loop, the per-instruction rows, the
   count, closeOpenBlocks before the closing ZERO); Tms6747.h emittedSize/ssaPlace_; Tms6747.cpp emitScope and one line
   before ssaChoose.
+
+### The tms6747 leg of R1's cases, 2026-11-14 (lane c6n, from c1100a58)
+
+- **The fault:** four cases R1 added or moved never ran on tms6747 and failed in wave 2's gate (`SIM=0 tests/tms6747.sh`
+  at -O0): bool-increment, handler-guards-nested, static-reference-to-temporary, inline-static-exit-helpers. Each was run
+  at -O0 and -O2, with the selector and with CXX1_C6X_WALKER=1: **the four answers are the same both ways**, so in each the
+  wrong function is one the selector leaves to the walker; the SSA path (x86) answers clang's in all four.
+- **Mended - bool-increment:** the walker's postfix `++` of a bool added 1 and stored 2 (`b++` twice printed 2);
+  Tms6747::visit(Postfix) stores 1 for a bool ([expr.post.incr]/1). The prefix form was already right (compound's
+  conversion to bool). src/: +2 (Tms6747.cpp).
+- **Registered (the walker's; M6's selector takes them):** handler-guards-nested - an exception out of a handler's inner
+  block destroys the block's object, not the handler's (gone 3 for 4) - tests/open/walker-handler-guards-nested.cpp;
+  static-reference-to-temporary - the Ast binds a static reference to an ordinary temporary, destroyed at once, the
+  reference left dangling (the static object staticTemporary declares is the SSA lowering's alone) -
+  tests/open/walker-static-reference-temporary.cpp; inline-static-exit-helpers is the same root over two units (the
+  register runs one unit, so it is named in its .notarget, not copied). Each case has a `tms6747` .notarget line naming it.
+- **Seen, not this lane's:** member-pointer-condition ran 22+ minutes on vm6747 in wave 2's -O2 shard 1 (a hang past the
+  3-minute run cap); noexcept-terminates-callee is the walker's known set_terminate.

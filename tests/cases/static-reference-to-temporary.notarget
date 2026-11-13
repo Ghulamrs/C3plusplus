@@ -1,0 +1,1 @@
+tms6747  the walker's static reference binds an ordinary temporary, destroyed at once ([class.temporary]/5 wants static storage); the selector leaves these to it (M6) - tests/open/walker-static-reference-temporary.cpp.

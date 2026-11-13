@@ -1,0 +1,1 @@
+tms6747  the walker destroys an inline function's static reference's temporary at once in each unit, the root of tests/open/walker-static-reference-temporary.cpp (the register runs one unit, so this two-unit case is not copied there); the selector leaves these to it (M6).

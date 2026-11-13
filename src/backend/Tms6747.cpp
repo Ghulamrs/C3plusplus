@@ -1538,6 +1538,8 @@ void Tms6747::visit(const Postfix &n) {
             if (step != 1) unsupported("a 64-bit step other than 1");
             if (n.increment()) out_ << "\tADD\tA4, 1, A4\n\tCMPEQ\t0, A4, A0\n\tADD\tA5, A0, A5\n";
             else               out_ << "\tCMPEQ\t0, A4, A0\n\tSUB\tA4, 1, A4\n\tSUB\tA5, A0, A5\n";
+        } else if (t->unqualified()->isBool()) {
+            out_ << "\tMVK\t1, A4\n";   // [expr.post.incr]/1: a bool's increment makes it true
         } else {
             if (step >= 0 && step <= 31)
                 out_ << (n.increment() ? "\tADD\tA4, " : "\tSUB\tA4, ") << step << ", A4\n";
