@@ -2068,6 +2068,7 @@ Lowering::Val Lowering::convertedObject(Val o, const sema::Resolution &r, bool o
     info.sret = sret;
     std::vector<ValueId> ops(1, result(add(Op::Bitcast, tid(self), std::vector<ValueId>(1, at.v))));
     const Val v = callTail(r.type, info, ops, 1, std::vector<sema::TypedId>(), false);
+    if (byRef && object) return Val(v.v, tid(*gives.referent()));      // the lvalue it answers, as its address
     return byRef ? readOf(v.v, tid(*gives.referent())) : v;
 }
 
@@ -2335,8 +2336,11 @@ bool Lowering::boundLocal(sema::TypedId init, const Type &t, ValueId slot) {
         bound = f.v;
     } else {
         const TypeId it = TypeTable::id(tree_.node(init).type);
+        sema::Resolution conv;       // a conversion function answering an lvalue binds it, below
         if (!scalar(ref) || !(ref.isConst() || t.isRValueReference()) || !it.valid() ||
-            (isLvalueNode(init) && T(it).unqualified() == ref.unqualified()))
+            (isLvalueNode(init) && T(it).unqualified() == ref.unqualified()) ||
+            (!t.isRValueReference() && convertedNode(init, conv) && T(conv.type).returns()->isReference() &&
+             !T(conv.type).returns()->isRValueReference()))
             return false;
         bound = entryAlloca(tid(*ref.unqualified()), "$bound");
         store(bound, exprTo(init, tid(*ref.unqualified())).v);
@@ -3859,7 +3863,11 @@ void Lowering::declaration(sema::TypedId id) {
             const sema::TypedId init = child(var, first);
             const bool called = !destroyedTemporary(init) && !destroyedResult(init);
             if (called) openFull();     // the initialiser's temporaries die at the declarator's end, `*f(std::string("x"))`'s too
-            Val b = destroyedTemporary(init) ? extendedTemporary(init) : destroyedResult(init) ? extendedResult(init) : lvalue(init);
+            sema::Resolution conv;     // [dcl.init.ref]/5.1.2: a class bound by its `operator int &()` names the lvalue that answers
+            const bool byConversion = convertedNode(init, conv) && T(conv.type).returns()->isReference() &&
+                                      !T(conv.type).returns()->isRValueReference() && classObjectNode(init);
+            Val b = byConversion ? convertedObject(classObject(init), conv, true) : destroyedTemporary(init) ? extendedTemporary(init)
+                  : destroyedResult(init) ? extendedResult(init) : lvalue(init);
             if (called) closeFull();
             // [dcl.init.ref]/5: a class lvalue bound to a reference to its base binds the base subobject.
             if (T(b.type).isStructOrUnion() && t.referent()->isStructOrUnion() && T(b.type).unqualified() != t.referent()->unqualified())

@@ -581,3 +581,20 @@ Each reason read for what must hold to reach it, then one probe on Windows (cxx3
 - **Count**: lowering-why over 1237 files: 479 owed reasons, **20 reached** (17 by tests/cases, 3 only by tests/open),
   459 by none.
 - src/ lines: +25 -11 (Lowering.cpp, ParserTopLevel.cpp).
+
+### R1, round 8: r1l's two refusals taken, and the walker-* register after M5.3 (lane r1m, 2026-11-13, from m5-r1l 7fd31c69)
+
+- **Taken** ([dcl.init.ref]/5.1.2, [dcl.init]/17): `int &r = s;` and `const int &c = s;` through `operator int &()`
+  bind to the lvalue it answers (bindReference asks the conversion function before refusing; the lowering binds the
+  call's address, and boundLocal makes no temporary for it); `int i = s;` through `operator const int &() const`
+  reads its referent (conversionFunction compares a reference to a scalar by its referent). Both moved from
+  tests/open to tests/cases with clang's output (clang 19.1.5 on Windows: 4 1, and 3).
+- **walker-***: all seven describe the C6000's walker as well as arm64's (each twin's .notarget names tms6747 alone,
+  so arm64 already ran them in the wave gates); none was arm64-only, so none is deleted. Each has a
+  `<name>.target` (tms6747) now, and open.sh counts it open on that target without running it on the host - it
+  printed them as "now agree" on Linux before (r1l). README says so.
+- Exclusion citations re-pointed: 7 (ParserExpr.cpp +11, ParserExprNew.cpp +2).
+- src/ lines: +25 -3 (Lowering.cpp, ParserExpr.cpp, ParserExprNew.cpp).
+- **Gates at this commit**: Windows (cxx3-msvc.exe, cl /W4 /WX clean): both cases ok at -O0 and -O2 in both spellings.
+  Linux (fresh ~/r1m): build ok; both cases pass -O0/-O2; open.sh 30 differ, 0 agree (7 on tms6747 only); typed.sh
+  856 passed, 0 failed; memory-gate rc 0; exclusions 0 uncited, 0 stale (556/93); comments 0 over the cap.

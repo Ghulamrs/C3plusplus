@@ -38,7 +38,7 @@ OUT=tests/out-open
 rm -rf "$OUT"; mkdir -p "$OUT"
 
 only="$1"
-open_count=0; closed=0
+open_count=0; closed=0; elsewhere=0
 # A `.c` program is the C90 dialect's (M7): compiled with -std=c90, its oracle
 # recorded from `clang -std=c89 -pedantic-errors -w` the way a .cpp's is from clang++.
 for src in tests/open/*.cpp tests/open/*.c; do
@@ -54,6 +54,13 @@ for src in tests/open/*.cpp tests/open/*.c; do
         continue
     fi
     verdict=$(head -1 "$want")
+    # A `.target` names the one target whose code generator still answers so - the C6000's walker since M5.3 took
+    # arm64's away: counted as open there, not run on this host, whose own answer the case in tests/cases holds.
+    if [ -f "tests/open/$base.target" ]; then
+        open_count=$((open_count + 1)); elsewhere=$((elsewhere + 1))
+        printf '  %-34s %s\n' "$base" "OPEN   on $(head -1 "tests/open/$base.target") only - not run here"
+        continue
+    fi
 
     if cxx1 $std "$src" -o "$OUT/$base.exe" > "$OUT/$base.err" 2>&1; then
         ( ulimit -t 10; "$OUT/$base.exe" ) > "$OUT/$base.out" 2>/dev/null || true
@@ -88,5 +95,5 @@ for src in tests/open/*.cpp tests/open/*.c; do
     fi
 done
 
-echo "open.sh: $open_count still differ from clang, $closed now agree"
+echo "open.sh: $open_count still differ from clang, $closed now agree ($elsewhere of the first on another target only)"
 exit 0
