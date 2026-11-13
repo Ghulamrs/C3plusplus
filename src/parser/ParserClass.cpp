@@ -2960,9 +2960,9 @@ StmtPtr Parser::memberInitialiser(const std::string &tag, const Type *type,
         const Type *held = types_.pointerTo(m.type->referent());
         ExprPtr field = thisMember(thisSlot, type, m);
         field->setType(held);
-        ExprPtr bind(new Assign(std::move(field), bindReference(m.type, std::move(value), valueAt, "'" + m.name + "'")));
+        ExprPtr bind(make_owned<Assign>(std::move(field), bindReference(m.type, std::move(value), valueAt, "'" + m.name + "'")));
         bind->setType(held);
-        made = StmtPtr(new ExprStmt(std::move(bind)));
+        made = StmtPtr(make_owned<ExprStmt>(std::move(bind)));
     }
     if (made == nullptr) {
         checkAssignable(*value, m.type, pos, "'" + m.name + "'");
