@@ -5,8 +5,10 @@
 #include "Arm64Darwin.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <map>
 
 namespace {
 
@@ -36,6 +38,26 @@ bool a64Moves(const Type *to, const Type *from) {
     return (a64Whole(to) || a64Whole(from)) && (a64Whole(to) || to->isPointer()) && (a64Whole(from) || from->isPointer());
 }
 
+// Whether an alloca's text (the lowering names it by its declaration, `const char * label`) declares `name`: a whole word of it.
+bool a64Declares(const std::string &text, const std::string &name) {
+    for (std::size_t at = text.find(name); !name.empty() && at != std::string::npos; at = text.find(name, at + 1)) {
+        const std::size_t end = at + name.size();
+        const bool before = at > 0 && (std::isalnum(static_cast<unsigned char>(text[at - 1])) || text[at - 1] == '_');
+        const bool after = end < text.size() && (std::isalnum(static_cast<unsigned char>(text[end])) || text[end] == '_');
+        if (!before && !after) return true;
+    }
+    return false;
+}
+
+// A constant as its slot holds it: the type's bits, extended as the type says.
+long long a64Canonical(long long k, const Type *t, const Target &target) {
+    const int bits = 8 * t->size(target);
+    if (bits >= 64) return k;
+    const unsigned long long low = static_cast<unsigned long long>(k) & ((1ull << bits) - 1);
+    const bool minus = t->isSigned(target) && ((low >> (bits - 1)) & 1) != 0;
+    return static_cast<long long>(minus ? low | ~((1ull << bits) - 1) : low);
+}
+
 bool a64Selects(ir::Op op) {
     switch (op) {
     case ir::Op::IConst: case ir::Op::FConst: case ir::Op::Null: case ir::Op::Addr: case ir::Op::Undef:
@@ -59,7 +81,6 @@ bool a64Selects(ir::Op op) {
 
 // **The fallback seam**: why `f` is not selected, empty where every part of it is inside the subset.
 std::string Arm64Darwin::ssaOutside(const Function &fn, const ir::Function &f) const {
-    if (lineSource() != nullptr) return "-g";
     if (f.params.size() != fn.params().size()) return "parameters the parser counts differently";
     for (std::size_t i = 0; i < fn.params().size(); i++)
         if (!a64Scalar(fn.params()[i].type, target_) && !fn.params()[i].type->isStructOrUnion() && !fn.params()[i].type->isReference())
@@ -128,6 +149,7 @@ const ir::Function *Arm64Darwin::ssaChoose(const Function &fn) {
 
 // The frame above the parser's parameter slots: each alloca at its alignment, then one 8-byte slot per value.
 int Arm64Darwin::layoutSsa(const Function &fn, const ir::Function &f) {
+    ssaAssign(f);
     long long cur = 0;
     for (const Param &p : fn.params()) cur = std::max(cur, static_cast<long long>(p.offset));
     cur = roundUp(std::max(cur, static_cast<long long>(fn.sretSlot())), 16);
@@ -152,13 +174,209 @@ int Arm64Darwin::layoutSsa(const Function &fn, const ir::Function &f) {
     }
     cur = roundUp(cur, 16) + area;
     ssaArgArea_ = cur;
-    ssaValueSlot_.assign(f.values.size(), 0);
-    for (std::size_t i = 1; i < f.values.size(); i++) {
-        if (!f.values[i].type.valid() || ssaTypes_->type(f.values[i].type)->isVoid()) continue;
-        cur += 8;
-        ssaValueSlot_[i] = cur;
+    // A value in a register has no slot; a frame the saves' offsets could not reach keeps every value in its slot.
+    const long long base = cur;
+    for (int pass = 0; pass < 2; pass++) {
+        cur = base;
+        ssaValueSlot_.assign(f.values.size(), 0);
+        for (std::size_t i = 1; i < f.values.size(); i++) {
+            if (!f.values[i].type.valid() || ssaTypes_->type(f.values[i].type)->isVoid() || ssaReg_[i] != 0 || (ssaImm_[i] & 2)) continue;
+            cur += 8;
+            ssaValueSlot_[i] = cur;
+        }
+        if (roundUp(cur, 16) + kCalleeArea <= 65535) break;
+        ssaReg_.assign(f.values.size(), 0);
+        ssaSaved_.clear();
     }
     return static_cast<int>(roundUp(cur, 16));
+}
+
+// **Registers by a linear scan over the values' live ranges** (M5.2 round 3): liveness over the blocks, a range the hull
+// of where the value is live; one that crosses a call takes x19-x28 or d8-d15, another x12-x15 or d16-d23 first.
+void Arm64Darwin::ssaAssign(const ir::Function &f) {
+    const std::size_t nv = f.values.size(), nb = f.blockArena.size();
+    ssaReg_.assign(nv, 0);
+    ssaImm_.assign(nv, 0);
+    ssaImmK_.assign(nv, 0);
+    ssaFlags_.assign(nv, 0);
+    ssaSaved_.clear();
+    if (optimize_ <= 0 || realign_ > 0) return;
+    std::vector<int> first(nb, 0), last(nb, 0), start(nv, -1), end(nv, -1), uses(nv, 0), folds(nv, 0), home(nv, -1), calls;
+    std::vector<const ir::Inst *> def(nv, nullptr);
+    std::vector<long long> weight(nv, 0);
+    // A block's depth: an edge to a block written no later is a loop's, and every block between the two is inside it.
+    std::vector<std::size_t> index(nb, 0), reach(f.blocks.size(), 0);
+    std::vector<int> depth(f.blocks.size(), 0);
+    for (std::size_t b = 0; b < f.blocks.size(); b++) index[f.blocks[b].v] = b;
+    for (std::size_t b = 0; b < f.blocks.size(); b++) {
+        if (!f.block(f.blocks[b]).term.valid()) continue;
+        const ir::Inst &t = f.inst(f.block(f.blocks[b]).term);
+        for (std::size_t s = 0; s < t.succ.size(); s++)
+            if (index[t.succ[s].block.v] <= b) reach[index[t.succ[s].block.v]] = std::max(reach[index[t.succ[s].block.v]], b + 1);
+    }
+    for (std::size_t h = 0; h < f.blocks.size(); h++)
+        for (std::size_t b = h; b < reach[h]; b++) depth[b]++;
+    const std::size_t words = (nv + 63) / 64;
+    std::vector<unsigned long long> in(nb * words, 0), out(nb * words, 0);
+    for (std::size_t i = 0; i < f.params.size(); i++) start[f.params[i].v] = 0;
+    if (f.sret.valid()) start[f.sret.v] = 0;
+    int at = 2;
+    // Positions two apart: a block's parameters at its first, each instruction after; a use in another block is live in.
+    for (std::size_t b = 0; b < f.blocks.size(); b++) {
+        const std::uint32_t id = f.blocks[b].v;
+        const ir::Block &blk = f.block(f.blocks[b]);
+        first[id] = at;
+        for (std::size_t p = 0; p < blk.params.size(); p++) { start[blk.params[p].v] = at; home[blk.params[p].v] = static_cast<int>(id); }
+        for (std::size_t k = 0; k <= blk.insts.size(); k++) {
+            const ir::InstId iid = k < blk.insts.size() ? blk.insts[k] : blk.term;
+            if (!iid.valid()) continue;
+            const ir::Inst &i = f.inst(iid);
+            at += 2;
+            if (i.result.valid()) { start[i.result.v] = at; home[i.result.v] = static_cast<int>(id); def[i.result.v] = &i; }
+            if (i.result.valid() && (i.op == ir::Op::IConst || i.op == ir::Op::Null)) {
+                ssaImmK_[i.result.v] = i.op == ir::Op::Null ? 0 : a64Canonical(i.k, ssaTypes_->type(i.type), target_);
+                if (ssaImmK_[i.result.v] >= 0 && ssaImmK_[i.result.v] < 4096) ssaImm_[i.result.v] = 1;
+            }
+            if (i.op == ir::Op::Call || i.op == ir::Op::Invoke || i.op == ir::Op::TlsAddr) calls.push_back(at);
+        }
+        last[id] = at;
+        at += 2;
+    }
+    for (std::size_t b = 0; b < f.blocks.size(); b++) {
+        const std::uint32_t id = f.blocks[b].v;
+        const ir::Block &blk = f.block(f.blocks[b]);
+        int pos = first[id];
+        const long long heat = 1ll << (3 * std::min(depth[b], 6));
+        const auto use = [&](ir::ValueId v, int late) {
+            if (!v.valid()) return;
+            end[v.v] = std::max(end[v.v], pos + late);
+            uses[v.v]++;
+            weight[v.v] += heat;
+            if (home[v.v] != static_cast<int>(id)) in[id * words + v.v / 64] |= 1ull << (v.v % 64);
+        };
+        for (std::size_t k = 0; k <= blk.insts.size(); k++) {
+            const ir::InstId iid = k < blk.insts.size() ? blk.insts[k] : blk.term;
+            if (!iid.valid()) continue;
+            const ir::Inst &i = f.inst(iid);
+            pos += 2;
+            for (std::uint32_t n = 0; n < i.count; n++) use(f.operand(i, n), 0);
+            // A branch's argument is read after an invoke's result is written.
+            for (std::size_t s = 0; s < i.succ.size(); s++)
+                for (std::uint32_t n = 0; n < i.succ[s].count; n++) use(f.arg(i.succ[s], n), 1);
+            // A small constant on the right of an add, a subtraction or a compare of words is an immediate.
+            const bool folds2 = i.op == ir::Op::Add || i.op == ir::Op::Sub ||
+                                (i.op == ir::Op::ICmp && typeOf(f, f.operand(i, 0))->size(target_) >= 4);
+            if (folds2 && i.count == 2 && (ssaImm_[f.operand(i, 1).v] & 1)) { folds[f.operand(i, 1).v]++; weight[f.operand(i, 1).v] -= heat; }
+            if (i.result.valid()) weight[i.result.v] += heat;
+            const bool compare = (i.op == ir::Op::ICmp || i.op == ir::Op::FCmp) && k + 1 == blk.insts.size() && blk.term.valid();
+            if (compare && f.inst(blk.term).op == ir::Op::CondBr && f.operand(f.inst(blk.term), 0).v == i.result.v) ssaFlags_[i.result.v] = 1;
+        }
+    }
+    for (std::size_t v = 1; v < nv; v++) {
+        if (ssaFlags_[v] && uses[v] != 1) ssaFlags_[v] = 0;
+        if ((ssaImm_[v] & 1) && uses[v] > 0 && folds[v] == uses[v]) ssaImm_[v] |= 2;
+    }
+    // Live in = used from another block, or live out and not defined here; to a fixed point, last block first.
+    for (bool changed = true; changed; ) {
+        changed = false;
+        for (std::size_t b = f.blocks.size(); b-- > 0; ) {
+            const std::uint32_t id = f.blocks[b].v;
+            const ir::Block &blk = f.block(f.blocks[b]);
+            if (!blk.term.valid()) continue;
+            const ir::Inst &t = f.inst(blk.term);
+            for (std::size_t s = 0; s < t.succ.size(); s++)
+                for (std::size_t w = 0; w < words; w++) out[id * words + w] |= in[t.succ[s].block.v * words + w];
+            for (std::size_t w = 0; w < words; w++) {
+                unsigned long long add = out[id * words + w] & ~in[id * words + w];
+                for (std::size_t bit = 0; bit < 64 && (add >> bit) != 0; bit++) {
+                    if (((add >> bit) & 1) == 0 || home[w * 64 + bit] == static_cast<int>(id)) continue;
+                    in[id * words + w] |= 1ull << bit;
+                    changed = true;
+                }
+            }
+        }
+    }
+    for (std::size_t b = 0; b < f.blocks.size(); b++) {
+        const std::uint32_t id = f.blocks[b].v;
+        for (std::size_t v = 1; v < nv; v++) {
+            const unsigned long long bit = 1ull << (v % 64);
+            if (in[id * words + v / 64] & bit) { start[v] = start[v] < 0 ? first[id] : std::min(start[v], first[id]); end[v] = std::max(end[v], first[id]); }
+            if (out[id * words + v / 64] & bit) end[v] = std::max(end[v], last[id] + 1);
+        }
+    }
+    std::vector<std::size_t> order;
+    for (std::size_t v = 1; v < nv; v++) {
+        if (!f.values[v].type.valid() || ssaTypes_->type(f.values[v].type)->isVoid() || start[v] < 0 || (ssaImm_[v] & 2) || ssaFlags_[v]) continue;
+        end[v] = std::max(end[v], start[v] + 1);
+        order.push_back(v);
+    }
+    std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) { return start[a] < start[b]; });
+    // Bit r of a file is register r free: scratch below, the saved ones above; a range ended gives its register back.
+    const unsigned scratch[2] = {0xf000u, 0xff0000u}, kept[2] = {0x1ff80000u, 0xff00u};
+    unsigned freeNow[2] = {scratch[0] | kept[0], scratch[1] | kept[1]}, taken[2] = {0, 0};
+    std::vector<std::size_t> active;
+    for (std::size_t n = 0; n < order.size(); n++) {
+        const std::size_t v = order[n];
+        const int file = ssaTypes_->type(f.values[v].type)->isFloating() ? 1 : 0;
+        for (std::size_t a = 0; a < active.size(); )
+            if (end[active[a]] <= start[v]) {
+                freeNow[ssaTypes_->type(f.values[active[a]].type)->isFloating() ? 1 : 0] |= 1u << ssaReg_[active[a]];
+                active.erase(active.begin() + static_cast<std::ptrdiff_t>(a));
+            } else a++;
+        const std::vector<int>::const_iterator call = std::upper_bound(calls.begin(), calls.end(), start[v]);
+        const bool crosses = call != calls.end() && *call < end[v];
+        unsigned pick = crosses ? 0 : freeNow[file] & scratch[file];
+        if (pick == 0) pick = freeNow[file] & kept[file];
+        if (pick == 0) {
+            // The lightest range in a register this one could take gives it up where this one weighs more.
+            std::size_t light = active.size();
+            for (std::size_t a = 0; a < active.size(); a++) {
+                const std::size_t o = active[a];
+                if ((ssaTypes_->type(f.values[o].type)->isFloating() ? 1 : 0) != file || (crosses && ((kept[file] >> ssaReg_[o]) & 1) == 0)) continue;
+                if (light == active.size() || weight[o] < weight[active[light]]) light = a;
+            }
+            if (light == active.size() || weight[active[light]] >= weight[v]) continue;
+            pick = 1u << ssaReg_[active[light]];
+            ssaReg_[active[light]] = 0;
+            active.erase(active.begin() + static_cast<std::ptrdiff_t>(light));
+        }
+        int r = 0;
+        while (((pick >> r) & 1) == 0) r++;
+        ssaReg_[v] = r;
+        freeNow[file] &= ~(1u << r);
+        taken[file] |= 1u << r;
+        active.push_back(v);
+    }
+    // A constant left without a register has no slot either: it is written again where it is read.
+    for (std::size_t v = 1; v < nv; v++)
+        if (def[v] != nullptr && (def[v]->op == ir::Op::IConst || def[v]->op == ir::Op::Null) && ssaReg_[v] == 0) ssaImm_[v] |= 2;
+    for (int r = 19; r <= 28; r++) if (taken[0] & (1u << r)) ssaSaved_.push_back("x" + std::to_string(r));
+    for (int r = 8; r <= 15; r++) if (taken[1] & (1u << r)) ssaSaved_.push_back("d" + std::to_string(r));
+}
+
+// A value as its 8 bytes, to x0 or from it: the parallel move's staging.
+void Arm64Darwin::ssaRaw(const ir::Function &f, ir::ValueId v, bool write) {
+    const int r = ssaReg_[v.v];
+    if (r == 0 && (ssaImm_[v.v] & 2)) { movImm("x0", ssaImmK_[v.v]); return; }
+    if (r == 0) { ssaSlot(write ? "st" : "ld", "x0", ssaValueSlot_[v.v]); return; }
+    const std::string own = (typeOf(f, v)->isFloating() ? "d" : "x") + std::to_string(r);
+    out_ << (own[0] == 'd' ? "  fmov " : "  mov ") << (write ? own : std::string("x0")) << ", " << (write ? std::string("x0") : own) << "\n";
+}
+
+// Value `v` into the register named: a move from its own register, or a read of its slot.
+void Arm64Darwin::ssaInto(const ir::Function &f, ir::ValueId v, const std::string &reg) {
+    const int r = ssaReg_[v.v];
+    if (r == 0 && (ssaImm_[v.v] & 2)) { movImm(reg.c_str(), ssaImmK_[v.v]); return; }
+    if (r == 0) { ssaSlot("ld", reg, ssaValueSlot_[v.v]); return; }
+    if (typeOf(f, v)->isFloating()) out_ << "  fmov " << reg << ", " << reg[0] << r << "\n";
+    else out_ << "  mov " << reg << ", x" << r << "\n";
+}
+
+// The register an operand is read from: its own, or register `n` of its kind after a read of its slot.
+int Arm64Darwin::ssaUse(const ir::Function &f, ir::ValueId v, int n) {
+    if (ssaReg_[v.v] != 0) return ssaReg_[v.v];
+    ssaLoad(f, v, n);
+    return n;
 }
 
 // The address x29 - off into `dst`.
@@ -179,34 +397,43 @@ void Arm64Darwin::ssaSlot(const char *op, const std::string &reg, long long off)
 // Operand `v` into register `n` of its kind: xN, or dN/sN for a floating value.
 void Arm64Darwin::ssaLoad(const ir::Function &f, ir::ValueId v, int n) {
     const Type *t = typeOf(f, v);
-    ssaSlot("ld", t->isFloating() ? a64Fp(t, n) : "x" + std::to_string(n), ssaValueSlot_[v.v]);
+    ssaInto(f, v, t->isFloating() ? a64Fp(t, n) : "x" + std::to_string(n));
 }
 
 // The result, from x0 or d0/s0, into its slot.
 void Arm64Darwin::ssaStore(const ir::Function &f, ir::ValueId v) {
-    if (!v.valid() || ssaValueSlot_[v.v] == 0) return;
+    if (!v.valid()) return;
     const Type *t = typeOf(f, v);
+    if (ssaReg_[v.v] != 0 && t->isFloating()) out_ << "  fmov " << a64Fp(t, ssaReg_[v.v]) << ", " << a64Fp(t, 0) << "\n";
+    else if (ssaReg_[v.v] != 0) out_ << "  mov x" << ssaReg_[v.v] << ", x0\n";
+    if (ssaReg_[v.v] != 0 || ssaValueSlot_[v.v] == 0) return;
     ssaSlot("st", t->isFloating() ? a64Fp(t, 0) : std::string("x0"), ssaValueSlot_[v.v]);
 }
 
-// A branch's arguments into the target's parameter slots as a parallel move of whole slots: a copy whose parameter no
-// copy left reads goes first; a cycle left over is staged on the stack, each argument read before any is written.
-void Arm64Darwin::ssaBranchArgs(const ir::Function &f, const ir::Succ &s) {
+// A branch's arguments into the target's parameters as a parallel move of whole places (two values may share a register):
+// a copy whose place no copy left reads goes first; a cycle left over is staged on the stack, each read before any write.
+bool Arm64Darwin::ssaBranchArgs(const ir::Function &f, const ir::Succ &s, bool ask) {
     const ir::Block &to = f.block(s.block);
+    const auto place = [&](ir::ValueId v) {
+        return ssaReg_[v.v] != 0 ? (typeOf(f, v)->isFloating() ? 100 : 0) + ssaReg_[v.v] : 1000 + ssaValueSlot_[v.v];
+    };
     std::vector<std::pair<ir::ValueId, ir::ValueId> > moves;
     for (std::uint32_t i = 0; i < s.count; i++)
-        if (f.arg(s, i).v != to.params[i].v && ssaValueSlot_[to.params[i].v] != 0) moves.push_back(std::make_pair(f.arg(s, i), to.params[i]));
+        if (place(f.arg(s, i)) != place(to.params[i]) && place(to.params[i]) != 1000) moves.push_back(std::make_pair(f.arg(s, i), to.params[i]));
+    if (ask) return !moves.empty();
     for (std::size_t m = 0; m < moves.size(); ) {
         bool read = false;
-        for (std::size_t o = 0; o < moves.size(); o++) read = read || (o != m && moves[o].first.v == moves[m].second.v);
+        for (std::size_t o = 0; o < moves.size(); o++) read = read || (o != m && place(moves[o].first) == place(moves[m].second));
         if (read) { m++; continue; }
-        ssaSlot("ld", "x0", ssaValueSlot_[moves[m].first.v]);
-        ssaSlot("st", "x0", ssaValueSlot_[moves[m].second.v]);
+        const int r = ssaReg_[moves[m].second.v];
+        if (r != 0) ssaInto(f, moves[m].first, (typeOf(f, moves[m].second)->isFloating() ? "d" : "x") + std::to_string(r));
+        else { ssaRaw(f, moves[m].first, false); ssaRaw(f, moves[m].second, true); }
         moves.erase(moves.begin() + static_cast<std::ptrdiff_t>(m));
         m = 0;
     }
-    for (std::size_t i = 0; i < moves.size(); i++) { ssaSlot("ld", "x0", ssaValueSlot_[moves[i].first.v]); push(); }
-    for (std::size_t i = moves.size(); i-- > 0; ) { pop("x0"); ssaSlot("st", "x0", ssaValueSlot_[moves[i].second.v]); }
+    for (std::size_t i = 0; i < moves.size(); i++) { ssaRaw(f, moves[i].first, false); push(); }
+    for (std::size_t i = moves.size(); i-- > 0; ) { pop("x0"); ssaRaw(f, moves[i].second, true); }
+    return true;
 }
 
 // The type argument `n` travels as: the signature's class where the operand is its address and the caller's to copy, as
@@ -269,11 +496,11 @@ void Arm64Darwin::selectCall(const ir::Function &f, const ir::Inst &i) {
         const ir::ValueId v = f.operand(i, first + static_cast<std::uint32_t>(n));
         const Type *t = types[n];
         if (t->isStructOrUnion()) {
-            if (copyAt[n] != 0) ssaFrame("x9", copyAt[n]); else ssaSlot("ld", "x9", ssaValueSlot_[v.v]);
+            if (copyAt[n] != 0) ssaFrame("x9", copyAt[n]); else ssaInto(f, v, "x9");
             aggToRegisters(plan.args[n].plan, plan.args[n].firstReg);
             continue;
         }
-        ssaSlot("ld", t->isFloating() ? a64Fp(t, plan.args[n].firstReg) : std::string(abi_.intRegs[plan.args[n].firstReg]), ssaValueSlot_[v.v]);
+        ssaInto(f, v, t->isFloating() ? a64Fp(t, plan.args[n].firstReg) : std::string(abi_.intRegs[plan.args[n].firstReg]));
     }
     // The object a class result comes back into: this function's own result pointer's, or a frame object.
     const Type *sig = ssaTypes_->type(c.signature);
@@ -284,7 +511,7 @@ void Arm64Darwin::selectCall(const ir::Function &f, const ir::Inst &i) {
     };
     if (object && planFor(sig->returns()).byRef) objectIn("x8");
     if (c.symbol.empty()) {
-        ssaSlot("ld", "x17", ssaValueSlot_[f.operand(i, 0).v]);
+        ssaInto(f, f.operand(i, 0), "x17");
         out_ << "  blr x17\n";
     } else {
         out_ << "  bl _" << c.symbol << "\n";
@@ -298,6 +525,8 @@ void Arm64Darwin::selectCall(const ir::Function &f, const ir::Inst &i) {
 // One instruction: the operands read from their slots, the result written to its own.
 void Arm64Darwin::selectInst(const ir::Function &f, const ir::Inst &i) {
     const Type *rt = i.type.valid() ? ssaTypes_->type(i.type) : nullptr;
+    const int d = ssaDef(i.result);
+    const std::string xd = "x" + std::to_string(d);
     switch (i.op) {
     case ir::Op::Undef:
         return;
@@ -305,31 +534,35 @@ void Arm64Darwin::selectInst(const ir::Function &f, const ir::Inst &i) {
         out_ << "  brk #0x1\n";
         return;
     case ir::Op::Alloca:
-        ssaFrame("x0", ssaAllocaSlot_[static_cast<std::size_t>(i.k)]);
-        ssaStore(f, i.result);
+        ssaFrame(xd.c_str(), ssaAllocaSlot_[static_cast<std::size_t>(i.k)]);
+        ssaKeep(f, i.result);
         return;
-    case ir::Op::IConst:
-        movImm("x0", i.k);
-        narrowInt(rt);
-        ssaStore(f, i.result);
+    case ir::Op::IConst: {
+        if (ssaImm_[i.result.v] & 2) return;
+        // Optimized, the constant is written in its canonical form at once.
+        movImm(xd.c_str(), optimize_ > 0 ? a64Canonical(i.k, rt, target_) : i.k);
+        if (optimize_ <= 0) narrowInt(rt, d, d);
+        ssaKeep(f, i.result);
         return;
+    }
     case ir::Op::Null:
-        out_ << "  mov x0, #0\n";
-        ssaStore(f, i.result);
+        if (ssaImm_[i.result.v] & 2) return;
+        out_ << "  mov " << xd << ", #0\n";
+        ssaKeep(f, i.result);
         return;
     case ir::Op::FConst:
         movImm("x9", static_cast<long long>(i.bits));
-        out_ << "  fmov " << a64Fp(rt, 0) << (rt->kind() == Kind::Float ? ", w9\n" : ", x9\n");
-        ssaStore(f, i.result);
+        out_ << "  fmov " << a64Fp(rt, d) << (rt->kind() == Kind::Float ? ", w9\n" : ", x9\n");
+        ssaKeep(f, i.result);
         return;
     case ir::Op::Addr: {
         // A symbol this unit defines, a label of its own (a string's `.L.str.N`: no identifier begins with '.'), or one through the GOT.
         const bool here = definedHere_.count(i.sym) != 0, own = !here && !i.sym.empty() && i.sym[0] == '.';
         const std::string name = (own ? "" : "_") + i.sym;
-        if (here || own) out_ << "  adrp x0, " << name << "@PAGE\n  add x0, x0, " << name << "@PAGEOFF\n";
-        else out_ << "  adrp x0, " << name << "@GOTPAGE\n  ldr x0, [x0, " << name << "@GOTPAGEOFF]\n";
-        if (i.k != 0) { movImm("x9", i.k); out_ << "  add x0, x0, x9\n"; }
-        ssaStore(f, i.result);
+        if (here || own) out_ << "  adrp " << xd << ", " << name << "@PAGE\n  add " << xd << ", " << xd << ", " << name << "@PAGEOFF\n";
+        else out_ << "  adrp " << xd << ", " << name << "@GOTPAGE\n  ldr " << xd << ", [" << xd << ", " << name << "@GOTPAGEOFF]\n";
+        if (i.k != 0) { movImm("x9", i.k); out_ << "  add " << xd << ", " << xd << ", x9\n"; }
+        ssaKeep(f, i.result);
         return;
     }
     case ir::Op::TlsAddr:
@@ -344,17 +577,27 @@ void Arm64Darwin::selectInst(const ir::Function &f, const ir::Inst &i) {
         return;
     case ir::Op::VaEnd:
         return;
-    case ir::Op::Load:
-        ssaLoad(f, f.operand(i, 0), 0);
-        load(rt);
-        ssaStore(f, i.result);
+    case ir::Op::Load: {
+        // The walker's load, from the address's own register into the result's.
+        if (a64Whole(rt)) { ssaLoad(f, f.operand(i, 0), 0); ssaStore(f, i.result); return; }
+        const int a = ssaUse(f, f.operand(i, 0), 0), sz = rt->size(target_);
+        const bool sign = rt->isSigned(target_);
+        if (rt->isFloating()) out_ << "  ldr " << a64Fp(rt, d);
+        else out_ << (sz == 1 ? (sign ? "  ldrsb x" : "  ldrb w") : sz == 2 ? (sign ? "  ldrsh x" : "  ldrh w") : sz == 4 ? (sign ? "  ldrsw x" : "  ldr w") : "  ldr x") << d;
+        out_ << ", [x" << a << "]\n";
+        ssaKeep(f, i.result);
         return;
-    case ir::Op::Store:
-        ssaLoad(f, f.operand(i, 1), 0);
-        ssaSlot("ld", "x1", ssaValueSlot_[f.operand(i, 0).v]);
-        if (a64Whole(typeOf(f, f.operand(i, 1)))) copyBlock(typeOf(f, f.operand(i, 1))->size(target_), "x0", "x1");
-        else storeThrough(typeOf(f, f.operand(i, 1)), "x1");
+    }
+    case ir::Op::Store: {
+        const Type *t = typeOf(f, f.operand(i, 1));
+        const int v = ssaUse(f, f.operand(i, 1), 0), a = ssaUse(f, f.operand(i, 0), 1), sz = t->size(target_);
+        const std::string to = "x" + std::to_string(a);
+        if (a64Whole(t)) { copyBlock(sz, ("x" + std::to_string(v)).c_str(), to.c_str()); return; }
+        if (t->isFloating()) out_ << "  str " << a64Fp(t, v);
+        else out_ << (sz == 1 ? "  strb w" : sz == 2 ? "  strh w" : sz == 4 ? "  str w" : "  str x") << v;
+        out_ << ", [" << to << "]\n";
         return;
+    }
     case ir::Op::Memcpy:
         ssaLoad(f, f.operand(i, 1), 0);
         ssaLoad(f, f.operand(i, 0), 1);
@@ -368,114 +611,153 @@ void Arm64Darwin::selectInst(const ir::Function &f, const ir::Inst &i) {
         for (; off < i.k; off++) out_ << "  strb wzr, [x0, #" << off << "]\n";
         return;
     }
-    case ir::Op::Gep:
-        ssaLoad(f, f.operand(i, 0), 0);
-        if (i.count == 2) { ssaLoad(f, f.operand(i, 1), 1); out_ << "  add x0, x0, x1\n"; }
-        else if (i.k != 0) { movImm("x9", i.k); out_ << "  add x0, x0, x9\n"; }
-        ssaStore(f, i.result);
+    case ir::Op::Gep: {
+        const int a = ssaUse(f, f.operand(i, 0), 0);
+        const int b = i.count == 2 ? ssaUse(f, f.operand(i, 1), 1) : 0;
+        if (i.count == 2) out_ << "  add " << xd << ", x" << a << ", x" << b << "\n";
+        else if (i.k > 0 && i.k < 4096 && optimize_ > 0) out_ << "  add " << xd << ", x" << a << ", #" << i.k << "\n";
+        else if (i.k != 0) { movImm("x9", i.k); out_ << "  add " << xd << ", x" << a << ", x9\n"; }
+        else if (d != a) out_ << "  mov " << xd << ", x" << a << "\n";
+        ssaKeep(f, i.result);
         return;
+    }
     case ir::Op::Add: case ir::Op::Sub: case ir::Op::Mul: case ir::Op::And: case ir::Op::Or: case ir::Op::Xor:
     case ir::Op::SDiv: case ir::Op::UDiv: case ir::Op::SRem: case ir::Op::URem: case ir::Op::Shl: case ir::Op::LShr: case ir::Op::AShr: {
         // At the type's width - 32 bits for anything narrower, whose operands are canonical - then extended again.
         const char *r = rt->size(target_) == 8 ? "x" : "w";
-        ssaLoad(f, f.operand(i, 0), 0);
-        ssaLoad(f, f.operand(i, 1), 1);
-        if (i.op == ir::Op::SRem || i.op == ir::Op::URem) {
-            out_ << (i.op == ir::Op::SRem ? "  sdiv " : "  udiv ") << r << "2, " << r << "0, " << r << "1\n";
-            out_ << "  msub " << r << "0, " << r << "2, " << r << "1, " << r << "0\n";
+        const int a = ssaUse(f, f.operand(i, 0), 0);
+        if ((ssaImm_[f.operand(i, 1).v] & 1) && (i.op == ir::Op::Add || i.op == ir::Op::Sub)) {
+            out_ << (i.op == ir::Op::Add ? "  add " : "  sub ") << r << d << ", " << r << a << ", #" << ssaImmK_[f.operand(i, 1).v] << "\n";
+        } else if (i.op == ir::Op::SRem || i.op == ir::Op::URem) {
+            const int b = ssaUse(f, f.operand(i, 1), 1);
+            out_ << (i.op == ir::Op::SRem ? "  sdiv " : "  udiv ") << r << "2, " << r << a << ", " << r << b << "\n";
+            out_ << "  msub " << r << d << ", " << r << "2, " << r << b << ", " << r << a << "\n";
         } else {
+            const int b = ssaUse(f, f.operand(i, 1), 1);
             const char *name = i.op == ir::Op::Add ? "add" : i.op == ir::Op::Sub ? "sub" : i.op == ir::Op::Mul ? "mul" :
                                i.op == ir::Op::And ? "and" : i.op == ir::Op::Or ? "orr" : i.op == ir::Op::Xor ? "eor" :
                                i.op == ir::Op::SDiv ? "sdiv" : i.op == ir::Op::UDiv ? "udiv" : i.op == ir::Op::Shl ? "lsl" :
                                i.op == ir::Op::LShr ? "lsr" : "asr";
-            out_ << "  " << name << " " << r << "0, " << r << "0, " << r << "1\n";
+            out_ << "  " << name << " " << r << d << ", " << r << a << ", " << r << b << "\n";
         }
-        narrowInt(rt);
-        ssaStore(f, i.result);
+        // A 32-bit operation left the upper half zero already.
+        if (optimize_ <= 0 || rt->size(target_) != 4 || rt->isSigned(target_)) narrowInt(rt, d, d);
+        ssaKeep(f, i.result);
         return;
     }
     case ir::Op::SMulH: case ir::Op::UMulH: {
         const bool sign = i.op == ir::Op::SMulH;
-        ssaLoad(f, f.operand(i, 0), 0);
-        ssaLoad(f, f.operand(i, 1), 1);
-        if (rt->size(target_) == 8) out_ << (sign ? "  smulh" : "  umulh") << " x0, x0, x1\n";
-        else out_ << (sign ? "  smull x0, w0, w1\n  asr x0, x0, #32\n" : "  umull x0, w0, w1\n  lsr x0, x0, #32\n");
-        narrowInt(rt);
-        ssaStore(f, i.result);
+        const int a = ssaUse(f, f.operand(i, 0), 0), b = ssaUse(f, f.operand(i, 1), 1);
+        if (rt->size(target_) == 8) out_ << (sign ? "  smulh " : "  umulh ") << xd << ", x" << a << ", x" << b << "\n";
+        else out_ << (sign ? "  smull " : "  umull ") << xd << ", w" << a << ", w" << b << "\n" << (sign ? "  asr " : "  lsr ") << xd << ", " << xd << ", #32\n";
+        narrowInt(rt, d, d);
+        ssaKeep(f, i.result);
         return;
     }
     case ir::Op::Neg: case ir::Op::Not: {
         const char *r = rt->size(target_) == 8 ? "x" : "w";
-        ssaLoad(f, f.operand(i, 0), 0);
-        out_ << (i.op == ir::Op::Neg ? "  neg " : "  mvn ") << r << "0, " << r << "0\n";
-        narrowInt(rt);
-        ssaStore(f, i.result);
+        const int a = ssaUse(f, f.operand(i, 0), 0);
+        out_ << (i.op == ir::Op::Neg ? "  neg " : "  mvn ") << r << d << ", " << r << a << "\n";
+        narrowInt(rt, d, d);
+        ssaKeep(f, i.result);
         return;
     }
     case ir::Op::ICmp: {
         // Below 32 bits an ordered compare extends both sides its own way first, whatever the operands' type says.
         static const char *const cond[] = {"eq", "ne", "lt", "le", "gt", "ge", "lo", "ls", "hi", "hs"};
+        static const int opposite[] = {1, 0, 5, 4, 3, 2, 9, 8, 7, 6};
         if (static_cast<int>(i.cc) > static_cast<int>(ir::Cmp::Uge)) { unsupported("this integer compare from SSA"); return; }
         const int size = typeOf(f, f.operand(i, 0))->size(target_);
         const bool sign = i.cc >= ir::Cmp::Slt && i.cc <= ir::Cmp::Sge, ordered = i.cc >= ir::Cmp::Slt;
-        ssaLoad(f, f.operand(i, 0), 0);
-        ssaLoad(f, f.operand(i, 1), 1);
+        const bool imm = (ssaImm_[f.operand(i, 1).v] & 1) != 0 && size >= 4;
+        int a = ssaUse(f, f.operand(i, 0), 0), b = imm ? 0 : ssaUse(f, f.operand(i, 1), 1);
         if (size < 4 && ordered) {
             const std::string ext = std::string(sign ? "  sxt" : "  uxt") + (size == 1 ? "b" : "h");
-            out_ << ext << " w0, w0\n" << ext << " w1, w1\n";
+            out_ << ext << " w0, w" << a << "\n" << ext << " w1, w" << b << "\n";
+            a = 0, b = 1;
         }
-        out_ << (size == 8 ? "  cmp x0, x1\n" : "  cmp w0, w1\n") << "  cset x0, " << cond[static_cast<int>(i.cc)] << "\n";
-        ssaStore(f, i.result);
+        const char *r = size == 8 ? "x" : "w";
+        out_ << "  cmp " << r << a << ", ";
+        if (imm) out_ << "#" << ssaImmK_[f.operand(i, 1).v] << "\n"; else out_ << r << b << "\n";
+        if (ssaFlags_[i.result.v]) { ssaCond_ = cond[static_cast<int>(i.cc)]; ssaNot_ = cond[opposite[static_cast<int>(i.cc)]]; return; }
+        out_ << "  cset " << xd << ", " << cond[static_cast<int>(i.cc)] << "\n";
+        ssaKeep(f, i.result);
         return;
     }
     case ir::Op::FAdd: case ir::Op::FSub: case ir::Op::FMul: case ir::Op::FDiv: {
-        ssaLoad(f, f.operand(i, 0), 0);
-        ssaLoad(f, f.operand(i, 1), 1);
+        const int a = ssaUse(f, f.operand(i, 0), 0), b = ssaUse(f, f.operand(i, 1), 1);
         const char *name = i.op == ir::Op::FAdd ? "fadd" : i.op == ir::Op::FSub ? "fsub" : i.op == ir::Op::FMul ? "fmul" : "fdiv";
-        out_ << "  " << name << " " << a64Fp(rt, 0) << ", " << a64Fp(rt, 0) << ", " << a64Fp(rt, 1) << "\n";
-        ssaStore(f, i.result);
+        out_ << "  " << name << " " << a64Fp(rt, d) << ", " << a64Fp(rt, a) << ", " << a64Fp(rt, b) << "\n";
+        ssaKeep(f, i.result);
         return;
     }
-    case ir::Op::FNeg:
-        ssaLoad(f, f.operand(i, 0), 0);
-        out_ << "  fneg " << a64Fp(rt, 0) << ", " << a64Fp(rt, 0) << "\n";
-        ssaStore(f, i.result);
+    case ir::Op::FNeg: {
+        const int a = ssaUse(f, f.operand(i, 0), 0);
+        out_ << "  fneg " << a64Fp(rt, d) << ", " << a64Fp(rt, a) << "\n";
+        ssaKeep(f, i.result);
         return;
+    }
     case ir::Op::FCmp: {
         // The ordered conditions as the flags give them: `mi` and `ls` are false on an unordered pair, `ne` true.
         const Type *t = typeOf(f, f.operand(i, 0));
         const char *cond = i.cc == ir::Cmp::Oeq ? "eq" : i.cc == ir::Cmp::Une ? "ne" : i.cc == ir::Cmp::Olt ? "mi" :
                            i.cc == ir::Cmp::Ole ? "ls" : i.cc == ir::Cmp::Ogt ? "gt" : i.cc == ir::Cmp::Oge ? "ge" : nullptr;
         if (cond == nullptr) { unsupported("this floating compare from SSA"); return; }
-        ssaLoad(f, f.operand(i, 0), 0);
-        ssaLoad(f, f.operand(i, 1), 1);
-        out_ << "  fcmp " << a64Fp(t, 0) << ", " << a64Fp(t, 1) << "\n  cset x0, " << cond << "\n";
-        ssaStore(f, i.result);
+        const int a = ssaUse(f, f.operand(i, 0), 0), b = ssaUse(f, f.operand(i, 1), 1);
+        out_ << "  fcmp " << a64Fp(t, a) << ", " << a64Fp(t, b) << "\n";
+        // Each condition's opposite is its flags' complement, an unordered pair included.
+        const char *other = i.cc == ir::Cmp::Oeq ? "ne" : i.cc == ir::Cmp::Une ? "eq" : i.cc == ir::Cmp::Olt ? "pl" :
+                            i.cc == ir::Cmp::Ole ? "hi" : i.cc == ir::Cmp::Ogt ? "le" : "lt";
+        if (ssaFlags_[i.result.v]) { ssaCond_ = cond; ssaNot_ = other; return; }
+        out_ << "  cset " << xd << ", " << cond << "\n";
+        ssaKeep(f, i.result);
         return;
     }
     case ir::Op::Trunc: case ir::Op::SExt: case ir::Op::ZExt: case ir::Op::FpToSi: case ir::Op::FpToUi: case ir::Op::SiToFp: case ir::Op::UiToFp:
     case ir::Op::FpExt: case ir::Op::FpTrunc: case ir::Op::Bitcast: case ir::Op::PtrToInt: case ir::Op::IntToPtr:
-        // The walker's conversion between the two types, as x86's selector takes it.
+    {
+        // The walker's conversion between the two types, as x86's selector takes it; between integers it is narrowInt alone.
+        const Type *from = typeOf(f, f.operand(i, 0));
+        if (a64Moves(rt, from) || (!from->isFloating() && !rt->isFloating())) {
+            const int a = ssaUse(f, f.operand(i, 0), 0);
+            if (!a64Moves(rt, from)) narrowInt(rt, d, a);
+            else if (d != a) out_ << "  mov " << xd << ", x" << a << "\n";
+            ssaKeep(f, i.result);
+            return;
+        }
         ssaLoad(f, f.operand(i, 0), 0);
-        if (!a64Moves(rt, typeOf(f, f.operand(i, 0)))) genConversion(typeOf(f, f.operand(i, 0)), rt);
+        genConversion(from, rt);
         ssaStore(f, i.result);
         return;
+    }
     case ir::Op::Br:
         ssaBranchArgs(f, i.succ[0]);
-        out_ << "  b " << ssaBlockLabel(i.succ[0].block) << "\n";
+        ssaJump(i.succ[0].block);
         return;
     case ir::Op::CondBr: {
-        ssaLoad(f, f.operand(i, 0), 0);
-        if (i.succ[0].count == 0) {
-            out_ << "  cbnz x0, " << ssaBlockLabel(i.succ[0].block) << "\n";
+        // A compare fused into the branch left its condition and the opposite; another condition is a value.
+        std::string yes = std::string("  b.") + (ssaCond_ != nullptr ? ssaCond_ : "") + " ", no = std::string("  b.") + (ssaNot_ != nullptr ? ssaNot_ : "") + " ";
+        if (ssaCond_ == nullptr) {
+            const std::string c = "x" + std::to_string(ssaUse(f, f.operand(i, 0), 0)) + ", ";
+            yes = "  cbnz " + c, no = "  cbz " + c;
+        }
+        ssaCond_ = ssaNot_ = nullptr;
+        // An edge that moves nothing is branched to directly; the true edge being the next block, the false one is taken.
+        const bool moves = optimize_ > 0 ? ssaBranchArgs(f, i.succ[0], true) : i.succ[0].count != 0;
+        if (!moves && i.succ[0].block.v == ssaNext_ && !ssaBranchArgs(f, i.succ[1], true)) {
+            out_ << no << ssaBlockLabel(i.succ[1].block) << "\n";
+            return;
+        }
+        if (!moves) {
+            out_ << yes << ssaBlockLabel(i.succ[0].block) << "\n";
         } else {
             const std::string other = label("ssaelse", nextLabel());
-            out_ << "  cbz x0, " << other << "\n";
+            out_ << no << other << "\n";
             ssaBranchArgs(f, i.succ[0]);
             out_ << "  b " << ssaBlockLabel(i.succ[0].block) << "\n" << other << ":\n";
         }
         ssaBranchArgs(f, i.succ[1]);
-        out_ << "  b " << ssaBlockLabel(i.succ[1].block) << "\n";
+        ssaJump(i.succ[1].block);
         return;
     }
     case ir::Op::Switch: {
@@ -518,7 +800,7 @@ void Arm64Darwin::selectInst(const ir::Function &f, const ir::Inst &i) {
         callSite(begin, end, ssaLandLabel(i.succ[1].block), pad.syms, indices, (pad.bits & 1) != 0, ++ssaRegionAt_, (pad.bits & 2) != 0);
         ssaStore(f, i.result);
         ssaBranchArgs(f, i.succ[0]);
-        out_ << "  b " << ssaBlockLabel(i.succ[0].block) << "\n";
+        ssaJump(i.succ[0].block);
         return;
     }
     case ir::Op::CatchPad: case ir::Op::CleanupPad:
@@ -538,27 +820,66 @@ void Arm64Darwin::selectBody(const Function &fn, const ir::Function &f) {
     }
     if (f.sret.valid() && sretSlot_ != 0) { localIn("x0", sretSlot_); out_ << "  ldr x0, [x0]\n"; ssaStore(f, f.sret); }
     ssaRegionAt_ = 0;
+    std::size_t lastPos = 0;
     if (!f.blocks.empty() && f.blocks[0].v != f.entry.v) out_ << "  b " << ssaBlockLabel(f.entry) << "\n";
     for (std::size_t b = 0; b < f.blocks.size(); b++) {
         const ir::Block &blk = f.block(f.blocks[b]);
+        ssaNext_ = optimize_ > 0 && b + 1 < f.blocks.size() && !f.block(f.blocks[b + 1]).pad ? f.blocks[b + 1].v : 0;
         // A pad: the runtime lands with the exception in x0 and the selector in w1, the block's two parameters; a
         // branch from another pad arrives past the stores, at the block's own label, carrying both.
         if (blk.pad) {
             out_ << ssaLandLabel(f.blocks[b]) << ":\n";
             ssaStore(f, blk.params[0]);
             out_ << "  sxtw x0, w1\n";
-            ssaSlot("st", "x0", ssaValueSlot_[blk.params[1].v]);
+            ssaStore(f, blk.params[1]);
         }
         out_ << ssaBlockLabel(f.blocks[b]) << ":\n";
         for (std::size_t k = 0; k <= blk.insts.size(); k++) {
             const ir::InstId id = k < blk.insts.size() ? blk.insts[k] : blk.term;
-            if (id.valid()) selectInst(f, f.inst(id));
+            if (!id.valid()) continue;
+            // -g: the statements and lexical blocks that begin before the instruction (ir::Inst::lines), as x86's selector.
+            const ir::Inst &in = f.inst(id);
+            for (std::size_t m = 0; m < in.lines.size(); m++) {
+                const std::uint32_t block = ir::kBlockOpens | ir::kBlockCloses, at = in.lines[m];
+                if (at & block) markBlock(fn.blockAt(at & ~block), (at & ir::kBlockCloses) != 0); else markLine(at);
+            }
+            if (in.pos != 0 && in.pos != lastPos) { markLine(in.pos); lastPos = in.pos; }
+            selectInst(f, in);
         }
     }
+    closeOpenBlocks();
     // Pads no invoke names: the prologue named the LSDA already, so an empty row defines it, as the walker's empty try does.
     if (f.landingPads && callSites().empty()) {
         const std::string none = label("ssatry", nextLabel());
         out_ << none << ":\n";
         callSite(none, none, none, std::vector<std::string>(), std::vector<int>(), false, ++ssaRegionAt_, false);
     }
+}
+
+// **-g's variables in a selected frame** (M5.2 round 4): the parser's locals, each at the slot of the alloca the lowering
+// made for it - matched by name in declaration order, both lists being in it. A parameter without a live alloca keeps
+// the slot the walker's prologue filled; a local without one (promoted at -O1 and -O2) has no record.
+const std::vector<Local> *Arm64Darwin::ssaLocals(const Function &fn, const ir::Function &f) {
+    std::vector<char> live(f.frame.size(), 0);
+    for (std::size_t b = 0; b < f.blocks.size(); b++)
+        for (std::size_t k = 0; k < f.block(f.blocks[b]).insts.size(); k++) {
+            const ir::Inst &i = f.inst(f.block(f.blocks[b]).insts[k]);
+            if (i.op == ir::Op::Alloca && i.k >= 0 && static_cast<std::size_t>(i.k) < live.size()) live[i.k] = 1;
+        }
+    std::map<std::string, std::size_t> next;
+    ssaLocals_.push_back(std::vector<Local>());
+    for (const Local &l : fn.locals()) {
+        std::size_t &j = next[l.name];
+        while (l.staticName.empty() && j < f.frame.size() && !a64Declares(f.frame[j].name, l.name)) j++;
+        Local d = l;
+        const bool slot = l.staticName.empty() && j < f.frame.size() && live[j];
+        if (slot) d.offset = static_cast<int>(ssaAllocaSlot_[j]);
+        if (l.staticName.empty() && j < f.frame.size()) j++;
+        if (!slot && l.staticName.empty() && !l.isParam) {
+            if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "a64 -g %s: '%s' has no slot\n", fn.symbol().c_str(), l.name.c_str());
+            continue;
+        }
+        ssaLocals_.back().push_back(d);
+    }
+    return &ssaLocals_.back();
 }

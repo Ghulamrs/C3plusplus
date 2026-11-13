@@ -123,12 +123,12 @@ void Arm64Darwin::loadFpConst(const std::string &reg, const Type *t, double v) {
     }
 }
 
-void Arm64Darwin::narrowInt(const Type *to) {
+void Arm64Darwin::narrowInt(const Type *to, int d, int s) {
     int sz = to->size(target_);
-    bool sign = to->isSigned(target_);
-    if (sz == 1)      out_ << (sign ? "  sxtb x0, w0\n" : "  uxtb w0, w0\n");
-    else if (sz == 2) out_ << (sign ? "  sxth x0, w0\n" : "  uxth w0, w0\n");
-    else if (sz == 4) out_ << (sign ? "  sxtw x0, w0\n" : "  mov w0, w0\n");
+    const char *op = to->isSigned(target_) ? (sz == 1 ? "  sxtb x" : sz == 2 ? "  sxth x" : "  sxtw x")
+                                           : (sz == 1 ? "  uxtb w" : sz == 2 ? "  uxth w" : "  mov w");
+    if (sz == 1 || sz == 2 || sz == 4) out_ << op << d << ", w" << s << "\n";
+    else if (d != s) out_ << "  mov x" << d << ", x" << s << "\n";
 }
 
 Arm64Darwin::AggPlan Arm64Darwin::planFor(const Type *t) const {
@@ -1166,9 +1166,10 @@ void Arm64Darwin::emitFunction(const Function &fn) {
     }
     // An optimized frame keeps room below its locals for the callee-saved registers a promoted local takes.
     const int locals = alignTo(ssaFn != nullptr ? layoutSsa(fn, *ssaFn) : fn.frameSize(), 16);
+    if (ssaFn != nullptr && lineSource()) dwarfFns_.back().locals = ssaLocals(fn, *ssaFn);
     const bool promote = ssaFn == nullptr && optimize_ > 0 && realign_ == 0 && locals + kCalleeArea <= 65535;
     if (ssaFn == nullptr && optimize_ > 0 && !promote) opt::noteDecline("arm64-frame-too-large-no-promotion", fn.symbol());
-    int frame = locals + (promote ? kCalleeArea : 0);
+    int frame = locals + (promote ? kCalleeArea : ssaFn != nullptr ? alignTo(8 * static_cast<int>(ssaSaved_.size()), 16) : 0);
     if (realign_ > 0) frame = top_ = alignTo(locals, realign_);
     if (realign_ > 0) {
         // `and` takes no sp as its source: the allocation is made in x9 and sp rounded from it, as clang writes it.
@@ -1253,24 +1254,29 @@ void Arm64Darwin::emitFunction(const Function &fn) {
 
     if (ssaFn != nullptr) selectBody(fn, *ssaFn); else fn.body().accept(asVisitor());
     std::vector<std::string> saved;
+    if (ssaFn != nullptr) saved = ssaSaved_;
     const Type *ret = fn.returns();
     const bool resultInX = ret != nullptr && !ret->isVoid() && !ret->isFloating();
-    // A selected body keeps its slots: the text peephole reads the walker's shapes, and the allocator's registers are M5.2's.
+    // A selected body has its registers from the selector (ssaAssign): the text peephole reads the walker's shapes only.
     const std::string body = ssaFn != nullptr ? out_.str() : a64Peephole(out_.str(), realign_ > 0 ? 0 : optimize_, promote ? &saved : nullptr, resultInX);
     out_.str(std::string());
     out_ << head;
     // Each register a promoted local took is saved below the locals, where the unwinder is told to find it.
     for (std::size_t i = 0; i < saved.size(); i++) {
         const int at = locals + 8 * static_cast<int>(i + 1);
-        out_ << "  mov x9, #" << at << "\n  sub x9, x29, x9\n  str " << saved[i] << ", [x9]\n";
+        if (ssaFn != nullptr && at <= 255) out_ << "  stur " << saved[i] << ", [x29, #-" << at << "]\n";
+        else out_ << "  mov x9, #" << at << "\n  sub x9, x29, x9\n  str " << saved[i] << ", [x9]\n";
         out_ << "  .cfi_offset " << (saved[i][0] == 'x' ? "w" : "b") << saved[i].substr(1) << ", -" << (16 + at) << "\n";
     }
     out_ << body;
 
     out_ << "  mov x0, #0\n";
     out_ << returnLabel_ << ":\n";
-    for (std::size_t i = 0; i < saved.size(); i++)
-        out_ << "  mov x9, #" << (locals + 8 * static_cast<int>(i + 1)) << "\n  sub x9, x29, x9\n  ldr " << saved[i] << ", [x9]\n";
+    for (std::size_t i = 0; i < saved.size(); i++) {
+        const int at = locals + 8 * static_cast<int>(i + 1);
+        if (ssaFn != nullptr && at <= 255) out_ << "  ldur " << saved[i] << ", [x29, #-" << at << "]\n";
+        else out_ << "  mov x9, #" << at << "\n  sub x9, x29, x9\n  ldr " << saved[i] << ", [x9]\n";
+    }
     if (realign_ > 0) out_ << "  ldur x19, [x29, #-16]\n";
     out_ << "  mov sp, x29\n";
     out_ << "  ldp x29, x30, [sp], #16\n";
@@ -1335,8 +1341,12 @@ void Arm64Darwin::run(const Program &program) {
 
     if (const Source *src = lineSource()) {
         const std::vector<std::string> &names = src->files();
-        for (std::size_t i = 0; i < names.size(); i++)
-            out_ << "  .file " << (i + 1) << " \"" << names[i] << "\"\n";
+        // A name escaped as the string it is: a Windows host's include directory is `C:\\...`, which Apple's assembler refuses bare.
+        for (std::size_t i = 0; i < names.size(); i++) {
+            out_ << "  .file " << (i + 1) << " \"";
+            for (const char c : names[i]) { if (c == '"' || c == '\\') out_ << '\\'; out_ << c; }
+            out_ << "\"\n";
+        }
     }
 
     emitData(program);
