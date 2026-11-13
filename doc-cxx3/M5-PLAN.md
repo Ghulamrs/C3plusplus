@@ -740,3 +740,30 @@ Each reason read for what must hold to reach it, then one probe on Windows (cxx3
 - **Gates, Linux: owed.** The chain (boxkit/x86i-linux.sh in a fresh ~/x86i at 4e083584's tree: build, the three cases at
   -O0/-O2, arm64-darwin -S of them, an -S census of tests/cases against ~/x86h, typed.sh, memory gate) was still queued
   on the lock behind two tms6747 shards at the hour; it stays queued, its answer in ~/x86i-linux.out.
+
+### Wave 3's merge: one -g locals match for three targets (lane w3m, 2026-11-14, from m5-wave2 da250ac7)
+
+- **Merged in order** `m5-x86i` (r1l, r1m, x86g, x86h, x86i), `m6-h`, `m5-c6m` onto m5-wave3. The one code conflict:
+  m6g (wave 2) had added `ssaLocalAllocas` (per parser local, its live alloca's index or -1) for arm64's ssaLocals and the
+  C6000's emitScope; x86h had made x86's and arm64's ssaLocals one `Regions::ssaFrameLocals` with its own copy of the
+  match (`frameDeclares`). Resolved: `Regions::ssaFrameLocals` (x86, arm64) is built on `ssaLocalAllocas` (the C6000
+  reads it directly); arm64's `Arm64Darwin::ssaLocals` and the second name matcher are gone. The .md conflicts took both
+  sides; docs/EXCLUSIONS.md's citations in ParserExpr.cpp and ParserExprNew.cpp re-pointed to the merged lines. The
+  ide/ projects came from m6-h's regeneration (C6xMir.{h,cpp}) and check fresh.
+- src/ lines: +28 -20 over da250ac7 in the five files of the conflict (Regions.{h,cpp}, A64Select.cpp, Arm64Darwin.cpp,
+  X86_64Linux.cpp); the second matcher and arm64's own ssaLocals gone.
+- **Gate (Linux, the merge's cxx3 in ~/w3m against the parents' builds ~/x86i, ~/c6m, ~/m6h, ~/w2g, each checked equal to
+  its branch's src/ and include/; boxkit/w3m-cmp.sh and w3m-judge{,2,3,4}.sh)**: 1,226 sources (tests/cases and
+  tests/m10) in 13 configurations, a header's tree path made one before the diff.
+  (a) -O0 -g against x86i: x86_64-linux, x86_64-windows (masm and gnu) and arm64-darwin 1,225 of 1,226 equal; the one
+  apart is c6m's member-pointer-null-neighbours, which x86i refuses (it lacks c6m's [conv.mem] ranking) - on arm64 it
+  equals c6m's, on x86 neither (x86g's slots and c6m's acceptance meet there).
+  (b) tms6747 -O0 -g against da250ac7: 1,220 equal; 6 differ, each a file x86i changed (char-array-short-string,
+  conversion-reference-to-value, conversion-to-lvalue-reference, lowering-return-empty-braces, mem-init-typedef-base,
+  w4). g-same: see below.
+  (c) without -g: x86_64-linux -O0/-O2, x86_64-windows -O0/-O2, arm64-darwin -O0 0 differ from the union of the parents;
+  arm64-darwin -O2 8 and tms6747 -O0/-O2 2 each equal neither parent - x86i's seven new cases and w4 (char-array-short-string
+  and w4 on tms6747), which only x86i compiles or lowers and whose backend wave 2 changed: both sides changed each.
+  No source the merge refuses compiles under any parent.
+- cl /W4 /WX clean (C:\Users\GRA\work\w3m); tools/exclusions --check 129 sites 0 uncited 0 stale, SSA 554/95; comments 0
+  over the cap; memory gate holds (raw-pointers 89); ide/generate.py --check fresh.
