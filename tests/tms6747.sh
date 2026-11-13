@@ -144,11 +144,14 @@ MAP
 else
     echo "tms6747.sh: SIM=0 - the sim6747 leg is left out; only the assembly is run, on vm6747"
 fi
+# SHARD=k/n takes every n-th case from the k-th, so a run fits the 25-minute job cap on a shared box.
 cases() {
+    i=0; k=${SHARD%/*}; n=${SHARD#*/}
     for src in tests/cases/*.cpp; do
         base=$(basename "$src" .cpp)
         [ -n "$only" ] && [ "$base" != "$only" ] && continue
         [ -f "tests/cases/$base.error" ] && continue
+        i=$((i + 1)); [ -n "${SHARD:-}" ] && [ $(( (i - 1) % n + 1 )) -ne "$k" ] && continue
         echo "$base"
     done
 }
