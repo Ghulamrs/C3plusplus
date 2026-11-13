@@ -104,7 +104,7 @@ goes in the same commit.
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:621` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2298` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:264` |
-| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:3143`, `src/parser/ParserTopLevel.cpp:835` |
+| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:3144`, `src/parser/ParserTopLevel.cpp:835` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:763` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:456` |
 | `template <template <class> typename C>`, `typename` after a template template parameter's list | C++17 | `src/parser/ParserTemplate.cpp:52` |
@@ -194,7 +194,7 @@ is left:
   `src/parser/ParserType.cpp:590`
 - **`sizeof` of a template parameter in a signature outside a template argument
   or a `decltype`** - an array bound, `void f(T, int (*)[sizeof(T)])`, whose
-  Itanium spelling was not measured. `src/parser/ParserExpr.cpp:3650`
+  Itanium spelling was not measured. `src/parser/ParserExpr.cpp:3653`
 - **two-phase name lookup is not done, and that is a decision rather than a
   gap.** A template is instantiated by replaying its tokens, so every name in
   its body is looked up at instantiation - MSVC's old model - and cxx1
@@ -245,7 +245,7 @@ is left:
 - **a bit-field of an anonymous union at namespace or block scope** - the
   members are names of the scope, and a bit-field would be a name with no
   object to be a field of. `src/parser/ParserType.cpp:2295`
-- **a member function of a union** - `src/parser/ParserClass.cpp:2398`
+- **a member function of a union** - `src/parser/ParserClass.cpp:2399`
 - **one name holding both a static and a non-static member**, where overload
   resolution picks the non-static one - `src/parser/ParserExpr.cpp:2035`
 - **a covariant return that moves the result** - an override may return a
@@ -301,10 +301,10 @@ many, or has no object of its own:
 - **a static data member that is an array of a class with a constructor** -
   each element would need its constructor before main and its destructor at
   exit; a file-scope array and a static local of the same shape are built and
-  destroyed element by element. `src/parser/ParserClass.cpp:2210`
+  destroyed element by element. `src/parser/ParserClass.cpp:2211`
 - **a static-duration reference bound to a temporary of an incomplete class, an
   array or void** - [class.temporary]/5's object of static storage is made for a
-  scalar or a complete class only. `src/parser/ParserInit.cpp:1815`
+  scalar or a complete class only. `src/parser/ParserInit.cpp:1817`
 
 ## Expressions
 
