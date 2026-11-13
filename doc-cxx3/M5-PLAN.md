@@ -444,3 +444,175 @@ squashed commit. **Gate**, on the final tree:
 **Owed:** emit.sh's golden on Linux (none recorded on that tree); lldb on the Mac (Developer Mode, the user's);
 target 3's self-host re-measured at M5's close; the C6000's M6a, not in this wave (its -O2 cycle gate is unmet).
 
+### M5.4, self-host on target 4 (2026-11-13, lane m5h, from `1f8ec47b`, every arm64 function from the selector)
+
+The Mac through `boxkit/mac-run.sh` at -j2 (`SELFHOST_JOBS=2`), stage 0 built by Apple clang++.
+- **First run, -O0: stage 0 compiled 99 of 100.** `src/backend/A64Select.cpp:323` (M5.2 round 3's linear scan) calls
+  `std::upper_bound`, which `include/algorithm` did not have: clang's libc++ compiles the tree, cxx1's library did not.
+  Not a selector wrong answer - a library gap the walker's sources never met. Mended: `upper_bound` in
+  `include/algorithm` ([upper.bound], halving, random-access as the rest of the header), and the case
+  `tests/cases/algorithm-upper-bound` (empty, one, repeated runs, both ends, a pointer range; `.expected` from the
+  Windows box's clang 19 with `-nostdinc++ -isystem include`, as par4 allows; `.nocl`, `.nonames` as
+  `algorithm-sort-large`'s).
+- **tools/self-host, -O0**: stages 0, 1, 2, 3 compiled 100 of 100 sources in 60, 492, 490, 491 s; **stages 0 = 1 = 2:
+  100 of 100 the same object; 2 = 3: 100 of 100**. At M5.0 (the walker, -j8) the stages took 15, 62, 64, 62 s: at
+  -j2 the cxx3-built stages are ~2x slower per job than the walker's were - the -O0 selector's code, measured, not
+  mended here.
+- **tools/self-host, -O2**: stages 0, 1, 2, 3 compiled 100 of 100 sources in 67, 102, 102, 102 s; **stages 0 = 1 = 2:
+  100 of 100 the same object; 2 = 3: 100 of 100**. A -O2 stage compiles cxx3 in a fifth of a -O0 stage's time (102
+  against 491 s); the clang-built stage 0 is 1.5x faster than the -O2 one.
+- **No tools/ change was needed.** The Mac idle after (no cxx3 or self-host process of this lane). Owed: target 3
+  re-measured at M5's close (the plan's row), the wave gate's run of the new case on every target.
+- **R1, round 4 (lane r1i, 2026-11-13, from m5-r1h 87f934d9).** **The open register's seven:** six are walker-* (arm64's,
+  left alone); the seventh, declaration-temporary-unwind, is an `#include` of tests/cases/ssa-own-landing-pads (the
+  same .expected, ok on Windows -O0/-O2 both spellings) and is the walker's defect too, so it is renamed
+  walker-declaration-temporary-unwind and the case's .notarget points there. **r1h's `_ZGR` names:** Windows clang
+  `-target x86_64-linux-gnu -S` writes the eleven r1h emits; it makes h's `_ZZ1hvE1q`, `_ZGVZ1hvE1q`, `_ZGRZ1hvE1q_`
+  weak in COMDATs, and cl makes `?q@?1??h@@YAHXZ@4AEBUA@@EB`, `?$TSS0@...`, `?$S10@...` External - **an inline function's
+  static reference was a per-unit `h.q`**: it takes the ABI's name now (uniqueStaticSymbol given its type, ParserStmt),
+  and with it its guard and temporary are shared (the atexit helpers stay file-local, as a static local's always were).
+  **48 probes** over Lowering.cpp 2290-2900, past 3760 and Builder*.cpp, each accepted by Windows clang -std=c++11
+  -pedantic-errors: 37 compile and print clang's answer. **(b) 6 taken**: unary `+` of a pointer, and so of a
+  captureless lambda (Typing and the lowering); `++` of a bool (deprecated, still C++11); a static member through `->`
+  of an expression (the pointer evaluated); a data member pointer value-initialised `P()` (was broken(), "a cast not
+  recorded") and as a truth value; a lambda reading its function's static local uncaptured ("'s' was not declared").
+  **(a) 4 refused by name as cited**, cases with a .error: a std::nullptr_t return, a thread_local reference in a block
+  and at namespace scope, a static member through `.` of a call. A virtual base with virtual functions on the Microsoft
+  ABI is refused by name in the parser (vtordisp), already cited. **(c) 0.** **Wrong answers, in tests/open:**
+  function-reference-through-dereference (`void (&r)() = *p` refused: the parser reads `*p` back as p) and
+  member-pointer-condition (requireScalar refuses a data member pointer as `?:`'s condition, `!`, a cast to bool).
+  src/ lines: +17 -7 (Lowering.cpp, Typing.cpp, ParserStmt.cpp, ParserExprLambda.cpp).
+
+- **R1, round 5 (lane r1j, 2026-11-13, from m5-r1i deb6df1b).** **r1i's two refusals of valid programs, taken; both
+  out of tests/open into tests/cases with Windows clang's answer.** member-pointer-condition: requireScalar takes a
+  pointer to a data member as a truth value ([conv.bool]) except under unary `+`, and the typer types `&&`/`||` of one
+  (the lowering's truth() already compared with the ABI's null: -1 on Itanium, cl's on Microsoft); the case covers `?:`,
+  `!`, `(bool)`, `&&`, `||`, `if`, `while`, an offset-0 member and a base's member converted to the derived class.
+  function-reference-through-dereference: bindReference takes `*p` (and `**q`) of a function pointer - the parser
+  keeps the dereference as p, and its syntax node says it was one. **An inline function's atexit helpers on
+  Microsoft:** cl 19.44 makes `??__F$S1@?1??h@@YAHXZ@YAXXZ` (a static reference's temporary) and `??__Fa@?1??k@@...`
+  (a static local) External in COMDATs, a non-inline function's Static; registerDestruction now does (the helper
+  inline and not static), and pruneUnusedInline keeps it with its object, which is always kept (the lowering, not the
+  parser, registers a temporary's helper, so nothing the parser sees names it). Two units both calling h and k link
+  and destroy each object once, in both spellings. **Left:** `static_cast<int D::*>(&C::y)` is "a 'cast' the typer
+  did not type" (the implicit conversion is typed). Windows 32/32 at -O0 and at -O2 over 16 cases (gnu and masm), cl /W4 /WX clean; Linux (fresh ~/r1j): 12/12 at
+  -O0/-O2, open.sh 23 differ / 7 agree (the walker's), typed.sh 846/0, exclusions 0/0, comments 0, memory gate holds.
+  src/ lines: +15 -5 (ParserOverload.cpp, ParserExpr.cpp, ParserInit.cpp, ParserClass.cpp, Typing.cpp).
+
+### R1, round 6, and the count (lane r1k, 2026-11-13, from m5-r1j 6fc992c7)
+
+- **`static_cast<int D::*>(&C::y)`** was "a 'cast' the typer did not type": noteKeywordForm recorded a named cast's
+  type only for a scalar or a class, and only where its text held no `&` - which an operand `&C::m` always does. A
+  member pointer's cast is recorded now, refused only for a reference type-id (`&>`). The lowering's
+  memberPointerConversion takes [expr.static.cast]/12's way back as well, a derived class's member pointer to a base's,
+  the offset shrunk and a null kept null (cxx1 types `&D::y` as `int D::*` where clang says `int C::*`, so
+  `static_cast<int C::*>(&D::y)` needed it). Case `member-pointer-static-cast` (a base at a nonzero offset, a null
+  through a function), clang's output.
+- **`inline-static-exit-helpers`** (+ `.part.cpp`) holds r1j's linkage: an inline function's static local and its
+  static reference's temporary, called from both units, under the ledger - built 3, gone 3, every fault column 0.
+- **Two stale refusals**: r1j made a static-duration reference to a temporary, so
+  `static-reference-temporary-refused` and `static-reference-member-temporary-refused` compiled and failed their
+  `.error`; wave 1 had already replaced them with `static-reference-scalar-temporary` and
+  `static-reference-member-scalar-temporary`, so the wave 2 merge kept those and dropped this lane's renamed pair.
+- **Gate:** Windows cl /W4 /WX clean; the 39 member-pointer, static-local, static-reference and named-cast cases plus the
+  two renamed at -O0 and -O2, gnu and masm: all ok (member-pointer-base-on-derived is .notarget there); exclusions
+  0 uncited / 0 stale (one citation re-pointed, ParserExpr.cpp:3655), comment cap 0, memory gate holds. **Linux not
+  run**: 2.4 GB free on the box, below the 3 GB rule - the coordinator's wave gate owes it.
+- src/ lines: +8 -2 (ParserExpr.cpp, Lowering.cpp).
+
+**R1's count.** Every tests/cases and tests/open case compiled -S for x86_64-windows with CXX1_SSA_WHY set (1229
+files; tools/windows/lowering-why.py, matched by tools/windows/lowering-why-match.py, `<...>` as any text, a line given to its most specific
+reason): of the 489 reasons in the ```owed block, **17 are reached by a tests/cases case, 3 more only by tests/open,
+469 by none** (one target; a reason peculiar to Itanium or the C6000 is not asked). One reached reason is a Builder's
+("a constructor of a class with bases, a vptr or members to build", lowering-implicit-copy-bitfield) and is not in the
+block's text; one is a broken() (array-static-tail-defaults, tests/open). The reached ones:
+
+| reason | first case |
+|---|---|
+| `<...>a reference parameter bound to a '<...>' that is not an object` | reached by tests/open/class-value-in-braced-aggregate.cpp |
+| `<...>of a class with a bit-field or reference member` | reached by tests/cases/lowering-implicit-copy-bitfield.cpp |
+| `<...>whose default argument makes a temporary with a destructor` | reached by tests/open/vector-default-temporary.cpp |
+| `a braced list reaching a member the lowering does not place` | reached by tests/cases/lowering-braced-bitfield-reference.cpp |
+| `a call returning '<...>'` | reached by tests/cases/lowering-return-nullptr-t.cpp |
+| `a class argument that is not an object` | reached by tests/open/braced-class-in-braced-aggregate.cpp |
+| `a class local initialised from a temporary of another type` | reached by tests/cases/lowering-local-from-derived-temporary.cpp |
+| `a class local initialised from another type` | reached by tests/cases/lowering-local-from-conversion-function.cpp |
+| `a class returned while a local with a destructor is alive` | reached by tests/cases/lowering-return-beside-destroyed-local.cpp |
+| `a class with a destructor returned from another type` | reached by tests/cases/lowering-return-derived-temporary-destructor.cpp |
+| `a class with a destructor returned inside a handler` | reached by tests/cases/lowering-return-destructor-in-handler.cpp |
+| `a constructed class returned from another type` | reached by tests/cases/lowering-return-derived-local.cpp |
+| `a named return value built with defaults, zeroed or from a braced list` | reached by tests/cases/lowering-named-return-defaulted.cpp |
+| `a named return value inside a handler` | reached by tests/cases/lowering-named-return-in-handler.cpp |
+| `a reference member bound to another type` | reached by tests/cases/lowering-reference-member-derived.cpp |
+| `a return type of '<...>'` | reached by tests/cases/lowering-return-nullptr-t.cpp |
+| `a static local built with default arguments` | reached by tests/cases/lowering-static-local-default-arguments.cpp |
+| `a static member reached through what is not a name` | reached by tests/cases/lowering-static-member-through-object.cpp |
+| `a thread_local reference` | reached by tests/cases/lowering-thread-local-reference-global.cpp |
+| `an initializer_list of '<...>' elements` | reached by tests/cases/lowering-initializer-list-class-elements.cpp |
+
+Every other owed reason: not reached (469).
+
+### M5.3, the code after the deletion (2026-11-13, lane m5i, from `ff1d1e77`)
+
+m5e's "left for M5.3" in `backend/A64Select.cpp`, at -O1 and -O2 only (A64Select 882 -> 1,033 lines; src/ 91,824 -> 91,987,
++176 -13 over three files). -O0 is untouched: all 833 `.s` at -O0 are byte-identical to m5-h's.
+
+- **Parameters from their incoming registers** (`ssaDirect_`): where every parameter is a scalar or a reference in a
+  register, the function is not variadic, the frame not realigned and there is no -g (which reads the parser's slots),
+  the prologue stores nothing and the body narrows each `xN`/`dN` straight into the value's place. Over the suite at
+  -O2, `mov x0, xN` (the old staging) 4,933 -> 379.
+- **No `sxtw` a reader does not need** (`ssaLow_`): a signed 32-bit result keeps the upper half its `w` operation left
+  where every reader reads only the word - word arithmetic, compares, stores of 4 bytes or fewer, narrowing conversions,
+  `ret`, `cbz`/`cbnz`, and block parameters whose own readers are such (to a fixed point over the edges). A call's
+  argument, a `switch`, a widening `sext` and an index stay canonical. `sxtw` 31,140 -> 23,926.
+- **Addressing modes** (`ssaFold_` 1): a gep whose every reader is a load or store of its block is no instruction:
+  `[xB, #k]` where the access scales `k`, `[xB, xI]`, and `[xB, xI, lsl #s]` where the index's `mul`/`shl` is by the
+  access's size and read nowhere else; base and index live to the access. 3,960 register-index and 13,245 (from 6,794)
+  immediate-offset accesses.
+- **`madd`** (`ssaFold_` 2) for a `mul` immediately before the add it alone feeds (252 in the suite). **Not `msub`**:
+  measured as a loss - `hash`'s remainder by a constant went 132 -> 136 ms with it (twice, 5 and 7 rounds) - and a first
+  form that fused across intervening instructions grew a range and cost `matmul`'s frame a slot.
+- **Bench** (`boxkit/m5i-bench.sh`: the kernels to arm64 `.s` at -O2 by the cl-built cxx3 of each step, linked and run on
+  the Mac through `mac-run.sh`, seven rounds interleaved, median ms; every checksum equal):
+
+  | kernel | m5-h | + parameters | + no `sxtw` | + addressing | + `madd` (this tree) | Apple clang -O2 |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | fib | 3 | 3 | 3 | 3 | 3 | 0 |
+  | sieve | 33 | 33 | 33 | 32 | 32 | 31 |
+  | matmul | 7 | 7 | 7 | 5 | 5 | 2 |
+  | isort | 18 | 18 | 18 | 18 | 18 | 6 |
+  | hash | 177 | 178 | 147 | 132 | 132 | 57 |
+  | virtual | 127 | 109 | 107 | 95 | 94 | 70 |
+  | total | 368 | 350 | 316 | 288 | **287** | 168 |
+
+  0.78 of m5-h's total and 1.7 times clang's (from 2.2); `hash` (a multiply-and-xor chain), `isort` (memory order) and
+  `virtual` (the call itself) are most of the distance left.
+- **Gate** (final tree, cl-built `cxx3-msvc.exe`, `boxkit/m5i-winprobe.sh`): -O0, -O2, -O2 -g: **0 broken, 0 refusals
+  wrong, 10869 of 10869 functions selected, 833 cases compiled**; the Mac at -j2 through `mac-run.sh`: **833 of 833 at
+  -O2** link, run and print their recorded output (-O0 is the base's bytes). cl /W4 /WX clean; exclusions 0 uncited,
+  0 stale; comment cap 0 over; `ide/generate.py --check` up to date; on Linux the memory gate passes;
+  `ast-residue --check` reports StmtPtr 635 -> 638, node-casts 164 -> 165, node-refs 409 -> 411, all under src/parser and
+  src/sema, which this lane did not touch: the base's against an unrecorded baseline, for the coordinator.
+- **Owed.** `identical.sh ARCHS=arm64-darwin` by name and the g++ build are the wave gate's; the Linux box had 2.4 GB
+  free (under par4's 3 GB) when the static gates ran - this lane's tree there is removed. Left: the parser's parameter
+  slots are still laid out (unused) under `ssaDirect_`; negative and unscaled offsets (`ldur`); `msub` re-measured
+  with a different schedule; -g's parameters from registers.
+
+### Wave 2 landed, 2026-11-14 (the coordinator)
+
+M5.4 (m5h: target 4 self-hosts through the selector, -O0 and -O2, 0=1=2 and 2=3 100/100), arm64 code quality (m5i:
+bench 368 -> 287 ms, clang 168), M6a (the C6000 selector, m6a2-m6d, -g by m6g), R1 rounds 4-6 (r1i, r1j, r1k), and
+c6n's tms6747 leg of R1's cases. **Gate**, final tree:
+- **Windows** (c1100a58; da250ac7 changed only tms6747 files): winpass -O2/-O0 820/0 gnu, 819/0 masm, 355 refused.
+- **Mac** (c1100a58): run.sh -O0/-O2 1207/0.
+- **Linux** (da250ac7, fresh tree): ssa.sh 1/2 882/0; make test green - run 1209/0, emit 3368/0, typed 852/0, c90 447/0,
+  every gate; identical.sh against main 108 differ = 12 cases (10 new, `static-reference-to-temporary` r1i's ABI name,
+  `lambda-static-local` r1j's External exit helper on Windows); arm64 -O0 12 (the new cases), -O2 804 (m5i), tms6747
+  728/720 (M6a).
+- **tms6747.sh SIM=0, three shards a level** (vm6747 cycles): selector -O0 393.2 M vs walker 447.7 M, -O2 192.2 M vs
+  195.9 M - M6a's cycle gate met; failures the walker's three noexcept cases, plus two new cases registered;
+  asm6x.sh 826 objects 0 failed at both levels.
+
+**Owed:** lldb on the Mac (Developer Mode, the user's); target 3's self-host re-measured at M5's close; the M6a
+sim6747 leg (SIM=1); emit.sh's golden on Linux.
+

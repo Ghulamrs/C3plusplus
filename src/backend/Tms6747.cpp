@@ -1538,6 +1538,8 @@ void Tms6747::visit(const Postfix &n) {
             if (step != 1) unsupported("a 64-bit step other than 1");
             if (n.increment()) out_ << "\tADD\tA4, 1, A4\n\tCMPEQ\t0, A4, A0\n\tADD\tA5, A0, A5\n";
             else               out_ << "\tCMPEQ\t0, A4, A0\n\tSUB\tA4, 1, A4\n\tSUB\tA5, A0, A5\n";
+        } else if (t->unqualified()->isBool()) {
+            out_ << "\tMVK\t1, A4\n";   // [expr.post.incr]/1: a bool's increment makes it true
         } else {
             if (step >= 0 && step <= 31)
                 out_ << (n.increment() ? "\tADD\tA4, " : "\tSUB\tA4, ") << step << ", A4\n";
@@ -2191,11 +2193,15 @@ void Tms6747::emitVariables(const Function &fn) {
 // something: as a lexical block when it has code of its own, else folded into this one
 void Tms6747::emitScope(const Function &fn, int scope) {
     for (int pass = 0; pass < 2; pass++)
-        for (const Local &l : fn.locals()) {
+        for (std::size_t n = 0; n < fn.locals().size(); n++) {
+            const Local &l = fn.locals()[n];
             if (l.scope != scope || l.isParam != (pass == 0) || l.name.empty() || l.type == nullptr) continue;
             std::string where;
             if (!l.staticName.empty()) where = "DW_OP_addr " + l.staticName;
-            else {
+            else if (n < ssaPlace_.size() && (ssaPlace_[n] >= 0 || !l.isParam || regOf_.count(l.offset))) {
+                if (ssaPlace_[n] < 0) continue;                 // selected: promoted, or a parameter in its home register
+                where = "DW_OP_breg15 " + std::to_string(-(saveBytes_ + ssaPlace_[n]));
+            } else {
                 int key = localBase_ + l.offset;
                 if (regOf_.count(key)) continue;
                 std::map<int, int>::const_iterator it = place_.find(key);
@@ -2327,7 +2333,10 @@ void Tms6747::emitFunction(const Function &fn) {
     paramInFrame_ = false;
     relayout_ = false;
     saveBytes_ = kSaveBytes;
-    if (optimize_ > 0) {
+    // Selected from SSA where the selector's subset holds the whole body (M6a); null: the walker's, the reason named.
+    ssaPlace_.clear();
+    const ir::Function *ssaFn = ssaChoose(fn);
+    if (optimize_ > 0 && ssaFn == nullptr) {
         planning_ = true;
         walkBody(fn);
         planHasCall_ = hasCall_;
@@ -2339,7 +2348,7 @@ void Tms6747::emitFunction(const Function &fn) {
         planFrame();
         saveBytes_ = align8(4 * (static_cast<int>(savedRegs().size()) - 1));   // A15 goes in the caller's word
     }
-    walkBody(fn);
+    if (ssaFn != nullptr) selectBody(fn, *ssaFn); else walkBody(fn);
     std::string body = out_.str();
     out_.str(std::string());
     if (sretSlot_ != 0) {
@@ -2369,7 +2378,7 @@ void Tms6747::emitFunction(const Function &fn) {
     }
 
     int frame = frame_;
-    const std::string early = earlyExit(fn);
+    const std::string early = ssaFn != nullptr ? std::string() : earlyExit(fn);
     std::ostringstream pro;
     pro.swap(out_);                                        // the prologue, scheduled with the body at -O1 and -O2
     markLine(fn.pos());                                     // -g: the function's own line, as cl6x's first .dwpsn names it
@@ -2454,5 +2463,7 @@ void Tms6747::run(const Program &program) {
         file_ += "\t.global\t__c6xabi_unwind_cpp_pr3\n\t.symdepend\t\"__c6xabi_unwind_cpp_pr3\", \".c6xabi.exidx:.text\"\n";
     if (needsPr2_) file_ += "\t.global\t__c6xabi_unwind_cpp_pr2\n";
     if (needsUnexpected_) file_ += "\t.global\t__cxa_call_unexpected\n";
+    if (ssa_ != nullptr && std::getenv("CXX1_SSA_WHY") != nullptr)
+        std::fprintf(stderr, "c6x-select: selected=%d of %d\n", ssaSelected_, ssaSelected_ + ssaWalked_);
     sink_ << tiExternals(tiSpelling(file_));
 }

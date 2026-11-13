@@ -324,6 +324,19 @@ It remove_if(It from, It to, Pred keep) {
     return out;
 }
 
+// **upper_bound - [upper.bound]** (M5.4, 2026-11-13): the first element greater than `value` in a
+// sorted range, by halving; random-access iterators, as everything here. A64Select's scan calls it.
+template <class It, class T>
+It upper_bound(It from, It to, const T &value) {
+    std::ptrdiff_t n = to - from;
+    while (n > 0) {
+        const std::ptrdiff_t half = n / 2;
+        if (value < from[half]) n = half;
+        else { from += half + 1; n -= half + 1; }
+    }
+    return from;
+}
+
 // reverse, max_element, min_element and remove are std's too: until 1.10 the namespace and the
 // include guard closed above reverse, so these were global and defined again at each #include.
 }  // namespace std

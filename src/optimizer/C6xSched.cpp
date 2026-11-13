@@ -2096,7 +2096,7 @@ std::vector<Pending> scheduleBlock(std::vector<Node> &nodes, std::ostringstream 
 // names - that no instruction names is no block boundary: the instructions
 // on either side are scheduled together and the label is kept in front.
 bool passThrough(const Line &l, const std::set<std::string> &named) {
-    static const char *const kinds[] = { ".begin", ".step", ".end", ".else", ".shortcut", ".wide", ".widend", ".noresult", ".case", ".default", ".inline" };
+    static const char *const kinds[] = { ".begin", ".step", ".end", ".else", ".shortcut", ".wide", ".widend", ".noresult", ".case", ".default", ".inline", ".ssain" };
     const std::string name = labelName(l);   // spelled with dots here; the TI spelling makes them $ later
     if (named.count(name)) return false;
     std::size_t d = name.find_last_not_of("0123456789");

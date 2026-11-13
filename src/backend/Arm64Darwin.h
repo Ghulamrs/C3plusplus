@@ -72,6 +72,14 @@ private:
     std::vector<long long> ssaImmK_;
     std::vector<std::string> ssaSaved_;
     std::vector<char> ssaFlags_;        // a compare whose only reader is its block's condbr: flags, no value
+    // -O1/-O2: `ssaFold_` 1 for a gep (or its scaled index) folded into each load and store it addresses, 2 for a
+    // multiply folded into the add it feeds; `ssaLow_` a 32-bit value whose upper half nothing reads; `ssaDirect_` the
+    // parameters taken from their incoming registers, not the parser's slots.
+    std::vector<char> ssaFold_, ssaLow_;
+    std::vector<const ir::Inst *> ssaDefs_;
+    bool ssaDirect_ = false;
+    void ssaFolds(const ir::Function &f, const std::vector<const ir::Inst *> &def, const std::vector<int> &home);
+    std::string ssaAddress(const ir::Function &f, ir::ValueId a, int n, int sz);
     std::uint32_t ssaNext_ = 0;         // the block written next, which a branch to it falls into
     void ssaJump(ir::BlockId b) { if (b.v != ssaNext_) out_ << "  b " << ssaBlockLabel(b) << "\n"; }
     const char *ssaCond_ = nullptr, *ssaNot_ = nullptr;

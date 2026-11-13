@@ -2410,6 +2410,9 @@ ExprPtr Parser::bindReference(const Type *ref, ExprPtr init, std::size_t pos,
     // function lvalue of the same type, and `&f` already is that address.
     if (referent->isFunction()) {
         const Type *fn = functionDesignated(*init);
+        // [expr.unary.op]/1: `*p` of a function pointer is the function lvalue, which the parser keeps as p.
+        if (fn == nullptr && it->isPointer() && it->pointee()->isFunction() && init->syntax().valid() &&
+            syntaxTree_.node(init->syntax()).kind == syntax::Kind::Unary && syntaxTree_.text(init->syntax()) == "*") fn = it->pointee();
         // [expr.cond]/4: `k ? g : h` of two functions of one type is that function lvalue, its value the address chosen.
         if (const Conditional *c = dynamic_cast<const Conditional *>(init.get()))
             if (const Type *a = functionDesignated(c->thenArm()))
@@ -3314,8 +3317,10 @@ ExprPtr Parser::noteKeywordForm(syntax::Kind kind, KeywordForm f) {
             keywordValues_[f.e->syntax().v] = std::make_pair(folded->value(), folded->type());
     if (kind == syntax::Kind::Cast) noteTemporarySlot(f.e.get());    // `static_cast<T>(v)` through T's converting constructor
     // A named cast to a scalar or a class is the conversion it names; one to a reference is a glvalue, left unrecorded.
-    if (kind == syntax::Kind::Cast && text.find('&') == std::string::npos && text.compare(0, 12, "dynamic_cast") != 0 &&
-        f.e->type() != nullptr && (f.e->type()->isVoid() || f.e->type()->isScalar() || f.e->type()->isStructOrUnion()))
+    // A member pointer's operand is often `&C::m`, so only a reference type-id, `&>`, leaves one unrecorded.
+    if (kind == syntax::Kind::Cast && text.compare(0, 12, "dynamic_cast") != 0 && f.e->type() != nullptr &&
+        (text.find('&') == std::string::npos || (f.e->type()->isMemberPointer() && text.find("&>") == std::string::npos)) &&
+        (f.e->type()->isVoid() || f.e->type()->isScalar() || f.e->type()->isMemberPointer() || f.e->type()->isStructOrUnion()))
         castTypes_[f.e->syntax().v] = f.e->type();
     // A static_cast, const_cast or reinterpret_cast to a reference names its operand, typed as the cast leaves it (M2.12o).
     if (kind == syntax::Kind::Cast && text.find("&>") != std::string::npos && f.e->type() != nullptr &&

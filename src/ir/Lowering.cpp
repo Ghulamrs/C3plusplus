@@ -4141,7 +4141,7 @@ void Lowering::stringArray(sema::TypedId lit, ValueId slot, const Type &t) {
 
 // A scalar's zero: a null pointer, 0.0, or 0 of the integer type.
 ValueId Lowering::zeroOf(TypeId type) {
-    if (T(type).isMemberPointer()) outside("a pointer to a data member value-initialised");
+    if (T(type).isMemberPointer()) return nullMemberPointer(type);
     if (T(type).isPointer() || T(type).isNullPtr()) return result(add(Op::Null, type, std::vector<ValueId>()));
     if (!T(type).isFloating()) return iconst(type, 0);
     const InstId z = add(Op::FConst, type, std::vector<ValueId>());
@@ -4506,10 +4506,10 @@ Lowering::Val Lowering::literal(sema::TypedId id) {
 // [expr.type.conv]/2: `T()` of a scalar is value-initialised - zero, a null pointer, `false`.
 Lowering::Val Lowering::valueInitialised(sema::TypedId id) {
     const TypeId id0 = TypeTable::id(tree_.node(id).type);
+    if (id0.valid() && T(id0).isMemberPointer()) return Val(nullMemberPointer(tid(*T(id0).unqualified())), tid(*T(id0).unqualified()));
     if (!tree_.node(id).folded.has) broken("a cast not recorded");
     if (!id0.valid() || !scalar(T(id0))) outside("a value-initialised cast to what is not a scalar");
     const TypeId ut = tid(*T(id0).unqualified());
-    if (T(ut).isMemberPointer()) outside("a pointer to a data member value-initialised");
     if (T(ut).isPointer()) return Val(result(add(Op::Null, ut, std::vector<ValueId>())), ut);
     if (!T(ut).isFloating()) return Val(iconst(ut, 0), ut);
     return Val(result(add(Op::FConst, ut, std::vector<ValueId>())), ut);
@@ -4606,8 +4606,9 @@ Lowering::Val Lowering::memberAddress(sema::TypedId id) {
     const sema::Resolution &sr = tree_.resolution(id);
     if (sr.what == sema::Resolution::StaticMember) {
         const syntax::Kind ok = syn(child(id, 0)).kind;
-        if (ok != syntax::Kind::Name && ok != syntax::Kind::This) outside("a static member reached through what is not a name");
+        if (ok != syntax::Kind::Name && ok != syntax::Kind::This && !arrow) outside("a static member reached through what is not a name");
         if (sr.serial == 1) outside("a folded static member, which has no storage");
+        if (arrow && ok != syntax::Kind::Name && ok != syntax::Kind::This) arrowPointer(id);     // the pointer is still evaluated
         return globalAddress(sr);
     }
     const bool wantBits = bitWanted_;
@@ -4979,6 +4980,7 @@ Lowering::Val Lowering::unary(sema::TypedId id) {
         at(c).cc = Cmp::Eq;
         return Val(result(c), b);
     }
+    if (op == "+" && t.isPointer()) return a;      // [expr.unary.op]/7: a pointer's value
     if (!scalarArithmetic(t)) outside("a unary '" + op + "' of what is not a number");
     if (op == "+") return promote(a);
     if (op == "-") {
@@ -5010,6 +5012,11 @@ Lowering::Val Lowering::step(sema::TypedId target, bool increment, bool prefix, 
         return prefix ? now : was;
     }
     const Type &t = T(a.type);
+    if (t.isBool() && increment && !t.isConst()) {      // [expr.post.incr]/1 (deprecated): a bool's increment makes it true
+        const ValueId old = load(a.v, a.type), made = iconst(a.type, 1);
+        store(a.v, made);
+        return Val(prefix ? made : old, a.type);
+    }
     if (!scalar(t) || t.isBool() || t.isEnumeration() || t.isConst()) outside("a step of what is not a scalar object");
     if (t.isPointer() && (t.pointee()->isFunction() || !t.pointee()->isComplete())) outside("a step of a pointer to an incomplete type");
     const ValueId old = load(a.v, a.type);
@@ -5041,7 +5048,7 @@ Lowering::Val Lowering::truth(Val v) {
     const TypeId b = tid(*types_.get(Kind::Bool));
     const Type &t = T(v.type);
     if (t.isBool()) return v;
-    if (t.isMemberPointer()) outside("a pointer to a data member as a truth value");
+    if (t.isMemberPointer()) return memberPointerCompare("!=", v, Val(nullMemberPointer(v.type), v.type));     // [conv.bool]
     if (!scalar(t) && !t.isNullPtr()) outside("a condition that is not a scalar");
     std::vector<ValueId> ops;
     ops.push_back(v.v);
@@ -6005,6 +6012,10 @@ Lowering::Val Lowering::memberPointerConversion(Val v, TypeId to) {
     if (&fc == &tc) return Val(result(add(Op::Bitcast, ut, std::vector<ValueId>(1, v.v))), ut);
     int found = 0, offset = 0;
     basePaths(tc, fc, 0, found, offset);
+    if (found == 0) {           // [expr.static.cast]/12: back to a base's, the offset shrunk by the base's
+        basePaths(fc, tc, 0, found, offset);
+        offset = -offset;
+    }
     if (found != 1) outside("a conversion of a pointer to a data member to one of a class not derived from its own");
     if (offset == 0) return Val(result(add(Op::Bitcast, ut, std::vector<ValueId>(1, v.v))), ut);
     std::vector<ValueId> test(1, v.v);

@@ -1,0 +1,1 @@
+tms6747  the walker destroys an inner block's object and not the handler's own when an exception leaves the block; the selector leaves the function to it (M6) - tests/open/walker-handler-guards-nested.cpp.

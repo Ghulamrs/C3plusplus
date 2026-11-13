@@ -1594,7 +1594,7 @@ bool Driver::compile(const Job &job) {
     // no mark, so there a file that writes `volatile` is compiled without -O, said as a warning at the first `volatile`.
     const bool marks = std::strncmp(backend_->name(), "x86_64", 6) == 0;
     const bool downgrade = program.usesVolatile && !marks;
-    // The generator selects from the SSA IR: x86 (M3b.7) and arm64-darwin (M5.3); the C6000 walks `Ast.h`.
+    // The generator selects from the SSA IR: x86 (M3b.7) and arm64-darwin (M5.3); the C6000 in part (M6a).
     const bool selects = marks || std::strcmp(backend_->name(), "arm64-darwin") == 0;
     const int level = downgrade ? 0 : optimize_;
     if (optimize_ > 0 && downgrade) {
@@ -1604,8 +1604,10 @@ bool Driver::compile(const Job &job) {
                      program.volatileAt.empty() ? job.input.c_str() : program.volatileAt.c_str(),
                      job.input.c_str(), optimize_);
     }
-    // **The SSA IR** (M3b.1): every body lowered; dumped, verified, and where a generator selects, the only thing selected.
-    if (selects || dumpSsa_ || checkSsa_) {
+    // **The SSA IR** (M3b.1): every body lowered; dumped, verified, and on x86 and arm64 the only thing selected.
+    // tms6747 selects a function its selector's subset holds, the walker the rest (M6a); CXX1_C6X_WALKER: the walker all.
+    const bool c6x = targetIsTi() && std::getenv("CXX1_C6X_WALKER") == nullptr;
+    if (selects || c6x || dumpSsa_ || checkSsa_) {
         std::string dumped;
         std::vector<std::string> outside;
         int failures = 0;
@@ -1629,7 +1631,7 @@ bool Driver::compile(const Job &job) {
         if (!job.object.empty() && !coffText_) gen->setStructured(&structured);
         if (debug_) gen->setLineSource(&src, workingDirectory());
         if (dumpMir_) gen->setMirDump(&mir, dumpMirAfter_);
-        if (selects) gen->setSsa(&program.module, &types);
+        if (selects || c6x) gen->setSsa(&program.module, &types);
         gen->setOptimize(level);
         gen->setOptimizeForSize(forSize_ && level > 0);
         gen->run(program);

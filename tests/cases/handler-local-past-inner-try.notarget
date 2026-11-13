@@ -1,0 +1,1 @@
+tms6747  an exception leaving a handler's inner block destroys too few objects on the C6000, the walker's (tests/open/walker-handler-guards-nested, c6n); the selector takes it in M6

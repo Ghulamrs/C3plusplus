@@ -1468,8 +1468,9 @@ void Parser::registerDestruction(const Declared &d, const std::string &symbol,
         return;
     }
 
-    // The helper: no parameters, one destructor call, file-local. Built in a
-    // frame of its own, as the implicit special members are.
+    // The helper: no parameters, one destructor call, file-local - but an inline function's, External in a COMDAT as
+    // cl makes it (its object is one for the program). Built in a frame of its own, as the implicit special members are.
+    const bool shared = sharedStaticLocal(symbol);
     const FrameSave savedFrame = openFrame();
     std::vector<StmtPtr> body;
     ExprPtr addr(new Unary('&', objectAt(d, symbol, 0)));
@@ -1485,9 +1486,10 @@ void Parser::registerDestruction(const Declared &d, const std::string &symbol,
     current_->functions.push_back(Function(helper, types_.get(Kind::Void),
                                            std::vector<Param>(),
                                            StmtPtr(new Block(std::move(body))),
-                                           alignTo(frameSize_, 16), true, 0,
+                                           alignTo(frameSize_, 16), !shared, 0,
                                            false, 0, d.pos,
                                            std::vector<::Local>()));
+    current_->functions.back().setInline(shared);
     current_->functions.back().setSynthesised("atexit helper");
     current_->functions.back().setSymbol(helper);
     closeFrame(savedFrame);

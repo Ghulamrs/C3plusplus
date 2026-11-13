@@ -690,8 +690,12 @@ void Arm64Darwin::emitFunction(const Function &fn) {
     ptypes.reserve(ps.size());
     for (std::size_t i = 0; i < ps.size(); i++) ptypes.push_back(ps[i].type);
     const Placement plan = placeArguments(ptypes);
+    // Optimized, scalars all in registers and no -g reading the slots: the body takes each from its register.
+    ssaDirect_ = optimize_ > 0 && realign_ == 0 && lineSource() == nullptr && !fn.isVariadic();
+    for (std::size_t i = 0; i < ps.size(); i++)
+        if (ps[i].type->isStructOrUnion() || !plan.args[i].inRegister) ssaDirect_ = false;
 
-    for (std::size_t i = 0; i < ps.size(); i++) {
+    for (std::size_t i = 0; i < ps.size() && !ssaDirect_; i++) {
         const ArgPlace &pl = plan.args[i];
         if (ps[i].type->isStructOrUnion()) {
             const AggPlan &p = pl.plan;

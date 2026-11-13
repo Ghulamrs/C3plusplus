@@ -1,0 +1,1 @@
+tms6747  hangs on vm6747: `c = 0;` on a data member pointer stores 0, not the null -1, so `while (c)` never ends (walker and selector alike, wave 2 gate 2026-11-14); owed to M6

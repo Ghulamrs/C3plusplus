@@ -5,10 +5,8 @@
 #include "Arm64Darwin.h"
 
 #include <algorithm>
-#include <cctype>
 #include <cstdio>
 #include <cstdlib>
-#include <map>
 
 namespace {
 
@@ -36,17 +34,6 @@ bool a64Keeps(ir::Op op) {
 // A bitcast between a class or an array and an address - an array's decay - moves the address it is.
 bool a64Moves(const Type *to, const Type *from) {
     return (a64Whole(to) || a64Whole(from)) && (a64Whole(to) || to->isPointer()) && (a64Whole(from) || from->isPointer());
-}
-
-// Whether an alloca's text (the lowering names it by its declaration, `const char * label`) declares `name`: a whole word of it.
-bool a64Declares(const std::string &text, const std::string &name) {
-    for (std::size_t at = text.find(name); !name.empty() && at != std::string::npos; at = text.find(name, at + 1)) {
-        const std::size_t end = at + name.size();
-        const bool before = at > 0 && (std::isalnum(static_cast<unsigned char>(text[at - 1])) || text[at - 1] == '_');
-        const bool after = end < text.size() && (std::isalnum(static_cast<unsigned char>(text[end])) || text[end] == '_');
-        if (!before && !after) return true;
-    }
-    return false;
 }
 
 // A constant as its slot holds it: the type's bits, extended as the type says.
@@ -177,7 +164,7 @@ int Arm64Darwin::layoutSsa(const Function &fn, const ir::Function &f) {
         cur = base;
         ssaValueSlot_.assign(f.values.size(), 0);
         for (std::size_t i = 1; i < f.values.size(); i++) {
-            if (!f.values[i].type.valid() || ssaTypes_->type(f.values[i].type)->isVoid() || ssaReg_[i] != 0 || (ssaImm_[i] & 2)) continue;
+            if (!f.values[i].type.valid() || ssaTypes_->type(f.values[i].type)->isVoid() || ssaReg_[i] != 0 || (ssaImm_[i] & 2) || ssaFold_[i]) continue;
             cur += 8;
             ssaValueSlot_[i] = cur;
         }
@@ -196,6 +183,8 @@ void Arm64Darwin::ssaAssign(const ir::Function &f) {
     ssaImm_.assign(nv, 0);
     ssaImmK_.assign(nv, 0);
     ssaFlags_.assign(nv, 0);
+    ssaFold_.assign(nv, 0);
+    ssaLow_.assign(nv, 0);
     ssaSaved_.clear();
     if (optimize_ <= 0 || realign_ > 0) return;
     std::vector<int> first(nb, 0), last(nb, 0), start(nv, -1), end(nv, -1), uses(nv, 0), folds(nv, 0), home(nv, -1), calls;
@@ -239,6 +228,8 @@ void Arm64Darwin::ssaAssign(const ir::Function &f) {
         last[id] = at;
         at += 2;
     }
+    ssaDefs_ = def;
+    ssaFolds(f, def, home);
     for (std::size_t b = 0; b < f.blocks.size(); b++) {
         const std::uint32_t id = f.blocks[b].v;
         const ir::Block &blk = f.block(f.blocks[b]);
@@ -257,6 +248,16 @@ void Arm64Darwin::ssaAssign(const ir::Function &f) {
             const ir::Inst &i = f.inst(iid);
             pos += 2;
             for (std::uint32_t n = 0; n < i.count; n++) use(f.operand(i, n), 0);
+            // A folded address's base and index, and a folded multiply's operands, are read here.
+            const bool access = (i.op == ir::Op::Load || i.op == ir::Op::Store) && i.count >= 1;
+            if (access && ssaFold_[f.operand(i, 0).v] == 1) {
+                const ir::Inst &g = *def[f.operand(i, 0).v];
+                use(f.operand(g, 0), 0);
+                if (g.count == 2 && ssaFold_[f.operand(g, 1).v] == 1) use(f.operand(*def[f.operand(g, 1).v], 0), 0);
+                else if (g.count == 2) use(f.operand(g, 1), 0);
+            }
+            for (std::uint32_t n = 0; i.op == ir::Op::Add && n < i.count; n++)
+                if (ssaFold_[f.operand(i, n).v] == 2) { use(f.operand(*def[f.operand(i, n).v], 0), 0); use(f.operand(*def[f.operand(i, n).v], 1), 0); }
             // A branch's argument is read after an invoke's result is written.
             for (std::size_t s = 0; s < i.succ.size(); s++)
                 for (std::uint32_t n = 0; n < i.succ[s].count; n++) use(f.arg(i.succ[s], n), 1);
@@ -303,7 +304,7 @@ void Arm64Darwin::ssaAssign(const ir::Function &f) {
     }
     std::vector<std::size_t> order;
     for (std::size_t v = 1; v < nv; v++) {
-        if (!f.values[v].type.valid() || ssaTypes_->type(f.values[v].type)->isVoid() || start[v] < 0 || (ssaImm_[v] & 2) || ssaFlags_[v]) continue;
+        if (!f.values[v].type.valid() || ssaTypes_->type(f.values[v].type)->isVoid() || start[v] < 0 || (ssaImm_[v] & 2) || ssaFlags_[v] || ssaFold_[v]) continue;
         end[v] = std::max(end[v], start[v] + 1);
         order.push_back(v);
     }
@@ -349,6 +350,113 @@ void Arm64Darwin::ssaAssign(const ir::Function &f) {
         if (def[v] != nullptr && (def[v]->op == ir::Op::IConst || def[v]->op == ir::Op::Null) && ssaReg_[v] == 0) ssaImm_[v] |= 2;
     for (int r = 19; r <= 28; r++) if (taken[0] & (1u << r)) ssaSaved_.push_back("x" + std::to_string(r));
     for (int r = 8; r <= 15; r++) if (taken[1] & (1u << r)) ssaSaved_.push_back("d" + std::to_string(r));
+}
+
+namespace {
+
+// The scale an index multiplied (or shifted) by `k` gives an access of `sz` bytes, 0 where it is none.
+bool a64Scaled(const ir::Function &f, const ir::Inst *m, const std::vector<const ir::Inst *> &def, int sz) {
+    if (m == nullptr || m->count != 2 || (m->op != ir::Op::Mul && m->op != ir::Op::Shl) || sz < 2) return false;
+    const ir::Inst *k = def[f.operand(*m, 1).v];
+    if (k == nullptr || k->op != ir::Op::IConst) return false;
+    return m->op == ir::Op::Mul ? k->k == sz : k->k >= 1 && k->k <= 3 && (1 << k->k) == sz;
+}
+
+}   // namespace
+
+// **What folds into its reader** (M5.3): a gep whose every reader is a load or store of its block at an offset the access
+// scales, with its index's multiply where that is the access's size; a multiply whose one reader is the add after it.
+// `ssaLow_`: a signed 32-bit result read only as 32 bits (word operations, compares, stores, returns, the edges into such).
+void Arm64Darwin::ssaFolds(const ir::Function &f, const std::vector<const ir::Inst *> &def, const std::vector<int> &home) {
+    const std::size_t nv = f.values.size();
+    std::vector<int> count(nv, 0), size(nv, 0);
+    std::vector<char> need(nv, 0), wrong(nv, 0);
+    std::vector<std::pair<std::uint32_t, std::uint32_t> > edges;
+    for (std::size_t b = 0; b < f.blocks.size(); b++) {
+        const ir::Block &blk = f.block(f.blocks[b]);
+        for (std::size_t k = 0; k <= blk.insts.size(); k++) {
+            const ir::InstId iid = k < blk.insts.size() ? blk.insts[k] : blk.term;
+            if (!iid.valid()) continue;
+            const ir::Inst &i = f.inst(iid);
+            const Type *rt = i.type.valid() ? ssaTypes_->type(i.type) : nullptr;
+            const bool word = rt != nullptr && rt->isInteger() && rt->size(target_) == 4;
+            for (std::uint32_t n = 0; n < i.count; n++) {
+                const ir::ValueId v = f.operand(i, n);
+                count[v.v]++;
+                const Type *ot = typeOf(f, v);
+                // The address of a load or store, one of its block, at an offset it scales.
+                const bool access = (i.op == ir::Op::Load || i.op == ir::Op::Store) && n == 0 && !a64Whole(i.op == ir::Op::Load ? rt : typeOf(f, f.operand(i, 1)));
+                const int sz = access ? (i.op == ir::Op::Load ? rt : typeOf(f, f.operand(i, 1)))->size(target_) : 0;
+                const ir::Inst *g = def[v.v];
+                const bool fits = access && g != nullptr && g->op == ir::Op::Gep && home[v.v] == static_cast<int>(f.blocks[b].v) &&
+                                  (g->count == 2 || (g->k >= 0 && g->k % sz == 0 && g->k / sz < 4096));
+                if (!fits) wrong[v.v] = 1;
+                else if (size[v.v] == 0 || size[v.v] == sz) size[v.v] = sz;
+                else size[v.v] = -1;
+                // Whether the upper half of a signed word is read here.
+                if (!ot->isInteger() || ot->size(target_) != 4) continue;
+                const bool arith = word && (i.op == ir::Op::Add || i.op == ir::Op::Sub || i.op == ir::Op::Mul || i.op == ir::Op::And ||
+                                            i.op == ir::Op::Or || i.op == ir::Op::Xor || i.op == ir::Op::SDiv || i.op == ir::Op::UDiv ||
+                                            i.op == ir::Op::SRem || i.op == ir::Op::URem || i.op == ir::Op::Shl || i.op == ir::Op::LShr ||
+                                            i.op == ir::Op::AShr || i.op == ir::Op::Neg || i.op == ir::Op::Not);
+                const bool narrow = (i.op == ir::Op::Trunc || i.op == ir::Op::SExt || i.op == ir::Op::ZExt || i.op == ir::Op::Bitcast) &&
+                                    rt != nullptr && rt->isInteger() && rt->size(target_) <= 4;
+                const bool safe = arith || narrow || i.op == ir::Op::ICmp || i.op == ir::Op::Ret || i.op == ir::Op::CondBr ||
+                                  (i.op == ir::Op::Store && n == 1);
+                if (!safe) need[v.v] = 1;
+            }
+            for (std::size_t s = 0; s < i.succ.size(); s++)
+                for (std::uint32_t n = 0; n < i.succ[s].count; n++) {
+                    count[f.arg(i.succ[s], n).v]++;
+                    wrong[f.arg(i.succ[s], n).v] = 1;
+                    edges.push_back(std::make_pair(f.arg(i.succ[s], n).v, f.block(i.succ[s].block).params[n].v));
+                }
+        }
+    }
+    for (std::size_t v = 1; v < nv; v++) if (f.values[v].type.valid() && wrong[v] == 0 && count[v] > 0 && def[v] != nullptr && def[v]->op == ir::Op::Gep) {
+        ssaFold_[v] = 1;
+        const ir::Inst &g = *def[v];
+        if (g.count != 2) continue;
+        const ir::ValueId x = f.operand(g, 1);
+        if (count[x.v] == 1 && home[x.v] == home[v] && size[v] > 0 && a64Scaled(f, def[x.v], def, size[v])) ssaFold_[x.v] = 1;
+    }
+    // A multiply just before the add it alone feeds, at the add's width: no range grows past a value written between
+    // them. Not `msub`: the bench's hash ran 132 -> 136 ms with it (a remainder by a constant), so a sub keeps its mul.
+    for (std::size_t b = 0; b < f.blocks.size(); b++) {
+        const ir::Block &blk = f.block(f.blocks[b]);
+        for (std::size_t k = 0; k < blk.insts.size(); k++) {
+            const ir::Inst &i = f.inst(blk.insts[k]);
+            if (i.op != ir::Op::Add || i.count != 2 || (ssaImm_[f.operand(i, 1).v] & 1)) continue;
+            const int width = ssaTypes_->type(i.type)->size(target_);
+            if (width != 4 && width != 8) continue;
+            for (std::uint32_t n = 0; n < 2; n++) {
+                const ir::ValueId m = f.operand(i, n);
+                if (def[m.v] == nullptr || def[m.v]->op != ir::Op::Mul || count[m.v] != 1 || k == 0 || f.inst(blk.insts[k - 1]).result.v != m.v ||
+                    ssaFold_[m.v] != 0 || ssaTypes_->type(def[m.v]->type)->size(target_) != width || f.operand(i, 0).v == f.operand(i, 1).v) continue;
+                ssaFold_[m.v] = 2;
+                break;
+            }
+        }
+    }
+    for (bool changed = true; changed; ) {
+        changed = false;
+        for (std::size_t e = 0; e < edges.size(); e++)
+            if (need[edges[e].second] && !need[edges[e].first]) { need[edges[e].first] = 1; changed = true; }
+    }
+    for (std::size_t v = 1; v < nv; v++) ssaLow_[v] = need[v] ? 0 : 1;
+}
+
+// A load's or a store's address: the folded gep's base, offset or index (scaled), else `[xN]` of its own register.
+std::string Arm64Darwin::ssaAddress(const ir::Function &f, ir::ValueId a, int n, int sz) {
+    if (ssaFold_[a.v] != 1) return "[x" + std::to_string(ssaUse(f, a, n)) + "]";
+    const ir::Inst *g = ssaDefs_[a.v];
+    const std::string base = "[x" + std::to_string(ssaUse(f, f.operand(*g, 0), n));
+    if (g->count == 1) return g->k == 0 ? base + "]" : base + ", #" + std::to_string(g->k) + "]";
+    const ir::ValueId x = f.operand(*g, 1);
+    if (ssaFold_[x.v] != 1) return base + ", x" + std::to_string(ssaUse(f, x, 2)) + "]";
+    const ir::Inst *m = ssaDefs_[x.v];
+    const int shift = sz == 8 ? 3 : sz == 4 ? 2 : 1;
+    return base + ", x" + std::to_string(ssaUse(f, f.operand(*m, 0), 2)) + ", lsl #" + std::to_string(shift) + "]";
 }
 
 // A value as its 8 bytes, to x0 or from it: the parallel move's staging.
@@ -577,22 +685,23 @@ void Arm64Darwin::selectInst(const ir::Function &f, const ir::Inst &i) {
     case ir::Op::Load: {
         // The walker's load, from the address's own register into the result's.
         if (a64Whole(rt)) { ssaLoad(f, f.operand(i, 0), 0); ssaStore(f, i.result); return; }
-        const int a = ssaUse(f, f.operand(i, 0), 0), sz = rt->size(target_);
+        const int sz = rt->size(target_);
+        const std::string at = ssaAddress(f, f.operand(i, 0), 0, sz);
         const bool sign = rt->isSigned(target_);
         if (rt->isFloating()) out_ << "  ldr " << a64Fp(rt, d);
         else out_ << (sz == 1 ? (sign ? "  ldrsb x" : "  ldrb w") : sz == 2 ? (sign ? "  ldrsh x" : "  ldrh w") : sz == 4 ? (sign ? "  ldrsw x" : "  ldr w") : "  ldr x") << d;
-        out_ << ", [x" << a << "]\n";
+        out_ << ", " << at << "\n";
         ssaKeep(f, i.result);
         return;
     }
     case ir::Op::Store: {
         const Type *t = typeOf(f, f.operand(i, 1));
-        const int v = ssaUse(f, f.operand(i, 1), 0), a = ssaUse(f, f.operand(i, 0), 1), sz = t->size(target_);
-        const std::string to = "x" + std::to_string(a);
-        if (a64Whole(t)) { copyBlock(sz, ("x" + std::to_string(v)).c_str(), to.c_str()); return; }
+        const int v = ssaUse(f, f.operand(i, 1), 0), sz = t->size(target_);
+        if (a64Whole(t)) { copyBlock(sz, ("x" + std::to_string(v)).c_str(), ("x" + std::to_string(ssaUse(f, f.operand(i, 0), 1))).c_str()); return; }
+        const std::string to = ssaAddress(f, f.operand(i, 0), 1, sz);
         if (t->isFloating()) out_ << "  str " << a64Fp(t, v);
         else out_ << (sz == 1 ? "  strb w" : sz == 2 ? "  strh w" : sz == 4 ? "  str w" : "  str x") << v;
-        out_ << ", [" << to << "]\n";
+        out_ << ", " << to << "\n";
         return;
     }
     case ir::Op::Memcpy:
@@ -609,6 +718,7 @@ void Arm64Darwin::selectInst(const ir::Function &f, const ir::Inst &i) {
         return;
     }
     case ir::Op::Gep: {
+        if (ssaFold_[i.result.v]) return;
         const int a = ssaUse(f, f.operand(i, 0), 0);
         const int b = i.count == 2 ? ssaUse(f, f.operand(i, 1), 1) : 0;
         if (i.count == 2) out_ << "  add " << xd << ", x" << a << ", x" << b << "\n";
@@ -622,6 +732,18 @@ void Arm64Darwin::selectInst(const ir::Function &f, const ir::Inst &i) {
     case ir::Op::SDiv: case ir::Op::UDiv: case ir::Op::SRem: case ir::Op::URem: case ir::Op::Shl: case ir::Op::LShr: case ir::Op::AShr: {
         // At the type's width - 32 bits for anything narrower, whose operands are canonical - then extended again.
         const char *r = rt->size(target_) == 8 ? "x" : "w";
+        if (ssaFold_[i.result.v]) return;
+        // A multiply folded into this add: `madd` with the other side as the addend.
+        const int fused = ssaFold_[f.operand(i, 0).v] == 2 ? 0 : ssaFold_[f.operand(i, 1).v] == 2 ? 1 : -1;
+        if (fused >= 0 && i.op == ir::Op::Add) {
+            const ir::Inst &m = *ssaDefs_[f.operand(i, static_cast<std::uint32_t>(fused)).v];
+            const int x = ssaUse(f, f.operand(m, 0), 0), y = ssaUse(f, f.operand(m, 1), 1);
+            const int c = ssaUse(f, f.operand(i, static_cast<std::uint32_t>(1 - fused)), 2);
+            out_ << "  madd " << r << d << ", " << r << x << ", " << r << y << ", " << r << c << "\n";
+            if (rt->size(target_) != 4 || (rt->isSigned(target_) && !ssaLow_[i.result.v])) narrowInt(rt, d, d);
+            ssaKeep(f, i.result);
+            return;
+        }
         const int a = ssaUse(f, f.operand(i, 0), 0);
         if ((ssaImm_[f.operand(i, 1).v] & 1) && (i.op == ir::Op::Add || i.op == ir::Op::Sub)) {
             out_ << (i.op == ir::Op::Add ? "  add " : "  sub ") << r << d << ", " << r << a << ", #" << ssaImmK_[f.operand(i, 1).v] << "\n";
@@ -638,7 +760,7 @@ void Arm64Darwin::selectInst(const ir::Function &f, const ir::Inst &i) {
             out_ << "  " << name << " " << r << d << ", " << r << a << ", " << r << b << "\n";
         }
         // A 32-bit operation left the upper half zero already.
-        if (optimize_ <= 0 || rt->size(target_) != 4 || rt->isSigned(target_)) narrowInt(rt, d, d);
+        if (optimize_ <= 0 || rt->size(target_) != 4 || (rt->isSigned(target_) && !ssaLow_[i.result.v])) narrowInt(rt, d, d);
         ssaKeep(f, i.result);
         return;
     }
@@ -655,7 +777,7 @@ void Arm64Darwin::selectInst(const ir::Function &f, const ir::Inst &i) {
         const char *r = rt->size(target_) == 8 ? "x" : "w";
         const int a = ssaUse(f, f.operand(i, 0), 0);
         out_ << (i.op == ir::Op::Neg ? "  neg " : "  mvn ") << r << d << ", " << r << a << "\n";
-        narrowInt(rt, d, d);
+        if (optimize_ <= 0 || rt->size(target_) != 4 || (rt->isSigned(target_) && !ssaLow_[i.result.v])) narrowInt(rt, d, d);
         ssaKeep(f, i.result);
         return;
     }
@@ -810,7 +932,23 @@ void Arm64Darwin::selectInst(const ir::Function &f, const ir::Inst &i) {
 // The body: the parameters from the slots the walker's prologue filled into their values, then the blocks in order.
 void Arm64Darwin::selectBody(const Function &fn, const ir::Function &f) {
     const std::vector<Param> &ps = fn.params();
+    std::vector<const Type *> ptypes;
+    for (std::size_t i = 0; i < ps.size(); i++) ptypes.push_back(ps[i].type);
+    const Placement plan = placeArguments(ptypes);
     for (std::size_t i = 0; i < ps.size() && i < f.params.size(); i++) {
+        // Taken from the incoming register (ssaDirect_), x0 and d0 staging a slot's only after their own parameter is read.
+        const Type *pt = ps[i].type->isReference() ? typeOf(f, f.params[i]) : ps[i].type;
+        const int r = ssaReg_[f.params[i].v], from = plan.args[i].firstReg;
+        if (ssaDirect_ && pt->isFloating()) {
+            if (r != 0 || from != 0) out_ << "  fmov " << a64Fp(pt, r) << ", " << a64Fp(pt, from) << "\n";
+            if (r == 0) ssaStore(f, f.params[i]);
+            continue;
+        }
+        if (ssaDirect_) {
+            narrowInt(pt, r, from);
+            if (r == 0) ssaStore(f, f.params[i]);
+            continue;
+        }
         localIn("x0", ps[i].offset);
         load(ps[i].type->isReference() ? typeOf(f, f.params[i]) : ps[i].type);
         ssaStore(f, f.params[i]);
@@ -857,22 +995,13 @@ void Arm64Darwin::selectBody(const Function &fn, const ir::Function &f) {
 // made for it - matched by name in declaration order, both lists being in it. A parameter without a live alloca keeps
 // the slot the walker's prologue filled; a local without one (promoted at -O1 and -O2) has no record.
 const std::vector<Local> *Arm64Darwin::ssaLocals(const Function &fn, const ir::Function &f) {
-    std::vector<char> live(f.frame.size(), 0);
-    for (std::size_t b = 0; b < f.blocks.size(); b++)
-        for (std::size_t k = 0; k < f.block(f.blocks[b]).insts.size(); k++) {
-            const ir::Inst &i = f.inst(f.block(f.blocks[b]).insts[k]);
-            if (i.op == ir::Op::Alloca && i.k >= 0 && static_cast<std::size_t>(i.k) < live.size()) live[i.k] = 1;
-        }
-    std::map<std::string, std::size_t> next;
+    const std::vector<int> at = ssaLocalAllocas(fn, f);
     ssaLocals_.push_back(std::vector<Local>());
-    for (const Local &l : fn.locals()) {
-        std::size_t &j = next[l.name];
-        while (l.staticName.empty() && j < f.frame.size() && !a64Declares(f.frame[j].name, l.name)) j++;
+    for (std::size_t n = 0; n < fn.locals().size(); n++) {
+        const Local &l = fn.locals()[n];
         Local d = l;
-        const bool slot = l.staticName.empty() && j < f.frame.size() && live[j];
-        if (slot) d.offset = static_cast<int>(ssaAllocaSlot_[j]);
-        if (l.staticName.empty() && j < f.frame.size()) j++;
-        if (!slot && l.staticName.empty() && !l.isParam) {
+        if (at[n] >= 0) d.offset = static_cast<int>(ssaAllocaSlot_[static_cast<std::size_t>(at[n])]);
+        if (at[n] < 0 && l.staticName.empty() && !l.isParam) {
             if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "a64 -g %s: '%s' has no slot\n", fn.symbol().c_str(), l.name.c_str());
             continue;
         }
