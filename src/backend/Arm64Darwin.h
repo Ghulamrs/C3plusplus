@@ -2,7 +2,7 @@
 
 #include "Backend.h"
 #include "Dwarf.h"
-#include "Walker.h"
+#include "Regions.h"
 #include "../ir/Ir.h"
 
 #include <deque>
@@ -38,33 +38,18 @@ private:
     DarwinArm64Target target_;
 };
 
-class Arm64Darwin final : public Walker {
+// **arm64-darwin's generator writes every function from the SSA IR** (A64Select.cpp; the walker's `Ast.h` visits went at M5.3).
+class Arm64Darwin final : public Regions {
 public:
     Arm64Darwin(std::ostream &sink, const Target &target, const Abi &abi)
         : sink_(sink), target_(target), abi_(abi) {}
 
-    using Walker::visit;
     void run(const Program &program) override;
-
-    void visit(const Num &) override;
-    void visit(const Var &) override;
-    void visit(const Assign &) override;
-    void visit(const Unary &) override;
-    void visit(const Binary &) override;
-    void visit(const Postfix &) override;
-    void visit(const Call &) override;
-    void visit(const Cast &) override;
-    void visit(const StrLit &) override;
-    void visit(const VaStart &) override;
-    void visit(const VaArg &) override;
-    void visit(const MemberAccess &) override;
-    void visit(const Return &) override;
+    void setLineSource(const Source *s, const std::string &dir) override { holdLineSource(s, dir); }
 
     void landingPad(int pointerSlot, int selectorSlot) override;
     void setOptimize(int level) override { optimize_ = level; }
     void setSsa(const ir::Module *module, const TypeTable *types) override { ssa_ = module; ssaTypes_ = types; }
-    bool terminateScopes() const override { return true; }
-    std::string terminatePad(int id) override;
 
 private:
     // The `.gcc_except_table` for the function just emitted: the call-site
@@ -72,8 +57,8 @@ private:
     void emitLsda(const std::string &symbol);
     std::vector<std::string> lsdaTypes_;
 
-    // **The SSA selector** (M5.1, A64Select.cpp): a function inside its subset is written from the module, the rest by the
-    // walker - ssaChoose names why. Every value has an 8-byte slot above the parser's parameters; x0/x1 and d0/d1 carry operands.
+    // **The SSA selector** (M5.1, A64Select.cpp): every function is written from the module; one outside the subset is
+    // refused by ssaChoose, naming why. A value has a register or an 8-byte slot above the parser's parameters.
     const ir::Module *ssa_ = nullptr;
     const TypeTable *ssaTypes_ = nullptr;
     std::vector<long long> ssaAllocaSlot_, ssaValueSlot_;
@@ -98,8 +83,8 @@ private:
     void ssaRaw(const ir::Function &f, ir::ValueId v, bool write);
     const Type *ssaArgType(const ir::Function &f, const ir::Inst &i, std::size_t n) const;
     std::string ssaLandLabel(ir::BlockId b) const { return label("ssaland", static_cast<int>(b.v)); }
-    int ssaSelected_ = 0, ssaWalked_ = 0;
-    const ir::Function *ssaChoose(const Function &fn);
+    int ssaSelected_ = 0;
+    const ir::Function &ssaChoose(const Function &fn);
     std::string ssaOutside(const Function &fn, const ir::Function &f) const;
     const Type *typeOf(const ir::Function &f, ir::ValueId v) const { return ssaTypes_->type(f.value(v).type); }
     int layoutSsa(const Function &fn, const ir::Function &f);
@@ -116,8 +101,8 @@ private:
     std::string ssaBlockLabel(ir::BlockId b) const { return label("ssa", static_cast<int>(b.v)); }
 
     std::ostringstream out_;
-    int optimize_ = 0;          // -O1 and -O2 run each body through a64Peephole
-    static constexpr int kCalleeArea = 144;   // x19-x28 and d8-d15, 8 bytes each, when a local is promoted
+    int optimize_ = 0;          // -O1 and -O2 give the selector's values registers (ssaAssign)
+    static constexpr int kCalleeArea = 144;   // x19-x28 and d8-d15, 8 bytes each
     std::size_t emittedSize() override {
         return static_cast<std::size_t>(out_.tellp());
     }
@@ -138,18 +123,13 @@ private:
     std::string label(const char *kind, int id) const override;
     void emitLoc(int file, int line, int column) override;
     void defineLabel(const std::string &l) override;
-    void jump(const std::string &l) override;
-    void branchIfZero(const std::string &l) override;
-    void branchIfNotZero(const std::string &l) override;
     void caseBranch(long long v, const std::string &l) override;
     std::string userLabel(const std::string &name) const override;
 
-    void unsupported(const char *what);
+    [[noreturn]] void unsupported(const char *what);
 
     void push();
     void pop(const char *reg);
-    void pushD();
-    void popD(const char *reg);
     void emitData(const Program &program);
     void emitGlobal(const Global &g, Segment seg);
     // The `_ZTW` wrappers, `_ZTH` aliases and the register-preserving `__tls_init` this unit defines.
@@ -190,10 +170,8 @@ private:
     };
     Placement placeArguments(const std::vector<const Type *> &types) const;
 
-    void storeToStack(const Type *t, int off);
     int namedStackBytes_ = 0;
 
-    void genAddr(const Expr &e);
     void tlsAddress(const std::string &symbol, bool viaWrapper);
     void vaStartAt();
     void vaArgAt(const Type *t);
@@ -201,16 +179,10 @@ private:
     void localIn(const char *dst, int slot);
     int realign_ = 0;
     int top_ = 0;
-    void addOffset(int bytes);
     void copyBlock(int size, const char *from, const char *to);
-    void bitFieldUnitAddr(const MemberAccess &m);
-    void bitFieldExtract(const MemberAccess &m);
-    void bitFieldInsert(const MemberAccess &m);
     void load(const Type *t);
     void storeThrough(const Type *t, const char *addrReg);
-    void genTruth(const Expr &e) override;
     void movImm(const char *reg, long long value);
-    void loadFpConst(const std::string &reg, const Type *t, double v);
     void genConversion(const Type *from, const Type *to);
     void narrowInt(const Type *to, int d = 0, int s = 0);
 };

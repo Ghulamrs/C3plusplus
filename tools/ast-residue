@@ -8,7 +8,7 @@
     tools/ast-residue --readers   every file under src/ that includes Ast.h, with its count of node-kind names
 
 M3b.7 deleted x86's walk of `Ast.h` and kept the rest (design 12.2): the parser's building half, `Classes`'
-synthesised bodies, the constant evaluator's reads, and the arm64 and tms6747 walkers (exceptions 1 and 2). Each
+synthesised bodies, the constant evaluator's reads, and the tms6747 walker (exception 2; arm64's went at M5.3). Each
 moves with a later row; until then the residue may only go down, as the memory gate's counts do. The kinds:
 
     ExprPtr, StmtPtr   the words, under src/parser and src/sema
@@ -16,6 +16,7 @@ moves with a later row; until then the residue may only go down, as the memory g
     node-refs          a node kind held by another spelling - `Unary *u`, `const Expr &e`, `unique_ptr<Call>`, an
                        alias of ExprPtr or StmtPtr - under src/parser and src/sema (N13 of the mend review)
     readers            files under src/ that include Ast.h
+    visits             a generator's visit of a node kind, declared or defined (`visit(const Unary &`), under src/backend
     ast-lines          the lines of src/Ast.h itself
 
 The node kinds are read from src/Ast.h (every class deriving from Node, Expr or Stmt), never listed here.
@@ -33,7 +34,7 @@ SRC = os.path.join(ROOT, "src")
 AST = os.path.join(SRC, "Ast.h")
 BASELINE = os.path.join(ROOT, "tools", "ast-residue.baseline")
 SCOPED = ("src/parser", "src/sema")
-KINDS = ("ExprPtr", "StmtPtr", "node-casts", "node-refs", "readers", "ast-lines")
+KINDS = ("ExprPtr", "StmtPtr", "node-casts", "node-refs", "visits", "readers", "ast-lines")
 INCLUDE = re.compile(r'^\s*#\s*include\s*"(?:\.\./)*Ast\.h"', re.M)
 
 
@@ -94,10 +95,16 @@ def sites():
     ref = re.compile(r"\b(\w+)\s*(?:const\s*)?[*&]+\s*(?:const\s+)?[A-Za-z_]\w*\s*[,;=()\[{:]")
     held = re.compile(r"\b(?:unique_ptr|shared_ptr|Owned)\s*<\s*(?:const\s+)?(\w+)\s*>")
     alias = re.compile(r"\b(?:typedef\s+(?:ExprPtr|StmtPtr)\s+\w+|using\s+\w+\s*=\s*(?:ExprPtr|StmtPtr))\b")
+    visit = re.compile(r"\bvisit\s*\(\s*const\s+(\w+)\s*&")
     found, readers = [], []
     for rel, text in sources():
         if INCLUDE.search(text):
             readers.append(rel)
+        if rel.replace(os.sep, "/").startswith("src/backend/"):
+            for lineno, line in enumerate(code_only(text).split("\n"), 1):
+                for m in visit.finditer(line):
+                    if m.group(1) in kinds:
+                        found.append((rel, lineno, "visits " + m.group(1)))
         if not rel.startswith(SCOPED):
             continue
         for lineno, line in enumerate(code_only(text).split("\n"), 1):

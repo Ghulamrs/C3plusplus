@@ -137,14 +137,11 @@ std::string Arm64Darwin::ssaOutside(const Function &fn, const ir::Function &f) c
 }
 
 // The function's SSA body where it is selected; the walker's reason on stderr under CXX1_SSA_WHY, the census's switch.
-const ir::Function *Arm64Darwin::ssaChoose(const Function &fn) {
-    if (ssa_ == nullptr) return nullptr;
-    const ir::FuncId id = ssa_->find(fn.symbol());
+const ir::Function &Arm64Darwin::ssaChoose(const Function &fn) {
+    const ir::FuncId id = ssa_ != nullptr ? ssa_->find(fn.symbol()) : ir::FuncId();
     const std::string why = id.valid() ? ssaOutside(fn, ssa_->functions[id.v]) : std::string("no SSA body");
-    if (why.empty()) { ssaSelected_++; return &ssa_->functions[id.v]; }
-    ssaWalked_++;
-    if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "a64 walker %s: %s\n", fn.symbol().c_str(), why.c_str());
-    return nullptr;
+    if (why.empty()) { ssaSelected_++; return ssa_->functions[id.v]; }
+    unsupported(("'" + fn.displayName() + "', " + why + ",").c_str());
 }
 
 // The frame above the parser's parameter slots: each alloca at its alignment, then one 8-byte slot per value.

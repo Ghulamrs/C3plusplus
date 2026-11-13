@@ -340,3 +340,87 @@ gone, the last thing keeping the walker for a body inside the subset (src/ 92,85
   Linux leg and `identical.sh` are the wave gate's; NRVO results (`DW_OP_fbreg` of the sret slot, then `DW_OP_deref`),
   anonymous-union members and location lists for promoted locals; x86's SSA path records the parser's offsets, not the
   selected frame's - the same mapping wants to be shared (it lives in `A64Select.cpp` today).
+
+- **R1, the probes (2026-11-13, lane r1p, from dd978ae1).** 40 smallest programs aimed at the lowering's `outside()`
+  reasons in Lowering.cpp's file order (members, bases, locals, statics, initializer_list, returns, braced lists), each
+  accepted by clang -std=c++11 -pedantic-errors over the tree's include/. Outcomes: **(a) 8 refused by name as cited**,
+  now tests/cases/lowering-*.cpp with a .error: a static local built with default arguments; a reference member bound to
+  another type; a class local initialised from a temporary of another type; an initializer_list of 'struct A' elements;
+  a constructed class returned from another type; a class with a destructor returned from another type, and returned
+  inside a handler; a braced list reaching a member the lowering does not place (a bit-field). **(b) 0 changed**; 26
+  probes aimed at a reason compile and print clang's answer, so the shape a reason names is not the shape a program
+  meets there (not counted as probed). **(c) 0 shown unreachable** this round. **One miscompile found**:
+  `B() : a() {}` over `A(int = 7)` prints an uninitialised value at -O0 and -O2 (tests/open/
+  lowering-member-value-init-default-argument.cpp). Four front-end refusals stand in front of a lowering reason and
+  are in tests/open/ with clang's answer: a static and a thread_local array initialised at run time ("expected a
+  constant initialiser", not by name), a reference member's default member initialiser, a member copied from a
+  derived object (no `A::A` found). src/ lines: 0 changed. Owed: the miscompile first; the four front-end shapes; the
+  reasons past Lowering.cpp:1414 and Builder*.cpp.
+- **R1's finds, mended (2026-11-13, lane r1f, from d7661b32).** The miscompile and the four front-end refusals R1's
+  probes put in tests/open/, each mended at its root and moved to tests/cases with clang's output (the Windows box's clang
+  over the tree's include/). **The miscompile** was the parser's: `: a()` value-initialising a member whose default
+  constructor is `A(int = 7)` called it with `this` alone, in both the walker's statement and the record the lowering
+  reads (ParserTopLevel's value-initialised member) - now [dcl.fct.default]/4's defaults are applied and noted as a
+  named entry's are (member-value-init-default-argument). **A static or thread_local array of scalars whose list does
+  not fold** was laid down as data and refused "expected a constant initialiser": `leavesFold` sends it to the guarded
+  run-time path (ParserStmt now emits a dynamic list, whose Init has no value of its own), and the lowering places its values leaf by leaf (staticArray, aggregateInit), the reason "a static/thread_local
+  array built at run time" kept for arrays of classes (static- and thread-local-array-runtime-initialiser). **A
+  reference member's default initialiser** was refused by a check that fired exactly when an initialiser followed the
+  declarator; it is gone, memberInitialiser binds the reference as `r(v)` does, and the lowering's reference branch
+  takes it (reference-member-default-initialiser). **A member copied from a derived object** (`: a(d)`, A trivially
+  copyable) went to overload resolution and found no `A::A`: constructMember converts to the base subobject first, and
+  the lowering's `$bytes` copy takes the subobject as classLocal does (member-copied-from-derived). src/ lines:
+  56 added, 23 removed over seven files (ParserTopLevel, ParserInit, ParserStmt, ParserClass, ParserType, Parser.h, ir/Lowering.cpp).
+- **R1, the probes, round 2 (2026-11-13, lane r1q, from c1a54315).** **The open register first:** r1f's "14 agree" was
+  Linux's count with tests/open/walker-* (arm64's, left alone); of the 24 other C++ entries two agree with clang on
+  Windows at -O2 in both spellings (Linux -O0/-O2 queued at hand-back) - handler-guards-nested and handler-local-past-inner-try,
+  both Ast.h-path faults that M3b.7's deletion closed - and are moved to tests/cases with clang's output; the other 22
+  still differ (the c90-* five by decision, two-phase-lookup-late-name by the token-replay decision). **Then 42 probes**
+  past Lowering.cpp:1414 and in BuilderCopy.cpp (statics, temporaries, operator->, conversion functions, `?:`, lambdas,
+  returns and named return values, conditions, range-for, switch, implicit copies and element constructors), each
+  accepted by the Windows box's clang -std=c++11 -pedantic-errors over the tree's include/. **(a) 5 refused by name as
+  cited**, now tests/cases/lowering-*.cpp with a .error: a class local copy-initialised through a conversion function;
+  a class returned while a local with a destructor is alive; a named return value built by defaults or a braced list;
+  a named return value inside a handler; the implicit copy of a class with a bit-field. **(b) 0 changed**; 30 probes
+  compile and print clang's answer (the shape a reason names is not what a program meets there). **(c) 0 shown
+  unreachable.** **Wrong answers, in tests/open with clang's answer:** a static local reference to a class temporary
+  destroys it at once instead of at exit (static-reference-to-temporary-destroyed-early, a miscompile); operator->
+  returning a class whose own operator-> answers is refused (arrow-chain-through-class-result); a function reference
+  bound to `k ? g : h` sees a pointer (function-reference-from-conditional); a declaration as a for's or a switch's
+  condition is a parse error, not refused by name (for-condition-declaration, switch-condition-declaration); a static
+  reference to a function is refused as binding a temporary (static-function-reference). `(k ? d : a).v` over two
+  lvalues, base and derived, is lowering-conditional-derived's root and not entered twice. src/ lines: 0 changed.
+  Owed: the miscompile first; the five front-end shapes; the reasons unprobed (Lowering.cpp 2290-2900 and past 3760,
+  Builder.cpp).
+- **Also to undo at M5.3:** 13 `lowering-*` refusal cases (R1 lanes) carry an `arm64-darwin` `.notarget` line - the walker writes what the lowering refuses until it goes.
+
+### M5.3, the deletion (2026-11-13, lane m5g, from `a353705c` with `m5-wave1` merged in for its `.notarget` lines)
+
+Every arm64-darwin function is written from the SSA IR; the walker's arm64 half and `A64Peep` are gone in one commit, as
+M3b.7 did for x86 (src/ 92,942 -> 91,683, +43 -1,302 over five files, two deleted).
+
+- **What went.** `Arm64Darwin` derives from `Regions`, not `Walker`: its 13 `Ast.h` visits (`Num` to `Return`) and what only
+  they used (`genAddr`, `addOffset`, the three bit-field helpers, `genTruth`, `jump`/`branchIfZero`/`branchIfNotZero`,
+  `loadFpConst`, `storeToStack`, `pushD`/`popD`, `terminatePad`); the promoted-locals frame and `a64Peephole`'s call in
+  `emitFunction`; `src/optimizer/A64Peep.{cpp,h}` (702 + 13 lines); `CXX1_A64_WALKER`. What the selector shares stays
+  (`placeArguments`, `planFor`, `copyBlock`, `load`, `genConversion`, the aggregate moves, `tlsAddress`, the va helpers).
+  `Walker.cpp` had nothing arm64's alone: tms6747 keeps it whole.
+- **What is refused now.** The driver treats arm64-darwin as x86: a function outside the lowering is an error naming it;
+  one the lowering took but the selector's `ssaOutside` does not is `codegen: 'f', <reason>, is not supported yet by the
+  arm64-darwin backend` (`ssaChoose`). No case reaches the second. The volatile downgrade stays arm64's (no MIR mark).
+- **`.notarget`**: the arm64-darwin line is gone from 21 files - the 13 `lowering-*` (refused by name, each `.error`
+  matched) and 8 citing the walker (`noexcept-set-terminate{,-callee}`, `ssa-own-landing-pads`, five `ssa-aggregate-*`/
+  `ssa-census-last-bodies`/`ssa-new-arguments-outlive`); their tms6747 lines stay.
+- **`tools/ast-residue`** counted nothing in src/backend, so the deletion did not move it; it has a `visits` kind now
+  (a generator's visit of a node kind, declared or defined, under src/backend): **150 -> 124** (-26: 13 declarations,
+  13 definitions). The other counts are the merge's: ExprPtr 2009 -> 2012 and StmtPtr 634 -> 635 came with `m5-wave1`
+  (R1's parser finds) against a baseline it had not re-recorded; recorded here.
+- **Gate** (cl-built `cxx3-msvc.exe` on the Windows box, `boxkit/m5g-winprobe.sh`): -O0, -O2, -O0 -g, -O2 -g: **0 broken,
+  0 refusals wrong, 10815 of 10815 functions selected, 821 cases compiled**; the Mac through `mac-run.sh` at -j2: **821
+  of 821 at -O0 and 821 of 821 at -O2** link, run and print their recorded output. Bench (`m5e-macbench.sh`, five
+  rounds, median ms): this tree 371 = m5f's selected 371 (the `.s` byte-identical), m5f's walker + `A64Peep` 675, Apple
+  clang 169; checksums equal. cl /W4 /WX clean (final tree); exclusions 0 uncited, 0 stale; comment cap 0 over;
+  `ide/generate.py --check` up to date; `ast-residue --check` passes (it does not run on Windows: `SIGPIPE`, as the
+  memory gate); the memory gate was not run (the Linux lock was held), and no file it reads changed.
+- **Owed.** The Linux leg (g++ build) and `identical.sh ARCHS=arm64-darwin` are the wave gate's; self-host on target 4
+  (M5.4); the plan's design text (`Compiler_Design_Final.md` sections naming `A64Peep`) is history now.

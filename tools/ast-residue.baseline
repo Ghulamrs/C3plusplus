@@ -1,6 +1,7 @@
-ExprPtr 2009
-StmtPtr 634
+ExprPtr 2012
+StmtPtr 635
 node-casts 164
 node-refs 409
+visits 124
 readers 14
 ast-lines 849

@@ -1,2 +1,1 @@
-arm64-darwin  the refusal is the SSA lowering's; arm64's walker writes a refused function until M5.3, which removes this line
 tms6747  the refusal is the SSA lowering's; the C6000's walker writes a refused function until M6a's selector takes it
