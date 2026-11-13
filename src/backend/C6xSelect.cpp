@@ -318,7 +318,7 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
                 use(f.operand(i, n), 0);
                 long long k = 0;
                 const bool held = i.op != ir::Op::Mul && smallConst(f, f.operand(i, n), -16, 15, k);
-                if (depth[b] > 0 && !callsOut(i.op) && !held && f.operand(i, n).valid()) hot[f.operand(i, n).v] = 1;
+                if (optimize_ != 0 && depth[b] > 0 && !callsOut(i.op) && !held && f.operand(i, n).valid()) hot[f.operand(i, n).v] = 1;
             }
             for (std::size_t s = 0; s < i.succ.size(); s++)
                 for (std::uint32_t n = 0; n < i.succ[s].count; n++) use(f.arg(i.succ[s], n), 1);
@@ -367,10 +367,25 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
         order.push_back(v);
     }
     std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) { return start[a] < start[b]; });
+    // An edge's argument and its parameter are partners: one takes the other's register where it is free, so no move.
+    std::vector<std::vector<std::size_t> > partner(nv);
+    for (std::size_t b = 0; b < ssaOrder_.size(); b++) {
+        const ir::Block &blk = f.block(ssaOrder_[b]);
+        if (!blk.term.valid()) continue;
+        const ir::Inst &t = f.inst(blk.term);
+        for (std::size_t s = 0; s < t.succ.size(); s++)
+            for (std::uint32_t n = 0; n < t.succ[s].count && n < f.block(t.succ[s].block).params.size(); n++) {
+                const ir::ValueId a = f.arg(t.succ[s], n), q = f.block(t.succ[s].block).params[n];
+                if (!a.valid() || a.v == q.v) continue;
+                partner[a.v].push_back(q.v);
+                partner[q.v].push_back(a.v);
+            }
+    }
     // Bit r is kHome[r] free. A function with a seventh argument, its own or a call's, leaves A10, B10, A12 and B12 to it.
     const unsigned kept = mode <= 0 ? 0u : wideCall ? kKept & ~0x55u : kKept, scratch = mode >= 2 ? kScratch : 0u;
     unsigned freeNow = kept | scratch, taken = 0;
     std::vector<std::size_t> active;
+    int turn = 0, turnBlock = -1;       // the rest rotate within a block, so an unrolled body's turns use different registers
     for (std::size_t n = 0; n < order.size(); n++) {
         const std::size_t v = order[n];
         for (std::size_t a = 0; a < active.size(); )
@@ -403,8 +418,16 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
             ssaHome_[active[light]] = 0;
             active.erase(active.begin() + static_cast<std::ptrdiff_t>(light));
         }
-        int r = 0;
-        while (((pick >> r) & 1) == 0) r++;
+        int r = -1;
+        for (std::size_t q = 0; q < partner[v].size() && r < 0; q++)
+            if (ssaHome_[partner[v][q]] != 0 && ((pick >> (ssaHome_[partner[v][q]] - 1)) & 1) != 0) r = ssaHome_[partner[v][q]] - 1;
+        if (home[v] != turnBlock) { turn = 0; turnBlock = home[v]; }
+        if (r < 0 && ((pick & ~scratch) != 0 || optimize_ == 0)) { r = 0; while (((pick >> r) & 1) == 0) r++; }       // nothing schedules -O0; a save costs
+        if (r < 0) {
+            r = pick >> turn != 0 ? turn : 0;
+            while (((pick >> r) & 1) == 0) r++;
+            turn = r + 1;
+        }
         ssaHome_[v] = r + 1;
         freeNow &= ~(1u << r);
         taken |= 1u << r;
