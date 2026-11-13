@@ -217,3 +217,4 @@ files, the walker's thread_local address, `va_start` and `va_arg` made three hel
   lvalues, base and derived, is lowering-conditional-derived's root and not entered twice. src/ lines: 0 changed.
   Owed: the miscompile first; the five front-end shapes; the reasons unprobed (Lowering.cpp 2290-2900 and past 3760,
   Builder.cpp).
+- **Also to undo at M5.3:** 13 `lowering-*` refusal cases (R1 lanes) carry an `arm64-darwin` `.notarget` line - the walker writes what the lowering refuses until it goes.
