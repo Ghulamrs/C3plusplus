@@ -164,12 +164,13 @@ bool Tms6747::ssaFrameMem(const ir::Function &f, ir::ValueId p, int size, std::s
 void Tms6747::ssaLoad(const ir::Function &f, ir::ValueId v, const char *reg, bool fresh) {
     const char *h = fresh ? nullptr : ssaHomeOf(v);
     if (h != nullptr) {
-        if (std::string(h) != reg) out_ << "\tMV\t" << h << ", " << reg << "\n";
+        if (std::string(h) != reg) ssaEmit(c6x::MInst("MV", h, reg));
         return;
     }
     if (!remade(f, v)) {
         const std::string m = ssaMem(ssaValueSlot_[v.v], 4);
-        out_ << "\tLDW\t" << m << ", " << reg << "\n\tNOP\t4\n";
+        ssaEmit(c6x::MInst("LDW", m, reg));
+        ssaNop(4);
         return;
     }
     const ir::Inst &d = f.inst(f.value(v).def);
@@ -178,7 +179,7 @@ void Tms6747::ssaLoad(const ir::Function &f, ir::ValueId v, const char *reg, boo
     switch (d.op) {
     case ir::Op::IConst: case ir::Op::Null: {
         const long long k = d.op == ir::Op::Null ? 0 : static_cast<int>(d.k);
-        if (k >= -32768 && k <= 32767) out_ << "\tMVK\t" << k << ", " << reg << "\n"; else movImm(reg, k);
+        if (k >= -32768 && k <= 32767) ssaEmit(c6x::MInst("MVK", k, reg)); else movImm(reg, k);
         return;
     }
     case ir::Op::Addr:
@@ -189,18 +190,18 @@ void Tms6747::ssaLoad(const ir::Function &f, ir::ValueId v, const char *reg, boo
         localAddr(ssaAllocaSlot_[static_cast<std::size_t>(d.k)], a);
         break;
     }
-    if (bSide) out_ << "\tMV\tA3, " << reg << "\n";
+    if (bSide) ssaEmit(c6x::MInst("MV", "A3", reg));
 }
 
 void Tms6747::ssaStore(const ir::Function &f, ir::ValueId v, const char *reg) {
     (void)f;
     if (const char *h = ssaHomeOf(v)) {
-        if (std::string(h) != reg) out_ << "\tMV\t" << reg << ", " << h << "\n";
+        if (std::string(h) != reg) ssaEmit(c6x::MInst("MV", reg, h));
         return;
     }
     if (ssaValueSlot_[v.v] == 0) return;
     const std::string m = ssaMem(ssaValueSlot_[v.v], 4);
-    out_ << "\tSTW\t" << reg << ", " << m << "\n";
+    ssaEmit(c6x::MInst("STW", reg, m));
 }
 
 const char *Tms6747::ssaHomeOf(ir::ValueId v) const { return ssaHome_[v.v] != 0 ? kHome[ssaHome_[v.v] - 1] : nullptr; }
@@ -240,10 +241,10 @@ void Tms6747::ssaMoves(const ir::Function &f, const ir::Succ &s) {
     for (std::size_t m = 0; m < moves.size(); m++) {
         if (remade(f, moves[m].first) || ssaHome_[moves[m].first.v] != 0) { ssaLoad(f, moves[m].first, kStage[m]); continue; }
         const std::string mem = ssaMem(ssaValueSlot_[moves[m].first.v], 4);
-        out_ << "\tLDW\t" << mem << ", " << kStage[m] << "\n";
+        ssaEmit(c6x::MInst("LDW", mem, kStage[m]));
         loads = true;
     }
-    if (loads) out_ << "\tNOP\t4\n";
+    if (loads) ssaNop(4);
     for (std::size_t m = 0; m < moves.size(); m++) ssaStore(f, moves[m].second, kStage[m]);
 }
 
@@ -442,13 +443,13 @@ bool Tms6747::ssaCompare(const ir::Function &f, const ir::Inst &c, const std::st
     const bool u = c.cc >= ir::Cmp::Ult;
     long long k = 0;
     if ((c.cc == ir::Cmp::Eq || c.cc == ir::Cmp::Ne) && smallConst(f, f.operand(c, 1), -16, 15, k)) {
-        out_ << "\tCMPEQ\t" << k << ", " << a << ", " << d << "\n";
+        ssaEmit(c6x::MInst("CMPEQ", k, a, d));
         return c.cc == ir::Cmp::Ne;
     }
     const std::string b = ssaUse(f, f.operand(c, 1), "A6");
     const bool gt = c.cc == ir::Cmp::Sgt || c.cc == ir::Cmp::Ugt || c.cc == ir::Cmp::Sle || c.cc == ir::Cmp::Ule;
     const char *op = c.cc == ir::Cmp::Eq || c.cc == ir::Cmp::Ne ? "CMPEQ" : gt ? (u ? "CMPGTU" : "CMPGT") : (u ? "CMPLTU" : "CMPLT");
-    out_ << "\t" << op << "\t" << a << ", " << b << ", " << d << "\n";
+    ssaEmit(c6x::MInst(op, a, b, d));
     return c.cc == ir::Cmp::Ne || c.cc == ir::Cmp::Sle || c.cc == ir::Cmp::Ule || c.cc == ir::Cmp::Sge || c.cc == ir::Cmp::Uge;
 }
 
@@ -459,6 +460,9 @@ void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
     usesSavedArgRegs_ = false;
     usesSavedPairRegs_ = false;
     callCount_ = 0;
+    const std::string head = out_.str();        // the stream holds the body alone; what stood before it goes back first
+    out_.str(std::string());
+    ssaMir_.clear();
     ssaOrder_ = optimize_ != 0 ? ssaBlockOrder(f) : f.blocks;       // a loop's blocks together, its latch last
     ssaAssign(fn, f);
     frame_ = layoutSsa(fn, f);
@@ -485,7 +489,30 @@ void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
         jump(ssaBlockLabel(ssaLater_[k].second->block));
     }
     ssaLater_.clear();
-    out_ << "\tZERO\tA4\n";     // falling off the end returns 0, as the walker's body does
+    ssaEmit(c6x::MInst("ZERO", "A4"));     // falling off the end returns 0, as the walker's body does
+    out_ << head;
+    c6x::write(ssaMir_, out_);
+    if (std::getenv("CXX1_C6X_MIR") != nullptr) {
+        const c6x::Census c = c6x::census(ssaMir_);
+        std::fprintf(stderr, "c6x-mir %s: %d instructions, %d labels, %d verbatim, %d opaque operands\n", fn.symbol().c_str(),
+                     c.instructions, c.labels, c.verbatim, c.opaque);
+    }
+}
+
+// What a walker's helper wrote since the last instruction, read onto the stream where it stood.
+void Tms6747::ssaAbsorb() {
+    if (out_.tellp() <= 0) return;
+    c6x::read(out_.str(), ssaMir_);
+    out_.str(std::string());
+}
+
+// `[A1] B l` or `[!A1] B l`, and the five cycles a branch takes.
+void Tms6747::ssaBranchIf(bool zero, const std::string &l) {
+    c6x::MInst b("B", l);
+    b.pred = static_cast<std::uint8_t>(c6x::regNumber("A1"));
+    b.predNot = zero;
+    ssaEmit(b);
+    ssaNop(5);
 }
 
 void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId next) {
@@ -498,15 +525,15 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
     const auto x = [&](std::uint32_t n) { return ssaUse(f, f.operand(i, n), n == 0 ? "A4" : "A6"); };
     const auto bin = [&](const char *op) {
         const std::string a = x(0), b = x(1);
-        out_ << "\t" << op << "\t" << a << ", " << b << ", " << d << "\n";
+        ssaEmit(c6x::MInst(op, a, b, d));
     };
     // An operation whose right operand of lo..hi is written in the instruction (`first`: before the register).
     const auto binK = [&](const char *op, long long lo, long long hi, bool first) {
         long long k = 0;
         if (!smallConst(f, f.operand(i, 1), lo, hi, k)) { bin(op); return; }
         const std::string a = x(0);
-        if (first) out_ << "\t" << op << "\t" << k << ", " << a << ", " << d << "\n";
-        else out_ << "\t" << op << "\t" << a << ", " << k << ", " << d << "\n";
+        if (first) ssaEmit(c6x::MInst(op, k, a, d));
+        else ssaEmit(c6x::MInst(op, a, k, d));
     };
     // An edge: its arguments, then the jump, or none where the target is written next.
     const auto edge = [&](const ir::Succ &s, bool fall) {
@@ -541,7 +568,8 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         if (!ssaFrameMem(f, f.operand(i, 0), accessSize(rt), mem)) mem = "*" + x(0);
         const int sz = rt->size(target_);
         const bool sign = rt->isSigned(target_);
-        out_ << "\t" << (sz == 1 ? (sign ? "LDB" : "LDBU") : sz == 2 ? (sign ? "LDH" : "LDHU") : "LDW") << "\t" << mem << ", " << wide << "\n\tNOP\t4\n";
+        ssaEmit(c6x::MInst(sz == 1 ? (sign ? "LDB" : "LDBU") : sz == 2 ? (sign ? "LDH" : "LDHU") : "LDW", mem, wide));
+        ssaNop(4);
         if (wide == "A4") ssaStore(f, i.result, "A4");
         return;
     }
@@ -551,14 +579,14 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         const std::string from = ssaUse(f, v, "A4");
         std::string mem;
         if (!ssaFrameMem(f, p, sz, mem)) mem = "*" + ssaUse(f, p, "A6");
-        out_ << "\t" << (sz == 1 ? "STB" : sz == 2 ? "STH" : "STW") << "\t" << from << ", " << mem << "\n";
+        ssaEmit(c6x::MInst(sz == 1 ? "STB" : sz == 2 ? "STH" : "STW", from, mem));
         return;
     }
     case ir::Op::Gep: {
         const std::string a = x(0);
-        if (i.count == 2) { const std::string b = x(1); out_ << "\tADD\t" << a << ", " << b << ", " << wide << "\n"; }
+        if (i.count == 2) { const std::string b = x(1); ssaEmit(c6x::MInst("ADD", a, b, wide)); }
         else if (i.k != 0) regAdd(a.c_str(), static_cast<int>(i.k), wide.c_str());
-        else if (a != wide) out_ << "\tMV\t" << a << ", " << wide << "\n";
+        else if (a != wide) ssaEmit(c6x::MInst("MV", a, wide));
         if (wide == "A4") ssaStore(f, i.result, "A4");
         return;
     }
@@ -567,7 +595,7 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         if (smallConst(f, f.operand(i, 1), -31, 31, k)) {
             const bool add = (i.op == ir::Op::Add) == (k >= 0);
             const std::string a = x(0);
-            out_ << (add ? "\tADD\t" : "\tSUB\t") << a << ", " << (k < 0 ? -k : k) << ", " << d << "\n";
+            ssaEmit(c6x::MInst(add ? "ADD" : "SUB", a, k < 0 ? -k : k, d));
         } else bin(i.op == ir::Op::Add ? "ADD" : "SUB");
         finish();
         return;
@@ -577,15 +605,15 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         long long k = 0;
         const int side = smallConst(f, f.operand(i, 1), 1, 1 << 30, k) && (k & (k - 1)) == 0 ? 0 :
                          smallConst(f, f.operand(i, 0), 1, 1 << 30, k) && (k & (k - 1)) == 0 ? 1 : -1;
-        if (side < 0) { bin("MPY32"); out_ << "\tNOP\t3\n"; finish(); return; }
+        if (side < 0) { bin("MPY32"); ssaNop(3); finish(); return; }
         int sh = 0;
         while ((1ll << sh) < k) sh++;
         const std::string a = ssaUse(f, f.operand(i, static_cast<std::uint32_t>(side)), "A4");
-        out_ << "\tSHL\t" << a << ", " << sh << ", " << d << "\n";
+        ssaEmit(c6x::MInst("SHL", a, sh, d));
         finish();
         return;
     }
-    case ir::Op::UMulH: { const std::string a = x(0), b = x(1); out_ << "\tMPY32U\t" << a << ", " << b << ", A1:A0\n\tNOP\t3\n\tMV\tA1, " << d << "\n"; finish(); return; }
+    case ir::Op::UMulH: { const std::string a = x(0), b = x(1); ssaEmit(c6x::MInst("MPY32U", a, b, "A1:A0")); ssaNop(3); ssaEmit(c6x::MInst("MV", "A1", d)); finish(); return; }
     case ir::Op::And: binK("AND", -16, 15, true); finish(); return;
     case ir::Op::Or:  binK("OR", -16, 15, true); finish(); return;
     case ir::Op::Xor: binK("XOR", -16, 15, true); finish(); return;
@@ -604,28 +632,28 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         return;
     case ir::Op::Neg: case ir::Op::Not: {
         const std::string a = x(0);
-        out_ << (i.op == ir::Op::Neg ? "\tNEG\t" : "\tXOR\t-1, ") << a << ", " << d << "\n";
+        ssaEmit(i.op == ir::Op::Neg ? c6x::MInst("NEG", a, d) : c6x::MInst("XOR", -1, a, d));
         finish();
         return;
     }
     case ir::Op::ICmp:
         if (ssaFused_[i.result.v]) return;      // written by the branch that reads it
-        if (ssaCompare(f, i, wide)) out_ << "\tXOR\t1, " << wide << ", " << wide << "\n";
+        if (ssaCompare(f, i, wide)) ssaEmit(c6x::MInst("XOR", 1, wide, wide));
         if (wide == "A4") ssaStore(f, i.result, "A4");
         return;
     case ir::Op::Trunc: case ir::Op::Bitcast: case ir::Op::PtrToInt: case ir::Op::IntToPtr: {
         const std::string a = x(0);
-        if (a != d) out_ << "\tMV\t" << a << ", " << d << "\n";
+        if (a != d) ssaEmit(c6x::MInst("MV", a, d));
         finish();
         return;
     }
     case ir::Op::SExt: case ir::Op::ZExt: {
         const std::string a = x(0);
         const int from = ssaType(f, f.operand(i, 0))->size(target_);
-        const char *ext = i.op == ir::Op::SExt ? "\tEXT\t" : "\tEXTU\t";
-        if (from == 1) out_ << ext << a << ", 24, 24, " << d << "\n";
-        else if (from == 2) out_ << ext << a << ", 16, 16, " << d << "\n";
-        else if (a != d) out_ << "\tMV\t" << a << ", " << d << "\n";
+        const char *ext = i.op == ir::Op::SExt ? "EXT" : "EXTU";
+        if (from == 1) ssaEmit(c6x::MInst(ext, a, 24, 24, d));
+        else if (from == 2) ssaEmit(c6x::MInst(ext, a, 16, 16, d));
+        else if (a != d) ssaEmit(c6x::MInst("MV", a, d));
         finish();
         return;
     }
@@ -652,7 +680,7 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         const ir::ValueId c = f.operand(i, 0);
         bool flip = false;
         if (ssaFused_[c.v]) flip = ssaCompare(f, f.inst(f.value(c).def), "A1"); else ssaLoad(f, c, "A1");
-        out_ << (flip ? "\t[A1]\tB\t" : "\t[!A1]\tB\t") << target(i.succ[1]) << "\n\tNOP\t5\n";
+        ssaBranchIf(!flip, target(i.succ[1]));
         if (i.succ[0].block.v == next.v) { ssaLater_.insert(ssaLater_.end(), stubs.begin(), stubs.end()); stubs.clear(); }
         edge(i.succ[0], stubs.empty());
         writeStubs();
@@ -662,7 +690,8 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         const std::string v = x(0);
         for (std::size_t k = 0; k < i.cases.size(); k++) {
             movImm("A0", i.cases[k]);
-            out_ << "\tCMPEQ\tA0, " << v << ", A1\n\t[A1]\tB\t" << target(i.succ[k + 1]) << "\n\tNOP\t5\n";
+            ssaEmit(c6x::MInst("CMPEQ", "A0", v, "A1"));
+            ssaBranchIf(false, target(i.succ[k + 1]));
         }
         edge(i.succ[0], stubs.empty());
         writeStubs();

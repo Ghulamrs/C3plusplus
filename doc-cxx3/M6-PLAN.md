@@ -205,3 +205,47 @@ tools in `~/ti6x`), never on the Mac.
   tms6747, Windows): outside 0, 25,023 of 34,847 functions selected (71.8%), 12 other failures - round 4's.
 - **Owed:** the pipeliner over a counter stepped by four (the unrolled bodies' last 0.2 M); the bench kernels' cycles;
   sim6747, asm6x.sh and identical.sh ARCHS=tms6747 (the coordinator's).
+
+## M6b's design: the C6000's MIR (written 2026-11-13 by lane m6e)
+
+**Its own MInst, not x86's parameterised.** `optimizer/Mir.h`'s MInst is two operands in AT&T order, a register a
+number and a width, a memory operand `disp(base,index,scale)`, and M4's encoder reads exactly that. A C6000
+instruction has up to four operands in TI's order (`EXT src, 24, 24, dst`), no width (a register is 32 bits, a 64-bit
+value a pair `A5:A4`), a predicate, and addresses that step their base. Bending one struct to both would give each
+target fields the other must ignore; what they share is kept shared instead - `opt::StrId` (text as an index) and the
+rule that an opcode and an operand are values, never strings. `optimizer/C6xMir.h`, namespace `c6x`:
+
+| part | what it holds | read by M6c for |
+| --- | --- | --- |
+| register | 0-31 A0-A31, 32-63 B0-B31 - the bit `c6x::bitOf` already gives a name; `sideOfReg` is the file | units and cross paths: an instruction runs on its destination's side (`MInst::side`), a source of the other file takes that side's one cross path |
+| `MOperand` | Register, Pair (`hi:lo`), Immediate, Memory (base, mode Base/Plus/Minus/PreInc/PreDec/PostInc/PostDec, a constant or register offset, `[]` scaled or `()` bytes), Symbol | the T path of a load or store (its data register's side), a stepped base written in E1, a frame access by its offset |
+| `MInst` | kind Instruction/Label/Verbatim; the mnemonic; up to four operands, sources first; `pred`/`predNot` (`[A1]`, `[!A1]`) | the predicate as a read; `slots()` = `c6x::delaySlots`, the one table: a result lands that many cycles after issue |
+| `MStream` | one function's body, serial: every instruction's delay slots padded by `NOP n` entries, as the walker's text is | C6xSched's reading: "with its NOPs removed it reads as a sequential program" |
+
+**Delay slots are the table's, not the stream's.** The serial stream still carries `NOP n` entries because the text the
+old post-passes read carries them; M6c's packetiser drops them on entry and pads to `slots()`, as `c6xSchedule` does
+with lines today. A branch's five slots and a load's four are never operands.
+
+**What the printer must write** (`c6x::write`, `MInst::str`) so C6xSched and C6xPipe read today's text: a label as
+`name:`; an instruction as a tab, `[R]` or `[!R]` and a tab where predicated, the mnemonic, a tab, the operands joined
+by `, ` (C6xSched's `parse` splits on exactly that); registers as `A<n>`/`B<n>`, a pair `hi:lo`, memory as `*`, the
+sign or step, the base, a step after it, then `(n)` or `[n]` or a register in either; a Verbatim line as it stood. The
+gate is identity of the whole text, and it is held by construction where it could not be by care: `c6x::read` makes an
+instruction of a line only where `MInst::str()` spells the same bytes back, and an operand the model cannot spell back
+is a Symbol holding its text (`CXX1_C6X_MIR=1` counts both per function, so what is unmodelled is a number).
+
+**Who builds it.** `C6xSelect.cpp` builds an `MInst` for every instruction it writes itself (`ssaEmit`). The walker's
+helpers it still calls - `movImm`, `movSym`, `regAdd`, `localAddr`, `narrowInt`, `loadFrom`, `jump`, `call`,
+`openArea`/`closeArea`, `defineLabel`, `frameOperand`'s `MVK` - write text; `ssaAbsorb` reads what they wrote onto the
+stream where it stood, before the next instruction. So the body is one `MStream` from its first label to its last
+`ZERO`, and `selectBody` ends by printing it. The helpers move to `MInst`s as the walker's use of them goes (M6d).
+
+**Where schedule-aware allocation enters (round 2).** Between selection and the printer, on the stream: today
+`ssaAssign` picks a home per value before any instruction exists, by live range alone. With the stream in hand the pick
+can read what the packetiser will: (1) *side* - a value takes the file of the instructions that read it, so an add of
+two A values is not fed through a cross path, and two independent chains of an unrolled body take A and B and run in
+one packet; (2) *unit pressure* - `.M` and `.D` are one a side, so two multiplies or two loads a turn want different
+sides; (3) *the T path* - a load's destination side picks its data path, two loads a cycle need both; (4) the B side is
+then a home an instruction reads directly, not a copy through A4/A6 as rounds 3-5 wrote it. The registers are numbered
+so a pseudo is any number from 64 up; the allocator's result is a rewrite of `MOperand::reg`. Its gate is cycles case
+by case against round 5 (`m6d-cmp.sh`), the text no longer identical by design.

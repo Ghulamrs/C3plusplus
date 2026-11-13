@@ -9,6 +9,7 @@
 #include "../ir/Ir.h"
 
 #include "../optimizer/Inliner.h"
+#include "../optimizer/C6xMir.h"
 #include "../optimizer/OptCosts.h"
 
 #include <iosfwd>
@@ -288,6 +289,12 @@ private:
     const char *ssaHomeOf(ir::ValueId v) const;
     std::string ssaUse(const ir::Function &f, ir::ValueId v, const char *scratch);
     bool ssaCompare(const ir::Function &f, const ir::Inst &c, const std::string &d);
+    // The body as MIR (M6b): the selector's instructions, a walker helper's text read in where it was written (ssaAbsorb).
+    c6x::MStream ssaMir_;
+    void ssaAbsorb();
+    void ssaEmit(const c6x::MInst &i) { ssaAbsorb(); ssaMir_.push_back(i); }
+    void ssaBranchIf(bool zero, const std::string &l);
+    void ssaNop(int n) { ssaEmit(c6x::MInst("NOP", n)); }
     // A block inside a loop that is neither its head nor what its latch falls into: C6xSched reads through the label.
     std::vector<char> ssaInner_;
     std::string ssaBlockLabel(ir::BlockId b) const { return label(b.v < ssaInner_.size() && ssaInner_[b.v] ? "ssain" : "ssa", static_cast<int>(b.v)); }
