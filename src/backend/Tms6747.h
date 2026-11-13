@@ -187,7 +187,10 @@ private:
     static std::string pairHigh(const std::string &r);
     void walkBody(const Function &fn);
 
-    std::size_t emittedSize() override { return static_cast<std::size_t>(out_.tellp()); }
+    // A selected body counts its instructions instead (m6e's MIR: nothing in selectBody reads out_'s position).
+    std::size_t emittedSize() override { return ssaCounting_ ? ssaInsts_ : static_cast<std::size_t>(out_.tellp()); }
+    bool ssaCounting_ = false;
+    std::size_t ssaInsts_ = 0;
     void defineLabel(const std::string &l) override;
     void jump(const std::string &l) override;
     void branchIfZero(const std::string &l) override;

@@ -471,6 +471,8 @@ void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
     }
     // -g: each variable at its alloca's slot (ssaPlace_); a value in a register has no record, as the walker's regOf_.
     ssaPlace_.assign(fn.locals().size(), -1);
+    ssaInsts_ = 0;
+    ssaCounting_ = lineSource() != nullptr;
     if (lineSource() != nullptr) {
         resetBlocks(fn.blocks());
         const std::vector<int> at = ssaLocalAllocas(fn, f);
@@ -492,6 +494,7 @@ void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
             }
             if (in.pos != 0 && in.pos != lastPos) { markLine(in.pos); lastPos = in.pos; }
             selectInst(f, in, next);
+            ssaInsts_++;
         }
     }
     for (std::size_t k = 0; k < ssaLater_.size(); k++) {      // none is left unless the last block cannot be left
@@ -501,6 +504,7 @@ void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
     }
     ssaLater_.clear();
     closeOpenBlocks();
+    ssaCounting_ = false;
     out_ << "\tZERO\tA4\n";     // falling off the end returns 0, as the walker's body does
 }
 

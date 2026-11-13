@@ -222,6 +222,9 @@ tools in `~/ti6x`), never on the Mac.
   source position through its packets), so -O2 has nothing to compare: all 860 refuse, as run.sh expects.
 - reference-to-function-member.cpp: 6 of 11 functions selected under -g (the 5 others: indirect calls).
 - src/: +74 -32 (A64Select.cpp, C6xSelect.cpp, Tms6747.cpp/.h, Regions.cpp/.h).
-- **For the merge with m6e:** Regions' markLine/openBlock/closeBlock read `emittedSize()` (out_'s position) to tell code
-  from directives; under m6e's MIR out_ holds only what follows the last ssaEmit, so a block's "has code" test and
-  notCode_ need m6e's ssaAbsorb to count Verbatim entries, or blocks fold into their parent (the records still assemble).
+- **For the merge with m6e** (its rule: nothing in selectBody reads out_'s position or content): Regions' block test read
+  `emittedSize()`; in a selected body Tms6747::emittedSize now answers a count of selected instructions (`ssaInsts_`), so
+  nothing reads out_ there - lines and block labels are written as text where the walker writes them. Touched in
+  C6xSelect.cpp: ssaOutside (the -g line), selectBody (the -g setup before the block loop, the per-instruction rows, the
+  count, closeOpenBlocks before the closing ZERO); Tms6747.h emittedSize/ssaPlace_; Tms6747.cpp emitScope and one line
+  before ssaChoose.
