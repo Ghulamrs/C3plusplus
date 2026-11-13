@@ -337,6 +337,9 @@ const Type *Typer::expression(syntax::NodeId id, const std::vector<const Type *>
             if (isClass(a) || isClass(b)) return nullptr;
             // [expr.eq]/2: a pointer to a data member compares for equality alone, with one or with a null.
             if ((op == "==" || op == "!=") && (a->isMemberPointer() || b->isMemberPointer())) return p_.rules().truthType();
+            // [expr.log.and]/1, [conv.bool]: it is a truth value as an operand of `&&` and `||`.
+            if ((op == "&&" || op == "||") && (scalarOrArray(a) || a->isMemberPointer()) && (scalarOrArray(b) || b->isMemberPointer()))
+                return p_.rules().truthType();
             if (op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=" ||
                 op == "&&" || op == "||")
                 return (scalarOrArray(a) || a->isNullPtr()) && (scalarOrArray(b) || b->isNullPtr()) ? p_.rules().truthType() : nullptr;

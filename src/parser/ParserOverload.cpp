@@ -413,7 +413,8 @@ void Parser::requireScalar(const Expr &e, std::size_t pos, const char *what) {
         refuseScopedOperand(e.type(), nullptr, "+", pos);
     if (e.type()->unqualified()->isScopedEnumeration() && !atSwitchCondition())
         refuseScopedConversion(e.type(), types_.get(Kind::Bool), pos);
-    if (!e.type()->isScalar())
+    // [conv.bool]: a pointer to a data member is a truth value too - but no operand of unary +, [expr.unary.op]/7.
+    if (!e.type()->isScalar() && !(e.type()->unqualified()->isMemberPointer() && std::string(what) != "unary '+'"))
         src_.fail(pos, std::string(what) + " needs a number or a pointer, not '" +
                        e.type()->describe() + "'");
 }

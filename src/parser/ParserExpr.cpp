@@ -2410,6 +2410,9 @@ ExprPtr Parser::bindReference(const Type *ref, ExprPtr init, std::size_t pos,
     // function lvalue of the same type, and `&f` already is that address.
     if (referent->isFunction()) {
         const Type *fn = functionDesignated(*init);
+        // [expr.unary.op]/1: `*p` of a function pointer is the function lvalue, which the parser keeps as p.
+        if (fn == nullptr && it->isPointer() && it->pointee()->isFunction() && init->syntax().valid() &&
+            syntaxTree_.node(init->syntax()).kind == syntax::Kind::Unary && syntaxTree_.text(init->syntax()) == "*") fn = it->pointee();
         // [expr.cond]/4: `k ? g : h` of two functions of one type is that function lvalue, its value the address chosen.
         if (const Conditional *c = dynamic_cast<const Conditional *>(init.get()))
             if (const Type *a = functionDesignated(c->thenArm()))

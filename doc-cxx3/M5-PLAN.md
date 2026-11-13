@@ -144,3 +144,18 @@ Everything else - x86 gates, the C6000, cl - stays on the boxes.
   function-reference-through-dereference (`void (&r)() = *p` refused: the parser reads `*p` back as p) and
   member-pointer-condition (requireScalar refuses a data member pointer as `?:`'s condition, `!`, a cast to bool).
   src/ lines: +17 -7 (Lowering.cpp, Typing.cpp, ParserStmt.cpp, ParserExprLambda.cpp).
+
+- **R1, round 5 (lane r1j, 2026-11-13, from m5-r1i deb6df1b).** **r1i's two refusals of valid programs, taken; both
+  out of tests/open into tests/cases with Windows clang's answer.** member-pointer-condition: requireScalar takes a
+  pointer to a data member as a truth value ([conv.bool]) except under unary `+`, and the typer types `&&`/`||` of one
+  (the lowering's truth() already compared with the ABI's null: -1 on Itanium, cl's on Microsoft); the case covers `?:`,
+  `!`, `(bool)`, `&&`, `||`, `if`, `while`, an offset-0 member and a base's member converted to the derived class.
+  function-reference-through-dereference: bindReference takes `*p` (and `**q`) of a function pointer - the parser
+  keeps the dereference as p, and its syntax node says it was one. **An inline function's atexit helpers on
+  Microsoft:** cl 19.44 makes `??__F$S1@?1??h@@YAHXZ@YAXXZ` (a static reference's temporary) and `??__Fa@?1??k@@...`
+  (a static local) External in COMDATs, a non-inline function's Static; registerDestruction now does (the helper
+  inline and not static), and pruneUnusedInline keeps it with its object, which is always kept (the lowering, not the
+  parser, registers a temporary's helper, so nothing the parser sees names it). Two units both calling h and k link
+  and destroy each object once, in both spellings. **Left:** `static_cast<int D::*>(&C::y)` is "a 'cast' the typer
+  did not type" (the implicit conversion is typed). Windows 32/32 at -O0 and at -O2 over 16 cases (gnu and masm).
+  src/ lines: +15 -5 (ParserOverload.cpp, ParserExpr.cpp, ParserInit.cpp, ParserClass.cpp, Typing.cpp).
