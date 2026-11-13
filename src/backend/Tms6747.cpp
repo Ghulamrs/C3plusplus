@@ -2327,7 +2327,9 @@ void Tms6747::emitFunction(const Function &fn) {
     paramInFrame_ = false;
     relayout_ = false;
     saveBytes_ = kSaveBytes;
-    if (optimize_ > 0) {
+    // Selected from SSA where the selector's subset holds the whole body (M6a); null: the walker's, the reason named.
+    const ir::Function *ssaFn = ssaChoose(fn);
+    if (optimize_ > 0 && ssaFn == nullptr) {
         planning_ = true;
         walkBody(fn);
         planHasCall_ = hasCall_;
@@ -2339,7 +2341,7 @@ void Tms6747::emitFunction(const Function &fn) {
         planFrame();
         saveBytes_ = align8(4 * (static_cast<int>(savedRegs().size()) - 1));   // A15 goes in the caller's word
     }
-    walkBody(fn);
+    if (ssaFn != nullptr) selectBody(fn, *ssaFn); else walkBody(fn);
     std::string body = out_.str();
     out_.str(std::string());
     if (sretSlot_ != 0) {
@@ -2369,7 +2371,7 @@ void Tms6747::emitFunction(const Function &fn) {
     }
 
     int frame = frame_;
-    const std::string early = earlyExit(fn);
+    const std::string early = ssaFn != nullptr ? std::string() : earlyExit(fn);
     std::ostringstream pro;
     pro.swap(out_);                                        // the prologue, scheduled with the body at -O1 and -O2
     markLine(fn.pos());                                     // -g: the function's own line, as cl6x's first .dwpsn names it
@@ -2454,5 +2456,7 @@ void Tms6747::run(const Program &program) {
         file_ += "\t.global\t__c6xabi_unwind_cpp_pr3\n\t.symdepend\t\"__c6xabi_unwind_cpp_pr3\", \".c6xabi.exidx:.text\"\n";
     if (needsPr2_) file_ += "\t.global\t__c6xabi_unwind_cpp_pr2\n";
     if (needsUnexpected_) file_ += "\t.global\t__cxa_call_unexpected\n";
+    if (ssa_ != nullptr && std::getenv("CXX1_SSA_WHY") != nullptr)
+        std::fprintf(stderr, "c6x-select: selected=%d of %d\n", ssaSelected_, ssaSelected_ + ssaWalked_);
     sink_ << tiExternals(tiSpelling(file_));
 }

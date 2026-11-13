@@ -34,6 +34,7 @@ BASE=${2:-$ROOT/tests/out-census}
 SRCS=$(ls src/*.cpp src/parser/*.cpp src/backend/*.cpp src/optimizer/*.cpp src/sema/*.cpp src/syntax/*.cpp src/ir/*.cpp src/ir/opt/*.cpp src/encoder/*.cpp)
 C90S=$(ls tests/c90/cases/*.c)
 bad=0
+export CXX1_SSA_WHY=1     # a target whose walker remains says how many functions it selected (tms6747: c6x-select)
 for CENSUS_ARCH in $ARCHS; do
     OUT=$BASE/$CENSUS_ARCH
     rm -rf "$OUT"; mkdir -p "$OUT/log"
@@ -50,6 +51,7 @@ for CENSUS_ARCH in $ARCHS; do
     fi
     n=$(wc -l < "$OUT/outside.txt" | tr -d ' ')
     echo "ssa-census $CENSUS_ARCH: outside=$n of $(echo "$SRCS" | wc -l | tr -d ' ') sources and $(echo "$C90S" | wc -l | tr -d ' ') C90 cases; other failures $(wc -l < "$OUT/other.txt" | tr -d ' ')"
+    sed -n 's/.*-select: selected=\([0-9]*\) of \([0-9]*\)$/\1 \2/p' "$OUT"/log/* | awk '{s+=$1;t+=$2} END {if (t) print "  selected " s " of " t " functions"}'
     head -20 "$OUT/kinds.txt"
     [ "$n" -eq 0 ] || bad=1
 done

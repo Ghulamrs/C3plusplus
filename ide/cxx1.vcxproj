@@ -98,6 +98,7 @@
     <ClCompile Include="..\src\backend\A64Select.cpp" />
     <ClCompile Include="..\src\backend\Arm64Darwin.cpp" />
     <ClCompile Include="..\src\backend\Backend.cpp" />
+    <ClCompile Include="..\src\backend\C6xSelect.cpp" />
     <ClCompile Include="..\src\backend\CodeView.cpp" />
     <ClCompile Include="..\src\backend\CodeViewTypes.cpp" />
     <ClCompile Include="..\src\backend\CoffEmitter.cpp" />
