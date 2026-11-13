@@ -440,3 +440,8 @@ The Mac through `boxkit/mac-run.sh` at -j2 (`SELFHOST_JOBS=2`), stage 0 built by
   100 of 100 the same object; 2 = 3: 100 of 100**. At M5.0 (the walker, -j8) the stages took 15, 62, 64, 62 s: at
   -j2 the cxx3-built stages are ~2x slower per job than the walker's were - the -O0 selector's code, measured, not
   mended here.
+- **tools/self-host, -O2**: stages 0, 1, 2, 3 compiled 100 of 100 sources in 67, 102, 102, 102 s; **stages 0 = 1 = 2:
+  100 of 100 the same object; 2 = 3: 100 of 100**. A -O2 stage compiles cxx3 in a fifth of a -O0 stage's time (102
+  against 491 s); the clang-built stage 0 is 1.5x faster than the -O2 one.
+- **No tools/ change was needed.** The Mac idle after (no cxx3 or self-host process of this lane). Owed: target 3
+  re-measured at M5's close (the plan's row), the wave gate's run of the new case on every target.
