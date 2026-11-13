@@ -358,8 +358,8 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
                 freeNow |= 1u << (ssaHome_[active[a]] - 1);
                 active.erase(active.begin() + static_cast<std::ptrdiff_t>(a));
             } else a++;
-        const std::vector<int>::const_iterator call = std::upper_bound(calls.begin(), calls.end(), start[v]);
-        const bool crosses = call != calls.end() && *call < end[v];
+        bool crosses = false;
+        for (std::size_t c = 0; c < calls.size() && !crosses; c++) crosses = calls[c] > start[v] && calls[c] < end[v];
         unsigned pick = crosses ? 0 : freeNow & scratch;
         if (pick == 0) pick = freeNow & kept;
         if (pick == 0) {

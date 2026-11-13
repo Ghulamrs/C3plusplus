@@ -66,3 +66,43 @@ tools in `~/ti6x`), never on the Mac.
   (unchanged, round 1's cost), -O2 311.7 M. Census (tools/ssa-census -arch tms6747):
   24,930 of 34,716 functions selected (71.8%; round 1 25,335 of 34,712 before its last fix), 12 other failures as before.
 - **Owed (the coordinator's):** the sim6747 cycles leg, identical.sh ARCHS=tms6747, asm6x.sh; registers are M6b's.
+
+### M6a, round 3 (registers), 2026-11-13, lane m6b
+
+- **Landed** (`d3faa75b`): `backend/C6xSelect.cpp` 345 -> 605 lines, `Tms6747.h` +6. `ssaAssign`, as arm64's: a linear scan
+  over live ranges (block liveness to a fixed point, weight by loop depth, the heavier range taking a lighter one's
+  register). A range that crosses a call or the EABI's divide helper takes A10-A13 or B10-B13 - the registers the walker's
+  planner promotes locals to, saved by the same prologue through `promoted_` - and any other A16-A31; a function with a
+  seventh argument, its own or a call's, leaves A10, B10, A12 and B12 alone. A parameter reaches its home through
+  `emitParams` (`regOf_`). An A-side home is an operand and a destination as it stands; a B-side one is copied through
+  A4 or A6, so no instruction reads two registers across the files. A compare read only by its block's branch is written
+  by the branch (`[A1]` or `[!A1]`, no XOR); a constant of 5 bits goes in ADD, SUB, AND, OR, XOR, the shifts and CMPEQ,
+  a multiply by a power of two is a shift, a 16-bit constant is one MVK; block arguments move one by one where no move
+  writes what another reads, else through B16-B23. `CXX1_C6X_HOMES` 0 gives no homes, 1 the saved registers alone.
+- **What C6xSched and C6xPipe see:** homes only in registers the walker's own text already keeps locals in (its planner's
+  A10-A13/B10-B13, its leaf's A16-A23) and A24-A31; no value moves between memory and a register unseen - a value has a
+  home or a frame word for its whole life. Neither pass was changed.
+- **Cycles, vm6747 (tests/tms6747.sh SIM=0 CYCLES=1, 780 cases):**
+
+  | level | walker | selector, round 2 | selector, round 3 | cases better / equal / worse |
+  | --- | --- | --- | --- | --- |
+  | -O0 | 447.7 M | 611.0 M | 393.2 M | 376 / 116 / 288 (worse by 0.17 M in all; thread-pool 156 k of it) |
+  | -O2 | 195.9 M | 311.7 M | 201.4 M | 336 / 319 / 125 (worse by 6.17 M in all) |
+
+  Probe c6x-select-scalars: -O0 2,750 (walker 3,523; round 1 5,502), -O2 743 (walker 746; round 1 1,760).
+- **The cycle gate is met in sum at -O0 and not at -O2 (+2.8%), and case by case at neither.** The -O2 loss is six loops:
+  stack-probe +1.60 M, local-zero-init-large +1.02 M, pipelined-data-exit +0.92 M, fill-stores +0.64 M,
+  array-loop-member-copy +0.47 M, array-loop-static +0.37 M - loops C6xPipe pipelines (and the fill pass stores as
+  doublewords) in the walker's text and leaves as written in the selector's. Read from the text, not traced: the guard
+  branches to the loop's head, and `recognise` refuses a head named twice ("the head is entered from elsewhere").
+  **Tried and reverted:** edge stubs written after the next jump, so the guard falls into its loop - right (783/3 at both
+  levels) and slower, -O2 202.9 M, stack-probe 4.0 M. The next step is CPP11_PIPE's trace on those six.
+- **Gates (Linux, d3faa75b's tree):** build; tms6747.sh SIM=0 -O0 783 passed / 3 failed, -O2 783 / 3 - the walker's three
+  noexcept cases; exclusions 0 uncited 0 stale, comments 0 over, memory gate rc 0, ide/generate.py --check up to date;
+  cl /W4 /WX clean on Windows.
+  Census (tools/ssa-census -arch tms6747, d3faa75b): 24,778 of 34,526 functions selected (71.8%), 13 other failures -
+  the thirteenth was `C6xSelect.cpp` itself, `std::upper_bound` not being in cxx3's library; the following commit writes
+  the search as a loop: cl /W4 /WX clean, and cxx3-msvc.exe then compiles the file for tms6747. Its Linux build and the
+  proof that it writes d3faa75b's text over every case (boxkit/m6b-same.sh) were queued behind the lock at the hour.
+- **Owed:** m6b-same.sh's verdict and the census re-run after that commit; the bench kernels' cycles; sim6747, asm6x.sh and identical.sh
+  ARCHS=tms6747 (the coordinator's).
