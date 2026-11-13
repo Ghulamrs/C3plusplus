@@ -249,3 +249,32 @@ sides; (3) *the T path* - a load's destination side picks its data path, two loa
 then a home an instruction reads directly, not a copy through A4/A6 as rounds 3-5 wrote it. The registers are numbered
 so a pseudo is any number from 64 up; the allocator's result is a rewrite of `MOperand::reg`. Its gate is cycles case
 by case against round 5 (`m6d-cmp.sh`), the text no longer identical by design.
+
+### M6b, round 1 (the selection emits MIR), 2026-11-13, lane m6e
+
+- **Landed** (`91f0d751`): `optimizer/C6xMir.{h,cpp}` (new, 76 + 175 lines) - the design section above; `backend/C6xSelect.cpp`
+  675 -> 704 lines, `Tms6747.h` +7. Every instruction the selector writes is an `MInst` (`ssaEmit`; no `out_ <<` of an
+  instruction is left in the file); what a walker's helper writes is read onto the stream where it stood (`ssaAbsorb`);
+  `selectBody` prints the stream (`c6x::write`) where its text used to accumulate. src/ +318 -31 lines. `ssaAssign` is
+  untouched: schedule-aware allocation is round 2.
+- **The selected text is m6-d's, byte for byte.** Windows, `cxx3-msvc.exe` of work\m6e against work\m6d's (bbedc0dd),
+  `-arch tms6747 -S` over the 1,170 files of tests/cases at -O0 and -O2, the text and the diagnostics by md5
+  (boxkit/m6e-winsame.sh): 2,331 same, 9 differ - eight are four cases whose diagnostic names the tree's own directory
+  (posix-headers, std-function-not-function-type-refused, ucn-identifier, windows-h-layout), one was a compile cut
+  short under load; re-run with the directory's name levelled, 10 outputs, 0 differ. Linux, five cases at both levels
+  (m6e-gate.sh quick): 0 differ.
+- **How much of the stream is modelled** (`CXX1_C6X_MIR=1`, tests/cases at -O2, Windows): 6,742 selected functions,
+  140,404 instructions, 21,794 labels, **0 verbatim lines**, 14,886 operands held as text that are no branch's target -
+  symbols in `MVKL`/`MVKH` and what else `MOperand` does not spell, not broken down.
+- **Gates:** cl /W4 /WX clean (Windows); exclusions 0 uncited 0 stale, comments 0 over, ide/generate.py --check up to
+  date (both boxes; the project lists regenerated). Census (tools/ssa-census -arch tms6747, Windows): outside 0, 25,033
+  of 34,860 functions selected (71.8%), 13 other failures - round 5's twelve and `C6xMir.cpp`, which includes
+  `C6xModel.h` (`thread_local`, refused on tms6747) as `C6xSched.cpp` and `C6xPipe.cpp` do.
+- **Linux gates (91f0d751's tree, ~/m6e):** build; `identical.sh ARCHS=tms6747 LEVELS="0 2"` against m6-d's cxx3.exe:
+  1,660 compared, 0 differ; tms6747.sh SIM=0 -O2 783 passed / 3 failed - the walker's three noexcept cases - 192.2 M
+  cycles, round 5's; exclusions 0 uncited 0 stale, comments 0 over, memory gate --check rc 0, ide/generate.py --check
+  up to date.
+- **Owed:** round 2, schedule-aware allocation on the stream (the design section's last paragraph); the opaque
+  operands broken down by kind; the helpers' text built as `MInst`s rather than read back; sim6747, asm6x.sh, -O0
+  tms6747.sh and make test (the coordinator's). For the merge with lane m6g's `-g`: boxkit/m6e-handover.md names every
+  function touched.
