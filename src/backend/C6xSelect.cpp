@@ -215,10 +215,10 @@ std::string Tms6747::ssaUse(const ir::Function &f, ir::ValueId v, const char *sc
     return scratch;
 }
 
-// v at its home on either side where the function is optimised - ssaPut decides whether the instruction may read it there.
+// v at its home on either side where the homes were given by side (ssaSides_) - ssaPut decides whether the instruction may read it there.
 std::string Tms6747::ssaRead(const ir::Function &f, ir::ValueId v, const char *scratch) {
     const char *h = ssaHomeOf(v);
-    return h != nullptr && optimize_ != 0 ? std::string(h) : ssaUse(f, v, scratch);
+    return h != nullptr && ssaSides_ ? std::string(h) : ssaUse(f, v, scratch);
 }
 
 // **An instruction over the homes as they stand** (M6b round 3): written as built where one source at most crosses
@@ -412,6 +412,7 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
     const unsigned kept = mode <= 0 ? 0u : wideCall ? kKept & ~0x55u : kKept;
     const bool sides = optimize_ != 0 && std::getenv("CXX1_C6X_NOSIDES") == nullptr;
     const unsigned scratch = mode >= 2 ? (sides ? kScratch : kScratchA) : 0u;
+    ssaSides_ = sides;
     std::vector<int> arrives(nv, -1);
     for (std::size_t i = 0; i < f.params.size(); i++) arrives[f.params[i].v] = static_cast<int>(i);
     // The file a value wants: a parameter its arriving register's, a load or a step its base's, else most of its operands'.
@@ -587,8 +588,8 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
     // The result where it is computed: its home on the A side, A4 where it has none or is narrowed after.
     const char *home = i.result.valid() ? ssaHomeOf(i.result) : nullptr;
     const std::string wide = home != nullptr && home[0] == 'A' ? home : "A4";
-    // On either side where the function is optimised (`own`, read by `y`): ssaPut answers where the result went.
-    const std::string own = home != nullptr && optimize_ != 0 ? home : wide;
+    // On either side where the homes were given by side (`own`, read by `y`): ssaPut answers where the result went.
+    const std::string own = home != nullptr && ssaSides_ ? home : wide;
     std::string d = rt != nullptr && !rt->isVoid() && rt->size(target_) < 4 ? "A4" : own;
     const auto finish = [&]() { if (d == "A4") { narrowInt(rt); ssaStore(f, i.result, "A4"); } };
     const auto x = [&](std::uint32_t n) { return ssaUse(f, f.operand(i, n), n == 0 ? "A4" : "A6"); };

@@ -294,6 +294,7 @@ private:
     std::string ssaUse(const ir::Function &f, ir::ValueId v, const char *scratch);
     std::string ssaRead(const ir::Function &f, ir::ValueId v, const char *scratch);
     std::string ssaPut(c6x::MInst t);
+    bool ssaSides_ = false;         // -O1 and up: homes on both files, read where they stand; CXX1_C6X_NOSIDES=1 is round 2's text
     bool ssaCompare(const ir::Function &f, const ir::Inst &c, const std::string &d);
     // The body as MIR (M6b): the selector's instructions, a walker helper's text read in where it was written (ssaAbsorb).
     c6x::MStream ssaMir_;
