@@ -39,3 +39,4 @@ Everything else - x86 gates, the C6000, cl - stays on the boxes.
 -O0 and -O2 on the Mac, and from M5.4 the target-4 self-host, each through `mac-run.sh`.
 
 ## Where it stands
+- **To undo at M5.3:** the five `arm64-darwin` lines m5b added to `.notarget` (walker defects, `tests/open/walker-*`) go when the walker goes; the selector must answer those cases as clang does.
