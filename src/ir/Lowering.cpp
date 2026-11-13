@@ -601,6 +601,8 @@ void Lowering::memberInits(sema::TypedId fnNode, std::uint32_t from, std::uint32
             openFull();
             store(result(g), exprTo(child(e->second, 0), tid(mt)).v);
             closeFull();
+        } else if (k == 1 && mt.isArray() && syn(child(e->second, 0)).kind == syntax::Kind::StringLit) {
+            stringArray(child(e->second, 0), result(g), mt);     // [dcl.init.string]: `= "ab"`, `{"ab"}`, `: m("ab")`
         } else if (k == 1 && plainClass(mt) && objectNode(child(e->second, 0))) {
             const Val src = object(child(e->second, 0));
             if (T(src.type).unqualified() != &mt) outside("a member built from another type");
@@ -1303,7 +1305,8 @@ void Lowering::guard(ValueId slot, const Type &c, const std::string &dtor) {
 
 // An array a guard builds: by its class's loop, from its braced list, or of scalars placed leaf by leaf.
 void Lowering::builtAtRunTime(const Type &t, const sema::StaticGuard &g, const std::string &what) {
-    if (t.isArray() && !g.array && !g.elements.recorded() && !scalar(*t.innermostElement()->unqualified()))
+    const Type &e = *t.innermostElement()->unqualified();
+    if (t.isArray() && !g.array && !g.elements.recorded() && !scalar(e) && !plainClass(e))
         outside(what + " array built at run time");
 }
 
@@ -1453,6 +1456,10 @@ void Lowering::staticConstruction(sema::TypedId var, const std::string &symbol, 
             outside("a static local's default constructor of parameters");
         }
         directCall(g.ctor, g.ctorSig, ops);
+    } else if (plainClass(c) && !(v.count == 1 && objectNode(child(var, 0)))) {
+        std::vector<sema::TypedId> parts;     // [stmt.dcl]/4: `static P p = { g(x), 1 };`, placed leaf by leaf
+        for (std::uint32_t i = 0; i < v.count; i++) parts.push_back(child(var, i));
+        aggregateInit(obj, c, parts);
     } else if (c.isStructOrUnion()) {
         if (v.count != 1) outside("a static class of " + std::to_string(v.count) + " parts");
         const Val o = classValue(child(var, 0), c);
@@ -1519,8 +1526,8 @@ void Lowering::staticArray(sema::TypedId var, const std::string &symbol, const T
     if (g.elements.recorded()) {
         closeFull();     // each element is a full expression of its own; nothing destroys one built, the guard aborting instead
         listArray(var, first, *T(elem).unqualified(), n, g.elements, std::string());
-    } else if (g.vectorLoop.empty() && scalar(*T(elem).unqualified())) {
-        // [stmt.dcl]/4: an array of scalars whose list is not constant - its values after the written bounds, placed leaf by leaf.
+    } else if (g.vectorLoop.empty() && (scalar(*T(elem).unqualified()) || plainClass(*T(elem).unqualified()))) {
+        // [stmt.dcl]/4: an array of scalars or plain classes whose list is not constant - its values after the written bounds, placed leaf by leaf.
         const sema::TypedNode &v = tree_.node(var);
         std::vector<sema::TypedId> parts;
         for (std::uint32_t i = v.bounds; i < v.count; i++) parts.push_back(child(var, i));
@@ -3051,7 +3058,7 @@ void Lowering::stmt(sema::TypedId id) {
             long long v = 0;
             // The value the parser folded the label to ([stmt.switch]/2), where the lowering's own folding has no answer.
             if (!foldConstant(child(id, 0), v)) {
-                if (!tree_.node(id).folded.has) outside("a case label that is not a constant the lowering folds");
+                if (!tree_.node(id).folded.has) broken("a case label the parser did not fold");     // caseLabel folds every one
                 v = tree_.node(id).folded.value;
             }
             for (long long k : sw.values) if (k == v) broken("two case labels of one value");

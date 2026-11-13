@@ -1235,7 +1235,11 @@ void Parser::topLevel(Program &program) {
                 bool flat = memberOf->findMember(entry) != nullptr;
                 for (std::size_t i = 0; flat && i < in.items.size(); i++) flat = !in.items[i].isList;
                 const Type *ilType = nullptr;
-                args = bracedInitArguments(target, in, epos, &ilType);
+                // [dcl.init.string]/1: `tag{"ab"}` is the literal itself, as `tag("ab")` is.
+                if (in.items.size() == 1 && stringInitialiser(in.items[0], target) != nullptr)
+                    args.push_back(std::move(in.items[0].value));
+                else
+                    args = bracedInitArguments(target, in, epos, &ilType);
                 if (flat && ilType != nullptr)
                     memberLists_[currentFunction_ + "|" + entry + "|" + std::to_string(static_cast<std::uint32_t>(epos))] =
                         std::make_pair(ilType, in.items.size());
@@ -1452,6 +1456,24 @@ void Parser::topLevel(Program &program) {
                 src_.fail(epos, "'" + m->name + "' takes one value here, "
                                 "given " + std::to_string(found->second.size()));
 
+            // [dcl.init.string]/1: `: tag("ab")` lays the literal down as a local's `= "ab"` does.
+            if (!valueInitialised && m->type->isArray()) {
+                Init in;
+                in.pos = epos;
+                in.value = std::move(found->second[0]);
+                if (const StrLit *str = stringInitialiser(in, m->type)) {
+                    const MemberRoot root = { thisOffset_, memberOf, m };
+                    const MemberRoot *was = memberRoot_;
+                    memberRoot_ = &root;
+                    std::vector<InitStep> path;
+                    std::vector<StmtPtr> laid;
+                    emitString(std::string(), path, m->type, str, epos, laid);
+                    memberRoot_ = was;
+                    memberInits.push_back(oneStatement(std::move(laid)));
+                    continue;
+                }
+                found->second[0] = std::move(in.value);
+            }
             ExprPtr field = thisMember(thisOffset_, memberOf, *m);
 
             // **A reference member is bound, not assigned**, and this is the one place

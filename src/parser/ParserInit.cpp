@@ -1562,6 +1562,8 @@ bool Parser::staticallyInitialisable(const Type *t, Init &in) {
     if (needsConstruction(t)) return false;
     const Type *elem = t->isArray() ? t->innermostElement()->unqualified() : nullptr;
     if (in.isList && elem != nullptr && !elem->isStructOrUnion() && !elem->isMemberPointer()) return leavesFold(elem, in);
+    if (in.value == nullptr && !(in.isList && (t->isStructOrUnion() || elem != nullptr))) return true;
+    if (in.isList && !classLeavesFold(in)) return false;     // [stmt.dcl]/4: `static P p = { g(x), 1 };`
     if (in.value == nullptr) return true;
     if (in.isList)
         return in.items.size() != 1 || in.items[0].isList || t->isArray() ||
@@ -1585,6 +1587,23 @@ bool Parser::leavesFold(const Type *elem, Init &in) {
         if (item.isList ? !leavesFold(elem, item)
                         : item.value != nullptr && !(item.value->type() != nullptr && item.value->type()->isArray()) &&
                               !staticallyInitialisable(elem, item))
+            return false;
+    }
+    return true;
+}
+
+// A class's or an array of classes' list, data unless a number or a pointer in it is neither a constant nor an address.
+bool Parser::classLeavesFold(Init &in) {
+    for (Init &item : in.items) {
+        if (item.isList) { if (!classLeavesFold(item)) return false; continue; }
+        const Type *vt = item.value == nullptr || item.value->type() == nullptr ? nullptr : item.value->type()->unqualified();
+        if (vt == nullptr || !(vt->isArithmetic() || vt->isPointer())) continue;
+        item.value = decay(std::move(item.value));
+        long long v;
+        long double d;
+        std::string sym;
+        if (!constant_.fold(*item.value, &v, item.pos) && !constant_.foldFloating(*item.value, &d) &&
+            !foldAddress(*item.value, &sym, &v))
             return false;
     }
     return true;

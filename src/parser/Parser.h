@@ -2192,6 +2192,7 @@ private:
     // not is stored by the init function instead, once the object is declared.
     bool staticallyInitialisable(const Type *t, Init &in);
     bool leavesFold(const Type *elem, Init &in);
+    bool classLeavesFold(Init &in);
     void dynamicInitialiseScalar(const std::string &name, const std::string &symbol, const Type *type, Init &in);
     void dynamicInitialiseStaticMember(const std::string &name,
                                        const std::string &symbol, const Type *type,

@@ -104,7 +104,7 @@ goes in the same commit.
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:621` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2298` |
 | `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:264` |
-| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:3144`, `src/parser/ParserTopLevel.cpp:835` |
+| `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:3146`, `src/parser/ParserTopLevel.cpp:835` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:763` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:456` |
 | `template <template <class> typename C>`, `typename` after a template template parameter's list | C++17 | `src/parser/ParserTemplate.cpp:52` |
@@ -218,13 +218,13 @@ is left:
   has no body. `src/parser/ParserType.cpp:1281`
 - **a delegating constructor of a class with a virtual base** - the target
   would have to be told whether the object is the most derived one.
-  `src/parser/ParserTopLevel.cpp:2470`
+  `src/parser/ParserTopLevel.cpp:2492`
 - **a mem-initialiser that would run a constructor once per element of an
-  array member** - `src/parser/ParserTopLevel.cpp:1326`
+  array member** - `src/parser/ParserTopLevel.cpp:1330`
 - **a virtual base initialised with an argument that needs a temporary** - the
   base is built by the most-derived constructor, in a frame the temporary is
   not in; an argument of parameters and constants works.
-  `src/parser/ParserTopLevel.cpp:1293`
+  `src/parser/ParserTopLevel.cpp:1297`
 - **a braced list among the arguments of an aggregate member's constructor**,
   `B b = { 1, { 2, { 3 } } }` where the member's class has a constructor - each
   argument is taken as a value. `src/parser/ParserInit.cpp:419`
@@ -304,7 +304,7 @@ many, or has no object of its own:
   destroyed element by element. `src/parser/ParserClass.cpp:2211`
 - **a static-duration reference bound to a temporary of an incomplete class, an
   array or void** - [class.temporary]/5's object of static storage is made for a
-  scalar or a complete class only. `src/parser/ParserInit.cpp:1828`
+  scalar or a complete class only. `src/parser/ParserInit.cpp:1847`
 
 ## Expressions
 
@@ -398,7 +398,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
   `catch` handler, on x86_64-windows** - the cleanup would be a funclet inside
   the handler's funclet. `src/parser/ParserStmt.cpp:979`
 - **a trailing return type that is itself deduced**, `auto f() -> auto` -
-  C++14. `src/parser/ParserTopLevel.cpp:2383`
+  C++14. `src/parser/ParserTopLevel.cpp:2405`
 - **an expression form the Itanium name was not measured for, over a template's
   parameters in a function template's signature** - a postfix `++` or `--`, a
   lambda, `new`, `throw`, `typeid`, `noexcept`, a C-style cast to a reference
@@ -662,7 +662,6 @@ a call that is no lvalue
 a call through a member pointer
 a call through what is not a pointer to a member function
 a call's class result that is no object
-a case label that is not a constant the lowering folds
 a case of <...> parts
 a cast of what is not a scalar
 a cast that takes a const away
@@ -1061,6 +1060,7 @@ a break outside a loop or switch
 two case labels of one value
 two default labels
 a case label outside a switch
+a case label the parser did not fold
 a conversion function that drops const
 an operator-> that drops const
 a mem-initialiser outside a constructor
