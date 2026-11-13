@@ -91,3 +91,19 @@ Everything else - x86 gates, the C6000, cl - stays on the boxes.
   lvalues, base and derived, is lowering-conditional-derived's root and not entered twice. src/ lines: 0 changed.
   Owed: the miscompile first; the five front-end shapes; the reasons unprobed (Lowering.cpp 2290-2900 and past 3760,
   Builder.cpp).
+
+- **R1's finds, round 2, mended (lane r1g, 2026-11-13, from m5-r1q 749b7d6d).** The six wrong answers r1q put in
+  tests/open leave it. **The miscompile:** a static reference bound to a class temporary passed bindStaticReference's
+  refusal because a class temporary is a dereference of its slot (a glvalue by shape, prvalue by mark); the mark is
+  asked now, so `static const A &r = A(3);` is refused by name (static-reference-to-temporary-refused) instead of
+  destroying the temporary at once. **Taken:** a declaration as a for's condition (made afresh each turn, as a while's;
+  Lowering's forStmt reads it by condition()); a declaration as a switch's condition of integer or enumeration type
+  (the switch in a block of its own, Lowering's new declaredCondition gives its value untested; a class there is
+  refused by name, ParserStmt.cpp:1157); a function reference bound to `k ? g : h`; a static reference to a function
+  (the guarded global holds its address). **arrow-chain-through-class-result's root was not operator->:** `P2 b = { a }`
+  elided braces into the member q and asked P1's first member to take a P1 - [dcl.init.aggr]/11 initialises a member
+  whole from an object of its own class, in the parser's emitFill and in Lowering's aggregateItem. Cases: the six
+  moved plus aggregate-member-from-own-class, for-condition-declaration-turns, switch-condition-declaration-enum.
+  Windows -O0/-O2 gnu+masm 36/36, cl /W4 /WX clean, exclusions 0 uncited 0 stale (outside 570 -> 569), comments 0,
+  memory gate new 1054 -> 1053. src/ lines: +61 -17. Owed: a temporary with static storage of its own
+  ([class.temporary]/5, `_ZGR...` on Itanium) so the refusal can go.

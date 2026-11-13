@@ -432,10 +432,12 @@ void Parser::emitFill(const std::string &name, std::vector<InitStep> &path,
         emitString(name, path, type, s, item.pos, out);
         return;
     }
+    // [dcl.init.aggr]/11: an object of the member's own class initialises it whole - no braces are elided into it.
+    const bool whole = type->isStructOrUnion() && item.value != nullptr && item.value->type()->unqualified() == type->unqualified();
     // A pointer to a member function is laid out as a struct here, and it is still one value:
     // `{&B::vf, &B::nf}` fills two of them, not the first one's fields (1.27, 2026-10-21, review
     // of 1.25, item 3 - the array's first element was asked to take `&B::vf` as a `void *`).
-    if (type->isArray() || (type->isStructOrUnion() && !type->isMemberFunctionPointer())) {
+    if (!whole && (type->isArray() || (type->isStructOrUnion() && !type->isMemberFunctionPointer()))) {
         emitAggregate(name, path, type, c, item.pos, out);
         return;
     }
@@ -1818,7 +1820,8 @@ void Parser::bindStaticReference(const Declared &d, const std::string &symbol,
     at_++;
     ExprPtr init;
     { OverloadTarget hold(*this, d.type); init = assign(); }
-    if (!isGlvalue(*init))
+    // A class temporary is a dereference of its slot marked prvalue; a function is bound by its address, no temporary.
+    if (!d.type->referent()->isFunction() && (!isGlvalue(*init) || init->declCategory() == Expr::Category::Prvalue))
         src_.fail(d.pos, "'" + d.name + "' is a reference with static storage "
                          "duration, and binding it to a temporary is not "
                          "supported yet - the temporary would need static "

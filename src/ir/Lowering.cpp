@@ -825,6 +825,13 @@ void Lowering::aggregateItem(ValueId at0, const Type &mt, const std::vector<sema
         next++;
         return;
     }
+    // [dcl.init.aggr]/11: an object of the member's own class initialises it whole - no braces are elided into it.
+    const sema::TypedNode &pn = tree_.node(p);
+    if (mt.isStructOrUnion() && pn.type != nullptr && pn.type->unqualified() == &mt && objectNode(p) && !mt.nonTrivialCopy()) {
+        copyObject(at0, object(p).v, mt);
+        next++;
+        return;
+    }
     aggregateFill(at0, mt, parts, next);     // brace elision: the value reaches into the member
 }
 
@@ -1396,7 +1403,12 @@ void Lowering::staticConstruction(sema::TypedId var, const std::string &symbol, 
     // bindStaticReference's binding: the global holds the address of the lvalue, as a local reference's alloca would.
     if (c.isReference()) {
         if (v.count != 1) outside("a static reference of " + std::to_string(v.count) + " parts");
-        Val b = lvalue(child(var, 0));
+        // [dcl.init.ref]/5: a reference to a function holds the function's address, as boundLocal's does.
+        Val b = c.referent()->isFunction() ? decay(expr(child(var, 0))) : lvalue(child(var, 0));
+        if (c.referent()->isFunction()) {
+            if (!T(b.type).isPointer() || T(b.type).pointee()->unqualified() != c.referent()->unqualified()) outside("a static reference to a function bound to what is not that function");
+            b.type = tid(*c.referent());
+        }
         if (T(b.type).isStructOrUnion() && c.referent()->isStructOrUnion() && T(b.type).unqualified() != c.referent()->unqualified())
             b = baseOfObject(b, c);
         if (T(b.type).unqualified() != c.referent()->unqualified()) outside("a static reference bound to another type");
@@ -3426,6 +3438,11 @@ Lowering::Val Lowering::condition(sema::TypedId id) {
         closeFull();
         return c;
     }
+    return declaredCondition(id, true);
+}
+
+// A condition's declaration, its variable read back - tested as a bool, or (a switch's) its value as it is.
+Lowering::Val Lowering::declaredCondition(sema::TypedId id, bool test) {
     if (count(id) != 1 || syn(child(id, 0)).kind != syntax::Kind::Var) outside("a condition declaring more than one name");
     const sema::TypedId var = child(id, 0);
     const TypeId t = TypeTable::id(tree_.node(var).type);
@@ -3437,13 +3454,13 @@ Lowering::Val Lowering::condition(sema::TypedId id) {
                               conv.what == sema::Resolution::Call && !conv.symbol.empty() && conv.hasThis && !conv.indirect &&
                               conv.vslot < 0 && conv.type.valid() && T(conv.type).isFunction() && T(conv.type).params().size() == 1 &&
                               T(conv.type).params()[0]->isPointer() && T(conv.type).params()[0]->pointee()->isStructOrUnion();
-    if (!v.valid() || !(scalar(T(v)) || byConversion)) outside("a condition declaring what is not a scalar");
+    if (!v.valid() || !(scalar(T(v)) || (byConversion && test))) outside("a condition declaring what is not a scalar");
     declaration(id);      // the object lives to the statement's end, which closes the scope it is declared in
     const std::map<std::uint32_t, std::pair<ValueId, TypeId> >::const_iterator l = locals_.find(tree_.node(var).syntax.v);
     if (l == locals_.end()) outside("a condition's variable the lowering did not declare");
     const ValueId where = v.v == t.v ? l->second.first : load(l->second.first, tid(*types_.pointerTo(&T(v))));
     openFull();
-    const Val c = byConversion ? truth(convertedObject(Val(where, v), conv)) : truth(readOf(where, v));
+    const Val c = !test ? readOf(where, v) : byConversion ? truth(convertedObject(Val(where, v), conv)) : truth(readOf(where, v));
     closeFull();
     return c;
 }
@@ -3466,15 +3483,12 @@ void Lowering::forStmt(sema::TypedId id) {
     }
     const sema::TypedId condNode = (parts & 2) ? child(id, at++) : sema::TypedId();
     const sema::TypedId stepNode = (parts & 4) ? child(id, at++) : sema::TypedId();
-    if (condNode.valid() && syn(condNode).kind == syntax::Kind::DeclStmt) outside("a declaration in a for's condition");
     const BlockId cond = newBlock(), body = newBlock(), step = newBlock(), exit = newBlock();
     br(cond);
     place(cond);
     if (condNode.valid()) {
         mark(id);       // the walker's: the `for`'s line again at its condition and at its step
-        openFull();
-        const Val c = truth(expr(condNode));
-        closeFull();
+        const Val c = condition(condNode);      // a declaration made afresh each turn, as a `while`'s is
         condbr(c.v, body, exit);
     } else {
         br(body);
@@ -3712,8 +3726,7 @@ Lowering::Val Lowering::iteratorCall(const sema::Resolution &r, const std::vecto
 
 void Lowering::switchStmt(sema::TypedId id) {
     if (count(id) != 2) outside("a switch of " + std::to_string(count(id)) + " parts");
-    if (syn(child(id, 0)).kind == syntax::Kind::DeclStmt) outside("a declaration in a switch's condition");
-    Val c = decay(expr(child(id, 0)));
+    Val c = syn(child(id, 0)).kind == syntax::Kind::DeclStmt ? declaredCondition(child(id, 0), false) : decay(expr(child(id, 0)));
     if (!T(c.type).isInteger()) outside("a switch on what is not an integer");
     c = convert(c, promoted(c.type));
     const BlockId head = cur_, exit = newBlock();
@@ -3759,7 +3772,7 @@ void Lowering::declaration(sema::TypedId id) {
             // one built at run time under a guard, a thread_local and a reference stay outside.
             const bool tls = r.isThreadLocal || threadLocalGlobal(r.symbol);
             if (tls && v.type->isReference()) outside("a thread_local reference");
-            if (v.type->isReference() && !referable(*v.type->referent())) outside("a static reference to '" + v.type->referent()->describe() + "'");
+            if (v.type->isReference() && !referable(*v.type->referent()) && !v.type->referent()->isFunction()) outside("a static reference to '" + v.type->referent()->describe() + "'");
             if (!guarded_) outside("a static local built at run time");
             if (guarded_(r.symbol) && tls) { threadStatic(var, r.symbol); continue; }
             if (guarded_(r.symbol)) { guardedStatic(var, r.symbol); continue; }

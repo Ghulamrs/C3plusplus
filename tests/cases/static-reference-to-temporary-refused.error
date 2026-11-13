@@ -1,0 +1,1 @@
+is a reference with static storage duration, and binding it to a temporary is not supported yet

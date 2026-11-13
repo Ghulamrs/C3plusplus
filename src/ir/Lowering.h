@@ -371,6 +371,7 @@ private:
     bool operatorCalls(sema::TypedId id) const;
     Val operatorCall(sema::TypedId id);
     Val condition(sema::TypedId id);
+    Val declaredCondition(sema::TypedId id, bool test);
     void throwExpr(sema::TypedId id);
     bool abortingThrow(sema::TypedId id);
     ValueId localAlloca(sema::TypedId var, TypeId slotType);
