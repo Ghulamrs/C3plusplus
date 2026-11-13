@@ -42,7 +42,8 @@ std::string Tms6747::ssaOutside(const Function &fn, const ir::Function &f) const
     if (fn.isVariadic() || f.variadic) return "variadic";
     if (fn.hasLandingPads() || f.landingPads) return "landing pads";
     if (fn.isNoexcept() || !fn.exceptionSpec().empty()) return "exception specification";
-    if (fn.sretSlot() != 0 || f.sret.valid()) return "class result";
+    if (fn.sretSlot() != 0 || f.sret.valid() || fn.returns()->isStructOrUnion()) return "class result";
+    if (fn.returns()->isFloating() || (!fn.returns()->isVoid() && accessSize(fn.returns()) > 4)) return "floating or 64-bit result";
     if (fn.params().size() != f.params.size()) return "parameters differ";
     for (const Param &p : fn.params()) if (p.type->isStructOrUnion() || accessSize(p.type) > 4) return "class or 64-bit parameter";
     for (std::size_t v = 1; v < f.values.size(); v++) {

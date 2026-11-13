@@ -27,3 +27,27 @@ and "Where it stands" appended to as steps land.
 tools in `~/ti6x`), never on the Mac.
 
 ## Where it stands
+
+### M6a, round 1 (WIP), 2026-11-13, lane m6a
+
+- **Landed (WIP):** `backend/C6xSelect.cpp` (new, ~330 lines); `Tms6747.{h,cpp}` +31; `Driver.cpp` 3 lines (tms6747 lowers
+  and hands the module over, `CXX1_C6X_WALKER` the walker all, `level` passed to the lowering); `tools/ssa-census` 2 lines
+  (the `-select: selected=` row); probe `tests/cases/c6x-select-scalars` (its .expected is the walker's and checked by
+  hand - clang's from the Windows box is owed).
+- **Subset:** words only (integers and pointers to 4 bytes), arithmetic, compares, branches, switch, block arguments
+  through B16-B23, loads/stores (frame operands folded), allocas, direct calls of up to ten arguments in registers, returns.
+  A function falls back to the walker with its reason under `CXX1_SSA_WHY` (`c6x-walker <sym>: <why>`).
+- **Census** (tools/ssa-census -arch tms6747, before the last fix): 25,335 of 34,712 functions selected (73.0%); 12 other
+  failures are the front end's target refusals (unistd.h, thread_local, realpath), not the selector's.
+- **tests/tms6747.sh, vm6747 only (SIM=0), -O0:** walker 783 passed / 3 failed (the three noexcept cases, base); selector
+  778 / 8 - five new wrong answers (namespace, namespace-relative-sibling, qualified-base-member-template,
+  ssa-converted-arguments, using-declaration). The root found: a call passing a class of 8 bytes or less by value - TI
+  passes it in registers, the IR a pointer to a copy; the refusal ("class argument", signature's class parameter) is
+  written in the handover, not built. A function returning such a class was the first such fault, fixed and built.
+- **Cycles:** worse, named - every value goes through its frame word (LDW + 4 NOPs), where the walker keeps A4: probe
+  5,502 against 3,523 at -O0 and 1,760 against 746 at -O2; suite -O0 611.0 M against the walker's 447.7 M. Registers are
+  M6b's; the cycle gate is not met by M6a round 1.
+- **Gates:** cl /W4 /WX clean (Windows, before the last fix); exclusions 0 uncited 0 stale, comments 0 over, memory gate
+  rc 0, ide/generate.py --check up to date. **Owed:** the class-argument refusal, then tms6747.sh with sim6747 at -O0/-O2
+  (each run under 25 minutes: the SIM=1 leg reached the cap twice), asm6x.sh (C6XDIFF set in boxkit/m6a-gate.sh),
+  identical.sh ARCHS=tms6747 by name (2,122 of 2,490 differed - every file with a selected function), -O2 cycles.
