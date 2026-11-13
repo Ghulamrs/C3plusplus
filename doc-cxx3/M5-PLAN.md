@@ -39,3 +39,23 @@ Everything else - x86 gates, the C6000, cl - stays on the boxes.
 -O0 and -O2 on the Mac, and from M5.4 the target-4 self-host, each through `mac-run.sh`.
 
 ## Where it stands
+
+### M5.0, the Mac baseline, 2026-11-13 (lane m5b, measured at `cd01e16b`)
+
+The Mac (arm64-darwin, clang++, 12 processors), every job through `boxkit/mac-run.sh`; `make -j8` 20 s.
+- **run.sh, the walker**: -O0 1154 passed, 5 failed; -O2 1154 passed, the same 5 failed. All five are M3b.7's
+  SSA-path cases, never run on arm64 before (the Mac rested): `ssa-aggregate-member-temporary`,
+  `ssa-aggregate-temporary-members`, `ssa-aggregate-value-temporaries`, `ssa-new-arguments-outlive` (the ledger
+  unbalanced on unwind) and `ssa-census-last-bodies` (`?:` of lvalues bound to `const Slot &` binds a copy: 0 for
+  clang's 1). Each is the walker's defect already registered for tms6747 as `tests/open/walker-*.cpp` with clang's
+  answer; each case's `.notarget` now names arm64-darwin beside tms6747, pointing there. After: -O0 and -O2 1154
+  passed, 0 failed (812 printed, 340 refused). M5.1-M5.3 close them by taking arm64 off the walker.
+- **tests/open.sh on the Mac**: 30 differ, 2 agree - `array-static-tail-defaults` and
+  `lowering-handler-return-class` are the SSA path's (x86) defects the walker does not have; they stay open.
+- **tools/self-host, target 4, -O0** (`SELFHOST_JOBS=8`): stages 0, 1, 2, 3 compiled 100 of 100 sources in 15, 62,
+  64, 62 s; **stages 0 = 1 = 2: 100 of 100 the same object; 2 = 3: 100 of 100**. No tools/ change was needed.
+- **<thread>/<mutex>**: two cases include them (`thread-pool`, `thread-sleep-yield`), with `thread-local` and
+  `thread-local-extern`: each passes in both run.sh runs and 10 of 10 repeated runs at -O0 and at -O2.
+- **R6's Mac leg: done.** The walker's arm64 output, held by byte identity since M3b.7, runs right on the Mac
+  outside the five registered walker defects above, and self-hosts to a fixed point.
+- Owed to the wave gate: emit.sh's arm64-darwin list skips the five cases now; its golden count, unmeasured here.
