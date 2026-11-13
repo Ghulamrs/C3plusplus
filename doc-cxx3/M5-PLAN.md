@@ -479,7 +479,7 @@ m5e's "left for M5.3" in `backend/A64Select.cpp`, at -O1 and -O2 only (A64Select
   | virtual | 127 | 109 | 107 | 95 | 94 | 70 |
   | total | 368 | 350 | 316 | 288 | **287** | 168 |
 
-  0.78 of m5-h's total and 1.7 times clang's (from 2.2); `hash` (a multiply-and-xor chain, `isort` (memory order) and
+  0.78 of m5-h's total and 1.7 times clang's (from 2.2); `hash` (a multiply-and-xor chain), `isort` (memory order) and
   `virtual` (the call itself) are most of the distance left.
 - **Gate** (final tree, cl-built `cxx3-msvc.exe`, `boxkit/m5i-winprobe.sh`): -O0, -O2, -O2 -g: **0 broken, 0 refusals
   wrong, 10869 of 10869 functions selected, 833 cases compiled**; the Mac at -j2 through `mac-run.sh`: **833 of 833 at
