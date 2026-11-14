@@ -423,15 +423,15 @@ struct Loop {
         hi = regNumber(regs[0]); lo = regNumber(regs[1]);
         return true;
     }
-    // `steppedRegister` of body line o: the base its first stepped access writes, empty where that access has an index.
-    std::string steppedAt(std::size_t o) const {
+    // `steppedRegister` of body line o by number: the base its first stepped access writes, kNoReg where it has an index.
+    int steppedR(std::size_t o) const {
         long by;
-        if (bodyM.empty()) return steppedRegister(body[o], by);
+        if (bodyM.empty()) return regNumber(steppedRegister(body[o], by));
         for (int k = 0; k < bodyM[o].operands; k++) {
             const MOperand &x = bodyM[o].op[k];
-            if (x.kind == MOperand::Memory && x.mode >= MOperand::PreInc) return x.index == kNoReg ? regName(x.reg) : std::string();
+            if (x.kind == MOperand::Memory && x.mode >= MOperand::PreInc) return x.index == kNoReg ? x.reg : kNoReg;
         }
-        return std::string();
+        return kNoReg;
     }
     // The address forms of the body's accesses: read from the entries on the stream, from the lines off it.
     std::vector<Access> addresses() const {
@@ -1149,7 +1149,7 @@ void renameWebs(Loop &L, std::vector<int> &pool) {
         const std::size_t nops = L.ops(o);
         std::vector<int> reads, writes;
         L.regs(o, reads, writes);
-        bool rmw = m == "MVKH" || m == "ADDK" || !L.plainAt(o) || !L.steppedAt(o).empty();
+        bool rmw = m == "MVKH" || m == "ADDK" || !L.plainAt(o) || L.steppedR(o) != kNoReg;
         for (std::size_t r = 0; r < reads.size(); r++) {
             if (!cur.count(reads[r])) { Web w; w.reg = reads[r]; w.keep = true; cur[reads[r]] = static_cast<int>(webs.size()); webs.push_back(w); }
             opWebs[o].push_back(std::make_pair(cur[reads[r]], 0));
@@ -1232,7 +1232,7 @@ void renameWebs(Loop &L, std::vector<int> &pool) {
         std::uint64_t rm = 0, wm = 0;
         L.masks(o, rm, wm);
         if (L.mnem(o) == "MVKH" || L.mnem(o) == "ADDK") L.rmwFirstM |= wm & ~seenM;
-        L.rmwFirstM |= wm & bitOf(L.steppedAt(o));
+        L.rmwFirstM |= wm & bitR(L.steppedR(o));
         seenM |= wm;
     }
 }
@@ -1286,7 +1286,7 @@ void checkBody(const Loop &L, const char *at) {
         if (!t.empty() && t[t.size() - 1] == '\n') t.erase(t.size() - 1);
         const Line p = parse(t), &l = L.body[o];
         long by;
-        if (p.mnem != l.mnem || p.ops != l.ops || p.pred != l.pred || L.steppedAt(o) != steppedRegister(l, by)) { std::fprintf(stderr, "c6x-body: %s %s|%s\n", at, l.raw.c_str(), t.c_str()); return; }
+        if (p.mnem != l.mnem || p.ops != l.ops || p.pred != l.pred || L.steppedR(o) != regNumber(steppedRegister(l, by))) { std::fprintf(stderr, "c6x-body: %s %s|%s\n", at, l.raw.c_str(), t.c_str()); return; }
     }
 }
 
