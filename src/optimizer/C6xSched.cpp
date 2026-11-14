@@ -2287,9 +2287,9 @@ bool removeDead(std::vector<Line> &v) {
 
 thread_local bool streamFolds = false;   // a selected function's folds on its stream; CXX1_C6X_TEXTFOLD=1 keeps the text's
 
-// The five folds on one stream held across the rounds (C6xPack.cpp), read back once (or where `dirty` already): liveness
-// as the text's would leave it.
-void rounds(MStream &s, std::vector<Line> &lines, bool dirty = false) {
+// The five folds on one stream held across the rounds (C6xPack.cpp), read back once into `lines` where the text's are
+// wanted, liveness as the text's would leave it; a stream held on (no lines) writes nothing back.
+void rounds(MStream &s, std::vector<Line> *lines) {
     LiveSpan live;
     bool any = false, changed = false;
     for (int round = 0; round < 8; round++) {
@@ -2306,15 +2306,16 @@ void rounds(MStream &s, std::vector<Line> &lines, bool dirty = false) {
         any = any || changed;
         if (!changed) break;
     }
-    if (any || dirty) linesOf(s, lines);
-    if (!changed) { computeLiveness(lines); return; }    // a fixed point: the liveness is current, as the text's is
-    for (std::size_t k = 0; k < lines.size(); k++) { lines[k].liveIn = live.in[k]; lines[k].liveOut = live.out[k]; }
+    if (lines == nullptr) return;
+    if (any) linesOf(s, *lines);
+    if (!changed) { computeLiveness(*lines); return; }    // a fixed point: the liveness is current, as the text's is
+    for (std::size_t k = 0; k < lines->size(); k++) { (*lines)[k].liveIn = live.in[k]; (*lines)[k].liveOut = live.out[k]; }
 }
 
 // The copy, constant and predicate folds, to a fixed point: a selected function's on its stream, else on the text.
 void rounds(std::vector<Line> &lines) {
     MStream s;
-    if (streamFolds && streamOf(lines, s)) { rounds(s, lines); return; }
+    if (streamFolds && streamOf(lines, s)) { rounds(s, &lines); return; }
     if (streamFolds && std::getenv("CXX1_C6X_MIR") != nullptr) std::fprintf(stderr, "c6x-fold: a line the stream does not spell; the text folds\n");
     for (int round = 0; round < 8; round++) {
         computeLiveness(lines);
@@ -2365,8 +2366,8 @@ std::string c6xSchedule(const std::string &text, int level, bool selected) {
         std::vector<Line> ref;
         if (liveCensus) { ref = lines; streamFolds = false; front(ref); streamFolds = true; }   // the text passes, for the census
         foldFront(early, !skipped("thread"), !skipped("labels"));
-        rounds(early, lines, true);    // the lines read back, the stream still theirs
-        if (!skipped("arms") && predicateArms(early)) rounds(early, lines, true);
+        rounds(early, nullptr);
+        if (!skipped("arms") && predicateArms(early)) rounds(early, nullptr);
         tidyStream(early, !skipped("labels"));
         if (liveCensus) linesOf(early, lines);
         for (std::size_t k = 0; liveCensus && k < std::max(ref.size(), lines.size()); k++)
@@ -2421,7 +2422,7 @@ std::string c6xSchedule(const std::string &text, int level, bool selected) {
         else for (std::size_t i = 0; i < lines.size(); i++) std::fprintf(stderr, "%s\n", lines[i].raw.c_str());
     }
     if (held) {
-        rounds(after, lines, true);
+        rounds(after, nullptr);
         foldAddressing(after, !skipped("index"));
         linesOf(after, lines);
     } else {

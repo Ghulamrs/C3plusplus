@@ -1291,7 +1291,7 @@ void tidyStream(MStream &s, bool labels) {
 namespace {
 
 // The loop passes' text as a stream's: `v` each entry as the text reads it, every edit made on the entry too - a line
-// set or inserted read as `streamOf` reads one - and liveness the stream's own (the views' while a blank is pending).
+// set or inserted assigned to its operands (`edited`) - and liveness the stream's own (the views' while a blank is pending).
 struct LoopStream : LoopText {
     MStream &s;
     std::vector<bool> gone;
@@ -1305,14 +1305,37 @@ struct LoopStream : LoopText {
         read(l.raw + "\n", one);
         return one[0];
     }
+    // The edit on the operands: `from`'s mnemonic, predicate and operands assigned where the line's differ (a fresh entry
+    // where `from` is none); its spelling the line's, else the line read. `c6x-loop-edit` names one the reading differs from.
+    static MInst edited(const Line &l, const MInst *from) {
+        MInst x;
+        if (from != nullptr && from->kind == MInst::Instruction && !from->packed && !from->par && from->unit == 0) x = *from;
+        bool ok = l.instr && !l.verbatim && l.ops.size() <= 4;
+        if (ok && x.m.str() != l.mnem) x.m = opt::StrId(l.mnem);
+        const bool predNot = !l.pred.empty() && l.pred[0] == '!';
+        x.pred = l.pred.empty() ? kNoReg : static_cast<std::uint8_t>(regNumber(l.pred.substr(predNot ? 1 : 0)));
+        x.predNot = predNot;
+        for (std::size_t o = 0; ok && o < 4; o++)
+            if (o >= l.ops.size()) x.op[o] = MOperand();
+            else if (o >= x.operands || x.op[o].str() != l.ops[o]) x.op[o] = MOperand(l.ops[o]);
+        x.operands = static_cast<std::uint8_t>(ok ? l.ops.size() : 0);
+        if (!ok || x.str() != l.raw + "\n") return entry(l);
+        if (std::getenv("CXX1_C6X_MIR") != nullptr) {
+            const MInst r = entry(l);
+            bool same = r.kind == x.kind && r.m.str() == x.m.str() && r.pred == x.pred && r.predNot == x.predNot && r.operands == x.operands;
+            for (int o = 0; same && o < x.operands; o++) same = r.op[o].kind == x.op[o].kind && r.op[o].str() == x.op[o].str();
+            if (!same) std::fprintf(stderr, "c6x-loop-edit: %s\n", l.raw.c_str());
+        }
+        return x;
+    }
     void blank(std::size_t k) override { LoopText::blank(k); gone[k] = pending = stale = true; }
-    void set(std::size_t k, const Line &l) override { LoopText::set(k, l); s[k] = entry(l); stale = true; }
+    void set(std::size_t k, const Line &l) override { LoopText::set(k, l); s[k] = edited(l, &s[k]); stale = true; }
     std::size_t apply(std::size_t h, const std::vector<Line> &pre, std::size_t i) override {
         MStream to;
         std::vector<Line> lines;
         std::size_t at = i;
         for (std::size_t k = 0; k < s.size(); k++) {
-            if (k == h) for (std::size_t p = 0; p < pre.size(); p++) { to.push_back(entry(pre[p])); lines.push_back(pre[p]); }
+            if (k == h) for (std::size_t p = 0; p < pre.size(); p++) { to.push_back(edited(pre[p], nullptr)); lines.push_back(pre[p]); }
             if (!gone[k] && (v[k].instr || !v[k].raw.empty())) { to.push_back(s[k]); lines.push_back(v[k]); }
             if (k == i) at = to.size() - 1;
         }
