@@ -1335,4 +1335,12 @@ until M6d, and Compiler++ and the CCS samples are measured before D4 (lane m6z).
   compared, 2 differ (static-reference-to-temporary, as above); -O0 -g 868 compared, 851 normalised, 1 differ (the
   same case); tests/tms6747.sh SHARD=k/3 CYCLES=1 SIM=0 at -O2 **814 passed, 0 failed, 192,009,106 cycles**
   (unchanged); **walker legs** `CXX1_C6X_WALKER=1` at -O2 **814 passed, 0 failed** (round 17: 812/2);
-  g-same 867 same, 0 differ, 0 broken; asm6x.sh 833 objects, 0 failed at -O0
+  g-same 867 same, 0 differ, 0 broken; asm6x.sh 833 objects, 0 failed at -O0 and -O2; walker legs at -O0 **814
+  passed, 0 failed** (447.8 M cycles). On the final tree b9818dd2 (1139c136 re-points one citation): Windows
+  (work\m6aa4) cl clean, walker same as 17f209c8's (the carets and the three static-reference cases), comments 0
+  over, memory gate rc 0, generate up to date; Linux g++ clean, exclusions 0 uncited 0 stale (after the
+  re-pointing), comments 0, memory gate, ast-residue and generate rc 0. The legs above are 64416d2f's compiler:
+  b9818dd2 builds the same Ast by a different route (not re-run there: tms2, walker legs, -g, g-same, asm6x).
+  Not run (the coordinator's): winpass, make test, ssa.sh.
+- **Owed:** D5's rest (the five passes composing entries, `t.v` gone), then D6; the walker's class temporaries of a
+  static reference (tests/open/walker-static-reference-temporary.cpp) and a `thread_local` one's scalar, with M6d.
