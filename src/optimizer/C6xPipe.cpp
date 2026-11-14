@@ -241,40 +241,30 @@ bool mayAliasAt(const Access &a, int sa, const Access &b, int sb, int d) {
 // **The recognisers' reader** (M6c round 4): what an entry is and its parts - kind, mnemonic, predicate, operands,
 // reads and writes, units - from the stream's typed operands where it has them (`modelled`), else from the line.
 struct Src {
-    const std::vector<Line> &v;                 // the text; empty on a stream
     const MStream *s;
     const std::vector<std::uint64_t> *live;     // the stream's live-in, entry by entry
     mutable std::vector<Line> made;
     mutable std::vector<char> have;
-    Src(const std::vector<Line> &lines, const MStream *stream, const std::vector<std::uint64_t> *in = nullptr) : v(lines), s(stream), live(in) {}
-    std::size_t size() const { return s ? s->size() : v.size(); }
+    Src(const MStream *stream, const std::vector<std::uint64_t> *in) : s(stream), live(in) {}
+    std::size_t size() const { return s->size(); }
     // **An entry read as a line** (M6c round 14): made where a reader still wants text, once.
     const Line &line(std::size_t i) const {
-        if (!s) return v[i];
         if (made.empty()) { made.resize(s->size()); have.assign(s->size(), 0); }
         if (!have[i]) { made[i] = viewOf((*s)[i]); have[i] = 1; }
         return made[i];
     }
-    // Entry i as it stands on the stream; a line of the walker's text as the entry of its parts.
-    MInst entry(std::size_t i) const {
-        if (s) return (*s)[i];
-        const Line &l = v[i];
-        MInst e(l.mnem.c_str());
-        for (std::size_t k = 0; k < l.ops.size() && k < 4; k++) e.op[e.operands++] = MOperand(l.ops[k]);
-        if (l.ops.size() > 4 || !l.instr) e.kind = MInst::Verbatim;
-        if (!l.pred.empty()) { e.predNot = l.pred[0] == '!'; e.pred = static_cast<std::uint8_t>(regNumber(l.pred.substr(e.predNot ? 1 : 0))); }
-        return e;
-    }
-    std::uint64_t liveIn(std::size_t i) const { return live ? (*live)[i] : v[i].liveIn; }
-    std::uint64_t liveAt(std::size_t i) const { return live ? (*live)[i] : liveInAt(v, i); }
-    bool typed(std::size_t i) const { return s && modelled((*s)[i]); }
-    bool instr(std::size_t i) const { return s ? (*s)[i].kind == MInst::Instruction && !(*s)[i].packed : line(i).instr; }
+    // Entry i as it stands on the stream.
+    MInst entry(std::size_t i) const { return (*s)[i]; }
+    std::uint64_t liveIn(std::size_t i) const { return (*live)[i]; }
+    std::uint64_t liveAt(std::size_t i) const { return (*live)[i]; }
+    bool typed(std::size_t i) const { return modelled((*s)[i]); }
+    bool instr(std::size_t i) const { return (*s)[i].kind == MInst::Instruction && !(*s)[i].packed; }
     bool label(std::size_t i) const {
-        if (s && (*s)[i].kind == MInst::Label) return true;
-        return (!s || (*s)[i].kind != MInst::Instruction || (*s)[i].packed) && isLabel(line(i));
+        if ((*s)[i].kind == MInst::Label) return true;
+        return ((*s)[i].kind != MInst::Instruction || (*s)[i].packed) && isLabel(line(i));
     }
-    std::string name(std::size_t i) const { return s && (*s)[i].kind == MInst::Label ? (*s)[i].m.str() : labelName(line(i)); }
-    std::string mnem(std::size_t i) const { return s && instr(i) ? (*s)[i].m.str() : line(i).mnem; }
+    std::string name(std::size_t i) const { return (*s)[i].kind == MInst::Label ? (*s)[i].m.str() : labelName(line(i)); }
+    std::string mnem(std::size_t i) const { return instr(i) ? (*s)[i].m.str() : line(i).mnem; }
     std::string pred(std::size_t i) const {
         if (!typed(i)) return line(i).pred;
         const MInst &e = (*s)[i];
@@ -368,7 +358,7 @@ struct Loop {
     // The body as the stream's entries (M6c round 5), kept equal to `body` through every edit; empty off the stream or
     // where an entry is not `modelled`. What the body hands on - reads, writes, pairs, nodes - is read from it there.
     std::vector<MInst> bodyM;
-    bool onStream = false, fromLines = false;
+    bool fromLines = false;
     std::vector<std::size_t> taken;       // where each entry of bodyM stands on the stream
     std::vector<Node> nodes;
     std::vector<Edge> edges;
@@ -742,7 +732,6 @@ bool recogniseStepped(const Src &src, Loop &L, std::string &why, const std::stri
 
 bool recognise(const Src &src, std::size_t back, const std::set<std::string> &labels, const std::set<std::string> &named, Loop &L, std::string &why) {
     const std::string bpred = src.pred(back);
-    L.onStream = src.s != nullptr;
     if (bpred.empty() || src.ops(back) == 0 || labels.count(src.op(back, 0)) == 0) { why = "no conditional branch to a label"; return false; }
     L.label = src.op(back, 0);
     if (L.label.size() > 5 && L.label.compare(L.label.size() - 5, 5, "$fill") == 0) { why = "a fill loop, memory-bound, kept as written"; return false; }
@@ -1045,18 +1034,14 @@ Turn spelled(const Loop &L, const std::vector<Unit> &units, const UnitOf &unitOf
 
 Line verbatim(const std::string &raw) { Line l; l.raw = raw; l.verbatim = true; return l; }
 
-// **What the emitters write** (M6c round 11): lines for a loop read from text; on the stream entries - an instruction
-// built from its parts, a turn the body's renamed entry, placed as it is put. `ok` false: one the stream cannot hold.
+// **What the emitters write** (M6c round 11): entries - an instruction built from its parts, a turn the body's
+// renamed entry, placed as it is put. `ok` false: one the stream cannot hold.
 struct Code {
-    std::vector<Line> lines;
     MStream m;
-    const MStream *from = nullptr;          // the stream being rewritten; none for the text
+    const MStream *from = nullptr;          // the stream being rewritten
     bool ok = true;
-    // An entry made whole (the window's): spelled for the text, itself on the stream.
-    void put(const MInst &e) {
-        if (!from) lines.push_back(lineOf(e));
-        if (from && ok) m.push_back(e);
-    }
+    // An entry made whole (the window's).
+    void put(const MInst &e) { if (ok) m.push_back(e); }
     // An instruction of its operands - registers by number, constants, a label - under `[pred]` or `[!pred]`.
     void add(const std::string &mnem, const MOperand &a, const MOperand &b = MOperand(), const MOperand &c = MOperand(), int pred = kNoReg, bool no = false) {
         put(entry(mnem, a, b, c, pred, no));
@@ -1065,12 +1050,10 @@ struct Code {
     // `legalForm` and the instruction: commuted where both sources cross, false with the reason where it has no form.
     bool legal(std::string &why, const std::string &mnem, const MOperand &a, const MOperand &b = MOperand(), const MOperand &c = MOperand()) {
         MInst e = entry(mnem, a, b, c);
-        const bool typed = from && ok && modelled(e);
-        if (!typed) {
+        if (!ok || !modelled(e)) {
             Line l = lineOf(e);
             if (!legalForm(l)) { why = "the stepped guard has no legal form for" + l.raw; return false; }
-            lines.push_back(l);
-            ok = ok && !from;
+            ok = false;
             return true;
         }
         const bool commutes = mnem == "ADD" || mnem == "AND" || mnem == "OR" || mnem == "XOR" || mnem == "MPYDP" || mnem == "ADDDP" || mnem == "MPYSP" ||
@@ -1085,9 +1068,8 @@ struct Code {
     }
     // A placed line - a turn, idle cycles, the kernel's label: the entry given, else the line read as placed.
     void placed(const std::string &raw, bool par, const MInst *e) {
-        if (!from || (!e && ok)) lines.push_back(verbatim((par ? "||" : "") + raw));
-        if (!from || !ok) return;
-        if (!e) { ok = streamOf(std::vector<Line>(1, lines.back()), m); lines.pop_back(); return; }
+        if (!ok) return;
+        if (!e) { ok = streamOf(std::vector<Line>(1, verbatim((par ? "||" : "") + raw)), m); return; }
         m.push_back(*e);
         m.back().par = par;
         m.back().packed = true;
@@ -1095,10 +1077,7 @@ struct Code {
     void nop(int n) { const MInst e("NOP", n); placed("\tNOP\t" + std::to_string(n), false, &e); }
     void label(const std::string &name) { MInst e; e.kind = MInst::Label; e.m = opt::StrId(name); placed(name + ":", false, &e); }
     // Line k of the function as it stands: the stream's own entry.
-    void same(const Src &src, std::size_t k) {
-        if (!from) lines.push_back(src.line(k));
-        if (from && ok) m.push_back((*from)[k]);
-    }
+    void same(std::size_t k) { if (ok) m.push_back((*from)[k]); }
 };
 
 Turn turnOf(const MInst &e) {
@@ -1353,7 +1332,7 @@ bool steppedGuard(const Loop &L, Code &out, const std::vector<int> &moved, int x
 }
 
 // The whole rewrite of one recognised loop; false, with the reason, where it is not worth it or cannot be done.
-bool pipeline(const Src &src, Loop &L, Code &out, std::string &why) {
+bool pipeline(Loop &L, Code &out, std::string &why) {
     // The pool of names the loop may take: caller-saved, unused in it, dead at its exit.
     std::vector<int> pool;
     for (int side = 0; side < 2; side++)
@@ -1588,7 +1567,7 @@ bool pipeline(const Src &src, Loop &L, Code &out, std::string &why) {
     for (std::size_t x = 0; x < units.size(); x++)
         if (units[x].q > 1 && units[x].exits && modq(S - 2, units[x].q) != 0) for (std::size_t h = 0; h < units[x].regs.size(); h++) out.add("MV", R(units[x].copies[h][static_cast<std::size_t>(modq(S - 2, units[x].q))]), R(units[x].regs[h]));
     if (L.stepped) { if (!steppedTest(L, out, L.boundsR[0], L.wide ? L.boundsR[1] : kNoReg, xt, xtb, why)) return false; }
-    else out.same(src, L.cmp);
+    else out.same(L.cmp);
     out.branch(L.exitName, L.PR, !L.negated);
     return true;
 }
@@ -2510,7 +2489,7 @@ bool pipelineAt(const Src &src, std::size_t i, const std::set<std::string> &labe
         return false;
     }
     if (L.head < copied) return false;
-    if (!pipeline(src, L, code, why)) { if (tracing()) std::fprintf(stderr, "pipe %s: %s\n", L.label.c_str(), why.c_str()); return false; }
+    if (!pipeline(L, code, why)) { if (tracing()) std::fprintf(stderr, "pipe %s: %s\n", L.label.c_str(), why.c_str()); return false; }
     from = to = L.head;
     return true;
 }
@@ -2520,10 +2499,9 @@ bool pipelineAt(const Src &src, std::size_t i, const std::set<std::string> &labe
 // **The pipeliner on the stream** (M6c rounds 2 and 14): the same candidates read from the entries, their liveness the
 // stream's; a kernel is written as entries (`Code`) - `par` its packets, `NOP n` its idle cycles. False: one not held.
 bool pipelineLoops(MStream &s) {
-    static const std::vector<Line> none;
     std::vector<std::uint64_t> in, liveOut;
     liveness(s, in, liveOut);
-    const Src src(none, &s, &in);
+    const Src src(&s, &in);
     std::set<std::string> labels, named;
     for (std::size_t i = 0; i < s.size(); i++) {
         if (tracing() > 5) std::fprintf(stderr, "| %s", s[i].str().c_str());
