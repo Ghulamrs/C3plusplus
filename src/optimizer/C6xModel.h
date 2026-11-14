@@ -4,6 +4,8 @@
 // packet being filled, and the readers of the ISA - delay slots, units, cross paths - written once in C6xSched.cpp
 // and read by the software pipeliner in C6xPipe.cpp.
 
+#include "C6xMir.h"
+
 #include <cstdint>
 #include <set>
 #include <string>
@@ -14,27 +16,14 @@ namespace c6x {
 
 enum { UL = 1, US = 2, UD = 4, UM = 8 };   // the units, as a bitmask
 
-// Every edit of the text - a line copied, or assigned over another - counted, for liveness to tell it is stale.
-extern thread_local std::uint64_t textEdits;
-
-struct LineFields {
+// A line of the text.
+struct Line {
     std::string raw;
     bool instr = false;
     bool verbatim = false;              // scheduled already: printed as it stands, never rescheduled
     std::string pred;                   // "A1" or "!A1", read as A1
     std::string mnem;
     std::vector<std::string> ops;
-    std::uint64_t liveOut = ~0ull;      // the registers live at the end of this line's block
-    std::uint64_t liveIn = ~0ull;       // and at its start
-};
-
-// A line of the text; an assignment over one, or a copy of one, is an edit, which is how a vector of them is edited.
-struct Line : LineFields {
-    Line() = default;
-    Line(Line &&) = default;
-    Line(const Line &o) : LineFields(o) { textEdits++; }
-    Line &operator=(const Line &o) { LineFields::operator=(o); textEdits++; return *this; }
-    Line &operator=(Line &&o) { LineFields::operator=(std::move(o)); textEdits++; return *this; }
 };
 
 // One instruction as the scheduler sees it: what it reads and writes, its
@@ -103,10 +92,6 @@ bool isReturnTo(const std::string &m, const std::string &target, const std::set<
 struct LiveFacts { bool instr = false, label = false, kept = false, predicated = false; std::string name, mnem, target; std::uint64_t reads = 0, writes = 0; };
 void liveness(const std::vector<LiveFacts> &v, std::vector<std::uint64_t> &liveIn, std::vector<std::uint64_t> &liveOut);
 LiveFacts liveFacts(const Line &l);
-void computeLiveness(std::vector<Line> &v);
-// The liveness of this text, recomputed first where an edit since makes it stale.
-std::uint64_t liveOutAt(const std::vector<Line> &v, std::size_t i);
-std::uint64_t liveInAt(const std::vector<Line> &v, std::size_t i);
 int accessSize(const std::string &m);
 std::string renamed(const std::string &op, const std::string &from, const std::string &to);
 int crossings(const Line &l);
@@ -130,21 +115,24 @@ std::string pairOf(const std::string &lo, const std::string &hi);
 std::string partner(const std::string &r);
 bool legalForm(Line &r);
 
-// What the loop passes (reuseEntryLoads to widenFills, hoistConstantPairs) read and edit: `v` as lines, a line blanked
-// or set, a preheader inserted, the blanks dropped, liveness asked. The text's own here; a stream's in C6xPack.cpp.
+// What the loop passes (reuseEntryLoads to widenFills, hoistConstantPairs) read and edit, a stream's (C6xPack.cpp): `v`
+// its entries as lines, a line blanked or set on the entry too, a preheader inserted, the blanks dropped, liveness asked.
 struct LoopText {
-    std::vector<Line> own, &v;
-    LoopText() : v(own) {}
-    explicit LoopText(std::vector<Line> &lines) : v(lines) {}
+    MStream &s;
+    std::vector<Line> v;
+    std::vector<bool> gone;
+    std::vector<std::uint64_t> in, out;
+    bool stale = true, pending = false;
+    explicit LoopText(MStream &stream);
     LoopText(const LoopText &) = delete;
     LoopText &operator=(const LoopText &) = delete;
-    virtual ~LoopText() {}
-    virtual void blank(std::size_t k) { v[k] = parse(""); }
-    virtual void set(std::size_t k, const Line &l) { v[k] = l; }
-    virtual std::size_t apply(std::size_t h, const std::vector<Line> &pre, std::size_t i);   // the back edge's new place
-    virtual void compact();
-    virtual std::uint64_t liveIn(std::size_t k) { return liveInAt(v, k); }
-    virtual std::uint64_t liveOut(std::size_t k) { return liveOutAt(v, k); }
+    void blank(std::size_t k);
+    void set(std::size_t k, const Line &l);
+    std::size_t apply(std::size_t h, const std::vector<Line> &pre, std::size_t i);   // the back edge's new place
+    void compact() { apply(s.size(), std::vector<Line>(), 0); }
+    std::uint64_t liveIn(std::size_t k) { current(); return in[k]; }
+    std::uint64_t liveOut(std::size_t k) { current(); return out[k]; }
+    void current();
 };
 void reuseEntryLoads(LoopText &t);
 void hoistInvariants(LoopText &t);

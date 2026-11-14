@@ -218,25 +218,6 @@ bool isCall(const Line &l, const std::set<std::string> &labels) { return isCallT
 
 // ----- liveness over the blocks -----
 
-// **The guard.** Liveness is a cache of one text: it keeps the text's buffer, its length and the edit count it was
-// computed at, and a question asked of it after an edit recomputes it first - so a pass that removes a definition and
-// then asks whether a register is free cannot read the answer from before the removal (numberValues, 2026-10-07).
-thread_local std::uint64_t textEdits = 0;
-namespace {
-struct LiveStamp { const Line *data = nullptr; std::size_t size = 0; std::uint64_t edits = ~0ull; };
-thread_local LiveStamp liveStamp;
-bool liveCurrent(const std::vector<Line> &v) {
-    return liveStamp.data == v.data() && liveStamp.size == v.size() && liveStamp.edits == textEdits;
-}
-// Recompute where stale: the fields are a cache, the vector is never a const object, and nothing but them is written.
-void ensureLiveness(const std::vector<Line> &v) {
-    if (!liveCurrent(v)) computeLiveness(const_cast<std::vector<Line> &>(v));
-}
-}   // namespace
-
-std::uint64_t liveOutAt(const std::vector<Line> &v, std::size_t i) { ensureLiveness(v); return v[i].liveOut; }
-std::uint64_t liveInAt(const std::vector<Line> &v, std::size_t i) { ensureLiveness(v); return v[i].liveIn; }
-
 // Every line takes the registers live at the end of its block: a label or a
 // directive opens a block, a branch closes one, a call reads its arguments
 // and clobbers the caller-saved registers, and a return leaves the exit set.
@@ -304,16 +285,6 @@ LiveFacts liveFacts(const Line &l) {
     f.reads = maskOf(reads);
     f.writes = maskOf(writes);
     return f;
-}
-
-void computeLiveness(std::vector<Line> &v) {
-    std::vector<LiveFacts> facts;
-    facts.reserve(v.size());
-    for (std::size_t i = 0; i < v.size(); i++) facts.push_back(liveFacts(v[i]));
-    std::vector<std::uint64_t> in, out;
-    liveness(facts, in, out);
-    for (std::size_t i = 0; i < v.size(); i++) { v[i].liveOut = out[i]; v[i].liveIn = in[i]; }
-    liveStamp.data = v.data(); liveStamp.size = v.size(); liveStamp.edits = textEdits;
 }
 
 int accessSize(const std::string &m) {
@@ -464,25 +435,6 @@ void reuseEntryLoads(LoopText &t) {
         t.blank(h + 1);
     }
     t.compact();
-}
-
-// One loop's rewrite applied before the next loop is looked at, so liveness asked of the text is of the text: the lines
-// `pre` before line h, the lines blanked dropped; where the back edge at i went.
-std::size_t LoopText::apply(std::size_t h, const std::vector<Line> &pre, std::size_t i) {
-    std::vector<Line> out;
-    std::size_t at = i;
-    for (std::size_t k = 0; k < v.size(); k++) {
-        if (k == h) out.insert(out.end(), pre.begin(), pre.end());
-        if (v[k].instr || !v[k].raw.empty()) out.push_back(v[k]);
-        if (k == i) at = out.size() - 1;
-    }
-    v.swap(out);
-    return at;
-}
-void LoopText::compact() {
-    std::vector<Line> out;
-    for (std::size_t i = 0; i < v.size(); i++) if (v[i].instr || !v[i].raw.empty()) out.push_back(v[i]);
-    v.swap(out);
 }
 
 // **A constant made inside a loop nest is made before it**: `MVKL sym, d; MVKH sym, d`, the only writer of d
