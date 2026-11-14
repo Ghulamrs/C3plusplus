@@ -218,8 +218,14 @@ int crossings(const MInst &i) { return crossings(i, i.m.str()); }
 unsigned unitsFor(const MInst &i) { return unitsFor(i, i.m.str()); }
 void readsAndWrites(const MInst &i, std::uint64_t &reads, std::uint64_t &writes) { readsAndWrites(i, i.m.str(), reads, writes); }
 void readsAndWrites(const MInst &i, std::vector<std::string> &reads, std::vector<std::string> &writes) {
-    auto names = [](const MOperand &o, std::vector<std::string> &to) { int r[2]; const int n = regsOf(o, r); for (int k = 0; k < n; k++) to.push_back(regName(r[k])); };
-    if (i.pred != kNoReg) reads.push_back(regName(i.pred));
+    std::vector<int> r, w;
+    readsAndWrites(i, r, w);
+    for (std::size_t k = 0; k < r.size(); k++) reads.push_back(regName(r[k]));
+    for (std::size_t k = 0; k < w.size(); k++) writes.push_back(regName(w[k]));
+}
+void readsAndWrites(const MInst &i, std::vector<int> &reads, std::vector<int> &writes) {
+    auto names = [](const MOperand &o, std::vector<int> &to) { int r[2]; const int n = regsOf(o, r); for (int k = 0; k < n; k++) to.push_back(r[k]); };
+    if (i.pred != kNoReg) reads.push_back(i.pred);
     if (i.operands == 0) return;
     const std::string m = i.m.str();
     const MOperand &last = i.op[i.operands - 1];

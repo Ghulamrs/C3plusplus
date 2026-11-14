@@ -23,11 +23,24 @@ int tracing() {
     return t;
 }
 
-// ----- addresses as linear forms: term -> coefficient, "" the constant, "iv" the induction variable -----
+// ----- addresses as linear forms: term -> coefficient -----
 
-typedef std::map<std::string, long> Form;
+// A form's term: the constant, the induction variable, the value a register came in with, or an object's address -
+// a symbol's by its name, the frame's as A15.
+struct Term {
+    enum Kind { Const, Iv, Reg, Object };
+    Kind kind; int reg; std::string name;
+    bool operator<(const Term &o) const { return kind != o.kind ? kind < o.kind : reg != o.reg ? reg < o.reg : name < o.name; }
+    bool operator==(const Term &o) const { return kind == o.kind && reg == o.reg && name == o.name; }
+};
+Term termOf(Term::Kind k, int reg = kNoReg, const std::string &name = std::string()) { Term t = { k, reg, name }; return t; }
+Term onEntry(int r) { return r == 15 ? termOf(Term::Object, 15) : termOf(Term::Reg, r); }
+std::uint64_t bitR(int r) { return r == kNoReg ? 0 : 1ull << r; }
 
-Form formOf(const std::string &term, long k = 1) { Form f; f[term] = k; return f; }
+typedef std::map<Term, long> Form;
+
+Form formOf(const Term &term, long k = 1) { Form f; f[term] = k; return f; }
+Form constForm(long k) { return formOf(termOf(Term::Const), k); }
 Form combine(const Form &a, const Form &b, long sign) {
     Form r = a;
     for (Form::const_iterator it = b.begin(); it != b.end(); ++it) r[it->first] += sign * it->second;
@@ -42,54 +55,59 @@ Form scaled(const Form &a, long k) {
 bool isConstForm(const Form &f, long &k) {
     k = 0;
     if (f.empty()) return true;
-    if (f.size() == 1 && f.begin()->first == "") { k = f.begin()->second; return true; }
+    if (f.size() == 1 && f.begin()->first.kind == Term::Const) { k = f.begin()->second; return true; }
     return false;
 }
-// The one object a form is based on - a global symbol or the frame, with coefficient one - or "" if none or several.
-std::string objectOf(const Form &f) {
-    std::string o;
+// The one object a form is based on - a global symbol or the frame, with coefficient one; false if none or several.
+bool objectOf(const Form &f, Term &o) {
+    bool found = false;
     for (Form::const_iterator it = f.begin(); it != f.end(); ++it) {
-        if (it->first.empty() || it->first == "iv" || it->first.compare(0, 4, "reg:") == 0) continue;
-        if (!o.empty() || it->second != 1) return "";
-        o = it->first;
+        if (it->first.kind != Term::Object) continue;
+        if (found || it->second != 1) return false;
+        o = it->first; found = true;
     }
-    return o;
+    return found;
 }
 
 struct Access { bool known = false; Form addr; };
 
 // **What the address walk reads of an instruction** (M6c round 11): its parts, its registers and its access - the base,
-// the offset or index and the step - from a line's text, or on the stream from the entry's operands.
+// the offset or index and the step - by number: from the entry's operands on the stream, from a line's text off it.
 struct Ins {
-    std::string mnem, name[2];              // the first two operands as spelled: a register's name, a symbol
-    bool pred = false, cst[2] = { false, false }, access = false;
+    std::string mnem, name[2];              // the first two operands as spelled, where one is a symbol
+    int reg[2] = { kNoReg, kNoReg };        // and as a register, where it is one
+    bool pred = false, cst[2] = { false, false }, access = false, indexed = false;
     std::size_t ops = 0;
     long num[2] = { 0, 0 };
-    std::vector<std::string> reads, writes;
-    std::string stepReg, base, index;       // `steppedRegister`; the access's base, and its index where it has one
+    std::vector<int> reads, writes;
+    int stepReg = kNoReg, base = kNoReg, index = kNoReg;    // `steppedRegister`; the access's base; indexed: its index, none a constant
     long by = 0, off = 0, sign = 1;
 };
 
 // The access `m` as its spelling says: stepped, `*+R(n)`, `*+R[x]` or `*R`.
 void accessOf(const std::string &m, Ins &x) {
-    if (!x.stepReg.empty()) { x.base = x.stepReg; if (m.compare(0, 3, "*++") == 0 || m.compare(0, 3, "*--") == 0) x.off = x.by; }
+    if (x.stepReg != kNoReg) { x.base = x.stepReg; if (m.compare(0, 3, "*++") == 0 || m.compare(0, 3, "*--") == 0) x.off = x.by; }
     else if (m.size() > 1 && m[0] == '*' && (m[1] == '+' || m[1] == '-') && m.find('(') != std::string::npos) {
         x.sign = m[1] == '-' ? -1 : 1;
-        x.base = m.substr(2, m.find('(') - 2);
+        x.base = regNumber(m.substr(2, m.find('(') - 2));
         x.off = std::atol(m.substr(m.find('(') + 1).c_str());
     } else if (m.size() > 1 && m[0] == '*' && (m[1] == '+' || m[1] == '-') && m.find('[') != std::string::npos) {
         x.sign = m[1] == '-' ? -1 : 1;
-        x.base = m.substr(2, m.find('[') - 2);
-        x.index = m.substr(m.find('[') + 1, m.find(']') - m.find('[') - 1);
-    } else if (m.size() > 1 && m[0] == '*' && sideOf(m.substr(1))) x.base = m.substr(1);
+        x.base = regNumber(m.substr(2, m.find('[') - 2));
+        x.indexed = true;
+        x.index = regNumber(m.substr(m.find('[') + 1, m.find(']') - m.find('[') - 1));
+    } else if (m.size() > 1 && m[0] == '*' && sideOf(m.substr(1))) x.base = regNumber(m.substr(1));
 }
 
 Ins insOf(const Line &l) {
     Ins x;
     x.mnem = l.mnem; x.pred = !l.pred.empty(); x.ops = l.ops.size();
-    for (std::size_t k = 0; k < 2 && k < l.ops.size(); k++) { x.name[k] = l.ops[k]; x.cst[k] = isNumber(l.ops[k]); x.num[k] = std::atol(l.ops[k].c_str()); }
-    readsAndWrites(l, x.reads, x.writes);
-    x.stepReg = steppedRegister(l, x.by);
+    for (std::size_t k = 0; k < 2 && k < l.ops.size(); k++) { x.name[k] = l.ops[k]; x.reg[k] = regNumber(l.ops[k]); x.cst[k] = isNumber(l.ops[k]); x.num[k] = std::atol(l.ops[k].c_str()); }
+    std::vector<std::string> reads, writes;
+    readsAndWrites(l, reads, writes);
+    for (std::size_t k = 0; k < reads.size(); k++) x.reads.push_back(regNumber(reads[k]));
+    for (std::size_t k = 0; k < writes.size(); k++) x.writes.push_back(regNumber(writes[k]));
+    x.stepReg = regNumber(steppedRegister(l, x.by));
     x.access = isLoad(l.mnem) || isStore(l.mnem);
     if (x.access) accessOf(isStore(l.mnem) ? l.ops[1] : l.ops[0], x);
     return x;
@@ -101,6 +119,7 @@ Ins insOf(const MInst &e) {
     for (int k = 0; k < 2 && k < e.operands; k++) {
         x.cst[k] = e.op[k].kind == MOperand::Immediate;
         x.num[k] = static_cast<long>(e.op[k].value);
+        if (e.op[k].kind == MOperand::Register) x.reg[k] = e.op[k].reg;
         if (!x.cst[k]) x.name[k] = e.op[k].str();
     }
     readsAndWrites(e, x.reads, x.writes);
@@ -109,7 +128,7 @@ Ins insOf(const MInst &e) {
         const MOperand &o = e.op[k];
         if (o.kind != MOperand::Memory || o.mode < MOperand::PreInc) continue;
         if (o.index != kNoReg) break;
-        x.stepReg = regName(o.reg);
+        x.stepReg = o.reg;
         x.by = o.hasOffset && !o.scaled ? static_cast<long>(o.value) : 1;
         if (o.mode == MOperand::PreDec || o.mode == MOperand::PostDec) x.by = -x.by;
         break;
@@ -119,32 +138,33 @@ Ins insOf(const MInst &e) {
     const MOperand &o = e.op[isStore(x.mnem) ? 1 : 0];
     if (o.kind != MOperand::Memory) { accessOf(o.str(), x); return x; }
     const bool signedBase = o.mode == MOperand::Plus || o.mode == MOperand::Minus;
-    if (!x.stepReg.empty()) { x.base = x.stepReg; if (o.mode == MOperand::PreInc || o.mode == MOperand::PreDec) x.off = x.by; }
+    if (x.stepReg != kNoReg) { x.base = x.stepReg; if (o.mode == MOperand::PreInc || o.mode == MOperand::PreDec) x.off = x.by; }
     else if (signedBase && o.hasOffset) {
         x.sign = o.mode == MOperand::Minus ? -1 : 1;
-        x.base = regName(o.reg);
+        x.base = o.reg;
         if (!o.scaled) x.off = o.index != kNoReg ? 0 : static_cast<long>(o.value);
-        else x.index = o.index != kNoReg ? regName(o.index) : std::to_string(o.value);
-    } else if (o.mode == MOperand::Base && !o.hasOffset) x.base = regName(o.reg);
+        else { x.indexed = true; x.index = o.index; }
+    } else if (o.mode == MOperand::Base && !o.hasOffset) x.base = o.reg;
     return x;
 }
 
 // What one instruction makes of its destination - a form, or nothing known - entered in val, the rest of its writes lost.
-void evalLine(const Ins &l, std::map<std::string, Form> &val, std::set<std::string> &lost) {
-    const std::vector<std::string> &writes = l.writes;
+void evalLine(const Ins &l, std::map<int, Form> &val, std::set<int> &lost) {
+    const std::vector<int> &writes = l.writes;
     if (writes.empty()) return;
-    const std::string &d = writes.back();
+    const int d = writes.back();
     Form nv; bool knownV = false; long k = 0, k2 = 0;
-    const std::string *p = l.name;
+    const int *p = l.reg;
     bool cst0 = l.ops > 1 && l.cst[0], cst1 = l.ops > 2 && l.cst[1];
-    Form v0 = l.ops > 1 && !l.cst[0] && val.count(p[0]) ? val[p[0]] : Form(), v1 = l.ops > 2 && !l.cst[1] && val.count(p[1]) ? val[p[1]] : Form();
+    Form v0 = l.ops > 1 && !l.cst[0] && p[0] != kNoReg && val.count(p[0]) ? val[p[0]] : Form(), v1 = l.ops > 2 && !l.cst[1] && p[1] != kNoReg && val.count(p[1]) ? val[p[1]] : Form();
     bool k0 = cst0 || (l.ops > 1 && !v0.empty()), k1 = cst1 || (l.ops > 2 && !v1.empty());
-    if (cst0) v0 = formOf("", l.num[0]);
-    if (cst1) v1 = formOf("", l.num[1]);
+    if (cst0) v0 = constForm(l.num[0]);
+    if (cst1) v1 = constForm(l.num[1]);
+    const Form symbol = formOf(termOf(Term::Object, kNoReg, l.name[0]));
     if (!l.pred && writes.size() == 1) {
         if (l.mnem == "MVK" && cst0) { nv = v0; knownV = true; }
-        else if (l.mnem == "MVKL" && l.ops == 2) { nv = cst0 ? v0 : formOf("@" + p[0]); knownV = true; }
-        else if (l.mnem == "MVKH" && l.ops == 2 && val.count(d) && val[d] == (cst0 ? v0 : formOf("@" + p[0]))) { nv = val[d]; knownV = true; }
+        else if (l.mnem == "MVKL" && l.ops == 2) { nv = cst0 ? v0 : symbol; knownV = true; }
+        else if (l.mnem == "MVKH" && l.ops == 2 && val.count(d) && val[d] == (cst0 ? v0 : symbol)) { nv = val[d]; knownV = true; }
         else if (l.mnem == "MV" && k0) { nv = v0; knownV = true; }
         else if (l.mnem == "ADD" && k0 && k1) { nv = combine(v0, v1, 1); knownV = true; }
         else if (l.mnem == "SUB" && k0 && k1) { nv = combine(v0, v1, -1); knownV = true; }
@@ -159,49 +179,49 @@ void evalLine(const Ins &l, std::map<std::string, Form> &val, std::set<std::stri
 
 // The address forms of the body's memory operands, from a walk over the body with the induction variable as
 // `iv`, a register the loop never writes as its own term, and a register written before its first read unknown.
-std::vector<Access> addressForms(const std::vector<Ins> &body, const std::vector<Ins> &pre, const std::string &iv, std::uint64_t written) {
-    std::map<std::string, Form> val, before;
-    std::set<std::string> lost;
+std::vector<Access> addressForms(const std::vector<Ins> &body, const std::vector<Ins> &pre, int iv, std::uint64_t written) {
+    std::map<int, Form> val, before;
+    std::set<int> lost;
     for (std::size_t o = 0; o < pre.size(); o++) {           // what the preheader computed, by the same rules
-        const std::vector<std::string> &reads = pre[o].reads;
-        for (std::size_t r = 0; r < reads.size(); r++) if (!before.count(reads[r]) && !lost.count(reads[r])) before[reads[r]] = formOf(reads[r] == "A15" ? "A15" : "reg:" + reads[r]);
+        const std::vector<int> &reads = pre[o].reads;
+        for (std::size_t r = 0; r < reads.size(); r++) if (!before.count(reads[r]) && !lost.count(reads[r])) before[reads[r]] = formOf(onEntry(reads[r]));
         evalLine(pre[o], before, lost);
     }
     lost.clear();
     // A pointer the accesses alone step: on entry to a turn it is the preheader's value plus its stride per turn gone.
-    std::map<std::string, long> stride, stepWrites, allWrites;
+    std::map<int, long> stride, stepWrites, allWrites;
     for (std::size_t o = 0; o < body.size(); o++) {
         for (std::size_t w = 0; w < body[o].writes.size(); w++) allWrites[body[o].writes[w]]++;
-        const std::string &r = body[o].stepReg;
-        if (!r.empty()) { stride[r] += body[o].by; stepWrites[r]++; }
+        const int r = body[o].stepReg;
+        if (r != kNoReg) { stride[r] += body[o].by; stepWrites[r]++; }
     }
-    const Form turns = combine(formOf("iv"), formOf("reg:" + iv), -1);
+    const Form turns = combine(formOf(termOf(Term::Iv)), formOf(termOf(Term::Reg, iv)), -1);
     std::vector<Access> out(body.size());
     for (std::size_t o = 0; o < body.size(); o++) {
         const Ins &l = body[o];
-        const std::vector<std::string> &reads = l.reads;
+        const std::vector<int> &reads = l.reads;
         for (std::size_t r = 0; r < reads.size(); r++) {
             if (val.count(reads[r]) || lost.count(reads[r])) continue;
-            const std::string &x = reads[r];
-            if (x == iv) val[x] = formOf("iv");
+            const int x = reads[r];
+            if (x == iv) val[x] = formOf(termOf(Term::Iv));
             else if (stepWrites.count(x) && stepWrites[x] == allWrites[x] && before.count(x) && x != iv) val[x] = combine(before[x], scaled(turns, stride[x]), 1);
-            else val[x] = (written & bitOf(x)) ? Form() : before.count(x) ? before[x] : formOf(x == "A15" ? "A15" : "reg:" + x);
+            else val[x] = (written & bitR(x)) ? Form() : before.count(x) ? before[x] : formOf(onEntry(x));
         }
-        const std::string &stepReg = l.stepReg;
-        Form stepFrom; bool stepKnown = !stepReg.empty() && val.count(stepReg) && !val[stepReg].empty();
+        const int stepReg = l.stepReg;
+        Form stepFrom; bool stepKnown = stepReg != kNoReg && val.count(stepReg) && !val[stepReg].empty();
         if (stepKnown) stepFrom = val[stepReg];
         if (l.access) {
-            bool known = !l.base.empty() && val.count(l.base) && !val[l.base].empty();
-            if (known && !l.index.empty()) known = val.count(l.index) && !val[l.index].empty();
+            bool known = l.base != kNoReg && val.count(l.base) && !val[l.base].empty();
+            if (known && l.indexed) known = l.index != kNoReg && val.count(l.index) && !val[l.index].empty();
             if (known) {
                 Form a = val[l.base];
-                if (!l.index.empty()) a = combine(a, scaled(val[l.index], accessSize(l.mnem)), l.sign);
-                else if (l.off) a = combine(a, formOf("", l.off), l.sign);
+                if (l.indexed) a = combine(a, scaled(val[l.index], accessSize(l.mnem)), l.sign);
+                else if (l.off) a = combine(a, constForm(l.off), l.sign);
                 out[o].known = true; out[o].addr = a;
             }
         }
         evalLine(l, val, lost);
-        if (stepKnown) { val[stepReg] = combine(stepFrom, formOf("", l.by), 1); lost.erase(stepReg); }
+        if (stepKnown) { val[stepReg] = combine(stepFrom, constForm(l.by), 1); lost.erase(stepReg); }
     }
     return out;
 }
@@ -210,12 +230,12 @@ std::vector<Access> addressForms(const std::vector<Ins> &body, const std::vector
 bool mayAliasAt(const Access &a, int sa, const Access &b, int sb, int d) {
     if (!a.known || !b.known) return true;
     Form diff = combine(b.addr, a.addr, -1);
-    Form::const_iterator iv = b.addr.find("iv");
-    if (iv != b.addr.end()) diff = combine(diff, formOf("", d * iv->second), 1);
+    Form::const_iterator iv = b.addr.find(termOf(Term::Iv));
+    if (iv != b.addr.end()) diff = combine(diff, constForm(d * iv->second), 1);
     long c;
     if (isConstForm(diff, c)) return c > -sb && c < sa;
-    std::string oa = objectOf(a.addr), ob = objectOf(b.addr);
-    return oa.empty() || ob.empty() || oa == ob;
+    Term oa, ob;
+    return !objectOf(a.addr, oa) || !objectOf(b.addr, ob) || oa == ob;
 }
 
 // **The recognisers' reader** (M6c round 4): what an entry is and its parts - kind, mnemonic, predicate, operands,
@@ -336,7 +356,7 @@ struct Loop {
         readsAndWrites(body[o], r, w);
         reads |= maskOf(r); writes |= maskOf(w);
     }
-    static std::uint64_t bit(int r) { return r == kNoReg ? 0 : 1ull << r; }
+    static std::uint64_t bit(int r) { return bitR(r); }
     // What a pass may not rename or fold away: the counter, a register bound, the predicate, and with `count` the count.
     std::uint64_t fixedM(bool count) const { return bit(ivR) | bit(boundR) | bit(PR) | (count ? bit(CR) : 0); }
     bool plainAt(std::size_t o) const { return bodyM.empty() ? body[o].pred.empty() : bodyM[o].pred == kNoReg; }
@@ -345,6 +365,7 @@ struct Loop {
     }
     // The same by number, in the order `rw` lists them.
     void regs(std::size_t o, std::vector<int> &reads, std::vector<int> &writes) const {
+        if (!bodyM.empty()) { readsAndWrites(bodyM[o], reads, writes); return; }
         std::vector<std::string> r, w;
         rw(o, r, w);
         for (std::size_t k = 0; k < r.size(); k++) reads.push_back(regNumber(r[k]));
@@ -380,12 +401,12 @@ struct Loop {
         const bool typed = !bodyM.empty() && preTyped;
         for (std::size_t o = 0; o < body.size(); o++) b.push_back(typed ? insOf(bodyM[o]) : insOf(body[o]));
         for (std::size_t o = 0; o < pre.size(); o++) p.push_back(typed ? insOf(preM[o]) : insOf(pre[o]));
-        const std::vector<Access> got = addressForms(b, p, iv, writtenM);
+        const std::vector<Access> got = addressForms(b, p, ivR, writtenM);
         // CXX1_C6X_MIR=1: the lines walked too, and `c6x-addr` names an access whose form differs.
         if (typed && std::getenv("CXX1_C6X_MIR") != nullptr) {
             for (std::size_t o = 0; o < body.size(); o++) b[o] = insOf(body[o]);
             for (std::size_t o = 0; o < pre.size(); o++) p[o] = insOf(pre[o]);
-            const std::vector<Access> ref = addressForms(b, p, iv, writtenM);
+            const std::vector<Access> ref = addressForms(b, p, ivR, writtenM);
             for (std::size_t o = 0; o < ref.size(); o++)
                 if (ref[o].known != got[o].known || ref[o].addr != got[o].addr) std::fprintf(stderr, "c6x-addr:%s\n", body[o].raw.c_str());
         }
