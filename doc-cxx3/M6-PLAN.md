@@ -585,3 +585,16 @@ model's reading (`sideOf`), not by the operand's kind - a symbol spelled `B2x` i
 - **ast-lines re-recorded 849 -> 850** (the coordinator): `Local::declared` (m5-dbg's dbg2) keeps a reference
   parameter's declared type for DWARF beside the slot's pointer type; `Local` is the frame record the backends
   still read, and the line goes with it when the frame moves off Ast.h.
+
+### Wave 4 landed, 2026-11-14 (the coordinator)
+
+m6-i (B-file homes), m6-j (the packetiser on MIR), m6-k (the pipeliner on the stream, behind CXX1_C6X_TEXTPIPE),
+m6-l (the packetiser reads typed operands), m5-dbg (tests/debug.sh; DWARF ranges, bool, references, enums, bases).
+- **Gate at 94d75187**: Windows winpass -O0 and -O2: 828 same / 0 differ, masm 827 / 0. Mac run.sh -O0 and -O2
+  1215 / 0. Linux make test rc 0 (run 1217/0, emit 3399/0, typed 860/0 with 46 untyped, ssa 890/0, coff 0 differ,
+  c90 447/0, exclusions 0/0, comments 0, memory gate rc 0); asm6x 833 / 0 at -O0 and -O2.
+- **tms6747** (vm6747, SIM=0, three shards): -O0 814 passed, 393.2 M cycles; -O2 814 passed, **192.0 M cycles**
+  (the M6a figure, unchanged - wave 4 moves no C6000 output). 3 failed at both levels, as in wave 3's gate:
+  noexcept-terminates, noexcept-terminates-callee, ssa-noexcept-throw - vm6747's runtime has no
+  `std::set_terminate`; owed to the next C6000 round (a .notarget for vm6747, or the symbol in its runtime).
+- cdb 5/5 both spellings and gdb 5/5 (dbg, dbg2); emit.sh's golden on Linux still owed.
