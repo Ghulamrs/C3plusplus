@@ -863,8 +863,7 @@ struct Turn { std::string raw; MInst e; bool typed = false; };
 Turn spelled(const Loop &L, const std::vector<Unit> &units, const std::map<std::string, std::size_t> &unitOf,
              const std::vector<int> &firstWrite, std::size_t o, long j) {
     Turn turn;
-    turn.raw = spelledLine(L, units, unitOf, firstWrite, o, j);
-    if (L.bodyM.empty() || L.bodyM[o].unit != 0 || L.bodyM[o].par || L.bodyM[o].packed) return turn;
+    if (L.bodyM.empty() || L.bodyM[o].unit != 0 || L.bodyM[o].par || L.bodyM[o].packed) { turn.raw = spelledLine(L, units, unitOf, firstWrite, o, j); return turn; }
     MInst x = L.bodyM[o];
     const std::string m = x.m.str();
     const bool hasDest = x.operands && !isStore(m) && m != "B" && x.op[x.operands - 1].kind != MOperand::Memory;
@@ -887,10 +886,11 @@ Turn spelled(const Loop &L, const std::vector<Unit> &units, const std::map<std::
         }
         if (x.pred == r) x.pred = static_cast<std::uint8_t>(rd);
     }
-    std::string raw = x.str();
-    raw.erase(raw.size() - 1);
-    // The line's spelling is the check: `c6x-spell` names a turn the entry writes otherwise, and the line is read.
-    if (raw != turn.raw) { if (std::getenv("CXX1_C6X_MIR") != nullptr) std::fprintf(stderr, "c6x-spell: %s against %s\n", raw.c_str(), turn.raw.c_str()); return turn; }
+    turn.raw = x.str();
+    turn.raw.erase(turn.raw.size() - 1);
+    // Under CXX1_C6X_MIR=1 the line's spelling too: `c6x-spell` names a turn the entry writes otherwise.
+    if (std::getenv("CXX1_C6X_MIR") != nullptr && turn.raw != spelledLine(L, units, unitOf, firstWrite, o, j))
+        std::fprintf(stderr, "c6x-spell: %s against %s\n", turn.raw.c_str(), spelledLine(L, units, unitOf, firstWrite, o, j).c_str());
     turn.e = x;
     turn.typed = true;
     return turn;
