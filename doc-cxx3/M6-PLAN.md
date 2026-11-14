@@ -1339,7 +1339,8 @@ until M6d, and Compiler++ and the CCS samples are measured before D4 (lane m6z).
   passed, 0 failed** (447.8 M cycles). On the final tree b9818dd2 (1139c136 re-points one citation): Windows
   (work\m6aa4) cl clean, walker same as 17f209c8's (the carets and the three static-reference cases), comments 0
   over, memory gate rc 0, generate up to date; Linux g++ clean, exclusions 0 uncited 0 stale (after the
-  re-pointing), comments 0, memory gate, ast-residue and generate rc 0. The legs above are 64416d2f's compiler:
+  re-pointing), comments 0, memory gate, ast-residue and generate rc 0, `identical.sh` -O0 and -O2 1,736 compared, the same
+  2 differ. The other legs above are 64416d2f's compiler:
   b9818dd2 builds the same Ast by a different route (not re-run there: tms2, walker legs, -g, g-same, asm6x).
   Not run (the coordinator's): winpass, make test, ssa.sh.
 - **Owed:** D5's rest (the five passes composing entries, `t.v` gone), then D6; the walker's class temporaries of a
