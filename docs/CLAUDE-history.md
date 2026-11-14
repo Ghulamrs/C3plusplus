@@ -15317,3 +15317,24 @@ by the implicit copy constructor (`const T &`), and a reference to volatile is r
 reaches it; a volatile bit-field is a marked load and store of its unit (`mir-volatile-shapes`); the allocator places
 spills around a marked access but never builds one from it. What must not change: a marked load is never folded into
 its use (fold-loads), so a volatile read is always its own instruction.
+
+## The new Windows box qualified for tms6747 with CCS 5.5 and CCS 7.4, 2026-11-14
+
+The box at 192.168.100.84 had CCS 5.5 (cl6x 7.4.4, the C6747 simulators) and CCS 7.4 (cl6x 8.2.2, no simulator)
+installed in `C:\ti` by the user. A hello built by 7.4.4 ran on `tisim_c6747_ca` (385, 45,482 cycles); CCS 7.4 has
+no `tisim_c6747*` configuration, as on the old box. Brought over: `rts6740_elf_eh.lib` from the Linux box's
+`~/c6747-lib` to `C:\ti\c6747-lib`; ASM6x 1.5, LNK6x 1.3 and VM6747 1.4 from the Linux box's `~/ti6x`, built with
+VS 2022's cl into `C:\Users\GRA\work\ti6x` (GRIDE1's `toolchain/TI` copies are the same code but for line endings,
+ASM6x's banner and two VM6747 runtime calls). VM6747's `msvc\build.cmd` lists five of its sources and does not
+link (the debugger's files are missing); `src\*.cpp ws2_32.lib` builds it.
+
+**release-check at 90e4ed5c: PASS in 131 s** - 33 programs, each -O2 run on TI's simulator as its `.expected` says
+with VM6747 agreeing; asm6x against TI's 8.2.2 encoding ok for all 99 objects. It first hung on
+`lambda-deduction-temporaries`: its `int junk[2048]` overran release-check.cmd's 2 KB stack into the heap below,
+and TI's `mremove` spun (the simulator warned "Register pair encoding may not work" at mremove's PC). The same
+object relinked with `--stack_size=0x4000` printed `86 0` in 294,305 cycles, so the link now gives 16 KB - a
+lambda case added after the sample was chosen, not a compiler fault. **c6747-three: 4 passed, 0 failed** on all
+five columns; the two simulators agree cycle for cycle; cpp11 -O2 over cl6x 7.4.4 -O2: arith 1.04, floats .70,
+hello .99, structs 1.26. `vm-ccs74.cmd` now finds VM6747 at `C:\Users\GRA\work\ti6x\VM6747\vm6747.exe`.
+release-check's own ssh does not return after cl's build on this box (a child holds the console), so its box
+half was run by hand: `python -u tools\c6747\release-check-box.py <tree> <cxx3> <asm6x> <vm6747>`.

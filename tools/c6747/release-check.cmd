@@ -45,7 +45,7 @@ for %%f in (*.s) do (
 )
 
 rem --- run: link each -O2 ASM6x object, then the simulator in parallel ---
-set LINK=-z --heap_size=0x800 --stack_size=0x800 -i"%C6747_EHLIB%" --rom_model "%W%\C6747.cmd" -lrts6740_elf_eh.lib
+set LINK=-z --heap_size=0x800 --stack_size=0x4000 -i"%C6747_EHLIB%" --rom_model "%W%\C6747.cmd" -lrts6740_elf_eh.lib
 set WANT=0
 for %%o in (*.O2.asm6x.obj) do (
   set N=%%~no
