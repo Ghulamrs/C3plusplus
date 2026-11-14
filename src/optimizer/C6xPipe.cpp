@@ -58,21 +58,93 @@ std::string objectOf(const Form &f) {
 
 struct Access { bool known = false; Form addr; };
 
-// What one line makes of its destination - a form, or nothing known - entered in val, the rest of its writes lost.
-void evalLine(const Line &l, const std::vector<std::string> &writes, std::map<std::string, Form> &val, std::set<std::string> &lost) {
+// **What the address walk reads of an instruction** (M6c round 11): its parts, its registers and its access - the base,
+// the offset or index and the step - from a line's text, or on the stream from the entry's operands.
+struct Ins {
+    std::string mnem, name[2];              // the first two operands as spelled: a register's name, a symbol
+    bool pred = false, cst[2] = { false, false }, access = false;
+    std::size_t ops = 0;
+    long num[2] = { 0, 0 };
+    std::vector<std::string> reads, writes;
+    std::string stepReg, base, index;       // `steppedRegister`; the access's base, and its index where it has one
+    long by = 0, off = 0, sign = 1;
+};
+
+// The access `m` as its spelling says: stepped, `*+R(n)`, `*+R[x]` or `*R`.
+void accessOf(const std::string &m, Ins &x) {
+    if (!x.stepReg.empty()) { x.base = x.stepReg; if (m.compare(0, 3, "*++") == 0 || m.compare(0, 3, "*--") == 0) x.off = x.by; }
+    else if (m.size() > 1 && m[0] == '*' && (m[1] == '+' || m[1] == '-') && m.find('(') != std::string::npos) {
+        x.sign = m[1] == '-' ? -1 : 1;
+        x.base = m.substr(2, m.find('(') - 2);
+        x.off = std::atol(m.substr(m.find('(') + 1).c_str());
+    } else if (m.size() > 1 && m[0] == '*' && (m[1] == '+' || m[1] == '-') && m.find('[') != std::string::npos) {
+        x.sign = m[1] == '-' ? -1 : 1;
+        x.base = m.substr(2, m.find('[') - 2);
+        x.index = m.substr(m.find('[') + 1, m.find(']') - m.find('[') - 1);
+    } else if (m.size() > 1 && m[0] == '*' && sideOf(m.substr(1))) x.base = m.substr(1);
+}
+
+Ins insOf(const Line &l) {
+    Ins x;
+    x.mnem = l.mnem; x.pred = !l.pred.empty(); x.ops = l.ops.size();
+    for (std::size_t k = 0; k < 2 && k < l.ops.size(); k++) { x.name[k] = l.ops[k]; x.cst[k] = isNumber(l.ops[k]); x.num[k] = std::atol(l.ops[k].c_str()); }
+    readsAndWrites(l, x.reads, x.writes);
+    x.stepReg = steppedRegister(l, x.by);
+    x.access = isLoad(l.mnem) || isStore(l.mnem);
+    if (x.access) accessOf(isStore(l.mnem) ? l.ops[1] : l.ops[0], x);
+    return x;
+}
+
+Ins insOf(const MInst &e) {
+    Ins x;
+    x.mnem = e.m.str(); x.pred = e.pred != kNoReg; x.ops = e.operands;
+    for (int k = 0; k < 2 && k < e.operands; k++) {
+        x.cst[k] = e.op[k].kind == MOperand::Immediate;
+        x.num[k] = static_cast<long>(e.op[k].value);
+        if (!x.cst[k]) x.name[k] = e.op[k].str();
+    }
+    readsAndWrites(e, x.reads, x.writes);
+    // The first stepped access names the step: by its `(n)` bytes, one where none is written, none where it has an index.
+    for (int k = 0; k < e.operands; k++) {
+        const MOperand &o = e.op[k];
+        if (o.kind != MOperand::Memory || o.mode < MOperand::PreInc) continue;
+        if (o.index != kNoReg) break;
+        x.stepReg = regName(o.reg);
+        x.by = o.hasOffset && !o.scaled ? static_cast<long>(o.value) : 1;
+        if (o.mode == MOperand::PreDec || o.mode == MOperand::PostDec) x.by = -x.by;
+        break;
+    }
+    x.access = isLoad(x.mnem) || isStore(x.mnem);
+    if (!x.access) return x;
+    const MOperand &o = e.op[isStore(x.mnem) ? 1 : 0];
+    if (o.kind != MOperand::Memory) { accessOf(o.str(), x); return x; }
+    const bool signedBase = o.mode == MOperand::Plus || o.mode == MOperand::Minus;
+    if (!x.stepReg.empty()) { x.base = x.stepReg; if (o.mode == MOperand::PreInc || o.mode == MOperand::PreDec) x.off = x.by; }
+    else if (signedBase && o.hasOffset) {
+        x.sign = o.mode == MOperand::Minus ? -1 : 1;
+        x.base = regName(o.reg);
+        if (!o.scaled) x.off = o.index != kNoReg ? 0 : static_cast<long>(o.value);
+        else x.index = o.index != kNoReg ? regName(o.index) : std::to_string(o.value);
+    } else if (o.mode == MOperand::Base && !o.hasOffset) x.base = regName(o.reg);
+    return x;
+}
+
+// What one instruction makes of its destination - a form, or nothing known - entered in val, the rest of its writes lost.
+void evalLine(const Ins &l, std::map<std::string, Form> &val, std::set<std::string> &lost) {
+    const std::vector<std::string> &writes = l.writes;
     if (writes.empty()) return;
     const std::string &d = writes.back();
     Form nv; bool knownV = false; long k = 0, k2 = 0;
-    const std::vector<std::string> &p = l.ops;
-    bool cst0 = p.size() > 1 && isNumber(p[0]), cst1 = p.size() > 2 && isNumber(p[1]);
-    Form v0 = p.size() > 1 && val.count(p[0]) ? val[p[0]] : Form(), v1 = p.size() > 2 && val.count(p[1]) ? val[p[1]] : Form();
-    bool k0 = cst0 || (p.size() > 1 && !v0.empty()), k1 = cst1 || (p.size() > 2 && !v1.empty());
-    if (cst0) v0 = formOf("", std::atol(p[0].c_str()));
-    if (cst1) v1 = formOf("", std::atol(p[1].c_str()));
-    if (l.pred.empty() && writes.size() == 1) {
+    const std::string *p = l.name;
+    bool cst0 = l.ops > 1 && l.cst[0], cst1 = l.ops > 2 && l.cst[1];
+    Form v0 = l.ops > 1 && !l.cst[0] && val.count(p[0]) ? val[p[0]] : Form(), v1 = l.ops > 2 && !l.cst[1] && val.count(p[1]) ? val[p[1]] : Form();
+    bool k0 = cst0 || (l.ops > 1 && !v0.empty()), k1 = cst1 || (l.ops > 2 && !v1.empty());
+    if (cst0) v0 = formOf("", l.num[0]);
+    if (cst1) v1 = formOf("", l.num[1]);
+    if (!l.pred && writes.size() == 1) {
         if (l.mnem == "MVK" && cst0) { nv = v0; knownV = true; }
-        else if (l.mnem == "MVKL" && p.size() == 2) { nv = cst0 ? v0 : formOf("@" + p[0]); knownV = true; }
-        else if (l.mnem == "MVKH" && p.size() == 2 && val.count(d) && val[d] == (cst0 ? v0 : formOf("@" + p[0]))) { nv = val[d]; knownV = true; }
+        else if (l.mnem == "MVKL" && l.ops == 2) { nv = cst0 ? v0 : formOf("@" + p[0]); knownV = true; }
+        else if (l.mnem == "MVKH" && l.ops == 2 && val.count(d) && val[d] == (cst0 ? v0 : formOf("@" + p[0]))) { nv = val[d]; knownV = true; }
         else if (l.mnem == "MV" && k0) { nv = v0; knownV = true; }
         else if (l.mnem == "ADD" && k0 && k1) { nv = combine(v0, v1, 1); knownV = true; }
         else if (l.mnem == "SUB" && k0 && k1) { nv = combine(v0, v1, -1); knownV = true; }
@@ -87,32 +159,27 @@ void evalLine(const Line &l, const std::vector<std::string> &writes, std::map<st
 
 // The address forms of the body's memory operands, from a walk over the body with the induction variable as
 // `iv`, a register the loop never writes as its own term, and a register written before its first read unknown.
-std::vector<Access> addressForms(const std::vector<Line> &body, const std::vector<Line> &pre, const std::string &iv, const std::set<std::string> &written) {
+std::vector<Access> addressForms(const std::vector<Ins> &body, const std::vector<Ins> &pre, const std::string &iv, const std::set<std::string> &written) {
     std::map<std::string, Form> val, before;
     std::set<std::string> lost;
     for (std::size_t o = 0; o < pre.size(); o++) {           // what the preheader computed, by the same rules
-        std::vector<std::string> reads, writes;
-        readsAndWrites(pre[o], reads, writes);
+        const std::vector<std::string> &reads = pre[o].reads;
         for (std::size_t r = 0; r < reads.size(); r++) if (!before.count(reads[r]) && !lost.count(reads[r])) before[reads[r]] = formOf(reads[r] == "A15" ? "A15" : "reg:" + reads[r]);
-        evalLine(pre[o], writes, before, lost);
+        evalLine(pre[o], before, lost);
     }
     lost.clear();
     // A pointer the accesses alone step: on entry to a turn it is the preheader's value plus its stride per turn gone.
     std::map<std::string, long> stride, stepWrites, allWrites;
     for (std::size_t o = 0; o < body.size(); o++) {
-        std::vector<std::string> reads, writes;
-        readsAndWrites(body[o], reads, writes);
-        for (std::size_t w = 0; w < writes.size(); w++) allWrites[writes[w]]++;
-        long by;
-        const std::string r = steppedRegister(body[o], by);
-        if (!r.empty()) { stride[r] += by; stepWrites[r]++; }
+        for (std::size_t w = 0; w < body[o].writes.size(); w++) allWrites[body[o].writes[w]]++;
+        const std::string &r = body[o].stepReg;
+        if (!r.empty()) { stride[r] += body[o].by; stepWrites[r]++; }
     }
     const Form turns = combine(formOf("iv"), formOf("reg:" + iv), -1);
     std::vector<Access> out(body.size());
     for (std::size_t o = 0; o < body.size(); o++) {
-        const Line &l = body[o];
-        std::vector<std::string> reads, writes;
-        readsAndWrites(l, reads, writes);
+        const Ins &l = body[o];
+        const std::vector<std::string> &reads = l.reads;
         for (std::size_t r = 0; r < reads.size(); r++) {
             if (val.count(reads[r]) || lost.count(reads[r])) continue;
             const std::string &x = reads[r];
@@ -120,34 +187,21 @@ std::vector<Access> addressForms(const std::vector<Line> &body, const std::vecto
             else if (stepWrites.count(x) && stepWrites[x] == allWrites[x] && before.count(x) && x != iv) val[x] = combine(before[x], scaled(turns, stride[x]), 1);
             else val[x] = written.count(x) ? Form() : before.count(x) ? before[x] : formOf(x == "A15" ? "A15" : "reg:" + x);
         }
-        long by = 0;
-        const std::string stepReg = steppedRegister(l, by);
+        const std::string &stepReg = l.stepReg;
         Form stepFrom; bool stepKnown = !stepReg.empty() && val.count(stepReg) && !val[stepReg].empty();
         if (stepKnown) stepFrom = val[stepReg];
-        if (isLoad(l.mnem) || isStore(l.mnem)) {
-            const std::string &m = isStore(l.mnem) ? l.ops[1] : l.ops[0];
-            std::string base; long off = 0; std::string index; long sign = 1;
-            if (!stepReg.empty()) { base = stepReg; if (m.compare(0, 3, "*++") == 0 || m.compare(0, 3, "*--") == 0) off = by, sign = 1; }
-            else if (m.size() > 1 && m[0] == '*' && (m[1] == '+' || m[1] == '-') && m.find('(') != std::string::npos) {
-                sign = m[1] == '-' ? -1 : 1;
-                base = m.substr(2, m.find('(') - 2);
-                off = std::atol(m.substr(m.find('(') + 1).c_str());
-            } else if (m.size() > 1 && m[0] == '*' && (m[1] == '+' || m[1] == '-') && m.find('[') != std::string::npos) {
-                sign = m[1] == '-' ? -1 : 1;
-                base = m.substr(2, m.find('[') - 2);
-                index = m.substr(m.find('[') + 1, m.find(']') - m.find('[') - 1);
-            } else if (m.size() > 1 && m[0] == '*' && sideOf(m.substr(1))) base = m.substr(1);
-            bool known = !base.empty() && val.count(base) && !val[base].empty();
-            if (known && !index.empty()) known = val.count(index) && !val[index].empty();
+        if (l.access) {
+            bool known = !l.base.empty() && val.count(l.base) && !val[l.base].empty();
+            if (known && !l.index.empty()) known = val.count(l.index) && !val[l.index].empty();
             if (known) {
-                Form a = val[base];
-                if (!index.empty()) a = combine(a, scaled(val[index], accessSize(l.mnem)), sign);
-                else if (off) a = combine(a, formOf("", off), sign);
+                Form a = val[l.base];
+                if (!l.index.empty()) a = combine(a, scaled(val[l.index], accessSize(l.mnem)), l.sign);
+                else if (l.off) a = combine(a, formOf("", l.off), l.sign);
                 out[o].known = true; out[o].addr = a;
             }
         }
-        evalLine(l, writes, val, lost);
-        if (stepKnown) { val[stepReg] = combine(stepFrom, formOf("", by), 1); lost.erase(stepReg); }
+        evalLine(l, val, lost);
+        if (stepKnown) { val[stepReg] = combine(stepFrom, formOf("", l.by), 1); lost.erase(stepReg); }
     }
     return out;
 }
@@ -223,6 +277,8 @@ struct Loop {
     std::size_t cmp = 0;
     std::vector<std::size_t> bodyAt;    // the body's instruction lines, the compare and the branch left out
     std::vector<Line> body, pre;          // the body, and the block that falls into the head
+    std::vector<MInst> preM;              // `pre` as entries, where every one is `modelled`
+    bool preTyped = true;
     // The body as the stream's entries (M6c round 5), kept equal to `body` through every edit; empty off the stream or
     // where an entry is not `modelled`. What the body hands on - reads, writes, pairs, nodes - is read from it there.
     std::vector<MInst> bodyM;
@@ -262,6 +318,23 @@ struct Loop {
             if (x.kind == MOperand::Memory && x.mode >= MOperand::PreInc) return x.index == kNoReg ? regName(x.reg) : std::string();
         }
         return std::string();
+    }
+    // The address forms of the body's accesses: read from the entries on the stream, from the lines off it.
+    std::vector<Access> addresses() const {
+        std::vector<Ins> b, p;
+        const bool typed = !bodyM.empty() && preTyped;
+        for (std::size_t o = 0; o < body.size(); o++) b.push_back(typed ? insOf(bodyM[o]) : insOf(body[o]));
+        for (std::size_t o = 0; o < pre.size(); o++) p.push_back(typed ? insOf(preM[o]) : insOf(pre[o]));
+        const std::vector<Access> got = addressForms(b, p, iv, written);
+        // CXX1_C6X_MIR=1: the lines walked too, and `c6x-addr` names an access whose form differs.
+        if (typed && std::getenv("CXX1_C6X_MIR") != nullptr) {
+            for (std::size_t o = 0; o < body.size(); o++) b[o] = insOf(body[o]);
+            for (std::size_t o = 0; o < pre.size(); o++) p[o] = insOf(pre[o]);
+            const std::vector<Access> ref = addressForms(b, p, iv, written);
+            for (std::size_t o = 0; o < ref.size(); o++)
+                if (ref[o].known != got[o].known || ref[o].addr != got[o].addr) std::fprintf(stderr, "c6x-addr:%s\n", body[o].raw.c_str());
+        }
+        return got;
     }
     void erase(std::size_t o) {
         body.erase(body.begin() + static_cast<long>(o));
@@ -533,7 +606,10 @@ bool recognise(const Src &src, std::size_t back, const std::set<std::string> &la
     if (!found) { why = "the head is not above"; return false; }
     if (back + 1 >= v.size() || !src.label(back + 1)) { why = "no exit label after the branch"; return false; }
     L.head = h; L.back = back; L.exitName = src.name(back + 1);
-    for (std::size_t k = h; k-- > 0 && src.instr(k) && !isBranch(src.mnem(k));) L.pre.insert(L.pre.begin(), v[k]);
+    for (std::size_t k = h; k-- > 0 && src.instr(k) && !isBranch(src.mnem(k));) {
+        L.pre.insert(L.pre.begin(), v[k]);
+        if (src.typed(k)) L.preM.insert(L.preM.begin(), (*src.s)[k]); else L.preTyped = false;
+    }
     if (src.naming(L.label) != 1) { why = "the head is entered from elsewhere"; return false; }
     for (std::size_t i = h + 1; i < back; i++) {
         if (src.label(i)) { if (!passThroughName(src.name(i), named)) { why = "a label inside"; return false; } continue; }
@@ -649,7 +725,7 @@ void buildEdges(Loop &L, const std::set<std::string> &renameable) {
         }
     }
     if (tracing() > 3) for (std::size_t e = 0; e < L.edges.size(); e++) std::fprintf(stderr, "  edge %s %d->%d (%d,%d)\n", L.edges[e].why, L.edges[e].from, L.edges[e].to, L.edges[e].delay, L.edges[e].dist);
-    std::vector<Access> addr = addressForms(L.body, L.pre, L.iv, L.written);
+    std::vector<Access> addr = L.addresses();
     for (std::size_t a = 0; a < n.size(); a++) {
         if (!n[a].mem) continue;
         for (std::size_t b = a; b < n.size(); b++) {
@@ -781,9 +857,14 @@ std::string spelledLine(const Loop &L, const std::vector<Unit> &units, const std
     return rebuilt(l.mnem, ops, pred).raw;
 }
 
-std::string spelled(const Loop &L, const std::vector<Unit> &units, const std::map<std::string, std::size_t> &unitOf,
-                    const std::vector<int> &firstWrite, std::size_t o, long j) {
-    if (L.bodyM.empty() || L.bodyM[o].unit != 0 || L.bodyM[o].par || L.bodyM[o].packed) return spelledLine(L, units, unitOf, firstWrite, o, j);
+// One instruction of a kernel's packet: its spelling, and on the stream the entry itself (typed).
+struct Turn { std::string raw; MInst e; bool typed = false; };
+
+Turn spelled(const Loop &L, const std::vector<Unit> &units, const std::map<std::string, std::size_t> &unitOf,
+             const std::vector<int> &firstWrite, std::size_t o, long j) {
+    Turn turn;
+    turn.raw = spelledLine(L, units, unitOf, firstWrite, o, j);
+    if (L.bodyM.empty() || L.bodyM[o].unit != 0 || L.bodyM[o].par || L.bodyM[o].packed) return turn;
     MInst x = L.bodyM[o];
     const std::string m = x.m.str();
     const bool hasDest = x.operands && !isStore(m) && m != "B" && x.op[x.operands - 1].kind != MOperand::Memory;
@@ -808,22 +889,118 @@ std::string spelled(const Loop &L, const std::vector<Unit> &units, const std::ma
     }
     std::string raw = x.str();
     raw.erase(raw.size() - 1);
-    // Under CXX1_C6X_MIR=1 the line's spelling too: `c6x-spell` names a turn the entry writes otherwise.
-    if (std::getenv("CXX1_C6X_MIR") != nullptr && raw != spelledLine(L, units, unitOf, firstWrite, o, j))
-        std::fprintf(stderr, "c6x-spell: %s against %s\n", raw.c_str(), spelledLine(L, units, unitOf, firstWrite, o, j).c_str());
-    return raw;
+    // The line's spelling is the check: `c6x-spell` names a turn the entry writes otherwise, and the line is read.
+    if (raw != turn.raw) { if (std::getenv("CXX1_C6X_MIR") != nullptr) std::fprintf(stderr, "c6x-spell: %s against %s\n", raw.c_str(), turn.raw.c_str()); return turn; }
+    turn.e = x;
+    turn.typed = true;
+    return turn;
 }
 
 Line verbatim(const std::string &raw) { Line l; l.raw = raw; l.verbatim = true; return l; }
 
-void emitCycles(std::vector<Line> &out, const std::vector<std::vector<std::string> > &cycles) {
+// **What the emitters write** (M6c round 11): lines for a loop read from text; on the stream entries - an instruction
+// built from its parts, a turn the body's renamed entry, placed as it is put. `ok` false: one the stream cannot hold.
+struct Code {
+    std::vector<Line> lines;
+    MStream m;
+    const MStream *from = nullptr;          // the stream being rewritten; none for the text
+    bool ok = true;
+    bool text() const { static const bool census = std::getenv("CXX1_C6X_MIR") != nullptr; return !from || census; }
+    static std::vector<std::string> opsOf(const std::string &a, const std::string &b, const std::string &c) {
+        std::vector<std::string> ops(1, a);
+        if (!b.empty()) ops.push_back(b);
+        if (!c.empty()) ops.push_back(c);
+        return ops;
+    }
+    // The entry of these parts; false where the predicate names no register, which an entry cannot hold.
+    static bool entryOf(const std::string &mnem, const std::vector<std::string> &ops, const std::string &pred, MInst &e) {
+        if (ops.size() > 4) return false;
+        e = MInst(mnem.c_str());
+        for (std::size_t k = 0; k < ops.size(); k++) e.op[e.operands++] = MOperand(ops[k]);
+        if (pred.empty()) return true;
+        e.predNot = pred[0] == '!';
+        e.pred = static_cast<std::uint8_t>(regNumber(pred.substr(e.predNot ? 1 : 0)));
+        return e.pred != kNoReg;
+    }
+    // A composed line (the window's): its fields the entry's where it spells the line, else the line read.
+    void push_back(const Line &l) {
+        if (text()) lines.push_back(l);
+        if (!from || !ok) return;
+        MInst e;
+        if (l.instr && !l.verbatim && entryOf(l.mnem, l.ops, l.pred, e) && e.str() == l.raw + "\n") { m.push_back(e); return; }
+        ok = streamOf(std::vector<Line>(1, l), m);
+    }
+    void add(const std::string &mnem, const std::string &a, const std::string &b = "", const std::string &c = "", const std::string &pred = "") {
+        const std::vector<std::string> ops = opsOf(a, b, c);
+        if (text()) lines.push_back(rebuilt(mnem, ops, pred));
+        if (!from || !ok) return;
+        MInst e;
+        ok = entryOf(mnem, ops, pred, e);
+        if (ok) m.push_back(e);
+    }
+    // `legalForm` and the instruction: commuted where both sources cross, false with the reason where it has no form.
+    bool legal(std::string &why, const std::string &mnem, const std::string &a, const std::string &b = "", const std::string &c = "") {
+        const std::vector<std::string> ops = opsOf(a, b, c);
+        MInst e;
+        const bool typed = from && ok && entryOf(mnem, ops, "", e) && modelled(e);
+        Line l;
+        bool fine = false;
+        if (!typed || text()) { l = rebuilt(mnem, ops); fine = legalForm(l); }
+        if (!typed) {
+            if (!fine) { why = "the stepped guard has no legal form for" + l.raw; return false; }
+            push_back(l);
+            return true;
+        }
+        const bool commutes = mnem == "ADD" || mnem == "AND" || mnem == "OR" || mnem == "XOR" || mnem == "MPYDP" || mnem == "ADDDP" || mnem == "MPYSP" ||
+                              mnem == "ADDSP" || mnem == "MPY32" || mnem == "CMPEQ";
+        if (crossings(e) > 1 && commutes && e.operands == 3 && e.op[0].kind != MOperand::Immediate && e.op[1].kind != MOperand::Immediate) std::swap(e.op[0], e.op[1]);
+        const bool has = crossings(e) <= 1 && (unitsFor(e) != 0 || isLoad(mnem) || isStore(mnem));
+        std::string raw = e.str();
+        raw.erase(raw.size() - 1);
+        if (text()) {
+            if (has != fine || (has && raw != l.raw)) std::fprintf(stderr, "c6x-emit: legal%s against%s\n", raw.c_str(), l.raw.c_str());
+            if (fine) lines.push_back(l);
+        }
+        if (!has) { why = "the stepped guard has no legal form for" + raw; return false; }
+        m.push_back(e);
+        return true;
+    }
+    // A placed line - a turn, idle cycles, the kernel's label: the entry given, else the line read as placed.
+    void placed(const std::string &raw, bool par, const MInst *e) {
+        if (text() || (!e && ok)) lines.push_back(verbatim((par ? "||" : "") + raw));
+        if (!from || !ok) return;
+        if (!e) { ok = streamOf(std::vector<Line>(1, lines.back()), m); if (!text()) lines.pop_back(); return; }
+        m.push_back(*e);
+        m.back().par = par;
+        m.back().packed = true;
+    }
+    void nop(int n) { const MInst e("NOP", n); placed("\tNOP\t" + std::to_string(n), false, &e); }
+    void label(const std::string &name) { MInst e; e.kind = MInst::Label; e.m = opt::StrId(name); placed(name + ":", false, &e); }
+    // Line k of the function as it stands: the stream's own entry.
+    void same(const std::vector<Line> &v, std::size_t k) {
+        if (!from || !ok) { push_back(v[k]); return; }
+        const MInst &e = (*from)[k];
+        if (e.kind != MInst::Instruction || e.packed || e.par || e.unit != 0 || !modelled(e)) { push_back(v[k]); return; }
+        if (text()) lines.push_back(v[k]);
+        m.push_back(e);
+    }
+};
+
+Turn turnOf(const std::string &mnem, const std::vector<std::string> &ops, const std::string &pred = "") {
+    Turn t;
+    t.raw = rebuilt(mnem, ops, pred).raw;
+    t.typed = Code::entryOf(mnem, ops, pred, t.e);
+    return t;
+}
+
+void emitCycles(Code &out, const std::vector<std::vector<Turn> > &cycles) {
     int nops = 0;
     for (std::size_t c = 0; c < cycles.size(); c++) {
         if (cycles[c].empty()) { nops++; continue; }
-        while (nops > 0) { out.push_back(verbatim("\tNOP\t" + std::to_string(std::min(nops, 9)))); nops -= std::min(nops, 9); }
-        for (std::size_t k = 0; k < cycles[c].size(); k++) out.push_back(verbatim((k ? "||" : "") + cycles[c][k]));
+        while (nops > 0) { out.nop(std::min(nops, 9)); nops -= std::min(nops, 9); }
+        for (std::size_t k = 0; k < cycles[c].size(); k++) out.placed(cycles[c][k].raw, k != 0, cycles[c][k].typed ? &cycles[c][k].e : nullptr);
     }
-    while (nops > 0) { out.push_back(verbatim("\tNOP\t" + std::to_string(std::min(nops, 9)))); nops -= std::min(nops, 9); }
+    while (nops > 0) { out.nop(std::min(nops, 9)); nops -= std::min(nops, 9); }
 }
 
 // A register web: one value, from its write to its last read; linked to its partner's where it is half a pair.
@@ -985,13 +1162,6 @@ void checkBody(const Loop &L, const char *at) {
     }
 }
 
-// A legal line, or false: the stepped guard is made of ordinary instructions and every one must have a form.
-bool emitLegal(std::vector<Line> &out, Line l, std::string &why) {
-    if (!legalForm(l)) { why = "the stepped guard has no legal form for" + l.raw; return false; }
-    out.push_back(l);
-    return true;
-}
-
 // A register of free's on the side asked for, or any; "" for none. With pair, an aligned even:odd pair's even half.
 std::string takeFree(std::vector<std::string> &free, char side, bool pair) {
     for (int pass = 0; pass < 2; pass++)
@@ -1012,25 +1182,25 @@ std::string takeFree(std::vector<std::string> &free, char side, bool pair) {
 
 // The loop's own test in one canonical shape: P = iv < n where the loop runs while iv < n, P = n < iv where it runs
 // while iv <= n; a two-word counter signed through the high word and unsigned through the low, over two scratch registers.
-bool steppedTest(const Loop &L, std::vector<Line> &out, const std::string &nlo, const std::string &nhi, const std::string &t, const std::string &tb, std::string &why) {
+bool steppedTest(const Loop &L, Code &out, const std::string &nlo, const std::string &nhi, const std::string &t, const std::string &tb, std::string &why) {
     const bool less = !L.plusOne;
     const std::string &lo = L.ivs[0];
     const bool across = sideOf(L.P) != sideOf(lo);    // the result is made beside the counter and copied to P
     if (!L.wide) {
-        if (!across) return emitLegal(out, make(less ? "CMPLT" : "CMPGT", lo, nlo, L.P), why);
+        if (!across) return out.legal(why, less ? "CMPLT" : "CMPGT", lo, nlo, L.P);
         if (t.empty()) { why = "the stepped test has no scratch register beside the counter"; return false; }
-        return emitLegal(out, make(less ? "CMPLT" : "CMPGT", lo, nlo, t), why) && emitLegal(out, make("MV", t, L.P), why);
+        return out.legal(why, less ? "CMPLT" : "CMPGT", lo, nlo, t) && out.legal(why, "MV", t, L.P);
     }
     const std::string &hi = L.ivs[1], &x = across ? tb : L.P;
-    return emitLegal(out, make("CMPEQ", hi, nhi, t), why) && emitLegal(out, make(less ? "CMPLTU" : "CMPGTU", lo, nlo, tb), why) &&
-           emitLegal(out, make("AND", t, tb, t), why) && emitLegal(out, make(less ? "CMPLT" : "CMPGT", hi, nhi, tb), why) &&
-           emitLegal(out, make("OR", t, tb, x), why) && (!across || emitLegal(out, make("MV", x, L.P), why));
+    return out.legal(why, "CMPEQ", hi, nhi, t) && out.legal(why, less ? "CMPLTU" : "CMPGTU", lo, nlo, tb) &&
+           out.legal(why, "AND", t, tb, t) && out.legal(why, less ? "CMPLT" : "CMPGT", hi, nhi, tb) &&
+           out.legal(why, "OR", t, tb, x) && (!across || out.legal(why, "MV", x, L.P));
 }
 
 // **The stepped loop's entry**: the step must not be negative, K = m*s and Kg = g*s must fit, n-K (the kernel's bound)
 // and n-Kg must not overflow, and turn g must exist - `iv REL n-Kg` by the loop's own test - or the loop runs as written.
 // Every check branches to the head, and the test is the loop's own over the bound n - Kg; one or two words.
-bool steppedGuard(const Loop &L, std::vector<Line> &out, const std::vector<std::string> &moved, const std::string &xt, const std::string &xtb,
+bool steppedGuard(const Loop &L, Code &out, const std::vector<std::string> &moved, const std::string &xt, const std::string &xtb,
                   std::vector<std::string> free, int m, int g, std::string &why) {
     const std::string &slo = L.steps[0], &nlo = L.bounds[0];
     const std::string shi = L.wide ? L.steps[1] : "", nhi = L.wide ? L.bounds[1] : "";
@@ -1040,43 +1210,42 @@ bool steppedGuard(const Loop &L, std::vector<Line> &out, const std::vector<std::
     if (klo.empty() || tm.empty() || t2.empty() || tb.empty()) { why = "no free registers for the stepped guard"; return false; }
     const std::string khi = std::string(1, klo[0]) + std::to_string(std::atoi(klo.c_str() + 1) + 1);
     const std::string skip = L.negated ? L.P : "!" + L.P;    // the branch past the pipelined copy, taken where the loop would not go on
-    Line toHead = rebuilt("B", std::vector<std::string>(1, L.label), L.P);
-    if (!constant && !emitLegal(out, make("CMPGT", "0", L.wide ? shi : slo, L.P), why)) return false;
-    if (!constant) out.push_back(toHead);
+    if (!constant && !out.legal(why, "CMPGT", "0", L.wide ? shi : slo, L.P)) return false;
+    if (!constant) out.add("B", L.label, "", "", L.P);
     // K = k*s into khi:klo, checked to fit: a 31-bit value for one word, a 47-bit step for two.
     auto times = [&](int k) -> bool {
         if (constant) {
             long kk = k * std::atol(slo.c_str());
             if (kk < 0 || kk > 0x7fffffff) { why = "the stepped guard's constant does not fit"; return false; }
-            if (kk <= 32767) out.push_back(make("MVK", std::to_string(kk), klo));
-            else { out.push_back(make("MVKL", std::to_string(kk), klo)); out.push_back(make("MVKH", std::to_string(kk), klo)); }
+            if (kk <= 32767) out.add("MVK", std::to_string(kk), klo);
+            else { out.add("MVKL", std::to_string(kk), klo); out.add("MVKH", std::to_string(kk), klo); }
             return true;
         }
-        out.push_back(make("MVK", std::to_string(k), tm));
-        if (!emitLegal(out, make("MPY32U", slo, tm, khi + ":" + klo), why)) return false;
+        out.add("MVK", std::to_string(k), tm);
+        if (!out.legal(why, "MPY32U", slo, tm, khi + ":" + klo)) return false;
         if (!L.wide) {
-            if (!emitLegal(out, make("CMPGT", "0", klo, tb), why) || !emitLegal(out, make("XOR", "1", tb, tb), why)) return false;
-            if (!emitLegal(out, make("CMPEQ", "0", khi, L.P), why) || !emitLegal(out, make("AND", L.P, tb, L.P), why)) return false;
-            out.push_back(rebuilt("B", std::vector<std::string>(1, L.label), "!" + L.P));
+            if (!out.legal(why, "CMPGT", "0", klo, tb) || !out.legal(why, "XOR", "1", tb, tb)) return false;
+            if (!out.legal(why, "CMPEQ", "0", khi, L.P) || !out.legal(why, "AND", L.P, tb, L.P)) return false;
+            out.add("B", L.label, "", "", "!" + L.P);
             return true;
         }
-        if (!emitLegal(out, make("MPY32", shi, tm, t2), why) || !emitLegal(out, make("ADD", t2, khi, khi), why)) return false;
-        if (!emitLegal(out, make("SHRU", shi, "15", t2), why) || !emitLegal(out, make("CMPEQ", "0", t2, L.P), why)) return false;
-        out.push_back(rebuilt("B", std::vector<std::string>(1, L.label), "!" + L.P));
+        if (!out.legal(why, "MPY32", shi, tm, t2) || !out.legal(why, "ADD", t2, khi, khi)) return false;
+        if (!out.legal(why, "SHRU", shi, "15", t2) || !out.legal(why, "CMPEQ", "0", t2, L.P)) return false;
+        out.add("B", L.label, "", "", "!" + L.P);
         return true;
     };
     // d = n - (khi:klo), into dlo (and dhi), then the overflow check: n negative and the difference not.
     auto minus = [&](const std::string &dlo, const std::string &dhi) -> bool {
         if (!L.wide) {
-            if (!emitLegal(out, make("SUB", nlo, klo, dlo), why)) return false;
-            if (!emitLegal(out, make("CMPGT", "0", nlo, L.P), why) || !emitLegal(out, make("CMPGT", "0", dlo, tb), why)) return false;
+            if (!out.legal(why, "SUB", nlo, klo, dlo)) return false;
+            if (!out.legal(why, "CMPGT", "0", nlo, L.P) || !out.legal(why, "CMPGT", "0", dlo, tb)) return false;
         } else {
-            if (!emitLegal(out, make("CMPLTU", nlo, klo, tb), why) || !emitLegal(out, make("SUB", nlo, klo, dlo), why)) return false;
-            if (!emitLegal(out, make("SUB", nhi, khi, dhi), why) || !emitLegal(out, make("SUB", dhi, tb, dhi), why)) return false;
-            if (!emitLegal(out, make("CMPGT", "0", nhi, L.P), why) || !emitLegal(out, make("CMPGT", "0", dhi, tb), why)) return false;
+            if (!out.legal(why, "CMPLTU", nlo, klo, tb) || !out.legal(why, "SUB", nlo, klo, dlo)) return false;
+            if (!out.legal(why, "SUB", nhi, khi, dhi) || !out.legal(why, "SUB", dhi, tb, dhi)) return false;
+            if (!out.legal(why, "CMPGT", "0", nhi, L.P) || !out.legal(why, "CMPGT", "0", dhi, tb)) return false;
         }
-        if (!emitLegal(out, make("XOR", "1", tb, tb), why) || !emitLegal(out, make("AND", L.P, tb, L.P), why)) return false;
-        out.push_back(toHead);
+        if (!out.legal(why, "XOR", "1", tb, tb) || !out.legal(why, "AND", L.P, tb, L.P)) return false;
+        out.add("B", L.label, "", "", L.P);
         return true;
     };
     if (!times(m) || !minus(moved[0], L.wide ? moved[1] : "")) return false;
@@ -1084,12 +1253,12 @@ bool steppedGuard(const Loop &L, std::vector<Line> &out, const std::vector<std::
     if (!minus(klo, khi)) return false;
     // The entry test over the bound n - Kg, then the branch past the copy where it fails.
     if (!steppedTest(L, out, klo, khi, xt, xtb, why)) return false;
-    out.push_back(rebuilt("B", std::vector<std::string>(1, L.label), skip));
+    out.add("B", L.label, "", "", skip);
     return true;
 }
 
 // The whole rewrite of one recognised loop; false, with the reason, where it is not worth it or cannot be done.
-bool pipeline(const std::vector<Line> &v, Loop &L, std::vector<Line> &out, std::string &why) {
+bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) {
     // The pool of names the loop may take: caller-saved, unused in it, dead at its exit.
     std::vector<std::string> pool;
     for (int side = 0; side < 2; side++)
@@ -1268,41 +1437,41 @@ bool pipeline(const std::vector<Line> &v, Loop &L, std::vector<Line> &out, std::
     const bool crossBoth = !L.stepped && !L.boundConst && sideOf(L.bound) != sideOf(X) && sideOf(L.iv) != sideOf(X);
     if (L.stepped) { }
     else if (L.boundConst) {
-        if (L.boundK >= -32768 && L.boundK <= 32767) out.push_back(make("MVK", std::to_string(L.boundK), X));
-        else { out.push_back(make("MVKL", std::to_string(L.boundK), X)); out.push_back(make("MVKH", std::to_string(L.boundK), X)); }
-        out.push_back(make("SUB", X, L.iv, X));
-    } else if (crossBoth) { out.push_back(make("MV", L.bound, X)); out.push_back(make("SUB", X, L.iv, X)); }
-    else out.push_back(make("SUB", L.bound, L.iv, X));
+        if (L.boundK >= -32768 && L.boundK <= 32767) out.add("MVK", std::to_string(L.boundK), X);
+        else { out.add("MVKL", std::to_string(L.boundK), X); out.add("MVKH", std::to_string(L.boundK), X); }
+        out.add("SUB", X, L.iv, X);
+    } else if (crossBoth) { out.add("MV", L.bound, X); out.add("SUB", X, L.iv, X); }
+    else out.add("SUB", L.bound, L.iv, X);
     if (!L.stepped) {
-        if (L.plusOne) out.push_back(make("ADD", "1", X, X));
-        if (S > 1) { if (S - 1 <= 31) out.push_back(make("SUB", X, std::to_string(S - 1), X)); else out.push_back(make("ADDK", std::to_string(1 - S), X)); }
+        if (L.plusOne) out.add("ADD", "1", X, X);
+        if (S > 1) { if (S - 1 <= 31) out.add("SUB", X, std::to_string(S - 1), X); else out.add("ADDK", std::to_string(1 - S), X); }
         int log2u = 0;
         while ((1 << log2u) < u) log2u++;
-        if (log2u) out.push_back(make("SHR", X, std::to_string(log2u), X));
-        out.push_back(make("CMPGT", "1", X, L.P));
-        out.push_back(rebuilt("B", std::vector<std::string>(1, L.label), L.P));
-        out.push_back(make("SUB", X, "1", L.C));
+        if (log2u) out.add("SHR", X, std::to_string(log2u), X);
+        out.add("CMPGT", "1", X, L.P);
+        out.add("B", L.label, "", "", L.P);
+        out.add("SUB", X, "1", L.C);
     }
     for (std::size_t x = 0; x < units.size(); x++)
-        if (units[x].q > 1 && units[x].carried) for (std::size_t h = 0; h < units[x].regs.size(); h++) out.push_back(make("MV", units[x].regs[h], units[x].copies[h][static_cast<std::size_t>(units[x].q - 1)]));
+        if (units[x].q > 1 && units[x].carried) for (std::size_t h = 0; h < units[x].regs.size(); h++) out.add("MV", units[x].regs[h], units[x].copies[h][static_cast<std::size_t>(units[x].q - 1)]);
     // The prologue, the kernel of u rounds with its branch, and the epilogue - every op of every iteration once.
     const std::size_t n = L.nodes.size();
-    std::vector<std::vector<std::string> > cyc;
+    std::vector<std::vector<Turn> > cyc;
     for (int a = 0; a < (S - 1) * II; a++) {
-        std::vector<std::string> p;
+        std::vector<Turn> p;
         for (std::size_t o = 0; o < n; o++) if (t[o] <= a && (a - t[o]) % II == 0) p.push_back(spelled(L, units, unitOf, firstWrite, o, (a - t[o]) / II));
         cyc.push_back(p);
     }
     emitCycles(out, cyc);
     cyc.clear();
-    out.push_back(verbatim(L.label + "$pipe:"));
+    out.label(L.label + "$pipe");
     for (int c = 0; c < u; c++)
         for (int s = 0; s < II; s++) {
-            std::vector<std::string> p;
+            std::vector<Turn> p;
             for (std::size_t o = 0; o < n; o++) if (t[o] % II == s) p.push_back(spelled(L, units, unitOf, firstWrite, o, S - 1 + c - t[o] / II));
             if (c * II + s == u * II - 6) {
-                p.push_back(rebuilt("B", std::vector<std::string>(1, L.label + "$pipe"), L.stepped ? (L.negated ? "!" + L.P : L.P) : L.C).raw);
-                if (!L.stepped) p.push_back(make("ADD", "-1", L.C, L.C).raw);
+                p.push_back(turnOf("B", std::vector<std::string>(1, L.label + "$pipe"), L.stepped ? (L.negated ? "!" + L.P : L.P) : L.C));
+                if (!L.stepped) p.push_back(turnOf("ADD", Code::opsOf("-1", L.C, L.C)));
             }
             cyc.push_back(p);
         }
@@ -1311,17 +1480,17 @@ bool pipeline(const std::vector<Line> &v, Loop &L, std::vector<Line> &out, std::
     int epi = (S - 1) * II;
     for (std::size_t o = 0; o < n; o++) epi = std::max(epi, t[o] + L.nodes[o].lat - II);
     for (int e = 0; e < epi; e++) {
-        std::vector<std::string> p;
+        std::vector<Turn> p;
         for (std::size_t o = 0; o < n; o++) if (t[o] - e >= II && (t[o] - e) % II == 0) p.push_back(spelled(L, units, unitOf, firstWrite, o, S - 1 - (t[o] - e) / II));
         cyc.push_back(p);
     }
     emitCycles(out, cyc);
     // The last pipelined iteration is u*q'+S-2, so its names are fixed: copied back, then the test the loop's own way.
     for (std::size_t x = 0; x < units.size(); x++)
-        if (units[x].q > 1 && units[x].exits && modq(S - 2, units[x].q) != 0) for (std::size_t h = 0; h < units[x].regs.size(); h++) out.push_back(make("MV", units[x].copies[h][static_cast<std::size_t>(modq(S - 2, units[x].q))], units[x].regs[h]));
+        if (units[x].q > 1 && units[x].exits && modq(S - 2, units[x].q) != 0) for (std::size_t h = 0; h < units[x].regs.size(); h++) out.add("MV", units[x].copies[h][static_cast<std::size_t>(modq(S - 2, units[x].q))], units[x].regs[h]);
     if (L.stepped) { if (!steppedTest(L, out, L.bounds[0], L.wide ? L.bounds[1] : "", xt, xtb, why)) return false; }
-    else out.push_back(v[L.cmp]);
-    out.push_back(rebuilt("B", std::vector<std::string>(1, L.exitName), L.negated ? L.P : "!" + L.P));
+    else out.same(v, L.cmp);
+    out.add("B", L.exitName, "", "", L.negated ? L.P : "!" + L.P);
     return true;
 }
 
@@ -2195,7 +2364,7 @@ void checkRecognisers(const Src &src, std::size_t i, const std::set<std::string>
 
 // One back branch tried: the code that replaces lines [from, to) of the text where the pipelining pays.
 bool pipelineAt(const Src &src, std::size_t i, const std::set<std::string> &labels, const std::set<std::string> &named,
-                std::size_t copied, std::vector<Line> &code, std::size_t &from, std::size_t &to) {
+                std::size_t copied, Code &code, std::size_t &from, std::size_t &to) {
     const std::vector<Line> &v = src.v;
     if (!src.instr(i) || src.mnem(i) != "B" || isCall(v[i], labels)) return false;
     const bool plain = src.pred(i).empty();
@@ -2213,7 +2382,9 @@ bool pipelineAt(const Src &src, std::size_t i, const std::set<std::string> &labe
         checkRecognisers(src, i, labels, named, false);
         Window W;
         std::string wwhy;
-        if (recogniseWindow(src, i, labels, named, W, wwhy) && W.head >= copied && emitWindow(v, W, code, wwhy)) {
+        std::vector<Line> turns;
+        if (recogniseWindow(src, i, labels, named, W, wwhy) && W.head >= copied && emitWindow(v, W, turns, wwhy)) {
+            for (std::size_t k = 0; k < turns.size(); k++) code.push_back(turns[k]);
             from = W.head + 1;
             to = W.back + 1;
             return true;
@@ -2225,6 +2396,19 @@ bool pipelineAt(const Src &src, std::size_t i, const std::set<std::string> &labe
     if (!pipeline(v, L, code, why)) { if (tracing()) std::fprintf(stderr, "pipe %s: %s\n", L.label.c_str(), why.c_str()); return false; }
     from = to = L.head;
     return true;
+}
+
+// CXX1_C6X_MIR=1: the emitters' lines read as round 10 read them, and `c6x-emit` names a loop whose entries differ.
+void checkEmitted(const Code &code, const Line &at) {
+    MStream ref;
+    bool same = streamOf(code.lines, ref) && ref.size() == code.m.size();
+    for (std::size_t k = 0; same && k < ref.size(); k++) {
+        const MInst &a = ref[k], &b = code.m[k];
+        same = a.kind == b.kind && a.par == b.par && a.packed == b.packed && a.pred == b.pred && a.predNot == b.predNot && a.unit == b.unit &&
+               a.operands == b.operands && a.str() == b.str();
+        for (int o = 0; same && o < a.operands; o++) same = a.op[o].kind == b.op[o].kind;
+    }
+    if (!same) std::fprintf(stderr, "c6x-emit: %s\n", at.raw.c_str());
 }
 
 // The names the text defines and the operands it names, with its liveness computed: what every candidate is read against.
@@ -2247,10 +2431,10 @@ void pipelineLoops(std::vector<Line> &v) {
     std::size_t copied = 0, from = 0, to = 0;
     const Src src = { v, nullptr };
     for (std::size_t i = 0; i < v.size(); i++) {
-        std::vector<Line> code;
+        Code code;
         if (!pipelineAt(src, i, labels, named, copied, code, from, to)) continue;
         for (std::size_t k = copied; k < from; k++) out.push_back(v[k]);
-        for (std::size_t k = 0; k < code.size(); k++) out.push_back(code[k]);
+        for (std::size_t k = 0; k < code.lines.size(); k++) out.push_back(code.lines[k]);
         copied = to;
     }
     for (std::size_t k = copied; k < v.size(); k++) out.push_back(v[k]);
@@ -2258,7 +2442,7 @@ void pipelineLoops(std::vector<Line> &v) {
 }
 
 // **The pipeliner on the stream** (M6c round 2): the same candidates, read through each entry's spelling; a kernel
-// comes back as entries - `par` its packets, `NOP n` its idle cycles, `packed` what is placed. False: one not spelled.
+// is written as entries (`Code`) - `par` its packets, `NOP n` its idle cycles, `packed` what is placed. False: one not held.
 bool pipelineLoops(MStream &s) {
     std::vector<Line> v;
     linesOf(s, v);
@@ -2268,10 +2452,13 @@ bool pipelineLoops(MStream &s) {
     const Src src = { v, &s };
     std::size_t copied = 0, from = 0, to = 0;
     for (std::size_t i = 0; i < v.size(); i++) {
-        std::vector<Line> code;
+        Code code;
+        code.from = &s;
         if (!pipelineAt(src, i, labels, named, copied, code, from, to)) continue;
+        if (!code.ok) return false;
+        if (code.text()) checkEmitted(code, v[i]);
         out.insert(out.end(), s.begin() + static_cast<long>(copied), s.begin() + static_cast<long>(from));
-        if (!streamOf(code, out)) return false;
+        out.insert(out.end(), code.m.begin(), code.m.end());
         copied = to;
     }
     out.insert(out.end(), s.begin() + static_cast<long>(copied), s.end());
