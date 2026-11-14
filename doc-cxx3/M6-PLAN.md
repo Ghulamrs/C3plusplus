@@ -1233,3 +1233,35 @@ M6c round 15 (m6x: W2-W4 the window's emitters on entries with numbered and virt
   827 / 0. Mac run.sh -O0 and -O2 1215 / 0. Linux make test rc 0 (run 1217/0, emit 3399/0, typed 860/0, ssa 890/0,
   c90 447/0, exclusions 0/0, comments 0). tms6747 (vm6747, SIM=0, three shards): 814 passed, 0 failed at -O0
   (393.2 M cycles) and -O2 (**192.0 M**, unchanged); asm6x 833 / 0 at -O0 and -O2.
+
+### M6c, round 17 (the wider measure: 0; D4 - the text-only passes deleted, the fallback a refusal by name), 2026-11-14, lane m6z
+
+- **The coordinator's answers to round 16's questions:** `CXX1_C6X_WALKER=1` and the `wtms0`/`wtms2` legs stay until
+  M6d (the wave gate runs them again from wave 13); measure before D4.
+- **The wider measure** (D3's compiler, m6-y 3f29eef7's code: Windows work\m6y4's `cxx3-msvc.exe` and Linux
+  `~/m6y/cxx3.exe`, both; boxkit/m6z-measure.sh, m6z-wmeasure.sh). Compiler++ - its 16 files one by one and the
+  amalgamated one (`dist/compilerpp_amalgamated.cpp`, 202,617 lines of assembly at -O2) - and the CCS samples (Sample
+  and SampleExt, `Math.cpp` with their headers; SampleExt1 is not in RIDE 4.7's tree) through `-arch tms6747` at -O0,
+  -O1 and -O2 under `CXX1_C6X_MIR=1`: **57 texts, every one rc 0, 1,732,389 lines, 8,665 selected functions, 52
+  functions with kernels on the stream; lines the stream does not spell: 0** (`c6x-fold`, `c6x-pipe`, `c6x-pack`,
+  `c6x-fold-edit` unread, `c6x-loop-unread`: 0 each, on both boxes). No shape to name; the stream needed nothing.
+- **D4 landed** (e40885ee, 9fcb7703, comments c1ff2b3f). C6xSched.cpp: the text front (`foldCalls`, `foldMvk`,
+  `foldFrame`, `foldPushPop` with the text `isPush`/`isPop`, `threadPredicates`, `dropUnnamedLabels`, `predicateArms`,
+  `rotateLoops`, `tidyJumps`), the five text folds and `rounds(lines)`, `numberValues(lines)`, `foldAddressing(lines)`
+  with `foldScaledIndex`, `schedule`, the text `foldBranchNops`, the text `deadAfter`/`deadAfterAsComputed`,
+  `LivenessHeld` (nothing opened one) and `isReturn(Line)` are gone; `c6xSchedule` is one path - `streamOf`, the
+  stream passes, `write` - and `rounds` takes the stream alone. C6xPipe.cpp: the text `pipelineLoops` and `namesOf`,
+  `Src::v` and every `!s` half of `Src`, the walker's entry made of a line's parts, `Code::lines` and the `!from`
+  halves of `put`/`legal`/`placed`/`same`, `Loop::onStream`, `pipeline`'s `src`. C6xPack.cpp: `linesOf`.
+  **The fallback is a refusal by name**: `c6xSchedule(text, level, spelled)` hands the text back with `spelled`
+  false where `streamOf` or the stream pipeliner cannot hold a line, and `Tms6747` says "codegen: a line the
+  scheduler's stream does not spell is not supported yet by the tms6747 backend" and fails the compile. No case
+  reaches it (0 over tests/cases, Compiler++ and the CCS samples), so none is recorded. `CPP11_C6XLIVECHECK` now
+  checks nothing (its check was the text `deadAfter`'s; tests/tms6747.sh still sets it - to retire with D5).
+- **Not landed: the rest of the pipeliner's line halves, and D5.** `Loop::body`/`pre`, `spelledLine` and the
+  `typed(i) ? ... : line(i)` halves of `Src` are not text-only: they are the path of an entry the model does not
+  hold (a placed or verbatim one - "the whole body from its lines"), so they go with D6's readers on operands, not
+  with D4. D5 (the five loop passes composing entries, `LoopText`/`LoopStream` gone) was not begun: `LoopText` is
+  now built only as a `LoopStream`, its `lines` constructor and the liveness cache behind `liveInAt`/`liveOutAt`
+  (`ensureLiveness`, `computeLiveness`) are what D5 removes.
+- src/ +72 -1,209 lines (C6xSched.cpp 2,423 -> 1,356, C6xPipe.cpp 2,578 -> 2,528, C6xPack.cpp 1,465 -> 1,452).
