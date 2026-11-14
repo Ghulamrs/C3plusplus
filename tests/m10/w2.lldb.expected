@@ -1,0 +1,24 @@
+== in the block, 21
+n = 12
+label = 0x# "hello"
+scale = 0.5
+c = 'h'
+big = true
+d = 6
+k = 3
+p = 0x#
+u = 7
+w = 1234567890123
+inner = 15
+work @ 21
+main @ 28
+== after the block, 23
+c = 'h'
+big = true
+d = 6
+k = 3
+p = 0x#
+u = 7
+w = 1234567890123
+counter = 41
+ratio = 2.5

@@ -1,0 +1,20 @@
+# lldb -b -s: the stops of w1.gdb, args (-l) and locals (-a) apart as gdb's info args and info locals
+settings set stop-line-count-before 0
+settings set stop-line-count-after 0
+settings set stop-disassembly-display never
+settings set target.output-path /dev/null
+breakpoint set -f w1.cpp -l 9
+run
+script print("== inner at 9")
+frame variable -l
+frame variable -a
+bt
+script print("== middle")
+frame select 1
+frame variable -l
+frame variable -a
+script print("== outer")
+frame select 2
+frame variable -l
+frame variable -a
+kill

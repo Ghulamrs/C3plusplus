@@ -1,0 +1,18 @@
+== fact at 10, n == 1
+n = 1
+below = 1
+r = 1
+fact @ 10
+fact @ 8
+fact @ 8
+main @ 14
+== fact, n == 2
+fact @ 8
+n = 2
+below = 1
+r = *
+== fact, n == 3
+fact @ 8
+n = 3
+below = 1
+r = *

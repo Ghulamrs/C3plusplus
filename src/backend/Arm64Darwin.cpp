@@ -606,6 +606,7 @@ void Arm64Darwin::emitFunction(const Function &fn) {
         Source::Place at = src->locate(fn.pos());
         DwarfFunction d;
         d.name = fn.displayName();
+        d.linkage = fn.symbol();
         d.begin = "Lfunc.begin." + fn.symbol();
         d.end = "Lfunc.end." + fn.symbol();
         d.file = at.file + 1;

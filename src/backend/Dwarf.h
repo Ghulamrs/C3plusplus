@@ -41,6 +41,8 @@ struct DwarfFunction {
     // parent's frame - `locals` and `blocks` are the parent's, `funclet` says which of its funclets this is (DwarfBlock::funclet). It
     // follows its parent in the list, and a mergeable parent's funclets share its `.debug$S` (CodeView.cpp).
     int funclet = 0;
+    // DW_AT_linkage_name, set by the Mach-O writer: lldb names a member function `::S::f` without it, and drops its `const`.
+    std::string linkage;
 };
 
 struct DwarfGlobal {

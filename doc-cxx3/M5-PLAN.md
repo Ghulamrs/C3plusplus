@@ -850,3 +850,29 @@ StmtPtr 639, node-refs 413): the parser's own fixes, in the half M6d deletes.
   -masm=masm and with -masm=gnu; emit.sh 0 of 3399 files changed (emit is not -g); exclusions 0 uncited / 0 stale,
   comments 0 over the cap, memory-gate rc 0 (Linux), ide/generate.py up to date. src/ lines: Dwarf.cpp 509 -> 569,
   Dwarf.h 70 -> 72, Ast.h 849 -> 850, Parser.cpp 950 -> 949.
+
+### lldb in the gates (lane lldb, 2026-11-14, on the Mac)
+- **`sh tests/debug.sh lldb [compiler]`** on arm64-darwin: `tests/m10/<w>.lldb` (lldb -b -x -s; the .gdb files' stops,
+  `frame variable -l` / `-a` as gdb's info args / info locals, `bt`, `frame select`, `== ` markers by `script print`;
+  the inferior's stdout to /dev/null, which lldb otherwise interleaves). **No link step of the case's own**: cxx3 -g
+  already runs dsymutil and lldb reads `<w>.exe.dSYM`. `normal()` gains `lldbText()`: `(type) name = value` made
+  `name = value` (lldb's `::` on a global dropped - clang's `counter` wears it too), an aggregate's lines joined into
+  `{a = 1, b = 2}`, `frame #n: ... f(args) at file:line:col` made `f @ line|file`, the chatter dropped. Developer Mode is
+  off and was not needed: lldb launches and stops its own inferior. Wired as a step of verify-three's Mac leg (skipped,
+  and says so, where no cxx3.exe was built on the Mac).
+- **The oracle**: clang++ -g -O0 under the same scripts gives the reduced text of every `.lldb.expected` line for line;
+  the expectations are clang's with the source's unset values as `= *` (d1 keep/got/after, d2 r, w1 r/m/n).
+- **Three cxx3 -g defects found against clang's lldb, two fixed in src/backend/Dwarf.cpp**: (1) const was dropped -
+  `const char *label` read `char *`, `const int k` `int`, `const Point &` `Point &`, a const member's `this`
+  `Square *`: a const-qualified type is now DW_TAG_const_type over its unqualified twin (ELF too; an array's const
+  stays its element's). (2) a member function's frame read `::Square::perimeter(this=...)` without ` const`, and every
+  breakpoint `::sum(int)`: the Mach-O writer gives each subprogram DW_AT_linkage_name (its symbol), two more abbrevs;
+  ELF is unchanged. (3) **owed**: a typedef is not described - w4's `Count n` reads `(unsigned int) n`, clang's `(Count)`
+  - the type system keeps no typedef name to emit DW_TAG_typedef from. Also seen, not a gate fact: a file-static global
+  reads `::ratio` where clang's reads `ratio` (cxx3 writes DW_AT_external 0 where clang writes none). The reduced text
+  drops types, so (1) and (3) are held by this note, not by the gate.
+- **Gates (Mac, through mac-run.sh)**: debug.sh lldb 5 passed, 0 failed with cxx3 and 5/5 with clang++; a wrong
+  expectation fails (w2 `inner = 16`: `line 12: expected inner = 16, got inner = 15`, 4 passed, 1 failed). run.sh
+  -O0 and -O2 1215 passed, 0 failed each. **Owed to the coordinator**: the boxes' gates (Linux gdb 5/5 - the const_type DIE reaches
+  ELF; Windows cdb is CodeView, untouched), exclusions, make comments, memory-gate (none run on the Mac). src/ lines:
+  Dwarf.cpp 569 -> 589, Dwarf.h 72 -> 74, Arm64Darwin.cpp 870 -> 871.

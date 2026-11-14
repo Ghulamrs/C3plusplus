@@ -29,7 +29,7 @@ const int kTagMember = 0x0d, kTagPointer = 0x0f, kTagCompileUnit = 0x11;
 const int kTagReference = 0x10, kTagRvalueReference = 0x42;
 const int kTagSubroutine = 0x15, kTagSubrange = 0x21, kTagBase = 0x24;
 const int kTagFormalParameter = 0x05, kTagSubprogram = 0x2e, kTagVariable = 0x34;
-const int kTagLexicalBlock = 0x0b;
+const int kTagLexicalBlock = 0x0b, kTagConst = 0x26;
 const int kTagUnspecifiedParameters = 0x18;
 const int kTagInheritance = 0x1c, kTagEnumeration = 0x04, kTagEnumerator = 0x28;
 
@@ -39,7 +39,7 @@ const int kAtHighPc = 0x12, kAtLanguage = 0x13, kAtCompDir = 0x1b;
 const int kAtProducer = 0x25, kAtUpperBound = 0x2f, kAtDataMemberLocation = 0x38;
 const int kAtDeclFile = 0x3a, kAtDeclLine = 0x3b, kAtEncoding = 0x3e;
 const int kAtExternal = 0x3f, kAtFrameBase = 0x40, kAtType = 0x49;
-const int kAtDataBitOffset = 0x6b, kAtConstValue = 0x1c, kAtRanges = 0x55;
+const int kAtDataBitOffset = 0x6b, kAtConstValue = 0x1c, kAtRanges = 0x55, kAtLinkageName = 0x6e;
 
 const int kFormAddr = 0x01, kFormData2 = 0x05, kFormData4 = 0x06;
 const int kFormString = 0x08, kFormData1 = 0x0b, kFormFlag = 0x0c;
@@ -55,14 +55,14 @@ const int kOpAddr = 0x03, kOpFbreg = 0x91;
 
 enum Abbrev {
     kAbCompileUnit = 1,
-    kAbSubprogram, kAbSubprogramVoid,
+    kAbSubprogram, kAbSubprogramVoid, kAbSubprogramLinked, kAbSubprogramVoidLinked,
     kAbFormalParameter, kAbVariable, kAbStaticVariable,
     kAbBase, kAbPointer, kAbPointerVoid,
     kAbArray, kAbSubrange, kAbSubrangeOpen,
     kAbStructure, kAbUnion, kAbMember, kAbBitField,
     kAbSubroutine, kAbSubroutineVoid, kAbParamType, kAbUnspecified,
     kAbLexicalBlock, kAbReference, kAbRvalueReference,
-    kAbInheritance, kAbEnumeration, kAbEnumerator
+    kAbInheritance, kAbEnumeration, kAbEnumerator, kAbConst
 };
 
 void line(std::string &o, const std::string &text) { o += text; o += '\n'; }
@@ -117,6 +117,11 @@ void abbrev(std::string &o, int code, int tag, bool children) {
 
 void endAbbrev(std::string &o) { o += "  .byte 0, 0\n"; }
 
+// A const-qualified type is DW_TAG_const_type over its unqualified twin; an array's const is its element's.
+const Type *constOver(const Type *t) {
+    return t->isConst() && !t->isArray() && t->unqualified() != t ? t->unqualified() : nullptr;
+}
+
 class Types {
 public:
 
@@ -129,6 +134,7 @@ public:
         ids_[t] = n;
         order_.push_back(t);
 
+        if (constOver(t) != nullptr) { id(constOver(t)); return n; }
         if (t->isPointer() || t->isArray()) id(t->pointee());
         if (t->isReference()) id(t->referent());
         if (t->isFunction()) {
@@ -202,16 +208,18 @@ void writeAbbrevTable(std::string &o, const DwarfSpelling &sp) {
     attr(o, kAtStmtList, kFormSecOffset);
     endAbbrev(o);
 
-    for (int i = 0; i < 2; i++) {
-        abbrev(o, i == 0 ? kAbSubprogram : kAbSubprogramVoid, kTagSubprogram, true);
+    const int subprograms[] = { kAbSubprogram, kAbSubprogramVoid, kAbSubprogramLinked, kAbSubprogramVoidLinked };
+    for (int i = 0; i < 4; i++) {
+        abbrev(o, subprograms[i], kTagSubprogram, true);
         attr(o, kAtName, kFormString);
+        if (i >= 2) attr(o, kAtLinkageName, kFormString);
         attr(o, kAtDeclFile, kFormData1);
         attr(o, kAtDeclLine, kFormData2);
         attr(o, kAtLowPc, kFormAddr);
         attr(o, kAtHighPc, kFormAddr);
         attr(o, kAtFrameBase, kFormExprLoc);
         attr(o, kAtExternal, kFormFlag);
-        if (i == 0) attr(o, kAtType, kFormRef4);
+        if (i % 2 == 0) attr(o, kAtType, kFormRef4);
         endAbbrev(o);
     }
 
@@ -326,6 +334,10 @@ void writeAbbrevTable(std::string &o, const DwarfSpelling &sp) {
     attr(o, kAtConstValue, kFormSdata);
     endAbbrev(o);
 
+    abbrev(o, kAbConst, kTagConst, false);
+    attr(o, kAtType, kFormRef4);
+    endAbbrev(o);
+
     o += "  .byte 0\n";
 }
 
@@ -333,6 +345,11 @@ void writeType(std::string &o, const Type *t, int id, Types &types,
                const Target &target) {
     line(o, label(id) + ":");
 
+    if (const Type *u = constOver(t)) {
+        num(o, "  .byte", kAbConst);
+        typeRef(o, types.id(u));
+        return;
+    }
     if (t->isPointer()) {
         int to = types.id(t->pointee());
         num(o, "  .byte", to != 0 ? kAbPointer : kAbPointerVoid);
@@ -523,8 +540,11 @@ void writeDwarf(std::string &out, const DwarfSpelling &sp, const Target &target,
     for (std::size_t i = 0; i < fns.size(); i++) {
         const DwarfFunction &f = fns[i];
         int returns = types.id(f.returns);
-        num(out, "  .byte", returns != 0 ? kAbSubprogram : kAbSubprogramVoid);
+        bool linked = !f.linkage.empty();
+        num(out, "  .byte", returns != 0 ? (linked ? kAbSubprogramLinked : kAbSubprogram)
+                                         : (linked ? kAbSubprogramVoidLinked : kAbSubprogramVoid));
         str(out, f.name);
+        if (linked) str(out, f.linkage);
         num(out, "  .byte", f.file);
         num(out, "  .short", f.line);
         line(out, "  .quad " + f.begin);
