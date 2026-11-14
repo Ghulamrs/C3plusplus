@@ -1034,3 +1034,67 @@ M6c rounds 11 (m6t: the counted loop's emitters write entries through `Code`; `a
   827 / 0. Mac run.sh -O0 and -O2 1215 / 0. Linux make test rc 0 (run 1217/0, emit 3399/0, typed 860/0, ssa 890/0,
   c90 447/0, exclusions 0/0, comments 0). tms6747 (vm6747, SIM=0, three shards): 814 passed, 0 failed at -O0
   (393.2 M cycles) and -O2 (**192.0 M**, unchanged); asm6x 833 / 0 at -O0 and -O2.
+### M6c, round 14 (the pipeliner reads the stream alone; the window's recogniser and the counted loop's body off the lines), 2026-11-14, lane m6w
+
+- **The order, written first** (each a commit of identical output, the census at 0): (P1) `pipelineLoops(MStream&)` without
+  `linesOf` - `Src` on a stream holds no lines, its liveness the stream's (`liveness`), the names read from the entries;
+  a reader that still wants text asks `Src::line` for one entry, and `c6x-line` names it; (W1) the window's recogniser
+  on numbers - `Window`'s predicate, exits and pointers, `trackPointer`; (C1) the counted loop's body and preheader
+  on the stream as entries alone; (C2) `steppedAt` a number; (W2) `WinCode::Op` an entry whose register is a number,
+  a virtual one above 63, so `giveRegisters` maps numbers; (W3) `emitClosed`/`emitWindow` reading `Window::bodyM`
+  (`Aff`, `value`, `renamedBy`, `byteOperand` on operands); (W4) their output through `Code::add`, so
+  `Code::push_back`/`entryOf` go; (C3) the algebra's terms keyed by number (`evaluateBody`'s sums are still strings).
+- **Landed** (from m6-v 4039ef42), four commits, each of identical output: **P1** (53ac6e53) the pipeliner on the
+  stream makes no vector of lines: `Src` reads the entries, the block liveness is `liveness(s)` (`liveIn`, `liveAt`),
+  labels and named operands are collected from the entries, `pipeline`, `Code::same` and `pipelineAt` take `Src`;
+  `Src::line(i, who)` makes the one line a reader asks (`viewOf`, exported from C6xPack.cpp) and, under
+  `CXX1_C6X_MIR=1`, `c6x-line: who` counts each entry so read; the census's text recognisers read `Src::text()`
+  (`linesOf`, census only). **W1** (97313c69) `Window::PR`/`backNot`, `Exit::pred`/`no`, `Ptr::reg` are numbers;
+  `recogniseWindow` compares predicates by number (`Src::predicated`, `predNot`), reads `Src::regs`, and
+  `trackPointer`, `Src::regsIn` and `Src::byteAddress` are keyed by number; the emitters spell a name from the number
+  (`Exit::name`, `regName`). A predicate that names no register is refused by name. **C1** (b88b8295) `Loop` on the
+  stream keeps `bodyM` and `preM` only: `renameWebs`, `foldBodyCopies`, `wantedAfter`, the moved bound, the nodes,
+  the units and the traces read `Loop::size`/`mnem`/`ops`/`op`/`raw`; a line stands beside an entry only where an
+  entry of the body or the preheader is not modelled, or under the census (which holds entries against lines as
+  before: `c6x-body`, `c6x-addr`, `c6x-spell`, `c6x-recog`). **C2** (39b8e820) `steppedR`, a number; `steppedAt` deleted.
+  src/ +256 -183 lines (C6xPipe.cpp 2,554 -> 2,622, C6xPack.cpp 1,492 -> 1,496, C6xMir.h 128 -> 129).
+- **`c6x-line`, the number to bring to 0** (entries of a selected function read as a line by the pipeliner, -O2 over
+  tests/cases): at P1 10,882 on Windows - window 7,977, pre 2,352, body 553; after C1 8,211 on Windows and 8,206 on
+  Linux, **all `window`** (`recogniseWindow` keeping `W.body` for every candidate it reads, taken or not). `untyped`
+  (an entry `modelled` refuses) and `same` are 0: no selected function's pipeliner reads an entry it cannot model.
+- **What still reads `Line` in the C6000 path** - M6c's deletion list. *The pipeliner* (C6xPipe.cpp): the window whole
+  past its recogniser - `Window::body`, `WinCode::Op` (spellings, `%N` a virtual register), `giveRegisters`,
+  `affineTurn`'s `Aff`, `emitClosed`, `emitWindow`, their `rebuilt` branches, and `Code::push_back`/`entryOf` that
+  read each composed line back as an entry; in the counted loop only what stands for the text - `Loop::body`/`pre`,
+  `insOf(const Line &)`, `spelledLine`, `Src`'s `v` and its `line` fallbacks, `Code::lines`/`text()`, `legalForm` in
+  `Code::legal`, `namesOf` and `pipelineLoops(std::vector<Line> &)` - reached by a walker's function or the census,
+  never by a selected one; the algebra's terms are strings but no lines. *The packetiser's file* (C6xPack.cpp):
+  `lineOf`/`viewOf` wherever an entry is not `modelled` (`makeNode`, `liveFacts`, `crossingsOf`, `unitsOf`,
+  `readsAndWrites`), `Folding::v` (the folds of `rounds`, `numberValues` and `foldAddressing` read a view of each entry and edit
+  the entry), `LoopStream` (the loop passes are C6xSched's text passes over `LoopText`,
+  each edit read back by `streamOf`), `streamOf`, `linesOf`, `checkLiveness`. *The driver* (`c6xSchedule`,
+  C6xSched.cpp): a selected function still arrives as text - parsed to lines, `streamOf` to enter the stream - and
+  `linesOf(after, lines)` after `foldAddressing` only to hand the text pass a fallback; every `CXX1_C6X_TEXT*` knob
+  and the census's reference runs. *The table* (C6xSched.cpp, C6xModel.h): `Node::line`, `makeNode`,
+  `readsAndWrites`, `unitsFor`, `crossings`, `legalForm`, `steppedRegister`, `parse`, `rebuilt` and the text passes
+  themselves, which the walker's functions keep until M6d. C6xMir.cpp: `legal` on an entry not modelled, and `read` (a
+  helper's text parsed onto the stream).
+- **Gate** (Linux ~/m6w, a copy of ~/m6v with the changed files laid over; REF main 85fe99fe's compiler in its kept
+  tree ~/w7ref; Windows against work\m6v's cxx3-msvc.exe). **Each step on its own** on Windows, its own tree built by
+  cl /W4 /WX clean: tests/cases at -O0, -O1, -O2 by md5, 3,669 outputs - P1 (work\m6w) 2,601 texts, 1,068 refused
+  alike, **0 differ**; W1 (work\m6w1) and C1 (work\m6w2) 3,663 same and the 6 round 13 named (posix-headers and
+  windows-h-layout, refused, the caret indented by the tree's longer name); C2, the final source (39b8e820), again in
+  work\m6w: **0 differ**. Census at each step 0 `c6x-recog`, 0 `c6x-emit`, 0 `c6x-addr`, 0 `c6x-spell`, 0
+  `c6x-loop-edit`, 0 `c6x-loops`, 0 `c6x-loop-unread`, 0 `c6x-front`, 0 `c6x-fold`, 0 `c6x-fold-edit`, 0 `c6x-live`, 0
+  `c6x-live-unread`, 0 to the text pipeliner or pass; 6,835 selected functions, 106 with kernels (2,727 placed
+  entries). P1, W1 and C1 were not built alone on Linux (the lock was the coordinator's). On the final source on
+  Linux: g++ -Werror clean; `identical.sh ARCHS=tms6747` against main's compiler, -O0 and -O2 1,736 compared, 0
+  differ; -O0 -g 868 compared, 91 raw (`/w7ref/` against `/m6w/`), 851 texts 0 differ with the tree path made the same; census
+  0 as above and 0 `c6x-body`, 0 `c6x-loop-lines`. tests/tms6747.sh SHARD=k/3 CYCLES=1 SIM=0 at -O2: 814 passed, 0
+  failed, 3 not run on vm6747; **192,009,106 cycles** (192.0 M, unchanged). tests/g-same.sh 867 same, 0 differ, 0 broken; asm6x.sh 833
+  objects, 0 failed, at -O0 and -O2. cl /W4 /WX clean (four builds). Exclusions 129 sites 0
+  uncited 0 stale (SSA lowering 554/95); comments 0 over; memory gate rc 0; ast-residue rc 0; ide/generate.py --check
+  up to date (both boxes). Not run (the coordinator's): winpass, make test, ssa.sh.
+- **Owed:** W2-W4 above - the window's emitters on entries, which is what `c6x-line` still counts and the last text
+  the pipeliner composes; C3; then `Src` without `v`, the loop passes composing entries (`LoopStream`), the selector's
+  stream handed in unprinted (the driver's parse and `streamOf`), step 4.
