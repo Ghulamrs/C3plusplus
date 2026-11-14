@@ -1212,7 +1212,7 @@ all the window's).
   91 raw (the tree's path), 851 texts 0 differ with the path made the same; tests/tms6747.sh SHARD=k/3 CYCLES=1
   SIM=0 at -O2 814 passed, 0 failed, 3 not run on vm6747, **192,009,106 cycles** (192.0 M, unchanged); g-same 867
   same, 0 differ, 0 broken; exclusions 0 uncited 0 stale (SSA lowering 554/95), comments 0 over, memory gate rc 0,
-  ast-residue rc 0, generate up to date. asm6x.sh at D3: ASM0 objects, 0 failed at -O0; ASM2 at -O2. Not run (the
+  ast-residue rc 0, generate up to date. asm6x.sh at D3: 833 objects, 0 failed, at -O0 and -O2 (not run at D2). Not run (the
   coordinator's): winpass, make test, ssa.sh.
 - **Owed:** D4 next (one commit of deletions, the suite's census 0 its licence; the fallback's five sites become one
   refusal), then D5, D6. The census tags left name fallbacks, not copies: `c6x-pack`, `c6x-pipe`, `c6x-fold`,
