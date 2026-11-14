@@ -121,11 +121,13 @@ int MInst::side() const {
 }
 
 std::string MInst::str() const {
-    if (kind == Verbatim) return m.str();
-    if (kind == Label) return m.str() + ":\n";
-    std::string s = "\t";
+    const char *const lead = par ? "||" : "";
+    if (kind == Verbatim) return lead + m.str();
+    if (kind == Label) return lead + m.str() + ":\n";
+    std::string s = std::string(lead) + "\t";
     if (pred != kNoReg) s += std::string(predNot ? "[!" : "[") + regName(pred) + "]\t";
     s += m.str();
+    if (unit != 0) s += unit == 1 ? "\t.S1" : "\t.S2";
     for (int k = 0; k < operands; k++) s += (k == 0 ? "\t" : ", ") + op[k].str();
     return s + "\n";
 }

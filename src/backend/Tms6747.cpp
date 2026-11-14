@@ -2421,8 +2421,8 @@ void Tms6747::emitFunction(const Function &fn) {
     epi << "\tB\tB3\n\tNOP\t5\n";
     emitVariables(fn);                                      // -g: after the label, outside the scheduled code
     // Scheduled with the body at -O1 and -O2, so a result in flight at its end lands under the return's delay slots.
-    if (optimize_ > 0 && !backendSkipped("pro")) out_ << c6xSchedule(early + pro.str() + params + body + epi.str(), optimize_);
-    else out_ << pro.str() << c6xSchedule(early + params + body + epi.str(), optimize_);
+    if (optimize_ > 0 && !backendSkipped("pro")) out_ << c6xSchedule(early + pro.str() + params + body + epi.str(), optimize_, ssaFn != nullptr);
+    else out_ << pro.str() << c6xSchedule(early + params + body + epi.str(), optimize_, ssaFn != nullptr);
     // TI's index entry for a function an exception can pass through - one that calls, so saves B3 - naming the table
     // when there are handlers, holding the word itself when there are none. A function that calls nothing gets no
     // entry, as cl6x gives none: the linker covers the run it sits in with one EXIDX_CANTUNWIND.

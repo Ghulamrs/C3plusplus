@@ -3,6 +3,7 @@
 // the delay slots of its branch filled, and padded to the hazards that remain.
 
 #include "C6xSched.h"
+#include "C6xMir.h"
 #include "C6xModel.h"
 
 #include <algorithm>
@@ -1977,12 +1978,15 @@ void add(Packet &p, const Node &n) {
     p.writes |= n.writes;
 }
 
-struct Pending { std::uint64_t writes; int lands; };   // a write in flight where a block ends, for the one fallen into
+// Idle cycles as rows: a multi-cycle NOP holds nine at most.
+void idle(std::vector<Row> &rows, int nops) {
+    for (; nops > 0; nops -= std::min(nops, 9)) { Row r = { -1, std::min(nops, 9), false }; rows.push_back(r); }
+}
 
 // One block - the instructions between two labels, ending in its branch if it has one - scheduled by list scheduling: the edges between instructions
 // are the register and memory orders with their distances in cycles, each cycle takes the ready instructions of greatest height that its packet has
 // units for, and the branch goes as early as leaves every other instruction issued in its window and landed by the time its target runs.
-std::vector<Pending> scheduleBlock(std::vector<Node> &nodes, std::ostringstream &out, const std::vector<Pending> &in, bool carry) {
+std::vector<Pending> scheduleBlock(std::vector<Node> &nodes, std::vector<Row> &rows, const std::vector<Pending> &in, bool carry) {
     const std::size_t n = nodes.size();
     int branchAt = -1, landing = 0;
     std::vector<int> minIssue(n, 0);                     // what the block before still has in flight
@@ -2085,20 +2089,29 @@ std::vector<Pending> scheduleBlock(std::vector<Node> &nodes, std::ostringstream 
     for (int c = 0; c < length; c++) {
         const Packet *p = c < static_cast<int>(cycles.size()) ? &cycles[static_cast<std::size_t>(c)] : nullptr;
         if (!p || p->count == 0) { nops++; continue; }
-        while (nops > 0) { out << "\tNOP\t" << std::min(nops, 9) << "\n"; nops -= std::min(nops, 9); }
-        for (std::size_t k = 0; k < p->members.size(); k++) out << (k == 0 ? "" : "||") << p->members[k]->line.raw << "\n";
+        idle(rows, nops);
+        nops = 0;
+        for (std::size_t k = 0; k < p->members.size(); k++) { Row r = { static_cast<int>(p->members[k] - &nodes[0]), 0, k != 0 }; rows.push_back(r); }
     }
-    while (nops > 0) { out << "\tNOP\t" << std::min(nops, 9) << "\n"; nops -= std::min(nops, 9); }
+    idle(rows, nops);
     return pend;
+}
+
+// A block that is empty and not fallen out of: the writes still in flight are waited for.
+void waitOut(std::vector<Pending> &pend, std::vector<Row> &rows) {
+    int wait = 0;
+    for (std::size_t p = 0; p < pend.size(); p++) wait = std::max(wait, pend[p].lands);
+    idle(rows, wait);
+    pend.clear();
 }
 
 // A label of the backend's own flow - the kinds only a branch of this text
 // names - that no instruction names is no block boundary: the instructions
 // on either side are scheduled together and the label is kept in front.
-bool passThrough(const Line &l, const std::set<std::string> &named) {
+bool passThrough(const Line &l, const std::set<std::string> &named) { return passThroughName(labelName(l), named); }
+bool passThroughName(const std::string &name, const std::set<std::string> &named) {
     static const char *const kinds[] = { ".begin", ".step", ".end", ".else", ".shortcut", ".wide", ".widend", ".noresult", ".case", ".default", ".inline", ".ssain" };
-    const std::string name = labelName(l);   // spelled with dots here; the TI spelling makes them $ later
-    if (named.count(name)) return false;
+    if (named.count(name)) return false;     // spelled with dots here; the TI spelling makes them $ later
     std::size_t d = name.find_last_not_of("0123456789");
     if (d == std::string::npos || d + 1 >= name.size()) return false;
     std::size_t k = name.rfind('.', d);
@@ -2120,12 +2133,12 @@ std::string schedule(const std::vector<Line> &v) {
     std::vector<Pending> pend;
     // A label is fallen into with the block's late writes in flight; anything else waits for them to land.
     auto flush = [&](bool carry) {
-        if (!block.empty()) pend = scheduleBlock(block, out, pend, carry);
-        else if (!carry) {
-            int wait = 0;
-            for (std::size_t p = 0; p < pend.size(); p++) wait = std::max(wait, pend[p].lands);
-            while (wait > 0) { out << "\tNOP\t" << std::min(wait, 9) << "\n"; wait -= std::min(wait, 9); }
-            pend.clear();
+        std::vector<Row> rows;
+        if (!block.empty()) pend = scheduleBlock(block, rows, pend, carry);
+        else if (!carry) waitOut(pend, rows);
+        for (std::size_t r = 0; r < rows.size(); r++) {
+            if (rows[r].node < 0) out << "\tNOP\t" << rows[r].nops << "\n";
+            else out << (rows[r].par ? "||" : "") << block[static_cast<std::size_t>(rows[r].node)].line.raw << "\n";
         }
         block.clear();
     };
@@ -2254,7 +2267,7 @@ void rounds(std::vector<Line> &lines) {
     }
 }
 
-std::string c6xSchedule(const std::string &text, int level) {
+std::string c6xSchedule(const std::string &text, int level, bool selected) {
     if (level <= 0) return text;
     std::vector<Line> lines;
     std::istringstream in(text);
@@ -2290,6 +2303,18 @@ std::string c6xSchedule(const std::string &text, int level) {
     rounds(lines);
     computeLiveness(lines);
     foldAddressing(lines);
+    // A selected function's packets are made on its MIR (C6xPack.cpp); CXX1_C6X_TEXTPACK=1 keeps the text pass, to hold the two equal.
+    MStream s;
+    if (selected && std::getenv("CXX1_C6X_TEXTPACK") == nullptr) {
+        if (streamOf(lines, s)) {
+            packetise(s);
+            foldBranchNops(s, s.size() * 4 + 512 < 8192);
+            std::ostringstream packed;
+            write(s, packed);
+            return packed.str();
+        }
+        if (std::getenv("CXX1_C6X_MIR") != nullptr) std::fprintf(stderr, "c6x-pack: a line the stream does not spell; the text pass\n");
+    }
     std::string text2 = schedule(lines);
     std::size_t words = 0;
     for (std::size_t i = 0; i < text2.size(); i++) if (text2[i] == '\n') words++;

@@ -423,3 +423,84 @@ by case against round 5 (`m6d-cmp.sh`), the text no longer identical by design.
 - **Owed:** the pick counting 1X/2X per turn (a B value with two A readers in one turn
   goes back to A) and `.M` pressure, neither begun; the unrolled turns alternating files, which needs the base on
   both - the stepped pointer of point (2); sim6747, asm6x.sh, make test (the coordinator's).
+
+## M6c's design: the schedule on the stream (written 2026-11-14 by lane m6j, from m6-i b7510429)
+
+**What exists.** `c6xSchedule` is one text pipeline for the walker's and the selector's functions alike: the serial
+text (prologue, the printed `MStream`, epilogue) is parsed into `c6x::Line`s, its `NOP`s dropped; the folds, loop
+passes and the pipeliner (`pipelineLoops`, whose kernels come back as `verbatim` lines, `||` and `NOP n` already
+written) edit the lines; `schedule` list-schedules each block into packets and `foldBranchNops` makes `BNOP`. M6c
+moves the last two, then the pipeliner, onto `c6x::MInst`; the folds between follow the pipeliner.
+
+**An execute packet and a delay slot on the stream.** Three fields on `MInst`, no new container - a scheduled stream
+is still one `MStream`, read in order:
+
+| field | means | printed |
+| --- | --- | --- |
+| `par` | the entry issues in the cycle of the entry before it; a packet is one entry and the `par` entries after it | `\|\|` before the line |
+| a `NOP n` entry | n idle cycles (nine at most an entry) - the only place a delay slot is visible | `NOP n` |
+| `unit` | a branch's named unit, 1 `.S1` or 2 `.S2`; set only where the packet forces the choice | after the mnemonic |
+| `packed` | placed already (a pipelined kernel): the packetiser keeps it where and as it stands | nothing |
+
+The cycle of an entry is counted, not stored: packets and `NOP` counts from its block's label. **Delay slots stay
+the table's** (M6b's rule): a load's four and a branch's five are `slots()`; the stream shows them only as the idle
+cycles the scheduler could not fill, and `BNOP x, k` is a branch that carries k of its own five as its last operand.
+A serial (unscheduled) stream has no `par` and no `NOP`: the selector's stream as built, were its helpers' padding
+not absorbed with them.
+
+**How a pass written for text reads MInsts.** A text pass reads a `Line` three ways, and each has its reading on the
+stream: (1) *what the line is* - `instr`, `isLabel`, `verbatim` - is `MInst::kind` and `packed`; (2) *its parts* -
+`mnem`, `ops[k]`, `pred` - are `m`, `op[k]`, `pred`/`predNot`, and an edit is an assignment to an operand, not a
+`rebuilt` line; (3) *the ISA's facts* - `readsAndWrites`, `unitsFor`, `crossings`, `delaySlots`, `makeNode` - are
+C6xSched's one table, which reads spellings. While both forms exist the table is asked through the entry's spelling
+(`lineOf`, as `c6x::legal` asks it since M6b round 3): one implementation of each fact, and a ported pass cannot
+disagree with the text pass about a unit or a cross path. The table's readers move to operands (a register a number,
+`bitOf` a shift) when the last text pass that calls them is gone - the step that deletes `Line`. The scheduler itself
+is shared by construction rather than copied: `scheduleBlock` writes `Row`s (a member by its place in the block, or
+idle cycles) and each form prints its rows.
+
+**The order, and how each step is held equal.**
+
+1. *The packetiser* (round 1): `streamOf` makes the stream from the lines the text passes leave, `packetise` and
+   `foldBranchNops` (C6xPack.cpp) place it, `c6x::write` prints it. Held: the selected functions' text byte-identical
+   to the text pass's - `identical.sh ARCHS=tms6747` against the round before, and `CXX1_C6X_TEXTPACK=1` runs the text
+   pass in the same binary. A line the stream does not spell back the same sends its function to the text pass
+   (`CXX1_C6X_MIR=1` names each), so identity is by construction and the fallback is a number to bring to 0.
+2. *The pipeliner* (round 2): `pipelineLoops` over entries - its kernels written as `par`/`NOP`/`packed` entries, not
+   verbatim text. Held the same way, with a `CXX1_C6X_TEXTPIPE` knob; then cycles (m6d-cmp.sh), which identity implies.
+3. *The folds between* (`rounds`, `numberValues`, `foldAddressing`, the loop passes): each ported behind the same
+   two checks, the stream then entering `c6xSchedule` as the selector built it, never printed and re-read.
+4. *The deletion*: with the walker's functions gone (M6d's census 0) the `Line` forms and the text entry go in one
+   commit; until then the walker's functions keep the text pass, and nothing of theirs may change (`CXX1_C6X_WALKER=1`
+   identity).
+
+**What must not change.** A `packed` entry is never rescheduled nor counted as naming a label (the text pass does not
+read a verbatim line's operands); a label of the backend's own flow that nothing names is no block boundary
+(`passThroughName`); `BNOP`'s reach is judged on the packetised length; and a branch's target is a register by the
+model's reading (`sideOf`), not by the operand's kind - a symbol spelled `B2x` is read as the text pass reads it.
+
+### M6c, round 1 (the packetiser on the MIR), 2026-11-14, lane m6j
+
+- **Landed** (code `ff8f480c` and the comment mend after it, from m6-i b7510429): the design section above;
+  `optimizer/C6xPack.cpp` (new, 137 lines) - `streamOf`, `packetise`, `foldBranchNops` on `c6x::MStream`; `MInst` gains
+  `par`, `packed`, `unit` and prints them; `scheduleBlock` writes `Row`s, which the text pass and the MIR pass each
+  print, so there is one list scheduler; `c6xSchedule(text, level, selected)` - a selected function's lines become a
+  stream after the text passes, are packetised and folded there, and printed. src/ +205 -22 lines (C6xSched.cpp
+  2,297 -> 2,322: the shared rows and the entry). The pipeliner and the folds stay on text; the walker's functions
+  keep the text packetiser. `CXX1_C6X_TEXTPACK=1` keeps the text packetiser for all.
+- **What round 1 is not.** The ISA's facts (`makeNode`: reads, writes, units, cross paths) are still asked by the
+  entry's spelling (`lineOf`), as the design says; the stream is made from the text passes' lines, not handed down from
+  the selector. What moved is the representation, the block walk, the emission and the branch fold.
+- **Identity.** Windows (work\m6j against work\m6i's cxx3-msvc.exe, b3d26f1e): text and diagnostics of tests/cases at
+  -O0, -O1 and -O2 by md5, 3,669 outputs (2,601 texts, 1,068 refused alike), 0 differ. `CXX1_C6X_MIR=1` at -O2: 6,835
+  selected functions, **0 sent to the text pass**. Linux (~/m6j against ~/m6i's cxx3.exe): `identical.sh ARCHS=tms6747
+  LEVELS="0 1 2"`: 2,604 compared, 0 differ.
+- **Gates.** Linux `tms6747.sh SIM=0 CYCLES=1` -O2, three shards: 814 passed, 4 failed - round 3's four
+  (noexcept-terminates, ssa-noexcept-throw, noexcept-terminates-callee, static-aggregate-runtime-list); 192.009 M
+  cycles, round 3's; tests/g-same.sh 867 same, 0 differ, 0 broken; exclusions 0 uncited 0 stale, memory gate rc 0,
+  comments 0 over and ide/generate.py --check up to date (both failed first on `._` files the lane's own second ship
+  left in ~/m6j, removed and re-run). Windows: cl /W4 /WX clean; tests/g-same.sh 867 same, 0 differ, 0 broken; exclusions 0 uncited
+  0 stale; comments 0 over (one over at C6xSched.h:9, mended, re-counted); memory gate rc 0; ide/generate.py
+  regenerated (C6xPack.cpp) and --check up to date.
+- **Owed:** round 2, the pipeliner on entries (design step 2); the table's readers on operands rather than spellings;
+  -O0 tms6747.sh, sim6747, asm6x.sh and make test (the coordinator's).
