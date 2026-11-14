@@ -366,6 +366,7 @@ struct Loop {
     // where an entry is not `modelled`. What the body hands on - reads, writes, pairs, nodes - is read from it there.
     std::vector<MInst> bodyM;
     bool onStream = false, fromLines = false;
+    std::vector<std::size_t> taken;       // where each entry of bodyM stands on the stream
     std::vector<Node> nodes;
     std::vector<Edge> edges;
     std::uint64_t liveExit = 0;
@@ -387,6 +388,13 @@ struct Loop {
         reads |= maskOf(r); writes |= maskOf(w);
     }
     static std::uint64_t bit(int r) { return bitR(r); }
+    // **The body read without its lines** (M6c round 14): on the stream the entries alone; a line is beside one only
+    // where an entry or the preheader is not modelled, or under the census. Text off the stream, as it was.
+    std::size_t size() const { return bodyM.empty() ? body.size() : bodyM.size(); }
+    std::string mnem(std::size_t o) const { return bodyM.empty() ? body[o].mnem : bodyM[o].m.str(); }
+    std::size_t ops(std::size_t o) const { return bodyM.empty() ? body[o].ops.size() : bodyM[o].operands; }
+    std::string op(std::size_t o, std::size_t k) const { return bodyM.empty() ? body[o].ops[k] : bodyM[o].op[k].str(); }
+    std::string raw(std::size_t o) const { return body.empty() ? lineOf(bodyM[o]).raw : body[o].raw; }
     // What a pass may not rename or fold away: the counter, a register bound, the predicate, and with `count` the count.
     std::uint64_t fixedM(bool count) const { return bit(ivR) | bit(boundR) | bit(PR) | (count ? bit(CR) : 0); }
     bool plainAt(std::size_t o) const { return bodyM.empty() ? body[o].pred.empty() : bodyM[o].pred == kNoReg; }
@@ -429,8 +437,8 @@ struct Loop {
     std::vector<Access> addresses() const {
         std::vector<Ins> b, p;
         const bool typed = !bodyM.empty() && preTyped;
-        for (std::size_t o = 0; o < body.size(); o++) b.push_back(typed ? insOf(bodyM[o]) : insOf(body[o]));
-        for (std::size_t o = 0; o < pre.size(); o++) p.push_back(typed ? insOf(preM[o]) : insOf(pre[o]));
+        for (std::size_t o = 0; o < size(); o++) b.push_back(typed ? insOf(bodyM[o]) : insOf(body[o]));
+        for (std::size_t o = 0; o < (typed ? preM.size() : pre.size()); o++) p.push_back(typed ? insOf(preM[o]) : insOf(pre[o]));
         const std::vector<Access> got = addressForms(b, p, ivR, writtenM);
         // CXX1_C6X_MIR=1: the lines walked too, and `c6x-addr` names an access whose form differs.
         if (typed && std::getenv("CXX1_C6X_MIR") != nullptr) {
@@ -443,7 +451,7 @@ struct Loop {
         return got;
     }
     void erase(std::size_t o) {
-        body.erase(body.begin() + static_cast<long>(o));
+        if (!body.empty()) body.erase(body.begin() + static_cast<long>(o));
         if (!bodyM.empty()) bodyM.erase(bodyM.begin() + static_cast<long>(o));
     }
     // `renameWebs`'s edit on entry o: `from` named `to` in its sources (a write: its destination, and MVKH's and ADDK's
@@ -465,9 +473,17 @@ struct Loop {
         if (!isWrite && e.pred == f) e.pred = static_cast<std::uint8_t>(t);
     }
     void take(const Src &src, std::size_t i) {
-        body.push_back(src.line(i, "body"));
-        if (fromLines) return;
-        if (src.typed(i)) bodyM.push_back((*src.s)[i]); else { fromLines = true; bodyM.clear(); }
+        static const bool census = std::getenv("CXX1_C6X_MIR") != nullptr;
+        const bool beside = census || !preTyped;
+        if (!fromLines && !src.typed(i)) {              // one entry not modelled: the whole body from its lines
+            fromLines = true;
+            for (std::size_t k = 0; k < taken.size(); k++) { const Line &l = src.line(taken[k], "body"); if (!beside) body.push_back(l); }
+            bodyM.clear();
+        }
+        if (fromLines) { body.push_back(src.line(i, "body")); return; }
+        bodyM.push_back((*src.s)[i]);
+        taken.push_back(i);
+        if (beside) body.push_back(src.line(i, preTyped ? nullptr : "body"));
     }
 };
 
@@ -703,7 +719,7 @@ bool recogniseStepped(const Src &src, Loop &L, std::string &why, const std::stri
         src.masks(i, rm, wm);
         L.count(rm, wm, src.pred(i).empty());
         if (src.mnem(i) == "MV" && src.ops(i) == 2 && src.op(i, 0) == src.op(i, 1)) continue;
-        if (std::find(tree.begin(), tree.end(), k) != tree.end()) L.testBody.push_back(L.body.size());
+        if (std::find(tree.begin(), tree.end(), k) != tree.end()) L.testBody.push_back(L.size());
         L.take(src, i);
     }
     why.clear();
@@ -723,10 +739,13 @@ bool recognise(const Src &src, std::size_t back, const std::set<std::string> &la
     if (!found) { why = "the head is not above"; return false; }
     if (back + 1 >= src.size() || !src.label(back + 1)) { why = "no exit label after the branch"; return false; }
     L.head = h; L.back = back; L.exitName = src.name(back + 1);
-    for (std::size_t k = h; k-- > 0 && src.instr(k) && !isBranch(src.mnem(k));) {
-        L.pre.insert(L.pre.begin(), src.line(k, "pre"));
+    std::size_t first = h;
+    for (std::size_t k = h; k-- > 0 && src.instr(k) && !isBranch(src.mnem(k)); first = k) {
         if (src.typed(k)) L.preM.insert(L.preM.begin(), (*src.s)[k]); else L.preTyped = false;
     }
+    // The preheader's lines: off the stream, where an entry of it is not modelled, and for the census.
+    static const bool census = std::getenv("CXX1_C6X_MIR") != nullptr;
+    if (!L.preTyped || census) for (std::size_t k = first; k < h; k++) L.pre.push_back(src.line(k, L.preTyped ? nullptr : "pre"));
     if (src.naming(L.label) != 1) { why = "the head is entered from elsewhere"; return false; }
     for (std::size_t i = h + 1; i < back; i++) {
         if (src.label(i)) { if (!passThroughName(src.name(i), named)) { why = "a label inside"; return false; } continue; }
@@ -897,7 +916,7 @@ bool scheduleAt(Loop &L, int II, std::vector<int> &t, std::uint64_t renameMask, 
             if (d.to == static_cast<int>(o) && d.from == static_cast<int>(o)) { if (d.delay > d.dist * II) return false; continue; }
             if (d.to == static_cast<int>(o) && t[static_cast<std::size_t>(d.from)] >= 0) lo = std::max(lo, t[static_cast<std::size_t>(d.from)] + d.delay - d.dist * II);
             if (d.from == static_cast<int>(o) && t[static_cast<std::size_t>(d.to)] >= 0) {
-                if (tracing() > 2 && t[static_cast<std::size_t>(d.to)] - d.delay + d.dist * II < hi) std::fprintf(stderr, "    hi by%s (%s delay %d dist %d)\n", L.body[static_cast<std::size_t>(d.to)].raw.c_str(), d.why, d.delay, d.dist);
+                if (tracing() > 2 && t[static_cast<std::size_t>(d.to)] - d.delay + d.dist * II < hi) std::fprintf(stderr, "    hi by%s (%s delay %d dist %d)\n", L.raw(static_cast<std::size_t>(d.to)).c_str(), d.why, d.delay, d.dist);
                 if (t[static_cast<std::size_t>(d.to)] - d.delay + d.dist * II < hi) { hi = t[static_cast<std::size_t>(d.to)] - d.delay + d.dist * II; hiBy = d.dist ? d.to : -1; }
             }
         }
@@ -926,7 +945,7 @@ bool scheduleAt(Loop &L, int II, std::vector<int> &t, std::uint64_t renameMask, 
             break;
         }
         if (!placed) {
-            if (tracing() > 1) std::fprintf(stderr, "  II=%d: no slot for%s in [%d,%d]\n", II, L.body[o].raw.c_str(), lo, hi);
+            if (tracing() > 1) std::fprintf(stderr, "  II=%d: no slot for%s in [%d,%d]\n", II, L.raw(o).c_str(), lo, hi);
             if (hi < lo && hiBy >= 0) push[static_cast<std::size_t>(hiBy)] += lo - hi;
             return false;
         }
@@ -952,7 +971,8 @@ long modq(long a, int q) { return ((a % q) + q) % q; }
 // it reads, the destination to the one it writes - on the entry where the body is the stream's, else on its line.
 std::string spelledLine(const Loop &L, const std::vector<Unit> &units, const UnitOf &unitOf,
                         const std::vector<int> &firstWrite, std::size_t o, long j) {
-    const Line &l = L.body[o];
+    const Line made = L.body.empty() ? lineOf(L.bodyM[o]) : Line();
+    const Line &l = L.body.empty() ? made : L.body[o];
     std::vector<std::string> ops = l.ops;
     std::string pred = l.pred;
     bool hasDest = !ops.empty() && !isStore(l.mnem) && l.mnem != "B" && ops.back()[0] != '*';
@@ -1123,26 +1143,27 @@ void renameWebs(Loop &L, std::vector<int> &pool) {
     std::vector<Web> webs;
     std::map<int, int, ByName> cur;
     std::uint64_t fixed = 0;                                // registers no web of which may be renamed
-    std::vector<std::vector<std::pair<int, int> > > opWebs(L.body.size());   // (web, isWrite) per op
-    for (std::size_t o = 0; o < L.body.size(); o++) {
-        const Line &l = L.body[o];
+    std::vector<std::vector<std::pair<int, int> > > opWebs(L.size());   // (web, isWrite) per op
+    for (std::size_t o = 0; o < L.size(); o++) {
+        const std::string m = L.mnem(o);
+        const std::size_t nops = L.ops(o);
         std::vector<int> reads, writes;
         L.regs(o, reads, writes);
-        bool rmw = l.mnem == "MVKH" || l.mnem == "ADDK" || !l.pred.empty() || !L.steppedAt(o).empty();
+        bool rmw = m == "MVKH" || m == "ADDK" || !L.plainAt(o) || !L.steppedAt(o).empty();
         for (std::size_t r = 0; r < reads.size(); r++) {
             if (!cur.count(reads[r])) { Web w; w.reg = reads[r]; w.keep = true; cur[reads[r]] = static_cast<int>(webs.size()); webs.push_back(w); }
             opWebs[o].push_back(std::make_pair(cur[reads[r]], 0));
         }
         // A pair operand links its halves' current webs - the sources before the writes are seen, the
         // destination after; a half linked twice over keeps its names.
-        bool hasDest = !l.ops.empty() && !isStore(l.mnem) && l.mnem != "B" && l.ops.back()[0] != '*';
+        bool hasDest = nops != 0 && !isStore(m) && m != "B" && L.op(o, nops - 1)[0] != '*';
         for (int pass = 0; pass < 2; pass++) {
             if (pass == 1) for (std::size_t w = 0; w < writes.size(); w++) {
                 if (!rmw || !cur.count(writes[w])) { Web nw; nw.reg = writes[w]; cur[writes[w]] = static_cast<int>(webs.size()); webs.push_back(nw); }
                 opWebs[o].push_back(std::make_pair(cur[writes[w]], 1));
             }
-            for (std::size_t k = 0; k < l.ops.size(); k++) {
-                const bool dest = hasDest && k + 1 == l.ops.size();
+            for (std::size_t k = 0; k < nops; k++) {
+                const bool dest = hasDest && k + 1 == nops;
                 if (dest != (pass == 1)) continue;
                 int h = kNoReg, w = kNoReg;
                 if (!L.pairIn(o, k, h, w) || !cur.count(h) || !cur.count(w)) continue;
@@ -1178,11 +1199,13 @@ void renameWebs(Loop &L, std::vector<int> &pool) {
             break;
         }
     }
-    for (std::size_t o = 0; o < L.body.size(); o++) {
-        Line &l = L.body[o];
-        std::vector<std::string> ops = l.ops;
-        std::string pred = l.pred;
-        bool hasDest = !ops.empty() && !isStore(l.mnem) && l.mnem != "B" && ops.back()[0] != '*';
+    for (std::size_t o = 0; o < L.size(); o++) {
+        const bool text = !L.body.empty();                  // a line beside the entry: renamed as the entry is
+        const std::string m = L.mnem(o);
+        std::vector<std::string> ops;
+        std::string pred;
+        if (text) { ops = L.body[o].ops; pred = L.body[o].pred; }
+        bool hasDest = !ops.empty() && !isStore(m) && m != "B" && ops.back()[0] != '*';
         for (std::size_t k = 0; k < opWebs[o].size(); k++) {
             const Web &w = webs[static_cast<std::size_t>(opWebs[o][k].first)];
             if (w.name == w.reg) continue;
@@ -1190,25 +1213,25 @@ void renameWebs(Loop &L, std::vector<int> &pool) {
             const std::string was = regName(w.reg), now = regName(w.name);     // the line's spelling, kept beside the entry
             for (std::size_t p = 0; p < ops.size(); p++) {
                 bool dest = hasDest && p + 1 == ops.size();
-                if (dest == isWrite || (dest && (l.mnem == "MVKH" || l.mnem == "ADDK"))) ops[p] = renamed(ops[p], was, now);
+                if (dest == isWrite || (dest && (m == "MVKH" || m == "ADDK"))) ops[p] = renamed(ops[p], was, now);
             }
-            if (!isWrite) pred = renamed(pred, was, now);
+            if (text && !isWrite) pred = renamed(pred, was, now);
             L.rename(o, w.reg, w.name, isWrite);
         }
-        l = rebuilt(l.mnem, ops, pred);
+        if (text) L.body[o] = rebuilt(m, ops, pred);
     }
     L.usedM = L.writtenM = L.predicatedM = 0;
-    for (std::size_t o = 0; o < L.body.size(); o++) {
+    for (std::size_t o = 0; o < L.size(); o++) {
         std::uint64_t rm = 0, wm = 0;
         L.masks(o, rm, wm);
         L.count(rm, wm, L.plainAt(o));
     }
     if (L.PR != kNoReg) L.usedM |= 1ull << L.PR;
     std::uint64_t seenM = 0;
-    for (std::size_t o = 0; o < L.body.size(); o++) {
+    for (std::size_t o = 0; o < L.size(); o++) {
         std::uint64_t rm = 0, wm = 0;
         L.masks(o, rm, wm);
-        if (L.body[o].mnem == "MVKH" || L.body[o].mnem == "ADDK") L.rmwFirstM |= wm & ~seenM;
+        if (L.mnem(o) == "MVKH" || L.mnem(o) == "ADDK") L.rmwFirstM |= wm & ~seenM;
         L.rmwFirstM |= wm & bitOf(L.steppedAt(o));
         seenM |= wm;
     }
@@ -1217,8 +1240,8 @@ void renameWebs(Loop &L, std::vector<int> &pool) {
 // Whether register r is read before it is written on the path from line k round the back edge to line o - the
 // value r holds after line o is wanted - or is live at the exit.
 bool wantedAfter(const Loop &L, std::size_t o, const std::string &r) {
-    const std::vector<Line> &b = L.body;
-    for (std::size_t n = 0, k = o + 1; n < b.size(); n++, k = (k + 1) % b.size()) {
+    const std::size_t size = L.size();
+    for (std::size_t n = 0, k = o + 1; n < size; n++, k = (k + 1) % size) {
         std::vector<std::string> reads, writes;
         L.rw(k, reads, writes);
         if (has(reads, r)) return true;
@@ -1231,17 +1254,16 @@ bool wantedAfter(const Loop &L, std::size_t o, const std::string &r) {
 // a copy nothing reads before the register is written again - round the back edge too, the exit not reading it - is none.
 // The backend saves a result across the address it computes next, and the save is a web the schedule would carry.
 void foldBodyCopies(Loop &L) {
-    std::vector<Line> &b = L.body;
     for (bool changed = true; changed;) {
         changed = false;
-        for (std::size_t o = 0; o < b.size() && !changed; o++) {
-            if (b[o].mnem != "MV" || b[o].ops.size() != 2 || !b[o].pred.empty() || !sideOf(b[o].ops[0]) || !sideOf(b[o].ops[1])) continue;
-            const std::string S = b[o].ops[0], D = b[o].ops[1];
+        for (std::size_t o = 0; o < L.size() && !changed; o++) {
+            if (L.mnem(o) != "MV" || L.ops(o) != 2 || !L.plainAt(o) || !sideOf(L.op(o, 0)) || !sideOf(L.op(o, 1))) continue;
+            const std::string S = L.op(o, 0), D = L.op(o, 1);
             if (D == "A15" || D == "B15" || D == "B3" || D == "B14" || (L.fixedM(false) & bitOf(D))) continue;
-            for (std::size_t k = o + 1; k < b.size(); k++) {
+            for (std::size_t k = o + 1; k < L.size(); k++) {
                 std::vector<std::string> reads, writes;
                 L.rw(k, reads, writes);
-                if (b[k].mnem == "MV" && b[k].ops.size() == 2 && b[k].pred.empty() && b[k].ops[0] == D && b[k].ops[1] == S) { L.erase(k); changed = true; break; }
+                if (L.mnem(k) == "MV" && L.ops(k) == 2 && L.plainAt(k) && L.op(k, 0) == D && L.op(k, 1) == S) { L.erase(k); changed = true; break; }
                 if (has(writes, S) || has(writes, D)) break;
             }
             if (changed) break;
@@ -1396,31 +1418,32 @@ bool pipeline(const Src &src, Loop &L, Code &out, std::string &why) {
         }
     }
     for (std::size_t k = 0; k < L.testBody.size(); k++) {
-        Line &l = L.body[L.testBody[k]];
-        std::vector<std::string> ops = l.ops;
-        for (std::size_t o = 0; o + 1 < ops.size(); o++)
-            for (std::size_t w = 0; w < L.boundsR.size(); w++) if (regNumber(ops[o]) == L.boundsR[w]) {
-                ops[o] = regName(moved[w]);
-                if (!L.bodyM.empty()) L.bodyM[L.testBody[k]].op[o] = R(moved[w]);
+        const std::size_t at = L.testBody[k];
+        std::vector<std::string> ops;
+        if (!L.body.empty()) ops = L.body[at].ops;
+        for (std::size_t o = 0; o + 1 < L.ops(at); o++)
+            for (std::size_t w = 0; w < L.boundsR.size(); w++) if (regNumber(L.op(at, o)) == L.boundsR[w]) {
+                if (!L.body.empty()) { ops[o] = regName(moved[w]); L.body[at].ops[o] = ops[o]; }
+                if (!L.bodyM.empty()) L.bodyM[at].op[o] = R(moved[w]);
             }
-        l = rebuilt(l.mnem, ops, l.pred);
+        if (!L.body.empty()) L.body[at] = rebuilt(L.mnem(at), ops, L.body[at].pred);
     }
     checkBody(L, "recognised");
     foldBodyCopies(L);
-    if (tracing() > 4) for (std::size_t o = 0; o < L.body.size(); o++) std::fprintf(stderr, "  as written%s\n", L.body[o].raw.c_str());
+    if (tracing() > 4) for (std::size_t o = 0; o < L.size(); o++) std::fprintf(stderr, "  as written%s\n", L.raw(o).c_str());
     renameWebs(L, pool);
     checkBody(L, "renamed");
     std::set<std::string> labels;
     labels.insert(L.label + "$pipe");
-    for (std::size_t o = 0; o < L.body.size(); o++) {
+    for (std::size_t o = 0; o < L.size(); o++) {
         if (L.bodyM.empty()) { L.nodes.push_back(makeNode(L.body[o], labels)); continue; }
         L.nodes.push_back(makeNode(L.bodyM[o], labels));
     }
     // The rename units, and which of them may take a name per iteration.
     std::vector<Unit> units;
     UnitOf unitOf;
-    for (std::size_t o = 0; o < L.body.size(); o++)
-        for (std::size_t k = 0; k < L.body[o].ops.size(); k++) {
+    for (std::size_t o = 0; o < L.size(); o++)
+        for (std::size_t k = 0; k < L.ops(o); k++) {
             int hi = kNoReg, lo = kNoReg;
             if (!L.pairIn(o, k, hi, lo)) continue;
             if (!unitOf.count(hi) && !unitOf.count(lo)) { Unit u; u.regs.push_back(lo); u.regs.push_back(hi); unitOf[hi] = unitOf[lo] = units.size(); units.push_back(u); }
@@ -1448,7 +1471,7 @@ bool pipeline(const Src &src, Loop &L, Code &out, std::string &why) {
         }
         if (ok) renameable |= halves;
     }
-    if (tracing() > 3) for (std::size_t o = 0; o < L.body.size(); o++) std::fprintf(stderr, "  body%s\n", L.body[o].raw.c_str());
+    if (tracing() > 3) for (std::size_t o = 0; o < L.size(); o++) std::fprintf(stderr, "  body%s\n", L.raw(o).c_str());
     if (tracing() > 2) { std::fprintf(stderr, "  renameable:"); for (UnitOf::const_iterator it = unitOf.begin(); it != unitOf.end(); ++it) if (renameable & Loop::bit(it->first)) std::fprintf(stderr, " %s", regName(it->first).c_str()); std::fprintf(stderr, "\n"); }
     std::vector<int> t;
     std::map<int, int> minQ;
