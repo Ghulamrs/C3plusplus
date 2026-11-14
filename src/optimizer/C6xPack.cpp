@@ -232,7 +232,7 @@ void readsAndWrites(const MInst &i, std::vector<int> &reads, std::vector<int> &w
 
 // What liveness reads of an entry: its operands where `modelled`, else its spelling - the one reader either way.
 LiveFacts liveFacts(const MInst &i) {
-    if (i.packed) return liveFacts(viewOf(i));   // a kept line, `||` and all, as `linesOf` hands it to the text passes
+    if (i.packed) return liveFacts(viewOf(i));   // a kept line, `||` and all, read as a line
     if (i.kind != MInst::Instruction || !modelled(i)) return liveFacts(lineOf(i));
     LiveFacts f;
     f.instr = true;
@@ -252,7 +252,7 @@ void liveness(const MStream &s, std::vector<std::uint64_t> &liveIn, std::vector<
 
 namespace {
 
-// `deadAfter` of C6xSched.cpp on entries, as liveness was computed: reg is written before it is read on the straight
+// `deadAfter` on entries, as liveness was computed: reg is written before it is read on the straight
 // path from i, or is not live where the block ends; a directive ends the path and answers no.
 bool deadAfter(const MStream &s, const std::vector<std::uint64_t> &out, std::size_t i, const std::string &reg) {
     const std::uint64_t bit = bitOf(reg);
@@ -1358,12 +1358,12 @@ bool streamOf(const std::vector<Line> &v, MStream &s) {
         if (one.size() != 1) return false;
         MInst &i = one[0];
         if (!l.verbatim) {
-            // An instruction the stream spells otherwise, or a line whose fields are not its text's, stays with the text pass.
+            // An instruction the stream spells otherwise, or a line whose fields are not its text's, is not spelled.
             if (l.instr != (i.kind == MInst::Instruction)) return false;
             const Line p = parse(l.raw);
             if (p.instr != l.instr || p.mnem != l.mnem || p.ops != l.ops || p.pred != l.pred) return false;
         }
-        // A placed line the text's fold would read as an instruction and the stream cannot: the text pass too.
+        // A placed line the text's fold would read as an instruction and the stream cannot: not spelled either.
         if (l.verbatim && i.kind == MInst::Verbatim && lineOf(i).instr) return false;
         i.par = par;
         i.packed = l.verbatim;
@@ -1372,7 +1372,7 @@ bool streamOf(const std::vector<Line> &v, MStream &s) {
     return true;
 }
 
-// Each block scheduled on its own, every label and kept line where it stood: `schedule` of C6xSched.cpp, on entries.
+// Each block scheduled on its own, every label and kept line where it stood, on entries.
 void packetise(MStream &s) {
     std::set<std::string> labels, named;
     std::string name;

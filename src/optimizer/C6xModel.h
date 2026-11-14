@@ -122,7 +122,7 @@ void add(Packet &p, const Node &n);
 bool passThrough(const Line &l, const std::set<std::string> &named);
 bool passThroughName(const std::string &name, const std::set<std::string> &named);
 bool assignUnits(const std::vector<const Node *> &m, std::size_t k, bool taken[2][4]);
-// One block list-scheduled into rows, and the wait where a block is empty: read by the text pass and by C6xPack.cpp.
+// One block list-scheduled into rows, and the wait where a block is empty: read by C6xPack.cpp.
 std::vector<Pending> scheduleBlock(std::vector<Node> &nodes, std::vector<Row> &rows, const std::vector<Pending> &in, bool carry);
 void waitOut(std::vector<Pending> &pend, std::vector<Row> &rows);
 std::string steppedRegister(const Line &l, long &by);
