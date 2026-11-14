@@ -478,3 +478,27 @@ idle cycles) and each form prints its rows.
 read a verbatim line's operands); a label of the backend's own flow that nothing names is no block boundary
 (`passThroughName`); `BNOP`'s reach is judged on the packetised length; and a branch's target is a register by the
 model's reading (`sideOf`), not by the operand's kind - a symbol spelled `B2x` is read as the text pass reads it.
+
+### M6c, round 1 (the packetiser on the MIR), 2026-11-14, lane m6j
+
+- **Landed** (code `ff8f480c` and the comment mend after it, from m6-i b7510429): the design section above;
+  `optimizer/C6xPack.cpp` (new, 137 lines) - `streamOf`, `packetise`, `foldBranchNops` on `c6x::MStream`; `MInst` gains
+  `par`, `packed`, `unit` and prints them; `scheduleBlock` writes `Row`s, which the text pass and the MIR pass each
+  print, so there is one list scheduler; `c6xSchedule(text, level, selected)` - a selected function's lines become a
+  stream after the text passes, are packetised and folded there, and printed. src/ +205 -22 lines (C6xSched.cpp
+  2,297 -> 2,322: the shared rows and the entry). The pipeliner and the folds stay on text; the walker's functions
+  keep the text packetiser. `CXX1_C6X_TEXTPACK=1` keeps the text packetiser for all.
+- **What round 1 is not.** The ISA's facts (`makeNode`: reads, writes, units, cross paths) are still asked by the
+  entry's spelling (`lineOf`), as the design says; the stream is made from the text passes' lines, not handed down from
+  the selector. What moved is the representation, the block walk, the emission and the branch fold.
+- **Identity.** Windows (work\m6j against work\m6i's cxx3-msvc.exe, b3d26f1e): text and diagnostics of tests/cases at
+  -O0, -O1 and -O2 by md5, 3,669 outputs (2,601 texts, 1,068 refused alike), 0 differ. `CXX1_C6X_MIR=1` at -O2: 6,835
+  selected functions, **0 sent to the text pass**. Linux (~/m6j against ~/m6i's cxx3.exe): `identical.sh ARCHS=tms6747
+  LEVELS="0 1 2"`: 2,604 compared, 0 differ.
+- **Gates.** Linux `tms6747.sh SIM=0 CYCLES=1` -O2, three shards: 814 passed, 4 failed - round 3's four
+  (noexcept-terminates, ssa-noexcept-throw, noexcept-terminates-callee, static-aggregate-runtime-list); 192.009 M
+  cycles, round 3's. Windows: cl /W4 /WX clean; tests/g-same.sh 867 same, 0 differ, 0 broken; exclusions 0 uncited
+  0 stale; comments 0 over (one over at C6xSched.h:9, mended, re-counted); memory gate rc 0; ide/generate.py
+  regenerated (C6xPack.cpp) and --check up to date.
+- **Owed:** round 2, the pipeliner on entries (design step 2); the table's readers on operands rather than spellings;
+  -O0 tms6747.sh, sim6747, asm6x.sh and make test (the coordinator's).
