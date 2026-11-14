@@ -46,9 +46,6 @@ SIM6747=$(find_tool "${SIM6747:-}" ../../TI/SIM6747/sim6747.exe "$(command -v si
 RTSLIB="${RTSLIB:-rts6x.lib}"
 if [ "$RTSLIB" = rts6x.lib ]; then TIRTS="${TIRTS:-../../TI/RTS6x/build}"; else TIRTS="${TIRTS:-${C6747_EHLIB:-$HOME/c6747-lib}}"; fi
 CXX1_FLAGS="${CXX1_FLAGS:-}"   # -O1 or -O2 runs the corpus through the C6000 optimizer
-# Every pass that vows its edits only shrink liveness is held to the vow (review V9; under 1% of the
-# compile time, measured 2026-10-07); -O0 never reaches the optimizer. CPP11_C6XLIVECHECK= turns it off.
-if [ "${CPP11_C6XLIVECHECK-1}" = "" ]; then unset CPP11_C6XLIVECHECK; else export CPP11_C6XLIVECHECK="${CPP11_C6XLIVECHECK:-1}"; fi
 OUT=tests/out-tms6747
 # One case by name, or all of them; a worker is handed the name it was asked for after --one.
 if [ "${1:-}" = --one ]; then only=$2; else only="${1:-}"; fi
@@ -66,10 +63,8 @@ one() {
     if [ -z "$only" ] && grep -q "^$base[[:space:]]" tests/tms6747-lp64.txt; then echo lp64 > "$OUT/$base.verdict"; return; fi
 
     # The CPU limit catches a hang, so it is twice the slowest ordinary case: regex-ecmascript takes 5 s at -O2 alone, and two jobs
-    # on the Linux box's hyperthread siblings took it past 10 (M2.7). The liveness self-check is quadratic in a function's length:
-    # tests/tms6747-nolivecheck.txt names the cases it kills, and gives them 30 s - one is 8 s alone (M2.4).
+    # on the Linux box's hyperthread siblings took it past 10 (M2.7).
     limit=20
-    if grep -q "^$base[[:space:]]" tests/tms6747-nolivecheck.txt; then unset CPP11_C6XLIVECHECK; limit=30; fi
     if ! ( ulimit -t $limit; "$CXX1" -S -arch tms6747 -nologo $CXX1_FLAGS "$src" -o "$OUT/$base.s" < /dev/null ) 2>"$OUT/$base.err"; then
         echo "FAIL $base: cpp11 refused it"
         sed 's/^/      /' "$OUT/$base.err" | head -3

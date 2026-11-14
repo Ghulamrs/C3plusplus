@@ -722,8 +722,8 @@ and says only what moved, which is what a refactor needs and no correctness
 claim may rest on. `tests/names.sh` and `tests/overload.sh` ask clang on every
 run, and are the two that compare this compiler against another. The optimizer
 has no IR verifier; what gates it is `run.sh` at -O2 on the Linux box and the
-Windows cases at -O2 (since 2026-10-07), `tools/identical.sh` across levels, and
-`CPP11_C6XLIVECHECK` on the C6000 - a `Mir` consistency check (every use after
+Windows cases at -O2 (since 2026-10-07) and `tools/identical.sh` across levels
+(`CPP11_C6XLIVECHECK`, the C6000's text-liveness vow, went with the text passes in M6c) - a `Mir` consistency check (every use after
 its definition, every label a target) is a later round, recorded in
 `docs/review-2026-10-08/ws-a.md`.
 

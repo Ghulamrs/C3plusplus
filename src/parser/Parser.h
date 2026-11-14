@@ -1478,6 +1478,7 @@ private:
                              std::vector<GlobalPiece> &pieces, bool &hasInit,
                              std::vector<StmtPtr> *into, bool local = false);
     void staticTemporary(const Declared &d, const std::string &symbol, bool local);
+    ExprPtr staticScalarTemporary(const Declared &d, const std::string &temp, ExprPtr init);
 
     // Whether a call to this function has to be given an object. A member's
     // `owner` used to answer it on its own, and a static member is exactly the

@@ -1866,6 +1866,28 @@ void Parser::staticTemporary(const Declared &d, const std::string &symbol, bool 
     staticGuards_[symbol].temporaryHelper = helper;
 }
 
+// A scalar bound by a static reference is stored in staticTemporary's object, `(T = init, &T)`, not in a frame slot.
+ExprPtr Parser::staticScalarTemporary(const Declared &d, const std::string &temp, ExprPtr init) {
+    const Type *store = d.type->referent()->unqualified();
+    checkAssignable(*init, d.type->referent(), d.pos, "'" + d.name + "'");
+    Var *object[2] = { Var::global(temp), Var::global(temp) };
+    for (Var *v : object) {
+        v->setSymbol(temp);
+        if (tlsObject_) tlsVar(v, false, false);
+    }
+    ExprPtr target(object[0]), held(object[1]);
+    target->setType(store);
+    held->setType(store);
+    ExprPtr keep(new Assign(std::move(target), convert(std::move(init), store)));
+    keep->setType(store);
+    ExprPtr addr(new Unary('&', std::move(held)));
+    addr->setType(types_.pointerTo(d.type->referent()));
+    const Type *at = addr->type();
+    ExprPtr both(new Comma(std::move(keep), std::move(addr)));
+    both->setType(at);
+    return both;
+}
+
 // A reference with static storage duration: `&global` goes into the image,
 // anything else is bound where `into` says - the init function, or a static
 // local's guarded statement. A temporary gets static storage of its own (staticTemporary).
@@ -1880,10 +1902,12 @@ void Parser::bindStaticReference(const Declared &d, const std::string &symbol,
     ExprPtr init;
     { OverloadTarget hold(*this, d.type); init = assign(); }
     // A class temporary is a dereference of its slot marked prvalue; a function is bound by its address, no temporary.
-    if (!d.type->referent()->isFunction() && (!isGlvalue(*init) || init->declCategory() == Expr::Category::Prvalue))
-        staticTemporary(d, symbol, local);
-    ExprPtr addr = bindReference(d.type, std::move(init), d.pos,
-                                 "'" + d.name + "'");
+    const Type *referent = d.type->referent();
+    const bool temporary = !referent->isFunction() && (!isGlvalue(*init) || init->declCategory() == Expr::Category::Prvalue);
+    if (temporary) staticTemporary(d, symbol, local);
+    ExprPtr addr = temporary && !referent->isStructOrUnion() && (referent->isConst() || d.type->isRValueReference())
+                 ? staticScalarTemporary(d, staticGuards_[symbol].temporary, std::move(init))
+                 : bindReference(d.type, std::move(init), d.pos, "'" + d.name + "'");
     const Type *slot = types_.pointerTo(d.type->referent());
     if (const Unary *u = dynamic_cast<const Unary *>(addr.get()))
         if (u->op() == '&')
