@@ -26,6 +26,8 @@ Line lineOf(const MInst &i) {
     return parse(s);
 }
 
+}   // namespace
+
 // An entry as the text passes read it: a placed entry a kept line, no instruction to them; any other its spelling.
 Line viewOf(const MInst &i) {
     if (!i.packed) return lineOf(i);
@@ -35,6 +37,8 @@ Line viewOf(const MInst &i) {
     l.verbatim = true;
     return l;
 }
+
+namespace {
 
 // What the text pass takes for a label: a Label, or a kept line that starts in the first column; its name ends at `:`.
 bool labelLike(const MInst &i, std::string &name) {

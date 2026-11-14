@@ -241,53 +241,74 @@ bool mayAliasAt(const Access &a, int sa, const Access &b, int sb, int d) {
 // **The recognisers' reader** (M6c round 4): what an entry is and its parts - kind, mnemonic, predicate, operands,
 // reads and writes, units - from the stream's typed operands where it has them (`modelled`), else from the line.
 struct Src {
-    const std::vector<Line> &v;
+    const std::vector<Line> &v;                 // the text; empty on a stream
     const MStream *s;
+    const std::vector<std::uint64_t> *live;     // the stream's live-in, entry by entry
+    mutable std::vector<Line> made, whole;
+    mutable std::vector<char> have;
+    Src(const std::vector<Line> &lines, const MStream *stream, const std::vector<std::uint64_t> *in = nullptr) : v(lines), s(stream), live(in) {}
+    std::size_t size() const { return s ? s->size() : v.size(); }
+    // **An entry read as a line** (M6c round 14): made where a reader still wants text, once; `c6x-line` names the reader.
+    const Line &line(std::size_t i, const char *who) const {
+        static const bool census = std::getenv("CXX1_C6X_MIR") != nullptr;
+        if (!s) return v[i];
+        if (made.empty()) { made.resize(s->size()); have.assign(s->size(), 0); }
+        if (!have[i]) { made[i] = viewOf((*s)[i]); have[i] = 1; }
+        if (census && who && have[i] == 1) { have[i] = 2; std::fprintf(stderr, "c6x-line: %s\n", who); }
+        return made[i];
+    }
+    // The census's text: the whole stream as lines with their liveness, what the recognisers are held against.
+    const std::vector<Line> &text() const {
+        if (s && whole.empty()) { linesOf(*s, whole); computeLiveness(whole); }
+        return s ? whole : v;
+    }
+    std::uint64_t liveIn(std::size_t i) const { return live ? (*live)[i] : v[i].liveIn; }
+    std::uint64_t liveAt(std::size_t i) const { return live ? (*live)[i] : liveInAt(v, i); }
     bool typed(std::size_t i) const { return s && modelled((*s)[i]); }
-    bool instr(std::size_t i) const { return s ? (*s)[i].kind == MInst::Instruction && !(*s)[i].packed : v[i].instr; }
+    bool instr(std::size_t i) const { return s ? (*s)[i].kind == MInst::Instruction && !(*s)[i].packed : line(i, "untyped").instr; }
     bool label(std::size_t i) const {
         if (s && (*s)[i].kind == MInst::Label) return true;
-        return (!s || (*s)[i].kind != MInst::Instruction || (*s)[i].packed) && isLabel(v[i]);
+        return (!s || (*s)[i].kind != MInst::Instruction || (*s)[i].packed) && isLabel(line(i, "untyped"));
     }
-    std::string name(std::size_t i) const { return s && (*s)[i].kind == MInst::Label ? (*s)[i].m.str() : labelName(v[i]); }
-    std::string mnem(std::size_t i) const { return s && instr(i) ? (*s)[i].m.str() : v[i].mnem; }
+    std::string name(std::size_t i) const { return s && (*s)[i].kind == MInst::Label ? (*s)[i].m.str() : labelName(line(i, "untyped")); }
+    std::string mnem(std::size_t i) const { return s && instr(i) ? (*s)[i].m.str() : line(i, "untyped").mnem; }
     std::string pred(std::size_t i) const {
-        if (!typed(i)) return v[i].pred;
+        if (!typed(i)) return line(i, "untyped").pred;
         const MInst &e = (*s)[i];
         return e.pred == kNoReg ? std::string() : (e.predNot ? "!" : "") + regName(e.pred);
     }
-    std::size_t ops(std::size_t i) const { return typed(i) ? (*s)[i].operands : v[i].ops.size(); }
-    std::string op(std::size_t i, std::size_t k) const { return typed(i) ? (*s)[i].op[k].str() : v[i].ops[k]; }
-    bool reg(std::size_t i, std::size_t k) const { return typed(i) ? (*s)[i].op[k].isReg() : sideOf(v[i].ops[k]) != 0; }
+    std::size_t ops(std::size_t i) const { return typed(i) ? (*s)[i].operands : line(i, "untyped").ops.size(); }
+    std::string op(std::size_t i, std::size_t k) const { return typed(i) ? (*s)[i].op[k].str() : line(i, "untyped").ops[k]; }
+    bool reg(std::size_t i, std::size_t k) const { return typed(i) ? (*s)[i].op[k].isReg() : sideOf(line(i, "untyped").ops[k]) != 0; }
     bool number(std::size_t i, std::size_t k, long &n) const {
         if (typed(i)) { n = static_cast<long>((*s)[i].op[k].value); return (*s)[i].op[k].kind == MOperand::Immediate; }
-        n = std::atol(v[i].ops[k].c_str());
-        return isNumber(v[i].ops[k]);
+        n = std::atol(line(i, "untyped").ops[k].c_str());
+        return isNumber(line(i, "untyped").ops[k]);
     }
-    bool pair(std::size_t i, std::size_t k) const { return typed(i) ? (*s)[i].op[k].kind == MOperand::Pair : v[i].ops[k].find(':') != std::string::npos; }
+    bool pair(std::size_t i, std::size_t k) const { return typed(i) ? (*s)[i].op[k].kind == MOperand::Pair : line(i, "untyped").ops[k].find(':') != std::string::npos; }
     void rw(std::size_t i, std::vector<std::string> &reads, std::vector<std::string> &writes) const {
-        if (typed(i)) readsAndWrites((*s)[i], reads, writes); else readsAndWrites(v[i], reads, writes);
+        if (typed(i)) readsAndWrites((*s)[i], reads, writes); else readsAndWrites(line(i, "untyped"), reads, writes);
     }
     // The same by number: the entry's own registers where it is typed, the line's names numbered where not.
     void regs(std::size_t i, std::vector<int> &reads, std::vector<int> &writes) const {
         if (typed(i)) { readsAndWrites((*s)[i], reads, writes); return; }
         std::vector<std::string> r, w;
-        readsAndWrites(v[i], r, w);
+        readsAndWrites(line(i, "untyped"), r, w);
         for (std::size_t k = 0; k < r.size(); k++) reads.push_back(regNumber(r[k]));
         for (std::size_t k = 0; k < w.size(); k++) writes.push_back(regNumber(w[k]));
     }
-    unsigned units(std::size_t i) const { return typed(i) ? unitsFor((*s)[i]) : unitsFor(v[i]); }
+    unsigned units(std::size_t i) const { return typed(i) ? unitsFor((*s)[i]) : unitsFor(line(i, "untyped")); }
     // The same as masks, and a register operand or the predicate as a number: the entry's own where it is typed.
     void masks(std::size_t i, std::uint64_t &reads, std::uint64_t &writes) const {
         if (typed(i)) { readsAndWrites((*s)[i], reads, writes); return; }
         std::vector<std::string> r, w;
-        readsAndWrites(v[i], r, w);
+        readsAndWrites(line(i, "untyped"), r, w);
         reads |= maskOf(r); writes |= maskOf(w);
     }
-    int regAt(std::size_t i, std::size_t k) const { return typed(i) ? ((*s)[i].op[k].kind == MOperand::Register ? (*s)[i].op[k].reg : kNoReg) : regNumber(v[i].ops[k]); }
-    int predReg(std::size_t i) const { return typed(i) ? (*s)[i].pred : regNumber(v[i].pred.substr(v[i].pred.compare(0, 1, "!") == 0 ? 1 : 0)); }
+    int regAt(std::size_t i, std::size_t k) const { return typed(i) ? ((*s)[i].op[k].kind == MOperand::Register ? (*s)[i].op[k].reg : kNoReg) : regNumber(line(i, "untyped").ops[k]); }
+    int predReg(std::size_t i) const { return typed(i) ? (*s)[i].pred : regNumber(line(i, "untyped").pred.substr(line(i, "untyped").pred.compare(0, 1, "!") == 0 ? 1 : 0)); }
     char side(std::size_t i, std::size_t k) const {
-        if (!typed(i)) return sideOf(v[i].ops[k]);
+        if (!typed(i)) return sideOf(line(i, "untyped").ops[k]);
         const MOperand &o = (*s)[i].op[k];
         if (o.kind != MOperand::Register && o.kind != MOperand::Pair) return 0;
         return sideOfReg(o.kind == MOperand::Pair ? o.hi : o.reg) ? 'B' : 'A';
@@ -297,7 +318,7 @@ struct Src {
     // The operands that name `x`: the label a branch reaches, counted over the function's instructions.
     int naming(const std::string &x) const {
         int n = 0;
-        for (std::size_t i = 0; i < v.size(); i++) if (instr(i)) for (std::size_t o = 0; o < ops(i); o++) if (op(i, o) == x) n++;
+        for (std::size_t i = 0; i < size(); i++) if (instr(i)) for (std::size_t o = 0; o < ops(i); o++) if (op(i, o) == x) n++;
         return n;
     }
 };
@@ -442,7 +463,7 @@ struct Loop {
         if (!isWrite && e.pred == f) e.pred = static_cast<std::uint8_t>(t);
     }
     void take(const Src &src, std::size_t i) {
-        body.push_back(src.v[i]);
+        body.push_back(src.line(i, "body"));
         if (fromLines) return;
         if (src.typed(i)) bodyM.push_back((*src.s)[i]); else { fromLines = true; bodyM.clear(); }
     }
@@ -529,7 +550,7 @@ Env evaluateBody(const Src &src, const Loop &L, std::vector<std::string> &lineTe
 bool recogniseStepped(const Src &src, Loop &L, std::string &why, const std::string &fallback) {
     why = fallback;
     auto no = [&](const char *r) { if (tracing() > 1) why += std::string(" [stepped: ") + r + "]"; return false; };
-    L.liveExit = src.v[L.back + 1].liveIn;
+    L.liveExit = src.liveIn(L.back + 1);
     if (L.liveExit & Loop::bit(L.PR)) return no("the predicate lives past the loop");
     std::map<int, int> writers;
     std::map<int, std::size_t> writerAt;
@@ -688,7 +709,6 @@ bool recogniseStepped(const Src &src, Loop &L, std::string &why, const std::stri
 }
 
 bool recognise(const Src &src, std::size_t back, const std::set<std::string> &labels, const std::set<std::string> &named, Loop &L, std::string &why) {
-    const std::vector<Line> &v = src.v;
     const std::string bpred = src.pred(back);
     L.onStream = src.s != nullptr;
     if (bpred.empty() || src.ops(back) == 0 || labels.count(src.op(back, 0)) == 0) { why = "no conditional branch to a label"; return false; }
@@ -699,10 +719,10 @@ bool recognise(const Src &src, std::size_t back, const std::set<std::string> &la
     std::size_t h = 0; bool found = false;
     for (std::size_t i = 0; i < back; i++) if (src.label(i) && src.name(i) == L.label) { h = i; found = true; }
     if (!found) { why = "the head is not above"; return false; }
-    if (back + 1 >= v.size() || !src.label(back + 1)) { why = "no exit label after the branch"; return false; }
+    if (back + 1 >= src.size() || !src.label(back + 1)) { why = "no exit label after the branch"; return false; }
     L.head = h; L.back = back; L.exitName = src.name(back + 1);
     for (std::size_t k = h; k-- > 0 && src.instr(k) && !isBranch(src.mnem(k));) {
-        L.pre.insert(L.pre.begin(), v[k]);
+        L.pre.insert(L.pre.begin(), src.line(k, "pre"));
         if (src.typed(k)) L.preM.insert(L.preM.begin(), (*src.s)[k]); else L.preTyped = false;
     }
     if (src.naming(L.label) != 1) { why = "the head is entered from elsewhere"; return false; }
@@ -739,7 +759,7 @@ bool recognise(const Src &src, std::size_t back, const std::set<std::string> &la
     else if (!src.reg(c, boundAt)) { why = "the bound is not a register"; return false; }
     if (!src.reg(c, ivAt) || (L.boundConst && L.ivR != src.regAt(c, 1))) { why = "the counter is not a register"; return false; }
     // P is read by the branch alone and is dead at the exit; i is stepped once, by one, before the test.
-    L.liveExit = v[back + 1].liveIn;
+    L.liveExit = src.liveIn(back + 1);
     if (L.liveExit & Loop::bit(L.PR)) { why = "the predicate lives past the loop"; return false; }
     int ivWrites = 0, boundWrites = 0, pWrites = 0;
     for (std::size_t k = 0; k < L.bodyAt.size(); k++) {
@@ -1064,11 +1084,11 @@ struct Code {
     void nop(int n) { const MInst e("NOP", n); placed("\tNOP\t" + std::to_string(n), false, &e); }
     void label(const std::string &name) { MInst e; e.kind = MInst::Label; e.m = opt::StrId(name); placed(name + ":", false, &e); }
     // Line k of the function as it stands: the stream's own entry.
-    void same(const std::vector<Line> &v, std::size_t k) {
-        if (!from || !ok) { push_back(v[k]); return; }
+    void same(const Src &src, std::size_t k) {
+        if (!from || !ok) { push_back(src.line(k, "same")); return; }
         const MInst &e = (*from)[k];
-        if (e.kind != MInst::Instruction || e.packed || e.par || e.unit != 0 || !modelled(e)) { push_back(v[k]); return; }
-        if (text()) lines.push_back(v[k]);
+        if (e.kind != MInst::Instruction || e.packed || e.par || e.unit != 0 || !modelled(e)) { push_back(src.line(k, "same")); return; }
+        if (text()) lines.push_back(src.line(k, nullptr));
         m.push_back(e);
     }
 };
@@ -1338,7 +1358,7 @@ bool steppedGuard(const Loop &L, Code &out, const std::vector<int> &moved, int x
 }
 
 // The whole rewrite of one recognised loop; false, with the reason, where it is not worth it or cannot be done.
-bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) {
+bool pipeline(const Src &src, Loop &L, Code &out, std::string &why) {
     // The pool of names the loop may take: caller-saved, unused in it, dead at its exit.
     std::vector<int> pool;
     for (int side = 0; side < 2; side++)
@@ -1574,7 +1594,7 @@ bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) 
     for (std::size_t x = 0; x < units.size(); x++)
         if (units[x].q > 1 && units[x].exits && modq(S - 2, units[x].q) != 0) for (std::size_t h = 0; h < units[x].regs.size(); h++) out.add("MV", R(units[x].copies[h][static_cast<std::size_t>(modq(S - 2, units[x].q))]), R(units[x].regs[h]));
     if (L.stepped) { if (!steppedTest(L, out, L.boundsR[0], L.wide ? L.boundsR[1] : kNoReg, xt, xtb, why)) return false; }
-    else out.same(v, L.cmp);
+    else out.same(src, L.cmp);
     out.branch(L.exitName, L.PR, !L.negated);
     return true;
 }
@@ -1630,7 +1650,7 @@ bool isByteLoad(const std::string &m) { return m == "LDB" || m == "LDBU"; }
 
 // An operand's registers in its spelling's order, and a byte load's address as `byteAddress` reads it, on the entry.
 void Src::regsIn(std::size_t i, std::size_t k, std::vector<std::string> &out) const {
-    if (!typed(i)) { registersIn(v[i].ops[k], out); return; }
+    if (!typed(i)) { registersIn(line(i, "untyped").ops[k], out); return; }
     const MOperand &o = (*s)[i].op[k];
     if (o.kind == MOperand::Register) out.push_back(regName(o.reg));
     if (o.kind == MOperand::Pair) { out.push_back(regName(o.hi)); out.push_back(regName(o.reg)); }
@@ -1639,7 +1659,7 @@ void Src::regsIn(std::size_t i, std::size_t k, std::vector<std::string> &out) co
     if (o.index != kNoReg) out.push_back(regName(o.index));
 }
 bool Src::byteAddress(std::size_t i, std::size_t k, std::string &base, long &off, bool &post) const {
-    if (!typed(i)) return c6x::byteAddress(v[i].ops[k], base, off, post);
+    if (!typed(i)) return c6x::byteAddress(line(i, "untyped").ops[k], base, off, post);
     const MOperand &o = (*s)[i].op[k];
     post = false; off = 0;
     if (o.kind != MOperand::Memory || o.index != kNoReg) return false;
@@ -1697,17 +1717,16 @@ bool trackPointer(const Src &src, const Window &W, const std::string &r, std::ma
 }
 
 bool recogniseWindow(const Src &src, std::size_t back, const std::set<std::string> &labels, const std::set<std::string> &named, Window &W, std::string &why) {
-    const std::vector<Line> &v = src.v;
     if (src.mnem(back) != "B" || src.ops(back) == 0 || labels.count(src.op(back, 0)) == 0) { why = "no branch back to a label"; return false; }
     const std::string bpred = src.pred(back);
     W.label = src.op(back, 0); W.backPred = bpred; W.P = bpred.empty() ? "" : bpred[0] == '!' ? bpred.substr(1) : bpred; W.back = back;
     std::map<std::string, std::size_t> at;
-    for (std::size_t i = 0; i < v.size(); i++) if (src.label(i)) at[src.name(i)] = i;
+    for (std::size_t i = 0; i < src.size(); i++) if (src.label(i)) at[src.name(i)] = i;
     bool found = false;
     for (std::size_t i = 0; i < back; i++) if (src.label(i) && src.name(i) == W.label) { W.head = i; found = true; }
     if (!found) { why = "the head is not above"; return false; }
     if (src.naming(W.label) != 1) { why = "the head is entered from elsewhere"; return false; }
-    W.liveHead = liveInAt(v, W.head);
+    W.liveHead = src.liveAt(W.head);
     for (std::size_t i = W.head + 1; i < back; i++) {
         if (src.label(i)) { if (!passThroughName(src.name(i), named)) { why = "a label inside"; return false; } continue; }
         if (!src.instr(i)) { why = "a directive inside"; return false; }
@@ -1716,12 +1735,12 @@ bool recogniseWindow(const Src &src, std::size_t back, const std::set<std::strin
             const std::string to = src.ops(i) ? src.op(i, 0) : std::string();
             if (m != "B" || pred.empty() || to.empty() || !at.count(to) || to == W.label) { why = "a branch inside that is not a way out"; return false; }
             Window::Exit e; e.target = to; e.pred = pred;
-            if (!W.backPred.empty() && back + 1 < v.size() && src.label(back + 1) && src.name(back + 1) == e.target) e.target = "";
-            e.live = liveInAt(v, at[to]);
+            if (!W.backPred.empty() && back + 1 < src.size() && src.label(back + 1) && src.name(back + 1) == e.target) e.target = "";
+            e.live = src.liveAt(at[to]);
             W.cls.push_back(static_cast<int>(W.exits.size()));
             W.exits.push_back(e);
             W.liveOut |= e.live;
-            W.body.push_back(v[i]);
+            W.body.push_back(src.line(i, "window"));
             W.at.push_back(i);
             continue;
         }
@@ -1733,12 +1752,12 @@ bool recogniseWindow(const Src &src, std::size_t back, const std::set<std::strin
         if (has(writes, "A15") || has(writes, "B15") || has(writes, "B3")) { why = "the stack pointer or return address is written"; return false; }
         if (!isLoad(m) && (src.units(i) == 0 || writes.size() != 1)) { why = "an instruction of no known form: " + m; return false; }
         W.cls.push_back(kPlain);
-        W.body.push_back(v[i]);
+        W.body.push_back(src.line(i, "window"));
         W.at.push_back(i);
     }
     if (!W.backPred.empty()) {
         Window::Exit e; e.pred = W.backPred[0] == '!' ? W.P : "!" + W.P;
-        e.live = back + 1 < v.size() ? liveInAt(v, back + 1) : ~0ull;
+        e.live = back + 1 < src.size() ? src.liveAt(back + 1) : ~0ull;
         W.exits.push_back(e);
         W.liveOut |= e.live;
     }
@@ -2149,8 +2168,7 @@ bool emitClosed(Window &W, const std::set<std::string> &committed, std::vector<s
     return true;
 }
 
-bool emitWindow(const std::vector<Line> &v, Window &W, std::vector<Line> &out, std::string &why) {
-    (void)v;
+bool emitWindow(Window &W, std::vector<Line> &out, std::string &why) {
     // What the window may not take: every register live at the head or an exit, and the fixed ones.
     const std::uint64_t fixed = W.liveHead | W.liveOut | bitOf("A15") | bitOf("B15") | bitOf("B14") | bitOf("B3");
     std::set<std::string> written;
@@ -2434,24 +2452,23 @@ bool sameWindow(const Window &a, const Window &b) {
 void checkRecognisers(const Src &src, std::size_t i, const std::set<std::string> &labels, const std::set<std::string> &named, bool counted) {
     static const bool check = std::getenv("CXX1_C6X_MIR") != nullptr;
     if (!check || !src.s) return;
-    const Src text = { src.v, nullptr };
+    const Src text(src.text(), nullptr);
     std::string w1, w2;
     if (counted) {
         Loop a, b;
         const bool ra = recognise(src, i, labels, named, a, w1), rb = recognise(text, i, labels, named, b, w2);
-        if (ra != rb || w1 != w2 || (ra && !sameLoop(a, b))) std::fprintf(stderr, "c6x-recog: loop %s\n", src.v[i].raw.c_str());
+        if (ra != rb || w1 != w2 || (ra && !sameLoop(a, b))) std::fprintf(stderr, "c6x-recog: loop %s\n", src.line(i, nullptr).raw.c_str());
         return;
     }
     Window a, b;
     const bool ra = recogniseWindow(src, i, labels, named, a, w1), rb = recogniseWindow(text, i, labels, named, b, w2);
-    if (ra != rb || w1 != w2 || (ra && !sameWindow(a, b))) std::fprintf(stderr, "c6x-recog: window %s\n", src.v[i].raw.c_str());
+    if (ra != rb || w1 != w2 || (ra && !sameWindow(a, b))) std::fprintf(stderr, "c6x-recog: window %s\n", src.line(i, nullptr).raw.c_str());
 }
 
 // One back branch tried: the code that replaces lines [from, to) of the text where the pipelining pays.
 bool pipelineAt(const Src &src, std::size_t i, const std::set<std::string> &labels, const std::set<std::string> &named,
                 std::size_t copied, Code &code, std::size_t &from, std::size_t &to) {
-    const std::vector<Line> &v = src.v;
-    if (!src.instr(i) || src.mnem(i) != "B" || isCall(v[i], labels)) return false;
+    if (!src.instr(i) || src.mnem(i) != "B" || isCallTo("B", src.ops(i) ? src.op(i, 0) : std::string(), labels)) return false;
     const bool plain = src.pred(i).empty();
     if (plain) {                                // an unconditional branch is a back branch only to a label above
         bool above = false;
@@ -2468,23 +2485,23 @@ bool pipelineAt(const Src &src, std::size_t i, const std::set<std::string> &labe
         Window W;
         std::string wwhy;
         std::vector<Line> turns;
-        if (recogniseWindow(src, i, labels, named, W, wwhy) && W.head >= copied && emitWindow(v, W, turns, wwhy)) {
+        if (recogniseWindow(src, i, labels, named, W, wwhy) && W.head >= copied && emitWindow(W, turns, wwhy)) {
             for (std::size_t k = 0; k < turns.size(); k++) code.push_back(turns[k]);
             from = W.head + 1;
             to = W.back + 1;
             return true;
         }
-        if (tracing()) std::fprintf(stderr, "pipe %s: %s [window: %s]\n", v[i].ops[0].c_str(), why.c_str(), wwhy.c_str());
+        if (tracing()) std::fprintf(stderr, "pipe %s: %s [window: %s]\n", src.op(i, 0).c_str(), why.c_str(), wwhy.c_str());
         return false;
     }
     if (L.head < copied) return false;
-    if (!pipeline(v, L, code, why)) { if (tracing()) std::fprintf(stderr, "pipe %s: %s\n", L.label.c_str(), why.c_str()); return false; }
+    if (!pipeline(src, L, code, why)) { if (tracing()) std::fprintf(stderr, "pipe %s: %s\n", L.label.c_str(), why.c_str()); return false; }
     from = to = L.head;
     return true;
 }
 
 // CXX1_C6X_MIR=1: the emitters' lines read as round 10 read them, and `c6x-emit` names a loop whose entries differ.
-void checkEmitted(const Code &code, const Line &at) {
+void checkEmitted(const Code &code, const std::string &at) {
     MStream ref;
     bool same = streamOf(code.lines, ref) && ref.size() == code.m.size();
     for (std::size_t k = 0; same && k < ref.size(); k++) {
@@ -2493,7 +2510,7 @@ void checkEmitted(const Code &code, const Line &at) {
                a.operands == b.operands && a.str() == b.str();
         for (int o = 0; same && o < a.operands; o++) same = a.op[o].kind == b.op[o].kind;
     }
-    if (!same) std::fprintf(stderr, "c6x-emit: %s\n", at.raw.c_str());
+    if (!same) std::fprintf(stderr, "c6x-emit: %s", at.c_str());
 }
 
 // The names the text defines and the operands it names, with its liveness computed: what every candidate is read against.
@@ -2514,7 +2531,7 @@ void pipelineLoops(std::vector<Line> &v) {
     namesOf(v, labels, named);
     std::vector<Line> out;
     std::size_t copied = 0, from = 0, to = 0;
-    const Src src = { v, nullptr };
+    const Src src(v, nullptr);
     for (std::size_t i = 0; i < v.size(); i++) {
         Code code;
         if (!pipelineAt(src, i, labels, named, copied, code, from, to)) continue;
@@ -2526,22 +2543,28 @@ void pipelineLoops(std::vector<Line> &v) {
     v.swap(out);
 }
 
-// **The pipeliner on the stream** (M6c round 2): the same candidates, read through each entry's spelling; a kernel
-// is written as entries (`Code`) - `par` its packets, `NOP n` its idle cycles, `packed` what is placed. False: one not held.
+// **The pipeliner on the stream** (M6c rounds 2 and 14): the same candidates read from the entries, their liveness the
+// stream's; a kernel is written as entries (`Code`) - `par` its packets, `NOP n` its idle cycles. False: one not held.
 bool pipelineLoops(MStream &s) {
-    std::vector<Line> v;
-    linesOf(s, v);
+    static const std::vector<Line> none;
+    std::vector<std::uint64_t> in, liveOut;
+    liveness(s, in, liveOut);
+    const Src src(none, &s, &in);
     std::set<std::string> labels, named;
-    namesOf(v, labels, named);
+    for (std::size_t i = 0; i < s.size(); i++) {
+        if (tracing() > 5) std::fprintf(stderr, "| %s", s[i].str().c_str());
+        if (src.label(i)) labels.insert(src.name(i));
+        if (s[i].kind == MInst::Label || s[i].packed) continue;             // a line of no operands
+        for (std::size_t o = 0; o < src.ops(i); o++) named.insert(src.op(i, o));
+    }
     MStream out;
-    const Src src = { v, &s };
     std::size_t copied = 0, from = 0, to = 0;
-    for (std::size_t i = 0; i < v.size(); i++) {
+    for (std::size_t i = 0; i < s.size(); i++) {
         Code code;
         code.from = &s;
         if (!pipelineAt(src, i, labels, named, copied, code, from, to)) continue;
         if (!code.ok) return false;
-        if (code.text()) checkEmitted(code, v[i]);
+        if (code.text()) checkEmitted(code, s[i].str());
         out.insert(out.end(), s.begin() + static_cast<long>(copied), s.begin() + static_cast<long>(from));
         out.insert(out.end(), code.m.begin(), code.m.end());
         copied = to;
