@@ -1163,3 +1163,41 @@ all the window's).
   827 / 0. Mac run.sh -O0 and -O2 1215 / 0. Linux make test rc 0 (run 1217/0, emit 3399/0, typed 860/0, ssa 890/0,
   c90 447/0, exclusions 0/0, comments 0). tms6747 (vm6747, SIM=0, three shards): 814 passed, 0 failed at -O0
   (393.2 M cycles) and -O2 (**192.0 M**, unchanged); asm6x 833 / 0 at -O0 and -O2.
+### M6c, round 16 (who still reaches the text passes, measured; the deletion's plan; its first three steps), 2026-11-14, lane m6y
+
+- **Measured** (from m6-x 32d47563, its compiler in work\m6x; tests/cases, 868 files). The selector takes **6,835 of
+  10,984 functions at -O2 (62.2%)**; **4,149 are walked, in 862 cases** (-O0: 6,988 selected, 3,996 walked). By the
+  selector's reason (`CXX1_SSA_WHY`, -O2): landing pads 1,312; variadic call 860; class result 399; class or 64-bit
+  parameter 398; floating value 243; `memcpy` 209; floating or 64-bit result 174; indirect call 140; 64-bit value 124;
+  `memset` 101; class result of a call 60; class argument 36; exception specification 31; outside the SSA lowering
+  24; `smulh` 20; variadic 16; aggregate value 2. M6a.2's "census 0 walked" is not reached, and M6d waits on it.
+  Before this round the text passes were reached by: (a) those 4,149 walked functions at -O1 and -O2 (at -O0
+  `c6xSchedule` returns its text), every one by `c6xSchedule(..., selected = false)`; (b) a selected function whose
+  text the stream does not spell - **0** (`c6x-pack`, `c6x-pipe`, `c6x-fold` 0 of 6,835); (c) the knobs
+  `CXX1_C6X_TEXTFOLD`, `TEXTPIPE`, `TEXTPACK` (no gate runs them) and `CXX1_C6X_WALKER=1` (all 10,984 walked; the
+  wave gates' script has `wtms0`/`wtms2` legs, and waves 11 and 12 did not run them); (d) the census copies under
+  `CXX1_C6X_MIR=1` (the text run beside the stream to name a difference: `c6x-front`, `-loops`, `-live`, `-recog`,
+  `-emit`, `-body`, `-addr`, `-spell`, `-node`, `-line`, each 0 since round 15).
+- **What the deletion would cost, measured.** Nothing in output: with every function's text sent through the stream
+  passes (the walker's text read by `streamOf` as the selector's is), tests/cases at -O0, -O1 and -O2 is **2,601
+  texts, 0 differ** against m6-x's compiler (the 6 named are the refused cases' carets, the tree's longer name), and
+  **0** functions go to the text pass, the text pipeliner or the text folds; kernels on the stream go from 106
+  functions (2,727 placed entries) to 219 (9,122) - the walker's loops, pipelined on entries to the same text. So no
+  case's output or cycles change, and the walker legs keep their text.
+- **The plan, each step of identical output.** **D1** the three `TEXT*` knobs and `c6xSchedule`'s census copies
+  (`liveCensus`, `checkLiveness`). **D2** the census copies in C6xPipe.cpp and C6xPack.cpp (`checkRecognisers`,
+  `sameLoop`, `sameWindow`, `sameLines`, `checkEmitted`, `checkBody`, `Src::text`, `Code::text`, `sameFacts`, the
+  `c6x-addr`, `-spell`, `-node`, `-fold-edit`, `-loop-edit` comparisons). **D3** `c6xSchedule` without `selected`:
+  every function is a stream where it spells its text; the text passes stand only behind a line the stream does not
+  spell. **D4** the text-only passes deleted - the front (`foldCalls`, `foldMvk`, `foldFrame`, `foldPushPop`,
+  `threadPredicates`, `dropUnnamedLabels`, `predicateArms`, `rotateLoops`, `tidyJumps`), the five folds and
+  `rounds(lines)`, `numberValues(lines)`, `foldAddressing(lines)` with `foldScaledIndex`, `schedule` and the text
+  `foldBranchNops`, the text `pipelineLoops` with `Src::v`, `Loop::body`/`pre`, `spelledLine`, `Code::lines`,
+  `namesOf` (about 840 lines of C6xSched.cpp by their bodies alone, and the pipeliner's line halves); a line the
+  stream does not spell is then refused by name (an internal error), which D3's census shows is 0. **D5** the loop
+  passes compose entries (`LoopText`/`LoopStream` gone; five passes, 526 lines, shared today through views). **D6**
+  the table's readers on operands (`readsAndWrites`, `unitsFor`, `crossings`, `makeNode`), the selector's stream
+  handed in unprinted; `Line`, `lineOf`/`viewOf`/`linesOf` deleted. The walker's text is still read (`parse`,
+  `streamOf`) until M6d removes the walker.
+- **Landed: D1** (7ae77575), **D2** (2366076d, mended 23e061ae - the first did not compile), **D3** (3f29eef7).
+  src/ +75 -237 lines (C6xSched.cpp 2,451 -> 2,423, C6xPipe.cpp 2,679 -> 2,578, C6xPack.cpp 1,496 -> 1,465).
