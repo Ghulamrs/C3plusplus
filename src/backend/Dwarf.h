@@ -37,12 +37,12 @@ struct DwarfFunction {
     int frameBias = 0;
     // A realigned frame's base register as DWARF numbers it (rbx is 3), records at `frameBias - offset` from it; -1 the frame pointer, `-offset`.
     int frameBaseReg = -1;
+    // DW_AT_linkage_name, set by the Mach-O writer: lldb names a member function `::S::f` without it, and drops its `const`.
+    std::string linkage;
     // **A handler funclet, described as cl describes one** (1.29): an S_LPROC32 of its own, `` `f'::`1'::catch$0 ``, typeless, over the
     // parent's frame - `locals` and `blocks` are the parent's, `funclet` says which of its funclets this is (DwarfBlock::funclet). It
     // follows its parent in the list, and a mergeable parent's funclets share its `.debug$S` (CodeView.cpp).
     int funclet = 0;
-    // DW_AT_linkage_name, set by the Mach-O writer: lldb names a member function `::S::f` without it, and drops its `const`.
-    std::string linkage;
 };
 
 struct DwarfGlobal {
