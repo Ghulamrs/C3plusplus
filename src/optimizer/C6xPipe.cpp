@@ -268,6 +268,14 @@ struct Src {
     void rw(std::size_t i, std::vector<std::string> &reads, std::vector<std::string> &writes) const {
         if (typed(i)) readsAndWrites((*s)[i], reads, writes); else readsAndWrites(v[i], reads, writes);
     }
+    // The same by number: the entry's own registers where it is typed, the line's names numbered where not.
+    void regs(std::size_t i, std::vector<int> &reads, std::vector<int> &writes) const {
+        if (typed(i)) { readsAndWrites((*s)[i], reads, writes); return; }
+        std::vector<std::string> r, w;
+        readsAndWrites(v[i], r, w);
+        for (std::size_t k = 0; k < r.size(); k++) reads.push_back(regNumber(r[k]));
+        for (std::size_t k = 0; k < w.size(); k++) writes.push_back(regNumber(w[k]));
+    }
     unsigned units(std::size_t i) const { return typed(i) ? unitsFor((*s)[i]) : unitsFor(v[i]); }
     // The same as masks, and a register operand or the predicate as a number: the entry's own where it is typed.
     void masks(std::size_t i, std::uint64_t &reads, std::uint64_t &writes) const {
@@ -323,7 +331,7 @@ struct Edge { int from, to, delay, dist; const char *why; };
 
 struct Loop {
     std::size_t head = 0, back = 0;
-    std::string label, exitName, P, C, iv, bound;
+    std::string label, exitName;
     bool negated = false, boundConst = false, plusOne = false;
     long boundK = 0;
     std::size_t cmp = 0;
@@ -341,12 +349,11 @@ struct Loop {
     // A counter stepped by more than one: the test stays in the body and the kernel's branch reads it against a bound
     // moved back by the turns in flight, so no turn the loop would not have run is begun. Low word first throughout.
     bool stepped = false, wide = false;
-    std::vector<std::string> ivs, bounds, steps;
-    std::vector<int> ivsR, boundsR, stepsR;     // the same as numbers: a constant step is kNoReg, its value stepK
+    std::vector<int> ivsR, boundsR, stepsR;     // the counter's words, the bound's and the step's: a constant step is kNoReg, its value stepK
     long stepK = 0;
     std::vector<std::size_t> testBody;          // the body's compares that read a bound
-    // **The loop's registers as numbers and masks** (M6c round 12), read from the entries' operands and kept beside the
-    // names while a name has a reader: kNoReg where a constant stands; `pinnedM` is a stepped counter's words, bounds and steps.
+    // **The loop's registers as numbers and masks** (M6c rounds 12 and 13), read from the entries' operands: the counter,
+    // the bound, the predicate and the count, kNoReg where a constant stands; `pinnedM` is a stepped counter's words, bounds and steps.
     int ivR = kNoReg, boundR = kNoReg, PR = kNoReg, CR = kNoReg;
     std::uint64_t usedM = 0, writtenM = 0, predicatedM = 0, rmwFirstM = 0, pinnedM = 0;
     void count(std::uint64_t reads, std::uint64_t writes, bool plain) { usedM |= reads | writes; writtenM |= writes; if (!plain) predicatedM |= writes; }
@@ -441,7 +448,6 @@ struct Loop {
     }
 };
 
-const char *const kCond[] = { "A0", "A1", "A2", "B0", "B1", "B2" };
 const int kCondR[] = { 0, 1, 2, 32, 33, 34 };
 
 // ----- the body read as algebra: what each register holds at its end, as a term over the values it came in with -----
@@ -476,23 +482,31 @@ std::string sumOf(const std::string &a, const std::string &b) {
     return "sum{" + joinSorted(ts) + "}";
 }
 
-// The terms of every register after the body, and the term P is computed from, by one pass in program order.
-std::map<std::string, std::string> evaluateBody(const Src &src, const Loop &L, std::vector<std::string> &lineTerms) {
-    std::map<std::string, std::string> env;
-    auto name = [&](const std::string &r) -> std::string {
-        if (!env.count(r)) env[r] = "s:" + r;
+bool in(const std::vector<int> &v, int r) { return std::find(v.begin(), v.end(), r) != v.end(); }
+
+// The terms of every register after the body, and the term P is computed from, by one pass in program order: keyed by
+// the register's number and walked in the names' order; a term spells a register by its name.
+typedef std::map<int, std::string, ByName> Env;
+Env evaluateBody(const Src &src, const Loop &L, std::vector<std::string> &lineTerms) {
+    Env env;
+    auto name = [&](int r) -> std::string {
+        if (!env.count(r)) env[r] = "s:" + regName(r);
         return env[r];
     };
     std::size_t i = 0;
-    auto term = [&](std::size_t k) -> std::string { long n; return src.number(i, k, n) ? "k:" + src.op(i, k) : name(src.op(i, k)); };
+    auto term = [&](std::size_t k) -> std::string {
+        long n;
+        if (src.number(i, k, n)) return "k:" + src.op(i, k);
+        return src.regAt(i, k) != kNoReg ? name(src.regAt(i, k)) : "s:" + src.op(i, k);
+    };
     for (std::size_t k = 0; k < L.bodyAt.size(); k++) {
         i = L.bodyAt[k];
         const std::string m = src.mnem(i);
-        std::vector<std::string> reads, writes;
-        src.rw(i, reads, writes);
+        std::vector<int> reads, writes;
+        src.regs(i, reads, writes);
         for (std::size_t r = 0; r < reads.size(); r++) name(reads[r]);
         std::string t;
-        const bool unpred = src.pred(i).empty(), plain = unpred && src.ops(i) == 3 && writes.size() == 1 && src.op(i, 2) == writes[0];
+        const bool unpred = src.pred(i).empty(), plain = unpred && src.ops(i) == 3 && writes.size() == 1 && src.regAt(i, 2) == writes[0];
         if (m == "MV" && unpred && src.ops(i) == 2 && writes.size() == 1) t = term(0);
         else if (plain && m == "ADD") t = sumOf(term(0), term(1));
         else if (plain && m == "CMPLT") t = "lt(" + term(0) + "," + term(1) + ")";
@@ -503,7 +517,7 @@ std::map<std::string, std::string> evaluateBody(const Src &src, const Loop &L, s
             std::vector<std::string> ts; ts.push_back(term(0)); ts.push_back(term(1));
             t = (m == "CMPEQ" ? "eq{" : m == "AND" ? "and{" : "or{") + joinSorted(ts) + "}";
         }
-        for (std::size_t w = 0; w < writes.size(); w++) env[writes[w]] = t.empty() || writes.size() > 1 ? "op:" + std::to_string(k) + ":" + writes[w] : t;
+        for (std::size_t w = 0; w < writes.size(); w++) env[writes[w]] = t.empty() || writes.size() > 1 ? "op:" + std::to_string(k) + ":" + regName(writes[w]) : t;
         lineTerms.push_back(t.empty() || writes.size() != 1 ? "" : env[writes[0]]);
     }
     return env;
@@ -517,59 +531,66 @@ bool recogniseStepped(const Src &src, Loop &L, std::string &why, const std::stri
     auto no = [&](const char *r) { if (tracing() > 1) why += std::string(" [stepped: ") + r + "]"; return false; };
     L.liveExit = src.v[L.back + 1].liveIn;
     if (L.liveExit & Loop::bit(L.PR)) return no("the predicate lives past the loop");
-    std::map<std::string, int> writers, readers;
-    std::map<std::string, std::size_t> writerAt;
+    std::map<int, int> writers;
+    std::map<int, std::size_t> writerAt;
     for (std::size_t k = 0; k < L.bodyAt.size(); k++) {
-        std::vector<std::string> reads, writes;
-        src.rw(L.bodyAt[k], reads, writes);
-        for (std::size_t r = 0; r < reads.size(); r++) readers[reads[r]]++;
+        std::vector<int> reads, writes;
+        src.regs(L.bodyAt[k], reads, writes);
         for (std::size_t w = 0; w < writes.size(); w++) { writers[writes[w]]++; writerAt[writes[w]] = k; }
     }
-    if (writers[L.P] != 1) return no("the predicate is written more than once");
+    if (writers[L.PR] != 1) return no("the predicate is written more than once");
     std::vector<std::string> lineTerms;
-    std::map<std::string, std::string> env = evaluateBody(src, L, lineTerms);
+    Env env = evaluateBody(src, L, lineTerms);
     // The steps: a register whose end term is itself plus one invariant (lo), and one that adds a carry of lo's sum (hi).
-    auto invariant = [&](const std::string &t, std::string &reg) -> bool {
-        if (t.compare(0, 2, "k:") == 0) { reg = t.substr(2); return true; }
+    // An invariant term: a constant (reg kNoReg, its value k) or the entry value of a register the loop never writes.
+    auto invariant = [&](const std::string &t, int &reg, long &k) -> bool {
+        reg = kNoReg; k = 0;
+        if (t.compare(0, 2, "k:") == 0) { k = std::atol(t.c_str() + 2); return true; }
         if (t.compare(0, 2, "s:") != 0) return false;
-        reg = t.substr(2);
-        return sideOf(reg) && !writers.count(reg);
+        reg = regNumber(t.substr(2));
+        return reg != kNoReg && !writers.count(reg);
     };
-    std::string lo, slo, hi, shi;
-    for (std::map<std::string, std::string>::const_iterator it = env.begin(); it != env.end() && lo.empty(); ++it) {
-        const std::string &r = it->first, &t = it->second;
-        if (!sideOf(r) || !writers.count(r) || t.compare(0, 4, "sum{") != 0) continue;
-        const std::string a = "s:" + r;
-        if (t == sumOf(a, "k:0") || env[L.P].find(t) == std::string::npos) continue;   // the counter the test reads
+    int lo = kNoReg, slo = kNoReg, hi = kNoReg, shi = kNoReg;
+    long sloK = 0;
+    std::string sloTerm;
+    for (Env::const_iterator it = env.begin(); it != env.end() && lo == kNoReg; ++it) {
+        const int r = it->first;
+        const std::string &t = it->second;
+        if (!writers.count(r) || t.compare(0, 4, "sum{") != 0) continue;
+        const std::string a = "s:" + regName(r);
+        if (t == sumOf(a, "k:0") || env[L.PR].find(t) == std::string::npos) continue;   // the counter the test reads
         std::vector<std::string> ts = splitTop(t.substr(4, t.size() - 5));
         if (ts.size() != 2) continue;
-        std::string x = ts[0], y = ts[1], s;
+        std::string x = ts[0], y = ts[1];
         const std::string other = x == a ? y : y == a ? x : "";
-        if (other.empty() || !invariant(other, s) || (s != r && s == "0")) continue;
-        lo = r; slo = s;
+        int s = kNoReg; long k = 0;
+        if (other.empty() || !invariant(other, s, k) || (s == kNoReg && k == 0)) continue;
+        lo = r; slo = s; sloK = k; sloTerm = other;
     }
-    if (lo.empty()) return no("no counter stepped by an invariant");
-    const std::string loTerm = env[lo], carry = "ltu(" + loTerm + "," + (isNumber(slo) ? "k:" : "s:") + slo + ")";
-    for (std::map<std::string, std::string>::const_iterator it = env.begin(); it != env.end() && hi.empty(); ++it) {
-        const std::string &r = it->first, &t = it->second;
-        if (!sideOf(r) || r == lo || !writers.count(r) || t.compare(0, 4, "sum{") != 0 || t.find(carry) == std::string::npos) continue;
-        std::string rest = sumOf("s:" + r, carry), s;
+    if (lo == kNoReg) return no("no counter stepped by an invariant");
+    const std::string loTerm = env[lo], carry = "ltu(" + loTerm + "," + sloTerm + ")";
+    for (Env::const_iterator it = env.begin(); it != env.end() && hi == kNoReg; ++it) {
+        const int r = it->first;
+        const std::string &t = it->second;
+        if (r == lo || !writers.count(r) || t.compare(0, 4, "sum{") != 0 || t.find(carry) == std::string::npos) continue;
+        const std::string self = "s:" + regName(r), rest = sumOf(self, carry);
         // t is sum{s:r, carry, step}: the step is what remains when those two are taken out.
         std::string cand;
         std::vector<std::string> parts = splitTop(t.substr(4, t.size() - 5));
         if (parts.size() != 3) continue;
-        for (std::size_t p = 0; p < parts.size(); p++) if (parts[p] != "s:" + r && parts[p] != carry) cand = parts[p];
-        if (cand.empty() || !invariant(cand, s) || sumOf(rest, cand) != t) continue;
+        for (std::size_t p = 0; p < parts.size(); p++) if (parts[p] != self && parts[p] != carry) cand = parts[p];
+        int s = kNoReg; long k = 0;
+        if (cand.empty() || !invariant(cand, s, k) || sumOf(rest, cand) != t) continue;
         hi = r; shi = s;
     }
-    L.wide = !hi.empty();
-    if (L.wide && (isNumber(slo) != isNumber(shi))) return no("the two steps are not both registers or both constants");
+    L.wide = hi != kNoReg;
+    if (L.wide && ((slo == kNoReg) != (shi == kNoReg))) return no("the two steps are not both registers or both constants");
     // The predicate: the stepped value against a bound the loop never writes, one or two words, signed.
-    const std::string p = env[L.P], hiTerm = L.wide ? env[hi] : "";
-    if (tracing() > 2) std::fprintf(stderr, "  stepped: lo %s + %s, hi %s + %s, %s = %s\n", lo.c_str(), slo.c_str(), hi.c_str(), shi.c_str(), L.P.c_str(), p.c_str());
-    std::string nlo, nhi;
+    const std::string p = env[L.PR], hiTerm = L.wide ? env[hi] : "";
+    if (tracing() > 2) std::fprintf(stderr, "  stepped: lo %s + %s, hi %s, %s = %s\n", regName(lo).c_str(), sloTerm.c_str(), hiTerm.c_str(), regName(L.PR).c_str(), p.c_str());
+    int nlo = kNoReg, nhi = kNoReg;
     bool less = false;                    // the loop runs while iv < n; else while iv <= n
-    auto boundOf = [&](const std::string &t, std::string &reg) -> bool { return t.compare(0, 2, "s:") == 0 && invariant(t, reg) && reg != lo && reg != hi; };
+    auto boundOf = [&](const std::string &t, int &reg) -> bool { long k; return t.compare(0, 2, "s:") == 0 && invariant(t, reg, k) && reg != lo && reg != hi; };
     if (!L.wide) {
         if (p.compare(0, 3, "lt(") != 0) return no("the predicate is not a compare");
         std::vector<std::string> xy = splitTop(p.substr(3, p.size() - 4));
@@ -580,23 +601,24 @@ bool recogniseStepped(const Src &src, Loop &L, std::string &why, const std::stri
         else return no("the compare is not of the stepped counter against an invariant");
     } else {
         // or{and{eq{hi',nhi},ltu(lo',nlo)},lt(hi',nhi)} for iv < n; the operands the other way round for n < iv.
-        for (int dir = 0; dir < 2 && nlo.empty(); dir++) {
-            for (std::map<std::string, std::string>::const_iterator a = env.begin(); a != env.end() && nlo.empty(); ++a) {
-                std::string nl, nh;
-                if (!boundOf("s:" + a->first, nl) || a->first == lo || a->first == hi) continue;
-                for (std::map<std::string, std::string>::const_iterator b = env.begin(); b != env.end() && nlo.empty(); ++b) {
-                    if (!boundOf("s:" + b->first, nh) || b->first == a->first) continue;
-                    const std::string NL = "s:" + nl, NH = "s:" + nh;
+        bool found = false;
+        for (int dir = 0; dir < 2 && !found; dir++) {
+            for (Env::const_iterator a = env.begin(); a != env.end() && !found; ++a) {
+                int nl = kNoReg, nh = kNoReg;
+                if (!boundOf("s:" + regName(a->first), nl) || a->first == lo || a->first == hi) continue;
+                for (Env::const_iterator b = env.begin(); b != env.end() && !found; ++b) {
+                    if (!boundOf("s:" + regName(b->first), nh) || b->first == a->first) continue;
+                    const std::string NL = "s:" + regName(nl), NH = "s:" + regName(nh);
                     std::vector<std::string> e; e.push_back(hiTerm); e.push_back(NH);
                     std::string ltu = dir == 0 ? "ltu(" + loTerm + "," + NL + ")" : "ltu(" + NL + "," + loTerm + ")";
                     std::string lt = dir == 0 ? "lt(" + hiTerm + "," + NH + ")" : "lt(" + NH + "," + hiTerm + ")";
                     std::vector<std::string> an; an.push_back("eq{" + joinSorted(e) + "}"); an.push_back(ltu);
                     std::vector<std::string> o; o.push_back("and{" + joinSorted(an) + "}"); o.push_back(lt);
-                    if (p == "or{" + joinSorted(o) + "}") { nlo = nl; nhi = nh; less = dir == 0; }
+                    if (p == "or{" + joinSorted(o) + "}") { nlo = nl; nhi = nh; less = dir == 0; found = true; }
                 }
             }
         }
-        if (nlo.empty()) return no("the two-word compare is not of the stepped counter against an invariant");
+        if (!found) return no("the two-word compare is not of the stepped counter against an invariant");
     }
     // `[P] B` with P = iv < n runs while iv < n; `[!P] B` with P = n < iv runs while iv <= n; the other two count down.
     if (less == L.negated) return no("the branch sense runs the loop while the test fails");
@@ -604,55 +626,54 @@ bool recogniseStepped(const Src &src, Loop &L, std::string &why, const std::stri
     // The lines that feed P, by the last writer before each read; the compares reading a bound must be among them,
     // must compare the stepped counter's term, and must be read by nothing else - they are the lines the kernel's
     // moved bound is substituted into.
-    auto lastWriterBefore = [&](const std::string &x, std::size_t k) -> long {
+    auto lastWriterBefore = [&](int x, std::size_t k) -> long {
         for (std::size_t j = k; j-- > 0;) {
-            std::vector<std::string> reads, writes;
-            src.rw(L.bodyAt[j], reads, writes);
-            if (has(writes, x)) return static_cast<long>(j);
+            std::vector<int> reads, writes;
+            src.regs(L.bodyAt[j], reads, writes);
+            if (in(writes, x)) return static_cast<long>(j);
         }
         return -1;
     };
     std::set<std::size_t> feeding;
-    std::vector<std::size_t> work(1, writerAt[L.P]);
+    std::vector<std::size_t> work(1, writerAt[L.PR]);
     while (!work.empty()) {
         std::size_t k = work.back(); work.pop_back();
         if (!feeding.insert(k).second) continue;
-        std::vector<std::string> reads, writes;
-        src.rw(L.bodyAt[k], reads, writes);
+        std::vector<int> reads, writes;
+        src.regs(L.bodyAt[k], reads, writes);
         for (std::size_t r = 0; r < reads.size(); r++) { long w = lastWriterBefore(reads[r], k); if (w >= 0) work.push_back(static_cast<std::size_t>(w)); }
     }
     std::vector<std::size_t> tree;
     for (std::size_t k = 0; k < L.bodyAt.size(); k++) {
         const std::size_t i = L.bodyAt[k];
-        std::vector<std::string> reads, writes;
-        src.rw(i, reads, writes);
-        const bool rlo = has(reads, nlo), rhi = L.wide && has(reads, nhi);
+        std::vector<int> reads, writes;
+        src.regs(i, reads, writes);
+        const bool rlo = in(reads, nlo), rhi = L.wide && in(reads, nhi);
         if (!rlo && !rhi) continue;
         if (!feeding.count(k) || src.ops(i) != 3 || !src.pred(i).empty() || src.mnem(i).compare(0, 3, "CMP") != 0 || writes.size() != 1) return no("a bound is read outside the test");
-        if (src.op(i, 2) == nlo || src.op(i, 2) == nhi) return no("the test writes a bound");
-        const std::string &lt = lineTerms[k], want = rlo ? loTerm : hiTerm, bound = "s:" + (rlo ? nlo : nhi);
+        const int dst = src.regAt(i, 2);
+        if (dst != kNoReg && (dst == nlo || dst == nhi)) return no("the test writes a bound");
+        const std::string &lt = lineTerms[k], want = rlo ? loTerm : hiTerm, bound = "s:" + regName(rlo ? nlo : nhi);
         if (lt.empty() || lt.find(want) == std::string::npos || lt.find(bound) == std::string::npos) return no("the test reads the counter before its step");
         for (std::size_t k2 = k + 1; k2 < L.bodyAt.size(); k2++) {
-            std::vector<std::string> r2, w2;
-            src.rw(L.bodyAt[k2], r2, w2);
-            if (has(r2, writes[0]) && !feeding.count(k2)) return no("a bound's compare is read outside the test");
-            if (has(w2, writes[0])) break;
+            std::vector<int> r2, w2;
+            src.regs(L.bodyAt[k2], r2, w2);
+            if (in(r2, writes[0]) && !feeding.count(k2)) return no("a bound's compare is read outside the test");
+            if (in(w2, writes[0])) break;
         }
         tree.push_back(k);
     }
     if (tree.empty()) return no("no compare reads the bound");
-    if (isNumber(nlo) || (L.wide && isNumber(nhi))) return no("a constant bound");
-    if (isNumber(slo) && L.wide) return no("a constant step on a two-word counter");
-    if (isNumber(slo) && std::atol(slo.c_str()) <= 0) return no("a step that is not positive");
+    if (slo == kNoReg && L.wide) return no("a constant step on a two-word counter");
+    if (slo == kNoReg && sloK <= 0) return no("a step that is not positive");
     L.stepped = true;
-    L.iv = lo; L.bound = nlo; L.cmp = L.bodyAt[writerAt[L.P]];
-    L.ivR = regNumber(lo); L.boundR = regNumber(nlo); L.CR = kNoReg;
-    L.ivs.push_back(lo); L.bounds.push_back(nlo); L.steps.push_back(slo);
-    if (L.wide) { L.ivs.push_back(hi); L.bounds.push_back(nhi); L.steps.push_back(shi); }
-    for (std::size_t w = 0; w < L.ivs.size(); w++) { L.ivsR.push_back(regNumber(L.ivs[w])); L.boundsR.push_back(regNumber(L.bounds[w])); L.stepsR.push_back(regNumber(L.steps[w])); }
-    L.stepK = isNumber(slo) ? std::atol(slo.c_str()) : 0;
-    L.usedM = L.writtenM = L.predicatedM = 0;
-    L.pinnedM = maskOf(L.ivs) | maskOf(L.bounds) | maskOf(L.steps);
+    L.cmp = L.bodyAt[writerAt[L.PR]];
+    L.ivR = lo; L.boundR = nlo; L.CR = kNoReg;
+    L.ivsR.push_back(lo); L.boundsR.push_back(nlo); L.stepsR.push_back(slo);
+    if (L.wide) { L.ivsR.push_back(hi); L.boundsR.push_back(nhi); L.stepsR.push_back(shi); }
+    L.stepK = sloK;
+    L.usedM = L.writtenM = L.predicatedM = L.pinnedM = 0;
+    for (std::size_t w = 0; w < L.ivsR.size(); w++) L.pinnedM |= Loop::bit(L.ivsR[w]) | Loop::bit(L.boundsR[w]) | Loop::bit(L.stepsR[w]);
     for (std::size_t k = 0; k < L.bodyAt.size(); k++) {
         const std::size_t i = L.bodyAt[k];
         std::uint64_t rm = 0, wm = 0;
@@ -673,7 +694,6 @@ bool recognise(const Src &src, std::size_t back, const std::set<std::string> &la
     if (bpred.empty() || src.ops(back) == 0 || labels.count(src.op(back, 0)) == 0) { why = "no conditional branch to a label"; return false; }
     L.label = src.op(back, 0);
     if (L.label.size() > 5 && L.label.compare(L.label.size() - 5, 5, "$fill") == 0) { why = "a fill loop, memory-bound, kept as written"; return false; }
-    L.P = bpred[0] == '!' ? bpred.substr(1) : bpred;
     L.PR = src.predReg(back);
     L.negated = bpred[0] == '!';
     std::size_t h = 0; bool found = false;
@@ -691,34 +711,33 @@ bool recognise(const Src &src, std::size_t back, const std::set<std::string> &la
         if (!src.instr(i)) { why = "a directive inside"; return false; }
         if (isBranch(src.mnem(i))) { why = "a branch inside"; return false; }
         if (src.units(i) == 0) { why = "an instruction of no known unit: " + src.mnem(i); return false; }
-        std::vector<std::string> reads, writes;
-        src.rw(i, reads, writes);
-        if (has(writes, "A15") || has(writes, "B15")) { why = "the stack pointer is written"; return false; }
+        std::vector<int> reads, writes;
+        src.regs(i, reads, writes);
+        if (in(writes, 15) || in(writes, 47)) { why = "the stack pointer is written"; return false; }
         L.bodyAt.push_back(i);
     }
     if (L.bodyAt.size() < 2 || L.bodyAt.size() > 64) { why = "too small or too large"; return false; }
     // The compare: the last writer of P, of a form the count can be read from.
     bool cmpFound = false;
     for (std::size_t k = L.bodyAt.size(); k-- > 0;) {
-        std::vector<std::string> reads, writes;
-        src.rw(L.bodyAt[k], reads, writes);
-        if (has(writes, L.P)) { L.cmp = L.bodyAt[k]; cmpFound = true; break; }
+        std::vector<int> reads, writes;
+        src.regs(L.bodyAt[k], reads, writes);
+        if (in(writes, L.PR)) { L.cmp = L.bodyAt[k]; cmpFound = true; break; }
     }
     if (!cmpFound) { why = "the predicate is not written in the loop"; return false; }
     const std::size_t c = L.cmp;
     const std::string cm = src.mnem(c);
     bool lt = cm == "CMPLT" || cm == "CMPLTU", gt = cm == "CMPGT" || cm == "CMPGTU";
-    if ((!lt && !gt) || src.ops(c) != 3 || !src.pred(c).empty() || src.op(c, 2) != L.P) return recogniseStepped(src, L, why, "the test is not a compare of two");
+    if ((!lt && !gt) || src.ops(c) != 3 || !src.pred(c).empty() || src.regAt(c, 2) != L.PR) return recogniseStepped(src, L, why, "the test is not a compare of two");
     // Loops while i < n: [P] with i < n or n > i; while i <= n: [!P] with i > n or n < i.
     const std::size_t ivAt = lt == !L.negated ? 0 : 1, boundAt = 1 - ivAt;
-    L.iv = src.op(c, ivAt); L.bound = src.op(c, boundAt);
     L.ivR = src.regAt(c, ivAt); L.boundR = src.regAt(c, boundAt);
     L.plusOne = L.negated;
     long k0 = 0;
     const bool boundNumber = src.number(c, boundAt, k0);
     if (boundNumber) { L.boundConst = true; L.boundK = k0; }
     else if (!src.reg(c, boundAt)) { why = "the bound is not a register"; return false; }
-    if (!src.reg(c, ivAt) || (L.boundConst && L.iv != src.op(c, 1))) { why = "the counter is not a register"; return false; }
+    if (!src.reg(c, ivAt) || (L.boundConst && L.ivR != src.regAt(c, 1))) { why = "the counter is not a register"; return false; }
     // P is read by the branch alone and is dead at the exit; i is stepped once, by one, before the test.
     L.liveExit = v[back + 1].liveIn;
     if (L.liveExit & Loop::bit(L.PR)) { why = "the predicate lives past the loop"; return false; }
@@ -726,23 +745,23 @@ bool recognise(const Src &src, std::size_t back, const std::set<std::string> &la
     for (std::size_t k = 0; k < L.bodyAt.size(); k++) {
         const std::size_t i = L.bodyAt[k];
         const bool plain = src.pred(i).empty();
-        std::vector<std::string> reads, writes;
-        src.rw(i, reads, writes);
-        if (has(reads, L.P) && pWrites == 0) { why = "the predicate's test is read in the loop"; return false; }
-        if (has(writes, L.iv)) {
+        std::vector<int> reads, writes;
+        src.regs(i, reads, writes);
+        if (in(reads, L.PR) && pWrites == 0) { why = "the predicate's test is read in the loop"; return false; }
+        if (in(writes, L.ivR)) {
             ivWrites++;
             long one = 0;
-            bool step = src.mnem(i) == "ADD" && plain && src.ops(i) == 3 && src.op(i, 2) == L.iv &&
-                        ((src.number(i, 0, one) && one == 1 && src.op(i, 1) == L.iv) || (src.number(i, 1, one) && one == 1 && src.op(i, 0) == L.iv));
+            bool step = src.mnem(i) == "ADD" && plain && src.ops(i) == 3 && src.regAt(i, 2) == L.ivR &&
+                        ((src.number(i, 0, one) && one == 1 && src.regAt(i, 1) == L.ivR) || (src.number(i, 1, one) && one == 1 && src.regAt(i, 0) == L.ivR));
             if (!step || i > L.cmp) return recogniseStepped(src, L, why, "the counter is not stepped by one before the test");
         }
         long kb = 0;
-        if (!boundNumber && has(writes, L.bound) && i < L.cmp) {
+        if (!boundNumber && in(writes, L.boundR) && i < L.cmp) {
             boundWrites++;
             if (src.mnem(i) == "MVK" && plain && src.ops(i) == 2 && src.number(i, 0, kb)) { L.boundConst = true; L.boundK = kb; }
             else L.boundConst = false;
         }
-        if (has(writes, L.P) && i != L.cmp) pWrites++;
+        if (in(writes, L.PR) && i != L.cmp) pWrites++;
         std::uint64_t rm = 0, wm = 0;
         src.masks(i, rm, wm);
         L.count(rm, wm, plain);
@@ -750,10 +769,10 @@ bool recognise(const Src &src, std::size_t back, const std::set<std::string> &la
     if (ivWrites != 1) { why = "the counter is stepped " + std::to_string(ivWrites) + " times"; return false; }
     if (boundWrites > 0 && !L.boundConst) { why = "the bound is written in the loop"; return false; }
     // The kernel's counter: P itself where the compare alone writes it, else a condition register the loop leaves alone.
-    if (pWrites == 0) { L.C = L.P; L.CR = L.PR; }
-    else for (std::size_t k = 0; k < 6 && L.C.empty(); k++)
-        if (!((L.usedM | L.liveExit) & Loop::bit(kCondR[k])) && kCondR[k] != L.PR) { L.C = kCond[k]; L.CR = kCondR[k]; }
-    if (L.C.empty()) { why = "no condition register for the count"; return false; }
+    if (pWrites == 0) L.CR = L.PR;
+    else for (std::size_t k = 0; k < 6 && L.CR == kNoReg; k++)
+        if (!((L.usedM | L.liveExit) & Loop::bit(kCondR[k])) && kCondR[k] != L.PR) L.CR = kCondR[k];
+    if (L.CR == kNoReg) { why = "no condition register for the count"; return false; }
     for (std::size_t k = 0; k < L.bodyAt.size(); k++) {
         const std::size_t i = L.bodyAt[k];
         if (i != L.cmp && !(src.mnem(i) == "MV" && src.ops(i) == 2 && src.op(i, 0) == src.op(i, 1))) L.take(src, i);
@@ -1213,19 +1232,8 @@ void foldBodyCopies(Loop &L) {
 
 // CXX1_C6X_MIR=1: the body's entries against its lines after an edit (`c6x-body`); a loop on the stream whose body
 // is not all modelled, and so is read from its lines, is named too (`c6x-loop-lines`).
-// CXX1_C6X_MIR=1: `c6x-reg` names a loop one of whose numbers is not its name's (the sets went once they held at 0).
-void checkRegisters(const Loop &L, const char *at) {
-    const char *what = regNumber(L.iv) != L.ivR ? "iv" : regNumber(L.bound) != L.boundR ? "bound" : regNumber(L.P) != L.PR ? "P" :
-        regNumber(L.C) != L.CR ? "C" : nullptr;
-    bool words = L.ivsR.size() == L.ivs.size() && L.boundsR.size() == L.bounds.size() && L.stepsR.size() == L.steps.size();
-    for (std::size_t w = 0; words && w < L.ivs.size(); w++) words = regNumber(L.ivs[w]) == L.ivsR[w] && regNumber(L.bounds[w]) == L.boundsR[w] && regNumber(L.steps[w]) == L.stepsR[w];
-    if (!what && !words) what = "words";
-    if (what) std::fprintf(stderr, "c6x-reg: %s %s %s\n", at, L.label.c_str(), what);
-}
-
 void checkBody(const Loop &L, const char *at) {
     static const bool check = std::getenv("CXX1_C6X_MIR") != nullptr;
-    if (check) checkRegisters(L, at);
     if (!check || !L.onStream) return;
     if (L.bodyM.empty() && !L.body.empty()) { std::fprintf(stderr, "c6x-loop-lines: %s %s\n", at, L.label.c_str()); return; }
     if (L.bodyM.size() != L.body.size()) { std::fprintf(stderr, "c6x-body: %s %s sizes\n", at, L.label.c_str()); return; }
@@ -1369,7 +1377,7 @@ bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) 
         Line &l = L.body[L.testBody[k]];
         std::vector<std::string> ops = l.ops;
         for (std::size_t o = 0; o + 1 < ops.size(); o++)
-            for (std::size_t w = 0; w < L.bounds.size(); w++) if (ops[o] == L.bounds[w]) {
+            for (std::size_t w = 0; w < L.boundsR.size(); w++) if (regNumber(ops[o]) == L.boundsR[w]) {
                 ops[o] = regName(moved[w]);
                 if (!L.bodyM.empty()) L.bodyM[L.testBody[k]].op[o] = R(moved[w]);
             }
@@ -2405,11 +2413,11 @@ bool sameLines(const std::vector<Line> &a, const std::vector<Line> &b) {
     return true;
 }
 bool sameLoop(const Loop &a, const Loop &b) {
-    return a.head == b.head && a.back == b.back && a.label == b.label && a.exitName == b.exitName && a.P == b.P && a.C == b.C &&
-           a.iv == b.iv && a.bound == b.bound && a.negated == b.negated && a.boundConst == b.boundConst && a.plusOne == b.plusOne &&
+    return a.head == b.head && a.back == b.back && a.label == b.label && a.exitName == b.exitName && a.PR == b.PR && a.CR == b.CR &&
+           a.ivR == b.ivR && a.boundR == b.boundR && a.negated == b.negated && a.boundConst == b.boundConst && a.plusOne == b.plusOne &&
            a.boundK == b.boundK && a.cmp == b.cmp && a.bodyAt == b.bodyAt && sameLines(a.body, b.body) && sameLines(a.pre, b.pre) &&
            a.usedM == b.usedM && a.writtenM == b.writtenM && a.predicatedM == b.predicatedM && a.liveExit == b.liveExit &&
-           a.stepped == b.stepped && a.wide == b.wide && a.ivs == b.ivs && a.bounds == b.bounds && a.steps == b.steps && a.testBody == b.testBody;
+           a.stepped == b.stepped && a.wide == b.wide && a.ivsR == b.ivsR && a.boundsR == b.boundsR && a.stepsR == b.stepsR && a.stepK == b.stepK && a.testBody == b.testBody;
 }
 bool sameWindow(const Window &a, const Window &b) {
     if (a.head != b.head || a.back != b.back || a.label != b.label || a.backPred != b.backPred || a.P != b.P || !sameLines(a.body, b.body) ||
