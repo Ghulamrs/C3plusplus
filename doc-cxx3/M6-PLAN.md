@@ -374,3 +374,51 @@ by case against round 5 (`m6d-cmp.sh`), the text no longer identical by design.
 - tests/tms6747.sh: a run by case name stopped at `SHARD: unbound variable` (set -u) and ran nothing; SHARD defaults.
 - member-pointer-condition's `.notarget` (its only line was tms6747's) is gone; member-pointer-null-neighbours holds
   nullptr and 0 assigned, returned, passed and compared, and a `for`/`do` ended by a null, with clang's output.
+
+### M6b, round 3 (homes on both files, read where they stand), 2026-11-14, lane m6i
+
+- **Landed** (`b3d26f1e`, from m5-wave3 7995cf0d): the design's points (1)-(3) in their first form, in `ssaAssign` and
+  on the instruction as it is built. src/ +90 -20 lines (`C6xSelect.cpp` 724 -> 779, `C6xMir.{h,cpp}` +10, `Tms6747.h` +3).
+  - **B24-B31 are homes** at -O1 and up (`kHome` is 32 registers; -O0 keeps the 24 and its text).
+  - **A value's file** (`wants`): a pointer parameter keeps its arriving register's file (B4, B6, B8 - point 2, a base
+    on B is a load on `.D2`); a load and an address step take their base's (point 3, `.D2` with the T2 path); anything
+    else the file of most of its homed operands, A on a tie (point 1). The pick is narrowed to that file where it has
+    a free register, and is otherwise as round 5 wrote it.
+  - **An instruction reads and writes a home where it stands** (`ssaRead`, `ssaPut`): built over the homes of either
+    file and kept where `c6x::legal` passes it - C6xSched's own `crossings` and `unitsFor`, no second table - else its
+    B sources go through A4 and A6 and its result through A4, as before. Loads and stores take either file directly.
+  - `CXX1_C6X_NOSIDES=1` writes round 2's text whole, so the baseline is this compiler's.
+- **vm6747 cycles, -O2, the whole suite** (Linux, ~/m6i, three shards each way, `boxkit/m6i-cmp.sh`; baseline
+  `CXX1_C6X_NOSIDES=1`, 192.174 M - round 1's 192.2 M):
+
+  | | cases | round 3 | round 2 | better | equal | worse |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | all | 811 | **192.009 M** | 192.174 M | 53 (by 0.203 M) | 675 | 83 (by 0.038 M) |
+
+  | the six loops | round 3 | round 2 |
+  | --- | --- | --- |
+  | stack-probe | 534,479 | 534,479 |
+  | local-zero-init-large | 661,890 | 661,890 |
+  | pipelined-data-exit | 1,414,163 | 1,458,291 |
+  | fill-stores | 1,049,849 | 1,049,849 |
+  | array-loop-member-copy | 3,969,492 | 3,967,524 |
+  | array-loop-static | 1,934,403 | 2,008,094 |
+
+  Best: map-set-node-stability -75,586, array-loop-static -73,691, pipelined-data-exit -44,128. Worst: array-loop-throw
+  +15,808 (0.6%), array-loop-local +6,676, vector-erase-destroys +2,869, array-loop-member-copy +1,968.
+- **What the first form taught** (shard 1, every parameter keeping its arriving file): 129.059 M against 129.032 M,
+  better 21, worse 39. ssa-fold-access showed why: a count arriving in B4 stayed on B, each of its A readers took 1X,
+  and two of them no longer shared a cycle (`SHL B25, 2, A19` alone, where `ADD || SHL` stood). So only a pointer
+  keeps the B file - a base is read by `.D2`, not over a cross path - and shard 1 is 129.054 M, better 17, worse 29:
+  the rest of that loss is array-loop-throw and array-loop-local, where a second base on B gives six-wide packets and
+  a longer prologue. The cross path is the resource the pick does not count yet.
+- **Gates.** Linux -O2 `tms6747.sh SIM=0`, three shards: 814 passed, 4 failed - noexcept-terminates,
+  ssa-noexcept-throw, noexcept-terminates-callee and static-aggregate-runtime-list (`thread_local`, refused) - the same
+  four under `CXX1_C6X_NOSIDES=1`. Windows (work\m6i, b3d26f1e's tree, against work\w3g): cl /W4 /WX clean; text and
+  diagnostics of tests/cases at -O0 and -O2, 2,446 outputs, under `CXX1_C6X_NOSIDES=1` 0 differ and under
+  `CXX1_C6X_WALKER=1` 0 differ; tests/g-same.sh 867 same, 0 differ, 0 broken; exclusions 0 uncited 0 stale, comments
+  0 over, memory gate rc 0, ide/generate.py --check up to date.
+- **Owed:** the Linux chain past the hour (`~/m6i-gate.out`: static, g-same, identical.sh with `CXX1_C6X_WALKER=1`
+  against ~/w3g, -O0 in three shards); the pick counting 1X/2X per turn (a B value with two A readers in one turn
+  goes back to A) and `.M` pressure, neither begun; the unrolled turns alternating files, which needs the base on
+  both - the stepped pointer of point (2); sim6747, asm6x.sh, make test (the coordinator's).
