@@ -1321,5 +1321,17 @@ until M6d, and Compiler++ and the CCS samples are measured before D4 (lane m6z).
   `computeLiveness` and `Line`'s `liveIn`/`liveOut` are gone; a blank pending is answered from the lines' `liveFacts`
   as before. **Not landed**: the five passes still read `t.v` as `Line`s (`blank`/`set`/`apply` keep the entries in
   step); composing entries is D5's rest, with D6.
-- src/ +108 -148 lines (C6xSched.cpp 1,356 -> 1,308, C6xPack.cpp 1,452 -> 1,447, C6xModel.h 155 -> 143, ParserInit.cpp
+- src/ +108 -148 lines at 64416d2f, the same at 17f209c8 (C6xSched.cpp 1,356 -> 1,308, C6xPack.cpp 1,452 -> 1,447, C6xModel.h 155 -> 143, ParserInit.cpp
   1,910 -> 1,934, Parser.h +1).
+- **Gate.** Windows, cl /W4 /WX clean at 64416d2f (work\m6aa2) and the final 17f209c8 (m6aa3), against round 17's
+  compiler (work\m6z3), tests/cases at -O0, -O1, -O2 by md5: plain 2,598 texts same, 1,062 refused alike, 9 differ -
+  the 6 path-length carets and static-reference-to-temporary's three (its walked init now stores its scalars in
+  `_ZGR`; the case is `.notarget` for tms6747); under `CXX1_C6X_WALKER=1` 15 differ - the carets and the three
+  static-reference cases at each level, the fix; census -O2 0 to any text pass, 6,835 selected, kernels 219 / 9,122;
+  exclusions 129 sites 0 uncited 0 stale, comments 0 over, memory gate rc 0 (1,056 at 64416d2f, mended by
+  `make_owned` in 17f209c8), generate up to date. Linux (~/m6aa, ~/m6z with the changed files laid over; REF main
+  85fe99fe's compiler in ~/w7ref), g++ -Werror clean at 64416d2f: `identical.sh ARCHS=tms6747` -O0 and -O2 1,736
+  compared, 2 differ (static-reference-to-temporary, as above); -O0 -g 868 compared, 851 normalised, 1 differ (the
+  same case); tests/tms6747.sh SHARD=k/3 CYCLES=1 SIM=0 at -O2 **814 passed, 0 failed, 192,009,106 cycles**
+  (unchanged); **walker legs** `CXX1_C6X_WALKER=1` at -O2 **814 passed, 0 failed** (round 17: 812/2);
+  g-same 867 same, 0 differ, 0 broken; asm6x.sh 833 objects, 0 failed at -O0

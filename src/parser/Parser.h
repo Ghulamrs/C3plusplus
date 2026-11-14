@@ -1478,7 +1478,6 @@ private:
                              std::vector<GlobalPiece> &pieces, bool &hasInit,
                              std::vector<StmtPtr> *into, bool local = false);
     void staticTemporary(const Declared &d, const std::string &symbol, bool local);
-    ExprPtr staticScalarTemporary(const Declared &d, const std::string &temp, ExprPtr init);
 
     // Whether a call to this function has to be given an object. A member's
     // `owner` used to answer it on its own, and a static member is exactly the
@@ -2136,7 +2135,7 @@ private:
     ExprPtr globalRef(const std::string &name);
     ExprPtr useReference(ExprPtr e);
     ExprPtr bindReference(const Type *ref, ExprPtr init, std::size_t pos,
-                          const std::string &what);
+                          const std::string &what, const std::string &object = std::string());
     int refTemps_ = 0;
 
     struct InitStep {

@@ -2411,7 +2411,7 @@ ExprPtr Parser::useReference(ExprPtr e) {
 // address of the initialiser. The rules here are the whole of what makes a
 // reference different from a pointer that is always dereferenced.
 ExprPtr Parser::bindReference(const Type *ref, ExprPtr init, std::size_t pos,
-                              const std::string &what) {
+                              const std::string &what, const std::string &object) {
     const Type *referent = ref->referent();
     const Type *it = init->type();
 
@@ -2604,15 +2604,16 @@ ExprPtr Parser::bindReference(const Type *ref, ExprPtr init, std::size_t pos,
     checkAssignable(*init, referent, pos, what);
     const Type *store = referent->unqualified();
     const Type *addrType = types_.pointerTo(referent);
-    int slot = allocateFrameSlot(store);
+    // `object` names a static one to copy into, a static reference's temporary (bindStaticReference).
+    int slot = object.empty() ? allocateFrameSlot(store) : 0;
     std::string temp = ".ref" + std::to_string(refTemps_++);
 
-    ExprPtr target(Var::local(temp, slot));
+    ExprPtr target(object.empty() ? Var::local(temp, slot) : Var::global(object));
     target->setType(store);
     ExprPtr keep(new Assign(std::move(target), convert(std::move(init), store)));
     keep->setType(store);
 
-    ExprPtr held(Var::local(temp, slot));
+    ExprPtr held(object.empty() ? Var::local(temp, slot) : Var::global(object));
     held->setType(store);
     ExprPtr addr(new Unary('&', std::move(held)));
     addr->setType(addrType);
