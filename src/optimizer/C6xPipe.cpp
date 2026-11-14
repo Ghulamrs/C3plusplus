@@ -281,6 +281,13 @@ MOperand R(int r) { MOperand o; o.kind = MOperand::Register; o.reg = static_cast
 MOperand RR(int hi, int lo) { MOperand o = R(lo); o.kind = MOperand::Pair; o.hi = static_cast<std::uint8_t>(hi); return o; }
 MOperand K(long long v) { return MOperand(v); }
 char sideOfR(int r) { return r == kNoReg ? 0 : sideOfReg(r) ? 'B' : 'A'; }
+// Registers in their names' order (A10 before A2): the order a map of names walked, which the schedule's ties keep.
+struct ByName {
+    static std::string key(int r) { return r == kNoReg ? std::string() : regName(r); }
+    bool operator()(int a, int b) const { return key(a) < key(b); }
+};
+// What no pass renames: A15, B3, B14 and B15.
+const std::uint64_t kKeptM = (1ull << 15) | (1ull << 35) | (1ull << 46) | (1ull << 47);
 MInst entry(const std::string &mnem, const MOperand &a, const MOperand &b = MOperand(), const MOperand &c = MOperand(), int pred = kNoReg, bool no = false) {
     MInst e(mnem.c_str(), a, b, c);
     e.pred = static_cast<std::uint8_t>(pred); e.predNot = no;
@@ -336,18 +343,25 @@ struct Loop {
     void rw(std::size_t o, std::vector<std::string> &reads, std::vector<std::string> &writes) const {
         if (!bodyM.empty()) readsAndWrites(bodyM[o], reads, writes); else readsAndWrites(body[o], reads, writes);
     }
+    // The same by number, in the order `rw` lists them.
+    void regs(std::size_t o, std::vector<int> &reads, std::vector<int> &writes) const {
+        std::vector<std::string> r, w;
+        rw(o, r, w);
+        for (std::size_t k = 0; k < r.size(); k++) reads.push_back(regNumber(r[k]));
+        for (std::size_t k = 0; k < w.size(); k++) writes.push_back(regNumber(w[k]));
+    }
     // Operand k of body line o as a pair `hi:lo` of two registers.
-    bool pairIn(std::size_t o, std::size_t k, std::string &hi, std::string &lo) const {
+    bool pairIn(std::size_t o, std::size_t k, int &hi, int &lo) const {
         if (!bodyM.empty()) {
             const MOperand &x = bodyM[o].op[k];
             if (x.kind != MOperand::Pair) return false;
-            hi = regName(x.hi); lo = regName(x.reg);
+            hi = x.hi; lo = x.reg;
             return true;
         }
         std::vector<std::string> regs;
         registersIn(body[o].ops[k], regs);
         if (body[o].ops[k].find(':') == std::string::npos || regs.size() != 2) return false;
-        hi = regs[0]; lo = regs[1];
+        hi = regNumber(regs[0]); lo = regNumber(regs[1]);
         return true;
     }
     // `steppedRegister` of body line o: the base its first stepped access writes, empty where that access has an index.
@@ -383,10 +397,9 @@ struct Loop {
     }
     // `renameWebs`'s edit on entry o: `from` named `to` in its sources (a write: its destination, and MVKH's and ADDK's
     // always), as `renamed` spells it - a register, a pair's half, an address's base or index - and a read in its predicate.
-    void rename(std::size_t o, const std::string &from, const std::string &to, bool isWrite) {
+    void rename(std::size_t o, int f, int t, bool isWrite) {
         if (bodyM.empty()) return;
         MInst &e = bodyM[o];
-        const int f = regNumber(from), t = regNumber(to);
         const std::string m = e.m.str();
         const bool hasDest = e.operands && !isStore(m) && m != "B" && e.op[e.operands - 1].kind != MOperand::Memory;
         for (int k = 0; k < e.operands; k++) {
@@ -731,20 +744,21 @@ int antiDelay(const Node &r, const Node &w) { return std::max(r.store ? 1 : 0, r
 
 // The dependences of one iteration and the next: register flow, anti and output orders in program order, the
 // same wrapped round the back edge - the anti and output ones only for a register kept under one name - and memory.
-void buildEdges(Loop &L, const std::set<std::string> &renameable) {
+void buildEdges(Loop &L, std::uint64_t renameable) {
     std::vector<Node> &n = L.nodes;
     L.edges.clear();
-    std::map<std::string, std::vector<std::pair<int, bool> > > acc;     // register -> (op, isWrite) in order
+    std::map<int, std::vector<std::pair<int, bool> >, ByName> acc;      // register -> (op, isWrite) in order
     for (std::size_t o = 0; o < n.size(); o++) {
-        std::vector<std::string> reads, writes;
-        L.rw(o, reads, writes);
+        std::vector<int> reads, writes;
+        L.regs(o, reads, writes);
         for (std::size_t r = 0; r < reads.size(); r++) acc[reads[r]].push_back(std::make_pair(static_cast<int>(o), false));
         for (std::size_t w = 0; w < writes.size(); w++) acc[writes[w]].push_back(std::make_pair(static_cast<int>(o), true));
     }
-    for (std::map<std::string, std::vector<std::pair<int, bool> > >::iterator it = acc.begin(); it != acc.end(); ++it) {
+    for (std::map<int, std::vector<std::pair<int, bool> >, ByName>::iterator it = acc.begin(); it != acc.end(); ++it) {
         const std::vector<std::pair<int, bool> > &a = it->second;
+        const bool kept = !(renameable & Loop::bit(it->first));         // under one name every turn
         // A writer's result lands at its latency - but an address it steps lands in E1, a cycle after issue.
-        auto latOf = [&](int w) { return (n[static_cast<std::size_t>(w)].stepped & bitOf(it->first)) ? 1 : n[static_cast<std::size_t>(w)].lat; };
+        auto latOf = [&](int w) { return (n[static_cast<std::size_t>(w)].stepped & Loop::bit(it->first)) ? 1 : n[static_cast<std::size_t>(w)].lat; };
         int firstW = -1, lastW = -1;
         for (std::size_t k = 0; k < a.size(); k++) if (a[k].second) { if (firstW < 0) firstW = static_cast<int>(k); lastW = static_cast<int>(k); }
         if (firstW < 0) continue;
@@ -756,12 +770,12 @@ void buildEdges(Loop &L, const std::set<std::string> &renameable) {
             if (!a[k].second) {
                 if (prevW >= 0 && a[static_cast<std::size_t>(prevW)].first != op) { Edge e = { a[static_cast<std::size_t>(prevW)].first, op, latOf(a[static_cast<std::size_t>(prevW)].first), 0, "flow" }; L.edges.push_back(e); }
                 if (prevW < 0) { Edge e = { a[static_cast<std::size_t>(lastW)].first, op, latOf(a[static_cast<std::size_t>(lastW)].first), 1, "flow1" }; L.edges.push_back(e); }
-                if (nextW >= 0 && a[static_cast<std::size_t>(nextW)].first != op && (prevW >= 0 || !renameable.count(it->first))) { const Node &w = n[static_cast<std::size_t>(a[static_cast<std::size_t>(nextW)].first)]; Edge e = { op, a[static_cast<std::size_t>(nextW)].first, antiDelay(n[static_cast<std::size_t>(op)], w), 0, "anti" }; L.edges.push_back(e); }
-                if (nextW < 0 && !renameable.count(it->first)) { const Node &w = n[static_cast<std::size_t>(a[static_cast<std::size_t>(firstW)].first)]; Edge e = { op, a[static_cast<std::size_t>(firstW)].first, antiDelay(n[static_cast<std::size_t>(op)], w), 1, "anti1" }; L.edges.push_back(e); }
+                if (nextW >= 0 && a[static_cast<std::size_t>(nextW)].first != op && (prevW >= 0 || kept)) { const Node &w = n[static_cast<std::size_t>(a[static_cast<std::size_t>(nextW)].first)]; Edge e = { op, a[static_cast<std::size_t>(nextW)].first, antiDelay(n[static_cast<std::size_t>(op)], w), 0, "anti" }; L.edges.push_back(e); }
+                if (nextW < 0 && kept) { const Node &w = n[static_cast<std::size_t>(a[static_cast<std::size_t>(firstW)].first)]; Edge e = { op, a[static_cast<std::size_t>(firstW)].first, antiDelay(n[static_cast<std::size_t>(op)], w), 1, "anti1" }; L.edges.push_back(e); }
             } else if (nextW >= 0) {
                 const Node &w1 = n[static_cast<std::size_t>(op)], &w2 = n[static_cast<std::size_t>(a[static_cast<std::size_t>(nextW)].first)];
                 Edge e = { op, a[static_cast<std::size_t>(nextW)].first, std::max(1, w1.lat - w2.lat + 1), 0, "out" }; L.edges.push_back(e);
-            } else if (!renameable.count(it->first)) {
+            } else if (kept) {
                 const Node &w1 = n[static_cast<std::size_t>(op)], &w2 = n[static_cast<std::size_t>(a[static_cast<std::size_t>(firstW)].first)];
                 Edge e = { op, a[static_cast<std::size_t>(firstW)].first, std::max(1, w1.lat - w2.lat + 1), 1, "out1" }; L.edges.push_back(e);
             }
@@ -798,12 +812,10 @@ int criticalPath(const Loop &L) {
 
 // One try at an initiation interval: each instruction in program order at the first cycle in the window its
 // scheduled neighbours leave it whose modulo slot has room - the branch and the count's step reserved first.
-bool scheduleAt(Loop &L, int II, std::vector<int> &t, const std::set<std::string> &renameable, std::map<std::string, int> &minQ, std::vector<int> &push) {
+bool scheduleAt(Loop &L, int II, std::vector<int> &t, std::uint64_t renameMask, std::map<int, int> &minQ, std::vector<int> &push) {
     const std::size_t n = L.nodes.size();
     t.assign(n, -1);
     minQ.clear();
-    std::uint64_t renameMask = 0;
-    for (std::set<std::string>::const_iterator it = renameable.begin(); it != renameable.end(); ++it) renameMask |= bitOf(*it);
     std::vector<Packet> mrt(static_cast<std::size_t>(II));
     std::vector<Node> extra;
     extra.reserve(2 + n * 5);
@@ -862,34 +874,35 @@ bool scheduleAt(Loop &L, int II, std::vector<int> &t, const std::set<std::string
         for (std::size_t p = 0; p < o; p++) {
             const std::uint64_t both = L.nodes[p].writes & L.nodes[o].writes & renameMask;
             if (!both || t[p] % II != t[o] % II) continue;
-            for (int r = 0; r < 64; r++) if (both & (1ull << r)) { std::string name = std::string(r < 32 ? "A" : "B") + std::to_string(r % 32); minQ[name] = std::max(minQ[name], std::abs(t[o] - t[p]) / II + 1); }
+            for (int r = 0; r < 64; r++) if (both & (1ull << r)) minQ[r] = std::max(minQ[r], std::abs(t[o] - t[p]) / II + 1);
         }
     return true;
 }
 
 // A register's rename unit: itself, or the even:odd pair it is half of.
-struct Unit { std::vector<std::string> regs; int q = 1; std::vector<std::vector<std::string> > copies; bool carried = false, exits = false; };
+struct Unit { std::vector<int> regs; int q = 1; std::vector<std::vector<int> > copies; bool carried = false, exits = false; };
+typedef std::map<int, std::size_t, ByName> UnitOf;        // a register's unit, walked in the names' order
 
 int pow2At(int x) { int p = 1; while (p < x) p *= 2; return p; }
 long modq(long a, int q) { return ((a % q) + q) % q; }
 
 // Body instruction o as turn j writes it: each register of a unit renamed to that turn's copy - a source to the copy
 // it reads, the destination to the one it writes - on the entry where the body is the stream's, else on its line.
-std::string spelledLine(const Loop &L, const std::vector<Unit> &units, const std::map<std::string, std::size_t> &unitOf,
+std::string spelledLine(const Loop &L, const std::vector<Unit> &units, const UnitOf &unitOf,
                         const std::vector<int> &firstWrite, std::size_t o, long j) {
     const Line &l = L.body[o];
     std::vector<std::string> ops = l.ops;
     std::string pred = l.pred;
     bool hasDest = !ops.empty() && !isStore(l.mnem) && l.mnem != "B" && ops.back()[0] != '*';
     std::size_t k0 = 0;
-    for (std::map<std::string, std::size_t>::const_iterator it = unitOf.begin(); it != unitOf.end(); ++it, k0++) {
+    for (UnitOf::const_iterator it = unitOf.begin(); it != unitOf.end(); ++it, k0++) {
         const Unit &u = units[it->second];
         if (u.q < 2) continue;
-        const std::string &r = it->first;
+        const std::string r = regName(it->first);
         std::size_t half = 0;
-        while (u.regs[half] != r) half++;
+        while (u.regs[half] != it->first) half++;
         const long readJ = j + (firstWrite[k0] >= static_cast<int>(o) ? -1 : 0);
-        const std::string rd = u.copies[half][static_cast<std::size_t>(modq(readJ, u.q))], wr = u.copies[half][static_cast<std::size_t>(modq(j, u.q))];
+        const std::string rd = regName(u.copies[half][static_cast<std::size_t>(modq(readJ, u.q))]), wr = regName(u.copies[half][static_cast<std::size_t>(modq(j, u.q))]);
         for (std::size_t k = 0; k < ops.size(); k++) {
             bool dest = hasDest && k + 1 == ops.size();
             if (dest && (l.mnem == "MVKH" || l.mnem == "ADDK")) { ops[k] = renamed(ops[k], r, wr); continue; }
@@ -903,7 +916,7 @@ std::string spelledLine(const Loop &L, const std::vector<Unit> &units, const std
 // One instruction of a kernel's packet: its spelling, and on the stream the entry itself (typed).
 struct Turn { std::string raw; MInst e; bool typed = false; };
 
-Turn spelled(const Loop &L, const std::vector<Unit> &units, const std::map<std::string, std::size_t> &unitOf,
+Turn spelled(const Loop &L, const std::vector<Unit> &units, const UnitOf &unitOf,
              const std::vector<int> &firstWrite, std::size_t o, long j) {
     Turn turn;
     if (L.bodyM.empty() || L.bodyM[o].unit != 0 || L.bodyM[o].par || L.bodyM[o].packed) { turn.raw = spelledLine(L, units, unitOf, firstWrite, o, j); return turn; }
@@ -911,14 +924,13 @@ Turn spelled(const Loop &L, const std::vector<Unit> &units, const std::map<std::
     const std::string m = x.m.str();
     const bool hasDest = x.operands && !isStore(m) && m != "B" && x.op[x.operands - 1].kind != MOperand::Memory;
     std::size_t k0 = 0;
-    for (std::map<std::string, std::size_t>::const_iterator it = unitOf.begin(); it != unitOf.end(); ++it, k0++) {
+    for (UnitOf::const_iterator it = unitOf.begin(); it != unitOf.end(); ++it, k0++) {
         const Unit &u = units[it->second];
         if (u.q < 2) continue;
         std::size_t half = 0;
         while (u.regs[half] != it->first) half++;
         const long readJ = j + (firstWrite[k0] >= static_cast<int>(o) ? -1 : 0);
-        const int r = regNumber(it->first), rd = regNumber(u.copies[half][static_cast<std::size_t>(modq(readJ, u.q))]),
-                  wr = regNumber(u.copies[half][static_cast<std::size_t>(modq(j, u.q))]);
+        const int r = it->first, rd = u.copies[half][static_cast<std::size_t>(modq(readJ, u.q))], wr = u.copies[half][static_cast<std::size_t>(modq(j, u.q))];
         for (int k = 0; k < x.operands; k++) {
             MOperand &y = x.op[k];
             const std::uint8_t to = static_cast<std::uint8_t>(hasDest && k + 1 == x.operands ? wr : rd);
@@ -1040,20 +1052,20 @@ void emitCycles(Code &out, const std::vector<std::vector<Turn> > &cycles) {
 }
 
 // A register web: one value, from its write to its last read; linked to its partner's where it is half a pair.
-struct Web { std::string reg, name; int link = -1; bool keep = false; };
+struct Web { int reg = kNoReg, name = kNoReg; int link = -1; bool keep = false; };
 
 // Each write of a temporary starts a web of its own, and every web but the first and the one a later iteration or
 // the exit reads takes a fresh name from the pool - so a name the backend recycles through an iteration becomes
 // several short-lived ones, each renamed per iteration on its own account.
-void renameWebs(Loop &L, std::vector<std::string> &pool) {
+void renameWebs(Loop &L, std::vector<int> &pool) {
     std::vector<Web> webs;
-    std::map<std::string, int> cur;
-    std::set<std::string> fixed;                            // registers no web of which may be renamed
+    std::map<int, int, ByName> cur;
+    std::uint64_t fixed = 0;                                // registers no web of which may be renamed
     std::vector<std::vector<std::pair<int, int> > > opWebs(L.body.size());   // (web, isWrite) per op
     for (std::size_t o = 0; o < L.body.size(); o++) {
         const Line &l = L.body[o];
-        std::vector<std::string> reads, writes;
-        L.rw(o, reads, writes);
+        std::vector<int> reads, writes;
+        L.regs(o, reads, writes);
         bool rmw = l.mnem == "MVKH" || l.mnem == "ADDK" || !l.pred.empty() || !L.steppedAt(o).empty();
         for (std::size_t r = 0; r < reads.size(); r++) {
             if (!cur.count(reads[r])) { Web w; w.reg = reads[r]; w.keep = true; cur[reads[r]] = static_cast<int>(webs.size()); webs.push_back(w); }
@@ -1070,37 +1082,36 @@ void renameWebs(Loop &L, std::vector<std::string> &pool) {
             for (std::size_t k = 0; k < l.ops.size(); k++) {
                 const bool dest = hasDest && k + 1 == l.ops.size();
                 if (dest != (pass == 1)) continue;
-                std::vector<std::string> regs(2);
-                if (!L.pairIn(o, k, regs[0], regs[1]) || !cur.count(regs[0]) || !cur.count(regs[1])) continue;
-                Web &hi = webs[static_cast<std::size_t>(cur[regs[0]])], &lo = webs[static_cast<std::size_t>(cur[regs[1]])];
-                if ((hi.link >= 0 && hi.link != cur[regs[1]]) || (lo.link >= 0 && lo.link != cur[regs[0]])) { fixed.insert(regs[0]); fixed.insert(regs[1]); }
-                hi.link = cur[regs[1]]; lo.link = cur[regs[0]];
+                int h = kNoReg, w = kNoReg;
+                if (!L.pairIn(o, k, h, w) || !cur.count(h) || !cur.count(w)) continue;
+                Web &hi = webs[static_cast<std::size_t>(cur[h])], &lo = webs[static_cast<std::size_t>(cur[w])];
+                if ((hi.link >= 0 && hi.link != cur[w]) || (lo.link >= 0 && lo.link != cur[h])) fixed |= Loop::bit(h) | Loop::bit(w);
+                hi.link = cur[w]; lo.link = cur[h];
             }
         }
     }
-    for (std::map<std::string, int>::const_iterator it = cur.begin(); it != cur.end(); ++it) {
-        const std::string &r = it->first;
+    for (std::map<int, int, ByName>::const_iterator it = cur.begin(); it != cur.end(); ++it) {
+        const std::uint64_t bit = Loop::bit(it->first);
         bool carried = false;
-        for (std::size_t w = 0; w < webs.size(); w++) if (webs[w].reg == r && webs[w].keep) carried = true;
-        if (carried || (L.liveExit & bitOf(r)) || ((L.fixedM(true) | L.pinnedM) & bitOf(r))) webs[static_cast<std::size_t>(it->second)].keep = true;
+        for (std::size_t w = 0; w < webs.size(); w++) if (webs[w].reg == it->first && webs[w].keep) carried = true;
+        if (carried || (L.liveExit & bit) || ((L.fixedM(true) | L.pinnedM) & bit)) webs[static_cast<std::size_t>(it->second)].keep = true;
     }
     for (std::size_t w = 0; w < webs.size(); w++) {
         Web &x = webs[w];
-        if (x.name.empty()) x.name = x.reg;
-        if (x.keep || fixed.count(x.reg) || x.reg == "A15" || x.reg == "B15" || x.reg == "B3" || x.reg == "B14") continue;
-        if (x.link >= 0 && (webs[static_cast<std::size_t>(x.link)].keep || fixed.count(webs[static_cast<std::size_t>(x.link)].reg))) continue;
+        if (x.name == kNoReg) x.name = x.reg;
+        if (x.keep || ((fixed | kKeptM) & Loop::bit(x.reg))) continue;
+        if (x.link >= 0 && (webs[static_cast<std::size_t>(x.link)].keep || (fixed & Loop::bit(webs[static_cast<std::size_t>(x.link)].reg)))) continue;
         if (x.name != x.reg) continue;                      // named with its partner already
         for (std::size_t f = 0; f < pool.size(); f++) {
-            if (sideOf(pool[f]) != sideOf(x.reg)) continue;
+            if (sideOfReg(pool[f]) != sideOfReg(x.reg)) continue;
             if (x.link < 0) { x.name = pool[f]; pool.erase(pool.begin() + static_cast<long>(f)); break; }
-            int num = std::atoi(pool[f].c_str() + 1);
-            if (num % 2) continue;
-            std::string hi = std::string(1, pool[f][0]) + std::to_string(num + 1);
-            std::vector<std::string>::iterator ih = std::find(pool.begin(), pool.end(), hi);
+            if ((pool[f] & 31) % 2) continue;
+            const int lo = pool[f], hi = lo + 1;
+            std::vector<int>::iterator ih = std::find(pool.begin(), pool.end(), hi);
             if (ih == pool.end()) continue;
             Web &y = webs[static_cast<std::size_t>(x.link)];
-            const bool xLow = std::atoi(x.reg.c_str() + 1) % 2 == 0;
-            x.name = xLow ? pool[f] : hi; y.name = xLow ? hi : pool[f];
+            const bool xLow = (x.reg & 31) % 2 == 0;
+            x.name = xLow ? lo : hi; y.name = xLow ? hi : lo;
             pool.erase(ih); pool.erase(pool.begin() + static_cast<long>(f));
             break;
         }
@@ -1114,11 +1125,12 @@ void renameWebs(Loop &L, std::vector<std::string> &pool) {
             const Web &w = webs[static_cast<std::size_t>(opWebs[o][k].first)];
             if (w.name == w.reg) continue;
             const bool isWrite = opWebs[o][k].second == 1;
+            const std::string was = regName(w.reg), now = regName(w.name);     // the line's spelling, kept beside the entry
             for (std::size_t p = 0; p < ops.size(); p++) {
                 bool dest = hasDest && p + 1 == ops.size();
-                if (dest == isWrite || (dest && (l.mnem == "MVKH" || l.mnem == "ADDK"))) ops[p] = renamed(ops[p], w.reg, w.name);
+                if (dest == isWrite || (dest && (l.mnem == "MVKH" || l.mnem == "ADDK"))) ops[p] = renamed(ops[p], was, now);
             }
-            if (!isWrite) pred = renamed(pred, w.reg, w.name);
+            if (!isWrite) pred = renamed(pred, was, now);
             L.rename(o, w.reg, w.name, isWrite);
         }
         l = rebuilt(l.mnem, ops, pred);
@@ -1205,22 +1217,20 @@ void checkBody(const Loop &L, const char *at) {
     }
 }
 
-// A register of free's on the side asked for, or any; "" for none. With pair, an aligned even:odd pair's even half.
-std::string takeFree(std::vector<std::string> &free, char side, bool pair) {
+// A register of free's on the side asked for, or any; kNoReg for none. With pair, an aligned even:odd pair's even half.
+int takeFree(std::vector<int> &free, char side, bool pair) {
     for (int pass = 0; pass < 2; pass++)
         for (std::size_t f = 0; f < free.size(); f++) {
-            if (pass == 0 && sideOf(free[f]) != side) continue;
-            if (!pair) { std::string r = free[f]; free.erase(free.begin() + static_cast<long>(f)); return r; }
-            int num = std::atoi(free[f].c_str() + 1);
-            if (num % 2) continue;
-            std::string hi = std::string(1, free[f][0]) + std::to_string(num + 1);
-            std::vector<std::string>::iterator ih = std::find(free.begin(), free.end(), hi);
+            if (pass == 0 && sideOfR(free[f]) != side) continue;
+            const int r = free[f];
+            if (!pair) { free.erase(free.begin() + static_cast<long>(f)); return r; }
+            if ((r & 31) % 2) continue;
+            std::vector<int>::iterator ih = std::find(free.begin(), free.end(), r + 1);
             if (ih == free.end()) continue;
-            std::string r = free[f];
             free.erase(ih); free.erase(free.begin() + static_cast<long>(f));
             return r;
         }
-    return "";
+    return kNoReg;
 }
 
 // The loop's own test in one canonical shape: P = iv < n where the loop runs while iv < n, P = n < iv where it runs
@@ -1243,12 +1253,11 @@ bool steppedTest(const Loop &L, Code &out, int nlo, int nhi, int t, int tb, std:
 // **The stepped loop's entry**: the step must not be negative, K = m*s and Kg = g*s must fit, n-K (the kernel's bound)
 // and n-Kg must not overflow, and turn g must exist - `iv REL n-Kg` by the loop's own test - or the loop runs as written.
 // Every check branches to the head, and the test is the loop's own over the bound n - Kg; one or two words.
-bool steppedGuard(const Loop &L, Code &out, const std::vector<int> &moved, int xt, int xtb, std::vector<std::string> free, int m, int g, std::string &why) {
+bool steppedGuard(const Loop &L, Code &out, const std::vector<int> &moved, int xt, int xtb, std::vector<int> free, int m, int g, std::string &why) {
     const int slo = L.stepsR[0], nlo = L.boundsR[0], shi = L.wide ? L.stepsR[1] : kNoReg, nhi = L.wide ? L.boundsR[1] : kNoReg, P = L.PR;
     const bool constant = slo == kNoReg;
     const char stepSide = sideOfR(constant ? nlo : slo);
-    const int klo = regNumber(takeFree(free, stepSide, true)), tm = regNumber(takeFree(free, stepSide, false)),
-              t2 = regNumber(takeFree(free, stepSide, false)), tb = regNumber(takeFree(free, sideOfR(nlo), false));
+    const int klo = takeFree(free, stepSide, true), tm = takeFree(free, stepSide, false), t2 = takeFree(free, stepSide, false), tb = takeFree(free, sideOfR(nlo), false);
     if (klo == kNoReg || tm == kNoReg || t2 == kNoReg || tb == kNoReg) { why = "no free registers for the stepped guard"; return false; }
     const int khi = klo + 1;
     // Each branch past the pipelined copy is to the head: taken where the loop would not go on, or a check fails.
@@ -1302,50 +1311,46 @@ bool steppedGuard(const Loop &L, Code &out, const std::vector<int> &moved, int x
 // The whole rewrite of one recognised loop; false, with the reason, where it is not worth it or cannot be done.
 bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) {
     // The pool of names the loop may take: caller-saved, unused in it, dead at its exit.
-    std::vector<std::string> pool;
+    std::vector<int> pool;
     for (int side = 0; side < 2; side++)
         for (int k = 3; k < 32; k++) {
             if ((k >= 10 && k <= 15) || (side == 1 && k == 3)) continue;
-            std::string r = std::string(side ? "B" : "A") + std::to_string(k);
-            if (!(L.usedM & bitOf(r)) && !(L.liveExit & bitOf(r)) && !(bitOf(r) & (Loop::bit(L.CR) | Loop::bit(L.PR)))) pool.push_back(r);
+            const int r = side * 32 + k;
+            if (!((L.usedM | L.liveExit) & Loop::bit(r)) && r != L.CR && r != L.PR) pool.push_back(r);
         }
-    std::string X;
+    int X = kNoReg;
     if (!L.stepped) {
-        for (std::size_t k = 0; k < pool.size() && X.empty(); k++) if (sideOf(pool[k]) == sideOfR(L.CR)) X = pool[k];
-        if (X.empty()) { why = "no free register for the count"; return false; }
+        for (std::size_t k = 0; k < pool.size() && X == kNoReg; k++) if (sideOfR(pool[k]) == sideOfR(L.CR)) X = pool[k];
+        if (X == kNoReg) { why = "no free register for the count"; return false; }
         pool.erase(std::find(pool.begin(), pool.end(), X));
     }
     // A stepped counter's kernel tests the moved bound: a fresh register per word, taking the bound's own side.
-    std::vector<std::string> moved;
-    for (std::size_t w = 0; w < L.bounds.size(); w++) {
-        std::string f;
-        for (int pass = 0; pass < 2 && f.empty(); pass++)
-            for (std::size_t k = 0; k < pool.size() && f.empty(); k++)
-                if (pass == 1 || sideOf(pool[k]) == sideOfR(L.boundsR[w])) { f = pool[k]; pool.erase(pool.begin() + static_cast<long>(k)); }
-        if (f.empty()) { why = "no free register for the moved bound"; return false; }
+    std::vector<int> moved;
+    for (std::size_t w = 0; w < L.boundsR.size(); w++) {
+        int f = kNoReg;
+        for (int pass = 0; pass < 2 && f == kNoReg; pass++)
+            for (std::size_t k = 0; k < pool.size() && f == kNoReg; k++)
+                if (pass == 1 || sideOfR(pool[k]) == sideOfR(L.boundsR[w])) { f = pool[k]; pool.erase(pool.begin() + static_cast<long>(k)); }
+        if (f == kNoReg) { why = "no free register for the moved bound"; return false; }
         moved.push_back(f);
     }
     // The test's scratch registers, beside the counter so that only the bound crosses: taken before the renaming can.
-    std::string xt, xtb;
+    int xt = kNoReg, xtb = kNoReg;
     if (L.stepped && (L.wide || sideOfReg(L.PR) != sideOfReg(L.ivsR[0]))) {
         const char beside = sideOfR(L.ivsR[0]);
         xt = takeFree(pool, beside, false);
         if (L.wide) xtb = takeFree(pool, beside, false);
-        if (xt.empty() || (L.wide && xtb.empty()) || sideOf(xt) != beside || (L.wide && sideOf(xtb) != beside)) {
+        if (xt == kNoReg || (L.wide && xtb == kNoReg) || sideOfR(xt) != beside || (L.wide && sideOfR(xtb) != beside)) {
             why = "no free register beside the counter for the stepped test"; return false;
         }
     }
-    // What the emitters take: the count's register, the moved bound's and the scratch ones as numbers.
-    const int XR = regNumber(X), xtR = regNumber(xt), xtbR = regNumber(xtb);
-    std::vector<int> movedR;
-    for (std::size_t w = 0; w < moved.size(); w++) movedR.push_back(regNumber(moved[w]));
     for (std::size_t k = 0; k < L.testBody.size(); k++) {
         Line &l = L.body[L.testBody[k]];
         std::vector<std::string> ops = l.ops;
         for (std::size_t o = 0; o + 1 < ops.size(); o++)
             for (std::size_t w = 0; w < L.bounds.size(); w++) if (ops[o] == L.bounds[w]) {
-                ops[o] = moved[w];
-                if (!L.bodyM.empty()) L.bodyM[L.testBody[k]].op[o] = MOperand(moved[w]);
+                ops[o] = regName(moved[w]);
+                if (!L.bodyM.empty()) L.bodyM[L.testBody[k]].op[o] = R(moved[w]);
             }
         l = rebuilt(l.mnem, ops, l.pred);
     }
@@ -1362,39 +1367,41 @@ bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) 
     }
     // The rename units, and which of them may take a name per iteration.
     std::vector<Unit> units;
-    std::map<std::string, std::size_t> unitOf;
+    UnitOf unitOf;
     for (std::size_t o = 0; o < L.body.size(); o++)
         for (std::size_t k = 0; k < L.body[o].ops.size(); k++) {
-            std::vector<std::string> regs(2);
-            if (!L.pairIn(o, k, regs[0], regs[1])) continue;
-            if (!unitOf.count(regs[0]) && !unitOf.count(regs[1])) { Unit u; u.regs.push_back(regs[1]); u.regs.push_back(regs[0]); unitOf[regs[0]] = unitOf[regs[1]] = units.size(); units.push_back(u); }
+            int hi = kNoReg, lo = kNoReg;
+            if (!L.pairIn(o, k, hi, lo)) continue;
+            if (!unitOf.count(hi) && !unitOf.count(lo)) { Unit u; u.regs.push_back(lo); u.regs.push_back(hi); unitOf[hi] = unitOf[lo] = units.size(); units.push_back(u); }
         }
-    std::vector<std::string> used;                      // the body's registers in their names' order, which is the units'
-    for (int r = 0; r < 64; r++) if (L.usedM >> r & 1) used.push_back(regName(r));
-    std::sort(used.begin(), used.end());
-    for (std::vector<std::string>::const_iterator it = used.begin(); it != used.end(); ++it)
+    std::vector<int> used;                              // the body's registers in their names' order, which is the units'
+    for (int r = 0; r < 64; r++) if (L.usedM >> r & 1) used.push_back(r);
+    std::sort(used.begin(), used.end(), ByName());
+    for (std::vector<int>::const_iterator it = used.begin(); it != used.end(); ++it)
         if (!unitOf.count(*it)) { Unit u; u.regs.push_back(*it); unitOf[*it] = units.size(); units.push_back(u); }
     std::vector<int> firstWrite(unitOf.size(), 1 << 30);
     {
         std::size_t k = 0;
-        for (std::map<std::string, std::size_t>::const_iterator it = unitOf.begin(); it != unitOf.end(); ++it, k++)
-            for (std::size_t o = 0; o < L.nodes.size(); o++) if (L.nodes[o].writes & bitOf(it->first)) { firstWrite[k] = static_cast<int>(o); break; }
+        for (UnitOf::const_iterator it = unitOf.begin(); it != unitOf.end(); ++it, k++)
+            for (std::size_t o = 0; o < L.nodes.size(); o++) if (L.nodes[o].writes & Loop::bit(it->first)) { firstWrite[k] = static_cast<int>(o); break; }
     }
-    std::set<std::string> renameable;
+    std::uint64_t renameable = 0;
     for (std::size_t u = 0; u < units.size(); u++) {
         bool ok = true;                                     // every half written: a pair's names move together
+        std::uint64_t halves = 0;
         for (std::size_t h = 0; h < units[u].regs.size(); h++) {
-            const std::string &r = units[u].regs[h];
-            if (!(L.writtenM & bitOf(r))) ok = false;
-            if (((L.predicatedM | L.rmwFirstM) & bitOf(r)) || (bitOf(r) & (Loop::bit(L.CR) | Loop::bit(L.PR))) || r == "A15" || r == "B15" || r == "B3" || r == "B14") { ok = false; break; }
+            const std::uint64_t bit = Loop::bit(units[u].regs[h]);
+            halves |= bit;
+            if (!(L.writtenM & bit)) ok = false;
+            if ((L.predicatedM | L.rmwFirstM | Loop::bit(L.CR) | Loop::bit(L.PR) | kKeptM) & bit) { ok = false; break; }
         }
-        if (ok) for (std::size_t h = 0; h < units[u].regs.size(); h++) renameable.insert(units[u].regs[h]);
+        if (ok) renameable |= halves;
     }
     if (tracing() > 3) for (std::size_t o = 0; o < L.body.size(); o++) std::fprintf(stderr, "  body%s\n", L.body[o].raw.c_str());
-    if (tracing() > 2) { std::fprintf(stderr, "  renameable:"); for (std::set<std::string>::const_iterator it = renameable.begin(); it != renameable.end(); ++it) std::fprintf(stderr, " %s", it->c_str()); std::fprintf(stderr, "\n"); }
+    if (tracing() > 2) { std::fprintf(stderr, "  renameable:"); for (UnitOf::const_iterator it = unitOf.begin(); it != unitOf.end(); ++it) if (renameable & Loop::bit(it->first)) std::fprintf(stderr, " %s", regName(it->first).c_str()); std::fprintf(stderr, "\n"); }
     std::vector<int> t;
-    std::map<std::string, int> minQ;
-    std::vector<std::string> free;          // the pool less the copies: what a guard may still take
+    std::map<int, int> minQ;
+    std::vector<int> free;                  // the pool less the copies: what a guard may still take
     int II = 1, S = 0, u = 1, seq = 0;
     for (int attempt = 0; attempt < 8; attempt++) {
         buildEdges(L, renameable);
@@ -1404,7 +1411,7 @@ bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) 
         // Each II in turn: a schedule, then the copies its spans need; an II whose copies the pool cannot
         // give is passed over for the next, and only past the bound are the units without them left unrenamed.
         bool any = false, done = false;
-        std::vector<std::string> failed;
+        std::vector<int> failed;
         for (II = lateMax + 1; II <= 64 && 5 * II <= 4 * seq; II++) {
             bool ok = false;
             std::vector<int> push(L.nodes.size(), 0), was;
@@ -1419,10 +1426,10 @@ bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) 
             int qMax = 1;
             std::size_t k = 0;
             for (std::size_t x = 0; x < units.size(); x++) { units[x].q = 1; units[x].carried = units[x].exits = false; }
-            for (std::map<std::string, std::size_t>::const_iterator it = unitOf.begin(); it != unitOf.end(); ++it, k++) {
+            for (UnitOf::const_iterator it = unitOf.begin(); it != unitOf.end(); ++it, k++) {
                 Unit &un = units[it->second];
-                const std::uint64_t bit = bitOf(it->first);
-                if (!renameable.count(it->first) || !(L.writtenM & bitOf(it->first))) continue;
+                const std::uint64_t bit = Loop::bit(it->first);
+                if (!(renameable & bit) || !(L.writtenM & bit)) continue;
                 int start = 1 << 30, end = 0;
                 for (std::size_t o = 0; o < L.nodes.size(); o++) {
                     if (L.nodes[o].writes & bit) { start = std::min(start, t[o] + L.nodes[o].lat); end = std::max(end, t[o] + L.nodes[o].lat); }
@@ -1439,17 +1446,16 @@ bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) 
             free = pool;
             for (std::size_t x = 0; x < units.size(); x++) {
                 Unit &un = units[x];
-                un.copies.assign(un.regs.size(), std::vector<std::string>());
+                un.copies.assign(un.regs.size(), std::vector<int>());
                 for (std::size_t h = 0; h < un.regs.size(); h++) un.copies[h].push_back(un.regs[h]);
                 for (int c = 1; c < un.q; c++) {
                     bool got = false;
                     for (std::size_t f = 0; f < free.size() && !got; f++) {
-                        if (sideOf(free[f]) != sideOf(un.regs[0])) continue;
+                        if (sideOfReg(free[f]) != sideOfReg(un.regs[0])) continue;
                         if (un.regs.size() == 1) { un.copies[0].push_back(free[f]); free.erase(free.begin() + static_cast<long>(f)); got = true; break; }
-                        int num = std::atoi(free[f].c_str() + 1);
-                        if (num % 2) continue;
-                        std::string hi = std::string(1, free[f][0]) + std::to_string(num + 1);
-                        std::vector<std::string>::iterator ih = std::find(free.begin(), free.end(), hi);
+                        if ((free[f] & 31) % 2) continue;
+                        const int hi = free[f] + 1;
+                        std::vector<int>::iterator ih = std::find(free.begin(), free.end(), hi);
                         if (ih == free.end()) continue;
                         un.copies[0].push_back(free[f]); un.copies[1].push_back(hi);
                         free.erase(ih); free.erase(free.begin() + static_cast<long>(f)); got = true;
@@ -1458,14 +1464,14 @@ bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) 
                 }
             }
             if (failed.empty()) { done = true; break; }
-            if (tracing() > 1) std::fprintf(stderr, "  II=%d: S=%d, no %d copies of %s - trying II+1\n", II, S, units[unitOf[failed[0]]].q, failed[0].c_str());
+            if (tracing() > 1) std::fprintf(stderr, "  II=%d: S=%d, no %d copies of %s - trying II+1\n", II, S, units[unitOf[failed[0]]].q, regName(failed[0]).c_str());
         }
         if (!any) { why = "no schedule under four fifths of the " + std::to_string(seq) + "-cycle iteration"; return false; }
         if (done) break;
         for (std::size_t f = 0; f < failed.size(); f++) {
             const Unit &un = units[unitOf[failed[f]]];
-            if (tracing() > 1) std::fprintf(stderr, "  II=%d: no %d copies of %s\n", II, un.q, failed[f].c_str());
-            for (std::size_t h = 0; h < un.regs.size(); h++) renameable.erase(un.regs[h]);
+            if (tracing() > 1) std::fprintf(stderr, "  II=%d: no %d copies of %s\n", II, un.q, regName(failed[f]).c_str());
+            for (std::size_t h = 0; h < un.regs.size(); h++) renameable &= ~Loop::bit(un.regs[h]);
         }
         if (attempt == 7) { why = "no registers for the renaming"; return false; }
     }
@@ -1482,28 +1488,28 @@ bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) 
         m = 2 * u - 2 - d; g = u + S - 2;
     }
     if (tracing()) std::fprintf(stderr, "pipe %s: II=%d S=%d u=%d seq=%d ops=%zu%s\n", L.label.c_str(), II, S, u, seq, L.nodes.size(), L.stepped ? (L.wide ? " stepped wide" : " stepped") : "");
-    if (L.stepped) { if (!steppedGuard(L, out, movedR, xtR, xtbR, free, m, g, why)) return false; }
+    if (L.stepped) { if (!steppedGuard(L, out, moved, xt, xtb, free, m, g, why)) return false; }
     // The guard: X = (n - i [+1] - (S-1)) >> log2 u, the unrolled rounds; none, and the loop is left as written.
-    const bool crossBoth = !L.stepped && !L.boundConst && sideOfReg(L.boundR) != sideOfReg(XR) && sideOfReg(L.ivR) != sideOfReg(XR);
+    const bool crossBoth = !L.stepped && !L.boundConst && sideOfReg(L.boundR) != sideOfReg(X) && sideOfReg(L.ivR) != sideOfReg(X);
     if (L.stepped) { }
     else if (L.boundConst) {
-        if (L.boundK >= -32768 && L.boundK <= 32767) out.add("MVK", K(L.boundK), R(XR));
-        else { out.add("MVKL", K(L.boundK), R(XR)); out.add("MVKH", K(L.boundK), R(XR)); }
-        out.add("SUB", R(XR), R(L.ivR), R(XR));
-    } else if (crossBoth) { out.add("MV", R(L.boundR), R(XR)); out.add("SUB", R(XR), R(L.ivR), R(XR)); }
-    else out.add("SUB", R(L.boundR), R(L.ivR), R(XR));
+        if (L.boundK >= -32768 && L.boundK <= 32767) out.add("MVK", K(L.boundK), R(X));
+        else { out.add("MVKL", K(L.boundK), R(X)); out.add("MVKH", K(L.boundK), R(X)); }
+        out.add("SUB", R(X), R(L.ivR), R(X));
+    } else if (crossBoth) { out.add("MV", R(L.boundR), R(X)); out.add("SUB", R(X), R(L.ivR), R(X)); }
+    else out.add("SUB", R(L.boundR), R(L.ivR), R(X));
     if (!L.stepped) {
-        if (L.plusOne) out.add("ADD", K(1), R(XR), R(XR));
-        if (S > 1) { if (S - 1 <= 31) out.add("SUB", R(XR), K(S - 1), R(XR)); else out.add("ADDK", K(1 - S), R(XR)); }
+        if (L.plusOne) out.add("ADD", K(1), R(X), R(X));
+        if (S > 1) { if (S - 1 <= 31) out.add("SUB", R(X), K(S - 1), R(X)); else out.add("ADDK", K(1 - S), R(X)); }
         int log2u = 0;
         while ((1 << log2u) < u) log2u++;
-        if (log2u) out.add("SHR", R(XR), K(log2u), R(XR));
-        out.add("CMPGT", K(1), R(XR), R(L.PR));
+        if (log2u) out.add("SHR", R(X), K(log2u), R(X));
+        out.add("CMPGT", K(1), R(X), R(L.PR));
         out.branch(L.label, L.PR, false);
-        out.add("SUB", R(XR), K(1), R(L.CR));
+        out.add("SUB", R(X), K(1), R(L.CR));
     }
     for (std::size_t x = 0; x < units.size(); x++)
-        if (units[x].q > 1 && units[x].carried) for (std::size_t h = 0; h < units[x].regs.size(); h++) out.add("MV", R(regNumber(units[x].regs[h])), R(regNumber(units[x].copies[h][static_cast<std::size_t>(units[x].q - 1)])));
+        if (units[x].q > 1 && units[x].carried) for (std::size_t h = 0; h < units[x].regs.size(); h++) out.add("MV", R(units[x].regs[h]), R(units[x].copies[h][static_cast<std::size_t>(units[x].q - 1)]));
     // The prologue, the kernel of u rounds with its branch, and the epilogue - every op of every iteration once.
     const std::size_t n = L.nodes.size();
     std::vector<std::vector<Turn> > cyc;
@@ -1537,8 +1543,8 @@ bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) 
     emitCycles(out, cyc);
     // The last pipelined iteration is u*q'+S-2, so its names are fixed: copied back, then the test the loop's own way.
     for (std::size_t x = 0; x < units.size(); x++)
-        if (units[x].q > 1 && units[x].exits && modq(S - 2, units[x].q) != 0) for (std::size_t h = 0; h < units[x].regs.size(); h++) out.add("MV", R(regNumber(units[x].copies[h][static_cast<std::size_t>(modq(S - 2, units[x].q))])), R(regNumber(units[x].regs[h])));
-    if (L.stepped) { if (!steppedTest(L, out, L.boundsR[0], L.wide ? L.boundsR[1] : kNoReg, xtR, xtbR, why)) return false; }
+        if (units[x].q > 1 && units[x].exits && modq(S - 2, units[x].q) != 0) for (std::size_t h = 0; h < units[x].regs.size(); h++) out.add("MV", R(units[x].copies[h][static_cast<std::size_t>(modq(S - 2, units[x].q))]), R(units[x].regs[h]));
+    if (L.stepped) { if (!steppedTest(L, out, L.boundsR[0], L.wide ? L.boundsR[1] : kNoReg, xt, xtb, why)) return false; }
     else out.same(v, L.cmp);
     out.branch(L.exitName, L.PR, !L.negated);
     return true;
