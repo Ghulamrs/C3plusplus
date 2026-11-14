@@ -1381,3 +1381,20 @@ C6xSched.cpp's text-only passes deleted, 2,423 -> 1,356 lines, src/ +78 -1,216; 
   pipeliner's line halves (an entry the model does not hold - placed or verbatim); the table's `Line` readers
   (behind `!modelled` entries, and the walker's text through `parse`/`streamOf`). The walker itself needs none of
   it: it hands text to `c6xSchedule`, so after D6.5 `read` is all it keeps until M6d.
+- src/ +42 -29 lines (C6xSched.cpp 1,308 -> 1,315, C6xPack.cpp 1,447 -> 1,450, C6xModel.h 143 -> 146): D5.1's
+  readers come before the lines they will delete.
+- **Gate.** Windows, cl /W4 /WX clean at 547ad9c6 (work\m6ab) and the final code 4c9343d0 (work\m6ab2), against
+  round 18's compiler (work\m6aa4), tests/cases at -O0, -O1, -O2 by md5: **2,601 texts same, 1,068 refused alike, 0
+  differ**, plain and under `CXX1_C6X_WALKER=1` (static-reference-to-temporary among them, against round 18's own
+  build); census -O2 0 to any text pass, 0 `c6x-loop-unread`, 6,835 selected, kernels 219 / 9,122; exclusions 129
+  sites 0 uncited 0 stale, comments 0 over (1 over at 547ad9c6, mended), memory gate rc 0, generate up to date.
+  Linux (~/m6ab, ~/m6aa with the three files laid over; REF main 85fe99fe's compiler in ~/w7ref), g++ -Werror clean,
+  at ec361783's code: `identical.sh ARCHS=tms6747` -O0 and -O2 1,736 compared, 2 differ (static-reference-to-temporary,
+  round 18's fix); -O0 -g 868 compared, 851 normalised, 1 differ (the same case); tests/tms6747.sh SHARD=k/3
+  CYCLES=1 SIM=0 at -O2 **814 passed, 0 failed, 192,009,106 cycles** (unchanged); walker legs at -O2 **814 / 0**;
+  g-same 867 same, 0 differ, 0 broken; asm6x.sh 833 objects, 0 failed at -O0 and -O2; census 0. On the final file
+  (4c9343d0, a function moved): g++ clean, exclusions 0/0, comments 0 over, memory gate, ast-residue, generate rc 0,
+  `identical.sh` the same 1,736 / 2; walker legs at -O0 **814 / 0** (447,770,677 cycles). Not run (the
+  coordinator's): winpass, make test, ssa.sh.
+- **Owed:** D5.2-D5.6, then D6.2-D6.5, in the order above - a round each for the loop passes' three large ones is the
+  honest size; the round ran past its hour waiting on a dropped ssh, with no job left running.
