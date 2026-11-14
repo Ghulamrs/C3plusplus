@@ -701,3 +701,36 @@ m6-l (the packetiser reads typed operands), m5-dbg (tests/debug.sh; DWARF ranges
   ide/generate.py --check up to date. Not run (the coordinator's): winpass, make test, ssa.sh.
 - **Owed:** `forwardMoves`, `forwardPairMoves`, `numberValues`, `foldAddressing` on the stream; the stream held
   across `rounds` rather than made per fold; the loop's registers as operands (round 5's owed list stands).
+
+### M6c, round 7 (the rest of the folds, and one stream across them), 2026-11-14, lane m6p
+
+- **Landed** (from m6-o b86a89c3): **every fold between the pipeliner and the packetiser runs on a selected function's
+  stream.** `forwardMoves`, `forwardPairMoves`, `numberValues` and `foldAddressing` (with `foldScaledIndex`) are
+  C6xSched's on entries (C6xPack.cpp), read through `Folding`: the stream, each entry as the text reads it (`viewOf`,
+  a placed entry a kept line) and its `LiveSpan` - held as computed, or for `numberValues` recomputed after an edit, as
+  `deadAfter` does on text. An edit is an assignment to the entry's operands (a register renamed, a destination or a
+  pair set, an address written as `MOperand`), judged by `crossings`/`unitsFor` on the entry, C6xSched's `legalForm`
+  on an entry; an entry not `modelled` is edited by the text fold's rebuilt line read back. `CXX1_C6X_MIR=1` names an
+  operand edit the text fold would spell otherwise (`c6x-fold-edit`). **One stream held**: `rounds` makes the stream
+  once and runs its five folds on it to the fixed point, read back once (liveness then current, as the text's is);
+  after the pipeliner one stream goes from `numberValues` through `rounds` and `foldAddressing` into `packetise`, never
+  printed and re-read. `foldStream` and `fold` are gone. `CXX1_C6X_TEXTFOLD=1` keeps every text fold; the walker's
+  functions keep them. src/ +638 -36 lines (C6xPack.cpp 511 -> 1,075, C6xSched.cpp 2,377 -> 2,411, C6xMir.h 117 ->
+  119, C6xModel.h 142 -> 144); the text forms go with `Line` at design step 4.
+- **Where it stopped.** Design step 3's last part - the loop's registers as operands (`iv`, `bound`, `P`, `C`, `used`,
+  the webs' names), `addressForms` on entries, the emitters building the kernel as entries - not begun. The passes
+  before the pipeliner (`foldCalls` to `widenFills`) and `hoistConstantPairs` stay on text, and `Folding` still asks
+  each entry's mnemonic and operand spellings through its view; their readers move to operands with them.
+- **Gate** (Linux ~/m6p, a copy of ~/m6o with the changed files laid over; REF main a5bc8eec's compiler built in its
+  own kept tree ~/w6ref; Windows work\m6p against work\m6o's cxx3-msvc.exe). `identical.sh ARCHS=tms6747` against
+  main's compiler: -O0 and -O2 1,736 compared, 0 differ; -O0 -g 868 compared, 0 differ once the tree's own path is
+  normalised (91 raw, all `/w6ref/` against `/m6p/`). Windows: tests/cases at -O0, -O1, -O2 by md5, 3,669 outputs
+  (2,601 texts, 1,068 refused alike), 0 differ - plain and `CXX1_C6X_TEXTFOLD=1`. Census at -O2 (`CXX1_C6X_MIR=1`,
+  both boxes): 0 `c6x-fold`, 0 `c6x-fold-edit`, 0 `c6x-live`, 0 `c6x-live-unread`, 0 `c6x-node`, 0 to the text
+  pipeliner or pass; 6,835 selected functions, 106 with kernels (2,727 placed entries). tests/tms6747.sh SHARD=k/3
+  CYCLES=1 SIM=0 at -O2: 814 passed, 0 failed, 3 not run on vm6747; **192,009,106 cycles** (192.0 M, unchanged).
+  tests/g-same.sh 867 same, 0 differ, 0 broken; asm6x.sh 833 objects, 0 failed, at -O0 and -O2. cl /W4 /WX clean.
+  Exclusions 129 sites 0 uncited 0 stale (SSA lowering 554/95); comments 0 over; memory gate rc 0; ast-residue rc 0;
+  ide/generate.py --check up to date. Not run (the coordinator's): winpass, make test, ssa.sh.
+- **Owed:** the loop's registers as operands and `addressForms` on entries; the emitters and the kernel as entries
+  (then `Node::line` goes); `Window`'s body as entries; the passes before the pipeliner on the stream; then step 4.
