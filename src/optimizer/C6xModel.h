@@ -104,15 +104,9 @@ struct LiveFacts { bool instr = false, label = false, kept = false, predicated =
 void liveness(const std::vector<LiveFacts> &v, std::vector<std::uint64_t> &liveIn, std::vector<std::uint64_t> &liveOut);
 LiveFacts liveFacts(const Line &l);
 void computeLiveness(std::vector<Line> &v);
-// The liveness of this text, recomputed first where an edit since makes it stale - unless a LivenessHeld is open.
+// The liveness of this text, recomputed first where an edit since makes it stale.
 std::uint64_t liveOutAt(const std::vector<Line> &v, std::size_t i);
 std::uint64_t liveInAt(const std::vector<Line> &v, std::size_t i);
-// A pass that vouches its edits only shrink liveness reads it as computed; CPP11_C6XLIVECHECK=1 checks that it does.
-struct LivenessHeld {
-    LivenessHeld(const std::vector<Line> &v, const char *pass);
-    ~LivenessHeld();
-    const char *outer;
-};
 int accessSize(const std::string &m);
 std::string renamed(const std::string &op, const std::string &from, const std::string &to);
 int crossings(const Line &l);
@@ -135,9 +129,6 @@ std::string steppedRegister(const Line &l, long &by);
 std::string pairOf(const std::string &lo, const std::string &hi);
 std::string partner(const std::string &r);
 bool legalForm(Line &r);
-
-// The software pipeliner (C6xPipe.cpp): the innermost counted loops of the text rewritten as verbatim lines.
-void pipelineLoops(std::vector<Line> &v);
 
 // What the loop passes (reuseEntryLoads to widenFills, hoistConstantPairs) read and edit: `v` as lines, a line blanked
 // or set, a preheader inserted, the blanks dropped, liveness asked. The text's own here; a stream's in C6xPack.cpp.

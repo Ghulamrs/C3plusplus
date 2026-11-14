@@ -2515,35 +2515,7 @@ bool pipelineAt(const Src &src, std::size_t i, const std::set<std::string> &labe
     return true;
 }
 
-// The names the text defines and the operands it names, with its liveness computed: what every candidate is read against.
-void namesOf(std::vector<Line> &v, std::set<std::string> &labels, std::set<std::string> &named) {
-    computeLiveness(v);
-    if (tracing() > 5) for (std::size_t i = 0; i < v.size(); i++) std::fprintf(stderr, "| %s\n", v[i].raw.c_str());
-    for (std::size_t i = 0; i < v.size(); i++) {
-        if (isLabel(v[i])) labels.insert(labelName(v[i]));
-        for (std::size_t o = 0; o < v[i].ops.size(); o++) named.insert(v[i].ops[o]);
-    }
-}
-
 }   // namespace
-
-// Every candidate loop of the text, innermost first as the text is walked: rewritten in place where the pipelining pays.
-void pipelineLoops(std::vector<Line> &v) {
-    std::set<std::string> labels, named;
-    namesOf(v, labels, named);
-    std::vector<Line> out;
-    std::size_t copied = 0, from = 0, to = 0;
-    const Src src(v, nullptr);
-    for (std::size_t i = 0; i < v.size(); i++) {
-        Code code;
-        if (!pipelineAt(src, i, labels, named, copied, code, from, to)) continue;
-        for (std::size_t k = copied; k < from; k++) out.push_back(v[k]);
-        for (std::size_t k = 0; k < code.lines.size(); k++) out.push_back(code.lines[k]);
-        copied = to;
-    }
-    for (std::size_t k = copied; k < v.size(); k++) out.push_back(v[k]);
-    v.swap(out);
-}
 
 // **The pipeliner on the stream** (M6c rounds 2 and 14): the same candidates read from the entries, their liveness the
 // stream's; a kernel is written as entries (`Code`) - `par` its packets, `NOP n` its idle cycles. False: one not held.

@@ -1372,19 +1372,6 @@ bool streamOf(const std::vector<Line> &v, MStream &s) {
     return true;
 }
 
-// The stream as the text passes read it: a placed entry a kept line, `||` and all; any other its spelling, parsed.
-void linesOf(const MStream &s, std::vector<Line> &v) {
-    v.clear();
-    for (std::size_t k = 0; k < s.size(); k++) {
-        std::string raw = s[k].str();
-        if (!raw.empty() && raw[raw.size() - 1] == '\n') raw.erase(raw.size() - 1);
-        Line l;
-        if (s[k].packed) { l.raw = raw; l.verbatim = true; }
-        else l = parse(raw);
-        v.push_back(l);
-    }
-}
-
 // Each block scheduled on its own, every label and kept line where it stood: `schedule` of C6xSched.cpp, on entries.
 void packetise(MStream &s) {
     std::set<std::string> labels, named;
