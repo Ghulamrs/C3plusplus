@@ -145,8 +145,7 @@ unsigned unitsFor(const MInst &i, const std::string &m) {
 Node nodeOf(const MInst &i, const std::set<std::string> &labels) {
     const std::string m = i.m.str();
     Node n;
-    n.line.instr = true;
-    n.line.mnem = m;
+    n.callp = m == "CALLP";
     readsAndWrites(i, m, n.reads, n.writes);
     n.lat = delaySlots(m) + 1;
     n.late = lateReads(m);

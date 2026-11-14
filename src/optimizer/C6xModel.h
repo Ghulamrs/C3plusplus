@@ -30,7 +30,6 @@ struct Line {
 // latency, the units it has a form on, its side and cross path, its memory
 // access, and the edges from the earlier instructions it must follow.
 struct Node {
-    Line line;
     std::uint64_t reads = 0, writes = 0;
     std::uint64_t stepped = 0;          // the address register a `*R++` or `*R--` access writes, in E1 rather than at its latency
     int lat = 1;
@@ -41,7 +40,7 @@ struct Node {
     bool mem = false, store = false;
     int tpath = -1;                     // a load's or store's data path: the data register's side
     std::string memBase; long memOff = 0; int memSize = 0; bool memFrame = false;
-    bool branch = false, call = false;
+    bool branch = false, call = false, callp = false;   // callp: a CALLP, whose own NOPs are its delay
     std::vector<std::pair<int, int> > preds;   // (earlier node, the least distance in cycles)
     int issue = -1, height = 0;
 };

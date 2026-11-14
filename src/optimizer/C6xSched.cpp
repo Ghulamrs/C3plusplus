@@ -1009,7 +1009,7 @@ bool frameSlot(const std::string &op, long &off) {
 
 Node makeNode(const Line &l, const std::set<std::string> &labels) {
     Node n;
-    n.line = l;
+    n.callp = l.mnem == "CALLP";
     std::vector<std::string> reads, writes;
     readsAndWrites(l, reads, writes);
     n.reads = maskOf(reads);
@@ -1181,7 +1181,7 @@ std::vector<Pending> scheduleBlock(std::vector<Node> &nodes, std::vector<Row> &r
         }
         for (std::size_t i = 0; i < n; i++) {
             if (nodes[i].branch) continue;
-            at = std::max(at, nodes[i].issue - (b.line.mnem == "CALLP" ? 0 : 5));   // issued in the window, and CALLP's is NOPs
+            at = std::max(at, nodes[i].issue - (b.callp ? 0 : 5));   // issued in the window, and CALLP's is NOPs
             at = std::max(at, nodes[i].issue + nodes[i].lat - 6);  // landed when the target runs
         }
         for (;;) {
@@ -1191,7 +1191,7 @@ std::vector<Pending> scheduleBlock(std::vector<Node> &nodes, std::vector<Row> &r
         }
         b.issue = at;
         add(cycles[static_cast<std::size_t>(at)], b);
-        length = b.line.mnem == "CALLP" ? at + 1 : at + 6;
+        length = b.callp ? at + 1 : at + 6;
     }
     // Falling into a label: the block ends at its last issue, its late landings handed on; else it waits for them.
     std::vector<Pending> pend;
