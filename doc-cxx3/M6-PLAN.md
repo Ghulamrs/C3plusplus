@@ -504,3 +504,25 @@ model's reading (`sideOf`), not by the operand's kind - a symbol spelled `B2x` i
   regenerated (C6xPack.cpp) and --check up to date.
 - **Owed:** round 2, the pipeliner on entries (design step 2); the table's readers on operands rather than spellings;
   -O0 tms6747.sh, sim6747, asm6x.sh and make test (the coordinator's).
+
+### M6c, round 2 (the pipeliner on the stream), 2026-11-14, lane m6k
+
+- **Landed** (from m6-j ad3ac547): `pipelineLoops(MStream &)` (C6xPipe.cpp) - a selected function's lines become a
+  stream before the pipeliner, its loops are pipelined there and each kernel comes back as entries (`par` its packets,
+  `NOP n` its idle cycles, `packed` what is placed, never a verbatim line), and `linesOf` (C6xPack.cpp, the inverse of
+  `streamOf`) reads the stream back for the text folds that follow. `pipelineAt` is the one trial of a back branch
+  (counted loop, then the byte window), read by the text driver and the stream driver alike; `namesOf` the one
+  collection of labels and named operands. `CXX1_C6X_TEXTPIPE=1` keeps the text pipeliner for all; the walker's
+  functions keep it always. `CXX1_C6X_MIR=1` names a function sent back to the text pipeliner (`c6x-pipe`) and counts
+  the placed entries of each function with a kernel (`c6x-kernel`). `streamOf` also refuses a line whose `instr` is
+  not its text's. src/ SRCDELTA (C6xPipe.cpp 2,007 -> PIPELINES, C6xPack.cpp 137 -> PACKLINES).
+- **What round 2 is not.** The II search, the register rotation and the loop shapes are the same code, unchanged: they
+  read the stream through each entry's spelling (`linesOf`), as round 1's packetiser asks the table through `lineOf`.
+  `Loop`, `Window`, the terms and the webs still hold `Line`s and register names as strings; the kernel is built as
+  lines and made entries where it is spliced. What moved is where the pipeliner stands (on the stream, between two
+  conversions), its splice and its kernels' representation. The readers on operands are the step that deletes `Line`.
+  The stream is still rebuilt from text (twice now: before the pipeliner and before the packetiser), not handed down
+  from the selector.
+- **Identity.** IDENTITY
+- **Gates.** GATES
+- **Owed:** OWED
