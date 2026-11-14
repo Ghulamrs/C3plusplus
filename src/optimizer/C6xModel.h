@@ -81,6 +81,7 @@ Line parse(const std::string &raw);
 Line make(const std::string &mnem, const std::string &a, const std::string &b = "", const std::string &c = "");
 Line rebuilt(const std::string &mnem, const std::vector<std::string> &ops, const std::string &pred = "");
 void registersIn(const std::string &op, std::vector<std::string> &out);
+bool isNameChar(char c);
 bool isStore(const std::string &m);
 bool isLoad(const std::string &m);
 char sideOf(const std::string &r);
@@ -134,6 +135,7 @@ std::vector<Pending> scheduleBlock(std::vector<Node> &nodes, std::vector<Row> &r
 void waitOut(std::vector<Pending> &pend, std::vector<Row> &rows);
 std::string steppedRegister(const Line &l, long &by);
 std::string pairOf(const std::string &lo, const std::string &hi);
+std::string partner(const std::string &r);
 bool legalForm(Line &r);
 
 // The software pipeliner (C6xPipe.cpp): the innermost counted loops of the text rewritten as verbatim lines.

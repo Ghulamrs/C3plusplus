@@ -5,8 +5,10 @@
 #include "C6xModel.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -22,6 +24,16 @@ Line lineOf(const MInst &i) {
     std::string s = x.str();
     if (!s.empty() && s[s.size() - 1] == '\n') s.erase(s.size() - 1);
     return parse(s);
+}
+
+// An entry as the text passes read it: a placed entry a kept line, no instruction to them; any other its spelling.
+Line viewOf(const MInst &i) {
+    if (!i.packed) return lineOf(i);
+    Line l;
+    l.raw = i.str();
+    l.raw.erase(l.raw.size() - 1);
+    l.verbatim = true;
+    return l;
 }
 
 // What the text pass takes for a label: a Label, or a kept line that starts in the first column; its name ends at `:`.
@@ -220,13 +232,7 @@ void readsAndWrites(const MInst &i, std::vector<std::string> &reads, std::vector
 
 // What liveness reads of an entry: its operands where `modelled`, else its spelling - the one reader either way.
 LiveFacts liveFacts(const MInst &i) {
-    if (i.packed) {                           // a kept line, `||` and all, as `linesOf` hands it to the text passes
-        Line l;
-        l.raw = i.str();
-        l.raw.erase(l.raw.size() - 1);
-        l.verbatim = true;
-        return liveFacts(l);
-    }
+    if (i.packed) return liveFacts(viewOf(i));   // a kept line, `||` and all, as `linesOf` hands it to the text passes
     if (i.kind != MInst::Instruction || !modelled(i)) return liveFacts(lineOf(i));
     LiveFacts f;
     f.instr = true;
@@ -382,16 +388,574 @@ bool forwardConstants(MStream &s, LiveSpan &live) {
     return changed;
 }
 
-bool foldStream(std::vector<Line> &v, bool (*fold)(MStream &, LiveSpan &), bool &changed) {
-    MStream s;
-    if (!streamOf(v, s)) return false;
+namespace {
+
+int crossingsOf(const MInst &i) { return modelled(i) ? crossings(i) : crossings(lineOf(i)); }
+unsigned unitsOf(const MInst &i) { return modelled(i) ? unitsFor(i) : unitsFor(lineOf(i)); }
+
+// `renamed` on an operand: a register, an address's base or index, named `to` where it names `from`.
+void renameOperand(MOperand &x, int from, int to) {
+    if ((x.kind == MOperand::Register || x.kind == MOperand::Memory) && x.reg == from) x.reg = static_cast<std::uint8_t>(to);
+    if (x.kind == MOperand::Memory && x.index == from) x.index = static_cast<std::uint8_t>(to);
+}
+
+// C6xSched's `legalForm` on an entry: a commutative one turns its sources about where the first crosses.
+bool legalForm(MInst &r) {
+    const std::string m = r.m.str();
+    const bool commutes = m == "ADD" || m == "AND" || m == "OR" || m == "XOR" || m == "MPYDP" || m == "ADDDP" || m == "MPYSP" || m == "ADDSP" || m == "MPY32" || m == "CMPEQ";
+    if (crossingsOf(r) > 1 && commutes && r.operands == 3 && !isNumber(r.op[0].str()) && !isNumber(r.op[1].str())) std::swap(r.op[0], r.op[1]);
+    return crossingsOf(r) <= 1 && (unitsOf(r) != 0 || isLoad(m) || isStore(m));
+}
+
+// An address over both register files, which no unit reaches.
+bool memSide(const MInst &e) {
+    if (!modelled(e)) {
+        const Line r = lineOf(e);
+        for (std::size_t o = 0; o < r.ops.size(); o++)
+            if (r.ops[o][0] == '*') { std::vector<std::string> m; registersIn(r.ops[o], m); if (m.size() > 1 && sideOf(m[0]) != sideOf(m[1])) return true; }
+        return false;
+    }
+    for (int k = 0; k < e.operands; k++)
+        if (e.op[k].kind == MOperand::Memory && e.op[k].index != kNoReg && sideOfReg(e.op[k].reg) != sideOfReg(e.op[k].index)) return true;
+    return false;
+}
+
+// A fold's stream with each entry as the text reads it (`v`) and its liveness: an edit is made on the entry's operands
+// where it is modelled, else by its spelling read back; CXX1_C6X_MIR=1 names an edit the text would spell otherwise.
+struct Folding {
+    MStream &s;
+    LiveSpan &live;
+    std::vector<Line> v;
+    bool held = true, stale = false;     // held: liveness as computed; else recomputed after an edit, as `deadAfter` does
+    Folding(MStream &stream, LiveSpan &l) : s(stream), live(l) { for (std::size_t k = 0; k < s.size(); k++) v.push_back(viewOf(s[k])); }
+    void erase(std::size_t i) { eraseAt(s, live, i); v.erase(v.begin() + static_cast<long>(i)); stale = true; }
+    void set(std::size_t i, const MInst &e) { s[i] = e; v[i] = viewOf(e); live.in[i] = live.out[i] = ~0ull; stale = true; }
+    bool dead(std::size_t i, const std::string &reg) {
+        if (!held && stale) { liveness(s, live.in, live.out); stale = false; }
+        return deadAfter(s, live.out, i, reg);
+    }
+    void rw(std::size_t k, std::vector<std::string> &reads, std::vector<std::string> &writes) const {
+        if (modelled(s[k])) readsAndWrites(s[k], reads, writes); else readsAndWrites(v[k], reads, writes);
+    }
+    bool touches(std::size_t k, const std::vector<std::string> &regs) const {
+        std::vector<std::string> reads, writes;
+        rw(k, reads, writes);
+        for (std::size_t r = 0; r < regs.size(); r++) if (has(reads, regs[r]) || has(writes, regs[r])) return true;
+        return false;
+    }
+    // Entry k edited: `edit` on its operands, or `text` (the text fold's rebuilt line) read back; false where it cannot be.
+    template <typename Edit> bool edited(std::size_t k, const Line &text, Edit edit, MInst &e) const {
+        if (modelled(s[k])) {
+            e = s[k];
+            edit(e);
+            static const bool check = std::getenv("CXX1_C6X_MIR") != nullptr;
+            if (check && viewOf(e).raw != text.raw) std::fprintf(stderr, "c6x-fold-edit: %s against %s\n", viewOf(e).raw.c_str(), text.raw.c_str());
+            return true;
+        }
+        MStream one;
+        read(text.raw + "\n", one);
+        if (one.size() != 1) { std::fprintf(stderr, "c6x-fold-edit: unread %s\n", text.raw.c_str()); return false; }
+        e = one[0];
+        return true;
+    }
+};
+
+}   // namespace
+
+// C6xSched's `forwardMoves` on entries: a copy's one reader on the straight path takes the source itself, an instruction
+// whose result is only copied writes the copy's destination, and a copy nothing reads is not made.
+bool forwardMoves(MStream &s, LiveSpan &live) {
+    Folding f(s, live);
+    const std::vector<Line> &v = f.v;
+    bool changed = false;
+    for (std::size_t i = 0; i < v.size(); i++) {
+        const Line &mv = v[i];
+        if (mv.mnem != "MV" || mv.ops.size() != 2 || !mv.pred.empty()) continue;
+        const std::string S = mv.ops[0], D = mv.ops[1];
+        if (sideOf(S) && S == D) { f.erase(i); i--; changed = true; continue; }   // a self-copy
+        if (!sideOf(S) || !sideOf(D) || S == "A15" || D == "A15" || S == "B15" || D == "B15") continue;
+        const int from = regNumber(D), to = regNumber(S);
+        if (i > 0 && renameable(v[i - 1]) && v[i - 1].pred.empty() && v[i - 1].mnem != "MVKH" &&
+            !v[i - 1].ops.empty() && v[i - 1].ops.back() == S && f.dead(i, S)) {
+            std::vector<std::string> reads, writes;
+            f.rw(i - 1, reads, writes);
+            if (writes.size() == 1) {
+                std::vector<std::string> ops = v[i - 1].ops;
+                ops.back() = D;
+                MInst e;
+                if (f.edited(i - 1, rebuilt(v[i - 1].mnem, ops), [&](MInst &x) { x.op[x.operands - 1] = MOperand(D); }, e) &&
+                    crossingsOf(e) <= 1 && unitsOf(e) != 0) {
+                    f.set(i - 1, e);
+                    f.erase(i);
+                    i--;
+                    changed = true;
+                    continue;
+                }
+            }
+        }
+        for (std::size_t j = i + 1; j < v.size(); j++) {
+            if (blockEnd(v[j])) break;
+            std::vector<std::string> reads, writes;
+            f.rw(j, reads, writes);
+            if (has(reads, D)) {
+                if (!v[j].pred.empty() || (!has(writes, D) && !f.dead(j, D))) break;
+                if (v[j].mnem == "ADDK" || v[j].mnem == "MVKH") break;      // the destination is read too
+                std::vector<std::string> ops = v[j].ops;
+                bool pair = false;          // a register pair is odd:even, and a half cannot be renamed alone
+                for (std::size_t o = 0; o < ops.size(); o++) if (ops[o].find(':') != std::string::npos) pair = true;
+                if (pair) break;
+                const std::string &m = v[j].mnem;
+                const bool keepDest = !isStore(m) && m != "B" && ops.back()[0] != '*';
+                for (std::size_t o = 0; o < ops.size(); o++) if (!(keepDest && o + 1 == ops.size())) ops[o] = renamed(ops[o], D, S);
+                MInst e;
+                auto rename = [&](MInst &x) { for (int k = 0; k < x.operands; k++) if (!(keepDest && k + 1 == x.operands)) renameOperand(x.op[k], from, to); };
+                if (!f.edited(j, rebuilt(m, ops, v[j].pred), rename, e)) break;
+                // A memory operand's registers stay on the unit's side; a branch register stays B.
+                if (memSide(e) || crossingsOf(e) > 1 || unitsOf(e) == 0 || (e.m.str() == "B" && sideOf(e.op[0].str()) == 'A')) break;
+                f.set(j, e);
+                f.erase(i);
+                i--;
+                changed = true;
+                break;
+            }
+            if (has(writes, D) || has(writes, S)) break;
+        }
+    }
+    for (std::size_t i = 0; i < v.size(); i++)
+        if (v[i].mnem == "MV" && v[i].ops.size() == 2 && v[i].pred.empty() && sideOf(v[i].ops[1]) &&
+            v[i].ops[1] != "A15" && v[i].ops[1] != "B15" && f.dead(i, v[i].ops[1])) {
+            f.erase(i);
+            i--;
+            changed = true;
+        }
+    return changed;
+}
+
+// C6xSched's `forwardPairMoves` on entries: a pair copied whole is made where the copies go, and a pair's two copies
+// read whole by one reader are that reader reading the source pair.
+bool forwardPairMoves(MStream &s, LiveSpan &live) {
+    Folding f(s, live);
+    const std::vector<Line> &v = f.v;
+    bool changed = false;
+    for (std::size_t i = 0; i < v.size(); i++) {
+        const Line &w = v[i];
+        if (!w.instr || !w.pred.empty() || isStore(w.mnem) || isBranch(w.mnem) || w.mnem == "MVKH" || w.mnem == "ADDK" || w.ops.empty()) continue;
+        if (w.ops.back().find(':') == std::string::npos) continue;
+        std::vector<std::string> dst, reads, writes;
+        registersIn(w.ops.back(), dst);
+        f.rw(i, reads, writes);
+        if (dst.size() != 2 || writes.size() != 2) continue;
+        const std::string H = dst[0], L = dst[1];
+        std::size_t mL = 0, mH = 0;
+        std::string X, Y;
+        std::vector<std::string> halves; halves.push_back(L); halves.push_back(H);
+        for (std::size_t j = i + 1; j < v.size() && !blockEnd(v[j]) && (!mL || !mH); j++) {
+            const Line &m = v[j];
+            if (m.mnem == "MV" && m.ops.size() == 2 && m.pred.empty() && sideOf(m.ops[1])) {
+                if (m.ops[0] == L && !mL) { mL = j; X = m.ops[1]; continue; }
+                if (m.ops[0] == H && !mH) { mH = j; Y = m.ops[1]; continue; }
+            }
+            if (f.touches(j, halves)) break;
+        }
+        if (!mL || !mH) continue;
+        const std::string pair = pairOf(X, Y);
+        if (pair.empty() || X == L || X == H || Y == L || Y == H || X == "A15" || X == "B15") continue;
+        const std::size_t last = std::max(mL, mH);
+        std::vector<std::string> both; both.push_back(X); both.push_back(Y);
+        bool ok = f.dead(last, L) && f.dead(last, H);
+        for (std::size_t k = i + 1; k < last && ok; k++) if (k != mL && k != mH && f.touches(k, both)) ok = false;
+        if (!ok) continue;
+        std::vector<std::string> ops = w.ops;
+        ops.back() = pair;
+        MInst e;
+        if (!f.edited(i, rebuilt(w.mnem, ops, w.pred), [&](MInst &x) { x.op[x.operands - 1] = MOperand(pair); }, e) || !legalForm(e)) continue;
+        f.set(i, e);
+        f.erase(last);
+        f.erase(std::min(mL, mH));
+        changed = true;
+    }
+    for (std::size_t i = 0; i < v.size(); i++) {
+        const Line &a = v[i];
+        if (!a.instr || a.mnem != "MV" || a.ops.size() != 2 || !a.pred.empty() || !sideOf(a.ops[0]) || !sideOf(a.ops[1])) continue;
+        const std::string S = a.ops[0], L = a.ops[1], T = partner(S), H = partner(L);
+        if (S == "A15" || S == "B15" || L == "A15" || L == "B15" || T == "A15" || T == "B15" || sideOf(S) != sideOf(T)) continue;
+        std::vector<std::string> four; four.push_back(S); four.push_back(T); four.push_back(L); four.push_back(H);
+        std::size_t j = i + 1;
+        for (; j < v.size() && !blockEnd(v[j]); j++) {
+            const Line &b = v[j];
+            if (b.mnem == "MV" && b.ops.size() == 2 && b.pred.empty() && b.ops[0] == T && b.ops[1] == H) break;
+            if (f.touches(j, four)) { j = v.size(); break; }
+        }
+        if (j >= v.size() || blockEnd(v[j])) continue;
+        const std::string from = pairOf(std::min(L, H), std::max(L, H)), to = pairOf(std::min(S, T), std::max(S, T));
+        if (from.empty() || to.empty()) continue;
+        std::size_t r = j + 1;
+        for (; r < v.size() && !blockEnd(v[r]); r++) {
+            std::vector<std::string> reads, writes;
+            f.rw(r, reads, writes);
+            if (has(reads, L) || has(reads, H)) break;
+            if (has(writes, L) || has(writes, H) || has(writes, S) || has(writes, T)) { r = v.size(); break; }
+        }
+        if (r >= v.size() || !v[r].instr || !v[r].pred.empty()) continue;
+        std::vector<std::string> ops = v[r].ops, reads, writes;
+        f.rw(r, reads, writes);
+        const bool hasDest = !isStore(v[r].mnem) && ops.back()[0] != '*';
+        bool ok = v[r].mnem != "MVKH" && v[r].mnem != "ADDK", seen = false;
+        for (std::size_t o = 0; o + (hasDest ? 1 : 0) < ops.size() && ok; o++) {
+            if (ops[o] == from) { ops[o] = to; seen = true; continue; }
+            std::vector<std::string> regs;                                      // a half read on its own stays a copy
+            registersIn(ops[o], regs);
+            if (has(regs, L) || has(regs, H)) ok = false;
+        }
+        const bool overwrites = hasDest && ops.back() == from;
+        if (!ok || !seen || (!overwrites && (has(writes, L) || has(writes, H)))) continue;
+        if (!overwrites && !(f.dead(r, L) && f.dead(r, H))) continue;
+        MInst e;
+        auto repair = [&](MInst &x) { for (int k = 0; k + (hasDest ? 1 : 0) < x.operands; k++) if (x.op[k].str() == from) x.op[k] = MOperand(to); };
+        if (!f.edited(r, rebuilt(v[r].mnem, ops, v[r].pred), repair, e) || !legalForm(e)) continue;
+        f.set(r, e);
+        f.erase(j);
+        f.erase(i);
+        i--;
+        changed = true;
+    }
+    return changed;
+}
+
+// C6xSched's `numberValues` on entries: within a straight run each result numbered by its operation and its sources'
+// numbers, a remake of a number a register holds a copy; liveness current, as the text's is, an entry gone a blank line.
+void numberValues(MStream &s) {
     LiveSpan live;
     liveness(s, live.in, live.out);
-    changed = fold(s, live);
-    if (!changed) return true;
-    linesOf(s, v);
-    for (std::size_t k = 0; k < v.size(); k++) { v[k].liveIn = live.in[k]; v[k].liveOut = live.out[k]; }
+    Folding f(s, live);
+    f.held = false;
+    const std::vector<Line> &v = f.v;
+    MInst blank;
+    blank.kind = MInst::Verbatim;
+    blank.m = opt::StrId("\n");
+    std::set<std::string> named;
+    for (std::size_t i = 0; i < v.size(); i++)
+        if (v[i].instr && v[i].mnem == "B") named.insert(v[i].ops[0]);
+    std::map<std::string, long> val;            // register -> number
+    std::map<std::string, long> made;           // key -> the number it makes
+    std::map<long, std::size_t> defAt;          // number -> the entry that made it, this run
+    long next = 1, stores = 0;
+    std::size_t runStart = 0;
+    auto reset = [&](std::size_t at) { val.clear(); made.clear(); defAt.clear(); next++; stores++; runStart = at; };
+    // The number's register overwritten before the remake: its maker given a fresh register, its readers with it.
+    auto renameFirst = [&](std::size_t p, std::size_t here, const std::string &D) -> std::string {
+        std::size_t end = here;
+        for (std::size_t k = p + 1; k < here; k++) {
+            std::vector<std::string> r, w;
+            f.rw(k, r, w);
+            if (has(w, D) && v[k].pred.empty()) { end = k; break; }
+        }
+        const int from = regNumber(D);
+        for (int n = 16; n < 32; n++) {
+            const std::string F = "A" + std::to_string(n);
+            bool ok = f.dead(p, F);
+            for (std::size_t k = p + 1; k <= here && ok; k++) if (f.touches(k, std::vector<std::string>(1, F))) ok = false;
+            if (!ok) continue;
+            std::vector<MInst> changed;
+            std::vector<std::size_t> where;
+            std::vector<std::string> ops = v[p].ops;
+            ops.back() = F;
+            MInst d;
+            if (!f.edited(p, rebuilt(v[p].mnem, ops, v[p].pred), [&](MInst &x) { x.op[x.operands - 1] = MOperand(F); }, d)) continue;
+            if (crossingsOf(d) > 1 || (unitsOf(d) == 0 && !isLoad(d.m.str()))) continue;
+            changed.push_back(d); where.push_back(p);
+            for (std::size_t k = p + 1; k <= end && k < here && ok; k++) {   // the web's last entry may write D too
+                std::vector<std::string> r, w;
+                f.rw(k, r, w);
+                if (!has(r, D)) continue;
+                const Line &u = v[k];
+                if (!u.pred.empty() || u.mnem == "MVKH" || u.mnem == "ADDK" || (has(w, D) && k != end)) { ok = false; break; }
+                std::vector<std::string> uo = u.ops;
+                std::size_t o = 0;
+                for (; o + 1 < uo.size() || (o < uo.size() && (isStore(u.mnem) || uo[o][0] == '*')); o++) {
+                    if (uo[o].find(':') != std::string::npos) { ok = false; break; }
+                    if (uo[o][0] == '*' && sideOf(D) != 'A' && renamed(uo[o], D, F) != uo[o]) { ok = false; break; }
+                    uo[o] = renamed(uo[o], D, F);
+                }
+                if (!ok) break;
+                const std::size_t upTo = o;
+                MInst r2;
+                auto rename = [&](MInst &x) { for (std::size_t q = 0; q < upTo; q++) renameOperand(x.op[q], from, n); };
+                if (!f.edited(k, rebuilt(u.mnem, uo, u.pred), rename, r2)) { ok = false; break; }
+                const std::string m2 = r2.m.str();
+                if (crossingsOf(r2) > 1 || (unitsOf(r2) == 0 && !isLoad(m2) && !isStore(m2))) { ok = false; break; }
+                changed.push_back(r2); where.push_back(k);
+            }
+            if (!ok) continue;
+            for (std::size_t c = 0; c < changed.size(); c++) f.set(where[c], changed[c]);
+            return F;
+        }
+        return std::string();
+    };
+    auto numberOf = [&](const std::string &r) -> long { std::map<std::string, long>::iterator it = val.find(r); if (it == val.end()) { val[r] = next++; return val[r]; } return it->second; };
+    auto keyOf = [&](const std::string &op) -> std::string {   // an operand with its registers' numbers
+        std::string out;
+        for (std::size_t k = 0; k < op.size();) {
+            if ((op[k] == 'A' || op[k] == 'B') && k + 1 < op.size() && std::isdigit(static_cast<unsigned char>(op[k + 1])) && (k == 0 || !isNameChar(op[k - 1]))) {
+                std::size_t e = k + 1;
+                while (e < op.size() && std::isdigit(static_cast<unsigned char>(op[e]))) e++;
+                out += "#" + std::to_string(numberOf(op.substr(k, e - k)));
+                k = e;
+            } else out += op[k++];
+        }
+        return out;
+    };
+    for (std::size_t i = 0; i < v.size(); i++) {
+        const Line &l = v[i];
+        if (isLabel(l)) { if (named.count(labelName(l))) reset(i); continue; }
+        if (!l.instr) { reset(i); continue; }
+        std::vector<std::string> reads, writes;
+        f.rw(i, reads, writes);
+        if (isBranch(l.mnem)) { if (l.pred.empty() || l.mnem == "CALLP" || sideOf(l.ops[0])) reset(i); continue; }
+        bool pair = false, incr = false;
+        for (std::size_t o = 0; o < l.ops.size(); o++) {
+            if (l.ops[o].find(':') != std::string::npos) pair = true;
+            if (l.ops[o][0] == '*' && (l.ops[o].find("++") != std::string::npos || l.ops[o].find("--") != std::string::npos)) incr = true;
+        }
+        const bool plain = l.pred.empty() && !pair && !incr && writes.size() == 1 && !isStore(l.mnem) && l.ops.size() >= 2 &&
+                           writes[0] != "A15" && writes[0] != "B15" && writes[0] != "B14" && writes[0] != "B3";
+        if (plain) {
+            std::string key = l.mnem;
+            for (std::size_t o = 0; o + 1 < l.ops.size(); o++) key += " " + keyOf(l.ops[o]);
+            if (l.mnem == "MVKH" || l.mnem == "ADDK") key += " #" + std::to_string(numberOf(writes[0]));
+            if (isLoad(l.mnem)) key += " @" + std::to_string(stores);
+            const std::string dst = writes[0];
+            if (l.mnem == "MV" && sideOf(l.ops[0])) {                           // a copy carries the number
+                const long n = numberOf(l.ops[0]);
+                if (val.count(dst) && val[dst] == n) { f.set(i, blank); continue; }   // a copy back of what it holds
+                val[dst] = n;
+                continue;
+            }
+            std::map<std::string, long>::iterator it = made.find(key);
+            const long number = it != made.end() ? it->second : next++;
+            if (it == made.end()) made[key] = number;
+            std::string holder;                 // a register still holding that number, the destination itself first
+            if (val.count(dst) && val[dst] == number) holder = dst;
+            for (std::map<std::string, long>::const_iterator h = val.begin(); h != val.end() && holder.empty(); ++h)
+                if (h->second == number && sideOf(h->first) && h->first != "A15" && h->first != "B15") holder = h->first;
+            const bool store = isStore(l.mnem);
+            if (holder.empty() && it != made.end() && defAt.count(number) && defAt[number] >= runStart && !store) {
+                const std::size_t p = defAt[number];
+                std::vector<std::string> r0, w0;
+                f.rw(p, r0, w0);
+                if (v[p].mnem != "MVKL" && v[p].mnem != "MVKH" && v[p].mnem != "ADDK" && sideOf(w0[0]) && w0[0] != "A15" && w0[0] != "B15") {
+                    holder = renameFirst(p, i, w0[0]);
+                    if (!holder.empty()) val[holder] = number;
+                }
+            }
+            if (!holder.empty()) {
+                if (holder == dst) { f.set(i, blank); continue; }   // gone: no operands left to read
+                const MInst r("MV", MOperand(holder), MOperand(dst));
+                if (crossingsOf(r) <= 1) { f.set(i, r); val[dst] = number; continue; }
+            }
+            val[dst] = number;
+            defAt[number] = i;
+            continue;
+        }
+        for (std::size_t w = 0; w < writes.size(); w++) val[writes[w]] = next++;
+        if (isStore(l.mnem)) stores++;
+    }
+    MStream out;
+    for (std::size_t i = 0; i < s.size(); i++) if (v[i].instr || !v[i].raw.empty()) out.push_back(s[i]);
+    s.swap(out);
+}
+
+namespace {
+
+// Entry k with operand `at` the address `addr`, by its operands or its spelling (`rebuilt` with no predicate).
+bool readdressed(Folding &f, std::size_t k, std::size_t at, const std::string &addr) {
+    std::vector<std::string> ops = f.v[k].ops;
+    ops[at] = addr;
+    MInst e;
+    if (!f.edited(k, rebuilt(f.v[k].mnem, ops), [&](MInst &x) { x.op[at] = MOperand(addr); }, e)) return false;
+    f.set(k, e);
     return true;
+}
+
+// C6xSched's `foldScaledIndex` on entries: `SHL I, log2(size), T` read by `ADD R, T, U`s whose U is an access's
+// address becomes `*+R[I]` (or `*+R[T]` after `MV I, T`).
+bool foldScaledIndex(Folding &f, std::size_t i, const std::set<std::string> &named) {
+    const std::vector<Line> &v = f.v;
+    const Line &l = v[i];
+    if (l.mnem != "SHL" || l.ops.size() != 3 || !isNumber(l.ops[1]) || !sideOf(l.ops[0]) || !sideOf(l.ops[2]) || l.ops[0] == l.ops[2]) return false;
+    const std::string I = l.ops[0], T = l.ops[2];
+    const long shift = std::atol(l.ops[1].c_str());
+    if (shift < 0 || shift > 3) return false;
+    struct Use { std::size_t add, access; std::string R, U; bool iWritten; };
+    std::vector<Use> uses;
+    std::vector<std::size_t> unfolded;
+    bool iWritten = false, tLive = true;
+    std::size_t last = i;
+    for (std::size_t j = i + 1; j < v.size(); j++) {
+        if (isLabel(v[j]) && passThrough(v[j], named)) continue;
+        if (blockEnd(v[j])) { tLive = !f.dead(j - 1, T); break; }
+        std::vector<std::string> r2, w2;
+        f.rw(j, r2, w2);
+        if (has(w2, I)) iWritten = true;
+        if (has(r2, T) && has(w2, T)) { unfolded.push_back(j); tLive = false; break; }
+        if (has(w2, T)) { tLive = false; break; }
+        if (!has(r2, T)) continue;
+        const Line &a = v[j];
+        const bool shape = a.pred.empty() && a.mnem == "ADD" && a.ops.size() == 3 && a.ops[2] != T && a.ops[2] != I &&
+                           ((a.ops[0] == T && sideOf(a.ops[1]) && a.ops[1] != T) || (a.ops[1] == T && sideOf(a.ops[0]) && a.ops[0] != T));
+        if (!shape) { unfolded.push_back(j); continue; }
+        Use u{ j, 0, a.ops[0] == T ? a.ops[1] : a.ops[0], a.ops[2], iWritten };
+        if (u.R == "A15" || u.R == "B15" || u.U == "A15" || u.U == "B15" || u.R == I) { unfolded.push_back(j); continue; }
+        for (std::size_t k = j + 1; k < v.size() && u.access == 0; k++) {
+            if (isLabel(v[k]) && passThrough(v[k], named)) continue;
+            if (blockEnd(v[k])) break;
+            std::vector<std::string> r3, w3;
+            f.rw(k, r3, w3);
+            const bool access = v[k].pred.empty() && v[k].ops.size() == 2 && (isLoad(v[k].mnem) || isStore(v[k].mnem));
+            if (has(w3, u.R) || has(w3, T) || has(w3, I)) { if (!(access && isLoad(v[k].mnem) && v[k].ops[1] == u.R && !has(w3, T) && !has(w3, I))) break; }
+            if (!has(r3, u.U) && !has(w3, u.U)) continue;
+            if (!access) break;
+            const std::size_t m = isStore(v[k].mnem) ? 1 : 0;
+            if (v[k].ops[m] != "*" + u.U || accessSize(v[k].mnem) != (1L << shift)) break;
+            std::vector<std::string> data;
+            registersIn(v[k].ops[1 - m], data);
+            if (has(data, u.R) || has(data, T) || has(data, I)) break;
+            if (!(has(data, u.U) || f.dead(k, u.U))) break;
+            u.access = k;
+        }
+        if (u.access == 0) { unfolded.push_back(j); continue; }
+        uses.push_back(u);
+        if (u.access > last) last = u.access;
+    }
+    if (uses.empty()) return false;
+    bool direct = true;
+    for (std::size_t k = 0; k < uses.size(); k++) direct = direct && !uses[k].iWritten && sideOf(I) == sideOf(uses[k].R);
+    for (std::size_t j = i + 1; j <= last && direct; j++) {
+        std::vector<std::string> r2, w2;
+        if (v[j].instr) { f.rw(j, r2, w2); if (has(w2, I)) direct = false; }
+    }
+    if (!direct) {
+        if (!unfolded.empty() || tLive) return false;
+        for (std::size_t k = 0; k < uses.size(); k++) if (sideOf(T) != sideOf(uses[k].R)) return false;
+    }
+    const std::string X = direct ? I : T;
+    std::vector<std::size_t> gone;
+    for (std::size_t k = 0; k < uses.size(); k++) {
+        readdressed(f, uses[k].access, isStore(v[uses[k].access].mnem) ? 1 : 0, "*+" + uses[k].R + "[" + X + "]");
+        gone.push_back(uses[k].add);
+    }
+    if (direct && unfolded.empty() && !tLive) gone.push_back(i);
+    else if (!direct) f.set(i, MInst("MV", MOperand(I), MOperand(T)));
+    std::sort(gone.begin(), gone.end());
+    for (std::size_t k = gone.size(); k-- > 0;) f.erase(gone[k]);
+    return true;
+}
+
+}   // namespace
+
+// C6xSched's `foldAddressing` on entries: an address made by ADD or SUB goes into its one access as `*+R(k)`, and a
+// step after an access through `*R` into it as `*R++(k)`; liveness held as computed.
+void foldAddressing(MStream &s, bool index) {
+    LiveSpan live;
+    liveness(s, live.in, live.out);
+    Folding f(s, live);
+    const std::vector<Line> &v = f.v;
+    std::set<std::string> named;
+    for (std::size_t i = 0; i < v.size(); i++) for (std::size_t o = 0; o < v[i].ops.size(); o++) named.insert(v[i].ops[o]);
+    for (std::size_t i = 0; i + 1 < v.size(); i++) {
+        const Line &l = v[i];
+        if (!l.instr || !l.pred.empty()) continue;
+        if (index && foldScaledIndex(f, i, named)) { i--; continue; }
+        std::vector<std::string> reads, writes;
+        f.rw(i, reads, writes);
+        if ((l.mnem == "ADD" || l.mnem == "SUB") && l.ops.size() == 3 && writes.size() == 1 && l.ops[2] == writes[0] &&
+            sideOf(writes[0]) && writes[0] != "A15" && writes[0] != "B15" && (isNumber(l.ops[0]) != isNumber(l.ops[1])) &&
+            (isNumber(l.ops[0]) ? l.ops[1] : l.ops[0]) == writes[0] && !(l.mnem == "SUB" && isNumber(l.ops[0]))) {
+            const std::string R = writes[0];
+            long k = std::atol((isNumber(l.ops[0]) ? l.ops[0] : l.ops[1]).c_str());
+            if (l.mnem == "SUB") k = -k;
+            for (std::size_t j = i + 1; j < v.size(); j++) {
+                if (isLabel(v[j]) && passThrough(v[j], named)) continue;
+                if (blockEnd(v[j])) break;
+                std::vector<std::string> r2, w2;
+                f.rw(j, r2, w2);
+                if (!has(r2, R) && !has(w2, R)) continue;
+                const Line &u = v[j];
+                if (u.pred.empty() && u.ops.size() == 2 && (isLoad(u.mnem) || isStore(u.mnem))) {
+                    const std::size_t at = isStore(u.mnem) ? 1 : 0;
+                    const long size = accessSize(u.mnem), mag = k < 0 ? -k : k;
+                    std::vector<std::string> data;
+                    registersIn(u.ops[1 - at], data);
+                    if (u.ops[at] == "*" + R && mag != 0 && mag % size == 0 && mag <= 31 && !has(data, R) &&
+                        readdressed(f, j, at, (k < 0 ? "*--" : "*++") + R + "(" + std::to_string(mag) + ")")) {
+                        f.erase(i);
+                        i--;
+                    }
+                }
+                break;
+            }
+            continue;
+        }
+        if ((l.mnem == "ADD" || l.mnem == "SUB" || l.mnem == "SUBAW") && l.ops.size() == 3 && writes.size() == 1 && !has(reads, writes[0])) {
+            const bool k0 = isNumber(l.ops[0]), k1 = isNumber(l.ops[1]);
+            if (l.mnem != "ADD" && !k1) continue;
+            if (k0 == k1) continue;
+            const std::string R = k0 ? l.ops[1] : l.ops[0], T = writes[0];
+            long k = std::atol((k0 ? l.ops[0] : l.ops[1]).c_str());
+            if (l.mnem == "SUBAW") k *= 4;
+            if (l.mnem != "ADD") k = -k;
+            if (!sideOf(R) || R == T) continue;
+            for (std::size_t j = i + 1; j < v.size(); j++) {
+                if (isLabel(v[j]) && passThrough(v[j], named)) continue;
+                if (blockEnd(v[j])) break;
+                std::vector<std::string> r2, w2;
+                f.rw(j, r2, w2);
+                const bool access = v[j].pred.empty() && v[j].ops.size() == 2 && (isLoad(v[j].mnem) || isStore(v[j].mnem));
+                if (has(w2, R) && !(access && isLoad(v[j].mnem) && v[j].ops[1] == R)) break;
+                if (!has(r2, T) && !has(w2, T)) continue;
+                const Line &u = v[j];
+                if (access) {
+                    const std::size_t at = isStore(u.mnem) ? 1 : 0;
+                    const long size = accessSize(u.mnem), mag = k < 0 ? -k : k;
+                    std::vector<std::string> data;
+                    registersIn(u.ops[1 - at], data);
+                    if (u.ops[at] == "*" + T && mag % size == 0 && mag / size <= 31 && (!has(data, R) || isLoad(u.mnem)) && (has(data, T) || f.dead(j, T)) &&
+                        readdressed(f, j, at, mag == 0 ? "*" + R : (k < 0 ? "*-" : "*+") + R + "(" + std::to_string(mag) + ")")) {
+                        f.erase(i);
+                        i--;
+                    }
+                }
+                break;
+            }
+            continue;
+        }
+        if ((isLoad(l.mnem) || isStore(l.mnem)) && l.ops.size() == 2) {
+            const std::size_t at = isStore(l.mnem) ? 1 : 0;
+            if (l.ops[at].size() < 2 || l.ops[at][0] != '*' || !sideOf(l.ops[at].substr(1))) continue;
+            const std::string R = l.ops[at].substr(1);
+            std::vector<std::string> data;
+            registersIn(l.ops[1 - at], data);
+            if (has(data, R) || R == "A15" || R == "B15") continue;
+            for (std::size_t j = i + 1; j < v.size(); j++) {
+                if (isLabel(v[j]) && passThrough(v[j], named)) continue;
+                if (blockEnd(v[j])) break;
+                std::vector<std::string> r2, w2;
+                f.rw(j, r2, w2);
+                if (!has(r2, R) && !has(w2, R)) continue;
+                const Line &u = v[j];
+                const bool k0 = u.ops.size() == 3 && isNumber(u.ops[0]), k1 = u.ops.size() == 3 && isNumber(u.ops[1]);
+                if (u.pred.empty() && (u.mnem == "ADD" || u.mnem == "SUB") && u.ops.size() == 3 && u.ops[2] == R && (k0 != k1) &&
+                    (k0 ? u.ops[1] : u.ops[0]) == R && !(u.mnem == "SUB" && k0)) {
+                    long k = std::atol((k0 ? u.ops[0] : u.ops[1]).c_str());
+                    if (u.mnem == "SUB") k = -k;
+                    const long size = accessSize(l.mnem), mag = k < 0 ? -k : k;
+                    if (mag != 0 && mag % size == 0 && mag / size <= 31 && readdressed(f, i, at, "*" + R + (k < 0 ? "--" : "++") + "(" + std::to_string(mag) + ")"))
+                        f.erase(j);
+                }
+                break;
+            }
+        }
+    }
 }
 
 bool streamOf(const std::vector<Line> &v, MStream &s) {

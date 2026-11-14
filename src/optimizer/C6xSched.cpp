@@ -2283,27 +2283,46 @@ bool removeDead(std::vector<Line> &v) {
 
 thread_local bool streamFolds = false;   // a selected function's folds on its stream; CXX1_C6X_TEXTFOLD=1 keeps the text's
 
-// A fold on the stream where the function is selected and its lines are spelled, else on the text.
-bool fold(std::vector<Line> &v, bool (*text)(std::vector<Line> &), bool (*stream)(MStream &, LiveSpan &)) {
-    bool changed = false;
-    if (streamFolds && foldStream(v, stream, changed)) return changed;
-    if (streamFolds && std::getenv("CXX1_C6X_MIR") != nullptr) std::fprintf(stderr, "c6x-fold: a line the stream does not spell; the text fold\n");
-    return text(v);
+// The five folds on one stream held across the rounds (C6xPack.cpp), read back once (or where `dirty` already): liveness
+// as the text's would leave it.
+void rounds(MStream &s, std::vector<Line> &lines, bool dirty = false) {
+    LiveSpan live;
+    bool any = false, changed = false;
+    for (int round = 0; round < 8; round++) {
+        liveness(s, live.in, live.out);
+        changed = c6x::forwardMoves(s, live);
+        liveness(s, live.in, live.out);
+        changed = (!skipped("pairmv") && c6x::forwardPairMoves(s, live)) || changed;
+        liveness(s, live.in, live.out);
+        changed = c6x::forwardConstants(s, live) || changed;
+        liveness(s, live.in, live.out);
+        changed = c6x::flipPredicates(s, live) || changed;
+        liveness(s, live.in, live.out);
+        changed = (!skipped("dead") && c6x::removeDead(s, live)) || changed;
+        any = any || changed;
+        if (!changed) break;
+    }
+    if (any || dirty) linesOf(s, lines);
+    if (!changed) { computeLiveness(lines); return; }    // a fixed point: the liveness is current, as the text's is
+    for (std::size_t k = 0; k < lines.size(); k++) { lines[k].liveIn = live.in[k]; lines[k].liveOut = live.out[k]; }
 }
 
-// The copy, constant and predicate folds, to a fixed point.
+// The copy, constant and predicate folds, to a fixed point: a selected function's on its stream, else on the text.
 void rounds(std::vector<Line> &lines) {
+    MStream s;
+    if (streamFolds && streamOf(lines, s)) { rounds(s, lines); return; }
+    if (streamFolds && std::getenv("CXX1_C6X_MIR") != nullptr) std::fprintf(stderr, "c6x-fold: a line the stream does not spell; the text folds\n");
     for (int round = 0; round < 8; round++) {
         computeLiveness(lines);
         bool changed = forwardMoves(lines);
         computeLiveness(lines);
         changed = (!skipped("pairmv") && forwardPairMoves(lines)) || changed;
         computeLiveness(lines);
-        changed = fold(lines, forwardConstants, c6x::forwardConstants) || changed;
+        changed = forwardConstants(lines) || changed;
         computeLiveness(lines);
-        changed = fold(lines, flipPredicates, c6x::flipPredicates) || changed;
+        changed = flipPredicates(lines) || changed;
         computeLiveness(lines);
-        changed = (!skipped("dead") && fold(lines, removeDead, c6x::removeDead)) || changed;
+        changed = (!skipped("dead") && removeDead(lines)) || changed;
         if (!changed) break;
     }
 }
@@ -2352,16 +2371,31 @@ std::string c6xSchedule(const std::string &text, int level, bool selected) {
         if (!skipped("pairs")) hoistConstantPairs(lines);
     }
     // After the loops are made: a value numbered across a pipelined kernel would lengthen the spans it schedules.
-    computeLiveness(lines);
-    if (!skipped("vn")) numberValues(lines);
-    if (std::getenv("CPP11_C6XTRACE")) { std::fprintf(stderr, "--- after numberValues\n"); for (std::size_t i = 0; i < lines.size(); i++) std::fprintf(stderr, "%s\n", lines[i].raw.c_str()); }
-    rounds(lines);
-    computeLiveness(lines);
-    foldAddressing(lines);
-    // A selected function's packets are made on its MIR (C6xPack.cpp); CXX1_C6X_TEXTPACK=1 keeps the text pass, to hold the two equal.
+    // On a selected function's stream, numberValues then the rounds, read back once.
+    MStream after;
+    const bool held = streamFolds && streamOf(lines, after);
+    if (!held) computeLiveness(lines);
+    if (!skipped("vn")) { if (held) numberValues(after); else numberValues(lines); }
+    if (std::getenv("CPP11_C6XTRACE")) {
+        std::fprintf(stderr, "--- after numberValues\n");
+        if (held) for (std::size_t i = 0; i < after.size(); i++) std::fprintf(stderr, "%s", after[i].str().c_str());
+        else for (std::size_t i = 0; i < lines.size(); i++) std::fprintf(stderr, "%s\n", lines[i].raw.c_str());
+    }
+    if (held) {
+        rounds(after, lines, true);
+        foldAddressing(after, !skipped("index"));
+        linesOf(after, lines);
+    } else {
+        rounds(lines);
+        computeLiveness(lines);
+        foldAddressing(lines);
+    }
+    // A selected function's packets are made on its MIR (C6xPack.cpp), the stream the folds held where they did;
+    // CXX1_C6X_TEXTPACK=1 keeps the text pass, to hold the two equal.
     MStream s;
     if (selected && std::getenv("CXX1_C6X_TEXTPACK") == nullptr) {
-        if (streamOf(lines, s)) {
+        if (held) s.swap(after);
+        if (held || streamOf(lines, s)) {
             packetise(s);
             foldBranchNops(s, s.size() * 4 + 512 < 8192);
             std::ostringstream packed;
