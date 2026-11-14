@@ -223,6 +223,10 @@ struct Loop {
     std::size_t cmp = 0;
     std::vector<std::size_t> bodyAt;    // the body's instruction lines, the compare and the branch left out
     std::vector<Line> body, pre;          // the body, and the block that falls into the head
+    // The body as the stream's entries (M6c round 5), kept equal to `body` through every edit; empty off the stream or
+    // where an entry is not `modelled`. What the body hands on - reads, writes, pairs, nodes - is read from it there.
+    std::vector<MInst> bodyM;
+    bool onStream = false, fromLines = false;
     std::vector<Node> nodes;
     std::vector<Edge> edges;
     std::set<std::string> used, written, predicated, rmwFirst;
@@ -232,6 +236,61 @@ struct Loop {
     bool stepped = false, wide = false;
     std::vector<std::string> ivs, bounds, steps;
     std::vector<std::size_t> testBody;          // the body's compares that read a bound
+    void rw(std::size_t o, std::vector<std::string> &reads, std::vector<std::string> &writes) const {
+        if (!bodyM.empty()) readsAndWrites(bodyM[o], reads, writes); else readsAndWrites(body[o], reads, writes);
+    }
+    // Operand k of body line o as a pair `hi:lo` of two registers.
+    bool pairIn(std::size_t o, std::size_t k, std::string &hi, std::string &lo) const {
+        if (!bodyM.empty()) {
+            const MOperand &x = bodyM[o].op[k];
+            if (x.kind != MOperand::Pair) return false;
+            hi = regName(x.hi); lo = regName(x.reg);
+            return true;
+        }
+        std::vector<std::string> regs;
+        registersIn(body[o].ops[k], regs);
+        if (body[o].ops[k].find(':') == std::string::npos || regs.size() != 2) return false;
+        hi = regs[0]; lo = regs[1];
+        return true;
+    }
+    // `steppedRegister` of body line o: the base its first stepped access writes, empty where that access has an index.
+    std::string steppedAt(std::size_t o) const {
+        long by;
+        if (bodyM.empty()) return steppedRegister(body[o], by);
+        for (int k = 0; k < bodyM[o].operands; k++) {
+            const MOperand &x = bodyM[o].op[k];
+            if (x.kind == MOperand::Memory && x.mode >= MOperand::PreInc) return x.index == kNoReg ? regName(x.reg) : std::string();
+        }
+        return std::string();
+    }
+    void erase(std::size_t o) {
+        body.erase(body.begin() + static_cast<long>(o));
+        if (!bodyM.empty()) bodyM.erase(bodyM.begin() + static_cast<long>(o));
+    }
+    // `renameWebs`'s edit on entry o: `from` named `to` in its sources (a write: its destination, and MVKH's and ADDK's
+    // always), as `renamed` spells it - a register, a pair's half, an address's base or index - and a read in its predicate.
+    void rename(std::size_t o, const std::string &from, const std::string &to, bool isWrite) {
+        if (bodyM.empty()) return;
+        MInst &e = bodyM[o];
+        const int f = regNumber(from), t = regNumber(to);
+        const std::string m = e.m.str();
+        const bool hasDest = e.operands && !isStore(m) && m != "B" && e.op[e.operands - 1].kind != MOperand::Memory;
+        for (int k = 0; k < e.operands; k++) {
+            const bool dest = hasDest && k + 1 == e.operands;
+            if (dest != isWrite && !(dest && (m == "MVKH" || m == "ADDK"))) continue;
+            MOperand &x = e.op[k];
+            if (x.kind != MOperand::Register && x.kind != MOperand::Pair && x.kind != MOperand::Memory) continue;
+            if (x.reg == f) x.reg = static_cast<std::uint8_t>(t);
+            if (x.kind == MOperand::Pair && x.hi == f) x.hi = static_cast<std::uint8_t>(t);
+            if (x.kind == MOperand::Memory && x.index == f) x.index = static_cast<std::uint8_t>(t);
+        }
+        if (!isWrite && e.pred == f) e.pred = static_cast<std::uint8_t>(t);
+    }
+    void take(const Src &src, std::size_t i) {
+        body.push_back(src.v[i]);
+        if (fromLines) return;
+        if (src.typed(i)) bodyM.push_back((*src.s)[i]); else { fromLines = true; bodyM.clear(); }
+    }
     // A counter's word, a bound or a step the kernel and the remainder both read under its own name.
     bool pinned(const std::string &r) const {
         return std::find(ivs.begin(), ivs.end(), r) != ivs.end() || std::find(bounds.begin(), bounds.end(), r) != bounds.end() ||
@@ -454,7 +513,7 @@ bool recogniseStepped(const Src &src, Loop &L, std::string &why, const std::stri
         for (std::size_t w = 0; w < writes.size(); w++) { L.used.insert(writes[w]); L.written.insert(writes[w]); if (!src.pred(i).empty()) L.predicated.insert(writes[w]); }
         if (src.mnem(i) == "MV" && src.ops(i) == 2 && src.op(i, 0) == src.op(i, 1)) continue;
         if (std::find(tree.begin(), tree.end(), k) != tree.end()) L.testBody.push_back(L.body.size());
-        L.body.push_back(src.v[i]);
+        L.take(src, i);
     }
     why.clear();
     return true;
@@ -463,6 +522,7 @@ bool recogniseStepped(const Src &src, Loop &L, std::string &why, const std::stri
 bool recognise(const Src &src, std::size_t back, const std::set<std::string> &labels, const std::set<std::string> &named, Loop &L, std::string &why) {
     const std::vector<Line> &v = src.v;
     const std::string bpred = src.pred(back);
+    L.onStream = src.s != nullptr;
     if (bpred.empty() || src.ops(back) == 0 || labels.count(src.op(back, 0)) == 0) { why = "no conditional branch to a label"; return false; }
     L.label = src.op(back, 0);
     if (L.label.size() > 5 && L.label.compare(L.label.size() - 5, 5, "$fill") == 0) { why = "a fill loop, memory-bound, kept as written"; return false; }
@@ -543,7 +603,7 @@ bool recognise(const Src &src, std::size_t back, const std::set<std::string> &la
     if (L.C.empty()) { why = "no condition register for the count"; return false; }
     for (std::size_t k = 0; k < L.bodyAt.size(); k++) {
         const std::size_t i = L.bodyAt[k];
-        if (i != L.cmp && !(src.mnem(i) == "MV" && src.ops(i) == 2 && src.op(i, 0) == src.op(i, 1))) L.body.push_back(v[i]);
+        if (i != L.cmp && !(src.mnem(i) == "MV" && src.ops(i) == 2 && src.op(i, 0) == src.op(i, 1))) L.take(src, i);
     }
     return true;
 }
@@ -558,7 +618,7 @@ void buildEdges(Loop &L, const std::set<std::string> &renameable) {
     std::map<std::string, std::vector<std::pair<int, bool> > > acc;     // register -> (op, isWrite) in order
     for (std::size_t o = 0; o < n.size(); o++) {
         std::vector<std::string> reads, writes;
-        readsAndWrites(n[o].line, reads, writes);
+        L.rw(o, reads, writes);
         for (std::size_t r = 0; r < reads.size(); r++) acc[reads[r]].push_back(std::make_pair(static_cast<int>(o), false));
         for (std::size_t w = 0; w < writes.size(); w++) acc[writes[w]].push_back(std::make_pair(static_cast<int>(o), true));
     }
@@ -745,9 +805,8 @@ void renameWebs(Loop &L, std::vector<std::string> &pool) {
     for (std::size_t o = 0; o < L.body.size(); o++) {
         const Line &l = L.body[o];
         std::vector<std::string> reads, writes;
-        readsAndWrites(l, reads, writes);
-        long by;
-        bool rmw = l.mnem == "MVKH" || l.mnem == "ADDK" || !l.pred.empty() || !steppedRegister(l, by).empty();
+        L.rw(o, reads, writes);
+        bool rmw = l.mnem == "MVKH" || l.mnem == "ADDK" || !l.pred.empty() || !L.steppedAt(o).empty();
         for (std::size_t r = 0; r < reads.size(); r++) {
             if (!cur.count(reads[r])) { Web w; w.reg = reads[r]; w.keep = true; cur[reads[r]] = static_cast<int>(webs.size()); webs.push_back(w); }
             opWebs[o].push_back(std::make_pair(cur[reads[r]], 0));
@@ -763,9 +822,8 @@ void renameWebs(Loop &L, std::vector<std::string> &pool) {
             for (std::size_t k = 0; k < l.ops.size(); k++) {
                 const bool dest = hasDest && k + 1 == l.ops.size();
                 if (dest != (pass == 1)) continue;
-                std::vector<std::string> regs;
-                registersIn(l.ops[k], regs);
-                if (l.ops[k].find(':') == std::string::npos || regs.size() != 2 || !cur.count(regs[0]) || !cur.count(regs[1])) continue;
+                std::vector<std::string> regs(2);
+                if (!L.pairIn(o, k, regs[0], regs[1]) || !cur.count(regs[0]) || !cur.count(regs[1])) continue;
                 Web &hi = webs[static_cast<std::size_t>(cur[regs[0]])], &lo = webs[static_cast<std::size_t>(cur[regs[1]])];
                 if ((hi.link >= 0 && hi.link != cur[regs[1]]) || (lo.link >= 0 && lo.link != cur[regs[0]])) { fixed.insert(regs[0]); fixed.insert(regs[1]); }
                 hi.link = cur[regs[1]]; lo.link = cur[regs[0]];
@@ -813,13 +871,14 @@ void renameWebs(Loop &L, std::vector<std::string> &pool) {
                 if (dest == isWrite || (dest && (l.mnem == "MVKH" || l.mnem == "ADDK"))) ops[p] = renamed(ops[p], w.reg, w.name);
             }
             if (!isWrite) pred = renamed(pred, w.reg, w.name);
+            L.rename(o, w.reg, w.name, isWrite);
         }
         l = rebuilt(l.mnem, ops, pred);
     }
     L.used.clear(); L.written.clear(); L.predicated.clear();
     for (std::size_t o = 0; o < L.body.size(); o++) {
         std::vector<std::string> reads, writes;
-        readsAndWrites(L.body[o], reads, writes);
+        L.rw(o, reads, writes);
         for (std::size_t r = 0; r < reads.size(); r++) L.used.insert(reads[r]);
         for (std::size_t w = 0; w < writes.size(); w++) { L.used.insert(writes[w]); L.written.insert(writes[w]); if (!L.body[o].pred.empty()) L.predicated.insert(writes[w]); }
     }
@@ -827,9 +886,8 @@ void renameWebs(Loop &L, std::vector<std::string> &pool) {
     std::set<std::string> seen;
     for (std::size_t o = 0; o < L.body.size(); o++) {
         std::vector<std::string> reads, writes;
-        readsAndWrites(L.body[o], reads, writes);
-        long by;
-        const std::string stepped = steppedRegister(L.body[o], by);
+        L.rw(o, reads, writes);
+        const std::string stepped = L.steppedAt(o);
         for (std::size_t w = 0; w < writes.size(); w++) {
             if (!seen.count(writes[w]) && (L.body[o].mnem == "MVKH" || L.body[o].mnem == "ADDK")) L.rmwFirst.insert(writes[w]);
             if (writes[w] == stepped) L.rmwFirst.insert(writes[w]);
@@ -844,7 +902,7 @@ bool wantedAfter(const Loop &L, std::size_t o, const std::string &r) {
     const std::vector<Line> &b = L.body;
     for (std::size_t n = 0, k = o + 1; n < b.size(); n++, k = (k + 1) % b.size()) {
         std::vector<std::string> reads, writes;
-        readsAndWrites(b[k], reads, writes);
+        L.rw(k, reads, writes);
         if (has(reads, r)) return true;
         if (has(writes, r)) return false;
     }
@@ -864,15 +922,31 @@ void foldBodyCopies(Loop &L) {
             if (D == "A15" || D == "B15" || D == "B3" || D == "B14" || D == L.iv || D == L.bound || D == L.P) continue;
             for (std::size_t k = o + 1; k < b.size(); k++) {
                 std::vector<std::string> reads, writes;
-                readsAndWrites(b[k], reads, writes);
-                if (b[k].mnem == "MV" && b[k].ops.size() == 2 && b[k].pred.empty() && b[k].ops[0] == D && b[k].ops[1] == S) { b.erase(b.begin() + static_cast<long>(k)); changed = true; break; }
+                L.rw(k, reads, writes);
+                if (b[k].mnem == "MV" && b[k].ops.size() == 2 && b[k].pred.empty() && b[k].ops[0] == D && b[k].ops[1] == S) { L.erase(k); changed = true; break; }
                 if (has(writes, S) || has(writes, D)) break;
             }
             if (changed) break;
             if ((L.liveExit & bitOf(D)) || wantedAfter(L, o, D)) continue;
-            b.erase(b.begin() + static_cast<long>(o));
+            L.erase(o);
             changed = true;
         }
+    }
+}
+
+// CXX1_C6X_MIR=1: the body's entries against its lines after an edit (`c6x-body`); a loop on the stream whose body
+// is not all modelled, and so is read from its lines, is named too (`c6x-loop-lines`).
+void checkBody(const Loop &L, const char *at) {
+    static const bool check = std::getenv("CXX1_C6X_MIR") != nullptr;
+    if (!check || !L.onStream) return;
+    if (L.bodyM.empty() && !L.body.empty()) { std::fprintf(stderr, "c6x-loop-lines: %s %s\n", at, L.label.c_str()); return; }
+    if (L.bodyM.size() != L.body.size()) { std::fprintf(stderr, "c6x-body: %s %s sizes\n", at, L.label.c_str()); return; }
+    for (std::size_t o = 0; o < L.body.size(); o++) {
+        std::string t = L.bodyM[o].str();
+        if (!t.empty() && t[t.size() - 1] == '\n') t.erase(t.size() - 1);
+        const Line p = parse(t), &l = L.body[o];
+        long by;
+        if (p.mnem != l.mnem || p.ops != l.ops || p.pred != l.pred || L.steppedAt(o) != steppedRegister(l, by)) { std::fprintf(stderr, "c6x-body: %s %s|%s\n", at, l.raw.c_str(), t.c_str()); return; }
     }
 }
 
@@ -1018,23 +1092,31 @@ bool pipeline(const std::vector<Line> &v, Loop &L, std::vector<Line> &out, std::
         Line &l = L.body[L.testBody[k]];
         std::vector<std::string> ops = l.ops;
         for (std::size_t o = 0; o + 1 < ops.size(); o++)
-            for (std::size_t w = 0; w < L.bounds.size(); w++) if (ops[o] == L.bounds[w]) ops[o] = moved[w];
+            for (std::size_t w = 0; w < L.bounds.size(); w++) if (ops[o] == L.bounds[w]) {
+                ops[o] = moved[w];
+                if (!L.bodyM.empty()) L.bodyM[L.testBody[k]].op[o] = MOperand(moved[w]);
+            }
         l = rebuilt(l.mnem, ops, l.pred);
     }
+    checkBody(L, "recognised");
     foldBodyCopies(L);
     if (tracing() > 4) for (std::size_t o = 0; o < L.body.size(); o++) std::fprintf(stderr, "  as written%s\n", L.body[o].raw.c_str());
     renameWebs(L, pool);
+    checkBody(L, "renamed");
     std::set<std::string> labels;
     labels.insert(L.label + "$pipe");
-    for (std::size_t o = 0; o < L.body.size(); o++) L.nodes.push_back(makeNode(L.body[o], labels));
+    for (std::size_t o = 0; o < L.body.size(); o++) {
+        if (L.bodyM.empty()) { L.nodes.push_back(makeNode(L.body[o], labels)); continue; }
+        L.nodes.push_back(makeNode(L.bodyM[o], labels));
+        L.nodes.back().line = L.body[o];                    // the emitters still spell the kernel from lines
+    }
     // The rename units, and which of them may take a name per iteration.
     std::vector<Unit> units;
     std::map<std::string, std::size_t> unitOf;
     for (std::size_t o = 0; o < L.body.size(); o++)
         for (std::size_t k = 0; k < L.body[o].ops.size(); k++) {
-            std::vector<std::string> regs;
-            registersIn(L.body[o].ops[k], regs);
-            if (L.body[o].ops[k].find(':') == std::string::npos || regs.size() != 2) continue;
+            std::vector<std::string> regs(2);
+            if (!L.pairIn(o, k, regs[0], regs[1])) continue;
             if (!unitOf.count(regs[0]) && !unitOf.count(regs[1])) { Unit u; u.regs.push_back(regs[1]); u.regs.push_back(regs[0]); unitOf[regs[0]] = unitOf[regs[1]] = units.size(); units.push_back(u); }
         }
     for (std::set<std::string>::const_iterator it = L.used.begin(); it != L.used.end(); ++it)

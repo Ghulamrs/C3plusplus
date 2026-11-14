@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <iosfwd>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -69,6 +70,7 @@ struct MInst {
 
 using MStream = std::vector<MInst>;
 struct Line;
+struct Node;
 
 // **The packetiser** (C6xPack.cpp): the text passes' lines as a stream, false where a line is not spelled back the same;
 // each block's instructions placed in execute packets with `NOP n` for its idle cycles; a branch and its NOPs as one BNOP.
@@ -88,6 +90,8 @@ unsigned unitsFor(const MInst &i);
 // `readsAndWrites` on a modelled entry: the registers it reads and writes by name, in the order the text pass lists them.
 void readsAndWrites(const MInst &i, std::vector<std::string> &reads, std::vector<std::string> &writes);
 
+// `makeNode` on an entry: its operands where `modelled`, else its spelling - the one table either way.
+Node makeNode(const MInst &i, const std::set<std::string> &labels);
 // Whether the instruction stands as written: one crossing source at most, and a unit - C6xSched's `crossings`, `unitsFor`.
 bool legal(const MInst &i);
 

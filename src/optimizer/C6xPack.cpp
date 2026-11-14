@@ -176,6 +176,8 @@ bool sameFacts(const Node &a, const Node &b) {
            a.branch == b.branch && a.call == b.call;
 }
 
+}   // namespace
+
 // The node of an entry: on its operands where they are modelled, else by its spelling. CXX1_C6X_MIR=1 asks both.
 Node makeNode(const MInst &i, const std::set<std::string> &labels) {
     if (!modelled(i)) return c6x::makeNode(lineOf(i), labels);
@@ -184,8 +186,6 @@ Node makeNode(const MInst &i, const std::set<std::string> &labels) {
     if (check && !sameFacts(n, c6x::makeNode(lineOf(i), labels))) std::fprintf(stderr, "c6x-node: %s", i.str().c_str());
     return n;
 }
-
-}   // namespace
 
 // An operand held as text that names a register, a memory address or a number is read by its spelling; nothing else.
 bool modelled(const MInst &i) {

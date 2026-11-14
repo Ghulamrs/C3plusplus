@@ -632,3 +632,38 @@ m6-l (the packetiser reads typed operands), m5-dbg (tests/debug.sh; DWARF ranges
   0 failed, run on sim6747 alone. tests/g-same.sh 867 same, 0 differ, 0 broken; asm6x.sh 833 objects, 0 failed, at -O0
   and -O2. cl /W4 /WX clean. Exclusions 129 sites 0 uncited 0 stale (SSA lowering 554/95); comments 0 over; memory gate
   rc 0; ast-residue rc 0; ide/generate.py --check up to date. Not run (the coordinator's): winpass, make test, ssa.sh.
+
+### M6c, round 5 (what the counted loop hands on, as entries), 2026-11-14, lane m6n
+
+- **Landed** (from m6-m e25a8c7d): `Loop` carries its body as the stream's entries (`bodyM`, C6xPipe.cpp) beside its
+  lines, taken where the recogniser takes each line (`take`) when every body entry is `modelled`, and kept equal to the
+  lines through every edit the pipeliner makes before it schedules: the moved bound in the stepped test, `foldBodyCopies`'
+  erasures (`erase`) and `renameWebs`' renaming (`rename`: a register, a pair's half, an address's base or index, a
+  predicate, as `renamed` spells it on text). From the entries come what the body hands on: its reads and writes
+  (`rw`, in `buildEdges`, `renameWebs`, `foldBodyCopies`, `wantedAfter`), its pairs (`pairIn`, the rename units and
+  the webs' links), its stepped bases (`steppedAt`) and its nodes - `makeNode(MInst)` (C6xPack.cpp, now outside the
+  anonymous namespace and declared in C6xMir.h), the one table, so the II search (`scheduleAt`, `criticalPath`) runs
+  on nodes read from operands. A loop read on the walker's text, or with an entry not modelled, reads its lines as
+  before. `CXX1_C6X_MIR=1` holds the two forms after recognition and after renaming (`c6x-body`: mnemonic, operands,
+  predicate and stepped base of each entry against its line) and names a loop on the stream read from lines
+  (`c6x-loop-lines`). src/ +110 -24 lines (C6xPipe.cpp 2,166 -> 2,248, C6xMir.h 101 -> 105, C6xPack.cpp 335).
+- **Where it stopped.** The registers the loop is described by (`iv`, `bound`, `P`, `C`, `used`, `written`, the
+  webs' and units' names) are still names; `addressForms` (the memory edges' algebra) reads `body` and `pre` as
+  lines; `Node::line` is still set from the line, since the emitters (`pipeline`'s kernel through `spelled`,
+  `steppedTest`, `emitWindow`, `emitClosed`) build the kernel as lines and stay on text this round. `Window` hands on
+  lines as round 4 left it (its only readers past the recogniser are the emitters). **Design step 3 not begun**:
+  `rounds` is five text folds under one liveness (`forwardMoves`, `forwardPairMoves`, `forwardConstants`,
+  `flipPredicates`, `removeDead`), and `numberValues` and `foldAddressing` read `computeLiveness`'s line fields; each
+  wants liveness on the stream first, which is the next round's first step.
+- **Gate** (Linux ~/m6n, a copy of ~/m6m with the changed files laid over; REF main 0e8877e6's compiler in ~/w4g;
+  Windows work\m6n). `identical.sh ARCHS=tms6747` against main's compiler: -O0 and -O2 1,736 compared, 0 differ; -O0
+  -g 868 compared, 0 differ once the tree's own path in `.dwpsn` is normalised (91 raw, all `/w4g/` against `/m6n/`).
+  Census at -O2 (`CXX1_C6X_MIR=1`): 0 `c6x-body`, 0 `c6x-loop-lines`, 0 `c6x-recog`, 0 `c6x-node`, 0 to the text
+  pipeliner, 0 to the text pass; 106 functions with kernels. tests/tms6747.sh SHARD=k/3 CYCLES=1 SIM=0 at -O2: 814
+  passed, 0 failed, 3 not run on vm6747; **192,009,106 cycles** (192.0 M, unchanged). tests/g-same.sh 867 same, 0
+  differ, 0 broken; asm6x.sh 833 objects, 0 failed, at -O0 and -O2. cl /W4 /WX clean. Exclusions 129 sites 0 uncited
+  0 stale (SSA lowering 554/95); comments 0 over; memory gate rc 0; ast-residue rc 0; ide/generate.py --check up to
+  date. Not run (the coordinator's): winpass, make test, ssa.sh.
+- **Owed:** the loop's registers as numbers and `addressForms` on entries; the emitters and the kernel built as
+  entries (then `Node::line` goes); `Window`'s body as entries with them; design step 3 (liveness on the stream, then
+  `rounds`, `numberValues`, `foldAddressing`).
