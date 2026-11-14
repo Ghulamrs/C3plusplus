@@ -980,3 +980,12 @@ loop passes' edits on operands; `rounds` writes no lines on a held stream; the k
   1215 / 0. Linux make test rc 0 (run 1217/0, emit 3399/0, typed 860/0, ssa 890/0, c90 447/0, exclusions 0/0,
   comments 0). tms6747 (vm6747, SIM=0, three shards): 814 passed, 0 failed at -O0 (393.2 M cycles) and -O2
   (**192.0 M**, unchanged); asm6x 833 / 0 at -O0 and -O2.
+
+### Wave 9 landed, 2026-11-14 (the coordinator)
+
+M6c rounds 11 (m6t: the counted loop's emitters write entries through `Code`; `addressForms`/`evalLine` read
+`Ins`) and 12 (m6u: steps S1-S4 of the register plan - `ivR`, `boundR`, `PR`, `CR` and the masks; the name sets gone).
+- **Gate at af87b476** (09ca5bbb merged with main ed1eaba2): Windows winpass -O0 and -O2: 828 same / 0 differ, masm
+  827 / 0. Mac run.sh -O0 and -O2 1215 / 0. Linux make test rc 0 (run 1217/0, emit 3399/0, typed 860/0, ssa 890/0,
+  c90 447/0, exclusions 0/0, comments 0). tms6747 (vm6747, SIM=0, three shards): 814 passed, 0 failed at -O0
+  (393.2 M cycles) and -O2 (**192.0 M**, unchanged); asm6x 833 / 0 at -O0 and -O2.
