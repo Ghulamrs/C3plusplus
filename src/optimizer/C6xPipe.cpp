@@ -249,6 +249,15 @@ struct Src {
         if (typed(i)) readsAndWrites((*s)[i], reads, writes); else readsAndWrites(v[i], reads, writes);
     }
     unsigned units(std::size_t i) const { return typed(i) ? unitsFor((*s)[i]) : unitsFor(v[i]); }
+    // The same as masks, and a register operand or the predicate as a number: the entry's own where it is typed.
+    void masks(std::size_t i, std::uint64_t &reads, std::uint64_t &writes) const {
+        if (typed(i)) { readsAndWrites((*s)[i], reads, writes); return; }
+        std::vector<std::string> r, w;
+        readsAndWrites(v[i], r, w);
+        reads |= maskOf(r); writes |= maskOf(w);
+    }
+    int regAt(std::size_t i, std::size_t k) const { return typed(i) ? ((*s)[i].op[k].kind == MOperand::Register ? (*s)[i].op[k].reg : kNoReg) : regNumber(v[i].ops[k]); }
+    int predReg(std::size_t i) const { return typed(i) ? (*s)[i].pred : regNumber(v[i].pred.substr(v[i].pred.compare(0, 1, "!") == 0 ? 1 : 0)); }
     char side(std::size_t i, std::size_t k) const {
         if (!typed(i)) return sideOf(v[i].ops[k]);
         const MOperand &o = (*s)[i].op[k];
@@ -292,6 +301,18 @@ struct Loop {
     bool stepped = false, wide = false;
     std::vector<std::string> ivs, bounds, steps;
     std::vector<std::size_t> testBody;          // the body's compares that read a bound
+    // **The loop's registers as numbers and masks** (M6c round 12), read from the entries' operands and kept beside the
+    // names while a name has a reader: kNoReg where a constant stands; `pinnedM` is what `pinned` answers.
+    int ivR = kNoReg, boundR = kNoReg, PR = kNoReg, CR = kNoReg;
+    std::uint64_t usedM = 0, writtenM = 0, predicatedM = 0, rmwFirstM = 0, pinnedM = 0;
+    void count(std::uint64_t reads, std::uint64_t writes, bool plain) { usedM |= reads | writes; writtenM |= writes; if (!plain) predicatedM |= writes; }
+    void masks(std::size_t o, std::uint64_t &reads, std::uint64_t &writes) const {
+        if (!bodyM.empty()) { readsAndWrites(bodyM[o], reads, writes); return; }
+        std::vector<std::string> r, w;
+        readsAndWrites(body[o], r, w);
+        reads |= maskOf(r); writes |= maskOf(w);
+    }
+    bool plainAt(std::size_t o) const { return bodyM.empty() ? body[o].pred.empty() : bodyM[o].pred == kNoReg; }
     void rw(std::size_t o, std::vector<std::string> &reads, std::vector<std::string> &writes) const {
         if (!bodyM.empty()) readsAndWrites(bodyM[o], reads, writes); else readsAndWrites(body[o], reads, writes);
     }
@@ -575,13 +596,19 @@ bool recogniseStepped(const Src &src, Loop &L, std::string &why, const std::stri
     if (isNumber(slo) && std::atol(slo.c_str()) <= 0) return no("a step that is not positive");
     L.stepped = true;
     L.iv = lo; L.bound = nlo; L.cmp = L.bodyAt[writerAt[L.P]];
+    L.ivR = regNumber(lo); L.boundR = regNumber(nlo); L.CR = kNoReg;
     L.ivs.push_back(lo); L.bounds.push_back(nlo); L.steps.push_back(slo);
     if (L.wide) { L.ivs.push_back(hi); L.bounds.push_back(nhi); L.steps.push_back(shi); }
     L.used.clear(); L.written.clear(); L.predicated.clear();
+    L.usedM = L.writtenM = L.predicatedM = 0;
+    L.pinnedM = maskOf(L.ivs) | maskOf(L.bounds) | maskOf(L.steps);
     for (std::size_t k = 0; k < L.bodyAt.size(); k++) {
         const std::size_t i = L.bodyAt[k];
         std::vector<std::string> reads, writes;
         src.rw(i, reads, writes);
+        std::uint64_t rm = 0, wm = 0;
+        src.masks(i, rm, wm);
+        L.count(rm, wm, src.pred(i).empty());
         for (std::size_t r = 0; r < reads.size(); r++) L.used.insert(reads[r]);
         for (std::size_t w = 0; w < writes.size(); w++) { L.used.insert(writes[w]); L.written.insert(writes[w]); if (!src.pred(i).empty()) L.predicated.insert(writes[w]); }
         if (src.mnem(i) == "MV" && src.ops(i) == 2 && src.op(i, 0) == src.op(i, 1)) continue;
@@ -600,6 +627,7 @@ bool recognise(const Src &src, std::size_t back, const std::set<std::string> &la
     L.label = src.op(back, 0);
     if (L.label.size() > 5 && L.label.compare(L.label.size() - 5, 5, "$fill") == 0) { why = "a fill loop, memory-bound, kept as written"; return false; }
     L.P = bpred[0] == '!' ? bpred.substr(1) : bpred;
+    L.PR = src.predReg(back);
     L.negated = bpred[0] == '!';
     std::size_t h = 0; bool found = false;
     for (std::size_t i = 0; i < back; i++) if (src.label(i) && src.name(i) == L.label) { h = i; found = true; }
@@ -637,6 +665,7 @@ bool recognise(const Src &src, std::size_t back, const std::set<std::string> &la
     // Loops while i < n: [P] with i < n or n > i; while i <= n: [!P] with i > n or n < i.
     const std::size_t ivAt = lt == !L.negated ? 0 : 1, boundAt = 1 - ivAt;
     L.iv = src.op(c, ivAt); L.bound = src.op(c, boundAt);
+    L.ivR = src.regAt(c, ivAt); L.boundR = src.regAt(c, boundAt);
     L.plusOne = L.negated;
     long k0 = 0;
     const bool boundNumber = src.number(c, boundAt, k0);
@@ -667,6 +696,9 @@ bool recognise(const Src &src, std::size_t back, const std::set<std::string> &la
             else L.boundConst = false;
         }
         if (has(writes, L.P) && i != L.cmp) pWrites++;
+        std::uint64_t rm = 0, wm = 0;
+        src.masks(i, rm, wm);
+        L.count(rm, wm, plain);
         for (std::size_t r = 0; r < reads.size(); r++) L.used.insert(reads[r]);
         for (std::size_t w = 0; w < writes.size(); w++) { L.used.insert(writes[w]); L.written.insert(writes[w]); if (!plain) L.predicated.insert(writes[w]); }
     }
@@ -677,6 +709,7 @@ bool recognise(const Src &src, std::size_t back, const std::set<std::string> &la
     else for (std::size_t k = 0; k < 6 && L.C.empty(); k++)
         if (!L.used.count(kCond[k]) && !(L.liveExit & bitOf(kCond[k])) && kCond[k] != L.P) L.C = kCond[k];
     if (L.C.empty()) { why = "no condition register for the count"; return false; }
+    L.CR = pWrites == 0 ? L.PR : regNumber(L.C);
     for (std::size_t k = 0; k < L.bodyAt.size(); k++) {
         const std::size_t i = L.bodyAt[k];
         if (i != L.cmp && !(src.mnem(i) == "MV" && src.ops(i) == 2 && src.op(i, 0) == src.op(i, 1))) L.take(src, i);
@@ -1088,18 +1121,29 @@ void renameWebs(Loop &L, std::vector<std::string> &pool) {
         l = rebuilt(l.mnem, ops, pred);
     }
     L.used.clear(); L.written.clear(); L.predicated.clear();
+    L.usedM = L.writtenM = L.predicatedM = 0;
     for (std::size_t o = 0; o < L.body.size(); o++) {
         std::vector<std::string> reads, writes;
         L.rw(o, reads, writes);
+        std::uint64_t rm = 0, wm = 0;
+        L.masks(o, rm, wm);
+        L.count(rm, wm, L.plainAt(o));
         for (std::size_t r = 0; r < reads.size(); r++) L.used.insert(reads[r]);
         for (std::size_t w = 0; w < writes.size(); w++) { L.used.insert(writes[w]); L.written.insert(writes[w]); if (!L.body[o].pred.empty()) L.predicated.insert(writes[w]); }
     }
     L.used.insert(L.P);
+    if (L.PR != kNoReg) L.usedM |= 1ull << L.PR;
+    std::uint64_t seenM = 0;
     std::set<std::string> seen;
     for (std::size_t o = 0; o < L.body.size(); o++) {
         std::vector<std::string> reads, writes;
         L.rw(o, reads, writes);
         const std::string stepped = L.steppedAt(o);
+        std::uint64_t rm = 0, wm = 0;
+        L.masks(o, rm, wm);
+        if (L.body[o].mnem == "MVKH" || L.body[o].mnem == "ADDK") L.rmwFirstM |= wm & ~seenM;
+        L.rmwFirstM |= wm & bitOf(stepped);
+        seenM |= wm;
         for (std::size_t w = 0; w < writes.size(); w++) {
             if (!seen.count(writes[w]) && (L.body[o].mnem == "MVKH" || L.body[o].mnem == "ADDK")) L.rmwFirst.insert(writes[w]);
             if (writes[w] == stepped) L.rmwFirst.insert(writes[w]);
@@ -1148,8 +1192,23 @@ void foldBodyCopies(Loop &L) {
 
 // CXX1_C6X_MIR=1: the body's entries against its lines after an edit (`c6x-body`); a loop on the stream whose body
 // is not all modelled, and so is read from its lines, is named too (`c6x-loop-lines`).
+// CXX1_C6X_MIR=1: `c6x-reg` names a loop one of whose numbers or masks is not its name's or its set's.
+void checkRegisters(const Loop &L, const char *at) {
+    auto differs = [](const std::set<std::string> &names, std::uint64_t m) {
+        std::uint64_t n = 0;
+        for (std::set<std::string>::const_iterator it = names.begin(); it != names.end(); ++it) { if (!bitOf(*it)) return true; n |= bitOf(*it); }
+        return n != m;
+    };
+    const char *what = regNumber(L.iv) != L.ivR ? "iv" : regNumber(L.bound) != L.boundR ? "bound" : regNumber(L.P) != L.PR ? "P" :
+        regNumber(L.C) != L.CR ? "C" : differs(L.used, L.usedM) ? "used" : differs(L.written, L.writtenM) ? "written" :
+        differs(L.predicated, L.predicatedM) ? "predicated" : differs(L.rmwFirst, L.rmwFirstM) ? "rmwFirst" : nullptr;
+    for (int r = 0; r < 64 && !what; r++) if (L.pinned(regName(r)) != ((L.pinnedM >> r & 1) != 0)) what = "pinned";
+    if (what) std::fprintf(stderr, "c6x-reg: %s %s %s\n", at, L.label.c_str(), what);
+}
+
 void checkBody(const Loop &L, const char *at) {
     static const bool check = std::getenv("CXX1_C6X_MIR") != nullptr;
+    if (check) checkRegisters(L, at);
     if (!check || !L.onStream) return;
     if (L.bodyM.empty() && !L.body.empty()) { std::fprintf(stderr, "c6x-loop-lines: %s %s\n", at, L.label.c_str()); return; }
     if (L.bodyM.size() != L.body.size()) { std::fprintf(stderr, "c6x-body: %s %s sizes\n", at, L.label.c_str()); return; }

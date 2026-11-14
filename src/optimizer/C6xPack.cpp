@@ -216,6 +216,7 @@ bool modelled(const MInst &i) {
 }
 int crossings(const MInst &i) { return crossings(i, i.m.str()); }
 unsigned unitsFor(const MInst &i) { return unitsFor(i, i.m.str()); }
+void readsAndWrites(const MInst &i, std::uint64_t &reads, std::uint64_t &writes) { readsAndWrites(i, i.m.str(), reads, writes); }
 void readsAndWrites(const MInst &i, std::vector<std::string> &reads, std::vector<std::string> &writes) {
     auto names = [](const MOperand &o, std::vector<std::string> &to) { int r[2]; const int n = regsOf(o, r); for (int k = 0; k < n; k++) to.push_back(regName(r[k])); };
     if (i.pred != kNoReg) reads.push_back(regName(i.pred));
