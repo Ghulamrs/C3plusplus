@@ -6,6 +6,5 @@
 
 #include <string>
 
-// Every padding NOP replaced by the wait the pending writes require; the packets are made on the function's MIR.
-// `spelled` false: a line the stream does not spell, the text returned unchanged for the caller to refuse.
+// The packets made on the function's stream; `spelled` false: a line it does not spell, the text returned to be refused.
 std::string c6xSchedule(const std::string &text, int level, bool &spelled);
