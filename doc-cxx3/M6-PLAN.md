@@ -768,3 +768,21 @@ m6-l (the packetiser reads typed operands), m5-dbg (tests/debug.sh; DWARF ranges
   make test, ssa.sh.
 - **Owed:** round 7's item (1) whole; `reuseEntryLoads` to `widenFills` and `hoistConstantPairs` on the stream, so one
   stream runs from the parse to the packetiser; then the selector's stream handed in unprinted; then step 4.
+### Wave 5 landed, 2026-11-14 (the coordinator)
+
+M6c rounds 4 (m6m: the recognisers read operands; vm6747's noexcept legs skipped by name) and 5 (m6n: the counted
+loop's body as entries, buildEdges, the II search and renameWebs on operands).
+- **Gate at a0a1d2ce**: Windows winpass -O0 and -O2: 828 same / 0 differ, masm 827 / 0. Mac run.sh -O0 and -O2
+  1215 / 0. Linux make test rc 0 (run 1217/0, emit 3399/0, typed 860/0, ssa 890/0, c90 447/0, exclusions 0/0,
+  comments 0). tms6747 (vm6747, SIM=0, three shards): 814 passed, **0 failed** at -O0 (393.2 M cycles) and -O2
+  (**192.0 M**, unchanged); asm6x 833 / 0 at -O0 and -O2.
+
+### Wave 6 landed, 2026-11-14 (the coordinator)
+
+M6c rounds 6 (m6o: liveness on the stream; removeDead, flipPredicates, forwardConstants edit operands) and 7 (m6p:
+forwardMoves, forwardPairMoves, numberValues, foldAddressing on the stream; one stream across `rounds` and on into
+the packetiser; foldStream and fold deleted; `CXX1_C6X_TEXTFOLD=1` keeps the text folds).
+- **Gate at 04aa7c5a**: Windows winpass -O0 and -O2: 828 same / 0 differ, masm 827 / 0. Mac run.sh -O0 and -O2
+  1215 / 0. Linux make test rc 0 (run 1217/0, emit 3399/0, typed 860/0, ssa 890/0, c90 447/0, exclusions 0/0,
+  comments 0). tms6747 (vm6747, SIM=0, three shards): 814 passed, 0 failed at -O0 (393.2 M cycles) and -O2
+  (**192.0 M**, unchanged); asm6x 833 / 0 at -O0 and -O2. The merge with main a5bc8eec adds plan text only.
