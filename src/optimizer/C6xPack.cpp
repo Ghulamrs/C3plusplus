@@ -261,18 +261,6 @@ void liveness(const MStream &s, std::vector<std::uint64_t> &liveIn, std::vector<
     liveness(facts, liveIn, liveOut);
 }
 
-void checkLiveness(const std::vector<Line> &v) {
-    MStream s;
-    if (!streamOf(v, s)) { std::fprintf(stderr, "c6x-live-unread: a line the stream does not spell\n"); return; }
-    std::vector<std::uint64_t> in, out;
-    liveness(s, in, out);
-    for (std::size_t k = 0; k < v.size(); k++) {
-        if (in[k] == v[k].liveIn && out[k] == v[k].liveOut) continue;
-        std::fprintf(stderr, "c6x-live: line %zu,%s\n", k, v[k].raw.c_str());
-        return;
-    }
-}
-
 namespace {
 
 // `deadAfter` of C6xSched.cpp on entries, as liveness was computed: reg is written before it is read on the straight

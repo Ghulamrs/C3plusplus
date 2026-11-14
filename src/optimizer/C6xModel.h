@@ -104,8 +104,6 @@ struct LiveFacts { bool instr = false, label = false, kept = false, predicated =
 void liveness(const std::vector<LiveFacts> &v, std::vector<std::uint64_t> &liveIn, std::vector<std::uint64_t> &liveOut);
 LiveFacts liveFacts(const Line &l);
 void computeLiveness(std::vector<Line> &v);
-// Under CXX1_C6X_MIR=1 the lines' liveness held against the stream's (C6xPack.cpp): `c6x-live` names a line that differs.
-void checkLiveness(const std::vector<Line> &v);
 // The liveness of this text, recomputed first where an edit since makes it stale - unless a LivenessHeld is open.
 std::uint64_t liveOutAt(const std::vector<Line> &v, std::size_t i);
 std::uint64_t liveInAt(const std::vector<Line> &v, std::size_t i);

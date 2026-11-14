@@ -312,8 +312,6 @@ LiveFacts liveFacts(const Line &l) {
     return f;
 }
 
-thread_local bool liveCensus = false;     // c6xSchedule's selected function under CXX1_C6X_MIR=1: liveness asked of the stream too
-
 void computeLiveness(std::vector<Line> &v) {
     std::vector<LiveFacts> facts;
     facts.reserve(v.size());
@@ -321,7 +319,6 @@ void computeLiveness(std::vector<Line> &v) {
     std::vector<std::uint64_t> in, out;
     liveness(facts, in, out);
     for (std::size_t i = 0; i < v.size(); i++) { v[i].liveOut = out[i]; v[i].liveIn = in[i]; }
-    if (liveCensus) { const std::uint64_t edits = textEdits; checkLiveness(v); textEdits = edits; }
     liveStamp.data = v.data(); liveStamp.size = v.size(); liveStamp.edits = textEdits;
 }
 
@@ -2285,7 +2282,7 @@ bool removeDead(std::vector<Line> &v) {
     return changed;
 }
 
-thread_local bool streamFolds = false;   // a selected function's folds on its stream; CXX1_C6X_TEXTFOLD=1 keeps the text's
+thread_local bool streamFolds = false;   // a selected function's folds are on its stream
 
 // The five folds on one stream held across the rounds (C6xPack.cpp), read back once into `lines` where the text's are
 // wanted, liveness as the text's would leave it; a stream held on (no lines) writes nothing back.
@@ -2335,8 +2332,8 @@ void rounds(std::vector<Line> &lines) {
 std::string c6xSchedule(const std::string &text, int level, bool selected) {
     if (level <= 0) return text;
     struct OnStream {
-        OnStream(bool on) { liveCensus = on && std::getenv("CXX1_C6X_MIR") != nullptr; streamFolds = on && std::getenv("CXX1_C6X_TEXTFOLD") == nullptr; }
-        ~OnStream() { liveCensus = streamFolds = false; }
+        OnStream(bool on) { streamFolds = on; }
+        ~OnStream() { streamFolds = false; }
     } onStream(selected);
     std::vector<Line> lines;
     std::istringstream in(text);
@@ -2359,45 +2356,29 @@ std::string c6xSchedule(const std::string &text, int level, bool selected) {
         tidyJumps(v);
         if (!skipped("labels")) dropUnnamedLabels(v);
     };
-    // A selected function is one stream from here to the packetiser where it spells its text; `c6x-front` names a text differing.
+    // A selected function is one stream from here to the packetiser where it spells its text.
     MStream early;
     bool held = streamFolds && streamOf(lines, early);
     if (held) {
-        std::vector<Line> ref;
-        if (liveCensus) { ref = lines; streamFolds = false; front(ref); streamFolds = true; }   // the text passes, for the census
         foldFront(early, !skipped("thread"), !skipped("labels"));
         rounds(early, nullptr);
         if (!skipped("arms") && predicateArms(early)) rounds(early, nullptr);
         tidyStream(early, !skipped("labels"));
-        if (liveCensus) linesOf(early, lines);
-        for (std::size_t k = 0; liveCensus && k < std::max(ref.size(), lines.size()); k++)
-            if (k >= ref.size() || k >= lines.size() || ref[k].raw != lines[k].raw) {
-                std::fprintf(stderr, "c6x-front: %s against %s\n", k < lines.size() ? lines[k].raw.c_str() : "(end)", k < ref.size() ? ref[k].raw.c_str() : "(end)");
-                break;
-            }
     } else front(lines);
-    // The loop passes on the stream where it is held, else on the text; `c6x-loops` names a text the stream's pass differs from.
-    const auto loops = [&](void (*pass)(LoopText &), const char *name) {
-        if (!held) { LoopText t(lines); pass(t); return; }
-        std::vector<Line> ref, got;
-        if (liveCensus) { linesOf(early, ref); LoopText t(ref); pass(t); }
-        loopPass(early, pass);
-        if (liveCensus) linesOf(early, got);
-        for (std::size_t k = 0; liveCensus && k < std::max(ref.size(), got.size()); k++)
-            if (k >= ref.size() || k >= got.size() || ref[k].raw != got[k].raw) {
-                std::fprintf(stderr, "c6x-loops: %s: %s against %s\n", name, k < got.size() ? got[k].raw.c_str() : "(end)", k < ref.size() ? ref[k].raw.c_str() : "(end)");
-                break;
-            }
+    // The loop passes on the stream where it is held, else on the text.
+    const auto loops = [&](void (*pass)(LoopText &)) {
+        if (held) loopPass(early, pass);
+        else { LoopText t(lines); pass(t); }
     };
-    if (!skipped("entry")) loops(reuseEntryLoads, "entry");
+    if (!skipped("entry")) loops(reuseEntryLoads);
     if (level >= 2) {
-        loops(hoistInvariants, "invariants");
-        if (!skipped("induct")) loops(inductionPointers, "induct");
-        if (!skipped("fill")) loops(widenFills, "fill");
-        // A selected function's loops are pipelined on its MIR; CXX1_C6X_TEXTPIPE=1 keeps the text pipeliner.
+        loops(hoistInvariants);
+        if (!skipped("induct")) loops(inductionPointers);
+        if (!skipped("fill")) loops(widenFills);
+        // A selected function's loops are pipelined on its MIR.
         MStream fresh;
         MStream &m = held ? early : fresh;
-        if (selected && std::getenv("CXX1_C6X_TEXTPIPE") == nullptr && (held || streamOf(lines, m)) && pipelineLoops(m)) {
+        if (selected && (held || streamOf(lines, m)) && pipelineLoops(m)) {
             int placed = 0;
             for (std::size_t k = 0; k < m.size(); k++) placed += m[k].packed ? 1 : 0;
             if (placed != 0 && std::getenv("CXX1_C6X_MIR") != nullptr) std::fprintf(stderr, "c6x-kernel: %d placed entries\n", placed);
@@ -2408,7 +2389,7 @@ std::string c6xSchedule(const std::string &text, int level, bool selected) {
             held = false;
             pipelineLoops(lines);
         }
-        if (!skipped("pairs")) loops(hoistConstantPairs, "pairs");
+        if (!skipped("pairs")) loops(hoistConstantPairs);
     }
     // After the loops are made: a value numbered across a pipelined kernel would lengthen the spans it schedules.
     // On a selected function's stream, numberValues then the rounds, read back once.
@@ -2430,10 +2411,9 @@ std::string c6xSchedule(const std::string &text, int level, bool selected) {
         computeLiveness(lines);
         foldAddressing(lines);
     }
-    // A selected function's packets are made on its MIR (C6xPack.cpp), the stream the folds held where they did;
-    // CXX1_C6X_TEXTPACK=1 keeps the text pass, to hold the two equal.
+    // A selected function's packets are made on its MIR (C6xPack.cpp), the stream the folds held where they did.
     MStream s;
-    if (selected && std::getenv("CXX1_C6X_TEXTPACK") == nullptr) {
+    if (selected) {
         if (held) s.swap(after);
         if (held || streamOf(lines, s)) {
             packetise(s);
