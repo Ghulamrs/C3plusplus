@@ -786,3 +786,12 @@ the packetiser; foldStream and fold deleted; `CXX1_C6X_TEXTFOLD=1` keeps the tex
   1215 / 0. Linux make test rc 0 (run 1217/0, emit 3399/0, typed 860/0, ssa 890/0, c90 447/0, exclusions 0/0,
   comments 0). tms6747 (vm6747, SIM=0, three shards): 814 passed, 0 failed at -O0 (393.2 M cycles) and -O2
   (**192.0 M**, unchanged); asm6x 833 / 0 at -O0 and -O2. The merge with main a5bc8eec adds plan text only.
+
+### Wave 7 landed, 2026-11-14 (the coordinator)
+
+M6c round 8 (m6q: a selected function is one stream from its parse to `reuseEntryLoads`; foldCalls through
+tidyJumps on entries; `c6x-front` census 0).
+- **Gate at 089582e3** (c4e540c7 merged with main 7b4ab022): Windows winpass -O0 and -O2: 828 same / 0 differ, masm
+  827 / 0. Mac run.sh -O0 and -O2 1215 / 0. Linux make test rc 0 (run 1217/0, emit 3399/0, typed 860/0, ssa 890/0,
+  c90 447/0, exclusions 0/0, comments 0). tms6747 (vm6747, SIM=0, three shards): 814 passed, 0 failed at -O0
+  (393.2 M cycles) and -O2 (**192.0 M**, unchanged); asm6x 833 / 0 at -O0 and -O2.
