@@ -582,3 +582,6 @@ model's reading (`sideOf`), not by the operand's kind - a symbol spelled `B2x` i
   over; memory gate rc 0; ide up to date. **ast-residue rose: ast-lines 849 -> 850**, from m5-dbg's 7bc8b402
   (`Local::declared` in src/Ast.h, a reference's own type for DWARF) - not re-recorded; the coordinator's call.
 - **Gate, Windows**: cl /W4 /WX clean (work\w4m, cxx3-msvc.exe built). The full wave gate is the coordinator's.
+- **ast-lines re-recorded 849 -> 850** (the coordinator): `Local::declared` (m5-dbg's dbg2) keeps a reference
+  parameter's declared type for DWARF beside the slot's pointer type; `Local` is the frame record the backends
+  still read, and the line goes with it when the frame moves off Ast.h.
