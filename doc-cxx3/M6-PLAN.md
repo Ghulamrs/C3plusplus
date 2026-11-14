@@ -497,7 +497,9 @@ model's reading (`sideOf`), not by the operand's kind - a symbol spelled `B2x` i
   LEVELS="0 1 2"`: 2,604 compared, 0 differ.
 - **Gates.** Linux `tms6747.sh SIM=0 CYCLES=1` -O2, three shards: 814 passed, 4 failed - round 3's four
   (noexcept-terminates, ssa-noexcept-throw, noexcept-terminates-callee, static-aggregate-runtime-list); 192.009 M
-  cycles, round 3's. Windows: cl /W4 /WX clean; tests/g-same.sh 867 same, 0 differ, 0 broken; exclusions 0 uncited
+  cycles, round 3's; tests/g-same.sh 867 same, 0 differ, 0 broken; exclusions 0 uncited 0 stale, memory gate rc 0,
+  comments 0 over and ide/generate.py --check up to date (both failed first on `._` files the lane's own second ship
+  left in ~/m6j, removed and re-run). Windows: cl /W4 /WX clean; tests/g-same.sh 867 same, 0 differ, 0 broken; exclusions 0 uncited
   0 stale; comments 0 over (one over at C6xSched.h:9, mended, re-counted); memory gate rc 0; ide/generate.py
   regenerated (C6xPack.cpp) and --check up to date.
 - **Owed:** round 2, the pipeliner on entries (design step 2); the table's readers on operands rather than spellings;
