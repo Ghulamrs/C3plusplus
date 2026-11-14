@@ -538,3 +538,29 @@ model's reading (`sideOf`), not by the operand's kind - a symbol spelled `B2x` i
 - **Owed:** the pipeliner's readers on operands (`Loop`, `Window`, the webs and terms off `Line`); the stream handed
   down from the selector; the folds between (design step 3); -O0 tms6747.sh, sim6747, asm6x.sh and make test (the
   coordinator's).
+
+### M6c, round 3 (the packetiser's table read on operands), 2026-11-14, lane m6l
+
+- **Landed** (from m6-k 16d69277): the ISA facts the packetiser asks - `makeNode`'s reads, writes, stepped address,
+  latency, units, side, cross path, data path and frame slot, and `crossings`/`unitsFor` - read from an entry's typed
+  operands (`regsOf`: a register a number, a pair high first, a base before its index; an immediate its value) in
+  C6xPack.cpp. `packetise`, the BNOP fold's unit trial and `c6x::legal` (the selector's) ask them; `modelled` sends an
+  entry with an operand held as text that names a register, an address or a number to the spelling (`lineOf`), as
+  before. A branch's target is still read by `sideOf` on its spelling (the design's rule). src/ +186 -2 lines
+  (C6xPack.cpp 150 -> 322, C6xMir.h, C6xModel.h, C6xMir.cpp).
+- **Two forms, held equal.** Until `Line` goes, the table has a spelled form and an operand form; `CXX1_C6X_MIR=1`
+  asks both for every modelled node and names each that differs (`c6x-node`). It found one on its first run: 2,502
+  nodes, all `LDW *A15, A15` - `frameSlot` reads `*A15` as slot 0, which the operand form had missed (no text changed:
+  only aliasing was more cautious). Mended; **0 nodes differ** over tests/cases at -O2. The spelled form goes with
+  `Line` (design step 4).
+- **Identity.** Windows (work\m6l with the final exe, against work\m6k's cxx3-msvc.exe): tests/cases at -O0, -O1,
+  -O2 by md5, 3,669 outputs, 0 differ - plain, `CXX1_C6X_TEXTPACK=1` and `CXX1_C6X_TEXTPIPE=1` each. (A tree named
+  `m6l2` showed 6 differ: two refused cases' caret column moves with the tree path's length - not the code.) Census:
+  6,835 selected, 0 to the text pass, 0 to the text pipeliner, 106 functions with 2,727 placed entries.
+- **Gates.** Windows: cl /W4 /WX clean; tests/g-same.sh 867 same, 0 differ, 0 broken; exclusions 0 uncited 0 stale;
+  comments 0 over; memory gate rc 0; ide/generate.py --check up to date. Linux: none (the lock is M5's); the cycle
+  run and identical.sh are the coordinator's.
+- **Not done, owed:** the pipeliner's recognisers on operands (`Loop`, `Window`, the webs and terms still hold `Line`s;
+  its `makeNode` calls read kernel lines); the selector's stream handed to the packetiser - not possible before the
+  folds between (`rounds`, `numberValues`, `foldAddressing`, design step 3) run on the stream, since they edit lines
+  after selection; -O0 tms6747.sh, sim6747, asm6x.sh and make test (the coordinator's).
