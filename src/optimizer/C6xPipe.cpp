@@ -268,56 +268,56 @@ struct Src {
     std::uint64_t liveIn(std::size_t i) const { return live ? (*live)[i] : v[i].liveIn; }
     std::uint64_t liveAt(std::size_t i) const { return live ? (*live)[i] : liveInAt(v, i); }
     bool typed(std::size_t i) const { return s && modelled((*s)[i]); }
-    bool instr(std::size_t i) const { return s ? (*s)[i].kind == MInst::Instruction && !(*s)[i].packed : line(i, "untyped").instr; }
+    bool instr(std::size_t i) const { return s ? (*s)[i].kind == MInst::Instruction && !(*s)[i].packed : line(i).instr; }
     bool label(std::size_t i) const {
         if (s && (*s)[i].kind == MInst::Label) return true;
-        return (!s || (*s)[i].kind != MInst::Instruction || (*s)[i].packed) && isLabel(line(i, "untyped"));
+        return (!s || (*s)[i].kind != MInst::Instruction || (*s)[i].packed) && isLabel(line(i));
     }
-    std::string name(std::size_t i) const { return s && (*s)[i].kind == MInst::Label ? (*s)[i].m.str() : labelName(line(i, "untyped")); }
-    std::string mnem(std::size_t i) const { return s && instr(i) ? (*s)[i].m.str() : line(i, "untyped").mnem; }
+    std::string name(std::size_t i) const { return s && (*s)[i].kind == MInst::Label ? (*s)[i].m.str() : labelName(line(i)); }
+    std::string mnem(std::size_t i) const { return s && instr(i) ? (*s)[i].m.str() : line(i).mnem; }
     std::string pred(std::size_t i) const {
-        if (!typed(i)) return line(i, "untyped").pred;
+        if (!typed(i)) return line(i).pred;
         const MInst &e = (*s)[i];
         return e.pred == kNoReg ? std::string() : (e.predNot ? "!" : "") + regName(e.pred);
     }
-    std::size_t ops(std::size_t i) const { return typed(i) ? (*s)[i].operands : line(i, "untyped").ops.size(); }
-    std::string op(std::size_t i, std::size_t k) const { return typed(i) ? (*s)[i].op[k].str() : line(i, "untyped").ops[k]; }
-    bool reg(std::size_t i, std::size_t k) const { return typed(i) ? (*s)[i].op[k].isReg() : sideOf(line(i, "untyped").ops[k]) != 0; }
+    std::size_t ops(std::size_t i) const { return typed(i) ? (*s)[i].operands : line(i).ops.size(); }
+    std::string op(std::size_t i, std::size_t k) const { return typed(i) ? (*s)[i].op[k].str() : line(i).ops[k]; }
+    bool reg(std::size_t i, std::size_t k) const { return typed(i) ? (*s)[i].op[k].isReg() : sideOf(line(i).ops[k]) != 0; }
     bool number(std::size_t i, std::size_t k, long &n) const {
         if (typed(i)) { n = static_cast<long>((*s)[i].op[k].value); return (*s)[i].op[k].kind == MOperand::Immediate; }
-        n = std::atol(line(i, "untyped").ops[k].c_str());
-        return isNumber(line(i, "untyped").ops[k]);
+        n = std::atol(line(i).ops[k].c_str());
+        return isNumber(line(i).ops[k]);
     }
-    bool pair(std::size_t i, std::size_t k) const { return typed(i) ? (*s)[i].op[k].kind == MOperand::Pair : line(i, "untyped").ops[k].find(':') != std::string::npos; }
+    bool pair(std::size_t i, std::size_t k) const { return typed(i) ? (*s)[i].op[k].kind == MOperand::Pair : line(i).ops[k].find(':') != std::string::npos; }
     void rw(std::size_t i, std::vector<std::string> &reads, std::vector<std::string> &writes) const {
-        if (typed(i)) readsAndWrites((*s)[i], reads, writes); else readsAndWrites(line(i, "untyped"), reads, writes);
+        if (typed(i)) readsAndWrites((*s)[i], reads, writes); else readsAndWrites(line(i), reads, writes);
     }
     // The same by number: the entry's own registers where it is typed, the line's names numbered where not.
     void regs(std::size_t i, std::vector<int> &reads, std::vector<int> &writes) const {
         if (typed(i)) { readsAndWrites((*s)[i], reads, writes); return; }
         std::vector<std::string> r, w;
-        readsAndWrites(line(i, "untyped"), r, w);
+        readsAndWrites(line(i), r, w);
         for (std::size_t k = 0; k < r.size(); k++) reads.push_back(regNumber(r[k]));
         for (std::size_t k = 0; k < w.size(); k++) writes.push_back(regNumber(w[k]));
     }
-    unsigned units(std::size_t i) const { return typed(i) ? unitsFor((*s)[i]) : unitsFor(line(i, "untyped")); }
+    unsigned units(std::size_t i) const { return typed(i) ? unitsFor((*s)[i]) : unitsFor(line(i)); }
     // The same as masks, and a register operand or the predicate as a number: the entry's own where it is typed.
     void masks(std::size_t i, std::uint64_t &reads, std::uint64_t &writes) const {
         if (typed(i)) { readsAndWrites((*s)[i], reads, writes); return; }
         std::vector<std::string> r, w;
-        readsAndWrites(line(i, "untyped"), r, w);
+        readsAndWrites(line(i), r, w);
         reads |= maskOf(r); writes |= maskOf(w);
     }
-    int regAt(std::size_t i, std::size_t k) const { return typed(i) ? ((*s)[i].op[k].kind == MOperand::Register ? (*s)[i].op[k].reg : kNoReg) : regNumber(line(i, "untyped").ops[k]); }
-    int predReg(std::size_t i) const { return typed(i) ? (*s)[i].pred : regNumber(line(i, "untyped").pred.substr(line(i, "untyped").pred.compare(0, 1, "!") == 0 ? 1 : 0)); }
+    int regAt(std::size_t i, std::size_t k) const { return typed(i) ? ((*s)[i].op[k].kind == MOperand::Register ? (*s)[i].op[k].reg : kNoReg) : regNumber(line(i).ops[k]); }
+    int predReg(std::size_t i) const { return typed(i) ? (*s)[i].pred : regNumber(line(i).pred.substr(line(i).pred.compare(0, 1, "!") == 0 ? 1 : 0)); }
     char side(std::size_t i, std::size_t k) const {
-        if (!typed(i)) return sideOf(line(i, "untyped").ops[k]);
+        if (!typed(i)) return sideOf(line(i).ops[k]);
         const MOperand &o = (*s)[i].op[k];
         if (o.kind != MOperand::Register && o.kind != MOperand::Pair) return 0;
         return sideOfReg(o.kind == MOperand::Pair ? o.hi : o.reg) ? 'B' : 'A';
     }
-    bool predicated(std::size_t i) const { return typed(i) ? (*s)[i].pred != kNoReg : !line(i, "untyped").pred.empty(); }
-    bool predNot(std::size_t i) const { return typed(i) ? (*s)[i].predNot : line(i, "untyped").pred.compare(0, 1, "!") == 0; }
+    bool predicated(std::size_t i) const { return typed(i) ? (*s)[i].pred != kNoReg : !line(i).pred.empty(); }
+    bool predNot(std::size_t i) const { return typed(i) ? (*s)[i].predNot : line(i).pred.compare(0, 1, "!") == 0; }
     void regsIn(std::size_t i, std::size_t k, std::vector<int> &out) const;
     bool byteAddress(std::size_t i, std::size_t k, int &base, long &off, bool &post) const;
     // The operands that name `x`: the label a branch reaches, counted over the function's instructions.
@@ -1067,7 +1067,7 @@ struct Code {
         MInst e = entry(mnem, a, b, c);
         const bool typed = from && ok && modelled(e);
         if (!typed) {
-            const Line l = lineOf(e);
+            Line l = lineOf(e);
             if (!legalForm(l)) { why = "the stepped guard has no legal form for" + l.raw; return false; }
             lines.push_back(l);
             ok = ok && !from;
@@ -1665,7 +1665,7 @@ bool isByteLoad(const std::string &m) { return m == "LDB" || m == "LDBU"; }
 void Src::regsIn(std::size_t i, std::size_t k, std::vector<int> &out) const {
     if (!typed(i)) {
         std::vector<std::string> names;
-        registersIn(line(i, "untyped").ops[k], names);
+        registersIn(line(i).ops[k], names);
         for (std::size_t g = 0; g < names.size(); g++) out.push_back(regNumber(names[g]));
         return;
     }
@@ -1679,7 +1679,7 @@ void Src::regsIn(std::size_t i, std::size_t k, std::vector<int> &out) const {
 bool Src::byteAddress(std::size_t i, std::size_t k, int &base, long &off, bool &post) const {
     if (!typed(i)) {
         std::string name;
-        const bool is = c6x::byteAddress(line(i, "untyped").ops[k], name, off, post);
+        const bool is = c6x::byteAddress(line(i).ops[k], name, off, post);
         base = regNumber(name);
         return is;
     }
