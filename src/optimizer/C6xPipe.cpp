@@ -503,50 +503,78 @@ const int kCondR[] = { 0, 1, 2, 32, 33, 34 };
 
 // A term is a string: `s:R` the value R held at entry, `k:N` a constant, `sum{a,b,..}` a sorted flattened sum, `lt(a,b)`,
 // `ltu(a,b)`, `eq{a,b}`, `and{a,b}`, `or{a,b}` the compares and logic (the braces sorted), and `op:N` anything else.
-std::string joinSorted(std::vector<std::string> ts) {
-    std::sort(ts.begin(), ts.end());
-    std::string s;
-    for (std::size_t i = 0; i < ts.size(); i++) s += (i ? "," : "") + ts[i];
-    return s;
-}
-// The terms between the brackets of one, split at the commas of its own level.
-std::vector<std::string> splitTop(const std::string &inner) {
-    std::vector<std::string> parts;
-    int depth = 0; std::size_t from = 0;
-    for (std::size_t c = 0; c <= inner.size(); c++) {
-        if (c == inner.size() || (inner[c] == ',' && depth == 0)) { parts.push_back(inner.substr(from, c - from)); from = c + 1; }
-        else if (inner[c] == '(' || inner[c] == '{') depth++;
-        else if (inner[c] == ')' || inner[c] == '}') depth--;
+// **The algebra's terms by number** (M6c round 15): each term made once in a table, so two are equal where their
+// numbers are; a sum is flat and, like eq, and, or, its terms sorted; -1 is no term. `str` spells one for a trace.
+struct Terms {
+    enum Kind { Entry, Symbol, Const, Op, Sum, Lt, Ltu, Eq, And, Or };
+    struct T { Kind kind; long k; int reg; std::string text; std::vector<int> args; };
+    std::vector<T> all;
+    std::map<std::pair<std::pair<int, long>, std::pair<std::pair<int, std::string>, std::vector<int> > >, int> made;
+    int make(Kind kind, long k, int reg, const std::string &text, const std::vector<int> &args) {
+        const std::pair<std::pair<int, long>, std::pair<std::pair<int, std::string>, std::vector<int> > > key(std::make_pair(static_cast<int>(kind), k), std::make_pair(std::make_pair(reg, text), args));
+        if (made.count(key)) return made[key];
+        T t; t.kind = kind; t.k = k; t.reg = reg; t.text = text; t.args = args;
+        all.push_back(t);
+        return made[key] = static_cast<int>(all.size()) - 1;
     }
-    return parts;
-}
-std::string sumOf(const std::string &a, const std::string &b) {
-    std::vector<std::string> ts;
-    const std::string *parts[2] = { &a, &b };
-    for (int i = 0; i < 2; i++) {
-        const std::string &p = *parts[i];
-        if (p.compare(0, 4, "sum{") == 0) { std::vector<std::string> in = splitTop(p.substr(4, p.size() - 5)); ts.insert(ts.end(), in.begin(), in.end()); }
-        else ts.push_back(p);
+    const T &at(int t) const { return all[static_cast<std::size_t>(t)]; }
+    int entry(int r) { return make(Entry, 0, r, std::string(), std::vector<int>()); }           // a register's value at the turn's start
+    int symbol(const std::string &x) { return make(Symbol, 0, kNoReg, x, std::vector<int>()); }
+    int constant(long k) { return make(Const, k, kNoReg, std::string(), std::vector<int>()); }
+    int op(long k, int r) { return make(Op, k, r, std::string(), std::vector<int>()); }         // what body line k leaves in r
+    int ordered(Kind kind, int a, int b) { std::vector<int> v; v.push_back(a); v.push_back(b); return make(kind, 0, kNoReg, std::string(), v); }
+    int sorted(Kind kind, std::vector<int> v) { std::sort(v.begin(), v.end()); return make(kind, 0, kNoReg, std::string(), v); }
+    int pair(Kind kind, int a, int b) { std::vector<int> v; v.push_back(a); v.push_back(b); return sorted(kind, v); }
+    int sum(int a, int b) {
+        std::vector<int> v;
+        const int parts[2] = { a, b };
+        for (int i = 0; i < 2; i++) {
+            if (at(parts[i]).kind == Sum) v.insert(v.end(), at(parts[i]).args.begin(), at(parts[i]).args.end());
+            else v.push_back(parts[i]);
+        }
+        return sorted(Sum, v);
     }
-    return "sum{" + joinSorted(ts) + "}";
-}
+    bool is(int t, Kind kind) const { return t >= 0 && at(t).kind == kind; }
+    // Whether `sub` is t or a term inside it; no term is inside every one, as an empty spelling was.
+    bool contains(int t, int sub) const {
+        if (sub < 0 || t == sub) return true;
+        if (t < 0) return false;
+        for (std::size_t a = 0; a < at(t).args.size(); a++) if (contains(at(t).args[a], sub)) return true;
+        return false;
+    }
+    std::string str(int t) const {
+        if (t < 0) return std::string();
+        const T &x = at(t);
+        if (x.kind == Entry) return "s:" + regName(x.reg);
+        if (x.kind == Symbol) return "s:" + x.text;
+        if (x.kind == Const) return "k:" + std::to_string(x.k);
+        if (x.kind == Op) return "op:" + std::to_string(x.k) + ":" + regName(x.reg);
+        std::vector<std::string> ts;
+        for (std::size_t a = 0; a < x.args.size(); a++) ts.push_back(str(x.args[a]));
+        if (x.kind == Lt || x.kind == Ltu) return (x.kind == Lt ? "lt(" : "ltu(") + ts[0] + "," + ts[1] + ")";
+        std::sort(ts.begin(), ts.end());
+        std::string s = x.kind == Sum ? "sum{" : x.kind == Eq ? "eq{" : x.kind == And ? "and{" : "or{";
+        for (std::size_t i = 0; i < ts.size(); i++) s += (i ? "," : "") + ts[i];
+        return s + "}";
+    }
+};
 
 bool in(const std::vector<int> &v, int r) { return std::find(v.begin(), v.end(), r) != v.end(); }
 
 // The terms of every register after the body, and the term P is computed from, by one pass in program order: keyed by
-// the register's number and walked in the names' order; a term spells a register by its name.
-typedef std::map<int, std::string, ByName> Env;
-Env evaluateBody(const Src &src, const Loop &L, std::vector<std::string> &lineTerms) {
+// the register's number and walked in the names' order.
+typedef std::map<int, int, ByName> Env;
+Env evaluateBody(const Src &src, const Loop &L, Terms &T, std::vector<int> &lineTerms) {
     Env env;
-    auto name = [&](int r) -> std::string {
-        if (!env.count(r)) env[r] = "s:" + regName(r);
+    auto name = [&](int r) -> int {
+        if (!env.count(r)) env[r] = T.entry(r);
         return env[r];
     };
     std::size_t i = 0;
-    auto term = [&](std::size_t k) -> std::string {
+    auto term = [&](std::size_t k) -> int {
         long n;
-        if (src.number(i, k, n)) return "k:" + src.op(i, k);
-        return src.regAt(i, k) != kNoReg ? name(src.regAt(i, k)) : "s:" + src.op(i, k);
+        if (src.number(i, k, n)) return T.constant(n);
+        return src.regAt(i, k) != kNoReg ? name(src.regAt(i, k)) : T.symbol(src.op(i, k));
     };
     for (std::size_t k = 0; k < L.bodyAt.size(); k++) {
         i = L.bodyAt[k];
@@ -554,20 +582,18 @@ Env evaluateBody(const Src &src, const Loop &L, std::vector<std::string> &lineTe
         std::vector<int> reads, writes;
         src.regs(i, reads, writes);
         for (std::size_t r = 0; r < reads.size(); r++) name(reads[r]);
-        std::string t;
+        int t = -1;
         const bool unpred = src.pred(i).empty(), plain = unpred && src.ops(i) == 3 && writes.size() == 1 && src.regAt(i, 2) == writes[0];
-        if (m == "MV" && unpred && src.ops(i) == 2 && writes.size() == 1) t = term(0);
-        else if (plain && m == "ADD") t = sumOf(term(0), term(1));
-        else if (plain && m == "CMPLT") t = "lt(" + term(0) + "," + term(1) + ")";
-        else if (plain && m == "CMPGT") t = "lt(" + term(1) + "," + term(0) + ")";
-        else if (plain && m == "CMPLTU") t = "ltu(" + term(0) + "," + term(1) + ")";
-        else if (plain && m == "CMPGTU") t = "ltu(" + term(1) + "," + term(0) + ")";
-        else if (plain && (m == "CMPEQ" || m == "AND" || m == "OR")) {
-            std::vector<std::string> ts; ts.push_back(term(0)); ts.push_back(term(1));
-            t = (m == "CMPEQ" ? "eq{" : m == "AND" ? "and{" : "or{") + joinSorted(ts) + "}";
-        }
-        for (std::size_t w = 0; w < writes.size(); w++) env[writes[w]] = t.empty() || writes.size() > 1 ? "op:" + std::to_string(k) + ":" + regName(writes[w]) : t;
-        lineTerms.push_back(t.empty() || writes.size() != 1 ? "" : env[writes[0]]);
+        const int t0 = (plain || m == "MV") && src.ops(i) > 0 ? term(0) : -1, t1 = plain ? term(1) : -1;
+        if (m == "MV" && unpred && src.ops(i) == 2 && writes.size() == 1) t = t0;
+        else if (plain && m == "ADD") t = T.sum(t0, t1);
+        else if (plain && m == "CMPLT") t = T.ordered(Terms::Lt, t0, t1);
+        else if (plain && m == "CMPGT") t = T.ordered(Terms::Lt, t1, t0);
+        else if (plain && m == "CMPLTU") t = T.ordered(Terms::Ltu, t0, t1);
+        else if (plain && m == "CMPGTU") t = T.ordered(Terms::Ltu, t1, t0);
+        else if (plain && (m == "CMPEQ" || m == "AND" || m == "OR")) t = T.pair(m == "CMPEQ" ? Terms::Eq : m == "AND" ? Terms::And : Terms::Or, t0, t1);
+        for (std::size_t w = 0; w < writes.size(); w++) env[writes[w]] = t < 0 || writes.size() > 1 ? T.op(static_cast<long>(k), writes[w]) : t;
+        lineTerms.push_back(t < 0 || writes.size() != 1 ? -1 : env[writes[0]]);
     }
     return env;
 }
@@ -588,63 +614,61 @@ bool recogniseStepped(const Src &src, Loop &L, std::string &why, const std::stri
         for (std::size_t w = 0; w < writes.size(); w++) { writers[writes[w]]++; writerAt[writes[w]] = k; }
     }
     if (writers[L.PR] != 1) return no("the predicate is written more than once");
-    std::vector<std::string> lineTerms;
-    Env env = evaluateBody(src, L, lineTerms);
+    Terms T;
+    std::vector<int> lineTerms;
+    Env env = evaluateBody(src, L, T, lineTerms);
+    auto termOf = [&](int r) -> int { Env::const_iterator it = env.find(r); return it == env.end() ? -1 : it->second; };
     // The steps: a register whose end term is itself plus one invariant (lo), and one that adds a carry of lo's sum (hi).
     // An invariant term: a constant (reg kNoReg, its value k) or the entry value of a register the loop never writes.
-    auto invariant = [&](const std::string &t, int &reg, long &k) -> bool {
+    auto invariant = [&](int t, int &reg, long &k) -> bool {
         reg = kNoReg; k = 0;
-        if (t.compare(0, 2, "k:") == 0) { k = std::atol(t.c_str() + 2); return true; }
-        if (t.compare(0, 2, "s:") != 0) return false;
-        reg = regNumber(t.substr(2));
-        return reg != kNoReg && !writers.count(reg);
+        if (T.is(t, Terms::Const)) { k = T.at(t).k; return true; }
+        if (!T.is(t, Terms::Entry)) return false;
+        reg = T.at(t).reg;
+        return !writers.count(reg);
     };
     int lo = kNoReg, slo = kNoReg, hi = kNoReg, shi = kNoReg;
     long sloK = 0;
-    std::string sloTerm;
+    int sloTerm = -1;
+    const int pTerm = termOf(L.PR);
     for (Env::const_iterator it = env.begin(); it != env.end() && lo == kNoReg; ++it) {
-        const int r = it->first;
-        const std::string &t = it->second;
-        if (!writers.count(r) || t.compare(0, 4, "sum{") != 0) continue;
-        const std::string a = "s:" + regName(r);
-        if (t == sumOf(a, "k:0") || env[L.PR].find(t) == std::string::npos) continue;   // the counter the test reads
-        std::vector<std::string> ts = splitTop(t.substr(4, t.size() - 5));
+        const int r = it->first, t = it->second;
+        if (!writers.count(r) || !T.is(t, Terms::Sum)) continue;
+        const int a = T.entry(r);
+        if (t == T.sum(a, T.constant(0)) || !T.contains(pTerm, t)) continue;            // the counter the test reads
+        const std::vector<int> ts = T.at(t).args;
         if (ts.size() != 2) continue;
-        std::string x = ts[0], y = ts[1];
-        const std::string other = x == a ? y : y == a ? x : "";
+        const int other = ts[0] == a ? ts[1] : ts[1] == a ? ts[0] : -1;
         int s = kNoReg; long k = 0;
-        if (other.empty() || !invariant(other, s, k) || (s == kNoReg && k == 0)) continue;
+        if (other < 0 || !invariant(other, s, k) || (s == kNoReg && k == 0)) continue;
         lo = r; slo = s; sloK = k; sloTerm = other;
     }
     if (lo == kNoReg) return no("no counter stepped by an invariant");
-    const std::string loTerm = env[lo], carry = "ltu(" + loTerm + "," + sloTerm + ")";
+    const int loTerm = termOf(lo), carry = T.ordered(Terms::Ltu, loTerm, sloTerm);
     for (Env::const_iterator it = env.begin(); it != env.end() && hi == kNoReg; ++it) {
-        const int r = it->first;
-        const std::string &t = it->second;
-        if (r == lo || !writers.count(r) || t.compare(0, 4, "sum{") != 0 || t.find(carry) == std::string::npos) continue;
-        const std::string self = "s:" + regName(r), rest = sumOf(self, carry);
+        const int r = it->first, t = it->second;
+        if (r == lo || !writers.count(r) || !T.is(t, Terms::Sum) || !T.contains(t, carry)) continue;
+        const int self = T.entry(r), rest = T.sum(self, carry);
         // t is sum{s:r, carry, step}: the step is what remains when those two are taken out.
-        std::string cand;
-        std::vector<std::string> parts = splitTop(t.substr(4, t.size() - 5));
+        int cand = -1;
+        const std::vector<int> parts = T.at(t).args;
         if (parts.size() != 3) continue;
         for (std::size_t p = 0; p < parts.size(); p++) if (parts[p] != self && parts[p] != carry) cand = parts[p];
         int s = kNoReg; long k = 0;
-        if (cand.empty() || !invariant(cand, s, k) || sumOf(rest, cand) != t) continue;
+        if (cand < 0 || !invariant(cand, s, k) || T.sum(rest, cand) != t) continue;
         hi = r; shi = s;
     }
     L.wide = hi != kNoReg;
     if (L.wide && ((slo == kNoReg) != (shi == kNoReg))) return no("the two steps are not both registers or both constants");
     // The predicate: the stepped value against a bound the loop never writes, one or two words, signed.
-    const std::string p = env[L.PR], hiTerm = L.wide ? env[hi] : "";
-    if (tracing() > 2) std::fprintf(stderr, "  stepped: lo %s + %s, hi %s, %s = %s\n", regName(lo).c_str(), sloTerm.c_str(), hiTerm.c_str(), regName(L.PR).c_str(), p.c_str());
+    const int p = pTerm, hiTerm = L.wide ? termOf(hi) : -1;
+    if (tracing() > 2) std::fprintf(stderr, "  stepped: lo %s + %s, hi %s, %s = %s\n", regName(lo).c_str(), T.str(sloTerm).c_str(), T.str(hiTerm).c_str(), regName(L.PR).c_str(), T.str(p).c_str());
     int nlo = kNoReg, nhi = kNoReg;
     bool less = false;                    // the loop runs while iv < n; else while iv <= n
-    auto boundOf = [&](const std::string &t, int &reg) -> bool { long k; return t.compare(0, 2, "s:") == 0 && invariant(t, reg, k) && reg != lo && reg != hi; };
+    auto boundOf = [&](int t, int &reg) -> bool { long k; return T.is(t, Terms::Entry) && invariant(t, reg, k) && reg != lo && reg != hi; };
     if (!L.wide) {
-        if (p.compare(0, 3, "lt(") != 0) return no("the predicate is not a compare");
-        std::vector<std::string> xy = splitTop(p.substr(3, p.size() - 4));
-        if (xy.size() != 2) return no("the predicate is not a compare");
-        const std::string x = xy[0], y = xy[1];
+        if (!T.is(p, Terms::Lt)) return no("the predicate is not a compare");
+        const int x = T.at(p).args[0], y = T.at(p).args[1];
         if (x == loTerm && boundOf(y, nlo)) less = true;
         else if (y == loTerm && boundOf(x, nlo)) less = false;
         else return no("the compare is not of the stepped counter against an invariant");
@@ -654,16 +678,13 @@ bool recogniseStepped(const Src &src, Loop &L, std::string &why, const std::stri
         for (int dir = 0; dir < 2 && !found; dir++) {
             for (Env::const_iterator a = env.begin(); a != env.end() && !found; ++a) {
                 int nl = kNoReg, nh = kNoReg;
-                if (!boundOf("s:" + regName(a->first), nl) || a->first == lo || a->first == hi) continue;
+                if (!boundOf(T.entry(a->first), nl) || a->first == lo || a->first == hi) continue;
                 for (Env::const_iterator b = env.begin(); b != env.end() && !found; ++b) {
-                    if (!boundOf("s:" + regName(b->first), nh) || b->first == a->first) continue;
-                    const std::string NL = "s:" + regName(nl), NH = "s:" + regName(nh);
-                    std::vector<std::string> e; e.push_back(hiTerm); e.push_back(NH);
-                    std::string ltu = dir == 0 ? "ltu(" + loTerm + "," + NL + ")" : "ltu(" + NL + "," + loTerm + ")";
-                    std::string lt = dir == 0 ? "lt(" + hiTerm + "," + NH + ")" : "lt(" + NH + "," + hiTerm + ")";
-                    std::vector<std::string> an; an.push_back("eq{" + joinSorted(e) + "}"); an.push_back(ltu);
-                    std::vector<std::string> o; o.push_back("and{" + joinSorted(an) + "}"); o.push_back(lt);
-                    if (p == "or{" + joinSorted(o) + "}") { nlo = nl; nhi = nh; less = dir == 0; found = true; }
+                    if (!boundOf(T.entry(b->first), nh) || b->first == a->first) continue;
+                    const int NL = T.entry(nl), NH = T.entry(nh);
+                    const int ltu = dir == 0 ? T.ordered(Terms::Ltu, loTerm, NL) : T.ordered(Terms::Ltu, NL, loTerm);
+                    const int lt = dir == 0 ? T.ordered(Terms::Lt, hiTerm, NH) : T.ordered(Terms::Lt, NH, hiTerm);
+                    if (p == T.pair(Terms::Or, T.pair(Terms::And, T.pair(Terms::Eq, hiTerm, NH), ltu), lt)) { nlo = nl; nhi = nh; less = dir == 0; found = true; }
                 }
             }
         }
@@ -702,8 +723,8 @@ bool recogniseStepped(const Src &src, Loop &L, std::string &why, const std::stri
         if (!feeding.count(k) || src.ops(i) != 3 || !src.pred(i).empty() || src.mnem(i).compare(0, 3, "CMP") != 0 || writes.size() != 1) return no("a bound is read outside the test");
         const int dst = src.regAt(i, 2);
         if (dst != kNoReg && (dst == nlo || dst == nhi)) return no("the test writes a bound");
-        const std::string &lt = lineTerms[k], want = rlo ? loTerm : hiTerm, bound = "s:" + regName(rlo ? nlo : nhi);
-        if (lt.empty() || lt.find(want) == std::string::npos || lt.find(bound) == std::string::npos) return no("the test reads the counter before its step");
+        const int lt = lineTerms[k], want = rlo ? loTerm : hiTerm, bound = T.entry(rlo ? nlo : nhi);
+        if (lt < 0 || !T.contains(lt, want) || !T.contains(lt, bound)) return no("the test reads the counter before its step");
         for (std::size_t k2 = k + 1; k2 < L.bodyAt.size(); k2++) {
             std::vector<int> r2, w2;
             src.regs(L.bodyAt[k2], r2, w2);
