@@ -704,7 +704,7 @@ bool scheduleAt(Loop &L, int II, std::vector<int> &t, const std::set<std::string
             if (d.to == static_cast<int>(o) && d.from == static_cast<int>(o)) { if (d.delay > d.dist * II) return false; continue; }
             if (d.to == static_cast<int>(o) && t[static_cast<std::size_t>(d.from)] >= 0) lo = std::max(lo, t[static_cast<std::size_t>(d.from)] + d.delay - d.dist * II);
             if (d.from == static_cast<int>(o) && t[static_cast<std::size_t>(d.to)] >= 0) {
-                if (tracing() > 2 && t[static_cast<std::size_t>(d.to)] - d.delay + d.dist * II < hi) std::fprintf(stderr, "    hi by%s (%s delay %d dist %d)\n", L.nodes[static_cast<std::size_t>(d.to)].line.raw.c_str(), d.why, d.delay, d.dist);
+                if (tracing() > 2 && t[static_cast<std::size_t>(d.to)] - d.delay + d.dist * II < hi) std::fprintf(stderr, "    hi by%s (%s delay %d dist %d)\n", L.body[static_cast<std::size_t>(d.to)].raw.c_str(), d.why, d.delay, d.dist);
                 if (t[static_cast<std::size_t>(d.to)] - d.delay + d.dist * II < hi) { hi = t[static_cast<std::size_t>(d.to)] - d.delay + d.dist * II; hiBy = d.dist ? d.to : -1; }
             }
         }
@@ -733,7 +733,7 @@ bool scheduleAt(Loop &L, int II, std::vector<int> &t, const std::set<std::string
             break;
         }
         if (!placed) {
-            if (tracing() > 1) std::fprintf(stderr, "  II=%d: no slot for%s in [%d,%d]\n", II, x.line.raw.c_str(), lo, hi);
+            if (tracing() > 1) std::fprintf(stderr, "  II=%d: no slot for%s in [%d,%d]\n", II, L.body[o].raw.c_str(), lo, hi);
             if (hi < lo && hiBy >= 0) push[static_cast<std::size_t>(hiBy)] += lo - hi;
             return false;
         }
@@ -754,9 +754,11 @@ struct Unit { std::vector<std::string> regs; int q = 1; std::vector<std::vector<
 int pow2At(int x) { int p = 1; while (p < x) p *= 2; return p; }
 long modq(long a, int q) { return ((a % q) + q) % q; }
 
-std::string spelled(const Loop &L, const std::vector<Unit> &units, const std::map<std::string, std::size_t> &unitOf,
-                    const std::vector<int> &firstWrite, std::size_t o, long j) {
-    const Line &l = L.nodes[o].line;
+// Body instruction o as turn j writes it: each register of a unit renamed to that turn's copy - a source to the copy
+// it reads, the destination to the one it writes - on the entry where the body is the stream's, else on its line.
+std::string spelledLine(const Loop &L, const std::vector<Unit> &units, const std::map<std::string, std::size_t> &unitOf,
+                        const std::vector<int> &firstWrite, std::size_t o, long j) {
+    const Line &l = L.body[o];
     std::vector<std::string> ops = l.ops;
     std::string pred = l.pred;
     bool hasDest = !ops.empty() && !isStore(l.mnem) && l.mnem != "B" && ops.back()[0] != '*';
@@ -777,6 +779,39 @@ std::string spelled(const Loop &L, const std::vector<Unit> &units, const std::ma
         if (!pred.empty()) pred = renamed(pred, r, rd);
     }
     return rebuilt(l.mnem, ops, pred).raw;
+}
+
+std::string spelled(const Loop &L, const std::vector<Unit> &units, const std::map<std::string, std::size_t> &unitOf,
+                    const std::vector<int> &firstWrite, std::size_t o, long j) {
+    if (L.bodyM.empty() || L.bodyM[o].unit != 0 || L.bodyM[o].par || L.bodyM[o].packed) return spelledLine(L, units, unitOf, firstWrite, o, j);
+    MInst x = L.bodyM[o];
+    const std::string m = x.m.str();
+    const bool hasDest = x.operands && !isStore(m) && m != "B" && x.op[x.operands - 1].kind != MOperand::Memory;
+    std::size_t k0 = 0;
+    for (std::map<std::string, std::size_t>::const_iterator it = unitOf.begin(); it != unitOf.end(); ++it, k0++) {
+        const Unit &u = units[it->second];
+        if (u.q < 2) continue;
+        std::size_t half = 0;
+        while (u.regs[half] != it->first) half++;
+        const long readJ = j + (firstWrite[k0] >= static_cast<int>(o) ? -1 : 0);
+        const int r = regNumber(it->first), rd = regNumber(u.copies[half][static_cast<std::size_t>(modq(readJ, u.q))]),
+                  wr = regNumber(u.copies[half][static_cast<std::size_t>(modq(j, u.q))]);
+        for (int k = 0; k < x.operands; k++) {
+            MOperand &y = x.op[k];
+            const std::uint8_t to = static_cast<std::uint8_t>(hasDest && k + 1 == x.operands ? wr : rd);
+            if (y.kind != MOperand::Register && y.kind != MOperand::Pair && y.kind != MOperand::Memory) continue;
+            if (y.reg == r) y.reg = to;
+            if (y.kind == MOperand::Pair && y.hi == r) y.hi = to;
+            if (y.kind == MOperand::Memory && y.index == r) y.index = to;
+        }
+        if (x.pred == r) x.pred = static_cast<std::uint8_t>(rd);
+    }
+    std::string raw = x.str();
+    raw.erase(raw.size() - 1);
+    // Under CXX1_C6X_MIR=1 the line's spelling too: `c6x-spell` names a turn the entry writes otherwise.
+    if (std::getenv("CXX1_C6X_MIR") != nullptr && raw != spelledLine(L, units, unitOf, firstWrite, o, j))
+        std::fprintf(stderr, "c6x-spell: %s against %s\n", raw.c_str(), spelledLine(L, units, unitOf, firstWrite, o, j).c_str());
+    return raw;
 }
 
 Line verbatim(const std::string &raw) { Line l; l.raw = raw; l.verbatim = true; return l; }
@@ -1108,7 +1143,6 @@ bool pipeline(const std::vector<Line> &v, Loop &L, std::vector<Line> &out, std::
     for (std::size_t o = 0; o < L.body.size(); o++) {
         if (L.bodyM.empty()) { L.nodes.push_back(makeNode(L.body[o], labels)); continue; }
         L.nodes.push_back(makeNode(L.bodyM[o], labels));
-        L.nodes.back().line = L.body[o];                    // the emitters still spell the kernel from lines
     }
     // The rename units, and which of them may take a name per iteration.
     std::vector<Unit> units;
