@@ -185,22 +185,11 @@ Node nodeOf(const MInst &i, const std::set<std::string> &labels) {
     return n;
 }
 
-bool sameFacts(const Node &a, const Node &b) {
-    return a.reads == b.reads && a.writes == b.writes && a.stepped == b.stepped && a.lat == b.lat && a.late == b.late &&
-           a.units == b.units && a.side == b.side && a.cross == b.cross && a.mem == b.mem && a.store == b.store &&
-           a.tpath == b.tpath && a.memOff == b.memOff && a.memSize == b.memSize && a.memFrame == b.memFrame &&
-           a.branch == b.branch && a.call == b.call;
-}
-
 }   // namespace
 
-// The node of an entry: on its operands where they are modelled, else by its spelling. CXX1_C6X_MIR=1 asks both.
+// The node of an entry: on its operands where they are modelled, else by its spelling.
 Node makeNode(const MInst &i, const std::set<std::string> &labels) {
-    if (!modelled(i)) return c6x::makeNode(lineOf(i), labels);
-    Node n = nodeOf(i, labels);
-    static const bool check = std::getenv("CXX1_C6X_MIR") != nullptr;
-    if (check && !sameFacts(n, c6x::makeNode(lineOf(i), labels))) std::fprintf(stderr, "c6x-node: %s", i.str().c_str());
-    return n;
+    return modelled(i) ? nodeOf(i, labels) : c6x::makeNode(lineOf(i), labels);
 }
 
 // An operand held as text that names a register, a memory address or a number is read by its spelling; nothing else.
@@ -447,8 +436,6 @@ struct Folding {
         if (modelled(s[k])) {
             e = s[k];
             edit(e);
-            static const bool check = std::getenv("CXX1_C6X_MIR") != nullptr;
-            if (check && viewOf(e).raw != text.raw) std::fprintf(stderr, "c6x-fold-edit: %s against %s\n", viewOf(e).raw.c_str(), text.raw.c_str());
             return true;
         }
         MStream one;
@@ -1305,7 +1292,7 @@ struct LoopStream : LoopText {
         return one[0];
     }
     // The edit on the operands: `from`'s mnemonic, predicate and operands assigned where the line's differ (a fresh entry
-    // where `from` is none); its spelling the line's, else the line read. `c6x-loop-edit` names one the reading differs from.
+    // where `from` is none); its spelling the line's, else the line read.
     static MInst edited(const Line &l, const MInst *from) {
         MInst x;
         if (from != nullptr && from->kind == MInst::Instruction && !from->packed && !from->par && from->unit == 0) x = *from;
@@ -1319,12 +1306,6 @@ struct LoopStream : LoopText {
             else if (o >= x.operands || x.op[o].str() != l.ops[o]) x.op[o] = MOperand(l.ops[o]);
         x.operands = static_cast<std::uint8_t>(ok ? l.ops.size() : 0);
         if (!ok || x.str() != l.raw + "\n") return entry(l);
-        if (std::getenv("CXX1_C6X_MIR") != nullptr) {
-            const MInst r = entry(l);
-            bool same = r.kind == x.kind && r.m.str() == x.m.str() && r.pred == x.pred && r.predNot == x.predNot && r.operands == x.operands;
-            for (int o = 0; same && o < x.operands; o++) same = r.op[o].kind == x.op[o].kind && r.op[o].str() == x.op[o].str();
-            if (!same) std::fprintf(stderr, "c6x-loop-edit: %s\n", l.raw.c_str());
-        }
         return x;
     }
     void blank(std::size_t k) override { LoopText::blank(k); gone[k] = pending = stale = true; }

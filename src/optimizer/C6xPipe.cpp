@@ -244,23 +244,16 @@ struct Src {
     const std::vector<Line> &v;                 // the text; empty on a stream
     const MStream *s;
     const std::vector<std::uint64_t> *live;     // the stream's live-in, entry by entry
-    mutable std::vector<Line> made, whole;
+    mutable std::vector<Line> made;
     mutable std::vector<char> have;
     Src(const std::vector<Line> &lines, const MStream *stream, const std::vector<std::uint64_t> *in = nullptr) : v(lines), s(stream), live(in) {}
     std::size_t size() const { return s ? s->size() : v.size(); }
-    // **An entry read as a line** (M6c round 14): made where a reader still wants text, once; `c6x-line` names the reader.
-    const Line &line(std::size_t i, const char *who) const {
-        static const bool census = std::getenv("CXX1_C6X_MIR") != nullptr;
+    // **An entry read as a line** (M6c round 14): made where a reader still wants text, once.
+    const Line &line(std::size_t i) const {
         if (!s) return v[i];
         if (made.empty()) { made.resize(s->size()); have.assign(s->size(), 0); }
         if (!have[i]) { made[i] = viewOf((*s)[i]); have[i] = 1; }
-        if (census && who && have[i] == 1) { have[i] = 2; std::fprintf(stderr, "c6x-line: %s\n", who); }
         return made[i];
-    }
-    // The census's text: the whole stream as lines with their liveness, what the recognisers are held against.
-    const std::vector<Line> &text() const {
-        if (s && whole.empty()) { linesOf(*s, whole); computeLiveness(whole); }
-        return s ? whole : v;
     }
     // Entry i as it stands on the stream; a line of the walker's text as the entry of its parts.
     MInst entry(std::size_t i) const {
@@ -399,7 +392,7 @@ struct Loop {
     }
     static std::uint64_t bit(int r) { return bitR(r); }
     // **The body read without its lines** (M6c round 14): on the stream the entries alone; a line is beside one only
-    // where an entry or the preheader is not modelled, or under the census. Text off the stream, as it was.
+    // where an entry or the preheader is not modelled. Text off the stream, as it was.
     std::size_t size() const { return bodyM.empty() ? body.size() : bodyM.size(); }
     std::string mnem(std::size_t o) const { return bodyM.empty() ? body[o].mnem : bodyM[o].m.str(); }
     std::size_t ops(std::size_t o) const { return bodyM.empty() ? body[o].ops.size() : bodyM[o].operands; }
@@ -450,14 +443,6 @@ struct Loop {
         for (std::size_t o = 0; o < size(); o++) b.push_back(typed ? insOf(bodyM[o]) : insOf(body[o]));
         for (std::size_t o = 0; o < (typed ? preM.size() : pre.size()); o++) p.push_back(typed ? insOf(preM[o]) : insOf(pre[o]));
         const std::vector<Access> got = addressForms(b, p, ivR, writtenM);
-        // CXX1_C6X_MIR=1: the lines walked too, and `c6x-addr` names an access whose form differs.
-        if (typed && std::getenv("CXX1_C6X_MIR") != nullptr) {
-            for (std::size_t o = 0; o < body.size(); o++) b[o] = insOf(body[o]);
-            for (std::size_t o = 0; o < pre.size(); o++) p[o] = insOf(pre[o]);
-            const std::vector<Access> ref = addressForms(b, p, ivR, writtenM);
-            for (std::size_t o = 0; o < ref.size(); o++)
-                if (ref[o].known != got[o].known || ref[o].addr != got[o].addr) std::fprintf(stderr, "c6x-addr:%s\n", body[o].raw.c_str());
-        }
         return got;
     }
     void erase(std::size_t o) {
@@ -483,17 +468,16 @@ struct Loop {
         if (!isWrite && e.pred == f) e.pred = static_cast<std::uint8_t>(t);
     }
     void take(const Src &src, std::size_t i) {
-        static const bool census = std::getenv("CXX1_C6X_MIR") != nullptr;
-        const bool beside = census || !preTyped;
+        const bool beside = !preTyped;
         if (!fromLines && !src.typed(i)) {              // one entry not modelled: the whole body from its lines
             fromLines = true;
-            for (std::size_t k = 0; k < taken.size(); k++) { const Line &l = src.line(taken[k], "body"); if (!beside) body.push_back(l); }
+            for (std::size_t k = 0; k < taken.size(); k++) if (!beside) body.push_back(src.line(taken[k]));
             bodyM.clear();
         }
-        if (fromLines) { body.push_back(src.line(i, "body")); return; }
+        if (fromLines) { body.push_back(src.line(i)); return; }
         bodyM.push_back((*src.s)[i]);
         taken.push_back(i);
-        if (beside) body.push_back(src.line(i, preTyped ? nullptr : "body"));
+        if (beside) body.push_back(src.line(i));
     }
 };
 
@@ -773,9 +757,8 @@ bool recognise(const Src &src, std::size_t back, const std::set<std::string> &la
     for (std::size_t k = h; k-- > 0 && src.instr(k) && !isBranch(src.mnem(k)); first = k) {
         if (src.typed(k)) L.preM.insert(L.preM.begin(), (*src.s)[k]); else L.preTyped = false;
     }
-    // The preheader's lines: off the stream, where an entry of it is not modelled, and for the census.
-    static const bool census = std::getenv("CXX1_C6X_MIR") != nullptr;
-    if (!L.preTyped || census) for (std::size_t k = first; k < h; k++) L.pre.push_back(src.line(k, L.preTyped ? nullptr : "pre"));
+    // The preheader's lines: off the stream, and where an entry of it is not modelled.
+    if (!L.preTyped) for (std::size_t k = first; k < h; k++) L.pre.push_back(src.line(k));
     if (src.naming(L.label) != 1) { why = "the head is entered from elsewhere"; return false; }
     for (std::size_t i = h + 1; i < back; i++) {
         if (src.label(i)) { if (!passThroughName(src.name(i), named)) { why = "a label inside"; return false; } continue; }
@@ -1055,9 +1038,6 @@ Turn spelled(const Loop &L, const std::vector<Unit> &units, const UnitOf &unitOf
     }
     turn.raw = x.str();
     turn.raw.erase(turn.raw.size() - 1);
-    // Under CXX1_C6X_MIR=1 the line's spelling too: `c6x-spell` names a turn the entry writes otherwise.
-    if (std::getenv("CXX1_C6X_MIR") != nullptr && turn.raw != spelledLine(L, units, unitOf, firstWrite, o, j))
-        std::fprintf(stderr, "c6x-spell: %s against %s\n", turn.raw.c_str(), spelledLine(L, units, unitOf, firstWrite, o, j).c_str());
     turn.e = x;
     turn.typed = true;
     return turn;
@@ -1072,10 +1052,9 @@ struct Code {
     MStream m;
     const MStream *from = nullptr;          // the stream being rewritten; none for the text
     bool ok = true;
-    bool text() const { static const bool census = std::getenv("CXX1_C6X_MIR") != nullptr; return !from || census; }
     // An entry made whole (the window's): spelled for the text, itself on the stream.
     void put(const MInst &e) {
-        if (text()) lines.push_back(lineOf(e));
+        if (!from) lines.push_back(lineOf(e));
         if (from && ok) m.push_back(e);
     }
     // An instruction of its operands - registers by number, constants, a label - under `[pred]` or `[!pred]`.
@@ -1087,11 +1066,9 @@ struct Code {
     bool legal(std::string &why, const std::string &mnem, const MOperand &a, const MOperand &b = MOperand(), const MOperand &c = MOperand()) {
         MInst e = entry(mnem, a, b, c);
         const bool typed = from && ok && modelled(e);
-        Line l;
-        bool fine = false;
-        if (!typed || text()) { l = lineOf(e); fine = legalForm(l); }
         if (!typed) {
-            if (!fine) { why = "the stepped guard has no legal form for" + l.raw; return false; }
+            const Line l = lineOf(e);
+            if (!legalForm(l)) { why = "the stepped guard has no legal form for" + l.raw; return false; }
             lines.push_back(l);
             ok = ok && !from;
             return true;
@@ -1102,19 +1079,15 @@ struct Code {
         const bool has = crossings(e) <= 1 && (unitsFor(e) != 0 || isLoad(mnem) || isStore(mnem));
         std::string raw = e.str();
         raw.erase(raw.size() - 1);
-        if (text()) {
-            if (has != fine || (has && raw != l.raw)) std::fprintf(stderr, "c6x-emit: legal%s against%s\n", raw.c_str(), l.raw.c_str());
-            if (fine) lines.push_back(l);
-        }
         if (!has) { why = "the stepped guard has no legal form for" + raw; return false; }
         m.push_back(e);
         return true;
     }
     // A placed line - a turn, idle cycles, the kernel's label: the entry given, else the line read as placed.
     void placed(const std::string &raw, bool par, const MInst *e) {
-        if (text() || (!e && ok)) lines.push_back(verbatim((par ? "||" : "") + raw));
+        if (!from || (!e && ok)) lines.push_back(verbatim((par ? "||" : "") + raw));
         if (!from || !ok) return;
-        if (!e) { ok = streamOf(std::vector<Line>(1, lines.back()), m); if (!text()) lines.pop_back(); return; }
+        if (!e) { ok = streamOf(std::vector<Line>(1, lines.back()), m); lines.pop_back(); return; }
         m.push_back(*e);
         m.back().par = par;
         m.back().packed = true;
@@ -1123,7 +1096,7 @@ struct Code {
     void label(const std::string &name) { MInst e; e.kind = MInst::Label; e.m = opt::StrId(name); placed(name + ":", false, &e); }
     // Line k of the function as it stands: the stream's own entry.
     void same(const Src &src, std::size_t k) {
-        if (text()) lines.push_back(src.line(k, nullptr));
+        if (!from) lines.push_back(src.line(k));
         if (from && ok) m.push_back((*from)[k]);
     }
 };
@@ -1287,21 +1260,6 @@ void foldBodyCopies(Loop &L) {
     }
 }
 
-// CXX1_C6X_MIR=1: the body's entries against its lines after an edit (`c6x-body`); a loop on the stream whose body
-// is not all modelled, and so is read from its lines, is named too (`c6x-loop-lines`).
-void checkBody(const Loop &L, const char *at) {
-    static const bool check = std::getenv("CXX1_C6X_MIR") != nullptr;
-    if (!check || !L.onStream) return;
-    if (L.bodyM.empty() && !L.body.empty()) { std::fprintf(stderr, "c6x-loop-lines: %s %s\n", at, L.label.c_str()); return; }
-    if (L.bodyM.size() != L.body.size()) { std::fprintf(stderr, "c6x-body: %s %s sizes\n", at, L.label.c_str()); return; }
-    for (std::size_t o = 0; o < L.body.size(); o++) {
-        std::string t = L.bodyM[o].str();
-        if (!t.empty() && t[t.size() - 1] == '\n') t.erase(t.size() - 1);
-        const Line p = parse(t), &l = L.body[o];
-        long by;
-        if (p.mnem != l.mnem || p.ops != l.ops || p.pred != l.pred || L.steppedR(o) != regNumber(steppedRegister(l, by))) { std::fprintf(stderr, "c6x-body: %s %s|%s\n", at, l.raw.c_str(), t.c_str()); return; }
-    }
-}
 
 // A register of free's on the side asked for, or any; kNoReg for none. With pair, an aligned even:odd pair's even half.
 int takeFree(std::vector<int> &free, char side, bool pair) {
@@ -1441,11 +1399,9 @@ bool pipeline(const Src &src, Loop &L, Code &out, std::string &why) {
             }
         if (!L.body.empty()) L.body[at] = rebuilt(L.mnem(at), ops, L.body[at].pred);
     }
-    checkBody(L, "recognised");
     foldBodyCopies(L);
     if (tracing() > 4) for (std::size_t o = 0; o < L.size(); o++) std::fprintf(stderr, "  as written%s\n", L.raw(o).c_str());
     renameWebs(L, pool);
-    checkBody(L, "renamed");
     std::set<std::string> labels;
     labels.insert(L.label + "$pipe");
     for (std::size_t o = 0; o < L.size(); o++) {
@@ -2526,47 +2482,6 @@ bool emitWindow(Window &W, MStream &out, std::string &why) {
     return true;
 }
 
-bool sameLines(const std::vector<Line> &a, const std::vector<Line> &b) {
-    if (a.size() != b.size()) return false;
-    for (std::size_t k = 0; k < a.size(); k++) if (a[k].raw != b[k].raw) return false;
-    return true;
-}
-bool sameLoop(const Loop &a, const Loop &b) {
-    return a.head == b.head && a.back == b.back && a.label == b.label && a.exitName == b.exitName && a.PR == b.PR && a.CR == b.CR &&
-           a.ivR == b.ivR && a.boundR == b.boundR && a.negated == b.negated && a.boundConst == b.boundConst && a.plusOne == b.plusOne &&
-           a.boundK == b.boundK && a.cmp == b.cmp && a.bodyAt == b.bodyAt && sameLines(a.body, b.body) && sameLines(a.pre, b.pre) &&
-           a.usedM == b.usedM && a.writtenM == b.writtenM && a.predicatedM == b.predicatedM && a.liveExit == b.liveExit &&
-           a.stepped == b.stepped && a.wide == b.wide && a.ivsR == b.ivsR && a.boundsR == b.boundsR && a.stepsR == b.stepsR && a.stepK == b.stepK && a.testBody == b.testBody;
-}
-bool sameWindow(const Window &a, const Window &b) {
-    if (a.head != b.head || a.back != b.back || a.label != b.label || a.PR != b.PR || a.backNot != b.backNot || a.bodyM.size() != b.bodyM.size() ||
-        a.cls != b.cls || a.liveHead != b.liveHead || a.liveOut != b.liveOut || a.exits.size() != b.exits.size() || a.ptrs.size() != b.ptrs.size()) return false;
-    for (std::size_t k = 0; k < a.bodyM.size(); k++) if (a.bodyM[k].str() != b.bodyM[k].str()) return false;
-    for (std::size_t k = 0; k < a.exits.size(); k++)
-        if (a.exits[k].target != b.exits[k].target || a.exits[k].pred != b.exits[k].pred || a.exits[k].no != b.exits[k].no || a.exits[k].live != b.exits[k].live) return false;
-    for (std::size_t k = 0; k < a.ptrs.size(); k++)
-        if (a.ptrs[k].reg != b.ptrs[k].reg || a.ptrs[k].loads != b.ptrs[k].loads || a.ptrs[k].offmin != b.ptrs[k].offmin ||
-            a.ptrs[k].offmax != b.ptrs[k].offmax || a.ptrs[k].cond != b.ptrs[k].cond || a.ptrs[k].anchor != b.ptrs[k].anchor) return false;
-    return true;
-}
-
-// CXX1_C6X_MIR=1: each recogniser asked on the stream is asked on the lines too, and a verdict that differs is named.
-void checkRecognisers(const Src &src, std::size_t i, const std::set<std::string> &labels, const std::set<std::string> &named, bool counted) {
-    static const bool check = std::getenv("CXX1_C6X_MIR") != nullptr;
-    if (!check || !src.s) return;
-    const Src text(src.text(), nullptr);
-    std::string w1, w2;
-    if (counted) {
-        Loop a, b;
-        const bool ra = recognise(src, i, labels, named, a, w1), rb = recognise(text, i, labels, named, b, w2);
-        if (ra != rb || w1 != w2 || (ra && !sameLoop(a, b))) std::fprintf(stderr, "c6x-recog: loop %s\n", src.line(i, nullptr).raw.c_str());
-        return;
-    }
-    Window a, b;
-    const bool ra = recogniseWindow(src, i, labels, named, a, w1), rb = recogniseWindow(text, i, labels, named, b, w2);
-    if (ra != rb || w1 != w2 || (ra && !sameWindow(a, b))) std::fprintf(stderr, "c6x-recog: window %s\n", src.line(i, nullptr).raw.c_str());
-}
-
 // One back branch tried: the code that replaces lines [from, to) of the text where the pipelining pays.
 bool pipelineAt(const Src &src, std::size_t i, const std::set<std::string> &labels, const std::set<std::string> &named,
                 std::size_t copied, Code &code, std::size_t &from, std::size_t &to) {
@@ -2577,13 +2492,11 @@ bool pipelineAt(const Src &src, std::size_t i, const std::set<std::string> &labe
         for (std::size_t k = 0; k < i && !above; k++) above = src.label(k) && src.name(k) == src.op(i, 0);
         if (!above) return false;
     }
-    if (!plain) checkRecognisers(src, i, labels, named, true);
     Loop L;
     std::string why;
     if (plain || !recognise(src, i, labels, named, L, why)) {
         if (plain) why = "an unconditional back branch";
         // Not counted: a loop that leaves on a byte it reads takes eight turns of one aligned block at a time.
-        checkRecognisers(src, i, labels, named, false);
         Window W;
         std::string wwhy;
         MStream turns;
@@ -2600,19 +2513,6 @@ bool pipelineAt(const Src &src, std::size_t i, const std::set<std::string> &labe
     if (!pipeline(src, L, code, why)) { if (tracing()) std::fprintf(stderr, "pipe %s: %s\n", L.label.c_str(), why.c_str()); return false; }
     from = to = L.head;
     return true;
-}
-
-// CXX1_C6X_MIR=1: the emitters' lines read as round 10 read them, and `c6x-emit` names a loop whose entries differ.
-void checkEmitted(const Code &code, const std::string &at) {
-    MStream ref;
-    bool same = streamOf(code.lines, ref) && ref.size() == code.m.size();
-    for (std::size_t k = 0; same && k < ref.size(); k++) {
-        const MInst &a = ref[k], &b = code.m[k];
-        same = a.kind == b.kind && a.par == b.par && a.packed == b.packed && a.pred == b.pred && a.predNot == b.predNot && a.unit == b.unit &&
-               a.operands == b.operands && a.str() == b.str();
-        for (int o = 0; same && o < a.operands; o++) same = a.op[o].kind == b.op[o].kind;
-    }
-    if (!same) std::fprintf(stderr, "c6x-emit: %s", at.c_str());
 }
 
 // The names the text defines and the operands it names, with its liveness computed: what every candidate is read against.
@@ -2666,7 +2566,6 @@ bool pipelineLoops(MStream &s) {
         code.from = &s;
         if (!pipelineAt(src, i, labels, named, copied, code, from, to)) continue;
         if (!code.ok) return false;
-        if (code.text()) checkEmitted(code, s[i].str());
         out.insert(out.end(), s.begin() + static_cast<long>(copied), s.begin() + static_cast<long>(from));
         out.insert(out.end(), code.m.begin(), code.m.end());
         copied = to;
