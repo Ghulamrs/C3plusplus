@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
+#include <cstdlib>
 #include <map>
 
 #include "../Source.h"
@@ -318,4 +320,23 @@ std::vector<int> ssaLocalAllocas(const Function &fn, const ir::Function &f) {
         if (j < f.frame.size()) { if (live[j]) at.back() = static_cast<int>(j); j++; }
     }
     return at;
+}
+
+// Each local at its live alloca's slot; a parameter without one keeps the slot the prologue filled, a local without one
+// (promoted at -O1 and -O2) has no record.
+const std::vector<Local> &Regions::ssaFrameLocals(const Function &fn, const ir::Function &f, const std::vector<long long> &allocaSlot,
+                                                  const std::string &who) {
+    const std::vector<int> at = ssaLocalAllocas(fn, f);
+    ssaLocals_.push_back(std::vector<Local>());
+    for (std::size_t n = 0; n < fn.locals().size(); n++) {
+        const Local &l = fn.locals()[n];
+        Local d = l;
+        if (at[n] >= 0) d.offset = static_cast<int>(allocaSlot[static_cast<std::size_t>(at[n])]);
+        if (at[n] < 0 && l.staticName.empty() && !l.isParam) {
+            if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "%s -g %s: '%s' has no slot\n", who.c_str(), fn.symbol().c_str(), l.name.c_str());
+            continue;
+        }
+        ssaLocals_.back().push_back(d);
+    }
+    return ssaLocals_.back();
 }

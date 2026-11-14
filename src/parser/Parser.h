@@ -144,6 +144,8 @@ private:
     void pruneUnchosenCandidates(Program &program);
     // Inline functions the program wrote, emitted where defined and dropped at the end unless odr-used.
     std::set<std::string> discardableInline_;
+    // Literals a char array copies (emitString): the AST stores their bytes, the SSA lowering copies the label.
+    std::set<std::string> copiedStrings_;
     void pruneUnusedInline(Program &program);
     bool isMemberTemplate(const Type *obj, const std::string &name) const {
         return obj != nullptr &&
@@ -2190,6 +2192,7 @@ private:
     // not is stored by the init function instead, once the object is declared.
     bool staticallyInitialisable(const Type *t, Init &in);
     bool leavesFold(const Type *elem, Init &in);
+    bool classLeavesFold(Init &in);
     void dynamicInitialiseScalar(const std::string &name, const std::string &symbol, const Type *type, Init &in);
     void dynamicInitialiseStaticMember(const std::string &name,
                                        const std::string &symbol, const Type *type,

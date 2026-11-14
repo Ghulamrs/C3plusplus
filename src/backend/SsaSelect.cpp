@@ -7,8 +7,11 @@
 #include "../Source.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <map>
 
 namespace {
 

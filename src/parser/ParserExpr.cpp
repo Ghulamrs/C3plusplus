@@ -409,6 +409,15 @@ ExprPtr Parser::staticCast(std::size_t pos) {
                                "pointer only to or from 'void *' or along a base-derived line; "
                                "reinterpret_cast is the cast that reads the bytes as another type");
         }
+        // [expr.static.cast]/12: a derived class's data member pointer back to a base's - the offset shrunk, null kept.
+        const int back = to->unqualified()->isMemberPointer() && !to->unqualified()->isMemberFunctionPointer()
+                             ? memberPointerToDerived(to, v->type()) : -1;
+        if (back > 0) {
+            const syntax::NodeId written = v->syntax();
+            ExprPtr shrunk = convertMemberPointer(std::move(v), to->unqualified(), -back);
+            if (!shrunk->syntax().valid()) shrunk->setSyntax(written);
+            return shrunk;
+        }
         return convert(std::move(v), to, true);
     }();
     r->setDeclCategory(Expr::Category::Prvalue);
@@ -2446,6 +2455,18 @@ ExprPtr Parser::bindReference(const Type *ref, ExprPtr init, std::size_t pos,
             if (ExprPtr again = clonePure(as->target())) {
                 it = again->type();
                 init = namedAfter(std::move(init), std::move(again));
+            }
+
+    // [dcl.init.ref]/5.1.2: a class whose `operator int &()` answers an lvalue of the referent's type binds to that lvalue.
+    if (it->unqualified()->isStructOrUnion() && !referent->unqualified()->isStructOrUnion() && !ref->isRValueReference())
+        if (const Signature *how = conversionFunction(it, referent, false))
+            if (how->returns->isReference() && !how->returns->isRValueReference() &&
+                (referent->isConst() || !how->returns->referent()->isConst())) {
+                const syntax::NodeId operand = init->syntax();
+                std::vector<ExprPtr> none;
+                ExprPtr got = memberCallWith(std::move(init), it, how->name, pos, std::move(none));
+                noteConversionCall(operand, *got);
+                return bindReference(ref, std::move(got), pos, what);
             }
 
     // Binding takes an address, so the two things that have none cannot be bound to

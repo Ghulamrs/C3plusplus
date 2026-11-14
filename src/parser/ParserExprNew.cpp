@@ -573,7 +573,9 @@ const Parser::Signature *Parser::conversionFunction(const Type *from,
             if (f.owner != c->tag()) continue;
             if (!isConversionName(f.name) || !f.params.empty()) continue;
             if (f.isExplicit && !allowExplicit) continue;
-            const Type *gives = f.returns;
+            // [dcl.init]/17: `operator const int &()` answers the int it names - a reference to a scalar is read.
+            const Type *gives = f.returns->isReference() && !f.returns->referent()->unqualified()->isStructOrUnion()
+                                    ? f.returns->referent() : f.returns;
             if (to == nullptr) {
                 if (!gives->unqualified()->isScalar()) continue;
                 if (gives->isBool()) return &f;          // the one asked for
@@ -633,6 +635,9 @@ ExprPtr Parser::contextualScalar(ExprPtr e, std::size_t pos, const char *what, s
         }
     }
     requireScalar(*e, pos, what);
+    // [conv.bool]: a data member pointer is tested against its null, -1, which only the conversion to bool knows.
+    const Type *u = e->type()->unqualified();
+    if (u->isMemberPointer() && !u->isMemberFunctionPointer()) return convert(std::move(e), types_.get(Kind::Bool));
     return e;
 }
 

@@ -7,6 +7,7 @@
 #include "Regions.h"
 #include "../ir/Ir.h"
 
+#include <deque>
 #include <iosfwd>
 #include <map>
 #include <memory>

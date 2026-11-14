@@ -990,22 +990,3 @@ void Arm64Darwin::selectBody(const Function &fn, const ir::Function &f) {
         callSite(none, none, none, std::vector<std::string>(), std::vector<int>(), false, ++ssaRegionAt_, false);
     }
 }
-
-// **-g's variables in a selected frame** (M5.2 round 4): the parser's locals, each at the slot of the alloca the lowering
-// made for it - matched by name in declaration order, both lists being in it. A parameter without a live alloca keeps
-// the slot the walker's prologue filled; a local without one (promoted at -O1 and -O2) has no record.
-const std::vector<Local> *Arm64Darwin::ssaLocals(const Function &fn, const ir::Function &f) {
-    const std::vector<int> at = ssaLocalAllocas(fn, f);
-    ssaLocals_.push_back(std::vector<Local>());
-    for (std::size_t n = 0; n < fn.locals().size(); n++) {
-        const Local &l = fn.locals()[n];
-        Local d = l;
-        if (at[n] >= 0) d.offset = static_cast<int>(ssaAllocaSlot_[static_cast<std::size_t>(at[n])]);
-        if (at[n] < 0 && l.staticName.empty() && !l.isParam) {
-            if (std::getenv("CXX1_SSA_WHY") != nullptr) std::fprintf(stderr, "a64 -g %s: '%s' has no slot\n", fn.symbol().c_str(), l.name.c_str());
-            continue;
-        }
-        ssaLocals_.back().push_back(d);
-    }
-    return &ssaLocals_.back();
-}
