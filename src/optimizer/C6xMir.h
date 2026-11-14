@@ -80,6 +80,12 @@ void foldBranchNops(MStream &s, bool near);
 // **The pipeliner** (C6xPipe.cpp): its counted loops' kernels as placed entries; false, untouched, where one is not spelled.
 bool pipelineLoops(MStream &s);
 
+// **The table's readers on operands** (C6xPack.cpp): C6xSched's `makeNode`, `crossings` and `unitsFor` read from an
+// entry's registers and immediates; `modelled` is false where an operand is text naming a register, asked by spelling.
+bool modelled(const MInst &i);
+int crossings(const MInst &i);
+unsigned unitsFor(const MInst &i);
+
 // Whether the instruction stands as written: one crossing source at most, and a unit - C6xSched's `crossings`, `unitsFor`.
 bool legal(const MInst &i);
 

@@ -110,6 +110,11 @@ std::string renamed(const std::string &op, const std::string &from, const std::s
 int crossings(const Line &l);
 unsigned unitsFor(const Line &l);
 Node makeNode(const Line &l, const std::set<std::string> &labels);
+// The call's registers and the cross-path positions, read by the table's readers on the stream too (C6xPack.cpp).
+std::uint64_t callReads();
+std::uint64_t callWrites();
+bool mayCross(const std::string &m, std::size_t o);
+bool pairMayCross(const std::string &m);
 bool fits(const Packet &p, const Node &n);
 void add(Packet &p, const Node &n);
 bool passThrough(const Line &l, const std::set<std::string> &named);
