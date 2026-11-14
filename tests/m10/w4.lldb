@@ -1,0 +1,29 @@
+# lldb -b -s: the stops of w4.gdb, args (-l) and locals (-a) apart as gdb's info args and info locals
+settings set stop-line-count-before 0
+settings set stop-line-count-after 0
+settings set stop-disassembly-display never
+settings set target.output-path /dev/null
+breakpoint set -f w4.cpp -l 34
+breakpoint set -f w4.cpp -l 25
+breakpoint set -f w4.cpp -l 48
+run
+script print("== total at 34")
+frame variable -l
+frame variable -a
+bt
+continue
+script print("== Square::perimeter at 25")
+frame variable -l
+frame variable -a
+bt
+continue
+script print("== main at 48")
+frame variable -a
+frame variable pt
+frame variable row[2]
+frame variable sq.edge
+frame variable sq.sides
+frame variable box.value
+frame variable bits.i
+frame variable name[2]
+kill

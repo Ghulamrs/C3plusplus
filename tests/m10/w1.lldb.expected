@@ -1,0 +1,16 @@
+== inner at 9
+x = 5
+y = 11
+inner @ 9
+middle @ 13
+outer @ 18
+main @ 24
+== middle
+middle @ 13
+x = 4
+r = *
+== outer
+outer @ 18
+x = 4
+m = *
+n = *

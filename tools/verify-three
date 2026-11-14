@@ -126,6 +126,12 @@ if [ -z "$LIGHT" ] && [ -x "$ROOT/cxx3.exe" ]; then
     (cd "$ROOT" && CXX1=./cxx3.exe sh tests/win-structure.sh > tests/out-winstructure.log 2>&1; rc=$?
      grep -v '^recorded' tests/out-winstructure.log | tail -5; exit $rc) || STATUS=1
 fi
+# lldb over tests/m10 on arm64-darwin (M5, tests/debug.sh lldb): the one Mac leg the user allowed, where cxx3.exe was built here.
+if [ -x "$ROOT/cxx3.exe" ] && command -v lldb > /dev/null 2>&1; then
+    (cd "$ROOT" && sh tests/debug.sh lldb ./cxx3.exe | tail -1) || STATUS=1
+else
+    echo "debug.sh lldb: skipped - no cxx3.exe built on the Mac, or no lldb"
+fi
 
 LEGS=$(mktemp -d)
 BG=""
