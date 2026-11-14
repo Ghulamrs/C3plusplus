@@ -1308,8 +1308,8 @@ until M6d, and Compiler++ and the CCS samples are measured before D4 (lane m6z).
   at -O0 as well: `staticTemporary` made `_ZGR1r_` and its `.bss`, but `bindStaticReference` still handed the init to
   `bindReference`, whose temporary is a frame slot - the selector's lowering reads `g.temporary` and was right. -O0
   passed by luck (main's frame never reached the dead slot); -O2's smaller frames reached it and printed 252.
-  **Fixed** in the parser (`Parser::staticScalarTemporary`, ParserInit.cpp): a scalar a static reference binds to a
-  temporary is `(T = init, &T)` with T the static object `staticTemporary` made (a `thread_local`'s too). Not
+  **Fixed** in the parser: `bindStaticReference` hands `bindReference` the static object's name, and its last branch
+  copies a scalar into that object (`(T = init, &T)`) instead of a frame slot (a `thread_local`'s not yet). Not
   changed: the class temporaries of tests/open/walker-static-reference-temporary.cpp and
   static-reference-to-temporary's `.notarget` (the walker still binds those to a frame slot; the selector leaves them
   to it - M6), and nothing the selector reads (its text at every level the same).
@@ -1321,8 +1321,9 @@ until M6d, and Compiler++ and the CCS samples are measured before D4 (lane m6z).
   `computeLiveness` and `Line`'s `liveIn`/`liveOut` are gone; a blank pending is answered from the lines' `liveFacts`
   as before. **Not landed**: the five passes still read `t.v` as `Line`s (`blank`/`set`/`apply` keep the entries in
   step); composing entries is D5's rest, with D6.
-- src/ +108 -148 lines at 64416d2f, the same at 17f209c8 (C6xSched.cpp 1,356 -> 1,308, C6xPack.cpp 1,452 -> 1,447, C6xModel.h 155 -> 143, ParserInit.cpp
-  1,910 -> 1,934, Parser.h +1).
+- src/ +92 -153 lines at the final b9818dd2 (C6xSched.cpp 1,356 -> 1,308, C6xPack.cpp 1,452 -> 1,447, C6xModel.h
+  155 -> 143, ParserInit.cpp 1,910 -> 1,913, ParserExpr.cpp +5 -4, Parser.h +1 -1). 17f209c8's helper of its own
+  (`staticScalarTemporary`) raised the Ast residue (ExprPtr 2,016 -> 2,024) and was folded into `bindReference`.
 - **Gate.** Windows, cl /W4 /WX clean at 64416d2f (work\m6aa2) and the final 17f209c8 (m6aa3), against round 17's
   compiler (work\m6z3), tests/cases at -O0, -O1, -O2 by md5: plain 2,598 texts same, 1,062 refused alike, 9 differ -
   the 6 path-length carets and static-reference-to-temporary's three (its walked init now stores its scalars in
