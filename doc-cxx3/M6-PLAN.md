@@ -1201,3 +1201,26 @@ all the window's).
   `streamOf`) until M6d removes the walker.
 - **Landed: D1** (7ae77575), **D2** (2366076d, mended 23e061ae - the first did not compile), **D3** (3f29eef7).
   src/ +75 -237 lines (C6xSched.cpp 2,451 -> 2,423, C6xPipe.cpp 2,679 -> 2,578, C6xPack.cpp 1,496 -> 1,465).
+- **Gate.** Windows, cl /W4 /WX clean at each (work\m6y D1, m6y3 D2, m6y4 D3), against work\m6x's cxx3-msvc.exe,
+  tests/cases at -O0, -O1, -O2 by md5: D1 2,601 texts, 1,068 refused alike, **0 differ**, and the same under
+  `CXX1_C6X_WALKER=1`; D2 and D3 3,663 same and the 6 path-length carets round 13 named, plain and under
+  `CXX1_C6X_WALKER=1` alike; census at each 0 to the text pass, the text pipeliner and the text folds, 6,835
+  selected; kernels on the stream 106 functions / 2,727 entries at D1 and D2, **219 / 9,122 at D3**; exclusions 129
+  sites 0 uncited 0 stale, comments 0 over, memory gate rc 0, ide/generate.py --check up to date at each. Linux
+  (~/m6y, a copy of ~/m6x with the changed files laid over; REF main 85fe99fe's compiler in ~/w7ref), g++ -Werror
+  clean, **D2 and D3 each**: `identical.sh ARCHS=tms6747` -O0 and -O2 1,736 compared, 0 differ; -O0 -g 868 compared,
+  91 raw (the tree's path), 851 texts 0 differ with the path made the same; tests/tms6747.sh SHARD=k/3 CYCLES=1
+  SIM=0 at -O2 814 passed, 0 failed, 3 not run on vm6747, **192,009,106 cycles** (192.0 M, unchanged); g-same 867
+  same, 0 differ, 0 broken; exclusions 0 uncited 0 stale (SSA lowering 554/95), comments 0 over, memory gate rc 0,
+  ast-residue rc 0, generate up to date. asm6x.sh at D3: ASM0 objects, 0 failed at -O0; ASM2 at -O2. Not run (the
+  coordinator's): winpass, make test, ssa.sh.
+- **Owed:** D4 next (one commit of deletions, the suite's census 0 its licence; the fallback's five sites become one
+  refusal), then D5, D6. The census tags left name fallbacks, not copies: `c6x-pack`, `c6x-pipe`, `c6x-fold`,
+  `c6x-fold-edit` unread, `c6x-loop-unread`. M6a.2's rest - the 4,149 walked functions above, landing pads first -
+  is what M6d waits on; it no longer holds the text passes.
+- **Questions for the user.** (1) `CXX1_C6X_WALKER=1` and the gate script's `wtms0`/`wtms2` legs: after D3 the knob
+  no longer reaches a text pass (the walker's text takes the stream's, 0 differ under the knob), so D4 does not need
+  it gone. Kept until M6d removes the walker (recommended: it is the only all-walker identity while 4,149 functions
+  are walked), or retired now? (2) D4 turns "a line the stream does not spell" from a silent fall to the text pass
+  into an internal error by name: 0 over tests/cases, Compiler++ and the CCS samples not measured here. Measure those
+  two corpora first (recommended), or delete on the suite's 0?
