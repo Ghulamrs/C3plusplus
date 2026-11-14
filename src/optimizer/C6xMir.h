@@ -50,6 +50,9 @@ struct MInst {
     Kind kind = Instruction;
     std::uint8_t pred = kNoReg;       // `[R]`: runs where R is not zero; predNot, `[!R]`, where it is
     bool predNot = false;
+    // The schedule (M6c): par, `||`, issues in the cycle of the entry before; packed is placed already and never moved.
+    bool par = false, packed = false;
+    std::uint8_t unit = 0;            // a branch's named unit: 1 `.S1`, 2 `.S2`, written before its operands
     std::uint8_t operands = 0;
     opt::StrId m;                     // the mnemonic; a Label's name; a Verbatim line
     MOperand op[4];                   // TI's order: sources first, the destination last
@@ -65,6 +68,13 @@ struct MInst {
 };
 
 using MStream = std::vector<MInst>;
+struct Line;
+
+// **The packetiser** (C6xPack.cpp): the text passes' lines as a stream, false where a line is not spelled back the same;
+// each block's instructions placed in execute packets with `NOP n` for its idle cycles; a branch and its NOPs as one BNOP.
+bool streamOf(const std::vector<Line> &v, MStream &s);
+void packetise(MStream &s);
+void foldBranchNops(MStream &s, bool near);
 
 // Whether the instruction stands as written: one crossing source at most, and a unit - C6xSched's `crossings`, `unitsFor`.
 bool legal(const MInst &i);

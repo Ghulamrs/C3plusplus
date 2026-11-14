@@ -69,6 +69,10 @@ struct Packet {
     std::vector<const Node *> members;
 };
 
+// What a scheduled block is written from: a packet's member by its place in the block, or idle cycles (node -1).
+struct Row { int node; int nops; bool par; };
+struct Pending { std::uint64_t writes; int lands; };   // a write in flight where a block ends, for the one fallen into
+
 bool startsWith(const std::string &s, const char *p);
 bool endsWith(const std::string &s, const char *p);
 int delaySlots(const std::string &m);
@@ -109,6 +113,11 @@ Node makeNode(const Line &l, const std::set<std::string> &labels);
 bool fits(const Packet &p, const Node &n);
 void add(Packet &p, const Node &n);
 bool passThrough(const Line &l, const std::set<std::string> &named);
+bool passThroughName(const std::string &name, const std::set<std::string> &named);
+bool assignUnits(const std::vector<const Node *> &m, std::size_t k, bool taken[2][4]);
+// One block list-scheduled into rows, and the wait where a block is empty: read by the text pass and by C6xPack.cpp.
+std::vector<Pending> scheduleBlock(std::vector<Node> &nodes, std::vector<Row> &rows, const std::vector<Pending> &in, bool carry);
+void waitOut(std::vector<Pending> &pend, std::vector<Row> &rows);
 std::string steppedRegister(const Line &l, long &by);
 std::string pairOf(const std::string &lo, const std::string &hi);
 bool legalForm(Line &r);

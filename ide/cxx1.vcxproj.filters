@@ -62,6 +62,7 @@
     <ClCompile Include="..\src\backend\X86_64Linux.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\backend\X86_64Windows.cpp"><Filter>Source Files\backend</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\C6xMir.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
+    <ClCompile Include="..\src\optimizer\C6xPack.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\C6xPipe.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\C6xSched.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
     <ClCompile Include="..\src\optimizer\Inliner.cpp"><Filter>Source Files\optimizer</Filter></ClCompile>
