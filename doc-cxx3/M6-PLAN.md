@@ -768,6 +768,44 @@ m6-l (the packetiser reads typed operands), m5-dbg (tests/debug.sh; DWARF ranges
   make test, ssa.sh.
 - **Owed:** round 7's item (1) whole; `reuseEntryLoads` to `widenFills` and `hoistConstantPairs` on the stream, so one
   stream runs from the parse to the packetiser; then the selector's stream handed in unprinted; then step 4.
+### M6c, round 9 (the loop passes on the stream, one stream from the parse to the packetiser), 2026-11-14, lane m6r
+
+- **Landed** (from main 85fe99fe): **the five loop passes are one implementation over two forms.** `reuseEntryLoads`,
+  `hoistInvariants`, `inductionPointers`, `widenFills` and `hoistConstantPairs` (C6xSched.cpp) read and edit through
+  `LoopText` (C6xModel.h): `v` as lines, a line blanked or set, a preheader inserted (`apply`, which was `applyLoop`),
+  the blanks dropped (`compact`), liveness asked (`liveIn`, `liveOut`, which were `liveInAt`/`liveOutAt`). The text's
+  `LoopText` edits the lines themselves; `LoopStream` (C6xPack.cpp, `loopPass`) holds a selected function's stream,
+  `v` its entries as the text reads them (`viewOf`), and makes every edit on the entry too - a line set or inserted is
+  read as `streamOf` reads one, a blank erased with the entry - with liveness the stream's own (`liveness(MStream)`; the
+  views' only while a blank is pending, which no pass asks). **The three hand-overs are gone**: a selected function's
+  stream is made once as its text is parsed and goes through `foldFront`, the rounds, the loop passes, the pipeliner,
+  `hoistConstantPairs`, `numberValues`, the rounds again and `foldAddressing` into `packetise` without `linesOf` or
+  `streamOf` between (the lines are read back only where the text pipeliner takes a function, `CXX1_C6X_TEXTPIPE=1` or
+  a loop not spelled). `CXX1_C6X_MIR=1` runs each loop pass on the text too and names the first line the stream's
+  differs at (`c6x-loops`), and a line the stream cannot read back (`c6x-loop-unread`). src/ +152 -49 lines
+  (C6xPack.cpp 1,405 -> 1,462, C6xSched.cpp 2,429 -> 2,450, C6xMir.h 123 -> 126, C6xModel.h 144 -> 166).
+- **Where it stopped.** Item (1) - the counted loop's registers as operands, `addressForms`, `Window`'s body,
+  `Node::line` and the emitters on entries - not begun. The loop passes' edits are spelled as text and read back
+  (`LoopStream::entry`), not assigned to operands; their readers read the views. **What still reads `Line`** on a
+  selected function: the parse of the printed text itself (the selector's `MStream` printed, then re-read); the loop
+  passes' views and spelled edits (`LoopStream`); `Folding`'s views (`viewOf`) and the table readers asked of a line
+  where an entry is not `modelled` (`lineOf`); inside the pipeliner `Loop`'s `body`/`pre` and its names (`iv`, `bound`,
+  `P`, `C`, `used`, `written`, the webs'), `addressForms`, `Window`'s body, `Node::line` and the emitters (`pipeline`,
+  `steppedTest`, `emitWindow`, `emitClosed`); `rounds(MStream&, lines, dirty)`, which still writes the lines back
+  (read on the held path by nothing); and the census copies under `CXX1_C6X_MIR=1`.
+- **Gate** (Linux ~/m6r, a copy of ~/m6q with the changed files laid over; REF main 85fe99fe's compiler built in its
+  own kept tree ~/w7ref; Windows work\m6r against work\m6q's cxx3-msvc.exe). `identical.sh ARCHS=tms6747` against main's compiler: -O0 and
+  -O2 1,736 compared, 0 differ; -O0 -g 868 compared, 0 differ once the tree's own path is normalised (91 raw, all
+  `/w7ref/` against `/m6r/`). Windows: tests/cases at -O0, -O1, -O2 by md5, 3,669 outputs (2,601 texts, 1,068 refused
+  alike), 0 differ. Census at -O2 (`CXX1_C6X_MIR=1`, both boxes): **0 `c6x-loops`**, 0 `c6x-loop-unread`, 0
+  `c6x-front`, 0 `c6x-fold`, 0 `c6x-fold-edit`, 0 `c6x-live`, 0 `c6x-live-unread`, 0 `c6x-node`, 0 to the text
+  pipeliner or pass; 6,835 selected functions, 106 with kernels (2,727 placed entries). tests/tms6747.sh SHARD=k/3
+  CYCLES=1 SIM=0 at -O2: 814 passed, 0 failed, 3 not run on vm6747; **192,009,106 cycles** (192.0 M, unchanged).
+  tests/g-same.sh 867 same, 0 differ, 0 broken; asm6x.sh 833 objects, 0 failed, at -O0 and -O2. cl /W4 /WX clean.
+  Exclusions 129 sites 0 uncited 0 stale (SSA lowering 554/95); comments 0 over; memory gate rc 0; ast-residue rc 0;
+  ide/generate.py --check up to date. Not run (the coordinator's): winpass, make test, ssa.sh.
+- **Owed:** round 7's item (1) whole; the loop passes' edits on operands and their readers off the views; the
+  selector's stream handed in unprinted; then step 4.
 ### Wave 5 landed, 2026-11-14 (the coordinator)
 
 M6c rounds 4 (m6m: the recognisers read operands; vm6747's noexcept legs skipped by name) and 5 (m6n: the counted
