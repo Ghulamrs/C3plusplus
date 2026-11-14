@@ -141,4 +141,26 @@ bool legalForm(Line &r);
 // The software pipeliner (C6xPipe.cpp): the innermost counted loops of the text rewritten as verbatim lines.
 void pipelineLoops(std::vector<Line> &v);
 
+// What the loop passes (reuseEntryLoads to widenFills, hoistConstantPairs) read and edit: `v` as lines, a line blanked
+// or set, a preheader inserted, the blanks dropped, liveness asked. The text's own here; a stream's in C6xPack.cpp.
+struct LoopText {
+    std::vector<Line> own, &v;
+    LoopText() : v(own) {}
+    explicit LoopText(std::vector<Line> &lines) : v(lines) {}
+    LoopText(const LoopText &) = delete;
+    LoopText &operator=(const LoopText &) = delete;
+    virtual ~LoopText() {}
+    virtual void blank(std::size_t k) { v[k] = parse(""); }
+    virtual void set(std::size_t k, const Line &l) { v[k] = l; }
+    virtual std::size_t apply(std::size_t h, const std::vector<Line> &pre, std::size_t i);   // the back edge's new place
+    virtual void compact();
+    virtual std::uint64_t liveIn(std::size_t k) { return liveInAt(v, k); }
+    virtual std::uint64_t liveOut(std::size_t k) { return liveOutAt(v, k); }
+};
+void reuseEntryLoads(LoopText &t);
+void hoistInvariants(LoopText &t);
+void inductionPointers(LoopText &t);
+void widenFills(LoopText &t);
+void hoistConstantPairs(LoopText &t);
+
 }   // namespace c6x

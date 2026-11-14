@@ -1002,7 +1002,8 @@ void rotateLoops(std::vector<Line> &v) {
 // **A byte read for the test is not read again for the work**: a rotated loop whose block opens with `LDx *R, X`
 // and ends - after R's last write - with the same `LDx *R, X` that its test reads, entered from a block whose
 // last write of X is that load too, opens without the load: on either path X holds `*R` already. `for (; *p; ++p)`.
-void reuseEntryLoads(std::vector<Line> &v) {
+void reuseEntryLoads(LoopText &t) {
+    std::vector<Line> &v = t.v;
     std::map<std::string, std::size_t> at;
     for (std::size_t i = 0; i < v.size(); i++) if (isLabel(v[i])) at[labelName(v[i])] = i;
     for (std::size_t i = 0; i < v.size(); i++) {
@@ -1038,16 +1039,14 @@ void reuseEntryLoads(std::vector<Line> &v) {
             if (has(w, R) || has(w, X) || isStore(v[k].mnem) || v[k].mnem == "CALLP") break;
         }
         if (!entry) continue;
-        v[h + 1] = parse("");
+        t.blank(h + 1);
     }
-    std::vector<Line> out;
-    for (std::size_t i = 0; i < v.size(); i++) if (v[i].instr || !v[i].raw.empty()) out.push_back(v[i]);
-    v.swap(out);
+    t.compact();
 }
 
 // One loop's rewrite applied before the next loop is looked at, so liveness asked of the text is of the text: the lines
 // `pre` before line h, the lines blanked dropped; where the back edge at i went.
-std::size_t applyLoop(std::vector<Line> &v, std::size_t h, const std::vector<Line> &pre, std::size_t i) {
+std::size_t LoopText::apply(std::size_t h, const std::vector<Line> &pre, std::size_t i) {
     std::vector<Line> out;
     std::size_t at = i;
     for (std::size_t k = 0; k < v.size(); k++) {
@@ -1058,12 +1057,17 @@ std::size_t applyLoop(std::vector<Line> &v, std::size_t h, const std::vector<Lin
     v.swap(out);
     return at;
 }
+void LoopText::compact() {
+    std::vector<Line> out;
+    for (std::size_t i = 0; i < v.size(); i++) if (v[i].instr || !v[i].raw.empty()) out.push_back(v[i]);
+    v.swap(out);
+}
 
 // **A constant made inside a loop nest is made before it**: `MVKL sym, d; MVKH sym, d`, the only writer of d
 // anywhere in a loop's region - inner loops and all - with d not live into the head and no branch into
 // the region but the back edge to its head, goes in front of the head. `comp` in sieve's outer loop.
-void hoistConstantPairs(std::vector<Line> &v) {
-    computeLiveness(v);
+void hoistConstantPairs(LoopText &t) {
+    std::vector<Line> &v = t.v;
     std::map<std::string, std::size_t> at;
     std::map<std::string, int> named;
     for (std::size_t i = 0; i < v.size(); i++) {
@@ -1083,7 +1087,7 @@ void hoistConstantPairs(std::vector<Line> &v) {
             if ((k < h || k > i) && v[k].instr && v[k].mnem == "B" && inside.count(v[k].ops[0])) ok = false;
         for (std::size_t k = h + 1; k < i && ok; k++) if ((!v[k].instr && !isLabel(v[k])) || (isLabel(v[k]) && hoistedHeads.count(labelName(v[k])))) ok = false;
         if (!ok) continue;
-        const std::uint64_t headIn = liveInAt(v, h);
+        const std::uint64_t headIn = t.liveIn(h);
         std::map<std::string, int> writers;
         for (std::size_t k = h + 1; k < i; k++) {
             if (!v[k].instr) continue;
@@ -1142,15 +1146,15 @@ void hoistConstantPairs(std::vector<Line> &v) {
             a.ops[1] = f; b2.ops[1] = f;
             hoisted.push_back(rebuilt(a.mnem, a.ops));
             hoisted.push_back(rebuilt(b2.mnem, b2.ops));
-            for (std::size_t x = 0; x < web.size(); x++) v[web[x].first] = web[x].second;
+            for (std::size_t x = 0; x < web.size(); x++) t.set(web[x].first, web[x].second);
             used.insert(f);
-            v[k] = parse("");
-            v[k + 1] = parse("");
+            t.blank(k);
+            t.blank(k + 1);
             k++;
         }
         if (hoisted.empty()) continue;
         hoistedHeads.insert(b.ops[0]);
-        i = applyLoop(v, h, hoisted, i);
+        i = t.apply(h, hoisted, i);
         at.clear();
         for (std::size_t k = 0; k < v.size(); k++) if (isLabel(v[k])) at[labelName(v[k])] = k;
     }
@@ -1159,8 +1163,8 @@ void hoistConstantPairs(std::vector<Line> &v) {
 // **A loop's invariants move to its preheader**: in a rotated loop - one block, entered by falling into its
 // head from the test that guards it - an instruction whose sources the loop never writes is computed once
 // before the head; a destination the loop also writes elsewhere takes a fresh register for that one value.
-void hoistInvariants(std::vector<Line> &v) {
-    computeLiveness(v);
+void hoistInvariants(LoopText &t) {
+    std::vector<Line> &v = t.v;
     std::set<std::string> labels, named;
     for (std::size_t i = 0; i < v.size(); i++) {
         if (isLabel(v[i])) labels.insert(labelName(v[i]));
@@ -1185,10 +1189,10 @@ void hoistInvariants(std::vector<Line> &v) {
         }
         if (!ok) continue;
         // The liveness of the loop as it is entered: its own edits rename what they hoist, never what is asked about after.
-        const std::uint64_t backOut = liveOutAt(v, i);
+        const std::uint64_t backOut = t.liveOut(i);
         std::vector<std::uint64_t> exitOut(exits.size());
         std::uint64_t liveAtExits = backOut;
-        for (std::size_t e = 0; e < exits.size(); e++) liveAtExits |= exitOut[e] = liveOutAt(v, exits[e]);
+        for (std::size_t e = 0; e < exits.size(); e++) liveAtExits |= exitOut[e] = t.liveOut(exits[e]);
         std::set<std::string> used;
         for (std::size_t b = 0; b < body.size(); b++) {
             std::vector<std::string> reads, writes;
@@ -1249,7 +1253,7 @@ void hoistInvariants(std::vector<Line> &v) {
                         if (v[x].instr && isBranch(v[x].mnem) && !v[x].pred.empty() && renamed(v[x].pred, d, f) != v[x].pred) return false;
                     for (std::size_t k = b + 1; k <= next && k < body.size(); k++) {
                         if (gone[k] || (pair && k == b + 1)) continue;
-                        Line &u = v[body[k]];
+                        const Line &u = v[body[k]];
                         std::vector<std::string> ops = u.ops;
                         std::size_t last = isStore(u.mnem) || u.mnem == "B" || ops.back()[0] == '*' ? ops.size() : ops.size() - 1;
                         for (std::size_t o = 0; o < ops.size(); o++)
@@ -1260,7 +1264,7 @@ void hoistInvariants(std::vector<Line> &v) {
                         if (!u.pred.empty() && renamed(u.pred, d, f) != u.pred) return false;
                         Line r = rebuilt(u.mnem, ops, u.pred);
                         if (sideOf(f) != sideOf(d) && (crossings(r) > 1 || unitsFor(r) == 0)) return false;
-                        if (apply) u = r;
+                        if (apply) t.set(body[k], r);
                     }
                     return true;
                 };
@@ -1301,16 +1305,16 @@ void hoistInvariants(std::vector<Line> &v) {
             }
         }
         if (hoisted.empty()) continue;
-        for (std::size_t b = 0; b < body.size(); b++) if (gone[b]) v[body[b]] = parse("");
-        i = applyLoop(v, h, hoisted, i);
+        for (std::size_t b = 0; b < body.size(); b++) if (gone[b]) t.blank(body[b]);
+        i = t.apply(h, hoisted, i);
     }
 }
 
 // **An address stepped with the counter is a pointer the access steps itself**: in a rotated loop whose counter iv is stepped
 // once by `ADD 1, iv, iv`, `SHL iv, k, S; ADD base, S, T; LDx/STx *T` - or `ADD base, iv, T` - with base never written in the
 // loop and S, T read nowhere else, is `*P++(1<<k)`, P made once in the preheader: T where nothing else writes or exits with it.
-void inductionPointers(std::vector<Line> &v) {
-    computeLiveness(v);
+void inductionPointers(LoopText &t) {
+    std::vector<Line> &v = t.v;
     std::set<std::string> labels, named;
     for (std::size_t i = 0; i < v.size(); i++) {
         if (isLabel(v[i])) labels.insert(labelName(v[i]));
@@ -1338,9 +1342,9 @@ void inductionPointers(std::vector<Line> &v) {
         }
         if (!ok) continue;
         // The liveness of the loop as it is entered: its own edits step pointers it chose from registers free here.
-        const std::uint64_t headIn = liveInAt(v, h);
-        std::uint64_t liveAtExits = liveOutAt(v, i);
-        for (std::size_t e = 0; e < exits.size(); e++) liveAtExits |= liveOutAt(v, exits[e]);
+        const std::uint64_t headIn = t.liveIn(h);
+        std::uint64_t liveAtExits = t.liveOut(i);
+        for (std::size_t e = 0; e < exits.size(); e++) liveAtExits |= t.liveOut(exits[e]);
         std::map<std::string, int> writers, readers;
         std::vector<std::vector<std::string> > reads(body.size()), writes(body.size());
         std::set<std::string> used;
@@ -1430,21 +1434,21 @@ void inductionPointers(std::vector<Line> &v) {
             std::vector<std::string> ops = m.ops;
             ops[isStore(m.mnem) ? 1 : 0] = "*" + P + "++(" + std::to_string(stride) + ")";
             if (std::getenv("CPP11_INDUCT")) std::fprintf(stderr, "induct%s -> P=%s stride=%ld base=%s S=%s after=%d\n", m.raw.c_str(), P.c_str(), stride, base.c_str(), S.c_str(), afterStep ? 1 : 0);
-            v[body[b]] = rebuilt(m.mnem, ops);
+            t.set(body[b], rebuilt(m.mnem, ops));
             gone.insert(ta);
             if (!S.empty()) gone.insert(sa);
         }
         if (entry.empty()) continue;
-        for (std::set<std::size_t>::const_iterator it = gone.begin(); it != gone.end(); ++it) v[body[*it]] = parse("");
-        i = applyLoop(v, h, entry, i);
+        for (std::set<std::size_t>::const_iterator it = gone.begin(); it != gone.end(); ++it) t.blank(body[*it]);
+        i = t.apply(h, entry, i);
     }
 }
 
 // **A loop that fills memory with one value stores doublewords**: a rotated loop of `ADD 1, iv, iv`, `STB|STH|STW V,
 // *P++(k)` and the compare of iv against a bound the loop never writes - K elements, known at entry - becomes, past 15
 // elements, a loop up to the next 8-byte boundary, `STDW` of the value replicated, and the elements left over.
-void widenFills(std::vector<Line> &v) {
-    computeLiveness(v);
+void widenFills(LoopText &t) {
+    std::vector<Line> &v = t.v;
     std::set<std::string> labels, named;
     for (std::size_t i = 0; i < v.size(); i++) {
         if (isLabel(v[i])) labels.insert(labelName(v[i]));
@@ -1486,8 +1490,8 @@ void widenFills(std::vector<Line> &v) {
         else { if (c.ops[1] != iv) continue; n = c.ops[0]; }
         plusOne = negated;
         if (n == iv || n == P || n == V || P == iv || V == iv || V == P || P == "A15" || P == "B15" || (!isNumber(n) && !sideOf(n))) continue;
-        if (storeAt == cmpAt || (liveOutAt(v, i) & bitOf(C)) || (liveInAt(v, i + 1) & bitOf(C))) continue;
-        const std::uint64_t liveAtExits = liveOutAt(v, i) | liveInAt(v, i + 1), liveHead = liveInAt(v, h);
+        if (storeAt == cmpAt || (t.liveOut(i) & bitOf(C)) || (t.liveIn(i + 1) & bitOf(C))) continue;
+        const std::uint64_t liveAtExits = t.liveOut(i) | t.liveIn(i + 1), liveHead = t.liveIn(h);
         std::set<std::string> used;
         used.insert(iv); used.insert(P); used.insert(V); used.insert(C); if (!isNumber(n)) used.insert(n);
         const char S = sideOf(P), SV = sideOf(V);
@@ -1556,7 +1560,7 @@ void widenFills(std::vector<Line> &v) {
         branch(exit, "");
         if (!legal) continue;
         if (std::getenv("CPP11_FILL")) std::fprintf(stderr, "fill %s: %s of %s through %s, %ld-byte elements\n", base.c_str(), v[body[storeAt]].mnem.c_str(), V.c_str(), P.c_str(), k);
-        i = applyLoop(v, h, out, i);
+        i = t.apply(h, out, i);
     }
 }
 
@@ -2354,44 +2358,61 @@ std::string c6xSchedule(const std::string &text, int level, bool selected) {
         tidyJumps(v);
         if (!skipped("labels")) dropUnnamedLabels(v);
     };
-    // A selected function's passes up to reuseEntryLoads on one stream, read back once; `c6x-front` names a text differing.
+    // A selected function is one stream from here to the packetiser where it spells its text; `c6x-front` names a text differing.
     MStream early;
-    if (streamFolds && streamOf(lines, early)) {
+    bool held = streamFolds && streamOf(lines, early);
+    if (held) {
         std::vector<Line> ref;
         if (liveCensus) { ref = lines; streamFolds = false; front(ref); streamFolds = true; }   // the text passes, for the census
         foldFront(early, !skipped("thread"), !skipped("labels"));
         rounds(early, lines, true);    // the lines read back, the stream still theirs
         if (!skipped("arms") && predicateArms(early)) rounds(early, lines, true);
         tidyStream(early, !skipped("labels"));
-        linesOf(early, lines);
+        if (liveCensus) linesOf(early, lines);
         for (std::size_t k = 0; liveCensus && k < std::max(ref.size(), lines.size()); k++)
             if (k >= ref.size() || k >= lines.size() || ref[k].raw != lines[k].raw) {
                 std::fprintf(stderr, "c6x-front: %s against %s\n", k < lines.size() ? lines[k].raw.c_str() : "(end)", k < ref.size() ? ref[k].raw.c_str() : "(end)");
                 break;
             }
     } else front(lines);
-    if (!skipped("entry")) reuseEntryLoads(lines);
+    // The loop passes on the stream where it is held, else on the text; `c6x-loops` names a text the stream's pass differs from.
+    const auto loops = [&](void (*pass)(LoopText &), const char *name) {
+        if (!held) { LoopText t(lines); pass(t); return; }
+        std::vector<Line> ref, got;
+        if (liveCensus) { linesOf(early, ref); LoopText t(ref); pass(t); }
+        loopPass(early, pass);
+        if (liveCensus) linesOf(early, got);
+        for (std::size_t k = 0; liveCensus && k < std::max(ref.size(), got.size()); k++)
+            if (k >= ref.size() || k >= got.size() || ref[k].raw != got[k].raw) {
+                std::fprintf(stderr, "c6x-loops: %s: %s against %s\n", name, k < got.size() ? got[k].raw.c_str() : "(end)", k < ref.size() ? ref[k].raw.c_str() : "(end)");
+                break;
+            }
+    };
+    if (!skipped("entry")) loops(reuseEntryLoads, "entry");
     if (level >= 2) {
-        hoistInvariants(lines);
-        if (!skipped("induct")) inductionPointers(lines);
-        if (!skipped("fill")) widenFills(lines);
-        // A selected function's loops are pipelined on its MIR and read back; CXX1_C6X_TEXTPIPE=1 keeps the text pipeliner.
-        MStream loops;
-        if (selected && std::getenv("CXX1_C6X_TEXTPIPE") == nullptr && streamOf(lines, loops) && pipelineLoops(loops)) {
+        loops(hoistInvariants, "invariants");
+        if (!skipped("induct")) loops(inductionPointers, "induct");
+        if (!skipped("fill")) loops(widenFills, "fill");
+        // A selected function's loops are pipelined on its MIR; CXX1_C6X_TEXTPIPE=1 keeps the text pipeliner.
+        MStream fresh;
+        MStream &m = held ? early : fresh;
+        if (selected && std::getenv("CXX1_C6X_TEXTPIPE") == nullptr && (held || streamOf(lines, m)) && pipelineLoops(m)) {
             int placed = 0;
-            for (std::size_t k = 0; k < loops.size(); k++) placed += loops[k].packed ? 1 : 0;
+            for (std::size_t k = 0; k < m.size(); k++) placed += m[k].packed ? 1 : 0;
             if (placed != 0 && std::getenv("CXX1_C6X_MIR") != nullptr) std::fprintf(stderr, "c6x-kernel: %d placed entries\n", placed);
-            linesOf(loops, lines);
+            if (!held) linesOf(m, lines);
         } else {
             if (selected && std::getenv("CXX1_C6X_MIR") != nullptr) std::fprintf(stderr, "c6x-pipe: the text pipeliner\n");
+            if (held) linesOf(early, lines);
+            held = false;
             pipelineLoops(lines);
         }
-        if (!skipped("pairs")) hoistConstantPairs(lines);
+        if (!skipped("pairs")) loops(hoistConstantPairs, "pairs");
     }
     // After the loops are made: a value numbered across a pipelined kernel would lengthen the spans it schedules.
     // On a selected function's stream, numberValues then the rounds, read back once.
-    MStream after;
-    const bool held = streamFolds && streamOf(lines, after);
+    if (!held) { early.clear(); held = streamFolds && streamOf(lines, early); }
+    MStream &after = early;
     if (!held) computeLiveness(lines);
     if (!skipped("vn")) { if (held) numberValues(after); else numberValues(lines); }
     if (std::getenv("CPP11_C6XTRACE")) {

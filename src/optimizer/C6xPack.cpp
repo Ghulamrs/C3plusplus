@@ -1288,6 +1288,63 @@ void tidyStream(MStream &s, bool labels) {
     if (labels) dropUnnamedLabels(s);
 }
 
+namespace {
+
+// The loop passes' text as a stream's: `v` each entry as the text reads it, every edit made on the entry too - a line
+// set or inserted read as `streamOf` reads one - and liveness the stream's own (the views' while a blank is pending).
+struct LoopStream : LoopText {
+    MStream &s;
+    std::vector<bool> gone;
+    std::vector<std::uint64_t> in, out;
+    bool stale = true, pending = false;
+    explicit LoopStream(MStream &stream) : s(stream), gone(stream.size(), false) { for (std::size_t k = 0; k < s.size(); k++) v.push_back(viewOf(s[k])); }
+    static MInst entry(const Line &l) {
+        MStream one;
+        if (streamOf(std::vector<Line>(1, l), one)) return one[0];
+        if (std::getenv("CXX1_C6X_MIR") != nullptr) std::fprintf(stderr, "c6x-loop-unread: %s\n", l.raw.c_str());
+        read(l.raw + "\n", one);
+        return one[0];
+    }
+    void blank(std::size_t k) override { LoopText::blank(k); gone[k] = pending = stale = true; }
+    void set(std::size_t k, const Line &l) override { LoopText::set(k, l); s[k] = entry(l); stale = true; }
+    std::size_t apply(std::size_t h, const std::vector<Line> &pre, std::size_t i) override {
+        MStream to;
+        std::vector<Line> lines;
+        std::size_t at = i;
+        for (std::size_t k = 0; k < s.size(); k++) {
+            if (k == h) for (std::size_t p = 0; p < pre.size(); p++) { to.push_back(entry(pre[p])); lines.push_back(pre[p]); }
+            if (!gone[k] && (v[k].instr || !v[k].raw.empty())) { to.push_back(s[k]); lines.push_back(v[k]); }
+            if (k == i) at = to.size() - 1;
+        }
+        s.swap(to);
+        v.swap(lines);
+        gone.assign(s.size(), false);
+        pending = false;
+        stale = true;
+        return at;
+    }
+    void compact() override { apply(s.size(), std::vector<Line>(), 0); }
+    void current() {
+        if (!stale) return;
+        if (pending) {
+            std::vector<Line> c = v;
+            computeLiveness(c);
+            in.clear(); out.clear();
+            for (std::size_t k = 0; k < c.size(); k++) { in.push_back(c[k].liveIn); out.push_back(c[k].liveOut); }
+        } else liveness(s, in, out);
+        stale = false;
+    }
+    std::uint64_t liveIn(std::size_t k) override { current(); return in[k]; }
+    std::uint64_t liveOut(std::size_t k) override { current(); return out[k]; }
+};
+
+}   // namespace
+
+void loopPass(MStream &s, void (*pass)(LoopText &)) {
+    LoopStream t(s);
+    pass(t);
+}
+
 bool streamOf(const std::vector<Line> &v, MStream &s) {
     for (std::size_t k = 0; k < v.size(); k++) {
         const Line &l = v[k];

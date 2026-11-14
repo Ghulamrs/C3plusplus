@@ -107,6 +107,9 @@ void foldFront(MStream &s, bool thread, bool labels);
 bool predicateArms(MStream &s);
 void tidyStream(MStream &s, bool labels);              // rotateLoops, tidyJumps, then (labels) dropUnnamedLabels
 void foldAddressing(MStream &s, bool index);    // index: foldScaledIndex too (CPP11_C6XSKIP=index leaves it)
+// A loop pass (reuseEntryLoads to widenFills, hoistConstantPairs) on a selected function's stream: each edit on the entry.
+struct LoopText;
+void loopPass(MStream &s, void (*pass)(LoopText &));
 
 // `makeNode` on an entry: its operands where `modelled`, else its spelling - the one table either way.
 Node makeNode(const MInst &i, const std::set<std::string> &labels);
