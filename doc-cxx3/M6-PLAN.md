@@ -1154,3 +1154,12 @@ recognisers on register numbers; `iv`, `bound`, `P`, `C`, `ivs`, `bounds`, `step
   `pipelineLoops`) go with the walker's path in M6d; before that `makeNode` on the two extra entries and `Turn`
   without `raw`; then the loop passes composing entries (`LoopStream`), the selector's stream handed in unprinted
   (the driver's parse and `streamOf`), step 4.
+### Wave 11 landed, 2026-11-14 (the coordinator)
+
+M6c round 14 (m6w: P1 `pipelineLoops(MStream&)` without `linesOf`, W1 the window's recogniser on numbers, C1 the
+counted loop's body and preheader as entries alone, C2 `steppedAt` a number; census `c6x-line` 10,882 -> ~8,200,
+all the window's).
+- **Gate at 7823b524** (eae6a9c9 merged with main c504e20a): Windows winpass -O0 and -O2: 828 same / 0 differ, masm
+  827 / 0. Mac run.sh -O0 and -O2 1215 / 0. Linux make test rc 0 (run 1217/0, emit 3399/0, typed 860/0, ssa 890/0,
+  c90 447/0, exclusions 0/0, comments 0). tms6747 (vm6747, SIM=0, three shards): 814 passed, 0 failed at -O0
+  (393.2 M cycles) and -O2 (**192.0 M**, unchanged); asm6x 833 / 0 at -O0 and -O2.
