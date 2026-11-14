@@ -378,9 +378,9 @@ by case against round 5 (`m6d-cmp.sh`), the text no longer identical by design.
 ### M6b, round 3 (homes on both files, read where they stand), 2026-11-14, lane m6i
 
 - **Landed** (`b3d26f1e`, from m5-wave3 7995cf0d): the design's points (1)-(3) in their first form, in `ssaAssign` and
-  on the instruction as it is built. src/ +90 -20 lines (`C6xSelect.cpp` 724 -> 779, `C6xMir.{h,cpp}` +10, `Tms6747.h` +3).
+  on the instruction as it is built. src/ +88 -20 lines (`C6xSelect.cpp` 724 -> 779, `C6xMir.{h,cpp}` +10, `Tms6747.h` +3).
   - **B24-B31 are homes** at -O1 and up (`kHome` is 32 registers; -O0 keeps the 24 and its text).
-  - **A value's file** (`wants`): a pointer parameter keeps its arriving register's file (B4, B6, B8 - point 2, a base
+  - **A value's file** (`wants`): a pointer or reference parameter keeps its arriving register's file (B4, B6, B8 - point 2, a base
     on B is a load on `.D2`); a load and an address step take their base's (point 3, `.D2` with the T2 path); anything
     else the file of most of its homed operands, A on a tie (point 1). The pick is narrowed to that file where it has
     a free register, and is otherwise as round 5 wrote it.
@@ -414,11 +414,12 @@ by case against round 5 (`m6d-cmp.sh`), the text no longer identical by design.
   a longer prologue. The cross path is the resource the pick does not count yet.
 - **Gates.** Linux -O2 `tms6747.sh SIM=0`, three shards: 814 passed, 4 failed - noexcept-terminates,
   ssa-noexcept-throw, noexcept-terminates-callee and static-aggregate-runtime-list (`thread_local`, refused) - the same
-  four under `CXX1_C6X_NOSIDES=1`. Windows (work\m6i, b3d26f1e's tree, against work\w3g): cl /W4 /WX clean; text and
+  four under `CXX1_C6X_NOSIDES=1`; tests/g-same.sh 867 same, 0 differ, 0 broken; exclusions 0 uncited 0 stale, comments
+  0 over, memory gate rc 0, ide/generate.py --check up to date. Windows (work\m6i, b3d26f1e's tree, against work\w3g): cl /W4 /WX clean; text and
   diagnostics of tests/cases at -O0 and -O2, 2,446 outputs, under `CXX1_C6X_NOSIDES=1` 0 differ and under
   `CXX1_C6X_WALKER=1` 0 differ; tests/g-same.sh 867 same, 0 differ, 0 broken; exclusions 0 uncited 0 stale, comments
   0 over, memory gate rc 0, ide/generate.py --check up to date.
-- **Owed:** the Linux chain past the hour (`~/m6i-gate.out`: static, g-same, identical.sh with `CXX1_C6X_WALKER=1`
-  against ~/w3g, -O0 in three shards); the pick counting 1X/2X per turn (a B value with two A readers in one turn
+- **Owed:** the Linux chain past the hour (`~/m6i-gate.out`: identical.sh with `CXX1_C6X_WALKER=1` against ~/w3g,
+  then -O0 in three shards); the pick counting 1X/2X per turn (a B value with two A readers in one turn
   goes back to A) and `.M` pressure, neither begun; the unrolled turns alternating files, which needs the base on
   both - the stepped pointer of point (2); sim6747, asm6x.sh, make test (the coordinator's).
