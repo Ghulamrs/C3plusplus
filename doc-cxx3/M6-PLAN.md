@@ -504,3 +504,37 @@ model's reading (`sideOf`), not by the operand's kind - a symbol spelled `B2x` i
   regenerated (C6xPack.cpp) and --check up to date.
 - **Owed:** round 2, the pipeliner on entries (design step 2); the table's readers on operands rather than spellings;
   -O0 tms6747.sh, sim6747, asm6x.sh and make test (the coordinator's).
+
+### M6c, round 2 (the pipeliner on the stream), 2026-11-14, lane m6k
+
+- **Landed** (from m6-j ad3ac547): `pipelineLoops(MStream &)` (C6xPipe.cpp) - a selected function's lines become a
+  stream before the pipeliner, its loops are pipelined there and each kernel comes back as entries (`par` its packets,
+  `NOP n` its idle cycles, `packed` what is placed, never a verbatim line), and `linesOf` (C6xPack.cpp, the inverse of
+  `streamOf`) reads the stream back for the text folds that follow. `pipelineAt` is the one trial of a back branch
+  (counted loop, then the byte window), read by the text driver and the stream driver alike; `namesOf` the one
+  collection of labels and named operands. `CXX1_C6X_TEXTPIPE=1` keeps the text pipeliner for all; the walker's
+  functions keep it always. `CXX1_C6X_MIR=1` names a function sent back to the text pipeliner (`c6x-pipe`) and counts
+  the placed entries of each function with a kernel (`c6x-kernel`). `streamOf` also refuses a line whose `instr` is
+  not its text's. src/ +94 -34 lines (C6xPipe.cpp 2,007 -> 2,040, C6xPack.cpp 137 -> 150).
+- **What round 2 is not.** The II search, the register rotation and the loop shapes are the same code, unchanged: they
+  read the stream through each entry's spelling (`linesOf`), as round 1's packetiser asks the table through `lineOf`.
+  `Loop`, `Window`, the terms and the webs still hold `Line`s and register names as strings; the kernel is built as
+  lines and made entries where it is spliced. What moved is where the pipeliner stands (on the stream, between two
+  conversions), its splice and its kernels' representation. The readers on operands are the step that deletes `Line`.
+  The stream is still rebuilt from text (twice now: before the pipeliner and before the packetiser), not handed down
+  from the selector.
+- **Identity.** Windows (work\m6k against work\m6j's cxx3-msvc.exe, ad3ac547's code): text and diagnostics of
+  tests/cases at -O0, -O1 and -O2 by md5, 3,669 outputs (2,601 texts, 1,068 refused alike), 0 differ. `CXX1_C6X_MIR=1`
+  at -O2: 6,835 selected functions, 0 sent to the text pass, **0 sent to the text pipeliner**; 106 functions hold
+  kernels made on the stream, 2,727 placed entries. Linux `identical.sh ARCHS=tms6747`
+  against ~/m6j's cxx3.exe: **not measured inside the lane's hour** - see Gates.
+- **Gates.** Windows: cl /W4 /WX clean (the final code tree); tests/g-same.sh 867 same, 0 differ, 0 broken; exclusions
+  0 uncited 0 stale; comments 0 over (one over at C6xMir.h:80, mended, rebuilt, re-counted); memory gate rc 0;
+  ide/generate.py --check up to date. Linux (~/m6k, a copy of ~/m6j with the changed files laid over): g++ build
+  clean; **no other Linux leg ran** - M5's closing self-host held the lock for the whole hour. The chain is queued
+  under the lock (`~/m6k-gate.sh`: build, ident 0/1/2, tms2-1..3 with cycles, static, gsame; output ~/m6k-gate.out)
+  and its numbers are owed to this entry. A fault of the lane's own: a file laid while make was compiling it left an
+  object newer than its source, so the first two builds were one edit (the census line) behind; touched and rebuilt.
+- **Owed:** the pipeliner's readers on operands (`Loop`, `Window`, the webs and terms off `Line`); the stream handed
+  down from the selector; the folds between (design step 3); -O0 tms6747.sh, sim6747, asm6x.sh and make test (the
+  coordinator's).

@@ -2,6 +2,7 @@
 // ending in `[P] B head`, counted by `ADD 1, i, i` against a bound, is modulo-scheduled at the least II its dependences
 // and units allow, renamed per iteration where a value outlives II, and emitted as prologue, kernel and epilogue.
 
+#include "C6xMir.h"
 #include "C6xModel.h"
 
 #include <algorithm>
@@ -1956,52 +1957,84 @@ bool emitWindow(const std::vector<Line> &v, Window &W, std::vector<Line> &out, s
     return true;
 }
 
-}   // namespace
+// One back branch tried: the code that replaces lines [from, to) of the text where the pipelining pays.
+bool pipelineAt(const std::vector<Line> &v, std::size_t i, const std::set<std::string> &labels, const std::set<std::string> &named,
+                std::size_t copied, std::vector<Line> &code, std::size_t &from, std::size_t &to) {
+    if (!v[i].instr || v[i].mnem != "B" || isCall(v[i], labels)) return false;
+    if (v[i].pred.empty()) {                    // an unconditional branch is a back branch only to a label above
+        bool above = false;
+        for (std::size_t k = 0; k < i && !above; k++) above = isLabel(v[k]) && labelName(v[k]) == v[i].ops[0];
+        if (!above) return false;
+    }
+    Loop L;
+    std::string why;
+    if (v[i].pred.empty() || !recognise(v, i, labels, named, L, why)) {
+        if (v[i].pred.empty()) why = "an unconditional back branch";
+        // Not counted: a loop that leaves on a byte it reads takes eight turns of one aligned block at a time.
+        Window W;
+        std::string wwhy;
+        if (recogniseWindow(v, i, labels, named, W, wwhy) && W.head >= copied && emitWindow(v, W, code, wwhy)) {
+            from = W.head + 1;
+            to = W.back + 1;
+            return true;
+        }
+        if (tracing()) std::fprintf(stderr, "pipe %s: %s [window: %s]\n", v[i].ops[0].c_str(), why.c_str(), wwhy.c_str());
+        return false;
+    }
+    if (L.head < copied) return false;
+    if (!pipeline(v, L, code, why)) { if (tracing()) std::fprintf(stderr, "pipe %s: %s\n", L.label.c_str(), why.c_str()); return false; }
+    from = to = L.head;
+    return true;
+}
 
-// Every candidate loop of the text, innermost first as the text is walked: rewritten in place where the pipelining pays.
-void pipelineLoops(std::vector<Line> &v) {
+// The names the text defines and the operands it names, with its liveness computed: what every candidate is read against.
+void namesOf(std::vector<Line> &v, std::set<std::string> &labels, std::set<std::string> &named) {
     computeLiveness(v);
     if (tracing() > 5) for (std::size_t i = 0; i < v.size(); i++) std::fprintf(stderr, "| %s\n", v[i].raw.c_str());
-    std::set<std::string> labels, named;
     for (std::size_t i = 0; i < v.size(); i++) {
         if (isLabel(v[i])) labels.insert(labelName(v[i]));
         for (std::size_t o = 0; o < v[i].ops.size(); o++) named.insert(v[i].ops[o]);
     }
+}
+
+}   // namespace
+
+// Every candidate loop of the text, innermost first as the text is walked: rewritten in place where the pipelining pays.
+void pipelineLoops(std::vector<Line> &v) {
+    std::set<std::string> labels, named;
+    namesOf(v, labels, named);
     std::vector<Line> out;
-    std::size_t copied = 0;
+    std::size_t copied = 0, from = 0, to = 0;
     for (std::size_t i = 0; i < v.size(); i++) {
-        if (!v[i].instr || v[i].mnem != "B" || isCall(v[i], labels)) continue;
-        if (v[i].pred.empty()) {                    // an unconditional branch is a back branch only to a label above
-            bool above = false;
-            for (std::size_t k = 0; k < i && !above; k++) above = isLabel(v[k]) && labelName(v[k]) == v[i].ops[0];
-            if (!above) continue;
-        }
-        Loop L;
-        std::string why;
-        if (v[i].pred.empty() || !recognise(v, i, labels, named, L, why)) {
-            if (v[i].pred.empty()) why = "an unconditional back branch";
-            // Not counted: a loop that leaves on a byte it reads takes eight turns of one aligned block at a time.
-            Window W;
-            std::string wwhy;
-            std::vector<Line> code;
-            if (recogniseWindow(v, i, labels, named, W, wwhy) && W.head >= copied && emitWindow(v, W, code, wwhy)) {
-                for (std::size_t k = copied; k <= W.head; k++) out.push_back(v[k]);
-                for (std::size_t k = 0; k < code.size(); k++) out.push_back(code[k]);
-                copied = W.back + 1;
-                continue;
-            }
-            if (tracing()) std::fprintf(stderr, "pipe %s: %s [window: %s]\n", v[i].ops[0].c_str(), why.c_str(), wwhy.c_str());
-            continue;
-        }
-        if (L.head < copied) continue;
         std::vector<Line> code;
-        if (!pipeline(v, L, code, why)) { if (tracing()) std::fprintf(stderr, "pipe %s: %s\n", L.label.c_str(), why.c_str()); continue; }
-        for (std::size_t k = copied; k < L.head; k++) out.push_back(v[k]);
+        if (!pipelineAt(v, i, labels, named, copied, code, from, to)) continue;
+        for (std::size_t k = copied; k < from; k++) out.push_back(v[k]);
         for (std::size_t k = 0; k < code.size(); k++) out.push_back(code[k]);
-        copied = L.head;
+        copied = to;
     }
     for (std::size_t k = copied; k < v.size(); k++) out.push_back(v[k]);
     v.swap(out);
+}
+
+// **The pipeliner on the stream** (M6c round 2): the same candidates, read through each entry's spelling; a kernel
+// comes back as entries - `par` its packets, `NOP n` its idle cycles, `packed` what is placed. False: one not spelled.
+bool pipelineLoops(MStream &s) {
+    std::vector<Line> v;
+    linesOf(s, v);
+    std::set<std::string> labels, named;
+    namesOf(v, labels, named);
+    MStream out;
+    std::size_t copied = 0, from = 0, to = 0;
+    for (std::size_t i = 0; i < v.size(); i++) {
+        std::vector<Line> code;
+        if (!pipelineAt(v, i, labels, named, copied, code, from, to)) continue;
+        out.insert(out.end(), s.begin() + static_cast<long>(copied), s.begin() + static_cast<long>(from));
+        if (!streamOf(code, out)) return false;
+        copied = to;
+    }
+    out.insert(out.end(), s.begin() + static_cast<long>(copied), s.end());
+    s.swap(out);
+    return true;
 }
 
 }   // namespace c6x

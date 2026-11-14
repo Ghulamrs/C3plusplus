@@ -46,7 +46,7 @@ bool streamOf(const std::vector<Line> &v, MStream &s) {
             // An instruction the stream spells otherwise, or a line whose fields are not its text's, stays with the text pass.
             if (l.instr != (i.kind == MInst::Instruction)) return false;
             const Line p = parse(l.raw);
-            if (p.mnem != l.mnem || p.ops != l.ops || p.pred != l.pred) return false;
+            if (p.instr != l.instr || p.mnem != l.mnem || p.ops != l.ops || p.pred != l.pred) return false;
         }
         // A placed line the text's fold would read as an instruction and the stream cannot: the text pass too.
         if (l.verbatim && i.kind == MInst::Verbatim && lineOf(i).instr) return false;
@@ -55,6 +55,19 @@ bool streamOf(const std::vector<Line> &v, MStream &s) {
         s.push_back(i);
     }
     return true;
+}
+
+// The stream as the text passes read it: a placed entry a kept line, `||` and all; any other its spelling, parsed.
+void linesOf(const MStream &s, std::vector<Line> &v) {
+    v.clear();
+    for (std::size_t k = 0; k < s.size(); k++) {
+        std::string raw = s[k].str();
+        if (!raw.empty() && raw[raw.size() - 1] == '\n') raw.erase(raw.size() - 1);
+        Line l;
+        if (s[k].packed) { l.raw = raw; l.verbatim = true; }
+        else l = parse(raw);
+        v.push_back(l);
+    }
 }
 
 // Each block scheduled on its own, every label and kept line where it stood: `schedule` of C6xSched.cpp, on entries.

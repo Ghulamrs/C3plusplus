@@ -73,8 +73,12 @@ struct Line;
 // **The packetiser** (C6xPack.cpp): the text passes' lines as a stream, false where a line is not spelled back the same;
 // each block's instructions placed in execute packets with `NOP n` for its idle cycles; a branch and its NOPs as one BNOP.
 bool streamOf(const std::vector<Line> &v, MStream &s);
+void linesOf(const MStream &s, std::vector<Line> &v);
 void packetise(MStream &s);
 void foldBranchNops(MStream &s, bool near);
+
+// **The pipeliner** (C6xPipe.cpp): its counted loops' kernels as placed entries; false, untouched, where one is not spelled.
+bool pipelineLoops(MStream &s);
 
 // Whether the instruction stands as written: one crossing source at most, and a unit - C6xSched's `crossings`, `unitsFor`.
 bool legal(const MInst &i);

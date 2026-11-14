@@ -2293,7 +2293,17 @@ std::string c6xSchedule(const std::string &text, int level, bool selected) {
         hoistInvariants(lines);
         if (!skipped("induct")) inductionPointers(lines);
         if (!skipped("fill")) widenFills(lines);
-        pipelineLoops(lines);
+        // A selected function's loops are pipelined on its MIR and read back; CXX1_C6X_TEXTPIPE=1 keeps the text pipeliner.
+        MStream loops;
+        if (selected && std::getenv("CXX1_C6X_TEXTPIPE") == nullptr && streamOf(lines, loops) && pipelineLoops(loops)) {
+            int placed = 0;
+            for (std::size_t k = 0; k < loops.size(); k++) placed += loops[k].packed ? 1 : 0;
+            if (placed != 0 && std::getenv("CXX1_C6X_MIR") != nullptr) std::fprintf(stderr, "c6x-kernel: %d placed entries\n", placed);
+            linesOf(loops, lines);
+        } else {
+            if (selected && std::getenv("CXX1_C6X_MIR") != nullptr) std::fprintf(stderr, "c6x-pipe: the text pipeliner\n");
+            pipelineLoops(lines);
+        }
         if (!skipped("pairs")) hoistConstantPairs(lines);
     }
     // After the loops are made: a value numbered across a pipelined kernel would lengthen the spans it schedules.
