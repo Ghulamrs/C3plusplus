@@ -203,17 +203,19 @@ std::uint64_t callWrites() {
 std::uint64_t exitLive() { return maskOf(kExitRegs, sizeof kExitRegs / sizeof kExitRegs[0]); }
 
 // A branch to a symbol that is no label of this text, or through a register other than B3, is a call.
-bool isCall(const Line &l, const std::set<std::string> &labels) {
-    if (l.mnem == "CALLP") return true;
-    if (l.mnem != "B" || l.ops.empty()) return false;
-    if (sideOf(l.ops[0])) return l.ops[0] != "B3";
-    return labels.count(l.ops[0]) == 0 && !startsWith(l.ops[0], "L$return$") && !startsWith(l.ops[0], "L.return.");
+bool isCallTo(const std::string &m, const std::string &t, const std::set<std::string> &labels) {
+    if (m == "CALLP") return true;
+    if (m != "B" || t.empty()) return false;
+    if (sideOf(t)) return t != "B3";
+    return labels.count(t) == 0 && !startsWith(t, "L$return$") && !startsWith(t, "L.return.");
 }
-bool isReturn(const Line &l, const std::set<std::string> &labels) {
-    if (l.mnem != "B" || l.ops.empty()) return false;
-    if (sideOf(l.ops[0])) return l.ops[0] == "B3";
-    return labels.count(l.ops[0]) == 0 && (startsWith(l.ops[0], "L$return$") || startsWith(l.ops[0], "L.return."));
+bool isReturnTo(const std::string &m, const std::string &t, const std::set<std::string> &labels) {
+    if (m != "B" || t.empty()) return false;
+    if (sideOf(t)) return t == "B3";
+    return labels.count(t) == 0 && (startsWith(t, "L$return$") || startsWith(t, "L.return."));
 }
+bool isCall(const Line &l, const std::set<std::string> &labels) { return isCallTo(l.mnem, l.ops.empty() ? "" : l.ops[0], labels); }
+bool isReturn(const Line &l, const std::set<std::string> &labels) { return isReturnTo(l.mnem, l.ops.empty() ? "" : l.ops[0], labels); }
 
 // ----- liveness over the blocks -----
 
@@ -244,15 +246,15 @@ std::uint64_t liveInAt(const std::vector<Line> &v, std::size_t i) { if (!heldBy)
 // Every line takes the registers live at the end of its block: a label or a
 // directive opens a block, a branch closes one, a call reads its arguments
 // and clobbers the caller-saved registers, and a return leaves the exit set.
-void computeLiveness(std::vector<Line> &v) {
+void liveness(const std::vector<LiveFacts> &v, std::vector<std::uint64_t> &liveIn, std::vector<std::uint64_t> &liveOut) {
     std::set<std::string> labels;
-    for (std::size_t i = 0; i < v.size(); i++) if (isLabel(v[i])) labels.insert(labelName(v[i]));
+    for (std::size_t i = 0; i < v.size(); i++) if (v[i].label) labels.insert(v[i].name);
     std::vector<std::size_t> starts;                       // the first line of each block
     for (std::size_t i = 0; i < v.size(); i++)
-        if (i == 0 || isLabel(v[i]) || !v[i].instr || blockEnd(v[i - 1])) starts.push_back(i);
+        if (i == 0 || v[i].label || !v[i].instr || !v[i - 1].instr || isBranch(v[i - 1].mnem)) starts.push_back(i);
     std::size_t nb = starts.size();
     std::map<std::string, std::size_t> blockOfLabel;
-    for (std::size_t b = 0; b < nb; b++) if (isLabel(v[starts[b]])) blockOfLabel[labelName(v[starts[b]])] = b;
+    for (std::size_t b = 0; b < nb; b++) if (v[starts[b]].label) blockOfLabel[v[starts[b]].name] = b;
     std::vector<std::uint64_t> use(nb, 0), def(nb, 0), in(nb, 0), out(nb, 0);
     std::vector<std::vector<std::size_t> > succ(nb);
     std::vector<bool> exits(nb, false), unknown(nb, false);
@@ -260,19 +262,17 @@ void computeLiveness(std::vector<Line> &v) {
         std::size_t end = b + 1 < nb ? starts[b + 1] : v.size();
         bool fall = true;
         for (std::size_t i = starts[b]; i < end; i++) {
-            const Line &l = v[i];
+            const LiveFacts &l = v[i];
             if (!l.instr) continue;
-            std::vector<std::string> reads, writes;
-            readsAndWrites(l, reads, writes);
-            std::uint64_t r = maskOf(reads), w = maskOf(writes);
+            std::uint64_t r = l.reads, w = l.writes;
             if (isBranch(l.mnem)) {
-                if (isCall(l, labels)) { r |= callReads(); w = callWrites(); if (l.mnem == "CALLP") { r &= ~bitOf("B3"); w |= bitOf("B3"); } }
-                else if (isReturn(l, labels)) { exits[b] = true; fall = false; }
-                else if (labels.count(l.ops[0])) { succ[b].push_back(blockOfLabel[l.ops[0]]); if (l.pred.empty()) fall = false; }
-                else { unknown[b] = true; if (l.pred.empty()) fall = false; }
+                if (isCallTo(l.mnem, l.target, labels)) { r |= callReads(); w = callWrites(); if (l.mnem == "CALLP") { r &= ~bitOf("B3"); w |= bitOf("B3"); } }
+                else if (isReturnTo(l.mnem, l.target, labels)) { exits[b] = true; fall = false; }
+                else if (labels.count(l.target)) { succ[b].push_back(blockOfLabel[l.target]); if (!l.predicated) fall = false; }
+                else { unknown[b] = true; if (!l.predicated) fall = false; }
             }
             use[b] |= r & ~def[b];
-            if (l.pred.empty()) def[b] |= w;
+            if (!l.predicated) def[b] |= w;
         }
         if (fall && b + 1 < nb) succ[b].push_back(b + 1);
     }
@@ -281,16 +281,47 @@ void computeLiveness(std::vector<Line> &v) {
         changed = false;
         for (std::size_t b = nb; b-- > 0;) {
             std::uint64_t o = exits[b] ? exitLive() : 0;
-            if (unknown[b] || v[starts[b]].verbatim) o = ~0ull;
+            if (unknown[b] || v[starts[b]].kept) o = ~0ull;
             for (std::size_t k = 0; k < succ[b].size(); k++) o |= in[succ[b][k]];
-            std::uint64_t n = v[starts[b]].verbatim ? ~0ull : use[b] | (o & ~def[b]);
+            std::uint64_t n = v[starts[b]].kept ? ~0ull : use[b] | (o & ~def[b]);
             if (o != out[b] || n != in[b]) { out[b] = o; in[b] = n; changed = true; }
         }
     }
+    liveIn.assign(v.size(), 0);
+    liveOut.assign(v.size(), 0);
     for (std::size_t b = 0; b < nb; b++) {
         std::size_t end = b + 1 < nb ? starts[b + 1] : v.size();
-        for (std::size_t i = starts[b]; i < end; i++) { v[i].liveOut = out[b]; v[i].liveIn = in[b]; }
+        for (std::size_t i = starts[b]; i < end; i++) { liveOut[i] = out[b]; liveIn[i] = in[b]; }
     }
+}
+
+LiveFacts liveFacts(const Line &l) {
+    LiveFacts f;
+    f.instr = l.instr;
+    f.label = isLabel(l);
+    f.kept = l.verbatim;
+    f.predicated = !l.pred.empty();
+    if (f.label) f.name = labelName(l);
+    if (!l.instr) return f;
+    f.mnem = l.mnem;
+    if (!l.ops.empty()) f.target = l.ops[0];
+    std::vector<std::string> reads, writes;
+    readsAndWrites(l, reads, writes);
+    f.reads = maskOf(reads);
+    f.writes = maskOf(writes);
+    return f;
+}
+
+thread_local bool liveCensus = false;     // c6xSchedule's selected function under CXX1_C6X_MIR=1: liveness asked of the stream too
+
+void computeLiveness(std::vector<Line> &v) {
+    std::vector<LiveFacts> facts;
+    facts.reserve(v.size());
+    for (std::size_t i = 0; i < v.size(); i++) facts.push_back(liveFacts(v[i]));
+    std::vector<std::uint64_t> in, out;
+    liveness(facts, in, out);
+    for (std::size_t i = 0; i < v.size(); i++) { v[i].liveOut = out[i]; v[i].liveIn = in[i]; }
+    if (liveCensus) { const std::uint64_t edits = textEdits; checkLiveness(v); textEdits = edits; }
     liveStamp.data = v.data(); liveStamp.size = v.size(); liveStamp.edits = textEdits;
 }
 
@@ -2250,6 +2281,16 @@ bool removeDead(std::vector<Line> &v) {
     return changed;
 }
 
+thread_local bool streamFolds = false;   // a selected function's folds on its stream; CXX1_C6X_TEXTFOLD=1 keeps the text's
+
+// A fold on the stream where the function is selected and its lines are spelled, else on the text.
+bool fold(std::vector<Line> &v, bool (*text)(std::vector<Line> &), bool (*stream)(MStream &, LiveSpan &)) {
+    bool changed = false;
+    if (streamFolds && foldStream(v, stream, changed)) return changed;
+    if (streamFolds && std::getenv("CXX1_C6X_MIR") != nullptr) std::fprintf(stderr, "c6x-fold: a line the stream does not spell; the text fold\n");
+    return text(v);
+}
+
 // The copy, constant and predicate folds, to a fixed point.
 void rounds(std::vector<Line> &lines) {
     for (int round = 0; round < 8; round++) {
@@ -2258,17 +2299,21 @@ void rounds(std::vector<Line> &lines) {
         computeLiveness(lines);
         changed = (!skipped("pairmv") && forwardPairMoves(lines)) || changed;
         computeLiveness(lines);
-        changed = forwardConstants(lines) || changed;
+        changed = fold(lines, forwardConstants, c6x::forwardConstants) || changed;
         computeLiveness(lines);
-        changed = flipPredicates(lines) || changed;
+        changed = fold(lines, flipPredicates, c6x::flipPredicates) || changed;
         computeLiveness(lines);
-        changed = (!skipped("dead") && removeDead(lines)) || changed;
+        changed = (!skipped("dead") && fold(lines, removeDead, c6x::removeDead)) || changed;
         if (!changed) break;
     }
 }
 
 std::string c6xSchedule(const std::string &text, int level, bool selected) {
     if (level <= 0) return text;
+    struct OnStream {
+        OnStream(bool on) { liveCensus = on && std::getenv("CXX1_C6X_MIR") != nullptr; streamFolds = on && std::getenv("CXX1_C6X_TEXTFOLD") == nullptr; }
+        ~OnStream() { liveCensus = streamFolds = false; }
+    } onStream(selected);
     std::vector<Line> lines;
     std::istringstream in(text);
     std::string line;

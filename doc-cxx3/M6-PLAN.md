@@ -667,3 +667,24 @@ m6-l (the packetiser reads typed operands), m5-dbg (tests/debug.sh; DWARF ranges
 - **Owed:** the loop's registers as numbers and `addressForms` on entries; the emitters and the kernel built as
   entries (then `Node::line` goes); `Window`'s body as entries with them; design step 3 (liveness on the stream, then
   `rounds`, `numberValues`, `foldAddressing`).
+
+### M6c, round 6 (liveness on the stream, and three of the folds), 2026-11-14, lane m6o
+
+- **Landed** (from m6-n a0a1d2ce): **liveness is one dataflow over two readers.** `liveness(LiveFacts)` (C6xSched.cpp)
+  is `computeLiveness`'s block walk, flow and fixed point, reading per line or entry only what it needs (`LiveFacts`:
+  instruction, label, kept, predicated, mnemonic, branch target, read and write masks); `liveFacts(Line)` reads a line,
+  `liveFacts(MInst)` (C6xPack.cpp) an entry - its operands where `modelled` (`readsAndWrites(MInst)`), else its
+  spelling, a placed entry as the kept line `linesOf` hands on. `isCallTo`/`isReturnTo` are `isCall`/`isReturn` on a
+  mnemonic and a target. `liveness(MStream)` gives each entry its block's live-in and live-out. `CXX1_C6X_MIR=1` asks
+  the stream after every `computeLiveness` of a selected function and names a line whose liveness differs
+  (`c6x-live`) or a text the stream does not spell (`c6x-live-unread`). **Then the folds**: `removeDead`,
+  `flipPredicates` and `forwardConstants` of `rounds` run on a selected function's stream (C6xPack.cpp), editing
+  operands - an erased entry, a flipped `predNot`, an immediate assigned - with the liveness they hold as computed in a
+  `LiveSpan` beside the stream (an entry made anew all live, as a line made anew is), and `foldStream` reads the stream
+  back, liveness and all. `deadAfter` on entries is the text's walk on `LiveFacts`. `CXX1_C6X_TEXTFOLD=1` keeps the
+  text folds; `c6x-fold` names a text the stream does not spell. src/ +270 -28 lines (C6xPack.cpp 335 -> 511,
+  C6xSched.cpp 2,332 -> 2,377, C6xMir.h 105 -> 117, C6xModel.h 133 -> 142).
+- **Where it stopped.** `forwardMoves` and `forwardPairMoves` (the two folds of `rounds` that rename through
+  `renamed` and judge the result by `crossings`/`unitsFor` on a rebuilt line), `numberValues` and `foldAddressing`
+  stay on text; the stream is still made from lines per fold and read back (`foldStream`), not held across `rounds`.
+  Design step 3's step (3) - the loop's registers as operands - not begun.

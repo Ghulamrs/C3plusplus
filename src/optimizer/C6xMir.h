@@ -90,6 +90,18 @@ unsigned unitsFor(const MInst &i);
 // `readsAndWrites` on a modelled entry: the registers it reads and writes by name, in the order the text pass lists them.
 void readsAndWrites(const MInst &i, std::vector<std::string> &reads, std::vector<std::string> &writes);
 
+// Liveness on the stream (C6xPack.cpp): each entry's block's live-in and live-out, C6xSched's one dataflow over its operands.
+void liveness(const MStream &s, std::vector<std::uint64_t> &liveIn, std::vector<std::uint64_t> &liveOut);
+
+// The folds on the stream (C6xPack.cpp): C6xSched's `removeDead`, `flipPredicates` and `forwardConstants` on entries, the liveness they
+// hold as computed in `LiveSpan` beside the stream. `foldStream` runs one on a text's lines and reads them back, liveness
+// and all; false, untouched, where a line is not spelled.
+struct LiveSpan { std::vector<std::uint64_t> in, out; };
+bool removeDead(MStream &s, LiveSpan &live);
+bool flipPredicates(MStream &s, LiveSpan &live);
+bool forwardConstants(MStream &s, LiveSpan &live);
+bool foldStream(std::vector<Line> &v, bool (*fold)(MStream &, LiveSpan &), bool &changed);
+
 // `makeNode` on an entry: its operands where `modelled`, else its spelling - the one table either way.
 Node makeNode(const MInst &i, const std::set<std::string> &labels);
 // Whether the instruction stands as written: one crossing source at most, and a unit - C6xSched's `crossings`, `unitsFor`.

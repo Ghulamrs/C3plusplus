@@ -218,6 +218,182 @@ void readsAndWrites(const MInst &i, std::vector<std::string> &reads, std::vector
     if (m == "MVKH" || m == "ADDK") names(last, reads);
 }
 
+// What liveness reads of an entry: its operands where `modelled`, else its spelling - the one reader either way.
+LiveFacts liveFacts(const MInst &i) {
+    if (i.packed) {                           // a kept line, `||` and all, as `linesOf` hands it to the text passes
+        Line l;
+        l.raw = i.str();
+        l.raw.erase(l.raw.size() - 1);
+        l.verbatim = true;
+        return liveFacts(l);
+    }
+    if (i.kind != MInst::Instruction || !modelled(i)) return liveFacts(lineOf(i));
+    LiveFacts f;
+    f.instr = true;
+    f.predicated = i.pred != kNoReg;
+    f.mnem = i.m.str();
+    if (i.operands) f.target = i.op[0].str();
+    readsAndWrites(i, f.mnem, f.reads, f.writes);
+    return f;
+}
+
+void liveness(const MStream &s, std::vector<std::uint64_t> &liveIn, std::vector<std::uint64_t> &liveOut) {
+    std::vector<LiveFacts> facts;
+    facts.reserve(s.size());
+    for (std::size_t k = 0; k < s.size(); k++) facts.push_back(liveFacts(s[k]));
+    liveness(facts, liveIn, liveOut);
+}
+
+void checkLiveness(const std::vector<Line> &v) {
+    MStream s;
+    if (!streamOf(v, s)) { std::fprintf(stderr, "c6x-live-unread: a line the stream does not spell\n"); return; }
+    std::vector<std::uint64_t> in, out;
+    liveness(s, in, out);
+    for (std::size_t k = 0; k < v.size(); k++) {
+        if (in[k] == v[k].liveIn && out[k] == v[k].liveOut) continue;
+        std::fprintf(stderr, "c6x-live: line %zu,%s\n", k, v[k].raw.c_str());
+        return;
+    }
+}
+
+namespace {
+
+// `deadAfter` of C6xSched.cpp on entries, as liveness was computed: reg is written before it is read on the straight
+// path from i, or is not live where the block ends; a directive ends the path and answers no.
+bool deadAfter(const MStream &s, const std::vector<std::uint64_t> &out, std::size_t i, const std::string &reg) {
+    const std::uint64_t bit = bitOf(reg);
+    for (std::size_t j = i + 1; j < s.size(); j++) {
+        const LiveFacts f = liveFacts(s[j]);
+        if (!f.instr) return f.label ? (out[i] & bit) == 0 : false;
+        if (f.reads & bit) return false;
+        if (f.mnem == "CALLP") {
+            if (callReads() & bit) return false;          // a call: its arguments
+            return (callWrites() & bit) || reg == "B3" || (out[j] & bit) == 0;
+        }
+        if (f.mnem == "B") {
+            if (sideOf(f.target) ? f.target != "B3" : !startsWith(f.target, "L$") && !startsWith(f.target, "L.")) {
+                if (callReads() & bit) return false;      // a call: its arguments
+                if (callWrites() & bit) return true;      // clobbered by the callee
+            }
+            return (out[j] & bit) == 0;
+        }
+        if ((f.writes & bit) && !f.predicated) return true;
+    }
+    return (out[i] & bit) == 0;
+}
+
+void eraseAt(MStream &s, LiveSpan &live, std::size_t i) {
+    s.erase(s.begin() + static_cast<long>(i));
+    live.in.erase(live.in.begin() + static_cast<long>(i));
+    live.out.erase(live.out.begin() + static_cast<long>(i));
+}
+
+}   // namespace
+
+// C6xSched's `removeDead` on entries: a result nothing reads is not made; a load, a store, a pair and a predicated entry stay.
+bool removeDead(MStream &s, LiveSpan &live) {
+    bool changed = false;
+    for (std::size_t i = 0; i < s.size(); i++) {
+        const MInst &x = s[i];
+        if (x.kind != MInst::Instruction || x.packed || x.pred != kNoReg || x.operands == 0) continue;
+        const std::string m = x.m.str();
+        if (isBranch(m) || isStore(m) || isLoad(m)) continue;
+        std::vector<std::string> reads, writes;
+        if (modelled(x)) {
+            const MOperand &last = x.op[x.operands - 1];
+            if (last.kind == MOperand::Pair || last.kind == MOperand::Memory) continue;
+            readsAndWrites(x, reads, writes);
+        } else {
+            const Line l = lineOf(x);
+            if (l.ops.empty() || l.ops.back().find(':') != std::string::npos || l.ops.back()[0] == '*') continue;
+            readsAndWrites(l, reads, writes);
+        }
+        if (writes.size() != 1) continue;
+        const std::string &d = writes[0];
+        if (d == "A15" || d == "B15" || d == "B14" || d == "B3" || !deadAfter(s, live.out, i, d)) continue;
+        eraseAt(s, live, i);
+        i--;
+        changed = true;
+    }
+    return changed;
+}
+
+// C6xSched's `flipPredicates` on entries: `XOR 1, R, P; [P] B L` with P dead after is `MV R, P; [!P] B L`, or the
+// branch alone where R is P. An entry made anew has no liveness (all live), as a line made anew has none.
+bool flipPredicates(MStream &s, LiveSpan &live) {
+    bool changed = false;
+    for (std::size_t i = 0; i + 1 < s.size(); i++) {
+        const MInst &x = s[i];
+        if (x.kind != MInst::Instruction || x.packed || x.m.str() != "XOR" || x.operands != 3 || x.pred != kNoReg) continue;
+        if (x.op[0].str() != "1" || !sideOf(x.op[1].str())) continue;
+        const std::string R = x.op[1].str(), P = x.op[2].str();
+        MInst &b = s[i + 1];
+        if (b.kind != MInst::Instruction || b.packed || b.m.str() != "B" || b.pred == kNoReg || regName(b.pred) != P) continue;
+        if (!deadAfter(s, live.out, i + 1, P)) continue;
+        b.predNot = !b.predNot;
+        live.in[i + 1] = live.out[i + 1] = ~0ull;
+        if (R == P) eraseAt(s, live, i);
+        else { s[i] = MInst("MV", MOperand(R), MOperand(P)); live.in[i] = live.out[i] = ~0ull; }
+        changed = true;
+    }
+    return changed;
+}
+
+// C6xSched's `forwardConstants` on entries: `MVK k, R` goes into R's one reader on the straight path as its immediate,
+// where the form takes one and R is dead after it (or written by it); a commutative operation takes it first.
+bool forwardConstants(MStream &s, LiveSpan &live) {
+    bool changed = false;
+    for (std::size_t i = 0; i < s.size(); i++) {
+        const MInst &mk = s[i];
+        if (mk.kind != MInst::Instruction || mk.packed || mk.m.str() != "MVK" || mk.operands != 2 || mk.pred != kNoReg) continue;
+        if (!isNumber(mk.op[0].str())) continue;
+        const long k = std::atol(mk.op[0].str().c_str());
+        const std::string R = mk.op[1].str();
+        const std::uint64_t bit = bitOf(R);
+        for (std::size_t j = i + 1; j < s.size(); j++) {
+            const LiveFacts f = liveFacts(s[j]);
+            if (!f.instr || isBranch(f.mnem)) break;
+            if (f.reads & bit) {
+                MInst &u = s[j];
+                if (u.pred != kNoReg || !renameable(lineOf(u)) || u.operands != 3 || (!(f.writes & bit) && !deadAfter(s, live.out, j, R))) break;
+                const std::string &m = f.mnem;
+                int at = u.op[0].str() == R ? 0 : u.op[1].str() == R ? 1 : -1;
+                if (at < 0 || u.op[0].str() == u.op[1].str() || isNumber(u.op[1 - at].str())) break;
+                const bool small = k >= -16 && k <= 15, ucst = k >= 0 && k <= 31;
+                const bool first = m == "ADD" || m == "AND" || m == "OR" || m == "XOR";
+                bool ok = false;
+                if (first && small) ok = true;
+                else if ((m == "CMPEQ" || m == "CMPGT" || m == "CMPLT") && small && at == 0) ok = true;
+                else if ((m == "CMPGTU" || m == "CMPLTU") && ucst && at == 0) ok = true;
+                else if (m == "SUB" && ucst && at == 1 && crossings(lineOf(u)) == 0) ok = true;
+                else if ((m == "SHL" || m == "SHR" || m == "SHRU") && ucst && at == 1) ok = true;
+                if (!ok) break;
+                if (first && at == 1) { u.op[1] = u.op[0]; at = 0; }
+                u.op[at] = MOperand(static_cast<long long>(k));
+                live.in[j] = live.out[j] = ~0ull;
+                eraseAt(s, live, i);
+                i--;
+                changed = true;
+                break;
+            }
+            if (f.writes & bit) break;
+        }
+    }
+    return changed;
+}
+
+bool foldStream(std::vector<Line> &v, bool (*fold)(MStream &, LiveSpan &), bool &changed) {
+    MStream s;
+    if (!streamOf(v, s)) return false;
+    LiveSpan live;
+    liveness(s, live.in, live.out);
+    changed = fold(s, live);
+    if (!changed) return true;
+    linesOf(s, v);
+    for (std::size_t k = 0; k < v.size(); k++) { v[k].liveIn = live.in[k]; v[k].liveOut = live.out[k]; }
+    return true;
+}
+
 bool streamOf(const std::vector<Line> &v, MStream &s) {
     for (std::size_t k = 0; k < v.size(); k++) {
         const Line &l = v[k];

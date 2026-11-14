@@ -95,7 +95,16 @@ std::string labelName(const Line &l);
 bool isBranch(const std::string &m);
 bool blockEnd(const Line &l);
 bool isCall(const Line &l, const std::set<std::string> &labels);
+bool renameable(const Line &l);
+bool isCallTo(const std::string &m, const std::string &target, const std::set<std::string> &labels);
+bool isReturnTo(const std::string &m, const std::string &target, const std::set<std::string> &labels);
+// What liveness reads of a line or a stream's entry: the blocks, the flow and the registers, by each form's reader.
+struct LiveFacts { bool instr = false, label = false, kept = false, predicated = false; std::string name, mnem, target; std::uint64_t reads = 0, writes = 0; };
+void liveness(const std::vector<LiveFacts> &v, std::vector<std::uint64_t> &liveIn, std::vector<std::uint64_t> &liveOut);
+LiveFacts liveFacts(const Line &l);
 void computeLiveness(std::vector<Line> &v);
+// Under CXX1_C6X_MIR=1 the lines' liveness held against the stream's (C6xPack.cpp): `c6x-live` names a line that differs.
+void checkLiveness(const std::vector<Line> &v);
 // The liveness of this text, recomputed first where an edit since makes it stale - unless a LivenessHeld is open.
 std::uint64_t liveOutAt(const std::vector<Line> &v, std::size_t i);
 std::uint64_t liveInAt(const std::vector<Line> &v, std::size_t i);
