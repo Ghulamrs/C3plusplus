@@ -313,8 +313,10 @@ struct Src {
         if (o.kind != MOperand::Register && o.kind != MOperand::Pair) return 0;
         return sideOfReg(o.kind == MOperand::Pair ? o.hi : o.reg) ? 'B' : 'A';
     }
-    void regsIn(std::size_t i, std::size_t k, std::vector<std::string> &out) const;
-    bool byteAddress(std::size_t i, std::size_t k, std::string &base, long &off, bool &post) const;
+    bool predicated(std::size_t i) const { return typed(i) ? (*s)[i].pred != kNoReg : !line(i, "untyped").pred.empty(); }
+    bool predNot(std::size_t i) const { return typed(i) ? (*s)[i].predNot : line(i, "untyped").pred.compare(0, 1, "!") == 0; }
+    void regsIn(std::size_t i, std::size_t k, std::vector<int> &out) const;
+    bool byteAddress(std::size_t i, std::size_t k, int &base, long &off, bool &post) const;
     // The operands that name `x`: the label a branch reaches, counted over the function's instructions.
     int naming(const std::string &x) const {
         int n = 0;
@@ -1607,15 +1609,22 @@ bool pipeline(const Src &src, Loop &L, Code &out, std::string &why) {
 // under R, the mask of the turns still alive. No turn the loop would not have run writes anything it can see.
 struct Window {
     struct Ptr {
-        std::string reg;
+        int reg = kNoReg;
         std::map<std::size_t, long> loads;      // body index -> the byte it reads, past the turn's own value of reg
         long offmin = 0, offmax = 0;
         bool cond = false;                      // the first byte read only after an exit: the block is read under G
         std::size_t anchor = 0;
     };
-    struct Exit { std::string target, pred; std::uint64_t live = 0; };  // target "" for the fall-through after the back branch
+    // An exit: target "" for the fall-through after the back branch; taken where `pred` is not zero, `no` where it is.
+    struct Exit {
+        std::string target;
+        int pred = kNoReg; bool no = false;
+        std::uint64_t live = 0;
+        std::string name() const { return (no ? "!" : "") + regName(pred); }
+    };
     std::size_t head = 0, back = 0;
-    std::string label, backPred, P;             // backPred "" for an unconditional back branch
+    std::string label;
+    int PR = kNoReg; bool backNot = false;      // the back branch's predicate, `[!P]` backNot; kNoReg: unconditional
     std::vector<Line> body;                     // the instructions in order, the back branch left out
     std::vector<std::size_t> at;                // where each stands in the text
     std::vector<int> cls;                       // a branch's exit, an instruction under one's predicate that exit, else kPlain or kCont
@@ -1649,21 +1658,31 @@ bool byteAddress(const std::string &op, std::string &base, long &off, bool &post
 bool isByteLoad(const std::string &m) { return m == "LDB" || m == "LDBU"; }
 
 // An operand's registers in its spelling's order, and a byte load's address as `byteAddress` reads it, on the entry.
-void Src::regsIn(std::size_t i, std::size_t k, std::vector<std::string> &out) const {
-    if (!typed(i)) { registersIn(line(i, "untyped").ops[k], out); return; }
+void Src::regsIn(std::size_t i, std::size_t k, std::vector<int> &out) const {
+    if (!typed(i)) {
+        std::vector<std::string> names;
+        registersIn(line(i, "untyped").ops[k], names);
+        for (std::size_t g = 0; g < names.size(); g++) out.push_back(regNumber(names[g]));
+        return;
+    }
     const MOperand &o = (*s)[i].op[k];
-    if (o.kind == MOperand::Register) out.push_back(regName(o.reg));
-    if (o.kind == MOperand::Pair) { out.push_back(regName(o.hi)); out.push_back(regName(o.reg)); }
+    if (o.kind == MOperand::Register) out.push_back(o.reg);
+    if (o.kind == MOperand::Pair) { out.push_back(o.hi); out.push_back(o.reg); }
     if (o.kind != MOperand::Memory) return;
-    out.push_back(regName(o.reg));
-    if (o.index != kNoReg) out.push_back(regName(o.index));
+    out.push_back(o.reg);
+    if (o.index != kNoReg) out.push_back(o.index);
 }
-bool Src::byteAddress(std::size_t i, std::size_t k, std::string &base, long &off, bool &post) const {
-    if (!typed(i)) return c6x::byteAddress(line(i, "untyped").ops[k], base, off, post);
+bool Src::byteAddress(std::size_t i, std::size_t k, int &base, long &off, bool &post) const {
+    if (!typed(i)) {
+        std::string name;
+        const bool is = c6x::byteAddress(line(i, "untyped").ops[k], name, off, post);
+        base = regNumber(name);
+        return is;
+    }
     const MOperand &o = (*s)[i].op[k];
     post = false; off = 0;
     if (o.kind != MOperand::Memory || o.index != kNoReg) return false;
-    base = regName(o.reg);
+    base = o.reg;
     if (o.mode == MOperand::Base) return !o.hasOffset;
     if (o.mode == MOperand::PostInc) { post = true; return !o.hasOffset || (!o.scaled && o.value == 1); }
     if (o.mode != MOperand::Plus && o.mode != MOperand::Minus) return false;
@@ -1673,24 +1692,24 @@ bool Src::byteAddress(std::size_t i, std::size_t k, std::string &base, long &off
 
 // Pointer r followed through one turn: registers holding r plus a constant, through copies, constant adds and the
 // steps of byte loads; true where r ends the turn one past where it began, with each byte load's offset in loads.
-bool trackPointer(const Src &src, const Window &W, const std::string &r, std::map<std::size_t, long> &loads) {
-    std::map<std::string, long> sym;
+bool trackPointer(const Src &src, const Window &W, int r, std::map<std::size_t, long> &loads) {
+    std::map<int, long> sym;
     sym[r] = 0;
     for (std::size_t k = 0; k < W.at.size(); k++) {
         const std::size_t i = W.at[k];
         const std::string m = src.mnem(i);
         if (isBranch(m)) continue;
-        std::vector<std::string> reads, writes;
-        src.rw(i, reads, writes);
+        std::vector<int> reads, writes;
+        src.regs(i, reads, writes);
         if (W.cls[k] >= 0) {                    // done only on the way out: what stays on sees none of it
-            std::vector<std::string> regs;
+            std::vector<int> regs;
             if (isLoad(m)) src.regsIn(i, 0, regs);
             for (std::size_t g = 0; g < regs.size(); g++) if (sym.count(regs[g])) return false;
             continue;
         }
         if (isLoad(m)) {
-            std::string base; long off; bool post;
-            std::vector<std::string> regs;
+            int base = kNoReg; long off; bool post;
+            std::vector<int> regs;
             src.regsIn(i, 0, regs);
             bool touches = false;
             for (std::size_t g = 0; g < regs.size(); g++) if (sym.count(regs[g])) touches = true;
@@ -1699,17 +1718,17 @@ bool trackPointer(const Src &src, const Window &W, const std::string &r, std::ma
                 loads[k] = sym[base] + off;
                 if (post) sym[base] += 1;
             }
-            sym.erase(src.op(i, src.ops(i) - 1));
+            sym.erase(src.regAt(i, src.ops(i) - 1));
             continue;
         }
         if (writes.empty()) continue;
-        const std::string &d = writes[0];
+        const int d = writes[0];
         long v = 0, n = 0; bool known = false;
-        if (m == "MV" && src.ops(i) == 2 && sym.count(src.op(i, 0))) { v = sym[src.op(i, 0)]; known = true; }
+        if (m == "MV" && src.ops(i) == 2 && sym.count(src.regAt(i, 0))) { v = sym[src.regAt(i, 0)]; known = true; }
         else if ((m == "ADD" || m == "SUB") && src.ops(i) == 3) {
             const bool sub = m == "SUB";
-            if (src.number(i, 0, n) && sym.count(src.op(i, 1)) && !sub) { v = sym[src.op(i, 1)] + n; known = true; }
-            else if (src.number(i, 1, n) && sym.count(src.op(i, 0))) { v = sym[src.op(i, 0)] + (sub ? -1 : 1) * n; known = true; }
+            if (src.number(i, 0, n) && sym.count(src.regAt(i, 1)) && !sub) { v = sym[src.regAt(i, 1)] + n; known = true; }
+            else if (src.number(i, 1, n) && sym.count(src.regAt(i, 0))) { v = sym[src.regAt(i, 0)] + (sub ? -1 : 1) * n; known = true; }
         }
         if (known) sym[d] = v; else sym.erase(d);
     }
@@ -1718,8 +1737,9 @@ bool trackPointer(const Src &src, const Window &W, const std::string &r, std::ma
 
 bool recogniseWindow(const Src &src, std::size_t back, const std::set<std::string> &labels, const std::set<std::string> &named, Window &W, std::string &why) {
     if (src.mnem(back) != "B" || src.ops(back) == 0 || labels.count(src.op(back, 0)) == 0) { why = "no branch back to a label"; return false; }
-    const std::string bpred = src.pred(back);
-    W.label = src.op(back, 0); W.backPred = bpred; W.P = bpred.empty() ? "" : bpred[0] == '!' ? bpred.substr(1) : bpred; W.back = back;
+    W.label = src.op(back, 0); W.back = back;
+    if (src.predicated(back)) { W.PR = src.predReg(back); W.backNot = src.predNot(back); }
+    if (src.predicated(back) && W.PR == kNoReg) { why = "a predicate that names no register"; return false; }
     std::map<std::string, std::size_t> at;
     for (std::size_t i = 0; i < src.size(); i++) if (src.label(i)) at[src.name(i)] = i;
     bool found = false;
@@ -1730,12 +1750,13 @@ bool recogniseWindow(const Src &src, std::size_t back, const std::set<std::strin
     for (std::size_t i = W.head + 1; i < back; i++) {
         if (src.label(i)) { if (!passThroughName(src.name(i), named)) { why = "a label inside"; return false; } continue; }
         if (!src.instr(i)) { why = "a directive inside"; return false; }
-        const std::string m = src.mnem(i), pred = src.pred(i);
+        const std::string m = src.mnem(i);
         if (isBranch(m)) {
             const std::string to = src.ops(i) ? src.op(i, 0) : std::string();
-            if (m != "B" || pred.empty() || to.empty() || !at.count(to) || to == W.label) { why = "a branch inside that is not a way out"; return false; }
-            Window::Exit e; e.target = to; e.pred = pred;
-            if (!W.backPred.empty() && back + 1 < src.size() && src.label(back + 1) && src.name(back + 1) == e.target) e.target = "";
+            if (m != "B" || !src.predicated(i) || to.empty() || !at.count(to) || to == W.label) { why = "a branch inside that is not a way out"; return false; }
+            Window::Exit e; e.target = to; e.pred = src.predReg(i); e.no = src.predNot(i);
+            if (e.pred == kNoReg) { why = "a predicate that names no register"; return false; }
+            if (W.PR != kNoReg && back + 1 < src.size() && src.label(back + 1) && src.name(back + 1) == e.target) e.target = "";
             e.live = src.liveAt(at[to]);
             W.cls.push_back(static_cast<int>(W.exits.size()));
             W.exits.push_back(e);
@@ -1747,16 +1768,16 @@ bool recogniseWindow(const Src &src, std::size_t back, const std::set<std::strin
         if (isStore(m)) { why = "a store, which a byte read early might meet"; return false; }
         if (m == "ADDK" || m == "MVKH" || m == "MVKL") { why = "an instruction that reads its destination"; return false; }
         for (std::size_t o = 0; o < src.ops(i); o++) if (src.pair(i, o)) { why = "a register pair"; return false; }
-        std::vector<std::string> reads, writes;
-        src.rw(i, reads, writes);
-        if (has(writes, "A15") || has(writes, "B15") || has(writes, "B3")) { why = "the stack pointer or return address is written"; return false; }
+        std::vector<int> reads, writes;
+        src.regs(i, reads, writes);
+        if (in(writes, 15) || in(writes, 47) || in(writes, 35)) { why = "the stack pointer or return address is written"; return false; }
         if (!isLoad(m) && (src.units(i) == 0 || writes.size() != 1)) { why = "an instruction of no known form: " + m; return false; }
         W.cls.push_back(kPlain);
         W.body.push_back(src.line(i, "window"));
         W.at.push_back(i);
     }
-    if (!W.backPred.empty()) {
-        Window::Exit e; e.pred = W.backPred[0] == '!' ? W.P : "!" + W.P;
+    if (W.PR != kNoReg) {
+        Window::Exit e; e.pred = W.PR; e.no = !W.backNot;
         e.live = back + 1 < src.size() ? src.liveAt(back + 1) : ~0ull;
         W.exits.push_back(e);
         W.liveOut |= e.live;
@@ -1767,27 +1788,28 @@ bool recogniseWindow(const Src &src, std::size_t back, const std::set<std::strin
     // or, before the back branch, only where the turn goes on. Its predicate must not change on the way.
     const std::size_t n = W.at.size();
     for (std::size_t k = 0; k < n; k++) {
-        const std::string pk = src.pred(W.at[k]);
-        if (pk.empty() || isBranch(src.mnem(W.at[k]))) continue;
-        const std::string q = pk[0] == '!' ? pk.substr(1) : pk;
+        if (!src.predicated(W.at[k]) || isBranch(src.mnem(W.at[k]))) continue;
+        const int q = src.predReg(W.at[k]);
+        const bool no = src.predNot(W.at[k]);
+        if (q == kNoReg) { why = "a predicate that names no register"; return false; }
         std::size_t j = k + 1;
         for (; j < n; j++) {
             if (isBranch(src.mnem(W.at[j]))) break;
-            std::vector<std::string> reads, writes;
-            src.rw(W.at[j], reads, writes);
-            if (has(writes, q)) { why = "a predicate written under its own instructions"; return false; }
+            std::vector<int> reads, writes;
+            src.regs(W.at[j], reads, writes);
+            if (in(writes, q)) { why = "a predicate written under its own instructions"; return false; }
         }
-        if (j < n && src.pred(W.at[j]) == pk) W.cls[k] = W.cls[j];
-        else if (j == n && pk == W.backPred) W.cls[k] = kCont;
+        if (j < n && src.predicated(W.at[j]) && src.predReg(W.at[j]) == q && src.predNot(W.at[j]) == no) W.cls[k] = W.cls[j];
+        else if (j == n && q == W.PR && no == W.backNot) W.cls[k] = kCont;
         else { why = "an instruction under a predicate no branch after it takes"; return false; }
     }
     // The pointers stepped by one a turn, followed through copies and constant offsets to the byte loads that read them.
-    std::set<std::string> tried;
+    std::set<int> tried;
     for (std::size_t k = 0; k < n; k++) {
-        std::vector<std::string> reads, writes;
-        src.rw(W.at[k], reads, writes);
+        std::vector<int> reads, writes;
+        src.regs(W.at[k], reads, writes);
         for (std::size_t r = 0; r < reads.size(); r++) {
-            if (!(W.liveHead & bitOf(reads[r])) || !tried.insert(reads[r]).second) continue;
+            if (!(W.liveHead & bitR(reads[r])) || !tried.insert(reads[r]).second) continue;
             Window::Ptr p;
             p.reg = reads[r];
             if (!trackPointer(src, W, p.reg, p.loads) || p.loads.empty()) continue;
@@ -1796,7 +1818,7 @@ bool recogniseWindow(const Src &src, std::size_t back, const std::set<std::strin
                 if (isBranch(src.mnem(W.at[b]))) { exited = true; continue; }
                 std::map<std::size_t, long>::const_iterator it = p.loads.find(b);
                 if (it == p.loads.end()) continue;
-                if (src.side(W.at[b], src.ops(W.at[b]) - 1) != sideOf(p.reg)) { first = false; p.loads.clear(); break; }
+                if (src.side(W.at[b], src.ops(W.at[b]) - 1) != sideOfR(p.reg)) { first = false; p.loads.clear(); break; }
                 if (first || it->second < p.offmin) { p.offmin = it->second; p.anchor = b; p.cond = exited; }
                 if (first || it->second > p.offmax) p.offmax = it->second;
                 first = false;
@@ -1811,8 +1833,8 @@ bool recogniseWindow(const Src &src, std::size_t back, const std::set<std::strin
     // A load through any other register is read where it stands, under R: it must not step its register.
     for (std::size_t k = 0; k < n; k++) {
         if (!isLoad(src.mnem(W.at[k]))) continue;
-        std::vector<std::string> reads, writes;
-        src.rw(W.at[k], reads, writes);
+        std::vector<int> reads, writes;
+        src.regs(W.at[k], reads, writes);
         bool stepped = false;
         for (std::size_t p = 0; p < W.ptrs.size(); p++) if (W.ptrs[p].loads.count(k)) stepped = true;
         if (!stepped && writes.size() != 1) { why = "a load that steps its own register"; return false; }
@@ -1954,7 +1976,7 @@ bool affineTurn(const Window &W, const std::set<std::string> &committed, std::ve
             away.clear();
             continue;
         }
-        if (W.cls[i] == kCont && !finalTaken && !W.backPred.empty()) {
+        if (W.cls[i] == kCont && !finalTaken && W.PR != kNoReg) {
             for (std::set<std::string>::const_iterator r = committed.begin(); r != committed.end(); ++r) at.back()[*r] = get(*r);
             finalTaken = true;
         }
@@ -1964,7 +1986,7 @@ bool affineTurn(const Window &W, const std::set<std::string> &committed, std::ve
         const Aff a = isLoad(l.mnem) ? Aff() : value(l);
         if (W.cls[i] >= 0) away[writes[0]] = a; else st[writes[0]] = a;
     }
-    if (!W.backPred.empty() && !finalTaken)
+    if (W.PR != kNoReg && !finalTaken)
         for (std::set<std::string>::const_iterator r = committed.begin(); r != committed.end(); ++r) at.back()[*r] = get(*r);
     // The steps: a register live at the head ends the turn as itself plus its step.
     for (std::set<std::string>::const_iterator r = committed.begin(); r != committed.end(); ++r) {
@@ -2018,15 +2040,15 @@ bool emitClosed(Window &W, const std::set<std::string> &committed, std::vector<s
     // Each pointer's block and offset in it; the turns run to the end of the nearest block, w = 8 - offset.
     std::vector<std::string> B(W.ptrs.size()), O(W.ptrs.size());
     for (std::size_t p = 0; p < W.ptrs.size(); p++) {
-        const char s = sideOf(W.ptrs[p].reg);
-        std::string u = W.ptrs[p].reg;
-        if (W.ptrs[p].offmin != 0) { u = c.fresh(s); c.put("ADD", { std::to_string(W.ptrs[p].offmin), W.ptrs[p].reg, u }); }
+        const char s = sideOfR(W.ptrs[p].reg);
+        std::string u = regName(W.ptrs[p].reg);
+        if (W.ptrs[p].offmin != 0) { u = c.fresh(s); c.put("ADD", { std::to_string(W.ptrs[p].offmin), regName(W.ptrs[p].reg), u }); }
         O[p] = c.fresh(s); c.put("AND", { "7", u, O[p] });
         B[p] = c.fresh(s); c.put("AND", { "-8", u, B[p] });
     }
     std::map<std::string, std::string> loaded;
     auto loadWrapped = [&](std::size_t p) {
-        const char s = sideOf(W.ptrs[p].reg);
+        const char s = sideOfR(W.ptrs[p].reg);
         std::set<std::string> mn;
         for (std::map<std::size_t, long>::const_iterator it = W.ptrs[p].loads.begin(); it != W.ptrs[p].loads.end(); ++it) mn.insert(W.body[it->first].mnem);
         // With two pointers, the odd turns' bytes through a copy of the block on the other side: both .D units read.
@@ -2058,7 +2080,7 @@ bool emitClosed(Window &W, const std::set<std::string> &committed, std::vector<s
     std::vector<std::string> dead;                      // d_p: 1 where some test up to place p stopped
     std::string d;
     auto pass = [&](int j, int k) {
-        const std::string &pr = W.exits[static_cast<std::size_t>(j)].pred;
+        const std::string pr = W.exits[static_cast<std::size_t>(j)].name();
         const std::string q = pr[0] == '!' ? pr.substr(1) : pr;
         const std::string s = stopOf(valueOf(q), pr[0] != '!');
         if (d.empty()) d = s;
@@ -2098,7 +2120,7 @@ bool emitClosed(Window &W, const std::set<std::string> &committed, std::vector<s
             if (startsWith(l.mnem, "CMP")) c.boolean.insert(std::atoi(x.c_str() + 1));
             cur[dst] = x;
         }
-        if (!W.backPred.empty()) pass(static_cast<int>(E) - 1, k);
+        if (W.PR != kNoReg) pass(static_cast<int>(E) - 1, k);
     }
     // t, the places passed: their count less the sum of the d_p, no more than the window's w*E places.
     std::vector<std::string> sum = dead;
@@ -2227,9 +2249,9 @@ bool emitWindow(Window &W, std::vector<Line> &out, std::string &why) {
     std::vector<std::string> B(W.ptrs.size()), O(W.ptrs.size());
     for (std::size_t p = 0; p < W.ptrs.size(); p++) {
         const Window::Ptr &P = W.ptrs[p];
-        const char s = sideOf(P.reg);
-        std::string u = P.reg;
-        if (P.offmin != 0) { u = c.fresh(s); c.put("ADD", { std::to_string(P.offmin), P.reg, u }); }
+        const char s = sideOfR(P.reg);
+        std::string u = regName(P.reg);
+        if (P.offmin != 0) { u = c.fresh(s); c.put("ADD", { std::to_string(P.offmin), regName(P.reg), u }); }
         O[p] = c.fresh(s); c.put("AND", { "7", u, O[p] });
         B[p] = c.fresh(s); c.put("AND", { "-8", u, B[p] });
         std::string sh = O[p];
@@ -2254,7 +2276,7 @@ bool emitWindow(Window &W, std::vector<Line> &out, std::string &why) {
     // The bytes of the block the later turns read, each where it wraps within the block, under the anchor's G.
     std::map<std::string, std::string> loaded;          // "p/n/mnem" -> register
     auto loadWrapped = [&](std::size_t p) {
-        const char s = sideOf(W.ptrs[p].reg);
+        const char s = sideOfR(W.ptrs[p].reg);
         for (int k = 1; k < 8; k++)
             for (std::size_t e = 0; e < reach[p].size(); e++) {
                 const long n = reach[p][e].first + k;
@@ -2291,7 +2313,7 @@ bool emitWindow(Window &W, std::vector<Line> &out, std::string &why) {
         const std::string Kk = needK ? K[static_cast<std::size_t>(k) % K.size()] : "";
         auto mask = [&](int j) {
             if (!yOf.count(j)) {
-                const std::string &pr = W.exits[static_cast<std::size_t>(j)].pred;     // the predicate it leaves on
+                const std::string pr = W.exits[static_cast<std::size_t>(j)].name();    // the predicate it leaves on
                 const std::string q = pr[0] == '!' ? pr.substr(1) : pr;
                 yOf[j] = maskOf(valueOf(q), pr[0] == '!');
             }
@@ -2394,7 +2416,7 @@ bool emitWindow(Window &W, std::vector<Line> &out, std::string &why) {
             commit(dst, x, cpr);
         }
         // The turn's end: Y with bit k cleared, so that R keeps only the turns after this one in the block.
-        if (!W.backPred.empty()) {
+        if (W.PR != kNoReg) {
             const std::string y = leaveBy(static_cast<int>(W.exits.size()) - 1);
             std::string x = c.fresh(ctl);
             c.put("CLR", { y, std::to_string(k), std::to_string(k), x });
@@ -2438,10 +2460,10 @@ bool sameLoop(const Loop &a, const Loop &b) {
            a.stepped == b.stepped && a.wide == b.wide && a.ivsR == b.ivsR && a.boundsR == b.boundsR && a.stepsR == b.stepsR && a.stepK == b.stepK && a.testBody == b.testBody;
 }
 bool sameWindow(const Window &a, const Window &b) {
-    if (a.head != b.head || a.back != b.back || a.label != b.label || a.backPred != b.backPred || a.P != b.P || !sameLines(a.body, b.body) ||
+    if (a.head != b.head || a.back != b.back || a.label != b.label || a.PR != b.PR || a.backNot != b.backNot || !sameLines(a.body, b.body) ||
         a.cls != b.cls || a.liveHead != b.liveHead || a.liveOut != b.liveOut || a.exits.size() != b.exits.size() || a.ptrs.size() != b.ptrs.size()) return false;
     for (std::size_t k = 0; k < a.exits.size(); k++)
-        if (a.exits[k].target != b.exits[k].target || a.exits[k].pred != b.exits[k].pred || a.exits[k].live != b.exits[k].live) return false;
+        if (a.exits[k].target != b.exits[k].target || a.exits[k].pred != b.exits[k].pred || a.exits[k].no != b.exits[k].no || a.exits[k].live != b.exits[k].live) return false;
     for (std::size_t k = 0; k < a.ptrs.size(); k++)
         if (a.ptrs[k].reg != b.ptrs[k].reg || a.ptrs[k].loads != b.ptrs[k].loads || a.ptrs[k].offmin != b.ptrs[k].offmin ||
             a.ptrs[k].offmax != b.ptrs[k].offmax || a.ptrs[k].cond != b.ptrs[k].cond || a.ptrs[k].anchor != b.ptrs[k].anchor) return false;
