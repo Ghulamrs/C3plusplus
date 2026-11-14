@@ -501,10 +501,9 @@ const int kCondR[] = { 0, 1, 2, 32, 33, 34 };
 
 // ----- the body read as algebra: what each register holds at its end, as a term over the values it came in with -----
 
-// A term is a string: `s:R` the value R held at entry, `k:N` a constant, `sum{a,b,..}` a sorted flattened sum, `lt(a,b)`,
-// `ltu(a,b)`, `eq{a,b}`, `and{a,b}`, `or{a,b}` the compares and logic (the braces sorted), and `op:N` anything else.
-// **The algebra's terms by number** (M6c round 15): each term made once in a table, so two are equal where their
-// numbers are; a sum is flat and, like eq, and, or, its terms sorted; -1 is no term. `str` spells one for a trace.
+// **The algebra's terms by number** (M6c round 15): each made once in a table, so two are equal where their numbers
+// are. The value R held at entry, a constant, a flat sorted sum, `lt(a,b)` and `ltu(a,b)`, eq, and, or of a sorted
+// pair, and `op` for anything else; -1 is no term. `str` spells one for a trace.
 struct Terms {
     enum Kind { Entry, Symbol, Const, Op, Sum, Lt, Ltu, Eq, And, Or };
     struct T { Kind kind; long k; int reg; std::string text; std::vector<int> args; };
