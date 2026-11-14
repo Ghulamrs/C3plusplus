@@ -294,7 +294,7 @@ struct Loop {
     bool onStream = false, fromLines = false;
     std::vector<Node> nodes;
     std::vector<Edge> edges;
-    std::set<std::string> used, written, predicated, rmwFirst;
+    std::set<std::string> used, written;
     std::uint64_t liveExit = 0;
     // A counter stepped by more than one: the test stays in the body and the kernel's branch reads it against a bound
     // moved back by the turns in flight, so no turn the loop would not have run is begun. Low word first throughout.
@@ -302,7 +302,7 @@ struct Loop {
     std::vector<std::string> ivs, bounds, steps;
     std::vector<std::size_t> testBody;          // the body's compares that read a bound
     // **The loop's registers as numbers and masks** (M6c round 12), read from the entries' operands and kept beside the
-    // names while a name has a reader: kNoReg where a constant stands; `pinnedM` is what `pinned` answers.
+    // names while a name has a reader: kNoReg where a constant stands; `pinnedM` is a stepped counter's words, bounds and steps.
     int ivR = kNoReg, boundR = kNoReg, PR = kNoReg, CR = kNoReg;
     std::uint64_t usedM = 0, writtenM = 0, predicatedM = 0, rmwFirstM = 0, pinnedM = 0;
     void count(std::uint64_t reads, std::uint64_t writes, bool plain) { usedM |= reads | writes; writtenM |= writes; if (!plain) predicatedM |= writes; }
@@ -384,11 +384,6 @@ struct Loop {
         body.push_back(src.v[i]);
         if (fromLines) return;
         if (src.typed(i)) bodyM.push_back((*src.s)[i]); else { fromLines = true; bodyM.clear(); }
-    }
-    // A counter's word, a bound or a step the kernel and the remainder both read under its own name.
-    bool pinned(const std::string &r) const {
-        return std::find(ivs.begin(), ivs.end(), r) != ivs.end() || std::find(bounds.begin(), bounds.end(), r) != bounds.end() ||
-               std::find(steps.begin(), steps.end(), r) != steps.end();
     }
 };
 
@@ -599,7 +594,7 @@ bool recogniseStepped(const Src &src, Loop &L, std::string &why, const std::stri
     L.ivR = regNumber(lo); L.boundR = regNumber(nlo); L.CR = kNoReg;
     L.ivs.push_back(lo); L.bounds.push_back(nlo); L.steps.push_back(slo);
     if (L.wide) { L.ivs.push_back(hi); L.bounds.push_back(nhi); L.steps.push_back(shi); }
-    L.used.clear(); L.written.clear(); L.predicated.clear();
+    L.used.clear(); L.written.clear();
     L.usedM = L.writtenM = L.predicatedM = 0;
     L.pinnedM = maskOf(L.ivs) | maskOf(L.bounds) | maskOf(L.steps);
     for (std::size_t k = 0; k < L.bodyAt.size(); k++) {
@@ -610,7 +605,7 @@ bool recogniseStepped(const Src &src, Loop &L, std::string &why, const std::stri
         src.masks(i, rm, wm);
         L.count(rm, wm, src.pred(i).empty());
         for (std::size_t r = 0; r < reads.size(); r++) L.used.insert(reads[r]);
-        for (std::size_t w = 0; w < writes.size(); w++) { L.used.insert(writes[w]); L.written.insert(writes[w]); if (!src.pred(i).empty()) L.predicated.insert(writes[w]); }
+        for (std::size_t w = 0; w < writes.size(); w++) { L.used.insert(writes[w]); L.written.insert(writes[w]); }
         if (src.mnem(i) == "MV" && src.ops(i) == 2 && src.op(i, 0) == src.op(i, 1)) continue;
         if (std::find(tree.begin(), tree.end(), k) != tree.end()) L.testBody.push_back(L.body.size());
         L.take(src, i);
@@ -700,14 +695,14 @@ bool recognise(const Src &src, std::size_t back, const std::set<std::string> &la
         src.masks(i, rm, wm);
         L.count(rm, wm, plain);
         for (std::size_t r = 0; r < reads.size(); r++) L.used.insert(reads[r]);
-        for (std::size_t w = 0; w < writes.size(); w++) { L.used.insert(writes[w]); L.written.insert(writes[w]); if (!plain) L.predicated.insert(writes[w]); }
+        for (std::size_t w = 0; w < writes.size(); w++) { L.used.insert(writes[w]); L.written.insert(writes[w]); }
     }
     if (ivWrites != 1) { why = "the counter is stepped " + std::to_string(ivWrites) + " times"; return false; }
     if (boundWrites > 0 && !L.boundConst) { why = "the bound is written in the loop"; return false; }
     // The kernel's counter: P itself where the compare alone writes it, else a condition register the loop leaves alone.
     if (pWrites == 0) L.C = L.P;
     else for (std::size_t k = 0; k < 6 && L.C.empty(); k++)
-        if (!L.used.count(kCond[k]) && !(L.liveExit & bitOf(kCond[k])) && kCond[k] != L.P) L.C = kCond[k];
+        if (!(L.usedM & bitOf(kCond[k])) && !(L.liveExit & bitOf(kCond[k])) && kCond[k] != L.P) L.C = kCond[k];
     if (L.C.empty()) { why = "no condition register for the count"; return false; }
     L.CR = pWrites == 0 ? L.PR : regNumber(L.C);
     for (std::size_t k = 0; k < L.bodyAt.size(); k++) {
@@ -1079,7 +1074,7 @@ void renameWebs(Loop &L, std::vector<std::string> &pool) {
         const std::string &r = it->first;
         bool carried = false;
         for (std::size_t w = 0; w < webs.size(); w++) if (webs[w].reg == r && webs[w].keep) carried = true;
-        if (carried || (L.liveExit & bitOf(r)) || r == L.iv || r == L.bound || r == L.C || r == L.P || L.pinned(r)) webs[static_cast<std::size_t>(it->second)].keep = true;
+        if (carried || (L.liveExit & bitOf(r)) || r == L.iv || r == L.bound || r == L.C || r == L.P || (L.pinnedM & bitOf(r))) webs[static_cast<std::size_t>(it->second)].keep = true;
     }
     for (std::size_t w = 0; w < webs.size(); w++) {
         Web &x = webs[w];
@@ -1120,7 +1115,7 @@ void renameWebs(Loop &L, std::vector<std::string> &pool) {
         }
         l = rebuilt(l.mnem, ops, pred);
     }
-    L.used.clear(); L.written.clear(); L.predicated.clear();
+    L.used.clear(); L.written.clear();
     L.usedM = L.writtenM = L.predicatedM = 0;
     for (std::size_t o = 0; o < L.body.size(); o++) {
         std::vector<std::string> reads, writes;
@@ -1129,26 +1124,17 @@ void renameWebs(Loop &L, std::vector<std::string> &pool) {
         L.masks(o, rm, wm);
         L.count(rm, wm, L.plainAt(o));
         for (std::size_t r = 0; r < reads.size(); r++) L.used.insert(reads[r]);
-        for (std::size_t w = 0; w < writes.size(); w++) { L.used.insert(writes[w]); L.written.insert(writes[w]); if (!L.body[o].pred.empty()) L.predicated.insert(writes[w]); }
+        for (std::size_t w = 0; w < writes.size(); w++) { L.used.insert(writes[w]); L.written.insert(writes[w]); }
     }
     L.used.insert(L.P);
     if (L.PR != kNoReg) L.usedM |= 1ull << L.PR;
     std::uint64_t seenM = 0;
-    std::set<std::string> seen;
     for (std::size_t o = 0; o < L.body.size(); o++) {
-        std::vector<std::string> reads, writes;
-        L.rw(o, reads, writes);
-        const std::string stepped = L.steppedAt(o);
         std::uint64_t rm = 0, wm = 0;
         L.masks(o, rm, wm);
         if (L.body[o].mnem == "MVKH" || L.body[o].mnem == "ADDK") L.rmwFirstM |= wm & ~seenM;
-        L.rmwFirstM |= wm & bitOf(stepped);
+        L.rmwFirstM |= wm & bitOf(L.steppedAt(o));
         seenM |= wm;
-        for (std::size_t w = 0; w < writes.size(); w++) {
-            if (!seen.count(writes[w]) && (L.body[o].mnem == "MVKH" || L.body[o].mnem == "ADDK")) L.rmwFirst.insert(writes[w]);
-            if (writes[w] == stepped) L.rmwFirst.insert(writes[w]);
-            seen.insert(writes[w]);
-        }
     }
 }
 
@@ -1200,9 +1186,7 @@ void checkRegisters(const Loop &L, const char *at) {
         return n != m;
     };
     const char *what = regNumber(L.iv) != L.ivR ? "iv" : regNumber(L.bound) != L.boundR ? "bound" : regNumber(L.P) != L.PR ? "P" :
-        regNumber(L.C) != L.CR ? "C" : differs(L.used, L.usedM) ? "used" : differs(L.written, L.writtenM) ? "written" :
-        differs(L.predicated, L.predicatedM) ? "predicated" : differs(L.rmwFirst, L.rmwFirstM) ? "rmwFirst" : nullptr;
-    for (int r = 0; r < 64 && !what; r++) if (L.pinned(regName(r)) != ((L.pinnedM >> r & 1) != 0)) what = "pinned";
+        regNumber(L.C) != L.CR ? "C" : differs(L.used, L.usedM) ? "used" : differs(L.written, L.writtenM) ? "written" : nullptr;
     if (what) std::fprintf(stderr, "c6x-reg: %s %s %s\n", at, L.label.c_str(), what);
 }
 
@@ -1324,7 +1308,7 @@ bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) 
         for (int k = 3; k < 32; k++) {
             if ((k >= 10 && k <= 15) || (side == 1 && k == 3)) continue;
             std::string r = std::string(side ? "B" : "A") + std::to_string(k);
-            if (!L.used.count(r) && !(L.liveExit & bitOf(r)) && r != L.C && r != L.P) pool.push_back(r);
+            if (!(L.usedM & bitOf(r)) && !(L.liveExit & bitOf(r)) && r != L.C && r != L.P) pool.push_back(r);
         }
     std::string X;
     if (!L.stepped) {
@@ -1394,8 +1378,8 @@ bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) 
         bool ok = true;                                     // every half written: a pair's names move together
         for (std::size_t h = 0; h < units[u].regs.size(); h++) {
             const std::string &r = units[u].regs[h];
-            if (!L.written.count(r)) ok = false;
-            if (L.predicated.count(r) || L.rmwFirst.count(r) || r == L.C || r == L.P || r == "A15" || r == "B15" || r == "B3" || r == "B14") { ok = false; break; }
+            if (!(L.writtenM & bitOf(r))) ok = false;
+            if (((L.predicatedM | L.rmwFirstM) & bitOf(r)) || r == L.C || r == L.P || r == "A15" || r == "B15" || r == "B3" || r == "B14") { ok = false; break; }
         }
         if (ok) for (std::size_t h = 0; h < units[u].regs.size(); h++) renameable.insert(units[u].regs[h]);
     }
@@ -1431,7 +1415,7 @@ bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) 
             for (std::map<std::string, std::size_t>::const_iterator it = unitOf.begin(); it != unitOf.end(); ++it, k++) {
                 Unit &un = units[it->second];
                 const std::uint64_t bit = bitOf(it->first);
-                if (!renameable.count(it->first) || !L.written.count(it->first)) continue;
+                if (!renameable.count(it->first) || !(L.writtenM & bitOf(it->first))) continue;
                 int start = 1 << 30, end = 0;
                 for (std::size_t o = 0; o < L.nodes.size(); o++) {
                     if (L.nodes[o].writes & bit) { start = std::min(start, t[o] + L.nodes[o].lat); end = std::max(end, t[o] + L.nodes[o].lat); }
@@ -1440,7 +1424,7 @@ bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) 
                 int q = std::max((end - start) / II + 1, minQ.count(it->first) ? minQ[it->first] : 1);
                 un.q = std::max(un.q, pow2At(q));
                 if (firstWrite[k] < (1 << 30)) for (std::size_t o = 0; o <= static_cast<std::size_t>(firstWrite[k]); o++) if (L.nodes[o].reads & bit) un.carried = true;
-                if ((L.liveExit & bit) || it->first == L.iv || it->first == L.bound || L.pinned(it->first)) un.exits = true;
+                if ((L.liveExit & bit) || it->first == L.iv || it->first == L.bound || (L.pinnedM & bit)) un.exits = true;
             }
             for (std::size_t x = 0; x < units.size(); x++) qMax = std::max(qMax, units[x].q);
             u = pow2At(std::max((6 + II - 1) / II, qMax));
@@ -2390,7 +2374,7 @@ bool sameLoop(const Loop &a, const Loop &b) {
     return a.head == b.head && a.back == b.back && a.label == b.label && a.exitName == b.exitName && a.P == b.P && a.C == b.C &&
            a.iv == b.iv && a.bound == b.bound && a.negated == b.negated && a.boundConst == b.boundConst && a.plusOne == b.plusOne &&
            a.boundK == b.boundK && a.cmp == b.cmp && a.bodyAt == b.bodyAt && sameLines(a.body, b.body) && sameLines(a.pre, b.pre) &&
-           a.used == b.used && a.written == b.written && a.predicated == b.predicated && a.liveExit == b.liveExit &&
+           a.used == b.used && a.written == b.written && a.predicatedM == b.predicatedM && a.liveExit == b.liveExit &&
            a.stepped == b.stepped && a.wide == b.wide && a.ivs == b.ivs && a.bounds == b.bounds && a.steps == b.steps && a.testBody == b.testBody;
 }
 bool sameWindow(const Window &a, const Window &b) {
