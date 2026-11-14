@@ -980,3 +980,48 @@ loop passes' edits on operands; `rounds` writes no lines on a held stream; the k
   1215 / 0. Linux make test rc 0 (run 1217/0, emit 3399/0, typed 860/0, ssa 890/0, c90 447/0, exclusions 0/0,
   comments 0). tms6747 (vm6747, SIM=0, three shards): 814 passed, 0 failed at -O0 (393.2 M cycles) and -O2
   (**192.0 M**, unchanged); asm6x 833 / 0 at -O0 and -O2.
+### M6c, round 13 (the counted loop on numbers: S5-S8 of round 12's plan, the names deleted), 2026-11-14, lane m6v
+
+- **Landed** (from m6-u af87b476), S5-S8, four commits, each of identical output: **S5** (c3981531) the emitters' sink:
+  `Code::add` and `legal` take operands (`R` a register by number, `RR` a pair, `K` a constant, a label) and a
+  predicate by number, `branch` writes `[P] B`; the line a loop off the stream wants is spelled from the entry
+  (`lineOf`); `steppedTest`, `steppedGuard`, `pipeline`'s guard and count, the kernel's branch and step (`turnOf`) and
+  `scheduleAt`'s two reserved nodes read `PR`, `CR`, `ivR`, `boundR` and the stepped counter's `ivsR`, `boundsR`,
+  `stepsR`, `stepK`. **S6** (ca93c160) the webs, units and pool: `Web::reg`/`name`, `renameWebs`' `cur` and `fixed`,
+  `Unit::regs`/`copies`, `unitOf`, `renameable` (a mask), `minQ`, `buildEdges`' accesses, `takeFree`, `X`, `moved`,
+  `xt` are numbers, so `spelled` asks no `regNumber`; a map that was walked in the names' order still is (`ByName`:
+  A10 before A2 - the units' order and the edges', which the schedule's ties keep). **S7** (6c01a0c5) the address walk:
+  `Ins`' reads, writes, step, base and index are numbers, a `Form`'s term is a `Term` (the constant, the induction
+  variable, a register's entry value, an object - a symbol or the frame), `addressForms` takes `ivR`;
+  `readsAndWrites` on an entry lists numbers (C6xPack.cpp), the names made from that one list. **S8** (b821a54c) the
+  recognisers: `evaluateBody`'s `env`, `recogniseStepped`'s writers, steps and bounds and `recognise`'s tests are keyed
+  and compared by number (`Src::regs`, `regAt`); a term still spells a register by name, so the sorted sums and their
+  substring tests are what they were. **Deleted**: `Loop`'s `iv`, `bound`, `P`, `C`, `ivs`, `bounds`, `steps`,
+  `kCond`, `Code::opsOf`, and the `c6x-reg` census with them (it held at 0 through S5-S7; nothing is left for it to
+  hold against). src/ +448 -386 lines (C6xPipe.cpp 2,499 -> 2,554, C6xPack.cpp 1,486 -> 1,492, C6xMir.h 127 -> 128).
+- **What still reads names** in the counted loop: the body's lines kept beside the entries - `renameWebs`' and
+  `spelledLine`'s `renamed` on a line (spelled from the numbers), the moved bound's substitution into a line,
+  `wantedAfter` and `foldBodyCopies` (lines, `Loop::rw`), `steppedAt` (a name; `rmwFirstM` asks `bitOf` of it),
+  `Ins` from a line where the preheader or body is not all modelled, `Loop::regs`/`Src::regs` numbering a line's
+  names off the stream; the algebra's terms (strings that spell a register); `Code::push_back`/`entryOf` for the
+  window's composed lines. Off the counted loop: the window whole (`Window`, `WinCode`, `Aff`), `namesOf`, `Src`'s lines.
+- **Gate** (Linux ~/m6v, a copy of ~/m6u with the changed files laid over; REF main 85fe99fe's compiler in its kept
+  tree ~/w7ref; Windows against work\m6u's cxx3-msvc.exe). **Each step on its own** on Windows, its own tree built by
+  cl /W4 /WX clean: tests/cases at -O0, -O1, -O2 by md5, 3,669 outputs - S5 (work\m6v) 0 differ; S6 (work\m6v6), S7
+  (work\m6v7s) and S8 (work\m6v7) 3,663 same and the same 6 named, which are two refused cases (posix-headers,
+  windows-h-layout) whose caret is indented by the tree's path - a longer tree name, not the compiler; S8 again in
+  work\m6v (the reference's name length): 2,601 texts, 1,068 refused alike, **0 differ**. `c6x-reg` 0 at S5, S6, S7
+  (deleted at S8); S5 alone on Linux too (g++ clean, `c6x-reg` 0); S6 and S7 were not built alone on Linux. On the
+  final source (S8, b821a54c): `identical.sh ARCHS=tms6747` against main's compiler, -O0 and -O2 1,736 compared, 0
+  differ; -O0 -g 868 compared, 91 raw (`/w7ref/` against `/m6v/`), 851 texts 0 differ with the tree path made the
+  same. Census at -O2 (`CXX1_C6X_MIR=1`, both boxes): 0 `c6x-emit`, 0 `c6x-addr`, 0 `c6x-spell`, 0 `c6x-loop-edit`,
+  0 `c6x-loops`, 0 `c6x-loop-unread`, 0 `c6x-front`, 0 `c6x-fold`, 0 `c6x-fold-edit`, 0 `c6x-live`, 0
+  `c6x-live-unread`, 0 to the text pipeliner or pass; 6,835 selected functions, 106 with kernels (2,727 placed
+  entries). tests/tms6747.sh SHARD=k/3 CYCLES=1 SIM=0 at -O2: 814 passed, 0 failed, 3 not run on vm6747;
+  **192,009,106 cycles** (192.0 M, unchanged). tests/g-same.sh 867 same, 0 differ, 0 broken; asm6x.sh 833 objects, 0
+  failed, at -O0 and -O2. cl /W4 /WX clean (five builds), g++ -Werror clean. Exclusions 129 sites 0 uncited 0 stale
+  (SSA lowering 554/95); comments 0 over; memory gate rc 0; ast-residue rc 0; ide/generate.py --check up to date. Not
+  run (the coordinator's): winpass, make test, ssa.sh.
+- **Owed:** the body's lines beside the entries (the list above) - then the window on entries, `Src` without the
+  lines, the loop passes composing entries, the selector's stream handed in unprinted, step 4. Not begun here:
+  `Window`, `pipelineLoops`' `linesOf`.
