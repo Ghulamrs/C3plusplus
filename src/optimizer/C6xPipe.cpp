@@ -276,6 +276,22 @@ struct Src {
 
 // ----- the loop as recognised -----
 
+// An operand from a register's number, a pair's two, or a constant; an entry of its parts; and the line an entry spells.
+MOperand R(int r) { MOperand o; o.kind = MOperand::Register; o.reg = static_cast<std::uint8_t>(r); return o; }
+MOperand RR(int hi, int lo) { MOperand o = R(lo); o.kind = MOperand::Pair; o.hi = static_cast<std::uint8_t>(hi); return o; }
+MOperand K(long long v) { return MOperand(v); }
+char sideOfR(int r) { return r == kNoReg ? 0 : sideOfReg(r) ? 'B' : 'A'; }
+MInst entry(const std::string &mnem, const MOperand &a, const MOperand &b = MOperand(), const MOperand &c = MOperand(), int pred = kNoReg, bool no = false) {
+    MInst e(mnem.c_str(), a, b, c);
+    e.pred = static_cast<std::uint8_t>(pred); e.predNot = no;
+    return e;
+}
+Line lineOf(const MInst &e) {
+    std::vector<std::string> ops;
+    for (int k = 0; k < e.operands; k++) ops.push_back(e.op[k].str());
+    return rebuilt(e.m.str(), ops, e.pred == kNoReg ? std::string() : (e.predNot ? "!" : "") + regName(e.pred));
+}
+
 struct Edge { int from, to, delay, dist; const char *why; };
 
 struct Loop {
@@ -299,6 +315,8 @@ struct Loop {
     // moved back by the turns in flight, so no turn the loop would not have run is begun. Low word first throughout.
     bool stepped = false, wide = false;
     std::vector<std::string> ivs, bounds, steps;
+    std::vector<int> ivsR, boundsR, stepsR;     // the same as numbers: a constant step is kNoReg, its value stepK
+    long stepK = 0;
     std::vector<std::size_t> testBody;          // the body's compares that read a bound
     // **The loop's registers as numbers and masks** (M6c round 12), read from the entries' operands and kept beside the
     // names while a name has a reader: kNoReg where a constant stands; `pinnedM` is a stepped counter's words, bounds and steps.
@@ -597,6 +615,8 @@ bool recogniseStepped(const Src &src, Loop &L, std::string &why, const std::stri
     L.ivR = regNumber(lo); L.boundR = regNumber(nlo); L.CR = kNoReg;
     L.ivs.push_back(lo); L.bounds.push_back(nlo); L.steps.push_back(slo);
     if (L.wide) { L.ivs.push_back(hi); L.bounds.push_back(nhi); L.steps.push_back(shi); }
+    for (std::size_t w = 0; w < L.ivs.size(); w++) { L.ivsR.push_back(regNumber(L.ivs[w])); L.boundsR.push_back(regNumber(L.bounds[w])); L.stepsR.push_back(regNumber(L.steps[w])); }
+    L.stepK = isNumber(slo) ? std::atol(slo.c_str()) : 0;
     L.usedM = L.writtenM = L.predicatedM = 0;
     L.pinnedM = maskOf(L.ivs) | maskOf(L.bounds) | maskOf(L.steps);
     for (std::size_t k = 0; k < L.bodyAt.size(); k++) {
@@ -790,8 +810,8 @@ bool scheduleAt(Loop &L, int II, std::vector<int> &t, const std::set<std::string
     std::set<std::string> lab;
     lab.insert(L.label + "$pipe");
     // The kernel's branch, on the count where there is one and on the loop's own test where the counter is stepped.
-    extra.push_back(makeNode(rebuilt("B", std::vector<std::string>(1, L.label + "$pipe"), L.stepped ? (L.negated ? "!" + L.P : L.P) : L.C), lab));
-    if (!L.stepped) extra.push_back(makeNode(make("ADD", "-1", L.C, L.C), std::set<std::string>()));
+    extra.push_back(makeNode(lineOf(entry("B", MOperand(L.label + "$pipe"), MOperand(), MOperand(), L.stepped ? L.PR : L.CR, L.stepped && L.negated)), lab));
+    if (!L.stepped) extra.push_back(makeNode(lineOf(entry("ADD", K(-1), R(L.CR), R(L.CR))), std::set<std::string>()));
     const int sb = ((6 % II) == 0 ? 0 : II - 6 % II);
     for (std::size_t k = 0; k < extra.size(); k++) { if (!fits(mrt[static_cast<std::size_t>(sb)], extra[k])) return false; add(mrt[static_cast<std::size_t>(sb)], extra[k]); }
     for (std::size_t o = 0; o < n; o++) {
@@ -929,12 +949,6 @@ struct Code {
     const MStream *from = nullptr;          // the stream being rewritten; none for the text
     bool ok = true;
     bool text() const { static const bool census = std::getenv("CXX1_C6X_MIR") != nullptr; return !from || census; }
-    static std::vector<std::string> opsOf(const std::string &a, const std::string &b, const std::string &c) {
-        std::vector<std::string> ops(1, a);
-        if (!b.empty()) ops.push_back(b);
-        if (!c.empty()) ops.push_back(c);
-        return ops;
-    }
     // The entry of these parts; false where the predicate names no register, which an entry cannot hold.
     static bool entryOf(const std::string &mnem, const std::vector<std::string> &ops, const std::string &pred, MInst &e) {
         if (ops.size() > 4) return false;
@@ -953,22 +967,20 @@ struct Code {
         if (l.instr && !l.verbatim && entryOf(l.mnem, l.ops, l.pred, e) && e.str() == l.raw + "\n") { m.push_back(e); return; }
         ok = streamOf(std::vector<Line>(1, l), m);
     }
-    void add(const std::string &mnem, const std::string &a, const std::string &b = "", const std::string &c = "", const std::string &pred = "") {
-        const std::vector<std::string> ops = opsOf(a, b, c);
-        if (text()) lines.push_back(rebuilt(mnem, ops, pred));
-        if (!from || !ok) return;
-        MInst e;
-        ok = entryOf(mnem, ops, pred, e);
-        if (ok) m.push_back(e);
+    // An instruction of its operands - registers by number, constants, a label - under `[pred]` or `[!pred]`.
+    void add(const std::string &mnem, const MOperand &a, const MOperand &b = MOperand(), const MOperand &c = MOperand(), int pred = kNoReg, bool no = false) {
+        const MInst e = entry(mnem, a, b, c, pred, no);
+        if (text()) lines.push_back(lineOf(e));
+        if (from && ok) m.push_back(e);
     }
+    void branch(const std::string &to, int pred, bool no) { add("B", MOperand(to), MOperand(), MOperand(), pred, no); }
     // `legalForm` and the instruction: commuted where both sources cross, false with the reason where it has no form.
-    bool legal(std::string &why, const std::string &mnem, const std::string &a, const std::string &b = "", const std::string &c = "") {
-        const std::vector<std::string> ops = opsOf(a, b, c);
-        MInst e;
-        const bool typed = from && ok && entryOf(mnem, ops, "", e) && modelled(e);
+    bool legal(std::string &why, const std::string &mnem, const MOperand &a, const MOperand &b = MOperand(), const MOperand &c = MOperand()) {
+        MInst e = entry(mnem, a, b, c);
+        const bool typed = from && ok && modelled(e);
         Line l;
         bool fine = false;
-        if (!typed || text()) { l = rebuilt(mnem, ops); fine = legalForm(l); }
+        if (!typed || text()) { l = lineOf(e); fine = legalForm(l); }
         if (!typed) {
             if (!fine) { why = "the stepped guard has no legal form for" + l.raw; return false; }
             push_back(l);
@@ -1009,10 +1021,11 @@ struct Code {
     }
 };
 
-Turn turnOf(const std::string &mnem, const std::vector<std::string> &ops, const std::string &pred = "") {
+Turn turnOf(const MInst &e) {
     Turn t;
-    t.raw = rebuilt(mnem, ops, pred).raw;
-    t.typed = Code::entryOf(mnem, ops, pred, t.e);
+    t.raw = lineOf(e).raw;
+    t.e = e;
+    t.typed = true;
     return t;
 }
 
@@ -1171,6 +1184,9 @@ void foldBodyCopies(Loop &L) {
 void checkRegisters(const Loop &L, const char *at) {
     const char *what = regNumber(L.iv) != L.ivR ? "iv" : regNumber(L.bound) != L.boundR ? "bound" : regNumber(L.P) != L.PR ? "P" :
         regNumber(L.C) != L.CR ? "C" : nullptr;
+    bool words = L.ivsR.size() == L.ivs.size() && L.boundsR.size() == L.bounds.size() && L.stepsR.size() == L.steps.size();
+    for (std::size_t w = 0; words && w < L.ivs.size(); w++) words = regNumber(L.ivs[w]) == L.ivsR[w] && regNumber(L.bounds[w]) == L.boundsR[w] && regNumber(L.steps[w]) == L.stepsR[w];
+    if (!what && !words) what = "words";
     if (what) std::fprintf(stderr, "c6x-reg: %s %s %s\n", at, L.label.c_str(), what);
 }
 
@@ -1209,78 +1225,77 @@ std::string takeFree(std::vector<std::string> &free, char side, bool pair) {
 
 // The loop's own test in one canonical shape: P = iv < n where the loop runs while iv < n, P = n < iv where it runs
 // while iv <= n; a two-word counter signed through the high word and unsigned through the low, over two scratch registers.
-bool steppedTest(const Loop &L, Code &out, const std::string &nlo, const std::string &nhi, const std::string &t, const std::string &tb, std::string &why) {
+bool steppedTest(const Loop &L, Code &out, int nlo, int nhi, int t, int tb, std::string &why) {
     const bool less = !L.plusOne;
-    const std::string &lo = L.ivs[0];
-    const bool across = sideOf(L.P) != sideOf(lo);    // the result is made beside the counter and copied to P
+    const int lo = L.ivsR[0];
+    const bool across = sideOfReg(L.PR) != sideOfReg(lo);    // the result is made beside the counter and copied to P
     if (!L.wide) {
-        if (!across) return out.legal(why, less ? "CMPLT" : "CMPGT", lo, nlo, L.P);
-        if (t.empty()) { why = "the stepped test has no scratch register beside the counter"; return false; }
-        return out.legal(why, less ? "CMPLT" : "CMPGT", lo, nlo, t) && out.legal(why, "MV", t, L.P);
+        if (!across) return out.legal(why, less ? "CMPLT" : "CMPGT", R(lo), R(nlo), R(L.PR));
+        if (t == kNoReg) { why = "the stepped test has no scratch register beside the counter"; return false; }
+        return out.legal(why, less ? "CMPLT" : "CMPGT", R(lo), R(nlo), R(t)) && out.legal(why, "MV", R(t), R(L.PR));
     }
-    const std::string &hi = L.ivs[1], &x = across ? tb : L.P;
-    return out.legal(why, "CMPEQ", hi, nhi, t) && out.legal(why, less ? "CMPLTU" : "CMPGTU", lo, nlo, tb) &&
-           out.legal(why, "AND", t, tb, t) && out.legal(why, less ? "CMPLT" : "CMPGT", hi, nhi, tb) &&
-           out.legal(why, "OR", t, tb, x) && (!across || out.legal(why, "MV", x, L.P));
+    const int hi = L.ivsR[1], x = across ? tb : L.PR;
+    return out.legal(why, "CMPEQ", R(hi), R(nhi), R(t)) && out.legal(why, less ? "CMPLTU" : "CMPGTU", R(lo), R(nlo), R(tb)) &&
+           out.legal(why, "AND", R(t), R(tb), R(t)) && out.legal(why, less ? "CMPLT" : "CMPGT", R(hi), R(nhi), R(tb)) &&
+           out.legal(why, "OR", R(t), R(tb), R(x)) && (!across || out.legal(why, "MV", R(x), R(L.PR)));
 }
 
 // **The stepped loop's entry**: the step must not be negative, K = m*s and Kg = g*s must fit, n-K (the kernel's bound)
 // and n-Kg must not overflow, and turn g must exist - `iv REL n-Kg` by the loop's own test - or the loop runs as written.
 // Every check branches to the head, and the test is the loop's own over the bound n - Kg; one or two words.
-bool steppedGuard(const Loop &L, Code &out, const std::vector<std::string> &moved, const std::string &xt, const std::string &xtb,
-                  std::vector<std::string> free, int m, int g, std::string &why) {
-    const std::string &slo = L.steps[0], &nlo = L.bounds[0];
-    const std::string shi = L.wide ? L.steps[1] : "", nhi = L.wide ? L.bounds[1] : "";
-    const bool constant = isNumber(slo);
-    const char stepSide = constant ? sideOf(nlo) : sideOf(slo);
-    const std::string klo = takeFree(free, stepSide, true), tm = takeFree(free, stepSide, false), t2 = takeFree(free, stepSide, false), tb = takeFree(free, sideOf(nlo), false);
-    if (klo.empty() || tm.empty() || t2.empty() || tb.empty()) { why = "no free registers for the stepped guard"; return false; }
-    const std::string khi = std::string(1, klo[0]) + std::to_string(std::atoi(klo.c_str() + 1) + 1);
-    const std::string skip = L.negated ? L.P : "!" + L.P;    // the branch past the pipelined copy, taken where the loop would not go on
-    if (!constant && !out.legal(why, "CMPGT", "0", L.wide ? shi : slo, L.P)) return false;
-    if (!constant) out.add("B", L.label, "", "", L.P);
+bool steppedGuard(const Loop &L, Code &out, const std::vector<int> &moved, int xt, int xtb, std::vector<std::string> free, int m, int g, std::string &why) {
+    const int slo = L.stepsR[0], nlo = L.boundsR[0], shi = L.wide ? L.stepsR[1] : kNoReg, nhi = L.wide ? L.boundsR[1] : kNoReg, P = L.PR;
+    const bool constant = slo == kNoReg;
+    const char stepSide = sideOfR(constant ? nlo : slo);
+    const int klo = regNumber(takeFree(free, stepSide, true)), tm = regNumber(takeFree(free, stepSide, false)),
+              t2 = regNumber(takeFree(free, stepSide, false)), tb = regNumber(takeFree(free, sideOfR(nlo), false));
+    if (klo == kNoReg || tm == kNoReg || t2 == kNoReg || tb == kNoReg) { why = "no free registers for the stepped guard"; return false; }
+    const int khi = klo + 1;
+    // Each branch past the pipelined copy is to the head: taken where the loop would not go on, or a check fails.
+    if (!constant && !out.legal(why, "CMPGT", K(0), R(L.wide ? shi : slo), R(P))) return false;
+    if (!constant) out.branch(L.label, P, false);
     // K = k*s into khi:klo, checked to fit: a 31-bit value for one word, a 47-bit step for two.
     auto times = [&](int k) -> bool {
         if (constant) {
-            long kk = k * std::atol(slo.c_str());
+            long kk = k * L.stepK;
             if (kk < 0 || kk > 0x7fffffff) { why = "the stepped guard's constant does not fit"; return false; }
-            if (kk <= 32767) out.add("MVK", std::to_string(kk), klo);
-            else { out.add("MVKL", std::to_string(kk), klo); out.add("MVKH", std::to_string(kk), klo); }
+            if (kk <= 32767) out.add("MVK", K(kk), R(klo));
+            else { out.add("MVKL", K(kk), R(klo)); out.add("MVKH", K(kk), R(klo)); }
             return true;
         }
-        out.add("MVK", std::to_string(k), tm);
-        if (!out.legal(why, "MPY32U", slo, tm, khi + ":" + klo)) return false;
+        out.add("MVK", K(k), R(tm));
+        if (!out.legal(why, "MPY32U", R(slo), R(tm), RR(khi, klo))) return false;
         if (!L.wide) {
-            if (!out.legal(why, "CMPGT", "0", klo, tb) || !out.legal(why, "XOR", "1", tb, tb)) return false;
-            if (!out.legal(why, "CMPEQ", "0", khi, L.P) || !out.legal(why, "AND", L.P, tb, L.P)) return false;
-            out.add("B", L.label, "", "", "!" + L.P);
+            if (!out.legal(why, "CMPGT", K(0), R(klo), R(tb)) || !out.legal(why, "XOR", K(1), R(tb), R(tb))) return false;
+            if (!out.legal(why, "CMPEQ", K(0), R(khi), R(P)) || !out.legal(why, "AND", R(P), R(tb), R(P))) return false;
+            out.branch(L.label, P, true);
             return true;
         }
-        if (!out.legal(why, "MPY32", shi, tm, t2) || !out.legal(why, "ADD", t2, khi, khi)) return false;
-        if (!out.legal(why, "SHRU", shi, "15", t2) || !out.legal(why, "CMPEQ", "0", t2, L.P)) return false;
-        out.add("B", L.label, "", "", "!" + L.P);
+        if (!out.legal(why, "MPY32", R(shi), R(tm), R(t2)) || !out.legal(why, "ADD", R(t2), R(khi), R(khi))) return false;
+        if (!out.legal(why, "SHRU", R(shi), K(15), R(t2)) || !out.legal(why, "CMPEQ", K(0), R(t2), R(P))) return false;
+        out.branch(L.label, P, true);
         return true;
     };
     // d = n - (khi:klo), into dlo (and dhi), then the overflow check: n negative and the difference not.
-    auto minus = [&](const std::string &dlo, const std::string &dhi) -> bool {
+    auto minus = [&](int dlo, int dhi) -> bool {
         if (!L.wide) {
-            if (!out.legal(why, "SUB", nlo, klo, dlo)) return false;
-            if (!out.legal(why, "CMPGT", "0", nlo, L.P) || !out.legal(why, "CMPGT", "0", dlo, tb)) return false;
+            if (!out.legal(why, "SUB", R(nlo), R(klo), R(dlo))) return false;
+            if (!out.legal(why, "CMPGT", K(0), R(nlo), R(P)) || !out.legal(why, "CMPGT", K(0), R(dlo), R(tb))) return false;
         } else {
-            if (!out.legal(why, "CMPLTU", nlo, klo, tb) || !out.legal(why, "SUB", nlo, klo, dlo)) return false;
-            if (!out.legal(why, "SUB", nhi, khi, dhi) || !out.legal(why, "SUB", dhi, tb, dhi)) return false;
-            if (!out.legal(why, "CMPGT", "0", nhi, L.P) || !out.legal(why, "CMPGT", "0", dhi, tb)) return false;
+            if (!out.legal(why, "CMPLTU", R(nlo), R(klo), R(tb)) || !out.legal(why, "SUB", R(nlo), R(klo), R(dlo))) return false;
+            if (!out.legal(why, "SUB", R(nhi), R(khi), R(dhi)) || !out.legal(why, "SUB", R(dhi), R(tb), R(dhi))) return false;
+            if (!out.legal(why, "CMPGT", K(0), R(nhi), R(P)) || !out.legal(why, "CMPGT", K(0), R(dhi), R(tb))) return false;
         }
-        if (!out.legal(why, "XOR", "1", tb, tb) || !out.legal(why, "AND", L.P, tb, L.P)) return false;
-        out.add("B", L.label, "", "", L.P);
+        if (!out.legal(why, "XOR", K(1), R(tb), R(tb)) || !out.legal(why, "AND", R(P), R(tb), R(P))) return false;
+        out.branch(L.label, P, false);
         return true;
     };
-    if (!times(m) || !minus(moved[0], L.wide ? moved[1] : "")) return false;
+    if (!times(m) || !minus(moved[0], L.wide ? moved[1] : kNoReg)) return false;
     if (g != m && !times(g)) return false;
     if (!minus(klo, khi)) return false;
     // The entry test over the bound n - Kg, then the branch past the copy where it fails.
     if (!steppedTest(L, out, klo, khi, xt, xtb, why)) return false;
-    out.add("B", L.label, "", "", skip);
+    out.branch(L.label, P, !L.negated);
     return true;
 }
 
@@ -1296,7 +1311,7 @@ bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) 
         }
     std::string X;
     if (!L.stepped) {
-        for (std::size_t k = 0; k < pool.size() && X.empty(); k++) if (sideOf(pool[k]) == sideOf(L.C)) X = pool[k];
+        for (std::size_t k = 0; k < pool.size() && X.empty(); k++) if (sideOf(pool[k]) == sideOfR(L.CR)) X = pool[k];
         if (X.empty()) { why = "no free register for the count"; return false; }
         pool.erase(std::find(pool.begin(), pool.end(), X));
     }
@@ -1306,19 +1321,24 @@ bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) 
         std::string f;
         for (int pass = 0; pass < 2 && f.empty(); pass++)
             for (std::size_t k = 0; k < pool.size() && f.empty(); k++)
-                if (pass == 1 || sideOf(pool[k]) == sideOf(L.bounds[w])) { f = pool[k]; pool.erase(pool.begin() + static_cast<long>(k)); }
+                if (pass == 1 || sideOf(pool[k]) == sideOfR(L.boundsR[w])) { f = pool[k]; pool.erase(pool.begin() + static_cast<long>(k)); }
         if (f.empty()) { why = "no free register for the moved bound"; return false; }
         moved.push_back(f);
     }
     // The test's scratch registers, beside the counter so that only the bound crosses: taken before the renaming can.
     std::string xt, xtb;
-    if (L.stepped && (L.wide || sideOf(L.P) != sideOf(L.ivs[0]))) {
-        xt = takeFree(pool, sideOf(L.ivs[0]), false);
-        if (L.wide) xtb = takeFree(pool, sideOf(L.ivs[0]), false);
-        if (xt.empty() || (L.wide && xtb.empty()) || sideOf(xt) != sideOf(L.ivs[0]) || (L.wide && sideOf(xtb) != sideOf(L.ivs[0]))) {
+    if (L.stepped && (L.wide || sideOfReg(L.PR) != sideOfReg(L.ivsR[0]))) {
+        const char beside = sideOfR(L.ivsR[0]);
+        xt = takeFree(pool, beside, false);
+        if (L.wide) xtb = takeFree(pool, beside, false);
+        if (xt.empty() || (L.wide && xtb.empty()) || sideOf(xt) != beside || (L.wide && sideOf(xtb) != beside)) {
             why = "no free register beside the counter for the stepped test"; return false;
         }
     }
+    // What the emitters take: the count's register, the moved bound's and the scratch ones as numbers.
+    const int XR = regNumber(X), xtR = regNumber(xt), xtbR = regNumber(xtb);
+    std::vector<int> movedR;
+    for (std::size_t w = 0; w < moved.size(); w++) movedR.push_back(regNumber(moved[w]));
     for (std::size_t k = 0; k < L.testBody.size(); k++) {
         Line &l = L.body[L.testBody[k]];
         std::vector<std::string> ops = l.ops;
@@ -1462,28 +1482,28 @@ bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) 
         m = 2 * u - 2 - d; g = u + S - 2;
     }
     if (tracing()) std::fprintf(stderr, "pipe %s: II=%d S=%d u=%d seq=%d ops=%zu%s\n", L.label.c_str(), II, S, u, seq, L.nodes.size(), L.stepped ? (L.wide ? " stepped wide" : " stepped") : "");
-    if (L.stepped) { if (!steppedGuard(L, out, moved, xt, xtb, free, m, g, why)) return false; }
+    if (L.stepped) { if (!steppedGuard(L, out, movedR, xtR, xtbR, free, m, g, why)) return false; }
     // The guard: X = (n - i [+1] - (S-1)) >> log2 u, the unrolled rounds; none, and the loop is left as written.
-    const bool crossBoth = !L.stepped && !L.boundConst && sideOf(L.bound) != sideOf(X) && sideOf(L.iv) != sideOf(X);
+    const bool crossBoth = !L.stepped && !L.boundConst && sideOfReg(L.boundR) != sideOfReg(XR) && sideOfReg(L.ivR) != sideOfReg(XR);
     if (L.stepped) { }
     else if (L.boundConst) {
-        if (L.boundK >= -32768 && L.boundK <= 32767) out.add("MVK", std::to_string(L.boundK), X);
-        else { out.add("MVKL", std::to_string(L.boundK), X); out.add("MVKH", std::to_string(L.boundK), X); }
-        out.add("SUB", X, L.iv, X);
-    } else if (crossBoth) { out.add("MV", L.bound, X); out.add("SUB", X, L.iv, X); }
-    else out.add("SUB", L.bound, L.iv, X);
+        if (L.boundK >= -32768 && L.boundK <= 32767) out.add("MVK", K(L.boundK), R(XR));
+        else { out.add("MVKL", K(L.boundK), R(XR)); out.add("MVKH", K(L.boundK), R(XR)); }
+        out.add("SUB", R(XR), R(L.ivR), R(XR));
+    } else if (crossBoth) { out.add("MV", R(L.boundR), R(XR)); out.add("SUB", R(XR), R(L.ivR), R(XR)); }
+    else out.add("SUB", R(L.boundR), R(L.ivR), R(XR));
     if (!L.stepped) {
-        if (L.plusOne) out.add("ADD", "1", X, X);
-        if (S > 1) { if (S - 1 <= 31) out.add("SUB", X, std::to_string(S - 1), X); else out.add("ADDK", std::to_string(1 - S), X); }
+        if (L.plusOne) out.add("ADD", K(1), R(XR), R(XR));
+        if (S > 1) { if (S - 1 <= 31) out.add("SUB", R(XR), K(S - 1), R(XR)); else out.add("ADDK", K(1 - S), R(XR)); }
         int log2u = 0;
         while ((1 << log2u) < u) log2u++;
-        if (log2u) out.add("SHR", X, std::to_string(log2u), X);
-        out.add("CMPGT", "1", X, L.P);
-        out.add("B", L.label, "", "", L.P);
-        out.add("SUB", X, "1", L.C);
+        if (log2u) out.add("SHR", R(XR), K(log2u), R(XR));
+        out.add("CMPGT", K(1), R(XR), R(L.PR));
+        out.branch(L.label, L.PR, false);
+        out.add("SUB", R(XR), K(1), R(L.CR));
     }
     for (std::size_t x = 0; x < units.size(); x++)
-        if (units[x].q > 1 && units[x].carried) for (std::size_t h = 0; h < units[x].regs.size(); h++) out.add("MV", units[x].regs[h], units[x].copies[h][static_cast<std::size_t>(units[x].q - 1)]);
+        if (units[x].q > 1 && units[x].carried) for (std::size_t h = 0; h < units[x].regs.size(); h++) out.add("MV", R(regNumber(units[x].regs[h])), R(regNumber(units[x].copies[h][static_cast<std::size_t>(units[x].q - 1)])));
     // The prologue, the kernel of u rounds with its branch, and the epilogue - every op of every iteration once.
     const std::size_t n = L.nodes.size();
     std::vector<std::vector<Turn> > cyc;
@@ -1500,8 +1520,8 @@ bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) 
             std::vector<Turn> p;
             for (std::size_t o = 0; o < n; o++) if (t[o] % II == s) p.push_back(spelled(L, units, unitOf, firstWrite, o, S - 1 + c - t[o] / II));
             if (c * II + s == u * II - 6) {
-                p.push_back(turnOf("B", std::vector<std::string>(1, L.label + "$pipe"), L.stepped ? (L.negated ? "!" + L.P : L.P) : L.C));
-                if (!L.stepped) p.push_back(turnOf("ADD", Code::opsOf("-1", L.C, L.C)));
+                p.push_back(turnOf(entry("B", MOperand(L.label + "$pipe"), MOperand(), MOperand(), L.stepped ? L.PR : L.CR, L.stepped && L.negated)));
+                if (!L.stepped) p.push_back(turnOf(entry("ADD", K(-1), R(L.CR), R(L.CR))));
             }
             cyc.push_back(p);
         }
@@ -1517,10 +1537,10 @@ bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) 
     emitCycles(out, cyc);
     // The last pipelined iteration is u*q'+S-2, so its names are fixed: copied back, then the test the loop's own way.
     for (std::size_t x = 0; x < units.size(); x++)
-        if (units[x].q > 1 && units[x].exits && modq(S - 2, units[x].q) != 0) for (std::size_t h = 0; h < units[x].regs.size(); h++) out.add("MV", units[x].copies[h][static_cast<std::size_t>(modq(S - 2, units[x].q))], units[x].regs[h]);
-    if (L.stepped) { if (!steppedTest(L, out, L.bounds[0], L.wide ? L.bounds[1] : "", xt, xtb, why)) return false; }
+        if (units[x].q > 1 && units[x].exits && modq(S - 2, units[x].q) != 0) for (std::size_t h = 0; h < units[x].regs.size(); h++) out.add("MV", R(regNumber(units[x].copies[h][static_cast<std::size_t>(modq(S - 2, units[x].q))])), R(regNumber(units[x].regs[h])));
+    if (L.stepped) { if (!steppedTest(L, out, L.boundsR[0], L.wide ? L.boundsR[1] : kNoReg, xtR, xtbR, why)) return false; }
     else out.same(v, L.cmp);
-    out.add("B", L.exitName, "", "", L.negated ? L.P : "!" + L.P);
+    out.branch(L.exitName, L.PR, !L.negated);
     return true;
 }
 
