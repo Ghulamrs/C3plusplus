@@ -688,3 +688,16 @@ m6-l (the packetiser reads typed operands), m5-dbg (tests/debug.sh; DWARF ranges
   `renamed` and judge the result by `crossings`/`unitsFor` on a rebuilt line), `numberValues` and `foldAddressing`
   stay on text; the stream is still made from lines per fold and read back (`foldStream`), not held across `rounds`.
   Design step 3's step (3) - the loop's registers as operands - not begun.
+- **Gate** (Linux ~/m6o, a copy of ~/m6n with the changed files laid over; REF main 0e8877e6's compiler in ~/w4g;
+  Windows work\m6o against work\m6n's cxx3-msvc.exe). `identical.sh ARCHS=tms6747` against main's compiler: -O0 and
+  -O2 1,736 compared, 0 differ; -O0 -g 868 compared, 0 differ once the tree's own path in `.dwpsn` is normalised (91
+  raw, all `/w4g/` against `/m6o/`). Windows: tests/cases at -O0, -O1, -O2 by md5, 3,669 outputs (2,601 texts, 1,068
+  refused alike), 0 differ - plain and `CXX1_C6X_TEXTFOLD=1`. Census at -O2 (`CXX1_C6X_MIR=1`, both boxes): **0
+  `c6x-live`**, 0 `c6x-live-unread`, 0 `c6x-fold`, 0 `c6x-body`, 0 `c6x-loop-lines`, 0 `c6x-node`, 0 to the text
+  pipeliner or pass; 6,835 selected functions, 106 with kernels (2,727 placed entries). tests/tms6747.sh SHARD=k/3
+  CYCLES=1 SIM=0 at -O2: 814 passed, 0 failed, 3 not run on vm6747; **192,009,106 cycles** (192.0 M, unchanged).
+  tests/g-same.sh 867 same, 0 differ, 0 broken; asm6x.sh 833 objects, 0 failed, at -O0 and -O2. cl /W4 /WX clean.
+  Exclusions 129 sites 0 uncited 0 stale (SSA lowering 554/95); comments 0 over; memory gate rc 0; ast-residue rc 0;
+  ide/generate.py --check up to date. Not run (the coordinator's): winpass, make test, ssa.sh.
+- **Owed:** `forwardMoves`, `forwardPairMoves`, `numberValues`, `foldAddressing` on the stream; the stream held
+  across `rounds` rather than made per fold; the loop's registers as operands (round 5's owed list stands).
