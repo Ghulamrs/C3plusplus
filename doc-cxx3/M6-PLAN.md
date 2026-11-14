@@ -878,3 +878,52 @@ tidyJumps on entries; `c6x-front` census 0).
   827 / 0. Mac run.sh -O0 and -O2 1215 / 0. Linux make test rc 0 (run 1217/0, emit 3399/0, typed 860/0, ssa 890/0,
   c90 447/0, exclusions 0/0, comments 0). tms6747 (vm6747, SIM=0, three shards): 814 passed, 0 failed at -O0
   (393.2 M cycles) and -O2 (**192.0 M**, unchanged); asm6x 833 / 0 at -O0 and -O2.
+
+### M6c, round 11 (the emitters write entries, the address walk reads operands), 2026-11-14, lane m6t
+
+- **The order, planned first.** What must change together: a kernel written as entries needs every emitter of the
+  counted loop on one sink at once (a guard as a line beside a turn as an entry is two streams), so (3) is one step;
+  `addressForms` with `evalLine` is a second, alone, its answer held against the lines'. The loop's registers as
+  numbers (1) touch every recogniser, `renameWebs`, the units and both emitters together - they follow (3), which
+  takes the last reader of the emitters' `Line`s away, and were not begun.
+- **Landed** (from m6-s 32b56531): **the emitters write entries.** `Code` (C6xPipe.cpp) is what `pipeline`,
+  `steppedTest`, `steppedGuard` and `emitCycles` write: lines for a loop read from text; on the stream an `MStream` -
+  a guard, count or copy an entry built from its parts (`add`; `legal`, which is `legalForm` on the entry: the two
+  sources commuted where both cross, `crossings` and `unitsFor` asked of the operands), a turn the body's renamed
+  entry itself (`spelled` returns it, a `Turn`), the idle cycles, the kernel's label, its branch and its count's step
+  entries placed as they are put (`par`, `packed`), and the loop's own compare the stream's entry (`same`). **A kernel
+  no longer goes back through `streamOf`**: `pipelineLoops(MStream&)` inserts `Code::m`. The window's turns
+  (`emitWindow`, `emitClosed`, `giveRegisters`) are still composed as lines over `%n` names and enter the sink by
+  their fields (`push_back`). `CXX1_C6X_MIR=1` composes the lines too, reads them as round 10 did and names a loop
+  whose entries differ, or a guard whose form or verdict does (`c6x-emit`). **The address walk reads operands**:
+  `addressForms` and `evalLine` read `Ins` - the mnemonic, the first two operands as numbers or names, reads and
+  writes, the stepped register and its step, the access's base, offset or index - made from a line's text off the
+  stream and from the entry's operands on it (`Loop::addresses`; `preM` is the preheader as entries). The census
+  walks the lines too and names an access whose form differs (`c6x-addr`). src/ +311 -124 lines (C6xPipe.cpp 2,282 ->
+  2,469).
+- **Where it stopped.** Item (1) not begun: `Loop`'s `iv`, `bound`, `P`, `C`, `used`, `written`, `predicated`, the webs
+  and the units are names, and `Form`'s terms with them. Of (2), `Window`'s body is lines. Of (3),
+  `pipelineLoops(MStream&)` still reads the stream through `linesOf` (`Src::v` for an entry not `modelled`, `namesOf`'s
+  liveness, the window's recogniser and emitters). **What still reads `Line`** on a selected function: the parse of
+  the printed text; the loop passes' views and composed edits (`LoopStream`); `Folding`'s views and the table readers
+  where an entry is not `modelled`; in the pipeliner `Src`'s lines beside the stream and `namesOf`, `Loop::body`/`pre`
+  kept beside `bodyM`/`preM` (the traces, `checkBody`, `testBody`'s edit), the window whole
+  (`Window::body`, `trackPointer`, `affineTurn`, `emitWindow`, `emitClosed`, `giveRegisters`); `rounds(std::vector<Line>&)`
+  where a function is not held; and the census copies under `CXX1_C6X_MIR=1`.
+- **Gate** (Linux ~/m6t, a copy of ~/m6s with the changed files laid over; REF main 85fe99fe's compiler in its kept
+  tree ~/w7ref; Windows work\m6t against work\m6s's cxx3-msvc.exe; on the final source, 4aa91c46).
+  `identical.sh ARCHS=tms6747` against main's compiler: -O0 and -O2 1,736 compared, 0 differ; -O0 -g 868 compared, 0
+  differ once the tree's own path is normalised (91 raw, all `/w7ref/` against `/m6t/`). Windows: tests/cases at -O0,
+  -O1, -O2 by md5, 3,669 outputs (2,601 texts, 1,068 refused alike), 0 differ. Census at -O2 (`CXX1_C6X_MIR=1`, both
+  boxes): **0 `c6x-emit`, 0 `c6x-addr`**, 0 `c6x-spell`, 0 `c6x-loop-edit`, 0 `c6x-loops`, 0 `c6x-loop-unread`, 0
+  `c6x-front`, 0 `c6x-fold`, 0 `c6x-fold-edit`, 0 `c6x-live`, 0 `c6x-live-unread`, 0 `c6x-body`, 0 `c6x-loop-lines`, 0
+  `c6x-recog`, 0 `c6x-node`, 0 to the text pipeliner or pass; 6,835 selected functions, 106 with kernels (2,727 placed
+  entries). tests/tms6747.sh SHARD=k/3 CYCLES=1 SIM=0 at -O2: 814 passed, 0 failed, 3 not run on vm6747;
+  **192,009,106 cycles** (192.0 M, unchanged). tests/g-same.sh 867 same, 0 differ, 0 broken; asm6x.sh 833 objects, 0
+  failed, at -O0 and -O2. cl /W4 /WX clean. Exclusions 129 sites 0 uncited 0 stale (SSA lowering 554/95); comments 0
+  over; memory gate rc 0; ast-residue rc 0; ide/generate.py --check up to date. Not run (the coordinator's): winpass,
+  make test, ssa.sh.
+- **Owed:** item (1) whole (the loop's registers, webs and units as numbers; `Form`'s terms); the window on entries
+  (`Window::body`, its emitters over `%n` names); `Src` without the lines, so `pipelineLoops(MStream&)` drops
+  `linesOf` and `Loop::body`/`pre` go; the loop passes composing their edits as entries; the selector's stream handed
+  in unprinted; then step 4.
