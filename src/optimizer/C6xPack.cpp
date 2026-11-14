@@ -958,6 +958,336 @@ void foldAddressing(MStream &s, bool index) {
     }
 }
 
+namespace {
+
+std::string opText(const MInst &x, int k) { return k < x.operands ? x.op[k].str() : std::string(); }
+bool isInstr(const MInst &x, const char *m) { return x.kind == MInst::Instruction && x.m.str() == m; }
+MInst made(const std::string &m, const MOperand &a, const MOperand &b = MOperand()) { return MInst(m.c_str(), a, b); }
+void rwOf(const MInst &x, std::vector<std::string> &reads, std::vector<std::string> &writes) {
+    if (modelled(x)) readsAndWrites(x, reads, writes); else readsAndWrites(lineOf(x), reads, writes);
+}
+
+// C6xSched's `foldCalls` on entries: `MVKL L, B3; MVKH L, B3; B f; L:` is `CALLP f, B3`.
+void foldCalls(MStream &s) {
+    MStream out;
+    for (std::size_t i = 0; i < s.size(); i++) {
+        std::string name;
+        if (i + 3 < s.size() && isInstr(s[i], "MVKL") && isInstr(s[i + 1], "MVKH") && isInstr(s[i + 2], "B") &&
+            s[i].pred == kNoReg && s[i + 1].pred == kNoReg && s[i + 2].pred == kNoReg &&
+            s[i].operands == 2 && s[i + 1].operands == 2 && opText(s[i], 1) == "B3" && opText(s[i + 1], 1) == "B3" &&
+            opText(s[i], 0) == opText(s[i + 1], 0) && labelLike(s[i + 3], name) && name == opText(s[i], 0) &&
+            s[i + 2].operands != 0 && !sideOf(opText(s[i + 2], 0))) {
+            out.push_back(made("CALLP", s[i + 2].op[0], MOperand("B3")));
+            i += 2;
+            continue;
+        }
+        out.push_back(s[i]);
+    }
+    s.swap(out);
+}
+
+// C6xSched's `foldMvk` on entries: MVKL then MVKH of a constant in sixteen signed bits is one MVK.
+void foldMvk(MStream &s) {
+    for (std::size_t i = 0; i + 1 < s.size(); i++) {
+        const MInst &a = s[i], &b = s[i + 1];
+        if (!isInstr(a, "MVKL") || !isInstr(b, "MVKH") || a.operands != 2 || b.operands != 2) continue;
+        if (opText(a, 0) != opText(b, 0) || opText(a, 1) != opText(b, 1) || !isNumber(opText(a, 0))) continue;
+        const long k = std::atol(opText(a, 0).c_str());
+        if (k < -32768 || k > 32767) continue;
+        s[i] = made("MVK", a.op[0], a.op[1]);
+        s.erase(s.begin() + static_cast<long>(i) + 1);
+    }
+}
+
+// C6xSched's `foldFrame` on entries, its liveness held as computed: a local's address built and used once is `*-A15(k)`.
+void foldFrame(MStream &s, LiveSpan &live) {
+    for (std::size_t i = 0; i + 1 < s.size(); i++) {
+        const MInst &x = s[i];
+        if (x.kind != MInst::Instruction || (x.m.str() != "SUB" && x.m.str() != "SUBAW") || x.operands != 3 || opText(x, 0) != "A15") continue;
+        const std::string reg = opText(x, 2), k1 = opText(x, 1);
+        long k;
+        std::size_t first = i;
+        if (x.m.str() == "SUBAW") { if (!isNumber(k1)) continue; k = 4 * std::atol(k1.c_str()); }
+        else if (isNumber(k1)) k = std::atol(k1.c_str());
+        else if (k1 == "A0" && i > 0 && isInstr(s[i - 1], "MVK") && s[i - 1].operands == 2 && opText(s[i - 1], 1) == "A0" &&
+                 isNumber(opText(s[i - 1], 0)) && deadAfter(s, live.out, i, "A0")) {
+            k = std::atol(opText(s[i - 1], 0).c_str());
+            first = i - 1;
+        } else continue;
+        const MInst use = s[i + 1];
+        if (use.kind != MInst::Instruction || use.operands != 2 || use.pred != kNoReg) continue;
+        const std::string m = use.m.str();
+        const bool load = startsWith(m, "LD") && opText(use, 0) == "*" + reg;
+        const bool store = isStore(m) && opText(use, 1) == "*" + reg;
+        if (!load && !store) continue;
+        const int size = accessSize(m);
+        if (k < 0 || k % size != 0) continue;
+        std::vector<std::string> into;
+        if (load) registersIn(opText(use, 1), into);
+        if (!has(into, reg) && !deadAfter(s, live.out, i + 1, reg)) continue;
+        const bool far = k / size > 31;
+        if (far && (first == i || k / size > 32767)) continue;
+        const MOperand mem(far ? std::string("*-A15[A0]") : "*-A15(" + std::to_string(k) + ")");
+        s[i + 1] = load ? made(m, mem, use.op[1]) : made(m, use.op[0], mem);
+        live.in[i + 1] = live.out[i + 1] = ~0ull;
+        if (far) {
+            s[first] = made("MVK", MOperand(static_cast<long long>(k / size)), MOperand("A0"));
+            live.in[first] = live.out[first] = ~0ull;
+            eraseAt(s, live, i);
+        } else {
+            for (std::size_t n = first; n <= i; n++) eraseAt(s, live, first);
+            i = first;
+        }
+    }
+}
+
+bool isPush(const MStream &s, std::size_t i) {
+    if (i + 1 >= s.size() || s[i].str() != "\tSUB\tB15, 8, B15\n" || s[i + 1].kind != MInst::Instruction || !isStore(s[i + 1].m.str())) return false;
+    const std::string m = s[i + 1].m.str(), at = opText(s[i + 1], 1);
+    return s[i + 1].operands == 2 && ((at == "*B15" && (m == "STW" || m == "STDW")) || (at == "*+B15(4)" && m == "STW"));
+}
+bool isPop(const MStream &s, std::size_t i) {
+    if (i + 1 >= s.size() || !(isInstr(s[i], "LDW") || isInstr(s[i], "LDDW")) || s[i].operands != 2) return false;
+    const std::string at = opText(s[i], 0);
+    return (at == "*B15" || (at == "*+B15(4)" && s[i].m.str() == "LDW")) && s[i + 1].str() == "\tADD\tB15, 8, B15\n";
+}
+
+// C6xSched's `foldPushPop` on entries: a push popped in its block, B15 untouched between, keeps its value in A16-A31.
+void foldPushPop(MStream &s, const LiveSpan &live) {
+    std::vector<std::size_t> open;
+    std::vector<std::pair<std::size_t, std::size_t> > pairs;
+    for (std::size_t i = 0; i < s.size(); i++) {
+        if (s[i].kind != MInst::Instruction || isBranch(s[i].m.str())) { open.clear(); continue; }
+        if (isPush(s, i)) { open.push_back(i); i++; continue; }
+        if (isPop(s, i)) {
+            if (!open.empty()) { pairs.push_back(std::make_pair(open.back(), i)); open.pop_back(); }
+            i++;
+            continue;
+        }
+        std::vector<std::string> reads, writes;
+        rwOf(s[i], reads, writes);
+        if (has(reads, "B15") || has(writes, "B15")) open.clear();
+    }
+    std::vector<bool> drop(s.size(), false);
+    for (std::size_t p = 0; p < pairs.size(); p++) {
+        const std::size_t push = pairs[p].first, pop = pairs[p].second;
+        int depth = 0;
+        for (std::size_t q = 0; q < pairs.size(); q++) if (pairs[q].first < push && pairs[q].second > pop) depth++;
+        std::string lo, hi;
+        for (; depth < 8 && lo.empty(); depth++) {
+            const std::string l = "A" + std::to_string(16 + 2 * depth), h = "A" + std::to_string(17 + 2 * depth);
+            bool ok = deadAfter(s, live.out, push, l) && deadAfter(s, live.out, push, h);
+            for (std::size_t k = push + 1; k <= pop + 1 && ok; k++) {
+                std::vector<std::string> r, w;
+                rwOf(s[k], r, w);
+                if (has(r, l) || has(w, l) || has(r, h) || has(w, h)) ok = false;
+            }
+            if (ok) { lo = l; hi = h; }
+        }
+        if (lo.empty()) continue;
+        const std::string src = opText(s[push + 1], 0), dst = opText(s[pop], 1);
+        if (s[push + 1].m.str() == "STDW") {      // the pair's halves take the two stack entries
+            s[push] = made("MV", MOperand(src.substr(src.find(':') + 1)), MOperand(lo));
+            s[push + 1] = made("MV", MOperand(src.substr(0, src.find(':'))), MOperand(hi));
+            s[pop] = made("MV", MOperand(lo), MOperand(dst.substr(dst.find(':') + 1)));
+            s[pop + 1] = made("MV", MOperand(hi), MOperand(dst.substr(0, dst.find(':'))));
+            continue;
+        }
+        s[push + 1] = made("MV", s[push + 1].op[0], MOperand(lo));
+        s[pop] = made("MV", MOperand(lo), s[pop].op[1]);
+        drop[push] = drop[pop + 1] = true;
+    }
+    MStream out;
+    for (std::size_t i = 0; i < s.size(); i++) if (!drop[i]) out.push_back(s[i]);
+    s.swap(out);
+}
+
+// C6xSched's `threadPredicates` on entries: a branch to a test it has just made goes where that test goes.
+void threadPredicates(MStream &s) {
+    std::map<std::string, std::size_t> at;
+    for (std::size_t i = 0; i < s.size(); i++) { std::string name; if (labelLike(s[i], name)) at[name] = i; }
+    for (std::size_t i = 0; i < s.size(); i++) {
+        MInst &b = s[i];
+        if (!isInstr(b, "B") || b.pred == kNoReg || b.operands == 0 || !at.count(opText(b, 0))) continue;
+        const MInst *mv = i > 0 && isInstr(s[i - 1], "MV") && s[i - 1].operands == 2 && s[i - 1].pred == kNoReg &&
+                          opText(s[i - 1], 1) == regName(b.pred) ? &s[i - 1] : nullptr;
+        for (int hops = 0; hops < 8; hops++) {
+            std::size_t j = at[opText(b, 0)] + 1;
+            std::string name;
+            while (j < s.size() && labelLike(s[j], name)) j++;
+            if (j >= s.size() || s[j].kind != MInst::Instruction) break;
+            if (mv != nullptr && isInstr(s[j], "MV") && s[j].operands == 2 && opText(s[j], 0) == opText(*mv, 0) &&
+                opText(s[j], 1) == opText(*mv, 1) && s[j].pred == kNoReg) j++;
+            if (j >= s.size() || !isInstr(s[j], "B") || s[j].pred != b.pred || s[j].predNot != b.predNot || s[j].operands == 0 ||
+                !at.count(opText(s[j], 0)) || opText(s[j], 0) == opText(b, 0)) break;
+            const MOperand to = s[j].op[0];
+            for (int k = 1; k < b.operands; k++) b.op[k] = MOperand();
+            b.op[0] = to;
+            b.operands = 1;
+        }
+    }
+}
+
+// C6xSched's `dropUnnamedLabels` on entries: a label of the backend's own flow no branch names ends no block.
+void dropUnnamedLabels(MStream &s) {
+    std::set<std::string> named;
+    for (std::size_t i = 0; i < s.size(); i++)
+        if (s[i].kind == MInst::Instruction) for (int o = 0; o < s[i].operands; o++) named.insert(opText(s[i], o));
+    MStream out;
+    for (std::size_t i = 0; i < s.size(); i++) {
+        std::string name;
+        if (labelLike(s[i], name) && (passThroughName(name, named) || (startsWith(name, "L.return.") && !named.count(name)))) continue;
+        out.push_back(s[i]);
+    }
+    s.swap(out);
+}
+
+}   // namespace
+
+// The passes before the first `rounds` on a selected function's stream (C6xMir.h), in c6xSchedule's order.
+void foldFront(MStream &s, bool thread, bool labels) {
+    foldCalls(s);
+    foldMvk(s);
+    LiveSpan live;
+    liveness(s, live.in, live.out);
+    foldFrame(s, live);
+    liveness(s, live.in, live.out);
+    foldPushPop(s, live);
+    if (thread) threadPredicates(s);
+    if (labels) dropUnnamedLabels(s);
+}
+
+namespace {
+
+void branchTo(MInst &b, const MOperand &to) {
+    for (int k = 1; k < b.operands; k++) b.op[k] = MOperand();
+    b.op[0] = to;
+    b.operands = 1;
+}
+bool callOn(const MInst &x, const std::set<std::string> &labels) { return isCallTo(x.m.str(), opText(x, 0), labels); }
+std::set<std::string> labelsOf(const MStream &s) {
+    std::set<std::string> labels;
+    for (std::size_t i = 0; i < s.size(); i++) { std::string name; if (labelLike(s[i], name)) labels.insert(name); }
+    return labels;
+}
+
+// C6xSched's `rotateLoops` on entries: a jump to a loop's test is the test itself, inverted, to the body's label.
+void rotateLoops(MStream &s) {
+    std::map<std::string, std::size_t> at;
+    for (std::size_t i = 0; i < s.size(); i++) { std::string name; if (labelLike(s[i], name)) at[name] = i; }
+    MStream out;
+    std::set<std::string> rotated;
+    for (std::size_t i = 0; i < s.size(); i++) {
+        const MInst &b = s[i];
+        std::string next;
+        bool taken = false;
+        if (isInstr(b, "B") && b.pred == kNoReg && at.count(opText(b, 0)) && i + 1 < s.size() && labelLike(s[i + 1], next)) {
+            std::size_t h = at[opText(b, 0)], e = h + 1;
+            while (e < s.size() && s[e].kind == MInst::Instruction && !isBranch(s[e].m.str())) e++;
+            if (e < s.size() && e - h <= 17 && isInstr(s[e], "B") && s[e].pred != kNoReg && opText(s[e], 0) == next && (i < h || i > e)) {
+                for (std::size_t k = h + 1; k < e; k++) out.push_back(s[k]);
+                MInst r("B", MOperand(opText(b, 0) + "$rot"));
+                r.pred = s[e].pred;
+                r.predNot = !s[e].predNot;
+                out.push_back(r);
+                rotated.insert(opText(b, 0));
+                taken = true;
+            }
+        }
+        if (!taken) out.push_back(b);
+    }
+    s.swap(out);
+    for (std::size_t i = 0; i < s.size(); i++) {
+        std::string name;
+        if (!labelLike(s[i], name) || !rotated.count(name)) continue;
+        std::size_t e = i + 1;
+        while (!isInstr(s[e], "B")) e++;
+        MStream one;
+        read(name + "$rot:\n", one);
+        s.insert(s.begin() + static_cast<long>(e) + 1, one[0]);
+    }
+}
+
+// C6xSched's `tidyJumps` on entries: what follows a jump unreached, a jump to a jump taken through, a jump to the next gone.
+void tidyJumps(MStream &s) {
+    const std::set<std::string> labels = labelsOf(s);
+    MStream out;
+    for (std::size_t i = 0; i < s.size(); i++) {
+        out.push_back(s[i]);
+        if (!isInstr(s[i], "B") || s[i].pred != kNoReg || callOn(s[i], labels)) continue;
+        while (i + 1 < s.size() && s[i + 1].kind == MInst::Instruction) i++;
+    }
+    s.swap(out);
+    std::map<std::string, std::string> onward;
+    for (std::size_t i = 0; i < s.size(); i++) {
+        std::string name, other;
+        if (!labelLike(s[i], name)) continue;
+        std::size_t j = i + 1;
+        while (j < s.size() && labelLike(s[j], other)) j++;
+        if (j < s.size() && isInstr(s[j], "B") && s[j].pred == kNoReg && !callOn(s[j], labels) && !sideOf(opText(s[j], 0)))
+            onward[name] = opText(s[j], 0);
+    }
+    for (std::size_t i = 0; i < s.size(); i++) {
+        if (!isInstr(s[i], "B") || sideOf(opText(s[i], 0)) || callOn(s[i], labels)) continue;
+        std::string t = opText(s[i], 0);
+        for (int hops = 0; hops < 8 && onward.count(t) && onward[t] != t; hops++) t = onward[t];
+        if (t != opText(s[i], 0)) branchTo(s[i], MOperand(t));
+    }
+    out.clear();
+    for (std::size_t i = 0; i < s.size(); i++) {
+        if (isInstr(s[i], "B") && !sideOf(opText(s[i], 0)) && !callOn(s[i], labels)) {
+            std::size_t j = i + 1;
+            bool next = false;
+            std::string name;
+            for (; j < s.size() && s[j].kind != MInst::Instruction; j++) if (labelLike(s[j], name) && name == opText(s[i], 0)) next = true;
+            if (!next && j == s.size() && isReturnTo(s[i].m.str(), opText(s[i], 0), labels)) next = true;
+            if (next) continue;
+        }
+        out.push_back(s[i]);
+    }
+    s.swap(out);
+}
+
+}   // namespace
+
+// C6xSched's `predicateArms` on entries: `[P] B L; i1..ik; B M; L:` is `[!P] i1..ik; [!P] B M; L:`, k at most four.
+bool predicateArms(MStream &s) {
+    const std::set<std::string> labels = labelsOf(s);
+    bool changed = false;
+    for (std::size_t i = 0; i < s.size(); i++) {
+        const MInst b = s[i];
+        if (!isInstr(b, "B") || b.pred == kNoReg || !labels.count(opText(b, 0))) continue;
+        const std::string P = regName(b.pred);
+        std::size_t j = i + 1;
+        bool ok = true;
+        for (; j < s.size() && s[j].kind == MInst::Instruction && !isBranch(s[j].m.str()) && ok; j++) {
+            const MInst &l = s[j];
+            const std::string m = l.m.str();
+            if (j - i > 4 || l.pred != kNoReg || (!isLoad(m) && !isStore(m) && unitsOf(l) == 0)) ok = false;
+            std::vector<std::string> reads, writes;
+            rwOf(l, reads, writes);
+            if (has(writes, P) || has(reads, "B15") || has(writes, "B15") || has(writes, "A15")) ok = false;
+        }
+        if (!ok || j >= s.size() || !isInstr(s[j], "B") || s[j].pred != kNoReg || !labels.count(opText(s[j], 0))) continue;
+        bool target = false;
+        std::string name;
+        for (std::size_t m = j + 1; m < s.size() && labelLike(s[m], name); m++) if (name == opText(b, 0)) target = true;
+        if (!target) continue;
+        for (std::size_t k = i + 1; k <= j; k++) { s[k].pred = b.pred; s[k].predNot = !b.predNot; }
+        s.erase(s.begin() + static_cast<long>(i));
+        i--;
+        changed = true;
+    }
+    return changed;
+}
+
+// The jumps tidied on a selected function's stream: rotateLoops, tidyJumps and (labels) dropUnnamedLabels, as c6xSchedule.
+void tidyStream(MStream &s, bool labels) {
+    rotateLoops(s);
+    tidyJumps(s);
+    if (labels) dropUnnamedLabels(s);
+}
+
 bool streamOf(const std::vector<Line> &v, MStream &s) {
     for (std::size_t k = 0; k < v.size(); k++) {
         const Line &l = v[k];

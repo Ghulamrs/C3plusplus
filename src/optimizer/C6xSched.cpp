@@ -2340,18 +2340,36 @@ std::string c6xSchedule(const std::string &text, int level, bool selected) {
         Line l = parse(line);
         if (l.mnem != "NOP") lines.push_back(l);    // the -O0 padding, re-derived by the scheduler
     }
-    foldCalls(lines);
-    foldMvk(lines);
-    computeLiveness(lines);
-    foldFrame(lines);
-    foldPushPop(lines);
-    if (!skipped("thread")) threadPredicates(lines);
-    if (!skipped("labels")) dropUnnamedLabels(lines);
-    rounds(lines);
-    if (!skipped("arms") && predicateArms(lines)) rounds(lines);
-    rotateLoops(lines);
-    tidyJumps(lines);
-    if (!skipped("labels")) dropUnnamedLabels(lines);
+    const auto front = [](std::vector<Line> &v) {
+        foldCalls(v);
+        foldMvk(v);
+        computeLiveness(v);
+        foldFrame(v);
+        foldPushPop(v);
+        if (!skipped("thread")) threadPredicates(v);
+        if (!skipped("labels")) dropUnnamedLabels(v);
+        rounds(v);
+        if (!skipped("arms") && predicateArms(v)) rounds(v);
+        rotateLoops(v);
+        tidyJumps(v);
+        if (!skipped("labels")) dropUnnamedLabels(v);
+    };
+    // A selected function's passes up to reuseEntryLoads on one stream, read back once; `c6x-front` names a text differing.
+    MStream early;
+    if (streamFolds && streamOf(lines, early)) {
+        std::vector<Line> ref;
+        if (liveCensus) { ref = lines; streamFolds = false; front(ref); streamFolds = true; }   // the text passes, for the census
+        foldFront(early, !skipped("thread"), !skipped("labels"));
+        rounds(early, lines, true);    // the lines read back, the stream still theirs
+        if (!skipped("arms") && predicateArms(early)) rounds(early, lines, true);
+        tidyStream(early, !skipped("labels"));
+        linesOf(early, lines);
+        for (std::size_t k = 0; liveCensus && k < std::max(ref.size(), lines.size()); k++)
+            if (k >= ref.size() || k >= lines.size() || ref[k].raw != lines[k].raw) {
+                std::fprintf(stderr, "c6x-front: %s against %s\n", k < lines.size() ? lines[k].raw.c_str() : "(end)", k < ref.size() ? ref[k].raw.c_str() : "(end)");
+                break;
+            }
+    } else front(lines);
     if (!skipped("entry")) reuseEntryLoads(lines);
     if (level >= 2) {
         hoistInvariants(lines);

@@ -734,3 +734,24 @@ m6-l (the packetiser reads typed operands), m5-dbg (tests/debug.sh; DWARF ranges
   ide/generate.py --check up to date. Not run (the coordinator's): winpass, make test, ssa.sh.
 - **Owed:** the loop's registers as operands and `addressForms` on entries; the emitters and the kernel as entries
   (then `Node::line` goes); `Window`'s body as entries; the passes before the pipeliner on the stream; then step 4.
+
+### M6c, round 8 (the passes before `reuseEntryLoads` on the stream), 2026-11-14, lane m6q
+
+- **Landed** (from m6-p 04aa7c5a): **a selected function's stream is made once, as the text is parsed, and held to
+  `reuseEntryLoads`.** `foldFront` (C6xPack.cpp) is `foldCalls`, `foldMvk`, `foldFrame` and `foldPushPop` (their
+  liveness held as computed in a `LiveSpan`, as `LivenessHeld` holds the text's), `threadPredicates` and
+  `dropUnnamedLabels` on entries; the stream then goes through `rounds` (read back, the stream still the lines'),
+  `predicateArms` and its `rounds`, and `tidyStream` (`rotateLoops`, `tidyJumps`, `dropUnnamedLabels`), read back
+  once. An edit is an assignment to an entry - a branch's target, a predicate set or flipped, a frame address written
+  as `MOperand`, a push made a copy. `CXX1_C6X_MIR=1` runs the text passes on a copy and names the first line the
+  stream's read-back spells otherwise (`c6x-front`); `CXX1_C6X_TEXTFOLD=1` keeps the text passes, the walker's
+  functions keep them. src/ +364 -12 lines (C6xPack.cpp 1,075 -> 1,405, C6xSched.cpp 2,411 -> 2,429, C6xMir.h 119 -> 123).
+- **Where it stopped.** Round 7's item (1) - the counted loop's registers as operands, `addressForms`, the kernel and
+  the emitters on entries - not begun. **What still reads `Line`** on a selected function (the list design step 4's
+  deletion needs): the parse of the printed text itself (the selector's `MStream` is printed, then re-read); the
+  passes `reuseEntryLoads`, `hoistInvariants`, `inductionPointers`, `widenFills` and `hoistConstantPairs`; inside the
+  pipeliner `Loop`'s `body`/`pre` and its names (`iv`, `bound`, `P`, `C`, `used`, `written`, the webs'), `addressForms`,
+  `Window`'s body, `Node::line` and the emitters (`pipeline`, `steppedTest`, `emitWindow`, `emitClosed`); `Folding`'s
+  views (`viewOf`) and the table readers asked of a line where an entry is not `modelled` (`lineOf`); and three
+  crossings between the forms - `linesOf` before `reuseEntryLoads`, `streamOf`/`linesOf` around the pipeliner, and
+  `streamOf` after `hoistConstantPairs`.

@@ -102,6 +102,10 @@ bool removeDead(MStream &s, LiveSpan &live);
 bool flipPredicates(MStream &s, LiveSpan &live);
 bool forwardConstants(MStream &s, LiveSpan &live);
 void numberValues(MStream &s);
+// foldCalls to dropUnnamedLabels on entries, the passes before the first `rounds`; thread, labels: run those two.
+void foldFront(MStream &s, bool thread, bool labels);
+bool predicateArms(MStream &s);
+void tidyStream(MStream &s, bool labels);              // rotateLoops, tidyJumps, then (labels) dropUnnamedLabels
 void foldAddressing(MStream &s, bool index);    // index: foldScaledIndex too (CPP11_C6XSKIP=index leaves it)
 
 // `makeNode` on an entry: its operands where `modelled`, else its spelling - the one table either way.
