@@ -262,6 +262,16 @@ struct Src {
         if (s && whole.empty()) { linesOf(*s, whole); computeLiveness(whole); }
         return s ? whole : v;
     }
+    // Entry i as it stands on the stream; a line of the walker's text as the entry of its parts.
+    MInst entry(std::size_t i) const {
+        if (s) return (*s)[i];
+        const Line &l = v[i];
+        MInst e(l.mnem.c_str());
+        for (std::size_t k = 0; k < l.ops.size() && k < 4; k++) e.op[e.operands++] = MOperand(l.ops[k]);
+        if (l.ops.size() > 4 || !l.instr) e.kind = MInst::Verbatim;
+        if (!l.pred.empty()) { e.predNot = l.pred[0] == '!'; e.pred = static_cast<std::uint8_t>(regNumber(l.pred.substr(e.predNot ? 1 : 0))); }
+        return e;
+    }
     std::uint64_t liveIn(std::size_t i) const { return live ? (*live)[i] : v[i].liveIn; }
     std::uint64_t liveAt(std::size_t i) const { return live ? (*live)[i] : liveInAt(v, i); }
     bool typed(std::size_t i) const { return s && modelled((*s)[i]); }
@@ -1043,29 +1053,14 @@ struct Code {
     const MStream *from = nullptr;          // the stream being rewritten; none for the text
     bool ok = true;
     bool text() const { static const bool census = std::getenv("CXX1_C6X_MIR") != nullptr; return !from || census; }
-    // The entry of these parts; false where the predicate names no register, which an entry cannot hold.
-    static bool entryOf(const std::string &mnem, const std::vector<std::string> &ops, const std::string &pred, MInst &e) {
-        if (ops.size() > 4) return false;
-        e = MInst(mnem.c_str());
-        for (std::size_t k = 0; k < ops.size(); k++) e.op[e.operands++] = MOperand(ops[k]);
-        if (pred.empty()) return true;
-        e.predNot = pred[0] == '!';
-        e.pred = static_cast<std::uint8_t>(regNumber(pred.substr(e.predNot ? 1 : 0)));
-        return e.pred != kNoReg;
-    }
-    // A composed line (the window's): its fields the entry's where it spells the line, else the line read.
-    void push_back(const Line &l) {
-        if (text()) lines.push_back(l);
-        if (!from || !ok) return;
-        MInst e;
-        if (l.instr && !l.verbatim && entryOf(l.mnem, l.ops, l.pred, e) && e.str() == l.raw + "\n") { m.push_back(e); return; }
-        ok = streamOf(std::vector<Line>(1, l), m);
+    // An entry made whole (the window's): spelled for the text, itself on the stream.
+    void put(const MInst &e) {
+        if (text()) lines.push_back(lineOf(e));
+        if (from && ok) m.push_back(e);
     }
     // An instruction of its operands - registers by number, constants, a label - under `[pred]` or `[!pred]`.
     void add(const std::string &mnem, const MOperand &a, const MOperand &b = MOperand(), const MOperand &c = MOperand(), int pred = kNoReg, bool no = false) {
-        const MInst e = entry(mnem, a, b, c, pred, no);
-        if (text()) lines.push_back(lineOf(e));
-        if (from && ok) m.push_back(e);
+        put(entry(mnem, a, b, c, pred, no));
     }
     void branch(const std::string &to, int pred, bool no) { add("B", MOperand(to), MOperand(), MOperand(), pred, no); }
     // `legalForm` and the instruction: commuted where both sources cross, false with the reason where it has no form.
@@ -1077,7 +1072,8 @@ struct Code {
         if (!typed || text()) { l = lineOf(e); fine = legalForm(l); }
         if (!typed) {
             if (!fine) { why = "the stepped guard has no legal form for" + l.raw; return false; }
-            push_back(l);
+            lines.push_back(l);
+            ok = ok && !from;
             return true;
         }
         const bool commutes = mnem == "ADD" || mnem == "AND" || mnem == "OR" || mnem == "XOR" || mnem == "MPYDP" || mnem == "ADDDP" || mnem == "MPYSP" ||
@@ -1107,11 +1103,8 @@ struct Code {
     void label(const std::string &name) { MInst e; e.kind = MInst::Label; e.m = opt::StrId(name); placed(name + ":", false, &e); }
     // Line k of the function as it stands: the stream's own entry.
     void same(const Src &src, std::size_t k) {
-        if (!from || !ok) { push_back(src.line(k, "same")); return; }
-        const MInst &e = (*from)[k];
-        if (e.kind != MInst::Instruction || e.packed || e.par || e.unit != 0 || !modelled(e)) { push_back(src.line(k, "same")); return; }
         if (text()) lines.push_back(src.line(k, nullptr));
-        m.push_back(e);
+        if (from && ok) m.push_back((*from)[k]);
     }
 };
 
@@ -1643,12 +1636,12 @@ struct Window {
         std::string target;
         int pred = kNoReg; bool no = false;
         std::uint64_t live = 0;
-        std::string name() const { return (no ? "!" : "") + regName(pred); }
     };
     std::size_t head = 0, back = 0;
     std::string label;
     int PR = kNoReg; bool backNot = false;      // the back branch's predicate, `[!P]` backNot; kNoReg: unconditional
-    std::vector<Line> body;                     // the instructions in order, the back branch left out
+    MStream bodyM;                              // the instructions in order, the back branch left out
+    std::string mnem(std::size_t k) const { return bodyM[k].m.str(); }
     std::vector<std::size_t> at;                // where each stands in the text
     std::vector<int> cls;                       // a branch's exit, an instruction under one's predicate that exit, else kPlain or kCont
     std::vector<Exit> exits;                    // the exits inside, in order, then the back branch's fall-through
@@ -1678,6 +1671,18 @@ bool byteAddress(const std::string &op, std::string &base, long &off, bool &post
     return true;
 }
 
+// A byte load's address on an entry's operand, as the spelling's reader above gives it.
+bool byteAddress(const MOperand &o, int &base, long &off, bool &post) {
+    post = false; off = 0;
+    if (o.kind != MOperand::Memory || o.index != kNoReg) return false;
+    base = o.reg;
+    if (o.mode == MOperand::Base) return !o.hasOffset;
+    if (o.mode == MOperand::PostInc) { post = true; return !o.hasOffset || (!o.scaled && o.value == 1); }
+    if (o.mode != MOperand::Plus && o.mode != MOperand::Minus) return false;
+    off = static_cast<long>(o.value) * (o.mode == MOperand::Minus ? -1 : 1);
+    return o.hasOffset;
+}
+
 bool isByteLoad(const std::string &m) { return m == "LDB" || m == "LDBU"; }
 
 // An operand's registers in its spelling's order, and a byte load's address as `byteAddress` reads it, on the entry.
@@ -1702,15 +1707,7 @@ bool Src::byteAddress(std::size_t i, std::size_t k, int &base, long &off, bool &
         base = regNumber(name);
         return is;
     }
-    const MOperand &o = (*s)[i].op[k];
-    post = false; off = 0;
-    if (o.kind != MOperand::Memory || o.index != kNoReg) return false;
-    base = o.reg;
-    if (o.mode == MOperand::Base) return !o.hasOffset;
-    if (o.mode == MOperand::PostInc) { post = true; return !o.hasOffset || (!o.scaled && o.value == 1); }
-    if (o.mode != MOperand::Plus && o.mode != MOperand::Minus) return false;
-    off = static_cast<long>(o.value) * (o.mode == MOperand::Minus ? -1 : 1);
-    return o.hasOffset;
+    return c6x::byteAddress((*s)[i].op[k], base, off, post);
 }
 
 // Pointer r followed through one turn: registers holding r plus a constant, through copies, constant adds and the
@@ -1784,7 +1781,7 @@ bool recogniseWindow(const Src &src, std::size_t back, const std::set<std::strin
             W.cls.push_back(static_cast<int>(W.exits.size()));
             W.exits.push_back(e);
             W.liveOut |= e.live;
-            W.body.push_back(src.line(i, "window"));
+            W.bodyM.push_back(src.entry(i));
             W.at.push_back(i);
             continue;
         }
@@ -1796,7 +1793,8 @@ bool recogniseWindow(const Src &src, std::size_t back, const std::set<std::strin
         if (in(writes, 15) || in(writes, 47) || in(writes, 35)) { why = "the stack pointer or return address is written"; return false; }
         if (!isLoad(m) && (src.units(i) == 0 || writes.size() != 1)) { why = "an instruction of no known form: " + m; return false; }
         W.cls.push_back(kPlain);
-        W.body.push_back(src.line(i, "window"));
+        W.bodyM.push_back(src.entry(i));
+        if (!modelled(W.bodyM.back())) { why = "an instruction an entry does not model"; return false; }
         W.at.push_back(i);
     }
     if (W.PR != kNoReg) {
@@ -1806,7 +1804,7 @@ bool recogniseWindow(const Src &src, std::size_t back, const std::set<std::strin
         W.liveOut |= e.live;
     }
     if (W.exits.empty()) { why = "no way out"; return false; }
-    if (W.body.empty() || W.body.size() > 20) { why = "too small or too large to unroll"; return false; }
+    if (W.bodyM.empty() || W.bodyM.size() > 20) { why = "too small or too large to unroll"; return false; }
     // An instruction under a predicate belongs to the next branch, under the same one: done on the way out there,
     // or, before the back branch, only where the turn goes on. Its predicate must not change on the way.
     const std::size_t n = W.at.size();
@@ -1866,57 +1864,81 @@ bool recogniseWindow(const Src &src, std::size_t back, const std::set<std::strin
     return true;
 }
 
-// The window's code before its registers are given: a virtual register is `%N`, a physical one its own name.
+// **The window's code before its registers are given** (M6c round 15): each operand an entry's, its registers numbers
+// beside it - a physical one its own, a virtual one kVirt and up - so no instruction is spelled before `giveRegisters`.
+const int kVirt = 256;
 struct WinCode {
-    struct Op { std::string mnem, pred; std::vector<std::string> ops; };
+    struct Arg { MOperand o; int reg = kNoReg, index = kNoReg; };
+    struct Op { std::string mnem; int pred = kNoReg; std::vector<Arg> ops; };
     std::vector<Op> ops;
     std::vector<char> side;
     std::set<int> boolean;                  // made by a compare: 0 or 1
-    std::map<std::string, std::pair<std::string, long> > affine;   // a register as another plus a constant
-    std::string fresh(char s) { side.push_back(s); return "%" + std::to_string(side.size() - 1); }
-    void put(const std::string &m, const std::vector<std::string> &o, const std::string &pred = "") { Op x; x.mnem = m; x.ops = o; x.pred = pred; ops.push_back(x); }
-    bool isBool(const std::string &r) const { return r[0] == '%' && boolean.count(std::atoi(r.c_str() + 1)); }
-    std::pair<std::string, long> base(const std::string &r) const {
-        std::map<std::string, std::pair<std::string, long> >::const_iterator it = affine.find(r);
+    std::map<int, std::pair<int, long> > affine;    // a register as another plus a constant
+    int fresh(char s) { side.push_back(s); return kVirt + static_cast<int>(side.size()) - 1; }
+    void put(const std::string &m, const std::vector<Arg> &o, int pred = kNoReg) { Op x; x.mnem = m; x.ops = o; x.pred = pred; ops.push_back(x); }
+    bool isBool(int r) const { return boolean.count(r) != 0; }
+    char sideOf(int r) const { return r >= kVirt ? side[static_cast<std::size_t>(r - kVirt)] : sideOfR(r); }
+    std::pair<int, long> base(int r) const {
+        std::map<int, std::pair<int, long> >::const_iterator it = affine.find(r);
         return it == affine.end() ? std::make_pair(r, 0L) : it->second;
     }
 };
+typedef WinCode::Arg Arg;
+typedef std::set<int, ByName> RegSet;
 
-char sideOfAny(const WinCode &c, const std::string &r) { return r[0] == '%' ? c.side[static_cast<std::size_t>(std::atoi(r.c_str() + 1))] : sideOf(r); }
+// The operands the emitters make: a register, a constant, `*base` or `*+base(off)`, and `*+base[index]`.
+Arg V(int r) { Arg a; a.o = R(0); a.reg = r; return a; }
+Arg N(long k) { Arg a; a.o = K(k); return a; }
+Arg byteAt(int base, long off) {
+    Arg a;
+    a.o.kind = MOperand::Memory; a.o.reg = 0; a.reg = base;
+    if (off == 0) return a;
+    a.o.mode = off > 0 ? MOperand::Plus : MOperand::Minus;
+    a.o.hasOffset = true; a.o.value = off < 0 ? -off : off;
+    return a;
+}
+Arg indexed(int base, int index) {
+    Arg a = byteAt(base, 0);
+    a.o.mode = MOperand::Plus; a.o.hasOffset = true; a.o.scaled = true; a.o.index = 0; a.index = index;
+    return a;
+}
+bool isConst(const Arg &a) { return a.o.kind == MOperand::Immediate; }
 
-// Every register of an operand renamed by cur, those not in it left as they are.
-std::string renamedBy(const std::string &op, const std::map<std::string, std::string> &cur) {
-    std::vector<std::string> regs;
-    registersIn(op, regs);
-    std::string s = op;
-    for (std::size_t r = 0; r < regs.size(); r++) {
-        std::map<std::string, std::string>::const_iterator it = cur.find(regs[r]);
-        if (it != cur.end() && it->second != regs[r]) s = renamed(s, regs[r], it->second);
+// An operand of the body with every register renamed by cur, one after the other as its spelling lists them.
+Arg renamedBy(const MOperand &o, const std::map<int, int> &cur) {
+    Arg a;
+    a.o = o;
+    if (o.kind != MOperand::Register && o.kind != MOperand::Memory) return a;
+    a.reg = o.reg;
+    if (o.kind == MOperand::Memory && o.index != kNoReg) a.index = o.index;
+    const int regs[2] = { a.reg, a.index };
+    for (int r = 0; r < 2; r++) {
+        std::map<int, int>::const_iterator it = cur.find(regs[r]);
+        if (regs[r] == kNoReg || it == cur.end() || it->second == regs[r]) continue;
+        if (a.reg == regs[r]) a.reg = it->second;
+        if (a.index == regs[r]) a.index = it->second;
     }
-    return s;
+    return a;
 }
 
-std::string byteOperand(const std::string &base, long off) {
-    if (off == 0) return "*" + base;
-    return std::string("*") + (off > 0 ? "+" : "-") + base + "(" + std::to_string(off < 0 ? -off : off) + ")";
-}
+MInst branchEntry(const std::string &to, int pred = kNoReg, bool no = false) { return entry("B", MOperand(to), MOperand(), MOperand(), pred, no); }
 
 // The window's code with registers given: an instruction whose result nothing reads is dropped first, then each
 // virtual register takes a physical one of its side in the order the code reads, freed after its last reader.
-bool giveRegisters(WinCode &c, std::vector<std::string> pool[2], std::vector<Line> &code, std::string &why) {
-    auto each = [&](const std::string &op, const std::function<void(int)> &f) {
-        for (std::size_t i = 0; i < op.size(); i++)
-            if (op[i] == '%') { std::size_t j = i + 1; while (j < op.size() && std::isdigit(static_cast<unsigned char>(op[j]))) j++; f(std::atoi(op.c_str() + i + 1)); i = j - 1; }
+bool giveRegisters(WinCode &c, std::vector<int> pool[2], MStream &code, std::string &why) {
+    auto each = [&](const Arg &a, const std::function<void(int)> &f) {
+        if (a.reg != kNoReg && a.reg >= kVirt) f(a.reg - kVirt);
+        if (a.index != kNoReg && a.index >= kVirt) f(a.index - kVirt);
     };
     for (bool changed = true; changed;) {
         changed = false;
         std::set<int> read;
         for (std::size_t i = 0; i < c.ops.size(); i++)
             for (std::size_t o = 0; o < c.ops[i].ops.size(); o++)
-                if (o + 1 < c.ops[i].ops.size() || c.ops[i].ops[o][0] == '*') each(c.ops[i].ops[o], [&](int n) { read.insert(n); });
+                if (o + 1 < c.ops[i].ops.size() || c.ops[i].ops[o].o.kind == MOperand::Memory) each(c.ops[i].ops[o], [&](int n) { read.insert(n); });
         for (std::size_t i = c.ops.size(); i-- > 0;) {
-            const std::string &d = c.ops[i].ops.back();
-            if (d[0] == '%' && d.find_first_not_of("0123456789", 1) == std::string::npos && !read.count(std::atoi(d.c_str() + 1))) {
+            const Arg &d = c.ops[i].ops.back();
+            if (d.o.kind == MOperand::Register && d.reg >= kVirt && !read.count(d.reg - kVirt)) {
                 c.ops.erase(c.ops.begin() + static_cast<long>(i));
                 changed = true;
             }
@@ -1925,14 +1947,14 @@ bool giveRegisters(WinCode &c, std::vector<std::string> pool[2], std::vector<Lin
     // Registers given in the order the code reads, each freed after its last reader, oldest freed first.
     std::vector<int> last(c.side.size(), -1);
     for (std::size_t i = 0; i < c.ops.size(); i++) for (std::size_t o = 0; o < c.ops[i].ops.size(); o++) each(c.ops[i].ops[o], [&](int n) { last[static_cast<std::size_t>(n)] = static_cast<int>(i); });
-    std::vector<std::string> phys(c.side.size());
+    std::vector<int> phys(c.side.size(), kNoReg);
     std::vector<bool> given(c.side.size(), false);
-    std::deque<std::string> freeList[2];
+    std::deque<int> freeList[2];
     for (int s = 0; s < 2; s++) for (std::size_t k = 0; k < pool[s].size(); k++) freeList[s].push_back(pool[s][k]);
     std::vector<int> live;
     for (std::size_t i = 0; i < c.ops.size(); i++) {
         for (std::size_t a = 0; a < live.size();) {
-            if (last[static_cast<std::size_t>(live[a])] < static_cast<int>(i)) { const std::string &r = phys[static_cast<std::size_t>(live[a])]; freeList[sideIndex(r)].push_back(r); live.erase(live.begin() + static_cast<long>(a)); }
+            if (last[static_cast<std::size_t>(live[a])] < static_cast<int>(i)) { const int r = phys[static_cast<std::size_t>(live[a])]; freeList[sideOfReg(r)].push_back(r); live.erase(live.begin() + static_cast<long>(a)); }
             else a++;
         }
         bool ok = true;
@@ -1945,296 +1967,305 @@ bool giveRegisters(WinCode &c, std::vector<std::string> pool[2], std::vector<Lin
         });
         if (!ok) { why = "no registers for the turns"; return false; }
     }
+    auto given1 = [&](int r) { return static_cast<std::uint8_t>(r >= kVirt ? phys[static_cast<std::size_t>(r - kVirt)] : r); };
     for (std::size_t i = 0; i < c.ops.size(); i++) {
-        std::vector<std::string> ops = c.ops[i].ops;
-        for (std::size_t o = 0; o < ops.size(); o++) {
-            std::string s;
-            for (std::size_t j = 0; j < ops[o].size(); j++) {
-                if (ops[o][j] != '%') { s += ops[o][j]; continue; }
-                std::size_t e = j + 1;
-                while (e < ops[o].size() && std::isdigit(static_cast<unsigned char>(ops[o][e]))) e++;
-                s += phys[static_cast<std::size_t>(std::atoi(ops[o].c_str() + j + 1))];
-                j = e - 1;
-            }
-            ops[o] = s;
+        const std::string &m = c.ops[i].mnem;
+        if (c.ops[i].ops.size() > 4) { why = "an instruction of more operands than an entry holds"; return false; }
+        MInst e(m.c_str());
+        for (std::size_t o = 0; o < c.ops[i].ops.size(); o++) {
+            MOperand x = c.ops[i].ops[o].o;
+            if (c.ops[i].ops[o].reg != kNoReg) x.reg = given1(c.ops[i].ops[o].reg);
+            if (c.ops[i].ops[o].index != kNoReg) x.index = given1(c.ops[i].ops[o].index);
+            e.op[e.operands++] = x;
         }
-        Line l = rebuilt(c.ops[i].mnem, ops, c.ops[i].pred);
-        if (!isLoad(l.mnem) && !legalForm(l)) { why = "no legal form for" + l.raw; return false; }
-        code.push_back(l);
+        e.pred = static_cast<std::uint8_t>(c.ops[i].pred);
+        // `legalForm` on the entry: commuted where both sources cross; a load stands as it is made.
+        const bool commutes = m == "ADD" || m == "AND" || m == "OR" || m == "XOR" || m == "MPYDP" || m == "ADDDP" || m == "MPYSP" ||
+                              m == "ADDSP" || m == "MPY32" || m == "CMPEQ";
+        if (!isLoad(m) && crossings(e) > 1 && commutes && e.operands == 3 && e.op[0].kind != MOperand::Immediate && e.op[1].kind != MOperand::Immediate) std::swap(e.op[0], e.op[1]);
+        if (!isLoad(m) && !(crossings(e) <= 1 && (unitsFor(e) != 0 || isStore(m)))) { why = "no legal form for" + lineOf(e).raw; return false; }
+        code.push_back(e);
     }
     return true;
 }
 
 // ----- the closed form: where all a loop leaves behind is its registers plus a constant step a turn -----
 
-// A value within one turn as a register's value at the turn's start plus a constant; base "" for a constant alone.
-struct Aff { std::string base; long c = 0; bool ok = false; };
+// A value within one turn as a register's value at the turn's start plus a constant; base kNoReg for a constant alone.
+struct Aff { int base = kNoReg; long c = 0; bool ok = false; };
 
 // **One turn read as affine values**: each value the loop leaves - at each exit where it is live, and at the head - must
 // be the start value of a register that steps by -1, 0 or 1 a turn, plus a constant; then the turn a window stops in
 // says them all, and no turn writes anything. at[j] is exit j's state, step a register's per-turn step.
-bool affineTurn(const Window &W, const std::set<std::string> &committed, std::vector<std::map<std::string, Aff> > &at, std::map<std::string, long> &step) {
-    std::map<std::string, Aff> st, away;
-    auto get = [&](const std::string &r) { if (away.count(r)) return away[r]; if (st.count(r)) return st[r]; Aff a; a.base = r; a.ok = true; return a; };
-    auto value = [&](const Line &l) {
+bool affineTurn(const Window &W, const RegSet &committed, std::vector<std::map<int, Aff> > &at, std::map<int, long> &step) {
+    std::map<int, Aff> st, away;
+    auto get = [&](int r) { if (away.count(r)) return away[r]; if (st.count(r)) return st[r]; Aff a; a.base = r; a.ok = true; return a; };
+    auto value = [&](const MInst &l) {
         Aff a;
-        if (l.mnem == "MV" && l.ops.size() == 2) return get(l.ops[0]);
-        if (l.mnem == "MVK" && l.ops.size() == 2 && isNumber(l.ops[0])) { a.ok = true; a.c = std::atol(l.ops[0].c_str()); return a; }
-        if ((l.mnem == "ADD" || l.mnem == "SUB") && l.ops.size() == 3) {
-            int ki = isNumber(l.ops[0]) && l.mnem == "ADD" ? 0 : isNumber(l.ops[1]) ? 1 : -1;
-            if (ki >= 0 && !isNumber(l.ops[static_cast<std::size_t>(1 - ki)])) {
-                a = get(l.ops[static_cast<std::size_t>(1 - ki)]);
-                a.c += std::atol(l.ops[static_cast<std::size_t>(ki)].c_str()) * (l.mnem == "SUB" ? -1 : 1);
+        const std::string m = l.m.str();
+        const auto num = [&](int k) { return l.op[k].kind == MOperand::Immediate; };
+        if (m == "MV" && l.operands == 2) return l.op[0].isReg() ? get(l.op[0].reg) : a;
+        if (m == "MVK" && l.operands == 2 && num(0)) { a.ok = true; a.c = static_cast<long>(l.op[0].value); return a; }
+        if ((m == "ADD" || m == "SUB") && l.operands == 3) {
+            const int ki = num(0) && m == "ADD" ? 0 : num(1) ? 1 : -1;
+            if (ki >= 0 && l.op[1 - ki].isReg()) {
+                a = get(l.op[1 - ki].reg);
+                a.c += static_cast<long>(l.op[ki].value) * (m == "SUB" ? -1 : 1);
                 return a;
             }
         }
         return a;
     };
-    at.assign(W.exits.size(), std::map<std::string, Aff>());
+    at.assign(W.exits.size(), std::map<int, Aff>());
     bool finalTaken = false;
-    for (std::size_t i = 0; i < W.body.size(); i++) {
-        const Line &l = W.body[i];
-        if (isBranch(l.mnem)) {
-            for (std::set<std::string>::const_iterator r = committed.begin(); r != committed.end(); ++r) at[static_cast<std::size_t>(W.cls[i])][*r] = get(*r);
+    for (std::size_t i = 0; i < W.bodyM.size(); i++) {
+        const MInst &l = W.bodyM[i];
+        if (isBranch(l.m.str())) {
+            for (RegSet::const_iterator r = committed.begin(); r != committed.end(); ++r) at[static_cast<std::size_t>(W.cls[i])][*r] = get(*r);
             away.clear();
             continue;
         }
         if (W.cls[i] == kCont && !finalTaken && W.PR != kNoReg) {
-            for (std::set<std::string>::const_iterator r = committed.begin(); r != committed.end(); ++r) at.back()[*r] = get(*r);
+            for (RegSet::const_iterator r = committed.begin(); r != committed.end(); ++r) at.back()[*r] = get(*r);
             finalTaken = true;
         }
-        std::vector<std::string> reads, writes;
+        std::vector<int> reads, writes;
         readsAndWrites(l, reads, writes);
         if (writes.empty()) continue;
-        const Aff a = isLoad(l.mnem) ? Aff() : value(l);
+        const Aff a = isLoad(l.m.str()) ? Aff() : value(l);
         if (W.cls[i] >= 0) away[writes[0]] = a; else st[writes[0]] = a;
     }
     if (W.PR != kNoReg && !finalTaken)
-        for (std::set<std::string>::const_iterator r = committed.begin(); r != committed.end(); ++r) at.back()[*r] = get(*r);
+        for (RegSet::const_iterator r = committed.begin(); r != committed.end(); ++r) at.back()[*r] = get(*r);
     // The steps: a register live at the head ends the turn as itself plus its step.
-    for (std::set<std::string>::const_iterator r = committed.begin(); r != committed.end(); ++r) {
-        if (!(W.liveHead & bitOf(*r))) continue;
+    for (RegSet::const_iterator r = committed.begin(); r != committed.end(); ++r) {
+        if (!(W.liveHead & bitR(*r))) continue;
         const Aff e = get(*r);
         if (!e.ok || e.base != *r || e.c < -1 || e.c > 1) return false;
         step[*r] = e.c;
     }
     // Every value an exit needs, over a register of known step or none; a register the loop never writes steps by 0.
     for (std::size_t j = 0; j < W.exits.size(); j++)
-        for (std::set<std::string>::const_iterator r = committed.begin(); r != committed.end(); ++r) {
-            if (!(W.exits[j].live & bitOf(*r))) continue;
+        for (RegSet::const_iterator r = committed.begin(); r != committed.end(); ++r) {
+            if (!(W.exits[j].live & bitR(*r))) continue;
             const Aff &a = at[j][*r];
             if (!a.ok) return false;
-            if (!a.base.empty() && !step.count(a.base)) { if (committed.count(a.base)) return false; step[a.base] = 0; }
+            if (a.base != kNoReg && !step.count(a.base)) { if (committed.count(a.base)) return false; step[a.base] = 0; }
         }
     return true;
 }
 
-bool emitClosed(Window &W, const std::set<std::string> &committed, std::vector<std::string> pool[2], std::vector<Line> &out, std::string &why) {
-    std::vector<std::map<std::string, Aff> > at;
-    std::map<std::string, long> step;
+bool emitClosed(Window &W, const RegSet &committed, std::vector<int> pool[2], MStream &out, std::string &why) {
+    std::vector<std::map<int, Aff> > at;
+    std::map<int, long> step;
     const std::size_t E = W.exits.size();
     if (E > 2) { why = "more than two ways out of a turn"; return false; }
     for (std::size_t p = 0; p < W.ptrs.size(); p++) if (W.ptrs[p].offmin != W.ptrs[p].offmax) { why = "bytes of a turn at two places"; return false; }
-    for (std::size_t k = 0; k < W.body.size(); k++) {
+    for (std::size_t k = 0; k < W.bodyM.size(); k++) {
         bool stepped = false;
         for (std::size_t p = 0; p < W.ptrs.size(); p++) if (W.ptrs[p].loads.count(k)) stepped = true;
-        if (isLoad(W.body[k].mnem) && !stepped) { why = "a load that cannot be read ahead"; return false; }
+        if (isLoad(W.mnem(k)) && !stepped) { why = "a load that cannot be read ahead"; return false; }
     }
     if (!affineTurn(W, committed, at, step)) { why = "a value left behind that is not a step a turn"; return false; }
     for (std::size_t p = 0; p < W.ptrs.size(); p++)
         if (W.ptrs[p].cond) {
             int before = 0;
-            for (std::size_t i = 0; i < W.ptrs[p].anchor; i++) if (isBranch(W.body[i].mnem)) before++;
+            for (std::size_t i = 0; i < W.ptrs[p].anchor; i++) if (isBranch(W.mnem(i))) before++;
             if (before != 1) { why = "a block read behind more than one exit"; return false; }
         }
-    auto isFree = [&](int s, int k) { return std::find(pool[s].begin(), pool[s].end(), std::string(s ? "B" : "A") + std::to_string(k)) != pool[s].end(); };
-    auto takePred = [&]() -> std::string {
-        for (int s = 0; s < 2; s++) for (int k = 0; k < 3; k++) if (isFree(s, k)) { std::string r = std::string(s ? "B" : "A") + std::to_string(k); pool[s].erase(std::find(pool[s].begin(), pool[s].end(), r)); return r; }
-        return "";
+    auto isFree = [&](int s, int k) { return std::find(pool[s].begin(), pool[s].end(), s * 32 + k) != pool[s].end(); };
+    auto takePred = [&]() -> int {
+        for (int s = 0; s < 2; s++) for (int k = 0; k < 3; k++) if (isFree(s, k)) { pool[s].erase(std::find(pool[s].begin(), pool[s].end(), s * 32 + k)); return s * 32 + k; }
+        return kNoReg;
     };
-    const std::string Pc = takePred(), Pj = E > 1 ? takePred() : "";
-    std::vector<std::string> G(W.ptrs.size());
+    const int Pc = takePred(), Pj = E > 1 ? takePred() : kNoReg;
+    std::vector<int> G(W.ptrs.size(), kNoReg);
     for (std::size_t p = 0; p < W.ptrs.size(); p++) if (W.ptrs[p].cond) G[p] = takePred();
-    bool ok = !Pc.empty() && (E == 1 || !Pj.empty());
-    for (std::size_t p = 0; p < W.ptrs.size(); p++) if (W.ptrs[p].cond && G[p].empty()) ok = false;
+    bool ok = Pc != kNoReg && (E == 1 || Pj != kNoReg);
+    for (std::size_t p = 0; p < W.ptrs.size(); p++) if (W.ptrs[p].cond && G[p] == kNoReg) ok = false;
     if (!ok) { why = "no condition registers for the closed form"; return false; }
     WinCode c;
-    std::map<std::string, std::string> cur;
+    std::map<int, int> cur;
     // Each pointer's block and offset in it; the turns run to the end of the nearest block, w = 8 - offset.
-    std::vector<std::string> B(W.ptrs.size()), O(W.ptrs.size());
+    std::vector<int> B(W.ptrs.size()), O(W.ptrs.size());
     for (std::size_t p = 0; p < W.ptrs.size(); p++) {
         const char s = sideOfR(W.ptrs[p].reg);
-        std::string u = regName(W.ptrs[p].reg);
-        if (W.ptrs[p].offmin != 0) { u = c.fresh(s); c.put("ADD", { std::to_string(W.ptrs[p].offmin), regName(W.ptrs[p].reg), u }); }
-        O[p] = c.fresh(s); c.put("AND", { "7", u, O[p] });
-        B[p] = c.fresh(s); c.put("AND", { "-8", u, B[p] });
+        int u = W.ptrs[p].reg;
+        if (W.ptrs[p].offmin != 0) { u = c.fresh(s); c.put("ADD", { N(W.ptrs[p].offmin), V(W.ptrs[p].reg), V(u) }); }
+        O[p] = c.fresh(s); c.put("AND", { N(7), V(u), V(O[p]) });
+        B[p] = c.fresh(s); c.put("AND", { N(-8), V(u), V(B[p]) });
     }
-    std::map<std::string, std::string> loaded;
+    std::map<std::string, int> loaded;
     auto loadWrapped = [&](std::size_t p) {
         const char s = sideOfR(W.ptrs[p].reg);
         std::set<std::string> mn;
-        for (std::map<std::size_t, long>::const_iterator it = W.ptrs[p].loads.begin(); it != W.ptrs[p].loads.end(); ++it) mn.insert(W.body[it->first].mnem);
+        for (std::map<std::size_t, long>::const_iterator it = W.ptrs[p].loads.begin(); it != W.ptrs[p].loads.end(); ++it) mn.insert(W.mnem(it->first));
         // With two pointers, the odd turns' bytes through a copy of the block on the other side: both .D units read.
         const char o2 = W.ptrs.size() < 2 ? s : s == 'A' ? 'B' : 'A';
-        std::string B2 = B[p], O2 = O[p];
-        if (o2 != s) { B2 = c.fresh(o2); O2 = c.fresh(o2); c.put("MV", { B[p], B2 }); c.put("MV", { O[p], O2 }); }
+        int B2 = B[p], O2 = O[p];
+        if (o2 != s) { B2 = c.fresh(o2); O2 = c.fresh(o2); c.put("MV", { V(B[p]), V(B2) }); c.put("MV", { V(O[p]), V(O2) }); }
         for (int k = 1; k < 8; k++)
             for (std::set<std::string>::const_iterator m = mn.begin(); m != mn.end(); ++m) {
                 const bool odd = k % 2 != 0;
-                std::string t = c.fresh(odd ? o2 : s), x = c.fresh(odd ? o2 : s);
-                c.put("ADD", { std::to_string(k), odd ? O2 : O[p], t });
-                c.put("AND", { "7", t, t });
-                c.put(*m, { "*+" + (odd ? B2 : B[p]) + "[" + t + "]", x }, G[p]);
+                const int t = c.fresh(odd ? o2 : s);
+                const int x = c.fresh(odd ? o2 : s);
+                c.put("ADD", { N(k), V(odd ? O2 : O[p]), V(t) });
+                c.put("AND", { N(7), V(t), V(t) });
+                c.put(*m, { indexed(odd ? B2 : B[p], t), V(x) }, G[p]);
                 loaded[std::to_string(p) + "/" + std::to_string(k) + "/" + *m] = x;
             }
     };
     for (std::size_t p = 0; p < W.ptrs.size(); p++) if (!W.ptrs[p].cond) loadWrapped(p);
-    auto valueOf = [&](const std::string &r) { return cur.count(r) ? cur[r] : r; };
+    auto valueOf = [&](int r) { std::map<int, int>::const_iterator it = cur.find(r); return it == cur.end() ? r : it->second; };
     // Whether a turn stops at a test, as 0 or 1, from Q and the sense it leaves in: a compare's own result where it can be.
-    auto stopOf = [&](const std::string &q, bool leavesWhenNonzero) {
+    auto stopOf = [&](int q, bool leavesWhenNonzero) {
         if (c.isBool(q) && leavesWhenNonzero) return q;
-        std::string x = c.fresh(sideOfAny(c, q));
-        if (c.isBool(q)) c.put("XOR", { "1", q, x });
-        else if (leavesWhenNonzero) c.put("CMPLTU", { "0", q, x });
-        else c.put("CMPEQ", { "0", q, x });
-        c.boolean.insert(std::atoi(x.c_str() + 1));
+        const int x = c.fresh(c.sideOf(q));
+        if (c.isBool(q)) c.put("XOR", { N(1), V(q), V(x) });
+        else if (leavesWhenNonzero) c.put("CMPLTU", { N(0), V(q), V(x) });
+        else c.put("CMPEQ", { N(0), V(q), V(x) });
+        c.boolean.insert(x);
         return x;
     };
-    std::vector<std::string> dead;                      // d_p: 1 where some test up to place p stopped
-    std::string d;
+    std::vector<int> dead;                              // d_p: 1 where some test up to place p stopped
+    int d = kNoReg;
     auto pass = [&](int j, int k) {
-        const std::string pr = W.exits[static_cast<std::size_t>(j)].name();
-        const std::string q = pr[0] == '!' ? pr.substr(1) : pr;
-        const std::string s = stopOf(valueOf(q), pr[0] != '!');
-        if (d.empty()) d = s;
-        else { std::string n = c.fresh(sideOfAny(c, d)); c.put("OR", { d, s, n }); d = n; }
+        const Window::Exit &x = W.exits[static_cast<std::size_t>(j)];
+        const int s = stopOf(valueOf(x.pred), !x.no);
+        if (d == kNoReg) d = s;
+        else { const int n = c.fresh(c.sideOf(d)); c.put("OR", { V(d), V(s), V(n) }); d = n; }
         dead.push_back(d);
         if (k == 0 && j == 0)
             for (std::size_t p = 0; p < W.ptrs.size(); p++)
-                if (W.ptrs[p].cond) { c.put("CMPEQ", { "0", s, G[p] }); loadWrapped(p); }
+                if (W.ptrs[p].cond) { c.put("CMPEQ", { N(0), V(s), V(G[p]) }); loadWrapped(p); }
     };
     for (int k = 0; k < 8; k++) {
-        for (std::size_t i = 0; i < W.body.size(); i++) {
-            const Line &l = W.body[i];
-            if (isBranch(l.mnem)) { pass(W.cls[i], k); continue; }
+        for (std::size_t i = 0; i < W.bodyM.size(); i++) {
+            const MInst &l = W.bodyM[i];
+            const std::string m = l.m.str();
+            if (isBranch(m)) { pass(W.cls[i], k); continue; }
             if (W.cls[i] >= 0) continue;            // done on the way out: its value is read from the closed form
-            const std::string &dst = l.ops.back();
+            const int dst = l.op[l.operands - 1].reg;
             std::size_t ptr = W.ptrs.size();
             for (std::size_t p = 0; p < W.ptrs.size() && ptr == W.ptrs.size(); p++) if (W.ptrs[p].loads.count(i)) ptr = p;
             if (ptr < W.ptrs.size()) {
-                std::string base; long off = 0; bool post = false;
-                byteAddress(l.ops[0], base, off, post);
-                const std::string key = std::to_string(ptr) + "/" + std::to_string(k) + "/" + l.mnem;
+                int base = kNoReg; long off = 0; bool post = false;
+                byteAddress(l.op[0], base, off, post);
+                const std::string key = std::to_string(ptr) + "/" + std::to_string(k) + "/" + m;
                 if (!loaded.count(key)) {
-                    std::string x = c.fresh(sideOf(dst));
-                    c.put(l.mnem, { byteOperand(valueOf(base), post ? 0 : off), x }, W.ptrs[ptr].cond ? G[ptr] : "");
+                    const int x = c.fresh(sideOfR(dst));
+                    c.put(m, { byteAt(valueOf(base), post ? 0 : off), V(x) }, W.ptrs[ptr].cond ? G[ptr] : kNoReg);
                     loaded[key] = x;
                 }
                 cur[dst] = loaded[key];
-                if (post) { std::string nv = c.fresh(sideOf(base)); c.put("ADD", { "1", valueOf(base), nv }); cur[base] = nv; }
+                if (post) { const int nv = c.fresh(sideOfR(base)); c.put("ADD", { N(1), V(valueOf(base)), V(nv) }); cur[base] = nv; }
                 continue;
             }
-            if (l.mnem == "MV" && l.ops.size() == 2 && sideOf(l.ops[0]) && sideOfAny(c, valueOf(l.ops[0])) == sideOf(dst)) { cur[dst] = valueOf(l.ops[0]); continue; }
-            std::vector<std::string> ops;
-            for (std::size_t o = 0; o + 1 < l.ops.size(); o++) ops.push_back(renamedBy(l.ops[o], cur));
-            std::string x = c.fresh(sideOf(dst));
-            ops.push_back(x);
-            c.put(l.mnem, ops);
-            if (startsWith(l.mnem, "CMP")) c.boolean.insert(std::atoi(x.c_str() + 1));
+            if (m == "MV" && l.operands == 2 && l.op[0].isReg() && c.sideOf(valueOf(l.op[0].reg)) == sideOfR(dst)) { const int v = valueOf(l.op[0].reg); cur[dst] = v; continue; }
+            std::vector<Arg> ops;
+            for (int o = 0; o + 1 < l.operands; o++) ops.push_back(renamedBy(l.op[o], cur));
+            const int x = c.fresh(sideOfR(dst));
+            ops.push_back(V(x));
+            c.put(m, ops);
+            if (startsWith(m, "CMP")) c.boolean.insert(x);
             cur[dst] = x;
         }
         if (W.PR != kNoReg) pass(static_cast<int>(E) - 1, k);
     }
     // t, the places passed: their count less the sum of the d_p, no more than the window's w*E places.
-    std::vector<std::string> sum = dead;
+    std::vector<int> sum = dead;
     while (sum.size() > 1) {
-        std::vector<std::string> next;
-        for (std::size_t i = 0; i + 1 < sum.size(); i += 2) { std::string n = c.fresh(sideOfAny(c, sum[i])); c.put("ADD", { sum[i], sum[i + 1], n }); next.push_back(n); }
+        std::vector<int> next;
+        for (std::size_t i = 0; i + 1 < sum.size(); i += 2) { const int n = c.fresh(c.sideOf(sum[i])); c.put("ADD", { V(sum[i]), V(sum[i + 1]), V(n) }); next.push_back(n); }
         if (sum.size() % 2) next.push_back(sum.back());
         sum.swap(next);
     }
-    std::string passed = c.fresh('A');
-    if (dead.size() <= 15) c.put("SUB", { std::to_string(dead.size()), sum[0], passed });
-    else { std::string n = c.fresh('A'); c.put("MVK", { std::to_string(dead.size()), n }); c.put("SUB", { n, sum[0], passed }); }
+    const int passed = c.fresh('A');
+    if (dead.size() <= 15) c.put("SUB", { N(static_cast<long>(dead.size())), V(sum[0]), V(passed) });
+    else { const int n = c.fresh('A'); c.put("MVK", { N(static_cast<long>(dead.size())), V(n) }); c.put("SUB", { V(n), V(sum[0]), V(passed) }); }
     // The window's bound, the least of the pointers' (8 - offset) * E, and t no more than it: t = b + min(t - b, 0).
-    std::string bound;
-    auto least = [&](const std::string &x, const std::string &y) {
-        std::string d = c.fresh('A'), m = c.fresh('A'), n = c.fresh('A');
-        c.put("SUB", { x, y, d }); c.put("SHR", { d, "31", m }); c.put("AND", { d, m, m }); c.put("ADD", { y, m, n });
+    int bound = kNoReg;
+    auto least = [&](int x, int y) {
+        const int df = c.fresh('A');
+        const int m = c.fresh('A');
+        const int n = c.fresh('A');
+        c.put("SUB", { V(x), V(y), V(df) }); c.put("SHR", { V(df), N(31), V(m) }); c.put("AND", { V(df), V(m), V(m) }); c.put("ADD", { V(y), V(m), V(n) });
         return n;
     };
     for (std::size_t p = 0; p < W.ptrs.size(); p++) {
-        std::string w = c.fresh('A');
-        c.put("SUB", { "8", O[p], w });
-        if (E > 1) { std::string w2 = c.fresh('A'); c.put("ADD", { w, w, w2 }); w = w2; }
-        bound = bound.empty() ? w : least(w, bound);
+        int w = c.fresh('A');
+        c.put("SUB", { N(8), V(O[p]), V(w) });
+        if (E > 1) { const int w2 = c.fresh('A'); c.put("ADD", { V(w), V(w), V(w2) }); w = w2; }
+        bound = bound == kNoReg ? w : least(w, bound);
     }
-    const std::string t = least(passed, bound);
-    c.put("CMPEQ", { t, bound, Pc });
-    std::string K = t;
-    if (E > 1) { K = c.fresh('A'); c.put("SHR", { t, "1", K }); c.put("AND", { "1", t, Pj }); }
+    const int t = least(passed, bound);
+    c.put("CMPEQ", { V(t), V(bound), V(Pc) });
+    int Kt = t;
+    if (E > 1) { Kt = c.fresh('A'); c.put("SHR", { V(t), N(1), V(Kt) }); c.put("AND", { N(1), V(t), V(Pj) }); }
     // Each value left behind, made from K: the exit-0 one first, the exit-1 one under Pj, the head's under Pc.
     auto make = [&](const Aff &v, char s) {
-        std::string x = c.fresh(s);
-        if (v.base.empty()) { c.put("MVK", { std::to_string(v.c), x }); return x; }
+        const int x = c.fresh(s);
+        if (v.base == kNoReg) { c.put("MVK", { N(v.c), V(x) }); return x; }
         const long sb = step.count(v.base) ? step[v.base] : 0;
-        std::string y = v.base;
-        if (sb == 1) { std::string z = c.fresh(s); c.put("ADD", { K, v.base, z }); y = z; }
-        else if (sb == -1) { std::string z = c.fresh(s); c.put("SUB", { v.base, K, z }); y = z; }
-        if (v.c >= -16 && v.c <= 15) c.put("ADD", { std::to_string(v.c), y, x });
-        else { std::string k2 = c.fresh(s); c.put("MVK", { std::to_string(v.c), k2 }); c.put("ADD", { y, k2, x }); }
+        int y = v.base;
+        if (sb == 1) { const int z = c.fresh(s); c.put("ADD", { V(Kt), V(v.base), V(z) }); y = z; }
+        else if (sb == -1) { const int z = c.fresh(s); c.put("SUB", { V(v.base), V(Kt), V(z) }); y = z; }
+        if (v.c >= -16 && v.c <= 15) c.put("ADD", { N(v.c), V(y), V(x) });
+        else { const int k2 = c.fresh(s); c.put("MVK", { N(v.c), V(k2) }); c.put("ADD", { V(y), V(k2), V(x) }); }
         return x;
     };
-    std::vector<std::pair<std::string, std::pair<std::string, std::string> > > moves;   // reg, value, predicate
-    for (std::set<std::string>::const_iterator r = committed.begin(); r != committed.end(); ++r) {
-        const char s = sideOf(*r);
-        std::vector<std::string> xs(E);
-        for (std::size_t j = 0; j < E; j++) if (W.exits[j].live & bitOf(*r)) xs[j] = make(at[j][*r], s);
-        std::string head;
+    struct Move { int reg, value, pred; };
+    std::vector<Move> moves;
+    auto move = [&](int reg, int value, int pred) { Move mv; mv.reg = reg; mv.value = value; mv.pred = pred; moves.push_back(mv); };
+    for (RegSet::const_iterator r = committed.begin(); r != committed.end(); ++r) {
+        const char s = sideOfR(*r);
+        std::vector<int> xs(E, kNoReg);
+        for (std::size_t j = 0; j < E; j++) if (W.exits[j].live & bitR(*r)) xs[j] = make(at[j][*r], s);
+        int head = kNoReg;
         bool same = true;                               // the head's value is the exits' own: one move does
-        for (std::size_t j = 0; j < E; j++) if (!(W.exits[j].live & bitOf(*r)) || at[j][*r].base != *r || at[j][*r].c != 0) same = false;
-        if ((W.liveHead & bitOf(*r)) && !same) { Aff h; h.base = *r; h.ok = true; head = make(h, s); }
-        if (!xs[0].empty()) moves.push_back(std::make_pair(*r, std::make_pair(xs[0], std::string())));
-        if (E > 1 && !xs[1].empty()) moves.push_back(std::make_pair(*r, std::make_pair(xs[1], xs[0].empty() ? std::string() : Pj)));
-        if (!head.empty()) moves.push_back(std::make_pair(*r, std::make_pair(head, Pc)));
+        for (std::size_t j = 0; j < E; j++) if (!(W.exits[j].live & bitR(*r)) || at[j][*r].base != *r || at[j][*r].c != 0) same = false;
+        if ((W.liveHead & bitR(*r)) && !same) { Aff h; h.base = *r; h.ok = true; head = make(h, s); }
+        if (xs[0] != kNoReg) move(*r, xs[0], kNoReg);
+        if (E > 1 && xs[1] != kNoReg) move(*r, xs[1], xs[0] == kNoReg ? kNoReg : Pj);
+        if (head != kNoReg) move(*r, head, Pc);
     }
-    for (std::size_t m = 0; m < moves.size(); m++) c.put("MV", { moves[m].second.first, moves[m].first }, moves[m].second.second);
-    std::vector<Line> code;
+    for (std::size_t m = 0; m < moves.size(); m++) c.put("MV", { V(moves[m].value), V(moves[m].reg) }, moves[m].pred);
+    MStream code;
     if (!giveRegisters(c, pool, code, why)) return false;
-    code.push_back(rebuilt("B", std::vector<std::string>(1, W.label), Pc));
-    if (E == 1 || W.exits[0].target == W.exits[1].target) { if (!W.exits[0].target.empty()) code.push_back(rebuilt("B", std::vector<std::string>(1, W.exits[0].target))); }
+    code.push_back(branchEntry(W.label, Pc));
+    if (E == 1 || W.exits[0].target == W.exits[1].target) { if (!W.exits[0].target.empty()) code.push_back(branchEntry(W.exits[0].target)); }
     else {
-        if (!W.exits[1].target.empty()) code.push_back(rebuilt("B", std::vector<std::string>(1, W.exits[1].target), Pj));
-        else { code.push_back(rebuilt("B", std::vector<std::string>(1, W.exits[0].target.empty() ? W.label : W.exits[0].target), "!" + Pj)); }
-        if (!W.exits[1].target.empty() && !W.exits[0].target.empty()) code.push_back(rebuilt("B", std::vector<std::string>(1, W.exits[0].target)));
+        if (!W.exits[1].target.empty()) code.push_back(branchEntry(W.exits[1].target, Pj));
+        else code.push_back(branchEntry(W.exits[0].target.empty() ? W.label : W.exits[0].target, Pj, true));
+        if (!W.exits[1].target.empty() && !W.exits[0].target.empty()) code.push_back(branchEntry(W.exits[0].target));
     }
     if (tracing()) std::fprintf(stderr, "pipe %s: window, closed form, %zu pointers, %zu instructions for eight turns\n", W.label.c_str(), W.ptrs.size(), code.size());
     out.swap(code);
     return true;
 }
 
-bool emitWindow(Window &W, std::vector<Line> &out, std::string &why) {
+bool emitWindow(Window &W, MStream &out, std::string &why) {
     // What the window may not take: every register live at the head or an exit, and the fixed ones.
-    const std::uint64_t fixed = W.liveHead | W.liveOut | bitOf("A15") | bitOf("B15") | bitOf("B14") | bitOf("B3");
-    std::set<std::string> written;
-    for (std::size_t k = 0; k < W.body.size(); k++) {
-        std::vector<std::string> reads, writes;
-        readsAndWrites(W.body[k], reads, writes);
+    const std::uint64_t fixed = W.liveHead | W.liveOut | kKeptM;
+    RegSet written;
+    for (std::size_t k = 0; k < W.bodyM.size(); k++) {
+        std::vector<int> reads, writes;
+        readsAndWrites(W.bodyM[k], reads, writes);
         for (std::size_t w = 0; w < writes.size(); w++) written.insert(writes[w]);
     }
     // The registers whose value the loop leaves behind: written in it and live at the head or an exit.
-    std::set<std::string> committed;
-    for (std::set<std::string>::const_iterator it = written.begin(); it != written.end(); ++it)
-        if ((W.liveHead | W.liveOut) & bitOf(*it)) committed.insert(*it);
-    std::vector<std::string> pool[2];
+    RegSet committed;
+    for (RegSet::const_iterator it = written.begin(); it != written.end(); ++it)
+        if ((W.liveHead | W.liveOut) & bitR(*it)) committed.insert(*it);
+    std::vector<int> pool[2];
     for (int s = 0; s < 2; s++)
         for (int k = 0; k < 32; k++) {
             if (k >= 10 && k <= 15) continue;
-            std::string r = std::string(s ? "B" : "A") + std::to_string(k);
-            if (!(fixed & bitOf(r)) && !committed.count(r)) pool[s].push_back(r);
+            const int r = s * 32 + k;
+            if (!(fixed & bitR(r)) && !committed.count(r)) pool[s].push_back(r);
         }
     {
-        std::vector<std::string> spare[2] = { pool[0], pool[1] };
+        std::vector<int> spare[2] = { pool[0], pool[1] };
         std::string cwhy;
         if (!std::getenv("CPP11_NOCLOSED") && emitClosed(W, committed, spare, out, cwhy)) return true;
         if (tracing() > 1) std::fprintf(stderr, "pipe %s: no closed form: %s\n", W.label.c_str(), cwhy.c_str());
@@ -2244,60 +2275,62 @@ bool emitWindow(Window &W, std::vector<Line> &out, std::string &why) {
     for (std::size_t j = 0; j < W.exits.size(); j++) if (!has(targets, W.exits[j].target)) targets.push_back(W.exits[j].target);
     const bool multi = targets.size() > 1;
     bool needK = false, needZ = multi;
-    for (std::size_t k = 0; k < W.body.size(); k++) {
+    for (std::size_t k = 0; k < W.bodyM.size(); k++) {
         if (W.cls[k] == kCont) needK = true;
-        if (W.cls[k] >= 0 && !isBranch(W.body[k].mnem)) needZ = true;
+        if (W.cls[k] >= 0 && !isBranch(W.mnem(k))) needZ = true;
     }
     // The predicates: R, K and Z on one side, beside the arithmetic that makes them; Cr and the anchors' G anywhere.
-    auto isFree = [&](int s, int k) { return std::find(pool[s].begin(), pool[s].end(), std::string(s ? "B" : "A") + std::to_string(k)) != pool[s].end(); };
-    auto take = [&](int s, int k) { std::string r = std::string(s ? "B" : "A") + std::to_string(k); pool[s].erase(std::find(pool[s].begin(), pool[s].end(), r)); return r; };
-    auto takePred = [&](int s) -> std::string { for (int k = 0; k < 3; k++) if (isFree(s, k)) return take(s, k); return ""; };
+    auto isFree = [&](int s, int k) { return std::find(pool[s].begin(), pool[s].end(), s * 32 + k) != pool[s].end(); };
+    auto take = [&](int s, int k) { pool[s].erase(std::find(pool[s].begin(), pool[s].end(), s * 32 + k)); return s * 32 + k; };
+    auto takePred = [&](int s) -> int { for (int k = 0; k < 3; k++) if (isFree(s, k)) return take(s, k); return kNoReg; };
     auto preds = [&](int s) { int n = 0; for (int k = 0; k < 3; k++) if (isFree(s, k)) n++; return n; };
     const int cs = preds(0) >= preds(1) ? 0 : 1;
     const char ctl = cs ? 'B' : 'A';
-    const std::string R = takePred(cs), Z = needZ ? takePred(cs) : "";
-    std::vector<std::string> K;
-    if (needK) { K.push_back(takePred(cs)); if (preds(cs) > 0 && preds(1 - cs) > 0) K.push_back(takePred(cs)); }
-    std::string Cr = takePred(1 - cs); if (Cr.empty()) Cr = takePred(cs);
-    std::vector<std::string> G(W.ptrs.size());
-    for (std::size_t p = 0; p < W.ptrs.size(); p++) if (W.ptrs[p].cond) { G[p] = takePred(1 - cs); if (G[p].empty()) G[p] = takePred(cs); }
-    bool predsOk = !R.empty() && (!needZ || !Z.empty()) && (!needK || !K[0].empty()) && !Cr.empty();
-    for (std::size_t p = 0; p < W.ptrs.size(); p++) if (W.ptrs[p].cond && G[p].empty()) predsOk = false;
+    const int Rr = takePred(cs);
+    const int Z = needZ ? takePred(cs) : kNoReg;
+    std::vector<int> Ks;
+    if (needK) { Ks.push_back(takePred(cs)); if (preds(cs) > 0 && preds(1 - cs) > 0) Ks.push_back(takePred(cs)); }
+    int Cr = takePred(1 - cs); if (Cr == kNoReg) Cr = takePred(cs);
+    std::vector<int> G(W.ptrs.size(), kNoReg);
+    for (std::size_t p = 0; p < W.ptrs.size(); p++) if (W.ptrs[p].cond) { G[p] = takePred(1 - cs); if (G[p] == kNoReg) G[p] = takePred(cs); }
+    bool predsOk = Rr != kNoReg && (!needZ || Z != kNoReg) && (!needK || Ks[0] != kNoReg) && Cr != kNoReg;
+    for (std::size_t p = 0; p < W.ptrs.size(); p++) if (W.ptrs[p].cond && G[p] == kNoReg) predsOk = false;
     if (!predsOk) { why = "no condition registers for the turns"; return false; }
-    std::string Sel;
+    int Sel = kNoReg;
     if (multi) { if (pool[cs].size() > 4) { Sel = pool[cs].back(); pool[cs].pop_back(); } else { why = "no register for the way out"; return false; } }
     WinCode c;
-    std::map<std::string, std::string> cur;
+    std::map<int, int> cur;
     // Setup: each pointer's block and offset in it, and R = 0xFF >> (offset + span) for each, or-ed with one.
-    std::vector<std::string> B(W.ptrs.size()), O(W.ptrs.size());
+    std::vector<int> B(W.ptrs.size()), O(W.ptrs.size());
     for (std::size_t p = 0; p < W.ptrs.size(); p++) {
         const Window::Ptr &P = W.ptrs[p];
         const char s = sideOfR(P.reg);
-        std::string u = regName(P.reg);
-        if (P.offmin != 0) { u = c.fresh(s); c.put("ADD", { std::to_string(P.offmin), regName(P.reg), u }); }
-        O[p] = c.fresh(s); c.put("AND", { "7", u, O[p] });
-        B[p] = c.fresh(s); c.put("AND", { "-8", u, B[p] });
-        std::string sh = O[p];
-        if (P.offmax != P.offmin) { sh = c.fresh(s); c.put("ADD", { std::to_string(P.offmax - P.offmin), O[p], sh }); }
-        std::string ff = c.fresh(s), m = c.fresh(s);
-        c.put("MVK", { "255", ff });
-        c.put("SHRU", { ff, sh, m });
-        if (p == 0) c.put("MV", { m, R }); else c.put("AND", { R, m, R });
+        int u = P.reg;
+        if (P.offmin != 0) { u = c.fresh(s); c.put("ADD", { N(P.offmin), V(P.reg), V(u) }); }
+        O[p] = c.fresh(s); c.put("AND", { N(7), V(u), V(O[p]) });
+        B[p] = c.fresh(s); c.put("AND", { N(-8), V(u), V(B[p]) });
+        int sh = O[p];
+        if (P.offmax != P.offmin) { sh = c.fresh(s); c.put("ADD", { N(P.offmax - P.offmin), V(O[p]), V(sh) }); }
+        const int ff = c.fresh(s);
+        const int m = c.fresh(s);
+        c.put("MVK", { N(255), V(ff) });
+        c.put("SHRU", { V(ff), V(sh), V(m) });
+        if (p == 0) c.put("MV", { V(m), V(Rr) }); else c.put("AND", { V(Rr), V(m), V(Rr) });
     }
-    c.put("OR", { "1", R, R });                     // the first turn is always the loop's own
+    c.put("OR", { N(1), V(Rr), V(Rr) });            // the first turn is always the loop's own
     // A committed register is read from a copy, its own name only ever written by the turns.
-    for (std::set<std::string>::const_iterator it = committed.begin(); it != committed.end(); ++it) {
-        std::string x = c.fresh(sideOf(*it));
-        c.put("MV", { *it, x });
+    for (RegSet::const_iterator it = committed.begin(); it != committed.end(); ++it) {
+        const int x = c.fresh(sideOfR(*it));
+        c.put("MV", { V(*it), V(x) });
         cur[*it] = x;
     }
     // Which (n, mnem) a turn reaches, n the byte's place past the anchor's in the first turn.
     std::vector<std::vector<std::pair<long, std::string> > > reach(W.ptrs.size());
     for (std::size_t p = 0; p < W.ptrs.size(); p++)
         for (std::map<std::size_t, long>::const_iterator it = W.ptrs[p].loads.begin(); it != W.ptrs[p].loads.end(); ++it)
-            reach[p].push_back(std::make_pair(it->second - W.ptrs[p].offmin, W.body[it->first].mnem));
+            reach[p].push_back(std::make_pair(it->second - W.ptrs[p].offmin, W.mnem(it->first)));
     // The bytes of the block the later turns read, each where it wraps within the block, under the anchor's G.
-    std::map<std::string, std::string> loaded;          // "p/n/mnem" -> register
+    std::map<std::string, int> loaded;                  // "p/n/mnem" -> register
     auto loadWrapped = [&](std::size_t p) {
         const char s = sideOfR(W.ptrs[p].reg);
         for (int k = 1; k < 8; k++)
@@ -2307,162 +2340,165 @@ bool emitWindow(Window &W, std::vector<Line> &out, std::string &why) {
                 bool atZero = false;
                 for (std::size_t f = 0; f < reach[p].size(); f++) if (reach[p][f].first == n && reach[p][f].second == reach[p][e].second) atZero = true;
                 if (atZero || loaded.count(key)) continue;
-                std::string t = c.fresh(s), x = c.fresh(s);
-                c.put("ADD", { std::to_string(n), O[p], t });
-                c.put("AND", { "7", t, t });
-                c.put(reach[p][e].second, { "*+" + B[p] + "[" + t + "]", x }, G[p]);
+                const int t = c.fresh(s);
+                const int x = c.fresh(s);
+                c.put("ADD", { N(n), V(O[p]), V(t) });
+                c.put("AND", { N(7), V(t), V(t) });
+                c.put(reach[p][e].second, { indexed(B[p], t), V(x) }, G[p]);
                 loaded[key] = x;
             }
     };
     for (std::size_t p = 0; p < W.ptrs.size(); p++) if (!W.ptrs[p].cond) loadWrapped(p);
-    auto commit = [&](const std::string &reg, const std::string &val, const std::string &pr) {
-        if (committed.count(reg)) c.put("MV", { val, reg }, pr);
+    auto commit = [&](int reg, int val, int pr) {
+        if (committed.count(reg)) c.put("MV", { V(val), V(reg) }, pr);
     };
-    auto valueOf = [&](const std::string &r) { return cur.count(r) ? cur[r] : r; };
+    auto valueOf = [&](int r) { std::map<int, int>::const_iterator it = cur.find(r); return it == cur.end() ? r : it->second; };
     // The test's mask: Y = -1 where the turn goes on and 0 where it leaves, from Q and the sense it goes on in.
-    auto maskOf = [&](const std::string &q, bool goesOnWhenNonzero) {
-        std::string y = c.fresh(ctl);
-        if (c.isBool(q)) { if (goesOnWhenNonzero) c.put("NEG", { q, y }); else c.put("ADD", { "-1", q, y }); return y; }
-        std::string t = c.fresh(ctl);
-        c.put("CMPEQ", { "0", q, t });                  // 1 where Q is zero
-        if (goesOnWhenNonzero) c.put("ADD", { "-1", t, y }); else c.put("NEG", { t, y });
+    auto maskOf = [&](int q, bool goesOnWhenNonzero) {
+        const int y = c.fresh(ctl);
+        if (c.isBool(q)) { if (goesOnWhenNonzero) c.put("NEG", { V(q), V(y) }); else c.put("ADD", { N(-1), V(q), V(y) }); return y; }
+        const int t = c.fresh(ctl);
+        c.put("CMPEQ", { N(0), V(q), V(t) });           // 1 where Q is zero
+        if (goesOnWhenNonzero) c.put("ADD", { N(-1), V(t), V(y) }); else c.put("NEG", { V(t), V(y) });
         return y;
     };
     for (int k = 0; k < 8; k++) {
         bool exited = false;
-        std::map<int, std::string> yOf;                 // exit -> its mask this turn
+        std::map<int, int> yOf;                         // exit -> its mask this turn
         int zFor = -1;                                  // the exit Z is made for, this turn
         bool kMade = false;
-        const std::string Kk = needK ? K[static_cast<std::size_t>(k) % K.size()] : "";
+        const int Kk = needK ? Ks[static_cast<std::size_t>(k) % Ks.size()] : kNoReg;
         auto mask = [&](int j) {
             if (!yOf.count(j)) {
-                const std::string pr = W.exits[static_cast<std::size_t>(j)].name();    // the predicate it leaves on
-                const std::string q = pr[0] == '!' ? pr.substr(1) : pr;
-                yOf[j] = maskOf(valueOf(q), pr[0] == '!');
+                const Window::Exit &x = W.exits[static_cast<std::size_t>(j)];      // the predicate it leaves on
+                const int y = maskOf(valueOf(x.pred), x.no);
+                yOf[j] = y;
             }
             return yOf[j];
         };
         auto leaving = [&](int j) {                     // Z: alive here and leaving by exit j
             if (zFor == j) return;
-            std::string n = c.fresh(ctl);
-            c.put("NOT", { mask(j), n });
-            c.put("AND", { R, n, Z });
+            const int n = c.fresh(ctl);
+            const int y = mask(j);
+            c.put("NOT", { V(y), V(n) });
+            c.put("AND", { V(Rr), V(n), V(Z) });
             zFor = j;
         };
         auto leaveBy = [&](int j) {                     // the exit itself: Cr, the selector, and R
-            const std::string y = mask(j);
+            const int y = mask(j);
             if (multi) {
                 leaving(j);
                 const std::size_t id = static_cast<std::size_t>(std::find(targets.begin(), targets.end(), W.exits[static_cast<std::size_t>(j)].target) - targets.begin());
-                c.put("MVK", { std::to_string(id), Sel }, Z);
+                c.put("MVK", { N(static_cast<long>(id)), V(Sel) }, Z);
             }
-            c.put("MV", { y, Cr }, R);
+            c.put("MV", { V(y), V(Cr) }, Rr);
             return y;
         };
-        for (std::size_t i = 0; i < W.body.size(); i++) {
-            const Line &l = W.body[i];
-            const std::string pr = k == 0 && !exited ? "" : R;
-            if (isBranch(l.mnem)) {             // an exit inside the turn: R loses the turns from here on where it leaves
-                const std::string y = leaveBy(W.cls[i]);
-                c.put("AND", { R, y, R });
+        for (std::size_t i = 0; i < W.bodyM.size(); i++) {
+            const MInst &l = W.bodyM[i];
+            const std::string m = l.m.str();
+            const int pr = k == 0 && !exited ? kNoReg : Rr;
+            if (isBranch(m)) {                  // an exit inside the turn: R loses the turns from here on where it leaves
+                const int y = leaveBy(W.cls[i]);
+                c.put("AND", { V(Rr), V(y), V(Rr) });
                 exited = true;
                 continue;
             }
             const int cl = W.cls[i];
-            std::string cpr = pr;
+            int cpr = pr;
             if (cl == kCont) {
-                if (!kMade) { c.put("AND", { R, mask(static_cast<int>(W.exits.size()) - 1), Kk }); kMade = true; }
+                if (!kMade) { const int y = mask(static_cast<int>(W.exits.size()) - 1); c.put("AND", { V(Rr), V(y), V(Kk) }); kMade = true; }
                 cpr = Kk;
             } else if (cl >= 0) { leaving(cl); cpr = Z; }
             const bool away = cl >= 0;          // done only on the way out: what stays on keeps the old value
+            const int dst = l.op[l.operands - 1].reg;
             std::size_t ptr = W.ptrs.size();
             for (std::size_t p = 0; p < W.ptrs.size() && ptr == W.ptrs.size(); p++) if (W.ptrs[p].loads.count(i)) ptr = p;
             if (ptr < W.ptrs.size()) {
                 const Window::Ptr &P = W.ptrs[ptr];
-                std::string base; long off = 0; bool post = false;
-                byteAddress(l.ops[0], base, off, post);
+                int base = kNoReg; long off = 0; bool post = false;
+                byteAddress(l.op[0], base, off, post);
                 const long n = P.loads.at(i) - P.offmin + k;
-                const std::string key = std::to_string(ptr) + "/" + std::to_string(n) + "/" + l.mnem;
-                if (k == 0 && P.cond && i == P.anchor) { c.put("MV", { R, G[ptr] }); loadWrapped(ptr); }
+                const std::string key = std::to_string(ptr) + "/" + std::to_string(n) + "/" + m;
+                if (k == 0 && P.cond && i == P.anchor) { c.put("MV", { V(Rr), V(G[ptr]) }); loadWrapped(ptr); }
                 if (!loaded.count(key)) {
                     if (k != 0) { why = "a byte no turn's block read was asked for"; return false; }
-                    std::string x = c.fresh(sideOf(l.ops.back()));
-                    c.put(l.mnem, { byteOperand(valueOf(base), post ? 0 : off), x }, pr);
+                    const int x = c.fresh(sideOfR(dst));
+                    c.put(m, { byteAt(valueOf(base), post ? 0 : off), V(x) }, pr);
                     loaded[key] = x;
                 }
-                const std::string &dst = l.ops.back();
                 cur[dst] = loaded[key];
                 c.affine.erase(dst);
                 commit(dst, loaded[key], cpr);
                 if (post) {
-                    const std::pair<std::string, long> a = c.base(valueOf(base));
-                    std::string nv = c.fresh(sideOf(base));
-                    c.put("ADD", { std::to_string(a.second + 1), a.first, nv });
+                    const std::pair<int, long> a = c.base(valueOf(base));
+                    const int nv = c.fresh(sideOfR(base));
+                    c.put("ADD", { N(a.second + 1), V(a.first), V(nv) });
                     c.affine[nv] = std::make_pair(a.first, a.second + 1);
                     cur[base] = nv;
                     commit(base, nv, cpr);
                 }
                 continue;
             }
-            const std::string &dst = l.ops.back();
-            if (isLoad(l.mnem)) {               // read where it stands, under the turn's mask
-                std::string x = c.fresh(sideOf(dst));
-                c.put(l.mnem, { renamedBy(l.ops[0], cur), x }, cpr.empty() ? "" : cpr);
+            if (isLoad(m)) {                    // read where it stands, under the turn's mask
+                const int x = c.fresh(sideOfR(dst));
+                c.put(m, { renamedBy(l.op[0], cur), V(x) }, cpr);
                 if (!away) cur[dst] = x;
                 commit(dst, x, cpr);
                 continue;
             }
-            if (l.mnem == "MV" && l.ops.size() == 2 && sideOf(l.ops[0])) {
-                const std::string s = valueOf(l.ops[0]);
-                if (sideOfAny(c, s) == sideOf(dst)) { if (!away) cur[dst] = s; commit(dst, s, cpr); continue; }
+            if (m == "MV" && l.operands == 2 && l.op[0].isReg()) {
+                const int s = valueOf(l.op[0].reg);
+                if (c.sideOf(s) == sideOfR(dst)) { if (!away) cur[dst] = s; commit(dst, s, cpr); continue; }
             }
-            std::vector<std::string> ops;
-            for (std::size_t o = 0; o + 1 < l.ops.size(); o++) ops.push_back(renamedBy(l.ops[o], cur));
-            std::string x = c.fresh(sideOf(dst));
+            std::vector<Arg> ops;
+            for (int o = 0; o + 1 < l.operands; o++) ops.push_back(renamedBy(l.op[o], cur));
+            const int x = c.fresh(sideOfR(dst));
             // A constant added to a register that is itself another plus a constant: one add from that other.
             int ki = -1;
-            if (l.mnem == "ADD" && ops.size() == 2) ki = isNumber(ops[0]) ? 0 : isNumber(ops[1]) ? 1 : -1;
-            if (l.mnem == "SUB" && ops.size() == 2 && isNumber(ops[1])) ki = 1;
-            if (ki >= 0 && !isNumber(ops[1 - ki])) {
-                const long kc = std::atol(ops[static_cast<std::size_t>(ki)].c_str()) * (l.mnem == "SUB" ? -1 : 1);
-                const std::pair<std::string, long> a = c.base(ops[static_cast<std::size_t>(1 - ki)]);
-                if (a.second + kc >= -16 && a.second + kc <= 15 && sideOfAny(c, a.first) == sideOf(dst)) {
-                    c.put("ADD", { std::to_string(a.second + kc), a.first, x });
+            if (m == "ADD" && ops.size() == 2) ki = isConst(ops[0]) ? 0 : isConst(ops[1]) ? 1 : -1;
+            if (m == "SUB" && ops.size() == 2 && isConst(ops[1])) ki = 1;
+            if (ki >= 0 && !isConst(ops[static_cast<std::size_t>(1 - ki)])) {
+                const Arg &other = ops[static_cast<std::size_t>(1 - ki)];
+                const long kc = static_cast<long>(ops[static_cast<std::size_t>(ki)].o.value) * (m == "SUB" ? -1 : 1);
+                const std::pair<int, long> a = other.o.isReg() ? c.base(other.reg) : std::make_pair(static_cast<int>(kNoReg), 0L);
+                if (other.o.isReg() && a.second + kc >= -16 && a.second + kc <= 15 && c.sideOf(a.first) == sideOfR(dst)) {
+                    c.put("ADD", { N(a.second + kc), V(a.first), V(x) });
                     c.affine[x] = std::make_pair(a.first, a.second + kc);
-                } else c.put(l.mnem, { ops[0], ops[1], x });
+                } else c.put(m, { ops[0], ops[1], V(x) });
             } else {
-                ops.push_back(x);
-                c.put(l.mnem, ops);
+                ops.push_back(V(x));
+                c.put(m, ops);
             }
-            if (startsWith(l.mnem, "CMP")) c.boolean.insert(std::atoi(x.c_str() + 1));
+            if (startsWith(m, "CMP")) c.boolean.insert(x);
             if (!away) { cur[dst] = x; }
             commit(dst, x, cpr);
         }
         // The turn's end: Y with bit k cleared, so that R keeps only the turns after this one in the block.
         if (W.PR != kNoReg) {
-            const std::string y = leaveBy(static_cast<int>(W.exits.size()) - 1);
-            std::string x = c.fresh(ctl);
-            c.put("CLR", { y, std::to_string(k), std::to_string(k), x });
-            c.put("AND", { R, x, R });
+            const int y = leaveBy(static_cast<int>(W.exits.size()) - 1);
+            const int x = c.fresh(ctl);
+            c.put("CLR", { V(y), N(k), N(k), V(x) });
+            c.put("AND", { V(Rr), V(x), V(Rr) });
         } else {
-            c.put("MVK", { "1", Cr }, R);
-            c.put("CLR", { R, std::to_string(k), std::to_string(k), R });
+            c.put("MVK", { N(1), V(Cr) }, Rr);
+            c.put("CLR", { V(Rr), N(k), N(k), V(Rr) });
         }
     }
-    std::vector<Line> code;
+    MStream code;
     if (!giveRegisters(c, pool, code, why)) return false;
     // Round again while the last turn went on; else to where the turn that stopped was going.
-    code.push_back(rebuilt("B", std::vector<std::string>(1, W.label), Cr));
-    if (!multi) { if (!targets[0].empty()) code.push_back(rebuilt("B", std::vector<std::string>(1, targets[0]))); }
+    code.push_back(branchEntry(W.label, Cr));
+    if (!multi) { if (!targets[0].empty()) code.push_back(branchEntry(targets[0])); }
     else {
         bool falls = has(targets, "");
         std::vector<std::string> branches;
         for (std::size_t t = 0; t < targets.size(); t++) if (!targets[t].empty()) branches.push_back(targets[t]);
         for (std::size_t t = 0; t < branches.size(); t++) {
             const std::size_t id = static_cast<std::size_t>(std::find(targets.begin(), targets.end(), branches[t]) - targets.begin());
-            if (!falls && t + 1 == branches.size()) { code.push_back(rebuilt("B", std::vector<std::string>(1, branches[t]))); break; }
-            code.push_back(make("CMPEQ", std::to_string(id), Sel, R));
-            code.push_back(rebuilt("B", std::vector<std::string>(1, branches[t]), R));
+            if (!falls && t + 1 == branches.size()) { code.push_back(branchEntry(branches[t])); break; }
+            code.push_back(entry("CMPEQ", K(static_cast<long long>(id)), R(Sel), R(Rr)));
+            code.push_back(branchEntry(branches[t], Rr));
         }
     }
     if (tracing()) std::fprintf(stderr, "pipe %s: window, %zu pointers, %zu instructions for eight turns\n", W.label.c_str(), W.ptrs.size(), code.size());
@@ -2483,8 +2519,9 @@ bool sameLoop(const Loop &a, const Loop &b) {
            a.stepped == b.stepped && a.wide == b.wide && a.ivsR == b.ivsR && a.boundsR == b.boundsR && a.stepsR == b.stepsR && a.stepK == b.stepK && a.testBody == b.testBody;
 }
 bool sameWindow(const Window &a, const Window &b) {
-    if (a.head != b.head || a.back != b.back || a.label != b.label || a.PR != b.PR || a.backNot != b.backNot || !sameLines(a.body, b.body) ||
+    if (a.head != b.head || a.back != b.back || a.label != b.label || a.PR != b.PR || a.backNot != b.backNot || a.bodyM.size() != b.bodyM.size() ||
         a.cls != b.cls || a.liveHead != b.liveHead || a.liveOut != b.liveOut || a.exits.size() != b.exits.size() || a.ptrs.size() != b.ptrs.size()) return false;
+    for (std::size_t k = 0; k < a.bodyM.size(); k++) if (a.bodyM[k].str() != b.bodyM[k].str()) return false;
     for (std::size_t k = 0; k < a.exits.size(); k++)
         if (a.exits[k].target != b.exits[k].target || a.exits[k].pred != b.exits[k].pred || a.exits[k].no != b.exits[k].no || a.exits[k].live != b.exits[k].live) return false;
     for (std::size_t k = 0; k < a.ptrs.size(); k++)
@@ -2529,9 +2566,9 @@ bool pipelineAt(const Src &src, std::size_t i, const std::set<std::string> &labe
         checkRecognisers(src, i, labels, named, false);
         Window W;
         std::string wwhy;
-        std::vector<Line> turns;
+        MStream turns;
         if (recogniseWindow(src, i, labels, named, W, wwhy) && W.head >= copied && emitWindow(W, turns, wwhy)) {
-            for (std::size_t k = 0; k < turns.size(); k++) code.push_back(turns[k]);
+            for (std::size_t k = 0; k < turns.size(); k++) code.put(turns[k]);
             from = W.head + 1;
             to = W.back + 1;
             return true;
