@@ -1,0 +1,29 @@
+== in the block, 21
+int inner = 0n15
+int n = 0n12
+char * label = 0x# "hello"
+double scale = 0.5
+int calls = 0n1
+char c = 0n104 'h'
+bool big = true
+double d = 6
+int k = 0n3
+int * p = 0x#
+unsigned int u = 7
+int64 w = 0n1234567890123
+work @ 21
+main @ 28
+== after the block, 23
+int n = 0n12
+char * label = 0x# "hello"
+double scale = 0.5
+int calls = 0n1
+char c = 0n104 'h'
+bool big = true
+double d = 6
+int k = 0n3
+int * p = 0x#
+unsigned int u = 7
+int64 w = 0n1234567890123
+int 0n41
+double 2.5

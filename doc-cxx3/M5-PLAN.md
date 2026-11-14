@@ -798,3 +798,25 @@ walker's three noexcept cases only once `static-aggregate-runtime-list` skips tm
 -O2 192.2 M against the walker's 195.9 M; asm6x.sh 833 objects 0 failed. **ast-residue re-recorded** (ExprPtr 2016,
 StmtPtr 639, node-refs 413): the parser's own fixes, in the half M6d deletes.
 
+
+### A debugger in the gates, 2026-11-14 (lane dbg, from afe32013)
+
+- **Why**: no suite ran a debugger on any target; x86g found gdb showing 6 of 11 of w2's locals wrong where the static
+  checks were silent. **`tests/debug.sh cdb|gdb [compiler]`**: each tests/m10 program with a command file (`<w>.cdb`,
+  `<w>.gdb`) is built -g -O0, run in batch - stops at named lines, `dv /t` / `info args` + `info locals`, the backtrace,
+  `??` / `print` of members and elements - normalised (frames `f @ line` in the program's own file, addresses `0x#`)
+  and compared line for line with `<w>.<dbg>.expected`, written by hand from the source's values (`name = *` where the
+  source leaves a local unset at that stop). Programs: w1, w2, w4, and two new ones with locals across calls - d1 (a
+  caller's loop locals at the callee's third call) and d2 (one function three frames deep). -O2 is not run: the
+  history records no cdb view of cl's -O2 locals, and cxx3 records no local there (x86g).
+- **Wired into tools/verify-three, not make test**: the windows leg runs it in both spellings with the project's LINK
+  (`CPP11_LD=winout-tools\link.exe`, which writes the PDB), the linux leg after make test.
+- **Windows (cxx3-msvc.exe at this tree, cl /W4 /WX clean)**: `debug.sh cdb` 5 passed, 0 failed with -masm=masm and with
+  -masm=gnu, both linked by the project's LINK. **The check fails when a record is wrong**: with x86gb's compiler
+  (190aebc9, records at the parser's offsets) 0 passed, 5 failed - w2 `c = 0n0 ''`, `big = false`, `d = 2.546e-313`,
+  `k = 0n32758`, `u` garbage, `w` scale's bits; w1 `y = 0n0`; d1, d2 every local 0; w4 refused outside the SSA
+  lowering then. Static gates: exclusions 0 uncited / 0 stale, comments 0 over the cap, ide/generate.py up to date;
+  memory-gate does not run under Windows Python (`signal.SIGPIPE`) - nothing in src/ changed (src/ lines +0).
+- **Linux**: the gdb half (`<w>.gdb`, `.gdb.expected` from the source, never yet run) queued as one job on the lock
+  behind M5's self-host (boxkit/dbg-linux.sh, ~/dbg-linux.out). Expected to name at least `big = 1` against the
+  source's `bool big = true` (x86g's run showed `1`: the DWARF type of bool).

@@ -1,0 +1,18 @@
+== fact at 10, n == 1
+int n = 0n1
+int below = 0n1
+int r = 0n1
+fact @ 10
+fact @ 8
+fact @ 8
+main @ 14
+== fact, n == 2
+fact @ 8
+int n = 0n2
+int below = 0n1
+int r = *
+== fact, n == 3
+fact @ 8
+int n = 0n3
+int below = 0n1
+int r = *

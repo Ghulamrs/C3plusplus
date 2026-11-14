@@ -1,0 +1,16 @@
+bp `d1.cpp:7` 3
+g
+.echo == square at 7, third call
+dv /t
+k
+.echo == sum
+.frame 1
+dv /t
+.echo == main
+.frame 2
+dv /t
+bc *
+bp `d1.cpp:18`
+g
+.echo == sum at 18
+dv /t

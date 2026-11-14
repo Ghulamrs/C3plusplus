@@ -1,0 +1,23 @@
+== square at 7, third call
+int v = 0n3
+int s = 0n9
+square @ 7
+sum @ 14
+main @ 23
+== sum
+sum @ 14
+int i = 0n3
+int n = 0n3
+int acc = 0n5
+int last = 0n4
+int keep = *
+== main
+main @ 23
+int before = 0n7
+int got = *
+int after = *
+== sum at 18
+int n = 0n3
+int acc = 0n14
+int last = 0n9
+int keep = 0n28

@@ -1,0 +1,11 @@
+bp `d2.cpp:10`
+g
+.echo == fact at 10, n == 1
+dv /t
+k
+.echo == fact, n == 2
+.frame 1
+dv /t
+.echo == fact, n == 3
+.frame 2
+dv /t

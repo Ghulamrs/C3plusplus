@@ -1,0 +1,11 @@
+bp `w2.cpp:21`
+bp `w2.cpp:23`
+g
+.echo == in the block, 21
+dv /t
+k
+g
+.echo == after the block, 23
+dv /t
+?? counter
+?? ratio

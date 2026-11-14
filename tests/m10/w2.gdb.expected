@@ -1,0 +1,26 @@
+== in the block, 21
+n = 12
+label = 0x# "hello"
+scale = 0.5
+inner = 15
+calls = 1
+c = 104 'h'
+big = true
+d = 6
+k = 3
+p = 0x# <counter>
+u = 7
+w = 1234567890123
+work @ 21
+main @ 28
+== after the block, 23
+calls = 1
+c = 104 'h'
+big = true
+d = 6
+k = 3
+p = 0x# <counter>
+u = 7
+w = 1234567890123
+$1 = 41
+$2 = 2.5

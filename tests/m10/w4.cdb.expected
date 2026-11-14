@@ -1,0 +1,30 @@
+== total at 34
+struct Point * pt = 0x#
+int (*)[3] row = 0x#
+int s = 0n15
+total @ 34
+main @ 47
+== Square::perimeter at 25
+class Square * this = 0x#
+int p = 0n24
+Square::perimeter @ 25
+main @ 47
+== main at 48
+int [3] row = int [3]
+struct Point pt = struct Point
+union Bits bits = union Bits
+Colour c = Green (0n5)
+unsigned int n = 9
+class Square sq = class Square
+struct Box<int> box = struct Box<int>
+char [6] name = char [6] "cdb"
+int t = 0n81
+struct Point
+   +0x# x                : 0n4
+   +0x# y                : 0n5
+int 0n3
+int 0n6
+int 0n4
+int 0n21
+int 0n1065353216
+char 0n98 'b'
