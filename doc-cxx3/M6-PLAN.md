@@ -564,3 +564,21 @@ model's reading (`sideOf`), not by the operand's kind - a symbol spelled `B2x` i
   its `makeNode` calls read kernel lines); the selector's stream handed to the packetiser - not possible before the
   folds between (`rounds`, `numberValues`, `foldAddressing`, design step 3) run on the stream, since they edit lines
   after selection; -O0 tms6747.sh, sim6747, asm6x.sh and make test (the coordinator's).
+
+## Wave 4's merge, 2026-11-14 (lane w4m, m6-wave4 from main 4a1cbac7)
+
+- **Merged, in order**: `m6-i` (M6b round 3, B-file homes), `m6-j` (M6c round 1, the packetiser on MIR), `m6-k`
+  (M6c round 2, the pipeliner on the stream behind `CXX1_C6X_TEXTPIPE`), `m6-l` (M6c round 3, the packetiser reads
+  typed operands), `m5-dbg` (tests/debug.sh, gdb 5/5, the DWARF mends). The m6 branches fork from 9b689e66 and carry
+  waves 1-3 as their original commits, which main holds as squashes; m6-i was therefore merged as main's tree plus
+  `git diff 7995cf0d m6-i` (its own five files: C6xSelect.cpp, Tms6747.h, C6xMir.{h,cpp}, M6-PLAN.md), and main's
+  later ast-residue baseline and .notarget kept. m6-j, m6-k and m6-l then merged clean; m5-dbg's one conflict was
+  M5-PLAN.md, both sides kept. ide/* came in with the branches and `ide/generate.py --check` says up to date.
+- **Gate, Linux** (three g++ builds from the merge, m6-l 22047329 and main 4a1cbac7; `boxkit/w4m-cmp.sh`, 1,228
+  inputs each, tree paths normalised): tms6747 -O0, -O2 and -O0 -g against m6-l's compiler 1,228 same, 0 differ
+  each; x86_64-linux, x86_64-windows (masm and gnu) and arm64-darwin at -O0 and -O2, non -g, against main's 1,228
+  same, 0 differ each (356 refused alike, 377/376 on x86_64-windows). tests/g-same.sh 867 same, 0 differ, 0 broken;
+  tests/debug.sh gdb 5 passed, 0 failed. Exclusions 129 sites 0 uncited 0 stale (SSA lowering 554/95, 0/0); comments 0
+  over; memory gate rc 0; ide up to date. **ast-residue rose: ast-lines 849 -> 850**, from m5-dbg's 7bc8b402
+  (`Local::declared` in src/Ast.h, a reference's own type for DWARF) - not re-recorded; the coordinator's call.
+- **Gate, Windows**: cl /W4 /WX clean (work\w4m, cxx3-msvc.exe built). The full wave gate is the coordinator's.
