@@ -1408,3 +1408,14 @@ class and `thread_local` temporaries registered in tests/open/walker-static-refe
   827 / 0. Mac run.sh -O0 and -O2 1215 / 0. Linux make test rc 0 (run 1217/0, emit 3399/0, typed 860/0, ssa 890/0,
   c90 447/0). tms6747: 814 passed, 0 failed at -O0 (393.2 M) and -O2 (**192.0 M**, unchanged); **walker -O0 and -O2
   814 / 0** (the two owed since wave 13 now pass); asm6x 833 / 0 at -O0 and -O2 (rerun after the ssh dropped).
+
+### Wave 16 landed, 2026-11-14 (the coordinator)
+
+M6c round 19 (m6ab: D5.1 `LoopText`'s readers on entries with reuseEntryLoads, D6.1 `Node` holds `callp`; nine of
+the round's eleven steps left - D5.2-D5.6, D6.2-D6.5) with M5's lldb lane (m5-lldb).
+- **Gate at 6530b725**: Windows winpass -O0 and -O2: 828 same / 0 differ, masm 827 / 0; cdb 5/5 both spellings. Mac
+  run.sh -O0 and -O2 1215 / 0; lldb 5/5. Linux make test's suites all passing (run 1217/0, emit 3399/0, typed 860/0,
+  ssa 890/0, coff 0 differ, c90 447/0) - its comment cap stopped it at one group in Dwarf.h (lldb's member split
+  `funclet`'s comment from its line), mended in 6530b725 and the cap, memory gate, ast-residue and exclusions then
+  rerun rc 0 on the rebuilt tree; gdb 5/5. tms6747 814 / 0 at -O0 (393.2 M) and -O2 (**192.0 M**); walker 814 / 0 at
+  both; asm6x 833 / 0 at both.

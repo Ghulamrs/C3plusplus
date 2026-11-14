@@ -876,3 +876,12 @@ StmtPtr 639, node-refs 413): the parser's own fixes, in the half M6d deletes.
   -O0 and -O2 1215 passed, 0 failed each. **Owed to the coordinator**: the boxes' gates (Linux gdb 5/5 - the const_type DIE reaches
   ELF; Windows cdb is CodeView, untouched), exclusions, make comments, memory-gate (none run on the Mac). src/ lines:
   Dwarf.cpp 569 -> 589, Dwarf.h 72 -> 74, Arm64Darwin.cpp 870 -> 871.
+
+### lldb landed with wave 16, 2026-11-14 (the coordinator)
+
+M5's owed lldb row, done at the user's "do lldb on the Mac" (with "if it needs developer mode leave it": it does
+not - lldb launches the program it debugs with Developer Mode off). `tests/debug.sh lldb` 5 / 5 on arm64-darwin,
+clang++ -g -O0's own builds 5 / 5 under the same scripts; DW_TAG_const_type and Mach-O DW_AT_linkage_name added.
+**Owed:** a typedef's name (`Count n` shows `unsigned int` - the type system keeps none), and a file-static
+global shown `::ratio` where clang shows `ratio`. Wave 16's gate: the Mac lldb 5/5, Windows cdb 5/5 in both
+spellings, Linux gdb 5/5 (the const type reaches ELF too).
