@@ -126,6 +126,10 @@ struct LoopText {
     explicit LoopText(MStream &stream);
     LoopText(const LoopText &) = delete;
     LoopText &operator=(const LoopText &) = delete;
+    // Entry k as the passes read it: an instruction not blanked; a label and its name; its registers by name.
+    bool instr(std::size_t k) const { return !gone[k] && s[k].kind == MInst::Instruction && !s[k].packed; }
+    bool label(std::size_t k, std::string &name) const;
+    void rw(std::size_t k, std::vector<std::string> &reads, std::vector<std::string> &writes) const;
     void blank(std::size_t k);
     void set(std::size_t k, const Line &l);
     std::size_t apply(std::size_t h, const std::vector<Line> &pre, std::size_t i);   // the back edge's new place

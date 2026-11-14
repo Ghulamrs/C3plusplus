@@ -1305,6 +1305,10 @@ MInst edited(const Line &l, const MInst *from) {
 }   // namespace
 
 LoopText::LoopText(MStream &stream) : s(stream), gone(stream.size(), false) { for (std::size_t k = 0; k < s.size(); k++) v.push_back(viewOf(s[k])); }
+bool LoopText::label(std::size_t k, std::string &name) const { return !gone[k] && !s[k].packed && labelLike(s[k], name); }
+void LoopText::rw(std::size_t k, std::vector<std::string> &reads, std::vector<std::string> &writes) const {
+    if (modelled(s[k])) readsAndWrites(s[k], reads, writes); else readsAndWrites(lineOf(s[k]), reads, writes);
+}
 void LoopText::blank(std::size_t k) { v[k] = parse(""); gone[k] = pending = stale = true; }
 void LoopText::set(std::size_t k, const Line &l) { v[k] = l; s[k] = edited(l, &s[k]); stale = true; }
 

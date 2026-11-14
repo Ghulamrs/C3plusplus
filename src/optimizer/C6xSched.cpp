@@ -395,41 +395,48 @@ bool passThrough(const Line &l, const std::set<std::string> &named);
 // **A byte read for the test is not read again for the work**: a rotated loop whose block opens with `LDx *R, X`
 // and ends - after R's last write - with the same `LDx *R, X` that its test reads, entered from a block whose
 // last write of X is that load too, opens without the load: on either path X holds `*R` already. `for (; *p; ++p)`.
+// The one register a load's address reads as it stands (`*R`, or displaced forward by a constant), or "" for any other.
+std::string plainBase(const MOperand &a) {
+    if (a.kind == MOperand::Memory) return a.mode == MOperand::Base && a.index == kNoReg && !(a.hasOffset && a.value < 0) ? regName(a.reg) : std::string();
+    const std::string s = a.str();
+    std::vector<std::string> addr;
+    if (!s.empty() && s[0] == '*') registersIn(s, addr);
+    return addr.size() == 1 && s.find('+') == std::string::npos && s.find('-') == std::string::npos ? addr[0] : std::string();
+}
+
 void reuseEntryLoads(LoopText &t) {
-    std::vector<Line> &v = t.v;
+    const MStream &s = t.s;
     std::map<std::string, std::size_t> at;
-    for (std::size_t i = 0; i < v.size(); i++) if (isLabel(v[i])) at[labelName(v[i])] = i;
-    for (std::size_t i = 0; i < v.size(); i++) {
-        const Line &b = v[i];
-        if (!b.instr || b.mnem != "B" || b.pred.empty() || !at.count(b.ops[0])) continue;
-        const std::size_t h = at[b.ops[0]];
-        if (h >= i || h + 1 >= v.size()) continue;
-        const Line &top = v[h + 1];
-        if (!top.instr || !isLoad(top.mnem) || top.ops.size() != 2 || top.ops[0][0] != '*' || !top.pred.empty()) continue;
-        std::vector<std::string> addr;
-        registersIn(top.ops[0], addr);
-        if (addr.size() != 1 || top.ops[0].find('+') != std::string::npos || top.ops[0].find('-') != std::string::npos) continue;
-        const std::string R = addr[0], X = top.ops[1];
-        if (X.find(':') != std::string::npos) continue;
+    std::string name;
+    for (std::size_t i = 0; i < s.size(); i++) if (t.label(i, name)) at[name] = i;
+    for (std::size_t i = 0; i < s.size(); i++) {
+        const MInst &b = s[i];
+        if (!t.instr(i) || b.m.str() != "B" || b.pred == kNoReg || b.operands == 0 || !at.count(b.op[0].str())) continue;
+        const std::size_t h = at[b.op[0].str()];
+        if (h >= i || h + 1 >= s.size()) continue;
+        const MInst &top = s[h + 1];
+        if (!t.instr(h + 1) || !isLoad(top.m.str()) || top.operands != 2 || top.pred != kNoReg) continue;
+        const std::string R = plainBase(top.op[0]), X = top.op[1].str(), load = top.str();
+        if (R.empty() || X.find(':') != std::string::npos) continue;
         // One block: no label between; the same load again after R's last write, nothing after it touching R, X or memory.
         std::size_t last = 0;
         bool ok = true;
         for (std::size_t k = h + 2; k < i && ok; k++) {
-            if (!v[k].instr || isBranch(v[k].mnem)) { ok = false; break; }
-            if (v[k].raw == top.raw) { last = k; continue; }
+            if (!t.instr(k) || isBranch(s[k].m.str())) { ok = false; break; }
+            if (s[k].str() == load) { last = k; continue; }
             std::vector<std::string> r, w;
-            readsAndWrites(v[k], r, w);
-            if (last != 0 && (has(w, R) || has(w, X) || isStore(v[k].mnem))) last = 0;
+            t.rw(k, r, w);
+            if (last != 0 && (has(w, R) || has(w, X) || isStore(s[k].m.str()))) last = 0;
         }
         if (!ok || last == 0) continue;
         // The entry: back from the head over one block's fall-through, the last write of X the same load, memory untouched.
         bool entry = false;
         for (std::size_t k = h; k-- > 0;) {
-            if (isLabel(v[k]) || !v[k].instr || (isBranch(v[k].mnem) && v[k].pred.empty())) break;
-            if (v[k].raw == top.raw) { entry = true; break; }
+            if (!t.instr(k) || (isBranch(s[k].m.str()) && s[k].pred == kNoReg)) break;
+            if (s[k].str() == load) { entry = true; break; }
             std::vector<std::string> r, w;
-            readsAndWrites(v[k], r, w);
-            if (has(w, R) || has(w, X) || isStore(v[k].mnem) || v[k].mnem == "CALLP") break;
+            t.rw(k, r, w);
+            if (has(w, R) || has(w, X) || isStore(s[k].m.str()) || s[k].m.str() == "CALLP") break;
         }
         if (!entry) continue;
         t.blank(h + 1);
