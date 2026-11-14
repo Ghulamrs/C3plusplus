@@ -1098,3 +1098,12 @@ M6c rounds 11 (m6t: the counted loop's emitters write entries through `Code`; `a
 - **Owed:** W2-W4 above - the window's emitters on entries, which is what `c6x-line` still counts and the last text
   the pipeliner composes; C3; then `Src` without `v`, the loop passes composing entries (`LoopStream`), the selector's
   stream handed in unprinted (the driver's parse and `streamOf`), step 4.
+
+### Wave 10 landed, 2026-11-14 (the coordinator)
+
+M6c round 13 (m6v: S5-S8 of the register plan - the emitters' sink, webs, units, the pool, the address walk and the
+recognisers on register numbers; `iv`, `bound`, `P`, `C`, `ivs`, `bounds`, `steps` deleted).
+- **Gate at 4039ef42** (6ad62714 merged with main 3d292471): Windows winpass -O0 and -O2: 828 same / 0 differ, masm
+  827 / 0. Mac run.sh -O0 and -O2 1215 / 0. Linux make test rc 0 (run 1217/0, emit 3399/0, typed 860/0, ssa 890/0,
+  c90 447/0, exclusions 0/0, comments 0). tms6747 (vm6747, SIM=0, three shards): 814 passed, 0 failed at -O0
+  (393.2 M cycles) and -O2 (**192.0 M**, unchanged); asm6x 833 / 0 at -O0 and -O2.
