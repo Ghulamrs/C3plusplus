@@ -806,6 +806,51 @@ m6-l (the packetiser reads typed operands), m5-dbg (tests/debug.sh; DWARF ranges
   ide/generate.py --check up to date. Not run (the coordinator's): winpass, make test, ssa.sh.
 - **Owed:** round 7's item (1) whole; the loop passes' edits on operands and their readers off the views; the
   selector's stream handed in unprinted; then step 4.
+### M6c, round 10 (the loop passes' edits on operands, the kernel's turns spelled from entries, the held rounds write no lines), 2026-11-14, lane m6s
+
+- **Landed** (from m6-r 867184a6): **a loop pass's edit is an assignment to the entry.** `LoopStream::edited`
+  (C6xPack.cpp) makes each line a loop pass sets or inserts on the entry itself: the entry's mnemonic, predicate and
+  only the operands whose spelling differs assigned (a hoisted or preheader line a fresh entry built from its fields),
+  where round 9 re-read the whole line (`entry`, `streamOf` of one line). The line's spelling is the check, not the
+  source: an edit the entry does not spell as the line, a placed or `||` entry, or a branch with a named unit, is read
+  as before. `CXX1_C6X_MIR=1` reads each edited line too and names an entry whose kind, mnemonic, predicate or operands
+  differ from the reading (`c6x-loop-edit`). **The held rounds write nothing back**: `rounds(MStream &, lines *)` takes
+  no lines on a selected function's held stream (the three calls in `c6xSchedule`), where round 9 read the stream back
+  into lines and recomputed their liveness for nobody; `rounds(std::vector<Line> &)` (a stream made for one call) still
+  hands its lines back. **The kernel's turns from the body's entries**: `spelled` (C6xPipe.cpp), which writes body
+  instruction o as turn j of the prologue, kernel and epilogue, renames each unit's register to that turn's copy on
+  the entry (`bodyM`, a register's number in a register, a pair's half, an address's base or index, the predicate)
+  and prints it; a loop read from lines keeps the text's (`spelledLine`, reading `body`, not the node). `Node::line` is
+  no longer set on the stream (its last reader there was `spelled`; the two traces read `body`). `CXX1_C6X_MIR=1`
+  spells each turn both ways and names one that differs (`c6x-spell`). src/ +77 -19 lines (C6xPack.cpp 1,462 ->
+  1,485, C6xSched.cpp 2,450 -> 2,451, C6xPipe.cpp 2,248 -> 2,282).
+- **Where it stopped.** The rest of item (1) of round 9's owed list - the counted loop's registers (`iv`, `bound`,
+  `P`, `C`, `used`, `written`, the webs') as operands, `addressForms`, `Window`'s body, and the emitters' own lines
+  (`pipeline`'s guards, counts and copies, `steppedTest`, `emitWindow`, `emitClosed`) on entries - not begun: the
+  kernel is still assembled as spelled lines (`emitCycles`, `verbatim`) and taken back through `streamOf`, and
+  `pipelineLoops(MStream&)` reads the stream through `linesOf` for `Src`. The loop passes still compose each edit as a `Line` (`rebuilt`, `make`) and read the stream through
+  its views. **What still reads `Line`** on a selected function: the parse of the printed text (the selector's
+  `MStream` printed, then re-read); the loop passes' views and the `Line`s they compose (`LoopStream`, its liveness from
+  the views while a blank is pending); `Folding`'s views (`viewOf`) and the table readers asked of a line where an
+  entry is not `modelled` (`lineOf`, `legal`); the whole pipeliner - `Src`'s lines beside the stream, `Loop`'s `body`/
+  `pre` and its names, `addressForms`/`evalLine`, `Window`'s body, the emitters' lines (the turns' text aside), `namesOf`'s liveness,
+  the `linesOf`/`streamOf` crossing around it; `rounds(std::vector<Line>&)` where a function is not held; and the
+  census copies under `CXX1_C6X_MIR=1`.
+- **Gate** (Linux ~/m6s, a copy of ~/m6r with the changed files laid over; REF main 85fe99fe's compiler in its kept
+  tree ~/w7ref; Windows work\m6s against work\m6r's cxx3-msvc.exe; on the final commit). `identical.sh ARCHS=tms6747`
+  against main's compiler: -O0 and -O2 1,736 compared, 0 differ; -O0 -g 868 compared, 0 differ once the tree's own path
+  is normalised (91 raw, all `/w7ref/` against `/m6s/`). Windows: tests/cases at -O0, -O1, -O2 by md5, 3,669 outputs
+  (2,601 texts, 1,068 refused alike), 0 differ. Census at -O2 (`CXX1_C6X_MIR=1`, both boxes): **0 `c6x-loop-edit`, 0
+  `c6x-spell`**, 0 `c6x-loops`, 0 `c6x-loop-unread`, 0 `c6x-front`, 0 `c6x-fold`, 0 `c6x-fold-edit`, 0 `c6x-live`, 0
+  `c6x-live-unread`, 0 `c6x-body`, 0 `c6x-loop-lines`, 0 `c6x-recog`, 0 `c6x-node`, 0 to the text pipeliner or pass;
+  6,835 selected functions, 106 with kernels (2,727 placed entries). tests/tms6747.sh SHARD=k/3 CYCLES=1 SIM=0 at -O2:
+  814 passed, 0 failed, 3 not run on vm6747; **192,009,106 cycles** (192.0 M, unchanged). tests/g-same.sh 867 same, 0
+  differ, 0 broken; asm6x.sh 833 objects, 0 failed, at -O0 and -O2. cl /W4 /WX clean. Exclusions 129 sites 0 uncited 0
+  stale (SSA lowering 554/95); comments 0 over; memory gate rc 0; ast-residue rc 0; ide/generate.py --check up to
+  date. Not run (the coordinator's): winpass, make test, ssa.sh.
+- **Owed:** the rest of round 7's item (1) (the loop's registers as numbers, `addressForms`, `Window`, the kernel
+  built as entries, then `Node::line` goes with the text pipeliner); the loop passes composing
+  their edits as entries (their readers off the views); the selector's stream handed in unprinted; then step 4.
 ### Wave 5 landed, 2026-11-14 (the coordinator)
 
 M6c rounds 4 (m6m: the recognisers read operands; vm6747's noexcept legs skipped by name) and 5 (m6n: the counted
