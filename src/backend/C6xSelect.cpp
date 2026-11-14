@@ -29,10 +29,12 @@ bool hoists(const ir::Function &f, ir::ValueId v) {
 const char *const kStage[] = { "B16", "B17", "B18", "B19", "B20", "B21", "B22", "B23" };
 const std::uint32_t kStages = 8;
 
-// A value's home: the registers the walker's planner promotes locals to (saved, bits 0-7), then A16-A31, which no call keeps.
+// A value's home: the registers the walker's planner promotes locals to (saved, bits 0-7), then A16-A31, which no call keeps,
+// then B24-B31 (M6b round 3), given where a function is optimised. kBside: the homes of the B file.
 const char *const kHome[] = { "A10", "A11", "A12", "A13", "B10", "B11", "B12", "B13", "A16", "A17", "A18", "A19",
-                              "A20", "A21", "A22", "A23", "A24", "A25", "A26", "A27", "A28", "A29", "A30", "A31" };
-const unsigned kKept = 0xffu, kScratch = 0xffff00u;
+                              "A20", "A21", "A22", "A23", "A24", "A25", "A26", "A27", "A28", "A29", "A30", "A31",
+                              "B24", "B25", "B26", "B27", "B28", "B29", "B30", "B31" };
+const unsigned kKept = 0xffu, kScratch = 0xffffff00u, kScratchA = 0xffff00u, kBside = 0xff0000f0u;
 
 bool callsOut(ir::Op op) {     // a call, or the EABI's divide helper
     return op == ir::Op::Call || op == ir::Op::SDiv || op == ir::Op::UDiv || op == ir::Op::SRem || op == ir::Op::URem;
@@ -213,6 +215,31 @@ std::string Tms6747::ssaUse(const ir::Function &f, ir::ValueId v, const char *sc
     return scratch;
 }
 
+// v at its home on either side where the homes were given by side (ssaSides_) - ssaPut decides whether the instruction may read it there.
+std::string Tms6747::ssaRead(const ir::Function &f, ir::ValueId v, const char *scratch) {
+    const char *h = ssaHomeOf(v);
+    return h != nullptr && ssaSides_ ? std::string(h) : ssaUse(f, v, scratch);
+}
+
+// **An instruction over the homes as they stand** (M6b round 3): written as built where one source at most crosses
+// (c6x::legal, the scheduler's reading); else its B sources through A4 and A6 and its result in A4. The destination used.
+std::string Tms6747::ssaPut(c6x::MInst t) {
+    if (!c6x::legal(t)) {
+        const int last = t.operands - 1;
+        for (int o = 0; o < last; o++) {
+            if (!t.op[o].isReg() || c6x::sideOfReg(t.op[o].reg) == 0) continue;
+            bool a4 = false;
+            for (int q = 0; q < last; q++) a4 = a4 || (q != o && t.op[q].isReg() && t.op[q].reg == c6x::regNumber("A4"));
+            const char *s = a4 ? "A6" : "A4";
+            ssaEmit(c6x::MInst("MV", t.op[o], s));
+            t.op[o] = c6x::MOperand(s);
+        }
+        if (t.op[last].isReg() && c6x::sideOfReg(t.op[last].reg) == 1) t.op[last] = c6x::MOperand("A4");
+    }
+    ssaEmit(t);
+    return t.op[t.operands - 1].str();
+}
+
 // A branch's arguments into the target's parameters: one by one where no move writes what another reads, else every
 // one read before any is written, through B16-B23.
 void Tms6747::ssaMoves(const ir::Function &f, const ir::Succ &s) {
@@ -382,7 +409,28 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
             }
     }
     // Bit r is kHome[r] free. A function with a seventh argument, its own or a call's, leaves A10, B10, A12 and B12 to it.
-    const unsigned kept = mode <= 0 ? 0u : wideCall ? kKept & ~0x55u : kKept, scratch = mode >= 2 ? kScratch : 0u;
+    const unsigned kept = mode <= 0 ? 0u : wideCall ? kKept & ~0x55u : kKept;
+    const bool sides = optimize_ != 0 && std::getenv("CXX1_C6X_NOSIDES") == nullptr;
+    const unsigned scratch = mode >= 2 ? (sides ? kScratch : kScratchA) : 0u;
+    ssaSides_ = sides;
+    std::vector<int> arrives(nv, -1);
+    for (std::size_t i = 0; i < f.params.size(); i++) arrives[f.params[i].v] = static_cast<int>(i);
+    // The file a value wants: a pointer parameter its arriving register's, a load or a step its base's, else most of its operands'.
+    const auto wants = [&](std::size_t v) -> unsigned {
+        const auto file = [&](ir::ValueId o) { return !o.valid() || ssaHome_[o.v] == 0 ? -1 : static_cast<int>((kBside >> (ssaHome_[o.v] - 1)) & 1); };
+        const bool base = ssaTypes_->type(f.values[v].type)->isPointer() || ssaTypes_->type(f.values[v].type)->isReference();
+        if (arrives[v] >= 0) return base && arrives[v] < abi_.intCount && abi_.intRegs[arrives[v]][0] == 'B' ? kBside : ~kBside;
+        int a = 0, b = 0;
+        const ir::Value &val = f.values[v];
+        if (!val.def.valid()) {
+            for (std::size_t q = 0; q < partner[v].size(); q++) (file(ir::ValueId(static_cast<std::uint32_t>(partner[v][q]))) == 1 ? b : a)++;
+            return b > 0 && b >= a ? kBside : ~kBside;
+        }
+        const ir::Inst &d = f.inst(val.def);
+        if ((d.op == ir::Op::Load || d.op == ir::Op::Gep) && d.count > 0) return file(f.operand(d, 0)) == 1 ? kBside : ~kBside;
+        for (std::uint32_t n = 0; n < d.count; n++) { const int s = file(f.operand(d, n)); if (s == 1) b++; else if (s == 0) a++; }
+        return b > a ? kBside : ~kBside;
+    };
     unsigned freeNow = kept | scratch, taken = 0;
     std::vector<std::size_t> active;
     int turn = 0, turnBlock = -1;       // the rest rotate within a block, so an unrolled body's turns use different registers
@@ -418,13 +466,14 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
             ssaHome_[active[light]] = 0;
             active.erase(active.begin() + static_cast<std::ptrdiff_t>(light));
         }
+        if (sides && (pick & wants(v)) != 0) pick &= wants(v);
         int r = -1;
         for (std::size_t q = 0; q < partner[v].size() && r < 0; q++)
             if (ssaHome_[partner[v][q]] != 0 && ((pick >> (ssaHome_[partner[v][q]] - 1)) & 1) != 0) r = ssaHome_[partner[v][q]] - 1;
         if (home[v] != turnBlock) { turn = 0; turnBlock = home[v]; }
         if (r < 0 && ((pick & ~scratch) != 0 || optimize_ == 0)) { r = 0; while (((pick >> r) & 1) == 0) r++; }       // nothing schedules -O0; a save costs
         if (r < 0) {
-            r = pick >> turn != 0 ? turn : 0;
+            r = turn < 32 && pick >> turn != 0 ? turn : 0;
             while (((pick >> r) & 1) == 0) r++;
             turn = r + 1;
         }
@@ -540,20 +589,22 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
     // The result where it is computed: its home on the A side, A4 where it has none or is narrowed after.
     const char *home = i.result.valid() ? ssaHomeOf(i.result) : nullptr;
     const std::string wide = home != nullptr && home[0] == 'A' ? home : "A4";
-    const std::string d = rt != nullptr && !rt->isVoid() && rt->size(target_) < 4 ? "A4" : wide;
+    // On either side where the homes were given by side (`own`, read by `y`): ssaPut answers where the result went.
+    const std::string own = home != nullptr && ssaSides_ ? home : wide;
+    std::string d = rt != nullptr && !rt->isVoid() && rt->size(target_) < 4 ? "A4" : own;
     const auto finish = [&]() { if (d == "A4") { narrowInt(rt); ssaStore(f, i.result, "A4"); } };
     const auto x = [&](std::uint32_t n) { return ssaUse(f, f.operand(i, n), n == 0 ? "A4" : "A6"); };
+    const auto y = [&](std::uint32_t n) { return ssaRead(f, f.operand(i, n), n == 0 ? "A4" : "A6"); };
     const auto bin = [&](const char *op) {
-        const std::string a = x(0), b = x(1);
-        ssaEmit(c6x::MInst(op, a, b, d));
+        const std::string a = y(0), b = y(1);
+        d = ssaPut(c6x::MInst(op, a, b, d));
     };
     // An operation whose right operand of lo..hi is written in the instruction (`first`: before the register).
     const auto binK = [&](const char *op, long long lo, long long hi, bool first) {
         long long k = 0;
         if (!smallConst(f, f.operand(i, 1), lo, hi, k)) { bin(op); return; }
-        const std::string a = x(0);
-        if (first) ssaEmit(c6x::MInst(op, k, a, d));
-        else ssaEmit(c6x::MInst(op, a, k, d));
+        const std::string a = y(0);
+        d = ssaPut(first ? c6x::MInst(op, k, a, d) : c6x::MInst(op, a, k, d));
     };
     // An edge: its arguments, then the jump, or none where the target is written next.
     const auto edge = [&](const ir::Succ &s, bool fall) {
@@ -585,27 +636,31 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         return;
     case ir::Op::Load: {
         std::string mem;
-        if (!ssaFrameMem(f, f.operand(i, 0), accessSize(rt), mem)) mem = "*" + x(0);
+        if (!ssaFrameMem(f, f.operand(i, 0), accessSize(rt), mem)) mem = "*" + y(0);
         const int sz = rt->size(target_);
         const bool sign = rt->isSigned(target_);
-        ssaEmit(c6x::MInst(sz == 1 ? (sign ? "LDB" : "LDBU") : sz == 2 ? (sign ? "LDH" : "LDHU") : "LDW", mem, wide));
+        ssaEmit(c6x::MInst(sz == 1 ? (sign ? "LDB" : "LDBU") : sz == 2 ? (sign ? "LDH" : "LDHU") : "LDW", mem, own));
         ssaNop(4);
-        if (wide == "A4") ssaStore(f, i.result, "A4");
+        if (own == "A4") ssaStore(f, i.result, "A4");
         return;
     }
     case ir::Op::Store: {
         const ir::ValueId p = f.operand(i, 0), v = f.operand(i, 1);
         const int sz = accessSize(ssaType(f, v));
-        const std::string from = ssaUse(f, v, "A4");
+        const std::string from = ssaRead(f, v, "A4");
         std::string mem;
-        if (!ssaFrameMem(f, p, sz, mem)) mem = "*" + ssaUse(f, p, "A6");
+        if (!ssaFrameMem(f, p, sz, mem)) mem = "*" + ssaRead(f, p, "A6");
         ssaEmit(c6x::MInst(sz == 1 ? "STB" : sz == 2 ? "STH" : "STW", from, mem));
         return;
     }
     case ir::Op::Gep: {
+        if (i.count == 2) {
+            const std::string p = y(0), b = y(1);
+            if (ssaPut(c6x::MInst("ADD", p, b, own)) == "A4") ssaStore(f, i.result, "A4");
+            return;
+        }
         const std::string a = x(0);
-        if (i.count == 2) { const std::string b = x(1); ssaEmit(c6x::MInst("ADD", a, b, wide)); }
-        else if (i.k != 0) regAdd(a.c_str(), static_cast<int>(i.k), wide.c_str());
+        if (i.k != 0) regAdd(a.c_str(), static_cast<int>(i.k), wide.c_str());
         else if (a != wide) ssaEmit(c6x::MInst("MV", a, wide));
         if (wide == "A4") ssaStore(f, i.result, "A4");
         return;
@@ -614,8 +669,8 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         long long k = 0;
         if (smallConst(f, f.operand(i, 1), -31, 31, k)) {
             const bool add = (i.op == ir::Op::Add) == (k >= 0);
-            const std::string a = x(0);
-            ssaEmit(c6x::MInst(add ? "ADD" : "SUB", a, k < 0 ? -k : k, d));
+            const std::string a = y(0);
+            d = ssaPut(c6x::MInst(add ? "ADD" : "SUB", a, k < 0 ? -k : k, d));
         } else bin(i.op == ir::Op::Add ? "ADD" : "SUB");
         finish();
         return;
