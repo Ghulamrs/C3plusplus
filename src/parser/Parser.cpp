@@ -842,15 +842,14 @@ int Parser::declare(const std::string &name, const Type *type, std::size_t pos,
     locals_.push_back(Local{ name, offset, type, false, std::string() });
     locals_.back().isParameter = inParams_;
     locals_.back().serial = ++localSerial_;
-    // The debug record describes the storage, which for a reference is the
-    // pointer it really is. DWARF has a tag for a reference and this does not
-    // use it yet.
+    // The debug record describes the storage, which for a reference is the pointer it really is; DWARF names the reference.
     const Type *stored = type->isReference()
                        ? types_.pointerTo(type->referent()) : type;
     fnVars_.push_back(::Local{ name, stored, offset, inParams_, std::string(),
                               currentBlock() });
     fnVars_.back().align = alignAtLeast > objectAlign(stored, target_) ? alignAtLeast : objectAlign(stored, target_);
     fnVars_.back().serial = localSerial_;
+    if (type->isReference()) fnVars_.back().declared = type;
     return offset;
 }
 

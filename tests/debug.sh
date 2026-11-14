@@ -20,9 +20,10 @@ GDB=${GDB:-gdb}
 OUT=tests/out-debug
 rm -rf "$OUT"; mkdir -p "$OUT"
 pass=0; fail=0
-# The debugger's text, kept from the first `==` marker: frames made `f @ line`, addresses masked, noise dropped.
+# The debugger's text, kept from the first `==` marker: frames made `f @ line`, addresses masked, noise dropped -
+# blank lines too, which gdb prints before every stop a `continue` reaches (g++'s binary the same).
 normal() {
-    tr -d '\r' | sed -n '/^==/,$p' | sed -e '/^quit:/,$d' -e '/^Breakpoint [0-9]* hit/d' -e '/^Child-SP/d' \
+    tr -d '\r' | sed -n '/^==/,$p' | sed -e '/^quit:/,$d' -e '/^$/d' -e '/^Breakpoint [0-9]* hit/d' -e '/^Child-SP/d' \
         -e '/^Breakpoint [0-9]*[,] /d' -e '/^Breakpoint [0-9]* at /d' -e '/^[0-9][0-9]*	/d' -e '/^\[/d' -e '/^Continuing\./d' \
         -e 's/^.*[ !]\([A-Za-z_][A-Za-z0-9_:<>~]*\)+0x[0-9a-f]* \[.*[\\/]\([^\\/]*\) @ \([0-9]*\)\]$/\1 @ \3|\2/' \
         -e 's/^#[0-9]* .* \([A-Za-z_][A-Za-z0-9_:<>~]*\) (.*) at \(.*[\\/]\)\{0,1\}\([^\\/ ]*\):\([0-9]*\)$/\1 @ \4|\3/' \

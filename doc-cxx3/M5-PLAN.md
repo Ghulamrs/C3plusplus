@@ -820,3 +820,20 @@ StmtPtr 639, node-refs 413): the parser's own fixes, in the half M6d deletes.
 - **Linux**: the gdb half (`<w>.gdb`, `.gdb.expected` from the source, never yet run) queued as one job on the lock
   behind M5's self-host (boxkit/dbg-linux.sh, ~/dbg-linux.out). Expected to name at least `big = 1` against the
   source's `bool big = true` (x86g's run showed `1`: the DWARF type of bool).
+- **The gdb half, mended (lane dbg2, 2026-11-14)**: the first run (boxkit/dbg-linux.out) was 2 passed, 3 failed; each
+  failure checked against g++ -g -O0's own gdb session over the same source and script (the oracle, ~/dbg2-oracle).
+  **d1, w2's extra blank line was the script's**: gdb prints a blank line before every stop a `continue` reaches, for
+  g++'s binary the same; the normaliser drops blank lines (no expectation holds one). **w2's `big = 1 '\001'`**: bool
+  was described with the char-sized integer encoding; it is DW_ATE_boolean now. **w4's missing `total` and `main`**: the
+  unit's DW_AT_low_pc/high_pc were the first function's begin and the last's end, and the last were COMDAT inline
+  functions in sections of their own placed after .text - so the unit covered only those and gdb found no symbols for
+  the rest. ELF units now carry low_pc 0 and DW_AT_ranges over .debug_ranges, one pair per function (Mach-O keeps its
+  pair: DwarfSpelling::ranges null). With that gdb read w4's records and three more were wrong against g++'s: a
+  reference parameter written as the pointer it is stored as (`Local::declared` now keeps the reference for DWARF;
+  CodeView still reads `type`, so cdb's view is unchanged), an enumeration as `int` (DW_TAG_enumeration_type with its
+  enumerators now), a base's members flattened into the class (DW_TAG_inheritance for a direct non-virtual base, the
+  inherited members skipped, as CodeView's LF_BCLASS). No expectation changed: every `.gdb.expected` line equals g++'s.
+- **Gates**: Linux `debug.sh gdb` 5 passed, 0 failed; Windows (tree dbg2, cl /W4 /WX clean) `debug.sh cdb` 5/5 with
+  -masm=masm and with -masm=gnu; emit.sh 0 of 3399 files changed (emit is not -g); exclusions 0 uncited / 0 stale,
+  comments 0 over the cap, memory-gate rc 0 (Linux), ide/generate.py up to date. src/ lines: Dwarf.cpp 509 -> 569,
+  Dwarf.h 70 -> 72, Ast.h 849 -> 850, Parser.cpp 950 -> 949.

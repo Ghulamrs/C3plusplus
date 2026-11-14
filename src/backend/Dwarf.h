@@ -55,6 +55,8 @@ struct DwarfSpelling {
     const char *info;
 
     const char *line;
+    // Where a unit's address ranges go, null for one low_pc/high_pc pair: an ELF COMDAT function is in a section of its own.
+    const char *ranges;
 
     bool offsetsAreLabels;
     int frameBaseReg;

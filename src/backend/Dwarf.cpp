@@ -6,6 +6,7 @@ const DwarfSpelling kElfDwarf = {
     "  .section .debug_abbrev,\"\",@progbits\n",
     "  .section .debug_info,\"\",@progbits\n",
     "  .section .debug_line,\"\",@progbits\n",
+    "  .section .debug_ranges,\"\",@progbits\n",
     true,
     6,
     "",
@@ -15,6 +16,7 @@ const DwarfSpelling kMachODwarf = {
     "  .section __DWARF,__debug_abbrev,regular,debug\n",
     "  .section __DWARF,__debug_info,regular,debug\n",
     "  .section __DWARF,__debug_line,regular,debug\n",
+    nullptr,
     false,
     29,
     "_",
@@ -29,6 +31,7 @@ const int kTagSubroutine = 0x15, kTagSubrange = 0x21, kTagBase = 0x24;
 const int kTagFormalParameter = 0x05, kTagSubprogram = 0x2e, kTagVariable = 0x34;
 const int kTagLexicalBlock = 0x0b;
 const int kTagUnspecifiedParameters = 0x18;
+const int kTagInheritance = 0x1c, kTagEnumeration = 0x04, kTagEnumerator = 0x28;
 
 const int kAtLocation = 0x02, kAtName = 0x03, kAtByteSize = 0x0b;
 const int kAtBitSize = 0x0d, kAtStmtList = 0x10, kAtLowPc = 0x11;
@@ -36,16 +39,16 @@ const int kAtHighPc = 0x12, kAtLanguage = 0x13, kAtCompDir = 0x1b;
 const int kAtProducer = 0x25, kAtUpperBound = 0x2f, kAtDataMemberLocation = 0x38;
 const int kAtDeclFile = 0x3a, kAtDeclLine = 0x3b, kAtEncoding = 0x3e;
 const int kAtExternal = 0x3f, kAtFrameBase = 0x40, kAtType = 0x49;
-const int kAtDataBitOffset = 0x6b;
+const int kAtDataBitOffset = 0x6b, kAtConstValue = 0x1c, kAtRanges = 0x55;
 
 const int kFormAddr = 0x01, kFormData2 = 0x05, kFormData4 = 0x06;
 const int kFormString = 0x08, kFormData1 = 0x0b, kFormFlag = 0x0c;
-const int kFormRef4 = 0x13, kFormSecOffset = 0x17, kFormExprLoc = 0x18;
+const int kFormSdata = 0x0d, kFormRef4 = 0x13, kFormSecOffset = 0x17, kFormExprLoc = 0x18;
 
 // DW_LANG_C_plus_plus, and DW_LANG_C89 for a unit read as C90 (M7): it decides how a debugger prints and demangles a
 // name, and a C++ compiler saying C89 - the fork's inheritance until 2026-09-06 - told it the wrong language.
 const int kLangCpp = 0x04, kLangC89 = 0x01;
-const int kAteFloat = 0x04, kAteSigned = 0x05, kAteSignedChar = 0x06;
+const int kAteBoolean = 0x02, kAteFloat = 0x04, kAteSigned = 0x05, kAteSignedChar = 0x06;
 const int kAteUnsigned = 0x07, kAteUnsignedChar = 0x08;
 
 const int kOpAddr = 0x03, kOpFbreg = 0x91;
@@ -58,7 +61,8 @@ enum Abbrev {
     kAbArray, kAbSubrange, kAbSubrangeOpen,
     kAbStructure, kAbUnion, kAbMember, kAbBitField,
     kAbSubroutine, kAbSubroutineVoid, kAbParamType, kAbUnspecified,
-    kAbLexicalBlock, kAbReference, kAbRvalueReference
+    kAbLexicalBlock, kAbReference, kAbRvalueReference,
+    kAbInheritance, kAbEnumeration, kAbEnumerator
 };
 
 void line(std::string &o, const std::string &text) { o += text; o += '\n'; }
@@ -132,9 +136,12 @@ public:
             for (std::size_t i = 0; i < t->params().size(); i++)
                 id(t->params()[i]);
         }
-        if (t->isStructOrUnion())
+        if (t->isStructOrUnion()) {
+            for (const Type::BaseSpec &b : t->bases())
+                if (b.direct && !b.isVirtual) id(b.type);
             for (std::size_t i = 0; i < t->members().size(); i++)
                 id(t->members()[i].type);
+        }
         return n;
     }
 
@@ -153,6 +160,7 @@ void typeRef(std::string &o, int id) {
 }
 
 int encodingFor(const Type *t, const Target &target) {
+    if (t->isBool()) return kAteBoolean;
     if (t->isFloating()) return kAteFloat;
     if (t->kind() == Kind::Char)
         return target.plainCharIsSigned() ? kAteSignedChar : kAteUnsignedChar;
@@ -189,7 +197,8 @@ void writeAbbrevTable(std::string &o, const DwarfSpelling &sp) {
     attr(o, kAtName, kFormString);
     attr(o, kAtCompDir, kFormString);
     attr(o, kAtLowPc, kFormAddr);
-    attr(o, kAtHighPc, kFormAddr);
+    if (sp.ranges != nullptr) attr(o, kAtRanges, kFormSecOffset);
+    else attr(o, kAtHighPc, kFormAddr);
     attr(o, kAtStmtList, kFormSecOffset);
     endAbbrev(o);
 
@@ -302,6 +311,21 @@ void writeAbbrevTable(std::string &o, const DwarfSpelling &sp) {
     attr(o, kAtType, kFormRef4);
     endAbbrev(o);
 
+    abbrev(o, kAbInheritance, kTagInheritance, false);
+    attr(o, kAtType, kFormRef4);
+    attr(o, kAtDataMemberLocation, kFormData4);
+    endAbbrev(o);
+
+    abbrev(o, kAbEnumeration, kTagEnumeration, true);
+    attr(o, kAtName, kFormString);
+    attr(o, kAtByteSize, kFormData1);
+    endAbbrev(o);
+
+    abbrev(o, kAbEnumerator, kTagEnumerator, false);
+    attr(o, kAtName, kFormString);
+    attr(o, kAtConstValue, kFormSdata);
+    endAbbrev(o);
+
     o += "  .byte 0\n";
 }
 
@@ -352,8 +376,16 @@ void writeType(std::string &o, const Type *t, int id, Types &types,
         num(o, "  .byte", t->kind() == Kind::Struct ? kAbStructure : kAbUnion);
         str(o, t->tag());
         num(o, "  .long", t->size(target));
+        // A direct non-virtual base as itself, as CodeView's LF_BCLASS: its members are not the class's own.
+        for (const Type::BaseSpec &b : t->bases()) {
+            if (!b.direct || b.isVirtual) continue;
+            num(o, "  .byte", kAbInheritance);
+            typeRef(o, types.id(b.type));
+            num(o, "  .long", b.offset);
+        }
         const std::vector<Member> &ms = t->members();
         for (std::size_t i = 0; i < ms.size(); i++) {
+            if (ms[i].declaredIn != nullptr || ms[i].inVirtualBase != nullptr) continue;
             if (ms[i].isBitField()) {
                 num(o, "  .byte", kAbBitField);
                 str(o, ms[i].name);
@@ -371,6 +403,20 @@ void writeType(std::string &o, const Type *t, int id, Types &types,
         return;
     }
 
+    if (t->isEnumeration()) {
+        num(o, "  .byte", kAbEnumeration);
+        str(o, t->enumTag().empty() ? t->enumTag() : t->displayTag());
+        num(o, "  .byte", t->size(target));
+        for (const std::pair<std::string, long long> &e : t->enumerators()) {
+            num(o, "  .byte", kAbEnumerator);
+            str(o, e.first);
+            std::vector<unsigned char> v;
+            sleb(v, e.second);
+            bytes(o, v);
+        }
+        o += "  .byte 0\n";
+        return;
+    }
     num(o, "  .byte", kAbBase);
     str(o, t->name());
     num(o, "  .byte", encodingFor(t, target));
@@ -390,7 +436,7 @@ void writeObject(std::string &o, const Local &l, Types &types,
     }
     num(o, "  .byte", l.isParam ? kAbFormalParameter : kAbVariable);
     str(o, l.name);
-    typeRef(o, types.id(l.type));
+    typeRef(o, types.id(l.declared != nullptr ? l.declared : l.type));
     exprLoc(o, frameLocation(l.offset, f));
 }
 
@@ -460,8 +506,13 @@ void writeDwarf(std::string &out, const DwarfSpelling &sp, const Target &target,
     num(out, "  .byte", dialect == Dialect::C90 ? kLangC89 : kLangCpp);
     str(out, file);
     str(out, compDir);
-    line(out, "  .quad " + fns.front().begin);
-    line(out, "  .quad " + fns.back().end);
+    if (sp.ranges != nullptr) {
+        out += "  .quad 0\n";
+        line(out, "  .long Ldebug.ranges.begin");
+    } else {
+        line(out, "  .quad " + fns.front().begin);
+        line(out, "  .quad " + fns.back().end);
+    }
 
     line(out, sp.offsetsAreLabels ? "  .long Ldebug.line.begin" : "  .long 0");
 
@@ -506,4 +557,13 @@ void writeDwarf(std::string &out, const DwarfSpelling &sp, const Target &target,
 
     out += "  .byte 0\n";
     line(out, "Ldebug.cu.end:");
+
+    if (sp.ranges == nullptr) return;
+    out += sp.ranges;
+    line(out, "Ldebug.ranges.begin:");
+    for (std::size_t i = 0; i < fns.size(); i++) {
+        line(out, "  .quad " + fns[i].begin);
+        line(out, "  .quad " + fns[i].end);
+    }
+    out += "  .quad 0\n  .quad 0\n";
 }

@@ -649,6 +649,7 @@ struct Local {
     int scope;
     int align = 0;      // the slot's alignment, alignas included: what a backend laying the frame out must keep
     int serial = -1;    // the parser's serial for it, which a Resolved record of the local names (M3b.2)
+    const Type *declared = nullptr;   // a reference's own type, for DWARF: `type` is the pointer it is stored as
 
     // C++11 has no aggregate with a member initialiser, so the braces call this.
     Local(std::string name = std::string(), const Type *type = nullptr, int offset = 0,
