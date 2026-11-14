@@ -1354,3 +1354,14 @@ C6xSched.cpp's text-only passes deleted, 2,423 -> 1,356 lines, src/ +78 -1,216; 
   c90 447/0). tms6747 (vm6747, SIM=0, three shards): 814 passed, 0 failed at -O0 (393.2 M) and -O2 (**192.0 M**,
   unchanged); walker -O0 814 / 0 (447.8 M), walker -O2 812 / 2 - the same two owed since wave 13, no new one;
   asm6x 833 / 0 at -O0 and -O2.
+
+### Wave 15 landed, 2026-11-14 (the coordinator)
+
+M6c round 18 (m6aa: the walker's two -O2 wrong answers fixed at their root - `bindStaticReference` bound a scalar
+temporary in the init function's frame instead of `_ZGR`, so `bindReference` now copies it to the static object;
+class and `thread_local` temporaries registered in tests/open/walker-static-reference-temporary.cpp, owed with M6d;
+`CPP11_C6XLIVECHECK` removed; D5's first step, one stream-backed `LoopText`; src/ +92 -153).
+- **Gate at 1d5526c0** (6f1a08b4 merged with main 522e4acf): Windows winpass -O0 and -O2: 828 same / 0 differ, masm
+  827 / 0. Mac run.sh -O0 and -O2 1215 / 0. Linux make test rc 0 (run 1217/0, emit 3399/0, typed 860/0, ssa 890/0,
+  c90 447/0). tms6747: 814 passed, 0 failed at -O0 (393.2 M) and -O2 (**192.0 M**, unchanged); **walker -O0 and -O2
+  814 / 0** (the two owed since wave 13 now pass); asm6x 833 / 0 at -O0 and -O2 (rerun after the ssh dropped).
