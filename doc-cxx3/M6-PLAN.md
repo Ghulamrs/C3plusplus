@@ -1163,3 +1163,12 @@ all the window's).
   827 / 0. Mac run.sh -O0 and -O2 1215 / 0. Linux make test rc 0 (run 1217/0, emit 3399/0, typed 860/0, ssa 890/0,
   c90 447/0, exclusions 0/0, comments 0). tms6747 (vm6747, SIM=0, three shards): 814 passed, 0 failed at -O0
   (393.2 M cycles) and -O2 (**192.0 M**, unchanged); asm6x 833 / 0 at -O0 and -O2.
+
+### Wave 12 landed, 2026-11-14 (the coordinator)
+
+M6c round 15 (m6x: W2-W4 the window's emitters on entries with numbered and virtual registers, `Code::push_back` and
+`entryOf` deleted; C3 the stepped counter's algebra on numbered terms; census `c6x-line` **0** for selected functions).
+- **Gate at 32d47563** (16f1f14a merged with main 8dc65fbb): Windows winpass -O0 and -O2: 828 same / 0 differ, masm
+  827 / 0. Mac run.sh -O0 and -O2 1215 / 0. Linux make test rc 0 (run 1217/0, emit 3399/0, typed 860/0, ssa 890/0,
+  c90 447/0, exclusions 0/0, comments 0). tms6747 (vm6747, SIM=0, three shards): 814 passed, 0 failed at -O0
+  (393.2 M cycles) and -O2 (**192.0 M**, unchanged); asm6x 833 / 0 at -O0 and -O2.
