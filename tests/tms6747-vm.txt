@@ -1,0 +1,4 @@
+# Cases vm6747 cannot run, the reason beside each: tests/tms6747.sh skips their vm6747 leg by name; sim6747 (SIM=1) still runs them.
+noexcept-terminates        std::set_terminate: vm6747's runtime (VM6747 src/Runtime.cpp) supplies _ZSt9terminatev but no _ZSt13set_terminatePFvvE, so the link of the emulator refuses the symbol; TI's rts6740 has it
+noexcept-terminates-callee std::set_terminate: vm6747's runtime (VM6747 src/Runtime.cpp) supplies _ZSt9terminatev but no _ZSt13set_terminatePFvvE, so the link of the emulator refuses the symbol; TI's rts6740 has it
+ssa-noexcept-throw         std::set_terminate: vm6747's runtime (VM6747 src/Runtime.cpp) supplies _ZSt9terminatev but no _ZSt13set_terminatePFvvE, so the link of the emulator refuses the symbol; TI's rts6740 has it

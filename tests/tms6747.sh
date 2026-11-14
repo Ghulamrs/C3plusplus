@@ -84,7 +84,12 @@ one() {
         fi
         parts="$OUT/$base.part.s"
     fi
-    if [ -n "$CYCLES" ]; then
+    verdict=pass
+    # tests/tms6747-vm.txt: cases vm6747's runtime cannot run, the reason beside; sim6747 with TI's runtime still runs them.
+    if grep -q "^$base[[:space:]]" tests/tms6747-vm.txt; then
+        echo "  skip $base on vm6747: $(grep "^$base[[:space:]]" tests/tms6747-vm.txt | sed 's/^[^[:space:]]*[[:space:]]*//')"
+        verdict=vmskip
+    elif [ -n "$CYCLES" ]; then
         { timeout 180 "$VM" -c "$OUT/$base.s" $parts > "$OUT/$base.raw" 2>&1 < /dev/null; } 2>/dev/null || true
         # The program's last line may have no newline, so the count is cut out exactly as written.
         grep -o 'CYCLES count=[0-9]* packets=[0-9]* natives=[0-9]*' "$OUT/$base.raw" | sed 's/^CYCLES //' > "$OUT/$base.cycles"
@@ -92,8 +97,7 @@ one() {
     else
         { timeout 180 "$VM" "$OUT/$base.s" $parts > "$OUT/$base.out" 2>&1 < /dev/null; } 2>/dev/null || true
     fi
-    verdict=pass
-    if ! diff -q "tests/cases/$base.expected" "$OUT/$base.out" >/dev/null; then
+    if [ "$verdict" = pass ] && ! diff -q "tests/cases/$base.expected" "$OUT/$base.out" >/dev/null; then
         echo "FAIL $base:"
         diff "tests/cases/$base.expected" "$OUT/$base.out" | sed 's/^/      /' | head -8
         verdict=fail
@@ -160,10 +164,11 @@ JOBS=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)}
 cases | xargs -P "$JOBS" -I{} sh "$0" --one "$only" {}
 for base in $(cases); do cat "$OUT/$base.report"; done
 count() { cat "$OUT"/*.verdict 2>/dev/null | grep -cx "$1" || true; }
-pass=$(( $(count pass) + $(count simskip) )); simskip=$(count simskip); fail=$(count fail); skipEh=$(count eh); skipLp=$(count lp64); skipNt=$(count notarget)
+pass=$(( $(count pass) + $(count simskip) )); simskip=$(count simskip); vmskip=$(count vmskip); fail=$(count fail); skipEh=$(count eh); skipLp=$(count lp64); skipNt=$(count notarget)
 
 echo "tms6747.sh: $pass passed, $fail failed, $skipEh skipped for exceptions, $skipLp skipped for a 64-bit long, $skipNt not for this target"
 [ "$SIM" = 1 ] && echo "tms6747.sh: every pass also on sim6747 (asm6x, lnk6x, $RTSLIB) but $simskip in tests/tms6747-sim.txt"
+echo "tms6747.sh: $vmskip not run on vm6747 (tests/tms6747-vm.txt)$([ "$SIM" = 1 ] && echo ", run on sim6747 alone" || echo ", and SIM=0 runs no other leg")"
 if [ -n "$CYCLES" ]; then
     for base in $(cases); do [ -s "$OUT/$base.cycles" ] && echo "$base $(cat "$OUT/$base.cycles")"; done > "$OUT/cycles.txt"
     awk '{ sub("count=", "", $2); s += $2 } END { printf "tms6747.sh: %d cycles (cycle.CPU) over %d cases, in %s\n", s, NR, FILENAME }' "$OUT/cycles.txt"

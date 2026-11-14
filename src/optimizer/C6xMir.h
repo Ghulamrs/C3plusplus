@@ -85,6 +85,8 @@ bool pipelineLoops(MStream &s);
 bool modelled(const MInst &i);
 int crossings(const MInst &i);
 unsigned unitsFor(const MInst &i);
+// `readsAndWrites` on a modelled entry: the registers it reads and writes by name, in the order the text pass lists them.
+void readsAndWrites(const MInst &i, std::vector<std::string> &reads, std::vector<std::string> &writes);
 
 // Whether the instruction stands as written: one crossing source at most, and a unit - C6xSched's `crossings`, `unitsFor`.
 bool legal(const MInst &i);

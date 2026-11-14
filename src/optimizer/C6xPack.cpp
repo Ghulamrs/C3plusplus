@@ -204,6 +204,19 @@ bool modelled(const MInst &i) {
 }
 int crossings(const MInst &i) { return crossings(i, i.m.str()); }
 unsigned unitsFor(const MInst &i) { return unitsFor(i, i.m.str()); }
+void readsAndWrites(const MInst &i, std::vector<std::string> &reads, std::vector<std::string> &writes) {
+    auto names = [](const MOperand &o, std::vector<std::string> &to) { int r[2]; const int n = regsOf(o, r); for (int k = 0; k < n; k++) to.push_back(regName(r[k])); };
+    if (i.pred != kNoReg) reads.push_back(regName(i.pred));
+    if (i.operands == 0) return;
+    const std::string m = i.m.str();
+    const MOperand &last = i.op[i.operands - 1];
+    const bool hasDest = !isStore(m) && m != "B" && m != "NOP" && last.kind != MOperand::Memory;
+    for (int k = 0; k < i.operands - (hasDest ? 1 : 0); k++) names(i.op[k], reads);
+    for (int k = 0; k < i.operands; k++) if (stepped(i.op[k])) names(i.op[k], writes);
+    if (!hasDest) return;
+    names(last, writes);
+    if (m == "MVKH" || m == "ADDK") names(last, reads);
+}
 
 bool streamOf(const std::vector<Line> &v, MStream &s) {
     for (std::size_t k = 0; k < v.size(); k++) {

@@ -598,3 +598,37 @@ m6-l (the packetiser reads typed operands), m5-dbg (tests/debug.sh; DWARF ranges
   noexcept-terminates, noexcept-terminates-callee, ssa-noexcept-throw - vm6747's runtime has no
   `std::set_terminate`; owed to the next C6000 round (a .notarget for vm6747, or the symbol in its runtime).
 - cdb 5/5 both spellings and gdb 5/5 (dbg, dbg2); emit.sh's golden on Linux still owed.
+
+### M6c, round 4 (the pipeliner's recognisers on operands), 2026-11-14, lane m6m
+
+- **Landed** (from main 0e8877e6): every recogniser of the pipeliner reads a line through `Src` (C6xPipe.cpp), its one
+  reader - `recognise` (the counted loop), `recogniseStepped` and the terms it reads the body as (`evaluateBody`),
+  `recogniseWindow` whole (the byte window: its scan, the predicate classes, the pointer search) with `trackPointer`,
+  and `pipelineAt`'s back-branch trial. On the stream an entry's kind, mnemonic, predicate (a register number), its
+  operands - a register, an immediate's value, a pair, a byte address by mode and offset, an operand's registers - its
+  reads and writes (`readsAndWrites(MInst)`, C6xPack.cpp, by `regsOf`, in the text pass's order) and its units
+  (`unitsFor(MInst)`) come from the typed entry where it is `modelled`, else from its line. On the walker's text (`Src`
+  with no stream) everything comes from the line, so the walker's functions cannot change. `Window` records where each
+  body instruction stands (`at`). `CXX1_C6X_MIR=1` asks every recogniser on the stream a second time on the lines and
+  names a verdict, reason or recognised shape that differs (`c6x-recog`). src/ +285 -144 lines (C6xPipe.cpp 2,040 ->
+  2,166, C6xPack.cpp 322 -> 335, C6xMir.h 99 -> 101).
+- **What round 4 is not.** What the recognisers hand on is unchanged: `Loop` and `Window` hold the body as `Line`s
+  (`body`, `pre`) and registers as names (`iv`, `bound`, `P`, `C`, `used`, a pointer's `reg`), and the terms are
+  strings over names. `buildEdges` (its `makeNode` calls on body lines), the II search, `renameWebs`, the emitters
+  (`pipeline`, `emitWindow`, `emitClosed`) and the kernel's construction read lines as before; they are the next step,
+  then design step 3. Nothing of step 3 was begun.
+- **vm6747 and std::set_terminate.** noexcept-terminates, noexcept-terminates-callee and ssa-noexcept-throw call
+  `std::set_terminate`, which vm6747's runtime (VM6747 src/Runtime.cpp, another checkout, not this tree) does not
+  supply - it has `_ZSt9terminatev` alone. Their vm6747 leg is skipped by name: tests/tms6747-vm.txt (the reason
+  beside each, printed every run); tests/tms6747.sh still runs their sim6747 leg, and with TI's rts6740_elf_eh.lib
+  all three pass there.
+- **Gate** (Linux ~/m6m, a copy of ~/w4g - main 0e8877e6's code, its compiler kept as REF; Windows work\m6m).
+  `identical.sh ARCHS=tms6747` against main's compiler: -O0 and -O2 1,736 compared, 0 differ; -O0 -g 868 compared, 0
+  differ once the tree's own path in `.dwpsn file "..."` is normalised (91 raw, every one `/home/ec2-user/w4g/` against
+  `/m6m/`; identical.sh normalises the path in diagnostics, not in a `.s`). Census at -O2 (`CXX1_C6X_MIR=1`, 1,223
+  cases): 0 `c6x-recog`, 0 `c6x-node`, 0 to the text pipeliner, 0 to the text pass; 106 functions with 2,727 placed
+  entries, round 3's. tests/tms6747.sh SHARD=k/3 CYCLES=1 SIM=0 at -O2: 814 passed, **0 failed**, 3 not run on vm6747
+  (tests/tms6747-vm.txt); **192,009,106 cycles** over 811 cases (192.0 M, unchanged). The three with SIM=1 (rts6740_elf_eh.lib):
+  0 failed, run on sim6747 alone. tests/g-same.sh 867 same, 0 differ, 0 broken; asm6x.sh 833 objects, 0 failed, at -O0
+  and -O2. cl /W4 /WX clean. Exclusions 129 sites 0 uncited 0 stale (SSA lowering 554/95); comments 0 over; memory gate
+  rc 0; ast-residue rc 0; ide/generate.py --check up to date. Not run (the coordinator's): winpass, make test, ssa.sh.

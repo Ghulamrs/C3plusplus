@@ -164,6 +164,53 @@ bool mayAliasAt(const Access &a, int sa, const Access &b, int sb, int d) {
     return oa.empty() || ob.empty() || oa == ob;
 }
 
+// **The recognisers' reader** (M6c round 4): what an entry is and its parts - kind, mnemonic, predicate, operands,
+// reads and writes, units - from the stream's typed operands where it has them (`modelled`), else from the line.
+struct Src {
+    const std::vector<Line> &v;
+    const MStream *s;
+    bool typed(std::size_t i) const { return s && modelled((*s)[i]); }
+    bool instr(std::size_t i) const { return s ? (*s)[i].kind == MInst::Instruction && !(*s)[i].packed : v[i].instr; }
+    bool label(std::size_t i) const {
+        if (s && (*s)[i].kind == MInst::Label) return true;
+        return (!s || (*s)[i].kind != MInst::Instruction || (*s)[i].packed) && isLabel(v[i]);
+    }
+    std::string name(std::size_t i) const { return s && (*s)[i].kind == MInst::Label ? (*s)[i].m.str() : labelName(v[i]); }
+    std::string mnem(std::size_t i) const { return s && instr(i) ? (*s)[i].m.str() : v[i].mnem; }
+    std::string pred(std::size_t i) const {
+        if (!typed(i)) return v[i].pred;
+        const MInst &e = (*s)[i];
+        return e.pred == kNoReg ? std::string() : (e.predNot ? "!" : "") + regName(e.pred);
+    }
+    std::size_t ops(std::size_t i) const { return typed(i) ? (*s)[i].operands : v[i].ops.size(); }
+    std::string op(std::size_t i, std::size_t k) const { return typed(i) ? (*s)[i].op[k].str() : v[i].ops[k]; }
+    bool reg(std::size_t i, std::size_t k) const { return typed(i) ? (*s)[i].op[k].isReg() : sideOf(v[i].ops[k]) != 0; }
+    bool number(std::size_t i, std::size_t k, long &n) const {
+        if (typed(i)) { n = static_cast<long>((*s)[i].op[k].value); return (*s)[i].op[k].kind == MOperand::Immediate; }
+        n = std::atol(v[i].ops[k].c_str());
+        return isNumber(v[i].ops[k]);
+    }
+    bool pair(std::size_t i, std::size_t k) const { return typed(i) ? (*s)[i].op[k].kind == MOperand::Pair : v[i].ops[k].find(':') != std::string::npos; }
+    void rw(std::size_t i, std::vector<std::string> &reads, std::vector<std::string> &writes) const {
+        if (typed(i)) readsAndWrites((*s)[i], reads, writes); else readsAndWrites(v[i], reads, writes);
+    }
+    unsigned units(std::size_t i) const { return typed(i) ? unitsFor((*s)[i]) : unitsFor(v[i]); }
+    char side(std::size_t i, std::size_t k) const {
+        if (!typed(i)) return sideOf(v[i].ops[k]);
+        const MOperand &o = (*s)[i].op[k];
+        if (o.kind != MOperand::Register && o.kind != MOperand::Pair) return 0;
+        return sideOfReg(o.kind == MOperand::Pair ? o.hi : o.reg) ? 'B' : 'A';
+    }
+    void regsIn(std::size_t i, std::size_t k, std::vector<std::string> &out) const;
+    bool byteAddress(std::size_t i, std::size_t k, std::string &base, long &off, bool &post) const;
+    // The operands that name `x`: the label a branch reaches, counted over the function's instructions.
+    int naming(const std::string &x) const {
+        int n = 0;
+        for (std::size_t i = 0; i < v.size(); i++) if (instr(i)) for (std::size_t o = 0; o < ops(i); o++) if (op(i, o) == x) n++;
+        return n;
+    }
+};
+
 // ----- the loop as recognised -----
 
 struct Edge { int from, to, delay, dist; const char *why; };
@@ -227,29 +274,31 @@ std::string sumOf(const std::string &a, const std::string &b) {
 }
 
 // The terms of every register after the body, and the term P is computed from, by one pass in program order.
-std::map<std::string, std::string> evaluateBody(const std::vector<Line> &v, const Loop &L, std::vector<std::string> &lineTerms) {
+std::map<std::string, std::string> evaluateBody(const Src &src, const Loop &L, std::vector<std::string> &lineTerms) {
     std::map<std::string, std::string> env;
-    auto term = [&](const std::string &op) -> std::string {
-        if (isNumber(op)) return "k:" + op;
-        if (!env.count(op)) env[op] = "s:" + op;
-        return env[op];
+    auto name = [&](const std::string &r) -> std::string {
+        if (!env.count(r)) env[r] = "s:" + r;
+        return env[r];
     };
+    std::size_t i = 0;
+    auto term = [&](std::size_t k) -> std::string { long n; return src.number(i, k, n) ? "k:" + src.op(i, k) : name(src.op(i, k)); };
     for (std::size_t k = 0; k < L.bodyAt.size(); k++) {
-        const Line &l = v[L.bodyAt[k]];
+        i = L.bodyAt[k];
+        const std::string m = src.mnem(i);
         std::vector<std::string> reads, writes;
-        readsAndWrites(l, reads, writes);
-        for (std::size_t r = 0; r < reads.size(); r++) term(reads[r]);
+        src.rw(i, reads, writes);
+        for (std::size_t r = 0; r < reads.size(); r++) name(reads[r]);
         std::string t;
-        const bool plain = l.pred.empty() && l.ops.size() == 3 && writes.size() == 1 && l.ops[2] == writes[0];
-        if (l.mnem == "MV" && l.pred.empty() && l.ops.size() == 2 && writes.size() == 1) t = term(l.ops[0]);
-        else if (plain && l.mnem == "ADD") t = sumOf(term(l.ops[0]), term(l.ops[1]));
-        else if (plain && l.mnem == "CMPLT") t = "lt(" + term(l.ops[0]) + "," + term(l.ops[1]) + ")";
-        else if (plain && l.mnem == "CMPGT") t = "lt(" + term(l.ops[1]) + "," + term(l.ops[0]) + ")";
-        else if (plain && l.mnem == "CMPLTU") t = "ltu(" + term(l.ops[0]) + "," + term(l.ops[1]) + ")";
-        else if (plain && l.mnem == "CMPGTU") t = "ltu(" + term(l.ops[1]) + "," + term(l.ops[0]) + ")";
-        else if (plain && (l.mnem == "CMPEQ" || l.mnem == "AND" || l.mnem == "OR")) {
-            std::vector<std::string> ts; ts.push_back(term(l.ops[0])); ts.push_back(term(l.ops[1]));
-            t = (l.mnem == "CMPEQ" ? "eq{" : l.mnem == "AND" ? "and{" : "or{") + joinSorted(ts) + "}";
+        const bool unpred = src.pred(i).empty(), plain = unpred && src.ops(i) == 3 && writes.size() == 1 && src.op(i, 2) == writes[0];
+        if (m == "MV" && unpred && src.ops(i) == 2 && writes.size() == 1) t = term(0);
+        else if (plain && m == "ADD") t = sumOf(term(0), term(1));
+        else if (plain && m == "CMPLT") t = "lt(" + term(0) + "," + term(1) + ")";
+        else if (plain && m == "CMPGT") t = "lt(" + term(1) + "," + term(0) + ")";
+        else if (plain && m == "CMPLTU") t = "ltu(" + term(0) + "," + term(1) + ")";
+        else if (plain && m == "CMPGTU") t = "ltu(" + term(1) + "," + term(0) + ")";
+        else if (plain && (m == "CMPEQ" || m == "AND" || m == "OR")) {
+            std::vector<std::string> ts; ts.push_back(term(0)); ts.push_back(term(1));
+            t = (m == "CMPEQ" ? "eq{" : m == "AND" ? "and{" : "or{") + joinSorted(ts) + "}";
         }
         for (std::size_t w = 0; w < writes.size(); w++) env[writes[w]] = t.empty() || writes.size() > 1 ? "op:" + std::to_string(k) + ":" + writes[w] : t;
         lineTerms.push_back(t.empty() || writes.size() != 1 ? "" : env[writes[0]]);
@@ -260,22 +309,22 @@ std::map<std::string, std::string> evaluateBody(const std::vector<Line> &v, cons
 // **A counter stepped by more than one, or sixty-four bits wide**: the body, read as algebra, must leave registers lo (and
 // hi) as `lo + s` (and `hi + shi + carry`) for s the loop never writes, and compute P as `lo' < n` or `n < lo'` - the two-word
 // signed form `hi'<nhi | (hi'==nhi & lo' <u nlo)` for a wide one - so the loop runs while iv < n or iv <= n by its own test.
-bool recogniseStepped(const std::vector<Line> &v, Loop &L, std::string &why, const std::string &fallback) {
+bool recogniseStepped(const Src &src, Loop &L, std::string &why, const std::string &fallback) {
     why = fallback;
     auto no = [&](const char *r) { if (tracing() > 1) why += std::string(" [stepped: ") + r + "]"; return false; };
-    L.liveExit = v[L.back + 1].liveIn;
+    L.liveExit = src.v[L.back + 1].liveIn;
     if (L.liveExit & bitOf(L.P)) return no("the predicate lives past the loop");
     std::map<std::string, int> writers, readers;
     std::map<std::string, std::size_t> writerAt;
     for (std::size_t k = 0; k < L.bodyAt.size(); k++) {
         std::vector<std::string> reads, writes;
-        readsAndWrites(v[L.bodyAt[k]], reads, writes);
+        src.rw(L.bodyAt[k], reads, writes);
         for (std::size_t r = 0; r < reads.size(); r++) readers[reads[r]]++;
         for (std::size_t w = 0; w < writes.size(); w++) { writers[writes[w]]++; writerAt[writes[w]] = k; }
     }
     if (writers[L.P] != 1) return no("the predicate is written more than once");
     std::vector<std::string> lineTerms;
-    std::map<std::string, std::string> env = evaluateBody(v, L, lineTerms);
+    std::map<std::string, std::string> env = evaluateBody(src, L, lineTerms);
     // The steps: a register whose end term is itself plus one invariant (lo), and one that adds a carry of lo's sum (hi).
     auto invariant = [&](const std::string &t, std::string &reg) -> bool {
         if (t.compare(0, 2, "k:") == 0) { reg = t.substr(2); return true; }
@@ -355,7 +404,7 @@ bool recogniseStepped(const std::vector<Line> &v, Loop &L, std::string &why, con
     auto lastWriterBefore = [&](const std::string &x, std::size_t k) -> long {
         for (std::size_t j = k; j-- > 0;) {
             std::vector<std::string> reads, writes;
-            readsAndWrites(v[L.bodyAt[j]], reads, writes);
+            src.rw(L.bodyAt[j], reads, writes);
             if (has(writes, x)) return static_cast<long>(j);
         }
         return -1;
@@ -366,23 +415,23 @@ bool recogniseStepped(const std::vector<Line> &v, Loop &L, std::string &why, con
         std::size_t k = work.back(); work.pop_back();
         if (!feeding.insert(k).second) continue;
         std::vector<std::string> reads, writes;
-        readsAndWrites(v[L.bodyAt[k]], reads, writes);
+        src.rw(L.bodyAt[k], reads, writes);
         for (std::size_t r = 0; r < reads.size(); r++) { long w = lastWriterBefore(reads[r], k); if (w >= 0) work.push_back(static_cast<std::size_t>(w)); }
     }
     std::vector<std::size_t> tree;
     for (std::size_t k = 0; k < L.bodyAt.size(); k++) {
-        const Line &l = v[L.bodyAt[k]];
+        const std::size_t i = L.bodyAt[k];
         std::vector<std::string> reads, writes;
-        readsAndWrites(l, reads, writes);
+        src.rw(i, reads, writes);
         const bool rlo = has(reads, nlo), rhi = L.wide && has(reads, nhi);
         if (!rlo && !rhi) continue;
-        if (!feeding.count(k) || l.ops.size() != 3 || !l.pred.empty() || l.mnem.compare(0, 3, "CMP") != 0 || writes.size() != 1) return no("a bound is read outside the test");
-        if (l.ops[2] == nlo || l.ops[2] == nhi) return no("the test writes a bound");
+        if (!feeding.count(k) || src.ops(i) != 3 || !src.pred(i).empty() || src.mnem(i).compare(0, 3, "CMP") != 0 || writes.size() != 1) return no("a bound is read outside the test");
+        if (src.op(i, 2) == nlo || src.op(i, 2) == nhi) return no("the test writes a bound");
         const std::string &lt = lineTerms[k], want = rlo ? loTerm : hiTerm, bound = "s:" + (rlo ? nlo : nhi);
         if (lt.empty() || lt.find(want) == std::string::npos || lt.find(bound) == std::string::npos) return no("the test reads the counter before its step");
         for (std::size_t k2 = k + 1; k2 < L.bodyAt.size(); k2++) {
             std::vector<std::string> r2, w2;
-            readsAndWrites(v[L.bodyAt[k2]], r2, w2);
+            src.rw(L.bodyAt[k2], r2, w2);
             if (has(r2, writes[0]) && !feeding.count(k2)) return no("a bound's compare is read outside the test");
             if (has(w2, writes[0])) break;
         }
@@ -398,43 +447,41 @@ bool recogniseStepped(const std::vector<Line> &v, Loop &L, std::string &why, con
     if (L.wide) { L.ivs.push_back(hi); L.bounds.push_back(nhi); L.steps.push_back(shi); }
     L.used.clear(); L.written.clear(); L.predicated.clear();
     for (std::size_t k = 0; k < L.bodyAt.size(); k++) {
-        const Line &l = v[L.bodyAt[k]];
+        const std::size_t i = L.bodyAt[k];
         std::vector<std::string> reads, writes;
-        readsAndWrites(l, reads, writes);
+        src.rw(i, reads, writes);
         for (std::size_t r = 0; r < reads.size(); r++) L.used.insert(reads[r]);
-        for (std::size_t w = 0; w < writes.size(); w++) { L.used.insert(writes[w]); L.written.insert(writes[w]); if (!l.pred.empty()) L.predicated.insert(writes[w]); }
-        if (l.mnem == "MV" && l.ops.size() == 2 && l.ops[0] == l.ops[1]) continue;
+        for (std::size_t w = 0; w < writes.size(); w++) { L.used.insert(writes[w]); L.written.insert(writes[w]); if (!src.pred(i).empty()) L.predicated.insert(writes[w]); }
+        if (src.mnem(i) == "MV" && src.ops(i) == 2 && src.op(i, 0) == src.op(i, 1)) continue;
         if (std::find(tree.begin(), tree.end(), k) != tree.end()) L.testBody.push_back(L.body.size());
-        L.body.push_back(l);
+        L.body.push_back(src.v[i]);
     }
     why.clear();
     return true;
 }
 
-bool recognise(const std::vector<Line> &v, std::size_t back, const std::set<std::string> &labels, const std::set<std::string> &named, Loop &L, std::string &why) {
-    const Line &b = v[back];
-    if (b.pred.empty() || labels.count(b.ops[0]) == 0) { why = "no conditional branch to a label"; return false; }
-    L.label = b.ops[0];
+bool recognise(const Src &src, std::size_t back, const std::set<std::string> &labels, const std::set<std::string> &named, Loop &L, std::string &why) {
+    const std::vector<Line> &v = src.v;
+    const std::string bpred = src.pred(back);
+    if (bpred.empty() || src.ops(back) == 0 || labels.count(src.op(back, 0)) == 0) { why = "no conditional branch to a label"; return false; }
+    L.label = src.op(back, 0);
     if (L.label.size() > 5 && L.label.compare(L.label.size() - 5, 5, "$fill") == 0) { why = "a fill loop, memory-bound, kept as written"; return false; }
-    L.P = b.pred[0] == '!' ? b.pred.substr(1) : b.pred;
-    L.negated = b.pred[0] == '!';
+    L.P = bpred[0] == '!' ? bpred.substr(1) : bpred;
+    L.negated = bpred[0] == '!';
     std::size_t h = 0; bool found = false;
-    for (std::size_t i = 0; i < back; i++) if (isLabel(v[i]) && labelName(v[i]) == L.label) { h = i; found = true; }
+    for (std::size_t i = 0; i < back; i++) if (src.label(i) && src.name(i) == L.label) { h = i; found = true; }
     if (!found) { why = "the head is not above"; return false; }
-    if (back + 1 >= v.size() || !isLabel(v[back + 1])) { why = "no exit label after the branch"; return false; }
-    L.head = h; L.back = back; L.exitName = labelName(v[back + 1]);
-    for (std::size_t k = h; k-- > 0 && v[k].instr && !isBranch(v[k].mnem);) L.pre.insert(L.pre.begin(), v[k]);
-    int names = 0;
-    for (std::size_t i = 0; i < v.size(); i++) if (v[i].instr) for (std::size_t o = 0; o < v[i].ops.size(); o++) if (v[i].ops[o] == L.label) names++;
-    if (names != 1) { why = "the head is entered from elsewhere"; return false; }
+    if (back + 1 >= v.size() || !src.label(back + 1)) { why = "no exit label after the branch"; return false; }
+    L.head = h; L.back = back; L.exitName = src.name(back + 1);
+    for (std::size_t k = h; k-- > 0 && src.instr(k) && !isBranch(src.mnem(k));) L.pre.insert(L.pre.begin(), v[k]);
+    if (src.naming(L.label) != 1) { why = "the head is entered from elsewhere"; return false; }
     for (std::size_t i = h + 1; i < back; i++) {
-        const Line &l = v[i];
-        if (isLabel(l)) { if (!passThrough(l, named)) { why = "a label inside"; return false; } continue; }
-        if (!l.instr) { why = "a directive inside"; return false; }
-        if (isBranch(l.mnem)) { why = "a branch inside"; return false; }
-        if (unitsFor(l) == 0) { why = "an instruction of no known unit: " + l.mnem; return false; }
+        if (src.label(i)) { if (!passThroughName(src.name(i), named)) { why = "a label inside"; return false; } continue; }
+        if (!src.instr(i)) { why = "a directive inside"; return false; }
+        if (isBranch(src.mnem(i))) { why = "a branch inside"; return false; }
+        if (src.units(i) == 0) { why = "an instruction of no known unit: " + src.mnem(i); return false; }
         std::vector<std::string> reads, writes;
-        readsAndWrites(l, reads, writes);
+        src.rw(i, reads, writes);
         if (has(writes, "A15") || has(writes, "B15")) { why = "the stack pointer is written"; return false; }
         L.bodyAt.push_back(i);
     }
@@ -443,43 +490,49 @@ bool recognise(const std::vector<Line> &v, std::size_t back, const std::set<std:
     bool cmpFound = false;
     for (std::size_t k = L.bodyAt.size(); k-- > 0;) {
         std::vector<std::string> reads, writes;
-        readsAndWrites(v[L.bodyAt[k]], reads, writes);
+        src.rw(L.bodyAt[k], reads, writes);
         if (has(writes, L.P)) { L.cmp = L.bodyAt[k]; cmpFound = true; break; }
     }
     if (!cmpFound) { why = "the predicate is not written in the loop"; return false; }
-    const Line &c = v[L.cmp];
-    bool lt = c.mnem == "CMPLT" || c.mnem == "CMPLTU", gt = c.mnem == "CMPGT" || c.mnem == "CMPGTU";
-    if ((!lt && !gt) || c.ops.size() != 3 || !c.pred.empty() || c.ops[2] != L.P) return recogniseStepped(v, L, why, "the test is not a compare of two");
+    const std::size_t c = L.cmp;
+    const std::string cm = src.mnem(c);
+    bool lt = cm == "CMPLT" || cm == "CMPLTU", gt = cm == "CMPGT" || cm == "CMPGTU";
+    if ((!lt && !gt) || src.ops(c) != 3 || !src.pred(c).empty() || src.op(c, 2) != L.P) return recogniseStepped(src, L, why, "the test is not a compare of two");
     // Loops while i < n: [P] with i < n or n > i; while i <= n: [!P] with i > n or n < i.
-    if (lt == !L.negated) { L.iv = c.ops[0]; L.bound = c.ops[1]; }
-    else { L.iv = c.ops[1]; L.bound = c.ops[0]; }
+    const std::size_t ivAt = lt == !L.negated ? 0 : 1, boundAt = 1 - ivAt;
+    L.iv = src.op(c, ivAt); L.bound = src.op(c, boundAt);
     L.plusOne = L.negated;
-    if (isNumber(L.bound)) { L.boundConst = true; L.boundK = std::atol(L.bound.c_str()); }
-    else if (!sideOf(L.bound)) { why = "the bound is not a register"; return false; }
-    if (!sideOf(L.iv) || (L.boundConst && L.iv != c.ops[1])) { why = "the counter is not a register"; return false; }
+    long k0 = 0;
+    const bool boundNumber = src.number(c, boundAt, k0);
+    if (boundNumber) { L.boundConst = true; L.boundK = k0; }
+    else if (!src.reg(c, boundAt)) { why = "the bound is not a register"; return false; }
+    if (!src.reg(c, ivAt) || (L.boundConst && L.iv != src.op(c, 1))) { why = "the counter is not a register"; return false; }
     // P is read by the branch alone and is dead at the exit; i is stepped once, by one, before the test.
     L.liveExit = v[back + 1].liveIn;
     if (L.liveExit & bitOf(L.P)) { why = "the predicate lives past the loop"; return false; }
     int ivWrites = 0, boundWrites = 0, pWrites = 0;
     for (std::size_t k = 0; k < L.bodyAt.size(); k++) {
-        const Line &l = v[L.bodyAt[k]];
+        const std::size_t i = L.bodyAt[k];
+        const bool plain = src.pred(i).empty();
         std::vector<std::string> reads, writes;
-        readsAndWrites(l, reads, writes);
+        src.rw(i, reads, writes);
         if (has(reads, L.P) && pWrites == 0) { why = "the predicate's test is read in the loop"; return false; }
         if (has(writes, L.iv)) {
             ivWrites++;
-            bool step = l.mnem == "ADD" && l.pred.empty() && l.ops.size() == 3 && l.ops[2] == L.iv &&
-                        ((l.ops[0] == "1" && l.ops[1] == L.iv) || (l.ops[1] == "1" && l.ops[0] == L.iv));
-            if (!step || L.bodyAt[k] > L.cmp) return recogniseStepped(v, L, why, "the counter is not stepped by one before the test");
+            long one = 0;
+            bool step = src.mnem(i) == "ADD" && plain && src.ops(i) == 3 && src.op(i, 2) == L.iv &&
+                        ((src.number(i, 0, one) && one == 1 && src.op(i, 1) == L.iv) || (src.number(i, 1, one) && one == 1 && src.op(i, 0) == L.iv));
+            if (!step || i > L.cmp) return recogniseStepped(src, L, why, "the counter is not stepped by one before the test");
         }
-        if (!isNumber(L.bound) && has(writes, L.bound) && L.bodyAt[k] < L.cmp) {
+        long kb = 0;
+        if (!boundNumber && has(writes, L.bound) && i < L.cmp) {
             boundWrites++;
-            if (l.mnem == "MVK" && l.pred.empty() && l.ops.size() == 2 && isNumber(l.ops[0])) { L.boundConst = true; L.boundK = std::atol(l.ops[0].c_str()); }
+            if (src.mnem(i) == "MVK" && plain && src.ops(i) == 2 && src.number(i, 0, kb)) { L.boundConst = true; L.boundK = kb; }
             else L.boundConst = false;
         }
-        if (has(writes, L.P) && L.bodyAt[k] != L.cmp) pWrites++;
+        if (has(writes, L.P) && i != L.cmp) pWrites++;
         for (std::size_t r = 0; r < reads.size(); r++) L.used.insert(reads[r]);
-        for (std::size_t w = 0; w < writes.size(); w++) { L.used.insert(writes[w]); L.written.insert(writes[w]); if (!l.pred.empty()) L.predicated.insert(writes[w]); }
+        for (std::size_t w = 0; w < writes.size(); w++) { L.used.insert(writes[w]); L.written.insert(writes[w]); if (!plain) L.predicated.insert(writes[w]); }
     }
     if (ivWrites != 1) { why = "the counter is stepped " + std::to_string(ivWrites) + " times"; return false; }
     if (boundWrites > 0 && !L.boundConst) { why = "the bound is written in the loop"; return false; }
@@ -489,8 +542,8 @@ bool recognise(const std::vector<Line> &v, std::size_t back, const std::set<std:
         if (!L.used.count(kCond[k]) && !(L.liveExit & bitOf(kCond[k])) && kCond[k] != L.P) L.C = kCond[k];
     if (L.C.empty()) { why = "no condition register for the count"; return false; }
     for (std::size_t k = 0; k < L.bodyAt.size(); k++) {
-        const Line &l = v[L.bodyAt[k]];
-        if (L.bodyAt[k] != L.cmp && !(l.mnem == "MV" && l.ops.size() == 2 && l.ops[0] == l.ops[1])) L.body.push_back(l);
+        const std::size_t i = L.bodyAt[k];
+        if (i != L.cmp && !(src.mnem(i) == "MV" && src.ops(i) == 2 && src.op(i, 0) == src.op(i, 1))) L.body.push_back(v[i]);
     }
     return true;
 }
@@ -1174,6 +1227,7 @@ struct Window {
     std::size_t head = 0, back = 0;
     std::string label, backPred, P;             // backPred "" for an unconditional back branch
     std::vector<Line> body;                     // the instructions in order, the back branch left out
+    std::vector<std::size_t> at;                // where each stands in the text
     std::vector<int> cls;                       // a branch's exit, an instruction under one's predicate that exit, else kPlain or kCont
     std::vector<Exit> exits;                    // the exits inside, in order, then the back branch's fall-through
     std::uint64_t liveHead = 0, liveOut = 0;    // live at the head; live where any exit goes
@@ -1204,87 +1258,113 @@ bool byteAddress(const std::string &op, std::string &base, long &off, bool &post
 
 bool isByteLoad(const std::string &m) { return m == "LDB" || m == "LDBU"; }
 
+// An operand's registers in its spelling's order, and a byte load's address as `byteAddress` reads it, on the entry.
+void Src::regsIn(std::size_t i, std::size_t k, std::vector<std::string> &out) const {
+    if (!typed(i)) { registersIn(v[i].ops[k], out); return; }
+    const MOperand &o = (*s)[i].op[k];
+    if (o.kind == MOperand::Register) out.push_back(regName(o.reg));
+    if (o.kind == MOperand::Pair) { out.push_back(regName(o.hi)); out.push_back(regName(o.reg)); }
+    if (o.kind != MOperand::Memory) return;
+    out.push_back(regName(o.reg));
+    if (o.index != kNoReg) out.push_back(regName(o.index));
+}
+bool Src::byteAddress(std::size_t i, std::size_t k, std::string &base, long &off, bool &post) const {
+    if (!typed(i)) return c6x::byteAddress(v[i].ops[k], base, off, post);
+    const MOperand &o = (*s)[i].op[k];
+    post = false; off = 0;
+    if (o.kind != MOperand::Memory || o.index != kNoReg) return false;
+    base = regName(o.reg);
+    if (o.mode == MOperand::Base) return !o.hasOffset;
+    if (o.mode == MOperand::PostInc) { post = true; return !o.hasOffset || (!o.scaled && o.value == 1); }
+    if (o.mode != MOperand::Plus && o.mode != MOperand::Minus) return false;
+    off = static_cast<long>(o.value) * (o.mode == MOperand::Minus ? -1 : 1);
+    return o.hasOffset;
+}
+
 // Pointer r followed through one turn: registers holding r plus a constant, through copies, constant adds and the
 // steps of byte loads; true where r ends the turn one past where it began, with each byte load's offset in loads.
-bool trackPointer(const Window &W, const std::string &r, std::map<std::size_t, long> &loads) {
+bool trackPointer(const Src &src, const Window &W, const std::string &r, std::map<std::size_t, long> &loads) {
     std::map<std::string, long> sym;
     sym[r] = 0;
-    for (std::size_t k = 0; k < W.body.size(); k++) {
-        const Line &l = W.body[k];
-        if (isBranch(l.mnem)) continue;
+    for (std::size_t k = 0; k < W.at.size(); k++) {
+        const std::size_t i = W.at[k];
+        const std::string m = src.mnem(i);
+        if (isBranch(m)) continue;
         std::vector<std::string> reads, writes;
-        readsAndWrites(l, reads, writes);
+        src.rw(i, reads, writes);
         if (W.cls[k] >= 0) {                    // done only on the way out: what stays on sees none of it
             std::vector<std::string> regs;
-            if (isLoad(l.mnem)) registersIn(l.ops[0], regs);
+            if (isLoad(m)) src.regsIn(i, 0, regs);
             for (std::size_t g = 0; g < regs.size(); g++) if (sym.count(regs[g])) return false;
             continue;
         }
-        if (isLoad(l.mnem)) {
+        if (isLoad(m)) {
             std::string base; long off; bool post;
             std::vector<std::string> regs;
-            registersIn(l.ops[0], regs);
+            src.regsIn(i, 0, regs);
             bool touches = false;
             for (std::size_t g = 0; g < regs.size(); g++) if (sym.count(regs[g])) touches = true;
             if (touches) {
-                if (!isByteLoad(l.mnem) || !byteAddress(l.ops[0], base, off, post) || !sym.count(base)) return false;
+                if (!isByteLoad(m) || !src.byteAddress(i, 0, base, off, post) || !sym.count(base)) return false;
                 loads[k] = sym[base] + off;
                 if (post) sym[base] += 1;
             }
-            sym.erase(l.ops.back());
+            sym.erase(src.op(i, src.ops(i) - 1));
             continue;
         }
         if (writes.empty()) continue;
         const std::string &d = writes[0];
-        long v = 0; bool known = false;
-        if (l.mnem == "MV" && l.ops.size() == 2 && sym.count(l.ops[0])) { v = sym[l.ops[0]]; known = true; }
-        else if ((l.mnem == "ADD" || l.mnem == "SUB") && l.ops.size() == 3) {
-            const bool sub = l.mnem == "SUB";
-            if (isNumber(l.ops[0]) && sym.count(l.ops[1]) && !sub) { v = sym[l.ops[1]] + std::atol(l.ops[0].c_str()); known = true; }
-            else if (isNumber(l.ops[1]) && sym.count(l.ops[0])) { v = sym[l.ops[0]] + (sub ? -1 : 1) * std::atol(l.ops[1].c_str()); known = true; }
+        long v = 0, n = 0; bool known = false;
+        if (m == "MV" && src.ops(i) == 2 && sym.count(src.op(i, 0))) { v = sym[src.op(i, 0)]; known = true; }
+        else if ((m == "ADD" || m == "SUB") && src.ops(i) == 3) {
+            const bool sub = m == "SUB";
+            if (src.number(i, 0, n) && sym.count(src.op(i, 1)) && !sub) { v = sym[src.op(i, 1)] + n; known = true; }
+            else if (src.number(i, 1, n) && sym.count(src.op(i, 0))) { v = sym[src.op(i, 0)] + (sub ? -1 : 1) * n; known = true; }
         }
         if (known) sym[d] = v; else sym.erase(d);
     }
     return sym.count(r) && sym[r] == 1;
 }
 
-bool recogniseWindow(const std::vector<Line> &v, std::size_t back, const std::set<std::string> &labels, const std::set<std::string> &named, Window &W, std::string &why) {
-    const Line &b = v[back];
-    if (b.mnem != "B" || b.ops.empty() || labels.count(b.ops[0]) == 0) { why = "no branch back to a label"; return false; }
-    W.label = b.ops[0]; W.backPred = b.pred; W.P = b.pred.empty() ? "" : b.pred[0] == '!' ? b.pred.substr(1) : b.pred; W.back = back;
+bool recogniseWindow(const Src &src, std::size_t back, const std::set<std::string> &labels, const std::set<std::string> &named, Window &W, std::string &why) {
+    const std::vector<Line> &v = src.v;
+    if (src.mnem(back) != "B" || src.ops(back) == 0 || labels.count(src.op(back, 0)) == 0) { why = "no branch back to a label"; return false; }
+    const std::string bpred = src.pred(back);
+    W.label = src.op(back, 0); W.backPred = bpred; W.P = bpred.empty() ? "" : bpred[0] == '!' ? bpred.substr(1) : bpred; W.back = back;
     std::map<std::string, std::size_t> at;
-    for (std::size_t i = 0; i < v.size(); i++) if (isLabel(v[i])) at[labelName(v[i])] = i;
+    for (std::size_t i = 0; i < v.size(); i++) if (src.label(i)) at[src.name(i)] = i;
     bool found = false;
-    for (std::size_t i = 0; i < back; i++) if (isLabel(v[i]) && labelName(v[i]) == W.label) { W.head = i; found = true; }
+    for (std::size_t i = 0; i < back; i++) if (src.label(i) && src.name(i) == W.label) { W.head = i; found = true; }
     if (!found) { why = "the head is not above"; return false; }
-    int names = 0;
-    for (std::size_t i = 0; i < v.size(); i++) if (v[i].instr) for (std::size_t o = 0; o < v[i].ops.size(); o++) if (v[i].ops[o] == W.label) names++;
-    if (names != 1) { why = "the head is entered from elsewhere"; return false; }
+    if (src.naming(W.label) != 1) { why = "the head is entered from elsewhere"; return false; }
     W.liveHead = liveInAt(v, W.head);
     for (std::size_t i = W.head + 1; i < back; i++) {
-        const Line &l = v[i];
-        if (isLabel(l)) { if (!passThrough(l, named)) { why = "a label inside"; return false; } continue; }
-        if (!l.instr) { why = "a directive inside"; return false; }
-        if (isBranch(l.mnem)) {
-            if (l.mnem != "B" || l.pred.empty() || l.ops.empty() || !at.count(l.ops[0]) || l.ops[0] == W.label) { why = "a branch inside that is not a way out"; return false; }
-            Window::Exit e; e.target = l.ops[0]; e.pred = l.pred;
-            if (!W.backPred.empty() && back + 1 < v.size() && isLabel(v[back + 1]) && labelName(v[back + 1]) == e.target) e.target = "";
-            e.live = liveInAt(v, at[l.ops[0]]);
+        if (src.label(i)) { if (!passThroughName(src.name(i), named)) { why = "a label inside"; return false; } continue; }
+        if (!src.instr(i)) { why = "a directive inside"; return false; }
+        const std::string m = src.mnem(i), pred = src.pred(i);
+        if (isBranch(m)) {
+            const std::string to = src.ops(i) ? src.op(i, 0) : std::string();
+            if (m != "B" || pred.empty() || to.empty() || !at.count(to) || to == W.label) { why = "a branch inside that is not a way out"; return false; }
+            Window::Exit e; e.target = to; e.pred = pred;
+            if (!W.backPred.empty() && back + 1 < v.size() && src.label(back + 1) && src.name(back + 1) == e.target) e.target = "";
+            e.live = liveInAt(v, at[to]);
             W.cls.push_back(static_cast<int>(W.exits.size()));
             W.exits.push_back(e);
             W.liveOut |= e.live;
-            W.body.push_back(l);
+            W.body.push_back(v[i]);
+            W.at.push_back(i);
             continue;
         }
-        if (isStore(l.mnem)) { why = "a store, which a byte read early might meet"; return false; }
-        if (l.mnem == "ADDK" || l.mnem == "MVKH" || l.mnem == "MVKL") { why = "an instruction that reads its destination"; return false; }
-        for (std::size_t o = 0; o < l.ops.size(); o++) if (l.ops[o].find(':') != std::string::npos) { why = "a register pair"; return false; }
+        if (isStore(m)) { why = "a store, which a byte read early might meet"; return false; }
+        if (m == "ADDK" || m == "MVKH" || m == "MVKL") { why = "an instruction that reads its destination"; return false; }
+        for (std::size_t o = 0; o < src.ops(i); o++) if (src.pair(i, o)) { why = "a register pair"; return false; }
         std::vector<std::string> reads, writes;
-        readsAndWrites(l, reads, writes);
+        src.rw(i, reads, writes);
         if (has(writes, "A15") || has(writes, "B15") || has(writes, "B3")) { why = "the stack pointer or return address is written"; return false; }
-        if (!isLoad(l.mnem) && (unitsFor(l) == 0 || writes.size() != 1)) { why = "an instruction of no known form: " + l.mnem; return false; }
+        if (!isLoad(m) && (src.units(i) == 0 || writes.size() != 1)) { why = "an instruction of no known form: " + m; return false; }
         W.cls.push_back(kPlain);
-        W.body.push_back(l);
+        W.body.push_back(v[i]);
+        W.at.push_back(i);
     }
     if (!W.backPred.empty()) {
         Window::Exit e; e.pred = W.backPred[0] == '!' ? W.P : "!" + W.P;
@@ -1296,38 +1376,39 @@ bool recogniseWindow(const std::vector<Line> &v, std::size_t back, const std::se
     if (W.body.empty() || W.body.size() > 20) { why = "too small or too large to unroll"; return false; }
     // An instruction under a predicate belongs to the next branch, under the same one: done on the way out there,
     // or, before the back branch, only where the turn goes on. Its predicate must not change on the way.
-    for (std::size_t i = 0; i < W.body.size(); i++) {
-        const Line &l = W.body[i];
-        if (l.pred.empty() || isBranch(l.mnem)) continue;
-        const std::string q = l.pred[0] == '!' ? l.pred.substr(1) : l.pred;
-        std::size_t j = i + 1;
-        for (; j < W.body.size(); j++) {
-            if (isBranch(W.body[j].mnem)) break;
+    const std::size_t n = W.at.size();
+    for (std::size_t k = 0; k < n; k++) {
+        const std::string pk = src.pred(W.at[k]);
+        if (pk.empty() || isBranch(src.mnem(W.at[k]))) continue;
+        const std::string q = pk[0] == '!' ? pk.substr(1) : pk;
+        std::size_t j = k + 1;
+        for (; j < n; j++) {
+            if (isBranch(src.mnem(W.at[j]))) break;
             std::vector<std::string> reads, writes;
-            readsAndWrites(W.body[j], reads, writes);
+            src.rw(W.at[j], reads, writes);
             if (has(writes, q)) { why = "a predicate written under its own instructions"; return false; }
         }
-        if (j < W.body.size() && W.body[j].pred == l.pred) W.cls[i] = W.cls[j];
-        else if (j == W.body.size() && l.pred == W.backPred) W.cls[i] = kCont;
+        if (j < n && src.pred(W.at[j]) == pk) W.cls[k] = W.cls[j];
+        else if (j == n && pk == W.backPred) W.cls[k] = kCont;
         else { why = "an instruction under a predicate no branch after it takes"; return false; }
     }
     // The pointers stepped by one a turn, followed through copies and constant offsets to the byte loads that read them.
     std::set<std::string> tried;
-    for (std::size_t k = 0; k < W.body.size(); k++) {
+    for (std::size_t k = 0; k < n; k++) {
         std::vector<std::string> reads, writes;
-        readsAndWrites(W.body[k], reads, writes);
+        src.rw(W.at[k], reads, writes);
         for (std::size_t r = 0; r < reads.size(); r++) {
             if (!(W.liveHead & bitOf(reads[r])) || !tried.insert(reads[r]).second) continue;
             Window::Ptr p;
             p.reg = reads[r];
-            if (!trackPointer(W, p.reg, p.loads) || p.loads.empty()) continue;
+            if (!trackPointer(src, W, p.reg, p.loads) || p.loads.empty()) continue;
             bool first = true, exited = false;
-            for (std::size_t i = 0; i < W.body.size(); i++) {
-                if (isBranch(W.body[i].mnem)) { exited = true; continue; }
-                std::map<std::size_t, long>::const_iterator it = p.loads.find(i);
+            for (std::size_t b = 0; b < n; b++) {
+                if (isBranch(src.mnem(W.at[b]))) { exited = true; continue; }
+                std::map<std::size_t, long>::const_iterator it = p.loads.find(b);
                 if (it == p.loads.end()) continue;
-                if (sideOf(W.body[i].ops.back()) != sideOf(p.reg)) { first = false; p.loads.clear(); break; }
-                if (first || it->second < p.offmin) { p.offmin = it->second; p.anchor = i; p.cond = exited; }
+                if (src.side(W.at[b], src.ops(W.at[b]) - 1) != sideOf(p.reg)) { first = false; p.loads.clear(); break; }
+                if (first || it->second < p.offmin) { p.offmin = it->second; p.anchor = b; p.cond = exited; }
                 if (first || it->second > p.offmax) p.offmax = it->second;
                 first = false;
             }
@@ -1339,11 +1420,10 @@ bool recogniseWindow(const std::vector<Line> &v, std::size_t back, const std::se
     if (W.ptrs.empty()) { why = "no byte load through a pointer stepped by one"; return false; }
     if (W.ptrs.size() > 3) { why = "more pointers than the block reads can carry"; return false; }
     // A load through any other register is read where it stands, under R: it must not step its register.
-    for (std::size_t k = 0; k < W.body.size(); k++) {
-        const Line &l = W.body[k];
-        if (!isLoad(l.mnem)) continue;
+    for (std::size_t k = 0; k < n; k++) {
+        if (!isLoad(src.mnem(W.at[k]))) continue;
         std::vector<std::string> reads, writes;
-        readsAndWrites(l, reads, writes);
+        src.rw(W.at[k], reads, writes);
         bool stepped = false;
         for (std::size_t p = 0; p < W.ptrs.size(); p++) if (W.ptrs[p].loads.count(k)) stepped = true;
         if (!stepped && writes.size() != 1) { why = "a load that steps its own register"; return false; }
@@ -1957,23 +2037,67 @@ bool emitWindow(const std::vector<Line> &v, Window &W, std::vector<Line> &out, s
     return true;
 }
 
+bool sameLines(const std::vector<Line> &a, const std::vector<Line> &b) {
+    if (a.size() != b.size()) return false;
+    for (std::size_t k = 0; k < a.size(); k++) if (a[k].raw != b[k].raw) return false;
+    return true;
+}
+bool sameLoop(const Loop &a, const Loop &b) {
+    return a.head == b.head && a.back == b.back && a.label == b.label && a.exitName == b.exitName && a.P == b.P && a.C == b.C &&
+           a.iv == b.iv && a.bound == b.bound && a.negated == b.negated && a.boundConst == b.boundConst && a.plusOne == b.plusOne &&
+           a.boundK == b.boundK && a.cmp == b.cmp && a.bodyAt == b.bodyAt && sameLines(a.body, b.body) && sameLines(a.pre, b.pre) &&
+           a.used == b.used && a.written == b.written && a.predicated == b.predicated && a.liveExit == b.liveExit &&
+           a.stepped == b.stepped && a.wide == b.wide && a.ivs == b.ivs && a.bounds == b.bounds && a.steps == b.steps && a.testBody == b.testBody;
+}
+bool sameWindow(const Window &a, const Window &b) {
+    if (a.head != b.head || a.back != b.back || a.label != b.label || a.backPred != b.backPred || a.P != b.P || !sameLines(a.body, b.body) ||
+        a.cls != b.cls || a.liveHead != b.liveHead || a.liveOut != b.liveOut || a.exits.size() != b.exits.size() || a.ptrs.size() != b.ptrs.size()) return false;
+    for (std::size_t k = 0; k < a.exits.size(); k++)
+        if (a.exits[k].target != b.exits[k].target || a.exits[k].pred != b.exits[k].pred || a.exits[k].live != b.exits[k].live) return false;
+    for (std::size_t k = 0; k < a.ptrs.size(); k++)
+        if (a.ptrs[k].reg != b.ptrs[k].reg || a.ptrs[k].loads != b.ptrs[k].loads || a.ptrs[k].offmin != b.ptrs[k].offmin ||
+            a.ptrs[k].offmax != b.ptrs[k].offmax || a.ptrs[k].cond != b.ptrs[k].cond || a.ptrs[k].anchor != b.ptrs[k].anchor) return false;
+    return true;
+}
+
+// CXX1_C6X_MIR=1: each recogniser asked on the stream is asked on the lines too, and a verdict that differs is named.
+void checkRecognisers(const Src &src, std::size_t i, const std::set<std::string> &labels, const std::set<std::string> &named, bool counted) {
+    static const bool check = std::getenv("CXX1_C6X_MIR") != nullptr;
+    if (!check || !src.s) return;
+    const Src text = { src.v, nullptr };
+    std::string w1, w2;
+    if (counted) {
+        Loop a, b;
+        const bool ra = recognise(src, i, labels, named, a, w1), rb = recognise(text, i, labels, named, b, w2);
+        if (ra != rb || w1 != w2 || (ra && !sameLoop(a, b))) std::fprintf(stderr, "c6x-recog: loop %s\n", src.v[i].raw.c_str());
+        return;
+    }
+    Window a, b;
+    const bool ra = recogniseWindow(src, i, labels, named, a, w1), rb = recogniseWindow(text, i, labels, named, b, w2);
+    if (ra != rb || w1 != w2 || (ra && !sameWindow(a, b))) std::fprintf(stderr, "c6x-recog: window %s\n", src.v[i].raw.c_str());
+}
+
 // One back branch tried: the code that replaces lines [from, to) of the text where the pipelining pays.
-bool pipelineAt(const std::vector<Line> &v, std::size_t i, const std::set<std::string> &labels, const std::set<std::string> &named,
+bool pipelineAt(const Src &src, std::size_t i, const std::set<std::string> &labels, const std::set<std::string> &named,
                 std::size_t copied, std::vector<Line> &code, std::size_t &from, std::size_t &to) {
-    if (!v[i].instr || v[i].mnem != "B" || isCall(v[i], labels)) return false;
-    if (v[i].pred.empty()) {                    // an unconditional branch is a back branch only to a label above
+    const std::vector<Line> &v = src.v;
+    if (!src.instr(i) || src.mnem(i) != "B" || isCall(v[i], labels)) return false;
+    const bool plain = src.pred(i).empty();
+    if (plain) {                                // an unconditional branch is a back branch only to a label above
         bool above = false;
-        for (std::size_t k = 0; k < i && !above; k++) above = isLabel(v[k]) && labelName(v[k]) == v[i].ops[0];
+        for (std::size_t k = 0; k < i && !above; k++) above = src.label(k) && src.name(k) == src.op(i, 0);
         if (!above) return false;
     }
+    if (!plain) checkRecognisers(src, i, labels, named, true);
     Loop L;
     std::string why;
-    if (v[i].pred.empty() || !recognise(v, i, labels, named, L, why)) {
-        if (v[i].pred.empty()) why = "an unconditional back branch";
+    if (plain || !recognise(src, i, labels, named, L, why)) {
+        if (plain) why = "an unconditional back branch";
         // Not counted: a loop that leaves on a byte it reads takes eight turns of one aligned block at a time.
+        checkRecognisers(src, i, labels, named, false);
         Window W;
         std::string wwhy;
-        if (recogniseWindow(v, i, labels, named, W, wwhy) && W.head >= copied && emitWindow(v, W, code, wwhy)) {
+        if (recogniseWindow(src, i, labels, named, W, wwhy) && W.head >= copied && emitWindow(v, W, code, wwhy)) {
             from = W.head + 1;
             to = W.back + 1;
             return true;
@@ -2005,9 +2129,10 @@ void pipelineLoops(std::vector<Line> &v) {
     namesOf(v, labels, named);
     std::vector<Line> out;
     std::size_t copied = 0, from = 0, to = 0;
+    const Src src = { v, nullptr };
     for (std::size_t i = 0; i < v.size(); i++) {
         std::vector<Line> code;
-        if (!pipelineAt(v, i, labels, named, copied, code, from, to)) continue;
+        if (!pipelineAt(src, i, labels, named, copied, code, from, to)) continue;
         for (std::size_t k = copied; k < from; k++) out.push_back(v[k]);
         for (std::size_t k = 0; k < code.size(); k++) out.push_back(code[k]);
         copied = to;
@@ -2024,10 +2149,11 @@ bool pipelineLoops(MStream &s) {
     std::set<std::string> labels, named;
     namesOf(v, labels, named);
     MStream out;
+    const Src src = { v, &s };
     std::size_t copied = 0, from = 0, to = 0;
     for (std::size_t i = 0; i < v.size(); i++) {
         std::vector<Line> code;
-        if (!pipelineAt(v, i, labels, named, copied, code, from, to)) continue;
+        if (!pipelineAt(src, i, labels, named, copied, code, from, to)) continue;
         out.insert(out.end(), s.begin() + static_cast<long>(copied), s.begin() + static_cast<long>(from));
         if (!streamOf(code, out)) return false;
         copied = to;
