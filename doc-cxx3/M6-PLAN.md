@@ -667,3 +667,12 @@ m6-l (the packetiser reads typed operands), m5-dbg (tests/debug.sh; DWARF ranges
 - **Owed:** the loop's registers as numbers and `addressForms` on entries; the emitters and the kernel built as
   entries (then `Node::line` goes); `Window`'s body as entries with them; design step 3 (liveness on the stream, then
   `rounds`, `numberValues`, `foldAddressing`).
+
+### Wave 5 landed, 2026-11-14 (the coordinator)
+
+M6c rounds 4 (m6m: the recognisers read operands; vm6747's noexcept legs skipped by name) and 5 (m6n: the counted
+loop's body as entries, buildEdges, the II search and renameWebs on operands).
+- **Gate at a0a1d2ce**: Windows winpass -O0 and -O2: 828 same / 0 differ, masm 827 / 0. Mac run.sh -O0 and -O2
+  1215 / 0. Linux make test rc 0 (run 1217/0, emit 3399/0, typed 860/0, ssa 890/0, c90 447/0, exclusions 0/0,
+  comments 0). tms6747 (vm6747, SIM=0, three shards): 814 passed, **0 failed** at -O0 (393.2 M cycles) and -O2
+  (**192.0 M**, unchanged); asm6x 833 / 0 at -O0 and -O2.
