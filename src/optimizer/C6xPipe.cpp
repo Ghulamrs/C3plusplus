@@ -312,6 +312,9 @@ struct Loop {
         readsAndWrites(body[o], r, w);
         reads |= maskOf(r); writes |= maskOf(w);
     }
+    static std::uint64_t bit(int r) { return r == kNoReg ? 0 : 1ull << r; }
+    // What a pass may not rename or fold away: the counter, a register bound, the predicate, and with `count` the count.
+    std::uint64_t fixedM(bool count) const { return bit(ivR) | bit(boundR) | bit(PR) | (count ? bit(CR) : 0); }
     bool plainAt(std::size_t o) const { return bodyM.empty() ? body[o].pred.empty() : bodyM[o].pred == kNoReg; }
     void rw(std::size_t o, std::vector<std::string> &reads, std::vector<std::string> &writes) const {
         if (!bodyM.empty()) readsAndWrites(bodyM[o], reads, writes); else readsAndWrites(body[o], reads, writes);
@@ -388,6 +391,7 @@ struct Loop {
 };
 
 const char *const kCond[] = { "A0", "A1", "A2", "B0", "B1", "B2" };
+const int kCondR[] = { 0, 1, 2, 32, 33, 34 };
 
 // ----- the body read as algebra: what each register holds at its end, as a term over the values it came in with -----
 
@@ -461,7 +465,7 @@ bool recogniseStepped(const Src &src, Loop &L, std::string &why, const std::stri
     why = fallback;
     auto no = [&](const char *r) { if (tracing() > 1) why += std::string(" [stepped: ") + r + "]"; return false; };
     L.liveExit = src.v[L.back + 1].liveIn;
-    if (L.liveExit & bitOf(L.P)) return no("the predicate lives past the loop");
+    if (L.liveExit & Loop::bit(L.PR)) return no("the predicate lives past the loop");
     std::map<std::string, int> writers, readers;
     std::map<std::string, std::size_t> writerAt;
     for (std::size_t k = 0; k < L.bodyAt.size(); k++) {
@@ -669,7 +673,7 @@ bool recognise(const Src &src, std::size_t back, const std::set<std::string> &la
     if (!src.reg(c, ivAt) || (L.boundConst && L.iv != src.op(c, 1))) { why = "the counter is not a register"; return false; }
     // P is read by the branch alone and is dead at the exit; i is stepped once, by one, before the test.
     L.liveExit = v[back + 1].liveIn;
-    if (L.liveExit & bitOf(L.P)) { why = "the predicate lives past the loop"; return false; }
+    if (L.liveExit & Loop::bit(L.PR)) { why = "the predicate lives past the loop"; return false; }
     int ivWrites = 0, boundWrites = 0, pWrites = 0;
     for (std::size_t k = 0; k < L.bodyAt.size(); k++) {
         const std::size_t i = L.bodyAt[k];
@@ -700,11 +704,10 @@ bool recognise(const Src &src, std::size_t back, const std::set<std::string> &la
     if (ivWrites != 1) { why = "the counter is stepped " + std::to_string(ivWrites) + " times"; return false; }
     if (boundWrites > 0 && !L.boundConst) { why = "the bound is written in the loop"; return false; }
     // The kernel's counter: P itself where the compare alone writes it, else a condition register the loop leaves alone.
-    if (pWrites == 0) L.C = L.P;
+    if (pWrites == 0) { L.C = L.P; L.CR = L.PR; }
     else for (std::size_t k = 0; k < 6 && L.C.empty(); k++)
-        if (!(L.usedM & bitOf(kCond[k])) && !(L.liveExit & bitOf(kCond[k])) && kCond[k] != L.P) L.C = kCond[k];
+        if (!((L.usedM | L.liveExit) & Loop::bit(kCondR[k])) && kCondR[k] != L.PR) { L.C = kCond[k]; L.CR = kCondR[k]; }
     if (L.C.empty()) { why = "no condition register for the count"; return false; }
-    L.CR = pWrites == 0 ? L.PR : regNumber(L.C);
     for (std::size_t k = 0; k < L.bodyAt.size(); k++) {
         const std::size_t i = L.bodyAt[k];
         if (i != L.cmp && !(src.mnem(i) == "MV" && src.ops(i) == 2 && src.op(i, 0) == src.op(i, 1))) L.take(src, i);
@@ -775,7 +778,7 @@ int criticalPath(const Loop &L) {
         len = std::max(len, t[o] + L.nodes[o].lat);
         // The sequential loop's branch waits for its predicate - the body's own, or the compare of the stepped counter - and
         // the next turn starts six cycles after it, which the overlapped kernel never pays.
-        const std::uint64_t gate = bitOf(L.stepped ? L.P : L.iv);
+        const std::uint64_t gate = Loop::bit(L.stepped ? L.PR : L.ivR);
         if (L.nodes[o].writes & gate) len = std::max(len, t[o] + L.nodes[o].lat + (L.stepped ? 0 : 1) + 6);
     }
     return std::max(len, 6);
@@ -1074,7 +1077,7 @@ void renameWebs(Loop &L, std::vector<std::string> &pool) {
         const std::string &r = it->first;
         bool carried = false;
         for (std::size_t w = 0; w < webs.size(); w++) if (webs[w].reg == r && webs[w].keep) carried = true;
-        if (carried || (L.liveExit & bitOf(r)) || r == L.iv || r == L.bound || r == L.C || r == L.P || (L.pinnedM & bitOf(r))) webs[static_cast<std::size_t>(it->second)].keep = true;
+        if (carried || (L.liveExit & bitOf(r)) || ((L.fixedM(true) | L.pinnedM) & bitOf(r))) webs[static_cast<std::size_t>(it->second)].keep = true;
     }
     for (std::size_t w = 0; w < webs.size(); w++) {
         Web &x = webs[w];
@@ -1161,7 +1164,7 @@ void foldBodyCopies(Loop &L) {
         for (std::size_t o = 0; o < b.size() && !changed; o++) {
             if (b[o].mnem != "MV" || b[o].ops.size() != 2 || !b[o].pred.empty() || !sideOf(b[o].ops[0]) || !sideOf(b[o].ops[1])) continue;
             const std::string S = b[o].ops[0], D = b[o].ops[1];
-            if (D == "A15" || D == "B15" || D == "B3" || D == "B14" || D == L.iv || D == L.bound || D == L.P) continue;
+            if (D == "A15" || D == "B15" || D == "B3" || D == "B14" || (L.fixedM(false) & bitOf(D))) continue;
             for (std::size_t k = o + 1; k < b.size(); k++) {
                 std::vector<std::string> reads, writes;
                 L.rw(k, reads, writes);
@@ -1308,7 +1311,7 @@ bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) 
         for (int k = 3; k < 32; k++) {
             if ((k >= 10 && k <= 15) || (side == 1 && k == 3)) continue;
             std::string r = std::string(side ? "B" : "A") + std::to_string(k);
-            if (!(L.usedM & bitOf(r)) && !(L.liveExit & bitOf(r)) && r != L.C && r != L.P) pool.push_back(r);
+            if (!(L.usedM & bitOf(r)) && !(L.liveExit & bitOf(r)) && !(bitOf(r) & (Loop::bit(L.CR) | Loop::bit(L.PR)))) pool.push_back(r);
         }
     std::string X;
     if (!L.stepped) {
@@ -1379,7 +1382,7 @@ bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) 
         for (std::size_t h = 0; h < units[u].regs.size(); h++) {
             const std::string &r = units[u].regs[h];
             if (!(L.writtenM & bitOf(r))) ok = false;
-            if (((L.predicatedM | L.rmwFirstM) & bitOf(r)) || r == L.C || r == L.P || r == "A15" || r == "B15" || r == "B3" || r == "B14") { ok = false; break; }
+            if (((L.predicatedM | L.rmwFirstM) & bitOf(r)) || (bitOf(r) & (Loop::bit(L.CR) | Loop::bit(L.PR))) || r == "A15" || r == "B15" || r == "B3" || r == "B14") { ok = false; break; }
         }
         if (ok) for (std::size_t h = 0; h < units[u].regs.size(); h++) renameable.insert(units[u].regs[h]);
     }
@@ -1424,7 +1427,7 @@ bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) 
                 int q = std::max((end - start) / II + 1, minQ.count(it->first) ? minQ[it->first] : 1);
                 un.q = std::max(un.q, pow2At(q));
                 if (firstWrite[k] < (1 << 30)) for (std::size_t o = 0; o <= static_cast<std::size_t>(firstWrite[k]); o++) if (L.nodes[o].reads & bit) un.carried = true;
-                if ((L.liveExit & bit) || it->first == L.iv || it->first == L.bound || (L.pinnedM & bit)) un.exits = true;
+                if ((L.liveExit & bit) || ((Loop::bit(L.ivR) | Loop::bit(L.boundR) | L.pinnedM) & bit)) un.exits = true;
             }
             for (std::size_t x = 0; x < units.size(); x++) qMax = std::max(qMax, units[x].q);
             u = pow2At(std::max((6 + II - 1) / II, qMax));
@@ -1468,7 +1471,7 @@ bool pipeline(const std::vector<Line> &v, Loop &L, Code &out, std::string &why) 
     int m = 0, g = 0;
     if (L.stepped) {
         int tP = 0;
-        for (std::size_t o = 0; o < L.nodes.size(); o++) if (L.nodes[o].writes & bitOf(L.P)) tP = t[o];
+        for (std::size_t o = 0; o < L.nodes.size(); o++) if (L.nodes[o].writes & Loop::bit(L.PR)) tP = t[o];
         auto floorDiv = [](int a, int b) { return a >= 0 ? a / b : -((-a + b - 1) / b); };
         int d = floorDiv(u * II - 7 - tP, II);
         while (S - 1 + d < 0) { u *= 2; d = floorDiv(u * II - 7 - tP, II); }   // the first round's branch must see a test
