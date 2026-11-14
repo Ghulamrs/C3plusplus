@@ -798,3 +798,16 @@ walker's three noexcept cases only once `static-aggregate-runtime-list` skips tm
 -O2 192.2 M against the walker's 195.9 M; asm6x.sh 833 objects 0 failed. **ast-residue re-recorded** (ExprPtr 2016,
 StmtPtr 639, node-refs 413): the parser's own fixes, in the half M6d deletes.
 
+
+### M5 closed, 2026-11-14 (the coordinator)
+
+- **Target 3 re-measured at the close** (the M5.4 row), on Linux from main `afe32013`, `tools/self-host` split by
+  `SELFHOST_RESUME` under 25 minutes a job: -O2, 102 of 102 sources the same object from stages 0, 1 and 2 and from
+  stages 2 and 3; -O0, the same, 102 of 102 both (stage 2 compiled in 337 s, stage 3 in 332 s; logs
+  `~/m5close-sh-*.log`, `~/m5close-sh2-*.log`). Target 4 was M5.4's, 100 of 100 at -O0 and -O2.
+- **lldb, not run, by the user's word: "Skip lldb for now."** The `.loc`/dwarfdump evidence of M5.2 round 4 stands;
+  `boxkit/m5f-maclldb.sh` is the leg for when it runs.
+- **A debugger in the gates** is on `m5-dbg`, landing with wave 4: cdb on x86_64-windows 5 of 5 in both spellings
+  (rerun today against the m5-dbg build); gdb on x86_64-linux 2 of 5 - a bool as `DW_ATE_unsigned_char`, a function
+  with reference parameters missing from .debug_info - mended by lane dbg2 before it lands.
+- **Owed to M6's first wave**: emit.sh's golden on Linux.
