@@ -1264,4 +1264,24 @@ M6c round 15 (m6x: W2-W4 the window's emitters on entries with numbered and virt
   with D4. D5 (the five loop passes composing entries, `LoopText`/`LoopStream` gone) was not begun: `LoopText` is
   now built only as a `LoopStream`, its `lines` constructor and the liveness cache behind `liveInAt`/`liveOutAt`
   (`ensureLiveness`, `computeLiveness`) are what D5 removes.
-- src/ +72 -1,209 lines (C6xSched.cpp 2,423 -> 1,356, C6xPipe.cpp 2,578 -> 2,528, C6xPack.cpp 1,465 -> 1,452).
+- src/ +78 -1,216 lines (C6xSched.cpp 2,423 -> 1,356, C6xPipe.cpp 2,578 -> 2,528, C6xPack.cpp 1,465 -> 1,452).
+- **Gate.** Windows, cl /W4 /WX clean at each of e40885ee (work\m6z), 9fcb7703 (m6z2) and the final code f47c410f
+  (m6z3), against D3's compiler (work\m6y4), tests/cases at -O0, -O1, -O2 by md5: **2,601 texts same, 1,068 refused
+  alike, 0 differ**, plain and under `CXX1_C6X_WALKER=1` (at work\m6z the 6 path-length carets of round 13, the
+  tree's shorter name); census 0 to the text pass, pipeliner and folds, 6,835 selected, kernels 219 functions /
+  9,122 entries; the wider corpus D3 against D4 (m6z-wsame.sh): **57 compared, 0 differ, none refused**; exclusions
+  129 sites 0 uncited 0 stale, comments 0 over, memory gate rc 0, generate up to date (f47c410f). Linux (~/m6z, a
+  copy of ~/m6y with the changed files laid over; REF main 85fe99fe's compiler in ~/w7ref), g++ -Werror clean, at
+  c1ff2b3f (f47c410f changes one comment in C6xSched.h after it): `identical.sh ARCHS=tms6747` -O0 and -O2 **1,736
+  compared, 0 differ**; -O0 -g 868 compared, 91 raw (the tree's path), **851 texts 0 differ** with the path made the
+  same; tests/tms6747.sh SHARD=k/3 CYCLES=1 SIM=0 at -O2 **814 passed, 0 failed, 192,009,106 cycles** (192.0 M,
+  unchanged); g-same 867 same, 0 differ, 0 broken; asm6x.sh 833 objects, 0 failed, at -O0 and -O2; exclusions,
+  memory gate, ast-residue, generate rc 0 (comments 1 over at c1ff2b3f, C6xSched.h:9, mended in f47c410f).
+  On the final tree f47c410f (Linux): g++ clean, `identical.sh` -O0 and -O2 1,736 compared, 0 differ again; exclusions,
+  comments (0 over), memory gate, ast-residue, generate rc 0; the walker legs `CXX1_C6X_WALKER=1` at -O2, three
+  shards: **812 passed, 2 failed** - `static-reference-scalar-temporary` and `static-reference-member-scalar-temporary`
+  (252 printed), the two wave 13's gate found on main 85fe99fe's compiler as well, so not this round's; no other.
+  Not run on the final tree after the one-comment change: tms2, -g, g-same, asm6x (their numbers are c1ff2b3f's).
+  Not run (the coordinator's): winpass, make test, ssa.sh.
+- **Owed:** D5 (the loop passes compose entries), then D6 with the rest of the pipeliner's line halves; retire
+  `CPP11_C6XLIVECHECK` from tests/tms6747.sh; the two walker-only -O2 wrong answers above (older than this branch).
