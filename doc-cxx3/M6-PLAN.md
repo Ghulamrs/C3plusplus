@@ -1354,3 +1354,30 @@ C6xSched.cpp's text-only passes deleted, 2,423 -> 1,356 lines, src/ +78 -1,216; 
   c90 447/0). tms6747 (vm6747, SIM=0, three shards): 814 passed, 0 failed at -O0 (393.2 M) and -O2 (**192.0 M**,
   unchanged); walker -O0 814 / 0 (447.8 M), walker -O2 812 / 2 - the same two owed since wave 13, no new one;
   asm6x 833 / 0 at -O0 and -O2.
+
+### M6c, round 19 (D5 and D6 planned step by step; the first step of each), 2026-11-14, lane m6ab
+
+- **What the two steps are made of, measured** (m6-aa 1d5526c0). `Line` is named 101 times in three files:
+  C6xSched.cpp 55 (the table's readers and the five loop passes), C6xPack.cpp 35 (`lineOf`, `viewOf`, `Folding::v` -
+  the five folds read lines too, which the deletion plan did not list - `LoopText`, `streamOf`), C6xPipe.cpp 11
+  (`insOf`, `Src::line`, `Loop::body`/`pre`, `spelledLine`). The loop passes are 549 lines of reads by spelling
+  (`ops[o].find("++")`, `renamed`, `rebuilt`), not 5 loops over a view: each is its own rewrite.
+- **The step order, each of identical output.** **D5.1** `LoopText` reads entries (`instr`, `label`, `rw`: a blanked
+  entry no instruction, registers from operands where `modelled`); `reuseEntryLoads` on them. **D5.2**
+  `hoistInvariants`, **D5.3** `inductionPointers`, **D5.4** `widenFills`: each composes its preheader and its edits
+  as entries (`set(k, MInst)`, `apply(h, MStream, i)`), legality by `legal(MInst)`. **D5.5** `hoistConstantPairs`,
+  the one pass that meets placed entries (a `||` line is a label to `isLabel`: kept so by `label`). **D5.6**
+  `LoopText::v`, `set(Line)`, `edited`, `entry` and `c6x-loop-unread` gone; a pending blank's liveness from the
+  entries. **D6.1** `Node::line`. **D6.2** `Folding::v` (the five folds read `s[k]`; `c6x-fold-edit` gone).
+  **D6.3** the pipeliner: `Loop::body`/`pre`, `spelledLine`, `Src::line`/`made`, `insOf(Line)`, its `lineOf` - a
+  placed entry read by its operands with its mark. **D6.4** the table on operands only: `makeNode(Line)`,
+  `readsAndWrites(Line)`, `unitsFor(Line)`, `crossings(Line)`, `legalForm`, `rebuilt`, `make`, C6xPack's
+  `lineOf`/`viewOf` and the `!modelled` halves (an operand held as text naming a register is then refused by name).
+  **D6.5** `c6xSchedule` reads the walker's text with `read` alone; `parse`, `streamOf` and `Line` deleted.
+- **Landed: D5.1** (547ad9c6) and **D6.1** (ec361783): `reuseEntryLoads` no longer reads `t.v`; `Node` holds
+  `callp` in place of a `Line` (the scheduler asked it one question, twice). **Not landed**: D5.2-D5.6, D6.2-D6.5 -
+  the round was briefed for 35 minutes and the four larger passes are a rewrite each.
+- **What still uses `Line`, and why.** The four loop passes above (`t.v`); the five folds (`Folding::v`); the
+  pipeliner's line halves (an entry the model does not hold - placed or verbatim); the table's `Line` readers
+  (behind `!modelled` entries, and the walker's text through `parse`/`streamOf`). The walker itself needs none of
+  it: it hands text to `c6xSchedule`, so after D6.5 `read` is all it keeps until M6d.

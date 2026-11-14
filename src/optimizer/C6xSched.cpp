@@ -392,9 +392,6 @@ bool touches(const Line &l, const std::vector<std::string> &regs) {
 
 bool passThrough(const Line &l, const std::set<std::string> &named);
 
-// **A byte read for the test is not read again for the work**: a rotated loop whose block opens with `LDx *R, X`
-// and ends - after R's last write - with the same `LDx *R, X` that its test reads, entered from a block whose
-// last write of X is that load too, opens without the load: on either path X holds `*R` already. `for (; *p; ++p)`.
 // The one register a load's address reads as it stands (`*R`, or displaced forward by a constant), or "" for any other.
 std::string plainBase(const MOperand &a) {
     if (a.kind == MOperand::Memory) return a.mode == MOperand::Base && a.index == kNoReg && !(a.hasOffset && a.value < 0) ? regName(a.reg) : std::string();
@@ -404,6 +401,9 @@ std::string plainBase(const MOperand &a) {
     return addr.size() == 1 && s.find('+') == std::string::npos && s.find('-') == std::string::npos ? addr[0] : std::string();
 }
 
+// **A byte read for the test is not read again for the work**: a rotated loop whose block opens with `LDx *R, X`
+// and ends - after R's last write - with the same `LDx *R, X` that its test reads, entered from a block whose
+// last write of X is that load too, opens without the load: on either path X holds `*R` already. `for (; *p; ++p)`.
 void reuseEntryLoads(LoopText &t) {
     const MStream &s = t.s;
     std::map<std::string, std::size_t> at;
