@@ -1300,3 +1300,26 @@ until M6d, and Compiler++ and the CCS samples are measured before D4 (lane m6z).
   temporary 252 for 7. Main 85fe99fe's compiler gives the same 252 on the walker and the right answers on the
   selector: a walker-only wrong answer that predates this wave, unseen since the legs left the gate after wave 3.
   **Owed** before M6d retires the walker, or with it: fix, or a by-name walker skip with its reason.
+
+### M6c, round 18 (the walker's two wrong answers, the dead live check, D5's first step), 2026-11-14, lane m6aa
+
+- **The walker's two -O2 wrong answers: a parser root, not an -O2 pass.** The walker's text for `const int &r = 5;`
+  (and `const int &S::cr = 7;`) stored the 5 in the init function's frame (`STW A4, *-A15(44)`, then `r = A15 - 44`)
+  at -O0 as well: `staticTemporary` made `_ZGR1r_` and its `.bss`, but `bindStaticReference` still handed the init to
+  `bindReference`, whose temporary is a frame slot - the selector's lowering reads `g.temporary` and was right. -O0
+  passed by luck (main's frame never reached the dead slot); -O2's smaller frames reached it and printed 252.
+  **Fixed** in the parser (`Parser::staticScalarTemporary`, ParserInit.cpp): a scalar a static reference binds to a
+  temporary is `(T = init, &T)` with T the static object `staticTemporary` made (a `thread_local`'s too). Not
+  changed: the class temporaries of tests/open/walker-static-reference-temporary.cpp and
+  static-reference-to-temporary's `.notarget` (the walker still binds those to a frame slot; the selector leaves them
+  to it - M6), and nothing the selector reads (its text at every level the same).
+- **`CPP11_C6XLIVECHECK` retired** (the smaller of the two): nothing in src/ read it since round 17; tests/tms6747.sh's
+  setting, tests/tms6747-nolivecheck.txt (the two cases it excused, and their 30 s limit) and README's mention gone.
+- **D5, first step**: `LoopText` is one struct, the stream's (`LoopStream` folded into it, no virtuals): the text
+  `LoopText` (`own`, the lines constructor, the text `apply`/`compact`/`blank`/`set`), the liveness cache behind it
+  (`liveInAt`, `liveOutAt`, `ensureLiveness`, `LiveStamp`, `textEdits` and `Line`'s counting copies),
+  `computeLiveness` and `Line`'s `liveIn`/`liveOut` are gone; a blank pending is answered from the lines' `liveFacts`
+  as before. **Not landed**: the five passes still read `t.v` as `Line`s (`blank`/`set`/`apply` keep the entries in
+  step); composing entries is D5's rest, with D6.
+- src/ +108 -148 lines (C6xSched.cpp 1,356 -> 1,308, C6xPack.cpp 1,452 -> 1,447, C6xModel.h 155 -> 143, ParserInit.cpp
+  1,910 -> 1,934, Parser.h +1).

@@ -1878,12 +1878,12 @@ ExprPtr Parser::staticScalarTemporary(const Declared &d, const std::string &temp
     ExprPtr target(object[0]), held(object[1]);
     target->setType(store);
     held->setType(store);
-    ExprPtr keep(new Assign(std::move(target), convert(std::move(init), store)));
+    ExprPtr keep(make_owned<Assign>(std::move(target), convert(std::move(init), store)));
     keep->setType(store);
-    ExprPtr addr(new Unary('&', std::move(held)));
+    ExprPtr addr(make_owned<Unary>('&', std::move(held)));
     addr->setType(types_.pointerTo(d.type->referent()));
     const Type *at = addr->type();
-    ExprPtr both(new Comma(std::move(keep), std::move(addr)));
+    ExprPtr both(make_owned<Comma>(std::move(keep), std::move(addr)));
     both->setType(at);
     return both;
 }
