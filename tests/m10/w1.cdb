@@ -1,0 +1,11 @@
+bp `w1.cpp:9`
+g
+.echo == inner at 9
+dv /t
+k
+.echo == middle
+.frame 1
+dv /t
+.echo == outer
+.frame 2
+dv /t

@@ -1,0 +1,23 @@
+== square at 7, third call
+v = 3
+s = 9
+square @ 7
+sum @ 14
+main @ 23
+== sum
+sum @ 14
+n = 3
+i = 3
+acc = 5
+last = 4
+keep = *
+== main
+main @ 23
+before = 7
+got = *
+after = *
+== sum at 18
+n = 3
+acc = 14
+last = 9
+keep = 28

@@ -1,0 +1,21 @@
+bp `w4.cpp:34`
+bp `w4.cpp:25`
+bp `w4.cpp:48`
+g
+.echo == total at 34
+dv /t
+k
+g
+.echo == Square::perimeter at 25
+dv /t
+k
+g
+.echo == main at 48
+dv /t
+?? pt
+?? row[2]
+?? sq.edge
+?? sq.sides
+?? box.value
+?? bits.i
+?? name[2]

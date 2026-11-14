@@ -811,3 +811,42 @@ StmtPtr 639, node-refs 413): the parser's own fixes, in the half M6d deletes.
   (rerun today against the m5-dbg build); gdb on x86_64-linux 2 of 5 - a bool as `DW_ATE_unsigned_char`, a function
   with reference parameters missing from .debug_info - mended by lane dbg2 before it lands.
 - **Owed to M6's first wave**: emit.sh's golden on Linux.
+
+### A debugger in the gates, 2026-11-14 (lane dbg, from afe32013)
+
+- **Why**: no suite ran a debugger on any target; x86g found gdb showing 6 of 11 of w2's locals wrong where the static
+  checks were silent. **`tests/debug.sh cdb|gdb [compiler]`**: each tests/m10 program with a command file (`<w>.cdb`,
+  `<w>.gdb`) is built -g -O0, run in batch - stops at named lines, `dv /t` / `info args` + `info locals`, the backtrace,
+  `??` / `print` of members and elements - normalised (frames `f @ line` in the program's own file, addresses `0x#`)
+  and compared line for line with `<w>.<dbg>.expected`, written by hand from the source's values (`name = *` where the
+  source leaves a local unset at that stop). Programs: w1, w2, w4, and two new ones with locals across calls - d1 (a
+  caller's loop locals at the callee's third call) and d2 (one function three frames deep). -O2 is not run: the
+  history records no cdb view of cl's -O2 locals, and cxx3 records no local there (x86g).
+- **Wired into tools/verify-three, not make test**: the windows leg runs it in both spellings with the project's LINK
+  (`CPP11_LD=winout-tools\link.exe`, which writes the PDB), the linux leg after make test.
+- **Windows (cxx3-msvc.exe at this tree, cl /W4 /WX clean)**: `debug.sh cdb` 5 passed, 0 failed with -masm=masm and with
+  -masm=gnu, both linked by the project's LINK. **The check fails when a record is wrong**: with x86gb's compiler
+  (190aebc9, records at the parser's offsets) 0 passed, 5 failed - w2 `c = 0n0 ''`, `big = false`, `d = 2.546e-313`,
+  `k = 0n32758`, `u` garbage, `w` scale's bits; w1 `y = 0n0`; d1, d2 every local 0; w4 refused outside the SSA
+  lowering then. Static gates: exclusions 0 uncited / 0 stale, comments 0 over the cap, ide/generate.py up to date;
+  memory-gate does not run under Windows Python (`signal.SIGPIPE`) - nothing in src/ changed (src/ lines +0).
+- **Linux**: the gdb half (`<w>.gdb`, `.gdb.expected` from the source, never yet run) queued as one job on the lock
+  behind M5's self-host (boxkit/dbg-linux.sh, ~/dbg-linux.out). Expected to name at least `big = 1` against the
+  source's `bool big = true` (x86g's run showed `1`: the DWARF type of bool).
+- **The gdb half, mended (lane dbg2, 2026-11-14)**: the first run (boxkit/dbg-linux.out) was 2 passed, 3 failed; each
+  failure checked against g++ -g -O0's own gdb session over the same source and script (the oracle, ~/dbg2-oracle).
+  **d1, w2's extra blank line was the script's**: gdb prints a blank line before every stop a `continue` reaches, for
+  g++'s binary the same; the normaliser drops blank lines (no expectation holds one). **w2's `big = 1 '\001'`**: bool
+  was described with the char-sized integer encoding; it is DW_ATE_boolean now. **w4's missing `total` and `main`**: the
+  unit's DW_AT_low_pc/high_pc were the first function's begin and the last's end, and the last were COMDAT inline
+  functions in sections of their own placed after .text - so the unit covered only those and gdb found no symbols for
+  the rest. ELF units now carry low_pc 0 and DW_AT_ranges over .debug_ranges, one pair per function (Mach-O keeps its
+  pair: DwarfSpelling::ranges null). With that gdb read w4's records and three more were wrong against g++'s: a
+  reference parameter written as the pointer it is stored as (`Local::declared` now keeps the reference for DWARF;
+  CodeView still reads `type`, so cdb's view is unchanged), an enumeration as `int` (DW_TAG_enumeration_type with its
+  enumerators now), a base's members flattened into the class (DW_TAG_inheritance for a direct non-virtual base, the
+  inherited members skipped, as CodeView's LF_BCLASS). No expectation changed: every `.gdb.expected` line equals g++'s.
+- **Gates**: Linux `debug.sh gdb` 5 passed, 0 failed; Windows (tree dbg2, cl /W4 /WX clean) `debug.sh cdb` 5/5 with
+  -masm=masm and with -masm=gnu; emit.sh 0 of 3399 files changed (emit is not -g); exclusions 0 uncited / 0 stale,
+  comments 0 over the cap, memory-gate rc 0 (Linux), ide/generate.py up to date. src/ lines: Dwarf.cpp 509 -> 569,
+  Dwarf.h 70 -> 72, Ast.h 849 -> 850, Parser.cpp 950 -> 949.

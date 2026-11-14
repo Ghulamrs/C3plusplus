@@ -1,0 +1,28 @@
+== total at 34
+pt = @0x#: {x = 4, y = 5}
+row = @0x#: {1, 2, 3}
+s = 15
+total @ 34
+main @ 47
+== Square::perimeter at 25
+this = 0x#
+p = 24
+Square::perimeter @ 25
+main @ 47
+== main at 48
+row = {1, 2, 3}
+pt = {x = 4, y = 5}
+bits = {i = 1065353216, f = 1}
+c = Green
+n = 9
+sq = {<geo::Shape> = {sides = 4}, edge = 6}
+box = {value = 21}
+name = "cdb\000\000"
+t = 81
+$1 = {x = 4, y = 5}
+$2 = 3
+$3 = 6
+$4 = 4
+$5 = 21
+$6 = 1065353216
+$7 = 98 'b'

@@ -161,6 +161,8 @@ if [ "$WHICH" = all ] || [ "$WHICH" = linux ]; then
         lstep 'BUILD_CAP=1200M ./build -j2 >/dev/null' &&
         { lstep 'JOBS=2 sh tools/crosshost-sums sums ./cxx3.exe sums-linux.txt | tail -1' && : > "$LEGS/sums-linux.ok" || rc=1; } &&
         lstep 'make test' &&
+        # gdb over tests/m10 (tests/debug.sh): stops at named lines, and the locals and frames are the source's.
+        { lstep 'sh tests/debug.sh gdb ./cxx3.exe | tail -12' || rc=1; } &&
         # The structural door under -g as well (make test runs it without): the funclet's head and tail are data (M4.7).
         lstep 'COFF_FLAGS=-g sh tests/coff.sh | tail -1' &&
         lstep 'CXX1="./cxx3.exe -O2" sh tests/run.sh' && lstep 'CXX1="./cxx3.exe -O1" sh tests/run.sh' &&
@@ -436,6 +438,12 @@ double 2.5" ]; then
         echo "  catch-check: FAILED"
         STATUS=1
     fi
+    # cdb over tests/m10 in both spellings (tests/debug.sh), the project's LINK writing the PDB: the source's locals.
+    for sp in masm gnu; do
+        if ssh -o BatchMode=yes "$WINDOWS" "cd /d $REMOTE && set CPP11_LD=$REMOTE\\winout-tools\\link.exe&& set DEBUG_FLAGS=-masm=$sp&& start \"\" /b /wait /affinity 3FF \"$WINBASH\" tests/debug.sh cdb ./cxx3-msvc.exe" \
+               > "$OUT/debug-$sp.txt" 2>&1 && tr -d '\r' < "$OUT/debug-$sp.txt" | tail -1 | grep -q ' 0 failed$'; then echo "  $(tr -d '\r' < "$OUT/debug-$sp.txt" | tail -1)"
+        else echo "  debug.sh cdb -masm=$sp: FAILED"; tr -d '\r' < "$OUT/debug-$sp.txt" | tail -8 | sed 's/^/      /'; fail=$((fail + 1)); fi
+    done
     echo "windows cases: $pass passed, $fail failed"
 
     # **The names, asked of cl rather than of clang.** tests/names.sh compares
