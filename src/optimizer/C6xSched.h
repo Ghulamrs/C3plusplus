@@ -6,5 +6,5 @@
 
 #include <string>
 
-// Every padding NOP replaced by the wait the pending writes require; a selected function's packets are made on its MIR.
-std::string c6xSchedule(const std::string &text, int level, bool selected = false);
+// Every padding NOP replaced by the wait the pending writes require; the packets are made on the function's MIR.
+std::string c6xSchedule(const std::string &text, int level);
