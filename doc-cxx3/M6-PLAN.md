@@ -1300,3 +1300,13 @@ until M6d, and Compiler++ and the CCS samples are measured before D4 (lane m6z).
   temporary 252 for 7. Main 85fe99fe's compiler gives the same 252 on the walker and the right answers on the
   selector: a walker-only wrong answer that predates this wave, unseen since the legs left the gate after wave 3.
   **Owed** before M6d retires the walker, or with it: fix, or a by-name walker skip with its reason.
+
+### Wave 14 landed, 2026-11-14 (the coordinator)
+
+M6c round 17 (m6z: Compiler++ and the CCS samples measured, 57 texts with 0 lines the stream does not spell; D4 -
+C6xSched.cpp's text-only passes deleted, 2,423 -> 1,356 lines, src/ +78 -1,216; the fallback a refusal by name).
+- **Gate at a2b329d8** (1931b1ad merged with main d556f3ff): Windows winpass -O0 and -O2: 828 same / 0 differ, masm
+  827 / 0. Mac run.sh -O0 and -O2 1215 / 0. Linux make test rc 0 (run 1217/0, emit 3399/0, typed 860/0, ssa 890/0,
+  c90 447/0). tms6747 (vm6747, SIM=0, three shards): 814 passed, 0 failed at -O0 (393.2 M) and -O2 (**192.0 M**,
+  unchanged); walker -O0 814 / 0 (447.8 M), walker -O2 812 / 2 - the same two owed since wave 13, no new one;
+  asm6x 833 / 0 at -O0 and -O2.
