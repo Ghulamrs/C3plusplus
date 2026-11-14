@@ -1107,3 +1107,50 @@ recognisers on register numbers; `iv`, `bound`, `P`, `C`, `ivs`, `bounds`, `step
   827 / 0. Mac run.sh -O0 and -O2 1215 / 0. Linux make test rc 0 (run 1217/0, emit 3399/0, typed 860/0, ssa 890/0,
   c90 447/0, exclusions 0/0, comments 0). tms6747 (vm6747, SIM=0, three shards): 814 passed, 0 failed at -O0
   (393.2 M cycles) and -O2 (**192.0 M**, unchanged); asm6x 833 / 0 at -O0 and -O2.
+
+### M6c, round 15 (the window's emitters on entries; the stepped counter's algebra on numbered terms), 2026-11-14, lane m6x
+
+- **Landed** (from m6-w 7823b524), each of identical output. **W2-W4** (041e0247, one commit: the three are one
+  representation) - `WinCode::Op` holds operands as an entry's (`Arg`: the `MOperand` and, beside it, its register and
+  index as numbers, a virtual one `kVirt` = 256 and up, since an operand's byte cannot count the window's virtuals);
+  `Window::bodyM` replaces `Window::body` (`Src::entry`: the stream's own entry, a walker's line as the entry of its
+  parts; one an entry does not model is refused by name); `affineTurn`'s `Aff`, `emitClosed` and `emitWindow` read
+  operands (`renamedBy`, `byteAt`, `indexed`, `byteAddress` on an operand - the one `Src::byteAddress` now asks);
+  `committed`, `cur`, `step`, the pool and the predicates are numbers, walked in the names' order (`RegSet`);
+  `giveRegisters` maps numbers and makes each entry, `legalForm`'s commute and unit test on the entry; the emitters
+  hand back a stream that `Code::put` takes. `Code::push_back`, `Code::entryOf`, `renamedBy`/`byteOperand` on
+  spellings, `sideOfAny` and `Exit::name` are deleted; `Code::same` copies the stream's entry. **C3** (559a6142,
+  comment mended 91c449f7) - `Terms`: each term of the stepped counter's algebra made once in a table (entry value,
+  symbol, constant, `op`, flat sorted sum, lt, ltu, eq, and, or), equal where the numbers are, `contains` for what
+  `find` asked of a spelling; `sumOf`, `splitTop`, `joinSorted` deleted, `str` spells a term for the trace alone.
+  One known narrowing: `contains` asks for the bound as a term, where `find("s:A1")` also met `s:A10`.
+  src/ +494 -437 lines (C6xPipe.cpp 2,622 -> 2,679).
+- **`c6x-line` is 0** on both boxes (8,211 / 8,206 at round 14, all `window`): no selected function's pipeliner reads
+  an entry as a line.
+- **What still reads `Line` in the C6000 path.** *The pipeliner* (C6xPipe.cpp), none of it for a selected function
+  outside the census: `Src`'s `v`, `line` (the `untyped`, `body`, `pre` fallbacks), `text()` and `entry` on a
+  walker's line; `insOf(const Line &)`; `Loop::body`/`pre` and what stands beside them (`raw`, `spelledLine`, the
+  line branches of `renameWebs` and the moved bound, `checkBody`); `Code::lines`/`text()`, `legalForm` in
+  `Code::legal`, `Code::placed` where a turn has no entry, `Turn::raw`; `sameLines`, `namesOf`,
+  `pipelineLoops(std::vector<Line> &)`. Reached on the stream too: `lineOf` for the two extra nodes of `scheduleAt`
+  (`makeNode(lineOf(entry(...)))`), for `turnOf`'s `raw` and for a refusal's reason. *The packetiser's file, the
+  driver, the table, C6xMir.cpp*: as round 14 listed them, unchanged.
+- **Gate** (Linux ~/m6x, a copy of ~/m6w with the changed files laid over; REF main 85fe99fe's compiler in ~/w7ref;
+  Windows against work\m6w's cxx3-msvc.exe). **Each step on its own**, cl /W4 /WX clean (three builds): tests/cases
+  at -O0, -O1, -O2 by md5, 3,669 outputs - W2-W4 (work\m6x) 2,601 texts, 1,068 refused alike, **0 differ**; C3
+  (work\m6x1) 3,663 same and the 6 path-length carets round 13 named; the final source (91c449f7) again in work\m6x
+  **0 differ**. Census at each step: `c6x-line` 0, and 0 `c6x-recog`, `c6x-emit`, `c6x-addr`, `c6x-spell`, `c6x-reg`,
+  `c6x-loop-edit`, `c6x-loops`, `c6x-loop-unread`, `c6x-front`, `c6x-fold`, `c6x-fold-edit`, `c6x-live`,
+  `c6x-live-unread`, 0 to the text pipeliner or pass; 6,835 selected functions, 106 with kernels (2,727 placed
+  entries). Linux, g++ -Werror clean at each: W2-W4 alone census 0, `identical.sh ARCHS=tms6747` -O0 and -O2 1,736
+  compared 0 differ, static rc 0; C3 (559a6142) the same 1,736 / 0, -O0 -g 868 compared, 91 raw (the tree's path),
+  851 texts 0 differ with the path made the same; tests/tms6747.sh SHARD=k/3 CYCLES=1 SIM=0 at -O2 814 passed, 0
+  failed, 3 not run on vm6747, **192,009,106 cycles** (192.0 M, unchanged); g-same 867 same, 0 differ, 0 broken;
+  asm6x.sh 833 objects, 0 failed, at -O0 and -O2. The final source (C3 and a comment) on Linux: build clean,
+  identical 1,736 / 0, exclusions 129 sites 0 uncited 0 stale (SSA lowering 554/95), comments 0 over (C3 alone had
+  1: the algebra's old two lines left above the new), memory gate rc 0, ast-residue rc 0, ide/generate.py --check up
+  to date (both boxes). Not run (the coordinator's): winpass, make test, ssa.sh.
+- **Owed:** the lines that stand for a walker's function only (`Loop::body`/`pre`, `Src::v`, `Code::lines`, the text
+  `pipelineLoops`) go with the walker's path in M6d; before that `makeNode` on the two extra entries and `Turn`
+  without `raw`; then the loop passes composing entries (`LoopStream`), the selector's stream handed in unprinted
+  (the driver's parse and `streamOf`), step 4.
