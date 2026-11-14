@@ -412,14 +412,14 @@ by case against round 5 (`m6d-cmp.sh`), the text no longer identical by design.
   keeps the B file - a base is read by `.D2`, not over a cross path - and shard 1 is 129.054 M, better 17, worse 29:
   the rest of that loss is array-loop-throw and array-loop-local, where a second base on B gives six-wide packets and
   a longer prologue. The cross path is the resource the pick does not count yet.
-- **Gates.** Linux -O2 `tms6747.sh SIM=0`, three shards: 814 passed, 4 failed - noexcept-terminates,
+- **Gates.** Linux (~/m6i, the landed code) `tms6747.sh SIM=0`, three shards, -O2 and -O0 alike: 814 passed, 4 failed - noexcept-terminates,
   ssa-noexcept-throw, noexcept-terminates-callee and static-aggregate-runtime-list (`thread_local`, refused) - the same
-  four under `CXX1_C6X_NOSIDES=1`; tests/g-same.sh 867 same, 0 differ, 0 broken; exclusions 0 uncited 0 stale, comments
+  four under `CXX1_C6X_NOSIDES=1`; `identical.sh ARCHS=tms6747 LEVELS="0 2"` under `CXX1_C6X_WALKER=1` against ~/w3g's
+  cxx3.exe: 1,736 compared, 0 differ; tests/g-same.sh 867 same, 0 differ, 0 broken; exclusions 0 uncited 0 stale, comments
   0 over, memory gate rc 0, ide/generate.py --check up to date. Windows (work\m6i, b3d26f1e's tree, against work\w3g): cl /W4 /WX clean; text and
   diagnostics of tests/cases at -O0 and -O2, 2,446 outputs, under `CXX1_C6X_NOSIDES=1` 0 differ and under
   `CXX1_C6X_WALKER=1` 0 differ; tests/g-same.sh 867 same, 0 differ, 0 broken; exclusions 0 uncited 0 stale, comments
   0 over, memory gate rc 0, ide/generate.py --check up to date.
-- **Owed:** the Linux chain past the hour (`~/m6i-gate.out`: identical.sh with `CXX1_C6X_WALKER=1` against ~/w3g,
-  then -O0 in three shards); the pick counting 1X/2X per turn (a B value with two A readers in one turn
+- **Owed:** the pick counting 1X/2X per turn (a B value with two A readers in one turn
   goes back to A) and `.M` pressure, neither begun; the unrolled turns alternating files, which needs the base on
   both - the stepped pointer of point (2); sim6747, asm6x.sh, make test (the coordinator's).
