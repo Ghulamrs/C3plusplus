@@ -755,3 +755,16 @@ m6-l (the packetiser reads typed operands), m5-dbg (tests/debug.sh; DWARF ranges
   views (`viewOf`) and the table readers asked of a line where an entry is not `modelled` (`lineOf`); and three
   crossings between the forms - `linesOf` before `reuseEntryLoads`, `streamOf`/`linesOf` around the pipeliner, and
   `streamOf` after `hoistConstantPairs`.
+- **Gate** (Linux ~/m6q, a copy of ~/m6p with the changed files laid over; REF main a5bc8eec's compiler in ~/w6ref;
+  Windows work\m6q against work\m6p's cxx3-msvc.exe). `identical.sh ARCHS=tms6747` against main's compiler: -O0 and
+  -O2 1,736 compared, 0 differ; -O0 -g 868 compared, 0 differ once the tree's own path is normalised (91 raw, all
+  `/w6ref/` against `/m6q/`). Windows: tests/cases at -O0, -O1, -O2 by md5, 3,669 outputs (2,601 texts, 1,068 refused
+  alike), 0 differ. Census at -O2 (`CXX1_C6X_MIR=1`, both boxes): **0 `c6x-front`**, 0 `c6x-fold`, 0 `c6x-fold-edit`,
+  0 `c6x-live`, 0 `c6x-live-unread`, 0 `c6x-node`, 0 to the text pipeliner or pass; 6,835 selected functions, 106 with
+  kernels (2,727 placed entries). tests/tms6747.sh SHARD=k/3 CYCLES=1 SIM=0 at -O2: 814 passed, 0 failed;
+  **192,009,106 cycles** (192.0 M, unchanged). tests/g-same.sh 867 same, 0 differ, 0 broken; asm6x.sh 833 objects, 0
+  failed, at -O0 and -O2. cl /W4 /WX clean. Exclusions 129 sites 0 uncited 0 stale (SSA lowering 554/95); comments 0
+  over; memory gate rc 0; ast-residue rc 0; ide/generate.py --check up to date. Not run (the coordinator's): winpass,
+  make test, ssa.sh.
+- **Owed:** round 7's item (1) whole; `reuseEntryLoads` to `widenFills` and `hoistConstantPairs` on the stream, so one
+  stream runs from the parse to the packetiser; then the selector's stream handed in unprinted; then step 4.
