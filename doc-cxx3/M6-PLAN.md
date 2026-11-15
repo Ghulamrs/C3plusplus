@@ -1637,3 +1637,42 @@ files (lane m6ad's):
 - **The lane's cxx3 on every C6x file** (`./cxx3.exe -std=c++11 -O0 -Isrc -c`, Linux): C6xPack.cpp, C6xPipe.cpp,
   C6xSched.cpp, C6xSelect.cpp and C6xMir.cpp each compile, 0 errors.
 - **Owed:** D6.4 and D6.5, in round 19's order; D6.4 not started.
+### M6c, round 24 (D6.4: the scheduler's table reads operands only), 2026-11-15, lane m6ag
+
+- **Landed, identical output: D6.4** (56371e9a). C6xSched.cpp: `make`, `rebuilt`, `readsAndWrites(Line)`,
+  `steppedRegister(Line)`, `isLabel`, `labelName`, `blockEnd`, `isCall(Line)`, `liveFacts(Line)`, `crossings(Line)`,
+  `unitsFor(Line)`, `legalForm(Line &)`, `renameable`, `touches`, `passThrough(Line)`, the text `frameSlot` and
+  `makeNode(Line)` are deleted. C6xPack.cpp: `lineOf`, `viewOf`, `renameIn` and the `!modelled` halves of
+  `makeNode`, `liveFacts`, `removeDead`, `memSide`, `LoopText::rw` and the fills' reader; `rwOf`, `crossingsOf` and
+  `unitsOf` were then synonyms of `readsAndWrites`, `crossings` and `unitsFor` and are gone (the pipeliner's
+  `regsOf`/`masksOf` are one line each). `labelLike` and a placed entry's liveness read the entry, not a line of it.
+- **The refusal by name.** `onOperands(MInst)` is what `modelled` asked of the operands (text naming a register, an
+  address or a number is not read); `onOperands(MStream)` asks it of every instruction, a placed one too, and
+  `c6xSchedule` asks it twice - after `streamOf` and before `packetise` - handing the text back with `spelled`
+  false, so `Tms6747` refuses as round 17's fallback does ("a line the scheduler's stream does not spell"; the one
+  site, its citation unmoved). Under `CXX1_C6X_MIR` the entry is printed as `c6x-line:`. `legal` answers no for
+  such an entry, so the selector never builds one. No case reaches it: 0 `c6x-line` over tests/cases at -O2 on both boxes, and no case's text moved.
+- **Assumed, and what would show it wrong**: a placed instruction (the kernel's, read with `par` and its unit
+  through `lineOf` until now) reads the same on its operands - `foldBranchNops`' packet nodes and the pipeliner's
+  reads of a kernel; no pass composes an entry `onOperands` refuses between the two checks; a `Verbatim` entry is
+  never an instruction to `parse` (`streamOf` refuses one). The identity and the per-case cycles below hold all three.
+- **What still reads `Line`**: `parse` (C6xSched.cpp), `streamOf` (C6xPack.cpp), `read`'s one call of `parse`
+  (C6xMir.cpp) and `c6xSchedule`'s read of the walker's text - D6.5, all of it. `Line` is named 3 times in
+  C6xPack.cpp, 4 in C6xSched.cpp, once in C6xMir.cpp, not at all as a type in C6xPipe.cpp. The pipeliner's
+  `typed(i) ? ... : op(i, k)` halves still read a placed entry by its spelling: they ask `modelled`, not the table.
+- src/ +67 -357 lines (C6xSched.cpp 1,363 -> 1,143, C6xPack.cpp 1,429 -> 1,390, C6xPipe.cpp 2,383 -> 2,372,
+  C6xModel.h 145 -> 130, C6xMir.h 139 -> 138, C6xMir.cpp 185 -> 181).
+- **Gate** (56371e9a; the reference is round 23's base build, b6edce1a, whose texts round 23's are). Windows, cl /W4 /WX
+  clean (work\m6ag1 against work\m6af0), tests/cases at -O0, -O1, -O2 by md5: **2,613 texts same, 1,068 refused
+  alike, 0 differ**, plain and under `CXX1_C6X_WALKER=1`; census -O2 0 to any text pass, 0 `c6x-line`, 7,012
+  selected, kernels 219 / 9,122; exclusions 129 sites 0 uncited 0 stale, comments 0 over, memory gate rc 0, generate
+  up to date. Linux (~/m6ag against ~/m6af0), g++ -Werror clean: `identical.sh ARCHS=tms6747` -O0 and -O2 **1,744
+  compared, 0 differ**; -O0 -g 0 differ once the tree path in `.dwpsn` is normalised. Against main 85fe99fe's
+  compiler (~/w7ref): 26 differ and -g 10 after normalising, round 23's numbers (the base's 13 cases).
+  tests/tms6747.sh SHARD=k/3 CYCLES=1 SIM=0 at -O2 **818 passed, 0 failed, 192,802,451 cycles**, and **per case
+  (cycles.txt of each shard against round 23's, 815 cases) 0 differ**; walker legs **818 / 0** at -O2 and at -O0;
+  g-same 871 same, 0 differ, 0 broken; asm6x.sh 837 objects, 0 failed at -O0 and -O2; census 0; exclusions 0/0,
+  comments 0 over, memory gate, ast-residue, generate rc 0. Not run (the coordinator's): winpass, make test, ssa.sh.
+- **The lane's cxx3 on every C6x file** (`./cxx3.exe -std=c++11 -O0 -Isrc -c`, Linux): C6xPack.cpp, C6xPipe.cpp,
+  C6xSched.cpp, C6xSelect.cpp and C6xMir.cpp each compile, 0 errors.
+- **Owed:** D6.5 (`parse`, `streamOf`, `Line`), then the pipeliner's spelling halves of a placed entry.
