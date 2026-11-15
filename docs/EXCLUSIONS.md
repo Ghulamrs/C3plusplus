@@ -63,7 +63,7 @@ oracle, and the sentence has to be read.
 *reachability* depends on where it sits. `template <>` at
 `src/parser/ParserTemplate.cpp:40` is refused where a template parameter list
 is expected, while `template <> struct Box<int> { ... };` compiles; the
-functional-cast temporary at `src/sema/Overload.cpp:584` is refused
+functional-cast temporary at `src/sema/Overload.cpp:610` is refused
 during overload ranking, while `take(P(4))` and `P q = P(3);` compile. Both were
 checked with a program before this sentence was written, and the same habit is
 the reason `pending[]` once had eight keywords in it that were implemented.
@@ -103,7 +103,7 @@ goes in the same commit.
 | `0b101`, a binary literal | C++14 | `src/Lexer.cpp:527` |
 | `u8'x'`, a `u8` character literal | C++17 | `src/Lexer.cpp:621` |
 | `decltype(auto)` | C++14 | `src/parser/ParserExpr.cpp:2307` |
-| `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:264` |
+| `[n = k]`, an init-capture | C++14 | `src/parser/ParserExprLambda.cpp:266` |
 | `auto` as a parameter type | C++14 | `src/parser/ParserClass.cpp:3146`, `src/parser/ParserTopLevel.cpp:835` |
 | `auto` as a return type | C++14 | `src/parser/ParserTopLevel.cpp:763` |
 | a variable template | C++14 | `src/parser/ParserTemplate.cpp:456` |
@@ -431,7 +431,7 @@ and `typeid` work (`tests/cases/typeid.cpp`). What is left:
 
 - **naming a capture after a default one** — `[=]` and `[&]` on their own take
   everything the body reads, `this` included where the body names a member.
-  `src/parser/ParserExprLambda.cpp:231`
+  `src/parser/ParserExprLambda.cpp:233`
 
 ## `volatile`, which is read and dropped
 

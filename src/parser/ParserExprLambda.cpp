@@ -168,6 +168,7 @@ std::vector<Parser::Local> Parser::constantLocals() const {
 // **The captured pointer has the type `this` has in the enclosing function** -
 // [expr.prim.lambda]/18.
 const Type *Parser::capturedThisClass() {
+    if (const Type *outer = closureOuterClass()) return outer;      // a lambda in a lambda: the object the outer one took
     const Local *enclosing = lookup_.findLocal("this");
     if (enclosing != nullptr && enclosing->type->pointee() != nullptr)
         return enclosing->type->pointee();
@@ -176,6 +177,7 @@ const Type *Parser::capturedThisClass() {
 
 bool Parser::namesOwnMember(const std::string &name) {
     if (currentClass_ == nullptr || lookup_.findLocal("this") == nullptr) return false;
+    if (const Type *outer = closureOuterClass()) return outer->findMember(name) != nullptr || lookup_.findMemberOwner(outer, name) != nullptr;
     const Type *cls = currentClass_->unqualified();
     return cls->findMember(name) != nullptr ||
            lookup_.findMemberOwner(cls, name) != nullptr;
@@ -778,6 +780,13 @@ ExprPtr Parser::capturedThisPointer() {
     ExprPtr acc = thisMember(self->offset, self->type->pointee(), *held);
     acc->setType(types_.pointerTo(outer->second));
     return acc;
+}
+
+// The class whose object the closure being read took as `this`, when this body is its call operator; null otherwise.
+const Type *Parser::closureOuterClass() const {
+    if (currentClass_ == nullptr) return nullptr;
+    std::map<std::string, const Type *>::const_iterator outer = closureOuter_.find(currentClass_->unqualified()->tag());
+    return outer == closureOuter_.end() ? nullptr : outer->second;
 }
 
 // The class whose scope the body being parsed is in, when that body is a
