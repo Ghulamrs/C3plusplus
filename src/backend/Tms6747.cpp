@@ -2421,13 +2421,15 @@ void Tms6747::emitFunction(const Function &fn) {
     epi << "\tB\tB3\n\tNOP\t5\n";
     emitVariables(fn);                                      // -g: after the label, outside the scheduled code
     // Scheduled with the body at -O1 and -O2, so a result in flight at its end lands under the return's delay slots.
-    bool spelled = true;
+    std::string declined, refused;
     const bool whole = optimize_ > 0 && !backendSkipped("pro");
     if (!whole) out_ << pro.str();
     // A selected body goes as its entries (C6xSelect.cpp), a walked one as the text it wrote.
     const std::string before = early + (whole ? pro.str() : std::string()) + params + (ssaFn != nullptr ? ssaHead_ : body);
-    out_ << c6xSchedule(before, ssaFn != nullptr ? &ssaMir_ : nullptr, epi.str(), optimize_, spelled);
-    if (!spelled) unsupported("a line the scheduler's stream does not spell");
+    out_ << c6xSchedule(before, ssaFn != nullptr ? &ssaMir_ : nullptr, epi.str(), optimize_, declined, refused);
+    // Declined (Q5 of the M6c review): the serial text stands as -O0 writes it, and tools/c6x-declines counts the line.
+    if (!declined.empty()) opt::noteDecline("c6x-unscheduled", fn.symbol() + ": " + declined);
+    if (!refused.empty()) unsupported(("the C6000 instruction '" + refused + "', which no unit encodes").c_str());
     // TI's index entry for a function an exception can pass through - one that calls, so saves B3 - naming the table
     // when there are handlers, holding the word itself when there are none. A function that calls nothing gets no
     // entry, as cl6x gives none: the linker covers the run it sits in with one EXIDX_CANTUNWIND.

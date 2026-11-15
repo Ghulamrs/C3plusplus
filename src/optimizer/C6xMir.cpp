@@ -203,6 +203,7 @@ bool addSerial(const MStream &from, MStream &to) {
     for (std::size_t k = 0; k < from.size(); k++) {
         const MInst &i = from[k];
         if (i.kind == MInst::Verbatim) { if (!readSerial(i.m.str(), to)) return false; continue; }
+        // Every NOP is -O0 padding today: the selector and the walker write none that is meant (R117).
         if (i.kind != MInst::Instruction || i.m.str() != "NOP") to.push_back(i);
     }
     return true;

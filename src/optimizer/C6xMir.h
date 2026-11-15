@@ -77,14 +77,15 @@ bool placedName(const MInst &i, std::string &name);       // a placed entry that
 void packetise(MStream &s);
 void foldBranchNops(MStream &s, bool near);
 
-// **The pipeliner** (C6xPipe.cpp): its counted loops' kernels as placed entries; false, untouched, where one is not spelled.
-bool pipelineLoops(MStream &s);
+// **The pipeliner** (C6xPipe.cpp): its counted loops' kernels as placed entries; a loop whose kernel is not modelled stays.
+void pipelineLoops(MStream &s);
 
 // **The table's readers on operands** (C6xPack.cpp): `makeNode`, `crossings` and `unitsFor` read an entry's registers
 // and immediates. `onOperands` is false where an operand is text naming a register, an address or a number - the
 // table cannot read it, and `c6xSchedule` refuses the function; `modelled` is that of an instruction not yet placed.
 bool onOperands(const MInst &i);
 bool onOperands(const MStream &s);                // every instruction's, a placed one's too
+bool firstUnread(const MStream &s, std::string &line);   // the first whose operands are not read, spelled
 bool modelled(const MInst &i);
 int crossings(const MInst &i);
 unsigned unitsFor(const MInst &i);

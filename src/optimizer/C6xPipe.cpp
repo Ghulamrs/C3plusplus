@@ -4,6 +4,7 @@
 
 #include "C6xMir.h"
 #include "C6xModel.h"
+#include "OptDeclines.h"
 
 #include <algorithm>
 #include <cctype>
@@ -2305,8 +2306,8 @@ bool pipelineAt(const Src &src, std::size_t i, const std::set<std::string> &labe
 }   // namespace
 
 // **The pipeliner on the stream** (M6c rounds 2 and 14): the same candidates read from the entries, their liveness the
-// stream's; a kernel is written as entries (`Code`) - `par` its packets, `NOP n` its idle cycles. False: one not held.
-bool pipelineLoops(MStream &s) {
+// stream's; a kernel is written as entries (`Code`) - `par` its packets, `NOP n` its idle cycles. One not modelled is declined.
+void pipelineLoops(MStream &s) {
     std::vector<std::uint64_t> in, liveOut;
     liveness(s, in, liveOut);
     const Src src(&s, &in);
@@ -2323,14 +2324,13 @@ bool pipelineLoops(MStream &s) {
         Code code;
         code.from = &s;
         if (!pipelineAt(src, i, labels, named, copied, code, from, to)) continue;
-        if (!code.ok) return false;
+        if (!code.ok) { opt::noteDecline("c6x-pipeline-unmodelled", s[i].str()); continue; }
         out.insert(out.end(), s.begin() + static_cast<long>(copied), s.begin() + static_cast<long>(from));
         out.insert(out.end(), code.m.begin(), code.m.end());
         copied = to;
     }
     out.insert(out.end(), s.begin() + static_cast<long>(copied), s.end());
     s.swap(out);
-    return true;
 }
 
 }   // namespace c6x
