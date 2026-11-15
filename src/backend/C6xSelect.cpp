@@ -518,7 +518,9 @@ void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
     out_.str(std::string());
     ssaMir_.clear();
     ssaRegionAt_ = 0;
-    ssaOrder_ = optimize_ != 0 ? ssaBlockOrder(f) : f.blocks;       // a loop's blocks together, its latch last
+    // A loop's blocks together, its latch last; at -O0 only a wrapped body's (pads, noexcept), which else jumps to its body and back.
+    const bool wrapped = fn.isNoexcept() || fn.hasLandingPads() || f.landingPads;
+    ssaOrder_ = optimize_ != 0 || wrapped ? ssaBlockOrder(f) : f.blocks;
     ssaAssign(fn, f);
     frame_ = layoutSsa(fn, f);
     // Each parameter into its home by emitParams (regOf_), or from the slot emitParams wrote it to into its value's word.

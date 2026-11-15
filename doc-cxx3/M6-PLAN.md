@@ -2298,10 +2298,13 @@ Windows: shards 4-6/6 SIM=1 at -O0 413 passed 0 failed; the rest of the Windows 
 397,279,749 -> 395,942,111. The largest worse: -O2 array-loop-throw +72,173, constructor-unwinds +31,247,
 array-loop-local +15,141, map-set-node-stability +11,356, ssa-catch-by-value-throw-out +10,317; -O0 local-in-handler
 +39,403, ssa-catch-by-value +38,366, local-try-states +38,027, ssa-catch-by-value-throw-out +37,932. The -O0 cause
-is read: a wrapped body's blocks are written in `f.blocks` order, so a selected `noexcept` or pad function jumps
-to its body and back (two `B` + `NOP 5`, 12 cycles a call; tests/cases/noexcept's `quiet`) - `ssaBlockOrder` at -O0
-for those functions is the candidate mend, not made in this lane's hour. The -O2 cause is not read (the tables are
-shorter than the walker's, so it is not the scan). Two accepted lines went stale (return-self-referential,
+was read: a wrapped body's blocks were written in `f.blocks` order, so a selected `noexcept` or pad function jumped
+to its body and back (two `B` + `NOP 5`, 12 cycles a call; tests/cases/noexcept's `quiet`). **Mended in the lane's
+last commit**: `ssaBlockOrder` at -O0 for those functions alone - -O0 then reads 640 equal, **175 better, 5 worse**
+(397,279,749 -> 395,759,751): the four catch-by-value cases above, each still +38,000, and template-class +3. That
+commit is gated on Linux only (tms6747.sh SIM=1 -O0, all six shards, 823 passed 0 failed; comment cap, memory gate);
+it changes -O0 text alone, and the Windows build and gate above are of the commit before it. The -O2 cause and the
+four +38,000 are not read (the tables are shorter than the walker's, so it is not the scan). Two accepted lines went stale (return-self-referential,
 map-move-only-mapped: no longer worse).
 
 **What remains, by reason.** The six `.notarget` lines: handler-guards-nested now passes selected (vm6747 and
