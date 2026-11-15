@@ -2260,3 +2260,22 @@ From r6e f56adfed, branch r6i, with r6b merged for `tools/c6x-cycles`. src/: +31
   run.sh on Linux at -O0 and -O2: 1223 passed, 0 failed; the case on x86_64-windows in both spellings at -O0 and -O2
   agrees with clang. cl /W4 /WX and g++ -Werror clean; exclusions 129 sites 0 uncited 0 stale; comment cap 0 over;
   memory gate holds; ide/generate.py up to date.
+
+### Wave 20 landed - the M6c review's mends, 2026-11-15 (the coordinator)
+
+The review's lanes r6a (tools/wave-gate, the -O1 leg, the fixed-point step), r6b (tools/c6x-cycles, the baseline),
+r6c (the runs never run: sim6747, ti-link, release-check, the fixed point, the clang suites on Windows), r6d (the clang
+suites run on Windows, R110 ADL), r6e (four wrong answers: the EXT home side; R108 per Q5, the decline count),
+r6f (R109, tests/subst.sh), r6g (the user's decisions in the plans, M6a.2's rounds, the walked ratchet, the owed
+table), r6h (the residue's user mark, the refusal ratchet, CLAUDE.md's pointer and the history), r6i (R114
+register-named symbols, R118), r6w (tools/wave-gate over both boxes); one residue raise in the merge removed.
+- **Gate: tools/wave-gate w20g at e91cacd4** - 30 passed, 5 failed, 5 not run (each with its reason). Linux: build,
+  static, gdb 5/5, run1 1226/0, make test rc 0, subst, self-compile 103/103. Windows: cl /W4 /WX, winpass -O0/-O1/-O2
+  837 / 0 and masm 836 / 0, cdb 5/5, self-compile 103/103. Joined over both boxes: tms6747 -O0/-O1/-O2, the walker
+  at all three and sim6747 -O2, each 823 passed / 0 failed. asm6x 842 / 0 at -O0/-O1/-O2; declines baseline 0
+  holds. Mac: run.sh 1224 / 0 at -O0 and -O2, lldb 5/5. **release-check by hand on Windows: PASS, 34 programs, 226 s.**
+- **The five failures, each explained:** names 141 / overload 1 / win-structure - the classified set, owed to lane
+  r6n; identical 12 - all intended (the new cases adl-*, c6x-ext-home-side, c6x-register-named-symbols, and the
+  mended inheriting-constructors, pipelined-data-exit, temporary-member-call, array-list-default-args); cycles 1 -
+  template-subst 448 -> 949, its source widened by r6f, re-recorded (f9e35d30). pipelined-data-exit +408 accepted
+  by the user as the correct-code baseline (79b00a6e).
