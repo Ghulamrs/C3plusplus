@@ -2260,3 +2260,51 @@ From r6e f56adfed, branch r6i, with r6b merged for `tools/c6x-cycles`. src/: +31
   run.sh on Linux at -O0 and -O2: 1223 passed, 0 failed; the case on x86_64-windows in both spellings at -O0 and -O2
   agrees with clang. cl /W4 /WX and g++ -Werror clean; exclusions 129 sites 0 uncited 0 stale; comment cap 0 over;
   memory gate holds; ide/generate.py up to date.
+
+## M6a.2 round W1 - landing pads through the C6000 selector, 2026-11-15 (lane w1, m6a2-w1 from wave20 79b00a6e)
+
+**What changed** (`a3134937`; src/ +53 lines, 94,324 -> 94,377; the baseline lowered in `dc878fb5`):
+- `Tms6747::ssaOutside` no longer leaves a function with Itanium pads, or a `noexcept` one, to the walker. A pad is
+  taken where it has the exception and the selector as its two parameters and a `catchpad`/`cleanuppad` first; an
+  invoke is checked as a call is. `throw(T...)` stays walked by name ("exception specification": the lowering's
+  filter has no row here) - none is left in tests/cases under that reason.
+- **An invoke is one call-site row** (`ssatry`/`ssatryend` round the call, in address order, disjoint), with its pad's
+  chain as arm64's selector reads it; `emitExceptionTable` joins no rows of a selected body (`ssaRows_`): a row is
+  one call, so TI's personality, which goes on after a cleanup from the next scope at the address that threw, finds
+  none. **The pad's entry** (`ssaland`) stores A4 and the trampoline's B4 into the block's parameters and takes B15
+  back, as `landingPad` does; nothing falls into it. **A pad that only ends the program** (a call of
+  `_ZSt9terminatev` in its block) is cl6x's terminate scope, the walker's row (`0xfffffffe`, no landing) - with an
+  honest landing vm6747 prints its own line where clang's answer has none (dtor-throws-unwinding).
+- **A value live into a pad has no register**: it stays in its word, or is made again. The scheduler's liveness
+  (C6xSched.cpp) has no edge from a call to a landing, so a register read only in a pad would be dead to it.
+- **The lowering resumes by `Target::resumeTakesException`**: `__cxa_end_cleanup()` for TI, `_Unwind_Resume(e)`
+  elsewhere (Lowering.cpp `resumeFrom`). vm6747 took `_Unwind_Resume`; TI's rts6740 on sim6747 did not (twelve
+  cases read a null control block in `__TI_Unwind_Resume`) - the judge the plan named found it.
+
+**The census** (Linux, g++ build, CENSUS_SOURCES=0, 1,232 cases): -O2 walked **3,527** (was 4,207), -O0 **3,313**
+(was 4,053); selected 7,724 and 7,938 of 11,251. "landing pads" and "exception specification" read 0 at both
+levels: of the 1,360, 680 are selected and 680 are now named by their next reason (variadic call 1,149, class
+result 493, class or 64-bit parameter 413, floating value 308, memcpy 269, ... - W2 to W6's).
+
+**Gates** (a3134937's tree). Linux: tests/tms6747.sh shards 1-3/6, SIM=1 and SIM=0, 410 passed 0 failed at each of
+-O0, -O1, -O2, and under the walker at -O2; tests/ti-link.sh 836 linked 0 failed at -O0 and at -O2; asm6x.sh 842 / 0
+at -O1 and -O2; tools/c6x-declines --check holds; identical.sh ARCHS=tms6747 against a build of 79b00a6e: 2,631
+compared, 594 differ, in 202 cases, each named in the lane's log (a case with a function newly selected);
+exclusions 129 sites 0 uncited 0 stale, comment cap 0 over, memory gate holds; g++ -Werror and cl /W4 /WX clean.
+Windows: shards 4-6/6 SIM=1 at -O0 413 passed 0 failed; the rest of the Windows half as the handover records it.
+
+**Cycles - the user's question, not accepted here.** Against 79b00a6e's own counts (Linux, vm6747, 820 cases): at
+-O2 649 equal, **147 better, 24 worse**, 192,038,836 -> 191,958,981; at -O0 640 equal, **163 better, 17 worse**,
+397,279,749 -> 395,942,111. The largest worse: -O2 array-loop-throw +72,173, constructor-unwinds +31,247,
+array-loop-local +15,141, map-set-node-stability +11,356, ssa-catch-by-value-throw-out +10,317; -O0 local-in-handler
++39,403, ssa-catch-by-value +38,366, local-try-states +38,027, ssa-catch-by-value-throw-out +37,932. The -O0 cause
+is read: a wrapped body's blocks are written in `f.blocks` order, so a selected `noexcept` or pad function jumps
+to its body and back (two `B` + `NOP 5`, 12 cycles a call; tests/cases/noexcept's `quiet`) - `ssaBlockOrder` at -O0
+for those functions is the candidate mend, not made in this lane's hour. The -O2 cause is not read (the tables are
+shorter than the walker's, so it is not the scan). Two accepted lines went stale (return-self-referential,
+map-move-only-mapped: no longer worse).
+
+**What remains, by reason.** The six `.notarget` lines: handler-guards-nested now passes selected (vm6747 and
+sim6747, -O0 and -O2) and still fails under `CXX1_C6X_WALKER=1`, so its line and tests/open/walker-handler-guards-
+nested stay while the walker's leg stands; the other five still fail, their functions walked for W2-W6's reasons.
+release-check's box half and the Windows shards at -O1, -O2 and the walker: see boxkit/w1-handover.md.
