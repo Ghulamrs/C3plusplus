@@ -76,6 +76,7 @@ struct Node;
 // each block's instructions placed in execute packets with `NOP n` for its idle cycles; a branch and its NOPs as one BNOP.
 bool streamOf(const std::vector<Line> &v, MStream &s);
 Line viewOf(const MInst &i);                      // one entry as a line: a placed one kept, `||` and all, any other its spelling parsed
+bool placedName(const MInst &i, std::string &name);       // a placed entry that starts in the first column, named up to its `:`
 void packetise(MStream &s);
 void foldBranchNops(MStream &s, bool near);
 

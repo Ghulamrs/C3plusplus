@@ -456,13 +456,7 @@ bool sameOperands(const MInst &a, const MInst &b, int but = 0) {
 // What the pass below takes for a label: one that is, or a placed entry that starts in the first column - the
 // kernel's label, a `||` turn - named up to its `:`. No branch names a turn; a region is not refused for one.
 bool placedLabel(const LoopText &t, std::size_t k, std::string &name) {
-    if (t.label(k, name)) return true;
-    if (t.gone[k] || !t.s[k].packed) return false;
-    std::string raw = t.s[k].str();
-    raw.erase(raw.size() - 1);
-    if (raw.empty() || raw[0] == '\t') return false;
-    name = raw.substr(0, raw.find(':'));
-    return true;
+    return t.label(k, name) || (!t.gone[k] && placedName(t.s[k], name));
 }
 
 // **A constant made inside a loop nest is made before it**: `MVKL sym, d; MVKH sym, d`, the only writer of d
