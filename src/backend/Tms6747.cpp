@@ -831,7 +831,7 @@ void Tms6747::emitExceptionTable(const Function &fn) {
     // goes on after a cleanup from the next one at the address that threw, which pieces split around an
     // inner region would not cover - unless a pad in it jumps to another, whose resume would run it twice.
     for (const CallSite &c : callSites()) {
-        const bool pure = c.types.empty() && !c.terminate && !c.handsOver;
+        const bool pure = !ssaRows_ && c.types.empty() && !c.terminate && !c.handsOver;
         std::map<std::string, std::size_t>::const_iterator at = pure ? region.find(c.pad) : region.end();
         if (at != region.end()) { rows[at->second].end = c.end; continue; }
         if (pure) region[c.pad] = rows.size();
@@ -2341,6 +2341,7 @@ void Tms6747::emitFunction(const Function &fn) {
     // Selected from SSA where the selector's subset holds the whole body (M6a); null: the walker's, the reason named.
     ssaPlace_.clear();
     const ir::Function *ssaFn = ssaChoose(fn);
+    ssaRows_ = ssaFn != nullptr;
     if (optimize_ > 0 && ssaFn == nullptr) {
         planning_ = true;
         walkBody(fn);
