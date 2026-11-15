@@ -7,8 +7,8 @@
 #                          [-t <commit>] [-a mfixed] [-k] [-r] [-p]
 #
 # Run from the Mac, which only ships and asks: the tree is HEAD as `git archive` writes it (the commit is printed);
-# the Linux box builds it in ~/<name> and runs its chain detached, one box job a step under the lock and the
-# 25-minute cap; the Windows box builds it in <work>\<name> (tools/windows/winbuild.sh) and the Mac in
+# the Linux box builds it in ~/<name> and runs its chain detached, two steps at once, each box job through ~/slot
+# (the first free of two locks, -j2/JOBS=2 each; installed from SLOT below when missing) under the 25-minute cap; the Windows box builds it in <work>\<name> (tools/windows/winbuild.sh) and the Mac in
 # $WAVEGATE_MAC/<name>, one Mac job at a time at -j2. `-n` names steps this wave does not owe, with the reason the
 # report prints; a group name (tms, wtms, winpass, fixed, mac, windows, linux) stands for its steps. `-b` keeps the
 # run to some boxes - the others' steps are NOT RUN and want a reason like any other. `-r` runs nothing: the report
@@ -16,7 +16,8 @@
 # have none yet (a chain cut by the box, or a step added), in the trees already built.
 #
 # **The steps and their boxes are one table, BOXTAB below** (the user's split, 2026-11-15, second form): linux runs
-# what executes x86_64-linux code at -j4/JOBS=4; windows the Windows-only steps, pinned to its ten; `split` steps
+# what executes x86_64-linux code, two at a time in the two slots; windows the Windows-only steps, pinned to its ten,
+# as many at once as WINLANES (10) holds - a wide step WINLANES/2 lanes, a narrow one 2 - back to back (pool below); `split` steps
 # run SHARD=k/6, k=1-3 on Linux and k=4-6 on Windows at once, and join into one verdict (counts summed, cycles.txt
 # concatenated); `idle` steps (the -S comparisons) go to whichever leg asks first after its own, and say so.
 # `-B step=box` (or WAVEGATE_BOXES) overrides a row for one run. `-t` ships that commit's tree, not HEAD's;
@@ -48,6 +49,37 @@ BOXTAB="build=linux static=linux gdb=linux run1=linux maketest=linux subst=linux
  identical=idle emit=idle census=idle declines=idle asm0=idle asm1=idle asm2=idle cycles=idle
  mbuild=mac mrun0=mac mrun2=mac lldb=mac"
 STEPS_asked="mfixed"; NSHARD=6; SPLIT_LINUX=1-3; SPLIT_WINDOWS=4-6
+# ~/slot on the Linux box is a copy of this text (the user, 2026-11-15: two slots on the 4 vCPU); installed when missing
+SLOT='#!/bin/sh
+# ~/slot <cmd...>: run one box job in either of two slots (the user, 2026-11-15: keep the 4 vCPU busy) - the
+# first free of ~/.boxleg.lock.1 and .2, waiting for whichever frees first; each job at -j2 / JOBS=2 by default.
+# The old single lock ~/.boxleg.lock is still honoured by a job that takes it (the wave-20 gate, started before).
+export MAKEFLAGS=${MAKEFLAGS:--j2} JOBS=${JOBS:-2} SELFHOST_JOBS=${SELFHOST_JOBS:-2}
+while :; do
+  for s in 1 2; do
+    exec 9>"$HOME/.boxleg.lock.$s"
+    if flock -n 9; then echo "slot $s: $*" >&2; "$@"; rc=$?; flock -u 9; exit $rc; fi
+  done
+  sleep 5
+done'
+# steps that write one folder of the tree (tests/out-run, out-tms6747, out-asm6x, winout, selfhost) never overlap
+fam() { case $1 in run1|maketest) echo run;; tms*|wtms*|sim*) echo tms;; asm*) echo asm;; winpass*) echo winpass;;
+    wfixed*|wselfc) echo selfhost;; *) echo "$1";; esac; }
+# pool <cap> <run> <width> [<more>] <step>...: each step in the background as `<run> <step> <w>` while the widths in
+# flight fit in <cap> and no step of its family runs; `<width> <step> <free> <left>` prints w (empty: not ready yet);
+# `<more>` (or -) is asked for another step when the list is empty. A step starts the moment one fits: no idle gap.
+pool() { cap=$1 prun=$2 pwid=$3 pmore=$4; shift 4; pq="$*" pr=
+    while :; do l=; used=0
+        for e in $pr; do p=${e%%:*}; w=${e##*:}; if kill -0 "$p" 2>/dev/null; then l="$l $e"; used=$((used + w)); fi; done; pr=$l; go=
+        if [ -z "$pq" ] && [ "$pmore" != - ]; then m=$($pmore); [ -n "$m" ] && pq=$m; fi
+        n=0; for s in $pq; do n=$((n + 1)); done
+        for s in $pq; do f=$(fam "$s"); busy=
+            for e in $pr; do x=${e#*:}; [ "$(fam "${x%:*}")" = "$f" ] && busy=1; done; [ -z "$busy" ] || continue
+            w=$($pwid "$s" $((cap - used)) $n); [ -n "$w" ] || continue
+            [ $((used + w)) -le "$cap" ] || [ -z "$pr" ] || continue
+            "$prun" "$s" "$w" & pr="$pr $!:$s:$w"; used=$((used + w)); go=1
+            pq=$(for x in $pq; do [ "$x" = "$s" ] || printf '%s ' "$x"; done); break; done
+        [ -n "$go" ] && continue; [ -z "$pq$pr" ] && break; sleep 5; done; wait; }
 # ---- the Windows box's side, under Git's bash in the built tree: sh tools/wave-gate --suite names|overload|win-structure
 if [ "${1:-}" = --suite ]; then
     PATH="$(dirname "$(cygpath -u "${CXX1_WINDOWS_CLANG:-C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\Llvm\x64\bin\clang.exe}")"):$PATH"
@@ -64,10 +96,11 @@ if [ "${1:-}" = --box ]; then
         job() { c=$1; shift; timeout "$c" "$@"; }                                # the caller pins the affinity
         # python3 on this box is the Store's stub (asm6x.sh's 837 failures in r6w's run): a shim to the real one first
         PY=${WAVEGATE_PYTHON:-/c/Program Files/Python312/python.exe}; mkdir -p "$T/../$N-py3"
-        printf '#!/bin/sh\nexec "%s" "$@"\n' "$PY" > "$T/../$N-py3/python3"; chmod +x "$T/../$N-py3/python3"; PATH=$T/../$N-py3:$PATH
+        [ -x "$T/../$N-py3/python3" ] || { printf '#!/bin/sh\nexec "%s" "$@"\n' "$PY" > "$T/../$N-py3/p.$$"; chmod +x "$T/../$N-py3/p.$$"; mv "$T/../$N-py3/p.$$" "$T/../$N-py3/python3"; }; PATH=$T/../$N-py3:$PATH
     else T=$HOME/$N; V=$HOME/$N-verdicts.txt; LOG=$HOME/$N; X=$HOME/ti6x
         export TMPDIR=$T/tmp TIRTS=$HOME/c6747-lib
-        job() { c=$1; shift; flock "$HOME/.boxleg.lock" timeout "$c" "$@"; }       # one box job: the lock, then the cap
+        [ -x "$HOME/slot" ] || { printf '%s\n' "$SLOT" > "$HOME/slot.$$" && chmod +x "$HOME/slot.$$" && mv "$HOME/slot.$$" "$HOME/slot"; }
+        job() { c=$1; shift; "$HOME/slot" timeout "$c" "$@"; }       # one box job: either slot, then the cap
     fi
     export PATH=$X/ASM6x/build:$X/LNK6x/build:$X/VM6747:$X/SIM6747:$PATH SIM6747=$X/SIM6747/sim6747.exe \
         VM=$X/VM6747/vm6747.exe ASM6X=$X/ASM6x/build/asm6x.exe LNK6X=$X/LNK6x/build/lnk6x.exe \
@@ -97,28 +130,28 @@ if [ "${1:-}" = --box ]; then
     # the fixed point at $2: stages "0 1", 2, 3 as box jobs, a cut stage resumed twice
     fixed() { s=$1; o=$HOME/$N-$s; : > "$LOG-$s.log"
         for st in 0 1 2 3; do res=
-            for try in 1 2 3; do job 1500 env SELFHOST_JOBS=4 SELFHOST_RESUME=$res sh tools/self-host "$o" "$2" "$st" >> "$LOG-$s.log" 2>&1; [ $? -eq 124 ] || break; res=1; done
+            for try in 1 2 3; do job 1500 env SELFHOST_JOBS=2 SELFHOST_RESUME=$res sh tools/self-host "$o" "$2" "$st" >> "$LOG-$s.log" 2>&1; [ $? -eq 124 ] || break; res=1; done
         done
         a=$(grep -a 'the same object from stages 0, 1 and 2' "$LOG-$s.log" | tail -1); b=$(grep -a 'the same object from stages 2 and 3' "$LOG-$s.log" | tail -1)
         n=$(find src -name "*.cpp" | wc -l | tr -d " ")
         case "$a|$b" in "self-host: $n of $n "*"|self-host: $n of $n "*) verdict "$s" PASS "${2:--O0}: $n of $n the same from stages 0, 1, 2 and from 2, 3" ;;
             *) verdict "$s" FAIL "${2:--O0}: ${a:-stages 0-2 not compared}; ${b:-stages 2-3 not compared}; $LOG-$s.log" ;; esac; }
     [ "${1:-}" = build ] || cd "$T" || exit 2
-    [ "$B" = linux ] && export JOBS=4
-    for s in "$@"; do
-        R=$(echo "$s" | sed -n 's/.*@//p'); R=${R:-1-$NSHARD}       # step@a-b: shards a to b of six
+    [ "$B" = linux ] && export JOBS=2
+    step1() { s=$1; R=$(echo "$s" | sed -n 's/.*@//p'); R=${R:-1-$NSHARD}       # step@a-b: shards a to b of six
+        echo "wave-gate: $B $s starts $(date +%H:%M:%S)"
         case $s in
         build) rm -rf "$T" && mkdir -p "$T/tmp" && tar -C "$T" -xzf "$HOME/$N-tree.tgz" && cd "$T" || { verdict build FAIL "no tree from ~/$N-tree.tgz"; exit 1; }
-            if job 540 make -j4 cxx3.exe > "$LOG-build.log" 2>&1; then verdict build PASS "cxx3.exe built by $(g++ --version | head -1)"
+            if job 540 make -j2 cxx3.exe > "$LOG-build.log" 2>&1; then verdict build PASS "cxx3.exe built by $(g++ --version | head -1)"
             else verdict build FAIL "$(grep -a -m1 'error' "$LOG-build.log" | cut -c1-160); $LOG-build.log"; exit 1; fi ;;
         static) d=; ok=1
             for c in "python3 tools/exclusions --check docs/EXCLUSIONS.md" "make comments" "python3 tools/memory-gate --check" "python3 ide/generate.py --check"; do
-                $c > "$LOG-static.log" 2>&1; rc=$?; l=$(tail -1 "$LOG-static.log" | cut -c1-90); [ $rc -eq 0 ] || { ok=0; l="FAILED ($c): $l"; }; d="$d${d:+ | }$l"; done
+                job 540 $c > "$LOG-static.log" 2>&1; rc=$?; l=$(tail -1 "$LOG-static.log" | cut -c1-90); [ $rc -eq 0 ] || { ok=0; l="FAILED ($c): $l"; }; d="$d${d:+ | }$l"; done
             [ $ok = 1 ] && verdict static PASS "$d" || verdict static FAIL "$d" ;;
-        maketest) job 1500 env JOBS=4 make test > "$LOG-maketest.log" 2>&1; rc=$?
+        maketest) job 1500 env JOBS=2 make test > "$LOG-maketest.log" 2>&1; rc=$?
             d=$(grep -a '^[a-z0-9.-]*\.sh: .*[0-9] \(passed\|changed\|failed\)' "$LOG-maketest.log" | sed 's/ (.*//; s/, [0-9]* \(skipped\|were\|printed\).*//' | tr '\n' ';' | cut -c1-400)
             [ $rc -eq 0 ] && verdict maketest PASS "rc 0; $d" || verdict maketest FAIL "rc $rc$(capnote $rc); $d $LOG-maketest.log" ;;
-        subst) if [ -f tests/subst.sh ]; then suite subst '^subst.sh: ' env JOBS=4 sh tests/subst.sh     # R109, lane r6f: -templates=subst on against off
+        subst) if [ -f tests/subst.sh ]; then suite subst '^subst.sh: ' env JOBS=2 sh tests/subst.sh     # R109, lane r6f: -templates=subst on against off
             else verdict subst "NOT RUN" "tests/subst.sh is not in this tree (R109, lane r6f)"; fi ;;
         run1) suite run1 '^run.sh: ' env CXX1="./cxx3.exe -O1" sh tests/run.sh ;;
         tms0*) tms "$s" "" 0 "" "$R" ;;   tms1*) tms "$s" -O1 0 "" "$R" ;;   tms2*) tms "$s" -O2 0 "" "$R" ;;
@@ -128,10 +161,10 @@ if [ "${1:-}" = --box ]; then
             elif [ ! -s "$LOG-cycles-joined.txt" ]; then verdict cycles "NOT RUN" "no joined cycles.txt came from tms2's shards"
             else suite cycles ' cases, [0-9]* in the baseline' sh tools/c6x-cycles --check "$LOG-cycles-joined.txt"; fi ;;
         identical) ref=${WAVEGATE_REF:-$HOME/w19g/cxx3.exe}; [ "$B" = windows ] && ref=${WAVEGATE_REF:-$T/../w19g/cxx3-msvc.exe}
-            if [ -x "$ref" ]; then suite identical '^identical: ' env ARCHS=tms6747 LEVELS="0 2" JOBS=4 sh tools/identical.sh "$ref" "$T/$(basename "${CXX1:-./cxx3.exe}")" /none "$LOG-ident"
+            if [ -x "$ref" ]; then suite identical '^identical: ' env ARCHS=tms6747 LEVELS="0 2" JOBS=$JOBS sh tools/identical.sh "$ref" "$T/$(basename "${CXX1:-./cxx3.exe}")" /none "$LOG-ident"
             else verdict identical "NOT RUN" "no main build at $ref (WAVEGATE_REF)"; fi ;;
         emit) suite emit '^emit.sh: ' sh tests/emit.sh --o2 ;;
-        census) job 1500 env CENSUS_FLAGS=-O2 CENSUS_JOBS=4 sh tools/ssa-census -arch tms6747 "${CXX1:-./cxx3.exe}" "$LOG-census" > "$LOG-census.log" 2>&1; rc=$?
+        census) job 1500 env CENSUS_FLAGS=-O2 CENSUS_JOBS=$JOBS sh tools/ssa-census -arch tms6747 "${CXX1:-./cxx3.exe}" "$LOG-census" > "$LOG-census.log" 2>&1; rc=$?
             d=$(grep -a '^ssa-census tms6747: outside=' "$LOG-census.log" | tail -1); n=$(echo "$d" | sed -n 's/.*outside=\([0-9]*\) .*/\1/p')
             if [ -z "$n" ]; then verdict census FAIL "rc $rc$(capnote $rc); no census line; $LOG-census.log"
             elif [ -n "${WAVEGATE_WALKED:-}" ] && [ "$n" -gt "$WAVEGATE_WALKED" ]; then verdict census FAIL "$d - the walked ratchet is $WAVEGATE_WALKED"
@@ -150,7 +183,12 @@ if [ "${1:-}" = --box ]; then
         fixed0) fixed fixed0 "" ;;   fixed2) fixed fixed2 -O2 ;;
         *) verdict "$s" FAIL "wave-gate --box knows no step $s" ;;
         esac
-    done
+        echo "wave-gate: $B $s ends $(date +%H:%M:%S)"; }
+    # Linux: the build alone, then two steps at once, a slot each; Windows: one step a call (the Mac's pool)
+    if [ "${1:-}" = build ]; then step1 build; shift; fi
+    if [ "$B" = linux ]; then lwid() { echo 1; }
+        pool "${WAVEGATE_SLOTS:-2}" step1 lwid - "$@"
+    else for s in "$@"; do step1 "$s"; done; fi
     echo CHAIN-DONE >> "$V"; exit 0
 fi
 
@@ -244,19 +282,24 @@ linux_leg() {
     [ -n "$KEEP" ] || { : > "$OUT/linux.verdicts"; lssh "rm -f ~/$N-verdicts.txt ~/$N-cycles.txt"; }
     scp -q -i "$KEY" -o BatchMode=yes "$OUT/tree.tgz" "$LINUX:$N-tree.tgz" && scp -q -i "$KEY" -o BatchMode=yes "$ROOT/tools/wave-gate" "$LINUX:$N-wave-gate" ||
         { verdict build FAIL "the tree did not reach $LINUX" linux; return; }
+    # ~/slot is this script's SLOT: installed when missing, and a copy that differs is named, not overwritten
+    h=$(lssh 'cat ~/slot 2>/dev/null'); if [ -z "$h" ]; then printf '%s\n' "$SLOT" | lssh 'cat > ~/slot.new && chmod +x ~/slot.new && mv ~/slot.new ~/slot' && echo "wave-gate: ~/slot installed on $LINUX"
+    elif [ "$h" != "$SLOT" ]; then echo "wave-gate: ~/slot on $LINUX differs from this script's SLOT - the box's copy runs"; fi
     free=$(lssh "df -BG --output=avail ~ | tail -1 | tr -dc 0-9")
     [ "${free:-0}" -ge 3 ] || { verdict build FAIL "the Linux box has ${free:-?} GB free, under 3" linux; return; }
     st=$(legsteps linux); [ -n "$st" ] && linux_chain $st
     grep -q "^build${TAB}PASS" "$OUT/linux.verdicts" 2>/dev/null || return 0
     s=$(own linux); [ -n "$s" ] && linux_chain cycles
-    while s=$(claim linux); [ -n "$s" ]; do [ $s = cycles ] && cycles_join linux; linux_chain $s; done; }
+    # idle steps two at a time, one chain: the box's pool puts them in the two slots
+    while s=$(claim linux); [ -n "$s" ]; do t=; [ $s = cycles ] || t=$(claim linux)
+        for x in $s $t; do [ $x = cycles ] && cycles_join linux; done; linux_chain $s $t; done; }
 
-windows_step() { s=$1; L="$OUT/$s.log"; W="$ROOT/tools/windows"
+windows_step() { s=$1; LN=${2:-${WINLANES:-10}}; L="$OUT/$s.log"; W="$ROOT/tools/windows"
     case $s in
     wbuild) sh "$W/winbuild.sh" "$WT" "$N" > "$L" 2>&1 && scp -q -o BatchMode=yes "$ROOT/tools/wave-gate" "$WINDOWS:$WF/$N/tools/wave-gate" &&   # a commit before r6a has none
             wverdict wbuild PASS "cxx3-msvc.exe built by cl /W4 /WX" || { verdict wbuild FAIL "$(tail -1 "$L" | cut -c1-160); $L" windows; return 1; } ;;
     winpass[012]) f=-O${s#winpass}
-        NOBUILD=1 WINLANES=${WINLANES:-10} sh "$W/winpass.sh" "$WT" "$N" "$f" > "$L" 2>&1
+        NOBUILD=1 WINLANES=$LN sh "$W/winpass.sh" "$WT" "$N" "$f" > "$L" 2>&1
         d=$(grep -a 'same, [0-9]* differ' "$L" | sed 's/^.*\\winout/winout/' | tr '\n' ';' | cut -c1-300)
         if [ "$(grep -a -c ' same, 0 differ; .* 0 not; 0 compile-failed, 0 not run' "$L")" = 2 ] && ! grep -a -q CAPPED "$L"
         then wverdict "$s" PASS "$f $d"; else verdict "$s" FAIL "$f ${d:-no verdict line}$(grep -a -m1 CAPPED "$L"); $L" windows; fi ;;
@@ -280,15 +323,23 @@ windows_step() { s=$1; L="$OUT/$s.log"; W="$ROOT/tools/windows"
         if [ -n "$n" ] && [ -n "$m" ] && [ "${n% *}" = "${n#* }" ] && [ "${m% *}" = "${m#* }" ]
         then wverdict "$s" PASS "${f:--O0} masm: $a; $b"; else verdict "$s" FAIL "${f:--O0}: ${a:-stages 0-2 not compared}; ${b:-stages 2-3 not compared}; $L" windows; fi ;;
     *)  # the C6000 and the -S comparisons, by this file's --box side in the built tree (it checks the disk itself)
-        capped 9200 ssh -o BatchMode=yes "$WINDOWS" "cd /d $REMOTE && set WINLANES=${WINLANES:-10}&& set JOBS=${WINLANES:-10}&& start \"\" /b /wait /affinity 3FF \"$WINBASH\" tools/wave-gate --box windows $N $s" > "$L" 2>&1
+        capped 9200 ssh -o BatchMode=yes "$WINDOWS" "cd /d $REMOTE && set WINLANES=$LN&& set JOBS=$LN&& start \"\" /b /wait /affinity 3FF \"$WINBASH\" tools/wave-gate --box windows $N $s" > "$L" 2>&1
         v=$(tr -d '\r' < "$L" | awk -F'\t' '$1 == "VERDICT" { print $3 "\t" $4 }' | tail -1)
         [ -n "$v" ] && printf '%s\t%s\n' "$s" "$v" >> "$OUT/windows.verdicts" || verdict "$s" FAIL "no verdict came back; $L" windows ;;
     esac; }
 windows_leg() {
     [ -n "$KEEP" ] || { : > "$OUT/windows.verdicts"; ssh -o BatchMode=yes "$WINDOWS" "del $WORK\\$N-cycles.txt $WORK\\$N-verdicts.txt 2>nul" > /dev/null 2>&1; }
-    for s in $(legsteps windows); do echo "wave-gate: windows $s $(date +%H:%M)"; windows_step $s || return 0; done
-    s=$(own windows); [ -n "$s" ] && windows_step cycles
-    while s=$(claim windows); [ -n "$s" ]; do [ $s = cycles ] && cycles_join windows; echo "wave-gate: windows $s (idle) $(date +%H:%M)"; windows_step $s; done; }
+    st=$(legsteps windows); case " $st " in *" wbuild "*) windows_step wbuild || return 0; st=$(echo " $st " | sed 's/ wbuild / /');; esac
+    [ "$(boxof cycles)" = windows ] && [ -z "$(why cycles)" ] && ! done_ cycles && st="$st cycles"   # wrun joins it
+    pool "${WINLANES:-10}" wrun wwid wmore $st; }
+# a Windows step at <w> lanes, its start and end timed (the overlap is read from these lines)
+wrun() { [ $1 = cycles ] && cycles_join windows; echo "wave-gate: windows $1 starts, $2 lanes $(date +%H:%M:%S)"; windows_step "$1" "$2"
+    echo "wave-gate: windows $1 ends $(date +%H:%M:%S)"; }
+# a wide step takes WINLANES/2 (all that is free when it is the last); a narrow one 2; cdb and wfixed wait for a winpass
+wwid() { case $1 in cdb|wfixed*) case " $pq $pr" in *" winpass"*|*:winpass*)
+        awk -F'\t' '$1 ~ /^winpass/ { f = 1 } END { exit !f }' "$OUT/windows.verdicts" 2>/dev/null || return 0;; esac;; esac
+    case $1 in names|overload|winstruct|cdb|cycles|declines|emit) echo 2;; *) h=$(( ${WINLANES:-10} / 2 )); [ "$3" -le 1 ] && [ "$2" -gt "$h" ] && h=$2; echo $h;; esac; }
+wmore() { claim windows; }
 
 # one Mac job at a time, niced, at -j2, under its cap (the user, 2026-11-13); nothing here runs unless mac is a box
 mac_leg() {
@@ -319,6 +370,9 @@ mac_leg() {
 }
 
 if [ -n "$PLAN" ]; then for b in linux windows mac; do has $b && echo "wave-gate: $b runs: $(legsteps $b)"; done
+    has linux && echo "wave-gate: linux: the build alone, then ${WAVEGATE_SLOTS:-2} steps at once through ~/slot (two locks, each job -j2 JOBS=2 SELFHOST_JOBS=2, timeout 1500)"
+    has windows && echo "wave-gate: windows: wbuild alone, then steps at once within WINLANES=${WINLANES:-10} at /affinity 3FF - wide $(( ${WINLANES:-10} / 2 )) lanes (the last one all that is free), names/overload/winstruct/cdb/cycles/declines/emit 2; cdb and wfixed after a winpass"
+    echo "wave-gate: never together, one tree folder each: run1+maketest, tms*/wtms*/sim, asm*, winpass*, wfixed*+wselfc"
     echo "wave-gate: idle steps, to the first box free: $(group idle)"; exit 0; fi
 if [ -z "$REPORT" ]; then
     WT=$OUT/tree; T0=$(date +%s)
