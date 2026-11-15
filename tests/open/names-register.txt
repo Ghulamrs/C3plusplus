@@ -1,0 +1,30 @@
+Real name differences beside clang 19.1.5, names.sh on the Windows box at 458f8974 (r6d, 2026-11-15, R103).
+open.sh reads only programs; this is the names suite's register: case, target, cxx1's name (<), clang's (>).
+A row leaves when names.sh passes the case or a .nonames gives it a recorded reason.
+
+1. A closure met while an enclosing lambda's return is deduced is emitted under its trial name `$deduced_N`
+   (src/parser/ParserExprLambda.cpp:384); clang has the closure once, as `UlvE_` / `<lambda_N>`.
+   lambda-captured-this-ssa   all three   < _ZZN3Box6nestedEvENK10$deduced_0clEv
+   ssa-lambda-outer-capture   all three   < _ZZ4mainENK10$deduced_0clEv (and _1, _2)
+2. A lifetime-extended temporary of a namespace-scope reference: cxx1 `?$SN@@3HB`, clang `?$RT1@r@@3AEBHEB`
+   (Microsoft) and `_ZGR2ir_` (Itanium).
+   static-reference-scalar-temporary          x86_64-windows  < ?$S1@@3HB          > ?$RT1@r@@3AEBHEB
+   static-reference-member-scalar-temporary   x86_64-windows  < ?$S1@@3HB          > ?$RT1@cr@S@@2AEBHEB
+   static-reference-to-temporary              x86_64-windows  < ?$S1@@3UA@@A ...   > ?$RT1@gr@@3AEBUA@@EB ...
+                                              arm64-darwin                         > __ZGR2ir_
+3. ThrowInfo of a pointer to const: cxx1 `_TI2CPEAD`, clang `_TIC2PEAD` (the C before the count;
+   src/Mangle.cpp:1843). cl not yet asked (tools/cl-measure).
+   ssa-ms-throw, ssa-ms-try   x86_64-windows
+4. Microsoft RTTI hierarchy records (??_R1, ??_R2, ??_R3, ??_R0) clang emits for a class with a vftable that
+   cxx1 does not, or emits under ??_R4 of another class.
+   ssa-member-pointer-call, ssa-virtual-base-parts, complete-object-builder, vptr-cdtor-lowered   x86_64-windows
+5. A copy of `std::initializer_list<int>`'s constructor clang defines and cxx1 does not.
+   ssa-class-values   x86_64-windows   > ??0?$initializer_list@H@std@@QEAA@XZ
+
+Emission, not names (counted, not registered as defects): unused inline special members cxx1 defines
+(C1/D1 on ELF, C2: ssa-handler-exits, ssa-virtual-base-parts, ssa-ctor-delegate, ssa-class-prvalue; 46 rows);
+runtime calls each compiler chooses (__cxa_free_exception, _Unwind_Resume, _Init_thread_abort, __chkstk,
+atexit: 14 rows); an unused internal constant (default-argument-lowered); a file-local exit helper
+(array-loop-static lfWatch).
+Clang 19, not cxx1: `TnT_`/`TpTn` for a non-type parameter of dependent type (nontype-pack*,
+ssa-pack-small-shapes, template-arg-unsigned-name: 6 cases) - what clang 19 writes and the Mac's clang is to confirm.

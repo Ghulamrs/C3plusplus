@@ -41,10 +41,10 @@ if [ "${1:-}" = --one ]; then
     nomasm=; [ -f "tests/cases/${base%.part}.nomasm" ] && nomasm=yes
     for L in 0 2; do
         if [ -z "$nomasm" ]; then
-            ( ulimit -t 60; "$CXX1" -nologo -arch x86_64-windows -masm=masm -O$L -c "$src" -o "$OUT/$base.O$L.masm.obj" \
+            ( ulimit -t 60 2>/dev/null; "$CXX1" -nologo -arch x86_64-windows -masm=masm -O$L -c "$src" -o "$OUT/$base.O$L.masm.obj" \
                 < /dev/null > /dev/null 2>&1 ) || echo "refused: -masm=masm -O$L" >> "$log"
         fi
-        if ( ulimit -t 60; "$CXX1" -nologo -arch x86_64-windows -masm=gnu -O$L -S "$src" -o "$OUT/$base.O$L.gnu.s" \
+        if ( ulimit -t 60 2>/dev/null; "$CXX1" -nologo -arch x86_64-windows -masm=gnu -O$L -S "$src" -o "$OUT/$base.O$L.gnu.s" \
                 < /dev/null > /dev/null 2>&1 ); then
             "$CLANG" -target $TARGET -c "$OUT/$base.O$L.gnu.s" -o "$OUT/$base.O$L.gnu.obj" > "$OUT/$base.O$L.gnu.err" 2>&1 \
                 || echo "clang refused the GNU spelling at -O$L: $(head -1 "$OUT/$base.O$L.gnu.err")" >> "$log"
@@ -53,7 +53,7 @@ if [ "${1:-}" = --one ]; then
         fi
     done
     # clang's object of the same source, the reference the layout check reads; its refusal is not a fault here.
-    ( ulimit -t 60; "$CLANG" -x c++ -std=c++11 -fexceptions -frtti -w -target $TARGET -O0 -c "$src" -o "$OUT/$base.ref.obj" \
+    ( ulimit -t 60 2>/dev/null; "$CLANG" -x c++ -std=c++11 -fexceptions -frtti -w -target $TARGET -O0 -c "$src" -o "$OUT/$base.ref.obj" \
         < /dev/null > /dev/null 2>&1 ) || echo "clang refused the source" >> "$log"
     if [ -f "$OUT/$base.O0.masm.obj" ] && [ -f "$OUT/$base.ref.obj" ]; then
         "$PYTHON" tools/win-layout-check "$OUT/$base.O0.masm.obj" "$OUT/$base.ref.obj" > "$OUT/$base.layout" 2>&1 || true

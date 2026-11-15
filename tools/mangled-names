@@ -113,6 +113,10 @@ names() {
     # The `??__F` atexit helpers *are* compared: the same rule names them on
     # both sides, and a mistake there would be a naming fault.
     grep -vE '^_*__cxx_global_var_init|^\?\?__E|^\$?_+GLOBAL__sub_I_' |
+    # **And the array loops**, file-local on both sides: cxx1's `__cxx1_vec_<new|del|exit>_<class>`, clang's
+    # `__cxx_global_array_dtor`. A block's zeroing or copying is a call or a loop by each compiler's choice, so
+    # memset, memcpy and bzero go too (R103, 2026-11-15: 48 target rows at 458f8974 differed by these alone).
+    grep -vE '^_*__cxx1_vec_|^_*__cxx_global_array_dtor|^_*(memset|memcpy|bzero)$' |
     sort -u
 }
 

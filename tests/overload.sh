@@ -51,7 +51,7 @@ one() {
 
     ) &
     (
-        if ( ulimit -t 10; $CXX1 "$src" -o "$OUT/$base.cxx1" < /dev/null ) \
+        if ( ulimit -t 10 2>/dev/null; $CXX1 "$src" -o "$OUT/$base.cxx1" < /dev/null ) \
                2> "$OUT/$base.cxx1.err"; then
             echo accept > "$OUT/$base.cxx1.verdict"
             "$OUT/$base.cxx1" > "$OUT/$base.cxx1.out" 2>&1 || true
