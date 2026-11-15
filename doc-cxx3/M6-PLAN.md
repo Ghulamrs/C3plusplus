@@ -1419,3 +1419,47 @@ the round's eleven steps left - D5.2-D5.6, D6.2-D6.5) with M5's lldb lane (m5-ll
   `funclet`'s comment from its line), mended in 6530b725 and the cap, memory gate, ast-residue and exclusions then
   rerun rc 0 on the rebuilt tree; gdb 5/5. tms6747 814 / 0 at -O0 (393.2 M) and -O2 (**192.0 M**); walker 814 / 0 at
   both; asm6x 833 / 0 at both.
+
+### M6c, round 20 (D5.2-D5.4: the three rotated-loop passes read and compose entries), 2026-11-15, lane m6ac
+
+- **Landed, each its own commit of identical output: D5.2** `hoistInvariants` (4de1e16f), **D5.3** `inductionPointers`
+  (e70fe6b2), **D5.4** `widenFills` (41edb042). None reads `t.v`: an entry is asked by `LoopText`'s `instr`, `label`
+  and `rw`, its mnemonic, predicate and operands; a rename is made on the operand (`MOperand` of the renamed
+  spelling, as `edited` made it), a preheader is an `MStream` of `MInst`s, legality is `legal(MInst)` and C6xPack's
+  `legalForm(MInst &)` (out of its unnamed namespace, declared in C6xMir.h); widenFills' labels are read onto the
+  stream (`read`), its branches made with their predicate's number.
+- **`LoopText`**: `set(k, MInst)` and `apply(h, MStream, i)` are the edits; the `Line` forms make the entry
+  (`edited`) and call them, kept for `hoistConstantPairs` alone. `v` is still held in step (`viewOf` of each entry
+  set or inserted) for that pass and a pending blank's liveness - D5.6's.
+- **One reader of each fact the three passes shared** (C6xSched.cpp): `namesOf` (the labels, the operands named),
+  `loopHead` (the head one predicated back edge names once), `loopBody` (a body that leaves by exits alone) - each
+  was written out in every pass; `steppedRegister(MInst)` beside the line's, which `makeNode(Line)` keeps to D6.4.
+- **Not changed, and why it matters**: every test still asks the spelling the line gave (`op[o].str()` against a
+  name; `sideOf` of a pair's text is still its first register's), so an operand the model holds as text takes the
+  path it took; `inductionPointers`' address is `*T` by the operand's mode where the line's `substr(1)` could never
+  name a register otherwise - the one test stated on fields.
+- **What still reads `Line`**: `hoistConstantPairs` (`t.v`, D5.5) and `LoopText::v`, `set(Line)`, `apply(Line)`,
+  `edited`, `entry` (D5.6); the five folds (`Folding::v`, D6.2); the pipeliner's line halves (D6.3); the table's
+  `Line` readers, `lineOf`/`viewOf` and the `!modelled` halves (D6.4); `parse`, `streamOf` and `c6xSchedule`'s read
+  of the walker's text (D6.5). `Line` is named 30 times in C6xSched.cpp (52 at main), 35 in C6xPack.cpp, 11 in
+  C6xPipe.cpp.
+- src/ +230 -176 lines at 41edb042 (C6xSched.cpp 1,315 -> 1,356, C6xPack.cpp 1,450 -> 1,460, C6xModel.h 146 ->
+  148, C6xMir.h 128 -> 129): the three shared readers and the entry forms of `set`/`apply` come before the `Line`
+  forms they replace are deleted (D5.6, D6.4).
+- **Gate.** Windows, cl /W4 /WX clean at each commit (work\m6ac 4de1e16f, m6ac2 e70fe6b2, m6ac3 41edb042), against
+  main 3b8a80fb's compiler (work\w16g), tests/cases at -O0, -O1, -O2 by md5: **2,601 texts same, 1,068 refused alike,
+  0 differ** at 4de1e16f; at e70fe6b2 and 41edb042 2,601 same and 6 differ, plain and under `CXX1_C6X_WALKER=1` -
+  the path-length carets alone (posix-headers, windows-h-layout: a tree name one letter longer); census -O2 0 to
+  any text pass, 0 `c6x-loop-unread`, 6,835 selected, kernels 219 / 9,122; exclusions 129 sites 0 uncited 0 stale,
+  comments 0 over, memory gate rc 0, generate up to date, at all three. Linux, g++ -Werror clean, REF main
+  85fe99fe's compiler (~/w7ref), at e70fe6b2 (~/m6ac) and again at 41edb042 (~/m6ac4; each ~/w16g with the four
+  files laid over): `identical.sh ARCHS=tms6747` -O0 and -O2 1,736 compared, 2 differ; -O0 -g 868 compared, 1
+  differ once the tree path in `.dwpsn` is normalised (91 by that alone) - static-reference-to-temporary, round
+  18's fix, its text at -O0, -O2 and -O0 -g the same as main 3b8a80fb's own build; tests/tms6747.sh SHARD=k/3
+  CYCLES=1 SIM=0 at -O2 **814 passed, 0 failed, 192,009,106 cycles** (unchanged); walker legs **814 / 0** at -O2
+  (195,919,053) and at -O0 (447,770,677); g-same 867 same, 0 differ, 0 broken; asm6x.sh 833 objects, 0 failed at
+  -O0 and -O2; census 0; exclusions 0/0, comments 0 over, memory gate, ast-residue, generate rc 0 (at 41edb042).
+  The rewrites the identity covers: 212 `inductionPointers` accesses and 9 `widenFills` loops over tests/cases at
+  -O2 (`CPP11_INDUCT`, `CPP11_FILL`). Not run (the coordinator's): winpass, make test, ssa.sh.
+- **Owed:** D5.5 `hoistConstantPairs` (the one pass that meets placed entries), D5.6, then D6.2-D6.5, in round 19's
+  order.
