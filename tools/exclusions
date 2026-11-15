@@ -11,6 +11,7 @@
 #   tools/exclusions --count             how many sites and distinct messages
 #   tools/exclusions --check FILE        what the source refuses and FILE omits
 #   tools/exclusions --lowering          the SSA lowering's outside() and broken() sites
+#   tools/exclusions --arm64             arm64-darwin's own unsupported() sites (it has no walker since M5.3)
 #
 # `--check docs/EXCLUSIONS.md` is the point of the tool: it is what stops that
 # document becoming the hand-written list it was written to replace. It reads
@@ -105,9 +106,47 @@ def owed(doc, name="owed"):
 BASELINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "exclusions.baseline")
 
 
+# arm64-darwin refuses every function the lowering leaves outside (A64Select.cpp's ssaChoose), and refuses a few
+# shapes of its own by unsupported(); those sites are counted too and may only go down (R112 of the M6c review).
+ARM64 = re.compile(r"\bunsupported\s*\(")
+
+
+def arm64(root="src/backend"):
+    rows = []
+    for n in sorted(os.listdir(root)):
+        if not (n.startswith("A64") or n.startswith("Arm64")) or not n.endswith(".cpp"):
+            continue
+        path = os.path.join(root, n).replace(os.sep, "/")
+        for i, line in enumerate(open(os.path.join(root, n), encoding="utf-8", errors="replace")):
+            if ARM64.search(line) and "::unsupported" not in line:
+                rows.append((f"{path}:{i + 1}", line.strip()))
+    return rows
+
+
+# Which owed reasons a case reaches: tools/windows/lowering-why.py over tests/cases and tests/open, then
+# lowering-why-match.py, written to this file with the commit it was measured at in its first line (R112).
+REACHED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "exclusions.reached")
+
+
+def reached():
+    """reason -> its first case, or "" when no case reaches it; None when the file is absent."""
+    if not os.path.exists(REACHED):
+        return None, ""
+    out, head = {}, ""
+    for line in open(REACHED, encoding="utf-8"):
+        line = line.rstrip("\n")
+        if line.startswith("#"):
+            head = head or line[1:].strip()
+        elif line.startswith("reached ") and "\t" in line:
+            out[line.split("\t", 1)[1]] = line.split("\t", 1)[0].split()[2]
+        elif line.startswith("not reached\t"):
+            out[line.split("\t", 1)[1]] = ""
+    return out, head
+
+
 def baseline():
     """The lowering's site counts the source may not rise above; a key the file lacks counts as 0."""
-    counts = {"outside": 0, "broken": 0}
+    counts = {"outside": 0, "broken": 0, "arm64": 0}
     if os.path.exists(BASELINE):
         for line in open(BASELINE, encoding="utf-8"):
             parts = line.split()
@@ -154,6 +193,12 @@ def main():
               f" {len(lbroken)} broken() sites")
         return 0
 
+    a64 = arm64()
+    if args and args[0] == "--arm64":
+        for site, line in a64:
+            print(f"{site}\t{line}")
+        return 0
+
     if args and args[0] == "--lowering":
         for site, kind, msg in low:
             print(f"{site}\t{kind}\t{msg}")
@@ -191,7 +236,7 @@ def main():
         for m in bstale:
             print(f"broken, listed and gone:     {m}")
         base, rose = baseline(), []
-        for kind, n in (("outside", len(lout)), ("broken", len(lbroken))):
+        for kind, n in (("outside", len(lout)), ("broken", len(lbroken)), ("arm64", len(a64))):
             if n > base[kind]:
                 rose.append(kind)
                 print(f"{kind}() sites rose: {n} against tools/exclusions.baseline's {base[kind]}")
@@ -202,6 +247,16 @@ def main():
         print(f"the SSA lowering: {len(lout)} outside() sites, {len(reasons)} reasons, {len(lmissing)} uncited,"
               f" {len(lstale)} stale; {len(lbroken)} broken() sites, {len(breasons)} reasons, {len(bmissing)} uncited,"
               f" {len(bstale)} stale; baseline outside {base['outside']} broken {base['broken']}")
+        hit, head = reached()
+        print(f"refusals of valid C++11: {len(lout)} outside() sites (baseline {base['outside']}, only down), each a compile"
+              f" error on x86_64-linux, x86_64-windows and arm64-darwin; arm64's own unsupported() {len(a64)}"
+              f" (baseline {base['arm64']})")
+        if hit is None:
+            print("reached by a test: tools/exclusions.reached is absent")
+        else:
+            now = sum(1 for r in reasons if hit.get(r))
+            print(f"reached by a test: {now} of {len(reasons)} owed reasons ({head}); {len(reasons - set(hit))}"
+                  f" reasons not measured yet, {len(set(hit) - reasons)} measured and gone")
         return 1 if (missing or stale or gone or lmissing or lstale or bmissing or bstale or rose) else 0
 
     for site, msg in rows:

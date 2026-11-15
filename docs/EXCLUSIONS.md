@@ -557,7 +557,8 @@ commit; and `make test` fails until both are true.
 ## The SSA lowering's limits: C++11, owed (2026-11-13)
 
 Since M3b.7 deleted the walker, a function the SSA lowering (`src/ir/`) does not build is a compile error on
-both x86 targets: "is outside the SSA lowering: <reason>". Each reason a valid C++11 program can meet is raised
+both x86 targets, and on arm64-darwin since M5.3 deleted its walker (`ssaChoose` in A64Select.cpp; its own
+`unsupported()` sites are counted by `tools/exclusions --arm64`): "is outside the SSA lowering: <reason>". Each reason a valid C++11 program can meet is raised
 by `outside(...)` and is **C++11, owed** - a defect, not a choice. Each is listed below by its message text
 rather than its line, because the lowering's lines move every round; `tools/exclusions --check` reads this
 block and names a reason the source raises and the block omits, and a listed one the source no longer raises.
@@ -565,7 +566,8 @@ block and names a reason the source raises and the block omits, and a listed one
 record the parser always makes, disagreeing) is raised by `broken(...)` instead, prints "internal error: ",
 and is listed by its text in the second block below; a `broken()` a valid program is shown to reach goes back to
 `outside()` (mend review N3). The two site counts are held by `tools/exclusions.baseline`: they may only go down
-(N6), so a new site with a reason already listed is seen too. The census's "0 outside" is a fact of the corpus only; the probes of these limits
+(N6), so a new site with a reason already listed is seen too; `--check` prints them with arm64's count and how many
+reasons a case reaches, from `tools/exclusions.reached` (R112 of the M6c review, 2026-11-15). The census's "0 outside" is a fact of the corpus only; the probes of these limits
 are in `tests/open/` (`lowering-*.cpp`). `<...>` is a piece spliced in at run time; a message built from a
 ternary comes back with both arms joined.
 

@@ -73,6 +73,12 @@ void Arm64Darwin::unsupported(const char *what) {
     compileFailed();
 }
 
+// Under CXX1_SSA_WHY: the functions selected of those offered; a refusal prints it first, so it shows the one refused.
+void Arm64Darwin::ssaCensus() const {
+    if (ssa_ != nullptr && std::getenv("CXX1_SSA_WHY") != nullptr)
+        std::fprintf(stderr, "a64-select: selected=%d of %d\n", ssaSelected_, ssaOffered_);
+}
+
 std::string Arm64Darwin::label(const char *kind, int id) const {
     return labelPrefix_ + kind + "." + std::to_string(id);
 }
@@ -865,7 +871,6 @@ void Arm64Darwin::run(const Program &program) {
         out_ << dwarf;
     }
     out_ << ".subsections_via_symbols\n";
-    if (ssa_ != nullptr && std::getenv("CXX1_SSA_WHY") != nullptr)
-        std::fprintf(stderr, "a64-select: selected=%d of %d\n", ssaSelected_, ssaSelected_);
+    ssaCensus();
     sink_ << out_.str();
 }

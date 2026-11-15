@@ -15338,3 +15338,104 @@ five columns; the two simulators agree cycle for cycle; cpp11 -O2 over cl6x 7.4.
 hello .99, structs 1.26. `vm-ccs74.cmd` now finds VM6747 at `C:\Users\GRA\work\ti6x\VM6747\vm6747.exe`.
 release-check's own ssh does not return after cl's build on this box (a child holds the console), so its box
 half was run by hand: `python -u tools\c6747\release-check-box.py <tree> <cxx3> <asm6x> <vm6747>`.
+
+## The self-host regression of the M6c waves, and the three roots behind it, 2026-11-15
+
+At M5's close the Linux self-host compiled 102 of 102 sources; by main 3b8a80fb cxx3 refused three of its own C6000
+sources, each a shape g++, cl and clang take. No wave gate compiled `src/*.cpp` with cxx3, so the M6c rounds that
+wrote the shapes landed green. Lane sh1 (M6-PLAN, "The self-host regression of the M6c waves", gate at 20f14d2e)
+mended all three in the compiler and the library, none in the C6x files:
+- **An unnamed namespace's overload set** (`C6xPack.cpp`'s `crossings(i, m)`): `resolveOverload` took the first key a
+  lookup answered as the whole set, so a namespace's own functions hid its unnamed namespace's ([namespace.unnamed]/1
+  makes them one scope), and an argument's namespace was asked only when nothing else answered ([basic.lookup.argdep]
+  adds it always). One set is now made from the three keys (`src/sema/Overload.cpp`); case
+  `namespace-unnamed-overload-set`. Open: `tests/open/namespace-unnamed-nested-leaks` - an unnamed namespace inside
+  `n` answers a lookup at file scope, because the using-directive is kept in one file-wide list.
+- **The comparator of `<map>` and `<set>`** (`std::map<int, int, ByName>` in `C6xPipe.cpp`): `__tree` had no
+  comparator parameter. `Compare = std::less<K>` now; case `map-set-comparator`. The first form called `std::less`'s
+  `operator()` for every key comparison, which cost one inlined call more per comparison and nine `<map>`/`<set>`
+  cases their cycles; lane sh2 (5984a7c3, include/ only) made `__tree_order<T, C>` the order of two keys, specialised
+  to `a < b` for `std::less<T>`. Seven cases stay +11,926 cycles above round 22 by the inliner's unit budget
+  (`rotateLeft` in `rebalance` declined): accepted by the user as a library cost (Q1 of the M6c review).
+- **`this` in a nested `[&]` lambda** (`C6xSelect.cpp:420`): in the outer closure's call operator the inner scan asked
+  the closure, not the class, whether a name was a member, so the inner lambda never took `this`.
+  `closureOuterClass()`, read by `namesOwnMember` and `capturedThisClass` (`ParserExprLambda.cpp`); case
+  `lambda-nested-this-default`.
+- A fourth refusal met on the way and **still owed**: `C()(a, b)`, a functional-cast temporary of a template class
+  ("not supported yet", `src/sema/Overload.cpp:610`), reached in `OptTable.cpp` but in no standalone case yet.
+
+**What follows from it**: wave 18 (4639c9af) put a self-compile of every `src/*.cpp` into the wave gate - 103 of 103
+since, at wave 19 (e37e175a) too. A shape the compiler's own source uses is a test only if something compiles that
+source; the review's R104 asks that the step be in the gate's script, not chosen by hand.
+
+## The box split: what runs where, 2026-11-15
+
+The user's split after Linux became a c7i.xlarge (4 vCPU, 7.6 GB, 80 GB; `make -j4`, `JOBS=4`): **Linux** runs
+everything that executes x86_64-linux code - run.sh, ssa.sh, typed.sh, `make test`, the linux self-host, gdb - plus
+shards 1-3 of 6 of the C6000 suites. **Windows** (at most 10 processors and 24 GB, every job `/affinity 3FF`) runs
+winpass in both spellings, cdb, the windows self-host, release-check (its box half by hand, `release-check-box.py`),
+shards 4-6 of the C6000 suites, and - the user's Q9 - **names.sh, overload.sh and win-structure.sh in every wave
+gate**, because Linux has no clang++ and the user chose not to install one there. `-S` comparisons (identical.sh,
+cross-host sums, emit, the census) go to whichever box is idle. Each box's disk stays below 70%.
+- **The C6000 shards** are tms6747.sh at -O0/-O1/-O2, the walker (`CXX1_C6X_WALKER=1`) and TI's simulator (`SIM=1`)
+  as `SHARD=k/6`; sim6747 runs in every wave gate (Q4), the Linux time accepted.
+- **The Mac** runs only what only it can: arm64-darwin binaries and lldb through `mac-run.sh`, one job at a time; a
+  target-4 self-host is allowed there at every milestone close, never in a wave (Q4b).
+- **Why**: before it, names and overload "skipped (no clang++ on the box)" in every Linux gate of M4-M6c and no gate
+  noticed (the review's R103) - a suite that skips is a suite that did not run, and the split names its home.
+The source is `boxkit/windows-split-2026-11-15.md` and the M6c review's Q4, Q4b and Q9.
+
+## A debugger in the gates on three targets, 2026-11-14
+
+Until M5 no suite ran a debugger: the -g checks were static (`.loc` rows, `dwarfdump`, CodeView tables), and lane x86g
+found gdb showing 6 of 11 of w2's locals wrong where those checks were silent. `tests/debug.sh cdb|gdb|lldb
+[compiler]` builds each tests/m10 program -g -O0, runs it under the debugger in batch (stops at named lines, locals,
+the backtrace), normalises the text and compares it with `<w>.<dbg>.expected`, written from the source's values; the
+oracle for each expectation is the platform compiler's own binary under the same script (g++ for gdb, clang++ for
+lldb, cl for cdb). -O2 is not run: cl's -O2 keeps no slot for a local, and cxx3 records none.
+- **gdb** (lane dbg2, M5-PLAN): first 2 of 5; each failure was cxx3's against g++'s session - bool written with the
+  char encoding (DW_ATE_boolean now); the ELF unit's low_pc/high_pc spanning only the COMDAT functions placed after
+  .text, so gdb found no other symbols (low_pc 0 and DW_AT_ranges now, one pair per function); a reference parameter
+  written as its pointer (`Local::declared` keeps the reference for DWARF - this is one of R111's accepted Ast raises);
+  an enumeration as `int`; a base's members flattened (DW_TAG_inheritance now).
+- **lldb** (lane lldb, on the Mac): const dropped (DW_TAG_const_type now) and no DW_AT_linkage_name on Mach-O, so a
+  frame lost ` const` and every breakpoint read `::sum(int)`. **Owed**: a typedef is not described (`Count n` reads
+  `unsigned int`) - the type system keeps no typedef name; the reduced text drops types, so this note holds it.
+- **cdb** on x86_64-windows 5 of 5 in both spellings from the start (CodeView, M10 W1-W5).
+Since wave 16 every wave gate runs all three, 5/5 each (gdb on Linux, cdb on Windows, lldb on the Mac).
+
+## A static reference's temporary has static storage of its own, 2026-11-13
+
+`static const A &r = A(3);` passed `bindStaticReference`'s refusal because a class temporary is a dereference of its
+slot - a glvalue by shape, a prvalue by mark - and the Ast destroyed the temporary at once: a miscompile, found by the
+R1 lanes' probes (lane r1g refused it by name). Lane r1h (M5-PLAN, "R1's finds, round 3") gave it what
+[class.temporary]/5 says: an object of static storage beside the reference, under the ABI's name, measured - clang
+`_ZGR1r_`, `_ZGRZ1fvE1r_`; cl `?$S<n>@@3UA@@A` at namespace scope (the scope dropped, n counting the unit's
+temporaries), `HB` for a scalar, its atexit helper `??__F$S<n>@@YAXXZ`. The parser's `staticTemporary` declares it
+and records it on the reference's guard; Lowering's builds it where the reference is bound (a class by its
+constructor, a scalar stored, a trivially copied class's bytes) and registers its destructor as a static object's
+(`destroyedAtExit`, one registration now). Case `static-reference-to-temporary` with the ledger at 0. **What is still
+apart**: the tms6747 walker binds a static reference to an ordinary temporary (`tests/open/
+walker-static-reference-temporary.cpp`, owed with M6d), and the scalar temporary's first form raised the Ast residue
+for a round before it was folded back (R111).
+
+## The Ast residue's five raises, accepted, and the mark a raise needs now, 2026-11-15
+
+`tools/ast-residue --check` compared the source with `tools/ast-residue.baseline`, and `--record` wrote whatever
+the source held - so a commit could raise the file it was judged by. Five did over M5 and M6 (`0712b7a2`,
+`3f22b845`, `afe32013`, `94d75187`, `1f8ec47b`: ExprPtr 2009 -> 2016, StmtPtr 634 -> 639, node-casts 164 -> 165,
+node-refs 409 -> 413, ast-lines 849 -> 850), while M5.3 deleted arm64's visits (the M6c review's R111). The user
+accepted the five as recorded (Q7) and ruled: from here the residue only goes down, and a raise is the user's word.
+- **`tools/ast-residue.start`** holds the milestone's start - the accepted counts, with the five raises listed in
+  its comment - written by the coordinator when a milestone opens and never inside one; `--check` prints every
+  count's delta from it beside the ratchet.
+- **The mark**: a baseline line above the start must read `<kind> <n> user-approved YYYY-MM-DD <why>`. `--check`
+  refuses an unmarked one; `--record` refuses any count above the baseline, so a raise is always a hand-written,
+  marked line. Only the coordinator writes the mark, and only on the user's word in chat.
+- **What did not change**: the source's count above the baseline still fails, as before; the kinds and the reader.
+
+The same round made the refusals of valid C++11 a printed number of every `make test` (R112): `tools/exclusions
+--check` prints the outside() sites against their baseline, arm64-darwin's own `unsupported()` sites (baseline
+`arm64`, only down - since M5.3 arm64 has no walker, so every outside() reason is a compile error there too), and
+how many owed reasons a case reaches, read from `tools/exclusions.reached` (measured by
+`tools/windows/lowering-why.py` and `lowering-why-match.py`, the commit in its first line).

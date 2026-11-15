@@ -91,7 +91,8 @@ private:
     void ssaRaw(const ir::Function &f, ir::ValueId v, bool write);
     const Type *ssaArgType(const ir::Function &f, const ir::Inst &i, std::size_t n) const;
     std::string ssaLandLabel(ir::BlockId b) const { return label("ssaland", static_cast<int>(b.v)); }
-    int ssaSelected_ = 0;
+    int ssaSelected_ = 0, ssaOffered_ = 0;   // the census row's two numbers (R120)
+    void ssaCensus() const;
     const ir::Function &ssaChoose(const Function &fn);
     std::string ssaOutside(const Function &fn, const ir::Function &f) const;
     const Type *typeOf(const ir::Function &f, ir::ValueId v) const { return ssaTypes_->type(f.value(v).type); }
