@@ -221,6 +221,9 @@ void Driver::usage(char *file) {
         "       -check=typed types the syntax tree in Sema and reports the census and\n"
         "         the nodes typed null, on stdout; it fails where the census or a\n"
         "         copied record differs\n"
+        "       -templates=subst makes a function template's specialization from a\n"
+        "         replayed sibling's body where M8.1-early's subset admits it (off by\n"
+        "         default; CXX1_TEMPLATE_SUBST=1 the same; refused under -g)\n"
         "       -keep-going[=N] reports up to N errors a file (100 if no N) and goes\n"
         "         on from the next declaration after each; the file still fails\n", file);
 }
@@ -1137,6 +1140,8 @@ bool Driver::parseArguments(int argc, char **argv) {
             }
         } else if (std::strcmp(argv[i], "-check=typed") == 0 || std::strcmp(argv[i], "--check=typed") == 0) {
             checkTyped_ = true;
+        } else if (std::strcmp(argv[i], "-templates=subst") == 0) {
+            templateSubst_ = true;
         } else if (std::strncmp(argv[i], "-front=", 7) == 0 || std::strncmp(argv[i], "--front=", 8) == 0) {
             std::fprintf(stderr, "%s: %s is gone: the SSA lowering is the only path on x86 (M3b.7)\n", argv[0], argv[i]);
             return false;
@@ -1573,6 +1578,7 @@ bool Driver::compile(const Job &job) {
     auto t2 = Clock::now();
 
     Parser parser(src, std::move(tokens), types, target, backend_->abi(), job.dialect);
+    parser.substituteTemplates(templateSubst_ || std::getenv("CXX1_TEMPLATE_SUBST") != nullptr, debug_);
     Program program = parser.parse();
     auto t3 = Clock::now();
     if (dumpSyntax_) {
