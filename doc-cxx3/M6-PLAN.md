@@ -2375,3 +2375,9 @@ W2 did not have worse; sum 192,015,699 -> 192,010,879.** Nothing accepted or rec
   4-6/6 at SIM=1 -O2 and under the walker at -O2, 0 failed. **Not done**: Windows at -O0/-O1 and SIM=0,
   identical.sh and self-compile on Windows, c6x-cycles at -O0, ide/generate.py --check, run.sh.
   `return-self-referential`'s accepted line is still stale (W2's note); the baseline file is untouched.
+- **A fourth mend, its own commit after the gate above: a cast's remade operand made in the cast's register**, not in
+  A4 and moved (C6xSelect.cpp 836 -> 838). Cycles, same measure (Linux, ~/w2b-x): **327 better, 444 equal, 37 worse and
+  unaccepted, none new**; sum 192,008,228; ssa-volatile +15 -> +6, fill-stores +7,651 -> +7,507, stdin-gets +3 -> +2
+  (the lists above carry the counts before it). Its legs: Linux SIM=1 -O0, -O1, -O2 and SIM=0 -O2 six shards and
+  asm6x -O2, comment cap, memory gate, exclusions; Windows cl clean, SIM=1 -O2 and the walker 4-6/6 - the numbers in
+  `boxkit/w2b-handover.md`'s last lines. The walker, SIM=0 -O0/-O1, identical.sh and self-compile were not re-run on it.

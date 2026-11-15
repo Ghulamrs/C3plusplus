@@ -746,6 +746,8 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         return;
     case ir::Op::Trunc: case ir::Op::Bitcast: case ir::Op::PtrToInt: case ir::Op::IntToPtr: {
         if (ssaFused_[i.result.v] == 2) return;     // made by each call that reads it
+        // A remade operand is made in the result's register, not in A4 and moved.
+        if (remade(f, f.operand(i, 0)) && ssaHomeOf(f.operand(i, 0)) == nullptr) { ssaLoad(f, f.operand(i, 0), d.c_str()); finish(); return; }
         const std::string a = x(0);
         if (a != d) ssaEmit(c6x::MInst("MV", a, d));
         finish();
