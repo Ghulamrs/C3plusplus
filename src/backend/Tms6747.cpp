@@ -100,6 +100,9 @@ std::string Tms6747::symName(const std::string &sym) {
     return sym[0] == '.' ? sym.substr(1) : sym;
 }
 
+// The same in an operand or a data word, where a name spelled like a register would be read as one (R114).
+static std::string symRef(const std::string &sym) { return c6x::symbolOperand(sym[0] == '.' ? sym.substr(1) : sym); }
+
 // The TI assembler admits no dot inside a name, `$` it does: the finished text
 // is respelled once, every dot between two name characters (outside a quoted
 // string, a comment, or a number) becoming `$` - `L$return$main`, `f$arr`.
@@ -151,6 +154,7 @@ static std::string tiExternals(const std::string &text) {
             while (j < line.size() && (std::isalnum(static_cast<unsigned char>(line[j])) || line[j] == '_' ||
                                        line[j] == '$' || line[j] == '.')) j++;
             words.push_back(line.substr(i, j - i));
+            if (line.compare(j, 2, "+0") == 0 && c6x::symbolOperand(words.back()) != words.back()) words.back() += "+0";
             i = j;
         }
         size_t k = 0;
@@ -163,6 +167,7 @@ static std::string tiExternals(const std::string &text) {
         for (size_t w = k + 1; w < words.size(); w++) {
             const std::string &t = words[w];
             if (std::isdigit(static_cast<unsigned char>(t[0])) || t[0] == '$') continue;   // a number, an operator
+            if (t.size() > 2 && t.compare(t.size() - 2, 2, "+0") == 0) { used.insert(t.substr(0, t.size() - 2)); continue; }
             if ((t[0] == 'A' || t[0] == 'B') && t.size() <= 3 && t.size() > 1 &&
                 std::isdigit(static_cast<unsigned char>(t[1])) && (t.size() == 2 || std::isdigit(static_cast<unsigned char>(t[2]))))
                 continue;                                           // a register
@@ -177,8 +182,8 @@ static std::string tiExternals(const std::string &text) {
 
 // A symbol's address, the same two halves; the assembler and linker fill them.
 void Tms6747::movSym(const char *reg, const std::string &sym) {
-    out_ << "\tMVKL\t" << symName(sym) << ", " << reg << "\n";
-    out_ << "\tMVKH\t" << symName(sym) << ", " << reg << "\n";
+    out_ << "\tMVKL\t" << symRef(sym) << ", " << reg << "\n";
+    out_ << "\tMVKH\t" << symRef(sym) << ", " << reg << "\n";
 }
 
 // dst = base + off. A large offset goes through the scratch register of the
@@ -1740,7 +1745,7 @@ void Tms6747::visit(const Call &n) {
     if (sret) localAddr(n.resultSlot(), shift != 0 ? "A4" : "A3", n.type()->size(target_), n.type()->align(target_));    // where the result goes
     if (sret && n.resultIndirect()) out_ << (shift != 0 ? "\tLDW\t*A4, A4\n\tNOP\t4\n" : "\tLDW\t*A3, A3\n\tNOP\t4\n");
 
-    call(n.callee() != nullptr ? "B1" : n.symbol());
+    call(n.callee() != nullptr ? "B1" : c6x::symbolOperand(n.symbol()));
     closeArea();
     if (pair) { localAddr(n.resultSlot(), "A3", n.type()->size(target_), n.type()->align(target_)); storePair(n.type()->size(target_), n.type()->align(target_)); }
     if (sret || pair) localAddr(n.resultSlot(), "A4", n.type()->size(target_), n.type()->align(target_));    // the value: its address
@@ -1984,7 +1989,7 @@ void Tms6747::emitGlobal(const Global &g, Segment seg) {
     // The word in front, where there is one: after the alignment, so that it
     // is the label and not the block that ends up aligned. A pointer here is
     // a word.
-    if (!g.prefixWord.empty()) out_ << "\t.word\t" << symName(g.prefixWord) << "\n";
+    if (!g.prefixWord.empty()) out_ << "\t.word\t" << symRef(g.prefixWord) << "\n";
     out_ << g.symbol << ":\n";
     if (seg == Segment::Bss) { out_ << "\t.space\t" << size << "\n"; return; }
     int at = 0;
@@ -1992,7 +1997,7 @@ void Tms6747::emitGlobal(const Global &g, Segment seg) {
         if (p.offset > at) out_ << "\t.space\t" << (p.offset - at) << "\n";
         if (!p.symbol.empty()) {
             if (p.size != 4) unsupported("a relocated piece that is not a word");
-            out_ << "\t.word\t" << symName(p.symbol);
+            out_ << "\t.word\t" << symRef(p.symbol);
             if (p.value > 0) out_ << "+" << p.value;
             else if (p.value < 0) out_ << "-" << -p.value;
             out_ << "\n";

@@ -17,6 +17,8 @@ namespace c6x {
 constexpr int kNoReg = 255;
 inline int sideOfReg(int r) { return r >> 5; }                  // 0 the A file, 1 the B file
 std::string regName(int r);
+// A symbol in an operand: one a C6000 assembler could read as a register is written `A4+0` (asm6x has no `||A4||`).
+std::string symbolOperand(const std::string &name);
 int regNumber(const std::string &name);                         // kNoReg where it names none
 
 struct MOperand {

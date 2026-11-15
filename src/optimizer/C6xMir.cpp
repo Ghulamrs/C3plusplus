@@ -21,6 +21,19 @@ int regNumber(const std::string &s) {
     return n + (s[0] == 'B' ? 32 : 0);
 }
 
+// The names asm6x, vm6747 and cl6x read as a register, in either case: A and B with digits, and the control registers.
+std::string symbolOperand(const std::string &name) {
+    static const char *const named[] = { "SP", "DP", "FP", "PC", "ILC", "RILC", "AMR", "CSR", "IER", "IFR", "ISR", "ICR", "ISTP",
+        "IRP", "NRP", "PCE1", "DNUM", "ECR", "EFR", "GFPGFR", "GPLYA", "GPLYB", "IERR", "ITSR", "NTSR", "REP", "SSR", "TSCH",
+        "TSCL", "TSR", "FADCR", "FAUCR", "FMCR" };
+    std::string u = name;
+    for (std::size_t i = 0; i < u.size(); i++) u[i] = static_cast<char>(std::toupper(static_cast<unsigned char>(u[i])));
+    bool reg = u.size() > 1 && (u[0] == 'A' || u[0] == 'B');
+    for (std::size_t i = 1; reg && i < u.size(); i++) reg = std::isdigit(static_cast<unsigned char>(u[i])) != 0;
+    for (std::size_t k = 0; !reg && k < sizeof named / sizeof named[0]; k++) reg = u == named[k];
+    return reg ? name + "+0" : name;
+}
+
 namespace {
 
 bool number(const std::string &s, long long &v) {
@@ -130,7 +143,7 @@ std::string MInst::str() const {
 }
 
 // A line with its line end as an entry: a label, an instruction where the entry spells it back, else kept as written.
-// `is`: 0 no instruction to the scheduler (no tab, predicate and capital), 1 one spelled, 2 one not; `nop`: a NOP.
+// `is`: 0 no instruction to the scheduler (no tab, or a directive), 1 one spelled, 2 one not read; `nop`: a NOP.
 static MInst entryOf(const std::string &raw, int &is, bool &nop) {
     MInst i;
     i.kind = MInst::Verbatim;
@@ -148,13 +161,14 @@ static MInst entryOf(const std::string &raw, int &is, bool &nop) {
     std::size_t at = 1;
     if (raw[at] == '[') {
         const std::size_t close = raw.find(']', at);
-        if (close == std::string::npos || close + 1 >= n) return i;
+        if (close == std::string::npos || close + 1 >= n) { is = 2; return i; }   // a predicate left open: not read (R118)
         x.predNot = raw[at + 1] == '!';
         x.pred = static_cast<std::uint8_t>(regNumber(raw.substr(at + 1 + (x.predNot ? 1 : 0), close - at - 1 - (x.predNot ? 1 : 0))));
         at = close + 1;
         while (at < n - 1 && raw[at] == '\t') at++;
     }
-    if (at >= n - 1 || !std::isupper(static_cast<unsigned char>(raw[at]))) return i;     // a directive
+    if (at >= n - 1 || raw[at] == '.' || raw[at] == ';') return i;                       // a directive, a comment
+    if (!std::isupper(static_cast<unsigned char>(raw[at]))) { is = 2; return i; }        // no mnemonic: not read (R118)
     std::size_t tab = raw.find('\t', at);
     if (tab == std::string::npos) tab = n - 1;
     x.m = opt::StrId(raw.substr(at, tab - at));
