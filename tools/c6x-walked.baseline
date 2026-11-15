@@ -1,0 +1,4 @@
+# tms6747 functions the selector leaves to the walker in tests/cases (tools/ssa-census -arch tms6747); only down (R101).
+# 458f8974, Windows box, cl build, CENSUS_SOURCES=0; M6a.2 is done when both read 0.
+-O0 4053
+-O2 4207

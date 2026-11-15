@@ -10,12 +10,17 @@
 # - a handler's funclet, M3b.7 W1 - is otherwise seen only on the Windows box. `-arch` names the targets instead.
 # <out>/<target>/outside.txt holds each outside body, kinds.txt the count by why; each target ends with a line
 # "outside=N of S sources and C C90 cases" and the status is 1 when any N is not 0. Another failure is named too.
+# tms6747 also counts tests/cases' walked functions (c6x-walker) at CENSUS_FLAGS' level, status 1 above c6x-walked.baseline;
+# CENSUS_SOURCES=0 counts that alone.
 set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT" || exit 2
-if [ "${1:-}" = --one ]; then     # xargs's job: $2 the compiler, $3 the kind (src or c90), $4 the file
+if [ "${1:-}" = --one ]; then     # xargs's job: $2 the compiler, $3 the kind (src, c90 or case), $4 the file
     b=$(echo "$4" | tr / _)
-    if [ "$3" = src ]; then
+    if [ "$3" = case ]; then
+        perl -e 'alarm 60; exec @ARGV' "$2" -nologo -arch "$CENSUS_ARCH" -S ${CENSUS_FLAGS:-} "$4" -o /dev/null \
+            > "$OUT/cases/$b" 2>&1 < /dev/null
+    elif [ "$3" = src ]; then
         perl -e 'alarm 180; exec @ARGV' "$2" -nologo -arch "$CENSUS_ARCH" -S ${CENSUS_FLAGS:-} -I src \
             -DCXX1_INCLUDE_DIR="\"$ROOT/lib\"" -DCXX1_CXX_INCLUDE_DIR="\"$ROOT/include\"" "$4" -o /dev/null > "$OUT/log/$b" 2>&1
     else
@@ -23,6 +28,7 @@ if [ "${1:-}" = --one ]; then     # xargs's job: $2 the compiler, $3 the kind (s
             > "$OUT/log/$b" 2>&1 < /dev/null
     fi
     r=$?
+    [ "$3" = case ] && exit 0      # a case's refusal is its own .expected's business; only its c6x-walker lines are read
     [ $r -eq 0 ] || grep -q 'is outside the SSA lowering' "$OUT/log/$b" || echo "$4: failed (rc $r) other than outside" >> "$OUT/log/$b.other"
     exit 0
 fi
@@ -34,11 +40,26 @@ BASE=${2:-$ROOT/tests/out-census}
 SRCS=$(ls src/*.cpp src/parser/*.cpp src/backend/*.cpp src/optimizer/*.cpp src/sema/*.cpp src/syntax/*.cpp src/ir/*.cpp src/ir/opt/*.cpp src/encoder/*.cpp)
 C90S=$(ls tests/c90/cases/*.c)
 bad=0
+walked() {
+    [ "$CENSUS_ARCH" = tms6747 ] || return 0    # R101: tests/cases' walked functions against tools/c6x-walked.baseline, only down
+    mkdir -p "$OUT/cases"; lvl=$(echo " ${CENSUS_FLAGS:-} " | sed -n 's/.* \(-O[0-3s]\) .*/\1/p'); lvl=${lvl:--O0}
+    ls tests/cases/*.cpp | sed "s|^|$CXX case |" | xargs -n 3 -P "${CENSUS_JOBS:-2}" sh "$ROOT/tools/ssa-census" --one
+    cat "$OUT"/cases/* | sed -n 's/^c6x-walker [^ ]*: //p' | sed 's/[0-9][0-9]*/N/g' | sort | uniq -c | sort -rn > "$OUT/walked.txt"
+    w=$(grep -h -c '^c6x-walker ' "$OUT"/cases/* | awk '{s+=$1} END {print s+0}')
+    c=$(grep -l '^c6x-walker ' "$OUT"/cases/* | wc -l | tr -d ' ')
+    b=$(sed -n "s/^$lvl \([0-9]*\).*/\1/p" tools/c6x-walked.baseline 2>/dev/null)
+    sed -n 's/^c6x-select: selected=\([0-9]*\) of \([0-9]*\)$/\1 \2/p' "$OUT"/cases/* | awk '{s+=$1;t+=$2} END {print "  selected " s+0 " of " t+0 " functions"}'
+    echo "ssa-census tms6747 $lvl: walked $w functions in $c of $(ls tests/cases/*.cpp | wc -l | tr -d ' ') cases; baseline ${b:-none}"
+    head -20 "$OUT/walked.txt"
+    if [ -n "$b" ] && [ "$w" -gt "$b" ]; then echo "  walked count rose above tools/c6x-walked.baseline"; bad=1; fi
+    if [ -n "$b" ] && [ "$w" -lt "$b" ]; then echo "  walked count fell: lower tools/c6x-walked.baseline to $w"; fi
+}
 export CXX1_SSA_WHY=1     # a target whose walker remains says how many functions it selected (tms6747: c6x-select)
 for CENSUS_ARCH in $ARCHS; do
     OUT=$BASE/$CENSUS_ARCH
     rm -rf "$OUT"; mkdir -p "$OUT/log"
     export OUT CENSUS_ARCH CENSUS_FLAGS="${CENSUS_FLAGS:-}" CXX1_SSA_WHY=1
+    [ "${CENSUS_SOURCES:-1}" = 0 ] && { walked; continue; }     # tms6747's walked count alone
     { for f in $SRCS; do echo "$CXX src $f"; done; for f in $C90S; do echo "$CXX c90 $f"; done; } |
         xargs -n 3 -P "${CENSUS_JOBS:-2}" sh "$ROOT/tools/ssa-census" --one
     cat "$OUT"/log/* 2>/dev/null | grep 'is outside the SSA lowering' | sed 's/^[^:]*: [^:]*: //' | sort -u > "$OUT/outside.txt"
@@ -54,5 +75,6 @@ for CENSUS_ARCH in $ARCHS; do
     sed -n 's/.*-select: selected=\([0-9]*\) of \([0-9]*\)$/\1 \2/p' "$OUT"/log/* | awk '{s+=$1;t+=$2} END {if (t) print "  selected " s " of " t " functions"}'
     head -20 "$OUT/kinds.txt"
     [ "$n" -eq 0 ] || bad=1
+    walked
 done
 exit $bad
