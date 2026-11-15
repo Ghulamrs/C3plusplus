@@ -1,4 +1,7 @@
 # tms6747 functions the selector leaves to the walker in tests/cases (tools/ssa-census -arch tms6747); only down (R101).
-# 458f8974, Windows box, cl build, CENSUS_SOURCES=0; M6a.2 is done when both read 0.
--O0 4053
--O2 4207
+# 458f8974, Windows box, cl build, CENSUS_SOURCES=0: -O0 4053, -O2 4207. Re-recorded by lane g1 at 82bd61a9 + r6n (Linux,
+# g++ build) as +17 at each level, new cases not functions that left the selector: adl-every-argument 4,
+# template-subst-refused 5, c6x-register-named-symbols 2, adl-after-block-declaration 1, c6x-ext-home-side 1 (13);
+# template-subst, widened by r6f from 32 to 46 lines, the other 4 (13 walked now). M6a.2 is done when both read 0.
+-O0 4070
+-O2 4224

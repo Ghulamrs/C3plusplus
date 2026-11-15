@@ -2281,3 +2281,33 @@ register-named symbols, R118), r6w (tools/wave-gate over both boxes); one residu
   mended inheriting-constructors, pipelined-data-exit, temporary-member-call, array-list-default-args); cycles 1 -
   template-subst 448 -> 949, its source widened by r6f, re-recorded (f9e35d30). pipelined-data-exit +408 accepted
   by the user as the correct-code baseline (79b00a6e).
+
+## The mend check's N1-N5 in tools/wave-gate - lane g1, 2026-11-15
+
+Lane g1 (Opus), branch g1 = `82bd61a9` + r6n `827e85f4` + r6x `4ecec004` (`~/slot`, the Windows pool). No src/ change.
+**The user, 2026-11-15, QA: a wave lands only when tools/wave-gate shows 0 failed, every expected difference named in
+a file the gate reads; nothing explained by hand.** QC: register-named symbols stay `A4+0`.
+- **N1** `census`: tools/ssa-census's own status at -O2 (outside= and walked) and -O0 (walked, CENSUS_SOURCES=0);
+  both walked lines in the verdict against tools/c6x-walked.baseline; `WAVEGATE_WALKED` gone. A cut is rc 124, a FAIL.
+  **Main's walked count at `82bd61a9` + r6n (Linux): -O0 4070, -O2 4224 - above 4053 / 4207 by 17 each**, and none of it a
+  function that left the selector: the five cases wave 20 added walk 13 (adl-every-argument 4, template-subst-refused
+  5, c6x-register-named-symbols 2, adl-after-block-declaration 1, c6x-ext-home-side 1) and template-subst, widened by
+  r6f (32 to 46 lines), the other 4 (by difference - no per-case count was kept at `458f8974`). Re-recorded with that
+  reason in the file. A per-case baseline (the check's fix) is left: owed to M6a.2's W1, beside its own re-record.
+- **N2** `-w <base>` names the wave's base (main at its start); `build` builds it beside the gated tree on Linux in
+  the other slot. `identical` (tms6747) compares against it at -O0, -O1, -O2 and passes only when the differing set is
+  exactly `tests/wave-expected.txt`'s rows (`<case> <target> <level> <reason>`) - an unnamed difference and a named one
+  that did not differ both fail. `cycles`: a WORSE row passes only for a case named there at `tms6747 2`; owed and
+  accepted rows stay in tests/tms6747-cycles.txt, which the gate reads. `baselines` (a report step): the judges' files
+  at the Mac's HEAD must be the gated commit's, or the report fails.
+- **N3** `identlnx`, `identwin` (both spellings), `identa64` - the same judge over the other targets; `ssa1`, `ssa2`
+  (tests/ssa.sh at SSA_LEVEL 1, 2); `run2` (run.sh -O2 on Linux).
+- **N4** the fixed point is owed when `-m <milestone>` is given, or base..commit adds or deletes a src/ file or takes
+  100 src/ lines away net; else its four steps are NOT RUN with that check as their reason. `-n fixed...` is refused.
+  **The fixed points on record:** Windows MASM -O2 at `458f8974` (r6c, entered above); **Linux -O0 and -O2 at r6c's
+  tree, read now from `~/r6c-sh0c.log`, `~/r6c-sh2c.log`: 103 of 103 the same from stages 0, 1, 2 and from 2, 3 at
+  each level** (finished 13:01 and 13:15 box time). **Windows -O0: not on record** (`work\r6c-sh0.log` has no
+  comparison line); owed before M6d deletes a path.
+- **N5** `emit`: the base records the -O2 golden in the run, the gated tree is compared to it, changed files judged
+  by the same expected file; no golden is a FAIL. `release`: tools/c6747/release-check-box.py on the Windows box at
+  /affinity 3FF under the 25-minute cap, PASS only on its "PASS in" line - no standing excuse.

@@ -4,7 +4,7 @@
 # WINDOWS_BOX (default windows) and CXX1_WINDOWS_WORK (default C:\Users\GRA\work) name the box and its folder.
 T=$1; N=$2; B=${WINDOWS_BOX:-windows}; W=${CXX1_WINDOWS_WORK:-'C:\Users\GRA\work'}; WF=$(printf '%s' "$W" | tr '\\' '/')
 L=$(mktemp -d); trap 'rm -rf "$L"' EXIT
-(cd "$T" && git ls-files -z | COPYFILE_DISABLE=1 xargs -0 tar -czf "$L/t.tgz") || exit 1
+(cd "$T" && git ls-files -z | COPYFILE_DISABLE=1 tar --null -T - -czf "$L/t.tgz") || exit 1   # one tar: xargs split the list
 scp -q -o BatchMode=yes "$L/t.tgz" "$B:$WF/wb-$N.tgz" || exit 1
 ssh -o BatchMode=yes "$B" "rmdir /s /q $W\\$N 2>nul & mkdir $W\\$N && tar -C $W\\$N -xzf $W\\wb-$N.tgz && del $W\\wb-$N.tgz && set _CL_=/MP2&& start \"\" /b /wait /affinity 3FF $W\\$N\\msvc\\build.cmd" > "$L/b.log" 2>&1 &
 P=$!; t=0   # the ssh may stay open after build.cmd ends: ended by its own PID

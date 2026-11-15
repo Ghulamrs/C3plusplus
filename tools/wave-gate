@@ -28,7 +28,8 @@
 # gated tree, on Linux: identical (tms6747), identlnx, identwin, identa64 are tools/identical.sh at -O0, -O1, -O2
 # against it, and emit is tests/emit.sh --o2 against a golden the base records in the same run (none is a FAIL).
 # **A difference is a PASS only when tests/wave-expected.txt names it** (`<case> <target> <level> <reason>`), and a
-# named one that does not differ fails as well (N2); cycles' WORSE rows are judged by the same file. baselines: the
+# named one that does not differ fails as well (N2); cycles' WORSE rows are judged by the same file. A wave lands
+# only on 0 failed, every expected difference named in a file the gate reads (the user, 2026-11-15, QA). baselines: the
 # judges' files at the Mac's HEAD are the gated commit's - one changed after the run fails it. census: tools/ssa-census
 # -arch tms6747 at -O2 (outside=, walked) and -O0 (walked), its own status the verdict (N1). release:
 # tools/c6747/release-check-box.py on the Windows box (N5). ssa1/ssa2: tests/ssa.sh at SSA_LEVEL 1, 2; run2: run.sh -O2.
