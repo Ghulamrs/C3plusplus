@@ -18,9 +18,13 @@ mkdir -p "$OUT"
 for step in $steps; do case "$step" in
 run|typed)
     for level in -O0 -O2; do
-        log="$OUT/$step$level.log"
-        CXX1_TEMPLATE_SUBST=1 CXX1="$CXX1 $level" JOBS=$JOBS sh tests/$step.sh > "$log" 2>&1; rc=$?
-        echo "subst.sh $step $level: $(grep "^$step.sh: [0-9]* passed" "$log" | tail -1) (rc $rc)"
+        # typed.sh quotes $CXX1 as one word: the level goes in through a wrapper.
+        log="$OUT/$step$level.log"; w="$(pwd)/$OUT/cxx$level"
+        printf '#!/bin/sh\nexec %s %s "$@"\n' "$CXX1" "$level" > "$w"; chmod +x "$w"
+        CXX1_TEMPLATE_SUBST=1 CXX1="$w" JOBS=$JOBS sh tests/$step.sh > "$log" 2>&1; rc=$?
+        line=$(grep "^$step.sh: [0-9]* passed" "$log" | tail -1)
+        echo "subst.sh $step $level: $line (rc $rc)"
+        case "$line" in "$step.sh: 0 passed"*|"") rc=1 ;; esac
         [ "$rc" -eq 0 ] || { grep '^FAIL' "$log" | head -10; bad=$((bad + 1)); }
     done ;;
 census)
