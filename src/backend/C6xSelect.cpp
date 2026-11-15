@@ -164,6 +164,7 @@ bool Tms6747::ssaFrameMem(const ir::Function &f, ir::ValueId p, int size, std::s
 // v into reg: made afresh where it has no slot, else read from its word.
 void Tms6747::ssaLoad(const ir::Function &f, ir::ValueId v, const char *reg, bool fresh) {
     const char *h = fresh ? nullptr : ssaHomeOf(v);
+    if (ssaFused_[v.v] == 2) { ssaLoad(f, f.operand(f.inst(f.value(v).def), 0), reg, true); return; }
     if (h != nullptr) {
         if (std::string(h) != reg) ssaEmit(c6x::MInst("MV", h, reg));
         return;
@@ -265,7 +266,7 @@ void Tms6747::ssaMoves(const ir::Function &f, const ir::Succ &s) {
     }
     bool loads = false;
     for (std::size_t m = 0; m < moves.size(); m++) {
-        if (remade(f, moves[m].first) || ssaHome_[moves[m].first.v] != 0) { ssaLoad(f, moves[m].first, kStage[m]); continue; }
+        if (remade(f, moves[m].first) || ssaHome_[moves[m].first.v] != 0 || ssaFused_[moves[m].first.v] == 2) { ssaLoad(f, moves[m].first, kStage[m]); continue; }
         const std::string mem = ssaMem(ssaValueSlot_[moves[m].first.v], 4);
         ssaEmit(c6x::MInst("LDW", mem, kStage[m]));
         loads = true;
@@ -285,6 +286,7 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
     std::vector<int> first(nb, 0), last(nb, 0), start(nv, -1), end(nv, -1), uses(nv, 0), home(nv, -1), calls;
     std::vector<long long> weight(nv, 0);
     std::vector<char> hot(nv, 0);       // a constant or an address a loop reads where no instruction can hold it
+    std::vector<char> kept2(nv, 0);     // read by other than a call's argument, or by a call deeper in loops than its definition
     bool wideCall = fn.params().size() > 6;
     // A block's depth: an edge to a block written no later is a loop's, and every block between the two is inside it.
     std::vector<std::size_t> index(nb, 0), reach(ssaOrder_.size(), 0);
@@ -343,18 +345,29 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
             pos += 2;
             for (std::uint32_t n = 0; n < i.count; n++) {
                 use(f.operand(i, n), 0);
+                const ir::ValueId o = f.operand(i, n);
+                if (o.valid() && (i.op != ir::Op::Call || home[o.v] < 0 || depth[b] > depth[index[static_cast<std::size_t>(home[o.v])]])) kept2[o.v] = 1;
                 long long k = 0;
                 const bool held = i.op != ir::Op::Mul && smallConst(f, f.operand(i, n), -16, 15, k);
                 if (optimize_ != 0 && depth[b] > 0 && !callsOut(i.op) && !held && f.operand(i, n).valid()) hot[f.operand(i, n).v] = 1;
             }
             for (std::size_t s = 0; s < i.succ.size(); s++)
-                for (std::uint32_t n = 0; n < i.succ[s].count; n++) use(f.arg(i.succ[s], n), 1);
+                for (std::uint32_t n = 0; n < i.succ[s].count; n++) { use(f.arg(i.succ[s], n), 1); if (f.arg(i.succ[s], n).valid()) kept2[f.arg(i.succ[s], n).v] = 1; }
             if (i.result.valid()) weight[i.result.v] += heat;
             const bool compare = i.op == ir::Op::ICmp && k + 1 == blk.insts.size() && blk.term.valid();
             if (compare && f.inst(blk.term).op == ir::Op::CondBr && f.operand(f.inst(blk.term), 0).v == i.result.v) ssaFused_[i.result.v] = 1;
         }
     }
     for (std::size_t v = 1; v < nv; v++) if (ssaFused_[v] && uses[v] != 1) ssaFused_[v] = 0;
+    // A cast of a remade value that calls alone read is remade at each (2), as the walker makes a string's address
+    // at its call: held from its definition, it takes a saved register across a call between the two.
+    for (std::size_t v = 1; v < nv; v++) {
+        if (!f.values[v].def.valid() || f.inst(f.values[v].def).op != ir::Op::Bitcast || uses[v] == 0 || kept2[v]) continue;
+        const ir::ValueId from = f.operand(f.inst(f.values[v].def), 0);
+        if (!remade(f, from)) continue;
+        ssaFused_[v] = 2;
+        if (uses[from.v] == 1) hot[from.v] = 0;
+    }
     // Live in = used from another block, or live out and not defined here; to a fixed point, last block first.
     for (bool changed = true; changed; ) {
         changed = false;
@@ -482,6 +495,11 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
         taken |= 1u << r;
         active.push_back(v);
     }
+    // A cast of a remade value that won no register is remade where it is read: two instructions, where a word is a store and loads.
+    for (std::size_t v = 1; v < nv; v++) {
+        if (ssaHome_[v] != 0 || ssaFused_[v] || !f.values[v].def.valid() || f.inst(f.values[v].def).op != ir::Op::Bitcast) continue;
+        if (remade(f, f.operand(f.inst(f.values[v].def), 0))) ssaFused_[v] = 2;
+    }
     for (int r = 0; r < 8; r++) if (taken & (1u << r)) promoted_.push_back(kHome[r]);
 }
 
@@ -532,9 +550,18 @@ void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
         for (std::size_t n = 0; n < at.size(); n++) if (at[n] >= 0) ssaPlace_[n] = ssaAllocaSlot_[static_cast<std::size_t>(at[n])];
     }
     std::size_t lastPos = 0;
+    // The first block's label stands between the prologue and the text where an edge reaches it, or a parameter has a
+    // home: without it the parameter's move is folded away and the text after it pairs worse (move-only, +1 cycle).
+    bool entered = false;
+    for (std::size_t i = 0; i < ps.size(); i++) entered = entered || ssaHomeOf(f.params[i]) != nullptr;
+    for (std::size_t b = 0; b < ssaOrder_.size() && !entered; b++) {
+        if (!f.block(ssaOrder_[b]).term.valid()) continue;
+        const ir::Inst &t = f.inst(f.block(ssaOrder_[b]).term);
+        for (std::size_t s = 0; s < t.succ.size(); s++) entered = entered || t.succ[s].block.v == ssaOrder_[0].v;
+    }
     for (std::size_t b = 0; b < ssaOrder_.size(); b++) {
         const ir::Block &blk = f.block(ssaOrder_[b]);
-        defineLabel(ssaBlockLabel(ssaOrder_[b]));
+        if (b != 0 || entered) defineLabel(ssaBlockLabel(ssaOrder_[b]));
         const ir::BlockId next = b + 1 < ssaOrder_.size() ? ssaOrder_[b + 1] : ir::BlockId();
         for (std::size_t k = 0; k <= blk.insts.size(); k++) {
             const ir::InstId id = k < blk.insts.size() ? blk.insts[k] : blk.term;
@@ -718,6 +745,7 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         if (wide == "A4") ssaStore(f, i.result, "A4");
         return;
     case ir::Op::Trunc: case ir::Op::Bitcast: case ir::Op::PtrToInt: case ir::Op::IntToPtr: {
+        if (ssaFused_[i.result.v] == 2) return;     // made by each call that reads it
         const std::string a = x(0);
         if (a != d) ssaEmit(c6x::MInst("MV", a, d));
         finish();
@@ -748,7 +776,9 @@ void Tms6747::selectInst(const ir::Function &f, const ir::Inst &i, ir::BlockId n
         const int area = c.variadic ? roundUp(4 + 4 * static_cast<int>(i.count - inRegs), 8) : 8;
         openArea(area, i.count > inRegs);
         for (std::uint32_t k = inRegs; k < i.count; k++) {
-            const std::string v = ssaRead(f, f.operand(i, k), "A4");
+            // Through A4, A6 and A8 in turn - each an argument's register, loaded after - so two words' values are made side by side.
+            const char *const turn[] = { "A4", "A6", "A8" };
+            const std::string v = ssaRead(f, f.operand(i, k), turn[(k - inRegs) % 3]);
             const int at = 4 + 4 * static_cast<int>(k - inRegs);
             if (at / 4 <= 31) { ssaEmit(c6x::MInst("STW", v, "*+B15(" + std::to_string(at) + ")")); continue; }
             regAdd("B15", at, "B0");
