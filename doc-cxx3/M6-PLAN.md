@@ -1803,3 +1803,52 @@ walker's text is read once into entries until M6d (round 25's entry names what i
 - **Owed into the review and M6d**: operand-spelling readers left inside passes (`registersIn` over
   `MOperand::str()` 11 sites, `renamed` 4, `kind == Symbol` halves unreachable for registers); the seven C6x
   optimizer files grew 4,694 -> 5,317 lines over M6c (+3,310 -2,687) - the text passes were replaced, not removed.
+
+## The M6c review's mends - lane r6e (R108, R117, R119; four wrong answers of the sim6747 leg), 2026-11-15
+
+From main 458f8974, branch r6e. Every number below is the Windows box's (cl-built cxx3, ASM6x, LNK6x, VM6747, SIM6747 1.12,
+TI's rts6740_elf_eh.lib); nothing ran on Linux or the Mac.
+
+- **Three wrong answers, one root: the selector wrote `EXT`/`EXTU` across the register files.** `selectInst`'s
+  SExt/ZExt read its source through `x(0)` (the A side) and wrote the result's home, which M6b round 3 may place on
+  the B side: `EXT A4, 24, 24, B26`. The constant form of EXT/EXTU has no cross path, so no unit encodes it; VM6747
+  ran the text and asm6x refused it (inheriting-constructors, temporary-member-call, pipelined-data-exit at -O1 and
+  -O2 - where `forwardMoves` could fold the copy in front it had hidden the fault). **Mend** (`C6xSelect.cpp`): the
+  source is read at its home where that is the result's side, through A4 for an A-side result, and for a B-side
+  result of an A-side source copied first and widened in place. A first mend through `ssaPut` was withdrawn: it was
+  legal but changed over 70 outputs of other cases for the worse (identical.sh, stopped there). **ssa-layout at
+  -O1 was a fourth** (`EXTU A4, 24, 24, B26` in `hashes`), found by identical.sh: no leg had assembled it at -O1.
+- **The class is caught in the compiler now**: `c6xSchedule` asks `crossings` of every instruction not yet placed,
+  as read and again before `packetise`, and the function is refused by name - "the C6000 instruction '...', which
+  no unit encodes". The suite at -O2 passes through it with 0 refusals. The sim6747 leg (asm6x) stays the second
+  witness, and it must run at -O1 as well as -O2: ssa-layout's fault was -O1's alone.
+- **long-double-literal-exact-digits is TI's printf, not cxx3 and not VM6747**: the data is exact (`.word 0,
+  1139802112` is 2^64) and the case's last line prints 1; rts6740's `%.17g` writes `1.8446744073709557e+19` where
+  the correctly rounded digits are `...552`. cl6x 7.4.4's own build of the same five `printf`s, linked with rts6740,
+  prints the same five lines on sim6747. Entered in tests/tms6747-sim.txt (rts6740 only). Not run under CCS's tisim.
+- **R108 by Q5 (the user's): a function the stream cannot take is emitted unscheduled and counted.** `c6xSchedule`
+  returns the serial text with a reason in `declined` at each of its four checks; `Tms6747` writes `decline
+  c6x-unscheduled <function>: <reason>: <entry>` under CPP11_DECLINES and compiles on. `pipelineLoops` declines one
+  loop (`decline c6x-pipeline-unmodelled`) and no longer the function. **tools/c6x-declines** counts both over
+  tests/cases at -O1 and -O2 against tools/c6x-declines.baseline, which only goes down; `--check` also requires
+  that `CXX1_C6X_UNSPELL=ADD` (the debug knob: one mnemonic taken as unread) declines something, so the path runs.
+  The serial text is right as it stands: shard 1/8 of the suite at -O2 under the knob passes on both machines.
+- **R119**: the serial text is composed only where it is returned (-O0, or a decline). **R117**: said beside
+  `addSerial`'s test - nothing writes a NOP that is meant. **R118**: not touched.
+- **R114 probed, not mended**: globals `A4`, `A10` and `extern "C" B3` break at every level, -O0 too - `MVKL A10, A4`
+  is refused by asm6x and by vm6747, and at -O1 the new check refuses `MVKL A4, B11` by name. cl6x spells the symbol
+  `||A4||`; whether ASM6x and VM6747 read that spelling is the first question of the mend. Owed.
+- **Gate, on Windows, at the lane's tree** (src/ 94,210 -> 94,256 lines, +80 -34): the five cases (the three, the new
+  tests/cases/c6x-ext-home-side, long-double) pass at -O0, -O1 and -O2 on vm6747 and sim6747. tms6747.sh SIM=1 -O2:
+  **819 passed / 0 failed** (asm6x and lnk6x take every one; 6 in tms6747-sim.txt), 192,037,675 cycles over 816
+  cases; **-O1: 819 / 0** on both machines. identical.sh ARCHS=tms6747 against main: 2619 compared, **9 differ, all named** - inheriting-constructors,
+  temporary-member-call, pipelined-data-exit and the new case at -O1 and -O2, ssa-layout at -O1; -O0 0 differ.
+  Cycles of the five (vm6747 -c, -O2, main / lane): 654 / 654, 202 / 202, 1,414,163 / 1,414,571 (+408: main's count
+  is of text asm6x refuses), 22,793 / 22,793, new case 290 / 292. **tools/c6x-declines --check: 0 declines,
+  baseline 0**, the knob declines 3 functions; shard 1/8 at -O2 under `CXX1_C6X_UNSPELL=ADD` 105 / 0 on both
+  machines. Walker (CXX1_C6X_WALKER=1) -O2 SIM=1, the Windows half: shard 4/6 136 / 0; 5/6 and 6/6 were running at
+  the lane's hour (boxkit/r6e-handover.md has their numbers). Self-compile of the six C6x files changed, -O0 and -O2: 12 / 0. cl /W4 /WX clean; exclusions 129 sites
+  0 uncited 0 stale; comment cap 0 over; memory gate's files untouched (the tool does not run on Windows: SIGPIPE).
+- **Not run in the lane** (the wave gate's): tools/c6x-cycles (lane r6b's, not merged here), the Linux half of the
+  shards (k=1-3 of 6), -O0 whole suite, ti-link.sh. tools/wave-gate does not call tools/c6x-declines yet: its
+  owner adds `tools/c6x-declines --check` beside the census.
