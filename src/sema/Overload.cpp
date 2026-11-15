@@ -522,7 +522,7 @@ std::size_t Overload::leastArguments(const Signature &f) const {
 }
 
 
-static std::vector<const Type *> argumentTypes(const std::vector<ExprPtr> &args) {
+template <class Args> static std::vector<const Type *> argumentTypes(const Args &args) {
     std::vector<const Type *> types;
     for (std::size_t i = 0; i < args.size(); i++) types.push_back(args[i]->type());
     return types;
