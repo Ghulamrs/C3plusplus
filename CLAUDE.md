@@ -109,8 +109,8 @@ being no function at all; the parser numbering selectors as `Regions::lsdaTable`
   and a target-4 self-host at a milestone's close, one job at a time through `mac-run.sh` (Q4b).
 - **What runs where** is the user's box split (history: "The box split: what runs where"); names, overload and
   win-structure run on Windows in every wave gate (Q9).
-- **Linux**: `ec2-user@52.202.164.123`, g++, 4 vCPU (`make -j4`, `JOBS=4`); every job under `flock ~/.boxleg.lock` and `timeout
-  1500`; TI's tools in `~/ti6x`, CCS 5.5 in `~/ti/ccsv5`, the TI runtime in `~/c6747-lib`.
+- **Linux**: `ec2-user@52.202.164.123`, g++, 4 vCPU in two slots; every job through `~/slot` (the first free of two
+  locks, `-j2`, `JOBS=2` each; its source is `tools/wave-gate`'s SLOT) and `timeout 1500`; TI's tools in `~/ti6x`, CCS 5.5 in `~/ti/ccsv5`, the TI runtime in `~/c6747-lib`.
 - **Windows**: `ssh windows` (`xrotrxt@192.168.100.84`), shared with another session - **at most 10
   processors and 24 GB**, every job pinned with `start /affinity 3FF`, never kill a process by name;
   `C:\Users\GRA\work` is a junction to the user's work folder; VS 2022 Build Tools (cl 19.44, clang

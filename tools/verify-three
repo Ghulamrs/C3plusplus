@@ -148,11 +148,11 @@ if [ "$WHICH" = all ] || [ "$WHICH" = linux ]; then
         # The C6000 here, with the TI tools built on this box from source (~/ti6x, tools/ti6x-build.sh): the
         # corpus on VM6747 and SIM6747 against rts6x.lib at -O0 and -O2, and the driver's path through ASM6x.
         # And the self-host - stage 1 = stage 2, the box's g++ building stage 0 rather than clang.
-        # Each step is its own box job under the lock and a 25-minute cap; the self-host is one job a stage, and a
+        # Each step is its own box job in a ~/slot (tools/wave-gate's SLOT) and a 25-minute cap; the self-host is one job a stage, and a
         # stage the cap cut (rc 124) is resumed by the next job (SELFHOST_RESUME=1) up to three times.
         lstep() {   # $1 the command, run in ~/cxx1-verify on the Linux box
             ssh -i "$KEY" -o BatchMode=yes "$LINUX" "cd ~/cxx1-verify && export TMPDIR=\$HOME/cxx1-verify/tmp T=\$HOME/ti6x &&
-                flock ~/.boxleg.lock timeout 1500 sh -c '$1'"
+                \$HOME/slot timeout 1500 sh -c '$1'"
         }
         selfhost() {
             lstep 'sh tools/self-host $HOME/cxx1-verify/selfhost "" 0' || return 1
