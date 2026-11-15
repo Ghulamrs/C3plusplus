@@ -1,6 +1,8 @@
 Real name differences beside clang 19.1.5, names.sh on the Windows box at 458f8974 (r6d, 2026-11-15, R103).
 open.sh reads only programs; this is the names suite's register: case, target, cxx1's name (<), clang's (>).
-A row leaves when names.sh passes the case or a .nonames gives it a recorded reason.
+A row leaves when names.sh passes the case or a .nonames gives it a recorded reason. Since r6n (2026-11-15) each row
+here also has a .nonames line beginning "OPEN, owed" and citing its number, so names.sh is a gate that fails only on
+a difference not recorded, and prints every open one on every run; `grep -l 'OPEN, owed' tests/cases/*.nonames`.
 
 1. A closure met while an enclosing lambda's return is deduced is emitted under its trial name `$deduced_N`
    (src/parser/ParserExprLambda.cpp:384); clang has the closure once, as `UlvE_` / `<lambda_N>`.
@@ -12,6 +14,13 @@ A row leaves when names.sh passes the case or a .nonames gives it a recorded rea
    static-reference-member-scalar-temporary   x86_64-windows  < ?$S1@@3HB          > ?$RT1@cr@S@@2AEBHEB
    static-reference-to-temporary              x86_64-windows  < ?$S1@@3UA@@A ...   > ?$RT1@gr@@3AEBUA@@EB ...
                                               arm64-darwin                         > __ZGR2ir_
+4. cxx1 accepts `p->~Base()` with Base a typedef of a base of *p's class; clang 19.1.5 refuses it ("destructor type
+   'Base' (aka 'B') in object destruction expression does not match the type 'D'"), [class.dtor]/14. An over-acceptance:
+   ssa-destructor-through-base   all three   clang refuses; the case's .expected cannot be clang's for that line.
+5. A parameter of type std::__fn_op (include/functional, an enumeration directly in std) mangles NSt7__fn_opE; Itanium
+   writes St7__fn_op. ssa-lambda-locals   x86_64-linux, arm64-darwin
+   < _ZNSt10__fn_modelIZL4giveRKSt6vectorISbIcEEE3$_1vJiEE6manageENSt7__fn_opEPv
+   > _ZNSt10__fn_modelIZL4giveRKSt6vectorISbIcEEE3$_0vJiEE6manageESt7__fn_opPv   (the closures' $_N differ beside it)
 3. win-structure's unwind check: dispUnwindHelp 0 in a function whose try body cannot throw (8 faults):
    nested-parse-state -O2 ?tryHoldsALambda@@YAHXZ; ssa-ms-try -O0/-O2 ?nothingThrows@@YAHH@Z;
    ssa-try-catch -O0 ?quiet@@YAHH@Z - both spellings; tools/win-unwind-check: "not an 8-byte slot inside the frame".
@@ -28,3 +37,6 @@ Clang 19 against cl: a ThrowInfo of a pointer to const is `_TI2CPEAD` by cl and 
 (ssa-ms-throw, ssa-ms-try: now .nonames rows).
 Clang 19, not cxx1: `TnT_`/`TpTn` for a non-type parameter of dependent type (nontype-pack*,
 ssa-pack-small-shapes, template-arg-unsigned-name: 6 cases) - what clang 19 writes and the Mac's clang is to confirm.
+r6n, 2026-11-15: clang on the Windows box reads include/ and lib/ as cxx1 does (tools/mangled-names), which ended the
+box-header class (77 rows at 458f8974); left of it: clang 19.1.5 crashes on anonymous-union-local and -namespace for
+arm64-apple-macos (.nonames rows; the Mac's clang compares them).

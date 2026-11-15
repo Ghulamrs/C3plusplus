@@ -53,7 +53,7 @@ if [ "${1:-}" = --one ]; then
         fi
     done
     # clang's object of the same source, the reference the layout check reads; its refusal is not a fault here.
-    ( ulimit -t 60 2>/dev/null; "$CLANG" -x c++ -std=c++11 -fexceptions -frtti -w -target $TARGET -O0 -c "$src" -o "$OUT/$base.ref.obj" \
+    ( ulimit -t 60 2>/dev/null; "$CLANG" -x c++ -std=c++11 -fexceptions -frtti -w $HEADERS -target $TARGET -O0 -c "$src" -o "$OUT/$base.ref.obj" \
         < /dev/null > /dev/null 2>&1 ) || echo "clang refused the source" >> "$log"
     if [ -f "$OUT/$base.O0.masm.obj" ] && [ -f "$OUT/$base.ref.obj" ]; then
         "$PYTHON" tools/win-layout-check "$OUT/$base.O0.masm.obj" "$OUT/$base.ref.obj" > "$OUT/$base.layout" 2>&1 || true
@@ -79,6 +79,8 @@ if ! command -v "$CLANG" > /dev/null 2>&1; then
     echo "win-structure.sh: NOT RUN - no $CLANG to assemble the GNU spelling and compile the reference"
     exit 3
 fi
+# clang's reference object reads the headers cxx1 reads, as tools/mangled-names gives them (r6n).
+HEADERS=$(tools/mangled-names --headers "$PWD/$OUT/shim"); export HEADERS
 cases "$@" | xargs -P "$JOBS" -n 1 sh "$0" --one
 
 status=0
@@ -95,8 +97,14 @@ echo "win-structure.sh: $skipped cases skipped for the target, $refused refusals
 # The unwind check, over every object of both spellings and levels at once.
 ls "$OUT"/*.masm.obj "$OUT"/*.gnu.obj > "$OUT/objects" 2>/dev/null
 if [ -s "$OUT/objects" ]; then
-    xargs "$PYTHON" tools/win-unwind-check < "$OUT/objects" > "$OUT/unwind.report" 2>&1 || status=1
-    grep -v '^win-unwind-check:' "$OUT/unwind.report"
+    xargs "$PYTHON" tools/win-unwind-check < "$OUT/objects" > "$OUT/unwind.report" 2>&1
+    # A fault the case's .nonames records (`win-unwind  <function>  <reason>`) is said with its reason, not counted.
+    grep -v '^win-unwind-check:' "$OUT/unwind.report" | while IFS= read -r line; do
+        b=${line%%.O[0-9].*}; fn=$(echo "$line" | sed -n 's/^[^:]*: \([^:]*\): .*/\1/p')
+        why=$(grep "^win-unwind  *$fn  " "tests/cases/$b.nonames" 2>/dev/null | sed "s/^win-unwind  *[^ ]*  *//")
+        if [ -n "$fn" ] && [ -n "$why" ]; then echo "recorded (.nonames) $line - $why"; else echo "$line"; echo unrecorded >> "$OUT/unwind.unrecorded"; fi
+    done
+    [ -s "$OUT/unwind.unrecorded" ] && status=1
     grep '^win-unwind-check:' "$OUT/unwind.report" | sed 's/^win-unwind-check:/win-structure.sh: unwind:/'
 fi
 

@@ -1,0 +1,1 @@
+arm64-darwin  a runtime call or record each compiler chooses (landing pads, guard aborts, __chkstk, atexit, a throw clang keeps where cxx1 calls terminate): emission, not spelling (tests/open/names-register.txt, "Emission, not names") - 1 names, e.g. <___cxa_free_exception (r6n, names.sh on the Windows box beside clang 19.1.5, 2026-11-15)

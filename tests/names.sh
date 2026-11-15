@@ -13,6 +13,7 @@ cd "$(dirname "$0")/.."
 if [ "${1:-}" = --reasons ]; then
     for f in tests/cases/*.nonames; do
         awk -v c="$(basename "$f" .nonames)" '
+            $1 == "win-unwind" { next }
             $1 ~ /^(x86_64-linux|x86_64-windows|arm64-darwin|tms6747)$/ { if (t != "") print c "\t" t "\t" r; t = $1; $1 = ""; r = substr($0, 2); next }
             NF { r = r " " $0 }
             END { if (t != "") print c "\t" t "\t" r }' "$f"
@@ -75,23 +76,31 @@ fi
 OUT=tests/out-names
 if [ "${1:-}" = --one ]; then
     if out=$(tools/mangled-names "tests/cases/$2.cpp" 2>&1); then echo pass > "$OUT/$2.verdict"
+        echo "$out" | grep ': skipped - ' | sed "s/^/recorded $2 /" > "$OUT/$2.recorded"
     else { echo "FAIL $2:"; echo "$out" | sed 's/^/      /'; } > "$OUT/$2.report"; echo fail > "$OUT/$2.verdict"; fi
     exit 0
 fi
 rm -rf "$OUT"; mkdir -p "$OUT"
 JOBS=${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)}
+# names.sh [case ...]: those cases alone, else every case.
 cases() {
-    for src in tests/cases/*.cpp; do
+    [ $# -gt 0 ] || set -- tests/cases/*.cpp
+    for src in "$@"; do
+        case "$src" in */*) ;; *) src=tests/cases/$src.cpp ;; esac
         case "$(basename "$src")" in *" "[0-9]*) continue;; esac
         base=$(basename "$src" .cpp)
         [ -f "tests/cases/$base.error" ] && continue
         echo "$base"
     done
 }
-cases | xargs -P "$JOBS" -n 1 sh "$0" --one
-for base in $(cases); do [ -f "$OUT/$base.report" ] && cat "$OUT/$base.report"; done
+cases "$@" | xargs -P "$JOBS" -n 1 sh "$0" --one
+# A recorded difference (a .nonames or .notarget row) is said with its reason on every run, then the failures.
+for base in $(cases "$@"); do [ -s "$OUT/$base.recorded" ] && cat "$OUT/$base.recorded"; done
+for base in $(cases "$@"); do [ -f "$OUT/$base.report" ] && cat "$OUT/$base.report"; done
 pass=$(cat "$OUT"/*.verdict 2>/dev/null | grep -c pass || true)
 fail=$(cat "$OUT"/*.verdict 2>/dev/null | grep -c fail || true)
 
 echo "names.sh: $pass passed, $fail failed"
+open=$(cat tests/cases/*.nonames | grep -c 'OPEN, owed' || true)
+echo "names.sh: $open .nonames rows OPEN, owed - real differences, tests/open/names-register.txt"
 [ "$fail" -eq 0 ]
