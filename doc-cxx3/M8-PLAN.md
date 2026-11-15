@@ -213,8 +213,8 @@ comment cap 0, memory gate held (Typing's raw pointers 89), ast-residue not abov
 probe's program prints the same five lines on and off, its `-S` text is identical on against off at -O0 and -O2
 natively, and the same five static gates pass (clang is not on that box's path: the `.expected` is the Windows clang's).
 **Not done, by name**: `run.sh` under the switch was not run (the Linux lock was the wave gate's; on = off in every
-emitted file is what stands for it) and `typed.sh` under it was started on the Linux box at 12:01 PKT and had not
-ended at hand-back (`~/m8a-typedon.log` there); `-check=typed` and `-dump=typed` type a substituted body with its sibling's types (they call
+emitted file is what stands for it) while `typed.sh` under it on the Linux box at `5c880a04` reads 861 passed, 0 failed,
+1 did not compile for this host; `-check=typed` and `-dump=typed` type a substituted body with its sibling's types (they call
 `typeFunction`, not `typeBody`); a substituted function carries no block table for `-g` and an empty Ast body; the
 identity grid was run at `f2dcccdf`, two commits before the last (a functor moved between headers, the empty body made
 by `oneStatement`, the C6000 refused) - only the probe, cl and the static gates were run again at `5c880a04`.
