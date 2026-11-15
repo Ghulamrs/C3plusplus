@@ -1503,3 +1503,46 @@ the round's eleven steps left - D5.2-D5.6, D6.2-D6.5) with M5's lldb lane (m5-ll
   C6xSched.cpp compiles, 0 errors; C6xPack.cpp is refused at 209:40 (`c6x::crossings` with two arguments), the
   refusal round 20's file meets at the same place (lane sh1's) - what lies behind that first error is not seen.
 - **Owed:** D6.2-D6.5, in round 19's order.
+### M6c, round 22 (D6.2: the folds read and edit entries; `Folding` holds no lines), 2026-11-15, lane m6ae
+
+- **Landed, one commit of identical output: D6.2** (6a73601c). `Folding::v` - a `Line` beside every entry, remade at
+  each edit - is deleted with `edited` (the text fold's rebuilt line read back) and the `c6x-fold-edit` census line.
+  `forwardMoves`, `forwardPairMoves`, `numberValues`, `foldScaledIndex` and `foldAddressing` ask the entry: `instr`
+  (an instruction not placed), `m`, `n`, `op`, `last`, `plain` (no predicate), `blockEnd`, `label`, `passThrough`,
+  `rw`. An edit is made on the operand - `MOperand` of the new spelling, or `renameIn`: the register by number where
+  the entry is `modelled`, else `renamed` in the spelling the operand is held as (what the read-back line made).
+- **What `v` was still deciding, kept on entries**: a placed entry and a kept line are no instruction and have no
+  mnemonic, operand or predicate (`m`, `n` and `plain` answer so); a placed entry that starts in the first column
+  is a label to `numberValues` and to a pass-through - `placedName` (C6xPack.cpp), the one reader, which C6xSched's
+  `placedLabel` now calls too; `numberValues` drops an entry that spells nothing by its spelling, as
+  `LoopText::apply` does.
+- **`forwardConstants`** asked `renameable` and `crossings` of the entry's line: it asks `mayRename(MInst)` and
+  `crossingsOf`, the readers the other folds use. `removeDead` is unchanged (its `!modelled` half is D6.4's).
+- **Assumed, and what would show it wrong**: a kept (`Verbatim`) line that `parse` would read as an instruction was
+  an instruction to `v`; to the folds now it is none, as it has been to `LoopText` since D5.1. `read` keeps a line
+  verbatim only where it does not spell back, and no case's text has one (the identity below, and the census).
+- **What still reads `Line`**: the pipeliner's line halves (D6.3); the table's `Line` readers, `lineOf`/`viewOf`,
+  `legalForm(Line &)`, `renameable(Line)`, `rebuilt`, `make` and the `!modelled` halves - `rwOf`, `crossingsOf`,
+  `unitsOf`, `memSide`, `removeDead`, `liveFacts`, `labelLike`, `LoopText::rw` (D6.4); `parse`, `streamOf` and
+  `c6xSchedule`'s read of the walker's text (D6.5). `Line` is named 9 times in C6xPack.cpp (29 at round 21), 22
+  in C6xSched.cpp, 11 in C6xPipe.cpp.
+- src/ +233 -234 lines (C6xPack.cpp 1,422 -> 1,426, C6xSched.cpp 1,369 -> 1,363, C6xMir.h 129 -> 130): the
+  folds' reads are respelled one for one; the lines come out with D6.4's readers.
+- **Gate.** Windows, cl /W4 /WX clean (work\m6ae1, 6a73601c), against round 21's compiler (work\m6ad2, 7f863b93),
+  tests/cases at -O0, -O1, -O2 by md5: **2,601 texts same, 1,068 refused alike, 0 differ**, plain and under
+  `CXX1_C6X_WALKER=1`; census -O2 0 to any text pass, 6,835 selected, kernels 219 / 9,122; exclusions 129 sites 0
+  uncited 0 stale, comments 0 over, memory gate rc 0, generate up to date. Linux (~/m6ae, a fresh tree of 6a73601c;
+  REF main 85fe99fe's compiler in ~/w7ref), g++ -Werror clean: `identical.sh ARCHS=tms6747` -O0 and -O2 1,736
+  compared, 2 differ; -O0 -g 1 differ once the tree path in `.dwpsn` is normalised (91 by that alone) -
+  static-reference-to-temporary, round 18's fix; every text against round 21's own (~/m6ad-ident, -identg: 1,702
+  and 851 compared) 0 differ; tests/tms6747.sh SHARD=k/3 CYCLES=1 SIM=0 at -O2 **814 passed, 0 failed,
+  192,009,106 cycles** (unchanged); walker legs at -O2 **814 / 0** (195,919,053, unchanged); g-same 867 same,
+  0 differ, 0 broken; asm6x.sh 833 objects, 0 failed at -O0 and -O2; census 0; exclusions 0/0, comments 0 over,
+  memory gate, ast-residue, generate rc 0. **Not finished at the hour**: the walker legs at -O0 - shard 1/3 270
+  passed, 0 failed (177,239,396 cycles); shards 2/3 and 3/3 were queued on the one lock behind another lane's
+  `make test` (~/m6ae-gate3.out holds them). Not run (the coordinator's): winpass, make test, ssa.sh.
+- **The lane's cxx3 on the files it changed** (`./cxx3.exe -std=c++11 -O0 -Isrc -c`): C6xSched.cpp compiles, 0
+  errors; C6xPack.cpp is refused at 219:40 (`c6x::crossings` with two arguments - round 21's file at 209:40, lane
+  sh1's). Behind it, measured: with the unnamed namespace's three readers renamed in a copy (boxkit/m6ae-probe.sh,
+  not committed), this round's C6xPack.cpp and round 21's both compile, 0 errors - the round adds no refusal.
+- **Owed:** D6.3-D6.5, in round 19's order. D6.3 was not started: the round's hour went to D6.2 and its gate.
