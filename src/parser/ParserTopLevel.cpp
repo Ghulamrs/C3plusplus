@@ -248,6 +248,7 @@ void Parser::topLevel(Program &program) {
     locals_.clear();
     fnVars_.clear();
     scopeStarts_.clear();
+    closeBlockFunctions();
     blocks_.clear();
     blockStack_.clear();
     blockAt_.clear();
@@ -2402,6 +2403,7 @@ const Type *Parser::readTrailingReturn(std::size_t paramsOpen) {
     if (paramsOpen != 0) {
         locals_.resize(scopeStarts_.back());
         scopeStarts_.pop_back();
+        closeBlockFunctions();
     }
     if (tmpl_.mentionsDeduced(returns))
         src_.fail(arrow, "a trailing return type cannot itself be deduced - 'auto' there "

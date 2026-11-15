@@ -447,6 +447,7 @@ Parser::FunctionState Parser::captureFunctionState() const {
     s.locals = locals_;
     s.fnVars = fnVars_;
     s.scopeStarts = scopeStarts_;
+    s.blockFunctions = blockFunctions_;
     s.blocks = blocks_;
     s.blockStack = blockStack_;
     s.blockAt = blockAt_;
@@ -533,6 +534,7 @@ void Parser::restoreFunctionState(const FunctionState &s) {
     locals_ = s.locals;
     fnVars_ = s.fnVars;
     scopeStarts_ = s.scopeStarts;
+    blockFunctions_ = s.blockFunctions;
     blocks_ = s.blocks;
     blockStack_ = s.blockStack;
     blockAt_ = s.blockAt;
@@ -620,6 +622,7 @@ void Parser::clearFunctionState() {
     locals_.clear();
     fnVars_.clear();
     scopeStarts_.clear();
+    blockFunctions_.clear();
     blocks_.clear();
     blockStack_.clear();
     blockAt_.clear();
@@ -706,6 +709,8 @@ void Parser::replayInlineBodies(std::vector<PendingBody> mine) {
     try {
     for (std::size_t i = 0; i < mine.size(); i++) {
         localTypes_ = outer.localTypes;     // each body's end clears them, and the next names them too
+        if (localClassOwner_.count(mine[i].tag) != 0) carryBlockFunctions(outer.blockFunctions);
+        else blockFunctions_.clear();
         at_ = mine[i].start;
         // A friend's body is written inside the class and belongs outside it,
         // so it is replayed with no owner to supply a `Class::` it must not have.
@@ -747,6 +752,15 @@ Parser::Nesting::Nesting(Parser *pp, std::size_t pos, const char *what) : p(pp) 
                       "here rather than run out of stack");
 }
 
+void Parser::carryBlockFunctions(const std::vector<std::pair<std::string, std::size_t> > &outer) {
+    blockFunctions_ = outer;
+    for (std::size_t i = 0; i < blockFunctions_.size(); i++) blockFunctions_[i].second = 0;
+}
+
+void Parser::closeBlockFunctions() {
+    while (!blockFunctions_.empty() && blockFunctions_.back().second > scopeStarts_.size()) blockFunctions_.pop_back();
+}
+
 void Parser::enterScope() {
     scopeStarts_.push_back(locals_.size());
     localTypeUndoStarts_.push_back(localTypeUndo_.size());
@@ -775,7 +789,7 @@ void Parser::leaveScope() {
     }
     locals_.resize(scopeStarts_.back());
     scopeStarts_.pop_back();
-    while (!blockFunctions_.empty() && blockFunctions_.back().second > scopeStarts_.size()) blockFunctions_.pop_back();
+    closeBlockFunctions();
     if (localTypeUndoStarts_.empty()) return;
     for (std::size_t i = localTypeUndo_.size(); i-- > localTypeUndoStarts_.back(); ) {
         if (localTypeUndo_[i].had != nullptr) localTypes_[localTypeUndo_[i].name] = localTypeUndo_[i].had;
