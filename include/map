@@ -28,7 +28,7 @@ template <class K, class V, class C>
 struct __map_key {
     typedef K key_type;
     static const K &get(const std::pair<const K, V> &v) { return v.first; }
-    static bool less(const K &a, const K &b) { return C()(a, b); }
+    static bool less(const K &a, const K &b) { C c; return c(a, b); }
 };
 
 // **An element is `pair<const K, V>`**, [map.overview], since 1.27 (2026-10-21, review of 1.25, item

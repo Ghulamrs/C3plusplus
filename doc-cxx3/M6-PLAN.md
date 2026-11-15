@@ -1419,3 +1419,27 @@ the round's eleven steps left - D5.2-D5.6, D6.2-D6.5) with M5's lldb lane (m5-ll
   `funclet`'s comment from its line), mended in 6530b725 and the cap, memory gate, ast-residue and exclusions then
   rerun rc 0 on the rebuilt tree; gdb 5/5. tms6747 814 / 0 at -O0 (393.2 M) and -O2 (**192.0 M**); walker 814 / 0 at
   both; asm6x 833 / 0 at both.
+
+### The self-host regression of the M6c waves, 2026-11-15, lane sh1
+
+At M5's close the Linux self-host compiled 102 of 102 sources; main 3b8a80fb's cxx3 refused three of its own C6000
+sources, each a shape g++ and cl take and clang takes too. Mended in the compiler and the library, none in the C6x
+files (lane m6ad's):
+- `C6xPack.cpp:209` (c1601e30, round 3) and `:380` (b25b87fa, round 7): `crossings(i, m)` from `c6x::crossings`, the
+  two-argument one in c6x's unnamed namespace, and the reverse from inside it. **Root:** `resolveOverload` took the
+  first key lookup answered as the whole set, so a namespace's own functions hid its unnamed namespace's
+  ([namespace.unnamed]/1 makes them one scope), and an argument's namespace was asked only when nothing else
+  answered ([basic.lookup.argdep] adds it always). **Mend:** one set from the three keys (`src/sema/Overload.cpp`).
+- `C6xPipe.cpp:539` (ca93c160, round 13) and `:1842` (041e0247, round 15): `std::map<int, int, ByName>`,
+  `std::set<int, ByName>`. **Root:** `<map>` and `<set>` had no comparator parameter. **Mend:** `Compare =
+  std::less<K>`, read through `__tree`'s KeyOf (`less`); a comparator that keeps state is not taken (it is made where
+  it is asked).
+- `C6xSelect.cpp:420` (73dd2103, M6b round 3): a `[&]` lambda inside a `[&]` lambda of a member function naming a
+  member. **Root:** in the outer closure's call operator the inner scan asked the closure, not the class, whether
+  the name was a member, so the inner lambda never took `this`. **Mend:** `closureOuterClass()`, read by
+  `namesOwnMember` and `capturedThisClass` (`src/parser/ParserExprLambda.cpp`).
+- Cases (clang's output): `namespace-unnamed-overload-set`, `map-set-comparator`, `lambda-nested-this-default`.
+  Open: `namespace-unnamed-nested-leaks` - an unnamed namespace inside `n` answers a lookup at file scope (the
+  directive is kept in one file-wide list), so `::f` defined after `n`'s unnamed `f` is taken for it.
+- src/ 94,414 -> 94,450 lines (include/ +32 -23).
+- **Gate at d88e36cf:** GATEROWS

@@ -20,5 +20,8 @@ int main() {
     s.insert(4); s.insert(9); s.insert(6);
     for (std::set<int, Backwards>::const_iterator it = s.begin(); it != s.end(); ++it) std::printf("%d ", *it);
     std::printf("%d\n", (int)s.count(6));
+    std::map<std::string, int> w;
+    w["b"] = 2; w["a"] = 1;
+    std::printf("%s %d\n", w.begin()->first.c_str(), w.begin()->second);
     return 0;
 }

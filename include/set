@@ -20,7 +20,7 @@ template <class T, class C>
 struct __set_key {
     typedef T key_type;
     static const T &get(const T &v) { return v; }
-    static bool less(const T &a, const T &b) { return C()(a, b); }
+    static bool less(const T &a, const T &b) { C c; return c(a, b); }
 };
 
 template <class T, class C = std::less<T> >
