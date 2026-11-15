@@ -2511,3 +2511,21 @@ map-set-node-stability's +11,356 (two __tree insertUnique calls, +5,685 each), t
 **The user's standing rule for cycles** (2026-11-15) is now in the cycle file's header: the coordinator may accept a
 round's worse cases itself only when the total falls at the level judged, no case is newly worse, and every worse
 case's cause is named there as owed with its round; anything else is the user's.
+
+### Wave 22's merge: M6a.2 W2 onto W1, with p7 and rh1 - lane mg22, 2026-11-15
+
+From wave22 b76b033b (g1 027251b9 + m6a2-w1c d5fa2715): `git merge m6a2-w2b`, `p7`, `rh1`, `w1-accept`. W2's four
+conflicts in C6xSelect.cpp were each one round's selection against the other's refusal; both are selected now - the
+refusal list holds neither "landing pads" nor "variadic" (W1's `throw(T...)` refusal kept by name), the op switch takes
+CatchPad/CleanupPad and VaStart/VaArg/VaEnd, a pad's landing label sits beside W2's entry label (only where reached),
+and an invoke's try label stands before W2's variadic stack words. **tests/cases/c6x-variadic-pad** holds both: a
+variadic definition with a pad and a variadic invoke, all four functions selected at -O0/-O1/-O2.
+**Walked (ssa-census -arch tms6747, CENSUS_SOURCES=0, Linux)**: -O0 3313 -> 2390, -O2 3527 -> 2442 (e573cbb9).
+**Cycles (Linux 1-3, Windows 4-6, against the file after w1-accept)**: -O2 192,025,550 -> 191,867,154, 404 better, 54
+worse (11 owed or accepted), 43 not owed: 30 W2's own (the 37 the user accepted as owed), 11 bodies with both pads and
+a variadic call (selected only on the merge; try-body-local +61,762 and ssa-ctor-delegate +20,354 the largest, both
+lifetime-ledger cases, W1's frame-slot shape by its owed reading, not diagnosed here), member-default-init and array-loop-throw past W1's caps for the same bodies.
+-O0 397,272,350 -> 385,994,327, 120 not owed (117 W2's - W2 was never measured at -O0 - and 3 both-feature bodies).
+16 W1 lines at -O2 and 2 at -O0 are stale (W2 made them equal or better). Lists: boxkit/mg22-worse-O2.txt, -O0.txt;
+the intended identical changes against g1 (1,829 tms6747 outputs, and p7's adl-block-declaration-outlives-nested on
+the three other targets) in boxkit/mg22-expected.txt. No accepted line is written here: that is the user's.
