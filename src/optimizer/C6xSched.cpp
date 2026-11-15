@@ -541,34 +541,66 @@ void hoistConstantPairs(LoopText &t) {
     }
 }
 
+// What the loop passes ask of operands, held by the model or as text: an address, a pair, two entries' spelled alike but the last `but`.
+bool isAddress(const MOperand &o) { return o.kind == MOperand::Memory || (o.kind == MOperand::Symbol && o.text[0] == '*'); }
+bool isPair(const MOperand &o) { return o.kind == MOperand::Pair || (o.kind == MOperand::Symbol && o.text.find(':') != std::string::npos); }
+bool sameOperands(const MInst &a, const MInst &b, int but = 0) {
+    if (a.operands != b.operands) return false;
+    for (int o = 0; o + but < a.operands; o++) if (a.op[o].str() != b.op[o].str()) return false;
+    return true;
+}
+
+// The stream's labels, and every operand an instruction spells (a label named there is no pass-through).
+void namesOf(const LoopText &t, std::set<std::string> &labels, std::set<std::string> &named) {
+    std::string name;
+    for (std::size_t i = 0; i < t.s.size(); i++) {
+        if (t.label(i, name)) labels.insert(name);
+        if (t.instr(i)) for (int o = 0; o < t.s[i].operands; o++) named.insert(t.s[i].op[o].str());
+    }
+}
+
+// The head a predicated back edge at i returns to - a label before it that this one branch names - or i for none.
+std::size_t loopHead(const LoopText &t, std::size_t i, const std::set<std::string> &labels) {
+    const MStream &s = t.s;
+    if (!t.instr(i) || s[i].m != "B" || s[i].pred == kNoReg || s[i].operands == 0 || !labels.count(s[i].op[0].str())) return i;
+    const std::string head = s[i].op[0].str();
+    std::size_t h = i; int uses = 0;
+    std::string name;
+    for (std::size_t k = 0; k < i; k++) if (t.label(k, name) && name == head) h = k;
+    for (std::size_t k = 0; k < s.size(); k++) if (t.instr(k)) for (int o = 0; o < s[k].operands; o++) if (s[k].op[o].kind == MOperand::Symbol && s[k].op[o].text == head) uses++;
+    return uses == 1 && h != 0 ? h : i;
+}
+
+// The loop from head h to back edge i as one body: it may leave by a conditional branch to a label outside it - an
+// exit - and by nothing else; its labels pass-through ones.
+bool loopBody(const LoopText &t, std::size_t h, std::size_t i, const std::set<std::string> &labels, const std::set<std::string> &named,
+              std::vector<std::size_t> &body, std::vector<std::size_t> &exits) {
+    const MStream &s = t.s;
+    std::set<std::string> inside;
+    std::string name;
+    for (std::size_t k = h; k <= i; k++) if (t.label(k, name)) inside.insert(name);
+    for (std::size_t k = h + 1; k < i; k++) {
+        if (t.label(k, name)) { if (!passThroughName(name, named)) return false; continue; }
+        if (!t.instr(k)) return false;
+        if (!isBranch(s[k].m.str())) { body.push_back(k); continue; }
+        if (s[k].m != "B" || s[k].pred == kNoReg || s[k].operands == 0 || inside.count(s[k].op[0].str()) || !labels.count(s[k].op[0].str())) return false;
+        exits.push_back(k);
+    }
+    return true;
+}
+
 // **A loop's invariants move to its preheader**: in a rotated loop - one block, entered by falling into its
 // head from the test that guards it - an instruction whose sources the loop never writes is computed once
 // before the head; a destination the loop also writes elsewhere takes a fresh register for that one value.
 void hoistInvariants(LoopText &t) {
-    std::vector<Line> &v = t.v;
+    const MStream &s = t.s;
     std::set<std::string> labels, named;
-    for (std::size_t i = 0; i < v.size(); i++) {
-        if (isLabel(v[i])) labels.insert(labelName(v[i]));
-        for (std::size_t o = 0; o < v[i].ops.size(); o++) named.insert(v[i].ops[o]);
-    }
-    for (std::size_t i = 0; i < v.size(); i++) {
-        if (!v[i].instr || v[i].mnem != "B" || v[i].pred.empty() || !labels.count(v[i].ops[0])) continue;
-        std::size_t h = i; int uses = 0;
-        for (std::size_t k = 0; k < i; k++) if (isLabel(v[k]) && labelName(v[k]) == v[i].ops[0]) h = k;
-        for (std::size_t k = 0; k < v.size(); k++) if (v[k].instr) for (std::size_t o = 0; o < v[k].ops.size(); o++) if (v[k].ops[o] == v[i].ops[0]) uses++;
-        if (h == i || uses != 1 || h == 0 || !v[h - 1].instr || v[h - 1].mnem != "B" || v[h - 1].pred.empty()) continue;
-        // The body may leave by a conditional branch to a label outside it - an exit - and by nothing else.
-        bool ok = true;
+    namesOf(t, labels, named);
+    for (std::size_t i = 0; i < s.size(); i++) {
+        const std::size_t h = loopHead(t, i, labels);
+        if (h == i || !t.instr(h - 1) || s[h - 1].m != "B" || s[h - 1].pred == kNoReg) continue;
         std::vector<std::size_t> body, exits;
-        std::set<std::string> inside;
-        for (std::size_t k = h; k <= i; k++) if (isLabel(v[k])) inside.insert(labelName(v[k]));
-        for (std::size_t k = h + 1; k < i && ok; k++) {
-            if (isLabel(v[k])) { ok = passThrough(v[k], named); continue; }
-            if (!v[k].instr) ok = false;
-            else if (isBranch(v[k].mnem)) { if (v[k].mnem != "B" || v[k].pred.empty() || inside.count(v[k].ops[0]) || !labels.count(v[k].ops[0])) ok = false; else exits.push_back(k); }
-            else body.push_back(k);
-        }
-        if (!ok) continue;
+        if (!loopBody(t, h, i, labels, named, body, exits)) continue;
         // The liveness of the loop as it is entered: its own edits rename what they hoist, never what is asked about after.
         const std::uint64_t backOut = t.liveOut(i);
         std::vector<std::uint64_t> exitOut(exits.size());
@@ -577,7 +609,7 @@ void hoistInvariants(LoopText &t) {
         std::set<std::string> used;
         for (std::size_t b = 0; b < body.size(); b++) {
             std::vector<std::string> reads, writes;
-            readsAndWrites(v[body[b]], reads, writes);
+            t.rw(body[b], reads, writes);
             for (std::size_t r = 0; r < reads.size(); r++) used.insert(reads[r]);
             for (std::size_t w = 0; w < writes.size(); w++) used.insert(writes[w]);
         }
@@ -588,7 +620,7 @@ void hoistInvariants(LoopText &t) {
                 std::string r = std::string(side ? "B" : "A") + std::to_string(k);
                 if (!used.count(r) && !(liveAtExits & bitOf(r))) pool.push_back(r);
             }
-        std::vector<Line> hoisted;
+        MStream hoisted;
         std::vector<bool> gone(body.size(), false);
         for (bool changed = true; changed;) {
             changed = false;
@@ -596,19 +628,20 @@ void hoistInvariants(LoopText &t) {
             for (std::size_t b = 0; b < body.size(); b++) {
                 if (gone[b]) continue;
                 std::vector<std::string> reads, writes;
-                readsAndWrites(v[body[b]], reads, writes);
+                t.rw(body[b], reads, writes);
                 for (std::size_t w = 0; w < writes.size(); w++) writers[writes[w]]++;
             }
             for (std::size_t b = 0; b < body.size() && !changed; b++) {
-                const Line &l = v[body[b]];
-                if (gone[b] || !l.pred.empty() || isLoad(l.mnem) || isStore(l.mnem) || l.mnem == "MVKH" || l.mnem == "ADDK" || l.ops.size() < 2) continue;
+                const MInst &l = s[body[b]];
+                const std::string &lm = l.m.str();
+                if (gone[b] || l.pred != kNoReg || isLoad(lm) || isStore(lm) || lm == "MVKH" || lm == "ADDK" || l.operands < 2) continue;
                 std::vector<std::string> reads, writes;
-                readsAndWrites(l, reads, writes);
+                t.rw(body[b], reads, writes);
                 if (writes.size() != 1) continue;
                 const std::string d = writes[0];
                 if (d == "A15" || d == "B15" || d == "B3" || d == "B14" || has(reads, d)) continue;
-                bool pair = l.mnem == "MVKL" && b + 1 < body.size() && !gone[b + 1] && v[body[b + 1]].mnem == "MVKH" && v[body[b + 1]].ops == l.ops && v[body[b + 1]].pred.empty();
-                if (l.mnem == "MVKL" && !pair) continue;
+                bool pair = lm == "MVKL" && b + 1 < body.size() && !gone[b + 1] && s[body[b + 1]].m == "MVKH" && sameOperands(s[body[b + 1]], l) && s[body[b + 1]].pred == kNoReg;
+                if (lm == "MVKL" && !pair) continue;
                 bool invariant = true;
                 for (std::size_t r = 0; r < reads.size(); r++) if (writers.count(reads[r])) invariant = false;
                 if (!invariant) continue;
@@ -617,35 +650,38 @@ void hoistInvariants(LoopText &t) {
                 for (std::size_t k = 0; k < body.size(); k++) {
                     if (gone[k] || k == b || (pair && k == b + 1)) continue;
                     std::vector<std::string> r2, w2;
-                    readsAndWrites(v[body[k]], r2, w2);
+                    t.rw(body[k], r2, w2);
                     if (has(w2, d)) { if (k < first) first = k; if (k > b && k < next) next = k; }
                 }
                 bool early = false;
-                for (std::size_t k = 0; k < first; k++) { std::vector<std::string> r2, w2; readsAndWrites(v[body[k]], r2, w2); if (has(r2, d)) early = true; }
+                for (std::size_t k = 0; k < first; k++) { std::vector<std::string> r2, w2; t.rw(body[k], r2, w2); if (has(r2, d)) early = true; }
                 if (early && next == body.size()) continue;                        // this value reaches the next turn
-                if (next < body.size() && (v[body[next]].mnem == "MVKH" || v[body[next]].mnem == "ADDK")) continue;
-                // The web renamed to f: every reader rebuilt, the next writer's sources too; false where a
+                if (next < body.size() && (s[body[next]].m == "MVKH" || s[body[next]].m == "ADDK")) continue;
+                // The web renamed to f: every reader's operands, the next writer's sources too; false where a
                 // reader cannot take f - a memory operand or a predicate, or a crossing the form lacks.
                 auto renameWeb = [&](const std::string &f, bool apply) -> bool {
-                    Line own = l; own.ops.back() = f;                          // the hoisted instruction's own form
-                    if (crossings(rebuilt(own.mnem, own.ops)) > 1 || unitsFor(rebuilt(own.mnem, own.ops)) == 0) return false;
+                    MInst own = l;                                             // the hoisted instruction's own form
+                    own.op[own.operands - 1] = MOperand(f);
+                    if (!legal(own)) return false;
+                    const bool moves = f != d, crosses = sideOf(f) != sideOf(d);
                     // A branch in the web - an exit, or the back edge itself - may read d as its predicate, which keeps its register.
                     for (std::size_t x = body[b] + 1; x <= (next < body.size() ? body[next] : i); x++)
-                        if (v[x].instr && isBranch(v[x].mnem) && !v[x].pred.empty() && renamed(v[x].pred, d, f) != v[x].pred) return false;
+                        if (moves && t.instr(x) && isBranch(s[x].m.str()) && s[x].pred != kNoReg && regName(s[x].pred) == d) return false;
                     for (std::size_t k = b + 1; k <= next && k < body.size(); k++) {
                         if (gone[k] || (pair && k == b + 1)) continue;
-                        const Line &u = v[body[k]];
-                        std::vector<std::string> ops = u.ops;
-                        std::size_t last = isStore(u.mnem) || u.mnem == "B" || ops.back()[0] == '*' ? ops.size() : ops.size() - 1;
-                        for (std::size_t o = 0; o < ops.size(); o++)
-                            if ((o < last || ops[o][0] == '*' || (k != next && (u.mnem == "MVKH" || u.mnem == "ADDK"))) && renamed(ops[o], d, f) != ops[o]) {
-                                if ((sideOf(f) != sideOf(d) && ops[o][0] == '*') || ops[o].find(':') != std::string::npos) return false;
-                                ops[o] = renamed(ops[o], d, f);
-                            }
-                        if (!u.pred.empty() && renamed(u.pred, d, f) != u.pred) return false;
-                        Line r = rebuilt(u.mnem, ops, u.pred);
-                        if (sideOf(f) != sideOf(d) && (crossings(r) > 1 || unitsFor(r) == 0)) return false;
-                        if (apply) t.set(body[k], r);
+                        MInst u = s[body[k]];
+                        const std::string &um = u.m.str();
+                        const int n = u.operands, last = n == 0 || isStore(um) || um == "B" || isAddress(u.op[n - 1]) ? n : n - 1;
+                        for (int o = 0; o < n; o++) {
+                            if (!(o < last || isAddress(u.op[o]) || (k != next && (um == "MVKH" || um == "ADDK")))) continue;
+                            const std::string was = u.op[o].str(), now = renamed(was, d, f);
+                            if (now == was) continue;
+                            if ((crosses && isAddress(u.op[o])) || isPair(u.op[o])) return false;
+                            u.op[o] = MOperand(now);
+                        }
+                        if (moves && u.pred != kNoReg && regName(u.pred) == d) return false;
+                        if (crosses && !legal(u)) return false;
+                        if (apply) t.set(body[k], u);
                     }
                     return true;
                 };
@@ -654,20 +690,19 @@ void hoistInvariants(LoopText &t) {
                 std::uint64_t liveAfter = backOut, liveBefore = 0;   // d at the exits past this write, and before it
                 for (std::size_t e = 0; e < exits.size(); e++) (exits[e] > body[b] ? liveAfter : liveBefore) |= exitOut[e];
                 if (liveBefore & bitOf(d)) continue;                       // an exit before the write reads the value coming in
-                const bool exits = next == body.size() && (liveAfter & bitOf(d));
-                if (!exits) for (std::size_t e = 0; e < hoisted.size() && f.empty(); e++) {
-                    const Line &m = hoisted[e];
-                    if (m.mnem != l.mnem || m.ops.size() != l.ops.size()) continue;
-                    bool same = true;
-                    for (std::size_t o = 0; o + 1 < l.ops.size(); o++) if (m.ops[o] != l.ops[o]) same = false;
-                    if (same && pair && !(e + 1 < hoisted.size() && hoisted[e + 1].mnem == "MVKH" && hoisted[e + 1].ops == m.ops)) same = false;
-                    if (same && renameWeb(m.ops.back(), false)) f = m.ops.back();
+                const bool leaves = next == body.size() && (liveAfter & bitOf(d));
+                if (!leaves) for (std::size_t e = 0; e < hoisted.size() && f.empty(); e++) {
+                    const MInst &m = hoisted[e];
+                    if (m.m != l.m || !sameOperands(m, l, 1)) continue;
+                    if (pair && !(e + 1 < hoisted.size() && hoisted[e + 1].m == "MVKH" && sameOperands(hoisted[e + 1], m))) continue;
+                    const std::string to = m.op[m.operands - 1].str();
+                    if (renameWeb(to, false)) f = to;
                 }
                 const bool reuse = !f.empty();
                 if (!reuse) {
                     if (writers[d] <= (pair ? 2 : 1)) f = d;
                     else {
-                        if (exits) continue;                                       // the exit reads this value
+                        if (leaves) continue;                                      // the exit reads this value
                         for (int side = 1; side >= 0 && f.empty(); side--)
                             for (std::size_t k = 0; k < pool.size() && f.empty(); k++)
                                 if (sideIndex(pool[k]) == side && renameWeb(pool[k], false)) { f = pool[k]; pool.erase(pool.begin() + static_cast<long>(k)); }
@@ -677,9 +712,9 @@ void hoistInvariants(LoopText &t) {
                 if (f != d) renameWeb(f, true);
                 if (reuse) { for (std::size_t k = b; k < b + (pair ? 2u : 1u); k++) gone[k] = true; changed = true; continue; }
                 for (std::size_t k = b; k < b + (pair ? 2u : 1u); k++) {
-                    Line m = v[body[k]];
-                    m.ops.back() = f;
-                    hoisted.push_back(rebuilt(m.mnem, m.ops));
+                    MInst m = s[body[k]];
+                    m.op[m.operands - 1] = MOperand(f);
+                    hoisted.push_back(m);
                     gone[k] = true;
                 }
                 changed = true;

@@ -1309,16 +1309,22 @@ void LoopText::rw(std::size_t k, std::vector<std::string> &reads, std::vector<st
     if (modelled(s[k])) readsAndWrites(s[k], reads, writes); else readsAndWrites(lineOf(s[k]), reads, writes);
 }
 void LoopText::blank(std::size_t k) { v[k] = parse(""); gone[k] = pending = stale = true; }
-void LoopText::set(std::size_t k, const Line &l) { v[k] = l; s[k] = edited(l, &s[k]); stale = true; }
+void LoopText::set(std::size_t k, const MInst &x) { s[k] = x; v[k] = viewOf(x); stale = true; }
+void LoopText::set(std::size_t k, const Line &l) { set(k, edited(l, &s[k])); v[k] = l; }
 
 // One loop's rewrite applied before the next loop is looked at, so liveness asked is of the stream as it stands: the
-// lines `pre` before entry h, the blanked dropped; where the back edge at i went.
+// entries `pre` (or lines, made entries) before entry h, the blanked dropped; where the back edge at i went.
 std::size_t LoopText::apply(std::size_t h, const std::vector<Line> &pre, std::size_t i) {
+    MStream made;
+    for (std::size_t p = 0; p < pre.size(); p++) made.push_back(edited(pre[p], nullptr));
+    return apply(h, made, i);
+}
+std::size_t LoopText::apply(std::size_t h, const MStream &pre, std::size_t i) {
     MStream to;
     std::vector<Line> lines;
     std::size_t at = i;
     for (std::size_t k = 0; k < s.size(); k++) {
-        if (k == h) for (std::size_t p = 0; p < pre.size(); p++) { to.push_back(edited(pre[p], nullptr)); lines.push_back(pre[p]); }
+        if (k == h) for (std::size_t p = 0; p < pre.size(); p++) { to.push_back(pre[p]); lines.push_back(viewOf(pre[p])); }
         if (!gone[k] && (v[k].instr || !v[k].raw.empty())) { to.push_back(s[k]); lines.push_back(v[k]); }
         if (k == i) at = to.size() - 1;
     }

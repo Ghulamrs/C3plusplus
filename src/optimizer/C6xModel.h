@@ -130,9 +130,11 @@ struct LoopText {
     bool label(std::size_t k, std::string &name) const;
     void rw(std::size_t k, std::vector<std::string> &reads, std::vector<std::string> &writes) const;
     void blank(std::size_t k);
+    void set(std::size_t k, const MInst &x);
     void set(std::size_t k, const Line &l);
-    std::size_t apply(std::size_t h, const std::vector<Line> &pre, std::size_t i);   // the back edge's new place
-    void compact() { apply(s.size(), std::vector<Line>(), 0); }
+    std::size_t apply(std::size_t h, const MStream &pre, std::size_t i);             // the back edge's new place
+    std::size_t apply(std::size_t h, const std::vector<Line> &pre, std::size_t i);
+    void compact() { apply(s.size(), MStream(), 0); }
     std::uint64_t liveIn(std::size_t k) { current(); return in[k]; }
     std::uint64_t liveOut(std::size_t k) { current(); return out[k]; }
     void current();
