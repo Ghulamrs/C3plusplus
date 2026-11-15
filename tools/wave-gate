@@ -146,7 +146,7 @@ if [ "${1:-}" = --box ]; then
             else verdict build FAIL "$(grep -a -m1 'error' "$LOG-build.log" | cut -c1-160); $LOG-build.log"; exit 1; fi ;;
         static) d=; ok=1
             for c in "python3 tools/exclusions --check docs/EXCLUSIONS.md" "make comments" "python3 tools/memory-gate --check" "python3 ide/generate.py --check"; do
-                job 540 $c > "$LOG-static.log" 2>&1; rc=$?; l=$(tail -1 "$LOG-static.log" | cut -c1-90); [ $rc -eq 0 ] || { ok=0; l="FAILED ($c): $l"; }; d="$d${d:+ | }$l"; done
+                job 540 $c > "$LOG-static.log" 2>&1; rc=$?; l=$(grep -av '^slot [12]: ' "$LOG-static.log" | tail -1 | cut -c1-90); [ $rc -eq 0 ] || { ok=0; l="FAILED ($c): $l"; }; d="$d${d:+ | }$l"; done
             [ $ok = 1 ] && verdict static PASS "$d" || verdict static FAIL "$d" ;;
         maketest) job 1500 env JOBS=2 make test > "$LOG-maketest.log" 2>&1; rc=$?
             d=$(grep -a '^[a-z0-9.-]*\.sh: .*[0-9] \(passed\|changed\|failed\)' "$LOG-maketest.log" | sed 's/ (.*//; s/, [0-9]* \(skipped\|were\|printed\).*//' | tr '\n' ';' | cut -c1-400)
