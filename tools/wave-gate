@@ -8,7 +8,7 @@
 #
 # Run from the Mac, which only ships and asks: the tree is HEAD as `git archive` writes it (the commit is printed);
 # the Linux box builds it in ~/<name> and runs its chain detached, two steps at once, each box job through ~/slot
-# (the first free of two locks, -j2/JOBS=2 each; installed from SLOT below when missing) under the 25-minute cap; the Windows box builds it in <work>\<name> (tools/windows/winbuild.sh) and the Mac in
+# (the first free of two locks, -j2/JOBS=2 each; installed from SLOT below when missing) under the 40-minute cap (2400 s, the user, 2026-11-15); the Windows box builds it in <work>\<name> (tools/windows/winbuild.sh) and the Mac in
 # $WAVEGATE_MAC/<name>, one Mac job at a time at -j2. `-n` names steps this wave does not owe, with the reason the
 # report prints; a group name (tms, wtms, winpass, fixed, mac, windows, linux) stands for its steps. `-b` keeps the
 # run to some boxes - the others' steps are NOT RUN and want a reason like any other. `-r` runs nothing: the report
@@ -111,14 +111,14 @@ if [ "${1:-}" = --box ]; then
         printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$V"; printf 'VERDICT\t%s\t%s\t%s\n' "$1" "$2" "$3"; echo "$1: $2 - $3 ($(date +%H:%M))"; }
     capnote() { [ "$1" -eq 124 ] && echo " (cut at its cap)"; }
     # one suite, one box job: $1 step, $2 the line that carries its count, the rest the command
-    suite() { s=$1; pat=$2; shift 2; job 1500 "$@" > "$LOG-$s.log" 2>&1; rc=$?
+    suite() { s=$1; pat=$2; shift 2; job 2400 "$@" > "$LOG-$s.log" 2>&1; rc=$?
         d=$(grep -a "$pat" "$LOG-$s.log" | tail -1 | cut -c1-200)
         [ $rc -eq 0 ] && [ -n "$d" ] && verdict "$s" PASS "$d" || verdict "$s" FAIL "rc $rc$(capnote $rc); ${d:-no count line}; $LOG-$s.log"; }
     # tms6747.sh, shards $5 (a-b) of NSHARD: $1 the verdict's name, $2 flags, $3 SIM, $4 the walker's switch or nothing
     NSHARD=6
     tms() { s=$1; p=0; f=0; bad=; r=$5; [ "${s%@*}" = tms2 ] && : > "$LOG-cycles.txt"
         for h in $(seq "${r%-*}" "${r#*-}"); do
-            job 1500 env $4 SHARD=$h/$NSHARD CXX1_FLAGS=$2 CYCLES=1 SIM=$3 sh tests/tms6747.sh > "$LOG-$s-$h.log" 2>&1; rc=$?
+            job 2400 env $4 SHARD=$h/$NSHARD CXX1_FLAGS=$2 CYCLES=1 SIM=$3 sh tests/tms6747.sh > "$LOG-$s-$h.log" 2>&1; rc=$?
             l=$(grep -a '^tms6747.sh: [0-9]* passed, [0-9]* failed' "$LOG-$s-$h.log" | tail -1)
             if [ -z "$l" ]; then bad="$bad shard $h: no count, rc $rc$(capnote $rc);"; continue; fi
             set -- "$1" "$2" "$3" "$4" "$5" $(echo "$l" | sed 's/^tms6747.sh: \([0-9]*\) passed, \([0-9]*\) failed.*/\1 \2/')
@@ -130,7 +130,7 @@ if [ "${1:-}" = --box ]; then
     # the fixed point at $2: stages "0 1", 2, 3 as box jobs, a cut stage resumed twice
     fixed() { s=$1; o=$HOME/$N-$s; : > "$LOG-$s.log"
         for st in 0 1 2 3; do res=
-            for try in 1 2 3; do job 1500 env SELFHOST_JOBS=2 SELFHOST_RESUME=$res sh tools/self-host "$o" "$2" "$st" >> "$LOG-$s.log" 2>&1; [ $? -eq 124 ] || break; res=1; done
+            for try in 1 2 3; do job 2400 env SELFHOST_JOBS=2 SELFHOST_RESUME=$res sh tools/self-host "$o" "$2" "$st" >> "$LOG-$s.log" 2>&1; [ $? -eq 124 ] || break; res=1; done
         done
         a=$(grep -a 'the same object from stages 0, 1 and 2' "$LOG-$s.log" | tail -1); b=$(grep -a 'the same object from stages 2 and 3' "$LOG-$s.log" | tail -1)
         n=$(find src -name "*.cpp" | wc -l | tr -d " ")
@@ -148,7 +148,7 @@ if [ "${1:-}" = --box ]; then
             for c in "python3 tools/exclusions --check docs/EXCLUSIONS.md" "make comments" "python3 tools/memory-gate --check" "python3 ide/generate.py --check"; do
                 job 540 $c > "$LOG-static.log" 2>&1; rc=$?; l=$(tail -1 "$LOG-static.log" | cut -c1-90); [ $rc -eq 0 ] || { ok=0; l="FAILED ($c): $l"; }; d="$d${d:+ | }$l"; done
             [ $ok = 1 ] && verdict static PASS "$d" || verdict static FAIL "$d" ;;
-        maketest) job 1500 env JOBS=2 make test > "$LOG-maketest.log" 2>&1; rc=$?
+        maketest) job 2400 env JOBS=2 make test > "$LOG-maketest.log" 2>&1; rc=$?
             d=$(grep -a '^[a-z0-9.-]*\.sh: .*[0-9] \(passed\|changed\|failed\)' "$LOG-maketest.log" | sed 's/ (.*//; s/, [0-9]* \(skipped\|were\|printed\).*//' | tr '\n' ';' | cut -c1-400)
             [ $rc -eq 0 ] && verdict maketest PASS "rc 0; $d" || verdict maketest FAIL "rc $rc$(capnote $rc); $d $LOG-maketest.log" ;;
         subst) if [ -f tests/subst.sh ]; then suite subst '^subst.sh: ' env JOBS=2 sh tests/subst.sh     # R109, lane r6f: -templates=subst on against off
@@ -164,7 +164,7 @@ if [ "${1:-}" = --box ]; then
             if [ -x "$ref" ]; then suite identical '^identical: ' env ARCHS=tms6747 LEVELS="0 2" JOBS=$JOBS sh tools/identical.sh "$ref" "$T/$(basename "${CXX1:-./cxx3.exe}")" /none "$LOG-ident"
             else verdict identical "NOT RUN" "no main build at $ref (WAVEGATE_REF)"; fi ;;
         emit) suite emit '^emit.sh: ' sh tests/emit.sh --o2 ;;
-        census) job 1500 env CENSUS_FLAGS=-O2 CENSUS_JOBS=$JOBS sh tools/ssa-census -arch tms6747 "${CXX1:-./cxx3.exe}" "$LOG-census" > "$LOG-census.log" 2>&1; rc=$?
+        census) job 2400 env CENSUS_FLAGS=-O2 CENSUS_JOBS=$JOBS sh tools/ssa-census -arch tms6747 "${CXX1:-./cxx3.exe}" "$LOG-census" > "$LOG-census.log" 2>&1; rc=$?
             d=$(grep -a '^ssa-census tms6747: outside=' "$LOG-census.log" | tail -1); n=$(echo "$d" | sed -n 's/.*outside=\([0-9]*\) .*/\1/p')
             if [ -z "$n" ]; then verdict census FAIL "rc $rc$(capnote $rc); no census line; $LOG-census.log"
             elif [ -n "${WAVEGATE_WALKED:-}" ] && [ "$n" -gt "$WAVEGATE_WALKED" ]; then verdict census FAIL "$d - the walked ratchet is $WAVEGATE_WALKED"
@@ -176,7 +176,7 @@ if [ "${1:-}" = --box ]; then
             else verdict declines "NOT RUN" "tools/c6x-declines is not in this tree (R108, lane r6e)"; fi ;;
         gdb) suite gdb '^debug.sh gdb' sh tests/debug.sh gdb ./cxx3.exe ;;
         selfc) res=; : > "$LOG-selfc.log"
-            for try in 1 2 3; do job 1500 env SELFHOST_RESUME=$res sh tools/self-host "$HOME/$N-selfc" "" 0 >> "$LOG-selfc.log" 2>&1; rc=$?; [ $rc -eq 124 ] || break; res=1; done
+            for try in 1 2 3; do job 2400 env SELFHOST_RESUME=$res sh tools/self-host "$HOME/$N-selfc" "" 0 >> "$LOG-selfc.log" 2>&1; rc=$?; [ $rc -eq 124 ] || break; res=1; done
             d=$(grep -a 'stage 0 compiled' "$LOG-selfc.log" | tail -1)
             case "$d" in *" compiled "*) set -- $(echo "$d" | sed 's/.*compiled \([0-9]*\) of \([0-9]*\) .*/\1 \2/'); [ "$1" = "$2" ] && verdict selfc PASS "$d" || verdict selfc FAIL "$d; $LOG-selfc.log" ;;
                 *) verdict selfc FAIL "rc $rc$(capnote $rc); no count; $LOG-selfc.log" ;; esac ;;
@@ -308,11 +308,11 @@ windows_step() { s=$1; LN=${2:-${WINLANES:-10}}; L="$OUT/$s.log"; W="$ROOT/tools
             l=$(capped 600 ssh -o BatchMode=yes "$WINDOWS" "cd /d $REMOTE && set CPP11_LD=$REMOTE\\winout-tools\\link.exe&& set DEBUG_FLAGS=-masm=$sp&& start \"\" /b /wait /affinity 3FF \"$WINBASH\" tests/debug.sh cdb ./cxx3-msvc.exe" 2>&1 | tr -d '\r' | tee -a "$L" | tail -1)
             case "$l" in "debug.sh cdb"*" 0 failed") ;; *) ok=0;; esac; d="$d${d:+; }${l:-no line at -masm=$sp}"; done
         [ $ok = 1 ] && wverdict cdb PASS "$d" || verdict cdb FAIL "$d; $L" windows ;;
-    wselfc) d=$(capped 1500 ssh -o BatchMode=yes "$WINDOWS" "start \"\" /b /wait /affinity 3FF cmd /c $REMOTE\\tools\\windows\\self-compile.cmd $REMOTE" 2>&1 | tr -d '\r' | tee "$L" | grep '^self-compile.cmd: ' | tail -1)
+    wselfc) d=$(capped 2400 ssh -o BatchMode=yes "$WINDOWS" "start \"\" /b /wait /affinity 3FF cmd /c $REMOTE\\tools\\windows\\self-compile.cmd $REMOTE" 2>&1 | tr -d '\r' | tee "$L" | grep '^self-compile.cmd: ' | tail -1)
         set -- $(echo "$d" | sed -n 's/^self-compile.cmd: \([0-9]*\) of \([0-9]*\) .*/\1 \2/p')
         [ -n "${1:-}" ] && [ "$1" = "$2" ] && wverdict wselfc PASS "$d" || verdict wselfc FAIL "${d:-no count}; $L" windows ;;
     names|overload|winstruct) u=$s; [ $s = winstruct ] && u=win-structure
-        capped 1500 ssh -o BatchMode=yes "$WINDOWS" "cd /d $REMOTE && start \"\" /b /wait /affinity 3FF \"$WINBASH\" tools/wave-gate --suite $u" > "$L" 2>&1
+        capped 2400 ssh -o BatchMode=yes "$WINDOWS" "cd /d $REMOTE && start \"\" /b /wait /affinity 3FF \"$WINBASH\" tools/wave-gate --suite $u" > "$L" 2>&1
         d=$(tr -d '\r' < "$L" | grep -a "^$u.sh: \|^wave-gate: no " | tail -2 | tr '\n' ';' | cut -c1-300)
         if tr -d '\r' < "$L" | grep -a -q "^wave-gate: $u.sh rc 0$" && [ -n "$d" ] && ! grep -a -q "^$u.sh: skipped\|NOT RUN" "$L"
         then wverdict "$s" PASS "$d"; else verdict "$s" FAIL "${d:-no count line}; $L" windows; fi ;;
@@ -350,12 +350,12 @@ mac_leg() {
         case $s in
         mbuild) rm -rf "$MACDIR" && mkdir -p "$MACDIR" && tar -C "$MACDIR" -xzf "$OUT/tree.tgz" && mjob 540 make -j2 cxx3.exe > "$L" 2>&1 &&
                 verdict mbuild PASS "cxx3.exe built by clang++" mac || { verdict mbuild FAIL "$(grep -m1 error "$L" | cut -c1-160); $L" mac; return; } ;;
-        mrun[02]) f=-O${s#mrun}; mjob 1500 env CXX1="./cxx3.exe $f" sh tests/run.sh > "$L" 2>&1; rc=$?; d=$(grep -a '^run.sh: ' "$L" | tail -1 | cut -c1-200)
+        mrun[02]) f=-O${s#mrun}; mjob 2400 env CXX1="./cxx3.exe $f" sh tests/run.sh > "$L" 2>&1; rc=$?; d=$(grep -a '^run.sh: ' "$L" | tail -1 | cut -c1-200)
             [ $rc -eq 0 ] && [ -n "$d" ] && verdict "$s" PASS "$f $d" mac || verdict "$s" FAIL "$f rc $rc; ${d:-no count}; $L" mac ;;
         mfixed) d=; ok=1; n=$(find "$MACDIR/src" -name "*.cpp" | wc -l | tr -d " ")
             for f in "" -O2; do o=$MACDIR-mfixed${f:--O0}
                 for stg in 0 1 2 3; do res=
-                    for try in 1 2 3; do mjob 1500 env SELFHOST_JOBS=2 SELFHOST_RESUME=$res sh tools/self-host "$o" "$f" $stg >> "$L" 2>&1; [ $? -eq 142 ] || break; res=1; done
+                    for try in 1 2 3; do mjob 2400 env SELFHOST_JOBS=2 SELFHOST_RESUME=$res sh tools/self-host "$o" "$f" $stg >> "$L" 2>&1; [ $? -eq 142 ] || break; res=1; done
                 done
                 a=$(grep -a 'the same object from stages 0, 1 and 2' "$L" | tail -1); c=$(grep -a 'the same object from stages 2 and 3' "$L" | tail -1)
                 case "$a|$c" in "self-host: $n of $n "*"|self-host: $n of $n "*) d="$d ${f:--O0}: $n of $n from stages 0, 1, 2 and from 2, 3;" ;;
@@ -370,7 +370,7 @@ mac_leg() {
 }
 
 if [ -n "$PLAN" ]; then for b in linux windows mac; do has $b && echo "wave-gate: $b runs: $(legsteps $b)"; done
-    has linux && echo "wave-gate: linux: the build alone, then ${WAVEGATE_SLOTS:-2} steps at once through ~/slot (two locks, each job -j2 JOBS=2 SELFHOST_JOBS=2, timeout 1500)"
+    has linux && echo "wave-gate: linux: the build alone, then ${WAVEGATE_SLOTS:-2} steps at once through ~/slot (two locks, each job -j2 JOBS=2 SELFHOST_JOBS=2, timeout 2400)"
     has windows && echo "wave-gate: windows: wbuild alone, then steps at once within WINLANES=${WINLANES:-10} at /affinity 3FF - wide $(( ${WINLANES:-10} / 2 )) lanes (the last one all that is free), names/overload/winstruct/cdb/cycles/declines/emit 2; cdb and wfixed after a winpass"
     echo "wave-gate: never together, one tree folder each: run1+maketest, tms*/wtms*/sim, asm*, winpass*, wfixed*+wselfc"
     echo "wave-gate: idle steps, to the first box free: $(group idle)"; exit 0; fi
