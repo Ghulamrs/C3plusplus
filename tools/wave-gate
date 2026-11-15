@@ -72,9 +72,13 @@ while :; do
   done
   sleep 5
 done'
-# steps that write one folder of the tree (tests/out-run, out-tms6747, out-asm6x, winout, selfhost) never overlap
-fam() { case $1 in run1|run2|maketest) echo run;; ssa1|ssa2) echo ssa;; tms*|wtms*|sim*) echo tms;; asm*) echo asm;; winpass*) echo winpass;;
-    wfixed*|wselfc) echo selfhost;; *) echo "$1";; esac; }
+# steps that write one folder of the tree (tests/out-run, out-tms6747, out-asm6x, winout) never overlap; winpass*,
+# cdb and wfixed* share winout-tools (each winpass job and wfixed rebuild its masm and LINK, cdb links with it)
+fam() { case $1 in run1|run2|maketest) echo run;; ssa1|ssa2) echo ssa;; tms*|wtms*|sim*) echo tms;; asm*) echo asm;;
+    winpass*|cdb|wfixed*) echo wintools;; *) echo "$1";; esac; }
+# a step that relinks its tree's compiler runs alone on its box: wselfc and wfixed* call msvc\build.cmd, which writes
+# cxx3-msvc.exe under every step running it (w21g: wtms2's "Device or resource busy"); Linux's checks make -q instead
+alone() { case $1 in wselfc|wfixed*) return 0;; esac; return 1; }
 # pool <cap> <run> <width> [<more>] <step>...: each step in the background as `<run> <step> <w>` while the widths in
 # flight fit in <cap> and no step of its family runs; `<width> <step> <free> <left>` prints w (empty: not ready yet);
 # `<more>` (or -) is asked for another step when the list is empty. A step starts the moment one fits: no idle gap.
@@ -83,8 +87,8 @@ pool() { cap=$1 prun=$2 pwid=$3 pmore=$4; shift 4; pq="$*" pr=
         for e in $pr; do p=${e%%:*}; w=${e##*:}; if kill -0 "$p" 2>/dev/null; then l="$l $e"; used=$((used + w)); fi; done; pr=$l; go=
         if [ -z "$pq" ] && [ "$pmore" != - ]; then m=$($pmore); [ -n "$m" ] && pq=$m; fi
         n=0; for s in $pq; do n=$((n + 1)); done
-        for s in $pq; do f=$(fam "$s"); busy=
-            for e in $pr; do x=${e#*:}; [ "$(fam "${x%:*}")" = "$f" ] && busy=1; done; [ -z "$busy" ] || continue
+        for s in $pq; do f=$(fam "$s"); busy=; alone "$s" && [ -n "$pr" ] && busy=1
+            for e in $pr; do x=${e#*:}; x=${x%:*}; [ "$(fam "$x")" = "$f" ] && busy=1; alone "$x" && busy=1; done; [ -z "$busy" ] || continue
             w=$($pwid "$s" $((cap - used)) $n); [ -n "$w" ] || continue
             [ $((used + w)) -le "$cap" ] || [ -z "$pr" ] || continue
             "$prun" "$s" "$w" & pr="$pr $!:$s:$w"; used=$((used + w)); go=1
@@ -166,6 +170,10 @@ if [ "${1:-}" = --box ]; then
     [ "$B" = linux ] && export JOBS=2
     step1() { s=$1; R=$(echo "$s" | sed -n 's/.*@//p'); R=${R:-1-$NSHARD}       # step@a-b: shards a to b of six
         echo "wave-gate: $B $s starts $(date +%H:%M:%S)"
+        # Linux's steps that run make (self-host's stage 0, make test) beside steps running cxx3.exe: make must be a no-op
+        case $B:$s in linux:selfc|linux:fixed*|linux:maketest) make -q cxx3.exe > /dev/null 2>&1 || {
+            verdict "$s" FAIL "make -q cxx3.exe: out of date in $T - this step's make would relink it under the steps running it"
+            echo "wave-gate: $B $s ends $(date +%H:%M:%S)"; return; };; esac
         case $s in
         build) rm -rf "$T" "$T-base" && mkdir -p "$T/tmp" && tar -C "$T" -xzf "$HOME/$N-tree.tgz" && cd "$T" || { verdict build FAIL "no tree from ~/$N-tree.tgz"; exit 1; }
             bp=; bm="no base named (-w)"     # the wave's base, built beside it in the other slot (N2)
@@ -321,10 +329,14 @@ wverdict() { u=$(wdisk); if [ "$2" = PASS ] && [ "${u:-0}" -gt 70 ]; then verdic
 # an idle step for box $1: the first unclaimed one, claimed by an atomic mkdir; cycles waits for both halves of tms2
 claim() { for s in $(group idle); do
         [ -z "$(why $s)" ] && ! done_ $s && mkdir "$OUT/claim/$s" 2>/dev/null && { echo "$s $1" >> "$OUT/chose"; echo $s; return; }; done; }
-cycles_join() {   # $1 the box that runs the check: both boxes' tms2 cycles.txt, one file, there
-    t=0; while [ $t -lt 3600 ]; do n=0
-        for f in linux windows; do awk -F'\t' '$1 ~ /^tms2(@|$)/ { f = 1 } END { exit !f }' "$OUT/$f.verdicts" 2>/dev/null && n=$((n + 1)); done
-        w=0; has linux && w=$((w + 1)); has windows && w=$((w + 1)); [ "$(boxof tms2)" = split ] || w=1; [ $n -ge $w ] && break; sleep 60; t=$((t + 60)); done
+# a verdict the Mac writes for box $1: Linux's goes into the box's file too, which each poll copies over the Mac's
+bverdict() { [ $1 = linux ] && printf '%s\t%s\t%s\n' "$2" "$3" "$4" | lssh "cat >> ~/$N-verdicts.txt"; verdict "$2" "$3" "$4" $1; }
+cycles_join() {   # $1 the box that runs the check: both boxes' tms2 cycles.txt, one file, there; cj_ names its own
+    cj_t=0; while :; do cj_n=0     # (w21g: a shared t made linux_leg's chain "asm2 240", and cycles lost its verdict)
+        for cj_f in linux windows; do awk -F'\t' '$1 ~ /^tms2(@|$)/ { f = 1 } END { exit !f }' "$OUT/$cj_f.verdicts" 2>/dev/null && cj_n=$((cj_n + 1)); done
+        cj_w=0; has linux && cj_w=$((cj_w + 1)); has windows && cj_w=$((cj_w + 1)); [ "$(boxof tms2)" = split ] || cj_w=1; [ $cj_n -ge $cj_w ] && break
+        [ $cj_t -ge 3600 ] && { bverdict $1 cycles "NOT RUN" "tms2's halves: $cj_n of $cj_w reported within an hour, nothing to join"; return 1; }
+        sleep 60; cj_t=$((cj_t + 60)); done
     : > "$OUT/cycles-joined.txt"
     has linux && lssh "cat ~/$N-cycles.txt 2>/dev/null" >> "$OUT/cycles-joined.txt"
     has windows && ssh -o BatchMode=yes "$WINDOWS" "type $WORK\\$N-cycles.txt 2>nul" | tr -d '\r' >> "$OUT/cycles-joined.txt"
@@ -359,10 +371,14 @@ linux_leg() {
     [ "${free:-0}" -ge 3 ] || { verdict build FAIL "the Linux box has ${free:-?} GB free, under 3" linux; return; }
     st=$(legsteps linux); [ -n "$st" ] && linux_chain $st
     grep -q "^build${TAB}PASS" "$OUT/linux.verdicts" 2>/dev/null || return 0
-    s=$(own linux); [ -n "$s" ] && linux_chain cycles
-    # idle steps two at a time, one chain: the box's pool puts them in the two slots
-    while s=$(claim linux); [ -n "$s" ]; do t=; [ $s = cycles ] || t=$(claim linux)
-        for x in $s $t; do [ $x = cycles ] && cycles_join linux; done; linux_chain $s $t; done; }
+    s=$(own linux); [ -n "$s" ] && { linux_chain cycles; lost cycles; }
+    # idle steps two at a time, one chain: the box's pool puts them in the two slots; cycles once its join is there
+    while s=$(claim linux); [ -n "$s" ]; do t=; [ $s = cycles ] || t=$(claim linux); c=
+        for x in $s $t; do [ $x = cycles ] && ! cycles_join linux && continue; c="$c $x"; done
+        [ -n "$c" ] && { linux_chain $c; lost $c; }; done; }
+# a step the chain ran that left no verdict on the box fails by name, never as a NOT RUN with no reason
+lost() { for x in "$@"; do awk -F'\t' -v s="$x" '$1 == s { f = 1 } END { exit !f }' "$OUT/linux.verdicts" 2>/dev/null ||
+    bverdict linux "$x" FAIL "the Linux chain ended with no verdict for it; ~/$N-gate.out"; done; }
 
 windows_step() { s=$1; LN=${2:-${WINLANES:-10}}; L="$OUT/$s.log"; W="$ROOT/tools/windows"
     case $s in
@@ -408,7 +424,7 @@ windows_leg() {
     [ "$(boxof cycles)" = windows ] && [ -z "$(why cycles)" ] && ! done_ cycles && st="$st cycles"   # wrun joins it
     pool "${WINLANES:-10}" wrun wwid wmore $st; }
 # a Windows step at <w> lanes, its start and end timed (the overlap is read from these lines)
-wrun() { [ $1 = cycles ] && cycles_join windows; echo "wave-gate: windows $1 starts, $2 lanes $(date +%H:%M:%S)"; windows_step "$1" "$2"
+wrun() { [ $1 = cycles ] && { cycles_join windows || return; }; echo "wave-gate: windows $1 starts, $2 lanes $(date +%H:%M:%S)"; windows_step "$1" "$2"
     echo "wave-gate: windows $1 ends $(date +%H:%M:%S)"; }
 # a wide step takes WINLANES/2 (all that is free when it is the last); a narrow one 2; cdb and wfixed wait for a winpass
 wwid() { case $1 in cdb|wfixed*) case " $pq $pr" in *" winpass"*|*:winpass*)
@@ -447,7 +463,8 @@ mac_leg() {
 if [ -n "$PLAN" ]; then for b in linux windows mac; do has $b && echo "wave-gate: $b runs: $(legsteps $b)"; done
     has linux && echo "wave-gate: linux: the build alone, then ${WAVEGATE_SLOTS:-2} steps at once through ~/slot (two locks, each job -j2 JOBS=2 SELFHOST_JOBS=2, timeout 1500)"
     has windows && echo "wave-gate: windows: wbuild alone, then steps at once within WINLANES=${WINLANES:-10} at /affinity 3FF - wide $(( ${WINLANES:-10} / 2 )) lanes (the last one all that is free), names/overload/winstruct/cdb/cycles/declines/release 2; cdb and wfixed after a winpass"
-    echo "wave-gate: never together, one tree folder each: run1+run2+maketest, ssa1+ssa2, tms*/wtms*/sim, asm*, winpass*, wfixed*+wselfc"
+    echo "wave-gate: never together, one tree folder each: run1+run2+maketest, ssa1+ssa2, tms*/wtms*/sim, asm*, winpass*+cdb+wfixed* (winout-tools)"
+    echo "wave-gate: alone on its box (relinks cxx3-msvc.exe): wselfc, wfixed0, wfixed2; linux selfc, fixed*, maketest FAIL unless make -q cxx3.exe holds"
     echo "wave-gate: idle steps, to the first box free: $(group idle)"; exit 0; fi
 if [ -z "$REPORT" ]; then
     WT=$OUT/tree; T0=$(date +%s)
@@ -493,7 +510,8 @@ for s in $STEPS; do
         if [ -z "$ch" ]; then v="PASS${TAB}at HEAD $(git -C "$ROOT" rev-parse --short=8 HEAD) the judges' files are the gated commit's"
         else v="FAIL${TAB}changed after the gated commit: $ch- gate the commit that holds them"; fi ;;
     idle) b=$(awk -v s="$s" '$1 == s { print $2 }' "$OUT/chose" 2>/dev/null | tail -1); [ -n "$b" ] && v=$(vof "$s" "$b")
-        [ -n "$v" ] && v="${v%%$TAB*}${TAB}(idle: $b) ${v#*$TAB}"; b=${b:-idle} ;;
+        [ -n "$v" ] && v="${v%%$TAB*}${TAB}(idle: $b) ${v#*$TAB}"
+        [ -z "$v" ] && [ -n "$b" ] && v="FAIL${TAB}(idle: $b) claimed, and no verdict came back"; b=${b:-idle} ;;
     *) v=$(vof "$s" "$x") ;;
     esac
     case "$v" in
@@ -505,7 +523,7 @@ for s in $STEPS; do
             case $x in split|idle) d="no verdict came back (no reason given)";;
             *) if has $x; then d="no verdict came back - the step before it stopped the chain, or the box did not answer (no reason given)"
                else d="box $x was not asked (no reason given)"; fi;; esac
-        else unexcused=$((unexcused + 1)); d="$d (no reason given)"; fi
+        else unexcused=$((unexcused + 1)); d="$d (the box's reason, none on the command line)"; fi
         printf '  %-8s %-9s NOT RUN  %s\n' "$b" "$s" "$d" ;;
     esac
 done
