@@ -1549,3 +1549,41 @@ files (lane m6ad's):
   C6xSched.cpp compiles, 0 errors; C6xPack.cpp is refused at 209:40 (`c6x::crossings` with two arguments), the
   refusal round 20's file meets at the same place (lane sh1's) - what lies behind that first error is not seen.
 - **Owed:** D6.2-D6.5, in round 19's order.
+
+## Wave 18's map/set cycles, 2026-11-15 (lane sh2, from wave18 4639c9af)
+
+- **The rise, measured** (tms6747 -O2, vm6747 cycle.CPU, round 22's ~/m6ae against wave 18's ~/w18g): 192,009,106 ->
+  192,786,413 over the 811 common cases; nine rose, and all nine include `<map>` or `<set>` (deque-both-ends and
+  range-for-vector among them). One root, sh-1's comparator: every key comparison in `__tree` went through
+  `KeyOf::less`, which made a `std::less<K>` object and called its `operator()` - two calls the inliner had to take
+  where round 22 wrote `<`.
+- **The mend** (include/ only): `__tree_order<T, C>` in `<__tree>` is the order of two keys, and its specialisation for
+  `std::less<T>` is `a < b` itself; `__map_key` and `__set_key` name their comparator as `key_compare`, and the tree
+  reads `__tree_order<key_type, key_compare>` once. A named comparator is still made where it is asked (`C c;`).
+  deque-both-ends and range-for-vector are back to round 22's count exactly; the total is 192,021,032.
+- **What is left, and why** (7 cases above round 22, +11,926 in all; map-set-node-stability 7,620,285 -> 7,630,335,
+  include-map-set +631, static-local-braced-list +533, library-self-compile-pieces-2 +364, map-move-only-mapped
+  +153, member-template-body-unchosen +117, return-self-referential +78): the inliner's **unit budget**. Each
+  comparison is one inlined call more than round 22's `<` (`__tree_order::less`, growth > 0 in SsaInline's measure
+  of an unpromoted body), so the unit's 40% is spent a few sites sooner and one `rotateLeft` in `rebalance` is
+  declined (`CPP11_DECLINES`: 74 -> 75 `inline-unit-budget-spent`); the code is otherwise the same instruction for
+  instruction (the unused weak `__tree_order::less` moved nothing: removing it from the .s leaves the count).
+  Tried and dropped: SsaInline not counting the loads of a parameter's slot (21 cases up, unordered-map +17,525); one
+  comparison a level in `place` (map-set-node-stability +159,396). Removing the rest wants either the comparison with
+  no call at all for `std::less` (one `__tree` per order, which is duplication) or an inliner that measures a callee as
+  promote leaves it - its own round, judged over all 811.
+- **Not mended: the `C()(a, b)` refusal** ("'C(...)' makes a temporary of type 'struct less<...>', which is not supported
+  yet", src/sema/Overload.cpp:610). It reproduces in src/optimizer/OptTable.cpp with `C()(a, b)` put back in `<map>`,
+  and in a 36-line cut of it (boxkit/sh2-r/u1.cpp: `opcodeOf`'s static map plus the unnamed namespace before it), but
+  in no standalone case written without OptTable.h (a template's functional cast, in a namespace, an unnamed
+  namespace, a static local's lambda, a declared-then-defined overload, an alias named `K`: all compile). Owed: the
+  reduction past OptTable.h, then a tests/cases entry with clang's answer.
+- src/ unchanged; include/ +21 -10 (`<__tree>` 324 -> 337, `<map>` 145 -> 144, `<set>` 100 -> 99).
+- **Gate at 5984a7c3** (include/ only; the compiler is wave 18's): tests/tms6747.sh SHARD=k/3 CYCLES=1 SIM=0 at -O2 on
+  Linux (~/sh2), **818 passed, 0 failed; 815 cases, 811 common with round 22: 192,009,106 -> 192,021,032, 7 up (above),
+  0 down** (wave 18: 192,786,413); map-set-comparator 15,388 -> 15,293. Windows (work\sh2w): cl /W4 /WX clean;
+  winpass -O0 **832 same / 0 differ, masm 831 / 0**; self-host stage 0 at -O0 **103 of 103**; exclusions 129 sites 0
+  uncited 0 stale, comments 0 over, memory gate rc 0, generate up to date. Linux: run.sh 1221 / 0; make test rc 0
+  (emit 3415 / 0, typed 864 / 0, ssa 894 / 0, syntax 3 / 0, coff 1,700 objects 0 differ). emit.sh against wave 18's
+  golden (work\sh2w, recorded with work\w18g's compiler): **40 of 3,415 changed**, 0 added - the ten cases that include
+  `<map>` or `<set>` (the nine above and map-set-comparator) on four targets: no comparator object, one order.
