@@ -1,0 +1,2 @@
+arm64-darwin  OPEN, owed: a real difference, tests/open/names-register.txt #2 - a lifetime-extended temporary of a namespace-scope reference is named ?$SN, not ?$RT1@ / _ZGR (r6n, names.sh on the Windows box beside clang 19.1.5, 2026-11-15)
+x86_64-windows  OPEN, owed: a real difference, tests/open/names-register.txt #2 - a lifetime-extended temporary of a namespace-scope reference is named ?$SN, not ?$RT1@ / _ZGR (r6n, names.sh on the Windows box beside clang 19.1.5, 2026-11-15)

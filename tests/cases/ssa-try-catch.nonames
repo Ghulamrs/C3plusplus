@@ -1,0 +1,1 @@
+win-unwind  ?quiet@@YAHH@Z  OPEN, owed: tests/open/names-register.txt #3 - dispUnwindHelp 0 in a function whose try body cannot throw (win-unwind-check holds it to an 8-byte slot inside the frame) (r6n, 2026-11-15)

@@ -1,0 +1,3 @@
+arm64-darwin  OPEN, owed: a real difference, tests/open/names-register.txt #1 - a closure met while an enclosing lambda's return is deduced keeps its trial name $deduced_N (r6n, names.sh on the Windows box beside clang 19.1.5, 2026-11-15)
+x86_64-linux  OPEN, owed: a real difference, tests/open/names-register.txt #1 - a closure met while an enclosing lambda's return is deduced keeps its trial name $deduced_N (r6n, names.sh on the Windows box beside clang 19.1.5, 2026-11-15)
+x86_64-windows  OPEN, owed: a real difference, tests/open/names-register.txt #1 - a closure met while an enclosing lambda's return is deduced keeps its trial name $deduced_N (r6n, names.sh on the Windows box beside clang 19.1.5, 2026-11-15)
