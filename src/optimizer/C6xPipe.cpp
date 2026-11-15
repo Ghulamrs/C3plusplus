@@ -222,7 +222,7 @@ bool mayAliasAt(const Access &a, int sa, const Access &b, int sb, int d) {
 }
 
 // **The recognisers' reader** (M6c round 4): what an entry is and its parts - kind, mnemonic, predicate, operands,
-// reads and writes, units - from its operands; where it is not `modelled`, an operand by the spelling it is held as.
+// reads and writes, units - from its operands (`c6xSchedule` refuses a stream whose operands the table cannot read).
 struct Src {
     const MStream *s;
     const std::vector<std::uint64_t> *live;     // the stream's live-in, entry by entry
@@ -232,7 +232,6 @@ struct Src {
     MInst entry(std::size_t i) const { return (*s)[i]; }
     std::uint64_t liveIn(std::size_t i) const { return (*live)[i]; }
     std::uint64_t liveAt(std::size_t i) const { return (*live)[i]; }
-    bool typed(std::size_t i) const { return modelled((*s)[i]); }
     bool instr(std::size_t i) const { return (*s)[i].kind == MInst::Instruction && !(*s)[i].packed; }
     bool label(std::size_t i) const { std::string n; return (*s)[i].kind == MInst::Label || labelOf((*s)[i], n); }
     std::string name(std::size_t i) const {
@@ -249,22 +248,20 @@ struct Src {
     }
     std::size_t ops(std::size_t i) const { return instr(i) ? (*s)[i].operands : 0; }
     std::string op(std::size_t i, std::size_t k) const { return (*s)[i].op[k].str(); }
-    bool reg(std::size_t i, std::size_t k) const { return typed(i) ? (*s)[i].op[k].isReg() : sideOf(op(i, k)) != 0; }
+    bool reg(std::size_t i, std::size_t k) const { return (*s)[i].op[k].isReg(); }
     bool number(std::size_t i, std::size_t k, long &n) const {
-        if (typed(i)) { n = static_cast<long>((*s)[i].op[k].value); return (*s)[i].op[k].kind == MOperand::Immediate; }
-        n = std::atol(op(i, k).c_str());
-        return isNumber(op(i, k));
+        n = static_cast<long>((*s)[i].op[k].value);
+        return (*s)[i].op[k].kind == MOperand::Immediate;
     }
-    bool pair(std::size_t i, std::size_t k) const { return typed(i) ? (*s)[i].op[k].kind == MOperand::Pair : op(i, k).find(':') != std::string::npos; }
+    bool pair(std::size_t i, std::size_t k) const { return (*s)[i].op[k].kind == MOperand::Pair; }
     void rw(std::size_t i, std::vector<std::string> &reads, std::vector<std::string> &writes) const { if (instr(i)) readsAndWrites((*s)[i], reads, writes); }
     // The same by number and as masks, and a register operand or the predicate as a number.
     void regs(std::size_t i, std::vector<int> &reads, std::vector<int> &writes) const { if (instr(i)) regsOf((*s)[i], reads, writes); }
     unsigned units(std::size_t i) const { return instr(i) ? unitsFor((*s)[i]) : 0; }
     void masks(std::size_t i, std::uint64_t &reads, std::uint64_t &writes) const { if (instr(i)) masksOf((*s)[i], reads, writes); }
-    int regAt(std::size_t i, std::size_t k) const { return typed(i) ? ((*s)[i].op[k].kind == MOperand::Register ? (*s)[i].op[k].reg : kNoReg) : regNumber(op(i, k)); }
+    int regAt(std::size_t i, std::size_t k) const { return (*s)[i].op[k].kind == MOperand::Register ? (*s)[i].op[k].reg : kNoReg; }
     int predReg(std::size_t i) const { return instr(i) ? (*s)[i].pred : kNoReg; }
     char side(std::size_t i, std::size_t k) const {
-        if (!typed(i)) return sideOf(op(i, k));
         const MOperand &o = (*s)[i].op[k];
         if (o.kind != MOperand::Register && o.kind != MOperand::Pair) return 0;
         return sideOfReg(o.kind == MOperand::Pair ? o.hi : o.reg) ? 'B' : 'A';
@@ -1450,27 +1447,6 @@ struct Window {
 const int kPlain = -1, kCont = -2;
 
 // A byte load's address as base and constant: `*R`, `*+R(c)`, `*-R(c)`, `*+R[c]`, `*R++`, `*R++(1)`; post for the two last.
-bool byteAddress(const std::string &op, std::string &base, long &off, bool &post) {
-    post = false; off = 0;
-    if (op.size() < 3 || op[0] != '*') return false;
-    std::string s = op.substr(1);
-    char sign = 0;
-    if (s[0] == '+' || s[0] == '-') { if (s.size() > 1 && (s[1] == '+' || s[1] == '-')) return false; sign = s[0]; s = s.substr(1); }
-    std::size_t i = 0;
-    while (i < s.size() && std::isalnum(static_cast<unsigned char>(s[i]))) i++;
-    base = s.substr(0, i);
-    if (!sideOf(base)) return false;
-    const std::string rest = s.substr(i);
-    if (rest.empty()) return sign == 0;
-    if (rest == "++" || rest == "++(1)") { post = true; return sign == 0; }
-    if (!sign || rest.size() < 3 || !((rest[0] == '(' && rest.back() == ')') || (rest[0] == '[' && rest.back() == ']'))) return false;
-    const std::string k = rest.substr(1, rest.size() - 2);
-    if (!isNumber(k)) return false;
-    off = std::atol(k.c_str()) * (sign == '-' ? -1 : 1);
-    return true;
-}
-
-// A byte load's address on an entry's operand, as the spelling's reader above gives it.
 bool byteAddress(const MOperand &o, int &base, long &off, bool &post) {
     post = false; off = 0;
     if (o.kind != MOperand::Memory || o.index != kNoReg) return false;
@@ -1484,14 +1460,8 @@ bool byteAddress(const MOperand &o, int &base, long &off, bool &post) {
 
 bool isByteLoad(const std::string &m) { return m == "LDB" || m == "LDBU"; }
 
-// An operand's registers in its spelling's order, and a byte load's address as `byteAddress` reads it, on the entry.
+// An operand's registers in its spelling's order, and a byte load's address, on the entry.
 void Src::regsIn(std::size_t i, std::size_t k, std::vector<int> &out) const {
-    if (!typed(i)) {
-        std::vector<std::string> names;
-        registersIn(op(i, k), names);
-        for (std::size_t g = 0; g < names.size(); g++) out.push_back(regNumber(names[g]));
-        return;
-    }
     const MOperand &o = (*s)[i].op[k];
     if (o.kind == MOperand::Register) out.push_back(o.reg);
     if (o.kind == MOperand::Pair) { out.push_back(o.hi); out.push_back(o.reg); }
@@ -1500,12 +1470,6 @@ void Src::regsIn(std::size_t i, std::size_t k, std::vector<int> &out) const {
     if (o.index != kNoReg) out.push_back(o.index);
 }
 bool Src::byteAddress(std::size_t i, std::size_t k, int &base, long &off, bool &post) const {
-    if (!typed(i)) {
-        std::string name;
-        const bool is = c6x::byteAddress(op(i, k), name, off, post);
-        base = regNumber(name);
-        return is;
-    }
     return c6x::byteAddress((*s)[i].op[k], base, off, post);
 }
 

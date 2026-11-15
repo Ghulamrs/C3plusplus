@@ -559,6 +559,7 @@ void Tms6747::selectBody(const Function &fn, const ir::Function &f) {
     closeOpenBlocks();
     ssaCounting_ = false;
     ssaEmit(c6x::MInst("ZERO", "A4"));     // falling off the end returns 0, as the walker's body does
+    ssaHead_ = head;
     out_ << head;
     c6x::write(ssaMir_, out_);
     if (std::getenv("CXX1_C6X_MIR") != nullptr) {

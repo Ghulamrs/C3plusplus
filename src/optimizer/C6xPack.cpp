@@ -1286,30 +1286,6 @@ void loopPass(MStream &s, void (*pass)(LoopText &)) {
     pass(t);
 }
 
-bool streamOf(const std::vector<Line> &v, MStream &s) {
-    for (std::size_t k = 0; k < v.size(); k++) {
-        const Line &l = v[k];
-        // The pipeliner's lines are placed already, `||` and all: the mark is read off, the rest is an entry.
-        const bool par = l.verbatim && startsWith(l.raw, "||");
-        MStream one;
-        read((par ? l.raw.substr(2) : l.raw) + "\n", one);
-        if (one.size() != 1) return false;
-        MInst &i = one[0];
-        if (!l.verbatim) {
-            // An instruction the stream spells otherwise, or a line whose fields are not its text's, is not spelled.
-            if (l.instr != (i.kind == MInst::Instruction)) return false;
-            const Line p = parse(l.raw);
-            if (p.instr != l.instr || p.mnem != l.mnem || p.ops != l.ops || p.pred != l.pred) return false;
-        }
-        // A placed line the text's fold would read as an instruction and the stream cannot: not spelled either.
-        if (l.verbatim && i.kind == MInst::Verbatim && parse(par ? l.raw.substr(2) : l.raw).instr) return false;
-        i.par = par;
-        i.packed = l.verbatim;
-        s.push_back(i);
-    }
-    return true;
-}
-
 // Each block scheduled on its own, every label and kept line where it stood, on entries.
 void packetise(MStream &s) {
     std::set<std::string> labels, named;

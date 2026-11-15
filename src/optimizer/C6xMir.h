@@ -69,12 +69,10 @@ struct MInst {
 };
 
 using MStream = std::vector<MInst>;
-struct Line;
 struct Node;
 
-// **The packetiser** (C6xPack.cpp): the text passes' lines as a stream, false where a line is not spelled back the same;
-// each block's instructions placed in execute packets with `NOP n` for its idle cycles; a branch and its NOPs as one BNOP.
-bool streamOf(const std::vector<Line> &v, MStream &s);
+// **The packetiser** (C6xPack.cpp): each block's instructions placed in execute packets with `NOP n` for its idle
+// cycles; a branch and its NOPs as one BNOP.
 bool placedName(const MInst &i, std::string &name);       // a placed entry that starts in the first column, named up to its `:`
 void packetise(MStream &s);
 void foldBranchNops(MStream &s, bool near);
@@ -130,6 +128,10 @@ bool legalForm(MInst &r);                         // the same, a commutative one
 
 // The text of a walker's helper, line by line, onto the stream: an instruction where it spells back the same.
 void read(const std::string &text, MStream &to);
+// What the scheduler takes: the walker's text, or a selected function's entries, with the -O0 padding (NOP) left out;
+// false where a line that is an instruction (a tab, a predicate, a capital) is not spelled back the same.
+bool readSerial(const std::string &text, MStream &to);
+bool addSerial(const MStream &from, MStream &to);
 void write(const MStream &s, std::ostream &out);
 // How much of a stream is modelled: instructions, labels, verbatim lines, and operands held as text that are no label.
 struct Census { int instructions = 0, labels = 0, verbatim = 0, opaque = 0; };

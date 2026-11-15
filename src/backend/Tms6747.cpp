@@ -2422,8 +2422,11 @@ void Tms6747::emitFunction(const Function &fn) {
     emitVariables(fn);                                      // -g: after the label, outside the scheduled code
     // Scheduled with the body at -O1 and -O2, so a result in flight at its end lands under the return's delay slots.
     bool spelled = true;
-    if (optimize_ > 0 && !backendSkipped("pro")) out_ << c6xSchedule(early + pro.str() + params + body + epi.str(), optimize_, spelled);
-    else out_ << pro.str() << c6xSchedule(early + params + body + epi.str(), optimize_, spelled);
+    const bool whole = optimize_ > 0 && !backendSkipped("pro");
+    if (!whole) out_ << pro.str();
+    // A selected body goes as its entries (C6xSelect.cpp), a walked one as the text it wrote.
+    const std::string before = early + (whole ? pro.str() : std::string()) + params + (ssaFn != nullptr ? ssaHead_ : body);
+    out_ << c6xSchedule(before, ssaFn != nullptr ? &ssaMir_ : nullptr, epi.str(), optimize_, spelled);
     if (!spelled) unsupported("a line the scheduler's stream does not spell");
     // TI's index entry for a function an exception can pass through - one that calls, so saves B3 - naming the table
     // when there are handlers, holding the word itself when there are none. A function that calls nothing gets no

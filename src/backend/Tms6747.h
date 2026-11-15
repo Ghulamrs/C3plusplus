@@ -298,6 +298,7 @@ private:
     bool ssaCompare(const ir::Function &f, const ir::Inst &c, const std::string &d);
     // The body as MIR (M6b): the selector's instructions, a walker helper's text read in where it was written (ssaAbsorb).
     c6x::MStream ssaMir_;
+    std::string ssaHead_;       // what stood in out_ before a selected body
     void ssaAbsorb();
     void ssaEmit(const c6x::MInst &i) { ssaAbsorb(); ssaMir_.push_back(i); }
     void ssaBranchIf(bool zero, const std::string &l);

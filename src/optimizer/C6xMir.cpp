@@ -129,35 +129,83 @@ std::string MInst::str() const {
     return s + "\n";
 }
 
+// A line with its line end as an entry: a label, an instruction where the entry spells it back, else kept as written.
+// `is`: 0 no instruction to the scheduler (no tab, predicate and capital), 1 one spelled, 2 one not; `nop`: a NOP.
+static MInst entryOf(const std::string &raw, int &is, bool &nop) {
+    MInst i;
+    i.kind = MInst::Verbatim;
+    i.m = opt::StrId(raw);
+    is = 0;
+    nop = false;
+    const std::size_t n = raw.size();
+    if (n >= 3 && raw[0] != '\t' && raw[n - 2] == ':' && raw[n - 1] == '\n') {
+        i.kind = MInst::Label;
+        i.m = opt::StrId(raw.substr(0, n - 2));
+        return i;
+    }
+    if (n < 3 || raw[0] != '\t' || raw[n - 1] != '\n') return i;
+    MInst x;
+    std::size_t at = 1;
+    if (raw[at] == '[') {
+        const std::size_t close = raw.find(']', at);
+        if (close == std::string::npos || close + 1 >= n) return i;
+        x.predNot = raw[at + 1] == '!';
+        x.pred = static_cast<std::uint8_t>(regNumber(raw.substr(at + 1 + (x.predNot ? 1 : 0), close - at - 1 - (x.predNot ? 1 : 0))));
+        at = close + 1;
+        while (at < n - 1 && raw[at] == '\t') at++;
+    }
+    if (at >= n - 1 || !std::isupper(static_cast<unsigned char>(raw[at]))) return i;     // a directive
+    std::size_t tab = raw.find('\t', at);
+    if (tab == std::string::npos) tab = n - 1;
+    x.m = opt::StrId(raw.substr(at, tab - at));
+    is = 2;
+    nop = raw.compare(at, tab - at, "NOP") == 0;
+    for (at = tab + 1; at <= n - 1; ) {
+        std::size_t comma = raw.find(", ", at);
+        if (comma == std::string::npos || comma > n - 1) comma = n - 1;
+        if (x.operands == 4) return i;
+        x.op[x.operands++] = MOperand(raw.substr(at, comma - at));
+        at = comma + 2;
+    }
+    if (x.str() != raw) return i;
+    is = 1;
+    return x;
+}
+
+// The next line of text from `at`, its line end with it where it has one.
+static std::string lineAt(const std::string &text, std::size_t &at) {
+    const std::size_t nl = text.find('\n', at), from = at;
+    at = nl == std::string::npos ? text.size() : nl + 1;
+    return text.substr(from, at - from);
+}
+
 void read(const std::string &text, MStream &to) {
+    int is;
+    bool nop;
+    for (std::size_t at = 0; at < text.size(); ) to.push_back(entryOf(lineAt(text, at), is, nop));
+}
+
+bool readSerial(const std::string &text, MStream &to) {
     for (std::size_t at = 0; at < text.size(); ) {
-        const std::size_t nl = text.find('\n', at);
-        const std::size_t end = nl == std::string::npos ? text.size() : nl + 1;
-        const std::string raw = text.substr(at, end - at);
-        at = end;
-        MInst i;
-        i.kind = MInst::Verbatim;
-        i.m = opt::StrId(raw);
-        const std::size_t n = raw.size();
-        if (n >= 3 && raw[0] != '\t' && raw[n - 2] == ':' && raw[n - 1] == '\n') {
-            i.kind = MInst::Label;
-            i.m = opt::StrId(raw.substr(0, n - 2));
-        } else if (n >= 3 && raw[0] == '\t' && raw[n - 1] == '\n') {
-            // C6xSched's reading of a line (parse), then each operand's own.
-            const Line l = parse(raw.substr(0, n - 1));
-            if (!l.mnem.empty() && l.ops.size() <= 4) {
-                MInst x;
-                x.m = opt::StrId(l.mnem);
-                if (!l.pred.empty()) {
-                    x.predNot = l.pred[0] == '!';
-                    x.pred = static_cast<std::uint8_t>(regNumber(l.pred.substr(x.predNot ? 1 : 0)));
-                }
-                for (std::size_t k = 0; k < l.ops.size(); k++) x.op[x.operands++] = MOperand(l.ops[k]);
-                if (x.str() == raw) i = x;
-            }
-        }
+        int is;
+        bool nop;
+        std::string raw = lineAt(text, at);
+        if (raw[raw.size() - 1] != '\n') raw += "\n";
+        const MInst i = entryOf(raw, is, nop);
+        if (nop) continue;
+        if (is == 2) return false;
         to.push_back(i);
     }
+    return true;
+}
+
+bool addSerial(const MStream &from, MStream &to) {
+    for (std::size_t k = 0; k < from.size(); k++) {
+        const MInst &i = from[k];
+        if (i.kind == MInst::Verbatim) { if (!readSerial(i.m.str(), to)) return false; continue; }
+        if (i.kind != MInst::Instruction || i.m.str() != "NOP") to.push_back(i);
+    }
+    return true;
 }
 
 void write(const MStream &s, std::ostream &out) {

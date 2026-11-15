@@ -1,6 +1,6 @@
 #pragma once
 
-// The C6000 machine model the text passes share: a parsed line, the scheduler's view of an instruction, an execute
+// The C6000 machine model the passes share: the scheduler's view of an instruction, an execute
 // packet being filled, and the readers of the ISA - delay slots, units, cross paths - written once in C6xSched.cpp
 // and read by the software pipeliner in C6xPipe.cpp.
 
@@ -15,16 +15,6 @@
 namespace c6x {
 
 enum { UL = 1, US = 2, UD = 4, UM = 8 };   // the units, as a bitmask
-
-// A line of the text.
-struct Line {
-    std::string raw;
-    bool instr = false;
-    bool verbatim = false;              // scheduled already: printed as it stands, never rescheduled
-    std::string pred;                   // "A1" or "!A1", read as A1
-    std::string mnem;
-    std::vector<std::string> ops;
-};
 
 // One instruction as the scheduler sees it: what it reads and writes, its
 // latency, the units it has a form on, its side and cross path, its memory
@@ -65,7 +55,6 @@ bool startsWith(const std::string &s, const char *p);
 bool endsWith(const std::string &s, const char *p);
 int delaySlots(const std::string &m);
 int lateReads(const std::string &m);
-Line parse(const std::string &raw);
 void registersIn(const std::string &op, std::vector<std::string> &out);
 bool isNameChar(char c);
 bool isStore(const std::string &m);

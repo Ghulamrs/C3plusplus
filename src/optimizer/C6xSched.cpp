@@ -53,35 +53,6 @@ int lateReads(const std::string &m) {
     return startsWith(m, "CMP") && endsWith(m, "DP") ? 1 : 0;
 }
 
-Line parse(const std::string &raw) {
-    Line l;
-    l.raw = raw;
-    if (raw.empty() || raw[0] != '\t') return l;        // a label, or blank
-    std::size_t i = 1;
-    if (i < raw.size() && raw[i] == '[') {
-        std::size_t close = raw.find(']', i);
-        if (close == std::string::npos) return l;
-        l.pred = raw.substr(i + 1, close - i - 1);
-        i = close + 1;
-        while (i < raw.size() && raw[i] == '\t') i++;
-    }
-    if (i >= raw.size() || !std::isupper(static_cast<unsigned char>(raw[i]))) return l;   // a directive
-    std::size_t tab = raw.find('\t', i);
-    l.mnem = raw.substr(i, tab == std::string::npos ? std::string::npos : tab - i);
-    if (tab != std::string::npos) {
-        std::string rest = raw.substr(tab + 1);
-        std::size_t at = 0;
-        while (at <= rest.size()) {
-            std::size_t comma = rest.find(", ", at);
-            l.ops.push_back(rest.substr(at, comma == std::string::npos ? std::string::npos : comma - at));
-            if (comma == std::string::npos) break;
-            at = comma + 2;
-        }
-    }
-    l.instr = true;
-    return l;
-}
-
 bool isNameChar(char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '$' || c == '.'; }
 
 // The registers an operand names: A0-A31 and B0-B31 as whole words, so a
@@ -1093,20 +1064,20 @@ void rounds(MStream &s) {
     }
 }
 
-std::string c6xSchedule(const std::string &text, int level, bool &spelled) {
+std::string c6xSchedule(const std::string &before, const MStream *selected, const std::string &after, int level, bool &spelled) {
     spelled = true;
-    if (level <= 0) return text;
-    std::vector<Line> lines;
-    std::istringstream in(text);
-    std::string line;
-    while (std::getline(in, line)) {
-        Line l = parse(line);
-        if (l.mnem != "NOP") lines.push_back(l);    // the -O0 padding, re-derived by the scheduler
+    std::string text = before;
+    if (selected != nullptr) {
+        std::ostringstream body;
+        write(*selected, body);
+        text += body.str();
     }
-    // A function is one stream from here to the packetiser, the selector's and the walker's alike; a line the stream
-    // does not spell, or an instruction the table cannot read on its operands, is refused by the caller, the text handed back.
+    text += after;
+    if (level <= 0) return text;
+    // A function is one stream from here to the packetiser: the walker's text read once, a selected body's entries as
+    // they stand. A line the stream does not spell, or operands the table cannot read, is refused by the caller.
     MStream s;
-    spelled = streamOf(lines, s) && onOperands(s);
+    spelled = readSerial(before, s) && (selected == nullptr || addSerial(*selected, s)) && readSerial(after, s) && onOperands(s);
     if (!spelled) return text;
     foldFront(s, !skipped("thread"), !skipped("labels"));
     rounds(s);
@@ -1118,7 +1089,7 @@ std::string c6xSchedule(const std::string &text, int level, bool &spelled) {
         if (!skipped("induct")) loopPass(s, inductionPointers);
         if (!skipped("fill")) loopPass(s, widenFills);
         // The loops are pipelined on the stream; a kernel whose entries do not spell is refused as a line is.
-        spelled = pipelineLoops(s);
+        spelled = onOperands(s) && pipelineLoops(s);
         if (!spelled) return text;
         int placed = 0;
         for (std::size_t k = 0; k < s.size(); k++) placed += s[k].packed ? 1 : 0;
