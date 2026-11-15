@@ -76,6 +76,7 @@ fi
 OUT=tests/out-names
 if [ "${1:-}" = --one ]; then
     if out=$(tools/mangled-names "tests/cases/$2.cpp" 2>&1); then echo pass > "$OUT/$2.verdict"
+        echo "$out" | grep ': skipped - ' | sed "s/^/recorded $2 /" > "$OUT/$2.recorded"
     else { echo "FAIL $2:"; echo "$out" | sed 's/^/      /'; } > "$OUT/$2.report"; echo fail > "$OUT/$2.verdict"; fi
     exit 0
 fi
@@ -93,6 +94,8 @@ cases() {
     done
 }
 cases "$@" | xargs -P "$JOBS" -n 1 sh "$0" --one
+# A recorded difference (a .nonames or .notarget row) is said with its reason on every run, then the failures.
+for base in $(cases "$@"); do [ -s "$OUT/$base.recorded" ] && cat "$OUT/$base.recorded"; done
 for base in $(cases "$@"); do [ -f "$OUT/$base.report" ] && cat "$OUT/$base.report"; done
 pass=$(cat "$OUT"/*.verdict 2>/dev/null | grep -c pass || true)
 fail=$(cat "$OUT"/*.verdict 2>/dev/null | grep -c fail || true)
