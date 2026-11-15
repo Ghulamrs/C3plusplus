@@ -2529,3 +2529,48 @@ lifetime-ledger cases, W1's frame-slot shape by its owed reading, not diagnosed 
 16 W1 lines at -O2 and 2 at -O0 are stale (W2 made them equal or better). Lists: boxkit/mg22-worse-O2.txt, -O0.txt;
 the intended identical changes against g1 (1,829 tms6747 outputs, and p7's adl-block-declaration-outlives-nested on
 the three other targets) in boxkit/mg22-expected.txt. No accepted line is written here: that is the user's.
+
+
+### Lane g2 - two faults of tools/wave-gate that failed wave 21, 2026-11-15
+
+Lane g2 (Opus), branch g2 from g1 `027251b9`. Only tools/wave-gate changed; no src/ change. Wave 21's gate (`w21g`):
+41 passed, 1 failed, 5 not run.
+- **`wtms2@4-6` failed 3 cases with `./cxx3-msvc.exe: Device or resource busy`**: `wselfc` started at 22:30:20 beside
+  it in the same Windows tree, and tools/windows/self-compile.cmd calls msvc\build.cmd, which relinks cxx3-msvc.exe
+  while the walker shard runs it. Read, step by step: **wselfc** (self-compile.cmd) and **wfixed0/wfixed2**
+  (self-host.cmd's stage 0) call build.cmd - they write the compiler; **winpass*** (each wincases job's run-cases.cmd
+  `:tools`) and **wfixed*** (`run-cases.cmd :tools`) rebuild winout-tools\masm.exe and link.exe, which **cdb** links
+  with; release, names, overload, winstruct, the tms halves and the idle steps only run it. On Linux **selfc**,
+  **fixed*** (tools/self-host stage 0) and **maketest** run `make cxx3.exe`, a no-op after `build`.
+  **The mend:** `alone()` - wselfc, wfixed0, wfixed2 start only on an empty Windows pool and nothing starts beside
+  them; winpass*, cdb and wfixed* are one family (`wintools`, winout-tools); on Linux those three steps FAIL by name
+  unless `make -q cxx3.exe` holds (the relink would happen under the other slot). `-p` prints both lines.
+- **`cycles` "NOT RUN no verdict came back (no reason given)"** though cycles-joined.txt (820 lines) was written:
+  `cycles_join` counted its wait in `t`, the same variable `linux_leg` held the second claimed step in, so after its
+  four-minute wait for tms2's halves the chain ran "asm2 240" (`240 FAIL wave-gate --box knows no step 240` in the
+  box's verdicts) and cycles never ran. **The mend:** cycles_join's variables are `cj_*`; a wait past an hour is
+  `NOT RUN tms2's halves: n of w reported` written into the box's own file (`bverdict`: the Mac's poll copies the
+  box's file over its own, so a Mac-written Linux verdict went there or was lost); after every Linux chain `lost`
+  FAILs by name any step it ran that left no verdict; the report says "claimed, and no verdict came back" for an idle
+  step, and a NOT RUN the box gave is marked as the box's reason, not "no reason given".
+- **The short run, `tools/wave-gate w21g -k` against w21g's trees (wtms2@4-6, wselfc and cycles cleared):**
+  `cycles` **PASS** on Linux - 820 cases, 815 in the baseline (458f8974): 807 equal, 8 worse all owed or accepted, 5
+  new, 0 missing, 0 WORSE. The Windows half's first try lost its ssh (the box did not answer 22:43-22:49: "Connection
+  reset by peer", then "Operation timed out") - the gate wrote FAIL "no verdict came back" and "no count", never a
+  silent NOT RUN. Again, `WAVEGATE_HALVES=1 -b windows`: **wtms2@4-6 PASS 413/0 (22:50:49-22:55:41), then wselfc
+  alone, PASS 103 of 103 (22:55:45-23:03:17)** - no overlap, no "Device or resource busy". With wave 21's other
+  verdicts the gate is 44 passed, 0 failed, 4 not run (the fixed points, not owed, checked). Static gates: no src/,
+  docs/EXCLUSIONS.md or ide/ change, so tools/exclusions, make comments and tools/memory-gate are w21g's (PASS).
+
+### Wave 21 landed - the gate under the user's QA rule, 2026-11-15 (the coordinator)
+
+g1 (the mend check's N1-N5: tests/wave-expected.txt and the wave's own base build, the walked ratchet on the census's
+status, identity for x86_64-linux/-windows/arm64 back, emit's golden from the base, release a real step, the fixed
+point's owed-check), r6n (names, overload and win-structure pass on Windows with REQUIRE_ORACLE=1), r6x (two Linux slots,
+the Windows pool), g2 (wselfc and wfixed* run alone; the `wintools` family; cycles' lost verdict).
+- **Gate: tools/wave-gate w21g -w 82bd61a9 at 027251b9**, then the two failed steps rerun by the gate itself (`-k`) with
+  g2's script: **44 passed, 0 failed, 4 not run** (the fixed points, not owed by the script's check). The first run's one
+  FAIL (wtms2 at Windows 4-6/6, "Device or resource busy") was wselfc relinking the compiler beside it, and its cycles
+  step lost its verdict to a shared variable - both g2's; with them mended wtms2 passed 413/0, wselfc 103/103 alone,
+  cycles PASS (807 equal, 8 owed or accepted, 5 new, 0 worse). Landed at g2 201767ca, which changes only the gate
+  script: the recommended option, taken under the user's standing instruction (2026-11-15).
