@@ -385,16 +385,16 @@ void Tms6747::ssaAssign(const Function &fn, const ir::Function &f) {
             if (out[id * words + v / 64] & bit) end[v] = std::max(end[v], last[id] + 1);
         }
     }
-    // A value live into a pad stays in its word, or is made again: the scheduler's liveness has no edge from a call to a landing.
+    // A value live into a pad may hold a saved register (every call reads those, TI's unwinder restores them); one remade is made there.
     std::vector<char> unwound(nv, 0);
     for (std::size_t b = 0; b < ssaOrder_.size(); b++)
-        for (std::size_t v = 1; v < nv && f.block(ssaOrder_[b]).pad; v++) unwound[v] = (in[ssaOrder_[b].v * words + v / 64] >> (v % 64)) & 1;
+        for (std::size_t v = 1; v < nv && f.block(ssaOrder_[b]).pad; v++) unwound[v] |= (in[ssaOrder_[b].v * words + v / 64] >> (v % 64)) & 1;
     std::vector<std::size_t> order;
     for (std::size_t v = 1; v < nv; v++) {
-        if (!f.values[v].type.valid() || ssaTypes_->type(f.values[v].type)->isVoid() || start[v] < 0 || ssaFused_[v] || unwound[v]) continue;
+        if (!f.values[v].type.valid() || ssaTypes_->type(f.values[v].type)->isVoid() || start[v] < 0 || ssaFused_[v]) continue;
         // A remade value a loop reads keeps a register where one is free, and no weight: any other value takes it back.
         hot[v] = hot[v] && hoists(f, ir::ValueId(static_cast<std::uint32_t>(v)));
-        if (remade(f, ir::ValueId(static_cast<std::uint32_t>(v))) && !hot[v]) continue;
+        if (remade(f, ir::ValueId(static_cast<std::uint32_t>(v))) && (!hot[v] || unwound[v])) continue;
         if (hot[v]) weight[v] = 0;
         end[v] = std::max(end[v], start[v] + 1);
         order.push_back(v);
