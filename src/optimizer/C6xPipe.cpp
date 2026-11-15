@@ -677,10 +677,7 @@ bool recognise(const Src &src, std::size_t back, const std::set<std::string> &la
     if (!found) { why = "the head is not above"; return false; }
     if (back + 1 >= src.size() || !src.label(back + 1)) { why = "no exit label after the branch"; return false; }
     L.head = h; L.back = back; L.exitName = src.name(back + 1);
-    std::size_t first = h;
-    for (std::size_t k = h; k-- > 0 && src.instr(k) && !isBranch(src.mnem(k)); first = k) {
-        L.preM.insert(L.preM.begin(), (*src.s)[k]);
-    }
+    for (std::size_t k = h; k-- > 0 && src.instr(k) && !isBranch(src.mnem(k));) L.preM.insert(L.preM.begin(), (*src.s)[k]);
     if (src.naming(L.label) != 1) { why = "the head is entered from elsewhere"; return false; }
     for (std::size_t i = h + 1; i < back; i++) {
         if (src.label(i)) { if (!passThroughName(src.name(i), named)) { why = "a label inside"; return false; } continue; }
